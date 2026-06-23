@@ -9,7 +9,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier, canPlaylandManage, canPlaylandAdmin } from "./role-guard";
-import { newMemberCode, newSaleCode, newShiftCode } from "./codes";
+import { newMemberCode, newSaleCode, newShiftCode, newBookingCode } from "./codes";
+import { searchMembers } from "./queries";
 import { getAdapter } from "./acs/mock-adapter";
 import { verifyBranchOrg, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
 import { requireOpenShift } from "./wristband";
@@ -155,6 +156,37 @@ export async function createMember(input: CreateMemberInput): Promise<ActionResu
   revalidatePath("/playland");
   revalidatePath("/playland/members");
   return { ok: true, data: { memberId: member.id, faceId: assignedFaceId } };
+}
+
+// Search members from the client SPA (members screen / check-in "เคยมาแล้ว")
+export interface MemberSearchHit {
+  id: string;
+  name: string;
+  nickname: string | null;
+  phone: string | null;
+  memberCode: string | null;
+  type: string;
+  lastVisitAt: string | null;
+}
+
+export async function searchMembersAction(input: { branchId?: string; query: string }): Promise<ActionResult<MemberSearchHit[]>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  const q = input.query.trim();
+  if (q.length < 1) return { ok: true, data: [] };
+  const rows = await searchMembers(session.user.org_id, q, input.branchId, 20);
+  return {
+    ok: true,
+    data: rows.map((m) => ({
+      id: m.id,
+      name: m.name,
+      nickname: m.nickname,
+      phone: m.phone,
+      memberCode: m.memberCode,
+      type: m.type,
+      lastVisitAt: m.lastVisitAt ? m.lastVisitAt.toISOString() : null,
+    })),
+  };
 }
 
 // ============================================================================
@@ -618,4 +650,83 @@ export async function upsertDevice(input: { id?: string; branchId: string; devic
   }
   revalidatePath("/playland/settings");
   return { ok: true, data: undefined };
+}
+
+// ============================================================================
+// BOOKINGS (walk-up / phone bookings created by cashier)
+// Mirrors app/api/playland/bookings/create/route.ts but auth-scoped for staff.
+// ============================================================================
+
+export interface CreateBookingInput {
+  branchId: string;
+  packageId: string;
+  customerName: string;
+  customerPhone: string;
+  partySize: number;
+  /** YYYY-MM-DD (local) */
+  slotDate: string;
+  /** 0-23 */
+  slotHour: number;
+  paymentMethod?: CheckInInput["paymentMethod"];
+}
+
+export async function createBooking(
+  input: CreateBookingInput,
+): Promise<ActionResult<{ bookingId: string; bookingCode: string; amountCents: number }>> {
+  const session = await requireSession();
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์จองล่วงหน้า");
+  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (!input.customerName.trim()) return err("กรอกชื่อลูกค้า");
+  if (!isValidThaiPhone(input.customerPhone)) return err("เบอร์โทรไม่ถูกต้อง (ใช้ 9-10 หลัก เริ่มต้น 0)");
+  if (input.partySize < 1 || input.partySize > 20) return err("จำนวนคน 1-20");
+  if (input.slotHour < 0 || input.slotHour > 23) return err("เวลาไม่ถูกต้อง");
+
+  const slotStart = new Date(`${input.slotDate}T${String(input.slotHour).padStart(2, "0")}:00:00+07:00`);
+  if (Number.isNaN(slotStart.getTime())) return err("วันที่/เวลาไม่ถูกต้อง");
+  if (slotStart.getTime() < Date.now() - 24 * 3600_000) return err("เลือกวันในอดีตไม่ได้");
+
+  const pkg = await prisma.playlandPackage.findFirst({
+    where: { id: input.packageId, orgId: session.user.org_id, active: true },
+  });
+  if (!pkg) return err("Package ไม่พบ");
+
+  const slotEnd = new Date(slotStart.getTime() + (pkg.minutes ?? 60) * 60_000);
+  const amount = pkg.price * input.partySize;
+
+  const booking = await prisma.playlandBooking.create({
+    data: {
+      orgId: session.user.org_id,
+      branchId: input.branchId,
+      packageId: pkg.id,
+      bookingCode: newBookingCode(),
+      customerName: input.customerName.trim(),
+      customerPhone: input.customerPhone,
+      partySize: Math.max(1, input.partySize),
+      slotStart,
+      slotEnd,
+      amountCents: amount,
+      paymentMethod: input.paymentMethod ?? "CASH",
+      paymentStatus: "pending",
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
+    },
+  });
+
+  await prisma.playlandAuditLog.create({
+    data: {
+      orgId: session.user.org_id,
+      branchId: input.branchId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+      action: "booking.create",
+      entityType: "PlaylandBooking",
+      entityId: booking.id,
+      after: { bookingCode: booking.bookingCode, amountCents: amount, partySize: input.partySize },
+      category: "money",
+    },
+  });
+
+  revalidatePath("/playland");
+  revalidatePath("/playland/bookings");
+  return { ok: true, data: { bookingId: booking.id, bookingCode: booking.bookingCode, amountCents: amount } };
 }

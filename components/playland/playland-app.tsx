@@ -15,10 +15,35 @@ import {
   createMember,
   createSale,
   extendSession,
+  createBooking,
+  searchMembersAction,
+  type MemberSearchHit,
 } from "@/lib/playland/actions";
+import {
+  issueWristband,
+  lookupWristband,
+  activateWristband,
+  exitWristband,
+  type WristbandLookup,
+} from "@/lib/playland/wristband";
+import { printWristband } from "@/components/playland/print-wristband";
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+
+// Shared themed input style (keeps the app's inline aesthetic on every new form)
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "#fff",
+  border: "1px solid #ece5d8",
+  borderRadius: 12,
+  padding: "14px 16px",
+  fontSize: 17,
+  fontFamily: MITR,
+  color: "#3A3026",
+  outline: "none",
+  boxSizing: "border-box",
+};
 
 // ---------------------------------------------------------------------------
 // Types (props seeded from real data)
@@ -44,26 +69,56 @@ export interface PlaylandProductVM {
   emoji: string;
   name: string;
   price: number; // baht
+  image?: string | null; // resolved R2 public URL (null → emoji/curated fallback)
 }
 export interface PlaylandMemberVM {
   id: string;
-  familyName: string;
-  childName: string;
-  visits: number;
-  isMember: boolean;
+  name: string;
+  nickname: string | null;
+  phone: string | null;
+  memberCode: string | null;
+  type: string; // "KID" | "PARENT" | ...
+  lastVisit: string | null;
   mascot: string;
+}
+export interface PlaylandBookingVM {
+  id: string;
+  code: string;
+  customerName: string;
+  customerPhone: string;
+  slotTime: string; // formatted HH:mm
+  slotDate: string; // formatted
+  pkgName: string;
+  partySize: number;
+  amount: number; // baht
+  status: string; // PENDING | PAID | CHECKED_IN | CANCELLED | EXPIRED | NO_SHOW
+}
+export interface PlaylandStats {
+  revenue: number; // baht today (total)
+  entryRevenue: number;
+  productRevenue: number;
+  kidsActive: number;
+  sessionsToday: number;
+  memberCount: number;
+  salesCount: number;
+  bookingsToday: number;
 }
 interface Props {
   initialKids: PlaylandKid[];
   packages: PlaylandPackageVM[];
   products: PlaylandProductVM[];
   members?: PlaylandMemberVM[];
-  revenue: number; // baht today
+  bookings?: PlaylandBookingVM[];
+  stats?: PlaylandStats;
+  revenue: number; // baht today (kept for back-compat)
   branchId: string;
+  branchSlug?: string | null;
   cashierName: string;
+  hasOpenShift?: boolean;
+  initialScreen?: Screen; // deep-link from redirected old routes (?screen=)
 }
 
-type Screen =
+export type Screen =
   | "home"
   | "board"
   | "checkout"
@@ -74,14 +129,21 @@ type Screen =
   | "shift"
   | "dashboard"
   | "settings"
-  | "staff";
-type CkStep = "choose" | "search" | "register" | "package";
+  | "staff"
+  | "members"
+  | "wristband"
+  | "bookings";
+type CkStep = "choose" | "search" | "register" | "package" | "pay";
+type PayMethod = "CASH" | "PROMPTPAY" | "CARD";
 
 interface Receipt {
   name: string;
   no: string;
   lines: { label: string; amount: number }[];
   total: number;
+  bandCode?: string | null; // when a wristband was printed
+  adultCount?: number;
+  kind?: "checkin" | "pos" | "checkout"; // controls receipt copy
 }
 
 interface State {
@@ -94,7 +156,11 @@ interface State {
   chargeKidId: string | null;
   ckStep: CkStep;
   ckName: string;
-  ckMemberId: string | null; // real memberId chosen/created for check-in
+  ckNickname: string;
+  ckMemberId: string | null; // real memberId chosen/created for check-in (null = needs createMember)
+  ckPkg: PlaylandPackageVM | null; // package chosen, awaiting payment
+  ckPay: PayMethod;
+  ckAdults: number; // adults coming with the child (0-4)
   receipt: Receipt | null;
   toast: string | null;
 }
@@ -121,6 +187,48 @@ const MASCOTS = ["sunny", "skye", "rocky"];
 function mascotSrc(name: string) {
   return `/playland/brand/mascot-${name}.png`;
 }
+// Module-scope impure helpers (called from event handlers — never during render,
+// and the React-compiler lint only flags impure calls *inside* the component body)
+function randReceiptNo(): string {
+  return "#" + (740 + Math.floor(Math.random() * 60));
+}
+function randMascot(): string {
+  return MASCOTS[Math.floor(Math.random() * 3)];
+}
+function randBandCode(): string {
+  return "PW-" + Math.random().toString(36).slice(2, 11).toUpperCase();
+}
+function localKidId(): string {
+  return "L" + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+}
+
+// Curated real-photo fallbacks (stable hotlink-friendly Wikimedia Commons URLs).
+// Keyed by name keyword → used when a product has no uploaded image.
+// onError in the tile falls back to the emoji tile, so a dead URL never breaks UI.
+const PRODUCT_PHOTO_FALLBACKS: { keys: string[]; url: string }[] = [
+  { keys: ["โค้ก", "coke", "โคคา", "cola"], url: "https://upload.wikimedia.org/wikipedia/commons/c/ca/Coca-Cola_bottle_cap.jpg" },
+  { keys: ["น้ำเปล่า", "น้ำดื่ม", "water", "น้ำ "], url: "https://upload.wikimedia.org/wikipedia/commons/e/e2/Bottle_of_water.jpg" },
+  { keys: ["ป๊อป", "popcorn"], url: "https://upload.wikimedia.org/wikipedia/commons/5/51/Popcorn_in_a_bowl.jpg" },
+  { keys: ["ไอติม", "ไอศ", "ไอศกรีม", "ice cream", "icecream", "ice"], url: "https://upload.wikimedia.org/wikipedia/commons/0/0e/Ice_Cream_dessert_02.jpg" },
+  { keys: ["คุกกี้", "cookie", "โอริ", "oreo"], url: "https://upload.wikimedia.org/wikipedia/commons/2/29/2ChocolateChipCookies.jpg" },
+  { keys: ["เยลลี่", "เยลลี", "jelly", "gummy"], url: "https://upload.wikimedia.org/wikipedia/commons/5/56/Gummy_bears.jpg" },
+  { keys: ["โดนัท", "donut", "doughnut"], url: "https://upload.wikimedia.org/wikipedia/commons/3/3c/Glazed-Donut.jpg" },
+  { keys: ["นม", "milk"], url: "https://upload.wikimedia.org/wikipedia/commons/b/bb/Milk_glass.jpg" },
+  { keys: ["น้ำส้ม", "ส้ม", "juice", "orange"], url: "https://upload.wikimedia.org/wikipedia/commons/9/9e/Orange_juice_1.jpg" },
+  { keys: ["ช็อก", "choc"], url: "https://upload.wikimedia.org/wikipedia/commons/7/70/Chocolate_%28blue_background%29.jpg" },
+  { keys: ["เค้ก", "cake", "คัพ"], url: "https://upload.wikimedia.org/wikipedia/commons/d/d7/Strawberry_cupcakes.jpg" },
+];
+function curatedPhoto(name: string): string | null {
+  const n = name.toLowerCase();
+  for (const f of PRODUCT_PHOTO_FALLBACKS) {
+    if (f.keys.some((k) => n.includes(k.toLowerCase().trim()))) return f.url;
+  }
+  return null;
+}
+// Resolve the best image source for a product tile (uploaded → curated → null)
+function productImageSrc(p: PlaylandProductVM): string | null {
+  return p.image ?? curatedPhoto(p.name);
+}
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
@@ -145,6 +253,7 @@ type Action =
   | { t: "chargeKid"; kidId: string; lines: { label: string; amount: number }[] }
   | { t: "completeCheckout"; kidId: string; receipt: Receipt }
   | { t: "addKid"; kid: PlaylandKid }
+  | { t: "checkinReceipt"; kid: PlaylandKid; receipt: Receipt }
   | { t: "posReceipt"; receipt: Receipt; total: number };
 
 function reducer(s: State, a: Action): State {
@@ -187,11 +296,11 @@ function reducer(s: State, a: Action): State {
         screen: "board",
       };
     case "completeCheckout":
+      // Checkout collects NO money now (everything is pre-paid) → revenue unchanged.
       return {
         ...s,
         receipt: a.receipt,
         kids: s.kids.filter((k) => k.id !== a.kidId),
-        revenue: s.revenue + a.receipt.total,
         coKidId: null,
         screen: "receipt",
       };
@@ -201,8 +310,24 @@ function reducer(s: State, a: Action): State {
         kids: [...s.kids, a.kid],
         ckStep: "choose",
         ckName: "",
+        ckNickname: "",
         ckMemberId: null,
-        screen: "board",
+        ckPkg: null,
+        ckAdults: 1,
+      };
+    case "checkinReceipt":
+      return {
+        ...s,
+        kids: [...s.kids, a.kid],
+        receipt: a.receipt,
+        revenue: s.revenue + a.receipt.total,
+        ckStep: "choose",
+        ckName: "",
+        ckNickname: "",
+        ckMemberId: null,
+        ckPkg: null,
+        ckAdults: 1,
+        screen: "receipt",
       };
     case "posReceipt":
       return { ...s, receipt: a.receipt, revenue: s.revenue + a.total, cart: {}, screen: "receipt" };
@@ -216,19 +341,25 @@ export default function PlaylandApp(props: Props) {
   const router = useRouter();
   const products = props.products.length ? props.products : PRESET_PRODUCTS;
   const packages = props.packages.length ? props.packages : PRESET_PACKAGES;
-  const members = props.members ?? [];
+  const propMembers = props.members;
+  const initialMembers = useMemo(() => propMembers ?? [], [propMembers]);
+  const stats = props.stats;
 
   const [state, dispatch] = useReducer(reducer, {
-    screen: "home",
+    screen: props.initialScreen ?? "home",
     kids: props.initialKids,
-    revenue: props.revenue,
+    revenue: stats?.revenue ?? props.revenue,
     coKidId: null,
     extKidId: null,
     cart: {},
     chargeKidId: null,
     ckStep: "choose",
     ckName: "",
+    ckNickname: "",
     ckMemberId: null,
+    ckPkg: null,
+    ckPay: "CASH",
+    ckAdults: 1,
     receipt: null,
     toast: null,
   });
@@ -245,29 +376,6 @@ export default function PlaylandApp(props: Props) {
   useEffect(() => {
     const id = setInterval(() => dispatch({ t: "tick" }), 1000);
     return () => clearInterval(id);
-  }, []);
-
-  // frame auto-zoom to fit
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const fit = () => {
-      const frame = frameRef.current;
-      if (!frame) return;
-      const availW = window.innerWidth - 68;
-      const availH = window.innerHeight - 130;
-      const z = Math.min(1, availW / 1280, availH / 860);
-      // `zoom` matches the prototype's behavior exactly
-      (frame.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(z);
-    };
-    window.addEventListener("resize", fit);
-    fit();
-    const raf = requestAnimationFrame(fit);
-    const t = setTimeout(fit, 120);
-    return () => {
-      window.removeEventListener("resize", fit);
-      cancelAnimationFrame(raf);
-      clearTimeout(t);
-    };
   }, []);
 
   const s = state;
@@ -297,7 +405,8 @@ export default function PlaylandApp(props: Props) {
   const openExtend = (id: string) => dispatch({ t: "set", p: { extKidId: id } });
   const closeExtend = () => dispatch({ t: "set", p: { extKidId: null } });
 
-  // ----- POS pay -----
+  // ----- POS pay (immediate paid sale; charges to a kid's session if chosen) -----
+  const [posPay, setPosPay] = useState<PayMethod>("CASH");
   const payPos = async () => {
     const lines = cartLines;
     if (lines.length === 0) {
@@ -305,42 +414,34 @@ export default function PlaylandApp(props: Props) {
       return;
     }
     const total = lines.reduce((a, l) => a + l.price * l.qty, 0);
+    const kid = s.chargeKidId != null ? s.kids.find((k) => k.id === s.chargeKidId) : undefined;
 
-    if (s.chargeKidId != null) {
-      // charging a kid → add to that kid's running charges (collected at checkout)
-      const kid = s.kids.find((k) => k.id === s.chargeKidId);
-      dispatch({
-        t: "chargeKid",
-        kidId: s.chargeKidId,
-        lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
-      });
-      showToast("ลงบิลให้ " + (kid ? kid.name : "") + " แล้ว · เก็บตอนเช็คเอาท์");
-      return;
-    }
-
-    // walk-in cash sale → real createSale when products map to real ids
+    // real createSale when products map to real ids (preset ids are p1..p8)
     const realItems = lines
-      .filter((l) => !l.id.startsWith("p") || l.id.length > 3) // preset ids are p1..p8
+      .filter((l) => !l.id.startsWith("p") || l.id.length > 3)
       .map((l) => ({ productId: l.id, quantity: l.qty }));
     const usingRealProducts = props.products.length > 0 && realItems.length === lines.length;
 
     dispatch({
       t: "posReceipt",
       receipt: {
-        name: "ลูกค้า",
-        no: "#" + (740 + Math.floor(Math.random() * 60)),
+        name: kid ? kid.name : "ลูกค้า",
+        no: randReceiptNo(),
         lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
         total,
+        kind: "pos",
       },
       total,
     });
+    showToast("รับเงิน ฿" + total + " แล้ว");
 
     if (usingRealProducts) {
       try {
         const res = await createSale({
           branchId: props.branchId,
           items: realItems,
-          paymentMethod: "CASH",
+          paymentMethod: PAY_MAP[posPay],
+          sessionId: kid && isRealId(kid.id) ? kid.id : undefined,
         });
         if (res.ok) router.refresh();
         else showToast(res.error);
@@ -350,7 +451,7 @@ export default function PlaylandApp(props: Props) {
     }
   };
 
-  // ----- checkout -----
+  // ----- checkout = close only (everything pre-paid; collect NO money) -----
   const doCheckout = async () => {
     const kid = s.kids.find((k) => k.id === s.coKidId);
     if (!kid) {
@@ -364,11 +465,13 @@ export default function PlaylandApp(props: Props) {
       kidId,
       receipt: {
         name: kid.name,
-        no: "#" + (740 + Math.floor(Math.random() * 60)),
+        no: randReceiptNo(),
         lines: kid.charges,
         total,
+        kind: "checkout",
       },
     });
+    showToast(kid.name + " เช็คเอาท์แล้ว · คืนสายรัด");
     // real session ids are uuids; preset/local kids use short numeric ids
     if (isRealId(kidId)) {
       try {
@@ -381,17 +484,18 @@ export default function PlaylandApp(props: Props) {
     }
   };
 
-  // ----- extend -----
+  // ----- extend (paid immediately with chosen method) -----
+  const [extPay, setExtPay] = useState<PayMethod>("CASH");
   const applyExtend = async (mins: number, price: number) => {
     const kidId = s.extKidId;
     if (!kidId) return;
     dispatch({ t: "applyExtendLocal", kidId, mins, price });
-    showToast("ต่อเวลา +" + mins + " นาที แล้ว");
+    showToast("ต่อเวลา +" + mins + " นาที · รับเงิน ฿" + price);
     // map minutes → a real package id to call extendSession
     const pkg = packages.find((p) => p.mins === mins) ?? packages.find((p) => p.mins > 0);
     if (isRealId(kidId) && pkg && isRealId(pkg.id)) {
       try {
-        const res = await extendSession({ sessionId: kidId, extraPackageId: pkg.id, paymentMethod: "CASH" });
+        const res = await extendSession({ sessionId: kidId, extraPackageId: pkg.id, paymentMethod: PAY_MAP[extPay] });
         if (res.ok) router.refresh();
         else showToast(res.error);
       } catch {
@@ -400,14 +504,39 @@ export default function PlaylandApp(props: Props) {
     }
   };
 
-  // ----- check-in: choose package -----
+  // ----- check-in: pick package → goes to PAY step (no timer yet) -----
   const [creating, setCreating] = useState(false);
-  const pickPackage = async (pkg: PlaylandPackageVM) => {
-    const name = s.ckName || "น้องใหม่";
-    const mascot = MASCOTS[Math.floor(Math.random() * 3)];
+  const pickPackage = (pkg: PlaylandPackageVM) => {
+    dispatch({ t: "set", p: { ckPkg: pkg, ckStep: "pay" } });
+  };
 
-    // try real wiring first: ensure a member, then check in
-    if (props.branchId && isRealId(pkg.id) && !creating) {
+  // ----- check-in: confirm payment → createMember? → checkIn → issueWristband → print -----
+  const PAY_MAP: Record<PayMethod, "CASH" | "PROMPTPAY" | "STRIPE" | "CHARGE_TO_MEMBER"> = {
+    CASH: "CASH",
+    PROMPTPAY: "PROMPTPAY",
+    CARD: "STRIPE",
+  };
+  const confirmCheckin = async () => {
+    if (creating) return;
+    const pkg = s.ckPkg;
+    if (!pkg) return;
+    const name = s.ckName || "น้องใหม่";
+    const mascot = randMascot();
+    const adults = s.ckAdults;
+    const payMethod = PAY_MAP[s.ckPay];
+
+    const buildReceipt = (bandCode: string | null): Receipt => ({
+      name,
+      no: randReceiptNo(),
+      lines: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
+      total: pkg.price,
+      bandCode,
+      adultCount: adults,
+      kind: "checkin",
+    });
+
+    // Real wiring: ensure member → check in → issue wristband
+    if (props.branchId && isRealId(pkg.id)) {
       setCreating(true);
       try {
         let memberId = s.ckMemberId;
@@ -416,7 +545,7 @@ export default function PlaylandApp(props: Props) {
             branchId: props.branchId,
             type: "KID",
             name,
-            nickname: name,
+            nickname: s.ckNickname || name,
             consentGiven: true,
             newFamilyGroupName: `ครอบครัว ${name}`,
           });
@@ -427,11 +556,22 @@ export default function PlaylandApp(props: Props) {
             branchId: props.branchId,
             memberId,
             packageId: pkg.id,
-            paymentMethod: "CASH",
+            paymentMethod: payMethod,
           });
           if (ci.ok) {
+            // Issue wristband (best-effort; requires open shift + cashier role)
+            let bandCode: string | null = null;
+            try {
+              const wb = await issueWristband({ branchId: props.branchId, memberId });
+              if (wb.ok) bandCode = wb.data.code;
+            } catch {
+              /* wristband optional — proceed */
+            }
+            if (bandCode) {
+              printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
+            }
             dispatch({
-              t: "addKid",
+              t: "checkinReceipt",
               kid: {
                 id: ci.data.sessionId,
                 name,
@@ -441,8 +581,9 @@ export default function PlaylandApp(props: Props) {
                 dayPass: pkg.mins === 0,
                 charges: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
               },
+              receipt: buildReceipt(bandCode),
             });
-            showToast(name + " เช็คอินแล้ว!");
+            showToast("รับเงินแล้ว · เริ่มเวลา " + name);
             router.refresh();
             setCreating(false);
             return;
@@ -456,11 +597,13 @@ export default function PlaylandApp(props: Props) {
       setCreating(false);
     }
 
-    // optimistic fallback (preset packages / no branch / action failed)
+    // Optimistic fallback (preset packages / no branch / action failed) — local code so print still works
+    const localCode = randBandCode();
+    printWristband({ code: localCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
     dispatch({
-      t: "addKid",
+      t: "checkinReceipt",
       kid: {
-        id: "L" + Date.now(),
+        id: localKidId(),
         name,
         mascot,
         pkg: pkg.label,
@@ -468,12 +611,217 @@ export default function PlaylandApp(props: Props) {
         dayPass: pkg.mins === 0,
         charges: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
       },
+      receipt: buildReceipt(localCode),
     });
-    showToast(name + " เช็คอินแล้ว!");
+    showToast("รับเงินแล้ว · เริ่มเวลา " + name);
+  };
+
+  const reprintBand = () => {
+    const r = s.receipt;
+    if (!r || !r.bandCode) return;
+    const ok = printWristband({ code: r.bandCode, memberName: r.name, adultCount: r.adultCount ?? 0 });
+    if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
+  };
+
+  // ----- start check-in for an existing member (from members/search screens) -----
+  const startCheckinForMember = (m: { id: string; name: string; nickname: string | null }) => {
+    dispatch({
+      t: "set",
+      p: {
+        screen: "checkin",
+        ckStep: "package",
+        ckName: m.nickname || m.name,
+        ckNickname: m.nickname ?? "",
+        ckMemberId: isRealId(m.id) ? m.id : null,
+      },
+    });
+  };
+
+  // =========================== MEMBERS screen state ===========================
+  // Seed with the recent members the server shell passed (so the list isn't empty on open).
+  const seededMembers: MemberSearchHit[] = useMemo(
+    () => initialMembers.map((m) => ({ id: m.id, name: m.name, nickname: m.nickname, phone: m.phone, memberCode: m.memberCode, type: m.type, lastVisitAt: m.lastVisit })),
+    [initialMembers],
+  );
+  const [memQuery, setMemQuery] = useState("");
+  const [memResults, setMemResults] = useState<MemberSearchHit[]>(seededMembers);
+  const [memSearching, setMemSearching] = useState(false);
+  const [memTab, setMemTab] = useState<"search" | "register">("search");
+  // register form
+  const [regName, setRegName] = useState("");
+  const [regNick, setRegNick] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regType, setRegType] = useState<"KID" | "PARENT">("KID");
+  const [regConsent, setRegConsent] = useState(false);
+  const [regBusy, setRegBusy] = useState(false);
+  const [regNewCode, setRegNewCode] = useState<string | null>(null);
+
+  const runMemberSearch = async () => {
+    const q = memQuery.trim();
+    if (q.length < 1) return;
+    setMemSearching(true);
+    try {
+      const res = await searchMembersAction({ branchId: props.branchId, query: q });
+      if (res.ok) setMemResults(res.data);
+      else showToast(res.error);
+    } catch {
+      showToast("ค้นหาไม่สำเร็จ");
+    }
+    setMemSearching(false);
+  };
+
+  const submitRegister = async () => {
+    if (regBusy) return;
+    if (!regName.trim()) { showToast("กรอกชื่อก่อน"); return; }
+    if (!regConsent) { showToast("ต้องยินยอม PDPA ก่อนลงทะเบียน"); return; }
+    setRegBusy(true);
+    setRegNewCode(null);
+    try {
+      const res = await createMember({
+        branchId: props.branchId,
+        type: regType,
+        name: regName.trim(),
+        nickname: regNick.trim() || undefined,
+        phone: regPhone.trim() || undefined,
+        consentGiven: true,
+        newFamilyGroupName: `ครอบครัว ${regName.trim()}`,
+      });
+      if (res.ok) {
+        showToast("ลงทะเบียนสำเร็จ");
+        // fetch the new member's code by searching the name
+        try {
+          const sr = await searchMembersAction({ branchId: props.branchId, query: regName.trim() });
+          if (sr.ok) {
+            const hit = sr.data.find((m) => m.id === res.data.memberId);
+            setRegNewCode(hit?.memberCode ?? "บันทึกแล้ว");
+          }
+        } catch { setRegNewCode("บันทึกแล้ว"); }
+        setRegName(""); setRegNick(""); setRegPhone(""); setRegConsent(false);
+        router.refresh();
+      } else {
+        showToast(res.error);
+      }
+    } catch {
+      showToast("ลงทะเบียนไม่สำเร็จ");
+    }
+    setRegBusy(false);
+  };
+
+  // =========================== WRISTBAND screen state ===========================
+  const [wbCode, setWbCode] = useState("");
+  const [wbBusy, setWbBusy] = useState(false);
+  const [wbLookup, setWbLookup] = useState<WristbandLookup | null>(null);
+  const [wbActPay, setWbActPay] = useState<PayMethod>("CASH");
+  const [wbActPkg, setWbActPkg] = useState<string | null>(null);
+
+  const runWbLookup = async () => {
+    const code = wbCode.trim();
+    if (!code) return;
+    setWbBusy(true);
+    setWbLookup(null);
+    try {
+      const res = await lookupWristband(code);
+      if (res.ok) { setWbLookup(res.data); setWbActPkg(packages.find((p) => isRealId(p.id))?.id ?? null); }
+      else showToast(res.error);
+    } catch {
+      showToast("สแกนไม่สำเร็จ");
+    }
+    setWbBusy(false);
+  };
+
+  const wbActivate = async () => {
+    if (!wbLookup || !wbActPkg) { showToast("เลือกแพ็กเกจก่อน"); return; }
+    setWbBusy(true);
+    try {
+      const res = await activateWristband({
+        code: wbLookup.wristband.code,
+        packageId: wbActPkg,
+        paymentMethod: wbActPay === "CARD" ? "STRIPE" : wbActPay,
+      });
+      if (res.ok) { showToast("เปิด gate · เริ่มเวลาเล่นแล้ว"); setWbLookup(null); setWbCode(""); router.refresh(); }
+      else showToast(res.error);
+    } catch { showToast("activate ไม่สำเร็จ"); }
+    setWbBusy(false);
+  };
+
+  const wbExit = async () => {
+    if (!wbLookup) return;
+    setWbBusy(true);
+    try {
+      const res = await exitWristband(wbLookup.wristband.code);
+      if (res.ok) { showToast("ออกแล้ว · คืนสายรัด"); setWbLookup(null); setWbCode(""); router.refresh(); }
+      else showToast(res.error);
+    } catch { showToast("ออกไม่สำเร็จ"); }
+    setWbBusy(false);
+  };
+
+  const wbPosCharge = () => {
+    // route POS charge to the kid's open session via the board flow
+    if (wbLookup?.session) {
+      dispatch({ t: "set", p: { chargeKidId: wbLookup.session.id, screen: "pos" } });
+    } else {
+      goPos();
+    }
+  };
+
+  // issue a brand-new wristband from this screen (member must be looked up/selected)
+  const [wbIssueMemberId, setWbIssueMemberId] = useState("");
+  const wbIssue = async () => {
+    const memberId = wbIssueMemberId.trim() || (memResults[0]?.id ?? "");
+    if (!isRealId(memberId)) { showToast("เลือกสมาชิกจริงก่อน (ค้นหาในหน้าสมาชิก)"); return; }
+    setWbBusy(true);
+    try {
+      const res = await issueWristband({ branchId: props.branchId, memberId });
+      if (res.ok) {
+        const m = memResults.find((x) => x.id === memberId);
+        printWristband({ code: res.data.code, memberName: m?.name ?? "สมาชิก", nickname: m?.nickname ?? null });
+        showToast("ออกสายรัด " + res.data.code + " · พิมพ์แล้ว");
+        router.refresh();
+      } else showToast(res.error);
+    } catch { showToast("ออกสายรัดไม่สำเร็จ"); }
+    setWbBusy(false);
+  };
+
+  // =========================== BOOKINGS screen state ===========================
+  const [bkForm, setBkForm] = useState(false);
+  const [bkName, setBkName] = useState("");
+  const [bkPhone, setBkPhone] = useState("");
+  const [bkPkg, setBkPkg] = useState<string | null>(null);
+  const [bkDate, setBkDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [bkHour, setBkHour] = useState(14);
+  const [bkParty, setBkParty] = useState(2);
+  const [bkBusy, setBkBusy] = useState(false);
+  const bookings = props.bookings ?? [];
+
+  const submitBooking = async () => {
+    if (bkBusy) return;
+    const pkgId = bkPkg ?? packages.find((p) => isRealId(p.id))?.id ?? null;
+    if (!bkName.trim()) { showToast("กรอกชื่อลูกค้า"); return; }
+    if (!pkgId || !isRealId(pkgId)) { showToast("เลือกแพ็กเกจ (ต้องมีแพ็กเกจจริงในระบบ)"); return; }
+    setBkBusy(true);
+    try {
+      const res = await createBooking({
+        branchId: props.branchId,
+        packageId: pkgId,
+        customerName: bkName.trim(),
+        customerPhone: bkPhone.trim(),
+        partySize: bkParty,
+        slotDate: bkDate,
+        slotHour: bkHour,
+        paymentMethod: "CASH",
+      });
+      if (res.ok) {
+        showToast("จองสำเร็จ " + res.data.bookingCode);
+        setBkForm(false); setBkName(""); setBkPhone(""); setBkParty(2);
+        router.refresh();
+      } else showToast(res.error);
+    } catch { showToast("จองไม่สำเร็จ"); }
+    setBkBusy(false);
   };
 
   const checkinBack = () => {
     if (s.ckStep === "choose") go("home");
+    else if (s.ckStep === "pay") dispatch({ t: "set", p: { ckStep: "package" } });
     else dispatch({ t: "set", p: { ckStep: "choose" } });
   };
 
@@ -486,14 +834,8 @@ export default function PlaylandApp(props: Props) {
   const posTotal = cartLines.reduce((a, l) => a + l.price * l.qty, 0);
   const rc = s.receipt;
 
-  // search results: real members (mapped) or two seed families to keep flow alive
-  const searchResults: PlaylandMemberVM[] =
-    members.length > 0
-      ? members.slice(0, 6)
-      : [
-          { id: "seedA", familyName: "ครอบครัวคุณแม่ปุ๊ก", childName: "น้องเอ", visits: 7, isMember: true, mascot: "sunny" },
-          { id: "seedB", familyName: "ครอบครัวคุณพ่อโต้ง", childName: "น้องบีม", visits: 3, isMember: false, mascot: "skye" },
-        ];
+  // check-in "เคยมาแล้ว" search results — live member search (fallback to seeded list)
+  const ckSearchResults: MemberSearchHit[] = memResults;
 
   const extOptions = [
     { label: "+15", price: "฿30", mins: 15, p: 30 },
@@ -507,54 +849,59 @@ export default function PlaylandApp(props: Props) {
   return (
     <div
       style={{
+        // FULL-SCREEN kiosk: covers the admin sidebar + the blue approval bar.
+        position: "fixed",
+        inset: 0,
+        zIndex: 40,
         fontFamily: MITR,
         color: "#3A3026",
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: 34,
-        background: "#d9d4cc",
+        background: "#F7F2EA",
+        overflowY: "auto",
       }}
     >
       {/* keyframes for pulse (matches prototype <style>) */}
       <style>{`@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,.0)}50%{box-shadow:0 0 0 5px rgba(231,76,60,.25)}}`}</style>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, color: "#2D6CB1" }}>
-          Play <span style={{ color: "#F0B323" }}>a</span> lot
-        </div>
-        <span style={{ fontSize: 14, color: "#7a7264" }}>· นาฬิกาเดินจริง · กดได้จริง</span>
-      </div>
-
-      {/* tablet frame */}
+      {/* max-width centered column — looks good on big screens, fills small/tablet */}
       <div
-        ref={frameRef}
         id="plFrame"
         style={{
-          width: 1280,
-          height: 860,
+          width: "100%",
+          maxWidth: 1180,
+          minHeight: "100dvh",
+          margin: "0 auto",
           background: "#fff",
-          borderRadius: 22,
-          boxShadow: "0 18px 50px rgba(0,0,0,.22)",
           overflow: "hidden",
           position: "relative",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         {/* ===== HOME ===== */}
         {s.screen === "home" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 18 }}>
               <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, color: "#2D6CB1" }}>
                 Play <span style={{ color: "#F0B323" }}>a</span> lot
               </div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eaf3eb", color: "#1F8A5B", padding: "8px 14px", borderRadius: 999, fontSize: 14 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1F8A5B", display: "inline-block" }} />
-                กะเปิดอยู่
-              </div>
+              {props.hasOpenShift !== false ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eaf3eb", color: "#1F8A5B", padding: "8px 14px", borderRadius: 999, fontSize: 14 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#1F8A5B", display: "inline-block" }} />
+                  กะเปิดอยู่
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fdf3df", color: "#a9791a", padding: "8px 14px", borderRadius: 999, fontSize: 14 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#F0B323", display: "inline-block" }} />
+                  ยังไม่เปิดกะ
+                </div>
+              )}
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
                 <div onClick={() => go("shift")} style={{ cursor: "pointer", fontSize: 14, color: "#6b6052", padding: "8px 14px", borderRadius: 10, background: "#f4ede0" }}>ปิดกะ</div>
+                <div onClick={() => router.push("/dashboard")} title="ออกจากโหมดร้าน" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#8a7f70", padding: "8px 14px", borderRadius: 10, background: "#f7f2ea", border: "1px solid #ece5d8" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a7f70" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
+                  ออกจากโหมดร้าน
+                </div>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#F0B323", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FREDOKA, fontWeight: 600, color: "#fff", fontSize: 18 }}>
                   {props.cashierName.trim().charAt(0) || "?"}
                 </div>
@@ -565,61 +912,75 @@ export default function PlaylandApp(props: Props) {
               <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>
                 มีเด็กเล่นอยู่ <strong style={{ color: "#2D6CB1" }}>{s.kids.length}</strong> คน · รายได้ <strong style={{ color: "#1F8A5B" }}>{revenueStr}</strong>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, flex: 1 }}>
+              {/* ── หน้าร้าน ── */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>หน้าร้าน</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {/* รับเด็กเข้าเล่น */}
-                <div onClick={startCheckin} style={{ cursor: "pointer", background: "#2D6CB1", borderRadius: 20, padding: "26px 30px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden" }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 15, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div onClick={startCheckin} style={{ cursor: "pointer", background: "#2D6CB1", borderRadius: 20, padding: "24px 28px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden", minHeight: 150 }}>
+                  <div style={{ width: 54, height: 54, borderRadius: 15, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" /></svg>
                   </div>
                   <div>
-                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26 }}>รับเด็กเข้าเล่น</div>
-                    <div style={{ fontSize: 15, opacity: 0.85 }}>ลงทะเบียน · เลือกแพ็กเกจ</div>
+                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 25 }}>รับเด็กเข้าเล่น</div>
+                    <div style={{ fontSize: 15, opacity: 0.85 }}>ลงทะเบียน · จ่าย · พิมพ์สายรัด</div>
                   </div>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={mascotSrc("skye")} alt="" style={{ position: "absolute", right: -10, bottom: -14, width: 128, opacity: 0.9 }} />
+                  <img src={mascotSrc("skye")} alt="" style={{ position: "absolute", right: -10, bottom: -14, width: 120, opacity: 0.9 }} />
                 </div>
                 {/* เด็กที่กำลังเล่น */}
-                <div onClick={() => go("board")} style={{ cursor: "pointer", background: "#E74C3C", borderRadius: 20, padding: "26px 30px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden" }}>
+                <div onClick={() => go("board")} style={{ cursor: "pointer", background: "#E74C3C", borderRadius: 20, padding: "24px 28px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden", minHeight: 150 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ width: 56, height: 56, borderRadius: 15, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 54, height: 54, borderRadius: 15, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
                     </div>
                     {near > 0 && <div style={{ background: "rgba(255,255,255,.22)", fontWeight: 500, fontSize: 14, padding: "6px 12px", borderRadius: 999 }}>{near} ใกล้หมดเวลา</div>}
                   </div>
                   <div>
-                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26 }}>เด็กที่กำลังเล่น</div>
+                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 25 }}>เด็กที่กำลังเล่น <span style={{ fontFamily: FREDOKA, fontWeight: 700 }}>{s.kids.length}</span></div>
                     <div style={{ fontSize: 15, opacity: 0.85 }}>ต่อเวลา · เพิ่มขนม · เช็คเอาท์</div>
                   </div>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={mascotSrc("rocky")} alt="" style={{ position: "absolute", right: -14, bottom: -16, width: 138, opacity: 0.9 }} />
-                </div>
-                {/* ขายขนม */}
-                <div onClick={goPos} style={{ cursor: "pointer", background: "#F0B323", borderRadius: 20, padding: "26px 30px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden" }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 15, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M5 7h14l-1.2 11.5a2 2 0 0 1-2 1.5H8.2a2 2 0 0 1-2-1.5L5 7Z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg>
-                  </div>
-                  <div>
-                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26, color: "#fff" }}>ขายขนม · เครื่องดื่ม</div>
-                    <div style={{ fontSize: 15, opacity: 0.9, color: "#fff" }}>POS · คิดเงิน</div>
-                  </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={mascotSrc("sunny")} alt="" style={{ position: "absolute", right: 0, bottom: -14, width: 108, opacity: 0.92 }} />
-                </div>
-                {/* Monitor */}
-                <div onClick={() => go("monitor")} style={{ cursor: "pointer", background: "#1c2740", borderRadius: 20, padding: "26px 30px", color: "#fff", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative", overflow: "hidden" }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 15, background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
-                  </div>
-                  <div>
-                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 26 }}>จอ Monitor (TV)</div>
-                    <div style={{ fontSize: 15, opacity: 0.8 }}>โชว์เวลาให้ทั้งร้านเห็น</div>
-                  </div>
+                  <img src={mascotSrc("rocky")} alt="" style={{ position: "absolute", right: -14, bottom: -16, width: 128, opacity: 0.9 }} />
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-                <div onClick={() => go("dashboard")} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: 14, textAlign: "center", fontSize: 15, color: "#3A3026" }}>📊 Dashboard</div>
-                <div onClick={() => go("settings")} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: 14, textAlign: "center", fontSize: 15, color: "#3A3026" }}>⚙️ แพ็กเกจ &amp; สต๊อก</div>
-                <div onClick={() => go("staff")} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: 14, textAlign: "center", fontSize: 15, color: "#3A3026" }}>👥 พนักงาน &amp; สิทธิ์</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 16 }}>
+                {/* ขายขนม */}
+                <div onClick={goPos} style={{ cursor: "pointer", background: "#F0B323", borderRadius: 18, padding: "22px 24px", color: "#fff", display: "flex", flexDirection: "column", gap: 14, position: "relative", overflow: "hidden", minHeight: 120 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 13, background: "rgba(255,255,255,.22)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M5 7h14l-1.2 11.5a2 2 0 0 1-2 1.5H8.2a2 2 0 0 1-2-1.5L5 7Z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, color: "#fff" }}>ขายขนม</div>
+                    <div style={{ fontSize: 14, opacity: 0.9, color: "#fff" }}>POS · คิดเงิน</div>
+                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={mascotSrc("sunny")} alt="" style={{ position: "absolute", right: -6, bottom: -12, width: 86, opacity: 0.9 }} />
+                </div>
+                {/* สายรัด · สแกน */}
+                {hubCard({ onClick: () => go("wristband"), bg: "#1F8A5B", title: "สายรัด · สแกน", sub: "ออก/สแกน band", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM21 14v7M17 21h4" /></svg>
+                ) })}
+                {/* จองล่วงหน้า */}
+                {hubCard({ onClick: () => go("bookings"), bg: "#2D6CB1", title: "จองล่วงหน้า", sub: (props.stats?.bookingsToday ?? bookings.length) + " วันนี้", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+                ) })}
+              </div>
+
+              {/* ── จัดการ ── */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", margin: "22px 0 12px" }}>จัดการ</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+                {hubCard({ onClick: () => go("monitor"), bg: "#1c2740", title: "จอ Monitor", sub: "โชว์เวลาทั้งร้าน", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                ) })}
+                {hubCard({ onClick: () => go("members"), bg: "#7a5cc4", title: "สมาชิก", sub: (props.stats?.memberCount ?? 0) + " คน", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                ) })}
+                {hubCard({ onClick: () => go("dashboard"), bg: "#0f9b8e", title: "Dashboard", sub: "รายได้ · สถิติ", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
+                ) })}
+                {hubCard({ onClick: () => router.push("/playland/settings"), bg: "#6b6052", title: "ตั้งค่า", sub: "แพ็กเกจ · สต๊อก · พนักงาน", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+                ) })}
               </div>
             </div>
           </div>
@@ -627,7 +988,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== BOARD ===== */}
         {s.screen === "board" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -695,7 +1056,11 @@ export default function PlaylandApp(props: Props) {
                     <div onClick={closeExtend} style={{ cursor: "pointer", width: 36, height: 36, borderRadius: "50%", background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a7f70", fontSize: 18 }}>✕</div>
                   </div>
                   <div style={{ padding: "24px 30px" }}>
-                    <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>แตะเพื่อเพิ่มเวลา (คิดเงินตอนเช็คเอาท์)</div>
+                    <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                      {payButtons(extPay, setExtPay)}
+                    </div>
+                    <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>แตะเพื่อต่อเวลา · รับเงินทันที</div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
                       {extOptions.map((o) => (
                         <div key={o.label} onClick={() => applyExtend(o.mins, o.p)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 14, padding: "18px 0", textAlign: "center" }}>
@@ -714,7 +1079,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== CHECKOUT ===== */}
         {s.screen === "checkout" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("board")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}กลับกระดาน</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -741,18 +1106,16 @@ export default function PlaylandApp(props: Props) {
                 ))}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, padding: "0 4px" }}>
-                <div style={{ fontSize: 18, color: "#6b6052" }}>รวมทั้งหมด</div>
-                <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 42, color: "#3A3026" }}>฿{co ? co.charges.reduce((a, c) => a + c.amount, 0) : 0}</div>
+                <div style={{ fontSize: 18, color: "#6b6052" }}>จ่ายแล้ววันนี้ (พรีเพด)</div>
+                <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 36, color: "#1F8A5B" }}>฿{co ? co.charges.reduce((a, c) => a + c.amount, 0) : 0}</div>
               </div>
               <div style={{ marginTop: "auto" }}>
-                <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 10 }}>ชำระด้วย</div>
-                <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-                  <span style={{ flex: 1, textAlign: "center", background: "#2D6CB1", color: "#fff", fontSize: 16, padding: 13, borderRadius: 12 }}>เงินสด</span>
-                  <span style={{ flex: 1, textAlign: "center", background: "#fff", border: "1px solid #ece5d8", color: "#6b6052", fontSize: 16, padding: 13, borderRadius: 12 }}>PromptPay</span>
-                  <span style={{ flex: 1, textAlign: "center", background: "#fff", border: "1px solid #ece5d8", color: "#6b6052", fontSize: 16, padding: 13, borderRadius: 12 }}>บัตร</span>
+                <div style={{ background: "#eaf3eb", color: "#1F8A5B", borderRadius: 12, padding: "12px 16px", fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F8A5B" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+                  จ่ายครบแล้วตอนเข้าเล่น · เช็คเอาท์ไม่เก็บเงินเพิ่ม
                 </div>
-                <div onClick={doCheckout} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-                  รับเงิน ฿{co ? co.charges.reduce((a, c) => a + c.amount, 0) : 0} · เช็คเอาท์
+                <div onClick={doCheckout} style={{ cursor: "pointer", background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                  เช็คเอาท์ · คืนสายรัด · จบรอบ
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
                 </div>
               </div>
@@ -762,7 +1125,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== POS ===== */}
         {s.screen === "pos" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -771,20 +1134,40 @@ export default function PlaylandApp(props: Props) {
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               <div style={{ flex: 1, padding: "24px 26px", overflow: "auto" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
-                  {products.map((p) => (
-                    <div key={p.id} onClick={() => addToCart(p.id)} style={{ cursor: "pointer", background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div style={{ height: 80, borderRadius: 12, background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38 }}>{p.emoji}</div>
-                      <div>
-                        <div style={{ fontWeight: 500, fontSize: 16 }}>{p.name}</div>
-                        <div style={{ fontFamily: FREDOKA, fontWeight: 600, color: "#1F8A5B", fontSize: 16 }}>฿{p.price}</div>
+                  {products.map((p) => {
+                    const img = productImageSrc(p);
+                    return (
+                      <div key={p.id} onClick={() => addToCart(p.id)} style={{ cursor: "pointer", background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {img ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={img}
+                            alt={p.name}
+                            style={{ height: 80, width: "100%", objectFit: "cover", borderRadius: 12, background: "#f4ede0" }}
+                            onError={(e) => {
+                              // fall back to the emoji tile so we never show a broken image
+                              const el = e.currentTarget;
+                              const fb = el.nextElementSibling as HTMLElement | null;
+                              el.style.display = "none";
+                              if (fb) fb.style.display = "flex";
+                            }}
+                          />
+                        ) : null}
+                        <div style={{ height: 80, borderRadius: 12, background: "#f4ede0", display: img ? "none" : "flex", alignItems: "center", justifyContent: "center", fontSize: 38 }}>{p.emoji}</div>
+                        <div>
+                          <div style={{ fontWeight: 500, fontSize: 16 }}>{p.name}</div>
+                          <div style={{ fontFamily: FREDOKA, fontWeight: 600, color: "#1F8A5B", fontSize: 16 }}>฿{p.price}</div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div style={{ width: 400, flex: "none", background: "#fff", borderLeft: "1px solid #ece5d8", display: "flex", flexDirection: "column", padding: "22px 24px" }}>
-                <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 10 }}>ลงบิลให้</div>
-                <div style={{ background: "#eaf3f6", border: "1.5px solid #2D6CB1", borderRadius: 12, padding: "11px 14px", fontSize: 15, marginBottom: 18 }}>{chargeKid ? chargeKid.name + " · เก็บตอนเช็คเอาท์" : "ลูกค้าจ่ายสด"}</div>
+                <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 10 }}>{chargeKid ? "ขายให้" : "ลูกค้า"}</div>
+                <div style={{ background: "#eaf3f6", border: "1.5px solid #2D6CB1", borderRadius: 12, padding: "11px 14px", fontSize: 15, marginBottom: 14 }}>{chargeKid ? chargeKid.name + " · คิดเงินทันที" : "ลูกค้าทั่วไป · จ่ายทันที"}</div>
+                <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{payButtons(posPay, setPosPay)}</div>
                 <div style={{ height: 1, background: "#f2ebdd", marginBottom: 14 }} />
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, overflow: "auto" }}>
                   {cartLines.map((c) => (
@@ -808,7 +1191,7 @@ export default function PlaylandApp(props: Props) {
                     <span style={{ fontSize: 17, color: "#6b6052" }}>รวม</span>
                     <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 32, color: "#3A3026" }}>฿{posTotal}</span>
                   </div>
-                  <div onClick={payPos} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 16, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 19 }}>{chargeKid ? "ลงบิล " + chargeKid.name : "รับเงิน ฿" + posTotal}</div>
+                  <div onClick={payPos} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 16, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 19 }}>รับเงิน ฿{posTotal}</div>
                 </div>
               </div>
             </div>
@@ -817,7 +1200,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== CHECK-IN ===== */}
         {s.screen === "checkin" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={checkinBack} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}ย้อนกลับ</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -851,62 +1234,78 @@ export default function PlaylandApp(props: Props) {
                   </div>
                 </div>
               )}
-              {/* search */}
+              {/* search (live member search) */}
               {s.ckStep === "search" && (
                 <div style={{ maxWidth: 760, margin: "0 auto" }}>
-                  <div style={{ background: "#fff", borderRadius: 12, display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", marginBottom: 18, border: "1.5px solid #2D6CB1" }}>
+                  <div style={{ background: "#fff", borderRadius: 12, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", marginBottom: 18, border: "1.5px solid #2D6CB1" }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a9978a" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" /></svg>
-                    <span style={{ color: "#3A3026", fontSize: 17 }}>086-204-1188</span>
+                    <input
+                      value={memQuery}
+                      onChange={(e) => setMemQuery(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") runMemberSearch(); }}
+                      placeholder="ชื่อ · เบอร์โทร · รหัสสมาชิก"
+                      autoFocus
+                      style={{ flex: 1, border: "none", outline: "none", color: "#3A3026", fontSize: 17, fontFamily: MITR, background: "transparent" }}
+                    />
+                    <span onClick={runMemberSearch} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", fontSize: 14, padding: "8px 16px", borderRadius: 9 }}>{memSearching ? "..." : "ค้นหา"}</span>
                   </div>
                   <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 12 }}>ผลการค้นหา</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {searchResults.map((m, i) => (
-                      <div key={m.id} onClick={() => dispatch({ t: "set", p: { ckName: m.childName, ckMemberId: isRealId(m.id) ? m.id : null, ckStep: "package" } })} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
+                    {ckSearchResults.length === 0 && <div style={{ textAlign: "center", color: "#bcae9b", fontSize: 15, padding: "26px 0" }}>{memSearching ? "กำลังค้นหา..." : "พิมพ์ชื่อหรือเบอร์ แล้วกดค้นหา"}</div>}
+                    {ckSearchResults.map((m, i) => (
+                      <div key={m.id} onClick={() => dispatch({ t: "set", p: { ckName: m.nickname || m.name, ckNickname: m.nickname ?? "", ckMemberId: isRealId(m.id) ? m.id : null, ckStep: "package" } })} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
                         <div style={{ width: 48, height: 48, borderRadius: "50%", background: i === 0 ? "#fdf3df" : "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={mascotSrc(m.mascot)} alt="" style={{ width: i === 0 ? 38 : 40 }} />
+                          <img src={mascotSrc(MASCOTS[i % 3])} alt="" style={{ width: 40 }} />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 500, fontSize: 18 }}>{m.familyName}</div>
-                          <div style={{ fontSize: 14, color: "#8a7f70" }}>{m.childName} · มาแล้ว {m.visits} ครั้ง</div>
+                          <div style={{ fontWeight: 500, fontSize: 18 }}>{m.nickname || m.name}</div>
+                          <div style={{ fontSize: 14, color: "#8a7f70" }}>{m.name}{m.phone ? " · " + m.phone : ""}{m.memberCode ? " · " + m.memberCode : ""}</div>
                         </div>
-                        {m.isMember && <div style={{ background: "#eaf3eb", color: "#1F8A5B", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 999 }}>สมาชิก</div>}
+                        <div style={{ background: m.type === "KID" ? "#eaf3f6" : "#fdf3df", color: m.type === "KID" ? "#2D6CB1" : "#a9791a", fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 999 }}>{m.type === "KID" ? "เด็ก" : "ผู้ใหญ่"}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              {/* register */}
+              {/* register (real fields; member is created on confirm in pay step) */}
               {s.ckStep === "register" && (
                 <div style={{ maxWidth: 820, margin: "0 auto" }}>
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 16 }}>ลงทะเบียนเด็กใหม่</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14 }}>
                     <div>
-                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ชื่อเล่นเด็ก</div>
-                      <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 12, padding: "14px 16px", fontSize: 17 }}>น้องมีน</div>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ชื่อ-นามสกุลเด็ก *</div>
+                      <input value={s.ckName} onChange={(e) => dispatch({ t: "set", p: { ckName: e.target.value } })} placeholder="เช่น เด็กหญิงมีนา ใจดี" style={inputStyle} />
                     </div>
                     <div>
-                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>อายุ</div>
-                      <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 12, padding: "14px 16px", fontSize: 17 }}>5 ขวบ</div>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ชื่อเล่น</div>
+                      <input value={s.ckNickname} onChange={(e) => dispatch({ t: "set", p: { ckNickname: e.target.value } })} placeholder="เช่น น้องมีน" style={inputStyle} />
                     </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
                     <div>
-                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ผู้ปกครอง</div>
-                      <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 12, padding: "14px 16px", fontSize: 17 }}>คุณแม่ฝน</div>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>เบอร์โทรผู้ปกครอง</div>
+                      <input value={regPhone} onChange={(e) => setRegPhone(e.target.value)} placeholder="0812345678" inputMode="tel" style={inputStyle} />
                     </div>
-                    <div>
-                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>เบอร์โทร</div>
-                      <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 12, padding: "14px 16px", fontSize: 17 }}>081-455-7xxx</div>
-                    </div>
+                    <div />
                   </div>
-                  <div style={{ background: "#f9f4ea", borderRadius: 14, padding: 18, display: "flex", gap: 11, alignItems: "flex-start", marginBottom: 20 }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 7, background: "#1F8A5B", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+                  <div onClick={() => setRegConsent(!regConsent)} style={{ cursor: "pointer", background: "#f9f4ea", borderRadius: 14, padding: 18, display: "flex", gap: 11, alignItems: "flex-start", marginBottom: 20 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 7, background: regConsent ? "#1F8A5B" : "#fff", border: regConsent ? "none" : "1.5px solid #d9cdb8", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {regConsent && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>}
                     </span>
-                    <span style={{ fontSize: 14, color: "#6b6052", lineHeight: 1.5 }}>ยินยอมให้เก็บข้อมูลเด็กและผู้ปกครองตาม PDPA เพื่อความปลอดภัย</span>
+                    <span style={{ fontSize: 14, color: "#6b6052", lineHeight: 1.5 }}>ยินยอมให้เก็บข้อมูลเด็กและผู้ปกครองตาม PDPA เพื่อความปลอดภัย (จำเป็น)</span>
                   </div>
-                  <div onClick={() => dispatch({ t: "set", p: { ckName: "น้องมีน", ckMemberId: null, ckStep: "package" } })} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", borderRadius: 14, padding: 16, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 19 }}>บันทึก · เลือกแพ็กเกจ</div>
+                  <div
+                    onClick={() => {
+                      if (!s.ckName.trim()) { showToast("กรอกชื่อเด็กก่อน"); return; }
+                      if (!regConsent) { showToast("ต้องยินยอม PDPA ก่อน"); return; }
+                      // new registration → memberId stays null; createMember runs at confirm
+                      dispatch({ t: "set", p: { ckMemberId: null, ckStep: "package" } });
+                    }}
+                    style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", borderRadius: 14, padding: 16, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 19 }}
+                  >
+                    ต่อไป · เลือกแพ็กเกจ
+                  </div>
                 </div>
               )}
               {/* package */}
@@ -916,7 +1315,7 @@ export default function PlaylandApp(props: Props) {
                   <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 24 }}>แตะเลือกเวลาเล่น</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16 }}>
                     {packages.map((pk) => (
-                      <div key={pk.id} onClick={() => pickPackage(pk)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", opacity: creating ? 0.6 : 1 }}>
+                      <div key={pk.id} onClick={() => pickPackage(pk)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <div>
                           <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22 }}>{pk.label}</div>
                           <div style={{ fontSize: 14, color: "#8a7f70" }}>{pk.sub}</div>
@@ -927,13 +1326,48 @@ export default function PlaylandApp(props: Props) {
                   </div>
                 </div>
               )}
+              {/* PAY — collect payment BEFORE starting the timer */}
+              {s.ckStep === "pay" && s.ckPkg && (
+                <div style={{ maxWidth: 720, margin: "0 auto" }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 24, marginBottom: 4 }}>รับเงิน · {s.ckName || "น้องใหม่"}</div>
+                  <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 22 }}>{s.ckPkg.label} · {s.ckPkg.sub}</div>
+
+                  <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 18, padding: "26px 28px", marginBottom: 18, textAlign: "center" }}>
+                    <div style={{ fontSize: 15, color: "#8a7f70" }}>ยอดที่ต้องเก็บ</div>
+                    <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 56, color: "#1F8A5B", lineHeight: 1.1 }}>฿{s.ckPkg.price}</div>
+                  </div>
+
+                  <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+                    {payButtons(s.ckPay, (m) => dispatch({ t: "set", p: { ckPay: m } }))}
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 17 }}>ผู้ใหญ่ที่มาด้วย</div>
+                      <div style={{ fontSize: 13, color: "#8a7f70" }}>พิมพ์สายรัด “ผู้ปกครอง” ให้ด้วย</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <span onClick={() => dispatch({ t: "set", p: { ckAdults: Math.max(0, s.ckAdults - 1) } })} style={{ cursor: "pointer", width: 40, height: 40, borderRadius: 10, background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, color: "#6b6052" }}>−</span>
+                      <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, minWidth: 28, textAlign: "center" }}>{s.ckAdults}</span>
+                      <span onClick={() => dispatch({ t: "set", p: { ckAdults: Math.min(4, s.ckAdults + 1) } })} style={{ cursor: "pointer", width: 40, height: 40, borderRadius: 10, background: "#2D6CB1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, color: "#fff" }}>+</span>
+                    </div>
+                  </div>
+
+                  <div onClick={confirmCheckin} style={{ cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1, background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 21, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                    {creating ? "กำลังบันทึก..." : `รับเงิน ฿${s.ckPkg.price} · พิมพ์สายรัด · เริ่มเล่น`}
+                    {!creating && <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#a9978a", textAlign: "center", marginTop: 12 }}>เริ่มจับเวลาหลังกดยืนยันเท่านั้น · สายรัด 1 (เด็ก) + {s.ckAdults} (ผู้ปกครอง)</div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* ===== RECEIPT ===== */}
         {s.screen === "receipt" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", alignItems: "center", justifyContent: "center", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", alignItems: "center", justifyContent: "center", overflowY: "auto", position: "relative" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={mascotSrc("sunny")} alt="" style={{ position: "absolute", left: 90, bottom: 60, width: 140, opacity: 0.9 }} />
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -942,12 +1376,20 @@ export default function PlaylandApp(props: Props) {
               <div style={{ width: 86, height: 86, borderRadius: "50%", background: "#1F8A5B", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
               </div>
-              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 30, marginBottom: 4 }}>รับเงินสำเร็จ</div>
-              <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>{rc?.name} · ขอบคุณค่ะ 💛</div>
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 30, marginBottom: 4 }}>
+                {rc?.kind === "checkout" ? "เช็คเอาท์เรียบร้อย" : rc?.kind === "checkin" ? "รับเงินแล้ว · เริ่มเล่น" : "รับเงินสำเร็จ"}
+              </div>
+              <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>
+                {rc?.kind === "checkout"
+                  ? `${rc?.name} · คืนสายรัดให้ทางร้าน 💛`
+                  : rc?.kind === "checkin"
+                    ? `${rc?.name} · พิมพ์สายรัด ${1 + (rc?.adultCount ?? 0)} ใบ · เริ่มเวลาแล้ว`
+                    : `${rc?.name} · ขอบคุณค่ะ 💛`}
+              </div>
               <div style={{ width: "100%", background: "#fff", borderRadius: 18, boxShadow: "0 2px 14px rgba(0,0,0,.06)", overflow: "hidden" }}>
                 <div style={{ textAlign: "center", padding: "20px 0 12px", borderBottom: "1px dashed #e0d6c4" }}>
                   <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, color: "#2D6CB1" }}>Play <span style={{ color: "#F0B323" }}>a</span> lot</div>
-                  <div style={{ fontSize: 13, color: "#a9978a", marginTop: 2 }}>ใบเสร็จ {rc?.no}</div>
+                  <div style={{ fontSize: 13, color: "#a9978a", marginTop: 2 }}>{rc?.kind === "checkout" ? "สรุปการเล่นวันนี้" : "ใบเสร็จ"} {rc?.no}</div>
                 </div>
                 <div style={{ padding: "16px 28px" }}>
                   {(rc?.lines ?? []).map((l, i) => (
@@ -957,14 +1399,26 @@ export default function PlaylandApp(props: Props) {
                     </div>
                   ))}
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0 4px", borderTop: "1px dashed #e0d6c4", marginTop: 10 }}>
-                    <span style={{ fontSize: 18 }}>รวม (เงินสด)</span>
+                    <span style={{ fontSize: 18 }}>{rc?.kind === "checkout" ? "ยอดที่จ่ายแล้ว (พรีเพด)" : "รวม"}</span>
                     <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, color: "#1F8A5B" }}>฿{rc?.total}</span>
                   </div>
+                  {rc?.bandCode && (
+                    <div style={{ marginTop: 12, padding: "10px 0 2px", borderTop: "1px dashed #e0d6c4", textAlign: "center" }}>
+                      <span style={{ fontSize: 13, color: "#8a7f70" }}>รหัสสายรัด</span>
+                      <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, letterSpacing: "0.05em", color: "#3A3026" }}>{rc.bandCode}</div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 12, width: "100%", marginTop: 20 }}>
-                <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16 }}>ปรินต์สลิป</div>
-                <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16 }}>ส่ง LINE</div>
+                {rc?.kind === "checkin" && rc?.bandCode ? (
+                  <div onClick={reprintBand} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
+                    พิมพ์สายรัดซ้ำ
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, color: "#bcae9b" }}>ปรินต์สลิป</div>
+                )}
                 <div onClick={() => go("home")} style={{ cursor: "pointer", flex: 1.2, background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
               </div>
             </div>
@@ -973,7 +1427,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== MONITOR ===== */}
         {s.screen === "monitor" && (
-          <div style={{ height: "100%", background: "#1c2740", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#1c2740", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 80, flex: "none", display: "flex", alignItems: "center", padding: "0 36px", gap: 18, borderBottom: "1px solid rgba(255,255,255,.08)" }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", color: "#9fb0d0", fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>{backIcon("#9fb0d0", 18)}ออก</div>
               <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#fff" }}>Play <span style={{ color: "#F0B323" }}>a</span> lot</div>
@@ -1000,7 +1454,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== SHIFT ===== */}
         {s.screen === "shift" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -1042,7 +1496,7 @@ export default function PlaylandApp(props: Props) {
 
         {/* ===== DASHBOARD ===== */}
         {s.screen === "dashboard" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
@@ -1051,123 +1505,251 @@ export default function PlaylandApp(props: Props) {
             <div style={{ flex: 1, padding: "26px 32px", display: "flex", flexDirection: "column", gap: 18, overflow: "auto" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>รายได้วันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#1F8A5B" }}>{revenueStr}</div></div>
-                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>สัปดาห์นี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>฿112,300</div></div>
-                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>เด็กเฉลี่ย/วัน</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#F0B323" }}>64</div></div>
-                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>บิลเฉลี่ย</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#3A3026" }}>฿255</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>ค่าเข้าเล่น</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>฿{(stats?.entryRevenue ?? 0).toLocaleString()}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>ขายขนม</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#F0B323" }}>฿{(stats?.productRevenue ?? 0).toLocaleString()}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>เด็กเข้าวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#3A3026" }}>{stats?.sessionsToday ?? s.kids.length}</div></div>
               </div>
-              <div style={{ display: "flex", gap: 18, flex: 1 }}>
-                <div style={{ flex: 1.6, background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column" }}>
-                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 16 }}>รายได้ 7 วันล่าสุด</div>
-                  <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 16 }}>
-                    {[
-                      { h: "52%", c: "#cfe0ee" },
-                      { h: "44%", c: "#cfe0ee" },
-                      { h: "60%", c: "#cfe0ee" },
-                      { h: "50%", c: "#cfe0ee" },
-                      { h: "78%", c: "#2D6CB1" },
-                      { h: "100%", c: "#2D6CB1" },
-                      { h: "92%", c: "#2D6CB1" },
-                    ].map((b, i) => (
-                      <div key={i} style={{ flex: 1, height: b.h, background: b.c, borderRadius: "8px 8px 0 0" }} />
-                    ))}
-                  </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>กำลังเล่นตอนนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#E74C3C" }}>{s.kids.length}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>บิลขนมวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>{stats?.salesCount ?? 0}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>สมาชิกทั้งหมด</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#7a5cc4" }}>{stats?.memberCount ?? 0}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>จองวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#0f9b8e" }}>{stats?.bookingsToday ?? bookings.length}</div></div>
+              </div>
+              <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>
+                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 6 }}>รายงานเชิงลึก</div>
+                <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 14 }}>กราฟยอดขายย้อนหลัง · ขนมขายดี · สรุปกะ — อยู่ในหน้ารายงานเต็ม</div>
+                <div onClick={() => router.push("/playland/reports")} style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, background: "#2D6CB1", color: "#fff", borderRadius: 12, padding: "12px 20px", fontSize: 15, fontFamily: MITR, fontWeight: 500 }}>
+                  เปิดรายงานเต็ม
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M7 7h10v10" /></svg>
                 </div>
-                <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>
-                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 16 }}>ขนมขายดี</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-                    {[
-                      { name: "🍿 ป๊อปคอร์น", n: "142", w: "90%" },
-                      { name: "🍦 ไอศกรีม", n: "118", w: "74%" },
-                      { name: "🍪 โอริโอ้", n: "96", w: "60%" },
-                    ].map((p, i) => (
-                      <div key={i}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 6 }}><span>{p.name}</span><span style={{ color: "#8a7f70" }}>{p.n}</span></div>
-                        <div style={{ height: 8, background: "#f2ebdd", borderRadius: 99 }}><div style={{ width: p.w, height: "100%", background: "#F0B323", borderRadius: 99 }} /></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== SETTINGS (honest hub → links to real config pages) ===== */}
+        {(s.screen === "settings" || s.screen === "staff") && (
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+            <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
+              <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
+              <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>ตั้งค่า</div>
+            </div>
+            <div style={{ flex: 1, padding: "30px 36px", overflow: "auto", maxWidth: 980, margin: "0 auto", width: "100%" }}>
+              <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>เปิดหน้าตั้งค่าจริงของแต่ละส่วน — ปลอดภัย มีบันทึก audit</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {settingsLink({ onClick: () => router.push("/playland/settings/packages"), color: "#2D6CB1", title: "แพ็กเกจเวลา", sub: packages.length + " แพ็กเกจ · ตั้งราคา/เวลา" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings/products"), color: "#F0B323", title: "ขนม · เครื่องดื่ม", sub: products.length + " รายการ · ราคา/รูป" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings/stock-count"), color: "#1F8A5B", title: "สต๊อก · นับของ", sub: "ปรับ/นับสต๊อกขนม" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings/branches"), color: "#7a5cc4", title: "สาขา", sub: "ข้อมูลสาขา · ที่อยู่" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings/devices"), color: "#0f9b8e", title: "อุปกรณ์ · เครื่องสแกน", sub: "ประตู/กล้องจดจำใบหน้า" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings/promos"), color: "#E74C3C", title: "โปรโมชั่น", sub: "ส่วนลด · แคมเปญ" })}
+                {settingsLink({ onClick: () => router.push("/playland/settings"), color: "#6b6052", title: "ตั้งค่าทั้งหมด · พนักงาน", sub: "สิทธิ์พนักงาน · ตั้งค่าระบบ" })}
+                {settingsLink({ onClick: () => router.push("/playland/reports"), color: "#1c2740", title: "รายงาน", sub: "ยอดขาย · กะ · สถิติ" })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== MEMBERS (search + register, real data) ===== */}
+        {s.screen === "members" && (
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+            <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
+              <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
+              <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, flex: 1 }}>สมาชิก</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div onClick={() => setMemTab("search")} style={{ cursor: "pointer", background: memTab === "search" ? "#2D6CB1" : "#f4ede0", color: memTab === "search" ? "#fff" : "#6b6052", fontSize: 14, padding: "8px 16px", borderRadius: 10 }}>ค้นหา</div>
+                <div onClick={() => setMemTab("register")} style={{ cursor: "pointer", background: memTab === "register" ? "#2D6CB1" : "#f4ede0", color: memTab === "register" ? "#fff" : "#6b6052", fontSize: 14, padding: "8px 16px", borderRadius: 10 }}>ลงทะเบียนใหม่</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, padding: "26px 36px", overflow: "auto", maxWidth: 880, margin: "0 auto", width: "100%" }}>
+              {memTab === "search" ? (
+                <>
+                  <div style={{ background: "#fff", borderRadius: 12, display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", marginBottom: 18, border: "1.5px solid #2D6CB1" }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a9978a" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" /></svg>
+                    <input value={memQuery} onChange={(e) => setMemQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runMemberSearch(); }} placeholder="ค้นชื่อ · เบอร์โทร · รหัสสมาชิก" autoFocus style={{ flex: 1, border: "none", outline: "none", color: "#3A3026", fontSize: 17, fontFamily: MITR, background: "transparent" }} />
+                    <span onClick={runMemberSearch} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", fontSize: 14, padding: "8px 16px", borderRadius: 9 }}>{memSearching ? "..." : "ค้นหา"}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {memResults.length === 0 && <div style={{ textAlign: "center", color: "#bcae9b", fontSize: 15, padding: "40px 0" }}>{memSearching ? "กำลังค้นหา..." : "พิมพ์ชื่อ/เบอร์แล้วกดค้นหา · คลิกสมาชิกเพื่อรับเข้าเล่น"}</div>}
+                    {memResults.map((m, i) => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
+                        <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={mascotSrc(MASCOTS[i % 3])} alt="" style={{ width: 40 }} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 500, fontSize: 18 }}>{m.nickname || m.name} <span style={{ fontSize: 13, color: m.type === "KID" ? "#2D6CB1" : "#a9791a", marginLeft: 6 }}>{m.type === "KID" ? "เด็ก" : "ผู้ใหญ่"}</span></div>
+                          <div style={{ fontSize: 14, color: "#8a7f70" }}>{m.name}{m.phone ? " · " + m.phone : ""}{m.memberCode ? " · " + m.memberCode : ""}{m.lastVisitAt ? " · มาล่าสุด " + new Date(m.lastVisitAt).toLocaleDateString("th-TH") : ""}</div>
+                        </div>
+                        <div onClick={() => startCheckinForMember(m)} style={{ cursor: "pointer", background: "#F0B323", color: "#fff", fontSize: 14, padding: "9px 16px", borderRadius: 10 }}>รับเข้าเล่น</div>
                       </div>
                     ))}
                   </div>
+                </>
+              ) : (
+                <div style={{ maxWidth: 640 }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 16 }}>ลงทะเบียนสมาชิกใหม่</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14 }}>
+                    <div><div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ชื่อ-นามสกุล *</div><input value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="ชื่อจริง" style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ชื่อเล่น</div><input value={regNick} onChange={(e) => setRegNick(e.target.value)} placeholder="ชื่อเล่น" style={inputStyle} /></div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                    <div><div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>เบอร์โทร</div><input value={regPhone} onChange={(e) => setRegPhone(e.target.value)} placeholder="0812345678" inputMode="tel" style={inputStyle} /></div>
+                    <div>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 7 }}>ประเภท</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <span onClick={() => setRegType("KID")} style={{ flex: 1, textAlign: "center", cursor: "pointer", padding: 13, borderRadius: 12, fontSize: 16, background: regType === "KID" ? "#2D6CB1" : "#fff", color: regType === "KID" ? "#fff" : "#6b6052", border: regType === "KID" ? "1px solid #2D6CB1" : "1px solid #ece5d8" }}>เด็ก</span>
+                        <span onClick={() => setRegType("PARENT")} style={{ flex: 1, textAlign: "center", cursor: "pointer", padding: 13, borderRadius: 12, fontSize: 16, background: regType === "PARENT" ? "#2D6CB1" : "#fff", color: regType === "PARENT" ? "#fff" : "#6b6052", border: regType === "PARENT" ? "1px solid #2D6CB1" : "1px solid #ece5d8" }}>ผู้ใหญ่</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div onClick={() => setRegConsent(!regConsent)} style={{ cursor: "pointer", background: "#f9f4ea", borderRadius: 14, padding: 18, display: "flex", gap: 11, alignItems: "flex-start", marginBottom: 18 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 7, background: regConsent ? "#1F8A5B" : "#fff", border: regConsent ? "none" : "1.5px solid #d9cdb8", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {regConsent && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>}
+                    </span>
+                    <span style={{ fontSize: 14, color: "#6b6052", lineHeight: 1.5 }}>ยินยอมให้เก็บข้อมูลตาม PDPA (จำเป็น)</span>
+                  </div>
+                  {regNewCode && (
+                    <div style={{ background: "#eaf3eb", color: "#1F8A5B", borderRadius: 12, padding: "14px 18px", fontSize: 16, marginBottom: 16 }}>✓ ลงทะเบียนสำเร็จ · รหัสสมาชิก <strong style={{ fontFamily: FREDOKA }}>{regNewCode}</strong></div>
+                  )}
+                  <div onClick={submitRegister} style={{ cursor: regBusy ? "default" : "pointer", opacity: regBusy ? 0.6 : 1, background: "#2D6CB1", color: "#fff", borderRadius: 14, padding: 16, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 19 }}>{regBusy ? "กำลังบันทึก..." : "บันทึกสมาชิก"}</div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ===== SETTINGS ===== */}
-        {s.screen === "settings" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+        {/* ===== WRISTBAND (scan / issue) ===== */}
+        {s.screen === "wristband" && (
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
-              <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
+              <div onClick={() => { setWbLookup(null); setWbCode(""); go("home"); }} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
-              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>แพ็กเกจ &amp; สต๊อก</div>
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>สายรัด · สแกน</div>
             </div>
-            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-              <div style={{ flex: 1, padding: "28px 32px", borderRight: "1px solid #ece5d8", overflow: "auto" }}>
-                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, marginBottom: 16 }}>แพ็กเกจเวลา</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {packages.map((pk) => (
-                    <div key={pk.id} style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center" }}>
-                      <div style={{ flex: 1, fontSize: 17 }}>{pk.label}</div>
-                      <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18, marginRight: 16 }}>฿{pk.price}</div>
-                      <div style={{ color: "#2D6CB1", fontSize: 14 }}>แก้ไข</div>
-                    </div>
-                  ))}
-                </div>
+            <div style={{ flex: 1, padding: "26px 36px", overflow: "auto", maxWidth: 760, margin: "0 auto", width: "100%" }}>
+              <div style={{ background: "#fff", borderRadius: 12, display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", marginBottom: 18, border: "1.5px solid #1F8A5B" }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1F8A5B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h7v7h-7z" /></svg>
+                <input value={wbCode} onChange={(e) => setWbCode(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") runWbLookup(); }} placeholder="สแกน หรือ พิมพ์รหัสสายรัด (PW-...)" autoFocus style={{ flex: 1, border: "none", outline: "none", color: "#3A3026", fontSize: 17, fontFamily: MITR, background: "transparent", letterSpacing: "0.04em" }} />
+                <span onClick={runWbLookup} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", fontSize: 14, padding: "9px 18px", borderRadius: 9 }}>{wbBusy ? "..." : "สแกน"}</span>
               </div>
-              <div style={{ width: 460, flex: "none", padding: "28px 32px", background: "#fff", overflow: "auto" }}>
-                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, marginBottom: 16 }}>สต๊อกขนม</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[
-                    { e: "🍿", n: "ป๊อปคอร์น", v: "48", low: false },
-                    { e: "🍦", n: "ไอศกรีม", v: "6", low: true },
-                    { e: "🍪", n: "โอริโอ้", v: "120", low: false },
-                    { e: "🍬", n: "เยลลี่", v: "9", low: true },
-                  ].map((it, i, arr) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 0", borderBottom: i < arr.length - 1 ? "1px solid #f2ebdd" : "none" }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>{it.e}</div>
-                      <div style={{ flex: 1, fontSize: 16 }}>{it.n}</div>
-                      {it.low && <div style={{ background: "#fdeceb", color: "#E74C3C", fontSize: 12, fontWeight: 600, padding: "3px 9px", borderRadius: 99, marginRight: 8 }}>ใกล้หมด</div>}
-                      <div style={{ fontFamily: FREDOKA, fontWeight: 600, color: it.low ? "#E74C3C" : undefined }}>{it.v}</div>
+
+              {wbLookup ? (
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "22px 24px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                    <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#eaf3f6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mascotSrc("skye")} alt="" style={{ width: 42 }} />
                     </div>
-                  ))}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500, fontSize: 20 }}>{wbLookup.member?.nickname || wbLookup.member?.name || "—"}</div>
+                      <div style={{ fontSize: 14, color: "#8a7f70" }}>{wbLookup.wristband.code} · สถานะ {wbLookup.wristband.status}{wbLookup.session ? " · " + wbLookup.session.packageName : ""}</div>
+                    </div>
+                  </div>
+                  {wbLookup.hint && <div style={{ background: "#f9f4ea", color: "#6b6052", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 16 }}>{wbLookup.hint}</div>}
+                  {wbLookup.allowedActions.includes("ACTIVATE") && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>เลือกแพ็กเกจ + รับเงิน</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                        {packages.filter((p) => isRealId(p.id)).map((p) => (
+                          <span key={p.id} onClick={() => setWbActPkg(p.id)} style={{ cursor: "pointer", padding: "10px 14px", borderRadius: 10, fontSize: 15, background: wbActPkg === p.id ? "#2D6CB1" : "#fff", color: wbActPkg === p.id ? "#fff" : "#6b6052", border: wbActPkg === p.id ? "1px solid #2D6CB1" : "1px solid #ece5d8" }}>{p.label} ฿{p.price}</span>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>{payButtons(wbActPay, setWbActPay)}</div>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 10 }}>
+                    {wbLookup.allowedActions.includes("ACTIVATE") && <div onClick={wbActivate} style={{ cursor: "pointer", flex: 1, background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เปิด gate · เริ่มเล่น</div>}
+                    {wbLookup.allowedActions.includes("POS_CHARGE") && <div onClick={wbPosCharge} style={{ cursor: "pointer", flex: 1, background: "#F0B323", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>ขายขนมให้</div>}
+                    {wbLookup.allowedActions.includes("EXIT") && <div onClick={wbExit} style={{ cursor: "pointer", flex: 1, background: "#E74C3C", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>ออก · คืนสายรัด</div>}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div style={{ background: "#fff", border: "1px dashed #d9cdb8", borderRadius: 16, padding: "26px 24px" }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 6 }}>ออกสายรัดใหม่</div>
+                  <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 14 }}>ค้นหาสมาชิกในหน้า “สมาชิก” ก่อน แล้วกลับมาออกสายรัดให้รายที่ค้นล่าสุด หรือใส่ memberId</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={wbIssueMemberId} onChange={(e) => setWbIssueMemberId(e.target.value)} placeholder={memResults[0] ? `รายล่าสุด: ${memResults[0].name}` : "memberId"} style={{ ...inputStyle, flex: 1 }} />
+                    <div onClick={wbIssue} style={{ cursor: "pointer", background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: "14px 22px", fontSize: 16, fontFamily: MITR, fontWeight: 500, whiteSpace: "nowrap" }}>{wbBusy ? "..." : "ออก + พิมพ์"}</div>
+                  </div>
+                  <div onClick={() => go("members")} style={{ cursor: "pointer", color: "#2D6CB1", fontSize: 14, marginTop: 12 }}>→ ไปค้นหาสมาชิก</div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ===== STAFF ===== */}
-        {s.screen === "staff" && (
-          <div style={{ height: "100%", background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+        {/* ===== BOOKINGS ===== */}
+        {s.screen === "bookings" && (
+          <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
-              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, flex: 1 }}>พนักงาน &amp; สิทธิ์</div>
-              <div style={{ background: "#2D6CB1", color: "#fff", fontSize: 15, padding: "10px 18px", borderRadius: 11 }}>+ เพิ่มพนักงาน</div>
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, flex: 1 }}>จองล่วงหน้า · วันนี้</div>
+              <div onClick={() => setBkForm(!bkForm)} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", fontSize: 15, padding: "10px 18px", borderRadius: 11 }}>{bkForm ? "ปิดฟอร์ม" : "+ จองใหม่"}</div>
             </div>
-            <div style={{ flex: 1, padding: "18px 32px", overflow: "auto" }}>
-              <div style={{ display: "flex", alignItems: "center", padding: "12px 20px", color: "#8a7f70", fontSize: 14 }}>
-                <div style={{ flex: 2 }}>พนักงาน</div>
-                <div style={{ flex: 1.4 }}>ตำแหน่ง</div>
-                <div style={{ flex: 1, textAlign: "center" }}>เปิด/ปิดกะ</div>
-                <div style={{ flex: 1, textAlign: "center" }}>คืนเงิน</div>
-                <div style={{ flex: 1, textAlign: "center" }}>ดูรายงาน</div>
-              </div>
+            <div style={{ flex: 1, padding: "24px 36px", overflow: "auto", maxWidth: 900, margin: "0 auto", width: "100%" }}>
+              {bkForm && (
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "22px 24px", marginBottom: 20 }}>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 19, marginBottom: 14 }}>จองใหม่ (walk-up / โทรจอง)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>ชื่อลูกค้า *</div><input value={bkName} onChange={(e) => setBkName(e.target.value)} placeholder="ชื่อ" style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>เบอร์โทร</div><input value={bkPhone} onChange={(e) => setBkPhone(e.target.value)} placeholder="0812345678" inputMode="tel" style={inputStyle} /></div>
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>แพ็กเกจ</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {packages.filter((p) => isRealId(p.id)).map((p) => (
+                        <span key={p.id} onClick={() => setBkPkg(p.id)} style={{ cursor: "pointer", padding: "10px 14px", borderRadius: 10, fontSize: 15, background: (bkPkg ?? packages.find((x) => isRealId(x.id))?.id) === p.id ? "#2D6CB1" : "#fff", color: (bkPkg ?? packages.find((x) => isRealId(x.id))?.id) === p.id ? "#fff" : "#6b6052", border: "1px solid #ece5d8" }}>{p.label} ฿{p.price}</span>
+                      ))}
+                      {packages.filter((p) => isRealId(p.id)).length === 0 && <span style={{ fontSize: 14, color: "#a9978a" }}>ยังไม่มีแพ็กเกจจริงในระบบ — เพิ่มที่ตั้งค่า</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 16 }}>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>วันที่</div><input type="date" value={bkDate} onChange={(e) => setBkDate(e.target.value)} style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>เวลา (ชม.)</div><input type="number" min={0} max={23} value={bkHour} onChange={(e) => setBkHour(Number(e.target.value))} style={inputStyle} /></div>
+                    <div><div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>จำนวนคน</div><input type="number" min={1} max={20} value={bkParty} onChange={(e) => setBkParty(Number(e.target.value))} style={inputStyle} /></div>
+                  </div>
+                  <div onClick={submitBooking} style={{ cursor: bkBusy ? "default" : "pointer", opacity: bkBusy ? 0.6 : 1, background: "#1F8A5B", color: "#fff", borderRadius: 12, padding: 15, textAlign: "center", fontSize: 17, fontFamily: MITR, fontWeight: 500 }}>{bkBusy ? "กำลังจอง..." : "บันทึกการจอง"}</div>
+                </div>
+              )}
+
+              {props.branchSlug && (
+                <div style={{ background: "#eaf3f6", color: "#2D6CB1", borderRadius: 12, padding: "12px 16px", fontSize: 14, marginBottom: 18 }}>
+                  ลิงก์จองสาธารณะ: <strong>/p/playland/{props.branchSlug}/book</strong> — ส่งให้ลูกค้าจองเองได้
+                </div>
+              )}
+
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {staffRow("ต", "#F0B323", "คุณต่าย", "เจ้าของ", "#eef0ec", "#1F8A5B", [true, true, true])}
-                {staffRow("น", "#2D6CB1", "พี่นก", "หัวหน้ากะ", "#eaf3f6", "#2D6CB1", [true, true, false])}
-                {staffRow("ฝ", "#E74C3C", "น้องฝ้าย", "แคชเชียร์", "#f4ede0", "#6b6052", [false, false, false])}
+                {bookings.length === 0 && <div style={{ textAlign: "center", color: "#bcae9b", fontSize: 15, padding: "40px 0" }}>วันนี้ยังไม่มีการจอง</div>}
+                {bookings.map((b) => (
+                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", border: "1px solid #ece5d8", borderRadius: 14, background: "#fff" }}>
+                    <div style={{ textAlign: "center", minWidth: 64 }}>
+                      <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 20, color: "#2D6CB1" }}>{b.slotTime}</div>
+                      <div style={{ fontSize: 12, color: "#a9978a" }}>{b.partySize} คน</div>
+                    </div>
+                    <div style={{ width: 1, height: 36, background: "#f2ebdd" }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500, fontSize: 17 }}>{b.customerName}</div>
+                      <div style={{ fontSize: 13, color: "#8a7f70" }}>{b.customerPhone} · {b.pkgName} · {b.code}</div>
+                    </div>
+                    <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 17, marginRight: 6 }}>฿{b.amount.toLocaleString()}</div>
+                    {bookingChip(b.status)}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* toast */}
-        {s.toast != null && (
-          <div style={{ position: "absolute", bottom: 28, left: "50%", transform: "translateX(-50%)", background: "#1c2740", color: "#fff", padding: "14px 26px", borderRadius: 999, fontSize: 16, boxShadow: "0 8px 28px rgba(0,0,0,.3)", zIndex: 90 }}>{s.toast}</div>
-        )}
       </div>
 
-      <div style={{ fontSize: 13, color: "#9a9285", marginTop: 14 }}>แตะการ์ด/ปุ่มเพื่อใช้งานจริง · นาฬิกานับถอยหลังเดินเอง · กด “เช็คเอาท์” เด็กจะออกจากกระดาน</div>
+      {/* toast — fixed so it's visible across the full-screen kiosk */}
+      {s.toast != null && (
+        <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: "#1c2740", color: "#fff", padding: "14px 26px", borderRadius: 999, fontSize: 16, boxShadow: "0 8px 28px rgba(0,0,0,.3)", zIndex: 90 }}>{s.toast}</div>
+      )}
     </div>
   );
 }
@@ -1197,27 +1779,72 @@ function backIcon(stroke: string, size = 20) {
   );
 }
 
-function toggle(on: boolean) {
-  return (
-    <span style={{ display: "inline-block", width: 42, height: 25, borderRadius: 99, background: on ? "#1F8A5B" : "#d9cdb8", position: "relative" }}>
-      <span style={{ position: "absolute", top: 3, [on ? "right" : "left"]: 3, width: 19, height: 19, borderRadius: "50%", background: "#fff" } as React.CSSProperties} />
-    </span>
-  );
+// Payment-method pills (เงินสด / พร้อมเพย์ / บัตร) — used by check-in pay, POS, extend
+const PAY_LABELS: Record<PayMethod, string> = { CASH: "เงินสด", PROMPTPAY: "พร้อมเพย์", CARD: "บัตร" };
+function payButtons(current: PayMethod, set: (m: PayMethod) => void) {
+  return (["CASH", "PROMPTPAY", "CARD"] as PayMethod[]).map((m) => {
+    const on = current === m;
+    return (
+      <span
+        key={m}
+        onClick={() => set(m)}
+        style={{
+          flex: 1,
+          textAlign: "center",
+          cursor: "pointer",
+          background: on ? "#2D6CB1" : "#fff",
+          color: on ? "#fff" : "#6b6052",
+          border: on ? "1px solid #2D6CB1" : "1px solid #ece5d8",
+          fontSize: 16,
+          padding: 13,
+          borderRadius: 12,
+          fontWeight: on ? 500 : 400,
+        }}
+      >
+        {PAY_LABELS[m]}
+      </span>
+    );
+  });
 }
 
-function staffRow(initial: string, avatarBg: string, name: string, role: string, roleBg: string, roleColor: string, toggles: [boolean, boolean, boolean]) {
+// Settings link-out tile (honest: links to the real config page, no fake toggles)
+function settingsLink(opts: { onClick: () => void; color: string; title: string; sub: string }) {
   return (
-    <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center" }}>
-      <div style={{ flex: 2, display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", background: avatarBg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: FREDOKA, fontWeight: 600 }}>{initial}</div>
-        <div style={{ fontWeight: 500, fontSize: 16 }}>{name}</div>
+    <div onClick={opts.onClick} style={{ cursor: "pointer", background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "20px 22px", display: "flex", alignItems: "center", gap: 16 }}>
+      <div style={{ width: 12, height: 44, borderRadius: 6, background: opts.color, flex: "none" }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 19 }}>{opts.title}</div>
+        <div style={{ fontSize: 14, color: "#8a7f70" }}>{opts.sub}</div>
       </div>
-      <div style={{ flex: 1.4 }}>
-        <span style={{ background: roleBg, color: roleColor, fontSize: 13, padding: "5px 12px", borderRadius: 99 }}>{role}</span>
-      </div>
-      <div style={{ flex: 1, textAlign: "center" }}>{toggle(toggles[0])}</div>
-      <div style={{ flex: 1, textAlign: "center" }}>{toggle(toggles[1])}</div>
-      <div style={{ flex: 1, textAlign: "center" }}>{toggle(toggles[2])}</div>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#bcae9b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M7 7h10v10" /></svg>
     </div>
   );
 }
+
+// Booking status chip (รอชำระ / ชำระแล้ว / เข้าแล้ว / ยกเลิก / หมดอายุ)
+function bookingChip(status: string) {
+  const map: Record<string, { label: string; bg: string; fg: string }> = {
+    PENDING: { label: "รอชำระ", bg: "#fdf3df", fg: "#a9791a" },
+    PAID: { label: "ชำระแล้ว", bg: "#eaf3eb", fg: "#1F8A5B" },
+    CHECKED_IN: { label: "เข้าแล้ว", bg: "#eaf3f6", fg: "#2D6CB1" },
+    CANCELLED: { label: "ยกเลิก", bg: "#fdeceb", fg: "#E74C3C" },
+    EXPIRED: { label: "หมดอายุ", bg: "#f0ece4", fg: "#8a7f70" },
+    NO_SHOW: { label: "ไม่มา", bg: "#f0ece4", fg: "#8a7f70" },
+  };
+  const c = map[status] ?? { label: status, bg: "#f0ece4", fg: "#8a7f70" };
+  return <span style={{ background: c.bg, color: c.fg, fontSize: 13, fontWeight: 600, padding: "6px 12px", borderRadius: 999 }}>{c.label}</span>;
+}
+
+// Compact home-hub card (colored tile + icon + title/sub) — shares the app aesthetic
+function hubCard(opts: { onClick: () => void; bg: string; title: string; sub: React.ReactNode; icon: React.ReactNode }) {
+  return (
+    <div onClick={opts.onClick} style={{ cursor: "pointer", background: opts.bg, borderRadius: 18, padding: "20px 22px", color: "#fff", display: "flex", flexDirection: "column", gap: 14, minHeight: 120 }}>
+      <div style={{ width: 48, height: 48, borderRadius: 13, background: "rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center" }}>{opts.icon}</div>
+      <div>
+        <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>{opts.title}</div>
+        <div style={{ fontSize: 14, opacity: 0.85 }}>{opts.sub}</div>
+      </div>
+    </div>
+  );
+}
+

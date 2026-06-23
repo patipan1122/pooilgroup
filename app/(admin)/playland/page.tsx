@@ -8,6 +8,7 @@
 
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { R2_PUBLIC_URL } from "@/lib/r2/client";
 import {
   getActiveSessions,
   listPackages,
@@ -15,12 +16,24 @@ import {
   getTodayStats,
   listBranches,
   listOpenShift,
+  searchMembers,
+  listBookings,
 } from "@/lib/playland/queries";
 import PlaylandApp, {
   type PlaylandKid,
   type PlaylandPackageVM,
   type PlaylandProductVM,
+  type PlaylandMemberVM,
+  type PlaylandBookingVM,
+  type PlaylandStats,
+  type Screen,
 } from "@/components/playland/playland-app";
+
+// Old front-of-house routes now redirect here as /playland?screen=<x>; honor it so
+// a bookmarked TV (?screen=monitor) or deep-link opens the right in-app screen.
+const DEEP_LINK_SCREENS = [
+  "board", "checkout", "pos", "checkin", "monitor", "members", "wristband", "bookings",
+];
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Play a lot · สวนสนุก" };
@@ -60,9 +73,11 @@ function pkgSub(p: { type: string; minutes: number | null }): string {
 export default async function PlaylandPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string }>;
+  searchParams: Promise<{ branch?: string; screen?: string }>;
 }) {
   const sp = await searchParams;
+  const initialScreen: Screen | undefined =
+    sp.screen && DEEP_LINK_SCREENS.includes(sp.screen) ? (sp.screen as Screen) : undefined;
   const session = await requireSession();
   const orgId = session.user.org_id;
   const cashierName = session.user.name || session.user.email || "พนักงาน";
@@ -73,13 +88,17 @@ export default async function PlaylandPage({
   // No branch yet → send to branch onboarding (settings)
   if (!branchId) redirect("/playland/settings/branches");
 
-  const [active, packages, products, stats, openShift] = await Promise.all([
+  const [active, packages, products, stats, openShift, recentMembers, todayBookings] = await Promise.all([
     getActiveSessions(orgId, branchId),
     listPackages(orgId, branchId),
     listProducts(orgId, branchId),
     getTodayStats(orgId, branchId),
     listOpenShift(orgId, branchId, session.user.id),
+    // recent members (empty query → most-recently-visited) for the สมาชิก screen seed
+    searchMembers(orgId, "", branchId, 12),
+    listBookings(orgId, { branchId }),
   ]);
+  const branch = branches.find((b) => b.id === branchId);
 
   // map active sessions → kids
   const now = Date.now();
@@ -117,18 +136,61 @@ export default async function PlaylandPage({
     emoji: emojiFor(p.name),
     name: p.name,
     price: Math.round(p.priceCents / 100),
+    // resolve R2 key → public URL (repo pattern: `${R2_PUBLIC_URL}/${key}`)
+    image: p.imageR2Path ? `${R2_PUBLIC_URL}/${p.imageR2Path}` : null,
+  }));
+
+  const MASCOTS3 = ["sunny", "skye", "rocky"];
+  const membersVM: PlaylandMemberVM[] = recentMembers.map((m, i) => ({
+    id: m.id,
+    name: m.name,
+    nickname: m.nickname,
+    phone: m.phone,
+    memberCode: m.memberCode,
+    type: m.type,
+    lastVisit: m.lastVisitAt ? m.lastVisitAt.toISOString() : null,
+    mascot: MASCOTS3[i % 3],
+  }));
+
+  const bookingsVM: PlaylandBookingVM[] = todayBookings.map((b) => ({
+    id: b.id,
+    code: b.bookingCode,
+    customerName: b.customerName,
+    customerPhone: b.customerPhone,
+    slotTime: new Date(b.slotStart).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+    slotDate: new Date(b.slotStart).toLocaleDateString("th-TH"),
+    pkgName: b.package?.name ?? "—",
+    partySize: b.partySize,
+    amount: Math.round(b.amountCents / 100),
+    status: b.status,
   }));
 
   const revenue = Math.round(stats.totalRevenueCents / 100);
+  const statsVM: PlaylandStats = {
+    revenue,
+    entryRevenue: Math.round(stats.entryRevenueCents / 100),
+    productRevenue: Math.round(stats.productRevenueCents / 100),
+    kidsActive: stats.activeSessions,
+    sessionsToday: stats.sessionsToday,
+    memberCount: stats.memberCount,
+    salesCount: stats.salesCount,
+    bookingsToday: stats.bookingsToday,
+  };
 
   return (
     <PlaylandApp
       initialKids={initialKids}
       packages={packagesVM}
       products={productsVM}
+      members={membersVM}
+      bookings={bookingsVM}
+      stats={statsVM}
       revenue={revenue}
       branchId={branchId}
+      branchSlug={branch?.slug ?? null}
       cashierName={cashierName}
+      hasOpenShift={!!openShift}
+      initialScreen={initialScreen}
       key={`${branchId}:${openShift?.id ?? "noshift"}`}
     />
   );

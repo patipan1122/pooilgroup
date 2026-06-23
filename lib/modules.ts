@@ -726,29 +726,24 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/playland",
     nav: [
-      // Sections render as visual group headers in the sidebar (admin-shell.tsx)
-      // Roles: ops staff + managers can run the front of house (matches /shifts + /stock-count pattern)
-      { href: "/playland",         label: "Cockpit",        icon: Activity, section: "Cockpit",
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-      { href: "/playland/monitor", label: "Monitor (TV)",   icon: Tv,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-      { href: "/playland/scan",    label: "สแกน wristband", icon: ScanLine,
+      // หน้าร้านทั้งหมด (รับเด็ก/กำลังเล่น/เช็คเอาท์/POS/Monitor/สมาชิก/สายรัด/จอง) อยู่ในแอป
+      // "Play a lot" (เต็มจอ) แล้ว — sidebar เหลือเฉพาะ "ทางเข้าแอป" + งานหลังร้าน/ตั้งค่า
+      // (ตัดเมนูซ้ำออกตามที่ CEO สั่ง 2026-06-23 · D-023)
+      { href: "/playland",         label: "หน้าร้าน · Play a lot", icon: Activity, section: "Play a lot",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
 
-      { href: "/playland/members",     label: "สมาชิก",       icon: ScanFace,       section: "ลูกค้า",
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-      { href: "/playland/wristbands",  label: "สายรัดข้อมือ",  icon: QrCode,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-      { href: "/playland/bookings",    label: "จองล่วงหน้า",  icon: CalendarClock,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-
-      { href: "/playland/pos",     label: "POS · ขายของ",   icon: ShoppingBasket, section: "หน้าร้าน",
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
       {
         href: "/playland/shifts",
         label: "กะ · ปิดวัน",
         icon: TicketCheck,
+        section: "หลังร้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/playland/reports",
+        label: "รายงาน",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
         href: "/playland/settings/stock-count",
@@ -756,18 +751,10 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ClipboardList,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"],
       },
-
       {
         href: "/playland/overrides",
         label: "เปิดประตูเอง",
         icon: ShieldAlert,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-        section: "Back-office",
-      },
-      {
-        href: "/playland/reports",
-        label: "รายงาน",
-        icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       { href: "/playland/audit",   label: "Audit Log",   icon: History,  adminOnly: true },
