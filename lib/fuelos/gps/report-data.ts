@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { bkkRelative } from "@/lib/fuelos/utils/format";
 
 // ---------- config (safe view, ไม่มี key) ----------
 export type GpsConfigView = {
@@ -48,6 +49,55 @@ export type GpsReportRow = {
   fuelStartPct: number | null;
   fuelEndPct: number | null;
 };
+
+// ---------- ตารางรถทั้งหมด (จาก fuel_gps_vehicle ที่เก็บไว้) — เอาไว้จัดเรียง/เตรียมจัดรถ ----------
+export type FleetTableRow = {
+  xsenseName: string;
+  plate: string | null;
+  groupName: string | null;
+  driverName: string | null;
+  speedKmh: number | null;
+  status: "วิ่ง" | "จอดติดเครื่อง" | "ดับ" | "—";
+  isMoving: boolean;
+  engineOn: boolean | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  mapLink: string | null;
+  seenText: string;
+};
+
+export async function listFleetVehicles(): Promise<FleetTableRow[]> {
+  const rows = await prisma.fuelGpsVehicle.findMany({ orderBy: [{ groupName: "asc" }, { plate: "asc" }] });
+  return rows.map((v) => {
+    const lat = v.lat != null ? Number(v.lat) : null;
+    const lng = v.lng != null ? Number(v.lng) : null;
+    const moving = v.moving === true;
+    const status: FleetTableRow["status"] = moving ? "วิ่ง" : v.engineOn ? "จอดติดเครื่อง" : v.engineOn === false ? "ดับ" : "—";
+    return {
+      xsenseName: v.xsenseName,
+      plate: v.plate,
+      groupName: v.groupName,
+      driverName: v.driverName,
+      speedKmh: v.speedKmh != null ? Number(v.speedKmh) : null,
+      status,
+      isMoving: moving,
+      engineOn: v.engineOn,
+      address: v.address,
+      lat,
+      lng,
+      mapLink: lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null,
+      seenText: v.seenAt ? bkkRelative(v.seenAt) : "—",
+    };
+  });
+}
+
+export async function listFleetGroups(): Promise<{ group: string; count: number }[]> {
+  const g = await prisma.fuelGpsVehicle.groupBy({ by: ["groupName"], _count: { _all: true } });
+  return g
+    .map((x) => ({ group: x.groupName ?? "(ไม่มีกลุ่ม)", count: x._count._all }))
+    .sort((a, b) => b.count - a.count);
+}
 
 const hr = (s: number) => Math.round((s / 3600) * 10) / 10;
 
