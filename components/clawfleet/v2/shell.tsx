@@ -25,6 +25,7 @@ const SEG_TO_ID: Record<string, string> = {
   team: "team",
   audit: "audit",
   settings: "settings",
+  preview: "preview",
   collect: "hub",
 };
 const ID_TO_SEG: Record<string, string> = {
@@ -36,6 +37,7 @@ const ID_TO_SEG: Record<string, string> = {
   team: "team",
   audit: "audit",
   settings: "settings",
+  preview: "preview",
 };
 const PAGE_LABEL: Record<string, string> = {
   hub: "Hub",
@@ -46,6 +48,7 @@ const PAGE_LABEL: Record<string, string> = {
   team: "ทีม & สาขา",
   audit: "Audit log",
   settings: "ตั้งค่า",
+  preview: "พรีวิวแอป",
   collect: "เก็บรอบ",
 };
 

@@ -405,6 +405,7 @@ const SIDEBAR_PRIMARY: SidebarItem[] = [
 ];
 
 const SIDEBAR_SECONDARY: SidebarItem[] = [
+  { id: "preview", name: "พรีวิวแอป", icon: "phone" },
   { id: "team", name: "ทีม & สาขา", icon: "users" },
   { id: "audit", name: "Audit log", icon: "history" },
   { id: "settings", name: "ตั้งค่า", icon: "settings" },
