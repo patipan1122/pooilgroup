@@ -1,16 +1,53 @@
 "use client";
 
-// ClawFleet v2 shell — SLIM version (unified nav, 2026-06-02).
+// ClawFleet v2 shell — BRANDED full-screen (Playalot redesign, 2026-06-23).
 //
-// Previously this rendered a full second sidebar (cf-sidebar) + topbar that
-// DUPLICATED the Pool AdminShell's left nav (CEO flagged "แถบซ้าย 2 อันซ้ำกัน").
-// The Pool AdminShell already shows ClawFleet's inner nav (from lib/modules.ts)
-// and the global company switcher. So this shell now renders ONLY what Pool does
-// NOT provide: the per-branch filter (?branch=) as a thin bar. No 2nd sidebar.
+// CEO เคาะ (2026-06-23): standalone ClawFleet-branded เต็มจอ ตาม Playalot prototype.
+// This restores the dedicated ClawFleet sidebar + topbar (which already exist in
+// chrome.tsx but were unused while the shell was "slim"). The `.cf-scope` wrapper
+// in the v2 layout is made `position:fixed; inset:0` by clawfleet-playalot.css, so
+// ClawFleet TAKES OVER the viewport — only ITS branded sidebar shows, covering the
+// Pool AdminShell underneath. That avoids the 2026-06-02 "two left sidebars" issue
+// (no 2nd sidebar nested inside AdminShell — it's a full-screen takeover instead).
+// Auth + module-entitlement still run in the parent (admin) layouts beneath.
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { BranchFilterBar, type BranchSummary } from "@/components/clawfleet/v2/chrome";
+import { Sidebar, TopBar, type BranchSummary } from "@/components/clawfleet/v2/chrome";
+
+/* sidebar short-id ↔ App Router segment */
+const SEG_TO_ID: Record<string, string> = {
+  hub: "hub",
+  operations: "ops",
+  anomalies: "anom",
+  stock: "stock",
+  insights: "insights",
+  team: "team",
+  audit: "audit",
+  settings: "settings",
+  collect: "hub",
+};
+const ID_TO_SEG: Record<string, string> = {
+  hub: "hub",
+  ops: "operations",
+  anom: "anomalies",
+  stock: "stock",
+  insights: "insights",
+  team: "team",
+  audit: "audit",
+  settings: "settings",
+};
+const PAGE_LABEL: Record<string, string> = {
+  hub: "Hub",
+  operations: "Operations",
+  anomalies: "Anomaly",
+  stock: "Stock",
+  insights: "Insights",
+  team: "ทีม & สาขา",
+  audit: "Audit log",
+  settings: "ตั้งค่า",
+  collect: "เก็บรอบ",
+};
 
 export function V2Shell({
   children,
@@ -24,20 +61,39 @@ export function V2Shell({
   const params = useSearchParams();
 
   const seg = pathname.split("/").filter(Boolean).pop() ?? "hub";
+  const activeId = SEG_TO_ID[seg] ?? "hub";
   const branch = params.get("branch") ?? "all";
+
+  const onNav = useCallback(
+    (id: string) => {
+      const target = ID_TO_SEG[id] ?? "hub";
+      const q = branch !== "all" ? `?branch=${branch}` : "";
+      router.push(`/clawfleet/v2/${target}${q}`);
+    },
+    [router, branch],
+  );
 
   const onBranchChange = useCallback(
     (id: string) => {
+      const target = ID_TO_SEG[activeId] ?? seg;
       const q = id !== "all" ? `?branch=${id}` : "";
-      router.push(`/clawfleet/v2/${seg}${q}`);
+      router.push(`/clawfleet/v2/${target}${q}`);
     },
-    [router, seg],
+    [router, activeId, seg],
   );
 
   return (
-    <div className="cf-slim">
-      <BranchFilterBar branch={branch} onBranchChange={onBranchChange} branches={branches} />
-      <main className="cf-content cf-content-slim">{children}</main>
+    <div className="cf-app">
+      <Sidebar active={activeId} onNav={onNav} subtitle="ตู้คีบ · cross-check" />
+      <div className="cf-main">
+        <TopBar
+          branch={branch}
+          onBranchChange={onBranchChange}
+          page={PAGE_LABEL[seg] ?? "ClawFleet"}
+          branches={branches}
+        />
+        <main className="cf-content">{children}</main>
+      </div>
     </div>
   );
 }
