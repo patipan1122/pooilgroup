@@ -190,6 +190,7 @@ export default async function PlaylandPage({
       branchSlug={branch?.slug ?? null}
       cashierName={cashierName}
       hasOpenShift={!!openShift}
+      shift={openShift ? { id: openShift.id, openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents } : null}
       initialScreen={initialScreen}
       key={`${branchId}:${openShift?.id ?? "noshift"}`}
     />

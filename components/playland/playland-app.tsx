@@ -17,6 +17,8 @@ import {
   extendSession,
   createBooking,
   searchMembersAction,
+  openShift,
+  closeShift,
   type MemberSearchHit,
 } from "@/lib/playland/actions";
 import {
@@ -103,6 +105,11 @@ export interface PlaylandStats {
   salesCount: number;
   bookingsToday: number;
 }
+export interface PlaylandShiftVM {
+  id: string;
+  openingCashCents: number;
+  totalSalesCents: number;
+}
 interface Props {
   initialKids: PlaylandKid[];
   packages: PlaylandPackageVM[];
@@ -115,6 +122,7 @@ interface Props {
   branchSlug?: string | null;
   cashierName: string;
   hasOpenShift?: boolean;
+  shift?: PlaylandShiftVM | null; // open shift financials → ปิดกะ/เปิดกะ จริง
   initialScreen?: Screen; // deep-link from redirected old routes (?screen=)
 }
 
@@ -407,6 +415,11 @@ export default function PlaylandApp(props: Props) {
 
   // ----- POS pay (immediate paid sale; charges to a kid's session if chosen) -----
   const [posPay, setPosPay] = useState<PayMethod>("CASH");
+  // ปิดกะ/เปิดกะ — ต่อ openShift/closeShift จริง
+  const [shiftOpening, setShiftOpening] = useState("");
+  const [shiftClosing, setShiftClosing] = useState("");
+  const [shiftDayClose, setShiftDayClose] = useState(false);
+  const [shiftBusy, setShiftBusy] = useState(false);
   const payPos = async () => {
     const lines = cartLines;
     if (lines.length === 0) {
@@ -828,6 +841,38 @@ export default function PlaylandApp(props: Props) {
   // ----- derived render values -----
   const near = s.kids.filter((k) => !k.dayPass && k.sec <= 600).length;
   const revenueStr = "฿" + s.revenue.toLocaleString();
+
+  // ----- ปิดกะ: คำนวณจากกะจริง (openingCash + ยอดขายในกะ = ควรมีในลิ้นชัก) -----
+  const shift = props.shift ?? null;
+  const baht = (cents: number) => "฿" + Math.round(cents / 100).toLocaleString();
+  const shExpectedCents = shift ? shift.openingCashCents + shift.totalSalesCents : 0;
+  const shCountedCents = Math.round((parseFloat(shiftClosing || "0") || 0) * 100);
+  const shVarCents = shCountedCents - shExpectedCents;
+  const doOpenShift = async () => {
+    if (shiftBusy) return;
+    setShiftBusy(true);
+    try {
+      const res = await openShift(props.branchId, Math.round((parseFloat(shiftOpening || "0") || 0) * 100));
+      if (res?.ok) { showToast("เปิดกะแล้ว"); router.refresh(); }
+      else showToast(res?.error || "เปิดกะไม่สำเร็จ");
+    } catch { showToast("เปิดกะไม่สำเร็จ"); }
+    finally { setShiftBusy(false); }
+  };
+  const doCloseShift = async () => {
+    if (shiftBusy || !shift) return;
+    if (!shiftClosing.trim()) { showToast("กรอกยอดเงินที่นับได้ก่อน"); return; }
+    setShiftBusy(true);
+    try {
+      const res = await closeShift({ shiftId: shift.id, closingCashCents: shCountedCents, isDayClose: shiftDayClose });
+      if (res?.ok) {
+        const v = res.data.varianceCents;
+        const msg = v === 0 ? "ตรงพอดี" : v > 0 ? `เกิน ${baht(v)}` : `ขาด ${baht(Math.abs(v))}`;
+        showToast(`${shiftDayClose ? "ปิดวัน" : "ปิดกะ"}แล้ว · ${msg}`);
+        go("home"); router.refresh();
+      } else showToast(res?.error || "ปิดกะไม่สำเร็จ");
+    } catch { showToast("ปิดกะไม่สำเร็จ"); }
+    finally { setShiftBusy(false); }
+  };
   const co = s.kids.find((k) => k.id === s.coKidId);
   const ext = s.kids.find((k) => k.id === s.extKidId);
   const chargeKid = s.kids.find((k) => k.id === s.chargeKidId);
@@ -1452,44 +1497,49 @@ export default function PlaylandApp(props: Props) {
           </div>
         )}
 
-        {/* ===== SHIFT ===== */}
+        {/* ===== SHIFT (เปิด/ปิดกะ จริง — openShift/closeShift) ===== */}
         {s.screen === "shift" && (
           <div style={{ flex: 1, minHeight: 0, background: "#F7F2EA", display: "flex", flexDirection: "column", overflowY: "auto" }}>
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
-              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>ปิดกะ — {props.cashierName}</div>
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>{shift ? "ปิดกะ" : "เปิดกะ"} — {props.cashierName}</div>
             </div>
-            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-              <div style={{ flex: 1, padding: "30px 36px" }}>
-                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 20 }}>สรุปยอดขายกะนี้</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-                  <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "20px 22px" }}>
-                    <div style={{ fontSize: 14, color: "#8a7f70" }}>ยอดขายรวม</div>
-                    <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 32, color: "#1F8A5B" }}>{revenueStr}</div>
+            <div style={{ flex: 1, padding: "30px 36px", overflow: "auto", maxWidth: 680, margin: "0 auto", width: "100%" }}>
+              {shift ? (
+                <>
+                  <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 18 }}>สรุปกะนี้</div>
+                  <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, overflow: "hidden", marginBottom: 22 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>เงินต้นกะ</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>{baht(shift.openingCashCents)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>+ ยอดขายในกะ</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>{baht(shift.totalSalesCents)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", background: "#f9f4ea" }}><span style={{ fontSize: 16, color: "#3A3026", fontWeight: 500 }}>ควรมีในลิ้นชัก</span><span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, color: "#2D6CB1" }}>{baht(shExpectedCents)}</span></div>
                   </div>
-                  <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "20px 22px" }}>
-                    <div style={{ fontSize: 14, color: "#8a7f70" }}>จำนวนบิล</div>
-                    <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 32, color: "#2D6CB1" }}>73</div>
+                  <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 8 }}>นับเงินจริงในลิ้นชัก (บาท)</div>
+                  <input value={shiftClosing} onChange={(e) => setShiftClosing(e.target.value)} placeholder="เช่น 11210" inputMode="decimal" autoFocus style={{ ...inputStyle, fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, marginBottom: 14 }} />
+                  {shiftClosing.trim() !== "" && (
+                    <div style={{ borderRadius: 12, padding: "14px 18px", fontSize: 16, fontWeight: 500, marginBottom: 18, background: shVarCents === 0 ? "#eaf3eb" : "#fdecea", color: shVarCents === 0 ? "#1F8A5B" : "#c0392b" }}>
+                      {shVarCents === 0 ? "✓ ตรงพอดี ไม่ขาดไม่เกิน" : shVarCents > 0 ? `เกิน ${baht(shVarCents)} (เงินในลิ้นชักมากกว่ายอดขาย)` : `ขาด ${baht(Math.abs(shVarCents))} (เงินในลิ้นชักน้อยกว่าที่ควรมี)`}
+                    </div>
+                  )}
+                  <div onClick={() => setShiftDayClose(!shiftDayClose)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
+                    <span style={{ width: 24, height: 24, borderRadius: 6, background: shiftDayClose ? "#E74C3C" : "#fff", border: shiftDayClose ? "none" : "1.5px solid #d9cdb8", flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {shiftDayClose && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>}
+                    </span>
+                    <span style={{ fontSize: 15, color: "#6b6052" }}>ปิดวันด้วย (กะสุดท้ายของวัน)</span>
                   </div>
-                </div>
-                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, overflow: "hidden" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "15px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>เงินสด</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>฿9,210</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "15px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>PromptPay</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>฿7,180</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "15px 22px" }}><span style={{ fontSize: 16, color: "#6b6052" }}>บัตร</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>฿2,250</span></div>
-                </div>
-              </div>
-              <div style={{ width: 440, flex: "none", background: "#fff", borderLeft: "1px solid #ece5d8", padding: 28, display: "flex", flexDirection: "column" }}>
-                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, marginBottom: 18 }}>นับเงินในลิ้นชัก</div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}><span style={{ fontSize: 16, color: "#6b6052" }}>เงินต้นกะ</span><span style={{ fontFamily: FREDOKA, fontWeight: 600 }}>฿2,000</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}><span style={{ fontSize: 16, color: "#6b6052" }}>+ ขายเงินสด</span><span style={{ fontFamily: FREDOKA, fontWeight: 600 }}>฿9,210</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 16, color: "#6b6052" }}>ควรมีในลิ้นชัก</span><span style={{ fontFamily: FREDOKA, fontWeight: 700, color: "#2D6CB1" }}>฿11,210</span></div>
-                <div style={{ height: 1, background: "#f2ebdd", margin: "18px 0" }} />
-                <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>นับจริงได้</div>
-                <div style={{ background: "#f4ede0", border: "1.5px solid #2D6CB1", borderRadius: 12, padding: "16px 18px", fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, marginBottom: 14 }}>฿ 11,210</div>
-                <div style={{ background: "#eaf3eb", color: "#1F8A5B", borderRadius: 12, padding: "14px 18px", fontSize: 16, fontWeight: 500, marginBottom: "auto" }}>✓ ตรงพอดี ไม่ขาดไม่เกิน</div>
-                <div onClick={() => { showToast("ปิดกะเรียบร้อย"); go("home"); }} style={{ cursor: "pointer", background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 17, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 20, marginTop: 20 }}>ยืนยันปิดกะ</div>
-              </div>
+                  <div onClick={doCloseShift} style={{ cursor: shiftBusy ? "default" : "pointer", opacity: shiftBusy ? 0.6 : 1, background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 17, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>{shiftBusy ? "กำลังปิดกะ..." : shiftDayClose ? "ยืนยันปิดวัน" : "ยืนยันปิดกะ"}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "26px 28px", textAlign: "center", marginBottom: 22 }}>
+                    <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20, marginBottom: 8 }}>ยังไม่มีกะเปิดอยู่</div>
+                    <div style={{ fontSize: 15, color: "#8a7f70" }}>เปิดกะก่อนเริ่มรับเงิน — ระบบจะนับยอดขายเข้ากะนี้</div>
+                  </div>
+                  <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 8 }}>เงินตั้งต้นในลิ้นชัก (บาท)</div>
+                  <input value={shiftOpening} onChange={(e) => setShiftOpening(e.target.value)} placeholder="เช่น 2000" inputMode="decimal" autoFocus style={{ ...inputStyle, fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, marginBottom: 18 }} />
+                  <div onClick={doOpenShift} style={{ cursor: shiftBusy ? "default" : "pointer", opacity: shiftBusy ? 0.6 : 1, background: "#1F8A5B", color: "#fff", borderRadius: 14, padding: 17, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>{shiftBusy ? "กำลังเปิดกะ..." : "เปิดกะ"}</div>
+                </>
+              )}
             </div>
           </div>
         )}
