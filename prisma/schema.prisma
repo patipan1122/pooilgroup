@@ -4761,6 +4761,25 @@ model FuelDepot {
   @@schema("fuel")
 }
 
+// ราคาหน้าปั๊มอ้างอิง (ขายปลีก) — เก็บ snapshot รายวันจาก thai-oil-api ไว้ดูย้อนหลัง
+// ข้อมูลสาธารณะระดับประเทศ (ไม่ผูก org) · cron บันทึกวันละ 1 ครั้ง · 1 แถว/วัน/ปั๊ม/ผลิตภัณฑ์
+model FuelPumpPriceSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  date         DateTime @db.Date // วันที่บันทึก (เวลาไทย) = คีย์กันซ้ำ 1 แถว/วัน
+  sourceDate   String?  @map("source_date") // วันที่ตาม source (string ไทย) เผื่ออ้างอิง
+  stationKey   String   @map("station_key") // ptt / bcp / shell ...
+  stationLabel String   @map("station_label")
+  productName  String   @map("product_name")
+  price        Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([date, stationKey, productName])
+  @@index([date])
+  @@index([stationKey, productName, date])
+  @@map("fuel_pump_price_snapshot")
+  @@schema("fuel")
+}
+
 // ---------- F5 CRM (1 group = 1 customer/company) ----------
 model Customer {
   id                String    @id @default(uuid()) @db.Uuid

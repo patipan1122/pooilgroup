@@ -1,5 +1,9 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { prisma } from "@/lib/prisma";
-import { PRODUCT_ORDER, round4 } from "@/lib/fuelos/pricing";
+import { PRODUCT_ORDER, PRODUCT_LABELS, round4 } from "@/lib/fuelos/pricing";
+import { bkkStartOfToday } from "@/lib/fuelos/utils/format";
+
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 export function startOfToday() {
   const d = new Date();
@@ -67,6 +71,54 @@ export async function getPricingContext(orgId: string): Promise<PricingContext> 
   }
 
   return { date, depots, defaultDepot, costs, costsByDepot, zones: [...zoneSet].sort(), margins };
+}
+
+export type DepotHistoryRow = { key: string; date: Date; costs: Record<string, number> };
+export type DepotHistory = {
+  depots: string[];
+  depot: string | null;
+  products: { key: string; label: string }[];
+  rows: DepotHistoryRow[]; // วันใหม่สุดอยู่บน
+};
+
+// ประวัติต้นทุนคลังย้อนหลัง (DepotPrice เก็บรายวันอยู่แล้ว · 1 แถว/คลัง/ผลิตภัณฑ์/วัน)
+// → pivot เป็นตาราง (แถว=วัน · คอลัมน์=ผลิตภัณฑ์) ของคลังที่เลือก
+export async function getDepotPriceHistory(
+  orgId: string,
+  depotName?: string,
+  days = 90,
+): Promise<DepotHistory> {
+  const since = new Date(bkkStartOfToday().getTime() - days * 86_400_000);
+
+  const depotRows = await prisma.depotPrice.findMany({
+    where: { orgId },
+    distinct: ["depotName"],
+    select: { depotName: true },
+    orderBy: { depotName: "asc" },
+  });
+  const depots = depotRows.map((d) => d.depotName);
+  const products = PRODUCT_ORDER.map((p) => ({ key: p as string, label: PRODUCT_LABELS[p] ?? p }));
+  if (depots.length === 0) return { depots, depot: null, products, rows: [] };
+
+  const depot = depotName && depots.includes(depotName) ? depotName : depots[0];
+  const snaps = await prisma.depotPrice.findMany({
+    where: { orgId, depotName: depot, date: { gte: since } },
+    orderBy: { date: "desc" },
+  });
+
+  const byDate = new Map<string, { date: Date; costs: Record<string, number> }>();
+  for (const s of snaps) {
+    const key = formatInTimeZone(s.date, TZ, "yyyy-MM-dd");
+    if (!byDate.has(key)) byDate.set(key, { date: s.date, costs: {} });
+    byDate.get(key)!.costs[s.productType] = Number(s.costPerL);
+  }
+  const rows: DepotHistoryRow[] = [...byDate.entries()].map(([key, v]) => ({
+    key,
+    date: v.date,
+    costs: v.costs,
+  }));
+
+  return { depots, depot, products, rows };
 }
 
 // รายการคลังทั้งหมด (รวม inactive) — สำหรับ tab จัดการคลัง

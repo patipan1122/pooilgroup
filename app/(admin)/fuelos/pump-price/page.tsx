@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/fuelos/auth";
 import { fetchPumpPrices } from "@/lib/fuelos/pump-price";
 import { PageHeader } from "@/components/fuelos/ui/page-header";
-import { Fuel, ExternalLink } from "lucide-react";
+import { Fuel, ExternalLink, History } from "lucide-react";
 
 export const revalidate = 1800; // อัปเดตทุก 30 นาที
 
@@ -12,7 +13,18 @@ export default async function PumpPricePage() {
 
   return (
     <div>
-      <PageHeader title="ราคาหน้าปั๊ม (อ้างอิง)" subtitle="ราคาขายปลีกหน้าปั๊ม — ใช้ประกอบการตั้งราคาขายส่ง" />
+      <PageHeader
+        title="ราคาหน้าปั๊ม (อ้างอิง)"
+        subtitle="ราคาขายปลีกหน้าปั๊ม — ใช้ประกอบการตั้งราคาขายส่ง"
+        actions={
+          <Link
+            href="/fuelos/pump-price/history"
+            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl border border-border bg-surface text-sm font-medium text-zinc-700 hover:bg-surface-2 transition-colors"
+          >
+            <History className="size-4" /> ดูย้อนหลัง
+          </Link>
+        }
+      />
 
       {result.ok ? (
         <div className="space-y-5">

@@ -1,5 +1,9 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { prisma } from "@/lib/prisma";
+import { bkkDate } from "@/lib/fuelos/utils/format";
 import type { OrderStatus } from "@/lib/generated/prisma/enums";
+
+const TZ = process.env.NEXT_PUBLIC_APP_TIMEZONE || "Asia/Bangkok";
 
 // 4 คอลัมน์บอร์ด Kanban (ไม่รวม CANCELLED — ออเดอร์ที่ยกเลิกหลุดจากบอร์ด)
 export const BOARD_STATUSES: OrderStatus[] = [
@@ -51,8 +55,8 @@ export type BoardCard = {
   status: OrderStatus;
 };
 
-// ดึงออเดอร์ทั้งหมดบนบอร์ด → จัดกลุ่มตามสถานะ
-export async function listOrdersBoard(orgId: string) {
+// ดึงการ์ดออเดอร์ที่กำลังดำเนินการ (statuses บนบอร์ด) — ใช้ร่วมทั้งมุมมองสถานะและมุมมองวัน
+async function fetchBoardCards(orgId: string): Promise<BoardCard[]> {
   const rows = await prisma.order.findMany({
     where: { orgId, status: { in: BOARD_STATUSES } },
     orderBy: [{ scheduledDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
@@ -63,7 +67,7 @@ export async function listOrdersBoard(orgId: string) {
     },
   });
 
-  const cards: BoardCard[] = rows.map((o) => ({
+  return rows.map((o) => ({
     id: o.id,
     orderNo: o.orderNo,
     customerName: o.customer.name,
@@ -73,14 +77,68 @@ export async function listOrdersBoard(orgId: string) {
     scheduledDate: o.scheduledDate,
     status: o.status,
   }));
+}
 
+// มุมมอง "ตามสถานะ" — จัดกลุ่ม 4 คอลัมน์ Kanban
+export async function listOrdersBoard(orgId: string) {
+  const cards = await fetchBoardCards(orgId);
   const columns = BOARD_STATUSES.map((status) => ({
     status,
     label: ORDER_STATUS_META[status].column ?? ORDER_STATUS_META[status].label,
     cards: cards.filter((c) => c.status === status),
   }));
-
   return { columns, total: cards.length };
+}
+
+export type DayGroup = {
+  key: string; // "yyyy-MM-dd" หรือ "none" (ยังไม่นัดส่ง)
+  title: string; // "วันนี้" / "พรุ่งนี้" / "พฤ. 23 มิ.ย. 69" / "ยังไม่นัดส่ง"
+  sub: string; // วันที่กำกับเมื่อ title เป็น วันนี้/พรุ่งนี้
+  totalLiters: number;
+  subtotal: number;
+  cards: BoardCard[];
+};
+
+// มุมมอง "ตามวัน" — จัดกลุ่มตามวันนัดส่ง เรียงวันใกล้→ไกล (ยังไม่นัดส่งไว้ท้ายสุด)
+export async function listOrdersByDay(orgId: string) {
+  const cards = await fetchBoardCards(orgId);
+
+  const now = new Date();
+  const todayKey = formatInTimeZone(now, TZ, "yyyy-MM-dd");
+  const tomorrowKey = formatInTimeZone(new Date(now.getTime() + 86_400_000), TZ, "yyyy-MM-dd");
+
+  const buckets = new Map<string, { date: Date | null; cards: BoardCard[] }>();
+  for (const c of cards) {
+    // scheduledDate เป็น @db.Date (เที่ยงคืน UTC) → format ที่ไทยได้วันปฏิทินถูกต้อง (ตรงกับ bkkDate ทั้งระบบ)
+    const key = c.scheduledDate ? formatInTimeZone(c.scheduledDate, TZ, "yyyy-MM-dd") : "none";
+    if (!buckets.has(key)) buckets.set(key, { date: c.scheduledDate, cards: [] });
+    buckets.get(key)!.cards.push(c);
+  }
+
+  const groups: DayGroup[] = [...buckets.entries()]
+    .sort(([a], [b]) => {
+      if (a === "none") return 1;
+      if (b === "none") return -1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    })
+    .map(([key, b]) => {
+      const dateLabel = b.date ? bkkDate(b.date) : "";
+      let title = dateLabel;
+      let sub = "";
+      if (key === "none") title = "ยังไม่นัดส่ง";
+      else if (key === todayKey) { title = "วันนี้"; sub = dateLabel; }
+      else if (key === tomorrowKey) { title = "พรุ่งนี้"; sub = dateLabel; }
+      return {
+        key,
+        title,
+        sub,
+        totalLiters: b.cards.reduce((s, c) => s + c.totalLiters, 0),
+        subtotal: b.cards.reduce((s, c) => s + c.subtotal, 0),
+        cards: b.cards,
+      };
+    });
+
+  return { groups, total: cards.length };
 }
 
 // รายละเอียดออเดอร์ + ลูกค้า + items + การอนุมัติเครดิต + รถที่เลือกได้
