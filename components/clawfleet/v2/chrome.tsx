@@ -409,6 +409,8 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "manage", name: "จัดการ", icon: "building", desc: "เพิ่มสาขา/ตู้" },
   { id: "audit", name: "Audit log", icon: "history", desc: "ประวัติทำรายการ" },
   { id: "settings", name: "ตั้งค่า", icon: "settings", desc: "threshold ฯลฯ" },
+  // FRONT-OF-HOUSE — the staff mobile app, playable in the web (separate surface)
+  { id: "app", name: "แอปพนักงาน", icon: "phone", desc: "หน้าบ้าน · กดลองในเว็บ" },
 ];
 
 export type SidebarProps = {

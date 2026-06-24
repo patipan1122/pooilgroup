@@ -66,3 +66,87 @@
 .cf-liff .bg-red-50 { background: #FDE8E5; }
 .cf-liff .text-red-800 { color: #D6402F; }
 .cf-liff .border-red-300 { border-color: #F3B6AE; }
+
+/* ============================================================
+   STAFF APP — web-playable phone-frame stage (/clawfleet/v2/app)
+   Full-screen takeover on the cream Playalot canvas → centered
+   phone frame → the real CollectGroupClient renders inside .cf-liff.
+   No admin chrome here: this is the FRONT-OF-HOUSE surface.
+   ============================================================ */
+/* on the staff-app surface, hide the admin mobile bottom nav (front-of-house ≠ back-office) */
+body.cf-staffapp-active nav[aria-label="ClawFleet mobile navigation"] { display: none !important; }
+
+.cf-staffapp-stage {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px 16px;
+  font-family: "Mitr", "Nunito", sans-serif;
+  background:
+    radial-gradient(900px 600px at 50% -10%, #FBEFD2 0%, rgba(251,239,210,0) 60%),
+    #F1E7D4;
+  overflow: auto;
+}
+.cf-staffapp-exit {
+  position: absolute; top: 18px; left: 20px;
+  font-size: 14px; font-weight: 600; color: #5A5248; text-decoration: none;
+  background: #fff; border: 2px solid #EBE2D2; border-radius: 999px;
+  padding: 8px 16px; box-shadow: 0 2px 6px rgba(42,38,34,0.08);
+  transition: border-color .12s, transform .12s;
+}
+.cf-staffapp-exit:hover { border-color: #F0B323; transform: translateX(-2px); }
+
+.cf-staffapp-phone {
+  width: 390px; max-width: 100%;
+  background: #211d19; border-radius: 44px; padding: 12px;
+  box-shadow: 0 24px 60px rgba(33,29,25,0.34), 0 4px 14px rgba(33,29,25,0.2);
+  flex-shrink: 0; position: relative;
+}
+.cf-staffapp-notch {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  width: 120px; height: 8px; border-radius: 999px; background: #36302a; z-index: 2;
+}
+.cf-staffapp-screen {
+  width: 100%; height: min(78vh, 760px);
+  border-radius: 34px; overflow-y: auto; overflow-x: hidden;
+  background: #F7F2EA; -webkit-overflow-scrolling: touch;
+}
+.cf-staffapp-hint {
+  font-size: 13px; font-weight: 600; color: #5A5248; text-align: center;
+  max-width: 360px; line-height: 1.5;
+}
+.cf-staffapp-hint strong { color: #C9870A; font-family: "Fredoka", sans-serif; }
+@media (max-width: 460px) {
+  .cf-staffapp-stage { padding: 8px; }
+  .cf-staffapp-phone { width: 100%; border-radius: 0; padding: 0; box-shadow: none; }
+  .cf-staffapp-screen { height: 100dvh; border-radius: 0; }
+  .cf-staffapp-notch { display: none; }
+  .cf-staffapp-exit { top: 8px; left: 8px; }
+}
+
+/* ===== PIN gate (prototype-style staff unlock) — inside .cf-liff ===== */
+.cf-liff .cf-pin { padding: 28px 22px 22px; display: flex; flex-direction: column; align-items: center; }
+.cf-pin-head { text-align: center; margin-bottom: 18px; }
+.cf-pin-avatar {
+  width: 76px; height: 76px; margin: 0 auto 10px; border-radius: 50%;
+  background: #FDF3DC; display: flex; align-items: center; justify-content: center;
+  font-size: 38px; box-shadow: 0 4px 0 #F0DDB0;
+}
+.cf-pin-name { font-family: "Mitr", sans-serif; font-weight: 600; font-size: 22px; color: #231F1B; }
+.cf-pin-role { font-size: 13px; color: #5A5248; font-weight: 500; }
+.cf-pin-ask { font-size: 14px; color: #5A5248; font-weight: 500; margin-bottom: 14px; }
+.cf-pin-dots { display: flex; gap: 16px; margin-bottom: 6px; }
+.cf-pin-dots.is-err { animation: cf-pin-shake .3s; }
+.cf-pin-dot { width: 16px; height: 16px; border-radius: 50%; background: #EBE2D2; transition: background .12s, transform .12s; }
+.cf-pin-dot.is-on { background: #F0B323; transform: scale(1.12); }
+@keyframes cf-pin-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)} 75%{transform:translateX(7px)} }
+.cf-pin-err { font-size: 13px; color: #D6402F; font-weight: 600; margin: 4px 0 0; }
+.cf-pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; width: 100%; max-width: 280px; }
+.cf-pin-key {
+  font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 26px; color: #231F1B;
+  height: 64px; border-radius: 20px; border: 0; background: #fff; cursor: pointer;
+  box-shadow: 0 3px 0 #EFE3CE; transition: transform .08s, box-shadow .08s, background .12s;
+}
+.cf-pin-key:active { transform: translateY(3px); box-shadow: 0 0 0 #EFE3CE; }
+.cf-pin-key-skip { font-family: "Mitr", sans-serif; font-size: 15px; font-weight: 600; color: #5A5248; background: #FDF3DC; box-shadow: 0 3px 0 #F0DDB0; }
+.cf-pin-key-back { color: #8A8070; }
+.cf-pin-foot { font-size: 12px; color: #8A8070; font-weight: 500; margin-top: 16px; }

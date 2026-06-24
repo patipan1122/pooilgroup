@@ -35,20 +35,20 @@ export default function ClawfleetPreviewPage() {
               <div className="cf-section-sub">กดลองใช้จริงได้เลย — เลือกสาขา · เก็บรอบ · cross-check</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <a className="cf-btn cf-btn-ghost cf-btn-sm" href="/clawfleet-demo/mobile.html" target="_blank" rel="noopener">
-                เดโมเต็มจอ ↗
-              </a>
+              <Link className="cf-btn cf-btn-ghost cf-btn-sm" href="/clawfleet/v2/app">
+                เปิดเต็มจอ ↗
+              </Link>
               <a className="cf-btn cf-btn-ghost cf-btn-sm" href="/liff/clawfleet" target="_blank" rel="noopener">
-                ตัวจริง (ข้อมูลสด) ↗
+                ใน LINE ↗
               </a>
             </div>
           </div>
           <div className="cf-phone-frame">
-            {/* clickable Playalot demo (self-contained · select branch → collect → close) */}
-            <iframe src="/clawfleet-demo/mobile.html" title="แอปพนักงาน (มือถือ) — กดลองได้" className="cf-phone-screen" />
+            {/* the REAL staff app (web-playable · ข้อมูลสด · เลือกสาขา → เก็บรอบ → ปิดกลุ่ม + cross-check) */}
+            <iframe src="/clawfleet/v2/app" title="แอปพนักงาน (มือถือ) — กดลองได้จริง" className="cf-phone-screen" />
           </div>
           <div className="cf-dim" style={{ fontSize: 13, marginTop: 8, fontWeight: 700 }}>
-            ▲ เดโมกดเล่นได้จริง (PIN ตัวอย่างโชว์ในจอ) · &ldquo;ตัวจริง&rdquo; = ข้อมูลสดของสาขาคุณ
+            ▲ แอปจริง · กดเล่นได้เลย (PIN ตัวอย่าง 1111 หรือกด “ข้าม”) · ข้อมูลสดของสาขาคุณ
           </div>
         </section>
 
