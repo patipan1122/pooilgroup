@@ -3,6 +3,7 @@ import { V2Shell } from "@/components/clawfleet/v2/shell";
 import { loadBranches } from "@/lib/clawfleet/v2-loaders";
 import "./clawfleet-redesign.css";
 import "./clawfleet-playalot.css"; // Playalot skin — loaded AFTER base to override tokens
+import "./clawfleet-house.css"; // House style (Playland/ChairOps) — loaded LAST, wins over Playalot
 
 export const dynamic = "force-dynamic";
 
