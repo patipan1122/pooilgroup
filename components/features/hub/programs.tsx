@@ -15,7 +15,7 @@ const GROUPS: ReadonlyArray<{ title: string; slugs: readonly Slug[] }> = [
   { title: "การเงิน & บัญชี", slugs: ["cashhub", "ledger", "costctrl"] },
   {
     title: "ปฏิบัติการสาขา",
-    slugs: ["chairops", "clawfleet", "playland", "hotelbook", "rentspace", "repairs"],
+    slugs: ["dc", "chairops", "clawfleet", "playland", "hotelbook", "rentspace", "repairs"],
   },
   {
     title: "คน · เอกสาร · สื่อสาร · ขาย",
