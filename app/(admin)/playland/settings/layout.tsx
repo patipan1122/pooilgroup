@@ -7,8 +7,9 @@ import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
-import { listBranches } from "@/lib/playland/queries";
+import { getBranchContext } from "@/lib/playland/branch-context";
 import { SettingsRail } from "@/components/playland/settings-rail";
+import { BranchSwitcher } from "@/components/playland/branch-switcher";
 import { MobileRailToggle } from "@/components/playland/mobile-rail-toggle";
 import { ArrowLeft, Settings } from "lucide-react";
 
@@ -19,12 +20,13 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   // หน้าตั้งค่า = ผู้จัดการขึ้นไป (กันพนักงาน/ผู้ชมหลุดเข้ามาแก้แพ็กเกจ/โปรโม)
   requirePlaylandManager(session.user.role);
   const orgId = session.user.org_id;
-
-  const [branches, packageCount, productCount, deviceCount] = await Promise.all([
-    listBranches(orgId),
-    prisma.playlandPackage.count({ where: { orgId, active: true } }),
-    prisma.playlandProduct.count({ where: { orgId, active: true } }),
-    prisma.playlandDevice.count({ where: { orgId, status: { not: "DISABLED" } } }),
+  const { branches, activeId } = await getBranchContext(orgId);
+  // นับเฉพาะ "สาขาที่กำลังทำงาน" → ตัวเลขในเมนูตรงกับสิ่งที่เห็น (ไม่ปนสาขาอื่น)
+  const branchScope = activeId ? { branchId: activeId } : {};
+  const [packageCount, productCount, deviceCount] = await Promise.all([
+    prisma.playlandPackage.count({ where: { orgId, active: true, ...(activeId ? { OR: [{ branchId: activeId }, { branchId: null }] } : {}) } }),
+    prisma.playlandProduct.count({ where: { orgId, active: true, ...branchScope } }),
+    prisma.playlandDevice.count({ where: { orgId, status: { not: "DISABLED" }, ...branchScope } }),
   ]);
 
   const sections = [
@@ -45,6 +47,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           <Link href="/playland" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> Workspace</Link>
           <h1><Settings size={20} style={{ display: "inline", marginRight: 8, verticalAlign: -3 }} />ตั้งค่า Playland</h1>
         </div>
+        <BranchSwitcher branches={branches} activeId={activeId} />
       </header>
 
       <div className="pl-two-pane">

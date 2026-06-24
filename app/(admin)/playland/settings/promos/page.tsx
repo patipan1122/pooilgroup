@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { getBranchContext } from "@/lib/playland/branch-context";
 import { fmtDate, thb } from "@/lib/playland/format";
 import { Tag, ArrowLeft } from "lucide-react";
 
@@ -8,13 +9,15 @@ export const dynamic = "force-dynamic";
 
 export default async function PromosSettingsPage() {
   const session = await requireSession();
-  const promos = await prisma.playlandPromo.findMany({ where: { orgId: session.user.org_id }, orderBy: { createdAt: "desc" } });
+  const { activeId, active } = await getBranchContext(session.user.org_id);
+  // โปรของสาขานี้ + ที่ตั้งเป็น "ทุกสาขา" (branchId null)
+  const promos = await prisma.playlandPromo.findMany({ where: { orgId: session.user.org_id, ...(activeId ? { OR: [{ branchId: activeId }, { branchId: null }] } : {}) }, orderBy: { createdAt: "desc" } });
   return (
     <div className="pl-page">
       <header className="pl-header">
         <div>
           <Link href="/playland/settings" className="pl-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}><ArrowLeft size={12} /> Settings</Link>
-          <h1>Promo / Coupon · {promos.length}</h1>
+          <h1>Promo / Coupon {active && <span style={{ color: "#2D6CB1" }}>· {active.name}</span>} · {promos.length}</h1>
         </div>
         <span className="pl-chip pl-chip-muted" style={{ fontSize: 12, padding: "5px 12px" }}>🚧 โปรโมชั่นกำลังพัฒนา</span>
       </header>

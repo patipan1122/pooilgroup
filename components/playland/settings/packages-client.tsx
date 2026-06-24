@@ -19,8 +19,9 @@ const TYPES = [
   { v: "DAY_PASS", label: "Day Pass" },
 ] as const;
 
-export function PackagesClient({ branches, packages }: { branches: Branch[]; packages: Pkg[] }) {
+export function PackagesClient({ branches, packages, activeBranchId }: { branches: Branch[]; packages: Pkg[]; activeBranchId: string | null }) {
   const router = useRouter();
+  const activeBranchName = branches.find((b) => b.id === activeBranchId)?.name ?? "";
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState<Pkg | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -48,7 +49,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
   }
   function startNew() {
     setEditing(null);
-    setType("FIXED"); setName(""); setDescription(""); setMinutes("60"); setPrice("100"); setPerMinute("2"); setBranchId(""); setActive(true);
+    setType("FIXED"); setName(""); setDescription(""); setMinutes("60"); setPrice("100"); setPerMinute("2"); setBranchId(activeBranchId ?? ""); setActive(true); setSaveErr(null);
     setShowForm(true);
   }
   function submit(e: React.FormEvent) {
@@ -78,7 +79,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
       <header className="pl-header">
         <div>
           <Link href="/playland/settings" className="pl-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}><ArrowLeft size={12} /> Settings</Link>
-          <h1>Packages · {packages.length}</h1>
+          <h1>Packages {activeBranchName && <span style={{ color: "#2D6CB1" }}>· {activeBranchName}</span>} · {packages.length}</h1>
         </div>
         <button className="pl-btn pl-btn-primary" onClick={startNew}><PlusCircle size={14} /> เพิ่ม Package</button>
       </header>
@@ -95,7 +96,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
                   <td><span className="pl-chip pl-chip-brand">{packageTypeLabel(p.type)}</span></td>
                   <td>{p.type === "DAY_PASS" ? "ทั้งวัน" : p.type === "PER_MINUTE" ? `${(p.perMinuteRate ?? 0) / 100}฿/min` : `${p.minutes ?? 0}`}</td>
                   <td style={{ fontWeight: 600 }}>{thb(p.price)}</td>
-                  <td>{branches.find((b) => b.id === p.branchId)?.name ?? "ทุกสาขา"}</td>
+                  <td>{p.branchId ? (branches.find((b) => b.id === p.branchId)?.name ?? "—") : <span className="pl-chip pl-chip-info">ทุกสาขา</span>}</td>
                   <td>{p.active ? <span className="pl-chip pl-chip-ok">ใช้</span> : <span className="pl-chip pl-chip-muted">ปิด</span>}</td>
                 </tr>
               ))}

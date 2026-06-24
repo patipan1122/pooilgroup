@@ -4,8 +4,9 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { upsertProduct } from "@/lib/playland/actions";
+import { cloneProductToBranches } from "@/lib/playland/branch-actions";
 import { thb } from "@/lib/playland/format";
-import { ShoppingBasket, PlusCircle, ArrowLeft, ImageOff } from "lucide-react";
+import { ShoppingBasket, PlusCircle, ArrowLeft, ImageOff, Copy } from "lucide-react";
 
 interface Branch { id: string; name: string; }
 interface Product {
@@ -14,9 +15,12 @@ interface Product {
   imageR2Path: string | null;
 }
 
-export function ProductsClient({ branches, products, r2PublicUrl }: { branches: Branch[]; products: Product[]; r2PublicUrl: string }) {
+export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId }: { branches: Branch[]; products: Product[]; r2PublicUrl: string; activeBranchId: string | null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  const otherBranches = branches.filter((b) => b.id !== activeBranchId);
+  const activeBranchName = branches.find((b) => b.id === activeBranchId)?.name ?? "";
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -57,9 +61,22 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
     setEditing(null);
     setName(""); setKind("SALE_ITEM"); setBarcode(""); setCategory(""); setSupplier("");
     setPrice("0"); setCost("0"); setStock("0"); setReorder("0");
-    setBranchId(branches[0]?.id ?? ""); setActive(true);
+    setBranchId(activeBranchId ?? branches[0]?.id ?? ""); setActive(true); // เพิ่มเข้าสาขาที่กำลังทำงาน
     setImageR2Path(""); setImgError(null); setSaveErr(null); setShowAdvanced(false);
     setShowForm(true);
+  }
+  // ก๊อปสินค้าไปสาขาอื่น (เปิดสาขาใหม่ไม่ต้องตั้งซ้ำ)
+  function cloneToBranches(p: Product) {
+    if (otherBranches.length === 0) return;
+    const names = otherBranches.map((b) => b.name).join(", ");
+    if (!confirm(`ก๊อป "${p.name}" ไปสาขา: ${names}? (สต๊อกเริ่มที่ 0 · ราคา/ต้นทุนตามต้นฉบับ)`)) return;
+    setCloningId(p.id);
+    start(async () => {
+      const res = await cloneProductToBranches({ productId: p.id, targetBranchIds: otherBranches.map((b) => b.id) });
+      setCloningId(null);
+      if (res.ok) { setSaveErr(null); router.refresh(); }
+      else alert(res.error);
+    });
   }
   // ทำซ้ำ: คัดลอกค่าเดิมทั้งหมด ยกเว้นรหัส+บาร์โค้ด (บาร์โค้ดต้องไม่ซ้ำ) → กรอกใหม่แค่ชื่อ/บาร์โค้ด
   function startClone(p: Product) {
@@ -115,7 +132,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
       <header className="pl-header">
         <div>
           <Link href="/playland/settings" className="pl-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}><ArrowLeft size={12} /> Settings</Link>
-          <h1>สินค้า POS · {products.length} {lowStock.length > 0 && <span className="pl-chip pl-chip-danger" style={{ marginLeft: 6, fontSize: 11 }}>เหลือน้อย {lowStock.length}</span>}</h1>
+          <h1>สินค้า POS {activeBranchName && <span style={{ color: "#2D6CB1" }}>· {activeBranchName}</span>} · {products.length} {lowStock.length > 0 && <span className="pl-chip pl-chip-danger" style={{ marginLeft: 6, fontSize: 11 }}>เหลือน้อย {lowStock.length}</span>}</h1>
         </div>
         <button className="pl-btn pl-btn-primary" onClick={startNew}><PlusCircle size={14} /> เพิ่มสินค้า</button>
       </header>
@@ -146,6 +163,11 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {p.active ? <span className="pl-chip pl-chip-ok">ใช้</span> : <span className="pl-chip pl-chip-muted">ปิด</span>}
                         <button type="button" className="pl-btn pl-btn-sm" onClick={(e) => { e.stopPropagation(); startClone(p); }} style={{ fontSize: 11 }}>ทำซ้ำ</button>
+                        {otherBranches.length > 0 && (
+                          <button type="button" className="pl-btn pl-btn-sm" disabled={cloningId === p.id} onClick={(e) => { e.stopPropagation(); cloneToBranches(p); }} style={{ fontSize: 11 }} title="ก๊อปไปสาขาอื่น">
+                            <Copy size={11} /> {cloningId === p.id ? "..." : "→สาขา"}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -237,11 +259,9 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
                 <input className="pl-input" type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} placeholder="0 = ไม่เตือน" />
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>สาขา</label>
-              <select className="pl-select" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+            <div style={{ fontSize: 13, color: "var(--pl-text-muted)", background: "#f9f4ea", borderRadius: 8, padding: "8px 12px" }}>
+              สาขา: <strong style={{ color: "#2D6CB1" }}>{editing ? (branches.find((b) => b.id === branchId)?.name ?? "—") : (activeBranchName || "—")}</strong>
+              {!editing && branches.length > 1 && <span> · สลับสาขาที่หัวหน้าจอเพื่อเพิ่มเข้าสาขาอื่น</span>}
             </div>
             <label style={{ fontSize: 13 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ marginRight: 6 }} /> Active</label>
             {saveErr && <div style={{ fontSize: 13, color: "#fff", background: "var(--pl-danger)", borderRadius: 8, padding: "8px 12px" }}>{saveErr}</div>}
