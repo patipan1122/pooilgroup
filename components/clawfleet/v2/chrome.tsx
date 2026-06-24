@@ -396,19 +396,19 @@ type SidebarItem = {
   badgeColor?: "blue" | "red" | "amber";
 };
 
-const SIDEBAR_PRIMARY: SidebarItem[] = [
-  { id: "hub", name: "Hub", icon: "home", desc: "ตอนนี้คุณต้องทำอะไร" },
-  { id: "ops", name: "Operations", icon: "activity", desc: "รอบเก็บที่กำลังเดิน", badge: 4 },
-  { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการที่ต้องตรวจ", badge: 4, badgeColor: "red" },
-  { id: "stock", name: "Stock", icon: "package", desc: "ของรางวัล + แลร์ต", badge: 3, badgeColor: "amber" },
-  { id: "insights", name: "Insights", icon: "chart", desc: "ตาราง + CSV" },
-];
-
-const SIDEBAR_SECONDARY: SidebarItem[] = [
-  { id: "preview", name: "พรีวิวแอป", icon: "phone" },
-  { id: "team", name: "ทีม & สาขา", icon: "users" },
-  { id: "audit", name: "Audit log", icon: "history" },
-  { id: "settings", name: "ตั้งค่า", icon: "settings" },
+// Flat 10-item list — matches the Playalot prototype hub.html sidebar exactly
+// (order · labels · descriptions · badges). No group labels (prototype is flat).
+const SIDEBAR_ITEMS: SidebarItem[] = [
+  { id: "hub", name: "Hub", icon: "home", desc: "ตอนนี้ต้องทำอะไร" },
+  { id: "fleet", name: "Fleet", icon: "pin", desc: "10 สาขา · สถานะ" },
+  { id: "ops", name: "Operations", icon: "activity", desc: "รอบที่กำลังเดิน", badge: 4, badgeColor: "red" },
+  { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการต้องตรวจ", badge: 4, badgeColor: "red" },
+  { id: "insights", name: "Insights", icon: "chart", desc: "รายงาน + CSV" },
+  { id: "stock", name: "Stock", icon: "package", desc: "DC + สาขา" },
+  { id: "team", name: "ทีม & สาขา", icon: "users", desc: "พนักงาน" },
+  { id: "manage", name: "จัดการ", icon: "building", desc: "เพิ่มสาขา/ตู้" },
+  { id: "audit", name: "Audit log", icon: "history", desc: "ประวัติทำรายการ" },
+  { id: "settings", name: "ตั้งค่า", icon: "settings", desc: "threshold ฯลฯ" },
 ];
 
 export type SidebarProps = {
@@ -431,8 +431,7 @@ export function Sidebar({ active, onNav, subtitle }: SidebarProps) {
       </div>
 
       <div className="cf-nav-group">
-        <div className="cf-nav-label">งานวันนี้</div>
-        {SIDEBAR_PRIMARY.map((it) => (
+        {SIDEBAR_ITEMS.map((it) => (
           <button
             key={it.id}
             type="button"
@@ -449,23 +448,6 @@ export function Sidebar({ active, onNav, subtitle }: SidebarProps) {
             {it.badge ? (
               <span className={`cf-nav-badge cf-nav-badge-${it.badgeColor ?? "blue"}`}>{it.badge}</span>
             ) : null}
-          </button>
-        ))}
-      </div>
-
-      <div className="cf-nav-group">
-        <div className="cf-nav-label">จัดการ</div>
-        {SIDEBAR_SECONDARY.map((it) => (
-          <button
-            key={it.id}
-            type="button"
-            className={`cf-nav-item cf-nav-item-secondary ${active === it.id ? "is-active" : ""}`}
-            onClick={() => onNav(it.id)}
-          >
-            <span className="cf-nav-icon">
-              <Ic name={it.icon} />
-            </span>
-            <span className="cf-nav-name">{it.name}</span>
           </button>
         ))}
       </div>

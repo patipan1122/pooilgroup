@@ -1,0 +1,67 @@
+/* Playalot Design System — shared app tokens & components */
+:root {
+  --mustard:#F0B323; --mustard-deep:#E09A0E; --mustard-tint:#FDF3DC;
+  --red:#E74C3C; --red-deep:#D6402F; --red-tint:#FDE8E5;
+  --blue:#2D6CB1; --blue-deep:#1F5A96; --blue-tint:#E4EEF7;
+  --green:#2E9E54; --green-tint:#E7F6EC;
+  --violet:#7C3AED; --violet-tint:#EDE7FB;
+  --cream:#F7F2EA; --cream-deep:#EFE7D8; --cream-line:#E8DEC C;
+  --cream-line:#E8DECC;
+  --ink:#231F1B; --ink-soft:#5A5248; --ink-faint:#8A8070; --white:#fff;
+
+  --r-sm:12px; --r:18px; --r-lg:26px; --r-xl:34px; --r-pill:999px;
+  --sh-sm:0 2px 8px rgba(42,38,34,.06);
+  --sh:0 6px 20px rgba(42,38,34,.08);
+  --sh-lg:0 16px 44px rgba(42,38,34,.14);
+
+  --f-display:'Fredoka','Mitr',sans-serif;
+  --f-th:'Mitr','Nunito',sans-serif;
+  --f-body:'Nunito','Mitr',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:var(--f-th);color:var(--ink);background:var(--cream);line-height:1.5;-webkit-font-smoothing:antialiased;font-weight:400;}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit;}
+input,textarea,select{font-family:inherit;color:inherit;}
+.mono{font-variant-numeric:tabular-nums;}
+
+/* text helpers */
+.t-mustard{color:var(--mustard-deep);} .t-red{color:var(--red);} .t-blue{color:var(--blue);}
+.t-green{color:var(--green);} .t-soft{color:var(--ink-soft);} .t-faint{color:var(--ink-faint);}
+.fd{font-family:var(--f-display);} .fb{font-family:var(--f-body);}
+
+/* pills / badges */
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-body);font-weight:800;
+  font-size:13px;padding:5px 12px;border-radius:var(--r-pill);background:var(--white);color:var(--ink-soft);}
+.pill .dot{width:8px;height:8px;border-radius:50%;}
+.pill-mustard{background:var(--mustard-tint);color:var(--mustard-deep);}
+.pill-red{background:var(--red-tint);color:var(--red);}
+.pill-blue{background:var(--blue-tint);color:var(--blue);}
+.pill-green{background:var(--green-tint);color:var(--green);}
+.pill-violet{background:var(--violet-tint);color:var(--violet);}
+.pill-solid-mustard{background:var(--mustard);color:#fff;}
+.pill-solid-red{background:var(--red);color:#fff;}
+.pill-solid-blue{background:var(--blue);color:#fff;}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--f-th);font-weight:600;font-size:16px;padding:13px 22px;border-radius:var(--r);
+  transition:transform .12s ease, filter .12s ease;}
+.btn:active{transform:scale(.97);}
+.btn-primary{background:var(--mustard);color:#fff;box-shadow:0 4px 0 var(--mustard-deep);}
+.btn-primary:active{box-shadow:0 1px 0 var(--mustard-deep);transform:translateY(3px);}
+.btn-blue{background:var(--blue);color:#fff;box-shadow:0 4px 0 var(--blue-deep);}
+.btn-blue:active{box-shadow:0 1px 0 var(--blue-deep);transform:translateY(3px);}
+.btn-ghost{background:var(--white);color:var(--ink);box-shadow:var(--sh-sm);}
+.btn-soft{background:var(--cream-deep);color:var(--ink-soft);}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+.btn-lg{font-size:18px;padding:16px 26px;}
+.btn-block{width:100%;}
+
+/* card */
+.card{background:var(--white);border-radius:var(--r-lg);box-shadow:var(--sh-sm);padding:20px;}
+
+/* icon helper */
+.ic{display:inline-grid;place-items:center;flex-shrink:0;}
+
+/* mascot blob */
+.mascot{border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--f-display);font-weight:700;flex-shrink:0;}

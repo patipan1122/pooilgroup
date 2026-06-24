@@ -18,11 +18,13 @@ import { Sidebar, TopBar, type BranchSummary } from "@/components/clawfleet/v2/c
 /* sidebar short-id ↔ App Router segment */
 const SEG_TO_ID: Record<string, string> = {
   hub: "hub",
+  fleet: "fleet",
   operations: "ops",
   anomalies: "anom",
   stock: "stock",
   insights: "insights",
   team: "team",
+  manage: "manage",
   audit: "audit",
   settings: "settings",
   preview: "preview",
@@ -30,22 +32,26 @@ const SEG_TO_ID: Record<string, string> = {
 };
 const ID_TO_SEG: Record<string, string> = {
   hub: "hub",
+  fleet: "fleet",
   ops: "operations",
   anom: "anomalies",
   stock: "stock",
   insights: "insights",
   team: "team",
+  manage: "manage",
   audit: "audit",
   settings: "settings",
   preview: "preview",
 };
 const PAGE_LABEL: Record<string, string> = {
   hub: "Hub",
+  fleet: "Fleet",
   operations: "Operations",
   anomalies: "Anomaly",
   stock: "Stock",
   insights: "Insights",
   team: "ทีม & สาขา",
+  manage: "จัดการ",
   audit: "Audit log",
   settings: "ตั้งค่า",
   preview: "พรีวิวแอป",

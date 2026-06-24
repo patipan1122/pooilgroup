@@ -314,3 +314,34 @@
 .cf-preview-row-gloss { font-family: var(--cf-font-body); font-weight: 700; font-size: 13px; color: var(--cf-text-3); }
 .cf-preview-row-go { font-family: var(--cf-font-display); font-weight: 700; font-size: 20px; color: var(--cf-mustard-deep); }
 @media (max-width: 1100px) { .cf-preview-grid { grid-template-columns: 1fr; } }
+
+/* ===== SIDEBAR spacing — match prototype hub.html exactly (gap 5 · nav gap 11 · icon 22) ===== */
+.cf-sidebar { gap: 5px; }
+.cf-nav-item { gap: 11px; }
+.cf-nav-icon { width: 22px; font-size: 17px; }
+
+/* ===== FLEET — branch status card grid ===== */
+.cf-fleet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.cf-fleet-card {
+  display: flex; flex-direction: column; gap: 14px;
+  background: var(--cf-surface); border-radius: var(--cf-radius-lg);
+  box-shadow: var(--cf-shadow-sm); padding: 20px 22px;
+  border-top: 4px solid var(--cf-emerald); text-decoration: none; color: inherit;
+  transition: transform .12s, box-shadow .12s;
+}
+.cf-fleet-card:hover { transform: translateY(-3px); box-shadow: var(--cf-shadow); }
+.cf-fleet-card.is-attention { border-top-color: var(--cf-red); }
+.cf-fleet-card-head { display: flex; align-items: center; gap: 12px; }
+.cf-fleet-card-id { min-width: 0; }
+.cf-fleet-card-name { font-family: var(--cf-font); font-weight: 600; font-size: 17px; }
+.cf-fleet-card-meta { font-family: var(--cf-font-body); font-weight: 700; font-size: 13px; color: var(--cf-text-3); }
+.cf-fleet-card-foot { display: flex; align-items: center; justify-content: space-between; }
+.cf-fleet-card-rev { font-family: var(--cf-font-display); font-weight: 700; font-size: 20px; }
+
+/* ===== MANAGE — branch + machine management ===== */
+.cf-manage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.cf-manage-card { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); padding: 18px 20px; }
+.cf-manage-card-head { display: flex; align-items: center; gap: 12px; }
+.cf-manage-card-actions { display: flex; gap: 8px; margin-top: 12px; }
+.cf-manage-note { margin-top: 16px; padding: 16px 22px; }
+.cf-manage-note-link { color: var(--cf-mustard-deep); font-weight: 700; }

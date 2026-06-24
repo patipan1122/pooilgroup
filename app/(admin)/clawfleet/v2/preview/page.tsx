@@ -27,19 +27,28 @@ export default function ClawfleetPreviewPage() {
       </div>
 
       <div className="cf-preview-grid">
-        {/* ── Employee mobile (front-of-house) in a phone frame ── */}
+        {/* ── Employee mobile (front-of-house) — CLICKABLE demo in a phone frame ── */}
         <section className="cf-section">
           <div className="cf-section-head">
             <div>
               <h3 className="cf-section-title">แอปพนักงาน · มือถือ</h3>
-              <div className="cf-section-sub">หน้างาน — เก็บรอบ · ถ่ายรูป · cross-check</div>
+              <div className="cf-section-sub">กดลองใช้จริงได้เลย — เลือกสาขา · เก็บรอบ · cross-check</div>
             </div>
-            <a className="cf-btn cf-btn-ghost cf-btn-sm" href="/liff/clawfleet" target="_blank" rel="noopener">
-              เปิดเต็มจอ ↗
-            </a>
+            <div style={{ display: "flex", gap: 8 }}>
+              <a className="cf-btn cf-btn-ghost cf-btn-sm" href="/clawfleet-demo/mobile.html" target="_blank" rel="noopener">
+                เดโมเต็มจอ ↗
+              </a>
+              <a className="cf-btn cf-btn-ghost cf-btn-sm" href="/liff/clawfleet" target="_blank" rel="noopener">
+                ตัวจริง (ข้อมูลสด) ↗
+              </a>
+            </div>
           </div>
           <div className="cf-phone-frame">
-            <iframe src="/liff/clawfleet" title="แอปพนักงาน (มือถือ)" className="cf-phone-screen" />
+            {/* clickable Playalot demo (self-contained · select branch → collect → close) */}
+            <iframe src="/clawfleet-demo/mobile.html" title="แอปพนักงาน (มือถือ) — กดลองได้" className="cf-phone-screen" />
+          </div>
+          <div className="cf-dim" style={{ fontSize: 13, marginTop: 8, fontWeight: 700 }}>
+            ▲ เดโมกดเล่นได้จริง (PIN ตัวอย่างโชว์ในจอ) · &ldquo;ตัวจริง&rdquo; = ข้อมูลสดของสาขาคุณ
           </div>
         </section>
 
