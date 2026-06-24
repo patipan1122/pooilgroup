@@ -432,3 +432,77 @@
 .cf-nav-item { padding: 13px 13px; }
 .cf-sidebar { gap: 9px; }
 .cf-nav-group + .cf-nav-group { margin-top: 8px; }
+
+/* ============================================================
+   LOCKED LOOK (2026-06-24) — CEO pick จาก render 3 แบบ:
+   "ตัวหนังสือขาว บนแถบไล่เฉดน้ำเงิน · เหลือง(มัสตาร์ด)น้อยสุด ·
+    ตัวอักษรใหญ่ขึ้น นุ่มไม่ดำ โปร่งตา"
+   เหลืองเหลือเฉพาะความหมาย "เตือน" (stale/low/P1) + สีประจำสาขา.
+   chrome/decorative มัสตาร์ด → น้ำเงิน. ดู [[feedback-ceo-ui-taste-white-on-blue-least-yellow-2026-06-24]]
+   ============================================================ */
+.cf-scope {
+  font-size: 16px;
+  line-height: 1.6;
+  /* ink นุ่ม warm-gray — ไม่ดำสนิท */
+  --cf-text: #4A4038;
+  --cf-text-2: #6B6258;
+  --cf-text-3: #938A7E;
+  /* แถบน้ำเงิน */
+  --cf-band: linear-gradient(135deg, #2D6CB1, #1B4D86);
+  --cf-band-deep: linear-gradient(135deg, #245C9C, #14385F);
+}
+
+/* หัวข้อใหญ่ขึ้น โปร่งขึ้น */
+.cf-scope .cf-h1 { font-size: 34px; line-height: 1.25; color: #3A322C; }
+.cf-scope .cf-h1-em { color: var(--cf-blue); }               /* was mustard */
+.cf-scope .cf-section-title {
+  font-size: 21px; line-height: 1.3;
+  background: linear-gradient(95deg, #2D6CB1, #1B4D86);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.cf-scope .cf-eyebrow, .cf-scope .cf-nav-label, .cf-scope .cf-stat-label { letter-spacing: .04em; }
+
+/* ===== HERO รายได้ → แถบน้ำเงินเข้ม ตัวอักษรขาว (เดิมการ์ดขาว) ===== */
+.cf-scope .cf-hero-revenue {
+  background: var(--cf-band-deep) !important;
+  border: none;
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(20,56,95,.30);
+}
+.cf-scope .cf-hero-revenue * { color: #fff; }
+.cf-scope .cf-hero-revenue .cf-hero-label { color: rgba(255,255,255,.82); }
+.cf-scope .cf-hero-revenue .cf-pill { background: rgba(255,255,255,.20); color: #fff; }
+.cf-scope .cf-hero-revenue svg path,
+.cf-scope .cf-hero-revenue svg polyline { stroke: rgba(255,255,255,.92) !important; fill: none !important; }
+.cf-scope .cf-hero-revenue svg line { stroke: rgba(255,255,255,.16) !important; }
+.cf-scope .cf-hero-revenue text,
+.cf-scope .cf-hero-revenue tspan { fill: rgba(255,255,255,.82) !important; }
+
+/* CTA = แถบน้ำเงิน (สว่างกว่า hero เล็กน้อย เพื่อแยกชั้น) */
+.cf-scope .cf-hero-cta { background: var(--cf-band) !important; box-shadow: 0 12px 30px rgba(45,108,177,.30); }
+
+/* ===== เหลืองน้อยสุด: chrome/decorative มัสตาร์ด → น้ำเงิน ===== */
+/* โลโก้ + wordmark */
+.cf-scope .cf-brand-mark { background: var(--cf-band); box-shadow: 0 4px 12px rgba(45,108,177,.38); color: #fff; }
+.cf-scope .cf-brand-name .cf-fleet { color: var(--cf-blue); }   /* was mustard-deep */
+/* เมนูที่เลือกอยู่ = น้ำเงิน ตัวขาว (เดิมมัสตาร์ด) */
+.cf-scope .cf-nav-item.is-active {
+  background: var(--cf-blue); color: #fff;
+  box-shadow: 0 4px 13px rgba(45,108,177,.34);
+}
+.cf-scope .cf-nav-item.is-active .cf-nav-name,
+.cf-scope .cf-nav-item.is-active .cf-nav-icon { color: #fff !important; }
+.cf-scope .cf-nav-item.is-active .cf-nav-desc { color: rgba(255,255,255,.78) !important; }
+/* ปุ่มหลัก = น้ำเงิน (เดิมมัสตาร์ด) */
+.cf-scope .cf-btn-primary { background: var(--cf-blue); color: #fff; box-shadow: 0 4px 0 #1B4D86; }
+.cf-scope .cf-btn-primary:active { box-shadow: 0 1px 0 #1B4D86; transform: translateY(3px); }
+/* decorative มัสตาร์ดอื่น ๆ → น้ำเงิน */
+.cf-scope .cf-stat-primary .cf-stat-value { color: var(--cf-blue); }
+.cf-scope .cf-pillbar-item.is-active,
+.cf-scope .cf-range-btn.is-active { background: var(--cf-blue); color: #fff; }
+.cf-scope .cf-branch-bar-fill, .cf-scope .cf-progress-bar { background: var(--cf-blue); }
+.cf-scope .cf-preview-row:hover { border-color: var(--cf-blue); }
+.cf-scope .cf-preview-row-go, .cf-scope .cf-manage-note-link { color: var(--cf-blue); }
+/* NOTE: มัสตาร์ดที่ "คงไว้" = ความหมายเตือน → .cf-sev-p1 · .cf-stock-badge ·
+   .cf-stock-card.is-low · .cf-ops-row-stale · .cf-progress-bar-stale · .cf-pill-amber
+   (เหลือง = "ระวัง" เท่านั้น) + สีประจำสาขา (.cf-branch-flag-*) */
