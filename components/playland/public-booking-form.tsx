@@ -99,7 +99,7 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
       {/* STEP 2 — Time */}
       <section>
         <div className="pl-eyebrow" style={{ marginBottom: 10 }}>② วันเวลา + จำนวน</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <div className="pl-grid-3" style={{ gap: 10 }}>
           <div>
             <label className="pl-label">วันที่</label>
             <input className="pl-input" type="date" value={date} onChange={(e) => setDate(e.target.value)} min={today} />
@@ -123,7 +123,7 @@ export function PublicBookingForm({ branchId, branchSlug, packages }: { branchId
       {/* STEP 3 — Contact */}
       <section>
         <div className="pl-eyebrow" style={{ marginBottom: 10 }}>③ ข้อมูลติดต่อ</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="pl-grid-2e" style={{ gap: 10 }}>
           <div>
             <label className="pl-label">ชื่อผู้ปกครอง *</label>
             <input className="pl-input" required value={name} onChange={(e) => setName(e.target.value)} placeholder="คุณ..." />

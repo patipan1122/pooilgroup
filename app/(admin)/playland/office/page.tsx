@@ -77,7 +77,7 @@ export default async function PlaylandDashboard() {
   ];
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip — title + ตัวสลับสาขา(ด้านบน) + หน้าร้าน */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
@@ -94,7 +94,7 @@ export default async function PlaylandDashboard() {
 
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 32px 40px" }}>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+        <div className="pl-kpi-row" style={{ marginBottom: 18 }}>
           {kpis.map((k) => (
             <div key={k.label} style={{ ...card, padding: 18 }}>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>
@@ -110,7 +110,7 @@ export default async function PlaylandDashboard() {
         </div>
 
         {/* chart + alerts */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 18 }}>
+        <div className="pl-grid-2" style={{ marginBottom: 18 }}>
           <div style={{ ...card, padding: 22 }}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
               <div style={{ fontWeight: 600, fontSize: 16, flex: 1, fontFamily: FREDOKA }}>รายได้ 14 วันล่าสุด</div>
@@ -169,7 +169,7 @@ export default async function PlaylandDashboard() {
         </div>
 
         {/* per-branch + top products */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16 }}>
+        <div className="pl-grid-2">
           <div style={{ ...card, padding: 22 }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, fontFamily: FREDOKA }}>รายได้ต่อสาขา · วันนี้</div>
             <div style={{ display: "flex", fontSize: 12, color: MUTED, padding: "0 4px 10px" }}><div style={{ flex: 2 }}>สาขา</div><div style={{ flex: 1, textAlign: "right" }}>Sessions</div><div style={{ flex: 1, textAlign: "right" }}>ค่าเข้า</div><div style={{ flex: 1, textAlign: "right" }}>ขายของ</div><div style={{ flex: 1, textAlign: "right" }}>รวม</div></div>

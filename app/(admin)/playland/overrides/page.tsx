@@ -70,7 +70,7 @@ export default async function OverridesPage() {
   ];
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
@@ -81,7 +81,7 @@ export default async function OverridesPage() {
 
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+        <div className="pl-kpi-row" style={{ marginBottom: 18 }}>
           {kpis.map((k) => (
             <div key={k.label} style={{ ...card, padding: 18 }}>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>

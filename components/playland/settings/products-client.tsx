@@ -159,13 +159,14 @@ export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId
         <button onClick={startNew} style={{ ...btn(true), marginLeft: "auto" }}><PlusCircle size={15} /> เพิ่มสินค้า</button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: showForm ? "1fr 360px" : "1fr", gap: 16, alignItems: "start" }}>
+      <div className={showForm ? "pl-grid-2" : undefined} style={showForm ? { alignItems: "start" } : undefined}>
         <div style={{ ...card, overflow: "hidden" }}>
           {products.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "48px 20px", color: MUTED }}>
               <ShoppingBasket size={30} opacity={0.4} />ยังไม่มีสินค้า
             </div>
           ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>
                 <th style={th}>รูป</th><th style={th}>ชื่อ</th><th style={th}>Barcode</th><th style={th}>หมวด</th>
@@ -206,6 +207,7 @@ export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

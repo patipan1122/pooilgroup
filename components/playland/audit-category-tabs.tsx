@@ -26,7 +26,7 @@ export function AuditCategoryTabs({ current }: { current: string | null }) {
   }
 
   return (
-    <div style={{ display: "inline-flex", gap: 4, padding: 4, background: "#faf7f1", border: `1px solid ${LINE}`, borderRadius: 11 }}>
+    <div style={{ display: "inline-flex", gap: 4, padding: 4, background: "#faf7f1", border: `1px solid ${LINE}`, borderRadius: 11, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
       {TABS.map((t) => {
         const active = current === t.v;
         return (
@@ -45,6 +45,8 @@ export function AuditCategoryTabs({ current }: { current: string | null }) {
               background: active ? "#fff" : "transparent",
               color: active ? BLUE : MUTED,
               boxShadow: active ? "0 1px 2px rgba(58,48,38,.08)" : "none",
+              whiteSpace: "nowrap",
+              flex: "0 0 auto",
             }}
           >
             {t.label}

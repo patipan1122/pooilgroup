@@ -28,7 +28,7 @@ export default async function BranchesSettingsPage() {
   const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>

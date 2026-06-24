@@ -61,7 +61,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const subtitle = `${logs.length} รายการล่าสุด · เก็บย้อนหลัง 90 วัน`;
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip — title + ฟิลเตอร์หมวด/ค้นหา (ในหน้า ไม่ใช่ tab หน้า/หลัง) */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>

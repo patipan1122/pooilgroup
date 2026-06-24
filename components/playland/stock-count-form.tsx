@@ -151,6 +151,8 @@ export function StockCountForm({ branchId, products }: { branchId: string; produ
 
       {/* Table */}
       <div style={{ ...card, overflow: "hidden" }}>
+       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ minWidth: 560 }}>
         <div style={{ ...rowGrid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
           <div>สินค้า</div>
           <div style={{ textAlign: "right" }}>ระบบ</div>
@@ -207,6 +209,8 @@ export function StockCountForm({ branchId, products }: { branchId: string; produ
             </div>
           );
         })}
+        </div>
+       </div>
       </div>
     </div>
   );

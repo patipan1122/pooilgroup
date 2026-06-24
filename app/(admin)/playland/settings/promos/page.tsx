@@ -41,6 +41,7 @@ export default async function PromosSettingsPage() {
         </div>
       ) : (
         <div style={{ ...card, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               <th style={th}>Type</th><th style={th}>Code</th><th style={th}>Name</th>
@@ -63,6 +64,7 @@ export default async function PromosSettingsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

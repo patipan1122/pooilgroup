@@ -1023,9 +1023,9 @@ export default function PlaylandApp(props: Props) {
               )}
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
                 <div onClick={() => go("shift")} style={{ cursor: "pointer", fontSize: 14, color: "#6b6052", padding: "8px 14px", borderRadius: 10, background: "#f4ede0" }}>ปิดกะ</div>
-                <div onClick={() => router.push("/dashboard")} title="ออกจากโหมดร้าน" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#8a7f70", padding: "8px 14px", borderRadius: 10, background: "#f7f2ea", border: "1px solid #ece5d8" }}>
+                <div onClick={() => router.push("/playland/office")} title="กลับหลังบ้าน (ภาพรวมร้าน)" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#8a7f70", padding: "8px 14px", borderRadius: 10, background: "#f7f2ea", border: "1px solid #ece5d8" }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a7f70" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
-                  ออกจากโหมดร้าน
+                  กลับหลังบ้าน
                 </div>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#F0B323", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FREDOKA, fontWeight: 600, color: "#fff", fontSize: 18 }}>
                   {props.cashierName.trim().charAt(0) || "?"}
@@ -1131,7 +1131,7 @@ export default function PlaylandApp(props: Props) {
               </div>
             </div>
             <div style={{ flex: 1, overflow: "auto", padding: "22px 28px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>
+              <div className="pl-grid-3" style={{ gap: 18 }}>
                 {boardKids.map((k) => {
                   const over = !k.dayPass && k.sec < 0; // เกินเวลาแล้ว — เวลาเดินต่อ เก็บค่าปรับตอนเช็คเอาท์
                   const nearEnd = !k.dayPass && k.sec >= 0 && k.sec <= 600;
@@ -1155,9 +1155,9 @@ export default function PlaylandApp(props: Props) {
                         <div style={{ fontSize: 13, color: over ? "#E74C3C" : "#8a7f70", marginTop: 2, fontWeight: over ? 600 : 400 }}>{k.dayPass ? "Day Pass" : over ? "เกินเวลา · เก็บค่าปรับ" : "เหลือ"}</div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
-                        <div onClick={() => openExtend(k.id)} style={{ cursor: "pointer", flex: 1, background: "#eaf3f6", color: "#2D6CB1", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ เวลา</div>
-                        <div onClick={() => addSnackFor(k.id)} style={{ cursor: "pointer", flex: 1, background: "#fdf3df", color: "#a9791a", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ ขนม</div>
-                        <div onClick={() => checkoutKid(k.id)} style={{ cursor: "pointer", flex: 1, background: "#E74C3C", color: "#fff", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>เช็คเอาท์</div>
+                        <div onClick={() => openExtend(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#eaf3f6", color: "#2D6CB1", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ เวลา</div>
+                        <div onClick={() => addSnackFor(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#fdf3df", color: "#a9791a", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ ขนม</div>
+                        <div onClick={() => checkoutKid(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#E74C3C", color: "#fff", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>เช็คเอาท์</div>
                       </div>
                     </div>
                   );
@@ -1174,7 +1174,7 @@ export default function PlaylandApp(props: Props) {
             {/* extend modal */}
             {ext != null && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(28,39,64,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ width: 540, background: "#fff", borderRadius: 22, boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
+                <div style={{ width: 540, maxWidth: "calc(100vw - 32px)", background: "#fff", borderRadius: 22, boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
                   <div style={{ padding: "24px 30px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: "1px solid #f2ebdd" }}>
                     <div style={{ width: 50, height: 50, borderRadius: "50%", background: "#fdeceb", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1192,7 +1192,7 @@ export default function PlaylandApp(props: Props) {
                       {payButtons(extPay, setExtPay)}
                     </div>
                     <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14 }}>แตะเพื่อต่อเวลา · รับเงินทันที</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+                    <div className="pl-grid-3" style={{ gap: 12 }}>
                       {extOptions.map((o) => (
                         <div key={o.id} onClick={() => applyExtend(o)} style={{ cursor: "pointer", background: "#fff", border: "1.5px solid #ece5d8", borderRadius: 14, padding: "18px 0", textAlign: "center" }}>
                           <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 24, color: "#2D6CB1" }}>{o.label}</div>
@@ -1285,7 +1285,7 @@ export default function PlaylandApp(props: Props) {
               <div style={{ flex: 1, padding: "24px 26px", overflow: "auto" }}>
                 {/* ยิงบาร์โค้ด (Harborland-style) — เครื่องยิง USB พิมพ์โค้ด+Enter · หรือกล้อง */}
                 <div style={{ marginBottom: 16 }}><BarcodeScanBox onScan={scanBarcode} placeholder="ยิงบาร์โค้ดขนม/น้ำ แล้วกด Enter…" /></div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+                <div className="pl-grid-4" style={{ gap: 14 }}>
                   {products.map((p) => {
                     const img = productImageSrc(p);
                     return (
@@ -1315,7 +1315,7 @@ export default function PlaylandApp(props: Props) {
                   })}
                 </div>
               </div>
-              <div style={{ width: 400, flex: "none", background: "#fff", borderLeft: "1px solid #ece5d8", display: "flex", flexDirection: "column", padding: "22px 24px" }}>
+              <div style={{ width: 400, maxWidth: "42vw", flex: "none", background: "#fff", borderLeft: "1px solid #ece5d8", display: "flex", flexDirection: "column", padding: "22px 24px" }}>
                 <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 10 }}>{chargeKid ? "ขายให้" : "ลูกค้า"}</div>
                 <div style={{ background: "#eaf3f6", border: "1.5px solid #2D6CB1", borderRadius: 12, padding: "11px 14px", fontSize: 15, marginBottom: 14 }}>{chargeKid ? chargeKid.name + " · คิดเงินทันที" : "ลูกค้าทั่วไป · จ่ายทันที"}</div>
                 <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
@@ -1524,7 +1524,7 @@ export default function PlaylandApp(props: Props) {
             <img src={mascotSrc("sunny")} alt="" style={{ position: "absolute", left: 90, bottom: 60, width: 140, opacity: 0.9 }} />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={mascotSrc("skye")} alt="" style={{ position: "absolute", right: 90, top: 70, width: 130, opacity: 0.85 }} />
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 500 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 500, maxWidth: "100%", padding: "0 16px", boxSizing: "border-box" }}>
               <div style={{ width: 86, height: 86, borderRadius: "50%", background: "#1F8A5B", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
               </div>
@@ -1585,7 +1585,7 @@ export default function PlaylandApp(props: Props) {
               <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#fff" }}>Play <span style={{ color: "#F0B323" }}>a</span> lot</div>
               <div style={{ color: "#9fb0d0", fontSize: 17 }}>กำลังเล่น <span style={{ color: "#fff", fontFamily: FREDOKA, fontWeight: 600 }}>{s.kids.length}</span> คน</div>
             </div>
-            <div style={{ flex: 1, padding: "26px 36px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "1fr", gap: 16, overflow: "auto" }}>
+            <div className="pl-grid-4" style={{ flex: 1, padding: "26px 36px", gridAutoRows: "1fr", gap: 16, overflow: "auto" }}>
               {s.kids.map((k) => {
                 const over = !k.dayPass && k.sec < 0; // เกินเวลา
                 const nearEnd = !k.dayPass && k.sec >= 0 && k.sec <= 600;
@@ -1662,13 +1662,13 @@ export default function PlaylandApp(props: Props) {
               <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>Dashboard ร้าน</div>
             </div>
             <div style={{ flex: 1, padding: "26px 32px", display: "flex", flexDirection: "column", gap: 18, overflow: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+              <div className="pl-kpi-row" style={{ gap: 16 }}>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>รายได้วันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#1F8A5B" }}>{revenueStr}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>ค่าเข้าเล่น</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>฿{(stats?.entryRevenue ?? 0).toLocaleString()}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>ขายขนม</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#F0B323" }}>฿{(stats?.productRevenue ?? 0).toLocaleString()}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>เด็กเข้าวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#3A3026" }}>{stats?.sessionsToday ?? s.kids.length}</div></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+              <div className="pl-kpi-row" style={{ gap: 16 }}>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>กำลังเล่นตอนนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#E74C3C" }}>{s.kids.length}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>บิลขนมวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>{stats?.salesCount ?? 0}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>สมาชิกทั้งหมด</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#7a5cc4" }}>{stats?.memberCount ?? 0}</div></div>

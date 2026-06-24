@@ -65,7 +65,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const productCount = await prisma.playlandProduct.count({ where: { orgId, branchId, active: true } });
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip — title + ตัวสลับสาขา + action buttons */}
       <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
@@ -137,7 +137,7 @@ async function OverviewTab({ orgId, branchId, productCount }: { orgId: string; b
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 18 }}>
+      <div className="pl-kpi-row" style={{ marginBottom: 18 }}>
         {kpis.map((k) => {
           const Icon = k.icon;
           return (
@@ -152,7 +152,7 @@ async function OverviewTab({ orgId, branchId, productCount }: { orgId: string; b
         })}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16, alignItems: "start" }}>
+      <div className="pl-grid-2" style={{ alignItems: "start" }}>
         <section style={{ ...card, padding: 22 }}>
           <h2 style={sectionH}>⚠️ ของใกล้หมด (ถึงจุดสั่งซื้อ)</h2>
           {low.length === 0 ? (
@@ -203,6 +203,8 @@ async function ItemsTab({ orgId, branchId }: { orgId: string; branchId: string }
         <div style={emptyCard}>ยังไม่มีสินค้า · กด “เพิ่มสินค้าตัวอย่าง” หรือ “จัดการสินค้า” เพื่อเริ่ม</div>
       ) : (
         <div style={{ ...card, overflow: "hidden" }}>
+         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ minWidth: 620 }}>
           <div style={{ ...itemGrid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
             <div>สินค้า</div><div>หมวด</div><div style={{ textAlign: "right" }}>คงเหลือ</div><div style={{ textAlign: "right" }}>จุดสั่งซื้อ</div><div style={{ textAlign: "right" }}>ทุน/ชิ้น</div><div style={{ textAlign: "center" }}>สถานะ</div>
           </div>
@@ -226,6 +228,8 @@ async function ItemsTab({ orgId, branchId }: { orgId: string; branchId: string }
               </div>
             );
           })}
+          </div>
+         </div>
         </div>
       )}
     </div>

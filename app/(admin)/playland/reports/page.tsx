@@ -144,7 +144,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   ];
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* white header strip — back-office only (ไม่มีสลับหน้าร้าน/หลังบ้าน) */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
@@ -163,7 +163,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         {/* KPI row 5-up */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+        <div className="pl-kpi-row" style={{ marginBottom: 18 }}>
           {kpis.map((k) => k.hero ? (
             <div key={k.label} style={{ background: BLUE, borderRadius: 16, padding: 18, color: "#fff" }}>
               <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>{k.label}</div>
@@ -180,7 +180,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </div>
 
         {/* ผู้เล่น เด็ก/ผู้ใหญ่ + ชั่วโมงคนเยอะ */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.9fr", gap: 16, marginBottom: 18 }}>
+        <div className="pl-mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1.9fr", gap: 16, marginBottom: 18 }}>
           {/* เด็ก vs ผู้ใหญ่ */}
           <div style={{ ...card, padding: 22 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
@@ -242,7 +242,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </div>
 
         {/* วิธีรับเงิน + รายได้แยกหมวด */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
+        <div className="pl-grid-2e" style={{ marginBottom: 18 }}>
           {/* วิธีรับเงิน */}
           <div style={{ ...card, padding: 22 }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 12, fontFamily: FREDOKA }}>วิธีรับเงิน</div>
@@ -297,7 +297,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </div>
 
         {/* per-สาขา + per-วัน */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16 }}>
+        <div className="pl-grid-2">
           {/* Per-branch */}
           <div style={{ ...card, padding: 22 }}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, fontFamily: FREDOKA }}>รายได้ต่อสาขา</div>

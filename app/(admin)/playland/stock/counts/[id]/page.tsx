@@ -26,7 +26,7 @@ export default async function CountDetailPage({ params }: { params: Promise<{ id
   if (!c) notFound();
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><ClipboardList size={20} /> {c.countCode}</div>
@@ -51,6 +51,8 @@ export default async function CountDetailPage({ params }: { params: Promise<{ id
 
         {/* บรรทัดนับ */}
         <div style={{ ...card, overflow: "hidden" }}>
+         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ minWidth: 560 }}>
           <div style={{ ...grid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
             <div>สินค้า</div><div style={{ textAlign: "right" }}>ระบบ</div><div style={{ textAlign: "right" }}>นับจริง</div><div style={{ textAlign: "right" }}>ต่าง</div><div>เหตุผล</div>
           </div>
@@ -63,6 +65,8 @@ export default async function CountDetailPage({ params }: { params: Promise<{ id
               <div style={{ fontSize: 13, color: MUTED }}>{l.reason ?? "—"}</div>
             </div>
           ))}
+          </div>
+         </div>
         </div>
       </div>
     </div>

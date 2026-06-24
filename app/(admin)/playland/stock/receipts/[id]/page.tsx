@@ -27,7 +27,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   if (!r) notFound();
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><ReceiptText size={20} /> {r.purchaseCode}</div>
@@ -50,6 +50,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
         {/* รายการ */}
         <div style={{ ...card, overflow: "hidden" }}>
+         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ minWidth: 480 }}>
           <div style={{ ...grid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
             <div>สินค้า</div><div style={{ textAlign: "right" }}>จำนวน</div><div style={{ textAlign: "right" }}>ต้นทุน/ชิ้น</div><div style={{ textAlign: "right" }}>รวม</div>
           </div>
@@ -61,6 +63,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               <div style={{ textAlign: "right", fontWeight: 500, fontFamily: MONO }}>{thb(l.unitCostCents * l.quantity)}</div>
             </div>
           ))}
+          </div>
+         </div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 18px", background: "#f9f7f2", borderTop: `1px solid #f2ebdd` }}>
             <span style={{ fontWeight: 500 }}>รวมต้นทุนรับเข้า</span>
             <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20, color: BLUE }}>{thb(r.totalCostCents)}</span>

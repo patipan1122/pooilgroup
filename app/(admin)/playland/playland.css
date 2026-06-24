@@ -1827,3 +1827,61 @@
   transition: border-color 0.15s var(--pl-ease);
 }
 .pl-co-pick-row:hover { border-color: var(--pl-blue); }
+
+/* ============================================================
+   MOBILE responsive foundation — Playland เวอร์ชันมือถือ (2026-06-24)
+   หน้าหลังบ้านใช้ inline style ตายตัว → ใช้ utility class เหล่านี้แทน
+   เพื่อให้ grid ยุบ + เนื้อหาไม่โดน bottom nav ทับ + แตะง่ายบนมือถือ
+   ============================================================ */
+
+/* scroll pane มาตรฐาน (แทน inline height:calc(100vh-64px);overflowY:auto)
+   topbar AdminShell = 56px (<640px) / 64px (≥640px) · ใช้ dvh กัน address bar iOS บังแถวท้าย */
+.pl-scroll { --pl-topbar: 56px; height: calc(100dvh - var(--pl-topbar)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@media (min-width: 640px) { .pl-scroll { --pl-topbar: 64px; } }
+
+/* grid ที่ยุบเป็น 1 คอลัมน์บนมือถือ */
+.pl-grid-2  { display: grid; grid-template-columns: 1.7fr 1fr;   gap: 16px; }
+.pl-grid-2r { display: grid; grid-template-columns: 1fr 1.4fr;   gap: 16px; }
+.pl-grid-2e { display: grid; grid-template-columns: 1fr 1fr;     gap: 16px; }
+.pl-grid-3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.pl-grid-4  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.pl-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+
+/* แถว chip/ปุ่ม เลื่อนแนวนอนแทน wrap หลายแถว (chrome budget) */
+.pl-hscroll { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.pl-hscroll::-webkit-scrollbar { display: none; }
+.pl-hscroll > * { flex: 0 0 auto; }
+
+.pl-show-mobile { display: none; }
+.pl-tap44 { min-height: 44px; }
+
+@media (max-width: 760px) {
+  .pl-grid-2, .pl-grid-2r, .pl-grid-2e, .pl-grid-3 { grid-template-columns: 1fr; }
+  .pl-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  /* บังคับ grid ที่เก็บ inline ratio เดิมไว้ (เช่น 1fr 1.9fr) ให้ stack 1 คอลัมน์บนมือถือ */
+  .pl-mobile-stack { grid-template-columns: 1fr !important; }
+  .pl-kpi-row { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pl-show-mobile { display: revert; }
+  .pl-hide-mobile { display: none !important; }
+}
+@media (max-width: 430px) {
+  .pl-kpi-row { grid-template-columns: 1fr; }
+}
+
+/* เผื่อที่ให้ bottom nav (โชว์ ≤900px) ไม่ทับเนื้อหาท้ายหน้า — ทั้ง .pl-scroll และ pane ของหน้าตั้งค่า (.pl-pane) */
+@media (max-width: 900px) {
+  .pl-scroll { padding-bottom: calc(70px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+  .pl-two-pane > .pl-pane, .pl-three-pane > .pl-pane { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+}
+
+/* iOS: input ≥16px กัน Safari zoom-on-focus */
+@media (max-width: 640px) {
+  .pl-root input, .pl-root select, .pl-root textarea, .pl-root button { font-size: 16px; }
+}
+
+/* bottom-sheet "เพิ่มเติม" ของ bottom nav */
+.pl-mnav-sheet-backdrop { position: fixed; inset: 0; background: rgba(28,25,23,0.4); z-index: 65; }
+.pl-mnav-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 66;
+  background: var(--pl-paper, #fff); border-radius: 18px 18px 0 0;
+  padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px rgba(28,25,23,0.18); max-height: 78vh; overflow-y: auto; }

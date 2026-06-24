@@ -161,7 +161,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
         </div>
       )}
 
-      <div className="pl-card" style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 24 }}>
+      <div className="pl-card pl-grid-2" style={{ gap: 24 }}>
         <FaceCapture value={photo} onChange={setPhoto} label="ขั้นที่ 1 · ถ่ายรูปหน้า" />
 
         <div style={{ display: "grid", gap: 12 }}>
@@ -182,7 +182,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="pl-grid-2e" style={{ gap: 10 }}>
             <div>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ชื่อจริง <span style={{ color: "var(--pl-danger)" }}>*</span></label>
               <input className="pl-input" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น น้องเอ" />
@@ -193,7 +193,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="pl-grid-2e" style={{ gap: 10 }}>
             <div>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>เบอร์โทร</label>
               <input className="pl-input" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0812345678" />
@@ -208,7 +208,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
 
       <div className="pl-card">
         <div style={{ fontSize: 12, color: "var(--pl-text-muted)", fontWeight: 600, marginBottom: 8 }}>ขั้นที่ 3 · ครอบครัว (สำหรับจับคู่เด็ก-ผู้ปกครอง)</div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
           <button type="button" className="pl-btn" style={familyMode === "new" ? { background: "var(--pl-brand)", color: "white", borderColor: "var(--pl-brand)" } : {}} onClick={() => setFamilyMode("new")}>+ สร้างครอบครัวใหม่</button>
           <button type="button" className="pl-btn" style={familyMode === "existing" ? { background: "var(--pl-brand)", color: "white", borderColor: "var(--pl-brand)" } : {}} onClick={() => setFamilyMode("existing")}>เลือกครอบครัวที่มีอยู่</button>
           <button type="button" className="pl-btn" style={familyMode === "none" ? { background: "var(--pl-text-muted)", color: "white" } : {}} onClick={() => setFamilyMode("none")}>ไม่ผูกครอบครัว</button>
@@ -259,7 +259,7 @@ export function MemberRegisterForm({ branchId, packages, familyGroups }: Props) 
             </div>
             <div style={{ marginTop: 12 }}>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ชำระด้วย</label>
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                 {PAY_METHODS.map((m) => (
                   <button type="button" key={m.v} className="pl-btn" onClick={() => setPay(m.v)} style={pay === m.v ? { background: "var(--pl-info)", color: "white", borderColor: "var(--pl-info)" } : {}}>{m.label}</button>
                 ))}

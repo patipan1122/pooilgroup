@@ -105,13 +105,14 @@ export function PackagesClient({ branches, packages, activeBranchId }: { branche
         <button onClick={startNew} style={{ ...btn(true), marginLeft: "auto" }}><PlusCircle size={15} /> เพิ่ม Package</button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: showForm ? "1fr 360px" : "1fr", gap: 16, alignItems: "start" }}>
+      <div className={showForm ? "pl-grid-2" : undefined} style={showForm ? { alignItems: "start" } : undefined}>
         <div style={{ ...card, overflow: "hidden" }}>
           {packages.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "48px 20px", color: MUTED }}>
               <Package size={30} opacity={0.4} />ยังไม่มี package
             </div>
           ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>
                 <th style={th}>ชื่อ</th><th style={th}>ประเภท</th><th style={{ ...th, textAlign: "right" }}>นาที</th>
@@ -143,6 +144,7 @@ export function PackagesClient({ branches, packages, activeBranchId }: { branche
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

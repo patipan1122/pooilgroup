@@ -50,7 +50,7 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
   ];
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip — title + back + ตัวสลับสาขา */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <Link href={`/playland/stock?branch=${branchId}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: MUTED, textDecoration: "none", fontSize: 13 }}><ArrowLeft size={16} /> สต๊อก</Link>
@@ -64,7 +64,7 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
 
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 18 }}>
+        <div className="pl-kpi-row" style={{ marginBottom: 18 }}>
           {kpis.map((k) => (
             <div key={k.label} style={{ ...card, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: MUTED, marginBottom: 8 }}>{k.icon} {k.label}</div>
@@ -75,7 +75,7 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
         </div>
 
         {/* ฟอร์มซ้าย + ประวัติซ่อมขวา (เต็มกว้าง) */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(360px, 1.1fr) 1fr", gap: 16, alignItems: "start" }}>
+        <div className="pl-grid-2" style={{ alignItems: "start" }}>
           <RepairForm branchId={branchId} parts={parts} machineLabels={machineLabels} />
 
           <section style={{ ...card, padding: 22 }}>

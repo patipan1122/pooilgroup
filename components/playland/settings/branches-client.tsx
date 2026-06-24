@@ -72,8 +72,9 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: showForm ? "1fr 380px" : "1fr", gap: 16, alignItems: "start" }}>
+      <div className={showForm ? "pl-grid-2" : undefined} style={showForm ? { alignItems: "start" } : undefined}>
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#faf7f1", borderBottom: `1px solid ${LINE}` }}>
@@ -99,6 +100,7 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         {showForm && (

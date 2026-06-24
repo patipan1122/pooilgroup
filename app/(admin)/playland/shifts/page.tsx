@@ -21,7 +21,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
   const branchId = activeId;
   if (!branchId) {
     return (
-      <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
         <div style={{ display: "flex", alignItems: "center", padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}` }}>
           <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA }}>ตั้งค่าสาขาก่อน</div>
         </div>
@@ -51,7 +51,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
   const branchName = branches.find((b) => b.id === branchId)?.name ?? "";
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* white header strip — back-office only (ไม่มีสลับหน้าร้าน/หลังบ้าน) */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>

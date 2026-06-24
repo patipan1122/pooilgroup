@@ -76,7 +76,7 @@ export function DevicesClient({ branches, devices }: { branches: Branch[]; devic
   const offlineCount = devices.filter((d) => d.status === "OFFLINE" || d.status === "ERROR").length;
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+    <div className="pl-scroll" style={{ background: "#fbfbf9", fontFamily: MITR, color: INK }}>
       {/* header strip */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
@@ -91,7 +91,7 @@ export function DevicesClient({ branches, devices }: { branches: Branch[]; devic
         </button>
       </div>
 
-      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px", display: "grid", gridTemplateColumns: showForm ? "1fr 420px" : "1fr", gap: 16, alignItems: "start" }}>
+      <div className={showForm ? "pl-grid-2" : undefined} style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px", ...(showForm ? { alignItems: "start" } : {}) }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 14, alignContent: "start" }}>
           {devices.length === 0 && (
             <div style={{ ...card, padding: 48, textAlign: "center", gridColumn: "1 / -1" }}>

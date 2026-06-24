@@ -93,7 +93,7 @@ export function StockReceiveForm({ branchId, products }: { branchId: string; pro
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="pl-grid-2e">
         <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="ผู้ขาย/ร้านค้า (ไม่บังคับ)" style={input} />
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="หมายเหตุ (ไม่บังคับ)" style={input} />
       </div>

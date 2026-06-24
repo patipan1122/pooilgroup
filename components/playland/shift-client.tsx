@@ -85,7 +85,7 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, alignItems: "start" }}>
+      <div className="pl-grid-2r" style={{ alignItems: "start" }}>
         {/* เปิด/ปิดกะ */}
         {!open ? (
           <div style={card}>
