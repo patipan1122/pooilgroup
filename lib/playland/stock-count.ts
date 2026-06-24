@@ -49,6 +49,10 @@ export async function submitStockCount(input: {
         where: { id: p.id },
         data: { stock: line.countedQty },
       });
+      // ledger: ปรับจากการนับสต๊อก
+      await tx.playlandStockMovement.create({
+        data: { orgId: session.user.org_id, branchId: input.branchId, productId: p.id, kind: "COUNT_ADJUST", quantity: diff, balanceAfter: line.countedQty, refType: "count", note: line.reason || null, actorUserId: session.user.id },
+      });
       adjusted++;
     }
   });

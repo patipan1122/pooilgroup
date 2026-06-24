@@ -17,7 +17,7 @@ export default async function ProductsSettingsPage() {
     r2PublicUrl={R2_PUBLIC_URL}
     branches={branches.map((b) => ({ id: b.id, name: b.name }))}
     products={products.map((p) => ({
-      id: p.id, branchId: p.branchId, name: p.name, barcode: p.barcode, sku: p.sku, category: p.category, priceCents: p.priceCents, costCents: p.costCents, stock: p.stock, reorderLevel: p.reorderLevel, active: p.active, imageR2Path: p.imageR2Path,
+      id: p.id, branchId: p.branchId, kind: p.kind, name: p.name, barcode: p.barcode, sku: p.sku, category: p.category, supplier: p.supplier, priceCents: p.priceCents, costCents: p.costCents, stock: p.stock, reorderLevel: p.reorderLevel, active: p.active, imageR2Path: p.imageR2Path,
     }))}
   />;
 }

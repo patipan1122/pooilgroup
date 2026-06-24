@@ -15,6 +15,7 @@ import { thb } from "@/lib/playland/format";
 import {
   BarChart3, Clock, Package, Cookie, Building2, Boxes,
   ScanFace, DoorOpen, History, ArrowRight, Store, Baby, Wallet,
+  PackagePlus, Wrench,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +73,12 @@ export default async function PlaylandOfficeHub() {
     { href: "/playland/settings/products", title: "ขนม · เครื่องดื่ม", gloss: "สินค้าใน POS หน้าร้าน", icon: Cookie, count: products.length, tint: GREEN },
     { href: "/playland/settings/branches", title: "สาขา", gloss: "พื้นที่ทำธุรกิจ", icon: Building2, count: branches.length, tint: BLUE },
     { href: "/playland/settings/stock-count", title: "นับสต๊อก", gloss: "เช็คจำนวนสินค้าคงเหลือ", icon: Boxes, tint: GREEN },
+  ];
+
+  const groupStock: Tile[] = [
+    { href: "/playland/stock", title: "สต๊อก · คลัง", gloss: "ของคงเหลือ · ของใกล้หมด · ความเคลื่อนไหว", icon: Boxes, tint: GREEN },
+    { href: "/playland/stock/receive", title: "รับของเข้า", gloss: "ซื้อเข้า · เพิ่มสต๊อก · ต้นทุน", icon: PackagePlus, tint: BLUE },
+    { href: "/playland/repairs", title: "ซ่อม · เบิกอะไหล่", gloss: "บันทึกซ่อมเครื่อง · ตัดสต๊อกอะไหล่", icon: Wrench, tint: AMBER },
   ];
 
   const groupSystem: Tile[] = [
@@ -147,6 +154,7 @@ export default async function PlaylandOfficeHub() {
         </div>
 
         <HubGroup title="ดูผลประกอบการ" tiles={groupReports} />
+        <HubGroup title="สต๊อก · คลัง" tiles={groupStock} />
         <HubGroup title="ตั้งค่าร้าน" tiles={groupSettings} />
         {admin && <HubGroup title="ระบบ · ความปลอดภัย" tiles={groupSystem} />}
       </div>

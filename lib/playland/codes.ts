@@ -7,6 +7,8 @@ const PREFIXES = {
   sale: "PS",
   shift: "SH",
   ticket: "PT",
+  purchase: "PO",
+  repair: "RP",
 } as const;
 
 function beYearTwoDigits(): string {
@@ -40,4 +42,12 @@ export function newSaleCode(): string {
 
 export function newShiftCode(): string {
   return `SH-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`;
+}
+
+export function newPurchaseCode(): string {
+  return newCode("purchase");
+}
+
+export function newRepairCode(): string {
+  return newCode("repair");
 }

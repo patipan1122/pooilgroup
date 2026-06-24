@@ -508,6 +508,11 @@ export async function createSale(input: CreateSaleInput): Promise<ActionResult<{
         data: { stock: { decrement: it.quantity } },
       });
       if (upd.count === 0) throw new Error(`สินค้า ${it.productId} เหลือไม่พอ (race condition)`);
+      // ledger: ขายออก
+      const pp = pmap.get(it.productId);
+      await tx.playlandStockMovement.create({
+        data: { orgId: session.user.org_id, branchId: input.branchId, productId: it.productId, kind: "SALE_OUT", quantity: -it.quantity, unitCostCents: pp?.costCents ?? null, balanceAfter: (pp?.stock ?? 0) - it.quantity, refType: "sale", refId: s.id, actorUserId: session.user.id },
+      });
     }
     if (openShift) {
       await tx.playlandShift.update({
@@ -635,8 +640,11 @@ export async function voidSale(input: { saleId: string; reason: string }): Promi
       data: { voidedAt: new Date(), voidedByUserId: session.user.id, voidReason: input.reason.trim() || "ยกเลิกโดยผู้จัดการ" },
     });
     if (voided.count !== 1) throw new Error("บิลถูกยกเลิกไปแล้ว");
-    // คืนสต๊อกสินค้ากลับ (เฉพาะบิลที่มีสินค้า · ค่าเข้า/ต่อเวลา/ค่าปรับ ไม่มี line)
+    // คืนสต๊อกสินค้ากลับ (เฉพาะบิลที่มีสินค้า · ค่าเข้า/ต่อเวลา/ค่าปรับ ไม่มี line) + ledger คืนเข้า
     for (const l of sale.lines) {
+      await tx.playlandStockMovement.create({
+        data: { orgId: session.user.org_id, branchId: sale.branchId, productId: l.productId, kind: "RETURN_IN", quantity: l.quantity, refType: "sale", refId: sale.id, note: `ยกเลิกบิล ${sale.saleCode}`, actorUserId: session.user.id },
+      });
       await tx.playlandProduct.updateMany({
         where: { id: l.productId, orgId: session.user.org_id },
         data: { stock: { increment: l.quantity } },
@@ -703,7 +711,7 @@ export async function upsertPackage(input: { id?: string; branchId: string | nul
   return { ok: true, data: undefined };
 }
 
-export async function upsertProduct(input: { id?: string; branchId: string; name: string; barcode?: string; sku?: string; category?: string; priceCents: number; costCents?: number; stock: number; reorderLevel?: number; active: boolean; imageR2Path?: string | null }): Promise<ActionResult> {
+export async function upsertProduct(input: { id?: string; branchId: string; kind?: "SALE_ITEM" | "SPARE_PART"; name: string; barcode?: string; sku?: string; category?: string; supplier?: string; priceCents: number; costCents?: number; stock: number; reorderLevel?: number; active: boolean; imageR2Path?: string | null }): Promise<ActionResult> {
   const session = await requireSession();
   if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
@@ -712,9 +720,11 @@ export async function upsertProduct(input: { id?: string; branchId: string; name
       where: { id: input.id, orgId: session.user.org_id },
       data: {
         name: input.name,
+        kind: input.kind,
         barcode: input.barcode,
         sku: input.sku,
         category: input.category,
+        supplier: input.supplier,
         priceCents: input.priceCents,
         costCents: input.costCents,
         stock: input.stock,
@@ -729,10 +739,12 @@ export async function upsertProduct(input: { id?: string; branchId: string; name
       data: {
         orgId: session.user.org_id,
         branchId: input.branchId,
+        kind: input.kind ?? "SALE_ITEM",
         name: input.name,
         barcode: input.barcode,
         sku: input.sku,
         category: input.category,
+        supplier: input.supplier,
         priceCents: input.priceCents,
         costCents: input.costCents,
         stock: input.stock,
@@ -744,6 +756,7 @@ export async function upsertProduct(input: { id?: string; branchId: string; name
   }
   revalidatePath("/playland/settings");
   revalidatePath("/playland/pos");
+  revalidatePath("/playland/stock");
   return { ok: true, data: undefined };
 }
 

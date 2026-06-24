@@ -29,6 +29,8 @@ import {
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
+import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
+import { lookupProductByBarcode } from "@/lib/playland/stock";
 import { overtimeFromSec, DEFAULT_OVERTIME_RATE_PER_MIN_CENTS } from "@/lib/playland/overtime";
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
@@ -410,6 +412,15 @@ export default function PlaylandApp(props: Props) {
   );
 
   const addToCart = (id: string) => dispatch({ t: "addCart", id });
+  // ยิงบาร์โค้ด (USB/กล้อง) → หาสินค้าจริง → ใส่ตะกร้า
+  const scanBarcode = async (code: string) => {
+    if (props.products.length === 0) { showToast("เดโม: ยังไม่มีสินค้าจริงให้สแกน"); return; }
+    try {
+      const res = await lookupProductByBarcode({ branchId: props.branchId, barcode: code });
+      if (res.ok) { addToCart(res.data.id); showToast(`+ ${res.data.name} ฿${Math.round(res.data.priceCents / 100)}`); }
+      else showToast("❌ " + res.error);
+    } catch { showToast("❌ สแกนไม่สำเร็จ · ลองใหม่"); }
+  };
   const decFromCart = (id: string) => dispatch({ t: "decCart", id });
 
   const checkoutKid = (id: string) => dispatch({ t: "set", p: { coKidId: id, screen: "checkout" } });
@@ -1260,6 +1271,8 @@ export default function PlaylandApp(props: Props) {
             </div>
             <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               <div style={{ flex: 1, padding: "24px 26px", overflow: "auto" }}>
+                {/* ยิงบาร์โค้ด (Harborland-style) — เครื่องยิง USB พิมพ์โค้ด+Enter · หรือกล้อง */}
+                <div style={{ marginBottom: 16 }}><BarcodeScanBox onScan={scanBarcode} placeholder="ยิงบาร์โค้ดขนม/น้ำ แล้วกด Enter…" /></div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
                   {products.map((p) => {
                     const img = productImageSrc(p);

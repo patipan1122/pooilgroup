@@ -3432,9 +3432,12 @@ model PlaylandBranch {
   shifts       PlaylandShift[]
   promos       PlaylandPromo[]
   alerts       PlaylandAlert[]
-  faceEvents   PlaylandFaceEvent[]
-  familyGroups PlaylandFamilyGroup[]
-  dailyReports PlaylandDailyReport[]
+  faceEvents     PlaylandFaceEvent[]
+  familyGroups   PlaylandFamilyGroup[]
+  dailyReports   PlaylandDailyReport[]
+  stockMovements PlaylandStockMovement[]
+  purchases      PlaylandPurchase[]
+  repairLogs     PlaylandRepairLog[]
 
   @@index([orgId])
   @@map("branches")
@@ -3703,32 +3706,164 @@ model PlaylandBooking {
 }
 
 // ---------- 10. Products (POS) ----------
+// kind: ขนม/น้ำขายผ่าน POS = SALE_ITEM · อะไหล่ซ่อมเครื่อง = SPARE_PART (เบิกใช้ในงานซ่อม)
+enum PlaylandProductKind {
+  SALE_ITEM
+  SPARE_PART
+
+  @@schema("playland")
+}
+
+// ทุกการเคลื่อนไหวสต๊อก (เข้า/ออก) = 1 แถวใน stock_movements → ตรวจย้อนหลังได้
+enum PlaylandStockMoveKind {
+  PURCHASE_IN
+  SALE_OUT
+  COUNT_ADJUST
+  PART_USED
+  RETURN_IN
+  MANUAL_ADJUST
+
+  @@schema("playland")
+}
+
 model PlaylandProduct {
-  id           String   @id @default(uuid()) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  branchId     String   @map("branch_id") @db.Uuid
+  id           String              @id @default(uuid()) @db.Uuid
+  orgId        String              @map("org_id") @db.Uuid
+  branchId     String              @map("branch_id") @db.Uuid
+  kind         PlaylandProductKind @default(SALE_ITEM)
   sku          String?
   barcode      String?
   category     String?
   name         String
   description  String?
-  priceCents   Int      @map("price_cents")
-  costCents    Int?     @map("cost_cents")
-  stock        Int      @default(0)
-  reorderLevel Int      @default(0) @map("reorder_level")
-  imageR2Path  String?  @map("image_r2_path")
-  active       Boolean  @default(true)
-  sortOrder    Int      @default(0) @map("sort_order")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  supplier     String?
+  priceCents   Int                 @map("price_cents")
+  costCents    Int?                @map("cost_cents")
+  stock        Int                 @default(0)
+  reorderLevel Int                 @default(0) @map("reorder_level")
+  imageR2Path  String?             @map("image_r2_path")
+  active       Boolean             @default(true)
+  sortOrder    Int                 @default(0) @map("sort_order")
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch    PlaylandBranch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  saleLines PlaylandSaleLine[]
+  branch        PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  saleLines     PlaylandSaleLine[]
+  movements     PlaylandStockMovement[]
+  purchaseLines PlaylandPurchaseLine[]
+  repairParts   PlaylandRepairPart[]
 
   @@unique([branchId, barcode])
   @@index([orgId, branchId])
   @@index([branchId, active, sortOrder])
+  @@index([branchId, kind, active])
   @@map("products")
+  @@schema("playland")
+}
+
+// ---------- 10b. Stock Movement Ledger (ทุกการเข้า-ออกของสต๊อก) ----------
+model PlaylandStockMovement {
+  id            String                @id @default(uuid()) @db.Uuid
+  orgId         String                @map("org_id") @db.Uuid
+  branchId      String                @map("branch_id") @db.Uuid
+  productId     String                @map("product_id") @db.Uuid
+  kind          PlaylandStockMoveKind
+  quantity      Int
+  unitCostCents Int?                  @map("unit_cost_cents")
+  balanceAfter  Int?                  @map("balance_after")
+  refType       String?               @map("ref_type")
+  refId         String?               @map("ref_id") @db.Uuid
+  note          String?
+  actorUserId   String?               @map("actor_user_id") @db.Uuid
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch  PlaylandBranch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product PlaylandProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, branchId])
+  @@index([productId, createdAt])
+  @@index([branchId, kind, createdAt])
+  @@map("stock_movements")
+  @@schema("playland")
+}
+
+// ---------- 10c. Purchases (รับของเข้า · goods receipt) ----------
+model PlaylandPurchase {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  purchaseCode    String   @unique @map("purchase_code")
+  supplierName    String?  @map("supplier_name")
+  totalCostCents  Int      @default(0) @map("total_cost_cents")
+  note            String?
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  lines  PlaylandPurchaseLine[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, createdAt])
+  @@map("purchases")
+  @@schema("playland")
+}
+
+model PlaylandPurchaseLine {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  purchaseId    String   @map("purchase_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  productName   String   @map("product_name")
+  quantity      Int
+  unitCostCents Int      @map("unit_cost_cents")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  purchase PlaylandPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  PlaylandProduct  @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_lines")
+  @@schema("playland")
+}
+
+// ---------- 10d. Repair Logs (ซ่อมเครื่อง · เบิกอะไหล่) ----------
+model PlaylandRepairLog {
+  id              String               @id @default(uuid()) @db.Uuid
+  orgId           String               @map("org_id") @db.Uuid
+  branchId        String               @map("branch_id") @db.Uuid
+  repairCode      String               @unique @map("repair_code")
+  machineLabel    String               @map("machine_label")
+  description     String?
+  partsCostCents  Int                  @default(0) @map("parts_cost_cents")
+  createdByUserId String               @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  parts  PlaylandRepairPart[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, createdAt])
+  @@map("repair_logs")
+  @@schema("playland")
+}
+
+model PlaylandRepairPart {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  repairId      String   @map("repair_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  productName   String   @map("product_name")
+  quantity      Int
+  unitCostCents Int      @map("unit_cost_cents")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  repair  PlaylandRepairLog @relation(fields: [repairId], references: [id], onDelete: Cascade)
+  product PlaylandProduct   @relation(fields: [productId], references: [id])
+
+  @@index([repairId])
+  @@index([productId])
+  @@map("repair_parts")
   @@schema("playland")
 }
 

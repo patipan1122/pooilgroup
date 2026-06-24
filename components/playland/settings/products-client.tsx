@@ -9,8 +9,8 @@ import { ShoppingBasket, PlusCircle, ArrowLeft, ImageOff } from "lucide-react";
 
 interface Branch { id: string; name: string; }
 interface Product {
-  id: string; branchId: string; name: string; barcode: string | null; sku: string | null;
-  category: string | null; priceCents: number; costCents: number | null; stock: number; reorderLevel: number; active: boolean;
+  id: string; branchId: string; kind: string; name: string; barcode: string | null; sku: string | null;
+  category: string | null; supplier: string | null; priceCents: number; costCents: number | null; stock: number; reorderLevel: number; active: boolean;
   imageR2Path: string | null;
 }
 
@@ -20,10 +20,14 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<"SALE_ITEM" | "SPARE_PART">("SALE_ITEM");
   const [barcode, setBarcode] = useState("");
   const [category, setCategory] = useState("");
+  const [supplier, setSupplier] = useState("");
   const [price, setPrice] = useState("0");
+  const [cost, setCost] = useState("0");
   const [stock, setStock] = useState("0");
+  const [reorder, setReorder] = useState("0");
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
   const [active, setActive] = useState(true);
   // imageR2Path เก็บได้ 2 แบบ: URL เต็ม (วางจาก google) หรือ R2 key (อัปไฟล์)
@@ -39,15 +43,18 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
 
   function startEdit(p: Product) {
     setEditing(p);
-    setName(p.name); setBarcode(p.barcode ?? ""); setCategory(p.category ?? "");
-    setPrice(((p.priceCents) / 100).toString()); setStock(String(p.stock));
+    setName(p.name); setKind(p.kind === "SPARE_PART" ? "SPARE_PART" : "SALE_ITEM");
+    setBarcode(p.barcode ?? ""); setCategory(p.category ?? ""); setSupplier(p.supplier ?? "");
+    setPrice(((p.priceCents) / 100).toString()); setCost(((p.costCents ?? 0) / 100).toString());
+    setStock(String(p.stock)); setReorder(String(p.reorderLevel));
     setBranchId(p.branchId); setActive(p.active);
     setImageR2Path(p.imageR2Path ?? ""); setImgError(null);
     setShowForm(true);
   }
   function startNew() {
     setEditing(null);
-    setName(""); setBarcode(""); setCategory(""); setPrice("0"); setStock("0");
+    setName(""); setKind("SALE_ITEM"); setBarcode(""); setCategory(""); setSupplier("");
+    setPrice("0"); setCost("0"); setStock("0"); setReorder("0");
     setBranchId(branches[0]?.id ?? ""); setActive(true);
     setImageR2Path(""); setImgError(null);
     setShowForm(true);
@@ -75,9 +82,11 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
     e.preventDefault();
     start(async () => {
       const priceCents = Math.round(parseFloat(price || "0") * 100);
+      const costCents = Math.round(parseFloat(cost || "0") * 100);
       const res = await upsertProduct({
-        id: editing?.id, branchId, name, barcode: barcode || undefined, category: category || undefined,
-        priceCents, stock: parseInt(stock || "0"), active,
+        id: editing?.id, branchId, kind, name, barcode: barcode || undefined, category: category || undefined,
+        supplier: supplier || undefined, priceCents, costCents, stock: parseInt(stock || "0"),
+        reorderLevel: parseInt(reorder || "0"), active,
         imageR2Path: imageR2Path.trim() === "" ? "" : imageR2Path.trim(),
       });
       if (res.ok) { setShowForm(false); router.refresh(); }
@@ -129,6 +138,10 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
         {showForm && (
           <form className="pl-card" onSubmit={submit} style={{ display: "grid", gap: 10 }}>
             <div className="pl-eyebrow">{editing ? "แก้สินค้า" : "สินค้าใหม่"}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className="pl-btn" onClick={() => setKind("SALE_ITEM")} style={{ flex: 1, ...(kind === "SALE_ITEM" ? { background: "#2D6CB1", color: "#fff", borderColor: "#2D6CB1" } : {}) }}>🍬 สินค้าขาย (POS)</button>
+              <button type="button" className="pl-btn" onClick={() => setKind("SPARE_PART")} style={{ flex: 1, ...(kind === "SPARE_PART" ? { background: "#a9791a", color: "#fff", borderColor: "#a9791a" } : {}) }}>🔧 อะไหล่ซ่อม</button>
+            </div>
             <div>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ชื่อ *</label>
               <input className="pl-input" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -136,12 +149,16 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>Barcode</label>
-                <input className="pl-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} />
+                <input className="pl-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="ยิง/พิมพ์บาร์โค้ด" />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>หมวด</label>
-                <input className="pl-input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="ขนม / เครื่องดื่ม" />
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ประเภทอะไหล่" : "หมวด"}</label>
+                <input className="pl-input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={kind === "SPARE_PART" ? "มอเตอร์ / สายพาน" : "ขนม / เครื่องดื่ม"} />
               </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ผู้ขาย/ร้านค้า</label>
+              <input className="pl-input" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="ไม่บังคับ" />
             </div>
             <div>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>รูปสินค้า</label>
@@ -177,12 +194,22 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ราคา (บาท)</label>
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ราคาขาย (ไม่ใช้)" : "ราคาขาย (บาท)"}</label>
                 <input className="pl-input" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>สต๊อก</label>
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ต้นทุน/ชิ้น (บาท)</label>
+                <input className="pl-input" type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>สต๊อกคงเหลือ</label>
                 <input className="pl-input" type="number" value={stock} onChange={(e) => setStock(e.target.value)} required />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>จุดสั่งซื้อ (เตือนใกล้หมด)</label>
+                <input className="pl-input" type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} placeholder="0 = ไม่เตือน" />
               </div>
             </div>
             <div>
