@@ -18,6 +18,8 @@ import {
   createCfMachine,
   renameCfMachine,
   retireCfMachine,
+  seedClawFleetDemo,
+  clearClawFleetDemo,
 } from "@/lib/clawfleet/v2-actions";
 import type { ManageBranch, ManageMachine } from "@/lib/clawfleet/v2-queries";
 
@@ -95,6 +97,16 @@ export function ManageClient({ branches }: { branches: ManageBranch[] }) {
     run(() => retireCfMachine(m.id), "ปลดระวางตู้แล้ว");
   }
 
+  function onSeedDemo() {
+    if (!window.confirm("ใส่ข้อมูลตัวอย่าง? จะสร้าง 3 สาขา + ตู้ + รอบเก็บ (ทุกอย่างชื่อขึ้นต้น [DEMO]) เพื่อทดลองแดชบอร์ดกำไร/ขาดทุน")) return;
+    run(() => seedClawFleetDemo(), "ใส่ข้อมูลตัวอย่างแล้ว · เปิดหน้ารวมเพื่อดูแดชบอร์ด");
+  }
+
+  function onClearDemo() {
+    if (!window.confirm("ลบข้อมูลตัวอย่างทั้งหมด ([DEMO]) ออกถาวร? ข้อมูลจริงไม่ถูกแตะ")) return;
+    run(() => clearClawFleetDemo(), "ลบข้อมูลตัวอย่างแล้ว");
+  }
+
   return (
     <div className="cf-page">
       <div className="cf-page-head">
@@ -105,13 +117,21 @@ export function ManageClient({ branches }: { branches: ManageBranch[] }) {
             {branches.length} สาขา · {totalMachines} ตู้ทั้งหมด
           </div>
         </div>
-        <button
-          className="cf-btn cf-btn-primary"
-          onClick={() => setModal({ type: "addBranch" })}
-          disabled={pending}
-        >
-          <Ic name="plus" size={14} /> เพิ่มสาขา
-        </button>
+        <div className="cf-section-actions">
+          <button className="cf-btn cf-btn-ghost" onClick={onSeedDemo} disabled={pending}>
+            <Ic name="cube" size={14} /> ใส่ข้อมูลตัวอย่าง
+          </button>
+          <button className="cf-btn cf-btn-ghost" onClick={onClearDemo} disabled={pending}>
+            <Ic name="x" size={14} /> ลบข้อมูลตัวอย่าง
+          </button>
+          <button
+            className="cf-btn cf-btn-primary"
+            onClick={() => setModal({ type: "addBranch" })}
+            disabled={pending}
+          >
+            <Ic name="plus" size={14} /> เพิ่มสาขา
+          </button>
+        </div>
       </div>
 
       {branches.length === 0 && (

@@ -428,10 +428,10 @@
    → bump to 7px. Plus +2px vertical padding inside each row. The name+sub stay
    tight as one unit (line-height 1.2 above), so each row reads as one clear
    target with comfortable air around it. */
-.cf-nav-group { gap: 7px; }
-.cf-nav-item { padding: 13px 13px; }
-.cf-sidebar { gap: 9px; }
-.cf-nav-group + .cf-nav-group { margin-top: 8px; }
+.cf-nav-group { gap: 11px; }
+.cf-nav-item { padding: 15px 13px; }
+.cf-sidebar { gap: 12px; }
+.cf-nav-group + .cf-nav-group { margin-top: 10px; }
 
 /* ============================================================
    LOCKED LOOK (2026-06-24) — CEO pick จาก render 3 แบบ:
@@ -506,3 +506,58 @@
 /* NOTE: มัสตาร์ดที่ "คงไว้" = ความหมายเตือน → .cf-sev-p1 · .cf-stock-badge ·
    .cf-stock-card.is-low · .cf-ops-row-stale · .cf-progress-bar-stale · .cf-pill-amber
    (เหลือง = "ระวัง" เท่านั้น) + สีประจำสาขา (.cf-branch-flag-*) */
+
+/* ============================================================
+   P&L DASHBOARD (Phase 1 · 2026-06-24) — แดชบอร์ดกำไร/ขาดทุน
+   ตัวชี้วัดหลัก = ค่าเฉลี่ยบาท/ตุ๊กตา · ธงสี emerald/amber/red.
+   ใช้ token เดิม (blue band · warm ink) ไม่ฮาร์ดโค้ดสีนอกธีม.
+   ============================================================ */
+
+/* ค่าเฉลี่ยบาท/ตัว ก้อนใหญ่บนแถบน้ำเงิน (hero) */
+.cf-scope .cf-hero-avg {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.18);
+}
+.cf-scope .cf-hero-avg-num { font-size: 30px; font-weight: 800; line-height: 1.1; color: #fff; }
+.cf-scope .cf-hero-avg-lbl { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 2px; }
+
+/* legend ของ section header */
+.cf-scope .cf-pnl-legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.cf-scope .cf-pnl-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--cf-text-3); }
+.cf-scope .cf-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.cf-scope .cf-dot-emerald { background: #16A34A; }
+.cf-scope .cf-dot-amber { background: #E0A100; }
+.cf-scope .cf-dot-red { background: #DC2626; }
+
+/* แถว P&L (สาขา/ตู้) — reuse .cf-branch-row layout */
+.cf-scope .cf-pnl-row { align-items: center; }
+.cf-scope .cf-pnl-row-risky {
+  border-color: #F4C7C7;
+  background: linear-gradient(0deg, rgba(220,38,38,.05), rgba(220,38,38,.05)), #fff;
+}
+
+/* ก้อนค่าเฉลี่ยบาท/ตัว ด้านซ้ายของแถว — สีตามธง */
+.cf-scope .cf-pnl-avg {
+  flex: 0 0 auto; min-width: 76px; text-align: center;
+  padding: 9px 10px; border-radius: 14px; line-height: 1.05;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.cf-scope .cf-pnl-avg-num { font-size: 19px; font-weight: 800; }
+.cf-scope .cf-pnl-avg-unit { font-size: 11px; opacity: .8; margin-top: 1px; }
+.cf-scope .cf-pnl-avg-na { font-size: 19px; font-weight: 700; }
+.cf-scope .cf-pnl-avg-emerald { background: #E7F6EC; color: #15803D; }
+.cf-scope .cf-pnl-avg-amber   { background: #FBF1D6; color: #A87900; }
+.cf-scope .cf-pnl-avg-red     { background: #FBE3E3; color: #C12626; }
+.cf-scope .cf-pnl-avg-slate   { background: #EEF0F2; color: #6B6258; }
+
+/* กำไร/ขาดทุน บรรทัดขวา */
+.cf-scope .cf-pnl-profit { font-size: 13.5px; font-weight: 700; margin-top: 2px; }
+.cf-scope .cf-pnl-profit.is-up { color: #15803D; }
+.cf-scope .cf-pnl-profit.is-down { color: #C12626; }
+.cf-scope .cf-pnl-sub { font-size: 12px; margin-top: 1px; }
+
+/* คำเตือน "ควรโทรบอกพนักงาน" */
+.cf-scope .cf-pnl-warn {
+  margin-top: 5px; font-size: 12.5px; font-weight: 600; color: #C12626;
+  background: #FBE3E3; border-radius: 9px; padding: 4px 9px; display: inline-block;
+}

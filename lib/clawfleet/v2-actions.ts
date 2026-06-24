@@ -915,3 +915,283 @@ export async function retireCfMachine(machineId: string): Promise<Result> {
     return { ok: false, error: `ปลดระวางตู้ไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
+
+// =============================================================
+// DEMO DATA — ใส่/ลบ ข้อมูลตัวอย่าง (super_admin only · idempotent)
+// ทุกอย่าง mark "[DEMO]" + code prefix "DEMO-" เพื่อให้ลบกลับได้สะอาด.
+// สร้างครบทั้ง spectrum ค่าเฉลี่ยบาท/ตัว: ดี(~200)/ต่ำ(~140)/ขาดทุน(~90)/ตึง(~420).
+// =============================================================
+
+const DEMO_MARK = "[DEMO]";
+const DEMO_PREFIX = "DEMO-";
+
+/** วันที่ย้อนหลัง n วัน (เที่ยงวัน) */
+function daysBack(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
+/** เวลาวันนี้ (ใช้ปิดรอบ ให้เข้าช่วง "วันนี้" ของ P&L) */
+function todayAt(hour: number): Date {
+  const d = new Date();
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
+
+/** หา/สร้าง company สำหรับ demo (org อาจว่างเปล่า) */
+async function ensureDemoCompany(orgId: string): Promise<string> {
+  const existing = await resolveCfCompanyId(orgId);
+  if (existing) return existing;
+  const c = await prisma.company.create({
+    data: { orgId, code: `${DEMO_PREFIX}CO`, name: `${DEMO_MARK} บริษัทตัวอย่าง` },
+    select: { id: true },
+  });
+  return c.id;
+}
+
+/** หา/สร้าง user สำหรับเป็นคนเก็บ/ปิดรอบ demo */
+async function ensureDemoUser(orgId: string): Promise<string> {
+  const existing = await prisma.user.findFirst({
+    where: { orgId, name: { startsWith: DEMO_MARK } },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const u = await prisma.user.create({
+    data: { orgId, name: `${DEMO_MARK} พนักงานตัวอย่าง`, role: "staff", isActive: true },
+    select: { id: true },
+  });
+  return u.id;
+}
+
+/** หา/สร้าง product ตาม sku (idempotent) */
+async function ensureDemoProduct(
+  orgId: string, sku: string, name: string, unitCostCents: number,
+): Promise<string> {
+  const existing = await prisma.cfProduct.findFirst({
+    where: { orgId, sku },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const p = await prisma.cfProduct.create({
+    data: { orgId, sku, name, unitCostCents, isActive: true },
+    select: { id: true },
+  });
+  return p.id;
+}
+
+/**
+ * spec ของตู้ demo: ค่าเฉลี่ยบาท/ตัว ที่อยากให้ออก → คำนวณ cash/dolls.
+ * cashCents = avg * dolls * 100.
+ */
+type DemoMachineSpec = {
+  code: string; nickname: string; dolls: number; avg: number;
+  configDaysAgo: number; // ตั้งค่าตู้ล่าสุดกี่วันก่อน
+};
+
+/**
+ * ใส่ข้อมูลตัวอย่าง — สร้าง products + 3 สาขา + ตู้ + loadout + รอบเก็บ
+ * (CLOSED หลายรอบ ครบ spectrum + 1-2 OPEN กำลังเก็บ).
+ */
+export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; machines: number; sessions: number }>> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  try {
+    const companyId = await ensureDemoCompany(orgId);
+    const userId = await ensureDemoUser(orgId);
+
+    // 1) products (ต้นทุนตุ๊กตา)
+    const bearId = await ensureDemoProduct(orgId, `${DEMO_PREFIX}BEAR`, `${DEMO_MARK} หมีบราวน์`, 11000); // ฿110
+    const catId = await ensureDemoProduct(orgId, `${DEMO_PREFIX}CAT`, `${DEMO_MARK} ตุ๊กตาแมว`, 12000); // ฿120
+
+    // 2) สาขา demo + spec ตู้ในแต่ละสาขา (ครบ spectrum)
+    const branchSpecs: { code: string; name: string; province: string; machines: DemoMachineSpec[] }[] = [
+      {
+        code: `${DEMO_PREFIX}A`, name: `${DEMO_MARK} สาขาเซ็นทรัล (ตัวอย่าง)`, province: "กรุงเทพฯ",
+        machines: [
+          { code: `${DEMO_PREFIX}A-01`, nickname: "ตู้ 01 · ทางเข้า", dolls: 20, avg: 210, configDaysAgo: 3 },  // GOOD
+          { code: `${DEMO_PREFIX}A-02`, nickname: "ตู้ 02 · ข้างกาแฟ", dolls: 18, avg: 195, configDaysAgo: 5 }, // GOOD
+          { code: `${DEMO_PREFIX}A-03`, nickname: "ตู้ 03 · มุมเด็ก", dolls: 22, avg: 140, configDaysAgo: 40 }, // LOW + stale
+        ],
+      },
+      {
+        code: `${DEMO_PREFIX}B`, name: `${DEMO_MARK} สาขาตลาดบางใหญ่ (ตัวอย่าง)`, province: "นนทบุรี",
+        machines: [
+          { code: `${DEMO_PREFIX}B-01`, nickname: "ตู้ 01 · ใกล้ ATM", dolls: 20, avg: 90, configDaysAgo: 60 },  // LOSS + stale
+          { code: `${DEMO_PREFIX}B-02`, nickname: "ตู้ 02 · ทางออก", dolls: 16, avg: 240, configDaysAgo: 8 },   // GOOD
+        ],
+      },
+      {
+        code: `${DEMO_PREFIX}C`, name: `${DEMO_MARK} สาขาปั๊ม ปตท. (ตัวอย่าง)`, province: "นครราชสีมา",
+        machines: [
+          { code: `${DEMO_PREFIX}C-01`, nickname: "ตู้ 01 · ร้านสะดวกซื้อ", dolls: 10, avg: 420, configDaysAgo: 12 }, // HIGH
+          { code: `${DEMO_PREFIX}C-02`, nickname: "ตู้ 02 · หน้าร้าน", dolls: 15, avg: 300, configDaysAgo: 6 },     // AMBER
+        ],
+      },
+    ];
+
+    let branchCount = 0, machineCount = 0, sessionCount = 0;
+
+    for (const bs of branchSpecs) {
+      // สาขา (idempotent by code)
+      let branch = await prisma.branch.findFirst({
+        where: { orgId, code: bs.code },
+        select: { id: true },
+      });
+      if (!branch) {
+        branch = await prisma.branch.create({
+          data: {
+            orgId, companyId, code: bs.code, name: bs.name,
+            businessType: "claw_machine", province: bs.province, isActive: true,
+          },
+          select: { id: true },
+        });
+      }
+      branchCount += 1;
+
+      // กลุ่ม event สำหรับ "วันนี้" — รวมเป็น 1 รอบ CLOSED ต่อสาขา
+      const sessionCode = `${DEMO_PREFIX}S-${bs.code}-CLOSED`;
+      // กันสร้างซ้ำ: ลบรอบ demo เดิมของสาขานี้ก่อน (events cascade ผ่าน SetNull → ลบ events เอง)
+      const existingSess = await prisma.cfCollectionSession.findMany({
+        where: { orgId, sessionCode: { startsWith: `${DEMO_PREFIX}S-${bs.code}` } },
+        select: { id: true },
+      });
+      if (existingSess.length > 0) {
+        const ids = existingSess.map((s) => s.id);
+        await prisma.cfCollectionEvent.deleteMany({ where: { sessionId: { in: ids } } });
+        await prisma.cfCollectionSession.deleteMany({ where: { id: { in: ids } } });
+      }
+
+      const closedSession = await prisma.cfCollectionSession.create({
+        data: {
+          orgId, branchId: branch.id, sessionCode,
+          openedAt: todayAt(9), openedById: userId,
+          closedAt: todayAt(11), closedById: userId,
+          status: "CLOSED",
+        },
+        select: { id: true },
+      });
+      sessionCount += 1;
+
+      let branchCashCents = 0;
+
+      for (let i = 0; i < bs.machines.length; i++) {
+        const ms = bs.machines[i]!;
+        const productId = i % 2 === 0 ? bearId : catId;
+
+        // ตู้ (idempotent by code)
+        let machine = await prisma.cfMachine.findFirst({
+          where: { orgId, code: ms.code },
+          select: { id: true },
+        });
+        if (!machine) {
+          machine = await prisma.cfMachine.create({
+            data: {
+              orgId, branchId: branch.id, code: ms.code, nickname: ms.nickname,
+              kind: "CLAW", qrToken: randomUUID(), isActive: true,
+            },
+            select: { id: true },
+          });
+        }
+        machineCount += 1;
+
+        // loadout active (effectiveTo null) — ตั้งต้นทุน + วันตั้งค่าล่าสุด
+        // ปิด loadout เดิมก่อน (กันมีหลาย active)
+        await prisma.cfMachineLoadout.updateMany({
+          where: { orgId, machineId: machine.id, effectiveTo: null },
+          data: { effectiveTo: daysBack(ms.configDaysAgo + 1) },
+        });
+        await prisma.cfMachineLoadout.create({
+          data: {
+            orgId, machineId: machine.id, productId,
+            pricePerPlayCoins: 1, effectiveFrom: daysBack(ms.configDaysAgo),
+          },
+        });
+
+        // event เก็บเงิน — cash จาก avg*dolls
+        const cashCents = Math.round(ms.avg * ms.dolls * 100);
+        branchCashCents += cashCents;
+        const meterBefore = 1000 + i * 100;
+        await prisma.cfCollectionEvent.create({
+          data: {
+            orgId, sessionId: closedSession.id, machineId: machine.id,
+            eventType: "COLLECTION", collectedAt: todayAt(10), collectedById: userId,
+            coinMeterBefore: 0, coinMeterAfter: ms.dolls * 25,
+            cashCountedCents: cashCents,
+            dollMeterBefore: meterBefore, dollMeterAfter: meterBefore + ms.dolls,
+            stockBefore: 30, stockAfter: 30 - ms.dolls,
+          },
+        });
+      }
+
+      // อัปยอดรวมของรอบ
+      await prisma.cfCollectionSession.update({
+        where: { id: closedSession.id },
+        data: { totalCashCents: branchCashCents },
+      });
+
+      // 1 รอบ OPEN (กำลังเก็บ) ในสาขาแรกสองสาขา เพื่อโชว์ "รอบกำลังเก็บ"
+      if (branchCount <= 2) {
+        await prisma.cfCollectionSession.create({
+          data: {
+            orgId, branchId: branch.id,
+            sessionCode: `${DEMO_PREFIX}S-${bs.code}-OPEN`,
+            openedAt: todayAt(20), openedById: userId, status: "OPEN",
+          },
+        });
+        sessionCount += 1;
+      }
+    }
+
+    revalidatePath(MANAGE_PATH);
+    revalidatePath("/clawfleet/v2/hub");
+    return { ok: true, data: { branches: branchCount, machines: machineCount, sessions: sessionCount } };
+  } catch (e) {
+    return { ok: false, error: `ใส่ข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/** ลบข้อมูลตัวอย่างทั้งหมด (super_admin only) — match "[DEMO]"/"DEMO-" */
+export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean }>> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  try {
+    // ลำดับลบจากลูก→แม่ (FK Restrict)
+    const sessions = await prisma.cfCollectionSession.findMany({
+      where: { orgId, sessionCode: { startsWith: DEMO_PREFIX } },
+      select: { id: true },
+    });
+    const sessIds = sessions.map((s) => s.id);
+    if (sessIds.length > 0) {
+      await prisma.cfCollectionEvent.deleteMany({ where: { sessionId: { in: sessIds } } });
+    }
+    // events ที่ไม่ผูก session (เผื่อ) ของตู้ demo
+    const demoMachines = await prisma.cfMachine.findMany({
+      where: { orgId, code: { startsWith: DEMO_PREFIX } },
+      select: { id: true },
+    });
+    const machIds = demoMachines.map((m) => m.id);
+    if (machIds.length > 0) {
+      await prisma.cfCollectionEvent.deleteMany({ where: { machineId: { in: machIds } } });
+    }
+    if (sessIds.length > 0) {
+      await prisma.cfCollectionSession.deleteMany({ where: { id: { in: sessIds } } });
+    }
+    if (machIds.length > 0) {
+      await prisma.cfMachineLoadout.deleteMany({ where: { orgId, machineId: { in: machIds } } });
+      await prisma.cfMachine.deleteMany({ where: { id: { in: machIds } } });
+    }
+    await prisma.cfProduct.deleteMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } } });
+    await prisma.branch.deleteMany({ where: { orgId, code: { startsWith: DEMO_PREFIX } } });
+    // เก็บ company/user demo ไว้ (อาจถูกอ้างที่อื่น · soft footprint) — ลบเฉพาะ orphan ปลอดภัย
+    await prisma.company.deleteMany({ where: { orgId, code: `${DEMO_PREFIX}CO` } }).catch(() => {});
+
+    revalidatePath(MANAGE_PATH);
+    revalidatePath("/clawfleet/v2/hub");
+    return { ok: true, data: { deleted: true } };
+  } catch (e) {
+    return { ok: false, error: `ลบข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
