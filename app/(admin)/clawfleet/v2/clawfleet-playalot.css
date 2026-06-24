@@ -92,10 +92,10 @@
 .cf-brand-name .cf-fleet { color: var(--cf-mustard-deep); }
 .cf-brand-sub { font-family: var(--cf-font-body); font-weight: 700; font-size: 11px; }
 
-.cf-nav-label { font-family: var(--cf-font-body); font-weight: 800; font-size: 11px; }
+.cf-nav-label { font-family: var(--cf-font-body); font-weight: 600; font-size: 11px; }
 .cf-nav-item { padding: 11px 13px; border-radius: 12px; color: var(--cf-text-2); }
-.cf-nav-name { font-family: var(--cf-font); font-weight: 500; font-size: 15px; }
-.cf-nav-desc { font-family: var(--cf-font-body); font-weight: 700; font-size: 11px; color: var(--cf-text-3); }
+.cf-nav-name { font-family: var(--cf-font); font-weight: 500; font-size: 15px; line-height: 1.2; }
+.cf-nav-desc { font-family: var(--cf-font-body); font-weight: 400; font-size: 11px; color: var(--cf-text-3); line-height: 1.2; }
 .cf-nav-item:hover { background: var(--cf-surface-2); }
 .cf-nav-item.is-active {
   background: var(--cf-mustard);
@@ -105,7 +105,7 @@
 }
 .cf-nav-item.is-active .cf-nav-icon,
 .cf-nav-item.is-active .cf-nav-desc { color: rgba(42,38,34,.6); }
-.cf-nav-badge { font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; border-radius: 999px; padding: 1px 8px; color: #fff; }
+.cf-nav-badge { font-family: var(--cf-font-body); font-weight: 700; font-size: 12px; border-radius: 999px; padding: 1px 8px; color: #fff; }
 .cf-nav-badge-red { background: var(--cf-red); }
 .cf-nav-badge-amber { background: var(--cf-mustard-deep); }
 .cf-nav-badge-blue { background: var(--cf-blue); }
@@ -132,14 +132,14 @@
 .cf-hero-revenue, .cf-hero-action > .cf-hero-cta, .cf-section, .cf-stat,
 .cf-closed-row, .cf-stock-row { box-shadow: var(--cf-shadow-sm); }
 .cf-hero-revenue { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); padding: 26px; }
-.cf-hero-label { font-family: var(--cf-font-body); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--cf-text-3); }
+.cf-hero-label { font-family: var(--cf-font-body); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cf-text-3); }
 .cf-hero-amount { font-family: var(--cf-font-display); font-weight: 700; color: var(--cf-text); }
 .cf-hero-num, .cf-hero-currency { font-family: var(--cf-font-display); font-weight: 700; }
 .cf-hero-num { font-size: 56px; }
 
 .cf-hero-action { display: flex; flex-direction: column; gap: 12px; }
-.cf-hero-action-label { font-family: var(--cf-font-body); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--cf-text-3); display: flex; align-items: center; gap: 8px; }
-.cf-hero-count { background: var(--cf-red); color: #fff; font-weight: 800; border-radius: 999px; padding: 0 9px; font-size: 12px; }
+.cf-hero-action-label { font-family: var(--cf-font-body); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--cf-text-3); display: flex; align-items: center; gap: 8px; }
+.cf-hero-count { background: var(--cf-red); color: #fff; font-weight: 700; border-radius: 999px; padding: 0 9px; font-size: 12px; }
 .cf-hero-cta {
   background: var(--cf-blue); color: #fff;
   border-radius: var(--cf-radius-lg); padding: 22px 26px;
@@ -169,10 +169,10 @@
   box-shadow: 0 4px 0 var(--cf-mustard-deep);
 }
 .cf-btn-primary:active { box-shadow: 0 1px 0 var(--cf-mustard-deep); transform: translateY(3px); }
-.cf-tab-n { font-family: var(--cf-font-body); font-weight: 800; }
+.cf-tab-n { font-family: var(--cf-font-body); font-weight: 700; }
 
 /* ===== PILLS ===== */
-.cf-pill { font-family: var(--cf-font-body); font-weight: 800; border-radius: 999px; }
+.cf-pill { font-family: var(--cf-font-body); font-weight: 700; border-radius: 999px; }
 .cf-pill-emerald { background: var(--cf-emerald-50); color: var(--cf-emerald); }
 .cf-pill-red { background: var(--cf-red-50); color: var(--cf-red); }
 .cf-pill-amber { background: var(--cf-primary-50); color: var(--cf-mustard-deep); }
@@ -182,7 +182,7 @@
 .cf-anomaly-list { display: flex; flex-direction: column; }
 .cf-anom-row { border-radius: 16px; }
 .cf-anom-row:hover { background: var(--cf-surface-2); }
-.cf-sev { font-family: var(--cf-font-body); font-weight: 800; border-radius: 9px; color: #fff; padding: 5px 10px; }
+.cf-sev { font-family: var(--cf-font-body); font-weight: 700; border-radius: 9px; color: #fff; padding: 5px 10px; }
 .cf-sev-p1 { background: var(--cf-mustard); }
 .cf-anom-zone { font-family: var(--cf-font); font-weight: 600; font-size: 17px; }
 .cf-anom-reason, .cf-anom-branch, .cf-anom-id { font-family: var(--cf-font-body); font-weight: 700; color: var(--cf-text-3); }
@@ -254,7 +254,7 @@
 .cf-ops-staff { display: flex; align-items: center; gap: 9px; flex: 0.9; min-width: 0; font-family: var(--cf-font); font-weight: 500; }
 .cf-ops-progress { flex: 1.1; display: flex; flex-direction: column; gap: 5px; }
 .cf-ops-progress .cf-progress { height: 9px; background: var(--cf-border-soft); border-radius: 999px; overflow: hidden; }
-.cf-ops-progress-text { font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; color: var(--cf-text-3); }
+.cf-ops-progress-text { font-family: var(--cf-font-body); font-weight: 700; font-size: 12px; color: var(--cf-text-3); }
 .cf-ops-time { display: flex; align-items: center; gap: 6px; flex: 0.7; font-family: var(--cf-font-body); font-weight: 700; font-size: 13px; color: var(--cf-text-3); }
 .cf-ops-rev { flex: 0.8; text-align: right; font-family: var(--cf-font-display); font-weight: 700; }
 .cf-ops-rev .cf-dim { font-family: var(--cf-font-body); font-weight: 700; }
@@ -268,7 +268,7 @@
 .cf-insight-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .cf-stat { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); padding: 22px 24px; }
 .cf-stat-head { display: flex; justify-content: space-between; align-items: center; }
-.cf-stat-label { font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--cf-text-3); }
+.cf-stat-label { font-family: var(--cf-font-body); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--cf-text-3); }
 .cf-stat-icon { color: var(--cf-text-3); }
 .cf-stat-value { font-family: var(--cf-font-display); font-weight: 700; font-size: 34px; line-height: 1.05; margin-top: 8px; color: var(--cf-text); }
 .cf-stat-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
@@ -279,7 +279,7 @@
 
 /* ===== TABLE — spacious & readable (Insights / Audit / aggregates) ===== */
 .cf-table { background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-sm); overflow: hidden; border: 0; }
-.cf-table-head { background: var(--cf-surface-2); font-family: var(--cf-font-body); font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--cf-text-3); padding: 14px 22px; }
+.cf-table-head { background: var(--cf-surface-2); font-family: var(--cf-font-body); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--cf-text-3); padding: 14px 22px; }
 .cf-table-row { padding: 15px 22px; border-top: 1px solid var(--cf-border-soft); font-family: var(--cf-font); font-size: 14px; align-items: center; }
 .cf-table-row:hover { background: var(--cf-surface-2); }
 .cf-table-machine { font-family: var(--cf-font); font-weight: 600; }
@@ -385,3 +385,14 @@
 /* — readable secondary text (avoid too-faint) — */
 .cf-dim { color: var(--cf-text-3); }
 .cf-branch-meta, .cf-session-meta, .cf-anom-reason, .cf-stock-card-meta { line-height: 1.45; }
+
+/* — left menu: more breathing room (CEO: "เมนูซ้ายชิดกันเกินไป · ตาลาย") —
+   This file loads AFTER clawfleet-redesign.css → wins. The real gap between
+   menu rows lives in redesign.css `.cf-nav-group { gap: 2px }` (way too tight)
+   → bump to 7px. Plus +2px vertical padding inside each row. The name+sub stay
+   tight as one unit (line-height 1.2 above), so each row reads as one clear
+   target with comfortable air around it. */
+.cf-nav-group { gap: 7px; }
+.cf-nav-item { padding: 13px 13px; }
+.cf-sidebar { gap: 9px; }
+.cf-nav-group + .cf-nav-group { margin-top: 8px; }
