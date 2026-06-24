@@ -207,7 +207,7 @@ export default function TenantImportShell() {
     <div className="space-y-5">
       {/* Input */}
       <section className="rs-card p-5 space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="text-base font-bold" style={{ color: "var(--rs-text)" }}>
             ข้อมูลนำเข้า
           </h2>
@@ -215,7 +215,7 @@ export default function TenantImportShell() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="rs-btn rs-btn-ghost"
+            className="rs-btn rs-btn-ghost w-full sm:w-auto"
             disabled={busy}
           >
             <Upload className="h-4 w-4" /> อัปโหลดไฟล์ .csv
@@ -234,7 +234,7 @@ export default function TenantImportShell() {
           }
         />
         <div className="flex items-center gap-2">
-          <button type="button" onClick={preview} className="rs-btn" disabled={busy}>
+          <button type="button" onClick={preview} className="rs-btn flex-1 sm:flex-none" disabled={busy}>
             {previewing ? "กำลังตรวจ…" : (
               <>
                 <FileSpreadsheet className="h-4 w-4" /> ตรวจสอบก่อนนำเข้า
@@ -250,7 +250,7 @@ export default function TenantImportShell() {
                 setResult(null);
                 setCommitted(false);
               }}
-              className="text-[13px] font-medium"
+              className="inline-flex items-center justify-center min-h-[44px] px-3 text-[13px] font-medium shrink-0"
               style={{ color: "var(--rs-text-3)" }}
               disabled={busy}
             >
@@ -290,9 +290,9 @@ export default function TenantImportShell() {
             </p>
           )}
 
-          {/* table */}
+          {/* table — own contained horizontal scroll on phone, never the page */}
           <div className="rs-card overflow-x-auto p-0">
-            <table className="rs-table w-full text-sm">
+            <table className="rs-table w-full min-w-[460px] text-sm">
               <thead>
                 <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
                   <th className="py-2.5 px-3 font-semibold">#</th>
@@ -337,11 +337,11 @@ export default function TenantImportShell() {
 
           {/* commit */}
           {!committed && (
-            <div className="flex justify-end">
+            <div className="flex justify-stretch sm:justify-end">
               <button
                 type="button"
                 onClick={commit}
-                className="rs-btn"
+                className="rs-btn w-full sm:w-auto"
                 disabled={busy || result.counts.total === 0}
               >
                 {committing ? "กำลังนำเข้า…" : (

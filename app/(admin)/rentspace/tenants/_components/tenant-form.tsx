@@ -235,7 +235,7 @@ export default function TenantForm({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1.5 rounded-lg"
+                className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg"
                 style={{ color: "var(--rs-text-3)" }}
                 aria-label="ปิด"
               >
@@ -332,7 +332,7 @@ export default function TenantForm({
                       <button
                         type="button"
                         onClick={() => idCardInputRef.current?.click()}
-                        className="rs-btn rs-btn-ghost"
+                        className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0"
                         disabled={busy}
                       >
                         <Upload className="h-4 w-4" /> {idCardUrl ? "เปลี่ยนรูป" : "อัปโหลด"}
@@ -383,6 +383,7 @@ export default function TenantForm({
                           <button
                             type="button"
                             onClick={() => setDocUrls((prev) => prev.filter((u) => u !== url))}
+                            className="inline-flex size-11 sm:size-8 items-center justify-center rounded-lg"
                             style={{ color: "var(--rs-text-3)" }}
                             aria-label="ลบเอกสาร"
                           >
@@ -395,7 +396,7 @@ export default function TenantForm({
                   <button
                     type="button"
                     onClick={() => docsInputRef.current?.click()}
-                    className="rs-btn rs-btn-ghost"
+                    className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0"
                     disabled={busy}
                   >
                     <Upload className="h-4 w-4" /> เพิ่มเอกสาร
@@ -424,7 +425,7 @@ export default function TenantForm({
                   type="button"
                   onClick={remove}
                   disabled={busy}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium"
                   style={{ color: "var(--rs-danger)" }}
                 >
                   <Trash2 className="h-4 w-4" /> ลบผู้เช่า
@@ -433,10 +434,10 @@ export default function TenantForm({
                 <span />
               )}
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setOpen(false)} className="rs-btn rs-btn-ghost" disabled={busy}>
+                <button type="button" onClick={() => setOpen(false)} className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" disabled={busy}>
                   ยกเลิก
                 </button>
-                <button type="button" onClick={save} className="rs-btn" disabled={busy}>
+                <button type="button" onClick={save} className="rs-btn min-h-[44px] sm:min-h-0" disabled={busy}>
                   {pending ? "กำลังบันทึก…" : uploading ? "กำลังอัปโหลด…" : "บันทึก"}
                 </button>
               </div>
@@ -448,13 +449,20 @@ export default function TenantForm({
       <style jsx>{`
         .rs-input {
           width: 100%;
-          height: 42px;
+          height: 44px;
           padding: 0 12px;
           border-radius: 10px;
           border: 1px solid var(--rs-border);
           background: #fff;
           color: var(--rs-text);
-          font-size: 14px;
+          /* 16px บนมือถือ กัน iOS zoom เวลาแตะ input */
+          font-size: 16px;
+        }
+        @media (min-width: 640px) {
+          .rs-input {
+            height: 42px;
+            font-size: 14px;
+          }
         }
         .rs-textarea {
           height: auto;

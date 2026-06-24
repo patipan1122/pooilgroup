@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays, Trash2 } from "lucide-react";
 import { actRemindOverdue, actDeleteBillsBulk } from "../../_actions";
 import { formatBaht, thaiDateLong, periodLabel, BILL_STATUS } from "@/lib/rentspace/format";
+import { RsMobileCard, RsField, RsBadge } from "@/components/rentspace/ui";
 
 export type BillRow = {
   id: string;
@@ -48,7 +49,7 @@ export function MonthPicker({ value, statusQS }: { value: string; statusQS?: str
   }
   return (
     <label
-      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium cursor-pointer"
+      className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 min-h-[36px] text-[12.5px] font-medium cursor-pointer"
       style={{ background: "var(--rs-bg-2)", color: "var(--rs-text-2)", border: "1px solid var(--rs-border)" }}
       title="เลือกเดือนที่ต้องการดู"
     >
@@ -290,6 +291,17 @@ export function BillsToolbar({
       )}
 
       <style jsx>{`
+        /* Toolbar buttons must be ≥44px tap targets on phones. rs-btn fixes
+           height:42px, so a min-height of 44 wins on small screens; from sm we
+           drop back to the compact 42px desktop size. */
+        :global(.rs-btn-toolbar) {
+          min-height: 44px;
+        }
+        @media (min-width: 640px) {
+          :global(.rs-btn-toolbar) {
+            min-height: 0;
+          }
+        }
         /* Disabled toolbar buttons: the global ".rs-btn:disabled { opacity:.5 }"
            fades near-black text on the light ghost bg below WCAG AA (~3.4:1).
            Replace the faint fade with a slightly stronger opacity + an explicit
@@ -418,7 +430,8 @@ export function BillsTable({
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* desktop table — hidden on phones (the wide grid crushes <lg) */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="rs-table w-full text-sm">
             <thead>
               <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
@@ -460,6 +473,57 @@ export function BillsTable({
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* mobile card stack — same state/selection as the desktop table */}
+        <div className="lg:hidden p-3 space-y-2">
+          {filtered.length === 0 ? (
+            <div className="py-8 text-center text-[13px]" style={{ color: "var(--rs-text-3)" }}>
+              {query.trim() ? `ไม่พบห้องที่ตรงกับ “${query.trim()}”` : "ไม่มีบิล"}
+            </div>
+          ) : (
+            groups.map(([floorKey, groupRows]) => {
+              const ids = groupRows.map((r) => r.id);
+              const floorAllOn = ids.every((id) => selected.has(id));
+              return (
+                <div key={floorKey} className="space-y-2">
+                  {/* floor header + เลือกทั้งชั้น */}
+                  <button
+                    type="button"
+                    onClick={() => toggleFloor(floorKey, ids)}
+                    aria-pressed={floorAllOn}
+                    aria-label={`เลือกทั้งชั้น ${floorKey} (${groupRows.length} ใบ)`}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 min-h-[44px] text-left"
+                    style={{ background: "var(--rs-bg-2)" }}
+                  >
+                    <input
+                      type="checkbox"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      checked={floorAllOn}
+                      readOnly
+                      className="rs-chk pointer-events-none"
+                    />
+                    <span className="text-[12.5px] font-semibold" style={{ color: "var(--rs-text-2)" }}>
+                      {floorKey}
+                    </span>
+                    <span className="text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
+                      · เลือกทั้งชั้น ({groupRows.length})
+                    </span>
+                  </button>
+
+                  {groupRows.map((b) => (
+                    <MobileBillCard
+                      key={b.id}
+                      bill={b}
+                      checked={selected.has(b.id)}
+                      onToggle={() => toggle(b.id)}
+                    />
+                  ))}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -582,6 +646,78 @@ function FloorGroup({
         </tr>
       ))}
     </>
+  );
+}
+
+/**
+ * Mobile bill card — checkbox (≥44px tap, does NOT navigate) on the left, and the
+ * rest of the card taps through to the bill detail. Selection drives the SAME
+ * `selected` Set as the desktop table, so bulk-delete works on phones too.
+ */
+function MobileBillCard({
+  bill: b,
+  checked,
+  onToggle,
+}: {
+  bill: BillRow;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rs-card flex items-stretch gap-1 p-0 overflow-hidden">
+      {/* select checkbox — separate tap target, stops navigation */}
+      <label
+        className="flex shrink-0 items-start justify-center pl-3 pt-3.5 cursor-pointer"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          type="checkbox"
+          aria-label={`เลือกบิล ${b.billNo}`}
+          checked={checked}
+          onChange={onToggle}
+          className="rs-chk"
+        />
+      </label>
+
+      {/* body taps through to the bill */}
+      <Link href={`/rentspace/bills/${b.id}`} className="block flex-1 min-w-0 p-3.5 pl-1.5 active:bg-[var(--rs-bg-2)]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[15px] font-semibold" style={{ color: "var(--rs-brand)" }}>
+              <Receipt className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{b.billNo}</span>
+            </div>
+            <div className="mt-0.5 truncate text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+              {b.unitCode}
+              {b.tenantName ? <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span> : null}
+            </div>
+          </div>
+          <div className="shrink-0 text-right space-y-1">
+            <RsBadge kind="bill" status={b.displayStatus} />
+            <div className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-text)" }}>
+              {formatBaht(b.total)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+          <RsField label="งวด" value={periodLabel(b.period)} />
+          <RsField
+            label="กำหนดชำระ"
+            value={b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
+            align="right"
+            tone={b.displayStatus === "overdue" ? "danger" : undefined}
+          />
+          <RsField label="ชำระแล้ว" value={formatBaht(b.paid)} tone="muted" />
+          <RsField
+            label="ค้างชำระ"
+            value={formatBaht(b.remaining)}
+            align="right"
+            tone={b.remaining > 0 ? "danger" : "muted"}
+          />
+        </div>
+      </Link>
+    </div>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, Upload, Check } from "lucide-react";
+import { Settings, Upload, Check, Info, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { actSaveProject, actUploadFile } from "../../_actions";
 
@@ -281,22 +281,20 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           hint="รูปแผนผังที่ใช้วางตำแหน่งห้องบนหน้าผัง (รองรับ 3D)"
         />
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileSelected} />
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row items-start gap-4">
           {planImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={planImageUrl}
               alt="ผังโครงการ"
-              className="rounded-xl border object-contain"
-              style={{ borderColor: "var(--rs-border)", width: 200, height: 140, background: "var(--rs-bg-2)" }}
+              className="rounded-xl border object-contain w-full sm:w-[200px] h-[140px] shrink-0"
+              style={{ borderColor: "var(--rs-border)", background: "var(--rs-bg-2)" }}
             />
           ) : (
             <div
-              className="rounded-xl border flex items-center justify-center text-center text-[12px]"
+              className="rounded-xl border flex items-center justify-center text-center text-[12px] w-full sm:w-[200px] h-[140px] shrink-0"
               style={{
                 borderColor: "var(--rs-border)",
-                width: 200,
-                height: 140,
                 color: "var(--rs-text-3)",
                 background: "var(--rs-bg-2)",
               }}
@@ -304,11 +302,11 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
               ยังไม่มีรูปผัง
             </div>
           )}
-          <div className="space-y-2">
+          <div className="space-y-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onPickFile}
-              className="rs-btn rs-btn-ghost"
+              className="rs-btn rs-btn-ghost w-full sm:w-auto"
               disabled={uploading || pending}
             >
               <Upload className="h-4 w-4" />
@@ -318,14 +316,14 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
               <button
                 type="button"
                 onClick={() => setPlanImageUrl("")}
-                className="block text-[13px] font-medium"
+                className="inline-flex items-center min-h-[44px] text-[13px] font-medium"
                 style={{ color: "var(--rs-danger)" }}
                 disabled={pending}
               >
                 เอารูปออก
               </button>
             )}
-            <p className="text-[12px] max-w-[220px]" style={{ color: "var(--rs-text-3)" }}>
+            <p className="text-[12px] sm:max-w-[220px]" style={{ color: "var(--rs-text-3)" }}>
               ไฟล์รูปภาพ ขนาดไม่เกิน 8MB จะใช้เป็นพื้นหลังของหน้าผังห้อง
             </p>
           </div>
@@ -376,7 +374,7 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
           style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
         >
-          <span>ℹ️</span>
+          <Info className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
             ตั้ง <b>ค่าปรับ / ส่วนลด / วันวางบิลเป็นรายคน</b> ได้ที่หน้าสัญญาของผู้เช่าแต่ละห้อง
             (เปิดสัญญา → “ตั้งค่าปรับ / ส่วนลด / วันวางบิล (รายคน)”) — ค่าตรงนี้เป็นค่าเริ่มต้นของทั้งโครงการเท่านั้น
@@ -470,7 +468,7 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
           style={{ background: "var(--rs-pending-soft)", color: "#8A6400" }}
         >
-          <span>⚠️</span>
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
             ตามหลักบัญชี ใบแจ้งหนี้ที่ออกแล้ว <b>ไม่ควรแก้/ลบอิสระ</b> — เปิดเฉพาะเมื่อจำเป็น
             แล้ว<b>ปิดกลับ</b>เมื่อไม่ใช้ · ทุกการออก/แก้/ลบมีบันทึกประวัติไว้ ·
@@ -498,8 +496,13 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
       </section>
 
       {/* ── บันทึก ── */}
-      <div className="flex justify-end pb-4">
-        <button type="button" onClick={save} className="rs-btn" disabled={pending || uploading}>
+      <div className="flex justify-stretch sm:justify-end pb-4">
+        <button
+          type="button"
+          onClick={save}
+          className="rs-btn w-full sm:w-auto"
+          disabled={pending || uploading}
+        >
           {pending ? (
             "กำลังบันทึก…"
           ) : (

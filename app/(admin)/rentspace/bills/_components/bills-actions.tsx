@@ -89,16 +89,16 @@ export function BillsActions({
   }
 
   return (
-    <div className="flex items-center gap-2 print:hidden">
+    <div className="flex flex-wrap items-center gap-2 print:hidden w-full sm:w-auto">
       <button
-        className="rs-btn rs-btn-ghost"
+        className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0 flex-1 sm:flex-none"
         onClick={openPreview}
         disabled={bulkPending || previewLoading || contracts.length === 0}
       >
-        <FileDown className="h-4 w-4" /> {bulkPending ? "กำลังออกบิล…" : "ออกบิลทั้งโครงการ (เดือนนี้)"}
+        <FileDown className="h-4 w-4 shrink-0" /> <span className="truncate">{bulkPending ? "กำลังออกบิล…" : "ออกบิลทั้งโครงการ (เดือนนี้)"}</span>
       </button>
-      <button className="rs-btn" onClick={() => setOpen(true)} disabled={contracts.length === 0}>
-        <Plus className="h-4 w-4" /> ออกบิล
+      <button className="rs-btn min-h-[44px] sm:min-h-0 flex-1 sm:flex-none" onClick={() => setOpen(true)} disabled={contracts.length === 0}>
+        <Plus className="h-4 w-4 shrink-0" /> ออกบิล
       </button>
 
       {/* ───────── PREVIEW modal — ดูก่อนออกบิลทั้งโครงการ ───────── */}

@@ -147,7 +147,7 @@ export function RecordPaymentButton({ billId, remaining }: { billId: string; rem
 
   return (
     <>
-      <button className="rs-btn w-full" onClick={() => setOpen(true)}>
+      <button className="rs-btn w-full min-h-[44px] sm:min-h-0" onClick={() => setOpen(true)}>
         <Banknote className="h-4 w-4" /> บันทึกรับชำระ
       </button>
       {open && (
@@ -240,7 +240,7 @@ export function RequestDiscountButton({ billId }: { billId: string }) {
 
   return (
     <>
-      <button className="rs-btn rs-btn-ghost w-full" onClick={() => setOpen(true)}>
+      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={() => setOpen(true)}>
         <Percent className="h-4 w-4" /> ขอส่วนลด
       </button>
       {open && (
@@ -295,7 +295,7 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
       <button
-        className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
+        className="inline-flex items-center justify-center size-11 sm:size-10 rounded-lg"
         style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}
         aria-label="อนุมัติส่วนลด"
         title="อนุมัติ"
@@ -305,7 +305,7 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
         <Check className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
-        className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
+        className="inline-flex items-center justify-center size-11 sm:size-10 rounded-lg"
         style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
         aria-label="ไม่อนุมัติส่วนลด"
         title="ไม่อนุมัติ"
@@ -364,7 +364,7 @@ export function SendBillButton({
   return (
     <div className="space-y-2">
       <button
-        className="rs-btn w-full"
+        className="rs-btn w-full min-h-[44px] sm:min-h-0"
         onClick={send}
         disabled={pending}
         aria-label={url ? "ส่งบิลอีกครั้ง — สร้างลิงก์ใหม่ให้ผู้เช่า" : "ส่งบิล — สร้างลิงก์ให้ผู้เช่า"}
@@ -414,7 +414,7 @@ export function SendBillButton({
 // ───────── print ─────────
 export function PrintBillButton() {
   return (
-    <button className="rs-btn rs-btn-ghost w-full" onClick={() => window.print()}>
+    <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={() => window.print()}>
       <Download className="h-4 w-4" /> ดาวน์โหลด / พิมพ์ PDF
     </button>
   );
@@ -442,7 +442,7 @@ export function RequestVoidButton({ billId }: { billId: string }) {
     });
   }
   return (
-    <button className="rs-btn rs-btn-ghost w-full" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
+    <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
       ขอยกเลิกบิล
     </button>
   );
@@ -467,11 +467,11 @@ export function VoidDecisionButtons({ billId }: { billId: string }) {
   }
   return (
     <div className="flex gap-2">
-      <button className="rs-btn flex-1" onClick={() => decide("approve")} disabled={pending}>
+      <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" onClick={() => decide("approve")} disabled={pending}>
         <Check className="h-4 w-4" /> อนุมัติยกเลิก
       </button>
       <button
-        className="rs-btn rs-btn-ghost flex-1"
+        className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0"
         style={{ color: "var(--rs-danger)" }}
         onClick={() => decide("reject")}
         disabled={pending}
@@ -547,7 +547,7 @@ export function EditBillButton({
 
   return (
     <>
-      <button className="rs-btn rs-btn-ghost w-full" onClick={openModal}>
+      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={openModal}>
         <Pencil className="h-4 w-4" /> แก้ไขบิล
       </button>
       {open && (
@@ -661,7 +661,7 @@ export function DeleteBillButton({
     });
   }
   return (
-    <button className="rs-btn rs-btn-ghost w-full" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
+    <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
       <Trash2 className="h-4 w-4" /> ลบบิลถาวร
     </button>
   );

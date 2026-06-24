@@ -35,11 +35,11 @@ function Step({
   const active = state === "active";
   const blue = "#2563EB";
   return (
-    <div className="flex-1 flex flex-col items-center text-center">
-      <div className="flex items-center w-full justify-center mb-3">
+    <div className="flex-1 flex flex-col items-center text-center min-w-0">
+      <div className="flex items-center w-full justify-center mb-2.5 sm:mb-3">
         <div className="flex-1 h-0.5" style={{ background: first ? "transparent" : done || active ? blue : "#E8EBEF" }} />
         <div
-          className="w-[38px] h-[38px] rounded-full shrink-0 flex items-center justify-center font-bold text-sm"
+          className="w-[32px] h-[32px] sm:w-[38px] sm:h-[38px] rounded-full shrink-0 flex items-center justify-center font-bold text-[13px] sm:text-sm"
           style={{
             background: done ? blue : active ? "#EEF3FE" : "#F1F3F6",
             color: done ? "#fff" : active ? blue : "#A7AEB9",
@@ -50,8 +50,8 @@ function Step({
         </div>
         <div className="flex-1 h-0.5" style={{ background: last ? "transparent" : done ? blue : "#E8EBEF" }} />
       </div>
-      <div className="font-semibold text-sm" style={{ color: done || active ? "#1F2733" : "#A7AEB9" }}>{title}</div>
-      <div className="text-xs mt-0.5" style={{ color: subDanger ? "#C0322B" : active ? blue : "#9098A4", fontWeight: subDanger || active ? 600 : 400 }}>{sub}</div>
+      <div className="font-semibold text-[13px] sm:text-sm leading-tight" style={{ color: done || active ? "#1F2733" : "#A7AEB9" }}>{title}</div>
+      <div className="text-[11px] sm:text-xs mt-0.5 leading-tight px-0.5" style={{ color: subDanger ? "#C0322B" : active ? blue : "#9098A4", fontWeight: subDanger || active ? 600 : 400 }}>{sub}</div>
     </div>
   );
 }
@@ -123,13 +123,13 @@ export default async function RentSpaceOverview() {
   ];
 
   return (
-    <div className="px-4 py-6 sm:px-8 sm:py-8 max-w-[1180px] mx-auto" style={{ color: "#0F1729" }}>
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
-          <p className="text-sm mt-0.5" style={{ color: "#7A828F" }}>ภาพรวมโครงการ · งวด {periodLabel(kpi.period)}</p>
+    <div className="px-4 py-4 sm:px-8 sm:py-8 max-w-[1180px] mx-auto" style={{ color: "#0F1729" }}>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{project.name}</h1>
+          <p className="text-[13px] sm:text-sm mt-0.5" style={{ color: "#7A828F" }}>ภาพรวมโครงการ · งวด {periodLabel(kpi.period)}</p>
         </div>
-        <Link href="/rentspace/contracts" className="flex items-center gap-2 rounded-xl bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white shrink-0" style={{ boxShadow: "0 1px 2px rgba(37,99,235,.25)" }}>
+        <Link href="/rentspace/contracts" className="flex items-center gap-2 rounded-xl bg-[#2563EB] px-3.5 py-2.5 min-h-[44px] text-[13px] sm:text-sm font-semibold text-white shrink-0" style={{ boxShadow: "0 1px 2px rgba(37,99,235,.25)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>ทำสัญญาใหม่
         </Link>
       </div>
@@ -160,18 +160,18 @@ export default async function RentSpaceOverview() {
       </div>
 
       {/* billing cycle */}
-      <div className="rounded-2xl bg-white p-5 mb-4" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-[34px] h-[34px] rounded-[9px] flex items-center justify-center" style={{ background: "#EEF3FE" }}>
+      <div className="rounded-2xl bg-white p-4 sm:p-5 mb-4" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-[34px] h-[34px] rounded-[9px] flex items-center justify-center shrink-0" style={{ background: "#EEF3FE" }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="1.8"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>
             </div>
-            <div>
-              <div className="font-semibold text-[15.5px]">รอบบิลเดือนนี้ · {periodLabel(kpi.period)}</div>
-              <div className="text-[12.5px]" style={{ color: "#8A929E" }}>ทำตามขั้นตอนให้ครบ ระบบจะกันไม่ให้ลืมวางบิล</div>
+            <div className="min-w-0">
+              <div className="font-semibold text-[14.5px] sm:text-[15.5px] truncate">รอบบิลเดือนนี้ · {periodLabel(kpi.period)}</div>
+              <div className="text-[12px] sm:text-[12.5px]" style={{ color: "#8A929E" }}>ทำตามขั้นตอนให้ครบ ระบบจะกันไม่ให้ลืมวางบิล</div>
             </div>
           </div>
-          <div className="text-[12.5px] hidden sm:block" style={{ color: "#8A929E" }}>ตัดรอบทุกวันที่ 1 ของเดือน</div>
+          <div className="text-[12.5px] hidden sm:block shrink-0" style={{ color: "#8A929E" }}>ตัดรอบทุกวันที่ 1 ของเดือน</div>
         </div>
 
         {total === 0 ? (
@@ -201,7 +201,7 @@ export default async function RentSpaceOverview() {
           { href: "/rentspace/payments", label: "รับชำระ / ส่วนลด" },
           { href: "/rentspace/tenants", label: "ผู้เช่า" },
         ].map((q) => (
-          <Link key={q.href} href={q.href} className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium" style={{ background: "#fff", border: "1px solid #E6E9F1", color: "#475569" }}>{q.label}</Link>
+          <Link key={q.href} href={q.href} className="inline-flex items-center rounded-full px-4 min-h-[44px] sm:min-h-0 sm:py-1.5 text-[12.5px] font-medium" style={{ background: "#fff", border: "1px solid #E6E9F1", color: "#475569" }}>{q.label}</Link>
         ))}
       </div>
 

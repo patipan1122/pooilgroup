@@ -103,6 +103,13 @@
 .rs-btn:hover {
   background: var(--rs-brand-700);
 }
+/* WCAG 2.5.5 tap target: bump shared button to ≥44px on phones (desktop 42px). */
+@media (max-width: 640px) {
+  .rs-btn,
+  .rs-btn-ghost {
+    height: 44px;
+  }
+}
 .rs-btn:disabled {
   opacity: 0.5;
 }

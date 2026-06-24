@@ -158,7 +158,7 @@ export function ProjectMap({
         <div className="inline-flex rounded-lg p-0.5" style={{ background: "var(--rs-bg-3)" }}>
           <button
             onClick={() => setMode("2d")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold"
+            className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-0 sm:py-1.5 rounded-md text-[13px] font-semibold"
             style={mode === "2d" ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}
           >
             <Grid3x3 className="h-3.5 w-3.5" /> 2D
@@ -166,7 +166,7 @@ export function ProjectMap({
           {view3dEnabled && (
             <button
               onClick={() => { setMode("3d"); setEditing(false); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold"
+              className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-0 sm:py-1.5 rounded-md text-[13px] font-semibold"
               style={mode === "3d" ? { background: "#fff", color: "var(--rs-brand)" } : { color: "var(--rs-text-2)" }}
             >
               <Box className="h-3.5 w-3.5" /> 3D
@@ -177,20 +177,20 @@ export function ProjectMap({
         {canEdit && mode === "2d" && (
           <button
             onClick={() => setEditing((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold"
+            className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-0 sm:py-1.5 rounded-md text-[13px] font-semibold"
             style={{ background: editing ? "var(--rs-brand)" : "var(--rs-bg-3)", color: editing ? "#fff" : "var(--rs-text-2)" }}
           >
             <Move className="h-3.5 w-3.5" /> {editing ? "กำลังจัดผัง" : "จัดผัง"}
           </button>
         )}
         {editing && dirty && (
-          <button onClick={save} disabled={saving} className="rs-btn h-9 text-[13px]">
+          <button onClick={save} disabled={saving} className="rs-btn h-11 sm:h-9 text-[13px]">
             <Save className="h-3.5 w-3.5" /> {saving ? "กำลังบันทึก…" : "บันทึกผัง"}
           </button>
         )}
 
         {/* legend */}
-        <div className="ml-auto flex items-center gap-3 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
           <Legend color="#16a34a" label="เช่าอยู่" />
           <Legend color="#dc2626" label="ค้างจ่าย" />
           <Legend color="#d97706" label="จอง" />
@@ -308,12 +308,13 @@ export function ProjectMap({
           <div className="absolute inset-0 bg-black/40" />
           <div
             className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl"
+            style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button onClick={() => setSelected(null)} className="absolute right-4 top-4 text-zinc-400">
+            <button aria-label="ปิด" onClick={() => setSelected(null)} className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-md text-zinc-400">
               <X className="h-5 w-5" />
             </button>
-            <div className="text-xs font-semibold" style={{ color: "var(--rs-brand)" }}>
+            <div className="text-xs font-semibold pr-12" style={{ color: "var(--rs-brand)" }}>
               อาคาร {selected.building || selected.code.split("/")[0]}
             </div>
             <div className="text-xl font-bold" style={{ color: "var(--rs-text)" }}>

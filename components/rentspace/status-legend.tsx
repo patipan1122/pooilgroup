@@ -47,7 +47,7 @@ export function StatusLegend({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label="คำอธิบายสถานะ"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold"
+        className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-0 sm:py-1.5 rounded-lg text-[13px] font-semibold"
         style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-2)" }}
       >
         <Info className="h-3.5 w-3.5" />
@@ -58,7 +58,7 @@ export function StatusLegend({
         <div
           role="dialog"
           aria-label="คำอธิบายสถานะห้อง"
-          className="absolute right-0 z-50 mt-2 w-[290px] rounded-xl p-3 shadow-xl"
+          className="absolute right-0 z-50 mt-2 w-[290px] max-w-[calc(100vw-2rem)] rounded-xl p-3 shadow-xl"
           style={{
             background: "#fff",
             border: "1px solid var(--rs-border)",
@@ -72,7 +72,7 @@ export function StatusLegend({
               type="button"
               aria-label="ปิด"
               onClick={() => setOpen(false)}
-              className="inline-flex h-9 w-9 -mr-1.5 items-center justify-center rounded-md"
+              className="inline-flex h-11 w-11 -mr-1.5 items-center justify-center rounded-md"
               style={{ color: "var(--rs-text-3)" }}
             >
               <X className="h-4 w-4" />

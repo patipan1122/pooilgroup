@@ -413,6 +413,13 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
         .rs-a4-sign-name { font-size: 12.5px; color: #444; margin-top: 2px; }
         .rs-a4-sign-stamp { font-size: 11.5px; color: #1a7f37; margin-top: 4px; font-weight: 600; }
 
+        /* ── phone: A4 preview readable (stack party/sign boxes; tighter padding) ── */
+        @media (max-width: 640px) {
+          #rs-contract.rs-a4 { padding: 18px 16px 24px; }
+          .rs-a4-parties { grid-template-columns: 1fr; gap: 10px; }
+          .rs-a4-signs { grid-template-columns: 1fr; gap: 28px; margin-top: 32px; }
+        }
+
         @media print {
           @page { size: A4; margin: 14mm; }
           body { background: #fff; }

@@ -164,7 +164,7 @@ export default function UnitForm({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="p-1.5 rounded-lg"
+                className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg"
                 style={{ color: "var(--rs-text-3)" }}
                 aria-label="ปิด"
               >
@@ -219,7 +219,7 @@ export default function UnitForm({
                   type="button"
                   onClick={remove}
                   disabled={pending}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium"
                   style={{ color: "var(--rs-danger)" }}
                 >
                   <Trash2 className="h-4 w-4" /> ลบห้อง
@@ -228,10 +228,10 @@ export default function UnitForm({
                 <span />
               )}
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setOpen(false)} className="rs-btn rs-btn-ghost" disabled={pending}>
+                <button type="button" onClick={() => setOpen(false)} className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" disabled={pending}>
                   ยกเลิก
                 </button>
-                <button type="button" onClick={save} className="rs-btn" disabled={pending}>
+                <button type="button" onClick={save} className="rs-btn min-h-[44px] sm:min-h-0" disabled={pending}>
                   {pending ? "กำลังบันทึก…" : "บันทึก"}
                 </button>
               </div>

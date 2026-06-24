@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Receipt, Banknote } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
-import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import {
   formatBaht,
   thaiDateLong,
@@ -113,7 +113,9 @@ export default async function PaymentsPage() {
         {payments.length === 0 ? (
           <RsEmpty icon="💸" title="ยังไม่มีการชำระเงิน" hint="เมื่อบันทึกรับชำระจากหน้าบิล รายการจะมาแสดงที่นี่" />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* desktop table */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="rs-table w-full text-sm">
               <thead>
                 <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
@@ -169,6 +171,46 @@ export default async function PaymentsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* mobile card stack */}
+          <div className="lg:hidden p-3 space-y-2">
+            {payments.map((p) => (
+              <RsMobileCard
+                key={p.id}
+                href={`/rentspace/bills/${p.billId}`}
+                title={
+                  <span className="flex items-center gap-1.5">
+                    <Receipt className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--rs-brand)" }} aria-hidden="true" />
+                    <span className="truncate">{p.bill.billNo}</span>
+                  </span>
+                }
+                titleRight={
+                  <div className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-ok)" }}>
+                    {formatBaht(toNum(p.amountThb))}
+                  </div>
+                }
+              >
+                <RsField label="วันที่" value={thaiDateLong(p.paidOn)} />
+                <RsField
+                  label="วิธีชำระ"
+                  value={`${PAYMENT_METHODS[p.method] ?? p.method}${p.reference ? ` · ${p.reference}` : ""}`}
+                  align="right"
+                />
+                <RsField
+                  label="ห้อง / ผู้เช่า"
+                  value={`${p.bill.unit.code} · ${tenantDisplayName(p.bill.tenant)}`}
+                  full
+                />
+                <RsField
+                  label="สลิป"
+                  value={p.slipUrl ? "มีสลิป (เปิดในหน้าบิล)" : "—"}
+                  tone={p.slipUrl ? undefined : "muted"}
+                  full
+                />
+              </RsMobileCard>
+            ))}
+          </div>
+          </>
         )}
       </RsCard>
     </RsPage>

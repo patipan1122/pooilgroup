@@ -137,10 +137,10 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="rs-btn rs-btn-ghost" onClick={() => openEdit(t)}>
+                <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" onClick={() => openEdit(t)}>
                   แก้ไข
                 </button>
-                <button className="p-2 rounded-lg hover:bg-black/5" onClick={() => del(t)} disabled={pending}>
+                <button className="inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" onClick={() => del(t)} disabled={pending} aria-label="ลบแม่แบบ">
                   <Trash2 className="h-4 w-4" style={{ color: "var(--rs-danger)" }} />
                 </button>
               </div>
@@ -165,7 +165,7 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
               <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
                 {editing === "new" ? "แม่แบบใหม่" : "แก้ไขแม่แบบ"}
               </div>
-              <button onClick={() => setEditing(null)} disabled={pending} className="p-1 rounded-lg hover:bg-black/5">
+              <button onClick={() => setEditing(null)} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                 <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
               </button>
             </div>
@@ -204,7 +204,7 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
                   เนื้อหาสัญญา (รองรับ HTML)
                 </label>
                 <textarea
-                  className="rs-t-input font-mono text-[12.5px] min-h-[320px]"
+                  className="rs-t-input font-mono min-h-[320px]"
                   value={bodyHtml}
                   onChange={(e) => setBodyHtml(e.target.value)}
                   placeholder={DEFAULT_TEMPLATE_HTML}
@@ -227,10 +227,10 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
               </label>
             </div>
             <div className="sticky bottom-0 flex gap-2 px-5 py-3 border-t" style={{ background: "#fff", borderColor: "var(--rs-border)" }}>
-              <button className="rs-btn rs-btn-ghost flex-1" disabled={pending} onClick={() => setEditing(null)}>
+              <button className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0" disabled={pending} onClick={() => setEditing(null)}>
                 ยกเลิก
               </button>
-              <button className="rs-btn flex-1" disabled={pending} onClick={save}>
+              <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" disabled={pending} onClick={save}>
                 {pending ? "กำลังบันทึก…" : "บันทึก"}
               </button>
             </div>
@@ -241,18 +241,32 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
       <style jsx>{`
         :global(.rs-t-input) {
           width: 100%;
-          height: 42px;
+          height: 44px;
           padding: 0 12px;
           border-radius: 10px;
           border: 1px solid var(--rs-border);
           background: var(--rs-bg-2);
           color: var(--rs-text);
-          font-size: 14px;
+          /* 16px บนมือถือ กัน iOS zoom เวลาแตะ */
+          font-size: 16px;
+        }
+        @media (min-width: 640px) {
+          :global(.rs-t-input) {
+            height: 42px;
+            font-size: 14px;
+          }
         }
         :global(textarea.rs-t-input) {
           height: auto;
           padding: 10px 12px;
           line-height: 1.6;
+          /* กัน iOS zoom: ใช้ 16px บนมือถือ (ทับ className text-[12.5px]) */
+          font-size: 16px;
+        }
+        @media (min-width: 640px) {
+          :global(textarea.rs-t-input) {
+            font-size: 12.5px;
+          }
         }
         :global(.rs-t-input:focus) {
           outline: none;

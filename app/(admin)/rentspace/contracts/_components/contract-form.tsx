@@ -326,7 +326,7 @@ export function ContractForm({
                 <div className="flex items-center gap-2 font-bold text-lg" style={{ color: "var(--rs-text)" }}>
                   <FileText className="h-5 w-5" style={{ color: "var(--rs-brand)" }} /> ทำสัญญาใหม่
                 </div>
-                <button onClick={close} disabled={pending} className="p-1 rounded-lg hover:bg-black/5">
+                <button onClick={close} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                   <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
                 </button>
               </div>
@@ -779,18 +779,18 @@ export function ContractForm({
 
             {/* ── sticky footer ── */}
             <div
-              className="sticky bottom-0 flex items-center gap-2 px-5 py-3 border-t"
+              className="sticky bottom-0 flex flex-wrap items-center gap-2 px-5 py-3 border-t"
               style={{ background: "#fff", borderColor: "var(--rs-border)" }}
             >
               {step > 0 && (
-                <button className="rs-btn rs-btn-ghost" disabled={pending} onClick={goBack}>
+                <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" disabled={pending} onClick={goBack}>
                   <ChevronLeft className="h-4 w-4" /> ย้อนกลับ
                 </button>
               )}
 
               {step < STEPS.length - 1 ? (
                 <button
-                  className="rs-btn flex-1 justify-center"
+                  className="rs-btn flex-1 justify-center min-h-[44px] sm:min-h-0"
                   disabled={!canNext || pending}
                   onClick={goNext}
                   style={!canNext ? { opacity: 0.5 } : undefined}
@@ -799,10 +799,10 @@ export function ContractForm({
                 </button>
               ) : (
                 <>
-                  <button className="rs-btn rs-btn-ghost flex-1 justify-center" disabled={pending} onClick={() => submit(false)}>
+                  <button className="rs-btn rs-btn-ghost flex-1 justify-center min-h-[44px] sm:min-h-0 basis-[120px]" disabled={pending} onClick={() => submit(false)}>
                     บันทึกร่าง
                   </button>
-                  <button className="rs-btn flex-1 justify-center" disabled={pending} onClick={() => submit(true)}>
+                  <button className="rs-btn flex-1 justify-center min-h-[44px] sm:min-h-0 basis-[160px]" disabled={pending} onClick={() => submit(true)}>
                     {pending ? "กำลังบันทึก…" : "สร้าง + เริ่มสัญญา"}
                   </button>
                 </>
@@ -815,13 +815,20 @@ export function ContractForm({
       <style jsx>{`
         :global(.rs-input) {
           width: 100%;
-          height: 42px;
+          height: 44px;
           padding: 0 12px;
           border-radius: 10px;
           border: 1px solid var(--rs-border);
           background: var(--rs-bg-2);
           color: var(--rs-text);
-          font-size: 14px;
+          /* 16px บนมือถือ กัน iOS zoom เวลาแตะ input */
+          font-size: 16px;
+        }
+        @media (min-width: 640px) {
+          :global(.rs-input) {
+            height: 42px;
+            font-size: 14px;
+          }
         }
         :global(textarea.rs-input) {
           height: auto;

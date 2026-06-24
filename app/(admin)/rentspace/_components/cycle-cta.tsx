@@ -35,7 +35,7 @@ export function CycleCta({ mode, projectId, period, title, hint, label }: Props)
   }
 
   return (
-    <div className="mt-4 flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "#F0F2F5" }}>
+    <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 border-t pt-4" style={{ borderColor: "#F0F2F5" }}>
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: dot }} />
         <div className="min-w-0">
@@ -48,19 +48,19 @@ export function CycleCta({ mode, projectId, period, title, hint, label }: Props)
           type="button"
           onClick={run}
           disabled={pending}
-          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0 disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-xl px-5 min-h-[44px] py-2.5 text-sm font-semibold text-white shrink-0 disabled:opacity-60 w-full sm:w-auto"
           style={{ background: "#DC2626", boxShadow: "0 1px 2px rgba(220,38,38,.3)", animation: pending ? "none" : "rsPulse 2s infinite" }}
         >
           {pending ? "กำลังออกบิล…" : label}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </button>
       ) : mode === "pay" ? (
-        <Link href="/rentspace/payments" className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shrink-0" style={{ background: "#2563EB", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}>
+        <Link href="/rentspace/payments" className="flex items-center justify-center gap-2 rounded-xl px-5 min-h-[44px] py-2.5 text-sm font-semibold text-white shrink-0 w-full sm:w-auto" style={{ background: "#2563EB", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}>
           {label}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </Link>
       ) : (
-        <span className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold shrink-0" style={{ background: "#EAF7EF", color: "#15803D" }}>
+        <span className="flex items-center justify-center gap-2 rounded-xl px-5 min-h-[44px] py-2.5 text-sm font-semibold shrink-0 w-full sm:w-auto" style={{ background: "#EAF7EF", color: "#15803D" }}>
           {label}
         </span>
       )}

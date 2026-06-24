@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName } from "@/lib/rentspace/format";
 import { listContracts, getPrimaryProject, listUnitsWithState, listTenants, listTemplates } from "@/lib/rentspace/data";
 import { ContractForm } from "./_components/contract-form";
@@ -70,7 +70,8 @@ export default async function ContractsPage() {
           action={newContractBtn}
         />
       ) : (
-        <RsCard className="overflow-hidden">
+        <>
+        <RsCard className="overflow-hidden hidden lg:block">
           <div className="overflow-x-auto">
             <table className="rs-table w-full text-sm">
               <thead>
@@ -138,6 +139,49 @@ export default async function ContractsPage() {
             </table>
           </div>
         </RsCard>
+
+        {/* Mobile: tappable cards (เลี่ยงตาราง 7 คอลัมน์ที่ล้นบนมือถือ) */}
+        <div className="space-y-2 lg:hidden">
+          {contracts.map((c) => {
+            const showStatus =
+              (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate)
+                ? "expiring"
+                : c.status;
+            return (
+              <RsMobileCard
+                key={c.id}
+                href={`/rentspace/contracts/${c.id}`}
+                title={
+                  <div className="min-w-0">
+                    <div className="inline-flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--rs-brand)" }} />
+                      <span className="truncate">{c.contractNo}</span>
+                    </div>
+                    <div className="truncate text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
+                      {c.unit.code}
+                      {c.unit.name ? ` · ${c.unit.name}` : ""}
+                    </div>
+                  </div>
+                }
+                titleRight={<RsBadge kind="contract" status={showStatus} />}
+              >
+                <RsField label="ผู้เช่า" value={tenantDisplayName(c.tenant)} />
+                <RsField label="ค่าเช่า/เดือน" value={formatBaht(toNum(c.rentAmountThb))} align="right" />
+                <RsField
+                  label="ระยะสัญญา"
+                  value={`${thaiDateLong(c.startDate)}${c.endDate ? ` – ${thaiDateLong(c.endDate)}` : " – ไม่มีกำหนด"}`}
+                  full
+                />
+                <RsField
+                  label="เซ็นแล้ว"
+                  value={c.tenantSigned ? "✓ เซ็นแล้ว" : "ยังไม่เซ็น"}
+                  tone={c.tenantSigned ? "ok" : "muted"}
+                />
+              </RsMobileCard>
+            );
+          })}
+        </div>
+        </>
       )}
     </RsPage>
   );

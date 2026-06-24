@@ -176,7 +176,7 @@ export default function BuildingManager({
               <div className="flex items-center gap-2 font-bold text-lg" style={{ color: "var(--rs-text)" }}>
                 <Building2 className="h-5 w-5" style={{ color: "var(--rs-brand)" }} /> จัดการอาคาร / โซน
               </div>
-              <button onClick={() => setOpen(false)} disabled={pending} className="p-1 rounded-lg hover:bg-black/5">
+              <button onClick={() => setOpen(false)} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                 <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
               </button>
             </div>
@@ -187,15 +187,16 @@ export default function BuildingManager({
               </p>
 
               {/* create */}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <input
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle }}
+                  className="min-w-0 flex-1 basis-[180px]"
                   placeholder="ชื่ออาคารใหม่ (เช่น A4, อาคารหน้า)"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && createBuilding()}
                 />
-                <button className="rs-btn" onClick={createBuilding} disabled={pending || !newName.trim()}>
+                <button className="rs-btn min-h-[44px] sm:min-h-0 shrink-0" onClick={createBuilding} disabled={pending || !newName.trim()}>
                   <Plus className="h-4 w-4" /> สร้างอาคาร
                 </button>
               </div>
@@ -230,16 +231,16 @@ export default function BuildingManager({
                       background: overBld === b.id ? "var(--rs-brand-50)" : "#fff",
                     }}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <GripVertical className="h-4 w-4 shrink-0 cursor-grab" style={{ color: "var(--rs-text-3)" }} />
                       {editId === b.id ? (
                         <>
-                          <input style={{ ...inputStyle, flex: 1 }} value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="ชื่ออาคาร" />
-                          <input style={{ ...inputStyle, width: 110 }} value={editZone} onChange={(e) => setEditZone(e.target.value)} placeholder="โซน" />
-                          <button className="rs-btn !h-9 !px-2.5" onClick={saveEdit} disabled={pending}>
+                          <input style={{ ...inputStyle }} className="min-w-0 flex-1 basis-[140px]" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="ชื่ออาคาร" />
+                          <input style={{ ...inputStyle }} className="min-w-0 basis-[90px] flex-1 sm:flex-none sm:basis-[110px]" value={editZone} onChange={(e) => setEditZone(e.target.value)} placeholder="โซน" />
+                          <button className="rs-btn !h-11 !px-3 sm:!h-9 sm:!px-2.5" onClick={saveEdit} disabled={pending} aria-label="บันทึก">
                             <Check className="h-4 w-4" />
                           </button>
-                          <button className="rs-btn rs-btn-ghost !h-9 !px-2.5" onClick={() => setEditId(null)}>
+                          <button className="rs-btn rs-btn-ghost !h-11 !px-3 sm:!h-9 sm:!px-2.5" onClick={() => setEditId(null)} aria-label="ยกเลิก">
                             <X className="h-4 w-4" />
                           </button>
                         </>
@@ -250,11 +251,11 @@ export default function BuildingManager({
                             {b.zone ? <span className="ml-1.5 text-[12px]" style={{ color: "var(--rs-text-3)" }}>· โซน {b.zone}</span> : null}
                             <span className="ml-1.5 text-[12px]" style={{ color: "var(--rs-text-3)" }}>· {roomsHere.length} ห้อง</span>
                           </div>
-                          <button className="rs-btn rs-btn-ghost !h-8 !px-2" onClick={() => startEdit(b)} title="แก้ชื่อ/โซน">
-                            <Pencil className="h-3.5 w-3.5" />
+                          <button className="rs-btn rs-btn-ghost !size-11 !p-0 sm:!h-8 sm:!w-auto sm:!px-2" onClick={() => startEdit(b)} title="แก้ชื่อ/โซน" aria-label="แก้ชื่อ/โซน">
+                            <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                           </button>
-                          <button className="rs-btn rs-btn-ghost !h-8 !px-2" style={{ color: "var(--rs-danger)" }} onClick={() => deleteBuilding(b)} title="ลบอาคาร">
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <button className="rs-btn rs-btn-ghost !size-11 !p-0 sm:!h-8 sm:!w-auto sm:!px-2" style={{ color: "var(--rs-danger)" }} onClick={() => deleteBuilding(b)} title="ลบอาคาร" aria-label="ลบอาคาร">
+                            <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                           </button>
                         </>
                       )}

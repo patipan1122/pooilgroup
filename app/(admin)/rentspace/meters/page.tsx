@@ -149,15 +149,21 @@ export default async function MetersPage({
         subtitle={`${project.name} · ${periodLabel(period)}`}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* บนมือถือ: โชว์เฉพาะความคืบหน้า (KPI เดียว เต็มแถว) เพื่อให้การ์ดห้องแรก
+          โผล่ในช่วงบน ~⅓ ของจอ · ยอดเงินรวมเก็บไว้ฝั่ง desktop */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <RsKpi
           label="ห้องที่จดแล้ว"
           value={`${recordedSides}/${totalSides}`}
           hint="นับแยกไฟ + น้ำ"
           tone={totalSides > 0 && recordedSides === totalSides ? "ok" : undefined}
         />
-        <RsKpi label="ยอดค่าไฟรวมเดือนนี้" value={formatBaht(totalElectric)} tone="pending" />
-        <RsKpi label="ยอดค่าน้ำรวมเดือนนี้" value={formatBaht(totalWater)} tone="ok" />
+        <div className="hidden lg:block">
+          <RsKpi label="ยอดค่าไฟรวมเดือนนี้" value={formatBaht(totalElectric)} tone="pending" />
+        </div>
+        <div className="hidden lg:block">
+          <RsKpi label="ยอดค่าน้ำรวมเดือนนี้" value={formatBaht(totalWater)} tone="ok" />
+        </div>
       </div>
 
       {units.length === 0 ? (

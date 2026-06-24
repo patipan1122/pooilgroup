@@ -136,11 +136,11 @@ export default function SelectiveBillPanel({
           </h2>
         </div>
         <div className="flex items-center gap-2 text-[12.5px]">
-          <button type="button" className="rs-btn rs-btn-ghost !h-8 !px-2.5" onClick={selectAllReady}>
+          <button type="button" className="rs-btn rs-btn-ghost !h-11 sm:!h-8 !px-3 sm:!px-2.5" onClick={selectAllReady}>
             เลือกห้องที่จดครบ
           </button>
           {sel.size > 0 && (
-            <button type="button" className="rs-btn rs-btn-ghost !h-8 !px-2.5" onClick={clearSel}>
+            <button type="button" className="rs-btn rs-btn-ghost !h-11 sm:!h-8 !px-3 sm:!px-2.5" onClick={clearSel}>
               ล้าง
             </button>
           )}
@@ -173,7 +173,7 @@ export default function SelectiveBillPanel({
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="ค้นหาห้อง / ชื่อผู้เช่า…"
                 aria-label="ค้นหาห้องที่จะออกบิล"
-                className="w-full h-9 rounded-xl pl-8 pr-3 text-sm outline-none focus:ring-2"
+                className="w-full h-11 sm:h-9 rounded-xl pl-9 pr-3 text-base sm:text-sm outline-none focus:ring-2"
                 style={{
                   background: "var(--rs-bg-2)",
                   border: "1px solid var(--rs-border)",
@@ -198,7 +198,7 @@ export default function SelectiveBillPanel({
                       type="button"
                       onClick={() => toggle(r.unitId)}
                       aria-pressed={checked}
-                      className="relative text-left rounded-xl p-2.5 transition-all"
+                      className="relative text-left rounded-xl p-3 sm:p-2.5 min-h-[44px] transition-all"
                       style={{
                         border: `1.5px solid ${checked ? "var(--rs-brand)" : "var(--rs-border)"}`,
                         background: checked ? "var(--rs-brand-50)" : "#fff",

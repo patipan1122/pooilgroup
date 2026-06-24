@@ -130,27 +130,29 @@ function BillRow({ bill, unitCode }: { bill: OverdueBill; unitCode: string }) {
         </span>
       </div>
 
-      {/* outstanding + inline รับชำระ form */}
-      <div className="mt-2 flex items-center gap-2">
-        <span className="text-[12px] shrink-0" style={{ color: "var(--rs-text-2)" }}>
-          ค้าง{" "}
-          <span className="font-semibold tabular-nums" style={{ color: "var(--rs-danger)" }}>
-            {formatBaht(bill.outstanding)}
-          </span>
+      {/* outstanding line */}
+      <div className="mt-2 text-[12px]" style={{ color: "var(--rs-text-2)" }}>
+        ค้าง{" "}
+        <span className="font-semibold tabular-nums" style={{ color: "var(--rs-danger)" }}>
+          {formatBaht(bill.outstanding)}
         </span>
+      </div>
+
+      {/* inline รับชำระ form — amount+method row, then full-width save on phone */}
+      <div className="mt-2 flex flex-wrap items-stretch gap-2">
         <input
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           inputMode="decimal"
           aria-label={`จำนวนเงินรับชำระ ${bill.label}`}
-          className="w-28 rounded-lg px-2.5 py-1.5 text-sm tabular-nums"
+          className="min-w-0 flex-1 sm:flex-none sm:w-28 h-11 rounded-lg px-2.5 text-sm tabular-nums"
           style={{ border: "1.5px solid var(--rs-border)", outline: "none", color: "var(--rs-text)" }}
         />
         <select
           value={method}
           onChange={(e) => setMethod(e.target.value as "cash" | "transfer" | "qr" | "card")}
           aria-label={`วิธีชำระ ${bill.label}`}
-          className="rounded-lg px-2 py-1.5 text-sm"
+          className="h-11 rounded-lg px-2 text-sm"
           style={{ border: "1.5px solid var(--rs-border)", outline: "none", color: "var(--rs-text)" }}
         >
           {METHODS.map((m) => (
@@ -163,7 +165,7 @@ function BillRow({ bill, unitCode }: { bill: OverdueBill; unitCode: string }) {
           type="button"
           onClick={submit}
           disabled={pending}
-          className="ml-auto rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white disabled:opacity-60"
+          className="w-full sm:w-auto sm:ml-auto h-11 rounded-lg px-5 text-sm font-semibold text-white disabled:opacity-60"
           style={{ background: "var(--rs-ok)" }}
         >
           {pending ? "…" : "บันทึก"}

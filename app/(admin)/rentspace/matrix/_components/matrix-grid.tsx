@@ -3,7 +3,7 @@
 import { useState, Fragment } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2 } from "lucide-react";
+import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight } from "lucide-react";
 import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 
@@ -106,21 +106,21 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
   }
 
   return (
-    <div className="rs-matrix">
+    <div className="rs-matrix min-w-0">
       {/* view + month toggles — single non-wrapping row; the month chips
           scroll horizontally instead of stacking onto a 2nd line on mobile */}
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() => setView("year")}
-          className={`rs-chip shrink-0 ${view === "year" ? "active" : ""}`}
+          className={`rs-chip shrink-0 !h-11 sm:!h-7 ${view === "year" ? "active" : ""}`}
         >
           <Table className="mr-1 inline h-3.5 w-3.5" /> รายปี
         </button>
         <button
           type="button"
           onClick={() => setView("month")}
-          className={`rs-chip shrink-0 ${view === "month" ? "active" : ""}`}
+          className={`rs-chip shrink-0 !h-11 sm:!h-7 ${view === "month" ? "active" : ""}`}
         >
           <Calendar className="mr-1 inline h-3.5 w-3.5" /> รายเดือน
         </button>
@@ -132,8 +132,8 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                 key={i}
                 type="button"
                 onClick={() => setMonth(i + 1)}
-                className={`rs-chip shrink-0 ${month === i + 1 ? "active" : ""}`}
-                style={{ height: 26, padding: "0 9px", fontSize: 11.5 }}
+                className={`rs-chip shrink-0 !h-11 sm:!h-[26px] !px-3 sm:!px-[9px] ${month === i + 1 ? "active" : ""}`}
+                style={{ fontSize: 12 }}
               >
                 {label}
               </button>
@@ -147,6 +147,14 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           </span>
         )}
       </div>
+
+      {/* mobile-only horizontal-scroll hint */}
+      {units.length > 0 && (
+        <div className="mb-2 flex items-center gap-1.5 text-[12px] lg:hidden" style={{ color: "var(--rs-text-3)" }}>
+          <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+          ปัดซ้าย-ขวาเพื่อดูทุกเดือน →
+        </div>
+      )}
 
       {units.length === 0 ? (
         <div className="rs-card py-10 text-center text-sm" style={{ color: "var(--rs-text-2)" }}>
@@ -721,7 +729,7 @@ function CellDetail({
       onClick={onClose}
     >
       <div
-        className="rs-card w-full max-w-md max-h-[88vh] overflow-y-auto"
+        className="rs-card w-full max-w-md max-h-[88vh] overflow-y-auto rounded-b-none sm:rounded-b-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 p-4 pb-2">
@@ -736,14 +744,14 @@ function CellDetail({
           <button
             type="button"
             onClick={onClose}
-            className="rs-btn-ghost inline-flex h-8 w-8 items-center justify-center !p-0"
+            className="rs-btn-ghost inline-flex h-11 w-11 items-center justify-center !p-0"
             aria-label="ปิด"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
           {cell ? (
             <>
               <div className="mb-3">

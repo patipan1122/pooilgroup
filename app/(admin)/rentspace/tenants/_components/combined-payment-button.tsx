@@ -58,18 +58,19 @@ export default function CombinedPaymentButton({
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    height: 42,
+    height: 44,
     padding: "0 12px",
     borderRadius: 10,
     border: "1px solid var(--rs-border)",
     background: "var(--rs-bg-2)",
     color: "var(--rs-text)",
-    fontSize: 14,
+    // 16px กัน iOS zoom ตอนแตะ input บนมือถือ
+    fontSize: 16,
   };
 
   return (
     <>
-      <button className="rs-btn !h-9 !px-3 text-[13px]" onClick={() => setOpen(true)}>
+      <button className="rs-btn !h-11 sm:!h-9 !px-3 text-[13px]" onClick={() => setOpen(true)}>
         <Banknote className="h-4 w-4" /> รับชำระรวมทุกห้อง
       </button>
 
@@ -86,7 +87,7 @@ export default function CombinedPaymentButton({
               <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
                 รับชำระรวมทุกห้อง
               </div>
-              <button onClick={() => setOpen(false)} disabled={pending} className="p-1 rounded-lg hover:bg-black/5">
+              <button onClick={() => setOpen(false)} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                 <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
               </button>
             </div>
@@ -125,7 +126,7 @@ export default function CombinedPaymentButton({
               </label>
               <input style={inputStyle} value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
-            <button className="rs-btn w-full justify-center" onClick={submit} disabled={pending}>
+            <button className="rs-btn w-full justify-center min-h-[44px]" onClick={submit} disabled={pending}>
               {pending ? "กำลังบันทึก…" : "บันทึกการชำระรวม"}
             </button>
           </div>

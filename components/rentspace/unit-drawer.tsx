@@ -79,7 +79,7 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
       <div className="absolute inset-0" style={{ background: "rgba(15,23,41,.34)" }} />
       <div
         className="absolute top-0 right-0 h-full bg-white flex flex-col"
-        style={{ width: 472, maxWidth: "94vw", boxShadow: "-12px 0 40px rgba(15,23,41,.13)", animation: "rsSlideIn .24s cubic-bezier(.2,.7,.3,1)" }}
+        style={{ width: "min(472px, 94vw)", boxShadow: "-12px 0 40px rgba(15,23,41,.13)", animation: "rsSlideIn .24s cubic-bezier(.2,.7,.3,1)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <style jsx global>{`@keyframes rsSlideIn{from{transform:translateX(30px);opacity:.6}to{transform:translateX(0);opacity:1}}`}</style>
@@ -98,24 +98,24 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
                 {data.unit.name && <div className="text-sm font-semibold" style={{ color: "#1F2733" }}>{data.unit.name}</div>}
                 <div className="text-[13px]" style={{ color: "#7A828F" }}>{data.tenant?.name ?? "— ว่าง —"}</div>
               </div>
-              <button type="button" onClick={onClose} aria-label="ปิด" className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid #E6E8EC" }}>
+              <button type="button" onClick={onClose} aria-label="ปิด" className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid #E6E8EC" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#525B68" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto p-5" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
               {/* actions */}
               {data.contract && (
-                <div className="flex gap-2.5 mb-4">
+                <div className="flex flex-wrap gap-2.5 mb-4">
                   {!data.currentBill ? (
-                    <button type="button" onClick={createBill} disabled={pending} className="flex-1 rounded-[10px] py-2.5 text-[13.5px] font-semibold text-white disabled:opacity-60" style={{ background: "#2563EB" }}>{pending ? "…" : "ออกบิลห้องนี้"}</button>
+                    <button type="button" onClick={createBill} disabled={pending} className="flex-1 min-h-[44px] rounded-[10px] py-2.5 text-[13.5px] font-semibold text-white disabled:opacity-60" style={{ background: "#2563EB" }}>{pending ? "…" : "ออกบิลห้องนี้"}</button>
                   ) : outstanding > 0 ? (
-                    <button type="button" onClick={() => setPayOpen((v) => !v)} className="flex-1 rounded-[10px] py-2.5 text-[13.5px] font-semibold" style={{ background: payOpen ? "#2563EB" : "#EAF7EF", color: payOpen ? "#fff" : "#15803D", border: "1.5px solid " + (payOpen ? "#2563EB" : "#C7E9D4") }}>รับชำระ {formatBaht(outstanding)}</button>
+                    <button type="button" onClick={() => setPayOpen((v) => !v)} className="flex-1 min-w-[160px] min-h-[44px] rounded-[10px] py-2.5 text-[13.5px] font-semibold" style={{ background: payOpen ? "#2563EB" : "#EAF7EF", color: payOpen ? "#fff" : "#15803D", border: "1.5px solid " + (payOpen ? "#2563EB" : "#C7E9D4") }}>รับชำระ {formatBaht(outstanding)}</button>
                   ) : (
-                    <span className="flex-1 text-center rounded-[10px] py-2.5 text-[13.5px] font-semibold" style={{ background: "#EAF7EF", color: "#15803D" }}>✓ ชำระครบงวดนี้</span>
+                    <span className="flex-1 min-h-[44px] flex items-center justify-center text-center rounded-[10px] py-2.5 text-[13.5px] font-semibold" style={{ background: "#EAF7EF", color: "#15803D" }}>✓ ชำระครบงวดนี้</span>
                   )}
                   {data.currentBill && (
-                    <Link href={`/rentspace/bills/${data.currentBill.billId}`} className="rounded-[10px] py-2.5 px-4 text-[13.5px] font-semibold text-center" style={{ background: "#fff", border: "1.5px solid #D9DDE3", color: "#525B68" }}>พิมพ์บิล</Link>
+                    <Link href={`/rentspace/bills/${data.currentBill.billId}`} className="min-h-[44px] flex items-center justify-center rounded-[10px] py-2.5 px-4 text-[13.5px] font-semibold text-center" style={{ background: "#fff", border: "1.5px solid #D9DDE3", color: "#525B68" }}>พิมพ์บิล</Link>
                   )}
                 </div>
               )}
@@ -124,12 +124,12 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
               {payOpen && data.currentBill && (
                 <div className="mb-4 rounded-xl p-3.5" style={{ border: "1px solid #E1E5EA", background: "#FAFBFC" }}>
                   <div className="flex gap-2 mb-2">
-                    <input value={payAmt} onChange={(e) => setPayAmt(e.target.value)} placeholder={String(outstanding)} inputMode="decimal" className="flex-1 rounded-lg px-3 py-2 text-sm tabular-nums" style={{ border: "1.5px solid #E1E5EA", outline: "none" }} />
-                    <select value={method} onChange={(e) => setMethod(e.target.value)} className="rounded-lg px-2 py-2 text-sm" style={{ border: "1.5px solid #E1E5EA", outline: "none" }}>
+                    <input value={payAmt} onChange={(e) => setPayAmt(e.target.value)} placeholder={String(outstanding)} inputMode="decimal" className="flex-1 min-h-[44px] rounded-lg px-3 py-2 text-sm tabular-nums" style={{ border: "1.5px solid #E1E5EA", outline: "none" }} />
+                    <select value={method} onChange={(e) => setMethod(e.target.value)} className="min-h-[44px] rounded-lg px-2 py-2 text-sm" style={{ border: "1.5px solid #E1E5EA", outline: "none" }}>
                       <option value="transfer">โอน</option><option value="cash">เงินสด</option><option value="qr">QR</option><option value="card">บัตร</option>
                     </select>
                   </div>
-                  <button type="button" onClick={recordPay} disabled={pending} className="w-full rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "#16A34A" }}>{pending ? "…" : "บันทึกรับชำระ"}</button>
+                  <button type="button" onClick={recordPay} disabled={pending} className="w-full min-h-[44px] rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "#16A34A" }}>{pending ? "…" : "บันทึกรับชำระ"}</button>
                 </div>
               )}
 

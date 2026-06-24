@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Building2, Wallet2 } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { RsPage, RsHeader, RsKpi, RsEmpty, RsCard, RsBackLink } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsKpi, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import {
   formatBaht,
   thaiDateLong,
@@ -83,7 +83,9 @@ export default async function DepositsPage() {
             hint="เมื่อบันทึกเก็บ/คืน/หักเงินประกันจากหน้าสัญญา รายการจะมาแสดงที่นี่"
           />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* desktop table */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="rs-table w-full text-sm">
               <thead>
                 <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
@@ -159,6 +161,50 @@ export default async function DepositsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* mobile card stack */}
+          <div className="lg:hidden p-3 space-y-2">
+            {deposits.map((d) => {
+              const k = KIND[d.kind] ?? { sign: 1 as const, color: "var(--rs-text)" };
+              const amt = toNum(d.amountThb);
+              const signed = `${k.sign < 0 ? "−" : "+"} ${formatBaht(amt)}`;
+              return (
+                <RsMobileCard
+                  key={d.id}
+                  href={`/rentspace/contracts/${d.contractId}`}
+                  title={
+                    <span className="flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--rs-brand)" }} aria-hidden="true" />
+                      <span className="truncate">{d.contract.unit.code}</span>
+                      <span className="truncate text-[12.5px] font-normal" style={{ color: "var(--rs-text-3)" }}>
+                        · {tenantDisplayName(d.contract.tenant)}
+                      </span>
+                    </span>
+                  }
+                  titleRight={
+                    <div className="space-y-1">
+                      <KindBadge kind={d.kind} />
+                      <div className="text-[15px] font-bold tabular-nums" style={{ color: k.color }}>
+                        {signed}
+                      </div>
+                    </div>
+                  }
+                >
+                  <RsField label="วันที่" value={thaiDateLong(d.occurredOn)} />
+                  <RsField
+                    label="วิธี"
+                    value={d.method ? PAYMENT_METHODS[d.method] ?? d.method : "—"}
+                    align="right"
+                  />
+                  {d.slipUrl ? (
+                    <RsField label="สลิป" value="มีสลิป (เปิดในหน้าสัญญา)" full />
+                  ) : null}
+                  {d.note ? <RsField label="หมายเหตุ" value={d.note} full /> : null}
+                </RsMobileCard>
+              );
+            })}
+          </div>
+          </>
         )}
       </RsCard>
     </RsPage>

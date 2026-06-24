@@ -371,8 +371,52 @@ export default function MeterBoard({
 
   return (
     <div className="space-y-3">
-      {/* toolbar: period selector + save-all */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* ── toolbar (mobile, lg:hidden): period chips row + save-all ── */}
+      <div className="lg:hidden space-y-2">
+        <div
+          className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+          style={{ scrollbarWidth: "none" }}
+          aria-label="เลือกรอบเดือน"
+        >
+          {navPending && (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" style={{ color: "var(--rs-text-3)" }} aria-hidden="true" />
+          )}
+          {periodOptions.map((p) => {
+            const active = p === period;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => changePeriod(p)}
+                disabled={navPending}
+                aria-pressed={active}
+                className="shrink-0 h-11 px-3.5 rounded-xl text-sm font-semibold whitespace-nowrap"
+                style={{
+                  background: active ? "var(--rs-brand)" : "var(--rs-bg-2)",
+                  color: active ? "#fff" : "var(--rs-text-2)",
+                  border: `1px solid ${active ? "var(--rs-brand)" : "var(--rs-border)"}`,
+                }}
+              >
+                {periodLabel(p)}
+              </button>
+            );
+          })}
+        </div>
+        {dirtyCount > 0 && (
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={savingAll}
+            className="rs-btn w-full justify-center h-11"
+          >
+            {savingAll ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+            บันทึกทั้งหมด ({dirtyCount})
+          </button>
+        )}
+      </div>
+
+      {/* ── toolbar (desktop, hidden lg:flex): period selector + save-all ── */}
+      <div className="hidden lg:flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm" style={{ color: "var(--rs-text-2)" }}>
           <span>รอบเดือน</span>
           <select
@@ -406,7 +450,31 @@ export default function MeterBoard({
         </button>
       </div>
 
-      <div className="rs-card p-0 rs-meter-scroll">
+      {/* ── mobile (lg:hidden): one stacked card per unit ── */}
+      <div className="lg:hidden space-y-3">
+        {units.map((u) => (
+          <MobileUnitCard
+            key={u.id}
+            unit={u}
+            row={rows[u.id]}
+            inputRefs={inputRefs}
+            refKey={refKey}
+            onChange={onChange}
+            onKeyDown={onKeyDown}
+            onBlur={saveSide}
+            onAttach={attachPhoto}
+            onToggleReset={toggleReset}
+            onOldFinalChange={onOldFinalChange}
+            onSaveRoom={async (unitId) => {
+              await saveSide(unitId, "electric");
+              await saveSide(unitId, "water");
+            }}
+          />
+        ))}
+      </div>
+
+      {/* ── desktop (hidden lg:block): existing wide board, unchanged ── */}
+      <div className="hidden lg:block rs-card p-0 rs-meter-scroll">
         <table className="rs-table w-full text-sm" style={{ minWidth: 880 }}>
           <thead>
             <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12px]">
@@ -768,5 +836,368 @@ function UsageCompare({ usage, prevUsage }: { usage: number | null; prevUsage: n
     >
       {up ? "↑" : "↓"} {delta.pct}%
     </div>
+  );
+}
+
+/* ───────────────────────── MOBILE (lg:hidden) ───────────────────────── */
+
+/** สถานะการจดของห้อง (ทั้งไฟ+น้ำ) → ชิปหัวการ์ด. */
+function unitDone(row: RowState): boolean {
+  return row.electric.saved && !row.electric.dirty && row.water.saved && !row.water.dirty;
+}
+
+/** One unit = one stacked card on phone. Reuses ALL the same handlers. */
+function MobileUnitCard({
+  unit,
+  row,
+  inputRefs,
+  refKey,
+  onChange,
+  onKeyDown,
+  onBlur,
+  onAttach,
+  onToggleReset,
+  onOldFinalChange,
+  onSaveRoom,
+}: {
+  unit: BoardUnit;
+  row: RowState;
+  inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
+  refKey: (unitId: string, kind: Kind) => string;
+  onChange: (unitId: string, kind: Kind, value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, unitId: string, kind: Kind) => void;
+  onBlur: (unitId: string, kind: Kind) => void;
+  onAttach: (unitId: string, kind: Kind, file: File) => void;
+  onToggleReset: (unitId: string, kind: Kind) => void;
+  onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
+  onSaveRoom: (unitId: string) => void;
+}) {
+  const done = unitDone(row);
+  const rowDirty =
+    (row.electric.dirty && parseReading(row.electric.curr) != null) ||
+    (row.water.dirty && parseReading(row.water.curr) != null);
+  const subtitle = [unit.name, unit.tenant].filter(Boolean).join(" · ");
+  const saving = row.electric.saving || row.water.saving;
+
+  return (
+    <div className="rs-card p-3.5">
+      {/* header: รหัสห้อง + ชื่อ/ผู้เช่า + ชิปสถานะ */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-bold text-[16px] leading-tight" style={{ color: "var(--rs-text)" }}>
+            {unit.code}
+          </div>
+          {subtitle && (
+            <div className="text-[12px] mt-0.5 truncate" style={{ color: "var(--rs-text-3)" }}>
+              {subtitle}
+            </div>
+          )}
+        </div>
+        <span
+          className="shrink-0 inline-flex items-center gap-1 text-[11.5px] font-semibold px-2 py-1 rounded-full"
+          style={
+            done
+              ? { background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }
+              : { background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }
+          }
+        >
+          {done ? <Check className="h-3 w-3" aria-hidden="true" /> : null}
+          {done ? "จดแล้ว" : "ยังไม่จด"}
+        </span>
+      </div>
+
+      <MobileSide
+        unitId={unit.id}
+        roomCode={unit.code}
+        kind="electric"
+        side={row.electric}
+        inputRefs={inputRefs}
+        refKey={refKey}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+        onAttach={onAttach}
+        onToggleReset={onToggleReset}
+        onOldFinalChange={onOldFinalChange}
+      />
+      <MobileSide
+        unitId={unit.id}
+        roomCode={unit.code}
+        kind="water"
+        side={row.water}
+        inputRefs={inputRefs}
+        refKey={refKey}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+        onAttach={onAttach}
+        onToggleReset={onToggleReset}
+        onOldFinalChange={onOldFinalChange}
+      />
+
+      {/* save this room */}
+      <button
+        type="button"
+        onClick={() => onSaveRoom(unit.id)}
+        disabled={saving || !rowDirty}
+        className="mt-3 w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-[14px] disabled:opacity-40"
+        style={{
+          background: rowDirty ? "var(--rs-brand)" : "var(--rs-bg-3)",
+          color: rowDirty ? "#fff" : "var(--rs-text-3)",
+        }}
+        aria-label={`บันทึกห้อง ${unit.code}`}
+      >
+        {saving ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Check className="h-4 w-4" aria-hidden="true" />
+        )}
+        บันทึกห้องนี้
+      </button>
+    </div>
+  );
+}
+
+/** One side (ไฟ/น้ำ) block inside a mobile unit card — full-width input. */
+function MobileSide({
+  unitId,
+  roomCode,
+  kind,
+  side,
+  inputRefs,
+  refKey,
+  onChange,
+  onKeyDown,
+  onBlur,
+  onAttach,
+  onToggleReset,
+  onOldFinalChange,
+}: {
+  unitId: string;
+  roomCode: string;
+  kind: Kind;
+  side: SideState;
+  inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
+  refKey: (unitId: string, kind: Kind) => string;
+  onChange: (unitId: string, kind: Kind, value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, unitId: string, kind: Kind) => void;
+  onBlur: (unitId: string, kind: Kind) => void;
+  onAttach: (unitId: string, kind: Kind, file: File) => void;
+  onToggleReset: (unitId: string, kind: Kind) => void;
+  onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const isElec = kind === "electric";
+  const label = isElec ? "ไฟ" : "น้ำ";
+  const Icon = isElec ? Zap : Droplet;
+  const iconColor = isElec ? "var(--rs-pending)" : "var(--rs-info)";
+  const currNum = parseReading(side.curr);
+  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
+
+  return (
+    <div
+      className="mt-3 rounded-xl p-3"
+      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+    >
+      {/* header row: label + prev reading */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-[14px]" style={{ color: "var(--rs-text)" }}>
+          <Icon className="h-4 w-4" style={{ color: iconColor }} aria-hidden="true" />
+          {label}
+        </span>
+        <span className="text-[12.5px] tabular-nums" style={{ color: "var(--rs-text-3)" }}>
+          ครั้งก่อน: {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
+        </span>
+      </div>
+
+      {/* full-width current reading input */}
+      <div className="relative mt-2">
+        <input
+          ref={(el) => {
+            inputRefs.current[refKey(unitId, kind)] = el;
+          }}
+          type="number"
+          inputMode="decimal"
+          min={0}
+          value={side.curr}
+          onChange={(e) => onChange(unitId, kind, e.target.value)}
+          onKeyDown={(e) => onKeyDown(e, unitId, kind)}
+          onBlur={() => onBlur(unitId, kind)}
+          placeholder="กรอกเลขมิเตอร์ล่าสุด"
+          aria-label={`เลขมิเตอร์ล่าสุด ห้อง ${roomCode} (${label})`}
+          className="w-full h-12 rounded-xl px-3 pr-10 text-[16px] tabular-nums outline-none focus:ring-2"
+          style={{
+            background: "#fff",
+            border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
+            color: "var(--rs-text)",
+            // @ts-expect-error css var for ring
+            "--tw-ring-color": "var(--rs-brand)",
+          }}
+        />
+        {side.saving ? (
+          <Loader2
+            className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin"
+            style={{ color: "var(--rs-text-3)" }}
+            aria-hidden="true"
+          />
+        ) : side.saved && !side.dirty ? (
+          <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--rs-ok)" }} aria-hidden="true" />
+        ) : null}
+      </div>
+
+      {/* computed usage + amount */}
+      <div className="mt-2 flex items-center justify-between gap-3 text-[13px]">
+        <span style={{ color: "var(--rs-text-2)" }}>
+          หน่วยที่ใช้:{" "}
+          <span className="font-semibold tabular-nums" style={{ color: side.usage != null ? "var(--rs-text)" : "var(--rs-text-3)" }}>
+            {side.usage != null ? side.usage.toLocaleString("th-TH") : "—"}
+          </span>
+          <UsageCompareInline usage={side.usage} prevUsage={side.prevUsage} />
+        </span>
+        <span style={{ color: "var(--rs-text-2)" }}>
+          เป็นเงิน:{" "}
+          <span className="font-semibold tabular-nums" style={{ color: side.amount != null ? "var(--rs-text)" : "var(--rs-text-3)" }}>
+            {side.amount != null ? formatBaht(side.amount) : "—"}
+          </span>
+        </span>
+      </div>
+
+      {/* มิเตอร์เต็ม/เปลี่ยน toggle */}
+      <button
+        type="button"
+        onClick={() => onToggleReset(unitId, kind)}
+        className="mt-2.5 inline-flex items-center gap-1.5 h-11 px-3 text-[13px] font-medium rounded-xl"
+        style={{
+          background: side.isReset ? "var(--rs-pending-soft)" : "transparent",
+          color: side.isReset ? "#8A6400" : "var(--rs-text-3)",
+          border: `1px solid ${side.isReset ? "#F6E0AE" : "var(--rs-border)"}`,
+        }}
+        aria-pressed={side.isReset}
+        aria-label={`มิเตอร์เต็ม/เปลี่ยน ห้อง ${roomCode} (${label})`}
+      >
+        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        มิเตอร์เต็ม/เปลี่ยน
+      </button>
+
+      {side.isReset && (
+        <div className="mt-2">
+          <label className="block text-[12px] mb-1" style={{ color: "var(--rs-text-3)" }}>
+            เลขมิเตอร์เดิมก่อนเปลี่ยน
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            value={side.oldFinal}
+            onChange={(e) => onOldFinalChange(unitId, kind, e.target.value)}
+            onBlur={() => onBlur(unitId, kind)}
+            placeholder="เลขมิเตอร์เดิม"
+            aria-label={`เลขมิเตอร์เดิมก่อนเปลี่ยน ห้อง ${roomCode} (${label})`}
+            className="w-full h-12 rounded-xl px-3 text-[16px] tabular-nums outline-none focus:ring-2"
+            style={{
+              background: "#fff",
+              border: "1px solid #F6E0AE",
+              color: "var(--rs-text)",
+              // @ts-expect-error css var for ring
+              "--tw-ring-color": "var(--rs-pending)",
+            }}
+          />
+        </div>
+      )}
+
+      {showRolloverWarn && (
+        <div
+          role="alert"
+          className="mt-2 inline-flex items-start gap-1.5 text-[12px] font-medium"
+          style={{ color: "#b91c1c" }}
+        >
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <span>เลขน้อยกว่าเดือนก่อน — เปิด “มิเตอร์เต็ม/เปลี่ยน” หากครบรอบ</span>
+        </div>
+      )}
+
+      {/* photo: full-width attach button OR existing thumbnail */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onAttach(unitId, kind, f);
+          e.target.value = ""; // allow re-picking the same file
+        }}
+      />
+      {side.uploading ? (
+        <div
+          role="status"
+          aria-label={`กำลังแนบรูปมิเตอร์${label} ห้อง ${roomCode}`}
+          className="mt-2.5 w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl text-[13px]"
+          style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-3)" }}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          กำลังแนบรูป…
+        </div>
+      ) : side.photoUrl ? (
+        <div className="mt-2.5 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.open(side.photoUrl!, "_blank", "noopener")}
+            className="h-11 w-11 shrink-0 overflow-hidden rounded-xl"
+            style={{ border: "1px solid var(--rs-ok)" }}
+            aria-label={`ดูรูปมิเตอร์${label} ห้อง ${roomCode}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={side.photoUrl} alt={`รูปมิเตอร์${label} ห้อง ${roomCode}`} className="h-full w-full object-cover" />
+          </button>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl text-[13px] font-medium"
+            style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-2)", border: "1px solid var(--rs-border)" }}
+            aria-label={`เปลี่ยนรูปมิเตอร์${label} ห้อง ${roomCode}`}
+          >
+            <Camera className="h-4 w-4" aria-hidden="true" />
+            เปลี่ยนรูป
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="mt-2.5 w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl text-[14px] font-medium"
+          style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-2)", border: "1px solid var(--rs-border)" }}
+          aria-label={`แนบรูปมิเตอร์${label} ห้อง ${roomCode}`}
+        >
+          <Camera className="h-4 w-4" aria-hidden="true" />
+          แนบรูปมิเตอร์
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** inline variant of UsageCompare — sits after the หน่วยที่ใช้ number. */
+function UsageCompareInline({ usage, prevUsage }: { usage: number | null; prevUsage: number | null }) {
+  const delta = usageDelta(usage, prevUsage);
+  if (delta == null || usage == null) return null;
+  const prevLabel = prevUsage != null ? prevUsage.toLocaleString("th-TH") : "—";
+  if (delta.dir === "same") {
+    return (
+      <span className="ml-1 text-[11px] font-semibold" style={{ color: "var(--rs-text-3)" }} title={`เดือนก่อน ${prevLabel} หน่วย`}>
+        = เท่าเดือนก่อน
+      </span>
+    );
+  }
+  const up = delta.dir === "up";
+  return (
+    <span
+      className="ml-1 text-[11px] font-semibold tabular-nums"
+      style={{ color: up ? "#B45309" : "#15803D" }}
+      title={`เดือนก่อน ${prevLabel} หน่วย — ${up ? "ใช้เยอะขึ้น" : "ใช้น้อยลง"} ${delta.pct}%`}
+    >
+      {up ? "↑" : "↓"} {delta.pct}%
+    </span>
   );
 }

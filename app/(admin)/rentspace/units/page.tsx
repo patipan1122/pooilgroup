@@ -4,7 +4,7 @@ import { isAdminTier } from "@/lib/auth/role-guards";
 import { getPrimaryProject, listUnitsWithState, listBuildingsWithUnits } from "@/lib/rentspace/data";
 import { formatBaht, tenantDisplayName, toNum, currentPeriod } from "@/lib/rentspace/format";
 import { promoStatus } from "@/lib/rentspace/billing";
-import { RsPage, RsHeader, RsBadge, RsEmpty } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsBadge, RsEmpty, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import UnitForm from "./_components/unit-form";
 import BuildingManager from "./_components/building-manager";
 
@@ -92,7 +92,7 @@ export default async function UnitsPage() {
                   {g.zone ? <span style={{ color: "var(--rs-text-3)" }}> · โซน {g.zone}</span> : null}
                   <span style={{ color: "var(--rs-text-3)" }}> · {rows.length}</span>
                 </h2>
-                <div className="rs-card overflow-x-auto">
+                <div className="rs-card overflow-x-auto hidden lg:block">
                   <table className="rs-table w-full min-w-[820px] text-sm">
                     <thead>
                       <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
@@ -170,6 +170,53 @@ export default async function UnitsPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Mobile: tappable cards (เลี่ยงตารางกว้างที่ล้นบนมือถือ) */}
+                <div className="space-y-2 lg:hidden">
+                  {rows.map((u) => {
+                    const outstanding = toNum(u.outstanding);
+                    const rent = u.contract ? toNum(u.contract.rentAmountThb) : toNum(u.baseRentThb);
+                    const promo = u.contract ? promoStatus(u.contract, period) : null;
+                    return (
+                      <RsMobileCard
+                        key={u.id}
+                        href={`/rentspace/units/${u.id}`}
+                        title={
+                          <div className="min-w-0">
+                            <div className="truncate">{u.code}</div>
+                            {u.name ? (
+                              <div className="truncate text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
+                                {u.name}
+                              </div>
+                            ) : null}
+                          </div>
+                        }
+                        titleRight={<RsBadge kind="unit" status={u.status} />}
+                      >
+                        <RsField
+                          label="ผู้เช่า"
+                          value={u.tenant ? tenantDisplayName(u.tenant) : "ว่าง"}
+                          tone={u.tenant ? undefined : "muted"}
+                        />
+                        <RsField label="ค่าเช่า/เดือน" value={rent > 0 ? formatBaht(rent) : "—"} align="right" />
+                        <RsField
+                          label="ค้างชำระ"
+                          value={outstanding > 0 ? formatBaht(outstanding) : "—"}
+                          align="right"
+                          tone={outstanding > 0 ? "danger" : "muted"}
+                        />
+                        {promo && promo.active ? (
+                          <RsField
+                            label="ส่วนลด"
+                            value={`−${formatBaht(promo.perMonth)} · เหลือ ${promo.monthsLeft} เดือน`}
+                            align="right"
+                            tone="ok"
+                          />
+                        ) : null}
+                      </RsMobileCard>
+                    );
+                  })}
                 </div>
               </section>
             );

@@ -170,15 +170,17 @@ export default async function BillsPage({
         <KpiInline label={`ออกบิลเดือนนี้ (${periodLabel(thisPeriod)})`} value={formatBaht(thisMonthBilled)} />
       </div>
 
-      {/* filter chips + month picker */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* filter chips + month picker — on phones this is a single horizontal-scroll
+          row (chips shrink-0, scrollbar hidden) so the filter chrome doesn't eat the
+          screen; from lg it wraps normally. */}
+      <div className="rs-chip-row flex items-center gap-2 overflow-x-auto lg:flex-wrap lg:overflow-visible -mx-4 px-4 lg:mx-0 lg:px-0">
         <FilterChip href={chipHref({ status: undefined, period: periodFilter })} active={!statusFilter} label="ทุกสถานะ" reset={!statusFilter ? undefined : `/rentspace/bills${periodFilter ? `?period=${periodFilter}` : ""}`} />
         {Object.entries(BILL_STATUS)
           .filter(([k]) => k !== "draft")
           .map(([k, v]) => (
             <FilterChip key={k} href={chipHref({ status: k })} active={statusFilter === k} label={v.label} />
           ))}
-        <span className="mx-1 h-4 w-px" style={{ background: "var(--rs-border)" }} />
+        <span className="mx-1 h-5 w-px shrink-0" style={{ background: "var(--rs-border)" }} />
         <FilterChip href={chipHref({ period: undefined, status: statusFilter })} active={!periodFilter} label="ทุกเดือน" />
         {periods.map((p) => (
           <FilterChip key={p} href={chipHref({ period: p })} active={periodFilter === p} label={periodLabel(p)} />
@@ -199,6 +201,12 @@ export default async function BillsPage({
       ) : project ? (
         <BillsTable projectId={project.id} period={periodFilter ?? thisPeriod} rows={billRows} canDelete={canDelete} />
       ) : null}
+
+      {/* hide the horizontal scrollbar on the mobile filter row (keeps it scrollable) */}
+      <style>{`
+        .rs-chip-row { scrollbar-width: none; -ms-overflow-style: none; }
+        .rs-chip-row::-webkit-scrollbar { display: none; }
+      `}</style>
     </RsPage>
   );
 }
@@ -233,7 +241,7 @@ function FilterChip({ href, active, label, reset }: { href: string; active: bool
   return (
     <Link
       href={reset && active ? reset : href}
-      className="rounded-full px-3 py-1.5 text-[12.5px] font-medium transition"
+      className="shrink-0 inline-flex items-center rounded-full px-3 min-h-[36px] text-[12.5px] font-medium transition"
       style={
         active
           ? { background: "var(--rs-brand)", color: "#fff" }

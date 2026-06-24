@@ -127,11 +127,11 @@ export default function RollingChart({ rolling12 }: { rolling12: RevenueMonth[] 
         }
         .rs-rev-scroll {
           overflow-x: auto;
-          padding-left: 52px; /* room for gridline value labels */
+          padding-left: 44px; /* room for gridline value labels */
         }
         .rs-rev-plot {
           position: relative;
-          min-width: 560px;
+          width: 100%;
           height: 220px;
         }
         .rs-rev-grid {
@@ -151,9 +151,9 @@ export default function RollingChart({ rolling12 }: { rolling12: RevenueMonth[] 
         }
         .rs-rev-gridval {
           position: absolute;
-          left: -52px;
+          left: -44px;
           top: -8px;
-          width: 46px;
+          width: 38px;
           text-align: right;
           font-size: 10px;
           color: var(--rs-text-3);
@@ -163,11 +163,11 @@ export default function RollingChart({ rolling12 }: { rolling12: RevenueMonth[] 
           inset: 0;
           display: flex;
           align-items: flex-end;
-          gap: 2px;
+          gap: 1px;
         }
         .rs-rev-col {
           flex: 1 1 0;
-          min-width: 38px;
+          min-width: 0;
           height: 100%;
           display: flex;
           flex-direction: column;
@@ -177,16 +177,29 @@ export default function RollingChart({ rolling12 }: { rolling12: RevenueMonth[] 
           display: flex;
           align-items: flex-end;
           justify-content: center;
-          gap: 3px;
+          gap: 2px;
           height: 100%;
         }
         .rs-rev-bar-wrap {
           position: relative;
-          flex: 0 0 auto;
-          width: 13px;
+          flex: 1 1 0;
+          min-width: 0;
+          max-width: 13px;
           height: 100%;
           display: flex;
           align-items: flex-end;
+        }
+        @media (min-width: 640px) {
+          .rs-rev-bar-wrap {
+            flex: 0 0 auto;
+            width: 13px;
+          }
+          .rs-rev-bars {
+            gap: 2px;
+          }
+          .rs-rev-pair {
+            gap: 3px;
+          }
         }
         .rs-rev-bar {
           width: 100%;
@@ -226,7 +239,7 @@ export default function RollingChart({ rolling12 }: { rolling12: RevenueMonth[] 
         }
         .rs-rev-yr {
           display: block;
-          font-size: 9.5px;
+          font-size: 11px;
           color: var(--rs-text-3);
         }
       `}</style>
