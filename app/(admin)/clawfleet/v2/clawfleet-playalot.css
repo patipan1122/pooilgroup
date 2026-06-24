@@ -345,3 +345,43 @@
 .cf-manage-card-actions { display: flex; gap: 8px; margin-top: 12px; }
 .cf-manage-note { margin-top: 16px; padding: 16px 22px; }
 .cf-manage-note-link { color: var(--cf-mustard-deep); font-weight: 700; }
+
+/* ============================================================
+   READABILITY POLISH (2026-06-24) — CEO: "อ่านง่าย ไม่ปวดตา ไม่งง"
+   clearer hierarchy · reserved color (red = money-lost only) · comfy sizes
+   ============================================================ */
+
+/* — main action: ตรวจ Anomaly = bold BLUE card (was rendering white) — */
+.cf-scope .cf-hero-cta {
+  background: var(--cf-blue) !important;
+  color: #fff !important;
+  box-shadow: 0 10px 26px rgba(45,108,177,.30);
+  padding: 24px 26px;
+}
+.cf-scope .cf-hero-cta .cf-hero-cta-title { color: #fff !important; font-size: 23px; }
+.cf-scope .cf-hero-cta .cf-hero-cta-sub { color: rgba(255,255,255,.88) !important; }
+.cf-scope .cf-hero-cta svg { color: #fff; flex-shrink: 0; }
+/* count chip = a count, not an alarm → mustard, not red */
+.cf-hero-count { background: var(--cf-mustard); color: var(--cf-text); }
+
+/* — Anomaly inbox rows: clearer hierarchy, less clutter — */
+.cf-anom-row { padding: 16px 18px; gap: 14px; align-items: center; }
+.cf-anom-zone { font-size: 18px; }                 /* branch name — primary */
+.cf-anom-head { gap: 7px; align-items: center; flex-wrap: wrap; }
+.cf-anom-id { display: none; }                     /* hide CFS-id noise */
+.cf-anom-reason { font-size: 12.5px; color: var(--cf-text-3); margin-top: 2px; }
+.cf-anom-gap-amt { font-size: 23px; }
+.cf-anom-meta-text { font-size: 12.5px; }
+/* soft pills for non-critical (reserve strong red for the lost-amount only) */
+.cf-pill-red { background: var(--cf-red-50); color: var(--cf-red-deep); }
+.cf-pill-amber { background: var(--cf-primary-50); color: var(--cf-mustard-deep); }
+
+/* — comfy, consistent block spacing — */
+.cf-section { padding: 24px 26px; }
+.cf-cols { gap: 20px; }
+.cf-section + .cf-section, .cf-cols { margin-top: 4px; }
+.cf-page { display: flex; flex-direction: column; gap: 22px; }
+
+/* — readable secondary text (avoid too-faint) — */
+.cf-dim { color: var(--cf-text-3); }
+.cf-branch-meta, .cf-session-meta, .cf-anom-reason, .cf-stock-card-meta { line-height: 1.45; }
