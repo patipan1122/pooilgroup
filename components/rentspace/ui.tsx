@@ -85,3 +85,82 @@ export function RsEmpty({ icon = "🏬", title, hint, action }: { icon?: string;
 export function RsCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`rs-card ${className}`}>{children}</div>;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile list primitives (CEO 2026-06-24 · mobile version).
+// On phones the wide `rs-table` (min-w-[820px]) overflows/crushes. Pattern: wrap
+// the existing <table> in `hidden lg:block` (desktop) and render an
+// `lg:hidden space-y-2` stack of <RsMobileCard> on mobile — same data, tappable
+// cards, no horizontal scroll. Cards are ≥44px tap targets by construction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function RsMobileCard({
+  href,
+  title,
+  titleRight,
+  children,
+  className = "",
+}: {
+  href?: string;
+  title: React.ReactNode;
+  titleRight?: React.ReactNode;
+  /** Key/value rows — usually a sequence of <RsField>. Rendered as a 2-col grid. */
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  const inner = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 text-[15px] font-semibold" style={{ color: "var(--rs-text)" }}>
+          {title}
+        </div>
+        {titleRight ? <div className="shrink-0 text-right">{titleRight}</div> : null}
+      </div>
+      {children ? <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">{children}</div> : null}
+    </>
+  );
+  const cls = `rs-card block p-3.5 transition-colors active:bg-[var(--rs-bg-2)] ${className}`;
+  return href ? (
+    <Link href={href} className={cls}>
+      {inner}
+    </Link>
+  ) : (
+    <div className={cls}>{inner}</div>
+  );
+}
+
+export function RsField({
+  label,
+  value,
+  align = "left",
+  tone,
+  full,
+}: {
+  label: string;
+  value: React.ReactNode;
+  align?: "left" | "right";
+  tone?: "danger" | "ok" | "pending" | "muted";
+  /** Span both grid columns (long values like address/note). */
+  full?: boolean;
+}) {
+  const color =
+    tone === "danger"
+      ? "var(--rs-danger)"
+      : tone === "ok"
+        ? "var(--rs-ok)"
+        : tone === "pending"
+          ? "var(--rs-pending)"
+          : tone === "muted"
+            ? "var(--rs-text-3)"
+            : "var(--rs-text)";
+  return (
+    <div className={`${full ? "col-span-2" : ""} ${align === "right" ? "text-right" : ""} min-w-0`}>
+      <div className="text-[11px]" style={{ color: "var(--rs-text-3)" }}>
+        {label}
+      </div>
+      <div className="truncate text-[13px] font-medium tabular-nums" style={{ color }}>
+        {value}
+      </div>
+    </div>
+  );
+}

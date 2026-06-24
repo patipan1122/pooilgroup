@@ -33,6 +33,17 @@
   border-radius: 14px;
 }
 
+/* iOS Safari auto-zooms when a focused field's font-size < 16px. Force ≥16px on
+   phones across all rs-scope fields (CEO 2026-06-24 mobile pass). Desktop keeps
+   the designed sizes. One block fixes every input/select/textarea at once. */
+@media (max-width: 640px) {
+  .rs-scope input:not([type="checkbox"]):not([type="radio"]),
+  .rs-scope select,
+  .rs-scope textarea {
+    font-size: 16px;
+  }
+}
+
 .rs-chip {
   display: inline-flex;
   align-items: center;
