@@ -165,7 +165,7 @@ export async function logRepair(input: {
   parts: Array<{ productId: string; quantity: number }>;
 }): Promise<ActionResult<{ repairId: string; partsCostCents: number }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์บันทึกซ่อม · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์บันทึกซ่อม"); // ช่าง/พนักงาน (staff) ได้ (CEO 2026-06-24)
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (!input.machineLabel.trim()) return err("ใส่ชื่อเครื่อง/จุดที่ซ่อม");
   const parts = input.parts.filter((p) => p.quantity > 0);

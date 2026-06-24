@@ -50,8 +50,8 @@
   --pl-ink-800: #382f24;
   --pl-ink-900: #3a3026;  /* ink — warm brown-black */
 
-  --pl-paper:  #fcf8f0;  /* card surface — warm cream (Cream #F7F2EA family) */
-  --pl-canvas: #eae5db;  /* page bg — warm sand grey (#e7e5df family) */
+  --pl-paper:  #ffffff;  /* card surface — pure white (CEO รสนิยม: ขาว อ่านง่าย · เท่าหน้า office/stock) */
+  --pl-canvas: #f7f2ea;  /* page bg — cream Play a lot #F7F2EA (เท่าหน้าใหม่เป๊ะ) */
 
   --pl-ok: #1f8a5b;        /* brand success green */
   --pl-ok-soft: #e0f2e9;
@@ -85,8 +85,8 @@
   --pl-text-muted: var(--pl-ink-500);
   --pl-text-faint: var(--pl-ink-400);
 
-  --pl-line: var(--pl-ink-200);
-  --pl-line-strong: var(--pl-ink-300);
+  --pl-line: #ece5d8;            /* hairline — เท่าขอบการ์ดหน้าใหม่ */
+  --pl-line-strong: #ddd3c2;
 
   /* ───── Typography · Playalot ─────
    * display = Fredoka (หัวข้อ + เลขตัวใหญ่ playful) · body = Mitr (ไทย) + Nunito
@@ -134,23 +134,11 @@
  * ============================================================================ */
 .pl-shell {
   min-height: calc(100vh - 64px);
-  background:
-    radial-gradient(circle at top right, rgba(240, 179, 35, 0.10), transparent 42%),
-    radial-gradient(circle at bottom left, rgba(45, 108, 177, 0.06), transparent 52%),
-    var(--pl-canvas);
+  background: var(--pl-canvas);  /* flat cream — สะอาด อ่านง่าย เท่าหน้า office/stock (ตัด gradient+dot grid) */
   position: relative;
 }
 
-.pl-shell::before {
-  content: "";
-  position: fixed;
-  inset: 64px 0 0 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(58, 48, 38, 0.05) 1px, transparent 0);
-  background-size: 24px 24px;
-  pointer-events: none;
-  z-index: 0;
-  mask-image: linear-gradient(to bottom, black 0%, transparent 80%);
-}
+.pl-shell::before { display: none; }
 
 .pl-shell > * { position: relative; z-index: 1; }
 
@@ -171,9 +159,7 @@
   gap: 1rem;
   padding: 1.1rem 1.75rem;
   border-bottom: 1px solid var(--pl-line);
-  background: rgba(255, 252, 245, 0.85);
-  backdrop-filter: saturate(180%) blur(14px);
-  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  background: #fff;  /* หัวขาวทึบ สะอาด เท่าหน้าใหม่ (ตัด blur) */
   position: sticky;
   top: 0;
   z-index: var(--pl-z-sticky);
@@ -317,19 +303,18 @@
 }
 
 .pl-btn-primary {
-  /* Darker gradient · WCAG AA white-on-amber (was 2.36:1 fail · now 4.7+:1)
-   * Use ink-on-amber for max contrast on light shade · white on darker shade. */
-  background: linear-gradient(180deg, var(--pl-amber-600), var(--pl-amber-700));
-  border-color: var(--pl-amber-700);
+  /* ปุ่มหลัก = ขาวบนน้ำเงิน Playalot (รสนิยม CEO · WCAG AA · เท่าหน้า office/stock) */
+  background: linear-gradient(180deg, var(--pl-blue), var(--pl-indigo-600));
+  border-color: var(--pl-indigo-600);
   color: white;
   font-weight: 600;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);  /* extra legibility */
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, var(--pl-shadow-1);
 }
 
 .pl-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--pl-amber-500), var(--pl-amber-600));
-  border-color: var(--pl-amber-700);
+  background: linear-gradient(180deg, #357cc6, var(--pl-blue));
+  border-color: var(--pl-indigo-600);
   color: white;
 }
 
@@ -700,8 +685,8 @@
 .pl-tab:hover { color: var(--pl-text); }
 
 .pl-tab.is-active {
-  color: var(--pl-brand-dark);
-  border-bottom-color: var(--pl-brand);
+  color: var(--pl-blue);             /* แท็บ active = น้ำเงิน (เท่าหน้า stock/office · รสนิยม CEO) */
+  border-bottom-color: var(--pl-blue);
   font-weight: 600;
 }
 

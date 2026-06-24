@@ -34,6 +34,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
   const [imageR2Path, setImageR2Path] = useState("");
   const [uploading, setUploading] = useState(false);
   const [imgError, setImgError] = useState<string | null>(null);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   // แปลงค่าที่เก็บ → URL สำหรับแสดง preview/รูปในตาราง
   function resolveImg(v: string | null): string | null {
@@ -80,6 +81,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
   }
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    setSaveErr(null);
     start(async () => {
       const priceCents = Math.round(parseFloat(price || "0") * 100);
       const costCents = Math.round(parseFloat(cost || "0") * 100);
@@ -90,6 +92,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
         imageR2Path: imageR2Path.trim() === "" ? "" : imageR2Path.trim(),
       });
       if (res.ok) { setShowForm(false); router.refresh(); }
+      else setSaveErr(res.error || "บันทึกไม่สำเร็จ · ลองใหม่");
     });
   }
 
@@ -194,8 +197,8 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ราคาขาย (ไม่ใช้)" : "ราคาขาย (บาท)"}</label>
-                <input className="pl-input" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
+                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ราคาขาย (อะไหล่ไม่ต้องใส่)" : "ราคาขาย (บาท)"}</label>
+                <input className="pl-input" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required={kind === "SALE_ITEM"} disabled={kind === "SPARE_PART"} />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ต้นทุน/ชิ้น (บาท)</label>
@@ -219,6 +222,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
               </select>
             </div>
             <label style={{ fontSize: 13 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ marginRight: 6 }} /> Active</label>
+            {saveErr && <div style={{ fontSize: 13, color: "#fff", background: "var(--pl-danger)", borderRadius: 8, padding: "8px 12px" }}>{saveErr}</div>}
             <div style={{ display: "flex", gap: 6 }}>
               <button type="button" className="pl-btn" onClick={() => setShowForm(false)}>ยกเลิก</button>
               <button type="submit" className="pl-btn pl-btn-primary" disabled={pending}>{pending ? "บันทึก..." : "บันทึก"}</button>

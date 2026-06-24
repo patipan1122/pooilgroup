@@ -83,7 +83,7 @@ export default async function PlaylandOfficeHub() {
     ...(isSuper
       ? [{ href: "/playland/settings/devices", title: "อุปกรณ์ · เครื่องสแกน", gloss: "ผูกเครื่องอ่านหน้า · สถานะ", icon: ScanFace, tint: BLUE }]
       : []),
-    { href: "/playland/overrides", title: "เปิดประตูเอง · log", gloss: "สั่งเปิดประตูด้วยมือ · บันทึกเหตุผล", icon: DoorOpen, tint: RED },
+    { href: "/playland/overrides", title: "ประวัติเปิดประตูเอง", gloss: "ดูบันทึกการเปิดประตูด้วยมือ · จับการใช้ผิดปกติ", icon: DoorOpen, tint: RED },
     { href: "/playland/audit", title: "Audit Log", gloss: "ประวัติการกระทำทั้งหมดในระบบ", icon: History, tint: AMBER },
   ];
 

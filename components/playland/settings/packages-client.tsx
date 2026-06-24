@@ -32,6 +32,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
   const [perMinute, setPerMinute] = useState("2");
   const [branchId, setBranchId] = useState<string | "">("");
   const [active, setActive] = useState(true);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   function startEdit(p: Pkg) {
     setEditing(p);
@@ -52,6 +53,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
   }
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    setSaveErr(null);
     start(async () => {
       const priceCents = Math.round(parseFloat(price || "0") * 100);
       const perMinuteCents = Math.round(parseFloat(perMinute || "0") * 100);
@@ -67,6 +69,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
         active,
       });
       if (res.ok) { setShowForm(false); router.refresh(); }
+      else setSaveErr(res.error || "บันทึกไม่สำเร็จ · ลองใหม่");
     });
   }
 
@@ -139,6 +142,7 @@ export function PackagesClient({ branches, packages }: { branches: Branch[]; pac
               </select>
             </div>
             <label style={{ fontSize: 13 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ marginRight: 6 }} /> Active</label>
+            {saveErr && <div style={{ fontSize: 13, color: "#fff", background: "var(--pl-danger)", borderRadius: 8, padding: "8px 12px" }}>{saveErr}</div>}
             <div style={{ display: "flex", gap: 6 }}>
               <button type="button" className="pl-btn" onClick={() => setShowForm(false)}>ยกเลิก</button>
               <button type="submit" className="pl-btn pl-btn-primary" disabled={pending}>{pending ? "บันทึก..." : "บันทึก"}</button>

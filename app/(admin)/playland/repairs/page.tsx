@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { requirePlaylandCashier } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { RepairForm } from "@/components/playland/repair-form";
@@ -16,7 +16,7 @@ const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
 export default async function RepairsPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandCashier(session.user.role); // ช่าง/พนักงาน (staff) บันทึกซ่อมเองได้ (CEO 2026-06-24)
   const orgId = session.user.org_id;
   const branches = await listBranches(orgId);
   const branchId = sp.branch || branches[0]?.id;

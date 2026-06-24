@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, thb } from "@/lib/playland/format";
-import { Tag, ArrowLeft, PlusCircle } from "lucide-react";
+import { Tag, ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export default async function PromosSettingsPage() {
           <Link href="/playland/settings" className="pl-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}><ArrowLeft size={12} /> Settings</Link>
           <h1>Promo / Coupon · {promos.length}</h1>
         </div>
-        <button className="pl-btn pl-btn-primary" disabled><PlusCircle size={14} /> เพิ่ม (เร็ว ๆ นี้)</button>
+        <span className="pl-chip pl-chip-muted" style={{ fontSize: 12, padding: "5px 12px" }}>🚧 โปรโมชั่นกำลังพัฒนา</span>
       </header>
       <div style={{ padding: 16 }}>
         {promos.length === 0 ? (
