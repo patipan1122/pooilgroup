@@ -9,6 +9,7 @@ const PREFIXES = {
   ticket: "PT",
   purchase: "PO",
   repair: "RP",
+  stockCount: "SC",
 } as const;
 
 function beYearTwoDigits(): string {
@@ -50,4 +51,8 @@ export function newPurchaseCode(): string {
 
 export function newRepairCode(): string {
   return newCode("repair");
+}
+
+export function newStockCountCode(): string {
+  return newCode("stockCount");
 }

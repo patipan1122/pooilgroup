@@ -3438,6 +3438,7 @@ model PlaylandBranch {
   stockMovements PlaylandStockMovement[]
   purchases      PlaylandPurchase[]
   repairLogs     PlaylandRepairLog[]
+  stockCounts    PlaylandStockCount[]
 
   @@index([orgId])
   @@map("branches")
@@ -3752,6 +3753,7 @@ model PlaylandProduct {
   movements     PlaylandStockMovement[]
   purchaseLines PlaylandPurchaseLine[]
   repairParts   PlaylandRepairPart[]
+  countLines    PlaylandStockCountLine[]
 
   @@unique([branchId, barcode])
   @@index([orgId, branchId])
@@ -3864,6 +3866,49 @@ model PlaylandRepairPart {
   @@index([repairId])
   @@index([productId])
   @@map("repair_parts")
+  @@schema("playland")
+}
+
+// ---------- 10e. Stock Counts (นับสต๊อกเป็นรอบ · cycle count rounds · เก็บเป็นใบดูย้อนหลังได้) ----------
+model PlaylandStockCount {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  countCode       String   @unique @map("count_code") // SC-YYMMDD-NN
+  note            String?
+  itemsCounted    Int      @default(0) @map("items_counted") // จำนวนรายการที่ปรับ
+  totalDiff       Int      @default(0) @map("total_diff") // ผลรวมส่วนต่าง (ชิ้น)
+  countedByUserId String   @map("counted_by_user_id") @db.Uuid
+  countedByName   String?  @map("counted_by_name") // snapshot ชื่อผู้นับ
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  lines  PlaylandStockCountLine[]
+
+  @@index([orgId, branchId])
+  @@index([branchId, createdAt])
+  @@map("stock_counts")
+  @@schema("playland")
+}
+
+model PlaylandStockCountLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  countId     String   @map("count_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") // snapshot
+  systemQty   Int      @map("system_qty") // ของในระบบก่อนนับ
+  countedQty  Int      @map("counted_qty") // นับได้จริง
+  diff        Int // countedQty - systemQty
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  count   PlaylandStockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  product PlaylandProduct    @relation(fields: [productId], references: [id])
+
+  @@index([countId])
+  @@index([productId])
+  @@map("stock_count_lines")
   @@schema("playland")
 }
 

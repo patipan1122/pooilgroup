@@ -56,7 +56,7 @@ export function StockReceiveForm({ branchId, products }: { branchId: string; pro
         note,
         lines: valid.map((l) => ({ productId: l.productId, quantity: l.quantity, unitCostCents: Math.round(l.unitCostBaht * 100) })),
       });
-      if (res.ok) { setMsg(`✓ รับเข้า ${res.data.itemsReceived} รายการ · รวม ฿${Math.round(res.data.totalCostCents / 100).toLocaleString()}`); setLines([]); setSupplier(""); setNote(""); router.refresh(); }
+      if (res.ok) { setLines([]); setSupplier(""); setNote(""); router.push(`/playland/stock/receipts/${res.data.purchaseId}`); }
       else setMsg("❌ " + res.error);
     } catch { setMsg("❌ บันทึกไม่สำเร็จ · ลองใหม่"); }
     finally { setBusy(false); }

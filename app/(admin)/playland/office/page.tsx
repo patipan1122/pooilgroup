@@ -15,7 +15,6 @@ import { thb } from "@/lib/playland/format";
 import {
   BarChart3, Clock, Package, Cookie, Building2, Boxes,
   ScanFace, DoorOpen, History, ArrowRight, Store, Baby, Wallet,
-  PackagePlus, Wrench,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -72,13 +71,11 @@ export default async function PlaylandOfficeHub() {
     { href: "/playland/settings/packages", title: "แพ็กเกจเวลา", gloss: "ราคาเข้าเล่น · day pass", icon: Package, count: packages.length, tint: AMBER },
     { href: "/playland/settings/products", title: "ขนม · เครื่องดื่ม", gloss: "สินค้าใน POS หน้าร้าน", icon: Cookie, count: products.length, tint: GREEN },
     { href: "/playland/settings/branches", title: "สาขา", gloss: "พื้นที่ทำธุรกิจ", icon: Building2, count: branches.length, tint: BLUE },
-    { href: "/playland/settings/stock-count", title: "นับสต๊อก", gloss: "เช็คจำนวนสินค้าคงเหลือ", icon: Boxes, tint: GREEN },
   ];
 
+  // สต๊อก·คลัง = ที่เดียวจบ (รับของเข้า · นับสต๊อก · ซ่อม · ของใกล้หมด อยู่ในแท็บข้างใน)
   const groupStock: Tile[] = [
-    { href: "/playland/stock", title: "สต๊อก · คลัง", gloss: "ของคงเหลือ · ของใกล้หมด · ความเคลื่อนไหว", icon: Boxes, tint: GREEN },
-    { href: "/playland/stock/receive", title: "รับของเข้า", gloss: "ซื้อเข้า · เพิ่มสต๊อก · ต้นทุน", icon: PackagePlus, tint: BLUE },
-    { href: "/playland/repairs", title: "ซ่อม · เบิกอะไหล่", gloss: "บันทึกซ่อมเครื่อง · ตัดสต๊อกอะไหล่", icon: Wrench, tint: AMBER },
+    { href: "/playland/stock", title: "สต๊อก · คลังสินค้า", gloss: "รับของเข้า · ใบรับสินค้า · นับสต๊อก · ซ่อม·อะไหล่ · ของใกล้หมด", icon: Boxes, tint: GREEN },
   ];
 
   const groupSystem: Tile[] = [

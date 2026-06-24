@@ -67,10 +67,15 @@ export function StockCountForm({ branchId, products }: { branchId: string; produ
         lines: dirty.map((d) => ({ productId: d.id, countedQty: d.after, reason: d.reason || undefined })),
       });
       if (!res.ok) { setMsg({ kind: "err", text: res.error }); return; }
-      setMsg({ kind: "ok", text: `ปรับ ${res.data.adjusted} รายการ · ข้าม ${res.data.skipped} (ตรงอยู่แล้ว)` });
       setCounts({});
       setReasons({});
       setNotes("");
+      if (res.data.countId) {
+        // เปิดใบนับที่เพิ่งบันทึก (ดูส่วนต่าง · ใครนับ · หมายเหตุ)
+        router.push(`/playland/stock/counts/${res.data.countId}`);
+        return;
+      }
+      setMsg({ kind: "ok", text: `นับครบ · ตรงกับระบบทุกรายการ (ข้าม ${res.data.skipped})` });
       router.refresh();
     });
   }
