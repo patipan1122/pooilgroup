@@ -16,11 +16,11 @@ import {
   listPackages,
   listProducts,
   getTodayStats,
-  listBranches,
   listOpenShift,
   searchMembers,
   listBookings,
 } from "@/lib/playland/queries";
+import { getAllowedBranchList } from "@/lib/playland/branch-context";
 import PlaylandApp, {
   type PlaylandKid,
   type PlaylandPackageVM,
@@ -84,8 +84,9 @@ export default async function PlaylandPage({
   const orgId = session.user.org_id;
   const cashierName = session.user.name || session.user.email || "พนักงาน";
 
-  const branches = await listBranches(orgId);
-  const branchId = sp.branch || branches[0]?.id;
+  // พนักงานเห็น/ลงเงินได้เฉพาะสาขาที่ผูก (ผูกแล้ว) — กันลงเงินผิดสาขา
+  const branches = await getAllowedBranchList(orgId);
+  const branchId = (sp.branch && branches.some((b) => b.id === sp.branch)) ? sp.branch : branches[0]?.id;
 
   // No branch yet → send to branch onboarding (settings)
   if (!branchId) redirect("/playland/settings/branches");

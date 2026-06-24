@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { canPlaylandManage } from "./role-guard";
+import { canPlaylandManage, canPlaylandAdmin } from "./role-guard";
 import { verifyBranchOrg } from "./guards";
 import { PL_BRANCH_COOKIE } from "./branch-context";
 
@@ -49,4 +49,29 @@ export async function cloneProductToBranches(input: { productId: string; targetB
   if (created === 0) return err(skipped > 0 ? "สาขาปลายทางมีสินค้านี้อยู่แล้ว" : "ไม่มีสาขาปลายทาง");
   revalidatePath("/playland/settings/products");
   return { ok: true, data: { created, skipped } };
+}
+
+/** ผูกพนักงานเข้าสาขา (เห็น/ทำได้เฉพาะสาขาที่ผูก) · เฉพาะผู้ดูแลตั้งได้ */
+export async function assignStaffToBranch(input: { userId: string; branchId: string }): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!canPlaylandAdmin(session.user.role)) return err("เฉพาะผู้ดูแลตั้งพนักงานประจำสาขาได้");
+  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  const u = await prisma.user.findFirst({ where: { id: input.userId, orgId: session.user.org_id }, select: { id: true } });
+  if (!u) return err("ไม่พบพนักงานใน org");
+  await prisma.playlandStaffBranch.upsert({
+    where: { userId_branchId: { userId: input.userId, branchId: input.branchId } },
+    create: { orgId: session.user.org_id, userId: input.userId, branchId: input.branchId },
+    update: {},
+  });
+  revalidatePath("/playland/settings/branches");
+  return { ok: true, data: undefined };
+}
+
+/** ปลดพนักงานออกจากสาขา */
+export async function removeStaffFromBranch(input: { userId: string; branchId: string }): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!canPlaylandAdmin(session.user.role)) return err("เฉพาะผู้ดูแล");
+  await prisma.playlandStaffBranch.deleteMany({ where: { orgId: session.user.org_id, userId: input.userId, branchId: input.branchId } });
+  revalidatePath("/playland/settings/branches");
+  return { ok: true, data: undefined };
 }

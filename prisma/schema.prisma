@@ -3610,6 +3610,7 @@ model PlaylandBranch {
   purchases      PlaylandPurchase[]
   repairLogs     PlaylandRepairLog[]
   stockCounts    PlaylandStockCount[]
+  staffBranches  PlaylandStaffBranch[]
 
   @@index([orgId])
   @@map("branches")
@@ -4080,6 +4081,24 @@ model PlaylandStockCountLine {
   @@index([countId])
   @@index([productId])
   @@map("stock_count_lines")
+  @@schema("playland")
+}
+
+// ---------- 10f. Staff ↔ Branch (พนักงานประจำสาขา · จำกัดให้เห็น/ทำเฉพาะสาขาตัวเอง) ----------
+// ไม่มี FK ไป public.users (ข้าม schema) · เก็บ userId ตรง ๆ · admin tier ไม่ต้องผูก (เห็นทุกสาขา)
+model PlaylandStaffBranch {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+  @@index([orgId, userId])
+  @@index([branchId])
+  @@map("staff_branches")
   @@schema("playland")
 }
 
