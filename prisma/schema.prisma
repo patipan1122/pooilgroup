@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "chairops", "playland", "fuel"]
+  schemas  = ["public", "chairops", "playland", "fuel", "dc"]
 }
 
 // =============================================================
@@ -7222,4 +7222,496 @@ model ClawhubReward {
   @@index([orgId, isActive])
   @@map("clawhub_rewards")
   @@schema("public")
+}
+
+// =============================================================
+// DC — Distribution Center / คลังกลาง (operational warehouse layer)
+// ARCHITECTURE (locked · docs/WORKSHOP_dc-warehouse.md):
+//   TRCloud = financial book-of-record for inventory cost (moving-avg).
+//   DC = OPERATIONAL layer: qty + location + state ONLY.
+//   ★ ZERO-COST-COLUMN INVARIANT: balances carry NO cost. Cost lives as an
+//     immutable per-receipt LAYER (a fact) and is pushed to TRCloud via
+//     pushStockIn (the single cost event). DC never computes a rival average.
+//   Separate @@schema("dc") · orgId/userId/branchId = plain @db.Uuid columns
+//   (mirrors playland pattern — no cross-schema relations to public).
+// =============================================================
+
+enum DcWarehouseRole {
+  FLOOR
+  MANAGER
+
+  @@schema("dc")
+}
+
+enum DcProductType {
+  SALE
+  SPARE
+
+  @@schema("dc")
+}
+
+enum DcMoveKind {
+  RECEIVE
+  ISSUE
+  TRANSFER_OUT
+  TRANSFER_IN
+  COUNT_ADJUST
+  MOVE
+  RETURN_IN
+
+  @@schema("dc")
+}
+
+enum DcPostStatus {
+  PENDING
+  POSTED
+  FAILED
+  NA
+
+  @@schema("dc")
+}
+
+enum DcPoStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ORDERED
+  PARTIAL
+  CLOSED
+  CANCELLED
+
+  @@schema("dc")
+}
+
+enum DcShipmentMode {
+  TRUCK
+  SEA
+
+  @@schema("dc")
+}
+
+enum DcShipmentStatus {
+  PREPARING
+  IN_TRANSIT
+  ARRIVED
+  RECEIVED
+
+  @@schema("dc")
+}
+
+enum DcTransferStatus {
+  DISPATCHED
+  IN_TRANSIT
+  CONFIRMED
+  AUTO_UNVERIFIED
+  CANCELLED
+
+  @@schema("dc")
+}
+
+enum DcTransferDestType {
+  WAREHOUSE
+  MODULE
+
+  @@schema("dc")
+}
+
+enum DcOutboxStatus {
+  PENDING
+  SENT
+  ACKED
+  FAILED
+
+  @@schema("dc")
+}
+
+model DcWarehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  code      String
+  name      String
+  location  String?
+  isActive  Boolean  @default(true) @map("is_active")
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  members   DcWarehouseUser[]
+  balances  DcStockBalance[]
+  movements DcStockMovement[]
+
+  @@unique([orgId, code])
+  @@index([orgId, isActive])
+  @@map("warehouses")
+  @@schema("dc")
+}
+
+model DcWarehouseUser {
+  id          String          @id @default(uuid()) @db.Uuid
+  orgId       String          @map("org_id") @db.Uuid
+  warehouseId String          @map("warehouse_id") @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  role        DcWarehouseRole @default(FLOOR)
+  isActive    Boolean         @default(true) @map("is_active")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  warehouse DcWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, warehouseId])
+  @@index([orgId, userId])
+  @@index([warehouseId, isActive])
+  @@map("warehouse_users")
+  @@schema("dc")
+}
+
+model DcProduct {
+  id                 String        @id @default(uuid()) @db.Uuid
+  orgId              String        @map("org_id") @db.Uuid
+  sku                String
+  name               String
+  barcode            String?
+  type               DcProductType @default(SALE)
+  unit               String        @default("ชิ้น")
+  category           String?
+  trcloudSkuId       String?       @map("trcloud_sku_id")
+  trcloudProductCode String?       @map("trcloud_product_code")
+  reorderPoint       Int?          @map("reorder_point")
+  imageR2Path        String?       @map("image_r2_path")
+  active             Boolean       @default(true)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  balances      DcStockBalance[]
+  movements     DcStockMovement[]
+  poLines       DcPurchaseLine[]
+  grnLines      DcGoodsReceiptLine[]
+  costLayers    DcCostLayer[]
+  transferLines DcTransferLine[]
+  links         DcProductLink[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, barcode])
+  @@index([orgId, active, type])
+  @@map("products")
+  @@schema("dc")
+}
+
+model DcProductLink {
+  id            String  @id @default(uuid()) @db.Uuid
+  orgId         String  @map("org_id") @db.Uuid
+  productId     String  @map("product_id") @db.Uuid
+  destModule    String  @map("dest_module")
+  destProductId String  @map("dest_product_id") @db.Uuid
+  destBranchId  String? @map("dest_branch_id") @db.Uuid
+
+  product DcProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, destModule, destProductId])
+  @@index([orgId, destModule])
+  @@map("product_links")
+  @@schema("dc")
+}
+
+model DcStockBalance {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  warehouseId  String   @map("warehouse_id") @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  qtyOnHand    Int      @default(0) @map("qty_on_hand")
+  qtyInTransit Int      @default(0) @map("qty_in_transit")
+  location     String?
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  warehouse DcWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   DcProduct   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, productId])
+  @@index([orgId, productId])
+  @@map("stock_balances")
+  @@schema("dc")
+}
+
+model DcStockMovement {
+  id             String       @id @default(uuid()) @db.Uuid
+  orgId          String       @map("org_id") @db.Uuid
+  warehouseId    String       @map("warehouse_id") @db.Uuid
+  productId      String       @map("product_id") @db.Uuid
+  kind           DcMoveKind
+  qty            Int
+  balanceAfter   Int?         @map("balance_after")
+  unitCostSatang Int?         @map("unit_cost_satang")
+  costLayerId    String?      @map("cost_layer_id") @db.Uuid
+  refType        String?      @map("ref_type")
+  refId          String?      @map("ref_id") @db.Uuid
+  sourceKey      String       @map("source_key")
+  postStatus     DcPostStatus @default(NA) @map("post_status")
+  note           String?
+  locationFrom   String?      @map("location_from")
+  locationTo     String?      @map("location_to")
+  actorUserId    String?      @map("actor_user_id") @db.Uuid
+  occurredAt     DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  warehouse DcWarehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   DcProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  costLayer DcCostLayer? @relation(fields: [costLayerId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, sourceKey])
+  @@index([orgId, warehouseId, occurredAt(sort: Desc)])
+  @@index([orgId, productId, occurredAt(sort: Desc)])
+  @@index([postStatus])
+  @@map("stock_movements")
+  @@schema("dc")
+}
+
+model DcCostLayer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  orgId              String   @map("org_id") @db.Uuid
+  productId          String   @map("product_id") @db.Uuid
+  grnId              String?  @map("grn_id") @db.Uuid
+  shipmentId         String?  @map("shipment_id") @db.Uuid
+  qty                Int
+  cnyUnitCost        Decimal  @map("cny_unit_cost") @db.Decimal(15, 4)
+  fxRate             Decimal  @map("fx_rate") @db.Decimal(12, 6)
+  fxDate             DateTime @map("fx_date") @db.Timestamptz(6)
+  goodsThbSatang     Int      @map("goods_thb_satang")
+  dutyThbSatang      Int      @default(0) @map("duty_thb_satang")
+  freightThbSatang   Int      @default(0) @map("freight_thb_satang")
+  brokerThbSatang    Int      @default(0) @map("broker_thb_satang")
+  insuranceThbSatang Int      @default(0) @map("insurance_thb_satang")
+  otherThbSatang     Int      @default(0) @map("other_thb_satang")
+  landedUnitSatang   Int      @map("landed_unit_satang")
+  vatClaimableSatang Int      @default(0) @map("vat_claimable_satang")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  product   DcProduct         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  grn       DcGoodsReceipt?   @relation(fields: [grnId], references: [id], onDelete: SetNull)
+  movements DcStockMovement[]
+
+  @@index([orgId, productId])
+  @@index([grnId])
+  @@map("cost_layers")
+  @@schema("dc")
+}
+
+model DcSupplier {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  name         String
+  country      String   @default("CN")
+  contact      String?
+  wechat       String?
+  paymentTerms String?  @map("payment_terms")
+  note         String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  purchaseOrders DcPurchaseOrder[]
+
+  @@index([orgId, active])
+  @@map("suppliers")
+  @@schema("dc")
+}
+
+model DcPurchaseOrder {
+  id               String     @id @default(uuid()) @db.Uuid
+  orgId            String     @map("org_id") @db.Uuid
+  poCode           String     @map("po_code")
+  supplierId       String?    @map("supplier_id") @db.Uuid
+  warehouseId      String?    @map("warehouse_id") @db.Uuid
+  status           DcPoStatus @default(DRAFT)
+  currency         String     @default("CNY")
+  fxRate           Decimal?   @map("fx_rate") @db.Decimal(12, 6)
+  note             String?
+  createdByUserId  String     @map("created_by_user_id") @db.Uuid
+  approvedByUserId String?    @map("approved_by_user_id") @db.Uuid
+  approvedAt       DateTime?  @map("approved_at") @db.Timestamptz(6)
+  orderedAt        DateTime?  @map("ordered_at") @db.Timestamptz(6)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  supplier  DcSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lines     DcPurchaseLine[]
+  shipments DcShipment[]
+
+  @@unique([orgId, poCode])
+  @@index([orgId, status])
+  @@map("purchase_orders")
+  @@schema("dc")
+}
+
+model DcPurchaseLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  poId         String   @map("po_id") @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  qty          Int
+  unitPriceCny Decimal  @map("unit_price_cny") @db.Decimal(15, 4)
+  unitPriceThb Decimal? @map("unit_price_thb") @db.Decimal(15, 4)
+  photoR2Key   String?  @map("photo_r2_key")
+  lengthCm     Decimal? @map("length_cm") @db.Decimal(10, 2)
+  widthCm      Decimal? @map("width_cm") @db.Decimal(10, 2)
+  heightCm     Decimal? @map("height_cm") @db.Decimal(10, 2)
+  cbmPerUnit   Decimal? @map("cbm_per_unit") @db.Decimal(12, 6)
+  note         String?
+
+  po      DcPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  product DcProduct       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, poId])
+  @@map("purchase_lines")
+  @@schema("dc")
+}
+
+model DcShipment {
+  id                    String           @id @default(uuid()) @db.Uuid
+  orgId                 String           @map("org_id") @db.Uuid
+  poId                  String?          @map("po_id") @db.Uuid
+  shipmentCode          String           @map("shipment_code")
+  trackingNo            String?          @map("tracking_no")
+  mode                  DcShipmentMode   @default(SEA)
+  status                DcShipmentStatus @default(PREPARING)
+  cbmTotal              Decimal?         @map("cbm_total") @db.Decimal(12, 4)
+  chinaFreightThbSatang Int              @default(0) @map("china_freight_thb_satang")
+  intlFreightThbSatang  Int              @default(0) @map("intl_freight_thb_satang")
+  dutyThbSatang         Int              @default(0) @map("duty_thb_satang")
+  brokerThbSatang       Int              @default(0) @map("broker_thb_satang")
+  insuranceThbSatang    Int              @default(0) @map("insurance_thb_satang")
+  fxRate                Decimal?         @map("fx_rate") @db.Decimal(12, 6)
+  fxDate                DateTime?        @map("fx_date") @db.Timestamptz(6)
+  etd                   DateTime?        @db.Timestamptz(6)
+  eta                   DateTime?        @db.Timestamptz(6)
+  note                  String?
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  po    DcPurchaseOrder? @relation(fields: [poId], references: [id], onDelete: SetNull)
+  lines DcShipmentLine[]
+  grns  DcGoodsReceipt[]
+
+  @@unique([orgId, shipmentCode])
+  @@index([orgId, status])
+  @@map("shipments")
+  @@schema("dc")
+}
+
+model DcShipmentLine {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  shipmentId String   @map("shipment_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  qty        Int
+  cbm        Decimal? @db.Decimal(12, 6)
+
+  shipment DcShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, shipmentId])
+  @@map("shipment_lines")
+  @@schema("dc")
+}
+
+model DcGoodsReceipt {
+  id               String       @id @default(uuid()) @db.Uuid
+  orgId            String       @map("org_id") @db.Uuid
+  grnCode          String       @map("grn_code")
+  warehouseId      String       @map("warehouse_id") @db.Uuid
+  poId             String?      @map("po_id") @db.Uuid
+  shipmentId       String?      @map("shipment_id") @db.Uuid
+  status           String       @default("RECEIVED")
+  postStatus       DcPostStatus @default(PENDING) @map("post_status")
+  note             String?
+  receivedByUserId String       @map("received_by_user_id") @db.Uuid
+  receivedAt       DateTime     @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  shipment   DcShipment?          @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  lines      DcGoodsReceiptLine[]
+  costLayers DcCostLayer[]
+
+  @@unique([orgId, grnCode])
+  @@index([orgId, warehouseId])
+  @@map("goods_receipts")
+  @@schema("dc")
+}
+
+model DcGoodsReceiptLine {
+  id          String  @id @default(uuid()) @db.Uuid
+  orgId       String  @map("org_id") @db.Uuid
+  grnId       String  @map("grn_id") @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  qtyExpected Int     @default(0) @map("qty_expected")
+  qtyReceived Int     @map("qty_received")
+  qtyDamaged  Int     @default(0) @map("qty_damaged")
+  costLayerId String? @map("cost_layer_id") @db.Uuid
+  note        String?
+
+  grn     DcGoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  product DcProduct      @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, grnId])
+  @@map("goods_receipt_lines")
+  @@schema("dc")
+}
+
+model DcTransfer {
+  id                 String             @id @default(uuid()) @db.Uuid
+  orgId              String             @map("org_id") @db.Uuid
+  transferCode       String             @map("transfer_code")
+  fromWarehouseId    String             @map("from_warehouse_id") @db.Uuid
+  destType           DcTransferDestType @default(WAREHOUSE) @map("dest_type")
+  toWarehouseId      String?            @map("to_warehouse_id") @db.Uuid
+  toModule           String?            @map("to_module")
+  toBranchId         String?            @map("to_branch_id") @db.Uuid
+  toLabel            String?            @map("to_label")
+  status             DcTransferStatus   @default(DISPATCHED)
+  sameSite           Boolean            @default(false) @map("same_site")
+  dispatchedByUserId String             @map("dispatched_by_user_id") @db.Uuid
+  dispatchedAt       DateTime           @default(now()) @map("dispatched_at") @db.Timestamptz(6)
+  confirmedByUserId  String?            @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt        DateTime?          @map("confirmed_at") @db.Timestamptz(6)
+  note               String?
+
+  lines DcTransferLine[]
+
+  @@unique([orgId, transferCode])
+  @@index([orgId, status])
+  @@map("transfers")
+  @@schema("dc")
+}
+
+model DcTransferLine {
+  id             String  @id @default(uuid()) @db.Uuid
+  orgId          String  @map("org_id") @db.Uuid
+  transferId     String  @map("transfer_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  qty            Int
+  qtyReceived    Int?    @map("qty_received")
+  costLayerId    String? @map("cost_layer_id") @db.Uuid
+  unitCostSatang Int?    @map("unit_cost_satang")
+
+  transfer DcTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  DcProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, transferId])
+  @@map("transfer_lines")
+  @@schema("dc")
+}
+
+model DcOutboxEvent {
+  id           String         @id @default(uuid()) @db.Uuid
+  orgId        String         @map("org_id") @db.Uuid
+  eventType    String         @map("event_type")
+  sourceKey    String         @map("source_key")
+  targetModule String?        @map("target_module")
+  payload      Json
+  status       DcOutboxStatus @default(PENDING)
+  attempts     Int            @default(0)
+  lastError    String?        @map("last_error")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt  DateTime?      @map("processed_at") @db.Timestamptz(6)
+
+  @@unique([orgId, sourceKey, eventType])
+  @@index([status, createdAt])
+  @@map("outbox_events")
+  @@schema("dc")
 }

@@ -70,10 +70,17 @@ import {
   Wallet2,
   Landmark,
   Gift,
+  Warehouse,
+  PackagePlus,
+  PackageMinus,
+  ArrowLeftRight,
+  Ship,
+  Search,
+  ShoppingCart,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace" | "clawhub";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace" | "clawhub" | "dc";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -1067,6 +1074,125 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/clawhub/settings",
         label: "ตั้งค่า",
         icon: Settings,
+        adminOnly: true,
+      },
+    ],
+  },
+  dc: {
+    slug: "dc",
+    name: "DC คลังกลาง",
+    tagline: "คลังกลาง + กระจายสินค้า",
+    description:
+      "ศูนย์คลังกลาง — รับของจากจีน (คิดต้นทุนนำเข้าต่อชิ้น) → เก็บ/นับ/กระจายไปสาขาและโปรแกรมในเครือ · พนักงานหน้าคลังสแกนบน iPad ปุ่มใหญ่ · หลังบ้านคุมสั่งซื้อ/สิทธิ์/รายงาน",
+    emoji: "📦",
+    Icon: Warehouse,
+    status: "active",
+    basePath: "/dc",
+    nav: [
+      // ----- หน้าคลัง (floor · iPad ปุ่มใหญ่) -----
+      {
+        href: "/dc",
+        label: "หน้าคลัง",
+        icon: Boxes,
+        section: "หน้าคลัง",
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff", "viewer"],
+      },
+      {
+        href: "/dc/receive",
+        label: "รับเข้า",
+        icon: PackagePlus,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/dc/transfer",
+        label: "ส่ง / โอน",
+        icon: Truck,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/dc/move",
+        label: "ย้ายที่",
+        icon: ArrowLeftRight,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/dc/count",
+        label: "นับสต๊อก",
+        icon: ClipboardCheck,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/dc/issue",
+        label: "เบิกออก",
+        icon: PackageMinus,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      {
+        href: "/dc/search",
+        label: "ค้นหา",
+        icon: Search,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff", "viewer"],
+      },
+      {
+        href: "/dc/labels",
+        label: "ปริ้นฉลาก",
+        icon: QrCode,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
+      },
+      // ----- หลังบ้าน (back-office · desktop) -----
+      {
+        href: "/dc/office",
+        label: "ภาพรวม",
+        icon: LayoutDashboard,
+        section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/dc/office/purchasing",
+        label: "สั่งซื้อจีน",
+        icon: ShoppingCart,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/suppliers",
+        label: "ผู้ขาย",
+        icon: Building2,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/shipments",
+        label: "ขนส่ง / ชิปเมนต์",
+        icon: Ship,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/receipts",
+        label: "ใบรับสินค้า",
+        icon: ClipboardCheck,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/products",
+        label: "สินค้า",
+        icon: Boxes,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/warehouses",
+        label: "โกดัง",
+        icon: Warehouse,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/reports",
+        label: "รายงาน",
+        icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        href: "/dc/office/permissions",
+        label: "สิทธิ์พนักงาน",
+        icon: UsersIcon,
         adminOnly: true,
       },
     ],

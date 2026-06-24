@@ -1,0 +1,224 @@
+"use client";
+
+// DC · ฟอร์มสินค้า (ใช้ทั้งสร้างใหม่ + แก้ไข) — เรียก server action ผ่าน
+// useTransition. สำเร็จ → เด้งกลับหน้ารายการสินค้า. โชว์ error เป็นภาษาไทย.
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  createProduct,
+  updateProduct,
+  type CreateProductInput,
+} from "@/lib/dc/product-actions";
+import { DcProductType } from "@/lib/generated/prisma/enums";
+import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+export type ProductFormValues = {
+  id?: string;
+  sku: string;
+  name: string;
+  barcode: string;
+  type: DcProductType;
+  unit: string;
+  category: string;
+  reorderPoint: string; // เก็บเป็นสตริงในฟอร์ม → แปลงตอน submit
+  imageR2Path: string;
+};
+
+const EMPTY: ProductFormValues = {
+  sku: "",
+  name: "",
+  barcode: "",
+  type: DcProductType.SALE,
+  unit: "ชิ้น",
+  category: "",
+  reorderPoint: "",
+  imageR2Path: "",
+};
+
+const TYPE_OPTIONS: DcProductType[] = [DcProductType.SALE, DcProductType.SPARE];
+
+export function ProductForm({ initial }: { initial?: ProductFormValues }) {
+  const router = useRouter();
+  const isEdit = !!initial?.id;
+  const [values, setValues] = useState<ProductFormValues>(initial ?? EMPTY);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function set<K extends keyof ProductFormValues>(key: K, v: ProductFormValues[K]) {
+    setValues((prev) => ({ ...prev, [key]: v }));
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const reorderRaw = values.reorderPoint.trim();
+    const payload: CreateProductInput = {
+      sku: values.sku,
+      name: values.name,
+      barcode: values.barcode,
+      type: values.type,
+      unit: values.unit,
+      category: values.category,
+      reorderPoint: reorderRaw === "" ? null : Number(reorderRaw),
+      imageR2Path: values.imageR2Path,
+    };
+
+    if (reorderRaw !== "" && Number.isNaN(Number(reorderRaw))) {
+      setError("จุดสั่งซื้อซ้ำ ต้องเป็นตัวเลข");
+      return;
+    }
+
+    startTransition(async () => {
+      const res =
+        isEdit && initial?.id
+          ? await updateProduct(initial.id, payload)
+          : await createProduct(payload);
+      if (res.ok) {
+        router.push("/dc/office/products");
+        router.refresh();
+      } else {
+        setError(res.error);
+      }
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="dc-card" style={{ maxWidth: 640 }}>
+      <div style={{ display: "grid", gap: 16 }}>
+        <Field label="รหัสสินค้า (SKU)" required htmlFor="sku">
+          <Input
+            id="sku"
+            value={values.sku}
+            onChange={(e) => set("sku", e.target.value)}
+            placeholder="เช่น SNK-001"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="ชื่อสินค้า" required htmlFor="name">
+          <Input
+            id="name"
+            value={values.name}
+            onChange={(e) => set("name", e.target.value)}
+            placeholder="เช่น เลย์ รสออริจินอล"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="ประเภท" required>
+          <div style={{ display: "flex", gap: 8 }}>
+            {TYPE_OPTIONS.map((t) => {
+              const active = values.type === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => set("type", t)}
+                  aria-pressed={active}
+                  style={{
+                    flex: 1,
+                    minHeight: 48,
+                    borderRadius: 12,
+                    border: active
+                      ? "2px solid var(--color-brand-600)"
+                      : "1px solid var(--dc-line, #e4e4e7)",
+                    background: active ? "var(--color-brand-50, #eef4ff)" : "#fff",
+                    color: active ? "var(--color-brand-700)" : "#3f3f46",
+                    fontWeight: 700,
+                    fontSize: 15,
+                    cursor: "pointer",
+                  }}
+                >
+                  {PRODUCT_TYPE_LABEL[t] ?? t}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Field label="บาร์โค้ด" optional htmlFor="barcode">
+          <Input
+            id="barcode"
+            value={values.barcode}
+            onChange={(e) => set("barcode", e.target.value)}
+            placeholder="เช่น 8851234567890"
+            inputMode="numeric"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="หน่วยนับ" htmlFor="unit">
+          <Input
+            id="unit"
+            value={values.unit}
+            onChange={(e) => set("unit", e.target.value)}
+            placeholder="ชิ้น"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="หมวดหมู่" optional htmlFor="category">
+          <Input
+            id="category"
+            value={values.category}
+            onChange={(e) => set("category", e.target.value)}
+            placeholder="เช่น ขนม / เครื่องดื่ม / อะไหล่"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field
+          label="จุดสั่งซื้อซ้ำ (Reorder point)"
+          optional
+          hint="เหลือต่ำกว่านี้ → ควรสั่งเพิ่ม"
+          htmlFor="reorderPoint"
+        >
+          <Input
+            id="reorderPoint"
+            value={values.reorderPoint}
+            onChange={(e) => set("reorderPoint", e.target.value)}
+            placeholder="เช่น 24"
+            inputMode="numeric"
+            autoComplete="off"
+          />
+        </Field>
+
+        <Field label="ลิงก์รูปสินค้า (imageR2Path)" optional htmlFor="imageR2Path">
+          <Input
+            id="imageR2Path"
+            value={values.imageR2Path}
+            onChange={(e) => set("imageR2Path", e.target.value)}
+            placeholder="https://… หรือ path ใน R2"
+            autoComplete="off"
+          />
+        </Field>
+
+        {error && (
+          <p style={{ color: "var(--color-danger, #dc2626)", fontSize: 14, fontWeight: 600 }}>
+            {error}
+          </p>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <Button type="submit" size="lg" loading={pending} className="flex-1">
+            {isEdit ? "บันทึกการแก้ไข" : "เพิ่มสินค้า"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={() => router.push("/dc/office/products")}
+            disabled={pending}
+          >
+            ยกเลิก
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
