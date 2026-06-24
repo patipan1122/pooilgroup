@@ -10,7 +10,20 @@ import { DEFAULTS } from "./types";
 // Team & สาขา
 // =============================================================
 
-export type TeamMember = { id: string; name: string; email: string | null; role: string };
+/** สถานะพนักงาน (derive จาก isActive + invite) — โชว์เป็น chip บน roster */
+export type MemberStatus = "active" | "invited" | "disabled";
+
+export type TeamMember = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string;
+  /** branch ที่ผูกกับ row นี้ (สำหรับ action เปลี่ยน role/เอาออก) */
+  branchId: string;
+  branchName: string;
+  lastLoginAt: Date | null;
+  status: MemberStatus;
+};
 export type TeamBranchRow = {
   id: string;
   name: string;
@@ -21,9 +34,34 @@ export type TeamBranchRow = {
   staff: TeamMember[];
 };
 export type TeamData = {
-  totals: { branches: number; machines: number; staff: number; withManager: number };
+  totals: {
+    branches: number;
+    machines: number;
+    staff: number;
+    withManager: number;
+    /** พนักงานที่ยังไม่เคยเข้าระบบ (รอกดลิงก์เชิญ) */
+    pending: number;
+  };
   branches: TeamBranchRow[];
 };
+
+/**
+ * แปลงสถานะ user → chip บน roster.
+ * สำคัญ: user ที่เพิ่งถูกเชิญถูกสร้างเป็น isActive=false โดยตั้งใจ (รอกดลิงก์) →
+ * ต้องเช็ค "รอเข้าระบบ" (มี inviteToken ที่ยังไม่ใช้) ก่อนเช็ค disabled
+ * ไม่งั้นคนที่เพิ่งเชิญจะโชว์เป็น "ปิดใช้" ผิด.
+ */
+function deriveMemberStatus(u: {
+  isActive: boolean;
+  inviteToken: string | null;
+  inviteUsedAt: Date | null;
+  lastLoginAt: Date | null;
+}): MemberStatus {
+  // มีลิงก์เชิญค้างอยู่ + ยังไม่ accept + ยังไม่เคย login → รอเข้าระบบ
+  if (u.inviteToken && !u.inviteUsedAt && !u.lastLoginAt) return "invited";
+  if (!u.isActive) return "disabled";
+  return "active";
+}
 
 export async function getTeamData(): Promise<TeamData> {
   const session = await requireSession();
@@ -50,12 +88,24 @@ export async function getTeamData(): Promise<TeamData> {
   });
 
   const branchIds = branches.map((b) => b.id);
+  const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
   const ubs = branchIds.length
     ? await prisma.userBranch.findMany({
-        where: { branchId: { in: branchIds } },
+        where: { branchId: { in: branchIds }, isActive: true },
         select: {
           branchId: true,
-          user: { select: { id: true, name: true, email: true, role: true } },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              isActive: true,
+              lastLoginAt: true,
+              inviteToken: true,
+              inviteUsedAt: true,
+            },
+          },
         },
       })
     : [];
@@ -68,6 +118,15 @@ export async function getTeamData(): Promise<TeamData> {
       name: u.user.name,
       email: u.user.email,
       role: u.user.role,
+      branchId: u.branchId,
+      branchName: branchNameById.get(u.branchId) ?? "—",
+      lastLoginAt: u.user.lastLoginAt,
+      status: deriveMemberStatus({
+        isActive: u.user.isActive,
+        inviteToken: u.user.inviteToken,
+        inviteUsedAt: u.user.inviteUsedAt,
+        lastLoginAt: u.user.lastLoginAt,
+      }),
     });
     staffByBranch.set(u.branchId, list);
   }
@@ -79,14 +138,27 @@ export async function getTeamData(): Promise<TeamData> {
     area: b.province ?? b.region ?? "—",
     managerName: b.manager?.name ?? null,
     machinesCount: b._count.cfMachines,
-    staff: staffByBranch.get(b.id) ?? [],
+    staff: (staffByBranch.get(b.id) ?? []).sort((a, b) => a.name.localeCompare(b.name, "th")),
   }));
+
+  // นับ pending ระดับ "คน" (ไม่นับซ้ำ user ที่อยู่หลายสาขา)
+  const pendingUserIds = new Set<string>();
+  for (const u of ubs) {
+    const st = deriveMemberStatus({
+      isActive: u.user.isActive,
+      inviteToken: u.user.inviteToken,
+      inviteUsedAt: u.user.inviteUsedAt,
+      lastLoginAt: u.user.lastLoginAt,
+    });
+    if (st === "invited") pendingUserIds.add(u.user.id);
+  }
 
   const totals = {
     branches: branchRows.length,
     machines: branchRows.reduce((s, b) => s + b.machinesCount, 0),
     staff: new Set(ubs.map((u) => u.user.id)).size,
     withManager: branchRows.filter((b) => b.managerName).length,
+    pending: pendingUserIds.size,
   };
 
   return { totals, branches: branchRows };

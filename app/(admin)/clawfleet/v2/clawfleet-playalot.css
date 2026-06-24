@@ -561,3 +561,71 @@
   margin-top: 5px; font-size: 12.5px; font-weight: 600; color: #C12626;
   background: #FBE3E3; border-radius: 9px; padding: 4px 9px; display: inline-block;
 }
+
+/* ============================================================
+   TEAM & สาขา — roster บรรทัดเดียวต่อพนักงาน (2026-06-24)
+   one-line scannable row: avatar · ชื่อ · role · สาขา · เข้าล่าสุด · สถานะ · ปุ่ม
+   ============================================================ */
+.cf-scope .cf-roster { display: flex; flex-direction: column; gap: 8px; }
+.cf-scope .cf-roster-group-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 14px 0 4px; padding: 0 2px;
+}
+.cf-scope .cf-roster-group-name { font-family: var(--cf-font-display); font-weight: 600; font-size: 15px; color: var(--cf-text); }
+.cf-scope .cf-roster-group-meta { font-size: 12.5px; color: var(--cf-text-3); }
+
+.cf-scope .cf-roster-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; background: var(--cf-surface);
+  border: 1px solid var(--cf-border); border-radius: 14px;
+  box-shadow: var(--cf-shadow-sm); min-height: 56px;
+}
+.cf-scope .cf-roster-row.is-disabled { opacity: .62; }
+.cf-scope .cf-roster-id { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
+.cf-scope .cf-roster-name-wrap { min-width: 0; }
+.cf-scope .cf-roster-name { font-weight: 700; font-size: 14.5px; color: var(--cf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cf-scope .cf-roster-contact { font-size: 12px; color: var(--cf-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cf-scope .cf-roster-cell { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cf-text-2); white-space: nowrap; }
+.cf-scope .cf-roster-cell-role { flex: 0 0 116px; }
+.cf-scope .cf-roster-cell-branch { flex: 0 0 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: block; }
+.cf-scope .cf-roster-cell-login { flex: 0 0 132px; color: var(--cf-text-3); }
+.cf-scope .cf-roster-cell-status { flex: 0 0 104px; }
+
+.cf-scope .cf-roster-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.cf-scope .cf-roster-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border-radius: 10px;
+  border: 1px solid var(--cf-border); background: var(--cf-surface-2);
+  color: var(--cf-text-2); cursor: pointer; transition: all .12s ease;
+}
+.cf-scope .cf-roster-iconbtn:hover:not(:disabled) { background: var(--cf-primary-50); color: var(--cf-primary-600); border-color: var(--cf-primary-100); }
+.cf-scope .cf-roster-iconbtn.is-danger:hover:not(:disabled) { background: var(--cf-red-50); color: var(--cf-red); border-color: #F6C9C3; }
+.cf-scope .cf-roster-iconbtn:disabled { opacity: .45; cursor: default; }
+
+/* role popover */
+.cf-scope .cf-roster-pop-wrap { position: relative; }
+.cf-scope .cf-roster-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  background: var(--cf-surface); border: 1px solid var(--cf-border);
+  border-radius: 14px; box-shadow: var(--cf-shadow-lg); padding: 6px; min-width: 180px;
+}
+.cf-scope .cf-roster-pop-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; padding: 9px 11px; border: 0; background: none;
+  border-radius: 10px; cursor: pointer; font-size: 13.5px; color: var(--cf-text); font-family: inherit;
+}
+.cf-scope .cf-roster-pop-item:hover { background: var(--cf-surface-2); }
+.cf-scope .cf-roster-pop-item.is-active { color: var(--cf-primary-600); font-weight: 700; }
+
+/* invite-link result field (copyable) */
+.cf-scope .cf-invite-result { background: var(--cf-emerald-50); border: 1px solid #BFE6CC; border-radius: 14px; padding: 14px; }
+.cf-scope .cf-invite-result-title { font-weight: 700; color: #15803D; font-size: 14px; margin-bottom: 8px; }
+.cf-scope .cf-invite-linkrow { display: flex; gap: 8px; align-items: stretch; }
+.cf-scope .cf-invite-linkrow .cf-input { font-family: var(--cf-font-body); font-size: 12.5px; }
+.cf-scope .cf-invite-note { font-size: 12.5px; color: var(--cf-text-3); margin-top: 8px; }
+
+@media (max-width: 880px) {
+  .cf-scope .cf-roster-cell-branch { flex-basis: 110px; }
+  .cf-scope .cf-roster-cell-login { display: none; }
+}
