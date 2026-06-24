@@ -1,23 +1,24 @@
-// Playland · หลังบ้าน Dashboard (Direction A · Command) — โครงใหม่ตาม Play a lot Admin.dc.html
+// Playland · หลังบ้าน Dashboard — เนื้อหา/การสื่อสารจากดีไซน์ Admin (KPI · กราฟ · ต้องลงมือ · ต่อสาขา)
+// แต่อยู่ในเมนูเดิม (AdminShell) + พื้นขาว + สไตล์ Play a lot เดิม (CEO 2026-06-24)
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandAccess, requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getTodayStats } from "@/lib/playland/queries";
 import { getBranchContext } from "@/lib/playland/branch-context";
-import { thb, thbShort } from "@/lib/playland/format";
-import { OfficeShell } from "@/components/playland/office-shell";
-import { PackageX, Clock, ScanFace, ChevronRight, Download } from "lucide-react";
+import { thb } from "@/lib/playland/format";
+import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard · Play a lot" };
 
-const INK = "#34291E", MUTED = "#A99C88", BLUE = "#2C6BB3", MUSTARD = "#D9A227", GREEN = "#1F8A5B", RED = "#D9483B", LINE = "#ECE3D4", CREAM = "#F4EEE3";
+const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", AMBER = "#a9791a", GREEN = "#1F8A5B", RED = "#E74C3C", LINE = "#ece5d8";
 const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
-const FREDOKA = "'Fredoka', var(--font-fredoka), sans-serif";
-
-const ROLE_LABEL: Record<string, string> = { super_admin: "Super Admin", org_admin: "Org Admin", admin: "Admin", program_admin: "Program Admin", area_manager: "Area Manager", branch_manager: "Branch Manager", staff: "พนักงาน", viewer: "Viewer" };
+const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const dayKey = (d: Date | string) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.toISOString().slice(0, 10); };
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 
 export default async function PlaylandDashboard() {
   const session = await requireSession();
@@ -35,14 +36,13 @@ export default async function PlaylandDashboard() {
     getTodayStats(orgId),
     prisma.playlandMember.count({ where: { orgId, createdAt: { gte: todayStart } } }),
     prisma.playlandSale.findMany({ where: { orgId, voidedAt: null, soldAt: { gte: ago14 } }, select: { soldAt: true, totalCents: true, branchId: true, _count: { select: { lines: true } } } }),
-    prisma.playlandSaleLine.groupBy({ by: ["productName"], where: { sale: { orgId, voidedAt: null, soldAt: { gte: todayStart } } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 4 }),
+    prisma.playlandSaleLine.groupBy({ by: ["productName"], where: { sale: { orgId, voidedAt: null, soldAt: { gte: todayStart } } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 5 }),
     prisma.playlandProduct.findMany({ where: { orgId, active: true, reorderLevel: { gt: 0 } }, select: { stock: true, reorderLevel: true, name: true } }),
     prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { branchId: true, startedAt: true } }),
     prisma.playlandDevice.count({ where: { orgId, status: { in: ["OFFLINE", "ERROR"] } } }),
     prisma.playlandSession.groupBy({ by: ["branchId"], where: { orgId, checkInAt: { gte: todayStart } }, _count: { _all: true } }),
   ]);
 
-  // ── 14-day series + yesterday delta ──
   const days: string[] = [];
   for (let i = 13; i >= 0; i--) { const d = new Date(todayStart); d.setDate(d.getDate() - i); days.push(dayKey(d)); }
   const dayMap = new Map(days.map((k) => [k, { entry: 0, product: 0 }]));
@@ -64,6 +64,7 @@ export default async function PlaylandDashboard() {
   const low = lowRows.filter((p) => p.stock <= p.reorderLevel);
   const maxTop = Math.max(1, ...topLines.map((t) => t._sum.quantity ?? 0));
   const oldestShiftHrs = openShifts.length > 0 ? Math.floor((Date.now() - Math.min(...openShifts.map((s) => new Date(s.startedAt).getTime()))) / 3600000) : 0;
+  const subtitle = new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "short", year: "numeric" }) + " · อัปเดตเรียลไทม์";
 
   const kpis = [
     { label: "รายได้รวม", value: thb(stats.totalRevenueCents), sub: revDelta != null ? `${revDelta >= 0 ? "▲" : "▼"} ${Math.abs(revDelta)}% · ${stats.salesCount} บิล` : `${stats.salesCount} บิล`, subColor: revDelta != null && revDelta >= 0 ? GREEN : revDelta != null ? RED : MUTED },
@@ -72,129 +73,137 @@ export default async function PlaylandDashboard() {
     { label: "สมาชิกใหม่", value: String(newMembers), sub: `กำลังเล่น ${stats.activeSessions}`, subColor: MUTED },
   ];
 
-  const subtitle = new Date().toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + " · อัปเดตเรียลไทม์";
-
   return (
-    <OfficeShell
-      branches={branches} activeId={activeId}
-      userName={session.user.name || session.user.email || "ผู้ใช้"}
-      userRole={ROLE_LABEL[session.user.role] ?? session.user.role}
-      title="ภาพรวมร้าน" subtitle={subtitle}
-      headerRight={<Link href="/playland/reports" style={{ display: "inline-flex", alignItems: "center", gap: 7, background: MUSTARD, color: "#fff", borderRadius: 9, padding: "8px 16px", fontSize: 13, textDecoration: "none" }}><Download size={14} /> รายงาน</Link>}
-    >
-      {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 14, marginBottom: 18 }}>
-        {kpis.map((k) => (
-          <div key={k.label} style={{ background: "#fff", borderRadius: 14, padding: 18, border: `1px solid ${LINE}` }}>
-            <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>
-            <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24, color: INK }}>{k.value}</div>
-            <div style={{ fontSize: 12, color: k.subColor, marginTop: 4 }}>{k.sub}</div>
-          </div>
-        ))}
-        <div style={{ background: BLUE, borderRadius: 14, padding: 18, color: "#fff" }}>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>บิลเฉลี่ย</div>
-          <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24 }}>{thb(avgBill)}</div>
-          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{stats.salesCount} บิลวันนี้</div>
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      {/* header strip — title + ตัวสลับสาขา(ด้านบน) + หน้าร้าน */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA }}>ภาพรวมร้าน</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{subtitle}</div>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <Link href="/playland/reports" style={btn(false)}><FileBarChart2 size={15} /> รายงาน</Link>
+          <BranchSwitcher branches={branches} activeId={activeId} />
+          <Link href="/playland" style={btn(true)}><Store size={15} /> หน้าร้าน <ChevronRight size={14} /></Link>
         </div>
       </div>
 
-      {/* chart + alerts */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 18 }}>
-        <div style={{ flex: 1.7, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
-            <div style={{ fontWeight: 500, fontSize: 16, flex: 1 }}>รายได้ 14 วันล่าสุด</div>
-            <div style={{ display: "flex", gap: 14, fontSize: 12, color: MUTED }}><span>● <span style={{ color: BLUE }}>ค่าเข้า</span></span><span>● <span style={{ color: MUSTARD }}>ขายของ</span></span></div>
+      <div style={{ maxWidth: 1240, margin: "0 auto", padding: "22px 28px 40px" }}>
+        {/* KPI row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+          {kpis.map((k) => (
+            <div key={k.label} style={{ ...card, padding: 18 }}>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>
+              <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24 }}>{k.value}</div>
+              <div style={{ fontSize: 12, color: k.subColor, marginTop: 4 }}>{k.sub}</div>
+            </div>
+          ))}
+          <div style={{ background: BLUE, borderRadius: 16, padding: 18, color: "#fff" }}>
+            <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>บิลเฉลี่ย</div>
+            <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24 }}>{thb(avgBill)}</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{stats.salesCount} บิลวันนี้</div>
           </div>
-          <div style={{ height: 230, display: "flex", alignItems: "flex-end", gap: 9 }}>
-            {series.map((d, i) => {
-              const eH = (d.entry / maxDay) * 100, pH = (d.product / maxDay) * 100;
-              return (
+        </div>
+
+        {/* chart + alerts */}
+        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 18 }}>
+          <div style={{ ...card, padding: 22 }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+              <div style={{ fontWeight: 600, fontSize: 16, flex: 1, fontFamily: FREDOKA }}>รายได้ 14 วันล่าสุด</div>
+              <div style={{ display: "flex", gap: 14, fontSize: 12, color: MUTED }}><span style={{ color: BLUE }}>● ค่าเข้า</span><span style={{ color: AMBER }}>● ขายของ</span></div>
+            </div>
+            <div style={{ height: 220, display: "flex", alignItems: "flex-end", gap: 9 }}>
+              {series.map((d, i) => (
                 <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 2, height: "100%" }} title={`${days[i].slice(5)} · ${thb(d.entry + d.product)}`}>
-                  <div style={{ height: `${eH}%`, background: BLUE, borderRadius: "5px 5px 0 0", minHeight: d.entry > 0 ? 2 : 0 }} />
-                  <div style={{ height: `${pH}%`, background: MUSTARD, borderRadius: "0 0 5px 5px", minHeight: d.product > 0 ? 2 : 0 }} />
+                  <div style={{ height: `${(d.entry / maxDay) * 100}%`, background: BLUE, borderRadius: "5px 5px 0 0", minHeight: d.entry > 0 ? 2 : 0 }} />
+                  <div style={{ height: `${(d.product / maxDay) * 100}%`, background: AMBER, borderRadius: "0 0 5px 5px", minHeight: d.product > 0 ? 2 : 0 }} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ ...card, padding: 20, display: "flex", flexDirection: "column" }}>
+            <div style={{ fontWeight: 600, fontSize: 16, fontFamily: FREDOKA }}>ต้องลงมือ</div>
+            <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>รายการที่รอจัดการ</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {low.length > 0 && (
+                <Link href="/playland/stock" style={alertRow("#fdf3df")}>
+                  <div style={alertIco}><PackageX size={17} color={AMBER} /></div>
+                  <div style={{ flex: 1 }}><div style={alertT}>ของใกล้หมด {low.length} รายการ</div><div style={alertS}>{low.slice(0, 2).map((p) => p.name).join(" · ")}</div></div>
+                  <ChevronRight size={16} color={AMBER} />
+                </Link>
+              )}
+              {openShifts.length > 0 && (
+                <Link href="/playland/shifts" style={alertRow("#eaf3f6")}>
+                  <div style={alertIco}><Clock size={17} color={BLUE} /></div>
+                  <div style={{ flex: 1 }}><div style={alertT}>กะยังไม่ปิด {openShifts.length} กะ</div><div style={alertS}>เปิดมา ~{oldestShiftHrs} ชม.</div></div>
+                  <ChevronRight size={16} color="#a89c8b" />
+                </Link>
+              )}
+              {devOffline > 0 && (
+                <Link href="/playland/settings/devices" style={alertRow("#fdeceb")}>
+                  <div style={alertIco}><ScanFace size={17} color={RED} /></div>
+                  <div style={{ flex: 1 }}><div style={alertT}>เครื่องสแกน {devOffline} เครื่องออฟไลน์</div><div style={alertS}>ตรวจสอบประตู</div></div>
+                  <ChevronRight size={16} color={RED} />
+                </Link>
+              )}
+              {low.length === 0 && openShifts.length === 0 && devOffline === 0 && (
+                <div style={{ ...alertRow("#eaf3eb"), cursor: "default" }}><div style={{ flex: 1, ...alertT, color: GREEN }}>✓ ไม่มีรายการค้าง</div></div>
+              )}
+            </div>
+            <div style={{ marginTop: "auto", paddingTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: `1px solid #f2ebdd` }}>
+              <div style={{ fontSize: 13, color: MUTED }}>กำลังเล่นตอนนี้</div>
+              <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 20, color: BLUE }}>{stats.activeSessions} คน</div>
+            </div>
+          </div>
+        </div>
+
+        {/* per-branch + top products */}
+        <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16 }}>
+          <div style={{ ...card, padding: 22 }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, fontFamily: FREDOKA }}>รายได้ต่อสาขา · วันนี้</div>
+            <div style={{ display: "flex", fontSize: 12, color: MUTED, padding: "0 4px 10px" }}><div style={{ flex: 2 }}>สาขา</div><div style={{ flex: 1, textAlign: "right" }}>Sessions</div><div style={{ flex: 1, textAlign: "right" }}>ค่าเข้า</div><div style={{ flex: 1, textAlign: "right" }}>ขายของ</div><div style={{ flex: 1, textAlign: "right" }}>รวม</div></div>
+            {branches.map((b, i) => {
+              const x = perBranch.get(b.id) ?? { entry: 0, product: 0, sessions: 0 };
+              const dot = [BLUE, AMBER, GREEN, RED][i % 4];
+              return (
+                <div key={b.id} style={{ display: "flex", alignItems: "center", padding: "12px 4px", borderTop: `1px solid #f2ebdd` }}>
+                  <div style={{ flex: 2, display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: dot }} /><span style={{ fontSize: 14 }}>{b.name}</span></div>
+                  <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{x.sessions}</div>
+                  <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.entry)}</div>
+                  <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.product)}</div>
+                  <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontWeight: 600, fontSize: 13 }}>{thb(x.entry + x.product)}</div>
                 </div>
               );
             })}
           </div>
-        </div>
-        <div style={{ flex: 1, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 20, display: "flex", flexDirection: "column" }}>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>ต้องลงมือ</div>
-          <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>รายการที่รอจัดการ</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {low.length > 0 && (
-              <Link href="/playland/stock" style={alertRow("#FCF1DC")}>
-                <div style={alertIco}><PackageX size={17} color={MUSTARD} /></div>
-                <div style={{ flex: 1 }}><div style={alertT}>ของใกล้หมด {low.length} รายการ</div><div style={alertS}>{low.slice(0, 2).map((p) => p.name).join(" · ")}</div></div>
-                <ChevronRight size={16} color={MUSTARD} />
-              </Link>
-            )}
-            {openShifts.length > 0 && (
-              <Link href="/playland/shifts" style={alertRow(CREAM)}>
-                <div style={alertIco}><Clock size={17} color={BLUE} /></div>
-                <div style={{ flex: 1 }}><div style={alertT}>กะยังไม่ปิด {openShifts.length} กะ</div><div style={alertS}>เปิดมา ~{oldestShiftHrs} ชม.</div></div>
-                <ChevronRight size={16} color="#B5A893" />
-              </Link>
-            )}
-            {devOffline > 0 && (
-              <Link href="/playland/settings/devices" style={alertRow("#FBEAE7")}>
-                <div style={alertIco}><ScanFace size={17} color={RED} /></div>
-                <div style={{ flex: 1 }}><div style={alertT}>เครื่องสแกน {devOffline} เครื่องออฟไลน์</div><div style={alertS}>ตรวจสอบประตู</div></div>
-                <ChevronRight size={16} color={RED} />
-              </Link>
-            )}
-            {low.length === 0 && openShifts.length === 0 && devOffline === 0 && (
-              <div style={{ ...alertRow(CREAM), cursor: "default" }}><div style={alertIco}>✓</div><div style={{ flex: 1, ...alertT }}>ไม่มีรายการค้าง</div></div>
-            )}
-          </div>
-          <div style={{ marginTop: "auto", paddingTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #F0E8D9" }}>
-            <div style={{ fontSize: 13, color: MUTED }}>กำลังเล่นตอนนี้</div>
-            <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 20, color: BLUE }}>{stats.activeSessions} คน</div>
-          </div>
-        </div>
-      </div>
-
-      {/* per-branch + top products */}
-      <div style={{ display: "flex", gap: 16 }}>
-        <div style={{ flex: 1.7, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 16 }}>รายได้ต่อสาขา · วันนี้</div>
-          <div style={{ display: "flex", fontSize: 12, color: MUTED, padding: "0 4px 10px" }}><div style={{ flex: 2 }}>สาขา</div><div style={{ flex: 1, textAlign: "right" }}>Sessions</div><div style={{ flex: 1, textAlign: "right" }}>ค่าเข้า</div><div style={{ flex: 1, textAlign: "right" }}>ขายของ</div><div style={{ flex: 1, textAlign: "right" }}>รวม</div></div>
-          {branches.map((b, i) => {
-            const x = perBranch.get(b.id) ?? { entry: 0, product: 0, sessions: 0 };
-            const dot = [BLUE, MUSTARD, GREEN, RED][i % 4];
-            return (
-              <div key={b.id} style={{ display: "flex", alignItems: "center", padding: "12px 4px", borderTop: "1px solid #F0E8D9" }}>
-                <div style={{ flex: 2, display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: dot }} /><span style={{ fontSize: 14 }}>{b.name}</span></div>
-                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{x.sessions}</div>
-                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.entry)}</div>
-                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.product)}</div>
-                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontWeight: 600, fontSize: 13 }}>{thb(x.entry + x.product)}</div>
+          <div style={{ ...card, padding: 22 }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, fontFamily: FREDOKA }}>ขนมขายดี · วันนี้</div>
+            {topLines.length === 0 ? (
+              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีการขายวันนี้</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                {topLines.map((t) => {
+                  const q = t._sum.quantity ?? 0;
+                  return (
+                    <div key={t.productName}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span>{t.productName}</span><span style={{ color: MUTED, fontFamily: MONO }}>{q}</span></div>
+                      <div style={{ height: 7, background: "#f2ebdd", borderRadius: 99 }}><div style={{ width: `${(q / maxTop) * 100}%`, height: "100%", background: AMBER, borderRadius: 99 }} /></div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-        <div style={{ flex: 1, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 16 }}>ขนมขายดี · วันนี้</div>
-          {topLines.length === 0 ? (
-            <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีการขายวันนี้</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-              {topLines.map((t) => {
-                const q = t._sum.quantity ?? 0;
-                return (
-                  <div key={t.productName}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span>{t.productName}</span><span style={{ color: MUTED, fontFamily: MONO }}>{q}</span></div>
-                    <div style={{ height: 7, background: "#F0E8D9", borderRadius: 99 }}><div style={{ width: `${(q / maxTop) * 100}%`, height: "100%", background: MUSTARD, borderRadius: 99 }} /></div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-    </OfficeShell>
+    </div>
   );
 }
 
+function btn(primary: boolean): React.CSSProperties {
+  return { display: "inline-flex", alignItems: "center", gap: 7, textDecoration: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 600,
+    background: primary ? BLUE : "#fff", color: primary ? "#fff" : MUTED, border: primary ? "none" : `1px solid ${LINE}` };
+}
 const alertRow = (bg: string): React.CSSProperties => ({ display: "flex", alignItems: "center", gap: 12, padding: 12, borderRadius: 11, background: bg, textDecoration: "none", color: INK });
 const alertIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 const alertT: React.CSSProperties = { fontSize: 14, fontWeight: 500 };
