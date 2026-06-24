@@ -591,8 +591,9 @@ export async function closeShift(input: { shiftId: string; closingCashCents: num
   const expected = sRow.openingCashCents + cashCents;
   const variance = input.closingCashCents - expected;
 
-  await prisma.playlandShift.update({
-    where: { id: input.shiftId },
+  // ปิดกะแบบ atomic: สำเร็จเฉพาะถ้ายัง OPEN อยู่ (กัน 2 คนกดปิดพร้อมกัน = ตัวเลขเขียนทับ)
+  const closed = await prisma.playlandShift.updateMany({
+    where: { id: input.shiftId, orgId: session.user.org_id, status: "OPEN" },
     data: {
       status: "CLOSED",
       endedAt: new Date(),
@@ -604,6 +605,7 @@ export async function closeShift(input: { shiftId: string; closingCashCents: num
       closedByUserId: session.user.id,
     },
   });
+  if (closed.count !== 1) return err("กะนี้เพิ่งถูกปิดไปแล้ว (อาจมีคนกดปิดพร้อมกัน) · รีเฟรชหน้าแล้วตรวจอีกครั้ง");
   await prisma.playlandAuditLog.create({
     data: {
       orgId: session.user.org_id,
@@ -629,9 +631,11 @@ export async function voidSale(input: { saleId: string; reason: string }): Promi
   if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ยกเลิกบิล · ต้องเป็นผู้จัดการขึ้นไป");
   const sale = await prisma.playlandSale.findFirst({
     where: { id: input.saleId, orgId: session.user.org_id, voidedAt: null },
-    include: { lines: true },
+    include: { lines: true, shift: { select: { status: true } } },
   });
   if (!sale) return err("ไม่พบบิล หรือถูกยกเลิกไปแล้ว");
+  // กันยกเลิกบิลของกะที่ปิดแล้ว → ลิ้นชัก/ยอดที่กระทบไปแล้วจะเพี้ยนย้อนหลัง (ต้องปรับผ่านบัญชี)
+  if (sale.shift && sale.shift.status !== "OPEN") return err("บิลนี้อยู่ในกะที่ปิดแล้ว · ยกเลิกไม่ได้ (ติดต่อบัญชีเพื่อปรับ)");
 
   await prisma.$transaction(async (tx) => {
     // race-safe void: สำเร็จเฉพาะถ้ายังไม่ถูก void (กดซ้ำ → ครั้งที่ 2 no-op)

@@ -26,16 +26,23 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   const where = { orgId, soldAt: { gte: from, lte: to }, voidedAt: null, ...(branchId ? { branchId } : {}) };
   const [sales, sessions, members] = await Promise.all([
-    prisma.playlandSale.findMany({ where, select: { totalCents: true, branchId: true, soldAt: true } }),
+    // เงินทั้งหมดมาจาก "รายการขายจริง" (ค่าเข้า/ต่อเวลา/ค่าปรับ = ไม่มีรายการสินค้า · ขายของ = มีรายการสินค้า)
+    prisma.playlandSale.findMany({ where, select: { totalCents: true, branchId: true, soldAt: true, paymentMethod: true, _count: { select: { lines: true } } } }),
     prisma.playlandSession.findMany({
       where: { orgId, checkInAt: { gte: from, lte: to }, ...(branchId ? { branchId } : {}) },
-      select: { packagePriceCents: true, branchId: true, status: true, memberId: true, checkInAt: true },
+      select: { branchId: true, status: true, memberId: true, checkInAt: true }, // นับ session/แขก เท่านั้น (ไม่คิดเงินจากตรงนี้ = กันนับค่าเข้าซ้ำ)
     }),
     prisma.playlandMember.count({ where: { orgId, createdAt: { gte: from, lte: to }, ...(branchId ? { branchId } : {}) } }),
   ]);
 
-  const totalEntry = sessions.reduce((a, s) => a + s.packagePriceCents, 0);
-  const totalProducts = sales.reduce((a, s) => a + s.totalCents, 0);
+  const isProduct = (s: { _count: { lines: number } }) => s._count.lines > 0;
+  let totalEntry = 0;   // ค่าเข้า + ต่อเวลา + ค่าปรับ (รายการไม่มีสินค้า)
+  let totalProducts = 0; // ขายขนม/ของ (รายการมีสินค้า)
+  const byMethod: Record<string, number> = {};
+  for (const s of sales) {
+    if (isProduct(s)) totalProducts += s.totalCents; else totalEntry += s.totalCents;
+    byMethod[s.paymentMethod] = (byMethod[s.paymentMethod] ?? 0) + s.totalCents;
+  }
   const total = totalEntry + totalProducts;
   const uniqueMembers = new Set(sessions.map((s) => s.memberId)).size;
 
@@ -43,28 +50,31 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   for (const b of branches) perBranch.set(b.id, { entry: 0, product: 0, sessions: 0 });
   for (const s of sessions) {
     const x = perBranch.get(s.branchId) ?? { entry: 0, product: 0, sessions: 0 };
-    x.entry += s.packagePriceCents; x.sessions += 1;
+    x.sessions += 1;
     perBranch.set(s.branchId, x);
   }
   for (const s of sales) {
     const x = perBranch.get(s.branchId) ?? { entry: 0, product: 0, sessions: 0 };
-    x.product += s.totalCents;
+    if (isProduct(s)) x.product += s.totalCents; else x.entry += s.totalCents;
     perBranch.set(s.branchId, x);
   }
 
   const dayMap = new Map<string, { entry: number; product: number }>();
-  for (const s of sessions) {
-    const day = new Date(s.checkInAt).toISOString().slice(0, 10);
-    const x = dayMap.get(day) ?? { entry: 0, product: 0 };
-    x.entry += s.packagePriceCents;
-    dayMap.set(day, x);
-  }
   for (const s of sales) {
     const day = new Date(s.soldAt).toISOString().slice(0, 10);
     const x = dayMap.get(day) ?? { entry: 0, product: 0 };
-    x.product += s.totalCents;
+    if (isProduct(s)) x.product += s.totalCents; else x.entry += s.totalCents;
     dayMap.set(day, x);
   }
+
+  // แยกเงินตามวิธีรับ (ลิ้นชัก = เฉพาะเงินสด · ที่เหลือเข้าบัญชี/ออนไลน์)
+  const METHOD_LABEL: Record<string, string> = {
+    CASH: "เงินสด", STRIPE: "บัตร/ออนไลน์", PROMPTPAY: "พร้อมเพย์", KBANK: "โอน KBank", SCB: "โอน SCB",
+    TRUEMONEY: "ทรูมันนี่", LINEPAY: "LINE Pay", CHARGE_TO_MEMBER: "ค้างจ่าย", COMPLIMENTARY: "ฟรี/อภินันท์",
+  };
+  const methodRows = Object.entries(byMethod).filter(([, v]) => v !== 0).sort(([, a], [, b]) => b - a);
+  const cashTotal = byMethod["CASH"] ?? 0;
+  const nonCashTotal = total - cashTotal;
   const days = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b));
   const maxDay = days.reduce((m, [, v]) => Math.max(m, v.entry + v.product), 0);
 
@@ -102,7 +112,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <span className="pl-stat-delta">{sessions.length + sales.length} transactions</span>
           </div>
           <div className="pl-card pl-stat">
-            <span className="pl-stat-label">ค่าเข้า</span>
+            <span className="pl-stat-label">ค่าเข้า · เวลา</span>
             <span className="pl-stat-value">{thbShort(totalEntry)}</span>
             <span className="pl-stat-delta">{sessions.length} sessions</span>
           </div>
@@ -121,6 +131,32 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <span className="pl-stat-value">{thbShort(days.length > 0 ? total / days.length : 0)}</span>
             <span className="pl-stat-delta">{days.length} วันมีรายได้</span>
           </div>
+        </div>
+
+        {/* วิธีรับเงิน — เงินสดเข้าลิ้นชัก · ที่เหลือเข้าบัญชี/ออนไลน์ */}
+        <div className="pl-card" style={{ marginBottom: 20 }}>
+          <div className="pl-eyebrow" style={{ marginBottom: 10 }}>วิธีรับเงิน</div>
+          {total === 0 ? (
+            <div style={{ color: "var(--pl-text-muted)", fontSize: 14 }}>ยังไม่มีรายรับในช่วงนี้</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                <div style={{ flex: "1 1 180px", background: "var(--pl-ok-soft)", borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 12, color: "var(--pl-ok-ink)" }}>💵 เงินสด (เข้าลิ้นชัก)</div>
+                  <div className="pl-num" style={{ fontSize: 22, fontWeight: 700, color: "var(--pl-ok-ink)" }}>{thb(cashTotal)}</div>
+                </div>
+                <div style={{ flex: "1 1 180px", background: "var(--pl-info-soft)", borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 12, color: "var(--pl-info-ink)" }}>🏦 ไม่ใช่เงินสด (เข้าบัญชี/ออนไลน์)</div>
+                  <div className="pl-num" style={{ fontSize: 22, fontWeight: 700, color: "var(--pl-info-ink)" }}>{thb(nonCashTotal)}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {methodRows.map(([m, v]) => (
+                  <span key={m} className="pl-chip pl-chip-muted" style={{ fontSize: 13 }}>{METHOD_LABEL[m] ?? m}: <strong style={{ marginLeft: 4 }}>{thb(v)}</strong></span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="pl-mobile-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>

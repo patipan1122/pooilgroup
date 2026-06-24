@@ -49,15 +49,30 @@ export default async function PlaylandOfficeHub() {
   // ── ดึงข้อมูลจริง (reuse queries เดิม · ไม่สร้าง data layer ใหม่) ──
   const branches = await listBranches(orgId);
   const firstBranchId = branches[0]?.id;
-  const [stats, packages, products, openShiftCount] = await Promise.all([
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+  const [stats, packages, products, openShifts, lowStockRows, lastClosed, yAgg] = await Promise.all([
     getTodayStats(orgId),
     listPackages(orgId),
     firstBranchId ? listProducts(orgId, firstBranchId) : Promise.resolve([]),
-    prisma.playlandShift.count({ where: { orgId, status: "OPEN" } }),
+    prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { id: true, openingCashCents: true } }),
+    prisma.playlandProduct.findMany({ where: { orgId, active: true, reorderLevel: { gt: 0 } }, select: { stock: true, reorderLevel: true } }),
+    prisma.playlandShift.findFirst({ where: { orgId, status: "CLOSED" }, orderBy: { endedAt: "desc" }, select: { varianceCents: true, shiftCode: true } }),
+    prisma.playlandSale.aggregate({ where: { orgId, voidedAt: null, soldAt: { gte: yStart, lt: todayStart } }, _sum: { totalCents: true } }),
   ]);
+  const openShiftCount = openShifts.length;
+  // เงินสดควรมีในลิ้นชักตอนนี้ = เงินเปิดกะ + ยอดขายเงินสดในกะที่ยังเปิดอยู่
+  const cashAgg = openShiftCount > 0
+    ? await prisma.playlandSale.aggregate({ where: { orgId, shiftId: { in: openShifts.map((s) => s.id) }, paymentMethod: "CASH", voidedAt: null }, _sum: { totalCents: true } })
+    : { _sum: { totalCents: 0 } };
+  const drawerExpected = openShifts.reduce((a, s) => a + s.openingCashCents, 0) + (cashAgg._sum.totalCents ?? 0);
+  const lowStockCount = lowStockRows.filter((p) => p.stock <= p.reorderLevel).length;
+  const lastVariance = lastClosed?.varianceCents ?? null;
+  const yRevenue = yAgg._sum.totalCents ?? 0;
+  const revDeltaPct = yRevenue > 0 ? Math.round(((stats.totalRevenueCents - yRevenue) / yRevenue) * 100) : null;
 
   const kpis = [
-    { label: "รายได้วันนี้", value: thb(stats.totalRevenueCents), tint: GREEN, icon: Wallet },
+    { label: "รายได้วันนี้", value: thb(stats.totalRevenueCents), sub: revDeltaPct != null ? `${revDeltaPct >= 0 ? "▲" : "▼"} ${Math.abs(revDeltaPct)}% เทียบเมื่อวาน` : undefined, tint: GREEN, icon: Wallet },
     { label: "เด็กกำลังเล่น", value: String(stats.activeSessions), tint: BLUE, icon: Baby },
     { label: "กะที่เปิดอยู่", value: `${openShiftCount} / ${branches.length || "—"}`, sub: "เปิด · สาขา", tint: AMBER, icon: Clock },
   ];
@@ -150,6 +165,26 @@ export default async function PlaylandOfficeHub() {
           })}
         </div>
 
+        {/* สรุปด่วน — เห็นสุขภาพร้านหน้าเดียว ไม่ต้องเข้า 3 หน้า */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 36 }}>
+          {openShiftCount > 0 && (
+            <Link href="/playland/shifts" style={pill(GREEN)}>
+              <span style={{ fontSize: 13, color: "#6b6052" }}>💵 ลิ้นชักควรมีตอนนี้</span>
+              <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{thb(drawerExpected)}</span>
+            </Link>
+          )}
+          <Link href="/playland/stock" style={pill(lowStockCount > 0 ? RED : GREEN)}>
+            <span style={{ fontSize: 13, color: "#6b6052" }}>{lowStockCount > 0 ? "⚠️ ของใกล้หมด" : "✓ สต๊อกเพียงพอ"}</span>
+            <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{lowStockCount > 0 ? `${lowStockCount} รายการ` : "ครบทุกตัว"}</span>
+          </Link>
+          {lastClosed && lastVariance != null && (
+            <Link href="/playland/shifts" style={pill(lastVariance === 0 ? GREEN : AMBER)}>
+              <span style={{ fontSize: 13, color: "#6b6052" }}>📊 กะล่าสุด ({lastClosed.shiftCode})</span>
+              <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{lastVariance === 0 ? "ตรงพอดี ✓" : `${lastVariance > 0 ? "เกิน" : "ขาด"} ${thb(Math.abs(lastVariance))}`}</span>
+            </Link>
+          )}
+        </div>
+
         <HubGroup title="ดูผลประกอบการ" tiles={groupReports} />
         <HubGroup title="สต๊อก · คลัง" tiles={groupStock} />
         <HubGroup title="ตั้งค่าร้าน" tiles={groupSettings} />
@@ -157,6 +192,11 @@ export default async function PlaylandOfficeHub() {
       </div>
     </div>
   );
+}
+
+// ป้ายสรุปด่วน (สีตามสถานะ · คลิกไปหน้าจริง)
+function pill(tint: { bg: string; fg: string }): React.CSSProperties {
+  return { display: "flex", flexDirection: "column", gap: 2, background: "#fff", border: "1px solid #ece5d8", borderLeft: `4px solid ${tint.fg}`, borderRadius: 14, padding: "12px 18px", textDecoration: "none", color: "inherit", minWidth: 160 };
 }
 
 // ───────── หมวด + การ์ดไทล์ (kiosk card style) ─────────

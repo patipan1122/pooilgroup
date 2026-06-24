@@ -48,17 +48,16 @@ export const getTodayStats = cache(async (orgId: string, branchId?: string) => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [memberCount, sessionsToday, salesAgg, bookingsToday] = await Promise.all([
+  const saleBase = { orgId, branchId: branchId ?? undefined, soldAt: { gte: startOfDay }, voidedAt: null };
+  const [memberCount, sessionsToday, entryAgg, productAgg, bookingsToday] = await Promise.all([
     prisma.playlandMember.count({ where: { orgId, branchId: branchId ?? undefined, deletedAt: null } }),
     prisma.playlandSession.findMany({
       where: { orgId, branchId: branchId ?? undefined, checkInAt: { gte: startOfDay } },
-      select: { id: true, status: true, packagePriceCents: true },
+      select: { id: true, status: true },
     }),
-    prisma.playlandSale.aggregate({
-      where: { orgId, branchId: branchId ?? undefined, soldAt: { gte: startOfDay }, voidedAt: null },
-      _sum: { totalCents: true },
-      _count: { _all: true },
-    }),
+    // เงินมาจาก "รายการขายจริง" แหล่งเดียว · ค่าเข้า/ต่อเวลา/ค่าปรับ = ไม่มีรายการสินค้า (กันนับค่าเข้าซ้ำ)
+    prisma.playlandSale.aggregate({ where: { ...saleBase, lines: { none: {} } }, _sum: { totalCents: true } }),
+    prisma.playlandSale.aggregate({ where: { ...saleBase, lines: { some: {} } }, _sum: { totalCents: true }, _count: { _all: true } }),
     prisma.playlandBooking.count({
       where: {
         orgId,
@@ -69,8 +68,8 @@ export const getTodayStats = cache(async (orgId: string, branchId?: string) => {
     }),
   ]);
 
-  const entryRevenue = sessionsToday.reduce((acc, s) => acc + s.packagePriceCents, 0);
-  const productRevenue = salesAgg._sum.totalCents ?? 0;
+  const entryRevenue = entryAgg._sum.totalCents ?? 0;
+  const productRevenue = productAgg._sum.totalCents ?? 0;
   const activeSessions = sessionsToday.filter((s) => s.status === "ACTIVE" || s.status === "PAUSED").length;
   const expiredSessions = sessionsToday.filter((s) => s.status === "EXPIRED").length;
 
@@ -83,7 +82,7 @@ export const getTodayStats = cache(async (orgId: string, branchId?: string) => {
     entryRevenueCents: entryRevenue,
     productRevenueCents: productRevenue,
     totalRevenueCents: entryRevenue + productRevenue,
-    salesCount: salesAgg._count._all,
+    salesCount: productAgg._count._all,
   };
 });
 
