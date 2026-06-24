@@ -241,9 +241,9 @@ export function PoCreateForm({
           style={{
             display: "grid",
             gap: 12,
-            gridTemplateColumns: isChina
-              ? "minmax(180px,1.2fr) minmax(150px,1fr) minmax(150px,1fr)"
-              : "minmax(180px,1.2fr) minmax(150px,1fr)",
+            // มือถือ (≤400px): ทุกช่องเรียงลงเป็นคอลัมน์เดียว (min() กันล้นจอ) ·
+            // จอกว้างค่อยกระจายเป็นหลายคอลัมน์อัตโนมัติ
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
           }}
         >
           {/* ผู้ขาย + สร้างใหม่ inline */}

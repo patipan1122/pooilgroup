@@ -10,7 +10,8 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
-import { requireDcAccess } from "@/lib/dc/role-guard";
+import { requireDcAccess, canDcManage } from "@/lib/dc/role-guard";
+import { DcMobileNav } from "@/components/dc/mobile-bottom-nav";
 import "./dc.css";
 
 export const dynamic = "force-dynamic";
@@ -25,5 +26,10 @@ export default async function DcLayout({ children }: { children: React.ReactNode
     const ok = await userHasModuleAccess(session.user, "dc");
     if (!ok) redirect("/403");
   }
-  return <div className="dc-root">{children}</div>;
+  return (
+    <div className="dc-root dc-has-mobilenav">
+      {children}
+      <DcMobileNav canManage={canDcManage(session.user.role)} />
+    </div>
+  );
 }
