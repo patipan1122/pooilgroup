@@ -35,7 +35,7 @@ export default async function FleetPage({
           return (
             <a
               key={b.id}
-              href={`/clawfleet/v2/hub?branch=${b.id}`}
+              href={`/clawfleet/v2/hub/${b.id}`}
               className={`cf-fleet-card ${anomaly > 0 ? "is-attention" : ""}`}
             >
               <div className="cf-fleet-card-head">

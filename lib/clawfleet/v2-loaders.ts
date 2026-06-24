@@ -20,6 +20,7 @@ import {
   BRANCHES, ANOMALIES, ACTIVE_SESSIONS, CLOSED_TODAY, BRANCH_STOCK, DELIVERIES,
   TODAY, TREND_7D, BRANCH_PERF, INSIGHTS_ROWS,
   type Branch, type Anomaly, type ActiveSession, type ClosedSession,
+  type SessionDetail,
   type StockEntry, type Delivery, type TodaySummary, type TrendDay,
   type BranchPerf, type InsightRow,
 } from "./v2-data";
@@ -60,6 +61,32 @@ export async function loadAnomalies(filter?: string): Promise<Anomaly[]> {
     (v) => v.length,
     ANOMALIES.filter((a) => inScope(filter, a.branchId)),
   );
+}
+
+/**
+ * ไส้ใน anomaly เดียว (drill-in จาก Anomaly inbox).
+ * real-DB tier ก่อน · ถ้าไม่เจอ fallback หา mock ที่ id ตรง (showcase env).
+ */
+export async function loadAnomaly(sessionCode: string): Promise<Anomaly | null> {
+  try {
+    const real = await Q.getV2Anomaly(sessionCode);
+    if (real) return real;
+  } catch {
+    /* fall through to mock */
+  }
+  return ANOMALIES.find((a) => a.id === sessionCode) ?? null;
+}
+
+/**
+ * ไส้ในรอบเดียว (drill-in จาก Operations).
+ * มีแค่ real-DB tier — ถ้าไม่เจอ (mock-only env / sessionCode ผิด) คืน null → page โชว์ notFound.
+ */
+export async function loadSessionDetail(sessionCode: string): Promise<SessionDetail | null> {
+  try {
+    return await Q.getV2SessionDetail(sessionCode);
+  } catch {
+    return null;
+  }
 }
 
 export async function loadHubData(filter?: string): Promise<{

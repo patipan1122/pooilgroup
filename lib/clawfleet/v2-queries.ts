@@ -16,6 +16,8 @@ import type {
   Machine,
   ActiveSession,
   ClosedSession,
+  SessionDetail,
+  SessionDetailStatus,
   StockEntry,
   Delivery,
   TodaySummary,
@@ -201,29 +203,7 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
     const isCash = gap > 0;
     const machines: Machine[] = s.events
       .filter((e) => e.machine.kind === "CLAW")
-      .map((e): Machine => {
-        const photos = [
-          e.photoMeterBeforeUrl, e.photoPrizeMeterUrl, e.photoCashUrl,
-          e.photoMeterAfterUrl, e.photoStockUrl,
-        ].filter(Boolean).length;
-        return {
-          code: e.machine.code,
-          name: e.machine.nickname ?? e.machine.code,
-          meterBefore: e.coinMeterBefore,
-          meterAfter: e.coinMeterAfter,
-          coinRate: 10,
-          prizeBefore: e.stockBefore ?? 0,
-          prizeAfter: e.stockAfter ?? 0,
-          refilled: e.refillQty ?? 0,
-          skuMix: "",
-          cashIn: Math.round(e.cashCountedCents / 100),
-          prizeMeterPrev: e.dollMeterBefore ?? 0,
-          prizeMeterNow: e.dollMeterAfter ?? 0,
-          photos,
-          flag: e.anomalyFlags.length > 0,
-          note: e.notes ?? undefined,
-        };
-      });
+      .map((e) => eventToMachine(e));
     const branchName = s.branch?.name ?? "";
     const branchCode = s.branch?.code ?? "";
     // ชื่อตู้ที่จะโชว์ในบรรทัดรอง — ตู้คีบตัวแรกของรอบ (nickname ?? code)
@@ -256,6 +236,227 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
       machines,
     };
   });
+}
+
+/** หา anomaly เดียวตาม sessionCode (drill-in จาก Anomaly inbox · scope org+branch) */
+export async function getV2Anomaly(sessionCode: string): Promise<Anomaly | null> {
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+
+  const s = await prisma.cfCollectionSession.findFirst({
+    where: {
+      orgId,
+      sessionCode,
+      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+    },
+    include: {
+      branch: { select: { name: true, code: true } },
+      openedBy: { select: { name: true } },
+      events: {
+        where: { eventType: "COLLECTION" },
+        include: { machine: { select: { code: true, nickname: true, kind: true } } },
+        orderBy: { collectedAt: "asc" },
+      },
+    },
+  });
+  if (!s) return null;
+
+  const expectedCash = Math.round((s.expectedCashCents ?? 0) / 100);
+  const actualCash = Math.round((s.actualCashCents ?? s.totalCashCents ?? 0) / 100);
+  const gap = Math.max(0, expectedCash - actualCash);
+  const gapPct = expectedCash > 0 ? (gap / expectedCash) * 100 : 0;
+  const prizeGap = s.prizeVariance ?? 0;
+  const opened = s.openedAt;
+  const closed = s.closedAt ?? s.openedAt;
+  const durMin = Math.max(1, Math.round((closed.getTime() - opened.getTime()) / 60000));
+  const isCash = gap > 0;
+  const machines: Machine[] = s.events
+    .filter((e) => e.machine.kind === "CLAW")
+    .map((e) => eventToMachine(e));
+  const branchName = s.branch?.name ?? "";
+  const branchCode = s.branch?.code ?? "";
+  const machineName = machines[0]?.name ?? "";
+
+  return {
+    id: s.sessionCode,
+    branchId: s.branchId ?? "",
+    branchName,
+    branchCode,
+    machineName,
+    severity: gapPct > 25 || Math.abs(prizeGap) > 4 ? "P0" : "P1",
+    type: isCash ? "cash_short" : "prize_short",
+    typeLabel: isCash ? "เงินขาด" : "ตุ๊กตาหาย",
+    reason: s.anomalyFlags[0] ?? (isCash ? "เงินที่เก็บได้น้อยกว่าเลขมิเตอร์" : "ตุ๊กตาที่นับน้อยกว่าที่ระบบคำนวณ"),
+    expectedCash,
+    actualCash,
+    gap,
+    gapPct,
+    prizeExpected: s.prizeMeterOut ?? 0,
+    prizeActual: s.prizeCountedOut ?? 0,
+    prizeGap,
+    sessionStart: thaiTime(opened),
+    sessionEnd: thaiTime(closed),
+    duration: `${durMin} นาที`,
+    timeAgo: timeAgo(closed),
+    timestamp: `${thaiTime(closed)} · ${thaiDateShort(closed)}`,
+    staff: s.openedBy.name,
+    staffAvatar: firstChar(s.openedBy.name),
+    machines,
+  };
+}
+
+// =============================================================
+// Session detail (ไส้ในรายรอบ) — drill-in จากหน้า Operations
+// รับ sessionCode → คืน SessionDetail (ทุก status · ไม่ใช่แค่ ANOMALY_REVIEW)
+// =============================================================
+
+/** map CfCollectionEvent (COLLECTION · CLAW) → Machine (shape เดียวกับ anomaly) */
+function eventToMachine(e: {
+  machine: { code: string; nickname: string | null };
+  coinMeterBefore: number;
+  coinMeterAfter: number;
+  cashCountedCents: number;
+  stockBefore: number | null;
+  stockAfter: number | null;
+  refillQty: number | null;
+  dollMeterBefore: number | null;
+  dollMeterAfter: number | null;
+  photoMeterBeforeUrl: string | null;
+  photoPrizeMeterUrl: string | null;
+  photoCashUrl: string | null;
+  photoMeterAfterUrl: string | null;
+  photoStockUrl: string | null;
+  anomalyFlags: string[];
+  notes: string | null;
+}): Machine {
+  const photos = [
+    e.photoMeterBeforeUrl, e.photoPrizeMeterUrl, e.photoCashUrl,
+    e.photoMeterAfterUrl, e.photoStockUrl,
+  ].filter(Boolean).length;
+  return {
+    code: e.machine.code,
+    name: e.machine.nickname ?? e.machine.code,
+    meterBefore: e.coinMeterBefore,
+    meterAfter: e.coinMeterAfter,
+    coinRate: 10,
+    prizeBefore: e.stockBefore ?? 0,
+    prizeAfter: e.stockAfter ?? 0,
+    refilled: e.refillQty ?? 0,
+    skuMix: "",
+    cashIn: Math.round(e.cashCountedCents / 100),
+    prizeMeterPrev: e.dollMeterBefore ?? 0,
+    prizeMeterNow: e.dollMeterAfter ?? 0,
+    photos,
+    flag: e.anomalyFlags.length > 0,
+    note: e.notes ?? undefined,
+  };
+}
+
+const SESSION_STATUS_LABEL: Record<SessionDetailStatus, string> = {
+  active: "กำลังเก็บ",
+  stale: "ค้างนาน",
+  review: "รอตรวจ",
+  closed: "ปิดแล้ว",
+  locked: "ล็อกแล้ว",
+};
+
+/** ไส้ในของรอบเดียว — หา session ตาม sessionCode (scope ด้วย org + branch ของ user) */
+export async function getV2SessionDetail(sessionCode: string): Promise<SessionDetail | null> {
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+
+  const s = await prisma.cfCollectionSession.findFirst({
+    where: {
+      orgId,
+      sessionCode,
+      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+    },
+    include: {
+      branch: { select: { id: true, name: true, code: true, province: true, region: true, _count: { select: { cfMachines: { where: { isActive: true } } } } } },
+      openedBy: { select: { name: true } },
+      closedBy: { select: { name: true } },
+      events: {
+        where: { eventType: "COLLECTION" },
+        include: { machine: { select: { code: true, nickname: true, kind: true } } },
+        orderBy: { collectedAt: "asc" },
+      },
+    },
+  });
+  if (!s) return null;
+
+  const machines: Machine[] = s.events
+    .filter((e) => e.machine.kind === "CLAW")
+    .map((e) => eventToMachine(e));
+
+  // cross-check รวม: ถ้า snapshot มีใน DB ใช้เลย · ไม่งั้นคำนวณจากรายตู้
+  const expectedFromMachines = machines.reduce(
+    (sum, m) => sum + (m.meterAfter - m.meterBefore) * m.coinRate, 0,
+  );
+  const actualFromMachines = machines.reduce((sum, m) => sum + m.cashIn, 0);
+  const expectedCash = s.expectedCashCents != null
+    ? Math.round(s.expectedCashCents / 100)
+    : expectedFromMachines;
+  const actualCash = s.actualCashCents != null
+    ? Math.round(s.actualCashCents / 100)
+    : (s.totalCashCents ? Math.round(s.totalCashCents / 100) : actualFromMachines);
+  const cashGap = actualCash - expectedCash;
+
+  // ตุ๊กตา: มิเตอร์บอกออก vs นับจริงหายไป
+  const prizeExpected = s.prizeMeterOut != null
+    ? s.prizeMeterOut
+    : machines.reduce((sum, m) => sum + (m.prizeMeterNow - m.prizeMeterPrev), 0);
+  const prizeActual = s.prizeCountedOut != null
+    ? s.prizeCountedOut
+    : machines.reduce((sum, m) => sum + (m.prizeBefore + m.refilled - m.prizeAfter), 0);
+  const prizeGap = prizeActual - prizeExpected;
+
+  const opened = s.openedAt;
+  const closed = s.closedAt ?? null;
+  const durEnd = closed ?? new Date();
+  const durMin = Math.max(1, Math.round((durEnd.getTime() - opened.getTime()) / 60000));
+
+  let status: SessionDetailStatus;
+  if (s.status === "OPEN") {
+    status = (Date.now() - opened.getTime()) > 3 * 3_600_000 ? "stale" : "active";
+  } else if (s.status === "ANOMALY_REVIEW") {
+    status = "review";
+  } else if (s.status === "LOCKED") {
+    status = "locked";
+  } else {
+    status = "closed";
+  }
+
+  const branchName = s.branch?.name ?? "";
+  const branchCode = s.branch?.code ?? "";
+  const branchArea = s.branch?.province ?? s.branch?.region ?? "";
+  const machineTotal = s.branch?._count.cfMachines ?? machines.length;
+
+  return {
+    id: s.sessionCode,
+    branchId: s.branchId ?? "",
+    branchName,
+    branchCode,
+    branchArea,
+    status,
+    statusLabel: SESSION_STATUS_LABEL[status],
+    staff: s.openedBy.name,
+    staffAvatar: firstChar(s.openedBy.name),
+    closedBy: s.closedBy?.name ?? undefined,
+    openedAt: `${thaiTime(opened)} · ${thaiDateShort(opened)}`,
+    closedAt: closed ? `${thaiTime(closed)} · ${thaiDateShort(closed)}` : undefined,
+    duration: durMin >= 60 ? `${Math.floor(durMin / 60)} ชม. ${durMin % 60} นาที` : `${durMin} นาที`,
+    machineCount: machineTotal,
+    doneCount: machines.length,
+    expectedCash,
+    actualCash,
+    cashGap,
+    prizeExpected,
+    prizeActual,
+    prizeGap,
+    hasAnomaly: s.status === "ANOMALY_REVIEW" || s.anomalyFlags.length > 0 || cashGap < 0,
+    anomalyFlags: s.anomalyFlags,
+    machines,
+  };
 }
 
 // =============================================================

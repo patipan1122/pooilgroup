@@ -160,6 +160,43 @@ export type BranchPerf = {
   status: BranchPerfStatus;
 };
 
+/** สถานะรอบเก็บเงิน (สำหรับหน้าไส้ในรายรอบ) */
+export type SessionDetailStatus = "active" | "stale" | "review" | "closed" | "locked";
+
+/**
+ * ไส้ในของ "หนึ่งรอบเก็บเงิน" (drill-in จากหน้า Operations).
+ * ใช้ machines เป็น Machine[] ตัวเดียวกับ Anomaly → reuse การ render รายตู้ได้.
+ */
+export type SessionDetail = {
+  id: string; // sessionCode
+  branchId: string;
+  branchName: string;
+  branchCode: string;
+  branchArea: string;
+  status: SessionDetailStatus;
+  statusLabel: string;
+  /** พนักงานที่เปิด/เก็บรอบนี้ */
+  staff: string;
+  staffAvatar: string;
+  /** ผู้ปิดรอบ (ถ้าปิดแล้ว) */
+  closedBy?: string;
+  openedAt: string;
+  closedAt?: string;
+  duration: string;
+  machineCount: number;
+  doneCount: number;
+  // cross-check รวมทั้งรอบ
+  expectedCash: number;
+  actualCash: number;
+  cashGap: number; // actual - expected (ลบ = เงินขาด)
+  prizeExpected: number; // ตุ๊กตาที่ควรออก (มิเตอร์)
+  prizeActual: number; // ตุ๊กตาที่นับได้จริง
+  prizeGap: number; // actual - expected
+  hasAnomaly: boolean;
+  anomalyFlags: string[];
+  machines: Machine[];
+};
+
 export type InsightStatus = "ok" | "review";
 
 export type InsightRow = {

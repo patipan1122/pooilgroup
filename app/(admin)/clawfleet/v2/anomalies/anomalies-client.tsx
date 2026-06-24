@@ -14,6 +14,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Avatar, Ic, Pill, Section, StatTile, fmtTHB } from "@/components/clawfleet/v2/chrome";
 import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
 import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
@@ -38,10 +39,14 @@ export function AnomaliesClient({
   const getBranch = (id: string): Branch | BranchFallback =>
     branchMap.get(id) ?? { id, name: id, code: id };
 
+  const router = useRouter();
   const [reviewing, setReviewing] = useState<Anomaly | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "cash_short" | "prize_short">("all");
+
+  // คลิกแถว = เปิดหน้าไส้ในเต็มจอ (drill-in) · ปุ่ม "เริ่มตรวจทีละสาขา" = modal ในหน้า
+  const drillTo = (a: Anomaly) => router.push(`/clawfleet/v2/anomalies/${encodeURIComponent(a.id)}`);
 
   const visible = anomalies.filter((a) => typeFilter === "all" || a.type === typeFilter);
   const totalGap = visible.reduce((s, a) => s + a.gap, 0);
@@ -155,7 +160,7 @@ export function AnomaliesClient({
       <Section title="คิวรอตรวจ" sub="เรียงตามมูลค่าที่หาย">
         <div className="cf-anomaly-list">
           {sorted.map((a) => (
-            <AnomalyRow key={a.id} a={a} branch={getBranch(a.branchId)} onOpen={() => openAnomaly(a)} />
+            <AnomalyRow key={a.id} a={a} branch={getBranch(a.branchId)} onOpen={() => drillTo(a)} />
           ))}
           {sorted.length === 0 && (
             <div className="cf-dim" style={{ padding: "20px 4px" }}>
