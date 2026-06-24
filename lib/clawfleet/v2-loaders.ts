@@ -16,17 +16,14 @@
 
 import * as Q from "./v2-queries";
 import * as L from "./v2-queries-legacy";
-import {
-  BRANCHES, ANOMALIES, ACTIVE_SESSIONS, CLOSED_TODAY, BRANCH_STOCK, DELIVERIES,
-  TODAY, TREND_7D, BRANCH_PERF, INSIGHTS_ROWS,
-  type Branch, type Anomaly, type ActiveSession, type ClosedSession,
-  type SessionDetail,
-  type StockEntry, type Delivery, type TodaySummary, type TrendDay,
-  type BranchPerf, type InsightRow,
+// mock runtime data (BRANCHES/ANOMALIES/TODAY/…) ถูกถอดออกแล้ว — fallback ทุก loader
+// เป็น empty-state จริง (ห้ามโชว์ยอดปลอมในแอปการเงิน). เก็บไว้แค่ "type" สำหรับ typing.
+import type {
+  Branch, Anomaly, ActiveSession, ClosedSession,
+  SessionDetail,
+  StockEntry, Delivery, TodaySummary, TrendDay,
+  BranchPerf, InsightRow,
 } from "./v2-data";
-
-const inScope = (filter: string | undefined, branchId: string) =>
-  !filter || filter === "all" || branchId === filter;
 
 /** try a sequence of async producers, return the first non-empty (by `len`), else the last. */
 async function firstNonEmpty<T>(
@@ -48,18 +45,21 @@ async function firstNonEmpty<T>(
 }
 
 export async function loadBranches(): Promise<Branch[]> {
+  // ⚠️ fallback = [] (ไม่ใช่ mock): org จริงที่ไม่มีข้อมูลต้องเห็น empty-state จริง
+  // ห้ามโชว์สาขา/ยอดปลอมในแอปการเงิน (mock สาขา → คลิก → getMachinePnl 404)
   return firstNonEmpty<Branch[]>(
     [() => Q.getV2Branches()],
     (v) => v.length,
-    BRANCHES,
+    [],
   );
 }
 
 export async function loadAnomalies(filter?: string): Promise<Anomaly[]> {
+  // ⚠️ fallback = [] (ไม่ใช่ mock): empty org → ไม่มี anomaly ปลอม
   return firstNonEmpty<Anomaly[]>(
     [() => Q.listV2Anomalies(filter), () => L.legacyAnomalies(filter)],
     (v) => v.length,
-    ANOMALIES.filter((a) => inScope(filter, a.branchId)),
+    [],
   );
 }
 
@@ -72,9 +72,10 @@ export async function loadAnomaly(sessionCode: string): Promise<Anomaly | null> 
     const real = await Q.getV2Anomaly(sessionCode);
     if (real) return real;
   } catch {
-    /* fall through to mock */
+    /* real-DB tier ล้ม → คืน null (ไม่ fallback หา mock) */
   }
-  return ANOMALIES.find((a) => a.id === sessionCode) ?? null;
+  // ⚠️ ไม่ fallback mock: empty org → ไม่เจอ → notFound (ไม่โชว์ anomaly ปลอม)
+  return null;
 }
 
 /**
@@ -93,11 +94,24 @@ export async function loadHubData(filter?: string): Promise<{
   today: TodaySummary; trend7d: TrendDay[]; branchPerf: BranchPerf[];
   activeSessions: ActiveSession[]; closedToday: ClosedSession[];
 }> {
-  const mock = {
-    today: TODAY, trend7d: TREND_7D,
-    branchPerf: BRANCH_PERF.filter((b) => inScope(filter, b.id)),
-    activeSessions: ACTIVE_SESSIONS.filter((s) => inScope(filter, s.branchId)),
-    closedToday: CLOSED_TODAY.filter((c) => inScope(filter, c.branchId)),
+  // ⚠️ fallback = EMPTY hub (ไม่ใช่ mock): empty org → hero โชว์ ฿0 จริง ไม่ใช่ยอดปลอม
+  const emptyToday: TodaySummary = {
+    revenue: 0,
+    yesterdayRevenue: 0,
+    sessions: 0,
+    sessionsExpected: 0,
+    anomaliesOpen: 0,
+    stockAlerts: 0,
+    staffActive: 0,
+    staffTotal: 0,
+    prizesOut: 0,
+  };
+  const empty = {
+    today: emptyToday,
+    trend7d: [] as TrendDay[],
+    branchPerf: [] as BranchPerf[],
+    activeSessions: [] as ActiveSession[],
+    closedToday: [] as ClosedSession[],
   };
   // "has data" = any session activity (closed or open)
   const hasData = (d: { closedToday: unknown[]; activeSessions: unknown[]; branchPerf: BranchPerf[] }) =>
@@ -105,28 +119,27 @@ export async function loadHubData(filter?: string): Promise<{
   return firstNonEmpty(
     [() => Q.getV2HubData(filter), () => L.legacyHubData(filter)],
     hasData,
-    mock,
+    empty,
   );
 }
 
 export async function loadInsights(filter?: string, days = 7): Promise<InsightRow[]> {
+  // ⚠️ fallback = [] (ไม่ใช่ mock): empty org → ตารางวิเคราะห์ว่างจริง
   return firstNonEmpty<InsightRow[]>(
     [() => Q.getV2Insights(filter, days), () => L.legacyInsights(filter, days)],
     (v) => v.length,
-    INSIGHTS_ROWS.filter((r) => inScope(filter, r.branchId)),
+    [],
   );
 }
 
 export async function loadBranchStock(branchId: string): Promise<{
   stock: StockEntry[]; deliveries: Delivery[];
 }> {
-  const mock = {
-    stock: BRANCH_STOCK[branchId] ?? [],
-    deliveries: DELIVERIES.filter((d) => d.branchId === branchId),
-  };
+  // ⚠️ fallback = ว่าง (ไม่ใช่ mock): empty org → ไม่มีสต๊อก/การส่งของปลอม
+  const empty = { stock: [] as StockEntry[], deliveries: [] as Delivery[] };
   return firstNonEmpty(
     [() => Q.getV2BranchStock(branchId), () => L.legacyBranchStock(branchId)],
     (v) => v.stock.length,
-    mock,
+    empty,
   );
 }

@@ -1251,51 +1251,57 @@ export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean 
   const orgId = session.user.org_id;
 
   try {
-    // ลำดับลบจากลูก→แม่ (FK Restrict)
-    const sessions = await prisma.cfCollectionSession.findMany({
-      where: { orgId, sessionCode: { startsWith: DEMO_PREFIX } },
-      select: { id: true },
+    // ทั้งหมดอยู่ใน 1 transaction → all-or-nothing (ถ้า step กลางพัง = rollback ไม่ลบครึ่งทาง)
+    // ลำดับลบจากลูก→แม่ (FK Restrict) · scope [DEMO]/orgId เหมือนเดิม (ไม่แตะข้อมูลจริง)
+    await prisma.$transaction(async (tx) => {
+      const sessions = await tx.cfCollectionSession.findMany({
+        where: { orgId, sessionCode: { startsWith: DEMO_PREFIX } },
+        select: { id: true },
+      });
+      const sessIds = sessions.map((s) => s.id);
+      if (sessIds.length > 0) {
+        await tx.cfCollectionEvent.deleteMany({ where: { sessionId: { in: sessIds } } });
+      }
+      // events ที่ไม่ผูก session (เผื่อ) ของตู้ demo
+      const demoMachines = await tx.cfMachine.findMany({
+        where: { orgId, code: { startsWith: DEMO_PREFIX } },
+        select: { id: true },
+      });
+      const machIds = demoMachines.map((m) => m.id);
+      if (machIds.length > 0) {
+        await tx.cfCollectionEvent.deleteMany({ where: { machineId: { in: machIds } } });
+      }
+      if (sessIds.length > 0) {
+        await tx.cfCollectionSession.deleteMany({ where: { id: { in: sessIds } } });
+      }
+      if (machIds.length > 0) {
+        await tx.cfMachineLoadout.deleteMany({ where: { orgId, machineId: { in: machIds } } });
+        await tx.cfMachine.deleteMany({ where: { id: { in: machIds } } });
+      }
+      // WMS demo docs (movements ผูก documentId → ลบ movements ของใบ demo ก่อน · lines cascade ผ่าน FK)
+      const demoReceipts = await tx.cfGoodsReceipt.findMany({ where: { orgId, receiptCode: { startsWith: `${DEMO_PREFIX}GR-` } }, select: { id: true } });
+      const demoCounts = await tx.cfStockCount.findMany({ where: { orgId, countCode: { startsWith: `${DEMO_PREFIX}SC-` } }, select: { id: true } });
+      const demoLosses = await tx.cfLossDoc.findMany({ where: { orgId, lossCode: { startsWith: `${DEMO_PREFIX}LS-` } }, select: { id: true } });
+      const docIds = [...demoReceipts, ...demoCounts, ...demoLosses].map((d) => d.id);
+      if (docIds.length > 0) {
+        await tx.cfStockMovement.deleteMany({ where: { orgId, documentId: { in: docIds } } });
+      }
+      if (demoReceipts.length) await tx.cfGoodsReceipt.deleteMany({ where: { id: { in: demoReceipts.map((d) => d.id) } } });
+      if (demoCounts.length) await tx.cfStockCount.deleteMany({ where: { id: { in: demoCounts.map((d) => d.id) } } });
+      if (demoLosses.length) await tx.cfLossDoc.deleteMany({ where: { id: { in: demoLosses.map((d) => d.id) } } });
+      // movements ของ product demo ที่ไม่ผูก doc (เผื่อ)
+      const demoProducts = await tx.cfProduct.findMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } }, select: { id: true } });
+      const demoProductIds = demoProducts.map((p) => p.id);
+      if (demoProductIds.length > 0) {
+        await tx.cfStockMovement.deleteMany({ where: { orgId, productId: { in: demoProductIds } } });
+      }
+      await tx.cfProduct.deleteMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } } });
+      await tx.branch.deleteMany({ where: { orgId, code: { startsWith: DEMO_PREFIX } } });
     });
-    const sessIds = sessions.map((s) => s.id);
-    if (sessIds.length > 0) {
-      await prisma.cfCollectionEvent.deleteMany({ where: { sessionId: { in: sessIds } } });
-    }
-    // events ที่ไม่ผูก session (เผื่อ) ของตู้ demo
-    const demoMachines = await prisma.cfMachine.findMany({
-      where: { orgId, code: { startsWith: DEMO_PREFIX } },
-      select: { id: true },
-    });
-    const machIds = demoMachines.map((m) => m.id);
-    if (machIds.length > 0) {
-      await prisma.cfCollectionEvent.deleteMany({ where: { machineId: { in: machIds } } });
-    }
-    if (sessIds.length > 0) {
-      await prisma.cfCollectionSession.deleteMany({ where: { id: { in: sessIds } } });
-    }
-    if (machIds.length > 0) {
-      await prisma.cfMachineLoadout.deleteMany({ where: { orgId, machineId: { in: machIds } } });
-      await prisma.cfMachine.deleteMany({ where: { id: { in: machIds } } });
-    }
-    // WMS demo docs (movements ผูก documentId → ลบ movements ของใบ demo ก่อน · lines cascade ผ่าน FK)
-    const demoReceipts = await prisma.cfGoodsReceipt.findMany({ where: { orgId, receiptCode: { startsWith: `${DEMO_PREFIX}GR-` } }, select: { id: true } });
-    const demoCounts = await prisma.cfStockCount.findMany({ where: { orgId, countCode: { startsWith: `${DEMO_PREFIX}SC-` } }, select: { id: true } });
-    const demoLosses = await prisma.cfLossDoc.findMany({ where: { orgId, lossCode: { startsWith: `${DEMO_PREFIX}LS-` } }, select: { id: true } });
-    const docIds = [...demoReceipts, ...demoCounts, ...demoLosses].map((d) => d.id);
-    if (docIds.length > 0) {
-      await prisma.cfStockMovement.deleteMany({ where: { orgId, documentId: { in: docIds } } });
-    }
-    if (demoReceipts.length) await prisma.cfGoodsReceipt.deleteMany({ where: { id: { in: demoReceipts.map((d) => d.id) } } });
-    if (demoCounts.length) await prisma.cfStockCount.deleteMany({ where: { id: { in: demoCounts.map((d) => d.id) } } });
-    if (demoLosses.length) await prisma.cfLossDoc.deleteMany({ where: { id: { in: demoLosses.map((d) => d.id) } } });
-    // movements ของ product demo ที่ไม่ผูก doc (เผื่อ)
-    const demoProducts = await prisma.cfProduct.findMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } }, select: { id: true } });
-    const demoProductIds = demoProducts.map((p) => p.id);
-    if (demoProductIds.length > 0) {
-      await prisma.cfStockMovement.deleteMany({ where: { orgId, productId: { in: demoProductIds } } });
-    }
-    await prisma.cfProduct.deleteMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } } });
-    await prisma.branch.deleteMany({ where: { orgId, code: { startsWith: DEMO_PREFIX } } });
+
     // เก็บ company/user demo ไว้ (อาจถูกอ้างที่อื่น · soft footprint) — ลบเฉพาะ orphan ปลอดภัย
+    // อยู่ "นอก" transaction โดยตั้งใจ: best-effort · ถ้า company ถูกอ้างที่อื่น (FK กันลบ)
+    // ก็ปล่อยผ่าน ไม่ rollback การลบ demo ที่สำเร็จไปแล้ว (semantics เดิม .catch no-op)
     await prisma.company.deleteMany({ where: { orgId, code: `${DEMO_PREFIX}CO` } }).catch(() => {});
 
     revalidatePath(MANAGE_PATH);

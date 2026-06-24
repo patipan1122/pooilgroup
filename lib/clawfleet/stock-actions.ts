@@ -16,7 +16,7 @@ type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
 
 const STOCK_PATH = "/clawfleet/v2/stock";
-const ANOMALY_PATH = "/clawfleet/v2/anomaly";
+const ANOMALY_PATH = "/clawfleet/v2/anomalies";
 
 // ── code-gen (human-readable · BE year · timestamp+random suffix · กันชนต่ำ) ──
 function beYearTwo(): string {
@@ -90,7 +90,12 @@ const ReceiveSchema = z.object({
     .min(1, "ยังไม่ได้ใส่รายการรับเข้า"),
 });
 
-/** ยอดคงคลังปัจจุบันของ product ในสาขา = ผลรวม signed qty ใน ledger */
+/**
+ * ยอดคงคลัง "ในคลังสาขา" (warehouse) ของ product = ผลรวม signed qty ใน ledger
+ * เฉพาะ movement ที่ machineId = null (ไม่นับของที่อยู่ในตู้) — match นิยาม warehouse
+ * ใน stock-queries.ts (getCfBranchStockProducts ใช้ machineId: null เป็น warehouse).
+ * ใช้กับ count / withdraw / transfer / receive ซึ่งทำกับคลังสาขาทั้งหมด.
+ */
 async function currentBalance(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
   orgId: string,
@@ -98,7 +103,7 @@ async function currentBalance(
   productId: string,
 ): Promise<number> {
   const agg = await tx.cfStockMovement.aggregate({
-    where: { orgId, branchId, productId },
+    where: { orgId, branchId, productId, machineId: null },
     _sum: { qty: true },
   });
   return agg._sum.qty ?? 0;
@@ -126,14 +131,47 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
       });
       const pmap = new Map(products.map((p) => [p.id, p]));
 
+      // รวมรายการที่เป็นสินค้าตัวเดียวกัน (ป้องกัน 2 บรรทัด productId ซ้ำ →
+      // ต้นทุนเฉลี่ยถ่วงน้ำหนัก double-count). รวม qty + ต้นทุนรวมต่อ product ก่อน loop
+      // และ snapshot ยอดเดิม (warehouse + org) ครั้งเดียวก่อนเขียน movement ใด ๆ.
       let total = 0;
-      const work: Array<{ id: string; name: string; oldCost: number; qty: number; unit: number; oldBal: number }> = [];
+      const agg = new Map<
+        string,
+        { id: string; name: string; oldCost: number; qty: number; costTotal: number }
+      >();
       for (const l of lines) {
         const p = pmap.get(l.productId);
         if (!p) throw new Error(`ไม่พบสินค้า ${l.productId}`);
         total += l.unitCostCents * l.quantity;
-        const oldBal = await currentBalance(tx, orgId, branchId, p.id);
-        work.push({ id: p.id, name: p.name, oldCost: p.unitCostCents, qty: l.quantity, unit: l.unitCostCents, oldBal });
+        const cur = agg.get(p.id);
+        if (cur) {
+          cur.qty += l.quantity;
+          cur.costTotal += l.unitCostCents * l.quantity;
+        } else {
+          agg.set(p.id, {
+            id: p.id,
+            name: p.name,
+            oldCost: p.unitCostCents,
+            qty: l.quantity,
+            costTotal: l.unitCostCents * l.quantity,
+          });
+        }
+      }
+
+      const work: Array<{
+        id: string; name: string; oldCost: number; qty: number;
+        unit: number; oldBal: number; orgQtyBefore: number;
+      }> = [];
+      for (const a of agg.values()) {
+        // ต้นทุนเฉลี่ยของรายการรับเข้าครั้งนี้ (รวมทุกบรรทัดของ product เดียวกัน)
+        const unit = a.qty > 0 ? Math.round(a.costTotal / a.qty) : a.oldCost;
+        const oldBal = await currentBalance(tx, orgId, branchId, a.id);
+        const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
+          where: { orgId, productId: a.id },
+          _sum: { qty: true },
+        });
+        const orgQtyBefore = totalQtyAcrossOrg._sum.qty ?? 0;
+        work.push({ id: a.id, name: a.name, oldCost: a.oldCost, qty: a.qty, unit, oldBal, orgQtyBefore });
       }
 
       const receipt = await tx.cfGoodsReceipt.create({
@@ -163,11 +201,9 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
       for (const w of work) {
         const newBal = w.oldBal + w.qty;
         // ต้นทุนเฉลี่ยถ่วงน้ำหนัก = (ของเก่า×ต้นทุนเก่า + ของใหม่×ต้นทุนใหม่) / รวม
-        const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
-          where: { orgId, productId: w.id },
-          _sum: { qty: true },
-        });
-        const orgQtyBefore = totalQtyAcrossOrg._sum.qty ?? 0;
+        // ใช้ orgQtyBefore ที่ snapshot ครั้งเดียวก่อน loop (ไม่ re-aggregate กลาง loop
+        // → ถ้ามี product ซ้ำหลายบรรทัด เรารวมเป็น w เดียวแล้ว ไม่ double-count)
+        const orgQtyBefore = w.orgQtyBefore;
         const avgCost = orgQtyBefore + w.qty > 0
           ? Math.round((w.oldCost * Math.max(0, orgQtyBefore) + w.unit * w.qty) / (Math.max(0, orgQtyBefore) + w.qty))
           : w.unit;
