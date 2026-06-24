@@ -11,6 +11,7 @@ type Line = { productId: string; name: string; quantity: number; stock: number; 
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
 const input: React.CSSProperties = { background: "#fff", border: "1px solid #ece5d8", borderRadius: 10, padding: "11px 13px", fontSize: 15, fontFamily: MITR, color: "#3A3026", outline: "none", boxSizing: "border-box", width: "100%" };
 
 export function RepairForm({ branchId, parts, machineLabels = [] }: { branchId: string; parts: Part[]; machineLabels?: string[] }) {
@@ -88,11 +89,11 @@ export function RepairForm({ branchId, parts, machineLabels = [] }: { branchId: 
             {lines.map((l) => (
               <div key={l.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "1px solid #f2ebdd" }}>
                 <div style={{ flex: 1, minWidth: 0, fontSize: 15 }}>{l.name} <span style={{ fontSize: 12, color: "#a89c8b" }}>(เหลือ {l.stock})</span></div>
-                <input type="number" value={l.quantity} onChange={(e) => setQty(l.productId, parseInt(e.target.value) || 0)} style={{ ...input, width: 72, fontFamily: FREDOKA }} />
+                <input type="number" value={l.quantity} onChange={(e) => setQty(l.productId, parseInt(e.target.value) || 0)} style={{ ...input, width: 72, fontFamily: MONO }} />
                 <button onClick={() => remove(l.productId)} style={{ background: "none", border: "none", color: "#E74C3C", cursor: "pointer", fontSize: 18 }}>×</button>
               </div>
             ))}
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "#f9f4ea" }}><span style={{ fontSize: 14 }}>ค่าอะไหล่รวม</span><span style={{ fontFamily: FREDOKA, fontWeight: 700, color: "#a9791a" }}>฿{totalCost.toLocaleString()}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#fff", borderTop: "1px solid #f2ebdd" }}><span style={{ fontSize: 14 }}>ค่าอะไหล่รวม</span><span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 15, color: "#a9791a" }}>฿{totalCost.toLocaleString()}</span></div>
           </div>
         )}
       </div>

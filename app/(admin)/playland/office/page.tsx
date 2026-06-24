@@ -2,12 +2,13 @@
 // แต่อยู่ในเมนูเดิม (AdminShell) + พื้นขาว + สไตล์ Play a lot เดิม (CEO 2026-06-24)
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandAccess, requirePlaylandManager } from "@/lib/playland/role-guard";
+import { requirePlaylandAccess, requirePlaylandManager, canPlaylandManage } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getTodayStats } from "@/lib/playland/queries";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb } from "@/lib/playland/format";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { DemoSeedButton } from "@/components/playland/demo-seed-button";
 import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -82,13 +83,14 @@ export default async function PlaylandDashboard() {
           <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{subtitle}</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          {canPlaylandManage(session.user.role) && activeId && <DemoSeedButton branchId={activeId} />}
           <Link href="/playland/reports" style={btn(false)}><FileBarChart2 size={15} /> รายงาน</Link>
           <BranchSwitcher branches={branches} activeId={activeId} />
           <Link href="/playland" style={btn(true)}><Store size={15} /> หน้าร้าน <ChevronRight size={14} /></Link>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1240, margin: "0 auto", padding: "22px 28px 40px" }}>
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 32px 40px" }}>
         {/* KPI row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
           {kpis.map((k) => (

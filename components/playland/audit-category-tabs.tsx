@@ -1,15 +1,18 @@
 "use client";
 
-// Audit category toggle · uses pl-toggle-group primitive contract (<button> children)
-// Replaces the 4× inline-styled <a> tags that bypassed the design system
+// Audit category filter (IN-PAGE filter ไม่ใช่ tab หน้า/หลัง) · สไตล์ Play a lot locked tokens
+// ทั้งหมด / คืนเงิน / แก้ราคา / เปิดประตู → map เข้า category ของ log (money / device / general)
 
 import { useRouter, useSearchParams } from "next/navigation";
 
+const BLUE = "#2D6CB1", MUTED = "#8a7f70", LINE = "#ece5d8";
+const MITR = "var(--font-mitr), 'Mitr', sans-serif";
+
 const TABS = [
-  { v: null,        label: "ทั้งหมด" },
-  { v: "money",     label: "เงิน" },
-  { v: "device",    label: "Device" },
-  { v: "general",   label: "ทั่วไป" },
+  { v: null,      label: "ทั้งหมด" },
+  { v: "money",   label: "เงิน · คืนเงิน" },
+  { v: "device",  label: "เปิดประตู" },
+  { v: "general", label: "ทั่วไป" },
 ] as const;
 
 export function AuditCategoryTabs({ current }: { current: string | null }) {
@@ -23,17 +26,31 @@ export function AuditCategoryTabs({ current }: { current: string | null }) {
   }
 
   return (
-    <div className="pl-toggle-group">
-      {TABS.map((t) => (
-        <button
-          type="button"
-          key={t.v ?? "all"}
-          onClick={() => go(t.v)}
-          className={current === t.v ? "is-active" : ""}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div style={{ display: "inline-flex", gap: 4, padding: 4, background: "#faf7f1", border: `1px solid ${LINE}`, borderRadius: 11 }}>
+      {TABS.map((t) => {
+        const active = current === t.v;
+        return (
+          <button
+            type="button"
+            key={t.v ?? "all"}
+            onClick={() => go(t.v)}
+            style={{
+              border: "none",
+              borderRadius: 8,
+              padding: "6px 14px",
+              fontSize: 13,
+              fontWeight: active ? 600 : 500,
+              fontFamily: MITR,
+              cursor: "pointer",
+              background: active ? "#fff" : "transparent",
+              color: active ? BLUE : MUTED,
+              boxShadow: active ? "0 1px 2px rgba(58,48,38,.08)" : "none",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

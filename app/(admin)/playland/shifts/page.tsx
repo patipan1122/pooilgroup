@@ -1,21 +1,33 @@
-import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
-import { listBranches } from "@/lib/playland/queries";
+import { getBranchContext } from "@/lib/playland/branch-context";
 import { ShiftClient } from "@/components/playland/shift-client";
-import { BackOfficeTabs } from "@/components/playland/back-office-tabs";
-import { NavSelect } from "@/components/playland/nav-select";
-import { ArrowLeft } from "lucide-react";
+import { BranchSwitcher } from "@/components/playland/branch-switcher";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "กะ · ปิดวัน · Play a lot" };
+
+const INK = "#3A3026", MUTED = "#8a7f70", LINE = "#ece5d8";
+const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 
 export default async function ShiftsPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
+  requirePlaylandManager(session.user.role); // ประวัติกะ/ปิดวัน = ผู้จัดการขึ้นไป
   const orgId = session.user.org_id;
-  const branches = await listBranches(orgId);
-  const branchId = sp.branch || branches[0]?.id;
-  if (!branchId) return <div className="pl-page"><header className="pl-header"><h1>ตั้งค่าสาขาก่อน</h1></header></div>;
+  const { branches, activeId } = await getBranchContext(orgId, sp.branch);
+  const branchId = activeId;
+  if (!branchId) {
+    return (
+      <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}` }}>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA }}>ตั้งค่าสาขาก่อน</div>
+        </div>
+      </div>
+    );
+  }
 
   const isManager = ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"].includes(session.user.role);
   const [openShift, recent] = await Promise.all([
@@ -26,22 +38,25 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
     prisma.playlandShift.findMany({ where: { orgId, branchId }, orderBy: { startedAt: "desc" }, take: 30 }),
   ]);
 
+  const branchName = branches.find((b) => b.id === branchId)?.name ?? "";
+
   return (
-    <div className="pl-page">
-      <header className="pl-header">
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      {/* white header strip — back-office only (ไม่มีสลับหน้าร้าน/หลังบ้าน) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
-          <Link href="/playland/office" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> หลังบ้าน · สำหรับผู้จัดการ</Link>
-          <h1>ประวัติกะ · ปิดวัน{openShift ? ` · ${openShift.shiftCode}` : ""}</h1>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA }}>กะ · ปิดวัน{openShift ? ` · ${openShift.shiftCode}` : ""}</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>เปิด/ปิดกะ · นับเงินลิ้นชัก · ตรวจประวัติกะย้อนหลัง</div>
         </div>
-        {branches.length > 1 && <NavSelect param="branch" value={branchId} options={branches.map((b) => ({ value: b.id, label: b.name }))} style={{ width: 170 }} />}
-      </header>
+        <div style={{ marginLeft: "auto" }}>
+          <BranchSwitcher branches={branches} activeId={activeId} />
+        </div>
+      </div>
 
-      <BackOfficeTabs active="shifts" />
-
-      <div style={{ overflowY: "auto" }}>
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         <ShiftClient
           branchId={branchId}
-          branchName={branches.find((b) => b.id === branchId)?.name ?? ""}
+          branchName={branchName}
           openShift={openShift ? {
             id: openShift.id, shiftCode: openShift.shiftCode,
             startedAt: openShift.startedAt.toISOString(),

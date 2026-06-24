@@ -4,6 +4,7 @@ import { listBranches } from "@/lib/playland/queries";
 import { canPlaylandAdmin } from "@/lib/playland/role-guard";
 import { BranchesClient } from "@/components/playland/settings/branches-client";
 import { StaffBranchManager } from "@/components/playland/settings/staff-branch-manager";
+import { Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -22,20 +23,32 @@ export default async function BranchesSettingsPage() {
     ]);
   }
 
+  const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", LINE = "#ece5d8";
+  const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+  const MITR = "var(--font-mitr), 'Mitr', sans-serif";
+
   return (
-    <div style={{ display: "grid", gap: 4 }}>
-      <BranchesClient branches={branches.map((b) => ({
-        id: b.id, name: b.name, slug: b.slug, address: b.address, phone: b.phone, active: b.active,
-      }))} />
-      {isAdmin && branches.length > 0 && (
-        <div style={{ padding: "0 16px 24px" }}>
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      {/* header strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><Users size={20} color={BLUE} /> ทีม &amp; สาขา</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>จัดการสาขา · ผูกพนักงานเข้าสาขา · กำหนดสิทธิ์การมองเห็น</div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
+        <BranchesClient branches={branches.map((b) => ({
+          id: b.id, name: b.name, slug: b.slug, address: b.address, phone: b.phone, active: b.active,
+        }))} />
+        {isAdmin && branches.length > 0 && (
           <StaffBranchManager
             branches={branches.map((b) => ({ id: b.id, name: b.name }))}
             users={users}
             assignments={assignments}
           />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

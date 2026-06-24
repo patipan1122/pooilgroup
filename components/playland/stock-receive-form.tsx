@@ -11,7 +11,9 @@ type Line = { productId: string; name: string; quantity: number; unitCostBaht: n
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
 const input: React.CSSProperties = { background: "#fff", border: "1px solid #ece5d8", borderRadius: 10, padding: "10px 12px", fontSize: 15, fontFamily: MITR, color: "#3A3026", outline: "none", boxSizing: "border-box" };
+const card: React.CSSProperties = { background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 
 export function StockReceiveForm({ branchId, products }: { branchId: string; products: Prod[] }) {
   const router = useRouter();
@@ -64,7 +66,7 @@ export function StockReceiveForm({ branchId, products }: { branchId: string; pro
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 18 }}>
+      <div style={{ ...card, padding: 18 }}>
         <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>ยิงบาร์โค้ด หรือเลือกสินค้าเพื่อเพิ่มรายการ</div>
         <div style={{ marginBottom: 12 }}><BarcodeScanBox onScan={onScan} placeholder="ยิงบาร์โค้ดของที่รับเข้า…" /></div>
         <select value={pick} onChange={(e) => { if (e.target.value) { addProduct(e.target.value); setPick(""); } }} style={{ ...input, width: "100%" }}>
@@ -74,19 +76,19 @@ export function StockReceiveForm({ branchId, products }: { branchId: string; pro
       </div>
 
       {lines.length > 0 && (
-        <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, overflow: "hidden" }}>
+        <div style={{ ...card, overflow: "hidden" }}>
           {lines.map((l) => (
             <div key={l.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid #f2ebdd", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 140, fontSize: 15, fontWeight: 500 }}>{l.name}</div>
-              <label style={{ fontSize: 12, color: "#8a7f70" }}>จำนวน <input type="number" value={l.quantity} onChange={(e) => setQty(l.productId, parseInt(e.target.value) || 0)} style={{ ...input, width: 72, fontFamily: FREDOKA }} /></label>
-              <label style={{ fontSize: 12, color: "#8a7f70" }}>ต้นทุน/ชิ้น <input type="number" value={l.unitCostBaht} onChange={(e) => setCost(l.productId, parseFloat(e.target.value) || 0)} style={{ ...input, width: 90, fontFamily: FREDOKA }} /></label>
-              <div style={{ fontFamily: FREDOKA, fontWeight: 600, width: 80, textAlign: "right" }}>฿{(l.quantity * l.unitCostBaht).toLocaleString()}</div>
+              <label style={{ fontSize: 12, color: "#8a7f70" }}>จำนวน <input type="number" value={l.quantity} onChange={(e) => setQty(l.productId, parseInt(e.target.value) || 0)} style={{ ...input, width: 72, fontFamily: MONO }} /></label>
+              <label style={{ fontSize: 12, color: "#8a7f70" }}>ต้นทุน/ชิ้น <input type="number" value={l.unitCostBaht} onChange={(e) => setCost(l.productId, parseFloat(e.target.value) || 0)} style={{ ...input, width: 90, fontFamily: MONO }} /></label>
+              <div style={{ fontFamily: MONO, fontWeight: 600, width: 84, textAlign: "right" }}>฿{(l.quantity * l.unitCostBaht).toLocaleString()}</div>
               <button onClick={() => remove(l.productId)} style={{ background: "none", border: "none", color: "#E74C3C", cursor: "pointer", fontSize: 18 }}>×</button>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: "#f9f4ea" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 16px", background: "#f9f7f2" }}>
             <span style={{ fontWeight: 500 }}>รวมต้นทุนรับเข้า</span>
-            <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 20, color: "#2D6CB1" }}>฿{total.toLocaleString()}</span>
+            <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20, color: "#2D6CB1" }}>฿{total.toLocaleString()}</span>
           </div>
         </div>
       )}
@@ -98,7 +100,7 @@ export function StockReceiveForm({ branchId, products }: { branchId: string; pro
 
       {msg && <div style={{ borderRadius: 10, padding: "12px 16px", fontSize: 15, background: msg.startsWith("✓") ? "#eaf3eb" : msg.startsWith("+") ? "#eaf3f6" : "#fdecea", color: msg.startsWith("✓") ? "#1F8A5B" : msg.startsWith("+") ? "#2D6CB1" : "#c0392b" }}>{msg}</div>}
 
-      <button onClick={submit} disabled={busy} style={{ background: "#1F8A5B", color: "#fff", border: "none", borderRadius: 14, padding: 16, fontFamily: MITR, fontWeight: 500, fontSize: 18, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "กำลังบันทึก…" : "บันทึกรับของเข้า"}</button>
+      <button type="button" onClick={submit} disabled={busy} style={{ background: "#1F8A5B", color: "#fff", border: "none", borderRadius: 14, padding: 16, fontFamily: MITR, fontWeight: 500, fontSize: 18, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "กำลังบันทึก…" : "บันทึกรับของเข้า"}</button>
     </div>
   );
 }

@@ -1,16 +1,22 @@
 // Playland · Manual gate override monitor (anti-fraud) · /bigfeature Phase A
 // Shows every staff-pressed gate override with snapshot + who + why · spots abuse.
 // Per [[playland-manual-override-antifraud]].
+// อยู่ในเมนูเดิม (AdminShell) + พื้นขาว + สไตล์ Play a lot · ตัด BackOfficeTabs (หน้า/หลังปน) ออก
 
-import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandAdmin } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { fmtDateTime } from "@/lib/playland/format";
-import { BackOfficeTabs } from "@/components/playland/back-office-tabs";
-import { ShieldAlert, ArrowLeft, AlertTriangle } from "lucide-react";
+import { ShieldAlert, AlertTriangle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "เปิดประตูเอง · Play a lot" };
+
+const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", AMBER = "#a9791a", RED = "#E74C3C", LINE = "#ece5d8";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
+const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MITR = "var(--font-mitr), 'Mitr', sans-serif";
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 
 const REASON_LABELS: Record<string, string> = {
   QR_DAMAGED: "QR เปียก/ขาด",
@@ -50,50 +56,57 @@ export default async function OverridesPage() {
   const ranking = [...countByUser.entries()]
     .map(([uid, count]) => ({ uid, name: nameById.get(uid) ?? uid.slice(0, 8), count }))
     .sort((a, b) => b.count - a.count);
+  const maxCount = Math.max(1, ...ranking.map((r) => r.count));
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayCount = logs.filter((l) => new Date(l.createdAt).toISOString().slice(0, 10) === todayStr).length;
+  const abuseCount = ranking.filter((r) => r.count >= ABUSE_THRESHOLD).length;
+
+  const kpis = [
+    { label: "วันนี้", value: `${todayCount}`, unit: "ครั้ง", color: INK },
+    { label: "30 วันล่าสุด", value: `${logs.length}`, unit: "ครั้ง", color: INK },
+    { label: "พนักงานที่กด", value: `${ranking.length}`, unit: "คน", color: INK },
+    { label: "ผิดปกติ (≥20)", value: `${abuseCount}`, unit: "คน", color: abuseCount > 0 ? RED : INK },
+  ];
 
   return (
-    <div className="pl-page">
-      <header className="pl-header">
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      {/* header strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
         <div>
-          <Link href="/playland" className="pl-eyebrow" style={{ textDecoration: "none" }}><ArrowLeft size={11} /> Workspace</Link>
-          <h1><ShieldAlert size={18} style={{ display: "inline", marginRight: 6, verticalAlign: -3 }} />เปิดประตูเอง · 30 วันล่าสุด</h1>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><ShieldAlert size={20} color={BLUE} /> เปิดประตูเอง</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>บันทึกทุกครั้งที่พนักงานเปิดประตูเอง · 30 วันล่าสุด</div>
         </div>
-      </header>
+      </div>
 
-      <BackOfficeTabs active="overrides" />
-
-      <div style={{ overflowY: "auto", padding: 20 }}>
-        {/* Summary */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 18 }}>
-          <div className="pl-card pl-stat">
-            <span className="pl-stat-label">วันนี้</span>
-            <span className="pl-stat-value">{todayCount} ครั้ง</span>
-          </div>
-          <div className="pl-card pl-stat">
-            <span className="pl-stat-label">30 วัน</span>
-            <span className="pl-stat-value">{logs.length} ครั้ง</span>
-          </div>
-          <div className="pl-card pl-stat">
-            <span className="pl-stat-label">พนักงานที่กด</span>
-            <span className="pl-stat-value">{ranking.length} คน</span>
-          </div>
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
+        {/* KPI row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+          {kpis.map((k) => (
+            <div key={k.label} style={{ ...card, padding: 18 }}>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>
+              <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24, color: k.color }}>{k.value} <span style={{ fontSize: 13, fontFamily: MITR, color: MUTED, fontWeight: 400 }}>{k.unit}</span></div>
+            </div>
+          ))}
         </div>
 
-        {/* Per-staff ranking · flag abuse */}
+        {/* per-staff ranking · flag abuse */}
         {ranking.length > 0 && (
-          <div className="pl-card" style={{ marginBottom: 18 }}>
-            <div className="pl-eyebrow" style={{ marginBottom: 8 }}>จำนวนครั้งต่อพนักงาน (30 วัน)</div>
-            <div style={{ display: "grid", gap: 6 }}>
+          <div style={{ ...card, padding: 22, marginBottom: 18 }}>
+            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, fontFamily: FREDOKA }}>จำนวนครั้งต่อพนักงาน · 30 วัน</div>
+            <div style={{ display: "grid", gap: 12 }}>
               {ranking.map((r) => {
                 const abuse = r.count >= ABUSE_THRESHOLD;
                 return (
-                  <div key={r.uid} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ flex: 1, fontWeight: 500 }}>{r.name}</span>
-                    {abuse && <span className="pl-chip pl-chip-danger"><AlertTriangle size={11} /> ผิดปกติ</span>}
-                    <span className="pl-num" style={{ fontWeight: 700, color: abuse ? "var(--pl-danger-ink)" : "var(--pl-text)" }}>{r.count}</span>
+                  <div key={r.uid}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{r.name}</span>
+                      {abuse && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 500, background: "#fdeceb", color: RED }}><AlertTriangle size={11} /> ผิดปกติ</span>}
+                      <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 14, color: abuse ? RED : INK }}>{r.count}</span>
+                    </div>
+                    <div style={{ height: 7, background: "#f2ebdd", borderRadius: 99 }}>
+                      <div style={{ width: `${(r.count / maxCount) * 100}%`, height: "100%", background: abuse ? RED : BLUE, borderRadius: 99 }} />
+                    </div>
                   </div>
                 );
               })}
@@ -101,15 +114,15 @@ export default async function OverridesPage() {
           </div>
         )}
 
-        {/* Event list with snapshots */}
+        {/* event list with snapshots */}
         {logs.length === 0 ? (
-          <div className="pl-empty">
-            <div className="pl-empty-icon"><ShieldAlert size={22} /></div>
-            <div className="pl-empty-title">ยังไม่มีการเปิดประตูเอง</div>
-            <div className="pl-empty-message">ทุกครั้งที่พนักงานกด "เปิดประตูเอง" จะมีรูป + ชื่อคนกด + เหตุผลบันทึกที่นี่</div>
+          <div style={{ ...card, padding: 48, textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: "#f4efe6", display: "grid", placeItems: "center", margin: "0 auto 14px" }}><ShieldAlert size={22} color={MUTED} /></div>
+            <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 16, marginBottom: 6 }}>ยังไม่มีการเปิดประตูเอง</div>
+            <div style={{ fontSize: 13, color: MUTED }}>ทุกครั้งที่พนักงานกด &quot;เปิดประตูเอง&quot; จะมีรูป + ชื่อคนกด + เหตุผลบันทึกที่นี่</div>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
             {logs.map((l) => {
               const meta = (l.metadata ?? {}) as Record<string, unknown>;
               const snapshotUrl = typeof meta.snapshotUrl === "string" ? meta.snapshotUrl : null;
@@ -117,25 +130,26 @@ export default async function OverridesPage() {
               const reasonNote = typeof meta.reasonNote === "string" ? meta.reasonNote : null;
               const wristbandCode = typeof meta.wristbandCode === "string" ? meta.wristbandCode : null;
               return (
-                <div key={l.id} className="pl-card" style={{ padding: 0, overflow: "hidden" }}>
+                <div key={l.id} style={{ ...card, padding: 0, overflow: "hidden" }}>
                   {snapshotUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={snapshotUrl} alt="override snapshot" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block", background: "#1c1917" }} />
                   ) : (
-                    <div style={{ width: "100%", aspectRatio: "1/1", display: "grid", placeItems: "center", background: "var(--pl-ink-50)", color: "var(--pl-text-faint)" }}>
+                    <div style={{ width: "100%", aspectRatio: "1/1", display: "grid", placeItems: "center", background: "#f4efe6", color: "#b3a896", fontSize: 13 }}>
                       ไม่มีรูป
                     </div>
                   )}
-                  <div style={{ padding: 10, display: "grid", gap: 4 }}>
+                  <div style={{ padding: 12, display: "grid", gap: 6 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                      <span className="pl-chip pl-chip-warn" style={{ fontSize: 11 }}>{REASON_LABELS[reason] ?? reason}</span>
-                      <span style={{ fontSize: 11, color: "var(--pl-text-muted)" }}>{fmtDateTime(l.createdAt)}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 500, background: "#fdf3df", color: AMBER }}>{REASON_LABELS[reason] ?? reason}</span>
+                      <span style={{ fontSize: 11, color: MUTED, fontFamily: MONO }}>{fmtDateTime(l.createdAt)}</span>
                     </div>
-                    {reasonNote && <div style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{reasonNote}</div>}
+                    {reasonNote && <div style={{ fontSize: 12, color: MUTED }}>{reasonNote}</div>}
                     <div style={{ fontSize: 12 }}>
                       โดย <strong>{l.actorUserId ? (nameById.get(l.actorUserId) ?? l.actorUserId.slice(0, 8)) : "—"}</strong>
                     </div>
                     {wristbandCode && (
-                      <div style={{ fontSize: 11, fontFamily: "var(--pl-font-mono)", color: "var(--pl-text-faint)" }}>{wristbandCode}</div>
+                      <div style={{ fontSize: 11, fontFamily: MONO, color: "#b3a896" }}>{wristbandCode}</div>
                     )}
                   </div>
                 </div>

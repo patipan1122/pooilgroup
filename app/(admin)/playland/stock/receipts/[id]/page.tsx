@@ -8,8 +8,11 @@ import { thb } from "@/lib/playland/format";
 import { ArrowLeft, ReceiptText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", LINE = "#ece5d8";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,18 +27,20 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   if (!r) notFound();
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#F7F2EA", fontFamily: MITR, color: "#3A3026" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 28px", background: "#fff", borderBottom: "1px solid #ece5d8" }}>
-        <Link href={`/playland/stock?branch=${r.branchId}&tab=receipts`} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b6052", textDecoration: "none", fontSize: 15 }}><ArrowLeft size={18} /> ใบรับสินค้า</Link>
-        <div style={{ width: 1, height: 24, background: "#ece5d8" }} />
-        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: "1.3rem", display: "flex", alignItems: "center", gap: 8 }}><ReceiptText size={20} /> {r.purchaseCode}</div>
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><ReceiptText size={20} /> {r.purchaseCode}</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>ใบรับสินค้า · {r.branch?.name ?? "—"}</div>
+        </div>
+        <Link href={`/playland/stock?branch=${r.branchId}&tab=receipts`} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, color: MUTED, textDecoration: "none", fontSize: 13, fontWeight: 600, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 9, padding: "8px 16px" }}><ArrowLeft size={15} /> ใบรับสินค้า</Link>
       </header>
 
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 28px 48px" }}>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "22px 32px 48px" }}>
         {/* หัวใบ */}
-        <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 18, padding: "20px 22px", marginBottom: 18 }}>
+        <div style={{ ...card, padding: "20px 22px", marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16 }}>
-            <Field label="เลขที่ใบ" value={r.purchaseCode} />
+            <Field label="เลขที่ใบ" value={r.purchaseCode} mono />
             <Field label="วันที่รับ" value={new Date(r.createdAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })} />
             <Field label="ผู้ขาย/ร้านค้า" value={r.supplierName ?? "—"} />
             <Field label="สาขา" value={r.branch?.name ?? "—"} />
@@ -44,21 +49,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         </div>
 
         {/* รายการ */}
-        <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, overflow: "hidden" }}>
-          <div style={{ ...grid, padding: "11px 18px", background: "#f9f4ea", fontSize: 12.5, color: "#8a7f70", fontWeight: 500 }}>
+        <div style={{ ...card, overflow: "hidden" }}>
+          <div style={{ ...grid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
             <div>สินค้า</div><div style={{ textAlign: "right" }}>จำนวน</div><div style={{ textAlign: "right" }}>ต้นทุน/ชิ้น</div><div style={{ textAlign: "right" }}>รวม</div>
           </div>
           {r.lines.map((l) => (
-            <div key={l.id} style={{ ...grid, padding: "12px 18px", borderTop: "1px solid #f2ebdd", alignItems: "center" }}>
+            <div key={l.id} style={{ ...grid, padding: "12px 18px", borderTop: `1px solid #f2ebdd`, alignItems: "center" }}>
               <div style={{ fontSize: 15 }}>{l.productName}</div>
-              <div style={{ textAlign: "right", fontFamily: FREDOKA, fontWeight: 600 }}>{l.quantity}</div>
-              <div style={{ textAlign: "right", fontSize: 14, color: "#8a7f70" }}>{thb(l.unitCostCents)}</div>
-              <div style={{ textAlign: "right", fontWeight: 500 }}>{thb(l.unitCostCents * l.quantity)}</div>
+              <div style={{ textAlign: "right", fontFamily: MONO, fontWeight: 600 }}>{l.quantity}</div>
+              <div style={{ textAlign: "right", fontSize: 14, color: MUTED, fontFamily: MONO }}>{thb(l.unitCostCents)}</div>
+              <div style={{ textAlign: "right", fontWeight: 500, fontFamily: MONO }}>{thb(l.unitCostCents * l.quantity)}</div>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 18px", background: "#f9f4ea", borderTop: "1px solid #f2ebdd" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 18px", background: "#f9f7f2", borderTop: `1px solid #f2ebdd` }}>
             <span style={{ fontWeight: 500 }}>รวมต้นทุนรับเข้า</span>
-            <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 20, color: "#2D6CB1" }}>{thb(r.totalCostCents)}</span>
+            <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20, color: BLUE }}>{thb(r.totalCostCents)}</span>
           </div>
         </div>
       </div>
@@ -66,11 +71,11 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
       <div style={{ fontSize: 12, color: "#a89c8b", marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 500 }}>{value}</div>
+      <div style={{ fontSize: 15, fontWeight: 500, fontFamily: mono ? MONO : undefined }}>{value}</div>
     </div>
   );
 }

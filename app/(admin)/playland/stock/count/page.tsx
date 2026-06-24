@@ -10,8 +10,10 @@ import { ArrowLeft, ClipboardList } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "นับสต๊อก · Play a lot" };
+const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", AMBER = "#a9791a", LINE = "#ece5d8";
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 
 export default async function StockCountCreatePage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
@@ -29,21 +31,23 @@ export default async function StockCountCreatePage({ searchParams }: { searchPar
   });
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#F7F2EA", fontFamily: MITR, color: "#3A3026" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 28px", background: "#fff", borderBottom: "1px solid #ece5d8" }}>
-        <Link href={`/playland/stock?branch=${branchId}&tab=counts`} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b6052", textDecoration: "none", fontSize: 15 }}><ArrowLeft size={18} /> สต๊อก</Link>
-        <div style={{ width: 1, height: 24, background: "#ece5d8" }} />
-        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: "1.3rem", display: "flex", alignItems: "center", gap: 8 }}><ClipboardList size={20} /> นับสต๊อกรอบใหม่</div>
+    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#fbfbf9", fontFamily: MITR, color: INK }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", background: "#fff", borderBottom: `1px solid ${LINE}`, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}><ClipboardList size={20} /> นับสต๊อกรอบใหม่</div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>นับของจริง → ระบบคำนวณส่วนต่าง → ปรับสต๊อกพร้อม audit log</div>
+        </div>
+        <Link href={`/playland/stock?branch=${branchId}&tab=counts`} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, color: MUTED, textDecoration: "none", fontSize: 13, fontWeight: 600, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 9, padding: "8px 16px" }}><ArrowLeft size={15} /> กลับสต๊อก</Link>
       </header>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 28px 48px", width: "100%" }}>
-        <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 14, padding: "16px 18px", marginBottom: 16, fontSize: 13.5, color: "#6b6052" }}>
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 32px 48px", width: "100%" }}>
+        <div style={{ ...card, padding: "16px 18px", marginBottom: 16, fontSize: 13.5, color: "#6b6052" }}>
           💡 <strong>วิธีนับ:</strong> เดินนับของจริงตามชั้น · กรอกจำนวนที่นับได้ในช่อง “นับจริง” · ระบบคำนวณส่วนต่างให้ · ใส่เหตุผลที่ของหาย/เกิน · กดบันทึก →
           เก็บเป็น “ใบนับ” (ใครนับ · เมื่อไหร่ · ส่วนต่าง) ดูย้อนหลังได้
-          <div style={{ marginTop: 4, color: "#a9791a" }}>⚠️ บันทึกแล้วปรับสต๊อกทันที · มี audit log ทุกครั้ง</div>
+          <div style={{ marginTop: 4, color: AMBER }}>⚠️ บันทึกแล้วปรับสต๊อกทันที · มี audit log ทุกครั้ง</div>
         </div>
         {products.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 24, textAlign: "center", color: "#8a7f70" }}>
-            ยังไม่มีสินค้าให้นับ · <Link href={`/playland/stock?branch=${branchId}&tab=items`} style={{ color: "#2D6CB1" }}>เพิ่มสินค้าก่อน</Link>
+          <div style={{ ...card, padding: 24, textAlign: "center", color: MUTED }}>
+            ยังไม่มีสินค้าให้นับ · <Link href={`/playland/stock?branch=${branchId}&tab=items`} style={{ color: BLUE }}>เพิ่มสินค้าก่อน</Link>
           </div>
         ) : (
           <StockCountForm branchId={branchId} products={products} />

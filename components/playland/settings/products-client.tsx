@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { upsertProduct } from "@/lib/playland/actions";
 import { cloneProductToBranches } from "@/lib/playland/branch-actions";
 import { thb } from "@/lib/playland/format";
-import { ShoppingBasket, PlusCircle, ArrowLeft, ImageOff, Copy } from "lucide-react";
+import { ShoppingBasket, PlusCircle, ImageOff, Copy } from "lucide-react";
 
 interface Branch { id: string; name: string; }
 interface Product {
@@ -14,6 +13,23 @@ interface Product {
   category: string | null; supplier: string | null; priceCents: number; costCents: number | null; stock: number; reorderLevel: number; active: boolean;
   imageR2Path: string | null;
 }
+
+// Locked "Play a lot" tokens (matches office)
+const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", AMBER = "#a9791a", GREEN = "#1F8A5B", RED = "#E74C3C", LINE = "#ece5d8";
+const MITR = "var(--font-mitr), 'Mitr', sans-serif";
+const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
+const th: React.CSSProperties = { fontSize: 11.5, color: MUTED, fontWeight: 600, textAlign: "left", padding: "11px 14px", borderBottom: `1px solid ${LINE}` };
+const td: React.CSSProperties = { fontSize: 13.5, padding: "11px 14px", borderBottom: `1px solid #f2ebdd` };
+const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", fontSize: 11.5, fontWeight: 600, borderRadius: 99, padding: "2px 10px", background: bg, color: fg });
+const lbl: React.CSSProperties = { fontSize: 12, color: MUTED, display: "block", marginBottom: 4 };
+const inputS: React.CSSProperties = { width: "100%", border: `1px solid ${LINE}`, borderRadius: 9, padding: "9px 11px", fontSize: 14, fontFamily: MITR, color: INK, background: "#fff", boxSizing: "border-box" };
+function btn(primary: boolean): React.CSSProperties {
+  return { display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: MITR,
+    background: primary ? BLUE : "#fff", color: primary ? "#fff" : MUTED, border: primary ? "none" : `1px solid ${LINE}` };
+}
+const btnSm: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", borderRadius: 8, padding: "4px 9px", fontSize: 11, fontWeight: 600, fontFamily: MITR, background: "#fff", color: MUTED, border: `1px solid ${LINE}` };
 
 export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId }: { branches: Branch[]; products: Product[]; r2PublicUrl: string; activeBranchId: string | null }) {
   const router = useRouter();
@@ -128,99 +144,115 @@ export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId
   const lowStock = products.filter((p) => p.stock <= p.reorderLevel);
 
   return (
-    <div className="pl-page">
-      <header className="pl-header">
+    <div style={{ fontFamily: MITR, color: INK, padding: "22px 28px 44px", maxWidth: 1480, margin: "0 auto" }}>
+      {/* sub-header: title + count + low-stock + primary action */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
         <div>
-          <Link href="/playland/settings" className="pl-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}><ArrowLeft size={12} /> Settings</Link>
-          <h1>สินค้า POS {activeBranchName && <span style={{ color: "#2D6CB1" }}>· {activeBranchName}</span>} · {products.length} {lowStock.length > 0 && <span className="pl-chip pl-chip-danger" style={{ marginLeft: 6, fontSize: 11 }}>เหลือน้อย {lowStock.length}</span>}</h1>
+          <div style={{ fontSize: "1.2rem", fontWeight: 600, fontFamily: FREDOKA, display: "flex", alignItems: "center", gap: 8 }}>
+            <ShoppingBasket size={19} color={AMBER} /> สินค้า POS · {products.length}
+            {lowStock.length > 0 && <span style={chip("#fdeceb", RED)}>เหลือน้อย {lowStock.length}</span>}
+          </div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+            ขนม · เครื่องดื่ม{activeBranchName && <> · <span style={{ color: BLUE }}>{activeBranchName}</span></>} · แตะแถวเพื่อแก้ไข
+          </div>
         </div>
-        <button className="pl-btn pl-btn-primary" onClick={startNew}><PlusCircle size={14} /> เพิ่มสินค้า</button>
-      </header>
+        <button onClick={startNew} style={{ ...btn(true), marginLeft: "auto" }}><PlusCircle size={15} /> เพิ่มสินค้า</button>
+      </div>
 
-      <div style={{ padding: 16, display: "grid", gridTemplateColumns: showForm ? "1fr 380px" : "1fr", gap: 16 }}>
-        <div className="pl-card" style={{ padding: 0, overflow: "hidden" }}>
-          <table className="pl-table">
-            <thead><tr><th>รูป</th><th>ชื่อ</th><th>Barcode</th><th>หมวด</th><th>ราคา</th><th>คงเหลือ</th><th>สาขา</th><th>Active</th></tr></thead>
-            <tbody>
-              {products.length === 0 && <tr><td colSpan={8}><div className="pl-empty"><ShoppingBasket size={28} opacity={0.4} />ยังไม่มีสินค้า</div></td></tr>}
-              {products.map((p) => {
-                const low = p.stock <= p.reorderLevel;
-                const img = resolveImg(p.imageR2Path);
-                return (
-                  <tr key={p.id} onClick={() => startEdit(p)}>
-                    <td>
-                      {img
-                        ? <img src={img} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", display: "block" }} />
-                        : <span style={{ display: "inline-flex", width: 32, height: 32, borderRadius: 6, alignItems: "center", justifyContent: "center", background: "var(--pl-surface-2, rgba(0,0,0,0.04))", color: "var(--pl-text-muted)" }}><ImageOff size={14} /></span>}
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{p.name}</td>
-                    <td><code style={{ fontSize: 12 }}>{p.barcode ?? "—"}</code></td>
-                    <td>{p.category ?? "—"}</td>
-                    <td style={{ fontWeight: 600 }}>{thb(p.priceCents)}</td>
-                    <td style={{ color: low ? "var(--pl-danger)" : "inherit", fontWeight: low ? 600 : 400 }}>{p.stock}</td>
-                    <td>{branches.find((b) => b.id === p.branchId)?.name ?? "—"}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {p.active ? <span className="pl-chip pl-chip-ok">ใช้</span> : <span className="pl-chip pl-chip-muted">ปิด</span>}
-                        <button type="button" className="pl-btn pl-btn-sm" onClick={(e) => { e.stopPropagation(); startClone(p); }} style={{ fontSize: 11 }}>ทำซ้ำ</button>
-                        {otherBranches.length > 0 && (
-                          <button type="button" className="pl-btn pl-btn-sm" disabled={cloningId === p.id} onClick={(e) => { e.stopPropagation(); cloneToBranches(p); }} style={{ fontSize: 11 }} title="ก๊อปไปสาขาอื่น">
-                            <Copy size={11} /> {cloningId === p.id ? "..." : "→สาขา"}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <div style={{ display: "grid", gridTemplateColumns: showForm ? "1fr 360px" : "1fr", gap: 16, alignItems: "start" }}>
+        <div style={{ ...card, overflow: "hidden" }}>
+          {products.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "48px 20px", color: MUTED }}>
+              <ShoppingBasket size={30} opacity={0.4} />ยังไม่มีสินค้า
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr>
+                <th style={th}>รูป</th><th style={th}>ชื่อ</th><th style={th}>Barcode</th><th style={th}>หมวด</th>
+                <th style={{ ...th, textAlign: "right" }}>ราคา</th><th style={{ ...th, textAlign: "right" }}>คงเหลือ</th>
+                <th style={th}>สาขา</th><th style={th}>Active</th>
+              </tr></thead>
+              <tbody>
+                {products.map((p) => {
+                  const low = p.stock <= p.reorderLevel;
+                  const img = resolveImg(p.imageR2Path);
+                  const isSel = editing?.id === p.id;
+                  return (
+                    <tr key={p.id} onClick={() => startEdit(p)} style={{ cursor: "pointer", background: isSel ? "#f5f9fe" : "transparent" }}>
+                      <td style={td}>
+                        {img
+                          ? <img src={img} alt="" style={{ width: 34, height: 34, borderRadius: 7, objectFit: "cover", display: "block" }} />
+                          : <span style={{ display: "inline-flex", width: 34, height: 34, borderRadius: 7, alignItems: "center", justifyContent: "center", background: "#f7f2ea", color: MUTED }}><ImageOff size={15} /></span>}
+                      </td>
+                      <td style={{ ...td, fontWeight: 600 }}>{p.name}</td>
+                      <td style={td}><span style={{ fontFamily: MONO, fontSize: 12, color: MUTED }}>{p.barcode ?? "—"}</span></td>
+                      <td style={{ ...td, color: MUTED }}>{p.category ?? "—"}</td>
+                      <td style={{ ...td, textAlign: "right", fontFamily: MONO, fontWeight: 600 }}>{thb(p.priceCents)}</td>
+                      <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: low ? RED : INK, fontWeight: low ? 700 : 400 }}>{p.stock}</td>
+                      <td style={td}><span style={chip("#f2ebdd", MUTED)}>{branches.find((b) => b.id === p.branchId)?.name ?? "—"}</span></td>
+                      <td style={td}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          {p.active ? <span style={chip("#eaf3eb", GREEN)}>ใช้</span> : <span style={chip("#f2ebdd", MUTED)}>ปิด</span>}
+                          <button type="button" style={btnSm} onClick={(e) => { e.stopPropagation(); startClone(p); }}>ทำซ้ำ</button>
+                          {otherBranches.length > 0 && (
+                            <button type="button" style={btnSm} disabled={cloningId === p.id} onClick={(e) => { e.stopPropagation(); cloneToBranches(p); }} title="ก๊อปไปสาขาอื่น">
+                              <Copy size={11} /> {cloningId === p.id ? "..." : "→สาขา"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {showForm && (
-          <form className="pl-card" onSubmit={submit} style={{ display: "grid", gap: 10 }}>
-            <div className="pl-eyebrow">{editing ? "แก้สินค้า" : "สินค้าใหม่"}</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="pl-btn" onClick={() => setKind("SALE_ITEM")} style={{ flex: 1, ...(kind === "SALE_ITEM" ? { background: "#2D6CB1", color: "#fff", borderColor: "#2D6CB1" } : {}) }}>🍬 สินค้าขาย (POS)</button>
-              <button type="button" className="pl-btn" onClick={() => setKind("SPARE_PART")} style={{ flex: 1, ...(kind === "SPARE_PART" ? { background: "#a9791a", color: "#fff", borderColor: "#a9791a" } : {}) }}>🔧 อะไหล่ซ่อม</button>
+          <form onSubmit={submit} style={{ ...card, padding: 18, display: "grid", gap: 11 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, fontFamily: FREDOKA }}>{editing ? "แก้สินค้า" : "สินค้าใหม่"}</div>
+            <div style={{ display: "flex", gap: 7 }}>
+              <button type="button" onClick={() => setKind("SALE_ITEM")} style={{ ...btn(kind === "SALE_ITEM"), flex: 1, justifyContent: "center" }}>🍬 สินค้าขาย</button>
+              <button type="button" onClick={() => setKind("SPARE_PART")} style={{ ...btn(false), flex: 1, justifyContent: "center", ...(kind === "SPARE_PART" ? { background: AMBER, color: "#fff", border: "none" } : {}) }}>🔧 อะไหล่ซ่อม</button>
             </div>
             <div>
-              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ชื่อ *</label>
-              <input className="pl-input" required value={name} onChange={(e) => setName(e.target.value)} />
+              <label style={lbl}>ชื่อ *</label>
+              <input style={inputS} required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>Barcode</label>
-                <input className="pl-input" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="ยิง/พิมพ์บาร์โค้ด" />
+                <label style={lbl}>Barcode</label>
+                <input style={inputS} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="ยิง/พิมพ์บาร์โค้ด" />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ประเภทอะไหล่" : "หมวด"}</label>
-                <input className="pl-input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={kind === "SPARE_PART" ? "มอเตอร์ / สายพาน" : "ขนม / เครื่องดื่ม"} />
+                <label style={lbl}>{kind === "SPARE_PART" ? "ประเภทอะไหล่" : "หมวด"}</label>
+                <input style={inputS} value={category} onChange={(e) => setCategory(e.target.value)} placeholder={kind === "SPARE_PART" ? "มอเตอร์ / สายพาน" : "ขนม / เครื่องดื่ม"} />
               </div>
             </div>
-            <button type="button" className="pl-btn pl-btn-sm" onClick={() => setShowAdvanced((v) => !v)} style={{ justifySelf: "start", fontSize: 12 }}>
+            <button type="button" onClick={() => setShowAdvanced((v) => !v)} style={{ ...btnSm, justifySelf: "start" }}>
               {showAdvanced ? "− ซ่อนตัวเลือกเพิ่มเติม" : "+ ตัวเลือกเพิ่มเติม (ผู้ขาย · รูป)"}
             </button>
             {showAdvanced && (<>
             <div>
-              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ผู้ขาย/ร้านค้า</label>
-              <input className="pl-input" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="ไม่บังคับ" />
+              <label style={lbl}>ผู้ขาย/ร้านค้า</label>
+              <input style={inputS} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="ไม่บังคับ" />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>รูปสินค้า</label>
+              <label style={lbl}>รูปสินค้า</label>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 {resolveImg(imageR2Path)
-                  ? <img src={resolveImg(imageR2Path)!} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flex: "0 0 auto" }} />
-                  : <span style={{ display: "inline-flex", width: 56, height: 56, borderRadius: 8, alignItems: "center", justifyContent: "center", background: "var(--pl-surface-2, rgba(0,0,0,0.04))", color: "var(--pl-text-muted)", flex: "0 0 auto" }}><ImageOff size={18} /></span>}
+                  ? <img src={resolveImg(imageR2Path)!} alt="" style={{ width: 56, height: 56, borderRadius: 9, objectFit: "cover", flex: "0 0 auto" }} />
+                  : <span style={{ display: "inline-flex", width: 56, height: 56, borderRadius: 9, alignItems: "center", justifyContent: "center", background: "#f7f2ea", color: MUTED, flex: "0 0 auto" }}><ImageOff size={18} /></span>}
                 <div style={{ flex: 1, display: "grid", gap: 6 }}>
                   <input
-                    className="pl-input"
+                    style={inputS}
                     value={imageR2Path}
                     onChange={(e) => { setImageR2Path(e.target.value); setImgError(null); }}
                     placeholder="วางลิงก์รูปจาก google ได้เลย"
                   />
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <label className="pl-btn" style={{ cursor: uploading ? "wait" : "pointer", fontSize: 12 }}>
+                    <label style={{ ...btnSm, cursor: uploading ? "wait" : "pointer" }}>
                       {uploading ? "กำลังอัป..." : "อัปโหลดไฟล์"}
                       <input
                         type="file"
@@ -231,43 +263,45 @@ export function ProductsClient({ branches, products, r2PublicUrl, activeBranchId
                       />
                     </label>
                     {imageR2Path && (
-                      <button type="button" className="pl-btn" style={{ fontSize: 12 }} onClick={() => { setImageR2Path(""); setImgError(null); }}>ลบรูป</button>
+                      <button type="button" style={btnSm} onClick={() => { setImageR2Path(""); setImgError(null); }}>ลบรูป</button>
                     )}
                   </div>
-                  {imgError && <span style={{ fontSize: 12, color: "var(--pl-danger)" }}>{imgError}</span>}
+                  {imgError && <span style={{ fontSize: 12, color: RED }}>{imgError}</span>}
                 </div>
               </div>
             </div>
             </>)}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ราคาขาย (อะไหล่ไม่ต้องใส่)" : "ราคาขาย (บาท)"}</label>
-                <input className="pl-input" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required={kind === "SALE_ITEM"} disabled={kind === "SPARE_PART"} />
+                <label style={lbl}>{kind === "SPARE_PART" ? "ราคาขาย (อะไหล่ไม่ต้องใส่)" : "ราคาขาย (บาท)"}</label>
+                <input style={{ ...inputS, ...(kind === "SPARE_PART" ? { background: "#f7f2ea", color: MUTED } : {}) }} type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required={kind === "SALE_ITEM"} disabled={kind === "SPARE_PART"} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ต้นทุน/ชิ้น (บาท)</label>
-                <input className="pl-input" type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
+                <label style={lbl}>ต้นทุน/ชิ้น (บาท)</label>
+                <input style={inputS} type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>สต๊อกคงเหลือ</label>
-                <input className="pl-input" type="number" value={stock} onChange={(e) => setStock(e.target.value)} required />
+                <label style={lbl}>สต๊อกคงเหลือ</label>
+                <input style={inputS} type="number" value={stock} onChange={(e) => setStock(e.target.value)} required />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>จุดสั่งซื้อ (เตือนใกล้หมด)</label>
-                <input className="pl-input" type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} placeholder="0 = ไม่เตือน" />
+                <label style={lbl}>จุดสั่งซื้อ (เตือนใกล้หมด)</label>
+                <input style={inputS} type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} placeholder="0 = ไม่เตือน" />
               </div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--pl-text-muted)", background: "#f9f4ea", borderRadius: 8, padding: "8px 12px" }}>
-              สาขา: <strong style={{ color: "#2D6CB1" }}>{editing ? (branches.find((b) => b.id === branchId)?.name ?? "—") : (activeBranchName || "—")}</strong>
-              {!editing && branches.length > 1 && <span> · สลับสาขาที่หัวหน้าจอเพื่อเพิ่มเข้าสาขาอื่น</span>}
+            <div style={{ fontSize: 12.5, color: MUTED, background: "#f9f4ea", borderRadius: 9, padding: "8px 12px" }}>
+              สาขา: <strong style={{ color: BLUE }}>{editing ? (branches.find((b) => b.id === branchId)?.name ?? "—") : (activeBranchName || "—")}</strong>
+              {!editing && branches.length > 1 && <span> · สลับสาขาที่หัวจอเพื่อเพิ่มเข้าสาขาอื่น</span>}
             </div>
-            <label style={{ fontSize: 13 }}><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ marginRight: 6 }} /> Active</label>
-            {saveErr && <div style={{ fontSize: 13, color: "#fff", background: "var(--pl-danger)", borderRadius: 8, padding: "8px 12px" }}>{saveErr}</div>}
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="pl-btn" onClick={() => setShowForm(false)}>ยกเลิก</button>
-              <button type="submit" className="pl-btn pl-btn-primary" disabled={pending}>{pending ? "บันทึก..." : "บันทึก"}</button>
+            <label style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 7 }}>
+              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
+            </label>
+            {saveErr && <div style={{ fontSize: 13, color: "#fff", background: RED, borderRadius: 9, padding: "8px 12px" }}>{saveErr}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" style={btn(false)} onClick={() => setShowForm(false)}>ยกเลิก</button>
+              <button type="submit" style={btn(true)} disabled={pending}>{pending ? "บันทึก..." : "บันทึก"}</button>
             </div>
           </form>
         )}
