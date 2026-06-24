@@ -1032,6 +1032,7 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
     ];
 
     let branchCount = 0, machineCount = 0, sessionCount = 0;
+    let firstBranchId = "";
 
     for (const bs of branchSpecs) {
       // สาขา (idempotent by code)
@@ -1049,6 +1050,7 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
         });
       }
       branchCount += 1;
+      if (!firstBranchId) firstBranchId = branch.id;
 
       // กลุ่ม event สำหรับ "วันนี้" — รวมเป็น 1 รอบ CLOSED ต่อสาขา
       const sessionCode = `${DEMO_PREFIX}S-${bs.code}-CLOSED`;
@@ -1144,12 +1146,103 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
       }
     }
 
+    // 3) ข้อมูลคลังสินค้า (WMS) ตัวอย่าง — ใบรับ + นับสต๊อก(มีต่าง) + ของหาย + movements
+    if (firstBranchId) {
+      await seedCfStockDemo(orgId, userId, firstBranchId, [bearId, catId]);
+    }
+
     revalidatePath(MANAGE_PATH);
     revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/v2/stock");
     return { ok: true, data: { branches: branchCount, machines: machineCount, sessions: sessionCount } };
   } catch (e) {
     return { ok: false, error: `ใส่ข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };
   }
+}
+
+/**
+ * ใส่ข้อมูลคลังสินค้า (WMS) ตัวอย่างให้สาขาแรก — idempotent (กันสร้างซ้ำด้วย code prefix).
+ * สร้าง: รับเข้า 2 ใบ (RECEIPT_IN) + นับสต๊อก 1 ใบ (มีต่าง · COUNT_ADJUST) + ของหาย 1 ใบ (LOSS_ADJUST).
+ */
+async function seedCfStockDemo(
+  orgId: string, userId: string, branchId: string, productIds: string[],
+): Promise<void> {
+  // กันซ้ำ: ถ้ามีใบรับ demo ของสาขานี้แล้ว ข้าม
+  const existing = await prisma.cfGoodsReceipt.findFirst({
+    where: { orgId, branchId, receiptCode: { startsWith: `${DEMO_PREFIX}GR-` } },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  const names = await prisma.cfProduct.findMany({
+    where: { id: { in: productIds } }, select: { id: true, name: true, unitCostCents: true },
+  });
+  const nmap = new Map(names.map((n) => [n.id, n]));
+  const [p1, p2] = productIds;
+  const n1 = nmap.get(p1!); const n2 = nmap.get(p2!);
+  if (!n1 || !n2) return;
+
+  await prisma.$transaction(async (tx) => {
+    // ── ใบรับ #1 (รับหมีบราวน์ 40 + แมว 30) ──
+    const r1 = await tx.cfGoodsReceipt.create({
+      data: {
+        orgId, branchId, receiptCode: `${DEMO_PREFIX}GR-001`,
+        supplierName: `${DEMO_MARK} คลังกลางบางนา`, note: "รับล็อตประจำสัปดาห์",
+        totalCostCents: 40 * n1.unitCostCents + 30 * n2.unitCostCents, status: "RECEIVED",
+        createdById: userId, createdAt: daysBack(7),
+        lines: { create: [
+          { orgId, productId: p1!, productName: n1.name, quantity: 40, unitCostCents: n1.unitCostCents },
+          { orgId, productId: p2!, productName: n2.name, quantity: 30, unitCostCents: n2.unitCostCents },
+        ] },
+      },
+      select: { id: true },
+    });
+    await tx.cfStockMovement.createMany({ data: [
+      { orgId, branchId, type: "RECEIPT_IN", productId: p1!, qty: 40, unitCostCents: n1.unitCostCents, occurredAt: daysBack(7), createdById: userId, documentType: "goods_receipt", documentId: r1.id, refTable: "cf_goods_receipts", refId: r1.id, reason: "รับเข้า · คงเหลือ 40" },
+      { orgId, branchId, type: "RECEIPT_IN", productId: p2!, qty: 30, unitCostCents: n2.unitCostCents, occurredAt: daysBack(7), createdById: userId, documentType: "goods_receipt", documentId: r1.id, refTable: "cf_goods_receipts", refId: r1.id, reason: "รับเข้า · คงเหลือ 30" },
+    ] });
+
+    // ── ใบรับ #2 (รับเพิ่มหมี 20) ──
+    const r2 = await tx.cfGoodsReceipt.create({
+      data: {
+        orgId, branchId, receiptCode: `${DEMO_PREFIX}GR-002`,
+        supplierName: `${DEMO_MARK} คลังกลางบางนา`, totalCostCents: 20 * n1.unitCostCents, status: "RECEIVED",
+        createdById: userId, createdAt: daysBack(3),
+        lines: { create: [{ orgId, productId: p1!, productName: n1.name, quantity: 20, unitCostCents: n1.unitCostCents }] },
+      },
+      select: { id: true },
+    });
+    await tx.cfStockMovement.create({ data: { orgId, branchId, type: "RECEIPT_IN", productId: p1!, qty: 20, unitCostCents: n1.unitCostCents, occurredAt: daysBack(3), createdById: userId, documentType: "goods_receipt", documentId: r2.id, refTable: "cf_goods_receipts", refId: r2.id, reason: "รับเข้า · คงเหลือ 60" } });
+
+    // ── นับสต๊อก 1 ใบ (พบหมีหาย 3 · แมวเกิน 1) ──
+    const c1 = await tx.cfStockCount.create({
+      data: {
+        orgId, branchId, countCode: `${DEMO_PREFIX}SC-001`, note: "นับประจำเดือน",
+        itemsCounted: 2, totalDiff: -2, countedById: userId, countedByName: `${DEMO_MARK} พนักงานตัวอย่าง`,
+        countedAt: daysBack(1),
+        lines: { create: [
+          { orgId, productId: p1!, productName: n1.name, systemQty: 60, countedQty: 57, diff: -3, reason: "หายจากชั้น" },
+          { orgId, productId: p2!, productName: n2.name, systemQty: 30, countedQty: 31, diff: 1, reason: "นับเกินเดิม" },
+        ] },
+      },
+      select: { id: true },
+    });
+    await tx.cfStockMovement.createMany({ data: [
+      { orgId, branchId, type: "COUNT_ADJUST", productId: p1!, qty: -3, expectedQty: 60, varianceQty: -3, occurredAt: daysBack(1), createdById: userId, documentType: "stock_count", documentId: c1.id, refTable: "cf_stock_counts", refId: c1.id, reason: "นับต่าง · 60→57" },
+      { orgId, branchId, type: "COUNT_ADJUST", productId: p2!, qty: 1, expectedQty: 30, varianceQty: 1, occurredAt: daysBack(1), createdById: userId, documentType: "stock_count", documentId: c1.id, refTable: "cf_stock_counts", refId: c1.id, reason: "นับต่าง · 30→31" },
+    ] });
+
+    // ── ของหาย 1 ใบ (แมวเสียหาย 2) ──
+    const l1 = await tx.cfLossDoc.create({
+      data: {
+        orgId, branchId, lossCode: `${DEMO_PREFIX}LS-001`, reason: "DAMAGE",
+        note: "ตุ๊กตาเปื้อน/ขาด", totalCostCents: 2 * n2.unitCostCents, reportedById: userId, reportedAt: daysBack(0),
+        lines: { create: [{ orgId, productId: p2!, productName: n2.name, qty: 2, unitCostCents: n2.unitCostCents, note: "เปื้อนน้ำ" }] },
+      },
+      select: { id: true },
+    });
+    await tx.cfStockMovement.create({ data: { orgId, branchId, type: "LOSS_ADJUST", productId: p2!, qty: -2, unitCostCents: n2.unitCostCents, occurredAt: daysBack(0), createdById: userId, documentType: "loss_doc", documentId: l1.id, refTable: "cf_loss_docs", refId: l1.id, reason: "ของหาย/เสียหาย (DAMAGE)" } });
+  });
 }
 
 /** ลบข้อมูลตัวอย่างทั้งหมด (super_admin only) — match "[DEMO]"/"DEMO-" */
@@ -1182,6 +1275,23 @@ export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean 
     if (machIds.length > 0) {
       await prisma.cfMachineLoadout.deleteMany({ where: { orgId, machineId: { in: machIds } } });
       await prisma.cfMachine.deleteMany({ where: { id: { in: machIds } } });
+    }
+    // WMS demo docs (movements ผูก documentId → ลบ movements ของใบ demo ก่อน · lines cascade ผ่าน FK)
+    const demoReceipts = await prisma.cfGoodsReceipt.findMany({ where: { orgId, receiptCode: { startsWith: `${DEMO_PREFIX}GR-` } }, select: { id: true } });
+    const demoCounts = await prisma.cfStockCount.findMany({ where: { orgId, countCode: { startsWith: `${DEMO_PREFIX}SC-` } }, select: { id: true } });
+    const demoLosses = await prisma.cfLossDoc.findMany({ where: { orgId, lossCode: { startsWith: `${DEMO_PREFIX}LS-` } }, select: { id: true } });
+    const docIds = [...demoReceipts, ...demoCounts, ...demoLosses].map((d) => d.id);
+    if (docIds.length > 0) {
+      await prisma.cfStockMovement.deleteMany({ where: { orgId, documentId: { in: docIds } } });
+    }
+    if (demoReceipts.length) await prisma.cfGoodsReceipt.deleteMany({ where: { id: { in: demoReceipts.map((d) => d.id) } } });
+    if (demoCounts.length) await prisma.cfStockCount.deleteMany({ where: { id: { in: demoCounts.map((d) => d.id) } } });
+    if (demoLosses.length) await prisma.cfLossDoc.deleteMany({ where: { id: { in: demoLosses.map((d) => d.id) } } });
+    // movements ของ product demo ที่ไม่ผูก doc (เผื่อ)
+    const demoProducts = await prisma.cfProduct.findMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } }, select: { id: true } });
+    const demoProductIds = demoProducts.map((p) => p.id);
+    if (demoProductIds.length > 0) {
+      await prisma.cfStockMovement.deleteMany({ where: { orgId, productId: { in: demoProductIds } } });
     }
     await prisma.cfProduct.deleteMany({ where: { orgId, sku: { startsWith: DEMO_PREFIX } } });
     await prisma.branch.deleteMany({ where: { orgId, code: { startsWith: DEMO_PREFIX } } });

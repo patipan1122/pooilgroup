@@ -95,6 +95,9 @@ model Organization {
   cfCollectionEvents      CfCollectionEvent[]
   cfStockMovements        CfStockMovement[]
   cfDeliveries            CfDelivery[]
+  cfGoodsReceipts         CfGoodsReceipt[]
+  cfStockCounts           CfStockCount[]
+  cfLossDocs              CfLossDoc[]
   // Ledger module
   ledgerCategories        LedgerCategory[]
   ledgerExpenses          LedgerExpense[]
@@ -248,6 +251,9 @@ model User {
   cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
   cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
   cfDeliveriesCreated      CfDelivery[]                 @relation("CfDeliveryCreator")
+  cfReceiptsCreated        CfGoodsReceipt[]             @relation("CfReceiptCreator")
+  cfStockCountsCounted     CfStockCount[]               @relation("CfCountCounter")
+  cfLossDocsReported       CfLossDoc[]                  @relation("CfLossReporter")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -325,6 +331,9 @@ model Branch {
   cfStockMovements CfStockMovement[]
   cfSessions       CfCollectionSession[]
   cfDeliveries     CfDelivery[]
+  cfGoodsReceipts  CfGoodsReceipt[]
+  cfStockCounts    CfStockCount[]
+  cfLossDocs       CfLossDoc[]
   // Ledger module
   ledgerExpenses   LedgerExpense[]
   ledgerBudgets    LedgerBudget[]
@@ -2008,6 +2017,12 @@ enum CfStockMoveType {
   LOAD_TO_MACHINE // เติมเข้าตู้
   COUNT_SNAPSHOT // นับสต๊อกวันนี้
   ADJUST // ปรับมือ (require approve)
+  RECEIPT_IN // รับเข้าจากใบรับสินค้า (goods receipt)
+  COUNT_ADJUST // ปรับยอดจากการนับสต๊อก (cycle count)
+  TRANSFER_OUT // โอนออกจากสาขานี้
+  TRANSFER_IN // โอนเข้าสาขานี้
+  WITHDRAW // เบิก/ตัดจ่าย (เบิกใช้งาน)
+  LOSS_ADJUST // ของหาย/เสียหาย (ตัดทิ้ง)
 
   @@schema("public")
 }
@@ -2119,6 +2134,7 @@ model CfProduct {
   id                String            @id @default(uuid()) @db.Uuid
   orgId             String            @map("org_id") @db.Uuid
   sku               String
+  barcode           String? // บาร์โค้ด (ยิงรับเข้า/นับสต๊อก) — unique ต่อ org
   name              String
   category          CfProductCategory @default(PLUSH)
   defaultPriceCoins Int               @default(1) @map("default_price_coins") // ค่าเล่นเริ่มต้น (จำนวนเหรียญ/ครั้ง)
@@ -2128,11 +2144,15 @@ model CfProduct {
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org            Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org            Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   loadouts       CfMachineLoadout[]
   stockMovements CfStockMovement[]
+  receiptLines   CfGoodsReceiptLine[]
+  countLines     CfStockCountLine[]
+  lossLines      CfLossLine[]
 
   @@unique([orgId, sku])
+  @@unique([orgId, barcode])
   @@index([orgId, category, isActive])
   @@map("cf_products")
   @@schema("public")
@@ -2303,6 +2323,9 @@ model CfStockMovement {
   expectedQty   Int?            @map("expected_qty") // ที่ระบบคาด (สำหรับ COUNT_SNAPSHOT compare)
   varianceQty   Int?            @map("variance_qty") // expected - actual (สำหรับ COUNT)
   reason        String?
+  photoUrls     String[]        @default([]) @map("photo_urls") // รูปแนบ (ใบเสร็จ/ของเสีย/ของส่ง · R2 URLs)
+  documentId    String?         @map("document_id") @db.Uuid // ลิงก์ไปใบ (receipt/count/loss)
+  documentType  String?         @map("document_type") // 'goods_receipt' | 'stock_count' | 'loss_doc' | 'transfer'
   occurredAt    DateTime        @map("occurred_at") @db.Timestamptz(6)
   createdById   String          @map("created_by_id") @db.Uuid
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2345,6 +2368,154 @@ model CfDelivery {
   @@index([orgId, branchId, eta(sort: Desc)])
   @@index([orgId, status])
   @@map("cf_deliveries")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.10 — cf_goods_receipts (รับของเข้า · goods receipt — fork Playland PlaylandPurchase)
+// =============================================================
+model CfGoodsReceipt {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  receiptCode    String   @map("receipt_code") // GR-YYMMDD-NN · unique per org
+  supplierName   String?  @map("supplier_name")
+  note           String?
+  totalCostCents Int      @default(0) @map("total_cost_cents")
+  status         String   @default("RECEIVED") // RECEIVED (อนาคต: DRAFT/CANCELLED)
+  photoUrls      String[] @default([]) @map("photo_urls") // รูปใบเสร็จ/ของที่รับเข้า (R2 URLs)
+  createdById    String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org       Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy User                 @relation("CfReceiptCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  lines     CfGoodsReceiptLine[]
+
+  @@unique([orgId, receiptCode])
+  @@index([orgId, branchId, createdAt(sort: Desc)])
+  @@map("cf_goods_receipts")
+  @@schema("public")
+}
+
+model CfGoodsReceiptLine {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  receiptId     String   @map("receipt_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  productName   String   @map("product_name") // snapshot
+  quantity      Int
+  unitCostCents Int      @map("unit_cost_cents")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  receipt CfGoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product CfProduct      @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([receiptId])
+  @@index([productId])
+  @@map("cf_goods_receipt_lines")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.11 — cf_stock_counts (นับสต๊อกเป็นรอบ · cycle count — fork Playland PlaylandStockCount)
+// =============================================================
+model CfStockCount {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  branchId      String   @map("branch_id") @db.Uuid
+  countCode     String   @map("count_code") // SC-YYMMDD-NN · unique per org
+  note          String?
+  itemsCounted  Int      @default(0) @map("items_counted") // จำนวนรายการที่ปรับ
+  totalDiff     Int      @default(0) @map("total_diff") // ผลรวมส่วนต่าง (ชิ้น)
+  countedById   String   @map("counted_by_id") @db.Uuid
+  countedByName String?  @map("counted_by_name") // snapshot ชื่อผู้นับ
+  countedAt     DateTime @default(now()) @map("counted_at") @db.Timestamptz(6)
+
+  org     Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch  Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  counter User                @relation("CfCountCounter", fields: [countedById], references: [id], onDelete: Restrict)
+  lines   CfStockCountLine[]
+
+  @@unique([orgId, countCode])
+  @@index([orgId, branchId, countedAt(sort: Desc)])
+  @@map("cf_stock_counts")
+  @@schema("public")
+}
+
+model CfStockCountLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  countId     String   @map("count_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") // snapshot
+  systemQty   Int      @map("system_qty") // ของในระบบก่อนนับ
+  countedQty  Int      @map("counted_qty") // นับได้จริง
+  diff        Int // countedQty - systemQty
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  count   CfStockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  product CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([countId])
+  @@index([productId])
+  @@map("cf_stock_count_lines")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.12 — cf_loss_docs (ของหาย/เสียหาย/ตัดทิ้ง · loss/write-off)
+// =============================================================
+enum CfLossReason {
+  DAMAGE // ของเสียหาย
+  THEFT // ของหาย/ถูกขโมย
+  OBSOLETE // ของหมดอายุ/เลิกใช้
+  OTHER // อื่น ๆ
+
+  @@schema("public")
+}
+
+model CfLossDoc {
+  id             String       @id @default(uuid()) @db.Uuid
+  orgId          String       @map("org_id") @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  lossCode       String       @map("loss_code") // LS-YYMMDD-NN · unique per org
+  reason         CfLossReason @default(DAMAGE)
+  note           String?
+  totalCostCents Int          @default(0) @map("total_cost_cents")
+  photoUrls      String[]     @default([]) @map("photo_urls") // รูปของเสีย/หลักฐาน (R2 URLs)
+  reportedById   String       @map("reported_by_id") @db.Uuid
+  reportedAt     DateTime     @default(now()) @map("reported_at") @db.Timestamptz(6)
+
+  org      Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  reporter User          @relation("CfLossReporter", fields: [reportedById], references: [id], onDelete: Restrict)
+  lines    CfLossLine[]
+
+  @@unique([orgId, lossCode])
+  @@index([orgId, branchId, reportedAt(sort: Desc)])
+  @@map("cf_loss_docs")
+  @@schema("public")
+}
+
+model CfLossLine {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  lossId        String   @map("loss_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  productName   String   @map("product_name") // snapshot
+  qty           Int
+  unitCostCents Int      @default(0) @map("unit_cost_cents") // snapshot ต้นทุนตอนตัด
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loss    CfLossDoc @relation(fields: [lossId], references: [id], onDelete: Cascade)
+  product CfProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([lossId])
+  @@index([productId])
+  @@map("cf_loss_lines")
   @@schema("public")
 }
 
