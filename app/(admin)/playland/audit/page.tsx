@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { requirePlaylandAdmin } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { fmtDateTime } from "@/lib/playland/format";
 import { BackOfficeTabs } from "@/components/playland/back-office-tabs";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ category?: string; q?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
+  requirePlaylandAdmin(session.user.role); // ประวัติการกระทำทั้งระบบ = แอดมินเท่านั้น
   const orgId = session.user.org_id;
 
   const logs = await prisma.playlandAuditLog.findMany({

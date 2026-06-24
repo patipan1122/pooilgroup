@@ -8,7 +8,9 @@
 
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
 import { R2_PUBLIC_URL } from "@/lib/r2/client";
+import { readOvertimeRate } from "@/lib/playland/overtime";
 import {
   getActiveSessions,
   listPackages,
@@ -100,12 +102,23 @@ export default async function PlaylandPage({
   ]);
   const branch = branches.find((b) => b.id === branchId);
 
+  // เงินสด "ที่รับจริง" ในกะที่เปิดอยู่ (จากรายการขายจริง) + เรตค่าปรับเกินเวลาของสาขา
+  const [cashAgg, branchRow] = await Promise.all([
+    openShift
+      ? prisma.playlandSale.aggregate({ where: { shiftId: openShift.id, orgId, paymentMethod: "CASH", voidedAt: null }, _sum: { totalCents: true } })
+      : Promise.resolve(null),
+    prisma.playlandBranch.findFirst({ where: { id: branchId, orgId }, select: { settings: true } }),
+  ]);
+  const cashSalesCents = cashAgg?._sum.totalCents ?? 0;
+  const overtimeRatePerMinuteCents = readOvertimeRate(branchRow?.settings ?? null);
+
   // map active sessions → kids
   const now = Date.now();
   const initialKids: PlaylandKid[] = active.map((sess) => {
     const dayPass = sess.packageMinutes === 0;
+    // sec ติดลบได้ = เกินเวลา (overtime) · board จะโชว์ "เกินเวลา +Xm" + ค่าปรับ
     const sec = sess.expiresAt
-      ? Math.max(0, Math.round((new Date(sess.expiresAt).getTime() - now) / 1000))
+      ? Math.round((new Date(sess.expiresAt).getTime() - now) / 1000)
       : 0;
     const pkgName = sess.package
       ? pkgLabel({ name: sess.package.name, minutes: sess.package.minutes, type: sess.package.type })
@@ -192,7 +205,8 @@ export default async function PlaylandPage({
       branchSlug={branch?.slug ?? null}
       cashierName={cashierName}
       hasOpenShift={!!openShift}
-      shift={openShift ? { id: openShift.id, openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents } : null}
+      shift={openShift ? { id: openShift.id, openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents, cashSalesCents } : null}
+      overtimeRatePerMinuteCents={overtimeRatePerMinuteCents}
       initialScreen={initialScreen}
       key={`${branchId}:${openShift?.id ?? "noshift"}`}
     />

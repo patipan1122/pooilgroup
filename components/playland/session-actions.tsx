@@ -22,7 +22,7 @@ export function SessionActions({
   function doCheckout() {
     if (!confirm(`Check-out "${memberName}"? · ขั้นตอนนี้ปิด session ถาวร · ห้าม refund`)) return;
     start(async () => {
-      const res = await checkOutSession(sessionId);
+      const res = await checkOutSession({ sessionId });
       if (!res.ok) alert(res.error); else router.refresh();
     });
   }

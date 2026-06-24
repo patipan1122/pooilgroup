@@ -15,12 +15,34 @@ export default async function SuccessPage({ params, searchParams }: { params: Pr
   });
   if (!booking || booking.branch.slug !== branchSlug) notFound();
 
+  // จองออนไลน์ = ต้องจ่ายเงินจริงผ่าน Stripe ก่อนถึงจะ "ชำระแล้ว"
+  // เดิม: ใครเปิดลิงก์ ?session_id=อะไรก็ได้ → มาร์คจ่ายแล้วฟรี (ช่องโหว่ · จองฟรี)
+  // ใหม่: ยืนยันกับ Stripe จริง (payment_status=paid) + ต้องเป็น session ของ booking ใบนี้เท่านั้น
   if (sp.session_id && booking.status === "PENDING") {
-    await prisma.playlandBooking.update({
-      where: { id: booking.id },
-      data: { status: "PAID", paymentStatus: "paid", paymentRef: sp.session_id },
-    });
-    booking.status = "PAID";
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    let paid = false;
+    if (stripeKey) {
+      try {
+        const r = await fetch(
+          `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sp.session_id)}`,
+          { headers: { authorization: `Bearer ${stripeKey}` }, cache: "no-store" },
+        );
+        if (r.ok) {
+          const cs = (await r.json()) as { payment_status?: string; metadata?: { booking_id?: string } };
+          // จ่ายแล้วจริง + เป็น checkout ของ booking ใบนี้ (กันเอา session ใบอื่นมาสวมรอย)
+          paid = cs.payment_status === "paid" && cs.metadata?.booking_id === booking.id;
+        }
+      } catch (e) {
+        console.warn("[playland/booking] stripe verify failed", e);
+      }
+    }
+    if (paid) {
+      await prisma.playlandBooking.update({
+        where: { id: booking.id },
+        data: { status: "PAID", paymentStatus: "paid", paymentRef: sp.session_id },
+      });
+      booking.status = "PAID";
+    }
   }
 
   return (

@@ -58,7 +58,7 @@ export function CheckoutPanel({
 
   function doCheckout() {
     start(async () => {
-      const res = await checkOutSession(sessionId);
+      const res = await checkOutSession({ sessionId });
       if (!res.ok) { alert(res.error); return; }
       setDone(true);
       router.refresh();

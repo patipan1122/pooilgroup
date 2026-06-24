@@ -29,6 +29,7 @@ import {
   type WristbandLookup,
 } from "@/lib/playland/wristband";
 import { printWristband } from "@/components/playland/print-wristband";
+import { overtimeFromSec, DEFAULT_OVERTIME_RATE_PER_MIN_CENTS } from "@/lib/playland/overtime";
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
@@ -109,6 +110,7 @@ export interface PlaylandShiftVM {
   id: string;
   openingCashCents: number;
   totalSalesCents: number;
+  cashSalesCents: number; // เงินสดที่รับจริงในกะ (จากรายการขายจริง) → ใช้คิด "ควรมีในลิ้นชัก"
 }
 interface Props {
   initialKids: PlaylandKid[];
@@ -123,6 +125,7 @@ interface Props {
   cashierName: string;
   hasOpenShift?: boolean;
   shift?: PlaylandShiftVM | null; // open shift financials → ปิดกะ/เปิดกะ จริง
+  overtimeRatePerMinuteCents?: number; // เรตค่าปรับเกินเวลา (สตางค์/นาที) ของสาขา
   initialScreen?: Screen; // deep-link from redirected old routes (?screen=)
 }
 
@@ -267,7 +270,8 @@ type Action =
 function reducer(s: State, a: Action): State {
   switch (a.t) {
     case "tick":
-      return { ...s, kids: s.kids.map((k) => (k.dayPass || k.sec <= 0 ? k : { ...k, sec: k.sec - 1 })) };
+      // เวลาเดินต่อแม้ติดลบ = เกินเวลา (overtime) · day pass ไม่นับ · หยุดที่ -24 ชม. กันเลขเพี้ยน
+      return { ...s, kids: s.kids.map((k) => (k.dayPass || k.sec <= -86400 ? k : { ...k, sec: k.sec - 1 })) };
     case "set":
       return { ...s, ...a.p };
     case "go":
@@ -415,12 +419,17 @@ export default function PlaylandApp(props: Props) {
 
   // ----- POS pay (immediate paid sale; charges to a kid's session if chosen) -----
   const [posPay, setPosPay] = useState<PayMethod>("CASH");
+  const [coPay, setCoPay] = useState<PayMethod>("CASH"); // วิธีจ่ายค่าปรับเกินเวลา (ตอนเช็คเอาท์)
+  // กันกดรัว/กดซ้ำ = ขายซ้ำ/เช็คเอาท์ซ้ำ (busyRef กันแบบ sync · busy คุมปุ่ม disabled)
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
   // ปิดกะ/เปิดกะ — ต่อ openShift/closeShift จริง
   const [shiftOpening, setShiftOpening] = useState("");
   const [shiftClosing, setShiftClosing] = useState("");
   const [shiftDayClose, setShiftDayClose] = useState(false);
   const [shiftBusy, setShiftBusy] = useState(false);
   const payPos = async () => {
+    if (busyRef.current) return; // กันกดรัว = ขายซ้ำ
     const lines = cartLines;
     if (lines.length === 0) {
       showToast("ยังไม่มีรายการ");
@@ -435,20 +444,23 @@ export default function PlaylandApp(props: Props) {
       .map((l) => ({ productId: l.id, quantity: l.qty }));
     const usingRealProducts = props.products.length > 0 && realItems.length === lines.length;
 
-    dispatch({
-      t: "posReceipt",
-      receipt: {
-        name: kid ? kid.name : "ลูกค้า",
-        no: randReceiptNo(),
-        lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
+    const showReceipt = () =>
+      dispatch({
+        t: "posReceipt",
+        receipt: {
+          name: kid ? kid.name : "ลูกค้า",
+          no: randReceiptNo(),
+          lines: lines.map((l) => ({ label: l.name + " ×" + l.qty, amount: l.price * l.qty })),
+          total,
+          kind: "pos",
+        },
         total,
-        kind: "pos",
-      },
-      total,
-    });
-    showToast("รับเงิน ฿" + total + " แล้ว");
+      });
 
     if (usingRealProducts) {
+      // เก็บเงินจริงก่อน → สำเร็จค่อยโชว์ใบเสร็จ "รับเงินแล้ว" (เดิมโชว์ก่อน await · พังก็เงียบ)
+      busyRef.current = true;
+      setBusy(true);
       try {
         const res = await createSale({
           branchId: props.branchId,
@@ -456,64 +468,107 @@ export default function PlaylandApp(props: Props) {
           paymentMethod: PAY_MAP[posPay],
           sessionId: kid && isRealId(kid.id) ? kid.id : undefined,
         });
-        if (res.ok) router.refresh();
-        else showToast(res.error);
+        if (res.ok) {
+          showReceipt();
+          showToast("รับเงิน ฿" + total + " แล้ว");
+          router.refresh();
+        } else {
+          showToast("❌ " + res.error);
+        }
       } catch {
-        // optimistic receipt already shown; backend can be retried by CEO
+        showToast("❌ บันทึกการขายไม่สำเร็จ · ยังไม่ได้รับเงิน · ลองใหม่");
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
       }
+    } else {
+      // preset/demo products (ไม่มีหลังบ้าน) → optimistic
+      showReceipt();
+      showToast("รับเงิน ฿" + total + " แล้ว");
     }
   };
 
-  // ----- checkout = close only (everything pre-paid; collect NO money) -----
+  // ----- checkout = ปิดรอบ + เก็บค่าปรับเกินเวลา (ถ้ามี) -----
   const doCheckout = async () => {
+    if (busyRef.current) return; // กันกดรัว = เช็คเอาท์/เก็บเงินซ้ำ
     const kid = s.kids.find((k) => k.id === s.coKidId);
     if (!kid) {
       go("board");
       return;
     }
-    const total = kid.charges.reduce((a, c) => a + c.amount, 0);
     const kidId = kid.id;
-    dispatch({
-      t: "completeCheckout",
-      kidId,
-      receipt: {
-        name: kid.name,
-        no: randReceiptNo(),
-        lines: kid.charges,
-        total,
-        kind: "checkout",
-      },
-    });
-    showToast(kid.name + " เช็คเอาท์แล้ว · คืนสายรัด");
+    const baseTotal = kid.charges.reduce((a, c) => a + c.amount, 0);
+    const rate = props.overtimeRatePerMinuteCents ?? DEFAULT_OVERTIME_RATE_PER_MIN_CENTS;
+    const ot = kid.dayPass ? { minutes: 0, cents: 0 } : overtimeFromSec(kid.sec, rate);
+    // ใช้ค่าปรับจาก server เป็นหลัก (authoritative) — ส่ง otCents มาตอน build ใบเสร็จ
+    const complete = (otCents: number) => {
+      const otBaht = Math.round(otCents / 100);
+      const lines = [
+        ...kid.charges,
+        ...(otBaht > 0 ? [{ label: `ค่าปรับเกินเวลา ${ot.minutes} นาที`, amount: otBaht }] : []),
+      ];
+      dispatch({
+        t: "completeCheckout",
+        kidId,
+        receipt: { name: kid.name, no: randReceiptNo(), lines, total: baseTotal + otBaht, kind: "checkout" },
+      });
+      showToast(
+        kid.name + " เช็คเอาท์แล้ว" + (otBaht > 0 ? ` · เก็บค่าปรับ ฿${otBaht}` : "") + " · คืนสายรัด",
+      );
+    };
     // real session ids are uuids; preset/local kids use short numeric ids
     if (isRealId(kidId)) {
+      busyRef.current = true;
+      setBusy(true);
       try {
-        const res = await checkOutSession(kidId);
-        if (res.ok) router.refresh();
-        else showToast(res.error);
+        const res = await checkOutSession({ sessionId: kidId, overtimePaymentMethod: PAY_MAP[coPay] });
+        if (res.ok) {
+          complete(res.data.overtimeCents);
+          router.refresh();
+        } else {
+          showToast("❌ " + res.error);
+        }
       } catch {
-        /* optimistic */
+        showToast("❌ เช็คเอาท์ไม่สำเร็จ · ลองใหม่");
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
       }
+    } else {
+      complete(ot.cents); // preset/demo → optimistic
     }
   };
 
   // ----- extend (paid immediately with chosen method) -----
   const [extPay, setExtPay] = useState<PayMethod>("CASH");
   const applyExtend = async (mins: number, price: number) => {
+    if (busyRef.current) return; // กันกดรัว = ต่อเวลา/เก็บเงินซ้ำ
     const kidId = s.extKidId;
     if (!kidId) return;
-    dispatch({ t: "applyExtendLocal", kidId, mins, price });
-    showToast("ต่อเวลา +" + mins + " นาที · รับเงิน ฿" + price);
     // map minutes → a real package id to call extendSession
     const pkg = packages.find((p) => p.mins === mins) ?? packages.find((p) => p.mins > 0);
     if (isRealId(kidId) && pkg && isRealId(pkg.id)) {
+      busyRef.current = true;
+      setBusy(true);
       try {
         const res = await extendSession({ sessionId: kidId, extraPackageId: pkg.id, paymentMethod: PAY_MAP[extPay] });
-        if (res.ok) router.refresh();
-        else showToast(res.error);
+        if (res.ok) {
+          dispatch({ t: "applyExtendLocal", kidId, mins, price });
+          showToast("ต่อเวลา +" + mins + " นาที · รับเงิน ฿" + price);
+          router.refresh();
+        } else {
+          showToast("❌ " + res.error);
+        }
       } catch {
-        /* optimistic */
+        showToast("❌ ต่อเวลาไม่สำเร็จ · ยังไม่ได้รับเงิน · ลองใหม่");
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
       }
+    } else {
+      // preset/demo → optimistic
+      dispatch({ t: "applyExtendLocal", kidId, mins, price });
+      showToast("ต่อเวลา +" + mins + " นาที · รับเงิน ฿" + price);
     }
   };
 
@@ -548,7 +603,7 @@ export default function PlaylandApp(props: Props) {
       kind: "checkin",
     });
 
-    // Real wiring: ensure member → check in → issue wristband
+    // Real wiring: ensure member → check in (เก็บเงิน) → issue wristband + บังคับปริ้น
     if (props.branchId && isRealId(pkg.id)) {
       setCreating(true);
       try {
@@ -563,56 +618,58 @@ export default function PlaylandApp(props: Props) {
             newFamilyGroupName: `ครอบครัว ${name}`,
           });
           if (cm.ok) memberId = cm.data.memberId;
+          else { showToast("❌ " + cm.error); return; }
         }
-        if (memberId) {
-          const ci = await checkInSession({
-            branchId: props.branchId,
-            memberId,
-            packageId: pkg.id,
-            paymentMethod: payMethod,
-          });
-          if (ci.ok) {
-            // Issue wristband (best-effort; requires open shift + cashier role)
-            let bandCode: string | null = null;
-            try {
-              const wb = await issueWristband({ branchId: props.branchId, memberId });
-              if (wb.ok) bandCode = wb.data.code;
-            } catch {
-              /* wristband optional — proceed */
-            }
-            if (bandCode) {
-              printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
-            }
-            dispatch({
-              t: "checkinReceipt",
-              kid: {
-                id: ci.data.sessionId,
-                name,
-                mascot,
-                pkg: pkg.label,
-                sec: pkg.mins * 60,
-                dayPass: pkg.mins === 0,
-                charges: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
-              },
-              receipt: buildReceipt(bandCode),
-            });
-            showToast("รับเงินแล้ว · เริ่มเวลา " + name);
-            router.refresh();
-            setCreating(false);
-            return;
-          } else {
-            showToast(ci.error);
-          }
+        const ci = await checkInSession({
+          branchId: props.branchId,
+          memberId,
+          packageId: pkg.id,
+          paymentMethod: payMethod,
+        });
+        // เก็บเงินไม่สำเร็จ → แจ้ง error + หยุด · ห้ามตกไป optimistic แล้วโชว์ "รับเงินแล้ว" (เงินหายเงียบ)
+        if (!ci.ok) { showToast("❌ " + ci.error + " · ยังไม่ได้รับเงิน"); return; }
+
+        // Issue wristband (best-effort; requires open shift + cashier role)
+        let bandCode: string | null = null;
+        try {
+          const wb = await issueWristband({ branchId: props.branchId, memberId });
+          if (wb.ok) bandCode = wb.data.code;
+        } catch {
+          /* wristband optional — proceed */
         }
+        if (bandCode) {
+          // CEO: หลังคิดเงินเสร็จ "บังคับ" ปริ้นสายรัด · ถ้า popup ถูกบล็อก แจ้งให้กดพิมพ์ซ้ำ
+          const printed = printWristband({ code: bandCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
+          if (!printed) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
+        }
+        dispatch({
+          t: "checkinReceipt",
+          kid: {
+            id: ci.data.sessionId,
+            name,
+            mascot,
+            pkg: pkg.label,
+            sec: pkg.mins * 60,
+            dayPass: pkg.mins === 0,
+            charges: [{ label: "ค่าเล่น " + pkg.label, amount: pkg.price }],
+          },
+          receipt: buildReceipt(bandCode),
+        });
+        showToast("รับเงินแล้ว · เริ่มเวลา " + name);
+        router.refresh();
+        return;
       } catch {
-        /* fall through to optimistic */
+        showToast("❌ เช็คอินไม่สำเร็จ · ยังไม่ได้รับเงิน · ลองใหม่");
+        return;
+      } finally {
+        setCreating(false);
       }
-      setCreating(false);
     }
 
-    // Optimistic fallback (preset packages / no branch / action failed) — local code so print still works
+    // Optimistic fallback — เฉพาะ preset/demo (ไม่มีสาขาจริง · ไม่มีหลังบ้าน)
     const localCode = randBandCode();
-    printWristband({ code: localCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
+    const printedLocal = printWristband({ code: localCode, memberName: name, nickname: s.ckNickname || null, adultCount: adults });
+    if (!printedLocal) showToast("⚠️ เบราว์เซอร์บล็อกการพิมพ์ · กด 'พิมพ์สายรัดซ้ำ' ที่ใบเสร็จ");
     dispatch({
       t: "checkinReceipt",
       kid: {
@@ -842,10 +899,10 @@ export default function PlaylandApp(props: Props) {
   const near = s.kids.filter((k) => !k.dayPass && k.sec <= 600).length;
   const revenueStr = "฿" + s.revenue.toLocaleString();
 
-  // ----- ปิดกะ: คำนวณจากกะจริง (openingCash + ยอดขายในกะ = ควรมีในลิ้นชัก) -----
+  // ----- ปิดกะ: ควรมีในลิ้นชัก = เงินต้นกะ + "เงินสดที่รับจริง" เท่านั้น (โอน/บัตร ไม่เข้าลิ้นชัก) -----
   const shift = props.shift ?? null;
   const baht = (cents: number) => "฿" + Math.round(cents / 100).toLocaleString();
-  const shExpectedCents = shift ? shift.openingCashCents + shift.totalSalesCents : 0;
+  const shExpectedCents = shift ? shift.openingCashCents + shift.cashSalesCents : 0;
   const shCountedCents = Math.round((parseFloat(shiftClosing || "0") || 0) * 100);
   const shVarCents = shCountedCents - shExpectedCents;
   const doOpenShift = async () => {
@@ -875,6 +932,10 @@ export default function PlaylandApp(props: Props) {
   };
   const co = s.kids.find((k) => k.id === s.coKidId);
   const ext = s.kids.find((k) => k.id === s.extKidId);
+  // ค่าปรับเกินเวลาของคนที่กำลังเช็คเอาท์ (โชว์ให้แคชเชียร์เห็นก่อนกดเก็บเงิน)
+  const otRate = props.overtimeRatePerMinuteCents ?? DEFAULT_OVERTIME_RATE_PER_MIN_CENTS;
+  const coOt = co && !co.dayPass ? overtimeFromSec(co.sec, otRate) : { minutes: 0, cents: 0 };
+  const coOtBaht = Math.round(coOt.cents / 100);
   const chargeKid = s.kids.find((k) => k.id === s.chargeKidId);
   const posTotal = cartLines.reduce((a, l) => a + l.price * l.qty, 0);
   const rc = s.receipt;
@@ -1049,10 +1110,11 @@ export default function PlaylandApp(props: Props) {
             <div style={{ flex: 1, overflow: "auto", padding: "22px 28px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>
                 {s.kids.map((k) => {
-                  const nearEnd = !k.dayPass && k.sec <= 600;
-                  const color = k.dayPass ? "#1F8A5B" : colorFor(k.sec);
+                  const over = !k.dayPass && k.sec < 0; // เกินเวลาแล้ว — เวลาเดินต่อ เก็บค่าปรับตอนเช็คเอาท์
+                  const nearEnd = !k.dayPass && k.sec >= 0 && k.sec <= 600;
+                  const color = k.dayPass ? "#1F8A5B" : over ? "#E74C3C" : colorFor(k.sec);
                   return (
-                    <div key={k.id} style={{ background: "#fff", borderRadius: 18, padding: 18, border: `2px solid ${nearEnd ? "#E74C3C" : "#eef0ec"}`, position: "relative" }}>
+                    <div key={k.id} style={{ background: "#fff", borderRadius: 18, padding: 18, border: `2px solid ${over || nearEnd ? "#E74C3C" : "#eef0ec"}`, position: "relative" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                         <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#f4ede0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1062,11 +1124,12 @@ export default function PlaylandApp(props: Props) {
                           <div style={{ fontWeight: 500, fontSize: 18 }}>{k.name}</div>
                           <div style={{ fontSize: 13, color: "#8a7f70" }}>{k.pkg}</div>
                         </div>
-                        {nearEnd && <div style={{ background: "#fdeceb", color: "#E74C3C", fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999 }}>ใกล้หมด</div>}
+                        {over ? <div style={{ background: "#E74C3C", color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 999 }}>เกินเวลา</div>
+                          : nearEnd ? <div style={{ background: "#fdeceb", color: "#E74C3C", fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999 }}>ใกล้หมด</div> : null}
                       </div>
                       <div style={{ textAlign: "center", margin: "6px 0 14px" }}>
-                        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : fmt(Math.max(0, k.sec))}</div>
-                        <div style={{ fontSize: 13, color: "#8a7f70", marginTop: 2 }}>{k.dayPass ? "Day Pass" : "เหลือ"}</div>
+                        <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : over ? "+" + fmt(-k.sec) : fmt(Math.max(0, k.sec))}</div>
+                        <div style={{ fontSize: 13, color: over ? "#E74C3C" : "#8a7f70", marginTop: 2, fontWeight: over ? 600 : 400 }}>{k.dayPass ? "Day Pass" : over ? "เกินเวลา · เก็บค่าปรับ" : "เหลือ"}</div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <div onClick={() => openExtend(k.id)} style={{ cursor: "pointer", flex: 1, background: "#eaf3f6", color: "#2D6CB1", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ เวลา</div>
@@ -1140,7 +1203,7 @@ export default function PlaylandApp(props: Props) {
                   <div style={{ fontWeight: 500, fontSize: 22 }}>{co?.name} · เช็คเอาท์</div>
                   <div style={{ fontSize: 14, color: "#8a7f70" }}>{co?.pkg}</div>
                 </div>
-                <div style={{ background: "#fdeceb", color: "#E74C3C", fontWeight: 500, fontSize: 15, padding: "8px 16px", borderRadius: 999 }}>เหลือ {co ? (co.dayPass ? "ทั้งวัน" : fmt(Math.max(0, co.sec))) : ""}</div>
+                <div style={{ background: coOt.minutes > 0 ? "#fdeceb" : "#eaf3eb", color: coOt.minutes > 0 ? "#E74C3C" : "#1F8A5B", fontWeight: 600, fontSize: 15, padding: "8px 16px", borderRadius: 999 }}>{co ? (co.dayPass ? "ทั้งวัน" : coOt.minutes > 0 ? `เกินเวลา +${coOt.minutes} นาที` : "เหลือ " + fmt(Math.max(0, co.sec))) : ""}</div>
               </div>
               <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ece5d8", overflow: "hidden" }}>
                 {(co?.charges ?? []).map((l, i) => (
@@ -1155,14 +1218,33 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 36, color: "#1F8A5B" }}>฿{co ? co.charges.reduce((a, c) => a + c.amount, 0) : 0}</div>
               </div>
               <div style={{ marginTop: "auto" }}>
-                <div style={{ background: "#eaf3eb", color: "#1F8A5B", borderRadius: 12, padding: "12px 16px", fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F8A5B" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
-                  จ่ายครบแล้วตอนเข้าเล่น · เช็คเอาท์ไม่เก็บเงินเพิ่ม
-                </div>
-                <div onClick={doCheckout} style={{ cursor: "pointer", background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-                  เช็คเอาท์ · คืนสายรัด · จบรอบ
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
-                </div>
+                {coOt.minutes > 0 ? (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fdf3df", border: "1px solid #f0d9a0", borderRadius: 12, padding: "14px 18px", marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 16, color: "#a9791a" }}>ค่าปรับเกินเวลา {coOt.minutes} นาที</div>
+                        <div style={{ fontSize: 13, color: "#8a7f70", marginTop: 2 }}>{baht(otRate)}/นาที · เก็บเพิ่มตอนเช็คเอาท์</div>
+                      </div>
+                      <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 28, color: "#E74C3C" }}>฿{coOtBaht}</div>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 8 }}>รับค่าปรับด้วย</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{payButtons(coPay, setCoPay)}</div>
+                    <div onClick={doCheckout} style={{ cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 22 }}>
+                      {busy ? "กำลังเช็คเอาท์..." : `เก็บค่าปรับ ฿${coOtBaht} · เช็คเอาท์`}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ background: "#eaf3eb", color: "#1F8A5B", borderRadius: 12, padding: "12px 16px", fontSize: 15, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F8A5B" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+                      จ่ายครบแล้วตอนเข้าเล่น · เช็คเอาท์ไม่เก็บเงินเพิ่ม
+                    </div>
+                    <div onClick={doCheckout} style={{ cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, background: "#E74C3C", color: "#fff", borderRadius: 14, padding: 18, textAlign: "center", fontFamily: MITR, fontWeight: 500, fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                      {busy ? "กำลังเช็คเอาท์..." : "เช็คเอาท์ · คืนสายรัด · จบรอบ"}
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1480,15 +1562,16 @@ export default function PlaylandApp(props: Props) {
             </div>
             <div style={{ flex: 1, padding: "26px 36px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridAutoRows: "1fr", gap: 16, overflow: "auto" }}>
               {s.kids.map((k) => {
-                const nearEnd = !k.dayPass && k.sec <= 600;
-                // near-expiry tile is full-red → countdown must be white to read (prototype quirk fix)
-                const color = k.dayPass ? "#5bc88a" : nearEnd ? "#fff" : colorFor(k.sec);
+                const over = !k.dayPass && k.sec < 0; // เกินเวลา
+                const nearEnd = !k.dayPass && k.sec >= 0 && k.sec <= 600;
+                // near-expiry/overtime tile is full-red → countdown must be white to read (prototype quirk fix)
+                const color = k.dayPass ? "#5bc88a" : over || nearEnd ? "#fff" : colorFor(k.sec);
                 return (
-                  <div key={k.id} style={{ background: nearEnd ? "#E74C3C" : "#28365a", borderRadius: 18, padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div key={k.id} style={{ background: over || nearEnd ? "#E74C3C" : "#28365a", borderRadius: 18, padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                     <div style={{ color: "#fff", fontSize: 19, fontWeight: 500, fontFamily: MITR }}>{k.name}</div>
                     <div>
-                      <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 40, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : fmt(Math.max(0, k.sec))}</div>
-                      <div style={{ color: "#9fb0d0", fontSize: 14, marginTop: 4 }}>{k.dayPass ? "Day Pass" : k.pkg}</div>
+                      <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 40, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : over ? "+" + fmt(-k.sec) : fmt(Math.max(0, k.sec))}</div>
+                      <div style={{ color: over ? "#ffe1de" : "#9fb0d0", fontSize: 14, marginTop: 4 }}>{k.dayPass ? "Day Pass" : over ? "เกินเวลา · เก็บค่าปรับ" : k.pkg}</div>
                     </div>
                   </div>
                 );
@@ -1511,9 +1594,10 @@ export default function PlaylandApp(props: Props) {
                   <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 22, marginBottom: 18 }}>สรุปกะนี้</div>
                   <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, overflow: "hidden", marginBottom: 22 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>เงินต้นกะ</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>{baht(shift.openingCashCents)}</span></div>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>+ ยอดขายในกะ</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>{baht(shift.totalSalesCents)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #f2ebdd" }}><span style={{ fontSize: 16, color: "#6b6052" }}>+ เงินสดที่รับ (ค่าเข้า·ขนม·ต่อเวลา)</span><span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 18 }}>{baht(shift.cashSalesCents)}</span></div>
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", background: "#f9f4ea" }}><span style={{ fontSize: 16, color: "#3A3026", fontWeight: 500 }}>ควรมีในลิ้นชัก</span><span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, color: "#2D6CB1" }}>{baht(shExpectedCents)}</span></div>
                   </div>
+                  <div style={{ fontSize: 13, color: "#a89c8b", margin: "-12px 4px 16px" }}>โอน/พร้อมเพย์/บัตร แยกต่างหาก ไม่นับเข้าลิ้นชัก · ยอดขายรวมทุกช่องทางดูได้ในรายงาน</div>
                   <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 8 }}>นับเงินจริงในลิ้นชัก (บาท)</div>
                   <input value={shiftClosing} onChange={(e) => setShiftClosing(e.target.value)} placeholder="เช่น 11210" inputMode="decimal" autoFocus style={{ ...inputStyle, fontFamily: FREDOKA, fontWeight: 700, fontSize: 22, marginBottom: 14 }} />
                   {shiftClosing.trim() !== "" && (

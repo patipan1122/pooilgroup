@@ -7,8 +7,8 @@
 
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/module-access";
-import { requirePlaylandAccess } from "@/lib/playland/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { requirePlaylandAccess, requirePlaylandManager, canPlaylandAdmin } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getTodayStats, listBranches, listPackages, listProducts } from "@/lib/playland/queries";
 import { thb } from "@/lib/playland/format";
@@ -41,8 +41,10 @@ const RED = { bg: "#fdeceb", fg: "#E74C3C" };
 export default async function PlaylandOfficeHub() {
   const session = await requireSession();
   requirePlaylandAccess(session.user.role);
+  requirePlaylandManager(session.user.role); // หลังบ้าน = ผู้จัดการขึ้นไป (พนักงานหน้าร้านเด้งกลับหน้าร้าน)
   const orgId = session.user.org_id;
-  const admin = isAdminTier(session.user.role);
+  const admin = canPlaylandAdmin(session.user.role); // ตรงกับ gate ของหน้า overrides/audit จริง → ไม่มี dead-bounce
+  const isSuper = isSuperAdmin(session.user.role); // เครื่องสแกน (กุญแจ webhook) = super เท่านั้น
 
   // ── ดึงข้อมูลจริง (reuse queries เดิม · ไม่สร้าง data layer ใหม่) ──
   const branches = await listBranches(orgId);
@@ -73,7 +75,10 @@ export default async function PlaylandOfficeHub() {
   ];
 
   const groupSystem: Tile[] = [
-    { href: "/playland/settings/devices", title: "อุปกรณ์ · เครื่องสแกน", gloss: "ผูกเครื่องอ่านหน้า · สถานะ", icon: ScanFace, tint: BLUE },
+    // เครื่องสแกน = หน้า super-only → โชว์ไทล์เฉพาะ super (กันคลิกแล้วเด้ง)
+    ...(isSuper
+      ? [{ href: "/playland/settings/devices", title: "อุปกรณ์ · เครื่องสแกน", gloss: "ผูกเครื่องอ่านหน้า · สถานะ", icon: ScanFace, tint: BLUE }]
+      : []),
     { href: "/playland/overrides", title: "เปิดประตูเอง · log", gloss: "สั่งเปิดประตูด้วยมือ · บันทึกเหตุผล", icon: DoorOpen, tint: RED },
     { href: "/playland/audit", title: "Audit Log", gloss: "ประวัติการกระทำทั้งหมดในระบบ", icon: History, tint: AMBER },
   ];

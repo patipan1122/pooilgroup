@@ -267,26 +267,31 @@ function mapDirection(d: ACSEvent["direction"]) {
 /** Cron-callable: expire active sessions whose time is up + handle paused-too-long */
 export async function expireDueSessions() {
   const now = new Date();
-  // ACTIVE sessions where expiresAt has passed
+  // เกินเวลา: CEO 2026-06-24 — "เวลาไม่หยุด ไม่ตัด/ไม่ริบอัตโนมัติ"
+  //   เลยเวลาแล้ว → ปล่อยเวลาเดินต่อเป็น "เกินเวลา" (status คง ACTIVE → ยังอยู่บนกระดาน)
+  //   จนแคชเชียร์เช็คเอาท์ → ตอนนั้นค่อยคิด "ค่าปรับเกินเวลา" เก็บเงิน (checkOutSession)
+  //   cron แค่แจ้งเตือนครั้งเดียวว่าเลยเวลาแล้ว · ไม่แตะ status · ไม่แตะเงิน
   const dueActive = await prisma.playlandSession.findMany({
-    where: { status: "ACTIVE", expiresAt: { lte: now }, packageMinutes: { gt: 0 } },
+    where: {
+      status: "ACTIVE",
+      expiresAt: { lte: now },
+      packageMinutes: { gt: 0 },
+      NOT: { alerts: { some: { type: "TIME_EXPIRED" } } }, // เตือนครั้งเดียวพอ
+    },
     select: { id: true, orgId: true, branchId: true },
   });
   for (const s of dueActive) {
-    await prisma.$transaction([
-      prisma.playlandSession.update({ where: { id: s.id }, data: { status: "EXPIRED" } }),
-      prisma.playlandAlert.create({
-        data: {
-          orgId: s.orgId,
-          branchId: s.branchId,
-          sessionId: s.id,
-          type: "TIME_EXPIRED",
-          severity: "WARNING",
-          title: "หมดเวลาเล่น",
-          message: "session expired · cashier ต้อง check-out หรือต่อเวลา",
-        },
-      }),
-    ]);
+    await prisma.playlandAlert.create({
+      data: {
+        orgId: s.orgId,
+        branchId: s.branchId,
+        sessionId: s.id,
+        type: "TIME_EXPIRED",
+        severity: "WARNING",
+        title: "เกินเวลาเล่น",
+        message: "เลยเวลาแล้ว · เวลาเดินต่อ → เก็บค่าปรับเกินเวลาตอนเช็คเอาท์",
+      },
+    });
   }
   // PAUSED sessions past grace
   const dueForfeit = await prisma.playlandSession.findMany({

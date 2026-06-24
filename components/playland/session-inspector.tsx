@@ -47,7 +47,7 @@ export function SessionInspector({ session, packages, backHref }: Props) {
   function doCheckout() {
     if (!confirm(`Check-out "${s.memberName}" ออกถาวร? · ห้าม refund ตามนโยบาย`)) return;
     start(async () => {
-      const res = await checkOutSession(s.id);
+      const res = await checkOutSession({ sessionId: s.id });
       if (!res.ok) alert(res.error); else { router.push(backHref); router.refresh(); }
     });
   }

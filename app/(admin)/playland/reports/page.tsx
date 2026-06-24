@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { thb, thbShort, fmtDate } from "@/lib/playland/format";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
+  requirePlaylandManager(session.user.role); // รายงานยอด/PII = ผู้จัดการขึ้นไป (กันพนักงานเห็นรายได้รวม)
   const orgId = session.user.org_id;
   const branches = await listBranches(orgId);
   const branchId = sp.branch || "";

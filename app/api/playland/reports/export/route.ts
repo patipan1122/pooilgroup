@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
+import { canPlaylandManage } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,11 @@ function csvCell(v: unknown): string {
 
 export async function GET(req: NextRequest) {
   const session = await requireSession();
+  // รายงานนี้มีข้อมูลส่วนตัวลูกค้า (ชื่อ/รหัสสมาชิก) → ผู้จัดการขึ้นไปเท่านั้น
+  // เดิม: ใครล็อกอินในองค์กรก็โหลด PII ลูกค้าทุกคนได้ (ช่องโหว่ PDPA)
+  if (!canPlaylandManage(session.user.role)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const orgId = session.user.org_id;
   const url = new URL(req.url);
   const branchId = url.searchParams.get("branch") || undefined;

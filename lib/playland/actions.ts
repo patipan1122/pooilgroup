@@ -14,6 +14,7 @@ import { searchMembers } from "./queries";
 import { getAdapter } from "./acs/mock-adapter";
 import { verifyBranchOrg, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
 import { requireOpenShift } from "./wristband";
+import { readOvertimeRate, overtimeFromExpiry } from "./overtime";
 
 type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -208,7 +209,8 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
   if (input.bookingId && !(await verifyBookingOrg(input.bookingId, session.user.org_id))) return err("booking ไม่อยู่ใน org");
-  try { await requireOpenShift(session.user.org_id, input.branchId, session.user.id); }
+  let shiftId: string;
+  try { shiftId = await requireOpenShift(session.user.org_id, input.branchId, session.user.id); }
   catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
 
   // Prevent double check-in: if member has ACTIVE/PAUSED session, error
@@ -224,32 +226,47 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   const minutes = pkg.minutes ?? 0;
   const expiresAt = minutes > 0 ? new Date(Date.now() + minutes * 60_000) : null;
 
-  const created = await prisma.playlandSession.create({
-    data: {
-      orgId: session.user.org_id,
-      branchId: input.branchId,
-      memberId: input.memberId,
-      packageId: input.packageId,
-      bookingId: input.bookingId,
-      packageMinutes: minutes,
-      packagePriceCents: pkg.price,
-      status: "ACTIVE",
-      checkInAt: new Date(),
-      expiresAt: expiresAt ?? undefined,
-      cashierUserId: session.user.id,
-    },
-  });
-
-  // Update member last visit
-  await prisma.playlandMember.update({ where: { id: input.memberId }, data: { lastVisitAt: new Date() } });
-
-  // Link booking if provided
-  if (input.bookingId) {
-    await prisma.playlandBooking.update({
-      where: { id: input.bookingId },
-      data: { status: "CHECKED_IN" },
+  // D-A1 (CEO 2026-06-24): ค่าเข้าเล่น = บันทึกเป็น "รายการขายจริง" แยกตามวิธีจ่าย
+  //   → ตอนปิดกะ สรุปเงินสดในลิ้นชักได้ตรง (เดิมค่าเข้าไม่เข้าระบบเลย)
+  // ทำ session + sale + เพิ่มยอดกะ ใน transaction เดียว (atomic — เงินกับ session เกิดพร้อมกัน)
+  const created = await prisma.$transaction(async (tx) => {
+    const sess = await tx.playlandSession.create({
+      data: {
+        orgId: session.user.org_id,
+        branchId: input.branchId,
+        memberId: input.memberId,
+        packageId: input.packageId,
+        bookingId: input.bookingId,
+        packageMinutes: minutes,
+        packagePriceCents: pkg.price,
+        status: "ACTIVE",
+        checkInAt: new Date(),
+        expiresAt: expiresAt ?? undefined,
+        cashierUserId: session.user.id,
+      },
     });
-  }
+    if (pkg.price > 0) {
+      await tx.playlandSale.create({
+        data: {
+          orgId: session.user.org_id,
+          branchId: input.branchId,
+          shiftId,
+          sessionId: sess.id,
+          saleCode: newSaleCode(),
+          totalCents: pkg.price,
+          paymentMethod: input.paymentMethod,
+          paymentRef: input.paymentRef,
+          cashierUserId: session.user.id,
+        },
+      });
+      await tx.playlandShift.update({ where: { id: shiftId }, data: { totalSessionsCents: { increment: pkg.price } } });
+    }
+    await tx.playlandMember.update({ where: { id: input.memberId }, data: { lastVisitAt: new Date() } });
+    if (input.bookingId) {
+      await tx.playlandBooking.update({ where: { id: input.bookingId }, data: { status: "CHECKED_IN" } });
+    }
+    return sess;
+  });
 
   await prisma.playlandAuditLog.create({
     data: {
@@ -270,15 +287,61 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   return { ok: true, data: { sessionId: created.id } };
 }
 
-export async function checkOutSession(sessionId: string): Promise<ActionResult> {
+export interface CheckOutInput {
+  sessionId: string;
+  /** วิธีจ่ายค่าปรับเกินเวลา (ถ้ามี) · default CASH */
+  overtimePaymentMethod?: CheckInInput["paymentMethod"];
+}
+
+export async function checkOutSession(input: CheckOutInput): Promise<ActionResult<{ overtimeCents: number; overtimeMinutes: number }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
-  const sRow = await prisma.playlandSession.findFirst({ where: { id: sessionId, orgId: session.user.org_id } });
-  if (!sRow) return err("Session not found");
-  await prisma.playlandSession.update({
-    where: { id: sessionId },
-    data: { status: "COMPLETED", checkOutAt: new Date(), closedByUserId: session.user.id },
+  const sessionId = input.sessionId;
+  const sRow = await prisma.playlandSession.findFirst({
+    where: { id: sessionId, orgId: session.user.org_id },
+    include: { branch: { select: { settings: true } } },
   });
+  if (!sRow) return err("Session not found");
+  if (sRow.checkOutAt || sRow.status === "COMPLETED" || sRow.status === "FORFEITED") return err("เช็คเอาท์ไปแล้ว");
+
+  const now = new Date();
+  // ค่าปรับเกินเวลา (CEO 2026-06-24): คิดจาก expiresAt จริงฝั่ง server (ไม่เชื่อ client)
+  const rate = readOvertimeRate(sRow.branch.settings);
+  const ot = overtimeFromExpiry(sRow.packageMinutes, sRow.expiresAt, now, rate);
+  // กะที่เปิดอยู่ของแคชเชียร์คนนี้ (ถ้ามี) — ใช้ผูกค่าปรับเข้ากะ · ไม่บังคับ (เช็คเอาท์ต้องทำได้เสมอ)
+  const openShift = ot.cents > 0
+    ? await prisma.playlandShift.findFirst({ where: { orgId: session.user.org_id, branchId: sRow.branchId, cashierUserId: session.user.id, status: "OPEN" }, select: { id: true } })
+    : null;
+
+  await prisma.$transaction(async (tx) => {
+    // ปิด session แบบ race-safe: สำเร็จเฉพาะถ้ายังไม่ถูกปิด (กดรัว 2 ครั้ง → ครั้งที่ 2 no-op)
+    const closed = await tx.playlandSession.updateMany({
+      where: { id: sessionId, orgId: session.user.org_id, status: { in: ["ACTIVE", "PAUSED", "EXPIRED"] }, checkOutAt: null },
+      data: { status: "COMPLETED", checkOutAt: now, closedByUserId: session.user.id },
+    });
+    if (closed.count !== 1) throw new Error("เช็คเอาท์ไปแล้ว");
+    if (ot.cents > 0) {
+      await tx.playlandSale.create({
+        data: {
+          orgId: session.user.org_id,
+          branchId: sRow.branchId,
+          shiftId: openShift?.id ?? null,
+          sessionId,
+          saleCode: newSaleCode(),
+          totalCents: ot.cents,
+          paymentMethod: input.overtimePaymentMethod ?? "CASH",
+          cashierUserId: session.user.id,
+        },
+      });
+      if (openShift) await tx.playlandShift.update({ where: { id: openShift.id }, data: { totalSessionsCents: { increment: ot.cents } } });
+    }
+    // ปลดสายรัดที่ผูกกับ session นี้ (เดิม checkout ไม่ปลด → สายรัดยัง ACTIVE สแกนเข้าได้)
+    await tx.playlandWristband.updateMany({
+      where: { sessionId, orgId: session.user.org_id, status: "ACTIVE" },
+      data: { status: "RETURNED", returnedAt: now, lastScanAt: now },
+    });
+  });
+
   await prisma.playlandAuditLog.create({
     data: {
       orgId: session.user.org_id,
@@ -288,12 +351,13 @@ export async function checkOutSession(sessionId: string): Promise<ActionResult> 
       action: "session.checkout",
       entityType: "PlaylandSession",
       entityId: sessionId,
-      category: "general",
+      after: { overtimeMinutes: ot.minutes, overtimeCents: ot.cents, overtimePaymentMethod: ot.cents > 0 ? (input.overtimePaymentMethod ?? "CASH") : null },
+      category: ot.cents > 0 ? "money" : "general",
     },
   });
   revalidatePath("/playland");
   revalidatePath("/playland/monitor");
-  return { ok: true, data: undefined };
+  return { ok: true, data: { overtimeCents: ot.cents, overtimeMinutes: ot.minutes } };
 }
 
 export interface ExtendSessionInput {
@@ -307,21 +371,42 @@ export async function extendSession(input: ExtendSessionInput): Promise<ActionRe
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
   const sRow = await prisma.playlandSession.findFirst({ where: { id: input.sessionId, orgId: session.user.org_id } });
   if (!sRow) return err("Session not found");
-  try { await requireOpenShift(session.user.org_id, sRow.branchId, session.user.id); }
+  let shiftId: string;
+  try { shiftId = await requireOpenShift(session.user.org_id, sRow.branchId, session.user.id); }
   catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
   const pkg = await prisma.playlandPackage.findFirst({ where: { id: input.extraPackageId, orgId: session.user.org_id, active: true } });
   if (!pkg) return err("Package not found");
   const extra = pkg.minutes ?? 0;
-  const newExpires = sRow.expiresAt ? new Date(sRow.expiresAt.getTime() + extra * 60_000) : new Date(Date.now() + extra * 60_000);
-  await prisma.playlandSession.update({
-    where: { id: input.sessionId },
-    data: {
-      packageMinutes: sRow.packageMinutes + extra,
-      packagePriceCents: sRow.packagePriceCents + pkg.price,
-      extendedCount: sRow.extendedCount + 1,
-      expiresAt: newExpires,
-      status: sRow.status === "EXPIRED" ? "ACTIVE" : sRow.status,
-    },
+  // ต่อเวลาจาก "ตอนนี้" ถ้าเลยเวลาไปแล้ว (เกินเวลา) · ไม่งั้นต่อจาก expiresAt เดิม
+  const base = sRow.expiresAt && sRow.expiresAt.getTime() > Date.now() ? sRow.expiresAt.getTime() : Date.now();
+  const newExpires = new Date(base + extra * 60_000);
+  // D-A1: ต่อเวลา = รายการขายจริง แยกตามวิธีจ่าย (เหมือนค่าเข้า) → ลิ้นชักตรง
+  await prisma.$transaction(async (tx) => {
+    await tx.playlandSession.update({
+      where: { id: input.sessionId },
+      data: {
+        packageMinutes: sRow.packageMinutes + extra,
+        packagePriceCents: sRow.packagePriceCents + pkg.price,
+        extendedCount: sRow.extendedCount + 1,
+        expiresAt: newExpires,
+        status: sRow.status === "EXPIRED" ? "ACTIVE" : sRow.status,
+      },
+    });
+    if (pkg.price > 0) {
+      await tx.playlandSale.create({
+        data: {
+          orgId: session.user.org_id,
+          branchId: sRow.branchId,
+          shiftId,
+          sessionId: input.sessionId,
+          saleCode: newSaleCode(),
+          totalCents: pkg.price,
+          paymentMethod: input.paymentMethod,
+          cashierUserId: session.user.id,
+        },
+      });
+      await tx.playlandShift.update({ where: { id: shiftId }, data: { totalSessionsCents: { increment: pkg.price } } });
+    }
   });
   await prisma.playlandAuditLog.create({
     data: {
@@ -481,13 +566,26 @@ export async function openShift(branchId: string, openingCashCents: number): Pro
   return { ok: true, data: { shiftId: s.id } };
 }
 
-export async function closeShift(input: { shiftId: string; closingCashCents: number; isDayClose: boolean; notes?: string }): Promise<ActionResult<{ varianceCents: number }>> {
+export async function closeShift(input: { shiftId: string; closingCashCents: number; isDayClose: boolean; notes?: string }): Promise<ActionResult<{ varianceCents: number; expectedCashCents: number; byMethod: Record<string, number> }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
   const sRow = await prisma.playlandShift.findFirst({ where: { id: input.shiftId, orgId: session.user.org_id, status: "OPEN" } });
   if (!sRow) return err("Shift not found or already closed");
-  const expected = sRow.openingCashCents + sRow.totalSalesCents;
+
+  // D-A1 (CEO 2026-06-24): "ควรมีในลิ้นชัก" = เงินเปิดกะ + เงินสด "ที่รับจริง" เท่านั้น
+  //   เดิม: openingCash + totalSalesCents (รวมโอน/บัตรเข้าเป็นเงินสด + ค่าเข้าไม่นับ) → variance มั่ว จับขโมยไม่ได้
+  //   ใหม่: รวมจากรายการขายจริงในกะ (ขนม + ค่าเข้า + ต่อเวลา + ค่าปรับ) แยกตามวิธีจ่าย · เอาเฉพาะ CASH
+  const grouped = await prisma.playlandSale.groupBy({
+    by: ["paymentMethod"],
+    where: { shiftId: input.shiftId, orgId: session.user.org_id, voidedAt: null },
+    _sum: { totalCents: true },
+  });
+  const byMethod: Record<string, number> = {};
+  for (const g of grouped) byMethod[g.paymentMethod] = g._sum.totalCents ?? 0;
+  const cashCents = byMethod["CASH"] ?? 0;
+  const expected = sRow.openingCashCents + cashCents;
   const variance = input.closingCashCents - expected;
+
   await prisma.playlandShift.update({
     where: { id: input.shiftId },
     data: {
@@ -510,13 +608,58 @@ export async function closeShift(input: { shiftId: string; closingCashCents: num
       action: input.isDayClose ? "shift.close_day" : "shift.close",
       entityType: "PlaylandShift",
       entityId: input.shiftId,
-      after: { expectedCents: expected, closingCents: input.closingCashCents, varianceCents: variance, isDayClose: input.isDayClose },
+      after: { expectedCashCents: expected, openingCashCents: sRow.openingCashCents, cashSalesCents: cashCents, closingCents: input.closingCashCents, varianceCents: variance, byMethod, isDayClose: input.isDayClose },
       category: "money",
     },
   });
   revalidatePath("/playland/shifts");
   revalidatePath("/playland/reports");
-  return { ok: true, data: { varianceCents: variance } };
+  return { ok: true, data: { varianceCents: variance, expectedCashCents: expected, byMethod } };
+}
+
+// ยกเลิก/คืนเงินบิล (manager+) — กดผิด/คืนเงินลูกค้า
+// บิลที่ void แล้วจะถูกตัดออกจาก "ควรมีในลิ้นชัก" อัตโนมัติ (closeShift กรอง voidedAt:null)
+export async function voidSale(input: { saleId: string; reason: string }): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ยกเลิกบิล · ต้องเป็นผู้จัดการขึ้นไป");
+  const sale = await prisma.playlandSale.findFirst({
+    where: { id: input.saleId, orgId: session.user.org_id, voidedAt: null },
+    include: { lines: true },
+  });
+  if (!sale) return err("ไม่พบบิล หรือถูกยกเลิกไปแล้ว");
+
+  await prisma.$transaction(async (tx) => {
+    // race-safe void: สำเร็จเฉพาะถ้ายังไม่ถูก void (กดซ้ำ → ครั้งที่ 2 no-op)
+    const voided = await tx.playlandSale.updateMany({
+      where: { id: input.saleId, orgId: session.user.org_id, voidedAt: null },
+      data: { voidedAt: new Date(), voidedByUserId: session.user.id, voidReason: input.reason.trim() || "ยกเลิกโดยผู้จัดการ" },
+    });
+    if (voided.count !== 1) throw new Error("บิลถูกยกเลิกไปแล้ว");
+    // คืนสต๊อกสินค้ากลับ (เฉพาะบิลที่มีสินค้า · ค่าเข้า/ต่อเวลา/ค่าปรับ ไม่มี line)
+    for (const l of sale.lines) {
+      await tx.playlandProduct.updateMany({
+        where: { id: l.productId, orgId: session.user.org_id },
+        data: { stock: { increment: l.quantity } },
+      });
+    }
+  });
+
+  await prisma.playlandAuditLog.create({
+    data: {
+      orgId: session.user.org_id,
+      branchId: sale.branchId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+      action: "sale.void",
+      entityType: "PlaylandSale",
+      entityId: sale.id,
+      after: { saleCode: sale.saleCode, totalCents: sale.totalCents, reason: input.reason },
+      category: "money",
+    },
+  });
+  revalidatePath("/playland/pos");
+  revalidatePath("/playland/reports");
+  return { ok: true, data: undefined };
 }
 
 // ============================================================================
