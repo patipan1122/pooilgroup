@@ -1214,7 +1214,8 @@
   .pl-tv-time { font-size: 1.45rem; }
 }
 
-/* MOBILE BOTTOM NAV · show on tablet + phone */
+/* MOBILE BOTTOM NAV · ซ่อนเป็น default (กันช่องโหว่ 900–901px บนจอ fractional) · โชว์เฉพาะ ≤900px */
+.pl-mobile-nav { display: none; }
 @media (max-width: 900px) {
   .pl-mobile-nav { display: block; }
   .pl-shell { padding-bottom: 68px; }
