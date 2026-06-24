@@ -9,7 +9,7 @@ import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb } from "@/lib/playland/format";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
 import { DemoSeedButton } from "@/components/playland/demo-seed-button";
-import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store } from "lucide-react";
+import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store, Coins } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard · Play a lot" };
@@ -33,7 +33,7 @@ export default async function PlaylandDashboard() {
   const yKey = dayKey(new Date(todayStart.getTime() - 86400000));
   const tKey = dayKey(todayStart);
 
-  const [stats, newMembers, sales14, topLines, lowRows, openShifts, devOffline, sessByBranch] = await Promise.all([
+  const [stats, newMembers, sales14, topLines, lowRows, openShifts, devOffline, sessByBranch, varShifts] = await Promise.all([
     getTodayStats(orgId),
     prisma.playlandMember.count({ where: { orgId, createdAt: { gte: todayStart } } }),
     prisma.playlandSale.findMany({ where: { orgId, voidedAt: null, soldAt: { gte: ago14 } }, select: { soldAt: true, totalCents: true, branchId: true, _count: { select: { lines: true } } } }),
@@ -42,7 +42,9 @@ export default async function PlaylandDashboard() {
     prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { branchId: true, startedAt: true } }),
     prisma.playlandDevice.count({ where: { orgId, status: { in: ["OFFLINE", "ERROR"] } } }),
     prisma.playlandSession.groupBy({ by: ["branchId"], where: { orgId, checkInAt: { gte: todayStart } }, _count: { _all: true } }),
+    prisma.playlandShift.findMany({ where: { orgId, status: "CLOSED", endedAt: { gte: todayStart } }, select: { varianceCents: true } }),
   ]);
+  const offShiftCount = varShifts.filter((s) => (s.varianceCents ?? 0) !== 0).length;
 
   const days: string[] = [];
   for (let i = 13; i >= 0; i--) { const d = new Date(todayStart); d.setDate(d.getDate() - i); days.push(dayKey(d)); }
@@ -127,6 +129,13 @@ export default async function PlaylandDashboard() {
             <div style={{ fontWeight: 600, fontSize: 16, fontFamily: FREDOKA }}>ต้องลงมือ</div>
             <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>รายการที่รอจัดการ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {offShiftCount > 0 && (
+                <Link href="/playland/reports" style={alertRow("#fdeceb")}>
+                  <div style={alertIco}><Coins size={17} color={RED} /></div>
+                  <div style={{ flex: 1 }}><div style={alertT}>เงินกะไม่ตรง {offShiftCount} กะวันนี้</div><div style={alertS}>ตรวจนับลิ้นชัก · จับเงินขาด/เกิน</div></div>
+                  <ChevronRight size={16} color={RED} />
+                </Link>
+              )}
               {low.length > 0 && (
                 <Link href="/playland/stock" style={alertRow("#fdf3df")}>
                   <div style={alertIco}><PackageX size={17} color={AMBER} /></div>
@@ -148,7 +157,7 @@ export default async function PlaylandDashboard() {
                   <ChevronRight size={16} color={RED} />
                 </Link>
               )}
-              {low.length === 0 && openShifts.length === 0 && devOffline === 0 && (
+              {low.length === 0 && openShifts.length === 0 && devOffline === 0 && offShiftCount === 0 && (
                 <div style={{ ...alertRow("#eaf3eb"), cursor: "default" }}><div style={{ flex: 1, ...alertT, color: GREEN }}>✓ ไม่มีรายการค้าง</div></div>
               )}
             </div>

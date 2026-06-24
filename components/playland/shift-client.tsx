@@ -20,6 +20,7 @@ interface OpenShift {
   startedAt: string;
   openingCashCents: number;
   totalSalesCents: number;
+  cashSalesCents: number;
 }
 
 interface Recent {
@@ -71,7 +72,8 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
     });
   }
 
-  const expected = open ? open.openingCashCents + open.totalSalesCents : 0;
+  // คาดว่าในลิ้นชัก = เงินต้นกะ + ยอดขายเงินสดเท่านั้น (โอน/บัตรไม่เข้าลิ้นชัก)
+  const expected = open ? open.openingCashCents + open.cashSalesCents : 0;
   const countedCents = closingCash ? Math.round(parseFloat(closingCash) * 100) : null;
   const diffCents = countedCents != null ? countedCents - expected : null;
 
@@ -102,9 +104,10 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
             <div style={{ display: "grid", gap: 8, fontSize: 14, marginBottom: 16 }}>
               <Row label="เปิดเมื่อ" value={fmtDateTime(open.startedAt)} />
               <Row label="เริ่มต้นเงิน" value={thb(open.openingCashCents)} mono />
-              <Row label="ยอดขายในกะ" value={thb(open.totalSalesCents)} mono />
+              <Row label="ขายเงินสด (เข้าลิ้นชัก)" value={thb(open.cashSalesCents)} mono />
+              <Row label="ยอดขายรวม (ทุกช่องทาง)" value={thb(open.totalSalesCents)} mono muted />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 8, borderTop: `1px solid #f2ebdd` }}>
-                <span style={{ fontSize: 12, color: MUTED }}>คาดว่าในลิ้นชัก</span>
+                <span style={{ fontSize: 12, color: MUTED }}>คาดว่าในลิ้นชัก (เงินสด)</span>
                 <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20 }}>{thb(expected)}</span>
               </div>
             </div>
@@ -175,11 +178,11 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({ label, value, mono, muted }: { label: string; value: string; mono?: boolean; muted?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: muted ? 13 : undefined }}>
       <span style={{ color: MUTED }}>{label}</span>
-      <span style={mono ? { fontFamily: MONO } : undefined}>{value}</span>
+      <span style={{ ...(mono ? { fontFamily: MONO } : {}), ...(muted ? { color: MUTED } : {}) }}>{value}</span>
     </div>
   );
 }

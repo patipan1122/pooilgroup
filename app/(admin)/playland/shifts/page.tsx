@@ -38,6 +38,16 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
     prisma.playlandShift.findMany({ where: { orgId, branchId }, orderBy: { startedAt: "desc" }, take: 30 }),
   ]);
 
+  // เงินสดที่ "ควรอยู่ในลิ้นชัก" = เฉพาะยอดขายเงินสดของกะนี้ (ไม่รวมโอน/บัตร) — ตรงกับวิธี server คิด variance ตอนปิดกะ
+  let cashSalesCents = 0;
+  if (openShift) {
+    const agg = await prisma.playlandSale.aggregate({
+      where: { shiftId: openShift.id, paymentMethod: "CASH", voidedAt: null },
+      _sum: { totalCents: true },
+    });
+    cashSalesCents = agg._sum.totalCents ?? 0;
+  }
+
   const branchName = branches.find((b) => b.id === branchId)?.name ?? "";
 
   return (
@@ -61,6 +71,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
             id: openShift.id, shiftCode: openShift.shiftCode,
             startedAt: openShift.startedAt.toISOString(),
             openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents,
+            cashSalesCents,
           } : null}
           recent={recent.map((r) => ({
             id: r.id, shiftCode: r.shiftCode, cashierUserId: r.cashierUserId, status: r.status,
