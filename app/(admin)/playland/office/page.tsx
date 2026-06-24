@@ -1,255 +1,201 @@
-// Playland · "Play a lot" — หลังบ้าน · Command Hub
-//
-// Landing ของโหมดหลังร้าน · อ่านสบายเหมือนหน้าร้าน (kiosk look):
-//   • พื้นครีม · การ์ดขาวขอบนุ่ม · เลข Fredoka · เว้นช่องหายใจเยอะ
-//   • KPI สด + 3 หมวดงานชัดเจน · ทุกไทล์เป็นลิงก์จริง (ไม่มี dead UI · ไม่มีโปรโม)
-// ไม่ย้าย route เดิม → ลิงก์ทุกหน้ายังทำงาน · หน้าปลายทางคุม role gate ของตัวเอง
-
+// Playland · หลังบ้าน Dashboard (Direction A · Command) — โครงใหม่ตาม Play a lot Admin.dc.html
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
-import { requirePlaylandAccess, requirePlaylandManager, canPlaylandAdmin } from "@/lib/playland/role-guard";
+import { requirePlaylandAccess, requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
-import { getTodayStats, listBranches, listPackages, listProducts } from "@/lib/playland/queries";
-import { thb } from "@/lib/playland/format";
-import {
-  BarChart3, Clock, Package, Cookie, Building2, Boxes,
-  ScanFace, DoorOpen, History, ArrowRight, Store, Baby, Wallet,
-} from "lucide-react";
+import { getTodayStats } from "@/lib/playland/queries";
+import { getBranchContext } from "@/lib/playland/branch-context";
+import { thb, thbShort } from "@/lib/playland/format";
+import { OfficeShell } from "@/components/playland/office-shell";
+import { PackageX, Clock, ScanFace, ChevronRight, Download } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "หลังบ้าน · Play a lot" };
+export const metadata = { title: "Dashboard · Play a lot" };
 
-const MITR = "var(--font-mitr), 'Mitr', sans-serif";
-const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
+const INK = "#34291E", MUTED = "#A99C88", BLUE = "#2C6BB3", MUSTARD = "#D9A227", GREEN = "#1F8A5B", RED = "#D9483B", LINE = "#ECE3D4", CREAM = "#F4EEE3";
+const MONO = "'IBM Plex Mono', var(--font-plex-mono), ui-monospace, monospace";
+const FREDOKA = "'Fredoka', var(--font-fredoka), sans-serif";
 
-type Tile = {
-  href: string;
-  title: string;
-  gloss: string;
-  icon: React.ComponentType<{ size?: number }>;
-  count?: number;
-  tint: { bg: string; fg: string };
-};
+const ROLE_LABEL: Record<string, string> = { super_admin: "Super Admin", org_admin: "Org Admin", admin: "Admin", program_admin: "Program Admin", area_manager: "Area Manager", branch_manager: "Branch Manager", staff: "พนักงาน", viewer: "Viewer" };
+const dayKey = (d: Date | string) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.toISOString().slice(0, 10); };
 
-// ───────── Playalot tinted icon chips (จากหน้าร้าน) ─────────
-const BLUE = { bg: "#eaf3f6", fg: "#2D6CB1" };
-const AMBER = { bg: "#fdf3df", fg: "#a9791a" };
-const GREEN = { bg: "#eaf3eb", fg: "#1F8A5B" };
-const RED = { bg: "#fdeceb", fg: "#E74C3C" };
-
-export default async function PlaylandOfficeHub() {
+export default async function PlaylandDashboard() {
   const session = await requireSession();
   requirePlaylandAccess(session.user.role);
-  requirePlaylandManager(session.user.role); // หลังบ้าน = ผู้จัดการขึ้นไป (พนักงานหน้าร้านเด้งกลับหน้าร้าน)
+  requirePlaylandManager(session.user.role);
   const orgId = session.user.org_id;
-  const admin = canPlaylandAdmin(session.user.role); // ตรงกับ gate ของหน้า overrides/audit จริง → ไม่มี dead-bounce
-  const isSuper = isSuperAdmin(session.user.role); // เครื่องสแกน (กุญแจ webhook) = super เท่านั้น
+  const { branches, activeId } = await getBranchContext(orgId);
 
-  // ── ดึงข้อมูลจริง (reuse queries เดิม · ไม่สร้าง data layer ใหม่) ──
-  const branches = await listBranches(orgId);
-  const firstBranchId = branches[0]?.id;
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
-  const [stats, packages, products, openShifts, lowStockRows, lastClosed, yAgg] = await Promise.all([
+  const ago14 = new Date(todayStart); ago14.setDate(ago14.getDate() - 13);
+  const yKey = dayKey(new Date(todayStart.getTime() - 86400000));
+  const tKey = dayKey(todayStart);
+
+  const [stats, newMembers, sales14, topLines, lowRows, openShifts, devOffline, sessByBranch] = await Promise.all([
     getTodayStats(orgId),
-    listPackages(orgId),
-    firstBranchId ? listProducts(orgId, firstBranchId) : Promise.resolve([]),
-    prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { id: true, openingCashCents: true } }),
-    prisma.playlandProduct.findMany({ where: { orgId, active: true, reorderLevel: { gt: 0 } }, select: { stock: true, reorderLevel: true } }),
-    prisma.playlandShift.findFirst({ where: { orgId, status: "CLOSED" }, orderBy: { endedAt: "desc" }, select: { varianceCents: true, shiftCode: true } }),
-    prisma.playlandSale.aggregate({ where: { orgId, voidedAt: null, soldAt: { gte: yStart, lt: todayStart } }, _sum: { totalCents: true } }),
+    prisma.playlandMember.count({ where: { orgId, createdAt: { gte: todayStart } } }),
+    prisma.playlandSale.findMany({ where: { orgId, voidedAt: null, soldAt: { gte: ago14 } }, select: { soldAt: true, totalCents: true, branchId: true, _count: { select: { lines: true } } } }),
+    prisma.playlandSaleLine.groupBy({ by: ["productName"], where: { sale: { orgId, voidedAt: null, soldAt: { gte: todayStart } } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 4 }),
+    prisma.playlandProduct.findMany({ where: { orgId, active: true, reorderLevel: { gt: 0 } }, select: { stock: true, reorderLevel: true, name: true } }),
+    prisma.playlandShift.findMany({ where: { orgId, status: "OPEN" }, select: { branchId: true, startedAt: true } }),
+    prisma.playlandDevice.count({ where: { orgId, status: { in: ["OFFLINE", "ERROR"] } } }),
+    prisma.playlandSession.groupBy({ by: ["branchId"], where: { orgId, checkInAt: { gte: todayStart } }, _count: { _all: true } }),
   ]);
-  const openShiftCount = openShifts.length;
-  // เงินสดควรมีในลิ้นชักตอนนี้ = เงินเปิดกะ + ยอดขายเงินสดในกะที่ยังเปิดอยู่
-  const cashAgg = openShiftCount > 0
-    ? await prisma.playlandSale.aggregate({ where: { orgId, shiftId: { in: openShifts.map((s) => s.id) }, paymentMethod: "CASH", voidedAt: null }, _sum: { totalCents: true } })
-    : { _sum: { totalCents: 0 } };
-  const drawerExpected = openShifts.reduce((a, s) => a + s.openingCashCents, 0) + (cashAgg._sum.totalCents ?? 0);
-  const lowStockCount = lowStockRows.filter((p) => p.stock <= p.reorderLevel).length;
-  const lastVariance = lastClosed?.varianceCents ?? null;
-  const yRevenue = yAgg._sum.totalCents ?? 0;
-  const revDeltaPct = yRevenue > 0 ? Math.round(((stats.totalRevenueCents - yRevenue) / yRevenue) * 100) : null;
+
+  // ── 14-day series + yesterday delta ──
+  const days: string[] = [];
+  for (let i = 13; i >= 0; i--) { const d = new Date(todayStart); d.setDate(d.getDate() - i); days.push(dayKey(d)); }
+  const dayMap = new Map(days.map((k) => [k, { entry: 0, product: 0 }]));
+  const perBranch = new Map<string, { entry: number; product: number; sessions: number }>();
+  for (const b of branches) perBranch.set(b.id, { entry: 0, product: 0, sessions: 0 });
+  for (const s of sales14) {
+    const k = dayKey(s.soldAt);
+    const bucket = dayMap.get(k);
+    if (bucket) { if (s._count.lines > 0) bucket.product += s.totalCents; else bucket.entry += s.totalCents; }
+    if (k === tKey) { const x = perBranch.get(s.branchId); if (x) { if (s._count.lines > 0) x.product += s.totalCents; else x.entry += s.totalCents; } }
+  }
+  for (const sc of sessByBranch) { const x = perBranch.get(sc.branchId); if (x) x.sessions = sc._count._all; }
+  const series = days.map((k) => dayMap.get(k)!);
+  const maxDay = Math.max(1, ...series.map((d) => d.entry + d.product));
+  const yRevenue = (dayMap.get(yKey)?.entry ?? 0) + (dayMap.get(yKey)?.product ?? 0);
+  const revDelta = yRevenue > 0 ? Math.round(((stats.totalRevenueCents - yRevenue) / yRevenue) * 100) : null;
+
+  const avgBill = stats.salesCount > 0 ? Math.round(stats.totalRevenueCents / stats.salesCount) : 0;
+  const low = lowRows.filter((p) => p.stock <= p.reorderLevel);
+  const maxTop = Math.max(1, ...topLines.map((t) => t._sum.quantity ?? 0));
+  const oldestShiftHrs = openShifts.length > 0 ? Math.floor((Date.now() - Math.min(...openShifts.map((s) => new Date(s.startedAt).getTime()))) / 3600000) : 0;
 
   const kpis = [
-    { label: "รายได้วันนี้", value: thb(stats.totalRevenueCents), sub: revDeltaPct != null ? `${revDeltaPct >= 0 ? "▲" : "▼"} ${Math.abs(revDeltaPct)}% เทียบเมื่อวาน` : undefined, tint: GREEN, icon: Wallet },
-    { label: "เด็กกำลังเล่น", value: String(stats.activeSessions), tint: BLUE, icon: Baby },
-    { label: "กะที่เปิดอยู่", value: `${openShiftCount} / ${branches.length || "—"}`, sub: "เปิด · สาขา", tint: AMBER, icon: Clock },
+    { label: "รายได้รวม", value: thb(stats.totalRevenueCents), sub: revDelta != null ? `${revDelta >= 0 ? "▲" : "▼"} ${Math.abs(revDelta)}% · ${stats.salesCount} บิล` : `${stats.salesCount} บิล`, subColor: revDelta != null && revDelta >= 0 ? GREEN : revDelta != null ? RED : MUTED },
+    { label: "ค่าเข้า · เวลา", value: thb(stats.entryRevenueCents), sub: `${stats.sessionsToday} sessions`, subColor: MUTED },
+    { label: "ขายของ", value: thb(stats.productRevenueCents), sub: `${stats.salesCount} รายการ`, subColor: MUTED },
+    { label: "สมาชิกใหม่", value: String(newMembers), sub: `กำลังเล่น ${stats.activeSessions}`, subColor: MUTED },
   ];
 
-  const groupReports: Tile[] = [
-    { href: "/playland/reports", title: "รายงานยอดขาย", gloss: "ยอดขาย · จำนวนเด็ก · สรุปรายวัน/เดือน", icon: BarChart3, tint: BLUE },
-    { href: "/playland/shifts", title: "ประวัติกะ · ปิดวัน", gloss: "เปิด/ปิดกะ · นับเงิน · ตรวจ variance", icon: Clock, tint: AMBER },
-  ];
-
-  const groupSettings: Tile[] = [
-    { href: "/playland/settings/packages", title: "แพ็กเกจเวลา", gloss: "ราคาเข้าเล่น · day pass", icon: Package, count: packages.length, tint: AMBER },
-    { href: "/playland/settings/products", title: "ขนม · เครื่องดื่ม", gloss: "สินค้าใน POS หน้าร้าน", icon: Cookie, count: products.length, tint: GREEN },
-    { href: "/playland/settings/branches", title: "สาขา", gloss: "พื้นที่ทำธุรกิจ", icon: Building2, count: branches.length, tint: BLUE },
-  ];
-
-  // สต๊อก·คลัง = ที่เดียวจบ (รับของเข้า · นับสต๊อก · ซ่อม · ของใกล้หมด อยู่ในแท็บข้างใน)
-  const groupStock: Tile[] = [
-    { href: "/playland/stock", title: "สต๊อก · คลังสินค้า", gloss: "รับของเข้า · ใบรับสินค้า · นับสต๊อก · ซ่อม·อะไหล่ · ของใกล้หมด", icon: Boxes, tint: GREEN },
-  ];
-
-  const groupSystem: Tile[] = [
-    // เครื่องสแกน = หน้า super-only → โชว์ไทล์เฉพาะ super (กันคลิกแล้วเด้ง)
-    ...(isSuper
-      ? [{ href: "/playland/settings/devices", title: "อุปกรณ์ · เครื่องสแกน", gloss: "ผูกเครื่องอ่านหน้า · สถานะ", icon: ScanFace, tint: BLUE }]
-      : []),
-    { href: "/playland/overrides", title: "ประวัติเปิดประตูเอง", gloss: "ดูบันทึกการเปิดประตูด้วยมือ · จับการใช้ผิดปกติ", icon: DoorOpen, tint: RED },
-    { href: "/playland/audit", title: "Audit Log", gloss: "ประวัติการกระทำทั้งหมดในระบบ", icon: History, tint: AMBER },
-  ];
+  const subtitle = new Date().toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + " · อัปเดตเรียลไทม์";
 
   return (
-    <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#F7F2EA", fontFamily: MITR, color: "#3A3026" }}>
-      {/* ───────── Header ───────── */}
-      <header
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
-          padding: "20px 28px", background: "#fff", borderBottom: "1px solid #ece5d8",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/playland/brand/mascot-skye.png" alt="" width={52} height={52} style={{ objectFit: "contain", flexShrink: 0 }} />
-          <div>
-            <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: "1.5rem", lineHeight: 1, letterSpacing: "-0.01em" }}>
-              <span style={{ color: "#2D6CB1" }}>Play</span>{" "}
-              <span style={{ color: "#F0B323" }}>a</span>{" "}
-              <span style={{ color: "#2D6CB1" }}>lot</span>
-            </div>
-            <div style={{ fontSize: "0.95rem", color: "#8a7f70", marginTop: 4 }}>หลังบ้าน · จัดการร้าน</div>
+    <OfficeShell
+      branches={branches} activeId={activeId}
+      userName={session.user.name || session.user.email || "ผู้ใช้"}
+      userRole={ROLE_LABEL[session.user.role] ?? session.user.role}
+      title="ภาพรวมร้าน" subtitle={subtitle}
+      headerRight={<Link href="/playland/reports" style={{ display: "inline-flex", alignItems: "center", gap: 7, background: MUSTARD, color: "#fff", borderRadius: 9, padding: "8px 16px", fontSize: 13, textDecoration: "none" }}><Download size={14} /> รายงาน</Link>}
+    >
+      {/* KPI row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 14, marginBottom: 18 }}>
+        {kpis.map((k) => (
+          <div key={k.label} style={{ background: "#fff", borderRadius: 14, padding: 18, border: `1px solid ${LINE}` }}>
+            <div style={{ fontSize: 12, color: MUTED, marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24, color: INK }}>{k.value}</div>
+            <div style={{ fontSize: 12, color: k.subColor, marginTop: 4 }}>{k.sub}</div>
+          </div>
+        ))}
+        <div style={{ background: BLUE, borderRadius: 14, padding: 18, color: "#fff" }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>บิลเฉลี่ย</div>
+          <div style={{ fontFamily: MONO, fontWeight: 600, fontSize: 24 }}>{thb(avgBill)}</div>
+          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{stats.salesCount} บิลวันนี้</div>
+        </div>
+      </div>
+
+      {/* chart + alerts */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 18 }}>
+        <div style={{ flex: 1.7, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+            <div style={{ fontWeight: 500, fontSize: 16, flex: 1 }}>รายได้ 14 วันล่าสุด</div>
+            <div style={{ display: "flex", gap: 14, fontSize: 12, color: MUTED }}><span>● <span style={{ color: BLUE }}>ค่าเข้า</span></span><span>● <span style={{ color: MUSTARD }}>ขายของ</span></span></div>
+          </div>
+          <div style={{ height: 230, display: "flex", alignItems: "flex-end", gap: 9 }}>
+            {series.map((d, i) => {
+              const eH = (d.entry / maxDay) * 100, pH = (d.product / maxDay) * 100;
+              return (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 2, height: "100%" }} title={`${days[i].slice(5)} · ${thb(d.entry + d.product)}`}>
+                  <div style={{ height: `${eH}%`, background: BLUE, borderRadius: "5px 5px 0 0", minHeight: d.entry > 0 ? 2 : 0 }} />
+                  <div style={{ height: `${pH}%`, background: MUSTARD, borderRadius: "0 0 5px 5px", minHeight: d.product > 0 ? 2 : 0 }} />
+                </div>
+              );
+            })}
           </div>
         </div>
-        <Link
-          href="/playland"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: "#2D6CB1", color: "#fff", textDecoration: "none",
-            padding: "12px 20px", borderRadius: 999, fontWeight: 600, fontSize: "0.95rem",
-            boxShadow: "0 2px 8px rgba(45,108,177,0.25)",
-          }}
-        >
-          <Store size={17} /> ไปหน้าร้าน (Play a lot) →
-        </Link>
-      </header>
+        <div style={{ flex: 1, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 20, display: "flex", flexDirection: "column" }}>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>ต้องลงมือ</div>
+          <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>รายการที่รอจัดการ</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {low.length > 0 && (
+              <Link href="/playland/stock" style={alertRow("#FCF1DC")}>
+                <div style={alertIco}><PackageX size={17} color={MUSTARD} /></div>
+                <div style={{ flex: 1 }}><div style={alertT}>ของใกล้หมด {low.length} รายการ</div><div style={alertS}>{low.slice(0, 2).map((p) => p.name).join(" · ")}</div></div>
+                <ChevronRight size={16} color={MUSTARD} />
+              </Link>
+            )}
+            {openShifts.length > 0 && (
+              <Link href="/playland/shifts" style={alertRow(CREAM)}>
+                <div style={alertIco}><Clock size={17} color={BLUE} /></div>
+                <div style={{ flex: 1 }}><div style={alertT}>กะยังไม่ปิด {openShifts.length} กะ</div><div style={alertS}>เปิดมา ~{oldestShiftHrs} ชม.</div></div>
+                <ChevronRight size={16} color="#B5A893" />
+              </Link>
+            )}
+            {devOffline > 0 && (
+              <Link href="/playland/settings/devices" style={alertRow("#FBEAE7")}>
+                <div style={alertIco}><ScanFace size={17} color={RED} /></div>
+                <div style={{ flex: 1 }}><div style={alertT}>เครื่องสแกน {devOffline} เครื่องออฟไลน์</div><div style={alertS}>ตรวจสอบประตู</div></div>
+                <ChevronRight size={16} color={RED} />
+              </Link>
+            )}
+            {low.length === 0 && openShifts.length === 0 && devOffline === 0 && (
+              <div style={{ ...alertRow(CREAM), cursor: "default" }}><div style={alertIco}>✓</div><div style={{ flex: 1, ...alertT }}>ไม่มีรายการค้าง</div></div>
+            )}
+          </div>
+          <div style={{ marginTop: "auto", paddingTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #F0E8D9" }}>
+            <div style={{ fontSize: 13, color: MUTED }}>กำลังเล่นตอนนี้</div>
+            <div style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: 20, color: BLUE }}>{stats.activeSessions} คน</div>
+          </div>
+        </div>
+      </div>
 
-      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 28px 48px" }}>
-        {/* ───────── KPI strip ───────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 36 }}>
-          {kpis.map((k) => {
-            const Icon = k.icon;
+      {/* per-branch + top products */}
+      <div style={{ display: "flex", gap: 16 }}>
+        <div style={{ flex: 1.7, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 16 }}>รายได้ต่อสาขา · วันนี้</div>
+          <div style={{ display: "flex", fontSize: 12, color: MUTED, padding: "0 4px 10px" }}><div style={{ flex: 2 }}>สาขา</div><div style={{ flex: 1, textAlign: "right" }}>Sessions</div><div style={{ flex: 1, textAlign: "right" }}>ค่าเข้า</div><div style={{ flex: 1, textAlign: "right" }}>ขายของ</div><div style={{ flex: 1, textAlign: "right" }}>รวม</div></div>
+          {branches.map((b, i) => {
+            const x = perBranch.get(b.id) ?? { entry: 0, product: 0, sessions: 0 };
+            const dot = [BLUE, MUSTARD, GREEN, RED][i % 4];
             return (
-              <div
-                key={k.label}
-                style={{
-                  background: "#fff", border: "1px solid #ece5d8", borderRadius: 18,
-                  padding: "20px 22px", display: "flex", alignItems: "center", gap: 16,
-                }}
-              >
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: k.tint.bg, color: k.tint.fg, display: "grid", placeItems: "center", flexShrink: 0 }}>
-                  <Icon size={24} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "0.82rem", color: "#8a7f70", marginBottom: 3 }}>{k.label}</div>
-                  <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: "1.75rem", lineHeight: 1, color: "#3A3026", fontVariantNumeric: "tabular-nums" }}>
-                    {k.value}
-                  </div>
-                  {"sub" in k && k.sub ? <div style={{ fontSize: "0.72rem", color: "#a89c8b", marginTop: 3 }}>{k.sub}</div> : null}
-                </div>
+              <div key={b.id} style={{ display: "flex", alignItems: "center", padding: "12px 4px", borderTop: "1px solid #F0E8D9" }}>
+                <div style={{ flex: 2, display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: dot }} /><span style={{ fontSize: 14 }}>{b.name}</span></div>
+                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{x.sessions}</div>
+                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.entry)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontSize: 13 }}>{thb(x.product)}</div>
+                <div style={{ flex: 1, textAlign: "right", fontFamily: MONO, fontWeight: 600, fontSize: 13 }}>{thb(x.entry + x.product)}</div>
               </div>
             );
           })}
         </div>
-
-        {/* สรุปด่วน — เห็นสุขภาพร้านหน้าเดียว ไม่ต้องเข้า 3 หน้า */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 36 }}>
-          {openShiftCount > 0 && (
-            <Link href="/playland/shifts" style={pill(GREEN)}>
-              <span style={{ fontSize: 13, color: "#6b6052" }}>💵 ลิ้นชักควรมีตอนนี้</span>
-              <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{thb(drawerExpected)}</span>
-            </Link>
-          )}
-          <Link href="/playland/stock" style={pill(lowStockCount > 0 ? RED : GREEN)}>
-            <span style={{ fontSize: 13, color: "#6b6052" }}>{lowStockCount > 0 ? "⚠️ ของใกล้หมด" : "✓ สต๊อกเพียงพอ"}</span>
-            <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{lowStockCount > 0 ? `${lowStockCount} รายการ` : "ครบทุกตัว"}</span>
-          </Link>
-          {lastClosed && lastVariance != null && (
-            <Link href="/playland/shifts" style={pill(lastVariance === 0 ? GREEN : AMBER)}>
-              <span style={{ fontSize: 13, color: "#6b6052" }}>📊 กะล่าสุด ({lastClosed.shiftCode})</span>
-              <span style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 18, color: "#3A3026" }}>{lastVariance === 0 ? "ตรงพอดี ✓" : `${lastVariance > 0 ? "เกิน" : "ขาด"} ${thb(Math.abs(lastVariance))}`}</span>
-            </Link>
+        <div style={{ flex: 1, background: "#fff", borderRadius: 16, border: `1px solid ${LINE}`, padding: 22 }}>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 16 }}>ขนมขายดี · วันนี้</div>
+          {topLines.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีการขายวันนี้</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              {topLines.map((t) => {
+                const q = t._sum.quantity ?? 0;
+                return (
+                  <div key={t.productName}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span>{t.productName}</span><span style={{ color: MUTED, fontFamily: MONO }}>{q}</span></div>
+                    <div style={{ height: 7, background: "#F0E8D9", borderRadius: 99 }}><div style={{ width: `${(q / maxTop) * 100}%`, height: "100%", background: MUSTARD, borderRadius: 99 }} /></div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-
-        <HubGroup title="ดูผลประกอบการ" tiles={groupReports} />
-        <HubGroup title="สต๊อก · คลัง" tiles={groupStock} />
-        <HubGroup title="ตั้งค่าร้าน" tiles={groupSettings} />
-        {admin && <HubGroup title="ระบบ · ความปลอดภัย" tiles={groupSystem} />}
       </div>
-    </div>
+    </OfficeShell>
   );
 }
 
-// ป้ายสรุปด่วน (สีตามสถานะ · คลิกไปหน้าจริง)
-function pill(tint: { bg: string; fg: string }): React.CSSProperties {
-  return { display: "flex", flexDirection: "column", gap: 2, background: "#fff", border: "1px solid #ece5d8", borderLeft: `4px solid ${tint.fg}`, borderRadius: 14, padding: "12px 18px", textDecoration: "none", color: "inherit", minWidth: 160 };
-}
-
-// ───────── หมวด + การ์ดไทล์ (kiosk card style) ─────────
-function HubGroup({ title, tiles }: { title: string; tiles: Tile[] }) {
-  return (
-    <section style={{ marginBottom: 36 }}>
-      <h2
-        style={{
-          fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", color: "#3A3026",
-          margin: "0 0 14px 2px", letterSpacing: "-0.01em",
-        }}
-      >
-        {title}
-      </h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(248px, 1fr))", gap: 16 }}>
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              style={{
-                display: "flex", alignItems: "flex-start", gap: 14,
-                background: "#fff", border: "1px solid #ece5d8", borderRadius: 18,
-                padding: "20px", textDecoration: "none", color: "inherit",
-                boxShadow: "0 1px 2px rgba(58,48,38,0.04)",
-              }}
-            >
-              <div style={{ width: 46, height: 46, borderRadius: 13, background: t.tint.bg, color: t.tint.fg, display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <Icon size={22} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.02rem", color: "#3A3026" }}>{t.title}</span>
-                  {typeof t.count === "number" && (
-                    <span
-                      style={{
-                        fontFamily: FREDOKA, fontWeight: 600, fontSize: "0.72rem",
-                        background: "#f4ede0", color: "#8a7f70", borderRadius: 999,
-                        padding: "2px 9px", lineHeight: 1.6,
-                      }}
-                    >
-                      {t.count}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: "0.82rem", color: "#8a7f70", lineHeight: 1.5, marginTop: 4 }}>{t.gloss}</div>
-              </div>
-              <ArrowRight size={17} color="#c9bfae" style={{ flexShrink: 0, marginTop: 4 }} />
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
+const alertRow = (bg: string): React.CSSProperties => ({ display: "flex", alignItems: "center", gap: 12, padding: 12, borderRadius: 11, background: bg, textDecoration: "none", color: INK });
+const alertIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
+const alertT: React.CSSProperties = { fontSize: 14, fontWeight: 500 };
+const alertS: React.CSSProperties = { fontSize: 12, color: MUTED };
