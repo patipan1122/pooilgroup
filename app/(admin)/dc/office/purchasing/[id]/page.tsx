@@ -1,5 +1,6 @@
-// DC · หลังบ้าน · รายละเอียดใบสั่งซื้อจีน + ปุ่มดำเนินการตามสถานะ
-// แสดงหัวใบ · รายการ + รูป + CBM · ยอดรวม · ผู้สร้าง/ผู้อนุมัติ + เวลา.
+// DC · หลังบ้าน · รายละเอียดใบสั่งซื้อ + กล่อง/พัสดุ + เปลี่ยนสถานะ + รับเข้าคลัง.
+// โหลดใบ + รายการ (ชื่อสินค้า) + กล่อง (DcShipment ของ poId นี้ + ของในกล่อง) +
+// ผู้ขาย + คลังที่ผู้ใช้เข้าถึงได้ (จาก ctx) → ส่งให้ <PoDetail/> (client) ทั้งหมด.
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 type Params = Promise<{ id: string }>;
 
-/** ดึงชื่อผู้ใช้ (ข้าม schema public.users) — best-effort, ไม่พังถ้าไม่เจอ. */
+/** ดึงชื่อผู้ใช้ (ข้าม schema) — best-effort, ไม่พังถ้าไม่เจอ. */
 async function userName(orgId: string, userId: string | null): Promise<string | null> {
   if (!userId) return null;
   try {
@@ -33,22 +34,25 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
   const orgId = ctx.session.user.org_id;
 
   const { id } = await params;
+
+  // 1) ใบ + รายการสินค้า (ชื่อ/SKU/หน่วย)
   const po = await prisma.dcPurchaseOrder.findFirst({
     where: { id, orgId },
     select: {
       id: true,
       poCode: true,
       status: true,
+      origin: true,
       currency: true,
       fxRate: true,
       note: true,
+      warehouseId: true,
       createdByUserId: true,
       approvedByUserId: true,
       approvedAt: true,
       orderedAt: true,
       createdAt: true,
       supplier: { select: { name: true } },
-      warehouseId: true,
       lines: {
         orderBy: { id: "asc" },
         select: {
@@ -57,12 +61,8 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           unitPriceCny: true,
           unitPriceThb: true,
           photoR2Key: true,
-          lengthCm: true,
-          widthCm: true,
-          heightCm: true,
-          cbmPerUnit: true,
           note: true,
-          product: { select: { sku: true, name: true, unit: true } },
+          product: { select: { id: true, sku: true, name: true, unit: true } },
         },
       },
     },
@@ -70,7 +70,40 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
 
   if (!po) notFound();
 
-  // ชื่อคลัง (ถ้ามี)
+  // 2) กล่อง/พัสดุ (DcShipment ของใบนี้) + ของในกล่อง (DcShipmentLine)
+  //    ไม่มี relation จาก shipment line → product → ดึงชื่อสินค้า join เองด้วย map.
+  const boxes = await prisma.dcShipment.findMany({
+    where: { poId: id, orgId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      shipmentCode: true,
+      trackingNo: true,
+      mode: true,
+      status: true,
+      cbmTotal: true,
+      lengthCm: true,
+      widthCm: true,
+      heightCm: true,
+      note: true,
+      lines: { select: { id: true, productId: true, qty: true } },
+    },
+  });
+
+  // ชื่อสินค้าทั้งหมดที่อ้างถึง (จากบรรทัดใบ + ของในกล่อง) → 1 query
+  const productNames = new Map<string, string>();
+  for (const l of po.lines) productNames.set(l.product.id, l.product.name);
+  const missing = new Set<string>();
+  for (const b of boxes) for (const bl of b.lines) if (!productNames.has(bl.productId)) missing.add(bl.productId);
+  if (missing.size > 0) {
+    const extra = await prisma.dcProduct.findMany({
+      where: { id: { in: [...missing] }, orgId },
+      select: { id: true, name: true },
+    });
+    for (const p of extra) productNames.set(p.id, p.name);
+  }
+
+  // 3) ชื่อคลัง (ถ้ามี) + ผู้สร้าง/ผู้อนุมัติ
   let warehouseName: string | null = null;
   if (po.warehouseId) {
     const w = await prisma.dcWarehouse.findFirst({
@@ -79,7 +112,6 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
     });
     warehouseName = w?.name ?? null;
   }
-
   const [createdBy, approvedBy] = await Promise.all([
     userName(orgId, po.createdByUserId),
     userName(orgId, po.approvedByUserId),
@@ -91,10 +123,12 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
     id: po.id,
     poCode: po.poCode,
     status: po.status,
+    origin: po.origin,
     currency: po.currency,
     fxRate,
     note: po.note,
     supplierName: po.supplier?.name ?? null,
+    warehouseId: po.warehouseId,
     warehouseName,
     createdBy,
     approvedBy,
@@ -103,6 +137,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
     createdAt: po.createdAt.toISOString(),
     lines: po.lines.map((l) => ({
       id: l.id,
+      productId: l.product.id,
       sku: l.product.sku,
       name: l.product.name,
       unit: l.product.unit,
@@ -110,15 +145,31 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
       unitPriceCny: Number(l.unitPriceCny),
       unitPriceThb: l.unitPriceThb != null ? Number(l.unitPriceThb) : null,
       photoR2Key: l.photoR2Key,
-      lengthCm: l.lengthCm != null ? Number(l.lengthCm) : null,
-      widthCm: l.widthCm != null ? Number(l.widthCm) : null,
-      heightCm: l.heightCm != null ? Number(l.heightCm) : null,
-      cbmPerUnit: l.cbmPerUnit != null ? Number(l.cbmPerUnit) : null,
       note: l.note,
+    })),
+    boxes: boxes.map((b) => ({
+      id: b.id,
+      shipmentCode: b.shipmentCode,
+      trackingNo: b.trackingNo,
+      mode: b.mode,
+      status: b.status,
+      cbmTotal: b.cbmTotal != null ? Number(b.cbmTotal) : null,
+      lengthCm: b.lengthCm != null ? Number(b.lengthCm) : null,
+      widthCm: b.widthCm != null ? Number(b.widthCm) : null,
+      heightCm: b.heightCm != null ? Number(b.heightCm) : null,
+      note: b.note,
+      contents: b.lines.map((bl) => ({
+        id: bl.id,
+        productId: bl.productId,
+        name: productNames.get(bl.productId) ?? "— สินค้า —",
+        qty: bl.qty,
+      })),
     })),
   };
 
-  // ฐาน URL ของ R2 (อ่านฝั่ง server) — เอาไว้ประกอบ key → ลิงก์รูปจริง
+  // คลังที่ผู้ใช้เข้าถึงได้ (สำหรับ dropdown รับเข้า)
+  const warehouses = ctx.warehouses.map((w) => ({ id: w.id, name: w.name }));
+
   const r2Public = process.env.R2_PUBLIC_URL ?? "";
 
   return (
@@ -127,24 +178,22 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
         <div>
           <Link
             href="/dc/office/purchasing"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 13,
-              color: "#71717a",
-              marginBottom: 4,
-            }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#71717a", marginBottom: 4 }}
           >
             <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
           </Link>
           <div className="dc-h1">ใบสั่งซื้อ {po.poCode}</div>
-          <div className="dc-sub">รายละเอียดใบสั่งซื้อจีน · อนุมัติ → สั่ง</div>
+          <div className="dc-sub">รายการสินค้า · กล่อง/พัสดุ · เปลี่ยนสถานะ · รับเข้าคลัง</div>
         </div>
         <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
       </div>
 
-      <PoDetail data={data} canManage={canDcManage(ctx.session.user.role)} r2PublicUrl={r2Public} />
+      <PoDetail
+        data={data}
+        warehouses={warehouses}
+        canManage={canDcManage(ctx.session.user.role)}
+        r2PublicUrl={r2Public}
+      />
     </div>
   );
 }

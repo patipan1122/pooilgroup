@@ -237,3 +237,43 @@
 }
 .dc-root tbody td { padding: 12px; border-bottom: 1px solid var(--dc-line); font-size: 14.5px; }
 .dc-root tbody tr:hover { background: var(--color-brand-50); }
+
+/* sub-tabs (ใบสั่งซื้อ/ผู้ขาย/สินค้า · status tabs) */
+.dc-subtabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 1.5px solid var(--dc-line); }
+.dc-subtab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 16px; font-size: 14.5px; font-weight: 650;
+  color: var(--dc-muted); text-decoration: none;
+  border-bottom: 2.5px solid transparent; margin-bottom: -1.5px;
+}
+.dc-subtab:hover { color: var(--dc-blue-strong); }
+.dc-subtab.is-active { color: var(--dc-blue-strong); border-bottom-color: var(--color-brand-600); }
+
+/* status filter chips (PO list) */
+.dc-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.dc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px; font-size: 13.5px; font-weight: 650;
+  border: 1.5px solid var(--dc-line); background: var(--dc-paper); color: var(--dc-muted); cursor: pointer;
+}
+.dc-chip.is-active { background: var(--color-brand-600); color: #fff; border-color: var(--color-brand-600); }
+
+/* kanban board */
+.dc-kanban { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+.dc-kanban__col { flex: 0 0 270px; background: var(--dc-canvas); border: 1px solid var(--dc-line); border-radius: 14px; padding: 12px; }
+.dc-kanban__head { font-size: 13px; font-weight: 750; margin-bottom: 10px; display: flex; justify-content: space-between; }
+.dc-kanban__card { background: var(--dc-paper); border: 1px solid var(--dc-line); border-radius: 11px; padding: 11px; margin-bottom: 9px; box-shadow: var(--dc-shadow-sm); }
+
+/* compact line row (PO products) */
+.dc-poline { display: grid; grid-template-columns: 1fr 84px 116px 40px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--dc-line); }
+@media (max-width: 640px) { .dc-poline { grid-template-columns: 1fr 64px 96px 36px; } }
+
+/* status pill colors per PO status */
+.dc-st { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
+.dc-st--draft { background: #eef1f6; color: #475569; }
+.dc-st--wait { background: #fcf2da; color: #a06d0c; }
+.dc-st--ok { background: #e8f0fe; color: var(--color-brand-700); }
+.dc-st--ship { background: #e6f0ff; color: #2456b8; }
+.dc-st--arrive { background: #e4f6ea; color: #167a41; }
+.dc-st--done { background: #e4f6ea; color: #0f6b39; }
+.dc-st--cancel { background: #fdeaea; color: #b8362a; }

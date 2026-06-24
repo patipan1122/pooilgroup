@@ -7,6 +7,7 @@ import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 import { SeedSampleButton } from "./seed-button";
@@ -62,6 +63,8 @@ export default async function DcProductsPage({
         </div>
         <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
       </div>
+
+      <PurchasingTabs />
 
       <div
         style={{

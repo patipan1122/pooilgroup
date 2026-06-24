@@ -7279,6 +7279,17 @@ enum DcPoStatus {
   PARTIAL
   CLOSED
   CANCELLED
+  SHIPPED
+  ARRIVED_TH
+  AT_WAREHOUSE
+  RECEIVED
+
+  @@schema("dc")
+}
+
+enum DcPoOrigin {
+  CHINA
+  THAI
 
   @@schema("dc")
 }
@@ -7521,6 +7532,7 @@ model DcPurchaseOrder {
   supplierId       String?    @map("supplier_id") @db.Uuid
   warehouseId      String?    @map("warehouse_id") @db.Uuid
   status           DcPoStatus @default(DRAFT)
+  origin           DcPoOrigin @default(CHINA)
   currency         String     @default("CNY")
   fxRate           Decimal?   @map("fx_rate") @db.Decimal(12, 6)
   note             String?
@@ -7573,6 +7585,9 @@ model DcShipment {
   mode                  DcShipmentMode   @default(SEA)
   status                DcShipmentStatus @default(PREPARING)
   cbmTotal              Decimal?         @map("cbm_total") @db.Decimal(12, 4)
+  lengthCm              Decimal?         @map("length_cm") @db.Decimal(10, 2)
+  widthCm               Decimal?         @map("width_cm") @db.Decimal(10, 2)
+  heightCm              Decimal?         @map("height_cm") @db.Decimal(10, 2)
   chinaFreightThbSatang Int              @default(0) @map("china_freight_thb_satang")
   intlFreightThbSatang  Int              @default(0) @map("intl_freight_thb_satang")
   dutyThbSatang         Int              @default(0) @map("duty_thb_satang")
@@ -7713,5 +7728,22 @@ model DcOutboxEvent {
   @@unique([orgId, sourceKey, eventType])
   @@index([status, createdAt])
   @@map("outbox_events")
+  @@schema("dc")
+}
+
+// อัตราแลกเปลี่ยนรายวัน (cache จาก fawazahmed0/currency-api · ฟรี ไม่ต้องคีย์)
+// global (ไม่ผูก org) · 1 แถวต่อ (วันที่ × คู่สกุล) · PO เติมเรตให้อัตโนมัติ
+model DcFxRate {
+  id        String   @id @default(uuid()) @db.Uuid
+  rateDate  DateTime @map("rate_date") @db.Date
+  baseCcy   String   @map("base_ccy")
+  quoteCcy  String   @map("quote_ccy")
+  rate      Decimal  @db.Decimal(15, 6)
+  source    String?
+  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  @@unique([rateDate, baseCcy, quoteCcy])
+  @@index([baseCcy, quoteCcy, rateDate])
+  @@map("fx_rates")
   @@schema("dc")
 }

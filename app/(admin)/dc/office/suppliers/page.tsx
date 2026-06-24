@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
 import { SuppliersManager, type SupplierRow } from "./suppliers-manager";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,8 @@ export default async function DcSuppliersPage() {
         </div>
         <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
       </div>
+
+      <PurchasingTabs />
 
       <SuppliersManager suppliers={rows} />
     </div>

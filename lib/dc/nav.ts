@@ -32,6 +32,7 @@ export type FloorTask = {
 
 export const FLOOR_TASKS: FloorTask[] = [
   { key: "receive", href: "/dc/receive", label: "รับเข้า", hint: "ของมาถึง · สแกน · นับ · ยืนยัน", icon: "PackagePlus", tone: "blue" },
+  { key: "receive-po", href: "/dc/receive-po", label: "รับตาม PO", hint: "รับของที่สั่งจากจีน/ไทย เข้าคลัง", icon: "PackagePlus", tone: "blue" },
   { key: "transfer", href: "/dc/transfer", label: "ส่ง / โอน", hint: "ส่งไปสาขา/คลังอื่น", icon: "Truck", tone: "green" },
   { key: "move", href: "/dc/move", label: "ย้ายที่", hint: "ย้ายของระหว่างชั้นวาง", icon: "ArrowLeftRight", tone: "slate" },
   { key: "count", href: "/dc/count", label: "นับสต๊อก", hint: "นับรอบ · ทำงานตอนเน็ตหลุดได้", icon: "ClipboardCheck", tone: "amber" },
@@ -56,9 +57,44 @@ export const PO_STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: "รออนุมัติ",
   APPROVED: "อนุมัติแล้ว",
   ORDERED: "สั่งแล้ว",
+  SHIPPED: "ได้เลข Tracking",
+  ARRIVED_TH: "ถึงไทยแล้ว",
+  AT_WAREHOUSE: "ถึงโกดังแล้ว",
+  RECEIVED: "รับสินค้าแล้ว",
   PARTIAL: "รับบางส่วน",
   CLOSED: "ปิดใบ",
   CANCELLED: "ยกเลิก",
+};
+
+// ลำดับสถานะที่ใช้แสดงแท็บ/Kanban (เรียงตาม flow จริง)
+export const PO_FLOW_STATUSES: string[] = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "ORDERED",
+  "SHIPPED",
+  "ARRIVED_TH",
+  "AT_WAREHOUSE",
+  "RECEIVED",
+];
+
+// สีป้ายสถานะ (ใช้ class dc-st--*)
+export const PO_STATUS_TONE: Record<string, string> = {
+  DRAFT: "draft",
+  PENDING_APPROVAL: "wait",
+  APPROVED: "ok",
+  ORDERED: "ok",
+  SHIPPED: "ship",
+  ARRIVED_TH: "arrive",
+  AT_WAREHOUSE: "arrive",
+  RECEIVED: "done",
+  PARTIAL: "ship",
+  CLOSED: "done",
+  CANCELLED: "cancel",
+};
+
+export const PO_ORIGIN_LABEL: Record<string, string> = {
+  CHINA: "จีน",
+  THAI: "ไทย",
 };
 
 export const SHIPMENT_STATUS_LABEL: Record<string, string> = {
