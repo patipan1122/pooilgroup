@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, Ic, Pill, fmtTHB } from "@/components/clawfleet/v2/chrome";
 import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
 import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
+import { anomalyBranchLabel } from "@/lib/clawfleet/v2-data";
 import type {
   ActiveSession,
   Anomaly,
@@ -284,6 +285,14 @@ function OpsRow({
 }) {
   const info = branch;
   const pct = s.machines ? Math.round((s.done / s.machines) * 100) : 0;
+  // หัวแถว = ชื่อสาขา เสมอ (review row ดึงจาก anomaly ที่ join ชื่อมาแล้ว · ไม่โชว์ UUID)
+  const zoneName =
+    s.status === "review"
+      ? anomalyBranchLabel(s.anomalyRef, info)
+      : info.name && info.name !== info.id
+        ? info.name
+        : (info.code && info.code !== info.id ? info.code : "—");
+  const zoneArea = info.area && info.area !== info.id ? info.area : "";
   return (
     <div className={`cf-ops-row cf-ops-row-${s.status}`}>
       <div className="cf-ops-status">
@@ -309,9 +318,10 @@ function OpsRow({
         )}
       </div>
       <div className="cf-ops-zone">
-        <div className="cf-ops-zone-name">{info.name}</div>
+        <div className="cf-ops-zone-name">{zoneName}</div>
         <div className="cf-ops-zone-meta">
-          {info.area} · {s.id}
+          {zoneArea && <>{zoneArea} · </>}
+          <span className="cf-anom-id">{s.id}</span>
         </div>
       </div>
       <div className="cf-ops-staff">

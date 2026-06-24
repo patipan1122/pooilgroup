@@ -102,6 +102,68 @@ export const getV2Branches = cache(async (): Promise<Branch[]> => {
 });
 
 // =============================================================
+// Manage page — branches WITH their machine list (for CRUD UI)
+// =============================================================
+export type ManageMachine = {
+  id: string;
+  code: string;
+  nickname: string | null;
+  kind: "CLAW" | "EXCHANGER";
+  isActive: boolean;
+};
+export type ManageBranch = {
+  id: string;
+  name: string;
+  code: string;
+  area: string;
+  manager: string;
+  avatar: string;
+  tone: BranchTone;
+  machineCount: number;
+  machines: ManageMachine[];
+};
+
+/** สาขาตู้คีบ + รายการตู้ในแต่ละสาขา (active เท่านั้น) สำหรับหน้า "จัดการ". */
+export async function getV2ManageBranches(): Promise<ManageBranch[]> {
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+  const rows = await prisma.branch.findMany({
+    where: {
+      orgId,
+      businessType: "claw_machine",
+      isActive: true,
+      ...(branchIds === "ALL" ? {} : { id: { in: branchIds } }),
+    },
+    include: {
+      manager: { select: { name: true } },
+      cfMachines: {
+        where: { isActive: true },
+        select: { id: true, code: true, nickname: true, kind: true, isActive: true },
+        orderBy: { code: "asc" },
+      },
+    },
+    orderBy: { code: "asc" },
+  });
+  return rows.map((b) => ({
+    id: b.id,
+    name: b.name,
+    code: b.code,
+    area: b.province ?? b.region ?? "—",
+    manager: b.manager?.name ?? "—",
+    avatar: firstChar(b.manager?.name ?? b.name),
+    tone: toneFor(b.id),
+    machineCount: b.cfMachines.length,
+    machines: b.cfMachines.map((m) => ({
+      id: m.id,
+      code: m.code,
+      nickname: m.nickname,
+      kind: m.kind as "CLAW" | "EXCHANGER",
+      isActive: m.isActive,
+    })),
+  }));
+}
+
+// =============================================================
 // Anomalies (sessions in ANOMALY_REVIEW) — with machines
 // =============================================================
 export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
@@ -116,6 +178,7 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
       ...(branchWhere ? { branchId: branchWhere } : {}),
     },
     include: {
+      branch: { select: { name: true, code: true } },
       openedBy: { select: { name: true } },
       events: {
         where: { eventType: "COLLECTION" },
@@ -161,9 +224,17 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
           note: e.notes ?? undefined,
         };
       });
+    const branchName = s.branch?.name ?? "";
+    const branchCode = s.branch?.code ?? "";
+    // ชื่อตู้ที่จะโชว์ในบรรทัดรอง — ตู้คีบตัวแรกของรอบ (nickname ?? code)
+    const firstMachine = machines[0];
+    const machineName = firstMachine?.name ?? "";
     return {
       id: s.sessionCode,
       branchId: s.branchId ?? "",
+      branchName,
+      branchCode,
+      machineName,
       severity: gapPct > 25 || Math.abs(prizeGap) > 4 ? "P0" : "P1",
       type: isCash ? "cash_short" : "prize_short",
       typeLabel: isCash ? "เงินขาด" : "ตุ๊กตาหาย",

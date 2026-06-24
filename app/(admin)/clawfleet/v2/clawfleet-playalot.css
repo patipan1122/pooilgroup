@@ -346,6 +346,42 @@
 .cf-manage-note { margin-top: 16px; padding: 16px 22px; }
 .cf-manage-note-link { color: var(--cf-mustard-deep); font-weight: 700; }
 
+/* ----- Manage CRUD (เพิ่ม/แก้/ลบ สาขา+ตู้) — token-driven ----- */
+.cf-manage-expand { margin-top: 10px; width: 100%; justify-content: center; }
+.cf-manage-mlist { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cf-manage-mrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; border-radius: var(--cf-radius-sm); background: var(--cf-surface-2);
+}
+.cf-manage-mrow-id { min-width: 0; flex: 1; }
+.cf-manage-mrow-name { font-size: 13.5px; color: var(--cf-text); }
+.cf-manage-mrow-meta { font-size: 11.5px; color: var(--cf-text-3); }
+.cf-manage-empty { padding: 28px; text-align: center; }
+.cf-manage-empty-sub { color: var(--cf-text-3); margin-bottom: 12px; }
+.cf-manage-mempty { font-size: 12.5px; color: var(--cf-text-3); padding: 6px 2px; }
+
+/* ----- modal / form primitives (ไม่มีในเดิม → สร้างที่นี่) ----- */
+.cf-modal-overlay {
+  position: fixed; inset: 0; z-index: 60; padding: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+}
+.cf-modal {
+  width: 100%; max-width: 420px; padding: 22px;
+  background: var(--cf-surface); border-radius: var(--cf-radius-lg); box-shadow: var(--cf-shadow-lg);
+}
+.cf-modal-head { display: flex; align-items: center; justify-content: space-between; }
+.cf-modal-title { font-size: 16px; font-weight: 600; color: var(--cf-text); }
+.cf-modal-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
+.cf-field { display: block; }
+.cf-field-label { display: block; font-size: 12.5px; color: var(--cf-text-2); margin: 12px 0 5px; }
+.cf-input {
+  width: 100%; padding: 9px 11px; font-size: 14px; font-family: var(--cf-font);
+  color: var(--cf-text); background: var(--cf-surface);
+  border: 1px solid var(--cf-border); border-radius: var(--cf-radius-sm);
+}
+.cf-input:focus { outline: none; border-color: var(--cf-primary); }
+
 /* ============================================================
    READABILITY POLISH (2026-06-24) — CEO: "อ่านง่าย ไม่ปวดตา ไม่งง"
    clearer hierarchy · reserved color (red = money-lost only) · comfy sizes

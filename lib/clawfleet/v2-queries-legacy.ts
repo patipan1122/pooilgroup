@@ -102,7 +102,7 @@ export async function legacyAnomalies(filter?: string): Promise<Anomaly[]> {
       exchangerCoinsOut: true, clawCoinsIn: true, coinVarianceBps: true,
       totalCashCents: true, anomalyFlags: true,
       openedBy: { select: { name: true } },
-      group: { select: { branchId: true } },
+      group: { select: { branchId: true, branch: { select: { name: true, code: true } } } },
       events: clawEventsSelect,
     },
     orderBy: { closedAt: "desc" },
@@ -125,6 +125,9 @@ export async function legacyAnomalies(filter?: string): Promise<Anomaly[]> {
       return {
         id: s.sessionCode,
         branchId: s.group?.branchId ?? "",
+        branchName: s.group?.branch?.name ?? "",
+        branchCode: s.group?.branch?.code ?? "",
+        machineName: machines[0]?.name ?? "",
         severity: gapPct > 25 ? "P0" : "P1",
         type: "cash_short",
         typeLabel: "เหรียญขาด",

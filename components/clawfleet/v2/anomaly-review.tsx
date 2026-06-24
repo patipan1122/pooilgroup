@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from "react";
 import { Ic, fmtTHB, type IconName } from "@/components/clawfleet/v2/chrome";
-import { getBranch, type Anomaly, type Machine } from "@/lib/clawfleet/v2-data";
+import { getBranch, anomalyBranchLabel, type Anomaly, type Machine } from "@/lib/clawfleet/v2-data";
 
 type Decision = "approve" | "recheck" | "escalate";
 
@@ -31,6 +31,11 @@ type LightboxState = { machineIdx: number; photoIdx: number };
 export function AnomalyReview({ anomaly, onClose, onNext, onDecision }: AnomalyReviewProps) {
   const a = anomaly;
   const branch = getBranch(a.branchId);
+  // ชื่อสาขาหัวจอ = ชื่อจริง (join จาก DB) ก่อนเสมอ · ห้ามโชว์ UUID
+  const branchTitle = anomalyBranchLabel(a, branch);
+  // เลี่ยงโชว์ id ดิบใน area/code เมื่อ map ไม่เจอ (fallback name === id)
+  const branchArea = branch.area && branch.area !== branch.id ? branch.area : "";
+  const branchCode = a.branchCode?.trim() || (branch.code && branch.code !== branch.id ? branch.code : "");
   const [decision, setDecision] = useState<Decision | null>(null);
   const [note, setNote] = useState("");
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
@@ -79,17 +84,19 @@ export function AnomalyReview({ anomaly, onClose, onNext, onDecision }: AnomalyR
           <span className={`cf-sev cf-sev-${a.severity.toLowerCase()}`}>{a.severity}</span>
           <div>
             <div className="cf-rev-title">
-              <span>{branch.name}</span>
+              <span>{branchTitle}</span>
               <span className="cf-dim cf-rev-title-meta">
                 · {a.machines.length} ตู้ · {a.staff}
               </span>
             </div>
             <div className="cf-rev-sub">
               {a.id} · เก็บ {a.sessionStart}–{a.sessionEnd} ({a.duration}) · {a.timestamp}
-              <span className="cf-dim">
-                {" "}
-                · {branch.area} · {branch.code}
-              </span>
+              {(branchArea || branchCode) && (
+                <span className="cf-dim">
+                  {branchArea && <> · {branchArea}</>}
+                  {branchCode && <> · {branchCode}</>}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -223,8 +230,8 @@ export function AnomalyReview({ anomaly, onClose, onNext, onDecision }: AnomalyR
           />
           <ContextItem
             icon="building"
-            title={branch.name}
-            value={`${branch.area ?? "—"} · ${branch.code} · ${branch.machines ?? "—"} ตู้ · ผจก. ${branch.manager ?? "—"}`}
+            title={branchTitle}
+            value={`${branchArea || "—"} · ${branchCode || "—"} · ${branch.machines ?? "—"} ตู้ · ผจก. ${branch.manager ?? "—"}`}
           />
           <ContextItem
             icon="alert"

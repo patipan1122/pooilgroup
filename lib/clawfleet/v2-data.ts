@@ -56,6 +56,12 @@ export type AnomalyType = "cash_short" | "prize_short";
 export type Anomaly = {
   id: string;
   branchId: string;
+  /** ชื่อสาขาที่ join มาจากตาราง Branch (real-DB tier) — บรรทัดหัวของแถว anomaly */
+  branchName?: string;
+  /** รหัสสาขา (เช่น "CTP") — fallback หัวแถวเมื่อไม่มีชื่อ */
+  branchCode?: string;
+  /** ชื่อตู้ที่จะโชว์ในบรรทัดรอง (nickname ?? code ของตู้คีบตัวแรก) */
+  machineName?: string;
   severity: AnomalySeverity;
   type: AnomalyType;
   typeLabel: string;
@@ -499,4 +505,34 @@ export type BranchFallback = {
 /** Look up branch by id with a graceful fallback (mirrors mockup `getBranch`). */
 export function getBranch(id: string): Branch | BranchFallback {
   return BRANCHES.find((b) => b.id === id) ?? { id, name: id, code: id };
+}
+
+/**
+ * บรรทัดหัวของแถว anomaly = "ชื่อสาขา" (ตัวใหญ่) เสมอ — ห้ามโชว์ UUID/รหัสรอบเป็นหัว.
+ * ลำดับ fallback: branchName (join จาก DB) → ชื่อสาขาจาก map (ถ้าไม่ใช่ id ตัวเอง)
+ * → รหัสสาขา (branchCode/code) → "—". รหัสรอบ (a.id) โชว์เป็น ref ตัวจิ๋วแยกต่างหาก.
+ */
+export function anomalyBranchLabel(
+  a: Pick<Anomaly, "branchId" | "branchName" | "branchCode">,
+  branch?: Branch | BranchFallback,
+): string {
+  const fromJoin = a.branchName?.trim();
+  if (fromJoin) return fromJoin;
+  // branch.name === branch.id คือ fallback ที่ map ไม่เจอ (id ดิบ) → ข้าม
+  const fromMap = branch && branch.name && branch.name !== branch.id ? branch.name.trim() : "";
+  if (fromMap) return fromMap;
+  const code = a.branchCode?.trim() || (branch?.code && branch.code !== branch.id ? branch.code.trim() : "");
+  if (code) return code;
+  return "—";
+}
+
+/** บรรทัดรองของแถว anomaly = "ชื่อตู้ · ชื่อพนักงาน · เวลา" (ข้ามช่องที่ว่าง). */
+export function anomalySubLabel(
+  a: Pick<Anomaly, "machineName" | "staff" | "timeAgo">,
+): string {
+  const parts: string[] = [];
+  if (a.machineName?.trim()) parts.push(a.machineName.trim());
+  if (a.staff?.trim()) parts.push(a.staff.trim());
+  if (a.timeAgo?.trim()) parts.push(`${a.timeAgo.trim()}ที่แล้ว`);
+  return parts.join(" · ");
 }

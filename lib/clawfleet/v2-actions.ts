@@ -7,11 +7,13 @@
 // Gracefully no-ops when the session code isn't a real DB row (e.g. the page is
 // still showing mock showcase data before the migration + branch-shape reseed).
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
-import { userBranchIds } from "./role-guard";
+import { userBranchIds, assertCfAdmin } from "./role-guard";
 import {
   StartBranchSessionSchema,
   SubmitBranchEventSchema,
@@ -659,5 +661,257 @@ export async function createDelivery(input: {
     return { ok: true, data: { id: d.id } };
   } catch (e) {
     return { ok: false, error: `สั่งของไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+// =============================================================
+// จัดการ (Manage) — full CRUD สำหรับ สาขา (Branch) + ตู้ (CfMachine)
+// Admin power = org admin-tier OR program_admin ที่ได้ grant clawfleet
+// (assertCfAdmin redirects ถ้าไม่มีสิทธิ์). ทุก action: Zod + try/catch + revalidate.
+// =============================================================
+
+const MANAGE_PATH = "/clawfleet/v2/manage";
+
+/** unique-violation จาก Prisma (รหัสซ้ำ) */
+function isUniqueViolation(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
+}
+
+/**
+ * หา companyId สำหรับสาขาตู้คีบใหม่ — สืบจากสาขาตู้คีบที่มีอยู่แล้ว (ให้ company
+ * เดียวกับของเดิม) → ถ้าไม่มี ใช้ company แรกของ org. Branch.companyId เป็น required
+ * ไม่มี default จึงต้อง resolve ก่อน create.
+ */
+async function resolveCfCompanyId(orgId: string): Promise<string | null> {
+  const sibling = await prisma.branch.findFirst({
+    where: { orgId, businessType: "claw_machine" },
+    select: { companyId: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (sibling?.companyId) return sibling.companyId;
+  const company = await prisma.company.findFirst({
+    where: { orgId },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return company?.id ?? null;
+}
+
+const CreateBranchSchema = z.object({
+  name: z.string().trim().min(1, "กรอกชื่อสาขา").max(120),
+  code: z.string().trim().min(1, "กรอกรหัสสาขา").max(40),
+  province: z.string().trim().max(120).optional(),
+  region: z.string().trim().max(120).optional(),
+});
+
+/** สร้างสาขาตู้คีบใหม่ */
+export async function createBranch(input: unknown): Promise<ResultOf<{ id: string }>> {
+  const parsed = CreateBranchSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+  const { name, code, province, region } = parsed.data;
+
+  const companyId = await resolveCfCompanyId(orgId);
+  if (!companyId) {
+    return { ok: false, error: "ไม่พบบริษัทในองค์กรนี้ · ตั้งค่าบริษัทก่อนเพิ่มสาขา" };
+  }
+
+  try {
+    const b = await prisma.branch.create({
+      data: {
+        orgId,
+        companyId,
+        code,
+        name,
+        businessType: "claw_machine",
+        province: province || null,
+        region: region || null,
+      },
+      select: { id: true },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true, data: { id: b.id } };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "รหัสสาขาซ้ำ · ใช้รหัสอื่น" };
+    return { ok: false, error: `เพิ่มสาขาไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+const RenameBranchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  code: z.string().trim().min(1).max(40).optional(),
+});
+
+/** เปลี่ยนชื่อ/รหัสสาขา */
+export async function renameBranch(branchId: string, input: unknown): Promise<Result> {
+  const parsed = RenameBranchSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  if (parsed.data.name === undefined && parsed.data.code === undefined) {
+    return { ok: false, error: "ไม่มีข้อมูลที่จะแก้ไข" };
+  }
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId, businessType: "claw_machine" },
+    select: { id: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบ" };
+
+  try {
+    await prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.code !== undefined ? { code: parsed.data.code } : {}),
+      },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "รหัสสาขาซ้ำ · ใช้รหัสอื่น" };
+    return { ok: false, error: `แก้ไขสาขาไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * ลบสาขา — SOFT delete (isActive=false) ถ้ามีตู้หรือรอบเก็บอยู่แล้ว
+ * (กันข้อมูลประวัติพัง) · ลบจริงเฉพาะสาขาที่ว่างเปล่า.
+ */
+export async function deleteBranch(branchId: string): Promise<ResultOf<{ mode: "soft" | "hard" }>> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId, businessType: "claw_machine" },
+    select: {
+      id: true,
+      _count: { select: { cfMachines: true, cfSessions: true } },
+    },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบ" };
+
+  const hasDependents = branch._count.cfMachines > 0 || branch._count.cfSessions > 0;
+
+  try {
+    if (hasDependents) {
+      await prisma.branch.update({ where: { id: branchId }, data: { isActive: false } });
+      revalidatePath(MANAGE_PATH);
+      return { ok: true, data: { mode: "soft" } };
+    }
+    await prisma.branch.delete({ where: { id: branchId } });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true, data: { mode: "hard" } };
+  } catch (e) {
+    return { ok: false, error: `ลบสาขาไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+const CreateMachineSchema = z.object({
+  branchId: z.string().min(1, "ไม่ระบุสาขา"),
+  code: z.string().trim().min(1, "กรอกรหัสตู้").max(40),
+  nickname: z.string().trim().max(120).optional(),
+  kind: z.enum(["CLAW", "EXCHANGER"]),
+});
+
+/** เพิ่มตู้ใหม่ในสาขา · generate qrToken เอง */
+export async function createCfMachine(input: unknown): Promise<ResultOf<{ id: string }>> {
+  const parsed = CreateMachineSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+  const { branchId, code, nickname, kind } = parsed.data;
+
+  // ตู้ต้องอยู่ในสาขาตู้คีบของ org นี้เท่านั้น
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId, businessType: "claw_machine" },
+    select: { id: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบ หรือสาขาไม่อยู่ในองค์กรนี้" };
+
+  try {
+    const m = await prisma.cfMachine.create({
+      data: {
+        orgId,
+        branchId,
+        code,
+        nickname: nickname || null,
+        kind,
+        qrToken: randomUUID(),
+      },
+      select: { id: true },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true, data: { id: m.id } };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "รหัสตู้ซ้ำ · ใช้รหัสอื่น" };
+    return { ok: false, error: `เพิ่มตู้ไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+const RenameMachineSchema = z.object({
+  nickname: z.string().trim().max(120).optional(),
+  code: z.string().trim().min(1).max(40).optional(),
+  kind: z.enum(["CLAW", "EXCHANGER"]).optional(),
+});
+
+/** เปลี่ยนชื่อ/รหัส/ประเภทตู้ */
+export async function renameCfMachine(machineId: string, input: unknown): Promise<Result> {
+  const parsed = RenameMachineSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  if (
+    parsed.data.nickname === undefined &&
+    parsed.data.code === undefined &&
+    parsed.data.kind === undefined
+  ) {
+    return { ok: false, error: "ไม่มีข้อมูลที่จะแก้ไข" };
+  }
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้" };
+
+  try {
+    await prisma.cfMachine.update({
+      where: { id: machineId },
+      data: {
+        ...(parsed.data.nickname !== undefined ? { nickname: parsed.data.nickname || null } : {}),
+        ...(parsed.data.code !== undefined ? { code: parsed.data.code } : {}),
+        ...(parsed.data.kind !== undefined ? { kind: parsed.data.kind } : {}),
+      },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true };
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: "รหัสตู้ซ้ำ · ใช้รหัสอื่น" };
+    return { ok: false, error: `แก้ไขตู้ไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/** ปลดระวางตู้ (soft · isActive=false + retiredAt) */
+export async function retireCfMachine(machineId: string): Promise<Result> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้" };
+
+  try {
+    await prisma.cfMachine.update({
+      where: { id: machineId },
+      data: { isActive: false, retiredAt: new Date() },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `ปลดระวางตู้ไม่สำเร็จ: ${(e as Error).message}` };
   }
 }

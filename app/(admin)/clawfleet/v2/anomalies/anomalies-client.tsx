@@ -17,6 +17,7 @@ import { useMemo, useState } from "react";
 import { Avatar, Ic, Pill, Section, StatTile, fmtTHB } from "@/components/clawfleet/v2/chrome";
 import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
 import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
+import { anomalyBranchLabel, anomalySubLabel } from "@/lib/clawfleet/v2-data";
 import type { Anomaly, Branch, BranchFallback } from "@/lib/clawfleet/v2-data";
 
 type ToastKind = "approve" | "recheck" | "escalate";
@@ -195,6 +196,8 @@ function AnomalyRow({
   branch: Branch | BranchFallback;
   onOpen: () => void;
 }) {
+  const headline = anomalyBranchLabel(a, branch);
+  const sub = anomalySubLabel(a);
   return (
     <button className="cf-anom-row" onClick={onOpen}>
       <div className="cf-anom-sev">
@@ -202,15 +205,13 @@ function AnomalyRow({
       </div>
       <div className="cf-anom-body">
         <div className="cf-anom-head">
-          <span className="cf-anom-zone">{branch.name}</span>
-          <span className="cf-dim">·</span>
-          <span className="cf-anom-branch">{branch.area}</span>
+          <span className="cf-anom-zone">{headline}</span>
           <Pill color={a.type === "cash_short" ? "red" : "amber"} size="sm">
             {a.typeLabel}
           </Pill>
           <span className="cf-anom-id">{a.id}</span>
         </div>
-        <div className="cf-anom-reason">{a.reason}</div>
+        <div className="cf-anom-reason">{sub}</div>
       </div>
       <div className="cf-anom-gap">
         {a.gap > 0 && <div className="cf-anom-gap-amt">-฿{a.gap.toLocaleString("th-TH")}</div>}
