@@ -4,20 +4,20 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logRepair } from "@/lib/playland/stock";
+import { BarcodeScanBox } from "@/components/playland/barcode-scan-box";
 
-type Part = { id: string; name: string; stock: number; costCents: number | null };
+type Part = { id: string; name: string; stock: number; costCents: number | null; barcode: string | null };
 type Line = { productId: string; name: string; quantity: number; stock: number; costBaht: number };
 
 const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
 const input: React.CSSProperties = { background: "#fff", border: "1px solid #ece5d8", borderRadius: 10, padding: "11px 13px", fontSize: 15, fontFamily: MITR, color: "#3A3026", outline: "none", boxSizing: "border-box", width: "100%" };
 
-export function RepairForm({ branchId, parts }: { branchId: string; parts: Part[] }) {
+export function RepairForm({ branchId, parts, machineLabels = [] }: { branchId: string; parts: Part[]; machineLabels?: string[] }) {
   const router = useRouter();
   const [machine, setMachine] = useState("");
   const [desc, setDesc] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
-  const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const pmap = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
@@ -26,6 +26,12 @@ export function RepairForm({ branchId, parts }: { branchId: string; parts: Part[
     const p = pmap.get(id);
     if (!p) return;
     setLines((ls) => (ls.find((l) => l.productId === id) ? ls.map((l) => (l.productId === id ? { ...l, quantity: l.quantity + 1 } : l)) : [...ls, { productId: id, name: p.name, quantity: 1, stock: p.stock, costBaht: Math.round((p.costCents ?? 0) / 100) }]));
+  };
+  const onScanPart = (code: string) => {
+    const p = parts.find((x) => x.barcode === code.trim());
+    if (p && p.stock > 0) { addPart(p.id); setMsg(`+ ${p.name}`); }
+    else if (p) setMsg(`❌ ${p.name} หมดสต๊อก`);
+    else setMsg(`❌ ไม่พบอะไหล่บาร์โค้ด ${code}`);
   };
   const setQty = (id: string, q: number) => setLines((ls) => ls.map((l) => (l.productId === id ? { ...l, quantity: Math.max(0, q) } : l)));
   const remove = (id: string) => setLines((ls) => ls.filter((l) => l.productId !== id));
@@ -49,7 +55,8 @@ export function RepairForm({ branchId, parts }: { branchId: string; parts: Part[
       <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 18, display: "grid", gap: 12 }}>
         <div>
           <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>เครื่อง/จุดที่ซ่อม *</div>
-          <input value={machine} onChange={(e) => setMachine(e.target.value)} placeholder="เช่น เครื่องเล่นโซน A · ประตูสแกน 2" style={input} />
+          <input value={machine} onChange={(e) => setMachine(e.target.value)} list="pl-machines" placeholder="เช่น เครื่องเล่นโซน A · ประตูสแกน 2" style={input} />
+          <datalist id="pl-machines">{machineLabels.map((m) => <option key={m} value={m} />)}</datalist>
         </div>
         <div>
           <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 6 }}>อาการ/รายละเอียด (ไม่บังคับ)</div>
@@ -62,10 +69,19 @@ export function RepairForm({ branchId, parts }: { branchId: string; parts: Part[
         {parts.length === 0 ? (
           <div style={{ color: "#a89c8b", fontSize: 14 }}>ยังไม่มีอะไหล่ในคลัง · เพิ่มสินค้าแล้วตั้งประเภทเป็น &quot;อะไหล่&quot;</div>
         ) : (
-          <select value={pick} onChange={(e) => { if (e.target.value) { addPart(e.target.value); setPick(""); } }} style={input}>
-            <option value="">+ เลือกอะไหล่…</option>
-            {parts.map((p) => <option key={p.id} value={p.id} disabled={p.stock <= 0}>🔧 {p.name} (เหลือ {p.stock}){p.stock <= 0 ? " — หมด" : ""}</option>)}
-          </select>
+          <>
+            <div style={{ marginBottom: 12 }}><BarcodeScanBox onScan={onScanPart} placeholder="ยิงบาร์โค้ดอะไหล่…" /></div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {parts.map((p) => {
+                const out = p.stock <= 0;
+                return (
+                  <button key={p.id} type="button" disabled={out} onClick={() => addPart(p.id)} style={{ cursor: out ? "not-allowed" : "pointer", fontFamily: MITR, fontSize: 14, padding: "9px 14px", borderRadius: 999, border: "1px solid #ece5d8", background: out ? "#f4ede0" : "#fff", color: out ? "#bcae9b" : "#3A3026", opacity: out ? 0.7 : 1 }}>
+                    🔧 {p.name} <span style={{ fontSize: 12, color: "#a89c8b" }}>({out ? "หมด" : "เหลือ " + p.stock})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
         {lines.length > 0 && (
           <div style={{ marginTop: 12, border: "1px solid #f2ebdd", borderRadius: 12, overflow: "hidden" }}>

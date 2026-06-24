@@ -22,9 +22,10 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
   const branchId = sp.branch || branches[0]?.id;
   if (!branchId) redirect("/playland/settings/branches");
   const [parts, repairs] = await Promise.all([
-    prisma.playlandProduct.findMany({ where: { orgId, branchId, active: true, kind: "SPARE_PART" }, orderBy: { name: "asc" }, select: { id: true, name: true, stock: true, costCents: true } }),
-    prisma.playlandRepairLog.findMany({ where: { orgId, branchId }, orderBy: { createdAt: "desc" }, take: 15, include: { parts: true } }),
+    prisma.playlandProduct.findMany({ where: { orgId, branchId, active: true, kind: "SPARE_PART" }, orderBy: { name: "asc" }, select: { id: true, name: true, stock: true, costCents: true, barcode: true } }),
+    prisma.playlandRepairLog.findMany({ where: { orgId, branchId }, orderBy: { createdAt: "desc" }, take: 30, include: { parts: true } }),
   ]);
+  const machineLabels = [...new Set(repairs.map((r) => r.machineLabel))]; // ชื่อเครื่องที่เคยซ่อม → autocomplete กันสะกดไม่ตรง
 
   return (
     <div style={{ height: "calc(100vh - 64px)", overflowY: "auto", background: "#F7F2EA", fontFamily: MITR, color: "#3A3026" }}>
@@ -34,7 +35,7 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
         <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: "1.3rem", display: "flex", alignItems: "center", gap: 8 }}><Wrench size={20} /> ซ่อมเครื่อง · เบิกอะไหล่</div>
       </header>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 28px 48px", display: "grid", gap: 28 }}>
-        <RepairForm branchId={branchId} parts={parts} />
+        <RepairForm branchId={branchId} parts={parts} machineLabels={machineLabels} />
 
         <section>
           <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 12px 2px" }}>ประวัติการซ่อมล่าสุด</h2>

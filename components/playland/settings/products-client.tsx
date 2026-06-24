@@ -35,6 +35,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
   const [uploading, setUploading] = useState(false);
   const [imgError, setImgError] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false); // ผู้ขาย/รูป ซ่อนไว้ก่อน → เพิ่มของด่วนกรอกน้อยลง
 
   // แปลงค่าที่เก็บ → URL สำหรับแสดง preview/รูปในตาราง
   function resolveImg(v: string | null): string | null {
@@ -49,7 +50,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
     setPrice(((p.priceCents) / 100).toString()); setCost(((p.costCents ?? 0) / 100).toString());
     setStock(String(p.stock)); setReorder(String(p.reorderLevel));
     setBranchId(p.branchId); setActive(p.active);
-    setImageR2Path(p.imageR2Path ?? ""); setImgError(null);
+    setImageR2Path(p.imageR2Path ?? ""); setImgError(null); setSaveErr(null); setShowAdvanced(true);
     setShowForm(true);
   }
   function startNew() {
@@ -57,7 +58,18 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
     setName(""); setKind("SALE_ITEM"); setBarcode(""); setCategory(""); setSupplier("");
     setPrice("0"); setCost("0"); setStock("0"); setReorder("0");
     setBranchId(branches[0]?.id ?? ""); setActive(true);
-    setImageR2Path(""); setImgError(null);
+    setImageR2Path(""); setImgError(null); setSaveErr(null); setShowAdvanced(false);
+    setShowForm(true);
+  }
+  // ทำซ้ำ: คัดลอกค่าเดิมทั้งหมด ยกเว้นรหัส+บาร์โค้ด (บาร์โค้ดต้องไม่ซ้ำ) → กรอกใหม่แค่ชื่อ/บาร์โค้ด
+  function startClone(p: Product) {
+    setEditing(null);
+    setName(p.name + " (สำเนา)"); setKind(p.kind === "SPARE_PART" ? "SPARE_PART" : "SALE_ITEM");
+    setBarcode(""); setCategory(p.category ?? ""); setSupplier(p.supplier ?? "");
+    setPrice(((p.priceCents) / 100).toString()); setCost(((p.costCents ?? 0) / 100).toString());
+    setStock("0"); setReorder(String(p.reorderLevel));
+    setBranchId(p.branchId); setActive(true);
+    setImageR2Path(p.imageR2Path ?? ""); setImgError(null); setSaveErr(null); setShowAdvanced(false);
     setShowForm(true);
   }
   async function handleFile(file: File) {
@@ -130,7 +142,12 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
                     <td style={{ fontWeight: 600 }}>{thb(p.priceCents)}</td>
                     <td style={{ color: low ? "var(--pl-danger)" : "inherit", fontWeight: low ? 600 : 400 }}>{p.stock}</td>
                     <td>{branches.find((b) => b.id === p.branchId)?.name ?? "—"}</td>
-                    <td>{p.active ? <span className="pl-chip pl-chip-ok">ใช้</span> : <span className="pl-chip pl-chip-muted">ปิด</span>}</td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {p.active ? <span className="pl-chip pl-chip-ok">ใช้</span> : <span className="pl-chip pl-chip-muted">ปิด</span>}
+                        <button type="button" className="pl-btn pl-btn-sm" onClick={(e) => { e.stopPropagation(); startClone(p); }} style={{ fontSize: 11 }}>ทำซ้ำ</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -159,6 +176,10 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
                 <input className="pl-input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder={kind === "SPARE_PART" ? "มอเตอร์ / สายพาน" : "ขนม / เครื่องดื่ม"} />
               </div>
             </div>
+            <button type="button" className="pl-btn pl-btn-sm" onClick={() => setShowAdvanced((v) => !v)} style={{ justifySelf: "start", fontSize: 12 }}>
+              {showAdvanced ? "− ซ่อนตัวเลือกเพิ่มเติม" : "+ ตัวเลือกเพิ่มเติม (ผู้ขาย · รูป)"}
+            </button>
+            {showAdvanced && (<>
             <div>
               <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>ผู้ขาย/ร้านค้า</label>
               <input className="pl-input" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="ไม่บังคับ" />
@@ -195,6 +216,7 @@ export function ProductsClient({ branches, products, r2PublicUrl }: { branches: 
                 </div>
               </div>
             </div>
+            </>)}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <label style={{ fontSize: 12, color: "var(--pl-text-muted)" }}>{kind === "SPARE_PART" ? "ราคาขาย (อะไหล่ไม่ต้องใส่)" : "ราคาขาย (บาท)"}</label>
