@@ -9,7 +9,7 @@
 //   • ★ lineKey (uuid) สร้างตอน "เพิ่ม" บรรทัด → ส่งซ้ำ = no-op (idempotent)
 //   • ปุ่มส่งออก busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2, Truck } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
@@ -32,6 +32,37 @@ type Line = {
 };
 
 type DestMode = "warehouse" | "module";
+
+// ★ บัฟเฟอร์รายการที่พิมพ์/ยิงไว้ใน localStorage แยกตามคลังต้นทาง — กันลิสต์หายตอนรีเฟรช/เน็ตหลุด
+const STORAGE_PREFIX = "dc.transfer.";
+
+function storageKey(fromWarehouseId: string): string {
+  return `${STORAGE_PREFIX}${fromWarehouseId}`;
+}
+
+function loadBuffer(fromWarehouseId: string): Line[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey(fromWarehouseId));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (l): l is Line => !!l && typeof (l as Line).lineKey === "string" && typeof (l as Line).productId === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveBuffer(fromWarehouseId: string, lines: Line[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey(fromWarehouseId), JSON.stringify(lines));
+  } catch {
+    /* quota / private mode — เงียบไว้ (ยังใช้ใน-memory ได้) */
+  }
+}
 
 function newLineKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -66,6 +97,16 @@ export function TransferDispatch({
   const [toast, setToast] = useState<string | null>(null);
 
   const lookingRef = useRef(false);
+
+  // ---- โหลด buffer ตอน mount (กู้ลิสต์คืนหลังรีเฟรช/เน็ตหลุด) ----
+  useEffect(() => {
+    setLines(loadBuffer(fromWarehouseId));
+  }, [fromWarehouseId]);
+
+  // ---- persist ทุกครั้งที่ลิสต์เปลี่ยน ----
+  useEffect(() => {
+    saveBuffer(fromWarehouseId, lines);
+  }, [fromWarehouseId, lines]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);

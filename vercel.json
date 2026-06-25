@@ -33,6 +33,7 @@
     { "path": "/api/chairops/cron/gmail-import", "schedule": "0 1 * * *" },
     { "path": "/api/cron/pinpoint-purge", "schedule": "0 20 * * *" },
     { "path": "/api/cron/fuelos-pump-price-snapshot", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/fuelos-gps-daily", "schedule": "30 17 * * *" }
+    { "path": "/api/cron/fuelos-gps-daily", "schedule": "30 17 * * *" },
+    { "path": "/api/dc/reconcile", "schedule": "45 20 * * *" }
   ]
 }

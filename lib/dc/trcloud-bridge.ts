@@ -119,7 +119,10 @@ export async function buildCostLayersForGrn(grnId: string): Promise<BuildCostLay
       })
     : [];
   const po = grn.poId
-    ? await prisma.dcPurchaseOrder.findFirst({ where: { id: grn.poId, orgId }, select: { fxRate: true } })
+    ? await prisma.dcPurchaseOrder.findFirst({
+        where: { id: grn.poId, orgId },
+        select: { fxRate: true, origin: true, currency: true },
+      })
     : null;
 
   const poByProduct = new Map(poLines.map((l) => [l.productId, l]));
@@ -130,7 +133,16 @@ export async function buildCostLayersForGrn(grnId: string): Promise<BuildCostLay
   }
 
   // fx: shipment fx wins, else PO fx, else 1 (no conversion).
-  const fxRate = shipment?.fxRate != null ? dec(shipment.fxRate) : po?.fxRate != null ? dec(po.fxRate) : 1;
+  // ⚠️ ใบไทย (origin THAI / currency THB): ราคาเป็นบาทอยู่แล้ว → ห้ามคูณเรตอีก (ไม่งั้นต้นทุนพอง ×เรต ≈ ×5).
+  //    บังคับ fx = 1 เสมอ ไม่ว่า PO/shipment จะเผลอเก็บเรตไว้ (เช่น เรต CNY ค้างจากตอนกรอก).
+  const poIsThai = po?.origin === "THAI" || po?.currency === "THB";
+  const fxRate = poIsThai
+    ? 1
+    : shipment?.fxRate != null
+      ? dec(shipment.fxRate)
+      : po?.fxRate != null
+        ? dec(po.fxRate)
+        : 1;
   const fxDate = shipment?.fxDate ?? new Date();
 
   const freightThbSatang = (shipment?.chinaFreightThbSatang ?? 0) + (shipment?.intlFreightThbSatang ?? 0);
@@ -285,6 +297,7 @@ export async function postGrnStock(grnId: string): Promise<PostGrnStockResult> {
     where: { orgId: grn.orgId, grnId },
     select: { id: true, productId: true, landedUnitSatang: true },
   });
+  const layerById = new Map(layers.map((l) => [l.id, l]));
   const layerByProduct = new Map(layers.map((l) => [l.productId, l]));
 
   let posted = 0;
@@ -294,9 +307,10 @@ export async function postGrnStock(grnId: string): Promise<PostGrnStockResult> {
       skipped++;
       continue;
     }
-    // Prefer the line's own linked layer, else fall back to product match.
+    // ใช้ "cost layer ของบรรทัดเอง" (gl.costLayerId) เป็นหลัก — buildCostLayersForGrn ลิงก์ไว้
+    // ต่อบรรทัดแล้ว → ต้นทุนตรงบรรทัดนั้นเป๊ะ. fallback by-product เฉพาะกรณีบรรทัดเก่าที่ยังไม่ลิงก์.
     const layer = gl.costLayerId
-      ? layers.find((l) => l.id === gl.costLayerId) ?? layerByProduct.get(gl.productId)
+      ? layerById.get(gl.costLayerId) ?? layerByProduct.get(gl.productId)
       : layerByProduct.get(gl.productId);
     if (!layer) return { ok: false, error: `ยังไม่ได้สร้างต้นทุนนำเข้าของสินค้า ${gl.productId}` };
 

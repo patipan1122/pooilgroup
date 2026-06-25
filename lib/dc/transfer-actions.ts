@@ -302,15 +302,31 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
   return { ok: true, transferId, status: sameSite ? DcTransferStatus.CONFIRMED : DcTransferStatus.IN_TRANSIT };
 }
 
-/** ลด qtyInTransit ของ balance ต้นทางลง n (floor ที่ 0 กัน negative). */
+/**
+ * ลด qtyInTransit ของ balance ต้นทางลง n (floor ที่ 0 กัน negative).
+ * ใช้ atomic `{ decrement: n }` (ไม่ใช่ read-modify-write) → กันสอง request ลดทับกัน
+ * แล้วเหลือผลแค่ครั้งเดียว (lost update). เนื่องจากตัวเรียก (confirmTransfer ผู้ชนะ /
+ * cron ผู้ชนะ) ถูก gate ด้วย atomic status-reserve อยู่แล้ว ตัวนี้จึงรันต่อใบครั้งเดียว;
+ * atomic decrement เป็นชั้นกันซ้ำชั้นที่สอง. ถ้าลดแล้วติดลบ → clamp กลับเป็น 0.
+ */
 async function decrementSourceInTransit(warehouseId: string, productId: string, n: number): Promise<void> {
-  const bal = await prisma.dcStockBalance.findUnique({
-    where: { warehouseId_productId: { warehouseId, productId } },
-    select: { id: true, qtyInTransit: true },
-  });
-  if (!bal) return;
-  const next = Math.max(0, (bal.qtyInTransit ?? 0) - n);
-  await prisma.dcStockBalance.update({ where: { id: bal.id }, data: { qtyInTransit: next } });
+  if (n <= 0) return;
+  try {
+    const updated = await prisma.dcStockBalance.update({
+      where: { warehouseId_productId: { warehouseId, productId } },
+      data: { qtyInTransit: { decrement: n } },
+      select: { qtyInTransit: true },
+    });
+    // clamp กัน negative (ถ้าฐานเดิมน้อยกว่า n ด้วยเหตุผิดปกติ)
+    if ((updated.qtyInTransit ?? 0) < 0) {
+      await prisma.dcStockBalance.update({
+        where: { warehouseId_productId: { warehouseId, productId } },
+        data: { qtyInTransit: 0 },
+      });
+    }
+  } catch {
+    // ไม่มี balance row (P2025) → no-op เงียบ ๆ (เหมือนพฤติกรรมเดิมที่ return เมื่อ !bal)
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -362,6 +378,23 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
   }
   if (transfer.status === DcTransferStatus.CANCELLED) {
     return { ok: false, error: "ใบนี้ถูกยกเลิกแล้ว" };
+  }
+
+  // ★ ATOMIC STATUS-RESERVE (จังหวะแรก · ก่อนแตะของ): จองสถานะเป็น CONFIRMED ทันที
+  // เงื่อนไข WHERE status=IN_TRANSIT → คนเดียวเท่านั้นที่ count===1 (ชนะการแข่ง).
+  // ใครมาทีหลัง/cron/กดซ้ำ → row ไม่ใช่ IN_TRANSIT แล้ว → count===0 → คืน ok เลย
+  // โดยไม่รัน movement/decrement ซ้ำ → รับประกัน decrement in-transit "ทำครั้งเดียว".
+  const reserved = await prisma.dcTransfer.updateMany({
+    where: { id: transferId, orgId, status: DcTransferStatus.IN_TRANSIT },
+    data: {
+      status: DcTransferStatus.CONFIRMED,
+      confirmedByUserId: userId,
+      confirmedAt: new Date(),
+    },
+  });
+  if (reserved.count === 0) {
+    // แพ้การแข่ง / ใบถูกปิดไปแล้วระหว่างทาง → ถือว่าสำเร็จ ไม่รันซ้ำ
+    return { ok: true };
   }
 
   // map qtyReceived ที่ส่งมา (รายบรรทัด) → default = qty เต็ม (รับครบ)
@@ -419,15 +452,8 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
         await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
       }
     }
-
-    await prisma.dcTransfer.update({
-      where: { id: transferId },
-      data: {
-        status: DcTransferStatus.CONFIRMED,
-        confirmedByUserId: userId,
-        confirmedAt: new Date(),
-      },
-    });
+    // หมายเหตุ: สถานะ CONFIRMED + confirmedBy/At ถูกตั้งไปแล้วตอน ATOMIC STATUS-RESERVE
+    // ด้านบน (ผู้ชนะการแข่งเท่านั้นที่มาถึงตรงนี้) — ไม่ต้องเขียน status ซ้ำอีก.
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "ยืนยันรับโอนไม่สำเร็จ" };
   }
@@ -547,6 +573,19 @@ export async function autoPromoteStaleTransfers(
     const isWarehouseDest = transfer.destType === DcTransferDestType.WAREHOUSE && !!transfer.toWarehouseId;
     const destWh = transfer.toWarehouseId;
 
+    // ★ ATOMIC RESERVE ต่อใบ (จังหวะแรก · ก่อนรับเข้า/ลด in-transit): จองสถานะ
+    // IN_TRANSIT → AUTO_UNVERIFIED ทันที. ถ้า count===0 = ใบนี้ถูกจัดการไปแล้ว
+    // (manual confirmTransfer ชนะไปก่อน / cron รอบก่อน / รอบนี้รันซ้อน) → ข้าม
+    // ไม่รับเข้า/ลด in-transit ซ้ำ. คนชนะเท่านั้น (count===1) ถึงเดินต่อ.
+    const reserved = await prisma.dcTransfer.updateMany({
+      where: { id: transfer.id, orgId, status: DcTransferStatus.IN_TRANSIT },
+      data: {
+        status: DcTransferStatus.AUTO_UNVERIFIED,
+        confirmedAt: new Date(),
+      },
+    });
+    if (reserved.count === 0) continue;
+
     try {
       if (isWarehouseDest && destWh) {
         for (const line of transfer.lines) {
@@ -578,16 +617,11 @@ export async function autoPromoteStaleTransfers(
         }
         promotedModule += 1;
       }
-
-      await prisma.dcTransfer.update({
-        where: { id: transfer.id },
-        data: {
-          status: DcTransferStatus.AUTO_UNVERIFIED,
-          confirmedAt: new Date(),
-        },
-      });
+      // หมายเหตุ: status=AUTO_UNVERIFIED + confirmedAt ถูกตั้งไปแล้วตอน ATOMIC RESERVE
+      // ด้านบน (ใบที่ชนะ reserve เท่านั้นที่มาถึงตรงนี้) — ไม่ต้องเขียน status ซ้ำ.
     } catch {
       // ใบนี้พลาด → ข้ามไปทำใบถัดไป (ไม่ทำให้ทั้ง job ล้ม)
+      // status ถูกตั้งเป็น AUTO_UNVERIFIED แล้ว (ติดธงไว้ ไม่หายเงียบ ๆ) ตั้งแต่ reserve.
       continue;
     }
   }

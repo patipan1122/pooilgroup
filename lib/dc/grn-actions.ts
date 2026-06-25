@@ -130,6 +130,32 @@ export async function createGrn(input: CreateGrnInput): Promise<GrnCreateResult>
     return { ok: false, error: "มีสินค้าบางรายการไม่อยู่ในองค์กรของคุณ" };
   }
 
+  // รวมบรรทัดที่เป็นสินค้าตัวเดียวกัน (productId ซ้ำ) ให้เหลือ "1 สินค้า = 1 บรรทัด GRN"
+  // → 1 cost layer ต่อสินค้า. ถ้าไม่รวม: bridge map ต้นทุน by-product ทับกัน → cost layer
+  //   ของบรรทัดหลังกลืนบรรทัดแรก (สต๊อก/ต้นทุนคลาดเคลื่อน). รวม qty + ใช้โน้ตแรกที่มี.
+  const mergedMap = new Map<
+    string,
+    { productId: string; qtyExpected: number; qtyReceived: number; qtyDamaged: number; note: string | null }
+  >();
+  for (const l of rawLines) {
+    const prev = mergedMap.get(l.productId);
+    if (prev) {
+      prev.qtyExpected += nonNegInt(l.qtyExpected);
+      prev.qtyReceived += nonNegInt(l.qtyReceived);
+      prev.qtyDamaged += nonNegInt(l.qtyDamaged);
+      prev.note = prev.note ?? cleanStr(l.note);
+    } else {
+      mergedMap.set(l.productId, {
+        productId: l.productId,
+        qtyExpected: nonNegInt(l.qtyExpected),
+        qtyReceived: nonNegInt(l.qtyReceived),
+        qtyDamaged: nonNegInt(l.qtyDamaged),
+        note: cleanStr(l.note),
+      });
+    }
+  }
+  const mergedLines = [...mergedMap.values()];
+
   try {
     const grn = await prisma.dcGoodsReceipt.create({
       data: {
@@ -143,13 +169,13 @@ export async function createGrn(input: CreateGrnInput): Promise<GrnCreateResult>
         note: cleanStr(input.note),
         receivedByUserId: userId,
         lines: {
-          create: rawLines.map((l) => ({
+          create: mergedLines.map((l) => ({
             orgId,
             productId: l.productId,
-            qtyExpected: nonNegInt(l.qtyExpected),
-            qtyReceived: nonNegInt(l.qtyReceived),
-            qtyDamaged: nonNegInt(l.qtyDamaged),
-            note: cleanStr(l.note),
+            qtyExpected: l.qtyExpected,
+            qtyReceived: l.qtyReceived,
+            qtyDamaged: l.qtyDamaged,
+            note: l.note,
           })),
         },
       },

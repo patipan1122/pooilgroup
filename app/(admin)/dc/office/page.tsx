@@ -3,7 +3,7 @@ import Link from "next/link";
 import {
   ShoppingCart, Building2, Ship, ClipboardCheck, Boxes,
   Warehouse, BarChart3, Users, type LucideIcon,
-  Package, Layers, Coins, AlertTriangle, Truck, FileWarning,
+  Package, Layers, Coins, AlertTriangle, Truck, FileWarning, GitCompare,
 } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcAdmin, canDcManage, requireDcManager } from "@/lib/dc/role-guard";
@@ -20,8 +20,10 @@ const CARDS: Card[] = [
   { href: "/dc/office/suppliers", label: "ผู้ขาย", hint: "ทะเบียนซัพพลายเออร์จีน", icon: Building2 },
   { href: "/dc/office/shipments", label: "ขนส่ง / ชิปเมนต์", hint: "ค่าส่ง CBM · อากร · ต้นทุนนำเข้า", icon: Ship },
   { href: "/dc/office/receipts", label: "ใบรับสินค้า (GRN)", hint: "รับของเข้าคลัง · ดูย้อนหลัง", icon: ClipboardCheck },
+  { href: "/dc/office/transfers", label: "การโอน", hint: "ยืนยันรับโอน · ของระหว่างทาง", icon: Truck },
   { href: "/dc/office/products", label: "สินค้า", hint: "ทะเบียนสินค้า · บาร์โค้ด · อะไหล่/ขาย", icon: Boxes },
   { href: "/dc/office/warehouses", label: "โกดัง", hint: "สร้าง/จัดการคลัง", icon: Warehouse },
+  { href: "/dc/office/reconcile", label: "กระทบยอด", hint: "เทียบ DC↔บัญชี · งานนับ", icon: GitCompare },
   { href: "/dc/office/reports", label: "รายงาน", hint: "มูลค่าสต๊อก · ต้นทุน landed · เคลื่อนไหว", icon: BarChart3 },
   { href: "/dc/office/permissions", label: "สิทธิ์พนักงาน", hint: "ใครเห็นคลังไหน", icon: Users, admin: true },
 ];

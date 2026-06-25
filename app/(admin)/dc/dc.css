@@ -267,6 +267,8 @@
 /* compact line row (PO products) */
 .dc-poline { display: grid; grid-template-columns: 1fr 84px 116px 40px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--dc-line); }
 @media (max-width: 640px) { .dc-poline { grid-template-columns: 1fr 64px 96px 36px; } }
+/* จอเล็กมาก (≤480px) — ช่องเลือกสินค้าเต็มแถว, จำนวน/ราคา/ลบ ตกลงบรรทัดล่าง */
+@media (max-width: 480px) { .dc-poline { grid-template-columns: 1fr; } }
 
 /* status pill colors per PO status */
 .dc-st { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
@@ -341,3 +343,40 @@
 }
 .dc-msheet__item.is-active { border-color: var(--color-brand-400, #9dbdf0); background: var(--color-brand-50); color: var(--dc-blue-strong); }
 .dc-msheet__item svg { color: var(--dc-blue); }
+
+/* ---------- loading skeletons (shimmer) ----------
+   Used by route-group loading.tsx — gives every navigation an instant
+   placeholder instead of a blank white wait. Subtle left→right sheen. */
+.dc-skel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--dc-line);
+  background-image: linear-gradient(
+    100deg,
+    var(--dc-line) 0%,
+    #f1f4f9 40%,
+    #fbfcfe 50%,
+    #f1f4f9 60%,
+    var(--dc-line) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 200% 0;
+  animation: dc-shimmer 1.2s linear infinite;
+}
+@keyframes dc-shimmer {
+  to { background-position: -200% 0; }
+}
+.dc-skel--line  { height: 14px; margin-bottom: 10px; }
+.dc-skel--title { height: 24px; width: 40%; }
+.dc-skel--card  { height: 96px; border-radius: var(--dc-radius); }
+.dc-skel--tile  { height: 140px; border-radius: 16px; }
+
+/* respect users who prefer no motion → static light block, no animation */
+@media (prefers-reduced-motion: reduce) {
+  .dc-skel {
+    animation: none;
+    background-image: none;
+    background: var(--dc-line);
+  }
+}

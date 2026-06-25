@@ -70,6 +70,7 @@ export const PO_STATUS_LABEL: Record<string, string> = {
 export const PO_FLOW_STATUSES: string[] = [
   "DRAFT",
   "PENDING_APPROVAL",
+  "APPROVED",
   "ORDERED",
   "SHIPPED",
   "ARRIVED_TH",

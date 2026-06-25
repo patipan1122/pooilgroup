@@ -78,7 +78,7 @@ export default async function DcShipmentsPage() {
           description="สร้างชิปเมนต์ใบแรก — เลือกใบสั่งซื้อ (หรือใส่สินค้าเอง) เลือกเรือ/รถ ใส่ tracking แล้วบันทึก"
         />
       ) : (
-        <div className="dc-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="dc-card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>

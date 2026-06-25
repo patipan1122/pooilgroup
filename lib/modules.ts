@@ -1172,6 +1172,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
+        href: "/dc/office/transfers",
+        label: "การโอน",
+        icon: Truck,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
         href: "/dc/office/products",
         label: "สินค้า",
         icon: Boxes,
@@ -1181,6 +1187,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/dc/office/warehouses",
         label: "โกดัง",
         icon: Warehouse,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/reconcile",
+        label: "กระทบยอด",
+        icon: GitCompare,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {

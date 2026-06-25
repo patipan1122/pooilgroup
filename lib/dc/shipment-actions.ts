@@ -255,6 +255,15 @@ const ALLOWED_STATUS: DcShipmentStatus[] = [
   DcShipmentStatus.RECEIVED,
 ];
 
+// ลำดับเดินหน้าเท่านั้น (mirror PO state-machine) — กันถอยกลับ (เช่น RECEIVED→PREPARING
+// แล้วปลดล็อกแก้รายการหลังต้นทุนคิดแล้ว) และกันข้ามขั้น. แต่ละสถานะปลายทาง
+// อนุญาตจาก "สถานะก่อนหน้าที่ถูกต้อง" ตัวเดียวเท่านั้น. RECEIVED = ปลายทาง ไม่มีทางออก.
+const PREV_STATUS: Partial<Record<DcShipmentStatus, DcShipmentStatus>> = {
+  [DcShipmentStatus.IN_TRANSIT]: DcShipmentStatus.PREPARING,
+  [DcShipmentStatus.ARRIVED]: DcShipmentStatus.IN_TRANSIT,
+  [DcShipmentStatus.RECEIVED]: DcShipmentStatus.ARRIVED,
+};
+
 export async function setShipmentStatus(
   id: string,
   status: DcShipmentStatus,
@@ -267,11 +276,20 @@ export async function setShipmentStatus(
     return { ok: false, error: "สถานะไม่ถูกต้อง" };
   }
 
+  // PREPARING ไม่มีสถานะก่อนหน้า → ไม่ใช่ปลายทางที่ตั้งได้ (เริ่มที่ PREPARING ตอนสร้าง)
+  const prev = PREV_STATUS[status];
+  if (!prev) {
+    return { ok: false, error: "เปลี่ยนสถานะไม่ได้ (ลำดับไม่ถูกต้อง หรือเปลี่ยนไปแล้ว)" };
+  }
+
+  // gate ด้วยสถานะก่อนหน้าที่ถูกต้องเท่านั้น → ถอยกลับ/ข้ามขั้น/แข่งกัน = count===0 = ปฏิเสธ
   const res = await prisma.dcShipment.updateMany({
-    where: { id, orgId },
+    where: { id, orgId, status: prev },
     data: { status },
   });
-  if (res.count === 0) return { ok: false, error: "ไม่พบชิปเมนต์นี้ในองค์กรของคุณ" };
+  if (res.count === 0) {
+    return { ok: false, error: "เปลี่ยนสถานะไม่ได้ (ลำดับไม่ถูกต้อง หรือเปลี่ยนไปแล้ว)" };
+  }
   revalidate(id);
   return { ok: true, id };
 }

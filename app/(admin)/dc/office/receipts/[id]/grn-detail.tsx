@@ -169,7 +169,7 @@ export function GrnDetail({ data, canManage }: { data: GrnDetailData; canManage:
       </div>
 
       {/* รายการ + ต้นทุนนำเข้าต่อบรรทัด */}
-      <div className="dc-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div className="dc-card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>

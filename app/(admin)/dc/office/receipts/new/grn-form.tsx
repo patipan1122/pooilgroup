@@ -9,7 +9,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, CheckCircle2 } from "lucide-react";
-import { createGrn, postGrn, type CreateGrnInput, type GrnLineInput } from "@/lib/dc/grn-actions";
+import { createGrn, postGrn, retryTrcloud, type CreateGrnInput, type GrnLineInput } from "@/lib/dc/grn-actions";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,8 @@ export function GrnForm({
   // หลังบันทึกใบสำเร็จ → เก็บ grnId ไว้ให้กดลงรับเข้า
   const [createdGrnId, setCreatedGrnId] = useState<string | null>(null);
   const [postMsg, setPostMsg] = useState<string | null>(null);
+  // ลงรับเข้าสำเร็จแต่ TRCloud (บัญชี) ยังไม่เข้า → โชว์แถบเหลือง + ปุ่มส่งซ้ำ (ไม่เด้งหน้าเป็นเขียวลอย ๆ)
+  const [trcloudPending, setTrcloudPending] = useState<{ reason?: string } | null>(null);
 
   function setLine(key: string, patch: Partial<LineDraft>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -206,14 +208,37 @@ export function GrnForm({
   function doPost() {
     if (!createdGrnId) return;
     setError(null);
+    setTrcloudPending(null);
     startTransition(async () => {
       const res = await postGrn(createdGrnId);
       if (res.ok) {
+        // ลงคลัง/คิดต้นทุนสำเร็จ — แต่ TRCloud อาจยังไม่เข้า (env ยังไม่ตั้ง / push fail)
+        if (!res.trcloud.posted) {
+          setPostMsg(null);
+          setTrcloudPending({ reason: res.trcloud.reason ?? res.trcloud.error });
+          return; // อย่าเด้งหน้า + อย่าโชว์เขียว — ให้ผู้ใช้กดส่งซ้ำก่อน
+        }
         router.push(`/dc/office/receipts/${createdGrnId}`);
         router.refresh();
       } else {
         setError(res.error);
         // ยังเด้งไปหน้ารายละเอียดได้ (ใบถูกสร้างแล้ว) — ปล่อยให้ผู้ใช้กดดูเอง
+      }
+    });
+  }
+
+  function retryPush() {
+    if (!createdGrnId) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await retryTrcloud(createdGrnId);
+      if ("posted" in res && res.ok && res.posted) {
+        setTrcloudPending(null);
+        router.push(`/dc/office/receipts/${createdGrnId}`);
+        router.refresh();
+      } else {
+        const reason = "reason" in res ? res.reason : res.error;
+        setTrcloudPending({ reason });
       }
     });
   }
@@ -331,10 +356,36 @@ export function GrnForm({
       </div>
 
       {error && <p style={{ color: "var(--color-danger, #dc2626)", fontSize: 14, fontWeight: 600 }}>{error}</p>}
-      {postMsg && (
+      {postMsg && !trcloudPending && (
         <p style={{ color: "var(--color-success, #16a34a)", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
           <CheckCircle2 size={16} /> {postMsg}
         </p>
+      )}
+      {trcloudPending && (
+        <div
+          className="dc-card"
+          style={{
+            background: "#fef9e7",
+            border: "1px solid #f4d77e",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#92660a", fontWeight: 600 }}>
+            ลงคลังแล้ว · บัญชี (TRCloud) ยังไม่เข้า — กดส่งซ้ำ
+            {trcloudPending.reason && (
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: "#a9810f", marginTop: 2 }}>
+                เหตุผล: {trcloudPending.reason}
+              </div>
+            )}
+          </div>
+          <Button type="button" size="lg" loading={pending} onClick={retryPush}>
+            ส่งซ้ำเข้า TRCloud
+          </Button>
+        </div>
       )}
 
       {/* ปุ่ม: ก่อนบันทึก = บันทึกใบ · หลังบันทึก = ลงรับเข้า + คิดต้นทุน */}

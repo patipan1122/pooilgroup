@@ -733,7 +733,13 @@ export type ReceivePoInput = {
 };
 
 export type ReceivePoResult =
-  | { ok: true; grnId: string }
+  | {
+      ok: true;
+      grnId: string;
+      /** TRCloud (บัญชี) เข้าแล้วหรือยัง — false = ลงคลังแล้วแต่ TRCloud ยังไม่เข้า (ให้กดส่งซ้ำ) */
+      trcloudPosted: boolean;
+      trcloudReason?: string;
+    }
   | { ok: false; error: string };
 
 /**
@@ -755,25 +761,56 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
   if (!poId) return { ok: false, error: "ไม่พบใบสั่งซื้อ" };
   if (!warehouseId) return { ok: false, error: "กรุณาเลือกคลังปลายทาง" };
 
-  // ใบสั่งซื้อต้องเป็นของ org นี้ (กันรับเข้าใบข้ามองค์กร)
+  // ใบสั่งซื้อต้องเป็นของ org นี้ (กันรับเข้าใบข้ามองค์กร) + ดึงสถานะ + รายการที่สั่ง
+  // (qty ต่อสินค้า) มาด้วย เพื่อ (ก) idempotent กดซ้ำ (ข) เช็คสถานะ (ค) เติม qtyExpected
   const po = await prisma.dcPurchaseOrder.findFirst({
     where: { id: poId, orgId },
-    select: { id: true },
+    select: {
+      id: true,
+      status: true,
+      lines: { select: { productId: true, qty: true } },
+    },
   });
   if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  // Idempotent no-op: ถ้าใบถูกปิดรับครบไปแล้ว (RECEIVED) → กดซ้ำ/refresh-retry ไม่สร้าง GRN ใหม่
+  // (ไม่งั้นแต่ละครั้งจะ mint GRN ใหม่ → สต๊อก + TRCloud เด้ง 2 เท่า). คืน ok เฉย ๆ.
+  if (po.status === DcPoStatus.RECEIVED) {
+    return { ok: true, grnId: "", trcloudPosted: true };
+  }
+
+  // ด่านสถานะ: รับเข้าได้เฉพาะใบที่สั่งแล้ว/กำลังขนส่ง/ถึงโกดัง หรือรับบางส่วนค้างอยู่ (PARTIAL)
+  const RECEIVABLE: DcPoStatus[] = [
+    DcPoStatus.ORDERED,
+    DcPoStatus.SHIPPED,
+    DcPoStatus.ARRIVED_TH,
+    DcPoStatus.AT_WAREHOUSE,
+    DcPoStatus.PARTIAL,
+  ];
+  if (!RECEIVABLE.includes(po.status)) {
+    return { ok: false, error: "ใบนี้ยังรับเข้าคลังไม่ได้ (ต้องสั่งซื้อกับผู้ขายก่อน)" };
+  }
 
   const rawLines = (input.lines ?? []).filter((l) => cleanStr(l.productId));
   if (rawLines.length === 0) {
     return { ok: false, error: "กรุณาระบุรายการที่รับเข้าอย่างน้อย 1 รายการ" };
   }
 
+  // จำนวนที่สั่งต่อสินค้า (รวมบรรทัดซ้ำ productId เข้าด้วยกัน) → ใช้เติม qtyExpected บน GRN line
+  const orderedByProduct = new Map<string, number>();
+  for (const pl of po.lines) {
+    orderedByProduct.set(pl.productId, (orderedByProduct.get(pl.productId) ?? 0) + pl.qty);
+  }
+
   // 1) สร้างใบรับสินค้า (createGrn ตรวจคลัง/สินค้า/PO เป็นของ org เองอีกชั้น)
+  //    เติม qtyExpected = จำนวนที่สั่งของสินค้านั้น → ให้ over/short มองเห็นได้ (ไม่ฮาร์ดบล็อก)
   const grn = await createGrn({
     warehouseId,
     poId,
     note: cleanStr(input.note),
     lines: rawLines.map((l) => ({
       productId: l.productId,
+      qtyExpected: orderedByProduct.get(l.productId) ?? 0,
       qtyReceived: nonNegInt(l.qtyReceived),
       qtyDamaged: nonNegInt(l.qtyDamaged),
     })),
@@ -784,7 +821,23 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
   const posted = await postGrn(grn.grnId);
   if (!posted.ok) return { ok: false, error: posted.error };
 
-  // 3) ใบสั่งซื้อ → RECEIVED (รับได้จากสถานะระหว่างทาง/ถึงโกดัง/สั่งแล้ว)
+  // 3) คำนวณ "รับสะสมจริง" (ทุก GRN ของใบนี้ รวมใบที่เพิ่งสร้าง) เทียบ "สั่งทั้งหมด" ต่อสินค้า
+  //    → รับครบทุกตัว = RECEIVED (ปิดใบ) · ยังไม่ครบ = PARTIAL (เปิดให้รับรอบถัดไปได้)
+  const grnLines = await prisma.dcGoodsReceiptLine.findMany({
+    where: { orgId, grn: { poId, orgId } },
+    select: { productId: true, qtyReceived: true },
+  });
+  const receivedByProduct = new Map<string, number>();
+  for (const gl of grnLines) {
+    receivedByProduct.set(gl.productId, (receivedByProduct.get(gl.productId) ?? 0) + gl.qtyReceived);
+  }
+  // รับครบ = ทุกสินค้าที่สั่ง มียอดรับสะสม ≥ ยอดที่สั่ง
+  const fullyReceived = [...orderedByProduct.entries()].every(
+    ([pid, ordered]) => (receivedByProduct.get(pid) ?? 0) >= ordered,
+  );
+  const nextStatus = fullyReceived ? DcPoStatus.RECEIVED : DcPoStatus.PARTIAL;
+
+  // เดินสถานะจากสถานะที่รับเข้าได้ (รวม PARTIAL → รับรอบ 2 แล้วครบ → ปิดใบ)
   await prisma.dcPurchaseOrder.updateMany({
     where: {
       id: poId,
@@ -795,12 +848,19 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
           DcPoStatus.ARRIVED_TH,
           DcPoStatus.SHIPPED,
           DcPoStatus.ORDERED,
+          DcPoStatus.PARTIAL,
         ],
       },
     },
-    data: { status: DcPoStatus.RECEIVED },
+    data: { status: nextStatus },
   });
 
   revalidate(poId);
-  return { ok: true, grnId: grn.grnId };
+  // สถานะ TRCloud จาก postGrn — ถ้า posted=false ฝั่ง UI จะโชว์แถบเหลือง "บัญชียังไม่เข้า · กดส่งซ้ำ"
+  return {
+    ok: true,
+    grnId: grn.grnId,
+    trcloudPosted: posted.trcloud.posted,
+    trcloudReason: posted.trcloud.reason ?? posted.trcloud.error,
+  };
 }

@@ -31,7 +31,7 @@ function quickTabs(canManage: boolean): Item[] {
     { href: "/dc", label: "หน้าคลัง", icon: Boxes },
     { href: "/dc/receive", label: "รับเข้า", icon: PackagePlus },
     { href: "/dc/count", label: "นับ", icon: ClipboardCheck },
-    { href: "/dc/search", label: "ค้นหา", icon: Search },
+    { href: "/dc/issue", label: "เบิกออก", icon: PackageMinus },
   ];
 }
 

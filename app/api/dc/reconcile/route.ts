@@ -1,9 +1,11 @@
 // GET /api/dc/reconcile
-// Runs the DC reconcile maintenance pass (runDcReconcile) for one org and returns JSON.
+// Runs the DC reconcile maintenance pass (runDcReconcile) and returns JSON.
 //
 // Auth (either is sufficient):
-//   • CRON_SECRET — header `Authorization: Bearer <CRON_SECRET>` + `?orgId=<uuid>`
-//     (so a Vercel Cron / external scheduler can hit it without a session).
+//   • CRON_SECRET — header `Authorization: Bearer <CRON_SECRET>`.
+//     - with `?orgId=<uuid>` → reconcile that one org.
+//     - WITHOUT orgId (the Vercel Cron case) → SWEEP every org that owns a DC
+//       warehouse. No hard-coded UUID, scales to multi-org / multi-warehouse.
 //   • or a logged-in DC manager session — scoped to that user's own org.
 //
 // Safe by construction: runDcReconcile never throws and never moves money; it only
@@ -12,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { canDcManage } from "@/lib/dc/role-guard";
 import { runDcReconcile } from "@/lib/dc/reconcile";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,10 +27,24 @@ export async function GET(request: NextRequest) {
   let orgId: string | null = null;
 
   if (isCron) {
-    // Cron caller must name the org explicitly.
     orgId = request.nextUrl.searchParams.get("orgId");
     if (!orgId) {
-      return NextResponse.json({ ok: false, error: "ต้องระบุ orgId" }, { status: 400 });
+      // Vercel Cron: no org named → reconcile every org that has a DC warehouse.
+      const orgs = await prisma.dcWarehouse.findMany({
+        select: { orgId: true },
+        distinct: ["orgId"],
+      });
+      const results = [];
+      for (const o of orgs) {
+        // runDcReconcile is non-throwing, but guard anyway so one bad org
+        // never aborts the whole sweep.
+        try {
+          results.push({ orgId: o.orgId, ...(await runDcReconcile(o.orgId)) });
+        } catch (e) {
+          results.push({ orgId: o.orgId, ok: false, error: e instanceof Error ? e.message : "error" });
+        }
+      }
+      return NextResponse.json({ ok: true, swept: results.length, results });
     }
   } else {
     // Session caller — must be a DC manager; always scoped to their own org.

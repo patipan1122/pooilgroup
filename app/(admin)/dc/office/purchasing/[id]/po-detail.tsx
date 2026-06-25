@@ -26,6 +26,7 @@ import {
   type PoActionResult,
 } from "@/lib/dc/po-actions";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
+import { retryTrcloud } from "@/lib/dc/grn-actions";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
 
 // ── types (props จาก server) ──────────────────────────────────
@@ -307,8 +308,8 @@ export function PoDetail({
         </div>
       </Section>
 
-      {/* 5) รับเข้าคลัง — เปิดเมื่อยังไม่รับ (ถึงโกดัง/ระหว่างทาง/สั่งแล้ว) */}
-      {["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE"].includes(status) && (
+      {/* 5) รับเข้าคลัง — เปิดเมื่อยังไม่รับครบ (ถึงโกดัง/ระหว่างทาง/สั่งแล้ว/รับบางส่วน) */}
+      {["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "PARTIAL"].includes(status) && (
         <ReceiveSection
           poId={data.id}
           lines={data.lines}
@@ -697,6 +698,8 @@ function ReceiveSection({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // หลังรับเข้าสำเร็จแต่ TRCloud ยังไม่เข้า → เก็บ grnId ไว้ให้กด "ส่งซ้ำ"
+  const [trcloudPending, setTrcloudPending] = useState<{ grnId: string; reason?: string } | null>(null);
   const [warehouseId, setWarehouseId] = useState<string>(
     defaultWarehouseId ?? warehouses[0]?.id ?? "",
   );
@@ -711,7 +714,9 @@ function ReceiveSection({
   }
 
   function submit() {
+    if (pending) return; // busy-lock: กันกดรัว/กดซ้ำ → ไม่สร้าง GRN ซ้ำ (สต๊อก/TRCloud เด้ง 2 เท่า)
     setError(null);
+    setTrcloudPending(null);
     if (!warehouseId) {
       setError("กรุณาเลือกคลังปลายทาง");
       return;
@@ -731,9 +736,28 @@ function ReceiveSection({
       const res = await receivePo({ poId, warehouseId, note: note.trim() || null, lines: payloadLines });
       if (res.ok) {
         setOpen(false);
+        // ลงคลังสำเร็จ แต่ TRCloud (บัญชี) ยังไม่เข้า → โชว์แถบเหลือง + ปุ่มส่งซ้ำ (ไม่ใช่เขียวลอย ๆ)
+        if (!res.trcloudPosted && res.grnId) {
+          setTrcloudPending({ grnId: res.grnId, reason: res.trcloudReason });
+        }
         router.refresh();
       } else {
         setError(res.error);
+      }
+    });
+  }
+
+  function retry() {
+    if (!trcloudPending) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await retryTrcloud(trcloudPending.grnId);
+      if ("posted" in res && res.ok && res.posted) {
+        setTrcloudPending(null);
+        router.refresh();
+      } else {
+        const reason = "reason" in res ? res.reason : res.error;
+        setTrcloudPending({ grnId: trcloudPending.grnId, reason });
       }
     });
   }
@@ -750,6 +774,34 @@ function ReceiveSection({
         ) : null
       }
     >
+      {trcloudPending && (
+        <div
+          style={{
+            background: "#fef9e7",
+            border: "1px solid #f4d77e",
+            borderRadius: 12,
+            padding: "12px 14px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontSize: 13.5, color: "#92660a", fontWeight: 600 }}>
+            ลงคลังแล้ว · บัญชี (TRCloud) ยังไม่เข้า — กดส่งซ้ำ
+            {trcloudPending.reason && (
+              <div style={{ fontSize: 12, fontWeight: 500, color: "#a9810f", marginTop: 2 }}>
+                เหตุผล: {trcloudPending.reason}
+              </div>
+            )}
+          </div>
+          <button type="button" className="dc-btn-xl" style={btnSmall} disabled={pending} onClick={retry}>
+            ส่งซ้ำเข้า TRCloud
+          </button>
+        </div>
+      )}
+
       {!open ? (
         <div style={{ fontSize: 13.5, color: "#71717a" }}>
           กด “รับสินค้าเข้าคลัง” เพื่อนับของจริงต่อรายการ แล้วยืนยัน — ระบบจะคิดต้นทุนนำเข้า ตัดสต๊อก และปิดใบเป็น “รับสินค้าแล้ว”.

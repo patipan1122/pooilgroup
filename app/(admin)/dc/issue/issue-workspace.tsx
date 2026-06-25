@@ -7,7 +7,7 @@
 //   • ★ lineKey (uuid) สร้างตอน "เพิ่ม" บรรทัด → ยืนยันซ้ำ = no-op (idempotent)
 //   • ปุ่มยืนยัน busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · โชว์รายการที่เบิกไม่ผ่านรายบรรทัด
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2, PackageMinus } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { lookupForIssue, postIssue, type IssueLine } from "@/lib/dc/issue-actions";
@@ -23,6 +23,37 @@ type Line = {
   qty: number;
   reason: string;
 };
+
+// ★ บัฟเฟอร์รายการที่พิมพ์/ยิงไว้ใน localStorage แยกตามคลัง — กันลิสต์หายตอนรีเฟรช/เน็ตหลุด
+const STORAGE_PREFIX = "dc.issue.";
+
+function storageKey(warehouseId: string): string {
+  return `${STORAGE_PREFIX}${warehouseId}`;
+}
+
+function loadBuffer(warehouseId: string): Line[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey(warehouseId));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (l): l is Line => !!l && typeof (l as Line).lineKey === "string" && typeof (l as Line).productId === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveBuffer(warehouseId: string, lines: Line[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey(warehouseId), JSON.stringify(lines));
+  } catch {
+    /* quota / private mode — เงียบไว้ (ยังใช้ใน-memory ได้) */
+  }
+}
 
 function newLineKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -46,6 +77,16 @@ export function IssueWorkspace({
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
   const lookingRef = useRef(false);
+
+  // ---- โหลด buffer ตอน mount (กู้ลิสต์คืนหลังรีเฟรช/เน็ตหลุด) ----
+  useEffect(() => {
+    setLines(loadBuffer(warehouseId));
+  }, [warehouseId]);
+
+  // ---- persist ทุกครั้งที่ลิสต์เปลี่ยน ----
+  useEffect(() => {
+    saveBuffer(warehouseId, lines);
+  }, [warehouseId, lines]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);

@@ -16,12 +16,23 @@ export function DcScanBox({ onScan, placeholder }: { onScan: (code: string) => v
   const [camOpen, setCamOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // โฟกัสอัตโนมัติเฉพาะอุปกรณ์ไม่ใช่จอสัมผัส (เครื่องยิง USB / เดสก์ท็อป)
+  // มือถือ/แท็บเล็ตจอสัมผัส = ไม่ autoFocus เพื่อกันคีย์บอร์ดเด้งขึ้นทุกหน้าจอ
+  const isTouch = () =>
+    typeof window !== "undefined" &&
+    ((typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) || "ontouchstart" in window);
+
+  useEffect(() => {
+    if (!isTouch()) inputRef.current?.focus();
+  }, []);
+
   const submit = (code: string) => {
     const c = code.trim();
     if (!c) return;
     onScan(c);
     setVal("");
-    inputRef.current?.focus();
+    // คืนโฟกัสหลังยิงเฉพาะเครื่อง USB/เดสก์ท็อป (ยิงรัวต่อเนื่องได้) · จอสัมผัสไม่เด้งคีย์บอร์ด
+    if (!isTouch()) inputRef.current?.focus();
   };
 
   const camSupported = typeof window !== "undefined" && "BarcodeDetector" in window;
@@ -36,7 +47,6 @@ export function DcScanBox({ onScan, placeholder }: { onScan: (code: string) => v
           onChange={(e) => setVal(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(val); } }}
           placeholder={placeholder ?? "ยิงบาร์โค้ด / พิมพ์รหัส แล้วกด Enter…"}
-          autoFocus
           inputMode="text"
           style={{ width: "100%", background: "#fff", border: "1.5px solid var(--dc-line, #e6eaf0)", borderRadius: 12, padding: "14px 14px 14px 40px", fontSize: 17, color: "var(--dc-ink, #1f2733)", outline: "none", boxSizing: "border-box" }}
         />

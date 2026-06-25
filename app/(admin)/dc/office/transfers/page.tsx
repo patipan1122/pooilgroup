@@ -112,7 +112,7 @@ export default async function DcTransfersPage() {
           description="ส่งของจากหน้าคลัง (ส่ง / โอน) — เลือกปลายทาง สแกนสินค้า แล้วส่งออก จะมาโผล่ที่นี่"
         />
       ) : (
-        <div className="dc-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="dc-card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>
