@@ -78,11 +78,24 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   for (const s of sessions) hourBuckets[new Date(s.checkInAt).getHours()]++;
   const peakHour = hourBuckets.some((c) => c > 0) ? hourBuckets.indexOf(Math.max(...hourBuckets)) : -1;
   const activeIdx = hourBuckets.map((c, h) => ({ c, h })).filter((x) => x.c > 0).map((x) => x.h);
-  const firstH = activeIdx.length ? Math.min(...activeIdx) : 9;
-  const lastH = activeIdx.length ? Math.max(...activeIdx) : 20;
+  // โชว์แกนเวลาช่วงเปิดร้านเสมอ (อย่างน้อย 9:00–21:00) → ข้อมูลน้อยก็ยังดูเป็น "กราฟช่วงเวลา" ไม่ใช่แท่งเดียว
+  const firstH = Math.min(9, ...(activeIdx.length ? activeIdx : [9]));
+  const lastH = Math.max(21, ...(activeIdx.length ? activeIdx : [21]));
   const hourRange: number[] = [];
   for (let h = firstH; h <= lastH; h++) hourRange.push(h);
   const maxHourCount = Math.max(1, ...hourBuckets);
+
+  // ── ปุ่มเลือกช่วงเร็ว (วันนี้/เมื่อวาน/เดือนนี้) ──
+  const fmtD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const _t = new Date(); _t.setHours(0, 0, 0, 0);
+  const _y = new Date(_t); _y.setDate(_y.getDate() - 1);
+  const _m = new Date(_t.getFullYear(), _t.getMonth(), 1);
+  const _bq = branchId ? `&branch=${branchId}` : "";
+  const datePresets = [
+    { label: "วันนี้", href: `?from=${fmtD(_t)}&to=${fmtD(_t)}${_bq}` },
+    { label: "เมื่อวาน", href: `?from=${fmtD(_y)}&to=${fmtD(_y)}${_bq}` },
+    { label: "เดือนนี้", href: `?from=${fmtD(_m)}&to=${fmtD(_t)}${_bq}` },
+  ];
 
   // ── รายได้แยกหมวด (ค่าเข้า·เวลา + หมวดสินค้า) ──
   const catMap = new Map<string, number>();
@@ -151,7 +164,12 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           <div style={{ fontWeight: 600, fontSize: "1.25rem", fontFamily: FREDOKA }}>รายงาน · ปิดวัน</div>
           <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{subtitle}</div>
         </div>
-        <form style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+          {datePresets.map((p) => (
+            <a key={p.label} href={p.href} style={{ fontSize: 12.5, fontWeight: 600, color: BLUE, background: "#eaf3f6", borderRadius: 8, padding: "7px 12px", textDecoration: "none" }}>{p.label}</a>
+          ))}
+        </div>
+        <form style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {branchId && <input type="hidden" name="branch" value={branchId} />}
           <input type="date" name="from" defaultValue={from.toISOString().slice(0, 10)} style={dateInput} />
           <input type="date" name="to" defaultValue={to.toISOString().slice(0, 10)} style={dateInput} />

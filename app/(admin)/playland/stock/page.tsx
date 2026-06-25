@@ -204,9 +204,9 @@ async function ItemsTab({ orgId, branchId }: { orgId: string; branchId: string }
       ) : (
         <div style={{ ...card, overflow: "hidden" }}>
          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ minWidth: 620 }}>
+          <div style={{ minWidth: 720 }}>
           <div style={{ ...itemGrid, padding: "12px 18px", background: "#f9f7f2", fontSize: 12.5, color: MUTED, fontWeight: 500 }}>
-            <div>สินค้า</div><div>หมวด</div><div style={{ textAlign: "right" }}>คงเหลือ</div><div style={{ textAlign: "right" }}>จุดสั่งซื้อ</div><div style={{ textAlign: "right" }}>ทุน/ชิ้น</div><div style={{ textAlign: "center" }}>สถานะ</div>
+            <div>สินค้า</div><div>หมวด</div><div style={{ textAlign: "right" }}>คงเหลือ</div><div style={{ textAlign: "right" }}>จุดสั่งซื้อ</div><div style={{ textAlign: "right" }}>ทุน/ชิ้น</div><div style={{ textAlign: "right" }}>ราคาขาย</div><div style={{ textAlign: "center" }}>สถานะ</div>
           </div>
           {items.map((p) => {
             const lowOn = p.reorderLevel > 0 && p.stock <= p.reorderLevel;
@@ -220,6 +220,7 @@ async function ItemsTab({ orgId, branchId }: { orgId: string; branchId: string }
                 <div style={{ textAlign: "right", fontFamily: MONO, fontWeight: 700, fontSize: 16, color: lowOn ? (p.stock === 0 ? RED : AMBER) : INK }}>{p.stock}</div>
                 <div style={{ textAlign: "right", fontSize: 14, color: MUTED, fontFamily: MONO }}>{p.reorderLevel || "—"}</div>
                 <div style={{ textAlign: "right", fontSize: 14, color: MUTED, fontFamily: MONO }}>{p.costCents != null ? thb(p.costCents) : "—"}</div>
+                <div style={{ textAlign: "right", fontSize: 14, fontFamily: MONO, fontWeight: 600, color: INK }}>{p.priceCents != null ? thb(p.priceCents) : "—"}</div>
                 <div style={{ textAlign: "center" }}>
                   {lowOn
                     ? <span style={badge(p.stock === 0 ? RED : AMBER, p.stock === 0 ? "#fdeceb" : "#fdf3df")}>{p.stock === 0 ? "หมด" : "ใกล้หมด"}</span>
@@ -382,5 +383,5 @@ function badge(fg: string, bg: string): React.CSSProperties {
 const sectionH: React.CSSProperties = { fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 8px 0" };
 const emptyCard: React.CSSProperties = { ...card, padding: "22px", color: MUTED, fontSize: 15 };
 const rowBase: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: `1px solid #f2ebdd` };
-const itemGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "1.6fr 1fr 86px 90px 96px 96px", gap: 12 };
+const itemGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "1.6fr 1fr 86px 90px 96px 96px 96px", gap: 12 };
 const chipPart: React.CSSProperties = { fontSize: 12, color: AMBER, background: "#fdf3df", padding: "1px 8px", borderRadius: 999, marginLeft: 4 };

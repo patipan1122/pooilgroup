@@ -619,24 +619,29 @@ function SidebarBody({
             </span>
           </p>
           <div className="space-y-0.5">
-            {moduleNav.map((it, i) => (
-              <Fragment key={it.href}>
-                {it.section && (
-                  <p
-                    className={`px-3 ${i === 0 ? "pt-0.5" : "pt-3"} pb-1 text-[10px] font-semibold text-zinc-400 tracking-wide uppercase`}
-                  >
-                    {it.section}
-                  </p>
-                )}
-                <SidebarLink
-                  href={it.href}
-                  icon={it.icon}
-                  label={it.label}
-                  pathname={pathname}
-                  onNavigate={onNavigate}
-                />
-              </Fragment>
-            ))}
+            {moduleNav.map((it, i) => {
+              // โชว์หัวข้อกลุ่มเฉพาะตอน section "เปลี่ยน" จากอันก่อนหน้า
+              // กัน label ซ้ำเมื่อหลาย item ใช้ section เดียวกัน (เช่น "หลังบ้าน" 4 อัน)
+              const showSection = it.section && it.section !== moduleNav[i - 1]?.section;
+              return (
+                <Fragment key={it.href}>
+                  {showSection && (
+                    <p
+                      className={`px-3 ${i === 0 ? "pt-0.5" : "pt-3"} pb-1 text-[10px] font-semibold text-zinc-400 tracking-wide uppercase`}
+                    >
+                      {it.section}
+                    </p>
+                  )}
+                  <SidebarLink
+                    href={it.href}
+                    icon={it.icon}
+                    label={it.label}
+                    pathname={pathname}
+                    onNavigate={onNavigate}
+                  />
+                </Fragment>
+              );
+            })}
           </div>
         </div>
       )}
