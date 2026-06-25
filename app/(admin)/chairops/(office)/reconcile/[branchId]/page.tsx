@@ -19,6 +19,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
+import { thaiDate } from "@/lib/chairops/utils/format";
 import {
   ReconcileShell,
   normalizeView,
@@ -59,6 +60,27 @@ export default async function ReconcileBranchPage({
   const view = normalizeView(sp.view);
   // Bangkok "today" — default + max for the write-off "ตั้งต้น ณ วันที่" picker.
   const today = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+
+  // Write-off log for THIS branch — surfaced on the page so an approved
+  // "ตั้งต้น" that pulls the drift to 0 is EXPLAINED (CEO 2026-06-25: "อยู่ดี ๆ
+  // ทำไมเป็น 0 — ต้องเคลียร์ว่ามีการตัดเงิน เหตุผลอะไร"). Org-scoped.
+  const branchWriteOffs = await prisma.chairopsWriteOff.findMany({
+    where: { branchId, orgId, status: { in: ["PENDING", "APPROVED"] } },
+    orderBy: [{ effectiveDate: "desc" }, { makerAt: "desc" }],
+    take: 20,
+    select: {
+      id: true,
+      amount: true,
+      direction: true,
+      effectiveDate: true,
+      reason: true,
+      status: true,
+      makerAt: true,
+      approverAt: true,
+      maker: { select: { displayName: true } },
+      approver: { select: { displayName: true } },
+    },
+  });
 
   return (
     <>
@@ -105,6 +127,102 @@ export default async function ReconcileBranchPage({
           </div>
         )}
       </div>
+
+      {/* Write-off LOG — explains why the drift jumped / hit 0 (CEO 2026-06-25).
+          Shows this branch's approved + pending write-offs with date·amount·
+          direction·reason·approver so a "ตั้งต้น" is never a mystery. */}
+      {branchWriteOffs.length > 0 && (
+        <section
+          className="card"
+          style={{ margin: "16px 22px 0", padding: 18, maxWidth: 720 }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 4,
+            }}
+          >
+            <h2 style={{ fontSize: 15, fontWeight: 600 }}>
+              🧾 รายการตัดเงิน / ตั้งต้น (สาขานี้)
+            </h2>
+            <span className="chip chip-accent" style={{ fontSize: 11 }}>
+              {branchWriteOffs.length} รายการ
+            </span>
+          </div>
+          <p className="text-3" style={{ fontSize: 12, marginBottom: 12 }}>
+            ยอดหายเปลี่ยน/เป็น 0 เพราะรายการพวกนี้ — ตัดเงิน &quot;ตั้งต้น&quot; ณ วันไหน
+            เท่าไร เหตุผลอะไร ใครอนุมัติ
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {branchWriteOffs.map((w) => {
+              const isOver = w.direction === "OVER";
+              const approved = w.status === "APPROVED";
+              return (
+                <div
+                  key={w.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--ok-border)",
+                    borderColor: approved ? "var(--ok-border)" : "var(--crit-border)",
+                    background: approved ? "var(--ok-soft)" : "var(--crit-soft)",
+                  }}
+                >
+                  <div style={{ minWidth: 96 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>
+                      ตั้งต้น {thaiDate(w.effectiveDate ?? w.makerAt)}
+                    </div>
+                    <span
+                      className="chip"
+                      style={{
+                        fontSize: 10,
+                        color: isOver ? "var(--accent)" : "var(--crit)",
+                      }}
+                    >
+                      {isOver ? "เงินเกิน" : "เงินขาด"}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      className="mono"
+                      style={{ fontSize: 14, fontWeight: 700 }}
+                    >
+                      {w.amount.toLocaleString()} ฿
+                    </div>
+                    <div className="text-2" style={{ fontSize: 12 }}>
+                      เหตุผล: {w.reason}
+                    </div>
+                    <div className="text-3" style={{ fontSize: 11, marginTop: 2 }}>
+                      ขอโดย {w.maker.displayName}
+                      {approved && w.approver
+                        ? ` · อนุมัติโดย ${w.approver.displayName}${
+                            w.approverAt ? ` (${thaiDate(w.approverAt)})` : ""
+                          }`
+                        : ""}
+                    </div>
+                  </div>
+                  <span
+                    className="chip"
+                    style={{
+                      fontSize: 10,
+                      whiteSpace: "nowrap",
+                      color: approved ? "var(--ok)" : "var(--crit)",
+                    }}
+                  >
+                    {approved ? "อนุมัติแล้ว · มีผลกับยอด" : "รออนุมัติ"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Write-off request form — target of Periods "สร้าง write-off" button */}
       <section
