@@ -8,7 +8,7 @@
  */
 
 import { OperationsClient } from "./operations-client";
-import { loadAnomalies, loadBranches, loadHubData } from "@/lib/clawfleet/v2-loaders";
+import { loadBranches, loadHubData } from "@/lib/clawfleet/v2-loaders";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +18,8 @@ export default async function OperationsPage({
   searchParams: Promise<{ branch?: string }>;
 }) {
   const branch = (await searchParams).branch ?? "all";
-  const [hub, anomalies, branches] = await Promise.all([
+  const [hub, branches] = await Promise.all([
     loadHubData(branch),
-    loadAnomalies(branch),
     loadBranches(),
   ]);
 
@@ -28,7 +27,6 @@ export default async function OperationsPage({
     <OperationsClient
       branch={branch}
       activeSessions={hub.activeSessions}
-      anomalies={anomalies}
       closedToday={hub.closedToday}
       branches={branches}
     />

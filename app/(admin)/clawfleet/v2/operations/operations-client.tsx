@@ -7,30 +7,24 @@
  * Renders ONLY the `.cf-page` body — Sidebar + TopBar come from the V2Shell
  * client layout (`components/clawfleet/v2/shell.tsx`).
  *
- * Data (active sessions + anomalies + closed sessions + branches + branch
- * filter) arrives via props from the server page. Sessions are the merge of
- * activeSessions (active/stale) + anomalies (review) + closedToday (closed),
- * exactly as the mockup does. A "review" row's "ตรวจ" button opens the shared
- * `AnomalyReview` modal; a decision calls `reviewV2Session` and shows a
- * `cf-toast`.
+ * Data (active sessions + closed sessions + branches + branch filter) arrives
+ * via props from the server page. Sessions are the merge of activeSessions
+ * (active/stale) + closedToday (closed) — session lifecycle ONLY. Anomaly
+ * review is no longer surfaced here: it lives solely on the dedicated
+ * Anomalies page, so Operations carries no review tab / no inline review modal.
  */
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Ic, Pill, fmtTHB } from "@/components/clawfleet/v2/chrome";
-import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
-import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
-import { anomalyBranchLabel } from "@/lib/clawfleet/v2-data";
 import type {
   ActiveSession,
-  Anomaly,
-  AnomalySeverity,
   Branch,
   BranchFallback,
   ClosedSession,
 } from "@/lib/clawfleet/v2-data";
 
-/* Discriminated union for the merged Operations rows. */
+/* Discriminated union for the merged Operations rows (lifecycle only). */
 type OpsSession =
   | {
       status: "active" | "stale";
@@ -45,22 +39,6 @@ type OpsSession =
       stale: boolean;
     }
   | {
-      status: "review";
-      id: string;
-      branchId: string;
-      machines: number;
-      done: number;
-      staff: string;
-      staffAvatar: string;
-      elapsed: string;
-      severity: AnomalySeverity;
-      revenue: number;
-      gap: number;
-      prizeGap: number;
-      typeLabel: string;
-      anomalyRef: Anomaly;
-    }
-  | {
       status: "closed";
       id: string;
       branchId: string;
@@ -73,21 +51,16 @@ type OpsSession =
       closedAt: string;
     };
 
-type ToastKind = "approve" | "recheck" | "escalate";
-type ToastState = { kind: ToastKind; text: string };
-
-type FilterId = "all" | "active" | "stale" | "review" | "closed";
+type FilterId = "all" | "active" | "stale" | "closed";
 
 export function OperationsClient({
   branch,
   activeSessions,
-  anomalies,
   closedToday,
   branches,
 }: {
   branch: string;
   activeSessions: ActiveSession[];
-  anomalies: Anomaly[];
   closedToday: ClosedSession[];
   branches: Branch[];
 }) {
@@ -98,31 +71,11 @@ export function OperationsClient({
     branchMap.get(id) ?? { id, name: id, code: id };
 
   const [filter, setFilter] = useState<FilterId>("all");
-  const [reviewing, setReviewing] = useState<Anomaly | null>(null);
-  const [toast, setToast] = useState<ToastState | null>(null);
   const router = useRouter();
 
   const sessions: OpsSession[] = [
     ...activeSessions.map(
       (s): OpsSession => ({ ...s, status: s.stale ? "stale" : "active" }),
-    ),
-    ...anomalies.map(
-      (a): OpsSession => ({
-        id: a.id,
-        branchId: a.branchId,
-        machines: a.machines.length || 6,
-        done: a.machines.length || 6,
-        staff: a.staff,
-        staffAvatar: a.staffAvatar,
-        elapsed: a.duration,
-        status: "review",
-        severity: a.severity,
-        revenue: a.actualCash,
-        gap: a.gap,
-        prizeGap: a.prizeGap,
-        typeLabel: a.typeLabel,
-        anomalyRef: a,
-      }),
     ),
     ...closedToday.map(
       (c): OpsSession => ({ ...c, status: "closed", done: c.machines }),
@@ -135,8 +88,7 @@ export function OperationsClient({
     const header = ["รอบ", "สาขา", "พนักงาน", "สถานะ", "ความคืบหน้า", "รายได้/ขาด"];
     const rows = filtered.map((s) => {
       const info = getBranch(s.branchId);
-      const money =
-        s.status === "review" ? `ขาด ${s.gap ?? 0}` : s.status === "closed" ? `${s.revenue ?? 0}` : "";
+      const money = s.status === "closed" ? `${s.revenue ?? 0}` : "";
       return [s.id, info.name, s.staff, s.status, `${s.done}/${s.machines}`, money];
     });
     const csv = [header, ...rows]
@@ -155,7 +107,6 @@ export function OperationsClient({
     all: sessions.length,
     active: sessions.filter((s) => s.status === "active").length,
     stale: sessions.filter((s) => s.status === "stale").length,
-    review: sessions.filter((s) => s.status === "review").length,
     closed: sessions.filter((s) => s.status === "closed").length,
   };
 
@@ -163,38 +114,8 @@ export function OperationsClient({
     { id: "all", name: "ทั้งหมด", n: stats.all },
     { id: "active", name: "กำลังเดิน", n: stats.active, color: "blue" },
     { id: "stale", name: "ค้าง", n: stats.stale, color: "amber" },
-    { id: "review", name: "รอตรวจ", n: stats.review, color: "red" },
     { id: "closed", name: "ปิดแล้ว", n: stats.closed, color: "emerald" },
   ];
-
-  const openAnomaly = (a: Anomaly) => setReviewing(a);
-
-  const nextAnomaly = () => {
-    if (!reviewing) return;
-    const i = anomalies.findIndex((x) => x.id === reviewing.id);
-    const next = anomalies[(i + 1) % anomalies.length];
-    setReviewing(next ?? null);
-  };
-
-  const decide = async (decision: string, note: string) => {
-    const kind = decision as ToastKind;
-    const current = reviewing;
-    if (current) {
-      // Soft-fails on mock rows (no real session). Toast shows regardless.
-      await reviewV2Session(current.id, kind, note);
-    }
-    setToast({
-      kind,
-      text:
-        kind === "approve"
-          ? "อนุมัติแล้ว · เข้ารายงาน"
-          : kind === "recheck"
-            ? "แจ้งให้พนักงานตรวจซ้ำ · LINE ส่งแล้ว"
-            : "ส่งให้ผู้จัดการ · รออนุมัติ",
-    });
-    setTimeout(() => setToast(null), 2400);
-    setReviewing(null);
-  };
 
   return (
     <div className="cf-page">
@@ -203,7 +124,7 @@ export function OperationsClient({
           <div className="cf-eyebrow">ปฏิบัติการ</div>
           <h1 className="cf-h1">รอบเก็บเงิน · วันนี้</h1>
           <div className="cf-page-sub">
-            {sessions.length} รอบจาก 10 สาขา — กำลังเดิน {stats.active} · รอตรวจ {stats.review} · ปิดแล้ว {stats.closed}
+            {sessions.length} รอบจาก 10 สาขา — กำลังเดิน {stats.active} · ค้าง {stats.stale} · ปิดแล้ว {stats.closed}
           </div>
         </div>
         <div className="cf-page-actions">
@@ -245,29 +166,10 @@ export function OperationsClient({
             key={s.id + s.status}
             s={s}
             branch={getBranch(s.branchId)}
-            onOpenAnomaly={openAnomaly}
             onDrill={(sessionId) => router.push(`/clawfleet/v2/operations/${encodeURIComponent(sessionId)}`)}
           />
         ))}
       </div>
-
-      {reviewing && (
-        <AnomalyReview
-          anomaly={reviewing}
-          onClose={() => setReviewing(null)}
-          onNext={nextAnomaly}
-          onDecision={decide}
-        />
-      )}
-
-      {toast && (
-        <div className={`cf-toast cf-toast-${toast.kind}`}>
-          <span className="cf-toast-icon">
-            {toast.kind === "approve" ? "✓" : toast.kind === "recheck" ? "↻" : "⚑"}
-          </span>
-          <span>{toast.text}</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -275,23 +177,19 @@ export function OperationsClient({
 function OpsRow({
   s,
   branch,
-  onOpenAnomaly,
   onDrill,
 }: {
   s: OpsSession;
   branch: Branch | BranchFallback;
-  onOpenAnomaly: (a: Anomaly) => void;
   onDrill: (sessionId: string) => void;
 }) {
   const info = branch;
   const pct = s.machines ? Math.round((s.done / s.machines) * 100) : 0;
-  // หัวแถว = ชื่อสาขา เสมอ (review row ดึงจาก anomaly ที่ join ชื่อมาแล้ว · ไม่โชว์ UUID)
+  // หัวแถว = ชื่อสาขา เสมอ (ไม่โชว์ UUID)
   const zoneName =
-    s.status === "review"
-      ? anomalyBranchLabel(s.anomalyRef, info)
-      : info.name && info.name !== info.id
-        ? info.name
-        : (info.code && info.code !== info.id ? info.code : "—");
+    info.name && info.name !== info.id
+      ? info.name
+      : (info.code && info.code !== info.id ? info.code : "—");
   const zoneArea = info.area && info.area !== info.id ? info.area : "";
   return (
     <div className={`cf-ops-row cf-ops-row-${s.status}`}>
@@ -304,11 +202,6 @@ function OpsRow({
         {s.status === "stale" && (
           <Pill color="amber" dot size="sm">
             ค้าง
-          </Pill>
-        )}
-        {s.status === "review" && (
-          <Pill color="red" dot size="sm">
-            รอตรวจ · {s.severity}
           </Pill>
         )}
         {s.status === "closed" && (
@@ -344,21 +237,6 @@ function OpsRow({
         <span>{s.status === "closed" ? s.closedAt : s.elapsed}</span>
       </div>
       <div className="cf-ops-rev">
-        {s.status === "review" && (
-          <div>
-            {s.gap > 0 && (
-              <div className="cf-text-red">
-                <strong>-{fmtTHB(s.gap)}</strong>
-              </div>
-            )}
-            {s.prizeGap > 0 && s.gap === 0 && (
-              <div className="cf-text-amber">
-                <strong>-{s.prizeGap} ตัว</strong>
-              </div>
-            )}
-            <div className="cf-dim">{s.typeLabel}</div>
-          </div>
-        )}
         {s.status === "closed" && (
           <div>
             <strong>{fmtTHB(s.revenue)}</strong>
@@ -368,22 +246,13 @@ function OpsRow({
         {(s.status === "active" || s.status === "stale") && <span className="cf-dim">—</span>}
       </div>
       <div className="cf-ops-cta">
-        {s.status === "review" ? (
-          <button
-            className="cf-btn cf-btn-primary cf-btn-sm"
-            onClick={() => onOpenAnomaly(s.anomalyRef)}
-          >
-            ตรวจ <Ic name="arrowR" size={12} />
-          </button>
-        ) : (
-          <button
-            className="cf-btn cf-btn-ghost cf-btn-sm"
-            onClick={() => onDrill(s.id)}
-            title="ดูไส้ในรอบนี้ (รายตู้ · มิเตอร์ · เงิน · รูป)"
-          >
-            ดูไส้ใน <Ic name="chevronR" size={14} />
-          </button>
-        )}
+        <button
+          className="cf-btn cf-btn-ghost cf-btn-sm"
+          onClick={() => onDrill(s.id)}
+          title="ดูไส้ในรอบนี้ (รายตู้ · มิเตอร์ · เงิน · รูป)"
+        >
+          ดูไส้ใน <Ic name="chevronR" size={14} />
+        </button>
       </div>
     </div>
   );

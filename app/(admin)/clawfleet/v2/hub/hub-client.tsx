@@ -7,29 +7,15 @@
  *   1. Hero — ยอดขายรวมวันนี้ + กำไรรวม(เขียว)/ขาดทุน(แดง) + จำนวนรอบ + ค่าเฉลี่ยบาท/ตัว
  *   2. "ตอนนี้ต้องทำ" — Anomaly CTA + รอบกำลังเก็บ(OPEN) + รอตรวจ
  *   3. อันดับสาขา — เรียงแย่→ดี · ค่าเฉลี่ยบาท/ตัว(เด่น) + ธงสี + กำไร/ขาดทุน · คลิกลึกเข้าสาขา
- *   4. Anomaly inbox (ของเดิม · โชว์ชื่อ)
+ *   4. Anomaly CTA banner — ทางลัดไปหน้า Anomaly (ตรวจจริงที่หน้านั้นที่เดียว · ไม่ซ้ำตาราง)
  *
  * คงลุคเดิม: แถบน้ำเงิน ตัวขาว · ใช้ class .cf-* เดิมทั้งหมด ไม่ฮาร์ดโค้ดสี.
  */
 
-import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ic, Pill, Section } from "@/components/clawfleet/v2/chrome";
-import { AnomalyReview } from "@/components/clawfleet/v2/anomaly-review";
-import { reviewV2Session } from "@/lib/clawfleet/v2-actions";
-import { anomalyBranchLabel, anomalySubLabel } from "@/lib/clawfleet/v2-data";
 import type { Anomaly } from "@/lib/clawfleet/v2-data";
 import type { BranchPnl, PnlSummary, PnlFlagInfo } from "@/lib/clawfleet/pnl-queries";
-
-/* toast decision kinds + copy (mirrors the mockup App.decide) */
-type ToastKind = "approve" | "recheck" | "escalate";
-type Toast = { kind: ToastKind; text: string };
-
-const TOAST_TEXT: Record<ToastKind, string> = {
-  approve: "อนุมัติแล้ว · เข้ารายงาน",
-  recheck: "แจ้งให้พนักงานตรวจซ้ำ · LINE ส่งแล้ว",
-  escalate: "ส่งให้ผู้จัดการ · รออนุมัติ",
-};
 
 function baht(n: number): string {
   return n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
@@ -53,50 +39,13 @@ export function HubClient({
 }) {
   const router = useRouter();
 
-  const branchNameMap = useMemo(
-    () => new Map(branchPnl.map((b) => [b.branchId, b.name])),
-    [branchPnl],
-  );
-  const getBranchName = (id: string): string => branchNameMap.get(id) ?? id;
-
-  const [reviewing, setReviewing] = useState<Anomaly | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
-  const [showFilter, setShowFilter] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<"all" | "cash_short" | "prize_short">("all");
-
   const anomalies = anomaliesProp;
   const openSessions = hub.activeSessions;
   const reviewWaiting = anomalies.length;
 
   const totalGap = anomalies.reduce((s, a) => s + a.gap, 0);
 
-  const anomaliesSorted = useMemo(
-    () => [...anomalies].sort((a, b) => b.gap - a.gap),
-    [anomalies],
-  );
-  const inboxList = useMemo(
-    () => anomaliesSorted.filter((a) => typeFilter === "all" || a.type === typeFilter),
-    [anomaliesSorted, typeFilter],
-  );
-
-  const openAnomaly = (a?: Anomaly) => setReviewing(a ?? anomaliesSorted[0] ?? null);
-  const nextAnomaly = () => {
-    if (!reviewing || anomaliesSorted.length === 0) return;
-    const i = anomaliesSorted.findIndex((x) => x.id === reviewing.id);
-    setReviewing(anomaliesSorted[(i + 1) % anomaliesSorted.length] ?? null);
-  };
-  const decide = (decision: string, note: string) => {
-    const kind = (decision as ToastKind) in TOAST_TEXT ? (decision as ToastKind) : "approve";
-    const target = reviewing;
-    if (target) void reviewV2Session(target.id, kind, note);
-    setToast({ kind, text: TOAST_TEXT[kind] });
-    setTimeout(() => setToast(null), 2400);
-    if (!target) return;
-    const i = anomaliesSorted.findIndex((x) => x.id === target.id);
-    const remaining = anomaliesSorted.filter((x) => x.id !== target.id);
-    setReviewing(remaining.length > 0 ? (remaining[i % remaining.length] ?? remaining[0] ?? null) : null);
-  };
-
+  const goAnomalies = () => router.push("/clawfleet/v2/anomalies");
   const goBranch = (id: string) => router.push(`/clawfleet/v2/hub/${id}`);
 
   const profitPositive = summary.profit >= 0;
@@ -163,7 +112,7 @@ export function HubClient({
               <span>ตอนนี้ต้องทำ</span>
               <span className="cf-hero-count">{reviewWaiting + summary.riskyBranches}</span>
             </div>
-            <button className="cf-hero-cta" onClick={() => openAnomaly(anomaliesSorted[0])}>
+            <button className="cf-hero-cta" onClick={goAnomalies}>
               <div className="cf-hero-cta-main">
                 <div className="cf-hero-cta-title">ตรวจ Anomaly · {anomalies.length} รายการ</div>
                 <div className="cf-hero-cta-sub">
@@ -209,81 +158,34 @@ export function HubClient({
           </div>
         </Section>
 
-        {/* Anomaly inbox (เดิม · โชว์ชื่อสาขา/ตู้/พนักงาน) */}
-        <Section
-          title="Anomaly inbox"
-          sub={`${anomalies.length} รายการที่ระบบ flag · จัดเรียงตามมูลค่าที่หาย`}
-          action={
-            <div className="cf-section-actions">
-              <button
-                className={`cf-btn cf-btn-ghost ${typeFilter !== "all" ? "is-active" : ""}`}
-                onClick={() => setShowFilter((v) => !v)}
-              >
-                <Ic name="filter" size={14} />
-                ตัวกรอง
-                {typeFilter !== "all" && <span className="cf-tab-n">1</span>}
-              </button>
-              <button
-                className="cf-btn cf-btn-primary"
-                onClick={() => openAnomaly(inboxList[0] ?? anomaliesSorted[0])}
-                disabled={anomalies.length === 0}
-              >
-                เริ่มตรวจทีละรายการ <Ic name="arrowR" size={14} />
+        {/* Anomaly CTA — ทางลัดไปหน้า Anomaly (ตรวจจริงที่หน้านั้นที่เดียว · ไม่มีตารางซ้ำใน Hub) */}
+        <Section title="Anomaly · cross-check">
+          {reviewWaiting > 0 ? (
+            <div
+              className="cf-branch-meta"
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 22, lineHeight: 1 }}>🔴</span>
+                <div>
+                  <div className="cf-branch-name">มี {reviewWaiting} รอบต้องตรวจ</div>
+                  <div className="cf-dim">
+                    เงิน/ตุ๊กตา ไม่ตรงรวม ฿{baht(totalGap)} · ตรวจที่หน้า Anomaly ที่เดียว
+                  </div>
+                </div>
+              </div>
+              <button className="cf-btn cf-btn-primary" onClick={goAnomalies}>
+                ดูทั้งหมด <Ic name="arrowR" size={14} />
               </button>
             </div>
-          }
-        >
-          {showFilter && (
-            <div className="cf-tabs" style={{ marginBottom: 8 }}>
-              {(
-                [
-                  { id: "all", name: "ทั้งหมด", n: anomalies.length },
-                  { id: "cash_short", name: "เงินขาด", n: anomalies.filter((a) => a.type === "cash_short").length, color: "red" },
-                  { id: "prize_short", name: "ตุ๊กตาหาย", n: anomalies.filter((a) => a.type === "prize_short").length, color: "amber" },
-                ] as const
-              ).map((t) => (
-                <button
-                  key={t.id}
-                  className={`cf-tab ${typeFilter === t.id ? "is-active" : ""}`}
-                  onClick={() => setTypeFilter(t.id)}
-                >
-                  {"color" in t && t.color && <span className={`cf-tab-dot cf-tab-dot-${t.color}`} />}
-                  <span>{t.name}</span>
-                  <span className="cf-tab-n">{t.n}</span>
-                </button>
-              ))}
+          ) : (
+            <div className="cf-dim" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>✓</span>
+              <span>ไม่มีรอบที่ต้องตรวจ · ทุกอย่างปกติ</span>
             </div>
           )}
-          <div className="cf-anomaly-list">
-            {inboxList.map((a) => (
-              <AnomalyRow key={a.id} a={a} onOpen={() => openAnomaly(a)} branchName={getBranchName(a.branchId)} />
-            ))}
-            {inboxList.length === 0 && (
-              <div className="cf-dim" style={{ padding: "16px 4px" }}>
-                ไม่มีรายการที่ต้องตรวจ · ทุกอย่างปกติ
-              </div>
-            )}
-          </div>
         </Section>
       </div>
-
-      {reviewing && (
-        <AnomalyReview
-          anomaly={reviewing}
-          onClose={() => setReviewing(null)}
-          onNext={nextAnomaly}
-          onDecision={decide}
-        />
-      )}
-
-      {toast && (
-        <div className={`cf-toast cf-toast-${toast.kind}`}>
-          <span className="cf-toast-icon">
-            {toast.kind === "approve" ? "✓" : toast.kind === "recheck" ? "↻" : "⚑"}
-          </span>
-          <span>{toast.text}</span>
-        </div>
-      )}
     </>
   );
 }
@@ -344,47 +246,6 @@ function BranchPnlRow({ b, onClick }: { b: BranchPnl; onClick: () => void }) {
         <div className="cf-dim cf-pnl-sub">ตุ๊กตา {baht(b.dollsOut)} ตัว · {b.sessions} รอบ</div>
       </div>
       <Ic name="chevronR" size={18} />
-    </button>
-  );
-}
-
-function AnomalyRow({
-  a,
-  onOpen,
-  branchName,
-}: {
-  a: Anomaly;
-  onOpen: () => void;
-  branchName: string;
-}) {
-  const headline = anomalyBranchLabel(a, { id: a.branchId, name: branchName, code: a.branchCode ?? branchName });
-  const sub = anomalySubLabel(a);
-  return (
-    <button className="cf-anom-row" onClick={onOpen}>
-      <div className="cf-anom-sev">
-        <span className={`cf-sev cf-sev-${a.severity.toLowerCase()}`}>{a.severity}</span>
-      </div>
-      <div className="cf-anom-body">
-        <div className="cf-anom-head">
-          <span className="cf-anom-zone">{headline}</span>
-          <Pill color={a.type === "cash_short" ? "red" : "amber"} size="sm">
-            {a.typeLabel}
-          </Pill>
-          <span className="cf-anom-id">{a.id}</span>
-        </div>
-        <div className="cf-anom-reason">{sub}</div>
-      </div>
-      <div className="cf-anom-gap">
-        {a.gap > 0 && <div className="cf-anom-gap-amt">-฿{a.gap.toLocaleString("th-TH")}</div>}
-        {a.prizeGap > 0 && a.gap === 0 && <div className="cf-anom-gap-amt">-{a.prizeGap} ตัว</div>}
-        <div className="cf-anom-gap-pct">
-          {a.gap > 0 && `${a.gapPct.toFixed(1)}% ห่าง`}
-          {a.gap === 0 && a.prizeGap > 0 && `ตุ๊กตาหาย`}
-        </div>
-      </div>
-      <div className="cf-anom-cta">
-        <Ic name="chevronR" size={18} />
-      </div>
     </button>
   );
 }

@@ -35,7 +35,7 @@ export function StaffAppFrame({ orgId, branches, skus }: Props) {
   return (
     <div className="cf-staffapp-stage">
       {/* exit back to the back-office (this surface has no admin sidebar) */}
-      <Link href="/clawfleet/v2/preview" className="cf-staffapp-exit">
+      <Link href="/clawfleet/v2/hub" className="cf-staffapp-exit">
         ← กลับหลังบ้าน
       </Link>
 
