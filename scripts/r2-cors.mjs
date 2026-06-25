@@ -19,6 +19,12 @@ await r2.send(
             "http://localhost:3100",
             "http://localhost:3000",
             "https://*.vercel.app",
+            // Custom prod domain — without this, browser→R2 presigned PUT from
+            // pooilgroup.com is blocked by CORS ("Failed to fetch"). This also
+            // un-breaks the photo uploads that were moved server-side because
+            // of the same gap. (CEO 2026-06-25 · StarThing >4.5MB import.)
+            "https://pooilgroup.com",
+            "https://www.pooilgroup.com",
           ],
           AllowedMethods: ["GET", "PUT", "HEAD"],
           AllowedHeaders: ["*"],
