@@ -74,11 +74,13 @@ export default async function PlaylandDashboard() {
   const maxTop = Math.max(1, ...topLines.map((t) => t._sum.quantity ?? 0));
   const oldestShiftHrs = openShifts.length > 0 ? Math.floor((Date.now() - Math.min(...openShifts.map((s) => new Date(s.startedAt).getTime()))) / 3600000) : 0;
   const subtitle = new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+  const topName = topLines[0]?.productName ?? "";
+  const topShort = topName.length > 16 ? topName.slice(0, 16) + "…" : topName;
 
   const kpis = [
     { label: "รายได้รวมวันนี้", value: thb(stats.totalRevenueCents), icon: Wallet, tint: BLUE, sub: `${stats.salesCount} บิล`, delta: revDelta },
     { label: "ค่าเข้า · ค่าเวลา", value: thb(stats.entryRevenueCents), icon: Ticket, tint: BLUE, sub: `${stats.sessionsToday} ครั้งเข้าเล่น`, delta: null as number | null },
-    { label: "ขายของ", value: thb(stats.productRevenueCents), icon: ShoppingBag, tint: AMBER, sub: `${stats.salesCount} รายการ`, delta: null as number | null },
+    { label: "ขายของ", value: thb(stats.productRevenueCents), icon: ShoppingBag, tint: AMBER, sub: topName ? `ขายดี · ${topShort}` : "ยังไม่มีขายวันนี้", delta: null as number | null },
     { label: "สมาชิกใหม่", value: String(newMembers), icon: UserPlus, tint: GREEN, sub: `กำลังเล่น ${stats.activeSessions} คน`, delta: null as number | null },
   ];
 
@@ -188,7 +190,7 @@ export default async function PlaylandDashboard() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "22px 12px", borderRadius: 12, background: tintOf(GREEN) }}>
                   <ClipboardCheck size={26} color={GREEN} />
                   <div style={{ fontSize: 14, fontWeight: 600, color: GREEN }}>ไม่มีรายการค้าง</div>
-                  <div style={{ fontSize: 12, color: MUTED }}>ทุกอย่างเรียบร้อยดี ✨</div>
+                  <div style={{ fontSize: 12, color: MUTED }}>ทุกอย่างเรียบร้อยดี</div>
                 </div>
               )}
             </div>
