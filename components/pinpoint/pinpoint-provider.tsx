@@ -62,6 +62,12 @@ interface DraftPin {
   clientY: number;
   docX: number;
   docY: number;
+  /** ตำแหน่งเลื่อนหน้า + ขนาดจอ ณ "ตอนกดปัก" — ใช้ตัดภาพให้เหลือเฉพาะจอที่เห็นตอนนั้น
+   *  (แม้ผู้ใช้จะเลื่อนหน้าไปก่อนกดบันทึก ภาพก็ยังตรงจุดที่ติชม). */
+  scrollX: number;
+  scrollY: number;
+  viewportW: number;
+  viewportH: number;
   selector: string;
   text: string;
   meta: ElementMeta;
@@ -106,10 +112,8 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   const [draft, setDraft] = useState<DraftPin | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // screenshot key cache per page-url + in-flight capture promise (เก็บ Promise
-  // ไม่ใช่แค่ flag → ตอนปักหมุดสามารถ await การถ่ายที่กำลังวิ่งให้เสร็จก่อนบันทึกได้)
-  const shotCache = useRef<Map<string, string>>(new Map());
-  const shotInFlight = useRef<Map<string, Promise<string | null>>>(new Map());
+  // ถ่ายภาพ "ต่อหมุด" ตอนกดปักจริง (ไม่ pre-capture ทั้งหน้าอีกต่อไป) → ภาพเป็นจอที่
+  // ผู้ใช้เห็นจริง ณ จุด+เวลานั้น (เนื้อหาโหลดเสร็จ ไม่ติด skeleton, ไม่ยาวเหมือนปริ้น).
   const trapRef = useRef<HTMLDivElement | null>(null);
   const captureWarned = useRef(false); // เตือนปัญหาจับภาพครั้งเดียวพอ (ไม่สแปม)
 
@@ -215,71 +219,35 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
     return () => window.removeEventListener("pinpoint:start", onStart);
   }, [loadPins, startSession]);
 
-  // ── per-page best-effort capture (desktop only) ──────────────────────────
-  // คืนค่า R2 key ของภาพหน้านี้ (null ถ้าจับ/อัปโหลดไม่สำเร็จ หรือบนมือถือ).
-  // ถ้าหน้าเดิมกำลังถ่ายอยู่ จะคืน Promise ตัวเดิม → ผู้เรียกหลายที่ await อันเดียวกันได้.
-  const ensureCapture = useCallback(
-    async (url: string): Promise<string | null> => {
+  // ── per-pin viewport capture (desktop only) ──────────────────────────────
+  // ถ่ายเฉพาะ "จอที่เห็น ณ จุดที่ปัก" แล้วอัปโหลด → คืน R2 key (null ถ้าล้ม/มือถือ).
+  // ถ่ายตอนกดปักจริง = เนื้อหาโหลดเสร็จ ไม่ติด skeleton · ตัดเหลือแค่จอ ไม่ยาวเหมือนปริ้น.
+  const captureForDraft = useCallback(
+    async (d: DraftPin): Promise<string | null> => {
       if (isLikelyMobile()) return null; // mobile = structured target only
-      const cached = shotCache.current.get(url);
-      if (cached) return cached;
-      const inflight = shotInFlight.current.get(url);
-      if (inflight) return inflight; // มีคนถ่ายหน้านี้อยู่แล้ว → รออันเดียวกัน
-
-      const task = (async (): Promise<string | null> => {
-        try {
-          const blob = await captureBody();
-          if (!blob) {
-            // เดิมเงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ. ตอนนี้บอกเหตุผล (ครั้งเดียว) · หมุดยังเซฟได้ปกติ
-            if (!captureWarned.current) {
-              captureWarned.current = true;
-              toast.error(`บันทึกภาพหน้าจอไม่สำเร็จ — ${lastCaptureError() ?? "ไม่ทราบสาเหตุ"} (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)`);
-            }
-            return null;
-          }
-          const key = await uploadCapture(blob);
-          if (!key) {
-            if (!captureWarned.current) {
-              captureWarned.current = true;
-              toast.error("อัปโหลดภาพหน้าจอไม่สำเร็จ (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)");
-            }
-            return null;
-          }
-          shotCache.current.set(url, key);
-          // Backfill any already-saved pins on this page that lack a screenshot
-          // (กันกรณีถ่ายเสร็จช้ากว่าตอนปัก → เติมภาพให้หมุดที่บันทึกไปแล้ว).
-          setPins((prev) => {
-            const targets = prev.filter(
-              (p) => p.url === url && !p.screenshotKey,
-            );
-            for (const t of targets) {
-              void fetch(`/api/pinpoint/pins/${t.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ screenshotKey: key }),
-              });
-            }
-            return prev.map((p) =>
-              p.url === url && !p.screenshotKey ? { ...p, screenshotKey: key } : p,
-            );
-          });
-          return key;
-        } finally {
-          shotInFlight.current.delete(url);
+      const blob = await captureBody({
+        scrollX: d.scrollX,
+        scrollY: d.scrollY,
+        width: d.viewportW,
+        height: d.viewportH,
+      });
+      if (!blob) {
+        // เดิมเงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ. ตอนนี้บอกเหตุผล (ครั้งเดียว) · หมุดยังเซฟได้ปกติ
+        if (!captureWarned.current) {
+          captureWarned.current = true;
+          toast.error(`บันทึกภาพหน้าจอไม่สำเร็จ — ${lastCaptureError() ?? "ไม่ทราบสาเหตุ"} (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)`);
         }
-      })();
-
-      shotInFlight.current.set(url, task);
-      return task;
+        return null;
+      }
+      const key = await uploadCapture(blob);
+      if (!key && !captureWarned.current) {
+        captureWarned.current = true;
+        toast.error("อัปโหลดภาพหน้าจอไม่สำเร็จ (หมุด/คอมเมนต์ยังบันทึกได้ปกติ)");
+      }
+      return key;
     },
     [],
   );
-
-  // Capture when entering a page in active+placing mode (one shot per url).
-  useEffect(() => {
-    if (active && !paused) void ensureCapture(currentUrl());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, paused, pathname]);
 
   // ── place a pin ───────────────────────────────────────────────────────────
   const onTrapPointerDown = useCallback(
@@ -308,6 +276,11 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         // Document-space px so the marker anchors to content, not the viewport.
         docX: x + window.scrollX,
         docY: y + window.scrollY,
+        // กรอบจอ + ตำแหน่งเลื่อน ณ ตอนกดปัก → ใช้ตัดภาพให้เหลือเฉพาะจอที่เห็นตอนนั้น
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        viewportW: vw,
+        viewportH: vh,
         selector: buildSelector(el),
         text: elementText(el),
         meta: buildElementMeta(el),
@@ -323,22 +296,21 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       screenshotKeyOverride?: string | null,
     ) => {
       if (!sessionId || !draft || busy) return;
+      const d = draft;
       setBusy(true);
       const url = currentUrl();
-      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ ใช้ทันที · ไม่งั้นใช้ภาพรวมของหน้า.
-      let finalKey: string | null =
-        screenshotKeyOverride ?? shotCache.current.get(url) ?? null;
-      // ยังไม่มีภาพ + เป็นคอม → "รอ" ถ่าย+อัปโหลดให้เสร็จก่อนบันทึก (มี timeout กันค้าง).
-      // เดิมยิงบันทึกเลยไม่รอ → หน้าหนักภาพถ่ายไม่ทัน → หมุดไม่มีภาพแบบเงียบ ๆ (RACE).
-      if (finalKey == null && !isLikelyMobile()) {
+      const isViewportShot = !isLikelyMobile(); // เดสก์ท็อป = ภาพเป็นกรอบจอ (viewport)
+      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ (ก็เป็นกรอบจอเช่นกัน) ใช้ทันที.
+      let finalKey: string | null = screenshotKeyOverride ?? null;
+      // ยังไม่มีภาพ + เป็นคอม → "รอ" ถ่ายจอ ณ จุดที่ปัก + อัปโหลดให้เสร็จก่อนบันทึก
+      // (มี timeout กันค้าง). ถ่ายตอนนี้ = เนื้อหาโหลดเสร็จ ไม่ติด skeleton.
+      if (finalKey == null && isViewportShot) {
         const loadingId = toast.loading("กำลังเก็บภาพหน้าจอ…");
         try {
           finalKey = await Promise.race([
-            ensureCapture(url),
+            captureForDraft(d),
             new Promise<null>((r) => setTimeout(() => r(null), CAPTURE_WAIT_MS)),
           ]);
-          // เผื่อ timeout พอดีกับที่เพิ่งถ่ายเสร็จ → อ่าน cache อีกครั้ง.
-          if (finalKey == null) finalKey = shotCache.current.get(url) ?? null;
         } finally {
           toast.dismiss(loadingId);
         }
@@ -351,13 +323,20 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             url,
             comment,
             priority,
-            elementSelector: draft.selector,
-            elementText: draft.text,
-            elementMeta: { ...draft.meta, docX: draft.docX, docY: draft.docY },
-            coordXPct: draft.xPct,
-            coordYPct: draft.yPct,
-            viewportW: window.innerWidth,
-            viewportH: window.innerHeight,
+            elementSelector: d.selector,
+            elementText: d.text,
+            // capture: "viewport" → ฝั่งแสดงผลรู้ว่าภาพนี้คือกรอบจอ → วางจุดด้วย
+            // coordXPct/YPct ตรง ๆ (หมุดเก่าที่ไม่มี flag ใช้สูตร docX/docY เดิม).
+            elementMeta: {
+              ...d.meta,
+              docX: d.docX,
+              docY: d.docY,
+              ...(isViewportShot ? { capture: "viewport" } : {}),
+            },
+            coordXPct: d.xPct,
+            coordYPct: d.yPct,
+            viewportW: d.viewportW,
+            viewportH: d.viewportH,
             screenshotKey: finalKey,
           }),
         });
@@ -374,10 +353,10 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             url,
             comment,
             priority,
-            coordXPct: draft.xPct,
-            coordYPct: draft.yPct,
-            docX: draft.docX,
-            docY: draft.docY,
+            coordXPct: d.xPct,
+            coordYPct: d.yPct,
+            docX: d.docX,
+            docY: d.docY,
             screenshotKey: finalKey,
           },
         ]);
@@ -388,7 +367,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         setBusy(false);
       }
     },
-    [sessionId, draft, busy, ensureCapture],
+    [sessionId, draft, busy, captureForDraft],
   );
 
   const deletePin = useCallback(
@@ -656,12 +635,17 @@ function PinPopover({
 
   const canDraw = !isLikelyMobile();
 
-  // กด "วาด" → ถ่ายภาพหน้าจอ (UI ของเราถูกตัดออกอยู่แล้ว) → เปิดโมดัลวาด.
+  // กด "วาด" → ถ่ายเฉพาะกรอบจอที่เห็น ณ จุดที่ปัก (UI ของเราถูกตัดออกอยู่แล้ว) → เปิดโมดัลวาด.
   async function openDraw() {
     if (capturing || savingDraw) return;
     setCapturing(true);
     try {
-      const blob = await captureBody();
+      const blob = await captureBody({
+        scrollX: draft.scrollX,
+        scrollY: draft.scrollY,
+        width: draft.viewportW,
+        height: draft.viewportH,
+      });
       if (!blob) {
         toast.error("วาดภาพบนหน้านี้ไม่ได้");
         return;

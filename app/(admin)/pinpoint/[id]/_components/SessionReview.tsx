@@ -342,30 +342,42 @@ function ZoomPanel({
     };
   }, []);
 
-  // ตำแหน่งจุดที่กด (เป็น % ของภาพ) — docX/docY = พิกัดในหน้าเอกสาร
-  // markerLeft% = docX / กว้างจอ · markerTop% = docY × (กว้างภาพจริง / สูงภาพจริง) / กว้างจอ
-  // (scale ของ snapdom หักล้างกันเองผ่านอัตราส่วนภาพจริง → ไม่ต้องรู้ scale)
-  const meta = pin.element_meta as { docX?: number; docY?: number } | null;
+  // ตำแหน่งจุดที่กด (เป็น % ของภาพ).
+  const meta = pin.element_meta as
+    | { docX?: number; docY?: number; capture?: string }
+    | null;
   const vw = pin.viewport_w;
-  const docX =
-    meta?.docX ??
-    (pin.coord_x_pct != null && vw != null
-      ? (pin.coord_x_pct / 100) * vw
-      : null);
-  const docY =
-    meta?.docY ??
-    (pin.coord_y_pct != null && pin.viewport_h != null
-      ? (pin.coord_y_pct / 100) * pin.viewport_h
-      : null);
 
   let markerLeft: number | null = null;
   let markerTop: number | null = null;
-  if (docX != null && docY != null && vw && nat && nat.w > 0 && nat.h > 0) {
-    markerLeft = Math.min(100, Math.max(0, (docX / vw) * 100));
-    markerTop = Math.min(
-      100,
-      Math.max(0, ((docY * nat.w) / (vw * nat.h)) * 100),
-    );
+
+  if (meta?.capture === "viewport") {
+    // หมุดใหม่: ภาพคือ "กรอบจอที่เห็น" → จุดที่กด = coordXPct/YPct ตรง ๆ (เทียบจอ = เทียบภาพ).
+    if (pin.coord_x_pct != null && pin.coord_y_pct != null) {
+      markerLeft = Math.min(100, Math.max(0, pin.coord_x_pct));
+      markerTop = Math.min(100, Math.max(0, pin.coord_y_pct));
+    }
+  } else {
+    // หมุดเก่า: ภาพคือ "ทั้งหน้าเอกสาร" → ใช้ docX/docY เทียบความสูงเอกสารเหมือนเดิม.
+    // markerLeft% = docX / กว้างจอ · markerTop% = docY × (กว้างภาพจริง / สูงภาพจริง) / กว้างจอ
+    // (scale ของ snapdom หักล้างกันเองผ่านอัตราส่วนภาพจริง → ไม่ต้องรู้ scale)
+    const docX =
+      meta?.docX ??
+      (pin.coord_x_pct != null && vw != null
+        ? (pin.coord_x_pct / 100) * vw
+        : null);
+    const docY =
+      meta?.docY ??
+      (pin.coord_y_pct != null && pin.viewport_h != null
+        ? (pin.coord_y_pct / 100) * pin.viewport_h
+        : null);
+    if (docX != null && docY != null && vw && nat && nat.w > 0 && nat.h > 0) {
+      markerLeft = Math.min(100, Math.max(0, (docX / vw) * 100));
+      markerTop = Math.min(
+        100,
+        Math.max(0, ((docY * nat.w) / (vw * nat.h)) * 100),
+      );
+    }
   }
 
   // เลื่อนให้เห็นจุดที่กดเมื่อโหลดภาพเสร็จ

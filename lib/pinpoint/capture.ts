@@ -7,9 +7,21 @@
 //    mode is actually used (0 bundle cost on every other admin page).
 //  • Capture MUST NEVER block saving a pin — every failure resolves to null and
 //    the pin still saves with its structured target (url + selector + comment).
-//  • One capture per page-visit, deduped by pathname in the provider.
+//  • VIEWPORT-ONLY: snapdom renders the whole document.body, then we crop to the
+//    visible viewport (จอที่ผู้ใช้เห็นจริง ณ ตำแหน่งเลื่อนนั้น) — ไม่เก็บทั้งหน้ายาว
+//    เหมือนปริ้น. ถ่ายตอนผู้ใช้กดปักจริง → เนื้อหาโหลดเสร็จแล้ว ไม่ติด skeleton.
 
 const MAX_DIM = 1600; // cap longest side → keeps webp small
+
+/** กรอบ "จอที่เห็น" ที่จะตัดเก็บ — พิกัดเลื่อนหน้า + ขนาดจอ (CSS px).
+ *  ถ้าไม่ส่งมา = ใช้ค่าปัจจุบันของหน้าต่าง. ผู้เรียกควรส่งค่า ณ "ตอนกดปัก" เพื่อ
+ *  ให้ภาพตรงกับสิ่งที่ผู้ใช้เห็นตอนนั้น แม้จะเลื่อนหน้าไปก่อนกดบันทึก. */
+export interface ViewportCrop {
+  scrollX: number;
+  scrollY: number;
+  width: number;
+  height: number;
+}
 
 // เก็บเหตุผลที่จับภาพล่าสุดล้มเหลว — ให้ provider เอาไปโชว์ toast (ก่อนหน้านี้เงียบ → CEO ไม่รู้ว่าทำไมไม่มีภาพ)
 let lastError: string | null = null;
@@ -22,10 +34,12 @@ type SnapResult = {
   toCanvas: (o?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
 };
 
-/** Capture document.body to a compressed webp Blob. Returns null on any failure
- *  (capture is decoration; the pin's structured target is the real record).
- *  เหตุผลที่ล้มเหลวอ่านได้จาก lastCaptureError() เพื่อโชว์ให้ผู้ใช้รู้. */
-export async function captureBody(): Promise<Blob | null> {
+/** Capture the VISIBLE VIEWPORT to a compressed webp Blob — snapdom renders the
+ *  whole document.body, then we crop to the `crop` region (จอที่เห็นจริง). Returns
+ *  null on any failure (capture is decoration; the pin's structured target is the
+ *  real record). เหตุผลที่ล้มเหลวอ่านได้จาก lastCaptureError() เพื่อโชว์ให้ผู้ใช้รู้.
+ *  ส่ง `crop` = ค่าตอน "กดปัก" เพื่อให้ภาพตรงกับสิ่งที่เห็นตอนนั้น (ไม่ส่ง = จอปัจจุบัน). */
+export async function captureBody(crop?: ViewportCrop): Promise<Blob | null> {
   lastError = null;
   try {
     if (typeof window === "undefined") return null;
@@ -67,31 +81,30 @@ export async function captureBody(): Promise<Blob | null> {
     };
     const run = snapdom as (el: Element, o?: Record<string, unknown>) => Promise<SnapResult>;
 
-    // ── ทางหลัก: snapdom → webp blob ──
-    try {
-      const result = await run(document.body, opts);
-      const blob = await result.toBlob({ type: "webp", quality: 0.7 });
-      if (blob && blob.size > 0) return blob;
-    } catch (e) {
-      console.warn("[pinpoint] toBlob(webp) failed, trying canvas fallback", e);
-    }
+    // กรอบจอที่จะตัดเก็บ — ไม่ส่งมา = ใช้จอปัจจุบัน
+    const region: ViewportCrop = crop ?? {
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
 
-    // ── ทางสำรอง: snapdom → canvas → native webp (เสถียรกว่า toBlob ของ snapdom บางเบราว์เซอร์) ──
+    // snapdom → canvas เต็มหน้า → ตัดเหลือเฉพาะกรอบจอที่เห็น → webp (เผื่อ png).
     try {
       const result = await run(document.body, opts);
-      const canvas = await result.toCanvas();
+      const full = await result.toCanvas();
+      const view = cropToViewport(full, region);
       const blob = await new Promise<Blob | null>((res) =>
-        canvas.toBlob((b) => res(b), "image/webp", 0.7),
+        view.toBlob((b) => res(b), "image/webp", 0.7),
       );
       if (blob && blob.size > 0) return blob;
-      // เผื่อ webp ไม่รองรับ → png
       const png = await new Promise<Blob | null>((res) =>
-        canvas.toBlob((b) => res(b), "image/png"),
+        view.toBlob((b) => res(b), "image/png"),
       );
       if (png && png.size > 0) return png;
     } catch (e) {
       lastError = "จับภาพหน้านี้ไม่สำเร็จ: " + (e instanceof Error ? e.message : String(e));
-      console.warn("[pinpoint] canvas fallback failed", e);
+      console.warn("[pinpoint] capture+crop failed", e);
       return null;
     }
 
@@ -102,6 +115,36 @@ export async function captureBody(): Promise<Blob | null> {
     console.warn("[pinpoint] captureBody failed (non-fatal)", err);
     return null;
   }
+}
+
+/** ตัด canvas เต็มหน้า (snapdom เก็บทั้ง body) ให้เหลือเฉพาะกรอบจอที่เห็น.
+ *  อัตราส่วน px-ต่อ-CSS-px ได้จาก ขนาด canvas ÷ ขนาด body จริง → รองรับ scale/DPR
+ *  ภายในของ snapdom เองโดยไม่ต้องรู้ค่า. หน้าสั้น/เลื่อนสุด → clamp อยู่ในขอบ canvas. */
+function cropToViewport(full: HTMLCanvasElement, region: ViewportCrop): HTMLCanvasElement {
+  const refW = document.body.scrollWidth || document.documentElement.scrollWidth || region.width;
+  const refH = document.body.scrollHeight || document.documentElement.scrollHeight || region.height;
+  const ratioX = full.width / refW;
+  const ratioY = full.height / refH;
+  const rx = refW > 0 && Number.isFinite(ratioX) && ratioX > 0 ? ratioX : 1;
+  const ry = refH > 0 && Number.isFinite(ratioY) && ratioY > 0 ? ratioY : 1;
+
+  let sx = Math.round(region.scrollX * rx);
+  let sy = Math.round(region.scrollY * ry);
+  let sw = Math.round(region.width * rx);
+  let sh = Math.round(region.height * ry);
+
+  sx = Math.max(0, Math.min(sx, Math.max(0, full.width - 1)));
+  sy = Math.max(0, Math.min(sy, Math.max(0, full.height - 1)));
+  sw = Math.max(1, Math.min(sw, full.width - sx));
+  sh = Math.max(1, Math.min(sh, full.height - sy));
+
+  const out = document.createElement("canvas");
+  out.width = sw;
+  out.height = sh;
+  const ctx = out.getContext("2d");
+  if (!ctx) return full; // ตัดไม่ได้ → คืนภาพเต็ม (ยังดีกว่าไม่มีภาพ)
+  ctx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+  return out;
 }
 
 /** Upload a captured blob through the SERVER (/api/r2/upload → putObject).
