@@ -733,13 +733,35 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/playland",
     nav: [
-      // แยกหน้าบ้าน/หลังบ้านให้ชัด ไม่ปนกัน (CEO 2026-06-23 · D-023) — sidebar มี 2 ทางเข้าเท่านั้น:
-      //   หน้าร้าน = แอป Play a lot เต็มจอ (งานเคาน์เตอร์เรียลไทม์ · พนักงานใช้)
-      //   หลังบ้าน = hub จัดการ (รายงาน/ประวัติกะ/ตั้งค่าร้าน/ระบบ · ผู้จัดการขึ้นไป) — จัดหมวดในหน้า /office
+      // แยกหน้าบ้าน/หลังบ้านให้ขาด (CEO 2026-06-25 · D-025 · ทบทวน D-023):
+      //   หน้าร้าน = แอป Play a lot เต็มจอ (งานเคาน์เตอร์ · พนักงานทุกคน) — ทางเข้าเดียว ไม่มีของแอดมินปน
+      //   หลังบ้าน = nav จัดหมวด (desktop-first · ผู้จัดการ+) เปิดได้ทุกหน้า ไม่ใช่ก้อนเดียว → เจ้าของ "ทำอะไรได้จริง"
       { href: "/playland", label: "หน้าร้าน · Play a lot", icon: Activity, section: "Play a lot",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
-      { href: "/playland/office", label: "หลังบ้าน · จัดการ", icon: LayoutDashboard, section: "หลังบ้าน",
+      // ── หลังบ้าน · ดูผล/จัดการรายวัน (ผู้จัดการขึ้นไป) ──
+      { href: "/playland/office", label: "ภาพรวมร้าน", icon: LayoutDashboard, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/reports", label: "รายงาน · ปิดวัน", icon: BarChart3, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/stock", label: "สต๊อก · คลังสินค้า", icon: Boxes, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/shifts", label: "กะ · เงิน · นับลิ้นชัก", icon: Coins, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      // ── ดูแลร้าน · ความปลอดภัย (ผู้จัดการขึ้นไป) ──
+      { href: "/playland/incidents", label: "บันทึกอุบัติเหตุ", icon: AlertTriangle, section: "ดูแลร้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/safety", label: "ตรวจ · ทำความสะอาด", icon: ClipboardCheck, section: "ดูแลร้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/lost-found", label: "ของหาย · ของเก็บ", icon: PackageSearch, section: "ดูแลร้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/repairs", label: "ซ่อม · อะไหล่", icon: Wrench, section: "ดูแลร้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      // ── ตั้งค่า (แอดมินเท่านั้น) ──
+      { href: "/playland/settings", label: "ตั้งค่าร้าน", icon: Settings, section: "ตั้งค่า", adminOnly: true },
+      { href: "/playland/settings/branches", label: "ทีม & สาขา", icon: Building2, section: "ตั้งค่า", adminOnly: true },
+      { href: "/playland/settings/promos", label: "โปรโมชั่น · ส่วนลด", icon: Sparkles, section: "ตั้งค่า", adminOnly: true },
+      { href: "/playland/overrides", label: "เปิดประตูเอง (กันโกง)", icon: ShieldX, section: "ตั้งค่า", adminOnly: true },
+      { href: "/playland/audit", label: "Audit Log", icon: ScrollText, section: "ตั้งค่า", adminOnly: true },
     ],
   },
 

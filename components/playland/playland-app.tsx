@@ -1106,23 +1106,14 @@ export default function PlaylandApp(props: Props) {
                 ) })}
               </div>
 
-              {/* ── จัดการ ── */}
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", margin: "22px 0 12px" }}>จัดการ</div>
+              {/* ── เครื่องมือหน้าร้าน (พนักงาน) — งานแอดมิน/รายงานย้ายไปหลังบ้านแล้ว (CEO 2026-06-25) ── */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", margin: "22px 0 12px" }}>เครื่องมือหน้าร้าน</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
                 {hubCard({ onClick: () => go("monitor"), bg: "#1c2740", title: "จอ Monitor", sub: "โชว์เวลาทั้งร้าน", icon: (
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
                 ) })}
-                {hubCard({ onClick: () => go("members"), bg: "#7a5cc4", title: "สมาชิก", sub: (props.stats?.memberCount ?? 0) + " คน", icon: (
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                ) })}
-                {hubCard({ onClick: () => go("dashboard"), bg: "#0f9b8e", title: "Dashboard", sub: "รายได้ · สถิติ", icon: (
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
-                ) })}
-                {hubCard({ onClick: () => router.push("/playland/settings"), bg: "#6b6052", title: "ตั้งค่า", sub: "แพ็กเกจ · สต๊อก · พนักงาน", icon: (
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-                ) })}
-                {hubCard({ onClick: () => router.push("/playland/repairs"), bg: "#a9791a", title: "ซ่อม · อะไหล่", sub: "บันทึกซ่อม · เบิกของ", icon: (
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2-2 2.3-2.3Z" /></svg>
+                {hubCard({ onClick: () => go("settings"), bg: "#6b6052", title: "เครื่องมือ · ช่วยเหลือ", sub: "เครื่องพิมพ์ · วิธีใช้ · รีเฟรช", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
                 ) })}
               </div>
             </div>
@@ -1725,19 +1716,30 @@ export default function PlaylandApp(props: Props) {
             <div style={{ height: 74, flex: "none", background: "#fff", borderBottom: "1px solid #ece5d8", display: "flex", alignItems: "center", padding: "0 28px", gap: 16 }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: "#6b6052", fontSize: 16 }}>{backIcon("#6b6052")}หน้าหลัก</div>
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
-              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>ตั้งค่า</div>
+              <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>เครื่องมือ · ช่วยเหลือ</div>
             </div>
-            <div style={{ flex: 1, padding: "30px 36px", overflow: "auto", maxWidth: 980, margin: "0 auto", width: "100%" }}>
-              <div style={{ fontSize: 16, color: "#8a7f70", marginBottom: 22 }}>เปิดหน้าตั้งค่าจริงของแต่ละส่วน — ปลอดภัย มีบันทึก audit</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                {settingsLink({ onClick: () => router.push("/playland/settings/packages"), color: "#2D6CB1", title: "แพ็กเกจเวลา", sub: packages.length + " แพ็กเกจ · ตั้งราคา/เวลา" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings/products"), color: "#F0B323", title: "ขนม · เครื่องดื่ม", sub: products.length + " รายการ · ราคา/รูป" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings/stock-count"), color: "#1F8A5B", title: "สต๊อก · นับของ", sub: "ปรับ/นับสต๊อกขนม" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings/branches"), color: "#7a5cc4", title: "สาขา", sub: "ข้อมูลสาขา · ที่อยู่" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings/devices"), color: "#0f9b8e", title: "อุปกรณ์ · เครื่องสแกน", sub: "ประตู/กล้องจดจำใบหน้า" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings/promos"), color: "#E74C3C", title: "โปรโมชั่น", sub: "ส่วนลด · แคมเปญ" })}
-                {settingsLink({ onClick: () => router.push("/playland/settings"), color: "#6b6052", title: "ตั้งค่าทั้งหมด · พนักงาน", sub: "สิทธิ์พนักงาน · ตั้งค่าระบบ" })}
-                {settingsLink({ onClick: () => router.push("/playland/reports"), color: "#1c2740", title: "รายงาน", sub: "ยอดขาย · กะ · สถิติ" })}
+            <div style={{ flex: 1, padding: "30px 36px", overflow: "auto", maxWidth: 820, margin: "0 auto", width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 2 }}>เครื่องมือสำหรับพนักงานหน้าร้าน · งานจัดการ/รายงาน/ตั้งค่าร้านอยู่ที่ "หลังบ้าน" (สำหรับผู้จัดการ)</div>
+              {/* เครื่องพิมพ์ */}
+              <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>
+                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 6 }}>🖨️ เครื่องพิมพ์สายรัด / ใบเสร็จ</div>
+                <div style={{ fontSize: 15, color: "#8a7f70", marginBottom: 14, lineHeight: 1.6 }}>ถ้าพิมพ์ไม่ออก: เปิดอนุญาต popup ของเบราว์เซอร์ · เลือกเครื่องพิมพ์ให้ถูก · ตั้งขนาดกระดาษให้ตรงสายรัด</div>
+                <button onClick={() => printWristband({ code: "TEST-PRINT", memberName: "ทดสอบเครื่องพิมพ์", nickname: null })} style={{ cursor: "pointer", background: "#2D6CB1", color: "#fff", border: "none", borderRadius: 12, padding: "12px 22px", fontSize: 16, fontFamily: MITR }}>ทดสอบพิมพ์สายรัด</button>
+              </div>
+              {/* วิธีใช้ */}
+              <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: 22 }}>
+                <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 18, marginBottom: 12 }}>❓ วิธีใช้งานเร็ว ๆ</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 15.5, color: "#3A3026", lineHeight: 1.5 }}>
+                  <div><b>1. รับเด็กเข้าเล่น</b> → เลือกแพ็กเกจ → จ่ายเงิน → พิมพ์สายรัดให้เด็ก</div>
+                  <div><b>2. เช็คเอาท์</b> → กดที่การ์ดเด็ก → กรอกชื่อผู้มารับ (ถ้ามี) → คืนสายรัด</div>
+                  <div><b>3. ขายขนม / เครื่องดื่ม</b> → "ขายขนม" → เลือกของ → คิดเงิน</div>
+                  <div><b>4. ของหาย / เครื่องเสีย / มีปัญหา</b> → แจ้งผู้จัดการ (อยู่ในงานหลังบ้าน)</div>
+                </div>
+              </div>
+              {/* รีเฟรช + กลับหลังบ้าน (ผู้จัดการ) */}
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button onClick={() => router.refresh()} style={{ cursor: "pointer", background: "#fff", color: "#6b6052", border: "1px solid #ece5d8", borderRadius: 12, padding: "12px 22px", fontSize: 16, fontFamily: MITR }}>🔄 รีเฟรชข้อมูล</button>
+                <button onClick={() => router.push("/playland/office")} style={{ cursor: "pointer", background: "#fff", color: "#6b6052", border: "1px solid #ece5d8", borderRadius: 12, padding: "12px 22px", fontSize: 16, fontFamily: MITR }}>กลับหลังบ้าน (ผู้จัดการ)</button>
               </div>
             </div>
           </div>
