@@ -70,6 +70,12 @@ export default async function DcEditProductPage({ params }: { params: Params }) 
           <div className="dc-sub">
             {product.name} · {product.sku}
           </div>
+          <Link
+            href={`/dc/office/products/${product.id}/timeline`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 13, fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)" }}
+          >
+            ดูการเดินของสินค้า (timeline) →
+          </Link>
         </div>
         <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
       </div>

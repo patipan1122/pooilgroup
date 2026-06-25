@@ -154,6 +154,7 @@ export type GrnRemaining = {
   postStatus: string;
   note: string | null;
   shipmentCode: string | null;
+  poCode: string | null;
   lines: GrnRemainingLine[];
   totalReceived: number;
   totalOnHandNow: number;
@@ -174,6 +175,7 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
       id: true,
       grnCode: true,
       warehouseId: true,
+      poId: true,
       receivedAt: true,
       status: true,
       postStatus: true,
@@ -193,7 +195,7 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
   if (!grn) return null;
 
   const productIds = grn.lines.map((l) => l.productId);
-  const [balances, wh] = await Promise.all([
+  const [balances, wh, po] = await Promise.all([
     productIds.length
       ? prisma.dcStockBalance.findMany({
           where: { orgId, warehouseId: grn.warehouseId, productId: { in: productIds } },
@@ -201,6 +203,9 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
         })
       : Promise.resolve([] as { productId: string; qtyOnHand: number }[]),
     prisma.dcWarehouse.findFirst({ where: { orgId, id: grn.warehouseId }, select: { name: true } }),
+    grn.poId
+      ? prisma.dcPurchaseOrder.findFirst({ where: { orgId, id: grn.poId }, select: { poCode: true } })
+      : Promise.resolve(null),
   ]);
   const onHandById = new Map(balances.map((b) => [b.productId, b.qtyOnHand]));
 
@@ -226,6 +231,7 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
     postStatus: grn.postStatus,
     note: grn.note,
     shipmentCode: grn.shipment?.shipmentCode ?? null,
+    poCode: po?.poCode ?? null,
     lines,
     totalReceived: lines.reduce((s, l) => s + l.qtyReceived, 0),
     totalOnHandNow: lines.reduce((s, l) => s + l.onHandNow, 0),

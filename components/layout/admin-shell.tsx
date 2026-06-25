@@ -148,8 +148,18 @@ const ZERO_COUNTS: NavCountsClient = {
 const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 
 // DC Redesign v2 — หน้าที่ปรับโฉมแล้วมี shell ครีม/ฟ้าเต็มจอของตัวเอง (DcOfficeShell)
-// จึงต้อง "ข้าม" chrome ของ AdminShell ทั้งหมด. ขยาย allowlist ทีละหน้าเมื่อ reskin เสร็จ.
-const DC_FULLBLEED_PATHS = new Set<string>(["/dc/office/products"]);
+// จึงต้อง "ข้าม" chrome ของ AdminShell ทั้งหมด. ขยายเมื่อ reskin หน้าอื่นเสร็จ.
+// ⚠️ ระวัง dynamic route: /receipts/new (ฟอร์มเก่า) ห้ามเต็มจอ — match เฉพาะหน้าที่ทำใหม่.
+function isDcFullBleedPath(pathname: string): boolean {
+  return (
+    pathname === "/dc/office/products" ||
+    pathname === "/dc/office/receipts" ||
+    // ใบรับสินค้า รายละเอียด /dc/office/receipts/<id> (ยกเว้น /new = ฟอร์มเก่า)
+    /^\/dc\/office\/receipts\/(?!new$)[^/]+$/.test(pathname) ||
+    // timeline การเดินของสินค้า /dc/office/products/<id>/timeline
+    /^\/dc\/office\/products\/[^/]+\/timeline$/.test(pathname)
+  );
+}
 
 export function AdminShell({
   user,
@@ -231,7 +241,7 @@ export function AdminShell({
 
   // หน้า DC ที่ปรับโฉมแล้ว → render เนื้อในเต็มจอ ไม่ครอบด้วย topbar/sidebar ของแอป.
   // (hooks ทั้งหมดถูกเรียกครบก่อนบรรทัดนี้แล้ว — early-return จึงไม่ผิดกฎ hook order)
-  if (DC_FULLBLEED_PATHS.has(pathname)) {
+  if (isDcFullBleedPath(pathname)) {
     return <>{children}</>;
   }
 
