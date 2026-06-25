@@ -3785,6 +3785,8 @@ model PlaylandSession {
   extendedCount      Int                   @default(0) @map("extended_count")
   cashierUserId      String?               @map("cashier_user_id") @db.Uuid
   closedByUserId     String?               @map("closed_by_user_id") @db.Uuid
+  pickedUpByMemberId String?               @map("picked_up_by_member_id") @db.Uuid
+  pickedUpByName     String?               @map("picked_up_by_name")
   notes              String?
   metadata           Json?
   createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)

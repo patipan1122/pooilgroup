@@ -154,6 +154,21 @@ export async function createMember(input: CreateMemberInput): Promise<ActionResu
     },
   });
 
+  // เซฟใบยินยอม/Waiver เป็น "แถวจริง" (เดิมเช็คบ็อกซ์ยินยอมหายไป ไม่บันทึก = ในศาลเท่ากับไม่มี)
+  // ผูกกับสมาชิก ครั้งเดียวตอนลงทะเบียน · best-effort (ไม่บล็อกการสมัครถ้า write พลาด)
+  try {
+    await prisma.playlandWaiver.create({
+      data: {
+        orgId: session.user.org_id,
+        memberId: member.id,
+        signatureType: "checkbox",
+        signedByName: input.newFamilyGroupName?.trim() || input.name,
+        signedByPhone: input.phone ?? null,
+        metadata: { consentGiven: true, source: "register", branchId: input.branchId },
+      },
+    });
+  } catch { /* best-effort · สมาชิกถูกสร้างแล้ว · waiver เป็น secondary */ }
+
   revalidatePath("/playland");
   revalidatePath("/playland/members");
   return { ok: true, data: { memberId: member.id, faceId: assignedFaceId } };
@@ -316,6 +331,9 @@ export interface CheckOutInput {
   sessionId: string;
   /** วิธีจ่ายค่าปรับเกินเวลา (ถ้ามี) · default CASH */
   overtimePaymentMethod?: CheckInInput["paymentMethod"];
+  /** บันทึก "ใครมารับเด็ก" — log อย่างเดียว ไม่บล็อก (CEO 2026-06-25) */
+  pickedUpByMemberId?: string;
+  pickedUpByName?: string;
 }
 
 export async function checkOutSession(input: CheckOutInput): Promise<ActionResult<{ overtimeCents: number; overtimeMinutes: number }>> {
@@ -342,7 +360,7 @@ export async function checkOutSession(input: CheckOutInput): Promise<ActionResul
     // ปิด session แบบ race-safe: สำเร็จเฉพาะถ้ายังไม่ถูกปิด (กดรัว 2 ครั้ง → ครั้งที่ 2 no-op)
     const closed = await tx.playlandSession.updateMany({
       where: { id: sessionId, orgId: session.user.org_id, status: { in: ["ACTIVE", "PAUSED", "EXPIRED"] }, checkOutAt: null },
-      data: { status: "COMPLETED", checkOutAt: now, closedByUserId: session.user.id },
+      data: { status: "COMPLETED", checkOutAt: now, closedByUserId: session.user.id, pickedUpByMemberId: input.pickedUpByMemberId ?? null, pickedUpByName: input.pickedUpByName?.trim() || null },
     });
     if (closed.count !== 1) throw new Error("เช็คเอาท์ไปแล้ว");
     if (ot.cents > 0) {
@@ -489,7 +507,10 @@ export async function createSale(input: CreateSaleInput): Promise<ActionResult<{
   catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
   const openShift = { id: openShiftId };
 
-  const discount = input.discountCents ?? 0;
+  // 🔒 นโยบาย CEO 2026-06-25: แคชเชียร์ลดราคาเองไม่ได้ — ส่วนลดมาจาก "โปรโมชั่นส่วนกลาง" เท่านั้น
+  // จึง "เพิกเฉย" discountCents ที่ client ส่งมา (กันยิง action ตรงเพื่อลดเงินเข้ากระเป๋า · ไม่มี audit)
+  // promo enforcement engine (คำนวณ discount จาก PlaylandPromo ฝั่ง server) = คลื่น 3
+  const discount = 0;
   // Stock check INSIDE transaction with SELECT FOR UPDATE-style row lock via update
   // (Prisma uses optimistic via current value · we do a 2-step: refetch in tx, then decrement)
   const result = await prisma.$transaction(async (tx) => {
