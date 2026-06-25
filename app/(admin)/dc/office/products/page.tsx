@@ -1,174 +1,121 @@
-// DC · หลังบ้าน · ทะเบียนสินค้า (master list)
-// แสดงสินค้าทั้งหมดของ org · ค้นหาด้วย ?q= (ชื่อ/SKU/บาร์โค้ด) ฝั่ง server.
-import Link from "next/link";
-import { Boxes } from "lucide-react";
+// DC · หลังบ้าน · สินค้า — Redesign v2 (shell ครีม/ฟ้าเต็มจอ ตาม prototype).
+// โหลดสินค้า active + คงเหลือรวม (DcStockBalance ทุกคลังที่เห็นได้) + ต้นทุน/หน่วยล่าสุด
+// (DcCostLayer) + จัดหมวด/สี/ของใกล้หมด → ส่งให้ ProductsClient (การ์ด/ตาราง/ค้นหา).
 import { prisma } from "@/lib/prisma";
+import { DcPoStatus, DcShipmentStatus, DcPostStatus } from "@/lib/generated/prisma/enums";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { requireDcManager } from "@/lib/dc/role-guard";
 import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
-import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
-import { EmptyState } from "@/components/ui/empty-state";
-import { StatusPill } from "@/components/ui/status-pill";
-import { SeedSampleButton } from "./seed-button";
+import { DcOfficeShell } from "@/components/dc/office-shell";
+import { ProductsClient, type ProductRow, type CatChip } from "./products-client";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ q?: string }>;
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "Super Admin", org_admin: "Admin", admin: "Admin", program_admin: "Program Admin",
+  area_manager: "Area Manager", branch_manager: "Manager", staff: "Staff", viewer: "Viewer",
+};
 
-export default async function DcProductsPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+// จานสี (จาก prototype + เสริม) — หมวดที่รู้จักแมปตรง · ที่เหลือ hash แบบคงที่
+const PALETTE = [
+  { c: "#2AA3A3", soft: "#D9F0EC" }, { c: "#E0922F", soft: "#FEF1DE" },
+  { c: "#5B53D8", soft: "#EDEAFB" }, { c: "#64748B", soft: "#EEF1F5" },
+  { c: "#2E9D6B", soft: "#DFF1E8" }, { c: "#8B5CD8", soft: "#F0E8FB" },
+  { c: "#1F4FD6", soft: "#E9F0FF" }, { c: "#DC5B53", soft: "#FBE3E1" },
+];
+const KNOWN_CAT: Record<string, { c: string; soft: string }> = {
+  "เครื่องดื่ม": PALETTE[0], "ขนม": PALETTE[1], "ของเล่น": PALETTE[2],
+  "อะไหล่ตู้คีบ": PALETTE[3], "อะไหล่": PALETTE[3], "สินค้าขาย": PALETTE[6],
+};
+function catColor(label: string): { c: string; soft: string } {
+  if (KNOWN_CAT[label]) return KNOWN_CAT[label];
+  let h = 0;
+  for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+}
+const fmtBaht = (satang: number) => "฿" + Math.round(satang / 100).toLocaleString("en-US");
+
+export default async function DcProductsPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
+  const allowedIds = ctx.warehouses.map((w) => w.id);
 
-  const { q } = await searchParams;
-  const query = (q ?? "").trim();
-
-  const products = await prisma.dcProduct.findMany({
-    where: {
-      orgId,
-      ...(query
-        ? {
-            OR: [
-              { name: { contains: query, mode: "insensitive" } },
-              { sku: { contains: query, mode: "insensitive" } },
-              { barcode: { contains: query, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: [{ active: "desc" }, { type: "asc" }, { sku: "asc" }],
+  const productsRaw = await prisma.dcProduct.findMany({
+    where: { orgId, active: true },
+    orderBy: [{ type: "asc" }, { name: "asc" }],
     select: {
-      id: true,
-      sku: true,
-      name: true,
-      barcode: true,
-      type: true,
-      unit: true,
-      reorderPoint: true,
-      active: true,
+      id: true, sku: true, name: true, barcode: true, type: true,
+      unit: true, category: true, reorderPoint: true, imageR2Path: true,
     },
   });
+  const ids = productsRaw.map((p) => p.id);
+
+  const [balances, costLayers, poOpen, shipOpen, grnPending, poOrdered, shipInTransit] = await Promise.all([
+    ids.length && allowedIds.length
+      ? prisma.dcStockBalance.findMany({
+          where: { orgId, productId: { in: ids }, warehouseId: { in: allowedIds } },
+          select: { productId: true, qtyOnHand: true },
+        })
+      : Promise.resolve([] as { productId: string; qtyOnHand: number }[]),
+    ids.length
+      ? prisma.dcCostLayer.findMany({
+          where: { orgId, productId: { in: ids } },
+          orderBy: { createdAt: "desc" },
+          select: { productId: true, landedUnitSatang: true },
+        })
+      : Promise.resolve([] as { productId: string; landedUnitSatang: number }[]),
+    prisma.dcPurchaseOrder.count({ where: { orgId, status: { notIn: [DcPoStatus.RECEIVED, DcPoStatus.CLOSED, DcPoStatus.CANCELLED] } } }),
+    prisma.dcShipment.count({ where: { orgId, status: { not: DcShipmentStatus.RECEIVED } } }),
+    prisma.dcGoodsReceipt.count({ where: { orgId, postStatus: DcPostStatus.PENDING } }),
+    prisma.dcPurchaseOrder.count({ where: { orgId, status: DcPoStatus.ORDERED } }),
+    prisma.dcShipment.count({ where: { orgId, status: DcShipmentStatus.IN_TRANSIT } }),
+  ]);
+
+  // รวมคงเหลือต่อสินค้า (ทุกคลังที่เห็นได้)
+  const onHand = new Map<string, number>();
+  for (const b of balances) onHand.set(b.productId, (onHand.get(b.productId) ?? 0) + b.qtyOnHand);
+  // ต้นทุน/หน่วยล่าสุด (cost layer แรกของแต่ละสินค้า เพราะ order desc)
+  const priceSatang = new Map<string, number>();
+  for (const l of costLayers) if (!priceSatang.has(l.productId)) priceSatang.set(l.productId, l.landedUnitSatang);
+
+  const rows: ProductRow[] = productsRaw.map((p) => {
+    const catLabel = (p.category?.trim() || PRODUCT_TYPE_LABEL[p.type] || p.type).trim();
+    const catKey = p.category?.trim() || `__type_${p.type}`;
+    const { c, soft } = catColor(catLabel);
+    const oh = onHand.get(p.id) ?? 0;
+    const low = p.reorderPoint != null && oh <= p.reorderPoint;
+    const ps = priceSatang.get(p.id);
+    const img = p.imageR2Path?.startsWith("http") ? p.imageR2Path : null;
+    return {
+      id: p.id, name: p.name, sku: p.sku, barcode: p.barcode, unit: p.unit,
+      catKey, catLabel, catC: c, catSoft: soft,
+      onhand: oh, reorder: p.reorderPoint, low,
+      price: ps != null ? fmtBaht(ps) : null,
+      imageUrl: img,
+    };
+  });
+
+  // chips หมวด (เรียงตามจำนวนมาก→น้อย)
+  const byCat = new Map<string, CatChip>();
+  for (const r of rows) {
+    const ex = byCat.get(r.catKey);
+    if (ex) ex.count++;
+    else byCat.set(r.catKey, { key: r.catKey, label: r.catLabel, count: 1 });
+  }
+  const chips = [...byCat.values()].sort((a, b) => b.count - a.count);
+  const lowCount = rows.filter((r) => r.low).length;
 
   return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <div className="dc-h1">สินค้า</div>
-          <div className="dc-sub">ทะเบียนสินค้า · บาร์โค้ด · สินค้าขาย/อะไหล่</div>
-        </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
-
-      <PurchasingTabs />
-
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          flexWrap: "wrap",
-          marginBottom: 16,
-        }}
-      >
-        <form method="get" style={{ flex: 1, minWidth: 220 }}>
-          <input
-            type="search"
-            name="q"
-            defaultValue={query}
-            placeholder="ค้นหาชื่อ / SKU / บาร์โค้ด…"
-            style={{
-              width: "100%",
-              height: 44,
-              borderRadius: 12,
-              border: "1px solid var(--dc-line, #e4e4e7)",
-              padding: "0 14px",
-              fontSize: 15,
-              background: "#fff",
-              color: "#18181b",
-              outline: "none",
-            }}
-          />
-        </form>
-        <Link href="/dc/office/products/new" className="dc-btn-xl" style={{ width: "auto", minHeight: 44, padding: "0 18px", fontSize: 15 }}>
-          ＋ เพิ่มสินค้า
-        </Link>
-        <SeedSampleButton />
-      </div>
-
-      {products.length === 0 ? (
-        <EmptyState
-          icon={<Boxes size={26} />}
-          title={query ? "ไม่พบสินค้าที่ค้นหา" : "ยังไม่มีสินค้าในทะเบียน"}
-          description={
-            query
-              ? "ลองคำค้นอื่น หรือเพิ่มสินค้าใหม่"
-              : "เริ่มด้วยการเพิ่มสินค้าเอง หรือกด “เพิ่มสินค้าตัวอย่าง” เพื่อทดลองระบบ"
-          }
-        />
-      ) : (
-        <div className="dc-card" style={{ padding: 0, overflowX: "auto", overflowY: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>
-                <th style={cellHead}>ชื่อสินค้า</th>
-                <th style={cellHead}>SKU</th>
-                <th style={cellHead}>บาร์โค้ด</th>
-                <th style={cellHead}>ประเภท</th>
-                <th style={{ ...cellHead, textAlign: "right" }}>จุดสั่งซ้ำ</th>
-                <th style={cellHead}>สถานะ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
-                  <td style={cell}>
-                    <Link
-                      href={`/dc/office/products/${p.id}`}
-                      style={{ fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)" }}
-                    >
-                      {p.name}
-                    </Link>
-                    <div style={{ fontSize: 12, color: "#a1a1aa" }}>หน่วย: {p.unit}</div>
-                  </td>
-                  <td style={{ ...cell, fontVariantNumeric: "tabular-nums" }}>{p.sku}</td>
-                  <td style={{ ...cell, fontVariantNumeric: "tabular-nums", color: "#52525b" }}>
-                    {p.barcode ?? "—"}
-                  </td>
-                  <td style={cell}>
-                    <StatusPill tone={p.type === "SPARE" ? "amber" : "brand"} size="sm">
-                      {PRODUCT_TYPE_LABEL[p.type] ?? p.type}
-                    </StatusPill>
-                  </td>
-                  <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {p.reorderPoint ?? "—"}
-                  </td>
-                  <td style={cell}>
-                    <StatusPill tone={p.active ? "success" : "neutral"} size="sm" dot>
-                      {p.active ? "ใช้งาน" : "ปิด"}
-                    </StatusPill>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    <DcOfficeShell
+      active="products"
+      warehouseName={ctx.activeWarehouse?.name ?? "DC คลังกลาง"}
+      userName={ctx.session.user.name || ctx.session.user.email || "ผู้ใช้"}
+      userRole={ROLE_LABEL[ctx.session.user.role] ?? ctx.session.user.role}
+      badges={{ po: poOpen, ship: shipOpen, grn: grnPending }}
+      taskStrip={{ tracking: poOrdered, grn: grnPending, inTransit: shipInTransit }}
+    >
+      <ProductsClient products={rows} chips={chips} total={rows.length} lowCount={lowCount} />
+    </DcOfficeShell>
   );
 }
-
-const cellHead: React.CSSProperties = {
-  padding: "10px 14px",
-  fontSize: 12,
-  fontWeight: 700,
-  whiteSpace: "nowrap",
-};
-const cell: React.CSSProperties = {
-  padding: "12px 14px",
-  verticalAlign: "top",
-};

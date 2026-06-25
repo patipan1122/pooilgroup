@@ -147,6 +147,10 @@ const ZERO_COUNTS: NavCountsClient = {
 
 const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 
+// DC Redesign v2 — หน้าที่ปรับโฉมแล้วมี shell ครีม/ฟ้าเต็มจอของตัวเอง (DcOfficeShell)
+// จึงต้อง "ข้าม" chrome ของ AdminShell ทั้งหมด. ขยาย allowlist ทีละหน้าเมื่อ reskin เสร็จ.
+const DC_FULLBLEED_PATHS = new Set<string>(["/dc/office/products"]);
+
 export function AdminShell({
   user,
   children,
@@ -223,6 +227,12 @@ export function AdminShell({
     await sb.auth.signOut().catch(() => {});
     router.refresh();
     router.push("/login");
+  }
+
+  // หน้า DC ที่ปรับโฉมแล้ว → render เนื้อในเต็มจอ ไม่ครอบด้วย topbar/sidebar ของแอป.
+  // (hooks ทั้งหมดถูกเรียกครบก่อนบรรทัดนี้แล้ว — early-return จึงไม่ผิดกฎ hook order)
+  if (DC_FULLBLEED_PATHS.has(pathname)) {
+    return <>{children}</>;
   }
 
   return (

@@ -1,0 +1,106 @@
+/* DC Redesign v2 — shell ครีม/ฟ้า (เต็มจอ) · ตรงตาม prototype DC Redesign v2.dc.html
+   ขอบเขต: scope ใต้ .dcx เท่านั้น — ไม่รั่วไปทับธีม dc.css เดิมของหน้าอื่น.
+   hover ทำเป็น CSS class (prototype ใช้ style-hover ที่ React ไม่รองรับ). */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+.dcx {
+  --primary: #1F4FD6;
+  --primary-d: #1A45BE;
+  --primary-soft: #E9F0FF;
+  --border: #EBE3D8;
+  --border-2: #DCD2C4;
+  --ink: #1E2A44;
+  --ink2: #5B6477;
+  --muted: #9A9082;
+  --bg: #FAF6F0;
+  --surf2: #F4EFE8;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: 'IBM Plex Sans Thai', 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+  font-size: 14px;
+}
+.dcx *,
+.dcx *::before,
+.dcx *::after { box-sizing: border-box; }
+.dcx ::-webkit-scrollbar { height: 10px; width: 10px; }
+.dcx ::-webkit-scrollbar-thumb { background: #D8CEBF; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.dcx ::-webkit-scrollbar-track { background: transparent; }
+.dcx .num { font-family: 'Inter', sans-serif; }
+
+/* ---- sidebar nav items ---- */
+.dcx-nav {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 12px; border-radius: 10px; font-size: 14px;
+  cursor: pointer; transition: background .15s, color .15s;
+  background: transparent; color: var(--ink2); font-weight: 500;
+  text-decoration: none;
+}
+.dcx-nav:hover { background: var(--surf2); color: var(--ink); }
+.dcx-nav.on {
+  background: var(--primary-soft); color: var(--primary); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.dcx-nav.on:hover { background: var(--primary-soft); color: var(--primary); }
+.dcx-seclabel {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  color: var(--muted); text-transform: uppercase; padding: 16px 12px 7px;
+}
+
+/* ---- topbar segment toggle ---- */
+.dcx-top {
+  padding: 6px 14px; border: none; border-radius: 8px; font-size: 13px;
+  font-weight: 600; font-family: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; text-decoration: none;
+}
+.dcx-top.on { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(31,79,214,.3); }
+.dcx-top.off { background: transparent; color: var(--ink2); }
+.dcx-top.off:hover { color: var(--ink); }
+
+/* ---- product card ---- */
+.dcx-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 14px;
+  overflow: hidden; box-shadow: 0 1px 2px rgba(30,42,68,.04);
+  display: flex; flex-direction: column; transition: box-shadow .15s;
+}
+.dcx-card:hover { box-shadow: 0 8px 22px rgba(30,42,68,.1); }
+.dcx-cardbtn {
+  border: none; background: #fff; padding: 9px 4px; font-size: 11.5px;
+  font-weight: 600; font-family: inherit; cursor: pointer; color: var(--ink2);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  text-decoration: none; transition: background .12s, color .12s;
+}
+.dcx-cardbtn:hover { background: var(--surf2); }
+.dcx-cardbtn.issue:hover { color: #DC5B53; }
+.dcx-cardbtn.move:hover { color: var(--primary); }
+
+/* ---- chips ---- */
+.dcx-chip {
+  font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 20px;
+  cursor: pointer; white-space: nowrap; transition: all .12s;
+  background: #fff; color: var(--ink2); border: 1px solid var(--border);
+}
+.dcx-chip:hover { background: var(--surf2); }
+.dcx-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.dcx-chip.on:hover { background: var(--primary-d); }
+
+/* ---- view toggle (grid/table) ---- */
+.dcx-vtoggle { display: flex; background: var(--surf2); border-radius: 10px; padding: 3px; gap: 2px; }
+.dcx-vbtn {
+  padding: 8px 11px; border-radius: 8px; border: none; cursor: pointer;
+  display: flex; background: transparent; color: var(--ink2); transition: all .12s;
+}
+.dcx-vbtn.on { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(30,42,68,.12); }
+
+/* ---- table view ---- */
+.dcx-trow { transition: background .1s; text-decoration: none; color: inherit; }
+.dcx-trow:hover { background: var(--surf2); }
+
+/* ---- generic clickable rows / buttons ---- */
+.dcx-soft:hover { background: var(--surf2); }
+
+@media (max-width: 1024px) {
+  .dcx { height: auto; min-height: 100vh; overflow: visible; }
+}
