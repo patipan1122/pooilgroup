@@ -3,6 +3,8 @@
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandCashier } from "@/lib/playland/role-guard";
 import { getBranchContext } from "@/lib/playland/branch-context";
+import { prisma } from "@/lib/prisma";
+import { readSafetyChecklist } from "@/lib/playland/safety-checklist";
 import { SafetyForm } from "@/components/playland/safety-form";
 import { StaffScreenShell } from "@/components/playland/care/staff-screen-shell";
 
@@ -26,9 +28,16 @@ export default async function CareSafetyPage() {
     );
   }
 
+  // เช็กลิสต์ความปลอดภัยต่อสาขา (ตั้งค่าที่ /playland/settings/care) · ไม่ตั้ง = default
+  const branch = await prisma.playlandBranch.findFirst({
+    where: { id: activeId, orgId: session.user.org_id },
+    select: { settings: true },
+  });
+  const items = readSafetyChecklist(branch?.settings);
+
   return (
     <StaffScreenShell title="ตรวจ · ทำความสะอาด" subtitle="สำหรับพนักงานหน้าร้าน">
-      <SafetyForm branchId={activeId} />
+      <SafetyForm branchId={activeId} items={items} />
     </StaffScreenShell>
   );
 }

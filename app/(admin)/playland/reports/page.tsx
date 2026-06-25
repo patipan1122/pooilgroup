@@ -16,8 +16,10 @@ const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 const CAT_COLORS = [BLUE, AMBER, GREEN, "#9B59B6", "#E67E22", "#16A085", RED, MUTED];
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string }> }) {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string; view?: "chart" | "table"; detail?: string }> }) {
   const sp = await searchParams;
+  const dayView = sp.view === "table" ? "table" : "chart"; // ?view=table → ตาราง · default = กราฟ
+  const dayDetail = sp.detail === "1"; // ?detail=1 → โชว์ทุกคอลัมน์ (ละเอียด) · default = สรุป
   const session = await requireSession();
   requirePlaylandManager(session.user.role); // รายงานยอด/PII = ผู้จัดการขึ้นไป (กันพนักงานเห็นรายได้รวม)
   const orgId = session.user.org_id;
@@ -120,12 +122,27 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     perBranch.set(s.branchId, x);
   }
 
-  const dayMap = new Map<string, { entry: number; product: number }>();
+  // ── per-วัน: เงิน (ค่าเข้า/ขายของ/เงินสด/เงินโอน) + คน (ลูกค้า/เด็ก/ผู้ใหญ่) ──
+  // bucket key = วันที่ในเขตเวลา local (เดียวกับ checkInAt) → กันยอดวันคร่อมเที่ยงคืนเพี้ยน
+  const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const dayMap = new Map<string, { entry: number; product: number; cash: number; transfer: number }>();
   for (const s of sales) {
-    const day = new Date(s.soldAt).toISOString().slice(0, 10);
-    const x = dayMap.get(day) ?? { entry: 0, product: 0 };
+    const day = dayKey(new Date(s.soldAt));
+    const x = dayMap.get(day) ?? { entry: 0, product: 0, cash: 0, transfer: 0 };
     if (isProduct(s)) x.product += s.totalCents; else x.entry += s.totalCents;
+    // เงินสด = paymentMethod CASH (เข้าลิ้นชัก) · ที่เหลือ = เงินโอน/ออนไลน์ (ตรงกับ cashTotal/nonCashTotal)
+    if (s.paymentMethod === "CASH") x.cash += s.totalCents; else x.transfer += s.totalCents;
     dayMap.set(day, x);
+  }
+  // คนต่อวัน = distinct memberId ต่อวัน (กันนับซ้ำคนเดิม) · แยกเด็ก/ผู้ใหญ่ตาม member.type
+  const dayPeople = new Map<string, { all: Set<string>; kids: Set<string>; adults: Set<string> }>();
+  for (const s of sessions) {
+    const day = dayKey(new Date(s.checkInAt));
+    const p = dayPeople.get(day) ?? { all: new Set<string>(), kids: new Set<string>(), adults: new Set<string>() };
+    p.all.add(s.memberId);
+    if (s.member?.type === "KID") p.kids.add(s.memberId);
+    else if (s.member?.type === "PARENT") p.adults.add(s.memberId);
+    dayPeople.set(day, p);
   }
 
   // แยกเงินตามวิธีรับ (ลิ้นชัก = เฉพาะเงินสด · ที่เหลือเข้าบัญชี/ออนไลน์)
@@ -138,6 +155,38 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const nonCashTotal = total - cashTotal;
   const days = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b));
   const maxDay = days.reduce((m, [, v]) => Math.max(m, v.entry + v.product), 0);
+
+  // ── แถวตารางต่อวัน (รวมวันที่มีเงิน ∪ วันที่มีคนเข้า) + แถวรวมท้ายตาราง ──
+  const tableDayKeys = Array.from(new Set([...dayMap.keys(), ...dayPeople.keys()])).sort((a, b) => a.localeCompare(b));
+  const dayRows = tableDayKeys.map((d) => {
+    const m = dayMap.get(d) ?? { entry: 0, product: 0, cash: 0, transfer: 0 };
+    const p = dayPeople.get(d);
+    return {
+      day: d,
+      total: m.entry + m.product,
+      cash: m.cash,
+      transfer: m.transfer,
+      product: m.product,
+      customers: p?.all.size ?? 0,
+      kids: p?.kids.size ?? 0,
+      adults: p?.adults.size ?? 0,
+    };
+  });
+  const dayTotals = dayRows.reduce(
+    (acc, r) => ({
+      total: acc.total + r.total,
+      cash: acc.cash + r.cash,
+      transfer: acc.transfer + r.transfer,
+      product: acc.product + r.product,
+      customers: acc.customers + r.customers,
+      kids: acc.kids + r.kids,
+      adults: acc.adults + r.adults,
+    }),
+    { total: 0, cash: 0, transfer: 0, product: 0, customers: 0, kids: 0, adults: 0 },
+  );
+  // ลิงก์สลับมุมมอง/รายละเอียด — พก from/to/branch ไปด้วย (ไม่หลุด filter)
+  const baseQ = `from=${fmtD(from)}&to=${fmtD(to)}${_bq}`;
+  const viewLink = (v: "chart" | "table", detail?: boolean) => `?${baseQ}&view=${v}${detail ? "&detail=1" : ""}`;
 
   // ── ปิดวัน: ยอดรวม ขาด/เกิน ของกะที่ปิดแล้ว ──
   const closedShifts = shifts.filter((sh) => sh.status === "CLOSED");
@@ -351,13 +400,95 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             })}
           </div>
 
-          {/* Per-day mini chart */}
+          {/* Per-day — สลับ กราฟ↔ตาราง ด้วย ?view= (pure server · ไม่มี client state) */}
           <div style={{ ...card, padding: 22 }}>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 16, flex: 1, fontFamily: FREDOKA }}>รายได้ต่อวัน</div>
-              <div style={{ display: "flex", gap: 12, fontSize: 11, color: MUTED }}><span style={{ color: BLUE }}>● ค่าเข้า</span><span style={{ color: AMBER }}>● ขายของ</span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 600, fontSize: 16, fontFamily: FREDOKA }}>รายได้ต่อวัน</div>
+              {/* toggle กราฟ↔ตาราง (ชิปแบบเดียวกับ date-preset) */}
+              <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                <a href={viewLink("chart")} style={chip(dayView === "chart")}>กราฟ</a>
+                <a href={viewLink("table", dayDetail)} style={chip(dayView === "table")}>ตาราง</a>
+              </div>
+              {dayView === "chart" && (
+                <div style={{ display: "flex", gap: 12, fontSize: 11, color: MUTED, width: "100%", justifyContent: "flex-end" }}><span style={{ color: BLUE }}>● ค่าเข้า</span><span style={{ color: AMBER }}>● ขายของ</span></div>
+              )}
+              {dayView === "table" && (
+                <div style={{ display: "flex", gap: 6, width: "100%", justifyContent: "flex-end" }}>
+                  <a href={viewLink("table", false)} style={chip(!dayDetail)}>สรุป</a>
+                  <a href={viewLink("table", true)} style={chip(dayDetail)}>ละเอียด</a>
+                </div>
+              )}
             </div>
-            {days.length === 0 ? (
+            {dayView === "table" ? (
+              dayRows.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "30px 0", color: MUTED }}>
+                  <BarChart3 size={22} />
+                  <div style={{ fontSize: 14 }}>ไม่มีรายได้ในช่วงนี้</div>
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ color: MUTED, fontWeight: 500, textAlign: "left" }}>
+                        <th style={th}>วันที่</th>
+                        <th style={{ ...th, textAlign: "right" }}>ยอดขายรวม</th>
+                        {dayDetail && <th style={{ ...th, textAlign: "right" }}>เงินสด</th>}
+                        {dayDetail && <th style={{ ...th, textAlign: "right" }}>เงินโอน</th>}
+                        <th style={{ ...th, textAlign: "right" }}>ลูกค้า</th>
+                        {dayDetail ? (
+                          <>
+                            <th style={{ ...th, textAlign: "right" }}>เด็ก</th>
+                            <th style={{ ...th, textAlign: "right" }}>ผู้ใหญ่</th>
+                          </>
+                        ) : (
+                          <th style={{ ...th, textAlign: "right" }}>เด็ก / ผู้ใหญ่</th>
+                        )}
+                        <th style={{ ...th, textAlign: "right" }}>ขนม/สินค้า</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayRows.map((r) => (
+                        <tr key={r.day} style={{ borderTop: `1px solid #f2ebdd` }}>
+                          <td style={{ ...td, fontFamily: MONO, whiteSpace: "nowrap" }}>{r.day.slice(5)}</td>
+                          <td style={{ ...td, textAlign: "right", fontFamily: MONO, fontWeight: 600 }}>{thb(r.total)}</td>
+                          {dayDetail && <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: GREEN }}>{thb(r.cash)}</td>}
+                          {dayDetail && <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: BLUE }}>{thb(r.transfer)}</td>}
+                          <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{r.customers}</td>
+                          {dayDetail ? (
+                            <>
+                              <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: AMBER }}>{r.kids}</td>
+                              <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: BLUE }}>{r.adults}</td>
+                            </>
+                          ) : (
+                            <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{r.kids} / {r.adults}</td>
+                          )}
+                          <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{thb(r.product)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: `2px solid ${LINE}`, fontWeight: 700 }}>
+                        <td style={{ ...td, fontFamily: FREDOKA }}>รวม</td>
+                        <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{thb(dayTotals.total)}</td>
+                        {dayDetail && <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: GREEN }}>{thb(dayTotals.cash)}</td>}
+                        {dayDetail && <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: BLUE }}>{thb(dayTotals.transfer)}</td>}
+                        <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{dayTotals.customers}</td>
+                        {dayDetail ? (
+                          <>
+                            <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: AMBER }}>{dayTotals.kids}</td>
+                            <td style={{ ...td, textAlign: "right", fontFamily: MONO, color: BLUE }}>{dayTotals.adults}</td>
+                          </>
+                        ) : (
+                          <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{dayTotals.kids} / {dayTotals.adults}</td>
+                        )}
+                        <td style={{ ...td, textAlign: "right", fontFamily: MONO }}>{thb(dayTotals.product)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                  <div style={{ fontSize: 11, color: MUTED, marginTop: 10 }}>* ค่าปรับยังแยกไม่ได้ (รวมในค่าเข้า) · ลูกค้า/เด็ก/ผู้ใหญ่ = นับหัวไม่ซ้ำต่อวัน</div>
+                </div>
+              )
+            ) : days.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "30px 0", color: MUTED }}>
                 <BarChart3 size={22} />
                 <div style={{ fontSize: 14 }}>ไม่มีรายได้ในช่วงนี้</div>
@@ -453,4 +584,9 @@ const badge = (color: string, bg: string): React.CSSProperties => ({ display: "i
 function btn(primary: boolean): React.CSSProperties {
   return { display: "inline-flex", alignItems: "center", gap: 7, textDecoration: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
     background: primary ? BLUE : "#fff", color: primary ? "#fff" : MUTED, border: primary ? "none" : `1px solid ${LINE}` };
+}
+// ชิปสลับมุมมอง (กราฟ/ตาราง · สรุป/ละเอียด) — แบบเดียวกับ date-preset · active = น้ำเงินเต็ม
+function chip(active: boolean): React.CSSProperties {
+  return { fontSize: 12, fontWeight: 600, textDecoration: "none", borderRadius: 8, padding: "5px 11px",
+    background: active ? BLUE : "#eaf3f6", color: active ? "#fff" : BLUE, border: `1px solid ${active ? BLUE : "transparent"}` };
 }

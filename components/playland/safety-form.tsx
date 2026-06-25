@@ -5,6 +5,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitSafetyCheck } from "@/lib/playland/safety";
+import { DEFAULT_SAFETY_ITEMS } from "@/lib/playland/safety-checklist";
+
+// re-export ให้ของเดิมที่ import จากไฟล์ฟอร์มยังใช้ได้ (single source อยู่ที่ lib/playland/safety-checklist)
+export { DEFAULT_SAFETY_ITEMS };
 
 type CheckType = "safety" | "cleaning";
 type Item = { label: string; ok: boolean; note: string };
@@ -14,30 +18,27 @@ const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
 const INK = "#3A3026", MUTED = "#8a7f70", BLUE = "#2D6CB1", GREEN = "#1F8A5B", RED = "#E74C3C", LINE = "#ece5d8";
 const input: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 10, padding: "11px 13px", fontSize: 16, fontFamily: MITR, color: INK, outline: "none", boxSizing: "border-box", width: "100%" };
 
-const DEFAULT_ITEMS: Record<CheckType, string[]> = {
-  safety: [
-    "น็อต/สกรูเครื่องเล่นแน่น",
-    "ตาข่าย/กันชนไม่ขาด",
-    "พื้น/เบาะนุ่มไม่ฉีก",
-    "บอลพิทสะอาดไม่มีของแหลม",
-    "ทางออกฉุกเฉินไม่มีของกีดขวาง",
-    "ถังดับเพลิงพร้อมใช้",
-    "ชุดปฐมพยาบาลครบ",
-  ],
-  cleaning: [
-    "บอลพิททำความสะอาด/ฆ่าเชื้อ",
-    "เครื่องเล่นเช็ดฆ่าเชื้อ",
-    "ห้องน้ำสะอาด",
-    "พื้นถูสะอาด",
-    "โต๊ะ/เก้าอี้กินขนมสะอาด",
-    "ถังขยะเททิ้ง",
-  ],
-};
+const DEFAULT_CLEANING_ITEMS: string[] = [
+  "บอลพิททำความสะอาด/ฆ่าเชื้อ",
+  "เครื่องเล่นเช็ดฆ่าเชื้อ",
+  "ห้องน้ำสะอาด",
+  "พื้นถูสะอาด",
+  "โต๊ะ/เก้าอี้กินขนมสะอาด",
+  "ถังขยะเททิ้ง",
+];
 
-const makeItems = (t: CheckType): Item[] => DEFAULT_ITEMS[t].map((label) => ({ label, ok: true, note: "" }));
+const toItems = (labels: string[]): Item[] => labels.map((label) => ({ label, ok: true, note: "" }));
 
-export function SafetyForm({ branchId }: { branchId: string }) {
+/**
+ * @param items เช็กลิสต์ "ความปลอดภัย" ที่ตั้งค่าต่อสาขา (ถ้ามี · non-empty) → ใช้แทน default
+ *              ถ้าไม่ส่ง/ว่าง = ใช้ DEFAULT_SAFETY_ITEMS เดิม (backward-compatible)
+ */
+export function SafetyForm({ branchId, items: safetyItems }: { branchId: string; items?: string[] }) {
   const router = useRouter();
+  // เช็กลิสต์ safety = ตั้งค่าต่อสาขา (ถ้ามี) · cleaning = default ตายตัว
+  const safetyLabels = safetyItems && safetyItems.length > 0 ? safetyItems : DEFAULT_SAFETY_ITEMS;
+  const makeItems = (t: CheckType): Item[] => toItems(t === "cleaning" ? DEFAULT_CLEANING_ITEMS : safetyLabels);
+
   const [checkType, setCheckType] = useState<CheckType>("safety");
   const [shiftLabel, setShiftLabel] = useState<string>("เปิดร้าน");
   const [items, setItems] = useState<Item[]>(() => makeItems("safety"));
