@@ -105,6 +105,22 @@ export async function redeemReward(
         return { ok: false, reason: "out_of_stock" };
       }
 
+      // กันแย่งสต๊อกชิ้นสุดท้าย (race): สำหรับของที่นับสต๊อก ตัด stock แบบมีเงื่อนไข
+      // updateMany WHERE stock>0 ก่อน "ตัดแต้ม" เลย — ใครชนะ updateMany (count===1)
+      // เท่านั้นถึงไปต่อ. คนแพ้ได้ count===0 → throw ให้ transaction rollback คืน
+      // out_of_stock (ไม่มีการตัดแต้ม เพราะ spendPoints อยู่หลังจุดนี้).
+      // (default Read Committed: updateMany ถือ row-lock ตอน write → serialize ได้จริง)
+      if (reward.stock != null) {
+        const dec = await tx.clawhubReward.updateMany({
+          where: { id: reward.id, stock: { gt: 0 } },
+          data: { stock: { decrement: 1 } },
+        });
+        if (dec.count !== 1) {
+          // แพ้ race — ของหมดพอดี. throw แล้วดักด้านล่างเป็น out_of_stock
+          throw new Error("__cf_out_of_stock");
+        }
+      }
+
       // Spend first — throws if the member has too few unexpired points.
       const redemptionId = crypto.randomUUID();
       await spendPoints(tx, {
@@ -138,12 +154,7 @@ export async function redeemReward(
         },
       });
 
-      if (reward.stock != null) {
-        await tx.clawhubReward.update({
-          where: { id: reward.id },
-          data: { stock: { decrement: 1 } },
-        });
-      }
+      // (stock ถูกตัดแบบมีเงื่อนไขไปแล้วก่อนตัดแต้ม — กัน race สต๊อกติดลบ)
 
       return {
         ok: true,
@@ -152,6 +163,10 @@ export async function redeemReward(
       };
     });
   } catch (err: unknown) {
+    // แพ้ race สต๊อก — conditional decrement คืน count 0 → out_of_stock (rollback แล้ว)
+    if (err instanceof Error && err.message === "__cf_out_of_stock") {
+      return { ok: false, reason: "out_of_stock" };
+    }
     // spendPoints throws on insufficient points — surface as a clean reason, not a 500.
     if (err instanceof Error && err.message.includes("insufficient points")) {
       return { ok: false, reason: "insufficient_points" };

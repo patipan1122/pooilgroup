@@ -12,7 +12,7 @@
 // Auth + module-entitlement still run in the parent (admin) layouts beneath.
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Sidebar, TopBar, type BranchSummary, type SidebarNavCounts, type SidebarUser } from "@/components/clawfleet/v2/chrome";
 
 /* sidebar short-id ↔ App Router segment */
@@ -77,8 +77,15 @@ export function V2Shell({
   const activeId = SEG_TO_ID[seg] ?? "hub";
   const branch = params.get("branch") ?? "all";
 
+  // drawer เมนูบนมือถือ — ปิดอัตโนมัติเมื่อเปลี่ยนหน้า (pathname เปลี่ยน)
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
+
   const onNav = useCallback(
     (id: string) => {
+      setDrawerOpen(false);
       const target = ID_TO_SEG[id] ?? "hub";
       const q = branch !== "all" ? `?branch=${branch}` : "";
       router.push(`/clawfleet/v2/${target}${q}`);
@@ -96,7 +103,15 @@ export function V2Shell({
   );
 
   return (
-    <div className="cf-app">
+    <div className={`cf-app ${drawerOpen ? "cf-drawer-open" : ""}`}>
+      {/* scrim มืด — แตะเพื่อปิด drawer (โชว์เฉพาะตอนเปิดบนมือถือ) */}
+      <div
+        className="cf-scrim"
+        role="button"
+        tabIndex={-1}
+        aria-label="ปิดเมนู"
+        onClick={() => setDrawerOpen(false)}
+      />
       <Sidebar
         active={activeId}
         onNav={onNav}
@@ -111,6 +126,7 @@ export function V2Shell({
           onBranchChange={onBranchChange}
           page={PAGE_LABEL[seg] ?? "ClawFleet"}
           branches={branches}
+          onMenu={() => setDrawerOpen(true)}
         />
         <main className="cf-content">{children}</main>
       </div>

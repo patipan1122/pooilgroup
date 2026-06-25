@@ -152,6 +152,16 @@
   position: sticky; top: 0; z-index: 30;
   backdrop-filter: saturate(180%) blur(8px);
 }
+.cf-tb-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* ปุ่มขีดสามขีด — ซ่อนบน desktop, โชว์เฉพาะมือถือ (≤900px) */
+.cf-tb-menu-btn {
+  display: none;
+  width: 36px; height: 36px; border-radius: 8px;
+  place-items: center; color: var(--cf-text-2); flex-shrink: 0;
+}
+.cf-tb-menu-btn:hover { background: var(--cf-surface); }
+/* scrim หลัง drawer — ซ่อนเสมอบน desktop */
+.cf-scrim { display: none; }
 .cf-tb-crumb { display: flex; gap: 6px; align-items: center; color: var(--cf-text-3); font-size: 13px; }
 .cf-tb-crumb-cur { color: var(--cf-text); font-weight: 600; }
 .cf-tb-right { display: flex; align-items: center; gap: 6px; }
@@ -1239,12 +1249,34 @@
   .cf-mobile-stage { grid-template-columns: 1fr; justify-items: center; }
 }
 @media (max-width: 900px) {
+  /* มือถือ: เนื้อหาเต็มจอ · sidebar กลายเป็น drawer เลื่อนเข้าจากซ้าย */
   .cf-app { grid-template-columns: 1fr; }
-  .cf-sidebar { display: none; }
+  .cf-tb-menu-btn { display: grid; }
+
+  .cf-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; height: 100vh;
+    width: 264px; max-width: 82vw;
+    z-index: 120;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--cf-shadow-lg);
+  }
+  .cf-drawer-open .cf-sidebar { transform: translateX(0); }
+
+  /* scrim — โผล่เฉพาะตอน drawer เปิด · แตะที่ใดก็ปิด */
+  .cf-drawer-open .cf-scrim {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 110;
+    animation: cf-scrim-in 0.18s ease;
+  }
+
   .cf-content { padding: 16px; }
   .cf-insight-cards { grid-template-columns: repeat(2, 1fr); }
   .cf-stock-grid { grid-template-columns: 1fr; }
 }
+@keyframes cf-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ===== TOAST — non-blocking confirmation ===== */
 /* Ported from the mockup index `<style>` block (ClawFleet Redesign.html). */

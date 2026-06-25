@@ -293,6 +293,7 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
       events: {
         where: { eventType: "COLLECTION" },
         select: {
+          machineId: true,
           coinMeterBefore: true, coinMeterAfter: true, cashCountedCents: true,
           dollMeterBefore: true, dollMeterAfter: true,
           stockBefore: true, stockAfter: true, refillQty: true,
@@ -316,6 +317,22 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     return { ok: false, error: `เก็บไม่ครบ · กรอก ${cf.events.length}/${machineCount} ตู้` };
   }
 
+  // ราคา/ครั้งจริงต่อตู้ (ตาม loadout ปัจจุบัน) — ตอนกรอกต่อตู้ใช้ราคาจริงอยู่แล้ว
+  // (pricePerPlayCoins×1000) ตอนปิดรอบต้องใช้ราคาเดียวกัน ไม่งั้น cross-check คิด
+  // ทุกตู้ที่ ฿10 → ตู้ราคาอื่นจะติด flag เงินขาด/เกินทั้งที่เงินถูก. ตู้ที่ไม่มี
+  // loadout → fallback flat (เหมือน submit).
+  const cashMachines = await prisma.cfMachine.findMany({
+    where: { orgId, branchId: cf.branchId, kind: "CLAW" },
+    select: {
+      id: true,
+      loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } },
+    },
+  });
+  const priceByMachine = new Map<string, number>();
+  for (const m of cashMachines) {
+    priceByMachine.set(m.id, m.loadouts[0] ? m.loadouts[0].pricePerPlayCoins * 1000 : CASH_PER_PLAY_CENTS);
+  }
+
   const cc = deriveBranchCrossCheck(
     cf.events.map((e) => ({
       coinMeterBefore: e.coinMeterBefore,
@@ -326,7 +343,7 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
       stockBefore: e.stockBefore ?? 0,
       stockAfter: e.stockAfter ?? 0,
       refillQty: e.refillQty ?? 0,
-      cashPerCoinCents: CASH_PER_PLAY_CENTS,
+      cashPerCoinCents: priceByMachine.get(e.machineId) ?? CASH_PER_PLAY_CENTS,
     })),
   );
 
@@ -553,6 +570,23 @@ export async function closeGroupSession(
     return { ok: false, error: "ยังไม่ได้เก็บตู้แลก (EXCHANGER) ของกลุ่มนี้" };
   }
 
+  // ราคา/ครั้งจริงต่อตู้ สำหรับกลุ่มเงินสด (cash group) — เหมือนปิดรอบสาขา ต้องใช้
+  // ราคาจริงตาม loadout ไม่ใช่ flat ฿10 ไม่งั้นตู้ราคาอื่นติด flag เงินผิด. token group
+  // ใช้ 0 (เงินอยู่ที่ตู้แลก · claw ไม่มีเงิน) จึงข้ามการ lookup.
+  const priceByMachine = new Map<string, number>();
+  if (!isTokenGroup) {
+    const cashMachines = await prisma.cfMachine.findMany({
+      where: { orgId, groupId: cf.groupId, kind: "CLAW" },
+      select: {
+        id: true,
+        loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } },
+      },
+    });
+    for (const m of cashMachines) {
+      priceByMachine.set(m.id, m.loadouts[0] ? m.loadouts[0].pricePerPlayCoins * 1000 : CASH_PER_PLAY_CENTS);
+    }
+  }
+
   // App-layer cash+doll preview (token = trigger). For token groups the claws carry
   // no cash, so skip the per-claw cash check; doll always applies.
   const cc = deriveBranchCrossCheck(
@@ -566,7 +600,7 @@ export async function closeGroupSession(
       stockAfter: e.stockAfter ?? 0,
       refillQty: e.refillQty ?? 0,
       // token group: claws have no cash → expected 0 so cash check is a no-op
-      cashPerCoinCents: isTokenGroup ? 0 : CASH_PER_PLAY_CENTS,
+      cashPerCoinCents: isTokenGroup ? 0 : (priceByMachine.get(e.machineId) ?? CASH_PER_PLAY_CENTS),
     })),
   );
 

@@ -516,9 +516,11 @@ export type TopBarProps = {
   onBranchChange: (id: string) => void;
   page: string;
   branches: BranchSummary[];
+  /** เปิด drawer เมนูบนมือถือ (ปุ่มขีดสามขีด · โชว์เฉพาะจอ ≤900px ผ่าน CSS) */
+  onMenu?: () => void;
 };
 
-export function TopBar({ branch, onBranchChange, page, branches }: TopBarProps) {
+export function TopBar({ branch, onBranchChange, page, branches, onMenu }: TopBarProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement | null>(null);
@@ -547,6 +549,25 @@ export function TopBar({ branch, onBranchChange, page, branches }: TopBarProps) 
   return (
     <header className="cf-topbar">
       <div className="cf-tb-left">
+        {onMenu && (
+          <button
+            type="button"
+            className="cf-tb-menu-btn"
+            aria-label="เปิดเมนู"
+            onClick={onMenu}
+          >
+            <Icon
+              d={
+                <>
+                  <path d="M3 6h18" />
+                  <path d="M3 12h18" />
+                  <path d="M3 18h18" />
+                </>
+              }
+              size={20}
+            />
+          </button>
+        )}
         <div className="cf-tb-crumb">
           <span className="cf-tb-crumb-pre">ClawFleet</span>
           <Ic name="chevronR" size={14} />
@@ -614,17 +635,12 @@ export function TopBar({ branch, onBranchChange, page, branches }: TopBarProps) 
             </div>
           )}
         </div>
-        <button type="button" className="cf-tb-icon" aria-label="search">
-          <Ic name="search" />
-        </button>
-        <button type="button" className="cf-tb-icon cf-tb-icon-bell" aria-label="notifications">
-          <Ic name="bell" />
-          <span className="cf-tb-icon-dot" />
-        </button>
+        {/* ปุ่มแว่นขยาย/กระดิ่งเดิมเป็นปุ่มตาย (ไม่มี handler) + จุดแดงหลอก → เอาออก.
+            การแจ้งเตือนจริง (รอบเปิด/anomaly) โชว์เป็น badge เลขจริงในเมนูซ้ายแล้ว. */}
         <div className="cf-tb-divider" />
-        <button type="button" className="cf-tb-profile" aria-label="profile">
+        <div className="cf-tb-profile" aria-label="profile">
           <div className="cf-avatar">P</div>
-        </button>
+        </div>
       </div>
     </header>
   );
