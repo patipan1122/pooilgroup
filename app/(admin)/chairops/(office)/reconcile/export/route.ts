@@ -25,6 +25,9 @@ export async function GET(req: Request) {
   const rawTo = url.searchParams.get("to");
   const from = rawFrom && DATE_RE.test(rawFrom) ? rawFrom : undefined;
   const to = rawTo && DATE_RE.test(rawTo) ? rawTo : undefined;
+  // CEO 2026-06-25: ?all=1 (the "ทั้งหมด" preset) exports the full history so
+  // the downloaded CSV matches the on-screen all-time view.
+  const allTime = url.searchParams.get("all") === "1";
 
   const ledger = await getReconcileLedger({
     orgId,
@@ -32,6 +35,7 @@ export async function GET(req: Request) {
     take: 365,
     from,
     to,
+    allTime,
   });
 
   const header = csvRow([
@@ -43,6 +47,7 @@ export async function GET(req: Request) {
     "cashTotal",
     "totalRev",
     "deposit",
+    "collectedNotDeposited",
     "diff",
     "cumDrift",
     "collected",
@@ -58,6 +63,7 @@ export async function GET(req: Request) {
         d.cashTotal,
         d.totalRev,
         d.deposit ?? "",
+        d.collectedNotDeposited,
         d.collected ? d.diff : "",
         d.cumDrift,
         d.collected ? "yes" : "no",

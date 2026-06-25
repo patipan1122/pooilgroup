@@ -16,7 +16,9 @@ import {
   getReconcileLedger,
   getReconcileTimeline,
   getReconcilePeriods,
+  getReconcileDayDetail,
   ledgerTotals,
+  type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
 import { getCumulativeShortage } from "@/lib/chairops/queries/_cumulative-shortage";
 import { ReconcileSidebar } from "./reconcile-sidebar";
@@ -25,10 +27,16 @@ import {
   DriftHero,
   ReconcileTabs,
   LedgerTab,
+  LedgerPager,
+  DayDetailPanel,
   TimelineTab,
   PeriodsTab,
 } from "./reconcile-views";
 import { LedgerDateFilter } from "./ledger-date-filter";
+
+// CEO 2026-06-25: page size for the ledger when showing wide / all-time ranges.
+// Preset windows (7/30/90) are smaller than this so they render in one page.
+const LEDGER_PAGE_SIZE = 120;
 
 export type ReconcileView = "ledger" | "timeline" | "periods";
 
@@ -51,6 +59,9 @@ export async function ReconcileShell({
   from,
   to,
   missingSlip,
+  allTime,
+  page,
+  day,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -61,6 +72,12 @@ export async function ReconcileShell({
   to?: string;
   /** F1 · audit MISS-04: filter Ledger to days where a CSV_IMPORT row has no slip. */
   missingSlip?: boolean;
+  /** CEO 2026-06-25: "ทั้งหมด" preset → load the branch's full history. */
+  allTime?: boolean;
+  /** CEO 2026-06-25: ledger pagination page (0-based) for wide / all-time ranges. */
+  page?: number;
+  /** CEO 2026-06-25: drill-down — show one day's individual collection/deposit chunks. */
+  day?: string;
 }) {
   const isOrg = branchId === null;
   const baseHref = isOrg
@@ -69,31 +86,38 @@ export async function ReconcileShell({
 
   const safeFrom = normalizeDate(from);
   const safeTo = normalizeDate(to);
+  const safeDay = normalizeDate(day);
+  const pageNum = Math.max(0, Math.floor(page ?? 0));
 
   // Sidebar + overview always load. The active tab's dataset loads on demand.
   // cumShortage is the canonical "ค้างฝากรวม" aggregate shared with the exec
   // home tile (CEO ruling 2026-06-02 — positive-only sum across active
   // branches · see lib/chairops/queries/_cumulative-shortage.ts).
-  const [sidebar, overview, cumShortage, ledger, timeline, periods] = await Promise.all([
-    getReconcileSidebar({ orgId }),
-    getReconcileOverview({ orgId, branchId: branchId ?? undefined }),
-    getCumulativeShortage(orgId),
-    view === "ledger"
-      ? getReconcileLedger({
-          orgId,
-          branchId: branchId ?? undefined,
-          take: 365,
-          from: safeFrom,
-          to: safeTo,
-        })
-      : Promise.resolve([]),
-    view === "timeline"
-      ? getReconcileTimeline({ orgId, branchId: branchId ?? undefined, days: 60 })
-      : Promise.resolve([]),
-    view === "periods"
-      ? getReconcilePeriods({ orgId, branchId: branchId ?? undefined })
-      : Promise.resolve([]),
-  ]);
+  const [sidebar, overview, cumShortage, ledger, timeline, periods, dayDetail] =
+    await Promise.all([
+      getReconcileSidebar({ orgId }),
+      getReconcileOverview({ orgId, branchId: branchId ?? undefined }),
+      getCumulativeShortage(orgId),
+      view === "ledger"
+        ? getReconcileLedger({
+            orgId,
+            branchId: branchId ?? undefined,
+            take: 365,
+            from: safeFrom,
+            to: safeTo,
+            allTime,
+          })
+        : Promise.resolve([]),
+      view === "timeline"
+        ? getReconcileTimeline({ orgId, branchId: branchId ?? undefined, days: 60 })
+        : Promise.resolve([]),
+      view === "periods"
+        ? getReconcilePeriods({ orgId, branchId: branchId ?? undefined })
+        : Promise.resolve([]),
+      view === "ledger" && safeDay
+        ? getReconcileDayDetail({ orgId, branchId: branchId ?? undefined, day: safeDay })
+        : Promise.resolve(null as ReconcileDayDetail | null),
+    ]);
 
   // CEO 2026-06-02: default the Ledger view to "last 30 complete POS days
   // ending at posCoverThrough" — same as how a bank statement opens on the
@@ -106,13 +130,30 @@ export async function ReconcileShell({
   // to posThrough-29 so the ledger opens on the latest POS data window.
   const posThrough = overview.freshness.posCoverThrough;
   const defaultedLedger = (() => {
-    if (view !== "ledger" || safeFrom || safeTo) return ledger;
+    // Explicit selection (custom range OR "ทั้งหมด") shows as-is. Only the
+    // untouched default opens on the latest 30-day window (bank-statement style).
+    // CEO 2026-06-25 BUGFIX: "ทั้งหมด" (allTime) previously fell into this 30-day
+    // default because it carries no ?from/?to — so it silently showed 30 days.
+    if (view !== "ledger" || safeFrom || safeTo || allTime) return ledger;
     if (!posThrough) return ledger;
     const cutoff = isoMinusDays(posThrough, 29); // 30-day inclusive window
     const today = new Date().toISOString().slice(0, 10);
     return ledger.filter((d) => d.date >= cutoff && d.date <= today);
   })();
+  // Totals reflect the WHOLE selected range (all pages), not just the visible
+  // page, so the "ยอดรวม" footer is the range summary. Pagination only slices
+  // which rows render.
   const totals = view === "ledger" ? ledgerTotals(defaultedLedger) : null;
+  const totalRows = defaultedLedger.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / LEDGER_PAGE_SIZE));
+  const safePage = Math.min(pageNum, pageCount - 1);
+  const pagedLedger =
+    pageCount > 1
+      ? defaultedLedger.slice(
+          safePage * LEDGER_PAGE_SIZE,
+          safePage * LEDGER_PAGE_SIZE + LEDGER_PAGE_SIZE,
+        )
+      : defaultedLedger;
 
   // CEO 2026-06-02 (orchestra-audit CONF-05): the org-level aggregate uses
   // the canonical "positive-only" formula (= "ค้างฝากรวม") so it matches the
@@ -132,17 +173,42 @@ export async function ReconcileShell({
   // explicit ?from/?to were set.
   const exportQs = new URLSearchParams();
   if (!isOrg) exportQs.set("branchId", branchId);
-  if (safeFrom) exportQs.set("from", safeFrom);
-  else if (posThrough && view === "ledger") {
-    exportQs.set("from", isoMinusDays(posThrough, 29));
-  }
-  if (safeTo) exportQs.set("to", safeTo);
-  else if (posThrough && view === "ledger") {
-    // Match the visible window ceiling (today, not posThrough) so deposits
-    // after the last POS upload appear in the downloaded file too.
-    exportQs.set("to", new Date().toISOString().slice(0, 10));
+  // CEO 2026-06-25: when the screen is in "ทั้งหมด" mode, the export must also
+  // be all-history — else the file silently caps at the 30-day default while
+  // the screen shows everything (file ≠ screen). Forward ?all=1 instead of a
+  // from/to window.
+  if (allTime) {
+    exportQs.set("all", "1");
+  } else {
+    if (safeFrom) exportQs.set("from", safeFrom);
+    else if (posThrough && view === "ledger") {
+      exportQs.set("from", isoMinusDays(posThrough, 29));
+    }
+    if (safeTo) exportQs.set("to", safeTo);
+    else if (posThrough && view === "ledger") {
+      // Match the visible window ceiling (today, not posThrough) so deposits
+      // after the last POS upload appear in the downloaded file too.
+      exportQs.set("to", new Date().toISOString().slice(0, 10));
+    }
   }
   const exportHref = `/chairops/reconcile/export${exportQs.toString() ? `?${exportQs.toString()}` : ""}`;
+
+  // CEO 2026-06-25 · build a ledger URL preserving the active filters while
+  // overriding the drill-down day and/or pagination page. `day: null` clears
+  // the drill-down; omitting `day` keeps the current one.
+  const buildLedgerHref = (opts: { day?: string | null; page?: number }): string => {
+    const usp = new URLSearchParams();
+    if (safeFrom) usp.set("from", safeFrom);
+    if (safeTo) usp.set("to", safeTo);
+    if (allTime) usp.set("all", "1");
+    if (missingSlip) usp.set("missingSlip", "1");
+    const pageVal = opts.page ?? safePage;
+    if (pageVal > 0) usp.set("page", String(pageVal));
+    const dayVal = opts.day === undefined ? safeDay : opts.day;
+    if (dayVal) usp.set("day", dayVal);
+    const qs = usp.toString();
+    return qs ? `${baseHref}?${qs}` : baseHref;
+  };
 
   return (
     <div className="rc-app">
@@ -233,6 +299,7 @@ export async function ReconcileShell({
             baseHref={baseHref}
             from={safeFrom ?? null}
             to={safeTo ?? null}
+            allTime={!!allTime}
             posCoverThrough={posThrough}
           />
         )}
@@ -250,6 +317,7 @@ export async function ReconcileShell({
                 const usp = new URLSearchParams();
                 if (safeFrom) usp.set("from", safeFrom);
                 if (safeTo) usp.set("to", safeTo);
+                if (allTime) usp.set("all", "1");
                 const qs = usp.toString();
                 return qs ? `${baseHref}?${qs}` : baseHref;
               })()}
@@ -272,6 +340,7 @@ export async function ReconcileShell({
                 const usp = new URLSearchParams();
                 if (safeFrom) usp.set("from", safeFrom);
                 if (safeTo) usp.set("to", safeTo);
+                if (allTime) usp.set("all", "1");
                 usp.set("missingSlip", "1");
                 return `${baseHref}?${usp.toString()}`;
               })()}
@@ -296,12 +365,40 @@ export async function ReconcileShell({
 
         <div className="rc-body">
           {view === "ledger" && (
-            <LedgerTab
-              ledger={defaultedLedger}
-              totals={totals}
-              isOrg={isOrg}
-              csvOnlyMissingSlip={missingSlip}
-            />
+            <>
+              {dayDetail && (
+                <DayDetailPanel
+                  detail={dayDetail}
+                  closeHref={buildLedgerHref({ day: null })}
+                />
+              )}
+              <LedgerTab
+                ledger={pagedLedger}
+                totals={totals}
+                isOrg={isOrg}
+                csvOnlyMissingSlip={missingSlip}
+                makeDayHref={(d) => buildLedgerHref({ day: d })}
+                activeDay={safeDay ?? null}
+              />
+              {pageCount > 1 && (
+                <LedgerPager
+                  page={safePage}
+                  pageCount={pageCount}
+                  total={totalRows}
+                  pageSize={LEDGER_PAGE_SIZE}
+                  prevHref={
+                    safePage > 0
+                      ? buildLedgerHref({ page: safePage - 1, day: null })
+                      : null
+                  }
+                  nextHref={
+                    safePage < pageCount - 1
+                      ? buildLedgerHref({ page: safePage + 1, day: null })
+                      : null
+                  }
+                />
+              )}
+            </>
           )}
           {view === "timeline" && <TimelineTab series={timeline} />}
           {view === "periods" && (

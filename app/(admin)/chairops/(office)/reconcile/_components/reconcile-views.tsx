@@ -16,6 +16,10 @@ import {
   Paperclip,
   Eye,
   Info,
+  X,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { baht } from "@/lib/chairops/utils/format";
 import { SlipBadge, DepositAmount } from "@/components/chairops/redesign/slip-viewer";
@@ -28,6 +32,7 @@ import {
   type ReconcileOverview,
   type TimelinePoint,
   type PeriodWindow,
+  type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -259,6 +264,8 @@ export function LedgerTab({
   totals,
   isOrg,
   csvOnlyMissingSlip,
+  makeDayHref,
+  activeDay,
 }: {
   ledger: LedgerDay[];
   /** Footer totals (null when no rows). */
@@ -269,6 +276,10 @@ export function LedgerTab({
    * Drives the "ยังไม่มีสลิป" filter chip wired in reconcile-shell.
    */
   csvOnlyMissingSlip?: boolean;
+  /** CEO 2026-06-25: build a drill-down URL for a given day (?day=...). */
+  makeDayHref?: (day: string) => string;
+  /** Currently drilled-in day (highlights its row). */
+  activeDay?: string | null;
 }) {
   const rows = csvOnlyMissingSlip
     ? ledger.filter((d) => d.hasCsvWithoutSlip)
@@ -285,6 +296,7 @@ export function LedgerTab({
             <th className="num rc-tcol">รวมเงินสด</th>
             <th className="num">รายได้รวม</th>
             <th className="num rc-tcol">ฝาก</th>
+            <th className="num">เก็บ·ยังไม่ฝาก</th>
             <th>ที่มา</th>
             <th>สลิป</th>
             <th className="num">หาย</th>
@@ -295,7 +307,7 @@ export function LedgerTab({
           {rows.length === 0 && (
             <tr>
               <td
-                colSpan={11}
+                colSpan={12}
                 style={{ textAlign: "center", padding: "48px 0" }}
                 className="text-3"
               >
@@ -306,16 +318,46 @@ export function LedgerTab({
             </tr>
           )}
           {rows.map((d) => (
-            <tr key={d.date} className={d.collected ? "rc-row-collected" : ""}>
+            <tr
+              key={d.date}
+              className={
+                (d.collected ? "rc-row-collected" : "") +
+                (activeDay === d.date ? " rc-row-active" : "")
+              }
+              style={
+                activeDay === d.date
+                  ? { background: "var(--accent-soft)" }
+                  : undefined
+              }
+            >
               <td>
-                <div className="rc-date">
-                  <span className="mono" style={{ fontSize: 12 }}>
-                    {d.date.slice(5)}
-                  </span>
-                  <span className="text-3" style={{ fontSize: 10.5 }}>
-                    {dayOfWeekTh(d.date)}
-                  </span>
-                </div>
+                {makeDayHref ? (
+                  <a
+                    href={makeDayHref(d.date)}
+                    className="rc-date"
+                    title="ดูรายการย่อยของวันนี้ (เก็บ/ฝาก รายก้อน)"
+                    style={{ textDecoration: "none", cursor: "pointer" }}
+                  >
+                    <span
+                      className="mono"
+                      style={{ fontSize: 12, color: "var(--accent)" }}
+                    >
+                      {d.date.slice(5)}
+                    </span>
+                    <span className="text-3" style={{ fontSize: 10.5 }}>
+                      {dayOfWeekTh(d.date)} · 🔍
+                    </span>
+                  </a>
+                ) : (
+                  <div className="rc-date">
+                    <span className="mono" style={{ fontSize: 12 }}>
+                      {d.date.slice(5)}
+                    </span>
+                    <span className="text-3" style={{ fontSize: 10.5 }}>
+                      {dayOfWeekTh(d.date)}
+                    </span>
+                  </div>
+                )}
               </td>
               <td className="num mono">{fmtN(d.online)}</td>
               <td className="num mono">{fmtN(d.cash)}</td>
@@ -338,6 +380,25 @@ export function LedgerTab({
                     slipUrl={d.slip && d.slip !== "slip" ? d.slip : null}
                     caption={`ฝาก ${fmtN(d.deposit)} ฿ · ${d.date}`}
                   />
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
+              </td>
+              <td className="num mono">
+                {d.collectedNotDeposited > 0 ? (
+                  makeDayHref ? (
+                    <a
+                      href={makeDayHref(d.date)}
+                      title="เงินที่แม่บ้านเก็บแล้วยังไม่ฝากธนาคาร · กดดูใครถือ"
+                      style={{ color: "var(--warn, #92400e)", fontWeight: 600 }}
+                    >
+                      {fmtN(d.collectedNotDeposited)}
+                    </a>
+                  ) : (
+                    <span style={{ color: "var(--warn, #92400e)", fontWeight: 600 }}>
+                      {fmtN(d.collectedNotDeposited)}
+                    </span>
+                  )
                 ) : (
                   <span className="text-muted">—</span>
                 )}
@@ -425,6 +486,18 @@ export function LedgerTab({
               <td className="num mono rc-tcol">{fmtN(totals.cashTotal)}</td>
               <td className="num mono">{fmtN(totals.totalRev)}</td>
               <td className="num mono rc-tcol">{fmtN(totals.deposit)}</td>
+              <td
+                className="num mono"
+                style={
+                  totals.collectedNotDeposited > 0
+                    ? { color: "var(--warn, #92400e)", fontWeight: 600 }
+                    : undefined
+                }
+              >
+                {totals.collectedNotDeposited > 0
+                  ? fmtN(totals.collectedNotDeposited)
+                  : "—"}
+              </td>
               <td />
               <td />
               <td
@@ -462,12 +535,12 @@ export function LedgerTab({
             {totals.pending > 0 && (
               <tr style={{ background: "var(--surface-soft)" }}>
                 <td
-                  colSpan={11}
+                  colSpan={12}
                   className="text-3"
                   style={{ padding: "6px 12px", fontSize: 11 }}
                 >
                   · มี pending <strong>{fmtN(totals.pending)} ฿</strong>{" "}
-                  ที่ยังไม่ฝาก ณ {ledger[0]?.date} (รวมอยู่ในหายสะสมแล้ว) ·
+                  ที่ยังไม่ฝาก ณ วันล่าสุดในช่วง (รวมอยู่ในหายสะสมแล้ว) ·
                   engine drift = <strong>{fmtSigned(totals.driftEndingEngine)} ฿</strong>{" "}
                   (positive = ค้างฝาก)
                 </td>
@@ -481,6 +554,268 @@ export function LedgerTab({
           ยอดรวมทุกสาขา · เรียงวันใหม่ก่อน
         </p>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Ledger pager — prev/next for wide / all-time ranges (CEO 2026-06-25)
+// Pure server-rendered <a> links · keeps the page-first cache-friendly.
+// ─────────────────────────────────────────────────────────────
+export function LedgerPager({
+  page,
+  pageCount,
+  total,
+  pageSize,
+  prevHref,
+  nextHref,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  pageSize: number;
+  prevHref: string | null;
+  nextHref: string | null;
+}) {
+  const fromN = page * pageSize + 1;
+  const toN = Math.min(total, (page + 1) * pageSize);
+  return (
+    <div
+      className="row"
+      style={{
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        padding: "10px 14px",
+        fontSize: 12.5,
+      }}
+    >
+      <span className="text-3">
+        แสดงวันที่ <strong className="mono">{fromN}</strong>–
+        <strong className="mono">{toN}</strong> จาก{" "}
+        <strong className="mono">{total}</strong> วัน · หน้า {page + 1}/{pageCount}
+      </span>
+      <span className="row gap-2">
+        {prevHref ? (
+          <a href={prevHref} className="btn btn-sm">
+            <ChevronLeft size={13} aria-hidden="true" /> ใหม่กว่า
+          </a>
+        ) : (
+          <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.4 }}>
+            <ChevronLeft size={13} aria-hidden="true" /> ใหม่กว่า
+          </span>
+        )}
+        {nextHref ? (
+          <a href={nextHref} className="btn btn-sm">
+            เก่ากว่า <ChevronRight size={13} aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.4 }}>
+            เก่ากว่า <ChevronRight size={13} aria-hidden="true" />
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Day-detail drill-down — the individual collection rounds + bank
+// deposits that make up ONE day's numbers (CEO 2026-06-25). Server-
+// rendered; opened via ?day=YYYY-MM-DD, closed via the X link.
+// ─────────────────────────────────────────────────────────────
+export function DayDetailPanel({
+  detail,
+  closeHref,
+}: {
+  detail: ReconcileDayDetail;
+  closeHref: string;
+}) {
+  const hasNothing =
+    detail.collections.length === 0 && detail.deposits.length === 0;
+  return (
+    <div
+      className="card"
+      style={{
+        margin: "0 0 12px",
+        padding: 0,
+        overflow: "hidden",
+        borderColor: "var(--accent)",
+      }}
+    >
+      <div
+        className="row"
+        style={{
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "10px 14px",
+          background: "var(--accent-soft)",
+          borderBottom: "1px solid var(--accent)",
+        }}
+      >
+        <strong style={{ fontSize: 13.5 }}>
+          รายการย่อยของวันที่ <span className="mono">{detail.date}</span>
+        </strong>
+        <a href={closeHref} className="btn btn-sm" title="ปิด">
+          <X size={13} aria-hidden="true" /> ปิด
+        </a>
+      </div>
+
+      <div style={{ padding: "10px 14px", display: "grid", gap: 14 }}>
+        {/* summary chips */}
+        <div className="row gap-2" style={{ flexWrap: "wrap", fontSize: 12 }}>
+          <span className="chip">
+            เก็บรวม <strong className="mono">{fmtN(detail.collectedTotal)}</strong> ฿
+          </span>
+          <span
+            className="chip"
+            style={{ background: "#fffbeb", borderColor: "#fcd34d", color: "#92400e" }}
+          >
+            ยังไม่ฝาก{" "}
+            <strong className="mono">{fmtN(detail.collectedNotDepositedTotal)}</strong> ฿
+          </span>
+          <span className="chip">
+            ฝากเข้าธนาคาร <strong className="mono">{fmtN(detail.depositTotal)}</strong> ฿
+          </span>
+        </div>
+
+        {hasNothing && (
+          <p className="text-3" style={{ fontSize: 12 }}>
+            วันนี้ไม่มีรายการเก็บเงินหรือฝากเงิน (มีแต่ยอดขาย POS)
+          </p>
+        )}
+
+        {/* collections */}
+        {detail.collections.length > 0 && (
+          <div>
+            <div
+              className="text-3"
+              style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}
+            >
+              แม่บ้านเก็บเงิน ({detail.collections.length} ก้อน)
+            </div>
+            <table className="tbl" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>เวลา</th>
+                  <th>แม่บ้าน</th>
+                  <th className="num">จำนวน</th>
+                  <th>ที่มา</th>
+                  <th>สถานะ</th>
+                  <th>สลิป</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.collections.map((c) => {
+                  const meta = sourceBadge(c.source);
+                  return (
+                    <tr key={c.id}>
+                      <td className="mono" style={{ fontSize: 11.5 }}>
+                        {c.collectedAt}
+                      </td>
+                      <td>{c.maidName}</td>
+                      <td className="num mono">{fmtN(c.countedAmount)}</td>
+                      <td>
+                        <span
+                          title={meta.title}
+                          className={
+                            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+                            SOURCE_TONE_CLASS[meta.tone]
+                          }
+                        >
+                          {meta.label}
+                        </span>
+                      </td>
+                      <td>
+                        {c.deposited ? (
+                          <span style={{ color: "var(--ok)", fontWeight: 600 }}>
+                            ฝากแล้ว
+                          </span>
+                        ) : (
+                          <span
+                            style={{ color: "#92400e", fontWeight: 600 }}
+                            className="row gap-1"
+                          >
+                            <Clock size={11} aria-hidden="true" />
+                            ยังไม่ฝาก
+                            {c.daysHeld != null && c.daysHeld > 0 && (
+                              <span className="text-3">· ถือมา {c.daysHeld} วัน</span>
+                            )}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {c.slipUrl ? (
+                          <a
+                            href={c.slipUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rc-slip"
+                          >
+                            <Paperclip size={10} aria-hidden="true" /> ดู
+                          </a>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* deposits */}
+        {detail.deposits.length > 0 && (
+          <div>
+            <div
+              className="text-3"
+              style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}
+            >
+              ฝากเข้าธนาคาร ({detail.deposits.length} ครั้ง)
+            </div>
+            <table className="tbl" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>เวลา</th>
+                  <th>โดย</th>
+                  <th className="num">ยอดฝาก</th>
+                  <th className="num">ค่าธรรมเนียม</th>
+                  <th>สลิป</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.deposits.map((d) => (
+                  <tr key={d.id}>
+                    <td className="mono" style={{ fontSize: 11.5 }}>
+                      {d.depositedAt}
+                    </td>
+                    <td>{d.maidName}</td>
+                    <td className="num mono">{fmtN(d.depositedAmount)}</td>
+                    <td className="num mono">{d.bankFee ? fmtN(d.bankFee) : "—"}</td>
+                    <td>
+                      {d.slipUrl ? (
+                        <a
+                          href={d.slipUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rc-slip"
+                        >
+                          <Paperclip size={10} aria-hidden="true" /> ดู
+                        </a>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

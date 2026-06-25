@@ -58,6 +58,14 @@ export interface LedgerDay {
   cashTotal: number; // = cash + coinBaht (cash maid must hand in · "รวมเงินสด")
   totalRev: number; // = grossTotal (or online+cash) + coinBaht
   deposit: number | null; // null = no collection that day
+  /**
+   * Σ countedAmount of collections on this day that are NOT yet linked to a
+   * bank deposit (depositId IS NULL). CEO 2026-06-25: "เก็บแล้วแต่ยังไม่ฝาก" —
+   * cash the maid has counted/handed to the office but hasn't reached the bank.
+   * Surfaces CSV-imported collection rounds (which carry depositId=null) that
+   * were otherwise invisible in the money columns.
+   */
+  collectedNotDeposited: number;
   slip: string | null; // slip / evidence ref
   collected: boolean;
   diff: number; // deposit − expectedCash (collected days only; else 0)
@@ -93,6 +101,8 @@ export interface LedgerTotals {
   cashTotal: number;
   totalRev: number;
   deposit: number;
+  /** Σ collected-but-not-deposited across the visible window (CEO 2026-06-25). */
+  collectedNotDeposited: number;
   diff: number;
   /** Σ pending leftover at the end of the visible window. */
   pending: number;
@@ -200,9 +210,12 @@ async function buildLedger(args: {
   orgId: string;
   branchId?: string;
   days: number;
+  /** Explicit lower bound · overrides `days`. Use for all-time / custom ranges
+   *  so the cumulative drift is computed from the branch's full history. */
+  since?: Date;
 }): Promise<LedgerDay[]> {
   const { orgId, branchId, days } = args;
-  const since = startOfDayMinus(days);
+  const since = args.since ?? startOfDayMinus(days);
 
   const branchFilter = branchId ? { branchId } : {};
 
@@ -282,10 +295,25 @@ async function buildLedger(args: {
         // signal to LedgerTab. `source` may be null on legacy rows because the
         // CHECK constraint was added in 20260602153000 — fall back to MAID_MANUAL.
         source: true,
+        // CEO 2026-06-25 "เก็บแล้วยังไม่ฝาก" — depositId IS NULL means this
+        // collected cash has not been linked to a bank deposit yet.
+        depositId: true,
+        countedAmount: true,
       },
       orderBy: { collectedAt: "asc" },
     }),
   ]);
+
+  // CEO 2026-06-25 · Σ collected-but-not-deposited per day (depositId IS NULL).
+  const collectedNotDepByDay = new Map<string, number>();
+  for (const c of slipCollections) {
+    if (c.depositId != null) continue;
+    const key = isoDay(c.collectedAt);
+    collectedNotDepByDay.set(
+      key,
+      (collectedNotDepByDay.get(key) ?? 0) + c.countedAmount,
+    );
+  }
   const slipByDay = new Map<string, string>();
   for (const c of slipCollections) {
     const key = isoDay(c.collectedAt);
@@ -340,6 +368,7 @@ async function buildLedger(args: {
     ...posByDay.keys(),
     ...depByDay.keys(),
     ...netWoByDay.keys(),
+    ...collectedNotDepByDay.keys(),
   ]);
   const sortedDays = [...allDays].sort();
 
@@ -388,6 +417,7 @@ async function buildLedger(args: {
       cashTotal,
       totalRev,
       deposit,
+      collectedNotDeposited: collectedNotDepByDay.get(date) ?? 0,
       slip,
       collected,
       diff: collected ? diff : 0,
@@ -421,6 +451,7 @@ export function ledgerTotals(rows: LedgerDay[]): LedgerTotals {
     cashTotal: 0,
     totalRev: 0,
     deposit: 0,
+    collectedNotDeposited: 0,
     diff: 0,
     pending: 0,
     driftEndingEngine: 0,
@@ -435,6 +466,7 @@ export function ledgerTotals(rows: LedgerDay[]): LedgerTotals {
     t.cashTotal += r.cashTotal;
     t.totalRev += r.totalRev;
     t.deposit += r.deposit ?? 0;
+    t.collectedNotDeposited += r.collectedNotDeposited;
     t.diff += r.diff;
     if (r.collected) t.daysCollected += 1;
   }
@@ -601,11 +633,24 @@ export async function getReconcileLedger(args: {
   take?: number;
   from?: string; // "YYYY-MM-DD" inclusive
   to?: string;   // "YYYY-MM-DD" inclusive
+  /** CEO 2026-06-25: load the branch's FULL history (no 365-day window) so the
+   *  "ทั้งหมด" preset and old custom ranges actually show every day. */
+  allTime?: boolean;
 }): Promise<LedgerDay[]> {
-  const { orgId, branchId, from, to } = args;
-  const take = args.take ?? 200;
-  // Build a wide ledger then slice; cheap because per-branch row count is small.
-  const ledger = await buildLedger({ orgId, branchId, days: 365 });
+  const { orgId, branchId, from, to, allTime } = args;
+  // How far back to build so the cumulative covers the visible window:
+  //  • allTime          → from epoch (full history)
+  //  • custom `from`     → from that date when it's older than the 365d default
+  //  • else              → last 365 days (unchanged default)
+  let since: Date | undefined;
+  if (allTime) {
+    since = new Date(0);
+  } else if (from) {
+    const fromDate = new Date(from + "T00:00:00+07:00");
+    const d365 = startOfDayMinus(365);
+    if (fromDate < d365) since = fromDate;
+  }
+  const ledger = await buildLedger({ orgId, branchId, days: 365, since });
   let scoped = ledger;
   if (from || to) {
     scoped = ledger.filter((d) => {
@@ -614,7 +659,122 @@ export async function getReconcileLedger(args: {
       return true;
     });
   }
-  return scoped.slice(-take).reverse();
+  const newestFirst = scoped.slice().reverse();
+  // Only cap the DEFAULT "no selection" view. Custom ranges + allTime return
+  // every row (the shell paginates for display · CEO 2026-06-25 "ดูทั้งหมด").
+  if (args.take != null && !allTime && !from && !to) {
+    return newestFirst.slice(0, args.take);
+  }
+  return newestFirst;
+}
+
+// ----------------------------------------------------------------
+// DAY DETAIL — drill-down chunks for ONE day (CEO 2026-06-25).
+// Clicking a ledger day shows the individual collection rounds + bank
+// deposits that make up that day's numbers, so a backdated CSV import is
+// no longer an opaque lump. Aging (days held) is computed for collections
+// that are still un-deposited.
+// ----------------------------------------------------------------
+export interface DayDetailCollection {
+  id: string;
+  collectedAt: string;          // ISO datetime (Bangkok)
+  maidName: string;
+  countedAmount: number;
+  source: LedgerDaySource;
+  deposited: boolean;           // depositId != null
+  daysHeld: number | null;      // today − collectedAt (only when not deposited)
+  slipUrl: string | null;
+}
+export interface DayDetailDeposit {
+  id: string;
+  depositedAt: string;
+  maidName: string;
+  depositedAmount: number;
+  bankFee: number;
+  slipUrl: string | null;
+}
+export interface ReconcileDayDetail {
+  date: string;
+  collections: DayDetailCollection[];
+  deposits: DayDetailDeposit[];
+  collectedTotal: number;
+  collectedNotDepositedTotal: number;
+  depositTotal: number;
+}
+
+export async function getReconcileDayDetail(args: {
+  orgId: string;
+  branchId?: string;
+  day: string; // "YYYY-MM-DD" (Bangkok)
+}): Promise<ReconcileDayDetail> {
+  const { orgId, branchId, day } = args;
+  const branchFilter = branchId ? { branchId } : {};
+  // Bangkok day window → [day 00:00+07, next day 00:00+07)
+  const start = new Date(day + "T00:00:00+07:00");
+  const end = new Date(start.getTime() + DAY_MS);
+
+  const [collections, deposits] = await Promise.all([
+    prisma.chairopsCashCollection.findMany({
+      where: { orgId, ...branchFilter, collectedAt: { gte: start, lt: end } },
+      select: {
+        id: true,
+        collectedAt: true,
+        countedAmount: true,
+        source: true,
+        depositId: true,
+        slipPhotoUrl: true,
+        evidencePhotoUrl: true,
+        maid: { select: { displayName: true } },
+      },
+      orderBy: { collectedAt: "asc" },
+    }),
+    prisma.chairopsCashDeposit.findMany({
+      where: { orgId, ...branchFilter, depositedAt: { gte: start, lt: end } },
+      select: {
+        id: true,
+        depositedAt: true,
+        depositedAmount: true,
+        bankFee: true,
+        slipPhotoUrl: true,
+        maid: { select: { displayName: true } },
+      },
+      orderBy: { depositedAt: "asc" },
+    }),
+  ]);
+
+  const now = Date.now();
+  const collOut: DayDetailCollection[] = collections.map((c) => ({
+    id: c.id,
+    collectedAt: formatDateTime(c.collectedAt),
+    maidName: c.maid?.displayName ?? "—",
+    countedAmount: c.countedAmount,
+    source: (c.source ?? "MAID_MANUAL") as LedgerDaySource,
+    deposited: c.depositId != null,
+    daysHeld:
+      c.depositId == null
+        ? Math.max(0, Math.floor((now - c.collectedAt.getTime()) / DAY_MS))
+        : null,
+    slipUrl: c.slipPhotoUrl ?? c.evidencePhotoUrl ?? null,
+  }));
+  const depOut: DayDetailDeposit[] = deposits.map((d) => ({
+    id: d.id,
+    depositedAt: formatDateTime(d.depositedAt),
+    maidName: d.maid?.displayName ?? "—",
+    depositedAmount: d.depositedAmount,
+    bankFee: d.bankFee,
+    slipUrl: d.slipPhotoUrl ?? null,
+  }));
+
+  return {
+    date: day,
+    collections: collOut,
+    deposits: depOut,
+    collectedTotal: collOut.reduce((s, c) => s + c.countedAmount, 0),
+    collectedNotDepositedTotal: collOut
+      .filter((c) => !c.deposited)
+      .reduce((s, c) => s + c.countedAmount, 0),
+    depositTotal: depOut.reduce((s, d) => s + d.depositedAmount + d.bankFee, 0),
+  };
 }
 
 // expose intent helper for the page (keeps coloring logic in one place)

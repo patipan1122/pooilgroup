@@ -23,11 +23,17 @@ function isoMinusDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function buildHref(base: string, args: Record<string, string | undefined>): string {
+function buildHref(
+  base: string,
+  args: { from?: string; to?: string; all?: boolean },
+): string {
   const usp = new URLSearchParams();
   usp.set("view", "ledger");
-  for (const [k, v] of Object.entries(args)) {
-    if (v) usp.set(k, v);
+  if (args.all) {
+    usp.set("all", "1");
+  } else {
+    if (args.from) usp.set("from", args.from);
+    if (args.to) usp.set("to", args.to);
   }
   return `${base}?${usp.toString()}`;
 }
@@ -36,26 +42,37 @@ export function LedgerDateFilter({
   baseHref,
   from,
   to,
+  allTime,
   posCoverThrough,
 }: {
   baseHref: string;
   from: string | null;
   to: string | null;
+  allTime?: boolean;
   posCoverThrough: string | null;
 }) {
   // If POS hasn't been uploaded yet, presets degrade to "no filter" (current
-  // behavior = newest 200 days reversed).
+  // behavior = newest days reversed).
   const anchor = posCoverThrough;
-  const presets = anchor
+  const presets: Array<{
+    label: string;
+    from?: string;
+    to?: string;
+    all?: boolean;
+  }> = anchor
     ? [
         { label: "7 วันล่าสุด", from: isoMinusDays(anchor, 6), to: anchor },
         { label: "30 วันล่าสุด", from: isoMinusDays(anchor, 29), to: anchor },
         { label: "90 วัน", from: isoMinusDays(anchor, 89), to: anchor },
-        { label: "ทั้งหมด", from: undefined, to: undefined },
+        // CEO 2026-06-25: "ทั้งหมด" now carries an explicit ?all=1 so the shell
+        // loads the full history instead of silently falling into the 30-day
+        // default (which made this button show only 30 days).
+        { label: "ทั้งหมด", all: true },
       ]
     : [];
 
-  const activeKey = !from && !to ? "default" : `${from ?? ""}|${to ?? ""}`;
+  const activeKey =
+    !from && !to && !allTime ? "default" : `${from ?? ""}|${to ?? ""}`;
 
   return (
     <div
@@ -85,12 +102,13 @@ export function LedgerDateFilter({
 
       {presets.map((p) => {
         const key = `${p.from ?? ""}|${p.to ?? ""}`;
-        const active =
-          (key === "|" && activeKey === "default") || key === activeKey;
+        const active = p.all
+          ? !!allTime
+          : !allTime && key === activeKey && activeKey !== "default";
         return (
           <Link
             key={p.label}
-            href={buildHref(baseHref, { from: p.from, to: p.to })}
+            href={buildHref(baseHref, { from: p.from, to: p.to, all: p.all })}
             className="btn btn-sm"
             style={
               active

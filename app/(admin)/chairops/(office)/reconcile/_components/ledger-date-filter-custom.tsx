@@ -25,6 +25,10 @@ export function LedgerDateFilterCustom({
   const [a, setA] = useState(from ?? "");
   const [b, setB] = useState(to ?? "");
 
+  // CEO 2026-06-25: navigate on ANY valid change (from-only, to-only, or both).
+  // The previous `(b || !b)` guard was always-true noise; and requiring `a`
+  // before applying `to` made a to-only filter silently do nothing. `all` is
+  // dropped here so a custom range overrides a prior "ทั้งหมด".
   const apply = (nextFrom: string, nextTo: string) => {
     const usp = new URLSearchParams();
     usp.set("view", "ledger");
@@ -45,7 +49,7 @@ export function LedgerDateFilterCustom({
         onChange={(e) => {
           const v = e.target.value;
           setA(v);
-          if (v && (b || !b)) apply(v, b);
+          apply(v, b);
         }}
         aria-label="วันที่เริ่ม"
         className="input"
@@ -60,7 +64,7 @@ export function LedgerDateFilterCustom({
         onChange={(e) => {
           const v = e.target.value;
           setB(v);
-          if (v && a) apply(a, v);
+          apply(a, v);
         }}
         aria-label="วันที่สิ้นสุด"
         className="input"
