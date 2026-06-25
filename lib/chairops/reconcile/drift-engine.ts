@@ -94,6 +94,112 @@ function toNum(d: Prisma.Decimal | number | null | undefined): number {
 }
 
 // ----------------------------------------------------------------
+// Bangkok day-grain date helpers (for "ตั้งต้น ณ วันที่" upper bounds).
+// `day` = "YYYY-MM-DD" interpreted as a Bangkok calendar day.
+// ----------------------------------------------------------------
+function bangkokDayStartUTC(day: string): Date {
+  return new Date(`${day}T00:00:00+07:00`);
+}
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function dateColValue(day: string): Date {
+  // Prisma `@db.Date` columns round-trip at UTC midnight of the calendar date.
+  return new Date(`${day}T00:00:00.000Z`);
+}
+
+// ----------------------------------------------------------------
+// Shared money formula (legacy/lifetime + "as of date X" residual).
+// SINGLE SOURCE so the persisted engine drift, the write-off auto-fill, and
+// any other caller can never disagree ([[chairops-coin-into-total-and-drift]]
+// "money table มี 2 read-path ต้องแก้ให้ครบ").
+//
+//   posTotal     = Σ ChairopsPosDaily.cashTotal + Σ coinInsertCount × COIN_BAHT
+//   depositTotal = Σ CashDeposit.depositedAmount + bankFee
+//                + Σ legacy CashCollection.depositedAmount (depositId IS NULL)
+//                + netWriteOff
+//   netWriteOff  = Σ APPROVED amount(SHORT) − Σ APPROVED amount(OVER)
+//   driftAmount  = posTotal − depositTotal   (positive = shortage/ค้างฝาก)
+//
+// `upToDay` (Bangkok "YYYY-MM-DD") bounds every source to ≤ that day — used by
+// the "ตั้งต้น" auto-fill to ask "how much drift is owed UP TO date X?". Pass
+// null for the lifetime total the engine persists. Coin baht is preserved
+// (CEO 2026-06-25) so a re-baseline never silently drops coin-box cash.
+// ----------------------------------------------------------------
+export async function computeDriftMoneyAsOf(
+  branchId: string,
+  orgId: string,
+  upToDay: string | null,
+): Promise<{ posTotal: number; depositTotal: number; driftAmount: number }> {
+  const bizDateFilter = upToDay ? { lte: dateColValue(upToDay) } : undefined;
+  // depositedAt / collectedAt are DateTime (UTC) — upper bound is the START of
+  // the NEXT Bangkok day, exclusive, so all of day X (Bangkok) is included.
+  const dtFilter = upToDay ? { lt: bangkokDayStartUTC(nextDay(upToDay)) } : undefined;
+  const effFilter = upToDay ? { lte: dateColValue(upToDay) } : undefined;
+
+  const [posAgg, newDepositAgg, legacyDepositAgg, woShortAgg, woOverAgg] =
+    await Promise.all([
+      prisma.chairopsPosDaily.aggregate({
+        where: { branchId, orgId, ...(bizDateFilter ? { bizDate: bizDateFilter } : {}) },
+        // drift = CASH owed to maid · + coin baht (coinInsertCount × COIN_BAHT).
+        _sum: { cashTotal: true, coinInsertCount: true },
+      }),
+      prisma.chairopsCashDeposit.aggregate({
+        where: { branchId, orgId, ...(dtFilter ? { depositedAt: dtFilter } : {}) },
+        _sum: { depositedAmount: true, bankFee: true },
+      }),
+      prisma.chairopsCashCollection.aggregate({
+        where: {
+          branchId,
+          orgId,
+          depositId: null,
+          depositedAmount: { gt: 0 },
+          ...(dtFilter ? { collectedAt: dtFilter } : {}),
+        },
+        _sum: { depositedAmount: true },
+      }),
+      // Approved write-offs · netted by direction. SHORT adds to deposit side
+      // (reduces a positive/ค้างฝาก drift); OVER subtracts (reduces a negative/
+      // ฝากเกิน drift toward zero). effectiveDate bounds the "ตั้งต้น" residual.
+      prisma.chairopsWriteOff.aggregate({
+        where: {
+          branchId,
+          orgId,
+          status: "APPROVED",
+          direction: "SHORT",
+          ...(effFilter ? { effectiveDate: effFilter } : {}),
+        },
+        _sum: { amount: true },
+      }),
+      prisma.chairopsWriteOff.aggregate({
+        where: {
+          branchId,
+          orgId,
+          status: "APPROVED",
+          direction: "OVER",
+          ...(effFilter ? { effectiveDate: effFilter } : {}),
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+  const posTotal =
+    toNum(posAgg._sum?.cashTotal) +
+    (posAgg._sum?.coinInsertCount ?? 0) * COIN_BAHT;
+  const netWriteOff =
+    (woShortAgg._sum?.amount ?? 0) - (woOverAgg._sum?.amount ?? 0);
+  const depositTotal =
+    (newDepositAgg._sum?.depositedAmount ?? 0) +
+    (newDepositAgg._sum?.bankFee ?? 0) +
+    (legacyDepositAgg._sum?.depositedAmount ?? 0) +
+    netWriteOff;
+  const driftAmount = posTotal - depositTotal;
+  return { posTotal, depositTotal, driftAmount };
+}
+
+// ----------------------------------------------------------------
 // LEGACY · lifetime-sum (kept for 7-day dual-read window)
 // ----------------------------------------------------------------
 async function recomputeDriftForBranch_legacy(
@@ -103,68 +209,26 @@ async function recomputeDriftForBranch_legacy(
     where: { id: branchId },
   });
 
-  // 2026-05-30: deposit source switched from CashCollection.depositedAmount
-  // (per-row, deprecated) to the new ChairopsCashDeposit table (one row per
-  // bank trip, can cover N collections). Legacy collection rows that still
-  // carry a non-zero depositedAmount are folded in too — only the ones that
-  // have NEVER been linked to a CashDeposit (depositId IS NULL), because
-  // anything already linked is counted via the new table.
-  const [posAgg, newDepositAgg, legacyDepositAgg, writeOffAgg, lastCollection, lastPos] =
-    await Promise.all([
-      prisma.chairopsPosDaily.aggregate({
-        where: { branchId, orgId: branch.orgId },
-        // CEO 2026-06-02 P0: drift = CASH owed to maid · NOT gross revenue.
-        // Online sales go straight to the bank; the maid never touches them.
-        // Previously this used `grossTotal` which mixed online into "shortage"
-        // and inflated every drift by the online-share (e.g. centralโคราช
-        // showed -22,761 instead of the real -7,920 of cash owed).
-        // CEO 2026-06-25: coin baht (coinInsertCount × COIN_BAHT) is cash the
-        // maid also collects → add it to the expected-cash side.
-        _sum: { cashTotal: true, coinInsertCount: true },
-      }),
-      prisma.chairopsCashDeposit.aggregate({
-        where: { branchId, orgId: branch.orgId },
-        // Wave-2 audit OWN P0 #1: include bankFee in deposit-side of drift
-        // so a 9,970-baht bank deposit + 30-baht fee against a 10,000 POS
-        // expected total reconciles to zero · NOT false 30-baht shortage.
-        _sum: { depositedAmount: true, bankFee: true },
-      }),
-      prisma.chairopsCashCollection.aggregate({
-        where: {
-          branchId,
-          orgId: branch.orgId,
-          depositId: null,
-          depositedAmount: { gt: 0 },
-        },
-        _sum: { depositedAmount: true },
-      }),
-      // Sprint-1 fix: approved write-offs reduce the effective shortage.
-      // Subtracting from the deposit side keeps the formula additive.
-      prisma.chairopsWriteOff.aggregate({
-        where: { branchId, orgId: branch.orgId, status: "APPROVED" },
-        _sum: { amount: true },
-      }),
-      prisma.chairopsCashCollection.findFirst({
-        where: { branchId, orgId: branch.orgId },
-        orderBy: { collectedAt: "desc" },
-        select: { collectedAt: true },
-      }),
-      prisma.chairopsPosDaily.findFirst({
-        where: { branchId, orgId: branch.orgId },
-        orderBy: { bizDate: "desc" },
-        select: { bizDate: true },
-      }),
-    ]);
+  // Money formula lives in computeDriftMoneyAsOf (single source · shared with
+  // the write-off auto-fill · coin baht preserved). `null` = lifetime total.
+  // Deposit source switched 2026-05-30 to ChairopsCashDeposit (+ bankFee) with
+  // legacy CashCollection rows folded in; approved write-offs netted by
+  // direction (SHORT−OVER).
+  const [money, lastCollection, lastPos] = await Promise.all([
+    computeDriftMoneyAsOf(branchId, branch.orgId, null),
+    prisma.chairopsCashCollection.findFirst({
+      where: { branchId, orgId: branch.orgId },
+      orderBy: { collectedAt: "desc" },
+      select: { collectedAt: true },
+    }),
+    prisma.chairopsPosDaily.findFirst({
+      where: { branchId, orgId: branch.orgId },
+      orderBy: { bizDate: "desc" },
+      select: { bizDate: true },
+    }),
+  ]);
 
-  const posTotal =
-    toNum(posAgg._sum?.cashTotal) +
-    (posAgg._sum?.coinInsertCount ?? 0) * COIN_BAHT;
-  const depositTotal =
-    (newDepositAgg._sum?.depositedAmount ?? 0) +
-    (newDepositAgg._sum?.bankFee ?? 0) +
-    (legacyDepositAgg._sum?.depositedAmount ?? 0) +
-    (writeOffAgg._sum?.amount ?? 0);
-  const driftAmount = posTotal - depositTotal;
+  const { posTotal, depositTotal, driftAmount } = money;
 
   // Determine when drift began (same logic as v0 · uses existing driftSince anchor)
   let driftSince: Date | null = null;
@@ -233,7 +297,7 @@ async function recomputeDriftForBranch_window(
   const anchorDate = new Date(anchor);
   anchorDate.setHours(0, 0, 0, 0);
 
-  const [posAgg, newDepositAgg, legacyDepositAgg, writeOffAgg, lastCollection, lastPos] =
+  const [posAgg, newDepositAgg, legacyDepositAgg, woShortAgg, woOverAgg, lastCollection, lastPos] =
     await Promise.all([
       // POS since the window opened · ChairopsBranchDailyRevenue is the new
       // per-branch-per-day aggregate (BA-2 / W0 migration step 6).
@@ -268,11 +332,15 @@ async function recomputeDriftForBranch_window(
         },
         _sum: { depositedAmount: true },
       }),
-      // Sprint-1 fix: approved write-offs reduce the effective shortage.
-      // Window mode: only write-offs approved within this window count
-      // (write-offs before the anchor are already "closed" in the prior period).
+      // Sprint-1 fix: approved write-offs reduce the effective shortage · netted
+      // by direction (SHORT−OVER, CEO 2026-06-25). Window mode: only write-offs
+      // approved within this window count (pre-anchor ones are "closed").
       prisma.chairopsWriteOff.aggregate({
-        where: { branchId, orgId: branch.orgId, status: "APPROVED", approverAt: { gt: anchor } },
+        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "SHORT", approverAt: { gt: anchor } },
+        _sum: { amount: true },
+      }),
+      prisma.chairopsWriteOff.aggregate({
+        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "OVER", approverAt: { gt: anchor } },
         _sum: { amount: true },
       }),
       prisma.chairopsCashCollection.findFirst({
@@ -305,11 +373,13 @@ async function recomputeDriftForBranch_window(
       (legacyPos._sum?.coinInsertCount ?? 0) * COIN_BAHT;
   }
 
+  const netWriteOff =
+    (woShortAgg._sum?.amount ?? 0) - (woOverAgg._sum?.amount ?? 0);
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
     (newDepositAgg._sum?.bankFee ?? 0) +
     (legacyDepositAgg._sum?.depositedAmount ?? 0) +
-    (writeOffAgg._sum?.amount ?? 0);
+    netWriteOff;
   const driftAmount = posTotal - depositTotal;
 
   // Window mode: drift "since" = window anchor (so age = age of the window

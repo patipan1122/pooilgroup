@@ -3034,17 +3034,26 @@ model ChairopsAlert {
 }
 
 model ChairopsWriteOff {
-  id         String    @id @default(uuid())
-  orgId      String
-  branchId   String
-  amount     Int
-  reason     String
-  makerId    String
-  makerAt    DateTime  @default(now())
-  approverId String?
-  approverAt DateTime?
-  status     String    @default("PENDING")
-  notes      String?
+  id            String    @id @default(uuid())
+  orgId         String
+  branchId      String
+  amount        Int
+  reason        String
+  // "ตั้งต้นใหม่" support (CEO 2026-06-25) — a write-off settles the drift
+  // accumulated UP TO `effectiveDate`. `direction` carries the sign because
+  // `amount` is always stored as a positive magnitude:
+  //   SHORT = เงินขาด/ค้างฝาก (drift > 0) · adds to the deposit side → drift ↓
+  //   OVER  = เงินเกิน/ฝากเกิน  (drift < 0) · subtracts from deposit side → drift ↑
+  direction     String    @default("SHORT")
+  // Date the write-off settles drift up to (Bangkok day grain). Nullable for
+  // backward-compat; the request action always sets it (defaults to today).
+  effectiveDate DateTime? @db.Date
+  makerId       String
+  makerAt       DateTime  @default(now())
+  approverId    String?
+  approverAt    DateTime?
+  status        String    @default("PENDING")
+  notes         String?
 
   maker    ChairopsUser  @relation("chairops_writeoffs_maker", fields: [makerId], references: [id])
   approver ChairopsUser? @relation("chairops_writeoffs_approver", fields: [approverId], references: [id])

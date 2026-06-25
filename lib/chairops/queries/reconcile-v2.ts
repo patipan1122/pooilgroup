@@ -311,12 +311,41 @@ async function buildLedger(args: {
     depByDay.set(key, { deposit, slip: slipByDay.get(key) ?? "slip" });
   }
 
-  // Union of all days present in either source, sorted ascending.
-  const allDays = new Set<string>([...posByDay.keys(), ...depByDay.keys()]);
+  // Approved write-offs settle the running shortage as of their effectiveDate
+  // (CEO 2026-06-25 "ตั้งต้นใหม่"). We fold the NET effect (SHORT = +amount ·
+  // OVER = −amount) into cumDrift so the ledger footer/hero MATCH the engine
+  // (ChairopsDrift) after a write-off — otherwise the sidebar drops but the
+  // table doesn't = "ตัวเลขโกหก" ([[chairops-coin-into-total-and-drift-2026-06-25]]
+  // "money table มี 2 read-path ต้องแก้ให้ครบ").
+  const writeOffRows = await prisma.chairopsWriteOff.findMany({
+    where: { orgId, ...branchFilter, status: "APPROVED" },
+    select: { amount: true, direction: true, effectiveDate: true, makerAt: true },
+  });
+  const sinceDay = isoDay(since);
+  const netWoByDay = new Map<string, number>();
+  let priorWriteOff = 0; // net write-off effective BEFORE the visible window
+  for (const w of writeOffRows) {
+    const eff = w.effectiveDate ?? w.makerAt;
+    const key = isoDay(eff);
+    const signed = w.direction === "OVER" ? -w.amount : w.amount;
+    if (key < sinceDay) {
+      priorWriteOff += signed;
+      continue;
+    }
+    netWoByDay.set(key, (netWoByDay.get(key) ?? 0) + signed);
+  }
+
+  // Union of all days present in any source, sorted ascending.
+  const allDays = new Set<string>([
+    ...posByDay.keys(),
+    ...depByDay.keys(),
+    ...netWoByDay.keys(),
+  ]);
   const sortedDays = [...allDays].sort();
 
   let closedDrift = 0;
   let pending = 0;
+  let cumWriteOff = priorWriteOff; // accumulates day-by-day across the window
   const ledger: LedgerDay[] = [];
   for (const date of sortedDays) {
     const pos = posByDay.get(date) ?? { online: 0, cash: 0, coin: 0, total: 0 };
@@ -345,6 +374,11 @@ async function buildLedger(args: {
       pending = 0;
     }
 
+    // Approved write-offs effective on/before this day move cumDrift toward 0
+    // (SHORT forgives a shortage · OVER cancels a surplus). Matches the engine's
+    // depositTotal += netWriteOff, so −cumDrift === engine driftAmount.
+    cumWriteOff += netWoByDay.get(date) ?? 0;
+
     ledger.push({
       date,
       online: pos.online,
@@ -361,7 +395,9 @@ async function buildLedger(args: {
       // CEO 2026-06-02: cumDrift must reflect OPEN pending too · otherwise a
       // branch that never collects shows 0 cumDrift forever while the side
       // panel/engine show −22,761. Negative = owed by branch (shortage).
-      cumDrift: closedDrift - pending,
+      // CEO 2026-06-25: + cumWriteOff so an approved "ตั้งต้น" write-off pulls
+      // this running drift toward 0 in lock-step with the engine/sidebar.
+      cumDrift: closedDrift - pending + cumWriteOff,
       pending,
       sources: Array.from(sourcesByDay.get(date) ?? []),
       hasCsvWithoutSlip: csvMissingSlipByDay.has(date),

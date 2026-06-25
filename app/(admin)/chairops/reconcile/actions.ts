@@ -77,6 +77,11 @@ const requestSchema = z.object({
   branchId: zUUID(),
   amount: zBaht(),
   reason: z.string().min(5, "เหตุผลสั้นเกินไป").max(500),
+  // "ตั้งต้นใหม่" support (CEO 2026-06-25): a write-off settles drift up to
+  // `effectiveDate` and carries a direction (ขาด/เกิน). `amount` is a positive
+  // magnitude; the sign lives in `direction`.
+  direction: z.enum(["SHORT", "OVER"]).default("SHORT"),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "วันที่ไม่ถูกต้อง").optional(),
 });
 
 export async function requestWriteOff(formData: FormData) {
@@ -85,6 +90,8 @@ export async function requestWriteOff(formData: FormData) {
     branchId: formData.get("branchId"),
     amount: Number(formData.get("amount")),
     reason: formData.get("reason"),
+    direction: formData.get("direction") ?? "SHORT",
+    effectiveDate: formData.get("effectiveDate") ?? undefined,
   });
   if (!parsed.success) {
     const branchId = String(formData.get("branchId") ?? "");
@@ -92,7 +99,18 @@ export async function requestWriteOff(formData: FormData) {
       `/chairops/reconcile/${branchId}?error=${encodeURIComponent(parsed.error.issues[0].message)}`
     );
   }
-  const { branchId, amount, reason } = parsed.data;
+  const { branchId, amount, reason, direction } = parsed.data;
+  // ตั้งต้นวันอนาคตไม่ได้ · default = วันนี้ (Bangkok day grain).
+  const todayBkk = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+  const effDay = parsed.data.effectiveDate ?? todayBkk;
+  if (effDay > todayBkk) {
+    redirect(`/chairops/reconcile/${branchId}?error=${encodeURIComponent("ตั้งต้นวันอนาคตไม่ได้")}`);
+  }
+  if (amount < 1) {
+    redirect(`/chairops/reconcile/${branchId}?error=${encodeURIComponent("จำนวนเงินต้องมากกว่า 0")}`);
+  }
+  // @db.Date round-trips at UTC midnight of the calendar date.
+  const effectiveDate = new Date(`${effDay}T00:00:00.000Z`);
   // CEO 2026-06-02 P0 IDOR fix · branch must belong to the session org. The
   // previous lookup keyed on id alone allowed a forged branchId from another
   // tenant to land a PENDING write-off + alert against tenant B's branch.
@@ -103,6 +121,8 @@ export async function requestWriteOff(formData: FormData) {
   });
   if (!branch) redirect(`/chairops/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
 
+  const kindLabel = direction === "OVER" ? "ตัดเงินเกิน" : "ตัดเงินขาด";
+
   // Wave-0 fix: write-off + alert + audit atomic in one tx
   const wo = await prisma.$transaction(async (tx) => {
     const row = await tx.chairopsWriteOff.create({
@@ -111,6 +131,8 @@ export async function requestWriteOff(formData: FormData) {
         branchId,
         amount,
         reason,
+        direction,
+        effectiveDate,
         makerId: session.user.id,
         status: "PENDING",
       },
@@ -123,9 +145,9 @@ export async function requestWriteOff(formData: FormData) {
         branchId,
         kind: ChairopsAlertKind.WRITE_OFF_REQUESTED,
         level: amount >= 500 ? ChairopsAlertLevel.WARN : ChairopsAlertLevel.INFO,
-        title: `ขอตัดเงินขาด ${amount.toLocaleString()} ฿ ที่ ${branch!.name}`,
+        title: `ขอ${kindLabel} ${amount.toLocaleString()} ฿ ที่ ${branch!.name} (ตั้งต้น ${effDay})`,
         message: `โดย ${session.user.displayName} · เหตุผล: ${reason}`,
-        contextJson: { writeOffId: row.id, amount },
+        contextJson: { writeOffId: row.id, amount, direction, effectiveDate: effDay },
       },
     });
 
@@ -135,7 +157,7 @@ export async function requestWriteOff(formData: FormData) {
         action: "write_off.request",
         entity: "WriteOff",
         entityId: row.id,
-        newValue: { branchId, amount, reason },
+        newValue: { branchId, amount, reason, direction, effectiveDate: effDay },
       },
       tx,
     );

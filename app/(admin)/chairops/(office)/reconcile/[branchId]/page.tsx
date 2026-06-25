@@ -19,11 +19,11 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
-import { requestWriteOff } from "../../../reconcile/actions";
 import {
   ReconcileShell,
   normalizeView,
 } from "../_components/reconcile-shell";
+import { WriteOffForm } from "./write-off-form";
 
 export default async function ReconcileBranchPage({
   params,
@@ -57,6 +57,8 @@ export default async function ReconcileBranchPage({
   }
 
   const view = normalizeView(sp.view);
+  // Bangkok "today" — default + max for the write-off "ตั้งต้น ณ วันที่" picker.
+  const today = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
 
   return (
     <>
@@ -120,57 +122,17 @@ export default async function ReconcileBranchPage({
           }}
         >
           <h2 style={{ fontSize: 15, fontWeight: 600 }}>
-            ขอตัดเงินขาด · write-off
+            ตัดเงินขาด/เกิน · ตั้งต้นใหม่
           </h2>
           <span className="chip chip-accent" style={{ fontSize: 11 }}>
             BR15 maker-checker
           </span>
         </div>
         <p className="text-3" style={{ fontSize: 12, marginBottom: 12 }}>
-          ใช้เมื่อ drift หาคืนไม่ได้ · &lt;500฿ ใช้ MANAGER อนุมัติ · ≥500฿
-          ต้องให้ CEO
+          เลือกวันตั้งต้น → ระบบคิดยอดหาย/เกินสะสมถึงวันนั้นให้ · ส่งเป็นคำขออนุมัติ
+          (&lt;500฿ ใช้ MANAGER · ≥500฿ ต้องให้ CEO) · อนุมัติแล้วยอดเริ่มนับใหม่จากวันนั้น
         </p>
-        <form action={requestWriteOff} aria-label="แบบฟอร์มขอตัดเงินขาด">
-          <input type="hidden" name="branchId" value={branchId} />
-          <label
-            htmlFor="wo-amount"
-            className="text-2"
-            style={{ display: "block", fontSize: 12, fontWeight: 600 }}
-          >
-            จำนวนเงิน (บาท)
-          </label>
-          <input
-            id="wo-amount"
-            type="number"
-            name="amount"
-            min={1}
-            max={1_000_000}
-            required
-            className="input mono"
-            style={{ margin: "4px 0 12px" }}
-          />
-          <label
-            htmlFor="wo-reason"
-            className="text-2"
-            style={{ display: "block", fontSize: 12, fontWeight: 600 }}
-          >
-            เหตุผล
-          </label>
-          <textarea
-            id="wo-reason"
-            name="reason"
-            required
-            rows={3}
-            minLength={5}
-            maxLength={500}
-            placeholder="เช่น แม่บ้านลาออก · ยอดหายไป · POS รายงานผิด"
-            className="input"
-            style={{ margin: "4px 0 12px", resize: "vertical" }}
-          />
-          <button type="submit" className="btn btn-primary" style={{ width: "100%" }}>
-            ส่งคำขอ
-          </button>
-        </form>
+        <WriteOffForm branchId={branchId} today={today} />
       </section>
     </>
   );
