@@ -87,8 +87,9 @@ export default async function MaidRosterPage({
         )}
       </nav>
 
-      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+      {/* มือถือ: เลื่อนซ้าย-ขวาดูคอลัมน์ค่าจ้าง/ปุ่มได้ (เดิม overflow-hidden ตัดทิ้ง) */}
+      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
             <tr>
               <th className="px-4 py-2.5">ชื่อ</th>

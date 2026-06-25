@@ -2,10 +2,39 @@
 // Per security review: actions were trusting client-supplied IDs without org-check
 
 import { prisma } from "@/lib/prisma";
+import type { DbUser } from "@/lib/auth/session";
+import { canPlaylandAdmin } from "./role-guard";
 
 export async function verifyBranchOrg(branchId: string, orgId: string): Promise<boolean> {
   const b = await prisma.playlandBranch.findFirst({ where: { id: branchId, orgId }, select: { id: true } });
   return Boolean(b);
+}
+
+/**
+ * ด่านกลาง: branchId ที่ action รับมา ต้องเป็นสาขาที่ "พนักงานคนนี้ถูกมอบหมายจริง"
+ * (เดิมจำกัดแค่ UI → สาขา A ยิง action ใส่ branchId ของสาขา B ได้)
+ *  • admin tier (super/org/admin/program_admin) = ทุกสาขาใน org (ผ่าน · ยังเช็ค org)
+ *  • พนักงาน/ผจก.สาขา ที่ถูกผูก staff_branches แล้ว = เฉพาะสาขาที่ผูก
+ *  • พนักงานที่ยังไม่ถูกผูกเลย = ทุกสาขาใน org (backward-compatible · ตรงกับ getAllowedBranchList)
+ * คืน false → action ต้อง return err ปฏิเสธ
+ */
+export async function verifyBranchAssignment(
+  branchId: string,
+  orgId: string,
+  userId: string,
+  role: DbUser["role"],
+): Promise<boolean> {
+  // ต้องอยู่ใน org เสมอ (กันยิงข้าม org)
+  if (!(await verifyBranchOrg(branchId, orgId))) return false;
+  // admin tier เข้าได้ทุกสาขาใน org
+  if (canPlaylandAdmin(role)) return true;
+  // staff/branch-manager: ถ้าถูกผูกสาขาแล้ว → branchId ต้องอยู่ในรายการที่ผูก
+  const assigned = await prisma.playlandStaffBranch.findMany({
+    where: { orgId, userId },
+    select: { branchId: true },
+  });
+  if (assigned.length === 0) return true; // ยังไม่ผูก = ไม่ล็อก (backward-compatible)
+  return assigned.some((a) => a.branchId === branchId);
 }
 
 export async function verifyMemberOrg(memberId: string, orgId: string): Promise<boolean> {

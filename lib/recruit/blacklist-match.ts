@@ -3,6 +3,7 @@
 // CEO Q5: ไม่เก็บ national ID → match ด้วย phone + name fuzzy
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 export interface BlacklistMatch {
   matched: boolean;
@@ -15,17 +16,28 @@ export interface BlacklistMatch {
   }>;
 }
 
-/** Check applicant against active blacklist entries. */
+/**
+ * Check applicant against active blacklist entries.
+ * companyCode = code ("POOIL" | "JPSYNC") ของบริษัทที่ออกประกาศ · ถ้าระบุ
+ * จะกรองเฉพาะ blacklist ที่ scope = BOTH หรือ = บริษัทนั้น (กันแบนข้ามบริษัท)
+ */
 export async function checkBlacklist(
   orgId: string,
   applicant: { fullName: string; phone: string },
+  companyCode?: string | null,
 ): Promise<BlacklistMatch> {
   const now = new Date();
+  // BOTH = แบนทุกบริษัท · ถ้ามี companyCode ให้รวม entry ที่ scope ตรงบริษัทนั้นด้วย
+  const scopeFilter: Prisma.RecruitBlacklistWhereInput =
+    companyCode === "POOIL" || companyCode === "JPSYNC"
+      ? { companyScope: { in: ["BOTH", companyCode] } }
+      : { companyScope: "BOTH" };
   const entries = await prisma.recruitBlacklist.findMany({
     where: {
       orgId,
       removedAt: null,
       expiresAt: { gt: now },
+      ...scopeFilter,
       OR: [
         { phone: applicant.phone },
         { fullName: { equals: applicant.fullName.trim(), mode: "insensitive" } },

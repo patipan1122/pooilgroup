@@ -17,10 +17,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ bo
   if (!booking) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   if (booking.status !== "PENDING") return NextResponse.json({ ok: false, error: `status is ${booking.status}` }, { status: 400 });
 
-  await prisma.playlandBooking.update({
-    where: { id: bookingId },
+  // ยืนยันแบบ race-safe: สำเร็จเฉพาะถ้ายัง PENDING อยู่ (กดยืนยันซ้ำ/พร้อมกัน → ครั้งที่ 2 ไม่เขียนทับ/ไม่บันทึกเงินซ้ำ)
+  const confirmed = await prisma.playlandBooking.updateMany({
+    where: { id: bookingId, orgId: session.user.org_id, status: "PENDING" },
     data: { status: "PAID", paymentStatus: "paid", confirmedByUserId: session.user.id, confirmedAt: new Date() },
   });
+  if (confirmed.count !== 1) {
+    return NextResponse.json({ ok: false, error: "booking ถูกยืนยันไปแล้ว (อาจมีคนกดพร้อมกัน)" }, { status: 409 });
+  }
 
   await prisma.playlandAuditLog.create({
     data: {

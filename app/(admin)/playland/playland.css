@@ -1230,31 +1230,7 @@
   .pl-mobile-nav { display: none; }
 }
 
-/* POS mobile · cart becomes bottom sheet · product grid full width above */
-@media (max-width: 599px) {
-  .pl-pos-search input { flex: 1; min-width: 0; }
-  .pl-pos-search { width: 100%; }
-  .pl-pos-pane > .pl-pos-cart {
-    position: fixed;
-    left: 0; right: 0; bottom: 68px;       /* above mobile nav */
-    z-index: 45;
-    max-height: 55vh;
-    border-top: 1px solid var(--pl-line);
-    border-radius: 16px 16px 0 0;
-    background: var(--pl-paper);
-    box-shadow: 0 -8px 24px rgba(28, 25, 23, 0.10);
-    transform: translateY(calc(100% - 56px));   /* peek = header only */
-    transition: transform 0.22s var(--pl-ease);
-  }
-  .pl-pos-pane > .pl-pos-cart.pl-pos-cart-open,
-  .pl-pos-pane > .pl-pos-cart[data-has-items="true"] {
-    transform: translateY(0);
-  }
-  .pl-pos-pane > .pl-pos-cart > div:first-child {
-    padding: 12px 16px;
-    cursor: pointer;
-  }
-}
+/* POS mobile · ตะกร้า stack เต็มจอใต้สินค้า (≤760px) → ดู .pl-pos-row / .pl-pos-cart ด้านล่าง */
 
 /* Reduce motion · existing rule preserved */
 
@@ -1855,6 +1831,14 @@
 
 .pl-show-mobile { display: none; }
 .pl-tap44 { min-height: 44px; }
+
+/* แคชเชียร์ POS: เดสก์ท็อป = สินค้าซ้าย + ตะกร้าขวา · มือถือ = ยุบเป็นแนวตั้ง ตะกร้าเต็มจอ */
+.pl-pos-row  { display: flex; flex: 1; overflow: hidden; }
+.pl-pos-cart { width: 400px; max-width: 42vw; flex: none; }
+@media (max-width: 760px) {
+  .pl-pos-row  { flex-direction: column; overflow: auto; }
+  .pl-pos-cart { width: 100%; max-width: none; border-left: none !important; border-top: 1px solid #ece5d8; }
+}
 
 @media (max-width: 760px) {
   .pl-grid-2, .pl-grid-2r, .pl-grid-2e, .pl-grid-3 { grid-template-columns: 1fr; }

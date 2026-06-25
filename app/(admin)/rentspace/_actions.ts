@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/r2/upload";
 import { audit } from "@/lib/audit/log";
 import type { AuditAction } from "@/lib/audit/log";
-import { toNum } from "@/lib/rentspace/format";
+import { toNum, currentPeriod } from "@/lib/rentspace/format";
 import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2 } from "@/lib/rentspace/billing";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import type { RentalBillStatus } from "@/lib/generated/prisma/enums";
@@ -620,6 +620,7 @@ export async function actUpdateContractBilling(input: {
   lateFeeGraceDays: number;
   promoDiscountThb: number;
   promoMonths: number;
+  promoStartPeriod?: string;
   billIssueDay?: number | null;
 }) {
   const session = await gateAdmin();
@@ -627,6 +628,12 @@ export async function actUpdateContractBilling(input: {
     prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
     "สัญญา",
   );
+  // "งวดเริ่มโปร" — เพิ่มโปรกลางสัญญาต้องเริ่มนับจากงวดที่ระบุ (ค่าเริ่มต้น = งวดปัจจุบัน)
+  // ไม่ใช่นับจากวันเข้าอยู่ ไม่งั้นโปรจะถูกใช้ไปกับงวดเก่าที่ผ่านมาแล้ว
+  const promoStart =
+    input.promoMonths > 0
+      ? (input.promoStartPeriod?.trim() || currentPeriod())
+      : null;
   await prisma.rentalContract.update({
     where: { id: input.contractId },
     data: {
@@ -635,6 +642,7 @@ export async function actUpdateContractBilling(input: {
       lateFeeGraceDays: input.lateFeeGraceDays,
       promoDiscountThb: input.promoDiscountThb,
       promoMonths: input.promoMonths,
+      promoStartPeriod: promoStart,
       billIssueDay: input.billIssueDay ?? null,
     },
   });
@@ -1089,10 +1097,16 @@ export async function actDecideVoidBill(billId: string, decision: "approve" | "r
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: billId, orgId: session.user.org_id },
-    select: { id: true, voidStatus: true, voidRequestedBy: true },
+    select: { id: true, voidStatus: true, voidRequestedBy: true, paidAmount: true },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
   if (bill.voidStatus !== "pending") throw new Error("ไม่มีคำขอยกเลิกที่รออนุมัติ");
+  // กันยกเลิกบิลที่รับเงินมาแล้วโดยไม่จัดการเงิน — ต้องคืน/ย้ายเงินออกให้ยอดรับเป็น 0 ก่อนยกเลิก
+  if (decision === "approve" && toNum(bill.paidAmount) > 0) {
+    throw new Error(
+      "บิลนี้เคยรับชำระเงินมาแล้ว ต้องคืนหรือย้ายเงินที่รับมาออกให้ครบก่อน (ยอดรับ = 0) จึงจะยกเลิกบิลได้",
+    );
+  }
   // maker ≠ checker — กันคนขอกับคนอนุมัติเป็นคนเดียวกัน (ยกเว้น super_admin)
   if (bill.voidRequestedBy === session.user.id && !isSuperAdmin(session.user.role)) {
     throw new Error("ต้องให้แอดมินอีกคนเป็นผู้อนุมัติคำขอยกเลิก (กันการอนุมัติเอง)");
@@ -1282,6 +1296,8 @@ export async function actRecordPayment(input: {
     where: { id: input.billId, orgId: session.user.org_id },
   });
   if (!bill) throw new Error("ไม่พบบิล");
+  // ห้ามรับชำระบิลที่ถูกยกเลิกไปแล้ว
+  if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกไปแล้ว ไม่สามารถรับชำระได้");
   // กันรับชำระซ้ำ (double-click / network retry / หลายแท็บ): บิล+ยอด+วิธี+วันเดียวกัน ภายใน 2 นาที = ซ้ำ
   const dupSince = new Date(Date.now() - 120_000);
   const dup = await prisma.rentalPayment.findFirst({
@@ -1395,8 +1411,14 @@ export async function actRequestDiscount(input: {
     where: { id: input.billId, orgId: session.user.org_id },
   });
   if (!bill) throw new Error("ไม่พบบิล");
-  // ฐานส่วนลด = ผลรวมรายการบิลจริง (rent+ไฟ+น้ำ+ค่าปรับ) ตรงกับที่ recomputeBillTotals เฉลี่ยส่วนลด — otherAmount ยังไม่มี line item จึงไม่รวม
-  const base = toNum(bill.rentAmount) + toNum(bill.electricAmount) + toNum(bill.waterAmount) + toNum(bill.lateFeeAmount);
+  // ฐานส่วนลด = ผลรวมรายการบิลจริง (rent+ไฟ+น้ำ+ค่าปรับ+อื่นๆ) ให้ตรงกับ gross ใน recomputeBillTotals
+  // ซึ่งรวมรายการ "อื่นๆ" (otherAmount มี line item เมื่อแก้บิลผ่าน actEditBillItems) — ถ้าไม่รวมจะคิดเพดานส่วนลดต่ำกว่าจริง
+  const base =
+    toNum(bill.rentAmount) +
+    toNum(bill.electricAmount) +
+    toNum(bill.waterAmount) +
+    toNum(bill.lateFeeAmount) +
+    toNum(bill.otherAmount);
   const raw = input.kind === "percent" ? Math.round(base * (input.value / 100) * 100) / 100 : input.value;
   // a discount can never exceed the bill — keeps totals ≥ 0
   const computedAmount = Math.max(0, Math.min(raw, base));

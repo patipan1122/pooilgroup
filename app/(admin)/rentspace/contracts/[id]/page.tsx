@@ -366,6 +366,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                   lateFeeGraceDays: contract.lateFeeGraceDays ?? 7,
                   promoDiscountThb: toNum(contract.promoDiscountThb),
                   promoMonths: contract.promoMonths ?? 0,
+                  promoStartPeriod: contract.promoStartPeriod ?? null,
                   billIssueDay: contract.billIssueDay ?? null,
                 }}
               />

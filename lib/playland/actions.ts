@@ -12,7 +12,7 @@ import { canPlaylandCashier, canPlaylandManage, canPlaylandAdmin } from "./role-
 import { newMemberCode, newSaleCode, newShiftCode, newBookingCode } from "./codes";
 import { searchMembers } from "./queries";
 import { getAdapter } from "./acs/mock-adapter";
-import { verifyBranchOrg, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
+import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg, verifyPackageOrg, verifyBookingOrg, isValidThaiPhone, decodePhotoDataUrl } from "./guards";
 import { requireOpenShift } from "./wristband";
 import { readOvertimeRate, overtimeFromExpiry } from "./overtime";
 
@@ -206,7 +206,7 @@ export interface CheckInInput {
 export async function checkInSession(input: CheckInInput): Promise<ActionResult<{ sessionId: string }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์ check-in");
-  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
   if (input.bookingId && !(await verifyBookingOrg(input.bookingId, session.user.org_id))) return err("booking ไม่อยู่ใน org");
   let shiftId: string;
@@ -220,6 +220,20 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   });
   if (existing) return err(`สมาชิกนี้มี session ${existing.status} อยู่แล้ว · ปิด session เดิมก่อน`);
 
+  // booking ที่ยังไม่จ่าย/หมดอายุ/ยกเลิก ห้ามเช็คอินเป็น "เข้าแล้ว"
+  //   อนุญาตเฉพาะ PAID (จ่ายออนไลน์แล้ว) หรือ PENDING (มาจ่ายสดที่เคาน์เตอร์ตอนนี้ · เช็คอินจะเก็บเงิน+ออกใบเสร็จให้)
+  //   EXPIRED/CANCELLED/NO_SHOW/CHECKED_IN → ปฏิเสธ
+  if (input.bookingId) {
+    const bk = await prisma.playlandBooking.findFirst({
+      where: { id: input.bookingId, orgId: session.user.org_id },
+      select: { status: true },
+    });
+    if (!bk) return err("ไม่พบ booking");
+    if (bk.status !== "PAID" && bk.status !== "PENDING") {
+      return err(`booking สถานะ ${bk.status} · เช็คอินไม่ได้ (ต้องจ่ายเงินก่อน)`);
+    }
+  }
+
   const pkg = await prisma.playlandPackage.findFirst({ where: { id: input.packageId, orgId: session.user.org_id, active: true } });
   if (!pkg) return err("Package ไม่พบ");
 
@@ -229,7 +243,9 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
   // D-A1 (CEO 2026-06-24): ค่าเข้าเล่น = บันทึกเป็น "รายการขายจริง" แยกตามวิธีจ่าย
   //   → ตอนปิดกะ สรุปเงินสดในลิ้นชักได้ตรง (เดิมค่าเข้าไม่เข้าระบบเลย)
   // ทำ session + sale + เพิ่มยอดกะ ใน transaction เดียว (atomic — เงินกับ session เกิดพร้อมกัน)
-  const created = await prisma.$transaction(async (tx) => {
+  let created;
+  try {
+    created = await prisma.$transaction(async (tx) => {
     const sess = await tx.playlandSession.create({
       data: {
         orgId: session.user.org_id,
@@ -263,10 +279,19 @@ export async function checkInSession(input: CheckInInput): Promise<ActionResult<
     }
     await tx.playlandMember.update({ where: { id: input.memberId }, data: { lastVisitAt: new Date() } });
     if (input.bookingId) {
-      await tx.playlandBooking.update({ where: { id: input.bookingId }, data: { status: "CHECKED_IN" } });
+      // มาร์ค CHECKED_IN แบบ race-safe: สำเร็จเฉพาะถ้ายัง PAID/PENDING อยู่
+      //   (ถ้า booking เพิ่งถูกยกเลิก/หมดอายุพร้อมกัน → ไม่ force-mark · rollback)
+      const marked = await tx.playlandBooking.updateMany({
+        where: { id: input.bookingId, orgId: session.user.org_id, status: { in: ["PAID", "PENDING"] } },
+        data: { status: "CHECKED_IN" },
+      });
+      if (marked.count !== 1) throw new Error("booking สถานะเปลี่ยนไปแล้ว · เช็คอินไม่ได้");
     }
     return sess;
-  });
+    });
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "เช็คอินไม่สำเร็จ");
+  }
 
   await prisma.playlandAuditLog.create({
     data: {
@@ -371,6 +396,7 @@ export async function extendSession(input: ExtendSessionInput): Promise<ActionRe
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
   const sRow = await prisma.playlandSession.findFirst({ where: { id: input.sessionId, orgId: session.user.org_id } });
   if (!sRow) return err("Session not found");
+  if (!(await verifyBranchAssignment(sRow.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   let shiftId: string;
   try { shiftId = await requireOpenShift(session.user.org_id, sRow.branchId, session.user.id); }
   catch (e) { return err(e instanceof Error ? e.message : "shift required"); }
@@ -454,7 +480,7 @@ export interface CreateSaleInput {
 export async function createSale(input: CreateSaleInput): Promise<ActionResult<{ saleId: string; totalCents: number }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
-  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   if (input.items.length === 0) return err("ยังไม่ได้เลือกสินค้า");
 
   // W3 · shift required (per CEO ans 4A)
@@ -555,6 +581,7 @@ export async function createSale(input: CreateSaleInput): Promise<ActionResult<{
 export async function openShift(branchId: string, openingCashCents: number): Promise<ActionResult<{ shiftId: string }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!(await verifyBranchAssignment(branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   const existing = await prisma.playlandShift.findFirst({
     where: { branchId, cashierUserId: session.user.id, status: "OPEN" },
   });
@@ -838,7 +865,7 @@ export async function createBooking(
 ): Promise<ActionResult<{ bookingId: string; bookingCode: string; amountCents: number }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์จองล่วงหน้า");
-  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   if (!input.customerName.trim()) return err("กรอกชื่อลูกค้า");
   if (!isValidThaiPhone(input.customerPhone)) return err("เบอร์โทรไม่ถูกต้อง (ใช้ 9-10 หลัก เริ่มต้น 0)");
   if (input.partySize < 1 || input.partySize > 20) return err("จำนวนคน 1-20");

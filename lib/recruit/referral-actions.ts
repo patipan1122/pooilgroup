@@ -117,11 +117,14 @@ export async function markReferralPaid(referralId: string) {
   });
   if (!ref) throw new Error("ไม่พบรายการ");
   if (ref.orgId !== session.user.org_id) throw new Error("ไม่มีสิทธิ์");
+  if (ref.status === "PAID") throw new Error("รายการนี้จ่ายไปแล้ว");
 
-  await prisma.recruitReferral.update({
-    where: { id: referralId },
+  // จ่ายได้ครั้งเดียว — updateMany เฉพาะที่ยัง "ไม่ใช่ PAID" (compare-and-swap กัน race/กดซ้ำ)
+  const updated = await prisma.recruitReferral.updateMany({
+    where: { id: referralId, status: { not: "PAID" } },
     data: { status: "PAID", paidAt: new Date() },
   });
+  if (updated.count === 0) throw new Error("รายการนี้จ่ายไปแล้ว");
 
   await audit({
     orgId: ref.orgId,

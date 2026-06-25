@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { Camera, CheckCircle2, Loader2 } from "lucide-react";
 import {
   createCashCollection,
@@ -55,6 +56,9 @@ export function CollectNewForm({ avg7d }: Props) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoHash, setPhotoHash] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  // เงินขาด/เงินเกิน gate — in-app modal (เลิกใช้ window.confirm ที่ LINE บางเครื่อง
+  // บล็อกเงียบ → เงินขาดหลุดผ่าน). เก็บข้อความเตือนไว้แสดงใน Dialog ของเราเอง.
+  const [confirmWarnings, setConfirmWarnings] = useState<string[] | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const countedId = useId();
@@ -147,11 +151,15 @@ export function CollectNewForm({ avg7d }: Props) {
     }
     const warnings = buildConfirms();
     if (warnings.length > 0) {
-      const msg =
-        warnings.join("\n\n") + "\n\nยืนยันว่าจำนวนนี้ถูกต้องและต้องการบันทึกใช่หรือไม่?";
-      if (!confirm(msg)) return;
+      // แสดง modal ของเราเอง (ไม่ใช่ window.confirm ที่ LINE บล็อกเงียบได้)
+      setConfirmWarnings(warnings);
+      return;
     }
+    doSubmit();
+  }
 
+  function doSubmit() {
+    setConfirmWarnings(null);
     startTransition(async () => {
       // Office shim — non-maid path posts a single synthetic "BULK" line so
       // the new chair-breakdown action accepts the legacy office form
@@ -337,6 +345,52 @@ export function CollectNewForm({ avg7d }: Props) {
           "ยืนยันบันทึก"
         )}
       </Button>
+
+      {/* เงินขาด/เงินเกิน — modal ในแอปเราเอง แทน window.confirm
+          (LINE in-app browser บางเครื่องบล็อก native confirm เงียบ ๆ
+          → เงินขาดหลุดผ่านได้ ถ้าใช้ confirm ของเบราว์เซอร์) */}
+      <Dialog
+        open={confirmWarnings !== null}
+        onClose={() => {
+          if (!pending) setConfirmWarnings(null);
+        }}
+        title="ตรวจสอบยอดอีกครั้ง"
+      >
+        <div className="space-y-5">
+          <div className="space-y-3">
+            {(confirmWarnings ?? []).map((w, i) => (
+              <div
+                key={i}
+                className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm leading-relaxed"
+              >
+                {w}
+              </div>
+            ))}
+            <p className="text-sm font-medium">
+              ยืนยันว่าจำนวนนี้ถูกต้องและต้องการบันทึกใช่หรือไม่?
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-zinc-100 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmWarnings(null)}
+              disabled={pending}
+            >
+              กลับไปแก้
+            </Button>
+            <Button type="button" onClick={doSubmit} disabled={pending}>
+              {pending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> กำลังบันทึก...
+                </>
+              ) : (
+                "ยืนยันบันทึก"
+              )}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </form>
   );
 }

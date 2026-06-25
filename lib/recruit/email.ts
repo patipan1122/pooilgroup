@@ -118,3 +118,57 @@ export async function sendStatusEmail(
 export function applicantLandingUrl(slug: string): string {
   return `${APP_URL}/apply/${slug}`;
 }
+
+/**
+ * Send a free-form recruiter message to an applicant via Resend.
+ * Used by the messaging thread (EMAIL channel) so what the UI promises
+ * ("ส่งได้ทาง Email") actually happens — not just QUEUED.
+ *
+ * Returns { sent } so the caller can flip the message status to SENT/FAILED.
+ * Never throws — delivery failure is reported via the result, not an exception.
+ */
+export async function sendRecruitMessageEmail(args: {
+  to: string;
+  subject: string;
+  body: string;
+}): Promise<{ sent: boolean; error?: string }> {
+  if (!args.to) return { sent: false, error: "no_email" };
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[recruit-email] FATAL · RESEND_API_KEY missing in production · message NOT sent",
+      );
+      return { sent: false, error: "no_api_key_prod" };
+    }
+    console.log("[recruit-email] RESEND_API_KEY missing (dev) · would send message to", args.to);
+    return { sent: false, error: "no_api_key" };
+  }
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: FROM,
+        to: [args.to],
+        subject: args.subject,
+        text: args.body,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("[recruit-email] resend message error", res.status, err);
+      return { sent: false, error: `resend_${res.status}` };
+    }
+    return { sent: true };
+  } catch (e) {
+    console.error("[recruit-email] message send fail", e);
+    return { sent: false, error: "exception" };
+  }
+}

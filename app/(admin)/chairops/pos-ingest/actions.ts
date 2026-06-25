@@ -893,7 +893,22 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   }
   chairsCreatedFromPos = plannedNewChairs.length;
 
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
+    // Compare-and-swap lock: claim this import as committed BEFORE doing any
+    // writes. The line-690 `imp.committed` read above is best-effort UX only —
+    // two OFFICE users confirming the SAME file at once both pass it, then both
+    // run this whole ingest → POS rows double-counted. This guarded updateMany
+    // (committed:false → true) lets exactly ONE win; the loser updates 0 rows →
+    // we throw → its transaction rolls back → no duplicate writes.
+    const claimed = await tx.chairopsPosImport.updateMany({
+      where: { id: imp.id, orgId, committed: false },
+      data: { committed: true, committedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      throw new Error("POS_IMPORT_ALREADY_COMMITTED");
+    }
+
     // Step A: bulk-create new chairs. Re-fetch IDs via findMany since
     // createMany doesn't return rows; one extra query but worth it.
     if (plannedNewChairs.length > 0) {
@@ -1111,18 +1126,24 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
       }
     }
 
-    await tx.chairopsPosImport.update({
-      where: { id: imp.id },
-      data: { committed: true, committedAt: new Date() },
+    // (committed/committedAt already claimed via CAS at top of this tx)
+    }, {
+      // Wave-2 audit BE P0 #4: default Prisma tx timeout is 5s · multi-week
+      // POS backfill writes hundreds of sequential awaits + chair-move inserts
+      // would trip the default + silently roll back. 5 min ceiling covers any
+      // realistic real-world XLSX upload.
+      maxWait: 30_000,
+      timeout: 5 * 60_000,
     });
-  }, {
-    // Wave-2 audit BE P0 #4: default Prisma tx timeout is 5s · multi-week
-    // POS backfill writes hundreds of sequential awaits + chair-move inserts
-    // would trip the default + silently roll back. 5 min ceiling covers any
-    // realistic real-world XLSX upload.
-    maxWait: 30_000,
-    timeout: 5 * 60_000,
-  });
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "POS_IMPORT_ALREADY_COMMITTED"
+    ) {
+      return { ok: false, error: "import นี้ถูก commit ไปแล้ว · รีเฟรชหน้า" };
+    }
+    throw err;
+  }
 
   // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
   // can take 10-30 s. Fire-and-forget so the commit returns to the CEO

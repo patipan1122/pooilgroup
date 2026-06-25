@@ -1,10 +1,11 @@
 // DC Warehouse · per-warehouse access + active-warehouse context (server-only).
 //
-// Visibility model (mirrors playland staff-branch, backward-compatible):
+// Visibility model (mirrors playland staff-branch):
 //   • admin tier (super/org/admin/program_admin) → ALL active warehouses
 //   • non-admin WITH DcWarehouseUser bindings → only the bound warehouses
-//   • non-admin WITHOUT bindings → all active warehouses (backward-compat,
-//     so a freshly-granted staff isn't locked out before binding exists)
+//   • non-admin WITHOUT bindings → ONLY the default warehouse (ถ้ามี) — กันพนักงาน
+//     ที่ยังไม่ผูกสิทธิ์คลัง เห็น/เบิก/โอน/นับ ข้ามคลังได้ทุกคลัง. ถ้าไม่มีคลัง default
+//     เลย → เห็นว่าง (ต้องให้แอดมินผูกคลังก่อนถึงทำงานได้)
 //
 // Back-office manage capability is role-based (canDcManage in role-guard.ts);
 // DcWarehouseUser scopes WHICH warehouses a floor user sees/acts on.
@@ -46,7 +47,12 @@ export async function getAllowedWarehouses(session: Session): Promise<DcWarehous
     where: { orgId, userId: session.user.id, isActive: true },
     select: { warehouseId: true },
   });
-  if (bindings.length === 0) return all; // backward-compat: no binding = see all
+  if (bindings.length === 0) {
+    // ยังไม่ผูกสิทธิ์คลัง → เห็นเฉพาะคลัง default เท่านั้น (ไม่ใช่ทุกคลัง)
+    // กันพนักงานเข้าถึง/เบิก/โอน/นับ ข้ามคลังที่ไม่ได้รับมอบหมาย
+    const def = all.find((w) => w.isDefault);
+    return def ? [def] : [];
+  }
   const allowed = new Set(bindings.map((b) => b.warehouseId));
   return all.filter((w) => allowed.has(w.id));
 }

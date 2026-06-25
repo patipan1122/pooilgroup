@@ -28,12 +28,18 @@ interface Thread {
 
 const CHANNEL_META: Record<
   string,
-  { label: string; chip: string; needs?: "phone" | "email" | "lineId" }
+  {
+    label: string;
+    chip: string;
+    needs?: "phone" | "email" | "lineId";
+    // notReady = ช่องที่ระบบยังส่งจริงไม่ได้ (รอตั้งค่า Phase 2) → ซ่อนปุ่ม
+    notReady?: boolean;
+  }
 > = {
   INAPP: { label: "ในระบบ", chip: "bg-zinc-100 text-zinc-700" },
   EMAIL: { label: "Email", chip: "bg-amber-100 text-amber-700", needs: "email" },
-  LINE: { label: "LINE", chip: "bg-green-100 text-green-800", needs: "lineId" },
-  SMS: { label: "SMS", chip: "bg-blue-100 text-blue-700", needs: "phone" },
+  LINE: { label: "LINE", chip: "bg-green-100 text-green-800", needs: "lineId", notReady: true },
+  SMS: { label: "SMS", chip: "bg-blue-100 text-blue-700", needs: "phone", notReady: true },
 };
 
 export function MessageThreadView({ thread }: { thread: Thread }) {
@@ -59,7 +65,7 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
           body: text,
         });
         if (result.deliveryError) {
-          toast.warning(`ส่งคิวแล้ว · แต่ delivery ติดปัญหา: ${result.deliveryError}`);
+          toast.warning(`ส่งไม่สำเร็จ · ติดปัญหา: ${result.deliveryError}`);
         } else {
           toast.success("ส่งข้อความแล้ว");
         }
@@ -170,7 +176,10 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
       {/* Composer */}
       <div className="border-t border-zinc-200 bg-white p-4">
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          {(["INAPP", "EMAIL", "LINE", "SMS"] as const).map((c) => {
+          {(["INAPP", "EMAIL", "LINE", "SMS"] as const)
+            // ซ่อนช่องที่ยังส่งจริงไม่ได้ (LINE/SMS · รอ Phase 2) — กันกดแล้วเข้าใจผิดว่าส่งแล้ว
+            .filter((c) => !CHANNEL_META[c].notReady)
+            .map((c) => {
             const meta = CHANNEL_META[c];
             const enabled =
               !meta.needs ||
@@ -197,12 +206,10 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
             );
           })}
         </div>
-        {(channel === "LINE" || channel === "SMS") && (
-          <p className="text-[11px] text-amber-700 mb-2 inline-flex items-center gap-1">
-            <AlertCircle className="size-3" />
-            ช่อง {channelMeta.label} จะเข้า queue · ยังไม่ส่งจริง (รอตั้งค่า Phase 2)
-          </p>
-        )}
+        <p className="text-[11px] text-zinc-400 mb-2 inline-flex items-center gap-1">
+          <AlertCircle className="size-3" />
+          LINE / SMS ยังส่งจริงไม่ได้ (รอตั้งค่า Phase 2) · ตอนนี้ส่งได้ทาง ในระบบ และ Email
+        </p>
         <div className="flex items-end gap-2">
           <textarea
             value={body}

@@ -4,11 +4,12 @@
 //
 // CURRENT STATE (Phase B-full):
 // - INAPP channel: fully implemented · messages stored + visible to admin
-// - LINE / SMS / EMAIL: stored as QUEUED · actual sending requires external setup
-//   (LINE OA webhook + Messaging API · SMS gateway · Resend already wired for email)
+// - LINE / FACEBOOK: sent live when a channel instance + access token exist
+// - EMAIL: sent live via Resend (sendRecruitMessageEmail) · status flips SENT/FAILED
+// - SMS: stored as QUEUED only · no gateway yet (button hidden in UI)
 //
-// EMAIL is the only outbound channel that works today (via existing Resend).
-// LINE/SMS show as QUEUED with a clear "TODO: connect" admin badge.
+// Every channel exposed in the UI as "sendable" actually attempts delivery here;
+// the only queued-without-sender channel (SMS) is hidden in the composer.
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -17,6 +18,7 @@ import { audit } from "@/lib/audit/log";
 import { canRecruitWrite } from "./role-guard";
 import { decryptToken } from "./channel-crypto";
 import { sendLineMessage, sendFacebookMessage } from "./inbox-send";
+import { sendRecruitMessageEmail } from "./email";
 
 type Channel = "LINE" | "SMS" | "EMAIL" | "INAPP" | "FACEBOOK";
 
@@ -176,8 +178,27 @@ export async function sendMessage(input: SendMessageInput) {
         data: { status: "FAILED", errorMessage: deliveryError },
       });
     }
+  } else if (input.channel === "EMAIL" && app.applicant.email) {
+    // Actually send via Resend so the UI's promise ("ส่งได้ทาง Email") is true.
+    const result = await sendRecruitMessageEmail({
+      to: app.applicant.email,
+      subject: `ข้อความจากทีม HR · ${app.applicant.fullName}`,
+      body,
+    });
+    if (result.sent) {
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "SENT", sentAt: new Date() },
+      });
+    } else {
+      deliveryError = result.error ?? "send failed";
+      await prisma.recruitMessage.update({
+        where: { id: msg.id },
+        data: { status: "FAILED", errorMessage: deliveryError },
+      });
+    }
   }
-  // EMAIL / SMS still QUEUED — wired in a later pass
+  // SMS still QUEUED — wired in a later pass (no gateway yet · ปุ่มถูกซ่อนใน UI)
 
   await audit({
     orgId: app.orgId,

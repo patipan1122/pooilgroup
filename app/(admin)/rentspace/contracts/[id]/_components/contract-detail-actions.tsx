@@ -11,6 +11,7 @@ import {
   actUploadFile,
   actUpdateContractBilling,
 } from "../../../_actions";
+import { currentPeriod } from "@/lib/rentspace/format";
 
 const LATE_FEE_OPTIONS: Record<string, string> = {
   none: "ไม่คิดค่าปรับ",
@@ -153,6 +154,7 @@ export function BillingTermsEditor({
     lateFeeGraceDays: number;
     promoDiscountThb: number;
     promoMonths: number;
+    promoStartPeriod: string | null;
     billIssueDay: number | null;
   };
 }) {
@@ -164,6 +166,7 @@ export function BillingTermsEditor({
   const [graceDays, setGraceDays] = useState(String(initial.lateFeeGraceDays ?? 7));
   const [promo, setPromo] = useState(initial.promoDiscountThb ? String(initial.promoDiscountThb) : "");
   const [promoMonths, setPromoMonths] = useState(initial.promoMonths ? String(initial.promoMonths) : "");
+  const [promoStart, setPromoStart] = useState(initial.promoStartPeriod || currentPeriod());
   const [issueDay, setIssueDay] = useState(initial.billIssueDay ? String(initial.billIssueDay) : "");
 
   function save() {
@@ -176,6 +179,7 @@ export function BillingTermsEditor({
           lateFeeGraceDays: Number(graceDays) || 0,
           promoDiscountThb: num(promo),
           promoMonths: Number(promoMonths) || 0,
+          promoStartPeriod: promoStart.trim() || undefined,
           billIssueDay: issueDay ? Number(issueDay) : null,
         });
         toast.success("บันทึกเงื่อนไขแล้ว — มีผลกับบิลรอบถัดไป");
@@ -242,6 +246,15 @@ export function BillingTermsEditor({
           <input type="number" min={0} style={inputStyle} value={promoMonths} onChange={(e) => setPromoMonths(e.target.value)} placeholder="0" />
         </div>
       </div>
+      {(Number(promoMonths) || 0) > 0 && (
+        <div>
+          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>งวดเริ่มโปร (YYYY-MM · เว้นว่าง = งวดปัจจุบัน)</label>
+          <input type="month" style={inputStyle} value={promoStart} onChange={(e) => setPromoStart(e.target.value)} />
+          <div className="text-[11px] mt-1" style={{ color: "var(--rs-text-2)" }}>
+            ส่วนลดจะเริ่มนับจากงวดนี้ ไม่นับงวดเก่าที่ผ่านมาแล้ว
+          </div>
+        </div>
+      )}
       <div>
         <label className={lbl} style={{ color: "var(--rs-text-2)" }}>วันวางบิล (1-28 · เว้นว่าง = ตามโครงการ)</label>
         <input type="number" min={1} max={28} style={inputStyle} value={issueDay} onChange={(e) => setIssueDay(e.target.value)} placeholder="ตามโครงการ" />

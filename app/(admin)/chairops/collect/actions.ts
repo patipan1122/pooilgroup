@@ -487,10 +487,18 @@ export async function batchDeposit(
           requiresReview,
         },
       });
-      await tx.chairopsCashCollection.updateMany({
-        where: { id: { in: data.collectionIds } },
+      // Compare-and-swap guard: only claim rows that are STILL pending
+      // (depositId === null). If two maids/tabs press "ฝาก" on the same rounds
+      // at once, the slower one updates 0 (or fewer) rows here → count mismatch
+      // → throw → whole transaction rolls back (no second deposit, no double-
+      // counted income). Pre-check above is best-effort UX; THIS is the lock.
+      const claimed = await tx.chairopsCashCollection.updateMany({
+        where: { id: { in: data.collectionIds }, depositId: null },
         data: { depositId: dep.id },
       });
+      if (claimed.count !== data.collectionIds.length) {
+        throw new Error("DEPOSIT_RACE");
+      }
       await writeAudit(
         {
           userId: session.user.id,
@@ -576,7 +584,13 @@ export async function batchDeposit(
     revalidatePath("/chairops/reconcile");
     revalidatePath("/chairops");
     return { ok: true, data: { id: deposit.id } };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "DEPOSIT_RACE") {
+      return {
+        ok: false,
+        error: "บางรายการเพิ่งถูกฝากไปแล้ว · รีเฟรชหน้ารายการแล้วลองใหม่",
+      };
+    }
     return { ok: false, error: "บันทึกการฝากไม่สำเร็จ · ลองอีกครั้ง" };
   }
 }
@@ -741,6 +755,11 @@ export async function extractSlipAmount(
 
   if (!slipPublicUrl || typeof slipPublicUrl !== "string") {
     return { ok: false, error: "URL รูปสลิปไม่ถูกต้อง" };
+  }
+  // กัน SSRF: server จะ fetch URL นี้ → ต้องเป็น R2/storage ที่อนุญาตเท่านั้น
+  // ไม่งั้น attacker ส่ง URL ภายใน (เช่น metadata endpoint) ให้ server ยิงแทน.
+  if (!isAllowedPhotoUrl(slipPublicUrl)) {
+    return { ok: false, error: "รูปสลิปไม่ถูกต้อง · อัปโหลดผ่านระบบ" };
   }
 
   try {

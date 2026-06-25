@@ -13,7 +13,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier } from "./role-guard";
-import { verifyBranchOrg, verifyMemberOrg } from "./guards";
+import { verifyBranchOrg, verifyBranchAssignment, verifyMemberOrg } from "./guards";
+import { newSaleCode } from "./codes";
 import { revalidatePath } from "next/cache";
 import crypto from "node:crypto";
 
@@ -54,7 +55,7 @@ export async function issueWristband(input: {
 }): Promise<ActionResult<{ wristbandId: string; code: string }>> {
   const session = await requireSession();
   if (!canPlaylandCashier(session.user.role)) return err("ไม่มีสิทธิ์");
-  if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
+  if (!(await verifyBranchAssignment(input.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
   if (!(await verifyMemberOrg(input.memberId, session.user.org_id))) return err("สมาชิกไม่อยู่ใน org");
 
   try {
@@ -212,9 +213,11 @@ export async function activateWristband(input: {
   });
   if (!w) return err("wristband ไม่อยู่ในสถานะ ISSUED");
   if (!w.memberId) return err("wristband ยังไม่ได้ผูกสมาชิก");
+  if (!(await verifyBranchAssignment(w.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
 
+  let shiftId: string;
   try {
-    await requireOpenShift(session.user.org_id, w.branchId, session.user.id);
+    shiftId = await requireOpenShift(session.user.org_id, w.branchId, session.user.id);
   } catch (e) {
     return err(e instanceof Error ? e.message : "shift required");
   }
@@ -242,6 +245,23 @@ export async function activateWristband(input: {
         cashierUserId: session.user.id,
       },
     });
+    // D-A1 (CEO 2026-06-24): ค่าเข้าตอนเปิดสายรัดที่ประตู = บันทึกเป็น "รายการขายจริง" + บวกเข้ายอดกะ
+    //   (เดิมเปิดสายรัดเก็บเงินค่าเข้าแต่เงินไม่เข้าระบบ/ลิ้นชักเลย · ตรงนี้ atomic กับ session ในทรานแซกชันเดียว)
+    if (pkg.price > 0) {
+      await tx.playlandSale.create({
+        data: {
+          orgId: session.user.org_id,
+          branchId: w.branchId,
+          shiftId,
+          sessionId: s.id,
+          saleCode: newSaleCode(),
+          totalCents: pkg.price,
+          paymentMethod: input.paymentMethod,
+          cashierUserId: session.user.id,
+        },
+      });
+      await tx.playlandShift.update({ where: { id: shiftId }, data: { totalSessionsCents: { increment: pkg.price } } });
+    }
     await tx.playlandWristband.update({
       where: { id: w.id },
       data: { status: "ACTIVE", activatedAt: new Date(), sessionId: s.id, lastScanAt: new Date() },
@@ -280,6 +300,7 @@ export async function exitWristband(code: string): Promise<ActionResult> {
     where: { code: upper, orgId: session.user.org_id, status: "ACTIVE" },
   });
   if (!w) return err("wristband ไม่อยู่ในสถานะ ACTIVE");
+  if (!(await verifyBranchAssignment(w.branchId, session.user.org_id, session.user.id, session.user.role))) return err("คุณไม่ได้รับมอบหมายให้ทำงานสาขานี้");
 
   await prisma.$transaction(async (tx) => {
     if (w.sessionId) {

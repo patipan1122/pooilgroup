@@ -21,19 +21,20 @@ function getKey(): Buffer {
     }
     return buf;
   }
-  // Dev fallback — derive from NEXTAUTH_SECRET so dev environments work
-  // without extra env. PROD MUST set RECRUIT_CHANNEL_KEY explicitly.
+  // PROD ต้องตั้ง RECRUIT_CHANNEL_KEY เสมอ — ห้ามใช้กุญแจสำรองเงียบ ๆ
+  // (RULE J / inbox decrypt bug: fallback แอบสลับกุญแจ = เปิด secret เก่าไม่ออก)
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Missing RECRUIT_CHANNEL_KEY in production — refusing to use a fallback key. " +
+        "Set RECRUIT_CHANNEL_KEY explicitly (openssl rand -base64 32).",
+    );
+  }
+  // Dev fallback — derive from NEXTAUTH_SECRET so local dev works without extra env.
   const fallback = process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET;
   if (!fallback) {
     throw new Error(
-      "Missing RECRUIT_CHANNEL_KEY (or NEXTAUTH_SECRET fallback). " +
+      "Missing RECRUIT_CHANNEL_KEY (or NEXTAUTH_SECRET fallback for dev). " +
         "Generate: openssl rand -base64 32",
-    );
-  }
-  if (process.env.NODE_ENV === "production") {
-    console.warn(
-      "[channel-crypto] RECRUIT_CHANNEL_KEY not set — falling back to NEXTAUTH_SECRET derivation. " +
-        "Set RECRUIT_CHANNEL_KEY explicitly in production.",
     );
   }
   return crypto.createHash("sha256").update(fallback).digest();

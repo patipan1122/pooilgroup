@@ -21,10 +21,10 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
-import { poCode, genCode } from "@/lib/dc/codes";
-import { DcPoStatus, DcPoOrigin, DcProductType } from "@/lib/generated/prisma/enums";
+import { poCode, genCode, grnCode } from "@/lib/dc/codes";
+import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
-import { createGrn, postGrn } from "@/lib/dc/grn-actions";
+import { postGrn } from "@/lib/dc/grn-actions";
 
 const LIST_PATH = "/dc/office/purchasing";
 
@@ -744,12 +744,18 @@ export type ReceivePoResult =
 
 /**
  * "รับสินค้าเข้าคลัง" ของใบสั่งซื้อ 1 ใบ — รวมขั้นตอนให้จบในปุ่มเดียว:
- *   1) createGrn (ผูก poId + คลัง + หมายเหตุ + รายการที่รับจริง/เสียหาย)
- *   2) postGrn  → คิดต้นทุนนำเข้า (landed cost) + ตัดสต๊อกเข้า + ดัน TRCloud (best-effort)
- *   3) ดันสถานะใบ → RECEIVED (idempotent · WHERE status ∈ ระหว่างทาง/ถึงโกดัง)
+ *   🔒 [ใน lock+tx เดียว] re-read สถานะ → สร้าง GRN+บรรทัด → advance สถานะใบ (atomic)
+ *   [นอก lock] postGrn → คิดต้นทุนนำเข้า (landed cost) + ตัดสต๊อกเข้า + ดัน TRCloud (best-effort)
  *
  * สิทธิ์: ผู้จัดการ หรือ พนักงานหน้าคลัง (คนแกะของจริง). org-scope ทุก query.
- * ⚠️ คิดต้นทุน/ตัดสต๊อก/TRCloud เป็น idempotent อยู่แล้วในชั้น bridge (sourceKey).
+ *
+ * 🏗️ กันรับซ้ำ (idempotency/race):
+ *   • serialize ต่อ PO ด้วย pg_advisory_xact_lock (transaction-level — pooler 6543 บังคับ)
+ *     → 2 writer รับใบเดียวกันพร้อมกัน วิ่งทีละคน → คนที่ 2 อ่านสถานะที่ถูก advance แล้ว
+ *       → ไม่ mint GRN ซ้ำ (ปิดช่องโหว่ self-transition PARTIAL→PARTIAL).
+ *   • GRN + advance สถานะ อยู่ tx เดียว → fail = rollback ทั้งก้อน (ไม่มีสถานะลอย/GRN ค้าง).
+ *   • postGrn idempotent (sourceKey) + ถ้า fail/ตายกลางคัน → retry วิ่งเข้า noop path แล้ว
+ *     re-drive GRN ที่ยังไม่ POSTED ให้สต๊อกเข้าจนครบ (ไม่ค้าง "รับครบ" โดยของไม่เข้า).
  */
 export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult> {
   const g = await requireReceiver();
@@ -761,25 +767,59 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
   if (!poId) return { ok: false, error: "ไม่พบใบสั่งซื้อ" };
   if (!warehouseId) return { ok: false, error: "กรุณาเลือกคลังปลายทาง" };
 
-  // ใบสั่งซื้อต้องเป็นของ org นี้ (กันรับเข้าใบข้ามองค์กร) + ดึงสถานะ + รายการที่สั่ง
-  // (qty ต่อสินค้า) มาด้วย เพื่อ (ก) idempotent กดซ้ำ (ข) เช็คสถานะ (ค) เติม qtyExpected
-  const po = await prisma.dcPurchaseOrder.findFirst({
-    where: { id: poId, orgId },
-    select: {
-      id: true,
-      status: true,
-      lines: { select: { productId: true, qty: true } },
-    },
-  });
-  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
-
-  // Idempotent no-op: ถ้าใบถูกปิดรับครบไปแล้ว (RECEIVED) → กดซ้ำ/refresh-retry ไม่สร้าง GRN ใหม่
-  // (ไม่งั้นแต่ละครั้งจะ mint GRN ใหม่ → สต๊อก + TRCloud เด้ง 2 เท่า). คืน ok เฉย ๆ.
-  if (po.status === DcPoStatus.RECEIVED) {
-    return { ok: true, grnId: "", trcloudPosted: true };
+  const rawLines = (input.lines ?? []).filter((l) => cleanStr(l.productId));
+  if (rawLines.length === 0) {
+    return { ok: false, error: "กรุณาระบุรายการที่รับเข้าอย่างน้อย 1 รายการ" };
   }
 
-  // ด่านสถานะ: รับเข้าได้เฉพาะใบที่สั่งแล้ว/กำลังขนส่ง/ถึงโกดัง หรือรับบางส่วนค้างอยู่ (PARTIAL)
+  // ✅ ใบสั่งซื้อต้องเป็นของ org นี้ (กันรับเข้าใบข้ามองค์กร) — อ่านครั้งแรกนอก lock
+  //    เพื่อ "เช็คสิทธิ์/มีจริง" เร็ว ๆ ก่อน. การตัดสินใจจริง (สถานะ/รับซ้ำ) อ่านใหม่
+  //    "ภายใน lock" อีกชั้น เพื่อกัน race (ดูบล็อก $transaction ด้านล่าง).
+  const poExists = await prisma.dcPurchaseOrder.findFirst({
+    where: { id: poId, orgId },
+    select: { id: true },
+  });
+  if (!poExists) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  // คลังปลายทางต้องเป็นของ org นี้ (ยืนยันก่อน เพื่อให้ tx สั้น — แตะแต่ DB writes)
+  const wh = await prisma.dcWarehouse.findFirst({
+    where: { id: warehouseId, orgId },
+    select: { id: true },
+  });
+  if (!wh) return { ok: false, error: "ไม่พบคลังนี้ในองค์กรของคุณ" };
+
+  // ยืนยันสินค้าทุกบรรทัดเป็นของ org (กันอ้าง productId ข้ามองค์กร) ก่อนเข้า tx
+  const inputProductIds = [...new Set(rawLines.map((l) => cleanStr(l.productId)!))];
+  const ownedProducts = await prisma.dcProduct.findMany({
+    where: { id: { in: inputProductIds }, orgId },
+    select: { id: true },
+  });
+  if (ownedProducts.length !== inputProductIds.length) {
+    return { ok: false, error: "มีสินค้าบางรายการไม่อยู่ในองค์กรของคุณ" };
+  }
+
+  // รวมบรรทัด productId ซ้ำ → 1 สินค้า = 1 บรรทัด GRN (เลียน logic createGrn → 1 cost layer/สินค้า)
+  const mergedMap = new Map<
+    string,
+    { productId: string; qtyReceived: number; qtyDamaged: number }
+  >();
+  for (const l of rawLines) {
+    const pid = cleanStr(l.productId)!;
+    const prev = mergedMap.get(pid);
+    if (prev) {
+      prev.qtyReceived += nonNegInt(l.qtyReceived);
+      prev.qtyDamaged += nonNegInt(l.qtyDamaged);
+    } else {
+      mergedMap.set(pid, {
+        productId: pid,
+        qtyReceived: nonNegInt(l.qtyReceived),
+        qtyDamaged: nonNegInt(l.qtyDamaged),
+      });
+    }
+  }
+  const mergedLines = [...mergedMap.values()];
+
+  // สถานะที่ "รับเข้าได้": สั่งแล้ว/กำลังขนส่ง/ถึงโกดัง หรือรับบางส่วนค้างอยู่ (PARTIAL)
   const RECEIVABLE: DcPoStatus[] = [
     DcPoStatus.ORDERED,
     DcPoStatus.SHIPPED,
@@ -787,79 +827,154 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
     DcPoStatus.AT_WAREHOUSE,
     DcPoStatus.PARTIAL,
   ];
-  if (!RECEIVABLE.includes(po.status)) {
-    return { ok: false, error: "ใบนี้ยังรับเข้าคลังไม่ได้ (ต้องสั่งซื้อกับผู้ขายก่อน)" };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🔒 SERIALIZE การรับเข้า "ต่อใบ" ด้วย transaction-level advisory lock
+  //    (Supabase ใช้ pooler port 6543 → session-level pg_advisory_lock ใช้ไม่ได้;
+  //     ต้องใช้ pg_advisory_xact_lock "ภายใน $transaction" เท่านั้น).
+  //
+  //    ทำไมต้อง serialize: ปิดช่องโหว่ (1) — รับบางส่วนบนใบ PARTIAL ที่ยังไม่ครบ.
+  //    เดิม CAS เป็น self-transition PARTIAL→PARTIAL (ค่าไม่เปลี่ยน) → 2 writer
+  //    พร้อมกันเห็น WHERE ตรงทั้งคู่ → count=1 ทั้งคู่ → mint 2 GRN = ตัดสต๊อก/ดัน
+  //    TRCloud ซ้ำ. lock บังคับให้รับเข้า "ใบเดียวกัน" วิ่งทีละคน → คนที่ 2 อ่านสถานะ
+  //    ที่ถูก advance แล้วใน lock → ตัดสินใจถูก (no-op ถ้าปิดใบไปแล้ว).
+  //
+  //    ภายใน lock เราทำให้จบเป็น atomic 1 tx: re-read สถานะ + GRN เดิม → สร้าง GRN
+  //    + บรรทัด → advance สถานะใบ. ถ้า step ไหน fail = ทั้ง tx rollback → ไม่มี GRN
+  //    ค้าง + สถานะไม่ถูกดันลอย ๆ (กันส่วนหนึ่งของช่องโหว่ (2)). การคิดต้นทุน/ตัดสต๊อก/
+  //    ดัน TRCloud (postGrn) ทำ "หลัง" tx เพราะมี network call (ห้ามถือ pooler tx ค้าง
+  //    ระหว่างยิง TRCloud) — และ postGrn idempotent อยู่แล้ว (sourceKey) → retry ปลอดภัย.
+  // ════════════════════════════════════════════════════════════════════════════
+  type TxResult =
+    | { kind: "noop" } // ปิดรับครบไปแล้ว — ไม่ต้องทำอะไร
+    | { kind: "blocked"; error: string }
+    | { kind: "created"; grnId: string };
+
+  let txResult: TxResult;
+  try {
+    txResult = await prisma.$transaction(async (tx) => {
+      // 🔒 ล็อกต่อ PO — serialize ทุกการรับเข้าใบนี้ (transaction-level → ปลดอัตโนมัติตอน commit/rollback)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${poId}))`;
+
+      // re-read "ภายใน lock" — ค่าที่อ่านตรงนี้คือความจริง ณ ขณะถือ lock (ไม่มีใครแทรก)
+      const po = await tx.dcPurchaseOrder.findFirst({
+        where: { id: poId, orgId },
+        select: {
+          id: true,
+          status: true,
+          lines: { select: { productId: true, qty: true } },
+        },
+      });
+      if (!po) return { kind: "blocked", error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+      // ปิดรับครบไปแล้ว (RECEIVED) → no-op (กดซ้ำ/refresh-retry ไม่ mint GRN ใหม่)
+      if (po.status === DcPoStatus.RECEIVED) {
+        return { kind: "noop" };
+      }
+      if (!RECEIVABLE.includes(po.status)) {
+        return { kind: "blocked", error: "ใบนี้ยังรับเข้าคลังไม่ได้ (ต้องสั่งซื้อกับผู้ขายก่อน)" };
+      }
+
+      // จำนวนที่สั่งต่อสินค้า (รวมบรรทัดซ้ำ) → เติม qtyExpected บน GRN line
+      const orderedByProduct = new Map<string, number>();
+      for (const pl of po.lines) {
+        orderedByProduct.set(pl.productId, (orderedByProduct.get(pl.productId) ?? 0) + pl.qty);
+      }
+
+      // รับสะสมเดิม (ทุก GRN ของใบนี้) + ที่กำลังจะรับรอบนี้ → เทียบ "สั่งทั้งหมด"
+      const priorGrnLines = await tx.dcGoodsReceiptLine.findMany({
+        where: { orgId, grn: { poId, orgId } },
+        select: { productId: true, qtyReceived: true },
+      });
+      const projectedByProduct = new Map<string, number>();
+      for (const gl of priorGrnLines) {
+        projectedByProduct.set(gl.productId, (projectedByProduct.get(gl.productId) ?? 0) + gl.qtyReceived);
+      }
+      for (const l of mergedLines) {
+        projectedByProduct.set(l.productId, (projectedByProduct.get(l.productId) ?? 0) + l.qtyReceived);
+      }
+      const fullyReceived = [...orderedByProduct.entries()].every(
+        ([pid, ordered]) => (projectedByProduct.get(pid) ?? 0) >= ordered,
+      );
+      const nextStatus = fullyReceived ? DcPoStatus.RECEIVED : DcPoStatus.PARTIAL;
+
+      // สร้าง GRN + บรรทัด "ภายใน lock+tx" (status PENDING — postGrn คิดต้นทุน/ตัดสต๊อกทีหลัง)
+      const grn = await tx.dcGoodsReceipt.create({
+        data: {
+          orgId,
+          grnCode: grnCode(),
+          warehouseId,
+          poId,
+          status: "RECEIVED",
+          postStatus: DcPostStatus.PENDING,
+          note: cleanStr(input.note),
+          receivedByUserId: g.userId,
+          lines: {
+            create: mergedLines.map((l) => ({
+              orgId,
+              productId: l.productId,
+              qtyExpected: orderedByProduct.get(l.productId) ?? 0,
+              qtyReceived: l.qtyReceived,
+              qtyDamaged: l.qtyDamaged,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+
+      // advance สถานะใบ "ใน tx เดียวกับ GRN" — ถ้าตรงนี้ fail = rollback ทั้งก้อน (GRN หาย ไม่มีสถานะลอย)
+      await tx.dcPurchaseOrder.updateMany({
+        where: { id: poId, orgId, status: { in: RECEIVABLE } },
+        data: { status: nextStatus },
+      });
+
+      return { kind: "created", grnId: grn.id };
+    });
+  } catch {
+    return { ok: false, error: "รับสินค้าเข้าคลังไม่สำเร็จ ลองอีกครั้ง" };
   }
 
-  const rawLines = (input.lines ?? []).filter((l) => cleanStr(l.productId));
-  if (rawLines.length === 0) {
-    return { ok: false, error: "กรุณาระบุรายการที่รับเข้าอย่างน้อย 1 รายการ" };
+  if (txResult.kind === "blocked") return { ok: false, error: txResult.error };
+  if (txResult.kind === "noop") {
+    // ใบปิดรับครบไปแล้ว — แต่ "เผื่อ" GRN ของใบนี้ยังคิดต้นทุน/ตัดสต๊อกไม่จบ (เช่น
+    // postGrn รอบก่อน fail หรือ process ตายกลางคัน) → re-drive ให้สต๊อกเข้าครบ.
+    // postGrn idempotent (sourceKey) + ปฏิเสธ POSTED → ปลอดภัยที่จะเรียกซ้ำ.
+    const pending = await prisma.dcGoodsReceipt.findFirst({
+      where: { orgId, poId, postStatus: { not: DcPostStatus.POSTED } },
+      orderBy: { receivedAt: "asc" },
+      select: { id: true },
+    });
+    if (pending) {
+      const posted = await postGrn(pending.id);
+      revalidate(poId);
+      if (posted.ok) {
+        return {
+          ok: true,
+          grnId: pending.id,
+          trcloudPosted: posted.trcloud.posted,
+          trcloudReason: posted.trcloud.reason ?? posted.trcloud.error,
+        };
+      }
+    }
+    return { ok: true, grnId: "", trcloudPosted: true };
   }
 
-  // จำนวนที่สั่งต่อสินค้า (รวมบรรทัดซ้ำ productId เข้าด้วยกัน) → ใช้เติม qtyExpected บน GRN line
-  const orderedByProduct = new Map<string, number>();
-  for (const pl of po.lines) {
-    orderedByProduct.set(pl.productId, (orderedByProduct.get(pl.productId) ?? 0) + pl.qty);
-  }
-
-  // 1) สร้างใบรับสินค้า (createGrn ตรวจคลัง/สินค้า/PO เป็นของ org เองอีกชั้น)
-  //    เติม qtyExpected = จำนวนที่สั่งของสินค้านั้น → ให้ over/short มองเห็นได้ (ไม่ฮาร์ดบล็อก)
-  const grn = await createGrn({
-    warehouseId,
-    poId,
-    note: cleanStr(input.note),
-    lines: rawLines.map((l) => ({
-      productId: l.productId,
-      qtyExpected: orderedByProduct.get(l.productId) ?? 0,
-      qtyReceived: nonNegInt(l.qtyReceived),
-      qtyDamaged: nonNegInt(l.qtyDamaged),
-    })),
-  });
-  if (!grn.ok) return { ok: false, error: grn.error };
-
-  // 2) ลงรับเข้า: คิดต้นทุน + ตัดสต๊อก + ดัน TRCloud (best-effort · ไม่ throw)
-  const posted = await postGrn(grn.grnId);
-  if (!posted.ok) return { ok: false, error: posted.error };
-
-  // 3) คำนวณ "รับสะสมจริง" (ทุก GRN ของใบนี้ รวมใบที่เพิ่งสร้าง) เทียบ "สั่งทั้งหมด" ต่อสินค้า
-  //    → รับครบทุกตัว = RECEIVED (ปิดใบ) · ยังไม่ครบ = PARTIAL (เปิดให้รับรอบถัดไปได้)
-  const grnLines = await prisma.dcGoodsReceiptLine.findMany({
-    where: { orgId, grn: { poId, orgId } },
-    select: { productId: true, qtyReceived: true },
-  });
-  const receivedByProduct = new Map<string, number>();
-  for (const gl of grnLines) {
-    receivedByProduct.set(gl.productId, (receivedByProduct.get(gl.productId) ?? 0) + gl.qtyReceived);
-  }
-  // รับครบ = ทุกสินค้าที่สั่ง มียอดรับสะสม ≥ ยอดที่สั่ง
-  const fullyReceived = [...orderedByProduct.entries()].every(
-    ([pid, ordered]) => (receivedByProduct.get(pid) ?? 0) >= ordered,
-  );
-  const nextStatus = fullyReceived ? DcPoStatus.RECEIVED : DcPoStatus.PARTIAL;
-
-  // เดินสถานะจากสถานะที่รับเข้าได้ (รวม PARTIAL → รับรอบ 2 แล้วครบ → ปิดใบ)
-  await prisma.dcPurchaseOrder.updateMany({
-    where: {
-      id: poId,
-      orgId,
-      status: {
-        in: [
-          DcPoStatus.AT_WAREHOUSE,
-          DcPoStatus.ARRIVED_TH,
-          DcPoStatus.SHIPPED,
-          DcPoStatus.ORDERED,
-          DcPoStatus.PARTIAL,
-        ],
-      },
-    },
-    data: { status: nextStatus },
-  });
-
+  // ── นอก lock: คิดต้นทุน + ตัดสต๊อก + ดัน TRCloud (มี network → ห้ามถือ pooler tx ค้าง) ──
+  // GRN ถูกสร้าง + สถานะใบถูก advance "ภายใน lock" ไปแล้ว → ไม่มีใคร mint GRN ซ้ำได้ (ปิด (1)).
+  // postGrn idempotent (sourceKey) — ถ้า fail/ตายกลางคัน: retry receivePo จะวิ่งเข้า "noop"
+  // ด้านบนแล้ว re-drive GRN ที่ยังไม่ POSTED ให้สต๊อกเข้าจนครบ (ปิด (2) — ไม่ค้าง "รับครบ" โดยของไม่เข้า).
+  const grnId = txResult.grnId;
+  const posted = await postGrn(grnId);
   revalidate(poId);
+  if (!posted.ok) {
+    // สต๊อกยังไม่เข้า แต่ GRN+สถานะอยู่แล้ว → ฝั่ง UI กดรับซ้ำได้ (จะ re-drive ผ่าน noop path).
+    return { ok: false, error: posted.error };
+  }
+
   // สถานะ TRCloud จาก postGrn — ถ้า posted=false ฝั่ง UI จะโชว์แถบเหลือง "บัญชียังไม่เข้า · กดส่งซ้ำ"
   return {
     ok: true,
-    grnId: grn.grnId,
+    grnId,
     trcloudPosted: posted.trcloud.posted,
     trcloudReason: posted.trcloud.reason ?? posted.trcloud.error,
   };

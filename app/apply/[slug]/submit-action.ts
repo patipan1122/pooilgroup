@@ -28,10 +28,14 @@ export async function submitPublicApplication(
   // 1. validate posting
   const posting = await prisma.recruitJobPosting.findUnique({
     where: { slug: input.slug },
-    include: { company: { select: { name: true } }, org: { select: { name: true } } },
+    include: { company: { select: { name: true, code: true } }, org: { select: { name: true } } },
   });
   if (!posting) throw new Error("ไม่พบประกาศ");
   if (posting.status !== "OPEN") throw new Error("ประกาศนี้ปิดรับแล้ว");
+  // ปิดรับเมื่อเลยกำหนดหมดเขต (closesAt) — กันใบสมัครไหลเข้าหลังปิดรับ
+  if (posting.closesAt && posting.closesAt.getTime() <= Date.now()) {
+    throw new Error("ประกาศนี้หมดเขตรับสมัครแล้ว");
+  }
 
   // sanity check schema parse
   let schema: FormSchema;
@@ -81,10 +85,14 @@ export async function submitPublicApplication(
   }
 
   // 3. blacklist check (use normalized phone for consistent match)
-  const bl = await checkBlacklist(posting.orgId, {
-    fullName: input.applicant.fullName,
-    phone: normalizedPhone,
-  });
+  const bl = await checkBlacklist(
+    posting.orgId,
+    {
+      fullName: input.applicant.fullName,
+      phone: normalizedPhone,
+    },
+    posting.company?.code ?? null,
+  );
 
   // 4. create application
   const refId = makeApplicationRefId();

@@ -37,29 +37,9 @@ interface Props {
   hideHeader?: boolean;
 }
 
-// Canvas section accent colors — brand → orange → purple → green cycle.
-// Maps to canvas Screen 03-8 review (Section 1-2 brand, 3-4 orange, 5 purple, 6 green).
-const SECTION_DOT_CLASSES = [
-  "bg-[var(--color-brand-500)]",
-  "bg-orange-500",
-  "bg-purple-500",
-  "bg-green-500",
-];
-const SECTION_TEXT_CLASSES = [
-  "text-[var(--color-brand-700)]",
-  "text-orange-700",
-  "text-purple-700",
-  "text-green-700",
-];
-
-function sectionAccent(title: string, index: number) {
-  const t = title.toLowerCase();
-  if (/iq|ทดสอบ|quiz|สถานการณ์/.test(t)) return 2; // purple
-  if (/ไฟล์|แนบ|รูป|ภาพ|เอกสาร|file|photo/.test(t)) return 3; // green
-  if (/ประสบการณ์|ทักษะ|skill|experience/.test(t)) return 1; // orange
-  if (index <= 1) return 0; // brand
-  return index % SECTION_DOT_CLASSES.length;
-}
+// ทุกหัวข้อใช้สีน้ำเงินแบรนด์จุดเดียว — ไม่เดาสีจากคำในชื่อหัวข้อ (ส้ม/ม่วง/เขียวมั่ว)
+const SECTION_DOT_CLASS = "bg-[var(--color-brand-500)]";
+const SECTION_TEXT_CLASS = "text-[var(--color-brand-700)]";
 
 export function PublicFormRenderer({
   schema,
@@ -336,11 +316,10 @@ export function PublicFormRenderer({
 
       {/* Sections from schema — colored dot per canvas Screen 03-8 */}
       {schema.sections.map((section, idx) => {
-        const accent = sectionAccent(section.title, idx + 1);
         return (
           <section key={section.id}>
-            <p className={`flex items-center gap-2 text-sm font-bold mb-3 ${SECTION_TEXT_CLASSES[accent]}`}>
-              <span className={`size-2 rounded-full ${SECTION_DOT_CLASSES[accent]}`} />
+            <p className={`flex items-center gap-2 text-sm font-bold mb-3 ${SECTION_TEXT_CLASS}`}>
+              <span className={`size-2 rounded-full ${SECTION_DOT_CLASS}`} />
               <span className="text-zinc-400 tabular-num text-xs">
                 {String(idx + 2).padStart(2, "0")}
               </span>

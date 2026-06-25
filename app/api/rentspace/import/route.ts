@@ -215,24 +215,12 @@ export async function POST(req: Request) {
       ? await prisma.rentalUnit.findUnique({ where: { projectId_code: { projectId, code: unitCode } } })
       : null;
 
-    // match tenant: by idCardNo first, else by (name + phone)
+    // match tenant: by เลขบัตรประชาชน เท่านั้น — ห้าม match ด้วยชื่อ+เบอร์
+    // (ชื่อพ้องกัน เช่น "สมชาย ใจดี" คนละคน จะถูกรวมเป็นคนเดียว → ผูกห้อง/บิลผิดคน)
+    // ไม่มีเลขบัตร = ถือเป็นผู้เช่าใหม่เสมอ
     let existingTenant = null as Awaited<ReturnType<typeof prisma.rentalTenant.findFirst>> | null;
     if (idCardNo) {
       existingTenant = await prisma.rentalTenant.findFirst({ where: { orgId, idCardNo } });
-    }
-    if (!existingTenant && nameRaw) {
-      existingTenant = await prisma.rentalTenant.findFirst({
-        where: {
-          orgId,
-          ...(bizName
-            ? { bizName: { equals: bizName, mode: "insensitive" } }
-            : {
-                firstName: person.firstName ?? undefined,
-                lastName: person.lastName ?? null,
-              }),
-          ...(phones.length ? { phones: { hasSome: phones } } : {}),
-        },
-      });
     }
 
     const isNewTenant = !existingTenant;
@@ -298,13 +286,19 @@ export async function POST(req: Request) {
       if (isNewTenant) countNew++;
       else countUpdated++;
 
-      // 3) create contract if a start date is present and no active contract on the unit
+      // 3) create contract if a start date is present and no active contract on the unit.
+      //    กันกดซ้ำ / เปิด 2 แท็บ พร้อมกัน แล้วได้ 2 สัญญาในห้องเดียว:
+      //    ใช้ advisory lock ต่อห้อง (pg_advisory_xact_lock) ครอบ "เช็ค active → สร้างสัญญา"
+      //    ให้เป็น atomic — ถ้าอีก request กำลังสร้างห้องเดียวกันจะรอจน lock ปล่อย แล้วเห็น active=1 จึงข้าม
+      //    (auto-release ตอน transaction จบ ไม่ต้องมี migration / unique constraint)
       if (startDate) {
-        const active = await prisma.rentalContract.count({
-          where: { unitId: unit.id, status: { in: ["active", "expiring"] } },
-        });
-        if (active === 0) {
-          await prisma.rentalContract.create({
+        const created = await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`rentspace:contract:${unit.id}`}))`;
+          const active = await tx.rentalContract.count({
+            where: { unitId: unit.id, status: { in: ["active", "expiring"] } },
+          });
+          if (active > 0) return false;
+          await tx.rentalContract.create({
             data: {
               id: randomUUID(),
               orgId,
@@ -319,9 +313,10 @@ export async function POST(req: Request) {
               createdBy: session.user.id,
             },
           });
-          await prisma.rentalUnit.update({ where: { id: unit.id }, data: { status: "occupied" } });
-          newContracts++;
-        }
+          await tx.rentalUnit.update({ where: { id: unit.id }, data: { status: "occupied" } });
+          return true;
+        });
+        if (created) newContracts++;
       }
 
       diffs.push({ row: rowNo, unitCode, status, tenant: tenantLabel, errors: [] });
