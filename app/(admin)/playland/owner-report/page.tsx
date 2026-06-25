@@ -30,6 +30,13 @@ const shortLabel = (key: string) => key.slice(5).replace("-", "/");
 
 type ExpenseLite = { id: string; kind: string; label: string | null; amountCents: number; staffCount: number | null; period: string; expenseDate: Date };
 
+// ── แยก "ขนม" (ของกิน/ดื่ม/สิ้นเปลือง) vs "ของ" (ของเล่น/สินค้าทั่วไป) จาก category หรือชื่อสินค้า ──
+const SNACK_KEYWORDS = ["ขนม", "เครื่องดื่ม", "น้ำ", "นม", "ไอศ", "ไอติม", "อาหาร", "ลูกอม", "ช็อก", "คุกกี้", "เวเฟอร์", "มันฝรั่ง", "เลย์", "ป๊อป", "ขนน", "snack", "drink", "food", "ice"];
+function isSnack(category: string | null | undefined, name: string | null | undefined): boolean {
+  const hay = `${category ?? ""} ${name ?? ""}`.toLowerCase();
+  return SNACK_KEYWORDS.some((kw) => hay.includes(kw.toLowerCase()));
+}
+
 // คิดต้นทุนที่ตกในวัน D (เฉลี่ยหารต่อวัน): once → เต็มถ้า expenseDate==D · monthly → amount / daysInMonth(D)
 function costForDay(dKey: string, expenses: ExpenseLite[]): number {
   let cost = 0;
@@ -46,7 +53,7 @@ function costForDay(dKey: string, expenses: ExpenseLite[]): number {
   return cost;
 }
 
-export default async function OwnerReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string }> }) {
+export default async function OwnerReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string; mode?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
   requirePlaylandManager(session.user.role); // รายงานเจ้าของ = ผู้จัดการ/เจ้าของขึ้นไป
@@ -54,6 +61,9 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId ?? "";
   const branchName = branches.find((b) => b.id === branchId)?.name ?? "ทุกสาขา";
+
+  // โหมดตาราง: "min" = ย่อ (เน้นยอดขาย ไม่มีต้นทุน/กำไร) · "full" = ขยาย (P&L เต็ม · ค่าเริ่มต้น)
+  const mode: "min" | "full" = sp.mode === "min" ? "min" : "full";
 
   // ── ช่วงวันที่: ค่าเริ่มต้น = เดือนนี้ (วันที่ 1 → วันนี้) เพื่อให้ตาราง Excel มีหลายแถว ──
   const today = new Date(); today.setHours(23, 59, 59, 999);
@@ -76,10 +86,15 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
   const expStartMonth = new Date(prevFrom.getFullYear(), prevFrom.getMonth(), 1, 0, 0, 0, 0);
   const expEndMonth = new Date(to.getFullYear(), to.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const [sales, sessions, prevSales, expensesAll] = await Promise.all([
+  const [sales, saleLines, sessions, prevSales, expensesAll] = await Promise.all([
     prisma.playlandSale.findMany({
       where: saleWhere(from, to),
       select: { totalCents: true, soldAt: true, paymentMethod: true, _count: { select: { lines: true } } },
+    }),
+    // sale lines (สินค้าที่ขายจริง) ใช้แยก ขนม vs ของ ต่อวัน — กรองผ่าน sale ให้ตรงกับ saleWhere (ไม่เอา voided)
+    prisma.playlandSaleLine.findMany({
+      where: { sale: saleWhere(from, to) },
+      select: { lineCents: true, productName: true, product: { select: { category: true, name: true } }, sale: { select: { soldAt: true } } },
     }),
     prisma.playlandSession.findMany({
       where: { orgId, checkInAt: { gte: from, lte: to }, ...(branchId ? { branchId } : {}) },
@@ -110,6 +125,17 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
     x.bills += 1;
     dayMoney.set(k, x);
   }
+  // ── per-วัน: แยกยอดสินค้าออกเป็น ขนม vs ของ จาก sale lines ──
+  type DaySplit = { snack: number; goods: number };
+  const daySplit = new Map<string, DaySplit>();
+  for (const l of saleLines) {
+    const k = dayKey(new Date(l.sale.soldAt));
+    const x = daySplit.get(k) ?? { snack: 0, goods: 0 };
+    if (isSnack(l.product?.category, l.product?.name ?? l.productName)) x.snack += l.lineCents;
+    else x.goods += l.lineCents;
+    daySplit.set(k, x);
+  }
+
   // คนต่อวัน (distinct memberId) + เด็ก/ผู้ใหญ่ + ใหม่/เก่า (createdAt อยู่ในช่วง = ใหม่)
   type DayPeople = { all: Set<string>; kids: Set<string>; adults: Set<string>; newC: Set<string>; retC: Set<string> };
   const dayPeople = new Map<string, DayPeople>();
@@ -129,7 +155,7 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
 
   // ── สร้างทุกวันใน [from,to] (รวมวันที่ยอด 0) ──
   type Row = {
-    day: string; revenue: number; entry: number; product: number; cash: number; transfer: number;
+    day: string; revenue: number; entry: number; product: number; snack: number; goods: number; cash: number; transfer: number;
     customers: number; newCustomers: number; returningCustomers: number; kids: number; adults: number;
     cost: number; profit: number; marginPct: number; avgBill: number; bills: number;
   };
@@ -140,10 +166,14 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
     const m = dayMoney.get(k) ?? { entry: 0, product: 0, cash: 0, transfer: 0, bills: 0 };
     const p = dayPeople.get(k);
     const revenue = m.entry + m.product;
+    // ขนม/ของ จาก lines · reconcile: ถ้ายอดสินค้าของวันนั้นมีส่วนที่ไม่มี line รองรับ → โยนส่วนต่างเข้า "ของ" เพื่อให้ ขนม+ของ = product
+    const sp_ = daySplit.get(k) ?? { snack: 0, goods: 0 };
+    const snack = sp_.snack;
+    const goods = Math.max(0, m.product - snack); // ของ = ยอดสินค้าทั้งหมด − ขนม (กลืนส่วนต่างที่ line ไม่ครอบคลุม)
     const cost = costForDay(k, expenses); // ต้นทุนเฉลี่ยที่ตกในวันนี้ (รายเดือนยังคิดแม้ขายได้ 0 → กำไรติดลบ = ถูกต้อง)
     const profit = revenue - cost;
     rows.push({
-      day: k, revenue, entry: m.entry, product: m.product, cash: m.cash, transfer: m.transfer,
+      day: k, revenue, entry: m.entry, product: m.product, snack, goods, cash: m.cash, transfer: m.transfer,
       customers: p?.all.size ?? 0, newCustomers: p?.newC.size ?? 0, returningCustomers: p?.retC.size ?? 0,
       kids: p?.kids.size ?? 0, adults: p?.adults.size ?? 0,
       cost, profit, marginPct: revenue > 0 ? (profit / revenue) * 100 : 0,
@@ -155,11 +185,12 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
   const tot = rows.reduce(
     (a, r) => ({
       revenue: a.revenue + r.revenue, entry: a.entry + r.entry, product: a.product + r.product,
+      snack: a.snack + r.snack, goods: a.goods + r.goods,
       cash: a.cash + r.cash, transfer: a.transfer + r.transfer, customers: a.customers + r.customers,
       newCustomers: a.newCustomers + r.newCustomers, returningCustomers: a.returningCustomers + r.returningCustomers,
       kids: a.kids + r.kids, adults: a.adults + r.adults, cost: a.cost + r.cost, profit: a.profit + r.profit, bills: a.bills + r.bills,
     }),
-    { revenue: 0, entry: 0, product: 0, cash: 0, transfer: 0, customers: 0, newCustomers: 0, returningCustomers: 0, kids: 0, adults: 0, cost: 0, profit: 0, bills: 0 },
+    { revenue: 0, entry: 0, product: 0, snack: 0, goods: 0, cash: 0, transfer: 0, customers: 0, newCustomers: 0, returningCustomers: 0, kids: 0, adults: 0, cost: 0, profit: 0, bills: 0 },
   );
   // ลูกค้า distinct ทั้งช่วง (ไม่ใช่ผลรวมรายวัน เพราะคนเดิมมาหลายวัน)
   const allMembers = new Set<string>(), newMembers = new Set<string>();
@@ -202,11 +233,16 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
   const _lastM1 = new Date(_t.getFullYear(), _t.getMonth() - 1, 1);
   const _lastMEnd = new Date(_t.getFullYear(), _t.getMonth(), 0);
   const _bq = branchId ? `&branch=${branchId}` : "";
+  const _mq = mode === "min" ? "&mode=min" : ""; // พก mode ไปด้วย (full = default ไม่ต้องใส่)
   const datePresets = [
-    { label: "วันนี้", href: `?from=${fmtD(_t)}&to=${fmtD(_t)}${_bq}` },
-    { label: "เดือนนี้", href: `?from=${fmtD(_m1)}&to=${fmtD(_t)}${_bq}` },
-    { label: "เดือนก่อน", href: `?from=${fmtD(_lastM1)}&to=${fmtD(_lastMEnd)}${_bq}` },
+    { label: "วันนี้", href: `?from=${fmtD(_t)}&to=${fmtD(_t)}${_bq}${_mq}` },
+    { label: "เดือนนี้", href: `?from=${fmtD(_m1)}&to=${fmtD(_t)}${_bq}${_mq}` },
+    { label: "เดือนก่อน", href: `?from=${fmtD(_lastM1)}&to=${fmtD(_lastMEnd)}${_bq}${_mq}` },
   ];
+  // ── chip ย่อ/ขยาย (พก from/to/branch ไปด้วย) ──
+  const _rangeQ = `from=${fmtD(from)}&to=${fmtD(to)}${_bq}`;
+  const minHref = `?${_rangeQ}&mode=min`;
+  const fullHref = `?${_rangeQ}&mode=full`;
 
   // expense rows สำหรับ panel (allocated ในช่วง = ผลรวม costForDay เฉพาะวันที่อยู่ใน [from,to])
   const expenseRows: ExpenseRow[] = expenses
@@ -232,9 +268,9 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
     }));
 
   const csvRows: CsvDayRow[] = rows.map((r) => ({
-    day: r.day, revenue: r.revenue, entry: r.entry, product: r.product, cash: r.cash, transfer: r.transfer,
+    day: r.day, revenue: r.revenue, entry: r.entry, product: r.product, snack: r.snack, goods: r.goods, cash: r.cash, transfer: r.transfer,
     customers: r.customers, newCustomers: r.newCustomers, returningCustomers: r.returningCustomers,
-    kids: r.kids, adults: r.adults, cost: r.cost, profit: r.profit, marginPct: r.marginPct, avgBill: r.avgBill,
+    kids: r.kids, adults: r.adults, cost: r.cost, profit: r.profit, marginPct: r.marginPct, avgBill: r.avgBill, bills: r.bills,
   }));
 
   const subtitle = `${fmtDate(from)} – ${fmtDate(to)} · ${branchName} · ${numDays} วัน`;
@@ -262,7 +298,7 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
           <input type="date" name="to" defaultValue={fmtD(to)} style={dateInput} />
           <button style={btn(false)}>ดู</button>
           <BranchSwitcher branches={branches} activeId={activeId} />
-          <OwnerReportCsvButton rows={csvRows} from={fmtD(from)} to={fmtD(to)} branchName={branchName} />
+          <OwnerReportCsvButton rows={csvRows} from={fmtD(from)} to={fmtD(to)} branchName={branchName} mode={mode} />
         </form>
       </div>
 
@@ -328,29 +364,38 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
         {/* ════ HERO: ตาราง Excel รายวัน ════ */}
         <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 18 }}>
           <div style={{ padding: "16px 22px", borderBottom: `1px solid ${LINE}`, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ fontWeight: 600, fontSize: 17, fontFamily: FREDOKA }}>ตารางกำไร-ขาดทุน รายวัน</div>
+            <div style={{ fontWeight: 600, fontSize: 17, fontFamily: FREDOKA }}>{mode === "min" ? "ตารางยอดขาย รายวัน" : "ตารางกำไร-ขาดทุน รายวัน"}</div>
             <div style={{ fontSize: 12, color: MUTED }}>เลื่อนซ้าย-ขวาเพื่อดูทุกคอลัมน์ · แถวล่างสุด = รวมทั้งช่วง</div>
-            <OwnerReportCsvButton rows={csvRows} from={fmtD(from)} to={fmtD(to)} branchName={branchName} />
+            {/* chip ย่อ/ขยาย */}
+            <div style={{ display: "inline-flex", gap: 6, marginLeft: 4 }}>
+              <a href={minHref} style={modeChip(mode === "min")} title="โหมดย่อ — เน้นยอดขาย ไม่มีต้นทุน/กำไร">ย่อ</a>
+              <a href={fullHref} style={modeChip(mode === "full")} title="โหมดขยาย — กำไร-ขาดทุนเต็ม">ขยาย</a>
+            </div>
+            <div style={{ marginLeft: "auto" }}>
+              <OwnerReportCsvButton rows={csvRows} from={fmtD(from)} to={fmtD(to)} branchName={branchName} mode={mode} />
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 1180, borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table style={{ width: "100%", minWidth: mode === "min" ? 880 : 1320, borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr>
                   <th style={{ ...xth, ...xstickyL, textAlign: "left" }}>วันที่</th>
                   <th style={xth}>ยอดขายรวม</th>
                   <th style={xth}>ค่าเข้า·เวลา</th>
-                  <th style={xth}>ขายของ</th>
-                  <th style={xth}>เงินสด</th>
-                  <th style={xth}>เงินโอน</th>
+                  <th style={xth}>ขนม</th>
+                  <th style={xth}>ของ</th>
+                  {mode === "full" && <th style={xth}>เงินสด</th>}
+                  {mode === "full" && <th style={xth}>เงินโอน</th>}
                   <th style={xth}>ลูกค้า</th>
-                  <th style={xth}>ใหม่</th>
-                  <th style={xth}>เก่า</th>
+                  {mode === "full" && <th style={xth}>ใหม่</th>}
+                  {mode === "full" && <th style={xth}>เก่า</th>}
                   <th style={xth}>เด็ก</th>
                   <th style={xth}>ผู้ใหญ่</th>
-                  <th style={xth}>ต้นทุน</th>
-                  <th style={xth}>กำไรสุทธิ</th>
-                  <th style={xth}>%</th>
+                  <th style={xth}>บิล</th>
                   <th style={xth}>บิลเฉลี่ย</th>
+                  {mode === "full" && <th style={xth}>ต้นทุน</th>}
+                  {mode === "full" && <th style={xth}>กำไรสุทธิ</th>}
+                  {mode === "full" && <th style={xth}>%</th>}
                 </tr>
               </thead>
               <tbody>
@@ -363,18 +408,20 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
                       <td style={{ ...xtd, ...xstickyL, background: zebra, textAlign: "left", fontFamily: MONO, whiteSpace: "nowrap" }}>{shortLabel(r.day)}</td>
                       <td style={{ ...xtd, fontWeight: 600 }}>{dash(thb(r.revenue))}</td>
                       <td style={xtd}>{dash(thb(r.entry))}</td>
-                      <td style={xtd}>{dash(thb(r.product))}</td>
-                      <td style={{ ...xtd, color: GREEN }}>{dash(thb(r.cash))}</td>
-                      <td style={{ ...xtd, color: BLUE }}>{dash(thb(r.transfer))}</td>
+                      <td style={{ ...xtd, color: AMBER }}>{dash(thb(r.snack))}</td>
+                      <td style={{ ...xtd, color: BLUE }}>{dash(thb(r.goods))}</td>
+                      {mode === "full" && <td style={{ ...xtd, color: GREEN }}>{dash(thb(r.cash))}</td>}
+                      {mode === "full" && <td style={{ ...xtd, color: BLUE }}>{dash(thb(r.transfer))}</td>}
                       <td style={xtd}>{dash(r.customers)}</td>
-                      <td style={{ ...xtd, color: GREEN }}>{dash(r.newCustomers)}</td>
-                      <td style={xtd}>{dash(r.returningCustomers)}</td>
+                      {mode === "full" && <td style={{ ...xtd, color: GREEN }}>{dash(r.newCustomers)}</td>}
+                      {mode === "full" && <td style={xtd}>{dash(r.returningCustomers)}</td>}
                       <td style={{ ...xtd, color: AMBER }}>{dash(r.kids)}</td>
                       <td style={{ ...xtd, color: BLUE }}>{dash(r.adults)}</td>
-                      <td style={{ ...xtd, color: RED }}>{r.cost > 0 ? thb(r.cost) : dash(thb(0))}</td>
-                      <td style={{ ...xtd, fontWeight: 700, color: r.profit >= 0 ? GREEN : RED }}>{r.profit < 0 ? "−" : ""}{thb(Math.abs(r.profit))}</td>
-                      <td style={{ ...xtd, color: r.profit >= 0 ? GREEN : RED }}>{r.revenue > 0 ? `${r.marginPct.toFixed(0)}%` : "—"}</td>
+                      <td style={xtd}>{r.bills > 0 ? r.bills : dash(0)}</td>
                       <td style={xtd}>{r.bills > 0 ? thb(r.avgBill) : "—"}</td>
+                      {mode === "full" && <td style={{ ...xtd, color: RED }}>{r.cost > 0 ? thb(r.cost) : dash(thb(0))}</td>}
+                      {mode === "full" && <td style={{ ...xtd, fontWeight: 700, color: r.profit >= 0 ? GREEN : RED }}>{r.profit < 0 ? "−" : ""}{thb(Math.abs(r.profit))}</td>}
+                      {mode === "full" && <td style={{ ...xtd, color: r.profit >= 0 ? GREEN : RED }}>{r.revenue > 0 ? `${r.marginPct.toFixed(0)}%` : "—"}</td>}
                     </tr>
                   );
                 })}
@@ -384,18 +431,20 @@ export default async function OwnerReportPage({ searchParams }: { searchParams: 
                   <td style={{ ...xtd, ...xstickyL, background: "#f5f1e8", textAlign: "left", fontFamily: FREDOKA }}>รวม</td>
                   <td style={{ ...xtd, fontFamily: MONO }}>{thb(tot.revenue)}</td>
                   <td style={{ ...xtd, fontFamily: MONO }}>{thb(tot.entry)}</td>
-                  <td style={{ ...xtd, fontFamily: MONO }}>{thb(tot.product)}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: GREEN }}>{thb(tot.cash)}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: BLUE }}>{thb(tot.transfer)}</td>
+                  <td style={{ ...xtd, fontFamily: MONO, color: AMBER }}>{thb(tot.snack)}</td>
+                  <td style={{ ...xtd, fontFamily: MONO, color: BLUE }}>{thb(tot.goods)}</td>
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: GREEN }}>{thb(tot.cash)}</td>}
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: BLUE }}>{thb(tot.transfer)}</td>}
                   <td style={{ ...xtd, fontFamily: MONO }}>{customersTotal}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: GREEN }}>{customersNew}</td>
-                  <td style={{ ...xtd, fontFamily: MONO }}>{customersReturning}</td>
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: GREEN }}>{customersNew}</td>}
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO }}>{customersReturning}</td>}
                   <td style={{ ...xtd, fontFamily: MONO, color: AMBER }}>{tot.kids}</td>
                   <td style={{ ...xtd, fontFamily: MONO, color: BLUE }}>{tot.adults}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: RED }}>{thb(tot.cost)}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: profit >= 0 ? GREEN : RED }}>{profit < 0 ? "−" : ""}{thb(Math.abs(profit))}</td>
-                  <td style={{ ...xtd, fontFamily: MONO, color: profit >= 0 ? GREEN : RED }}>{totalMarginPct.toFixed(0)}%</td>
+                  <td style={{ ...xtd, fontFamily: MONO }}>{tot.bills}</td>
                   <td style={{ ...xtd, fontFamily: MONO }}>{thb(totalAvgBill)}</td>
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: RED }}>{thb(tot.cost)}</td>}
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: profit >= 0 ? GREEN : RED }}>{profit < 0 ? "−" : ""}{thb(Math.abs(profit))}</td>}
+                  {mode === "full" && <td style={{ ...xtd, fontFamily: MONO, color: profit >= 0 ? GREEN : RED }}>{totalMarginPct.toFixed(0)}%</td>}
                 </tr>
               </tfoot>
             </table>
@@ -439,6 +488,15 @@ function DeltaStat({ label, change, prevValue }: { label: string; change: number
   );
 }
 
+// chip ย่อ/ขยาย — active = น้ำเงินทึบขาว, inactive = ขอบบาง
+function modeChip(active: boolean): React.CSSProperties {
+  return {
+    display: "inline-flex", alignItems: "center", textDecoration: "none", borderRadius: 8,
+    padding: "6px 14px", fontSize: 12.5, fontWeight: 600, fontFamily: MITR, cursor: "pointer",
+    background: active ? BLUE : "#fff", color: active ? "#fff" : MUTED,
+    border: active ? "none" : `1px solid ${LINE}`,
+  };
+}
 const dateInput: React.CSSProperties = { border: `1px solid ${LINE}`, borderRadius: 9, padding: "7px 10px", fontSize: 13, fontFamily: MITR, color: INK, background: "#fff", outline: "none" };
 function btn(primary: boolean): React.CSSProperties {
   return { display: "inline-flex", alignItems: "center", gap: 7, textDecoration: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
