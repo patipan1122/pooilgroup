@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb, thbShort, fmtDate, fmtDateTime } from "@/lib/playland/format";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
-import { BarChart3, Download, Users, Clock, Coins } from "lucide-react";
+import { OwnerReportPanel, type ExpenseRow } from "@/components/playland/reports/owner-report-panel";
+import { BarChart3, Download, Users, Clock, Coins, Wallet, TrendingUp } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "รายงาน · Play a lot" };
@@ -16,8 +17,9 @@ const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "0 1px 3px rgba(58,48,38,.05)" };
 const CAT_COLORS = [BLUE, AMBER, GREEN, "#9B59B6", "#E67E22", "#16A085", RED, MUTED];
 
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string; view?: "chart" | "table"; detail?: string }> }) {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string; view?: "chart" | "table" | "owner"; detail?: string }> }) {
   const sp = await searchParams;
+  const ownerView = sp.view === "owner"; // ?view=owner → รายงานเจ้าของ (กำไร-ขาดทุน)
   const dayView = sp.view === "table" ? "table" : "chart"; // ?view=table → ตาราง · default = กราฟ
   const dayDetail = sp.detail === "1"; // ?detail=1 → โชว์ทุกคอลัมน์ (ละเอียด) · default = สรุป
   const session = await requireSession();
@@ -40,7 +42,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     prisma.playlandSession.findMany({
       where: { orgId, checkInAt: { gte: from, lte: to }, ...(branchId ? { branchId } : {}) },
       // นับ session/แขก + เด็ก/ผู้ใหญ่ + ชั่วโมงพีค (ไม่คิดเงินจากตรงนี้ = กันนับค่าเข้าซ้ำ)
-      select: { branchId: true, status: true, memberId: true, checkInAt: true, member: { select: { type: true } } },
+      select: { branchId: true, status: true, memberId: true, checkInAt: true, member: { select: { type: true, createdAt: true } } },
     }),
     prisma.playlandMember.count({ where: { orgId, createdAt: { gte: from, lte: to }, ...(branchId ? { branchId } : {}) } }),
     // ขายแยกหมวด: รายการสินค้า join หมวด
@@ -186,7 +188,86 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   );
   // ลิงก์สลับมุมมอง/รายละเอียด — พก from/to/branch ไปด้วย (ไม่หลุด filter)
   const baseQ = `from=${fmtD(from)}&to=${fmtD(to)}${_bq}`;
-  const viewLink = (v: "chart" | "table", detail?: boolean) => `?${baseQ}&view=${v}${detail ? "&detail=1" : ""}`;
+  const viewLink = (v: "chart" | "table" | "owner", detail?: boolean) => `?${baseQ}&view=${v}${detail ? "&detail=1" : ""}`;
+
+  // ════════════════════════════════════════════════════════════════════
+  // รายงานเจ้าของ (P&L) — โหลด+คิดต้นทุน · กำไร · ลูกค้าใหม่/เก่า (เฉพาะ view=owner)
+  // ════════════════════════════════════════════════════════════════════
+  let totalExpense = 0;
+  const expenseByKind = new Map<string, number>();
+  const expenseRows: ExpenseRow[] = [];
+  let customersNew = 0, customersReturning = 0;
+
+  if (ownerView) {
+    // โหลดต้นทุนทั้งช่วงเดือนที่คร่อม [from,to] → ค่ารายเดือนต้องมีให้เฉลี่ย แม้ขอบเดือนไม่ตรง
+    const startOfMonth = new Date(from.getFullYear(), from.getMonth(), 1, 0, 0, 0, 0);
+    const endOfMonth = new Date(to.getFullYear(), to.getMonth() + 1, 0, 23, 59, 59, 999);
+    const expenses = await prisma.playlandDailyExpense.findMany({
+      where: { orgId, ...(branchId ? { branchId } : {}), expenseDate: { gte: startOfMonth, lte: endOfMonth } },
+      select: { id: true, kind: true, label: true, amountCents: true, staffCount: true, period: true, expenseDate: true },
+      orderBy: { expenseDate: "desc" },
+    });
+
+    // helper: เทียบเฉพาะวันที่ (ตัดเวลา) ในเขตเวลา local
+    const dateOnly = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const fromDay = dateOnly(from), toDay = dateOnly(to);
+    const daysInMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    // นับจำนวนวันใน [from,to] ที่อยู่ปี+เดือนเดียวกับ expenseDate (สำหรับเฉลี่ยรายเดือน)
+    const daysInRangeSharingMonth = (ed: Date) => {
+      let cnt = 0;
+      const cur = new Date(fromDay);
+      const end = new Date(toDay);
+      while (cur.getTime() <= end.getTime()) {
+        if (cur.getFullYear() === ed.getFullYear() && cur.getMonth() === ed.getMonth()) cnt++;
+        cur.setDate(cur.getDate() + 1);
+      }
+      return cnt;
+    };
+
+    for (const ex of expenses) {
+      const ed = new Date(ex.expenseDate);
+      const edDay = dateOnly(ed);
+      let allocated = 0;
+      if (ex.period === "monthly") {
+        // เฉลี่ยหารต่อวัน × จำนวนวันใน [from,to] ที่อยู่เดือนเดียวกัน
+        const dim = daysInMonth(ed) || 1;
+        const dailyRate = ex.amountCents / dim;
+        allocated = Math.round(dailyRate * daysInRangeSharingMonth(ed));
+      } else {
+        // ครั้งเดียว: เต็มจำนวน ถ้า expenseDate อยู่ใน [from,to]
+        allocated = edDay >= fromDay && edDay <= toDay ? ex.amountCents : 0;
+      }
+      if (allocated <= 0 && ex.period === "once") continue; // ครั้งเดียวนอกช่วง = ไม่โชว์/ไม่รวม
+      if (ex.period === "monthly" && allocated <= 0) continue; // รายเดือนที่ไม่มีวันคาบ = ข้าม
+      totalExpense += allocated;
+      expenseByKind.set(ex.kind, (expenseByKind.get(ex.kind) ?? 0) + allocated);
+      expenseRows.push({
+        id: ex.id, kind: ex.kind, label: ex.label, amountCents: ex.amountCents,
+        allocatedCents: allocated, staffCount: ex.staffCount, period: ex.period === "monthly" ? "monthly" : "once",
+      });
+    }
+
+    // ── ลูกค้าใหม่/เก่า: distinct memberId ในช่วง · ใหม่ = วันสมัคร (createdAt) อยู่ใน [from,to] ──
+    const seen = new Set<string>();
+    for (const s of sessions) {
+      if (seen.has(s.memberId)) continue;
+      seen.add(s.memberId);
+      const created = s.member?.createdAt ? new Date(s.member.createdAt) : null;
+      const cDay = created ? dateOnly(created) : null;
+      if (cDay != null && cDay >= fromDay && cDay <= toDay) customersNew++;
+      else customersReturning++;
+    }
+    // guard rounding: ใหม่+เก่า ต้องเท่ากับ uniqueMembers
+    if (customersNew + customersReturning !== uniqueMembers) {
+      customersReturning = Math.max(0, uniqueMembers - customersNew);
+    }
+  }
+
+  const profit = total - totalExpense;
+  const margin = total > 0 ? (profit / total) * 100 : 0;
+  const billCount = sales.length;
+  const avgBill = (billCount > 0 ? total / billCount : (uniqueMembers > 0 ? total / uniqueMembers : 0));
+  const ownerToDate = fmtD(to);
 
   // ── ปิดวัน: ยอดรวม ขาด/เกิน ของกะที่ปิดแล้ว ──
   const closedShifts = shifts.filter((sh) => sh.status === "CLOSED");
@@ -406,8 +487,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               <div style={{ fontWeight: 600, fontSize: 16, fontFamily: FREDOKA }}>รายได้ต่อวัน</div>
               {/* toggle กราฟ↔ตาราง (ชิปแบบเดียวกับ date-preset) */}
               <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                <a href={viewLink("chart")} style={chip(dayView === "chart")}>กราฟ</a>
-                <a href={viewLink("table", dayDetail)} style={chip(dayView === "table")}>ตาราง</a>
+                <a href={viewLink("chart")} style={chip(!ownerView && dayView === "chart")}>กราฟ</a>
+                <a href={viewLink("table", dayDetail)} style={chip(!ownerView && dayView === "table")}>ตาราง</a>
+                <a href={viewLink("owner")} style={chip(ownerView)}>เจ้าของ</a>
               </div>
               {dayView === "chart" && (
                 <div style={{ display: "flex", gap: 12, fontSize: 11, color: MUTED, width: "100%", justifyContent: "flex-end" }}><span style={{ color: BLUE }}>● ค่าเข้า</span><span style={{ color: AMBER }}>● ขายของ</span></div>
@@ -516,6 +598,92 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             )}
           </div>
         </div>
+
+        {/* ════ รายงานเจ้าของ (กำไร-ขาดทุน) — เฉพาะ view=owner ════ */}
+        {ownerView && (
+          <div style={{ ...card, padding: 0, marginTop: 18, overflow: "hidden" }}>
+            <div style={{ padding: "20px 24px", borderBottom: `1px solid ${LINE}`, display: "flex", alignItems: "center", gap: 10 }}>
+              <Wallet size={19} color={BLUE} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 18, fontFamily: FREDOKA }}>รายงานเจ้าของ · กำไร-ขาดทุน</div>
+                <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{fmtDate(from)} – {fmtDate(to)} · รายรับ − ต้นทุน = กำไรสุทธิ</div>
+              </div>
+            </div>
+
+            <div style={{ padding: 24, display: "grid", gridTemplateColumns: "1.05fr 1fr", gap: 22 }} className="pl-mobile-stack">
+              {/* ── คอลัมน์ซ้าย: รายรับ + ต้นทุน + รายการ ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                {/* รายรับ */}
+                <div style={{ background: "#eaf3eb", borderRadius: 14, padding: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: GREEN, marginBottom: 6 }}>💰 รายรับ</div>
+                  <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 32, color: GREEN }}>{thb(total)}</div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12.5, color: MUTED, flexWrap: "wrap" }}>
+                    <span>ค่าเข้า · เวลา <strong style={{ fontFamily: MONO, color: INK }}>{thb(totalEntry)}</strong></span>
+                    <span>ขายของ <strong style={{ fontFamily: MONO, color: INK }}>{thb(totalProducts)}</strong></span>
+                  </div>
+                </div>
+
+                {/* ต้นทุน + รายการ + จัดการ (client) */}
+                <div style={{ border: `1px solid ${LINE}`, borderRadius: 14, padding: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: RED }}>💸 ต้นทุน</div>
+                    <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 22, color: RED }}>{thb(totalExpense)}</div>
+                  </div>
+                  <OwnerReportPanel branchId={branchId} defaultDate={ownerToDate} expenses={expenseRows} />
+                </div>
+              </div>
+
+              {/* ── คอลัมน์ขวา: กำไรสุทธิ + ลูกค้า ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                {/* กำไรสุทธิ */}
+                <div style={{ background: profit >= 0 ? "#eaf3eb" : "#fdecea", borderRadius: 14, padding: 22, textAlign: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontSize: 14, color: profit >= 0 ? GREEN : RED, marginBottom: 8 }}>
+                    <TrendingUp size={16} /> 📊 กำไรสุทธิ
+                  </div>
+                  <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: profit >= 0 ? GREEN : RED, lineHeight: 1.1 }}>
+                    {profit < 0 ? "−" : ""}{thb(Math.abs(profit))}
+                  </div>
+                  <div style={{ fontSize: 13, color: MUTED, marginTop: 8 }}>
+                    มาร์จิน <strong style={{ fontFamily: MONO, color: profit >= 0 ? GREEN : RED }}>{margin.toFixed(1)}%</strong> ของรายรับ
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 14, fontSize: 12.5, color: MUTED, fontFamily: MONO, flexWrap: "wrap" }}>
+                    <span>{thb(total)}</span><span style={{ color: RED }}>− {thb(totalExpense)}</span><span>=</span>
+                    <strong style={{ color: profit >= 0 ? GREEN : RED }}>{profit < 0 ? "−" : ""}{thb(Math.abs(profit))}</strong>
+                  </div>
+                </div>
+
+                {/* ลูกค้า */}
+                <div style={{ border: `1px solid ${LINE}`, borderRadius: 14, padding: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 14, fontWeight: 600, fontFamily: FREDOKA, marginBottom: 14 }}>
+                    <Users size={16} color={BLUE} /> 👥 ลูกค้า
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+                    <div style={{ flex: 1, background: "#eaf3f6", borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
+                      <div style={{ fontSize: 12, color: MUTED }}>ทั้งหมด</div>
+                      <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: INK }}>{uniqueMembers}</div>
+                    </div>
+                    <div style={{ flex: 1, background: "#eaf3eb", borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
+                      <div style={{ fontSize: 12, color: GREEN }}>ใหม่</div>
+                      <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: GREEN }}>{customersNew}</div>
+                    </div>
+                    <div style={{ flex: 1, background: "#f7f3ea", borderRadius: 12, padding: "12px 14px", textAlign: "center" }}>
+                      <div style={{ fontSize: 12, color: MUTED }}>เก่า</div>
+                      <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: INK }}>{customersReturning}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED, paddingTop: 10, borderTop: `1px solid #f2ebdd` }}>
+                    <span>เด็ก : ผู้ใหญ่</span>
+                    <strong style={{ fontFamily: MONO, color: INK }}>{kids} : {adults}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED, marginTop: 8 }}>
+                    <span>บิลเฉลี่ย/คน</span>
+                    <strong style={{ fontFamily: MONO, color: INK }}>{thb(Math.round(avgBill))}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ใบปิดวัน · นับลิ้นชัก (variance จริง) */}
         <div style={{ ...card, padding: 22, marginTop: 18 }}>

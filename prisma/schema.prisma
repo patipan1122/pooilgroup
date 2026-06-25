@@ -3606,6 +3606,7 @@ model PlaylandBranch {
   faceEvents     PlaylandFaceEvent[]
   familyGroups   PlaylandFamilyGroup[]
   dailyReports   PlaylandDailyReport[]
+  dailyExpenses  PlaylandDailyExpense[]
   stockMovements PlaylandStockMovement[]
   purchases      PlaylandPurchase[]
   repairLogs     PlaylandRepairLog[]
@@ -4407,6 +4408,29 @@ model PlaylandDailyReport {
   @@unique([branchId, reportDate])
   @@index([orgId, reportDate])
   @@map("daily_reports")
+  @@schema("playland")
+}
+
+// ต้นทุน/ค่าใช้จ่ายรายวัน (รายงานกำไร-ขาดทุนเจ้าของ) — กรอกเอง/AI ช่วยกรอก
+model PlaylandDailyExpense {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  expenseDate     DateTime @map("expense_date") @db.Date
+  kind            String // labor | electricity | rent | water | supplies | marketing | other
+  label           String?
+  amountCents     Int      @default(0) @map("amount_cents")
+  staffCount      Int?     @map("staff_count")
+  period          String   @default("once") // once | monthly (เฉลี่ยหารต่อวัน)
+  note            String?
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, expenseDate])
+  @@index([orgId, expenseDate])
+  @@map("daily_expenses")
   @@schema("playland")
 }
 
