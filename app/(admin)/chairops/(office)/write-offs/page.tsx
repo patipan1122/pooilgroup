@@ -22,7 +22,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { canWriteOff } from "@/lib/chairops/auth/role-guards";
+import { canWriteOff, canSelfApproveWriteOff } from "@/lib/chairops/auth/role-guards";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import {
   MasterDetailShell,
@@ -179,12 +179,21 @@ export default async function WriteOffsPage({
     const statusMeta = STATUS_LABELS[status];
     const requiredRole: "MANAGER" | "CEO" = w.amount >= 500 ? "CEO" : "MANAGER";
     const isOwn = w.makerId === session.user.id;
-    const can = canWriteOff(session.user, w.amount) && !isOwn && status === "PENDING";
+    // BR7 maker-checker: ผู้ขอห้ามอนุมัติเอง — ยกเว้น superadmin (ADMIN) ที่เป็น
+    // ผู้อนุมัติคนเดียว (CEO 2026-06-25). ถ้า ADMIN อนุมัติคำขอตัวเอง = "อนุมัติเอง"
+    const makerCheckerBlocked = isOwn && !canSelfApproveWriteOff(session.user);
+    const can =
+      canWriteOff(session.user, w.amount) && !makerCheckerBlocked && status === "PENDING";
+    // จะเป็นการ "อนุมัติเอง" ก็ต่อเมื่อ ADMIN กดอนุมัติคำขอที่ตัวเองสร้าง
+    const willSelfApprove = can && isOwn;
+    // ดูย้อนหลัง: รายการที่ปิดแล้วและคนอนุมัติ = คนสร้าง → เคยอนุมัติเอง
+    const wasSelfApproved =
+      status === "APPROVED" && w.approverId != null && w.approverId === w.makerId;
     const branch = branchMap.get(w.branchId);
 
     let disabledReason: string | null = null;
     if (!can && status === "PENDING") {
-      if (isOwn) disabledReason = "ห้ามอนุมัติของตัวเอง";
+      if (makerCheckerBlocked) disabledReason = "ห้ามอนุมัติของตัวเอง (ให้คนอื่นอนุมัติ)";
       else if (w.amount >= 500 && !isCeoPlus)
         disabledReason = "ยอด ≥ 500 ต้อง CEO ขึ้นไป";
       else if (w.amount < 500 && !isManagerPlus)
@@ -211,6 +220,8 @@ export default async function WriteOffsPage({
       notes: w.notes,
       canApprove: can,
       isOwnRow: isOwn,
+      willSelfApprove,
+      wasSelfApproved,
       approveDisabledReason: disabledReason,
       bulkEligible: can && w.amount < 500,
       detailHref: buildHref(
@@ -362,6 +373,12 @@ export default async function WriteOffsPage({
               ยืนยัน (maker-checker) · ทุกการอนุมัติคิด drift ใหม่ทันที (BR15)
             </p>
           </div>
+          <Link
+            href="/chairops/write-offs/history"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+          >
+            📋 ประวัติการอนุมัติ
+          </Link>
         </div>
 
         {/* flash banners */}
@@ -401,7 +418,12 @@ export default async function WriteOffsPage({
     const statusMeta = STATUS_LABELS[status];
     const requiredRole: "MANAGER" | "CEO" = w.amount >= 500 ? "CEO" : "MANAGER";
     const isOwn = w.makerId === actorId;
-    const can = canWriteOff(session.user, w.amount) && !isOwn && status === "PENDING";
+    const makerCheckerBlocked = isOwn && !canSelfApproveWriteOff(session.user);
+    const can =
+      canWriteOff(session.user, w.amount) && !makerCheckerBlocked && status === "PENDING";
+    const willSelfApprove = can && isOwn;
+    const wasSelfApproved =
+      status === "APPROVED" && w.approverId != null && w.approverId === w.makerId;
 
     return (
       <div className="flex flex-col gap-4">
@@ -482,6 +504,11 @@ export default async function WriteOffsPage({
                 : null
             }
           />
+          {wasSelfApproved && (
+            <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200">
+              อนุมัติเอง (ผู้ขอ = ผู้อนุมัติ)
+            </p>
+          )}
         </section>
 
         {/* Reason + notes */}
@@ -515,17 +542,26 @@ export default async function WriteOffsPage({
         {/* Action buttons — BR3 threshold + BR7 self-block */}
         {status === "PENDING" ? (
           <section className="flex flex-col gap-2">
+            {willSelfApprove && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                ⚠️ คุณกำลังอนุมัติ<strong>คำขอของตัวเอง</strong> — ปกติต้องให้คนอื่นอนุมัติ
+                แต่คุณเป็นผู้อนุมัติคนเดียว ระบบจะบันทึกว่า{" "}
+                <strong>“อนุมัติเอง”</strong> ไว้ในประวัติเพื่อความโปร่งใส
+              </div>
+            )}
             <form action={approveWriteOff}>
               <input type="hidden" name="writeOffId" value={w.id} />
               <button
                 type="submit"
                 disabled={!can}
                 title={
-                  !can && isOwn
+                  makerCheckerBlocked
                     ? "ห้ามอนุมัติของตัวเอง (BR7)"
                     : !can
                       ? `ต้อง ${requiredRole} ขึ้นไป`
-                      : undefined
+                      : willSelfApprove
+                        ? "อนุมัติเอง — จะถูกบันทึกเป็น 'อนุมัติเอง'"
+                        : undefined
                 }
                 className={
                   "w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors " +
@@ -570,7 +606,7 @@ export default async function WriteOffsPage({
 
             {!can && (
               <p className="text-[11px] text-zinc-500">
-                {isOwn
+                {makerCheckerBlocked
                   ? "คุณเป็นผู้สร้างคำขอนี้ · ต้องให้คนอื่นอนุมัติ"
                   : `ต้องใช้ role ${requiredRole} ขึ้นไป อนุมัติยอด ${baht(w.amount)}`}
               </p>
@@ -579,10 +615,15 @@ export default async function WriteOffsPage({
         ) : (
           <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
             <p>
-              <strong className="text-zinc-800">ปิดแล้ว</strong> ·{" "}
-              {w.approver?.displayName ?? "ระบบ"} ·{" "}
+              <strong className="text-zinc-800">
+                {status === "APPROVED" ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว"}
+              </strong>{" "}
+              · {w.approver?.displayName ?? "ระบบ"} ·{" "}
               {w.approverAt ? thaiDateTime(w.approverAt) : "—"}
             </p>
+            {wasSelfApproved && (
+              <p className="mt-1 font-semibold text-amber-800">⚠️ อนุมัติเอง (ผู้ขอ = ผู้อนุมัติ)</p>
+            )}
           </section>
         )}
       </div>

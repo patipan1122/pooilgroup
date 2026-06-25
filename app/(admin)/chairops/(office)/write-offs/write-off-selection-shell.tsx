@@ -8,7 +8,7 @@
 // Server passes pre-shaped row VMs so the client never imports Prisma.
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition, type FormEvent } from "react";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   MakerCheckerBadge,
@@ -16,6 +16,10 @@ import {
 } from "@/components/chairops/_kit";
 import { asEngineDrift, toCellDrift } from "@/lib/chairops/types/drift";
 import { bulkApproveWriteOffsAction } from "./actions";
+import {
+  approveWriteOff,
+  rejectWriteOff,
+} from "@/app/(admin)/chairops/reconcile/actions";
 
 export interface WriteOffRowVM {
   id: string;
@@ -41,6 +45,10 @@ export interface WriteOffRowVM {
   canApprove: boolean;
   /** True when the viewer is the maker (BR7 hard-block on self-approve). */
   isOwnRow: boolean;
+  /** True when approving this row would be a self-approve (ADMIN single-approver). */
+  willSelfApprove: boolean;
+  /** True for closed rows where approver === maker (was self-approved). */
+  wasSelfApproved: boolean;
   /** Disable reason for the tooltip when canApprove=false. */
   approveDisabledReason: string | null;
   /** True when row is bulk-eligible (PENDING · <500 · viewer can approve · not own). */
@@ -210,6 +218,11 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
                         }
                         noApprover={false}
                       />
+                      {r.wasSelfApproved && (
+                        <span className="mt-1 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 ring-1 ring-amber-200">
+                          อนุมัติเอง
+                        </span>
+                      )}
                     </td>
                     <td className="max-w-[260px] px-2 py-2 align-top text-xs text-zinc-600">
                       <Link
@@ -231,13 +244,7 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
                       </StatusPill>
                     </td>
                     <td className="px-2 py-2 text-right align-top">
-                      <Link
-                        href={r.detailHref}
-                        scroll={false}
-                        className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                      >
-                        ดู
-                      </Link>
+                      <RowActions row={r} />
                     </td>
                   </tr>
                 );
@@ -290,5 +297,111 @@ export function WriteOffSelectionShell({ rows }: WriteOffSelectionShellProps) {
         </div>
       )}
     </>
+  );
+}
+
+// Inline per-row actions — visible on ALL breakpoints (the right-rail detail
+// pane is `hidden lg:block`, so on mobile/tablet this is the ONLY way to
+// approve/reject a row, especially ≥500 ones that the bulk checkbox excludes).
+function RowActions({ row }: { row: WriteOffRowVM }) {
+  const rejectFormRef = useRef<HTMLFormElement>(null);
+  const reasonRef = useRef<HTMLInputElement>(null);
+
+  // Self-approve (ADMIN single-approver) → confirm + transparency before submit.
+  const onApproveSubmit = (e: FormEvent<HTMLFormElement>) => {
+    if (!row.willSelfApprove) return;
+    const ok = window.confirm(
+      `ยืนยันอนุมัติคำขอของตัวเอง?\n\nยอด ${row.amount.toLocaleString("en-US")} ฿ · ${row.branchName}\nระบบจะบันทึกว่า "อนุมัติเอง" ไว้ในประวัติเพื่อความโปร่งใส`,
+    );
+    if (!ok) e.preventDefault();
+  };
+
+  // Reject needs a reason — collect it inline so it works without the detail pane.
+  const onReject = () => {
+    const reason = window.prompt("เหตุผลที่ปฏิเสธคำขอนี้ (อย่างน้อย 3 ตัวอักษร):");
+    if (reason == null) return; // user cancelled
+    if (reason.trim().length < 3) {
+      window.alert("เหตุผลสั้นเกินไป");
+      return;
+    }
+    if (reasonRef.current) reasonRef.current.value = reason.trim();
+    rejectFormRef.current?.requestSubmit();
+  };
+
+  if (row.status !== "PENDING") {
+    return (
+      <Link
+        href={row.detailHref}
+        scroll={false}
+        className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+      >
+        ดู
+      </Link>
+    );
+  }
+
+  if (!row.canApprove) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        {row.approveDisabledReason && (
+          <span className="text-[10px] leading-tight text-zinc-500">
+            {row.approveDisabledReason}
+          </span>
+        )}
+        <Link
+          href={row.detailHref}
+          scroll={false}
+          className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          ดู
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <form action={approveWriteOff} onSubmit={onApproveSubmit}>
+        <input type="hidden" name="writeOffId" value={row.id} />
+        <button
+          type="submit"
+          className={
+            "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold text-white transition-colors " +
+            (row.willSelfApprove
+              ? "bg-amber-600 hover:bg-amber-700"
+              : row.requiredRole === "CEO"
+                ? "bg-rose-600 hover:bg-rose-700"
+                : "bg-emerald-600 hover:bg-emerald-700")
+          }
+          title={
+            row.willSelfApprove
+              ? "อนุมัติเอง — จะถูกบันทึกเป็น 'อนุมัติเอง'"
+              : `อนุมัติยอด ${row.amount.toLocaleString("en-US")} ฿`
+          }
+        >
+          {row.willSelfApprove ? "อนุมัติเอง" : "อนุมัติ"}
+        </button>
+      </form>
+
+      <form action={rejectWriteOff} ref={rejectFormRef}>
+        <input type="hidden" name="writeOffId" value={row.id} />
+        <input type="hidden" name="reason" ref={reasonRef} defaultValue="" />
+        <button
+          type="button"
+          onClick={onReject}
+          className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          ปฏิเสธ
+        </button>
+      </form>
+
+      <Link
+        href={row.detailHref}
+        scroll={false}
+        className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+      >
+        ดู
+      </Link>
+    </div>
   );
 }

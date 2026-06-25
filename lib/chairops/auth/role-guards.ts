@@ -42,6 +42,17 @@ export function canWriteOff(actor: ChairopsUser, amount: number): boolean {
   return RANK[actor.role] >= RANK.CEO;
 }
 
+// BR7 single-approver exception (CEO 2026-06-25):
+// องค์กรที่มีผู้อนุมัติคนเดียว (superadmin = ADMIN) จะ deadlock ถ้า maker-checker
+// บังคับ "ผู้ขอ ≠ ผู้อนุมัติ" เพราะ ADMIN เป็นทั้งคนสร้างคำขอและคนอนุมัติ.
+// → อนุญาตเฉพาะ ADMIN ให้อนุมัติคำขอของตัวเองได้ (waive BR7). บทบาทอื่นยังติด
+//   maker-checker เหมือนเดิม. ทุกครั้งที่ ADMIN อนุมัติเอง audit จะ stamp
+//   selfApproved=true และ UI จะติดป้าย "อนุมัติเอง" (ตรวจได้จาก approverId === makerId)
+//   เพื่อความโปร่งใส. ดู memory [[chairops-writeoff-single-approver-superadmin-2026-06-25]].
+export function canSelfApproveWriteOff(actor: ChairopsUser): boolean {
+  return actor.role === "ADMIN";
+}
+
 export function canUnlockCollection(actor: ChairopsUser): boolean {
   return RANK[actor.role] >= RANK.OFFICE;
 }

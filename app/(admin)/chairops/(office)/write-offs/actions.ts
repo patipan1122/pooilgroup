@@ -18,7 +18,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { canWriteOff } from "@/lib/chairops/auth/role-guards";
+import { canWriteOff, canSelfApproveWriteOff } from "@/lib/chairops/auth/role-guards";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
@@ -60,10 +60,12 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
     select: { id: true, branchId: true, amount: true, makerId: true, status: true },
   });
 
+  // BR7 maker-checker — ปกติผู้ขอห้ามอนุมัติเอง · ยกเว้น superadmin (ADMIN)
+  // ผู้อนุมัติคนเดียว (CEO 2026-06-25) ที่อนุมัติเองได้ (stamp selfApproved).
   const eligible = rows.filter(
     (w) =>
       w.amount < BULK_CAP_BAHT &&
-      w.makerId !== session.user.id &&
+      (w.makerId !== session.user.id || canSelfApproveWriteOff(session.user)) &&
       canWriteOff(session.user, w.amount),
   );
 
@@ -99,7 +101,12 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
           entity: "WriteOff",
           entityId: wo.id,
           oldValue: { status: "PENDING" },
-          newValue: { status: "APPROVED", amount: wo.amount, bulk: true },
+          newValue: {
+            status: "APPROVED",
+            amount: wo.amount,
+            bulk: true,
+            selfApproved: wo.makerId === session.user.id,
+          },
         },
         tx,
       );

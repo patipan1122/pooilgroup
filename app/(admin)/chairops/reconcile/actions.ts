@@ -12,7 +12,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
-import { canWriteOff } from "@/lib/chairops/auth/role-guards";
+import { canWriteOff, canSelfApproveWriteOff } from "@/lib/chairops/auth/role-guards";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import { ChairopsAlertKind, ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
@@ -172,16 +172,21 @@ export async function approveWriteOff(formData: FormData) {
       )}`
     );
   }
-  if (wo.makerId === session.user.id) {
+  // BR7 maker-checker: ผู้ขอห้ามอนุมัติเอง — ยกเว้น superadmin (ADMIN) ผู้อนุมัติคนเดียว
+  // (CEO 2026-06-25). การอนุมัติเองจะถูก stamp selfApproved=true ใน audit.
+  const isSelfApprove = wo.makerId === session.user.id;
+  if (isSelfApprove && !canSelfApproveWriteOff(session.user)) {
     redirect(`/chairops/write-offs?error=${encodeURIComponent("ห้ามอนุมัติ write-off ที่ตัวเองขอ (maker/checker)")}`);
   }
 
   // Wave-0 fix: approve + audit atomic. CEO 2026-06-02 P0 IDOR fix: composite
-  // (orgId, id) on the update guards against TOCTOU as well.
+  // (orgId, id) on the update guards against TOCTOU. status:"PENDING" on the
+  // update makes approve idempotent — a double-click / racing 2nd approver
+  // touches 0 rows (no double drift recompute · no overwritten approver).
   let touched = 0;
   await prisma.$transaction(async (tx) => {
     const res = await tx.chairopsWriteOff.updateMany({
-      where: { id: writeOffId, orgId },
+      where: { id: writeOffId, orgId, status: "PENDING" },
       data: {
         status: "APPROVED",
         approverId: session.user.id,
@@ -201,7 +206,7 @@ export async function approveWriteOff(formData: FormData) {
         entity: "WriteOff",
         entityId: writeOffId,
         oldValue: { status: wo.status },
-        newValue: { status: "APPROVED", amount: wo.amount },
+        newValue: { status: "APPROVED", amount: wo.amount, selfApproved: isSelfApprove },
       },
       tx,
     );
