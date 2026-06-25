@@ -532,14 +532,13 @@ export function AdminShell({
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
           Lazy-mounted on first click via AiChatLauncher. */}
-      {/* Recruit ships its own AI assistant (RecruitChatFab in its layout), so
-          suppress the global launcher there to avoid two stacked Bot buttons. */}
-      {activeModuleSlug !== "recruit" && (
-        <AiChatLauncher
-          liftMobile={showHubNav || moduleHasBottomNav}
-          canPinpoint={canPinpoint}
-        />
-      )}
+      {/* Global AI + Pinpoint (ติชม) launcher — kept on every module incl. recruit
+          so Pinpoint feedback works everywhere. On recruit it sits BELOW the
+          module's own RecruitChatFab (stacked, not overlapping — see chat-fab.tsx). */}
+      <AiChatLauncher
+        liftMobile={showHubNav || moduleHasBottomNav}
+        canPinpoint={canPinpoint}
+      />
 
       {/* Pinpoint / โหมดติชม overlay — every signed-in user (flag on). Renders
           nothing until a session is started from the AI button. canReview gates
