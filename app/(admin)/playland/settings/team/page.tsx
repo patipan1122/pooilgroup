@@ -1,7 +1,7 @@
 // Playland · ทีม & สิทธิ์ — แอดมิน/เจ้าของตั้งตำแหน่งพนักงาน → สิทธิ์ derive จากตำแหน่ง (รายสาขา)
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Inbox, UserPlus } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
@@ -68,6 +68,12 @@ export default async function TeamSettingsPage() {
             ตั้งตำแหน่งให้พนักงาน → สิทธิ์มาตามตำแหน่ง (เฉพาะ Playland · ไม่กระทบโปรแกรมอื่น)
           </div>
         </div>
+        <Link href="/users/requests" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, background: "#fff", color: MUTED, border: `1px solid ${LINE}` }}>
+          <Inbox size={15} /> คำขอเข้าใช้งาน
+        </Link>
+        <Link href="/users/new" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, background: BLUE, color: "#fff" }}>
+          <UserPlus size={15} /> เพิ่มพนักงาน
+        </Link>
         <BranchSwitcher branches={branches} activeId={activeId} />
       </div>
 

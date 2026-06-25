@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier, canPlaylandManage, canPlaylandAdmin } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { newMemberCode, newSaleCode, newShiftCode, newBookingCode } from "./codes";
 import { searchMembers } from "./queries";
 import { getAdapter } from "./acs/mock-adapter";
@@ -676,7 +677,7 @@ export async function closeShift(input: { shiftId: string; closingCashCents: num
 // บิลที่ void แล้วจะถูกตัดออกจาก "ควรมีในลิ้นชัก" อัตโนมัติ (closeShift กรอง voidedAt:null)
 export async function voidSale(input: { saleId: string; reason: string }): Promise<ActionResult> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ยกเลิกบิล · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์ยกเลิกบิล · ต้องเป็นผู้จัดการขึ้นไป");
   const sale = await prisma.playlandSale.findFirst({
     where: { id: input.saleId, orgId: session.user.org_id, voidedAt: null },
     include: { lines: true, shift: { select: { status: true } } },
@@ -728,7 +729,7 @@ export async function voidSale(input: { saleId: string; reason: string }): Promi
 
 export async function upsertPackage(input: { id?: string; branchId: string | null; type: "FIXED" | "PER_MINUTE" | "DAY_PASS"; name: string; description?: string; minutes?: number; price: number; perMinuteRate?: number; active: boolean }): Promise<ActionResult> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์");
   if (input.branchId && !(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (input.id) {
     await prisma.playlandPackage.update({
@@ -765,7 +766,7 @@ export async function upsertPackage(input: { id?: string; branchId: string | nul
 
 export async function upsertProduct(input: { id?: string; branchId: string; kind?: "SALE_ITEM" | "SPARE_PART"; name: string; barcode?: string; sku?: string; category?: string; supplier?: string; priceCents: number; costCents?: number; stock: number; reorderLevel?: number; active: boolean; imageR2Path?: string | null }): Promise<ActionResult> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   if (input.id) {
     await prisma.playlandProduct.update({
@@ -814,7 +815,7 @@ export async function upsertProduct(input: { id?: string; branchId: string; kind
 
 export async function upsertBranch(input: { id?: string; name: string; slug: string; address?: string; phone?: string; settings?: Record<string, unknown>; active: boolean }): Promise<ActionResult<{ branchId: string }>> {
   const session = await requireSession();
-  if (!canPlaylandAdmin(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์");
   if (input.id) {
     const u = await prisma.playlandBranch.update({
       where: { id: input.id, orgId: session.user.org_id },
@@ -830,7 +831,7 @@ export async function upsertBranch(input: { id?: string; name: string; slug: str
 
 export async function upsertDevice(input: { id?: string; branchId: string; deviceId: string; deviceName: string; vendor?: string; baseUrl?: string; protocol?: "http" | "tcp"; modelVersion?: "B" | "C"; webhookSecret?: string }): Promise<ActionResult> {
   const session = await requireSession();
-  if (!canPlaylandAdmin(session.user.role)) return err("ไม่มีสิทธิ์");
+  if (!canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์");
   if (input.id) {
     await prisma.playlandDevice.update({
       where: { id: input.id, orgId: session.user.org_id },
