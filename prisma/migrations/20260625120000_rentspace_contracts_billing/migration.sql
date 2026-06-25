@@ -62,5 +62,8 @@ CREATE TABLE IF NOT EXISTS public.rental_contract_addendum (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS rental_contract_addendum_sign_token_key
   ON public.rental_contract_addendum(sign_token);
+-- F5: กันลำดับฉบับแก้ไข (seq) ชนกันต่อสัญญา (table ใหม่/ว่าง → ปลอดภัย)
+CREATE UNIQUE INDEX IF NOT EXISTS rental_contract_addendum_contract_seq_key
+  ON public.rental_contract_addendum(contract_id, seq);
 CREATE INDEX IF NOT EXISTS rental_contract_addendum_org_contract_seq_idx
   ON public.rental_contract_addendum(org_id, contract_id, seq);

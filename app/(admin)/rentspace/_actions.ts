@@ -699,10 +699,24 @@ export async function actUpdateContractBilling(input: {
   billIssueDay?: number | null;
 }) {
   const session = await gateAdmin();
-  await ownGuard(
-    prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
-    "สัญญา",
-  );
+  // F2: เงื่อนไขค่าปรับ/โปรฯ/วันวางบิล บางส่วน (เช่น ค่าปรับล่าช้า) ถูก "พิมพ์ลงในสัญญา" →
+  // สัญญาที่เซ็นแล้วต้องผ่านด่านเดียวกับ actSaveContract ก่อนแก้ (กันเลี่ยงการขออนุมัติ)
+  const existing = await prisma.rentalContract.findFirst({
+    where: { id: input.contractId, orgId: session.user.org_id },
+    select: {
+      id: true,
+      tenantSigned: true,
+      editStatus: true,
+      project: { select: { contractEditUnlocked: true } },
+    },
+  });
+  if (!existing) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  if (
+    existing.tenantSigned &&
+    !(existing.project.contractEditUnlocked || existing.editStatus === "approved" || isSuperAdmin(session.user.role))
+  ) {
+    throw new Error('สัญญานี้เซ็นแล้ว — กด "ขอแก้ไขสัญญา" ให้อนุมัติก่อน หรือเปิดสิทธิ์แก้สัญญาในตั้งค่า');
+  }
   // "งวดเริ่มโปร" — เพิ่มโปรกลางสัญญาต้องเริ่มนับจากงวดที่ระบุ (ค่าเริ่มต้น = งวดปัจจุบัน)
   // ไม่ใช่นับจากวันเข้าอยู่ ไม่งั้นโปรจะถูกใช้ไปกับงวดเก่าที่ผ่านมาแล้ว
   const promoStart =
@@ -1248,6 +1262,12 @@ export async function actEditBillItems(input: {
 
   const sumByKind = (k: string) =>
     round2(clean.filter((it) => it.kind === k).reduce((s, it) => s + it.amount, 0));
+  // otherAmount = ทุกรายการที่ไม่เข้าคอลัมน์เฉพาะ (rent/ไฟ/น้ำ/ค่าปรับ) และไม่ใช่ส่วนลด
+  // → land_tax/custom/ส่วนกลาง ฯลฯ ตกเข้า otherAmount ไม่หล่นหายจากคอลัมน์ denormalized
+  const DEDICATED_KINDS = new Set(["rent", "electric", "water", "late_fee", "discount"]);
+  const sumOther = round2(
+    clean.filter((it) => !DEDICATED_KINDS.has(it.kind)).reduce((s, it) => s + it.amount, 0),
+  );
 
   await prisma.$transaction(async (tx) => {
     await tx.rentalBillItem.deleteMany({ where: { billId: bill.id } });
@@ -1270,7 +1290,7 @@ export async function actEditBillItems(input: {
         electricAmount: sumByKind("electric"),
         waterAmount: sumByKind("water"),
         lateFeeAmount: sumByKind("late_fee"),
-        otherAmount: sumByKind("other"),
+        otherAmount: sumOther,
       },
     });
   });
@@ -1486,16 +1506,13 @@ export async function actRequestDiscount(input: {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: input.billId, orgId: session.user.org_id },
+    include: { items: true },
   });
   if (!bill) throw new Error("ไม่พบบิล");
-  // ฐานส่วนลด = ผลรวมรายการบิลจริง (rent+ไฟ+น้ำ+ค่าปรับ+อื่นๆ) ให้ตรงกับ gross ใน recomputeBillTotals
-  // ซึ่งรวมรายการ "อื่นๆ" (otherAmount มี line item เมื่อแก้บิลผ่าน actEditBillItems) — ถ้าไม่รวมจะคิดเพดานส่วนลดต่ำกว่าจริง
-  const base =
-    toNum(bill.rentAmount) +
-    toNum(bill.electricAmount) +
-    toNum(bill.waterAmount) +
-    toNum(bill.lateFeeAmount) +
-    toNum(bill.otherAmount);
+  // ฐานส่วนลด = gross จริง = ผลรวม "รายการบิลทุกบรรทัด" ก่อนหักส่วนลด (เหมือน gross ใน computeBillTotals)
+  // ใช้ items โดยตรง ไม่ใช้คอลัมน์ denormalized — เพราะคอลัมน์ rent/ไฟ/น้ำ/ค่าปรับ/อื่นๆ อาจไม่ครอบคลุม
+  // รายการประจำ (ภาษีที่ดิน · ค่าส่วนกลาง ฯลฯ) → ถ้าไม่รวมจะคิดเพดานส่วนลดต่ำกว่ายอดบิลจริง.
+  const base = round2(bill.items.reduce((s, it) => s + toNum(it.amount), 0));
   const raw = input.kind === "percent" ? Math.round(base * (input.value / 100) * 100) / 100 : input.value;
   // a discount can never exceed the bill — keeps totals ≥ 0
   const computedAmount = Math.max(0, Math.min(raw, base));

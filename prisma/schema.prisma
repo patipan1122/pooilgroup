@@ -6836,6 +6836,7 @@ model RentalContractAddendum {
   contract RentalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@unique([signToken])
+  @@unique([contractId, seq]) // F5: กันลำดับฉบับแก้ไข (seq) ชนกันต่อสัญญา
   @@index([orgId, contractId, seq])
   @@map("rental_contract_addendum")
   @@schema("public")

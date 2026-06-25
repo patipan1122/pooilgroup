@@ -36,6 +36,10 @@ const ITEM_KIND_LABELS: Record<string, string> = {
   water: "ค่าน้ำ",
   late_fee: "ค่าปรับล่าช้า",
   discount: "ส่วนลด",
+  land_tax: "ภาษีที่ดิน",
+  common_fee: "ค่าส่วนกลาง",
+  waste: "ค่าขยะ",
+  custom: "ค่าใช้จ่ายเพิ่มเติม",
   other: "อื่น ๆ",
 };
 

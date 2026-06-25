@@ -130,9 +130,14 @@ export type BuiltBill = {
   electricAmount: number;
   waterAmount: number;
   lateFeeAmount: number;
+  /** ผลรวมรายการประจำอื่น ๆ (ภาษีที่ดิน · ค่าส่วนกลาง · ค่าขยะ · custom ฯลฯ) ที่ไม่เข้าคอลัมน์ rent/ไฟ/น้ำ/ค่าปรับ */
+  otherAmount: number;
   items: { kind: string; label: string; qty: number; unitPrice: number; amount: number; vatable: boolean; sort: number }[];
   notes: string[];
 };
+
+/** kinds ที่มีคอลัมน์ denormalized เฉพาะตัว (+ discount ที่ไม่ใช่ค่าใช้จ่าย) — ที่เหลือ fold เข้า otherAmount */
+const DEDICATED_BILL_KINDS = new Set(["rent", "electric", "water", "late_fee", "discount"]);
 
 /** Days in the calendar month of a YYYY-MM period. */
 function daysInPeriod(period: string): number {
@@ -263,6 +268,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   //    ซึ่งจัดการ item แยกต่างหาก ไม่เรียก buildBill ซ้ำ.)
   const recurring = await prisma.rentalRecurringCharge.findMany({
     where: {
+      orgId: contract.orgId, // F8 defense-in-depth: กันข้อมูลข้าม org แม้ projectId จะผูกกับ org อยู่แล้ว
       projectId: contract.projectId,
       isActive: true,
       OR: [{ unitId: null }, { unitId: contract.unitId }],
@@ -285,7 +291,13 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
     });
   }
 
-  return { rentAmount, electricAmount, waterAmount, lateFeeAmount, items, notes };
+  // otherAmount = ผลรวมรายการที่ไม่เข้าคอลัมน์ rent/ไฟ/น้ำ/ค่าปรับ (ภาษีที่ดิน · ส่วนกลาง · custom ฯลฯ)
+  // → คอลัมน์ denormalized ครบ ไม่หล่นหาย (ยอดรวมจริงคิดจาก items ผ่าน computeBillTotals อยู่แล้ว)
+  const otherAmount = round2(
+    items.filter((it) => !DEDICATED_BILL_KINDS.has(it.kind)).reduce((s, it) => s + it.amount, 0),
+  );
+
+  return { rentAmount, electricAmount, waterAmount, lateFeeAmount, otherAmount, items, notes };
 }
 
 /**
@@ -399,6 +411,7 @@ export async function createBillForContract(
           electricAmount: built.electricAmount,
           waterAmount: built.waterAmount,
           lateFeeAmount: built.lateFeeAmount,
+          otherAmount: built.otherAmount,
           discountAmount,
           subtotal,
           vatAmount,

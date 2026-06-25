@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { requireSession } from "@/lib/auth/session";
+import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { RsPage, RsHeader, RsBadge, RsCard, RsBackLink } from "@/components/rentspace/ui";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel } from "@/lib/rentspace/format";
-import { getContract } from "@/lib/rentspace/data";
+import { getContract, listUnitsWithState, listTenants, listTemplates } from "@/lib/rentspace/data";
 import { resolveContractBody, bankInfoLine } from "@/lib/rentspace/contract-doc";
+import { Pencil } from "lucide-react";
+import { ContractForm } from "../_components/contract-form";
 import {
   SignLinkBox,
   PrintButton,
@@ -30,10 +33,6 @@ const DEPOSIT_KINDS: Record<string, string> = {
   deduct: "หักจากประกัน",
   forfeit: "ยึดประกัน",
 };
-
-// ผู้ให้เช่า (lessor) — fixed for โครงการทะเลทาวน์ / เจพี ซิงค์ กรุ๊ป
-const LESSOR_NAME = "บริษัท เจพี ซิงค์ กรุ๊ป จำกัด";
-const LESSOR_PROJECT = "โครงการทะเลทาวน์";
 
 /** mask an id-card / tax id → show only last 4 digits */
 function maskId(raw?: string | null): string {
@@ -68,7 +67,15 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     orderBy: { seq: "asc" },
   });
   const editStatus = (contract.editStatus ?? "none") as "none" | "pending" | "approved" | "rejected";
-  const canDelete = !!contract.project.contractDeleteUnlocked;
+  const role = session.user.role;
+  // F7: ปุ่มลบต้องมีด่าน role — เปิดสิทธิ์ลบ (หรือ super) + ต้องเป็น admin tier เท่านั้น
+  const canDelete = (!!contract.project.contractDeleteUnlocked || isSuperAdmin(role)) && isAdminTier(role);
+  // F3: ปุ่ม "แก้ไขสัญญา" เห็นได้เมื่อ ยังไม่เซ็น / เปิดสิทธิ์แก้สัญญา / คำขอแก้อนุมัติแล้ว / super_admin
+  const canEdit =
+    !contract.tenantSigned ||
+    !!contract.project.contractEditUnlocked ||
+    editStatus === "approved" ||
+    isSuperAdmin(role);
 
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "https";
@@ -85,7 +92,60 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     ? (contract.rentSchedule as { fromPeriod: string; amount: number }[])
     : [];
 
+  // F3: ข้อมูลที่ ContractForm (โหมดแก้ไข) ต้องใช้ — โหลดเฉพาะเมื่อมีสิทธิ์แก้ (ไม่เปลือง query)
+  const editData = canEdit
+    ? await (async () => {
+        const [units, tenants, templates] = await Promise.all([
+          listUnitsWithState(session.user.org_id, contract.projectId),
+          listTenants(session.user.org_id),
+          listTemplates(session.user.org_id),
+        ]);
+        // ห้องที่เลือกได้ = ว่าง/จอง + ห้องปัจจุบันของสัญญานี้ (แม้สถานะ "เช่าอยู่" ก็ต้องเลือกได้)
+        const selectable = units.filter(
+          (u) => u.status === "vacant" || u.status === "reserved" || u.id === contract.unitId,
+        );
+        return { units: selectable, tenants, templates };
+      })()
+    : null;
+  const previewProject = {
+    name: contract.project.name,
+    billCompanyName: contract.project.billCompanyName,
+    address: contract.project.address,
+    bankName: contract.project.bankName,
+    bankAccountNo: contract.project.bankAccountNo,
+    bankAccountHolder: contract.project.bankAccountHolder,
+    promptpayId: contract.project.promptpayId,
+    paymentNote: contract.project.paymentNote,
+  };
+  const editInitial = {
+    id: contract.id,
+    unitId: contract.unitId,
+    tenantId: contract.tenantId,
+    templateId: contract.templateId ?? null,
+    startDate: contract.startDate.toISOString().slice(0, 10),
+    endDate: contract.endDate ? contract.endDate.toISOString().slice(0, 10) : null,
+    rentAmountThb: toNum(contract.rentAmountThb),
+    rentDueDay: contract.rentDueDay,
+    depositAmountThb: toNum(contract.depositAmountThb),
+    depositMonths: toNum(contract.depositMonths),
+    vatPercent: toNum(contract.vatPercent),
+    electricRate: contract.electricRate != null ? toNum(contract.electricRate) : null,
+    waterRate: contract.waterRate != null ? toNum(contract.waterRate) : null,
+    lateFeeType: contract.lateFeeType as "none" | "fixed" | "percent_total" | "per_day",
+    lateFeeValue: toNum(contract.lateFeeValue),
+    lateFeeGraceDays: contract.lateFeeGraceDays ?? 7,
+    promoDiscountThb: toNum(contract.promoDiscountThb),
+    promoMonths: contract.promoMonths ?? 0,
+    billIssueDay: contract.billIssueDay ?? null,
+    customTermsHtml: contract.customTermsHtml ?? null,
+    note: contract.note ?? null,
+    tenantSigned: contract.tenantSigned,
+  };
+
   // ─── A4 document fields ───
+  // ผู้ให้เช่า (lessor) — ดึงจากโครงการ (multi-tenant) ไม่ฮาร์ดโค้ด → เอกสารจริงตรงกับพรีวิว
+  const lessorName = contract.project.billCompanyName?.trim() || contract.project.name;
+  const lessorProject = contract.project.name;
   const tenantName = tenantDisplayName(contract.tenant);
   const tenantPhone = contract.tenant.phones?.[0] ?? "—";
   const tenantId = maskId(contract.tenant.idCardNo ?? contract.tenant.taxId);
@@ -118,6 +178,21 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
         action={
           <div className="flex items-center gap-2 print:hidden">
             <RsBadge kind="contract" status={contract.status} />
+            {canEdit && editData && contract.status !== "terminated" && (
+              <ContractForm
+                projectId={contract.projectId}
+                project={previewProject}
+                units={editData.units}
+                tenants={editData.tenants}
+                templates={editData.templates}
+                editInitial={editInitial}
+                trigger={
+                  <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0">
+                    <Pencil className="h-4 w-4" /> แก้ไขสัญญา
+                  </button>
+                }
+              />
+            )}
           </div>
         }
       />
@@ -244,7 +319,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               <div className="rs-a4-title">
                 <div className="rs-a4-h1">สัญญาเช่าพื้นที่</div>
                 <div className="rs-a4-sub">
-                  {LESSOR_PROJECT} · เลขที่สัญญา {docNo}
+                  {lessorProject} · เลขที่สัญญา {docNo}
                 </div>
                 <div className="rs-a4-sub">ทำ ณ วันที่ {thaiDateLong(new Date())}</div>
               </div>
@@ -253,8 +328,8 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               <div className="rs-a4-parties">
                 <div className="rs-a4-party">
                   <div className="rs-a4-party-h">ผู้ให้เช่า (เจ้าของพื้นที่)</div>
-                  <div className="rs-a4-party-name">{LESSOR_NAME}</div>
-                  <div className="rs-a4-party-line">{LESSOR_PROJECT}</div>
+                  <div className="rs-a4-party-name">{lessorName}</div>
+                  <div className="rs-a4-party-line">{lessorProject}</div>
                   {contract.project.address && (
                     <div className="rs-a4-party-line">{contract.project.address}</div>
                   )}
@@ -339,7 +414,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                   <div className="rs-a4-sign-space" />
                   <div className="rs-a4-sign-line" />
                   <div className="rs-a4-sign-role">ผู้ให้เช่า</div>
-                  <div className="rs-a4-sign-name">( {LESSOR_NAME} )</div>
+                  <div className="rs-a4-sign-name">( {lessorName} )</div>
                 </div>
                 <div className="rs-a4-sign">
                   {contract.tenantSigned && contract.signatureDataUrl ? (
