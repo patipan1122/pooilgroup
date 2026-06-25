@@ -41,3 +41,11 @@
   .inbox-scope textarea,
   .inbox-scope select { font-size: 16px; }
 }
+
+/* When a super_admin is browsing as another user, the amber "เข้าใช้แทน" bar
+   (~48px) sits above the top-nav. Subtract it so the chat workspace + reply box
+   stay fully on-screen. [data-impersonating] is set in app/(admin)/layout.tsx. */
+[data-impersonating] .inbox-shell { height: calc(100dvh - 3.5rem - 48px); }
+@media (min-width: 640px) {
+  [data-impersonating] .inbox-shell { height: calc(100dvh - 4rem - 48px); }
+}

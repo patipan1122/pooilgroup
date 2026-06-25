@@ -263,7 +263,7 @@ export function InboxWorkspace({
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col sm:h-[calc(100dvh-4rem)]">
+    <div className="inbox-shell flex h-[calc(100dvh-3.5rem)] flex-col sm:h-[calc(100dvh-4rem)]">
       {/* Page header — hidden on mobile while a conversation is open (full-screen chat) */}
       <div
         className={`border-b border-zinc-200 bg-white px-4 py-3 sm:px-6 sm:py-4 ${

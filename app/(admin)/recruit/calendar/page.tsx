@@ -432,7 +432,7 @@ function CalendarGrid({
         {padded.map((d, i) => {
           if (!d)
             return (
-              <div key={`pad-${i}`} className="aspect-square border-r border-b border-zinc-100 bg-zinc-50/30" />
+              <div key={`pad-${i}`} className="min-h-[72px] sm:min-h-0 sm:aspect-square border-r border-b border-zinc-100 bg-zinc-50/30" />
             );
           const key = d.toISOString().slice(0, 10);
           const events = byDay.get(key) ?? [];
@@ -441,7 +441,7 @@ function CalendarGrid({
           return (
             <div
               key={key}
-              className={`aspect-square border-r border-b border-zinc-100 p-1.5 flex flex-col ${
+              className={`min-h-[72px] sm:min-h-0 sm:aspect-square border-r border-b border-zinc-100 p-1.5 flex flex-col ${
                 isToday
                   ? "bg-[var(--color-brand-50)]"
                   : isPast
@@ -466,14 +466,14 @@ function CalendarGrid({
                     <Link
                       key={e.noteId}
                       href={`/recruit/applications/${e.applicationId}`}
-                      className="text-[9px] bg-[var(--color-brand-600)] text-white px-1 py-0.5 rounded truncate hover:bg-[var(--color-brand-700)]"
+                      className="block text-[11px] leading-tight sm:text-[9px] bg-[var(--color-brand-600)] text-white px-1.5 py-1 sm:py-0.5 rounded truncate hover:bg-[var(--color-brand-700)]"
                       title={`${e.applicantName} — ${e.postingTitle}`}
                     >
                       {e.applicantName.split(" ")[0]}
                     </Link>
                   ))}
                   {events.length > 2 && (
-                    <span className="text-[9px] text-zinc-500 pl-1">
+                    <span className="text-[11px] sm:text-[9px] text-zinc-500 pl-1">
                       +{events.length - 2}
                     </span>
                   )}

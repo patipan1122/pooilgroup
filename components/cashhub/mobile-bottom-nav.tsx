@@ -84,19 +84,27 @@ export function CashHubMobileNav({ role }: { role: DbUser["role"] }) {
                 <X size={20} />
               </button>
             </div>
-            <div className="ch-msheet__grid">
-              {permitted.map((it) => (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  onClick={() => setOpen(false)}
-                  className={`ch-msheet__item${isActive(pathname, it.href) ? " is-active" : ""}`}
-                >
-                  <it.icon size={22} />
-                  <span>{it.label}</span>
-                </Link>
-              ))}
-            </div>
+            {permitted.length === 0 ? (
+              <p className="px-1 py-6 text-center text-sm" style={{ color: "var(--ch-text-2)" }}>
+                ยังไม่มีหน้าที่คุณเข้าถึงได้ในโปรแกรมนี้
+                <br />
+                ติดต่อแอดมินเพื่อขอสิทธิ์เพิ่ม
+              </p>
+            ) : (
+              <div className="ch-msheet__grid">
+                {permitted.map((it) => (
+                  <Link
+                    key={it.href}
+                    href={it.href}
+                    onClick={() => setOpen(false)}
+                    className={`ch-msheet__item${isActive(pathname, it.href) ? " is-active" : ""}`}
+                  >
+                    <it.icon size={22} />
+                    <span>{it.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

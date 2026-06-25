@@ -62,7 +62,9 @@ export default async function AdminLayout({
   ]);
 
   return (
-    <>
+    // display:contents wrapper carries data-impersonating so viewport-locked
+    // pages (เช่น แชต Inbox) สามารถหักความสูงของแถบ "เข้าใช้แทน" ออกได้ผ่าน CSS.
+    <div className="contents" data-impersonating={session.actingAs ? "true" : undefined}>
       {session.actingAs && (
         <ImpersonationBar
           targetName={session.user.name}
@@ -82,6 +84,6 @@ export default async function AdminLayout({
       >
         {children}
       </AdminShell>
-    </>
+    </div>
   );
 }

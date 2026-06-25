@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import {
   STATUS_LABELS,
@@ -106,9 +106,44 @@ function ApplicationCard({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [, startTransition] = useTransition();
+  // "ย้ายสถานะ" menu is rendered as a FIXED popover anchored to the button so it
+  // escapes the column's overflow-hidden + the card-list's scroll clipping
+  // (เดิม absolute → การ์ดล่างสุดเมนูโดนตัด). Flips up when near the viewport bottom.
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  function closeMenu() {
+    setShowMenu(false);
+    setMenuPos(null);
+  }
+
+  function toggleMenu() {
+    if (showMenu) return closeMenu();
+    const el = menuBtnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const optionCount = APPLICATION_STATUSES.filter((s) => s !== currentStatus).length;
+    const menuH = optionCount * 40 + 8;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow >= menuH + 8 ? r.bottom + 4 : Math.max(8, r.top - menuH - 4);
+    setMenuPos({ left: r.left, top, width: r.width });
+    setShowMenu(true);
+  }
+
+  // Fixed popover doesn't follow the card when its column scrolls → close on scroll/resize.
+  useEffect(() => {
+    if (!showMenu) return;
+    const close = () => closeMenu();
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [showMenu]);
 
   function change(next: ApplicationStatus) {
-    setShowMenu(false);
+    closeMenu();
     if (next === currentStatus) return;
     startTransition(async () => {
       try {
@@ -189,27 +224,35 @@ function ApplicationCard({
         )}
       </Link>
       {canWrite && (
-        <div className="relative mt-2">
+        <div className="mt-2">
           <button
+            ref={menuBtnRef}
             type="button"
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={toggleMenu}
             className="w-full h-10 text-xs font-medium text-zinc-600 hover:text-zinc-900 border border-zinc-200 rounded-lg flex items-center justify-center gap-1"
           >
             ย้ายสถานะ <ChevronDown className="size-3.5" />
           </button>
-          {showMenu && (
-            <div className="absolute top-full left-0 right-0 mt-1 rounded-xl border border-zinc-200 bg-white shadow-lg z-20 overflow-hidden">
-              {APPLICATION_STATUSES.filter((s) => s !== currentStatus).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => change(s)}
-                  className="block w-full text-left px-3 h-10 text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  {STATUS_LABELS[s]}
-                </button>
-              ))}
-            </div>
+          {showMenu && menuPos && (
+            <>
+              {/* backdrop closes on tap-away */}
+              <div className="fixed inset-0 z-[60]" onClick={closeMenu} aria-hidden />
+              <div
+                className="fixed z-[61] rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                style={{ left: menuPos.left, top: menuPos.top, width: menuPos.width }}
+              >
+                {APPLICATION_STATUSES.filter((s) => s !== currentStatus).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => change(s)}
+                    className="block w-full text-left px-3 h-10 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
