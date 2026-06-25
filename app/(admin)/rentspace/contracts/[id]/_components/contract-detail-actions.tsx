@@ -3,13 +3,16 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, Check, PenLine, Download, X } from "lucide-react";
+import { Copy, Check, PenLine, Download, X, Pencil, Trash2 } from "lucide-react";
 import {
   actGenerateSignLink,
   actTerminateContract,
   actRecordDeposit,
   actUploadFile,
   actUpdateContractBilling,
+  actRequestContractEdit,
+  actDecideContractEdit,
+  actDeleteContract,
 } from "../../../_actions";
 import { currentPeriod } from "@/lib/rentspace/format";
 
@@ -424,5 +427,159 @@ export function RecordDepositButton({ contractId }: { contractId: string }) {
         }
       `}</style>
     </>
+  );
+}
+
+// ───────── แก้ไขสัญญา (maker-checker) — เลียนแบบ "ขอยกเลิกบิล" ─────────
+// flow: เซ็นแล้ว → ขอแก้ไข → อีกคนอนุมัติ → กดแก้ไขเพื่อออกฉบับแก้ไข (เซ็นใหม่)
+export function ContractEditRequest({
+  contractId,
+  tenantSigned,
+  editStatus,
+  editRequestReason,
+  editDecisionNote,
+}: {
+  contractId: string;
+  tenantSigned: boolean;
+  editStatus: "none" | "pending" | "approved" | "rejected";
+  editRequestReason?: string | null;
+  editDecisionNote?: string | null;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+
+  // ยังไม่เซ็น → แก้ได้เลย ไม่ต้องขออนุมัติ (ปุ่มแก้ไขอยู่ที่ ContractEditButton บนหน้า)
+  if (!tenantSigned) return null;
+
+  function requestEdit() {
+    const reason = prompt(
+      "เหตุผลที่ขอแก้ไขสัญญาที่เซ็นแล้ว?\n(ต้องให้แอดมินอีกคนอนุมัติก่อนจึงจะแก้ได้ · การแก้จะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่)",
+    );
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      toast.error("กรุณาระบุเหตุผลที่ต้องแก้ไขสัญญา");
+      return;
+    }
+    start(async () => {
+      try {
+        await actRequestContractEdit(contractId, reason.trim());
+        toast.success("ส่งคำขอแก้ไขแล้ว — รอแอดมินอีกคนอนุมัติ");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ส่งคำขอไม่สำเร็จ");
+      }
+    });
+  }
+
+  function decide(decision: "approve" | "reject") {
+    if (decision === "approve" && !confirm("ยืนยันอนุมัติให้แก้ไขสัญญานี้?")) return;
+    const note = decision === "reject" ? prompt("เหตุผลที่ไม่อนุมัติ (ถ้ามี)") ?? "" : "";
+    start(async () => {
+      try {
+        await actDecideContractEdit(contractId, decision, note || undefined);
+        toast.success(decision === "approve" ? "อนุมัติแก้ไขสัญญาแล้ว" : "ปฏิเสธคำขอแก้ไขแล้ว");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
+      }
+    });
+  }
+
+  // none → ปุ่มขอแก้ไข
+  if (editStatus === "none") {
+    return (
+      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={requestEdit} disabled={pending}>
+        <Pencil className="h-4 w-4" /> ขอแก้ไขสัญญา
+      </button>
+    );
+  }
+
+  // pending → รออนุมัติ + ปุ่มอนุมัติ/ปฏิเสธ (checker ≠ requester บังคับฝั่ง server)
+  if (editStatus === "pending") {
+    return (
+      <div className="space-y-2.5">
+        <div
+          className="rounded-xl px-3 py-2.5 text-[12.5px]"
+          style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+        >
+          <div className="font-semibold">รออนุมัติแก้ไขสัญญา</div>
+          {editRequestReason && <div className="mt-0.5">เหตุผล: {editRequestReason}</div>}
+        </div>
+        <div className="flex gap-2">
+          <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" onClick={() => decide("approve")} disabled={pending}>
+            <Check className="h-4 w-4" /> อนุมัติ
+          </button>
+          <button
+            className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0"
+            style={{ color: "var(--rs-danger)" }}
+            onClick={() => decide("reject")}
+            disabled={pending}
+          >
+            <X className="h-4 w-4" /> ปฏิเสธ
+          </button>
+        </div>
+        <p className="text-[11px]" style={{ color: "var(--rs-text-3)" }}>
+          ผู้อนุมัติต้องเป็นแอดมินคนละคนกับผู้ขอ (กันการอนุมัติเอง)
+        </p>
+      </div>
+    );
+  }
+
+  // approved → แบนเนอร์ชวนกดแก้ไข
+  if (editStatus === "approved") {
+    return (
+      <div
+        className="rounded-xl px-3 py-2.5 text-[12.5px]"
+        style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}
+      >
+        <div className="font-semibold">อนุมัติแล้ว — กดปุ่ม “แก้ไขสัญญา” เพื่อออกฉบับแก้ไข</div>
+        <div className="mt-0.5">เมื่อบันทึก ระบบจะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่</div>
+      </div>
+    );
+  }
+
+  // rejected → แบนเนอร์ + ขอใหม่ได้
+  return (
+    <div className="space-y-2">
+      <div
+        className="rounded-xl px-3 py-2.5 text-[12.5px]"
+        style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+      >
+        <div className="font-semibold">คำขอแก้ไขถูกปฏิเสธ</div>
+        {editDecisionNote && <div className="mt-0.5">หมายเหตุ: {editDecisionNote}</div>}
+      </div>
+      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={requestEdit} disabled={pending}>
+        <Pencil className="h-4 w-4" /> ขอแก้ไขใหม่อีกครั้ง
+      </button>
+    </div>
+  );
+}
+
+// ───────── ลบสัญญา — แสดงเฉพาะเมื่อเปิดสิทธิ์ (กันลบที่มีบิลผ่าน thrown error) ─────────
+export function DeleteContractButton({ contractId }: { contractId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  function go() {
+    if (!confirm("ยืนยันลบสัญญานี้ถาวร?\n(ลบไม่ได้ถ้ามีบิลผูกอยู่ — ให้ใช้ “ยกเลิกสัญญา” แทน)")) return;
+    start(async () => {
+      try {
+        await actDeleteContract(contractId);
+        toast.success("ลบสัญญาแล้ว");
+        router.push("/rentspace/contracts");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+      }
+    });
+  }
+  return (
+    <button
+      className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0"
+      style={{ color: "var(--rs-danger)" }}
+      onClick={go}
+      disabled={pending}
+    >
+      <Trash2 className="h-4 w-4" /> ลบสัญญา
+    </button>
   );
 }

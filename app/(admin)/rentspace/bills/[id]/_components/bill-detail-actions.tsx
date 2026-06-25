@@ -490,15 +490,19 @@ const BILL_KIND_OPTS: { value: string; label: string }[] = [
   { value: "electric", label: "ค่าไฟ" },
   { value: "water", label: "ค่าน้ำ" },
   { value: "late_fee", label: "ค่าปรับล่าช้า" },
+  { value: "land_tax", label: "ภาษีที่ดิน (ไม่คิด VAT)" },
+  { value: "custom", label: "ค่าใช้จ่ายเพิ่มเติม" },
   { value: "other", label: "อื่น ๆ" },
 ];
 
 export function EditBillButton({
   billId,
   items,
+  vatPercent = 0,
 }: {
   billId: string;
   items: { kind: string; label: string; amount: number; vatable: boolean }[];
+  vatPercent?: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -526,7 +530,19 @@ export function EditBillButton({
     setRows((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  const total = rows.reduce((s, r) => s + (Number.isFinite(num(r.amount)) ? num(r.amount) : 0), 0);
+  // ───── พรีวิวบิลสด — คิดยอดเหมือน computeBillTotals ฝั่งเซิร์ฟเวอร์ ─────
+  // subtotal = รวมทุก item · VAT คิดเฉพาะ item ที่ติ๊ก "คิด VAT" (land_tax ไม่คิด)
+  // หมายเหตุ: ส่วนลดที่อนุมัติแล้วจะถูกหักเพิ่มฝั่งเซิร์ฟเวอร์ตอนบันทึก —
+  // พรีวิวนี้แสดงยอด "ก่อนส่วนลด" เพื่อให้เห็นผลของการแก้ item ทันที.
+  const round2 = (x: number) => Math.round(x * 100) / 100;
+  const previewSubtotal = round2(
+    rows.reduce((s, r) => s + (Number.isFinite(num(r.amount)) ? num(r.amount) : 0), 0),
+  );
+  const previewVatBase = round2(
+    rows.reduce((s, r) => s + (r.vatable && Number.isFinite(num(r.amount)) ? num(r.amount) : 0), 0),
+  );
+  const previewVat = round2(previewVatBase * (vatPercent / 100));
+  const previewTotal = round2(previewSubtotal + previewVat);
 
   function submit() {
     const clean = rows
@@ -567,7 +583,11 @@ export function EditBillButton({
                     className="rs-d-input"
                     style={{ height: 38, flex: 1 }}
                     value={r.kind}
-                    onChange={(e) => patch(i, { kind: e.target.value })}
+                    onChange={(e) => {
+                      const kind = e.target.value;
+                      // ภาษีที่ดินเป็นภาษีส่งผ่าน → บังคับไม่คิด VAT ทันทีเพื่อกัน base พอง
+                      patch(i, kind === "land_tax" ? { kind, vatable: false } : { kind });
+                    }}
                     aria-label="ประเภทรายการ"
                   >
                     {BILL_KIND_OPTS.map((o) => (
@@ -616,16 +636,43 @@ export function EditBillButton({
           <button type="button" onClick={addRow} className="rs-btn rs-btn-ghost w-full">
             <Plus className="h-4 w-4" /> เพิ่มรายการ
           </button>
+
+          {/* พรีวิวบิลสด — อัปเดตยอดทันทีที่แก้รายการ */}
           <div
-            className="flex items-center justify-between pt-2"
-            style={{ borderTop: "1px solid var(--rs-border)" }}
+            className="rounded-xl p-3 mt-1"
+            style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
           >
-            <span className="text-[13px]" style={{ color: "var(--rs-text-2)" }}>
-              รวมก่อนภาษี/ส่วนลด
-            </span>
-            <span className="font-bold tabular-nums" style={{ color: "var(--rs-text)" }}>
-              {formatBaht(total)}
-            </span>
+            <div className="text-[11.5px] font-semibold uppercase mb-1.5" style={{ color: "var(--rs-text-3)" }}>
+              พรีวิวบิลสด
+            </div>
+            <div className="flex items-center justify-between py-0.5 text-[13px]">
+              <span style={{ color: "var(--rs-text-2)" }}>ยอดก่อนภาษี</span>
+              <span className="tabular-nums font-medium" style={{ color: "var(--rs-text)" }}>
+                {formatBaht(previewSubtotal)}
+              </span>
+            </div>
+            {vatPercent > 0 && (
+              <div className="flex items-center justify-between py-0.5 text-[13px]">
+                <span style={{ color: "var(--rs-text-2)" }}>ภาษีมูลค่าเพิ่ม (VAT {vatPercent}%)</span>
+                <span className="tabular-nums font-medium" style={{ color: "var(--rs-text)" }}>
+                  {formatBaht(previewVat)}
+                </span>
+              </div>
+            )}
+            <div
+              className="flex items-center justify-between pt-1.5 mt-1"
+              style={{ borderTop: "1px solid var(--rs-border)" }}
+            >
+              <span className="text-[13.5px] font-semibold" style={{ color: "var(--rs-text)" }}>
+                ยอดรวมทั้งสิ้น
+              </span>
+              <span className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-brand)" }}>
+                {formatBaht(previewTotal)}
+              </span>
+            </div>
+            <p className="text-[11px] mt-1.5" style={{ color: "var(--rs-text-3)" }}>
+              VAT คิดเฉพาะรายการที่ติ๊ก “คิด VAT” · ส่วนลดที่อนุมัติแล้วจะหักเพิ่มตอนบันทึก
+            </p>
           </div>
         </Modal>
       )}

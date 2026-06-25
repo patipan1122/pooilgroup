@@ -52,6 +52,10 @@ export async function GET(req: NextRequest) {
     let errors = 0;
     for (const c of contracts) {
       try {
+        // Idempotent: createBillForContract early-returns when a bill for
+        // (contractId, period) already exists → buildBill (rent + meters + late
+        // fee + recurring charges) runs at most once per bill, so re-running the
+        // cron never double-adds line items. res.created=false ⇒ skipped.
         const res = await createBillForContract(c, period, { auto: true, issue: true });
         if (res.created) created++;
         else skipped++;

@@ -3,8 +3,9 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, X, FileText, Check, ChevronLeft, ChevronRight, Search, DoorOpen, User } from "lucide-react";
+import { Plus, X, FileText, Check, ChevronLeft, ChevronRight, Search, DoorOpen, User, Eye, AlertTriangle } from "lucide-react";
 import { actSaveContract, actSaveTenant } from "../../_actions";
+import { ContractPreview, type ContractPreviewProject } from "@/components/rentspace/contract-preview";
 
 type Unit = {
   id: string;
@@ -24,7 +25,34 @@ type Tenant = {
   nickname?: string | null;
   phones?: string[] | null;
 };
-type Template = { id: string; name: string; isDefault: boolean };
+type Template = { id: string; name: string; isDefault: boolean; bodyHtml?: string | null };
+
+/** ค่าตั้งต้นเมื่อ "แก้ไขสัญญาเดิม" — ถ้าไม่ส่ง = สร้างใหม่ */
+type EditInitial = {
+  id: string;
+  unitId: string;
+  tenantId: string;
+  templateId?: string | null;
+  startDate: string;
+  endDate?: string | null;
+  rentAmountThb: number;
+  rentDueDay?: number | null;
+  depositAmountThb: number;
+  depositMonths?: number | null;
+  vatPercent?: number | null;
+  electricRate?: number | null;
+  waterRate?: number | null;
+  lateFeeType?: "none" | "fixed" | "percent_total" | "per_day";
+  lateFeeValue?: number | null;
+  lateFeeGraceDays?: number | null;
+  promoDiscountThb?: number | null;
+  promoMonths?: number | null;
+  billIssueDay?: number | null;
+  customTermsHtml?: string | null;
+  note?: string | null;
+  /** เซ็นแล้วหรือยัง — ใช้โชว์แบนเนอร์เตือนตอนแก้ */
+  tenantSigned?: boolean;
+};
 
 function tenantLabel(t: Tenant): string {
   const person = [t.prefix, t.firstName, t.lastName].filter(Boolean).join(" ").trim();
@@ -72,15 +100,21 @@ const STEPS = ["เลือกห้องว่าง", "ผู้เช่า
 
 export function ContractForm({
   projectId,
+  project,
   units,
   tenants,
   templates,
+  editInitial,
   trigger,
 }: {
   projectId: string;
+  /** ข้อมูลโครงการ/บัญชีรับเงิน — ใช้เรนเดอร์พรีวิวสัญญา */
+  project: ContractPreviewProject;
   units: Unit[];
   tenants: Tenant[];
   templates: Template[];
+  /** ถ้าส่งมา = โหมดแก้ไขสัญญาเดิม (ไม่ใช่สร้างใหม่) */
+  editInitial?: EditInitial;
   /** optional custom open button; defaults to a primary "ทำสัญญาใหม่" */
   trigger?: React.ReactNode;
 }) {
@@ -88,30 +122,35 @@ export function ContractForm({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [step, setStep] = useState(0);
+  const [showPreview, setShowPreview] = useState(false); // มือถือ: เปิด/ปิด sheet พรีวิว
 
   const today = new Date().toISOString().slice(0, 10);
-  const defaultTemplate = templates.find((t) => t.isDefault)?.id ?? "";
+  const defaultTemplate = editInitial?.templateId ?? templates.find((t) => t.isDefault)?.id ?? "";
+  const isEdit = !!editInitial;
+  const editSigned = !!editInitial?.tenantSigned;
 
-  // ── form state ──────────────────────────────────────────────
-  const [unitId, setUnitId] = useState("");
-  const [tenantId, setTenantId] = useState("");
+  // ── form state (prefill จาก editInitial ถ้ามี) ─────────────────
+  const [unitId, setUnitId] = useState(editInitial?.unitId ?? "");
+  const [tenantId, setTenantId] = useState(editInitial?.tenantId ?? "");
   const [templateId, setTemplateId] = useState(defaultTemplate);
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(editInitial?.startDate ?? today);
+  const [endDate, setEndDate] = useState(editInitial?.endDate ?? "");
   const [termMonths, setTermMonths] = useState(""); // ตัวช่วยคำนวณวันสิ้นสุด
-  const [rentAmount, setRentAmount] = useState("");
-  const [rentDueDay, setRentDueDay] = useState("5");
-  const [depositAmount, setDepositAmount] = useState("");
-  const [vatPercent, setVatPercent] = useState("0");
-  const [electricRate, setElectricRate] = useState("");
-  const [waterRate, setWaterRate] = useState("");
-  const [lateFeeType, setLateFeeType] = useState<"none" | "fixed" | "percent_total" | "per_day">("none");
-  const [lateFeeValue, setLateFeeValue] = useState("");
-  const [lateFeeGraceDays, setLateFeeGraceDays] = useState("7");
-  const [promoDiscount, setPromoDiscount] = useState("");
-  const [promoMonths, setPromoMonths] = useState("");
-  const [billIssueDay, setBillIssueDay] = useState("");
-  const [note, setNote] = useState("");
+  const [rentAmount, setRentAmount] = useState(editInitial ? String(editInitial.rentAmountThb) : "");
+  const [rentDueDay, setRentDueDay] = useState(String(editInitial?.rentDueDay ?? 5));
+  const [depositAmount, setDepositAmount] = useState(editInitial ? String(editInitial.depositAmountThb) : "");
+  const [vatPercent, setVatPercent] = useState(String(editInitial?.vatPercent ?? 0));
+  const [electricRate, setElectricRate] = useState(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
+  const [waterRate, setWaterRate] = useState(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
+  const [lateFeeType, setLateFeeType] = useState<"none" | "fixed" | "percent_total" | "per_day">(editInitial?.lateFeeType ?? "none");
+  const [lateFeeValue, setLateFeeValue] = useState(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
+  const [lateFeeGraceDays, setLateFeeGraceDays] = useState(String(editInitial?.lateFeeGraceDays ?? 7));
+  const [promoDiscount, setPromoDiscount] = useState(editInitial?.promoDiscountThb ? String(editInitial.promoDiscountThb) : "");
+  const [promoMonths, setPromoMonths] = useState(editInitial?.promoMonths ? String(editInitial.promoMonths) : "");
+  const [billIssueDay, setBillIssueDay] = useState(editInitial?.billIssueDay ? String(editInitial.billIssueDay) : "");
+  const [note, setNote] = useState(editInitial?.note ?? "");
+  // เนื้อหาสัญญาแบบแก้ได้อิสระ — โหลดจากแม่แบบ/สัญญาเดิม แล้วปรับสดได้
+  const [customTermsHtml, setCustomTermsHtml] = useState(editInitial?.customTermsHtml ?? "");
 
   // step-1 unit search
   const [unitSearch, setUnitSearch] = useState("");
@@ -156,25 +195,27 @@ export function ContractForm({
 
   function reset() {
     setStep(0);
-    setUnitId("");
-    setTenantId("");
+    setShowPreview(false);
+    setUnitId(editInitial?.unitId ?? "");
+    setTenantId(editInitial?.tenantId ?? "");
     setTemplateId(defaultTemplate);
-    setStartDate(today);
-    setEndDate("");
+    setStartDate(editInitial?.startDate ?? today);
+    setEndDate(editInitial?.endDate ?? "");
     setTermMonths("");
-    setRentAmount("");
-    setRentDueDay("5");
-    setDepositAmount("");
-    setVatPercent("0");
-    setElectricRate("");
-    setWaterRate("");
-    setLateFeeType("none");
-    setLateFeeValue("");
-    setLateFeeGraceDays("7");
-    setPromoDiscount("");
-    setPromoMonths("");
-    setBillIssueDay("");
-    setNote("");
+    setRentAmount(editInitial ? String(editInitial.rentAmountThb) : "");
+    setRentDueDay(String(editInitial?.rentDueDay ?? 5));
+    setDepositAmount(editInitial ? String(editInitial.depositAmountThb) : "");
+    setVatPercent(String(editInitial?.vatPercent ?? 0));
+    setElectricRate(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
+    setWaterRate(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
+    setLateFeeType(editInitial?.lateFeeType ?? "none");
+    setLateFeeValue(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
+    setLateFeeGraceDays(String(editInitial?.lateFeeGraceDays ?? 7));
+    setPromoDiscount(editInitial?.promoDiscountThb ? String(editInitial.promoDiscountThb) : "");
+    setPromoMonths(editInitial?.promoMonths ? String(editInitial.promoMonths) : "");
+    setBillIssueDay(editInitial?.billIssueDay ? String(editInitial.billIssueDay) : "");
+    setNote(editInitial?.note ?? "");
+    setCustomTermsHtml(editInitial?.customTermsHtml ?? "");
     setUnitSearch("");
     setTenantSearch("");
     setNewTenantMode(false);
@@ -203,6 +244,34 @@ export function ContractForm({
     setNewTenantMode(false);
     setTenantId(id);
   }
+
+  // เลือกแม่แบบ → โหลดเนื้อหาแม่แบบเข้า "เนื้อสัญญาแบบแก้ได้" (ถ้ายังไม่เคยแก้เอง)
+  function onPickTemplate(id: string) {
+    setTemplateId(id);
+    const tpl = templates.find((t) => t.id === id);
+    // เติมเนื้อหาก็ต่อเมื่อช่องว่าง เพื่อไม่ทับสิ่งที่ผู้ใช้พิมพ์เอง
+    if (tpl?.bodyHtml && !customTermsHtml.trim()) setCustomTermsHtml(tpl.bodyHtml);
+  }
+
+  // ── ค่าที่ส่งให้พรีวิว (อัปเดตสดตามฟอร์ม) ──────────────────────
+  const previewTenantName =
+    selectedTenant ? tenantLabel(selectedTenant) : newTenantValid ? ntName : "ผู้เช่า";
+  const previewBody = customTermsHtml.trim()
+    ? customTermsHtml
+    : templates.find((t) => t.id === templateId)?.bodyHtml ?? "";
+  const previewValues = {
+    tenantName: previewTenantName,
+    unitCode: selectedUnit?.code ?? "—",
+    unitName: selectedUnit?.name ?? null,
+    rentAmountThb: num(rentAmount),
+    depositAmountThb: num(depositAmount),
+    depositMonths:
+      num(rentAmount) > 0 ? Math.round((num(depositAmount) / num(rentAmount)) * 10) / 10 : 0,
+    rentDueDay: Number(rentDueDay) || 5,
+    startDate,
+    endDate: endDate || null,
+    vatPercent: num(vatPercent),
+  };
 
   // ── ตัวช่วย deposit / term ───────────────────────────────────
   function setDepositByMonths(months: number) {
@@ -262,7 +331,8 @@ export function ContractForm({
           finalTenantId = created.id;
         }
 
-        await actSaveContract({
+        const res = await actSaveContract({
+          id: editInitial?.id,
           projectId,
           unitId,
           tenantId: finalTenantId,
@@ -281,10 +351,15 @@ export function ContractForm({
           promoDiscountThb: promoDiscount ? num(promoDiscount) : undefined,
           promoMonths: promoMonths ? Number(promoMonths) : undefined,
           billIssueDay: billIssueDay ? Number(billIssueDay) : undefined,
+          customTermsHtml: customTermsHtml.trim() || undefined,
           note: note || undefined,
           activate,
         });
-        toast.success(activate ? "เริ่มสัญญาเรียบร้อย" : "บันทึกร่างสัญญาแล้ว");
+        if (res && "reSignRequired" in res && res.reSignRequired) {
+          toast.success("ออกฉบับแก้ไขแล้ว — ส่งลิงก์ให้ผู้เช่าเซ็นใหม่");
+        } else {
+          toast.success(isEdit ? "บันทึกสัญญาแล้ว" : activate ? "เริ่มสัญญาเรียบร้อย" : "บันทึกร่างสัญญาแล้ว");
+        }
         setOpen(false);
         reset();
         router.refresh();
@@ -314,9 +389,11 @@ export function ContractForm({
           onClick={close}
         >
           <div
-            className="rs-card w-full sm:max-w-2xl max-h-[88vh] flex flex-col rounded-b-none sm:rounded-2xl overflow-hidden"
+            className="w-full sm:max-w-2xl lg:max-w-5xl max-h-[92vh] sm:max-h-[88vh] flex"
             onClick={(e) => e.stopPropagation()}
           >
+          {/* ── LEFT: form column ── */}
+          <div className="rs-card w-full lg:w-[480px] lg:flex-shrink-0 max-h-[92vh] sm:max-h-[88vh] flex flex-col rounded-b-none sm:rounded-2xl lg:rounded-r-none overflow-hidden">
             {/* ── sticky header + stepper ── */}
             <div
               className="sticky top-0 z-10 px-5 pt-4 pb-3 border-b"
@@ -324,7 +401,7 @@ export function ContractForm({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-lg" style={{ color: "var(--rs-text)" }}>
-                  <FileText className="h-5 w-5" style={{ color: "var(--rs-brand)" }} /> ทำสัญญาใหม่
+                  <FileText className="h-5 w-5" style={{ color: "var(--rs-brand)" }} /> {isEdit ? "แก้ไขสัญญา" : "ทำสัญญาใหม่"}
                 </div>
                 <button onClick={close} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                   <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
@@ -372,6 +449,26 @@ export function ContractForm({
 
             {/* ── scrollable body ── */}
             <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+              {/* แบนเนอร์เตือนเมื่อแก้สัญญาที่เซ็นแล้ว */}
+              {editSigned && (
+                <div
+                  className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+                  style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+                >
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <span>สัญญานี้เซ็นแล้ว — การบันทึกจะออกฉบับแก้ไขและต้องให้ผู้เช่าเซ็นใหม่</span>
+                </div>
+              )}
+
+              {/* มือถือ: ปุ่มเปิดพรีวิวสัญญาเต็มจอ */}
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                className="lg:hidden rs-btn rs-btn-ghost w-full justify-center min-h-[44px]"
+              >
+                <Eye className="h-4 w-4" /> ดูตัวอย่างสัญญา
+              </button>
+
               {/* STEP 1 — เลือกห้องว่าง */}
               {step === 0 && (
                 <div className="space-y-3">
@@ -563,7 +660,7 @@ export function ContractForm({
               {step === 2 && (
                 <div className="space-y-4">
                   <Field label="แม่แบบสัญญา (ไม่บังคับ)">
-                    <select className="rs-input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                    <select className="rs-input" value={templateId} onChange={(e) => onPickTemplate(e.target.value)}>
                       <option value="">— ไม่ใช้แม่แบบ —</option>
                       {templates.map((t) => (
                         <option key={t.id} value={t.id}>
@@ -573,6 +670,19 @@ export function ContractForm({
                       ))}
                     </select>
                   </Field>
+
+                  {/* เนื้อสัญญาแบบแก้ได้อิสระ — โหลดจากแม่แบบ แล้วปรับสด เห็นในพรีวิวทันที */}
+                  <Field label="เนื้อหาสัญญา (แก้ไขได้ · ใช้ {{tenantName}} {{rentAmount}} ฯลฯ เป็นตัวแปร)">
+                    <textarea
+                      className="rs-input min-h-[120px] font-mono"
+                      value={customTermsHtml}
+                      onChange={(e) => setCustomTermsHtml(e.target.value)}
+                      placeholder="เว้นว่าง = ใช้เนื้อสัญญามาตรฐาน · พิมพ์/วาง HTML หรือข้อความเพื่อกำหนดเอง"
+                    />
+                  </Field>
+                  <p className="text-[11.5px] -mt-2" style={{ color: "var(--rs-text-3)" }}>
+                    ตัวแปรที่ใช้ได้: {"{{tenantName}} {{unitCode}} {{rentAmount}} {{depositAmount}} {{depositMonths}} {{rentDueDay}} {{startDate}} {{endDate}} {{landlordName}} {{bankInfo}} {{today}}"}
+                  </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -797,6 +907,10 @@ export function ContractForm({
                 >
                   ถัดไป <ChevronRight className="h-4 w-4" />
                 </button>
+              ) : isEdit ? (
+                <button className="rs-btn flex-1 justify-center min-h-[44px] sm:min-h-0" disabled={pending} onClick={() => submit(true)}>
+                  {pending ? "กำลังบันทึก…" : editSigned ? "บันทึก + ออกฉบับแก้ไข" : "บันทึกการแก้ไข"}
+                </button>
               ) : (
                 <>
                   <button className="rs-btn rs-btn-ghost flex-1 justify-center min-h-[44px] sm:min-h-0 basis-[120px]" disabled={pending} onClick={() => submit(false)}>
@@ -807,6 +921,49 @@ export function ContractForm({
                   </button>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* ── RIGHT: live A4 preview (desktop sticky) ── */}
+          <div className="hidden lg:flex flex-col flex-1 rs-card rounded-l-none border-l-0 max-h-[88vh] overflow-hidden">
+            <div
+              className="sticky top-0 z-10 flex items-center gap-2 px-5 py-3 border-b font-bold"
+              style={{ background: "var(--rs-bg-2)", borderColor: "var(--rs-border)", color: "var(--rs-text)" }}
+            >
+              <Eye className="h-4 w-4" style={{ color: "var(--rs-brand)" }} /> ตัวอย่างสัญญา (อัปเดตสด)
+            </div>
+            <div className="flex-1 overflow-y-auto p-4" style={{ background: "var(--rs-bg-3)" }}>
+              <div className="mx-auto shadow-sm rounded-lg overflow-hidden" style={{ maxWidth: 720 }}>
+                <ContractPreview values={previewValues} project={project} bodyHtml={previewBody} />
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── mobile: full-screen preview sheet ── */}
+      {open && showPreview && (
+        <div className="lg:hidden fixed inset-0 z-[60] flex flex-col bg-black/40" onClick={() => setShowPreview(false)}>
+          <div
+            className="mt-auto sm:m-auto w-full sm:max-w-2xl max-h-[94vh] flex flex-col rs-card rounded-b-none sm:rounded-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b font-bold"
+              style={{ background: "#fff", borderColor: "var(--rs-border)", color: "var(--rs-text)" }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Eye className="h-4 w-4" style={{ color: "var(--rs-brand)" }} /> ตัวอย่างสัญญา
+              </span>
+              <button onClick={() => setShowPreview(false)} className="inline-flex size-11 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
+                <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3" style={{ background: "var(--rs-bg-3)" }}>
+              <div className="mx-auto shadow-sm rounded-lg overflow-hidden bg-white">
+                <ContractPreview values={previewValues} project={project} bodyHtml={previewBody} />
+              </div>
             </div>
           </div>
         </div>

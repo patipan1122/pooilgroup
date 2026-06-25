@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { toNum } from "@/lib/rentspace/format";
+import { prisma } from "@/lib/prisma";
 import { RsPage, RsHeader } from "@/components/rentspace/ui";
 import SettingsForm from "./_components/settings-form";
 
@@ -13,6 +14,28 @@ export default async function RentSpaceSettingsPage() {
   if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   const project = await getPrimaryProject(session.user.org_id);
+
+  // ค่าใช้จ่ายประจำ (recurring charges) ของโครงการนี้ — โหลดเฉพาะเมื่อมีโครงการแล้ว
+  const recurringCharges = project
+    ? (
+        await prisma.rentalRecurringCharge.findMany({
+          where: { projectId: project.id, orgId: session.user.org_id },
+          orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
+          include: { unit: { select: { code: true, name: true } } },
+        })
+      ).map((c) => ({
+        id: c.id,
+        unitId: c.unitId,
+        kind: c.kind,
+        label: c.label,
+        amountThb: toNum(c.amountThb),
+        vatable: c.vatable,
+        isActive: c.isActive,
+        sort: c.sort,
+        unitCode: c.unit?.code ?? null,
+        unitName: c.unit?.name ?? null,
+      }))
+    : [];
 
   // Flatten Decimal/Date into plain values for the client component.
   const initial = project
@@ -43,6 +66,13 @@ export default async function RentSpaceSettingsPage() {
         billTaxId: project.billTaxId ?? "",
         billBranch: project.billBranch ?? "",
         billAddress: project.billAddress ?? "",
+        contractEditUnlocked: project.contractEditUnlocked,
+        contractDeleteUnlocked: project.contractDeleteUnlocked,
+        bankName: project.bankName ?? "",
+        bankAccountNo: project.bankAccountNo ?? "",
+        bankAccountHolder: project.bankAccountHolder ?? "",
+        promptpayId: project.promptpayId ?? "",
+        paymentNote: project.paymentNote ?? "",
       }
     : null;
 
@@ -56,7 +86,7 @@ export default async function RentSpaceSettingsPage() {
             : "ตั้งค่าโครงการเช่าครั้งแรก เพื่อเริ่มใช้งานระบบ"
         }
       />
-      <SettingsForm initial={initial} />
+      <SettingsForm initial={initial} recurringCharges={recurringCharges} />
     </RsPage>
   );
 }

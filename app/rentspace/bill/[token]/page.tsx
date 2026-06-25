@@ -5,9 +5,11 @@
 import "@/components/rentspace/tokens.css";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { getBillByPublicToken } from "@/lib/rentspace/data";
 import { periodLabel } from "@/lib/rentspace/format";
 import { BillDocument, BILL_DOC_STYLE } from "@/components/rentspace/bill-document";
+import { loadBillMeterReadings, projectBankInfo } from "@/lib/rentspace/bill-extras";
 import { PublicPrintButton } from "./_components/public-print-button";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,10 @@ export default async function PublicBillPage({ params }: { params: Promise<{ tok
   const { token } = await params;
   const bill = await getBillByPublicToken(token);
   if (!bill) notFound();
+
+  // เลขมิเตอร์ก่อน→หลัง ของงวดนี้ + ช่องทางชำระเงินของโครงการ (จ่ายง่าย)
+  const meterReadings = await loadBillMeterReadings(prisma, bill.unitId, bill.period);
+  const bank = projectBankInfo(bill.project);
 
   return (
     <div className="rs-scope min-h-screen pb-10" style={{ background: "var(--rs-bg-2)" }}>
@@ -43,7 +49,7 @@ export default async function PublicBillPage({ params }: { params: Promise<{ tok
         {/* A4 invoice */}
         <div className="rs-card p-6">
           <div id="rs-bill">
-            <BillDocument bill={bill} />
+            <BillDocument bill={{ ...bill, meterReadings, bank }} />
           </div>
         </div>
       </div>

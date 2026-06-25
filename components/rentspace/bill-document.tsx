@@ -5,6 +5,7 @@
 // never recomputes. NOTE: bills/[id]/page.tsx keeps its own inline copy (owned by
 // another agent) — this component is for the new read-only surfaces only.
 
+import { Zap, Droplet, Landmark } from "lucide-react";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel } from "@/lib/rentspace/format";
 
 const ITEM_KIND_LABELS: Record<string, string> = {
@@ -13,6 +14,10 @@ const ITEM_KIND_LABELS: Record<string, string> = {
   water: "ค่าน้ำ",
   late_fee: "ค่าปรับล่าช้า",
   discount: "ส่วนลด",
+  land_tax: "ภาษีที่ดิน",
+  custom: "ค่าใช้จ่ายเพิ่มเติม",
+  common_fee: "ค่าส่วนกลาง",
+  waste: "ค่าขยะ",
   other: "อื่น ๆ",
 };
 
@@ -24,6 +29,18 @@ type BillItem = {
   unitPrice: unknown;
   amount: unknown;
   vatable: boolean;
+};
+
+/** มิเตอร์ก่อน→หลัง สำหรับแสดงให้ผู้เช่าตรวจการคิดค่าน้ำ-ไฟ. */
+type MeterDetail = { prev: number; curr: number; usage: number; rate: number; amount: number };
+
+/** ช่องทางชำระเงินของโครงการ (บัญชี/พร้อมเพย์) — แสดงท้ายบิลให้ผู้เช่าจ่ายง่าย. */
+export type BillPaymentInfo = {
+  bankName?: string | null;
+  bankAccountNo?: string | null;
+  bankAccountHolder?: string | null;
+  promptpayId?: string | null;
+  paymentNote?: string | null;
 };
 
 export type BillDocumentData = {
@@ -55,7 +72,96 @@ export type BillDocumentData = {
     taxId?: string | null;
   };
   items: BillItem[];
+  /** เลขมิเตอร์ก่อน→หลังของงวดนี้ (ไฟ/น้ำ) — เสริม แสดงถ้ามี. */
+  meterReadings?: { electric?: MeterDetail; water?: MeterDetail };
+  /** ช่องทางชำระเงิน — เสริม แสดงถ้ามี. */
+  bank?: BillPaymentInfo;
 };
+
+function hasBank(b?: BillPaymentInfo): boolean {
+  return !!(b && (b.bankName || b.bankAccountNo || b.bankAccountHolder || b.promptpayId || b.paymentNote));
+}
+
+/** บล็อกแสดงเลขมิเตอร์ ก่อน→หลัง = ใช้ N หน่วย (ไฟ/น้ำ). */
+function MeterDetailBlock({ meters }: { meters: { electric?: MeterDetail; water?: MeterDetail } }) {
+  const rows: { icon: React.ReactNode; label: string; m: MeterDetail }[] = [];
+  if (meters.electric) rows.push({ icon: <Zap className="h-3.5 w-3.5" />, label: "ไฟ", m: meters.electric });
+  if (meters.water) rows.push({ icon: <Droplet className="h-3.5 w-3.5" />, label: "น้ำ", m: meters.water });
+  if (rows.length === 0) return null;
+  return (
+    <div
+      className="mt-3 rounded-xl px-3.5 py-2.5"
+      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+    >
+      <div className="text-[11.5px] font-semibold uppercase mb-1.5" style={{ color: "var(--rs-text-3)" }}>
+        การอ่านมิเตอร์งวดนี้
+      </div>
+      <div className="space-y-1">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+            <span className="inline-flex items-center" style={{ color: "var(--rs-text-3)" }}>
+              {r.icon}
+            </span>
+            <span style={{ color: "var(--rs-text)" }}>{r.label}:</span>
+            <span className="tabular-nums">
+              เลขก่อน <b style={{ color: "var(--rs-text)" }}>{r.m.prev.toLocaleString()}</b> →{" "}
+              เลขหลัง <b style={{ color: "var(--rs-text)" }}>{r.m.curr.toLocaleString()}</b> ={" "}
+              ใช้ <b style={{ color: "var(--rs-text)" }}>{r.m.usage.toLocaleString()}</b> หน่วย
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** บล็อกช่องทางชำระเงิน — โดดเด่น คัดลอกง่าย สำหรับหน้าผู้เช่า. */
+function PaymentBlock({ bank }: { bank: BillPaymentInfo }) {
+  return (
+    <div
+      className="mt-5 rounded-xl px-4 py-3.5"
+      style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Landmark className="h-4 w-4" style={{ color: "var(--rs-brand)" }} />
+        <span className="text-[13.5px] font-bold" style={{ color: "var(--rs-text)" }}>
+          ช่องทางชำระเงิน
+        </span>
+      </div>
+      <div className="space-y-1 text-[13px]" style={{ color: "var(--rs-text)" }}>
+        {bank.bankName && (
+          <div className="flex justify-between gap-3">
+            <span style={{ color: "var(--rs-text-2)" }}>ธนาคาร</span>
+            <b className="text-right">{bank.bankName}</b>
+          </div>
+        )}
+        {bank.bankAccountNo && (
+          <div className="flex justify-between gap-3">
+            <span style={{ color: "var(--rs-text-2)" }}>เลขบัญชี</span>
+            <b className="text-right tabular-nums select-all">{bank.bankAccountNo}</b>
+          </div>
+        )}
+        {bank.bankAccountHolder && (
+          <div className="flex justify-between gap-3">
+            <span style={{ color: "var(--rs-text-2)" }}>ชื่อบัญชี</span>
+            <b className="text-right">{bank.bankAccountHolder}</b>
+          </div>
+        )}
+        {bank.promptpayId && (
+          <div className="flex justify-between gap-3">
+            <span style={{ color: "var(--rs-text-2)" }}>พร้อมเพย์</span>
+            <b className="text-right tabular-nums select-all">{bank.promptpayId}</b>
+          </div>
+        )}
+      </div>
+      {bank.paymentNote && (
+        <div className="text-[12px] mt-2 pt-2 border-t" style={{ color: "var(--rs-text-2)", borderColor: "var(--rs-border)" }}>
+          {bank.paymentNote}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TotalRow({
   label,
@@ -220,6 +326,9 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
         </table>
       </div>
 
+      {/* meter detail — เลขมิเตอร์ก่อน→หลัง ให้ผู้เช่าตรวจค่าน้ำ-ไฟ */}
+      {bill.meterReadings && <MeterDetailBlock meters={bill.meterReadings} />}
+
       {/* totals */}
       <div className="mt-4 pt-3 border-t" style={{ borderColor: "var(--rs-border)" }}>
         <div className="ml-auto max-w-xs">
@@ -232,6 +341,9 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
           <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
         </div>
       </div>
+
+      {/* payment — ช่องทางชำระเงิน (โอน/พร้อมเพย์) ให้ผู้เช่าจ่ายง่าย */}
+      {hasBank(bill.bank) && bill.bank && <PaymentBlock bank={bill.bank} />}
     </div>
   );
 }

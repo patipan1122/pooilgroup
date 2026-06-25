@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { Zap, Droplet, Landmark } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
@@ -12,6 +14,7 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/rentspace/format";
 import { getBill } from "@/lib/rentspace/data";
+import { loadBillMeterReadings, projectBankInfo } from "@/lib/rentspace/bill-extras";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import {
   RecordPaymentButton,
@@ -73,6 +76,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const canOperate = isAdmin || (await userIsModuleAdmin(session.user, "rentspace"));
   const bill = await getBill(session.user.org_id, id);
   if (!bill) notFound();
+  // เลขมิเตอร์ก่อน→หลังของงวดนี้ + ช่องทางชำระเงิน (โชว์บนใบบิลให้ตรวจ/จ่ายง่าย)
+  const meterReadings = await loadBillMeterReadings(prisma, bill.unitId, bill.period);
+  const bank = projectBankInfo(bill.project);
   const canEditBill = isSuper || (bill.project.billEditUnlocked && canOperate);
   const canDeleteBill = isSuper || (bill.project.billDeleteUnlocked && canOperate);
 
@@ -241,6 +247,42 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               </table>
             </div>
 
+            {/* meter detail — เลขมิเตอร์ก่อน→หลัง ให้ตรวจค่าน้ำ-ไฟ */}
+            {meterReadings && (
+              <div
+                className="mt-3 rounded-xl px-3.5 py-2.5"
+                style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+              >
+                <div className="text-[11.5px] font-semibold uppercase mb-1.5" style={{ color: "var(--rs-text-3)" }}>
+                  การอ่านมิเตอร์งวดนี้
+                </div>
+                <div className="space-y-1">
+                  {meterReadings.electric && (
+                    <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                      <Zap className="h-3.5 w-3.5" style={{ color: "var(--rs-text-3)" }} />
+                      <span style={{ color: "var(--rs-text)" }}>ไฟ:</span>
+                      <span className="tabular-nums">
+                        เลขก่อน <b style={{ color: "var(--rs-text)" }}>{meterReadings.electric.prev.toLocaleString()}</b> →{" "}
+                        เลขหลัง <b style={{ color: "var(--rs-text)" }}>{meterReadings.electric.curr.toLocaleString()}</b> ={" "}
+                        ใช้ <b style={{ color: "var(--rs-text)" }}>{meterReadings.electric.usage.toLocaleString()}</b> หน่วย
+                      </span>
+                    </div>
+                  )}
+                  {meterReadings.water && (
+                    <div className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                      <Droplet className="h-3.5 w-3.5" style={{ color: "var(--rs-text-3)" }} />
+                      <span style={{ color: "var(--rs-text)" }}>น้ำ:</span>
+                      <span className="tabular-nums">
+                        เลขก่อน <b style={{ color: "var(--rs-text)" }}>{meterReadings.water.prev.toLocaleString()}</b> →{" "}
+                        เลขหลัง <b style={{ color: "var(--rs-text)" }}>{meterReadings.water.curr.toLocaleString()}</b> ={" "}
+                        ใช้ <b style={{ color: "var(--rs-text)" }}>{meterReadings.water.usage.toLocaleString()}</b> หน่วย
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* totals */}
             <div className="mt-4 pt-3 border-t" style={{ borderColor: "var(--rs-border)" }}>
               <div className="ml-auto max-w-xs">
@@ -253,6 +295,52 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
               </div>
             </div>
+
+            {/* payment — ช่องทางชำระเงิน (โอน/พร้อมเพย์) ให้ผู้เช่าจ่ายง่าย */}
+            {bank && (
+              <div
+                className="mt-5 rounded-xl px-4 py-3.5"
+                style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Landmark className="h-4 w-4" style={{ color: "var(--rs-brand)" }} />
+                  <span className="text-[13.5px] font-bold" style={{ color: "var(--rs-text)" }}>
+                    ช่องทางชำระเงิน
+                  </span>
+                </div>
+                <div className="space-y-1 text-[13px]" style={{ color: "var(--rs-text)" }}>
+                  {bank.bankName && (
+                    <div className="flex justify-between gap-3">
+                      <span style={{ color: "var(--rs-text-2)" }}>ธนาคาร</span>
+                      <b className="text-right">{bank.bankName}</b>
+                    </div>
+                  )}
+                  {bank.bankAccountNo && (
+                    <div className="flex justify-between gap-3">
+                      <span style={{ color: "var(--rs-text-2)" }}>เลขบัญชี</span>
+                      <b className="text-right tabular-nums select-all">{bank.bankAccountNo}</b>
+                    </div>
+                  )}
+                  {bank.bankAccountHolder && (
+                    <div className="flex justify-between gap-3">
+                      <span style={{ color: "var(--rs-text-2)" }}>ชื่อบัญชี</span>
+                      <b className="text-right">{bank.bankAccountHolder}</b>
+                    </div>
+                  )}
+                  {bank.promptpayId && (
+                    <div className="flex justify-between gap-3">
+                      <span style={{ color: "var(--rs-text-2)" }}>พร้อมเพย์</span>
+                      <b className="text-right tabular-nums select-all">{bank.promptpayId}</b>
+                    </div>
+                  )}
+                </div>
+                {bank.paymentNote && (
+                  <div className="text-[12px] mt-2 pt-2 border-t" style={{ color: "var(--rs-text-2)", borderColor: "var(--rs-border)" }}>
+                    {bank.paymentNote}
+                  </div>
+                )}
+              </div>
+            )}
            </div>
           </RsCard>
 
@@ -374,6 +462,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                 {canEditBill && bill.status !== "void" && (
                   <EditBillButton
                     billId={bill.id}
+                    vatPercent={toNum(bill.contract?.vatPercent)}
                     items={items.map((it) => ({
                       kind: it.kind,
                       label: it.label,

@@ -36,8 +36,22 @@ export default async function ContractsPage() {
   // ห้องที่เปิดทำสัญญาได้ = ว่าง/จอง
   const vacantUnits = units.filter((u) => u.status === "vacant" || u.status === "reserved");
 
+  // ข้อมูลโครงการ/บัญชีรับเงิน → ส่งให้พรีวิวสัญญาในฟอร์ม
+  const previewProject = project
+    ? {
+        name: project.name,
+        billCompanyName: project.billCompanyName,
+        address: project.address,
+        bankName: project.bankName,
+        bankAccountNo: project.bankAccountNo,
+        bankAccountHolder: project.bankAccountHolder,
+        promptpayId: project.promptpayId,
+        paymentNote: project.paymentNote,
+      }
+    : { name: "" };
+
   const newContractBtn = project ? (
-    <ContractForm projectId={project.id} units={vacantUnits} tenants={tenants} templates={templates} />
+    <ContractForm projectId={project.id} project={previewProject} units={vacantUnits} tenants={tenants} templates={templates} />
   ) : null;
 
   return (
@@ -105,6 +119,14 @@ export default async function ContractsPage() {
                         >
                           <FileText className="h-3.5 w-3.5" /> {c.contractNo}
                         </Link>
+                        {c.editStatus === "pending" && (
+                          <span
+                            className="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                            style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+                          >
+                            รอแก้ไข
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
                         {c.unit.code}
@@ -153,9 +175,17 @@ export default async function ContractsPage() {
                 href={`/rentspace/contracts/${c.id}`}
                 title={
                   <div className="min-w-0">
-                    <div className="inline-flex items-center gap-1.5">
+                    <div className="inline-flex items-center gap-1.5 flex-wrap">
                       <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--rs-brand)" }} />
                       <span className="truncate">{c.contractNo}</span>
+                      {c.editStatus === "pending" && (
+                        <span
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                          style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+                        >
+                          รอแก้ไข
+                        </span>
+                      )}
                     </div>
                     <div className="truncate text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
                       {c.unit.code}

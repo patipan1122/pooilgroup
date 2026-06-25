@@ -1205,12 +1205,14 @@ export async function actDecideVoidBill(billId: string, decision: "approve" | "r
 
 // ───────── โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (ต้องเปิดสิทธิ์ project.billEditUnlocked) ─────────
 
-const EDITABLE_BILL_KINDS = new Set(["rent", "electric", "water", "late_fee", "other"]);
+const EDITABLE_BILL_KINDS = new Set(["rent", "electric", "water", "late_fee", "land_tax", "custom", "other"]);
 const ITEM_KIND_FALLBACK_LABEL: Record<string, string> = {
   rent: "ค่าเช่า",
   electric: "ค่าไฟ",
   water: "ค่าน้ำ",
   late_fee: "ค่าปรับล่าช้า",
+  land_tax: "ภาษีที่ดิน",
+  custom: "ค่าใช้จ่ายเพิ่มเติม",
   other: "อื่น ๆ",
 };
 

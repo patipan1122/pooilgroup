@@ -2,11 +2,39 @@
 
 import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, Upload, Check, Info, AlertTriangle } from "lucide-react";
+import {
+  Settings,
+  Upload,
+  Check,
+  Info,
+  AlertTriangle,
+  Plus,
+  Pencil,
+  Trash2,
+  Landmark,
+} from "lucide-react";
 import { toast } from "sonner";
-import { actSaveProject, actUploadFile } from "../../_actions";
+import {
+  actSaveProject,
+  actUploadFile,
+  actSaveRecurringCharge,
+  actDeleteRecurringCharge,
+} from "../../_actions";
 
 type LateFeeType = "none" | "fixed" | "percent_total" | "per_day";
+
+export type RecurringCharge = {
+  id: string;
+  unitId: string | null;
+  kind: string;
+  label: string;
+  amountThb: number;
+  vatable: boolean;
+  isActive: boolean;
+  sort: number;
+  unitCode: string | null;
+  unitName: string | null;
+};
 
 type Initial = {
   id: string;
@@ -31,6 +59,13 @@ type Initial = {
   billTaxId: string;
   billBranch: string;
   billAddress: string;
+  contractEditUnlocked: boolean;
+  contractDeleteUnlocked: boolean;
+  bankName: string;
+  bankAccountNo: string;
+  bankAccountHolder: string;
+  promptpayId: string;
+  paymentNote: string;
 };
 
 const LATE_FEE_OPTIONS: { value: LateFeeType; label: string }[] = [
@@ -54,7 +89,13 @@ function slugify(s: string): string {
     .slice(0, 48);
 }
 
-export default function SettingsForm({ initial }: { initial: Initial | null }) {
+export default function SettingsForm({
+  initial,
+  recurringCharges = [],
+}: {
+  initial: Initial | null;
+  recurringCharges?: RecurringCharge[];
+}) {
   const router = useRouter();
   const isFirstTime = !initial;
   const [pending, start] = useTransition();
@@ -83,6 +124,17 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
   const [billTaxId, setBillTaxId] = useState(initial?.billTaxId ?? "");
   const [billBranch, setBillBranch] = useState(initial?.billBranch ?? "");
   const [billAddress, setBillAddress] = useState(initial?.billAddress ?? "");
+  const [contractEditUnlocked, setContractEditUnlocked] = useState(
+    initial?.contractEditUnlocked ?? false,
+  );
+  const [contractDeleteUnlocked, setContractDeleteUnlocked] = useState(
+    initial?.contractDeleteUnlocked ?? false,
+  );
+  const [bankName, setBankName] = useState(initial?.bankName ?? "");
+  const [bankAccountNo, setBankAccountNo] = useState(initial?.bankAccountNo ?? "");
+  const [bankAccountHolder, setBankAccountHolder] = useState(initial?.bankAccountHolder ?? "");
+  const [promptpayId, setPromptpayId] = useState(initial?.promptpayId ?? "");
+  const [paymentNote, setPaymentNote] = useState(initial?.paymentNote ?? "");
 
   function onNameChange(v: string) {
     setName(v);
@@ -163,6 +215,13 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
           billTaxId: billTaxId.trim() || undefined,
           billBranch: billBranch.trim() || undefined,
           billAddress: billAddress.trim() || undefined,
+          contractEditUnlocked,
+          contractDeleteUnlocked,
+          bankName: bankName.trim() || undefined,
+          bankAccountNo: bankAccountNo.trim() || undefined,
+          bankAccountHolder: bankAccountHolder.trim() || undefined,
+          promptpayId: promptpayId.trim() || undefined,
+          paymentNote: paymentNote.trim() || undefined,
         });
         toast.success(isFirstTime ? "สร้างโครงการแล้ว" : "บันทึกการตั้งค่าแล้ว");
         router.refresh();
@@ -269,6 +328,59 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
               value={billAddress}
               onChange={(e) => setBillAddress(e.target.value)}
               placeholder="เลขที่ ... ถนน ... ตำบล ... อำเภอ ... จังหวัด ... รหัสไปรษณีย์"
+            />
+          </Field>
+        </div>
+      </section>
+
+      {/* ── บัญชีรับเงิน ── */}
+      <section className="rs-card p-5 space-y-4">
+        <SectionTitle
+          title="บัญชีรับเงิน (ให้ผู้เช่าจ่ายง่าย)"
+          hint="เลขบัญชีนี้จะแสดงบนบิล สัญญา และหน้าจ่ายเงินออนไลน์ของผู้เช่า"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="ชื่อธนาคาร" hint="ธนาคารที่รับโอนเงินค่าเช่า">
+            <input
+              className="rs-input"
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              placeholder="ไทยพาณิชย์ (SCB)"
+            />
+          </Field>
+          <Field label="เลขที่บัญชี" hint="เลขบัญชีสำหรับรับโอน">
+            <input
+              className="rs-input"
+              value={bankAccountNo}
+              onChange={(e) => setBankAccountNo(e.target.value)}
+              placeholder="8134094107"
+              inputMode="numeric"
+            />
+          </Field>
+          <Field label="ชื่อบัญชี" hint="ชื่อเจ้าของบัญชีตามที่ปรากฏในธนาคาร">
+            <input
+              className="rs-input"
+              value={bankAccountHolder}
+              onChange={(e) => setBankAccountHolder(e.target.value)}
+              placeholder="เจพีซิ้งค์ กรุ๊ป จำกัด"
+            />
+          </Field>
+          <Field label="พร้อมเพย์ (PromptPay)" hint="เบอร์โทร / เลขประจำตัวผู้เสียภาษี (ไม่บังคับ)">
+            <input
+              className="rs-input"
+              value={promptpayId}
+              onChange={(e) => setPromptpayId(e.target.value)}
+              placeholder="0812345678"
+              inputMode="numeric"
+            />
+          </Field>
+          <Field label="หมายเหตุการชำระเงิน" hint="ข้อความเพิ่มเติมที่จะแสดงใต้ช่องทางการจ่ายเงิน (ไม่บังคับ)" full>
+            <textarea
+              className="rs-input"
+              style={{ height: 80, paddingTop: 8, resize: "vertical" }}
+              value={paymentNote}
+              onChange={(e) => setPaymentNote(e.target.value)}
+              placeholder="เช่น โอนแล้วส่งสลิปทาง LINE @rentspace · ชำระภายในวันที่ครบกำหนด"
             />
           </Field>
         </div>
@@ -495,6 +607,42 @@ export default function SettingsForm({ initial }: { initial: Initial | null }) {
         />
       </section>
 
+      {/* ── สิทธิ์จัดการสัญญา (เปิด-ปิดต่อการกระทำ · super_admin ทะลุเสมอ) ── */}
+      <section className="rs-card p-5 space-y-3">
+        <SectionTitle
+          title="สิทธิ์จัดการสัญญา (สำหรับทีมงาน)"
+          hint="เปิด-ปิดว่าให้แอดมิน/ผู้ดูแล RentSpace ทำอะไรกับสัญญาเช่าได้บ้าง · ผู้ดูแลระบบ (super admin) ทำได้ทุกอย่างเสมอ ไม่ต้องเปิดสวิตช์"
+        />
+        <div
+          className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+          style={{ background: "var(--rs-pending-soft)", color: "#8A6400" }}
+        >
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>
+            สัญญาที่เซ็นแล้วถือเป็นเอกสารผูกพัน <b>ไม่ควรแก้/ลบอิสระ</b> — เปิดเฉพาะเมื่อจำเป็น
+            แล้ว<b>ปิดกลับ</b>เมื่อไม่ใช้ · ทุกการแก้/ลบมีบันทึกประวัติไว้ ·
+            สวิตช์เหล่านี้คุมเฉพาะทีมงาน <b>ไม่กระทบ super admin</b>
+          </span>
+        </div>
+        <Toggle
+          checked={contractEditUnlocked}
+          onChange={setContractEditUnlocked}
+          label="อนุญาตให้แก้ไขสัญญา"
+          hint="เปิด = แก้สัญญาที่เซ็นแล้วได้ (จะออกฉบับแก้ไข + ให้เซ็นใหม่) · ปิด = ต้องขออนุมัติก่อน"
+        />
+        <Toggle
+          checked={contractDeleteUnlocked}
+          onChange={setContractDeleteUnlocked}
+          label="อนุญาตให้ลบสัญญา"
+          hint="เปิด = ลบสัญญาที่ยังไม่มีบิลได้ · ปิด = ปลอดภัย"
+        />
+      </section>
+
+      {/* ── ค่าใช้จ่ายประจำ (เฉพาะเมื่อมีโครงการแล้ว) ── */}
+      {initial?.id && (
+        <RecurringChargesManager projectId={initial.id} charges={recurringCharges} />
+      )}
+
       {/* ── บันทึก ── */}
       <div className="flex justify-stretch sm:justify-end pb-4">
         <button
@@ -623,5 +771,319 @@ function Toggle({
         />
       </span>
     </button>
+  );
+}
+
+// ───────── ค่าใช้จ่ายประจำ (recurring charges) — บวกทุกบิลอัตโนมัติ ─────────
+
+const thb = new Intl.NumberFormat("th-TH", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+type ChargeDraft = {
+  id?: string;
+  label: string;
+  amount: string;
+  vatable: boolean;
+  kind: string;
+};
+
+const EMPTY_DRAFT: ChargeDraft = { label: "", amount: "", vatable: false, kind: "other" };
+
+function RecurringChargesManager({
+  projectId,
+  charges,
+}: {
+  projectId: string;
+  charges: RecurringCharge[];
+}) {
+  const router = useRouter();
+  const [saving, startSave] = useTransition();
+  const [draft, setDraft] = useState<ChargeDraft | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const isLandTax = draft?.kind === "land_tax";
+
+  function openAdd(preset?: Partial<ChargeDraft>) {
+    setDraft({ ...EMPTY_DRAFT, ...preset });
+  }
+
+  function openEdit(c: RecurringCharge) {
+    setDraft({
+      id: c.id,
+      label: c.label,
+      amount: str(c.amountThb),
+      vatable: c.vatable,
+      kind: c.kind,
+    });
+  }
+
+  function saveDraft() {
+    if (!draft) return;
+    const label = draft.label.trim();
+    if (!label) {
+      toast.error("กรุณาระบุชื่อรายการค่าใช้จ่าย");
+      return;
+    }
+    const amount = Number(draft.amount);
+    if (!draft.amount.trim() || !Number.isFinite(amount) || amount < 0) {
+      toast.error("กรุณาระบุจำนวนเงินให้ถูกต้อง");
+      return;
+    }
+    startSave(async () => {
+      try {
+        await actSaveRecurringCharge({
+          id: draft.id,
+          projectId,
+          unitId: null,
+          kind: draft.kind,
+          label,
+          amountThb: amount,
+          vatable: draft.vatable,
+        });
+        toast.success(draft.id ? "แก้ไขรายการแล้ว" : "เพิ่มรายการแล้ว");
+        setDraft(null);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      }
+    });
+  }
+
+  function remove(c: RecurringCharge) {
+    if (!window.confirm(`ลบรายการ “${c.label}” ออกจากบิลทุกเดือน?`)) return;
+    setBusyId(c.id);
+    startSave(async () => {
+      try {
+        await actDeleteRecurringCharge(c.id);
+        toast.success("ลบรายการแล้ว");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+      } finally {
+        setBusyId(null);
+      }
+    });
+  }
+
+  const hasLandTax = charges.some((c) => c.kind === "land_tax");
+
+  return (
+    <section className="rs-card p-5 space-y-4">
+      <SectionTitle
+        title="ค่าใช้จ่ายประจำ (บวกทุกบิลอัตโนมัติ)"
+        hint="รายการที่ต้องเก็บจากผู้เช่าทุกเดือน เช่น ค่าส่วนกลาง ค่าขยะ ภาษีที่ดิน — ระบบจะบวกเข้าบิลให้อัตโนมัติ"
+      />
+
+      {/* รายการที่มีอยู่ */}
+      {charges.length === 0 ? (
+        <p
+          className="rounded-xl px-3 py-4 text-center text-[13px]"
+          style={{ background: "var(--rs-bg-2)", color: "var(--rs-text-3)" }}
+        >
+          ยังไม่มีค่าใช้จ่ายประจำ — เพิ่มรายการด้านล่างเพื่อให้บวกเข้าบิลทุกเดือนอัตโนมัติ
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {charges.map((c) => {
+            const rowBusy = busyId === c.id;
+            const scope =
+              c.unitId == null
+                ? "ทั้งโครงการ"
+                : `ห้อง ${c.unitCode ?? ""}${c.unitName ? ` · ${c.unitName}` : ""}`.trim();
+            return (
+              <li
+                key={c.id}
+                className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl px-3 py-3 border"
+                style={{
+                  borderColor: "var(--rs-border)",
+                  background: c.isActive ? "#fff" : "var(--rs-bg-2)",
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className="text-sm font-semibold truncate"
+                      style={{ color: "var(--rs-text)" }}
+                    >
+                      {c.label}
+                    </span>
+                    {c.vatable && (
+                      <span
+                        className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md"
+                        style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
+                      >
+                        VAT
+                      </span>
+                    )}
+                    {!c.isActive && (
+                      <span
+                        className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md"
+                        style={{ background: "var(--rs-bg-3)", color: "var(--rs-text-3)" }}
+                      >
+                        ปิดอยู่
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[12px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                    {scope}
+                  </div>
+                </div>
+                <div
+                  className="text-base font-bold tabular-nums shrink-0"
+                  style={{ color: "var(--rs-text)" }}
+                >
+                  ฿{thb.format(c.amountThb)}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(c)}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 rounded-lg text-[13px] font-medium border"
+                    style={{ borderColor: "var(--rs-border)", color: "var(--rs-text-2)" }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    แก้
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(c)}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 rounded-lg text-[13px] font-medium border"
+                    style={{ borderColor: "var(--rs-border)", color: "var(--rs-danger)" }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {rowBusy ? "กำลังลบ…" : "ลบ"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* ฟอร์มเพิ่ม/แก้ไข inline */}
+      {draft ? (
+        <div
+          className="rounded-xl border p-4 space-y-4"
+          style={{ borderColor: "var(--rs-brand)", background: "var(--rs-brand-50)" }}
+        >
+          <div className="text-sm font-semibold" style={{ color: "var(--rs-text)" }}>
+            {draft.id ? "แก้ไขรายการ" : "เพิ่มรายการใหม่"}
+          </div>
+          {isLandTax && (
+            <div
+              className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12.5px]"
+              style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
+            >
+              <Info className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>ภาษีที่ดินเป็นภาษีส่งต่อ — ไม่คิด VAT ซ้ำ</span>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="ชื่อรายการ *" hint="เช่น ค่าส่วนกลาง · ค่าขยะ · ภาษีที่ดิน">
+              <input
+                className="rs-input"
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                placeholder="ค่าส่วนกลาง"
+              />
+            </Field>
+            <Field label="จำนวนเงิน (บาท/เดือน) *" hint="ยอดที่จะบวกเข้าบิลทุกเดือน">
+              <input
+                className="rs-input"
+                type="number"
+                step="0.01"
+                min={0}
+                inputMode="decimal"
+                value={draft.amount}
+                onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+                placeholder="0.00"
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2.5 min-h-[44px] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded"
+              style={{ accentColor: "var(--rs-brand)" }}
+              checked={draft.vatable}
+              onChange={(e) => setDraft({ ...draft, vatable: e.target.checked })}
+            />
+            <span className="text-sm" style={{ color: "var(--rs-text)" }}>
+              คิด VAT กับรายการนี้
+            </span>
+          </label>
+          <div className="text-[12px]" style={{ color: "var(--rs-text-3)" }}>
+            ขอบเขต: <b style={{ color: "var(--rs-text-2)" }}>ทั้งโครงการ</b> (ทุกห้องที่มีสัญญา)
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setDraft(null)}
+              disabled={saving}
+              className="rs-btn rs-btn-ghost w-full sm:w-auto"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={saveDraft}
+              disabled={saving}
+              className="rs-btn w-full sm:w-auto"
+            >
+              <Check className="h-4 w-4" />
+              {saving ? "กำลังบันทึก…" : draft.id ? "บันทึกการแก้ไข" : "เพิ่มรายการ"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            type="button"
+            onClick={() => openAdd()}
+            className="rs-btn rs-btn-ghost w-full sm:w-auto"
+          >
+            <Plus className="h-4 w-4" />
+            เพิ่มรายการ
+          </button>
+          {!hasLandTax && (
+            <button
+              type="button"
+              onClick={() =>
+                openAdd({ label: "ภาษีที่ดิน", kind: "land_tax", vatable: false })
+              }
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg text-[13px] font-medium border w-full sm:w-auto"
+              style={{ borderColor: "var(--rs-border)", color: "var(--rs-text-2)", background: "#fff" }}
+            >
+              <Landmark className="h-4 w-4" />
+              + ภาษีที่ดิน
+            </button>
+          )}
+        </div>
+      )}
+
+      <style jsx>{`
+        .rs-input {
+          width: 100%;
+          min-height: 42px;
+          padding: 0 12px;
+          border-radius: 10px;
+          border: 1px solid var(--rs-border);
+          background: #fff;
+          color: var(--rs-text);
+          font-size: 14px;
+        }
+        textarea.rs-input {
+          line-height: 1.5;
+        }
+        .rs-input:focus {
+          outline: none;
+          border-color: var(--rs-brand);
+          box-shadow: 0 0 0 3px var(--rs-brand-50);
+        }
+      `}</style>
+    </section>
   );
 }

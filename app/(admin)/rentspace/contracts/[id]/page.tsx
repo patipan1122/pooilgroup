@@ -1,16 +1,19 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { requireSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
 import { RsPage, RsHeader, RsBadge, RsCard, RsBackLink } from "@/components/rentspace/ui";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel } from "@/lib/rentspace/format";
 import { getContract } from "@/lib/rentspace/data";
-import { resolveContractBody } from "@/lib/rentspace/contract-doc";
+import { resolveContractBody, bankInfoLine } from "@/lib/rentspace/contract-doc";
 import {
   SignLinkBox,
   PrintButton,
   TerminateButton,
   RecordDepositButton,
   BillingTermsEditor,
+  ContractEditRequest,
+  DeleteContractButton,
 } from "./_components/contract-detail-actions";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +62,14 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const contract = await getContract(session.user.org_id, id);
   if (!contract) notFound();
 
+  // ประวัติฉบับแก้ไข (addendum) — เรียงตามลำดับที่ออก
+  const addenda = await prisma.rentalContractAddendum.findMany({
+    where: { orgId: session.user.org_id, contractId: id },
+    orderBy: { seq: "asc" },
+  });
+  const editStatus = (contract.editStatus ?? "none") as "none" | "pending" | "approved" | "rejected";
+  const canDelete = !!contract.project.contractDeleteUnlocked;
+
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "https";
   const host = h.get("host") ?? "";
@@ -91,6 +102,10 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     contract.lateFeeType !== "none"
       ? `${LATE_FEE_LABELS[contract.lateFeeType]} ${formatBaht(toNum(contract.lateFeeValue))} (ผ่อนผัน ${contract.lateFeeGraceDays} วัน)`
       : null;
+
+  // ── ข้อมูลบัญชีรับชำระ (จาก field โครงการ · ถ้ามี) → โชว์ใน A4 ──
+  const bankLine = bankInfoLine(contract.project);
+  const hasPaymentInfo = !!(bankLine || contract.project.promptpayId || contract.project.paymentNote);
 
   return (
     <RsPage>
@@ -292,10 +307,29 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 </ol>
               )}
 
+              {/* payment / bank block */}
+              {hasPaymentInfo && (
+                <div className="rs-a4-pay">
+                  <div className="rs-a4-pay-h">ช่องทางชำระเงิน</div>
+                  {(bankLine || contract.project.promptpayId) && (
+                    <div className="rs-a4-pay-line">
+                      {bankLine}
+                      {contract.project.promptpayId
+                        ? `${bankLine ? " · " : ""}พร้อมเพย์ ${contract.project.promptpayId}`
+                        : ""}
+                    </div>
+                  )}
+                  {contract.project.paymentNote && (
+                    <div className="rs-a4-pay-note">{contract.project.paymentNote}</div>
+                  )}
+                </div>
+              )}
+
               {/* attachments */}
               <div className="rs-a4-attach">
                 เอกสารแนบ: สำเนาบัตรประชาชน/ทะเบียนพาณิชย์ผู้เช่า
                 {schedule.length > 0 ? " · ตารางปรับค่าเช่ารายงวด" : ""}
+                {addenda.length > 0 ? ` · ฉบับแก้ไข ${addenda.length} ฉบับ` : ""}
                 {contract.note ? ` · หมายเหตุ: ${contract.note}` : ""}
               </div>
 
@@ -373,9 +407,63 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
             </RsCard>
           )}
 
+          {/* แก้ไขสัญญา (maker-checker) — เฉพาะสัญญาที่เซ็นแล้ว */}
+          {contract.tenantSigned && contract.status !== "terminated" && (
+            <RsCard className="p-5 space-y-3">
+              <h2 className="font-bold" style={{ color: "var(--rs-text)" }}>
+                แก้ไขสัญญา
+              </h2>
+              <ContractEditRequest
+                contractId={contract.id}
+                tenantSigned={contract.tenantSigned}
+                editStatus={editStatus}
+                editRequestReason={contract.editRequestReason}
+                editDecisionNote={contract.editDecisionNote}
+              />
+            </RsCard>
+          )}
+
+          {/* ประวัติฉบับแก้ไข (addendum) */}
+          {addenda.length > 0 && (
+            <RsCard className="p-5">
+              <h2 className="font-bold mb-3" style={{ color: "var(--rs-text)" }}>
+                ประวัติฉบับแก้ไข
+              </h2>
+              <div className="space-y-2">
+                {addenda.map((a) => (
+                  <div
+                    key={a.id}
+                    className="rounded-lg px-3 py-2"
+                    style={{ border: "1px solid var(--rs-border)", background: "var(--rs-bg-2)" }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-semibold" style={{ color: "var(--rs-text)" }}>
+                        ฉบับแก้ไขที่ {a.seq}
+                      </span>
+                      <span className="text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+                        {thaiDateLong(a.createdAt)}
+                      </span>
+                    </div>
+                    {a.summary && (
+                      <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-2)" }}>
+                        {a.summary}
+                      </div>
+                    )}
+                    <div className="text-[11.5px] mt-1" style={{ color: a.tenantSigned ? "var(--rs-ok)" : "var(--rs-text-3)" }}>
+                      {a.tenantSigned
+                        ? `เซ็นแล้ว${a.signerName ? ` · ${a.signerName}` : ""}${a.signedAt ? ` · ${thaiDateLong(a.signedAt)}` : ""}`
+                        : "ยังไม่เซ็น"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </RsCard>
+          )}
+
           <RsCard className="p-5 space-y-2">
             <PrintButton />
             {contract.status !== "terminated" && <TerminateButton contractId={contract.id} />}
+            {canDelete && <DeleteContractButton contractId={contract.id} />}
           </RsCard>
         </div>
       </div>
@@ -403,6 +491,10 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
         .rs-a4-clauses { padding-left: 22px; margin: 0; }
         .rs-a4-clauses > li { margin-bottom: 12px; text-align: justify; }
         .rs-a4-custom { margin: 8px 0; }
+        .rs-a4-pay { margin-top: 16px; padding: 10px 14px; border: 1px dashed #ccc; border-radius: 8px; background: #fafafa; }
+        .rs-a4-pay-h { font-size: 11.5px; font-weight: 700; color: #777; margin-bottom: 3px; }
+        .rs-a4-pay-line { font-size: 13px; color: #222; font-weight: 600; }
+        .rs-a4-pay-note { font-size: 12.5px; color: #555; margin-top: 2px; }
         .rs-a4-attach { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #ccc; font-size: 12.5px; color: #555; }
         .rs-a4-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 48px; }
         .rs-a4-sign { text-align: center; }

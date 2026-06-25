@@ -245,6 +245,46 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
     }
   }
 
+  // 4) ค่าใช้จ่ายประจำที่ตั้งไว้ (RentalRecurringCharge) — ค่าส่วนกลาง · ค่าขยะ ·
+  //    ภาษีที่ดิน ฯลฯ ที่เก็บทุกเดือน. ดึงเฉพาะที่ isActive และใช้กับห้องนี้:
+  //    unitId=null = ใช้ทั้งโครงการ · unitId=ตรงห้องนี้ = เฉพาะห้องนี้.
+  //
+  //    VAT: เคารพ `vatable` ราย item — ภาษีที่ดิน (land_tax, vatable=false) เป็น
+  //    ภาษีส่งผ่าน (pass-through) ห้ามเอาเข้าฐาน VAT. computeBillTotals คิด VAT
+  //    จาก items.filter(it => it.vatable) เท่านั้น → ตั้ง vatable ของ item ตาม
+  //    charge.vatable ก็พอ ฐาน VAT จะไม่รวม land_tax โดยอัตโนมัติ.
+  //
+  //    IDEMPOTENCY: buildBill ถูกเรียกจาก createBillForContract เท่านั้น และ
+  //    createBillForContract early-return เมื่อมีบิลของ (contractId, period) อยู่แล้ว
+  //    (กัน double ด้วย @@unique([contractId, period]) + retry บน P2002) — cron ก็
+  //    เรียกผ่าน createBillForContract ตัวเดียวกัน. ดังนั้น buildBill จะ "สร้าง
+  //    item ตั้งต้น" ครั้งเดียวต่อบิล รันซ้ำไม่ได้ → recurring item ไม่มีทาง
+  //    ซ้ำซ้อน. (การแก้บิลภายหลังใช้ actEditBillItems → recomputeBillTotals
+  //    ซึ่งจัดการ item แยกต่างหาก ไม่เรียก buildBill ซ้ำ.)
+  const recurring = await prisma.rentalRecurringCharge.findMany({
+    where: {
+      projectId: contract.projectId,
+      isActive: true,
+      OR: [{ unitId: null }, { unitId: contract.unitId }],
+    },
+    orderBy: { sort: "asc" },
+  });
+  let recurSort = 5;
+  for (const charge of recurring) {
+    const amount = round2(toNum(charge.amountThb));
+    if (amount === 0) continue;
+    items.push({
+      kind: charge.kind,
+      label: charge.label,
+      qty: 1,
+      unitPrice: amount,
+      amount,
+      // เคารพ vatable ราย item — land_tax (vatable=false) ไม่เข้าฐาน VAT
+      vatable: !!charge.vatable,
+      sort: recurSort++,
+    });
+  }
+
   return { rentAmount, electricAmount, waterAmount, lateFeeAmount, items, notes };
 }
 
