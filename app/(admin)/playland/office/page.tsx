@@ -9,7 +9,7 @@ import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb } from "@/lib/playland/format";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
 import { DemoSeedButton } from "@/components/playland/demo-seed-button";
-import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store, Coins } from "lucide-react";
+import { PackageX, Clock, ScanFace, ChevronRight, FileBarChart2, Store, Coins, AlertTriangle, ClipboardCheck, PackageSearch, Wrench } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard · Play a lot" };
@@ -204,6 +204,24 @@ export default async function PlaylandDashboard() {
                 })}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ความปลอดภัย & ดูแล — ทางลัด (คลื่น 1) */}
+        <div style={{ ...card, padding: 22, marginTop: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 14, fontFamily: FREDOKA }}>ความปลอดภัย &amp; ดูแลร้าน</div>
+          <div className="pl-grid-4">
+            {[
+              { href: "/playland/incidents", icon: <AlertTriangle size={20} color={RED} />, label: "บันทึกอุบัติเหตุ", bg: "#fdeceb" },
+              { href: "/playland/safety", icon: <ClipboardCheck size={20} color={GREEN} />, label: "ตรวจ/ทำความสะอาด", bg: "#eaf3eb" },
+              { href: "/playland/lost-found", icon: <PackageSearch size={20} color={BLUE} />, label: "ของหาย-ของเก็บ", bg: "#eaf3f6" },
+              { href: "/playland/repairs", icon: <Wrench size={20} color={AMBER} />, label: "บันทึกซ่อม", bg: "#fdf3df" },
+            ].map((t) => (
+              <Link key={t.href} href={t.href} style={{ display: "flex", flexDirection: "column", gap: 9, padding: 16, borderRadius: 12, background: t.bg, textDecoration: "none", color: INK, minHeight: 44 }}>
+                {t.icon}
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{t.label}</span>
+              </Link>
+            ))}
           </div>
         </div>
       </div>

@@ -10,6 +10,9 @@ const PREFIXES = {
   purchase: "PO",
   repair: "RP",
   stockCount: "SC",
+  incident: "IC",
+  safetyCheck: "SF",
+  lostFound: "LF",
 } as const;
 
 function beYearTwoDigits(): string {
@@ -55,4 +58,16 @@ export function newRepairCode(): string {
 
 export function newStockCountCode(): string {
   return newCode("stockCount");
+}
+
+export function newIncidentCode(): string {
+  return newCode("incident");
+}
+
+export function newSafetyCheckCode(): string {
+  return newCode("safetyCheck");
+}
+
+export function newLostFoundCode(): string {
+  return newCode("lostFound");
 }

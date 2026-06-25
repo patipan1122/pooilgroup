@@ -11,6 +11,7 @@ import {
   LayoutDashboard, BarChart3, Boxes, Users, Menu, X, ChevronRight,
   Store, LogIn, CalendarClock, MonitorSmartphone, Coins, ShieldCheck,
   Building2, Settings, ScanFace, Wrench, DoorOpen, Percent,
+  AlertTriangle, ClipboardCheck, PackageSearch,
 } from "lucide-react";
 
 type Item = { href: string; icon: typeof Store; label: string; admin?: boolean };
@@ -35,12 +36,17 @@ const SHEET: { title: string; items: Item[] }[] = [
     { href: "/playland/audit", icon: ShieldCheck, label: "Audit Log", admin: true },
     { href: "/playland/overrides", icon: DoorOpen, label: "เปิดประตูเอง (กันโกง)", admin: true },
   ] },
+  { title: "ความปลอดภัย & ดูแล", items: [
+    { href: "/playland/incidents", icon: AlertTriangle, label: "บันทึกอุบัติเหตุ/เหตุการณ์" },
+    { href: "/playland/safety", icon: ClipboardCheck, label: "ตรวจความปลอดภัย/ทำความสะอาด" },
+    { href: "/playland/lost-found", icon: PackageSearch, label: "ของหาย-ของเก็บได้" },
+    { href: "/playland/repairs", icon: Wrench, label: "บันทึกซ่อม" },
+  ] },
   { title: "จัดการร้าน", items: [
     { href: "/playland/settings/branches", icon: Building2, label: "ทีม & สาขา", admin: true },
     { href: "/playland/settings", icon: Settings, label: "ตั้งค่า · Packages · สินค้า", admin: true },
     { href: "/playland/settings/promos", icon: Percent, label: "โปรโมชั่น / ส่วนลด", admin: true },
     { href: "/playland/settings/devices", icon: ScanFace, label: "อุปกรณ์ประตู", admin: true },
-    { href: "/playland/repairs", icon: Wrench, label: "บันทึกซ่อม" },
   ] },
 ];
 

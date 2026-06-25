@@ -18,6 +18,11 @@ const OFFICE_PREFIXES = [
   "/playland/bookings",
   "/playland/wristbands",
   "/playland/settings",
+  "/playland/incidents",
+  "/playland/safety",
+  "/playland/lost-found",
+  "/playland/repairs",
+  "/playland/stock",
 ] as const;
 
 export const FRONT_HOME = "/playland";

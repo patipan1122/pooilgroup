@@ -3611,6 +3611,9 @@ model PlaylandBranch {
   repairLogs     PlaylandRepairLog[]
   stockCounts    PlaylandStockCount[]
   staffBranches  PlaylandStaffBranch[]
+  incidents      PlaylandIncident[]
+  safetyChecks   PlaylandSafetyCheck[]
+  lostItems      PlaylandLostFound[]
 
   @@index([orgId])
   @@map("branches")
@@ -4038,6 +4041,79 @@ model PlaylandRepairPart {
   @@index([repairId])
   @@index([productId])
   @@map("repair_parts")
+  @@schema("playland")
+}
+
+// คลื่น 1 ความปลอดภัย/กฎหมายเด็ก (2026-06-25)
+model PlaylandIncident {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  incidentCode     String   @unique @map("incident_code")
+  occurredAt       DateTime @map("occurred_at") @db.Timestamptz(6)
+  kind             String
+  severity         String   @default("minor")
+  childName        String?  @map("child_name")
+  memberId         String?  @map("member_id") @db.Uuid
+  location         String?
+  description      String
+  actionTaken      String?  @map("action_taken")
+  parentNotified   Boolean  @default(false) @map("parent_notified")
+  photoR2Paths     String[] @default([]) @map("photo_r2_paths")
+  reportedByUserId String   @map("reported_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, branchId])
+  @@index([branchId, occurredAt])
+  @@map("incidents")
+  @@schema("playland")
+}
+
+model PlaylandSafetyCheck {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  checkCode       String   @unique @map("check_code")
+  checkType       String   @map("check_type")
+  shiftLabel      String?  @map("shift_label")
+  itemsJson       Json     @default("[]") @map("items_json")
+  allPass         Boolean  @default(true) @map("all_pass")
+  note            String?
+  checkedByUserId String   @map("checked_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, branchId])
+  @@index([branchId, createdAt])
+  @@map("safety_checks")
+  @@schema("playland")
+}
+
+model PlaylandLostFound {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  branchId         String    @map("branch_id") @db.Uuid
+  itemCode         String    @unique @map("item_code")
+  status           String    @default("stored")
+  itemName         String    @map("item_name")
+  description      String?
+  foundLocation    String?   @map("found_location")
+  foundAt          DateTime  @map("found_at") @db.Timestamptz(6)
+  photoR2Path      String?   @map("photo_r2_path")
+  claimedByName    String?   @map("claimed_by_name")
+  claimedAt        DateTime? @map("claimed_at") @db.Timestamptz(6)
+  contactPhone     String?   @map("contact_phone")
+  recordedByUserId String    @map("recorded_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, branchId])
+  @@index([branchId, status])
+  @@map("lost_found")
   @@schema("playland")
 }
 
