@@ -1,6 +1,6 @@
 // DC · หลังบ้าน · สินค้า — Redesign v2 (shell ครีม/ฟ้าเต็มจอ ตาม prototype).
-// โหลดสินค้า active + คงเหลือรวม (DcStockBalance ทุกคลังที่เห็นได้) + ต้นทุน/หน่วยล่าสุด
-// (DcCostLayer) + จัดหมวด/สี/ของใกล้หมด → ส่งให้ ProductsClient (การ์ด/ตาราง/ค้นหา).
+// โหลดสินค้า active + คงเหลือรวม (DcStockBalance ทุกคลังที่เห็นได้) + จัดหมวด/สี/ของใกล้หมด
+// → ส่งให้ ProductsClient (การ์ด/ตาราง/ค้นหา). ไม่โชว์ต้นทุน (CEO ขอซ่อน 2026-06-25).
 import { prisma } from "@/lib/prisma";
 import { DcPoStatus, DcShipmentStatus, DcPostStatus } from "@/lib/generated/prisma/enums";
 import { getDcContext } from "@/lib/dc/access";
@@ -33,7 +33,6 @@ function catColor(label: string): { c: string; soft: string } {
   for (let i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
-const fmtBaht = (satang: number) => "฿" + Math.round(satang / 100).toLocaleString("en-US");
 
 export default async function DcProductsPage() {
   const ctx = await getDcContext();
@@ -51,20 +50,13 @@ export default async function DcProductsPage() {
   });
   const ids = productsRaw.map((p) => p.id);
 
-  const [balances, costLayers, poOpen, shipOpen, grnPending, poOrdered, shipInTransit] = await Promise.all([
+  const [balances, poOpen, shipOpen, grnPending, poOrdered, shipInTransit] = await Promise.all([
     ids.length && allowedIds.length
       ? prisma.dcStockBalance.findMany({
           where: { orgId, productId: { in: ids }, warehouseId: { in: allowedIds } },
           select: { productId: true, qtyOnHand: true },
         })
       : Promise.resolve([] as { productId: string; qtyOnHand: number }[]),
-    ids.length
-      ? prisma.dcCostLayer.findMany({
-          where: { orgId, productId: { in: ids } },
-          orderBy: { createdAt: "desc" },
-          select: { productId: true, landedUnitSatang: true },
-        })
-      : Promise.resolve([] as { productId: string; landedUnitSatang: number }[]),
     prisma.dcPurchaseOrder.count({ where: { orgId, status: { notIn: [DcPoStatus.RECEIVED, DcPoStatus.CLOSED, DcPoStatus.CANCELLED] } } }),
     prisma.dcShipment.count({ where: { orgId, status: { not: DcShipmentStatus.RECEIVED } } }),
     prisma.dcGoodsReceipt.count({ where: { orgId, postStatus: DcPostStatus.PENDING } }),
@@ -75,9 +67,6 @@ export default async function DcProductsPage() {
   // รวมคงเหลือต่อสินค้า (ทุกคลังที่เห็นได้)
   const onHand = new Map<string, number>();
   for (const b of balances) onHand.set(b.productId, (onHand.get(b.productId) ?? 0) + b.qtyOnHand);
-  // ต้นทุน/หน่วยล่าสุด (cost layer แรกของแต่ละสินค้า เพราะ order desc)
-  const priceSatang = new Map<string, number>();
-  for (const l of costLayers) if (!priceSatang.has(l.productId)) priceSatang.set(l.productId, l.landedUnitSatang);
 
   const rows: ProductRow[] = productsRaw.map((p) => {
     const catLabel = (p.category?.trim() || PRODUCT_TYPE_LABEL[p.type] || p.type).trim();
@@ -85,13 +74,11 @@ export default async function DcProductsPage() {
     const { c, soft } = catColor(catLabel);
     const oh = onHand.get(p.id) ?? 0;
     const low = p.reorderPoint != null && oh <= p.reorderPoint;
-    const ps = priceSatang.get(p.id);
     const img = p.imageR2Path?.startsWith("http") ? p.imageR2Path : null;
     return {
       id: p.id, name: p.name, sku: p.sku, barcode: p.barcode, unit: p.unit,
       catKey, catLabel, catC: c, catSoft: soft,
       onhand: oh, reorder: p.reorderPoint, low,
-      price: ps != null ? fmtBaht(ps) : null,
       imageUrl: img,
     };
   });

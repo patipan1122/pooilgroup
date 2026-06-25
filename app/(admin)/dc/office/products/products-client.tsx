@@ -34,7 +34,6 @@ export type ProductRow = {
   onhand: number;
   reorder: number | null;
   low: boolean;
-  price: string | null;
   imageUrl: string | null;
 };
 export type CatChip = { key: string; label: string; count: number };
@@ -172,9 +171,8 @@ function GridView({ rows }: { rows: ProductRow[] }) {
               <div style={{ fontSize: 11, color: "var(--muted)" }}>หน่วย: {p.unit}</div>
             </div>
             <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{p.sku}</div>
-            <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 12, color: "var(--ink2)" }}>คงเหลือ <b className="num" style={{ color: p.low ? "#DC5B53" : "var(--ink)", fontWeight: 700 }}>{p.onhand}</b></span>
-              <span className="num" style={{ fontSize: 12.5, fontWeight: 600 }}>{p.price ?? ""}</span>
+            <div style={{ marginTop: "auto", display: "flex", alignItems: "center", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 12, color: "var(--ink2)" }}>คงเหลือ <b className="num" style={{ color: p.low ? "#DC5B53" : "var(--ink)", fontWeight: 700 }}>{p.onhand}</b> <span style={{ color: "var(--muted)" }}>{p.unit}</span></span>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", borderTop: "1px solid var(--border)" }}>
@@ -189,7 +187,7 @@ function GridView({ rows }: { rows: ProductRow[] }) {
   );
 }
 
-const COLS = "2.3fr 1fr .7fr .85fr .9fr .9fr 26px";
+const COLS = "2.3fr 1fr .7fr .85fr .9fr 26px";
 function TableView({ rows }: { rows: ProductRow[] }) {
   return (
     <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 15, boxShadow: "0 1px 2px rgba(30,42,68,.04)", overflow: "hidden", marginTop: 14 }}>
@@ -198,7 +196,6 @@ function TableView({ rows }: { rows: ProductRow[] }) {
         <span>หมวด</span>
         <span>หน่วย</span>
         <span style={{ textAlign: "right" }}>คงเหลือ</span>
-        <span style={{ textAlign: "right" }}>ทุน/หน่วย</span>
         <span style={{ textAlign: "center" }}>สถานะ</span>
         <span />
       </div>
@@ -223,7 +220,6 @@ function TableView({ rows }: { rows: ProductRow[] }) {
           </span>
           <span style={{ color: "var(--ink2)" }}>{p.unit}</span>
           <span className="num" style={{ textAlign: "right", fontWeight: 700, color: p.low ? "#DC5B53" : "var(--ink)" }}>{p.onhand}</span>
-          <span className="num" style={{ textAlign: "right", color: "var(--ink2)" }}>{p.price ?? "—"}</span>
           <span style={{ textAlign: "center" }}>
             {p.low ? (
               <span style={{ fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FEF1DE", padding: "2px 9px", borderRadius: 20 }}>ใกล้หมด</span>
