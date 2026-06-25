@@ -281,7 +281,7 @@ export function LedgerTab({
             <th>วันที่</th>
             <th className="num">ออนไลน์</th>
             <th className="num">เงินสด</th>
-            <th className="num">เหรียญ (ครั้ง)</th>
+            <th className="num">เหรียญ (บาท)</th>
             <th className="num rc-tcol">รวมเงินสด</th>
             <th className="num">รายได้รวม</th>
             <th className="num rc-tcol">ฝาก</th>
@@ -319,7 +319,9 @@ export function LedgerTab({
               </td>
               <td className="num mono">{fmtN(d.online)}</td>
               <td className="num mono">{fmtN(d.cash)}</td>
-              <td className="num mono">{fmtN(d.coin)}</td>
+              <td className="num mono" title={`${fmtN(d.coin)} ครั้ง × 10 บาท`}>
+                {fmtN(d.coinBaht)}
+              </td>
               <td className="num mono rc-tcol">{fmtN(d.cashTotal)}</td>
               <td className="num mono" style={{ fontWeight: 500 }}>
                 {fmtN(d.totalRev)}
@@ -417,7 +419,9 @@ export function LedgerTab({
               </th>
               <td className="num mono">{fmtN(totals.online)}</td>
               <td className="num mono">{fmtN(totals.cash)}</td>
-              <td className="num mono">{fmtN(totals.coin)}</td>
+              <td className="num mono" title={`${fmtN(totals.coin)} ครั้ง × 10 บาท`}>
+                {fmtN(totals.coinBaht)}
+              </td>
               <td className="num mono rc-tcol">{fmtN(totals.cashTotal)}</td>
               <td className="num mono">{fmtN(totals.totalRev)}</td>
               <td className="num mono rc-tcol">{fmtN(totals.deposit)}</td>

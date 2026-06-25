@@ -35,6 +35,11 @@ import {
   ingestEvents,
   type EventDiffSummary,
 } from "@/lib/chairops/pos-ingest/event-diff";
+import {
+  getObjectBuffer,
+  headObjectSize,
+  posIngestKeyPrefix,
+} from "@/lib/chairops/storage/r2";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -392,6 +397,93 @@ export async function previewBatchSmart(
   }
 
   return { items };
+}
+
+// ---------------------------------------------------------------------------
+// R2-backed variants — CEO 2026-06-25
+//
+// Large StarThing files (>4.5 MB) cannot ride through a Server Action because
+// Vercel caps the request body at ~4.5 MB regardless of next.config's
+// serverActions.bodySizeLimit. So the browser PUTs each file straight to R2
+// (via /api/chairops/pos-ingest/presign) and hands us only the tiny key. We
+// download the bytes server-side and delegate to the SAME preview/commit code
+// the FormData path uses — zero change to parsing/dedup/ingest behaviour.
+//
+// Security: the key MUST live under this org's pos-ingest namespace, otherwise
+// a crafted key could make the server read another org's (or module's) object
+// from the shared bucket. See [[chairops-starthing-import-r2-presign-2026-06-25]].
+// ---------------------------------------------------------------------------
+
+type StorageRef = { key: string; fileName: string };
+
+async function downloadFromStorage(
+  orgId: string,
+  refs: StorageRef[],
+): Promise<Array<{ name: string; buf: Buffer }>> {
+  const prefix = posIngestKeyPrefix(orgId);
+  const out: Array<{ name: string; buf: Buffer }> = [];
+  for (const ref of refs) {
+    const key = ref?.key;
+    if (typeof key !== "string" || !key.startsWith(prefix)) {
+      throw new Error("ไฟล์ไม่อยู่ในขอบเขตขององค์กร · ปฏิเสธการอ่าน");
+    }
+    // Reject an oversized object BEFORE pulling it into memory.
+    const size = await headObjectSize(key);
+    if (size != null && size > MAX_BYTES) {
+      throw new Error(`ไฟล์ ${ref.fileName || key} ใหญ่เกิน 10MB`);
+    }
+    const buf = await getObjectBuffer(key);
+    if (buf.length > MAX_BYTES) {
+      throw new Error(`ไฟล์ ${ref.fileName || key} ใหญ่เกิน 10MB`);
+    }
+    out.push({ name: ref.fileName || "starthing.xlsx", buf });
+  }
+  return out;
+}
+
+export async function previewBatchSmartFromStorage(
+  refs: StorageRef[],
+): Promise<BatchPreviewResult> {
+  const session = await requireRole("OFFICE");
+  if (!Array.isArray(refs) || refs.length === 0) return { items: [] };
+  const files = await downloadFromStorage(session.user.orgId, refs);
+  const fd = new FormData();
+  files.forEach((f, i) => {
+    fd.set(`file${i}`, new File([new Uint8Array(f.buf)], f.name));
+  });
+  return previewBatchSmart(fd);
+}
+
+export interface CommitFromStorageInput {
+  cashKey?: string | null;
+  cashFileName?: string | null;
+  coinKey?: string | null;
+  coinFileName?: string | null;
+  skipOverflowingCoinRows?: boolean;
+  notes?: string | null;
+}
+
+export async function commitMultiImportFromStorage(
+  input: CommitFromStorageInput,
+): Promise<MultiCommitResult> {
+  const session = await requireRole("OFFICE");
+  const orgId = session.user.orgId;
+  const fd = new FormData();
+  if (input.cashKey) {
+    const [f] = await downloadFromStorage(orgId, [
+      { key: input.cashKey, fileName: input.cashFileName || "cash.xlsx" },
+    ]);
+    fd.set("cashFile", new File([new Uint8Array(f.buf)], f.name));
+  }
+  if (input.coinKey) {
+    const [f] = await downloadFromStorage(orgId, [
+      { key: input.coinKey, fileName: input.coinFileName || "coin.xlsx" },
+    ]);
+    fd.set("coinFile", new File([new Uint8Array(f.buf)], f.name));
+  }
+  if (input.skipOverflowingCoinRows) fd.set("skipOverflowingCoinRows", "1");
+  if (input.notes) fd.set("notes", input.notes);
+  return commitMultiImport(fd);
 }
 
 // ---------------------------------------------------------------------------

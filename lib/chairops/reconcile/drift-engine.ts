@@ -13,7 +13,9 @@
 //      a 90-day sensible default if even that is null).
 //
 // Money math:
-//   - posSince = SUM(ChairopsBranchDailyRevenue.cashTotal WHERE bizDate > anchor.date AND orgId AND branchId)
+//   - posSince = SUM(ChairopsBranchDailyRevenue.cashTotal + coinInsertCount×COIN_BAHT
+//                WHERE bizDate > anchor.date AND orgId AND branchId)
+//                (CEO 2026-06-25: coin baht is cash the maid also hands in)
 //   - depSince = SUM(ChairopsCashCollection.depositedAmount WHERE collectedAt > anchor AND orgId AND branchId)
 //   - drift = posSince - depSince
 //
@@ -33,6 +35,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { ageHours, ageDays } from "@/lib/chairops/utils/format";
+import { COIN_BAHT } from "@/lib/chairops/reconcile/constants";
 
 // ----------------------------------------------------------------
 // Public defaults (kept identical to v0 so callers don't break)
@@ -115,7 +118,9 @@ async function recomputeDriftForBranch_legacy(
         // Previously this used `grossTotal` which mixed online into "shortage"
         // and inflated every drift by the online-share (e.g. centralโคราช
         // showed -22,761 instead of the real -7,920 of cash owed).
-        _sum: { cashTotal: true },
+        // CEO 2026-06-25: coin baht (coinInsertCount × COIN_BAHT) is cash the
+        // maid also collects → add it to the expected-cash side.
+        _sum: { cashTotal: true, coinInsertCount: true },
       }),
       prisma.chairopsCashDeposit.aggregate({
         where: { branchId, orgId: branch.orgId },
@@ -151,7 +156,9 @@ async function recomputeDriftForBranch_legacy(
       }),
     ]);
 
-  const posTotal = toNum(posAgg._sum?.cashTotal);
+  const posTotal =
+    toNum(posAgg._sum?.cashTotal) +
+    (posAgg._sum?.coinInsertCount ?? 0) * COIN_BAHT;
   const depositTotal =
     (newDepositAgg._sum?.depositedAmount ?? 0) +
     (newDepositAgg._sum?.bankFee ?? 0) +
@@ -230,13 +237,14 @@ async function recomputeDriftForBranch_window(
     await Promise.all([
       // POS since the window opened · ChairopsBranchDailyRevenue is the new
       // per-branch-per-day aggregate (BA-2 / W0 migration step 6).
+      // CEO 2026-06-25: coin baht (coinInsertCount × COIN_BAHT) added below.
       prisma.chairopsBranchDailyRevenue.aggregate({
         where: {
           branchId,
           orgId: branch.orgId,
           bizDate: { gt: anchorDate },
         },
-        _sum: { cashTotal: true },
+        _sum: { cashTotal: true, coinInsertCount: true },
       }),
       // 2026-05-30 split: deposit total = sum from new cash_deposits + any
       // legacy CashCollection rows where the maid recorded a deposit on the
@@ -279,7 +287,9 @@ async function recomputeDriftForBranch_window(
       }),
     ]);
 
-  let posTotal = toNum(posAgg._sum?.cashTotal);
+  let posTotal =
+    toNum(posAgg._sum?.cashTotal) +
+    (posAgg._sum?.coinInsertCount ?? 0) * COIN_BAHT;
   // Fallback when no daily-revenue rows exist yet (W0 pre-import phase).
   if (posTotal === 0) {
     const legacyPos = await prisma.chairopsPosDaily.aggregate({
@@ -288,9 +298,11 @@ async function recomputeDriftForBranch_window(
         orgId: branch.orgId,
         bizDate: { gt: anchorDate },
       },
-      _sum: { cashTotal: true },
+      _sum: { cashTotal: true, coinInsertCount: true },
     });
-    posTotal = toNum(legacyPos._sum?.cashTotal);
+    posTotal =
+      toNum(legacyPos._sum?.cashTotal) +
+      (legacyPos._sum?.coinInsertCount ?? 0) * COIN_BAHT;
   }
 
   const depositTotal =

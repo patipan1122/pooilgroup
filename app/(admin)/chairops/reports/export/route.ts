@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
+import { coinBahtOf } from "@/lib/chairops/reconcile/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,8 @@ export async function GET(req: NextRequest) {
               "เก้าอี้",
               "Online",
               "แบงค์",
-              "เหรียญ",
+              "เหรียญ (ครั้ง)",
+              "เหรียญ (บาท)",
               "เงินสดรวม",
               "รวมทั้งหมด",
             ])
@@ -129,8 +131,11 @@ export async function GET(req: NextRequest) {
                   p.onlineTotal.toString(),
                   p.cashTotal.toString(),
                   p.coinInsertCount,
+                  // CEO 2026-06-25: coin baht (count × 10) — StarThing omits it
+                  // from gross, so add it into "รวมทั้งหมด" too.
+                  coinBahtOf(p.coinInsertCount),
                   p.totalCash.toString(),
-                  p.grossTotal.toString(),
+                  Number(p.grossTotal) + coinBahtOf(p.coinInsertCount),
                 ])
               )
             );
@@ -155,7 +160,7 @@ export async function GET(req: NextRequest) {
   const [posDaily, collections, writeOffs] = await Promise.all([
     prisma.chairopsPosDaily.findMany({
       where: { orgId, bizDate: { gte: from, lte: to } },
-      select: { branchId: true, bizDate: true, grossTotal: true },
+      select: { branchId: true, bizDate: true, grossTotal: true, coinInsertCount: true },
     }),
     // Wave-2 audit P0 #6: deposits live on chairops_cash_deposit · include
     // it so monthly CSV "ฝาก" column reflects what actually landed at bank.
@@ -184,8 +189,11 @@ export async function GET(req: NextRequest) {
     if (!matrix.has(k)) matrix.set(k, { pos: 0, dep: 0, wo: 0 });
     return matrix.get(k)!;
   };
-  // grossTotal is Decimal — coerce to number for summation
-  for (const p of posDaily) ensure(keyFor(p.branchId, p.bizDate)).pos += Number(p.grossTotal);
+  // grossTotal is Decimal — coerce to number for summation. CEO 2026-06-25:
+  // add coin baht (count × 10) so monthly POS/drift matches the reconcile screen.
+  for (const p of posDaily)
+    ensure(keyFor(p.branchId, p.bizDate)).pos +=
+      Number(p.grossTotal) + coinBahtOf(p.coinInsertCount);
   for (const c of collections) {
     const dep = c.deposit
       ? Number(c.deposit.depositedAmount) + Number(c.deposit.bankFee)

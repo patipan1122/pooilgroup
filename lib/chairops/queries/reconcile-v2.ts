@@ -15,17 +15,23 @@
 //   online      = onlineTotal
 //   cash        = cashTotal            (StarThing "จ่ายเงินสด" · physical cash in baht)
 //   coin        = coinInsertCount      (StarThing "จำนวนหยอดเหรียญ" · COUNT of coin
-//                                       insertions, NOT baht — display-only · the coin
-//                                       MONEY is already inside cashTotal, so it is
-//                                       NEVER added into cashTotal/pending/drift)
-//   cashTotal   = cashTotal            (coins already folded into cash · = "รวมเงินสด")
-//   totalRev    = grossTotal
+//                                       insertions, NOT baht)
+//   coinBaht    = coinInsertCount × COIN_BAHT (10) — CEO 2026-06-25: StarThing
+//                                       does NOT include coin revenue in its
+//                                       cash/gross totals, and the maid collects
+//                                       the coin box too, so coin baht is added
+//                                       into BOTH cashTotal AND totalRev (and
+//                                       therefore pending/drift). See
+//                                       [[chairops-coin-into-total-and-drift-2026-06-25]].
+//   cashTotal   = cashTotal + coinBaht (cash the maid must hand in · = "รวมเงินสด")
+//   totalRev    = grossTotal + coinBaht
 //   deposit     = ChairopsCashCollection.depositedAmount (bucketed to bizDate)
 //
 // Drift convention here matches the MOCKUP (diff = deposit − expectedCash, so
 // NEGATIVE = shortage), which is the inverse of the drift-engine's positive=
-// shortage. We do NOT touch the drift-engine or its formula
-// ([[chairops-no-cumulative-shortage]]) — this module is DISPLAY ONLY.
+// shortage. The drift-engine applies the SAME coin-into-cash rule (via the
+// shared COIN_BAHT constant) so its persisted shortage and this display ledger
+// stay in agreement ([[chairops-no-cumulative-shortage]]).
 //
 // All reads filter by orgId (Pool multi-tenant · no hardcoded org).
 // References: [[chairops-starthing-xlsx-schema-2026-05-27]] ·
@@ -35,6 +41,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveMall } from "@/lib/chairops/utils/mall-groups";
 import { getDepositsByDate } from "@/lib/chairops/queries/_deposits";
+import { coinBahtOf } from "@/lib/chairops/reconcile/constants";
 
 // ----------------------------------------------------------------
 // Public types — shaped to drive the UI directly
@@ -46,9 +53,10 @@ export interface LedgerDay {
   date: string; // "YYYY-MM-DD"
   online: number;
   cash: number;
-  coin: number; // COUNT of coin insertions ("จำนวนหยอดเหรียญ") · NOT baht · display-only
-  cashTotal: number; // = cash (coin money already folded into cash · "รวมเงินสด")
-  totalRev: number; // online + cashTotal
+  coin: number; // COUNT of coin insertions ("จำนวนหยอดเหรียญ") · NOT baht
+  coinBaht: number; // = coin × COIN_BAHT (10) · the coin revenue StarThing omits
+  cashTotal: number; // = cash + coinBaht (cash maid must hand in · "รวมเงินสด")
+  totalRev: number; // = grossTotal (or online+cash) + coinBaht
   deposit: number | null; // null = no collection that day
   slip: string | null; // slip / evidence ref
   collected: boolean;
@@ -81,6 +89,7 @@ export interface LedgerTotals {
   online: number;
   cash: number;
   coin: number;
+  coinBaht: number;
   cashTotal: number;
   totalRev: number;
   deposit: number;
@@ -222,8 +231,8 @@ async function buildLedger(args: {
       const prev = posByDay.get(key) ?? { online: 0, cash: 0, coin: 0, total: 0 };
       prev.online += toNum(r.onlineTotal);
       prev.cash += toNum(r.cashTotal);
-      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht).
-      // Coin money is already inside cashTotal; this is display-only.
+      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht). The coin
+      // baht is added separately below (coinBahtOf) since StarThing omits it.
       prev.coin += r.coinInsertCount;
       prev.total += toNum(r.grossTotal);
       posByDay.set(key, prev);
@@ -246,8 +255,8 @@ async function buildLedger(args: {
       const prev = posByDay.get(key) ?? { online: 0, cash: 0, coin: 0, total: 0 };
       prev.online += toNum(r.onlineTotal);
       prev.cash += toNum(r.cashTotal);
-      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht). Coin
-      // money is already inside cashTotal/grossTotal; this is display-only.
+      // coin = "จำนวนหยอดเหรียญ" → count of coin insertions (NOT baht). The coin
+      // baht is added separately below (coinBahtOf) since StarThing omits it.
       prev.coin += r.coinInsertCount;
       prev.total += toNum(r.grossTotal);
       posByDay.set(key, prev);
@@ -311,11 +320,15 @@ async function buildLedger(args: {
   const ledger: LedgerDay[] = [];
   for (const date of sortedDays) {
     const pos = posByDay.get(date) ?? { online: 0, cash: 0, coin: 0, total: 0 };
-    // pos.coin is a COUNT of coin insertions (not baht) — the coin money is
-    // already inside pos.cash. So "รวมเงินสด" = cash only · the coin count is
-    // NEVER added into the money that feeds pending/drift/หาย.
-    const cashTotal = pos.cash;
-    const totalRev = pos.total || pos.online + cashTotal;
+    // CEO 2026-06-25: pos.coin is a COUNT of coin insertions (not baht), and
+    // StarThing does NOT include that coin revenue in cash/gross. The maid
+    // empties the coin box too, so coin baht (count × COIN_BAHT) is real cash
+    // she must hand in → fold it into BOTH cashTotal (→ pending/drift) AND the
+    // revenue total. The drift-engine applies the same rule so the numbers
+    // agree. See [[chairops-coin-into-total-and-drift-2026-06-25]].
+    const coinBaht = coinBahtOf(pos.coin);
+    const cashTotal = pos.cash + coinBaht;
+    const totalRev = (pos.total || pos.online + pos.cash) + coinBaht;
     pending += cashTotal;
 
     const dep = depByDay.get(date);
@@ -337,6 +350,7 @@ async function buildLedger(args: {
       online: pos.online,
       cash: pos.cash,
       coin: pos.coin,
+      coinBaht,
       cashTotal,
       totalRev,
       deposit,
@@ -367,6 +381,7 @@ export function ledgerTotals(rows: LedgerDay[]): LedgerTotals {
     online: 0,
     cash: 0,
     coin: 0,
+    coinBaht: 0,
     cashTotal: 0,
     totalRev: 0,
     deposit: 0,
@@ -380,6 +395,7 @@ export function ledgerTotals(rows: LedgerDay[]): LedgerTotals {
     t.online += r.online;
     t.cash += r.cash;
     t.coin += r.coin;
+    t.coinBaht += r.coinBaht;
     t.cashTotal += r.cashTotal;
     t.totalRev += r.totalRev;
     t.deposit += r.deposit ?? 0;

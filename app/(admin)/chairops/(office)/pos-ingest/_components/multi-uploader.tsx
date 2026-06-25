@@ -28,13 +28,44 @@ import {
   X,
 } from "lucide-react";
 import {
-  previewBatchSmart,
-  commitMultiImport,
+  previewBatchSmartFromStorage,
+  commitMultiImportFromStorage,
   runPosIngestMigration,
   type BatchPreviewItem,
 } from "@/app/(admin)/chairops/pos-ingest/multi-actions";
 
 const MAX_FILES = 10;
+
+// Upload one file straight to R2 via a presigned PUT, returning the object key.
+// This bypasses the ~4.5 MB Vercel server-action body ceiling that made large
+// StarThing files fail with "An unexpected response was received from the
+// server." (CEO 2026-06-25).
+async function uploadToR2(file: File): Promise<string> {
+  const ct = file.type || "application/octet-stream";
+  const presignRes = await fetch("/api/chairops/pos-ingest/presign", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fileName: file.name, contentType: ct }),
+  });
+  if (!presignRes.ok) {
+    const j = (await presignRes.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    throw new Error(
+      `ขอที่อัปไฟล์ไม่สำเร็จ${j?.error ? ` (${j.error})` : ` (${presignRes.status})`}`,
+    );
+  }
+  const { url, key } = (await presignRes.json()) as { url: string; key: string };
+  const put = await fetch(url, {
+    method: "PUT",
+    headers: { "content-type": ct },
+    body: file,
+  });
+  if (!put.ok) {
+    throw new Error(`อัปไฟล์ "${file.name}" ขึ้นที่เก็บไม่สำเร็จ (${put.status})`);
+  }
+  return key;
+}
 
 interface ClientFile {
   id: string;
@@ -59,8 +90,10 @@ function newId(): string {
 export function MultiUploader() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const cashFileRef = useRef<File | null>(null);
-  const coinFileRef = useRef<File | null>(null);
+  // After upload we keep the R2 KEY (not the File) for the cash/coin commit —
+  // the server re-downloads from R2 instead of the browser re-sending bytes.
+  const cashRef = useRef<{ key: string; fileName: string } | null>(null);
+  const coinRef = useRef<{ key: string; fileName: string } | null>(null);
   const [files, setFiles] = useState<ClientFile[]>([]);
   const [drag, setDrag] = useState(false);
   const [run, setRun] = useState<RunState>({ state: "idle" });
@@ -114,47 +147,62 @@ export function MultiUploader() {
       return;
     }
     setRun({ state: "uploading" });
-    cashFileRef.current = null;
-    coinFileRef.current = null;
-    // CEO 2026-06-01: send one file per server-action call · in parallel.
-    // Next.js 16 ignores experimental.serverActions.bodySizeLimit at the
-    // platform layer on Vercel, so a 1.3 MB multi-file POST still throws
-    // "Body exceeded 1 MB limit" even after the config is set. Splitting
-    // keeps each request well under the 1 MB hard cap (each StarThing
-    // XLSX is ~100-700 KB) and the server still aggregates results.
+    cashRef.current = null;
+    coinRef.current = null;
+    // CEO 2026-06-25: upload each file straight to R2 (presigned PUT), then
+    // hand the server only the tiny keys. This bypasses Vercel's ~4.5 MB
+    // server-action body ceiling, so a 4.95 MB StarThing file uploads fine.
     try {
-      const settled = await Promise.all(
+      const uploaded = await Promise.all(
         files.map(async (f) => {
-          const fd = new FormData();
-          fd.set("file0", f.file, f.file.name);
           try {
-            const r = await previewBatchSmart(fd);
-            return r.items[0] ?? {
-              ok: false as const,
-              fileName: f.file.name,
-              kind: "unknown" as const,
-              error: "ไม่ได้รับผลจาก server",
-            };
+            const key = await uploadToR2(f.file);
+            return { ok: true as const, key, fileName: f.file.name };
           } catch (err) {
             return {
               ok: false as const,
               fileName: f.file.name,
-              kind: "unknown" as const,
               error: err instanceof Error ? err.message : "อัปโหลดล้มเหลว",
             };
           }
         }),
       );
-      // Keep raw File refs for cash/coin commit (server doesn't persist them).
+
+      const okUploads = uploaded.filter(
+        (u): u is { ok: true; key: string; fileName: string } => u.ok,
+      );
+      // One server call with all keys · server downloads + parses the batch.
+      const r =
+        okUploads.length > 0
+          ? await previewBatchSmartFromStorage(
+              okUploads.map(({ key, fileName }) => ({ key, fileName })),
+            )
+          : { items: [] };
+      const settled: BatchPreviewItem[] = [...r.items];
+      // Surface any file that failed to reach R2 as a per-file error row.
+      for (const u of uploaded) {
+        if (!u.ok) {
+          settled.push({
+            ok: false,
+            fileName: u.fileName,
+            kind: "unknown",
+            error: u.error,
+          });
+        }
+      }
+
+      // Remember R2 keys for cash/coin commit (server re-downloads from R2).
       for (const it of settled) {
         if (it.ok && (it.kind === "cash" || it.kind === "coin")) {
-          const match = files.find((f) => f.file.name === it.fileName);
+          const match = okUploads.find((u) => u.fileName === it.fileName);
           if (match) {
-            if (it.kind === "cash") cashFileRef.current = match.file;
-            else coinFileRef.current = match.file;
+            const ref = { key: match.key, fileName: match.fileName };
+            if (it.kind === "cash") cashRef.current = ref;
+            else coinRef.current = ref;
           }
         }
       }
+
       setRun({ state: "done", items: settled });
       const okCount = settled.filter((i) => i.ok).length;
       const errCount = settled.length - okCount;
@@ -170,60 +218,30 @@ export function MultiUploader() {
   }
 
   function onCommitCashCoin(opts?: { skipOverflowingCoinRows?: boolean }) {
-    if (!cashFileRef.current && !coinFileRef.current) {
+    if (!cashRef.current && !coinRef.current) {
       toast.error("ไม่มีไฟล์ cash/coin ให้ commit");
       return;
     }
     startCommit(async () => {
-      let cashIns = 0;
-      let coinIns = 0;
-      let coinOverflowSkipped = 0;
-      let coverage: string | null = null;
-      const errs: string[] = [];
-
-      if (cashFileRef.current) {
-        const fd = new FormData();
-        fd.set("cashFile", cashFileRef.current);
-        const r = await commitMultiImport(fd);
-        if (r.ok) {
-          cashIns = r.cashInserted;
-          if (r.coverageThrough) coverage = r.coverageThrough;
-        } else {
-          errs.push(`cash: ${r.error ?? "ล้มเหลว"}`);
-        }
-      }
-      if (coinFileRef.current) {
-        const fd = new FormData();
-        fd.set("coinFile", coinFileRef.current);
-        if (opts?.skipOverflowingCoinRows) {
-          fd.set("skipOverflowingCoinRows", "1");
-        }
-        const r = await commitMultiImport(fd);
-        if (r.ok) {
-          coinIns = r.coinInserted;
-          coinOverflowSkipped = r.coinOverflowingSkipped ?? 0;
-          if (
-            r.coverageThrough &&
-            (!coverage || r.coverageThrough > coverage)
-          ) {
-            coverage = r.coverageThrough;
-          }
-        } else {
-          errs.push(`coin: ${r.error ?? "ล้มเหลว"}`);
-        }
-      }
-
-      if (errs.length > 0) {
-        toast.error(errs.join(" · "));
+      const r = await commitMultiImportFromStorage({
+        cashKey: cashRef.current?.key ?? null,
+        cashFileName: cashRef.current?.fileName ?? null,
+        coinKey: coinRef.current?.key ?? null,
+        coinFileName: coinRef.current?.fileName ?? null,
+        skipOverflowingCoinRows: opts?.skipOverflowingCoinRows ?? false,
+      });
+      if (!r.ok) {
+        toast.error(r.error ?? "commit ล้มเหลว");
         return;
       }
+      const coinOverflowSkipped = r.coinOverflowingSkipped ?? 0;
       const overflowNote =
         coinOverflowSkipped > 0
           ? ` · ข้าม ${coinOverflowSkipped} แถวที่ค่าเกิน int4 (รอ migration)`
           : "";
       toast.success(
-        `บันทึก cash +${cashIns} · coin +${coinIns}${overflowNote}` +
-          (coverage ? ` · ถึง ${coverage}` : ""),
+        `บันทึก cash +${r.cashInserted} · coin +${r.coinInserted}${overflowNote}` +
+          (r.coverageThrough ? ` · ถึง ${r.coverageThrough}` : ""),
       );
       setFiles([]);
       setRun({ state: "idle" });
