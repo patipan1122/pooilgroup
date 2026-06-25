@@ -73,7 +73,7 @@ export default async function PosPreviewPage({
     changed: diff.counts.changed,
     bad: diff.counts.error,
   };
-  const rows: DiffRow[] = Array.isArray(diff.rows) ? diff.rows : [];
+  const allRows: DiffRow[] = Array.isArray(diff.rows) ? diff.rows : [];
 
   const isSelfCommit = uploader?.id === session.user.id;
   const role = session.user.role;
@@ -82,7 +82,7 @@ export default async function PosPreviewPage({
   // BR16: uploader cannot self-commit unless MANAGER+
   const makerCheckerBlocker = isSelfCommit && !isManagerOrAbove;
 
-  const hasPastDayWrite = rows.some(
+  const hasPastDayWrite = allRows.some(
     (r) => (r.status === "changed" || r.status === "new") && r.isPastDay
   );
   const ceoOnlyBlocker = hasPastDayWrite && !canEditPastDay(session.user);
@@ -93,7 +93,7 @@ export default async function PosPreviewPage({
   // dropped but don't fit this UI). Group + sample at most 5 chair codes
   // per storeName so the card stays compact.
   const unknownGroupsMap = new Map<string, UnknownBranchGroup>();
-  for (const r of rows) {
+  for (const r of allRows) {
     if (r.status !== "error") continue;
     const name = (r.shopName ?? "").trim();
     if (!name) continue;
@@ -115,6 +115,16 @@ export default async function PosPreviewPage({
   const unknownGroups = Array.from(unknownGroupsMap.values()).sort(
     (a, b) => b.rowCount - a.rowCount,
   );
+
+  // CEO 2026-06-25: a large StarThing daily file (e.g. 6,000+ rows) crashed
+  // this preview ("An error occurred in the Server Components render") because
+  // EVERY row — each carrying its 20-column `raw` blob — was serialized into
+  // the RSC payload handed to <DiffTable> in one pass. Cap what we render (the
+  // counters + unknown-branch card above already use the FULL allRows, and
+  // commit reads the stored diffSummary directly, so nothing downstream loses
+  // data). The operator can never eyeball 6,000 rows anyway.
+  const RENDER_CAP = 500;
+  const rows: DiffRow[] = allRows.slice(0, RENDER_CAP);
 
   return (
     <div className="chairops-scope mx-auto max-w-screen-2xl p-4 sm:p-6">
@@ -213,7 +223,7 @@ export default async function PosPreviewPage({
       )}
 
       {/* ── 4-bucket DiffTable ──────────────────────────────────────── */}
-      <DiffTable counts={counts} rows={rows} />
+      <DiffTable counts={counts} rows={rows} totalRowCount={allRows.length} />
 
       {/* ── Commit card ────────────────────────────────────────────── */}
       {!imp.committed && (

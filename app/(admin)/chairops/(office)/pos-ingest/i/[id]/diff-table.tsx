@@ -48,9 +48,13 @@ const PILL_LABEL: Record<DiffBucket, string> = {
 export function DiffTable({
   counts,
   rows,
+  totalRowCount,
 }: {
   counts: DiffBucketCounts;
   rows: DiffRow[];
+  // Full row count BEFORE the server-side render cap. When > rows.length the
+  // table only shows the first rows.length and we say so. (CEO 2026-06-25)
+  totalRowCount?: number;
 }) {
   const [active, setActive] = useState<DiffBucket | null>(null);
 
@@ -58,6 +62,9 @@ export function DiffTable({
     active === null
       ? rows
       : rows.filter((r) => statusToBucket(r.status) === active);
+
+  const total = totalRowCount ?? rows.length;
+  const capped = total > rows.length;
 
   return (
     <section className="space-y-3">
@@ -71,6 +78,15 @@ export function DiffTable({
         <p className="text-xs text-muted-foreground">
           แสดง {visible.length.toLocaleString("th-TH")} จาก{" "}
           {rows.length.toLocaleString("th-TH")} แถว
+          {capped && (
+            <>
+              {" "}
+              · ไฟล์มีทั้งหมด{" "}
+              <strong>{total.toLocaleString("th-TH")}</strong> แถว — ตาราง preview
+              แสดงแค่ {rows.length.toLocaleString("th-TH")} แถวแรก
+              <span className="text-emerald-700"> (commit ใส่ครบทุกแถว)</span>
+            </>
+          )}
           {active && (
             <>
               {" "}
