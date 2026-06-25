@@ -78,6 +78,28 @@ export const PO_FLOW_STATUSES: string[] = [
   "RECEIVED",
 ];
 
+// 5 คอลัมน์หลักของบอร์ดสถานะ (Kanban) ตาม mockup — ตัด DRAFT/PENDING/APPROVED ออก
+// (PARTIAL/CLOSED/CANCELLED แสดงในโซน "อื่น ๆ" ต่างหาก)
+export const PO_FLOW_CORE: string[] = ["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "RECEIVED"];
+
+// ป้ายคอลัมน์ Kanban (สั้น ตรงตาม mockup) — แยกจาก PO_STATUS_LABEL ที่ใช้กับป้ายในหน้ารายละเอียด
+export const PO_KANBAN_LABEL: Record<string, string> = {
+  ORDERED: "สั่งแล้ว",
+  SHIPPED: "ได้เลข Tracking",
+  ARRIVED_TH: "ถึงไทยแล้ว",
+  AT_WAREHOUSE: "ถึงโกดังแล้ว",
+  RECEIVED: "รับแล้ว",
+};
+
+// action หลัก 1 อันต่อคอลัมน์ (ลิงก์ไปหน้ารายละเอียดของใบนั้น)
+export const PO_KANBAN_ACTION: Record<string, string> = {
+  ORDERED: "ใส่เลข Tracking",
+  SHIPPED: "อัปเดตขนส่ง",
+  ARRIVED_TH: "ติดตามขนส่ง",
+  AT_WAREHOUSE: "รับเข้า GRN",
+  RECEIVED: "เปิดดูใบ",
+};
+
 // สีป้ายสถานะ (ใช้ class dc-st--*)
 export const PO_STATUS_TONE: Record<string, string> = {
   DRAFT: "draft",

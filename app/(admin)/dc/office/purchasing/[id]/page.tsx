@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { type PoPaymentData } from "@/lib/dc/po-actions";
+import { DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { PoDetail, type PoDetailData } from "./po-detail";
 
 export const dynamic = "force-dynamic";
@@ -117,6 +119,23 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
     userName(orgId, po.approvedByUserId),
   ]);
 
+  // 4) การจ่ายเงิน (ledger 2 ด่าน: ค่าของ / ค่าขนส่งในไทย) → flags ปลดล็อกสถานะ
+  const paymentRows = await prisma.dcPoPayment.findMany({
+    where: { orgId, poId: id },
+    orderBy: { paidAt: "asc" },
+    select: { id: true, kind: true, amountSatang: true, currency: true, paidAt: true, note: true },
+  });
+  const payments: PoPaymentData[] = paymentRows.map((p) => ({
+    id: p.id,
+    kind: p.kind === DcPoPaymentKind.THAI_FREIGHT ? "THAI_FREIGHT" : "GOODS",
+    amountSatang: p.amountSatang,
+    currency: p.currency,
+    paidAt: p.paidAt.toISOString(),
+    note: p.note,
+  }));
+  const goodsPaid = payments.some((p) => p.kind === "GOODS");
+  const thaiFreightPaid = payments.some((p) => p.kind === "THAI_FREIGHT");
+
   const fxRate = po.fxRate != null ? Number(po.fxRate) : null;
 
   const data: PoDetailData = {
@@ -190,6 +209,9 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
 
       <PoDetail
         data={data}
+        payments={payments}
+        goodsPaid={goodsPaid}
+        thaiFreightPaid={thaiFreightPaid}
         warehouses={warehouses}
         canManage={canDcManage(ctx.session.user.role)}
         r2PublicUrl={r2Public}

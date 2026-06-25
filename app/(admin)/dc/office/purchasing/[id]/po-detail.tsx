@@ -1,19 +1,23 @@
 "use client";
 
-// DC · รายละเอียดใบสั่งซื้อ (client) — 4 ส่วน:
+// DC · รายละเอียดใบสั่งซื้อ (client):
+//   0) ไทม์ไลน์ 5 ขั้น (สั่งแล้ว→Tracking→ถึงไทย→ถึงโกดัง→รับแล้ว) + badge "รอใส่ข้อมูล"
 //   1) หัวใบ: poCode · ผู้ขาย · จุดเริ่ม (จีน/ไทย) · สถานะ · เรต (จีน) · ยอดรวม
 //   2) รายการสินค้า (read-only) — แก้ตอนร่างที่หน้า new/list
 //   3) กล่อง/พัสดุ: เพิ่ม/แก้/ลบ · เลขพัสดุ · รถ/เรือ · L×W×H → CBM สด · ของในกล่อง
-//   4) สถานะ: ปุ่มเดินสถานะตามสถานะปัจจุบัน (submit/approve/markOrdered/.../cancel)
-//   5) รับเข้าคลัง: ฟอร์มรับต่อบรรทัด (รับจริง/เสียหาย) + เลือกคลัง + หมายเหตุ → receivePo
+//   4) สรุปต้นทุน (ยอดของ · เรต · ค่าขนส่งจีน-ไทย · ค่าขนส่งในไทย · Landed) — ตัวเลขจริง/placeholder
+//   5) การจ่ายเงิน (จีนเท่านั้น): ด่านค่าของ (GOODS) + ค่าขนส่งในไทย (THAI_FREIGHT) → ปลดล็อกสถานะ
+//   6) สถานะ: ปุ่มเดินสถานะตามสถานะปัจจุบัน (submit/approve/markOrdered/.../cancel)
+//   7) รับเข้าคลัง: ฟอร์มรับต่อบรรทัด (รับจริง/เสียหาย) + เลือกคลัง + หมายเหตุ → receivePo
 //
-// ทุก action ผ่าน useTransition + refresh + ภาษาไทย + busy-lock + แสดง error.
+// ทุก action ผ่าน useTransition + (onChanged ?? router.refresh) + ภาษาไทย + busy-lock + แสดง error.
 // Flow ล็อก: DRAFT → PENDING_APPROVAL → APPROVED → ORDERED → SHIPPED →
 //            ARRIVED_TH → AT_WAREHOUSE → RECEIVED. ยกเลิกได้จาก ร่าง/รออนุมัติ/อนุมัติ.
+// ด่านจ่ายเงิน (server บังคับ): markAtWarehouse ต้องมี GOODS payment · receivePo ต้องมี THAI_FREIGHT payment.
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X } from "lucide-react";
+import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign } from "lucide-react";
 import {
   submitPo,
   approvePo,
@@ -23,7 +27,10 @@ import {
   markAtWarehouse,
   cancelPo,
   receivePo,
+  recordPoPayment,
+  deletePoPayment,
   type PoActionResult,
+  type PoPaymentData,
 } from "@/lib/dc/po-actions";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
@@ -108,17 +115,56 @@ const numOrNull = (s: string): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+// ── ลำดับสถานะตามจริง (ไว้เทียบ ≥ ARRIVED_TH ฯลฯ) ──────────────
+// PARTIAL ถือว่าอยู่ระหว่าง AT_WAREHOUSE กับ RECEIVED (รับบางส่วน)
+const STATUS_RANK: Record<string, number> = {
+  DRAFT: 0,
+  PENDING_APPROVAL: 1,
+  APPROVED: 2,
+  ORDERED: 3,
+  SHIPPED: 4,
+  ARRIVED_TH: 5,
+  AT_WAREHOUSE: 6,
+  PARTIAL: 6.5,
+  RECEIVED: 7,
+  CANCELLED: -1,
+};
+function statusRank(s: string): number {
+  return STATUS_RANK[s] ?? 0;
+}
+/** สถานะปัจจุบันถึง/เลย target หรือยัง (ไม่นับ CANCELLED) */
+function statusAtLeast(current: string, target: string): boolean {
+  if (current === "CANCELLED") return false;
+  return statusRank(current) >= statusRank(target);
+}
+
+/** ยอดเงินจาก satang (×100) → ตัวเลขจริงในสกุลนั้น */
+function fromSatang(amountSatang: number): number {
+  return amountSatang / 100;
+}
+function payCurSym(cur: string): string {
+  return cur === "CNY" ? "¥" : "฿";
+}
+
 // ── main ──────────────────────────────────────────────────────
 export function PoDetail({
   data,
+  payments,
+  goodsPaid,
+  thaiFreightPaid,
   warehouses,
   canManage,
   r2PublicUrl,
+  onChanged,
 }: {
   data: PoDetailData;
+  payments: PoPaymentData[];
+  goodsPaid: boolean;
+  thaiFreightPaid: boolean;
   warehouses: WarehouseOption[];
   canManage: boolean;
   r2PublicUrl: string;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +177,10 @@ export function PoDetail({
   const totalThb = isChina && data.fxRate != null ? totalNative * data.fxRate : null;
   const totalCbm = data.boxes.reduce((sum, b) => sum + (b.cbmTotal ?? 0), 0);
 
+  // หลัง action สำเร็จ: ถ้า inline master-detail ส่ง onChanged มา → ใช้ refetch ของมัน
+  // ถ้าไม่ส่งมา (หน้า standalone /[id]) → router.refresh() ตามเดิม
+  const refresh = () => (onChanged ? onChanged() : router.refresh());
+
   function run(action: () => Promise<PoActionResult | BoxActionResult>, confirmMsg?: string, after?: () => void) {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setError(null);
@@ -138,7 +188,7 @@ export function PoDetail({
       const res = await action();
       if (res.ok) {
         after?.();
-        router.refresh();
+        refresh();
       } else {
         setError(res.error);
       }
@@ -157,6 +207,15 @@ export function PoDetail({
     [data.lines],
   );
 
+  // "รอใส่ข้อมูล" — Pinpoint: ของสั่งทำ สั่งแล้ว/ได้เลขแล้ว แต่ยังไม่มีกล่องที่มีเลขพัสดุ
+  const awaitingTracking =
+    (status === "ORDERED" || status === "SHIPPED") &&
+    (data.boxes.length === 0 || data.boxes.every((b) => !b.trackingNo));
+
+  // ยอด GOODS / THAI_FREIGHT ล่าสุด (ไว้โชว์ "จ่ายแล้ว" + ใช้ใน cost panel)
+  const goodsPayment = payments.find((p) => p.kind === "GOODS") ?? null;
+  const thaiFreightPayment = payments.find((p) => p.kind === "THAI_FREIGHT") ?? null;
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {error && (
@@ -164,6 +223,9 @@ export function PoDetail({
           {error}
         </div>
       )}
+
+      {/* 0) ไทม์ไลน์ 5 ขั้น + badge รอใส่ข้อมูล */}
+      <Timeline status={status} isChina={isChina} awaitingTracking={awaitingTracking} />
 
       {/* 1) หัวใบ */}
       <div className="dc-card" style={{ display: "grid", gap: 14 }}>
@@ -174,6 +236,22 @@ export function PoDetail({
               <span className={`dc-st dc-st--${isChina ? "ship" : "ok"}`} style={{ fontSize: 11 }}>
                 {PO_ORIGIN_LABEL[data.origin] ?? data.origin}
               </span>
+              {awaitingTracking && (
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: "#92660a",
+                    background: "#fef9e7",
+                    border: "1px solid #f4d77e",
+                    borderRadius: 999,
+                    padding: "3px 10px",
+                  }}
+                  title="ของสั่งทำ — รอผู้ขายแจ้งเลขพัสดุ/ขนาดกล่อง"
+                >
+                  รอใส่เลขพัสดุ/ขนาดกล่อง
+                </span>
+              )}
             </div>
             <div style={{ fontSize: 14, color: "#52525b", display: "grid", gap: 2, marginTop: 2 }}>
               <div>ผู้ขาย: <b style={{ color: "#18181b" }}>{data.supplierName ?? "—"}</b></div>
@@ -265,7 +343,35 @@ export function PoDetail({
         sealed={status === "RECEIVED"}
       />
 
-      {/* 4) สถานะ — ปุ่มเดินสถานะตามสถานะปัจจุบัน */}
+      {/* 4) สรุปต้นทุน */}
+      <CostSummary
+        status={status}
+        isChina={isChina}
+        sym={s}
+        totalNative={totalNative}
+        fxRate={data.fxRate}
+        totalThb={totalThb}
+        goodsPayment={goodsPayment}
+        thaiFreightPayment={thaiFreightPayment}
+      />
+
+      {/* 5) การจ่ายเงิน — จีนเท่านั้น (ด่านปลดล็อกสถานะ) */}
+      {isChina && (
+        <PaymentSection
+          poId={data.id}
+          status={status}
+          payments={payments}
+          goodsPaid={goodsPaid}
+          thaiFreightPaid={thaiFreightPaid}
+          goodsPayment={goodsPayment}
+          thaiFreightPayment={thaiFreightPayment}
+          canManage={canManage}
+          pending={pending}
+          run={run}
+        />
+      )}
+
+      {/* 6) สถานะ — ปุ่มเดินสถานะตามสถานะปัจจุบัน */}
       <Section title="สถานะใบสั่งซื้อ" sub="เดินสถานะตามจริง — ปุ่มจะโชว์เฉพาะขั้นที่ทำได้ตอนนี้">
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span className={`dc-st dc-st--${tone(status)}`} style={{ fontSize: 14, padding: "5px 14px" }}>
@@ -343,6 +449,393 @@ function AdvanceBtn({ label, onClick, pending }: { label: string; onClick: () =>
     <button type="button" className="dc-btn-xl" style={btnSmall} disabled={pending} onClick={onClick}>
       {label}
     </button>
+  );
+}
+
+// ── 0) ไทม์ไลน์ 5 ขั้น ─────────────────────────────────────────
+// map: ORDERED→1 · SHIPPED→2 · ARRIVED_TH→3 · AT_WAREHOUSE→4 · RECEIVED→5
+// ก่อนสั่ง (DRAFT/PENDING_APPROVAL/APPROVED) → โชว์โน้ต "ก่อนสั่ง" เหนือไทม์ไลน์ (ทุกขั้นยังเป็นสีเทา)
+// PARTIAL → ระหว่างขั้น 4-5 (รับบางส่วน) · CANCELLED → ริบบิ้น "ยกเลิกแล้ว"
+const TIMELINE_STEPS: { key: string; label: string; hint?: string }[] = [
+  { key: "ORDERED", label: "สั่งแล้ว" },
+  { key: "SHIPPED", label: "ได้เลข Tracking" },
+  { key: "ARRIVED_TH", label: "ถึงไทยแล้ว", hint: "· จ่ายค่าของ" },
+  { key: "AT_WAREHOUSE", label: "ถึงโกดังแล้ว", hint: "· จ่ายค่าขนส่งไทย" },
+  { key: "RECEIVED", label: "รับแล้ว" },
+];
+
+function Timeline({ status, isChina, awaitingTracking }: { status: string; isChina: boolean; awaitingTracking: boolean }) {
+  const preOrder = status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED";
+  const cancelled = status === "CANCELLED";
+  const partial = status === "PARTIAL";
+  const currentRank = statusRank(status); // 3..7
+
+  if (cancelled) {
+    return (
+      <div
+        className="dc-card"
+        style={{
+          background: "#fdeaea",
+          borderColor: "#f3c7c2",
+          color: "#b8362a",
+          fontWeight: 700,
+          fontSize: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <X size={16} /> ใบสั่งซื้อนี้ถูกยกเลิกแล้ว
+      </div>
+    );
+  }
+
+  return (
+    <div className="dc-card" style={{ display: "grid", gap: 10 }}>
+      {preOrder && (
+        <div style={{ fontSize: 12.5, color: "#92660a", fontWeight: 600, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 8, padding: "5px 10px", justifySelf: "start" }}>
+          ก่อนสั่ง — รออนุมัติ/สั่งกับผู้ขาย
+        </div>
+      )}
+      {partial && (
+        <div style={{ fontSize: 12.5, color: "#1c5fc4", fontWeight: 600, justifySelf: "start" }}>
+          รับบางส่วน — ระหว่าง “ถึงโกดังแล้ว” กับ “รับแล้ว”
+        </div>
+      )}
+      {awaitingTracking && (
+        <div style={{ fontSize: 12.5, color: "#92660a", fontWeight: 600, justifySelf: "start" }}>
+          รอใส่ข้อมูล — ของสั่งทำ ยังไม่มีเลขพัสดุ/ขนาดกล่อง
+        </div>
+      )}
+
+      {/* แถวขั้น — มือถือ: scroll แนวนอน */}
+      <div style={{ overflowX: "auto", paddingBottom: 2 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 0, minWidth: 520 }}>
+          {TIMELINE_STEPS.map((step, i) => {
+            const rank = statusRank(step.key);
+            // ขั้นที่ทำเสร็จแล้ว (rank < current หรือ partial ครอบขั้น 4) = filled
+            const done = !preOrder && (rank < currentRank || (partial && rank <= statusRank("AT_WAREHOUSE")));
+            const current = !preOrder && rank === currentRank;
+            const fill = done ? "#1c8a4e" : current ? "#fff" : "#f1f1f4";
+            const ring = current ? "#1c5fc4" : done ? "#1c8a4e" : "#e4e4e7";
+            const numColor = done ? "#fff" : current ? "#1c5fc4" : "#a1a1aa";
+            // เส้นเชื่อมไปขั้นถัดไป
+            const connectorDone = !preOrder && rank < currentRank;
+            return (
+              <div key={step.key} style={{ display: "flex", alignItems: "flex-start", flex: 1, minWidth: 96 }}>
+                <div style={{ display: "grid", justifyItems: "center", gap: 5, flex: "0 0 auto", width: 96 }}>
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      background: fill,
+                      border: `2px solid ${ring}`,
+                      boxShadow: current ? "0 0 0 4px rgba(28,95,196,0.14)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: numColor,
+                    }}
+                  >
+                    {done ? <Check size={16} /> : i + 1}
+                  </div>
+                  <div style={{ fontSize: 11.5, fontWeight: current ? 700 : 600, color: current ? "#18181b" : done ? "#3f6f50" : "#a1a1aa", textAlign: "center", lineHeight: 1.25 }}>
+                    {step.label}
+                  </div>
+                  {isChina && step.hint && (
+                    <div style={{ fontSize: 10.5, color: "#b08400", textAlign: "center", lineHeight: 1.2 }}>{step.hint}</div>
+                  )}
+                </div>
+                {i < TIMELINE_STEPS.length - 1 && (
+                  <div style={{ flex: 1, height: 2, marginTop: 16, background: connectorDone ? "#1c8a4e" : "#e4e4e7", minWidth: 12 }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 4) สรุปต้นทุน ──────────────────────────────────────────────
+// ตัวเลขจริงเท่าที่มี · placeholder เมื่อยังไม่มีข้อมูล (ไม่ปั้นตัวเลข Landed ปลอม)
+function CostSummary({
+  status,
+  isChina,
+  sym,
+  totalNative,
+  fxRate,
+  totalThb,
+  goodsPayment,
+  thaiFreightPayment,
+}: {
+  status: string;
+  isChina: boolean;
+  sym: string;
+  totalNative: number;
+  fxRate: number | null;
+  totalThb: number | null;
+  goodsPayment: PoPaymentData | null;
+  thaiFreightPayment: PoPaymentData | null;
+}) {
+  // ค่าขนส่งจีน–ไทย: ไม่มี freight fields ใน boxes → ใช้ยอด GOODS ที่บันทึกถ้ามี · ไม่งั้น placeholder
+  const arrivedTh = statusAtLeast(status, "ARRIVED_TH");
+  const atWarehouse = statusAtLeast(status, "AT_WAREHOUSE");
+
+  const chinaFreightNode = goodsPayment
+    ? `${payCurSym(goodsPayment.currency)}${fmt(fromSatang(goodsPayment.amountSatang))}`
+    : arrivedTh
+      ? "รอกรอก"
+      : "รอกรอก (เมื่อถึงไทย)";
+
+  const thaiFreightNode = thaiFreightPayment
+    ? `${payCurSym(thaiFreightPayment.currency)}${fmt(fromSatang(thaiFreightPayment.amountSatang))}`
+    : atWarehouse
+      ? "รอกรอก"
+      : "รอกรอก (เมื่อถึงโกดัง)";
+
+  // Landed ประมาณ = ยอดของ × เรต (subtotal) — label ชัดว่า "ประมาณ" · ไม่รวม freight ที่ยังไม่รู้แน่
+  const landedEstimate = isChina && totalThb != null ? totalThb : !isChina ? totalNative : null;
+
+  return (
+    <Section title="สรุปต้นทุน" sub="ตัวเลขจริงเท่าที่มี — ช่องที่ยังไม่รู้จะขึ้น “รอกรอก” (ไม่เดาตัวเลข)">
+      <div style={{ display: "grid", gap: 0, fontSize: 14 }}>
+        <CostRow label={isChina ? "ยอดหยวน (ค่าของ)" : "ยอดบาท (ค่าของ)"} value={`${sym}${fmt(totalNative)}`} strong />
+        {isChina && (
+          <CostRow label="เรต ฿/¥" value={fxRate != null ? `1 ¥ = ฿${fmt(fxRate, 4)}` : "ยังไม่ใส่เรต"} muted={fxRate == null} />
+        )}
+        {isChina && totalThb != null && <CostRow label="ยอดของ (บาท)" value={`฿${fmt(totalThb)}`} />}
+        <CostRow
+          label="ค่าขนส่งจีน–ไทย"
+          value={chinaFreightNode}
+          muted={!goodsPayment}
+        />
+        <CostRow
+          label="ค่าขนส่งในไทย"
+          value={thaiFreightNode}
+          muted={!thaiFreightPayment}
+        />
+        <div style={{ borderTop: "2px solid var(--dc-line, #e4e4e7)", marginTop: 4 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "12px 2px 2px" }}>
+          <div style={{ fontWeight: 750, color: "#18181b" }}>
+            ต้นทุน Landed <span style={{ fontSize: 11.5, fontWeight: 600, color: "#a1a1aa" }}>(ประมาณ)</span>
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 18, fontVariantNumeric: "tabular-nums", color: landedEstimate != null ? "#18181b" : "#a1a1aa" }}>
+            {landedEstimate != null ? `฿${fmt(landedEstimate)}` : "—"}
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#a1a1aa", padding: "2px 2px 0" }}>
+          * ประมาณจากยอดของ × เรต — ยังไม่รวมค่าขนส่ง/ภาษีที่รอกรอก ตัวเลขจริงคิดตอนรับเข้าคลัง
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function CostRow({ label, value, strong, muted }: { label: string; value: string; strong?: boolean; muted?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 2px", borderBottom: "1px solid var(--dc-line, #f4f4f6)" }}>
+      <div style={{ color: "#52525b", fontWeight: strong ? 650 : 500 }}>{label}</div>
+      <div style={{ fontVariantNumeric: "tabular-nums", fontWeight: strong ? 750 : 600, color: muted ? "#a1a1aa" : "#18181b" }}>{value}</div>
+    </div>
+  );
+}
+
+// ── 5) การจ่ายเงิน (จีนเท่านั้น) ───────────────────────────────
+// 2 ด่าน: ค่าของ (GOODS) ปลดล็อก "ถึงโกดังเรา" · ค่าขนส่งในไทย (THAI_FREIGHT) ปลดล็อก "รับเข้าคลัง"
+function PaymentSection({
+  poId,
+  status,
+  payments,
+  goodsPaid,
+  thaiFreightPaid,
+  goodsPayment,
+  thaiFreightPayment,
+  canManage,
+  pending,
+  run,
+}: {
+  poId: string;
+  status: string;
+  payments: PoPaymentData[];
+  goodsPaid: boolean;
+  thaiFreightPaid: boolean;
+  goodsPayment: PoPaymentData | null;
+  thaiFreightPayment: PoPaymentData | null;
+  canManage: boolean;
+  pending: boolean;
+  run: (action: () => Promise<PoActionResult | BoxActionResult>, confirmMsg?: string, after?: () => void) => void;
+}) {
+  return (
+    <Section title="การจ่ายเงิน" sub="2 ด่าน — จ่ายค่าของก่อนถึงโกดัง · จ่ายค่าขนส่งไทยก่อนรับเข้าคลัง">
+      <div style={{ display: "grid", gap: 12 }}>
+        <PaymentGate
+          poId={poId}
+          kind="GOODS"
+          title="ค่าของ (GOODS)"
+          paid={goodsPaid}
+          payment={goodsPayment}
+          // เปิดฟอร์มเมื่อ ≥ ถึงไทยแล้ว · default สกุล ¥ (จ่ายผู้ขายจีน)
+          formOpen={statusAtLeast(status, "ARRIVED_TH")}
+          notYetMsg="พอถึงไทยแล้วจะบันทึกจ่ายค่าของได้"
+          defaultCurrency="CNY"
+          hint="จ่ายค่าของก่อน จึงจะเลื่อน “ถึงโกดังเรา” ได้"
+          canManage={canManage}
+          pending={pending}
+          run={run}
+        />
+        <PaymentGate
+          poId={poId}
+          kind="THAI_FREIGHT"
+          title="ค่าขนส่งในไทย (THAI_FREIGHT)"
+          paid={thaiFreightPaid}
+          payment={thaiFreightPayment}
+          // เปิดฟอร์มเมื่อ ≥ ถึงโกดังแล้ว · default สกุล ฿
+          formOpen={statusAtLeast(status, "AT_WAREHOUSE")}
+          notYetMsg="พอถึงโกดังแล้วจะบันทึกจ่ายค่าขนส่งไทยได้"
+          defaultCurrency="THB"
+          hint="จ่ายค่าขนส่งไทยก่อน จึงจะรับเข้าคลังได้"
+          canManage={canManage}
+          pending={pending}
+          run={run}
+        />
+
+        {/* รายการจ่ายทั้งหมด (ledger) */}
+        {payments.length > 0 && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: "#a1a1aa", marginBottom: 6 }}>ประวัติการจ่าย</div>
+            <div style={{ display: "grid", gap: 4 }}>
+              {payments.map((p) => (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, fontVariantNumeric: "tabular-nums", color: "#52525b" }}>
+                  <span>{p.kind === "GOODS" ? "ค่าของ" : "ค่าขนส่งในไทย"} · {fmtDateTime(p.paidAt)}{p.note ? ` · ${p.note}` : ""}</span>
+                  <span style={{ fontWeight: 600, color: "#18181b" }}>{payCurSym(p.currency)}{fmt(fromSatang(p.amountSatang))}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function PaymentGate({
+  poId,
+  kind,
+  title,
+  paid,
+  payment,
+  formOpen,
+  notYetMsg,
+  defaultCurrency,
+  hint,
+  canManage,
+  pending,
+  run,
+}: {
+  poId: string;
+  kind: "GOODS" | "THAI_FREIGHT";
+  title: string;
+  paid: boolean;
+  payment: PoPaymentData | null;
+  formOpen: boolean;
+  notYetMsg: string;
+  defaultCurrency: "THB" | "CNY";
+  hint: string;
+  canManage: boolean;
+  pending: boolean;
+  run: (action: () => Promise<PoActionResult | BoxActionResult>, confirmMsg?: string, after?: () => void) => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"THB" | "CNY">(defaultCurrency);
+  const today = new Date().toISOString().slice(0, 10);
+  const [paidAt, setPaidAt] = useState(today);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+
+  function submit() {
+    setLocalErr(null);
+    const amt = numOrNull(amount);
+    if (amt == null) {
+      setLocalErr("กรุณาระบุยอดเงินที่จ่าย");
+      return;
+    }
+    run(
+      () =>
+        recordPoPayment({
+          poId,
+          kind,
+          amountSatang: Math.round(amt * 100),
+          currency,
+          paidAt: new Date(paidAt + "T00:00:00").toISOString(),
+        }),
+      undefined,
+      () => setAmount(""),
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--dc-line, #e4e4e7)", borderRadius: 12, padding: "12px 14px", background: paid ? "#f1faf3" : "#fcfcfd", display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 700, color: "#18181b", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <CircleDollarSign size={15} /> {title}
+        </span>
+        {paid && payment && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#167a41", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Check size={14} /> จ่ายแล้ว · {payCurSym(payment.currency)}{fmt(fromSatang(payment.amountSatang))} · {fmtDateTime(payment.paidAt)}
+            </span>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => run(() => deletePoPayment(payment.id), "ยืนยันลบรายการจ่ายเงินนี้?")}
+                disabled={pending}
+                style={{ ...iconBtn, width: 30, height: 30, color: "#b8362a" }}
+                title="ลบรายการจ่าย"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+
+      {!paid && (
+        <>
+          {canManage && formOpen ? (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+                <label style={{ ...lbl, flex: "1 1 120px", minWidth: 110 }}>
+                  ยอดที่จ่าย
+                  <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="0.00" style={inp} />
+                </label>
+                <div style={{ display: "grid", gap: 5 }}>
+                  <span style={lblText}>สกุล</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button type="button" onClick={() => setCurrency("THB")} className={`dc-chip${currency === "THB" ? " is-active" : ""}`}>฿ บาท</button>
+                    <button type="button" onClick={() => setCurrency("CNY")} className={`dc-chip${currency === "CNY" ? " is-active" : ""}`}>¥ หยวน</button>
+                  </div>
+                </div>
+                <label style={{ ...lbl, flex: "0 0 auto" }}>
+                  วันที่จ่าย
+                  <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} style={{ ...inp, width: 160 }} />
+                </label>
+                <button type="button" onClick={submit} className="dc-btn-xl" style={btnSmall} disabled={pending}>
+                  {kind === "GOODS" ? "บันทึกจ่ายค่าของ" : "บันทึกจ่ายค่าขนส่งไทย"}
+                </button>
+              </div>
+              {localErr && <div style={{ color: "#b8362a", fontSize: 13, fontWeight: 600 }}>{localErr}</div>}
+              <div style={{ fontSize: 12, color: "#92660a" }}>{hint}</div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: "#a1a1aa" }}>{canManage ? notYetMsg : "ยังไม่ได้จ่าย"}</div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

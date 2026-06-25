@@ -7468,6 +7468,16 @@ enum DcPoOrigin {
   @@schema("dc")
 }
 
+// ด่านจ่ายเงิน 2 จุดของใบสั่งซื้อนำเข้า (CEO 2026-06-25):
+//   GOODS        = ค่าของ — จ่ายตอน "ถึงโกดังไทย" ก่อนจึงส่งมาโกดังเราได้ (gate ARRIVED_TH→AT_WAREHOUSE)
+//   THAI_FREIGHT = ค่าขนส่งในไทย — จ่ายตอน "ถึงโกดังเรา" ก่อนจึงรับเข้าคลังได้ (gate รับเข้า)
+enum DcPoPaymentKind {
+  GOODS
+  THAI_FREIGHT
+
+  @@schema("dc")
+}
+
 enum DcShipmentMode {
   TRUCK
   SEA
@@ -7720,10 +7730,32 @@ model DcPurchaseOrder {
   supplier  DcSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   lines     DcPurchaseLine[]
   shipments DcShipment[]
+  payments  DcPoPayment[]
 
   @@unique([orgId, poCode])
   @@index([orgId, status])
   @@map("purchase_orders")
+  @@schema("dc")
+}
+
+// บันทึกการจ่ายเงินต่อใบสั่งซื้อ (ledger · audit-trail ใคร/เมื่อไร/เท่าไร).
+// ใช้เป็น "ด่าน" — มีแถว GOODS แล้วจึงเลื่อนถึงโกดังได้ · มีแถว THAI_FREIGHT แล้วจึงรับเข้าได้.
+model DcPoPayment {
+  id           String          @id @default(uuid()) @db.Uuid
+  orgId        String          @map("org_id") @db.Uuid
+  poId         String          @map("po_id") @db.Uuid
+  kind         DcPoPaymentKind
+  amountSatang Int             @map("amount_satang") // ยอดที่จ่าย (หน่วยย่อย ×100 ของ currency)
+  currency     String          @default("THB") // THB หรือ CNY (ค่าของจีนจ่ายเป็นหยวนได้)
+  paidAt       DateTime        @map("paid_at") @db.Timestamptz(6)
+  paidByUserId String          @map("paid_by_user_id") @db.Uuid
+  note         String?
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  po DcPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, poId])
+  @@map("po_payments")
   @@schema("dc")
 }
 

@@ -270,6 +270,152 @@
 /* จอเล็กมาก (≤480px) — ช่องเลือกสินค้าเต็มแถว, จำนวน/ราคา/ลบ ตกลงบรรทัดล่าง */
 @media (max-width: 480px) { .dc-poline { grid-template-columns: 1fr; } }
 
+/* ============ PURCHASING WORKSPACE (ใบสั่งซื้อจีน · master-detail + kanban) ============ */
+.dc-pur { display: grid; gap: 14px; }
+
+/* แถวบน: สถิติงานค้าง (ซ้าย) + สลับมุมมอง/ปุ่มสั่งซื้อ (ขวา) */
+.dc-pur-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.dc-pur-bar__right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* สถิติ "งานค้างวันนี้" */
+.dc-pur-stats {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 13.5px; color: var(--dc-muted);
+  background: var(--color-brand-50); border: 1px solid var(--dc-line);
+  border-radius: 999px; padding: 7px 16px;
+}
+.dc-pur-stats__label { font-weight: 750; color: var(--dc-blue-strong); }
+.dc-pur-stat { font-variant-numeric: tabular-nums; }
+.dc-pur-stat b { color: var(--dc-ink); font-weight: 800; }
+.dc-pur-stats__dot { color: var(--dc-subtle); }
+
+.dc-pur-toggle { padding: 4px; }
+.dc-pur-empty { text-align: center; color: var(--dc-muted); padding: 44px 16px; }
+
+/* ปุ่ม "＋ สั่งซื้อ" + เมนูจีน/ไทย */
+.dc-pur-new { position: relative; }
+.dc-pur-new__btn {
+  width: auto; min-height: 44px; padding: 0 18px; font-size: 15px;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.dc-pur-new__scrim { position: fixed; inset: 0; z-index: 20; }
+.dc-pur-new__menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 21;
+  background: var(--dc-paper); border: 1px solid var(--dc-line);
+  border-radius: 12px; box-shadow: var(--dc-shadow-lg);
+  padding: 6px; min-width: 220px; display: grid; gap: 4px;
+}
+.dc-pur-new__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 9px; color: var(--dc-ink); text-decoration: none;
+}
+.dc-pur-new__item:hover { background: var(--color-brand-50); }
+.dc-pur-new__flag { font-size: 18px; }
+.dc-pur-new__hint { font-size: 12px; color: var(--dc-subtle); }
+
+/* ── master-detail: 2 คอลัมน์ (ลิสต์ซ้าย · แผงขวา) → ยุบเป็น 1 คอลัมน์ ≤900px ── */
+.dc-pur-md {
+  display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px;
+  align-items: start;
+}
+.dc-pur-md__list { display: grid; gap: 10px; align-content: start; }
+.dc-pur-md__chips { margin-bottom: 0; }
+.dc-pur-md__cards {
+  display: grid; gap: 9px; align-content: start;
+  max-height: calc(100vh - 240px); overflow-y: auto; padding-right: 2px;
+}
+.dc-pur-md__empty { font-size: 13.5px; color: var(--dc-subtle); padding: 24px 8px; text-align: center; }
+.dc-pur-md__panel { min-width: 0; }
+.dc-pur-md__placeholder { text-align: center; color: var(--dc-muted); padding: 48px 16px; }
+
+/* การ์ดใบกระชับ (ลิสต์ซ้าย) */
+.dc-pur-card {
+  display: grid; gap: 6px; width: 100%; text-align: left; cursor: pointer;
+  background: var(--dc-paper); border: 1px solid var(--dc-line);
+  border-radius: 13px; padding: 12px 13px;
+  box-shadow: var(--dc-shadow-sm);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+}
+.dc-pur-card:hover { border-color: var(--color-brand-200, #c9d8f0); box-shadow: var(--dc-shadow-md); }
+.dc-pur-card:active { transform: scale(0.99); }
+.dc-pur-card.is-active {
+  border-color: var(--color-brand-500); box-shadow: 0 0 0 1px var(--color-brand-500), var(--dc-shadow-md);
+  background: linear-gradient(180deg, var(--color-brand-50), var(--dc-paper));
+}
+.dc-pur-card__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dc-pur-card__supplier {
+  font-weight: 750; font-size: 14.5px; color: var(--dc-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.dc-pur-card__meta { font-size: 12px; color: var(--dc-muted); font-variant-numeric: tabular-nums; }
+.dc-pur-card__bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dc-pur-card__total { font-weight: 800; font-size: 15px; color: var(--dc-ink); font-variant-numeric: tabular-nums; }
+
+/* ป้าย "รอใส่ข้อมูล" (amber) */
+.dc-pur-badge-input {
+  display: inline-flex; align-items: center; padding: 2px 9px;
+  border-radius: 999px; font-size: 11px; font-weight: 700;
+  background: #fcf2da; color: #a06d0c; border: 1px solid #f0dca6;
+}
+
+/* ── kanban (บอร์ดสถานะ) ── */
+.dc-pur-kb { display: grid; gap: 10px; }
+.dc-pur-kb__hint { font-size: 13px; color: var(--dc-muted); font-weight: 600; }
+.dc-pur-kb__cols { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+.dc-pur-kb__col {
+  flex: 0 0 264px; min-width: 264px;
+  background: var(--dc-canvas); border: 1px solid var(--dc-line);
+  border-radius: 14px; padding: 12px; display: grid; gap: 10px; align-content: start;
+}
+.dc-pur-kb__head { font-size: 13px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+.dc-pur-kb__count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 999px; background: var(--color-brand-600); color: #fff;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.dc-pur-kb__body { display: grid; gap: 9px; }
+.dc-pur-kb__empty { font-size: 12px; color: #c4c4cc; padding: 4px 2px; }
+
+.dc-pur-kb__card {
+  display: grid; gap: 5px; text-decoration: none; color: inherit;
+  background: var(--dc-paper); border: 1px solid var(--dc-line);
+  border-radius: 11px; padding: 11px; box-shadow: var(--dc-shadow-sm);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+}
+.dc-pur-kb__card:hover { border-color: var(--color-brand-200, #c9d8f0); box-shadow: var(--dc-shadow-md); transform: translateY(-1px); }
+.dc-pur-kb__card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.dc-pur-kb__card-supplier {
+  font-weight: 700; font-size: 13.5px; color: var(--dc-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.dc-pur-kb__card-meta { font-size: 11.5px; color: var(--dc-muted); font-variant-numeric: tabular-nums; }
+.dc-pur-kb__card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.dc-pur-kb__card-total { font-weight: 800; font-size: 14px; color: var(--dc-ink); font-variant-numeric: tabular-nums; }
+.dc-pur-kb__card-action {
+  display: inline-flex; align-items: center; gap: 3px; margin-top: 3px;
+  font-size: 12.5px; font-weight: 700; color: var(--dc-blue-strong);
+}
+
+/* โซน "อื่น ๆ" (PARTIAL/CLOSED/CANCELLED) */
+.dc-pur-kb__other {
+  border-top: 1px dashed var(--dc-line-strong); padding-top: 12px; display: grid; gap: 9px;
+}
+.dc-pur-kb__other-head { font-size: 12.5px; font-weight: 700; color: var(--dc-muted); }
+.dc-pur-kb__other-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.dc-pur-kb__other-row .dc-pur-kb__card { flex: 0 0 240px; min-width: 240px; }
+
+/* ── responsive: ≤900px master-detail ยุบเป็น 1 คอลัมน์ (ลิสต์อยู่บน) ── */
+@media (max-width: 900px) {
+  .dc-pur-md { grid-template-columns: 1fr; }
+  .dc-pur-md__cards { max-height: 420px; }
+  .dc-pur-stats { width: 100%; justify-content: flex-start; }
+  .dc-pur-bar__right { width: 100%; justify-content: space-between; }
+}
+
 /* status pill colors per PO status */
 .dc-st { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
 .dc-st--draft { background: #eef1f6; color: #475569; }

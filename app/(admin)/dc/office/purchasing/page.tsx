@@ -1,12 +1,12 @@
-// DC · หลังบ้าน · รายการใบสั่งซื้อ (PO list)
-// แสดงใบสั่งซื้อทั้งหมดของ org เป็นการ์ดชื่อร้าน/ผู้ขาย (กดกางดูรายการ) +
-// แท็บกรองสถานะ + สลับมุมมอง Kanban. รองรับใบจีน (¥) และใบไทย (฿).
+// DC · หลังบ้าน · ใบสั่งซื้อจีน — workspace มาสเตอร์-ดีเทล + บอร์ดสถานะ (ในจอเดียว)
+// แสดงใบสั่งซื้อทั้งหมดของ org · สั่งจีน (¥) / ซื้อไทย (฿) · ติดตามสถานะตั้งแต่สั่งถึงรับเข้าคลัง.
+// server โหลด list + สถิติ "งานค้างวันนี้" → ส่งให้ <PurchasingWorkspace> (client) คุม interactivity.
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
-import { PoListView, type PoListItem } from "./po-list-view";
+import { PurchasingWorkspace, type PoListItem, type PurchasingStats } from "./purchasing-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,9 @@ export default async function DcPurchasingPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
+  const canManage = canDcManage(ctx.session.user.role);
 
-  // โหลดใบ + ผู้ขาย + บรรทัด (ชื่อสินค้า/จำนวน/ราคา) + จำนวนกล่อง — ใหม่สุดก่อน
+  // โหลดใบ + ผู้ขาย + บรรทัด + กล่อง (เลขพัสดุ/สถานะ) — ใหม่สุดก่อน
   const pos = await prisma.dcPurchaseOrder.findMany({
     where: { orgId },
     orderBy: { createdAt: "desc" },
@@ -30,19 +31,26 @@ export default async function DcPurchasingPage() {
       supplier: { select: { name: true } },
       lines: {
         orderBy: { id: "asc" },
-        select: {
-          id: true,
-          qty: true,
-          unitPriceCny: true,
-          product: { select: { name: true, sku: true } },
-        },
+        select: { id: true, qty: true, unitPriceCny: true },
       },
-      _count: { select: { shipments: true } },
+      shipments: { select: { trackingNo: true, status: true } },
     },
   });
 
+  // สถิติ "งานค้างวันนี้" — นับระหว่าง map ครั้งเดียว
+  let pendingTracking = 0; // สั่งแล้ว (ORDERED) แต่ยังไม่มีกล่องที่มีเลขพัสดุ
+  let pendingGrn = 0; // ถึงโกดัง/ถึงไทย/รับบางส่วน — ค้างรับเข้า (GRN)
+  let inTransit = 0; // กล่องที่กำลังขนส่ง (IN_TRANSIT)
+
   const items: PoListItem[] = pos.map((po) => {
     const total = po.lines.reduce((sum, l) => sum + l.qty * Number(l.unitPriceCny), 0);
+    const boxCount = po.shipments.length;
+    const hasTracking = po.shipments.some((s) => (s.trackingNo ?? "").trim() !== "");
+    inTransit += po.shipments.filter((s) => s.status === "IN_TRANSIT").length;
+
+    if (po.status === "ORDERED" && !hasTracking) pendingTracking += 1;
+    if (po.status === "AT_WAREHOUSE" || po.status === "ARRIVED_TH" || po.status === "PARTIAL") pendingGrn += 1;
+
     return {
       id: po.id,
       poCode: po.poCode,
@@ -52,33 +60,30 @@ export default async function DcPurchasingPage() {
       supplierName: po.supplier?.name ?? null,
       total,
       lineCount: po.lines.length,
-      boxCount: po._count.shipments,
+      boxCount,
+      hasTracking,
       date: (po.orderedAt ?? po.createdAt).toISOString(),
-      lines: po.lines.map((l) => ({
-        id: l.id,
-        name: l.product.name,
-        sku: l.product.sku,
-        qty: l.qty,
-        unitPrice: Number(l.unitPriceCny),
-      })),
     };
   });
+
+  const stats: PurchasingStats = { pendingTracking, pendingGrn, inTransit };
+  const r2PublicUrl = process.env.R2_PUBLIC_URL ?? "";
 
   return (
     <div className="dc-page dc-page--wide">
       <div className="dc-head">
         <div>
-          <div className="dc-h1">ใบสั่งซื้อ</div>
+          <div className="dc-h1">ใบสั่งซื้อจีน</div>
           <div className="dc-sub">
-            สั่งของจากจีน (¥) และซื้อในไทย (฿) · กางการ์ดดูรายการ · ติดตามสถานะตั้งแต่สั่งถึงรับเข้าคลัง
+            สั่งของจากจีน (¥) และซื้อในไทย (฿) · ติดตามสถานะตั้งแต่สั่งถึงรับเข้าคลัง — ในจอเดียว
           </div>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
+        <DcModeSwitch canManage={canManage} />
       </div>
 
       <PurchasingTabs />
 
-      <PoListView items={items} />
+      <PurchasingWorkspace items={items} stats={stats} canManage={canManage} r2PublicUrl={r2PublicUrl} />
     </div>
   );
 }

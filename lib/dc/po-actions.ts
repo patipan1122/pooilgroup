@@ -22,7 +22,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
 import { poCode, genCode, grnCode } from "@/lib/dc/codes";
-import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus } from "@/lib/generated/prisma/enums";
+import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
 import { postGrn } from "@/lib/dc/grn-actions";
 
@@ -541,6 +541,22 @@ export async function markAtWarehouse(id: string): Promise<PoActionResult> {
   if (!g.ok) return g;
   const { orgId } = g;
 
+  // 💰 ด่านค่าของ: ใบจีนต้องบันทึก "จ่ายค่าของแล้ว" ก่อน จึงจะส่งมาโกดังเราได้
+  // (CEO 2026-06-25: "ถึงโกดังไทยแล้วต้องจ่ายเงิน ถ้าจ่ายแล้วถึงส่งต่อมาได้")
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id, orgId },
+    select: { origin: true },
+  });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+  if (po.origin === DcPoOrigin.CHINA) {
+    const paid = await prisma.dcPoPayment.count({
+      where: { orgId, poId: id, kind: DcPoPaymentKind.GOODS },
+    });
+    if (paid === 0) {
+      return { ok: false, error: "ต้องบันทึกการจ่าย 'ค่าของ' ก่อน จึงจะส่งมาโกดังเราได้ (ด่านจ่ายเงินตอนถึงไทย)" };
+    }
+  }
+
   const res = await prisma.dcPurchaseOrder.updateMany({
     where: { id, orgId, status: DcPoStatus.ARRIVED_TH },
     data: { status: DcPoStatus.AT_WAREHOUSE },
@@ -777,9 +793,20 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
   //    "ภายใน lock" อีกชั้น เพื่อกัน race (ดูบล็อก $transaction ด้านล่าง).
   const poExists = await prisma.dcPurchaseOrder.findFirst({
     where: { id: poId, orgId },
-    select: { id: true },
+    select: { id: true, origin: true },
   });
   if (!poExists) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  // 💰 ด่านค่าขนส่งในไทย: ใบจีนต้องบันทึก "จ่ายค่าขนส่งไทยแล้ว" ก่อนรับเข้าคลัง
+  // (CEO 2026-06-25: "ถึงโกดังเราแล้วต้องจ่ายค่าขนส่งไทยมาไทย") — เช็คก่อนเข้า lock/tx
+  if (poExists.origin === DcPoOrigin.CHINA) {
+    const paidFreight = await prisma.dcPoPayment.count({
+      where: { orgId, poId, kind: DcPoPaymentKind.THAI_FREIGHT },
+    });
+    if (paidFreight === 0) {
+      return { ok: false, error: "ต้องบันทึกการจ่าย 'ค่าขนส่งในไทย' ก่อน จึงจะรับเข้าคลังได้ (ด่านจ่ายเงินตอนถึงโกดังเรา)" };
+    }
+  }
 
   // คลังปลายทางต้องเป็นของ org นี้ (ยืนยันก่อน เพื่อให้ tx สั้น — แตะแต่ DB writes)
   const wh = await prisma.dcWarehouse.findFirst({
@@ -978,4 +1005,255 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
     trcloudPosted: posted.trcloud.posted,
     trcloudReason: posted.trcloud.reason ?? posted.trcloud.error,
   };
+}
+
+// ── 💰 การจ่ายเงิน (ด่าน 2 จุด · บันทึกยอด · CEO 2026-06-25) ──────────────
+//   GOODS=ค่าของ (จ่าย@ถึงไทย → ปลดล็อก markAtWarehouse)
+//   THAI_FREIGHT=ค่าขนส่งในไทย (จ่าย@ถึงโกดังเรา → ปลดล็อก receivePo)
+// เก็บเป็น ledger (หลายครั้งได้) · amountSatang = หน่วยย่อย ×100 ของ currency.
+
+export type PoPaymentKindInput = "GOODS" | "THAI_FREIGHT";
+
+export type PoPaymentData = {
+  id: string;
+  kind: PoPaymentKindInput;
+  amountSatang: number;
+  currency: string;
+  paidAt: string;
+  note: string | null;
+};
+
+export type RecordPaymentInput = {
+  poId: string;
+  kind: PoPaymentKindInput;
+  amountSatang: number;
+  currency?: string | null; // "THB" (ค่าเริ่มต้น) หรือ "CNY"
+  paidAt?: string | null; // ISO; ว่าง = ตอนนี้
+  note?: string | null;
+};
+
+export async function recordPoPayment(input: RecordPaymentInput): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId, userId } = g;
+
+  const poId = cleanStr(input.poId);
+  if (!poId) return { ok: false, error: "ไม่พบใบสั่งซื้อ" };
+  const amount = nonNegInt(input.amountSatang);
+  if (amount <= 0) return { ok: false, error: "กรุณาระบุยอดเงินที่จ่าย (มากกว่า 0)" };
+  const kind = input.kind === "THAI_FREIGHT" ? DcPoPaymentKind.THAI_FREIGHT : DcPoPaymentKind.GOODS;
+  const currency = cleanStr(input.currency) === "CNY" ? "CNY" : "THB";
+
+  // ใบต้องเป็นของ org นี้ (กันบันทึกจ่ายข้ามองค์กร)
+  const po = await prisma.dcPurchaseOrder.findFirst({ where: { id: poId, orgId }, select: { id: true } });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  const parsed = input.paidAt ? new Date(input.paidAt) : new Date();
+  const paidAt = isNaN(parsed.getTime()) ? new Date() : parsed;
+
+  await prisma.dcPoPayment.create({
+    data: { orgId, poId, kind, amountSatang: amount, currency, paidAt, paidByUserId: userId, note: cleanStr(input.note) },
+  });
+  revalidate(poId);
+  return { ok: true, id: poId };
+}
+
+export async function deletePoPayment(paymentId: string): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId } = g;
+  const id = cleanStr(paymentId);
+  if (!id) return { ok: false, error: "ไม่พบรายการจ่ายเงิน" };
+  // ลบได้เฉพาะของ org ตัวเอง
+  const res = await prisma.dcPoPayment.deleteMany({ where: { id, orgId } });
+  if (res.count === 0) return { ok: false, error: "ไม่พบรายการจ่ายเงินนี้" };
+  revalidate();
+  return { ok: true, id };
+}
+
+// ── 🔎 โหลดรายละเอียดใบสำหรับ panel master-detail (เรียกจาก client ตอนเลือกใบ) ──
+// คืนชุดข้อมูลเดียวกับหน้า /[id] + payments + paid flags + คลังที่เข้าถึงได้
+// → ฝั่ง client เอาไป render <PoDetail/> ในแผงขวาได้โดยไม่ต้องเปลี่ยนหน้า.
+
+export type PanelLine = {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  qty: number;
+  unitPriceCny: number;
+  unitPriceThb: number | null;
+  photoR2Key: string | null;
+  note: string | null;
+};
+
+export type PanelBoxContent = { id: string; productId: string; name: string; qty: number };
+
+export type PanelBox = {
+  id: string;
+  shipmentCode: string;
+  trackingNo: string | null;
+  mode: string;
+  status: string;
+  cbmTotal: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  note: string | null;
+  contents: PanelBoxContent[];
+};
+
+export type PanelData = {
+  id: string;
+  poCode: string;
+  status: string;
+  origin: string;
+  currency: string;
+  fxRate: number | null;
+  note: string | null;
+  supplierName: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  createdBy: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  orderedAt: string | null;
+  createdAt: string;
+  lines: PanelLine[];
+  boxes: PanelBox[];
+};
+
+export type PoPanelBundle = {
+  data: PanelData;
+  payments: PoPaymentData[];
+  goodsPaid: boolean;
+  thaiFreightPaid: boolean;
+  warehouses: { id: string; name: string }[];
+  r2PublicUrl: string;
+};
+
+export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundle | null> {
+  const session = await requireSession();
+  if (!canDcManage(session.user.role)) return null;
+  const orgId = session.user.org_id;
+  const poId = cleanStr(poIdRaw);
+  if (!poId) return null;
+
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id: poId, orgId },
+    select: {
+      id: true, poCode: true, status: true, origin: true, currency: true, fxRate: true, note: true,
+      warehouseId: true, createdByUserId: true, approvedByUserId: true, approvedAt: true, orderedAt: true, createdAt: true,
+      supplier: { select: { name: true } },
+      lines: {
+        orderBy: { id: "asc" },
+        select: {
+          id: true, qty: true, unitPriceCny: true, unitPriceThb: true, photoR2Key: true, note: true,
+          product: { select: { id: true, sku: true, name: true, unit: true } },
+        },
+      },
+    },
+  });
+  if (!po) return null;
+
+  const boxes = await prisma.dcShipment.findMany({
+    where: { poId, orgId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true, shipmentCode: true, trackingNo: true, mode: true, status: true, cbmTotal: true,
+      lengthCm: true, widthCm: true, heightCm: true, note: true,
+      lines: { select: { id: true, productId: true, qty: true } },
+    },
+  });
+
+  // ชื่อสินค้าทั้งหมด (บรรทัดใบ + ของในกล่อง) → 1 query เสริม
+  const productNames = new Map<string, string>();
+  for (const l of po.lines) productNames.set(l.product.id, l.product.name);
+  const missing = new Set<string>();
+  for (const b of boxes) for (const bl of b.lines) if (!productNames.has(bl.productId)) missing.add(bl.productId);
+  if (missing.size > 0) {
+    const extra = await prisma.dcProduct.findMany({ where: { id: { in: [...missing] }, orgId }, select: { id: true, name: true } });
+    for (const p of extra) productNames.set(p.id, p.name);
+  }
+
+  let warehouseName: string | null = null;
+  if (po.warehouseId) {
+    const w = await prisma.dcWarehouse.findFirst({ where: { id: po.warehouseId, orgId }, select: { name: true } });
+    warehouseName = w?.name ?? null;
+  }
+  const nameOf = async (userId: string | null): Promise<string | null> => {
+    if (!userId) return null;
+    try {
+      const u = await prisma.user.findFirst({ where: { id: userId, orgId }, select: { name: true, email: true } });
+      return u?.name ?? u?.email ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const [createdBy, approvedBy] = await Promise.all([nameOf(po.createdByUserId), nameOf(po.approvedByUserId)]);
+
+  const paymentRows = await prisma.dcPoPayment.findMany({
+    where: { orgId, poId },
+    orderBy: { paidAt: "asc" },
+    select: { id: true, kind: true, amountSatang: true, currency: true, paidAt: true, note: true },
+  });
+  const payments: PoPaymentData[] = paymentRows.map((p) => ({
+    id: p.id,
+    kind: p.kind === DcPoPaymentKind.THAI_FREIGHT ? "THAI_FREIGHT" : "GOODS",
+    amountSatang: p.amountSatang,
+    currency: p.currency,
+    paidAt: p.paidAt.toISOString(),
+    note: p.note,
+  }));
+  const goodsPaid = payments.some((p) => p.kind === "GOODS");
+  const thaiFreightPaid = payments.some((p) => p.kind === "THAI_FREIGHT");
+
+  // คลังที่ผู้ใช้เข้าถึง (สำหรับ dropdown รับเข้า) — best-effort ผ่าน DcWarehouseUser/admin
+  const whRows = await prisma.dcWarehouse.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+
+  const data: PanelData = {
+    id: po.id,
+    poCode: po.poCode,
+    status: po.status,
+    origin: po.origin,
+    currency: po.currency,
+    fxRate: po.fxRate != null ? Number(po.fxRate) : null,
+    note: po.note,
+    supplierName: po.supplier?.name ?? null,
+    warehouseId: po.warehouseId,
+    warehouseName,
+    createdBy,
+    approvedBy,
+    approvedAt: po.approvedAt ? po.approvedAt.toISOString() : null,
+    orderedAt: po.orderedAt ? po.orderedAt.toISOString() : null,
+    createdAt: po.createdAt.toISOString(),
+    lines: po.lines.map((l) => ({
+      id: l.id,
+      productId: l.product.id,
+      sku: l.product.sku,
+      name: l.product.name,
+      unit: l.product.unit,
+      qty: l.qty,
+      unitPriceCny: Number(l.unitPriceCny),
+      unitPriceThb: l.unitPriceThb != null ? Number(l.unitPriceThb) : null,
+      photoR2Key: l.photoR2Key,
+      note: l.note,
+    })),
+    boxes: boxes.map((b) => ({
+      id: b.id,
+      shipmentCode: b.shipmentCode,
+      trackingNo: b.trackingNo,
+      mode: b.mode,
+      status: b.status,
+      cbmTotal: b.cbmTotal != null ? Number(b.cbmTotal) : null,
+      lengthCm: b.lengthCm != null ? Number(b.lengthCm) : null,
+      widthCm: b.widthCm != null ? Number(b.widthCm) : null,
+      heightCm: b.heightCm != null ? Number(b.heightCm) : null,
+      note: b.note,
+      contents: b.lines.map((bl) => ({ id: bl.id, productId: bl.productId, name: productNames.get(bl.productId) ?? "— สินค้า —", qty: bl.qty })),
+    })),
+  };
+
+  return { data, payments, goodsPaid, thaiFreightPaid, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
 }
