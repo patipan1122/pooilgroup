@@ -130,7 +130,7 @@ export default async function TrainingPage() {
 
             return (
               <Card key={b.id}>
-                <CardHeader>
+                <CardHeader className="flex-col sm:flex-row sm:items-start">
                   <div className="min-w-0">
                     <CardTitle>{b.code}</CardTitle>
                     <p className="text-[11px] text-zinc-500 mt-0.5 truncate">
@@ -139,7 +139,7 @@ export default async function TrainingPage() {
                   </div>
                   <Link
                     href={`/liff/report/${b.id}`}
-                    className="inline-flex items-center justify-center h-9 rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
+                    className="inline-flex items-center justify-center min-h-[44px] w-full sm:w-auto rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
                   >
                     บันทึกอบรมเดือนนี้
                   </Link>

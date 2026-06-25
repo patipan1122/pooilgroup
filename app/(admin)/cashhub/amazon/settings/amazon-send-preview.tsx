@@ -25,8 +25,9 @@ export function AmazonSendPreview({ days, storeLabel, caption }: { days: SendPre
         </p>
       ) : (
         <div className="space-y-4">
+          <p className="lg:hidden text-xs" style={{ color: 'var(--ch-text-3)' }}>ปัด ←→ เพื่อดูเพิ่ม</p>
           {days.map((d) => (
-            <div key={d.date} className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+            <div key={d.date} className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white -mx-3 sm:mx-0">
               <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2.5">
                 <span className="text-sm font-semibold text-zinc-700">{d.date}</span>
                 <span className="text-xs text-zinc-500">

@@ -234,7 +234,7 @@ export function BranchAssignmentPanel({
                 type="button"
                 onClick={() => toggle(b.id)}
                 disabled={pending}
-                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-50 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-4 py-2.5 min-h-[44px] hover:bg-zinc-50 transition-colors text-left"
               >
                 <div
                   className={cn(
@@ -276,12 +276,12 @@ export function BranchAssignmentPanel({
       </ul>
 
       {dirty && (
-        <div className="px-4 py-3 border-t-2 border-zinc-100 bg-zinc-50/60 flex items-center justify-end gap-2">
+        <div className="px-4 py-3 border-t-2 border-zinc-100 bg-zinc-50/60 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
           <button
             type="button"
             onClick={reset}
             disabled={pending}
-            className="h-9 px-4 rounded-lg border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
+            className="w-full sm:w-auto min-h-[44px] h-11 sm:h-9 px-4 rounded-lg border-2 border-zinc-200 bg-white text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
           >
             ยกเลิก
           </button>
@@ -289,7 +289,7 @@ export function BranchAssignmentPanel({
             type="button"
             onClick={save}
             disabled={pending}
-            className="h-9 px-5 rounded-lg bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white text-sm font-bold shadow-blue inline-flex items-center gap-1.5 disabled:bg-zinc-300"
+            className="w-full sm:w-auto min-h-[44px] h-11 sm:h-9 px-5 rounded-lg bg-[var(--color-brand-600)] hover:bg-[var(--color-brand-700)] text-white text-sm font-bold shadow-blue inline-flex items-center justify-center gap-1.5 disabled:bg-zinc-300"
           >
             {pending ? (
               <>

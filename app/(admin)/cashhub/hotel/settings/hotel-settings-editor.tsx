@@ -57,9 +57,9 @@ export function HotelSettingsEditor({ configs, accounts, companies, branchCode =
           {rows.map((r) => {
             const acc = r.bankAccountId ? acctById.get(r.bankAccountId) : null;
             return (
-              <li key={r.channel} className="flex items-center gap-2 text-sm">
-                <span className="min-w-[120px] font-medium text-zinc-700">{r.label}</span>
-                <span className="text-zinc-400">→</span>
+              <li key={r.channel} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <span className="w-full sm:w-auto sm:min-w-[120px] font-medium text-zinc-700">{r.label}</span>
+                <span className="hidden sm:inline text-zinc-400">→</span>
                 {!r.isSettle ? (
                   <span className="text-zinc-400">ปิด (ไม่ส่งเข้ากระทบยอด)</span>
                 ) : acc ? (
@@ -78,8 +78,11 @@ export function HotelSettingsEditor({ configs, accounts, companies, branchCode =
       </div>
 
       {/* ตารางแก้ไข */}
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
+      <p className="lg:hidden text-xs" style={{ color: "var(--ch-text-3)" }}>
+        ปัด ←→ เพื่อดูเพิ่ม
+      </p>
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white -mx-3 lg:mx-0">
+        <table className="w-full min-w-[560px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
               <th className="p-3">ช่องทาง</th>
@@ -158,7 +161,7 @@ export function HotelSettingsEditor({ configs, accounts, companies, branchCode =
           type="button"
           disabled={busy}
           onClick={save}
-          className="h-11 rounded-xl bg-[var(--ch-brand,#1e3aff)] px-6 text-sm font-bold text-white disabled:opacity-40"
+          className="h-11 w-full sm:w-auto rounded-xl bg-[var(--ch-brand,#1e3aff)] px-6 text-sm font-bold text-white disabled:opacity-40"
         >
           {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}
         </button>

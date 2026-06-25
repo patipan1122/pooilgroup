@@ -125,7 +125,7 @@ export default async function ImportHubPage() {
     (lastEvImport?.diff as { new?: Record<string, unknown> } | null)?.new ?? null;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-5xl mx-auto">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
 
       <header className="mb-6 animate-fade-up flex flex-col gap-2">

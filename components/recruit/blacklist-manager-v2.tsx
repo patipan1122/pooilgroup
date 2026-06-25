@@ -246,7 +246,7 @@ function AddForm({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            className="text-xs font-bold px-4 h-10 rounded-lg text-zinc-600 hover:bg-zinc-100"
+            className="text-xs font-bold px-4 h-11 rounded-lg text-zinc-600 hover:bg-zinc-100"
           >
             ยกเลิก
           </button>
@@ -254,7 +254,7 @@ function AddForm({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={submit}
             disabled={pending || !fullName.trim() || reason.trim().length < 20}
-            className="text-xs font-bold text-white bg-red-600 px-5 h-10 rounded-lg hover:bg-red-700 disabled:opacity-40"
+            className="text-xs font-bold text-white bg-red-600 px-5 h-11 rounded-lg hover:bg-red-700 disabled:opacity-40"
           >
             {pending ? "กำลังบันทึก..." : "ยืนยันเพิ่มเข้า Blacklist"}
           </button>
@@ -314,17 +314,20 @@ function BlacklistRowV2({
         )}
       </div>
       <div className="md:col-span-4">
-        <p className="text-sm text-zinc-700 leading-relaxed line-clamp-3">
+        <p className="md:hidden text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-0.5">เหตุผล</p>
+        <p className="text-sm text-zinc-700 leading-relaxed line-clamp-3 break-words">
           {entry.reason}
         </p>
       </div>
       <div className="md:col-span-2 text-xs text-zinc-600">
-        <p className="font-medium">{entry.addedBy}</p>
+        <p className="md:hidden text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-0.5">เพิ่มโดย</p>
+        <p className="font-medium break-words">{entry.addedBy}</p>
         <p className="text-zinc-400">
           {new Date(entry.addedAt).toLocaleDateString("th-TH")}
         </p>
       </div>
       <div className="md:col-span-2 text-xs">
+        <p className="md:hidden text-[10px] font-bold text-zinc-400 uppercase tracking-wide mb-0.5">หมดอายุ</p>
         <p className="font-bold text-zinc-700">{expiryLabel}</p>
         <p className="text-zinc-400">
           {expiryDate.toLocaleDateString("th-TH")}

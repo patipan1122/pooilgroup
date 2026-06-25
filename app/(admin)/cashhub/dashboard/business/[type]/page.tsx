@@ -49,7 +49,7 @@ export default async function BusinessDrillPage({
 
   if (branchesInType.length === 0) {
     return (
-      <div className="p-4 sm:p-6 lg:p-10 max-w-5xl mx-auto">
+      <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto">
         <BackLink />
         <EmptyState
           icon={<Building2 className="size-6" />}

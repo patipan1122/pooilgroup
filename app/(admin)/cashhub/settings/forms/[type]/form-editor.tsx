@@ -361,7 +361,7 @@ export function FormEditor({
         </div>
 
         {/* Hero — matches design forms.jsx:42-63 (56×56 icon + SectionPill + Title + actions) */}
-        <div className="flex items-center gap-4 mb-5">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-5">
           <div className="size-14 shrink-0 rounded-2xl bg-[var(--ch-brand-50)] border border-[var(--ch-brand-100)] flex items-center justify-center text-2xl">
             {emoji}
           </div>
@@ -385,6 +385,7 @@ export function FormEditor({
             disabled={
               Object.keys(overrides).length === 0 && customFields.length === 0
             }
+            className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
           >
             <RotateCcw className="size-3.5" />
             รีเซ็ตทั้งหมด
@@ -402,7 +403,7 @@ export function FormEditor({
                 onClick={() => switchVersion(t.id)}
                 disabled={versionPending}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm font-bold transition-colors",
+                  "inline-flex items-center gap-1.5 px-3 h-11 sm:h-9 rounded-xl text-sm font-bold transition-colors",
                   isActive
                     ? "bg-white text-[var(--color-brand-700)] shadow-soft border border-[var(--color-brand-200)]"
                     : "text-zinc-600 hover:bg-white",
@@ -421,7 +422,7 @@ export function FormEditor({
             type="button"
             onClick={createNewVersion}
             disabled={versionPending}
-            className="inline-flex items-center gap-1 px-3 h-9 rounded-xl text-sm font-bold text-[var(--color-brand-700)] hover:bg-white border border-dashed border-[var(--color-brand-300)]"
+            className="inline-flex items-center gap-1 px-3 h-11 sm:h-9 rounded-xl text-sm font-bold text-[var(--color-brand-700)] hover:bg-white border border-dashed border-[var(--color-brand-300)]"
             title={`ก๊อบจาก ${activeTemplate.name} → สร้างเวอร์ชั่นใหม่`}
           >
             <Plus className="size-3.5" />
@@ -433,7 +434,7 @@ export function FormEditor({
               onClick={renameVersion}
               disabled={versionPending}
               title="เปลี่ยนชื่อเวอร์ชั่นนี้"
-              className="p-1.5 rounded-lg text-zinc-500 hover:bg-white hover:text-zinc-900"
+              className="grid place-items-center size-11 sm:size-auto sm:p-1.5 rounded-lg text-zinc-500 hover:bg-white hover:text-zinc-900"
             >
               <Pencil className="size-3.5" />
             </button>
@@ -443,7 +444,7 @@ export function FormEditor({
                 onClick={deleteVersion}
                 disabled={versionPending}
                 title="ลบเวอร์ชั่นนี้"
-                className="p-1.5 rounded-lg text-zinc-500 hover:bg-red-50 hover:text-red-700"
+                className="grid place-items-center size-11 sm:size-auto sm:p-1.5 rounded-lg text-zinc-500 hover:bg-red-50 hover:text-red-700"
               >
                 <Trash2 className="size-3.5" />
               </button>
@@ -466,7 +467,7 @@ export function FormEditor({
           />
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_360px] gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
           {/* Editor column */}
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-0.5 px-0.5">
@@ -635,7 +636,7 @@ export function FormEditor({
 
             {/* Custom fields section — admin can add new fields beyond built-in spec */}
             <div className="mt-6 pt-4 border-t-2 border-dashed border-zinc-200">
-              <div className="flex items-center justify-between mb-2 px-0.5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-0.5">
                 <h2 className="text-xs font-bold text-zinc-500">
                   ฟิลด์ที่เพิ่มเอง ({customFields.length})
                 </h2>
@@ -644,6 +645,7 @@ export function FormEditor({
                   variant="outline"
                   size="sm"
                   onClick={addCustomField}
+                  className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
                 >
                   <Plus className="size-3.5" />
                   เพิ่มช่องใหม่
@@ -781,9 +783,9 @@ export function FormEditor({
         </div>
       </div>
 
-      {/* Sticky save bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t-2 border-zinc-200 px-4 py-3 safe-bottom">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      {/* Sticky save bar — sits above the mobile bottom nav (~64px), flush on desktop */}
+      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 z-30 bg-white border-t-2 border-zinc-200 px-3 sm:px-4 py-3 safe-bottom">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
           <div className="text-sm min-w-0">
             {dirty ? (
               <span className="flex items-center gap-1.5 text-amber-700 font-semibold">

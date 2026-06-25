@@ -103,7 +103,7 @@ export function TriageStack({
 
   if (queue.length === 0) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="h-[calc(100dvh-56px-64px)] lg:h-auto lg:min-h-screen flex flex-col items-center justify-center p-6">
         <div className="text-6xl mb-4">🎉</div>
         <h1 className="text-3xl font-extrabold font-display">เสร็จแล้ว!</h1>
         <p className="text-sm opacity-80 mt-2 text-center max-w-md">
@@ -122,7 +122,7 @@ export function TriageStack({
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-[calc(100dvh-56px-64px)] lg:h-auto lg:min-h-screen flex flex-col">
       {/* Header */}
       <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10">
         <Link

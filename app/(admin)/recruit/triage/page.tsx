@@ -40,7 +40,7 @@ export default async function TriagePage({
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[var(--color-brand-900)] to-zinc-900 text-white">
+    <div className="h-[calc(100dvh-56px-64px)] overflow-hidden lg:h-auto lg:min-h-screen bg-gradient-to-br from-[var(--color-brand-900)] to-zinc-900 text-white">
       <TriageStack
         applications={apps.map((a) => ({
           id: a.id,

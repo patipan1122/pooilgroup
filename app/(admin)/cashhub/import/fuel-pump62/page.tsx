@@ -14,7 +14,7 @@ export default async function FuelImportPage() {
   if (!cashhubFuelV1()) notFound();
 
   return (
-    <div className="ch-scope p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
+    <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <BackButton label="ศูนย์นำเข้าข้อมูล" fallbackHref="/cashhub/import" />
 
       <header className="mb-5 animate-fade-up">
@@ -31,7 +31,7 @@ export default async function FuelImportPage() {
         </p>
       </header>
 
-      <div className="rounded-2xl border border-[var(--ch-border)] bg-[var(--ch-bg-2)] p-4 text-sm text-[var(--ch-text-2)] mb-5 animate-fade-up delay-75 flex items-start gap-3">
+      <div className="rounded-2xl border border-[var(--ch-border)] bg-[var(--ch-bg-2)] p-4 text-sm text-[var(--ch-text-2)] mb-5 animate-fade-up delay-75 flex flex-col sm:flex-row sm:items-start gap-3">
         <div className="flex-1">
           <p className="font-semibold text-[var(--ch-text)] mb-1">
             ที่มาของข้อมูล
@@ -51,7 +51,7 @@ export default async function FuelImportPage() {
         </div>
         <Link
           href="/cashhub/fuel-pump62"
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-[var(--ch-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ch-text)] hover:border-[var(--ch-brand)]"
+          className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--ch-border)] bg-white px-3 py-2 min-h-[44px] text-xs font-semibold text-[var(--ch-text)] hover:border-[var(--ch-brand)]"
         >
           <BarChart3 className="size-3.5" />
           หน้าบริหารยอดขาย

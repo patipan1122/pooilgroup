@@ -230,7 +230,7 @@ export default async function ReportDetailPage({
   const ratio = avg30 > 0 ? Number(report.total_sales || 0) / avg30 : 0;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
+    <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-40 sm:pb-24">
       <BackButton label="กลับ" fallbackHref="/cashhub/reports" />
 
       {/* Header */}
@@ -547,7 +547,7 @@ export default async function ReportDetailPage({
 
       {/* Sticky approve actions */}
       {canApprove && report.status === "submitted" && (
-        <div className="fixed sm:static sm:mt-6 bottom-0 left-0 right-0 sm:max-w-5xl sm:mx-auto z-30 bg-white sm:bg-transparent border-t-2 sm:border-0 border-zinc-200 px-4 py-3 sm:p-0 safe-bottom">
+        <div className="fixed sm:static sm:mt-6 bottom-[56px] sm:bottom-auto left-0 right-0 sm:max-w-5xl sm:mx-auto z-30 bg-white sm:bg-transparent border-t-2 sm:border-0 border-zinc-200 px-4 py-3 sm:p-0 safe-bottom">
           <ApproveActions
             reportId={report.id as string}
             preset={

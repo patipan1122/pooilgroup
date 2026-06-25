@@ -17,7 +17,7 @@ export default async function FacebookPastePage() {
   if (!isSuperAdmin(session.user.role)) redirect("/403");
 
   return (
-    <div className="mx-auto max-w-[1100px] p-5 sm:p-8">
+    <div className="inbox-has-mobilenav mx-auto max-w-[1100px] p-3 sm:p-8">
       <Section
         number="IS.2"
         label="เชื่อม Facebook (Paste JSON)"

@@ -177,16 +177,16 @@ export default async function KioskPage() {
                       }
                     />
                   </div>
-                  <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+                  <div className="px-5 py-3 border-t border-zinc-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 bg-zinc-50/50">
                     <Link
                       href={`/cashhub/branches/${b.id}`}
-                      className="text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
+                      className="inline-flex items-center min-h-[44px] sm:min-h-0 text-xs text-zinc-500 hover:text-[var(--color-brand-700)]"
                     >
                       ดูประวัติทั้งหมด
                     </Link>
                     <Link
                       href={`/liff/report/${b.id}`}
-                      className="inline-flex items-center justify-center h-9 rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
+                      className="inline-flex items-center justify-center min-h-[44px] sm:h-9 w-full sm:w-auto rounded-xl bg-[var(--color-brand-600)] text-white px-4 text-sm font-bold shadow-blue hover:bg-[var(--color-brand-700)]"
                     >
                       💰 บันทึกรอบเก็บเงินใหม่
                     </Link>

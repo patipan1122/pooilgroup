@@ -275,9 +275,10 @@ export function AmazonExcelGrid({
           </button>
         </div>
       )}
-      <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+      <p className="lg:hidden mb-1.5 text-xs" style={{ color: 'var(--ch-text-3)' }}>ปัด ←→ เพื่อดูเพิ่ม</p>
+      <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden -mx-3 sm:mx-0">
         <div className="overflow-auto max-h-[72vh]">
-          <table className="text-[11px] border-collapse">
+          <table className="text-[11px] border-collapse min-w-max">
             <thead className="sticky top-0 z-20">
               <tr className="bg-zinc-100 text-zinc-600">
                 <th className="sticky left-0 z-30 bg-zinc-100 px-2 py-1.5 text-left font-semibold border-b border-zinc-200">

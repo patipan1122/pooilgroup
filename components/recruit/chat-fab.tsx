@@ -84,7 +84,7 @@ export function RecruitChatFab() {
         ref={fabRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-brand-600)]"
+        className="fixed bottom-[84px] right-4 z-40 size-14 rounded-full bg-[var(--color-brand-600)] text-white shadow-xl hover:bg-[var(--color-brand-700)] hover:scale-105 transition-all flex items-center justify-center group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-brand-600)] lg:bottom-6 lg:right-6"
         aria-label="เปิดผู้ช่วย AI"
         aria-expanded={open}
         aria-controls="recruit-chat-dialog"
@@ -96,7 +96,7 @@ export function RecruitChatFab() {
       {/* Panel */}
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-end p-0 sm:p-6 sm:items-end sm:justify-end"
+          className="fixed inset-0 z-[70] flex items-end justify-end p-0 sm:p-6 sm:items-end sm:justify-end"
           onClick={() => setOpen(false)}
           aria-hidden="true"
         >

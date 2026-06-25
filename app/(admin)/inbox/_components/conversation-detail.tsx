@@ -15,10 +15,13 @@ import {
 } from "@/lib/inbox/actions";
 import type { ConversationDetail } from "@/lib/inbox/queries";
 import { fullThaiTime } from "./format";
-import { Send, Phone, StickyNote, UserCheck } from "lucide-react";
+import Link from "next/link";
+import { Send, Phone, StickyNote, UserCheck, ChevronLeft, Info } from "lucide-react";
 
 interface Props {
   conversation: ConversationDetail;
+  /** Mobile-only back link that clears the open conversation (?c=). Desktop ignores it. */
+  backHref?: string;
 }
 
 const STATUS_OPTIONS: {
@@ -30,10 +33,12 @@ const STATUS_OPTIONS: {
   { value: "CLOSED", label: "ปิด" },
 ];
 
-export function ConversationDetailPane({ conversation }: Props) {
+export function ConversationDetailPane({ conversation, backHref }: Props) {
   const [reply, setReply] = useState("");
   const [phone, setPhone] = useState(conversation.contactPhone ?? "");
   const [note, setNote] = useState(conversation.contactNote ?? "");
+  // Mobile: contact panel is collapsed by default so the chat thread gets full height.
+  const [showContact, setShowContact] = useState(false);
   const [sending, startSend] = useTransition();
   const [savingStatus, startStatus] = useTransition();
   const [savingContact, startContact] = useTransition();
@@ -120,9 +125,18 @@ export function ConversationDetailPane({ conversation }: Props) {
       {/* Main column: header + thread + reply box */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
-        <div className="border-b border-zinc-200 bg-white px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
+        <div className="border-b border-zinc-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="flex items-start gap-2">
+            {backHref && (
+              <Link
+                href={backHref}
+                aria-label="กลับไปรายการแชต"
+                className="-ml-1 mt-0.5 inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-zinc-600 hover:bg-zinc-100 lg:hidden"
+              >
+                <ChevronLeft className="size-5" />
+              </Link>
+            )}
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span
                   className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ${
@@ -149,6 +163,20 @@ export function ConversationDetailPane({ conversation }: Props) {
               {conversation.topicTag && (
                 <Badge tone="neutral">{topicLabel(conversation.topicTag)}</Badge>
               )}
+              {/* Mobile: toggle the customer-info panel (hidden by default to keep chat tall) */}
+              <button
+                type="button"
+                onClick={() => setShowContact((v) => !v)}
+                aria-pressed={showContact}
+                aria-label="ข้อมูลลูกค้า"
+                className={`inline-flex size-11 items-center justify-center rounded-xl border lg:hidden ${
+                  showContact
+                    ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)]"
+                    : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                }`}
+              >
+                <Info className="size-4" />
+              </button>
             </div>
           </div>
 
@@ -167,7 +195,7 @@ export function ConversationDetailPane({ conversation }: Props) {
                   // screen readers — visual style alone failed AT users
                   // (audit CH-004).
                   aria-pressed={active}
-                  className={`h-7 rounded-full border px-3 text-xs font-bold transition-colors disabled:opacity-50 ${
+                  className={`h-11 sm:h-7 rounded-full border px-3 text-xs font-bold transition-colors disabled:opacity-50 ${
                     active
                       ? "border-[var(--color-brand-600)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]"
                       : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -181,7 +209,7 @@ export function ConversationDetailPane({ conversation }: Props) {
               type="button"
               onClick={toggleHuman}
               disabled={togglingHuman}
-              className={`ml-auto inline-flex h-7 items-center gap-1 rounded-full border px-3 text-xs font-bold transition-colors disabled:opacity-50 ${
+              className={`ml-auto inline-flex h-11 sm:h-7 items-center gap-1 rounded-full border px-3 text-xs font-bold transition-colors disabled:opacity-50 ${
                 conversation.needsHuman
                   ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
                   : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
@@ -279,7 +307,7 @@ export function ConversationDetailPane({ conversation }: Props) {
               onClick={submitReply}
               loading={sending}
               disabled={sending || !reply.trim()}
-              className="shrink-0"
+              className="shrink-0 min-h-[44px]"
               aria-label="ส่งข้อความ"
             >
               <Send className="size-4" />
@@ -292,8 +320,12 @@ export function ConversationDetailPane({ conversation }: Props) {
         </div>
       </div>
 
-      {/* Contact panel */}
-      <aside className="border-t border-zinc-200 bg-zinc-50/60 p-4 lg:w-72 lg:shrink-0 lg:border-l lg:border-t-0">
+      {/* Contact panel — collapsible on mobile (toggle in header), always visible on desktop */}
+      <aside
+        className={`border-t border-zinc-200 bg-zinc-50/60 p-4 lg:block lg:w-72 lg:shrink-0 lg:border-l lg:border-t-0 ${
+          showContact ? "block" : "hidden"
+        }`}
+      >
         <h3 className="font-display text-sm font-bold text-zinc-900">ข้อมูลลูกค้า</h3>
         <p className="mt-0.5 text-[11px] text-zinc-500">
           บันทึกเบอร์โทรและโน้ตไว้ติดตามทีหลัง

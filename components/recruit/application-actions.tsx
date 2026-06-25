@@ -125,15 +125,15 @@ export function ApplicationActions({
   return (
     <div className="mt-4 mb-6 rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
       {/* Quick action row */}
-      <div className="flex items-center justify-between gap-2 pb-3 border-b border-zinc-100">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-zinc-100">
         <p className="text-xs font-bold text-zinc-700">การดำเนินการ</p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <button
             type="button"
             onClick={runAllRules}
             disabled={applyingRules || isPending}
             title="ใช้กฎคัดอัตโนมัติทั้งหมดกับใบสมัครนี้"
-            className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-bold border border-amber-200 bg-gradient-to-br from-amber-50 to-white text-amber-800 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 w-full sm:w-auto h-11 px-3 rounded-lg text-xs font-bold border border-amber-200 bg-gradient-to-br from-amber-50 to-white text-amber-800 hover:bg-amber-100 disabled:opacity-50 transition-colors"
           >
             {applyingRules ? (
               <Loader2 className="size-3.5 animate-spin" />

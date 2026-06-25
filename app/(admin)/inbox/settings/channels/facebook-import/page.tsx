@@ -23,7 +23,7 @@ export default async function FacebookImportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] p-5 sm:p-8">
+    <div className="inbox-has-mobilenav mx-auto max-w-[1100px] p-3 sm:p-8">
       <Section
         number="IS.1"
         label="เชื่อม Facebook Pages"
@@ -34,7 +34,7 @@ export default async function FacebookImportPage() {
           pages={cookie.pages}
           businesses={INBOX_BUSINESSES}
         />
-        <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-zinc-500">
           <Link
             href="/inbox/settings/channels"
             className="text-[var(--color-brand-700)] hover:underline"

@@ -121,10 +121,10 @@ export function AiChat({ defaultOpen = false, canPinpoint = false }: AiChatProps
       {open && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/30"
+            className="fixed inset-0 z-[65] bg-black/30"
             onClick={() => setOpen(false)}
           />
-          <div className="fixed bottom-0 right-0 sm:bottom-5 sm:right-5 z-50 w-full sm:w-[420px] sm:max-w-[calc(100vw-2.5rem)] h-[85vh] sm:h-[600px] sm:max-h-[calc(100vh-3rem)] bg-white rounded-t-3xl sm:rounded-3xl border-2 border-zinc-200 shadow-pop flex flex-col overflow-hidden">
+          <div className="fixed bottom-0 right-0 sm:bottom-5 sm:right-5 z-[70] w-full sm:w-[420px] sm:max-w-[calc(100vw-2.5rem)] h-[85vh] sm:h-[600px] sm:max-h-[calc(100vh-3rem)] bg-white rounded-t-3xl sm:rounded-3xl border-2 border-zinc-200 shadow-pop flex flex-col overflow-hidden">
             {/* Header */}
             <div className="px-4 sm:px-5 py-3 border-b-2 border-zinc-100 flex items-center justify-between bg-gradient-to-br from-[var(--color-brand-50)] to-white">
               <div className="flex items-center gap-2.5">

@@ -414,8 +414,8 @@ export function AmazonView({
     <div className="space-y-5">
       {/* upload + actions */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-medium hover:bg-zinc-100">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+          <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-medium hover:bg-zinc-100 w-full sm:w-auto">
             <input
               type="file"
               accept=".xlsx,.xls"
@@ -428,17 +428,17 @@ export function AmazonView({
             type="button"
             disabled={!file || busy !== null}
             onClick={upload}
-            className="h-11 rounded-xl bg-zinc-900 px-5 text-sm font-semibold text-white disabled:opacity-40"
+            className="h-11 w-full sm:w-auto rounded-xl bg-zinc-900 px-5 text-sm font-semibold text-white disabled:opacity-40"
           >
             {busy === "upload" ? "กำลังอ่าน + เซฟ…" : "อัปไฟล์ + เซฟ"}
           </button>
-          <div className="grow" />
+          <div className="hidden sm:block grow" />
           {/* การทำงานหลัก (เด่น) */}
           <button
             type="button"
             disabled={busy !== null || savedDays.length === 0}
             onClick={refreshMatch}
-            className="h-11 rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-40"
+            className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 disabled:opacity-40"
           >
             {busy === "match" ? "กำลังเทียบ…" : "🔄 เทียบกับ TRCloud"}
           </button>
@@ -447,13 +447,13 @@ export function AmazonView({
               type="button"
               disabled={busy !== null || savedDays.length === 0}
               onClick={sendReconcile}
-              className="h-11 rounded-xl bg-[var(--ch-navy,#0b1850)] px-4 text-sm font-semibold text-white disabled:opacity-40"
+              className="h-11 w-full sm:w-auto rounded-xl bg-[var(--ch-navy,#0b1850)] px-4 text-sm font-semibold text-white disabled:opacity-40"
             >
               {busy === "reconcile" ? "กำลังส่ง…" : "🏦 ส่งเข้า reconcile"}
             </button>
           )}
           {/* เครื่องมือรอง (ย่อ ghost) */}
-          <div className="ml-1 flex items-center gap-1 border-l border-zinc-200 pl-2">
+          <div className="flex items-center gap-1 sm:ml-1 sm:border-l border-zinc-200 sm:pl-2">
             <button
               type="button"
               disabled={savedDays.length === 0}
@@ -602,28 +602,30 @@ export function AmazonView({
           )}
 
           {/* summary */}
-          <div className="flex flex-wrap gap-2">
-            <Stat n={stat.days} label="วันทั้งหมด" />
-            <Stat n={stat.match} label="ตรงกับ TRC" tone="ok" />
-            <Stat n={stat.mismatch} label="ไม่ตรง" tone="warn" />
-            {stat.innerMismatch > 0 && (
-              <Stat n={stat.innerMismatch} label="ไส้ในเพี้ยน" tone="warn" />
-            )}
-            <Stat n={stat.notChecked} label="ยังไม่เทียบ" tone="warn" />
-            <Stat n={stat.noIv} label="ยังไม่มี IV" tone="info" />
-            <Stat n={stat.blocked} label="ติดปัญหา" tone="warn" />
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+              <Stat n={stat.days} label="วันทั้งหมด" />
+              <Stat n={stat.match} label="ตรงกับ TRC" tone="ok" />
+              <Stat n={stat.mismatch} label="ไม่ตรง" tone="warn" />
+              {stat.innerMismatch > 0 && (
+                <Stat n={stat.innerMismatch} label="ไส้ในเพี้ยน" tone="warn" />
+              )}
+              <Stat n={stat.notChecked} label="ยังไม่เทียบ" tone="warn" />
+              <Stat n={stat.noIv} label="ยังไม่มี IV" tone="info" />
+              <Stat n={stat.blocked} label="ติดปัญหา" tone="warn" />
+            </div>
             {stat.noIv > 0 && canSend && (
               <button
                 type="button"
                 disabled={busy !== null}
                 onClick={createAllReady}
-                className="ml-auto h-11 self-center rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
+                className="w-full sm:w-auto sm:ml-auto h-11 self-center rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
               >
                 {busy === "push-all" ? "กำลังสร้าง…" : `✓ สร้าง IV ที่ยังไม่มี (${stat.noIv} วัน)`}
               </button>
             )}
             {stat.noIv > 0 && !canSend && (
-              <span className="ml-auto self-center text-xs text-zinc-500">
+              <span className="w-full sm:w-auto sm:ml-auto self-center text-xs text-zinc-500">
                 🔒 เฉพาะ super_admin สร้าง IV ได้
               </span>
             )}

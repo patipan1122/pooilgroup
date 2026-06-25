@@ -766,7 +766,9 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/inbox/settings/channels",
         label: "เชื่อมช่องทาง",
         icon: Settings,
-        adminOnly: true,
+        // หน้านี้ guard ด้วย isSuperAdmin เท่านั้น — เมนูจึงต้องโชว์เฉพาะ super_admin
+        // (ถ้าใช้ adminOnly org_admin/admin จะเห็นเมนูแล้วกดเด้ง /403 = ปุ่มตาย)
+        roles: ["super_admin"],
       },
     ],
   },

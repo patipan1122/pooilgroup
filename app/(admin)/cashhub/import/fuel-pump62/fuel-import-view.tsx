@@ -123,16 +123,16 @@ export function FuelImportView() {
             • พบ <strong>{result.flagged}</strong> แถวที่ต้องตรวจ (ส่วนต่าง/รอเงินเข้า/ผิดปกติ)
           </li>
         </ul>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-col sm:flex-row gap-2">
           <a
             href="/cashhub/fuel-pump62"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--ch-brand)] text-white px-4 py-2 text-sm font-semibold"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--ch-brand)] text-white px-4 py-2 min-h-[44px] w-full sm:w-auto text-sm font-semibold"
           >
             ไปหน้าบริหารยอดขาย →
           </a>
           <button
             onClick={reset}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--ch-border)] px-4 py-2 text-sm font-semibold"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--ch-border)] px-4 py-2 min-h-[44px] w-full sm:w-auto text-sm font-semibold"
           >
             <RotateCcw className="size-3.5" /> นำเข้าใหม่
           </button>
@@ -268,11 +268,11 @@ export function FuelImportView() {
             </details>
           )}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <button
               onClick={runCommit}
               disabled={busy !== null}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--ch-brand)] text-white px-4 py-2 text-sm font-semibold disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--ch-brand)] text-white px-4 py-2 min-h-[44px] w-full sm:w-auto text-sm font-semibold disabled:opacity-60"
             >
               {busy === "commit" ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -284,7 +284,7 @@ export function FuelImportView() {
             <button
               onClick={reset}
               disabled={busy !== null}
-              className="rounded-xl border border-[var(--ch-border)] px-4 py-2 text-sm font-semibold"
+              className="rounded-xl border border-[var(--ch-border)] px-4 py-2 min-h-[44px] w-full sm:w-auto text-sm font-semibold"
             >
               ยกเลิก
             </button>

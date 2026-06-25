@@ -303,7 +303,7 @@ export function PasteImportForm({
               type="button"
               onClick={fetchByToken}
               disabled={!userToken.trim() || fetching}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+              className="inline-flex w-full sm:w-auto justify-center min-h-[44px] items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
             >
               {fetching ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -384,7 +384,7 @@ export function PasteImportForm({
           type="button"
           onClick={parse}
           disabled={!raw.trim()}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+          className="inline-flex w-full sm:w-auto justify-center min-h-[44px] items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
         >
           <ClipboardPaste className="size-4" />
           อ่าน JSON · เลือกเพจ
@@ -500,7 +500,7 @@ export function PasteImportForm({
                     }))
                   }
                   disabled={!s.selected}
-                  className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs disabled:opacity-50"
+                  className="h-9 w-full sm:w-auto rounded-lg border border-zinc-300 bg-white px-2 text-xs disabled:opacity-50"
                 >
                   {businesses.map((b) => (
                     <option key={b.tag} value={b.tag}>
@@ -514,7 +514,7 @@ export function PasteImportForm({
         </ul>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
         <button
           type="button"
           onClick={() => {
@@ -522,7 +522,7 @@ export function PasteImportForm({
             setSel({});
             setBulkTag("");
           }}
-          className="text-xs text-zinc-600 hover:underline"
+          className="min-h-[44px] text-xs text-zinc-600 hover:underline"
         >
           ← แก้ JSON ใหม่
         </button>
@@ -530,7 +530,7 @@ export function PasteImportForm({
           type="button"
           onClick={submit}
           disabled={submitting || selectedCount === 0}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+          className="inline-flex w-full sm:w-auto justify-center min-h-[44px] items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
         >
           {submitting && <Loader2 className="size-4 animate-spin" />}
           นำเข้า {selectedCount} เพจ

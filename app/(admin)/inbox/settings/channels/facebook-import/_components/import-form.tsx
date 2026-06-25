@@ -193,7 +193,7 @@ export function FacebookImportForm({
                     }))
                   }
                   disabled={!s.selected}
-                  className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs disabled:opacity-50"
+                  className="h-9 w-full sm:w-auto rounded-lg border border-zinc-300 bg-white px-2 text-xs disabled:opacity-50"
                 >
                   {businesses.map((b) => (
                     <option key={b.tag} value={b.tag}>
@@ -212,7 +212,7 @@ export function FacebookImportForm({
           type="button"
           onClick={submit}
           disabled={submitting || selectedCount === 0}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+          className="inline-flex w-full sm:w-auto justify-center min-h-[44px] items-center gap-2 rounded-xl bg-[var(--color-brand-600)] px-4 text-sm font-bold text-white hover:bg-[var(--color-brand-700)] disabled:opacity-40"
         >
           {submitting && <Loader2 className="size-4 animate-spin" />}
           นำเข้า {selectedCount} เพจ

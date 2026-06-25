@@ -294,7 +294,11 @@ export function EvImportView() {
                       ตัวอย่าง "ค่าเปลี่ยน" (
                       {preview.changedSample.length} จาก {preview.changedTotal})
                     </div>
-                    <table className="w-full text-[11px]">
+                    <p className="lg:hidden mb-1.5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+                      ปัด ←→ เพื่อดูเพิ่ม
+                    </p>
+                    <div className="overflow-x-auto -mx-3 px-3 lg:mx-0 lg:px-0">
+                    <table className="w-full min-w-max text-[11px]">
                       <thead>
                         <tr className="text-amber-700">
                           <th className="text-left py-0.5">วัน · สาขา</th>
@@ -335,6 +339,7 @@ export function EvImportView() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -390,9 +395,12 @@ export function EvImportView() {
             )}
 
             {/* Aggregate table */}
+            <p className="lg:hidden mb-1.5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+              ปัด ←→ เพื่อดูเพิ่ม
+            </p>
             <div className="rounded-xl border border-zinc-200 overflow-hidden">
-              <div className="max-h-72 overflow-y-auto">
-                <table className="w-full text-xs">
+              <div className="max-h-72 overflow-y-auto overflow-x-auto">
+                <table className="w-full min-w-max text-xs">
                   {/* sticky to inner scroll container (max-h-72 overflow-y-auto) — top-0 correct here */}
                   <thead className="bg-zinc-50 sticky top-0 z-10">
                     <tr>
@@ -425,7 +433,7 @@ export function EvImportView() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
               <Badge tone="neutral">
                 <CheckCircle2 className="size-3 mr-1" />
                 Audit log จะบันทึก
@@ -435,6 +443,7 @@ export function EvImportView() {
                 loading={pending}
                 disabled={previewLoading || !preview}
                 size="lg"
+                className="w-full sm:w-auto min-h-[44px]"
               >
                 {confirmButtonLabel(preview, overwrite, parsed.aggregates.length)}
               </Button>

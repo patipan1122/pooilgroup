@@ -109,7 +109,7 @@ export default async function NotesInboxPage({
           <Link
             key={d}
             href={`?days=${d}`}
-            className={`px-3 py-1.5 rounded-xl font-semibold ${
+            className={`inline-flex items-center justify-center min-h-[44px] px-4 rounded-xl font-semibold ${
               days === d
                 ? "bg-[var(--color-brand-600)] text-white"
                 : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"

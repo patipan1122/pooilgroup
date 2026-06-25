@@ -171,20 +171,20 @@ export default async function QuickFillPage({
                     name="q"
                     defaultValue={searchQ}
                     placeholder="ค้นหา รหัส / ชื่อ / จังหวัด..."
-                    className="flex-1 rounded-lg border border-zinc-200 px-3 h-10 text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
+                    className="flex-1 rounded-lg border border-zinc-200 px-3 h-11 text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-3 items-end">
+                <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-3 sm:items-end">
                   {isCross && companies.length > 0 && (
-                    <div>
+                    <div className="w-full sm:w-auto">
                       <label className="block text-xs font-bold text-zinc-500 mb-1">
                         บริษัท
                       </label>
                       <select
                         name="company"
                         defaultValue={filterCompany}
-                        className="h-10 px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
+                        className="h-11 w-full sm:w-auto px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
                       >
                         <option value="">ทุกบริษัท</option>
                         {companies.map((c) => (
@@ -195,14 +195,14 @@ export default async function QuickFillPage({
                       </select>
                     </div>
                   )}
-                  <div>
+                  <div className="w-full sm:w-auto">
                     <label className="block text-xs font-bold text-zinc-500 mb-1">
                       ประเภทธุรกิจ
                     </label>
                     <select
                       name="type"
                       defaultValue={filterType}
-                      className="h-10 px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
+                      className="h-11 w-full sm:w-auto px-3 rounded-lg border-2 border-zinc-200 bg-white text-sm focus:border-[var(--color-brand-500)] focus:outline-none"
                     >
                       <option value="">ทุกประเภท</option>
                       {Object.entries(BUSINESS_TYPES).map(([k, c]) => (
@@ -212,20 +212,22 @@ export default async function QuickFillPage({
                       ))}
                     </select>
                   </div>
-                  <button
-                    type="submit"
-                    className="h-10 px-5 rounded-lg bg-[var(--color-brand-600)] text-white font-bold text-sm hover:bg-[var(--color-brand-700)]"
-                  >
-                    กรอง
-                  </button>
-                  {(filterCompany || filterType || searchQ) && (
-                    <Link
-                      href="/cashhub/quick-fill"
-                      className="h-10 px-3 inline-flex items-center rounded-lg text-zinc-600 text-sm hover:bg-zinc-100"
+                  <div className="grid grid-cols-2 gap-3 sm:contents">
+                    <button
+                      type="submit"
+                      className="min-h-[44px] w-full sm:w-auto px-5 rounded-lg bg-[var(--color-brand-600)] text-white font-bold text-sm hover:bg-[var(--color-brand-700)]"
                     >
-                      ล้าง
-                    </Link>
-                  )}
+                      กรอง
+                    </button>
+                    {(filterCompany || filterType || searchQ) && (
+                      <Link
+                        href="/cashhub/quick-fill"
+                        className="min-h-[44px] w-full sm:w-auto px-3 inline-flex items-center justify-center rounded-lg text-zinc-600 text-sm hover:bg-zinc-100 border border-zinc-200 sm:border-0"
+                      >
+                        ล้าง
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </form>
             </Section>

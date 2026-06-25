@@ -106,26 +106,26 @@ export function DashboardV1View({
         {/* Hero — design dashboard.jsx:88-101 */}
         <div className="flex flex-col gap-3 mb-2">
           <SectionPill num="💰" label={`CashHub · ${today}`} />
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-4">
             <TwoToneTitle first="ภาพรวม" accent="ยอดสาขา" size={42} />
-            <div className="flex-1" />
-            <div className="flex gap-2">
+            <div className="hidden sm:block sm:flex-1" />
+            <div className="flex flex-col sm:flex-row gap-2">
               <Link
                 href="/cashhub/hotel"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[var(--ch-navy)] text-white text-sm font-semibold hover:opacity-90"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-3 rounded-lg bg-[var(--ch-navy)] text-white text-sm font-semibold hover:opacity-90 w-full sm:w-auto"
               >
                 🏨 ตรวจยอดขายโรงแรม
               </Link>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[var(--ch-border-strong)] bg-white text-sm font-semibold text-[var(--ch-text)] hover:bg-zinc-50"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-3 rounded-lg border border-[var(--ch-border-strong)] bg-white text-sm font-semibold text-[var(--ch-text)] hover:bg-zinc-50 w-full sm:w-auto"
                 onClick={() => window.print()}
               >
                 <Download className="size-4" /> Export PDF
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[var(--ch-brand)] text-white text-sm font-semibold hover:bg-[var(--ch-brand-700)]"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:h-9 px-3 rounded-lg bg-[var(--ch-brand)] text-white text-sm font-semibold hover:bg-[var(--ch-brand-700)] w-full sm:w-auto"
                 onClick={() => window.location.reload()}
               >
                 <RefreshCw className="size-4" /> รีเฟรช
@@ -138,7 +138,7 @@ export function DashboardV1View({
         </div>
 
         {/* Hero KPI strip — design dashboard.jsx:104-155 (4 cards) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr] gap-3 mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr] gap-3 mt-4">
           {/* Total */}
           <HeroKpiCard eyebrow={`ยอดขายรวม · ${monthLabel}`}>
             <div className="flex items-baseline gap-2 mt-1">
@@ -152,7 +152,7 @@ export function DashboardV1View({
                 <DeltaPill pct={monthDelta} />
               </div>
             </div>
-            <div className="h-7 mt-2">
+            <div className="h-7 mt-2 overflow-hidden">
               <SparklineV2
                 data={totalSpark.length ? totalSpark : [0]}
                 width={260}
@@ -160,6 +160,7 @@ export function DashboardV1View({
                 color="var(--ch-brand)"
                 fill
                 smooth
+                className="max-w-full"
               />
             </div>
             <div className="text-[11px] text-[var(--ch-text-3)] mt-1">

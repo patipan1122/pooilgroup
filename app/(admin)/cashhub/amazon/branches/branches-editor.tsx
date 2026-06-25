@@ -252,10 +252,10 @@ export function BranchesEditor({ branches }: { branches: UiBranch[] }) {
   if (mode === "list") {
     return (
       <div className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex sm:justify-end">
           <button
             onClick={startAdd}
-            className="h-10 rounded-xl bg-emerald-600 text-white font-semibold px-5 text-sm hover:bg-emerald-700"
+            className="h-11 w-full sm:w-auto rounded-xl bg-emerald-600 text-white font-semibold px-5 text-sm hover:bg-emerald-700"
           >
             ➕ เพิ่มสาขา
           </button>
@@ -342,18 +342,18 @@ export function BranchesEditor({ branches }: { branches: UiBranch[] }) {
           พิมพ์ชื่อสาขา (เช่น “ตลาดจักราช”) แล้วกดค้นหา — ระบบจะดึง สูตรบัญชี/โครงการ/แผนก/รหัสคู่ค้า
           จากใบกำกับจริงให้ ไม่ต้องพิมพ์รหัสเอง
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runProbe()}
             placeholder="ชื่อสาขาใน TRCloud"
-            className="flex-1 h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+            className="w-full sm:flex-1 h-11 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
           />
           <button
             onClick={runProbe}
             disabled={probing}
-            className="h-10 rounded-xl bg-zinc-900 text-white font-semibold px-4 text-sm disabled:opacity-50"
+            className="h-11 w-full sm:w-auto rounded-xl bg-zinc-900 text-white font-semibold px-4 text-sm disabled:opacity-50"
           >
             {probing ? "กำลังค้น…" : "🔎 ค้นหา"}
           </button>
@@ -425,17 +425,17 @@ export function BranchesEditor({ branches }: { branches: UiBranch[] }) {
           />
 
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <button
               onClick={save}
               disabled={busy}
-              className="h-10 rounded-xl bg-emerald-600 text-white font-semibold px-6 text-sm hover:bg-emerald-700 disabled:opacity-50"
+              className="h-11 w-full sm:w-auto rounded-xl bg-emerald-600 text-white font-semibold px-6 text-sm hover:bg-emerald-700 disabled:opacity-50"
             >
               {busy ? "กำลังบันทึก…" : "บันทึกสาขา"}
             </button>
             <button
               onClick={() => setMode("list")}
-              className="h-10 rounded-xl border border-zinc-200 px-5 text-sm font-medium hover:bg-zinc-50"
+              className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-5 text-sm font-medium hover:bg-zinc-50"
             >
               ยกเลิก
             </button>

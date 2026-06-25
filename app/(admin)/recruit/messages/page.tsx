@@ -74,7 +74,7 @@ export default async function MessagesPage({
   }
 
   return (
-    <div className="h-[calc(100vh-60px)] flex flex-col">
+    <div className="h-[calc(100dvh-60px-64px)] lg:h-[calc(100vh-60px)] flex flex-col">
       <div className="p-5 sm:p-7 border-b border-zinc-200 bg-white">
         <Section
           number="08"

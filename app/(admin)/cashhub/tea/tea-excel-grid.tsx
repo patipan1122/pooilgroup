@@ -118,8 +118,11 @@ export function TeaExcelGrid({ branchLabel, branchCode, days, byDate, canSend, r
           {msg.text}
         </div>
       )}
+      <p className="lg:hidden mx-3 mt-3 -mb-1 text-xs" style={{ color: "var(--ch-text-3)" }}>
+        ปัด ←→ เพื่อดูเพิ่ม
+      </p>
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse text-xs">
+        <table className="min-w-max lg:min-w-full border-collapse text-xs">
           <thead>
             <tr className="bg-zinc-50 text-zinc-600">
               <th className="sticky left-0 z-10 bg-zinc-50 px-2.5 py-2 text-left font-semibold border-b border-zinc-200">วันที่</th>

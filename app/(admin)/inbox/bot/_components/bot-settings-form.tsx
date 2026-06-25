@@ -202,7 +202,7 @@ export function BotSettingsForm({
           type="button"
           onClick={save}
           disabled={pending}
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-5 h-11 rounded-xl hover:bg-[var(--color-brand-700)] disabled:opacity-40"
+          className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-5 h-11 rounded-xl hover:bg-[var(--color-brand-700)] disabled:opacity-40"
         >
           <Save className="size-4" />
           {pending ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}

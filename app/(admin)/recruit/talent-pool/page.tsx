@@ -205,7 +205,12 @@ export default async function TalentPoolPage({
         {filtered.length === 0 ? (
           <EmptyState filter={filter} />
         ) : (
-          <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+          <>
+          <p className="lg:hidden text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+            ← ปัดเพื่อดูข้อมูลทุกคอลัมน์ →
+          </p>
+          <div className="rounded-2xl border border-zinc-200 bg-white overflow-x-auto">
+            <div className="min-w-[640px]">
             {/* Header */}
             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-zinc-50/60 border-b border-zinc-200 text-[11px] font-bold text-zinc-500 uppercase tracking-wide">
               <div className="col-span-4">คน + เบอร์</div>
@@ -285,7 +290,9 @@ export default async function TalentPoolPage({
                 </p>
               </div>
             )}
+            </div>
           </div>
+          </>
         )}
       </Section>
     </div>

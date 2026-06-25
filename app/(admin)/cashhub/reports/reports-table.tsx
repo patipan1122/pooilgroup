@@ -533,8 +533,12 @@ function ReportTable({
   onPopup: (p: { branchId: string; branchCode: string; date: string }) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <>
+    <p className="lg:hidden mb-1.5 px-4 sm:px-5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+      ปัด ←→ เพื่อดูเพิ่ม
+    </p>
+    <div className="overflow-x-auto -mx-3 px-3 lg:mx-0 lg:px-0">
+      <table className="w-full min-w-max lg:min-w-full text-sm">
         <thead className="sticky top-14 sm:top-16 z-20 bg-white">
           <tr className="border-b border-zinc-100 bg-zinc-50 text-xs font-bold text-zinc-500">
             <th className="w-9 p-3"></th>
@@ -644,5 +648,6 @@ function ReportTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }

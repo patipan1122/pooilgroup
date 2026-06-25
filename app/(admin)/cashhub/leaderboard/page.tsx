@@ -68,16 +68,16 @@ export default async function LeaderboardPage({
         <CardBody>
           <form
             method="get"
-            className="flex flex-wrap items-end gap-3 text-sm"
+            className="grid grid-cols-1 sm:flex sm:flex-wrap sm:items-end gap-3 text-sm"
           >
-            <label className="flex flex-col gap-1.5 min-w-[160px]">
+            <label className="flex flex-col gap-1.5 w-full sm:w-auto sm:min-w-[160px]">
               <span className="text-xs font-bold text-zinc-500">
                 เรียงตาม
               </span>
               <select
                 name="sort"
                 defaultValue={sort}
-                className="h-10 rounded-xl border border-zinc-200 px-3 font-medium bg-white"
+                className="h-11 w-full rounded-xl border border-zinc-200 px-3 font-medium bg-white"
               >
                 {Object.entries(SORTS).map(([k, v]) => (
                   <option key={k} value={k}>
@@ -86,14 +86,14 @@ export default async function LeaderboardPage({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 min-w-[160px]">
+            <label className="flex flex-col gap-1.5 w-full sm:w-auto sm:min-w-[160px]">
               <span className="text-xs font-bold text-zinc-500">
                 ประเภทธุรกิจ
               </span>
               <select
                 name="type"
                 defaultValue={type}
-                className="h-10 rounded-xl border border-zinc-200 px-3 font-medium bg-white"
+                className="h-11 w-full rounded-xl border border-zinc-200 px-3 font-medium bg-white"
               >
                 <option value="">ทั้งหมด</option>
                 {Object.entries(BUSINESS_TYPES).map(([k, v]) => (
@@ -105,7 +105,7 @@ export default async function LeaderboardPage({
             </label>
             <button
               type="submit"
-              className="h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold px-5"
+              className="min-h-[44px] w-full sm:w-auto rounded-xl bg-[var(--color-brand-600)] text-white font-semibold px-5"
             >
               ใช้ตัวกรอง
             </button>

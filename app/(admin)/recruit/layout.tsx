@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requireRecruitAccess } from "@/lib/recruit/role-guard";
+import {
+  requireRecruitAccess,
+  canRecruitWrite,
+  canRecruitAdmin,
+} from "@/lib/recruit/role-guard";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { RecruitChatFab } from "@/components/recruit/chat-fab";
+import { RecruitMobileNav } from "@/components/recruit/mobile-bottom-nav";
+import "./recruit.css";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +29,14 @@ export default async function RecruitLayout({
   }
 
   return (
-    <div className="relative min-h-screen bg-zinc-50/30">
+    <div className="recruit-scope relative min-h-screen bg-zinc-50/30">
       {children}
       {/* AI chat FAB · CEO-confirmed manual trigger only */}
       <RecruitChatFab />
+      <RecruitMobileNav
+        canWrite={canRecruitWrite(session.user.role)}
+        canAdmin={canRecruitAdmin(session.user.role)}
+      />
     </div>
   );
 }

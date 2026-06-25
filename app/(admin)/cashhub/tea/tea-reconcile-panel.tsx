@@ -244,7 +244,7 @@ export function TeaReconcilePanel({
             ส่งยอดเข้าจริง (หักค่าธรรมเนียมแล้ว) <b>ของเดือน {thMonth(month)}</b> → นักบัญชีกระทบกับ statement → 🟢 เขียวเมื่อกระทบแล้ว · เปลี่ยนเดือนที่ปุ่มเลือกเดือนด้านบน
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto sm:shrink-0">
           {branches && onBranchChange && (
             <select
               value={branchCode}
@@ -252,7 +252,7 @@ export function TeaReconcilePanel({
               aria-label="เลือกสาขาที่จะส่งเข้ากระทบยอด"
               title="เลือกสาขา"
               disabled={busy}
-              className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium max-w-[180px] disabled:opacity-50"
+              className="h-11 sm:h-9 w-full sm:w-auto rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium sm:max-w-[180px] disabled:opacity-50"
             >
               {branches.map((b) => (
                 <option key={b.code} value={b.code}>
@@ -267,7 +267,7 @@ export function TeaReconcilePanel({
               onClick={sendAll}
               disabled={busy}
               title="ส่งยอดเข้ากระทบยอดทุกสาขาในเดือนนี้ (สาขาที่ยังไม่ตั้งบัญชีจะถูกข้าม)"
-              className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
+              className="h-11 sm:h-9 w-full sm:w-auto px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
             >
               {busy && bulkProgress ? bulkProgress : `ส่งทุกสาขา (${branches.length})`}
             </button>
@@ -277,7 +277,7 @@ export function TeaReconcilePanel({
               type="button"
               onClick={send}
               disabled={busy || !configured || !hasDeposits}
-              className={`h-9 px-4 rounded-xl text-sm font-semibold disabled:opacity-50 ${branches ? "border border-zinc-300 text-zinc-700 hover:bg-zinc-50" : "bg-[var(--ch-navy,#0b1850)] text-white"}`}
+              className={`h-11 sm:h-9 w-full sm:w-auto px-4 rounded-xl text-sm font-semibold disabled:opacity-50 ${branches ? "border border-zinc-300 text-zinc-700 hover:bg-zinc-50" : "bg-[var(--ch-navy,#0b1850)] text-white"}`}
             >
               {busy && !bulkProgress ? "กำลังส่ง…" : branches ? "ส่งสาขานี้" : "ส่งเข้าระบบบัญชี"}
             </button>
@@ -356,8 +356,12 @@ export function TeaReconcilePanel({
           </div>
 
           {showDays && (
-            <div className="overflow-x-auto rounded-xl border border-zinc-100">
-              <table className="w-full text-sm">
+            <div>
+              <p className="lg:hidden mb-1.5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+                ปัด ←→ เพื่อดูเพิ่ม
+              </p>
+              <div className="overflow-x-auto rounded-xl border border-zinc-100">
+                <table className="w-full min-w-max lg:min-w-full text-sm">
                 <thead>
                   <tr className="bg-zinc-50 text-zinc-500 text-xs">
                     <th className="px-2.5 py-1.5 text-left font-semibold">วันที่</th>
@@ -390,6 +394,7 @@ export function TeaReconcilePanel({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

@@ -73,11 +73,14 @@ export default async function PermissionsPage() {
           </div>
         </div>
 
+        <p className="lg:hidden text-xs font-medium text-zinc-400 mb-2 flex items-center gap-1">
+          ← ปัดเพื่อดูทุก role →
+        </p>
         <div className="rounded-2xl border border-zinc-200 bg-white overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-zinc-50 border-b border-zinc-200">
-                <th className="text-left text-xs font-bold text-zinc-700 px-4 py-3 min-w-[260px]">
+                <th className="text-left text-xs font-bold text-zinc-700 px-4 py-3 min-w-[260px] sticky left-0 z-10 bg-zinc-50">
                   ความสามารถ
                 </th>
                 {ROLES.map((r) => (
@@ -103,7 +106,7 @@ export default async function PermissionsPage() {
                   key={cap.label}
                   className={`border-b border-zinc-100 ${i % 2 === 0 ? "" : "bg-zinc-50/30"}`}
                 >
-                  <td className="text-sm text-zinc-900 px-4 py-3 font-medium">{cap.label}</td>
+                  <td className={`text-sm text-zinc-900 px-4 py-3 font-medium sticky left-0 z-10 ${i % 2 === 0 ? "bg-white" : "bg-zinc-50"}`}>{cap.label}</td>
                   {ROLES.map((r) => (
                     <td key={r.key} className="text-center px-3 py-3">
                       {cap.access.includes(r.key) ? (

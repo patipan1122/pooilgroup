@@ -10,6 +10,7 @@ import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { ApprovalBanner } from "@/components/cashhub/redesign/approval-banner";
+import { CashHubMobileNav } from "@/components/cashhub/mobile-bottom-nav";
 import "@/components/cashhub/redesign/tokens.css";
 
 export const metadata = { title: "CashHub" };
@@ -35,6 +36,7 @@ export default async function CashHubLayout({
     <div className="ch-scope">
       <ApprovalBanner orgId={session.user.org_id} />
       {children}
+      <CashHubMobileNav role={session.user.role} />
     </div>
   );
 }

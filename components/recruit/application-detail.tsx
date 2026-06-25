@@ -124,8 +124,8 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
                   {app.applicant.phone}
                 </span>
                 {app.applicant.email && (
-                  <span className="inline-flex items-center gap-1">
-                    <Mail className="size-3" />
+                  <span className="inline-flex items-center gap-1 min-w-0 max-w-full break-all">
+                    <Mail className="size-3 shrink-0" />
                     {app.applicant.email}
                   </span>
                 )}

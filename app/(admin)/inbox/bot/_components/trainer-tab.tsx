@@ -264,10 +264,10 @@ export function TrainerTab({ businessTag }: { businessTag: string }) {
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]">
       {/* LEFT — chat with Claude */}
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-soft">
-        <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-4 py-3">
           <Sparkles className="size-4 text-[var(--color-brand-600)]" />
           <p className="text-sm font-bold text-zinc-900">เทรนกับ Claude</p>
-          <span className="ml-auto text-[11px] text-zinc-500">
+          <span className="ml-auto hidden text-[11px] text-zinc-500 sm:inline">
             Claude Sonnet 4.6 · จำสนทนาได้ ~40 turn · บันทึกอัตโนมัติ
           </span>
           {history.length > 0 && (
@@ -390,7 +390,7 @@ function RightPanel({
 }) {
   const [tab, setTab] = useState<"problems" | "preview">("problems");
   return (
-    <div className="flex h-[640px] flex-col">
+    <div className="flex h-[70vh] min-h-[420px] flex-col xl:h-[640px]">
       <div className="flex shrink-0 gap-1 border-b border-zinc-200 p-1.5">
         <button
           type="button"
@@ -1059,7 +1059,7 @@ function PreviewPane({ businessTag }: { businessTag: string }) {
   }
 
   return (
-    <div className="flex h-[640px] flex-col">
+    <div className="flex h-full min-h-[420px] flex-col xl:h-[640px]">
       {/* Phone-frame header */}
       <div className="flex items-center gap-2 border-b border-zinc-200 bg-gradient-to-b from-zinc-100 to-zinc-50 px-4 py-3">
         <div className="flex size-8 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">

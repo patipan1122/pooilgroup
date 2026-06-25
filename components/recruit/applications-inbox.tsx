@@ -76,7 +76,7 @@ export async function ApplicationsInbox({
       : null;
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-60px)]">
+    <div className="flex flex-col lg:flex-row h-[calc(100dvh-60px-64px)] lg:h-[calc(100vh-60px)]">
       {/* PANE 1: Filters (left) — KPI strip + filters */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
         {/* KPI strip — CEO 30-second health check · shared <KpiTile> รอบ 46 */}

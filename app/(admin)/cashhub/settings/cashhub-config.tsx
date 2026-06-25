@@ -170,7 +170,11 @@ export function CashHubConfigForm({ initial }: Props) {
         </div>
 
         <div className="flex justify-end pt-2">
-          <Button onClick={save} loading={pending}>
+          <Button
+            onClick={save}
+            loading={pending}
+            className="w-full sm:w-auto min-h-[44px]"
+          >
             บันทึกการตั้งค่า
           </Button>
         </div>

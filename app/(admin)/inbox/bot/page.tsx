@@ -47,7 +47,7 @@ export default async function InboxBotPage({
   // component only knows about the text fields — split here.
   const { flowImages, ...settingsForm } = settings;
   return (
-    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
+    <div className="inbox-has-mobilenav p-3 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="IB.2"
         label="ฝึกบอทตอบลูกค้า"

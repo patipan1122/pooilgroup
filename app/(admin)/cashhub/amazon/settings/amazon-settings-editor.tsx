@@ -58,26 +58,26 @@ export function AmazonSettingsEditor({ configs, accounts, companies, branchCode 
   return (
     <div className="space-y-4">
       {/* บริษัท + ตั้งบัญชีทุกช่องทีเดียว */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-wrap items-center gap-3">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
         <label className="text-sm font-medium text-zinc-600">บริษัทที่เงินเข้า:</label>
         <select
           value={companyId}
           onChange={(e) => setCompanyId(e.target.value)}
           aria-label="บริษัท"
-          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+          className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm bg-white"
         >
           <option value="">— เลือกบริษัท —</option>
           {companies.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <div className="grow" />
-        <label className="text-xs text-zinc-500">ตั้งบัญชีทุกช่องพร้อมกัน:</label>
+        <div className="hidden sm:block grow" />
+        <label className="text-xs text-zinc-500 sm:mt-0 mt-1">ตั้งบัญชีทุกช่องพร้อมกัน:</label>
         <select
           aria-label="ตั้งบัญชีทุกช่อง"
           defaultValue=""
           onChange={(e) => e.target.value && applyAccountToAll(e.target.value)}
-          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+          className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm bg-white"
         >
           <option value="">— เลือกบัญชี —</option>
           {accounts.map((a) => (
@@ -86,8 +86,9 @@ export function AmazonSettingsEditor({ configs, accounts, companies, branchCode 
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
+      <p className="lg:hidden text-xs" style={{ color: 'var(--ch-text-3)' }}>ปัด ←→ เพื่อดูเพิ่ม</p>
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white -mx-3 sm:mx-0">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
               <th className="p-3">ช่องทาง</th>

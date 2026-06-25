@@ -227,7 +227,7 @@ export function PostingEditor({
 
       {/* Save bar (sticky bottom) */}
       {!readonly && (
-        <div className="sticky bottom-0 left-0 right-0 -mx-5 sm:mx-0 bg-white border-t border-zinc-200 sm:rounded-2xl sm:border p-4 flex items-center justify-between gap-3 flex-wrap shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.08)] z-10">
+        <div className="sticky bottom-[64px] lg:bottom-0 left-0 right-0 -mx-5 sm:mx-0 bg-white border-t border-zinc-200 sm:rounded-2xl sm:border p-4 flex items-center justify-between gap-3 flex-wrap shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.08)] z-10">
           <div className="flex items-center gap-2 flex-wrap text-xs text-zinc-500">
             <span>
               <span className="font-bold text-zinc-900">

@@ -174,7 +174,7 @@ export function HotelTtbUpload({
         type="button"
         onClick={upload}
         disabled={busy || !file}
-        className="h-10 w-full rounded-xl bg-[var(--ch-navy,#0b1850)] text-white font-semibold text-sm disabled:opacity-50"
+        className="h-11 w-full sm:w-auto rounded-xl bg-[var(--ch-navy,#0b1850)] text-white font-semibold text-sm px-5 disabled:opacity-50"
       >
         {busy ? "กำลังอ่านไฟล์…" : "อัปโหลด + คิด QR เงินเข้าจริง"}
       </button>

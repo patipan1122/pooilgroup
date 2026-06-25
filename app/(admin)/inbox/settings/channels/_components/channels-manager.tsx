@@ -259,18 +259,18 @@ export function ChannelsManager({
   return (
     <div className="space-y-4">
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-sm font-bold text-zinc-900">
           ช่องทางที่เชื่อม{" "}
           <span className="text-zinc-400 tabular-nums font-normal">({channels.length})</span>
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           {/* Kicks off FB OAuth → returns to /facebook-import picker.
               Plain anchor (full-page nav) because the OAuth dialog can't
               load inside a partial fetch. */}
           <a
             href="/api/inbox/facebook-oauth/start"
-            className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[#1877F2] px-3 h-10 rounded-xl hover:bg-[#0e5fc0]"
+            className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-sm font-bold text-white bg-[#1877F2] px-3 h-11 sm:h-10 rounded-xl hover:bg-[#0e5fc0]"
           >
             <Globe className="size-4" />
             เชื่อม Facebook (หลายเพจ)
@@ -280,7 +280,7 @@ export function ChannelsManager({
               (bulk channel import), different on-ramp. */}
           <a
             href="/inbox/settings/channels/facebook-paste"
-            className="inline-flex items-center gap-1.5 text-sm font-bold text-zinc-700 bg-white border border-zinc-300 px-3 h-10 rounded-xl hover:bg-zinc-50"
+            className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-sm font-bold text-zinc-700 bg-white border border-zinc-300 px-3 h-11 sm:h-10 rounded-xl hover:bg-zinc-50"
             title="ใช้เมื่อ OAuth dialog ติด"
           >
             <Globe className="size-4" />
@@ -289,7 +289,7 @@ export function ChannelsManager({
           <button
             type="button"
             onClick={() => setShowAdd(!showAdd)}
-            className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-3 h-10 rounded-xl hover:bg-[var(--color-brand-700)]"
+            className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-sm font-bold text-white bg-[var(--color-brand-600)] px-3 h-11 sm:h-10 rounded-xl hover:bg-[var(--color-brand-700)]"
           >
             <Plus className="size-4" />
             เพิ่มทีละช่อง

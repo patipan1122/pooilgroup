@@ -78,7 +78,7 @@ export default async function FormsListPage() {
             </p>
           </div>
           <div className="flex-1" />
-          <div className="ch-card-v2 bg-white p-3 flex gap-5 text-xs">
+          <div className="ch-card-v2 bg-white p-3 flex justify-between sm:justify-start gap-3 sm:gap-5 text-xs w-full sm:w-auto">
             <div>
               <div className="text-[11px] font-semibold text-[var(--ch-text-3)]">
                 ประเภทธุรกิจ

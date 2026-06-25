@@ -126,10 +126,13 @@ export function HeatmapGrid({
         )}
       </div>
 
+      <p className="lg:hidden text-[11px] text-[var(--ch-text-2)] mb-2 flex items-center gap-1">
+        <span aria-hidden>👉</span> ปัด ←→ เพื่อดูวันเพิ่ม
+      </p>
       {/* Single unified table — biz-type rows act as inline collapsible dividers
           (no separate cards/tables per group · header วันแถวเดียวด้านบน) */}
       <div className="rounded-2xl border-2 border-zinc-200 bg-white overflow-x-auto">
-        <table className="text-xs min-w-full">
+        <table className="text-xs min-w-max">
           <thead className="bg-zinc-50 sticky top-14 sm:top-16 z-20">
             <tr className="border-b border-zinc-100">
               <th className="text-left p-2 sticky left-0 bg-zinc-50 z-30 whitespace-nowrap">
@@ -139,7 +142,7 @@ export function HeatmapGrid({
                 <th
                   key={d}
                   className={cn(
-                    "p-1 text-center font-semibold tabular-num text-[10px] w-7",
+                    "p-1 text-center font-semibold tabular-num text-[10px] w-9 lg:w-7",
                     d === todayDay &&
                       "text-[var(--color-brand-700)] font-extrabold",
                   )}
@@ -210,7 +213,7 @@ export function HeatmapGrid({
                               <td key={d} className="p-0.5 text-center">
                                 {isFuture ? (
                                   <div
-                                    className="size-5 mx-auto rounded-md bg-zinc-50"
+                                    className="size-9 lg:size-5 mx-auto rounded-md bg-zinc-50"
                                     title={`${b.code} วันที่ ${d}`}
                                   />
                                 ) : (
@@ -224,7 +227,7 @@ export function HeatmapGrid({
                                       })
                                     }
                                     className={cn(
-                                      "size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
+                                      "size-9 lg:size-5 mx-auto rounded-md flex items-center justify-center transition-transform hover:scale-110 cursor-pointer",
                                       cellColor(status),
                                     )}
                                     title={`${b.code} วันที่ ${d}: ${statusLabel(status)}`}

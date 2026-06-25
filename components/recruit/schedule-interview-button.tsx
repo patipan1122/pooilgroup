@@ -66,7 +66,7 @@ export function ScheduleInterviewButton({ applicationId }: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 text-xs h-9 px-3 rounded-lg bg-orange-100 text-orange-800 hover:bg-orange-200 font-bold"
+        className="inline-flex items-center justify-center gap-1.5 text-xs w-full sm:w-auto h-11 px-3 rounded-lg bg-orange-100 text-orange-800 hover:bg-orange-200 font-bold"
       >
         <CalendarCheck className="size-3.5" />
         นัดสัมภาษณ์
@@ -205,7 +205,7 @@ export function ScheduleInterviewButton({ applicationId }: Props) {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="h-10 px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-100 rounded-lg"
+                  className="h-11 px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-100 rounded-lg"
                 >
                   ยกเลิก
                 </button>
@@ -213,7 +213,7 @@ export function ScheduleInterviewButton({ applicationId }: Props) {
                   type="button"
                   onClick={submit}
                   disabled={isPending || !date || !time}
-                  className="h-10 px-5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg disabled:opacity-50"
+                  className="h-11 px-5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-lg disabled:opacity-50"
                 >
                   {isPending ? "กำลังบันทึก..." : "บันทึกนัดสัมภาษณ์"}
                 </button>

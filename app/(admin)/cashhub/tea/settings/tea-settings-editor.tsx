@@ -100,43 +100,50 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
       </div>
 
       {/* บริษัท + ตั้งบัญชีทุกช่องทีเดียว */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-zinc-600">บริษัทที่เงินเข้า:</label>
-        <select
-          value={companyId}
-          onChange={(e) => setCompanyId(e.target.value)}
-          disabled={!canEdit}
-          aria-label="บริษัท"
-          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white disabled:opacity-60"
-        >
-          <option value="">— เลือกบริษัท —</option>
-          {companies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <div className="grow" />
-        <label className="text-sm text-zinc-500">ตั้งบัญชีทุกช่องทีเดียว:</label>
-        <select
-          defaultValue=""
-          disabled={!canEdit}
-          onChange={(e) => applyAccountToAll(e.target.value)}
-          aria-label="ตั้งบัญชีทุกช่อง"
-          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white disabled:opacity-60"
-        >
-          <option value="">— เลือกบัญชี —</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {accLabel(a)}
-            </option>
-          ))}
-        </select>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+          <label className="text-sm font-medium text-zinc-600 w-full sm:w-auto">บริษัทที่เงินเข้า:</label>
+          <select
+            value={companyId}
+            onChange={(e) => setCompanyId(e.target.value)}
+            disabled={!canEdit}
+            aria-label="บริษัท"
+            className="h-10 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm bg-white disabled:opacity-60"
+          >
+            <option value="">— เลือกบริษัท —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="hidden sm:block grow" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+          <label className="text-sm text-zinc-500 w-full sm:w-auto">ตั้งบัญชีทุกช่องทีเดียว:</label>
+          <select
+            defaultValue=""
+            disabled={!canEdit}
+            onChange={(e) => applyAccountToAll(e.target.value)}
+            aria-label="ตั้งบัญชีทุกช่อง"
+            className="h-10 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm bg-white disabled:opacity-60"
+          >
+            <option value="">— เลือกบัญชี —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {accLabel(a)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* ตารางช่องทาง */}
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-        <table className="min-w-full border-collapse text-sm">
+      <p className="lg:hidden mb-1.5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+        ปัด ←→ เพื่อดูเพิ่ม
+      </p>
+      <div className="overflow-x-auto -mx-3 px-3 lg:mx-0 lg:px-0 rounded-2xl border border-zinc-200 bg-white">
+        <table className="min-w-max lg:min-w-full border-collapse text-sm">
           <thead>
             <tr className="bg-zinc-50 text-zinc-600">
               <th className="px-3 py-2 text-left font-semibold border-b border-zinc-200">ช่องทาง</th>
@@ -214,12 +221,12 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
       )}
 
       {canEdit && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <button
             type="button"
             disabled={busy}
             onClick={save}
-            className="h-10 rounded-xl bg-[var(--ch-brand,#1e3aff)] px-6 text-sm font-bold text-white disabled:opacity-40"
+            className="h-11 sm:h-10 w-full sm:w-auto rounded-xl bg-[var(--ch-brand,#1e3aff)] px-6 text-sm font-bold text-white disabled:opacity-40"
           >
             {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}
           </button>

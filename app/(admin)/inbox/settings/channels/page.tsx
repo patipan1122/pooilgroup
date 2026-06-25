@@ -27,7 +27,7 @@ export default async function InboxChannelsSettingsPage({
   const channels = await listChannels();
 
   return (
-    <div className="p-5 sm:p-8 max-w-[1600px] mx-auto">
+    <div className="inbox-has-mobilenav p-3 sm:p-8 max-w-[1600px] mx-auto">
       <Section
         number="IB.1"
         label="OMNICHANNEL INBOX"

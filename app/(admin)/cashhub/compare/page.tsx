@@ -412,7 +412,11 @@ export default async function ComparePage({
       <Section number="02" label="ตามประเภท" title="แยกตามประเภทธุรกิจ" className="mb-6">
         <Card>
           <CardBody className="!p-0">
-            <table className="w-full text-sm">
+            <p className="lg:hidden mb-1.5 px-3 pt-3 text-xs" style={{ color: "var(--ch-text-3)" }}>
+              ปัด ←→ เพื่อดูเพิ่ม
+            </p>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-max lg:min-w-full text-sm">
               <thead className="sticky top-14 sm:top-16 z-20 bg-white text-xs font-bold text-zinc-500">
                 <tr className="border-b border-zinc-100">
                   <th className="text-left p-3">ประเภท</th>
@@ -450,6 +454,7 @@ export default async function ComparePage({
                 })}
               </tbody>
             </table>
+            </div>
           </CardBody>
         </Card>
       </Section>
@@ -463,7 +468,7 @@ export default async function ComparePage({
       >
         <Card>
           <CardBody>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-4">
               {(["cash", "transfer", "card", "credit"] as const).map((k) => {
                 const aV = aMix[k];
                 const bV = bMix[k];

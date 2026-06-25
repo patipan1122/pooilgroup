@@ -238,7 +238,7 @@ export function TeaView({
     <div className="space-y-5">
       {/* controls */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
           <form method="get" className="flex items-center gap-2">
             <input type="hidden" name="view" value={view} />
             <input type="hidden" name="branch" value={branch} />
@@ -248,19 +248,19 @@ export function TeaView({
               aria-label="เลือกเดือน"
               title="เลือกเดือน"
               defaultValue={month}
-              className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+              className="h-10 grow sm:grow-0 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
             />
             <button type="submit" className="h-10 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white">
               ดู
             </button>
           </form>
 
-          <div className="grow" />
+          <div className="hidden sm:block grow" />
 
           {canConfig && (
             <a
               href="/cashhub/tea/settings"
-              className="h-10 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
+              className="h-10 inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
             >
               ⚙ ตั้งค่าบัญชี (Reconcile)
             </a>
@@ -276,7 +276,7 @@ export function TeaView({
             </button>
           )}
           {canPull && (
-            <label className="h-10 inline-flex items-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 cursor-pointer">
+            <label className="h-10 inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 cursor-pointer">
               ⬆ อัปไฟล์ Foodstory
               <input
                 type="file"
@@ -337,18 +337,18 @@ export function TeaView({
                     key={i}
                     className="rounded-xl bg-white border border-zinc-200 px-3 py-2.5 flex flex-wrap items-center gap-2"
                   >
-                    <div className="min-w-[180px] text-sm text-zinc-600">
+                    <div className="w-full sm:w-auto sm:min-w-[180px] text-sm text-zinc-600">
                       ในไฟล์:{" "}
                       <span className="font-medium text-zinc-800">
                         {b.storeLabel ?? b.storeCode ?? "—"}
                       </span>
                     </div>
-                    <span className="text-sm text-zinc-400">→</span>
+                    <span className="hidden sm:inline text-sm text-zinc-400">→</span>
                     <select
                       value={pick}
                       onChange={(e) => setPick(i, e.target.value)}
                       aria-label="เลือกสาขาที่จะนำเข้า"
-                      className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium"
+                      className="h-9 w-full sm:w-auto rounded-xl border border-zinc-200 bg-white px-3 text-sm font-medium"
                     >
                       <option value="">— ข้าม (ไม่นำเข้า) —</option>
                       {branches.map((br) => (
@@ -378,7 +378,7 @@ export function TeaView({
               type="button"
               disabled={importing || picks.every((p) => !p)}
               onClick={confirmImport}
-              className="h-10 rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
+              className="h-11 w-full sm:w-auto rounded-xl bg-[var(--ch-brand,#1e3aff)] px-5 text-sm font-bold text-white disabled:opacity-40"
             >
               {importing ? "กำลังนำเข้า…" : "ยืนยันนำเข้าทุกสาขาที่เลือก"}
             </button>
@@ -386,19 +386,19 @@ export function TeaView({
         )}
 
         {/* view toggle */}
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-xl border border-zinc-200 bg-zinc-50 p-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="inline-flex w-full sm:w-auto rounded-xl border border-zinc-200 bg-zinc-50 p-1">
             <button
               type="button"
               onClick={() => setView("matrix")}
-              className={`h-8 rounded-lg px-3 text-sm font-medium ${view === "matrix" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500"}`}
+              className={`h-8 flex-1 sm:flex-none rounded-lg px-3 text-sm font-medium ${view === "matrix" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500"}`}
             >
               ตารางรวม (วันที่ × สาขา)
             </button>
             <button
               type="button"
               onClick={() => setView("branch")}
-              className={`h-8 rounded-lg px-3 text-sm font-medium ${view === "branch" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500"}`}
+              className={`h-8 flex-1 sm:flex-none rounded-lg px-3 text-sm font-medium ${view === "branch" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500"}`}
             >
               รายสาขา (Excel)
             </button>
@@ -409,7 +409,7 @@ export function TeaView({
               onChange={(e) => setBranch(e.target.value)}
               aria-label="เลือกสาขา"
               title="เลือกสาขา"
-              className="h-9 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+              className="h-9 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
             >
               {branches.map((b) => (
                 <option key={b.code} value={b.code}>
@@ -494,8 +494,12 @@ function MatrixTable({
   const grand = colTot.reduce((a, b) => a + b, 0);
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-      <table className="min-w-full border-collapse text-sm">
+    <div>
+      <p className="lg:hidden mb-1.5 text-xs" style={{ color: "var(--ch-text-3)" }}>
+        ปัด ←→ เพื่อดูเพิ่ม
+      </p>
+      <div className="overflow-x-auto -mx-3 px-3 lg:mx-0 lg:px-0 rounded-2xl border border-zinc-200 bg-white">
+        <table className="min-w-max lg:min-w-full border-collapse text-sm">
         <thead>
           <tr className="bg-zinc-50">
             <th className="sticky left-0 z-10 bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-600 border-b border-zinc-200">
@@ -564,6 +568,7 @@ function MatrixTable({
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   );
 }

@@ -229,7 +229,7 @@ export default async function ShortagesPage({
   return (
     <div className="p-3 sm:p-6 lg:p-10 max-w-5xl mx-auto pb-24">
       <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-      <header className="mt-3 mb-6 flex items-end justify-between gap-4 flex-wrap">
+      <header className="mt-3 mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div className="flex flex-col gap-2">
           <SectionPill num="00" label="Shortage · เงินขาด" />
           <TwoToneTitle first="เงินขาด" accent={formatBaht(total)} size={32} />
@@ -239,7 +239,7 @@ export default async function ShortagesPage({
         </div>
         <a
           href={exportUrl}
-          className="inline-flex items-center gap-2 px-4 h-10 rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
+          className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] w-full sm:w-auto rounded-xl border-2 border-zinc-200 bg-white text-zinc-800 font-bold hover:border-[var(--color-brand-300)] hover:bg-[var(--color-brand-50)]/40 transition-colors text-sm"
           title="ดาวน์โหลด CSV เปิดด้วย Excel/Sheets · ส่งให้ HR หักเงินเดือน"
         >
           📥 Export CSV (ส่ง HR)
@@ -251,8 +251,8 @@ export default async function ShortagesPage({
         <CardBody>
           <form method="get" className="space-y-3">
             {/* Row 1: Quick range + Month picker */}
-            <div className="flex flex-wrap gap-3 items-end">
-              <label className="flex flex-col gap-1.5 min-w-[160px]">
+            <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-3 sm:items-end">
+              <label className="flex flex-col gap-1.5 w-full sm:w-auto sm:min-w-[160px]">
                 <span className="text-xs font-bold text-zinc-500">
                   ช่วงด่วน
                 </span>
@@ -261,7 +261,7 @@ export default async function ShortagesPage({
                   defaultValue={
                     fromParam || monthParam ? "" : range
                   }
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
                 >
                   <option value="">— ไม่ใช้ —</option>
                   <option value="30d">30 วันล่าสุด</option>
@@ -271,14 +271,14 @@ export default async function ShortagesPage({
                 </select>
               </label>
 
-              <label className="flex flex-col gap-1.5 min-w-[160px]">
+              <label className="flex flex-col gap-1.5 w-full sm:w-auto sm:min-w-[160px]">
                 <span className="text-xs font-bold text-zinc-500">
                   เลือกเดือน
                 </span>
                 <select
                   name="month"
                   defaultValue={monthParam}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
                 >
                   <option value="">— เลือกเดือน —</option>
                   {monthOptions.map((m) => (
@@ -289,41 +289,43 @@ export default async function ShortagesPage({
                 </select>
               </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-bold text-zinc-500">
-                  จากวันที่
-                </span>
-                <input
-                  type="date"
-                  name="from"
-                  defaultValue={fromParam}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
-                />
-              </label>
+              <div className="grid grid-cols-2 gap-3 sm:contents">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-zinc-500">
+                    จากวันที่
+                  </span>
+                  <input
+                    type="date"
+                    name="from"
+                    defaultValue={fromParam}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+                  />
+                </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-bold text-zinc-500">
-                  ถึงวันที่
-                </span>
-                <input
-                  type="date"
-                  name="to"
-                  defaultValue={toParam}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
-                />
-              </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-zinc-500">
+                    ถึงวันที่
+                  </span>
+                  <input
+                    type="date"
+                    name="to"
+                    defaultValue={toParam}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* Row 2: Branch + Person search + Group toggle */}
-            <div className="flex flex-wrap gap-3 items-end">
-              <label className="flex flex-col gap-1.5 min-w-[180px]">
+            <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-3 sm:items-end">
+              <label className="flex flex-col gap-1.5 w-full sm:w-auto sm:min-w-[180px]">
                 <span className="text-xs font-bold text-zinc-500">
                   สาขา
                 </span>
                 <select
                   name="branchId"
                   defaultValue={branchId}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
                 >
                   <option value="">ทั้งหมด</option>
                   {allBranches.map((b) => (
@@ -334,7 +336,7 @@ export default async function ShortagesPage({
                 </select>
               </label>
 
-              <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+              <label className="flex flex-col gap-1.5 w-full sm:flex-1 sm:min-w-[180px]">
                 <span className="text-xs font-bold text-zinc-500">
                   ค้นชื่อพนักงาน
                 </span>
@@ -342,18 +344,18 @@ export default async function ShortagesPage({
                   name="person"
                   defaultValue={person}
                   placeholder="เช่น สมชาย"
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm bg-white"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm bg-white"
                 />
               </label>
 
-              <label className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-1.5 w-full sm:w-auto">
                 <span className="text-xs font-bold text-zinc-500">
                   มุมมอง
                 </span>
                 <select
                   name="groupBy"
                   defaultValue={groupBy}
-                  className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+                  className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
                 >
                   <option value="branch">ตามสาขา</option>
                   <option value="person">ตามพนักงาน</option>
@@ -361,19 +363,21 @@ export default async function ShortagesPage({
                 </select>
               </label>
 
-              <button
-                type="submit"
-                className="h-10 rounded-xl bg-[var(--color-brand-600)] text-white font-semibold px-5"
-              >
-                กรอง
-              </button>
+              <div className="grid grid-cols-2 gap-3 sm:contents">
+                <button
+                  type="submit"
+                  className="min-h-[44px] w-full sm:w-auto rounded-xl bg-[var(--color-brand-600)] text-white font-semibold px-5"
+                >
+                  กรอง
+                </button>
 
-              <a
-                href="/cashhub/shortages"
-                className="h-10 rounded-xl border-2 border-zinc-200 text-zinc-700 font-semibold px-4 inline-flex items-center text-sm hover:bg-zinc-50"
-              >
-                ล้างกรอง
-              </a>
+                <a
+                  href="/cashhub/shortages"
+                  className="min-h-[44px] w-full sm:w-auto rounded-xl border-2 border-zinc-200 text-zinc-700 font-semibold px-4 inline-flex items-center justify-center text-sm hover:bg-zinc-50"
+                >
+                  ล้างกรอง
+                </a>
+              </div>
             </div>
 
             <p className="text-[11px] text-zinc-400">

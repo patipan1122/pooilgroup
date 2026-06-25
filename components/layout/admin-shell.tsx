@@ -188,6 +188,13 @@ export function AdminShell({
   // module (e.g. /ledger) the module has its OWN nav/top-bar switcher, so the
   // hub nav must disappear — otherwise it stacks on / hides the module's menu.
   const showHubNav = isHubAudience && !activeModuleSlug;
+  // These modules render their OWN fixed bottom-nav (~64px) on mobile, so the
+  // floating AI button must lift above it to avoid covering the right-most tab.
+  const moduleHasBottomNav =
+    !!activeModuleSlug &&
+    (activeModuleSlug === "cashhub" ||
+      activeModuleSlug === "recruit" ||
+      activeModuleSlug === "inbox");
 
   const moduleNav = useMemo(() => {
     if (!activeModule) return [];
@@ -508,7 +515,14 @@ export function AdminShell({
             // flex-col so a full-height page (เช่น กล่องแชท) ใช้ flex-1 ฟิลพื้นที่จริง
             // ที่เหลือใต้ topnav + แถบฟ้ารออนุมัติได้เอง (ไม่ต้องเดา 100dvh-Nrem ตายตัว)
             "flex-1 min-w-0 flex flex-col",
-            showHubNav ? "pb-24 lg:pb-20" : "pb-20",
+            // Inbox's chat workspace is viewport-locked (h-[calc(100dvh-3.5rem)])
+            // and each inbox page clears the bottom-nav itself, so adding page
+            // padding here would only create dead overscroll — pin it to 0.
+            activeModuleSlug === "inbox"
+              ? "pb-0"
+              : showHubNav || moduleHasBottomNav
+                ? "pb-24 lg:pb-20"
+                : "pb-20",
           )}
         >
           {children}
@@ -518,7 +532,14 @@ export function AdminShell({
       {/* Global floating AI Assistant — available to every signed-in user
           (admins for analysis, branch managers for how-to + their own data).
           Lazy-mounted on first click via AiChatLauncher. */}
-      <AiChatLauncher liftMobile={showHubNav} canPinpoint={canPinpoint} />
+      {/* Recruit ships its own AI assistant (RecruitChatFab in its layout), so
+          suppress the global launcher there to avoid two stacked Bot buttons. */}
+      {activeModuleSlug !== "recruit" && (
+        <AiChatLauncher
+          liftMobile={showHubNav || moduleHasBottomNav}
+          canPinpoint={canPinpoint}
+        />
+      )}
 
       {/* Pinpoint / โหมดติชม overlay — every signed-in user (flag on). Renders
           nothing until a session is started from the AI button. canReview gates

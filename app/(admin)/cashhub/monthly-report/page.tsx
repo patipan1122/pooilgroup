@@ -191,18 +191,18 @@ export default async function MonthlyReportPage({
       `}</style>
 
       <div className="no-print bg-zinc-100 border-b-2 border-zinc-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <BackButton label="ภาพรวม" fallbackHref="/cashhub/dashboard" />
-          <form method="get" className="flex items-center gap-2">
+          <form method="get" className="flex flex-col sm:flex-row sm:items-center gap-2">
             <input
               type="month"
               name="month"
               defaultValue={monthStr}
-              className="h-9 rounded-xl border border-zinc-200 px-2 text-sm bg-white"
+              className="h-11 sm:h-9 w-full sm:w-auto rounded-xl border border-zinc-200 px-2 text-sm bg-white"
             />
             <button
               type="submit"
-              className="h-9 px-3 rounded-xl bg-zinc-200 text-sm font-semibold"
+              className="h-11 sm:h-9 w-full sm:w-auto px-3 rounded-xl bg-zinc-200 text-sm font-semibold"
             >
               เลือกเดือน
             </button>
@@ -212,7 +212,7 @@ export default async function MonthlyReportPage({
       </div>
 
       <div className="bg-white text-zinc-900">
-        <div className="max-w-4xl mx-auto px-6 sm:px-10 py-10 print:py-0 print:px-0 space-y-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-10 py-6 sm:py-10 print:py-0 print:px-0 space-y-8">
           {/* PAGE 1 — EXECUTIVE */}
           <section className="pg">
             <div className="flex items-baseline justify-between">

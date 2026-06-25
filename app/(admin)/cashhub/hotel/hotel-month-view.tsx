@@ -281,9 +281,12 @@ export function HotelMonthView({
       {view === "grid" ? (
         <HotelExcelGrid days={shownDays} />
       ) : (
-        <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+        <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden -mx-3 lg:mx-0">
+          <p className="lg:hidden px-3 pt-2 text-xs" style={{ color: "var(--ch-text-3)" }}>
+            ปัด ←→ เพื่อดูเพิ่ม
+          </p>
           <div className="overflow-x-auto max-h-[70vh]">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="sticky top-0 z-10 bg-zinc-50">
                 <tr className="text-[11px] uppercase tracking-wide text-zinc-500 border-b border-zinc-200">
                   <th className="text-left font-semibold px-3 py-2.5 sticky left-0 bg-zinc-50">

@@ -84,7 +84,7 @@ export function HotelTrcloudPanel({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="font-bold text-zinc-800">ดึง IV จาก TRCloud</div>
           <div className="text-xs text-zinc-500">
@@ -95,7 +95,7 @@ export function HotelTrcloudPanel({
           type="button"
           onClick={pull}
           disabled={busy}
-          className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
+          className="h-11 px-4 w-full sm:w-auto rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 sm:shrink-0"
         >
           {busy ? "กำลังดึง…" : "ดึง IV เดือนนี้"}
         </button>
@@ -128,8 +128,11 @@ export function HotelTrcloudPanel({
               หน้างานอาจลืมคีย์ (ดูแถวที่ขึ้น 🔴 ด้านล่าง)
             </div>
           )}
-          <div className="overflow-x-auto rounded-xl border border-zinc-100">
-            <table className="w-full text-xs">
+          <p className="lg:hidden text-xs" style={{ color: "var(--ch-text-3)" }}>
+            ปัด ←→ เพื่อดูเพิ่ม
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-zinc-100 -mx-1 lg:mx-0">
+            <table className="w-full min-w-[480px] text-xs">
               <thead className="bg-zinc-50 text-zinc-500">
                 <tr>
                   <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>

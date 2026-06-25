@@ -35,7 +35,7 @@ export default async function CashHubSettingsPage() {
         }}
       />
 
-      <div className="relative p-4 sm:p-8 lg:p-12 max-w-3xl mx-auto pb-24">
+      <div className="relative p-3 sm:p-8 lg:p-12 max-w-3xl mx-auto">
         <div className="mb-10 animate-slide-up-soft flex flex-col gap-2">
           <SectionPill num="00" label="CashHub · ตั้งค่า" />
           <TwoToneTitle first="ตั้งค่า" accent="CashHub" size={40} />

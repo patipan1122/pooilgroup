@@ -71,7 +71,7 @@ export function HotelReconcilePanel({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <div className="font-bold text-zinc-800">🏦 กระทบยอดธนาคาร (reconcile)</div>
           <div className="text-xs text-zinc-500">
@@ -83,7 +83,7 @@ export function HotelReconcilePanel({
             type="button"
             onClick={send}
             disabled={busy || !configured}
-            className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 shrink-0"
+            className="h-11 px-4 w-full sm:w-auto rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50 sm:shrink-0"
           >
             {busy ? "กำลังส่ง…" : "ส่งเข้าระบบบัญชี"}
           </button>
@@ -143,7 +143,7 @@ export function HotelReconcilePanel({
         })}
       </div>
 
-      <div className="flex items-center justify-between text-sm border-t border-zinc-100 pt-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm border-t border-zinc-100 pt-2.5">
         <span className="text-zinc-600">
           รวม: <b className="text-emerald-700">กระทบแล้ว {formatBaht(totalRec)}</b> ·{" "}
           <b className="text-zinc-700">ค้าง {formatBaht(totalOut)}</b>
@@ -160,8 +160,8 @@ export function HotelReconcilePanel({
       </div>
 
       {showDays && (
-        <div className="overflow-hidden rounded-xl border border-zinc-100">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-zinc-100 -mx-1 lg:mx-0">
+          <table className="w-full min-w-[420px] text-sm">
             <thead>
               <tr className="bg-zinc-50 text-zinc-500 text-xs">
                 <th className="px-2.5 py-1.5 text-left font-semibold">วันที่</th>

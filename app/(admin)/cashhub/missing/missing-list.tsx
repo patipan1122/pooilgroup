@@ -70,22 +70,22 @@ export function MissingList({ rows }: { rows: MissingRow[] }) {
               {row.missing.map((m) => (
                 <li
                   key={m.date}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-zinc-50 border border-zinc-100"
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2 rounded-lg bg-zinc-50 border border-zinc-100"
                 >
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="size-3.5 text-zinc-400 shrink-0" />
-                    <span className="font-mono tabular-num text-zinc-900 font-bold">
+                  <div className="flex items-start gap-2 text-sm min-w-0">
+                    <Calendar className="size-3.5 text-zinc-400 shrink-0 mt-0.5" />
+                    <span className="font-mono tabular-num text-zinc-900 font-bold shrink-0">
                       {m.date}
                     </span>
                     {m.reasonType ? (
-                      <span className="ml-2 text-xs text-zinc-700">
+                      <span className="text-xs text-zinc-700">
                         {REASON_LABEL[m.reasonType] ?? m.reasonType}
                         {m.reasonText && (
                           <span className="text-zinc-500"> — “{m.reasonText}”</span>
                         )}
                       </span>
                     ) : (
-                      <span className="ml-2 text-xs text-amber-700">
+                      <span className="text-xs text-amber-700">
                         ⚠️ ยังไม่ได้แจ้งเหตุผล
                       </span>
                     )}
@@ -101,7 +101,7 @@ export function MissingList({ rows }: { rows: MissingRow[] }) {
                       })
                     }
                     className={cn(
-                      "shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors",
+                      "shrink-0 inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-1.5 w-full sm:w-auto px-3 rounded-lg text-xs font-bold border-2 transition-colors",
                       m.reasonType
                         ? "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
                         : "border-[var(--color-brand-300)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] hover:border-[var(--color-brand-500)]",

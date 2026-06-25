@@ -81,14 +81,14 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
       </header>
 
       {/* store / month picker */}
-      <form method="get" className="flex flex-wrap gap-2 mb-5">
+      <form method="get" className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mb-5">
         {stores.length > 1 && (
           <select
             name="store"
             aria-label="เลือกสาขา"
             title="เลือกสาขา"
             defaultValue={storeCode}
-            className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+            className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
           >
             {stores.map((s) => (
               <option key={s.store_code} value={s.store_code}>
@@ -103,11 +103,11 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
           aria-label="เลือกเดือน"
           title="เลือกเดือน"
           defaultValue={monthStr}
-          className="h-10 rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
+          className="h-11 w-full sm:w-auto rounded-xl border border-zinc-200 px-3 text-sm font-medium bg-white"
         />
         <button
           type="submit"
-          className="h-10 rounded-xl bg-zinc-900 text-white font-semibold px-5 text-sm"
+          className="h-11 w-full sm:w-auto rounded-xl bg-zinc-900 text-white font-semibold px-5 text-sm"
         >
           ดู
         </button>

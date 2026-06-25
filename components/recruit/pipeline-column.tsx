@@ -60,7 +60,7 @@ export function PipelineColumn({
   selectHref,
 }: Props) {
   return (
-    <div className="w-72 sm:w-auto shrink-0 sm:shrink rounded-2xl border border-zinc-200 bg-zinc-50/40 overflow-hidden flex flex-col max-h-[80vh]">
+    <div className="w-[82vw] max-w-[300px] snap-start sm:w-auto sm:max-w-none shrink-0 sm:shrink rounded-2xl border border-zinc-200 bg-zinc-50/40 overflow-hidden flex flex-col max-h-[80vh]">
       <div className="p-3 border-b border-zinc-200 bg-white">
         <div className="flex items-center justify-between">
           <Badge tone={STATUS_TONE[status]}>

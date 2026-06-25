@@ -14,7 +14,7 @@ export default async function EvImportPage() {
   await requireRole("super_admin", "org_admin", "admin");
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <BackButton label="ศูนย์นำเข้าข้อมูล" fallbackHref="/cashhub/import" />
 
       <header className="mb-5 animate-fade-up">

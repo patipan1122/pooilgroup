@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useInboxRealtime } from "@/lib/inbox/use-inbox-realtime";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -22,6 +22,8 @@ import {
   Hand,
   AlertTriangle,
   Sparkles,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 
 interface ChannelOption {
@@ -97,6 +99,14 @@ export function InboxWorkspace({
   // to rebuild the socket on every message click (audit RT-001).
   useInboxRealtime({ orgId });
 
+  // Mobile filter drawer — the desktop filter rail is hidden on phones, so we
+  // surface the same controls behind a slide-in sheet toggled from the header.
+  const [filterOpen, setFilterOpen] = useState(false);
+  // Auto-close the drawer once a filter is applied (URL query changed).
+  useEffect(() => {
+    setFilterOpen(false);
+  }, [searchParams]);
+
   const hasAnyChannel = channels.length > 0;
   const hasAnyFilter =
     !!activeFilters.status ||
@@ -106,167 +116,231 @@ export function InboxWorkspace({
     activeFilters.urgent ||
     activeFilters.lead ||
     !!activeFilters.q;
+  const activeFilterCount =
+    (activeFilters.status ? 1 : 0) +
+    (activeFilters.channel ? 1 : 0) +
+    (activeFilters.biz ? 1 : 0) +
+    (activeFilters.q ? 1 : 0) +
+    (activeFilters.human ? 1 : 0) +
+    (activeFilters.urgent ? 1 : 0) +
+    (activeFilters.lead ? 1 : 0);
 
-  return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      {/* Page header */}
-      <div className="border-b border-zinc-200 bg-white px-4 py-4 sm:px-6">
-        <Section
-          label="กล่องข้อความรวม"
-          title="กล่องข้อความรวม"
-          description="รวมแชตลูกค้าจาก LINE และ Facebook ทุกเพจไว้ที่เดียว"
-          action={
-            <Link
-              href="/inbox/settings/channels"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
-            >
-              <PlugZap className="size-4" />
-              ตั้งค่าช่องทาง
-            </Link>
-          }
+  // Filter controls, shared between the desktop rail and the mobile drawer.
+  const filterRail = (
+    <>
+      {/* Search */}
+      <form
+        action={pathname}
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("q");
+          setFilter({ q: typeof value === "string" ? value.trim() || null : null });
+        }}
+        className="relative mb-4"
+      >
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+        <input
+          name="q"
+          defaultValue={activeFilters.q}
+          placeholder="ค้นหาชื่อ/ข้อความ"
+          className="h-10 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-3 text-[16px] outline-none focus:border-[var(--color-brand-500)] sm:h-9 sm:text-sm"
+        />
+      </form>
+
+      {/* Triage counts (quick filters) */}
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
+        คิวงาน
+      </p>
+      <div className="space-y-1">
+        <CountRow
+          icon={<Hand className="size-4" />}
+          label="ต้องคนตอบ"
+          count={counts.needsHuman}
+          tone="danger"
+          active={activeFilters.human}
+          href={buildHref({ human: activeFilters.human ? null : "1" })}
+        />
+        <CountRow
+          icon={<AlertTriangle className="size-4" />}
+          label="ด่วน"
+          count={counts.urgent}
+          tone="orange"
+          active={activeFilters.urgent}
+          href={buildHref({ urgent: activeFilters.urgent ? null : "1" })}
+        />
+        <CountRow
+          icon={<Sparkles className="size-4" />}
+          label="สนใจซื้อ (ลีด)"
+          count={counts.leads}
+          tone="purple"
+          active={activeFilters.lead}
+          href={buildHref({ lead: activeFilters.lead ? null : "1" })}
+        />
+        <CountRow
+          icon={<Inbox className="size-4" />}
+          label="เปิดอยู่"
+          count={counts.open}
+          tone="brand"
+          active={activeFilters.status === "OPEN"}
+          href={buildHref({ status: activeFilters.status === "OPEN" ? null : "OPEN" })}
         />
       </div>
 
-      {/* 3-pane body */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[240px_340px_minmax(0,1fr)]">
-        {/* LEFT: filter rail */}
-        <aside className="hidden overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 lg:block">
-          {/* Search */}
-          <form
-            action={pathname}
-            onSubmit={(e) => {
-              e.preventDefault();
-              const value = new FormData(e.currentTarget).get("q");
-              setFilter({ q: typeof value === "string" ? value.trim() || null : null });
-            }}
-            className="relative mb-4"
-          >
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-            <input
-              name="q"
-              defaultValue={activeFilters.q}
-              placeholder="ค้นหาชื่อ/ข้อความ"
-              className="h-9 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-3 text-sm outline-none focus:border-[var(--color-brand-500)]"
-            />
-          </form>
+      {/* Status filter */}
+      <p className="mb-1.5 mt-5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
+        สถานะ
+      </p>
+      <div className="space-y-1">
+        {[
+          { value: "", label: "ทั้งหมด" },
+          { value: "OPEN", label: "เปิด" },
+          { value: "SNOOZED", label: "พักไว้" },
+          { value: "CLOSED", label: "ปิดแล้ว" },
+        ].map((s) => (
+          <FilterRow
+            key={s.value || "all"}
+            label={s.label}
+            active={activeFilters.status === s.value}
+            href={buildHref({ status: s.value || null })}
+          />
+        ))}
+      </div>
 
-          {/* Triage counts (quick filters) */}
-          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
-            คิวงาน
-          </p>
-          <div className="space-y-1">
-            <CountRow
-              icon={<Hand className="size-4" />}
-              label="ต้องคนตอบ"
-              count={counts.needsHuman}
-              tone="danger"
-              active={activeFilters.human}
-              href={buildHref({ human: activeFilters.human ? null : "1" })}
-            />
-            <CountRow
-              icon={<AlertTriangle className="size-4" />}
-              label="ด่วน"
-              count={counts.urgent}
-              tone="orange"
-              active={activeFilters.urgent}
-              href={buildHref({ urgent: activeFilters.urgent ? null : "1" })}
-            />
-            <CountRow
-              icon={<Sparkles className="size-4" />}
-              label="สนใจซื้อ (ลีด)"
-              count={counts.leads}
-              tone="purple"
-              active={activeFilters.lead}
-              href={buildHref({ lead: activeFilters.lead ? null : "1" })}
-            />
-            <CountRow
-              icon={<Inbox className="size-4" />}
-              label="เปิดอยู่"
-              count={counts.open}
-              tone="brand"
-              active={activeFilters.status === "OPEN"}
-              href={buildHref({ status: activeFilters.status === "OPEN" ? null : "OPEN" })}
-            />
-          </div>
+      {/* Business filter */}
+      <p className="mb-1.5 mt-5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
+        ธุรกิจ
+      </p>
+      <div className="space-y-1">
+        <FilterRow
+          label="ทุกธุรกิจ"
+          active={!activeFilters.biz}
+          href={buildHref({ biz: null })}
+        />
+        {INBOX_BUSINESSES.map((b) => (
+          <FilterRow
+            key={b.tag}
+            label={b.label}
+            active={activeFilters.biz === b.tag}
+            href={buildHref({ biz: b.tag })}
+          />
+        ))}
+      </div>
 
-          {/* Status filter */}
+      {/* Channel filter */}
+      {hasAnyChannel && (
+        <>
           <p className="mb-1.5 mt-5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
-            สถานะ
-          </p>
-          <div className="space-y-1">
-            {[
-              { value: "", label: "ทั้งหมด" },
-              { value: "OPEN", label: "เปิด" },
-              { value: "SNOOZED", label: "พักไว้" },
-              { value: "CLOSED", label: "ปิดแล้ว" },
-            ].map((s) => (
-              <FilterRow
-                key={s.value || "all"}
-                label={s.label}
-                active={activeFilters.status === s.value}
-                href={buildHref({ status: s.value || null })}
-              />
-            ))}
-          </div>
-
-          {/* Business filter */}
-          <p className="mb-1.5 mt-5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
-            ธุรกิจ
+            ช่องทาง
           </p>
           <div className="space-y-1">
             <FilterRow
-              label="ทุกธุรกิจ"
-              active={!activeFilters.biz}
-              href={buildHref({ biz: null })}
+              label="ทุกช่องทาง"
+              active={!activeFilters.channel}
+              href={buildHref({ channel: null })}
             />
-            {INBOX_BUSINESSES.map((b) => (
+            {channels.map((ch) => (
               <FilterRow
-                key={b.tag}
-                label={b.label}
-                active={activeFilters.biz === b.tag}
-                href={buildHref({ biz: b.tag })}
+                key={ch.id}
+                label={`${ch.platform === "LINE" ? "🟢" : "🔵"} ${ch.displayName}`}
+                sub={ch.businessTag ? businessLabel(ch.businessTag) : undefined}
+                active={activeFilters.channel === ch.id}
+                href={buildHref({ channel: ch.id })}
               />
             ))}
           </div>
+        </>
+      )}
 
-          {/* Channel filter */}
-          {hasAnyChannel && (
-            <>
-              <p className="mb-1.5 mt-5 text-[11px] font-bold uppercase tracking-wide text-zinc-400">
-                ช่องทาง
-              </p>
-              <div className="space-y-1">
-                <FilterRow
-                  label="ทุกช่องทาง"
-                  active={!activeFilters.channel}
-                  href={buildHref({ channel: null })}
-                />
-                {channels.map((ch) => (
-                  <FilterRow
-                    key={ch.id}
-                    label={`${ch.platform === "LINE" ? "🟢" : "🔵"} ${ch.displayName}`}
-                    sub={ch.businessTag ? businessLabel(ch.businessTag) : undefined}
-                    active={activeFilters.channel === ch.id}
-                    href={buildHref({ channel: ch.id })}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+      {hasAnyFilter && (
+        <Link
+          href={pathname}
+          className="mt-5 inline-block text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+        >
+          ล้างตัวกรองทั้งหมด
+        </Link>
+      )}
+    </>
+  );
 
-          {hasAnyFilter && (
-            <Link
-              href={pathname}
-              className="mt-5 inline-block text-xs font-bold text-[var(--color-brand-700)] hover:underline"
-            >
-              ล้างตัวกรองทั้งหมด
-            </Link>
-          )}
+  return (
+    <div className="flex h-[calc(100dvh-3.5rem)] flex-col sm:h-[calc(100dvh-4rem)]">
+      {/* Page header — hidden on mobile while a conversation is open (full-screen chat) */}
+      <div
+        className={`border-b border-zinc-200 bg-white px-4 py-3 sm:px-6 sm:py-4 ${
+          selected ? "hidden lg:block" : ""
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <Section
+              label="กล่องข้อความรวม"
+              title="กล่องข้อความรวม"
+              description="รวมแชตลูกค้าจาก LINE และ Facebook ทุกเพจไว้ที่เดียว"
+              action={
+                <Link
+                  href="/inbox/settings/channels"
+                  className="hidden items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 sm:inline-flex"
+                >
+                  <PlugZap className="size-4" />
+                  ตั้งค่าช่องทาง
+                </Link>
+              }
+            />
+          </div>
+          {/* Mobile: open the filter drawer */}
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            aria-label="ตัวกรอง"
+            className="relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 lg:hidden"
+          >
+            <SlidersHorizontal className="size-5" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex min-w-[18px] items-center justify-center rounded-full bg-[var(--color-brand-600)] px-1 text-[10px] font-bold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile filter drawer */}
+      {filterOpen && (
+        <div className="fixed inset-0 z-[70] lg:hidden" role="dialog" aria-modal="true">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setFilterOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute inset-y-0 left-0 flex w-[86%] max-w-xs flex-col bg-zinc-50 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
+              <span className="font-display text-base font-bold text-zinc-900">ตัวกรอง</span>
+              <button
+                type="button"
+                onClick={() => setFilterOpen(false)}
+                aria-label="ปิด"
+                className="inline-flex size-9 items-center justify-center rounded-xl text-zinc-500 hover:bg-zinc-100"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(16px+env(safe-area-inset-bottom))]">
+              {filterRail}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3-pane body */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[240px_340px_minmax(0,1fr)]">
+        {/* LEFT: filter rail (desktop) */}
+        <aside className="hidden overflow-y-auto border-r border-zinc-200 bg-zinc-50 p-4 lg:block">
+          {filterRail}
         </aside>
 
         {/* MIDDLE: conversation list */}
         <section
-          className={`min-h-0 overflow-y-auto border-r border-zinc-200 bg-white ${
+          className={`min-h-0 overflow-y-auto border-r border-zinc-200 bg-white pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0 ${
             selected ? "hidden lg:block" : ""
           }`}
           aria-label="รายการบทสนทนา"
@@ -305,7 +379,10 @@ export function InboxWorkspace({
           aria-label="รายละเอียดบทสนทนา"
         >
           {selected ? (
-            <ConversationDetailPane conversation={selected} />
+            <ConversationDetailPane
+              conversation={selected}
+              backHref={buildHref({ c: null })}
+            />
           ) : (
             <div className="flex h-full items-center justify-center p-8 text-center">
               <div>

@@ -126,7 +126,7 @@ export default async function PipelinePage({
   })();
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-60px)]">
+    <div className="flex flex-col lg:flex-row h-[calc(100dvh-60px-64px)] lg:h-[calc(100vh-60px)]">
       {/* PANE 1: Filters (left) */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
         {/* KPI strip */}
@@ -305,8 +305,13 @@ export default async function PipelinePage({
               </Link>
             </div>
           ) : (
-            <div className="flex gap-3 min-w-max lg:min-w-0 lg:grid lg:grid-cols-3 xl:grid-cols-6">
-              {showStatuses.map((s) => (
+            <>
+              {/* มือถือ: คอลัมน์เลื่อนแนวนอนแบบ snap (เดสก์ท็อปเป็น grid) */}
+              <p className="lg:hidden mb-2 flex items-center justify-center gap-1 text-xs font-medium text-zinc-400">
+                ← ปัดเพื่อเลื่อนดูสถานะถัดไป →
+              </p>
+              <div className="flex gap-3 min-w-max snap-x snap-mandatory lg:min-w-0 lg:snap-none lg:grid lg:grid-cols-3 xl:grid-cols-6">
+                {showStatuses.map((s) => (
                 <PipelineColumn
                   key={s}
                   status={s}
@@ -331,8 +336,9 @@ export default async function PipelinePage({
                     })
                   }
                 />
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </section>

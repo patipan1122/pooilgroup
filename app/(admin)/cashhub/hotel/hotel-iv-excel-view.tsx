@@ -266,20 +266,20 @@ export function HotelIvExcelView({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex items-center justify-between gap-3">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="font-bold text-zinc-800">ตาราง Excel จาก IV (TRCloud)</div>
           <div className="text-xs text-zinc-500">
             ยอดขายดึงจาก IV ที่หน้างานคีย์ · ช่องอื่น (QR/OTA/เงินสด) IV ไม่มี → ว่างไว้
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:shrink-0">
           {data && (
             <button
               type="button"
               onClick={save}
               disabled={saving || busy}
-              className="h-9 px-4 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50"
+              className="h-11 px-4 flex-1 sm:flex-none rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50"
             >
               {saving ? "กำลังบันทึก…" : "💾 บันทึก"}
             </button>
@@ -288,7 +288,7 @@ export function HotelIvExcelView({
             type="button"
             onClick={pull}
             disabled={busy}
-            className="h-9 px-4 rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
+            className="h-11 px-4 flex-1 sm:flex-none rounded-xl bg-[var(--ch-navy,#0b1850)] text-white text-sm font-semibold disabled:opacity-50"
           >
             {busy ? "กำลังดึง…" : data || showingSaved ? "ดึงใหม่" : "ดึง IV เดือนนี้"}
           </button>
@@ -515,13 +515,13 @@ function QrDailyCheck({
           ✅ ทุกวันยอดคีย์ตรงกับเข้าบัญชี (ฐานกะ)
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-zinc-100">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-zinc-100">
+          <table className="w-full min-w-[420px] text-sm">
             <thead>
               <tr className="bg-zinc-50 text-zinc-500 text-xs">
                 <th className="px-2.5 py-1.5 text-left font-semibold">วันที่</th>
                 <th className="px-2.5 py-1.5 text-right font-semibold">คีย์ (IV)</th>
-                <th className="px-2.5 py-1.5 text-right font-semibold">เข้าบัญชี (กะ)</th>
+                <th className="px-2.5 py-1.5 text-right font-semibold whitespace-nowrap">เข้าบัญชี (กะ)</th>
                 <th className="px-2.5 py-1.5 text-right font-semibold">ต่าง</th>
                 <th className="px-2.5 py-1.5 text-right font-semibold whitespace-nowrap text-indigo-500">
                   🌙 23:00–00:00

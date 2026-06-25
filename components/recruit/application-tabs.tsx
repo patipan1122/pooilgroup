@@ -305,7 +305,7 @@ function IQTab({
           return (
             <div key={f.id} className="p-4">
               <div className="flex items-start justify-between gap-2 mb-1.5">
-                <p className="text-sm font-medium text-zinc-900 flex-1">
+                <p className="text-sm font-medium text-zinc-900 flex-1 min-w-0 break-words">
                   {f.label}
                 </p>
                 {correct === true && (
@@ -322,7 +322,7 @@ function IQTab({
                 )}
               </div>
               <p
-                className={`text-sm pl-3 border-l-2 ${
+                className={`text-sm pl-3 border-l-2 break-words ${
                   correct === true
                     ? "border-green-500 text-zinc-900"
                     : correct === false
