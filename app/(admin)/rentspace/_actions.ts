@@ -171,6 +171,15 @@ export async function actSaveProject(input: {
   billTaxId?: string;
   billBranch?: string;
   billAddress?: string;
+  // ── สิทธิ์จัดการสัญญา (mirror bill toggles)
+  contractEditUnlocked?: boolean;
+  contractDeleteUnlocked?: boolean;
+  // ── บัญชีรับเงิน (โชว์บนบิล/สัญญา/หน้าจ่ายออนไลน์)
+  bankName?: string;
+  bankAccountNo?: string;
+  bankAccountHolder?: string;
+  promptpayId?: string;
+  paymentNote?: string;
 }) {
   const session = await gateSuper();
   const data = {
@@ -195,6 +204,13 @@ export async function actSaveProject(input: {
     billTaxId: input.billTaxId?.trim() || null,
     billBranch: input.billBranch?.trim() || null,
     billAddress: input.billAddress?.trim() || null,
+    contractEditUnlocked: input.contractEditUnlocked ?? false,
+    contractDeleteUnlocked: input.contractDeleteUnlocked ?? false,
+    bankName: input.bankName?.trim() || null,
+    bankAccountNo: input.bankAccountNo?.trim() || null,
+    bankAccountHolder: input.bankAccountHolder?.trim() || null,
+    promptpayId: input.promptpayId?.trim() || null,
+    paymentNote: input.paymentNote?.trim() || null,
   };
   let id = input.id;
   if (id) {
@@ -588,7 +604,66 @@ export async function actSaveContract(input: {
   };
   let id = input.id;
   if (id) {
-    await ownGuard(prisma.rentalContract.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "สัญญา");
+    const existing = await prisma.rentalContract.findFirst({
+      where: { id, orgId: session.user.org_id },
+      select: {
+        id: true,
+        tenantSigned: true,
+        editStatus: true,
+        customTermsHtml: true,
+        project: { select: { contractEditUnlocked: true } },
+        _count: { select: { addenda: true } },
+      },
+    });
+    if (!existing) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+    if (existing.tenantSigned) {
+      // สัญญาเซ็นแล้ว: ต้องเปิดสิทธิ์แก้สัญญา หรือมีคำขอแก้ที่อนุมัติแล้ว (super_admin ทะลุ)
+      const allowed =
+        existing.project.contractEditUnlocked ||
+        existing.editStatus === "approved" ||
+        isSuperAdmin(session.user.role);
+      if (!allowed) {
+        throw new Error('สัญญานี้เซ็นแล้ว — กด "ขอแก้ไขสัญญา" ให้อีกคนอนุมัติก่อน หรือเปิดสิทธิ์แก้สัญญาในหน้าตั้งค่า');
+      }
+      // ออกฉบับแก้ไข (addendum) เก็บเนื้อเดิม + ล้างลายเซ็นเพื่อให้เซ็นใหม่ (ไม่ลบลายเซ็นเดิมเงียบ ๆ)
+      const token = randomBytes(24).toString("base64url");
+      await prisma.$transaction([
+        prisma.rentalContractAddendum.create({
+          data: {
+            id: randomUUID(),
+            orgId: session.user.org_id,
+            contractId: id,
+            seq: existing._count.addenda + 1,
+            summary: `แก้ไขเงื่อนไขสัญญา (ฉบับแก้ไขที่ ${existing._count.addenda + 1})`,
+            bodyHtml: existing.customTermsHtml ?? null,
+            createdBy: session.user.id,
+          },
+        }),
+        prisma.rentalContract.update({
+          where: { id },
+          data: {
+            ...data,
+            tenantSigned: false,
+            signedAt: null,
+            signatureDataUrl: null,
+            signerName: null,
+            signToken: token,
+            editStatus: "none",
+            editRequestReason: null,
+            editRequestedBy: null,
+            editRequestedAt: null,
+            editDecidedBy: null,
+            editDecidedAt: null,
+            editDecisionNote: null,
+          },
+        }),
+      ]);
+      await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", id, { amendment: true, reSign: true });
+      revalidatePath("/rentspace/contracts");
+      revalidatePath(`/rentspace/contracts/${id}`);
+      revalidatePath("/rentspace");
+      return { id, reSignRequired: true };
+    }
     await prisma.rentalContract.update({ where: { id }, data });
   } else {
     const created = await prisma.rentalContract.create({
@@ -1574,5 +1649,160 @@ export async function actDecideDiscount(discountId: string, decision: "approved"
   await logAudit(session, "RENTSPACE_DISCOUNT_DECIDED", "rental_discount", discountId, { decision });
   revalidatePath(`/rentspace/bills/${d.billId}`);
   revalidatePath("/rentspace/bills");
+  return { ok: true };
+}
+
+// ───────── ค่าใช้จ่ายประจำ (ภาษีที่ดิน · ส่วนกลาง · ขยะ ฯลฯ — บวกเข้าทุกบิลอัตโนมัติ) ─────────
+export async function actSaveRecurringCharge(input: {
+  id?: string;
+  projectId: string;
+  unitId?: string | null;
+  kind?: string;
+  label: string;
+  amountThb: number;
+  vatable?: boolean;
+  isActive?: boolean;
+  sort?: number;
+}) {
+  const session = await gateSuper();
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: input.projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  const label = input.label.trim();
+  if (!label) throw new Error("กรุณาระบุชื่อรายการค่าใช้จ่าย");
+  // ถ้าระบุห้อง ต้องเป็นห้องในโครงการเดียวกัน (กัน IDOR ข้ามโครงการ/องค์กร)
+  if (input.unitId) {
+    await ownGuard(
+      prisma.rentalUnit.findFirst({ where: { id: input.unitId, orgId: session.user.org_id, projectId: input.projectId }, select: { id: true } }),
+      "ห้อง",
+    );
+  }
+  const data = {
+    projectId: input.projectId,
+    unitId: input.unitId || null,
+    kind: (input.kind || "other").trim() || "other",
+    label,
+    amountThb: input.amountThb ?? 0,
+    vatable: input.vatable ?? false,
+    isActive: input.isActive ?? true,
+    sort: input.sort ?? 0,
+  };
+  let id = input.id;
+  if (id) {
+    await ownGuard(
+      prisma.rentalRecurringCharge.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }),
+      "รายการค่าใช้จ่าย",
+    );
+    await prisma.rentalRecurringCharge.update({ where: { id }, data });
+  } else {
+    const created = await prisma.rentalRecurringCharge.create({
+      data: { id: randomUUID(), orgId: session.user.org_id, ...data },
+    });
+    id = created.id;
+  }
+  await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rental_recurring_charge", id, { label });
+  revalidatePath("/rentspace/settings");
+  return { id };
+}
+
+export async function actDeleteRecurringCharge(id: string) {
+  const session = await gateSuper();
+  await ownGuard(
+    prisma.rentalRecurringCharge.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }),
+    "รายการค่าใช้จ่าย",
+  );
+  await prisma.rentalRecurringCharge.delete({ where: { id } });
+  await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rental_recurring_charge", id, { deleted: true });
+  revalidatePath("/rentspace/settings");
+  return { ok: true };
+}
+
+// ───────── ขออนุมัติแก้ไขสัญญาที่เซ็นแล้ว (maker≠checker · mirror void บิล) ─────────
+export async function actRequestContractEdit(contractId: string, reason: string) {
+  const session = await gateAdmin();
+  const c = await prisma.rentalContract.findFirst({
+    where: { id: contractId, orgId: session.user.org_id },
+    select: { id: true, tenantSigned: true, editStatus: true },
+  });
+  if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  if (!c.tenantSigned) throw new Error("สัญญายังไม่ถูกเซ็น แก้ไขได้เลย ไม่ต้องขออนุมัติ");
+  if (c.editStatus === "pending") throw new Error("มีคำขอแก้ไขที่รออนุมัติอยู่แล้ว");
+  const r = (reason || "").trim();
+  if (r.length < 3) throw new Error("กรุณาระบุเหตุผลที่ต้องแก้ไขสัญญา");
+  await prisma.rentalContract.update({
+    where: { id: contractId },
+    data: {
+      editStatus: "pending",
+      editRequestReason: r,
+      editRequestedBy: session.user.id,
+      editRequestedAt: new Date(),
+      editDecidedBy: null,
+      editDecidedAt: null,
+      editDecisionNote: null,
+    },
+  });
+  await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", contractId, { action: "request_edit", reason: r });
+  revalidatePath("/rentspace/contracts");
+  revalidatePath(`/rentspace/contracts/${contractId}`);
+  return { ok: true };
+}
+
+/** อนุมัติ/ปฏิเสธคำขอแก้สัญญา — checker ต้องไม่ใช่ผู้ขอ (super_admin อนุมัติเองได้) */
+export async function actDecideContractEdit(contractId: string, decision: "approve" | "reject", note?: string) {
+  const session = await gateAdmin();
+  const c = await prisma.rentalContract.findFirst({
+    where: { id: contractId, orgId: session.user.org_id },
+    select: { id: true, editStatus: true, editRequestedBy: true },
+  });
+  if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  if (c.editStatus !== "pending") throw new Error("ไม่มีคำขอแก้ไขที่รออนุมัติ");
+  if (c.editRequestedBy === session.user.id && !isSuperAdmin(session.user.role)) {
+    throw new Error("ต้องให้แอดมินอีกคนเป็นผู้อนุมัติคำขอแก้สัญญา (กันการอนุมัติเอง)");
+  }
+  const n = (note || "").trim() || null;
+  await prisma.rentalContract.update({
+    where: { id: contractId },
+    data: {
+      editStatus: decision === "approve" ? "approved" : "rejected",
+      editDecidedBy: session.user.id,
+      editDecidedAt: new Date(),
+      editDecisionNote: n,
+    },
+  });
+  await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", contractId, { action: `${decision}_edit`, note: n });
+  revalidatePath("/rentspace/contracts");
+  revalidatePath(`/rentspace/contracts/${contractId}`);
+  return { ok: true };
+}
+
+// ───────── ลบสัญญา (ต้องเปิดสิทธิ์ contractDeleteUnlocked · super_admin ทะลุ · กันลบที่มีบิล) ─────────
+export async function actDeleteContract(contractId: string) {
+  const session = await gateAdmin();
+  const c = await prisma.rentalContract.findFirst({
+    where: { id: contractId, orgId: session.user.org_id },
+    select: {
+      id: true,
+      unitId: true,
+      status: true,
+      project: { select: { contractDeleteUnlocked: true } },
+      _count: { select: { bills: true } },
+    },
+  });
+  if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  if (!c.project.contractDeleteUnlocked && !isSuperAdmin(session.user.role)) {
+    throw new Error('การลบสัญญาถูกปิดอยู่ — เปิดสิทธิ์ "ลบสัญญา" ในหน้าตั้งค่าก่อน');
+  }
+  // กันลบประวัติเงิน: สัญญาที่มีบิลแล้วให้ "ยกเลิกสัญญา" แทน (บิลผูก onDelete cascade)
+  if (c._count.bills > 0) {
+    throw new Error("สัญญานี้มีบิลผูกอยู่แล้ว ลบไม่ได้ — ใช้ “ยกเลิกสัญญา” แทนเพื่อเก็บประวัติ");
+  }
+  await prisma.rentalContract.delete({ where: { id: contractId } });
+  if (c.status === "active") {
+    await prisma.rentalUnit.update({ where: { id: c.unitId }, data: { status: "vacant" } }).catch(() => {});
+  }
+  await logAudit(session, "RENTSPACE_CONTRACT_TERMINATED", "rental_contract", contractId, { deleted: true });
+  revalidatePath("/rentspace/contracts");
+  revalidatePath("/rentspace");
   return { ok: true };
 }

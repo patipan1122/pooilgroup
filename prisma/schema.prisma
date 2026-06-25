@@ -6659,14 +6659,24 @@ model RentalProject {
   billEditUnlocked Boolean           @default(false) @map("bill_edit_unlocked")
   billDeleteUnlocked Boolean         @default(false) @map("bill_delete_unlocked")
   billIssueUnlocked Boolean          @default(true) @map("bill_issue_unlocked")
+  // สิทธิ์จัดการสัญญา (mirror bill toggles) — super_admin ทะลุเสมอ
+  contractEditUnlocked   Boolean     @default(false) @map("contract_edit_unlocked")
+  contractDeleteUnlocked Boolean     @default(false) @map("contract_delete_unlocked")
+  // บัญชีรับเงิน (โชว์บนบิล/สัญญา/หน้าจ่ายออนไลน์ ให้ผู้เช่าจ่ายง่าย)
+  bankName          String?          @map("bank_name")
+  bankAccountNo     String?          @map("bank_account_no")
+  bankAccountHolder String?          @map("bank_account_holder")
+  promptpayId       String?          @map("promptpay_id")
+  paymentNote       String?          @map("payment_note")
   isActive         Boolean           @default(true) @map("is_active")
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  units     RentalUnit[]
-  contracts RentalContract[]
-  bills     RentalBill[]
-  buildings RentalBuilding[]
+  units            RentalUnit[]
+  contracts        RentalContract[]
+  bills            RentalBill[]
+  buildings        RentalBuilding[]
+  recurringCharges RentalRecurringCharge[]
 
   @@unique([orgId, slug])
   @@index([orgId, isActive])
@@ -6703,6 +6713,7 @@ model RentalUnit {
   meters      RentalMeter[]
   readings    RentalMeterReading[]
   bills       RentalBill[]
+  recurringCharges RentalRecurringCharge[]
 
   @@unique([projectId, code])
   @@index([orgId, projectId, status])
@@ -6779,6 +6790,57 @@ model RentalContractTemplate {
   @@schema("public")
 }
 
+// ค่าใช้จ่ายประจำที่บวกเข้าทุกบิลอัตโนมัติ (เช่น ภาษีที่ดิน · ค่าส่วนกลาง · ค่าขยะ)
+// unitId = null → คิดทั้งโครงการ · unitId ระบุ → คิดเฉพาะห้องนั้น
+// vatable = false สำหรับภาษีส่งต่อ (land_tax) — ไม่บวก VAT ซ้ำ
+model RentalRecurringCharge {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  unitId    String?  @map("unit_id") @db.Uuid
+  kind      String   @default("other") // land_tax | common_fee | waste | other
+  label     String
+  amountThb Decimal  @default(0) @map("amount_thb") @db.Decimal(15, 2)
+  vatable   Boolean  @default(false)
+  isActive  Boolean  @default(true) @map("is_active")
+  sort      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project RentalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit    RentalUnit?   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, projectId, isActive])
+  @@index([unitId])
+  @@map("rental_recurring_charge")
+  @@schema("public")
+}
+
+// บันทึกฉบับแก้ไขสัญญา (addendum) — แก้สัญญาที่เซ็นแล้วต้องออกฉบับแก้ไข + เซ็นใหม่
+// ไม่ลบลายเซ็นเดิมเงียบ ๆ (กฎหมาย/ตรวจสอบย้อนหลัง)
+model RentalContractAddendum {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  contractId       String    @map("contract_id") @db.Uuid
+  seq              Int       @default(1) // ฉบับแก้ไขที่ 1, 2, ...
+  summary          String // สรุปสิ่งที่แก้ (ภาษาคน)
+  bodyHtml         String?   @map("body_html") @db.Text // สแนปช็อตเนื้อสัญญา ณ ฉบับแก้ไข
+  signToken        String?   @map("sign_token")
+  signedAt         DateTime? @map("signed_at") @db.Timestamptz(6)
+  tenantSigned     Boolean   @default(false) @map("tenant_signed")
+  signatureDataUrl String?   @map("signature_data_url") @db.Text
+  signerName       String?   @map("signer_name")
+  createdBy        String?   @map("created_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  contract RentalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([signToken])
+  @@index([orgId, contractId, seq])
+  @@map("rental_contract_addendum")
+  @@schema("public")
+}
+
 model RentalContract {
   id               String                  @id @default(uuid()) @db.Uuid
   orgId            String                  @map("org_id") @db.Uuid
@@ -6816,6 +6878,14 @@ model RentalContract {
   signatureDataUrl String?                 @map("signature_data_url") @db.Text
   signerName       String?                 @map("signer_name")
   contractPdfUrl   String?                 @map("contract_pdf_url")
+  // ขออนุมัติแก้ไขสัญญาที่เซ็นแล้ว (maker≠checker · mirror bill void) — แก้สำเร็จ = ออก addendum + เซ็นใหม่
+  editStatus        String                 @default("none") @map("edit_status") // none | pending | approved | rejected
+  editRequestReason String?                @map("edit_request_reason")
+  editRequestedBy   String?                @map("edit_requested_by") @db.Uuid
+  editRequestedAt   DateTime?              @map("edit_requested_at") @db.Timestamptz(6)
+  editDecidedBy     String?                @map("edit_decided_by") @db.Uuid
+  editDecidedAt     DateTime?              @map("edit_decided_at") @db.Timestamptz(6)
+  editDecisionNote  String?                @map("edit_decision_note")
   note             String?
   createdBy        String?                 @map("created_by") @db.Uuid
   createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -6827,6 +6897,7 @@ model RentalContract {
   template RentalContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   deposits RentalDeposit[]
   bills    RentalBill[]
+  addenda  RentalContractAddendum[]
 
   @@unique([orgId, contractNo])
   @@unique([signToken])
