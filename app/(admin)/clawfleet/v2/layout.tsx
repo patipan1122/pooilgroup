@@ -5,7 +5,8 @@ import { getSession } from "@/lib/auth/session";
 import type { DbUser } from "@/lib/auth/session";
 import "./clawfleet-redesign.css";
 import "./clawfleet-playalot.css"; // Playalot skin — loaded AFTER base to override tokens
-import "./clawfleet-house.css"; // House style (Playland/ChairOps) — loaded LAST, wins over Playalot
+import "./clawfleet-house.css"; // House style (Playland/ChairOps) — loaded before DC
+import "./clawfleet-dc.css"; // DC skin (คลังกลาง) — loaded LAST, recolors warm→cool white-on-blue
 
 export const dynamic = "force-dynamic";
 
