@@ -91,6 +91,15 @@ export interface LedgerDay {
    * slipPhotoUrl. Drives the "ยังไม่มีสลิป" filter chip.
    */
   hasCsvWithoutSlip: boolean;
+  /**
+   * Net approved write-off effective on THIS day (SHORT = +amount · OVER =
+   * −amount). Non-zero → the ledger row is highlighted so the CEO sees WHY the
+   * running drift jumped toward 0 right here (CEO 2026-06-25 "โชว์ในตารางตรงวันที่
+   * เงินหาย"). 0 on normal days.
+   */
+  writeOffNet: number;
+  /** Pre-formatted hover tooltip describing the write-off(s) on this day · null if none. */
+  writeOffNote: string | null;
 }
 
 export interface LedgerTotals {
@@ -347,10 +356,11 @@ async function buildLedger(args: {
   // "money table มี 2 read-path ต้องแก้ให้ครบ").
   const writeOffRows = await prisma.chairopsWriteOff.findMany({
     where: { orgId, ...branchFilter, status: "APPROVED" },
-    select: { amount: true, direction: true, effectiveDate: true, makerAt: true },
+    select: { amount: true, direction: true, effectiveDate: true, makerAt: true, reason: true },
   });
   const sinceDay = isoDay(since);
   const netWoByDay = new Map<string, number>();
+  const woNoteByDay = new Map<string, string[]>(); // hover-tooltip lines per day
   let priorWriteOff = 0; // net write-off effective BEFORE the visible window
   for (const w of writeOffRows) {
     const eff = w.effectiveDate ?? w.makerAt;
@@ -361,6 +371,10 @@ async function buildLedger(args: {
       continue;
     }
     netWoByDay.set(key, (netWoByDay.get(key) ?? 0) + signed);
+    const label = w.direction === "OVER" ? "ตัดเงินเกิน" : "ตัดเงินขาด";
+    const lines = woNoteByDay.get(key) ?? [];
+    lines.push(`${label} ${w.amount.toLocaleString()}฿ — ${w.reason}`);
+    woNoteByDay.set(key, lines);
   }
 
   // Union of all days present in any source, sorted ascending.
@@ -406,7 +420,9 @@ async function buildLedger(args: {
     // Approved write-offs effective on/before this day move cumDrift toward 0
     // (SHORT forgives a shortage · OVER cancels a surplus). Matches the engine's
     // depositTotal += netWriteOff, so −cumDrift === engine driftAmount.
-    cumWriteOff += netWoByDay.get(date) ?? 0;
+    const woNetToday = netWoByDay.get(date) ?? 0;
+    cumWriteOff += woNetToday;
+    const woNoteLines = woNoteByDay.get(date);
 
     ledger.push({
       date,
@@ -431,6 +447,8 @@ async function buildLedger(args: {
       pending,
       sources: Array.from(sourcesByDay.get(date) ?? []),
       hasCsvWithoutSlip: csvMissingSlipByDay.has(date),
+      writeOffNet: woNetToday,
+      writeOffNote: woNoteLines ? woNoteLines.join(" · ") : null,
     });
   }
 

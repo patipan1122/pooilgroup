@@ -324,10 +324,14 @@ export function LedgerTab({
                 (d.collected ? "rc-row-collected" : "") +
                 (activeDay === d.date ? " rc-row-active" : "")
               }
+              // CEO 2026-06-25: ระบายสีม่วงแถวที่มี "ตัดเงิน/ตั้งต้น" มีผล เพื่อให้
+              // เห็นทันทีว่ายอดสะสมกระโดดเข้า 0 ตรงไหน · เมาส์ชี้ ✂️ ดูรายละเอียด.
               style={
                 activeDay === d.date
                   ? { background: "var(--accent-soft)" }
-                  : undefined
+                  : d.writeOffNet
+                    ? { background: "rgba(139, 92, 246, 0.12)" }
+                    : undefined
               }
             >
               <td>
@@ -450,11 +454,22 @@ export function LedgerTab({
                 className={"num mono rc-tcol co-drift " + ledgerCumClass(d)}
                 style={{ fontWeight: 500 }}
                 title={
-                  d.pending > 0
-                    ? `รวม pending ${fmtN(d.pending)} ฿ ที่ยังไม่ฝาก`
-                    : undefined
+                  d.writeOffNote
+                    ? d.writeOffNote
+                    : d.pending > 0
+                      ? `รวม pending ${fmtN(d.pending)} ฿ ที่ยังไม่ฝาก`
+                      : undefined
                 }
               >
+                {d.writeOffNet ? (
+                  <span
+                    title={d.writeOffNote ?? undefined}
+                    style={{ marginRight: 4, cursor: "help" }}
+                    aria-label="มีการตัดเงิน/ตั้งต้นวันนี้"
+                  >
+                    ✂️
+                  </span>
+                ) : null}
                 {fmtSigned(d.cumDrift)}
               </td>
             </tr>
