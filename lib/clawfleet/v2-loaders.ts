@@ -14,6 +14,9 @@
 // TODO[v2-wire-db]: once migration applied + verified in prod, the legacy + mock
 // tiers can be dropped.
 
+import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth/session";
+import { userBranchIds } from "./role-guard";
 import * as Q from "./v2-queries";
 import * as L from "./v2-queries-legacy";
 // mock runtime data (BRANCHES/ANOMALIES/TODAY/…) ถูกถอดออกแล้ว — fallback ทุก loader
@@ -130,6 +133,30 @@ export async function loadInsights(filter?: string, days = 7): Promise<InsightRo
     (v) => v.length,
     [],
   );
+}
+
+/**
+ * นับ badge เมนูแบบเบา ๆ (REAL · ไม่ hardcode):
+ *   - openSessions = รอบที่กำลังเก็บ (status OPEN) ในสาขาที่ user เห็น
+ *   - anomalies    = รอบที่รอตรวจ (status ANOMALY_REVIEW)
+ * scope ด้วย org + branch ของ user (เหมือน loaders อื่น) · ถ้า query พังคืน 0/0
+ * (badge หายไป ดีกว่าโชว์เลขปลอม).
+ */
+export async function loadNavCounts(): Promise<{ openSessions: number; anomalies: number }> {
+  try {
+    const session = await requireSession();
+    const orgId = session.user.org_id;
+    const branchIds = await userBranchIds(session);
+    const branchWhere = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
+
+    const [openSessions, anomalies] = await Promise.all([
+      prisma.cfCollectionSession.count({ where: { orgId, status: "OPEN", ...branchWhere } }),
+      prisma.cfCollectionSession.count({ where: { orgId, status: "ANOMALY_REVIEW", ...branchWhere } }),
+    ]);
+    return { openSessions, anomalies };
+  } catch {
+    return { openSessions: 0, anomalies: 0 };
+  }
 }
 
 export async function loadBranchStock(branchId: string): Promise<{

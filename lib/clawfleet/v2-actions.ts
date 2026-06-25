@@ -1033,6 +1033,9 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
 
     let branchCount = 0, machineCount = 0, sessionCount = 0;
     let firstBranchId = "";
+    // เก็บ ref สาขา/ตู้แรกไว้ใช้สร้างรอบ "รอตรวจ (ANOMALY_REVIEW)" ตัวอย่าง
+    let anomalyBranchId = "";
+    let anomalyMachineId = "";
 
     for (const bs of branchSpecs) {
       // สาขา (idempotent by code)
@@ -1097,6 +1100,11 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
           });
         }
         machineCount += 1;
+        // ตู้แรกของสาขาแรก → ใช้เป็น ref ของรอบ anomaly ตัวอย่าง
+        if (!anomalyMachineId) {
+          anomalyBranchId = branch.id;
+          anomalyMachineId = machine.id;
+        }
 
         // loadout active (effectiveTo null) — ตั้งต้นทุน + วันตั้งค่าล่าสุด
         // ปิด loadout เดิมก่อน (กันมีหลาย active)
@@ -1146,6 +1154,55 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
       }
     }
 
+    // 2b) รอบ "รอตรวจ (ANOMALY_REVIEW)" ตัวอย่าง 1 รอบ — เงินขาดจริง (cash < ที่ควรได้)
+    //     เพื่อให้หน้า Anomaly ไม่ว่างใน demo. มี shortfall ทั้งเงินและตุ๊กตา:
+    //       มิเตอร์เหรียญออก 800 ครั้ง → ควรได้ ฿8,000 (800 × ฿10) แต่เก็บได้ ฿6,400
+    //       → ขาด ฿1,600 (~20% · เด้ง ANOMALY_REVIEW). ตุ๊กตาออกตามมิเตอร์ 30 ตัว
+    //       แต่นับจริงหาย → variance -3.
+    //     code ขึ้นต้น DEMO- จึงถูก clearClawFleetDemo() ลบอัตโนมัติ (scope startsWith DEMO_PREFIX).
+    if (anomalyBranchId && anomalyMachineId) {
+      const anomCode = `${DEMO_PREFIX}S-A-ANOMALY`;
+      // กันสร้างซ้ำ
+      const existingAnom = await prisma.cfCollectionSession.findMany({
+        where: { orgId, sessionCode: anomCode },
+        select: { id: true },
+      });
+      if (existingAnom.length > 0) {
+        const ids = existingAnom.map((s) => s.id);
+        await prisma.cfCollectionEvent.deleteMany({ where: { sessionId: { in: ids } } });
+        await prisma.cfCollectionSession.deleteMany({ where: { id: { in: ids } } });
+      }
+      const expectedCashCents = 800 * CASH_PER_PLAY_CENTS; // ฿8,000
+      const actualCashCents = 640000; // ฿6,400 → ขาด ฿1,600 (~20%)
+      const anomSession = await prisma.cfCollectionSession.create({
+        data: {
+          orgId, branchId: anomalyBranchId, sessionCode: anomCode,
+          openedAt: todayAt(13), openedById: userId,
+          closedAt: todayAt(14), closedById: userId,
+          status: "ANOMALY_REVIEW",
+          expectedCashCents, actualCashCents, totalCashCents: actualCashCents,
+          cashVarianceBps: Math.round(((actualCashCents - expectedCashCents) / expectedCashCents) * 10000),
+          prizeMeterOut: 30, prizeCountedOut: 27, prizeVariance: -3,
+          anomalyFlags: ["CASH_SHORT", "PRIZE_SHORT"],
+          reviewNote: `${DEMO_MARK} เงินที่เก็บได้น้อยกว่าที่มิเตอร์ควรได้ ฿1,600`,
+        },
+        select: { id: true },
+      });
+      await prisma.cfCollectionEvent.create({
+        data: {
+          orgId, sessionId: anomSession.id, machineId: anomalyMachineId,
+          eventType: "COLLECTION", collectedAt: todayAt(13), collectedById: userId,
+          coinMeterBefore: 0, coinMeterAfter: 800,
+          cashCountedCents: actualCashCents,
+          dollMeterBefore: 1000, dollMeterAfter: 1030, // มิเตอร์บอกตุ๊กตาออก 30
+          stockBefore: 30, stockAfter: 3, // 30 - 27 (นับจริงออก 27 → หาย 3)
+          anomalyFlags: ["CASH_SHORT"],
+          notes: `${DEMO_MARK} ตัวอย่างเงินขาด`,
+        },
+      });
+      sessionCount += 1;
+    }
+
     // 3) ข้อมูลคลังสินค้า (WMS) ตัวอย่าง — ใบรับ + นับสต๊อก(มีต่าง) + ของหาย + movements
     if (firstBranchId) {
       await seedCfStockDemo(orgId, userId, firstBranchId, [bearId, catId]);
@@ -1154,6 +1211,8 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
     revalidatePath(MANAGE_PATH);
     revalidatePath("/clawfleet/v2/hub");
     revalidatePath("/clawfleet/v2/stock");
+    revalidatePath("/clawfleet/v2/anomalies");
+    revalidatePath("/clawfleet/v2/operations");
     return { ok: true, data: { branches: branchCount, machines: machineCount, sessions: sessionCount } };
   } catch (e) {
     return { ok: false, error: `ใส่ข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };

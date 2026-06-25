@@ -13,7 +13,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { Sidebar, TopBar, type BranchSummary } from "@/components/clawfleet/v2/chrome";
+import { Sidebar, TopBar, type BranchSummary, type SidebarNavCounts, type SidebarUser } from "@/components/clawfleet/v2/chrome";
 
 /* sidebar short-id ↔ App Router segment */
 const SEG_TO_ID: Record<string, string> = {
@@ -64,9 +64,13 @@ const PAGE_LABEL: Record<string, string> = {
 export function V2Shell({
   children,
   branches,
+  navCounts,
+  user,
 }: {
   children: React.ReactNode;
   branches: BranchSummary[];
+  navCounts?: SidebarNavCounts;
+  user?: SidebarUser | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -96,7 +100,14 @@ export function V2Shell({
 
   return (
     <div className="cf-app">
-      <Sidebar active={activeId} onNav={onNav} subtitle="ตู้คีบ · cross-check" />
+      <Sidebar
+        active={activeId}
+        onNav={onNav}
+        subtitle="ตู้คีบ · cross-check"
+        navCounts={navCounts}
+        branchCount={branches.length}
+        user={user}
+      />
       <div className="cf-main">
         <TopBar
           branch={branch}

@@ -392,17 +392,18 @@ type SidebarItem = {
   name: string;
   icon: IconName;
   desc?: string;
-  badge?: number;
   badgeColor?: "blue" | "red" | "amber";
 };
 
 // Flat 10-item list — matches the Playalot prototype hub.html sidebar exactly
-// (order · labels · descriptions · badges). No group labels (prototype is flat).
+// (order · labels · descriptions). Badges + Fleet count are REAL (computed at
+// render from live counts/branches) — ห้าม hardcode เลขปลอม (เคยเป็น badge:4 +
+// "10 สาขา" ทั้งที่ของจริงอาจเป็น 0). ดู Sidebar() ด้านล่าง.
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "hub", name: "Hub", icon: "home", desc: "ตอนนี้ต้องทำอะไร" },
-  { id: "fleet", name: "Fleet", icon: "pin", desc: "10 สาขา · สถานะ" },
-  { id: "ops", name: "Operations", icon: "activity", desc: "รอบที่กำลังเดิน", badge: 4, badgeColor: "red" },
-  { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการต้องตรวจ", badge: 4, badgeColor: "red" },
+  { id: "fleet", name: "Fleet", icon: "pin" },
+  { id: "ops", name: "Operations", icon: "activity", desc: "รอบที่กำลังเดิน", badgeColor: "red" },
+  { id: "anom", name: "Anomaly", icon: "alert", desc: "รายการต้องตรวจ", badgeColor: "red" },
   { id: "insights", name: "Insights", icon: "chart", desc: "รายงาน + CSV" },
   { id: "stock", name: "Stock", icon: "package", desc: "DC + สาขา" },
   { id: "team", name: "ทีม & สาขา", icon: "users", desc: "พนักงาน" },
@@ -413,13 +414,47 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: "app", name: "แอปพนักงาน", icon: "phone", desc: "หน้าบ้าน · กดลองในเว็บ" },
 ];
 
+/** REAL menu badge counts (จาก live DB · ห้าม hardcode) */
+export type SidebarNavCounts = {
+  openSessions: number;
+  anomalies: number;
+};
+
+/** REAL ผู้ใช้ที่ login (ชื่อ + label ตำแหน่งภาษาคน · ไม่ใช่ enum ดิบ) */
+export type SidebarUser = {
+  name: string;
+  roleLabel: string;
+  initial: string;
+};
+
 export type SidebarProps = {
   active: string;
   onNav: (id: string) => void;
   subtitle?: string;
+  /** live badge counts — ถ้าไม่ส่งมา = ไม่โชว์ badge (ไม่เดาเลข) */
+  navCounts?: SidebarNavCounts;
+  /** จำนวนสาขาจริงที่ user เห็น (branches.length) — ใช้กับ desc ของ Fleet */
+  branchCount?: number;
+  /** ผู้ใช้ที่ login จริง — null/undefined = ไม่โชว์ชิป (ไม่ใส่ชื่อปลอม) */
+  user?: SidebarUser | null;
 };
 
-export function Sidebar({ active, onNav, subtitle }: SidebarProps) {
+export function Sidebar({ active, onNav, subtitle, navCounts, branchCount, user }: SidebarProps) {
+  // map id → badge จริง (0 = ไม่โชว์ badge · ไม่โชว์เลข 0 สีเทา)
+  const badgeFor = (id: string): number => {
+    if (!navCounts) return 0;
+    if (id === "ops") return navCounts.openSessions;
+    if (id === "anom") return navCounts.anomalies;
+    return 0;
+  };
+  // Fleet desc จริง = "{n} สาขา · สถานะ" (เดิม hardcode "10 สาขา")
+  const descFor = (it: SidebarItem): string | undefined => {
+    if (it.id === "fleet") {
+      return branchCount != null ? `${branchCount} สาขา · สถานะ` : "สถานะสาขา";
+    }
+    return it.desc;
+  };
+
   return (
     <aside className="cf-sidebar">
       <div className="cf-brand">
@@ -433,34 +468,43 @@ export function Sidebar({ active, onNav, subtitle }: SidebarProps) {
       </div>
 
       <div className="cf-nav-group">
-        {SIDEBAR_ITEMS.map((it) => (
-          <button
-            key={it.id}
-            type="button"
-            className={`cf-nav-item ${active === it.id ? "is-active" : ""}`}
-            onClick={() => onNav(it.id)}
-          >
-            <span className="cf-nav-icon">
-              <Ic name={it.icon} />
-            </span>
-            <span className="cf-nav-text">
-              <span className="cf-nav-name">{it.name}</span>
-              {it.desc && <span className="cf-nav-desc">{it.desc}</span>}
-            </span>
-            {it.badge ? (
-              <span className={`cf-nav-badge cf-nav-badge-${it.badgeColor ?? "blue"}`}>{it.badge}</span>
-            ) : null}
-          </button>
-        ))}
+        {SIDEBAR_ITEMS.map((it) => {
+          const badge = badgeFor(it.id);
+          const desc = descFor(it);
+          return (
+            <button
+              key={it.id}
+              type="button"
+              className={`cf-nav-item ${active === it.id ? "is-active" : ""}`}
+              onClick={() => onNav(it.id)}
+            >
+              <span className="cf-nav-icon">
+                <Ic name={it.icon} />
+              </span>
+              <span className="cf-nav-text">
+                <span className="cf-nav-name">{it.name}</span>
+                {desc && <span className="cf-nav-desc">{desc}</span>}
+              </span>
+              {badge > 0 ? (
+                <span className={`cf-nav-badge cf-nav-badge-${it.badgeColor ?? "blue"}`}>{badge}</span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="cf-sidebar-foot">
-        <div className="cf-avatar cf-avatar-sm">P</div>
-        <div className="cf-foot-text">
-          <div className="cf-foot-name">patipan</div>
-          <div className="cf-foot-role">Super Admin · ทุก 3 สาขา</div>
+      {user && (
+        <div className="cf-sidebar-foot">
+          <div className="cf-avatar cf-avatar-sm">{user.initial}</div>
+          <div className="cf-foot-text">
+            <div className="cf-foot-name">{user.name}</div>
+            <div className="cf-foot-role">
+              {user.roleLabel}
+              {branchCount != null ? ` · ${branchCount} สาขา` : ""}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }
