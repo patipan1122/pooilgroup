@@ -489,7 +489,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                 <a href={viewLink("chart")} style={chip(!ownerView && dayView === "chart")}>กราฟ</a>
                 <a href={viewLink("table", dayDetail)} style={chip(!ownerView && dayView === "table")}>ตาราง</a>
-                <a href={viewLink("owner")} style={chip(ownerView)}>เจ้าของ</a>
+                <a href="/playland/owner-report" style={chip(false)}>เจ้าของ »</a>
               </div>
               {dayView === "chart" && (
                 <div style={{ display: "flex", gap: 12, fontSize: 11, color: MUTED, width: "100%", justifyContent: "flex-end" }}><span style={{ color: BLUE }}>● ค่าเข้า</span><span style={{ color: AMBER }}>● ขายของ</span></div>

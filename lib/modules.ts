@@ -743,6 +743,8 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/playland/reports", label: "รายงาน · ปิดวัน", icon: BarChart3, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      { href: "/playland/owner-report", label: "รายงานเจ้าของ · กำไร-ขาดทุน", icon: Coins, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/playland/stock", label: "สต๊อก · คลังสินค้า", icon: Boxes, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/playland/shifts", label: "กะ · เงิน · นับลิ้นชัก", icon: Coins, section: "หลังบ้าน",
