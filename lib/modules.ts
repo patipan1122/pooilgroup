@@ -761,6 +761,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       // ── ตั้งค่า (แอดมินเท่านั้น) ──
       { href: "/playland/settings", label: "ตั้งค่าร้าน", icon: Settings, section: "ตั้งค่า", adminOnly: true },
       { href: "/playland/settings/branches", label: "ทีม & สาขา", icon: Building2, section: "ตั้งค่า", adminOnly: true },
+      { href: "/playland/settings/team", label: "ทีม & สิทธิ์ (ตำแหน่ง)", icon: ShieldX, section: "ตั้งค่า", adminOnly: true },
       { href: "/playland/settings/promos", label: "โปรโมชั่น · ส่วนลด", icon: Sparkles, section: "ตั้งค่า", adminOnly: true },
       { href: "/playland/overrides", label: "เปิดประตูเอง (กันโกง)", icon: ShieldX, section: "ตั้งค่า", adminOnly: true },
       { href: "/playland/audit", label: "Audit Log", icon: ScrollText, section: "ตั้งค่า", adminOnly: true },

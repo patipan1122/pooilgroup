@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import type { PlaylandPromoType } from "@/lib/generated/prisma/enums";
 
@@ -33,7 +34,7 @@ export interface UpsertPromoInput {
 
 export async function upsertPromo(input: UpsertPromoInput): Promise<ActionResult<{ promoId: string }>> {
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   const orgId = session.user.org_id;
 
   if (!input.name.trim()) return err("กรุณาใส่ชื่อโปรโมชั่น");
@@ -77,7 +78,7 @@ export async function upsertPromo(input: UpsertPromoInput): Promise<ActionResult
 
 export async function togglePromo(input: { id: string; active: boolean }): Promise<ActionResult> {
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   await prisma.playlandPromo.updateMany({ where: { id: input.id, orgId: session.user.org_id }, data: { active: input.active } });
   revalidatePath("/playland/settings/promos");
   return { ok: true, data: undefined };
@@ -85,7 +86,7 @@ export async function togglePromo(input: { id: string; active: boolean }): Promi
 
 export async function deletePromo(input: { id: string }): Promise<ActionResult> {
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   await prisma.playlandPromo.deleteMany({ where: { id: input.id, orgId: session.user.org_id } });
   revalidatePath("/playland/settings/promos");
   return { ok: true, data: undefined };

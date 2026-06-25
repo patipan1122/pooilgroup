@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandAdmin } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { prisma } from "@/lib/prisma";
 import { readSafetyChecklist, DEFAULT_SAFETY_ITEMS } from "@/lib/playland/safety-checklist";
@@ -19,7 +20,7 @@ const MITR = "var(--font-mitr), 'Mitr', sans-serif";
 export default async function CareSettingsPage() {
   const session = await requireSession();
   // ตั้งค่า = ผู้ดูแลเท่านั้น (กันผู้จัดการ/พนักงานแก้เช็กลิสต์)
-  requirePlaylandAdmin(session.user.role);
+  requirePlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   const orgId = session.user.org_id;
   const { branches, activeId, active } = await getBranchContext(orgId);
   if (!activeId) redirect("/playland/settings/branches");

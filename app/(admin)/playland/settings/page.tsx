@@ -7,6 +7,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { canPlaylandAdmin } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { Building2, Package, ShoppingBasket, Boxes, ScanFace, ShieldCheck, ChevronRight, type LucideIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export default async function SettingsHome() {
     { href: "/playland/settings/stock-count", icon: Boxes, title: "นับสต๊อก", gloss: "ปรับจำนวนคงเหลือให้ตรงของจริง", count: productCount, tint: GREEN },
   ];
   // กลุ่มที่ 3 · งานดูแลร้าน (ตั้งค่า = ผู้ดูแลเท่านั้น)
-  const careTiles: Tile[] = canPlaylandAdmin(session.user.role)
+  const careTiles: Tile[] = canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))
     ? [{ href: "/playland/settings/care", icon: ShieldCheck, title: "ตั้งค่างานดูแลร้าน", gloss: "เช็กลิสต์ความปลอดภัย · ตั้งทีละสาขา", count: branches.length, tint: GREEN }]
     : [];
   // กลุ่มที่ 4 · อุปกรณ์ (super_admin)

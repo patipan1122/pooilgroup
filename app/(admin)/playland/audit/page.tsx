@@ -2,6 +2,7 @@
 // อยู่ในเมนูเดิม (AdminShell) + พื้นขาว + สไตล์ Play a lot · ตัด BackOfficeTabs (หน้า/หลังปน) ออก
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandAdmin } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { fmtDate, fmtTime, thb } from "@/lib/playland/format";
 import { AuditCategoryTabs } from "@/components/playland/audit-category-tabs";
@@ -37,7 +38,7 @@ function pickAmountCents(after: unknown): number | null {
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ category?: string; q?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandAdmin(session.user.role); // ประวัติการกระทำทั้งระบบ = แอดมินเท่านั้น
+  requirePlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role)); // ประวัติการกระทำทั้งระบบ = แอดมินเท่านั้น
   const orgId = session.user.org_id;
 
   const where = {

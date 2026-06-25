@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier, canPlaylandManage } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import { newIncidentCode } from "./codes";
 
@@ -60,7 +61,7 @@ export async function createIncident(input: {
 // ── ลบเหตุการณ์ (ผู้จัดการขึ้นไป · เก็บ snapshot ลง audit ก่อนลบ) ──
 export async function deleteIncident(id: string): Promise<ActionResult<{ id: string }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
   const rec = await prisma.playlandIncident.findFirst({ where: { id, orgId: session.user.org_id } });
   if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
   try {

@@ -2,6 +2,7 @@
 // แยกเป็นหน้าของตัวเอง (ไม่ใช่ toggle ใน /reports) · ค่าเริ่มต้น = เดือนนี้ (1 → วันนี้) เพื่อให้เห็นตารางหลายวัน
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb, fmtDate } from "@/lib/playland/format";
@@ -56,7 +57,7 @@ function costForDay(dKey: string, expenses: ExpenseLite[]): number {
 export default async function OwnerReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; from?: string; to?: string; mode?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandManager(session.user.role); // รายงานเจ้าของ = ผู้จัดการ/เจ้าของขึ้นไป
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role)); // รายงานเจ้าของ = ผู้จัดการ/เจ้าของขึ้นไป
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId ?? "";

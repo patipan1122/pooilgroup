@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandManage } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import { newSaleCode, newMemberCode, newShiftCode } from "./codes";
 
@@ -72,7 +73,7 @@ export async function seedDemoData(input: { branchId: string }): Promise<ActionR
   products: number; sales: number; saleLines: number; members: number; sessions: number;
 }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
 
   const orgId = session.user.org_id;
@@ -267,7 +268,7 @@ export async function clearDemoData(input: { branchId: string }): Promise<Action
   products: number; sales: number; sessions: number; members: number; shifts: number;
 }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
 
   const counts = await clearDemoRows(session.user.org_id, input.branchId);

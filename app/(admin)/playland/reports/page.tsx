@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb, thbShort, fmtDate, fmtDateTime } from "@/lib/playland/format";
@@ -23,7 +24,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const dayView = sp.view === "table" ? "table" : "chart"; // ?view=table → ตาราง · default = กราฟ
   const dayDetail = sp.detail === "1"; // ?detail=1 → โชว์ทุกคอลัมน์ (ละเอียด) · default = สรุป
   const session = await requireSession();
-  requirePlaylandManager(session.user.role); // รายงานยอด/PII = ผู้จัดการขึ้นไป (กันพนักงานเห็นรายได้รวม)
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role)); // รายงานยอด/PII = ผู้จัดการขึ้นไป (กันพนักงานเห็นรายได้รวม)
   const orgId = session.user.org_id;
   // ตัวสลับสาขา = cookie/URL (เหมือนหน้า office) · ?branch= ยังใช้ deep-link ได้
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);

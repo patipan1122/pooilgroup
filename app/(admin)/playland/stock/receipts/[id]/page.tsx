@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { thb } from "@/lib/playland/format";
 import { ArrowLeft, ReceiptText } from "lucide-react";
@@ -17,7 +18,7 @@ const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LIN
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   const orgId = session.user.org_id;
 
   const r = await prisma.playlandPurchase.findFirst({

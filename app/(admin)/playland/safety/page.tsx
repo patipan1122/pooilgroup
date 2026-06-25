@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
@@ -27,7 +28,7 @@ const typeLabel = (t: string) => (t === "cleaning" ? "🧼 ทำความส
 export default async function SafetyPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandManager(session.user.role); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (ตรวจ+บันทึกย้ายไปหน้าร้าน)
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role)); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (ตรวจ+บันทึกย้ายไปหน้าร้าน)
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId;

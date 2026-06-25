@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandManage } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -31,7 +32,7 @@ export interface ExpenseInput {
 // ── เพิ่มต้นทุน 1 รายการ (ผจก.+) ──
 export async function addExpense(input: ExpenseInput): Promise<ActionResult<{ id: string }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปกรอกต้นทุนได้");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไปกรอกต้นทุนได้");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   const kind = isKind(input.kind) ? input.kind : "other";
   const date = new Date(input.expenseDate);
@@ -57,7 +58,7 @@ export async function addExpense(input: ExpenseInput): Promise<ActionResult<{ id
 // ── ลบต้นทุน (ผจก.+ · audit category money) ──
 export async function deleteExpense(id: string): Promise<ActionResult<{ id: string }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
   const rec = await prisma.playlandDailyExpense.findFirst({ where: { id, orgId: session.user.org_id } });
   if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
   try {
@@ -81,7 +82,7 @@ export interface ParsedExpense { kind: string; label: string; amountCents: numbe
 
 export async function aiParseExpenses(input: { branchId: string; text: string }): Promise<ActionResult<{ items: ParsedExpense[] }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไป");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   const text = input.text.trim();
   if (!text) return err("พิมพ์ข้อความก่อน");

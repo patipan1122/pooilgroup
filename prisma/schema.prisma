@@ -4179,6 +4179,7 @@ model PlaylandStaffBranch {
   orgId     String   @map("org_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   branchId  String   @map("branch_id") @db.Uuid
+  position  String? // owner | manager | cashier (null = ใช้ role ระบบเดิม) — สิทธิ์เฉพาะ Playland
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   branch PlaylandBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)

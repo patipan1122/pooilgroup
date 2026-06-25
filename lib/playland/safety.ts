@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier, canPlaylandManage, canPlaylandAdmin } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import { newSafetyCheckCode } from "./codes";
 import { sanitizeSafetyChecklist } from "./safety-checklist";
@@ -61,7 +62,7 @@ export async function updateSafetyChecklist(input: {
   items: string[];
 }): Promise<ActionResult<{ count: number }>> {
   const session = await requireSession();
-  if (!canPlaylandAdmin(session.user.role)) return err("เฉพาะผู้ดูแลตั้งค่าเช็กลิสต์ได้");
+  if (!canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้ดูแลตั้งค่าเช็กลิสต์ได้");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
 
   const cleaned = sanitizeSafetyChecklist(input.items);
@@ -93,7 +94,7 @@ export async function updateSafetyChecklist(input: {
 // ── ลบเช็กลิสต์ (ผู้จัดการขึ้นไป · เก็บ snapshot ลง audit ก่อนลบ) ──
 export async function deleteSafetyCheck(id: string): Promise<ActionResult<{ id: string }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
   const rec = await prisma.playlandSafetyCheck.findFirst({ where: { id, orgId: session.user.org_id } });
   if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
   try {

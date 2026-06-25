@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { listBranches } from "./queries";
 import { canPlaylandAdmin } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 
 export const PL_BRANCH_COOKIE = "pl_branch";
 
@@ -19,7 +20,7 @@ export type BranchLite = { id: string; name: string };
 export async function getAllowedBranchList(orgId: string) {
   const session = await requireSession();
   const all = await listBranches(orgId); // full rows (มี slug/settings · kiosk ต้องใช้)
-  if (canPlaylandAdmin(session.user.role)) return all;
+  if (canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return all;
   const assigned = await prisma.playlandStaffBranch.findMany({ where: { orgId, userId: session.user.id }, select: { branchId: true } });
   if (assigned.length === 0) return all;
   const ids = new Set(assigned.map((a) => a.branchId));

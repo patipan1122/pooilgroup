@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canPlaylandCashier, canPlaylandManage } from "./role-guard";
+import { getPlaylandRole } from "./position-resolve";
 import { verifyBranchOrg } from "./guards";
 import { newPurchaseCode, newRepairCode } from "./codes";
 
@@ -42,7 +43,7 @@ export async function receivePurchase(input: {
   lines: Array<{ productId: string; quantity: number; unitCostCents: number }>;
 }): Promise<ActionResult<{ purchaseId: string; itemsReceived: number; totalCostCents: number }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์รับของเข้า · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์รับของเข้า · ต้องเป็นผู้จัดการขึ้นไป");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
   const lines = input.lines.filter((l) => l.quantity > 0 && l.unitCostCents >= 0);
   if (lines.length === 0) return err("ยังไม่ได้ใส่รายการรับเข้า");
@@ -110,7 +111,7 @@ const SAMPLE_PRODUCTS: Array<{ kind: "SALE_ITEM" | "SPARE_PART"; name: string; c
 
 export async function seedSampleProducts(input: { branchId: string }): Promise<ActionResult<{ created: number; skipped: number }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("ไม่มีสิทธิ์ · ต้องเป็นผู้จัดการขึ้นไป");
   if (!(await verifyBranchOrg(input.branchId, session.user.org_id))) return err("สาขาไม่อยู่ใน org");
 
   // กันซ้ำ: ตัดตัวที่บาร์โค้ดมีอยู่แล้วในสาขานี้ออก (กดปุ่มซ้ำได้ ไม่เพิ่มซ้ำ)
@@ -215,7 +216,7 @@ export async function logRepair(input: {
 // ── ลบรายการซ่อม (ผู้จัดการขึ้นไป) → คืนอะไหล่ที่เบิกไปกลับเข้าสต๊อก + ledger RETURN_IN + audit ──
 export async function deleteRepair(id: string): Promise<ActionResult<{ id: string }>> {
   const session = await requireSession();
-  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  if (!canPlaylandManage(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role))) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
   const rec = await prisma.playlandRepairLog.findFirst({ where: { id, orgId: session.user.org_id }, include: { parts: true } });
   if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
   const result = await prisma.$transaction(async (tx) => {

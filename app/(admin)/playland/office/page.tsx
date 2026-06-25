@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandAccess, requirePlaylandManager, canPlaylandManage } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getTodayStats } from "@/lib/playland/queries";
 import { getBranchContext } from "@/lib/playland/branch-context";
@@ -26,7 +27,8 @@ const tintOf = (c: string) => (c === BLUE ? "#eaf3f6" : c === AMBER ? "#fdf3df" 
 export default async function PlaylandDashboard() {
   const session = await requireSession();
   requirePlaylandAccess(session.user.role);
-  requirePlaylandManager(session.user.role);
+  const plRole = await getPlaylandRole(session.user.id, session.user.org_id, session.user.role);
+  requirePlaylandManager(plRole);
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId);
 
@@ -96,7 +98,7 @@ export default async function PlaylandDashboard() {
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-          {canPlaylandManage(session.user.role) && activeId && <DemoSeedButton branchId={activeId} />}
+          {canPlaylandManage(plRole) && activeId && <DemoSeedButton branchId={activeId} />}
           <Link href="/playland/reports" style={btn(false)}><FileBarChart2 size={15} /> รายงาน</Link>
           <BranchSwitcher branches={branches} activeId={activeId} />
           <Link href="/playland" style={btn(true)}><Store size={15} /> หน้าร้าน <ChevronRight size={14} /></Link>

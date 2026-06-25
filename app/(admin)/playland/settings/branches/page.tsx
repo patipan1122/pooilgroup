@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { canPlaylandAdmin } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { BranchesClient } from "@/components/playland/settings/branches-client";
 import { StaffBranchManager } from "@/components/playland/settings/staff-branch-manager";
 import { Users } from "lucide-react";
@@ -12,7 +13,7 @@ export default async function BranchesSettingsPage() {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const branches = await listBranches(orgId);
-  const isAdmin = canPlaylandAdmin(session.user.role); // ตั้งพนักงานประจำสาขา = ผู้ดูแลเท่านั้น
+  const isAdmin = canPlaylandAdmin(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role)); // ตั้งพนักงานประจำสาขา = ผู้ดูแลเท่านั้น
 
   let users: { id: string; name: string; email: string | null; role: string }[] = [];
   let assignments: { userId: string; branchId: string }[] = [];

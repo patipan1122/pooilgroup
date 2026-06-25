@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { listBranches } from "@/lib/playland/queries";
 import { StockReceiveForm } from "@/components/playland/stock-receive-form";
@@ -18,7 +19,7 @@ const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LIN
 export default async function ReceivePage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   const orgId = session.user.org_id;
   const branches = await listBranches(orgId);
   const branchId = sp.branch || branches[0]?.id;

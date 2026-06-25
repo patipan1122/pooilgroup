@@ -11,6 +11,7 @@ import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { requirePlaylandAccess, canPlaylandManage } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { CommandPalette } from "@/components/playland/command-palette";
 import { MobileBottomNav } from "@/components/playland/mobile-bottom-nav";
 import "./playland.css";
@@ -27,11 +28,12 @@ export default async function PlaylandLayout({ children }: { children: React.Rea
     const ok = await userHasModuleAccess(session.user, "playland");
     if (!ok) redirect("/403");
   }
+  const plRole = await getPlaylandRole(session.user.id, session.user.org_id, session.user.role);
   return (
     <div className="pl-root pl-shell">
       <CommandPalette />
       {children}
-      <MobileBottomNav canManage={canPlaylandManage(session.user.role)} />
+      <MobileBottomNav canManage={canPlaylandManage(plRole)} />
     </div>
   );
 }

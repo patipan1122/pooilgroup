@@ -2,6 +2,7 @@
 // CEO policy: ส่วนลดทั้งหมดมาจากที่นี่ · แคชเชียร์ลดเองไม่ได้ (CRUD เท่านั้น · enforcement = Wave 3)
 import { requireSession } from "@/lib/auth/session";
 import { requirePlaylandManager } from "@/lib/playland/role-guard";
+import { getPlaylandRole } from "@/lib/playland/position-resolve";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { listBranches } from "@/lib/playland/queries";
@@ -17,7 +18,7 @@ const FREDOKA = "var(--font-fredoka), 'Fredoka', sans-serif";
 
 export default async function PromosSettingsPage() {
   const session = await requireSession();
-  requirePlaylandManager(session.user.role);
+  requirePlaylandManager(await getPlaylandRole(session.user.id, session.user.org_id, session.user.role));
   const orgId = session.user.org_id;
   const { active } = await getBranchContext(orgId);
 
