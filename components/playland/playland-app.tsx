@@ -496,9 +496,9 @@ export default function PlaylandApp(props: Props) {
         setBusy(false);
       }
     } else {
-      // preset/demo products (ไม่มีหลังบ้าน) → optimistic
-      showReceipt();
-      showToast("รับเงิน ฿" + total + " แล้ว");
+      // preset/demo products (ยังไม่ได้ผูกสินค้าจริงในหลังบ้าน) → ไม่บันทึกยอด + ไม่หลอกว่ารับเงินแล้ว
+      // (เดิม optimistic showReceipt+"รับเงินแล้ว" = เงินทิพย์ ทำยอดปิดกะเพี้ยน · QA/User-A flag)
+      showToast("⚠️ โหมดทดลอง · สินค้านี้ยังไม่ได้ตั้งค่าจริง · ยอดไม่ถูกบันทึก — ไปตั้งค่า 'สินค้า POS' ที่หลังบ้านก่อนขายจริง");
     }
   };
 
@@ -1584,9 +1584,7 @@ export default function PlaylandApp(props: Props) {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
                     พิมพ์สายรัดซ้ำ
                   </div>
-                ) : (
-                  <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, color: "#bcae9b" }}>ปรินต์สลิป</div>
-                )}
+                ) : null}
                 <div onClick={() => go("home")} style={{ cursor: "pointer", flex: 1.2, background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
               </div>
             </div>
