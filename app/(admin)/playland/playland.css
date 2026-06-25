@@ -1864,6 +1864,14 @@
   .pl-root input, .pl-root select, .pl-root textarea, .pl-root button { font-size: 16px; }
 }
 
+/* การ์ด/ไทล์กดได้ — ยกตัวนิดตอน hover (เดสก์ท็อปหลังบ้าน) · ไม่ทับ bg ที่ตั้ง inline ไว้ */
+.pl-lift { transition: transform .14s ease, box-shadow .14s ease; }
+.pl-lift:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(58,48,38,.12); }
+.pl-rowlink { transition: filter .14s ease, transform .14s ease; }
+.pl-rowlink:hover { filter: brightness(.975); transform: translateX(2px); }
+@media (hover: none) { .pl-lift:hover, .pl-rowlink:hover { transform: none; box-shadow: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) { .pl-lift, .pl-rowlink { transition: none; } .pl-lift:hover, .pl-rowlink:hover { transform: none; } }
+
 /* bottom-sheet "เพิ่มเติม" ของ bottom nav */
 .pl-mnav-sheet-backdrop { position: fixed; inset: 0; background: rgba(28,25,23,0.4); z-index: 65; }
 .pl-mnav-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 66;
