@@ -1,10 +1,9 @@
-// DC · หลังบ้าน · ทะเบียนผู้ขาย (Suppliers master, ส่วนใหญ่โรงงานจีน)
-// แสดงรายชื่อผู้ขายทั้งหมดของ org + สร้าง/แก้/เปิด-ปิด (ใน suppliers-manager).
+// DC Redesign v2 · หลังบ้าน · ทะเบียนผู้ขาย (Suppliers) — shell ครีม/ฟ้า (เข้าชุด DC).
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
-import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
+import { requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { SuppliersManager, type SupplierRow } from "./suppliers-manager";
 
 export const dynamic = "force-dynamic";
@@ -14,45 +13,32 @@ export default async function DcSuppliersPage() {
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
 
-  const suppliers = await prisma.dcSupplier.findMany({
-    where: { orgId },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      country: true,
-      contact: true,
-      wechat: true,
-      paymentTerms: true,
-      note: true,
-      active: true,
-    },
-  });
+  const [chrome, suppliers] = await Promise.all([
+    getDcOfficeChrome(orgId),
+    prisma.dcSupplier.findMany({
+      where: { orgId },
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+      select: {
+        id: true, name: true, country: true, contact: true,
+        wechat: true, paymentTerms: true, note: true, active: true,
+      },
+    }),
+  ]);
 
   const rows: SupplierRow[] = suppliers.map((s) => ({
-    id: s.id,
-    name: s.name,
-    country: s.country,
-    contact: s.contact,
-    wechat: s.wechat,
-    paymentTerms: s.paymentTerms,
-    note: s.note,
-    active: s.active,
+    id: s.id, name: s.name, country: s.country, contact: s.contact,
+    wechat: s.wechat, paymentTerms: s.paymentTerms, note: s.note, active: s.active,
   }));
 
   return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <div className="dc-h1">ผู้ขาย</div>
-          <div className="dc-sub">ทะเบียนโรงงาน/ผู้ขาย (จีนเป็นหลัก) · ติดต่อ · WeChat · เงื่อนไขชำระ</div>
+    <DcOfficeShell active="suppliers" {...dcShellChrome(ctx, chrome)}>
+      <div>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ผู้ขาย</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>ทะเบียนโรงงาน/ผู้ขาย (จีนเป็นหลัก) · ติดต่อ · WeChat · เงื่อนไขชำระ</p>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
+        <SuppliersManager suppliers={rows} />
       </div>
-
-      <PurchasingTabs />
-
-      <SuppliersManager suppliers={rows} />
-    </div>
+    </DcOfficeShell>
   );
 }

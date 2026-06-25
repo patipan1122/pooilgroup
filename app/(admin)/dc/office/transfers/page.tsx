@@ -5,10 +5,11 @@ import Link from "next/link";
 import { Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { requireDcManager } from "@/lib/dc/role-guard";
 import { TRANSFER_STATUS_LABEL } from "@/lib/dc/nav";
 import { DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
@@ -77,16 +78,15 @@ export default async function DcTransfersPage() {
   };
 
   const inTransitCount = transfers.filter((t) => t.status === DcTransferStatus.IN_TRANSIT).length;
+  const chrome = await getDcOfficeChrome(orgId);
 
   return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <div className="dc-h1">ใบโอน (ส่ง / รับระหว่างคลัง)</div>
-          <div className="dc-sub">ส่งของออก 2 จังหวะ — ปลายทางกดยืนยันรับ · ต้นทุนตามของไป</div>
+    <DcOfficeShell active="transfer" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ใบโอน (ส่ง / รับระหว่างคลัง)</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>ส่งของออก 2 จังหวะ — ปลายทางกดยืนยันรับ · ต้นทุนตามของไป</p>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
 
       {inTransitCount > 0 && (
         <div
@@ -166,7 +166,8 @@ export default async function DcTransfersPage() {
           </table>
         </div>
       )}
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }
 

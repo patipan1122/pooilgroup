@@ -30,3 +30,19 @@ export const DC_ROLE_LABEL: Record<string, string> = {
   super_admin: "Super Admin", org_admin: "Admin", admin: "Admin", program_admin: "Program Admin",
   area_manager: "Area Manager", branch_manager: "Manager", staff: "Staff", viewer: "Viewer",
 };
+
+type CtxLike = {
+  activeWarehouse: { name: string } | null;
+  session: { user: { name: string; email: string | null; role: string } };
+};
+
+/** props ของ DcOfficeShell ที่ใช้ซ้ำทุกหน้า (ยกเว้น active) — ลด boilerplate ตอน migrate. */
+export function dcShellChrome(ctx: CtxLike, chrome: DcChrome) {
+  return {
+    warehouseName: ctx.activeWarehouse?.name ?? "DC คลังกลาง",
+    userName: ctx.session.user.name || ctx.session.user.email || "ผู้ใช้",
+    userRole: DC_ROLE_LABEL[ctx.session.user.role] ?? ctx.session.user.role,
+    badges: chrome.badges,
+    taskStrip: chrome.taskStrip,
+  };
+}

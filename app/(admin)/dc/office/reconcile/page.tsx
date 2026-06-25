@@ -17,9 +17,10 @@ import {
   PlugZap,
 } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { requireDcManager } from "@/lib/dc/role-guard";
 import { runDcReconcile } from "@/lib/dc/reconcile";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { KpiTile } from "@/components/ui/kpi-tile";
 import { DataTable } from "@/components/ui/data-table";
 import { Section } from "@/components/ui/section";
@@ -42,16 +43,15 @@ export default async function DcReconcilePage() {
   const orgId = ctx.session.user.org_id;
 
   const result = await runDcReconcile(orgId);
+  const chrome = await getDcOfficeChrome(orgId);
 
   return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <div className="dc-h1">ตรวจกระทบยอด · DC คลังกลาง</div>
-          <div className="dc-sub">งานบำรุงรักษา — เลื่อนสถานะโอนค้าง · งานนับสต๊อกที่ควรทำ · เทียบกับบัญชี</div>
+    <DcOfficeShell active="recon" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>กระทบยอด · DC คลังกลาง</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>งานบำรุงรักษา — เลื่อนสถานะโอนค้าง · งานนับสต๊อกที่ควรทำ · เทียบกับบัญชี</p>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
 
       <div className="flex items-start justify-between gap-3 flex-wrap mb-6">
         <div
@@ -207,6 +207,7 @@ export default async function DcReconcilePage() {
           </div>
         </Section>
       </div>
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }

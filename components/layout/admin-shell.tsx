@@ -152,7 +152,15 @@ const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 // ⚠️ ระวัง dynamic route: /receipts/new (ฟอร์มเก่า) ห้ามเต็มจอ — match เฉพาะหน้าที่ทำใหม่.
 function isDcFullBleedPath(pathname: string): boolean {
   return (
+    pathname === "/dc/office" ||
     pathname === "/dc/office/products" ||
+    pathname === "/dc/office/suppliers" ||
+    pathname === "/dc/office/shipments" ||
+    pathname === "/dc/office/purchasing" ||
+    pathname === "/dc/office/warehouses" ||
+    pathname === "/dc/office/transfers" ||
+    pathname === "/dc/office/reconcile" ||
+    pathname === "/dc/office/reports" ||
     pathname === "/dc/office/receipts" ||
     // ใบรับสินค้า รายละเอียด /dc/office/receipts/<id> (ยกเว้น /new = ฟอร์มเก่า)
     /^\/dc\/office\/receipts\/(?!new$)[^/]+$/.test(pathname) ||
@@ -242,7 +250,13 @@ export function AdminShell({
   // หน้า DC ที่ปรับโฉมแล้ว → render เนื้อในเต็มจอ ไม่ครอบด้วย topbar/sidebar ของแอป.
   // (hooks ทั้งหมดถูกเรียกครบก่อนบรรทัดนี้แล้ว — early-return จึงไม่ผิดกฎ hook order)
   if (isDcFullBleedPath(pathname)) {
-    return <>{children}</>;
+    // เต็มจอ แต่ยังคง Pinpoint (โหมดติชม) ไว้ — ไม่งั้น CEO ติชมหน้านี้ไม่ได้.
+    return (
+      <>
+        {children}
+        {canPinpoint && <PinpointProvider canReview={canReviewPinpoint} />}
+      </>
+    );
   }
 
   return (

@@ -11,7 +11,8 @@
 import Link from "next/link";
 import { BarChart3, AlertTriangle, ArrowRightLeft, Coins, Package, Layers, Truck, FileWarning } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import {
   getDcOverview,
   getLowStock,
@@ -21,7 +22,7 @@ import {
   fmtSatang,
   EST_VALUE_NOTE,
 } from "@/lib/dc/reports";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { KpiTile } from "@/components/ui/kpi-tile";
 import { DataTable } from "@/components/ui/data-table";
 import { Section } from "@/components/ui/section";
@@ -87,15 +88,15 @@ export default async function DcReportsPage({
     return `/dc/office/reports?${qs.toString()}`;
   };
 
+  const chrome = await getDcOfficeChrome(orgId);
+
   return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <div className="dc-h1">รายงานสต๊อก · DC คลังกลาง</div>
-          <div className="dc-sub">ภาพรวม · ของใกล้หมด · ความเคลื่อนไหว · ต้นทุนนำเข้า</div>
+    <DcOfficeShell active="reports" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>รายงานสต๊อก · DC คลังกลาง</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>ภาพรวม · ของใกล้หมด · ความเคลื่อนไหว · ต้นทุนนำเข้า</p>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
 
       {/* ตัวกรองคลัง */}
       {allowed.length > 1 && (
@@ -153,7 +154,8 @@ export default async function DcReportsPage({
       {tab === "low" && <LowStockTab orgId={orgId} scopeIds={scopeIds} />}
       {tab === "moves" && <MovesTab orgId={orgId} scopeWarehouseId={selectedWh} />}
       {tab === "landed" && <LandedTab orgId={orgId} />}
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }
 
