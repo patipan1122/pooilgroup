@@ -115,9 +115,9 @@ export function CollectGroupClient({ orgId, branches, skus }: Props) {
   }
 
   // ---------- exchanger ----------
-  // รูป = หลักฐานเสริม "ไม่บังคับ" → บันทึกได้ด้วยตัวเลข (กัน R2 อัปโหลดล่ม = ปุ่มกดไม่ได้ตลอด)
-  const exReady = ex.coinMeterAfter !== "" && ex.cashCounted !== "";
-  const exPhotosDone = [ex.photoCoinMeterUrl, ex.photoCashUrl, ex.photoTokenTrayUrl].filter(Boolean).length;
+  const exReady =
+    ex.coinMeterAfter !== "" && ex.cashCounted !== "" &&
+    !!ex.photoCoinMeterUrl && !!ex.photoCashUrl && !!ex.photoTokenTrayUrl;
 
   function submitEx() {
     if (!sessionId || !group?.exchanger) return;
@@ -394,12 +394,9 @@ export function CollectGroupClient({ orgId, branches, skus }: Props) {
               className="w-full rounded-xl border border-zinc-300 p-3 text-sm focus:border-blue-500 focus:outline-none" />
           </FormSection>
 
-          {exReady && exPhotosDone < 3 && (
-            <p className="mb-2 text-xs text-amber-600">ยังไม่ได้ถ่ายรูป {exPhotosDone}/3 (ไม่บังคับ) · บันทึกได้เลย</p>
-          )}
           <button type="button" onClick={submitEx} disabled={!exReady || pending}
             className="sticky bottom-3 z-10 w-full rounded-xl bg-indigo-600 px-6 py-4 text-base font-semibold text-white shadow-lg transition hover:bg-indigo-700 disabled:bg-zinc-300">
-            {pending ? "กำลังบันทึก..." : !exReady ? "กรอกเลขให้ครบ" : "บันทึกตู้แลก →"}
+            {pending ? "กำลังบันทึก..." : !exReady ? "กรอกเลข + ถ่าย 3 รูปให้ครบ" : "บันทึกตู้แลก →"}
           </button>
         </>
       )}
@@ -484,12 +481,9 @@ export function CollectGroupClient({ orgId, branches, skus }: Props) {
               className="w-full rounded-xl border border-zinc-300 p-3 text-sm focus:border-blue-500 focus:outline-none" />
           </FormSection>
 
-          {clawNumbersReady && !clawPhotosReady && (
-            <p className="mb-2 text-xs text-amber-600">ยังถ่ายรูปไม่ครบ (ไม่บังคับ) · บันทึกได้เลย</p>
-          )}
-          <button type="button" onClick={submitClaw} disabled={!clawNumbersReady || pending}
+          <button type="button" onClick={submitClaw} disabled={!clawPhotosReady || !clawNumbersReady || pending}
             className="sticky bottom-3 z-10 w-full rounded-xl bg-blue-600 px-6 py-4 text-base font-semibold text-white shadow-lg transition hover:bg-blue-700 disabled:bg-zinc-300">
-            {pending ? "กำลังบันทึก..." : !clawNumbersReady ? "กรอกตัวเลขให้ครบ" : "บันทึก & ตู้ถัดไป →"}
+            {pending ? "กำลังบันทึก..." : !clawNumbersReady ? "กรอกตัวเลขให้ครบ" : !clawPhotosReady ? "ถ่ายรูปให้ครบ 5 รูป" : "บันทึก & ตู้ถัดไป →"}
           </button>
         </>
       )}
