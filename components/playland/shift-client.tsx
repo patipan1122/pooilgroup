@@ -37,7 +37,7 @@ interface Recent {
   isDayClose: boolean;
 }
 
-export function ShiftClient({ branchId, branchName, openShift: open, recent }: { branchId: string; branchName: string; openShift: OpenShift | null; recent: Recent[] }) {
+export function ShiftClient({ branchId, branchName, openShift: open, recent, readOnly = false }: { branchId: string; branchName: string; openShift: OpenShift | null; recent: Recent[]; readOnly?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [openingCash, setOpeningCash] = useState("0");
@@ -86,8 +86,30 @@ export function ShiftClient({ branchId, branchName, openShift: open, recent }: {
       )}
 
       <div className="pl-grid-2r" style={{ alignItems: "start" }}>
-        {/* เปิด/ปิดกะ */}
-        {!open ? (
+        {/* เปิด/ปิดกะ — หลังบ้าน readOnly = ดูอย่างเดียว · ปิดกะ/นับลิ้นชักทำที่หน้าร้าน (จอพนักงาน) */}
+        {readOnly ? (
+          <div style={card}>
+            {!open ? (
+              <div style={{ color: MUTED, fontSize: 14, padding: "20px 0", textAlign: "center" }}>ไม่มีกะที่เปิดอยู่ตอนนี้</div>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, fontFamily: FREDOKA }}>กะปัจจุบัน · {open.shiftCode}</div>
+                <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>{branchName}</div>
+                <div style={{ display: "grid", gap: 8, fontSize: 14, marginBottom: 12 }}>
+                  <Row label="เปิดเมื่อ" value={fmtDateTime(open.startedAt)} />
+                  <Row label="เริ่มต้นเงิน" value={thb(open.openingCashCents)} mono />
+                  <Row label="ขายเงินสด (เข้าลิ้นชัก)" value={thb(open.cashSalesCents)} mono />
+                  <Row label="ยอดขายรวม (ทุกช่องทาง)" value={thb(open.totalSalesCents)} mono muted />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 8, borderTop: `1px solid #f2ebdd` }}>
+                    <span style={{ fontSize: 12, color: MUTED }}>คาดว่าในลิ้นชัก (เงินสด)</span>
+                    <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20 }}>{thb(expected)}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: MUTED, background: "#f9f7f2", borderRadius: 9, padding: "10px 12px" }}>🔒 ดูอย่างเดียว · ปิดกะ/นับลิ้นชัก ทำที่หน้าร้าน (จอพนักงาน)</div>
+              </>
+            )}
+          </div>
+        ) : !open ? (
           <div style={card}>
             <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4, fontFamily: FREDOKA }}>เปิดกะใหม่</div>
             <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>{branchName}</div>

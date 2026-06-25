@@ -65,6 +65,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
 
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         <ShiftClient
+          readOnly
           branchId={branchId}
           branchName={branchName}
           openShift={openShift ? {

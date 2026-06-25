@@ -211,3 +211,35 @@ export async function logRepair(input: {
   revalidatePath("/playland/stock");
   return { ok: true, data: result };
 }
+
+// ── ลบรายการซ่อม (ผู้จัดการขึ้นไป) → คืนอะไหล่ที่เบิกไปกลับเข้าสต๊อก + ledger RETURN_IN + audit ──
+export async function deleteRepair(id: string): Promise<ActionResult<{ id: string }>> {
+  const session = await requireSession();
+  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  const rec = await prisma.playlandRepairLog.findFirst({ where: { id, orgId: session.user.org_id }, include: { parts: true } });
+  if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
+  const result = await prisma.$transaction(async (tx) => {
+    // ลบใบซ่อมที่ลงผิด → คืนอะไหล่กลับสต๊อก (กันสต๊อกเพี้ยน)
+    for (const p of rec.parts) {
+      const prod = await tx.playlandProduct.findFirst({ where: { id: p.productId, orgId: session.user.org_id }, select: { id: true, stock: true } });
+      if (!prod) continue;
+      await tx.playlandProduct.update({ where: { id: prod.id }, data: { stock: { increment: p.quantity } } });
+      await tx.playlandStockMovement.create({
+        data: { orgId: session.user.org_id, branchId: rec.branchId, productId: p.productId, kind: "RETURN_IN", quantity: p.quantity, unitCostCents: p.unitCostCents, balanceAfter: prod.stock + p.quantity, refType: "repair_delete", refId: rec.id, actorUserId: session.user.id },
+      });
+    }
+    await tx.playlandAuditLog.create({
+      data: {
+        orgId: session.user.org_id, branchId: rec.branchId, actorUserId: session.user.id, actorRole: session.user.role,
+        action: "repair.delete", entityType: "PlaylandRepairLog", entityId: rec.id,
+        before: JSON.parse(JSON.stringify(rec)), category: "general",
+      },
+    });
+    await tx.playlandRepairLog.delete({ where: { id: rec.id } }); // cascade ลบ parts
+    return { id: rec.id };
+  }).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+  if ("error" in result) return err(result.error);
+  revalidatePath("/playland/repairs");
+  revalidatePath("/playland/stock");
+  return { ok: true, data: result };
+}

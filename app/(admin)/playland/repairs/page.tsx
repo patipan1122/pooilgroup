@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandCashier } from "@/lib/playland/role-guard";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
 import { thb } from "@/lib/playland/format";
-import { RepairForm } from "@/components/playland/repair-form";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { CareDeleteButton } from "@/components/playland/care-delete-button";
 import { ArrowLeft, Wrench, PackageX, Coins } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ const card: React.CSSProperties = { background: "#fff", border: `1px solid ${LIN
 export default async function RepairsPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandCashier(session.user.role); // ช่าง/พนักงาน (staff) บันทึกซ่อมเองได้ (CEO 2026-06-24)
+  requirePlaylandManager(session.user.role); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (บันทึกซ่อมย้ายไปหน้าร้าน)
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch); // ?branch= → cookie → สาขาแรก (สิทธิ์กรองแล้ว)
   const branchId = activeId;
@@ -33,7 +33,6 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
     prisma.playlandProduct.findMany({ where: { orgId, branchId, active: true, kind: "SPARE_PART" }, orderBy: { name: "asc" }, select: { id: true, name: true, stock: true, costCents: true, barcode: true } }),
     prisma.playlandRepairLog.findMany({ where: { orgId, branchId }, orderBy: { createdAt: "desc" }, take: 30, include: { parts: true } }),
   ]);
-  const machineLabels = [...new Set(repairs.map((r) => r.machineLabel))]; // ชื่อเครื่องที่เคยซ่อม → autocomplete กันสะกดไม่ตรง
 
   // KPI สรุป — เดือนนี้ (จำนวนครั้ง + ค่าอะไหล่รวม) + อะไหล่ใกล้หมด
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
@@ -74,31 +73,31 @@ export default async function RepairsPage({ searchParams }: { searchParams: Prom
           ))}
         </div>
 
-        {/* ฟอร์มซ้าย + ประวัติซ่อมขวา (เต็มกว้าง) */}
-        <div className="pl-grid-2" style={{ alignItems: "start" }}>
-          <RepairForm branchId={branchId} parts={parts} machineLabels={machineLabels} />
-
-          <section style={{ ...card, padding: 22 }}>
-            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>ประวัติการซ่อมล่าสุด</h2>
-            {repairs.length === 0 ? (
-              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีประวัติซ่อม</div>
-            ) : (
-              <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
-                {repairs.map((r) => (
-                  <div key={r.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                      <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{r.machineLabel}</div>
-                      <div style={{ fontFamily: MONO, fontWeight: 600, color: AMBER, fontSize: 14 }}>{thb(r.partsCostCents)}</div>
-                      <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(r.createdAt).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })}</div>
-                    </div>
-                    {r.description && <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{r.description}</div>}
-                    {r.parts.length > 0 && <div style={{ fontSize: 13, color: "#6b6052", marginTop: 4 }}>อะไหล่: {r.parts.map((p) => `${p.productName}×${p.quantity}`).join(" · ")}</div>}
+        {/* ดูอย่างเดียว — ประวัติการซ่อมเต็มกว้าง (บันทึกซ่อมย้ายไปหน้าร้าน) */}
+        <section style={{ ...card, padding: 22 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: 0 }}>ประวัติการซ่อมล่าสุด</h2>
+            <span style={{ fontSize: 12, color: MUTED }}>ดูอย่างเดียว · บันทึกที่หน้าร้าน</span>
+          </div>
+          {repairs.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีประวัติซ่อม</div>
+          ) : (
+            <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
+              {repairs.map((r) => (
+                <div key={r.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                    <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{r.machineLabel}</div>
+                    <div style={{ fontFamily: MONO, fontWeight: 600, color: AMBER, fontSize: 14 }}>{thb(r.partsCostCents)}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(r.createdAt).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })}</div>
+                    <CareDeleteButton kind="repair" id={r.id} />
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+                  {r.description && <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{r.description}</div>}
+                  {r.parts.length > 0 && <div style={{ fontSize: 13, color: "#6b6052", marginTop: 4 }}>อะไหล่: {r.parts.map((p) => `${p.productName}×${p.quantity}`).join(" · ")}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

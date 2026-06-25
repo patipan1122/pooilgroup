@@ -2,11 +2,11 @@
 // ฟอร์มบันทึกซ้าย + รายการของที่ยังเก็บอยู่ขวา + ประวัติคืน/ทิ้งด้านล่าง (CEO 2026-06-25)
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandCashier } from "@/lib/playland/role-guard";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
-import { LostFoundForm, LostFoundActions } from "@/components/playland/lost-found-form";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { CareDeleteButton } from "@/components/playland/care-delete-button";
 import { PackageSearch, Archive, RotateCcw, Clock } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ const STATUS_LABEL: Record<string, { text: string; color: string; bg: string }> 
 export default async function LostFoundPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandCashier(session.user.role); // พนักงาน (staff) บันทึก/คืนของได้เอง
+  requirePlaylandManager(session.user.role); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (บันทึก/คืนของย้ายไปหน้าร้าน)
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId;
@@ -76,65 +76,65 @@ export default async function LostFoundPage({ searchParams }: { searchParams: Pr
           ))}
         </div>
 
-        {/* ฟอร์มซ้าย + รายการขวา */}
-        <div className="pl-grid-2" style={{ alignItems: "start" }}>
-          <LostFoundForm branchId={branchId} />
-
-          <div style={{ display: "grid", gap: 18 }}>
-            {/* ของที่ยังเก็บอยู่ */}
-            <section style={{ ...card, padding: 22 }}>
-              <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>ของที่ยังเก็บอยู่ ({stored.length})</h2>
-              {stored.length === 0 ? (
-                <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีของที่เก็บไว้</div>
-              ) : (
-                <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
-                  {stored.map((s) => {
-                    const days = Math.floor((now - new Date(s.foundAt).getTime()) / DAY);
-                    const old = now - new Date(s.foundAt).getTime() > 30 * DAY;
-                    return (
-                      <div key={s.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                          <div style={{ flex: 1, minWidth: 0, fontWeight: 500, fontSize: 15 }}>{s.itemName}</div>
-                          <div style={{ fontFamily: MONO, fontSize: 11, color: "#a89c8b" }}>{s.itemCode}</div>
-                          <div style={{ fontFamily: MONO, fontSize: 12, color: old ? RED : "#a89c8b" }}>{days === 0 ? "วันนี้" : `${days} วัน`}</div>
-                        </div>
-                        <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
-                          {s.foundLocation ? `เก็บได้ที่ ${s.foundLocation} · ` : ""}{fmtDT(s.foundAt)}
-                          {s.contactPhone ? ` · ☎ ${s.contactPhone}` : ""}
-                        </div>
-                        {s.description && <div style={{ fontSize: 13, color: "#6b6052", marginTop: 2 }}>{s.description}</div>}
-                        <LostFoundActions itemId={s.id} />
+        {/* ดูอย่างเดียว — รายการเต็มกว้าง (บันทึก/คืนของย้ายไปหน้าร้าน) */}
+        <div style={{ display: "grid", gap: 18 }}>
+          {/* ของที่ยังเก็บอยู่ */}
+          <section style={{ ...card, padding: 22 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+              <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: 0 }}>ของที่ยังเก็บอยู่ ({stored.length})</h2>
+              <span style={{ fontSize: 12, color: MUTED }}>ดูอย่างเดียว · บันทึกที่หน้าร้าน</span>
+            </div>
+            {stored.length === 0 ? (
+              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีของที่เก็บไว้</div>
+            ) : (
+              <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
+                {stored.map((s) => {
+                  const days = Math.floor((now - new Date(s.foundAt).getTime()) / DAY);
+                  const old = now - new Date(s.foundAt).getTime() > 30 * DAY;
+                  return (
+                    <div key={s.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 0, fontWeight: 500, fontSize: 15 }}>{s.itemName}</div>
+                        <div style={{ fontFamily: MONO, fontSize: 11, color: "#a89c8b" }}>{s.itemCode}</div>
+                        <div style={{ fontFamily: MONO, fontSize: 12, color: old ? RED : "#a89c8b" }}>{days === 0 ? "วันนี้" : `${days} วัน`}</div>
+                        <CareDeleteButton kind="lostfound" id={s.id} />
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            {/* ประวัติคืน/ทิ้ง */}
-            <section style={{ ...card, padding: 22 }}>
-              <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>ประวัติคืน/ทิ้ง</h2>
-              {history.length === 0 ? (
-                <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีประวัติ</div>
-              ) : (
-                <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
-                  {history.map((h) => {
-                    const st = STATUS_LABEL[h.status] ?? { text: h.status, color: MUTED, bg: "#f4ede0" };
-                    return (
-                      <div key={h.id} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "12px 16px", borderBottom: "1px solid #f2ebdd", flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
-                          {h.itemName}
-                          {h.status === "claimed" && h.claimedByName && <span style={{ color: MUTED }}> · รับโดย {h.claimedByName}</span>}
-                        </div>
-                        <span style={{ fontSize: 12, color: st.color, background: st.bg, padding: "3px 10px", borderRadius: 999 }}>{st.text}</span>
-                        <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{fmtDT(h.claimedAt ?? h.createdAt)}</div>
+                      <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
+                        {s.foundLocation ? `เก็บได้ที่ ${s.foundLocation} · ` : ""}{fmtDT(s.foundAt)}
+                        {s.contactPhone ? ` · ☎ ${s.contactPhone}` : ""}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </div>
+                      {s.description && <div style={{ fontSize: 13, color: "#6b6052", marginTop: 2 }}>{s.description}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* ประวัติคืน/ทิ้ง */}
+          <section style={{ ...card, padding: 22 }}>
+            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>ประวัติคืน/ทิ้ง</h2>
+            {history.length === 0 ? (
+              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีประวัติ</div>
+            ) : (
+              <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
+                {history.map((h) => {
+                  const st = STATUS_LABEL[h.status] ?? { text: h.status, color: MUTED, bg: "#f4ede0" };
+                  return (
+                    <div key={h.id} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "12px 16px", borderBottom: "1px solid #f2ebdd", flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
+                        {h.itemName}
+                        {h.status === "claimed" && h.claimedByName && <span style={{ color: MUTED }}> · รับโดย {h.claimedByName}</span>}
+                      </div>
+                      <span style={{ fontSize: 12, color: st.color, background: st.bg, padding: "3px 10px", borderRadius: 999 }}>{st.text}</span>
+                      <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{fmtDT(h.claimedAt ?? h.createdAt)}</div>
+                      <CareDeleteButton kind="lostfound" id={h.id} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>

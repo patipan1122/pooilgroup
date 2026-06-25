@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandCashier } from "@/lib/playland/role-guard";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
-import { IncidentForm } from "@/components/playland/incident-form";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { CareDeleteButton } from "@/components/playland/care-delete-button";
 import { ArrowLeft, ShieldAlert, AlertTriangle, BellRing } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ const SEV: Record<string, { t: string; color: string; bg: string }> = {
 export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandCashier(session.user.role); // พนักงาน (staff) ลงเหตุการณ์เองได้ (CEO 2026-06-25)
+  requirePlaylandManager(session.user.role); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (บันทึกย้ายไปหน้าร้าน)
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId;
@@ -81,37 +81,37 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
           ))}
         </div>
 
-        {/* ฟอร์มซ้าย + ประวัติเหตุการณ์ขวา */}
-        <div className="pl-grid-2" style={{ alignItems: "start" }}>
-          <IncidentForm branchId={branchId} />
-
-          <section style={{ ...card, padding: 22 }}>
-            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>เหตุการณ์ล่าสุด</h2>
-            {incidents.length === 0 ? (
-              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีบันทึกเหตุการณ์</div>
-            ) : (
-              <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
-                {incidents.map((i) => {
-                  const sev = SEV[i.severity] ?? SEV.minor;
-                  return (
-                    <div key={i.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: sev.bg, color: sev.color }}>{sev.t}</span>
-                        <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{KIND_LABEL[i.kind] ?? i.kind}{i.childName ? ` · ${i.childName}` : ""}</div>
-                        {i.parentNotified
-                          ? <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "#eaf3eb", color: GREEN }}>แจ้งผู้ปกครองแล้ว</span>
-                          : <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "#fbf2dc", color: AMBER }}>ยังไม่แจ้ง</span>}
-                        <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(i.occurredAt).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })} {new Date(i.occurredAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}</div>
-                      </div>
-                      {i.location && <div style={{ fontSize: 12, color: "#a89c8b", marginTop: 3 }}>📍 {i.location}</div>}
-                      {i.description && <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>{i.description}</div>}
+        {/* ดูอย่างเดียว — รายการเหตุการณ์เต็มกว้าง (บันทึกย้ายไปหน้าร้าน) */}
+        <section style={{ ...card, padding: 22 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: 0 }}>เหตุการณ์ล่าสุด</h2>
+            <span style={{ fontSize: 12, color: MUTED }}>ดูอย่างเดียว · บันทึกที่หน้าร้าน</span>
+          </div>
+          {incidents.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีบันทึกเหตุการณ์</div>
+          ) : (
+            <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
+              {incidents.map((i) => {
+                const sev = SEV[i.severity] ?? SEV.minor;
+                return (
+                  <div key={i.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: sev.bg, color: sev.color }}>{sev.t}</span>
+                      <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{KIND_LABEL[i.kind] ?? i.kind}{i.childName ? ` · ${i.childName}` : ""}</div>
+                      {i.parentNotified
+                        ? <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "#eaf3eb", color: GREEN }}>แจ้งผู้ปกครองแล้ว</span>
+                        : <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "#fbf2dc", color: AMBER }}>ยังไม่แจ้ง</span>}
+                      <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(i.occurredAt).toLocaleDateString("th-TH", { day: "2-digit", month: "2-digit" })} {new Date(i.occurredAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}</div>
+                      <CareDeleteButton kind="incident" id={i.id} />
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
+                    {i.location && <div style={{ fontSize: 12, color: "#a89c8b", marginTop: 3 }}>📍 {i.location}</div>}
+                    {i.description && <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>{i.description}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

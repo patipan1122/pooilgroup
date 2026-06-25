@@ -2,11 +2,11 @@
 // กรมอนามัย/ประกันต้องการ log ก่อนเปิด-ปิดร้านทุกวัน → เก็บไว้เคลม/กันคดีประมาท
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { requirePlaylandCashier } from "@/lib/playland/role-guard";
+import { requirePlaylandManager } from "@/lib/playland/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getBranchContext } from "@/lib/playland/branch-context";
-import { SafetyForm } from "@/components/playland/safety-form";
 import { BranchSwitcher } from "@/components/playland/branch-switcher";
+import { CareDeleteButton } from "@/components/playland/care-delete-button";
 import { ShieldCheck, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ const typeLabel = (t: string) => (t === "cleaning" ? "🧼 ทำความส
 export default async function SafetyPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
   const sp = await searchParams;
   const session = await requireSession();
-  requirePlaylandCashier(session.user.role); // พนักงาน (staff) ตรวจ+บันทึกเองได้
+  requirePlaylandManager(session.user.role); // ดูอย่างเดียว · ผู้จัดการเท่านั้น (ตรวจ+บันทึกย้ายไปหน้าร้าน)
   const orgId = session.user.org_id;
   const { branches, activeId } = await getBranchContext(orgId, sp.branch);
   const branchId = activeId;
@@ -101,42 +101,42 @@ export default async function SafetyPage({ searchParams }: { searchParams: Promi
           ))}
         </div>
 
-        {/* ฟอร์มซ้าย + ประวัติขวา */}
-        <div className="pl-grid-2" style={{ alignItems: "start" }}>
-          <SafetyForm branchId={branchId} />
-
-          <section style={{ ...card, padding: 22 }}>
-            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: "0 0 14px" }}>ประวัติการตรวจล่าสุด</h2>
-            {checks.length === 0 ? (
-              <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีการตรวจ · เริ่มเช็กรายการแรกก่อนเปิดร้าน</div>
-            ) : (
-              <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
-                {checks.map((c) => {
-                  const fails = parseItems(c.itemsJson).filter((i) => !i.ok);
-                  return (
-                    <div key={c.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{typeLabel(c.checkType)}{c.shiftLabel ? <span style={{ color: MUTED, fontSize: 13 }}> · {c.shiftLabel}</span> : null}</div>
-                        <div style={{ fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 999, color: "#fff", background: c.allPass ? GREEN : RED }}>
-                          {c.allPass ? "ผ่าน" : `พบปัญหา ${fails.length} จุด`}
-                        </div>
-                        <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(c.createdAt).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+        {/* ดูอย่างเดียว — ประวัติการตรวจเต็มกว้าง (ตรวจ+บันทึกย้ายไปหน้าร้าน) */}
+        <section style={{ ...card, padding: 22 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+            <h2 style={{ fontFamily: FREDOKA, fontWeight: 600, fontSize: "1.05rem", margin: 0 }}>ประวัติการตรวจล่าสุด</h2>
+            <span style={{ fontSize: 12, color: MUTED }}>ดูอย่างเดียว · บันทึกที่หน้าร้าน</span>
+          </div>
+          {checks.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 14 }}>ยังไม่มีการตรวจ · เริ่มเช็กรายการแรกก่อนเปิดร้าน</div>
+          ) : (
+            <div style={{ border: `1px solid #f2ebdd`, borderRadius: 12, overflow: "hidden" }}>
+              {checks.map((c) => {
+                const fails = parseItems(c.itemsJson).filter((i) => !i.ok);
+                return (
+                  <div key={c.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f2ebdd" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{typeLabel(c.checkType)}{c.shiftLabel ? <span style={{ color: MUTED, fontSize: 13 }}> · {c.shiftLabel}</span> : null}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 999, color: "#fff", background: c.allPass ? GREEN : RED }}>
+                        {c.allPass ? "ผ่าน" : `พบปัญหา ${fails.length} จุด`}
                       </div>
-                      {fails.length > 0 && (
-                        <div style={{ fontSize: 13, color: "#c0392b", marginTop: 6 }}>
-                          {fails.map((f, i) => (
-                            <div key={i} style={{ marginTop: 2 }}>✗ {f.label}{f.note ? ` — ${f.note}` : ""}</div>
-                          ))}
-                        </div>
-                      )}
-                      {c.note && <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>หมายเหตุ: {c.note}</div>}
+                      <div style={{ fontFamily: MONO, fontSize: 12, color: "#a89c8b" }}>{new Date(c.createdAt).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+                      <CareDeleteButton kind="safety" id={c.id} />
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
+                    {fails.length > 0 && (
+                      <div style={{ fontSize: 13, color: "#c0392b", marginTop: 6 }}>
+                        {fails.map((f, i) => (
+                          <div key={i} style={{ marginTop: 2 }}>✗ {f.label}{f.note ? ` — ${f.note}` : ""}</div>
+                        ))}
+                      </div>
+                    )}
+                    {c.note && <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>หมายเหตุ: {c.note}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

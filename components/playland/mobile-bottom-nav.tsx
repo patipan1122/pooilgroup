@@ -81,7 +81,7 @@ export function MobileBottomNav({ canManage = false }: { canManage?: boolean }) 
   }, [sheetOpen]);
 
   // ซ่อนบน kiosk หน้าร้าน (มี UI ของตัวเอง) + หน้าพิมพ์
-  if (pathname === "/playland" || pathname.includes("/print")) return null;
+  if (pathname === "/playland" || pathname.startsWith("/playland/care") || pathname.includes("/print")) return null;
 
   const isActive = (href: string) => pathname === href || (href !== "/playland" && pathname.startsWith(href));
   const groups = SHEET.map((g) => ({ ...g, items: g.items.filter((it) => !it.admin || canManage) })).filter((g) => g.items.length > 0);

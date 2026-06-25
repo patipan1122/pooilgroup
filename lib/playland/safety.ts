@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { canPlaylandCashier } from "./role-guard";
+import { canPlaylandCashier, canPlaylandManage } from "./role-guard";
 import { verifyBranchOrg } from "./guards";
 import { newSafetyCheckCode } from "./codes";
 
@@ -51,4 +51,28 @@ export async function submitSafetyCheck(input: {
 
   revalidatePath("/playland/safety");
   return { ok: true, data: { checkId: check.id } };
+}
+
+// ── ลบเช็กลิสต์ (ผู้จัดการขึ้นไป · เก็บ snapshot ลง audit ก่อนลบ) ──
+export async function deleteSafetyCheck(id: string): Promise<ActionResult<{ id: string }>> {
+  const session = await requireSession();
+  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  const rec = await prisma.playlandSafetyCheck.findFirst({ where: { id, orgId: session.user.org_id } });
+  if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
+  try {
+    await prisma.$transaction([
+      prisma.playlandAuditLog.create({
+        data: {
+          orgId: session.user.org_id, branchId: rec.branchId, actorUserId: session.user.id, actorRole: session.user.role,
+          action: "safety.delete", entityType: "PlaylandSafetyCheck", entityId: rec.id,
+          before: JSON.parse(JSON.stringify(rec)), category: "general",
+        },
+      }),
+      prisma.playlandSafetyCheck.delete({ where: { id } }),
+    ]);
+    revalidatePath("/playland/safety");
+    return { ok: true, data: { id } };
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+  }
 }

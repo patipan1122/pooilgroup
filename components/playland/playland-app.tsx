@@ -1116,6 +1116,23 @@ export default function PlaylandApp(props: Props) {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
                 ) })}
               </div>
+
+              {/* ── งานดูแลร้าน — พนักงานบันทึกที่หน้าร้าน · หลังบ้านดูรายงาน (CEO 2026-06-25) ── */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#a9978a", letterSpacing: "0.06em", textTransform: "uppercase", margin: "22px 0 12px" }}>งานดูแลร้าน</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+                {hubCard({ onClick: () => router.push("/playland/care/incidents"), bg: "#c0392b", title: "อุบัติเหตุ/เหตุการณ์", sub: "ลงบันทึก กันคดี", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></svg>
+                ) })}
+                {hubCard({ onClick: () => router.push("/playland/care/safety"), bg: "#1F8A5B", title: "ตรวจ · ทำความสะอาด", sub: "เช็กลิสต์ก่อน-หลังเปิด", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                ) })}
+                {hubCard({ onClick: () => router.push("/playland/care/lost-found"), bg: "#2D6CB1", title: "ของหาย · ของเก็บ", sub: "รับฝาก · คืนเจ้าของ", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5M12 22V12" /></svg>
+                ) })}
+                {hubCard({ onClick: () => router.push("/playland/care/repairs"), bg: "#a9791a", title: "บันทึกซ่อม", sub: "เครื่องเล่น · อะไหล่", icon: (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2-2 2.1-2.1Z" /></svg>
+                ) })}
+              </div>
             </div>
           </div>
         )}

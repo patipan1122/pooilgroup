@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { canPlaylandCashier } from "./role-guard";
+import { canPlaylandCashier, canPlaylandManage } from "./role-guard";
 import { verifyBranchOrg } from "./guards";
 import { newIncidentCode } from "./codes";
 
@@ -55,4 +55,28 @@ export async function createIncident(input: {
   if ("error" in incident) return err(incident.error);
   revalidatePath("/playland/incidents");
   return { ok: true, data: { incidentId: incident.id } };
+}
+
+// ── ลบเหตุการณ์ (ผู้จัดการขึ้นไป · เก็บ snapshot ลง audit ก่อนลบ) ──
+export async function deleteIncident(id: string): Promise<ActionResult<{ id: string }>> {
+  const session = await requireSession();
+  if (!canPlaylandManage(session.user.role)) return err("เฉพาะผู้จัดการขึ้นไปลบได้");
+  const rec = await prisma.playlandIncident.findFirst({ where: { id, orgId: session.user.org_id } });
+  if (!rec) return err("ไม่พบรายการ หรือไม่อยู่ใน org");
+  try {
+    await prisma.$transaction([
+      prisma.playlandAuditLog.create({
+        data: {
+          orgId: session.user.org_id, branchId: rec.branchId, actorUserId: session.user.id, actorRole: session.user.role,
+          action: "incident.delete", entityType: "PlaylandIncident", entityId: rec.id,
+          before: JSON.parse(JSON.stringify(rec)), category: "general",
+        },
+      }),
+      prisma.playlandIncident.delete({ where: { id } }),
+    ]);
+    revalidatePath("/playland/incidents");
+    return { ok: true, data: { id } };
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+  }
 }
