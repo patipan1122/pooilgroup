@@ -40,6 +40,7 @@ export default async function BranchesSettingsPage() {
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: "22px 28px 40px" }}>
         <BranchesClient branches={branches.map((b) => ({
           id: b.id, name: b.name, slug: b.slug, address: b.address, phone: b.phone, active: b.active,
+          settings: (b.settings as Record<string, unknown> | null) ?? null,
         }))} />
         {isAdmin && branches.length > 0 && (
           <StaffBranchManager

@@ -112,6 +112,18 @@ export default async function PlaylandPage({
   ]);
   const cashSalesCents = cashAgg?._sum.totalCents ?? 0;
   const overtimeRatePerMinuteCents = readOvertimeRate(branchRow?.settings ?? null);
+  // ความจุสนาม (จำนวนเด็กสูงสุดที่รับได้) — อ่านจาก branch.settings (อาจไม่ตั้งไว้ = null)
+  // โชว์ X/cap + เตือนนุ่มตอนเช็คอินถ้าเต็ม (ไม่บล็อก)
+  const settingsObj = branchRow?.settings;
+  const maxCapacityRaw =
+    settingsObj && typeof settingsObj === "object" && "maxCapacity" in settingsObj
+      ? (settingsObj as Record<string, unknown>).maxCapacity
+      : undefined;
+  const maxCapacity =
+    typeof maxCapacityRaw === "number" && Number.isFinite(maxCapacityRaw) && maxCapacityRaw > 0
+      ? Math.round(maxCapacityRaw)
+      : null;
+  const activeCount = active.length; // เด็กที่กำลังเล่นตอนนี้ (จำนวน session ที่ active)
 
   // map active sessions → kids
   const now = Date.now();
@@ -208,6 +220,8 @@ export default async function PlaylandPage({
       hasOpenShift={!!openShift}
       shift={openShift ? { id: openShift.id, openingCashCents: openShift.openingCashCents, totalSalesCents: openShift.totalSalesCents, cashSalesCents } : null}
       overtimeRatePerMinuteCents={overtimeRatePerMinuteCents}
+      maxCapacity={maxCapacity}
+      activeCount={activeCount}
       initialScreen={initialScreen}
       key={`${branchId}:${openShift?.id ?? "noshift"}`}
     />

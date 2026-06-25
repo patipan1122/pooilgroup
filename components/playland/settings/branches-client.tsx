@@ -20,6 +20,7 @@ interface Branch {
   address: string | null;
   phone: string | null;
   active: boolean;
+  settings: Record<string, unknown> | null;
 }
 
 export function BranchesClient({ branches }: { branches: Branch[] }) {
@@ -32,22 +33,32 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
   const [address, setAddress] = useState(editing?.address ?? "");
   const [phone, setPhone] = useState(editing?.phone ?? "");
   const [active, setActive] = useState(editing?.active ?? true);
+  const [maxCapacity, setMaxCapacity] = useState(""); // จำนวนเด็กสูงสุดในสนาม · ว่าง = ไม่จำกัด
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  function capFromSettings(s: Record<string, unknown> | null): string {
+    const v = s?.maxCapacity;
+    return typeof v === "number" && v > 0 ? String(v) : "";
+  }
   function startEdit(b: Branch) {
     setEditing(b);
     setName(b.name); setSlug(b.slug); setAddress(b.address ?? ""); setPhone(b.phone ?? ""); setActive(b.active);
+    setMaxCapacity(capFromSettings(b.settings));
     setShowForm(true);
   }
   function startNew() {
     setEditing(null);
-    setName(""); setSlug(""); setAddress(""); setPhone(""); setActive(true);
+    setName(""); setSlug(""); setAddress(""); setPhone(""); setActive(true); setMaxCapacity("");
     setShowForm(true);
   }
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    // merge maxCapacity เข้า settings JSON เดิม (ไม่ทับ key อื่น) · ว่าง = ลบ key (ไม่จำกัด)
+    const baseSettings = { ...(editing?.settings ?? {}) } as Record<string, unknown>;
+    if (maxCapacity !== "" && Number(maxCapacity) > 0) baseSettings.maxCapacity = Number(maxCapacity);
+    else delete baseSettings.maxCapacity;
     start(async () => {
-      const res = await upsertBranch({ id: editing?.id, name, slug, address: address || undefined, phone: phone || undefined, active });
+      const res = await upsertBranch({ id: editing?.id, name, slug, address: address || undefined, phone: phone || undefined, settings: baseSettings, active });
       if (!res.ok) { setMsg({ kind: "err", text: res.error }); return; }
       setMsg({ kind: "ok", text: editing ? "อัปเดตสาขาแล้ว" : "สร้างสาขาใหม่แล้ว" });
       setShowForm(false);
@@ -121,6 +132,10 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
             <div>
               <label style={lbl}>เบอร์</label>
               <input value={phone} onChange={(e) => setPhone(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>จำนวนเด็กสูงสุดในสนาม (เตือนเมื่อเต็ม · ไม่บล็อก)</label>
+              <input type="number" min={1} value={maxCapacity} onChange={(e) => setMaxCapacity(e.target.value)} placeholder="ว่าง = ไม่จำกัด" style={{ ...inp, fontFamily: MONO }} />
             </div>
             <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
               <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> เปิดใช้งานสาขา

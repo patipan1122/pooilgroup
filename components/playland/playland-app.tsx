@@ -128,6 +128,8 @@ interface Props {
   hasOpenShift?: boolean;
   shift?: PlaylandShiftVM | null; // open shift financials → ปิดกะ/เปิดกะ จริง
   overtimeRatePerMinuteCents?: number; // เรตค่าปรับเกินเวลา (สตางค์/นาที) ของสาขา
+  maxCapacity?: number | null; // ความจุสนาม (จำนวนเด็กสูงสุด) · null = ไม่ตั้ง → ไม่โชว์/ไม่เตือน
+  activeCount?: number; // จำนวน session ที่ active ตอน server render (seed ของตัวนับ)
   initialScreen?: Screen; // deep-link from redirected old routes (?screen=)
 }
 
@@ -431,6 +433,7 @@ export default function PlaylandApp(props: Props) {
   // ----- POS pay (immediate paid sale; charges to a kid's session if chosen) -----
   const [posPay, setPosPay] = useState<PayMethod>("CASH");
   const [coPay, setCoPay] = useState<PayMethod>("CASH"); // วิธีจ่ายค่าปรับเกินเวลา (ตอนเช็คเอาท์)
+  const [coPickedUpBy, setCoPickedUpBy] = useState(""); // ชื่อผู้มารับเด็ก (log only · ไม่บังคับ · ไม่บล็อก)
   // กันกดรัว/กดซ้ำ = ขายซ้ำ/เช็คเอาท์ซ้ำ (busyRef กันแบบ sync · busy คุมปุ่ม disabled)
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -532,9 +535,10 @@ export default function PlaylandApp(props: Props) {
       busyRef.current = true;
       setBusy(true);
       try {
-        const res = await checkOutSession({ sessionId: kidId, overtimePaymentMethod: PAY_MAP[coPay] });
+        const res = await checkOutSession({ sessionId: kidId, overtimePaymentMethod: PAY_MAP[coPay], pickedUpByName: coPickedUpBy.trim() || undefined });
         if (res.ok) {
           complete(res.data.overtimeCents);
+          setCoPickedUpBy(""); // เคลียร์ชื่อผู้มารับ พร้อมสำหรับเด็กคนถัดไป
           router.refresh();
         } else {
           showToast("❌ " + res.error);
@@ -547,6 +551,7 @@ export default function PlaylandApp(props: Props) {
       }
     } else {
       complete(ot.cents); // preset/demo → optimistic
+      setCoPickedUpBy("");
     }
   };
 
@@ -600,6 +605,11 @@ export default function PlaylandApp(props: Props) {
     if (creating) return;
     const pkg = s.ckPkg;
     if (!pkg) return;
+    // เตือนนุ่ม (ไม่บล็อก): ถ้าสนามเต็มแล้ว ให้พนักงานยืนยันก่อนรับเพิ่ม — ตอบ "ตกลง" = รับต่อได้เลย
+    if (maxCapacity != null && liveCount >= maxCapacity) {
+      const proceed = window.confirm(`สนามเต็มแล้ว (${liveCount}/${maxCapacity}) — รับเพิ่มไหม?`);
+      if (!proceed) return;
+    }
     const name = s.ckName || "น้องใหม่";
     const mascot = randMascot();
     const adults = s.ckAdults;
@@ -703,49 +713,6 @@ export default function PlaylandApp(props: Props) {
     if (!r || !r.bandCode) return;
     const ok = printWristband({ code: r.bandCode, memberName: r.name, adultCount: r.adultCount ?? 0 });
     if (!ok) showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่");
-  };
-
-  // พิมพ์สลิป/ใบเสร็จ 58mm จากข้อมูลใบเสร็จที่กำลังโชว์ (ก่อนหน้านี้ปุ่ม "ปรินต์สลิป" เป็นปุ่มตาย กดแล้วเงียบ)
-  const printSlip = () => {
-    const r = s.receipt;
-    if (!r) return;
-    const esc = (x: string) => x.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
-    const title = r.kind === "checkout" ? "สรุปการเล่น" : "ใบเสร็จ";
-    const totalLabel = r.kind === "checkout" ? "ยอดที่จ่ายแล้ว (พรีเพด)" : "รวม";
-    const dateStr = new Date().toLocaleString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-    const rows = (r.lines ?? []).map((l) => `<div class="ln"><span>${esc(l.label)}</span><span>฿${l.amount}</span></div>`).join("");
-    const band = r.bandCode ? `<div class="band">รหัสสายรัด<br><b>${esc(r.bandCode)}</b></div>` : "";
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ${esc(r.no)}</title>
-<style>
-  @page { size: 58mm auto; margin: 0; }
-  @media print { @page { size: 58mm auto; margin: 0; } body { margin: 0; } }
-  html,body { margin:0; padding:0; font-family: ui-sans-serif, system-ui, "IBM Plex Sans Thai", sans-serif; color:#000; }
-  .slip { width:58mm; padding:4mm 3mm; box-sizing:border-box; }
-  .brand { text-align:center; font-weight:700; font-size:13pt; }
-  .sub { text-align:center; font-size:8pt; color:#555; margin-bottom:2mm; }
-  .who { text-align:center; font-size:10pt; font-weight:600; margin-bottom:2mm; }
-  .ln { display:flex; justify-content:space-between; font-size:9.5pt; padding:0.6mm 0; }
-  .tot { display:flex; justify-content:space-between; font-size:11pt; font-weight:700; border-top:1px dashed #999; margin-top:2mm; padding-top:2mm; }
-  .band { text-align:center; font-size:8.5pt; border-top:1px dashed #999; margin-top:2mm; padding-top:2mm; }
-  .ft { text-align:center; font-size:7.5pt; color:#888; margin-top:3mm; }
-  @media screen { body { background:#eee; padding:20px; } .slip { background:#fff; margin:0 auto; box-shadow:0 2px 12px rgba(0,0,0,.15); } }
-</style></head><body>
-<div class="slip">
-  <div class="brand">PLAY A LOT</div>
-  <div class="sub">${esc(title)} ${esc(r.no)} · ${esc(dateStr)}</div>
-  <div class="who">${esc(r.name)}</div>
-  ${rows}
-  <div class="tot"><span>${esc(totalLabel)}</span><span>฿${r.total}</span></div>
-  ${band}
-  <div class="ft">ขอบคุณที่มาเล่นกับเรา 💛</div>
-</div>
-<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},200);window.addEventListener("afterprint",function(){setTimeout(function(){window.close();},300);});});</script>
-</body></html>`;
-    const w = window.open("", "_blank", "width=420,height=720");
-    if (!w) { showToast("เบราว์เซอร์บล็อก popup · อนุญาต popup แล้วลองใหม่"); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
   };
 
   // ----- start check-in for an existing member (from members/search screens) -----
@@ -995,6 +962,11 @@ export default function PlaylandApp(props: Props) {
   const posTotal = cartLines.reduce((a, l) => a + l.price * l.qty, 0);
   const rc = s.receipt;
 
+  // ความจุสนาม — โชว์ X/cap + เตือนนุ่ม (ไม่บล็อก) · ใช้ตัวนับ client (s.kids.length) ที่อัปเดตจริงตอนเช็คอิน/เช็คเอาท์
+  const maxCapacity = props.maxCapacity ?? null;
+  const liveCount = s.kids.length;
+  const atCapacity = maxCapacity != null && liveCount >= maxCapacity; // เต็มแล้ว → เลขแดง + เตือนตอนเช็คอิน
+
   // check-in "เคยมาแล้ว" search results — live member search (fallback to seeded list)
   const ckSearchResults: MemberSearchHit[] = memResults;
 
@@ -1197,14 +1169,10 @@ export default function PlaylandApp(props: Props) {
                         <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 38, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : over ? "+" + fmt(-k.sec) : fmt(Math.max(0, k.sec))}</div>
                         <div style={{ fontSize: 13, color: over ? "#E74C3C" : "#8a7f70", marginTop: 2, fontWeight: over ? 600 : 400 }}>{k.dayPass ? "Day Pass" : over ? "เกินเวลา · เก็บค่าปรับ" : "เหลือ"}</div>
                       </div>
-                      {/* +เวลา/+ขนม อยู่แถวบน · เช็คเอาท์ (จบรอบ ย้อนยาก) แยกแถวล่าง + ปุ่มใหญ่ กันกดพลาด */}
                       <div style={{ display: "flex", gap: 8 }}>
-                        <div onClick={() => openExtend(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#eaf3f6", color: "#2D6CB1", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 15 }}>+ เวลา</div>
-                        <div onClick={() => addSnackFor(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "#fdf3df", color: "#a9791a", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 15 }}>+ ขนม</div>
-                      </div>
-                      <div onClick={() => checkoutKid(k.id)} style={{ cursor: "pointer", marginTop: 10, minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: "#fff", color: "#E74C3C", border: "2px solid #E74C3C", textAlign: "center", padding: "12px 10px", borderRadius: 12, fontSize: 16, fontWeight: 600 }}>
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#E74C3C" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
-                        เช็คเอาท์ · จบรอบ
+                        <div onClick={() => openExtend(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#eaf3f6", color: "#2D6CB1", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ เวลา</div>
+                        <div onClick={() => addSnackFor(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#fdf3df", color: "#a9791a", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>+ ขนม</div>
+                        <div onClick={() => checkoutKid(k.id)} style={{ cursor: "pointer", flex: 1, minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#E74C3C", color: "#fff", textAlign: "center", padding: 10, borderRadius: 10, fontSize: 14 }}>เช็คเอาท์</div>
                       </div>
                     </div>
                   );
@@ -1288,6 +1256,16 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 36, color: "#1F8A5B" }}>฿{co ? co.charges.reduce((a, c) => a + c.amount, 0) : 0}</div>
               </div>
               <div style={{ marginTop: "auto" }}>
+                {/* ใครมารับเด็ก — บันทึกไว้เฉย ๆ (ไม่บังคับ · เว้นว่างได้ · ไม่บล็อกการเช็คเอาท์) */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 8 }}>ชื่อผู้มารับเด็ก (ถ้ามี)</div>
+                  <input
+                    value={coPickedUpBy}
+                    onChange={(e) => setCoPickedUpBy(e.target.value)}
+                    placeholder="เช่น คุณแม่ · คุณยาย · ชื่อผู้ปกครอง"
+                    style={inputStyle}
+                  />
+                </div>
                 {coOt.minutes > 0 ? (
                   <>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fdf3df", border: "1px solid #f0d9a0", borderRadius: 12, padding: "14px 18px", marginBottom: 14 }}>
@@ -1328,7 +1306,7 @@ export default function PlaylandApp(props: Props) {
               <div style={{ width: 1, height: 28, background: "#ece5d8" }} />
               <div style={{ fontFamily: MITR, fontWeight: 500, fontSize: 20 }}>ขายขนม · เครื่องดื่ม</div>
             </div>
-            <div className="pl-pos-row">
+            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
               <div style={{ flex: 1, padding: "24px 26px", overflow: "auto" }}>
                 {/* ยิงบาร์โค้ด (Harborland-style) — เครื่องยิง USB พิมพ์โค้ด+Enter · หรือกล้อง */}
                 <div style={{ marginBottom: 16 }}><BarcodeScanBox onScan={scanBarcode} placeholder="ยิงบาร์โค้ดขนม/น้ำ แล้วกด Enter…" /></div>
@@ -1362,7 +1340,7 @@ export default function PlaylandApp(props: Props) {
                   })}
                 </div>
               </div>
-              <div className="pl-pos-cart" style={{ background: "#fff", borderLeft: "1px solid #ece5d8", display: "flex", flexDirection: "column", padding: "22px 24px" }}>
+              <div style={{ width: 400, maxWidth: "42vw", flex: "none", background: "#fff", borderLeft: "1px solid #ece5d8", display: "flex", flexDirection: "column", padding: "22px 24px" }}>
                 <div style={{ fontSize: 14, color: "#8a7f70", marginBottom: 10 }}>{chargeKid ? "ขายให้" : "ลูกค้า"}</div>
                 <div style={{ background: "#eaf3f6", border: "1.5px solid #2D6CB1", borderRadius: 12, padding: "11px 14px", fontSize: 15, marginBottom: 14 }}>{chargeKid ? chargeKid.name + " · คิดเงินทันที" : "ลูกค้าทั่วไป · จ่ายทันที"}</div>
                 <div style={{ fontSize: 13, color: "#8a7f70", marginBottom: 8 }}>รับเงินด้วย</div>
@@ -1616,10 +1594,7 @@ export default function PlaylandApp(props: Props) {
                     พิมพ์สายรัดซ้ำ
                   </div>
                 ) : (
-                  <div onClick={printSlip} style={{ cursor: "pointer", flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, color: "#6b6052", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b6052" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
-                    ปรินต์สลิป
-                  </div>
+                  <div style={{ flex: 1, background: "#fff", border: "1px solid #ece5d8", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, color: "#bcae9b" }}>ปรินต์สลิป</div>
                 )}
                 <div onClick={() => go("home")} style={{ cursor: "pointer", flex: 1.2, background: "#2D6CB1", color: "#fff", borderRadius: 13, padding: 15, textAlign: "center", fontSize: 16, fontFamily: MITR, fontWeight: 500 }}>เสร็จ</div>
               </div>
@@ -1633,7 +1608,7 @@ export default function PlaylandApp(props: Props) {
             <div style={{ height: 80, flex: "none", display: "flex", alignItems: "center", padding: "0 36px", gap: 18, borderBottom: "1px solid rgba(255,255,255,.08)" }}>
               <div onClick={() => go("home")} style={{ cursor: "pointer", color: "#9fb0d0", fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>{backIcon("#9fb0d0", 18)}ออก</div>
               <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#fff" }}>Play <span style={{ color: "#F0B323" }}>a</span> lot</div>
-              <div style={{ color: "#9fb0d0", fontSize: 17 }}>กำลังเล่น <span style={{ color: "#fff", fontFamily: FREDOKA, fontWeight: 600 }}>{s.kids.length}</span> คน</div>
+              <div style={{ color: "#9fb0d0", fontSize: 17 }}>กำลังเล่น <span style={{ color: atCapacity ? "#ff8a7a" : "#fff", fontFamily: FREDOKA, fontWeight: 600 }}>{liveCount}{maxCapacity != null ? `/${maxCapacity}` : ""}</span> คน</div>
             </div>
             <div className="pl-grid-4" style={{ flex: 1, padding: "26px 36px", gridAutoRows: "1fr", gap: 16, overflow: "auto" }}>
               {s.kids.map((k) => {
@@ -1643,7 +1618,15 @@ export default function PlaylandApp(props: Props) {
                 const color = k.dayPass ? "#5bc88a" : over || nearEnd ? "#fff" : colorFor(k.sec);
                 return (
                   <div key={k.id} style={{ background: over || nearEnd ? "#E74C3C" : "#28365a", borderRadius: 18, padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                    <div style={{ color: "#fff", fontSize: 19, fontWeight: 500, fontFamily: MITR }}>{k.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ color: "#fff", fontSize: 19, fontWeight: 500, fontFamily: MITR }}>{k.name}</div>
+                      {/* badge "เกินเวลา +Xm" — เฉพาะคนที่เวลาติดลบ (เกินลิมิต) · X = นาทีที่เกิน */}
+                      {over && (
+                        <div style={{ background: "#fff", color: "#E74C3C", fontSize: 13, fontWeight: 700, fontFamily: FREDOKA, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                          เกินเวลา +{Math.ceil(-k.sec / 60)}m
+                        </div>
+                      )}
+                    </div>
                     <div>
                       <div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 40, lineHeight: 1, color }}>{k.dayPass ? "ทั้งวัน" : over ? "+" + fmt(-k.sec) : fmt(Math.max(0, k.sec))}</div>
                       <div style={{ color: over ? "#ffe1de" : "#9fb0d0", fontSize: 14, marginTop: 4 }}>{k.dayPass ? "Day Pass" : over ? "เกินเวลา · เก็บค่าปรับ" : k.pkg}</div>
@@ -1719,7 +1702,7 @@ export default function PlaylandApp(props: Props) {
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>เด็กเข้าวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#3A3026" }}>{stats?.sessionsToday ?? s.kids.length}</div></div>
               </div>
               <div className="pl-kpi-row" style={{ gap: 16 }}>
-                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>กำลังเล่นตอนนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#E74C3C" }}>{s.kids.length}</div></div>
+                <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>กำลังเล่นตอนนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: atCapacity ? "#E74C3C" : "#3A3026" }}>{liveCount}{maxCapacity != null && <span style={{ fontSize: 18, color: atCapacity ? "#E74C3C" : "#8a7f70" }}>/{maxCapacity}</span>}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>บิลขนมวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#2D6CB1" }}>{stats?.salesCount ?? 0}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>สมาชิกทั้งหมด</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#7a5cc4" }}>{stats?.memberCount ?? 0}</div></div>
                 <div style={{ background: "#fff", border: "1px solid #ece5d8", borderRadius: 16, padding: "18px 20px" }}><div style={{ fontSize: 13, color: "#8a7f70" }}>จองวันนี้</div><div style={{ fontFamily: FREDOKA, fontWeight: 700, fontSize: 26, color: "#0f9b8e" }}>{stats?.bookingsToday ?? bookings.length}</div></div>
