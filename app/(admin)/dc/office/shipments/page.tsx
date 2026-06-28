@@ -7,6 +7,7 @@ import { requireDcManager } from "@/lib/dc/role-guard";
 import { SHIPMENT_STATUS_LABEL } from "@/lib/dc/nav";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { PurchasingSubnav } from "@/components/dc/purchasing-subnav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
@@ -51,6 +52,7 @@ export default async function DcShipmentsPage() {
   return (
     <DcOfficeShell active="ship" {...dcShellChrome(ctx, chrome)}>
       <div>
+        <PurchasingSubnav active="ship" />
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ชิปเมนต์ (ขนของจากจีน)</h1>

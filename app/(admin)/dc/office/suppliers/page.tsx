@@ -4,6 +4,7 @@ import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { PurchasingSubnav } from "@/components/dc/purchasing-subnav";
 import { SuppliersManager, type SupplierRow } from "./suppliers-manager";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export default async function DcSuppliersPage() {
   return (
     <DcOfficeShell active="suppliers" {...dcShellChrome(ctx, chrome)}>
       <div>
+        <PurchasingSubnav active="suppliers" />
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ผู้ขาย</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>ทะเบียนโรงงาน/ผู้ขาย (จีนเป็นหลัก) · ติดต่อ · WeChat · เงื่อนไขชำระ</p>

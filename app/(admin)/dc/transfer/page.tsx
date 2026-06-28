@@ -1,19 +1,29 @@
-// DC · หน้า "ส่ง / โอน" (floor) — ส่งของจากคลังต้นทางไปคลังอื่น/สาขา/โมดูล
-//   • เลือกปลายทาง: คลัง DC อื่น (รับเข้า 2 จังหวะ) หรือ พิมพ์ป้ายสาขา/โมดูลเอง
-//   • สแกน/พิมพ์รหัส → เพิ่มรายการ → นับจำนวน → "ส่งออก (N ชิ้น)"
+// DC · หน้ารวม "ส่ง/โอน + ย้ายที่" (floor) — รวม 2 งานที่ CEO สับสนว่าต่างกันยังไง ไว้หน้าเดียว
+//   มี toggle บนสุด เลือกได้ 2 โหมด (อธิบายความต่างชัด ๆ):
+//     • "ย้ายที่เก็บ — ในคลังนี้"  → ย้ายช่องเก็บภายในคลังเดียว (move flow · moveLocation)
+//     • "ส่ง / โอน — ไปคลัง/สาขาอื่น" → ส่งของข้ามคลัง/สาขา (transfer flow · dispatchTransfer)
+//   ?mode=move → default แท็บ "ย้ายที่" · ไม่ใส่ / mode อื่น → default "ส่ง/โอน"
+//   /dc/move ยัง redirect มาที่ ?mode=move (ดู move/page.tsx)
 import Link from "next/link";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
-import { TransferDispatch, type DestWarehouseOption } from "./transfer-dispatch";
+import { FloorTransferMove, type DestWarehouseOption } from "./transfer-dispatch";
 
 export const dynamic = "force-dynamic";
 
-export default async function DcTransferPage() {
+export default async function DcTransferPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
   const ctx = await getDcContext();
   requireDcFloor(ctx.session.user.role);
   const canManage = canDcManage(ctx.session.user.role);
+
+  const sp = await searchParams;
+  const initialTab: "move" | "transfer" = sp?.mode === "move" ? "move" : "transfer";
 
   // คลังปลายทางที่เลือกได้ = คลังที่ allowed ทั้งหมด ยกเว้นคลังต้นทาง (กรองใน client)
   const destWarehouses: DestWarehouseOption[] = ctx.warehouses.map((w) => ({
@@ -25,9 +35,9 @@ export default async function DcTransferPage() {
     <div className="dc-page">
       <div className="dc-head">
         <div>
-          <div className="dc-h1">ส่ง / โอน</div>
+          <div className="dc-h1">ส่ง / โอน · ย้ายที่</div>
           <div className="dc-sub">
-            {ctx.activeWarehouse ? `จากคลัง: ${ctx.activeWarehouse.name}` : "ยังไม่มีคลัง"}
+            {ctx.activeWarehouse ? `คลัง: ${ctx.activeWarehouse.name}` : "ยังไม่มีคลัง"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -46,9 +56,10 @@ export default async function DcTransferPage() {
           )}
         </div>
       ) : (
-        <TransferDispatch
-          fromWarehouseId={ctx.activeWarehouseId}
-          fromWarehouseName={ctx.activeWarehouse.name}
+        <FloorTransferMove
+          initialTab={initialTab}
+          warehouseId={ctx.activeWarehouseId}
+          warehouseName={ctx.activeWarehouse.name}
           warehouses={destWarehouses}
         />
       )}

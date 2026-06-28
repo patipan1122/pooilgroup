@@ -1,12 +1,17 @@
 "use client";
 
-// DC · ฟอร์มสร้างใบสั่งซื้อแบบกะทัดรัด (จีน CNY / ไทย THB)
-// หัวใจ: แต่ละรายการสินค้า = "แถวเดียว" (dc-poline: สินค้า | จำนวน | ราคา | ✕)
-//   - ช่องสินค้า = combobox ค้นหา (searchProductsForPo debounce) หรือ "สร้างสินค้าใหม่" ตรงนี้เลย
-//   - ผู้ขาย/สินค้า สร้างใหม่ inline ได้ทันที (quickCreateSupplier / quickCreateProduct)
-//   - รูปต่อรายการ (รูปที่ผู้ขายจีนส่งมา) + โน้ต (พับเก็บได้)
-//   - ไม่มี กว้าง/ยาว/สูง ที่นี่ — ขนาดอยู่ที่ "กล่อง" หน้ารายละเอียดทีหลัง
-// ยอดรวมสด: ¥ (จีน) หรือ ฿ (ไทย) · จีน+เรต โชว์ ≈฿. บันทึก → DRAFT → เด้งหน้ารายละเอียด.
+// DC · ฟอร์มสร้างใบสั่งซื้อแบบกะทัดรัด (จีน CNY / ไทย THB) — REUSABLE
+// ใช้ได้ 2 ที่:
+//   • <PoCreateForm variant="page"> ในหน้า /dc/office/purchasing/new (fallback เต็มจอ)
+//   • <PoCreateForm variant="drawer"> ในรางสไลด์ขวาเหนือลิสต์ (CEO #6 — ไม่เด้งออกจากหน้า)
+//
+// หัวใจ (CEO #7 lean): แต่ละรายการ = "แถวเดียวเตี้ย" — สินค้าเป็น "ปุ่มเล็กกดดู/เลือก"
+//   (ไม่ใช่ combobox ก้อนใหญ่) · จำนวน + ราคา inline · รูป/โน้ตเป็นชิปเล็กข้าง ๆ.
+//   ฝั่งขวาในจอกว้าง = พรีวิวรูป + รายละเอียดรายการที่เลือก (left-right split).
+//
+// บันทึก (CEO #8/#10 — ไม่มีด่านอนุมัติ):
+//   • ปุ่มหลัก "บันทึก & สั่งเลย"  → createPo({ placeOrder:true })  → ORDERED ทันที
+//   • ปุ่มรอง "เก็บร่างไว้ก่อน"     → createPo({ placeOrder:false }) → DRAFT
 
 import {
   useCallback,
@@ -20,7 +25,6 @@ import { useRouter } from "next/navigation";
 import {
   Plus,
   Trash2,
-  Upload,
   ImageIcon,
   Loader2,
   Search,
@@ -28,6 +32,8 @@ import {
   X,
   StickyNote,
   RefreshCw,
+  Send,
+  FileText,
 } from "lucide-react";
 import {
   createPo,
@@ -43,6 +49,7 @@ import { Input } from "@/components/ui/input";
 
 type Origin = "CHINA" | "THAI";
 type WarehouseOpt = { id: string; name: string };
+type Variant = "page" | "drawer";
 
 type LineDraft = {
   key: string;
@@ -101,19 +108,32 @@ async function uploadFile(
 }
 
 export function PoCreateForm({
-  origin,
+  origin: originProp,
   warehouses,
   suppliers: initialSuppliers,
   initialFxRate,
   fxDate,
+  variant = "page",
+  onSaved,
+  onCancel,
+  onOriginChange,
 }: {
   origin: Origin;
   warehouses: WarehouseOpt[];
   suppliers: PoSupplierOption[];
   initialFxRate: number | null;
   fxDate: string | null;
+  /** "page" = หน้า /new (เด้งไปรายละเอียดเมื่อบันทึก) · "drawer" = รางสไลด์ในหน้า list */
+  variant?: Variant;
+  /** เรียกหลังบันทึกสำเร็จ — drawer ใช้ปิดราง + refresh list. ถ้าไม่ส่ง → page เด้งไป /[id] */
+  onSaved?: (poId: string) => void;
+  /** ปุ่มยกเลิก — drawer ใช้ปิดราง · page ใช้กลับรายการ */
+  onCancel?: () => void;
+  /** drawer: สลับจีน/ไทยแบบ state (ไม่เปลี่ยน URL) → ขอเรตใหม่จาก parent */
+  onOriginChange?: (o: Origin) => void;
 }) {
   const router = useRouter();
+  const origin = originProp;
   const isChina = origin === "CHINA";
   const sym = isChina ? "¥" : "฿";
 
@@ -127,10 +147,17 @@ export function PoCreateForm({
   );
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([newLine()]);
+  const [activeKey, setActiveKey] = useState<string>(lines[0].key); // รายการที่เลือกดู (right pane)
   const [error, setError] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<"order" | "draft" | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // อัปเดต fxRate เมื่อสลับ origin (server เปลี่ยน initialFxRate)
+  // sync suppliers list ถ้า parent ส่งมาใหม่ (drawer โหลดสด)
+  useEffect(() => {
+    setSuppliers(initialSuppliers);
+  }, [initialSuppliers]);
+
+  // อัปเดต fxRate เมื่อ initialFxRate เปลี่ยน (สลับ origin → เรตใหม่)
   useEffect(() => {
     setFxRate(initialFxRate != null ? String(initialFxRate) : "");
   }, [initialFxRate]);
@@ -144,16 +171,28 @@ export function PoCreateForm({
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
   function addLine() {
-    setLines((prev) => [...prev, newLine()]);
+    const l = newLine();
+    setLines((prev) => [...prev, l]);
+    setActiveKey(l.key);
   }
   function removeLine(key: string) {
-    setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.key !== key)));
+    setLines((prev) => {
+      if (prev.length === 1) return prev;
+      const next = prev.filter((l) => l.key !== key);
+      if (key === activeKey) setActiveKey(next[next.length - 1].key);
+      return next;
+    });
   }
 
-  // ── สลับชนิดใบ จีน/ไทย → เปลี่ยน ?origin (server re-fetch เรต) ──
+  // ── สลับชนิดใบ จีน/ไทย ──
+  // page: เปลี่ยน ?origin (server re-fetch เรต) · drawer: ให้ parent จัดการ (state)
   function switchOrigin(next: Origin) {
     if (next === origin) return;
-    router.push(`/dc/office/purchasing/new?origin=${next === "THAI" ? "thai" : "china"}`);
+    if (onOriginChange) {
+      onOriginChange(next);
+    } else {
+      router.push(`/dc/office/purchasing/new?origin=${next === "THAI" ? "thai" : "china"}`);
+    }
   }
 
   async function uploadLinePhoto(key: string, file: File) {
@@ -178,8 +217,10 @@ export function PoCreateForm({
     return { sum, thb: isChina && fx != null ? sum * fx : null };
   }, [lines, fx, isChina]);
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
+  const activeLine = lines.find((l) => l.key === activeKey) ?? lines[0];
+
+  // ── บันทึก: placeOrder=true (สั่งเลย) / false (ร่าง) ──
+  function save(placeOrder: boolean) {
     setError(null);
 
     const valid = lines.filter((l) => l.productId);
@@ -217,36 +258,45 @@ export function PoCreateForm({
       fxRate: isChina ? fx : null, // ไทยไม่มีเรต
       note: note.trim() || null,
       lines: payloadLines,
+      placeOrder,
     };
 
+    setPendingMode(placeOrder ? "order" : "draft");
     startTransition(async () => {
       const res = await createPo(payload);
+      setPendingMode(null);
       if (res.ok) {
-        router.push(`/dc/office/purchasing/${res.id}`);
-        router.refresh();
+        if (onSaved) {
+          onSaved(res.id);
+        } else {
+          router.push(`/dc/office/purchasing/${res.id}`);
+          router.refresh();
+        }
       } else {
         setError(res.error);
       }
     });
   }
 
+  const cardStyle: React.CSSProperties =
+    variant === "drawer"
+      ? { background: "#fff", border: "1px solid var(--dc-line, #e7ebf2)", borderRadius: 14, padding: 14, display: "grid", gap: 12 }
+      : {};
+  const cardClass = variant === "drawer" ? "" : "dc-card";
+
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+    <div style={{ display: "grid", gap: 12 }}>
       {/* ── หัวใบ: ชนิด + ผู้ขาย + คลัง + เรต ── */}
-      <div className="dc-card" style={{ display: "grid", gap: 14 }}>
-        {/* toggle จีน/ไทย */}
+      <div className={cardClass} style={{ ...cardStyle, display: "grid", gap: 12 }}>
         <OriginToggle origin={origin} onSwitch={switchOrigin} disabled={pending} />
 
         <div
           style={{
             display: "grid",
-            gap: 12,
-            // มือถือ (≤400px): ทุกช่องเรียงลงเป็นคอลัมน์เดียว (min() กันล้นจอ) ·
-            // จอกว้างค่อยกระจายเป็นหลายคอลัมน์อัตโนมัติ
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
+            gap: 10,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
           }}
         >
-          {/* ผู้ขาย + สร้างใหม่ inline */}
           <SupplierField
             suppliers={suppliers}
             value={supplierId}
@@ -258,7 +308,6 @@ export function PoCreateForm({
             onError={setError}
           />
 
-          {/* คลังปลายทาง */}
           <label style={fieldWrap}>
             <span style={labelStyle}>คลังปลายทาง <span style={optStyle}>(ไม่บังคับ)</span></span>
             <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={selectStyle}>
@@ -269,12 +318,11 @@ export function PoCreateForm({
             </select>
           </label>
 
-          {/* เรต — เฉพาะจีน */}
           {isChina && (
             <label style={fieldWrap}>
               <span style={labelStyle}>
-                อัตราแลกเปลี่ยน (฿ ต่อ 1 ¥)
-                {fxDate && <span style={optStyle}>เรตวันนี้ {fxDate}</span>}
+                เรต (฿ ต่อ 1 ¥)
+                {fxDate && <span style={optStyle}>วันนี้ {fxDate}</span>}
               </span>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <Input
@@ -300,36 +348,59 @@ export function PoCreateForm({
         </div>
       </div>
 
-      {/* ── รายการสินค้า: แต่ละแถวกะทัดรัด ── */}
-      <div className="dc-card" style={{ display: "grid", gap: 4 }}>
-        {/* หัวคอลัมน์ */}
-        <div className="dc-poline" style={{ borderBottom: "1.5px solid var(--dc-line-strong, #d4dae4)", paddingBottom: 8 }}>
-          <span style={colHead}>สินค้า</span>
-          <span style={{ ...colHead, textAlign: "center" }}>จำนวน</span>
-          <span style={{ ...colHead, textAlign: "right" }}>ราคา/หน่วย ({sym})</span>
-          <span />
-        </div>
+      {/* ── รายการสินค้า (ซ้าย: แถวเตี้ย | ขวา: พรีวิวรายการที่เลือก) ── */}
+      <div
+        className={cardClass}
+        style={{
+          ...cardStyle,
+          display: "grid",
+          gap: 0,
+          // left-right split เฉพาะจอกว้าง (>720px) — มือถือ stack
+          gridTemplateColumns: "1fr",
+        }}
+      >
+        <div className="dc-poline2-grid">
+          {/* ซ้าย: ลิสต์แถวเตี้ย */}
+          <div style={{ display: "grid", gap: 2, alignContent: "start" }}>
+            {/* หัวคอลัมน์ */}
+            <div style={{ ...lineRow, paddingBottom: 6, borderBottom: "1.5px solid var(--dc-line-strong, #d4dae4)" }}>
+              <span style={colHead}>สินค้า</span>
+              <span style={{ ...colHead, textAlign: "center", width: 56 }}>จำนวน</span>
+              <span style={{ ...colHead, textAlign: "right", width: 92 }}>ราคา ({sym})</span>
+              <span style={{ width: 28 }} />
+            </div>
 
-        {lines.map((l) => (
-          <LineRow
-            key={l.key}
-            line={l}
+            {lines.map((l) => (
+              <CompactLineRow
+                key={l.key}
+                line={l}
+                sym={sym}
+                active={l.key === activeKey}
+                canRemove={lines.length > 1}
+                onSelect={() => setActiveKey(l.key)}
+                onPatch={(patch) => setLine(l.key, patch)}
+                onRemove={() => removeLine(l.key)}
+                onError={setError}
+              />
+            ))}
+
+            <button type="button" onClick={addLine} style={addRowBtn}>
+              <Plus size={16} /> เพิ่มรายการ
+            </button>
+          </div>
+
+          {/* ขวา: พรีวิว/รายละเอียดรายการที่เลือก (รูป + โน้ต) */}
+          <LineDetailPane
+            line={activeLine}
             sym={sym}
-            canRemove={lines.length > 1}
-            onPatch={(patch) => setLine(l.key, patch)}
-            onRemove={() => removeLine(l.key)}
-            onUploadPhoto={(file) => uploadLinePhoto(l.key, file)}
-            onError={setError}
+            onPatch={(patch) => activeLine && setLine(activeLine.key, patch)}
+            onUploadPhoto={(file) => activeLine && uploadLinePhoto(activeLine.key, file)}
           />
-        ))}
-
-        <button type="button" onClick={addLine} style={addRowBtn}>
-          <Plus size={17} /> เพิ่มรายการ
-        </button>
+        </div>
       </div>
 
       {/* ── โน้ตใบ + ยอดรวม ── */}
-      <div className="dc-card" style={{ display: "grid", gap: 14 }}>
+      <div className={cardClass} style={{ ...cardStyle, display: "grid", gap: 12 }}>
         <label style={fieldWrap}>
           <span style={labelStyle}>โน้ตใบสั่งซื้อ <span style={optStyle}>(ไม่บังคับ)</span></span>
           <Input
@@ -348,16 +419,16 @@ export function PoCreateForm({
             flexWrap: "wrap",
             gap: 8,
             borderTop: "1px solid var(--dc-line, #e7ebf2)",
-            paddingTop: 12,
+            paddingTop: 10,
           }}
         >
           <span style={{ fontSize: 14, color: "var(--dc-muted, #5b6676)" }}>ยอดรวมทั้งใบ</span>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 26, fontWeight: 820, fontVariantNumeric: "tabular-nums", color: "var(--dc-ink, #1c2533)" }}>
+            <div style={{ fontSize: 24, fontWeight: 820, fontVariantNumeric: "tabular-nums", color: "var(--dc-ink, #1c2533)" }}>
               {sym}{fmt(totals.sum)}
             </div>
             {totals.thb != null && (
-              <div style={{ fontSize: 14, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ fontSize: 13.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums" }}>
                 ≈ ฿{fmt(totals.thb)} (เรต {fmt(fx ?? 0, 4)})
               </div>
             )}
@@ -369,22 +440,64 @@ export function PoCreateForm({
         <p style={{ color: "var(--color-danger, #dc2626)", fontSize: 14, fontWeight: 600, margin: 0 }}>{error}</p>
       )}
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <button type="submit" className="dc-btn-xl" disabled={pending} style={{ flex: 1 }}>
-          {pending ? <Loader2 size={18} className="animate-spin" /> : null}
-          บันทึกใบสั่งซื้อ (ร่าง)
-        </button>
+      {/* ── ปุ่มบันทึก (CEO #8): หลัก = "บันทึก & สั่งเลย" · รอง = "เก็บร่างไว้ก่อน" ── */}
+      <div style={{ display: "grid", gap: 8 }}>
         <button
           type="button"
-          className="dc-btn-xl dc-btn-xl--ghost"
-          onClick={() => router.push("/dc/office/purchasing")}
+          className="dc-btn-xl"
           disabled={pending}
-          style={{ flex: "0 0 auto" }}
+          onClick={() => save(true)}
+          style={{ width: "100%", fontSize: 16 }}
         >
-          ยกเลิก
+          {pending && pendingMode === "order" ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <Send size={17} />
+          )}
+          บันทึก &amp; สั่งเลย
         </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="dc-btn-xl dc-btn-xl--ghost"
+            disabled={pending}
+            onClick={() => save(false)}
+            style={{ flex: 1 }}
+          >
+            {pending && pendingMode === "draft" ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <FileText size={15} />
+            )}
+            เก็บร่างไว้ก่อน
+          </button>
+          <button
+            type="button"
+            className="dc-btn-xl dc-btn-xl--ghost"
+            onClick={() => (onCancel ? onCancel() : router.push("/dc/office/purchasing"))}
+            disabled={pending}
+            style={{ flex: "0 0 auto", color: "var(--dc-muted, #5b6676)" }}
+          >
+            ยกเลิก
+          </button>
+        </div>
       </div>
-    </form>
+
+      {/* left-right split เฉพาะจอกว้าง */}
+      <style jsx>{`
+        .dc-poline2-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+        @media (min-width: 760px) {
+          .dc-poline2-grid {
+            grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.9fr);
+            gap: 18px;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -416,8 +529,8 @@ function OriginToggle({
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              minWidth: 96,
-              padding: "7px 16px",
+              minWidth: 84,
+              padding: "6px 14px",
               borderRadius: 9,
               border: "none",
               cursor: disabled ? "default" : "pointer",
@@ -428,7 +541,7 @@ function OriginToggle({
               lineHeight: 1.2,
             }}
           >
-            <span style={{ fontSize: 15 }}>{o.label}</span>
+            <span style={{ fontSize: 14.5 }}>{o.label}</span>
             <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>{o.sub}</span>
           </button>
         );
@@ -513,136 +626,213 @@ function SupplierField({
   );
 }
 
-/* ───────────────────────── Line row (compact) ───────────────────────── */
-function LineRow({
+/* ───────────────────────── Compact line row (CEO #7 — แถวเดียวเตี้ย) ─────────────────────────
+   สินค้า = ปุ่มเล็กกดเปิด picker · จำนวน + ราคา inline · ✕
+   มี indicator เล็ก ๆ (รูป 📷 / โน้ต) ถ้ามี — แต่ไม่ดันความสูง */
+function CompactLineRow({
   line,
   sym,
+  active,
   canRemove,
+  onSelect,
   onPatch,
   onRemove,
-  onUploadPhoto,
   onError,
 }: {
   line: LineDraft;
   sym: string;
+  active: boolean;
   canRemove: boolean;
+  onSelect: () => void;
   onPatch: (patch: Partial<LineDraft>) => void;
   onRemove: () => void;
-  onUploadPhoto: (file: File) => void;
   onError: (e: string | null) => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
   return (
-    <div style={{ borderBottom: "1px solid var(--dc-line, #e7ebf2)", paddingBottom: 6 }}>
-      <div className="dc-poline" style={{ borderBottom: "none", padding: "8px 0 4px" }}>
-        {/* ช่องสินค้า = combobox ค้น/สร้าง */}
-        <ProductCombobox
-          value={line.productId}
-          label={line.productLabel}
-          onSelect={(p) => onPatch({ productId: p.id, productLabel: `${p.name} · ${p.sku}` })}
-          onError={onError}
-        />
+    <div
+      style={{
+        ...lineRow,
+        padding: "5px 4px",
+        borderRadius: 9,
+        background: active ? "var(--color-brand-50, #eef3fb)" : "transparent",
+        boxShadow: active ? "inset 0 0 0 1px var(--color-brand-200, #c9d8f0)" : "none",
+      }}
+      onClick={onSelect}
+    >
+      {/* ช่องสินค้า = ปุ่มเล็ก (กดดู/เลือก) */}
+      <ProductPickerButton
+        value={line.productId}
+        label={line.productLabel}
+        hasPhoto={!!line.photoUrl}
+        hasNote={!!line.note}
+        onSelect={(p) => onPatch({ productId: p.id, productLabel: `${p.name} · ${p.sku}` })}
+        onError={onError}
+      />
 
-        {/* จำนวน */}
-        <input
-          value={line.qty}
-          onChange={(e) => onPatch({ qty: e.target.value })}
-          inputMode="numeric"
-          placeholder="1"
-          style={cellInput}
-          aria-label="จำนวน"
-        />
+      {/* จำนวน */}
+      <input
+        value={line.qty}
+        onChange={(e) => onPatch({ qty: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        inputMode="numeric"
+        placeholder="1"
+        style={{ ...cellInputSm, width: 56, textAlign: "center" }}
+        aria-label="จำนวน"
+      />
 
-        {/* ราคา/หน่วย */}
-        <input
-          value={line.unitPrice}
-          onChange={(e) => onPatch({ unitPrice: e.target.value })}
-          inputMode="decimal"
-          placeholder={`${sym}0`}
-          style={{ ...cellInput, textAlign: "right" }}
-          aria-label={`ราคาต่อหน่วย ${sym}`}
-        />
+      {/* ราคา/หน่วย */}
+      <input
+        value={line.unitPrice}
+        onChange={(e) => onPatch({ unitPrice: e.target.value })}
+        onClick={(e) => e.stopPropagation()}
+        inputMode="decimal"
+        placeholder={`${sym}0`}
+        style={{ ...cellInputSm, width: 92, textAlign: "right" }}
+        aria-label={`ราคาต่อหน่วย ${sym}`}
+      />
 
-        {/* ลบแถว */}
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={!canRemove}
-          style={{ ...ghostIconBtn, opacity: canRemove ? 1 : 0.3, justifySelf: "center" }}
-          title="ลบรายการ"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
-
-      {/* แถวเสริม: รูป + โน้ต (เล็ก ไม่ดันแถวให้สูง) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4, flexWrap: "wrap" }}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onUploadPhoto(f);
-            e.target.value = "";
-          }}
-        />
-        {line.photoUrl ? (
-          <button type="button" onClick={() => fileRef.current?.click()} style={{ ...thumbBox, padding: 0, overflow: "hidden" }} title="เปลี่ยนรูป">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={line.photoUrl} alt="รูปสินค้า" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={line.uploading}
-            style={{ ...miniChip }}
-            title="แนบรูปที่ผู้ขายส่งมา"
-          >
-            {line.uploading ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
-            {line.uploading ? "กำลังอัป…" : "แนบรูป"}
-          </button>
-        )}
-        {line.photoUrl && (
-          <button type="button" onClick={() => onPatch({ photoR2Key: null, photoUrl: null })} style={ghostMiniBtn}>
-            <Upload size={12} /> ลบรูป
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => onPatch({ showNote: !line.showNote })}
-          style={{ ...miniChip, ...(line.showNote || line.note ? { color: "var(--dc-blue-strong, #1d4ed8)", borderColor: "var(--color-brand-200, #c9d8f0)" } : {}) }}
-        >
-          <StickyNote size={13} /> โน้ต
-        </button>
-
-        {line.showNote && (
-          <input
-            value={line.note}
-            onChange={(e) => onPatch({ note: e.target.value })}
-            placeholder="เช่น สี/รุ่น"
-            style={{ ...cellInput, flex: "1 1 160px", minWidth: 140 }}
-            autoComplete="off"
-          />
-        )}
-      </div>
+      {/* ลบแถว */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        disabled={!canRemove}
+        style={{ ...ghostIconBtn, height: 30, width: 28, opacity: canRemove ? 1 : 0.3, justifySelf: "center" }}
+        title="ลบรายการ"
+      >
+        <Trash2 size={15} />
+      </button>
     </div>
   );
 }
 
-/* ───────────────────────── Product combobox (search + inline create) ───────────────────────── */
-function ProductCombobox({
+/* ขวา: พรีวิวรายการที่เลือก (รูปที่ผู้ขายส่งมา + โน้ต) — left-right split ของ #7 */
+function LineDetailPane({
+  line,
+  sym,
+  onPatch,
+  onUploadPhoto,
+}: {
+  line: LineDraft | undefined;
+  sym: string;
+  onPatch: (patch: Partial<LineDraft>) => void;
+  onUploadPhoto: (file: File) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  if (!line) return null;
+
+  const priceN = num(line.unitPrice);
+  const qtyN = num(line.qty);
+
+  return (
+    <div
+      style={{
+        background: "var(--color-brand-50, #f7faff)",
+        border: "1px solid var(--dc-line, #e7ebf2)",
+        borderRadius: 12,
+        padding: 12,
+        display: "grid",
+        gap: 10,
+        alignContent: "start",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--dc-muted, #5b6676)" }}>
+        รายการที่เลือก
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--dc-ink, #1c2533)", minHeight: 20 }}>
+        {line.productId ? line.productLabel : "— ยังไม่เลือกสินค้า —"}
+      </div>
+
+      {/* รูปที่ผู้ขายจีนส่งมา */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onUploadPhoto(f);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={line.uploading}
+        style={{
+          width: "100%",
+          aspectRatio: "4 / 3",
+          maxHeight: 150,
+          borderRadius: 10,
+          border: "1px dashed var(--color-brand-200, #c9d8f0)",
+          background: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          cursor: "pointer",
+          color: "var(--dc-subtle, #8a94a3)",
+          gap: 6,
+          fontSize: 13,
+        }}
+        title="แนบรูปที่ผู้ขายส่งมา"
+      >
+        {line.uploading ? (
+          <Loader2 size={18} className="animate-spin" />
+        ) : line.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={line.photoUrl} alt="รูปสินค้า" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <>
+            <ImageIcon size={16} /> แนบรูป
+          </>
+        )}
+      </button>
+      {line.photoUrl && (
+        <button
+          type="button"
+          onClick={() => onPatch({ photoR2Key: null, photoUrl: null })}
+          style={{ ...ghostMiniBtn, justifySelf: "start" }}
+        >
+          <X size={12} /> ลบรูป
+        </button>
+      )}
+
+      {/* โน้ตต่อรายการ */}
+      <label style={{ display: "grid", gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted, #5b6676)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <StickyNote size={13} /> โน้ต (เช่น สี/รุ่น)
+        </span>
+        <input
+          value={line.note}
+          onChange={(e) => onPatch({ note: e.target.value })}
+          placeholder="ไม่บังคับ"
+          style={cellInput}
+          autoComplete="off"
+        />
+      </label>
+
+      {line.productId && priceN > 0 && (
+        <div style={{ fontSize: 12.5, color: "var(--dc-muted, #5b6676)", borderTop: "1px solid var(--dc-line, #e7ebf2)", paddingTop: 8, fontVariantNumeric: "tabular-nums" }}>
+          รวมรายการนี้: <b style={{ color: "var(--dc-ink, #1c2533)" }}>{sym}{fmt(qtyN * priceN)}</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── Product picker button (เล็ก) + popover (search + inline create) ───────────────────────── */
+function ProductPickerButton({
   value,
   label,
+  hasPhoto,
+  hasNote,
   onSelect,
   onError,
 }: {
   value: string;
   label: string;
+  hasPhoto: boolean;
+  hasNote: boolean;
   onSelect: (p: PoProductOption) => void;
   onError: (e: string | null) => void;
 }) {
@@ -654,7 +844,6 @@ function ProductCombobox({
   const wrapRef = useRef<HTMLDivElement>(null);
   const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ปิดเมื่อคลิกนอกกล่อง
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
@@ -677,7 +866,8 @@ function ProductCombobox({
     }, 250);
   }, []);
 
-  function openPicker() {
+  function openPicker(e: React.MouseEvent) {
+    e.stopPropagation();
     setOpen(true);
     setCreating(false);
     if (results.length === 0) runSearch("");
@@ -689,33 +879,39 @@ function ProductCombobox({
     setQ("");
   }
 
+  const shortName = value ? label.split(" · ")[0] : "";
+
   return (
-    <div ref={wrapRef} style={{ position: "relative", minWidth: 0 }}>
+    <div ref={wrapRef} style={{ position: "relative", minWidth: 0, flex: 1 }}>
       <button
         type="button"
         onClick={openPicker}
         style={{
-          ...cellInput,
+          ...cellInputSm,
           width: "100%",
           textAlign: "left",
           cursor: "pointer",
-          color: value ? "var(--dc-ink, #1c2533)" : "var(--dc-subtle, #8a94a3)",
+          color: value ? "var(--dc-ink, #1c2533)" : "var(--dc-blue-strong, #1d4ed8)",
+          fontWeight: value ? 600 : 600,
           display: "flex",
           alignItems: "center",
           gap: 6,
           overflow: "hidden",
-          whiteSpace: "nowrap",
-          textOverflow: "ellipsis",
+          background: value ? "#fff" : "var(--color-brand-50, #eef3fb)",
+          border: value ? "1px solid var(--dc-line, #e7ebf2)" : "1px dashed var(--color-brand-200, #c9d8f0)",
         }}
+        title={value ? label : "เลือกสินค้า"}
       >
-        <Search size={14} style={{ flex: "0 0 auto", opacity: 0.6 }} />
+        <Search size={14} style={{ flex: "0 0 auto", opacity: 0.65 }} />
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {value ? label : "ค้นหา / เลือกสินค้า"}
+          {value ? shortName : "เลือกสินค้า"}
         </span>
+        {hasPhoto && <ImageIcon size={12} style={{ flex: "0 0 auto", opacity: 0.6 }} />}
+        {hasNote && <StickyNote size={12} style={{ flex: "0 0 auto", opacity: 0.6 }} />}
       </button>
 
       {open && (
-        <div style={popover}>
+        <div style={popover} onClick={(e) => e.stopPropagation()}>
           {!creating ? (
             <>
               <div style={{ padding: 8, borderBottom: "1px solid var(--dc-line, #e7ebf2)" }}>
@@ -765,7 +961,7 @@ function ProductCombobox({
   );
 }
 
-/* ───────────────────────── Inline create product (name, category, type, photo) ───────────────────────── */
+/* ───────────────────────── Inline create product ───────────────────────── */
 function InlineCreateProduct({
   onCancel,
   onCreated,
@@ -823,7 +1019,6 @@ function InlineCreateProduct({
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
-        {/* รูป */}
         <input
           ref={fileRef}
           type="file"
@@ -851,7 +1046,6 @@ function InlineCreateProduct({
         </div>
       </div>
 
-      {/* ชนิด SALE/SPARE */}
       <div style={{ display: "flex", gap: 6 }}>
         {(["SALE", "SPARE"] as const).map((t) => (
           <button
@@ -876,13 +1070,19 @@ function InlineCreateProduct({
       </div>
 
       <button type="button" onClick={save} disabled={!name.trim() || saving || uploading} style={savePanelBtn}>
-        {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} สร้าง & เลือกเข้าแถว
+        {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} สร้าง &amp; เลือกเข้าแถว
       </button>
     </div>
   );
 }
 
 /* ───────────────────────── styles ───────────────────────── */
+const lineRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+};
+
 const fieldWrap: React.CSSProperties = { display: "grid", gap: 5 };
 const labelStyle: React.CSSProperties = {
   fontSize: 13,
@@ -893,7 +1093,7 @@ const labelStyle: React.CSSProperties = {
   gap: 6,
 };
 const optStyle: React.CSSProperties = { fontSize: 12, fontWeight: 500, color: "var(--dc-subtle, #8a94a3)" };
-const colHead: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: "var(--dc-muted, #5b6676)" };
+const colHead: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: "var(--dc-muted, #5b6676)", flex: 1 };
 
 const selectStyle: React.CSSProperties = {
   height: 42,
@@ -913,6 +1113,19 @@ const cellInput: React.CSSProperties = {
   border: "1px solid var(--dc-line, #e7ebf2)",
   padding: "0 10px",
   fontSize: 14,
+  background: "#fff",
+  color: "var(--dc-ink, #1c2533)",
+  fontVariantNumeric: "tabular-nums",
+  outline: "none",
+};
+
+// แถวรายการ = เตี้ยกว่า (34px) ให้ดู lean
+const cellInputSm: React.CSSProperties = {
+  height: 34,
+  borderRadius: 8,
+  border: "1px solid var(--dc-line, #e7ebf2)",
+  padding: "0 8px",
+  fontSize: 13.5,
   background: "#fff",
   color: "var(--dc-ink, #1c2533)",
   fontVariantNumeric: "tabular-nums",
@@ -952,28 +1165,13 @@ const addRowBtn: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: 6,
-  height: 42,
-  borderRadius: 10,
+  height: 38,
+  borderRadius: 9,
   border: "1.5px dashed var(--color-brand-200, #c9d8f0)",
   background: "var(--color-brand-50, #eef3fb)",
   color: "var(--dc-blue-strong, #1d4ed8)",
-  fontSize: 14,
+  fontSize: 13.5,
   fontWeight: 700,
-  cursor: "pointer",
-};
-
-const miniChip: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  height: 28,
-  padding: "0 10px",
-  borderRadius: 8,
-  border: "1px solid var(--dc-line, #e7ebf2)",
-  background: "#fff",
-  color: "var(--dc-muted, #5b6676)",
-  fontSize: 12,
-  fontWeight: 600,
   cursor: "pointer",
 };
 
@@ -981,7 +1179,7 @@ const ghostMiniBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 4,
-  height: 28,
+  height: 26,
   padding: "0 8px",
   borderRadius: 8,
   border: "none",
@@ -992,8 +1190,8 @@ const ghostMiniBtn: React.CSSProperties = {
 };
 
 const thumbBox: React.CSSProperties = {
-  width: 36,
-  height: 36,
+  width: 56,
+  height: 56,
   borderRadius: 9,
   border: "1px solid var(--dc-line, #e7ebf2)",
   background: "#fff",
@@ -1007,9 +1205,9 @@ const popover: React.CSSProperties = {
   position: "absolute",
   top: "calc(100% + 4px)",
   left: 0,
-  zIndex: 30,
+  zIndex: 60,
   width: 320,
-  maxWidth: "min(320px, 88vw)",
+  maxWidth: "min(320px, 86vw)",
   background: "#fff",
   borderRadius: 12,
   border: "1px solid var(--dc-line-strong, #d4dae4)",

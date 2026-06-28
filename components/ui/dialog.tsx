@@ -10,9 +10,16 @@ interface DialogProps {
   title?: string;
   children: ReactNode;
   className?: string;
+  /**
+   * ความเข้มของฉากหลัง:
+   *  - "blur" (ค่าเริ่มต้น) = ดำ 40% + เบลอ (ของเดิม · ใช้กับโมดูลอื่น)
+   *  - "soft" = ดำ 20% ไม่เบลอ → ยังเห็นข้อมูลข้างหลังราง ๆ (CEO #14: "อย่าเบลอจนมองอันอื่นไม่เห็น")
+   *  - "none" = โปร่งใส
+   */
+  backdrop?: "blur" | "soft" | "none";
 }
 
-export function Dialog({ open, onClose, title, children, className }: DialogProps) {
+export function Dialog({ open, onClose, title, children, className, backdrop = "blur" }: DialogProps) {
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -31,7 +38,12 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div
-        className="absolute inset-0 bg-zinc-950/40 backdrop-blur-sm"
+        className={cn(
+          "absolute inset-0",
+          backdrop === "blur" && "bg-zinc-950/40 backdrop-blur-sm",
+          backdrop === "soft" && "bg-zinc-950/20",
+          backdrop === "none" && "bg-transparent",
+        )}
         onClick={onClose}
       />
       <div

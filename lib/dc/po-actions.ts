@@ -16,13 +16,14 @@
 //   ถ้ากดซ้ำ/แข่งกัน (race) ครั้งที่สองจะ count===0 = no-op เงียบ ๆ (idempotent)
 //   ไม่ double-approve / ไม่ข้ามสถานะ. แก้ไขใบได้เฉพาะตอน DRAFT เท่านั้น.
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
-import { poCode, genCode, grnCode } from "@/lib/dc/codes";
-import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind } from "@/lib/generated/prisma/enums";
+import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
+import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
 import { postGrn } from "@/lib/dc/grn-actions";
 
@@ -51,6 +52,8 @@ export type CreatePoInput = {
   fxRate?: number | null;
   note?: string | null;
   lines: PoLineInput[];
+  /** true = บันทึกแล้วเป็น "สั่งแล้ว" ทันที (ไม่มีด่านอนุมัติ · CEO D-#10) · false/undefined = เก็บร่างไว้ก่อน */
+  placeOrder?: boolean;
 };
 
 export type UpdatePoInput = {
@@ -227,7 +230,9 @@ export async function createPo(input: CreatePoInput): Promise<PoActionResult> {
         poCode: poCode(),
         supplierId: supplierId,
         warehouseId: warehouseId,
-        status: DcPoStatus.DRAFT,
+        // #10 CEO เคาะ: ไม่มีด่านอนุมัติ — "บันทึก & สั่งเลย" → ORDERED ทันที · "เก็บร่าง" → DRAFT
+        status: input.placeOrder ? DcPoStatus.ORDERED : DcPoStatus.DRAFT,
+        orderedAt: input.placeOrder ? new Date() : null,
         origin,
         currency,
         fxRate: fxRate != null ? dec(fxRate) : null,
@@ -516,6 +521,68 @@ export async function markShipped(id: string): Promise<PoActionResult> {
   }
   revalidate(id);
   return { ok: true, id };
+}
+
+/**
+ * #12 ใส่เลข Tracking จริง: บันทึกเลขลงกล่อง/ชิปเมนต์ของใบนี้ แล้วดันสถานะ ORDERED → SHIPPED
+ *  - ถ้าใบมีกล่องอยู่แล้ว → อัปเดตเลข tracking ของกล่องแรก
+ *  - ถ้ายังไม่มี → สร้างกล่อง/ชิปเมนต์ใหม่ผูกกับใบ พร้อมเลข tracking
+ * (เดิม popup สถานะ ORDERED ไม่มีช่องกรอกเลข — เด้งไปหาเองในส่วนกล่อง · CEO #11,#12)
+ */
+export async function setPoTracking(input: {
+  poId: string;
+  trackingNo: string;
+  mode?: "TRUCK" | "SEA" | null;
+}): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId } = g;
+
+  const poId = cleanStr(input.poId);
+  if (!poId) return { ok: false, error: "ไม่พบใบสั่งซื้อ" };
+  const tracking = cleanStr(input.trackingNo);
+  if (!tracking) return { ok: false, error: "กรุณากรอกเลข Tracking" };
+  const mode = input.mode === "SEA" ? DcShipmentMode.SEA : DcShipmentMode.TRUCK;
+
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id: poId, orgId },
+    select: { id: true, status: true },
+  });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  // บันทึกเลขลงกล่อง: มีกล่องแล้ว → อัปเดตกล่องแรก · ไม่มี → สร้างใหม่
+  const existing = await prisma.dcShipment.findFirst({
+    where: { poId, orgId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.dcShipment.update({
+      where: { id: existing.id },
+      data: { trackingNo: tracking, mode },
+    });
+  } else {
+    await prisma.dcShipment.create({
+      data: {
+        orgId,
+        poId,
+        shipmentCode: shipmentCode(),
+        trackingNo: tracking,
+        mode,
+        status: DcShipmentStatus.IN_TRANSIT,
+      },
+    });
+  }
+
+  // ดันสถานะ ORDERED → SHIPPED (idempotent: ถ้าเลย SHIPPED ไปแล้วก็แค่บันทึกเลข ไม่ error)
+  if (po.status === DcPoStatus.ORDERED) {
+    await prisma.dcPurchaseOrder.updateMany({
+      where: { id: poId, orgId, status: DcPoStatus.ORDERED },
+      data: { status: DcPoStatus.SHIPPED },
+    });
+  }
+  revalidate(poId);
+  return { ok: true, id: poId };
 }
 
 /** ถึงไทยแล้ว: SHIPPED → ARRIVED_TH */
@@ -1071,6 +1138,134 @@ export async function deletePoPayment(paymentId: string): Promise<PoActionResult
   return { ok: true, id };
 }
 
+// ── 💰 จ่ายรวมหลายใบทีเดียว (#13) ────────────────────────────────
+// "ของถึงแล้วจ่ายค่าขนส่ง · เลือกหลายใบ กดจ่ายทีเดียว"
+// แต่ละใบยังได้ payment record ของตัวเอง (ด่านเงินรายใบทำงานเหมือนเดิม) — แค่แสตมป์ batchId เดียวกัน
+
+export type PayableRow = {
+  poId: string;
+  poCode: string;
+  supplierName: string | null;
+  status: string;
+  /** ยอดที่ "ระบบแนะนำ" (จากราคาสินค้า/ค่าขนส่งที่บันทึกไว้) — แก้ได้ตอนจ่ายจริง */
+  suggestedSatang: number;
+};
+
+/** รายการใบที่ยังค้างจ่าย kind นี้ (จีนเท่านั้น) — ให้หน้า "รวมจ่าย" เอาไปแสดงเลือกติ๊ก */
+export async function getPayableOutstanding(
+  kindInput: PoPaymentKindInput,
+): Promise<PayableRow[]> {
+  const session = await requireSession();
+  if (!canDcManage(session.user.role)) return [];
+  const orgId = session.user.org_id;
+  const kind = kindInput === "THAI_FREIGHT" ? DcPoPaymentKind.THAI_FREIGHT : DcPoPaymentKind.GOODS;
+
+  // GOODS = ค่าของ (ด่านตอน ARRIVED_TH) · THAI_FREIGHT = ค่าขนส่งไทย (ด่านตอน AT_WAREHOUSE/PARTIAL)
+  const statuses =
+    kind === DcPoPaymentKind.GOODS
+      ? [DcPoStatus.ARRIVED_TH]
+      : [DcPoStatus.AT_WAREHOUSE, DcPoStatus.PARTIAL];
+
+  const pos = await prisma.dcPurchaseOrder.findMany({
+    where: {
+      orgId,
+      origin: DcPoOrigin.CHINA,
+      status: { in: statuses },
+      payments: { none: { kind } }, // ยังไม่มี payment ชนิดนี้
+    },
+    orderBy: { orderedAt: "asc" },
+    select: {
+      id: true,
+      poCode: true,
+      status: true,
+      fxRate: true,
+      supplier: { select: { name: true } },
+      lines: { select: { qty: true, unitPriceCny: true, unitPriceThb: true } },
+    },
+  });
+
+  // freight ที่บันทึกไว้ต่อใบ (สำหรับ THAI_FREIGHT) — ดึงครั้งเดียว
+  let freightByPo = new Map<string, number>();
+  if (kind === DcPoPaymentKind.THAI_FREIGHT && pos.length > 0) {
+    const ships = await prisma.dcShipment.findMany({
+      where: { orgId, poId: { in: pos.map((p) => p.id) } },
+      select: { poId: true, chinaFreightThbSatang: true, intlFreightThbSatang: true },
+    });
+    for (const s of ships) {
+      if (!s.poId) continue;
+      freightByPo.set(s.poId, (freightByPo.get(s.poId) ?? 0) + s.chinaFreightThbSatang + s.intlFreightThbSatang);
+    }
+  }
+
+  return pos.map((p) => {
+    let suggestedSatang = 0;
+    if (kind === DcPoPaymentKind.GOODS) {
+      const fx = p.fxRate != null ? Number(p.fxRate) : 1;
+      const thb = p.lines.reduce((sum, l) => {
+        const unitThb = l.unitPriceThb != null ? Number(l.unitPriceThb) : Number(l.unitPriceCny) * fx;
+        return sum + l.qty * unitThb;
+      }, 0);
+      suggestedSatang = Math.round(thb * 100);
+    } else {
+      suggestedSatang = freightByPo.get(p.id) ?? 0;
+    }
+    return { poId: p.id, poCode: p.poCode, supplierName: p.supplier?.name ?? null, status: p.status, suggestedSatang };
+  });
+}
+
+export type BulkPaymentInput = {
+  kind: PoPaymentKindInput;
+  items: { poId: string; amountSatang: number }[];
+  currency?: string | null; // ค่าเริ่มต้น THB
+  paidAt?: string | null;
+  note?: string | null;
+};
+
+/** จ่ายหลายใบในคราวเดียว — สร้าง payment ต่อใบ + แสตมป์ batchId เดียวกัน (atomic ทั้งก้อน) */
+export async function recordBulkPayment(
+  input: BulkPaymentInput,
+): Promise<{ ok: true; count: number; batchId: string } | { ok: false; error: string }> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId, userId } = g;
+
+  const kind = input.kind === "THAI_FREIGHT" ? DcPoPaymentKind.THAI_FREIGHT : DcPoPaymentKind.GOODS;
+  const currency = cleanStr(input.currency) === "CNY" ? "CNY" : "THB";
+  const parsed = input.paidAt ? new Date(input.paidAt) : new Date();
+  const paidAt = isNaN(parsed.getTime()) ? new Date() : parsed;
+
+  const items = (input.items ?? [])
+    .map((it) => ({ poId: cleanStr(it.poId), amountSatang: nonNegInt(it.amountSatang) }))
+    .filter((it) => it.poId && it.amountSatang > 0) as { poId: string; amountSatang: number }[];
+  if (items.length === 0) return { ok: false, error: "กรุณาเลือกใบที่จะจ่าย และระบุยอดมากกว่า 0" };
+
+  // ทุกใบต้องเป็นของ org นี้ (กันจ่ายข้ามองค์กร)
+  const ids = [...new Set(items.map((it) => it.poId))];
+  const owned = await prisma.dcPurchaseOrder.findMany({ where: { id: { in: ids }, orgId }, select: { id: true } });
+  if (owned.length !== ids.length) return { ok: false, error: "มีบางใบไม่อยู่ในองค์กรของคุณ" };
+
+  const batchId = randomUUID();
+  await prisma.$transaction(
+    items.map((it) =>
+      prisma.dcPoPayment.create({
+        data: {
+          orgId,
+          poId: it.poId,
+          kind,
+          amountSatang: it.amountSatang,
+          currency,
+          paidAt,
+          paidByUserId: userId,
+          note: cleanStr(input.note),
+          batchId,
+        },
+      }),
+    ),
+  );
+  revalidate();
+  return { ok: true, count: items.length, batchId };
+}
+
 // ── 🔎 โหลดรายละเอียดใบสำหรับ panel master-detail (เรียกจาก client ตอนเลือกใบ) ──
 // คืนชุดข้อมูลเดียวกับหน้า /[id] + payments + paid flags + คลังที่เข้าถึงได้
 // → ฝั่ง client เอาไป render <PoDetail/> ในแผงขวาได้โดยไม่ต้องเปลี่ยนหน้า.
@@ -1129,6 +1324,10 @@ export type PoPanelBundle = {
   payments: PoPaymentData[];
   goodsPaid: boolean;
   thaiFreightPaid: boolean;
+  /** ยอด "ค่าของ" ที่ระบบแนะนำ (รวมราคาสินค้าทั้งใบ เป็นบาท·สตางค์) — prefill ตอนจ่าย แก้ได้ */
+  goodsOwedSatang: number;
+  /** ยอด "ค่าขนส่ง" ที่บันทึกไว้ในกล่อง/ชิปเมนต์ (จีน+ระหว่างประเทศ บาท·สตางค์) — prefill ตอนจ่าย แก้ได้ */
+  freightOwedSatang: number;
   warehouses: { id: string; name: string }[];
   r2PublicUrl: string;
 };
@@ -1163,6 +1362,7 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
     select: {
       id: true, shipmentCode: true, trackingNo: true, mode: true, status: true, cbmTotal: true,
       lengthCm: true, widthCm: true, heightCm: true, note: true,
+      chinaFreightThbSatang: true, intlFreightThbSatang: true,
       lines: { select: { id: true, productId: true, qty: true } },
     },
   });
@@ -1208,6 +1408,16 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
   }));
   const goodsPaid = payments.some((p) => p.kind === "GOODS");
   const thaiFreightPaid = payments.some((p) => p.kind === "THAI_FREIGHT");
+
+  // ยอดแนะนำ (prefill ตอนจ่าย · แก้ได้): ค่าของ = ราคารวมทั้งใบ(บาท) · ค่าขนส่ง = freight ที่บันทึกในกล่อง
+  const poFx = po.fxRate != null ? Number(po.fxRate) : 1;
+  const goodsOwedSatang = Math.round(
+    po.lines.reduce((s, l) => {
+      const unitThb = l.unitPriceThb != null ? Number(l.unitPriceThb) : Number(l.unitPriceCny) * poFx;
+      return s + l.qty * unitThb;
+    }, 0) * 100,
+  );
+  const freightOwedSatang = boxes.reduce((s, b) => s + b.chinaFreightThbSatang + b.intlFreightThbSatang, 0);
 
   // คลังที่ผู้ใช้เข้าถึง (สำหรับ dropdown รับเข้า) — best-effort ผ่าน DcWarehouseUser/admin
   const whRows = await prisma.dcWarehouse.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
@@ -1255,5 +1465,5 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
     })),
   };
 
-  return { data, payments, goodsPaid, thaiFreightPaid, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
+  return { data, payments, goodsPaid, thaiFreightPaid, goodsOwedSatang, freightOwedSatang, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
 }

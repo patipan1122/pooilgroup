@@ -7760,11 +7760,13 @@ model DcPoPayment {
   paidAt       DateTime        @map("paid_at") @db.Timestamptz(6)
   paidByUserId String          @map("paid_by_user_id") @db.Uuid
   note         String?
+  batchId      String?         @map("batch_id") @db.Uuid // จ่ายรวมหลายใบทีเดียว → payment ทุกแถวในรอบเดียวกันใช้ batchId เดียว (#13)
   createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   po DcPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
 
   @@index([orgId, poId])
+  @@index([orgId, batchId])
   @@map("po_payments")
   @@schema("dc")
 }

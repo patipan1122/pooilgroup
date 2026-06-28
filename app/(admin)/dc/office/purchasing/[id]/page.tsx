@@ -139,6 +139,21 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
 
   const fxRate = po.fxRate != null ? Number(po.fxRate) : null;
 
+  // #13 ยอดแนะนำ prefill ตอนจ่าย (แก้ได้): ค่าของ = ราคารวมทั้งใบ · ค่าขนส่ง = freight ที่บันทึกในกล่อง
+  const poFxForOwed = fxRate ?? 1;
+  const goodsOwedSatang = Math.round(
+    po.lines.reduce((s, l) => {
+      const unitThb = l.unitPriceThb != null ? Number(l.unitPriceThb) : Number(l.unitPriceCny) * poFxForOwed;
+      return s + l.qty * unitThb;
+    }, 0) * 100,
+  );
+  const freightAgg = await prisma.dcShipment.aggregate({
+    where: { orgId, poId: id },
+    _sum: { chinaFreightThbSatang: true, intlFreightThbSatang: true },
+  });
+  const freightOwedSatang =
+    (freightAgg._sum.chinaFreightThbSatang ?? 0) + (freightAgg._sum.intlFreightThbSatang ?? 0);
+
   const data: PoDetailData = {
     id: po.id,
     poCode: po.poCode,
@@ -210,6 +225,8 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           payments={payments}
           goodsPaid={goodsPaid}
           thaiFreightPaid={thaiFreightPaid}
+          goodsOwedSatang={goodsOwedSatang}
+          freightOwedSatang={freightOwedSatang}
           warehouses={warehouses}
           canManage={canDcManage(ctx.session.user.role)}
           r2PublicUrl={r2Public}

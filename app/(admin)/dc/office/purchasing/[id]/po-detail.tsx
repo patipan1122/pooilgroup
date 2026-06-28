@@ -15,12 +15,10 @@
 //            ARRIVED_TH → AT_WAREHOUSE → RECEIVED. ยกเลิกได้จาก ร่าง/รออนุมัติ/อนุมัติ.
 // ด่านจ่ายเงิน (server บังคับ): markAtWarehouse ต้องมี GOODS payment · receivePo ต้องมี THAI_FREIGHT payment.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign } from "lucide-react";
 import {
-  submitPo,
-  approvePo,
   markOrdered,
   markShipped,
   markArrivedTh,
@@ -29,12 +27,13 @@ import {
   receivePo,
   recordPoPayment,
   deletePoPayment,
+  setPoTracking,
   type PoActionResult,
   type PoPaymentData,
 } from "@/lib/dc/po-actions";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
-import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
+import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL, PO_FLOW_CORE } from "@/lib/dc/nav";
 import { Dialog } from "@/components/ui/dialog";
 
 // ── types (props จาก server) ──────────────────────────────────
@@ -157,6 +156,8 @@ export function PoDetail({
   canManage,
   r2PublicUrl,
   onChanged,
+  goodsOwedSatang,
+  freightOwedSatang,
 }: {
   data: PoDetailData;
   payments: PoPaymentData[];
@@ -166,6 +167,10 @@ export function PoDetail({
   canManage: boolean;
   r2PublicUrl: string;
   onChanged?: () => void;
+  // #13 — ระบบบันทึกยอดค่าของ/ค่าขนส่งไว้แล้ว → เอามา prefill ช่องจ่าย (แก้ได้)
+  // optional: call site ที่ยังไม่ส่งมา (ของเดิม) จะ undefined → ฟอร์ม fallback ว่าง
+  goodsOwedSatang?: number;
+  freightOwedSatang?: number;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -220,10 +225,12 @@ export function PoDetail({
   // ── ขั้นต่อไป (Pinpoint #2/#3): กดเปิดป๊อปอัปเลื่อนสถานะ + กรอกข้อมูลที่ขั้นนั้นต้องใช้ ──
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const NEXT_ACTION_LABEL: Record<string, string> = {
-    DRAFT: "ส่งขออนุมัติ",
-    PENDING_APPROVAL: "อนุมัติใบสั่งซื้อ",
-    APPROVED: "ยืนยันสั่งกับผู้ขาย",
-    ORDERED: "ได้เลข Tracking",
+    // #10 — ไม่มีด่านอนุมัติแล้ว · ใบใหม่เป็น ORDERED ทันที
+    // ใบเก่าที่ยัง DRAFT/รออนุมัติ/อนุมัติ → ปุ่มเดียว "ยืนยันสั่งซื้อ" (markOrdered)
+    DRAFT: "ยืนยันสั่งซื้อ",
+    PENDING_APPROVAL: "ยืนยันสั่งซื้อ",
+    APPROVED: "ยืนยันสั่งซื้อ",
+    ORDERED: "ใส่เลข Tracking",
     SHIPPED: "ถึงไทยแล้ว",
     ARRIVED_TH: "ถึงโกดังแล้ว",
     AT_WAREHOUSE: "รับเข้าคลัง",
@@ -270,6 +277,8 @@ export function PoDetail({
         thaiFreightPaid={thaiFreightPaid}
         awaitingTracking={awaitingTracking}
         defaultWarehouseId={data.warehouseId}
+        goodsOwedSatang={goodsOwedSatang}
+        freightOwedSatang={freightOwedSatang}
         onDone={() => { setAdvanceOpen(false); refresh(); }}
       />
 
@@ -425,14 +434,9 @@ export function PoDetail({
           </span>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {status === "DRAFT" && (
-              <AdvanceBtn label="ส่งขออนุมัติ" onClick={() => run(() => submitPo(data.id))} pending={pending} />
-            )}
-            {status === "PENDING_APPROVAL" && canManage && (
-              <AdvanceBtn label="อนุมัติ" onClick={() => run(() => approvePo(data.id), "ยืนยันอนุมัติใบสั่งซื้อนี้? (เป็นการอนุมัติเงินออก)")} pending={pending} />
-            )}
-            {status === "APPROVED" && (
-              <AdvanceBtn label="สั่งกับผู้ขายแล้ว" onClick={() => run(() => markOrdered(data.id), "ยืนยันว่าได้สั่งซื้อกับผู้ขายแล้ว?")} pending={pending} />
+            {/* #10 — ไม่มีด่านอนุมัติ · ใบเก่าที่ยัง DRAFT/รออนุมัติ/อนุมัติ → ปุ่มเดียว "ยืนยันสั่งซื้อ" (markOrdered) */}
+            {(status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") && (
+              <AdvanceBtn label="ยืนยันสั่งซื้อ" onClick={() => run(() => markOrdered(data.id), "ยืนยันว่าได้สั่งซื้อกับผู้ขายแล้ว?")} pending={pending} />
             )}
             {status === "ORDERED" && (
               <AdvanceBtn label="ได้เลข Tracking" onClick={() => run(() => markShipped(data.id))} pending={pending} />
@@ -500,19 +504,22 @@ function AdvanceBtn({ label, onClick, pending }: { label: string; onClick: () =>
 
 // ── ป๊อปอัปเลื่อนสถานะ (Pinpoint #2/#3) ───────────────────────────
 // กดขั้นถัดไป → ป๊อปอัปขึ้น → กรอกข้อมูลที่ขั้นนั้นต้องใช้ (น้อยสุด) → ยืนยัน → เลื่อนสถานะ.
-// reuse action เดิม (submitPo/.../receivePo/recordPoPayment) — ไม่แตะ section/ฟอร์มเดิม (fallback).
+// reuse action เดิม (markOrdered/setPoTracking/.../receivePo/recordPoPayment) — ไม่แตะ section/ฟอร์มเดิม (fallback).
 function AdvanceModal({
-  open, onClose, data, status, isChina, goodsPaid, thaiFreightPaid, awaitingTracking, defaultWarehouseId, onDone,
+  open, onClose, data, status, isChina, goodsPaid, thaiFreightPaid, defaultWarehouseId, goodsOwedSatang, freightOwedSatang, onDone,
 }: {
   open: boolean; onClose: () => void; data: PoDetailData; status: string;
   isChina: boolean; goodsPaid: boolean; thaiFreightPaid: boolean; awaitingTracking: boolean;
-  defaultWarehouseId: string | null; onDone: () => void;
+  defaultWarehouseId: string | null; goodsOwedSatang?: number; freightOwedSatang?: number; onDone: () => void;
 }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"CNY" | "THB">(isChina ? "CNY" : "THB");
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
+  // #11/#12 — ช่องกรอกเลข Tracking จริง (ตอน ORDERED) + โหมดขนส่ง
+  const [trackingNo, setTrackingNo] = useState("");
+  const [trackMode, setTrackMode] = useState<"TRUCK" | "SEA">("SEA");
 
   type Res = { ok: boolean; error?: string };
   const done = (r: Res) => { if (r.ok) onDone(); else setErr(r.error ?? "ทำรายการไม่สำเร็จ"); };
@@ -539,13 +546,43 @@ function AdvanceModal({
     else exec(receivePoCall);
   };
 
+  // #11/#12 — กรอกเลข Tracking จริง → setPoTracking (บันทึกลงกล่อง + ดัน ORDERED→SHIPPED)
+  const submitTracking = () =>
+    start(async () => {
+      setErr(null);
+      const t = trackingNo.trim();
+      if (!t) { setErr("กรุณากรอกเลข Tracking / เลขพัสดุ"); return; }
+      done(await setPoTracking({ poId: data.id, trackingNo: t, mode: trackMode }));
+    });
+
+  // #13 — ยอดที่ระบบบันทึกไว้สำหรับด่านจ่ายตอนนี้ (satang รวม ×100 → ÷100 = บาท) · undefined = ไม่มี
+  //   ARRIVED_TH = จ่ายค่าของ (goodsOwed) · AT_WAREHOUSE/PARTIAL = จ่ายค่าขนส่งไทย (freightOwed)
+  const owedSatangForStage =
+    status === "ARRIVED_TH" ? goodsOwedSatang
+    : status === "AT_WAREHOUSE" || status === "PARTIAL" ? freightOwedSatang
+    : undefined;
+
+  // prefill ช่องยอดเงินตอนเปิดป๊อปอัป (แก้ได้) + reset ตอนปิด เพื่อกันค่าค้างข้ามใบ
+  useEffect(() => {
+    if (open) {
+      if (owedSatangForStage != null && owedSatangForStage > 0) setAmount(String(owedSatangForStage / 100));
+    } else {
+      setAmount(""); setErr(null); setTrackingNo("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, owedSatangForStage]);
+
+  const owedHint = (satang?: number) =>
+    satang != null && satang > 0
+      ? <div style={{ fontSize: 12, color: "#3f6f50", fontWeight: 600 }}>ระบบบันทึกไว้ ฿{fmt(satang / 100)} (แก้ได้)</div>
+      : null;
+
   const inp: React.CSSProperties = { border: "1px solid #d4d4d8", borderRadius: 8, padding: "8px 11px", fontSize: 14, fontFamily: "inherit", outline: "none", background: "#fff", color: "#18181b" };
   const chipStyle = (on: boolean): React.CSSProperties => ({ padding: "7px 12px", borderRadius: 8, border: `1px solid ${on ? "#1c5fc4" : "#d4d4d8"}`, background: on ? "#1c5fc4" : "#fff", color: on ? "#fff" : "#52525b", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" });
   const primary: React.CSSProperties = { width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "#1c5fc4", color: "#fff", fontWeight: 700, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" };
   const pStyle: React.CSSProperties = { margin: "0 0 4px", fontSize: 14, color: "#3f3f46", lineHeight: 1.5 };
-  const warn: React.CSSProperties = { fontSize: 12.5, color: "#92660a", fontWeight: 600, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 8, padding: "7px 10px" };
 
-  const payFields = (label: string) => (
+  const payFields = (label: string, owedSatang?: number) => (
     <div style={{ display: "grid", gap: 8, padding: 12, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 10 }}>
       <div style={{ fontSize: 12.5, color: "#92660a", fontWeight: 700 }}>{label} — ต้องบันทึกจ่ายก่อนถึงจะเลื่อนสถานะได้</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -555,26 +592,33 @@ function AdvanceModal({
         ))}
         <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} style={inp} />
       </div>
+      {owedHint(owedSatang)}
     </div>
   );
 
+  // #10 — ไม่มีด่านอนุมัติแล้ว · ใบเก่าที่ยัง DRAFT/รออนุมัติ/อนุมัติ → ปุ่มเดียว "ยืนยันสั่งซื้อ" (markOrdered)
   let body: React.ReactNode = null;
-  if (status === "DRAFT") body = (
-    <><p style={pStyle}>ส่งใบนี้ขออนุมัติ — ผู้มีสิทธิ์จะกดอนุมัติให้เงินออก</p>
-    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => submitPo(data.id))}>ส่งขออนุมัติ</button></>
+  if (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") body = (
+    <><p style={pStyle}>ยืนยันว่าสั่งซื้อกับผู้ขายแล้ว → สถานะ “สั่งแล้ว”</p>
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markOrdered(data.id))}>ยืนยันสั่งซื้อ</button></>
   );
-  else if (status === "PENDING_APPROVAL") body = (
-    <><p style={pStyle}>อนุมัติใบสั่งซื้อนี้ — <b>เป็นการอนุมัติให้เงินออก</b></p>
-    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => approvePo(data.id))}>อนุมัติ</button></>
-  );
-  else if (status === "APPROVED") body = (
-    <><p style={pStyle}>ยืนยันว่าได้สั่งซื้อกับผู้ขายแล้ว → สถานะ “สั่งแล้ว”</p>
-    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markOrdered(data.id))}>ยืนยันสั่งแล้ว</button></>
-  );
+  // #11/#12 — ORDERED → กรอกเลข Tracking จริงในป๊อปอัป (text input + รถ/เรือ + ยืนยัน) → setPoTracking → SHIPPED
   else if (status === "ORDERED") body = (
-    <><p style={pStyle}>ของออกจากจีนแล้ว มีเลขพัสดุ → สถานะ “ได้เลข Tracking”</p>
-    {awaitingTracking && <div style={warn}>⚠️ ยังไม่มีกล่องที่มีเลขพัสดุ — เพิ่มกล่อง+เลขพัสดุที่ส่วน “กล่อง/พัสดุ” ด้านล่างก่อน</div>}
-    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markShipped(data.id))}>ยืนยันได้เลข Tracking</button></>
+    <><p style={pStyle}>ผู้ขายแจ้งเลขพัสดุแล้ว — กรอกเลขด้านล่าง ระบบจะบันทึกให้แล้วเลื่อนสถานะเป็น “ได้เลข Tracking” ให้อัตโนมัติ</p>
+    <div style={{ display: "grid", gap: 8 }}>
+      <label style={{ display: "grid", gap: 5, fontSize: 12.5, fontWeight: 600, color: "#52525b" }}>
+        เลข Tracking / เลขพัสดุ
+        <input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} placeholder="เช่น SF1234567890" autoFocus style={{ ...inp, width: "100%" }} />
+      </label>
+      <div style={{ display: "grid", gap: 5 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "#52525b" }}>วิธีขนส่ง (ไม่บังคับ)</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setTrackMode("TRUCK")} style={chipStyle(trackMode === "TRUCK")}>🚚 รถ</button>
+          <button type="button" onClick={() => setTrackMode("SEA")} style={chipStyle(trackMode === "SEA")}>🚢 เรือ</button>
+        </div>
+      </div>
+    </div>
+    <button type="button" style={primary} disabled={pending} onClick={submitTracking}>บันทึกเลข Tracking</button></>
   );
   else if (status === "SHIPPED") body = (
     <><p style={pStyle}>ของถึงไทยแล้ว → สถานะ “ถึงไทยแล้ว”</p>
@@ -583,7 +627,7 @@ function AdvanceModal({
   else if (status === "ARRIVED_TH") body = (
     <><p style={pStyle}>ของถึงโกดังแล้ว → สถานะ “ถึงโกดังแล้ว”</p>
     {isChina && !goodsPaid ? (
-      <>{payFields("ค่าของ (จ่ายผู้ขายจีน)")}
+      <>{payFields("ค่าของ (จ่ายผู้ขายจีน)", goodsOwedSatang)}
       <button type="button" style={primary} disabled={pending} onClick={() => payThen("GOODS", () => markAtWarehouse(data.id))}>บันทึกจ่ายค่าของ + ถึงโกดังแล้ว</button></>
     ) : (
       <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markAtWarehouse(data.id))}>ยืนยันถึงโกดังแล้ว</button>
@@ -591,13 +635,13 @@ function AdvanceModal({
   );
   else if (status === "AT_WAREHOUSE" || status === "PARTIAL") body = (
     <><p style={pStyle}>รับของเข้าคลัง → ตัดเข้าสต๊อก (สถานะ “รับแล้ว”)</p>
-    {isChina && !thaiFreightPaid && payFields("ค่าขนส่งในไทย")}
+    {isChina && !thaiFreightPaid && payFields("ค่าขนส่งในไทย", freightOwedSatang)}
     <button type="button" style={primary} disabled={pending} onClick={doReceive}>รับเข้าครบทุกชิ้น</button>
     <p style={{ ...pStyle, fontSize: 12, color: "#71717a", marginTop: 6 }}>ต้องการรับบางส่วน / ใส่ของเสียหาย → ปิดป๊อปอัปแล้วใช้ฟอร์ม “รับเข้าคลัง” ด้านล่าง</p></>
   );
 
   return (
-    <Dialog open={open} onClose={onClose} title="ดำเนินการขั้นต่อไป">
+    <Dialog open={open} onClose={onClose} title="ดำเนินการขั้นต่อไป" backdrop="soft" className="sm:max-w-lg">
       <div style={{ display: "grid", gap: 12 }}>
         {err && <div style={{ background: "#fdeaea", border: "1px solid #f3c7c2", color: "#b8362a", borderRadius: 8, padding: "9px 12px", fontSize: 13.5, fontWeight: 600 }}>{err}</div>}
         {body}
@@ -618,11 +662,22 @@ const TIMELINE_STEPS: { key: string; label: string; hint?: string }[] = [
   { key: "RECEIVED", label: "รับแล้ว" },
 ];
 
+// #15 — current step ของไทม์ไลน์ ต้อง map กับสถานะจริงแบบ index-based บน PO_FLOW_CORE
+// (source of truth ใน nav.ts) ไม่พึ่ง STATUS_RANK ที่ยังพ่วง DRAFT/PENDING/APPROVED → กัน index เลื่อน
+//   ORDERED→0 · SHIPPED→1 · ARRIVED_TH→2 · AT_WAREHOUSE→3 · RECEIVED→4
+//   PARTIAL → ถือว่าอยู่ที่ AT_WAREHOUSE (index 3, รับบางส่วน) · CLOSED → RECEIVED (index 4)
+function flowIndexOf(status: string): number {
+  if (status === "PARTIAL") return PO_FLOW_CORE.indexOf("AT_WAREHOUSE");
+  if (status === "CLOSED") return PO_FLOW_CORE.indexOf("RECEIVED");
+  return PO_FLOW_CORE.indexOf(status); // -1 ถ้า pre-order/cancelled
+}
+
 function Timeline({ status, isChina, awaitingTracking }: { status: string; isChina: boolean; awaitingTracking: boolean }) {
   const preOrder = status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED";
   const cancelled = status === "CANCELLED";
   const partial = status === "PARTIAL";
-  const currentRank = statusRank(status); // 3..7
+  // index ของขั้นปัจจุบันใน PO_FLOW_CORE (0..4) — ตรงกับ TIMELINE_STEPS แบบ 1:1
+  const currentIndex = flowIndexOf(status);
 
   if (cancelled) {
     return (
@@ -666,15 +721,15 @@ function Timeline({ status, isChina, awaitingTracking }: { status: string; isChi
       <div style={{ overflowX: "auto", paddingBottom: 2 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 0, minWidth: 520 }}>
           {TIMELINE_STEPS.map((step, i) => {
-            const rank = statusRank(step.key);
-            // ขั้นที่ทำเสร็จแล้ว (rank < current หรือ partial ครอบขั้น 4) = filled
-            const done = !preOrder && (rank < currentRank || (partial && rank <= statusRank("AT_WAREHOUSE")));
-            const current = !preOrder && rank === currentRank;
+            // i = index ของขั้นนี้ใน flow (ตรง 1:1 กับ PO_FLOW_CORE) → เทียบกับ currentIndex ตรง ๆ
+            // ขั้นที่อยู่ก่อนขั้นปัจจุบัน = ทำเสร็จแล้ว (filled) · ขั้นปัจจุบัน = current (ไฮไลต์)
+            const done = !preOrder && currentIndex >= 0 && i < currentIndex;
+            const current = !preOrder && i === currentIndex;
             const fill = done ? "#1c8a4e" : current ? "#fff" : "#f1f1f4";
             const ring = current ? "#1c5fc4" : done ? "#1c8a4e" : "#e4e4e7";
             const numColor = done ? "#fff" : current ? "#1c5fc4" : "#a1a1aa";
             // เส้นเชื่อมไปขั้นถัดไป
-            const connectorDone = !preOrder && rank < currentRank;
+            const connectorDone = !preOrder && currentIndex >= 0 && i < currentIndex;
             return (
               <div key={step.key} style={{ display: "flex", alignItems: "flex-start", flex: 1, minWidth: 96 }}>
                 <div style={{ display: "grid", justifyItems: "center", gap: 5, flex: "0 0 auto", width: 96 }}>

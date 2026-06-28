@@ -6,6 +6,8 @@ import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { listSuppliersForPo } from "@/lib/dc/po-actions";
+import { getTodayFxRate } from "@/lib/dc/fx";
 import { PurchasingWorkspace, type PoListItem, type PurchasingStats } from "./purchasing-workspace";
 
 export const dynamic = "force-dynamic";
@@ -68,18 +70,34 @@ export default async function DcPurchasingPage() {
 
   const stats: PurchasingStats = { pendingTracking, pendingGrn, inTransit };
   const r2PublicUrl = process.env.R2_PUBLIC_URL ?? "";
-  const chrome = await getDcOfficeChrome(orgId);
+
+  // ข้อมูลให้ราง "สร้างใบสั่งซื้อ" (#6) ใช้ — โหลดพร้อมกัน
+  const [chrome, suppliers, chinaFx] = await Promise.all([
+    getDcOfficeChrome(orgId),
+    canManage ? listSuppliersForPo() : Promise.resolve([]),
+    canManage ? getTodayFxRate("CNY", "THB") : Promise.resolve(null),
+  ]);
+  const warehouses = ctx.warehouses.map((w) => ({ id: w.id, name: w.name }));
 
   return (
     <DcOfficeShell active="po" {...dcShellChrome(ctx, chrome)}>
       <div>
-        <div style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ใบสั่งซื้อจีน</h1>
-          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>
-            สั่งของจากจีน (¥) และซื้อในไทย (฿) · ติดตามสถานะตั้งแต่สั่งถึงรับเข้าคลัง — ในจอเดียว
+        <div style={{ marginBottom: 14 }}>
+          <h1 style={{ margin: 0, fontSize: 23, fontWeight: 700, letterSpacing: "-.01em" }}>จัดซื้อ &amp; นำเข้า</h1>
+          <p style={{ margin: "4px 0 0", color: "var(--ink2)", fontSize: 13.5 }}>
+            สั่งของจากจีน (¥) และซื้อในไทย (฿) · ติดตามตั้งแต่สั่งถึงรับเข้าคลัง — ในจอเดียว
           </p>
         </div>
-        <PurchasingWorkspace items={items} stats={stats} canManage={canManage} r2PublicUrl={r2PublicUrl} />
+        <PurchasingWorkspace
+          items={items}
+          stats={stats}
+          canManage={canManage}
+          r2PublicUrl={r2PublicUrl}
+          warehouses={warehouses}
+          suppliers={suppliers}
+          chinaFxRate={chinaFx?.rate ?? null}
+          chinaFxDate={chinaFx?.date ?? null}
+        />
       </div>
     </DcOfficeShell>
   );

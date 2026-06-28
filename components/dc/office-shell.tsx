@@ -98,10 +98,9 @@ export function DcOfficeShell({ active, warehouseName, userName, userRole, badge
         <nav style={{ flex: 1, overflowY: "auto", padding: "12px 12px 16px" }}>
           <NavItem href="/dc/office" label="ภาพรวม" icon={IcGrid} on={active === "dash"} />
 
+          {/* #16 CEO: เมนูรก — ยุบ "ผู้ขาย" + "ขนส่ง/ชิปเมนต์" เข้าเป็นแท็บในหน้าสั่งซื้อ (เหลือ 9 เมนู) */}
           <div className="dcx-seclabel">จัดซื้อ &amp; นำเข้า</div>
-          <NavItem href="/dc/office/purchasing" label="สั่งซื้อจีน" icon={IcCart} on={active === "po"} badge={poBadge} />
-          <NavItem href="/dc/office/suppliers" label="ผู้ขาย" icon={IcVendor} on={active === "suppliers"} />
-          <NavItem href="/dc/office/shipments" label="ขนส่ง / ชิปเมนต์" icon={IcShip} on={active === "ship"} badge={shipBadge} />
+          <NavItem href="/dc/office/purchasing" label="สั่งซื้อ / นำเข้า" icon={IcCart} on={active === "po" || active === "suppliers" || active === "ship"} badge={poBadge} />
           <NavItem href="/dc/office/receipts" label="ใบรับสินค้า (GRN)" icon={IcGrn} on={active === "grn"} badge={grnBadge} />
 
           <div className="dcx-seclabel">คลังสินค้า</div>

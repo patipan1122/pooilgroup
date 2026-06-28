@@ -147,6 +147,8 @@ export function MasterDetailView({
               payments={bundle.payments}
               goodsPaid={bundle.goodsPaid}
               thaiFreightPaid={bundle.thaiFreightPaid}
+              goodsOwedSatang={bundle.goodsOwedSatang}
+              freightOwedSatang={bundle.freightOwedSatang}
               warehouses={bundle.warehouses}
               canManage={canManage}
               r2PublicUrl={r2PublicUrl || bundle.r2PublicUrl}
@@ -159,7 +161,9 @@ export function MasterDetailView({
   );
 }
 
-// ── การ์ดใบกระชับ (ลิสต์ซ้าย) ─────────────────────────────────
+// ── การ์ดใบ "เตี้ย/แน่น" (ลิสต์ซ้าย · CEO #9 ลดความสูง) ───────────────
+//   2 บรรทัด: บน = ผู้ขาย + ยอด · ล่าง = poCode·รายการ·วันที่ + สถานะ (origin ย่อเป็นจุดสี)
+//   override .dc-pur-card ให้ padding/gap เล็กลง (ลิสต์ scan ได้เยอะขึ้นในจอเดียว)
 function PoCardMini({
   item,
   active,
@@ -170,31 +174,43 @@ function PoCardMini({
   onSelect: () => void;
 }) {
   const s = moneySym(item);
+  const isThai = item.origin === "THAI";
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={active}
       className={`dc-pur-card${active ? " is-active" : ""}`}
+      style={{ gap: 4, padding: "8px 11px", borderRadius: 11 }}
+      title={`${PO_ORIGIN_LABEL[item.origin] ?? item.origin} · ${item.poCode}`}
     >
-      <div className="dc-pur-card__top">
-        <span className="dc-pur-card__supplier">{item.supplierName ?? "— ไม่ระบุผู้ขาย —"}</span>
-        <span className={`dc-st dc-st--${item.origin === "THAI" ? "ok" : "ship"}`} style={{ fontSize: 10.5, padding: "2px 7px" }}>
-          {PO_ORIGIN_LABEL[item.origin] ?? item.origin}
+      {/* บน: ผู้ขาย (+จุดสี origin) · ยอด */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
+          <span
+            aria-hidden
+            title={PO_ORIGIN_LABEL[item.origin] ?? item.origin}
+            style={{ flex: "0 0 auto", width: 7, height: 7, borderRadius: 999, background: isThai ? "#167a41" : "#2456b8" }}
+          />
+          <span className="dc-pur-card__supplier" style={{ fontSize: 14 }}>
+            {item.supplierName ?? "— ไม่ระบุผู้ขาย —"}
+          </span>
         </span>
-      </div>
-      <div className="dc-pur-card__meta">
-        {item.poCode} · {item.lineCount} รายการ
-        {item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""} · {fmtDate(item.date)}
-      </div>
-      <div className="dc-pur-card__bottom">
-        <span className="dc-pur-card__total">
+        <span className="dc-pur-card__total" style={{ fontSize: 14, flex: "0 0 auto" }}>
           {s}
-          {fmtMoney(item.total)}
+          {fmtMoney(item.total, 0)}
         </span>
-        <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          {needsInput(item) && <span className="dc-pur-badge-input">รอใส่ข้อมูล</span>}
-          <span className={`dc-st dc-st--${tone(item.status)}`}>{PO_STATUS_LABEL[item.status] ?? item.status}</span>
+      </div>
+      {/* ล่าง: meta ย่อ + สถานะ (+ป้ายรอใส่ข้อมูลถ้ามี) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+          {item.poCode} · {item.lineCount} รก.{item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""} · {fmtDate(item.date)}
+        </span>
+        <span style={{ display: "inline-flex", gap: 5, alignItems: "center", flex: "0 0 auto" }}>
+          {needsInput(item) && <span className="dc-pur-badge-input" style={{ fontSize: 10, padding: "1px 7px" }}>รอใส่</span>}
+          <span className={`dc-st dc-st--${tone(item.status)}`} style={{ fontSize: 11, padding: "2px 8px" }}>
+            {PO_STATUS_LABEL[item.status] ?? item.status}
+          </span>
         </span>
       </div>
     </button>

@@ -3,14 +3,18 @@
 // DC · ใบสั่งซื้อจีน — workspace (client) ที่คุม 2 มุมมองในจอเดียว:
 //   • "รายการ + รายละเอียด" (master-detail · ค่าเริ่มต้น): ซ้าย=ลิสต์ใบ · ขวา=รายละเอียดใบที่เลือก
 //   • "บอร์ดสถานะ" (Kanban): 5 คอลัมน์ตาม flow + action หลักต่อคอลัมน์
-// บนสุด: สถิติ "งานค้างวันนี้" + ปุ่มสลับมุมมอง + ปุ่ม "＋ สั่งซื้อ" (จีน ¥ / ไทย ฿).
-// อ่านอย่างเดียวฝั่งลิสต์ — action ทั้งหมดอยู่ในแผงรายละเอียด (<PoDetail>) หรือหน้า /[id].
+// บนสุด: แท็บย่อย (#16) + สถิติงานค้าง + สลับมุมมอง + ปุ่ม "＋ สั่งซื้อ" (เปิดราง #6) + "รวมจ่าย" (#13).
+// #6: สั่งซื้อเปิดเป็น "รางสไลด์ขวา" เหนือลิสต์ (ไม่เด้งออกจากหน้า) · #13: รวมจ่ายหลายใบในราง.
 
 import { useState } from "react";
-import Link from "next/link";
-import { Plus, LayoutGrid, Columns } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, LayoutGrid, Columns, Wallet } from "lucide-react";
 import { MasterDetailView } from "./master-detail-view";
 import { KanbanBoard } from "./kanban-board";
+import { PurchasingSubnav } from "@/components/dc/purchasing-subnav";
+import { PoCreateDrawer } from "@/components/dc/po-create-drawer";
+import { BulkPayDrawer } from "@/components/dc/bulk-pay-drawer";
+import type { PoSupplierOption } from "@/lib/dc/po-actions";
 
 // ── shared types (ส่งมาจาก server) ───────────────────────────
 export type PoListItem = {
@@ -35,6 +39,8 @@ export type PurchasingStats = {
 
 export type ViewMode = "detail" | "kanban";
 
+type WarehouseOpt = { id: string; name: string };
+
 // ── shared helpers (ใช้ร่วมกับ master-detail + kanban) ────────
 export function fmtMoney(n: number, d = 2): string {
   return new Intl.NumberFormat("th-TH", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
@@ -57,22 +63,45 @@ export function PurchasingWorkspace({
   stats,
   canManage,
   r2PublicUrl,
+  warehouses,
+  suppliers,
+  chinaFxRate,
+  chinaFxDate,
 }: {
   items: PoListItem[];
   stats: PurchasingStats;
   canManage: boolean;
   r2PublicUrl: string;
+  warehouses: WarehouseOpt[];
+  suppliers: PoSupplierOption[];
+  chinaFxRate: number | null;
+  chinaFxDate: string | null;
 }) {
+  const router = useRouter();
   const [view, setView] = useState<ViewMode>("detail");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [bulkPayOpen, setBulkPayOpen] = useState(false);
 
   return (
     <div className="dc-pur">
-      {/* แถวบน: สถิติงานค้าง + สลับมุมมอง + ปุ่มสั่งซื้อ */}
+      {/* #16 แท็บย่อย: ใบสั่งซื้อ / ผู้ขาย / ขนส่ง */}
+      <PurchasingSubnav active="po" />
+
+      {/* แถวบน: สถิติงานค้าง + สลับมุมมอง + ปุ่มจ่าย/สั่งซื้อ */}
       <div className="dc-pur-bar">
         <StatStrip stats={stats} />
         <div className="dc-pur-bar__right">
           <ViewToggle view={view} onChange={setView} />
-          {canManage && <NewPoButton />}
+          {canManage && (
+            <>
+              <button type="button" className="dc-btn-xl dc-btn-xl--ghost" onClick={() => setBulkPayOpen(true)} style={bulkPayBtn}>
+                <Wallet size={17} /> รวมจ่ายหลายใบ
+              </button>
+              <button type="button" className="dc-btn-xl dc-pur-new__btn" onClick={() => setCreateOpen(true)}>
+                <Plus size={18} /> สั่งซื้อ
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -85,6 +114,33 @@ export function PurchasingWorkspace({
       ) : (
         <KanbanBoard items={items} />
       )}
+
+      {/* #6 รางสร้างใบสั่งซื้อ (สไลด์ขวา · ไม่เด้งออกจากหน้า) */}
+      {canManage && (
+        <PoCreateDrawer
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          warehouses={warehouses}
+          suppliers={suppliers}
+          chinaFxRate={chinaFxRate}
+          chinaFxDate={chinaFxDate}
+          onSaved={(poId) => {
+            setCreateOpen(false);
+            // ไปดูใบที่เพิ่งสร้าง (เปิดรายละเอียด) + refresh list
+            router.push(`/dc/office/purchasing/${poId}`);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {/* #13 รางรวมจ่ายหลายใบ */}
+      {canManage && (
+        <BulkPayDrawer
+          open={bulkPayOpen}
+          onClose={() => setBulkPayOpen(false)}
+          onPaid={() => router.refresh()}
+        />
+      )}
     </div>
   );
 }
@@ -95,15 +151,15 @@ function StatStrip({ stats }: { stats: PurchasingStats }) {
     <div className="dc-pur-stats" aria-label="งานค้างวันนี้">
       <span className="dc-pur-stats__label">งานค้างวันนี้</span>
       <span className="dc-pur-stat">
-        <b>{stats.pendingTracking}</b> ใบสั่งแล้วรอใส่ Tracking
+        <b>{stats.pendingTracking}</b> รอใส่ Tracking
       </span>
       <span className="dc-pur-stats__dot" aria-hidden>·</span>
       <span className="dc-pur-stat">
-        <b>{stats.pendingGrn}</b> ใบรับเข้า (GRN)
+        <b>{stats.pendingGrn}</b> รับเข้า (GRN)
       </span>
       <span className="dc-pur-stats__dot" aria-hidden>·</span>
       <span className="dc-pur-stat">
-        <b>{stats.inTransit}</b> ของระหว่างทางถึงวันนี้
+        <b>{stats.inTransit}</b> ระหว่างทาง
       </span>
     </div>
   );
@@ -120,7 +176,7 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
         className={`dc-mode-pill${view === "kanban" ? " is-active" : ""}`}
         onClick={() => onChange("kanban")}
       >
-        <LayoutGrid size={15} /> บอร์ดสถานะ
+        <LayoutGrid size={15} /> บอร์ด
       </button>
       <button
         type="button"
@@ -129,59 +185,18 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
         className={`dc-mode-pill${view === "detail" ? " is-active" : ""}`}
         onClick={() => onChange("detail")}
       >
-        <Columns size={15} /> รายการ + รายละเอียด
+        <Columns size={15} /> รายการ
       </button>
     </div>
   );
 }
 
-// ── ปุ่มสั่งซื้อ + เลือกจีน/ไทย ───────────────────────────────
-function NewPoButton() {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="dc-pur-new">
-      <button
-        type="button"
-        className="dc-btn-xl dc-pur-new__btn"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-      >
-        <Plus size={18} /> สั่งซื้อ
-      </button>
-      {open && (
-        <>
-          <div className="dc-pur-new__scrim" onClick={() => setOpen(false)} />
-          <div role="menu" className="dc-pur-new__menu">
-            <Link
-              href="/dc/office/purchasing/new?origin=china"
-              role="menuitem"
-              className="dc-pur-new__item"
-              onClick={() => setOpen(false)}
-            >
-              <span className="dc-pur-new__flag">🇨🇳</span>
-              <span>
-                <b>สั่งจากจีน</b>
-                <br />
-                <span className="dc-pur-new__hint">ราคาเป็นหยวน (¥) · มีกล่อง/CBM</span>
-              </span>
-            </Link>
-            <Link
-              href="/dc/office/purchasing/new?origin=thai"
-              role="menuitem"
-              className="dc-pur-new__item"
-              onClick={() => setOpen(false)}
-            >
-              <span className="dc-pur-new__flag">🇹🇭</span>
-              <span>
-                <b>ซื้อในไทย</b>
-                <br />
-                <span className="dc-pur-new__hint">ราคาเป็นบาท (฿)</span>
-              </span>
-            </Link>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+const bulkPayBtn: React.CSSProperties = {
+  width: "auto",
+  minHeight: 44,
+  padding: "0 16px",
+  fontSize: 14.5,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+};

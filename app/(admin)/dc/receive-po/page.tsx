@@ -42,11 +42,14 @@ export default async function DcReceivePoPage() {
         select: {
           productId: true,
           qty: true,
-          product: { select: { name: true, sku: true } },
+          product: { select: { name: true, sku: true, unit: true, imageR2Path: true } },
         },
       },
     },
   });
+
+  // base สำหรับสร้าง URL รูปสินค้าจาก R2 key (ส่งให้ฝั่ง client)
+  const r2PublicUrl = process.env.R2_PUBLIC_URL ?? "";
 
   const rows: ReceivablePo[] = pos.map((po) => ({
     id: po.id,
@@ -60,6 +63,8 @@ export default async function DcReceivePoPage() {
       productId: l.productId,
       name: l.product?.name ?? "(ไม่พบสินค้า)",
       sku: l.product?.sku ?? "—",
+      unit: l.product?.unit ?? "ชิ้น",
+      imageR2Path: l.product?.imageR2Path ?? null,
       qtyOrdered: l.qty,
     })),
   }));
@@ -68,12 +73,24 @@ export default async function DcReceivePoPage() {
     <div className="dc-page">
       <div className="dc-head">
         <div>
-          <div className="dc-h1">รับสินค้าตาม PO</div>
+          <div className="dc-h1">รับตามใบสั่งซื้อ (PO)</div>
           <div className="dc-sub">
-            {ctx.activeWarehouse
-              ? `รับเข้าคลัง: ${ctx.activeWarehouse.name}`
-              : "ยังไม่มีคลัง"}
+            ทางหลักในการรับของ — เลือกใบที่ของมาถึง แล้วนับรับเข้า
+            {ctx.activeWarehouse ? ` · รับเข้าคลัง: ${ctx.activeWarehouse.name}` : " · ยังไม่มีคลัง"}
           </div>
+          <Link
+            href="/dc/receive"
+            style={{
+              display: "inline-block",
+              marginTop: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--dc-primary, #1F4FD6)",
+              textDecoration: "none",
+            }}
+          >
+            ของไม่มีใบสั่ง? รับแบบไม่มี PO ›
+          </Link>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <DcWarehousePicker warehouses={ctx.warehouses} activeId={ctx.activeWarehouseId} />
@@ -91,7 +108,7 @@ export default async function DcReceivePoPage() {
           )}
         </div>
       ) : (
-        <ReceivePoList pos={rows} warehouseId={ctx.activeWarehouseId} />
+        <ReceivePoList pos={rows} warehouseId={ctx.activeWarehouseId} r2PublicUrl={r2PublicUrl} />
       )}
     </div>
   );

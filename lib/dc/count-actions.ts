@@ -52,6 +52,113 @@ export async function lookupForCount(input: {
   }
 }
 
+/**
+ * รายชื่อ "หมวดหมู่" (category) ที่ไม่ว่าง ของสินค้า active ในองค์กร (distinct).
+ * category เป็น free-text → group + เรียงตามตัวอักษร. ใช้ทำ filter ในหน้านับ (online เท่านั้น).
+ */
+export async function listCategoriesForCount(): Promise<string[]> {
+  try {
+    const session = await requireSession();
+    if (!canDcFloor(session.user.role)) return [];
+    const orgId = session.user.org_id;
+
+    const rows = await prisma.dcProduct.findMany({
+      where: { orgId, active: true, category: { not: null } },
+      distinct: ["category"],
+      orderBy: { category: "asc" },
+      select: { category: true },
+    });
+    return rows
+      .map((r) => (r.category ?? "").trim())
+      .filter((c) => c.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export type CountProductRow = {
+  productId: string;
+  sku: string;
+  name: string;
+  category: string | null;
+  unit: string | null;
+  systemQty: number;
+};
+
+export type ListProductsForCountResult =
+  | { ok: true; products: CountProductRow[] }
+  | { ok: false; error: string };
+
+/**
+ * รายการสินค้า active ในองค์กร (กรอง category + ค้นหา q ได้) พร้อมยอดในระบบ (systemQty)
+ * ของคลังที่กำลังนับ. ใช้สำหรับหน้า "ดูสินค้าทั้งหมด" → กดเลือกสินค้าที่จะนับเอง (online เท่านั้น).
+ *  • systemQty = qtyOnHand ใน dcStockBalance ของคลังนั้น (0 ถ้าไม่มีแถว balance)
+ *  • limit ~200 (กันโหลดยาวบนมือถือ)
+ */
+export async function listProductsForCount(input: {
+  warehouseId: string;
+  category?: string;
+  q?: string;
+}): Promise<ListProductsForCountResult> {
+  try {
+    const session = await requireSession();
+    if (!canDcFloor(session.user.role)) {
+      return { ok: false, error: "ไม่มีสิทธิ์นับสต๊อก" };
+    }
+    await assertWarehouseAllowed(session, input.warehouseId);
+    const orgId = session.user.org_id;
+
+    const category = (input.category ?? "").trim();
+    const q = (input.q ?? "").trim();
+
+    const products = await prisma.dcProduct.findMany({
+      where: {
+        orgId,
+        active: true,
+        ...(category ? { category } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { sku: { contains: q, mode: "insensitive" } },
+                { barcode: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ name: "asc" }],
+      take: 200,
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        category: true,
+        unit: true,
+        // ดึงเฉพาะ balance ของคลังที่นับ → systemQty
+        balances: {
+          where: { warehouseId: input.warehouseId },
+          select: { qtyOnHand: true },
+          take: 1,
+        },
+      },
+    });
+
+    return {
+      ok: true,
+      products: products.map((p) => ({
+        productId: p.id,
+        sku: p.sku,
+        name: p.name,
+        category: p.category,
+        unit: p.unit,
+        systemQty: p.balances[0]?.qtyOnHand ?? 0,
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "โหลดรายการสินค้าไม่สำเร็จ" };
+  }
+}
+
 export type SyncCountLine = { productId: string; countedQty: number; lineKey: string };
 
 export type SyncCountsResult =

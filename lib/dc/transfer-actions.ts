@@ -110,6 +110,83 @@ export async function lookupForTransfer(args: {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// listStockForPick (เลือกจากรายการ — ตอนกดเลือกแทนการสแกน)
+// ════════════════════════════════════════════════════════════════════
+
+export type PickRow = {
+  productId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  onHand: number;
+};
+
+export type ListStockForPickResult =
+  | { ok: true; rows: PickRow[] }
+  | { ok: false; error: string };
+
+/**
+ * รายการสินค้าที่ "มีของอยู่จริง" ในคลังต้นทาง (qtyOnHand > 0) ให้ผู้ใช้กดเลือกแทนการสแกน.
+ *  - scope: orgId + warehouse · เฉพาะ balance ที่ qtyOnHand > 0
+ *  - q (ไม่บังคับ): กรองตามชื่อ/SKU (case-insensitive)
+ *  - เรียงตามชื่อ · จำกัด ~100 แถว (กันลิสต์ยาวเกินบนมือถือ)
+ */
+export async function listStockForPick(args: {
+  fromWarehouseId: string;
+  q?: string;
+}): Promise<ListStockForPickResult> {
+  const session = await requireSession();
+  if (!canDcFloor(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์ทำงานหน้าคลัง" };
+  const orgId = session.user.org_id;
+
+  const from = (args.fromWarehouseId ?? "").trim();
+  if (!from) return { ok: false, error: "ยังไม่ได้เลือกคลังต้นทาง" };
+
+  try {
+    await assertWarehouseAllowed(session, from);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "ไม่มีสิทธิ์เข้าถึงคลังนี้" };
+  }
+
+  const q = (args.q ?? "").trim();
+
+  const balances = await prisma.dcStockBalance.findMany({
+    where: {
+      orgId,
+      warehouseId: from,
+      qtyOnHand: { gt: 0 },
+      product: {
+        active: true,
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { sku: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+    },
+    select: {
+      qtyOnHand: true,
+      product: { select: { id: true, sku: true, name: true, unit: true } },
+    },
+    orderBy: { product: { name: "asc" } },
+    take: 100,
+  });
+
+  const rows: PickRow[] = balances.map((b) => ({
+    productId: b.product.id,
+    sku: b.product.sku,
+    name: b.product.name,
+    unit: b.product.unit ?? "ชิ้น",
+    onHand: b.qtyOnHand,
+  }));
+
+  return { ok: true, rows };
+}
+
+// ════════════════════════════════════════════════════════════════════
 // dispatch (ส่งออกจากต้นทาง → สร้างใบโอน)
 // ════════════════════════════════════════════════════════════════════
 

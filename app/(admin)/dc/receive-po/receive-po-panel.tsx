@@ -1,19 +1,27 @@
 "use client";
 
 // DC · หน้าคลัง · รายการ PO ที่รอรับเข้า (client) — แตะใบ → ฟอร์มรับสินค้า.
-//   • แตะใบ → กางฟอร์ม: แต่ละบรรทัด (ชื่อสินค้า + จำนวนที่สั่ง) → stepper รับจริง + เสียหาย
-//   • หมายเหตุการรับ (note) — เหมือนการนำเข้า (แนะนำให้กรอก)
+//   • หัวใบโชว์ "ผู้ขาย (คนขาย)" เด่น · แตะเพื่อกาง/พับ
+//   • แต่ละบรรทัด = การ์ดซ้าย-ขวา:
+//       ซ้าย  = รูปสินค้า (จาก imageR2Path) + "สั่ง N [หน่วย]" + ชื่อ + SKU
+//       ขวา   = กรอกจำนวนรับจริง (stepper ใหญ่) + เสียหาย (เล็ก)
+//               + ปุ่ม "ถ่ายรูป/แนบรูปของที่รับ" (อัปผ่าน /api/dc/upload → คืน R2 key)
+//               + thumbnail รูปที่อัปแล้ว
+//   • รูปที่ถ่ายใหม่: เก็บ R2 key แล้ว "ต่อท้าย note" ตอนส่ง (ไม่แตะ signature ของ receivePo)
+//   • หมายเหตุการรับ (note) — แนะนำให้กรอก
 //   • ปุ่ม "รับเข้าคลัง" busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว + เอาใบออกจากรายการ
-//   • รับเข้าคลัง = ctx.activeWarehouseId (ส่งมาจาก server)
+//   • มือถือ/iPad: ซ้าย-ขวา ยุบเป็นบน-ล่างบนจอแคบ (flexWrap + minWidth)
 
 import { useCallback, useState } from "react";
-import { PackageCheck, ChevronDown, ChevronRight } from "lucide-react";
+import { PackageCheck, ChevronDown, ChevronRight, Camera, Trash2, ImageOff } from "lucide-react";
 import { receivePo } from "@/lib/dc/po-actions";
 
 export type ReceivablePoLine = {
   productId: string;
   name: string;
   sku: string;
+  unit: string;
+  imageR2Path: string | null;
   qtyOrdered: number;
 };
 
@@ -33,21 +41,46 @@ type LineDraft = {
   productId: string;
   name: string;
   sku: string;
+  unit: string;
+  imageR2Path: string | null;
   qtyOrdered: number;
   qtyReceived: number;
   qtyDamaged: number;
+  /** R2 key ของรูปที่ "ถ่ายใหม่ตอนรับ" (อัปผ่าน /api/dc/upload) */
+  photoKeys: string[];
+  /** public URL ของรูปที่ถ่ายใหม่ (ไว้โชว์ thumbnail) — เรียงตรงกับ photoKeys */
+  photoUrls: string[];
+  uploading: boolean;
 };
 
 function toInt(n: number): number {
   return Math.max(0, Math.trunc(Number.isFinite(n) ? n : 0));
 }
 
+// อัปไฟล์ผ่านเซิร์ฟเวอร์ (เหมือนฟอร์มสร้าง PO) → คืน R2 key + public url
+async function uploadReceivePhoto(
+  file: File,
+): Promise<{ ok: true; key: string; url: string } | { ok: false; error: string }> {
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/dc/upload", { method: "POST", body: fd });
+    return (await res.json()) as
+      | { ok: true; key: string; url: string }
+      | { ok: false; error: string };
+  } catch {
+    return { ok: false, error: "อัปโหลดรูปไม่สำเร็จ ลองอีกครั้ง" };
+  }
+}
+
 export function ReceivePoList({
   pos,
   warehouseId,
+  r2PublicUrl,
 }: {
   pos: ReceivablePo[];
   warehouseId: string;
+  r2PublicUrl: string;
 }) {
   const [items, setItems] = useState<ReceivablePo[]>(pos);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -81,6 +114,7 @@ export function ReceivePoList({
           key={po.id}
           po={po}
           warehouseId={warehouseId}
+          r2PublicUrl={r2PublicUrl}
           open={openId === po.id}
           onToggle={() => setOpenId((cur) => (cur === po.id ? null : po.id))}
           onReceived={(grnId) => {
@@ -123,12 +157,14 @@ export function ReceivePoList({
 function PoCard({
   po,
   warehouseId,
+  r2PublicUrl,
   open,
   onToggle,
   onReceived,
 }: {
   po: ReceivablePo;
   warehouseId: string;
+  r2PublicUrl: string;
   open: boolean;
   onToggle: () => void;
   onReceived: (grnId: string) => void;
@@ -139,14 +175,29 @@ function PoCard({
       productId: l.productId,
       name: l.name,
       sku: l.sku,
+      unit: l.unit,
+      imageR2Path: l.imageR2Path,
       qtyOrdered: l.qtyOrdered,
       qtyReceived: l.qtyOrdered,
       qtyDamaged: 0,
+      photoKeys: [],
+      photoUrls: [],
+      uploading: false,
     })),
   );
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // สร้าง URL รูปสินค้า (imageR2Path) — http เต็มใช้ตรง ๆ · key → ต่อ base
+  const productImg = useCallback(
+    (path: string | null): string | null => {
+      if (!path) return null;
+      if (/^https?:\/\//.test(path)) return path;
+      return r2PublicUrl ? `${r2PublicUrl}/${path}` : null;
+    },
+    [r2PublicUrl],
+  );
 
   const setReceived = useCallback((productId: string, qty: number) => {
     setDrafts((prev) =>
@@ -159,27 +210,70 @@ function PoCard({
     );
   }, []);
 
+  // ถ่าย/เลือกรูปของที่รับ → อัป → เก็บ key+url ลง draft
+  const addPhoto = useCallback(async (productId: string, file: File) => {
+    setError(null);
+    setDrafts((prev) =>
+      prev.map((d) => (d.productId === productId ? { ...d, uploading: true } : d)),
+    );
+    const res = await uploadReceivePhoto(file);
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.productId !== productId) return d;
+        if (!res.ok) return { ...d, uploading: false };
+        return {
+          ...d,
+          uploading: false,
+          photoKeys: [...d.photoKeys, res.key],
+          photoUrls: [...d.photoUrls, res.url],
+        };
+      }),
+    );
+    if (!res.ok) setError(res.error);
+  }, []);
+
+  const removePhoto = useCallback((productId: string, idx: number) => {
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.productId !== productId) return d;
+        return {
+          ...d,
+          photoKeys: d.photoKeys.filter((_, i) => i !== idx),
+          photoUrls: d.photoUrls.filter((_, i) => i !== idx),
+        };
+      }),
+    );
+  }, []);
+
   const confirm = useCallback(async () => {
     if (busy) return;
     if (!note.trim()) {
       setError("กรุณากรอกหมายเหตุการรับ (เช่น สภาพของ / ผู้รับ / กล่องที่ขาด)");
       return;
     }
-    const lines = drafts
-      .filter((d) => d.qtyReceived > 0 || d.qtyDamaged > 0)
-      .map((d) => ({
-        productId: d.productId,
-        qtyReceived: d.qtyReceived,
-        qtyDamaged: d.qtyDamaged,
-      }));
+    const active = drafts.filter((d) => d.qtyReceived > 0 || d.qtyDamaged > 0);
+    const lines = active.map((d) => ({
+      productId: d.productId,
+      qtyReceived: d.qtyReceived,
+      qtyDamaged: d.qtyDamaged,
+    }));
     if (lines.length === 0) {
       setError("กรุณาระบุจำนวนที่รับเข้าอย่างน้อย 1 รายการ");
       return;
     }
+    // ต่อท้ายรูปที่ถ่ายใหม่ลง note (ไม่แตะ signature ของ receivePo)
+    const photoRefs = active
+      .filter((d) => d.photoKeys.length > 0)
+      .map((d) => `${d.name}: ${d.photoKeys.join(", ")}`);
+    const noteOut =
+      photoRefs.length > 0
+        ? `${note.trim()}\n[รูปของที่รับ]\n${photoRefs.join("\n")}`
+        : note.trim();
+
     setBusy(true);
     setError(null);
     try {
-      const res = await receivePo({ poId: po.id, warehouseId, note: note.trim(), lines });
+      const res = await receivePo({ poId: po.id, warehouseId, note: noteOut, lines });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -196,7 +290,7 @@ function PoCard({
 
   return (
     <div className="dc-card" style={{ padding: 0, overflow: "hidden" }}>
-      {/* หัวใบ — แตะเพื่อกาง/พับ */}
+      {/* หัวใบ — โชว์ "ผู้ขาย" เด่น · แตะเพื่อกาง/พับ */}
       <button
         type="button"
         onClick={onToggle}
@@ -217,18 +311,22 @@ function PoCard({
           {open ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
+          {/* ผู้ขายเด่นสุด */}
           <div
             style={{
               fontSize: 17,
-              fontWeight: 700,
+              fontWeight: 800,
               color: "var(--dc-ink, #1f2733)",
               lineHeight: 1.25,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
-            {po.poCode}
+            {po.supplierName}
           </div>
           <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-            {po.supplierName} · {po.lineCount} รายการ
+            {po.poCode} · {po.lineCount} รายการ
           </div>
         </div>
         <span className={`dc-st dc-st--${po.statusTone}`} style={{ flexShrink: 0 }}>
@@ -247,106 +345,252 @@ function PoCard({
             gap: 14,
           }}
         >
-          {drafts.map((d) => (
-            <div
-              key={d.productId}
-              style={{
-                border: "1px solid var(--dc-line, #e6eaf0)",
-                borderRadius: 12,
-                padding: 14,
-              }}
-            >
+          {drafts.map((d) => {
+            const img = productImg(d.imageR2Path);
+            return (
               <div
+                key={d.productId}
                 style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: "var(--dc-ink, #1f2733)",
-                  lineHeight: 1.25,
+                  border: "1px solid var(--dc-line, #e6eaf0)",
+                  borderRadius: 14,
+                  padding: 14,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 14,
+                  alignItems: "stretch",
                 }}
               >
-                {d.name}
-              </div>
-              <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                {d.sku} · สั่งไว้ {d.qtyOrdered} ชิ้น
-              </div>
-
-              {/* จำนวนที่รับจริง */}
-              <div style={{ marginTop: 12 }}>
+                {/* ========== ซ้าย: รูป + จำนวนสั่ง + ชื่อ ========== */}
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "var(--dc-muted, #6b7785)",
-                    marginBottom: 6,
+                    flex: "1 1 180px",
+                    minWidth: 160,
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
                   }}
                 >
-                  รับจริง
-                </div>
-                <div className="dc-qty">
-                  <button
-                    type="button"
-                    onClick={() => setReceived(d.productId, d.qtyReceived - 1)}
-                    aria-label="ลดจำนวนรับ"
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      flexShrink: 0,
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: "var(--dc-surf2, #f4efe8)",
+                      border: "1px solid var(--dc-line, #e6eaf0)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--dc-muted, #9aa4b2)",
+                    }}
                   >
-                    −
-                  </button>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={d.qtyReceived}
-                    onChange={(e) => setReceived(d.productId, Number(e.target.value))}
-                    aria-label="จำนวนที่รับจริง"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setReceived(d.productId, d.qtyReceived + 1)}
-                    aria-label="เพิ่มจำนวนรับ"
-                  >
-                    ＋
-                  </button>
+                    {img ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={img}
+                        alt={d.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <ImageOff size={26} />
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "var(--dc-ink, #1f2733)",
+                        lineHeight: 1.25,
+                      }}
+                    >
+                      {d.name}
+                    </div>
+                    <div
+                      style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}
+                    >
+                      {d.sku}
+                    </div>
+                    <div
+                      style={{
+                        display: "inline-block",
+                        marginTop: 8,
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        background: "var(--dc-surf2, #f4efe8)",
+                        color: "var(--dc-ink, #1f2733)",
+                        fontSize: 13,
+                        fontWeight: 700,
+                      }}
+                    >
+                      สั่ง {d.qtyOrdered} {d.unit}
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {/* จำนวนที่เสียหาย */}
-              <div style={{ marginTop: 12 }}>
+                {/* ========== ขวา: รับจริง + เสียหาย + รูปที่ถ่ายใหม่ ========== */}
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "var(--dc-muted, #6b7785)",
-                    marginBottom: 6,
+                    flex: "1 1 200px",
+                    minWidth: 180,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
                   }}
                 >
-                  เสียหาย (ถ้ามี)
-                </div>
-                <div className="dc-qty">
-                  <button
-                    type="button"
-                    onClick={() => setDamaged(d.productId, d.qtyDamaged - 1)}
-                    aria-label="ลดจำนวนเสียหาย"
+                  {/* รับจริง (ใหญ่) */}
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "var(--dc-ink, #1f2733)",
+                        marginBottom: 6,
+                      }}
+                    >
+                      รับจริง
+                    </div>
+                    <div className="dc-qty">
+                      <button
+                        type="button"
+                        onClick={() => setReceived(d.productId, d.qtyReceived - 1)}
+                        aria-label="ลดจำนวนรับ"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={d.qtyReceived}
+                        onChange={(e) => setReceived(d.productId, Number(e.target.value))}
+                        aria-label="จำนวนที่รับจริง"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setReceived(d.productId, d.qtyReceived + 1)}
+                        aria-label="เพิ่มจำนวนรับ"
+                      >
+                        ＋
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* เสียหาย (เล็ก) */}
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--dc-muted, #6b7785)",
+                    }}
                   >
-                    −
-                  </button>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={d.qtyDamaged}
-                    onChange={(e) => setDamaged(d.productId, Number(e.target.value))}
-                    aria-label="จำนวนที่เสียหาย"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setDamaged(d.productId, d.qtyDamaged + 1)}
-                    aria-label="เพิ่มจำนวนเสียหาย"
-                  >
-                    ＋
-                  </button>
+                    <span style={{ whiteSpace: "nowrap" }}>เสียหาย</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={d.qtyDamaged}
+                      onChange={(e) => setDamaged(d.productId, Number(e.target.value))}
+                      aria-label="จำนวนที่เสียหาย"
+                      style={{
+                        width: 84,
+                        border: "1.5px solid var(--dc-line, #e6eaf0)",
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "var(--dc-ink, #1f2733)",
+                        background: "#fff",
+                      }}
+                    />
+                  </label>
+
+                  {/* ปุ่มถ่ายรูป/แนบรูปของที่รับ + thumbnail */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <label
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        border: "1.5px solid var(--dc-line, #e6eaf0)",
+                        background: "#fff",
+                        color: "var(--dc-ink, #1f2733)",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        cursor: d.uploading ? "wait" : "pointer",
+                        opacity: d.uploading ? 0.6 : 1,
+                      }}
+                    >
+                      <Camera size={18} />
+                      {d.uploading ? "กำลังอัป…" : "ถ่ายรูป / แนบรูปของที่รับ"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        disabled={d.uploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void addPhoto(d.productId, f);
+                          e.target.value = "";
+                        }}
+                        style={{ display: "none" }}
+                      />
+                    </label>
+
+                    {d.photoUrls.map((u, i) => (
+                      <div
+                        key={u}
+                        style={{
+                          position: "relative",
+                          width: 52,
+                          height: 52,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          border: "1px solid var(--dc-line, #e6eaf0)",
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={u}
+                          alt="รูปของที่รับ"
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(d.productId, i)}
+                          aria-label="ลบรูป"
+                          style={{
+                            position: "absolute",
+                            top: 2,
+                            right: 2,
+                            width: 22,
+                            height: 22,
+                            borderRadius: "50%",
+                            border: "none",
+                            background: "rgba(0,0,0,0.6)",
+                            color: "#fff",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 0,
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* หมายเหตุการรับ — เหมือนการนำเข้า */}
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
