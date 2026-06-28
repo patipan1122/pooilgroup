@@ -4,9 +4,9 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
-import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
-import { PurchasingTabs } from "@/components/dc/purchasing-tabs";
+import { requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { listSuppliersForPo } from "@/lib/dc/po-actions";
 import { getTodayFxRate } from "@/lib/dc/fx";
 import { PO_ORIGIN_LABEL } from "@/lib/dc/nav";
@@ -35,43 +35,32 @@ export default async function DcNewPoPage({
 
   const originLabel = PO_ORIGIN_LABEL[origin] ?? origin;
 
-  return (
-    <div className="dc-page dc-page--wide">
-      <PurchasingTabs />
+  const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
-      <div className="dc-head">
-        <div>
-          <Link
-            href="/dc/office/purchasing"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 13,
-              color: "var(--dc-muted, #5b6676)",
-              marginBottom: 4,
-            }}
-          >
-            <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
-          </Link>
-          <div className="dc-h1">สร้างใบสั่งซื้อ ({originLabel})</div>
-          <div className="dc-sub">
+  return (
+    <DcOfficeShell active="po" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <Link href="/dc/office/purchasing" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink2)", marginBottom: 8, textDecoration: "none" }}>
+          <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
+        </Link>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>สร้างใบสั่งซื้อ ({originLabel})</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>
             {origin === "CHINA"
               ? "สั่งจากจีน · ราคาเป็นหยวน (CNY) แปลงเป็นบาทอัตโนมัติ"
               : "ซื้อในไทย · ราคาเป็นบาท (THB)"}{" "}
             · เลือก/สร้างผู้ขาย+สินค้าตรงนี้ได้เลย → บันทึกเป็นร่าง
-          </div>
+          </p>
         </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
 
-      <PoCreateForm
-        origin={origin}
-        warehouses={warehouses}
-        suppliers={suppliers}
-        initialFxRate={fx?.rate ?? null}
-        fxDate={fx?.date ?? null}
-      />
-    </div>
+        <PoCreateForm
+          origin={origin}
+          warehouses={warehouses}
+          suppliers={suppliers}
+          initialFxRate={fx?.rate ?? null}
+          fxDate={fx?.date ?? null}
+        />
+      </div>
+    </DcOfficeShell>
   );
 }

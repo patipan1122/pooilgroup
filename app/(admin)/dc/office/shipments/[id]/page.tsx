@@ -6,7 +6,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { ShipmentDetail, type ShipmentDetailData } from "./shipment-detail";
 
 export const dynamic = "force-dynamic";
@@ -90,23 +91,21 @@ export default async function DcShipmentDetailPage({ params }: { params: Params 
     grns: ship.grns.map((g) => ({ id: g.id, grnCode: g.grnCode, postStatus: g.postStatus })),
   };
 
-  return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <Link
-            href="/dc/office/shipments"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#71717a", marginBottom: 4 }}
-          >
-            <ArrowLeft size={15} /> กลับรายการชิปเมนต์
-          </Link>
-          <div className="dc-h1">ชิปเมนต์ {ship.shipmentCode}</div>
-          <div className="dc-sub">รายการ · ค่าขนส่ง/ต้นทุนนำเข้า · สถานะ → รับเข้าคลัง (GRN)</div>
-        </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
+  const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
-      <ShipmentDetail data={data} canManage={canDcManage(ctx.session.user.role)} />
-    </div>
+  return (
+    <DcOfficeShell active="ship" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <Link href="/dc/office/shipments" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink2)", marginBottom: 8, textDecoration: "none" }}>
+          <ArrowLeft size={15} /> กลับรายการชิปเมนต์
+        </Link>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ชิปเมนต์ {ship.shipmentCode}</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>รายการ · ค่าขนส่ง/ต้นทุนนำเข้า · สถานะ → รับเข้าคลัง (GRN)</p>
+        </div>
+
+        <ShipmentDetail data={data} canManage={canDcManage(ctx.session.user.role)} />
+      </div>
+    </DcOfficeShell>
   );
 }

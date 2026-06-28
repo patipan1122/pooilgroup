@@ -7,7 +7,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
-import { DcModeSwitch } from "@/components/dc/mode-switch";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { type PoPaymentData } from "@/lib/dc/po-actions";
 import { DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { PoDetail, type PoDetailData } from "./po-detail";
@@ -191,31 +192,29 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
 
   const r2Public = process.env.R2_PUBLIC_URL ?? "";
 
-  return (
-    <div className="dc-page dc-page--wide">
-      <div className="dc-head">
-        <div>
-          <Link
-            href="/dc/office/purchasing"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#71717a", marginBottom: 4 }}
-          >
-            <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
-          </Link>
-          <div className="dc-h1">ใบสั่งซื้อ {po.poCode}</div>
-          <div className="dc-sub">รายการสินค้า · กล่อง/พัสดุ · เปลี่ยนสถานะ · รับเข้าคลัง</div>
-        </div>
-        <DcModeSwitch canManage={canDcManage(ctx.session.user.role)} />
-      </div>
+  const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
-      <PoDetail
-        data={data}
-        payments={payments}
-        goodsPaid={goodsPaid}
-        thaiFreightPaid={thaiFreightPaid}
-        warehouses={warehouses}
-        canManage={canDcManage(ctx.session.user.role)}
-        r2PublicUrl={r2Public}
-      />
-    </div>
+  return (
+    <DcOfficeShell active="po" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <Link href="/dc/office/purchasing" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink2)", marginBottom: 8, textDecoration: "none" }}>
+          <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
+        </Link>
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ใบสั่งซื้อ {po.poCode}</h1>
+          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>รายการสินค้า · กล่อง/พัสดุ · เปลี่ยนสถานะ · รับเข้าคลัง</p>
+        </div>
+
+        <PoDetail
+          data={data}
+          payments={payments}
+          goodsPaid={goodsPaid}
+          thaiFreightPaid={thaiFreightPaid}
+          warehouses={warehouses}
+          canManage={canDcManage(ctx.session.user.role)}
+          r2PublicUrl={r2Public}
+        />
+      </div>
+    </DcOfficeShell>
   );
 }

@@ -164,6 +164,11 @@ function isDcFullBleedPath(pathname: string): boolean {
     pathname === "/dc/office/receipts" ||
     // ใบรับสินค้า รายละเอียด /dc/office/receipts/<id> (ยกเว้น /new = ฟอร์มเก่า)
     /^\/dc\/office\/receipts\/(?!new$)[^/]+$/.test(pathname) ||
+    // รายละเอียดชิปเมนต์/ใบโอน (ยกเว้น /new ที่ยังเป็นฟอร์มเก่า)
+    /^\/dc\/office\/shipments\/(?!new$)[^/]+$/.test(pathname) ||
+    /^\/dc\/office\/transfers\/(?!new$)[^/]+$/.test(pathname) ||
+    // ใบสั่งซื้อ รายละเอียด + สร้างใหม่ (ทั้งคู่ปรับเป็นครีมแล้ว)
+    /^\/dc\/office\/purchasing\/[^/]+$/.test(pathname) ||
     // timeline การเดินของสินค้า /dc/office/products/<id>/timeline
     /^\/dc\/office\/products\/[^/]+\/timeline$/.test(pathname)
   );
