@@ -35,6 +35,7 @@ import {
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
+import { Dialog } from "@/components/ui/dialog";
 
 // ── types (props จาก server) ──────────────────────────────────
 export type PoLineData = {
@@ -216,6 +217,21 @@ export function PoDetail({
   const goodsPayment = payments.find((p) => p.kind === "GOODS") ?? null;
   const thaiFreightPayment = payments.find((p) => p.kind === "THAI_FREIGHT") ?? null;
 
+  // ── ขั้นต่อไป (Pinpoint #2/#3): กดเปิดป๊อปอัปเลื่อนสถานะ + กรอกข้อมูลที่ขั้นนั้นต้องใช้ ──
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const NEXT_ACTION_LABEL: Record<string, string> = {
+    DRAFT: "ส่งขออนุมัติ",
+    PENDING_APPROVAL: "อนุมัติใบสั่งซื้อ",
+    APPROVED: "ยืนยันสั่งกับผู้ขาย",
+    ORDERED: "ได้เลข Tracking",
+    SHIPPED: "ถึงไทยแล้ว",
+    ARRIVED_TH: "ถึงโกดังแล้ว",
+    AT_WAREHOUSE: "รับเข้าคลัง",
+    PARTIAL: "รับส่วนที่เหลือ",
+  };
+  const nextLabel = NEXT_ACTION_LABEL[status] ?? null;
+  const showAdvance = canManage && !!nextLabel;
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {error && (
@@ -226,6 +242,36 @@ export function PoDetail({
 
       {/* 0) ไทม์ไลน์ 5 ขั้น + badge รอใส่ข้อมูล */}
       <Timeline status={status} isChina={isChina} awaitingTracking={awaitingTracking} />
+
+      {/* ปุ่มเลื่อนขั้นถัดไป (Pinpoint #2/#3) — กดแล้วป๊อปอัปขึ้น กรอกข้อมูลที่ขั้นนั้นต้องใช้ */}
+      {showAdvance && (
+        <button
+          type="button"
+          onClick={() => setAdvanceOpen(true)}
+          disabled={pending}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            width: "100%", padding: "13px 16px", borderRadius: 12, border: "none", cursor: "pointer",
+            background: "var(--color-brand-600, #1c5fc4)", color: "#fff", fontSize: 15, fontWeight: 700,
+            fontFamily: "inherit", boxShadow: "0 2px 8px rgba(28,95,196,.25)",
+          }}
+        >
+          ⚡ ดำเนินการขั้นต่อไป: {nextLabel} →
+        </button>
+      )}
+
+      <AdvanceModal
+        open={advanceOpen}
+        onClose={() => setAdvanceOpen(false)}
+        data={data}
+        status={status}
+        isChina={isChina}
+        goodsPaid={goodsPaid}
+        thaiFreightPaid={thaiFreightPaid}
+        awaitingTracking={awaitingTracking}
+        defaultWarehouseId={data.warehouseId}
+        onDone={() => { setAdvanceOpen(false); refresh(); }}
+      />
 
       {/* 1) หัวใบ */}
       <div className="dc-card" style={{ display: "grid", gap: 14 }}>
@@ -449,6 +495,114 @@ function AdvanceBtn({ label, onClick, pending }: { label: string; onClick: () =>
     <button type="button" className="dc-btn-xl" style={btnSmall} disabled={pending} onClick={onClick}>
       {label}
     </button>
+  );
+}
+
+// ── ป๊อปอัปเลื่อนสถานะ (Pinpoint #2/#3) ───────────────────────────
+// กดขั้นถัดไป → ป๊อปอัปขึ้น → กรอกข้อมูลที่ขั้นนั้นต้องใช้ (น้อยสุด) → ยืนยัน → เลื่อนสถานะ.
+// reuse action เดิม (submitPo/.../receivePo/recordPoPayment) — ไม่แตะ section/ฟอร์มเดิม (fallback).
+function AdvanceModal({
+  open, onClose, data, status, isChina, goodsPaid, thaiFreightPaid, awaitingTracking, defaultWarehouseId, onDone,
+}: {
+  open: boolean; onClose: () => void; data: PoDetailData; status: string;
+  isChina: boolean; goodsPaid: boolean; thaiFreightPaid: boolean; awaitingTracking: boolean;
+  defaultWarehouseId: string | null; onDone: () => void;
+}) {
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"CNY" | "THB">(isChina ? "CNY" : "THB");
+  const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
+
+  type Res = { ok: boolean; error?: string };
+  const done = (r: Res) => { if (r.ok) onDone(); else setErr(r.error ?? "ทำรายการไม่สำเร็จ"); };
+  const exec = (fn: () => Promise<Res>) => start(async () => { setErr(null); done(await fn()); });
+  const payThen = (kind: "GOODS" | "THAI_FREIGHT", advance: () => Promise<Res>) =>
+    start(async () => {
+      setErr(null);
+      const amt = Math.round((parseFloat(amount) || 0) * 100);
+      if (amt <= 0) { setErr("กรอกจำนวนเงินที่จ่ายจริง"); return; }
+      const p = await recordPoPayment({ poId: data.id, kind, amountSatang: amt, currency, paidAt });
+      if (!p.ok) { setErr(p.error); return; }
+      done(await advance());
+    });
+  const receivePoCall = () =>
+    receivePo({
+      poId: data.id,
+      warehouseId: defaultWarehouseId ?? "",
+      note: null,
+      lines: data.lines.map((l) => ({ productId: l.productId, qtyReceived: l.qty, qtyDamaged: 0 })),
+    });
+  const doReceive = () => {
+    if (!defaultWarehouseId) { setErr("ใบนี้ยังไม่ผูกคลัง — ปิดป๊อปอัปแล้วใช้ฟอร์ม “รับเข้าคลัง” ด้านล่างเพื่อเลือกคลัง"); return; }
+    if (isChina && !thaiFreightPaid) payThen("THAI_FREIGHT", receivePoCall);
+    else exec(receivePoCall);
+  };
+
+  const inp: React.CSSProperties = { border: "1px solid #d4d4d8", borderRadius: 8, padding: "8px 11px", fontSize: 14, fontFamily: "inherit", outline: "none", background: "#fff", color: "#18181b" };
+  const chipStyle = (on: boolean): React.CSSProperties => ({ padding: "7px 12px", borderRadius: 8, border: `1px solid ${on ? "#1c5fc4" : "#d4d4d8"}`, background: on ? "#1c5fc4" : "#fff", color: on ? "#fff" : "#52525b", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" });
+  const primary: React.CSSProperties = { width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "#1c5fc4", color: "#fff", fontWeight: 700, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" };
+  const pStyle: React.CSSProperties = { margin: "0 0 4px", fontSize: 14, color: "#3f3f46", lineHeight: 1.5 };
+  const warn: React.CSSProperties = { fontSize: 12.5, color: "#92660a", fontWeight: 600, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 8, padding: "7px 10px" };
+
+  const payFields = (label: string) => (
+    <div style={{ display: "grid", gap: 8, padding: 12, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 10 }}>
+      <div style={{ fontSize: 12.5, color: "#92660a", fontWeight: 700 }}>{label} — ต้องบันทึกจ่ายก่อนถึงจะเลื่อนสถานะได้</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="จำนวนเงิน" style={{ ...inp, flex: 1, minWidth: 110 }} />
+        {isChina && (["CNY", "THB"] as const).map((c) => (
+          <button key={c} type="button" onClick={() => setCurrency(c)} style={chipStyle(currency === c)}>{c === "CNY" ? "¥ หยวน" : "฿ บาท"}</button>
+        ))}
+        <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} style={inp} />
+      </div>
+    </div>
+  );
+
+  let body: React.ReactNode = null;
+  if (status === "DRAFT") body = (
+    <><p style={pStyle}>ส่งใบนี้ขออนุมัติ — ผู้มีสิทธิ์จะกดอนุมัติให้เงินออก</p>
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => submitPo(data.id))}>ส่งขออนุมัติ</button></>
+  );
+  else if (status === "PENDING_APPROVAL") body = (
+    <><p style={pStyle}>อนุมัติใบสั่งซื้อนี้ — <b>เป็นการอนุมัติให้เงินออก</b></p>
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => approvePo(data.id))}>อนุมัติ</button></>
+  );
+  else if (status === "APPROVED") body = (
+    <><p style={pStyle}>ยืนยันว่าได้สั่งซื้อกับผู้ขายแล้ว → สถานะ “สั่งแล้ว”</p>
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markOrdered(data.id))}>ยืนยันสั่งแล้ว</button></>
+  );
+  else if (status === "ORDERED") body = (
+    <><p style={pStyle}>ของออกจากจีนแล้ว มีเลขพัสดุ → สถานะ “ได้เลข Tracking”</p>
+    {awaitingTracking && <div style={warn}>⚠️ ยังไม่มีกล่องที่มีเลขพัสดุ — เพิ่มกล่อง+เลขพัสดุที่ส่วน “กล่อง/พัสดุ” ด้านล่างก่อน</div>}
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markShipped(data.id))}>ยืนยันได้เลข Tracking</button></>
+  );
+  else if (status === "SHIPPED") body = (
+    <><p style={pStyle}>ของถึงไทยแล้ว → สถานะ “ถึงไทยแล้ว”</p>
+    <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markArrivedTh(data.id))}>ยืนยันถึงไทยแล้ว</button></>
+  );
+  else if (status === "ARRIVED_TH") body = (
+    <><p style={pStyle}>ของถึงโกดังแล้ว → สถานะ “ถึงโกดังแล้ว”</p>
+    {isChina && !goodsPaid ? (
+      <>{payFields("ค่าของ (จ่ายผู้ขายจีน)")}
+      <button type="button" style={primary} disabled={pending} onClick={() => payThen("GOODS", () => markAtWarehouse(data.id))}>บันทึกจ่ายค่าของ + ถึงโกดังแล้ว</button></>
+    ) : (
+      <button type="button" style={primary} disabled={pending} onClick={() => exec(() => markAtWarehouse(data.id))}>ยืนยันถึงโกดังแล้ว</button>
+    )}</>
+  );
+  else if (status === "AT_WAREHOUSE" || status === "PARTIAL") body = (
+    <><p style={pStyle}>รับของเข้าคลัง → ตัดเข้าสต๊อก (สถานะ “รับแล้ว”)</p>
+    {isChina && !thaiFreightPaid && payFields("ค่าขนส่งในไทย")}
+    <button type="button" style={primary} disabled={pending} onClick={doReceive}>รับเข้าครบทุกชิ้น</button>
+    <p style={{ ...pStyle, fontSize: 12, color: "#71717a", marginTop: 6 }}>ต้องการรับบางส่วน / ใส่ของเสียหาย → ปิดป๊อปอัปแล้วใช้ฟอร์ม “รับเข้าคลัง” ด้านล่าง</p></>
+  );
+
+  return (
+    <Dialog open={open} onClose={onClose} title="ดำเนินการขั้นต่อไป">
+      <div style={{ display: "grid", gap: 12 }}>
+        {err && <div style={{ background: "#fdeaea", border: "1px solid #f3c7c2", color: "#b8362a", borderRadius: 8, padding: "9px 12px", fontSize: 13.5, fontWeight: 600 }}>{err}</div>}
+        {body}
+      </div>
+    </Dialog>
   );
 }
 
