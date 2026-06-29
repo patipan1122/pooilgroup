@@ -255,6 +255,25 @@ export function TeaView({
     [channelConfigs],
   );
 
+  // ── สรุปก่อนนำเข้า (กันซ้ำ): นับวันใหม่ vs วันที่จะเขียนทับ + จับว่าไฟล์ชื่อนี้เคยอัปแล้วไหม ──
+  const importPreview = useMemo(() => {
+    if (!pending) return null;
+    let totalNew = 0;
+    let totalOverwrite = 0;
+    pending.branches.forEach((b, i) => {
+      const pick = picks[i] ?? "";
+      if (!pick) return;
+      for (const r of b.rows) {
+        const prev = dayMap.get(`${pick}|${r.date}`)?.pos_gross ?? null;
+        if (prev == null) totalNew++;
+        else totalOverwrite++;
+      }
+    });
+    // จับไฟล์ซ้ำจากชื่อไฟล์ในประวัติการอัป (เตือนเฉย ๆ — ระบบเขียนทับต่อวันอยู่แล้ว ไม่บวกซ้ำ)
+    const dup = importHistory.find((h) => h.file && h.file === pending.fileName) ?? null;
+    return { totalNew, totalOverwrite, dup };
+  }, [pending, picks, dayMap, importHistory]);
+
   return (
     <div className="space-y-5">
       {/* controls */}
@@ -354,15 +373,44 @@ export function TeaView({
             <div className="text-sm text-zinc-500">
               ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
             </div>
+
+            {/* เตือนไฟล์ซ้ำ — ชื่อไฟล์นี้เคยอัปแล้ว */}
+            {importPreview?.dup && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                🔁 <b>ไฟล์ชื่อนี้เคยอัปแล้ว</b> เมื่อ {fmtDateTime(importPreview.dup.at)} โดย{" "}
+                {importPreview.dup.by} ({importPreview.dup.baht.toLocaleString()} ฿ ·{" "}
+                {importPreview.dup.days} วัน) — อัปซ้ำได้ ระบบจะ<b>เขียนทับ ไม่บวกเพิ่ม</b>
+              </div>
+            )}
+
+            {/* สรุปก่อนนำเข้า: วันใหม่ vs เขียนทับของเดิม */}
+            {importPreview && (importPreview.totalNew > 0 || importPreview.totalOverwrite > 0) && (
+              <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm">
+                จะนำเข้า:{" "}
+                <span className="font-semibold text-emerald-700">
+                  {importPreview.totalNew} วันใหม่
+                </span>
+                {importPreview.totalOverwrite > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold text-amber-700">
+                      เขียนทับของเดิม {importPreview.totalOverwrite} วัน
+                    </span>{" "}
+                    <span className="text-zinc-500">(แทนที่ค่าเดิม ไม่บวกซ้ำ)</span>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               {pending.branches.map((b, i) => {
                 const pick = picks[i] ?? "";
                 let neu = 0;
-                let changed = 0;
+                let exist = 0;
                 for (const r of b.rows) {
                   const prev = pick ? dayMap.get(`${pick}|${r.date}`)?.pos_gross ?? null : null;
                   if (prev == null) neu++;
-                  else if (Math.abs(prev - r.gross) >= 0.01) changed++;
+                  else exist++;
                 }
                 const total = b.rows.reduce((s, r) => s + r.gross, 0);
                 return (
@@ -399,7 +447,7 @@ export function TeaView({
                       {pick && (
                         <>
                           {" · "}ใหม่ {neu}
-                          {changed > 0 && <span className="text-amber-700"> · เปลี่ยน {changed}</span>}
+                          {exist > 0 && <span className="text-amber-700"> · เขียนทับ {exist}</span>}
                         </>
                       )}
                     </div>
