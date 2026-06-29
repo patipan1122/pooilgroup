@@ -247,8 +247,13 @@ export async function createCashCollection(
     if (d.getTime() > now + 5 * 60 * 1000) {
       return { ok: false, error: "เวลาที่เก็บเป็นอนาคต — กรอกเวลาที่เก็บจริง" };
     }
-    if (d.getTime() < now - 30 * 24 * 60 * 60 * 1000) {
-      return { ok: false, error: "เวลาที่เก็บเก่าเกินไป (เกิน 30 วัน) — ตรวจสอบอีกครั้ง" };
+    // Cap back-dating to 7 days: a maid records within a day or two of the
+    // actual collection; a wider window would let her park a shortage outside
+    // the office's default 30-day per-round glance (the cumulative meter still
+    // catches it, but keep the headline verdict honest). Office backfill of
+    // older rounds uses the CSV/office path, not the live maid form.
+    if (d.getTime() < now - 7 * 24 * 60 * 60 * 1000) {
+      return { ok: false, error: "เวลาที่เก็บเก่าเกิน 7 วัน — ถ้าเป็นรอบเก่าให้ออฟฟิศคีย์ให้" };
     }
     collectedAtDate = d;
   }
