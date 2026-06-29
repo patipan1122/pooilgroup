@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
+import type { SavedTeaDay, TeaImportHistoryRow } from "@/lib/cashhub/tea-data";
 import type { TeaChannelConfig } from "@/lib/cashhub/tea-channels";
 import type { TeaReconcileCell } from "@/lib/cashhub/tea-settlement-data";
 import { parseTeaPos, csvToMatrix, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
@@ -22,12 +22,25 @@ type Props = {
   canConfig: boolean;
   channelConfigs: TeaChannelConfig[];
   reconStatus: Record<string, TeaReconcileCell>;
+  importHistory: TeaImportHistoryRow[];
   initialView: "matrix" | "branch";
   initialBranch: string;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const shortLabel = (b: BranchMeta) => b.label.replace(b.brand, "").trim() || b.label;
+const fmtDateTime = (iso: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 export function TeaView({
   month,
@@ -39,6 +52,7 @@ export function TeaView({
   canConfig,
   channelConfigs,
   reconStatus,
+  importHistory,
   initialView,
   initialBranch,
 }: Props) {
@@ -53,6 +67,8 @@ export function TeaView({
   const [pending, setPending] = useState<{ fileName: string; branches: TeaPosBranch[] } | null>(null);
   const [picks, setPicks] = useState<string[]>([]); // picks[i] = branchCode ของ section i
   const [importing, setImporting] = useState(false);
+  const [reading, setReading] = useState(false); // กำลังอ่าน/แปลงไฟล์ (ไฟล์ใหญ่ใช้เวลา)
+  const [showHistory, setShowHistory] = useState(false);
 
   const dayMap = useMemo(() => {
     const m = new Map<string, SavedTeaDay>();
@@ -137,6 +153,9 @@ export function TeaView({
   // ── เลือกไฟล์ Foodstory → parse ฝั่ง client (หลายสาขา) → เด้ง panel ยืนยัน ──
   const onPickFile = useCallback(async (file: File) => {
     setMsg(null);
+    setReading(true);
+    // ปล่อยให้ UI วาดสถานะ "กำลังอ่าน…" ก่อน (การ parse ฝั่ง client เป็น sync — ไฟล์ใหญ่ค้างจอชั่วคราว)
+    await sleep(30);
     try {
       const buf = await file.arrayBuffer();
       let matrix: unknown[][];
@@ -161,7 +180,9 @@ export function TeaView({
       setPending({ fileName: file.name, branches: res.branches });
       setPicks(res.branches.map((b) => b.detectedBranchCode ?? ""));
     } catch {
-      setMsg({ kind: "err", text: "อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv" });
+      setMsg({ kind: "err", text: "อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv (ลองบันทึกเป็น .csv แล้วอัปใหม่)" });
+    } finally {
+      setReading(false);
     }
   }, []);
 
@@ -276,12 +297,15 @@ export function TeaView({
             </button>
           )}
           {canPull && (
-            <label className="h-10 inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50 cursor-pointer">
-              ⬆ อัปไฟล์ Foodstory
+            <label
+              className={`h-10 inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 text-sm font-medium ${reading ? "opacity-60 cursor-wait" : "hover:bg-zinc-50 cursor-pointer"}`}
+            >
+              {reading ? "⏳ กำลังอ่านไฟล์…" : "⬆ อัปไฟล์ Foodstory"}
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 className="hidden"
+                disabled={reading}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) void onPickFile(f);
@@ -289,6 +313,15 @@ export function TeaView({
                 }}
               />
             </label>
+          )}
+          {canPull && (
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className={`h-10 rounded-xl border px-4 text-sm font-medium ${showHistory ? "border-[var(--ch-brand,#1e3aff)] bg-[var(--ch-brand,#1e3aff)]/[0.06] text-[var(--ch-brand,#1e3aff)]" : "border-zinc-200 hover:bg-zinc-50"}`}
+            >
+              🕘 ประวัติการอัป
+            </button>
           )}
           <button
             type="button"
@@ -382,6 +415,63 @@ export function TeaView({
             >
               {importing ? "กำลังนำเข้า…" : "ยืนยันนำเข้าทุกสาขาที่เลือก"}
             </button>
+          </div>
+        )}
+
+        {/* ประวัติการอัปไฟล์ Foodstory (toggle ด้วยปุ่ม 🕘 ประวัติการอัป) */}
+        {showHistory && (
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-zinc-800">
+                🕘 ประวัติการอัปไฟล์ {importHistory.length > 0 && `(${importHistory.length} ครั้งล่าสุด)`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistory(false)}
+                className="text-sm text-zinc-400 hover:text-zinc-700"
+              >
+                ✕ ปิด
+              </button>
+            </div>
+            {importHistory.length === 0 ? (
+              <div className="py-4 text-center text-sm text-zinc-400">
+                ยังไม่มีประวัติการอัปไฟล์ — อัปไฟล์ Foodstory ครั้งแรกแล้วจะขึ้นที่นี่
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {importHistory.map((h, i) => (
+                  <div key={i} className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-medium text-zinc-800">{fmtDateTime(h.at)}</span>
+                      <span className="text-zinc-300">·</span>
+                      <span className="text-zinc-600">โดย {h.by}</span>
+                      <div className="grow" />
+                      <span className="tabular-nums text-zinc-500">
+                        {h.days} วัน · {h.baht.toLocaleString()} ฿
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+                      {h.file && <span className="text-zinc-500">📄 {h.file}</span>}
+                      <span className="text-emerald-600">✅ ตรง {h.matched}</span>
+                      {h.mismatch > 0 && <span className="text-red-600">⚠️ ไม่ตรง {h.mismatch}</span>}
+                      {h.noIv > 0 && <span className="text-amber-600">⚪ ยังไม่มี IV {h.noIv}</span>}
+                    </div>
+                    {h.branches.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {h.branches.map((b, j) => (
+                          <span
+                            key={j}
+                            className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600"
+                          >
+                            {b.label} · {b.saved} วัน
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

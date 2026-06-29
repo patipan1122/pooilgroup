@@ -139,11 +139,22 @@ export function parseTeaPos(matrix: unknown[][]): TeaPosParseResult {
   return parseEodReport(matrix);
 }
 
-/** ไฟล์เป็นรายงาน "แยกตามบิล" ไหม (มีหัวคอลัมน์ วันที่ชำระเงิน) */
+/**
+ * normalize หัวคอลัมน์: ลบ NBSP/zero-width (Foodstory บางทีแทรกอักขระล่องหน) +
+ * ยุบช่องว่างซ้ำ + ตัดหัวท้าย → กันชื่อคอลัมน์ "ดูเหมือนตรง" แต่ match ไม่ติดเพราะมีช่องว่างแปลก.
+ */
+function normHeader(h: unknown): string {
+  return String(h ?? "")
+    .replace(/[\u00A0\u200B\u200C\u200D\uFEFF\u3000]/g, " ") // NBSP/zero-width/BOM/full-width -> space
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** ไฟล์เป็นรายงาน "แยกตามบิล" ไหม (มีหัวคอลัมน์ วันที่ชำระเงิน) — สแกน 15 แถวแรกเผื่อมีหัวเรื่องยาว */
 function isBillReport(matrix: unknown[][]): boolean {
   return matrix
-    .slice(0, 8)
-    .some((r) => Array.isArray(r) && r.some((c) => String(c ?? "").includes("วันที่ชำระเงิน")));
+    .slice(0, 15)
+    .some((r) => Array.isArray(r) && r.some((c) => normHeader(c).includes("วันที่ชำระเงิน")));
 }
 
 /** Excel serial number → YYYY-MM-DD (epoch 1899-12-30) */
@@ -194,19 +205,49 @@ function parseBillCellDate(raw: string, order: "dmy" | "mdy"): string | null {
 /** parse รายงาน "แยกตามบิล" → รวมต่อ (สาขา, วัน) + แยกช่องทางจากประเภทการชำระเงิน */
 function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
   const hi = matrix.findIndex(
-    (r) => Array.isArray(r) && r.some((c) => String(c ?? "").includes("วันที่ชำระเงิน")),
+    (r) => Array.isArray(r) && r.some((c) => normHeader(c).includes("วันที่ชำระเงิน")),
   );
-  const header = (matrix[hi] as unknown[]).map((h) => String(h ?? "").trim());
-  const find = (pred: (h: string) => boolean) => header.findIndex(pred);
-  const cDate = find((h) => h.includes("วันที่ชำระเงิน"));
-  const cNet = find((h) => h.startsWith("รวมสุทธิ"));
-  const cPay = find((h) => h === "ประเภทการชำระเงิน");
-  const cBranch = find((h) => h === "สาขา");
-  if (cDate < 0 || cNet < 0 || cBranch < 0)
+  if (hi < 0)
+    return { branches: [], error: 'รายงานแยกตามบิล: ไม่พบแถวหัวตาราง "วันที่ชำระเงิน"' };
+  const header = (matrix[hi] as unknown[]).map(normHeader);
+  // หาคอลัมน์แบบ "ใจกว้าง" ตามลำดับความเฉพาะเจาะจง — เจอตัวแรกที่เข้าเงื่อนไขก็ใช้เลย
+  // กัน Foodstory เปลี่ยนชื่อรายงาน: "ราคาสุทธิ"(รายละเอียดบิล) vs "รวมสุทธิ"(สรุปต่อบิล) · "ชื่อสาขา" vs "สาขา"
+  const findCol = (...preds: ((h: string) => boolean)[]) => {
+    for (const p of preds) {
+      const i = header.findIndex(p);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const cDate = findCol(
+    (h) => h.includes("วันที่ชำระเงิน"),
+    (h) => h.startsWith("วันที่"),
+  );
+  const cNet = findCol(
+    (h) => h.startsWith("รวมสุทธิ") || h.startsWith("ราคาสุทธิ"),
+    (h) => h === "สุทธิ",
+    (h) => h.includes("สุทธิ") && !h.includes("ภาษี") && !h.includes("ก่อน"),
+  );
+  const cPay = findCol(
+    (h) => h === "ประเภทการชำระเงิน",
+    (h) => h.includes("ประเภทการชำระ"),
+    (h) => h.includes("ช่องทางการชำระ"),
+  );
+  const cBranch = findCol(
+    (h) => h === "สาขา" || h === "ชื่อสาขา",
+    (h) => h.endsWith("สาขา") && !h.startsWith("รหัส"),
+  );
+  if (cDate < 0 || cNet < 0 || cBranch < 0) {
+    const miss = [
+      cDate < 0 ? "วันที่ชำระเงิน" : null,
+      cNet < 0 ? "ยอดสุทธิ (รวมสุทธิ/ราคาสุทธิ)" : null,
+      cBranch < 0 ? "สาขา" : null,
+    ].filter(Boolean) as string[];
     return {
       branches: [],
-      error: "รายงานแยกตามบิล: ไม่พบคอลัมน์ที่ต้องการ (วันที่ชำระเงิน / รวมสุทธิ / สาขา)",
+      error: `รายงานแยกตามบิล: ไม่พบคอลัมน์ ${miss.join(" · ")} — กรุณาเลือกรายงาน "ยอดขายแยกตามรายละเอียดบิล" หรือ "สรุปยอดขายแยกตามบิล" จาก Foodstory`,
     };
+  }
 
   const order = detectSlashOrder(matrix, cDate, hi + 1);
   const bag = new Map<string, { storeLabel: string; byDate: Map<string, TeaPosRow> }>();

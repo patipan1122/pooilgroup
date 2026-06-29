@@ -116,14 +116,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  await audit({
-    orgId,
-    userId: gate.session.user.id,
-    action: "IMPORT_TEA_POS",
-    resourceType: "cashhub_tea_daily",
-    diff: { new: { fileName, branches: results.map((r) => ({ code: r.branchCode, saved: r.saved })) } },
-  });
-
   const totals = results.reduce(
     (a, r) => ({
       saved: a.saved + r.saved,
@@ -133,6 +125,33 @@ export async function POST(req: NextRequest) {
     }),
     { saved: 0, matched: 0, mismatch: 0, noIv: 0 },
   );
+  // ยอดรวมบาทของไฟล์นี้ (จากแถวที่ผ่าน validate แล้ว) — เก็บไว้โชว์ในประวัติการอัป
+  const totalBaht =
+    Math.round(
+      [...byBranch.values()].reduce(
+        (s, b) => s + b.rows.reduce((a, r) => a + r.gross, 0),
+        0,
+      ) * 100,
+    ) / 100;
+
+  // เก็บประวัติการอัปลง audit_logs (อ่านกลับด้วย loadTeaImportHistory) — field ชื่อ file/days ตรงกับ Amazon
+  await audit({
+    orgId,
+    userId: gate.session.user.id,
+    action: "IMPORT_TEA_POS",
+    resourceType: "cashhub_tea_daily",
+    diff: {
+      new: {
+        file: fileName,
+        days: totals.saved,
+        baht: totalBaht,
+        matched: totals.matched,
+        mismatch: totals.mismatch,
+        noIv: totals.noIv,
+        branches: results.map((r) => ({ code: r.branchCode, label: r.label, saved: r.saved })),
+      },
+    },
+  });
 
   return NextResponse.json({ ok: true, results, totals, skipped });
 }

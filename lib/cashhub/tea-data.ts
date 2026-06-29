@@ -206,6 +206,63 @@ export async function upsertTeaPos(
   return { saved: payload.length, matched, mismatch, noIv };
 }
 
+// ── ประวัติการอัปไฟล์ Foodstory (อ่านจาก audit_logs IMPORT_TEA_POS) ──────────
+export type TeaImportHistoryRow = {
+  at: string; // ISO timestamp
+  file: string | null; // ชื่อไฟล์
+  days: number; // จำนวนวันที่บันทึก
+  baht: number; // ยอดรวมบาทของไฟล์นั้น
+  matched: number; // ตรง POS↔IV
+  mismatch: number; // ไม่ตรง
+  noIv: number; // ยังไม่มี IV
+  branches: { code: string; label: string; saved: number }[];
+  by: string; // ชื่อผู้อัป
+};
+
+/** ประวัติการอัปไฟล์ล่าสุด (mirror amazon-data.loadImportHistory) — ไม่ต้องสร้างตารางใหม่ */
+export async function loadTeaImportHistory(
+  admin: Admin,
+  orgId: string,
+  limit = 20,
+): Promise<TeaImportHistoryRow[]> {
+  const { data } = await admin
+    .from("audit_logs")
+    .select("created_at, user_id, diff")
+    .eq("org_id", orgId)
+    .eq("action", "IMPORT_TEA_POS")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean) as string[])];
+  const nameById = new Map<string, string>();
+  if (userIds.length) {
+    const { data: users } = await admin.from("users").select("id, name").in("id", userIds);
+    for (const u of (users ?? []) as Array<{ id: string; name: string }>) nameById.set(u.id, u.name);
+  }
+  return rows.map((r) => {
+    const di = (r.diff as { new?: Record<string, unknown> } | null)?.new ?? {};
+    const uid = r.user_id ? String(r.user_id) : null;
+    const branches = Array.isArray(di.branches)
+      ? (di.branches as Array<Record<string, unknown>>).map((b) => ({
+          code: String(b.code ?? ""),
+          label: String(b.label ?? b.code ?? ""),
+          saved: Number(b.saved ?? 0),
+        }))
+      : [];
+    return {
+      at: String(r.created_at ?? ""),
+      file: (di.file as string | null) ?? null,
+      days: Number(di.days ?? 0),
+      baht: Number(di.baht ?? 0),
+      matched: Number(di.matched ?? 0),
+      mismatch: Number(di.mismatch ?? 0),
+      noIv: Number(di.noIv ?? 0),
+      branches,
+      by: (uid ? nameById.get(uid) : null) ?? "—",
+    };
+  });
+}
+
 /** สรุปยอดต่อสาขาในช่วง (ไว้โชว์ KPI/หัวตาราง) */
 export type TeaBranchSummary = {
   branch_code: string;
