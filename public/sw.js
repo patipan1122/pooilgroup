@@ -11,7 +11,7 @@
 //
 // Bump CACHE on every strategy change so activate() purges the stale cache.
 
-const CACHE = "pooilgroup-v6";
+const CACHE = "pooilgroup-v7";
 const SHELL = ["/", "/home", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

@@ -151,10 +151,10 @@ const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 // จึงต้อง "ข้าม" chrome ของ AdminShell ทั้งหมด. ขยายเมื่อ reskin หน้าอื่นเสร็จ.
 // ⚠️ ระวัง dynamic route: /receipts/new (ฟอร์มเก่า) ห้ามเต็มจอ — match เฉพาะหน้าที่ทำใหม่.
 function isDcFullBleedPath(pathname: string): boolean {
-  // ทุกหน้า DC หลังบ้าน = ชุดครีม DcOfficeShell เดียวกันทั้งหมด · ห้าม migrate ครึ่งๆ
-  // (ไม่งั้นเมนูกระโดด "2 ชุด" + บางหน้าหายปุ่มติชม — CEO 2026-06-29).
-  // ⚠️ ทุก page.tsx ใต้ /dc/office ต้องห่อด้วย <DcOfficeShell> ไม่งั้นจะ render เปล่า (ไม่มีเมนู).
-  return pathname === "/dc/office" || pathname.startsWith("/dc/office/");
+  // CEO 2026-06-29: DC เลิกใช้ shell ครีมแยกแล้ว — ทุกหน้า DC (รวม /dc/office/*) ใช้กรอบ
+  // มาตรฐาน AdminShell ชุดเดียวกับทุกโปรแกรม (เมนู/หัว/สลับโปรแกรม เหมือนกันหมด · ไม่กระโดด).
+  // → DC ไม่ full-bleed อีกต่อไป. (DcOfficeShell เหลือเป็นแค่ content wrapper บาง ๆ.)
+  return false;
 }
 
 export function AdminShell({
