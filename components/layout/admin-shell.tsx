@@ -237,9 +237,7 @@ export function AdminShell({
 
   // หน้า DC ที่ปรับโฉมแล้ว → render เนื้อในเต็มจอ ไม่ครอบด้วย topbar/sidebar ของแอป.
   // (hooks ทั้งหมดถูกเรียกครบก่อนบรรทัดนี้แล้ว — early-return จึงไม่ผิดกฎ hook order)
-  // ตู้คีบ OS (ClawOS) — full-bleed shell เฉพาะตัว (เหมือน DC) ทุกหน้าใต้ /clawfleet/os
-  const isClawOsFullBleed = pathname.startsWith("/clawfleet/os");
-  if (isDcFullBleedPath(pathname) || isClawOsFullBleed) {
+  if (isDcFullBleedPath(pathname)) {
     // เต็มจอ แต่ยังคง Pinpoint (โหมดติชม) ไว้ — ไม่งั้น CEO ติชมหน้านี้ไม่ได้.
     return (
       <>

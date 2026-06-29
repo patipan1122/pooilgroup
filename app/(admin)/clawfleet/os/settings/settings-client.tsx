@@ -200,7 +200,7 @@ export function SettingsClient({
         style={{ marginTop: 18 }}
         right={
           <Link
-            href="/clawfleet/v2/team"
+            href="/clawfleet/os/staff"
             style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "9px 15px", borderRadius: 9, cursor: "pointer", textDecoration: "none" }}
           >
             <Plus size={15} /> เพิ่มผู้ใช้
@@ -237,7 +237,7 @@ export function SettingsClient({
         <div style={{ padding: "12px 20px", fontSize: 11.5, color: "#9AA1AB", display: "flex", alignItems: "center", gap: 8 }}>
           <button
             type="button"
-            onClick={() => router.push("/clawfleet/v2/team")}
+            onClick={() => router.push("/clawfleet/os/staff")}
             style={{ fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
           >
             จัดการบทบาท · เชิญ · ปิดใช้ (หน้าทีม) →

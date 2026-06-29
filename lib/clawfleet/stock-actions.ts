@@ -15,8 +15,8 @@ import { assertCfAdmin, userBranchIds } from "./role-guard";
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
 
-const STOCK_PATH = "/clawfleet/v2/stock";
-const ANOMALY_PATH = "/clawfleet/v2/anomalies";
+const STOCK_PATH = "/clawfleet/os/stock";
+const ANOMALY_PATH = "/clawfleet/os/collections";
 
 // ── code-gen (human-readable · BE year · timestamp+random suffix · กันชนต่ำ) ──
 function beYearTwo(): string {
@@ -235,7 +235,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
-  revalidatePath("/clawfleet/v2/hub");
+  revalidatePath("/clawfleet/os/dashboard");
   return { ok: true, data: result };
 }
 
@@ -382,7 +382,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
   revalidatePath(ANOMALY_PATH);
-  revalidatePath("/clawfleet/v2/hub");
+  revalidatePath("/clawfleet/os/dashboard");
   return { ok: true, data: result };
 }
 
@@ -487,7 +487,7 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
-  revalidatePath("/clawfleet/v2/hub");
+  revalidatePath("/clawfleet/os/dashboard");
   return { ok: true, data: result };
 }
 

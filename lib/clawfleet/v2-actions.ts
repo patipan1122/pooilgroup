@@ -82,9 +82,9 @@ export async function reviewV2Session(
     },
   });
 
-  revalidatePath("/clawfleet/v2/anomalies");
-  revalidatePath("/clawfleet/v2/operations");
-  revalidatePath("/clawfleet/v2/hub");
+  revalidatePath("/clawfleet/os/collections");
+  revalidatePath("/clawfleet/os/collections");
+  revalidatePath("/clawfleet/os/dashboard");
   return { ok: true };
 }
 
@@ -139,8 +139,8 @@ export async function startBranchSession(input: unknown): Promise<ResultOf<{ id:
       },
       select: { id: true, sessionCode: true },
     });
-    revalidatePath("/clawfleet/v2/operations");
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { id: s.id, code: s.sessionCode } };
   } catch (e) {
     return { ok: false, error: `เปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
@@ -271,7 +271,7 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
       }
       return created;
     });
-    revalidatePath("/clawfleet/v2/operations");
+    revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { id: ev.id } };
   } catch (e) {
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
@@ -366,9 +366,9 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
       },
       select: { id: true },
     });
-    revalidatePath("/clawfleet/v2/operations");
-    revalidatePath("/clawfleet/v2/anomalies");
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { status: cc.status, flags: cc.flags } };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
@@ -435,8 +435,8 @@ export async function startGroupSession(
       },
       select: { id: true, sessionCode: true },
     });
-    revalidatePath("/clawfleet/v2/operations");
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { id: s.id, code: s.sessionCode, groupType } };
   } catch (e) {
     return { ok: false, error: `เปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
@@ -504,7 +504,7 @@ export async function submitExchangerEvent(input: unknown): Promise<ResultOf<{ i
       },
       select: { id: true },
     });
-    revalidatePath("/clawfleet/v2/operations");
+    revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { id: ev.id } };
   } catch (e) {
     return { ok: false, error: `บันทึกตู้แลกไม่สำเร็จ: ${(e as Error).message}` };
@@ -640,9 +640,9 @@ export async function closeGroupSession(
       where: { id: data.sessionId, orgId },
       select: { status: true, anomalyFlags: true },
     });
-    revalidatePath("/clawfleet/v2/operations");
-    revalidatePath("/clawfleet/v2/anomalies");
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
     return {
       ok: true,
       data: { status: after?.status ?? cc.status, flags: after?.anomalyFlags ?? cc.flags },
@@ -691,8 +691,8 @@ export async function createDelivery(input: {
       },
       select: { id: true },
     });
-    revalidatePath("/clawfleet/v2/stock");
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/stock");
+    revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { id: d.id } };
   } catch (e) {
     return { ok: false, error: `สั่งของไม่สำเร็จ: ${(e as Error).message}` };
@@ -705,7 +705,7 @@ export async function createDelivery(input: {
 // (assertCfAdmin redirects ถ้าไม่มีสิทธิ์). ทุก action: Zod + try/catch + revalidate.
 // =============================================================
 
-const MANAGE_PATH = "/clawfleet/v2/manage";
+const MANAGE_PATH = "/clawfleet/os/branches";
 
 /** unique-violation จาก Prisma (รหัสซ้ำ) */
 function isUniqueViolation(e: unknown): boolean {
@@ -1244,10 +1244,10 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
     }
 
     revalidatePath(MANAGE_PATH);
-    revalidatePath("/clawfleet/v2/hub");
-    revalidatePath("/clawfleet/v2/stock");
-    revalidatePath("/clawfleet/v2/anomalies");
-    revalidatePath("/clawfleet/v2/operations");
+    revalidatePath("/clawfleet/os/dashboard");
+    revalidatePath("/clawfleet/os/stock");
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { branches: branchCount, machines: machineCount, sessions: sessionCount } };
   } catch (e) {
     return { ok: false, error: `ใส่ข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };
@@ -1399,7 +1399,7 @@ export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean 
     await prisma.company.deleteMany({ where: { orgId, code: `${DEMO_PREFIX}CO` } }).catch(() => {});
 
     revalidatePath(MANAGE_PATH);
-    revalidatePath("/clawfleet/v2/hub");
+    revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { deleted: true } };
   } catch (e) {
     return { ok: false, error: `ลบข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };

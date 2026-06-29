@@ -1,24 +1,30 @@
-// ClawFleet — LINE Mini App (LIFF) staff entry · /liff/clawfleet
+// ตู้คีบ OS — LINE Mini App (LIFF) staff entry · /liff/clawfleet
 //
-// Replaces Excel for field staff: opens inside LINE, LiffBootstrap (app/liff/layout)
-// handles LINE auth → session, then renders the SAME group collection flow as the
-// web /clawfleet/v2/collect (getGroupCollectData → CollectGroupClient): pick branch
-// → pick group → (exchanger step if TOKEN) → claws one by one → close → 3-way
-// cross-check. Mobile-first (Tailwind, no cf-scope dependency).
-//
-// Go-live: set NEXT_PUBLIC_LIFF_ID (LINE channel) for in-LINE auto-login; the route
-// already works for any authenticated session (LINE in-app browser or web fallback).
-
+// เปิดในแอป LINE: LiffBootstrap (app/liff/layout) จัดการ LINE auth → session แล้วเรนเดอร์
+// แอปพนักงานหน้าบ้าน "ตู้คีบ OS" ตัวเดียวกับ /clawfleet/os/app (StaffAppClient) — flow เก็บเงิน
+// 6 สเต็ป กระทบยอด 3 ทางกันโกง. ใช้ UI ใหม่ (เลิกพึ่ง v2/collect ที่ลบทิ้งแล้ว).
 import { getGroupCollectData } from "@/lib/clawfleet/v2-group-data";
-import { CollectGroupClient } from "@/app/(admin)/clawfleet/v2/collect/collect-group-client";
+import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/v2-group-data";
+import { StaffAppClient } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
+import "@/app/(admin)/clawfleet/os/clawos.css";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClawfleetLiffPage() {
-  const data = await getGroupCollectData();
+  let orgId = "";
+  let branches: GroupCollectBranch[] = [];
+  let skus: CollectSku[] = [];
+  try {
+    const data = await getGroupCollectData();
+    orgId = data.orgId;
+    branches = data.branches;
+    skus = data.skus;
+  } catch {
+    // graceful: ยังไม่ migrate / DB ว่าง → StaffAppClient ใช้ demo fallback เอง
+  }
   return (
-    <div className="mx-auto w-full max-w-md px-1 py-2">
-      <CollectGroupClient orgId={data.orgId} branches={data.branches} skus={data.skus} />
+    <div className="clawos">
+      <StaffAppClient orgId={orgId} branches={branches} skus={skus} />
     </div>
   );
 }

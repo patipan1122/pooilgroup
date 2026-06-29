@@ -10,9 +10,10 @@
  * `lib/clawfleet/queries.ts` for the existing helpers we'll wrap.
  */
 
-import type { BranchTone } from "@/components/clawfleet/v2/chrome";
-
-export type { BranchTone };
+// BranchTone — inline (เดิม import จาก components/clawfleet/v2/chrome ที่ลบทิ้งแล้ว 2026-06-29)
+export type BranchTone =
+  | "indigo" | "cyan" | "emerald" | "amber" | "violet"
+  | "rose" | "sky" | "lime" | "fuchsia" | "teal";
 
 export type Branch = {
   id: string;

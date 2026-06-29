@@ -3,6 +3,10 @@
  * Server: ดึงบัญชีผู้ใช้จริง (getTeamData) + snapshot การตั้งค่าระบบ (getSettingsData) ใน try/catch.
  * ถ้า DB ว่าง/ยังไม่ migrate → client ใช้ SAMPLE fallback + แบนเนอร์ "ตัวอย่าง" (ตาม pattern ClawFleet).
  */
+import { redirect } from "next/navigation";
+import { requireSession } from "@/lib/auth/session";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { isCfAdmin } from "@/lib/clawfleet/role-guard";
 import { getTeamData, getSettingsData } from "@/lib/clawfleet/v2-admin-queries";
 import { SettingsClient, type SettingsUserRow } from "./settings-client";
 
@@ -30,6 +34,11 @@ function lastLoginLabel(d: Date | null): string {
 }
 
 export default async function SettingsPage() {
+  // หน้าตั้งค่า & สิทธิ์ = เฉพาะแอดมินตู้คีบ (กัน staff/viewer URL-hop เข้าดูบัญชีผู้ใช้/นโยบาย)
+  const session = await requireSession();
+  const canSee = isCfAdmin(session.user.role) || (await userIsModuleAdmin(session.user, "clawfleet"));
+  if (!canSee) redirect("/clawfleet/os/dashboard");
+
   let users: SettingsUserRow[] = [];
   let counts = { branches: 0, machines: 0 };
 

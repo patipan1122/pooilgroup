@@ -18,12 +18,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { getBaseUrl } from "@/lib/utils/base-url";
-import { assertCfAdmin, userBranchIds } from "./role-guard";
+import { assertCfAdmin, userBranchIds, canCfManage } from "./role-guard";
 
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
 
-const TEAM_PATH = "/clawfleet/v2/team";
+const TEAM_PATH = "/clawfleet/os/staff";
 
 /** role ที่อนุญาตให้กำหนดให้พนักงานสาขาตู้คีบ (ไม่เปิด admin org-wide จากหน้านี้) */
 const CF_ASSIGNABLE_ROLES = ["staff", "branch_manager", "area_manager"] as const;
@@ -109,6 +109,11 @@ export async function inviteCfStaff(
     }
   }
 
+  // กันเชิญด้วยบทบาทที่สูง/เท่าระดับตัวเอง (role-rank-privilege-escalation-guard)
+  if (!canCfManage(session.user.role, role)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เชิญด้วยบทบาทนี้ (เกินระดับของคุณ)" };
+  }
+
   const token = makeInviteToken();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
@@ -188,6 +193,16 @@ export async function updateCfStaffRole(
     return { ok: false, error: "พนักงานคนนี้เป็นแอดมินองค์กร · เปลี่ยนสิทธิ์ที่หน้าผู้ใช้ส่วนกลาง" };
   }
   if (target.role === parsed.data.role) return { ok: true };
+
+  // กันยกสิทธิ์ข้าม/เท่าระดับตัวเอง (memory: role-rank-privilege-escalation-guard) —
+  // area_manager ห้ามตั้ง peer area_manager หรือสิทธิ์ที่สูง/เท่าตัวเอง · super_admin ผ่านหมด
+  if (!canCfManage(session.user.role, parsed.data.role)) {
+    return { ok: false, error: "ไม่มีสิทธิ์กำหนดบทบาทนี้ (เกินระดับของคุณ)" };
+  }
+  // กันเปลี่ยนบทบาทของตัวเอง (กัน self-lockout)
+  if (userId === session.user.id) {
+    return { ok: false, error: "เปลี่ยนบทบาทของตัวเองไม่ได้" };
+  }
 
   // ต้องผูกกับสาขานี้จริง
   const ub = await prisma.userBranch.findFirst({
