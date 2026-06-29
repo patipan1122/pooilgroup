@@ -2598,6 +2598,21 @@ enum ChairopsCleanlinessGrade {
   @@schema("chairops")
 }
 
+// CEO 2026-06-29 · triage states for a suspect-broken payment device. Lives
+// ABOVE the alert (survives auto-clear) and BESIDE the damage ticket (the
+// lightweight "ตรวจ→ตัดสินใจซ่อม" stage before a formal repair ticket).
+enum ChairopsChairCheckStatus {
+  PENDING // ยังไม่ตรวจ (default when first surfaced)
+  CHECKING // กำลังตรวจสอบ
+  MAID_SCHEDULED // นัดแม่บ้านไปดูแล้ว
+  REPAIR_REPORTED // แจ้งซ่อมแล้ว (อาจมีใบแจ้งซ่อม)
+  PARTS_SENT // ส่งอะไหล่แล้ว
+  RESOLVED // แก้แล้ว / เงินกลับมา
+  FALSE_ALARM // ตรวจแล้วไม่เสีย
+
+  @@schema("chairops")
+}
+
 // Where a cash-collection row came from · drives the photo-required CHECK
 // constraint on ChairopsCashCollection (MAID_MANUAL still requires
 // evidencePhotoUrl + imageHash · CSV_IMPORT / OFFICE_PROXY may omit them).
@@ -3179,6 +3194,57 @@ model ChairopsAuditLog {
   @@index([entity, entityId])
   @@index([userId, createdAt])
   @@index([createdAt])
+  @@schema("chairops")
+}
+
+// CEO 2026-06-29 · per-(chair, payment device) triage record for the "ตู้เสีย"
+// feature. One row per streamKey (`${chairCode}::${stream}`), lazily created the
+// first time office acts on a suspect. Holds the current triage status; the
+// append-only ChairopsChairCheckLog records who-did-what-when (no race on JSON).
+// linkedTicketId graduates a check into the existing repair-ticket flow.
+model ChairopsChairCheck {
+  id               String                   @id @default(uuid())
+  orgId            String
+  branchId         String
+  chairId          String
+  chairCode        String
+  stream           String // "coin" | "cash" | "transfer"
+  streamKey        String // `${chairCode}::${stream}`
+  status           ChairopsChairCheckStatus @default(PENDING)
+  linkedTicketId   String?
+  note             String? // latest short note / next action
+  lastActionById   String?
+  lastActionByName String?
+  lastActionAt     DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  logs ChairopsChairCheckLog[]
+
+  @@unique([orgId, streamKey])
+  @@index([orgId, branchId])
+  @@index([orgId, status])
+  @@index([orgId, chairCode])
+  @@schema("chairops")
+}
+
+// Append-only timeline for a ChairopsChairCheck. byUserId/byName are denormalised
+// (no FK) so the log survives user changes and never blocks a write.
+model ChairopsChairCheckLog {
+  id         String   @id @default(uuid())
+  orgId      String
+  checkId    String
+  action     String // "STATUS" | "NOTE"
+  fromStatus String?
+  toStatus   String?
+  note       String?
+  byUserId   String?
+  byName     String?
+  createdAt  DateTime @default(now())
+
+  check ChairopsChairCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, checkId, createdAt])
   @@schema("chairops")
 }
 

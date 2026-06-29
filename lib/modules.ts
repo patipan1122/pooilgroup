@@ -581,12 +581,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
       },
       {
-        href: "/chairops/broken-chairs",
-        label: "จัดการตู้เสีย",
-        icon: Wrench,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
-      },
-      {
+        // CEO 2026-06-29 · "ตู้เสีย" merged into ของเสีย as a tab — single menu.
         href: "/chairops/damage",
         label: "ของเสีย",
         icon: Wrench,

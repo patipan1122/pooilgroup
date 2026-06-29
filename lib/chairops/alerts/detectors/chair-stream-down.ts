@@ -23,7 +23,8 @@ import {
   STREAM_LABEL,
 } from "@/lib/chairops/alerts/_stream-activity";
 
-const LINK_PATH = "/chairops/broken-chairs";
+// "ตู้เสีย" merged into ของเสีย as the ตู้ต้องเช็ก tab (CEO 2026-06-29).
+const LINK_PATH = "/chairops/damage?tab=suspects";
 
 export async function detectChairStreamDown(orgId?: string): Promise<NewAlert[]> {
   const suspects = await computeStreamSuspects(orgId);

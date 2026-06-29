@@ -36,6 +36,36 @@ export const STREAM_LABEL: Record<StreamKey, string> = {
   transfer: "ตัวรับเงินโอน",
 };
 
+// UI meta for each payment device — short label + icon + a soft chip class.
+// Colours lean blue/green/orange (not yellow) per CEO taste
+// [[feedback-ceo-ui-taste-white-on-blue-least-yellow-2026-06-24]].
+export const STREAM_META: Record<
+  StreamKey,
+  { label: string; short: string; icon: string; chipClass: string; unit: string }
+> = {
+  coin: {
+    label: "ตัวรับเหรียญ",
+    short: "เหรียญ",
+    icon: "🪙",
+    chipClass: "bg-orange-50 text-orange-700 border border-orange-200",
+    unit: "เหรียญ",
+  },
+  cash: {
+    label: "ตัวรับแบงค์",
+    short: "แบงค์",
+    icon: "💵",
+    chipClass: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+    unit: "บาท",
+  },
+  transfer: {
+    label: "ตัวรับเงินโอน",
+    short: "โอน",
+    icon: "📲",
+    chipClass: "bg-blue-50 text-blue-700 border border-blue-200",
+    unit: "บาท",
+  },
+};
+
 export interface StreamSuspect {
   orgId: string;
   branchId: string;
@@ -199,4 +229,130 @@ export async function computeStreamSuspects(orgId?: string): Promise<StreamSuspe
   }
 
   return suspects;
+}
+
+// ── Per-chair drill-down ────────────────────────────────────────────────────
+// Full 3-stream history + per-device state for ONE chair, using the SAME rules
+// as computeStreamSuspects (so the detail page can never disagree with the list).
+
+export interface ChairStreamDay {
+  bizDate: Date;
+  coin: number; // count
+  cash: number; // baht (bills only)
+  transfer: number; // baht
+}
+
+export interface ChairStreamState {
+  stream: StreamKey;
+  lastActiveAt: Date | null;
+  daysZero: number;
+  hasBaseline: boolean; // earned within BASELINE_DAYS → worth watching
+  isSuspect: boolean; // hasBaseline && chairAlive && daysZero ≥ threshold
+}
+
+export interface ChairStreamDetail {
+  chair: {
+    id: string;
+    chairCode: string;
+    branchId: string;
+    branchName: string;
+    installedAt: Date | null;
+  };
+  chairAlive: boolean;
+  newInstall: boolean;
+  posBlocked: boolean;
+  threshold: number;
+  days: ChairStreamDay[]; // ascending, only days with a real PosDaily row
+  streams: Record<StreamKey, ChairStreamState>;
+}
+
+/** Drill-down for a single chair. Returns null when the chair isn't in this org. */
+export async function computeChairStreamDetail(
+  orgId: string,
+  chairCode: string,
+): Promise<ChairStreamDetail | null> {
+  const chair = await prisma.chairopsChair.findFirst({
+    where: { orgId, chairCode },
+    select: {
+      id: true,
+      chairCode: true,
+      branchId: true,
+      installedAt: true,
+      suspectThresholdDays: true,
+      branch: { select: { name: true } },
+    },
+  });
+  if (!chair) return null;
+
+  const threshold = chair.suspectThresholdDays ?? 2;
+  const now = Date.now();
+  const since = new Date(now - LOOKBACK_DAYS * DAY_MS);
+  const baselineFrontier = new Date(now - BASELINE_DAYS * DAY_MS);
+  const chairRecentFrontier = new Date(now - CHAIR_RECENT_DAYS * DAY_MS);
+
+  const blocked = await prisma.chairopsAlert.findFirst({
+    where: {
+      kind: ChairopsAlertKind.POS_NOT_INGESTED,
+      status: { in: ["OPEN", "ACK"] },
+      orgId,
+      branchId: chair.branchId,
+    },
+    select: { id: true },
+  });
+  const posBlocked = !!blocked;
+
+  const rows = await prisma.chairopsPosDaily.findMany({
+    where: { orgId, branchId: chair.branchId, chairCode, bizDate: { gte: since } },
+    select: { bizDate: true, coinInsertCount: true, cashTotal: true, onlineTotal: true },
+    orderBy: { bizDate: "asc" },
+  });
+
+  const days: ChairStreamDay[] = rows.map((r) => ({
+    bizDate: r.bizDate,
+    coin: r.coinInsertCount,
+    cash: toNum(r.cashTotal as never),
+    transfer: toNum(r.onlineTotal as never),
+  }));
+
+  const lastActive: Record<StreamKey, Date | null> = { coin: null, cash: null, transfer: null };
+  for (const r of rows) {
+    for (const s of STREAMS) {
+      if (STREAM_VALUE[s](r) > 0) {
+        const d = lastActive[s];
+        if (!d || r.bizDate > d) lastActive[s] = r.bizDate;
+      }
+    }
+  }
+  const chairLastActive =
+    [lastActive.coin, lastActive.cash, lastActive.transfer]
+      .filter((d): d is Date => d != null)
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const chairAlive = !!chairLastActive && chairLastActive >= chairRecentFrontier;
+  const newInstall =
+    !!chair.installedAt && now - chair.installedAt.getTime() < NEW_INSTALL_GRACE_MS;
+
+  const streams = {} as Record<StreamKey, ChairStreamState>;
+  for (const s of STREAMS) {
+    const last = lastActive[s];
+    const hasBaseline = !!last && last >= baselineFrontier;
+    const daysZero = last ? rows.filter((r) => r.bizDate > last).length : 0;
+    const isSuspect = !posBlocked && !newInstall && chairAlive && hasBaseline && daysZero >= threshold;
+    streams[s] = { stream: s, lastActiveAt: last, daysZero, hasBaseline, isSuspect };
+  }
+
+  return {
+    chair: {
+      id: chair.id,
+      chairCode: chair.chairCode,
+      branchId: chair.branchId,
+      branchName: chair.branch?.name ?? "(ไม่ทราบสาขา)",
+      installedAt: chair.installedAt,
+    },
+    chairAlive,
+    newInstall,
+    posBlocked,
+    threshold,
+    days,
+    streams,
+  };
 }
