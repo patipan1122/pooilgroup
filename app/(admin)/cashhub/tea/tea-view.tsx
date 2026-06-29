@@ -64,7 +64,11 @@ export function TeaView({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   // ── นำเข้า POS Foodstory (หลายสาขา/ไฟล์) ──
-  const [pending, setPending] = useState<{ fileName: string; branches: TeaPosBranch[] } | null>(null);
+  const [pending, setPending] = useState<{
+    fileName: string;
+    branches: TeaPosBranch[];
+    reportType?: "summary" | "detail" | "eod";
+  } | null>(null);
   const [picks, setPicks] = useState<string[]>([]); // picks[i] = branchCode ของ section i
   const [importing, setImporting] = useState(false);
   const [reading, setReading] = useState(false); // กำลังอ่าน/แปลงไฟล์ (ไฟล์ใหญ่ใช้เวลา)
@@ -177,7 +181,7 @@ export function TeaView({
         return;
       }
       if (res.warning) setMsg({ kind: "err", text: `⚠️ ${res.warning}` });
-      setPending({ fileName: file.name, branches: res.branches });
+      setPending({ fileName: file.name, branches: res.branches, reportType: res.reportType });
       setPicks(res.branches.map((b) => b.detectedBranchCode ?? ""));
     } catch {
       setMsg({ kind: "err", text: "อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv (ลองบันทึกเป็น .csv แล้วอัปใหม่)" });
@@ -373,6 +377,19 @@ export function TeaView({
             <div className="text-sm text-zinc-500">
               ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
             </div>
+
+            {/* ⚠️ เตือนชนิดรายงาน — "รายละเอียดบิล" ยอดอาจคลาดเคลื่อนจากยอดบิลจริง (TRCloud) */}
+            {pending.reportType === "detail" && (
+              <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-3 text-sm text-red-800">
+                ⚠️ <b>ไฟล์นี้เป็นรายงาน &ldquo;ยอดขายแยกตามรายละเอียดบิล&rdquo;</b> (รวมราคารายเมนู) —
+                ยอดอาจ<b>คลาดเคลื่อนเล็กน้อย</b>จากยอดบิลจริง เพราะไม่รวมส่วนลด/ปัดเศษระดับบิล
+                จึงอาจไม่ตรงกับ TRCloud
+                <div className="mt-1.5 font-semibold text-red-900">
+                  👉 แนะนำให้ใช้รายงาน &ldquo;สรุปยอดขายแยกตามบิล&rdquo; แทน (ยอดต่อบิลจริง · ตรง
+                  TRCloud) — ยังนำเข้าไฟล์นี้ได้ แต่ตัวเลขจะเป็นค่าประมาณ
+                </div>
+              </div>
+            )}
 
             {/* เตือนไฟล์ซ้ำ — ชื่อไฟล์นี้เคยอัปแล้ว */}
             {importPreview?.dup && (

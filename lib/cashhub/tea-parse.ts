@@ -83,6 +83,11 @@ export type TeaPosParseResult = {
   branches: TeaPosBranch[];
   error?: string;
   warning?: string; // เช่น มีบางบรรทัดอ่านวันที่ไม่ได้ → เตือนผู้ใช้ (ไม่ block)
+  // ชนิดรายงาน Foodstory ที่ตรวจพบ — ใช้เตือน UI:
+  //   summary = "สรุปยอดขายแยกตามบิล" (รวมสุทธิ = ยอดบิลจริง · ตรง TRCloud) ✅
+  //   detail  = "ยอดขายแยกตามรายละเอียดบิล" (ราคาสุทธิ = รวมรายเมนู · อาจคลาดเคลื่อน) ⚠️
+  //   eod     = "ปิดกะ/ปิดสิ้นวัน" (ยอดรวมวัน · ตรง)
+  reportType?: "summary" | "detail" | "eod";
 };
 
 function num(v: unknown): number {
@@ -249,6 +254,11 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
     };
   }
 
+  // "รวมสุทธิ" = ยอดบิลจริง (สรุปต่อบิล · ตรง TRCloud) · "ราคาสุทธิ" = รวมรายเมนู (รายละเอียดบิล · อาจคลาดเคลื่อน)
+  const reportType: "summary" | "detail" = header[cNet].startsWith("ราคาสุทธิ")
+    ? "detail"
+    : "summary";
+
   const order = detectSlashOrder(matrix, cDate, hi + 1);
   const bag = new Map<string, { storeLabel: string; byDate: Map<string, TeaPosRow> }>();
   let dropped = 0; // บรรทัดที่มีสาขา+ยอด แต่อ่านวันที่ไม่ได้
@@ -291,7 +301,7 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
     dropped > 0
       ? `มี ${dropped} บิลที่อ่านวันที่ไม่ได้ → ไม่ถูกนำเข้า (แนะนำอัปเป็นไฟล์ .csv จะแม่นกว่า)`
       : undefined;
-  return { branches, warning };
+  return { branches, warning, reportType };
 }
 
 /** parse รายงาน "ปิดกะและปิดสิ้นวัน" (EOD) */
