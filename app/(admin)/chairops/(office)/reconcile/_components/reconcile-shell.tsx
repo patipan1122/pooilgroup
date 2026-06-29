@@ -17,7 +17,7 @@ import {
   getReconcileTimeline,
   getReconcilePeriods,
   getReconcileDayDetail,
-  getReconcilePerChair,
+  getReconcilePerChairTW,
   getReconcilePerChairDetail,
   ledgerTotals,
   type ReconcileDayDetail,
@@ -148,7 +148,7 @@ export async function ReconcileShell({
   // Only the active one is fetched. Both share the same date-filter window.
   const perChair =
     view === "perchair" && branchId && !perChairDaily
-      ? await getReconcilePerChair({
+      ? await getReconcilePerChairTW({
           orgId,
           branchId,
           from: safeFrom,

@@ -36,6 +36,8 @@ import {
   type ReconcileDayDetail,
   type ReconcilePerChair,
   type PerChairRow,
+  type ReconcilePerChairTW,
+  type PerChairVerdict,
   type ReconcilePerChairDetail,
   type PerChairDay,
   type PerChairDetailCell,
@@ -1096,41 +1098,60 @@ export function DayDetailPanel({
 // Per-chair tab — deep dive (CEO 2026-06-29): POS sales (ควรได้) vs maid-
 // collected (เก็บได้) per massage chair → which machine is short/over.
 // ─────────────────────────────────────────────────────────────
-const PERCHAIR_TOL = 20; // ±฿ band counted as "ตรง" (rounding/coin slack)
-
-function perChairStatus(r: PerChairRow): {
-  emoji: string;
-  label: string;
-  color: string;
-} {
+const PERCHAIR_TOL = 20;
+// Legacy full-day helper — retained for the old getReconcilePerChair (the TAB
+// now uses the time-windowed verdict below).
+function perChairStatus(r: PerChairRow): { emoji: string; label: string; color: string } {
   if (!r.hasCollection && r.hasPos)
     return { emoji: "⚪", label: "ยังไม่เก็บ", color: "var(--text-3)" };
-  if (!r.hasPos && r.hasCollection)
-    return { emoji: "⚪", label: "ไม่มี POS", color: "var(--text-3)" };
-  if (!r.hasPos && !r.hasCollection)
-    return { emoji: "⚪", label: "ไม่มีข้อมูล", color: "var(--text-3)" };
-  if (r.variance < -PERCHAIR_TOL)
-    return { emoji: "🔴", label: "ขาด", color: "var(--crit)" };
-  if (r.variance > PERCHAIR_TOL)
-    return { emoji: "🟡", label: "เกิน", color: "#92400e" };
+  if (r.variance < -PERCHAIR_TOL) return { emoji: "🔴", label: "ขาด", color: "var(--crit)" };
+  if (r.variance > PERCHAIR_TOL) return { emoji: "🟡", label: "เกิน", color: "#92400e" };
   return { emoji: "🟢", label: "ตรง", color: "var(--ok)" };
+}
+void perChairStatus;
+
+// Time-windowed verdict → emoji/label/color (.co-scope tokens).
+function verdictDisplay(v: PerChairVerdict): { emoji: string; label: string; color: string } {
+  switch (v) {
+    case "ok":
+      return { emoji: "🟢", label: "ตรง", color: "var(--ok)" };
+    case "warn":
+      return { emoji: "🟡", label: "ขาดเล็กน้อย", color: "#92400e" };
+    case "short":
+      return { emoji: "🔴", label: "ขาดเยอะ", color: "var(--crit)" };
+    case "over":
+      return { emoji: "🟡", label: "เก็บเกินยอดขาย", color: "#92400e" };
+    case "uncollected":
+      return { emoji: "⚪", label: "ยังไม่เก็บรอบนี้", color: "var(--text-3)" };
+    case "incomplete":
+    default:
+      return { emoji: "⚪", label: "ไม่มีข้อมูล", color: "var(--text-3)" };
+  }
+}
+
+// Bangkok-local short datetime for the collection instant.
+function fmtCollectedAt(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function PerChairTab({
   data,
   isOrg,
 }: {
-  data: ReconcilePerChair | null;
+  data: ReconcilePerChairTW | null;
   isOrg: boolean;
 }) {
   if (isOrg) {
     return (
-      <div
-        className="card"
-        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
-      >
-        🔍 <strong>เลือกสาขาก่อน</strong> — มุมมอง “รายตู้” ดูเชิงลึกทีละสาขา
-        (กดสาขาทางซ้าย)
+      <div className="card" style={{ margin: "12px 0", padding: 18, fontSize: 13 }}>
+        🔍 <strong>เลือกสาขาก่อน</strong> — มุมมอง “รายตู้” ดูเชิงลึกทีละสาขา (กดสาขาทางซ้าย)
       </div>
     );
   }
@@ -1141,118 +1162,66 @@ export function PerChairTab({
       </div>
     );
   }
-  const {
-    rows,
-    totals,
-    unattributedCollected,
-    unattributedCount,
-    unattributedExpected,
-    unattributedExpectedCount,
-  } = data;
-  const posChairs = rows.filter((r) => r.hasPos).length;
-  const totalVarColor =
-    totals.variance < -PERCHAIR_TOL
-      ? "var(--crit)"
-      : totals.variance > PERCHAIR_TOL
-        ? "#92400e"
-        : "var(--ok)";
+  const { rows, totals, cumShortageTotal, inBoxNowTotal } = data;
+  const lastVarColor =
+    totals.lastVariance < -20 ? "var(--crit)" : totals.lastVariance > 20 ? "#92400e" : "var(--ok)";
   return (
     <div className="rc-ledger">
       <div className="text-3" style={{ fontSize: 11.5, padding: "6px 2px 4px" }}>
-        เทียบ “ยอดขายต่อตู้ (POS · ควรได้)” กับ “แม่บ้านเก็บได้ต่อตู้” ช่วง{" "}
-        <strong className="mono">{data.from}</strong> –{" "}
-        <strong className="mono">{data.to}</strong> · ติดลบ 🔴 = เงินขาดที่ตู้นั้น
+        เทียบ “แม่บ้านเก็บได้” กับ “ยอดขายที่เครื่องทำได้ <strong>ถึงเวลาที่เธอเก็บ</strong>” (จากมิเตอร์
+        ไม่ใช่ยอดทั้งวัน) ช่วง <strong className="mono">{data.from}</strong> –{" "}
+        <strong className="mono">{data.to}</strong> · 🔴 = รอบล่าสุดขาด · “ขาดสะสม” = ตัวจับโกงจริง
+        (มิเตอร์ แก้ไม่ได้)
       </div>
 
-      <div
-        className="row gap-2"
-        style={{ flexWrap: "wrap", fontSize: 12, margin: "2px 0 8px" }}
-      >
+      <div className="row gap-2" style={{ flexWrap: "wrap", fontSize: 12, margin: "2px 0 8px" }}>
         <span className="chip">
-          ควรได้รวม <strong className="mono">{fmtN(totals.expected)}</strong> ฿
+          รอบล่าสุด เก็บได้ <strong className="mono">{fmtN(totals.lastCollected)}</strong> / ควรได้{" "}
+          <strong className="mono">{fmtN(totals.lastExpected)}</strong> ฿
         </span>
-        <span className="chip">
-          เก็บได้รวม <strong className="mono">{fmtN(totals.collected)}</strong> ฿
+        <span className="chip" style={{ color: lastVarColor, fontWeight: 600 }}>
+          รอบล่าสุดต่าง <strong className="mono">{fmtSigned(totals.lastVariance)}</strong> ฿
         </span>
-        <span className="chip" style={{ color: totalVarColor, fontWeight: 600 }}>
-          ขาด/เกินรวม <strong className="mono">{fmtSigned(totals.variance)}</strong> ฿
+        <span
+          className="chip"
+          style={{ color: cumShortageTotal < -20 ? "var(--crit)" : "var(--text)", fontWeight: 600 }}
+        >
+          ขาดสะสมรวม <strong className="mono">{fmtSigned(cumShortageTotal)}</strong> ฿
+        </span>
+        <span className="chip" style={{ color: "var(--info)" }}>
+          รอเก็บในเครื่องรวม <strong className="mono">~{fmtN(inBoxNowTotal)}</strong> ฿
         </span>
       </div>
 
-      {unattributedCount > 0 && (
-        <div
-          className="card"
-          style={{
-            margin: "0 0 8px",
-            padding: "8px 12px",
-            fontSize: 12,
-            background: "#fffbeb",
-            borderColor: "#fcd34d",
-            color: "#92400e",
-          }}
-        >
-          ⚠️ มีเงินเก็บ{" "}
-          <strong className="mono">{fmtN(unattributedCollected)}</strong> ฿ จาก{" "}
-          {unattributedCount} รอบ ที่นำเข้าด้วย CSV — ไม่ได้แยกรายตู้ จึงไม่อยู่ในตารางข้างล่าง
-          (แต่รวมอยู่ใน “เก็บได้รวม” แล้ว)
-        </div>
-      )}
-
-      {unattributedExpectedCount > 0 && (
-        <div
-          className="card"
-          style={{
-            margin: "0 0 8px",
-            padding: "8px 12px",
-            fontSize: 12,
-            background: "#fffbeb",
-            borderColor: "#fcd34d",
-            color: "#92400e",
-          }}
-        >
-          ⚠️ มียอดขาย POS{" "}
-          <strong className="mono">{fmtN(unattributedExpected)}</strong> ฿ ที่ไม่มีรหัสตู้ —
-          ไม่อยู่ในตารางข้างล่าง (แต่รวมอยู่ใน “ควรได้รวม” แล้ว)
-        </div>
-      )}
-
-      {rows.length > 0 && posChairs === 0 && (
-        <div
-          className="card"
-          style={{
-            margin: "0 0 8px",
-            padding: "8px 12px",
-            fontSize: 12,
-            background: "var(--surface-soft)",
-          }}
-        >
-          ℹ️ ช่วงนี้ยังไม่มี “ยอดขายรายตู้” — POS อาจอัปแบบรวมสาขา (ไม่ได้แยกเครื่อง)
-          จึงเทียบขาด/เกินรายตู้ยังไม่ได้ · ดูได้เฉพาะ “แม่บ้านเก็บได้” รายตู้
+      {(totals.incompleteCount > 0 || totals.uncollectedCount > 0) && (
+        <div className="text-3" style={{ fontSize: 11, margin: "0 0 6px" }}>
+          {totals.verifiedCount} ตู้ตรวจได้
+          {totals.uncollectedCount > 0 && ` · ${totals.uncollectedCount} ตู้ยังไม่เก็บรอบนี้`}
+          {totals.incompleteCount > 0 &&
+            ` · ${totals.incompleteCount} ตู้ ⚪ ข้อมูลไม่ครบ (ยังไม่อัปไฟล์ event)`}
         </div>
       )}
 
       {rows.length === 0 ? (
-        <div
-          className="text-3"
-          style={{ textAlign: "center", padding: "40px 0", fontSize: 12.5 }}
-        >
-          ยังไม่มีข้อมูลรายตู้ในช่วงนี้ — ต้องมีแม่บ้านกรอกในแอป (ไม่ใช่ CSV) + POS อัพแล้ว
+        <div className="text-3" style={{ textAlign: "center", padding: "40px 0", fontSize: 12.5 }}>
+          ยังไม่มีข้อมูลรายตู้ในช่วงนี้ — ต้องมีแม่บ้านกรอกในแอป (ไม่ใช่ CSV)
         </div>
       ) : (
         <table className="tbl rc-ledger-tbl">
           <thead>
             <tr>
               <th>เก้าอี้</th>
-              <th className="num">ยอดขาย (ควรได้)</th>
-              <th className="num">แม่บ้านเก็บได้</th>
-              <th className="num rc-tcol">ขาด/เกิน</th>
-              <th>สถานะ</th>
+              <th>เก็บล่าสุด</th>
+              <th className="num">เก็บได้</th>
+              <th className="num">ควรได้ (ถึงเวลานั้น)</th>
+              <th className="num rc-tcol">ส่วนต่าง</th>
+              <th className="num">ขาดสะสม</th>
+              <th className="num">รอเก็บในกล่อง</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
-              const st = perChairStatus(r);
-              const showVar = r.hasPos && r.hasCollection;
+              const v = verdictDisplay(r.verdict);
               return (
                 <tr key={r.chairCode}>
                   <td>
@@ -1265,35 +1234,41 @@ export function PerChairTab({
                       </span>
                     )}
                   </td>
-                  <td className="num mono">
-                    {r.hasPos ? fmtN(r.expected) : <span className="text-muted">—</span>}
+                  <td style={{ fontSize: 11.5 }} className="text-3">
+                    {fmtCollectedAt(r.lastCollectedAt)}
                   </td>
                   <td className="num mono">
-                    {r.hasCollection ? (
-                      fmtN(r.collected)
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
+                    {r.lastCollected != null ? fmtN(r.lastCollected) : <span className="text-muted">—</span>}
+                  </td>
+                  <td className="num mono">
+                    {r.lastExpected != null ? fmtN(r.lastExpected) : <span className="text-muted">—</span>}
                   </td>
                   <td
                     className="num mono rc-tcol"
-                    style={{ color: showVar ? st.color : undefined, fontWeight: 600 }}
+                    style={{ color: v.color, fontWeight: 600, fontSize: 12 }}
                   >
-                    {showVar ? fmtSigned(r.variance) : <span className="text-muted">—</span>}
-                  </td>
-                  <td style={{ fontSize: 12 }}>
-                    <span style={{ color: st.color }}>
-                      {st.emoji} {st.label}
-                    </span>
-                    {r.brokenOrEmpty && (
-                      <span
-                        className="text-3"
-                        style={{ fontSize: 10.5, marginLeft: 6 }}
-                        title="แม่บ้านระบุว่าตู้นี้บางช่องไม่ปกติ (เสีย/ว่าง/ข้าม)"
-                      >
-                        ⚠️ ตู้มีปัญหา
-                      </span>
+                    {r.lastVariance != null ? (
+                      <>
+                        {fmtSigned(r.lastVariance)}
+                        <span style={{ marginLeft: 4 }} title={v.label}>
+                          {v.emoji}
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-3)" }}>{v.emoji} {v.label}</span>
                     )}
+                  </td>
+                  <td
+                    className="num mono"
+                    style={{
+                      color: r.cumShortage != null && r.cumShortage < -20 ? "var(--crit)" : undefined,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {r.cumShortage != null ? fmtSigned(r.cumShortage) : <span className="text-muted">—</span>}
+                  </td>
+                  <td className="num mono" style={{ color: "var(--info)" }}>
+                    {r.inBoxNow != null ? `~${fmtN(r.inBoxNow)}` : <span className="text-muted">—</span>}
                   </td>
                 </tr>
               );
