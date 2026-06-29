@@ -5,7 +5,7 @@
  * NOTE: "รอบเก็บ" / "ยอดไม่ตรง" ต่อคน ยังไม่มี metric จริง — ดู backend gap.
  * จัดการทีม (เพิ่ม/แก้สิทธิ์/ปิดใช้/สร้างลิงก์เชิญ) เปิดให้เฉพาะ admin-tier (isAdmin).
  */
-import { getTeamData } from "@/lib/clawfleet/v2-admin-queries";
+import { getTeamData } from "@/lib/clawfleet/admin-queries";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";

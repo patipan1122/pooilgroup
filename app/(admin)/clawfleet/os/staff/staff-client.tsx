@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { Card, Pill, Modal } from "@/components/clawfleet/os/kit";
 import { num, type Tone } from "@/components/clawfleet/os/format";
-import type { MemberStatus } from "@/lib/clawfleet/v2-admin-queries";
+import type { MemberStatus } from "@/lib/clawfleet/admin-queries";
 import {
   inviteCfStaff,
   updateCfStaffRole,

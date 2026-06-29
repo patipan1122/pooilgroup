@@ -4,7 +4,7 @@
  * เพื่อไม่ให้หน้าโล่ง (ตาม pattern ClawFleet เดิม).
  */
 import { getBranchPnl, summarizeBranchPnl } from "@/lib/clawfleet/pnl-queries";
-import { loadAnomalies } from "@/lib/clawfleet/v2-loaders";
+import { loadAnomalies } from "@/lib/clawfleet/loaders";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";

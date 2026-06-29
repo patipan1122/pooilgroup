@@ -11,7 +11,7 @@
 import { AlertTriangle, Boxes } from "lucide-react";
 import { Card, Pill, IconBox } from "@/components/clawfleet/os/kit";
 import { num, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
-import type { MemberStatus } from "@/lib/clawfleet/v2-admin-queries";
+import type { MemberStatus } from "@/lib/clawfleet/admin-queries";
 
 export type ProblemBranch = {
   branchId: string;

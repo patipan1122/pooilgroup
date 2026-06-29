@@ -6,7 +6,7 @@
  * Backend นี้กว้างกว่าที่ design ต้องการ (ภาพรวมสต็อก "ทุก" สาขา + คลังกลาง + ใบโอน/shipment
  * แยกใบ) — query ปัจจุบันคืนแค่ระดับ "สาขาเดียว" → จึง sample ส่วนคลังกลาง/การกระจายไว้ในฝั่ง client.
  */
-import { getV2Branches, getV2BranchStock } from "@/lib/clawfleet/v2-queries";
+import { getV2Branches, getV2BranchStock } from "@/lib/clawfleet/queries";
 import { requireCfSession } from "@/lib/clawfleet/role-guard";
 import { getCfStockOverview, getCfReceipts } from "@/lib/clawfleet/stock-queries";
 import { StockClient, type BranchStockSeed, type ReceiptSeed } from "./stock-client";

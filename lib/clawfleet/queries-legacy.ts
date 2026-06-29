@@ -7,7 +7,7 @@
 //
 // Cross-check semantics here are the GROUP coin-balance model the data actually
 // supports: exchanger coins dispensed vs claw coins received (the real anti-fraud
-// check). Once the migration + branch-shape seed run, lib/clawfleet/v2-queries.ts
+// check). Once the migration + branch-shape seed run, lib/clawfleet/queries.ts
 // (per-claw cash model) takes over via the loader's new→legacy→mock order.
 //
 // Every query uses explicit `select` that avoids the not-yet-existing columns so
@@ -19,8 +19,8 @@ import { userBranchIds } from "./role-guard";
 import type {
   Anomaly, Machine, ActiveSession, ClosedSession, StockEntry, Delivery,
   TodaySummary, TrendDay, BranchPerf, InsightRow,
-} from "./v2-data";
-import { getV2Branches } from "./v2-queries";
+} from "./data";
+import { getV2Branches } from "./queries";
 
 const COIN_BAHT = 10;
 

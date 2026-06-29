@@ -4,9 +4,9 @@
  * ถ้าว่าง (DB ยังไม่ seed / ยังไม่ migrate) → client ใช้ demo fallback (id ขึ้นต้น "demo-").
  * หน้านี้แสดงทั้งใน back-office (กรอบมือถือ) และใช้เต็มจอบนมือถือจริง (component เดียว render สองที่).
  */
-import { getGroupCollectData } from "@/lib/clawfleet/v2-group-data";
+import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { StaffAppClient } from "./staff-app-client";
-import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/v2-group-data";
+import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
 export const dynamic = "force-dynamic";
 

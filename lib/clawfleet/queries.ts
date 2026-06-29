@@ -1,5 +1,5 @@
 // ClawFleet v2 — real-DB query layer.
-// Returns the SAME shapes as lib/clawfleet/v2-data.ts (the mockup types) but
+// Returns the SAME shapes as lib/clawfleet/data.ts (the mockup types) but
 // sourced from real cf_* tables. Pages call these in server components and pass
 // the result to the client islands, so the rendering code is unchanged.
 //
@@ -24,7 +24,7 @@ import type {
   TrendDay,
   BranchPerf,
   InsightRow,
-} from "./v2-data";
+} from "./data";
 
 const TONES: BranchTone[] = [
   "indigo", "cyan", "emerald", "amber", "violet", "rose", "sky", "lime", "fuchsia", "teal",

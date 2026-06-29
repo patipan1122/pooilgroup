@@ -6,7 +6,7 @@
  * NOTE: "สินค้าใกล้หมด" ยังเป็น SAMPLE — ดู backend gap ใน briefing.
  */
 import { getBranchPnl } from "@/lib/clawfleet/pnl-queries";
-import { getTeamData } from "@/lib/clawfleet/v2-admin-queries";
+import { getTeamData } from "@/lib/clawfleet/admin-queries";
 import { ReportsClient, type ProblemBranch, type StaffQualityRow } from "./reports-client";
 
 export const dynamic = "force-dynamic";

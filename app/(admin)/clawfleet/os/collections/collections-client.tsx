@@ -19,7 +19,7 @@ import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Camera, Info, Maximize2,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
-import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/v2-actions";
+import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/actions";
 
 /* ───────── types ───────── */
 export type BranchOption = { value: string; label: string };

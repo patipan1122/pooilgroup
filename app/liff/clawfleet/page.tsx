@@ -3,8 +3,8 @@
 // เปิดในแอป LINE: LiffBootstrap (app/liff/layout) จัดการ LINE auth → session แล้วเรนเดอร์
 // แอปพนักงานหน้าบ้าน "ตู้คีบ OS" ตัวเดียวกับ /clawfleet/os/app (StaffAppClient) — flow เก็บเงิน
 // 6 สเต็ป กระทบยอด 3 ทางกันโกง. ใช้ UI ใหม่ (เลิกพึ่ง v2/collect ที่ลบทิ้งแล้ว).
-import { getGroupCollectData } from "@/lib/clawfleet/v2-group-data";
-import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/v2-group-data";
+import { getGroupCollectData } from "@/lib/clawfleet/group-data";
+import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
 

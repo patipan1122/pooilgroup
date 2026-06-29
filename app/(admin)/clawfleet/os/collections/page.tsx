@@ -4,8 +4,8 @@
  * ถ้า DB ว่าง → client ใช้ SAMPLE fallback + แบนเนอร์ "กำลังแสดงตัวอย่าง"
  * (ตาม pattern ClawFleet เดิม — ห้ามหน้าโล่ง).
  */
-import { loadAnomalies } from "@/lib/clawfleet/v2-loaders";
-import { getV2Branches } from "@/lib/clawfleet/v2-queries";
+import { loadAnomalies } from "@/lib/clawfleet/loaders";
+import { getV2Branches } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 
 export const dynamic = "force-dynamic";

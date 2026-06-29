@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";
-import { getTeamData, getSettingsData } from "@/lib/clawfleet/v2-admin-queries";
+import { getTeamData, getSettingsData } from "@/lib/clawfleet/admin-queries";
 import { SettingsClient, type SettingsUserRow } from "./settings-client";
 
 export const dynamic = "force-dynamic";

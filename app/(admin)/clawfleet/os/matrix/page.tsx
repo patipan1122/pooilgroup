@@ -7,7 +7,7 @@
  * ⚠️ Backend gap: ยังไม่มี query สำหรับเมทริกซ์ ตู้×วัน (ต้นทุน/ยอดเก็บ/ตุ๊กตา รายวัน) →
  *   ฝั่ง client สร้างข้อมูลตัวอย่างแบบ deterministic เพื่อโชว์โครงหน้าก่อน (จะต่อ query จริงภายหลัง).
  */
-import { getV2Branches } from "@/lib/clawfleet/v2-queries";
+import { getV2Branches } from "@/lib/clawfleet/queries";
 import { MatrixClient, type MatrixBranch } from "./matrix-client";
 
 export const dynamic = "force-dynamic";

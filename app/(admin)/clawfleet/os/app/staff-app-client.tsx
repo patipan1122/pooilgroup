@@ -29,12 +29,12 @@ import {
   startBranchSession,
   submitBranchEvent,
   closeBranchSession,
-} from "@/lib/clawfleet/v2-actions";
+} from "@/lib/clawfleet/actions";
 import type {
   GroupCollectBranch,
   CollectSku,
   GroupMachine,
-} from "@/lib/clawfleet/v2-group-data";
+} from "@/lib/clawfleet/group-data";
 
 /* ─────────────────────────── demo fallback (no real DB) ────────────────────────── */
 type AppMachine = {

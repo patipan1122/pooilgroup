@@ -5,7 +5,7 @@
  *
  * BACKEND GAP: ยังไม่มี `cf_config_request` table + query/action จริง (ดู RETURN).
  */
-import { getV2Branches } from "@/lib/clawfleet/v2-queries";
+import { getV2Branches } from "@/lib/clawfleet/queries";
 import { ConfigClient } from "./config-client";
 
 export const dynamic = "force-dynamic";
