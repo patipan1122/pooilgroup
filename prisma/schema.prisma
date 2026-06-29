@@ -2572,6 +2572,9 @@ enum ChairopsAlertKind {
   CLEANLINESS_FAIL
   REPAIR_OVERDUE
   WRITE_OFF_REQUESTED
+  // CEO 2026-06-29 · one payment device (coin/bill/transfer) on a chair stopped
+  // earning while the chair is otherwise alive → suspect that device broke.
+  CHAIR_STREAM_DOWN
 
   @@schema("chairops")
 }
@@ -2806,6 +2809,10 @@ model ChairopsChair {
   isActive      Boolean   @default(true)
   installedAt   DateTime?
   retiredAt     DateTime?
+  // CEO 2026-06-29 · "ตู้เสีย" per-stream detector: consecutive zero-days on a
+  // payment device before it's flagged suspect-broken. Adjustable PER CHAIR so a
+  // low-traffic placement can be bumped (e.g. 3) without spamming. Default 2.
+  suspectThresholdDays Int @default(2)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

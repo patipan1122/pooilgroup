@@ -36,6 +36,7 @@ import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import {
   autoResolvePosNotIngested,
   autoResolveChairOffline,
+  autoResolveChairStreamDown,
 } from "@/lib/chairops/alerts/auto-resolve";
 import {
   parseStarThingXlsx,
@@ -1180,13 +1181,14 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     // the underlying gap.
     (async () => {
       try {
-        const [posResolved, chairResolved] = await Promise.all([
+        const [posResolved, chairResolved, streamResolved] = await Promise.all([
           autoResolvePosNotIngested(orgId, branchIdsInBatch),
           autoResolveChairOffline(orgId, Array.from(chairCodesInBatch)),
+          autoResolveChairStreamDown(orgId, Array.from(chairCodesInBatch)),
         ]);
-        if (posResolved + chairResolved > 0) {
+        if (posResolved + chairResolved + streamResolved > 0) {
           console.log(
-            `[pos-ingest commit] auto-resolved ${posResolved} POS + ${chairResolved} CHAIR alerts`,
+            `[pos-ingest commit] auto-resolved ${posResolved} POS + ${chairResolved} CHAIR + ${streamResolved} STREAM alerts`,
           );
         }
       } catch (err) {

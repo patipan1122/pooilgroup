@@ -53,6 +53,9 @@ const KIND_LABELS: Record<ChairopsAlertKind, string> = {
   CLEANLINESS_FAIL: "ตรวจสภาพไม่ผ่าน",
   REPAIR_OVERDUE: "ซ่อมเกิน SLA",
   WRITE_OFF_REQUESTED: "ขอตัดเงินขาด",
+  // Surfaced on the dedicated /chairops/broken-chairs page — excluded from this
+  // list by default (no double-surface) but labelled for completeness.
+  CHAIR_STREAM_DOWN: "ช่องรับเงินน่าจะเสีย",
 };
 
 const STATUS_LABELS: Record<ChairopsAlertStatus, { label: string; tone: "danger" | "warning" | "success" | "neutral" }> = {
@@ -72,6 +75,7 @@ const DEFAULT_CHANNEL_PER_KIND: Record<ChairopsAlertKind, string> = {
   CLEANLINESS_FAIL: "ops",
   REPAIR_OVERDUE: "repair",
   WRITE_OFF_REQUESTED: "ceo",
+  CHAIR_STREAM_DOWN: "repair",
 };
 
 const CHANNEL_LABEL: Record<string, string> = {
@@ -106,7 +110,10 @@ async function loadAlerts(params: {
     where.status = params.status;
   }
   if (params.branchId) where.branchId = params.branchId;
+  // CHAIR_STREAM_DOWN ("ตู้เสีย" per-device) lives on /chairops/broken-chairs —
+  // exclude it here so the same chair isn't double-surfaced in two inboxes.
   if (params.kind) where.kind = params.kind;
+  else where.kind = { not: ChairopsAlertKind.CHAIR_STREAM_DOWN };
   if (params.level) where.level = params.level;
 
   const [alerts, branches] = await Promise.all([

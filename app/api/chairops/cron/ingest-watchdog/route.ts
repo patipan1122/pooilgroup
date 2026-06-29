@@ -27,6 +27,7 @@ import {
 } from "@/lib/chairops/alerts/_shared";
 import { detectPosNotIngested } from "@/lib/chairops/alerts/detectors/pos-not-ingested";
 import { detectChairOffline } from "@/lib/chairops/alerts/detectors/chair-offline";
+import { detectChairStreamDown } from "@/lib/chairops/alerts/detectors/chair-stream-down";
 import { detectCleanlinessFail } from "@/lib/chairops/alerts/detectors/cleanliness-fail";
 import { detectRepairOverdue } from "@/lib/chairops/alerts/detectors/repair-overdue";
 
@@ -64,6 +65,9 @@ async function watchdogHandler(): Promise<NextResponse> {
   // also check OPEN POS_NOT_INGESTED to skip blocked branches.
   outcomes.push(await runDetector("pos-not-ingested", detectPosNotIngested));
   outcomes.push(await runDetector("chair-offline", detectChairOffline));
+  // D5 runs AFTER chair-offline — both gate on POS_NOT_INGESTED, and
+  // computeStreamSuspects already skips fully-offline chairs (mutual-exclusion).
+  outcomes.push(await runDetector("chair-stream-down", detectChairStreamDown));
   outcomes.push(await runDetector("cleanliness-fail-backstop", detectCleanlinessFail));
   outcomes.push(await runDetector("repair-overdue", detectRepairOverdue));
 

@@ -66,7 +66,7 @@ export async function findOpenAlert(args: {
   orgId: string;
   kind: ChairopsAlertKind;
   branchId?: string | null;
-  entityKey?: "chairCode" | "ticketId" | "reportId";
+  entityKey?: "chairCode" | "ticketId" | "reportId" | "streamKey";
   entityValue?: string;
 }): Promise<{ id: string } | null> {
   const where: Parameters<typeof prisma.chairopsAlert.findFirst>[0] = {

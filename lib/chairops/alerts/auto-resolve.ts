@@ -95,3 +95,76 @@ export async function autoResolveChairOffline(orgId: string, chairCodes: string[
   // re-emit on next cron if still offline.
   return total;
 }
+
+/**
+ * Drop CHAIR_STREAM_DOWN alerts for a device that EARNED AGAIN. Called from
+ * pos-ingest after commit · for each chair in the file, if its most-recent
+ * PosDaily row now shows the flagged device > 0, the device is back → resolve
+ * (CEO 2026-06-29 "auto-clear เมื่อเงินกลับมา"). System-actor, audit-tagged.
+ */
+export async function autoResolveChairStreamDown(
+  orgId: string,
+  chairCodes: string[],
+): Promise<number> {
+  if (!orgId || chairCodes.length === 0) return 0;
+  const streamCol: Record<string, "coinInsertCount" | "cashTotal" | "onlineTotal"> = {
+    coin: "coinInsertCount",
+    cash: "cashTotal",
+    transfer: "onlineTotal",
+  };
+  let total = 0;
+  for (const code of chairCodes) {
+    const open = await prisma.chairopsAlert.findMany({
+      where: {
+        orgId,
+        kind: ChairopsAlertKind.CHAIR_STREAM_DOWN,
+        status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] },
+        contextJson: { path: ["chairCode"], equals: code },
+      },
+      select: { id: true, contextJson: true },
+    });
+    if (open.length === 0) continue;
+    // Latest PosDaily row for this chair (most-recent business day).
+    const latest = await prisma.chairopsPosDaily.findFirst({
+      where: { orgId, chairCode: code },
+      orderBy: { bizDate: "desc" },
+      select: { coinInsertCount: true, cashTotal: true, onlineTotal: true },
+    });
+    if (!latest) continue;
+    for (const a of open) {
+      const ctx = (a.contextJson ?? {}) as Record<string, unknown> & { stream?: string };
+      const col = ctx.stream ? streamCol[ctx.stream] : undefined;
+      if (!col) continue;
+      const val = col === "coinInsertCount" ? latest.coinInsertCount : Number(latest[col]);
+      if (val <= 0) continue;
+      // Per-id update (not updateMany) so we can stamp the audit flag this file's
+      // header promises — keeps "ทำไมตู้เสียหาย" traceable (system vs human close).
+      await prisma.chairopsAlert.update({
+        where: { id: a.id },
+        data: {
+          status: ChairopsAlertStatus.RESOLVED,
+          resolvedAt: new Date(),
+          contextJson: { ...ctx, autoResolved: true, resolvedReason: "stream-recovered" } as never,
+        },
+      });
+      total += 1;
+    }
+  }
+
+  // The one-time first-run summary row (branchId null · historical · no chairCode)
+  // can never match the per-chair loop above — clear it once fresh data lands so
+  // it doesn't linger as a stale "ตู้เสีย" forever.
+  const summary = await prisma.chairopsAlert.updateMany({
+    where: {
+      orgId,
+      kind: ChairopsAlertKind.CHAIR_STREAM_DOWN,
+      status: { in: [ChairopsAlertStatus.OPEN, ChairopsAlertStatus.ACK] },
+      branchId: null,
+      contextJson: { path: ["historical"], equals: true },
+    },
+    data: { status: ChairopsAlertStatus.RESOLVED, resolvedAt: new Date() },
+  });
+  total += summary.count;
+
+  return total;
+}
