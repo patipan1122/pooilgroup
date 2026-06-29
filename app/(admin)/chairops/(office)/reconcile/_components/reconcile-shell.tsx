@@ -18,6 +18,7 @@ import {
   getReconcilePeriods,
   getReconcileDayDetail,
   getReconcilePerChair,
+  getReconcilePerChairDetail,
   ledgerTotals,
   type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
@@ -33,6 +34,8 @@ import {
   TimelineTab,
   PeriodsTab,
   PerChairTab,
+  PerChairDetailTab,
+  PerChairViewToggle,
 } from "./reconcile-views";
 import { LedgerDateFilter } from "./ledger-date-filter";
 
@@ -66,6 +69,7 @@ export async function ReconcileShell({
   allTime,
   page,
   day,
+  perChairDaily,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -82,6 +86,8 @@ export async function ReconcileShell({
   page?: number;
   /** CEO 2026-06-25: drill-down — show one day's individual collection/deposit chunks. */
   day?: string;
+  /** CEO 2026-06-29: per-chair sub-view — true = รายวัน (per-day × per-chair matrix · default), false = สรุปรวม (window aggregate). */
+  perChairDaily?: boolean;
 }) {
   const isOrg = branchId === null;
   const baseHref = isOrg
@@ -137,9 +143,23 @@ export async function ReconcileShell({
   // CEO 2026-06-29: per-chair deep-dive — only meaningful per branch (chairCode
   // is unique within a branch). Loads after posThrough so the default window
   // matches the ledger's. Org view shows a "pick a branch" prompt instead.
+  // CEO 2026-06-29: รายตู้ tab has two sub-views — "รายวัน" (per-day × per-chair
+  // matrix · the new default) and "สรุปรวม" (window aggregate · the original).
+  // Only the active one is fetched. Both share the same date-filter window.
   const perChair =
-    view === "perchair" && branchId
+    view === "perchair" && branchId && !perChairDaily
       ? await getReconcilePerChair({
+          orgId,
+          branchId,
+          from: safeFrom,
+          to: safeTo,
+          allTime,
+          posCoverThrough: posThrough,
+        })
+      : null;
+  const perChairDetail =
+    view === "perchair" && branchId && perChairDaily
+      ? await getReconcilePerChairDetail({
           orgId,
           branchId,
           from: safeFrom,
@@ -425,7 +445,37 @@ export async function ReconcileShell({
           {view === "periods" && (
             <PeriodsTab periods={periods} branchId={branchId} />
           )}
-          {view === "perchair" && <PerChairTab data={perChair} isOrg={isOrg} />}
+          {view === "perchair" && (
+            <>
+              {!isOrg && (
+                <PerChairViewToggle
+                  summaryHref={(() => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    usp.set("pcv", "summary");
+                    return `${baseHref}?${usp.toString()}`;
+                  })()}
+                  dailyHref={(() => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    return `${baseHref}?${usp.toString()}`;
+                  })()}
+                  active={perChairDaily ? "daily" : "summary"}
+                />
+              )}
+              {perChairDaily ? (
+                <PerChairDetailTab data={perChairDetail} isOrg={isOrg} />
+              ) : (
+                <PerChairTab data={perChair} isOrg={isOrg} />
+              )}
+            </>
+          )}
         </div>
       </main>
     </div>

@@ -3040,6 +3040,10 @@ model ChairopsCashDeposit {
   // BF1 MAID-04 anti-fraud · auto-flagged TRUE when |diff| >= 500 ฿ ·
   // office staff clears via reconcile flow. Indexed partial in migration.
   requiresReview  Boolean  @default(false)
+  // CEO 2026-06-29: ChairopsUserRole snapshot of WHO pressed "ฝาก" (maidId already
+  // = that actor). MAID/TECHNICIAN ⇒ "แม่บ้านฝาก" · OFFICE+ ⇒ "แอดมิน/ออฟฟิศฝาก".
+  // Stamped at create; old rows backfilled from the actor's role. Nullable = unknown.
+  depositedByRole String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

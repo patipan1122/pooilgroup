@@ -710,6 +710,9 @@ export interface DayDetailDeposit {
   depositedAmount: number;
   bankFee: number;
   slipUrl: string | null;
+  // CEO 2026-06-29: who pressed ฝาก (role snapshot) → split แม่บ้านฝาก vs ออฟฟิศฝาก.
+  depositedByRole: string | null;
+  depositorKind: "maid" | "office" | "unknown";
 }
 // CEO 2026-06-29: write-offs ("ตัดเงิน/ตั้งต้น") effective on this day, so the
 // ✂️ marker in the ledger row can drill straight into who cut how much and why.
@@ -780,6 +783,7 @@ export async function getReconcileDayDetail(args: {
         depositedAmount: true,
         bankFee: true,
         slipPhotoUrl: true,
+        depositedByRole: true,
         maid: { select: { displayName: true } },
       },
       orderBy: { depositedAt: "asc" },
@@ -826,6 +830,8 @@ export async function getReconcileDayDetail(args: {
     depositedAmount: d.depositedAmount,
     bankFee: d.bankFee,
     slipUrl: d.slipPhotoUrl ?? null,
+    depositedByRole: d.depositedByRole ?? null,
+    depositorKind: depositActorKind(d.depositedByRole),
   }));
 
   // CEO 2026-06-29: per-origin split (มือ / CSV / Office) for this day's
@@ -1063,6 +1069,313 @@ export async function getReconcilePerChair(args: {
     unattributedCount,
     unattributedExpected: unExp,
     unattributedExpectedCount,
+  };
+}
+
+// ----------------------------------------------------------------
+// PER-CHAIR DETAIL — long per-DAY × per-chair matrix (CEO 2026-06-29).
+// Same money formula as getReconcilePerChair, but split BY DAY instead of summed
+// over the window, plus a per-day disclosure strip: เก็บแยกที่มา (มือ/CSV/ออฟฟิศ),
+// ฝากแยกผู้ฝาก (แม่บ้าน/ออฟฟิศ via depositedByRole), ตัดเงินขาด/เกิน.
+// "สะสม" (cumVariance) is per-chair, running WITHIN the rendered window.
+// Per-chair collected only exists for MAID_MANUAL chairBreakdown — CSV/legacy rows
+// have no per-chair split, so on CSV-heavy days the chairs read ⚪ "ยังไม่เก็บรายตู้"
+// and the money is disclosed in summary.unattributedCollected. NOT misleading-by-
+// omission: the day's full collected total is always summary's source split.
+// ----------------------------------------------------------------
+const PER_CHAIR_DETAIL_MAX_DAYS = 92;
+
+/** แม่บ้าน (MAID/TECHNICIAN) vs ออฟฟิศ/แอดมิน (OFFICE+) bucket for a deposit actor. */
+export function depositActorKind(
+  role: string | null | undefined,
+): "maid" | "office" | "unknown" {
+  if (!role) return "unknown";
+  return role === "MAID" || role === "TECHNICIAN" ? "maid" : "office";
+}
+
+export interface PerChairDetailCell {
+  chairCode: string;
+  generation: string | null;
+  expected: number; // POS cash + coin baht for THIS chair on THIS day (ควรได้)
+  collected: number; // maid-counted for this chair this day (chairBreakdown · MAID_MANUAL)
+  variance: number; // collected − expected (วันนั้น)
+  cumVariance: number; // running Σ variance for this chair within the window (สะสม)
+  hasPos: boolean;
+  hasCollection: boolean; // a per-chair count exists this day (else ⚪ ยังไม่เก็บรายตู้)
+  broken: boolean; // any chairBreakdown line ≠ "collected" this day
+}
+export interface PerChairDaySummary {
+  collectedMaidManual: number; // 💵 แม่บ้านเก็บมือ
+  collectedCsvImport: number; // 📥 เก็บผ่าน CSV
+  collectedOfficeProxy: number; // 🏢 ออฟฟิศ/แอดมินเก็บแทน
+  /** collections with no per-chair breakdown (CSV/legacy) — money present, no chair. */
+  unattributedCollected: number;
+  depositMaid: number; // 🏦 ฝากโดยแม่บ้าน
+  depositOffice: number; // 🏦 ฝากโดยแอดมิน/ออฟฟิศ
+  depositUnknown: number; // ฝาก role ยังไม่ระบุ (แถวเก่าที่ยังไม่ backfill)
+  depositFee: number; // ค่าธรรมเนียมธนาคารวันนั้น
+  writeOffShort: number; // ✂️ ตัดเงินขาด (direction SHORT) มีผลวันนั้น
+  writeOffOver: number; // ✂️ ตัดเงินเกิน (direction OVER)
+}
+export interface PerChairDay {
+  date: string; // YYYY-MM-DD
+  chairs: PerChairDetailCell[];
+  summary: PerChairDaySummary;
+  expectedTotal: number; // Σ chairs.expected + POS-no-chairCode
+  collectedTotal: number; // Σ chairs.collected + unattributedCollected
+  varianceTotal: number;
+  depositTotal: number; // Σ deposited amount that day (all actors)
+}
+export interface ReconcilePerChairDetail {
+  from: string;
+  to: string;
+  days: PerChairDay[]; // newest-first
+  truncated: boolean; // window clamped to maxDays
+  maxDays: number;
+  chairCount: number;
+}
+
+export async function getReconcilePerChairDetail(args: {
+  orgId: string;
+  branchId: string;
+  from?: string;
+  to?: string;
+  allTime?: boolean;
+  posCoverThrough?: string | null;
+}): Promise<ReconcilePerChairDetail> {
+  const { orgId, branchId } = args;
+
+  // Resolve the [fromDay, toDay] window — SAME default as getReconcilePerChair.
+  let fromDay: string;
+  let toDay: string;
+  if (args.allTime) {
+    fromDay = "1970-01-01";
+    toDay = isoDay(new Date());
+  } else if (args.from || args.to) {
+    fromDay = args.from ?? "1970-01-01";
+    toDay = args.to ?? isoDay(new Date());
+  } else {
+    const anchor = args.posCoverThrough ?? isoDay(new Date());
+    fromDay = isoMinusDaysLocal(anchor, 29);
+    toDay = isoDay(new Date());
+  }
+
+  // The per-day × per-chair matrix is large → clamp the RENDERED window to the
+  // most-recent maxDays. Cumulative starts at 0 at the window start (สะสมในช่วง).
+  let truncated = false;
+  if (daysBetween(fromDay, toDay) + 1 > PER_CHAIR_DETAIL_MAX_DAYS) {
+    fromDay = isoMinusDaysLocal(toDay, PER_CHAIR_DETAIL_MAX_DAYS - 1);
+    truncated = true;
+  }
+
+  const bizStart = new Date(fromDay);
+  const bizEnd = new Date(toDay);
+  const collStart = new Date(fromDay + "T00:00:00+07:00");
+  const collEnd = new Date(new Date(toDay + "T00:00:00+07:00").getTime() + DAY_MS);
+
+  const [chairs, posRows, collections, deposits, writeOffsRaw] =
+    await Promise.all([
+      prisma.chairopsChair.findMany({
+        where: { orgId, branchId, isActive: true },
+        select: { chairCode: true, generation: true },
+      }),
+      prisma.chairopsPosDaily.findMany({
+        where: { orgId, branchId, bizDate: { gte: bizStart, lte: bizEnd } },
+        select: {
+          chairCode: true,
+          cashTotal: true,
+          coinInsertCount: true,
+          bizDate: true,
+        },
+      }),
+      prisma.chairopsCashCollection.findMany({
+        where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd } },
+        select: {
+          countedAmount: true,
+          chairBreakdown: true,
+          source: true,
+          collectedAt: true,
+        },
+      }),
+      prisma.chairopsCashDeposit.findMany({
+        where: { orgId, branchId, depositedAt: { gte: collStart, lt: collEnd } },
+        select: {
+          depositedAmount: true,
+          bankFee: true,
+          depositedByRole: true,
+          depositedAt: true,
+        },
+      }),
+      prisma.chairopsWriteOff.findMany({
+        where: { orgId, branchId, status: { in: ["PENDING", "APPROVED"] } },
+        select: {
+          amount: true,
+          direction: true,
+          effectiveDate: true,
+          makerAt: true,
+        },
+      }),
+    ]);
+
+  const genByCode = new Map(chairs.map((c) => [c.chairCode, c.generation]));
+
+  type DayBucket = {
+    expByChair: Map<string, number>;
+    collByChair: Map<string, number>;
+    brokenByChair: Set<string>;
+    unattributedExpected: number;
+    summary: PerChairDaySummary;
+    depositTotal: number;
+  };
+  const newSummary = (): PerChairDaySummary => ({
+    collectedMaidManual: 0,
+    collectedCsvImport: 0,
+    collectedOfficeProxy: 0,
+    unattributedCollected: 0,
+    depositMaid: 0,
+    depositOffice: 0,
+    depositUnknown: 0,
+    depositFee: 0,
+    writeOffShort: 0,
+    writeOffOver: 0,
+  });
+  const byDay = new Map<string, DayBucket>();
+  const ensureDay = (day: string): DayBucket => {
+    let b = byDay.get(day);
+    if (!b) {
+      b = {
+        expByChair: new Map(),
+        collByChair: new Map(),
+        brokenByChair: new Set(),
+        unattributedExpected: 0,
+        summary: newSummary(),
+        depositTotal: 0,
+      };
+      byDay.set(day, b);
+    }
+    return b;
+  };
+
+  // POS per chair per day (expected = same cash formula as the ledger).
+  for (const p of posRows) {
+    const b = ensureDay(isoDay(p.bizDate));
+    const exp = toNum(p.cashTotal) + coinBahtOf(p.coinInsertCount);
+    if (!p.chairCode) {
+      b.unattributedExpected += exp;
+      continue;
+    }
+    b.expByChair.set(p.chairCode, (b.expByChair.get(p.chairCode) ?? 0) + exp);
+  }
+
+  // Collections per day → per-chair collected (chairBreakdown) + source split.
+  for (const c of collections) {
+    const b = ensureDay(isoDay(c.collectedAt));
+    const source = (c.source ?? "MAID_MANUAL") as LedgerDaySource;
+    if (source === "CSV_IMPORT") b.summary.collectedCsvImport += c.countedAmount;
+    else if (source === "OFFICE_PROXY")
+      b.summary.collectedOfficeProxy += c.countedAmount;
+    else b.summary.collectedMaidManual += c.countedAmount;
+
+    const bd = c.chairBreakdown as { lines?: unknown } | null;
+    const lines =
+      bd && Array.isArray(bd.lines)
+        ? (bd.lines as Array<Record<string, unknown>>)
+        : null;
+    if (!lines || lines.length === 0) {
+      b.summary.unattributedCollected += c.countedAmount;
+      continue;
+    }
+    for (const ln of lines) {
+      const code = typeof ln.chairCode === "string" ? ln.chairCode.trim() : "";
+      const amt = typeof ln.amount === "number" ? ln.amount : 0;
+      if (!code) {
+        if (amt > 0) b.summary.unattributedCollected += amt;
+        continue;
+      }
+      b.collByChair.set(code, (b.collByChair.get(code) ?? 0) + amt);
+      const status = typeof ln.status === "string" ? ln.status : "";
+      if (status && status !== "collected") b.brokenByChair.add(code);
+    }
+  }
+
+  // Deposits per day → split by actor role (maidId = the actor; role = snapshot).
+  for (const d of deposits) {
+    const b = ensureDay(isoDay(d.depositedAt));
+    const kind = depositActorKind(d.depositedByRole);
+    if (kind === "maid") b.summary.depositMaid += d.depositedAmount;
+    else if (kind === "office") b.summary.depositOffice += d.depositedAmount;
+    else b.summary.depositUnknown += d.depositedAmount;
+    b.summary.depositFee += d.bankFee;
+    b.depositTotal += d.depositedAmount;
+  }
+
+  // Write-offs by effective day (SAME bucket as the ledger ✂️ marker).
+  for (const w of writeOffsRaw) {
+    const day = isoDay(w.effectiveDate ?? w.makerAt);
+    if (day < fromDay || day > toDay) continue;
+    const b = ensureDay(day);
+    if (w.direction === "OVER") b.summary.writeOffOver += w.amount;
+    else b.summary.writeOffShort += w.amount;
+  }
+
+  // Ascending pass for the running cumulative, then reverse for newest-first display.
+  const dayKeys = [...byDay.keys()].sort();
+  const cumByChair = new Map<string, number>();
+  const daysAsc: PerChairDay[] = dayKeys.map((day) => {
+    const b = byDay.get(day)!;
+    const codes = new Set<string>([
+      ...b.expByChair.keys(),
+      ...b.collByChair.keys(),
+    ]);
+    const cells: PerChairDetailCell[] = [...codes].map((code) => {
+      const expected = Math.round(b.expByChair.get(code) ?? 0);
+      const collected = Math.round(b.collByChair.get(code) ?? 0);
+      const variance = collected - expected;
+      const cumVariance = (cumByChair.get(code) ?? 0) + variance;
+      cumByChair.set(code, cumVariance);
+      return {
+        chairCode: code,
+        generation: genByCode.get(code) ?? null,
+        expected,
+        collected,
+        variance,
+        cumVariance,
+        hasPos: b.expByChair.has(code),
+        hasCollection: b.collByChair.has(code),
+        broken: b.brokenByChair.has(code),
+      };
+    });
+    // Chairs WITH a per-chair count first (real signal), worst shortage first.
+    cells.sort(
+      (a, c) =>
+        (a.hasCollection === c.hasCollection ? 0 : a.hasCollection ? -1 : 1) ||
+        a.variance - c.variance ||
+        a.chairCode.localeCompare(c.chairCode),
+    );
+    const expectedTotal = Math.round(
+      cells.reduce((s, x) => s + x.expected, 0) + b.unattributedExpected,
+    );
+    const collectedTotal =
+      cells.reduce((s, x) => s + x.collected, 0) +
+      Math.round(b.summary.unattributedCollected);
+    return {
+      date: day,
+      chairs: cells,
+      summary: b.summary,
+      expectedTotal,
+      collectedTotal,
+      varianceTotal: collectedTotal - expectedTotal,
+      depositTotal: b.depositTotal,
+    };
+  });
+
+  return {
+    from: fromDay,
+    to: toDay,
+    days: daysAsc.reverse(),
+    truncated,
+    maxDays: PER_CHAIR_DETAIL_MAX_DAYS,
+    chairCount: chairs.length,
   };
 }
 

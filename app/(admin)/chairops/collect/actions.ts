@@ -485,6 +485,9 @@ export async function batchDeposit(
           slipImageHash: data.slipImageHash,
           notes: data.notes ?? null,
           requiresReview,
+          // CEO 2026-06-29: stamp WHO pressed ฝาก (maidId above = same actor) so the
+          // reconcile per-chair view can split แม่บ้านฝาก vs แอดมิน/ออฟฟิศฝาก.
+          depositedByRole: session.user.role,
         },
       });
       // Compare-and-swap guard: only claim rows that are STILL pending

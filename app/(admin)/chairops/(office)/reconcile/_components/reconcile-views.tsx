@@ -36,6 +36,9 @@ import {
   type ReconcileDayDetail,
   type ReconcilePerChair,
   type PerChairRow,
+  type ReconcilePerChairDetail,
+  type PerChairDay,
+  type PerChairDetailCell,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -1298,6 +1301,313 @@ export function PerChairTab({
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Per-chair DETAIL — long per-DAY × per-chair matrix (CEO 2026-06-29)
+// ─────────────────────────────────────────────────────────────
+function cumColor(cum: number): string {
+  if (cum < -500) return "var(--crit)";
+  if (cum < -100) return "#b45309";
+  if (cum > 100) return "var(--ok)";
+  return "var(--text-3, #888)";
+}
+
+export function PerChairViewToggle({
+  summaryHref,
+  dailyHref,
+  active,
+}: {
+  summaryHref: string;
+  dailyHref: string;
+  active: "summary" | "daily";
+}) {
+  return (
+    <div className="rc-tabs-row" style={{ marginTop: 4 }}>
+      <div className="rc-tabs">
+        <Link
+          href={dailyHref}
+          className="rc-tab"
+          data-active={active === "daily" ? "" : undefined}
+          scroll={false}
+        >
+          📅 รายวัน (ละเอียด)
+        </Link>
+        <Link
+          href={summaryHref}
+          className="rc-tab"
+          data-active={active === "summary" ? "" : undefined}
+          scroll={false}
+        >
+          📊 สรุปรวม
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function PerChairDayRow({ c }: { c: PerChairDetailCell }) {
+  const showVar = c.hasCollection;
+  const st = showVar
+    ? c.variance < -PERCHAIR_TOL
+      ? { emoji: "🔴", label: "ขาด", color: "var(--crit)" }
+      : c.variance > PERCHAIR_TOL
+        ? { emoji: "🟡", label: "เกิน", color: "#92400e" }
+        : { emoji: "🟢", label: "ตรง", color: "var(--ok)" }
+    : { emoji: "⚪", label: "ยังไม่เก็บรายตู้", color: "var(--text-3, #888)" };
+  return (
+    <tr>
+      <td>
+        <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
+          {c.chairCode}
+        </span>
+        {c.generation && (
+          <span className="text-3" style={{ fontSize: 10.5, marginLeft: 6 }}>
+            {c.generation}
+          </span>
+        )}
+      </td>
+      <td className="num mono">
+        {c.hasPos ? fmtN(c.expected) : <span className="text-muted">—</span>}
+      </td>
+      <td className="num mono">
+        {c.hasCollection ? (
+          fmtN(c.collected)
+        ) : (
+          <span className="text-muted">—</span>
+        )}
+      </td>
+      <td
+        className="num mono rc-tcol"
+        style={{ color: showVar ? st.color : undefined, fontWeight: 600 }}
+      >
+        {showVar ? fmtSigned(c.variance) : <span className="text-muted">—</span>}
+      </td>
+      <td
+        className="num mono"
+        style={{
+          color: showVar ? cumColor(c.cumVariance) : "var(--text-3, #999)",
+          fontSize: 11.5,
+        }}
+        title="ขาด/เกินสะสมของตู้นี้ในช่วงที่เลือก"
+      >
+        {fmtSigned(c.cumVariance)}
+      </td>
+      <td style={{ fontSize: 11.5 }}>
+        <span style={{ color: st.color }}>
+          {st.emoji} {st.label}
+        </span>
+        {c.broken && (
+          <span
+            className="text-3"
+            style={{ fontSize: 10, marginLeft: 4 }}
+            title="แม่บ้านระบุว่าตู้นี้บางช่องไม่ปกติ (เสีย/ว่าง/ข้าม)"
+          >
+            ⚠️
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function PerChairDayBlock({ day }: { day: PerChairDay }) {
+  const s = day.summary;
+  const hasColl =
+    s.collectedMaidManual ||
+    s.collectedCsvImport ||
+    s.collectedOfficeProxy ||
+    s.unattributedCollected;
+  const hasDep = s.depositMaid || s.depositOffice || s.depositUnknown;
+  const hasWO = s.writeOffShort || s.writeOffOver;
+  const varColor =
+    day.varianceTotal < -PERCHAIR_TOL
+      ? "var(--crit)"
+      : day.varianceTotal > PERCHAIR_TOL
+        ? "#92400e"
+        : "var(--ok)";
+  return (
+    <div
+      className="card"
+      style={{ margin: "0 0 12px", padding: 0, overflow: "hidden" }}
+    >
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: "8px 12px",
+          background: "var(--surface-soft)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div>
+          <span className="mono" style={{ fontWeight: 700, fontSize: 13 }}>
+            {day.date}
+          </span>
+          <span className="text-3" style={{ marginLeft: 6, fontSize: 11 }}>
+            {dayOfWeekTh(day.date)}
+          </span>
+        </div>
+        <div className="text-3" style={{ fontSize: 11.5 }}>
+          ขาย <strong className="mono">{fmtN(day.expectedTotal)}</strong> · เก็บ{" "}
+          <strong className="mono">{fmtN(day.collectedTotal)}</strong> ·{" "}
+          <span style={{ color: varColor, fontWeight: 600 }}>
+            {fmtSigned(day.varianceTotal)}
+          </span>
+          {day.depositTotal > 0 && (
+            <>
+              {" "}
+              · ฝาก <strong className="mono">{fmtN(day.depositTotal)}</strong>
+            </>
+          )}
+        </div>
+      </div>
+
+      {day.chairs.length > 0 ? (
+        <table className="tbl rc-ledger-tbl" style={{ margin: 0 }}>
+          <thead>
+            <tr>
+              <th>เก้าอี้</th>
+              <th className="num">ยอดขาย</th>
+              <th className="num">เก็บได้</th>
+              <th className="num rc-tcol">ขาด/เกินวันนี้</th>
+              <th className="num">สะสม</th>
+              <th>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {day.chairs.map((c) => (
+              <PerChairDayRow key={c.chairCode} c={c} />
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="text-3" style={{ padding: 12, fontSize: 12 }}>
+          วันนี้ไม่มียอดขาย/เก็บแยกรายตู้
+        </div>
+      )}
+
+      <div
+        className="row gap-1"
+        style={{
+          flexWrap: "wrap",
+          alignItems: "center",
+          padding: "8px 12px",
+          borderTop: "1px solid var(--border)",
+          fontSize: 11.5,
+          background: "var(--surface-soft)",
+        }}
+      >
+        <span className="text-3" style={{ fontWeight: 600 }}>
+          สรุปเงินวันนี้:
+        </span>
+        {s.collectedMaidManual > 0 && (
+          <span className="chip">💵 แม่บ้านมือ {fmtN(s.collectedMaidManual)}</span>
+        )}
+        {s.collectedCsvImport > 0 && (
+          <span
+            className="chip"
+            style={{ background: "#fffbeb", color: "#92400e" }}
+            title="เก็บผ่านไฟล์ CSV — ไม่มีแยกรายตู้"
+          >
+            📥 CSV {fmtN(s.collectedCsvImport)}
+          </span>
+        )}
+        {s.collectedOfficeProxy > 0 && (
+          <span className="chip">🏢 ออฟฟิศเก็บ {fmtN(s.collectedOfficeProxy)}</span>
+        )}
+        {s.depositMaid > 0 && (
+          <span className="chip">🏦 ฝากแม่บ้าน {fmtN(s.depositMaid)}</span>
+        )}
+        {s.depositOffice > 0 && (
+          <span className="chip">🏦 ฝากแอดมิน {fmtN(s.depositOffice)}</span>
+        )}
+        {s.depositUnknown > 0 && (
+          <span className="chip text-3" title="แถวฝากเก่าที่ยังไม่ระบุผู้ฝาก">
+            🏦 ฝาก(ไม่ระบุ) {fmtN(s.depositUnknown)}
+          </span>
+        )}
+        {s.writeOffShort > 0 && (
+          <span className="chip" style={{ color: "var(--crit)" }}>
+            ✂️ ตัดขาด {fmtN(s.writeOffShort)}
+          </span>
+        )}
+        {s.writeOffOver > 0 && (
+          <span className="chip" style={{ color: "#92400e" }}>
+            ✂️ ตัดเกิน {fmtN(s.writeOffOver)}
+          </span>
+        )}
+        {!hasColl && !hasDep && !hasWO && (
+          <span className="text-3">— ไม่มีการเก็บ/ฝาก/ตัดเงิน</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function PerChairDetailTab({
+  data,
+  isOrg,
+}: {
+  data: ReconcilePerChairDetail | null;
+  isOrg: boolean;
+}) {
+  if (isOrg) {
+    return (
+      <div
+        className="card"
+        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
+      >
+        🔍 <strong>เลือกสาขาก่อน</strong> — มุมมอง “รายตู้ · รายวัน” ดูทีละสาขา
+        (กดสาขาทางซ้าย)
+      </div>
+    );
+  }
+  if (!data || data.days.length === 0) {
+    return (
+      <div
+        className="card"
+        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
+      >
+        ยังไม่มีข้อมูลรายตู้-รายวันในช่วงนี้ — ต้องมีแม่บ้านกรอกในแอป (ไม่ใช่ CSV)
+        + POS อัพแล้ว
+      </div>
+    );
+  }
+  return (
+    <div className="rc-ledger">
+      <div
+        className="text-3"
+        style={{ fontSize: 11.5, padding: "6px 2px 4px" }}
+      >
+        แยกราย <strong>วัน × ตู้</strong> · ช่วง{" "}
+        <strong className="mono">{data.from}</strong> –{" "}
+        <strong className="mono">{data.to}</strong> · “สะสม” =
+        ขาด/เกินรายตู้สะสมในช่วงนี้ · ⚪ = วันนั้นยังไม่กรอกรายตู้
+        (เงินอยู่ในสรุปท้ายวัน)
+      </div>
+      {data.truncated && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 12,
+            background: "var(--surface-soft)",
+          }}
+        >
+          ℹ️ แสดง {data.maxDays} วันล่าสุดของช่วงที่เลือก
+          (ตารางรายวันยาวมาก) — เลือกช่วงวันเองด้านบนเพื่อดูช่วงเก่ากว่า
+        </div>
+      )}
+      {data.days.map((d) => (
+        <PerChairDayBlock key={d.date} day={d} />
+      ))}
     </div>
   );
 }

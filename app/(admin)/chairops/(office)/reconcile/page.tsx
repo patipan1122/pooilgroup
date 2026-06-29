@@ -34,6 +34,7 @@ export default async function ReconcileOrgPage({
     all?: string;
     page?: string;
     day?: string;
+    pcv?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -66,6 +67,7 @@ export default async function ReconcileOrgPage({
         allTime={sp.all === "1"}
         page={sp.page ? Number(sp.page) : 0}
         day={sp.day}
+        perChairDaily={sp.pcv !== "summary"}
       />
     </div>
   );
