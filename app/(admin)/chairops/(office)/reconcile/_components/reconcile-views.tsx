@@ -34,6 +34,8 @@ import {
   type TimelinePoint,
   type PeriodWindow,
   type ReconcileDayDetail,
+  type ReconcilePerChair,
+  type PerChairRow,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -214,9 +216,12 @@ export function ReconcileTabs({
   active,
 }: {
   baseHref: string;
-  active: "ledger" | "timeline" | "periods";
+  active: "ledger" | "timeline" | "periods" | "perchair";
 }) {
-  const tab = (key: "ledger" | "timeline" | "periods", label: string) => {
+  const tab = (
+    key: "ledger" | "timeline" | "periods" | "perchair",
+    label: string,
+  ) => {
     const href =
       key === "ledger" ? baseHref : `${baseHref}?view=${key}`;
     return (
@@ -236,6 +241,7 @@ export function ReconcileTabs({
         {tab("ledger", "Ledger")}
         {tab("timeline", "Timeline")}
         {tab("periods", "รอบเก็บ (Periods)")}
+        {tab("perchair", "รายตู้")}
       </div>
     </div>
   );
@@ -1079,6 +1085,219 @@ export function DayDetailPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Per-chair tab — deep dive (CEO 2026-06-29): POS sales (ควรได้) vs maid-
+// collected (เก็บได้) per massage chair → which machine is short/over.
+// ─────────────────────────────────────────────────────────────
+const PERCHAIR_TOL = 20; // ±฿ band counted as "ตรง" (rounding/coin slack)
+
+function perChairStatus(r: PerChairRow): {
+  emoji: string;
+  label: string;
+  color: string;
+} {
+  if (!r.hasCollection && r.hasPos)
+    return { emoji: "⚪", label: "ยังไม่เก็บ", color: "var(--text-3)" };
+  if (!r.hasPos && r.hasCollection)
+    return { emoji: "⚪", label: "ไม่มี POS", color: "var(--text-3)" };
+  if (!r.hasPos && !r.hasCollection)
+    return { emoji: "⚪", label: "ไม่มีข้อมูล", color: "var(--text-3)" };
+  if (r.variance < -PERCHAIR_TOL)
+    return { emoji: "🔴", label: "ขาด", color: "var(--crit)" };
+  if (r.variance > PERCHAIR_TOL)
+    return { emoji: "🟡", label: "เกิน", color: "#92400e" };
+  return { emoji: "🟢", label: "ตรง", color: "var(--ok)" };
+}
+
+export function PerChairTab({
+  data,
+  isOrg,
+}: {
+  data: ReconcilePerChair | null;
+  isOrg: boolean;
+}) {
+  if (isOrg) {
+    return (
+      <div
+        className="card"
+        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
+      >
+        🔍 <strong>เลือกสาขาก่อน</strong> — มุมมอง “รายตู้” ดูเชิงลึกทีละสาขา
+        (กดสาขาทางซ้าย)
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div className="card" style={{ margin: "12px 0", padding: 18, fontSize: 13 }}>
+        ยังไม่มีข้อมูล
+      </div>
+    );
+  }
+  const {
+    rows,
+    totals,
+    unattributedCollected,
+    unattributedCount,
+    unattributedExpected,
+    unattributedExpectedCount,
+  } = data;
+  const posChairs = rows.filter((r) => r.hasPos).length;
+  const totalVarColor =
+    totals.variance < -PERCHAIR_TOL
+      ? "var(--crit)"
+      : totals.variance > PERCHAIR_TOL
+        ? "#92400e"
+        : "var(--ok)";
+  return (
+    <div className="rc-ledger">
+      <div className="text-3" style={{ fontSize: 11.5, padding: "6px 2px 4px" }}>
+        เทียบ “ยอดขายต่อตู้ (POS · ควรได้)” กับ “แม่บ้านเก็บได้ต่อตู้” ช่วง{" "}
+        <strong className="mono">{data.from}</strong> –{" "}
+        <strong className="mono">{data.to}</strong> · ติดลบ 🔴 = เงินขาดที่ตู้นั้น
+      </div>
+
+      <div
+        className="row gap-2"
+        style={{ flexWrap: "wrap", fontSize: 12, margin: "2px 0 8px" }}
+      >
+        <span className="chip">
+          ควรได้รวม <strong className="mono">{fmtN(totals.expected)}</strong> ฿
+        </span>
+        <span className="chip">
+          เก็บได้รวม <strong className="mono">{fmtN(totals.collected)}</strong> ฿
+        </span>
+        <span className="chip" style={{ color: totalVarColor, fontWeight: 600 }}>
+          ขาด/เกินรวม <strong className="mono">{fmtSigned(totals.variance)}</strong> ฿
+        </span>
+      </div>
+
+      {unattributedCount > 0 && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 12,
+            background: "#fffbeb",
+            borderColor: "#fcd34d",
+            color: "#92400e",
+          }}
+        >
+          ⚠️ มีเงินเก็บ{" "}
+          <strong className="mono">{fmtN(unattributedCollected)}</strong> ฿ จาก{" "}
+          {unattributedCount} รอบ ที่นำเข้าด้วย CSV — ไม่ได้แยกรายตู้ จึงไม่อยู่ในตารางข้างล่าง
+          (แต่รวมอยู่ใน “เก็บได้รวม” แล้ว)
+        </div>
+      )}
+
+      {unattributedExpectedCount > 0 && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 12,
+            background: "#fffbeb",
+            borderColor: "#fcd34d",
+            color: "#92400e",
+          }}
+        >
+          ⚠️ มียอดขาย POS{" "}
+          <strong className="mono">{fmtN(unattributedExpected)}</strong> ฿ ที่ไม่มีรหัสตู้ —
+          ไม่อยู่ในตารางข้างล่าง (แต่รวมอยู่ใน “ควรได้รวม” แล้ว)
+        </div>
+      )}
+
+      {rows.length > 0 && posChairs === 0 && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 12,
+            background: "var(--surface-soft)",
+          }}
+        >
+          ℹ️ ช่วงนี้ยังไม่มี “ยอดขายรายตู้” — POS อาจอัปแบบรวมสาขา (ไม่ได้แยกเครื่อง)
+          จึงเทียบขาด/เกินรายตู้ยังไม่ได้ · ดูได้เฉพาะ “แม่บ้านเก็บได้” รายตู้
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <div
+          className="text-3"
+          style={{ textAlign: "center", padding: "40px 0", fontSize: 12.5 }}
+        >
+          ยังไม่มีข้อมูลรายตู้ในช่วงนี้ — ต้องมีแม่บ้านกรอกในแอป (ไม่ใช่ CSV) + POS อัพแล้ว
+        </div>
+      ) : (
+        <table className="tbl rc-ledger-tbl">
+          <thead>
+            <tr>
+              <th>เก้าอี้</th>
+              <th className="num">ยอดขาย (ควรได้)</th>
+              <th className="num">แม่บ้านเก็บได้</th>
+              <th className="num rc-tcol">ขาด/เกิน</th>
+              <th>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const st = perChairStatus(r);
+              const showVar = r.hasPos && r.hasCollection;
+              return (
+                <tr key={r.chairCode}>
+                  <td>
+                    <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                      {r.chairCode}
+                    </span>
+                    {r.generation && (
+                      <span className="text-3" style={{ fontSize: 10.5, marginLeft: 6 }}>
+                        {r.generation}
+                      </span>
+                    )}
+                  </td>
+                  <td className="num mono">
+                    {r.hasPos ? fmtN(r.expected) : <span className="text-muted">—</span>}
+                  </td>
+                  <td className="num mono">
+                    {r.hasCollection ? (
+                      fmtN(r.collected)
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                  <td
+                    className="num mono rc-tcol"
+                    style={{ color: showVar ? st.color : undefined, fontWeight: 600 }}
+                  >
+                    {showVar ? fmtSigned(r.variance) : <span className="text-muted">—</span>}
+                  </td>
+                  <td style={{ fontSize: 12 }}>
+                    <span style={{ color: st.color }}>
+                      {st.emoji} {st.label}
+                    </span>
+                    {r.brokenOrEmpty && (
+                      <span
+                        className="text-3"
+                        style={{ fontSize: 10.5, marginLeft: 6 }}
+                        title="แม่บ้านระบุว่าตู้นี้บางช่องไม่ปกติ (เสีย/ว่าง/ข้าม)"
+                      >
+                        ⚠️ ตู้มีปัญหา
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

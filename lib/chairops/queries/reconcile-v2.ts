@@ -876,6 +876,196 @@ export async function getReconcileDayDetail(args: {
   };
 }
 
+// ----------------------------------------------------------------
+// PER-CHAIR — deep-dive: each massage chair's POS sales (ควรได้) vs what the
+// maid actually counted/collected (เก็บได้) → variance per machine, so the CEO
+// can see WHICH chair is short/over (CEO 2026-06-29). Collected-per-chair comes
+// from ChairopsCashCollection.chairBreakdown (only MAID_MANUAL form entries set
+// it — CSV/legacy rows have no breakdown → surfaced as "unattributed"). Expected
+// uses the SAME cash formula as the ledger: PosDaily.cashTotal + coin×10.
+// ----------------------------------------------------------------
+export interface PerChairRow {
+  chairCode: string;
+  generation: string | null;
+  expected: number; // POS cash + coin baht (ควรได้) · over the window
+  collected: number; // maid-counted per chair (เก็บได้) · over the window
+  variance: number; // collected − expected (− = ขาด · + = เกิน)
+  hasPos: boolean;
+  hasCollection: boolean;
+  brokenOrEmpty: boolean; // any chairBreakdown line ≠ "collected"
+}
+export interface ReconcilePerChair {
+  from: string;
+  to: string;
+  rows: PerChairRow[];
+  totals: { expected: number; collected: number; variance: number };
+  /** collected via CSV/legacy rows with no per-chair breakdown — cannot map to a chair. */
+  unattributedCollected: number;
+  unattributedCount: number;
+  /** POS cash on rows with no chairCode — counted in totals.expected but not in any chair row. */
+  unattributedExpected: number;
+  unattributedExpectedCount: number;
+}
+
+function isoMinusDaysLocal(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function getReconcilePerChair(args: {
+  orgId: string;
+  branchId: string;
+  from?: string;
+  to?: string;
+  allTime?: boolean;
+  posCoverThrough?: string | null;
+}): Promise<ReconcilePerChair> {
+  const { orgId, branchId } = args;
+
+  // Resolve the [fromDay, toDay] window (mirrors the ledger's default: last 30
+  // days ending at the latest POS-complete day when no explicit range is set).
+  let fromDay: string;
+  let toDay: string;
+  if (args.allTime) {
+    fromDay = "1970-01-01";
+    toDay = isoDay(new Date());
+  } else if (args.from || args.to) {
+    fromDay = args.from ?? "1970-01-01";
+    toDay = args.to ?? isoDay(new Date());
+  } else {
+    // Default window mirrors the ledger's: last 30 days STARTING at posThrough-29
+    // but ending TODAY (not posThrough) — else a collection made after the last
+    // POS upload is hidden and the chair wrongly reads as ขาด (verify P2 · the
+    // ledger made the same fix, reconcile-shell defaultedLedger).
+    const anchor = args.posCoverThrough ?? isoDay(new Date());
+    fromDay = isoMinusDaysLocal(anchor, 29);
+    toDay = isoDay(new Date());
+  }
+  // bizDate is @db.Date (UTC midnight) → compare with plain date boundaries.
+  const bizStart = new Date(fromDay);
+  const bizEnd = new Date(toDay);
+  // collectedAt is a full instant → Bangkok day window [from 00:00+07, to+1 00:00+07).
+  const collStart = new Date(fromDay + "T00:00:00+07:00");
+  const collEnd = new Date(new Date(toDay + "T00:00:00+07:00").getTime() + DAY_MS);
+
+  const [chairs, posRows, collections] = await Promise.all([
+    prisma.chairopsChair.findMany({
+      where: { orgId, branchId, isActive: true },
+      select: { chairCode: true, generation: true },
+    }),
+    prisma.chairopsPosDaily.findMany({
+      where: { orgId, branchId, bizDate: { gte: bizStart, lte: bizEnd } },
+      select: { chairCode: true, cashTotal: true, coinInsertCount: true },
+    }),
+    prisma.chairopsCashCollection.findMany({
+      where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd } },
+      select: { countedAmount: true, chairBreakdown: true },
+    }),
+  ]);
+
+  // Expected cash per chair = Σ(cashTotal) + Σ(coin)×10 — same as buildLedger.
+  // POS rows with no chairCode (the ingest allows them) go to an "unattributed"
+  // bucket that STILL counts in totals.expected — else the tab's ขาด/เกินรวม
+  // under-reports shortage vs the ledger (verify P1).
+  const expectedByChair = new Map<string, number>();
+  let unattributedExpected = 0;
+  let unattributedExpectedCount = 0;
+  for (const p of posRows) {
+    const exp = toNum(p.cashTotal) + coinBahtOf(p.coinInsertCount);
+    if (!p.chairCode) {
+      unattributedExpected += exp;
+      unattributedExpectedCount += 1;
+      continue;
+    }
+    expectedByChair.set(p.chairCode, (expectedByChair.get(p.chairCode) ?? 0) + exp);
+  }
+
+  // Collected per chair from the maid's chairBreakdown (MAID_MANUAL only).
+  const collectedByChair = new Map<string, number>();
+  const brokenByChair = new Set<string>();
+  let unattributedCollected = 0;
+  let unattributedCount = 0;
+  for (const c of collections) {
+    const bd = c.chairBreakdown as { lines?: unknown } | null;
+    const lines = bd && Array.isArray(bd.lines)
+      ? (bd.lines as Array<Record<string, unknown>>)
+      : null;
+    if (!lines || lines.length === 0) {
+      unattributedCollected += c.countedAmount;
+      unattributedCount += 1;
+      continue;
+    }
+    // A line with a blank chairCode (only via malformed/legacy JSON — the writer
+    // validates codes) still carries money → fold into the unattributed bucket
+    // instead of silently dropping it, so totals.collected never loses baht.
+    let blankMoneyInColl = false;
+    for (const ln of lines) {
+      const code = typeof ln.chairCode === "string" ? ln.chairCode.trim() : "";
+      const amt = typeof ln.amount === "number" ? ln.amount : 0;
+      if (!code) {
+        if (amt > 0) {
+          unattributedCollected += amt;
+          blankMoneyInColl = true;
+        }
+        continue;
+      }
+      collectedByChair.set(code, (collectedByChair.get(code) ?? 0) + amt);
+      const status = typeof ln.status === "string" ? ln.status : "";
+      if (status && status !== "collected") brokenByChair.add(code);
+    }
+    if (blankMoneyInColl) unattributedCount += 1;
+  }
+
+  const genByCode = new Map(chairs.map((c) => [c.chairCode, c.generation]));
+  const allCodes = new Set<string>([
+    ...chairs.map((c) => c.chairCode),
+    ...expectedByChair.keys(),
+    ...collectedByChair.keys(),
+  ]);
+  const rows: PerChairRow[] = [...allCodes].map((code) => {
+    const expected = Math.round(expectedByChair.get(code) ?? 0);
+    const collected = Math.round(collectedByChair.get(code) ?? 0);
+    return {
+      chairCode: code,
+      generation: genByCode.get(code) ?? null,
+      expected,
+      collected,
+      variance: collected - expected,
+      hasPos: expectedByChair.has(code),
+      hasCollection: collectedByChair.has(code),
+      brokenOrEmpty: brokenByChair.has(code),
+    };
+  });
+  // Worst shortage first (most negative variance), then by code.
+  rows.sort(
+    (a, b) => a.variance - b.variance || a.chairCode.localeCompare(b.chairCode),
+  );
+
+  // Sum the ALREADY-ROUNDED per-row values + the rounded unattributed buckets
+  // so the footer total always equals Σ(visible rows) + disclosed unattributed
+  // (no per-row-vs-total drift · verify P2).
+  const unExp = Math.round(unattributedExpected);
+  const unColl = Math.round(unattributedCollected);
+  const totalExpected = rows.reduce((s, r) => s + r.expected, 0) + unExp;
+  const totalCollected = rows.reduce((s, r) => s + r.collected, 0) + unColl;
+
+  return {
+    from: fromDay,
+    to: toDay,
+    rows,
+    totals: {
+      expected: totalExpected,
+      collected: totalCollected,
+      variance: totalCollected - totalExpected,
+    },
+    unattributedCollected: unColl,
+    unattributedCount,
+    unattributedExpected: unExp,
+    unattributedExpectedCount,
+  };
+}
+
 // expose intent helper for the page (keeps coloring logic in one place)
 export function ledgerDiffClass(d: LedgerDay): "crit" | "warn" | "ok" | "muted" {
   const i = diffIntent(d.diff, d.collected);

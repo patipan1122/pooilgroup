@@ -11,11 +11,14 @@ import { useState } from "react";
 
 export function LedgerDateFilterCustom({
   baseHref,
+  view = "ledger",
   from,
   to,
   max,
 }: {
   baseHref: string;
+  /** which tab to stay on when applying a custom range (CEO 2026-06-29 รายตู้). */
+  view?: string;
   from: string | null;
   to: string | null;
   /** Latest POS-complete day · used as the max for both inputs. */
@@ -31,10 +34,10 @@ export function LedgerDateFilterCustom({
   // dropped here so a custom range overrides a prior "ทั้งหมด".
   const apply = (nextFrom: string, nextTo: string) => {
     const usp = new URLSearchParams();
-    usp.set("view", "ledger");
+    usp.set("view", view);
     if (nextFrom) usp.set("from", nextFrom);
     if (nextTo) usp.set("to", nextTo);
-    router.push(`${baseHref}?${usp.toString()}`);
+    router.push(`${baseHref}?${usp.toString()}`, { scroll: false });
   };
 
   return (

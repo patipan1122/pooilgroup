@@ -25,10 +25,11 @@ function isoMinusDays(iso: string, days: number): string {
 
 function buildHref(
   base: string,
+  view: string,
   args: { from?: string; to?: string; all?: boolean },
 ): string {
   const usp = new URLSearchParams();
-  usp.set("view", "ledger");
+  usp.set("view", view);
   if (args.all) {
     usp.set("all", "1");
   } else {
@@ -40,12 +41,15 @@ function buildHref(
 
 export function LedgerDateFilter({
   baseHref,
+  view = "ledger",
   from,
   to,
   allTime,
   posCoverThrough,
 }: {
   baseHref: string;
+  /** which tab the filter drives — keeps ?view= when changing range (CEO 2026-06-29 รายตู้). */
+  view?: string;
   from: string | null;
   to: string | null;
   allTime?: boolean;
@@ -108,7 +112,7 @@ export function LedgerDateFilter({
         return (
           <Link
             key={p.label}
-            href={buildHref(baseHref, { from: p.from, to: p.to, all: p.all })}
+            href={buildHref(baseHref, view, { from: p.from, to: p.to, all: p.all })}
             className="btn btn-sm"
             style={
               active
@@ -128,6 +132,7 @@ export function LedgerDateFilter({
 
       <LedgerDateFilterCustom
         baseHref={baseHref}
+        view={view}
         from={from}
         to={to}
         max={anchor}

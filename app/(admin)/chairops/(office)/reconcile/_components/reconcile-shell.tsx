@@ -17,6 +17,7 @@ import {
   getReconcileTimeline,
   getReconcilePeriods,
   getReconcileDayDetail,
+  getReconcilePerChair,
   ledgerTotals,
   type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
@@ -31,6 +32,7 @@ import {
   DayDetailPanel,
   TimelineTab,
   PeriodsTab,
+  PerChairTab,
 } from "./reconcile-views";
 import { LedgerDateFilter } from "./ledger-date-filter";
 
@@ -38,10 +40,12 @@ import { LedgerDateFilter } from "./ledger-date-filter";
 // Preset windows (7/30/90) are smaller than this so they render in one page.
 const LEDGER_PAGE_SIZE = 120;
 
-export type ReconcileView = "ledger" | "timeline" | "periods";
+export type ReconcileView = "ledger" | "timeline" | "periods" | "perchair";
 
 export function normalizeView(raw: string | undefined): ReconcileView {
-  return raw === "timeline" || raw === "periods" ? raw : "ledger";
+  return raw === "timeline" || raw === "periods" || raw === "perchair"
+    ? raw
+    : "ledger";
 }
 
 // CEO 2026-06-02: validate ?from / ?to in "YYYY-MM-DD" form. Anything else is
@@ -129,6 +133,22 @@ export async function ReconcileShell({
   // posThrough silently hides the deposit row. The lower bound still anchors
   // to posThrough-29 so the ledger opens on the latest POS data window.
   const posThrough = overview.freshness.posCoverThrough;
+
+  // CEO 2026-06-29: per-chair deep-dive — only meaningful per branch (chairCode
+  // is unique within a branch). Loads after posThrough so the default window
+  // matches the ledger's. Org view shows a "pick a branch" prompt instead.
+  const perChair =
+    view === "perchair" && branchId
+      ? await getReconcilePerChair({
+          orgId,
+          branchId,
+          from: safeFrom,
+          to: safeTo,
+          allTime,
+          posCoverThrough: posThrough,
+        })
+      : null;
+
   const defaultedLedger = (() => {
     // Explicit selection (custom range OR "ทั้งหมด") shows as-is. Only the
     // untouched default opens on the latest 30-day window (bank-statement style).
@@ -294,9 +314,10 @@ export async function ReconcileShell({
 
         <ReconcileTabs baseHref={baseHref} active={view} />
 
-        {view === "ledger" && (
+        {(view === "ledger" || view === "perchair") && (
           <LedgerDateFilter
             baseHref={baseHref}
+            view={view}
             from={safeFrom ?? null}
             to={safeTo ?? null}
             allTime={!!allTime}
@@ -404,6 +425,7 @@ export async function ReconcileShell({
           {view === "periods" && (
             <PeriodsTab periods={periods} branchId={branchId} />
           )}
+          {view === "perchair" && <PerChairTab data={perChair} isOrg={isOrg} />}
         </div>
       </main>
     </div>
