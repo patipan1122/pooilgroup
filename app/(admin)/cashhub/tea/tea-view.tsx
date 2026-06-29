@@ -180,6 +180,14 @@ export function TeaView({
         setMsg({ kind: "err", text: res.error });
         return;
       }
+      // ❌ บล็อกรายงาน "รายละเอียดบิล" (ราคาสุทธิ = รวมรายเมนู) — ยอดไม่ตรงบิลจริง → ห้ามนำเข้า
+      if (res.reportType === "detail") {
+        setMsg({
+          kind: "err",
+          text: "❌ ไฟล์นี้เป็นรายงาน “ยอดขายแยกตามรายละเอียดบิล” — ใช้ไม่ได้ เพราะยอดรวมรายเมนูไม่ตรงกับยอดบิลจริง (TRCloud) · กรุณาอัป “รายงานสรุปยอดขายแยกตามบิล” แทน",
+        });
+        return;
+      }
       if (res.warning) setMsg({ kind: "err", text: `⚠️ ${res.warning}` });
       setPending({ fileName: file.name, branches: res.branches, reportType: res.reportType });
       setPicks(res.branches.map((b) => b.detectedBranchCode ?? ""));
@@ -378,19 +386,6 @@ export function TeaView({
               ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
             </div>
 
-            {/* ⚠️ เตือนชนิดรายงาน — "รายละเอียดบิล" ยอดอาจคลาดเคลื่อนจากยอดบิลจริง (TRCloud) */}
-            {pending.reportType === "detail" && (
-              <div className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-3 text-sm text-red-800">
-                ⚠️ <b>ไฟล์นี้เป็นรายงาน &ldquo;ยอดขายแยกตามรายละเอียดบิล&rdquo;</b> (รวมราคารายเมนู) —
-                ยอดอาจ<b>คลาดเคลื่อนเล็กน้อย</b>จากยอดบิลจริง เพราะไม่รวมส่วนลด/ปัดเศษระดับบิล
-                จึงอาจไม่ตรงกับ TRCloud
-                <div className="mt-1.5 font-semibold text-red-900">
-                  👉 แนะนำให้ใช้รายงาน &ldquo;สรุปยอดขายแยกตามบิล&rdquo; แทน (ยอดต่อบิลจริง · ตรง
-                  TRCloud) — ยังนำเข้าไฟล์นี้ได้ แต่ตัวเลขจะเป็นค่าประมาณ
-                </div>
-              </div>
-            )}
-
             {/* เตือนไฟล์ซ้ำ — ชื่อไฟล์นี้เคยอัปแล้ว */}
             {importPreview?.dup && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
@@ -582,10 +577,15 @@ export function TeaView({
             {msg.text}
           </div>
         )}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          📋 <b>ต้องใช้รายงาน &ldquo;สรุปยอดขายแยกตามบิล&rdquo;</b> จาก Foodstory เท่านั้น (ยอดต่อบิลจริง ·
+          ตรงกับ TRCloud) — <b>ห้าม</b>ใช้รายงาน &ldquo;ยอดขายแยกตามรายละเอียดบิล&rdquo; (รวมรายเมนู ·
+          ยอดไม่ตรง · ระบบจะบล็อกให้)
+        </div>
         <p className="text-xs text-zinc-500">
           ดึง IV จาก TRCloud (คีย์ไว้แล้ว 1 ใบ/วัน/สาขา) → กด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo;
-          (รายงานปิดสิ้นวัน · ไฟล์เดียวมีหลายสาขาได้) → ดูทาน &ldquo;รายสาขา (Excel)&rdquo; ว่าตรง POS ไหม ·
-          ตั้งบัญชีต่อช่องทางที่ &ldquo;⚙ ตั้งค่าบัญชี&rdquo; เพื่อเตรียม reconcile
+          (รายงานสรุปยอดขายแยกตามบิล · ไฟล์เดียวมีหลายสาขาได้) → ดูทาน &ldquo;รายสาขา (Excel)&rdquo; ว่าตรง
+          POS ไหม · ตั้งบัญชีต่อช่องทางที่ &ldquo;⚙ ตั้งค่าบัญชี&rdquo; เพื่อเตรียม reconcile
           {canConfig && (
             <>
               {" · "}

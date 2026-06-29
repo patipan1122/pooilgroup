@@ -62,7 +62,7 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
         </div>
         <p className="text-sm text-zinc-500 mt-1">
           ดึงใบกำกับ (IV) รายวันจาก TRCloud ทั้ง {branches.length} สาขา · เก็บถาวร · อัปไฟล์ Foodstory
-          (รายงานปิดสิ้นวัน) มาเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
+          (รายงานสรุปยอดขายแยกตามบิล) มาเทียบว่ายอดที่คีย์ตรงกับ POS จริงไหม
         </p>
       </header>
 
