@@ -151,27 +151,10 @@ const ALL_MODULES = ["cashhub", "fuelos", "docuflow", "recruit"];
 // จึงต้อง "ข้าม" chrome ของ AdminShell ทั้งหมด. ขยายเมื่อ reskin หน้าอื่นเสร็จ.
 // ⚠️ ระวัง dynamic route: /receipts/new (ฟอร์มเก่า) ห้ามเต็มจอ — match เฉพาะหน้าที่ทำใหม่.
 function isDcFullBleedPath(pathname: string): boolean {
-  return (
-    pathname === "/dc/office" ||
-    pathname === "/dc/office/products" ||
-    pathname === "/dc/office/suppliers" ||
-    pathname === "/dc/office/shipments" ||
-    pathname === "/dc/office/purchasing" ||
-    pathname === "/dc/office/warehouses" ||
-    pathname === "/dc/office/transfers" ||
-    pathname === "/dc/office/reconcile" ||
-    pathname === "/dc/office/reports" ||
-    pathname === "/dc/office/receipts" ||
-    // ใบรับสินค้า รายละเอียด /dc/office/receipts/<id> (ยกเว้น /new = ฟอร์มเก่า)
-    /^\/dc\/office\/receipts\/(?!new$)[^/]+$/.test(pathname) ||
-    // รายละเอียดชิปเมนต์/ใบโอน (ยกเว้น /new ที่ยังเป็นฟอร์มเก่า)
-    /^\/dc\/office\/shipments\/(?!new$)[^/]+$/.test(pathname) ||
-    /^\/dc\/office\/transfers\/(?!new$)[^/]+$/.test(pathname) ||
-    // ใบสั่งซื้อ รายละเอียด + สร้างใหม่ (ทั้งคู่ปรับเป็นครีมแล้ว)
-    /^\/dc\/office\/purchasing\/[^/]+$/.test(pathname) ||
-    // timeline การเดินของสินค้า /dc/office/products/<id>/timeline
-    /^\/dc\/office\/products\/[^/]+\/timeline$/.test(pathname)
-  );
+  // ทุกหน้า DC หลังบ้าน = ชุดครีม DcOfficeShell เดียวกันทั้งหมด · ห้าม migrate ครึ่งๆ
+  // (ไม่งั้นเมนูกระโดด "2 ชุด" + บางหน้าหายปุ่มติชม — CEO 2026-06-29).
+  // ⚠️ ทุก page.tsx ใต้ /dc/office ต้องห่อด้วย <DcOfficeShell> ไม่งั้นจะ render เปล่า (ไม่มีเมนู).
+  return pathname === "/dc/office" || pathname.startsWith("/dc/office/");
 }
 
 export function AdminShell({

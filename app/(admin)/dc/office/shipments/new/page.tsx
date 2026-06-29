@@ -5,6 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { ShipmentForm, type PoOption } from "./shipment-form";
 
@@ -15,7 +17,8 @@ export default async function DcNewShipmentPage() {
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
 
-  const [pos, products] = await Promise.all([
+  const [chrome, pos, products] = await Promise.all([
+    getDcOfficeChrome(orgId),
     // ใบสั่งซื้อที่ "ของกำลังจะมา" (สั่งแล้ว/รับบางส่วน) ขึ้นก่อน — แต่ให้เลือกได้ทุกใบที่ไม่ยกเลิก
     prisma.dcPurchaseOrder.findMany({
       where: { orgId, status: { not: "CANCELLED" } },
@@ -59,7 +62,8 @@ export default async function DcNewShipmentPage() {
   }));
 
   return (
-    <div className="dc-page dc-page--wide">
+    <DcOfficeShell active="ship" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
       <div className="dc-head">
         <div>
           <Link
@@ -75,6 +79,7 @@ export default async function DcNewShipmentPage() {
       </div>
 
       <ShipmentForm poOptions={poOptions} products={products} />
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }

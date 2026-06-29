@@ -6,6 +6,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { GrnForm, type ShipmentOption, type GrnPoOption } from "./grn-form";
 import { SHIPMENT_STATUS_LABEL } from "@/lib/dc/nav";
@@ -21,7 +23,8 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
 
   const { shipmentId } = await searchParams;
 
-  const [shipments, pos, products] = await Promise.all([
+  const [chrome, shipments, pos, products] = await Promise.all([
+    getDcOfficeChrome(orgId),
     // ชิปเมนต์ที่ยังไม่ได้ยกเลิก (ดึงรายการมา pre-fill ปริมาณคาดหวัง)
     prisma.dcShipment.findMany({
       where: { orgId },
@@ -81,7 +84,8 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
   const initialShipmentId = shipmentId && shipments.some((s) => s.id === shipmentId) ? shipmentId : null;
 
   return (
-    <div className="dc-page dc-page--wide">
+    <DcOfficeShell active="grn" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
       <div className="dc-head">
         <div>
           <Link
@@ -104,6 +108,7 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
         initialShipmentId={initialShipmentId}
         activeWarehouseId={ctx.activeWarehouseId}
       />
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }

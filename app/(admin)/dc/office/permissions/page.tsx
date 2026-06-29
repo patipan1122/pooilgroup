@@ -1,6 +1,8 @@
 // DC · หลังบ้าน → สิทธิ์พนักงาน (ใครเห็นคลังไหน) — แอดมินเท่านั้น
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcAdmin, canDcManage } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
@@ -13,6 +15,8 @@ export default async function DcPermissionsPage() {
   requireDcAdmin(ctx.session.user.role);
 
   const orgId = ctx.session.user.org_id;
+
+  const chrome = await getDcOfficeChrome(orgId);
 
   // คลังขององค์กร (รวมที่ปิดใช้ — ผูกสิทธิ์ได้ทุกคลัง)
   const warehouses = await prisma.dcWarehouse.findMany({
@@ -47,7 +51,8 @@ export default async function DcPermissionsPage() {
   }));
 
   return (
-    <div className="dc-page dc-page--wide">
+    <DcOfficeShell active="dash" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
       <div className="dc-head">
         <div>
           <div className="dc-h1">สิทธิ์พนักงาน</div>
@@ -68,6 +73,7 @@ export default async function DcPermissionsPage() {
         users={users}
         assignments={assignments}
       />
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }

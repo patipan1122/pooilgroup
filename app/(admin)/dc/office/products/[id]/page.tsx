@@ -5,6 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { ProductForm, type ProductFormValues } from "../product-form";
 import { ToggleActive } from "./toggle-active";
@@ -19,21 +21,24 @@ export default async function DcEditProductPage({ params }: { params: Params }) 
   const orgId = ctx.session.user.org_id;
 
   const { id } = await params;
-  const product = await prisma.dcProduct.findFirst({
-    where: { id, orgId },
-    select: {
-      id: true,
-      sku: true,
-      name: true,
-      barcode: true,
-      type: true,
-      unit: true,
-      category: true,
-      reorderPoint: true,
-      imageR2Path: true,
-      active: true,
-    },
-  });
+  const [chrome, product] = await Promise.all([
+    getDcOfficeChrome(orgId),
+    prisma.dcProduct.findFirst({
+      where: { id, orgId },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        barcode: true,
+        type: true,
+        unit: true,
+        category: true,
+        reorderPoint: true,
+        imageR2Path: true,
+        active: true,
+      },
+    }),
+  ]);
 
   if (!product) notFound();
 
@@ -50,7 +55,8 @@ export default async function DcEditProductPage({ params }: { params: Params }) 
   };
 
   return (
-    <div className="dc-page">
+    <DcOfficeShell active="products" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
       <div className="dc-head">
         <div>
           <Link
@@ -84,6 +90,7 @@ export default async function DcEditProductPage({ params }: { params: Params }) 
         <ProductForm initial={initial} />
         <ToggleActive id={product.id} active={product.active} />
       </div>
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }

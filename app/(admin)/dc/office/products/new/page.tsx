@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { ProductForm } from "../product-form";
 
@@ -11,9 +13,11 @@ export const dynamic = "force-dynamic";
 export default async function DcNewProductPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
+  const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
   return (
-    <div className="dc-page">
+    <DcOfficeShell active="products" {...dcShellChrome(ctx, chrome)}>
+      <div className="dc-page" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
       <div className="dc-head">
         <div>
           <Link
@@ -36,6 +40,7 @@ export default async function DcNewProductPage() {
       </div>
 
       <ProductForm />
-    </div>
+      </div>
+    </DcOfficeShell>
   );
 }
