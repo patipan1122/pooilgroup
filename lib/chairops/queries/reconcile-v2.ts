@@ -711,13 +711,39 @@ export interface DayDetailDeposit {
   bankFee: number;
   slipUrl: string | null;
 }
+// CEO 2026-06-29: write-offs ("ตัดเงิน/ตั้งต้น") effective on this day, so the
+// ✂️ marker in the ledger row can drill straight into who cut how much and why.
+export interface DayDetailWriteOff {
+  id: string;
+  amount: number;
+  direction: string;            // "SHORT" (เงินขาด) | "OVER" (เงินเกิน)
+  reason: string;
+  status: string;               // "PENDING" | "APPROVED"
+  effectiveDate: string | null; // "YYYY-MM-DD" — ตั้งต้น ณ วันไหน
+  makerName: string;
+  makerAt: string;
+  approverName: string | null;
+  approverAt: string | null;
+}
+export interface DayDetailSourceTotal {
+  count: number;
+  total: number;
+}
 export interface ReconcileDayDetail {
   date: string;
   collections: DayDetailCollection[];
   deposits: DayDetailDeposit[];
+  writeOffs: DayDetailWriteOff[];
   collectedTotal: number;
   collectedNotDepositedTotal: number;
   depositTotal: number;
+  // CEO 2026-06-29: split this day's collections by ORIGIN so a backfilled CSV
+  // import is never lumped together with money the maid actually keyed/handed in.
+  bySource: {
+    maidManual: DayDetailSourceTotal;
+    csvImport: DayDetailSourceTotal;
+    officeProxy: DayDetailSourceTotal;
+  };
 }
 
 export async function getReconcileDayDetail(args: {
@@ -731,7 +757,7 @@ export async function getReconcileDayDetail(args: {
   const start = new Date(day + "T00:00:00+07:00");
   const end = new Date(start.getTime() + DAY_MS);
 
-  const [collections, deposits] = await Promise.all([
+  const [collections, deposits, writeOffsRaw] = await Promise.all([
     prisma.chairopsCashCollection.findMany({
       where: { orgId, ...branchFilter, collectedAt: { gte: start, lt: end } },
       select: {
@@ -758,6 +784,25 @@ export async function getReconcileDayDetail(args: {
       },
       orderBy: { depositedAt: "asc" },
     }),
+    // CEO 2026-06-29: write-offs are keyed by isoDay(effectiveDate ?? makerAt) —
+    // the SAME bucket buildLedger uses for the ✂️ marker — so we fetch the
+    // branch's PENDING+APPROVED write-offs and filter in JS to match exactly.
+    prisma.chairopsWriteOff.findMany({
+      where: { orgId, ...branchFilter, status: { in: ["PENDING", "APPROVED"] } },
+      select: {
+        id: true,
+        amount: true,
+        direction: true,
+        reason: true,
+        status: true,
+        effectiveDate: true,
+        makerAt: true,
+        approverAt: true,
+        maker: { select: { displayName: true } },
+        approver: { select: { displayName: true } },
+      },
+      orderBy: [{ effectiveDate: "desc" }, { makerAt: "desc" }],
+    }),
   ]);
 
   const now = Date.now();
@@ -783,15 +828,51 @@ export async function getReconcileDayDetail(args: {
     slipUrl: d.slipPhotoUrl ?? null,
   }));
 
+  // CEO 2026-06-29: per-origin split (มือ / CSV / Office) for this day's
+  // collections — surfaces "how much was backfilled by CSV vs handed in by the
+  // maid" so the merged total is no longer confusing.
+  const bySource = {
+    maidManual: { count: 0, total: 0 },
+    csvImport: { count: 0, total: 0 },
+    officeProxy: { count: 0, total: 0 },
+  };
+  for (const c of collOut) {
+    const bucket =
+      c.source === "CSV_IMPORT"
+        ? bySource.csvImport
+        : c.source === "OFFICE_PROXY"
+          ? bySource.officeProxy
+          : bySource.maidManual;
+    bucket.count += 1;
+    bucket.total += c.countedAmount;
+  }
+
+  const writeOffs: DayDetailWriteOff[] = writeOffsRaw
+    .filter((w) => isoDay(w.effectiveDate ?? w.makerAt) === day)
+    .map((w) => ({
+      id: w.id,
+      amount: w.amount,
+      direction: w.direction,
+      reason: w.reason,
+      status: w.status,
+      effectiveDate: w.effectiveDate ? isoDay(w.effectiveDate) : null,
+      makerName: w.maker?.displayName ?? "—",
+      makerAt: formatDateTime(w.makerAt),
+      approverName: w.approver?.displayName ?? null,
+      approverAt: w.approverAt ? formatDateTime(w.approverAt) : null,
+    }));
+
   return {
     date: day,
     collections: collOut,
     deposits: depOut,
+    writeOffs,
     collectedTotal: collOut.reduce((s, c) => s + c.countedAmount, 0),
     collectedNotDepositedTotal: collOut
       .filter((c) => !c.deposited)
       .reduce((s, c) => s + c.countedAmount, 0),
     depositTotal: depOut.reduce((s, d) => s + d.depositedAmount + d.bankFee, 0),
+    bySource,
   };
 }
 

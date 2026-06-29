@@ -160,70 +160,92 @@ export default async function ReconcileBranchPage({
           </div>
           <p className="text-3" style={{ fontSize: 12, marginBottom: 12 }}>
             ยอดหายเปลี่ยน/เป็น 0 เพราะรายการพวกนี้ — ตัดเงิน &quot;ตั้งต้น&quot; ณ วันไหน
-            เท่าไร เหตุผลอะไร ใครอนุมัติ
+            เท่าไร เหตุผลอะไร ใครอนุมัติ ·{" "}
+            <span style={{ fontWeight: 600 }}>กดที่แต่ละรายการเพื่อกางดูรายละเอียด</span>
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* CEO 2026-06-29: กดกางดูรายละเอียดในที่เดิม (native details — ไม่
+                ต้องเปิดหน้าใหม่ ไม่บานเบ้อ · ปิดไว้ก่อน กดทีละอันที่อยากดู). */}
             {branchWriteOffs.map((w) => {
               const isOver = w.direction === "OVER";
               const approved = w.status === "APPROVED";
               return (
-                <div
+                <details
                   key={w.id}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    padding: "10px 12px",
+                    padding: "9px 12px",
                     borderRadius: 10,
-                    border: "1px solid var(--ok-border)",
+                    border: "1px solid",
                     borderColor: approved ? "var(--ok-border)" : "var(--crit-border)",
                     background: approved ? "var(--ok-soft)" : "var(--crit-soft)",
                   }}
                 >
-                  <div style={{ minWidth: 96 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>
-                      ตั้งต้น {thaiDate(w.effectiveDate ?? w.makerAt)}
-                    </div>
+                  <summary style={{ cursor: "pointer", fontSize: 13 }}>
                     <span
-                      className="chip"
                       style={{
-                        fontSize: 10,
-                        color: isOver ? "var(--accent)" : "var(--crit)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        verticalAlign: "middle",
                       }}
                     >
-                      {isOver ? "เงินเกิน" : "เงินขาด"}
+                      <span style={{ fontWeight: 600 }}>
+                        ตั้งต้น {thaiDate(w.effectiveDate ?? w.makerAt)}
+                      </span>
+                      <span
+                        className="chip"
+                        style={{
+                          fontSize: 10,
+                          color: isOver ? "var(--accent)" : "var(--crit)",
+                        }}
+                      >
+                        {isOver ? "เงินเกิน" : "เงินขาด"}
+                      </span>
+                      <strong className="mono" style={{ fontSize: 14 }}>
+                        {w.amount.toLocaleString()} ฿
+                      </strong>
+                      <span
+                        className="chip"
+                        style={{
+                          fontSize: 10,
+                          whiteSpace: "nowrap",
+                          color: approved ? "var(--ok)" : "var(--crit)",
+                        }}
+                      >
+                        {approved ? "อนุมัติแล้ว · มีผลกับยอด" : "รออนุมัติ"}
+                      </span>
                     </span>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      className="mono"
-                      style={{ fontSize: 14, fontWeight: 700 }}
-                    >
-                      {w.amount.toLocaleString()} ฿
-                    </div>
-                    <div className="text-2" style={{ fontSize: 12 }}>
-                      เหตุผล: {w.reason}
-                    </div>
-                    <div className="text-3" style={{ fontSize: 11, marginTop: 2 }}>
-                      ขอโดย {w.maker.displayName}
-                      {approved && w.approver
-                        ? ` · อนุมัติโดย ${w.approver.displayName}${
-                            w.approverAt ? ` (${thaiDate(w.approverAt)})` : ""
-                          }`
-                        : ""}
-                    </div>
-                  </div>
-                  <span
-                    className="chip"
+                  </summary>
+                  <div
                     style={{
-                      fontSize: 10,
-                      whiteSpace: "nowrap",
-                      color: approved ? "var(--ok)" : "var(--crit)",
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: "1px dashed var(--border)",
+                      display: "grid",
+                      gap: 4,
                     }}
                   >
-                    {approved ? "อนุมัติแล้ว · มีผลกับยอด" : "รออนุมัติ"}
-                  </span>
-                </div>
+                    <div className="text-2" style={{ fontSize: 12.5 }}>
+                      เหตุผล: {w.reason}
+                    </div>
+                    <div className="text-3" style={{ fontSize: 11.5 }}>
+                      ขอโดย {w.maker.displayName} · {thaiDate(w.makerAt)}
+                    </div>
+                    {approved && w.approver && (
+                      <div className="text-3" style={{ fontSize: 11.5 }}>
+                        อนุมัติโดย {w.approver.displayName}
+                        {w.approverAt ? ` · ${thaiDate(w.approverAt)}` : ""}
+                      </div>
+                    )}
+                    <div className="text-3" style={{ fontSize: 11.5 }}>
+                      ตั้งต้นยอดใหม่ ณ {thaiDate(w.effectiveDate ?? w.makerAt)}
+                      {approved
+                        ? " · ยอดหายสะสมถูกปรับตามรายการนี้แล้ว"
+                        : " · ยังไม่อนุมัติ — ยังไม่กระทบยอด"}
+                    </div>
+                  </div>
+                </details>
               );
             })}
           </div>

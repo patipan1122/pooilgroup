@@ -286,6 +286,29 @@ export function LedgerTab({
     : ledger;
   return (
     <div className="rc-ledger">
+      {/* CEO 2026-06-29: legend so the click targets are discoverable — the
+          report drill-down was already there but invisible ("กดดูไม่ได้"). */}
+      {makeDayHref && (
+        <div
+          className="text-3"
+          style={{
+            fontSize: 11,
+            padding: "6px 2px 8px",
+            display: "flex",
+            gap: 14,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span>
+            <span style={{ color: "var(--accent)" }}>🔍 กดที่วันที่</span> ดูรายการย่อย
+            (เก็บ/ฝาก แยก CSV·แม่บ้าน)
+          </span>
+          {rows.some((d) => d.writeOffNet) && (
+            <span>✂️ กดดูรายละเอียดการตัดเงิน</span>
+          )}
+        </div>
+      )}
       <table className="tbl rc-ledger-tbl">
         <thead>
           <tr>
@@ -462,13 +485,33 @@ export function LedgerTab({
                 }
               >
                 {d.writeOffNet ? (
-                  <span
-                    title={d.writeOffNote ?? undefined}
-                    style={{ marginRight: 4, cursor: "help" }}
-                    aria-label="มีการตัดเงิน/ตั้งต้นวันนี้"
-                  >
-                    ✂️
-                  </span>
+                  makeDayHref ? (
+                    // CEO 2026-06-29: กดกรรไกรแล้วเปิด drill-down วันนั้น เห็น
+                    // รายละเอียดการตัดเงิน (กี่บาท ใครตัด เหตุผล ใครอนุมัติ).
+                    <a
+                      href={makeDayHref(d.date)}
+                      title={
+                        (d.writeOffNote ? d.writeOffNote + " · " : "") +
+                        "กดดูรายละเอียดการตัดเงิน"
+                      }
+                      aria-label="กดดูรายละเอียดการตัดเงิน/ตั้งต้นวันนี้"
+                      style={{
+                        marginRight: 4,
+                        cursor: "pointer",
+                        textDecoration: "none",
+                      }}
+                    >
+                      ✂️
+                    </a>
+                  ) : (
+                    <span
+                      title={d.writeOffNote ?? undefined}
+                      style={{ marginRight: 4, cursor: "help" }}
+                      aria-label="มีการตัดเงิน/ตั้งต้นวันนี้"
+                    >
+                      ✂️
+                    </span>
+                  )
                 ) : null}
                 {fmtSigned(d.cumDrift)}
               </td>
@@ -639,6 +682,52 @@ export function LedgerPager({
 // deposits that make up ONE day's numbers (CEO 2026-06-25). Server-
 // rendered; opened via ?day=YYYY-MM-DD, closed via the X link.
 // ─────────────────────────────────────────────────────────────
+// CEO 2026-06-29: one row of the "แยกตามที่มาของเงิน" panel — keeps the icon,
+// label, count and money aligned so the CSV vs maid split reads at a glance.
+function SourceSplitRow({
+  icon,
+  label,
+  count,
+  total,
+  unit = "ก้อน",
+  tone,
+}: {
+  icon: string;
+  label: string;
+  count: number;
+  total: number;
+  unit?: string;
+  tone: string;
+}) {
+  return (
+    <div
+      className={tone}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderTop: "1px solid var(--border)",
+        fontSize: 12.5,
+      }}
+    >
+      <span style={{ fontSize: 15 }} aria-hidden="true">
+        {icon}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+      <span className="text-3" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+        {count} {unit}
+      </span>
+      <strong
+        className="mono"
+        style={{ fontSize: 13, minWidth: 78, textAlign: "right" }}
+      >
+        {fmtN(total)} ฿
+      </strong>
+    </div>
+  );
+}
+
 export function DayDetailPanel({
   detail,
   closeHref,
@@ -647,7 +736,9 @@ export function DayDetailPanel({
   closeHref: string;
 }) {
   const hasNothing =
-    detail.collections.length === 0 && detail.deposits.length === 0;
+    detail.collections.length === 0 &&
+    detail.deposits.length === 0 &&
+    detail.writeOffs.length === 0;
   return (
     <div
       className="card"
@@ -678,22 +769,97 @@ export function DayDetailPanel({
       </div>
 
       <div style={{ padding: "10px 14px", display: "grid", gap: 14 }}>
-        {/* summary chips */}
-        <div className="row gap-2" style={{ flexWrap: "wrap", fontSize: 12 }}>
-          <span className="chip">
-            เก็บรวม <strong className="mono">{fmtN(detail.collectedTotal)}</strong> ฿
-          </span>
-          <span
-            className="chip"
-            style={{ background: "#fffbeb", borderColor: "#fcd34d", color: "#92400e" }}
+        {/* summary chips — CEO 2026-06-29: ซ่อนชิปยอด 0 (วันที่มีแต่ตัดเงิน
+            จะได้ไม่โชว์ "ยังไม่ฝาก 0" สีเหลืองเตือนชวนงง) */}
+        {(detail.collectedTotal > 0 ||
+          detail.collectedNotDepositedTotal > 0 ||
+          detail.depositTotal > 0) && (
+          <div className="row gap-2" style={{ flexWrap: "wrap", fontSize: 12 }}>
+            {detail.collectedTotal > 0 && (
+              <span className="chip">
+                เก็บรวม <strong className="mono">{fmtN(detail.collectedTotal)}</strong> ฿
+              </span>
+            )}
+            {detail.collectedNotDepositedTotal > 0 && (
+              <span
+                className="chip"
+                style={{ background: "#fffbeb", borderColor: "#fcd34d", color: "#92400e" }}
+              >
+                ยังไม่ฝาก{" "}
+                <strong className="mono">{fmtN(detail.collectedNotDepositedTotal)}</strong> ฿
+              </span>
+            )}
+            {detail.depositTotal > 0 && (
+              <span className="chip">
+                ฝากเข้าธนาคาร <strong className="mono">{fmtN(detail.depositTotal)}</strong> ฿
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* CEO 2026-06-29: แยกชัดว่าเงินก้อนนี้มาจาก CSV หรือแม่บ้านฝากจริง —
+            ไม่ต้องเดาจากป้ายเล็ก ๆ ในแต่ละแถวอีก */}
+        {(detail.bySource.maidManual.count > 0 ||
+          detail.bySource.csvImport.count > 0 ||
+          detail.bySource.officeProxy.count > 0 ||
+          detail.deposits.length > 0) && (
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              overflow: "hidden",
+            }}
           >
-            ยังไม่ฝาก{" "}
-            <strong className="mono">{fmtN(detail.collectedNotDepositedTotal)}</strong> ฿
-          </span>
-          <span className="chip">
-            ฝากเข้าธนาคาร <strong className="mono">{fmtN(detail.depositTotal)}</strong> ฿
-          </span>
-        </div>
+            <div
+              className="text-3"
+              style={{
+                fontSize: 11.5,
+                fontWeight: 600,
+                padding: "7px 12px",
+                background: "var(--surface-soft)",
+              }}
+            >
+              แยกตามที่มาของเงิน
+            </div>
+            {detail.bySource.maidManual.count > 0 && (
+              <SourceSplitRow
+                icon="💵"
+                label="แม่บ้านบันทึกเอง (มือ)"
+                count={detail.bySource.maidManual.count}
+                total={detail.bySource.maidManual.total}
+                tone="bg-zinc-50"
+              />
+            )}
+            {detail.bySource.csvImport.count > 0 && (
+              <SourceSplitRow
+                icon="📥"
+                label="นำเข้าจาก CSV"
+                count={detail.bySource.csvImport.count}
+                total={detail.bySource.csvImport.total}
+                tone="bg-amber-50"
+              />
+            )}
+            {detail.bySource.officeProxy.count > 0 && (
+              <SourceSplitRow
+                icon="🏢"
+                label="สำนักงานบันทึกแทน"
+                count={detail.bySource.officeProxy.count}
+                total={detail.bySource.officeProxy.total}
+                tone="bg-sky-50"
+              />
+            )}
+            {detail.deposits.length > 0 && (
+              <SourceSplitRow
+                icon="🏦"
+                label="ฝากเข้าธนาคารจริง"
+                count={detail.deposits.length}
+                total={detail.depositTotal}
+                unit="ครั้ง"
+                tone="bg-emerald-50"
+              />
+            )}
+          </div>
+        )}
 
         {hasNothing && (
           <p className="text-3" style={{ fontSize: 12 }}>
@@ -828,6 +994,83 @@ export function DayDetailPanel({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* write-offs effective today — CEO 2026-06-29: กดกรรไกร ✂️ จากตาราง
+            มาที่นี่ เห็นเลยว่าตัดกี่บาท ใครตัด เหตุผลอะไร ใครอนุมัติ */}
+        {detail.writeOffs.length > 0 && (
+          <div>
+            <div
+              className="text-3"
+              style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}
+            >
+              ✂️ ตัดเงิน / ตั้งต้น ({detail.writeOffs.length} รายการ)
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {detail.writeOffs.map((w) => {
+                const isOver = w.direction === "OVER";
+                const approved = w.status === "APPROVED";
+                return (
+                  <div
+                    key={w.id}
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid",
+                      borderColor: approved
+                        ? "var(--ok-border)"
+                        : "var(--crit-border)",
+                      background: approved ? "var(--ok-soft)" : "var(--crit-soft)",
+                      padding: "8px 10px",
+                      fontSize: 12,
+                    }}
+                  >
+                    <div
+                      className="row"
+                      style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}
+                    >
+                      <strong className="mono" style={{ fontSize: 13.5 }}>
+                        {fmtN(w.amount)} ฿
+                      </strong>
+                      <span
+                        className="chip"
+                        style={{
+                          fontSize: 10,
+                          color: isOver ? "var(--accent)" : "var(--crit)",
+                        }}
+                      >
+                        {isOver ? "เงินเกิน" : "เงินขาด"}
+                      </span>
+                      <span
+                        className="chip"
+                        style={{
+                          fontSize: 10,
+                          color: approved ? "var(--ok)" : "var(--crit)",
+                        }}
+                      >
+                        {approved ? "อนุมัติแล้ว · มีผลกับยอด" : "รออนุมัติ"}
+                      </span>
+                    </div>
+                    <div className="text-2" style={{ fontSize: 12, marginTop: 3 }}>
+                      เหตุผล: {w.reason}
+                    </div>
+                    <div className="text-3" style={{ fontSize: 11, marginTop: 2 }}>
+                      ขอโดย {w.makerName} · {w.makerAt}
+                      {w.approverName
+                        ? ` · อนุมัติโดย ${w.approverName}${
+                            w.approverAt ? ` · ${w.approverAt}` : ""
+                          }`
+                        : ""}
+                    </div>
+                    {w.effectiveDate && (
+                      <div className="text-3" style={{ fontSize: 11, marginTop: 1 }}>
+                        ตั้งต้นยอดใหม่ ณ {w.effectiveDate}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
