@@ -1174,18 +1174,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: ShoppingCart,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
-      {
-        href: "/dc/office/suppliers",
-        label: "ผู้ขาย",
-        icon: Building2,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/dc/office/shipments",
-        label: "ขนส่ง / ชิปเมนต์",
-        icon: Ship,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
+      // #16 ยุบ "ผู้ขาย" + "ขนส่ง/ชิปเมนต์" ออกจากเมนู — เข้าถึงผ่านแท็บใน "สั่งซื้อจีน" (PurchasingSubnav) แทน
       {
         href: "/dc/office/receipts",
         label: "ใบรับสินค้า",

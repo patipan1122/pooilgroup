@@ -50,9 +50,8 @@ const FLOOR_MENU: Item[] = [
 const OFFICE_MENU: Item[] = [
   { href: "/dc/office", label: "ภาพรวม", icon: LayoutDashboard },
   { href: "/dc/office/purchasing", label: "สั่งซื้อ", icon: ShoppingCart },
-  { href: "/dc/office/suppliers", label: "ผู้ขาย", icon: Building2 },
+  // #16 ผู้ขาย + ขนส่ง ยุบเข้าแท็บใน "สั่งซื้อ" (PurchasingSubnav) — ไม่ลิสต์เป็นเมนูแยก
   { href: "/dc/office/products", label: "สินค้า", icon: Boxes },
-  { href: "/dc/office/shipments", label: "ขนส่ง", icon: Ship },
   { href: "/dc/office/receipts", label: "ใบรับสินค้า", icon: ClipboardCheck },
   { href: "/dc/office/transfers", label: "การโอน", icon: Truck },
   { href: "/dc/office/warehouses", label: "โกดัง", icon: Warehouse },
