@@ -1379,6 +1379,443 @@ export async function getReconcilePerChairDetail(args: {
   };
 }
 
+// ----------------------------------------------------------------
+// 2c) PER-CHAIR · TIME-WINDOWED (meter-delta) — expected = sales accrued in the
+//     machine UP TO the maid's collection time, from the cumulative meter
+//     odometer (ChairopsPosCashEvent.cashMeter + ChairopsPosCoinEvent.coinMeter
+//     ×10) — NOT the whole-day PosDaily total. Fixes the false-shortage when a
+//     maid collects midday but the machine keeps selling all evening, and lets
+//     us verify each ROUND. The maid-entered collection time is the window
+//     boundary; the meter is the ungameable amount (gaming the time only
+//     shuffles a shortage to the next round — cumulative stays exact since
+//     window-end of round N = window-start of round N+1). Read-only; does NOT
+//     touch the ledger/drift. See
+//     [[chairops-time-based-collection-verification-design-2026-06-29]].
+// ----------------------------------------------------------------
+export type PerChairVerdict =
+  | "ok" // 🟢 ตรง (within tolerance)
+  | "warn" // 🟡 ขาดเล็กน้อย
+  | "short" // 🔴 ขาดเยอะ ต้องตรวจ
+  | "over" // 🟡 เก็บเกินยอดขาย (ผิดปกติ)
+  | "incomplete" // ⚪ ไม่มีข้อมูล event / มิเตอร์ผิดปกติ
+  | "uncollected"; // ⚪ ยังไม่เก็บรอบนี้ (มีแต่ยอดขาย)
+
+export interface PerChairRoundTW {
+  collectedAt: string; // ISO instant the maid says she collected
+  collected: number; // เก็บได้ รอบนี้ (this chair's amount)
+  expected: number | null; // ควรได้ ถึงเวลานั้น (meterΔ prevRound→thisRound) · null = ⚪
+  variance: number | null; // collected − expected (− = ขาด)
+  verdict: PerChairVerdict;
+  broken: boolean; // chairBreakdown line status ≠ "collected"
+}
+
+export interface PerChairRowTW {
+  chairCode: string;
+  generation: string | null;
+  // latest collection round IN the selected window
+  lastCollectedAt: string | null;
+  lastCollected: number | null; // เก็บได้ (รอบล่าสุด)
+  lastExpected: number | null; // ควรได้ ถึงเวลานั้น
+  lastVariance: number | null; // เก็บได้ − ควรได้
+  verdict: PerChairVerdict;
+  // standing (all-time, ungameable)
+  cumShortage: number | null; // ขาดสะสม (− = ขาด · + = เก็บเกิน) · null = ⚪
+  inBoxNow: number | null; // รอเก็บในกล่องตอนนี้ = ยอดขายหลังเก็บรอบล่าสุด (ยังไม่เก็บ)
+  hasEvents: boolean;
+}
+
+export interface ReconcilePerChairTW {
+  from: string;
+  to: string;
+  rows: PerChairRowTW[];
+  totals: {
+    lastCollected: number;
+    lastExpected: number;
+    lastVariance: number;
+    verifiedCount: number;
+    incompleteCount: number;
+    uncollectedCount: number;
+  };
+  cumShortageTotal: number; // Σ per-machine ขาดสะสม (ตัวจับโกงจริง)
+  inBoxNowTotal: number; // Σ เงินที่คาดว่ายังอยู่ในเครื่องตอนนี้
+}
+
+/** Cumulative-meter value (cash baht or coin count) as of instant `at` =
+ *  the last event with eventAt ≤ at for that device. null when no event ≤ at
+ *  (NEVER treat as 0 — that would fabricate a shortage; the caller maps to ⚪). */
+function meterAsOf(
+  series: { t: number; m: number }[] | undefined,
+  at: number,
+): number | null {
+  if (!series || series.length === 0) return null;
+  let lo = 0;
+  let hi = series.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (series[mid].t <= at) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans >= 0 ? series[ans].m : null;
+}
+
+/** Verdict from a (collected − expected) variance against a tolerance band that
+ *  floors at ฿20 and widens with the expected amount (rounding + the natural
+ *  slack of a 30–60 min collection walk). */
+function perChairVerdict(variance: number, expected: number): PerChairVerdict {
+  const tol = Math.max(20, Math.abs(expected) * 0.02);
+  if (Math.abs(variance) <= tol) return "ok";
+  if (variance > 0) return "over";
+  const big = Math.abs(variance) > 100 || Math.abs(variance) > Math.abs(expected) * 0.05;
+  return big ? "short" : "warn";
+}
+
+/** Read this branch's cash+coin events (eventAt ≤ now, from `sinceMs`) into
+ *  per-device cumulative-meter series for binary-search "meter as of T".
+ *  Coin meter (BigInt count) → Number (counts are well within 2^53). */
+async function loadMeterSeries(args: {
+  orgId: string;
+  branchId: string;
+  sinceMs: number;
+}): Promise<{
+  cash: Map<string, { t: number; m: number }[]>;
+  coin: Map<string, { t: number; m: number }[]>;
+  anyEvents: boolean;
+  latestCashByDev: Map<string, number>;
+  latestCoinByDev: Map<string, number>;
+}> {
+  const since = new Date(Math.max(0, args.sinceMs));
+  const now = new Date();
+  const [cashEv, coinEv] = await Promise.all([
+    prisma.chairopsPosCashEvent.findMany({
+      where: { orgId: args.orgId, branchId: args.branchId, eventAt: { gte: since, lte: now } },
+      select: { chairDeviceId: true, eventAt: true, cashMeter: true },
+      orderBy: { eventAt: "asc" },
+    }),
+    prisma.chairopsPosCoinEvent.findMany({
+      where: { orgId: args.orgId, branchId: args.branchId, eventAt: { gte: since, lte: now } },
+      select: { chairDeviceId: true, eventAt: true, coinMeter: true },
+      orderBy: { eventAt: "asc" },
+    }),
+  ]);
+  const cash = new Map<string, { t: number; m: number }[]>();
+  const latestCashByDev = new Map<string, number>();
+  for (const e of cashEv) {
+    const arr = cash.get(e.chairDeviceId) ?? [];
+    const m = toNum(e.cashMeter);
+    arr.push({ t: e.eventAt.getTime(), m });
+    cash.set(e.chairDeviceId, arr);
+    latestCashByDev.set(e.chairDeviceId, m);
+  }
+  const coin = new Map<string, { t: number; m: number }[]>();
+  const latestCoinByDev = new Map<string, number>();
+  for (const e of coinEv) {
+    const arr = coin.get(e.chairDeviceId) ?? [];
+    const m = Number(e.coinMeter);
+    arr.push({ t: e.eventAt.getTime(), m });
+    coin.set(e.chairDeviceId, arr);
+    latestCoinByDev.set(e.chairDeviceId, m);
+  }
+  return {
+    cash,
+    coin,
+    anyEvents: cashEv.length > 0 || coinEv.length > 0,
+    latestCashByDev,
+    latestCoinByDev,
+  };
+}
+
+export async function getReconcilePerChairTW(args: {
+  orgId: string;
+  branchId: string;
+  from?: string;
+  to?: string;
+  allTime?: boolean;
+  posCoverThrough?: string | null;
+}): Promise<ReconcilePerChairTW> {
+  const { orgId, branchId } = args;
+
+  let fromDay: string;
+  let toDay: string;
+  if (args.allTime) {
+    fromDay = "1970-01-01";
+    toDay = isoDay(new Date());
+  } else if (args.from || args.to) {
+    fromDay = args.from ?? "1970-01-01";
+    toDay = args.to ?? isoDay(new Date());
+  } else {
+    const anchor = args.posCoverThrough ?? isoDay(new Date());
+    fromDay = isoMinusDaysLocal(anchor, 29);
+    toDay = isoDay(new Date());
+  }
+  const collStart = new Date(fromDay + "T00:00:00+07:00").getTime();
+  const collEnd = new Date(toDay + "T00:00:00+07:00").getTime() + DAY_MS;
+
+  const [chairs, collections] = await Promise.all([
+    prisma.chairopsChair.findMany({
+      where: { orgId, branchId, isActive: true },
+      select: { chairCode: true, generation: true },
+    }),
+    prisma.chairopsCashCollection.findMany({
+      where: { orgId, branchId },
+      select: { collectedAt: true, chairBreakdown: true },
+      orderBy: { collectedAt: "asc" },
+    }),
+  ]);
+
+  type Round = { t: number; amount: number; broken: boolean };
+  const roundsByChair = new Map<string, Round[]>();
+  for (const c of collections) {
+    const bd = c.chairBreakdown as { lines?: unknown } | null;
+    const lines = bd && Array.isArray(bd.lines) ? (bd.lines as Array<Record<string, unknown>>) : null;
+    if (!lines) continue;
+    const t = c.collectedAt.getTime();
+    for (const ln of lines) {
+      const code = typeof ln.chairCode === "string" ? ln.chairCode.trim() : "";
+      if (!code) continue;
+      const amount = typeof ln.amount === "number" ? ln.amount : 0;
+      const status = typeof ln.status === "string" ? ln.status : "";
+      const arr = roundsByChair.get(code) ?? [];
+      arr.push({ t, amount, broken: status !== "" && status !== "collected" });
+      roundsByChair.set(code, arr);
+    }
+  }
+
+  let earliestNeeded = collStart - 45 * DAY_MS;
+  for (const rounds of roundsByChair.values()) {
+    rounds.sort((a, b) => a.t - b.t);
+    const firstInWin = rounds.find((r) => r.t >= collStart && r.t < collEnd);
+    if (!firstInWin) continue;
+    const prior = [...rounds].reverse().find((r) => r.t < firstInWin.t);
+    if (prior) earliestNeeded = Math.min(earliestNeeded, prior.t - 2 * DAY_MS);
+  }
+
+  const { cash, coin, latestCashByDev, latestCoinByDev } = await loadMeterSeries({
+    orgId,
+    branchId,
+    sinceMs: earliestNeeded,
+  });
+
+  const genByCode = new Map(chairs.map((c) => [c.chairCode, c.generation]));
+  const allCodes = new Set<string>([...chairs.map((c) => c.chairCode), ...roundsByChair.keys()]);
+
+  const rows: PerChairRowTW[] = [];
+  let tLastCollected = 0;
+  let tLastExpected = 0;
+  let tLastVariance = 0;
+  let verifiedCount = 0;
+  let incompleteCount = 0;
+  let uncollectedCount = 0;
+  let cumShortageTotal = 0;
+  let inBoxNowTotal = 0;
+
+  for (const code of allCodes) {
+    const rounds = (roundsByChair.get(code) ?? []).slice().sort((a, b) => a.t - b.t);
+    const cashSeries = cash.get(code);
+    const coinSeries = coin.get(code);
+    const hasEvents = (cashSeries?.length ?? 0) > 0 || (coinSeries?.length ?? 0) > 0;
+
+    const inWin = rounds.filter((r) => r.t >= collStart && r.t < collEnd);
+    let lastCollectedAt: string | null = null;
+    let lastCollected: number | null = null;
+    let lastExpected: number | null = null;
+    let lastVariance: number | null = null;
+    let verdict: PerChairVerdict;
+
+    if (inWin.length === 0) {
+      verdict = "uncollected";
+      uncollectedCount += 1;
+    } else {
+      const last = inWin[inWin.length - 1];
+      lastCollectedAt = new Date(last.t).toISOString();
+      lastCollected = Math.round(last.amount);
+      const prior = [...rounds].reverse().find((r) => r.t < last.t) ?? null;
+      const cashUp = meterAsOf(cashSeries, last.t);
+      const coinUp = meterAsOf(coinSeries, last.t);
+      if (cashUp === null && coinUp === null) {
+        verdict = "incomplete";
+        incompleteCount += 1;
+      } else {
+        const cashLo = prior ? meterAsOf(cashSeries, prior.t) : 0;
+        const coinLo = prior ? meterAsOf(coinSeries, prior.t) : 0;
+        if (prior && cashLo === null && coinLo === null) {
+          verdict = "incomplete";
+          incompleteCount += 1;
+        } else {
+          const cashDelta = (cashUp ?? cashLo ?? 0) - (cashLo ?? 0);
+          const coinDelta = (coinUp ?? coinLo ?? 0) - (coinLo ?? 0);
+          if (cashDelta < 0 || coinDelta < 0) {
+            verdict = "incomplete";
+            incompleteCount += 1;
+          } else {
+            const exp = Math.round(cashDelta + coinBahtOf(coinDelta));
+            lastExpected = exp;
+            lastVariance = lastCollected - exp;
+            verdict = perChairVerdict(lastVariance, exp);
+            tLastCollected += lastCollected;
+            tLastExpected += exp;
+            tLastVariance += lastVariance;
+            verifiedCount += 1;
+          }
+        }
+      }
+    }
+
+    let cumShortage: number | null = null;
+    const lastEver = rounds.length ? rounds[rounds.length - 1] : null;
+    if (lastEver) {
+      const cashCum = meterAsOf(cashSeries, lastEver.t);
+      const coinCum = meterAsOf(coinSeries, lastEver.t);
+      if (cashCum !== null || coinCum !== null) {
+        const totalCollectedEver = rounds.reduce((s, r) => s + r.amount, 0);
+        const cumExpected = (cashCum ?? 0) + coinBahtOf(coinCum ?? 0);
+        cumShortage = Math.round(totalCollectedEver - cumExpected);
+        cumShortageTotal += cumShortage;
+      }
+    }
+
+    let inBoxNow: number | null = null;
+    if (hasEvents && lastEver) {
+      const cashNow = latestCashByDev.get(code) ?? null;
+      const coinNow = latestCoinByDev.get(code) ?? null;
+      const cashAtColl = meterAsOf(cashSeries, lastEver.t);
+      const coinAtColl = meterAsOf(coinSeries, lastEver.t);
+      if (cashNow !== null || coinNow !== null) {
+        const d =
+          (cashNow ?? cashAtColl ?? 0) - (cashAtColl ?? 0) +
+          coinBahtOf((coinNow ?? coinAtColl ?? 0) - (coinAtColl ?? 0));
+        inBoxNow = Math.max(0, Math.round(d));
+        inBoxNowTotal += inBoxNow;
+      }
+    }
+
+    rows.push({
+      chairCode: code,
+      generation: genByCode.get(code) ?? null,
+      lastCollectedAt,
+      lastCollected,
+      lastExpected,
+      lastVariance,
+      verdict,
+      cumShortage,
+      inBoxNow,
+      hasEvents,
+    });
+  }
+
+  rows.sort(
+    (a, b) =>
+      (a.lastVariance ?? 0) - (b.lastVariance ?? 0) ||
+      (a.cumShortage ?? 0) - (b.cumShortage ?? 0) ||
+      a.chairCode.localeCompare(b.chairCode),
+  );
+
+  return {
+    from: fromDay,
+    to: toDay,
+    rows,
+    totals: {
+      lastCollected: tLastCollected,
+      lastExpected: tLastExpected,
+      lastVariance: tLastVariance,
+      verifiedCount,
+      incompleteCount,
+      uncollectedCount,
+    },
+    cumShortageTotal: Math.round(cumShortageTotal),
+    inBoxNowTotal: Math.round(inBoxNowTotal),
+  };
+}
+
+/** Drill: every collection round for one chair (newest first) with the
+ *  time-windowed expected per round. Powers the per-machine history panel. */
+export async function getReconcilePerChairRoundsTW(args: {
+  orgId: string;
+  branchId: string;
+  chairCode: string;
+}): Promise<{ chairCode: string; rounds: PerChairRoundTW[]; cumShortage: number | null }> {
+  const { orgId, branchId, chairCode } = args;
+  const collections = await prisma.chairopsCashCollection.findMany({
+    where: { orgId, branchId },
+    select: { collectedAt: true, chairBreakdown: true },
+    orderBy: { collectedAt: "asc" },
+  });
+  const rounds: { t: number; amount: number; broken: boolean }[] = [];
+  for (const c of collections) {
+    const bd = c.chairBreakdown as { lines?: unknown } | null;
+    const lines = bd && Array.isArray(bd.lines) ? (bd.lines as Array<Record<string, unknown>>) : null;
+    if (!lines) continue;
+    for (const ln of lines) {
+      const code = typeof ln.chairCode === "string" ? ln.chairCode.trim() : "";
+      if (code !== chairCode) continue;
+      const amount = typeof ln.amount === "number" ? ln.amount : 0;
+      const status = typeof ln.status === "string" ? ln.status : "";
+      rounds.push({ t: c.collectedAt.getTime(), amount, broken: status !== "" && status !== "collected" });
+    }
+  }
+  rounds.sort((a, b) => a.t - b.t);
+  if (rounds.length === 0) return { chairCode, rounds: [], cumShortage: null };
+
+  const { cash, coin } = await loadMeterSeries({ orgId, branchId, sinceMs: rounds[0].t - 2 * DAY_MS });
+  const cashSeries = cash.get(chairCode);
+  const coinSeries = coin.get(chairCode);
+
+  const out: PerChairRoundTW[] = [];
+  let totalCollected = 0;
+  for (let i = 0; i < rounds.length; i++) {
+    const r = rounds[i];
+    const prior = i > 0 ? rounds[i - 1] : null;
+    totalCollected += r.amount;
+    const cashUp = meterAsOf(cashSeries, r.t);
+    const coinUp = meterAsOf(coinSeries, r.t);
+    let expected: number | null = null;
+    let variance: number | null = null;
+    let verdict: PerChairVerdict;
+    if (cashUp === null && coinUp === null) {
+      verdict = "incomplete";
+    } else {
+      const cashLo = prior ? meterAsOf(cashSeries, prior.t) : 0;
+      const coinLo = prior ? meterAsOf(coinSeries, prior.t) : 0;
+      if (prior && cashLo === null && coinLo === null) {
+        verdict = "incomplete";
+      } else {
+        const cashDelta = (cashUp ?? cashLo ?? 0) - (cashLo ?? 0);
+        const coinDelta = (coinUp ?? coinLo ?? 0) - (coinLo ?? 0);
+        if (cashDelta < 0 || coinDelta < 0) {
+          verdict = "incomplete";
+        } else {
+          expected = Math.round(cashDelta + coinBahtOf(coinDelta));
+          variance = Math.round(r.amount) - expected;
+          verdict = perChairVerdict(variance, expected);
+        }
+      }
+    }
+    out.push({
+      collectedAt: new Date(r.t).toISOString(),
+      collected: Math.round(r.amount),
+      expected,
+      variance,
+      verdict,
+      broken: r.broken,
+    });
+  }
+  out.reverse();
+
+  const last = rounds[rounds.length - 1];
+  const cashCum = meterAsOf(cashSeries, last.t);
+  const coinCum = meterAsOf(coinSeries, last.t);
+  const cumShortage =
+    cashCum !== null || coinCum !== null
+      ? Math.round(totalCollected - ((cashCum ?? 0) + coinBahtOf(coinCum ?? 0)))
+      : null;
+
+  return { chairCode, rounds: out, cumShortage };
+}
+
 // expose intent helper for the page (keeps coloring logic in one place)
 export function ledgerDiffClass(d: LedgerDay): "crit" | "warn" | "ok" | "muted" {
   const i = diffIntent(d.diff, d.collected);
