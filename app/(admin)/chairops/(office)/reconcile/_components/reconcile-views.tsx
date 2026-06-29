@@ -5,6 +5,7 @@
 // Thai labels are verbatim from the mockup. Currency uses baht(n, true) for
 // signed values per the spec.
 
+import Link from "next/link";
 import {
   Upload,
   Calendar,
@@ -219,13 +220,14 @@ export function ReconcileTabs({
     const href =
       key === "ledger" ? baseHref : `${baseHref}?view=${key}`;
     return (
-      <a
+      <Link
         href={href}
         className="rc-tab"
         data-active={active === key ? "" : undefined}
+        scroll={false}
       >
         {label}
-      </a>
+      </Link>
     );
   };
   return (
@@ -359,11 +361,12 @@ export function LedgerTab({
             >
               <td>
                 {makeDayHref ? (
-                  <a
+                  <Link
                     href={makeDayHref(d.date)}
                     className="rc-date"
                     title="ดูรายการย่อยของวันนี้ (เก็บ/ฝาก รายก้อน)"
                     style={{ textDecoration: "none", cursor: "pointer" }}
+                    scroll={false}
                   >
                     <span
                       className="mono"
@@ -374,7 +377,7 @@ export function LedgerTab({
                     <span className="text-3" style={{ fontSize: 10.5 }}>
                       {dayOfWeekTh(d.date)} · 🔍
                     </span>
-                  </a>
+                  </Link>
                 ) : (
                   <div className="rc-date">
                     <span className="mono" style={{ fontSize: 12 }}>
@@ -414,13 +417,14 @@ export function LedgerTab({
               <td className="num mono">
                 {d.collectedNotDeposited > 0 ? (
                   makeDayHref ? (
-                    <a
+                    <Link
                       href={makeDayHref(d.date)}
                       title="เงินที่แม่บ้านเก็บแล้วยังไม่ฝากธนาคาร · กดดูใครถือ"
                       style={{ color: "var(--warn, #92400e)", fontWeight: 600 }}
+                      scroll={false}
                     >
                       {fmtN(d.collectedNotDeposited)}
-                    </a>
+                    </Link>
                   ) : (
                     <span style={{ color: "var(--warn, #92400e)", fontWeight: 600 }}>
                       {fmtN(d.collectedNotDeposited)}
@@ -488,7 +492,7 @@ export function LedgerTab({
                   makeDayHref ? (
                     // CEO 2026-06-29: กดกรรไกรแล้วเปิด drill-down วันนั้น เห็น
                     // รายละเอียดการตัดเงิน (กี่บาท ใครตัด เหตุผล ใครอนุมัติ).
-                    <a
+                    <Link
                       href={makeDayHref(d.date)}
                       title={
                         (d.writeOffNote ? d.writeOffNote + " · " : "") +
@@ -500,9 +504,10 @@ export function LedgerTab({
                         cursor: "pointer",
                         textDecoration: "none",
                       }}
+                      scroll={false}
                     >
                       ✂️
-                    </a>
+                    </Link>
                   ) : (
                     <span
                       title={d.writeOffNote ?? undefined}
@@ -655,18 +660,18 @@ export function LedgerPager({
       </span>
       <span className="row gap-2">
         {prevHref ? (
-          <a href={prevHref} className="btn btn-sm">
+          <Link href={prevHref} className="btn btn-sm" scroll={false}>
             <ChevronLeft size={13} aria-hidden="true" /> ใหม่กว่า
-          </a>
+          </Link>
         ) : (
           <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.4 }}>
             <ChevronLeft size={13} aria-hidden="true" /> ใหม่กว่า
           </span>
         )}
         {nextHref ? (
-          <a href={nextHref} className="btn btn-sm">
+          <Link href={nextHref} className="btn btn-sm" scroll={false}>
             เก่ากว่า <ChevronRight size={13} aria-hidden="true" />
-          </a>
+          </Link>
         ) : (
           <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.4 }}>
             เก่ากว่า <ChevronRight size={13} aria-hidden="true" />
@@ -763,9 +768,9 @@ export function DayDetailPanel({
         <strong style={{ fontSize: 13.5 }}>
           รายการย่อยของวันที่ <span className="mono">{detail.date}</span>
         </strong>
-        <a href={closeHref} className="btn btn-sm" title="ปิด">
+        <Link href={closeHref} className="btn btn-sm" title="ปิด" scroll={false}>
           <X size={13} aria-hidden="true" /> ปิด
-        </a>
+        </Link>
       </div>
 
       <div style={{ padding: "10px 14px", display: "grid", gap: 14 }}>
@@ -1368,20 +1373,21 @@ export function PeriodsTab({
           {!p.open && (
             <div className="rc-period-actions">
               {branchId && (
-                <a
+                <Link
                   href={`/chairops/reconcile/${branchId}`}
                   className="btn btn-sm btn-ghost"
+                  scroll={false}
                 >
                   <Eye size={11} aria-hidden="true" /> ดูรายวัน
-                </a>
+                </Link>
               )}
               {Math.abs(p.diff ?? 0) >= 100 && (p.diff ?? 0) < 0 && branchId && (
-                <a
+                <Link
                   href={`/chairops/reconcile/${branchId}#write-off`}
                   className="btn btn-sm"
                 >
                   <Minus size={11} aria-hidden="true" /> สร้าง write-off
-                </a>
+                </Link>
               )}
             </div>
           )}

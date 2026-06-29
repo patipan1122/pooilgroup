@@ -61,8 +61,8 @@ export function LedgerDateFilter({
     all?: boolean;
   }> = anchor
     ? [
-        { label: "7 วันล่าสุด", from: isoMinusDays(anchor, 6), to: anchor },
-        { label: "30 วันล่าสุด", from: isoMinusDays(anchor, 29), to: anchor },
+        { label: "7 วัน", from: isoMinusDays(anchor, 6), to: anchor },
+        { label: "30 วัน", from: isoMinusDays(anchor, 29), to: anchor },
         { label: "90 วัน", from: isoMinusDays(anchor, 89), to: anchor },
         // CEO 2026-06-25: "ทั้งหมด" now carries an explicit ?all=1 so the shell
         // loads the full history instead of silently falling into the 30-day
@@ -78,13 +78,13 @@ export function LedgerDateFilter({
     <div
       className="card"
       style={{
-        margin: "12px 22px 0",
-        padding: "10px 14px",
+        margin: "8px 22px 0",
+        padding: "5px 10px",
         display: "flex",
         flexWrap: "wrap",
         alignItems: "center",
-        gap: 8,
-        fontSize: 12.5,
+        gap: 5,
+        fontSize: 12,
       }}
     >
       <span
@@ -136,17 +136,18 @@ export function LedgerDateFilter({
       {anchor && (
         <span
           className="text-3"
+          title="filter ใช้ได้แค่วันที่ POS อัพแล้ว (POS มักช้ากว่าปฏิทิน 1-2 วัน)"
           style={{
             marginLeft: "auto",
             display: "inline-flex",
             alignItems: "center",
-            gap: 6,
-            fontSize: 11.5,
+            gap: 4,
+            fontSize: 11,
+            whiteSpace: "nowrap",
           }}
         >
           <Clock size={11} aria-hidden="true" />
-          POS ครบถึง <strong className="mono">{anchor}</strong> · filter
-          ใช้ได้แค่วันที่ POS อัพแล้ว
+          POS ครบ <strong className="mono">{anchor}</strong>
         </span>
       )}
     </div>
