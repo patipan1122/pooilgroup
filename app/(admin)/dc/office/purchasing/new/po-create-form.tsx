@@ -936,7 +936,15 @@ function ProductPickerButton({
                 {!searching &&
                   results.map((p) => (
                     <button key={p.id} type="button" onClick={() => pick(p)} style={popRow}>
-                      <span style={{ fontWeight: 600, color: "var(--dc-ink, #1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      {p.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.imageUrl} alt={p.name} style={popThumbImg} />
+                      ) : (
+                        <span style={popThumbPlaceholder}>
+                          <ImageIcon size={14} color="var(--dc-subtle, #8a94a3)" />
+                        </span>
+                      )}
+                      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: "var(--dc-ink, #1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
                       <span style={{ fontSize: 12, color: "var(--dc-subtle, #8a94a3)", flex: "0 0 auto" }}>{p.sku}</span>
                     </button>
                   ))}
@@ -961,7 +969,10 @@ function ProductPickerButton({
   );
 }
 
-/* ───────────────────────── Inline create product ───────────────────────── */
+/* ───────────────────────── Inline create product (CEO #1 — มินิมอล) ─────────────────────────
+   ถามแค่ "ชื่อสินค้า" + toggle เพื่อขาย/ไม่เพื่อขาย (SALE/SPARE) เท่านั้น
+   ส่ง quickCreateProduct({ name, type }) — ไม่มีหมวด/รูป (อยู่ในฟอร์มสินค้าเต็ม)
+   ถ้าชื่อซ้ำ → server คืน {ok:false,error} → โชว์ข้อความแดงใต้ช่องชื่อ ให้ผู้ใช้ไปเลือกจากลิสต์แทน */
 function InlineCreateProduct({
   onCancel,
   onCreated,
@@ -972,42 +983,26 @@ function InlineCreateProduct({
   onError: (e: string | null) => void;
 }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
   const [type, setType] = useState<"SALE" | "SPARE">("SALE");
-  const [imageR2Path, setImageR2Path] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  async function pickPhoto(file: File) {
-    setUploading(true);
-    onError(null);
-    const data = await uploadFile(file);
-    setUploading(false);
-    if (data.ok) {
-      setImageR2Path(data.key);
-      setImageUrl(data.url);
-    } else {
-      onError(data.error);
-    }
-  }
+  const [dupError, setDupError] = useState<string | null>(null);
 
   async function save() {
-    if (!name.trim() || saving || uploading) return;
+    if (!name.trim() || saving) return;
     setSaving(true);
+    setDupError(null);
     onError(null);
     const res = await quickCreateProduct({
       name: name.trim(),
-      category: category.trim() || null,
       type,
-      imageR2Path,
     });
     setSaving(false);
     if (res.ok) {
-      onCreated({ id: res.product.id, name: res.product.name, sku: res.product.sku });
+      // สินค้าที่เพิ่งสร้างยังไม่มีรูป → imageUrl: null
+      onCreated({ id: res.product.id, name: res.product.name, sku: res.product.sku, imageUrl: null });
     } else {
-      onError(res.error);
+      // โชว์ inline ใต้ช่องชื่อ (เช่น ชื่อซ้ำ) — ไม่ดันขึ้น error ก้อนใหญ่ของฟอร์ม
+      setDupError(res.error);
     }
   }
 
@@ -1018,32 +1013,22 @@ function InlineCreateProduct({
         <button type="button" onClick={onCancel} style={ghostIconBtn}><X size={15} /></button>
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
+      <div style={{ display: "grid", gap: 5 }}>
+        <Input
+          value={name}
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) pickPhoto(f);
-            e.target.value = "";
+            setName(e.target.value);
+            if (dupError) setDupError(null);
           }}
+          placeholder="ชื่อสินค้า *"
+          autoFocus
+          autoComplete="off"
         />
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ ...thumbBox, flex: "0 0 auto", padding: 0, overflow: "hidden" }}>
-          {uploading ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={imageUrl} alt="รูปสินค้า" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <ImageIcon size={20} color="var(--dc-subtle, #8a94a3)" />
-          )}
-        </button>
-        <div style={{ flex: 1, display: "grid", gap: 8 }}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อสินค้า *" autoFocus autoComplete="off" />
-          <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="หมวด (เช่น ตุ๊กตา)" autoComplete="off" />
-        </div>
+        {dupError && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger, #dc2626)", lineHeight: 1.35 }}>
+            {dupError}
+          </span>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 6 }}>
@@ -1064,12 +1049,12 @@ function InlineCreateProduct({
               color: type === t ? "var(--dc-blue-strong, #1d4ed8)" : "var(--dc-muted, #5b6676)",
             }}
           >
-            {t === "SALE" ? "สินค้าขาย" : "อะไหล่"}
+            {t === "SALE" ? "เพื่อขาย" : "ไม่เพื่อขาย"}
           </button>
         ))}
       </div>
 
-      <button type="button" onClick={save} disabled={!name.trim() || saving || uploading} style={savePanelBtn}>
+      <button type="button" onClick={save} disabled={!name.trim() || saving} style={savePanelBtn}>
         {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} สร้าง &amp; เลือกเข้าแถว
       </button>
     </div>
@@ -1189,18 +1174,6 @@ const ghostMiniBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const thumbBox: React.CSSProperties = {
-  width: 56,
-  height: 56,
-  borderRadius: 9,
-  border: "1px solid var(--dc-line, #e7ebf2)",
-  background: "#fff",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-};
-
 const popover: React.CSSProperties = {
   position: "absolute",
   top: "calc(100% + 4px)",
@@ -1227,6 +1200,28 @@ const popRow: React.CSSProperties = {
   background: "transparent",
   cursor: "pointer",
   textAlign: "left",
+};
+
+// รูปย่อในแถวผลค้นหา (#2) — ~32px มุมมน · objectFit cover
+const popThumbImg: React.CSSProperties = {
+  flex: "0 0 auto",
+  width: 32,
+  height: 32,
+  borderRadius: 7,
+  objectFit: "cover",
+  border: "1px solid var(--dc-line, #e7ebf2)",
+  background: "#fff",
+};
+const popThumbPlaceholder: React.CSSProperties = {
+  flex: "0 0 auto",
+  width: 32,
+  height: 32,
+  borderRadius: 7,
+  border: "1px solid var(--dc-line, #e7ebf2)",
+  background: "var(--color-brand-50, #f7faff)",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const popMsg: React.CSSProperties = {

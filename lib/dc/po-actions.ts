@@ -26,6 +26,8 @@ import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
 import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
 import { postGrn } from "@/lib/dc/grn-actions";
+import { computePoFreightSatang } from "@/lib/dc/freight";
+import { loadFreightRates } from "@/lib/dc/freight-rates";
 
 const LIST_PATH = "/dc/office/purchasing";
 
@@ -259,15 +261,28 @@ export async function updatePo(
 ): Promise<PoActionResult> {
   const g = await requireManager();
   if (!g.ok) return g;
-  const { orgId } = g;
+  const { orgId, userId } = g;
 
   const po = await prisma.dcPurchaseOrder.findFirst({
     where: { id, orgId },
-    select: { id: true, status: true, origin: true },
+    select: { id: true, status: true, origin: true, supplierId: true, fxRate: true },
   });
   if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
-  if (po.status !== DcPoStatus.DRAFT) {
-    return { ok: false, error: "แก้ไขได้เฉพาะใบที่ยังเป็นร่าง (DRAFT)" };
+
+  // #3 (CEO 2026-06-29): แก้ผู้ขาย/เรตได้ "ก่อนจ่ายเงิน/ก่อนรับเข้า" — หลังจากนั้นล็อก (ดูประวัติได้)
+  //   กันยอดบัญชีเพี้ยน: ถ้าจ่ายเงินไปแล้ว/รับเข้าแล้ว การแก้เรตจะทำให้ยอดที่ลงบัญชีไม่ตรง.
+  const LOCKED: DcPoStatus[] = [
+    DcPoStatus.RECEIVED,
+    DcPoStatus.PARTIAL,
+    DcPoStatus.CANCELLED,
+    DcPoStatus.CLOSED,
+  ];
+  if (LOCKED.includes(po.status)) {
+    return { ok: false, error: "แก้ไขไม่ได้ — ใบนี้รับเข้าคลัง/ปิด/ยกเลิกแล้ว (ดูประวัติได้)" };
+  }
+  const paidCount = await prisma.dcPoPayment.count({ where: { orgId, poId: id } });
+  if (paidCount > 0) {
+    return { ok: false, error: "แก้ไขไม่ได้ — ใบนี้มีบันทึกการจ่ายเงินแล้ว (กันยอดบัญชีเพี้ยน · ดูประวัติได้)" };
   }
 
   const supplierId = cleanStr(input.supplierId);
@@ -279,7 +294,7 @@ export async function updatePo(
   if (refErr) return { ok: false, error: refErr };
 
   try {
-    // อัปเดต fxRate → คิด unitPriceThb ของทุกบรรทัดใหม่ให้สอดคล้อง
+    // อัปเดต fxRate → คิด unitPriceThb ของทุกบรรทัดใหม่ให้สอดคล้อง + เก็บ log ประวัติ
     await prisma.$transaction(async (tx) => {
       await tx.dcPurchaseOrder.update({
         where: { id },
@@ -308,6 +323,20 @@ export async function updatePo(
           data: { unitPriceThb: thb != null ? dec(thb) : null },
         });
       }
+      // #3: log ประวัติการแก้ (ใคร/เก่า→ใหม่/เมื่อไหร่) ใน audit_logs (reuse · มี diff Json)
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId,
+          action: "DC_PO_UPDATE",
+          resourceType: "dc_purchase_order",
+          resourceId: id,
+          diff: {
+            old: { supplierId: po.supplierId, fxRate: po.fxRate != null ? Number(po.fxRate) : null },
+            new: { supplierId, fxRate },
+          },
+        },
+      });
     });
     revalidate(id);
     return { ok: true, id };
@@ -608,28 +637,50 @@ export async function markAtWarehouse(id: string): Promise<PoActionResult> {
   if (!g.ok) return g;
   const { orgId } = g;
 
-  // 💰 ด่านค่าของ: ใบจีนต้องบันทึก "จ่ายค่าของแล้ว" ก่อน จึงจะส่งมาโกดังเราได้
-  // (CEO 2026-06-25: "ถึงโกดังไทยแล้วต้องจ่ายเงิน ถ้าจ่ายแล้วถึงส่งต่อมาได้")
-  const po = await prisma.dcPurchaseOrder.findFirst({
-    where: { id, orgId },
-    select: { origin: true },
-  });
-  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
-  if (po.origin === DcPoOrigin.CHINA) {
-    const paid = await prisma.dcPoPayment.count({
-      where: { orgId, poId: id, kind: DcPoPaymentKind.GOODS },
-    });
-    if (paid === 0) {
-      return { ok: false, error: "ต้องบันทึกการจ่าย 'ค่าของ' ก่อน จึงจะส่งมาโกดังเราได้ (ด่านจ่ายเงินตอนถึงไทย)" };
-    }
-  }
-
+  // #4 (CEO 2026-06-29): ตัดด่าน "ค่าของ" ทิ้ง — ค่าสินค้าจ่ายตั้งแต่ตอนซื้อแล้ว.
+  //   ถึงโกดังไทย = แค่ยืนยันว่าของถึง (ไม่มีด่านเงินตรงนี้). ค่าขนส่งจีน-ไทยไปจ่ายตอน "พร้อมรับเข้า".
   const res = await prisma.dcPurchaseOrder.updateMany({
     where: { id, orgId, status: DcPoStatus.ARRIVED_TH },
     data: { status: DcPoStatus.AT_WAREHOUSE },
   });
   if (res.count === 0) {
     return { ok: false, error: "ทำได้เฉพาะใบที่ 'ถึงไทย' (อาจเปลี่ยนสถานะไปแล้ว ลองรีเฟรช)" };
+  }
+  revalidate(id);
+  return { ok: true, id };
+}
+
+/**
+ * #6 (CEO 2026-06-29): "พร้อมรับเข้า" = จ่ายค่าขนส่งจีน-ไทยแล้ว + ของถึงโกดังแล้ว
+ *   แต่ "ยังไม่นับเข้าสต๊อก". AT_WAREHOUSE → READY_TO_RECEIVE.
+ *   ใบจีนต้องมีบันทึกจ่าย "ค่าขนส่งจีน-ไทย" (THAI_FREIGHT) ก่อน.
+ *   การรับเข้าสต๊อกจริง (GRN) แยกไปทำที่ปุ่ม "รับเข้าคลัง" (receivePo).
+ */
+export async function markReadyToReceive(id: string): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId } = g;
+
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id, orgId },
+    select: { origin: true },
+  });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+  if (po.origin === DcPoOrigin.CHINA) {
+    const paidFreight = await prisma.dcPoPayment.count({
+      where: { orgId, poId: id, kind: DcPoPaymentKind.THAI_FREIGHT },
+    });
+    if (paidFreight === 0) {
+      return { ok: false, error: "ต้องบันทึกการจ่าย 'ค่าขนส่งจีน-ไทย' ก่อน จึงจะกด 'พร้อมรับเข้า' ได้" };
+    }
+  }
+
+  const res = await prisma.dcPurchaseOrder.updateMany({
+    where: { id, orgId, status: DcPoStatus.AT_WAREHOUSE },
+    data: { status: DcPoStatus.READY_TO_RECEIVE },
+  });
+  if (res.count === 0) {
+    return { ok: false, error: "ทำได้เฉพาะใบที่ 'ถึงโกดังแล้ว' (อาจเปลี่ยนสถานะไปแล้ว ลองรีเฟรช)" };
   }
   revalidate(id);
   return { ok: true, id };
@@ -686,6 +737,15 @@ export async function quickCreateProduct(
 
   const name = cleanStr(input.name);
   if (!name) return { ok: false, error: "กรุณากรอกชื่อสินค้า" };
+
+  // #1 (CEO 2026-06-29): กันสร้างชื่อซ้ำ — เช็คชื่อเดิม (ไม่สนตัวพิมพ์เล็ก/ใหญ่) ในองค์กรก่อน
+  const dup = await prisma.dcProduct.findFirst({
+    where: { orgId, name: { equals: name, mode: "insensitive" } },
+    select: { id: true, sku: true },
+  });
+  if (dup) {
+    return { ok: false, error: `มีสินค้าชื่อ "${name}" อยู่แล้ว (รหัส ${dup.sku}) — เลือกจากรายการ หรือใช้ชื่ออื่น` };
+  }
 
   const category = cleanStr(input.category);
   const type = input.type === "SPARE" ? DcProductType.SPARE : DcProductType.SALE;
@@ -752,7 +812,7 @@ export async function quickCreateSupplier(
 
 // ── ตัวช่วยเลือกสินค้า/ผู้ขาย (picker ในฟอร์มใบสั่งซื้อ) ──────────────────
 
-export type PoProductOption = { id: string; name: string; sku: string };
+export type PoProductOption = { id: string; name: string; sku: string; imageUrl: string | null };
 export type PoSupplierOption = { id: string; name: string };
 
 /** ค้นสินค้า active ของ org (ชื่อ/SKU/บาร์โค้ด · insensitive · ≤30) สำหรับ picker. */
@@ -780,9 +840,20 @@ export async function searchProductsForPo(
     },
     orderBy: { name: "asc" },
     take: 30,
-    select: { id: true, name: true, sku: true },
+    select: { id: true, name: true, sku: true, imageR2Path: true },
   });
-  return rows;
+  // #2: คืน URL รูปพร้อมใช้ (picker ในใบสั่งซื้อจะได้โชว์รูปที่อัปไว้)
+  const base = process.env.R2_PUBLIC_URL ?? "";
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    sku: r.sku,
+    imageUrl: r.imageR2Path
+      ? r.imageR2Path.startsWith("http")
+        ? r.imageR2Path
+        : `${base}/${r.imageR2Path}`
+      : null,
+  }));
 }
 
 /** ผู้ขาย active ของ org (≤200) สำหรับ dropdown ในฟอร์มใบสั่งซื้อ. */
@@ -919,6 +990,7 @@ export async function receivePo(input: ReceivePoInput): Promise<ReceivePoResult>
     DcPoStatus.SHIPPED,
     DcPoStatus.ARRIVED_TH,
     DcPoStatus.AT_WAREHOUSE,
+    DcPoStatus.READY_TO_RECEIVE,
     DcPoStatus.PARTIAL,
   ];
 
@@ -1109,7 +1181,13 @@ export async function recordPoPayment(input: RecordPaymentInput): Promise<PoActi
   const amount = nonNegInt(input.amountSatang);
   if (amount <= 0) return { ok: false, error: "กรุณาระบุยอดเงินที่จ่าย (มากกว่า 0)" };
   const kind = input.kind === "THAI_FREIGHT" ? DcPoPaymentKind.THAI_FREIGHT : DcPoPaymentKind.GOODS;
-  const currency = cleanStr(input.currency) === "CNY" ? "CNY" : "THB";
+  // #5 (CEO 2026-06-29): ค่าขนส่งจีน-ไทย = บาทเท่านั้น (ไม่มีหยวน)
+  const currency =
+    kind === DcPoPaymentKind.THAI_FREIGHT
+      ? "THB"
+      : cleanStr(input.currency) === "CNY"
+        ? "CNY"
+        : "THB";
 
   // ใบต้องเป็นของ org นี้ (กันบันทึกจ่ายข้ามองค์กร)
   const po = await prisma.dcPurchaseOrder.findFirst({ where: { id: poId, orgId }, select: { id: true } });
@@ -1184,16 +1262,34 @@ export async function getPayableOutstanding(
     },
   });
 
-  // freight ที่บันทึกไว้ต่อใบ (สำหรับ THAI_FREIGHT) — ดึงครั้งเดียว
-  let freightByPo = new Map<string, number>();
+  // #4: ค่าขนส่งจีน-ไทย ที่แนะนำต่อใบ = Σ(cbm × เรตต่อคิว) · fallback ยอดเดิมถ้ายังไม่ตั้งเรต
+  const freightByPo = new Map<string, number>();
   if (kind === DcPoPaymentKind.THAI_FREIGHT && pos.length > 0) {
+    const rates = await loadFreightRates(orgId);
     const ships = await prisma.dcShipment.findMany({
       where: { orgId, poId: { in: pos.map((p) => p.id) } },
-      select: { poId: true, chinaFreightThbSatang: true, intlFreightThbSatang: true },
+      select: { poId: true, mode: true, cbmTotal: true, chinaFreightThbSatang: true, intlFreightThbSatang: true },
     });
+    const byPo = new Map<string, typeof ships>();
     for (const s of ships) {
       if (!s.poId) continue;
-      freightByPo.set(s.poId, (freightByPo.get(s.poId) ?? 0) + s.chinaFreightThbSatang + s.intlFreightThbSatang);
+      const arr = byPo.get(s.poId) ?? [];
+      arr.push(s);
+      byPo.set(s.poId, arr);
+    }
+    for (const [pid, arr] of byPo) {
+      freightByPo.set(
+        pid,
+        computePoFreightSatang(
+          arr.map((s) => ({
+            cbmTotal: s.cbmTotal != null ? Number(s.cbmTotal) : null,
+            mode: s.mode,
+            chinaFreightThbSatang: s.chinaFreightThbSatang,
+            intlFreightThbSatang: s.intlFreightThbSatang,
+          })),
+          rates,
+        ),
+      );
     }
   }
 
@@ -1230,7 +1326,13 @@ export async function recordBulkPayment(
   const { orgId, userId } = g;
 
   const kind = input.kind === "THAI_FREIGHT" ? DcPoPaymentKind.THAI_FREIGHT : DcPoPaymentKind.GOODS;
-  const currency = cleanStr(input.currency) === "CNY" ? "CNY" : "THB";
+  // #5: ค่าขนส่งจีน-ไทย = บาทเท่านั้น
+  const currency =
+    kind === DcPoPaymentKind.THAI_FREIGHT
+      ? "THB"
+      : cleanStr(input.currency) === "CNY"
+        ? "CNY"
+        : "THB";
   const parsed = input.paidAt ? new Date(input.paidAt) : new Date();
   const paidAt = isNaN(parsed.getTime()) ? new Date() : parsed;
 
@@ -1326,8 +1428,10 @@ export type PoPanelBundle = {
   thaiFreightPaid: boolean;
   /** ยอด "ค่าของ" ที่ระบบแนะนำ (รวมราคาสินค้าทั้งใบ เป็นบาท·สตางค์) — prefill ตอนจ่าย แก้ได้ */
   goodsOwedSatang: number;
-  /** ยอด "ค่าขนส่ง" ที่บันทึกไว้ในกล่อง/ชิปเมนต์ (จีน+ระหว่างประเทศ บาท·สตางค์) — prefill ตอนจ่าย แก้ได้ */
+  /** ยอด "ค่าขนส่งจีน-ไทย" คิดอัตโนมัติ Σ(cbm × เรตต่อคิว) บาท·สตางค์ — prefill ตอนจ่าย แก้ได้ (#4) */
   freightOwedSatang: number;
+  /** ตั้งเรตค่าขนส่งต่อคิวแล้วหรือยัง — false = freightOwed มาจากยอดเดิม/0 (ควรเตือนให้ไปตั้งเรต) */
+  freightRatesConfigured: boolean;
   warehouses: { id: string; name: string }[];
   r2PublicUrl: string;
 };
@@ -1417,7 +1521,18 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
       return s + l.qty * unitThb;
     }, 0) * 100,
   );
-  const freightOwedSatang = boxes.reduce((s, b) => s + b.chinaFreightThbSatang + b.intlFreightThbSatang, 0);
+  // #4: ค่าขนส่งจีน-ไทย = Σ(cbm × เรตต่อคิว) อัตโนมัติ · fallback ยอดเดิมถ้ายังไม่ตั้งเรต
+  const freightRates = await loadFreightRates(orgId);
+  const freightOwedSatang = computePoFreightSatang(
+    boxes.map((b) => ({
+      cbmTotal: b.cbmTotal != null ? Number(b.cbmTotal) : null,
+      mode: b.mode,
+      chinaFreightThbSatang: b.chinaFreightThbSatang,
+      intlFreightThbSatang: b.intlFreightThbSatang,
+    })),
+    freightRates,
+  );
+  const freightRatesConfigured = freightRates.TRUCK > 0 || freightRates.SEA > 0;
 
   // คลังที่ผู้ใช้เข้าถึง (สำหรับ dropdown รับเข้า) — best-effort ผ่าน DcWarehouseUser/admin
   const whRows = await prisma.dcWarehouse.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
@@ -1465,5 +1580,113 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
     })),
   };
 
-  return { data, payments, goodsPaid, thaiFreightPaid, goodsOwedSatang, freightOwedSatang, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
+  return { data, payments, goodsPaid, thaiFreightPaid, goodsOwedSatang, freightOwedSatang, freightRatesConfigured, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
+}
+
+// ── #3 ประวัติการแก้ใบสั่งซื้อ (audit log · ใคร/เก่า→ใหม่/เมื่อไหร่) ─────────
+export type PoAuditEntry = {
+  id: string;
+  userName: string | null;
+  createdAt: string;
+  diff: { old?: Record<string, unknown>; new?: Record<string, unknown> } | null;
+};
+
+export async function getPoAuditHistory(poIdRaw: string): Promise<PoAuditEntry[]> {
+  const session = await requireSession();
+  if (!canDcManage(session.user.role)) return [];
+  const orgId = session.user.org_id;
+  const poId = cleanStr(poIdRaw);
+  if (!poId) return [];
+  const rows = await prisma.auditLog.findMany({
+    where: { orgId, resourceType: "dc_purchase_order", resourceId: poId, action: "DC_PO_UPDATE" },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: { id: true, createdAt: true, diff: true, user: { select: { name: true, email: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    userName: r.user?.name ?? r.user?.email ?? null,
+    createdAt: r.createdAt.toISOString(),
+    diff: (r.diff as PoAuditEntry["diff"]) ?? null,
+  }));
+}
+
+// ── #12e เทียบใบสั่งซื้อ vs ใบรับทั้งหมด (สั่ง / รับสะสม / คงค้าง) ─────────
+export type PoReceiveProductRow = {
+  productId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  ordered: number;
+  received: number;
+  remaining: number;
+};
+export type PoReceiveGrnRow = {
+  grnId: string;
+  grnCode: string;
+  receivedAt: string;
+  totalReceived: number;
+};
+export type PoReceiveSummary = {
+  products: PoReceiveProductRow[];
+  grns: PoReceiveGrnRow[];
+  fullyReceived: boolean;
+};
+
+export async function getPoReceivingSummary(poIdRaw: string): Promise<PoReceiveSummary | null> {
+  const session = await requireSession();
+  if (!canDcManage(session.user.role)) return null;
+  const orgId = session.user.org_id;
+  const poId = cleanStr(poIdRaw);
+  if (!poId) return null;
+
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id: poId, orgId },
+    select: {
+      id: true,
+      lines: { select: { qty: true, product: { select: { id: true, sku: true, name: true, unit: true } } } },
+    },
+  });
+  if (!po) return null;
+
+  const grns = await prisma.dcGoodsReceipt.findMany({
+    where: { orgId, poId },
+    orderBy: { receivedAt: "asc" },
+    select: {
+      id: true,
+      grnCode: true,
+      receivedAt: true,
+      lines: { select: { productId: true, qtyReceived: true } },
+    },
+  });
+
+  const orderedByProduct = new Map<string, { sku: string; name: string; unit: string; ordered: number }>();
+  for (const l of po.lines) {
+    const prev = orderedByProduct.get(l.product.id);
+    if (prev) prev.ordered += l.qty;
+    else orderedByProduct.set(l.product.id, { sku: l.product.sku, name: l.product.name, unit: l.product.unit, ordered: l.qty });
+  }
+  const receivedByProduct = new Map<string, number>();
+  for (const grn of grns) {
+    for (const gl of grn.lines) {
+      receivedByProduct.set(gl.productId, (receivedByProduct.get(gl.productId) ?? 0) + gl.qtyReceived);
+    }
+  }
+
+  const products: PoReceiveProductRow[] = [...orderedByProduct.entries()].map(([productId, p]) => {
+    const received = receivedByProduct.get(productId) ?? 0;
+    return { productId, sku: p.sku, name: p.name, unit: p.unit, ordered: p.ordered, received, remaining: p.ordered - received };
+  });
+  const fullyReceived = products.length > 0 && products.every((p) => p.received >= p.ordered);
+
+  return {
+    products,
+    grns: grns.map((gr) => ({
+      grnId: gr.id,
+      grnCode: gr.grnCode,
+      receivedAt: gr.receivedAt.toISOString(),
+      totalReceived: gr.lines.reduce((s, l) => s + l.qtyReceived, 0),
+    })),
+    fullyReceived,
+  };
 }

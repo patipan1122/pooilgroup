@@ -138,6 +138,8 @@ export type GrnRemainingLine = {
   name: string;
   unit: string;
   imageR2Path: string | null;
+  /** จำนวนที่ "สั่ง/คาดว่าจะรับ" (เทียบกับรับจริง → ขาด/เกิน · #13) */
+  qtyExpected: number;
   qtyReceived: number;
   qtyDamaged: number;
   /** คงเหลือสินค้านี้ในคลังของใบนี้ "ตอนนี้" (ระดับสินค้า รวมทุกใบ — ตามที่ CEO เคาะ) */
@@ -154,7 +156,11 @@ export type GrnRemaining = {
   postStatus: string;
   note: string | null;
   shipmentCode: string | null;
+  /** ใบสั่งซื้อต้นทาง (id ไว้ทำลิงก์กดเข้าดู · #10) */
+  poId: string | null;
   poCode: string | null;
+  /** ผู้ขาย (ใครขาย · #13) */
+  supplierName: string | null;
   lines: GrnRemainingLine[];
   totalReceived: number;
   totalOnHandNow: number;
@@ -185,6 +191,7 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
         select: {
           id: true,
           productId: true,
+          qtyExpected: true,
           qtyReceived: true,
           qtyDamaged: true,
           product: { select: { sku: true, name: true, unit: true, imageR2Path: true } },
@@ -204,7 +211,10 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
       : Promise.resolve([] as { productId: string; qtyOnHand: number }[]),
     prisma.dcWarehouse.findFirst({ where: { orgId, id: grn.warehouseId }, select: { name: true } }),
     grn.poId
-      ? prisma.dcPurchaseOrder.findFirst({ where: { orgId, id: grn.poId }, select: { poCode: true } })
+      ? prisma.dcPurchaseOrder.findFirst({
+          where: { orgId, id: grn.poId },
+          select: { poCode: true, supplier: { select: { name: true } } },
+        })
       : Promise.resolve(null),
   ]);
   const onHandById = new Map(balances.map((b) => [b.productId, b.qtyOnHand]));
@@ -216,6 +226,7 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
     name: l.product.name,
     unit: l.product.unit,
     imageR2Path: l.product.imageR2Path,
+    qtyExpected: l.qtyExpected,
     qtyReceived: l.qtyReceived,
     qtyDamaged: l.qtyDamaged,
     onHandNow: onHandById.get(l.productId) ?? 0,
@@ -231,7 +242,9 @@ export async function getGrnRemaining(args: { orgId: string; grnId: string }): P
     postStatus: grn.postStatus,
     note: grn.note,
     shipmentCode: grn.shipment?.shipmentCode ?? null,
+    poId: grn.poId,
     poCode: po?.poCode ?? null,
+    supplierName: po?.supplier?.name ?? null,
     lines,
     totalReceived: lines.reduce((s, l) => s + l.qtyReceived, 0),
     totalOnHandNow: lines.reduce((s, l) => s + l.onHandNow, 0),

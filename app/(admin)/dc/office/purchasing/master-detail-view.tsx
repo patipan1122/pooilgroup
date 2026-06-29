@@ -149,6 +149,7 @@ export function MasterDetailView({
               thaiFreightPaid={bundle.thaiFreightPaid}
               goodsOwedSatang={bundle.goodsOwedSatang}
               freightOwedSatang={bundle.freightOwedSatang}
+              freightRatesConfigured={bundle.freightRatesConfigured}
               warehouses={bundle.warehouses}
               canManage={canManage}
               r2PublicUrl={r2PublicUrl || bundle.r2PublicUrl}

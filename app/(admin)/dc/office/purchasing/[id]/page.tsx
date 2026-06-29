@@ -10,6 +10,8 @@ import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { type PoPaymentData } from "@/lib/dc/po-actions";
+import { freightForBox } from "@/lib/dc/freight";
+import { loadFreightRates } from "@/lib/dc/freight-rates";
 import { DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { PoDetail, type PoDetailData } from "./po-detail";
 
@@ -147,12 +149,19 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
       return s + l.qty * unitThb;
     }, 0) * 100,
   );
+  // #4 (CEO 2026-06-29): ค่าขนส่งจีน-ไทย = Σ(cbm × เรตต่อคิว) อัตโนมัติ · fallback ยอดเดิมถ้ายังไม่ตั้งเรต
+  const freightRates = await loadFreightRates(orgId);
+  const freightRatesConfigured = freightRates.TRUCK > 0 || freightRates.SEA > 0;
   const freightAgg = await prisma.dcShipment.aggregate({
     where: { orgId, poId: id },
     _sum: { chinaFreightThbSatang: true, intlFreightThbSatang: true },
   });
-  const freightOwedSatang =
-    (freightAgg._sum.chinaFreightThbSatang ?? 0) + (freightAgg._sum.intlFreightThbSatang ?? 0);
+  const freightOwedSatang = freightRatesConfigured
+    ? boxes.reduce(
+        (s, b) => s + freightForBox(b.cbmTotal != null ? Number(b.cbmTotal) : null, b.mode, freightRates),
+        0,
+      )
+    : (freightAgg._sum.chinaFreightThbSatang ?? 0) + (freightAgg._sum.intlFreightThbSatang ?? 0);
 
   const data: PoDetailData = {
     id: po.id,
@@ -227,6 +236,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           thaiFreightPaid={thaiFreightPaid}
           goodsOwedSatang={goodsOwedSatang}
           freightOwedSatang={freightOwedSatang}
+          freightRatesConfigured={freightRatesConfigured}
           warehouses={warehouses}
           canManage={canDcManage(ctx.session.user.role)}
           r2PublicUrl={r2Public}

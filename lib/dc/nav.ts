@@ -60,6 +60,7 @@ export const PO_STATUS_LABEL: Record<string, string> = {
   SHIPPED: "ได้เลข Tracking",
   ARRIVED_TH: "ถึงไทยแล้ว",
   AT_WAREHOUSE: "ถึงโกดังแล้ว",
+  READY_TO_RECEIVE: "พร้อมรับเข้า",
   RECEIVED: "รับสินค้าแล้ว",
   PARTIAL: "รับบางส่วน",
   CLOSED: "ปิดใบ",
@@ -75,12 +76,13 @@ export const PO_FLOW_STATUSES: string[] = [
   "SHIPPED",
   "ARRIVED_TH",
   "AT_WAREHOUSE",
+  "READY_TO_RECEIVE",
   "RECEIVED",
 ];
 
 // 5 คอลัมน์หลักของบอร์ดสถานะ (Kanban) ตาม mockup — ตัด DRAFT/PENDING/APPROVED ออก
 // (PARTIAL/CLOSED/CANCELLED แสดงในโซน "อื่น ๆ" ต่างหาก)
-export const PO_FLOW_CORE: string[] = ["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "RECEIVED"];
+export const PO_FLOW_CORE: string[] = ["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "READY_TO_RECEIVE", "RECEIVED"];
 
 // ป้ายคอลัมน์ Kanban (สั้น ตรงตาม mockup) — แยกจาก PO_STATUS_LABEL ที่ใช้กับป้ายในหน้ารายละเอียด
 export const PO_KANBAN_LABEL: Record<string, string> = {
@@ -88,6 +90,7 @@ export const PO_KANBAN_LABEL: Record<string, string> = {
   SHIPPED: "ได้เลข Tracking",
   ARRIVED_TH: "ถึงไทยแล้ว",
   AT_WAREHOUSE: "ถึงโกดังแล้ว",
+  READY_TO_RECEIVE: "พร้อมรับเข้า",
   RECEIVED: "รับแล้ว",
 };
 
@@ -96,7 +99,8 @@ export const PO_KANBAN_ACTION: Record<string, string> = {
   ORDERED: "ใส่เลข Tracking",
   SHIPPED: "อัปเดตขนส่ง",
   ARRIVED_TH: "ติดตามขนส่ง",
-  AT_WAREHOUSE: "รับเข้า GRN",
+  AT_WAREHOUSE: "ทำให้พร้อมรับ",
+  READY_TO_RECEIVE: "รับเข้า GRN",
   RECEIVED: "เปิดดูใบ",
 };
 
@@ -109,6 +113,7 @@ export const PO_STATUS_TONE: Record<string, string> = {
   SHIPPED: "ship",
   ARRIVED_TH: "arrive",
   AT_WAREHOUSE: "arrive",
+  READY_TO_RECEIVE: "arrive",
   RECEIVED: "done",
   PARTIAL: "ship",
   CLOSED: "done",

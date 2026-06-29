@@ -1,15 +1,22 @@
 "use client";
 
-// DC · ฟอร์มรับสินค้าเข้าคลัง (GRN) — 2 จังหวะ:
-//   จังหวะ 1: บันทึกใบ (createGrn) — เลือกคลัง + อิงชิปเมนต์/PO (pre-fill ปริมาณคาดหวัง)
-//             + ใส่จำนวนรับจริง/เสียหายต่อบรรทัด (รับครบ/ขาด/เกิน/เสียได้)
-//   จังหวะ 2: หลังบันทึก → ปุ่ม "ลงรับเข้า + คิดต้นทุน" (postGrn) คิดต้นทุนนำเข้า +
-//             ตัดสต๊อก + ดัน TRCloud แล้วเด้งไปหน้ารายละเอียดใบ.
+// DC · ฟอร์มรับสินค้าเข้าคลัง (GRN) — #12 (CEO 2026-06-29) สองโหมดชัดเจน:
+//
+//   โหมดหลัก "รับตามใบสั่งซื้อ (PO)" — เปิดเมื่อมา ?po=<id>:
+//     เทียบ สั่ง/รับแล้ว/คงค้าง ต่อสินค้า · รับจริง default = คงค้าง · ขาด/เกิน live
+//     → ส่งครั้งเดียวผ่าน receivePo (มีด่านกันรับซ้ำ pg_advisory_lock + ด่านค่าขนส่งจีน)
+//     → ลงคลัง+คิดต้นทุน+ดัน TRCloud ในตัว. ถ้า receivePo คืน error (เช่นยังไม่จ่ายค่าขนส่ง)
+//       → โชว์ชัด.
+//
+//   โหมดรอง "รับของไม่มีใบสั่งซื้อ" (createGrn, 2 จังหวะ):
+//     สำหรับของแถม/ตัวอย่าง/ซื้อสด เท่านั้น — เลือกคลัง+สินค้า+จำนวนอิสระ (server บังคับ
+//     poId=null กันสต๊อกซ้อน). จังหวะ 1 บันทึกใบ → จังหวะ 2 "ลงรับเข้า + คิดต้นทุน".
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, PackageCheck, FileQuestion, AlertTriangle } from "lucide-react";
 import { createGrn, postGrn, retryTrcloud, type CreateGrnInput, type GrnLineInput } from "@/lib/dc/grn-actions";
+import { receivePo, type ReceivePoLineInput } from "@/lib/dc/po-actions";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +36,25 @@ export type GrnPoOption = {
   id: string;
   poCode: string;
   lines: SourceLine[];
+};
+
+/** #12 · ข้อมูล pre-fill สำหรับโหมด "รับตามใบสั่งซื้อ" (มาจาก getPoReceivingSummary). */
+export type PoReceivePrefill = {
+  poId: string;
+  poCode: string;
+  supplierName: string | null;
+  /** ใบจีน → receivePo มีด่าน "ต้องจ่ายค่าขนส่งในไทย" ก่อน */
+  isChina: boolean;
+  fullyReceived: boolean;
+  products: {
+    productId: string;
+    sku: string;
+    name: string;
+    unit: string;
+    ordered: number;
+    received: number;
+    remaining: number;
+  }[];
 };
 
 type LineDraft = {
@@ -72,6 +98,10 @@ function linesFromSource(src: SourceLine[]): LineDraft[] {
   );
 }
 
+/**
+ * #12 · ตัวเลือกโหมด. ถ้ามาทาง ?po= (poReceive != null) → เริ่มที่โหมด PO-driven
+ * พร้อมปุ่มสลับไป "รับของไม่มีใบสั่งซื้อ" (โหมดรอง). ถ้าไม่มี PO → โหมด no-PO ตรง ๆ.
+ */
 export function GrnForm({
   warehouses,
   shipmentOptions,
@@ -79,6 +109,7 @@ export function GrnForm({
   products,
   initialShipmentId,
   activeWarehouseId,
+  poReceive,
 }: {
   warehouses: WarehouseOpt[];
   shipmentOptions: ShipmentOption[];
@@ -86,6 +117,58 @@ export function GrnForm({
   products: ProductOpt[];
   initialShipmentId: string | null;
   activeWarehouseId: string | null;
+  poReceive: PoReceivePrefill | null;
+}) {
+  // ถ้ามา ?po= ให้เริ่มที่โหมด PO. สลับเป็น no-PO ได้ (โหมดรอง).
+  const [mode, setMode] = useState<"po" | "nopo">(poReceive ? "po" : "nopo");
+
+  if (poReceive && mode === "po") {
+    return (
+      <PoReceiveForm
+        po={poReceive}
+        warehouses={warehouses}
+        activeWarehouseId={activeWarehouseId}
+        onSwitchToNoPo={() => setMode("nopo")}
+      />
+    );
+  }
+
+  return (
+    <NoPoGrnForm
+      warehouses={warehouses}
+      shipmentOptions={shipmentOptions}
+      poOptions={poOptions}
+      products={products}
+      initialShipmentId={initialShipmentId}
+      activeWarehouseId={activeWarehouseId}
+      // โชว์ลิงก์กลับโหมด PO เฉพาะตอนมา ?po= แล้วสลับมา no-PO
+      onBackToPo={poReceive ? () => setMode("po") : null}
+      poCode={poReceive?.poCode ?? null}
+    />
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   โหมดรอง · รับของไม่มีใบสั่งซื้อ (createGrn — server บังคับ poId=null)
+   ════════════════════════════════════════════════════════════════════════ */
+function NoPoGrnForm({
+  warehouses,
+  shipmentOptions,
+  poOptions,
+  products,
+  initialShipmentId,
+  activeWarehouseId,
+  onBackToPo,
+  poCode,
+}: {
+  warehouses: WarehouseOpt[];
+  shipmentOptions: ShipmentOption[];
+  poOptions: GrnPoOption[];
+  products: ProductOpt[];
+  initialShipmentId: string | null;
+  activeWarehouseId: string | null;
+  onBackToPo: (() => void) | null;
+  poCode: string | null;
 }) {
   const router = useRouter();
 
@@ -245,6 +328,39 @@ export function GrnForm({
 
   return (
     <form onSubmit={saveGrn} style={{ display: "grid", gap: 16 }}>
+      {/* #12 · ป้ายบอกว่านี่คือโหมดรอง — กันพนักงานเอามารับของที่มีใบสั่งซื้อ */}
+      <div
+        className="dc-card"
+        style={{
+          background: "#fff7ed",
+          border: "1px solid #fdba74",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          padding: "12px 14px",
+        }}
+      >
+        <FileQuestion size={18} style={{ color: "#c2410c", flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 13.5, color: "#9a3412", lineHeight: 1.5 }}>
+          <b>รับของไม่มีใบสั่งซื้อ</b> — สำหรับของแถม · ตัวอย่าง · ซื้อสด เท่านั้น (ช่องนี้จะไม่ผูกใบสั่งซื้อ)
+          <div style={{ marginTop: 4 }}>
+            ของที่มี <b>ใบสั่งซื้อ (PO)</b> ให้รับผ่านใบสั่งซื้อ เพื่อกันรับซ้ำ/สต๊อกซ้อน
+            {onBackToPo && (
+              <>
+                {" — "}
+                <button
+                  type="button"
+                  onClick={onBackToPo}
+                  style={{ background: "none", border: "none", padding: 0, color: "#1d4ed8", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                >
+                  กลับไปรับตามใบสั่งซื้อ {poCode ?? ""}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* หัวใบ */}
       <div className="dc-card">
         <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
@@ -425,6 +541,309 @@ export function GrnForm({
     </form>
   );
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   โหมดหลัก · รับตามใบสั่งซื้อ (receivePo — กันรับซ้ำ + ด่านค่าขนส่ง + คิดต้นทุน
+   + ดัน TRCloud จบในปุ่มเดียว). pre-fill รับจริง = คงค้าง · โชว์ สั่ง/รับแล้ว/คงค้าง.
+   ════════════════════════════════════════════════════════════════════════ */
+type PoLineDraft = {
+  productId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  ordered: number;
+  received: number;
+  remaining: number;
+  qtyReceived: string;
+  qtyDamaged: string;
+};
+
+function PoReceiveForm({
+  po,
+  warehouses,
+  activeWarehouseId,
+  onSwitchToNoPo,
+}: {
+  po: PoReceivePrefill;
+  warehouses: WarehouseOpt[];
+  activeWarehouseId: string | null;
+  onSwitchToNoPo: () => void;
+}) {
+  const router = useRouter();
+
+  const [warehouseId, setWarehouseId] = useState(
+    activeWarehouseId ?? (warehouses.length === 1 ? warehouses[0].id : ""),
+  );
+  const [note, setNote] = useState("");
+  const [drafts, setDrafts] = useState<PoLineDraft[]>(() =>
+    po.products.map((p) => ({
+      productId: p.productId,
+      sku: p.sku,
+      name: p.name,
+      unit: p.unit,
+      ordered: p.ordered,
+      received: p.received,
+      remaining: p.remaining,
+      // default รับจริง = คงค้าง (ไม่ติดลบ); ถ้ารับครบแล้ว → 0
+      qtyReceived: String(Math.max(0, p.remaining)),
+      qtyDamaged: "",
+    })),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [trcloudPending, setTrcloudPending] = useState<{ grnId: string; reason?: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function setDraft(productId: string, patch: Partial<PoLineDraft>) {
+    setDrafts((prev) => prev.map((d) => (d.productId === productId ? { ...d, ...patch } : d)));
+  }
+
+  const totalReceived = useMemo(
+    () => drafts.reduce((s, d) => s + num(d.qtyReceived), 0),
+    [drafts],
+  );
+  const totalDamaged = useMemo(
+    () => drafts.reduce((s, d) => s + num(d.qtyDamaged), 0),
+    [drafts],
+  );
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setTrcloudPending(null);
+
+    if (!warehouseId) {
+      setError("กรุณาเลือกคลังปลายทาง");
+      return;
+    }
+    for (const d of drafts) {
+      if (num(d.qtyReceived) < 0 || num(d.qtyDamaged) < 0) {
+        setError("จำนวนต้องไม่ติดลบ");
+        return;
+      }
+    }
+    const lines: ReceivePoLineInput[] = drafts
+      .filter((d) => num(d.qtyReceived) > 0 || num(d.qtyDamaged) > 0)
+      .map((d) => ({
+        productId: d.productId,
+        qtyReceived: num(d.qtyReceived),
+        qtyDamaged: num(d.qtyDamaged),
+      }));
+    if (lines.length === 0) {
+      setError("กรุณาระบุจำนวนที่รับเข้าอย่างน้อย 1 รายการ");
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await receivePo({
+        poId: po.poId,
+        warehouseId,
+        note: note.trim() || null,
+        lines,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      if (!res.trcloudPosted) {
+        // ลงคลังแล้ว แต่ TRCloud ยังไม่เข้า → ให้กดดูใบ (retry อยู่ในหน้ารายละเอียด)
+        setTrcloudPending({ grnId: res.grnId, reason: res.trcloudReason });
+        return;
+      }
+      router.push(`/dc/office/receipts/${res.grnId}`);
+      router.refresh();
+    });
+  }
+
+  return (
+    <form onSubmit={submit} style={{ display: "grid", gap: 16 }}>
+      {/* หัวใบ PO — ผู้ขาย + รหัส + สถานะรับครบ */}
+      <div
+        className="dc-card"
+        style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}
+      >
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: "#71717a", marginBottom: 2 }}>รับสินค้าตามใบสั่งซื้อ</div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: "#18181b" }}>{po.poCode}</div>
+          {po.supplierName && (
+            <div style={{ fontSize: 14, color: "#52525b", marginTop: 2 }}>ผู้ขาย: {po.supplierName}</div>
+          )}
+        </div>
+        {po.fullyReceived && (
+          <span
+            style={{
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: "#1F8A55",
+              background: "#E1F0E8",
+              padding: "4px 11px",
+              borderRadius: 20,
+            }}
+          >
+            รับครบแล้ว
+          </span>
+        )}
+      </div>
+
+      {/* คลังปลายทาง */}
+      <div className="dc-card">
+        <Field label="คลังปลายทาง" required htmlFor="po-wh">
+          <select
+            id="po-wh"
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+            style={selectStyle}
+            title="คลังปลายทาง"
+          >
+            <option value="">— เลือกคลัง —</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </Field>
+        <div style={{ marginTop: 16 }}>
+          <Field label="หมายเหตุการรับ" optional htmlFor="po-note" hint="เช่น สภาพของ / ผู้รับ / กล่องที่ขาด">
+            <Input id="po-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="หมายเหตุการรับ" autoComplete="off" />
+          </Field>
+        </div>
+      </div>
+
+      {/* รายการ — สั่ง / รับแล้ว / คงค้าง + รับจริง + เสียหาย + diff live */}
+      <div style={{ display: "grid", gap: 12 }}>
+        {drafts.map((d) => {
+          const recv = num(d.qtyReceived);
+          const diff = recv - d.remaining; // เทียบกับคงค้าง: <0 รับขาด · >0 รับเกินคงค้าง
+          return (
+            <div key={d.productId} className="dc-card" style={{ display: "grid", gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#18181b", lineHeight: 1.25 }}>{d.name}</div>
+                <div style={{ fontSize: 13, color: "#71717a", marginTop: 2 }}>{d.sku}</div>
+              </div>
+
+              {/* สั่ง · รับแล้ว · คงค้าง */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <span style={chipStyle}>สั่ง {d.ordered} {d.unit}</span>
+                <span style={chipStyle}>รับแล้ว {d.received} {d.unit}</span>
+                <span style={{ ...chipStyle, background: d.remaining > 0 ? "#FEF1DE" : "#E1F0E8", color: d.remaining > 0 ? "#B45309" : "#1F8A55" }}>
+                  คงค้าง {d.remaining} {d.unit}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+                <Field label="รับจริง" required htmlFor={`por-${d.productId}`}>
+                  <Input
+                    id={`por-${d.productId}`}
+                    value={d.qtyReceived}
+                    onChange={(e) => setDraft(d.productId, { qtyReceived: e.target.value })}
+                    inputMode="numeric"
+                    placeholder="0"
+                  />
+                </Field>
+                <Field label="เสียหาย" optional htmlFor={`pod-${d.productId}`}>
+                  <Input
+                    id={`pod-${d.productId}`}
+                    value={d.qtyDamaged}
+                    onChange={(e) => setDraft(d.productId, { qtyDamaged: e.target.value })}
+                    inputMode="numeric"
+                    placeholder="0"
+                  />
+                </Field>
+              </div>
+
+              {/* diff live เทียบคงค้าง */}
+              {diff !== 0 && (
+                <div style={{ fontSize: 13, fontWeight: 600, color: diff < 0 ? "var(--color-danger, #dc2626)" : "var(--color-brand-700, #1d4ed8)" }}>
+                  {diff < 0 ? `รับขาดจากคงค้าง ${Math.abs(diff)} ${d.unit}` : `รับเกินคงค้าง ${diff} ${d.unit}`}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* สรุป */}
+      <div className="dc-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "grid", gap: 4 }}>
+          <div style={{ fontSize: 13, color: "#71717a" }}>รวมรับเข้าจริง</div>
+          <div style={{ fontSize: 24, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{totalReceived} ชิ้น</div>
+          {totalDamaged > 0 && (
+            <div style={{ fontSize: 13, color: "var(--color-danger, #dc2626)", fontVariantNumeric: "tabular-nums" }}>
+              เสียหาย {totalDamaged} ชิ้น
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: "#fdecea",
+            color: "#c0392b",
+            border: "1px solid #f5c6c0",
+            borderRadius: 12,
+            padding: "12px 14px",
+            fontSize: 14,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+          }}
+        >
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>{error}{po.isChina && error.includes("ค่าขนส่ง") ? " — ไปบันทึกการจ่ายค่าขนส่งที่หน้าใบสั่งซื้อก่อน" : ""}</span>
+        </div>
+      )}
+
+      {/* ลงคลังแล้ว แต่ TRCloud ยังไม่เข้า */}
+      {trcloudPending && (
+        <div
+          className="dc-card"
+          style={{ background: "#fef9e7", border: "1px solid #f4d77e", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+        >
+          <div style={{ fontSize: 14, color: "#92660a", fontWeight: 600 }}>
+            รับเข้าคลังแล้ว · บัญชี (TRCloud) ยังไม่เข้า — เปิดใบเพื่อกดส่งซ้ำ
+            {trcloudPending.reason && (
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: "#a9810f", marginTop: 2 }}>เหตุผล: {trcloudPending.reason}</div>
+            )}
+          </div>
+          <Button type="button" size="lg" onClick={() => router.push(`/dc/office/receipts/${trcloudPending.grnId}`)}>
+            เปิดใบรับสินค้า
+          </Button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button type="submit" size="lg" loading={pending} className="flex-1">
+          <PackageCheck size={18} /> รับเข้าคลัง ({totalReceived} ชิ้น)
+        </Button>
+        <Button type="button" variant="outline" size="lg" onClick={() => router.push("/dc/office/receipts")} disabled={pending}>
+          ยกเลิก
+        </Button>
+      </div>
+
+      {/* ทางออกไปโหมดรอง (รับของไม่มีใบสั่งซื้อ) — ทำให้เป็นลิงก์เล็ก ๆ ไม่เด่น */}
+      <div style={{ textAlign: "center" }}>
+        <button
+          type="button"
+          onClick={onSwitchToNoPo}
+          style={{ background: "none", border: "none", padding: 0, color: "#71717a", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}
+        >
+          ของชิ้นนี้ไม่มีใบสั่งซื้อ? → รับของไม่มีใบสั่งซื้อ
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "3px 10px",
+  borderRadius: 999,
+  background: "#f4f4f5",
+  color: "#3f3f46",
+  fontSize: 12.5,
+  fontWeight: 700,
+};
 
 const selectStyle: React.CSSProperties = {
   height: 48,

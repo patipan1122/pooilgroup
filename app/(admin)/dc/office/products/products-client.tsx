@@ -4,6 +4,7 @@
 // ตรงตาม prototype DC Redesign v2.dc.html (isProducts) + เพิ่มมุมมอง "ตาราง" (CEO ขอ).
 import { useState, useRef } from "react";
 import Link from "next/link";
+import { DataTable } from "@/components/ui/data-table";
 
 type SvgProps = { size?: number; sw?: number; stroke?: string; fill?: string; children: React.ReactNode };
 function Svg({ size = 16, sw = 1.8, stroke = "currentColor", fill = "none", children }: SvgProps) {
@@ -187,51 +188,47 @@ function GridView({ rows }: { rows: ProductRow[] }) {
   );
 }
 
-const COLS = "2.3fr 1fr .7fr .85fr .9fr 26px";
+// ตาราง — ใช้ <DataTable> จริง (real <table> w-full ใน overflow-x-auto, auto-sizing)
+// แทน fake grid เดิม (fr/auto ไม่มี min-width:0 → คอลัมน์ยาวดันเหลื่อมซ้อน header).
 function TableView({ rows }: { rows: ProductRow[] }) {
   return (
-    <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 15, boxShadow: "0 1px 2px rgba(30,42,68,.04)", overflow: "hidden", marginTop: 14 }}>
-      <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 14, padding: "12px 18px", borderBottom: "1px solid var(--border)", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em", background: "#FCFAF7", alignItems: "center" }}>
-        <span>สินค้า</span>
-        <span>หมวด</span>
-        <span>หน่วย</span>
-        <span style={{ textAlign: "right" }}>คงเหลือ</span>
-        <span style={{ textAlign: "center" }}>สถานะ</span>
-        <span />
-      </div>
-      {rows.map((p) => (
-        <Link
-          key={p.id}
-          href={`/dc/office/products/${p.id}`}
-          className="dcx-trow"
-          style={{ display: "grid", gridTemplateColumns: COLS, gap: 14, padding: "13px 18px", borderBottom: "1px solid var(--border)", alignItems: "center", fontSize: 13.5 }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, background: p.catSoft, color: p.catC, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Svg size={16} sw={1.5}>{IcImage}</Svg>
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
-              <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{p.sku}</div>
-            </div>
-          </div>
-          <span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: p.catC, background: p.catSoft, padding: "2px 9px", borderRadius: 6 }}>{p.catLabel}</span>
-          </span>
-          <span style={{ color: "var(--ink2)" }}>{p.unit}</span>
-          <span className="num" style={{ textAlign: "right", fontWeight: 700, color: p.low ? "#DC5B53" : "var(--ink)" }}>{p.onhand}</span>
-          <span style={{ textAlign: "center" }}>
-            {p.low ? (
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FEF1DE", padding: "2px 9px", borderRadius: 20 }}>ใกล้หมด</span>
+    <div style={{ marginTop: 14 }}>
+      <DataTable
+        columns={[
+          { key: "name", header: "สินค้า" },
+          { key: "cat", header: "หมวด" },
+          { key: "unit", header: "หน่วย" },
+          { key: "onhand", header: "คงเหลือ", align: "right" },
+          { key: "status", header: "สถานะ", align: "center" },
+        ]}
+        rows={rows.map((p) => ({
+          key: p.id,
+          href: `/dc/office/products/${p.id}`,
+          cells: {
+            name: (
+              <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                <span style={{ width: 30, height: 30, borderRadius: 8, background: p.catSoft, color: p.catC, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Svg size={16} sw={1.5}>{IcImage}</Svg>
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--ink)" }}>{p.name}</div>
+                  <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{p.sku}</div>
+                </div>
+              </div>
+            ),
+            cat: (
+              <span style={{ display: "inline-block", whiteSpace: "nowrap", fontSize: 11, fontWeight: 600, color: p.catC, background: p.catSoft, padding: "2px 9px", borderRadius: 6 }}>{p.catLabel}</span>
+            ),
+            unit: <span style={{ whiteSpace: "nowrap", color: "var(--ink2)" }}>{p.unit}</span>,
+            onhand: <span className="num" style={{ fontWeight: 700, color: p.low ? "#DC5B53" : "var(--ink)" }}>{p.onhand}</span>,
+            status: p.low ? (
+              <span style={{ display: "inline-block", whiteSpace: "nowrap", fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FEF1DE", padding: "2px 9px", borderRadius: 20 }}>ใกล้หมด</span>
             ) : (
-              <span style={{ fontSize: 11, fontWeight: 600, color: "#1F8A55", background: "#E1F0E8", padding: "2px 9px", borderRadius: 20 }}>ปกติ</span>
-            )}
-          </span>
-          <span style={{ display: "flex", justifyContent: "flex-end", color: "var(--muted)" }}>
-            <Svg size={15} sw={2}><path d="M9 6l6 6-6 6" /></Svg>
-          </span>
-        </Link>
-      ))}
+              <span style={{ display: "inline-block", whiteSpace: "nowrap", fontSize: 11, fontWeight: 600, color: "#1F8A55", background: "#E1F0E8", padding: "2px 9px", borderRadius: 20 }}>ปกติ</span>
+            ),
+          },
+        }))}
+      />
     </div>
   );
 }

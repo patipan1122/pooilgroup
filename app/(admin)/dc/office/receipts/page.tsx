@@ -9,6 +9,7 @@ import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
 import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { DataTable } from "@/components/ui/data-table";
 
 export const dynamic = "force-dynamic";
 
@@ -67,8 +68,6 @@ export default async function DcReceiptsPage() {
     };
   });
 
-  const GRID = "1.1fr 1fr 1.1fr 1fr auto auto auto";
-
   return (
     <DcOfficeShell
       active="grn"
@@ -110,35 +109,52 @@ export default async function DcReceiptsPage() {
           </>
         ) : null}
 
-        {/* ประวัติการรับเข้า */}
+        {/* ประวัติการรับเข้า — ตารางจริง (DataTable) แทน fake grid (#11: คอลัมน์ทับกันเวลาข้อความยาว) */}
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>ประวัติการรับเข้า</div>
-        {rows.length === 0 ? (
-          <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 15, padding: "40px 20px", textAlign: "center", color: "var(--muted)" }}>
-            <PackageCheck size={26} style={{ marginBottom: 8, opacity: 0.6 }} />
-            <div style={{ fontSize: 14 }}>ยังไม่มีใบรับสินค้า — เมื่อของถึงโกดัง กด “รับสินค้าเข้า” เพื่อสร้างใบแรก</div>
-          </div>
-        ) : (
-          <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 15, boxShadow: "0 1px 2px rgba(30,42,68,.04)", overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 14, padding: "13px 20px", borderBottom: "1px solid var(--border)", fontSize: 11.5, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em", background: "#FCFAF7" }}>
-              <span>เลข GRN</span><span>อ้างอิง PO</span><span>ผู้ขาย</span><span>คลัง</span><span>วันที่</span><span style={{ textAlign: "center" }}>รับ</span><span style={{ textAlign: "right" }}>สถานะ</span>
-            </div>
-            {rows.map((g) => (
-              <Link key={g.id} href={`/dc/office/receipts/${g.id}`} className="dcx-trow" style={{ display: "grid", gridTemplateColumns: GRID, gap: 14, padding: "15px 20px", borderBottom: "1px solid var(--border)", alignItems: "center", fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{g.grnCode}</span>
-                <span className="num" style={{ color: "var(--ink2)" }}>{g.poCode}</span>
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.vendor}</span>
-                <span style={{ color: "var(--ink2)" }}>{g.wh}</span>
-                <span style={{ color: "var(--ink2)" }}>{g.date}</span>
-                <span className="num" style={{ textAlign: "center", color: "var(--ink2)" }}>{g.recvText}</span>
-                <span style={{ textAlign: "right" }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: g.ok ? "#1F8A55" : "#B45309", background: g.ok ? "#E1F0E8" : "#FEF1DE", padding: "2px 9px", borderRadius: 20 }}>
-                    {g.ok ? "รับครบ" : "รับไม่ครบ"}
-                  </span>
+        <DataTable
+          columns={[
+            { key: "grn", header: "เลข GRN" },
+            { key: "po", header: "อ้างอิง PO" },
+            { key: "vendor", header: "ผู้ขาย" },
+            { key: "wh", header: "คลัง" },
+            { key: "date", header: "วันที่" },
+            { key: "recv", header: "รับ", align: "center" },
+            { key: "status", header: "สถานะ", align: "right" },
+          ]}
+          rows={rows.map((g) => ({
+            key: g.id,
+            href: `/dc/office/receipts/${g.id}`,
+            cells: {
+              grn: <span className="font-semibold text-zinc-900">{g.grnCode}</span>,
+              po: <span className="tabular-nums text-zinc-500">{g.poCode}</span>,
+              vendor: <span className="text-zinc-700">{g.vendor}</span>,
+              wh: <span className="text-zinc-500">{g.wh}</span>,
+              date: <span className="text-zinc-500">{g.date}</span>,
+              recv: <span className="tabular-nums text-zinc-500">{g.recvText}</span>,
+              status: (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: g.ok ? "#1F8A55" : "#B45309",
+                    background: g.ok ? "#E1F0E8" : "#FEF1DE",
+                    padding: "2px 9px",
+                    borderRadius: 20,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {g.ok ? "รับครบ" : "รับไม่ครบ"}
                 </span>
-              </Link>
-            ))}
-          </div>
-        )}
+              ),
+            },
+          }))}
+          emptyState={
+            <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 15, padding: "40px 20px", textAlign: "center", color: "var(--muted)" }}>
+              <PackageCheck size={26} style={{ marginBottom: 8, opacity: 0.6 }} />
+              <div style={{ fontSize: 14 }}>ยังไม่มีใบรับสินค้า — เมื่อของถึงโกดัง กด “รับสินค้าเข้า” เพื่อสร้างใบแรก</div>
+            </div>
+          }
+        />
       </div>
     </DcOfficeShell>
   );

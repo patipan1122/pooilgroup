@@ -7611,6 +7611,7 @@ enum DcPoStatus {
   SHIPPED
   ARRIVED_TH
   AT_WAREHOUSE
+  READY_TO_RECEIVE
   RECEIVED
 
   @@schema("dc")
@@ -7637,6 +7638,21 @@ enum DcShipmentMode {
   TRUCK
   SEA
 
+  @@schema("dc")
+}
+
+// เรตค่าขนส่งจีน-ไทย ต่อ 1 คิว (m³) แยกตามวิธีส่ง (รถ/เรือ) — ใช้คิดค่าขนส่งอัตโนมัติ
+// freight = cbmTotal × rate (#4 · CEO 2026-06-29) · 1 แถวต่อ mode ต่อ org
+model DcFreightRate {
+  id               String         @id @default(uuid()) @db.Uuid
+  orgId            String         @map("org_id") @db.Uuid
+  mode             DcShipmentMode
+  ratePerCbmSatang Int            @default(0) @map("rate_per_cbm_satang")
+  updatedByUserId  String?        @map("updated_by_user_id") @db.Uuid
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, mode])
+  @@map("freight_rates")
   @@schema("dc")
 }
 

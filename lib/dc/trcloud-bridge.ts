@@ -20,6 +20,7 @@ import { DcMoveKind, DcPostStatus, DcOutboxStatus } from "@/lib/generated/prisma
 import { recordMovement } from "@/lib/dc/stock";
 import { sourceKey } from "@/lib/dc/codes";
 import { computeLandedCost, type LandedCostInputLine } from "@/lib/dc/landed-cost";
+import { loadFreightRates } from "@/lib/dc/freight-rates";
 import { pushStockIn, type StockInLine } from "@/lib/ledger/trcloud-inventory";
 
 const IMPORT_VAT_RATE = 0.07;
@@ -145,7 +146,6 @@ export async function buildCostLayersForGrn(grnId: string): Promise<BuildCostLay
         : 1;
   const fxDate = shipment?.fxDate ?? new Date();
 
-  const freightThbSatang = (shipment?.chinaFreightThbSatang ?? 0) + (shipment?.intlFreightThbSatang ?? 0);
   const dutyThbSatang = shipment?.dutyThbSatang ?? 0;
   const brokerThbSatang = shipment?.brokerThbSatang ?? 0;
   const insuranceThbSatang = shipment?.insuranceThbSatang ?? 0;
@@ -159,6 +159,24 @@ export async function buildCostLayersForGrn(grnId: string): Promise<BuildCostLay
     const cbm = shipCbm != null ? shipCbm : pl?.cbmPerUnit != null ? dec(pl.cbmPerUnit) : null;
     return { productId: gl.productId, qty: gl.qtyReceived, goodsCnyUnit, cbm };
   });
+
+  // #4 (CEO 2026-06-29): ค่าขนส่งจีน-ไทย เข้าต้นทุน landed = ปริมาตร(CBM) ของ "ใบรับนี้" × เรตต่อคิว.
+  //   คิดตามวอลุ่มที่รับจริงในใบนี้ → รับแบ่งหลายงวด (PARTIAL) ก็ไม่คิดค่าขนส่งซ้ำ (แต่ละใบจ่ายตามวอลุ่มตัวเอง).
+  //   เรตเลือกจาก mode ของชิปเมนต์ในใบ PO (ใบแรก) · ยังไม่ตั้งเรต → fallback ยอด freight เดิมที่กรอกมือไว้.
+  const poShipments = grn.poId
+    ? await prisma.dcShipment.findMany({
+        where: { orgId, poId: grn.poId },
+        select: { mode: true, chinaFreightThbSatang: true, intlFreightThbSatang: true },
+      })
+    : [];
+  const freightRates = await loadFreightRates(orgId);
+  const ratesSet = freightRates.TRUCK > 0 || freightRates.SEA > 0;
+  const poMode = poShipments[0]?.mode ?? "SEA";
+  const ratePerCbm = poMode === "SEA" ? freightRates.SEA : freightRates.TRUCK;
+  const grnVolume = engineLines.reduce((s, l) => s + (l.cbm != null && l.cbm > 0 ? l.cbm * l.qty : 0), 0);
+  const freightThbSatang = ratesSet
+    ? Math.round(grnVolume * ratePerCbm)
+    : (shipment?.chinaFreightThbSatang ?? 0) + (shipment?.intlFreightThbSatang ?? 0);
 
   const computed = computeLandedCost({
     lines: engineLines,

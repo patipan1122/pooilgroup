@@ -89,8 +89,11 @@ export async function createGrn(input: CreateGrnInput): Promise<GrnCreateResult>
   const warehouseId = cleanStr(input.warehouseId);
   if (!warehouseId) return { ok: false, error: "กรุณาเลือกคลังปลายทาง" };
 
-  const shipmentId = cleanStr(input.shipmentId);
-  const poId = cleanStr(input.poId);
+  // #12 (CEO 2026-06-29): ช่องนี้ = "รับของไม่มีใบสั่งซื้อ" เท่านั้น (ของแถม/ตัวอย่าง/ซื้อสด).
+  //   ห้ามผูก PO/ชิปเมนต์ผ่านช่องนี้เด็ดขาด → กันการรับซ้ำใบ PO เดิม (สต๊อกซ้อน).
+  //   ของที่มี PO ให้รับผ่านใบสั่งซื้อ (receivePo) ซึ่งมีด่านกันรับซ้ำครบ.
+  const shipmentId: string | null = null;
+  const poId: string | null = null;
 
   // คลังต้องเป็นของ org นี้
   const wh = await prisma.dcWarehouse.findFirst({
@@ -98,22 +101,6 @@ export async function createGrn(input: CreateGrnInput): Promise<GrnCreateResult>
     select: { id: true },
   });
   if (!wh) return { ok: false, error: "ไม่พบคลังนี้ในองค์กรของคุณ" };
-
-  // ชิปเมนต์/PO (ถ้าระบุ) ต้องเป็นของ org นี้
-  if (shipmentId) {
-    const s = await prisma.dcShipment.findFirst({
-      where: { id: shipmentId, orgId },
-      select: { id: true },
-    });
-    if (!s) return { ok: false, error: "ไม่พบชิปเมนต์นี้ในองค์กรของคุณ" };
-  }
-  if (poId) {
-    const p = await prisma.dcPurchaseOrder.findFirst({
-      where: { id: poId, orgId },
-      select: { id: true },
-    });
-    if (!p) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
-  }
 
   const rawLines = (input.lines ?? []).filter((l) => cleanStr(l.productId));
   if (rawLines.length === 0) {
