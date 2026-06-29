@@ -17,9 +17,8 @@ export const dynamic = "force-dynamic";
 type Card = { href: string; label: string; hint: string; icon: LucideIcon; admin?: boolean };
 
 const CARDS: Card[] = [
-  { href: "/dc/office/purchasing", label: "สั่งซื้อจีน", hint: "ใบสั่งซื้อ · รูป · ราคาหยวน · CBM", icon: ShoppingCart },
-  { href: "/dc/office/suppliers", label: "ผู้ขาย", hint: "ทะเบียนซัพพลายเออร์จีน", icon: Building2 },
-  { href: "/dc/office/shipments", label: "ขนส่ง / ชิปเมนต์", hint: "ค่าส่ง CBM · อากร · ต้นทุนนำเข้า", icon: Ship },
+  // #16 ผู้ขาย + ขนส่ง ยุบเข้าใต้ "สั่งซื้อจีน" (แท็บ PurchasingSubnav) — ไม่แยกการ์ด/เมนู
+  { href: "/dc/office/purchasing", label: "สั่งซื้อจีน", hint: "ใบสั่งซื้อ · ผู้ขาย · ขนส่ง/ชิปเมนต์ · CBM", icon: ShoppingCart },
   { href: "/dc/office/receipts", label: "ใบรับสินค้า (GRN)", hint: "รับของเข้าคลัง · ดูย้อนหลัง", icon: ClipboardCheck },
   { href: "/dc/office/transfers", label: "การโอน", hint: "ยืนยันรับโอน · ของระหว่างทาง", icon: Truck },
   { href: "/dc/office/products", label: "สินค้า", hint: "ทะเบียนสินค้า · บาร์โค้ด · อะไหล่/ขาย", icon: Boxes },
