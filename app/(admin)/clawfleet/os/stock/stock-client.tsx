@@ -12,11 +12,14 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
-  Boxes, ArrowRight, Plus,
+  Boxes, ArrowRight, Plus, Trash2, Inbox,
 } from "lucide-react";
-import { Card, Pill, IconBox, Modal } from "@/components/clawfleet/os/kit";
+import { Card, Pill, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
-import { transferStock, receiveStock } from "@/lib/clawfleet/stock-actions";
+import {
+  transferStock, receiveStock, submitStockCount, recordLoss,
+  createShipment, confirmShipmentReceived,
+} from "@/lib/clawfleet/stock-actions";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
 export type ReceiptSeed = { items: string; date: string; status: "received" | "pending" | "diff" };
@@ -32,6 +35,28 @@ export type BranchStockSeed = {
 /** ตัวเลือกจริงจาก DB สำหรับฟอร์มที่ต้องเขียนกลับ (โอน/ตรวจรับ) — ต้องมี UUID จริง */
 export type BranchOption = { id: string; name: string };
 export type ProductOption = { id: string; name: string; unitCostCents: number };
+
+/* ── เอกสารจริงสำหรับ 3 แท็บใหม่ + การกระจาย + ยอดคลังกลางจริง (จาก page.tsx) ── */
+export type DocReceiptSeed = {
+  id: string; code: string; supplier: string | null;
+  itemsCount: number; totalCostCents: number; createdAt: string;
+};
+export type DocCountSeed = {
+  id: string; code: string; countedBy: string | null;
+  itemsCounted: number; totalDiff: number; countedAt: string;
+};
+export type DocLossSeed = {
+  id: string; code: string; reasonLabel: string;
+  itemsCount: number; totalCostCents: number; reportedAt: string;
+};
+export type WarehouseRowSeed = {
+  id: string; name: string; cat: string; qty: number; recvISO: string | null;
+  dist: { branch: string; qty: number }[];
+};
+export type ShipmentSeed = {
+  id: string; to: string; status: string; unitsCount: number; createdAt: string;
+  lines: { lineId: string; name: string; sent: number; received: number | null }[];
+};
 
 /* ───────────────────────── view models ───────────────────────── */
 type BranchRow = {
@@ -194,14 +219,28 @@ function ageTag(days: number): WarehouseItem["tag"] {
 const TH_ITEM: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9AA1AB" };
 
 /* ───────────────────────── main ───────────────────────── */
+type StockTab = "overview" | "receipts" | "counts" | "losses" | "dist";
+
 export function StockClient({
   branches,
   realBranches,
   products,
+  receiptDocs,
+  countDocs,
+  lossDocs,
+  warehouseRows,
+  shipments,
+  docBranchId,
 }: {
   branches: BranchStockSeed[];
   realBranches: BranchOption[];
   products: ProductOption[];
+  receiptDocs: DocReceiptSeed[];
+  countDocs: DocCountSeed[];
+  lossDocs: DocLossSeed[];
+  warehouseRows: WarehouseRowSeed[];
+  shipments: ShipmentSeed[];
+  docBranchId: string | null;
 }) {
   const empty = branches.length === 0;
 
@@ -228,7 +267,18 @@ export function StockClient({
     });
   }, [branches, empty]);
 
-  const [tab, setTab] = useState<"overview" | "dist">("overview");
+  const [tab, setTab] = useState<StockTab>("overview");
+
+  // สาขาเริ่มต้นของฟอร์ม/เอกสาร = สาขาที่ server โหลดเอกสารจริงมา (ถ้าไม่มี → สาขาแรก)
+  const defaultBranchId = docBranchId ?? realBranches[0]?.id ?? "";
+
+  const tabs: { k: StockTab; label: string }[] = [
+    { k: "overview", label: "ภาพรวม" },
+    { k: "receipts", label: "รับของ" },
+    { k: "counts", label: "นับสต็อก" },
+    { k: "losses", label: "ตัดของเสีย" },
+    { k: "dist", label: "การกระจาย" },
+  ];
 
   return (
     <div>
@@ -239,8 +289,8 @@ export function StockClient({
       )}
 
       {/* tab switcher */}
-      <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4, marginBottom: 18 }}>
-        {([["overview", "ภาพรวม"], ["dist", "การกระจาย"]] as const).map(([k, label]) => {
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4, marginBottom: 18, width: "fit-content" }}>
+        {tabs.map(({ k, label }) => {
           const active = tab === k;
           return (
             <button
@@ -258,11 +308,47 @@ export function StockClient({
         })}
       </div>
 
-      {tab === "overview"
-        ? <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} />
-        : <DistributionTab realBranches={realBranches} products={products} />}
+      {tab === "overview" && (
+        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} />
+      )}
+      {tab === "receipts" && (
+        <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+      )}
+      {tab === "counts" && (
+        <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+      )}
+      {tab === "losses" && (
+        <LossesTab docs={lossDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+      )}
+      {tab === "dist" && (
+        <DistributionTab realBranches={realBranches} products={products} shipments={shipments} defaultBranchId={defaultBranchId} />
+      )}
     </div>
   );
+}
+
+/* แปลง category enum → label ไทย (สำหรับตารางคลังกลางจริง) */
+const CAT_TH: Record<string, string> = {
+  PLUSH: "ตุ๊กตา", TOY: "ของเล่น", UTILITY: "ของใช้", MYSTERY_BOX: "กล่องสุ่ม",
+  MODEL: "โมเดล", KEYCHAIN: "พวงกุญแจ", SNACK: "ขนม", OTHER: "อื่น ๆ",
+};
+
+/* แปลง WarehouseRowSeed (จริง) → WarehouseItem (view-model ที่ modal ใช้) */
+function toWarehouseItem(r: WarehouseRowSeed): WarehouseItem {
+  const ageDays = r.recvISO
+    ? Math.max(0, Math.round((Date.now() - new Date(r.recvISO).getTime()) / 86_400_000))
+    : 0;
+  return {
+    id: r.id,
+    name: r.name,
+    cat: CAT_TH[r.cat] ?? r.cat,
+    qty: r.qty,
+    recvISO: r.recvISO ?? "",
+    tag: ageTag(ageDays),
+    ageDays,
+    dist: r.dist,
+    hist: [], // ใบกระจายจริงดูได้ในแท็บ "การกระจาย" — modal นี้โชว์การกระจายปัจจุบัน
+  };
 }
 
 /* ───────────────────────── OVERVIEW ───────────────────────── */
@@ -270,17 +356,26 @@ function OverviewTab({
   branchRows,
   realBranches,
   products,
+  warehouseRows,
 }: {
   branchRows: BranchRow[];
   realBranches: BranchOption[];
   products: ProductOption[];
+  warehouseRows: WarehouseRowSeed[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
   const machineWarn = SAMPLE_MACHINES.filter((m) => m.ageDays >= 40).length;
 
+  // คลังกลางจริง — ถ้า DB มีของจริงใช้จริง · ว่างจริงค่อย fallback ตัวอย่าง
+  const hasRealWarehouse = warehouseRows.length > 0;
+  const warehouse: WarehouseItem[] = useMemo(
+    () => (hasRealWarehouse ? warehouseRows.map(toWarehouseItem) : SAMPLE_WAREHOUSE),
+    [hasRealWarehouse, warehouseRows],
+  );
+
   const flow = [
-    { title: "คลังกลาง", sub: "1 แห่ง · 6 รายการหลัก", bg: "#EEF0FE", color: "#4F46E5", icon: <Warehouse size={16} /> },
+    { title: "คลังกลาง", sub: `1 แห่ง · ${hasRealWarehouse ? warehouse.length : 6} รายการหลัก`, bg: "#EEF0FE", color: "#4F46E5", icon: <Warehouse size={16} /> },
     { title: "สต็อกสาขา", sub: `${branchRows.length} สาขา`, bg: "#E7F4EC", color: "#15803D", icon: <Store size={16} /> },
     { title: "ในตู้คีบ", sub: "หมุนเวียน FIFO", bg: "#FCF1E2", color: "#B45309", icon: <Monitor size={16} /> },
   ];
@@ -391,16 +486,18 @@ function OverviewTab({
       {/* central warehouse table */}
       <Card
         title="คลังกลาง · สินค้าคงคลัง"
-        sub="กดสินค้าเพื่อดูรายละเอียด · กระจายตามสาขา · ประวัติรับเข้า"
+        sub={hasRealWarehouse
+          ? "ยอดคงคลัง (ยังไม่อยู่ในตู้) รวมทุกสาขา · กดสินค้าเพื่อดูการกระจายตามสาขา"
+          : "ตัวอย่าง — ยังไม่มีของจริงในคลัง · กดสินค้าเพื่อดูรายละเอียด"}
         pad={false}
         style={{ marginBottom: 18 }}
       >
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 640 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>คงเหลือ</span><span style={{ textAlign: "right" }}>รับเข้าเมื่อ</span><span style={{ textAlign: "right" }}>อายุ</span><span style={{ textAlign: "right" }}>อายุสินค้า</span>
+              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>คงเหลือ</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>อายุ</span><span style={{ textAlign: "right" }}>อายุสินค้า</span>
             </div>
-            {SAMPLE_WAREHOUSE.map((w) => {
+            {warehouse.map((w) => {
               const t = AGE_TONE[w.tag];
               const low = w.qty <= 20;
               return (
@@ -411,8 +508,8 @@ function OverviewTab({
                   </span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{w.cat}</span>
                   <span className="num" style={{ textAlign: "right", fontWeight: 700, color: low ? "#B42318" : "#1A1D21" }}>{num(w.qty)}</span>
-                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(w.recvISO)}</span>
-                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.ageDays} วัน</span>
+                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? fmtDate(w.recvISO) : "—"}</span>
+                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? `${w.ageDays} วัน` : "—"}</span>
                   <span style={{ textAlign: "right" }}>
                     <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: t.bg, color: t.color }}>{w.tag}</span>
                   </span>
@@ -634,7 +731,9 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>กระจายอยู่ที่สาขา (สต็อกสาขา)</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-            {item.dist.map((d) => (
+            {item.dist.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#9AA1AB" }}>ยังไม่มีของกระจายไปสาขา</div>
+            ) : item.dist.map((d) => (
               <div key={d.branch} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ width: 74, flex: "0 0 74px", fontSize: 12, color: "#454B54" }}>{d.branch}</span>
                 <span style={{ flex: 1, height: 8, background: "#F1F2F5", borderRadius: 6, overflow: "hidden" }}>
@@ -644,6 +743,8 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
               </div>
             ))}
           </div>
+          {item.hist.length > 0 && (
+          <>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>ประวัติการกระจายสินค้านี้</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {item.hist.map((h) => {
@@ -660,93 +761,595 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
               );
             })}
           </div>
+          </>
+          )}
         </div>
       )}
     </Modal>
   );
 }
 
-/* ───────────────────────── DISTRIBUTION ───────────────────────── */
-type ShipFilter = "all" | "in_transit" | "pending" | "received" | "received_diff";
+/* ───────────────────────── shared: doc-form line editor ───────────────────────── */
+type FormLine = { productId: string; qty: string };
 
-function DistributionTab({ realBranches, products }: { realBranches: BranchOption[]; products: ProductOption[] }) {
+function LineEditor({
+  products,
+  lines,
+  setLines,
+  qtyLabel = "จำนวน",
+}: {
+  products: ProductOption[];
+  lines: FormLine[];
+  setLines: (fn: (prev: FormLine[]) => FormLine[]) => void;
+  qtyLabel?: string;
+}) {
+  const setAt = (i: number, patch: Partial<FormLine>) =>
+    setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const removeAt = (i: number) => setLines((prev) => prev.filter((_, j) => j !== i));
+  const add = () => setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "" }]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {lines.map((l, i) => (
+        <div key={i} className="grid grid-cols-[1fr_96px_36px] gap-2 items-end">
+          <div>
+            {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+            <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+              <option value="">— เลือกสินค้า —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>{qtyLabel}</label>}
+            <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+          </div>
+          <button
+            type="button"
+            onClick={() => removeAt(i)}
+            disabled={lines.length <= 1}
+            title="ลบรายการ"
+            style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+      >
+        <Plus size={13} /> เพิ่มรายการ
+      </button>
+    </div>
+  );
+}
+
+/** parse + validate form lines → {productId, qty} (qty>0) · คืน error ถ้าไม่ผ่าน */
+function parseLines(lines: FormLine[]): { ok: true; data: { productId: string; qty: number }[] } | { ok: false; error: string } {
+  const out: { productId: string; qty: number }[] = [];
+  for (const l of lines) {
+    if (!l.productId) continue;
+    const n = Number(l.qty);
+    if (l.qty.trim() === "") continue;
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return { ok: false, error: "จำนวนต้องเป็นเลขจำนวนเต็ม ≥ 0" };
+    if (n > 0) out.push({ productId: l.productId, qty: n });
+  }
+  if (out.length === 0) return { ok: false, error: "เลือกสินค้าและใส่จำนวนมากกว่า 0 อย่างน้อย 1 รายการ" };
+  return { ok: true, data: out };
+}
+
+const PRIMARY_BTN = (disabled: boolean): React.CSSProperties => ({
+  flex: 1, border: "none", cursor: disabled ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700,
+  color: "#fff", background: disabled ? "#A5A0EC" : "#4F46E5", padding: 12, borderRadius: 10,
+});
+const CANCEL_BTN = (disabled: boolean): React.CSSProperties => ({
+  border: "1px solid #E3E6EA", cursor: disabled ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600,
+  color: "#5A6270", background: "#fff", padding: "12px 18px", borderRadius: 10,
+});
+
+function ErrorRow({ msg }: { msg: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#B42318", background: "#FCEDEC", borderRadius: 10, padding: "9px 12px" }}>
+      <AlertTriangle size={14} style={{ flex: "0 0 14px" }} /> {msg}
+    </div>
+  );
+}
+
+function NeedDataBanner({ msg }: { msg: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+      <AlertTriangle size={15} style={{ flex: "0 0 15px" }} /> {msg}
+    </div>
+  );
+}
+
+/* ───────────────────────── RECEIPTS (รับของ) ───────────────────────── */
+function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
+  docs: DocReceiptSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+}) {
   const router = useRouter();
-  const [shipments, setShipments] = useState<Shipment[]>(SAMPLE_SHIPMENTS);
-  const [filter, setFilter] = useState<ShipFilter>("all");
-  const [detail, setDetail] = useState<Shipment | null>(null);
+  const [adding, setAdding] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [confirmError, setConfirmError] = useState<string | null>(null);
-  const canReceive = realBranches.length >= 1 && products.length >= 1;
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const [supplier, setSupplier] = useState("");
+  const [note, setNote] = useState("");
+  const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  // ต้นทุนต่อชิ้น (สตางค์) ต่อรายการ — เริ่มจากต้นทุนเฉลี่ยปัจจุบันของสินค้า (ห้าม 0)
+  const [costs, setCosts] = useState<string[]>([""]);
+  const [error, setError] = useState<string | null>(null);
+  const canCreate = realBranches.length >= 1 && products.length >= 1;
 
-  const stats = useMemo(() => {
-    const by = (s: ShipStatus) => shipments.filter((x) => x.status === s).length;
-    return [
-      { label: "กำลังส่ง", n: by("in_transit"), c: "#4F46E5" },
-      { label: "รอสาขารับ", n: by("pending"), c: "#B45309" },
-      { label: "รับครบ · ตรง", n: by("received"), c: "#15803D" },
-      { label: "รับแล้ว · ไม่ตรง", n: by("received_diff"), c: "#B42318" },
-    ];
-  }, [shipments]);
+  function reset() {
+    setBranchId(defaultBranchId); setSupplier(""); setNote("");
+    setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setCosts([""]); setError(null);
+  }
+  function setLinesWrap(fn: (prev: FormLine[]) => FormLine[]) {
+    setLines((prev) => {
+      const next = fn(prev);
+      // sync costs array length
+      setCosts((c) => next.map((_, i) => c[i] ?? ""));
+      return next;
+    });
+  }
 
-  const filtered = filter === "all" ? shipments : shipments.filter((s) => s.status === filter);
-
-  const chips: { k: ShipFilter; label: string }[] = [
-    { k: "all", label: "ทั้งหมด" },
-    { k: "in_transit", label: "กำลังส่ง" },
-    { k: "pending", label: "รอสาขารับ" },
-    { k: "received", label: "รับครบ" },
-    { k: "received_diff", label: "ไม่ตรง" },
-  ];
-
-  // ตรวจรับจริง — บันทึกของที่รับเข้าคลังสาขาเป็นรายการรับเข้า (receiveStock)
-  //   branchId = สาขาที่รับ (เลือกใน modal) · แต่ละแถวจับคู่กับสินค้าจริง + จำนวนที่รับจริง
-  //   diff (รับไม่ครบ) = รับเข้าตามจำนวนจริง → สถานะ received_diff เพื่อให้เห็นว่าต่างจากใบโอน
-  function doReceive(
-    shipment: Shipment,
-    branchId: string,
-    lines: { productId: string; quantity: number; productName: string }[],
-    isDiff: boolean,
-  ) {
-    setConfirmError(null);
-    const payloadLines = lines.filter((l) => l.productId && l.quantity > 0);
-    if (!branchId) { setConfirmError("เลือกสาขาที่รับสินค้าก่อน"); return; }
-    if (payloadLines.length === 0) { setConfirmError("จับคู่สินค้าและใส่จำนวนที่รับจริงอย่างน้อย 1 รายการ"); return; }
-
-    // ต้นทุนต่อชิ้น = ต้นทุนเฉลี่ยปัจจุบันของสินค้า (ห้ามส่ง 0 → จะดึงต้นทุนเฉลี่ยถ่วงน้ำหนักให้เพี้ยน)
+  function submit() {
+    setError(null);
+    const parsed = parseLines(lines);
+    if (!parsed.ok) { setError(parsed.error); return; }
     const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+    const payloadLines = parsed.data.map((d, i) => {
+      const typed = Number(costs[i]);
+      const cents = costs[i] && Number.isFinite(typed) && typed >= 0 ? Math.round(typed * 100) : (costMap.get(d.productId) ?? 0);
+      return { productId: d.productId, quantity: d.qty, unitCostCents: cents };
+    });
     startTransition(async () => {
-      const res = await receiveStock({
-        branchId,
-        note: `ตรวจรับใบโอน ${shipment.id}${isDiff ? " · รับไม่ตรงใบโอน" : ""}`,
-        lines: payloadLines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitCostCents: costMap.get(l.productId) ?? 0 })),
-      });
-      if (!res.ok) { setConfirmError(res.error); return; }
-      // อัปเดต UI ให้สะท้อนผลที่บันทึกแล้ว (DB เขียนจริงผ่าน receiveStock)
-      const recvMap = new Map(payloadLines.map((l) => [l.productName, l.quantity]));
-      setShipments((prev) => prev.map((s) =>
-        s.id === shipment.id
-          ? {
-              ...s,
-              status: isDiff ? "received_diff" : "received",
-              rows: s.rows.map((r) => ({ ...r, recv: recvMap.get(r.name) ?? r.sent })),
-              by: "คุณ (ยืนยันรับ)",
-              at: "เมื่อสักครู่",
-              note: isDiff ? "รับไม่ตรงใบโอน — บันทึกตามจำนวนที่รับจริง" : undefined,
-            }
-          : s,
-      ));
-      setDetail(null);
-      setConfirmError(null);
-      router.refresh();
+      const res = await receiveStock({ branchId, supplierName: supplier || undefined, note: note || undefined, lines: payloadLines });
+      if (!res.ok) { setError(res.error); return; }
+      setAdding(false); reset(); router.refresh();
     });
   }
 
   return (
     <div>
+      {!canCreate && <NeedDataBanner msg="ยังรับของจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
+      <DocListCard
+        title="ใบรับสินค้า (Goods Receipt)"
+        sub="บันทึกของที่รับเข้าคลังสาขา · ต้นทุนเฉลี่ยถ่วงน้ำหนักอัปเดตอัตโนมัติ"
+        onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
+        addLabel="รับของเข้า"
+        empty={docs.length === 0}
+        emptyTitle="ยังไม่มีใบรับสินค้า"
+        emptySub="กด รับของเข้า เพื่อบันทึกของที่รับเข้าคลังสาขา"
+        cols="1fr 1.2fr 0.7fr 0.9fr 0.9fr"
+        head={<><span>เลขที่</span><span>ผู้ขาย</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+      >
+        {docs.map((d) => (
+          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.9fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
+            <span style={{ color: "#454B54" }}>{d.supplier || "—"}</span>
+            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)} รายการ</span>
+            <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{bahtN(Math.round(d.totalCostCents / 100))}</span>
+            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.createdAt)}</span>
+          </div>
+        ))}
+      </DocListCard>
+
+      <Modal
+        open={adding}
+        onClose={() => { if (!pending) { setAdding(false); reset(); } }}
+        title="รับของเข้าคลังสาขา"
+        sub="เลือกสาขา + รายการสินค้า + จำนวน (ต้นทุนเว้นว่าง = ใช้ต้นทุนเฉลี่ยเดิม)"
+        width={520}
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
+            <button type="button" onClick={submit} disabled={pending} style={PRIMARY_BTN(pending)}>{pending ? "กำลังบันทึก…" : "บันทึกรับเข้า"}</button>
+            <button type="button" onClick={() => { if (!pending) { setAdding(false); reset(); } }} disabled={pending} style={CANCEL_BTN(pending)}>ยกเลิก</button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={FIELD_LABEL}>สาขาที่รับเข้า</label>
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+              {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>ผู้ขาย / ที่มา (ไม่บังคับ)</label>
+            <input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="เช่น คลังกลาง บางนา" style={FIELD_INPUT} />
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>รายการรับเข้า</label>
+            <ReceiptLineEditor products={products} lines={lines} setLines={setLinesWrap} costs={costs} setCosts={setCosts} />
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ล็อตใหม่ มิ.ย." style={FIELD_INPUT} />
+          </div>
+          {error && <ErrorRow msg={error} />}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/** line editor พิเศษสำหรับ "รับของ" — มีช่องต้นทุนต่อชิ้น (บาท) เพิ่มจากปกติ */
+function ReceiptLineEditor({ products, lines, setLines, costs, setCosts }: {
+  products: ProductOption[];
+  lines: FormLine[];
+  setLines: (fn: (prev: FormLine[]) => FormLine[]) => void;
+  costs: string[];
+  setCosts: (fn: (prev: string[]) => string[]) => void;
+}) {
+  const setAt = (i: number, patch: Partial<FormLine>) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const setCostAt = (i: number, v: string) => setCosts((prev) => prev.map((c, j) => (j === i ? v : c)));
+  const removeAt = (i: number) => { setLines((prev) => prev.filter((_, j) => j !== i)); setCosts((prev) => prev.filter((_, j) => j !== i)); };
+  const add = () => { setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "" }]); setCosts((prev) => [...prev, ""]); };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {lines.map((l, i) => {
+        const defCost = products.find((p) => p.id === l.productId)?.unitCostCents ?? 0;
+        return (
+          <div key={i} className="grid grid-cols-[1fr_70px_84px_34px] gap-2 items-end">
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+              <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+                <option value="">— เลือก —</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>จำนวน</label>}
+              <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน/ตัว (บาท)</label>}
+              <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={String(Math.round(defCost / 100))} style={FIELD_INPUT} />
+            </div>
+            <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        );
+      })}
+      <button type="button" onClick={add} style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <Plus size={13} /> เพิ่มรายการ
+      </button>
+    </div>
+  );
+}
+
+/* ───────────────────────── COUNTS (นับสต็อก) ───────────────────────── */
+function CountsTab({ docs, realBranches, products, defaultBranchId }: {
+  docs: DocCountSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+}) {
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const [note, setNote] = useState("");
+  const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  const [error, setError] = useState<string | null>(null);
+  const canCreate = realBranches.length >= 1 && products.length >= 1;
+
+  function reset() { setBranchId(defaultBranchId); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
+
+  function submit() {
+    setError(null);
+    // นับสต็อก: qty = ยอดที่นับได้จริง (อนุญาต 0 ได้) → ต้องเช็คเองว่ามีอย่างน้อย 1 บรรทัดมีสินค้า
+    const out: { productId: string; countedQty: number }[] = [];
+    for (const l of lines) {
+      if (!l.productId || l.qty.trim() === "") continue;
+      const n = Number(l.qty);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) { setError("จำนวนที่นับได้ต้องเป็นเลขจำนวนเต็ม ≥ 0"); return; }
+      out.push({ productId: l.productId, countedQty: n });
+    }
+    if (out.length === 0) { setError("เลือกสินค้าและใส่จำนวนที่นับได้อย่างน้อย 1 รายการ"); return; }
+    startTransition(async () => {
+      const res = await submitStockCount({ branchId, note: note || undefined, lines: out });
+      if (!res.ok) { setError(res.error); return; }
+      setAdding(false); reset(); router.refresh();
+    });
+  }
+
+  return (
+    <div>
+      {!canCreate && <NeedDataBanner msg="ยังนับสต็อกจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
+      <DocListCard
+        title="ใบนับสต็อก (Cycle Count)"
+        sub="นับของจริงในคลัง → ระบบปรับยอดให้ตรง · นับต่างมากจะเด้งเข้าหน้าตรวจสอบ"
+        onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
+        addLabel="นับสต็อก"
+        empty={docs.length === 0}
+        emptyTitle="ยังไม่มีใบนับสต็อก"
+        emptySub="กด นับสต็อก เพื่อบันทึกการนับของจริงในคลัง"
+        cols="1fr 1.2fr 0.7fr 0.8fr 0.9fr"
+        head={<><span>เลขที่</span><span>ผู้นับ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>ผลต่าง</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+      >
+        {docs.map((d) => (
+          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.8fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
+            <span style={{ color: "#454B54" }}>{d.countedBy || "—"}</span>
+            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCounted)} รายการ</span>
+            <span className="num" style={{ textAlign: "right", fontWeight: 700, color: d.totalDiff === 0 ? "#15803D" : "#B42318" }}>{d.totalDiff > 0 ? "+" : ""}{num(d.totalDiff)}</span>
+            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.countedAt)}</span>
+          </div>
+        ))}
+      </DocListCard>
+
+      <Modal
+        open={adding}
+        onClose={() => { if (!pending) { setAdding(false); reset(); } }}
+        title="นับสต็อกในคลังสาขา"
+        sub="ใส่จำนวนที่นับได้จริง — ระบบจะปรับยอดให้ตรง (นับเท่าเดิม = ข้าม)"
+        width={500}
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
+            <button type="button" onClick={submit} disabled={pending} style={PRIMARY_BTN(pending)}>{pending ? "กำลังบันทึก…" : "บันทึกผลนับ"}</button>
+            <button type="button" onClick={() => { if (!pending) { setAdding(false); reset(); } }} disabled={pending} style={CANCEL_BTN(pending)}>ยกเลิก</button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={FIELD_LABEL}>สาขาที่นับ</label>
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+              {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>รายการนับ (ใส่ยอดที่นับได้จริง)</label>
+            <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="นับได้" />
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น นับรอบสิ้นเดือน" style={FIELD_INPUT} />
+          </div>
+          {error && <ErrorRow msg={error} />}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ───────────────────────── LOSSES (ตัดของเสีย) ───────────────────────── */
+const LOSS_REASONS: { k: "DAMAGE" | "THEFT" | "OBSOLETE" | "OTHER"; label: string }[] = [
+  { k: "DAMAGE", label: "ชำรุด/เสียหาย" },
+  { k: "THEFT", label: "สูญหาย/ถูกขโมย" },
+  { k: "OBSOLETE", label: "ล้าสมัย/ตัดทิ้ง" },
+  { k: "OTHER", label: "อื่น ๆ" },
+];
+
+function LossesTab({ docs, realBranches, products, defaultBranchId }: {
+  docs: DocLossSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+}) {
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const [reason, setReason] = useState<"DAMAGE" | "THEFT" | "OBSOLETE" | "OTHER">("DAMAGE");
+  const [note, setNote] = useState("");
+  const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  const [error, setError] = useState<string | null>(null);
+  const canCreate = realBranches.length >= 1 && products.length >= 1;
+
+  function reset() { setBranchId(defaultBranchId); setReason("DAMAGE"); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
+
+  function submit() {
+    setError(null);
+    const parsed = parseLines(lines);
+    if (!parsed.ok) { setError(parsed.error); return; }
+    startTransition(async () => {
+      const res = await recordLoss({ branchId, reason, note: note || undefined, lines: parsed.data.map((d) => ({ productId: d.productId, qty: d.qty })) });
+      if (!res.ok) { setError(res.error); return; }
+      setAdding(false); reset(); router.refresh();
+    });
+  }
+
+  return (
+    <div>
+      {!canCreate && <NeedDataBanner msg="ยังตัดของเสียจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
+      <DocListCard
+        title="ใบตัดของเสีย / ของหาย (Loss)"
+        sub="ตัดของชำรุด/สูญหาย/ตัดทิ้งออกจากคลัง · บันทึกมูลค่าที่เสียไป"
+        onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
+        addLabel="ตัดของเสีย"
+        empty={docs.length === 0}
+        emptyTitle="ยังไม่มีใบตัดของเสีย"
+        emptySub="กด ตัดของเสีย เพื่อบันทึกของชำรุด/สูญหาย/ตัดทิ้ง"
+        cols="1fr 1.2fr 0.7fr 0.9fr 0.9fr"
+        head={<><span>เลขที่</span><span>สาเหตุ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+      >
+        {docs.map((d) => (
+          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.9fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
+            <span style={{ color: "#454B54" }}>{d.reasonLabel}</span>
+            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)} รายการ</span>
+            <span className="num" style={{ textAlign: "right", fontWeight: 600, color: "#B42318" }}>{bahtN(Math.round(d.totalCostCents / 100))}</span>
+            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.reportedAt)}</span>
+          </div>
+        ))}
+      </DocListCard>
+
+      <Modal
+        open={adding}
+        onClose={() => { if (!pending) { setAdding(false); reset(); } }}
+        title="ตัดของเสีย / ของหาย"
+        sub="เลือกสาเหตุ + รายการ + จำนวน · ตัดออกจากคลังตามต้นทุนเฉลี่ยปัจจุบัน"
+        width={500}
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
+            <button type="button" onClick={submit} disabled={pending} style={{ ...PRIMARY_BTN(pending), background: pending ? "#E3B9B4" : "#B42318" }}>{pending ? "กำลังบันทึก…" : "ยืนยันตัดของเสีย"}</button>
+            <button type="button" onClick={() => { if (!pending) { setAdding(false); reset(); } }} disabled={pending} style={CANCEL_BTN(pending)}>ยกเลิก</button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label style={FIELD_LABEL}>สาขา</label>
+              <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+                {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={FIELD_LABEL}>สาเหตุ</label>
+              <select value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} style={FIELD_INPUT}>
+                {LOSS_REASONS.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>รายการที่ตัด</label>
+            <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="จำนวน" />
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น น้ำท่วมโกดัง" style={FIELD_INPUT} />
+          </div>
+          {error && <ErrorRow msg={error} />}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ───────────────────────── shared doc-list card ───────────────────────── */
+function DocListCard({
+  title, sub, onAdd, addLabel, empty, emptyTitle, emptySub, cols, head, children,
+}: {
+  title: string; sub: string; onAdd?: () => void; addLabel: string;
+  empty: boolean; emptyTitle: string; emptySub: string;
+  cols: string; head: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <Card
+      title={title}
+      sub={sub}
+      pad={false}
+      right={onAdd && (
+        <button type="button" onClick={onAdd} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <Plus size={13} /> {addLabel}
+        </button>
+      )}
+    >
+      {empty ? (
+        <div style={{ padding: "10px 4px" }}>
+          <EmptyState icon={<Inbox size={26} />} title={emptyTitle} sub={emptySub} />
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 620 }}>
+            <div style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>{head}</div>
+            {children}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ───────────────────────── DISTRIBUTION ───────────────────────── */
+// DB status (CfDeliveryStatus) → UI tone. รับแล้ว = DELIVERED · ยังไม่รับ = SCHEDULED/IN_TRANSIT
+type DistFilter = "all" | "pending" | "received" | "cancelled";
+
+type ShipVM = {
+  id: string;
+  to: string;
+  dbStatus: string; // SCHEDULED | IN_TRANSIT | DELIVERED | CANCELLED
+  unitsCount: number;
+  createdAt: string;
+  lines: { lineId: string; name: string; sent: number; received: number | null }[];
+  isReceived: boolean;
+  hasDiff: boolean;
+};
+
+function shipTone(s: ShipVM): { bg: string; color: string; label: string } {
+  if (s.dbStatus === "CANCELLED") return { bg: "#F1F2F7", color: "#5A6270", label: "ยกเลิก" };
+  if (s.dbStatus === "DELIVERED") {
+    return s.hasDiff
+      ? { bg: "#FCEDEC", color: "#B42318", label: "รับแล้ว · ไม่ตรง" }
+      : { bg: "#E7F4EC", color: "#15803D", label: "รับครบ · ตรงใบ" };
+  }
+  if (s.dbStatus === "IN_TRANSIT") return { bg: "#EEF0FE", color: "#4F46E5", label: "กำลังส่ง" };
+  return { bg: "#FCF1E2", color: "#B45309", label: "รอสาขารับ" };
+}
+
+function toShipVM(s: ShipmentSeed): ShipVM {
+  const isReceived = s.status === "DELIVERED";
+  const hasDiff = isReceived && s.lines.some((l) => l.received != null && l.received !== l.sent);
+  return {
+    id: s.id, to: s.to, dbStatus: s.status, unitsCount: s.unitsCount, createdAt: s.createdAt,
+    lines: s.lines, isReceived, hasDiff,
+  };
+}
+
+function DistributionTab({ realBranches, products, shipments: shipmentSeeds, defaultBranchId }: {
+  realBranches: BranchOption[];
+  products: ProductOption[];
+  shipments: ShipmentSeed[];
+  defaultBranchId: string;
+}) {
+  const router = useRouter();
+  const hasReal = shipmentSeeds.length > 0;
+  // ของจริงถ้ามี · ว่างจริงค่อย fallback sample (sample = read-only, ยืนยันรับไม่ได้)
+  const sampleVMs: ShipVM[] = useMemo(() => SAMPLE_SHIPMENTS.map((s) => ({
+    id: s.id, to: s.to, dbStatus: s.status === "received" ? "DELIVERED" : s.status === "received_diff" ? "DELIVERED" : s.status === "in_transit" ? "IN_TRANSIT" : "SCHEDULED",
+    unitsCount: s.totSent, createdAt: s.dateISO,
+    lines: s.rows.map((r, i) => ({ lineId: `${s.id}-${i}`, name: r.name, sent: r.sent, received: r.recv })),
+    isReceived: s.status === "received" || s.status === "received_diff",
+    hasDiff: s.status === "received_diff",
+  })), []);
+  const ships: ShipVM[] = useMemo(
+    () => (hasReal ? shipmentSeeds.map(toShipVM) : sampleVMs),
+    [hasReal, shipmentSeeds, sampleVMs],
+  );
+
+  const [filter, setFilter] = useState<DistFilter>("all");
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const detail = ships.find((s) => s.id === detailId) ?? null;
+  const canCreate = realBranches.length >= 1 && products.length >= 1;
+
+  const stats = useMemo(() => {
+    const pending = ships.filter((s) => !s.isReceived && s.dbStatus !== "CANCELLED").length;
+    const received = ships.filter((s) => s.isReceived && !s.hasDiff).length;
+    const diff = ships.filter((s) => s.isReceived && s.hasDiff).length;
+    const cancelled = ships.filter((s) => s.dbStatus === "CANCELLED").length;
+    return [
+      { label: "รอสาขารับ", n: pending, c: "#B45309" },
+      { label: "รับครบ · ตรง", n: received, c: "#15803D" },
+      { label: "รับแล้ว · ไม่ตรง", n: diff, c: "#B42318" },
+      { label: "ยกเลิก", n: cancelled, c: "#5A6270" },
+    ];
+  }, [ships]);
+
+  const filtered = ships.filter((s) => {
+    if (filter === "all") return true;
+    if (filter === "pending") return !s.isReceived && s.dbStatus !== "CANCELLED";
+    if (filter === "received") return s.isReceived;
+    return s.dbStatus === "CANCELLED";
+  });
+
+  const chips: { k: DistFilter; label: string }[] = [
+    { k: "all", label: "ทั้งหมด" },
+    { k: "pending", label: "รอสาขารับ" },
+    { k: "received", label: "รับแล้ว" },
+    { k: "cancelled", label: "ยกเลิก" },
+  ];
+
+  return (
+    <div>
+      {!hasReal && (
+        <NeedDataBanner msg="ยังไม่มีใบกระจายจริง — กำลังแสดงตัวอย่าง (สร้างใบกระจายเพื่อเริ่มใช้จริง)" />
+      )}
+
       {/* info banner */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
         <Info size={15} style={{ flex: "0 0 15px", color: "#9AA1AB" }} />
-        คลังกลางส่งสินค้าให้สาขา → ติดตามว่าใบไหนกำลังส่ง / สาขายังไม่รับ / รับแล้วตรง-ไม่ตรง · กดใบโอนเพื่อตรวจรับและดูประวัติย้อนหลัง
+        คลังกลางสร้างใบกระจาย → สาขา → สาขากด “ตรวจรับ” ยืนยันของครบตรงกับใบ · รับแล้วล็อกไม่ให้รับซ้ำ
       </div>
 
       {/* shipment stats */}
@@ -762,7 +1365,7 @@ function DistributionTab({ realBranches, products }: { realBranches: BranchOptio
         ))}
       </div>
 
-      {/* filter chips */}
+      {/* toolbar: filter chips + create */}
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
         {chips.map((c) => {
           const active = filter === c.k;
@@ -780,26 +1383,37 @@ function DistributionTab({ realBranches, products }: { realBranches: BranchOptio
             </button>
           );
         })}
+        <span style={{ flex: 1 }} />
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "8px 14px", borderRadius: 9, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}
+          >
+            <Plus size={14} /> สร้างใบกระจาย
+          </button>
+        )}
       </div>
 
       {/* shipment list */}
       <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 720 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 0.9fr 1.8fr 0.7fr 0.9fr 1.1fr 0.4fr", padding: "11px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>เลขที่ใบโอน</span><span>ปลายทาง</span><span>รายการ</span><span style={{ textAlign: "right" }}>รวม</span><span style={{ textAlign: "right" }}>วันที่ส่ง</span><span style={{ textAlign: "center" }}>สถานะ</span><span />
+          <div style={{ minWidth: 700 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr 1.8fr 0.6fr 0.9fr 1.1fr 0.4fr", padding: "11px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
+              <span>ใบกระจาย</span><span>ปลายทาง</span><span>รายการ</span><span style={{ textAlign: "right" }}>รวม</span><span style={{ textAlign: "right" }}>วันที่สร้าง</span><span style={{ textAlign: "center" }}>สถานะ</span><span />
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA1AB", fontSize: 13 }}>ไม่มีใบโอนในสถานะนี้</div>
+              <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA1AB", fontSize: 13 }}>ไม่มีใบกระจายในสถานะนี้</div>
             ) : filtered.map((sp) => {
-              const tn = SHIP_TONE[sp.status];
+              const tn = shipTone(sp);
+              const summary = sp.lines.map((l) => `${l.name} ×${l.sent}`).join(" · ");
               return (
-                <div key={sp.id} className="co-rowh" onClick={() => setDetail(sp)} style={{ display: "grid", gridTemplateColumns: "1fr 0.9fr 1.8fr 0.7fr 0.9fr 1.1fr 0.4fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-                  <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{sp.id}</span>
+                <div key={sp.id} className="co-rowh" onClick={() => setDetailId(sp.id)} style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr 1.8fr 0.6fr 0.9fr 1.1fr 0.4fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+                  <span className="num" style={{ fontWeight: 700, color: "#4F46E5", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hasReal ? `DLV-${sp.id.slice(0, 6).toUpperCase()}` : sp.id}</span>
                   <span style={{ fontWeight: 600 }}>{sp.to}</span>
-                  <span style={{ color: "#6B7280", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sp.summary}</span>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(sp.totSent)}</span>
-                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(sp.dateISO)}</span>
+                  <span style={{ color: "#6B7280", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
+                  <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(sp.unitsCount)}</span>
+                  <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(sp.createdAt)}</span>
                   <span style={{ textAlign: "center" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: tn.bg, color: tn.color, whiteSpace: "nowrap" }}>{tn.label}</span>
                   </span>
@@ -811,177 +1425,206 @@ function DistributionTab({ realBranches, products }: { realBranches: BranchOptio
         </div>
       </div>
 
-      {/* shipment detail modal */}
-      <ShipmentDetailModal
-        shipment={detail}
-        onClose={() => { if (!pending) { setDetail(null); setConfirmError(null); } }}
+      {/* create-shipment modal */}
+      <CreateShipmentModal
+        open={creating}
+        onClose={() => setCreating(false)}
         realBranches={realBranches}
         products={products}
-        canReceive={canReceive}
-        pending={pending}
-        error={confirmError}
-        onReceive={doReceive}
+        defaultBranchId={defaultBranchId}
+        onDone={() => { setCreating(false); router.refresh(); }}
       />
+
+      {/* shipment detail / confirm-receive modal */}
+      {detail && (
+        <ShipmentDetailModal
+          key={detail.id}
+          ship={detail}
+          isSample={!hasReal}
+          onClose={() => setDetailId(null)}
+          onDone={() => { setDetailId(null); router.refresh(); }}
+        />
+      )}
     </div>
   );
 }
 
-/* ───────────────────────── shipment detail modal ───────────────────────── */
-type ReceiveLine = { productId: string; quantity: number; productName: string };
-
-function ShipmentDetailModal(props: {
-  shipment: Shipment | null;
+/* ───────────────────────── create-shipment modal ───────────────────────── */
+function CreateShipmentModal({ open, onClose, realBranches, products, defaultBranchId, onDone }: {
+  open: boolean;
   onClose: () => void;
   realBranches: BranchOption[];
   products: ProductOption[];
-  canReceive: boolean;
-  pending: boolean;
-  error: string | null;
-  onReceive: (shipment: Shipment, branchId: string, lines: ReceiveLine[], isDiff: boolean) => void;
+  defaultBranchId: string;
+  onDone: () => void;
 }) {
-  if (!props.shipment) return null;
-  return <ShipmentDetailModalInner {...props} shipment={props.shipment} />;
+  const [pending, startTransition] = useTransition();
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const [fromLocation, setFromLocation] = useState("");
+  const [note, setNote] = useState("");
+  const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    setBranchId(defaultBranchId); setFromLocation(""); setNote("");
+    setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null);
+  }
+
+  function submit() {
+    setError(null);
+    if (!branchId) { setError("เลือกสาขาปลายทางก่อน"); return; }
+    const parsed = parseLines(lines);
+    if (!parsed.ok) { setError(parsed.error); return; }
+    startTransition(async () => {
+      const res = await createShipment({
+        branchId,
+        fromLocation: fromLocation || undefined,
+        note: note || undefined,
+        lines: parsed.data,
+      });
+      if (!res.ok) { setError(res.error); return; }
+      reset(); onDone();
+    });
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => { if (!pending) { reset(); onClose(); } }}
+      title="สร้างใบกระจายสินค้า"
+      sub="คลังกลาง → สาขา · เลือกปลายทาง + รายการสินค้า + จำนวน"
+      width={520}
+      footer={
+        <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
+          <button type="button" onClick={submit} disabled={pending} style={PRIMARY_BTN(pending)}>{pending ? "กำลังสร้าง…" : "สร้างใบกระจาย"}</button>
+          <button type="button" onClick={() => { if (!pending) { reset(); onClose(); } }} disabled={pending} style={CANCEL_BTN(pending)}>ยกเลิก</button>
+        </div>
+      }
+    >
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={FIELD_LABEL}>สาขาปลายทาง</label>
+          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+            {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={FIELD_LABEL}>ต้นทาง (ไม่บังคับ)</label>
+          <input value={fromLocation} onChange={(e) => setFromLocation(e.target.value)} placeholder="คลังกลาง บางนา" style={FIELD_INPUT} />
+        </div>
+        <div>
+          <label style={FIELD_LABEL}>รายการสินค้า</label>
+          <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="ส่ง" />
+        </div>
+        <div>
+          <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น รอบส่งประจำสัปดาห์" style={FIELD_INPUT} />
+        </div>
+        {error && <ErrorRow msg={error} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "9px 12px" }}>
+          <Boxes size={14} style={{ flex: "0 0 14px", color: "#9AA1AB" }} />
+          ใบกระจายเริ่มที่สถานะ “รอสาขารับ” — สต็อกสาขายังไม่เพิ่มจนกว่าสาขาจะกดตรวจรับ
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
-function ShipmentDetailModalInner({
-  shipment, onClose, realBranches, products, canReceive, pending, error, onReceive,
-}: {
-  shipment: Shipment;
+/* ───────────────────────── shipment detail + confirm-receive ───────────────────────── */
+function ShipmentDetailModal({ ship, isSample, onClose, onDone }: {
+  ship: ShipVM;
+  isSample: boolean;
   onClose: () => void;
-  realBranches: BranchOption[];
-  products: ProductOption[];
-  canReceive: boolean;
-  pending: boolean;
-  error: string | null;
-  onReceive: (shipment: Shipment, branchId: string, lines: ReceiveLine[], isDiff: boolean) => void;
+  onDone: () => void;
 }) {
-  const tn = SHIP_TONE[shipment.status];
-  const canConfirm = shipment.status === "in_transit" || shipment.status === "pending";
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  // จำนวนที่รับจริงต่อบรรทัด (เริ่มจากจำนวนส่ง)
+  const [recvQty, setRecvQty] = useState<string[]>(() => ship.lines.map((l) => String(l.sent)));
+  const tn = shipTone(ship);
+  // ยืนยันได้เฉพาะ: ใบจริง (ไม่ใช่ sample) · ยังไม่รับ · ไม่ยกเลิก  → idempotency guard
+  const canConfirm = !isSample && !ship.isReceived && ship.dbStatus !== "CANCELLED";
 
-  // ฟอร์มตรวจรับ: เลือกสาขาที่รับ + จับคู่แต่ละแถวกับสินค้าจริง + จำนวนรับจริง
-  const [branchId, setBranchId] = useState(realBranches[0]?.id ?? "");
-  // จับคู่สินค้าอัตโนมัติด้วยชื่อ (ถ้าชื่อไม่ตรง = ว่าง → ให้ผู้ใช้เลือก)
-  const [rowProduct, setRowProduct] = useState<string[]>(() =>
-    shipment.rows.map((r) => products.find((p) => p.name === r.name)?.id ?? products[0]?.id ?? ""),
-  );
-  const [rowQty, setRowQty] = useState<string[]>(() => shipment.rows.map((r) => String(r.sent)));
-
-  function setProductAt(i: number, v: string) {
-    setRowProduct((prev) => prev.map((x, j) => (j === i ? v : x)));
-  }
   function setQtyAt(i: number, v: string) {
-    setRowQty((prev) => prev.map((x, j) => (j === i ? v : x)));
+    setRecvQty((prev) => prev.map((x, j) => (j === i ? v : x)));
   }
 
-  function buildLines(useSent: boolean): ReceiveLine[] {
-    return shipment.rows.map((r, i) => {
-      const q = useSent ? r.sent : Math.trunc(Number(rowQty[i]));
-      return {
-        productId: rowProduct[i] ?? "",
-        quantity: Number.isFinite(q) && q > 0 ? q : 0,
-        productName: r.name,
-      };
+  function confirm() {
+    setError(null);
+    const receivedLines = ship.lines.map((l, i) => {
+      const n = Math.trunc(Number(recvQty[i]));
+      return { lineId: l.lineId, receivedQty: Number.isFinite(n) && n >= 0 ? n : 0 };
+    });
+    startTransition(async () => {
+      const res = await confirmShipmentReceived({ deliveryId: ship.id, receivedLines });
+      if (!res.ok) { setError(res.error); return; }
+      onDone();
     });
   }
 
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => { if (!pending) onClose(); }}
       width={600}
-      title={<span className="num" style={{ color: "#4F46E5" }}>{shipment.id}</span>}
-      sub={`คลังกลาง → สาขา${shipment.to} · ส่ง ${fmtDate(shipment.dateISO)}`}
+      title={<span className="num" style={{ color: "#4F46E5" }}>{isSample ? ship.id : `DLV-${ship.id.slice(0, 6).toUpperCase()}`}</span>}
+      sub={`คลังกลาง → สาขา${ship.to} · สร้าง ${fmtDate(ship.createdAt)}`}
       badge={<span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: tn.bg, color: tn.color, whiteSpace: "nowrap" }}>{tn.label}</span>}
-      footer={canConfirm && canReceive ? (
+      footer={canConfirm ? (
         <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
           <button
             type="button"
             disabled={pending}
-            onClick={() => onReceive(shipment, branchId, buildLines(true), false)}
+            onClick={confirm}
             style={{ flex: 1, border: "none", cursor: pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#fff", background: pending ? "#84C39E" : "#15803D", padding: 12, borderRadius: 10 }}
           >
-            {pending ? "กำลังบันทึก…" : "ยืนยันรับครบ · ตรงใบโอน"}
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => onReceive(shipment, branchId, buildLines(false), true)}
-            style={{ border: "1px solid #E3B9B4", cursor: pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#B42318", background: "#fff", padding: "12px 18px", borderRadius: 10 }}
-          >
-            บันทึกรับไม่ตรง
+            {pending ? "กำลังบันทึก…" : "ยืนยันตรวจรับเข้าสต็อก"}
           </button>
         </div>
       ) : undefined}
     >
       <div style={{ padding: "6px 0" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.9fr", padding: "9px 20px", fontSize: 10.5, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
-          <span>รายการสินค้า</span><span style={{ textAlign: "right" }}>ส่ง</span><span style={{ textAlign: "right" }}>รับจริง</span><span style={{ textAlign: "right" }}>ผลตรวจ</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.9fr 0.9fr", padding: "9px 20px", fontSize: 10.5, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
+          <span>รายการสินค้า</span><span style={{ textAlign: "right" }}>ส่ง</span><span style={{ textAlign: "right" }}>{canConfirm ? "รับจริง" : "รับแล้ว"}</span><span style={{ textAlign: "right" }}>ผลตรวจ</span>
         </div>
-        {shipment.rows.map((ir, i) => {
-          const diff = ir.recv == null ? null : ir.recv - ir.sent;
-          const recvColor = diff == null ? "#9AA1AB" : diff === 0 ? "#15803D" : "#B42318";
-          const diffStr = diff == null ? "รอรับ" : diff === 0 ? "✓ ตรง" : `${diff > 0 ? "+" : ""}${diff}`;
+        {ship.lines.map((ir, i) => {
+          const recvShown = ship.isReceived ? ir.received : null;
+          const diff = recvShown == null ? null : recvShown - ir.sent;
+          const diffStr = diff == null ? (canConfirm ? "รอรับ" : "—") : diff === 0 ? "✓ ตรง" : `${diff > 0 ? "+" : ""}${diff}`;
           const diffColor = diff == null ? "#9AA1AB" : diff === 0 ? "#15803D" : "#B42318";
           return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.9fr", padding: "12px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+            <div key={ir.lineId} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.9fr 0.9fr", padding: "12px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
               <span style={{ fontWeight: 600 }}>{ir.name}</span>
               <span className="num" style={{ textAlign: "right" }}>{num(ir.sent)}</span>
-              <span className="num" style={{ textAlign: "right", fontWeight: 700, color: recvColor }}>{ir.recv == null ? "—" : num(ir.recv)}</span>
+              <span style={{ textAlign: "right" }}>
+                {canConfirm ? (
+                  <input type="number" min={0} step={1} inputMode="numeric" value={recvQty[i] ?? ""} onChange={(e) => setQtyAt(i, e.target.value)} style={{ ...FIELD_INPUT, width: 76, textAlign: "right", padding: "6px 8px" }} />
+                ) : (
+                  <span className="num" style={{ fontWeight: 700, color: recvShown == null ? "#9AA1AB" : "#1A1D21" }}>{recvShown == null ? "—" : num(recvShown)}</span>
+                )}
+              </span>
               <span className="num" style={{ textAlign: "right", fontWeight: 700, color: diffColor }}>{diffStr}</span>
             </div>
           );
         })}
 
-        {/* ── ฟอร์มตรวจรับจริง (เฉพาะใบที่ยังรอรับ + มีข้อมูลจริง) ── */}
-        {canConfirm && canReceive && (
-          <div style={{ margin: "14px 20px 4px", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 12, padding: "14px 16px" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>ตรวจรับเข้าคลังสาขา</div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={FIELD_LABEL}>สาขาที่รับสินค้า</label>
-              <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
-                {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
-            <div style={{ fontSize: 11.5, color: "#7A8089", marginBottom: 8 }}>จับคู่แต่ละรายการกับสินค้าในคลัง แล้วใส่จำนวนที่รับจริง</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {shipment.rows.map((r, i) => (
-                <div key={i} className="grid grid-cols-[1fr_88px] gap-2 items-end">
-                  <div>
-                    <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>{r.name} <span style={{ color: "#9AA1AB", fontWeight: 400 }}>(ส่ง {r.sent})</span></label>
-                    <select value={rowProduct[i] ?? ""} onChange={(e) => setProductAt(i, e.target.value)} style={FIELD_INPUT}>
-                      <option value="">— เลือกสินค้า —</option>
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>รับจริง</label>
-                    <input type="number" min={0} step={1} inputMode="numeric" value={rowQty[i] ?? ""} onChange={(e) => setQtyAt(i, e.target.value)} style={FIELD_INPUT} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            {error && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#B42318", background: "#FCEDEC", borderRadius: 10, padding: "9px 12px", marginTop: 10 }}>
-                <AlertTriangle size={14} style={{ flex: "0 0 14px" }} /> {error}
-              </div>
-            )}
+        {canConfirm && (
+          <div style={{ margin: "12px 20px 4px", fontSize: 11.5, color: "#7A8089" }}>
+            ปรับจำนวน “รับจริง” ให้ตรงกับของที่นับได้ แล้วกดยืนยัน — ระบบจะเพิ่มเข้าสต็อกสาขาและล็อกใบนี้ (รับซ้ำไม่ได้)
           </div>
         )}
-        {canConfirm && !canReceive && (
+        {ship.isReceived && (
+          <div style={{ margin: "12px 20px", background: ship.hasDiff ? "#FCEDEC" : "#E7F4EC", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: ship.hasDiff ? "#B42318" : "#15803D" }}>
+            {ship.hasDiff ? "⚠ รับไม่ตรงใบ — บันทึกตามจำนวนที่รับจริงแล้ว" : "✓ รับครบตรงใบแล้ว · เข้าสต็อกสาขาเรียบร้อย"}
+          </div>
+        )}
+        {isSample && !ship.isReceived && (
           <div style={{ margin: "12px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px" }}>
             <AlertTriangle size={14} style={{ flex: "0 0 14px" }} />
-            ยังตรวจรับจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน
+            นี่คือใบตัวอย่าง — ตรวจรับจริงได้เมื่อสร้างใบกระจายจริง
           </div>
         )}
-
-        {shipment.by && (
-          <div style={{ margin: "12px 20px 4px", background: "#F8F9FB", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: "#454B54" }}>
-            ตรวจรับโดย <b>{shipment.by}</b>{shipment.at ? ` · ${shipment.at}` : ""}
-          </div>
-        )}
-        {shipment.note && (
-          <div style={{ margin: "8px 20px 12px", background: "#FCEDEC", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: "#B42318" }}>⚠ {shipment.note}</div>
-        )}
+        {error && <div style={{ margin: "8px 20px 12px" }}><ErrorRow msg={error} /></div>}
       </div>
     </Modal>
   );

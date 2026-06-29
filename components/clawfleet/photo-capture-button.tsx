@@ -48,7 +48,9 @@ export function PhotoCaptureButton({
       const { url } = (await res.json()) as { url: string };
       onChange(url);
     } catch (e) {
-      setError((e as Error).message);
+      // เก็บ error ดิบไว้ใน console เท่านั้น (debug) · พนักงานเห็นข้อความเป็นมิตร
+      console.error("[photo-capture] upload failed:", e);
+      setError("อัพโหลดรูปไม่สำเร็จ · ลองใหม่");
     } finally {
       setBusy(false);
     }

@@ -23,6 +23,7 @@
  */
 
 import { useMemo, useReducer, useState, useTransition } from "react";
+import { Loader2 } from "lucide-react";
 import { PhoneFrame } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
@@ -238,22 +239,30 @@ const initialState: WizardState = {
 };
 
 /* ─────────────────────────── public wrapper (renders twice) ─────────────────────────── */
-type Props = { orgId: string; branches: GroupCollectBranch[]; skus: CollectSku[] };
+type Props = {
+  orgId: string;
+  branches: GroupCollectBranch[];
+  skus: CollectSku[];
+  // นโยบายถ่ายรูป (จาก org settings) — true = บังคับถ่ายก่อนไปต่อ, false = ถ่ายได้-ข้ามได้
+  photoRequired: boolean;
+};
 
-export function StaffAppClient({ orgId, branches, skus }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired }: Props) {
   const realMachines = useMemo(() => flattenReal(branches), [branches]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
   const skuList = usingDemo || skus.length === 0 ? DEMO_SKUS : skus;
+  // ในโหมด demo ไม่มี backend อัปโหลด → ปุ่มถ่ายถูก disable อยู่แล้ว, จึงไม่บังคับถ่าย (กันค้าง)
+  const enforcePhoto = photoRequired && !usingDemo;
 
   // ONE StaffApp instance per render-slot. Each keeps its own local state, but the
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} />
   );
 
   return (
@@ -321,17 +330,21 @@ type StaffAppProps = {
   machines: AppMachine[];
   skus: CollectSku[];
   usingDemo: boolean;
+  // true = บังคับถ่ายรูปก่อนกดถัดไป/ส่ง (org policy photoRequired)
+  photoRequired: boolean;
 };
 
 type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState(0);
+  // ตู้ที่กำลังเปิดรอบ (กดแล้วรอ startBranchSession ~2-3 วิ) → โชว์สปินเนอร์บนตู้นั้น
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const machine = useMemo(
     () => machines.find((m) => m.id === state.machineId) ?? null,
@@ -353,6 +366,22 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
   const tooHard = dispensed <= 0 && f.cash >= 200;
   const meterReady = !state.meterDeferred;
 
+  /* ── นโยบายถ่ายรูป: แต่ละขั้นต้องมีรูปครบไหมก่อนกดถัดไป/ส่ง ──
+   * step 1 = ก่อนเติม · step 2 = หลังเติม · step 3 = มิเตอร์ (ตุ๊กตา + เหรียญ อย่างละ 1 รูป) · step 4 = เงินสด.
+   * backend coalesce มิเตอร์เป็น 1 ช่อง/ตัว → บังคับอย่างน้อยฝั่งละ 1 (เฟืองหรือดิจิตอล). */
+  const ph = state.photos;
+  // ขั้นมิเตอร์ที่กด "ถ่ายไว้ก่อน · กรอกทีหลัง" (defer) จะซ่อนปุ่มถ่าย → ห้ามบังคับถ่ายตอนนั้น (กันค้าง)
+  const step3PhotoOk = (!!ph.dollGear || !!ph.dollDigi) && (!!ph.coinGear || !!ph.coinDigi);
+  const stepPhotoSatisfied =
+    state.step === 1 ? !!ph.before
+      : state.step === 2 ? !!ph.after
+        : state.step === 3 ? (state.meterDeferred ? true : step3PhotoOk)
+          : state.step === 4 ? !!ph.cash
+            : true; // step 5/6 ไม่มีช่องถ่าย
+  // บังคับเฉพาะเมื่อนโยบายเปิด + ขั้นที่มีรูป (1-4)
+  const photoStepActive = photoRequired && state.step >= 1 && state.step <= 4;
+  const photoBlocks = photoStepActive && !stepPhotoSatisfied;
+
   /* ── open a machine: start a REAL session up-front (so submit can fire), else demo ── */
   function openMachine(m: AppMachine) {
     setError(null);
@@ -367,15 +396,20 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
       return;
     }
     // REAL: open (or resume) the branch session before the wizard
+    setOpeningId(m.id);
     startTransition(async () => {
-      const r = await startBranchSession({ branchId: m.branchId });
-      if (!r.ok) {
-        // เปิดรอบกับระบบไม่ได้ (เน็ต/สิทธิ์) → อย่าเปิด wizard ที่ submit ไม่ได้
-        // (กันเก็บเงินจริงแล้วโชว์ "เสร็จ" ลอย ๆ โดยไม่บันทึก) — ให้พนักงานลองใหม่
-        setError(`${r.error} · เปิดรอบไม่ได้ ลองอีกครั้ง`);
-        return;
+      try {
+        const r = await startBranchSession({ branchId: m.branchId });
+        if (!r.ok) {
+          // เปิดรอบกับระบบไม่ได้ (เน็ต/สิทธิ์) → อย่าเปิด wizard ที่ submit ไม่ได้
+          // (กันเก็บเงินจริงแล้วโชว์ "เสร็จ" ลอย ๆ โดยไม่บันทึก) — ให้พนักงานลองใหม่
+          setError(`${r.error} · เปิดรอบไม่ได้ ลองอีกครั้ง`);
+          return;
+        }
+        dispatch({ type: "open", machine: m, skus, sessionId: r.data.id });
+      } finally {
+        setOpeningId(null);
       }
-      dispatch({ type: "open", machine: m, skus, sessionId: r.data.id });
     });
   }
 
@@ -387,7 +421,7 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
       branch: machine.branch,
       cash: f.cash,
       dispensed,
-      time: "14:32",
+      time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
       form: { ...f },
       sessionId: state.sessionId,
     };
@@ -493,6 +527,9 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
     primaryAction = finishMachine;
   }
 
+  // นโยบายถ่ายรูป: ถ้าขั้นนี้ยังไม่ถ่ายครบ → กันกดถัดไป + dim ปุ่ม (ไม่บังคับขั้น 5/6 ที่ไม่มีช่องถ่าย)
+  const primaryDisabled = pending || photoBlocks;
+
   const stepLabels: Record<number, string> = {
     1: "นับตุ๊กตาก่อนเติม",
     2: "เติมตุ๊กตา",
@@ -536,6 +573,7 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
           draftList={draftList}
           onOpen={openMachine}
           pending={pending}
+          openingId={openingId}
           tourStep={tourStep}
           setTourStep={setTourStep}
           skus={skus}
@@ -554,6 +592,8 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
           afterFill={afterFill}
           photos={state.photos}
           onPhoto={(k, url) => dispatch({ type: "setPhoto", key: k, url })}
+          photoRequired={photoRequired}
+          photoBlocks={photoBlocks}
           meterDeferred={state.meterDeferred}
           toggleDefer={() => dispatch({ type: "toggleDefer" })}
           resumed={state.resumed}
@@ -565,10 +605,12 @@ function StaffApp({ orgId, machines, skus, usingDemo }: StaffAppProps) {
           skus={skus}
           onProduct={(v) => dispatch({ type: "setForm", key: "product", value: v })}
           onCategory={(v) => dispatch({ type: "setForm", key: "category", value: v })}
-          onBack={() => dispatch({ type: "back" })}
+          // ขั้นเสร็จ (6): back = กลับหน้าหลัก+รีเซ็ต (กันย้อนเข้าไปแก้ยอดที่ส่งไปแล้ว)
+          onBack={() => dispatch({ type: state.step >= 6 ? "home" : "back" })}
           primary={{ label: primaryLabel, color: primaryColor, action: primaryAction }}
           secondary={secondaryAction ? { label: secondaryLabel, action: secondaryAction } : null}
           pending={pending}
+          primaryDisabled={primaryDisabled}
         />
       )}
     </div>
@@ -587,11 +629,12 @@ function HomeScreen(props: {
   draftList: Draft[];
   onOpen: (m: AppMachine) => void;
   pending: boolean;
+  openingId: string | null;
   tourStep: number;
   setTourStep: (n: number) => void;
   skus: CollectSku[];
 }) {
-  const { panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending } = props;
+  const { panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId } = props;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 24px" }}>
@@ -679,25 +722,46 @@ function HomeScreen(props: {
 
           {/* route list */}
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#454B54" }}>ตู้ในเส้นทางวันนี้</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {machines.map((m) => {
-              const isDraft = !!drafts[m.id];
-              const tag = isDraft
-                ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
-              return (
-                <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
-                  style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: `1px solid ${isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: "pointer", opacity: pending ? 0.6 : 1 }}>
-                  <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: tag.iBg, color: tag.iC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
-                    <div style={{ fontSize: 11, color: "#9AA1AB" }}>{tag.hint}</div>
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
-                </button>
-              );
-            })}
-          </div>
+          {machines.length === 0 ? (
+            // empty state — พนักงานยังไม่ได้รับมอบหมายตู้ (กันหน้าว่างเปล่าดูเหมือนพัง)
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 10, background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14, padding: "30px 20px" }}>
+              <span style={{ width: 48, height: 48, borderRadius: 13, background: "#F1F2F5", color: "#9AA1AB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M3 9h6" /></svg>
+              </span>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#454B54" }}>ยังไม่มีตู้ที่ได้รับมอบหมาย</div>
+              <div style={{ fontSize: 12, color: "#9AA1AB", lineHeight: 1.5, maxWidth: 220 }}>ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ</div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {machines.map((m) => {
+                const isDraft = !!drafts[m.id];
+                const isOpening = openingId === m.id;
+                const tag = isDraft
+                  ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                  : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
+                const dimmed = pending && !isOpening;
+                return (
+                  <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
+                    style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
+                    <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: tag.iBg, color: tag.iC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
+                      <div style={{ fontSize: 11, color: "#9AA1AB" }}>{isOpening ? "กำลังเปิดรอบ…" : tag.hint}</div>
+                    </div>
+                    {isOpening ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#4F46E5" }}>
+                        <Spinner color="#4F46E5" />
+                        เปิดรอบ
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </>
       ) : (
         <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} />
@@ -976,6 +1040,8 @@ function FlowScreen(props: {
   afterFill: number;
   photos: Photos;
   onPhoto: (k: keyof Photos, url: string) => void;
+  photoRequired: boolean;
+  photoBlocks: boolean;
   meterDeferred: boolean;
   toggleDefer: () => void;
   resumed: boolean;
@@ -991,6 +1057,7 @@ function FlowScreen(props: {
   primary: { label: string; color: string; action: () => void };
   secondary: { label: string; action: () => void } | null;
   pending: boolean;
+  primaryDisabled: boolean;
 }) {
   const { step, form: f, dispensed, afterFill, photos, meterDeferred, recon, machine } = props;
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
@@ -1020,9 +1087,9 @@ function FlowScreen(props: {
             <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
             <BigInput value={f.left} onChange={props.setNum("left")} />
             <div style={{ marginTop: 10 }}>
-              <PhotoSlot label="ถ่ายรูปสินค้าในตู้ก่อนเติม (ถ่ายได้-ข้ามได้)" value={photos.before}
+              <PhotoSlot label={`ถ่ายรูปสินค้าในตู้ก่อนเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.before}
                 onChange={(url) => props.onPhoto("before", url)}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} />
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} required={props.photoRequired} />
             </div>
             <div style={{ fontSize: 12, color: "#8A909A", display: "flex", alignItems: "center", gap: 7, marginTop: 14 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A909A" strokeWidth="2"><path d="M12 3v6" /><path d="M8 9h8l-1.2 4.2a3 3 0 0 1-2.88 2.18h-.84a3 3 0 0 1-2.88-2.18Z" /><path d="M12 15.5V21" /><path d="M8.5 21h7" /></svg>
@@ -1053,9 +1120,9 @@ function FlowScreen(props: {
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#4F46E5" }}>รวมหลังเติม (ก่อนเติม {f.left} + เติม {f.refill})</span>
                 <span className="num" style={{ fontSize: 20, fontWeight: 700, color: "#4F46E5" }}>{afterFill} ตัว</span>
               </div>
-              <PhotoSlot label="ถ่ายรูปสินค้าในตู้หลังเติม (ถ่ายได้-ข้ามได้)" value={photos.after}
+              <PhotoSlot label={`ถ่ายรูปสินค้าในตู้หลังเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.after}
                 onChange={(url) => props.onPhoto("after", url)}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} />
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} required={props.photoRequired} />
             </div>
           </div>
         )}
@@ -1063,10 +1130,17 @@ function FlowScreen(props: {
         {step === 3 && (
           <div>
             {props.resumed && (
-              <div style={{ display: "flex", gap: 9, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "11px 13px", marginBottom: 12 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M20 6 9 17l-5-5" /></svg>
-                <span style={{ fontSize: 11.5, color: "#15803D", lineHeight: 1.45 }}>กลับมากรอกมิเตอร์ของตู้ที่<b>เก็บค้างไว้</b> — รูปและจำนวนถ่าย/นับไว้แล้ว กรอกเลขให้ครบเพื่อปิดรอบ</span>
-              </div>
+              <>
+                <div style={{ display: "flex", gap: 9, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "11px 13px", marginBottom: 10 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M20 6 9 17l-5-5" /></svg>
+                  <span style={{ fontSize: 11.5, color: "#15803D", lineHeight: 1.45 }}>กลับมากรอกมิเตอร์ของตู้ที่<b>เก็บค้างไว้</b> — จำนวนที่นับไว้ยังอยู่ กรอกเลขมิเตอร์ให้ครบเพื่อปิดรอบ</span>
+                </div>
+                {/* รูปไม่ถูกเก็บใน draft → ต้องถ่ายใหม่ (กันพนักงานเข้าใจผิดว่ารูปยังอยู่) */}
+                <div style={{ display: "flex", gap: 9, background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 11, padding: "11px 13px", marginBottom: 12 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
+                  <span style={{ fontSize: 11.5, color: "#7A5510", lineHeight: 1.45 }}>รูปที่ถ่ายไว้ต้องถ่ายใหม่{props.photoRequired ? " (บังคับถ่ายก่อนส่ง)" : ""} — รูปไม่ถูกเก็บตอนพักไว้</span>
+                </div>
+              </>
             )}
             <div style={{ display: "flex", gap: 9, background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 11, padding: "11px 13px", marginBottom: 14 }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 17px", marginTop: 1 }}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
@@ -1074,13 +1148,13 @@ function FlowScreen(props: {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
               <MeterGroup title="มิเตอร์ตุ๊กตา" prev={f.dollPrev} equalOk={props.meterGroupVals.dollMeterEqual} deferred={meterDeferred}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo} photoRequired={props.photoRequired}
                 rows={[
                   { label: "เฟือง (บน)", value: f.dollGear, onChange: props.setNum("dollGear"), photo: photos.dollGear, onPhoto: (url) => props.onPhoto("dollGear", url), phase: "prize_meter" },
                   { label: "ดิจิตอล (ล่าง)", value: f.dollDigi, onChange: props.setNum("dollDigi"), photo: photos.dollDigi, onPhoto: (url) => props.onPhoto("dollDigi", url), phase: "prize_meter" },
                 ]} />
               <MeterGroup title="มิเตอร์เหรียญ" prev={f.coinPrev} equalOk={props.meterGroupVals.coinMeterEqual} deferred={meterDeferred}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo} photoRequired={props.photoRequired}
                 rows={[
                   { label: "เฟือง (บน)", value: f.coinGear, onChange: props.setNum("coinGear"), photo: photos.coinGear, onPhoto: (url) => props.onPhoto("coinGear", url), phase: "meter_after" },
                   { label: "ดิจิตอล (ล่าง)", value: f.coinDigi, onChange: props.setNum("coinDigi"), photo: photos.coinDigi, onPhoto: (url) => props.onPhoto("coinDigi", url), phase: "meter_after" },
@@ -1103,9 +1177,9 @@ function FlowScreen(props: {
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
               <BigInput value={f.cash} onChange={props.setNum("cash")} />
               <div style={{ marginTop: 10 }}>
-                <PhotoSlot label="ถ่ายรูปเงินสด (ถ่ายได้-ข้ามได้)" value={photos.cash}
+                <PhotoSlot label={`ถ่ายรูปเงินสด ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.cash}
                   onChange={(url) => props.onPhoto("cash", url)}
-                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} />
+                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} required={props.photoRequired} />
               </div>
             </div>
             <div style={{ borderTop: "1px solid #EEF0F2", paddingTop: 15 }}>
@@ -1198,8 +1272,14 @@ function FlowScreen(props: {
 
       {/* bottom bar */}
       <div style={{ padding: "14px 18px 22px", borderTop: "1px solid #EAECEF", background: "#fff" }}>
-        <button type="button" onClick={props.primary.action} disabled={props.pending}
-          style={{ width: "100%", fontSize: 14.5, fontWeight: 700, color: "#fff", border: "none", padding: 14, borderRadius: 13, cursor: "pointer", background: props.primary.color, opacity: props.pending ? 0.7 : 1 }}>
+        {props.photoBlocks && (
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, fontWeight: 600, color: "#B42318", lineHeight: 1.4 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
+            ต้องถ่ายรูปก่อน
+          </div>
+        )}
+        <button type="button" onClick={props.primary.action} disabled={props.primaryDisabled}
+          style={{ width: "100%", fontSize: 14.5, fontWeight: 700, color: "#fff", border: "none", padding: 14, borderRadius: 13, cursor: props.primaryDisabled ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1 }}>
           {props.primary.label}
         </button>
         {props.secondary && (
@@ -1213,6 +1293,11 @@ function FlowScreen(props: {
 }
 
 /* ─────────────────────────── small UI helpers ─────────────────────────── */
+// สปินเนอร์เล็ก — ใช้บนตู้ที่กำลังเปิดรอบ. ใช้ Tailwind `animate-spin` (มี @keyframes spin ในตัว).
+function Spinner({ color = "#4F46E5", size = 15 }: { color?: string; size?: number }) {
+  return <Loader2 className="animate-spin" style={{ width: size, height: size, color }} />;
+}
+
 function Icon({ paths, size = 17 }: { paths: string[]; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -1249,9 +1334,9 @@ type Phase = "meter_before" | "cash" | "meter_after" | "stock" | "prize_meter" |
  * Skipping is fine (value stays ""); shows a soft "ถ่ายได้-ข้ามได้" hint, never blocks.
  * In demo preview (no real session/upload backend) we render a disabled informational box.
  */
-function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, phase, disabled }: {
+function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, phase, disabled, required }: {
   label: string; value: string; onChange: (url: string) => void;
-  orgId: string; machineCode: string; eventScopeId: string; phase: Phase; disabled?: boolean;
+  orgId: string; machineCode: string; eventScopeId: string; phase: Phase; disabled?: boolean; required?: boolean;
 }) {
   if (disabled || !orgId || !machineCode) {
     return (
@@ -1265,7 +1350,11 @@ function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, p
     <div>
       <PhotoCaptureButton label={label} value={value} onChange={onChange}
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
-      {!value && <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 4 }}>ยังไม่ถ่าย · ข้ามได้ (ไม่บังคับ)</div>}
+      {!value && (
+        required
+          ? <div style={{ fontSize: 10.5, color: "#B42318", fontWeight: 600, marginTop: 4 }}>ต้องถ่ายรูปก่อน (บังคับ)</div>
+          : <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 4 }}>ยังไม่ถ่าย · ข้ามได้ (ไม่บังคับ)</div>
+      )}
     </div>
   );
 }
@@ -1274,9 +1363,9 @@ type MeterRow = {
   label: string; value: number; onChange: (v: string) => void;
   photo: string; onPhoto: (url: string) => void; phase: Phase;
 };
-function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, eventScopeId, usingDemo }: {
+function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, eventScopeId, usingDemo, photoRequired }: {
   title: string; prev: number; equalOk: boolean; deferred: boolean; rows: MeterRow[];
-  orgId: string; machineCode: string; eventScopeId: string; usingDemo: boolean;
+  orgId: string; machineCode: string; eventScopeId: string; usingDemo: boolean; photoRequired: boolean;
 }) {
   return (
     <div style={{ border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 14px" }}>
@@ -1304,7 +1393,7 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
                 )}
               </div>
               {canCapture && !deferred && (
-                <PhotoCaptureButton label={r.photo ? "ถ่ายมิเตอร์แล้ว · แตะถ่ายใหม่" : "ถ่ายรูปมิเตอร์ (ถ่ายได้-ข้ามได้)"}
+                <PhotoCaptureButton label={r.photo ? "ถ่ายมิเตอร์แล้ว · แตะถ่ายใหม่" : `ถ่ายรูปมิเตอร์ ${photoRequired ? "(บังคับอย่างน้อย 1 รูป)" : "(ถ่ายได้-ข้ามได้)"}`}
                   value={r.photo} onChange={r.onPhoto}
                   orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={r.phase} />
               )}

@@ -16,13 +16,20 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
-  Building2, AlertTriangle, Check, ChevronRight, Coins, Camera, Info, Maximize2,
+  Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/actions";
 
 /* ───────── types ───────── */
 export type BranchOption = { value: string; label: string };
+
+/** รูปจริงต่อตู้ที่พนักงานถ่ายตอนเก็บเงิน (anti-cheat) — label = ความหมายจริง */
+export type CollectionMachine = {
+  code: string;
+  name: string;
+  photoShots: { label: string; url: string | null }[];
+};
 
 export type CollectionRow = {
   id: string;
@@ -39,6 +46,8 @@ export type CollectionRow = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** ตู้ในรอบนี้ พร้อมรูปจริงต่อตู้ (real tier ส่งมา · sample = []) */
+  machines: CollectionMachine[];
   sample: boolean;
 };
 
@@ -57,27 +66,27 @@ const SAMPLE_ROWS: CollectionRow[] = [
   {
     id: "s-CFS-000041", code: "CFS-000041", branch: "รังสิต", staff: "น้องเอ", date: "12 นาทีที่แล้ว",
     expectedCash: 8400, actualCash: 5860, gap: 2540, prizeExpected: 32, prizeActual: 32, prizeGap: 0,
-    severity: "P0", type: "cash_short", reason: "เงินสดน้อยกว่ามิเตอร์ ฿2,540 (30% ห่าง)", sample: true,
+    severity: "P0", type: "cash_short", reason: "เงินสดน้อยกว่ามิเตอร์ ฿2,540 (30% ห่าง)", machines: [], sample: true,
   },
   {
     id: "s-CFS-000038", code: "CFS-000038", branch: "บางแค", staff: "พี่สอง", date: "2 ชม.ที่แล้ว",
     expectedCash: 6100, actualCash: 6100, gap: 0, prizeExpected: 28, prizeActual: 22, prizeGap: 6,
-    severity: "P1", type: "prize_short", reason: "ตุ๊กตาหาย 6 ตัว — มิเตอร์ตุ๊กต่ากับนับจริงไม่ตรง", sample: true,
+    severity: "P1", type: "prize_short", reason: "ตุ๊กตาหาย 6 ตัว — มิเตอร์ตุ๊กต่ากับนับจริงไม่ตรง", machines: [], sample: true,
   },
   {
     id: "s-CFS-000035", code: "CFS-000035", branch: "ลาดพร้าว", staff: "น้องบี", date: "เมื่อวาน",
     expectedCash: 5400, actualCash: 5380, gap: 20, prizeExpected: 24, prizeActual: 24, prizeGap: 0,
-    severity: "P2", type: "cash_short", reason: "ส่วนต่าง ฿20 อยู่ในเกณฑ์ — ตรงกัน", sample: true,
+    severity: "P2", type: "cash_short", reason: "ส่วนต่าง ฿20 อยู่ในเกณฑ์ — ตรงกัน", machines: [], sample: true,
   },
   {
     id: "s-CFS-000033", code: "CFS-000033", branch: "รังสิต", staff: "น้องเอ", date: "เมื่อวาน",
     expectedCash: 7200, actualCash: 7200, gap: 0, prizeExpected: 30, prizeActual: 30, prizeGap: 0,
-    severity: "P2", type: "cash_short", reason: "ทุกตัวเลขตรงกัน — รอบสะอาด", sample: true,
+    severity: "P2", type: "cash_short", reason: "ทุกตัวเลขตรงกัน — รอบสะอาด", machines: [], sample: true,
   },
   {
     id: "s-CFS-000029", code: "CFS-000029", branch: "บางแค", staff: "พี่สอง", date: "2 วันก่อน",
     expectedCash: 0, actualCash: 0, gap: 0, prizeExpected: 0, prizeActual: 0, prizeGap: 0,
-    severity: "P1", type: "cash_short", reason: "มิเตอร์ไม่ขยับ 3 วัน — ตู้อาจเสีย/ไม่มีลูกค้า", sample: true,
+    severity: "P1", type: "cash_short", reason: "มิเตอร์ไม่ขยับ 3 วัน — ตู้อาจเสีย/ไม่มีลูกค้า", machines: [], sample: true,
   },
 ];
 
@@ -145,8 +154,8 @@ export function CollectionsClient({
   const review = (row: CollectionRow, decision: V2Decision) => {
     const target: ReviewState =
       decision === "approve" ? "reviewed" : decision === "recheck" ? "rechecked" : "escalated";
-    // sample id → optimistic only (no real session)
-    if (row.sample || row.id.startsWith("s") || row.id.startsWith("demo-")) {
+    // sample row → optimistic only (no real session) · ใช้ flag จาก server ไม่เดาจาก id
+    if (row.sample) {
       setReview(row.id, target);
       return;
     }
@@ -265,6 +274,8 @@ function CollectionCard({
   onReview: (d: V2Decision) => void;
   busy: boolean;
 }) {
+  // รูปที่กดขยาย (lightbox) — null = ปิด
+  const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
   const st = statusOf(row);
   const meta = STATUS_META[st];
   const diffColor = row.gap > 50 ? "#B42318" : row.gap > 0 ? "#B45309" : "#15803D";
@@ -294,13 +305,19 @@ function CollectionCard({
       : reviewState === "rechecked" ? "ส่งตรวจซ้ำ"
         : reviewState === "escalated" ? "ส่งผู้จัดการ" : "";
 
-  // รูปมิเตอร์ (placeholder boxes + ค่าที่กรอก)
-  const photos = [
-    { label: "มิเตอร์เหรียญ", val: coinPrev + coinDelta },
-    { label: "มิเตอร์ตุ๊กตา", val: row.prizeExpected },
-    { label: "ตุ๊กตาในตู้", val: row.prizeActual },
-    { label: "เงินสดที่นับ", val: bahtN(row.actualCash) },
-  ];
+  // รูปจริงต่อตู้ (anti-cheat) — real tier ส่ง machines[].photoShots มา
+  // ถ้าไม่มีตู้ (sample/legacy) → โชว์ช่องว่าง 5 ป้ายเป็น placeholder "ไม่มีรูป"
+  const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม", "เงินสด"];
+  const photoMachines: { code: string; name: string; shots: { label: string; url: string | null }[] }[] =
+    row.machines.length > 0
+      ? row.machines.map((m) => ({
+          code: m.code,
+          name: m.name,
+          shots: m.photoShots.length > 0
+            ? m.photoShots
+            : FALLBACK_LABELS.map((label) => ({ label, url: null })),
+        }))
+      : [{ code: "", name: "", shots: FALLBACK_LABELS.map((label) => ({ label, url: null })) }];
 
   return (
     <div style={{ background: rowBg, border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
@@ -392,26 +409,66 @@ function CollectionCard({
             </span>
           </div>
 
-          {/* meter photos */}
+          {/* รูปจริงที่พนักงานถ่าย (anti-cheat) — แยกต่อตู้ · กดรูปเพื่อขยายตรวจ */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 8 }}>
-              รูปมิเตอร์ที่พนักงานถ่าย · เทียบกับเลขที่กรอก (กดดูรูปเต็มเพื่อตรวจว่ากรอกตรงไหม)
+              รูปที่พนักงานถ่ายตอนเก็บเงิน · กดรูปเพื่อขยายตรวจว่าเลขในรูปตรงกับที่กรอกไหม
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-[9px]">
-              {photos.map((p) => (
-                <div key={p.label} style={{ border: "1px solid #E8EAED", borderRadius: 9, overflow: "hidden" }}>
-                  <div style={{ height: 58, background: "#EFF1F4", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                    <Camera size={18} color="#AEB4BD" />
-                    <span style={{ position: "absolute", top: 4, right: 5 }}><Maximize2 size={13} color="#9AA1AB" /></span>
-                  </div>
-                  <div style={{ padding: "6px 8px" }}>
-                    <div style={{ fontSize: 9.5, color: "#9AA1AB", lineHeight: 1.2 }}>{p.label}</div>
-                    <div className="num" style={{ fontSize: 13, fontWeight: 700 }}>{p.val}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {photoMachines.map((m, mi) => (
+                <div key={m.code || `m-${mi}`}>
+                  {m.name && (
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 6 }}>
+                      {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-[9px]">
+                    {m.shots.map((s, si) => (
+                      <PhotoTile
+                        key={`${s.label}-${si}`}
+                        label={s.label}
+                        url={s.url}
+                        onOpen={s.url ? () => setLightbox({ url: s.url as string, label: s.label }) : undefined}
+                      />
+                    ))}
                   </div>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* lightbox overlay — กดรูปแล้วขยายเต็ม · กดพื้นหลัง/ปุ่มปิด */}
+          {lightbox && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              onClick={() => setLightbox(null)}
+              style={{
+                position: "fixed", inset: 0, zIndex: 90, background: "rgba(17,20,24,0.82)",
+                display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+              }}
+            >
+              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{lightbox.label}</span>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    onClick={() => setLightbox(null)}
+                    style={{ color: "#fff", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    ปิด
+                  </button>
+                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
+                <img
+                  src={lightbox.url}
+                  alt={lightbox.label}
+                  style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 10, background: "#000" }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* recommended action + review buttons */}
           <div style={{ marginTop: 14, background: "#F8F9FB", borderRadius: 11, padding: "14px 16px" }}>
@@ -489,6 +546,47 @@ function ReviewBtn({
     >
       {label}
     </button>
+  );
+}
+
+/** การ์ดรูปเดียว — มีรูปจริง → กดขยายได้ · null → placeholder "ไม่มีรูป" */
+function PhotoTile({
+  label, url, onOpen,
+}: {
+  label: string;
+  url: string | null;
+  onOpen?: () => void;
+}) {
+  return (
+    <div style={{ border: "1px solid #E8EAED", borderRadius: 9, overflow: "hidden", background: "#fff" }}>
+      {url ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          title="กดเพื่อดูรูปเต็ม"
+          style={{ display: "block", width: "100%", height: 66, padding: 0, border: "none", background: "#EFF1F4", position: "relative", cursor: "pointer" }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
+          <img
+            src={url}
+            alt={label}
+            loading="lazy"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+          <span style={{ position: "absolute", top: 4, right: 5, background: "rgba(17,20,24,0.5)", borderRadius: 5, padding: 2, lineHeight: 0 }}>
+            <Maximize2 size={12} color="#fff" />
+          </span>
+        </button>
+      ) : (
+        <div style={{ height: 66, background: "#F5F6F8", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
+          <ImageOff size={16} color="#C2C7CF" />
+          <span style={{ fontSize: 9, color: "#AEB4BD" }}>ไม่มีรูป</span>
+        </div>
+      )}
+      <div style={{ padding: "5px 8px" }}>
+        <div style={{ fontSize: 9.5, color: "#9AA1AB", lineHeight: 1.2 }}>{label}</div>
+      </div>
+    </div>
   );
 }
 

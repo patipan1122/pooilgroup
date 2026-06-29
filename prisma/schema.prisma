@@ -95,6 +95,7 @@ model Organization {
   cfCollectionEvents      CfCollectionEvent[]
   cfStockMovements        CfStockMovement[]
   cfDeliveries            CfDelivery[]
+  cfDeliveryLines         CfDeliveryLine[]
   cfGoodsReceipts         CfGoodsReceipt[]
   cfStockCounts           CfStockCount[]
   cfLossDocs              CfLossDoc[]
@@ -2155,6 +2156,7 @@ model CfProduct {
   receiptLines   CfGoodsReceiptLine[]
   countLines     CfStockCountLine[]
   lossLines      CfLossLine[]
+  deliveryLines  CfDeliveryLine[]
 
   @@unique([orgId, sku])
   @@unique([orgId, barcode])
@@ -2366,13 +2368,35 @@ model CfDelivery {
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  createdBy User         @relation("CfDeliveryCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch           @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy User             @relation("CfDeliveryCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  lines     CfDeliveryLine[]
 
   @@index([orgId, branchId, eta(sort: Desc)])
   @@index([orgId, status])
   @@map("cf_deliveries")
+  @@schema("public")
+}
+
+// CF.9b — cf_delivery_lines (รายการสินค้าในใบกระจาย · per-line received qty)
+model CfDeliveryLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  deliveryId  String   @map("delivery_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  productName String   @map("product_name") // snapshot เผื่อสินค้าถูกแก้ชื่อ/ลบ
+  qty         Int // จำนวนที่ส่งตามใบ
+  receivedQty Int      @default(0) @map("received_qty") // จำนวนที่สาขารับจริง (ตั้งตอนยืนยันรับ)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  delivery CfDelivery   @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  product  CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryId])
+  @@index([productId])
+  @@map("cf_delivery_lines")
   @@schema("public")
 }
 

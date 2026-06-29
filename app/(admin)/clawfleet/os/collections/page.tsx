@@ -41,6 +41,12 @@ export default async function CollectionsPage() {
     severity: a.severity,
     type: a.type,
     reason: a.reason || a.typeLabel || "ยอดไม่ตรงกับมิเตอร์",
+    // รูปจริงที่พนักงานถ่ายต่อตู้ (anti-cheat) — ผ่าน eventToMachine → photoShots
+    machines: a.machines.map((m) => ({
+      code: m.code,
+      name: m.name,
+      photoShots: m.photoShots ?? [],
+    })),
     // มิเตอร์ต่อเนื่อง: real loader ยังไม่ส่ง meter snapshot → ใช้ค่าประเมินจาก gap
     sample: false,
   }));

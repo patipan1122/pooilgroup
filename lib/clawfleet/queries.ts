@@ -329,10 +329,18 @@ function eventToMachine(e: {
   anomalyFlags: string[];
   notes: string | null;
 }): Machine {
-  const photos = [
-    e.photoMeterBeforeUrl, e.photoPrizeMeterUrl, e.photoCashUrl,
-    e.photoMeterAfterUrl, e.photoStockUrl,
-  ].filter(Boolean).length;
+  // ⚠️ COLUMN→CONTENT MAPPING (ดู actions.ts ~244 · ชื่อ column ไม่ตรง content):
+  //   photoMeterAfterUrl  = มิเตอร์เหรียญ      photoPrizeMeterUrl = มิเตอร์ตุ๊กตา
+  //   photoStockUrl       = สต็อกก่อนเติม       photoMeterBeforeUrl = สต็อกหลังเติม
+  //   photoCashUrl        = เงินสด
+  const photoShots: { label: string; url: string | null }[] = [
+    { label: "มิเตอร์เหรียญ", url: e.photoMeterAfterUrl },
+    { label: "มิเตอร์ตุ๊กตา", url: e.photoPrizeMeterUrl },
+    { label: "สต็อกก่อนเติม", url: e.photoStockUrl },
+    { label: "สต็อกหลังเติม", url: e.photoMeterBeforeUrl },
+    { label: "เงินสด", url: e.photoCashUrl },
+  ];
+  const photos = photoShots.filter((p) => p.url).length;
   return {
     code: e.machine.code,
     name: e.machine.nickname ?? e.machine.code,
@@ -347,6 +355,7 @@ function eventToMachine(e: {
     prizeMeterPrev: e.dollMeterBefore ?? 0,
     prizeMeterNow: e.dollMeterAfter ?? 0,
     photos,
+    photoShots,
     flag: e.anomalyFlags.length > 0,
     note: e.notes ?? undefined,
   };

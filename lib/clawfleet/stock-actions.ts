@@ -606,6 +606,228 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
 }
 
 // =============================================================
+// 7) ใบกระจายสินค้า (delivery / shipment) คลังกลาง → สาขา
+//    createShipment: สร้างใบ (status SCHEDULED) + รายการสินค้า (cf_delivery_lines)
+//    confirmShipmentReceived: ตั้ง receivedQty + status DELIVERED + รับเข้าสต๊อกสาขา
+//      (RECEIPT_IN movement เดียวกับ receiveStock) · idempotent: ถ้า DELIVERED แล้ว → no-op
+// =============================================================
+const CreateShipmentSchema = z.object({
+  branchId: z.string().uuid("สาขาไม่ถูกต้อง"),
+  fromLocation: z.string().trim().max(200).optional(),
+  eta: z.string().datetime().optional(),
+  note: z.string().trim().max(500).optional(),
+  lines: z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        qty: z.coerce.number().int().positive(),
+      }),
+    )
+    .min(1, "ยังไม่ได้ใส่รายการสินค้าในใบกระจาย"),
+});
+
+export async function createShipment(input: unknown): Promise<Result<{ deliveryId: string }>> {
+  const parsed = CreateShipmentSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { branchId, fromLocation, eta, note, lines } = parsed.data;
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      const ids = lines.map((l) => l.productId);
+      const products = await tx.cfProduct.findMany({
+        where: { id: { in: ids }, orgId },
+        select: { id: true, name: true },
+      });
+      const pmap = new Map(products.map((p) => [p.id, p]));
+
+      // รวม qty ของ product ที่ซ้ำบรรทัด → 1 line ต่อ product (กันใบกระจายมีสินค้าซ้ำ)
+      const agg = new Map<string, { id: string; name: string; qty: number }>();
+      for (const l of lines) {
+        const p = pmap.get(l.productId);
+        if (!p) throw new Error(`ไม่พบสินค้า ${l.productId}`);
+        const cur = agg.get(p.id);
+        if (cur) cur.qty += l.qty;
+        else agg.set(p.id, { id: p.id, name: p.name, qty: l.qty });
+      }
+      const work = Array.from(agg.values());
+      const itemsCount = work.length;
+      const unitsCount = work.reduce((s, w) => s + w.qty, 0);
+
+      const delivery = await tx.cfDelivery.create({
+        data: {
+          orgId,
+          branchId,
+          status: "SCHEDULED",
+          fromLocation: fromLocation || undefined,
+          eta: eta ? new Date(eta) : null,
+          itemsCount,
+          unitsCount,
+          note: note || null,
+          createdById: session.user.id,
+          lines: {
+            create: work.map((w) => ({
+              orgId,
+              productId: w.id,
+              productName: w.name,
+              qty: w.qty,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+      return { deliveryId: delivery.id };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/dashboard");
+  return { ok: true, data: result };
+}
+
+const ConfirmShipmentSchema = z.object({
+  deliveryId: z.string().uuid("ใบกระจายไม่ถูกต้อง"),
+  receivedLines: z
+    .array(
+      z.object({
+        lineId: z.string().uuid(),
+        receivedQty: z.coerce.number().int().min(0),
+      }),
+    )
+    .min(1, "ยังไม่ได้ใส่จำนวนที่รับ"),
+});
+
+export async function confirmShipmentReceived(
+  input: unknown,
+): Promise<Result<{ deliveryId: string; status: string; alreadyReceived: boolean }>> {
+  const parsed = ConfirmShipmentSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { deliveryId, receivedLines } = parsed.data;
+
+  // หา branchId ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา
+  const head = await prisma.cfDelivery.findFirst({
+    where: { id: deliveryId },
+    select: { id: true, orgId: true, branchId: true, status: true },
+  });
+  if (!head) return err("ไม่พบใบกระจาย");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(head.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบกระจายนี้");
+
+  // idempotent guard (นอก tx · เร็ว) — รับแล้วห้ามรับซ้ำ
+  if (head.status === "DELIVERED") {
+    return { ok: true, data: { deliveryId, status: "DELIVERED", alreadyReceived: true } };
+  }
+
+  const recvMap = new Map(receivedLines.map((r) => [r.lineId, r.receivedQty]));
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // re-read สถานะ + lines ใน tx (กัน race: 2 คนกดยืนยันพร้อมกัน → คนหลัง no-op)
+      const d = await tx.cfDelivery.findFirst({
+        where: { id: deliveryId, orgId },
+        select: {
+          id: true,
+          branchId: true,
+          status: true,
+          lines: { select: { id: true, productId: true, productName: true, qty: true } },
+        },
+      });
+      if (!d) throw new Error("ไม่พบใบกระจาย");
+      if (d.status === "DELIVERED") {
+        return { status: "DELIVERED", alreadyReceived: true };
+      }
+
+      // 🔒 atomic claim (กัน double-receive · 2 คนกดยืนยันใบเดียวพร้อมกัน):
+      // updateMany ที่มีเงื่อนไข status ≠ DELIVERED จะล็อกแถว → คนที่สองรอ แล้ว Postgres re-check
+      // WHERE กับค่าใหม่ (DELIVERED) = match 0 แถว → count=0 → no-op ไม่เขียน movement ซ้ำ.
+      // ถ้า throw ภายหลัง (เช่นต้นทุน 0) tx rollback → claim ถูกยกเลิก สถานะกลับเป็นเดิม.
+      const claim = await tx.cfDelivery.updateMany({
+        where: { id: d.id, orgId, status: { not: "DELIVERED" } },
+        data: { status: "DELIVERED" },
+      });
+      if (claim.count !== 1) {
+        return { status: "DELIVERED", alreadyReceived: true };
+      }
+
+      // ต้นทุนต่อชิ้น = ต้นทุนเฉลี่ยปัจจุบันของสินค้า (ห้าม 0 → ทำต้นทุนเฉลี่ยถ่วงน้ำหนักเพี้ยน)
+      const ids = d.lines.map((l) => l.productId);
+      const products = await tx.cfProduct.findMany({
+        where: { id: { in: ids }, orgId },
+        select: { id: true, name: true, unitCostCents: true },
+      });
+      const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+      const nameMap = new Map(products.map((p) => [p.id, p.name]));
+
+      // รวมจำนวนรับจริงต่อ product (กัน product ซ้ำหลาย line) + snapshot ยอด org ก่อนเขียน
+      const agg = new Map<string, { id: string; qty: number; cost: number }>();
+      for (const ln of d.lines) {
+        const recv = recvMap.get(ln.id);
+        // clamp ≤ qty ในใบ (รับเกินจำนวนที่ส่งไม่ได้) · ไม่ส่งจำนวนมา = รับครบตามใบ
+        const qty = recv == null ? ln.qty : Math.min(recv, ln.qty);
+        await tx.cfDeliveryLine.update({ where: { id: ln.id }, data: { receivedQty: qty } });
+        if (qty <= 0) continue;
+        const cost = costMap.get(ln.productId) ?? 0;
+        if (cost <= 0) {
+          // reject ทั้งใบ (rollback claim) แทนเขียน movement ทุน 0 ที่ทำต้นทุนเฉลี่ยเพี้ยน
+          throw new Error(
+            `สินค้า "${nameMap.get(ln.productId) ?? ln.productName}" ยังไม่ได้ตั้งราคาทุน · ตั้งราคาทุนก่อนรับเข้าคลัง`,
+          );
+        }
+        const cur = agg.get(ln.productId);
+        if (cur) cur.qty += qty;
+        else agg.set(ln.productId, { id: ln.productId, qty, cost });
+      }
+
+      // รับเข้าสต๊อกสาขา — RECEIPT_IN movement (machineId null = คลังสาขา) · ตรรกะเดียวกับ receiveStock
+      const now = new Date();
+      for (const a of agg.values()) {
+        const oldBal = await currentBalance(tx, orgId, d.branchId, a.id);
+        await tx.cfStockMovement.create({
+          data: {
+            orgId,
+            branchId: d.branchId,
+            type: "RECEIPT_IN",
+            productId: a.id,
+            qty: a.qty,
+            unitCostCents: a.cost,
+            occurredAt: now,
+            createdById: session.user.id,
+            refTable: "cf_deliveries",
+            refId: d.id,
+            documentType: "transfer",
+            documentId: d.id,
+            reason: `ตรวจรับใบกระจาย · คงเหลือ ${oldBal + a.qty}`,
+          },
+        });
+      }
+
+      // (สถานะ DELIVERED ถูกตั้งแล้วตอน claim ด้านบน)
+      return { status: "DELIVERED", alreadyReceived: false };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/dashboard");
+  return { ok: true, data: { deliveryId, status: result.status, alreadyReceived: result.alreadyReceived } };
+}
+
+// =============================================================
 // 6) สินค้าตัวอย่าง (idempotent) — ให้คลังมีของให้รับเข้า/นับ/ตัด
 // =============================================================
 const CF_SAMPLE_PRODUCTS: Array<{ sku: string; barcode: string; name: string; category: "PLUSH" | "TOY" | "KEYCHAIN" | "MODEL"; costBaht: number }> = [

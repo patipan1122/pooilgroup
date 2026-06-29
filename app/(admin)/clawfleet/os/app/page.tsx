@@ -5,6 +5,7 @@
  * หน้านี้แสดงทั้งใน back-office (กรอบมือถือ) และใช้เต็มจอบนมือถือจริง (component เดียว render สองที่).
  */
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
+import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { StaffAppClient } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -23,5 +24,22 @@ export default async function StaffAppPage() {
     // graceful: ยังไม่ migrate / DB ว่าง → client จะ demo fallback เอง
   }
 
-  return <StaffAppClient orgId={orgId} branches={branches} skus={skus} />;
+  // นโยบายถ่ายรูป (photoRequired) — อ่าน server-side ส่งให้แอปพนักงานบังคับถ่ายรูป.
+  // graceful: ถ้าอ่านไม่ได้ (ยังไม่ login / DB ว่าง) → ใช้ default false (ถ่ายได้-ข้ามได้).
+  let photoRequired = false;
+  try {
+    const policy = await getClawfleetPolicy();
+    photoRequired = policy.photoRequired;
+  } catch {
+    // graceful: ใช้ default (ไม่บังคับ) เมื่ออ่าน policy ไม่ได้
+  }
+
+  return (
+    <StaffAppClient
+      orgId={orgId}
+      branches={branches}
+      skus={skus}
+      photoRequired={photoRequired}
+    />
+  );
 }

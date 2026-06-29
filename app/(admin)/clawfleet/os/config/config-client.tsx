@@ -42,6 +42,19 @@ export function ConfigClient({
   const [rows, setRows] = useState<CfConfigRequestView[]>(requests);
   const [isPending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
+  // error แบบ inline ต่อการ์ด (แทน window.alert) — auto-clear ใน 6 วิ
+  const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
+
+  function showRowError(id: string, msg: string) {
+    setErrorByRow((prev) => ({ ...prev, [id]: msg }));
+    setTimeout(() => {
+      setErrorByRow((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }, 6000);
+  }
 
   const pendingCount = useMemo(
     () => rows.filter((r) => r.status === "pending").length,
@@ -60,7 +73,7 @@ export function ConfigClient({
           : await rejectCfConfigRequest(req.id);
       setBusyId(null);
       if (!res.ok) {
-        window.alert(res.error);
+        showRowError(req.id, res.error ?? "ทำรายการไม่สำเร็จ ลองอีกครั้ง");
         return;
       }
       // อัปเดตสถานะในหน้าให้ตรง (revalidatePath จะรีเฟรชจริงในรอบถัดไป)
@@ -244,6 +257,28 @@ export function ConfigClient({
                     {cf.status === "approved" ? "อนุมัติโดย" : "ตีกลับโดย"} {cf.reviewedByName}
                     {cf.reviewedAt ? ` · ${timeLabel(cf.reviewedAt)}` : ""}
                     {cf.reviewNote ? ` · ${cf.reviewNote}` : ""}
+                  </div>
+                )}
+
+                {/* error แบบ inline (แทน alert) — auto-clear */}
+                {errorByRow[cf.id] && (
+                  <div
+                    role="alert"
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      fontSize: 12,
+                      background: "#FCEDEC",
+                      border: "1px solid #F0CFCB",
+                      borderRadius: 10,
+                      padding: "10px 13px",
+                      marginTop: 12,
+                      color: "#9B3127",
+                    }}
+                  >
+                    <AlertTriangle size={14} color="#B42318" style={{ flex: "0 0 14px", marginTop: 1 }} />
+                    <span>{errorByRow[cf.id]}</span>
                   </div>
                 )}
 

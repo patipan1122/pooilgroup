@@ -47,6 +47,13 @@ export type Machine = {
   prizeMeterPrev: number;
   prizeMeterNow: number;
   photos: number;
+  /**
+   * รูปจริงที่พนักงานถ่ายตอนเก็บเงิน (anti-cheat) — label = ความหมายจริงของรูป
+   * (column ใน DB ชื่อไม่ตรง content · ดู mapping ใน queries.eventToMachine / actions.ts).
+   * url = null → ตู้นั้นไม่มีรูปช่องนี้ (client โชว์ "ไม่มีรูป"). optional เพื่อ backward-compat
+   * กับ mock/legacy tier ที่ยังไม่ส่ง array นี้.
+   */
+  photoShots?: { label: string; url: string | null }[];
   flag: boolean;
   note?: string;
 };
