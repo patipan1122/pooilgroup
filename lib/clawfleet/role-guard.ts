@@ -142,14 +142,14 @@ export async function assertCanReviewSession(sessionId: string): Promise<Session
   if (!isCfBranchManager(session.user.role)) redirect("/403");
   const cfSession = await prisma.cfCollectionSession.findFirst({
     where: { id: sessionId, orgId: session.user.org_id },
-    // Pre-migration safe select: top-level branchId column does NOT exist in prod DB
-    // yet. Resolve the session's branch via its group only. If the group (and thus
-    // branchId) is null we cannot verify ownership → deny (never silently pass an
-    // unscoped session).
-    select: { group: { select: { branchId: true } } },
+    // Resolve the session's branch from EITHER its own top-level branchId column
+    // (staff-app collect flow sets this directly, groupId may be null) OR its group.
+    // Prefer the top-level branchId when present. If BOTH are null we cannot verify
+    // ownership → deny (never silently pass an unscoped session).
+    select: { branchId: true, group: { select: { branchId: true } } },
   });
   if (!cfSession) redirect("/404");
-  const sessionBranchId = cfSession.group?.branchId;
+  const sessionBranchId = cfSession.branchId ?? cfSession.group?.branchId;
   if (!sessionBranchId) redirect("/403");
   const ub = await prisma.userBranch.findFirst({
     where: { userId: session.user.id, branchId: sessionBranchId },

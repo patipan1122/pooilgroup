@@ -27,10 +27,19 @@ export type StaffQualityRow = {
   role: string;
   branchName: string;
   status: MemberStatus;
-  /** จำนวนรอบเก็บเงิน — null = ยังไม่มี metric จริง (ดู gap) */
+  /** จำนวนรอบเก็บเงินที่ปิดในช่วง 30 วัน (จริง) */
   rounds: number | null;
-  /** จำนวนครั้งยอดไม่ตรง — null = ยังไม่มี metric จริง (ดู gap) */
+  /** จำนวนครั้งยอดไม่ตรง 30 วัน (จริง · event anomaly + รอบ review) */
   mismatch: number | null;
+};
+export type LowStockItem = {
+  name: string;
+  /** สาขาที่ใกล้หมด */
+  loc: string;
+  /** คงคลังในคลังสาขา */
+  qty: number;
+  /** จุดสั่งเติม */
+  reorderLevel: number;
 };
 
 /* ── สถานะพนักงาน → pill ── */
@@ -68,13 +77,19 @@ const SAMPLE_STAFF: StaffQualityRow[] = [
   { id: "ss5", name: "กิตติ ศรีสุข", role: "staff", branchName: "นนทบุรี", status: "invited", rounds: 0, mismatch: 0 },
 ];
 
-/* สินค้าใกล้หมด — SAMPLE ทั้งหมด (ยังไม่มี aggregate ต่ำกว่า reorder จาก backend · ดู gap) */
-const SAMPLE_LOW_STOCK: { name: string; loc: string; qty: number; color: string }[] = [
-  { name: "หมีบราวน์ ไซต์ L", loc: "คลังกลาง", qty: 8, color: "#B42318" },
-  { name: "ไดโนเสาร์เขียว", loc: "คลังกลาง", qty: 14, color: "#B45309" },
-  { name: "แมวเหมียวชมพู", loc: "รังสิต", qty: 19, color: "#B45309" },
-  { name: "ยูนิคอร์น พาสเทล", loc: "ลาดพร้าว", qty: 22, color: "#B45309" },
+/* สินค้าใกล้หมด — SAMPLE fallback (ใช้เมื่อ DB ว่าง) */
+const SAMPLE_LOW_STOCK: LowStockItem[] = [
+  { name: "หมีบราวน์ ไซต์ L", loc: "คลังกลาง", qty: 2, reorderLevel: 8 },
+  { name: "ไดโนเสาร์เขียว", loc: "คลังกลาง", qty: 4, reorderLevel: 8 },
+  { name: "แมวเหมียวชมพู", loc: "รังสิต", qty: 6, reorderLevel: 8 },
+  { name: "ยูนิคอร์น พาสเทล", loc: "ลาดพร้าว", qty: 7, reorderLevel: 8 },
 ];
+
+/** สีเตือนตามความใกล้หมด: ยิ่งต่ำเทียบ reorder ยิ่งแดงเข้ม */
+function lowStockColor(qty: number, reorder: number): string {
+  if (qty <= Math.ceil(reorder / 2)) return "#B42318"; // วิกฤต (≤ ครึ่งของจุดสั่งเติม)
+  return "#B45309"; // ใกล้หมด
+}
 
 function problemIssue(p: ProblemBranch): string {
   const t = pnlTone(p.flag);
@@ -86,14 +101,17 @@ function problemIssue(p: ProblemBranch): string {
 export function ReportsClient({
   problemBranches,
   staffQuality,
+  lowStock: lowStockReal,
 }: {
   problemBranches: ProblemBranch[];
   staffQuality: StaffQualityRow[];
+  lowStock: LowStockItem[];
 }) {
   const empty = problemBranches.length === 0 && staffQuality.length === 0;
   const problems = problemBranches.length === 0 ? SAMPLE_PROBLEMS : problemBranches;
   const staff = staffQuality.length === 0 ? SAMPLE_STAFF : staffQuality;
-  const lowStock = SAMPLE_LOW_STOCK; // backend gap — ดู briefing
+  // ข้อมูลจริง · ใช้ SAMPLE เฉพาะตอนทั้งระบบยังว่าง (ไม่มีสาขา/staff)
+  const lowStock = empty && lowStockReal.length === 0 ? SAMPLE_LOW_STOCK : lowStockReal;
 
   return (
     <div>
@@ -127,17 +145,20 @@ export function ReportsClient({
           )}
         </Card>
 
-        <Card title="สินค้าใกล้หมด · ต้องสั่งเพิ่ม" sub="ตุ๊กตาต่ำกว่าจุดสั่งเติม" right={<IconBox tone="amber" size={28} radius={8}><Boxes size={15} /></IconBox>}>
-          {lowStock.map((s, i) => (
-            <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
-                <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{s.loc}</div>
+        <Card title="สินค้าใกล้หมด · ต้องสั่งเพิ่ม" sub={`ตุ๊กตาต่ำกว่าจุดสั่งเติม (≤ ${SAMPLE_LOW_STOCK[0].reorderLevel} ชิ้น)`} right={<IconBox tone="amber" size={28} radius={8}><Boxes size={15} /></IconBox>}>
+          {lowStock.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "8px 0" }}>คลังทุกสาขาอยู่เหนือจุดสั่งเติม — ไม่มีสินค้าใกล้หมด</div>
+          ) : (
+            lowStock.map((s, i) => (
+              <div key={`${s.loc}-${s.name}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+                  <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{s.loc}</div>
+                </div>
+                <span className="num" style={{ fontSize: 14, fontWeight: 700, color: lowStockColor(s.qty, s.reorderLevel), whiteSpace: "nowrap" }}>{num(s.qty)} ชิ้น</span>
               </div>
-              <span className="num" style={{ fontSize: 14, fontWeight: 700, color: s.color, whiteSpace: "nowrap" }}>{num(s.qty)} ชิ้น</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 10, fontSize: 10.5, color: "#9AA1AB", fontStyle: "italic" }}>* ตัวอย่าง — ยังไม่ได้เชื่อมจุดสั่งเติมจริง</div>
+            ))
+          )}
         </Card>
       </div>
 
@@ -172,7 +193,7 @@ export function ReportsClient({
         </div>
         {staffQuality.length > 0 && (
           <div style={{ padding: "10px 20px", fontSize: 10.5, color: "#9AA1AB", fontStyle: "italic", borderTop: "1px solid #F4F5F7" }}>
-            * &quot;รอบเก็บ&quot; และ &quot;ยอดไม่ตรง&quot; ต่อคน ยังไม่มี metric จริง (แสดง —) — ดูได้จากหน้าเก็บเงิน/ตรวจสอบ
+            * &quot;รอบเก็บ&quot; = จำนวนรอบที่ปิดในรอบ 30 วัน · &quot;ยอดไม่ตรง&quot; = ครั้งที่เก็บแล้วยอดเงิน/ตุ๊กตาไม่ตรง (30 วัน)
           </div>
         )}
       </Card>

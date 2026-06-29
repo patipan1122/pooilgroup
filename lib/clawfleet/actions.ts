@@ -241,7 +241,17 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
           stockBefore: data.stockBefore,
           stockAfter: data.stockAfter,
           refillQty: data.refillQty,
-          // 5 photos → schema columns
+          // ⚠️ COLUMN→CONTENT MAPPING (column names DON'T match content — no migration to rename).
+          // The 5 captured photos are packed into 5 existing columns. When you READ these back,
+          // map column → REAL meaning using this table (do NOT trust the column name):
+          //   photoMeterAfterUrl   = รูปมิเตอร์เหรียญ (coin meter)   ← data.photoCoinMeterUrl
+          //   photoPrizeMeterUrl   = รูปมิเตอร์ตุ๊กตา (prize meter)  ← data.photoPrizeMeterUrl  (name OK)
+          //   photoStockUrl        = รูปตุ๊กตาก่อนเติม (stock before) ← data.photoStockBeforeUrl
+          //   photoMeterBeforeUrl  = รูปตุ๊กตาหลังเติม (stock after)  ← data.photoStockAfterUrl  (reused slot!)
+          //   photoCashUrl         = รูปเงินสด (cash)                ← data.photoCashUrl         (name OK)
+          // Read side today only COUNTS non-null photos (queries.ts eventToMachine) — never labels by
+          // column name — so this is currently cosmetic. Keep labels in sync with the table above if a
+          // per-photo gallery is ever added.
           photoMeterAfterUrl: data.photoCoinMeterUrl,
           photoPrizeMeterUrl: data.photoPrizeMeterUrl,
           photoStockUrl: data.photoStockBeforeUrl,
@@ -497,9 +507,13 @@ export async function submitExchangerEvent(input: unknown): Promise<ResultOf<{ i
         coinMeterAfter: data.coinMeterAfter, // token dispensed = delta
         cashCountedCents: data.cashCountedCents, // money collected at exchanger
         promoCoinsDispensed: data.promoCoinsDispensed ?? null,
+        // ⚠️ COLUMN→CONTENT MAPPING (EXCHANGER · names don't match — see CLAW write site above):
+        //   photoMeterAfterUrl  = รูปมิเตอร์เหรียญ (coin meter) ← data.photoCoinMeterUrl
+        //   photoCashUrl        = รูปเงินสด (cash)              ← data.photoCashUrl       (name OK)
+        //   photoMeterBeforeUrl = รูปถาดเหรียญ (token tray)     ← data.photoTokenTrayUrl  (reused slot!)
         photoMeterAfterUrl: data.photoCoinMeterUrl,
         photoCashUrl: data.photoCashUrl,
-        photoMeterBeforeUrl: data.photoTokenTrayUrl, // reuse slot for token-tray photo
+        photoMeterBeforeUrl: data.photoTokenTrayUrl,
         notes: data.notes,
       },
       select: { id: true },

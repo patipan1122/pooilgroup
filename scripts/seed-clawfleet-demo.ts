@@ -69,57 +69,115 @@ async function main() {
   if (!admin) throw new Error("no super_admin");
   tick(`org=${org.name} · user=${admin.name} · company=${company.name}`);
 
-  // ---- 1. Idempotent cleanup ----
-  await prisma.cfStockMovement.deleteMany({
-    where: { orgId: org.id, reason: { startsWith: DEMO_TAG } },
+  // ---- 1. Idempotent cleanup (dependency-safe · ลบตามความสัมพันธ์ ไม่พึ่งแค่ tag) ----
+  // หา id ของของเดโมทั้งหมดก่อน · ลบลูกก่อนพ่อเสมอ กัน FK violation
+  const demoBranches = await prisma.branch.findMany({
+    where: { orgId: org.id, code: { startsWith: "DM-BR-" } },
+    select: { id: true },
   });
+  const demoBranchIds = demoBranches.map((b) => b.id);
+  const demoMachines = await prisma.cfMachine.findMany({
+    where: { orgId: org.id, code: { startsWith: "DM-" } },
+    select: { id: true },
+  });
+  const demoMachineIds = demoMachines.map((m) => m.id);
+  const demoGroups = await prisma.cfMachineGroup.findMany({
+    where: {
+      orgId: org.id,
+      OR: [
+        { name: { startsWith: DEMO_TAG } },
+        { branchId: { in: demoBranchIds } },
+      ],
+    },
+    select: { id: true },
+  });
+  const demoGroupIds = demoGroups.map((g) => g.id);
+  // sessions ของเดโม = อ้าง group เดโม หรือ branch เดโม หรือ tag เดโม
+  const demoSessions = await prisma.cfCollectionSession.findMany({
+    where: {
+      orgId: org.id,
+      OR: [
+        { reviewNote: { startsWith: DEMO_TAG } },
+        { groupId: { in: demoGroupIds } },
+        { branchId: { in: demoBranchIds } },
+      ],
+    },
+    select: { id: true },
+  });
+  const demoSessionIds = demoSessions.map((s) => s.id);
+
+  // (a) events — ลูกสุดของ session/machine
   await prisma.cfCollectionEvent.deleteMany({
-    where: { orgId: org.id, notes: { startsWith: DEMO_TAG } },
+    where: {
+      orgId: org.id,
+      OR: [
+        { notes: { startsWith: DEMO_TAG } },
+        { sessionId: { in: demoSessionIds } },
+        { machineId: { in: demoMachineIds } },
+      ],
+    },
   });
+  // (b) sessions
   await prisma.cfCollectionSession.deleteMany({
-    where: { orgId: org.id, reviewNote: { startsWith: DEMO_TAG } },
+    where: { orgId: org.id, id: { in: demoSessionIds } },
   });
+  // (c) stock docs + movements (lines cascade)
+  await prisma.cfStockMovement.deleteMany({
+    where: {
+      orgId: org.id,
+      OR: [
+        { reason: { startsWith: DEMO_TAG } },
+        { machineId: { in: demoMachineIds } },
+        { branchId: { in: demoBranchIds } },
+      ],
+    },
+  });
+  await prisma.cfGoodsReceipt.deleteMany({
+    where: { orgId: org.id, OR: [{ receiptCode: { startsWith: "GR-DM-" } }, { branchId: { in: demoBranchIds } }] },
+  });
+  await prisma.cfStockCount.deleteMany({
+    where: { orgId: org.id, OR: [{ countCode: { startsWith: "SC-DM-" } }, { branchId: { in: demoBranchIds } }] },
+  });
+  await prisma.cfLossDoc.deleteMany({
+    where: { orgId: org.id, OR: [{ lossCode: { startsWith: "LS-DM-" } }, { branchId: { in: demoBranchIds } }] },
+  });
+  // (d) loadouts
   await prisma.cfMachineLoadout.deleteMany({
-    where: { orgId: org.id, notes: { startsWith: DEMO_TAG } },
+    where: { orgId: org.id, OR: [{ notes: { startsWith: DEMO_TAG } }, { machineId: { in: demoMachineIds } }] },
   });
   await prisma.cfExchangerLoadout.deleteMany({
-    where: { orgId: org.id, notes: { startsWith: DEMO_TAG } },
+    where: { orgId: org.id, OR: [{ notes: { startsWith: DEMO_TAG } }, { machineId: { in: demoMachineIds } }] },
   });
-  // detach machines from groups first so we can drop both
+  // (e) detach machines/exchanger from groups, then drop groups + machines + branches
   await prisma.cfMachineGroup.updateMany({
-    where: { orgId: org.id, name: { startsWith: DEMO_TAG } },
+    where: { orgId: org.id, id: { in: demoGroupIds } },
     data: { exchangerId: null },
   });
   await prisma.cfMachine.updateMany({
-    where: { orgId: org.id, code: { startsWith: "DM-" } },
+    where: { orgId: org.id, id: { in: demoMachineIds } },
     data: { groupId: null },
   });
   await prisma.cfMachineGroup.deleteMany({
-    where: { orgId: org.id, name: { startsWith: DEMO_TAG } },
+    where: { orgId: org.id, id: { in: demoGroupIds } },
   });
   await prisma.cfMachine.deleteMany({
-    where: { orgId: org.id, code: { startsWith: "DM-" } },
+    where: { orgId: org.id, id: { in: demoMachineIds } },
   });
   await prisma.branch.deleteMany({
-    where: { orgId: org.id, code: { startsWith: "DM-BR-" } },
+    where: { orgId: org.id, id: { in: demoBranchIds } },
   });
   tick("Cleaned previous demo rows");
 
-  // ---- 2. Branches (2 new demo + reuse 1 existing) ----
-  const existingBranch = await prisma.branch.findFirst({
-    where: { orgId: org.id, businessType: "claw_machine", isActive: true },
+  // ---- 2. Branches (3 fresh demo · ไม่แตะสาขาจริง · ลบง่ายด้วย prefix DM-BR-) ----
+  const branchA = await prisma.branch.create({
+    data: {
+      orgId: org.id,
+      companyId: company.id,
+      code: "DM-BR-00",
+      name: `${DEMO_TAG} ตู้คีบ เมกาบางนา`,
+      businessType: "claw_machine",
+    },
   });
-  const branchA =
-    existingBranch ??
-    (await prisma.branch.create({
-      data: {
-        orgId: org.id,
-        companyId: company.id,
-        code: "DM-BR-00",
-        name: `${DEMO_TAG} ตู้คีบ สาขาแรก (auto)`,
-        businessType: "claw_machine",
-      },
-    }));
   const branchB = await prisma.branch.create({
     data: {
       orgId: org.id,
@@ -389,6 +447,102 @@ async function main() {
   }
   tick("Stock movements", stockCount);
 
+  // ---- 6b. Stock documents (รับของ · นับสต็อก · ตัดของเสีย) — per unique branch ----
+  const uniqBranches = Array.from(
+    new Map(groups.map((g) => [g.branchId, g.branchName])).entries()
+  ).map(([branchId, branchName]) => ({ branchId, branchName }));
+  let grN = 0;
+  let scN = 0;
+  let lsN = 0;
+  let docCount = 0;
+  for (const b of uniqBranches) {
+    // (1) Goods receipt — รับตุ๊กตาเข้าคลังสาขา
+    const recvLines = products.slice(0, 3).map((p) => ({ p, qty: rand(40, 90) }));
+    await prisma.cfGoodsReceipt.create({
+      data: {
+        orgId: org.id,
+        branchId: b.branchId,
+        receiptCode: `GR-DM-${String(++grN).padStart(3, "0")}`,
+        supplierName: `${DEMO_TAG} ผู้จัดส่งตุ๊กตา ABC`,
+        note: `${DEMO_TAG} รับของเข้าคลัง`,
+        totalCostCents: recvLines.reduce((s, l) => s + l.qty * l.p.unitCostCents, 0),
+        createdById: admin.id,
+        createdAt: daysAgo(rand(8, 12)),
+        lines: {
+          create: recvLines.map((l) => ({
+            orgId: org.id,
+            productId: l.p.id,
+            productName: l.p.name,
+            quantity: l.qty,
+            unitCostCents: l.p.unitCostCents,
+          })),
+        },
+      },
+    });
+    docCount++;
+
+    // (2) Stock count — นับสต็อกจริง (มีส่วนต่างเล็กน้อย)
+    const cntLines = products.slice(0, 4).map((p) => {
+      const systemQty = rand(20, 60);
+      const diff = rand(-3, 1);
+      return { p, systemQty, countedQty: systemQty + diff, diff };
+    });
+    await prisma.cfStockCount.create({
+      data: {
+        orgId: org.id,
+        branchId: b.branchId,
+        countCode: `SC-DM-${String(++scN).padStart(3, "0")}`,
+        note: `${DEMO_TAG} นับสต็อกประจำสัปดาห์`,
+        itemsCounted: cntLines.filter((l) => l.diff !== 0).length,
+        totalDiff: cntLines.reduce((s, l) => s + l.diff, 0),
+        countedById: admin.id,
+        countedByName: admin.name,
+        countedAt: daysAgo(rand(3, 6)),
+        lines: {
+          create: cntLines.map((l) => ({
+            orgId: org.id,
+            productId: l.p.id,
+            productName: l.p.name,
+            systemQty: l.systemQty,
+            countedQty: l.countedQty,
+            diff: l.diff,
+            reason: l.diff < 0 ? `${DEMO_TAG} ขาดหาย` : null,
+          })),
+        },
+      },
+    });
+    docCount++;
+
+    // (3) Loss doc — ตัดตุ๊กตาเสีย/ชำรุด
+    const lossProd = products[0]!;
+    const lossQty = rand(1, 3);
+    await prisma.cfLossDoc.create({
+      data: {
+        orgId: org.id,
+        branchId: b.branchId,
+        lossCode: `LS-DM-${String(++lsN).padStart(3, "0")}`,
+        note: `${DEMO_TAG} ตุ๊กตาชำรุดจากการขนส่ง`,
+        totalCostCents: lossQty * lossProd.unitCostCents,
+        reportedById: admin.id,
+        reportedAt: daysAgo(rand(2, 5)),
+        lines: {
+          create: [
+            {
+              orgId: org.id,
+              productId: lossProd.id,
+              productName: lossProd.name,
+              qty: lossQty,
+              unitCostCents: lossProd.unitCostCents,
+              note: `${DEMO_TAG} ชำรุด`,
+            },
+          ],
+        },
+      },
+    });
+    docCount++;
+  }
+  tick("Stock documents (รับ/นับ/ตัด)", docCount);
+
   // ---- 7. Historical sessions · CLOSED healthy ----
   let sessionCount = 0;
   let eventCount = 0;
@@ -440,6 +594,7 @@ async function main() {
         data: {
           orgId: org.id,
           groupId: g.groupId,
+          branchId: g.branchId,
           sessionCode,
           openedAt: sessionAt,
           openedById: admin.id,
@@ -534,6 +689,7 @@ async function main() {
       data: {
         orgId: org.id,
         groupId: g.groupId,
+        branchId: g.branchId,
         sessionCode: todayCode,
         openedAt: hoursAgo(rand(1, 3)),
         openedById: admin.id,
@@ -588,11 +744,13 @@ async function main() {
 
   console.log("\n=== Final DB state ===");
   console.log(JSON.stringify(final, null, 2));
-  console.log("\n=== Visit ===");
-  console.log("  /clawfleet/hub        (morning launcher)");
-  console.log("  /clawfleet/operations (sessions + anomalies)");
-  console.log("  /clawfleet/insights   (7-view explorer)");
-  console.log("  /clawfleet/setup      (machines · products · users)");
+  console.log("\n=== Visit (ตู้คีบ OS) ===");
+  console.log("  /clawfleet/os/dashboard   (ภาพรวม)");
+  console.log("  /clawfleet/os/branches    (รายสาขา)");
+  console.log("  /clawfleet/os/collections (รอบเก็บเงิน + ธงผิดปกติ)");
+  console.log("  /clawfleet/os/matrix      (ตู้ × วัน)");
+  console.log("  /clawfleet/os/stock       (คลัง · รับ/นับ/ตัด)");
+  console.log("  /clawfleet/os/reports     (รายงาน)");
   console.log("");
   process.exit(0);
 }

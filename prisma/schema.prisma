@@ -98,6 +98,7 @@ model Organization {
   cfGoodsReceipts         CfGoodsReceipt[]
   cfStockCounts           CfStockCount[]
   cfLossDocs              CfLossDoc[]
+  cfConfigRequests        CfConfigRequest[]
   // Ledger module
   ledgerCategories        LedgerCategory[]
   ledgerExpenses          LedgerExpense[]
@@ -254,6 +255,8 @@ model User {
   cfReceiptsCreated        CfGoodsReceipt[]             @relation("CfReceiptCreator")
   cfStockCountsCounted     CfStockCount[]               @relation("CfCountCounter")
   cfLossDocsReported       CfLossDoc[]                  @relation("CfLossReporter")
+  cfConfigRequestsSubmitted CfConfigRequest[]           @relation("CfConfigRequester")
+  cfConfigRequestsReviewed CfConfigRequest[]            @relation("CfConfigReviewer")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -334,6 +337,7 @@ model Branch {
   cfGoodsReceipts  CfGoodsReceipt[]
   cfStockCounts    CfStockCount[]
   cfLossDocs       CfLossDoc[]
+  cfConfigRequests CfConfigRequest[]
   // Ledger module
   ledgerExpenses   LedgerExpense[]
   ledgerBudgets    LedgerBudget[]
@@ -2094,6 +2098,7 @@ model CfMachine {
   events            CfCollectionEvent[]
   exchangerOfGroup  CfMachineGroup?      @relation("CfGroupExchanger")
   stockMovements    CfStockMovement[]
+  configRequests    CfConfigRequest[]
 
   @@unique([orgId, code])
   @@index([orgId, branchId, kind, isActive])
@@ -2414,6 +2419,45 @@ model CfGoodsReceiptLine {
   @@index([receiptId])
   @@index([productId])
   @@map("cf_goods_receipt_lines")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.10b — cf_config_requests (คำขอตั้งค่าตู้ · machine config approval queue)
+// พนักงานเสนอปรับความแรงคีบ/ราคา → PENDING → เจ้าของอนุมัติ/ตีกลับ.
+// snapshot machineCode/branchName/submittedByName เผื่อลบของจริงแล้วประวัติยังอ่านได้.
+// =============================================================
+model CfConfigRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  branchId        String    @map("branch_id") @db.Uuid
+  machineId       String?   @map("machine_id") @db.Uuid
+  machineCode     String    @map("machine_code") // snapshot e.g. "DM-CW-A101"
+  branchName      String    @map("branch_name") // snapshot
+  productName     String?   @map("product_name")
+  clawFrom        Int?      @map("claw_from")
+  clawTo          Int?      @map("claw_to")
+  priceBaht       Int?      @map("price_baht")
+  reason          String
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  submittedById   String    @map("submitted_by_id") @db.Uuid
+  submittedByName String?   @map("submitted_by_name")
+  submittedAt     DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  reviewedById    String?   @map("reviewed_by_id") @db.Uuid
+  reviewedByName  String?   @map("reviewed_by_name")
+  reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote      String?   @map("review_note")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch      Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  machine     CfMachine?   @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  submittedBy User         @relation("CfConfigRequester", fields: [submittedById], references: [id], onDelete: Restrict)
+  reviewedBy  User?        @relation("CfConfigReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId, status])
+  @@index([orgId, branchId])
+  @@map("cf_config_requests")
   @@schema("public")
 }
 

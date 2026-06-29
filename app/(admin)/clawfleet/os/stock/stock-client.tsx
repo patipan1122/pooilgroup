@@ -8,13 +8,15 @@
  * ข้อมูลจริงจาก server (สาขาแรก) ถ้าว่าง → SAMPLE fallback เต็ม + แบนเนอร์ "กำลังแสดงตัวอย่าง".
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
   Boxes, ArrowRight, Plus,
 } from "lucide-react";
 import { Card, Pill, IconBox, Modal } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
+import { transferStock, receiveStock } from "@/lib/clawfleet/stock-actions";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
 export type ReceiptSeed = { items: string; date: string; status: "received" | "pending" | "diff" };
@@ -27,6 +29,9 @@ export type BranchStockSeed = {
   receipts: ReceiptSeed[];
   hasReal: boolean;
 };
+/** ตัวเลือกจริงจาก DB สำหรับฟอร์มที่ต้องเขียนกลับ (โอน/ตรวจรับ) — ต้องมี UUID จริง */
+export type BranchOption = { id: string; name: string };
+export type ProductOption = { id: string; name: string; unitCostCents: number };
 
 /* ───────────────────────── view models ───────────────────────── */
 type BranchRow = {
@@ -189,7 +194,15 @@ function ageTag(days: number): WarehouseItem["tag"] {
 const TH_ITEM: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9AA1AB" };
 
 /* ───────────────────────── main ───────────────────────── */
-export function StockClient({ branches }: { branches: BranchStockSeed[] }) {
+export function StockClient({
+  branches,
+  realBranches,
+  products,
+}: {
+  branches: BranchStockSeed[];
+  realBranches: BranchOption[];
+  products: ProductOption[];
+}) {
   const empty = branches.length === 0;
 
   // map seed → BranchRow (เติมตัวเลขที่ query ไม่มีจาก sample เป็น proxy)
@@ -245,13 +258,23 @@ export function StockClient({ branches }: { branches: BranchStockSeed[] }) {
         })}
       </div>
 
-      {tab === "overview" ? <OverviewTab branchRows={branchRows} /> : <DistributionTab />}
+      {tab === "overview"
+        ? <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} />
+        : <DistributionTab realBranches={realBranches} products={products} />}
     </div>
   );
 }
 
 /* ───────────────────────── OVERVIEW ───────────────────────── */
-function OverviewTab({ branchRows }: { branchRows: BranchRow[] }) {
+function OverviewTab({
+  branchRows,
+  realBranches,
+  products,
+}: {
+  branchRows: BranchRow[];
+  realBranches: BranchOption[];
+  products: ProductOption[];
+}) {
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
   const machineWarn = SAMPLE_MACHINES.filter((m) => m.ageDays >= 40).length;
@@ -422,7 +445,7 @@ function OverviewTab({ branchRows }: { branchRows: BranchRow[] }) {
           })}
         </Card>
 
-        <TransfersCard />
+        <TransfersCard realBranches={realBranches} products={products} />
       </div>
 
       {/* warehouse item detail modal */}
@@ -431,18 +454,64 @@ function OverviewTab({ branchRows }: { branchRows: BranchRow[] }) {
   );
 }
 
+/* ───────────────────────── form field styles ───────────────────────── */
+const FIELD_LABEL: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#5A6270", marginBottom: 6, display: "block" };
+const FIELD_INPUT: React.CSSProperties = {
+  width: "100%", fontSize: 13, padding: "10px 12px", borderRadius: 10,
+  border: "1px solid #E3E6EA", background: "#fff", color: "#1A1D21", outline: "none",
+};
+
 /* ───────────────────────── transfers card (with + โอนสินค้า) ───────────────────────── */
-function TransfersCard() {
+function TransfersCard({ realBranches, products }: { realBranches: BranchOption[]; products: ProductOption[] }) {
+  const router = useRouter();
   const [transfers, setTransfers] = useState<Transfer[]>(SAMPLE_TRANSFERS);
   const [adding, setAdding] = useState(false);
+  const [pending, startTransition] = useTransition();
 
-  function quickTransfer() {
-    // optimistic sample: เพิ่มใบโอนใหม่ขึ้นหัวลิสต์ (สถานะ กำลังส่ง)
-    setTransfers((prev) => [
-      { to: "มีนบุรี", status: "in_transit", dateISO: new Date().toISOString(), items: "หมีบราวน์ M ×24 · ยูนิคอร์น ×16" },
-      ...prev,
-    ]);
-    setAdding(false);
+  // ฟอร์มต้องใช้ id จริง → ใช้ได้ก็ต่อเมื่อมีสาขาจริง ≥2 + สินค้าจริง ≥1
+  const canTransfer = realBranches.length >= 2 && products.length >= 1;
+
+  const [fromId, setFromId] = useState("");
+  const [toId, setToId] = useState("");
+  const [productId, setProductId] = useState("");
+  const [qty, setQty] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function resetForm() {
+    setFromId(""); setToId(""); setProductId(""); setQty(""); setError(null);
+  }
+  function openModal() {
+    resetForm();
+    if (canTransfer) {
+      // เดาค่าเริ่มต้นที่สมเหตุสมผล: ต้นทาง=สาขาแรก ปลายทาง=สาขาที่สอง สินค้า=ตัวแรก
+      setFromId(realBranches[0]!.id);
+      setToId(realBranches[1]!.id);
+      setProductId(products[0]!.id);
+    }
+    setAdding(true);
+  }
+
+  function submitTransfer() {
+    setError(null);
+    const n = Number(qty);
+    if (!fromId || !toId || !productId) { setError("เลือกสาขาต้นทาง · ปลายทาง · สินค้าให้ครบ"); return; }
+    if (fromId === toId) { setError("สาขาต้นทางและปลายทางต้องต่างกัน"); return; }
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) { setError("จำนวนต้องเป็นจำนวนเต็มมากกว่า 0"); return; }
+
+    startTransition(async () => {
+      const res = await transferStock({ fromBranchId: fromId, toBranchId: toId, productId, qty: n });
+      if (!res.ok) { setError(res.error); return; }
+      // โชว์ใบโอนใหม่ขึ้นหัวลิสต์ทันที (ของจริงเขียน DB แล้ว · refresh ดึงสต็อกใหม่)
+      const toName = realBranches.find((b) => b.id === toId)?.name ?? "สาขา";
+      const pName = products.find((p) => p.id === productId)?.name ?? "สินค้า";
+      setTransfers((prev) => [
+        { to: toName, status: "in_transit", dateISO: new Date().toISOString(), items: `${pName} ×${n}` },
+        ...prev,
+      ]);
+      setAdding(false);
+      resetForm();
+      router.refresh();
+    });
   }
 
   return (
@@ -452,7 +521,7 @@ function TransfersCard() {
       right={
         <button
           type="button"
-          onClick={() => setAdding(true)}
+          onClick={openModal}
           style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
         >
           <Plus size={13} /> โอนสินค้า
@@ -476,22 +545,67 @@ function TransfersCard() {
 
       <Modal
         open={adding}
-        onClose={() => setAdding(false)}
-        title="โอนสินค้าเข้าสาขา"
-        sub="คลังกลาง → สาขา · เลือกสินค้าและจำนวนแล้วยืนยัน"
+        onClose={() => { if (!pending) { setAdding(false); resetForm(); } }}
+        title="โอนสินค้าระหว่างสาขา"
+        sub="ตัดสต็อกต้นทาง → เพิ่มสต็อกปลายทาง · เลือกสินค้าและจำนวนแล้วยืนยัน"
         width={460}
         footer={
           <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
-            <button type="button" onClick={quickTransfer} style={{ flex: 1, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#fff", background: "#4F46E5", padding: 12, borderRadius: 10 }}>ยืนยันโอน (ตัวอย่าง)</button>
-            <button type="button" onClick={() => setAdding(false)} style={{ border: "1px solid #E3E6EA", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#5A6270", background: "#fff", padding: "12px 18px", borderRadius: 10 }}>ยกเลิก</button>
+            <button
+              type="button"
+              onClick={submitTransfer}
+              disabled={!canTransfer || pending}
+              style={{ flex: 1, border: "none", cursor: !canTransfer || pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#fff", background: !canTransfer || pending ? "#A5A0EC" : "#4F46E5", padding: 12, borderRadius: 10 }}
+            >
+              {pending ? "กำลังโอน…" : "ยืนยันโอน"}
+            </button>
+            <button type="button" onClick={() => { if (!pending) { setAdding(false); resetForm(); } }} disabled={pending} style={{ border: "1px solid #E3E6EA", cursor: pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, color: "#5A6270", background: "#fff", padding: "12px 18px", borderRadius: 10 }}>ยกเลิก</button>
           </div>
         }
       >
         <div style={{ padding: "18px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "10px 14px" }}>
-            <Boxes size={15} style={{ flex: "0 0 15px", color: "#9AA1AB" }} />
-            ตัวอย่างฟอร์มโอน — ในระบบจริงจะเชื่อมกับ <b>transferStock</b> (เลือกสินค้า · ปลายทาง · จำนวน). กด “ยืนยันโอน” เพื่อดูใบโอนใหม่ขึ้นในลิสต์
-          </div>
+          {!canTransfer ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px" }}>
+              <AlertTriangle size={15} style={{ flex: "0 0 15px" }} />
+              ยังโอนจริงไม่ได้ — ต้องมีอย่างน้อย <b>2 สาขา</b> และ <b>สินค้าในคลัง 1 รายการ</b> ก่อน (เพิ่มสาขา/รับสินค้าเข้าคลังก่อน)
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label style={FIELD_LABEL}>จากสาขา (ต้นทาง)</label>
+                  <select value={fromId} onChange={(e) => setFromId(e.target.value)} style={FIELD_INPUT}>
+                    {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={FIELD_LABEL}>ไปสาขา (ปลายทาง)</label>
+                  <select value={toId} onChange={(e) => setToId(e.target.value)} style={FIELD_INPUT}>
+                    {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={FIELD_LABEL}>สินค้า</label>
+                <select value={productId} onChange={(e) => setProductId(e.target.value)} style={FIELD_INPUT}>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={FIELD_LABEL}>จำนวน (ตัว)</label>
+                <input type="number" min={1} step={1} inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="เช่น 20" style={FIELD_INPUT} />
+              </div>
+              {error && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#B42318", background: "#FCEDEC", borderRadius: 10, padding: "9px 12px" }}>
+                  <AlertTriangle size={14} style={{ flex: "0 0 14px" }} /> {error}
+                </div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "9px 12px" }}>
+                <Boxes size={14} style={{ flex: "0 0 14px", color: "#9AA1AB" }} />
+                ระบบจะตัดสต็อกต้นทางและเพิ่มปลายทางทันที (บันทึกในบัญชีคลัง) — ถ้าต้นทางของไม่พอจะแจ้งเตือนและไม่โอน
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </Card>
@@ -555,10 +669,14 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
 /* ───────────────────────── DISTRIBUTION ───────────────────────── */
 type ShipFilter = "all" | "in_transit" | "pending" | "received" | "received_diff";
 
-function DistributionTab() {
+function DistributionTab({ realBranches, products }: { realBranches: BranchOption[]; products: ProductOption[] }) {
+  const router = useRouter();
   const [shipments, setShipments] = useState<Shipment[]>(SAMPLE_SHIPMENTS);
   const [filter, setFilter] = useState<ShipFilter>("all");
   const [detail, setDetail] = useState<Shipment | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const canReceive = realBranches.length >= 1 && products.length >= 1;
 
   const stats = useMemo(() => {
     const by = (s: ShipStatus) => shipments.filter((x) => x.status === s).length;
@@ -580,22 +698,47 @@ function DistributionTab() {
     { k: "received_diff", label: "ไม่ตรง" },
   ];
 
-  // optimistic receive-confirm (sample id ขึ้นต้น TF- → จำลอง client-side)
-  function confirmOk(id: string) {
-    setShipments((prev) => prev.map((s) =>
-      s.id === id
-        ? { ...s, status: "received", rows: s.rows.map((r) => ({ ...r, recv: r.sent })), by: "คุณ (ยืนยันเอง)", at: "เมื่อสักครู่", note: undefined }
-        : s,
-    ));
-    setDetail(null);
-  }
-  function confirmDiff(id: string) {
-    setShipments((prev) => prev.map((s) =>
-      s.id === id
-        ? { ...s, status: "received_diff", rows: s.rows.map((r, i) => ({ ...r, recv: i === 0 ? Math.max(0, r.sent - 2) : r.sent })), by: "คุณ (แจ้งไม่ตรง)", at: "เมื่อสักครู่", note: "ของรับไม่ครบ — รอตรวจสอบกับคลังกลาง" }
-        : s,
-    ));
-    setDetail(null);
+  // ตรวจรับจริง — บันทึกของที่รับเข้าคลังสาขาเป็นรายการรับเข้า (receiveStock)
+  //   branchId = สาขาที่รับ (เลือกใน modal) · แต่ละแถวจับคู่กับสินค้าจริง + จำนวนที่รับจริง
+  //   diff (รับไม่ครบ) = รับเข้าตามจำนวนจริง → สถานะ received_diff เพื่อให้เห็นว่าต่างจากใบโอน
+  function doReceive(
+    shipment: Shipment,
+    branchId: string,
+    lines: { productId: string; quantity: number; productName: string }[],
+    isDiff: boolean,
+  ) {
+    setConfirmError(null);
+    const payloadLines = lines.filter((l) => l.productId && l.quantity > 0);
+    if (!branchId) { setConfirmError("เลือกสาขาที่รับสินค้าก่อน"); return; }
+    if (payloadLines.length === 0) { setConfirmError("จับคู่สินค้าและใส่จำนวนที่รับจริงอย่างน้อย 1 รายการ"); return; }
+
+    // ต้นทุนต่อชิ้น = ต้นทุนเฉลี่ยปัจจุบันของสินค้า (ห้ามส่ง 0 → จะดึงต้นทุนเฉลี่ยถ่วงน้ำหนักให้เพี้ยน)
+    const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+    startTransition(async () => {
+      const res = await receiveStock({
+        branchId,
+        note: `ตรวจรับใบโอน ${shipment.id}${isDiff ? " · รับไม่ตรงใบโอน" : ""}`,
+        lines: payloadLines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitCostCents: costMap.get(l.productId) ?? 0 })),
+      });
+      if (!res.ok) { setConfirmError(res.error); return; }
+      // อัปเดต UI ให้สะท้อนผลที่บันทึกแล้ว (DB เขียนจริงผ่าน receiveStock)
+      const recvMap = new Map(payloadLines.map((l) => [l.productName, l.quantity]));
+      setShipments((prev) => prev.map((s) =>
+        s.id === shipment.id
+          ? {
+              ...s,
+              status: isDiff ? "received_diff" : "received",
+              rows: s.rows.map((r) => ({ ...r, recv: recvMap.get(r.name) ?? r.sent })),
+              by: "คุณ (ยืนยันรับ)",
+              at: "เมื่อสักครู่",
+              note: isDiff ? "รับไม่ตรงใบโอน — บันทึกตามจำนวนที่รับจริง" : undefined,
+            }
+          : s,
+      ));
+      setDetail(null);
+      setConfirmError(null);
+      router.refresh();
+    });
   }
 
   return (
@@ -669,36 +812,104 @@ function DistributionTab() {
       </div>
 
       {/* shipment detail modal */}
-      <ShipmentDetailModal shipment={detail} onClose={() => setDetail(null)} onConfirmOk={confirmOk} onConfirmDiff={confirmDiff} />
+      <ShipmentDetailModal
+        shipment={detail}
+        onClose={() => { if (!pending) { setDetail(null); setConfirmError(null); } }}
+        realBranches={realBranches}
+        products={products}
+        canReceive={canReceive}
+        pending={pending}
+        error={confirmError}
+        onReceive={doReceive}
+      />
     </div>
   );
 }
 
 /* ───────────────────────── shipment detail modal ───────────────────────── */
-function ShipmentDetailModal({
-  shipment, onClose, onConfirmOk, onConfirmDiff,
-}: {
+type ReceiveLine = { productId: string; quantity: number; productName: string };
+
+function ShipmentDetailModal(props: {
   shipment: Shipment | null;
   onClose: () => void;
-  onConfirmOk: (id: string) => void;
-  onConfirmDiff: (id: string) => void;
+  realBranches: BranchOption[];
+  products: ProductOption[];
+  canReceive: boolean;
+  pending: boolean;
+  error: string | null;
+  onReceive: (shipment: Shipment, branchId: string, lines: ReceiveLine[], isDiff: boolean) => void;
 }) {
-  if (!shipment) return null;
+  if (!props.shipment) return null;
+  return <ShipmentDetailModalInner {...props} shipment={props.shipment} />;
+}
+
+function ShipmentDetailModalInner({
+  shipment, onClose, realBranches, products, canReceive, pending, error, onReceive,
+}: {
+  shipment: Shipment;
+  onClose: () => void;
+  realBranches: BranchOption[];
+  products: ProductOption[];
+  canReceive: boolean;
+  pending: boolean;
+  error: string | null;
+  onReceive: (shipment: Shipment, branchId: string, lines: ReceiveLine[], isDiff: boolean) => void;
+}) {
   const tn = SHIP_TONE[shipment.status];
   const canConfirm = shipment.status === "in_transit" || shipment.status === "pending";
 
+  // ฟอร์มตรวจรับ: เลือกสาขาที่รับ + จับคู่แต่ละแถวกับสินค้าจริง + จำนวนรับจริง
+  const [branchId, setBranchId] = useState(realBranches[0]?.id ?? "");
+  // จับคู่สินค้าอัตโนมัติด้วยชื่อ (ถ้าชื่อไม่ตรง = ว่าง → ให้ผู้ใช้เลือก)
+  const [rowProduct, setRowProduct] = useState<string[]>(() =>
+    shipment.rows.map((r) => products.find((p) => p.name === r.name)?.id ?? products[0]?.id ?? ""),
+  );
+  const [rowQty, setRowQty] = useState<string[]>(() => shipment.rows.map((r) => String(r.sent)));
+
+  function setProductAt(i: number, v: string) {
+    setRowProduct((prev) => prev.map((x, j) => (j === i ? v : x)));
+  }
+  function setQtyAt(i: number, v: string) {
+    setRowQty((prev) => prev.map((x, j) => (j === i ? v : x)));
+  }
+
+  function buildLines(useSent: boolean): ReceiveLine[] {
+    return shipment.rows.map((r, i) => {
+      const q = useSent ? r.sent : Math.trunc(Number(rowQty[i]));
+      return {
+        productId: rowProduct[i] ?? "",
+        quantity: Number.isFinite(q) && q > 0 ? q : 0,
+        productName: r.name,
+      };
+    });
+  }
+
   return (
     <Modal
-      open={shipment != null}
+      open
       onClose={onClose}
       width={600}
       title={<span className="num" style={{ color: "#4F46E5" }}>{shipment.id}</span>}
       sub={`คลังกลาง → สาขา${shipment.to} · ส่ง ${fmtDate(shipment.dateISO)}`}
       badge={<span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: tn.bg, color: tn.color, whiteSpace: "nowrap" }}>{tn.label}</span>}
-      footer={canConfirm ? (
+      footer={canConfirm && canReceive ? (
         <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
-          <button type="button" onClick={() => onConfirmOk(shipment.id)} style={{ flex: 1, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#fff", background: "#15803D", padding: 12, borderRadius: 10 }}>ยืนยันรับครบ · ตรงใบโอน</button>
-          <button type="button" onClick={() => onConfirmDiff(shipment.id)} style={{ border: "1px solid #E3B9B4", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#B42318", background: "#fff", padding: "12px 18px", borderRadius: 10 }}>แจ้งไม่ตรง</button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onReceive(shipment, branchId, buildLines(true), false)}
+            style={{ flex: 1, border: "none", cursor: pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#fff", background: pending ? "#84C39E" : "#15803D", padding: 12, borderRadius: 10 }}
+          >
+            {pending ? "กำลังบันทึก…" : "ยืนยันรับครบ · ตรงใบโอน"}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onReceive(shipment, branchId, buildLines(false), true)}
+            style={{ border: "1px solid #E3B9B4", cursor: pending ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, color: "#B42318", background: "#fff", padding: "12px 18px", borderRadius: 10 }}
+          >
+            บันทึกรับไม่ตรง
+          </button>
         </div>
       ) : undefined}
     >
@@ -720,6 +931,49 @@ function ShipmentDetailModal({
             </div>
           );
         })}
+
+        {/* ── ฟอร์มตรวจรับจริง (เฉพาะใบที่ยังรอรับ + มีข้อมูลจริง) ── */}
+        {canConfirm && canReceive && (
+          <div style={{ margin: "14px 20px 4px", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>ตรวจรับเข้าคลังสาขา</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={FIELD_LABEL}>สาขาที่รับสินค้า</label>
+              <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={FIELD_INPUT}>
+                {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#7A8089", marginBottom: 8 }}>จับคู่แต่ละรายการกับสินค้าในคลัง แล้วใส่จำนวนที่รับจริง</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {shipment.rows.map((r, i) => (
+                <div key={i} className="grid grid-cols-[1fr_88px] gap-2 items-end">
+                  <div>
+                    <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>{r.name} <span style={{ color: "#9AA1AB", fontWeight: 400 }}>(ส่ง {r.sent})</span></label>
+                    <select value={rowProduct[i] ?? ""} onChange={(e) => setProductAt(i, e.target.value)} style={FIELD_INPUT}>
+                      <option value="">— เลือกสินค้า —</option>
+                      {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>รับจริง</label>
+                    <input type="number" min={0} step={1} inputMode="numeric" value={rowQty[i] ?? ""} onChange={(e) => setQtyAt(i, e.target.value)} style={FIELD_INPUT} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {error && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#B42318", background: "#FCEDEC", borderRadius: 10, padding: "9px 12px", marginTop: 10 }}>
+                <AlertTriangle size={14} style={{ flex: "0 0 14px" }} /> {error}
+              </div>
+            )}
+          </div>
+        )}
+        {canConfirm && !canReceive && (
+          <div style={{ margin: "12px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px" }}>
+            <AlertTriangle size={14} style={{ flex: "0 0 14px" }} />
+            ยังตรวจรับจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน
+          </div>
+        )}
+
         {shipment.by && (
           <div style={{ margin: "12px 20px 4px", background: "#F8F9FB", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: "#454B54" }}>
             ตรวจรับโดย <b>{shipment.by}</b>{shipment.at ? ` · ${shipment.at}` : ""}
@@ -727,9 +981,6 @@ function ShipmentDetailModal({
         )}
         {shipment.note && (
           <div style={{ margin: "8px 20px 12px", background: "#FCEDEC", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: "#B42318" }}>⚠ {shipment.note}</div>
-        )}
-        {canConfirm && (
-          <div style={{ margin: "8px 20px 12px", fontSize: 11.5, color: "#9AA1AB" }}>พนักงานสาขายืนยันรับเพื่อปิดใบโอน — แนบรูปได้ในระบบจริง</div>
         )}
       </div>
     </Modal>

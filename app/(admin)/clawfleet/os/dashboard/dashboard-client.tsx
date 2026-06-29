@@ -10,6 +10,9 @@ type BranchRow = {
   dolls: number; revenue: number; profit: number; avgWin: number; flag: string;
 };
 type Alert = { title: string; detail: string; tag: string; tone: "red" | "amber" | "neutral" };
+type DailyPoint = { d: string; iso: string; profit: number; cost: number };
+type LowStockItem = { name: string; loc: string; qty: number; color: string };
+type Fleet = { totalMachines: number; activeMachines: number; needRefill: number; broken: number };
 
 /* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลขจาก design ── */
 const SAMPLE_BRANCHES: BranchRow[] = [
@@ -29,11 +32,12 @@ const SAMPLE_ALERTS: Alert[] = [
   { title: "ตุ๊กตาออกผิดปกติ", detail: "ลาดพร้าว · LP-01 · เมื่อวาน", tag: "P2", tone: "neutral" },
   { title: "ยังไม่ปิดรอบเก็บเงิน", detail: "สมุทรปราการ · SP-02 · วันนี้", tag: "P2", tone: "neutral" },
 ];
-const DAYS = [
-  { d: "18", profit: 24.2, cost: 12 }, { d: "19", profit: 31, cost: 14 }, { d: "20", profit: 28.5, cost: 13 },
-  { d: "21", profit: 35, cost: 16 }, { d: "22", profit: 30.1, cost: 14 }, { d: "23", profit: 28.4, cost: 13 }, { d: "24", profit: 32.7, cost: 15 },
+/* sample fallback เมื่อ DB ว่าง */
+const SAMPLE_DAYS: DailyPoint[] = [
+  { d: "18", iso: "", profit: 24.2, cost: 12 }, { d: "19", iso: "", profit: 31, cost: 14 }, { d: "20", iso: "", profit: 28.5, cost: 13 },
+  { d: "21", iso: "", profit: 35, cost: 16 }, { d: "22", iso: "", profit: 30.1, cost: 14 }, { d: "23", iso: "", profit: 28.4, cost: 13 }, { d: "24", iso: "", profit: 32.7, cost: 15 },
 ];
-const LOW_STOCK = [
+const SAMPLE_LOW_STOCK: LowStockItem[] = [
   { name: "หมีบราวน์ ไซต์ L", loc: "คลังกลาง", qty: 8, color: "#B42318" },
   { name: "ไดโนเสาร์เขียว", loc: "คลังกลาง", qty: 14, color: "#B45309" },
   { name: "แมวเหมียวชมพู", loc: "รังสิต", qty: 19, color: "#B45309" },
@@ -45,27 +49,40 @@ export function DashboardClient({
   branches,
   alerts,
   machineCount,
+  dailyPnl,
+  lowStock,
+  fleet,
 }: {
   summary: { revenue: number; profit: number; dollsOut: number; avgBahtPerDoll: number | null; riskyBranches: number };
   branches: BranchRow[];
   alerts: Alert[];
   machineCount: number;
+  dailyPnl: DailyPoint[];
+  lowStock: LowStockItem[];
+  fleet: Fleet;
 }) {
   const router = useRouter();
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
   const alertRows = alerts.length === 0 ? SAMPLE_ALERTS : alerts;
+  // กราฟรายวัน: ใช้ของจริงถ้ามี · ไม่งั้น sample (กราฟต้องมีอย่างน้อย 1 แท่งที่ >0 ถึงจะเป็น "จริง")
+  const days = dailyPnl.length > 0 && dailyPnl.some((d) => d.profit + d.cost > 0) ? dailyPnl : SAMPLE_DAYS;
+  const lowStockRows = lowStock.length > 0 ? lowStock : (empty ? SAMPLE_LOW_STOCK : []);
   const totRevenue = empty ? rows.reduce((s, b) => s + b.revenue, 0) : summary.revenue;
   const totProfit = empty ? rows.reduce((s, b) => s + b.profit, 0) : summary.profit;
-  const totMachines = empty ? rows.reduce((s, b) => s + b.machines, 0) : Math.max(machineCount, rows.reduce((s, b) => s + b.machines, 0));
+  const totMachines = empty ? rows.reduce((s, b) => s + b.machines, 0) : machineCount;
   const avgWinAll = empty
     ? Math.round(rows.reduce((s, b) => s + b.avgWin, 0) / rows.length)
     : summary.avgBahtPerDoll == null ? 0 : Math.round(summary.avgBahtPerDoll);
   const costPerDoll = avgWinAll > 0 ? Math.round(avgWinAll * 0.62) : 0;
+  // fleet overview: ใช้ของจริงถ้า DB ไม่ว่าง · ไม่งั้น derive จาก sample branches
+  const fleetView = empty
+    ? { totalMachines: totMachines, activeMachines: totMachines, needRefill: 0, broken: 0 }
+    : fleet;
   const tooEasy = rows.filter((b) => b.flag === "LOW" || b.flag === "LOSS").length;
   const good = rows.filter((b) => b.flag === "GOOD").length;
   const tooHard = rows.filter((b) => b.flag === "HIGH" || b.flag === "AMBER").length;
-  const maxBar = Math.max(...DAYS.map((d) => d.profit + d.cost));
+  const maxBar = Math.max(1, ...days.map((d) => d.profit + d.cost));
 
   return (
     <div>
@@ -85,19 +102,19 @@ export function DashboardClient({
       </div>
 
       {/* daily chart */}
-      <Card title="รายได้ & กำไรรายวัน" sub="7 วันล่าสุด · 18–24 มิ.ย. 69" style={{ marginBottom: 18 }} right={
+      <Card title="รายได้ & กำไรรายวัน" sub={`${days.length} วันล่าสุด · กำไรสุทธิหักต้นทุนตุ๊กตา`} style={{ marginBottom: 18 }} right={
         <div style={{ display: "flex", gap: 16, fontSize: 11.5 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7280" }}><span style={{ width: 10, height: 10, borderRadius: 3, background: "#4F46E5" }} />กำไรสุทธิ</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7280" }}><span style={{ width: 10, height: 10, borderRadius: 3, background: "#EEF0F4" }} />ต้นทุนตุ๊กตา</span>
         </div>
       }>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 18, height: 184, padding: "0 4px" }}>
-          {DAYS.map((d) => {
+          {days.map((d, di) => {
             const total = d.profit + d.cost;
             const h = (total / maxBar) * 150;
-            const profitH = (d.profit / total) * h;
+            const profitH = total > 0 ? (d.profit / total) * h : 0;
             return (
-              <div key={d.d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+              <div key={d.iso || `${d.d}-${di}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
                 <div className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#454B54", marginBottom: 4 }}>฿{total.toFixed(0)}k</div>
                 <div style={{ width: 30, height: h, borderRadius: "6px 6px 0 0", background: "#EEF0F4", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden" }}>
                   <div style={{ height: profitH, background: "#4F46E5" }} />
@@ -183,8 +200,10 @@ export function DashboardClient({
               <IconBox tone="amber" size={26} radius={7}><Boxes size={14} /></IconBox>
               <span style={{ fontSize: 14, fontWeight: 700 }}>สินค้าใกล้หมด</span>
             </div>
-            {LOW_STOCK.map((s) => (
-              <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: "1px solid #F4F5F7" }}>
+            {lowStockRows.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#9AA1AB", padding: "10px 0" }}>ไม่มีสินค้าใกล้หมด · สต๊อกเพียงพอ</div>
+            ) : lowStockRows.map((s, i) => (
+              <div key={`${s.name}-${s.loc}-${i}`} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: "1px solid #F4F5F7" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
                   <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{s.loc}</div>
@@ -197,13 +216,13 @@ export function DashboardClient({
           <div style={{ background: "#1E2230", border: "1px solid #1E2230", borderRadius: 14, padding: "17px 18px", color: "#fff", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
               <span style={{ width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}><Monitor size={14} /></span>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>ตู้หน้า 7-11</span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>ภาพรวมตู้ทั้งร้าน</span>
             </div>
-            <div className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>80</div>
-            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.6)", marginBottom: 14 }}>ตู้ทั่วประเทศ · 1 ตู้/สาขา</div>
+            <div className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>{num(fleetView.activeMachines)}</div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.6)", marginBottom: 14 }}>ตู้คีบที่เปิดใช้งาน · {rows.length} สาขา</div>
             <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#F2B24A" }}>9</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ต้องเติม</div></div>
-              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#E8736A" }}>4</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ตู้เสีย</div></div>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#F2B24A" }}>{num(fleetView.needRefill)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ต้องเติม</div></div>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#E8736A" }}>{num(fleetView.broken)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ตู้เสีย</div></div>
             </div>
           </div>
         </div>

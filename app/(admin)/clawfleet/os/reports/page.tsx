@@ -1,21 +1,34 @@
 /**
  * ตู้คีบ OS — รายงาน (Reports)
  * Server: P&L รายสาขา (จริง · ใช้ flag/riskyMachines หาตู้ที่มีปัญหา)
- *         + Team data (จริง · staff สำหรับคุณภาพงานพนักงานเก็บเงิน).
+ *         + Team data (จริง · staff) + ผลงานต่อคน (จริง · รอบเก็บ/ยอดไม่ตรง จาก getStaffPerformance)
+ *         + สินค้าใกล้หมด (จริง · getCfStockOverview ต่อสาขา รวมทุกสาขาในขอบเขต).
  * ถ้า DB ว่าง → client ใช้ SAMPLE fallback + แบนเนอร์ "กำลังแสดงตัวอย่าง".
- * NOTE: "สินค้าใกล้หมด" ยังเป็น SAMPLE — ดู backend gap ใน briefing.
  */
 import { getBranchPnl } from "@/lib/clawfleet/pnl-queries";
 import { getTeamData } from "@/lib/clawfleet/admin-queries";
-import { ReportsClient, type ProblemBranch, type StaffQualityRow } from "./reports-client";
+import { getStaffPerformance, getLowStockItems } from "@/lib/clawfleet/reports-queries";
+import { ReportsClient, type ProblemBranch, type StaffQualityRow, type LowStockItem } from "./reports-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   let branchPnl: Awaited<ReturnType<typeof getBranchPnl>> = [];
   let team: Awaited<ReturnType<typeof getTeamData>> | null = null;
+  let staffPerf: Awaited<ReturnType<typeof getStaffPerformance>> = new Map();
+  let lowStock: LowStockItem[] = [];
+
   try {
-    [branchPnl, team] = await Promise.all([getBranchPnl(), getTeamData()]);
+    const [pnl, t, perf, low] = await Promise.all([
+      getBranchPnl(),
+      getTeamData(),
+      getStaffPerformance({ days: 30 }),
+      getLowStockItems(6),
+    ]);
+    branchPnl = pnl;
+    team = t;
+    staffPerf = perf;
+    lowStock = low.map((p) => ({ name: p.name, loc: p.branchName, qty: p.qty, reorderLevel: p.reorderLevel }));
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → sample fallback ในฝั่ง client
   }
@@ -34,27 +47,27 @@ export default async function ReportsPage() {
       avgBahtPerDoll: b.avgBahtPerDoll == null ? null : Math.round(b.avgBahtPerDoll),
     }));
 
-  // ── คุณภาพงานพนักงานเก็บเงิน: รวม staff จากทุกสาขา (unique ต่อคน) ──
-  // GAP: ยังไม่มี per-staff "รอบเก็บ" / "ยอดไม่ตรง" จริง → ใส่ null, client เติมตัวอย่าง.
+  // ── คุณภาพงานพนักงานเก็บเงิน: รวม staff จากทุกสาขา (unique ต่อคน) + เติมผลงานจริง ──
   const seen = new Set<string>();
   const staffQuality: StaffQualityRow[] = [];
   for (const br of team?.branches ?? []) {
     for (const m of br.staff) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
+      const perf = staffPerf.get(m.id);
       staffQuality.push({
         id: m.id,
         name: m.name,
         role: m.role,
         branchName: m.branchName,
         status: m.status,
-        rounds: null,
-        mismatch: null,
+        rounds: perf?.rounds ?? 0,
+        mismatch: perf?.mismatch ?? 0,
       });
     }
   }
 
   return (
-    <ReportsClient problemBranches={problemBranches} staffQuality={staffQuality} />
+    <ReportsClient problemBranches={problemBranches} staffQuality={staffQuality} lowStock={lowStock} />
   );
 }

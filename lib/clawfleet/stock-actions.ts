@@ -359,7 +359,11 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
         await tx.cfCollectionSession.create({
           data: {
             orgId,
-            branchId,
+            // ⚠️ ต้องมี branchId ของใบนับ — ไม่งั้น session กำพร้า:
+            // listV2Anomalies / getV2SessionDetail กรอง branchId ตามสิทธิ์ user (non-admin)
+            // → ถ้า null คนตรวจ anomaly จะมองไม่เห็น/เปิดไม่ได้ (sentinel หลุดเข้า DB เปล่า ๆ)
+            branchId, // = branchId ที่ validate จากใบนับ (CountSchema.branchId · UUID)
+            groupId: null, // sentinel จากนับสต๊อก = ผูกกับสาขา ไม่ใช่ legacy machine-group
             sessionCode: `SC-ANOM-${count.countCode}`,
             openedAt: new Date(),
             openedById: session.user.id,

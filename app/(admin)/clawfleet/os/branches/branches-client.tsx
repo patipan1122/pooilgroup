@@ -6,6 +6,9 @@ import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu } from "lucide-rea
 import { Kpi, IconBox, Pill } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 
+/** สถานะตู้จริงจาก server (cfMachine): ดี / ต้องเติม / เสีย */
+export type ServerDotStatus = "good" | "warn" | "broken";
+
 export type BranchRow = {
   branchId: string;
   code: string;
@@ -16,18 +19,20 @@ export type BranchRow = {
   profit: number;
   avgWin: number;
   flag: string;
+  /** สถานะรายตู้จริง (เรียงตาม code) — ว่าง = ไม่มีข้อมูลตู้ */
+  dots: ServerDotStatus[];
 };
 
 /* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลข/สาขาแนวเดียวกับ dashboard ── */
 const SAMPLE_BRANCHES: BranchRow[] = [
-  { branchId: "s1", code: "RS", name: "รังสิต", machines: 12, dolls: 168, revenue: 70300, profit: 41200, avgWin: 168, flag: "LOW" },
-  { branchId: "s2", code: "LP", name: "ลาดพร้าว", machines: 10, dolls: 142, revenue: 61000, profit: 36800, avgWin: 215, flag: "GOOD" },
-  { branchId: "s3", code: "BK", name: "บางแค", machines: 11, dolls: 121, revenue: 58500, profit: 30900, avgWin: 242, flag: "GOOD" },
-  { branchId: "s4", code: "BN", name: "บางนา", machines: 9, dolls: 98, revenue: 52400, profit: 28100, avgWin: 268, flag: "AMBER" },
-  { branchId: "s5", code: "NB", name: "นนทบุรี", machines: 8, dolls: 64, revenue: 44800, profit: 19500, avgWin: 410, flag: "HIGH" },
-  { branchId: "s6", code: "PT", name: "ปทุมธานี", machines: 10, dolls: 110, revenue: 49200, profit: 21300, avgWin: 198, flag: "GOOD" },
-  { branchId: "s7", code: "SP", name: "สมุทรปราการ", machines: 7, dolls: 88, revenue: 38900, profit: 17600, avgWin: 178, flag: "LOW" },
-  { branchId: "s8", code: "MB", name: "มีนบุรี", machines: 9, dolls: 95, revenue: 42600, profit: 22700, avgWin: 225, flag: "GOOD" },
+  { branchId: "s1", code: "RS", name: "รังสิต", machines: 12, dolls: 168, revenue: 70300, profit: 41200, avgWin: 168, flag: "LOW", dots: [] },
+  { branchId: "s2", code: "LP", name: "ลาดพร้าว", machines: 10, dolls: 142, revenue: 61000, profit: 36800, avgWin: 215, flag: "GOOD", dots: [] },
+  { branchId: "s3", code: "BK", name: "บางแค", machines: 11, dolls: 121, revenue: 58500, profit: 30900, avgWin: 242, flag: "GOOD", dots: [] },
+  { branchId: "s4", code: "BN", name: "บางนา", machines: 9, dolls: 98, revenue: 52400, profit: 28100, avgWin: 268, flag: "AMBER", dots: [] },
+  { branchId: "s5", code: "NB", name: "นนทบุรี", machines: 8, dolls: 64, revenue: 44800, profit: 19500, avgWin: 410, flag: "HIGH", dots: [] },
+  { branchId: "s6", code: "PT", name: "ปทุมธานี", machines: 10, dolls: 110, revenue: 49200, profit: 21300, avgWin: 198, flag: "GOOD", dots: [] },
+  { branchId: "s7", code: "SP", name: "สมุทรปราการ", machines: 7, dolls: 88, revenue: 38900, profit: 17600, avgWin: 178, flag: "LOW", dots: [] },
+  { branchId: "s8", code: "MB", name: "มีนบุรี", machines: 9, dolls: 95, revenue: 42600, profit: 22700, avgWin: 225, flag: "GOOD", dots: [] },
 ];
 
 /* ── per-machine status dots (จำลองในหน้านี้ — backend ไม่มี per-machine status ใน BranchPnl) ── */
@@ -39,8 +44,13 @@ const DOT: Record<DotKind, { bg: string; letter: string; title: string }> = {
   broken: { bg: "#B9BEC7", letter: "–", title: "ตู้เสีย" },
 };
 
-/** สร้าง dots จำลองตาม flag ของสาขา (deterministic จาก machines count) */
-function makeDots(machines: number, flag: string): DotKind[] {
+/** map สถานะตู้จริงจาก server → DotKind (real ไม่มี "bad"; ใช้ good/warn/broken) */
+function realDots(dots: ServerDotStatus[]): DotKind[] {
+  return dots.map((d) => (d === "warn" ? "warn" : d === "broken" ? "broken" : "good"));
+}
+
+/** fallback (เฉพาะตอน DB ว่าง/ไม่มีข้อมูลตู้): จำลองตาม flag + machines count */
+function sampleDots(machines: number, flag: string): DotKind[] {
   const n = Math.max(1, Math.min(machines, 14));
   const out: DotKind[] = [];
   for (let i = 0; i < n; i++) {
@@ -95,7 +105,8 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
         {rows.map((b) => {
           const t = pnlTone(b.flag as PnlFlagKey);
           const open = openId === b.branchId;
-          const dots = makeDots(b.machines, b.flag);
+          // ใช้สถานะตู้จริงถ้ามี · ไม่งั้น (DB ว่าง/ไม่มีตู้) ใช้ sample จำลอง
+          const dots = b.dots.length > 0 ? realDots(b.dots) : sampleDots(b.machines, b.flag);
           return (
             <div key={b.branchId} className="co-card" style={{ padding: "18px 20px" }}>
               {/* header: code chip + name + flag pill */}

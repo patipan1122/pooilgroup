@@ -8,18 +8,35 @@
  */
 import { getV2Branches, getV2BranchStock } from "@/lib/clawfleet/queries";
 import { requireCfSession } from "@/lib/clawfleet/role-guard";
-import { getCfStockOverview, getCfReceipts } from "@/lib/clawfleet/stock-queries";
-import { StockClient, type BranchStockSeed, type ReceiptSeed } from "./stock-client";
+import { getCfStockOverview, getCfReceipts, getCfProductsForForms } from "@/lib/clawfleet/stock-queries";
+import {
+  StockClient,
+  type BranchStockSeed,
+  type ReceiptSeed,
+  type BranchOption,
+  type ProductOption,
+} from "./stock-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function StockPage() {
   let branchSeeds: BranchStockSeed[] = [];
+  // ปุ่ม "โอนสินค้า" / "ตรวจรับ" ต้องเขียน DB จริง → ต้องมี id จริง (UUID) ของสาขา+สินค้า
+  // ส่งไปให้ client เพื่อ wire เข้า server action (transferStock / receiveStock).
+  let realBranches: BranchOption[] = [];
+  let products: ProductOption[] = [];
 
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
     const branches = await getV2Branches();
+    realBranches = branches.map((b) => ({ id: b.id, name: b.name }));
+    try {
+      const ps = await getCfProductsForForms(orgId);
+      products = ps.map((p) => ({ id: p.id, name: p.name, unitCostCents: p.unitCostCents }));
+    } catch {
+      // graceful: ยังไม่มีตาราง/สินค้า → ฟอร์มจะปิดการใช้งานเอง
+    }
 
     if (branches.length > 0) {
       // โหลดแบบจริงเฉพาะสาขาแรก (ที่เหลือใส่ตัวเลข derive จาก machine count เพื่อไม่ยิง query หนัก)
@@ -69,5 +86,5 @@ export default async function StockPage() {
     // graceful: ยังไม่ login / DB ว่าง / ยังไม่ migrate → sample fallback
   }
 
-  return <StockClient branches={branchSeeds} />;
+  return <StockClient branches={branchSeeds} realBranches={realBranches} products={products} />;
 }

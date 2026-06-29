@@ -2,17 +2,30 @@
 
 /**
  * รายงานเจาะสาขา (Matrix) — ตาราง ตู้ × รายวัน + drill modal รายตู้.
- * ข้อมูลในเมทริกซ์เป็น "ตัวอย่าง deterministic" (seed จาก index ตู้ + ลำดับวัน) —
- * ค่าเดิมทุกครั้งที่ render → ไม่มี hydration mismatch (เป็น pure fn ของ index, ไม่มี Math.random/Date.now ตอน render).
- * ⚠️ Backend gap: รอ query จริงสำหรับ ตู้×วัน (ต้นทุน/ยอดเก็บ/ตุ๊กตา รายวัน).
+ * ข้อมูลในเมทริกซ์เป็น "ข้อมูลจริง" จาก cf_collection_events (ส่งมาจาก page.tsx ผ่าน prop `machines`):
+ *   cash = ยอดเก็บ/วัน · dolls = ตุ๊กตาออก/วัน · cost = บาท/ตุ๊กตา (revenue/dolls) · swapped = มี refill วันนั้น
+ * วันที่ใช้ "วันจริง" (เวลาไทย) ย้อนหลัง N วันจากวันนี้ (ส่งมาเป็น isoDays).
+ * เปลี่ยนสาขา/ช่วงวัน → navigate (router) ให้ server ดึงข้อมูลจริงของชุดใหม่.
+ * DB ว่าง (ไม่มีสาขา) → ใช้ SAMPLE deterministic เพื่อโชว์โครงหน้า + แบนเนอร์เตือน.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { Modal } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday } from "@/components/clawfleet/os/format";
 
 export type MatrixBranch = { id: string; code: string; name: string; machines: number };
+
+/** ค่ารายวันต่อตู้ (serialized จาก server · cost = null เมื่อไม่มีตุ๊กตาออก) */
+export type MatrixSerialDay = { cash: number; dolls: number; cost: number | null; swapped: boolean };
+/** ตู้ + map isoDay → ค่ารายวัน (เฉพาะวันที่มี event) */
+export type MatrixSerialMachine = {
+  machineId: string;
+  code: string;
+  nickname: string | null;
+  days: Record<string, MatrixSerialDay>;
+};
 
 type Metric = "cost" | "cash" | "dolls" | "all";
 
@@ -28,15 +41,6 @@ const SAMPLE_BRANCHES: MatrixBranch[] = [
   { id: "s-MB", code: "MB", name: "มีนบุรี", machines: 9 },
 ];
 
-/* fixed base date ของรายงาน (วันล่าสุด = 24 มิ.ย. 2026) — คงที่ → SSR/CSR ตรงกัน */
-const BASE_DATE = new Date(2026, 5, 24);
-
-/* pseudo-random เสถียร: pure fn ของ seed → ค่าเดิมเสมอ (กัน hydration mismatch) */
-function mrng(s: number): number {
-  const x = Math.sin(s * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-
 /* แถบสีตามต้นทุน/ตัว (cost band): เขียว=กำลังดี · เหลือง=ถูก/ง่ายไป · แดง=แพง/ยากไป */
 function costBand(v: number): { bg: string; co: string } {
   if (v < 180) return { bg: "#FCF1E2", co: "#B45309" }; // ถูก/ง่ายไป
@@ -50,36 +54,43 @@ function dollHeat(v: number): string {
   return `rgba(232,163,61,${(0.06 + Math.max(0, Math.min(1, (v - 4) / 22)) * 0.4).toFixed(2)})`;
 }
 
-type MachineSeed = { code: string; broken: boolean; base: number; swapEvery: number; swapOff: number };
-type DayVals = { phase: number; swapped: boolean; cost: number; cash: number; dolls: number };
-
-function buildMachines(branchCode: string, n: number): MachineSeed[] {
+/* ── SAMPLE generator (เฉพาะเมื่อ DB ว่าง) — deterministic, ไม่มี hydration mismatch ── */
+function mrng(s: number): number {
+  const x = Math.sin(s * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+type SampleSeed = { code: string; base: number; swapEvery: number; swapOff: number };
+function sampleMachines(branchCode: string, n: number): SampleSeed[] {
   const seed0 = (branchCode.charCodeAt(0) || 65) + (branchCode.charCodeAt(1) || 65);
   return Array.from({ length: n }, (_, i) => ({
     code: `${branchCode}-${String(i + 1).padStart(2, "0")}`,
-    broken: branchCode === "BK" && i === 3,
-    base: 165 + Math.round(mrng(seed0 + i * 7 + 1) * 130), // span คาบ cost band ทั้งสามสี
+    base: 165 + Math.round(mrng(seed0 + i * 7 + 1) * 130),
     swapEvery: 9 + Math.round(mrng(seed0 + i * 3 + 2) * 13),
     swapOff: Math.round(mrng(seed0 + i * 5 + 3) * 12),
   }));
 }
-
-/* ค่าดิบรายวันของตู้ — pure fn(seed0, machineIndex, dayOffset) */
-function rawVals(seed0: number, m: MachineSeed, mi: number, d: number): DayVals {
+function sampleVals(seed0: number, m: SampleSeed, mi: number, d: number): MatrixSerialDay {
   const phase = (d + m.swapOff) % m.swapEvery;
+  const cost = Math.max(95, m.base + Math.round((mrng(seed0 + mi * 31 + d * 7 + 1) - 0.5) * 46) - Math.round(phase * 1.1));
   return {
-    phase,
-    swapped: phase === 0,
-    cost: Math.max(95, m.base + Math.round((mrng(seed0 + mi * 31 + d * 7 + 1) - 0.5) * 46) - Math.round(phase * 1.1)),
+    cost,
     cash: 280 + Math.round(mrng(seed0 + mi * 17 + d * 5 + 2) * 520),
     dolls: 4 + Math.round(mrng(seed0 + mi * 13 + d * 11 + 3) * 22),
+    swapped: phase === 0,
   };
 }
-
-function dateMinus(days: number): Date {
-  const dt = new Date(BASE_DATE);
-  dt.setDate(dt.getDate() - days);
-  return dt;
+/** สร้าง isoDays ตัวอย่าง (วันจริงย้อนหลัง · ใช้เฉพาะ sample path) */
+function sampleIsoDays(n: number): string[] {
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" });
+  const out: string[] = [];
+  const now = Date.now();
+  for (let i = 0; i < n; i++) out.push(fmt.format(new Date(now - i * 86_400_000)));
+  return out;
+}
+/** parse "YYYY-MM-DD" → Date (เที่ยงวัน กัน DST/offset) สำหรับ label เท่านั้น */
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
 }
 
 const METRICS: { key: Metric; label: string }[] = [
@@ -103,58 +114,102 @@ const CELL_PAD: React.CSSProperties = {
   position: "relative",
 };
 
+type GridDay = MatrixSerialDay & { hasData: boolean };
+type GridMachine = { code: string; days: GridDay[] };
+
 export function MatrixClient({
   branches,
   initialBranch,
+  isoDays,
+  machines,
+  days,
 }: {
   branches: MatrixBranch[];
   initialBranch: string | null;
+  isoDays: string[];
+  machines: MatrixSerialMachine[];
+  days: 20 | 30;
 }) {
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
-  const [branchCode, setBranchCode] = useState<string>(() => {
+  const branchCode = useMemo(() => {
     const found = initialBranch && rows.find((b) => b.code === initialBranch);
     return found ? found.code : rows[0]?.code ?? "RS";
-  });
+  }, [initialBranch, rows]);
+
   const [metric, setMetric] = useState<Metric>("cost");
-  const [days, setDays] = useState<20 | 30>(20);
   const [drillIdx, setDrillIdx] = useState<number | null>(null);
 
   const branch = rows.find((b) => b.code === branchCode) ?? rows[0];
   const machineCount = branch?.machines ?? 8;
-  const seed0 = (branchCode.charCodeAt(0) || 65) + (branchCode.charCodeAt(1) || 65);
 
-  /* สร้างเมทริกซ์ทั้งหมด (รายแถว=วัน · คอลัมน์=ตู้) + footer เฉลี่ยตู้ */
+  /** เปลี่ยนสาขา/ช่วง → navigate ให้ server ดึงข้อมูลจริงชุดใหม่ */
+  const navigate = (nextBranch: string, nextDays: 20 | 30) => {
+    const params = new URLSearchParams();
+    params.set("branch", nextBranch);
+    params.set("days", String(nextDays));
+    startTransition(() => router.push(`/clawfleet/os/matrix?${params.toString()}`));
+  };
+
+  /* แถววัน (ใหม่→เก่า) + grid ค่าจริง (หรือ sample เมื่อ DB ว่าง) */
+  const grid = useMemo(() => {
+    // SAMPLE path — DB ว่าง: สร้าง deterministic จาก code (โชว์โครงหน้า)
+    if (empty) {
+      const seed0 = (branchCode.charCodeAt(0) || 65) + (branchCode.charCodeAt(1) || 65);
+      const sIso = sampleIsoDays(days);
+      const sMachines = sampleMachines(branchCode, machineCount);
+      const gm: GridMachine[] = sMachines.map((m, mi) => ({
+        code: m.code,
+        days: sIso.map((_iso, di) => ({ ...sampleVals(seed0, m, mi, di), hasData: true })),
+      }));
+      return { iso: sIso, machines: gm };
+    }
+    // REAL path — เรียงวันตาม isoDays (ใหม่→เก่า) · เติมช่องว่าง = ไม่มีข้อมูล
+    const gm: GridMachine[] = machines.map((m) => ({
+      code: m.code,
+      days: isoDays.map((iso) => {
+        const d = m.days[iso];
+        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, hasData: false };
+        return { ...d, hasData: true };
+      }),
+    }));
+    return { iso: isoDays, machines: gm };
+  }, [empty, branchCode, machineCount, days, isoDays, machines]);
+
+  /* สร้างเมทริกซ์ที่ render ได้ (รายแถว=วัน · คอลัมน์=ตู้) + footer เฉลี่ยตู้ */
   const matrix = useMemo(() => {
-    const machines = buildMachines(branchCode, machineCount);
-    const colCost = new Array<number>(machineCount).fill(0);
-    const colCash = new Array<number>(machineCount).fill(0);
-    const colDoll = new Array<number>(machineCount).fill(0);
-    const colCnt = new Array<number>(machineCount).fill(0);
+    const cols = grid.machines.length;
+    const colCost = new Array<number>(cols).fill(0);
+    const colCash = new Array<number>(cols).fill(0);
+    const colDoll = new Array<number>(cols).fill(0);
+    const colCnt = new Array<number>(cols).fill(0);
 
     type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; style: React.CSSProperties };
     const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string }[] = [];
 
-    for (let d = 0; d < days; d++) {
-      const dt = dateMinus(d);
+    grid.iso.forEach((iso, di) => {
+      const dt = isoToDate(iso);
       let daySum = 0;
       let dayCnt = 0;
-      const cells: Cell[] = machines.map((m, mi) => {
-        // ตู้เสีย (BK ตู้ที่ 4) — 6 วันแรกไม่มีข้อมูล
-        if (m.broken && d < 6) {
+      const cells: Cell[] = grid.machines.map((gm, mi) => {
+        const rv = gm.days[di];
+        if (!rv || !rv.hasData) {
           return {
             rows: [{ v: "—", style: { color: "#B6BBC4" } }],
             swapped: false,
             style: { ...CELL_PAD, background: "#F4F5F7", color: "#B6BBC4" },
           };
         }
-        const rv = rawVals(seed0, m, mi, d);
-        colCost[mi] += rv.cost;
+        // cost = null (ไม่มีตุ๊กตาออก) → ถือเป็น 0 สำหรับ band/heat แต่โชว์ "—" ในโหมด cost
+        const costVal = rv.cost ?? 0;
+        colCost[mi] += costVal;
         colCash[mi] += rv.cash;
         colDoll[mi] += rv.dolls;
         colCnt[mi] += 1;
-        const cb = costBand(rv.cost);
+        const cb = costBand(costVal);
         let bg: string;
         let cellRows: { v: string; style: React.CSSProperties }[];
         let primary: number;
@@ -168,16 +223,16 @@ export function MatrixClient({
           cellRows = [{ v: String(rv.dolls), style: { fontWeight: 600, color: "#1A1D21" } }];
         } else if (metric === "all") {
           bg = cb.bg;
-          primary = rv.cost;
+          primary = costVal;
           cellRows = [
-            { v: `฿${rv.cost}`, style: { fontWeight: 700, color: cb.co, fontSize: 11.5 } },
+            { v: rv.cost == null ? "—" : `฿${rv.cost}`, style: { fontWeight: 700, color: cb.co, fontSize: 11.5 } },
             { v: `฿${rv.cash}`, style: { fontWeight: 500, color: "#15803D", fontSize: 10.5 } },
             { v: `${rv.dolls} ตัว`, style: { fontWeight: 500, color: "#B45309", fontSize: 10.5 } },
           ];
         } else {
           bg = cb.bg;
-          primary = rv.cost;
-          cellRows = [{ v: `฿${rv.cost}`, style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
+          primary = costVal;
+          cellRows = [{ v: rv.cost == null ? "—" : `฿${rv.cost}`, style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
         }
         daySum += primary;
         dayCnt += 1;
@@ -198,9 +253,9 @@ export function MatrixClient({
         cells,
         avg: metric === "dolls" ? String(avgv) : `฿${avgv}`,
       });
-    }
+    });
 
-    const footer = machines.map((_m, mi) => {
+    const footer = grid.machines.map((_gm, mi) => {
       const cnt = colCnt[mi] || 1;
       const aCost = Math.round(colCost[mi] / cnt);
       const aCash = Math.round(colCash[mi] / cnt);
@@ -226,17 +281,18 @@ export function MatrixClient({
       return { rows: frows, style: { ...CELL_PAD, background: bg, borderTop: "2px solid #DDE0E6" } };
     });
 
-    return { machines, dayRows, footer };
-  }, [branchCode, machineCount, seed0, metric, days]);
+    return { dayRows, footer };
+  }, [grid, metric]);
 
   /* drill รายตู้ */
   const drill = useMemo(() => {
-    if (drillIdx == null || drillIdx >= matrix.machines.length) return null;
-    const m = matrix.machines[drillIdx];
+    if (drillIdx == null || drillIdx >= grid.machines.length) return null;
+    const gm = grid.machines[drillIdx];
     let sc = 0;
     let sh = 0;
     let sd = 0;
-    let cnt = 0;
+    let cntCost = 0;
+    let cntAll = 0;
     let swaps = 0;
     let lastSwap: number | null = null;
     const drows: {
@@ -249,9 +305,10 @@ export function MatrixClient({
       swapped: boolean;
       rowStyle: React.CSSProperties;
     }[] = [];
-    for (let d = 0; d < days; d++) {
-      const dt = dateMinus(d);
-      if (m.broken && d < 6) {
+    grid.iso.forEach((iso, di) => {
+      const dt = isoToDate(iso);
+      const rv = gm.days[di];
+      if (!rv || !rv.hasData) {
         drows.push({
           date: thDate(dt),
           wd: thWeekday(dt),
@@ -262,44 +319,45 @@ export function MatrixClient({
           swapped: false,
           rowStyle: { borderBottom: "1px solid #F0F1F4", background: "#F8F9FB", color: "#B6BBC4" },
         });
-        continue;
+        return;
       }
-      const rv = rawVals(seed0, m, drillIdx, d);
       if (rv.swapped) {
         swaps += 1;
-        if (lastSwap == null) lastSwap = d;
+        if (lastSwap == null) lastSwap = di;
       }
-      sc += rv.cost;
+      if (rv.cost != null) { sc += rv.cost; cntCost += 1; }
       sh += rv.cash;
       sd += rv.dolls;
-      cnt += 1;
-      const cb = costBand(rv.cost);
+      cntAll += 1;
+      const cb = costBand(rv.cost ?? 0);
       drows.push({
         date: thDate(dt),
         wd: thWeekday(dt),
-        cost: `฿${rv.cost}`,
+        cost: rv.cost == null ? "—" : `฿${rv.cost}`,
         costColor: cb.co,
         cash: `฿${rv.cash}`,
         dolls: String(rv.dolls),
         swapped: rv.swapped,
         rowStyle: { borderBottom: "1px solid #F0F1F4", ...(rv.swapped ? { background: "#EEF0FE" } : {}) },
       });
-    }
-    const denom = cnt || 1;
+    });
+    const denomAll = cntAll || 1;
     return {
-      code: m.code,
+      code: gm.code,
       branch: branch?.name ?? "",
-      avgCost: `฿${Math.round(sc / denom)}`,
-      avgCash: `฿${Math.round(sh / denom)}`,
-      avgDoll: String(Math.round(sd / denom)),
+      avgCost: cntCost > 0 ? `฿${Math.round(sc / cntCost)}` : "—",
+      avgCash: `฿${Math.round(sh / denomAll)}`,
+      avgDoll: String(Math.round(sd / denomAll)),
       swaps: String(swaps),
       lastSwap: lastSwap == null ? "ไม่พบ" : lastSwap === 0 ? "วันนี้" : `${lastSwap} วันก่อน`,
       rows: drows,
     };
-  }, [drillIdx, matrix.machines, seed0, days, branch]);
+  }, [drillIdx, grid, branch]);
+
+  const noData = !empty && grid.machines.length === 0;
 
   return (
-    <div>
+    <div style={{ opacity: pending ? 0.6 : 1, transition: "opacity .15s" }}>
       {empty && (
         <div
           style={{
@@ -332,8 +390,8 @@ export function MatrixClient({
             <button
               key={b.id}
               onClick={() => {
-                setBranchCode(b.code);
                 setDrillIdx(null);
+                if (!empty) navigate(b.code, days);
               }}
               style={{
                 whiteSpace: "nowrap",
@@ -389,7 +447,9 @@ export function MatrixClient({
             return (
               <button
                 key={n}
-                onClick={() => setDays(n)}
+                onClick={() => {
+                  if (n !== days) navigate(branchCode, n);
+                }}
                 style={{
                   border: "none",
                   cursor: "pointer",
@@ -468,7 +528,14 @@ export function MatrixClient({
         </div>
       )}
 
+      {noData && (
+        <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "26px 18px", textAlign: "center", fontSize: 13, color: "#8A909A" }}>
+          สาขานี้ยังไม่มีตู้คีบ หรือยังไม่มีรอบเก็บที่ปิดแล้วในช่วงที่เลือก
+        </div>
+      )}
+
       {/* the matrix table — sticky first col (dates) + sticky header (machine codes) */}
+      {!noData && (
       <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
         <div style={{ overflow: "auto", maxHeight: "60vh" }}>
           <table className="num" style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", fontSize: 12 }}>
@@ -493,9 +560,9 @@ export function MatrixClient({
                 >
                   วันที่
                 </th>
-                {matrix.machines.map((m, i) => (
+                {grid.machines.map((gm, i) => (
                   <th
-                    key={m.code}
+                    key={gm.code}
                     onClick={() => setDrillIdx(i)}
                     style={{
                       position: "sticky",
@@ -512,7 +579,7 @@ export function MatrixClient({
                       cursor: "pointer",
                     }}
                   >
-                    {m.code}
+                    {gm.code}
                     <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#A9AEB8", marginTop: 1 }}>
                       กดดูตู้
                     </span>
@@ -627,6 +694,7 @@ export function MatrixClient({
           </table>
         </div>
       </div>
+      )}
 
       {/* drill modal รายตู้ */}
       <Modal

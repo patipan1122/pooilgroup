@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";
 import { getTeamData, getSettingsData } from "@/lib/clawfleet/admin-queries";
+import { getClawfleetPolicy, type ClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { SettingsClient, type SettingsUserRow } from "./settings-client";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,19 @@ export default async function SettingsPage() {
 
   let users: SettingsUserRow[] = [];
   let counts = { branches: 0, machines: 0 };
+  // นโยบายระบบ (persist ใน Organization.settings.clawfleetPolicy) — default safety ON
+  let policy: ClawfleetPolicy = {
+    photoRequired: true,
+    cashAlert: true,
+    lockConfig: false,
+    meterMatch: true,
+  };
+
+  try {
+    policy = await getClawfleetPolicy();
+  } catch {
+    // graceful: ใช้ default ด้านบนถ้าอ่านไม่ได้
+  }
 
   try {
     const [team, settings] = await Promise.all([getTeamData(), getSettingsData()]);
@@ -70,5 +84,5 @@ export default async function SettingsPage() {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ sample fallback
   }
 
-  return <SettingsClient users={users} counts={counts} />;
+  return <SettingsClient users={users} counts={counts} policy={policy} />;
 }

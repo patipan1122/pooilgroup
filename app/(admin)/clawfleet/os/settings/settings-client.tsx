@@ -6,12 +6,13 @@
  * นโยบายระบบ (toggles, client state) + บัญชีผู้ใช้ (real getTeamData → sample fallback).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, ShieldCheck, Users2, Coins, Wrench } from "lucide-react";
 import { Card, Pill, Toggle, IconBox } from "@/components/clawfleet/os/kit";
 import { TONE, num, type Tone } from "@/components/clawfleet/os/format";
+import { saveClawfleetPolicy, type ClawfleetPolicy } from "@/lib/clawfleet/policy";
 
 /* ── types (shared กับ page.tsx) ─────────────────────────────────────────── */
 export type RoleKey = "owner" | "manager" | "collector" | "tech";
@@ -57,12 +58,13 @@ const PERM_MATRIX: { feat: string; owner: Access; manager: Access; collector: Ac
   { feat: "เก็บเงินหน้าบ้าน", owner: "full", manager: "full", collector: "full", tech: "none" },
 ];
 
-/* ── system policies (toggles เป็น client state — persist = backend gap) ──── */
-const POLICY_DEFS: { id: string; label: string; sub: string; on: boolean }[] = [
-  { id: "photo", label: "บังคับถ่ายรูปก่อน–หลังเติม", sub: "พนักงานต้องแนบรูปทุกครั้งก่อนปิดรอบ", on: true },
-  { id: "cashAlert", label: "เตือนเงินไม่ตรงทันที", sub: "ส่งแจ้งเตือน ผจก.สาขาเมื่อยอดต่างเกินเกณฑ์", on: true },
-  { id: "lockConfig", label: "ล็อกค่าตู้รออนุมัติ", sub: "การเปลี่ยนความแรงคีบต้องให้เจ้าของอนุมัติก่อน", on: false },
-  { id: "meterMatch", label: "มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน", sub: "บล็อกการปิดรอบถ้าเลขมิเตอร์ 2 ตัวไม่ตรง", on: true },
+/* ── system policies (toggles · persist ใน Organization.settings.clawfleetPolicy) ──
+ * key = field ของ ClawfleetPolicy (saveClawfleetPolicy รับ partial ตาม key นี้). */
+const POLICY_DEFS: { key: keyof ClawfleetPolicy; label: string; sub: string }[] = [
+  { key: "photoRequired", label: "บังคับถ่ายรูปก่อน–หลังเติม", sub: "พนักงานต้องแนบรูปทุกครั้งก่อนปิดรอบ" },
+  { key: "cashAlert", label: "เตือนเงินไม่ตรงทันที", sub: "ส่งแจ้งเตือน ผจก.สาขาเมื่อยอดต่างเกินเกณฑ์" },
+  { key: "lockConfig", label: "ล็อกค่าตู้รออนุมัติ", sub: "การเปลี่ยนความแรงคีบต้องให้เจ้าของอนุมัติก่อน" },
+  { key: "meterMatch", label: "มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน", sub: "บล็อกการปิดรอบถ้าเลขมิเตอร์ 2 ตัวไม่ตรง" },
 ];
 
 /* ── sample fallback (เมื่อ DB ว่าง) ─────────────────────────────────────── */
@@ -97,15 +99,36 @@ function initialOf(name: string): string {
 export function SettingsClient({
   users,
   counts,
+  policy,
 }: {
   users: SettingsUserRow[];
   counts: { branches: number; machines: number };
+  policy: ClawfleetPolicy;
 }) {
   const router = useRouter();
   const empty = users.length === 0;
   const rows = empty ? SAMPLE_USERS : users;
 
-  const [policies, setPolicies] = useState(POLICY_DEFS);
+  // นโยบายระบบ — init จาก prop (ค่าที่ persist จริง) ไม่ใช่ค่า hardcode
+  const [pol, setPol] = useState<ClawfleetPolicy>(policy);
+  const [savingKey, setSavingKey] = useState<keyof ClawfleetPolicy | null>(null);
+  const [, startSaving] = useTransition();
+
+  function togglePolicy(key: keyof ClawfleetPolicy, value: boolean) {
+    const prev = pol[key];
+    setPol((p) => ({ ...p, [key]: value })); // optimistic
+    setSavingKey(key);
+    startSaving(async () => {
+      const res = await saveClawfleetPolicy({ [key]: value });
+      setSavingKey(null);
+      if (!res.ok) {
+        setPol((p) => ({ ...p, [key]: prev })); // rollback
+        window.alert(res.error);
+        return;
+      }
+      setPol(res.data); // sync กับค่าที่ persist จริง (กัน drift)
+    });
+  }
 
   const countByRole = useMemo(() => {
     const m: Record<RoleKey, number> = { owner: 0, manager: 0, collector: 0, tech: 0 };
@@ -176,15 +199,15 @@ export function SettingsClient({
 
         <Card title="นโยบายระบบ" sub="กฎกลางที่บังคับใช้กับทุกสาขา">
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {policies.map((p) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            {POLICY_DEFS.map((p) => (
+              <div key={p.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, opacity: savingKey === p.key ? 0.6 : 1 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{p.label}</div>
                   <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 3, lineHeight: 1.4 }}>{p.sub}</div>
                 </div>
                 <Toggle
-                  on={p.on}
-                  onChange={(v) => setPolicies((prev) => prev.map((x) => (x.id === p.id ? { ...x, on: v } : x)))}
+                  on={pol[p.key]}
+                  onChange={(v) => togglePolicy(p.key, v)}
                 />
               </div>
             ))}
