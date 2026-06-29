@@ -5,10 +5,10 @@ export const dynamic = "force-dynamic";
 
 export default async function ClawfleetIndexPage() {
   const session = await requireSession();
-  // v2 is the only production experience (all v1 routes deleted 2026-06-02).
-  // Staff (collector) → หน้าเก็บเงิน · ผู้บริหาร/หัวหน้า → hub
+  // ตู้คีบ OS (redesign 2026-06-28) — UI ใหม่อยู่ใต้ /clawfleet/os
+  // พนักงานเก็บเงิน → แอปหน้าบ้าน (มือถือ) · ผู้บริหาร/หัวหน้า → ภาพรวม
   if (session.user.role === "staff") {
-    redirect("/clawfleet/v2/collect");
+    redirect("/clawfleet/os/app");
   }
-  redirect("/clawfleet/v2/hub");
+  redirect("/clawfleet/os/dashboard");
 }

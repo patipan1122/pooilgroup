@@ -194,12 +194,13 @@ export const SubmitBranchEventSchema = z
     refillQty: z.number().int().min(0).default(0), // เติมจากคลังสาขา
     stockAfter: z.number().int().min(0), // ตุ๊กตาในตู้ หลังเติม (นับจริง)
     refillProductId: zUUID().optional(), // SKU ที่เติม (ตัดสต๊อกสาขา)
-    // 5 รูป (R2 URLs)
-    photoCoinMeterUrl: z.string().url(), // → photoMeterAfterUrl
-    photoPrizeMeterUrl: z.string().url(), // → photoPrizeMeterUrl
-    photoStockBeforeUrl: z.string().url(), // → photoStockUrl
-    photoStockAfterUrl: z.string().url(), // → photoMeterBeforeUrl (reused slot)
-    photoCashUrl: z.string().url(), // → photoCashUrl
+    // 5 รูป (R2 URLs) — OPTIONAL (CEO 2026-06-29 "ถ่ายได้-ข้ามได้"):
+    // ถ่าย = อัป R2 จริงเป็นหลักฐานกันโกง · ข้าม = ส่งค่าว่าง/ไม่ส่ง (ไม่บล็อก submit)
+    photoCoinMeterUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoMeterAfterUrl
+    photoPrizeMeterUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoPrizeMeterUrl
+    photoStockBeforeUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoStockUrl
+    photoStockAfterUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoMeterBeforeUrl (reused slot)
+    photoCashUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoCashUrl
     notes: z.string().max(1000).optional(),
   })
   .strict();

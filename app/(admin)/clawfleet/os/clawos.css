@@ -1,0 +1,152 @@
+/* ============================================================================
+   ตู้คีบ OS (ClawOS) — design tokens + utilities
+   Rebuild ของ ClawFleet UI ให้ตรง design ใหม่ (claude.ai/design 2026-06-28)
+   ภาษาดีไซน์: ขาวบนน้ำเงิน indigo · clean · เหมือน DC ที่ CEO ชอบ
+   ทุก rule scope ใต้ .clawos เพื่อไม่ให้รั่วไปโมดูลอื่น
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+.clawos {
+  /* surfaces */
+  --co-bg: #F5F6F8;
+  --co-surface: #FFFFFF;
+  --co-surface-2: #F8F9FB;
+  --co-surface-3: #F1F2F7;
+  --co-dark: #1E2230;
+  --co-dark-2: #1B1E2A;
+
+  /* borders */
+  --co-border: #E8EAED;
+  --co-border-2: #F0F1F4;
+  --co-border-3: #F4F5F7;
+  --co-line: #E3E6EA;
+
+  /* text */
+  --co-ink: #1A1D21;
+  --co-ink-2: #454B54;
+  --co-muted: #6B7280;
+  --co-muted-2: #9AA1AB;
+  --co-muted-3: #A9AEB8;
+
+  /* brand indigo */
+  --co-brand: #4F46E5;
+  --co-brand-2: #6D5CE8;
+  --co-brand-soft: #EEF0FE;
+  --co-brand-soft-2: #EDEBFB;
+  --co-brand-tint: #EEF0F4;
+
+  /* status */
+  --co-green: #15803D;
+  --co-green-soft: #E7F4EC;
+  --co-green-soft-2: #F2FAF5;
+  --co-green-border: #CDE9D7;
+  --co-red: #B42318;
+  --co-red-soft: #FCEDEC;
+  --co-red-soft-2: #FFF9F8;
+  --co-red-border: #F3D9D5;
+  --co-amber: #B45309;
+  --co-amber-ink: #7A5510;
+  --co-amber-soft: #FCF1E2;
+  --co-amber-soft-2: #FCF8EC;
+  --co-amber-border: #F0E2BE;
+
+  background: var(--co-bg);
+  color: var(--co-ink);
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.clawos *,
+.clawos *::before,
+.clawos *::after { box-sizing: border-box; }
+
+/* tabular numbers for money/meters */
+.clawos .num { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+
+/* inputs */
+.clawos input,
+.clawos textarea,
+.clawos select,
+.clawos button { font-family: inherit; }
+.clawos input:focus,
+.clawos textarea:focus,
+.clawos select:focus {
+  outline: none;
+  border-color: var(--co-brand) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+/* scrollbar */
+.clawos ::-webkit-scrollbar { width: 10px; height: 10px; }
+.clawos ::-webkit-scrollbar-thumb {
+  background: #D5D9E0;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* interaction helpers */
+.clawos .co-tap { transition: transform .08s ease; cursor: pointer; }
+.clawos .co-tap:active { transform: scale(0.98); }
+.clawos .co-pbtn { transition: filter .12s ease; }
+.clawos .co-pbtn:hover { filter: brightness(0.96); }
+.clawos .co-navitem:hover { background: var(--co-border-2) !important; }
+.clawos .co-rowh:hover { background: #FAFBFC; }
+
+/* ---- composable primitives (optional helpers; components also use them) ---- */
+.clawos .co-card {
+  background: var(--co-surface);
+  border: 1px solid var(--co-border);
+  border-radius: 14px;
+}
+.clawos .co-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.clawos .co-input {
+  width: 100%;
+  font-size: 14px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--co-line);
+  border-radius: 11px;
+  background: var(--co-surface);
+  color: var(--co-ink);
+}
+.clawos .co-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border-radius: 9px;
+  cursor: pointer;
+  border: 1px solid var(--co-line);
+  background: var(--co-surface);
+  color: var(--co-ink-2);
+  transition: filter .12s ease;
+}
+.clawos .co-btn:hover { filter: brightness(0.97); }
+.clawos .co-btn-primary {
+  background: var(--co-brand);
+  border-color: var(--co-brand);
+  color: #fff;
+}
+.clawos .co-btn-green { background: var(--co-green); border-color: var(--co-green); color: #fff; }
+.clawos .co-btn-danger { background: #fff; border-color: #F0CFCB; color: var(--co-red); }
+
+/* responsive: stack desktop grids on phones (back-office mobile) */
+@media (max-width: 1023px) {
+  .clawos .co-hide-mobile { display: none !important; }
+}
+@media (min-width: 1024px) {
+  .clawos .co-only-mobile { display: none !important; }
+}

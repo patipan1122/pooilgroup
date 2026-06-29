@@ -30,6 +30,9 @@ const ALL_TABS = [
 
 export function MobileBottomNav({ isAdmin }: MobileBottomNavProps) {
   const pathname = usePathname();
+  // ตู้คีบ OS (/clawfleet/os/*) มี shell + เมนูของตัวเอง (full-bleed) — อย่าโชว์แถบล่างเก่า (v2)
+  // ที่จะลอยทับ UI ใหม่ + ลิงก์พาออกไป v2 (redesign 2026-06-29)
+  if (pathname.startsWith("/clawfleet/os")) return null;
   const tabs = ALL_TABS.filter((t) => !t.adminOnly || isAdmin);
   const cols = tabs.length;
 

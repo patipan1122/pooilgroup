@@ -22,7 +22,7 @@ import {
   SubmitExchangerEventSchema,
   CloseGroupSessionSchema,
 } from "./types";
-import { deriveEvent, validateBranchPhotos, deriveBranchCrossCheck } from "./validation";
+import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -183,8 +183,9 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     return { ok: false, error: "ตู้ไม่อยู่ในกลุ่มของรอบนี้" };
   }
 
-  const photoCheck = validateBranchPhotos(data);
-  if (!photoCheck.ok) return { ok: false, error: photoCheck.reason };
+  // รูปมิเตอร์ = ตัวเลือก (CEO 2026-06-29 "ถ่ายได้-ข้ามได้") — การกระทบยอด/กันโกงใช้ตัวเลข
+  // (มิเตอร์เหรียญ↔เงินสด↔ตุ๊กตา) เป็นหลัก. รูปที่ถ่าย (PhotoCaptureButton→R2) เก็บเป็น
+  // หลักฐานเสริม · การข้ามถ่ายไม่บล็อก submit (เดิมบังคับ 5 รูป = พนง.ติดถ้าเน็ต/กล้องล่ม).
 
   const cashPerCoin = machine.loadouts[0]
     ? machine.loadouts[0].pricePerPlayCoins * 1000
