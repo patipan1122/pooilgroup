@@ -80,6 +80,14 @@ const cashCollectionInput = z.object({
     .optional()
     .nullable(),
   notes: z.string().max(500).optional().nullable(),
+  // Actual collection time entered by the maid (ISO instant). The maid often
+  // physically collects at 13:00 but records ~14:00, so the data-entry time
+  // (server now()) would falsely flag her short against sales that accrued in
+  // between. We store the REAL collection time as the verdict window boundary.
+  // createdAt (server now, default) is kept separately as the tamper-evident
+  // anchor so a back-dated collectedAt can be flagged later. Optional → falls
+  // back to now() when omitted (legacy/CSV paths).
+  collectedAt: z.string().datetime({ offset: true }).optional().nullable(),
 });
 
 export type CashCollectionInput = z.infer<typeof cashCollectionInput>;
@@ -225,6 +233,26 @@ export async function createCashCollection(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
+  // Resolve the real collection time. Reject a future time (entered-time gaming
+  // / device-clock skew) and an absurdly old one (typo). When omitted, the row
+  // keeps the schema default now(). createdAt always stays server-now, so the
+  // gap between collectedAt and createdAt is auditable.
+  let collectedAtDate: Date | undefined;
+  if (data.collectedAt) {
+    const d = new Date(data.collectedAt);
+    const now = Date.now();
+    if (isNaN(d.getTime())) {
+      return { ok: false, error: "เวลาที่เก็บไม่ถูกต้อง" };
+    }
+    if (d.getTime() > now + 5 * 60 * 1000) {
+      return { ok: false, error: "เวลาที่เก็บเป็นอนาคต — กรอกเวลาที่เก็บจริง" };
+    }
+    if (d.getTime() < now - 30 * 24 * 60 * 60 * 1000) {
+      return { ok: false, error: "เวลาที่เก็บเก่าเกินไป (เกิน 30 วัน) — ตรวจสอบอีกครั้ง" };
+    }
+    collectedAtDate = d;
+  }
+
   try {
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.chairopsCashCollection.create({
@@ -239,6 +267,7 @@ export async function createCashCollection(
           imageHash: fallbackHash,
           notes: data.notes ?? null,
           chairBreakdown: { lines: data.lines },
+          ...(collectedAtDate ? { collectedAt: collectedAtDate } : {}),
         },
       });
 
@@ -260,6 +289,7 @@ export async function createCashCollection(
             collectedCount,
             mismatchCount: mismatches.length,
             notes: data.notes ?? null,
+            collectedAt: collectedAtDate?.toISOString() ?? null,
           },
           metadata: { route: "/chairops/collect/new" },
         },

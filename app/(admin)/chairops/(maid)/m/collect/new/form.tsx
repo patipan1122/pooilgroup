@@ -147,6 +147,21 @@ export function CollectNewForm({
   });
 
   const notesId = useId();
+  const collectedAtId = useId();
+  // Real collection time (ms). The maid often counts/records ~1 hr after she
+  // physically empties the machines, so we let her set the ACTUAL collect time
+  // — the office reconcile compares cash counted vs sales accrued UP TO this
+  // instant. Default = now (set on mount → no hydration mismatch); editable +
+  // quick "ago" chips so it's one tap, not digit-typing.
+  const [collectedAtMs, setCollectedAtMs] = useState<number | null>(null);
+  useEffect(() => {
+    setCollectedAtMs((prev) => prev ?? Date.now());
+  }, []);
+  function toLocalInput(ms: number): string {
+    const d = new Date(ms);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
   // Two-phase UX: "flag" = quick-mark problem chairs first · "amounts" = enter amounts
   const [phase, setPhase] = useState<"flag" | "amounts">("flag");
 
@@ -340,6 +355,7 @@ export function CollectNewForm({
         evidencePhotoUrl: null,
         imageHash: null,
         notes: notes.trim() || null,
+        collectedAt: new Date(collectedAtMs ?? Date.now()).toISOString(),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -649,6 +665,46 @@ export function CollectNewForm({
 
       {phase === "amounts" && (
         <>
+          <Card>
+            <CardBody className="space-y-2 p-4">
+              <label htmlFor={collectedAtId} className="text-sm font-semibold text-zinc-800">
+                เก็บเงินรอบนี้เมื่อไหร่
+              </label>
+              <p className="text-xs text-zinc-500">
+                ใส่เวลาที่ไปเก็บเงินจริง (ไม่ใช่ตอนนี้ที่กำลังกรอก) — ออฟฟิศจะเทียบกับยอดขายของตู้ถึงเวลานั้น
+              </p>
+              <input
+                id={collectedAtId}
+                type="datetime-local"
+                value={collectedAtMs == null ? "" : toLocalInput(collectedAtMs)}
+                max={collectedAtMs == null ? undefined : toLocalInput(Date.now())}
+                onChange={(e) => {
+                  const t = new Date(e.target.value).getTime();
+                  if (!Number.isNaN(t)) setCollectedAtMs(t);
+                }}
+                className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              />
+              <div className="flex flex-wrap gap-2 pt-1">
+                {[
+                  { label: "เก็บตอนนี้", min: 0 },
+                  { label: "15 นาทีที่แล้ว", min: 15 },
+                  { label: "30 นาทีที่แล้ว", min: 30 },
+                  { label: "1 ชม.ที่แล้ว", min: 60 },
+                  { label: "2 ชม.ที่แล้ว", min: 120 },
+                ].map((c) => (
+                  <button
+                    key={c.label}
+                    type="button"
+                    onClick={() => setCollectedAtMs(Date.now() - c.min * 60_000)}
+                    className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-700 active:bg-zinc-200"
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </CardBody>
+          </Card>
+
           <Card>
             <CardBody className="space-y-2 p-4">
               <label htmlFor={notesId} className="text-sm font-semibold text-zinc-800">
