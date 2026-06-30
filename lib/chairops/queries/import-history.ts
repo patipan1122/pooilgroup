@@ -92,6 +92,7 @@ export async function getCsvImportHistory(args: {
       deleteReason: true,
       branch: { select: { name: true } },
       importer: { select: { displayName: true } },
+      maid: { select: { displayName: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -103,7 +104,7 @@ export async function getCsvImportHistory(args: {
   ];
   const deleters = deleterIds.length
     ? await prisma.chairopsUser.findMany({
-        where: { id: { in: deleterIds } },
+        where: { id: { in: deleterIds }, orgId },
         select: { id: true, displayName: true },
       })
     : [];
@@ -171,7 +172,9 @@ export async function getCsvImportHistory(args: {
         id: r.id,
         collectedAt: fmtDateTime(r.collectedAt),
         branchName: r.branch.name,
-        maidName: r.importer?.displayName ?? "—",
+        // the maid the round is attributed to (collector) — NOT the admin who
+        // uploaded the file (that's importedByName at batch level).
+        maidName: r.maid?.displayName ?? "—",
         countedAmount: r.countedAmount,
         source: (r.source === "OFFICE_PROXY" ? "OFFICE_PROXY" : "CSV_IMPORT") as
           | "CSV_IMPORT"

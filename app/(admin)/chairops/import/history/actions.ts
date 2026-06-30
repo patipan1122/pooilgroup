@@ -112,13 +112,45 @@ export async function restoreCollections(input: {
   const orgId = session.user.orgId;
   const targets = await prisma.chairopsCashCollection.findMany({
     where: { id: { in: ids }, orgId, deletedAt: { not: null } },
-    select: { id: true, branchId: true },
+    select: { id: true, branchId: true, collectedAt: true, countedAmount: true },
   });
   if (targets.length === 0) {
     return { ok: false, error: "ไม่พบรายการที่เรียกคืนได้" };
   }
   const targetIds = targets.map((t) => t.id);
   const branchIds = [...new Set(targets.map((t) => t.branchId))];
+
+  // Money-safety (review P2): if a deleted import was RE-IMPORTED after deletion
+  // (a fresh active row with the same branch/time/amount now exists), restoring
+  // the old rows would double-count the cash. Block the restore and tell the CEO
+  // to delete the newer copy first.
+  const times = targets.map((t) => t.collectedAt.getTime());
+  const actives = await prisma.chairopsCashCollection.findMany({
+    where: {
+      orgId,
+      branchId: { in: branchIds },
+      deletedAt: null,
+      collectedAt: {
+        gte: new Date(Math.min(...times) - 60_000),
+        lte: new Date(Math.max(...times) + 60_000),
+      },
+    },
+    select: { branchId: true, collectedAt: true, countedAmount: true },
+  });
+  const blocked = targets.filter((t) =>
+    actives.some(
+      (a) =>
+        a.branchId === t.branchId &&
+        a.countedAmount === t.countedAmount &&
+        Math.abs(a.collectedAt.getTime() - t.collectedAt.getTime()) <= 60_000,
+    ),
+  );
+  if (blocked.length > 0) {
+    return {
+      ok: false,
+      error: `เรียกคืนไม่ได้ ${blocked.length} แถว — มีข้อมูลชุดนี้ใช้งานอยู่แล้ว (อาจถูกนำเข้าซ้ำหลังลบ) · ลบอันใหม่ก่อนจึงเรียกคืนได้`,
+    };
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
     const res = await tx.chairopsCashCollection.updateMany({
