@@ -21,6 +21,8 @@ export default async function OfficeDepositsPage() {
 
   const pending = await prisma.chairopsCashCollection.findMany({
     where: {
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      deletedAt: null,
       orgId: session.user.orgId,
       maidId: session.user.id, // office's own on-behalf rounds (not real maids')
       depositId: null,

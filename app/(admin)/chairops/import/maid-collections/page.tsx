@@ -48,6 +48,8 @@ export default async function MaidCsvImportPage({
 
   const recent = await prisma.chairopsCashCollection.findMany({
     where: {
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      deletedAt: null,
       orgId: session.user.orgId,
       // Both CSV back-fills and admin-collected (OFFICE_PROXY) rows land here.
       source: { in: ["CSV_IMPORT", "OFFICE_PROXY"] },
@@ -85,6 +87,12 @@ export default async function MaidCsvImportPage({
           ใช้เมื่อบันทึกรอบเก็บเงินใน LIFF ไม่ทัน · กรอกลง Excel
           แล้วอัปโหลดเข้ามา · รองรับ .xlsx และ .csv · ระบบกรองรายการซ้ำให้
         </p>
+        <Link
+          href="/chairops/import/history"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          📋 ดูประวัติการนำเข้า · ลบ/เรียกคืน
+        </Link>
       </header>
 
       {committed != null ? (

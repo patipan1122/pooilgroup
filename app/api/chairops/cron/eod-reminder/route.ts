@@ -43,7 +43,8 @@ async function eodHandler(): Promise<NextResponse> {
       orderBy: { name: "asc" },
     }),
     prisma.chairopsCashCollection.findMany({
-      where: { collectedAt: { gte: dayStart } },
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      where: { collectedAt: { gte: dayStart }, deletedAt: null },
       select: { branchId: true },
       distinct: ["branchId"],
     }),

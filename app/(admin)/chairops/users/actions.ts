@@ -420,7 +420,8 @@ export async function deactivateUser(
       // F6: check pending cash collections (same orgId + maid, depositId=null)
       if (target.role === ChairopsUserRole.MAID) {
         const pendingCount = await tx.chairopsCashCollection.count({
-          where: { orgId: target.orgId, maidId: target.id, depositId: null },
+          // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+          where: { orgId: target.orgId, maidId: target.id, depositId: null, deletedAt: null },
         });
         if (pendingCount > 0) {
           throw Object.assign(new Error("SETTLE_REQUIRED"), { pendingCount });

@@ -606,6 +606,9 @@ export async function previewMaidCsv(
         orgId,
         branchId: { in: branchIds },
         collectedAt: { gte: new Date(minTs), lte: new Date(maxTs) },
+        // CEO 2026-06-30 · a deleted import must not block re-importing the
+        // corrected file (dedup ignores soft-deleted rows).
+        deletedAt: null,
       },
       select: {
         id: true,
@@ -794,6 +797,7 @@ export async function commitMaidCsv(
         orgId,
         branchId: { in: branchSet },
         collectedAt: { gte: new Date(minTs), lte: new Date(maxTs) },
+        deletedAt: null, // re-import after delete must not collide with deleted rows
       },
       select: { branchId: true, collectedAt: true, countedAmount: true },
     });
@@ -817,6 +821,9 @@ export async function commitMaidCsv(
       return { count: 0, attempted: rowsToWrite.length };
     }
 
+    // CEO 2026-06-30 · one shared batch id for every row in THIS commit, so the
+    // super_admin can see/undo the whole import as one unit on /chairops/import/history.
+    const importBatchId = globalThis.crypto.randomUUID();
     const data = finalRows.map((r) => ({
       orgId,
       branchId: r.branchId!,
@@ -834,6 +841,7 @@ export async function commitMaidCsv(
       // (maidId = admin), CSV_IMPORT for a normal maid back-fill. 2026-06-16.
       source: r.source === "OFFICE_PROXY" ? ("OFFICE_PROXY" as const) : ("CSV_IMPORT" as const),
       importedById: session.user.id,
+      importBatchId,
     }));
 
     // skipDuplicates:true so the DB partial unique index (migration
@@ -866,8 +874,10 @@ export async function commitMaidCsv(
   });
 
   revalidatePath("/chairops/import/maid-collections");
+  revalidatePath("/chairops/import/history");
   revalidatePath("/chairops/collections");
   revalidatePath("/chairops/reconcile");
+  revalidatePath("/chairops/reconcile/[branchId]", "page");
   revalidatePath("/chairops/write-offs");
 
   return {

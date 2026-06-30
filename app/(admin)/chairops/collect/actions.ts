@@ -460,6 +460,7 @@ export async function batchDeposit(
       orgId: session.user.orgId,
       branchId,
       maidId: session.user.id,
+      deletedAt: null, // CEO 2026-06-30 · cannot deposit a soft-deleted round
     },
     select: { id: true, depositId: true, countedAmount: true },
   });
@@ -531,7 +532,7 @@ export async function batchDeposit(
       // → throw → whole transaction rolls back (no second deposit, no double-
       // counted income). Pre-check above is best-effort UX; THIS is the lock.
       const claimed = await tx.chairopsCashCollection.updateMany({
-        where: { id: { in: data.collectionIds }, depositId: null },
+        where: { id: { in: data.collectionIds }, depositId: null, deletedAt: null },
         data: { depositId: dep.id },
       });
       if (claimed.count !== data.collectionIds.length) {
@@ -643,7 +644,7 @@ export async function requestUnlock(id: string): Promise<ActionResult> {
   if (!parsedId.success) return { ok: false, error: "id ไม่ถูกต้อง" };
 
   const existing = await prisma.chairopsCashCollection.findFirst({
-    where: { id: parsedId.data, orgId: session.user.orgId },
+    where: { id: parsedId.data, orgId: session.user.orgId, deletedAt: null },
     select: { id: true, lockedAt: true, branchId: true },
   });
   if (!existing) return { ok: false, error: "ไม่พบรายการ" };

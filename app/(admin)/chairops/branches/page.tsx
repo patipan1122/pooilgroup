@@ -866,7 +866,8 @@ async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: strin
     // collections). counted/deposit shown distinctly: counted = what maid
     // counted from chairs · deposit = what landed at bank.
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, branchId },
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      where: { orgId, branchId, deletedAt: null },
       orderBy: { collectedAt: "desc" },
       take: 30,
       include: {
@@ -1161,7 +1162,8 @@ function CostTab({ b, canViewCost }: { b: BranchDetailVM; canViewCost: boolean }
 async function NotesTab({ branchId, orgId }: { branchId: string; orgId: string }) {
   // Surface free-text notes captured across collections (closest to "บันทึก").
   const collections = await prisma.chairopsCashCollection.findMany({
-    where: { orgId, branchId, notes: { not: null } },
+    // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+    where: { orgId, branchId, notes: { not: null }, deletedAt: null },
     orderBy: { collectedAt: "desc" },
     take: 30,
     include: { maid: { select: { displayName: true } } },

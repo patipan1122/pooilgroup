@@ -143,6 +143,8 @@ export default async function MaidHomePage() {
     // and submit ONE bank trip (CEO 2026-05-30 batch-deposit spec).
     prisma.chairopsCashCollection.findMany({
       where: {
+        // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+        deletedAt: null,
         branchId,
         maidId: session.user.id,
         depositId: null,
@@ -170,6 +172,7 @@ export default async function MaidHomePage() {
     // (เดิม KPI นับจาก 20 แถวแรก → ถ้าค้างเกิน 20 รอบ ยอดจะต่ำกว่าจริง)
     prisma.chairopsCashCollection.aggregate({
       where: {
+        deletedAt: null, // soft-delete: exclude super_admin-deleted rows
         orgId: session.user.orgId, // defense-in-depth (no RLS) + matches badge query
         branchId,
         maidId: session.user.id,

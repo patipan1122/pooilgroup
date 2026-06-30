@@ -39,6 +39,8 @@ export default async function MaidBatchDepositPage() {
     }),
     prisma.chairopsCashCollection.findMany({
       where: {
+        // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+        deletedAt: null,
         branchId,
         maidId: session.user.id,
         depositId: null,

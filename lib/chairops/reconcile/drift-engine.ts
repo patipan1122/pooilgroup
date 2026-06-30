@@ -156,6 +156,7 @@ export async function computeDriftMoneyAsOf(
           orgId,
           depositId: null,
           depositedAmount: { gt: 0 },
+          deletedAt: null, // CEO 2026-06-30 · exclude soft-deleted rows from drift
           ...(dtFilter ? { collectedAt: dtFilter } : {}),
         },
         _sum: { depositedAmount: true },
@@ -217,7 +218,7 @@ async function recomputeDriftForBranch_legacy(
   const [money, lastCollection, lastPos] = await Promise.all([
     computeDriftMoneyAsOf(branchId, branch.orgId, null),
     prisma.chairopsCashCollection.findFirst({
-      where: { branchId, orgId: branch.orgId },
+      where: { branchId, orgId: branch.orgId, deletedAt: null },
       orderBy: { collectedAt: "desc" },
       select: { collectedAt: true },
     }),
@@ -329,6 +330,7 @@ async function recomputeDriftForBranch_window(
           collectedAt: { gt: anchor },
           depositId: null,
           depositedAmount: { gt: 0 },
+          deletedAt: null, // CEO 2026-06-30 · exclude soft-deleted rows from drift
         },
         _sum: { depositedAmount: true },
       }),
@@ -344,7 +346,7 @@ async function recomputeDriftForBranch_window(
         _sum: { amount: true },
       }),
       prisma.chairopsCashCollection.findFirst({
-        where: { branchId, orgId: branch.orgId },
+        where: { branchId, orgId: branch.orgId, deletedAt: null },
         orderBy: { collectedAt: "desc" },
         select: { collectedAt: true },
       }),

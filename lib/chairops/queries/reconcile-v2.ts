@@ -158,6 +158,19 @@ export interface PeriodWindow {
   cumAfter: number;
   open: boolean;
   intent: "crit" | "warn" | "ok";
+  // CEO 2026-06-30 (Pinpoint #3) · real collection clock-times + who collected,
+  // so each "รอบเก็บ" shows เก็บครั้งก่อน→ครั้งนี้ + สถานะคนเก็บ (มือ/CSV/แอดมิน).
+  // collectedSum = Σ countedAmount of (non-deleted) collections inside this
+  // window · first/lastCollectedAt = formatted "YYYY-MM-DD HH:mm".
+  collectedSum: number;
+  firstCollectedAt: string | null;
+  lastCollectedAt: string | null;
+  collectors: LedgerDaySource[]; // distinct sources present in the window
+  bySource: {
+    maidManual: DayDetailSourceTotal;
+    csvImport: DayDetailSourceTotal;
+    officeProxy: DayDetailSourceTotal;
+  };
 }
 
 export interface ReconcileSidebarRow {
@@ -292,10 +305,12 @@ async function buildLedger(args: {
   // had actually deposited (CEO complaint: "sidebar −22,761 แต่ ledger 0").
   // Slip refs are fetched separately (collection rows still carry photo
   // pointers regardless of where the cash amount lives).
-  const [depByDayAmount, slipCollections] = await Promise.all([
+  const [depByDayAmount, slipCollections, depositSlipRows] = await Promise.all([
     getDepositsByDate({ orgId, branchId, since }),
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, ...branchFilter, collectedAt: { gte: since } },
+      // deletedAt: null — soft-deleted CSV imports must vanish from every money
+      // column (CEO 2026-06-30). Same filter repeated on every collection read.
+      where: { orgId, ...branchFilter, collectedAt: { gte: since }, deletedAt: null },
       select: {
         collectedAt: true,
         slipPhotoUrl: true,
@@ -310,6 +325,16 @@ async function buildLedger(args: {
         countedAmount: true,
       },
       orderBy: { collectedAt: "asc" },
+    }),
+    // CEO 2026-06-30 (Pinpoint #1) · the "สลิป" column used to read the
+    // COLLECTION's photo, which CSV imports rarely have → the slip showed as
+    // grey un-clickable text. The bank-deposit slip (ChairopsCashDeposit.
+    // slipPhotoUrl) is REQUIRED on every deposit, so prefer it: "กดฝากแล้ว
+    // สลิปต้องขึ้นรูป".
+    prisma.chairopsCashDeposit.findMany({
+      where: { orgId, ...branchFilter, depositedAt: { gte: since } },
+      select: { depositedAt: true, slipPhotoUrl: true },
+      orderBy: { depositedAt: "asc" },
     }),
   ]);
 
@@ -343,9 +368,22 @@ async function buildLedger(args: {
       csvMissingSlipByDay.add(key);
     }
   }
+  // Deposit-slip per day (first real bank slip). ChairopsCashDeposit.slipPhotoUrl
+  // is required → always a viewable image.
+  const depositSlipByDay = new Map<string, string>();
+  for (const d of depositSlipRows) {
+    const key = isoDay(d.depositedAt);
+    if (depositSlipByDay.has(key)) continue;
+    if (d.slipPhotoUrl) depositSlipByDay.set(key, d.slipPhotoUrl);
+  }
   const depByDay = new Map<string, { deposit: number; slip: string | null }>();
   for (const [key, deposit] of depByDayAmount) {
-    depByDay.set(key, { deposit, slip: slipByDay.get(key) ?? "slip" });
+    // Prefer the bank-deposit slip (real image · CEO 2026-06-30) over the
+    // collection photo; fall back to the "slip" placeholder when neither exists.
+    depByDay.set(key, {
+      deposit,
+      slip: depositSlipByDay.get(key) ?? slipByDay.get(key) ?? "slip",
+    });
   }
 
   // Approved write-offs settle the running shortage as of their effectiveDate
@@ -563,7 +601,7 @@ export async function getReconcileOverview(args: {
       select: { bizDate: true },
     }),
     prisma.chairopsCashCollection.findFirst({
-      where: { orgId, ...(branchId ? { branchId } : {}) },
+      where: { orgId, ...(branchId ? { branchId } : {}), deletedAt: null },
       orderBy: { collectedAt: "desc" },
       include: {
         maid: { select: { displayName: true } },
@@ -762,7 +800,7 @@ export async function getReconcileDayDetail(args: {
 
   const [collections, deposits, writeOffsRaw] = await Promise.all([
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, ...branchFilter, collectedAt: { gte: start, lt: end } },
+      where: { orgId, ...branchFilter, collectedAt: { gte: start, lt: end }, deletedAt: null },
       select: {
         id: true,
         collectedAt: true,
@@ -965,7 +1003,7 @@ export async function getReconcilePerChair(args: {
       select: { chairCode: true, cashTotal: true, coinInsertCount: true },
     }),
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd } },
+      where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd }, deletedAt: null },
       select: { countedAmount: true, chairBreakdown: true },
     }),
   ]);
@@ -1189,7 +1227,7 @@ export async function getReconcilePerChairDetail(args: {
         },
       }),
       prisma.chairopsCashCollection.findMany({
-        where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd } },
+        where: { orgId, branchId, collectedAt: { gte: collStart, lt: collEnd }, deletedAt: null },
         select: {
           countedAmount: true,
           chairBreakdown: true,
@@ -1561,7 +1599,7 @@ export async function getReconcilePerChairTW(args: {
       select: { chairCode: true, generation: true },
     }),
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, branchId },
+      where: { orgId, branchId, deletedAt: null },
       select: { collectedAt: true, chairBreakdown: true },
       orderBy: { collectedAt: "asc" },
     }),
@@ -1740,7 +1778,7 @@ export async function getReconcilePerChairRoundsTW(args: {
 }): Promise<{ chairCode: string; rounds: PerChairRoundTW[]; cumShortage: number | null }> {
   const { orgId, branchId, chairCode } = args;
   const collections = await prisma.chairopsCashCollection.findMany({
-    where: { orgId, branchId },
+    where: { orgId, branchId, deletedAt: null },
     select: { collectedAt: true, chairBreakdown: true },
     orderBy: { collectedAt: "asc" },
   });
@@ -1842,7 +1880,7 @@ export async function getBranchShortageTrend(args: {
   const n = args.consecutive ?? 3;
   const { orgId, branchId } = args;
   const collections = await prisma.chairopsCashCollection.findMany({
-    where: { orgId, branchId },
+    where: { orgId, branchId, deletedAt: null },
     select: { collectedAt: true, chairBreakdown: true },
     orderBy: { collectedAt: "asc" },
   });
@@ -1994,6 +2032,15 @@ export async function getReconcilePeriods(args: {
         cumAfter: d.cumDrift,
         open: false,
         intent: Math.abs(diff) < 100 ? "ok" : "crit",
+        collectedSum: 0,
+        firstCollectedAt: null,
+        lastCollectedAt: null,
+        collectors: [],
+        bySource: {
+          maidManual: { count: 0, total: 0 },
+          csvImport: { count: 0, total: 0 },
+          officeProxy: { count: 0, total: 0 },
+        },
       });
       lastDriftBefore = d.cumDrift;
       posSum = 0;
@@ -2017,7 +2064,60 @@ export async function getReconcilePeriods(args: {
       cumAfter: lastDriftBefore,
       open: true,
       intent: "warn",
+      collectedSum: 0,
+      firstCollectedAt: null,
+      lastCollectedAt: null,
+      collectors: [],
+      bySource: {
+        maidManual: { count: 0, total: 0 },
+        csvImport: { count: 0, total: 0 },
+        officeProxy: { count: 0, total: 0 },
+      },
     });
+  }
+
+  // CEO 2026-06-30 (Pinpoint #3) · enrich each period with the REAL collection
+  // clock-times (เก็บครั้งก่อน→ครั้งนี้) and who collected (มือ/CSV/แอดมิน).
+  // The money math above (posSum/cashSum/deposit/diff/cumDrift) is untouched —
+  // this only ADDS display data, never changes the verified drift formula.
+  const periodSince = startOfDayMinus(365);
+  const periodCollections = await prisma.chairopsCashCollection.findMany({
+    where: {
+      orgId,
+      ...(branchId ? { branchId } : {}),
+      collectedAt: { gte: periodSince },
+      deletedAt: null,
+    },
+    select: { collectedAt: true, source: true, countedAmount: true },
+    orderBy: { collectedAt: "asc" },
+  });
+  // wins are contiguous + ascending here (before reverse). Linear find is fine
+  // for the per-branch collection volume.
+  const findWin = (day: string): number => {
+    for (let k = 0; k < wins.length; k++) {
+      if (day >= wins[k].from && day <= wins[k].to) return k;
+    }
+    return wins.length > 0 && day < wins[0].from ? 0 : -1;
+  };
+  for (const c of periodCollections) {
+    const day = isoDay(c.collectedAt);
+    const idx = findWin(day);
+    if (idx < 0) continue;
+    const w = wins[idx];
+    const src = (c.source ?? "MAID_MANUAL") as LedgerDaySource;
+    const bucket =
+      src === "CSV_IMPORT"
+        ? w.bySource.csvImport
+        : src === "OFFICE_PROXY"
+          ? w.bySource.officeProxy
+          : w.bySource.maidManual;
+    bucket.count += 1;
+    bucket.total += c.countedAmount;
+    w.collectedSum += c.countedAmount;
+    if (!w.collectors.includes(src)) w.collectors.push(src);
+    const ts = formatDateTime(c.collectedAt);
+    if (w.firstCollectedAt == null) w.firstCollectedAt = ts; // asc → earliest first
+    w.lastCollectedAt = ts; // asc → latest last
   }
 
   return wins.reverse().slice(0, 12);

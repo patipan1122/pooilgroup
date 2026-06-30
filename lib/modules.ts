@@ -520,6 +520,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         section: "นำเข้า",
         roles: ["super_admin", "org_admin", "admin"],
       },
+      // CEO 2026-06-30 · see every CSV import in one place + delete/restore
+      {
+        href: "/chairops/import/history",
+        label: "ประวัติการนำเข้า CSV",
+        icon: History,
+        section: "นำเข้า",
+        roles: ["super_admin", "org_admin", "admin"],
+      },
       // ── ปฏิบัติงาน ──────────────────────────────────────────
       {
         href: "/chairops/pos-ingest",

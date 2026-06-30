@@ -54,7 +54,8 @@ export default async function BranchDetailPage({
     // timeline can show actual deposit amount (deposit lives on a separate
     // table now · the legacy depositedAmount column is 0 for new rows).
     prisma.chairopsCashCollection.findMany({
-      where: { branchId: branch.id, collectedAt: { gte: thirtyDaysAgo } },
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      where: { deletedAt: null, branchId: branch.id, collectedAt: { gte: thirtyDaysAgo } },
       orderBy: { collectedAt: "desc" },
       include: {
         // Wave-2 B2: include role so we can mark office-tier acting "(แทน)".

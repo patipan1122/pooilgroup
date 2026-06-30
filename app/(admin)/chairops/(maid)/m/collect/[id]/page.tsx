@@ -35,7 +35,8 @@ export default async function MaidCollectDetailPage({ params }: Props) {
   // branch name, maid identity, deposit slip URL).
   const orgId = session.user.orgId;
   const row = await prisma.chairopsCashCollection.findFirst({
-    where: { id, orgId },
+    // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+    where: { id, orgId, deletedAt: null },
     include: {
       branch: { select: { name: true } },
       // Wave-2 B2: include role so detail screen can mark "เก็บโดย CEO (แทน)" if office acted.

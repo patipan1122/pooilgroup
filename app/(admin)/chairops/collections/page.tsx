@@ -51,6 +51,8 @@ export default async function AdminCollectionsPage({
 
   const missingSlipOnly = sp.missingSlip === "1";
   const where = {
+    // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+    deletedAt: null,
     collectedAt: { gte: from, lt: to },
     ...(sp.branch ? { branchId: sp.branch } : {}),
     ...(sp.maid ? { maidId: sp.maid } : {}),

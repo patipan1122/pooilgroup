@@ -48,7 +48,8 @@ export default async function MonthlyReport() {
      // Fall back to legacy depositedAmount column for pre-W2 rows where the
      // separate deposit table wasn't yet wired.
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, collectedAt: { gte: since } },
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      where: { orgId, collectedAt: { gte: since }, deletedAt: null },
       select: {
         branchId: true,
         collectedAt: true,

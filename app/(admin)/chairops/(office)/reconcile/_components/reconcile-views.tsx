@@ -23,7 +23,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { baht } from "@/lib/chairops/utils/format";
-import { SlipBadge, DepositAmount } from "@/components/chairops/redesign/slip-viewer";
+import { SlipBadge } from "@/components/chairops/redesign/slip-viewer";
 import {
   ledgerCumClass,
   ledgerDiffClass,
@@ -415,13 +415,26 @@ export function LedgerTab({
                 style={{ fontWeight: 500 }}
               >
                 {d.deposit != null ? (
-                  <DepositAmount
-                    amount={fmtN(d.deposit)}
-                    // d.slip is the literal "slip" placeholder when a collection
-                    // exists but carries no photo → pass null (not clickable).
-                    slipUrl={d.slip && d.slip !== "slip" ? d.slip : null}
-                    caption={`ฝาก ${fmtN(d.deposit)} ฿ · ${d.date}`}
-                  />
+                  // CEO 2026-06-30 (Pinpoint #2): กดเลขฝาก → เปิดรายละเอียดวัน
+                  // (ใครฝาก · ยอดย่อยรายก้อน) แทนการเปิดรูปสลิป — รูปสลิปย้ายไปช่อง
+                  // "สลิป" แล้ว (ดึงจากสลิปธนาคารจริง).
+                  makeDayHref ? (
+                    <Link
+                      href={makeDayHref(d.date)}
+                      className="rc-deposit-link"
+                      title="กดดูว่าใครฝาก · ยอดย่อยในรอบนี้"
+                      style={{
+                        textDecoration: "none",
+                        color: "var(--accent)",
+                        cursor: "pointer",
+                      }}
+                      scroll={false}
+                    >
+                      {fmtN(d.deposit)}
+                    </Link>
+                  ) : (
+                    fmtN(d.deposit)
+                  )
                 ) : (
                   <span className="text-muted">—</span>
                 )}
@@ -1873,6 +1886,20 @@ export function TimelineTab({ series }: { series: TimelinePoint[] }) {
 // ─────────────────────────────────────────────────────────────
 // Periods tab — between-collection windows
 // ─────────────────────────────────────────────────────────────
+// CEO 2026-06-30 (Pinpoint #3/#4/#5): "รอบเก็บ" was tall 4-cell cards that ate
+// the screen. Rebuilt as ONE ROW per period (LeanUX) + real collection
+// clock-time ("เก็บล่าสุด") + who-collected pills (มือ/CSV/แอดมิน). Money math
+// is unchanged — same posSum/cashSum/deposit/diff/cumDrift from getReconcilePeriods.
+const PERIOD_SRC: Array<{
+  key: "maidManual" | "csvImport" | "officeProxy";
+  emoji: string;
+  label: string;
+}> = [
+  { key: "maidManual", emoji: "💵", label: "แม่บ้าน" },
+  { key: "csvImport", emoji: "📥", label: "CSV" },
+  { key: "officeProxy", emoji: "🏢", label: "แอดมิน" },
+];
+
 export function PeriodsTab({
   periods,
   branchId,
@@ -1888,130 +1915,160 @@ export function PeriodsTab({
     );
   }
   return (
-    <div className="rc-periods">
-      {periods.map((p, i) => (
-        <div
-          key={i}
-          className={"rc-period " + (p.open ? "open" : "")}
-          data-intent={p.intent}
-        >
-          <div className="rc-period-head">
-            <div className="rc-period-range">
-              <span className="mono">{p.from.slice(5)}</span>
-              <span className="text-3">→</span>
-              <span className="mono">{p.to.slice(5)}</span>
-              <span
-                className="chip"
-                style={{ padding: "1px 6px", fontSize: 10.5 }}
-              >
-                {p.days} วัน
-              </span>
-              {p.open && (
-                <span
-                  className="chip chip-warn"
-                  style={{ padding: "1px 6px", fontSize: 10.5 }}
-                >
-                  ⏳ ยังไม่เก็บ
-                </span>
-              )}
-            </div>
-            <div className="rc-period-cum">
-              <span className="text-3">cumulative</span>
-              <span
-                className={
-                  "mono " +
-                  (p.cumAfter < -500
-                    ? "co-drift crit"
-                    : p.cumAfter < -100
-                      ? "co-drift warn"
-                      : "")
-                }
-              >
-                {fmtSigned(p.cumBefore)} → {fmtSigned(p.cumAfter)}
-              </span>
-            </div>
-          </div>
-          <div className="rc-period-grid">
-            <div className="rc-period-cell">
-              <div className="rc-period-label">รายได้รวม</div>
-              <div className="rc-period-value mono">{fmtN(p.posSum)} ฿</div>
-            </div>
-            <div className="rc-period-cell">
-              <div className="rc-period-label">เงินสด</div>
-              <div className="rc-period-value mono">{fmtN(p.cashSum)} ฿</div>
-              <div className="rc-period-sub">คาดว่าแม่บ้านควรส่ง</div>
-            </div>
-            <div className="rc-period-cell">
-              <div className="rc-period-label">
-                {p.open ? "Pending" : "แม่บ้านส่ง"}
-              </div>
-              <div className="rc-period-value mono">
-                {p.open
-                  ? fmtN(p.cashSum) + " ฿"
-                  : p.deposit != null
-                    ? fmtN(p.deposit) + " ฿"
-                    : "—"}
-              </div>
-              {p.slip && (
-                <div className="rc-period-sub">
-                  <span className="rc-slip">
-                    <Paperclip size={10} aria-hidden="true" /> สลิป
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="rc-period-cell">
-              <div className="rc-period-label">ต่าง (diff)</div>
-              <div
-                className={
-                  "rc-period-value mono " +
-                  (p.open
-                    ? ""
-                    : Math.abs(p.diff ?? 0) < 100
-                      ? "co-drift ok"
-                      : "co-drift crit")
-                }
-              >
-                {p.open ? (
-                  <span className="text-3">—</span>
-                ) : (
-                  fmtSigned(p.diff) + " ฿"
-                )}
-              </div>
-              {!p.open && (
-                <div className="rc-period-sub">
-                  {Math.abs(p.diff ?? 0) < 100
-                    ? "✓ ตรงพอดี"
-                    : (p.diff ?? 0) < 0
-                      ? "ขาด"
-                      : "เกิน"}
-                </div>
-              )}
-            </div>
-          </div>
-          {!p.open && (
-            <div className="rc-period-actions">
-              {branchId && (
-                <Link
-                  href={`/chairops/reconcile/${branchId}`}
-                  className="btn btn-sm btn-ghost"
-                  scroll={false}
-                >
-                  <Eye size={11} aria-hidden="true" /> ดูรายวัน
-                </Link>
-              )}
-              {Math.abs(p.diff ?? 0) >= 100 && (p.diff ?? 0) < 0 && branchId && (
-                <Link
-                  href={`/chairops/reconcile/${branchId}#write-off`}
-                  className="btn btn-sm"
-                >
-                  <Minus size={11} aria-hidden="true" /> สร้าง write-off
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+    <div className="rc-ledger">
+      <div
+        className="text-3"
+        style={{
+          fontSize: 11,
+          padding: "6px 2px 8px",
+          display: "flex",
+          gap: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <span>
+          🕒 <strong>เก็บล่าสุด</strong> = เวลาเก็บเงินจริงในรอบนั้น · รอบต่อกันเรื่อย (รอบก่อน→รอบนี้)
+        </span>
+        <span>คนเก็บ: 💵 แม่บ้าน · 📥 CSV · 🏢 แอดมิน</span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tbl rc-ledger-tbl">
+          <thead>
+            <tr>
+              <th>ช่วงรอบ</th>
+              <th>เก็บล่าสุด</th>
+              <th>คนเก็บ</th>
+              <th className="num rc-tcol">ควรได้</th>
+              <th className="num">เก็บได้</th>
+              <th className="num rc-tcol">ฝาก</th>
+              <th className="num">ต่าง</th>
+              <th className="num">สะสม</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map((p, i) => {
+              const pills = PERIOD_SRC.filter((s) => p.bySource[s.key].count > 0);
+              const diffClass = p.open
+                ? ""
+                : Math.abs(p.diff ?? 0) < 100
+                  ? "co-drift ok"
+                  : "co-drift crit";
+              return (
+                <tr key={i} className={p.open ? "rc-row-active" : ""}>
+                  <td>
+                    <span className="mono" style={{ fontSize: 12 }}>
+                      {p.from.slice(5)} → {p.to.slice(5)}
+                    </span>{" "}
+                    <span className="text-3" style={{ fontSize: 10.5 }}>
+                      ({p.days} วัน)
+                    </span>
+                    {p.open && (
+                      <span
+                        className="chip chip-warn"
+                        style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}
+                      >
+                        ⏳ ยังไม่เก็บ
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    className="mono"
+                    style={{ fontSize: 11.5 }}
+                    title={
+                      p.firstCollectedAt
+                        ? `เก็บครั้งแรก ${p.firstCollectedAt} · ล่าสุด ${p.lastCollectedAt}`
+                        : "ไม่มีรายการเก็บในรอบนี้"
+                    }
+                  >
+                    {p.lastCollectedAt ? p.lastCollectedAt.slice(5) : "—"}
+                  </td>
+                  <td style={{ fontSize: 11 }}>
+                    {pills.length === 0 ? (
+                      <span className="text-3">—</span>
+                    ) : (
+                      pills.map((s) => (
+                        <span
+                          key={s.key}
+                          style={{ marginRight: 6, whiteSpace: "nowrap" }}
+                          title={`${s.label} ${p.bySource[s.key].count} รายการ · ${fmtN(p.bySource[s.key].total)} ฿`}
+                        >
+                          {s.emoji} {s.label}
+                          {p.bySource[s.key].count > 1 ? ` ${p.bySource[s.key].count}` : ""}
+                        </span>
+                      ))
+                    )}
+                  </td>
+                  <td className="num mono rc-tcol" title="คาดว่าแม่บ้านควรส่ง">
+                    {fmtN(p.cashSum)}
+                  </td>
+                  <td className="num mono">
+                    {p.collectedSum > 0 ? fmtN(p.collectedSum) : "—"}
+                  </td>
+                  <td className="num mono rc-tcol">
+                    {p.deposit != null ? (
+                      <>
+                        {fmtN(p.deposit)}
+                        {p.slip && (
+                          <Paperclip
+                            size={10}
+                            aria-hidden="true"
+                            style={{ marginLeft: 4, opacity: 0.6 }}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                  <td className={"num mono " + diffClass} title={p.open ? "ยังไม่ปิดรอบ" : (p.diff ?? 0) < 0 ? "ขาด" : (p.diff ?? 0) > 0 ? "เกิน" : "ตรงพอดี"}>
+                    {p.open ? <span className="text-3">—</span> : fmtSigned(p.diff)}
+                  </td>
+                  <td
+                    className={
+                      "num mono " +
+                      (p.cumAfter < -500
+                        ? "co-drift crit"
+                        : p.cumAfter < -100
+                          ? "co-drift warn"
+                          : "")
+                    }
+                    title={`สะสม ${fmtSigned(p.cumBefore)} → ${fmtSigned(p.cumAfter)}`}
+                  >
+                    {fmtSigned(p.cumAfter)}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {branchId && (
+                      <Link
+                        href={`/chairops/reconcile/${branchId}?day=${p.to}`}
+                        className="rc-date"
+                        title="ดูรายวันของรอบนี้"
+                        style={{ textDecoration: "none", color: "var(--accent)", fontSize: 11 }}
+                        scroll={false}
+                      >
+                        <Eye size={11} aria-hidden="true" /> ดู
+                      </Link>
+                    )}
+                    {!p.open &&
+                      Math.abs(p.diff ?? 0) >= 100 &&
+                      (p.diff ?? 0) < 0 &&
+                      branchId && (
+                        <Link
+                          href={`/chairops/reconcile/${branchId}#write-off`}
+                          className="rc-date"
+                          title="สร้างใบตัดเงินขาด"
+                          style={{ textDecoration: "none", color: "var(--crit, #b91c1c)", fontSize: 11, marginLeft: 8 }}
+                        >
+                          <Minus size={11} aria-hidden="true" /> ตัด
+                        </Link>
+                      )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

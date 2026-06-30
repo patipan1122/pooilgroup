@@ -69,6 +69,8 @@ export default async function MaidRouteGroupLayout({
   const pendingDepositCount = rawUser.primaryBranchId
     ? await prisma.chairopsCashCollection.count({
         where: {
+          // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+          deletedAt: null,
           orgId: rawUser.orgId,
           branchId: rawUser.primaryBranchId,
           maidId: rawUser.id,

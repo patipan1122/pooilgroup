@@ -31,6 +31,8 @@ export default async function BranchCollectPage() {
   // Office's own on-behalf rounds still awaiting deposit (drives the link below).
   const pendingDepositCount = await prisma.chairopsCashCollection.count({
     where: {
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      deletedAt: null,
       orgId: session.user.orgId,
       maidId: session.user.id,
       depositId: null,

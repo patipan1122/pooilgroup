@@ -65,10 +65,14 @@ function buildLegacyCollectionWhere(args: RangeArgs) {
     depositId: null;
     depositedAmount: { gt: number };
     collectedAt?: { gte?: Date; lt?: Date };
+    deletedAt: null;
   } = {
     orgId,
     depositId: null,
     depositedAmount: { gt: 0 },
+    // CEO 2026-06-30 · a soft-deleted legacy collection must drop out of the
+    // deposit total too (otherwise drift would still count its money).
+    deletedAt: null,
   };
   if (branchId) where.branchId = branchId;
   else if (branchIds && branchIds.length > 0) where.branchId = { in: branchIds };

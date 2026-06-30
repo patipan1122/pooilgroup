@@ -40,7 +40,7 @@ export async function disputeCollection(formData: FormData) {
   // the redirect doesn't leak a foreign branchId either).
   const orgId = session.user.orgId;
   const c = await prisma.chairopsCashCollection.findFirst({
-    where: { id: collectionId, orgId },
+    where: { id: collectionId, orgId, deletedAt: null },
   });
   if (!c) redirect(`/chairops/reconcile?error=${encodeURIComponent("ไม่พบรายการ")}`);
 
@@ -52,7 +52,7 @@ export async function disputeCollection(formData: FormData) {
     // re-checked above; defense-in-depth against TOCTOU between findFirst
     // and update.
     await tx.chairopsCashCollection.updateMany({
-      where: { id: collectionId, orgId },
+      where: { id: collectionId, orgId, deletedAt: null },
       data: { notes: c!.notes ? `${c!.notes}\n${stampedNote}` : stampedNote },
     });
     await writeAudit(

@@ -3021,6 +3021,19 @@ model ChairopsCashCollection {
   source           CollectionSource     @default(MAID_MANUAL)
   importedById     String?
   importer         ChairopsUser?        @relation("CashCollectionImporter", fields: [importedById], references: [id], onDelete: SetNull)
+  // CEO 2026-06-30 · groups every row written in ONE CSV-import commit so the
+  // super_admin can see/undo a whole import at once on /chairops/import/history.
+  // Null on rows imported before this column existed (legacy) and on the
+  // maid-LIFF / office-proxy live paths — those group by (importedById, day).
+  importBatchId    String?
+  // CEO 2026-06-30 · SOFT delete (reversible · keeps evidence). A non-null
+  // deletedAt hides the row from EVERY money/visibility query (ledger, periods,
+  // per-chair, drift, deposit lists, reports). Restore = set back to null.
+  // deletedById = ChairopsUser.id of the super_admin who deleted it (plain
+  // string · no relation needed · the audit log carries the full trail).
+  deletedAt        DateTime?
+  deletedById      String?
+  deleteReason     String?
   // Per-chair breakdown captured by the maid at Step 1. Shape:
   //   { lines: [{ chairCode, status: "collected"|"broken"|"empty"|"skipped",
   //               amount: number, reason?: string, photoUrl?: string }, ...] }
@@ -3046,6 +3059,8 @@ model ChairopsCashCollection {
   @@index([branchId, collectedAt])
   @@index([maidId, collectedAt])
   @@index([branchId, depositId])
+  @@index([importBatchId])
+  @@index([branchId, deletedAt])
   @@schema("chairops")
 }
 

@@ -165,7 +165,8 @@ export async function GET(req: NextRequest) {
     // Wave-2 audit P0 #6: deposits live on chairops_cash_deposit · include
     // it so monthly CSV "ฝาก" column reflects what actually landed at bank.
     prisma.chairopsCashCollection.findMany({
-      where: { orgId, collectedAt: { gte: from, lte: to } },
+      // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
+      where: { orgId, collectedAt: { gte: from, lte: to }, deletedAt: null },
       select: {
         branchId: true,
         collectedAt: true,
