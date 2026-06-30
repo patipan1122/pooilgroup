@@ -2643,6 +2643,9 @@ enum ChairopsAlertKind {
   // CEO 2026-06-29 · one payment device (coin/bill/transfer) on a chair stopped
   // earning while the chair is otherwise alive → suspect that device broke.
   CHAIR_STREAM_DOWN
+  // CEO 2026-06-29 · cumulative shortage worsening N collection rounds in a row
+  // (branch- or chair-level, from the ungameable meter) → suspect active leakage.
+  SHORTAGE_TRENDING
 
   @@schema("chairops")
 }

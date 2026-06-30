@@ -30,6 +30,7 @@ import { detectChairOffline } from "@/lib/chairops/alerts/detectors/chair-offlin
 import { detectChairStreamDown } from "@/lib/chairops/alerts/detectors/chair-stream-down";
 import { detectCleanlinessFail } from "@/lib/chairops/alerts/detectors/cleanliness-fail";
 import { detectRepairOverdue } from "@/lib/chairops/alerts/detectors/repair-overdue";
+import { detectShortageTrending } from "@/lib/chairops/alerts/detectors/shortage-trending";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,6 +71,8 @@ async function watchdogHandler(): Promise<NextResponse> {
   outcomes.push(await runDetector("chair-stream-down", detectChairStreamDown));
   outcomes.push(await runDetector("cleanliness-fail-backstop", detectCleanlinessFail));
   outcomes.push(await runDetector("repair-overdue", detectRepairOverdue));
+  // Wave 4 · cumulative shortage worsening N rounds in a row (branch + chair).
+  outcomes.push(await runDetector("shortage-trending", detectShortageTrending));
 
   const totals = outcomes.reduce(
     (acc, o) => ({

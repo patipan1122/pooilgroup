@@ -56,6 +56,7 @@ const KIND_LABELS: Record<ChairopsAlertKind, string> = {
   // Surfaced on the dedicated /chairops/broken-chairs page — excluded from this
   // list by default (no double-surface) but labelled for completeness.
   CHAIR_STREAM_DOWN: "ช่องรับเงินน่าจะเสีย",
+  SHORTAGE_TRENDING: "ขาดสะสมโตต่อเนื่อง",
 };
 
 const STATUS_LABELS: Record<ChairopsAlertStatus, { label: string; tone: "danger" | "warning" | "success" | "neutral" }> = {
@@ -76,6 +77,7 @@ const DEFAULT_CHANNEL_PER_KIND: Record<ChairopsAlertKind, string> = {
   REPAIR_OVERDUE: "repair",
   WRITE_OFF_REQUESTED: "ceo",
   CHAIR_STREAM_DOWN: "repair",
+  SHORTAGE_TRENDING: "finance",
 };
 
 const CHANNEL_LABEL: Record<string, string> = {

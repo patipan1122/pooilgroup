@@ -1816,6 +1816,116 @@ export async function getReconcilePerChairRoundsTW(args: {
   return { chairCode, rounds: out, cumShortage };
 }
 
+// ----------------------------------------------------------------
+// 2d) SHORTAGE TREND — "ยอดขาดสะสมโตต่อเนื่อง N รอบติด" (Wave 4 alert source).
+//     Reuses the meter-delta per-round engine: a BRANCH trends short when its
+//     last N collection events are each net short (Σ collected < Σ expected),
+//     and a CHAIR trends short when its last N rounds are each short. Cumulative
+//     meter = ungameable, so a sustained worsening = real leakage, not noise.
+//     Read-only; consumed by the daily detector. CEO 2026-06-29: N=3.
+// ----------------------------------------------------------------
+function isShortVariance(variance: number, expected: number): boolean {
+  return variance < -Math.max(20, Math.abs(expected) * 0.02);
+}
+
+export interface ShortageTrend {
+  branchTrending: boolean;
+  branchLast: { collectedAt: string; collected: number; expected: number; variance: number }[];
+  chairsTrending: { chairCode: string; variances: number[] }[];
+}
+
+export async function getBranchShortageTrend(args: {
+  orgId: string;
+  branchId: string;
+  consecutive?: number;
+}): Promise<ShortageTrend> {
+  const n = args.consecutive ?? 3;
+  const { orgId, branchId } = args;
+  const collections = await prisma.chairopsCashCollection.findMany({
+    where: { orgId, branchId },
+    select: { collectedAt: true, chairBreakdown: true },
+    orderBy: { collectedAt: "asc" },
+  });
+  type R = { t: number; amount: number };
+  const roundsByChair = new Map<string, R[]>();
+  const eventTimes = new Set<number>();
+  for (const c of collections) {
+    const bd = c.chairBreakdown as { lines?: unknown } | null;
+    const lines = bd && Array.isArray(bd.lines) ? (bd.lines as Array<Record<string, unknown>>) : null;
+    if (!lines) continue;
+    const t = c.collectedAt.getTime();
+    eventTimes.add(t);
+    for (const ln of lines) {
+      const code = typeof ln.chairCode === "string" ? ln.chairCode.trim() : "";
+      if (!code) continue;
+      const amount = typeof ln.amount === "number" ? ln.amount : 0;
+      const arr = roundsByChair.get(code) ?? [];
+      arr.push({ t, amount });
+      roundsByChair.set(code, arr);
+    }
+  }
+  if (eventTimes.size < n) return { branchTrending: false, branchLast: [], chairsTrending: [] };
+
+  const sortedEvents = [...eventTimes].sort((a, b) => a - b);
+  const since = (sortedEvents[Math.max(0, sortedEvents.length - n - 1)] ?? sortedEvents[0]) - 2 * DAY_MS;
+  const { cash, coin } = await loadMeterSeries({ orgId, branchId, sinceMs: since });
+
+  const branchByEvent = new Map<number, { collected: number; expected: number }>();
+  const chairsTrending: ShortageTrend["chairsTrending"] = [];
+
+  for (const [code, rs] of roundsByChair) {
+    rs.sort((a, b) => a.t - b.t);
+    const cashS = cash.get(code);
+    const coinS = coin.get(code);
+    const perRound: { variance: number | null; expected: number | null }[] = [];
+    for (let i = 0; i < rs.length; i++) {
+      const r = rs[i];
+      const prior = i > 0 ? rs[i - 1] : null;
+      const cashUp = meterAsOf(cashS, r.t);
+      const coinUp = meterAsOf(coinS, r.t);
+      let expected: number | null = null;
+      let variance: number | null = null;
+      if (cashUp !== null || coinUp !== null) {
+        const cashLo = prior ? meterAsOf(cashS, prior.t) : 0;
+        const coinLo = prior ? meterAsOf(coinS, prior.t) : 0;
+        if (!(prior && cashLo === null && coinLo === null)) {
+          const cd = (cashUp ?? cashLo ?? 0) - (cashLo ?? 0);
+          const kd = (coinUp ?? coinLo ?? 0) - (coinLo ?? 0);
+          if (cd >= 0 && kd >= 0) {
+            expected = Math.round(cd + coinBahtOf(kd));
+            variance = Math.round(r.amount) - expected;
+          }
+        }
+      }
+      perRound.push({ variance, expected });
+      if (expected !== null && variance !== null) {
+        const e = branchByEvent.get(r.t) ?? { collected: 0, expected: 0 };
+        e.collected += Math.round(r.amount);
+        e.expected += expected;
+        branchByEvent.set(r.t, e);
+      }
+    }
+    const lastN = perRound.slice(-n);
+    const chairTrend =
+      lastN.length === n &&
+      lastN.every((x) => x.variance !== null && x.expected !== null && isShortVariance(x.variance, x.expected));
+    if (chairTrend) {
+      chairsTrending.push({ chairCode: code, variances: lastN.map((x) => x.variance as number) });
+    }
+  }
+
+  const evSorted = [...branchByEvent.entries()].sort((a, b) => a[0] - b[0]).slice(-n);
+  const branchTrending =
+    evSorted.length === n && evSorted.every(([, e]) => isShortVariance(e.collected - e.expected, e.expected));
+  const branchLast = evSorted.map(([t, e]) => ({
+    collectedAt: new Date(t).toISOString(),
+    collected: e.collected,
+    expected: e.expected,
+    variance: e.collected - e.expected,
+  }));
+  return { branchTrending, branchLast, chairsTrending };
+}
+
 // expose intent helper for the page (keeps coloring logic in one place)
 export function ledgerDiffClass(d: LedgerDay): "crit" | "warn" | "ok" | "muted" {
   const i = diffIntent(d.diff, d.collected);
