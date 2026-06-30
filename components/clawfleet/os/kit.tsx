@@ -75,6 +75,7 @@ export function Kpi({
   deltaColor = "#15803D",
   valueColor = "#1A1D21",
   iconTone = "brand",
+  trend,
 }: {
   icon?: ReactNode;
   label: string;
@@ -83,6 +84,8 @@ export function Kpi({
   deltaColor?: string;
   valueColor?: string;
   iconTone?: Tone;
+  /** ถ้าใส่ → render delta เป็น chip ▲/▼ จาง (เด่นกว่าข้อความเฉยๆ) */
+  trend?: "up" | "down" | "flat";
 }) {
   return (
     <div className="co-card" style={{ padding: "16px 17px" }}>
@@ -93,11 +96,33 @@ export function Kpi({
       <div className="num" style={{ fontSize: 25, fontWeight: 700, letterSpacing: "-0.5px", color: valueColor }}>
         {value}
       </div>
-      {delta != null && (
-        <div style={{ marginTop: 6, fontSize: 11.5, color: deltaColor, fontWeight: 500 }}>{delta}</div>
-      )}
+      {delta != null &&
+        (trend ? (
+          <div style={{ marginTop: 8 }}>
+            <span className={`co-delta co-delta-${trend}`}>
+              {trend === "up" ? "▲" : trend === "down" ? "▼" : "•"} {delta}
+            </span>
+          </div>
+        ) : (
+          <div style={{ marginTop: 6, fontSize: 11.5, color: deltaColor, fontWeight: 500 }}>{delta}</div>
+        ))}
     </div>
   );
+}
+
+/* ── skeleton (loading placeholder · แทนกล่องเทาตาย) ─────────────────────── */
+export function Skeleton({
+  w = "100%",
+  h = 14,
+  radius = 8,
+  style,
+}: {
+  w?: number | string;
+  h?: number | string;
+  radius?: number;
+  style?: React.CSSProperties;
+}) {
+  return <div className="co-skeleton" style={{ width: w, height: h, borderRadius: radius, ...style }} />;
 }
 
 /* ── section card with header ───────────────────────────────────────────── */

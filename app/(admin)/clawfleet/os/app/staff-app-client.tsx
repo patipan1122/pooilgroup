@@ -23,8 +23,8 @@
  */
 
 import { useMemo, useReducer, useState, useTransition } from "react";
-import { Loader2 } from "lucide-react";
-import { PhoneFrame } from "@/components/clawfleet/os/kit";
+import { Loader2, ChevronRight, Inbox, Check, X } from "lucide-react";
+import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
   startBranchSession,
@@ -668,8 +668,8 @@ function HomeScreen(props: {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 9, color: "#454B54" }}>เมนูลัด</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
             {QUICK_MENU.map((mn) => (
-              <button key={mn.key} type="button" onClick={() => setPanel(mn.key)}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 6px", cursor: "pointer" }}>
+              <button key={mn.key} type="button" onClick={() => setPanel(mn.key)} className="co-tap co-lift"
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minHeight: 72, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 6px", cursor: "pointer" }}>
                 <span style={{ width: 34, height: 34, borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Icon paths={mn.d} size={17} />
                 </span>
@@ -679,8 +679,8 @@ function HomeScreen(props: {
           </div>
 
           {/* tour CTA */}
-          <button type="button" onClick={() => { setPanel("tour"); props.setTourStep(0); }}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", border: "none", cursor: "pointer", background: "linear-gradient(100deg,#4F46E5,#6D5DF0)", color: "#fff", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+          <button type="button" onClick={() => { setPanel("tour"); props.setTourStep(0); }} className="co-tap co-lift"
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, minHeight: 64, textAlign: "left", border: "none", cursor: "pointer", background: "linear-gradient(100deg,#4F46E5,#6D5DF0)", color: "#fff", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
             <span style={{ width: 40, height: 40, borderRadius: 11, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M3 9h18M4 9v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9 6 4h12l2 5" /></svg>
             </span>
@@ -703,16 +703,16 @@ function HomeScreen(props: {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {draftList.map((d) => (
-                  <button key={d.machineId} type="button"
+                  <button key={d.machineId} type="button" className="co-tap co-lift"
                     onClick={() => { const m = machines.find((x) => x.id === d.machineId); if (m) onOpen(m); }}
-                    style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #F0E2BE", borderRadius: 12, padding: "11px 13px", textAlign: "left", cursor: "pointer" }}>
-                    <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: "#FCF1E2", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{d.code}</span>
+                    style={{ display: "flex", alignItems: "center", gap: 11, minHeight: 64, background: "#fff", border: "1px solid #F0E2BE", borderRadius: 12, padding: "11px 13px", textAlign: "left", cursor: "pointer" }}>
+                    <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 12, background: "#FCF1E2", color: "#B45309", fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{d.code}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{d.branch}</div>
                       <div style={{ fontSize: 11, color: "#9AA1AB" }}>เก็บ <span className="num">฿{d.cash.toLocaleString("en-US")}</span> · ตุ๊กตาออก <span className="num">{d.dispensed}</span> · {d.time}</div>
                     </div>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#B45309", whiteSpace: "nowrap" }}>
-                      กรอกมิเตอร์<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: "#B45309", whiteSpace: "nowrap" }}>
+                      กรอกมิเตอร์<ChevronRight size={16} strokeWidth={2.4} />
                     </span>
                   </button>
                 ))}
@@ -724,12 +724,8 @@ function HomeScreen(props: {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#454B54" }}>ตู้ในเส้นทางวันนี้</div>
           {machines.length === 0 ? (
             // empty state — พนักงานยังไม่ได้รับมอบหมายตู้ (กันหน้าว่างเปล่าดูเหมือนพัง)
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 10, background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14, padding: "30px 20px" }}>
-              <span style={{ width: 48, height: 48, borderRadius: 13, background: "#F1F2F5", color: "#9AA1AB", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M3 9h6" /></svg>
-              </span>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#454B54" }}>ยังไม่มีตู้ที่ได้รับมอบหมาย</div>
-              <div style={{ fontSize: 12, color: "#9AA1AB", lineHeight: 1.5, maxWidth: 220 }}>ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ</div>
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีตู้ที่ได้รับมอบหมาย" sub="ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ" />
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
@@ -737,14 +733,18 @@ function HomeScreen(props: {
                 const isDraft = !!drafts[m.id];
                 const isOpening = openingId === m.id;
                 const tag = isDraft
-                  ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                  : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                  ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                  : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
                 // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
                 const dimmed = pending && !isOpening;
                 return (
                   <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
-                    style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
-                    <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: tag.iBg, color: tag.iC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                    className={pending ? "" : "co-tap co-lift"}
+                    style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
+                    <span style={{ position: "relative", flex: "0 0 42px" }}>
+                      <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                      <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
+                    </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
                       <div style={{ fontSize: 11, color: "#9AA1AB" }}>{isOpening ? "กำลังเปิดรอบ…" : tag.hint}</div>
@@ -755,7 +755,10 @@ function HomeScreen(props: {
                         เปิดรอบ
                       </span>
                     ) : (
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
+                        <ChevronRight size={17} color="#C2C7CF" strokeWidth={2.2} />
+                      </span>
                     )}
                   </button>
                 );
@@ -784,7 +787,7 @@ function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; t
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 16 }}>
-        <button type="button" onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <button type="button" onClick={onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
         </button>
         <span style={{ fontSize: 15, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
@@ -980,7 +983,7 @@ function TourPanel({ tourStep, setTourStep }: { tourStep: number; setTourStep: (
                   style={{ display: "flex", alignItems: "center", gap: 11, background: done ? "#F2FBF5" : "#fff", border: `1px solid ${done ? "#BFE6CB" : "#E8EAED"}`, borderRadius: 12, padding: "11px 13px", cursor: "pointer", textAlign: "left" }}>
                   <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, background: "#F1F2F7", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
                   <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>7-11 {m.branch}</div><div style={{ fontSize: 11, color: "#9AA1AB" }}>เติม {m.need} ตัว</div></div>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: done ? "#E7F4EC" : "#F1F2F7", color: done ? "#15803D" : "#9AA1AB", whiteSpace: "nowrap" }}>{done ? "เติมแล้ว ✓" : "แตะเพื่อเติม"}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: done ? "#E7F4EC" : "#F1F2F7", color: done ? "#15803D" : "#9AA1AB", whiteSpace: "nowrap" }}>{done ? <>เติมแล้ว <Check size={13} strokeWidth={2.8} /></> : "แตะเพื่อเติม"}</span>
                 </button>
               );
             })}
@@ -1064,16 +1067,19 @@ function FlowScreen(props: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      {/* header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 18px 12px", borderBottom: "1px solid #EAECEF" }}>
-        <button type="button" onClick={props.onBack} style={{ width: 34, height: 34, borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
-        </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14.5, fontWeight: 700 }}>เก็บเงิน · <span className="num">{machine?.code ?? "—"}</span></div>
-          <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
+      {/* header — กระชับ (back + ชื่อตู้ + ขั้น) ให้เนื้อหาขึ้นถึง ⅓ บน */}
+      <div style={{ padding: "4px 18px 10px", borderBottom: "1px solid #EAECEF" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <button type="button" onClick={props.onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700 }}>เก็บเงิน · <span className="num">{machine?.code ?? "—"}</span></div>
+            <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
+          </div>
+          <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>{stepIndicator}</span>
         </div>
-        <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>{stepIndicator}</span>
+        {step <= 5 && <StepStrip step={step} />}
       </div>
 
       {/* body */}
@@ -1260,17 +1266,30 @@ function FlowScreen(props: {
         )}
 
         {step === 6 && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", paddingTop: 40 }}>
-            <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#E7F4EC", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", paddingTop: 36 }}>
+            <div style={{ position: "relative", marginBottom: 18 }}>
+              <div style={{ position: "absolute", inset: -10, borderRadius: "50%", background: "#E7F4EC", opacity: 0.55 }} />
+              <div style={{ position: "relative", width: 88, height: 88, borderRadius: "50%", background: "#15803D", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 28px -10px rgba(21,128,61,0.55)" }}>
+                <Check size={44} strokeWidth={2.4} />
+              </div>
             </div>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>บันทึกรอบเก็บเงินแล้ว</div>
-            <div style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.6, maxWidth: 260 }}>ตู้ <span className="num">{machine?.code ?? "—"}</span> · เก็บเงิน <b className="num">฿{f.cash}</b> · ตุ๊กตาออก <b className="num">{dispensed}</b> ตัว ส่งข้อมูลเข้าระบบหลังบ้านเรียบร้อย</div>
+            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 6 }}>บันทึกรอบเก็บเงินแล้ว</div>
+            <div style={{ fontSize: 12.5, color: "#9AA1AB", lineHeight: 1.55, maxWidth: 260, marginBottom: 18 }}>ส่งข้อมูลเข้าระบบหลังบ้านเรียบร้อย · ตู้ <span className="num">{machine?.code ?? "—"}</span></div>
+            <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300 }}>
+              <div style={{ flex: 1, background: "#F2FBF5", border: "1px solid #CDE9D7", borderRadius: 13, padding: "13px 10px" }}>
+                <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>เก็บเงิน</div>
+                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#15803D" }}>฿{f.cash.toLocaleString("en-US")}</div>
+              </div>
+              <div style={{ flex: 1, background: "#F6F7FA", border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 10px" }}>
+                <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>ตุ๊กตาออก</div>
+                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#1A1D21" }}>{dispensed} <span style={{ fontSize: 12, fontWeight: 600, color: "#9AA1AB" }}>ตัว</span></div>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* bottom bar */}
+      {/* bottom bar — sticky · พื้นทึบ · ปุ่มหลักเต็มกว้าง แตะถนัด (≥48px) */}
       <div style={{ padding: "14px 18px 22px", borderTop: "1px solid #EAECEF", background: "#fff" }}>
         {props.photoBlocks && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, fontWeight: 600, color: "#B42318", lineHeight: 1.4 }}>
@@ -1279,11 +1298,12 @@ function FlowScreen(props: {
           </div>
         )}
         <button type="button" onClick={props.primary.action} disabled={props.primaryDisabled}
-          style={{ width: "100%", fontSize: 14.5, fontWeight: 700, color: "#fff", border: "none", padding: 14, borderRadius: 13, cursor: props.primaryDisabled ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1 }}>
+          className={props.primaryDisabled ? "" : "co-tap co-pbtn"}
+          style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: props.primaryDisabled ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1, boxShadow: props.primaryDisabled ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
           {props.primary.label}
         </button>
         {props.secondary && (
-          <button type="button" onClick={props.secondary.action} style={{ width: "100%", fontSize: 13, fontWeight: 600, color: "#6B7280", border: "none", padding: "11px 0 2px", background: "transparent", cursor: "pointer" }}>
+          <button type="button" onClick={props.secondary.action} style={{ width: "100%", minHeight: 44, fontSize: 13, fontWeight: 600, color: "#6B7280", border: "none", padding: "11px 0 2px", background: "transparent", cursor: "pointer" }}>
             {props.secondary.label}
           </button>
         )}
@@ -1293,6 +1313,46 @@ function FlowScreen(props: {
 }
 
 /* ─────────────────────────── small UI helpers ─────────────────────────── */
+// แถบความคืบหน้า 5 ขั้น (อ่านปราดเดียว) — เสร็จ=ติ๊ก · กำลังทำ=เด่น · เหลือ=จาง.
+// VISUAL ONLY: อ่านค่า step จาก reducer ตรง ๆ ไม่แตะ step logic.
+const STEP_STRIP = [
+  { n: 1, t: "นับ" },
+  { n: 2, t: "เติม" },
+  { n: 3, t: "มิเตอร์" },
+  { n: 4, t: "เงินสด" },
+  { n: 5, t: "กระทบยอด" },
+];
+function StepStrip({ step }: { step: number }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+      {STEP_STRIP.map((s, i) => {
+        const done = step > s.n;
+        const active = step === s.n;
+        return (
+          <div key={s.n} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+              <span style={{ height: 3, flex: 1, borderRadius: 3, background: i === 0 ? "transparent" : step > s.n - 1 ? "#4F46E5" : "#E4E6EC" }} />
+              <span style={{
+                flex: "0 0 auto", width: active ? 22 : 18, height: active ? 22 : 18, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10.5, fontWeight: 700,
+                background: done ? "#4F46E5" : active ? "#4F46E5" : "#F1F2F5",
+                color: done || active ? "#fff" : "#9AA1AB",
+                boxShadow: active ? "0 0 0 4px rgba(79,70,229,0.14)" : "none",
+                transition: "all .15s",
+              }}>
+                {done ? <Check size={12} strokeWidth={3} /> : <span className="num">{s.n}</span>}
+              </span>
+              <span style={{ height: 3, flex: 1, borderRadius: 3, background: i === STEP_STRIP.length - 1 ? "transparent" : step > s.n ? "#4F46E5" : "#E4E6EC" }} />
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: active ? 700 : 500, color: active ? "#4F46E5" : done ? "#6B7280" : "#B6BBC4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{s.t}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // สปินเนอร์เล็ก — ใช้บนตู้ที่กำลังเปิดรอบ. ใช้ Tailwind `animate-spin` (มี @keyframes spin ในตัว).
 function Spinner({ color = "#4F46E5", size = 15 }: { color?: string; size?: number }) {
   return <Loader2 className="animate-spin" style={{ width: size, height: size, color }} />;
@@ -1352,8 +1412,11 @@ function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, p
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
       {!value && (
         required
-          ? <div style={{ fontSize: 10.5, color: "#B42318", fontWeight: 600, marginTop: 4 }}>ต้องถ่ายรูปก่อน (บังคับ)</div>
-          : <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 4 }}>ยังไม่ถ่าย · ข้ามได้ (ไม่บังคับ)</div>
+          ? <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "#B42318", fontWeight: 700, marginTop: 5, background: "#FCEDEC", borderRadius: 6, padding: "2px 7px" }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+              ต้องถ่ายรูปก่อน
+            </div>
+          : <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 5 }}>ยังไม่ถ่าย · ข้ามได้ (ไม่บังคับ)</div>
       )}
     </div>
   );
@@ -1373,7 +1436,9 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
         <span style={{ fontSize: 13.5, fontWeight: 700 }}>{title}</span>
         <span style={{ flex: 1 }} />
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: equalOk ? "#E7F4EC" : "#FCEDEC", color: equalOk ? "#15803D" : "#B42318" }}>
-          {equalOk ? "✓ เฟือง = ดิจิตอล" : "✗ ไม่เท่ากัน เช็คอีกครั้ง"}
+          {equalOk
+            ? <><Check size={13} strokeWidth={2.6} /> เฟือง = ดิจิตอล</>
+            : <><X size={13} strokeWidth={2.6} /> ไม่เท่ากัน เช็คอีกครั้ง</>}
         </span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
@@ -1387,8 +1452,8 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
                   onChange={(e) => r.onChange(e.target.value)} className="num"
                   style={{ width: "100%", fontSize: 16, fontWeight: 700, padding: "10px 12px", border: "1.5px solid #E3E6EA", borderRadius: 10, background: deferred ? "#F1F2F5" : "#fff", color: deferred ? "#AEB4BD" : "#1A1D21" }} />
                 {canCapture && r.photo && (
-                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 46, height: 42, flex: "0 0 46px", borderRadius: 9, border: "1.5px solid #BBE3C8", background: "#F2FAF5", color: "#15803D" }}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 46, height: 44, flex: "0 0 46px", borderRadius: 10, border: "1.5px solid #BBE3C8", background: "#F2FAF5", color: "#15803D" }}>
+                    <Check size={18} strokeWidth={2.6} />
                   </span>
                 )}
               </div>

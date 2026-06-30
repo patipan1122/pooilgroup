@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight } from "lucide-react";
 import { Kpi, IconBox, Pill } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 
@@ -146,15 +146,15 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
               {/* footer: dot strip + ดูรายตู้ toggle */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 14, borderTop: "1px solid #F4F5F7" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 10.5, color: "#9AA1AB", marginBottom: 6 }}>สถานะตู้ในสาขา</div>
-                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 10.5, color: "#9AA1AB", marginBottom: 7 }}>สถานะตู้ในสาขา</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {dots.map((d, i) => {
                       const cfg = DOT[d];
                       return (
                         <span
                           key={i}
                           title={cfg.title}
-                          style={{ width: 16, height: 16, borderRadius: 4, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700 }}
+                          style={{ width: 18, height: 18, borderRadius: 5, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9.5, fontWeight: 700, lineHeight: 1, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}
                         >
                           {cfg.letter}
                         </span>
@@ -181,7 +181,7 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  ดูรายตู้ <span style={{ fontSize: 14, transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }}>→</span>
+                  ดูรายตู้ <ChevronRight size={15} style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }} />
                 </button>
               </div>
 
@@ -247,8 +247,8 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
         {(["good", "warn", "bad", "broken"] as DotKind[]).map((k) => {
           const cfg = DOT[k];
           return (
-            <span key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 16, height: 16, borderRadius: 4, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700 }}>{cfg.letter}</span>
+            <span key={k} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 18, height: 18, borderRadius: 5, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9.5, fontWeight: 700, lineHeight: 1, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}>{cfg.letter}</span>
               {cfg.title}
             </span>
           );

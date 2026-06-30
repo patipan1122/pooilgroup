@@ -11,8 +11,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
-import { Modal } from "@/components/clawfleet/os/kit";
+import { AlertTriangle, CalendarX } from "lucide-react";
+import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday } from "@/components/clawfleet/os/format";
 
 export type MatrixBranch = { id: string; code: string; name: string; machines: number };
@@ -480,21 +480,22 @@ export function MatrixClient({
           color: "#6B7280",
         }}
       >
+        <span className="co-eyebrow" style={{ marginRight: 2 }}>แถบสีต้นทุน/ตัว</span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, border: "2px solid #4F46E5", display: "inline-block" }} />
           วันที่เปลี่ยนตุ๊กตา
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#E7F4EC", display: "inline-block" }} />
-          กำลังดี
+          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCF1E2", display: "inline-block" }} />
+          ถูก/ง่ายไป <span className="num" style={{ color: "#A9AEB8" }}>&lt;฿180</span>
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCF1E2", display: "inline-block" }} />
-          ถูก/ง่ายไป
+          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#E7F4EC", display: "inline-block" }} />
+          กำลังดี <span className="num" style={{ color: "#A9AEB8" }}>฿180–280</span>
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCEDEC", display: "inline-block" }} />
-          แพง/ยากไป
+          แพง/ยากไป <span className="num" style={{ color: "#A9AEB8" }}>&gt;฿280</span>
         </span>
         <span style={{ flex: 1 }} />
         <span>หน่วย: {METRIC_UNIT[metric]}</span>
@@ -529,8 +530,12 @@ export function MatrixClient({
       )}
 
       {noData && (
-        <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "26px 18px", textAlign: "center", fontSize: 13, color: "#8A909A" }}>
-          สาขานี้ยังไม่มีตู้คีบ หรือยังไม่มีรอบเก็บที่ปิดแล้วในช่วงที่เลือก
+        <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
+          <EmptyState
+            icon={<CalendarX size={28} />}
+            title="ไม่มีรอบปิดในช่วงนี้"
+            sub="สาขานี้ยังไม่มีตู้คีบ หรือยังไม่มีรอบเก็บที่ปิดแล้วในช่วงวันที่เลือก — ลองขยายเป็น 30 วัน"
+          />
         </div>
       )}
 
@@ -604,25 +609,27 @@ export function MatrixClient({
               </tr>
             </thead>
             <tbody>
-              {matrix.dayRows.map((r) => (
+              {matrix.dayRows.map((r, ri) => (
                 <tr key={r.dateLabel} className="co-rowh">
                   <th
                     style={{
                       position: "sticky",
                       left: 0,
                       zIndex: 1,
-                      background: "#fff",
+                      background: ri === 0 ? "#F7F7FE" : "#fff",
                       padding: "7px 12px",
                       textAlign: "left",
                       fontSize: 11.5,
-                      fontWeight: 600,
+                      fontWeight: ri === 0 ? 700 : 600,
                       color: "#1A1D21",
                       borderBottom: "1px solid #F0F1F4",
                       borderRight: "1px solid #E3E6EA",
+                      borderLeft: ri === 0 ? "2px solid #4F46E5" : "2px solid transparent",
                       whiteSpace: "nowrap",
                     }}
                   >
                     {r.dateLabel} <span style={{ color: "#AEB4BD", fontWeight: 400 }}>{r.wd}</span>
+                    {ri === 0 && <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "1px 6px", borderRadius: 20 }}>วันนี้</span>}
                   </th>
                   {r.cells.map((c, ci) => (
                     <td key={ci} style={c.style}>

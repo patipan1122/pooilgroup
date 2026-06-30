@@ -271,6 +271,7 @@ export function StaffClient({
             <button
               type="button"
               onClick={() => { resetInvite(); setOpenInvite(true); }}
+              className="co-tap"
               style={PRIMARY_BTN}
             >
               <Plus size={15} /> เพิ่มพนักงาน
@@ -324,11 +325,11 @@ export function StaffClient({
                               ))}
                             </select>
                             {st.status === "invited" && (
-                              <button type="button" disabled={isPending} onClick={() => regen(st)} style={GHOST_BTN} title="สร้างลิงก์เชิญใหม่">
+                              <button type="button" disabled={isPending} onClick={() => regen(st)} className="co-tap" style={GHOST_BTN} title="สร้างลิงก์เชิญใหม่">
                                 <RefreshCw size={12} /> ลิงก์
                               </button>
                             )}
-                            <button type="button" disabled={isPending} onClick={() => disableMember(st)} style={DANGER_BTN} title="เอาออก / ปิดใช้งาน">
+                            <button type="button" disabled={isPending} onClick={() => disableMember(st)} className="co-tap" style={DANGER_BTN} title="เอาออก / ปิดใช้งาน">
                               <UserMinus size={12} /> ปิดใช้
                             </button>
                           </>
@@ -368,16 +369,16 @@ export function StaffClient({
         footer={
           inviteResult ? (
             <div style={{ padding: "12px 18px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button type="button" onClick={resetInvite} style={{ ...GHOST_BTN, padding: "9px 14px", fontSize: 13 }}>
+              <button type="button" onClick={resetInvite} className="co-tap" style={{ ...GHOST_BTN, padding: "9px 14px", fontSize: 13 }}>
                 <Plus size={14} /> เชิญอีกคน
               </button>
-              <button type="button" onClick={closeInvite} style={PRIMARY_BTN}>เสร็จสิ้น</button>
+              <button type="button" onClick={closeInvite} className="co-tap" style={PRIMARY_BTN}>เสร็จสิ้น</button>
             </div>
           ) : (
             <div style={{ padding: "12px 18px", display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
               {formErr && <span style={{ fontSize: 12, color: "#B42318", marginRight: "auto" }}>{formErr}</span>}
-              <button type="button" onClick={closeInvite} style={{ ...GHOST_BTN, padding: "9px 14px", fontSize: 13, color: "#5A6270", border: "1px solid #DFE2E8" }}>ยกเลิก</button>
-              <button type="button" onClick={submitInvite} disabled={isPending} style={{ ...PRIMARY_BTN, opacity: isPending ? 0.6 : 1 }}>
+              <button type="button" onClick={closeInvite} className="co-tap" style={{ ...GHOST_BTN, padding: "9px 14px", fontSize: 13, color: "#5A6270", border: "1px solid #DFE2E8" }}>ยกเลิก</button>
+              <button type="button" onClick={submitInvite} disabled={isPending} className="co-tap" style={{ ...PRIMARY_BTN, opacity: isPending ? 0.6 : 1 }}>
                 {isPending ? "กำลังสร้างลิงก์…" : "สร้างลิงก์เชิญ"}
               </button>
             </div>

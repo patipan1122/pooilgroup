@@ -74,31 +74,42 @@ export function PhotoCaptureButton({
         type="button"
         onClick={() => ref.current?.click()}
         disabled={busy}
-        className={`flex h-24 w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed text-xs transition ${
+        className={`co-tap flex min-h-[88px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-3 py-3 text-center text-xs font-medium leading-tight transition ${
           value
-            ? "border-emerald-300 bg-emerald-50/40 text-emerald-700"
+            ? "border-emerald-300 bg-emerald-50/60 text-emerald-700"
             : error
-              ? "border-red-300 bg-red-50/40 text-red-700"
-              : "border-zinc-300 bg-zinc-50/40 text-zinc-600 hover:border-blue-400"
+              ? "border-red-300 bg-red-50/50 text-red-700"
+              : busy
+                ? "border-indigo-300 bg-indigo-50/50 text-indigo-600"
+                : "border-zinc-300 bg-zinc-50/50 text-zinc-600 hover:border-indigo-400 hover:bg-indigo-50/30"
         }`}
       >
         {busy ? (
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <>
+            <Loader2 className="h-7 w-7 animate-spin" />
+            <span className="text-[11px]">กำลังอัปโหลด…</span>
+          </>
         ) : value ? (
           <>
-            <Check className="h-6 w-6" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Check className="h-5 w-5" strokeWidth={2.6} />
+            </span>
             <span>{label}</span>
-            <span className="text-[10px] text-emerald-600">แตะเพื่อถ่ายใหม่</span>
+            <span className="text-[10px] text-emerald-600">ถ่ายแล้ว · แตะเพื่อถ่ายใหม่</span>
           </>
         ) : error ? (
           <>
-            <X className="h-6 w-6" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <X className="h-5 w-5" strokeWidth={2.6} />
+            </span>
             <span>{label}</span>
-            <span className="text-[10px] text-red-600">ลองอีก</span>
+            <span className="text-[10px] text-red-600">แตะเพื่อลองอีกครั้ง</span>
           </>
         ) : (
           <>
-            <Camera className="h-6 w-6" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+              <Camera className="h-5 w-5" />
+            </span>
             <span>{label}</span>
           </>
         )}

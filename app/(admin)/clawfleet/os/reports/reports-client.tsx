@@ -8,8 +8,8 @@
  * design ref: ระบบตู้คีบ.dc.html 864–900
  */
 
-import { AlertTriangle, Boxes } from "lucide-react";
-import { Card, Pill, IconBox } from "@/components/clawfleet/os/kit";
+import { AlertTriangle, Boxes, PackageSearch, ShieldCheck } from "lucide-react";
+import { Card, Pill, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { num, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import type { MemberStatus } from "@/lib/clawfleet/admin-queries";
 
@@ -125,13 +125,17 @@ export function ReportsClient({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mb-[18px]">
         <Card title="สาขา/ตู้ที่มีปัญหา" sub="ธงเสี่ยง · ตั้งค่าตู้ผิด · ต้องเข้าไปดู">
           {problems.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "8px 0" }}>ทุกสาขาอยู่ในเกณฑ์ดี — ไม่มีตู้ที่ต้องตรวจ</div>
+            <EmptyState icon={<ShieldCheck size={26} />} title="ทุกสาขาอยู่ในเกณฑ์ดี" sub="ไม่มีตู้ที่ต้องเข้าไปตรวจตอนนี้" />
           ) : (
             problems.map((p, i) => {
               const t = pnlTone(p.flag);
+              const accent = t.tone === "red" ? "#B42318" : t.tone === "amber" ? "#B45309" : "#9AA1AB";
               return (
-                <div key={p.branchId} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: i === problems.length - 1 ? "none" : "1px solid #F4F5F7" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: pnlTone(p.flag).tone === "red" ? "#B42318" : pnlTone(p.flag).tone === "amber" ? "#B45309" : "#9AA1AB", flex: "0 0 8px" }} />
+                <div
+                  key={p.branchId}
+                  className="co-accent-l"
+                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === problems.length - 1 ? "none" : "1px solid #F4F5F7" } as React.CSSProperties}
+                >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>
                       {p.name} <span style={{ fontWeight: 400, color: "#9AA1AB", fontSize: 12 }} className="num">· {p.code}</span>
@@ -147,17 +151,24 @@ export function ReportsClient({
 
         <Card title="สินค้าใกล้หมด · ต้องสั่งเพิ่ม" sub={`ตุ๊กตาต่ำกว่าจุดสั่งเติม (≤ ${SAMPLE_LOW_STOCK[0].reorderLevel} ชิ้น)`} right={<IconBox tone="amber" size={28} radius={8}><Boxes size={15} /></IconBox>}>
           {lowStock.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "8px 0" }}>คลังทุกสาขาอยู่เหนือจุดสั่งเติม — ไม่มีสินค้าใกล้หมด</div>
+            <EmptyState icon={<PackageSearch size={26} />} title="ไม่มีสินค้าใกล้หมด" sub="คลังทุกสาขาอยู่เหนือจุดสั่งเติม" />
           ) : (
-            lowStock.map((s, i) => (
-              <div key={`${s.loc}-${s.name}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 0", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
-                  <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{s.loc}</div>
+            lowStock.map((s, i) => {
+              const accent = lowStockColor(s.qty, s.reorderLevel);
+              return (
+                <div
+                  key={`${s.loc}-${s.name}`}
+                  className="co-accent-l"
+                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7" } as React.CSSProperties}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+                    <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{s.loc} · จุดสั่งเติม {num(s.reorderLevel)}</div>
+                  </div>
+                  <span className="num" style={{ fontSize: 14, fontWeight: 700, color: accent, whiteSpace: "nowrap" }}>{num(s.qty)} ชิ้น</span>
                 </div>
-                <span className="num" style={{ fontSize: 14, fontWeight: 700, color: lowStockColor(s.qty, s.reorderLevel), whiteSpace: "nowrap" }}>{num(s.qty)} ชิ้น</span>
-              </div>
-            ))
+              );
+            })
           )}
         </Card>
       </div>
@@ -166,7 +177,7 @@ export function ReportsClient({
       <Card title="คุณภาพงานพนักงานเก็บเงิน" sub={`${num(staff.length)} คน · เรียงตามรายชื่อ`} pad={false}>
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 640 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 0.8fr 1fr 0.9fr", padding: "10px 20px", fontSize: 11, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
+            <div className="co-eyebrow" style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 0.8fr 1fr 0.9fr", padding: "10px 20px", borderBottom: "1px solid #F4F5F7" }}>
               <span>พนักงาน</span>
               <span>เส้นทาง/ดูแล</span>
               <span style={{ textAlign: "right" }}>รอบเก็บ</span>

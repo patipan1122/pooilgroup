@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Info, AlertTriangle, ClipboardList } from "lucide-react";
-import { Pill, IconBox } from "@/components/clawfleet/os/kit";
+import { Info, AlertTriangle, ClipboardList, Check, X, ArrowRight } from "lucide-react";
+import { Pill, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, type Tone } from "@/components/clawfleet/os/format";
 import {
   approveCfConfigRequest,
@@ -127,27 +127,12 @@ export function ConfigClient({
 
       {/* empty state — ยังไม่มีคำขอจริงในฐานข้อมูล (ไม่โชว์ sample หลอกตา) */}
       {empty ? (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            background: "#fff",
-            border: "1px dashed #D9DCE3",
-            borderRadius: 16,
-            padding: "48px 24px",
-            textAlign: "center",
-          }}
-        >
-          <IconBox tone="neutral" size={44} radius={12}>
-            <ClipboardList size={22} />
-          </IconBox>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#374151" }}>ยังไม่มีคำขอตั้งค่าตู้</div>
-          <div style={{ fontSize: 12.5, color: "#9AA1AB", maxWidth: 360, lineHeight: 1.5 }}>
-            เมื่อพนักงานเสนอปรับความแรงการคีบหรือราคาขายของตู้ คำขอจะมาอยู่ที่นี่เพื่อรอเจ้าของอนุมัติ
-          </div>
+        <div style={{ background: "#fff", border: "1px dashed #D9DCE3", borderRadius: 16 }}>
+          <EmptyState
+            icon={<ClipboardList size={30} />}
+            title="ยังไม่มีคำขอตั้งค่าตู้"
+            sub="เมื่อพนักงานเสนอปรับความแรงการคีบหรือราคาขายของตู้ คำขอจะมาอยู่ที่นี่เพื่อรอเจ้าของอนุมัติ"
+          />
         </div>
       ) : (
         /* รายการคำขอตั้งค่าตู้ */
@@ -159,12 +144,15 @@ export function ConfigClient({
             return (
               <div
                 key={cf.id}
+                className="co-accent-l"
                 style={{
                   background: "#fff",
                   border: "1px solid #E8EAED",
                   borderRadius: 14,
                   padding: "18px 22px",
                   opacity: rowBusy ? 0.6 : 1,
+                  ["--co-accent" as string]:
+                    cf.status === "pending" ? "#B45309" : cf.status === "approved" ? "#15803D" : "#B42318",
                 }}
               >
                 {/* หัวการ์ด: รหัสตู้ + สาขา + ผู้เสนอ + สถานะ */}
@@ -204,15 +192,15 @@ export function ConfigClient({
                   <div style={{ background: "#F8F9FB", borderRadius: 11, padding: "12px 14px" }}>
                     <div style={{ fontSize: 10.5, color: "#9AA1AB", marginBottom: 7 }}>ปรับความแรงการคีบ</div>
                     {cf.clawFrom !== null && cf.clawTo !== null ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <span
                           className="num"
-                          style={{ fontSize: 14, fontWeight: 600, color: "#9AA1AB", textDecoration: "line-through" }}
+                          style={{ fontSize: 13.5, fontWeight: 700, color: "#9AA1AB", background: "#EFF1F4", borderRadius: 7, padding: "3px 9px" }}
                         >
                           {cf.clawFrom}
                         </span>
-                        <span style={{ color: "#4F46E5" }}>→</span>
-                        <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>
+                        <ArrowRight size={14} color="#9AA1AB" style={{ flex: "0 0 14px" }} />
+                        <span className="num" style={{ fontSize: 14, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 7, padding: "3px 10px" }}>
                           {cf.clawTo}
                         </span>
                       </div>
@@ -289,7 +277,11 @@ export function ConfigClient({
                       type="button"
                       disabled={rowBusy}
                       onClick={() => decide(cf, "rejected")}
+                      className="co-tap"
                       style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                         fontSize: 13,
                         fontWeight: 600,
                         color: "#B42318",
@@ -300,13 +292,17 @@ export function ConfigClient({
                         cursor: rowBusy ? "not-allowed" : "pointer",
                       }}
                     >
-                      ตีกลับ
+                      <X size={15} /> ตีกลับ
                     </button>
                     <button
                       type="button"
                       disabled={rowBusy}
                       onClick={() => decide(cf, "approved")}
+                      className="co-tap"
                       style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
                         fontSize: 13,
                         fontWeight: 600,
                         color: "#fff",
@@ -317,7 +313,7 @@ export function ConfigClient({
                         cursor: rowBusy ? "not-allowed" : "pointer",
                       }}
                     >
-                      {rowBusy ? "กำลังบันทึก…" : "อนุมัติให้ตั้งค่า"}
+                      <Check size={15} /> {rowBusy ? "กำลังบันทึก…" : "อนุมัติให้ตั้งค่า"}
                     </button>
                   </div>
                 )}

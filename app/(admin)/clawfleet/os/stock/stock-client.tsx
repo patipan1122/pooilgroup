@@ -417,7 +417,7 @@ function OverviewTab({
               return (
                 <div key={b.branchId} style={{ background: isOpen ? "#FAFBFE" : "#fff", borderBottom: "1px solid #F4F5F7" }}>
                   <div
-                    className="co-rowh"
+                    className="co-rowlink"
                     onClick={() => setOpen(isOpen ? null : b.branchId)}
                     style={{ display: "grid", gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", fontSize: 13 }}
                   >
@@ -501,7 +501,7 @@ function OverviewTab({
               const t = AGE_TONE[w.tag];
               const low = w.qty <= 20;
               return (
-                <div key={w.id} className="co-rowh" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
+                <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
                   <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
                     {w.name}
                     {low && <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
@@ -1403,12 +1403,12 @@ function DistributionTab({ realBranches, products, shipments: shipmentSeeds, def
               <span>ใบกระจาย</span><span>ปลายทาง</span><span>รายการ</span><span style={{ textAlign: "right" }}>รวม</span><span style={{ textAlign: "right" }}>วันที่สร้าง</span><span style={{ textAlign: "center" }}>สถานะ</span><span />
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: "32px 20px", textAlign: "center", color: "#9AA1AB", fontSize: 13 }}>ไม่มีใบกระจายในสถานะนี้</div>
+              <EmptyState icon={<Inbox size={26} />} title="ไม่มีใบกระจายในสถานะนี้" sub="ลองเปลี่ยนตัวกรองด้านบน หรือสร้างใบกระจายใหม่" />
             ) : filtered.map((sp) => {
               const tn = shipTone(sp);
               const summary = sp.lines.map((l) => `${l.name} ×${l.sent}`).join(" · ");
               return (
-                <div key={sp.id} className="co-rowh" onClick={() => setDetailId(sp.id)} style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr 1.8fr 0.6fr 0.9fr 1.1fr 0.4fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+                <div key={sp.id} className="co-rowlink" onClick={() => setDetailId(sp.id)} style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr 1.8fr 0.6fr 0.9fr 1.1fr 0.4fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
                   <span className="num" style={{ fontWeight: 700, color: "#4F46E5", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hasReal ? `DLV-${sp.id.slice(0, 6).toUpperCase()}` : sp.id}</span>
                   <span style={{ fontWeight: 600 }}>{sp.to}</span>
                   <span style={{ color: "#6B7280", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>

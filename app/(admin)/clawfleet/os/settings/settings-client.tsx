@@ -151,7 +151,7 @@ export function SettingsClient({
           const Icon = ROLE_ICON[rk];
           const t = TONE[meta.tone];
           return (
-            <div key={rk} className="co-card" style={{ padding: "15px 16px" }}>
+            <div key={rk} className="co-card co-accent-l" style={{ padding: "15px 16px", ["--co-accent" as string]: meta.dot }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
                 <IconBox tone={meta.tone} size={26} radius={7}><Icon size={14} /></IconBox>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: meta.dot }} />
@@ -198,9 +198,19 @@ export function SettingsClient({
         </Card>
 
         <Card title="นโยบายระบบ" sub="กฎกลางที่บังคับใช้กับทุกสาขา">
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {POLICY_DEFS.map((p) => (
-              <div key={p.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, opacity: savingKey === p.key ? 0.6 : 1 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {POLICY_DEFS.map((p, i) => (
+              <div
+                key={p.key}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  padding: "14px 0",
+                  borderTop: i === 0 ? "none" : "1px solid #F4F5F7",
+                  opacity: savingKey === p.key ? 0.6 : 1,
+                }}
+              >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{p.label}</div>
                   <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 3, lineHeight: 1.4 }}>{p.sub}</div>

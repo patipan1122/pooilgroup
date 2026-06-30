@@ -94,6 +94,67 @@
 .clawos .co-navitem:hover { background: var(--co-border-2) !important; }
 .clawos .co-rowh:hover { background: #FAFBFC; }
 
+/* ---- polish helpers (opt-in · เพิ่ม craft โดยไม่แตะ layout/wiring เดิม) ---- */
+/* hover-lift สำหรับการ์ด/ไทล์ที่กดได้ — เคลื่อนแค่ transform/shadow (ผสมกับ bg inline ได้) */
+.clawos .co-lift {
+  transition: transform .14s ease, box-shadow .14s ease;
+  will-change: transform;
+}
+@media (hover: hover) {
+  .clawos .co-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px -12px rgba(27, 30, 42, 0.28);
+  }
+}
+/* แถวที่กดได้ — affordance ชัดขึ้นกว่า co-rowh เฉยๆ */
+.clawos .co-rowlink { transition: background .12s ease; cursor: pointer; }
+.clawos .co-rowlink:hover { background: #FAFBFC; }
+.clawos .co-rowlink:active { background: var(--co-surface-3); }
+
+/* focus ring a11y (keyboard) — ไม่โผล่ตอนคลิกเมาส์ */
+.clawos a:focus-visible,
+.clawos button:focus-visible,
+.clawos [role="button"]:focus-visible,
+.clawos .co-tap:focus-visible {
+  outline: 2px solid var(--co-brand);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* delta chip — ตัวเลขเปลี่ยนแปลง ▲/▼ ในพิลล์จาง */
+.clawos .co-delta {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700; padding: 1.5px 7px; border-radius: 20px;
+  font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
+}
+.clawos .co-delta-up { color: var(--co-green); background: var(--co-green-soft); }
+.clawos .co-delta-down { color: var(--co-red); background: var(--co-red-soft); }
+.clawos .co-delta-flat { color: var(--co-muted); background: var(--co-surface-3); }
+
+/* severity left-accent — เน้นแถว/การ์ดตามระดับ (set --co-accent) */
+.clawos .co-accent-l {
+  position: relative;
+  border-left: 3px solid var(--co-accent, var(--co-brand));
+}
+
+/* skeleton shimmer — โหลดข้อมูล (แทนกล่องเทาตาย) */
+.clawos .co-skeleton {
+  background: linear-gradient(100deg, var(--co-surface-3) 30%, var(--co-border-2) 50%, var(--co-surface-3) 70%);
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: co-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes co-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .clawos .co-lift, .clawos .co-skeleton { transition: none; animation: none; }
+}
+
+/* hairline divider + section eyebrow (ไม่ใส่ letter-spacing — ภาษาไทยไม่รับ tracking) */
+.clawos .co-eyebrow {
+  font-size: 11px; font-weight: 700;
+  color: var(--co-muted-2); text-transform: none;
+}
+
 /* ---- composable primitives (optional helpers; components also use them) ---- */
 .clawos .co-card {
   background: var(--co-surface);

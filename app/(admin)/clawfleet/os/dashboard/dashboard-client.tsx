@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, Monitor } from "lucide-react";
-import { Kpi, Card, Pill, AvgWinBar, IconBox } from "@/components/clawfleet/os/kit";
+import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, Monitor, ChevronRight, PackageOpen } from "lucide-react";
+import { Kpi, Card, Pill, AvgWinBar, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, avgWinMarkerPct, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 
 type BranchRow = {
@@ -94,8 +94,8 @@ export function DashboardClient({
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-4">
-        <Kpi icon={<Wallet size={16} />} label="รายได้ (7 วัน)" value={bahtN(totRevenue)} delta="↑ 8.4% จากสัปดาห์ก่อน" />
-        <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" delta="↑ 6.1% หักต้นทุนตุ๊กตาแล้ว" />
+        <Kpi icon={<Wallet size={16} />} label="รายได้ (7 วัน)" value={bahtN(totRevenue)} trend="up" delta="8.4% จากสัปดาห์ก่อน" />
+        <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" trend="up" delta="6.1% หักต้นทุนตุ๊กตาแล้ว" />
         <Kpi icon={<Boxes size={16} />} iconTone="neutral" label="ตู้คีบทั้งหมด" value={`${num(totMachines)} ตู้`} delta={`${rows.length} สาขา`} deltaColor="#9AA1AB" />
         <Kpi icon={<Coins size={16} />} iconTone="amber" label="ต้นทุน/ตัว เฉลี่ย" value={bahtN(costPerDoll)} delta="↓ 2.0% จากสัปดาห์ก่อน" deltaColor="#15803D" />
         <Kpi icon={<ShieldAlert size={16} />} iconTone="red" label="ธงแดง · ต้องตรวจ" value={`${alertRows.length} รายการ`} valueColor="#B42318" delta={`${summary.riskyBranches || tooEasy + tooHard} สาขาเสี่ยง`} deltaColor="#C2756C" />
@@ -108,21 +108,31 @@ export function DashboardClient({
           <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7280" }}><span style={{ width: 10, height: 10, borderRadius: 3, background: "#EEF0F4" }} />ต้นทุนตุ๊กตา</span>
         </div>
       }>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 18, height: 184, padding: "0 4px" }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 18, height: 184, padding: "0 4px" }}>
+          {/* baseline rule — เส้นฐานใต้แท่งกราฟ ให้ดูมีระดับอ้างอิง */}
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 23, height: 1, background: "#EBEDF1", pointerEvents: "none" }} />
           {days.map((d, di) => {
             const total = d.profit + d.cost;
             const h = (total / maxBar) * 150;
             const profitH = total > 0 ? (d.profit / total) * h : 0;
+            const isToday = di === days.length - 1; // แท่งขวาสุด = วันล่าสุด
             return (
               <div key={d.iso || `${d.d}-${di}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
-                <div className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#454B54", marginBottom: 4 }}>฿{total.toFixed(0)}k</div>
-                <div style={{ width: 30, height: h, borderRadius: "6px 6px 0 0", background: "#EEF0F4", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden" }}>
+                <div className="num" style={{ fontSize: 10.5, fontWeight: 700, color: isToday ? "#4F46E5" : "#454B54", marginBottom: 4 }}>฿{total.toFixed(0)}k</div>
+                <div style={{ width: 30, height: h, borderRadius: "6px 6px 0 0", background: "#EEF0F4", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", boxShadow: isToday ? "0 0 0 2px rgba(79,70,229,0.22)" : undefined }}>
                   <div style={{ height: profitH, background: "#4F46E5" }} />
                 </div>
-                <div className="num" style={{ fontSize: 11, color: "#9AA1AB", marginTop: 6 }}>{d.d}</div>
+                <div className="num" style={{ fontSize: 11, color: isToday ? "#4F46E5" : "#9AA1AB", fontWeight: isToday ? 700 : 400, marginTop: 6 }}>{d.d}</div>
               </div>
             );
           })}
+        </div>
+        {/* axis caption — บอกแกนให้คนอ่านเข้าใจ + วันนี้เน้นน้ำเงิน */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: "#9AA1AB" }}>
+          <span>ตัวเลขบนแท่ง = ยอดรวมต่อวัน (พันบาท)</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#4F46E5", fontWeight: 600 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4F46E5" }} /> วันล่าสุด
+          </span>
         </div>
       </Card>
 
@@ -140,7 +150,7 @@ export function DashboardClient({
           {rows.map((b) => {
             const t = pnlTone(b.flag as PnlFlagKey);
             return (
-              <div key={b.branchId} className="co-rowh" onClick={() => router.push(`/clawfleet/os/matrix?branch=${encodeURIComponent(b.code)}`)} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.9fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", cursor: "pointer" }}>
+              <div key={b.branchId} className="co-rowlink" onClick={() => router.push(`/clawfleet/os/matrix?branch=${encodeURIComponent(b.code)}`)} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.9fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
                   <IconBox tone="neutral" size={32}><span className="num" style={{ fontSize: 11, fontWeight: 700 }}>{b.code}</span></IconBox>
                   <div style={{ minWidth: 0 }}>
@@ -150,8 +160,9 @@ export function DashboardClient({
                 </div>
                 <div className="num" style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600 }}>{bahtN(b.revenue)}</div>
                 <div className="num" style={{ textAlign: "right", fontSize: 13.5, fontWeight: 700, color: deltaColor(b.profit) }}>{b.profit >= 0 ? "+" : ""}{bahtN(b.profit)}</div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
                   <Pill tone={t.tone as Tone}><span className="num">฿{b.avgWin}</span> {t.label}</Pill>
+                  <ChevronRight size={15} style={{ color: "#C2C7CF", flex: "0 0 auto" }} />
                 </div>
               </div>
             );
@@ -159,16 +170,25 @@ export function DashboardClient({
         </Card>
 
         <Card title="ธงแดง · ต้องตรวจสอบ" pad={false} right={<Pill tone="red">{alertRows.length}</Pill>}>
-          {alertRows.map((a, i) => (
-            <div key={i} className="co-rowh" onClick={() => router.push("/clawfleet/os/collections")} style={{ display: "flex", gap: 11, padding: "13px 18px", borderBottom: "1px solid #F4F5F7", cursor: "pointer" }}>
-              <IconBox tone={a.tone === "red" ? "red" : a.tone === "amber" ? "amber" : "neutral"} size={30}><AlertTriangle size={14} /></IconBox>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>{a.title}</div>
-                <div style={{ fontSize: 11.5, color: "#8A909A", marginTop: 2, lineHeight: 1.35 }}>{a.detail}</div>
+          {alertRows.map((a, i) => {
+            const accent = a.tone === "red" ? "var(--co-red)" : a.tone === "amber" ? "var(--co-amber)" : "var(--co-border)";
+            return (
+              <div
+                key={i}
+                className="co-rowlink co-accent-l"
+                onClick={() => router.push("/clawfleet/os/collections")}
+                style={{ display: "flex", alignItems: "center", gap: 11, padding: "13px 18px", borderBottom: "1px solid #F4F5F7", ["--co-accent" as string]: accent }}
+              >
+                <IconBox tone={a.tone === "red" ? "red" : a.tone === "amber" ? "amber" : "neutral"} size={30}><AlertTriangle size={14} /></IconBox>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>{a.title}</div>
+                  <div style={{ fontSize: 11.5, color: "#8A909A", marginTop: 2, lineHeight: 1.35 }}>{a.detail}</div>
+                </div>
+                <Pill tone={a.tone === "red" ? "red" : a.tone === "amber" ? "amber" : "neutral"}>{a.tag}</Pill>
+                <ChevronRight size={15} style={{ color: "#C2C7CF", flex: "0 0 auto" }} />
               </div>
-              <Pill tone={a.tone === "red" ? "red" : a.tone === "amber" ? "amber" : "neutral"}>{a.tag}</Pill>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       </div>
 
@@ -201,7 +221,7 @@ export function DashboardClient({
               <span style={{ fontSize: 14, fontWeight: 700 }}>สินค้าใกล้หมด</span>
             </div>
             {lowStockRows.length === 0 ? (
-              <div style={{ fontSize: 12, color: "#9AA1AB", padding: "10px 0" }}>ไม่มีสินค้าใกล้หมด · สต๊อกเพียงพอ</div>
+              <EmptyState icon={<PackageOpen size={26} />} title="สต๊อกเพียงพอ" sub="ยังไม่มีสินค้าที่ใกล้หมด" />
             ) : lowStockRows.map((s, i) => (
               <div key={`${s.name}-${s.loc}-${i}`} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: "1px solid #F4F5F7" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>

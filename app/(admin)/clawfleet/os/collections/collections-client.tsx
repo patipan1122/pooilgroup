@@ -17,8 +17,10 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
+  X, ZoomIn, SearchX,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
+import { EmptyState } from "@/components/clawfleet/os/kit";
 import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/actions";
 
 /* ───────── types ───────── */
@@ -238,8 +240,12 @@ export function CollectionsClient({
           />
         ))}
         {filtered.length === 0 && (
-          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "28px 20px", textAlign: "center", color: "#9AA1AB", fontSize: 13 }}>
-            ไม่มีรอบเก็บในตัวกรองนี้
+          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
+            <EmptyState
+              icon={<SearchX size={30} />}
+              title="ไม่มีรอบเก็บในตัวกรองนี้"
+              sub="ลองเปลี่ยนสาขา หรือเลือกแท็บ “ทั้งหมด” เพื่อดูทุกรอบ"
+            />
           </div>
         )}
       </div>
@@ -319,12 +325,18 @@ function CollectionCard({
         }))
       : [{ code: "", name: "", shots: FALLBACK_LABELS.map((label) => ({ label, url: null })) }];
 
+  // severity left-accent — แดง=ไม่ตรง · เทา=ตู้เสีย · เขียว=ตรงกัน (อ่านระดับได้ตั้งแต่ขอบซ้าย)
+  const accent = st === "diff" ? "#B42318" : st === "broken" ? "#9AA1AB" : "#15803D";
+
   return (
-    <div style={{ background: rowBg, border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+    <div
+      className="co-accent-l"
+      style={{ background: rowBg, border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden", ["--co-accent" as string]: accent }}
+    >
       {/* row header */}
       <button
         onClick={onToggle}
-        className="co-rowh"
+        className="co-rowlink"
         style={{ display: "flex", alignItems: "center", gap: 16, padding: "15px 20px", cursor: "pointer", width: "100%", background: "transparent", border: "none", textAlign: "left", flexWrap: "wrap" }}
       >
         <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: meta.bg, color: meta.color }}>
@@ -411,18 +423,22 @@ function CollectionCard({
 
           {/* รูปจริงที่พนักงานถ่าย (anti-cheat) — แยกต่อตู้ · กดรูปเพื่อขยายตรวจ */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 8 }}>
-              รูปที่พนักงานถ่ายตอนเก็บเงิน · กดรูปเพื่อขยายตรวจว่าเลขในรูปตรงกับที่กรอกไหม
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+              <ZoomIn size={13} color="#9AA1AB" style={{ flex: "0 0 13px" }} />
+              <span className="co-eyebrow">
+                รูปที่พนักงานถ่ายตอนเก็บเงิน · กดรูปเพื่อขยายตรวจว่าเลขในรูปตรงกับที่กรอกไหม
+              </span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {photoMachines.map((m, mi) => (
                 <div key={m.code || `m-${mi}`}>
                   {m.name && (
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 7 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C2C7CF", flex: "0 0 5px" }} />
                       {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-[9px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
                     {m.shots.map((s, si) => (
                       <PhotoTile
                         key={`${s.label}-${si}`}
@@ -444,28 +460,36 @@ function CollectionCard({
               aria-modal="true"
               onClick={() => setLightbox(null)}
               style={{
-                position: "fixed", inset: 0, zIndex: 90, background: "rgba(17,20,24,0.82)",
-                display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+                position: "fixed", inset: 0, zIndex: 90, background: "rgba(13,15,20,0.9)",
+                backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
+                display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
               }}
             >
-              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{lightbox.label}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "#fff", fontSize: 13, fontWeight: 700, background: "rgba(255,255,255,0.1)", padding: "5px 12px", borderRadius: 20 }}>
+                    <ZoomIn size={13} /> {lightbox.label}
+                  </span>
                   <span style={{ flex: 1 }} />
                   <button
                     type="button"
                     onClick={() => setLightbox(null)}
-                    style={{ color: "#fff", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                    aria-label="ปิดรูป"
+                    className="co-tap"
+                    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, width: 36, height: 36, cursor: "pointer" }}
                   >
-                    ปิด
+                    <X size={17} />
                   </button>
                 </div>
                 {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
                 <img
                   src={lightbox.url}
                   alt={lightbox.label}
-                  style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 10, background: "#000" }}
+                  style={{ maxWidth: "92vw", maxHeight: "76vh", objectFit: "contain", borderRadius: 12, background: "#000", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
                 />
+                <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
+                  กดพื้นหลังหรือปุ่มปิดเพื่อออก
+                </div>
               </div>
             </div>
           )}
@@ -558,13 +582,14 @@ function PhotoTile({
   onOpen?: () => void;
 }) {
   return (
-    <div style={{ border: "1px solid #E8EAED", borderRadius: 9, overflow: "hidden", background: "#fff" }}>
+    <div className={url ? "co-lift" : ""} style={{ border: "1px solid #E8EAED", borderRadius: 11, overflow: "hidden", background: "#fff" }}>
       {url ? (
         <button
           type="button"
           onClick={onOpen}
           title="กดเพื่อดูรูปเต็ม"
-          style={{ display: "block", width: "100%", height: 66, padding: 0, border: "none", background: "#EFF1F4", position: "relative", cursor: "pointer" }}
+          className="co-tap"
+          style={{ display: "block", width: "100%", height: 72, padding: 0, border: "none", background: "#EFF1F4", position: "relative", cursor: "pointer" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
           <img
@@ -573,18 +598,18 @@ function PhotoTile({
             loading="lazy"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
-          <span style={{ position: "absolute", top: 4, right: 5, background: "rgba(17,20,24,0.5)", borderRadius: 5, padding: 2, lineHeight: 0 }}>
-            <Maximize2 size={12} color="#fff" />
+          <span style={{ position: "absolute", top: 5, right: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(17,20,24,0.55)", borderRadius: 6, width: 20, height: 20 }}>
+            <Maximize2 size={11} color="#fff" />
           </span>
         </button>
       ) : (
-        <div style={{ height: 66, background: "#F5F6F8", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
-          <ImageOff size={16} color="#C2C7CF" />
-          <span style={{ fontSize: 9, color: "#AEB4BD" }}>ไม่มีรูป</span>
+        <div style={{ height: 72, background: "#F7F8FA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <ImageOff size={15} color="#CDD2DA" />
+          <span style={{ fontSize: 9, color: "#B6BBC4" }}>ไม่มีรูป</span>
         </div>
       )}
-      <div style={{ padding: "5px 8px" }}>
-        <div style={{ fontSize: 9.5, color: "#9AA1AB", lineHeight: 1.2 }}>{label}</div>
+      <div style={{ padding: "6px 9px", borderTop: "1px solid #F0F1F4" }}>
+        <div style={{ fontSize: 9.5, color: "#9AA1AB", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
       </div>
     </div>
   );
