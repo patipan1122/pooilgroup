@@ -93,10 +93,20 @@ const SAMPLE_ROWS: CollectionRow[] = [
 ];
 
 /* ───────── helpers ───────── */
+/** ส่วนต่างเงิน ไม่เกินเท่านี้ = ถือว่าตรง (display only — logic เดิมใช้ r.gap > 50) */
+const CASH_TOLERANCE = 50;
+
 function statusOf(r: CollectionRow): StatusKind {
   if (r.expectedCash === 0 && r.actualCash === 0 && r.gap === 0) return "broken";
-  if (r.gap > 50 || r.prizeGap > 0) return "diff";
+  if (r.gap > CASH_TOLERANCE || r.prizeGap > 0) return "diff";
   return "match";
+}
+
+/** เขียนส่วนต่างเป็นคำพูด: ตรงกัน / ขาด ฿x / เกิน ฿x (บวก=ขาด, ลบ=เกิน) */
+function gapWords(gap: number): string {
+  if (gap === 0) return "ตรงกัน";
+  if (gap > 0) return `ขาด ${bahtN(gap)}`;
+  return `เกิน ${bahtN(-gap)}`;
 }
 
 const STATUS_META: Record<StatusKind, { label: string; bg: string; color: string }> = {
@@ -226,6 +236,15 @@ export function CollectionsClient({
         <SummaryCard label="ตู้เสีย/ไม่ขยับ" value={`${brokenN} ตู้`} valueColor="#5A6270" />
       </div>
 
+      {/* คำอธิบายสี (legend) — ให้สีในรายการอ่านออกเองได้ */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 11, fontSize: 11.5, color: "#6B7280" }}>
+        <span style={{ fontWeight: 600, color: "#9AA1AB" }}>สีสถานะ:</span>
+        <LegendDot color="#15803D" label="เขียว = ตรงกัน" />
+        <LegendDot color="#B42318" label="แดง = ไม่ตรง · ต้องสอบ" />
+        <LegendDot color="#9AA1AB" label="เทา = ตู้เสีย/ไม่ขยับ" />
+        <span style={{ color: "#9AA1AB" }}>· ส่วนต่างไม่เกิน {bahtN(CASH_TOLERANCE)} = ถือว่าตรง</span>
+      </div>
+
       {/* list */}
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
         {filtered.map((r) => (
@@ -284,8 +303,9 @@ function CollectionCard({
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
   const st = statusOf(row);
   const meta = STATUS_META[st];
-  const diffColor = row.gap > 50 ? "#B42318" : row.gap > 0 ? "#B45309" : "#15803D";
-  const diffStr = row.gap === 0 ? "ตรงกัน" : row.gap > 0 ? `−${bahtN(row.gap)}` : `+${bahtN(-row.gap)}`;
+  const diffColor = row.gap > CASH_TOLERANCE ? "#B42318" : row.gap > 0 ? "#B45309" : row.gap < 0 ? "#B45309" : "#15803D";
+  // ส่วนต่างเป็นคำพูด: ตรงกัน / ขาด ฿x / เกิน ฿x (ไม่โชว์เลขติดลบให้งง)
+  const diffStr = gapWords(row.gap);
   const rowBg = open ? "#FCFCFD" : "#fff";
 
   // เส้นทางเงิน (3-way): มิเตอร์ควรได้ ↔ เงินนับได้ ↔ ส่วนต่าง
@@ -295,7 +315,8 @@ function CollectionCard({
 
   // เส้นทางตุ๊กตา
   const dollOk = row.prizeGap === 0;
-  const cashOk = row.gap <= 50;
+  // ส่วนต่างไม่เกินเกณฑ์ (รวมเกิน) = ถือว่าตรง
+  const cashOk = Math.abs(row.gap) <= CASH_TOLERANCE;
 
   // แนะนำ action
   const action =
@@ -310,6 +331,11 @@ function CollectionCard({
     reviewState === "reviewed" ? "อนุมัติแล้ว"
       : reviewState === "rechecked" ? "ส่งตรวจซ้ำ"
         : reviewState === "escalated" ? "ส่งผู้จัดการ" : "";
+  // สีป้ายผลตรวจให้ตรงกับผล (เขียว=อนุมัติ · ส้ม=ตรวจซ้ำ · แดง=ส่งผจก.)
+  const reviewedChip =
+    reviewState === "reviewed" ? { color: "#15803D", bg: "#E7F4EC" }
+      : reviewState === "rechecked" ? { color: "#B45309", bg: "#FDF3E7" }
+        : { color: "#B42318", bg: "#FCEDEC" };
 
   // รูปจริงต่อตู้ (anti-cheat) — real tier ส่ง machines[].photoShots มา
   // ถ้าไม่มีตู้ (sample/legacy) → โชว์ช่องว่าง 5 ป้ายเป็น placeholder "ไม่มีรูป"
@@ -396,7 +422,7 @@ function CollectionCard({
                 <span style={{ fontSize: 13, fontWeight: 700 }}>เส้นทางเงิน</span>
                 <span style={{ flex: 1 }} />
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: cashOk ? "#15803D" : "#B42318" }}>
-                  {cashOk ? "ตรงกัน" : "เงินขาด"}
+                  {cashOk ? "ตรงกัน" : gapWords(row.gap)}
                 </span>
               </div>
               {/* 3-way: มิเตอร์ควรได้ ↔ เงินนับได้ ↔ ส่วนต่าง */}
@@ -410,6 +436,11 @@ function CollectionCard({
               <div style={{ fontSize: 12, color: "#5A6270" }}>
                 เหรียญเข้า ~<b className="num" style={{ color: "#1A1D21" }}>{coinDelta}</b> เหรียญ ×฿10 = <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.expectedCash)}</b>
               </div>
+              {cashOk && row.gap !== 0 && (
+                <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 5 }}>
+                  {gapWords(row.gap)} · ต่างไม่เกิน {bahtN(CASH_TOLERANCE)} = ถือว่าตรง
+                </div>
+              )}
             </div>
           </div>
 
@@ -430,26 +461,37 @@ function CollectionCard({
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {photoMachines.map((m, mi) => (
-                <div key={m.code || `m-${mi}`}>
-                  {m.name && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 7 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C2C7CF", flex: "0 0 5px" }} />
-                      {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
-                    {m.shots.map((s, si) => (
-                      <PhotoTile
-                        key={`${s.label}-${si}`}
-                        label={s.label}
-                        url={s.url}
-                        onOpen={s.url ? () => setLightbox({ url: s.url as string, label: s.label }) : undefined}
-                      />
-                    ))}
+              {photoMachines.map((m, mi) => {
+                // มีรูปจริงอย่างน้อย 1 รูปไหม — ถ้าไม่มีเลย → ซ่อนกริด 5 ช่อง โชว์บรรทัดเดียว
+                const hasAnyPhoto = m.shots.some((s) => s.url);
+                return (
+                  <div key={m.code || `m-${mi}`}>
+                    {m.name && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 7 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C2C7CF", flex: "0 0 5px" }} />
+                        {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
+                      </div>
+                    )}
+                    {hasAnyPhoto ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
+                        {m.shots.map((s, si) => (
+                          <PhotoTile
+                            key={`${s.label}-${si}`}
+                            label={s.label}
+                            url={s.url}
+                            onOpen={s.url ? () => setLightbox({ url: s.url as string, label: s.label }) : undefined}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "#9AA1AB", background: "#F7F8FA", border: "1px dashed #E2E5EA", borderRadius: 9, padding: "10px 13px" }}>
+                        <ImageOff size={14} color="#C2C7CF" style={{ flex: "0 0 14px" }} />
+                        ยังไม่มีรูปในรอบนี้
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -501,14 +543,14 @@ function CollectionCard({
               <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: actionColor }}>แนะนำ: {action}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>พนักงานตรวจแล้ว เปลี่ยนสถานะ →</span>
-              <ReviewBtn label="ตรวจแล้ว" tone="green" active={reviewState === "reviewed"} disabled={busy} onClick={() => onReview("approve")} />
+              <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตรวจเสร็จแล้ว เลือกผล →</span>
+              <ReviewBtn label="อนุมัติ" tone="green" active={reviewState === "reviewed"} disabled={busy} onClick={() => onReview("approve")} />
               <ReviewBtn label="ตรวจซ้ำ" tone="amber" active={reviewState === "rechecked"} disabled={busy} onClick={() => onReview("recheck")} />
               <ReviewBtn label="ส่งผู้จัดการ" tone="red" active={reviewState === "escalated"} disabled={busy} onClick={() => onReview("escalate")} />
               <span style={{ flex: 1 }} />
               {reviewed ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#15803D", background: "#E7F4EC", padding: "5px 12px", borderRadius: 20 }}>
-                  <Check size={14} /> ตรวจแล้ว · {reviewedLabel}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: reviewedChip.color, background: reviewedChip.bg, padding: "5px 12px", borderRadius: 20 }}>
+                  <Check size={14} /> {reviewedLabel}
                 </span>
               ) : (
                 <span style={{ fontSize: 11, color: "#C2756C", background: "#FCEDEC", padding: "5px 11px", borderRadius: 20, fontWeight: 600 }}>
@@ -524,6 +566,15 @@ function CollectionCard({
 }
 
 /* ───────── small parts ───────── */
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flex: "0 0 9px" }} />
+      {label}
+    </span>
+  );
+}
+
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>

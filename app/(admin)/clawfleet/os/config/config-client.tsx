@@ -44,6 +44,8 @@ export function ConfigClient({
   const [busyId, setBusyId] = useState<string | null>(null);
   // error แบบ inline ต่อการ์ด (แทน window.alert) — auto-clear ใน 6 วิ
   const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
+  // ยืนยันในหน้า (แทน window.confirm) — เก็บคำขอ+ผลที่กำลังจะทำ
+  const [confirmFor, setConfirmFor] = useState<{ id: string; next: "approved" | "rejected" } | null>(null);
 
   function showRowError(id: string, msg: string) {
     setErrorByRow((prev) => ({ ...prev, [id]: msg }));
@@ -61,10 +63,14 @@ export function ConfigClient({
     [rows],
   );
 
-  function decide(req: CfConfigRequestView, next: "approved" | "rejected") {
-    const verb = next === "approved" ? "อนุมัติให้ตั้งค่า" : "ตีกลับคำขอ";
-    if (!window.confirm(`${verb}ตู้ ${req.machineCode} (${req.branchName}) ?`)) return;
+  // กดปุ่ม → เปิดยืนยันในหน้า (ไม่เรียก action จนกว่าจะกด "ใช่")
+  function requestDecide(req: CfConfigRequestView, next: "approved" | "rejected") {
+    setConfirmFor({ id: req.id, next });
+  }
 
+  // ยืนยันแล้ว → เรียก action จริง (wiring เดิม)
+  function confirmDecide(req: CfConfigRequestView, next: "approved" | "rejected") {
+    setConfirmFor(null);
     setBusyId(req.id);
     startTransition(async () => {
       const res =
@@ -270,13 +276,13 @@ export function ConfigClient({
                   </div>
                 )}
 
-                {/* ปุ่ม (เฉพาะ pending) — ตีกลับ / อนุมัติ */}
-                {isRowPending && (
+                {/* ปุ่ม (เฉพาะ pending) — ตีกลับ / อนุมัติ · กดแล้วยืนยันในหน้า (ไม่ใช้ popup) */}
+                {isRowPending && confirmFor?.id !== cf.id && (
                   <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     <button
                       type="button"
                       disabled={rowBusy}
-                      onClick={() => decide(cf, "rejected")}
+                      onClick={() => requestDecide(cf, "rejected")}
                       className="co-tap"
                       style={{
                         display: "inline-flex",
@@ -297,7 +303,7 @@ export function ConfigClient({
                     <button
                       type="button"
                       disabled={rowBusy}
-                      onClick={() => decide(cf, "approved")}
+                      onClick={() => requestDecide(cf, "approved")}
                       className="co-tap"
                       style={{
                         display: "inline-flex",
@@ -314,6 +320,50 @@ export function ConfigClient({
                       }}
                     >
                       <Check size={15} /> {rowBusy ? "กำลังบันทึก…" : "อนุมัติให้ตั้งค่า"}
+                    </button>
+                  </div>
+                )}
+
+                {/* ยืนยันในหน้า (แทน window.confirm) — ใช่ / ยกเลิก */}
+                {isRowPending && confirmFor?.id === cf.id && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                      background: confirmFor.next === "approved" ? "#F2FAF5" : "#FCEDEC",
+                      border: `1px solid ${confirmFor.next === "approved" ? "#CDE9D7" : "#F0CFCB"}`,
+                      borderRadius: 10,
+                      padding: "12px 16px",
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 180, fontSize: 12.5, fontWeight: 600, color: confirmFor.next === "approved" ? "#15803D" : "#9B3127" }}>
+                      {confirmFor.next === "approved" ? "อนุมัติให้ตั้งค่า" : "ตีกลับคำขอ"}ตู้ {cf.machineCode} ({cf.branchName}) ?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmFor(null)}
+                      className="co-tap"
+                      style={{
+                        fontSize: 13, fontWeight: 600, color: "#5A6270", background: "#fff",
+                        border: "1px solid #DFE2E8", padding: "8px 16px", borderRadius: 9, cursor: "pointer",
+                      }}
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmDecide(cf, confirmFor.next)}
+                      className="co-tap"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#fff",
+                        background: confirmFor.next === "approved" ? "#15803D" : "#B42318",
+                        border: "none", padding: "8px 18px", borderRadius: 9, cursor: "pointer",
+                      }}
+                    >
+                      {confirmFor.next === "approved" ? <Check size={15} /> : <X size={15} />} ใช่
                     </button>
                   </div>
                 )}

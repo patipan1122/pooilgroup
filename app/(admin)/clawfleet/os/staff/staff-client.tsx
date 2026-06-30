@@ -263,8 +263,17 @@ export function StaffClient({
       )}
 
       <Card
-        title="พนักงานทั้งหมด"
-        sub={`${num(count)} คน · ทุกสาขา`}
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            พนักงานทั้งหมด
+            {empty && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7A5510", background: "#FCF3DC", border: "1px solid #F0E2BE", borderRadius: 20, padding: "2px 9px" }}>
+                ตัวอย่าง · ไม่ใช่บัญชีจริง
+              </span>
+            )}
+          </span>
+        }
+        sub={empty ? "รายชื่อด้านล่างเป็นตัวอย่างเพื่อให้เห็นภาพ — ยังไม่ใช่พนักงานจริง" : `${num(count)} คน · ทุกสาขา`}
         pad={false}
         right={
           isAdmin ? (
@@ -284,7 +293,7 @@ export function StaffClient({
             <div style={{ display: "grid", gridTemplateColumns: cols, padding: "12px 22px", fontSize: 11, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
               <span>พนักงาน</span>
               <span>ตำแหน่ง</span>
-              <span>เส้นทาง/ดูแล</span>
+              <span>สาขา</span>
               <span style={{ textAlign: "right" }}>รอบเก็บ</span>
               <span style={{ textAlign: "right" }}>ยอดไม่ตรง</span>
               <span style={{ textAlign: canManage ? "left" : "right" }}>สถานะ</span>
@@ -357,6 +366,10 @@ export function StaffClient({
             * &quot;รอบเก็บ&quot; และ &quot;ยอดไม่ตรง&quot; ต่อคน ยังไม่มี metric จริง (แสดง —) — ดูได้จากหน้าเก็บเงิน/ตรวจสอบ
           </div>
         )}
+        {/* หมายเหตุ: บทบาท "ผจก.เขต" ยังไม่มีในตารางสิทธิ์ (หน้า ตั้งค่า & สิทธิ์) — สิทธิ์ใช้ของ ผจก.สาขาไปก่อน */}
+        <div style={{ padding: "10px 22px", fontSize: 10.5, color: "#B45309", borderTop: "1px solid #F4F5F7", background: "#FDF7EC" }}>
+          หมายเหตุ: บทบาท <b>“ผจก.เขต”</b> เลือกได้ที่นี่ แต่ยังไม่มีในตารางสิทธิ์หน้า “ตั้งค่า &amp; สิทธิ์” — ปัจจุบันใช้สิทธิ์เทียบเท่า ผจก.สาขา
+        </div>
       </Card>
 
       {/* ── เพิ่มพนักงาน (เชิญ) ── */}

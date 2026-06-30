@@ -55,8 +55,11 @@ export default async function DashboardPage() {
     <DashboardClient
       summary={{
         revenue: summary.revenue,
+        // ต้นทุนตุ๊กตาจริง (รวมทุกสาขา) — ใช้คำนวณ "ต้นทุน/ตัว" จริง แทนการเดา
+        cost: summary.cost,
         profit: summary.profit,
         dollsOut: summary.dollsOut,
+        hasCost: summary.hasCost,
         avgBahtPerDoll: summary.avgBahtPerDoll,
         riskyBranches: summary.riskyBranches,
       }}

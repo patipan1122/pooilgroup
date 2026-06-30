@@ -98,6 +98,42 @@ function problemIssue(p: ProblemBranch): string {
   return `${t.label} · เฉลี่ย ${avg}${risky}`;
 }
 
+/* ── DEMO markers (ใช้กำกับกล่อง/แถวที่เป็นข้อมูลตัวอย่าง ให้ชัดว่าไม่ใช่ของจริง) ── */
+function DemoBadge() {
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: "#9AA1AB", background: "#F1F2F7", border: "1px solid #E3E6EA", borderRadius: 20, padding: "3px 10px", whiteSpace: "nowrap" }}>
+      ตัวอย่าง
+    </span>
+  );
+}
+/** tag จาง ๆ ต่อแถว — ย้ำว่าแถวนี้เป็นข้อมูลตัวอย่าง */
+function DemoTag() {
+  return (
+    <span style={{ fontSize: 9.5, fontWeight: 600, color: "#B6BBC4", border: "1px solid #E3E6EA", borderRadius: 5, padding: "0 5px", marginLeft: 6, whiteSpace: "nowrap" }}>
+      ตัวอย่าง
+    </span>
+  );
+}
+
+/* ── color legend — อธิบายความหมายของสีในตาราง (เขียว/เหลือง/แดง) ── */
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, display: "inline-block" }} />
+      {label}
+    </span>
+  );
+}
+function ColorLegend() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 12, fontSize: 11, color: "#8A909A" }}>
+      <LegendDot color="#15803D" label="เขียว = ปกติ/ดี" />
+      <LegendDot color="#B45309" label="เหลือง = ต้องจับตา" />
+      <LegendDot color="#B42318" label="แดง = ต้องเข้าไปตรวจ" />
+    </div>
+  );
+}
+
 export function ReportsClient({
   problemBranches,
   staffQuality,
@@ -108,10 +144,14 @@ export function ReportsClient({
   lowStock: LowStockItem[];
 }) {
   const empty = problemBranches.length === 0 && staffQuality.length === 0;
-  const problems = problemBranches.length === 0 ? SAMPLE_PROBLEMS : problemBranches;
-  const staff = staffQuality.length === 0 ? SAMPLE_STAFF : staffQuality;
+  // แต่ละการ์ดมี "โหมดตัวอย่าง" ของตัวเอง → badge/tag เฉพาะกล่องที่ใช้ข้อมูลปลอม (ไม่เหมาว่าทั้งหน้าจริง)
+  const problemsDemo = problemBranches.length === 0;
+  const staffDemo = staffQuality.length === 0;
+  const lowStockDemo = empty && lowStockReal.length === 0;
+  const problems = problemsDemo ? SAMPLE_PROBLEMS : problemBranches;
+  const staff = staffDemo ? SAMPLE_STAFF : staffQuality;
   // ข้อมูลจริง · ใช้ SAMPLE เฉพาะตอนทั้งระบบยังว่าง (ไม่มีสาขา/staff)
-  const lowStock = empty && lowStockReal.length === 0 ? SAMPLE_LOW_STOCK : lowStockReal;
+  const lowStock = lowStockDemo ? SAMPLE_LOW_STOCK : lowStockReal;
 
   return (
     <div>
@@ -123,7 +163,8 @@ export function ReportsClient({
 
       {/* ── 2-col: ตู้ที่มีปัญหา + สินค้าใกล้หมด ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mb-[18px]">
-        <Card title="สาขา/ตู้ที่มีปัญหา" sub="ธงเสี่ยง · ตั้งค่าตู้ผิด · ต้องเข้าไปดู">
+        <Card title="สาขา/ตู้ที่มีปัญหา" sub="ธงเสี่ยง · ตั้งค่าตู้ผิด · ต้องเข้าไปดู" right={problemsDemo ? <DemoBadge /> : undefined}>
+          <ColorLegend />
           {problems.length === 0 ? (
             <EmptyState icon={<ShieldCheck size={26} />} title="ทุกสาขาอยู่ในเกณฑ์ดี" sub="ไม่มีตู้ที่ต้องเข้าไปตรวจตอนนี้" />
           ) : (
@@ -134,11 +175,12 @@ export function ReportsClient({
                 <div
                   key={p.branchId}
                   className="co-accent-l"
-                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === problems.length - 1 ? "none" : "1px solid #F4F5F7" } as React.CSSProperties}
+                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === problems.length - 1 ? "none" : "1px solid #F4F5F7", opacity: problemsDemo ? 0.78 : 1 } as React.CSSProperties}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>
                       {p.name} <span style={{ fontWeight: 400, color: "#9AA1AB", fontSize: 12 }} className="num">· {p.code}</span>
+                      {problemsDemo && <DemoTag />}
                     </div>
                     <div style={{ fontSize: 11.5, color: "#8A909A" }}>{problemIssue(p)}</div>
                   </div>
@@ -149,7 +191,7 @@ export function ReportsClient({
           )}
         </Card>
 
-        <Card title="สินค้าใกล้หมด · ต้องสั่งเพิ่ม" sub={`ตุ๊กตาต่ำกว่าจุดสั่งเติม (≤ ${SAMPLE_LOW_STOCK[0].reorderLevel} ชิ้น)`} right={<IconBox tone="amber" size={28} radius={8}><Boxes size={15} /></IconBox>}>
+        <Card title="สินค้าใกล้หมด · ต้องสั่งเพิ่ม" sub={`ตุ๊กตาต่ำกว่าจุดสั่งเติม (≤ ${SAMPLE_LOW_STOCK[0].reorderLevel} ชิ้น)`} right={lowStockDemo ? <DemoBadge /> : <IconBox tone="amber" size={28} radius={8}><Boxes size={15} /></IconBox>}>
           {lowStock.length === 0 ? (
             <EmptyState icon={<PackageSearch size={26} />} title="ไม่มีสินค้าใกล้หมด" sub="คลังทุกสาขาอยู่เหนือจุดสั่งเติม" />
           ) : (
@@ -159,10 +201,10 @@ export function ReportsClient({
                 <div
                   key={`${s.loc}-${s.name}`}
                   className="co-accent-l"
-                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7" } as React.CSSProperties}
+                  style={{ "--co-accent": accent, display: "flex", alignItems: "center", gap: 11, padding: "11px 0 11px 13px", borderBottom: i === lowStock.length - 1 ? "none" : "1px solid #F4F5F7", opacity: lowStockDemo ? 0.78 : 1 } as React.CSSProperties}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}{lowStockDemo && <DemoTag />}</div>
                     <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{s.loc} · จุดสั่งเติม {num(s.reorderLevel)}</div>
                   </div>
                   <span className="num" style={{ fontSize: 14, fontWeight: 700, color: accent, whiteSpace: "nowrap" }}>{num(s.qty)} ชิ้น</span>
@@ -174,7 +216,8 @@ export function ReportsClient({
       </div>
 
       {/* ── full-width: คุณภาพงานพนักงานเก็บเงิน ── */}
-      <Card title="คุณภาพงานพนักงานเก็บเงิน" sub={`${num(staff.length)} คน · เรียงตามรายชื่อ`} pad={false}>
+      <Card title="คุณภาพงานพนักงานเก็บเงิน" sub={`${num(staff.length)} คน · เรียงตามรายชื่อ`} pad={false} right={staffDemo ? <DemoBadge /> : undefined}>
+        <div style={{ padding: "12px 20px 0" }}><ColorLegend /></div>
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 640 }}>
             <div className="co-eyebrow" style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 0.8fr 1fr 0.9fr", padding: "10px 20px", borderBottom: "1px solid #F4F5F7" }}>
@@ -188,10 +231,10 @@ export function ReportsClient({
               const q = qualityPill(st.mismatch, st.status);
               const mmColor = st.mismatch == null ? "#9AA1AB" : st.mismatch === 0 ? "#15803D" : st.mismatch <= 2 ? "#B45309" : "#B42318";
               return (
-                <div key={st.id} className="co-rowh" style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 0.8fr 1fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
+                <div key={st.id} className="co-rowh" style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 0.8fr 1fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, opacity: staffDemo ? 0.78 : 1 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <span style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{initial(st.name)}</span>
-                    <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.name}</span>
+                    <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}>{st.name}{staffDemo && <DemoTag />}</span>
                   </span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{st.branchName}</span>
                   <span className="num" style={{ textAlign: "right" }}>{st.rounds == null ? "—" : num(st.rounds)}</span>
@@ -202,11 +245,10 @@ export function ReportsClient({
             })}
           </div>
         </div>
-        {staffQuality.length > 0 && (
-          <div style={{ padding: "10px 20px", fontSize: 10.5, color: "#9AA1AB", fontStyle: "italic", borderTop: "1px solid #F4F5F7" }}>
-            * &quot;รอบเก็บ&quot; = จำนวนรอบที่ปิดในรอบ 30 วัน · &quot;ยอดไม่ตรง&quot; = ครั้งที่เก็บแล้วยอดเงิน/ตุ๊กตาไม่ตรง (30 วัน)
-          </div>
-        )}
+        <div style={{ padding: "10px 20px", fontSize: 10.5, color: "#9AA1AB", fontStyle: "italic", borderTop: "1px solid #F4F5F7" }}>
+          * &quot;รอบเก็บ&quot; = จำนวนรอบที่ปิดในรอบ 30 วัน · &quot;ยอดไม่ตรง&quot; = ครั้งที่เก็บแล้วยอดเงิน/ตุ๊กตาไม่ตรง (30 วัน)
+          {staffDemo && " — ข้อมูลในตารางนี้เป็นตัวอย่าง"}
+        </div>
       </Card>
     </div>
   );

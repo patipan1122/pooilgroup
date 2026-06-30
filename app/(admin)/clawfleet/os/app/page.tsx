@@ -6,6 +6,7 @@
  */
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
+import { getSession } from "@/lib/auth/session";
 import { StaffAppClient } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -24,6 +25,15 @@ export default async function StaffAppPage() {
     // graceful: ยังไม่ migrate / DB ว่าง → client จะ demo fallback เอง
   }
 
+  // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าไม่ login → ปล่อยว่าง (client ใช้ default)
+  let userName = "";
+  try {
+    const session = await getSession();
+    userName = session?.user.name ?? "";
+  } catch {
+    // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
+  }
+
   // นโยบายถ่ายรูป (photoRequired) — อ่าน server-side ส่งให้แอปพนักงานบังคับถ่ายรูป.
   // graceful: ถ้าอ่านไม่ได้ (ยังไม่ login / DB ว่าง) → ใช้ default false (ถ่ายได้-ข้ามได้).
   let photoRequired = false;
@@ -40,6 +50,7 @@ export default async function StaffAppPage() {
       branches={branches}
       skus={skus}
       photoRequired={photoRequired}
+      userName={userName}
     />
   );
 }

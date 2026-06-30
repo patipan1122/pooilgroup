@@ -92,25 +92,36 @@ function flattenReal(branches: GroupCollectBranch[]): AppMachine[] {
 }
 
 const isDemo = (id: string) => id.startsWith("demo-");
-const CASH_PER_PLAY = 10; // ฿/ครั้ง
+const CASH_PER_PLAY = 10; // ฿/ครั้ง — ⚠️ สมมติ (ราคาจริงต่อตู้ยังไม่ส่งมาฝั่ง client) → preview ADVISORY
+
+// counted/อ่านมิเตอร์เอง: null = "ยังไม่กรอก" (กันค่า default หลอก anti-cheat).
+// server ต้องการ number → ก่อนส่งต้องกรอกครบ (gating), เราจึง coerce ตอน submit.
+type Counted = number | null;
 
 /* ─────────────────────────── wizard state ─────────────────────────── */
 type Form = {
-  last: number; // ตุ๊กตารอบก่อน (ระบบ)
-  left: number; // คงเหลือก่อนเติม (นับจริง)
-  refill: number; // เติมกี่ตัว
+  last: number; // ตุ๊กตารอบก่อน (ระบบ · reference)
+  left: Counted; // คงเหลือก่อนเติม (นับจริง)
+  refill: Counted; // เติมกี่ตัว (นับจริง)
   product: string;
   category: string;
-  price: number;
+  price: Counted; // ราคาขาย (กรอกเอง)
   // meters
-  dollPrev: number;
-  dollGear: number;
-  dollDigi: number;
-  coinPrev: number;
-  coinGear: number;
-  coinDigi: number;
-  cash: number;
+  dollPrev: number; // รอบก่อน (ระบบ · reference)
+  dollGear: Counted; // อ่านมิเตอร์เอง
+  dollDigi: Counted;
+  coinPrev: number; // รอบก่อน (ระบบ · reference)
+  coinGear: Counted;
+  coinDigi: Counted;
+  cash: Counted; // นับเงินจริง
 };
+
+/** field ที่พนักงานต้องนับ/อ่านเอง (ไม่ใช่ค่าจากระบบ) */
+const COUNTED_KEYS = ["left", "refill", "price", "dollGear", "dollDigi", "coinGear", "coinDigi", "cash"] as const;
+type CountedKey = (typeof COUNTED_KEYS)[number];
+/** ค่าที่ใช้คำนวณ: null → 0 (เฉพาะตอน "พรีวิว" เท่านั้น · submit จะ gate ไม่ให้ null หลุด) */
+const n0 = (v: Counted): number => (v == null ? 0 : v);
+const isFilled = (v: Counted): boolean => v != null;
 
 // Each slot holds the R2 url returned by PhotoCaptureButton ("" = not taken / skipped).
 type Photos = {
@@ -131,6 +142,7 @@ type Draft = {
   dispensed: number;
   time: string;
   form: Form;
+  photos: Photos; // เก็บ url รูปที่ถ่ายไว้ → resume แล้วไม่หาย (กันค้างเพราะถ่ายซ้ำไม่ได้)
   sessionId: string | null;
 };
 
@@ -152,20 +164,23 @@ const blankPhotos: Photos = {
 
 function formFor(m: AppMachine, skus: CollectSku[]): Form {
   const product = m.product || skus[0]?.name || "ตุ๊กตา";
+  const demo = isDemo(m.id);
+  // REAL: ช่องที่ต้องนับ/อ่านมิเตอร์เอง = ว่าง (null) → พนักงานต้องนับจริงก่อนไปต่อ.
+  // DEMO: ใส่ค่าเดาไว้ให้เดิน flow ตัวอย่างได้ลื่น.
   return {
     last: m.lastStock,
-    left: Math.max(0, m.lastStock - 5),
-    refill: 5,
+    left: demo ? Math.max(0, m.lastStock - 5) : null,
+    refill: demo ? 5 : null,
     product,
     category: "ลิขสิทธิ์",
-    price: 250,
+    price: demo ? 250 : null,
     dollPrev: m.lastDollMeter,
-    dollGear: m.lastDollMeter + 5,
-    dollDigi: m.lastDollMeter + 5,
+    dollGear: demo ? m.lastDollMeter + 5 : null,
+    dollDigi: demo ? m.lastDollMeter + 5 : null,
     coinPrev: m.lastCoinMeter,
-    coinGear: m.lastCoinMeter + 30,
-    coinDigi: m.lastCoinMeter + 30,
-    cash: 300,
+    coinGear: demo ? m.lastCoinMeter + 30 : null,
+    coinDigi: demo ? m.lastCoinMeter + 30 : null,
+    cash: demo ? 300 : null,
   };
 }
 
@@ -175,7 +190,7 @@ type Action =
   | { type: "next" }
   | { type: "back" }
   | { type: "home" }
-  | { type: "setForm"; key: keyof Form; value: number | string }
+  | { type: "setForm"; key: keyof Form; value: number | string | null }
   | { type: "setPhoto"; key: keyof Photos; url: string }
   | { type: "toggleDefer" }
   | { type: "fillMeterNow" }
@@ -200,9 +215,9 @@ function reducer(s: WizardState, a: Action): WizardState {
         step: 3,
         machineId: a.draft.machineId,
         form: { ...a.draft.form },
-        // resumed: count already done · photos optional (skipped urls don't persist in
-        // the local draft) → leave blank; the resumed banner explains "just need meters".
-        photos: { ...blankPhotos },
+        // resumed: count already done · รูปที่ถ่ายไว้ถูกเก็บใน draft แล้ว → คืนกลับมา
+        // (เดิมรูปหาย → ถ้านโยบายบังคับถ่ายจะ submit ไม่ได้ = ค้าง เพราะเดินจากตู้มาแล้ว)
+        photos: { ...a.draft.photos },
         meterDeferred: false,
         resumed: true,
         configSent: false,
@@ -245,9 +260,11 @@ type Props = {
   skus: CollectSku[];
   // นโยบายถ่ายรูป (จาก org settings) — true = บังคับถ่ายก่อนไปต่อ, false = ถ่ายได้-ข้ามได้
   photoRequired: boolean;
+  // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — "" = ไม่ทราบ → ใช้ default
+  userName: string;
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName }: Props) {
   const realMachines = useMemo(() => flattenReal(branches), [branches]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
@@ -259,10 +276,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired }: Props) 
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} />
   );
 
   return (
@@ -332,11 +349,12 @@ type StaffAppProps = {
   usingDemo: boolean;
   // true = บังคับถ่ายรูปก่อนกดถัดไป/ส่ง (org policy photoRequired)
   photoRequired: boolean;
+  userName: string;
 };
 
 type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -352,19 +370,42 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
   );
 
   const f = state.form;
-  const dispensed = Math.max(0, f.last - f.left);
-  const afterFill = f.left + f.refill;
-  const dollDelta = f.dollDigi - f.dollPrev;
-  const coinDelta = f.coinDigi - f.coinPrev;
+  // พรีวิวคำนวณด้วย n0() (null→0) แต่ "ตรง/ไม่ตรง" จะโชว์เฉพาะเมื่อ field ที่เกี่ยวกรอกครบ
+  const dispensed = Math.max(0, f.last - n0(f.left));
+  const afterFill = n0(f.left) + n0(f.refill);
+  const dollDelta = n0(f.dollDigi) - f.dollPrev;
+  const coinDelta = n0(f.coinDigi) - f.coinPrev;
   const expectedCash = coinDelta * CASH_PER_PLAY;
-  const dollMeterEqual = f.dollGear === f.dollDigi;
-  const coinMeterEqual = f.coinGear === f.coinDigi;
+  // ความ "ตรง" จะตัดสินก็ต่อเมื่อกรอกครบ (กัน false ตรง/ไม่ตรง ตอนช่องยังว่าง)
+  const dollMeterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
+  const coinMeterFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
+  const dollMeterEqual = dollMeterFilled && n0(f.dollGear) === n0(f.dollDigi);
+  const coinMeterEqual = coinMeterFilled && n0(f.coinGear) === n0(f.coinDigi);
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
-  const dollMatch = dollDelta === dispensed;
-  const cashMatch = f.cash === expectedCash;
-  const allMatch = dollMatch && cashMatch && meterEqualOk;
-  const tooHard = dispensed <= 0 && f.cash >= 200;
+  const dollMatch = isFilled(f.left) && dollMeterFilled && dollDelta === dispensed;
+  // ⚠️ cashMatch = ADVISORY เท่านั้น: client เดา ฿10/เกม (CASH_PER_PLAY) เพราะราคาจริงต่อตู้
+  // ยังไม่ถูกส่งมา client → สาขา ฿20/เกม จะดู "ไม่ตรง" ทั้งที่ถูก. ตัวจริง = server reconcile.
+  // จึง "ไม่" รวม cashMatch เข้า allMatch (กัน banner/ปุ่มแดงหลอก) — โชว์เป็นคำแนะนำ "ประมาณ".
+  const cashMatch = isFilled(f.cash) && coinMeterFilled && n0(f.cash) === expectedCash;
+  const allMatch = dollMatch && meterEqualOk;
+  const tooHard = isFilled(f.cash) && isFilled(f.left) && dispensed <= 0 && n0(f.cash) >= 200;
   const meterReady = !state.meterDeferred;
+
+  /* ── gating: แต่ละขั้นต้องกรอกช่องที่ "ต้องนับ/อ่านเอง" ครบก่อนไปต่อ/ส่ง ──
+   * (DEMO ใส่ค่าให้แล้ว → ผ่านอัตโนมัติ · REAL = ว่าง → ต้องกรอกจริง)
+   * step1 นับเหลือ · step2 เติมกี่ตัว · step3 มิเตอร์ 4 ช่อง (เว้นเมื่อ defer) · step4 เงินสด+ราคา */
+  const step1CountOk = isFilled(f.left);
+  const step2CountOk = isFilled(f.refill);
+  const step3CountOk = state.meterDeferred ||
+    (isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi));
+  const step4CountOk = isFilled(f.cash) && isFilled(f.price);
+  const stepCountSatisfied =
+    state.step === 1 ? step1CountOk
+      : state.step === 2 ? step2CountOk
+        : state.step === 3 ? step3CountOk
+          : state.step === 4 ? step4CountOk
+            : true; // step 5/6 ไม่มีช่องนับ
+  const countBlocks = state.step >= 1 && state.step <= 4 && !stepCountSatisfied;
 
   /* ── นโยบายถ่ายรูป: แต่ละขั้นต้องมีรูปครบไหมก่อนกดถัดไป/ส่ง ──
    * step 1 = ก่อนเติม · step 2 = หลังเติม · step 3 = มิเตอร์ (ตุ๊กตา + เหรียญ อย่างละ 1 รูป) · step 4 = เงินสด.
@@ -403,7 +444,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
         if (!r.ok) {
           // เปิดรอบกับระบบไม่ได้ (เน็ต/สิทธิ์) → อย่าเปิด wizard ที่ submit ไม่ได้
           // (กันเก็บเงินจริงแล้วโชว์ "เสร็จ" ลอย ๆ โดยไม่บันทึก) — ให้พนักงานลองใหม่
-          setError(`${r.error} · เปิดรอบไม่ได้ ลองอีกครั้ง`);
+          console.error("[clawos] startBranchSession failed:", r.error);
+          setError("เปิดรอบไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
           return;
         }
         dispatch({ type: "open", machine: m, skus, sessionId: r.data.id });
@@ -419,10 +461,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
       machineId: machine.id,
       code: machine.code,
       branch: machine.branch,
-      cash: f.cash,
+      cash: n0(f.cash),
       dispensed,
       time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
       form: { ...f },
+      photos: { ...state.photos }, // เก็บรูปไว้ → resume ไม่ต้องถ่ายใหม่ (กันค้าง)
       sessionId: state.sessionId,
     };
     setDrafts((p) => ({ ...p, [machine.id]: d }));
@@ -449,24 +492,32 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
       setError("ยังไม่ได้เปิดรอบกับระบบ · กดย้อนกลับเปิดตู้ใหม่ (ตรวจสัญญาณเน็ต) ก่อนบันทึก");
       return;
     }
+    // safety net: ช่องที่ต้องนับ/อ่านเองต้องกรอกครบก่อนส่ง (ปุ่มถูก gate ไว้แล้ว · กันหลุดซ้ำ)
+    // → จะได้ไม่ส่ง 0 ปลอมเข้าระบบ anti-cheat
+    if (!isFilled(f.left) || !isFilled(f.refill) || !isFilled(f.cash) ||
+        !isFilled(f.dollDigi) || !isFilled(f.coinDigi)) {
+      setError("กรอกตัวเลขที่นับ/อ่านมิเตอร์ให้ครบก่อนบันทึก");
+      return;
+    }
 
     const sessionId = state.sessionId;
     const p = state.photos;
+    const refillQty = n0(f.refill);
     startTransition(async () => {
       const ev = await submitBranchEvent({
         sessionId,
         machineId: machine.id,
-        coinMeterAfter: f.coinDigi,
-        dollMeterAfter: f.dollDigi,
-        cashCountedCents: Math.round(f.cash * 100),
+        coinMeterAfter: n0(f.coinDigi),
+        dollMeterAfter: n0(f.dollDigi),
+        cashCountedCents: Math.round(n0(f.cash) * 100),
         // ⚠️ anti-cheat: stockBefore = สต๊อกรอบก่อน (lastDollStock = f.last) ไม่ใช่ที่นับตอนนี้.
         // server: prizeCountedOut = stockBefore + refillQty − stockAfter = f.last − f.left = dispensed
         // (ถ้าส่ง f.left จะได้ 0 เสมอ → ทุกตู้โดน flag ตุ๊กตาหายเท็จ + จับขโมยจริงไม่ได้)
         stockBefore: f.last,
-        refillQty: f.refill,
+        refillQty,
         stockAfter: afterFill,
         refillProductId:
-          f.refill > 0 ? skus.find((s) => s.name === f.product)?.id : undefined,
+          refillQty > 0 ? skus.find((s) => s.name === f.product)?.id : undefined,
         // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
         // (server accepts url | "" | undefined → a skipped photo never blocks the round).
         // The meter step captures per-row (เฟือง/ดิจิตอล); backend has 1 slot per meter, so
@@ -478,12 +529,15 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
         photoCashUrl: p.cash || "",
       });
       if (!ev.ok) {
-        setError(ev.error);
+        // เก็บ error ดิบไว้ใน console เท่านั้น · พนักงานเห็นข้อความง่าย ๆ
+        console.error("[clawos] submitBranchEvent failed:", ev.error);
+        setError("ส่งไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
         return;
       }
       const close = await closeBranchSession({ sessionId });
       if (!close.ok) {
-        setError(close.error);
+        console.error("[clawos] closeBranchSession failed:", close.error);
+        setError("ปิดรอบไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
         return;
       }
       setDrafts((p) => {
@@ -499,8 +553,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
     dispatch({ type: "home" });
   }
 
-  const setNum = (key: keyof Form) => (v: string) =>
-    dispatch({ type: "setForm", key, value: v === "" ? 0 : Number(v.replace(/[^0-9]/g, "")) });
+  // ช่องตัวเลข: ว่าง → null ("ยังไม่กรอก") · มีค่า → number.
+  // null สำคัญ: แยก "ยังไม่นับ" ออกจาก "นับได้ 0" → กันค่า default หลอก anti-cheat + กัน false ตรง/ไม่ตรง
+  const setNum = (key: keyof Form) => (v: string) => {
+    const digits = v.replace(/[^0-9]/g, "");
+    dispatch({ type: "setForm", key, value: digits === "" ? null : Number(digits) });
+  };
 
   /* ── bottom-bar primary/secondary buttons ── */
   let primaryLabel = "ถัดไป";
@@ -527,8 +585,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
     primaryAction = finishMachine;
   }
 
-  // นโยบายถ่ายรูป: ถ้าขั้นนี้ยังไม่ถ่ายครบ → กันกดถัดไป + dim ปุ่ม (ไม่บังคับขั้น 5/6 ที่ไม่มีช่องถ่าย)
-  const primaryDisabled = pending || photoBlocks;
+  // กันกดถัดไป/ส่ง เมื่อ: กำลังส่ง · ยังถ่ายรูปไม่ครบ (นโยบาย) · หรือยังกรอกตัวเลขที่ต้องนับไม่ครบ
+  const primaryDisabled = pending || photoBlocks || countBlocks;
 
   const stepLabels: Record<number, string> = {
     1: "นับตุ๊กตาก่อนเติม",
@@ -563,6 +621,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
 
       {onHome ? (
         <HomeScreen
+          userName={userName}
           panel={panel}
           setPanel={setPanel}
           routeTotal={routeTotal}
@@ -594,6 +653,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
           onPhoto={(k, url) => dispatch({ type: "setPhoto", key: k, url })}
           photoRequired={photoRequired}
           photoBlocks={photoBlocks}
+          countBlocks={countBlocks}
           meterDeferred={state.meterDeferred}
           toggleDefer={() => dispatch({ type: "toggleDefer" })}
           resumed={state.resumed}
@@ -619,6 +679,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired }: StaffAppP
 
 /* ─────────────────────────── HOME ─────────────────────────── */
 function HomeScreen(props: {
+  userName: string;
   panel: Panel;
   setPanel: (p: Panel) => void;
   routeTotal: number;
@@ -634,16 +695,22 @@ function HomeScreen(props: {
   setTourStep: (n: number) => void;
   skus: CollectSku[];
 }) {
-  const { panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId } = props;
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId } = props;
+  // ชื่อจริงของพนักงานที่ล็อกอิน (จาก session) · ถ้าไม่ทราบ → "พนักงาน"
+  const displayName = userName.trim() || "พนักงาน";
+  const avatarChar = displayName.charAt(0) || "พ";
+  // ทักทายตามเวลา (เช้า/บ่าย/เย็น/ค่ำ)
+  const hr = new Date().getHours();
+  const greet = hr < 12 ? "สวัสดีตอนเช้า" : hr < 16 ? "สวัสดีตอนบ่าย" : hr < 19 ? "สวัสดีตอนเย็น" : "สวัสดีตอนค่ำ";
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 24px" }}>
       {/* greeting */}
       <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "8px 0 18px" }}>
-        <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>ส</div>
+        <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{avatarChar}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, color: "#9AA1AB" }}>สวัสดีตอนบ่าย</div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>สมชาย ใจดี</div>
+          <div style={{ fontSize: 12, color: "#9AA1AB" }}>{greet}</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{displayName}</div>
         </div>
         <span style={{ width: 38, height: 38, borderRadius: 11, background: "#fff", border: "1px solid #E8EAED", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -834,6 +901,7 @@ function RepairPanel() {
   const sel = { width: "100%", fontSize: 14, fontWeight: 600, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", cursor: "pointer" } as const;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+      <ComingSoonBanner text="หน้าแจ้งซ่อมยังไม่เปิดใช้จริง — เป็นตัวอย่างหน้าตา · เร็ว ๆ นี้" />
       <div>
         <label style={lbl}>เลือกตู้ที่เสีย</label>
         <select style={sel}><option>RS-03 · รังสิต</option><option>RS-04 · รังสิต</option><option>BK-02 · บางแค</option><option>LP-01 · ลาดพร้าว</option></select>
@@ -846,7 +914,7 @@ function RepairPanel() {
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>แนบรูปอาการเสีย
       </div>
       <textarea placeholder="รายละเอียดเพิ่มเติม…" style={{ width: "100%", fontSize: 13, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", minHeight: 64, resize: "none" }} />
-      <button type="button" style={{ width: "100%", fontSize: 14, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: "pointer" }}>ส่งแจ้งซ่อม</button>
+      <ComingSoonButton label="ส่งแจ้งซ่อม (เร็ว ๆ นี้)" />
       <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54", marginTop: 4 }}>แจ้งซ่อมที่ค้างอยู่</div>
       {repairList.map((rp) => (
         <div key={rp.code} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
@@ -866,7 +934,8 @@ function StockPanel() {
   ];
   return (
     <div>
-      <div style={{ fontSize: 11.5, color: "#8A909A", marginBottom: 12, lineHeight: 1.5 }}>นับสต็อกในห้องสต็อกประจำสาขา แล้วกรอกจำนวนจริง ระบบจะเทียบกับยอดในระบบ</div>
+      <ComingSoonBanner text="หน้านับสต็อกยังไม่เปิดใช้จริง — เป็นตัวอย่างหน้าตา · เร็ว ๆ นี้" />
+      <div style={{ fontSize: 11.5, color: "#8A909A", margin: "12px 0", lineHeight: 1.5 }}>นับสต็อกในห้องสต็อกประจำสาขา แล้วกรอกจำนวนจริง ระบบจะเทียบกับยอดในระบบ</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         {rows.map((s) => (
           <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
@@ -878,7 +947,7 @@ function StockPanel() {
           </div>
         ))}
       </div>
-      <button type="button" style={{ width: "100%", fontSize: 14, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: "pointer", marginTop: 14 }}>บันทึกผลนับสต็อก</button>
+      <div style={{ marginTop: 14 }}><ComingSoonButton label="บันทึกผลนับสต็อก (เร็ว ๆ นี้)" /></div>
     </div>
   );
 }
@@ -891,6 +960,7 @@ function ConfigPanel() {
   ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      <ComingSoonBanner text="หน้าตั้งค่าตู้ยังไม่เปิดใช้จริง — เป็นตัวอย่างหน้าตา · เร็ว ๆ นี้" />
       {rows.map((cf) => (
         <div key={cf.code} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "12px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
@@ -900,7 +970,7 @@ function ConfigPanel() {
           </div>
           <div style={{ fontSize: 11.5, color: "#6B7280" }}>{cf.note}</div>
           {!cf.ok && (
-            <button type="button" style={{ width: "100%", fontSize: 12.5, fontWeight: 700, color: "#fff", background: "#B45309", border: "none", padding: 9, borderRadius: 9, cursor: "pointer", marginTop: 9 }}>ตั้งค่าตู้นี้ตอนนี้</button>
+            <button type="button" disabled style={{ width: "100%", fontSize: 12.5, fontWeight: 700, color: "#fff", background: "#B45309", border: "none", padding: 9, borderRadius: 9, cursor: "not-allowed", marginTop: 9, opacity: 0.5 }}>ตั้งค่าตู้นี้ตอนนี้ (เร็ว ๆ นี้)</button>
           )}
         </div>
       ))}
@@ -1045,6 +1115,7 @@ function FlowScreen(props: {
   onPhoto: (k: keyof Photos, url: string) => void;
   photoRequired: boolean;
   photoBlocks: boolean;
+  countBlocks: boolean;
   meterDeferred: boolean;
   toggleDefer: () => void;
   resumed: boolean;
@@ -1091,7 +1162,7 @@ function FlowScreen(props: {
               <span style={{ fontSize: 12.5, color: "#5A6270" }}>รอบที่แล้วในตู้มีตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{f.last} ตัว</b></span>
             </div>
             <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
-            <BigInput value={f.left} onChange={props.setNum("left")} />
+            <BigInput value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
             <div style={{ marginTop: 10 }}>
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้ก่อนเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.before}
                 onChange={(url) => props.onPhoto("before", url)}
@@ -1099,7 +1170,10 @@ function FlowScreen(props: {
             </div>
             <div style={{ fontSize: 12, color: "#8A909A", display: "flex", alignItems: "center", gap: 7, marginTop: 14 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A909A" strokeWidth="2"><path d="M12 3v6" /><path d="M8 9h8l-1.2 4.2a3 3 0 0 1-2.88 2.18h-.84a3 3 0 0 1-2.88-2.18Z" /><path d="M12 15.5V21" /><path d="M8.5 21h7" /></svg>
-              ตุ๊กตาออกจากตู้รอบนี้ <b className="num" style={{ color: "#1A1D21" }}>{dispensed} ตัว</b>
+              {/* แสดงผลตุ๊กตาออกเฉพาะเมื่อ "นับเหลือ" แล้ว (กันโชว์ค่าหลอกตอนช่องยังว่าง) */}
+              {f.left != null
+                ? <>ตุ๊กตาออกจากตู้รอบนี้ <b className="num" style={{ color: "#1A1D21" }}>{dispensed} ตัว</b></>
+                : <>กรอกจำนวนที่นับได้ — ระบบจะคำนวณตุ๊กตาที่ออกให้</>}
             </div>
           </div>
         )}
@@ -1120,12 +1194,19 @@ function FlowScreen(props: {
               </div>
               <div>
                 <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
-                <BigInput value={f.refill} onChange={props.setNum("refill")} size={18} />
+                <BigInput value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />
               </div>
-              <div style={{ background: "#EEF0FE", borderRadius: 11, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#4F46E5" }}>รวมหลังเติม (ก่อนเติม {f.left} + เติม {f.refill})</span>
-                <span className="num" style={{ fontSize: 20, fontWeight: 700, color: "#4F46E5" }}>{afterFill} ตัว</span>
-              </div>
+              {/* รวมหลังเติม = ก่อนเติม(นับ) + เติม → โชว์เมื่อกรอกครบ (กันค่าหลอก) */}
+              {f.left != null && f.refill != null ? (
+                <div style={{ background: "#EEF0FE", borderRadius: 11, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#4F46E5" }}>รวมหลังเติม (ก่อนเติม {f.left} + เติม {f.refill})</span>
+                  <span className="num" style={{ fontSize: 20, fontWeight: 700, color: "#4F46E5" }}>{afterFill} ตัว</span>
+                </div>
+              ) : (
+                <div style={{ background: "#F6F7FA", borderRadius: 11, padding: "13px 16px", fontSize: 12.5, color: "#9AA1AB" }}>
+                  กรอกจำนวนที่เติม — ระบบจะรวมยอดหลังเติมให้
+                </div>
+              )}
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้หลังเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.after}
                 onChange={(url) => props.onPhoto("after", url)}
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} required={props.photoRequired} />
@@ -1181,7 +1262,7 @@ function FlowScreen(props: {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
-              <BigInput value={f.cash} onChange={props.setNum("cash")} />
+              <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
               <div style={{ marginTop: 10 }}>
                 <PhotoSlot label={`ถ่ายรูปเงินสด ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.cash}
                   onChange={(url) => props.onPhoto("cash", url)}
@@ -1207,7 +1288,7 @@ function FlowScreen(props: {
                 </div>
                 <div>
                   <FieldLabel small>ราคาขายสินค้า (บาท) — ใช้ตัดสต็อก &amp; ดูต้นทุนคีบ</FieldLabel>
-                  <BigInput value={f.price} onChange={props.setNum("price")} size={16} />
+                  <BigInput value={f.price} onChange={props.setNum("price")} size={16} placeholder="ระบุราคา" />
                 </div>
               </div>
             </div>
@@ -1234,15 +1315,16 @@ function FlowScreen(props: {
                   )}
                 </span>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>{recon.allMatch ? "ยอดตรงกันทั้งหมด" : "พบยอดไม่ตรง"}</div>
-                  <div style={{ fontSize: 12, opacity: 0.9 }}>{recon.allMatch ? "มิเตอร์ เงินสด และตุ๊กตา สอดคล้องกัน" : "กรุณาตรวจสอบและระบุเหตุผลก่อนส่ง"}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>{recon.allMatch ? "มิเตอร์ & ตุ๊กตา ตรงกัน" : "พบยอดไม่ตรง"}</div>
+                  <div style={{ fontSize: 12, opacity: 0.9 }}>{recon.allMatch ? "เงินสดเทียบกับมิเตอร์เป็นค่าประมาณ — ระบบจะกระทบยอดจริงให้" : "กรุณาตรวจสอบตุ๊กตา/มิเตอร์ก่อนส่ง"}</div>
                 </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
                 <ReconRow title="มิเตอร์เฟือง = ดิจิตอล" a={`ตุ๊กตา ${props.meterGroupVals.dollMeterEqual ? "ตรง" : "ต่างกัน"}`} b={`เหรียญ ${props.meterGroupVals.coinMeterEqual ? "ตรง" : "ต่างกัน"}`} ok={recon.meterEqualOk} />
                 <ReconRow title="มิเตอร์ตุ๊กตา ↔ ตุ๊กตาที่หาย" a={`มิเตอร์เพิ่ม ${recon.dollDelta} ครั้ง`} b={`ตุ๊กตาหาย ${dispensed} ตัว`} ok={recon.dollMatch} />
-                <ReconRow title="เงินสด ↔ มิเตอร์เหรียญ" a={`นับได้ ฿${f.cash}`} b={`มิเตอร์ควรได้ ฿${recon.expectedCash}`} ok={recon.cashMatch} />
+                {/* ADVISORY: ราคา/เกมจริงต่อตู้ยังไม่ส่งมา client (เดา ฿10) → โชว์เป็น "ประมาณ" ไม่ฟันธงแดง · ตัวจริง server เช็ค */}
+                <ReconRow title="เงินสด ↔ มิเตอร์เหรียญ" a={`นับได้ ฿${n0(f.cash)}`} b={`ประมาณ ฿${recon.expectedCash} (ที่ ฿10/เกม)`} ok={recon.cashMatch} advisory />
               </div>
 
               {props.tooHard && (
@@ -1251,7 +1333,7 @@ function FlowScreen(props: {
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
                     <span style={{ fontSize: 13, fontWeight: 700, color: "#7A5510" }}>ตู้นี้อาจตั้งยากเกินไป</span>
                   </div>
-                  <div style={{ fontSize: 12, color: "#7A5510", lineHeight: 1.5, marginBottom: 11 }}>เก็บเงินได้ <b className="num">฿{f.cash}</b> แต่ตุ๊กตาออก <b>0 ตัว</b> เสี่ยงเสียลูกค้า ต้องการเสนอปรับความแรงการคีบไหม?</div>
+                  <div style={{ fontSize: 12, color: "#7A5510", lineHeight: 1.5, marginBottom: 11 }}>เก็บเงินได้ <b className="num">฿{n0(f.cash)}</b> แต่ตุ๊กตาออก <b>0 ตัว</b> เสี่ยงเสียลูกค้า ต้องการเสนอปรับความแรงการคีบไหม?</div>
                   {props.configSent ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#15803D", background: "#E7F4EC", borderRadius: 10, padding: "11px 14px" }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>ส่งคำขอตั้งค่าแล้ว · สถานะ “รอตรวจ”
@@ -1278,7 +1360,7 @@ function FlowScreen(props: {
             <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300 }}>
               <div style={{ flex: 1, background: "#F2FBF5", border: "1px solid #CDE9D7", borderRadius: 13, padding: "13px 10px" }}>
                 <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>เก็บเงิน</div>
-                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#15803D" }}>฿{f.cash.toLocaleString("en-US")}</div>
+                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#15803D" }}>฿{n0(f.cash).toLocaleString("en-US")}</div>
               </div>
               <div style={{ flex: 1, background: "#F6F7FA", border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 10px" }}>
                 <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>ตุ๊กตาออก</div>
@@ -1291,6 +1373,15 @@ function FlowScreen(props: {
 
       {/* bottom bar — sticky · พื้นทึบ · ปุ่มหลักเต็มกว้าง แตะถนัด (≥48px) */}
       <div style={{ padding: "14px 18px 22px", borderTop: "1px solid #EAECEF", background: "#fff" }}>
+        {props.countBlocks && (
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, fontWeight: 600, color: "#B45309", lineHeight: 1.4 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+            {props.step === 1 ? "นับตุ๊กตาที่เหลือก่อน"
+              : props.step === 2 ? "กรอกจำนวนที่เติมก่อน"
+                : props.step === 3 ? "อ่านเลขมิเตอร์ให้ครบทั้ง 4 ช่องก่อน"
+                  : "นับเงินสด + กรอกราคาก่อน"}
+          </div>
+        )}
         {props.photoBlocks && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, fontWeight: 600, color: "#B42318", lineHeight: 1.4 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
@@ -1373,15 +1464,35 @@ const QUICK_MENU: { key: Exclude<Panel, null>; label: string; d: string[] }[] = 
   { key: "config", label: "ตั้งค่าตู้", d: ["M4 21v-7", "M4 10V3", "M12 21v-9", "M12 8V3", "M20 21v-5", "M20 12V3", "M1 14h6M9 8h6M17 16h6"] },
 ];
 
+// แบนเนอร์ "เร็ว ๆ นี้" — บอกชัดว่าหน้านี้ยังเป็นตัวอย่าง ไม่บันทึกจริง (กันพนักงานเข้าใจผิดว่าส่งแล้ว)
+function ComingSoonBanner({ text }: { text: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 11, padding: "10px 13px", fontSize: 11.5, fontWeight: 600, color: "#7A5510", lineHeight: 1.45 }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 16px" }}><circle cx="12" cy="12" r="9" /><path d="M12 8v4l3 2" /></svg>
+      {text}
+    </div>
+  );
+}
+
+// ปุ่มที่ยังไม่ทำงาน → disable + ป้าย "เร็ว ๆ นี้" (ไม่ให้กดแล้วนึกว่าส่งสำเร็จ)
+function ComingSoonButton({ label }: { label: string }) {
+  return (
+    <button type="button" disabled style={{ width: "100%", fontSize: 14, fontWeight: 700, color: "#fff", background: "#A8AEB8", border: "none", padding: 13, borderRadius: 12, cursor: "not-allowed", opacity: 0.75 }}>
+      {label}
+    </button>
+  );
+}
+
 function FieldLabel({ children, small }: { children: React.ReactNode; small?: boolean }) {
   return <label style={{ fontSize: small ? 12 : 12.5, fontWeight: 600, color: "#454B54", display: "block", marginBottom: small ? 5 : 6 }}>{children}</label>;
 }
 
 const selectStyle = { width: "100%", fontSize: 15, fontWeight: 600, padding: "12px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", cursor: "pointer" } as const;
 
-function BigInput({ value, onChange, size = 20 }: { value: number; onChange: (v: string) => void; size?: number }) {
+function BigInput({ value, onChange, size = 20, placeholder = "นับแล้วกรอก" }: { value: Counted; onChange: (v: string) => void; size?: number; placeholder?: string }) {
+  // null = ยังไม่กรอก → ช่องว่าง + placeholder (ไม่โชว์ 0 หลอกว่ากรอกแล้ว)
   return (
-    <input type="number" inputMode="numeric" pattern="[0-9]*" value={value === 0 ? "" : String(value)} placeholder="0"
+    <input type="number" inputMode="numeric" pattern="[0-9]*" value={value == null ? "" : String(value)} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)} className="num"
       style={{ width: "100%", fontSize: size, fontWeight: 700, padding: "13px 14px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
   );
@@ -1423,7 +1534,7 @@ function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, p
 }
 
 type MeterRow = {
-  label: string; value: number; onChange: (v: string) => void;
+  label: string; value: Counted; onChange: (v: string) => void;
   photo: string; onPhoto: (url: string) => void; phase: Phase;
 };
 function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, eventScopeId, usingDemo, photoRequired }: {
@@ -1448,7 +1559,7 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
             <div key={r.label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ fontSize: 12, color: "#6B7280", flex: "0 0 78px" }}>{r.label}</span>
-                <input type="number" inputMode="numeric" value={r.value === 0 ? "" : String(r.value)} placeholder="เลขมิเตอร์" disabled={deferred}
+                <input type="number" inputMode="numeric" value={r.value == null ? "" : String(r.value)} placeholder="อ่านมิเตอร์" disabled={deferred}
                   onChange={(e) => r.onChange(e.target.value)} className="num"
                   style={{ width: "100%", fontSize: 16, fontWeight: 700, padding: "10px 12px", border: "1.5px solid #E3E6EA", borderRadius: 10, background: deferred ? "#F1F2F5" : "#fff", color: deferred ? "#AEB4BD" : "#1A1D21" }} />
                 {canCapture && r.photo && (
@@ -1471,20 +1582,28 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
   );
 }
 
-function ReconRow({ title, a, b, ok }: { title: string; a: string; b: string; ok: boolean }) {
+function ReconRow({ title, a, b, ok, advisory }: { title: string; a: string; b: string; ok: boolean; advisory?: boolean }) {
+  // 3 โทน: ok=เขียว · advisory ที่ไม่ตรง=เหลือง (คำแนะนำ ไม่ฟันธง) · ไม่ตรง(hard)=แดง
+  const soft = advisory && !ok; // เหลือง
+  const border = ok ? "#CDE9D7" : soft ? "#F0E2BE" : "#F3D4D0";
+  const bg = ok ? "#F2FAF5" : soft ? "#FCF8EC" : "#FDF3F2";
+  const fg = ok ? "#15803D" : soft ? "#B45309" : "#B42318";
+  const verdict = ok ? "ตรงกัน" : soft ? "ประมาณ · ตรวจหน้างาน" : "ไม่ตรง";
   return (
-    <div style={{ border: `1px solid ${ok ? "#CDE9D7" : "#F3D4D0"}`, background: ok ? "#F2FAF5" : "#FDF3F2", borderRadius: 12, padding: "13px 15px" }}>
+    <div style={{ border: `1px solid ${border}`, background: bg, borderRadius: 12, padding: "13px 15px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ color: ok ? "#15803D" : "#B42318" }}>
+        <span style={{ color: fg }}>
           {ok ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          ) : soft ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
           ) : (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="M6 6l12 12" /></svg>
           )}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700 }}>{title}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: ok ? "#15803D" : "#B42318" }}>{ok ? "ตรงกัน" : "ไม่ตรง"}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: fg }}>{verdict}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#5A6270" }}>
         <span>{a}</span><span style={{ color: "#C2C7CF" }}>↔</span><span>{b}</span>

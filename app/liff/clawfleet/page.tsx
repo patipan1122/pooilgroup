@@ -5,6 +5,7 @@
 // 6 สเต็ป กระทบยอด 3 ทางกันโกง. ใช้ UI ใหม่ (เลิกพึ่ง v2/collect ที่ลบทิ้งแล้ว).
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
+import { getSession } from "@/lib/auth/session";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -33,9 +34,18 @@ export default async function ClawfleetLiffPage() {
     // graceful: ใช้ default (ไม่บังคับ) เมื่ออ่าน policy ไม่ได้
   }
 
+  // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าอ่านไม่ได้ → ปล่อยว่าง
+  let userName = "";
+  try {
+    const session = await getSession();
+    userName = session?.user.name ?? "";
+  } catch {
+    // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
+  }
+
   return (
     <div className="clawos">
-      <StaffAppClient orgId={orgId} branches={branches} skus={skus} photoRequired={photoRequired} />
+      <StaffAppClient orgId={orgId} branches={branches} skus={skus} photoRequired={photoRequired} userName={userName} />
     </div>
   );
 }

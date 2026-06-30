@@ -214,6 +214,11 @@ export function SettingsClient({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{p.label}</div>
                   <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 3, lineHeight: 1.4 }}>{p.sub}</div>
+                  {/* บอกสถานะปัจจุบันเป็นตัวอักษร — กันสับสนว่าเปิดหรือปิด */}
+                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 5, color: pol[p.key] ? "#15803D" : "#9AA1AB" }}>
+                    ตอนนี้: {pol[p.key] ? "เปิด" : "ปิด"}
+                    {savingKey === p.key && <span style={{ color: "#9AA1AB", fontWeight: 500 }}> · กำลังบันทึก…</span>}
+                  </div>
                 </div>
                 <Toggle
                   on={pol[p.key]}
@@ -227,8 +232,17 @@ export function SettingsClient({
 
       {/* ── บัญชีผู้ใช้ ── */}
       <Card
-        title="บัญชีผู้ใช้"
-        sub="มอบบทบาทและขอบเขตสาขาที่เข้าถึงได้"
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            บัญชีผู้ใช้
+            {empty && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7A5510", background: "#FCF3DC", border: "1px solid #F0E2BE", borderRadius: 20, padding: "2px 9px" }}>
+                ตัวอย่าง · ไม่ใช่บัญชีจริง
+              </span>
+            )}
+          </span>
+        }
+        sub={empty ? "รายชื่อด้านล่างเป็นตัวอย่างเพื่อให้เห็นภาพ — เพิ่มผู้ใช้จริงได้ที่หน้าพนักงาน" : "มอบบทบาทและขอบเขตสาขาที่เข้าถึงได้"}
         pad={false}
         style={{ marginTop: 18 }}
         right={
@@ -236,7 +250,7 @@ export function SettingsClient({
             href="/clawfleet/os/staff"
             style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "9px 15px", borderRadius: 9, cursor: "pointer", textDecoration: "none" }}
           >
-            <Plus size={15} /> เพิ่มผู้ใช้
+            <Plus size={15} /> เพิ่มพนักงาน
           </Link>
         }
       >

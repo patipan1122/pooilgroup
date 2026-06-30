@@ -13,7 +13,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarX } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
-import { thDate, thWeekday } from "@/components/clawfleet/os/format";
+import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
 
 export type MatrixBranch = { id: string; code: string; name: string; machines: number };
 
@@ -41,10 +41,10 @@ const SAMPLE_BRANCHES: MatrixBranch[] = [
   { id: "s-MB", code: "MB", name: "มีนบุรี", machines: 9 },
 ];
 
-/* แถบสีตามต้นทุน/ตัว (cost band): เขียว=กำลังดี · เหลือง=ถูก/ง่ายไป · แดง=แพง/ยากไป */
+/* แถบสีตามต้นทุน/ตัว (cost band): เขียว=กำลังดี · เหลือง=ปล่อยง่ายไป(กำไรหด) · แดง=คีบยากไป(ลูกค้าหนี) */
 function costBand(v: number): { bg: string; co: string } {
-  if (v < 180) return { bg: "#FCF1E2", co: "#B45309" }; // ถูก/ง่ายไป
-  if (v > 280) return { bg: "#FCEDEC", co: "#B42318" }; // แพง/ยากไป
+  if (v < 180) return { bg: "#FCF1E2", co: "#B45309" }; // ปล่อยง่ายไป — ต้นทุน/ตัวต่ำ กำไรหด
+  if (v > 280) return { bg: "#FCEDEC", co: "#B42318" }; // คีบยากไป — ต้นทุน/ตัวสูง ลูกค้าเลิกเล่น
   return { bg: "#E7F4EC", co: "#15803D" }; // กำลังดี 180–280
 }
 function cashHeat(v: number): string {
@@ -216,7 +216,7 @@ export function MatrixClient({
         if (metric === "cash") {
           bg = cashHeat(rv.cash);
           primary = rv.cash;
-          cellRows = [{ v: `฿${rv.cash}`, style: { fontWeight: 600, color: "#1A1D21" } }];
+          cellRows = [{ v: bahtN(rv.cash), style: { fontWeight: 600, color: "#1A1D21" } }];
         } else if (metric === "dolls") {
           bg = dollHeat(rv.dolls);
           primary = rv.dolls;
@@ -225,14 +225,14 @@ export function MatrixClient({
           bg = cb.bg;
           primary = costVal;
           cellRows = [
-            { v: rv.cost == null ? "—" : `฿${rv.cost}`, style: { fontWeight: 700, color: cb.co, fontSize: 11.5 } },
-            { v: `฿${rv.cash}`, style: { fontWeight: 500, color: "#15803D", fontSize: 10.5 } },
+            { v: rv.cost == null ? "—" : bahtN(rv.cost), style: { fontWeight: 700, color: cb.co, fontSize: 11.5 } },
+            { v: bahtN(rv.cash), style: { fontWeight: 500, color: "#15803D", fontSize: 10.5 } },
             { v: `${rv.dolls} ตัว`, style: { fontWeight: 500, color: "#B45309", fontSize: 10.5 } },
           ];
         } else {
           bg = cb.bg;
           primary = costVal;
-          cellRows = [{ v: rv.cost == null ? "—" : `฿${rv.cost}`, style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
+          cellRows = [{ v: rv.cost == null ? "—" : bahtN(rv.cost), style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
         }
         daySum += primary;
         dayCnt += 1;
@@ -251,7 +251,7 @@ export function MatrixClient({
         dateLabel: thDate(dt),
         wd: thWeekday(dt),
         cells,
-        avg: metric === "dolls" ? String(avgv) : `฿${avgv}`,
+        avg: metric === "dolls" ? String(avgv) : bahtN(avgv),
       });
     });
 
@@ -264,19 +264,19 @@ export function MatrixClient({
       let bg = "#fff";
       let frows: { v: string; style: React.CSSProperties }[];
       if (metric === "cash") {
-        frows = [{ v: `฿${aCash}`, style: { fontWeight: 700, color: "#454B54" } }];
+        frows = [{ v: bahtN(aCash), style: { fontWeight: 700, color: "#454B54" } }];
       } else if (metric === "dolls") {
         frows = [{ v: String(aDoll), style: { fontWeight: 700, color: "#454B54" } }];
       } else if (metric === "all") {
         bg = cb.bg;
         frows = [
-          { v: `฿${aCost}`, style: { fontWeight: 700, color: cb.co, fontSize: 11 } },
-          { v: `฿${aCash}`, style: { color: "#15803D", fontSize: 10 } },
+          { v: bahtN(aCost), style: { fontWeight: 700, color: cb.co, fontSize: 11 } },
+          { v: bahtN(aCash), style: { color: "#15803D", fontSize: 10 } },
           { v: `${aDoll} ตัว`, style: { color: "#B45309", fontSize: 10 } },
         ];
       } else {
         bg = cb.bg;
-        frows = [{ v: `฿${aCost}`, style: { fontWeight: 700, color: cb.co } }];
+        frows = [{ v: bahtN(aCost), style: { fontWeight: 700, color: cb.co } }];
       }
       return { rows: frows, style: { ...CELL_PAD, background: bg, borderTop: "2px solid #DDE0E6" } };
     });
@@ -333,9 +333,9 @@ export function MatrixClient({
       drows.push({
         date: thDate(dt),
         wd: thWeekday(dt),
-        cost: rv.cost == null ? "—" : `฿${rv.cost}`,
+        cost: rv.cost == null ? "—" : bahtN(rv.cost),
         costColor: cb.co,
-        cash: `฿${rv.cash}`,
+        cash: bahtN(rv.cash),
         dolls: String(rv.dolls),
         swapped: rv.swapped,
         rowStyle: { borderBottom: "1px solid #F0F1F4", ...(rv.swapped ? { background: "#EEF0FE" } : {}) },
@@ -345,8 +345,8 @@ export function MatrixClient({
     return {
       code: gm.code,
       branch: branch?.name ?? "",
-      avgCost: cntCost > 0 ? `฿${Math.round(sc / cntCost)}` : "—",
-      avgCash: `฿${Math.round(sh / denomAll)}`,
+      avgCost: cntCost > 0 ? bahtN(Math.round(sc / cntCost)) : "—",
+      avgCash: bahtN(Math.round(sh / denomAll)),
       avgDoll: String(Math.round(sd / denomAll)),
       swaps: String(swaps),
       lastSwap: lastSwap == null ? "ไม่พบ" : lastSwap === 0 ? "วันนี้" : `${lastSwap} วันก่อน`,
@@ -487,7 +487,7 @@ export function MatrixClient({
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCF1E2", display: "inline-block" }} />
-          ถูก/ง่ายไป <span className="num" style={{ color: "#A9AEB8" }}>&lt;฿180</span>
+          ปล่อยง่ายไป (กำไรหด) <span className="num" style={{ color: "#A9AEB8" }}>&lt;฿180</span>
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, background: "#E7F4EC", display: "inline-block" }} />
@@ -495,7 +495,7 @@ export function MatrixClient({
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCEDEC", display: "inline-block" }} />
-          แพง/ยากไป <span className="num" style={{ color: "#A9AEB8" }}>&gt;฿280</span>
+          คีบยากไป (ลูกค้าหนี) <span className="num" style={{ color: "#A9AEB8" }}>&gt;฿280</span>
         </span>
         <span style={{ flex: 1 }} />
         <span>หน่วย: {METRIC_UNIT[metric]}</span>
@@ -541,7 +541,10 @@ export function MatrixClient({
 
       {/* the matrix table — sticky first col (dates) + sticky header (machine codes) */}
       {!noData && (
-      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ position: "relative", background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+        {empty && (
+          <span style={{ position: "absolute", top: 10, right: 16, zIndex: 4, fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#C2C7CF", pointerEvents: "none" }}>ตัวอย่าง · DEMO</span>
+        )}
         <div style={{ overflow: "auto", maxHeight: "60vh" }}>
           <table className="num" style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", fontSize: 12 }}>
             <thead>

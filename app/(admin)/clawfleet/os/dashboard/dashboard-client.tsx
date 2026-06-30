@@ -53,7 +53,7 @@ export function DashboardClient({
   lowStock,
   fleet,
 }: {
-  summary: { revenue: number; profit: number; dollsOut: number; avgBahtPerDoll: number | null; riskyBranches: number };
+  summary: { revenue: number; cost: number; profit: number; dollsOut: number; hasCost: boolean; avgBahtPerDoll: number | null; riskyBranches: number };
   branches: BranchRow[];
   alerts: Alert[];
   machineCount: number;
@@ -74,11 +74,15 @@ export function DashboardClient({
   const avgWinAll = empty
     ? Math.round(rows.reduce((s, b) => s + b.avgWin, 0) / rows.length)
     : summary.avgBahtPerDoll == null ? 0 : Math.round(summary.avgBahtPerDoll);
-  const costPerDoll = avgWinAll > 0 ? Math.round(avgWinAll * 0.62) : 0;
-  // fleet overview: ใช้ของจริงถ้า DB ไม่ว่าง · ไม่งั้น derive จาก sample branches
+  // ต้นทุน/ตัว จริง = ต้นทุนตุ๊กตารวม ÷ จำนวนตุ๊กตาที่ออก (ไม่เดา) · null ถ้ายังไม่มีต้นทุนตั้งไว้/ไม่มีตุ๊กตาออก
+  const costPerDoll =
+    !empty && summary.hasCost && summary.dollsOut > 0
+      ? Math.round(summary.cost / summary.dollsOut)
+      : null;
+  // fleet overview: ใช้ของจริงถ้า DB ไม่ว่าง · ถ้า DB ว่าง (sample) → needRefill/broken ไม่รู้จริง = null
   const fleetView = empty
-    ? { totalMachines: totMachines, activeMachines: totMachines, needRefill: 0, broken: 0 }
-    : fleet;
+    ? { activeMachines: totMachines, needRefill: null as number | null, broken: null as number | null }
+    : { activeMachines: fleet.activeMachines, needRefill: fleet.needRefill, broken: fleet.broken };
   const tooEasy = rows.filter((b) => b.flag === "LOW" || b.flag === "LOSS").length;
   const good = rows.filter((b) => b.flag === "GOOD").length;
   const tooHard = rows.filter((b) => b.flag === "HIGH" || b.flag === "AMBER").length;
@@ -94,10 +98,10 @@ export function DashboardClient({
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-4">
-        <Kpi icon={<Wallet size={16} />} label="รายได้ (7 วัน)" value={bahtN(totRevenue)} trend="up" delta="8.4% จากสัปดาห์ก่อน" />
-        <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" trend="up" delta="6.1% หักต้นทุนตุ๊กตาแล้ว" />
+        <Kpi icon={<Wallet size={16} />} label="รายได้ (7 วัน)" value={bahtN(totRevenue)} />
+        <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" delta="หักต้นทุนตุ๊กตาแล้ว" deltaColor="#9AA1AB" />
         <Kpi icon={<Boxes size={16} />} iconTone="neutral" label="ตู้คีบทั้งหมด" value={`${num(totMachines)} ตู้`} delta={`${rows.length} สาขา`} deltaColor="#9AA1AB" />
-        <Kpi icon={<Coins size={16} />} iconTone="amber" label="ต้นทุน/ตัว เฉลี่ย" value={bahtN(costPerDoll)} delta="↓ 2.0% จากสัปดาห์ก่อน" deltaColor="#15803D" />
+        <Kpi icon={<Coins size={16} />} iconTone="amber" label="ต้นทุน/ตัว เฉลี่ย" value={costPerDoll == null ? "—" : bahtN(costPerDoll)} delta={costPerDoll == null ? "ยังไม่มีต้นทุนตั้งไว้" : "ต้นทุนตุ๊กตา ÷ ตัวที่ออก"} deltaColor="#9AA1AB" />
         <Kpi icon={<ShieldAlert size={16} />} iconTone="red" label="ธงแดง · ต้องตรวจ" value={`${alertRows.length} รายการ`} valueColor="#B42318" delta={`${summary.riskyBranches || tooEasy + tooHard} สาขาเสี่ยง`} deltaColor="#C2756C" />
       </div>
 
@@ -241,8 +245,8 @@ export function DashboardClient({
             <div className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>{num(fleetView.activeMachines)}</div>
             <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.6)", marginBottom: 14 }}>ตู้คีบที่เปิดใช้งาน · {rows.length} สาขา</div>
             <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
-              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#F2B24A" }}>{num(fleetView.needRefill)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ต้องเติม</div></div>
-              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#E8736A" }}>{num(fleetView.broken)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ตู้เสีย</div></div>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#F2B24A" }}>{fleetView.needRefill == null ? "—" : num(fleetView.needRefill)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ต้องเติม</div></div>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.07)", borderRadius: 9, padding: "9px 10px" }}><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#E8736A" }}>{fleetView.broken == null ? "—" : num(fleetView.broken)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>ตู้เสีย</div></div>
             </div>
           </div>
         </div>

@@ -205,10 +205,11 @@ function fmtDate(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : thDate(d);
 }
+// ค่าประมาณ → ใช้สีจาง ไม่ใช่แดงจัด (กันตื่นตูมจากเลขที่เดา · เลขจริงดูในรายงานรายตู้)
 function daysColor(d: number): string {
-  if (d <= 5) return "#B42318";
-  if (d <= 8) return "#B45309";
-  return "#15803D";
+  if (d <= 5) return "#C2785A";
+  if (d <= 8) return "#B89A6A";
+  return "#8FA890";
 }
 function ageTag(days: number): WarehouseItem["tag"] {
   if (days <= 7) return "ใหม่";
@@ -245,6 +246,8 @@ export function StockClient({
   const empty = branches.length === 0;
 
   // map seed → BranchRow (เติมตัวเลขที่ query ไม่มีจาก sample เป็น proxy)
+  // ⚠️ outDay/salesDay/daysLeft = "ค่าประมาณ" (heuristic จาก dolls × อัตราเฉลี่ย) ยังไม่ใช่ velocity จริง
+  // → แสดงเป็น "≈ ประมาณ" สีจาง ไม่ใช่ตัวเลขแม่นยำ จะได้ไม่สั่งของเกินจากเลขที่เดา
   const branchRows: BranchRow[] = useMemo(() => {
     if (empty) return SAMPLE_BRANCHES;
     return branches.map((b, i) => {
@@ -365,7 +368,6 @@ function OverviewTab({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
-  const machineWarn = SAMPLE_MACHINES.filter((m) => m.ageDays >= 40).length;
 
   // คลังกลางจริง — ถ้า DB มีของจริงใช้จริง · ว่างจริงค่อย fallback ตัวอย่าง
   const hasRealWarehouse = warehouseRows.length > 0;
@@ -404,13 +406,17 @@ function OverviewTab({
       {/* per-branch stock table */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>ภาพรวมสต็อกรายสาขา</span>
-        <span style={{ fontSize: 12, color: "#9AA1AB" }}>ตุ๊กตา/มูลค่าสต็อก · เฉลี่ยออก-ขายต่อวัน · พอใช้กี่วัน — กดแถวเพื่อเจาะดูสาขานั้น + ใบรับสินค้า</span>
+        <span style={{ fontSize: 12, color: "#9AA1AB" }}>ตุ๊กตา/มูลค่าสต็อก = ข้อมูลจริง · กดแถวเพื่อเจาะดูสาขานั้น + ใบรับสินค้า</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#9AA1AB", marginBottom: 12 }}>
+        <span style={{ color: "#B6BBC4", fontWeight: 600 }}>≈</span>
+        ช่อง “ออก/วัน · ยอดขาย/วัน · พอใช้” เป็น<b style={{ color: "#7A8089" }}>ค่าประมาณ</b> (คาดจากสต็อก ยังไม่ใช่ยอดขายจริงรายตู้) — ใช้ดูแนวโน้มคร่าว ๆ อย่าสั่งของจากเลขนี้ตรง ๆ
       </div>
       <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden", marginBottom: 22 }}>
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 760 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr", padding: "11px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สาขา</span><span style={{ textAlign: "right" }}>ตุ๊กตาในสต็อก</span><span style={{ textAlign: "right" }}>มูลค่าสต็อก</span><span style={{ textAlign: "right" }}>ออก/วัน</span><span style={{ textAlign: "right" }}>ยอดขาย/วัน</span><span style={{ textAlign: "right" }}>พอใช้</span><span style={{ textAlign: "center" }}>ใกล้หมด</span><span style={{ textAlign: "center" }}>ของเก่า</span><span />
+              <span>สาขา</span><span style={{ textAlign: "right" }}>ตุ๊กตาในสต็อก</span><span style={{ textAlign: "right" }}>มูลค่าสต็อก</span><span style={{ textAlign: "right" }}>ออก/วัน <span style={{ fontWeight: 500, color: "#B6BBC4" }}>≈</span></span><span style={{ textAlign: "right" }}>ยอดขาย/วัน <span style={{ fontWeight: 500, color: "#B6BBC4" }}>≈</span></span><span style={{ textAlign: "right" }}>พอใช้ <span style={{ fontWeight: 500, color: "#B6BBC4" }}>≈</span></span><span style={{ textAlign: "center" }}>ใกล้หมด</span><span style={{ textAlign: "center" }}>ของเก่า</span><span />
             </div>
             {branchRows.map((b) => {
               const isOpen = open === b.branchId;
@@ -424,9 +430,9 @@ function OverviewTab({
                     <span style={{ fontWeight: 700 }}>{b.branch}</span>
                     <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(b.dolls)} ตัว</span>
                     <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{bahtN(b.valueBaht)}</span>
-                    <span className="num" style={{ textAlign: "right" }}>{num(b.outDay)} ตัว</span>
-                    <span className="num" style={{ textAlign: "right" }}>{bahtN(b.salesDay)}</span>
-                    <span className="num" style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: daysColor(b.daysLeft) }}>{b.daysLeft} วัน</span>
+                    <span className="num" style={{ textAlign: "right", color: "#9AA1AB" }}>≈ {num(b.outDay)} ตัว</span>
+                    <span className="num" style={{ textAlign: "right", color: "#9AA1AB" }}>≈ {bahtN(b.salesDay)}</span>
+                    <span className="num" style={{ textAlign: "right", fontSize: 12, fontWeight: 600, color: daysColor(b.daysLeft) }}>≈ {b.daysLeft} วัน</span>
                     <span className="num" style={{ textAlign: "center", fontWeight: 700, color: b.low > 0 ? "#B42318" : "#C2C7CF" }}>{b.low > 0 ? b.low : "—"}</span>
                     <span className="num" style={{ textAlign: "center", fontWeight: 700, color: b.old > 0 ? "#B45309" : "#C2C7CF" }}>{b.old > 0 ? b.old : "—"}</span>
                     <span style={{ textAlign: "right", color: "#C2C7CF", display: "flex", justifyContent: "flex-end" }}>
@@ -442,13 +448,13 @@ function OverviewTab({
                             {[
                               ["ตุ๊กตาคงเหลือ", `${num(b.dolls)} ตัว`, "#1A1D21"],
                               ["มูลค่าสต็อก (ต้นทุน)", bahtN(b.valueBaht), "#1A1D21"],
-                              ["เฉลี่ยตุ๊กตาออก/วัน", `${num(b.outDay)} ตัว`, "#1A1D21"],
-                              ["ยอดขายเฉลี่ย/วัน", bahtN(b.salesDay), "#1A1D21"],
-                              ["สต็อกพอใช้อีก", `${b.daysLeft} วัน`, daysColor(b.daysLeft)],
+                              ["เฉลี่ยตุ๊กตาออก/วัน (ประมาณ)", `≈ ${num(b.outDay)} ตัว`, "#9AA1AB"],
+                              ["ยอดขายเฉลี่ย/วัน (ประมาณ)", `≈ ${bahtN(b.salesDay)}`, "#9AA1AB"],
+                              ["สต็อกพอใช้อีก (ประมาณ)", `≈ ${b.daysLeft} วัน`, daysColor(b.daysLeft)],
                             ].map(([l, v, c]) => (
                               <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                                 <span style={{ color: "#6B7280" }}>{l}</span>
-                                <span className="num" style={{ fontWeight: l === "สต็อกพอใช้อีก" ? 700 : 600, color: c }}>{v}</span>
+                                <span className="num" style={{ fontWeight: 600, color: c }}>{v}</span>
                               </div>
                             ))}
                           </div>
@@ -456,7 +462,7 @@ function OverviewTab({
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
                             <span style={{ fontSize: 12, fontWeight: 700 }}>ใบรับสินค้า (โอนจากคลังกลาง)</span>
-                            <span style={{ fontSize: 10, color: "#9AA1AB" }}>· sync ผ่าน API</span>
+                            <span style={{ fontSize: 10, color: "#9AA1AB" }}>· อัปเดตอัตโนมัติ</span>
                           </div>
                           {b.receipts.map((rc, i) => {
                             const rt = RECEIPT_TONE[rc.status];
@@ -495,7 +501,7 @@ function OverviewTab({
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 640 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>คงเหลือ</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>อายุ</span><span style={{ textAlign: "right" }}>อายุสินค้า</span>
+              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>คงเหลือ</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
             </div>
             {warehouse.map((w) => {
               const t = AGE_TONE[w.tag];
@@ -524,22 +530,27 @@ function OverviewTab({
       <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-[18px]">
         <Card
           title="สินค้าในตู้ · ควรหมุนเวียน"
+          sub="ตัวอย่างภาพรายงาน — รอเชื่อมข้อมูลตู้จริง (ตู้ไหนของค้างนานต้องเปลี่ยน)"
           pad={false}
-          right={<Pill tone="red">{machineWarn} ตู้ต้องเปลี่ยน</Pill>}
+          right={<Pill tone="neutral">ตัวอย่าง</Pill>}
         >
-          {SAMPLE_MACHINES.map((m) => {
-            const tone = m.ageDays >= 45 ? AGE_TONE["เก่า"] : m.ageDays >= 30 ? { bg: "#FCF1E2", color: "#B45309" } : AGE_TONE["ปกติ"];
-            return (
-              <div key={m.code} className="co-rowh" style={{ display: "flex", alignItems: "center", gap: 13, padding: "13px 20px", borderBottom: "1px solid #F4F5F7" }}>
-                <IconBox bg="#F1F2F7" color="#4F46E5" size={38} radius={10}><span className="num" style={{ fontSize: 10.5, fontWeight: 700 }}>{m.code}</span></IconBox>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.product} <span style={{ fontWeight: 400, color: "#9AA1AB", fontSize: 11.5 }}>· {m.branch}</span></div>
-                  <div style={{ fontSize: 11, color: "#9AA1AB" }}>ตั้งแต่ {fmtDate(m.sinceISO)} · {m.ageDays >= 45 ? "เกินกำหนดหมุนเวียน" : m.ageDays >= 30 ? "ใกล้ครบกำหนด" : "อยู่ในเกณฑ์"}</div>
+          {/* DEMO watermark — section นี้ยังไม่มี query จริง (ตู้×สินค้าค้างนาน) ป้องกันเข้าใจผิดว่าจริง */}
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", top: 8, right: 14, fontSize: 9.5, fontWeight: 700, letterSpacing: 1, color: "#C2C7CF", pointerEvents: "none", zIndex: 1 }}>DEMO</span>
+            {SAMPLE_MACHINES.map((m) => {
+              const tone = m.ageDays >= 45 ? AGE_TONE["เก่า"] : m.ageDays >= 30 ? { bg: "#FCF1E2", color: "#B45309" } : AGE_TONE["ปกติ"];
+              return (
+                <div key={m.code} className="co-rowh" style={{ display: "flex", alignItems: "center", gap: 13, padding: "13px 20px", borderBottom: "1px solid #F4F5F7", opacity: 0.78 }}>
+                  <IconBox bg="#F1F2F7" color="#9AA1AB" size={38} radius={10}><span className="num" style={{ fontSize: 10.5, fontWeight: 700 }}>{m.code}</span></IconBox>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{m.product} <span style={{ fontWeight: 400, color: "#9AA1AB", fontSize: 11.5 }}>· {m.branch}</span> <span style={{ fontSize: 9.5, fontWeight: 600, color: "#B6BBC4", border: "1px solid #E3E6EA", borderRadius: 5, padding: "0 5px" }}>ตัวอย่าง</span></div>
+                    <div style={{ fontSize: 11, color: "#9AA1AB" }}>ตั้งแต่ {fmtDate(m.sinceISO)} · {m.ageDays >= 45 ? "เกินกำหนดหมุนเวียน" : m.ageDays >= 30 ? "ใกล้ครบกำหนด" : "อยู่ในเกณฑ์"}</div>
+                  </div>
+                  <span className="num" style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: tone.bg, color: tone.color, whiteSpace: "nowrap" }}>{m.ageDays} วัน</span>
                 </div>
-                <span className="num" style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: tone.bg, color: tone.color, whiteSpace: "nowrap" }}>{m.ageDays} วัน</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </Card>
 
         <TransfersCard realBranches={realBranches} products={products} />
@@ -914,7 +925,7 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
     <div>
       {!canCreate && <NeedDataBanner msg="ยังรับของจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
       <DocListCard
-        title="ใบรับสินค้า (Goods Receipt)"
+        title="ใบรับสินค้าเข้าคลัง"
         sub="บันทึกของที่รับเข้าคลังสาขา · ต้นทุนเฉลี่ยถ่วงน้ำหนักอัปเดตอัตโนมัติ"
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="รับของเข้า"
@@ -1058,7 +1069,7 @@ function CountsTab({ docs, realBranches, products, defaultBranchId }: {
     <div>
       {!canCreate && <NeedDataBanner msg="ยังนับสต็อกจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
       <DocListCard
-        title="ใบนับสต็อก (Cycle Count)"
+        title="ใบนับสต็อก"
         sub="นับของจริงในคลัง → ระบบปรับยอดให้ตรง · นับต่างมากจะเด้งเข้าหน้าตรวจสอบ"
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="นับสต็อก"
@@ -1152,7 +1163,7 @@ function LossesTab({ docs, realBranches, products, defaultBranchId }: {
     <div>
       {!canCreate && <NeedDataBanner msg="ยังตัดของเสียจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
       <DocListCard
-        title="ใบตัดของเสีย / ของหาย (Loss)"
+        title="ใบตัดของเสีย / ของหาย"
         sub="ตัดของชำรุด/สูญหาย/ตัดทิ้งออกจากคลัง · บันทึกมูลค่าที่เสียไป"
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="ตัดของเสีย"

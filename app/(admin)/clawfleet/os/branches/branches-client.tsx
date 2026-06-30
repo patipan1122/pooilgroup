@@ -35,31 +35,18 @@ const SAMPLE_BRANCHES: BranchRow[] = [
   { branchId: "s8", code: "MB", name: "มีนบุรี", machines: 9, dolls: 95, revenue: 42600, profit: 22700, avgWin: 225, flag: "GOOD", dots: [] },
 ];
 
-/* ── per-machine status dots (จำลองในหน้านี้ — backend ไม่มี per-machine status ใน BranchPnl) ── */
-type DotKind = "good" | "warn" | "bad" | "broken";
+/* ── per-machine status dots — ใช้ "สถานะตู้จริง" จาก server (cfMachine) เท่านั้น ──
+ * ถ้าสาขาไม่มีข้อมูลตู้จริง (dots ว่าง) จะ "ไม่แสดง" แถบจุด — ไม่จำลอง เพื่อไม่ให้เข้าใจผิดว่าตู้สุขภาพดี/เสีย */
+type DotKind = "good" | "warn" | "broken";
 const DOT: Record<DotKind, { bg: string; letter: string; title: string }> = {
   good: { bg: "#2FA866", letter: "✓", title: "กำลังดี" },
-  warn: { bg: "#E8A33D", letter: "!", title: "ตั้งง่าย/ยากไป" },
-  bad: { bg: "#DB5040", letter: "✕", title: "มีปัญหา" },
-  broken: { bg: "#B9BEC7", letter: "–", title: "ตู้เสีย" },
+  warn: { bg: "#E8A33D", letter: "!", title: "ตุ๊กตาใกล้หมด · ต้องเติม" },
+  broken: { bg: "#B9BEC7", letter: "–", title: "ตู้เสีย (ปิดใช้งาน)" },
 };
 
-/** map สถานะตู้จริงจาก server → DotKind (real ไม่มี "bad"; ใช้ good/warn/broken) */
+/** map สถานะตู้จริงจาก server → DotKind (real มีแค่ good/warn/broken) */
 function realDots(dots: ServerDotStatus[]): DotKind[] {
   return dots.map((d) => (d === "warn" ? "warn" : d === "broken" ? "broken" : "good"));
-}
-
-/** fallback (เฉพาะตอน DB ว่าง/ไม่มีข้อมูลตู้): จำลองตาม flag + machines count */
-function sampleDots(machines: number, flag: string): DotKind[] {
-  const n = Math.max(1, Math.min(machines, 14));
-  const out: DotKind[] = [];
-  for (let i = 0; i < n; i++) {
-    if ((flag === "HIGH" || flag === "LOSS") && i === 0) out.push("bad");
-    else if ((flag === "AMBER" || flag === "LOW") && i === 0) out.push("warn");
-    else if (i === n - 1 && machines > 8) out.push("broken");
-    else out.push("good");
-  }
-  return out;
 }
 
 export function BranchesClient({ branches }: { branches: BranchRow[] }) {
@@ -105,8 +92,9 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
         {rows.map((b) => {
           const t = pnlTone(b.flag as PnlFlagKey);
           const open = openId === b.branchId;
-          // ใช้สถานะตู้จริงถ้ามี · ไม่งั้น (DB ว่าง/ไม่มีตู้) ใช้ sample จำลอง
-          const dots = b.dots.length > 0 ? realDots(b.dots) : sampleDots(b.machines, b.flag);
+          // เฉพาะสถานะตู้จริงจาก server · ถ้าไม่มีข้อมูลตู้จริง (DB ว่าง/สาขายังไม่ผูกตู้) = ไม่แสดงจุด
+          const dots = b.dots.length > 0 ? realDots(b.dots) : [];
+          const hasRealDots = dots.length > 0;
           return (
             <div key={b.branchId} className="co-card" style={{ padding: "18px 20px" }}>
               {/* header: code chip + name + flag pill */}
@@ -143,85 +131,104 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
                 </div>
               </div>
 
-              {/* footer: dot strip + ดูรายตู้ toggle */}
+              {/* footer: dot strip (เฉพาะเมื่อมีสถานะตู้จริง) + ปุ่มเจาะดูในหน้า matrix */}
               <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 14, borderTop: "1px solid #F4F5F7" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 10.5, color: "#9AA1AB", marginBottom: 7 }}>สถานะตู้ในสาขา</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {dots.map((d, i) => {
-                      const cfg = DOT[d];
-                      return (
-                        <span
-                          key={i}
-                          title={cfg.title}
-                          style={{ width: 18, height: 18, borderRadius: 5, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9.5, fontWeight: 700, lineHeight: 1, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}
-                        >
-                          {cfg.letter}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  {hasRealDots ? (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {dots.map((d, i) => {
+                        const cfg = DOT[d];
+                        return (
+                          <span
+                            key={i}
+                            title={cfg.title}
+                            style={{ width: 18, height: 18, borderRadius: 5, background: cfg.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9.5, fontWeight: 700, lineHeight: 1, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)" }}
+                          >
+                            {cfg.letter}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ยังไม่มีข้อมูลสถานะตู้</div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setOpenId(open ? null : b.branchId)}
-                  className="co-tap"
-                  style={{
-                    border: "1px solid #E3E6EA",
-                    background: open ? "#EEF0FE" : "#fff",
-                    color: open ? "#4F46E5" : "#454B54",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    padding: "7px 13px",
-                    borderRadius: 9,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  ดูรายตู้ <ChevronRight size={15} style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }} />
-                </button>
+                {hasRealDots ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(open ? null : b.branchId)}
+                    className="co-tap"
+                    style={{
+                      border: "1px solid #E3E6EA",
+                      background: open ? "#EEF0FE" : "#fff",
+                      color: open ? "#4F46E5" : "#454B54",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: "7px 13px",
+                      borderRadius: 9,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ดูรายตู้ <ChevronRight size={15} style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }} />
+                  </button>
+                ) : (
+                  <Link
+                    href={`/clawfleet/os/matrix?branch=${encodeURIComponent(b.code)}`}
+                    className="co-tap"
+                    style={{ textDecoration: "none", border: "1px solid #E3E6EA", background: "#fff", color: "#454B54", fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 9, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                  >
+                    เจาะดู <ArrowRight size={13} />
+                  </Link>
+                )}
               </div>
 
-              {/* expandable detail */}
-              {open && (
-                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #F4F5F7" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                    <span style={{ fontSize: 11, color: "#9AA1AB" }}>รายตู้ · สถานะการตั้งค่า · เก็บล่าสุด</span>
-                    <span style={{ flex: 1 }} />
-                    <Link
-                      href={`/clawfleet/os/matrix?branch=${encodeURIComponent(b.code)}`}
-                      style={{ textDecoration: "none", fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "5px 11px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 4 }}
-                    >
-                      เจาะดู <ArrowRight size={12} />
-                    </Link>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                    {dots.map((d, i) => {
-                      const cfg = DOT[d];
-                      const st = pnlTone(
-                        d === "good" ? "GOOD" : d === "warn" ? "AMBER" : d === "bad" ? "HIGH" : "NODATA",
-                      );
-                      return (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, background: "#F8F9FB", borderRadius: 10, padding: "9px 11px" }}>
-                          <span style={{ width: 36, height: 36, flex: "0 0 36px", borderRadius: 8, background: "#EAECF1", display: "flex", alignItems: "center", justifyContent: "center", color: "#9AA1AB" }}>
-                            <Cpu size={16} />
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#4F46E5" }}>{b.code}-{String(i + 1).padStart(2, "0")}</span>
+              {/* expandable detail — สรุปสถานะตู้จริง (นับตามสถานะ · ไม่กุรหัสตู้/เวลาเก็บปลอม) */}
+              {open && hasRealDots && (() => {
+                const goodN = dots.filter((d) => d === "good").length;
+                const warnN = dots.filter((d) => d === "warn").length;
+                const brokenN = dots.filter((d) => d === "broken").length;
+                const breakdown = ([
+                  { kind: "good", n: goodN },
+                  { kind: "warn", n: warnN },
+                  { kind: "broken", n: brokenN },
+                ] as { kind: DotKind; n: number }[]).filter((x) => x.n > 0);
+                return (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #F4F5F7" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                      <span style={{ fontSize: 11, color: "#9AA1AB" }}>สรุปสถานะตู้ในสาขา ({dots.length} ตู้)</span>
+                      <span style={{ flex: 1 }} />
+                      <Link
+                        href={`/clawfleet/os/matrix?branch=${encodeURIComponent(b.code)}`}
+                        style={{ textDecoration: "none", fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "5px 11px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 4 }}
+                      >
+                        ดูรายตู้ในหน้าเจาะดู <ArrowRight size={12} />
+                      </Link>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                      {breakdown.map(({ kind, n }) => {
+                        const cfg = DOT[kind];
+                        const st = pnlTone(kind === "good" ? "GOOD" : kind === "warn" ? "AMBER" : "NODATA");
+                        return (
+                          <div key={kind} style={{ display: "flex", alignItems: "center", gap: 11, background: "#F8F9FB", borderRadius: 10, padding: "9px 11px" }}>
+                            <span style={{ width: 36, height: 36, flex: "0 0 36px", borderRadius: 8, background: "#EAECF1", display: "flex", alignItems: "center", justifyContent: "center", color: "#9AA1AB" }}>
+                              <Cpu size={16} />
+                            </span>
+                            <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7 }}>
                               <Pill tone={st.tone as Tone}>{cfg.title}</Pill>
+                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54" }}>{n} ตู้</span>
                             </div>
-                            <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>เก็บล่าสุด · ดูรายละเอียดในหน้าเจาะดู</div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           );
         })}
