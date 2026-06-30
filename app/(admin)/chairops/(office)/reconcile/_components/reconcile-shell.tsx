@@ -18,6 +18,7 @@ import {
   getReconcilePeriods,
   getReconcileDayDetail,
   getReconcilePerChairTW,
+  getReconcilePerChairRoundsTW,
   getReconcilePerChairDetail,
   ledgerTotals,
   type ReconcileDayDetail,
@@ -70,6 +71,7 @@ export async function ReconcileShell({
   page,
   day,
   perChairDaily,
+  chair,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -88,6 +90,8 @@ export async function ReconcileShell({
   day?: string;
   /** CEO 2026-06-29: per-chair sub-view — true = รายวัน (per-day × per-chair matrix · default), false = สรุปรวม (window aggregate). */
   perChairDaily?: boolean;
+  /** CEO 2026-06-29: drill — selected chairCode → show its per-round history in the summary sub-view. */
+  chair?: string;
 }) {
   const isOrg = branchId === null;
   const baseHref = isOrg
@@ -167,6 +171,12 @@ export async function ReconcileShell({
           allTime,
           posCoverThrough: posThrough,
         })
+      : null;
+  // CEO 2026-06-29: drill — one chair's per-round history (newest first) for the
+  // summary sub-view. Loaded only when a chair is selected via ?chair=.
+  const perChairRounds =
+    view === "perchair" && branchId && !perChairDaily && chair
+      ? await getReconcilePerChairRoundsTW({ orgId, branchId, chairCode: chair })
       : null;
 
   const defaultedLedger = (() => {
@@ -472,7 +482,21 @@ export async function ReconcileShell({
               {perChairDaily ? (
                 <PerChairDetailTab data={perChairDetail} isOrg={isOrg} />
               ) : (
-                <PerChairTab data={perChair} isOrg={isOrg} />
+                <PerChairTab
+                  data={perChair}
+                  isOrg={isOrg}
+                  hrefBase={(() => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    usp.set("pcv", "summary");
+                    return `${baseHref}?${usp.toString()}`;
+                  })()}
+                  selectedChair={chair ?? null}
+                  rounds={perChairRounds}
+                />
               )}
             </>
           )}

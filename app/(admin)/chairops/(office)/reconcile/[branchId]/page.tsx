@@ -43,6 +43,7 @@ export default async function ReconcileBranchPage({
     page?: string;
     day?: string;
     pcv?: string;
+    chair?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -100,6 +101,7 @@ export default async function ReconcileBranchPage({
         page={sp.page ? Number(sp.page) : 0}
         day={sp.day}
         perChairDaily={sp.pcv !== "summary"}
+        chair={sp.chair}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

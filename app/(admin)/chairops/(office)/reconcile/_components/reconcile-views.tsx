@@ -38,6 +38,7 @@ import {
   type PerChairRow,
   type ReconcilePerChairTW,
   type PerChairVerdict,
+  type PerChairRoundTW,
   type ReconcilePerChairDetail,
   type PerChairDay,
   type PerChairDetailCell,
@@ -1144,9 +1145,16 @@ function fmtCollectedAt(iso: string | null): string {
 export function PerChairTab({
   data,
   isOrg,
+  hrefBase,
+  selectedChair,
+  rounds,
 }: {
   data: ReconcilePerChairTW | null;
   isOrg: boolean;
+  /** base URL (view=perchair&pcv=summary&…) for per-chair drill links. */
+  hrefBase?: string;
+  selectedChair?: string | null;
+  rounds?: { chairCode: string; rounds: PerChairRoundTW[]; cumShortage: number | null } | null;
 }) {
   if (isOrg) {
     return (
@@ -1202,6 +1210,10 @@ export function PerChairTab({
         </div>
       )}
 
+      {selectedChair && rounds && hrefBase && (
+        <PerChairRoundsPanel data={rounds} closeHref={hrefBase} />
+      )}
+
       {rows.length === 0 ? (
         <div className="text-3" style={{ textAlign: "center", padding: "40px 0", fontSize: 12.5 }}>
           ยังไม่มีข้อมูลรายตู้ในช่วงนี้ — ต้องมีแม่บ้านกรอกในแอป (ไม่ใช่ CSV)
@@ -1223,11 +1235,26 @@ export function PerChairTab({
             {rows.map((r) => {
               const v = verdictDisplay(r.verdict);
               return (
-                <tr key={r.chairCode}>
+                <tr
+                  key={r.chairCode}
+                  style={selectedChair === r.chairCode ? { background: "var(--surface-hover)" } : undefined}
+                >
                   <td>
-                    <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                      {r.chairCode}
-                    </span>
+                    {hrefBase ? (
+                      <Link
+                        href={`${hrefBase}&chair=${encodeURIComponent(r.chairCode)}`}
+                        scroll={false}
+                        className="mono"
+                        style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent)" }}
+                        title="ดูประวัติการเก็บรายรอบของตู้นี้"
+                      >
+                        {r.chairCode}
+                      </Link>
+                    ) : (
+                      <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                        {r.chairCode}
+                      </span>
+                    )}
                     {r.generation && (
                       <span className="text-3" style={{ fontSize: 10.5, marginLeft: 6 }}>
                         {r.generation}
@@ -1269,6 +1296,94 @@ export function PerChairTab({
                   </td>
                   <td className="num mono" style={{ color: "var(--info)" }}>
                     {r.inBoxNow != null ? `~${fmtN(r.inBoxNow)}` : <span className="text-muted">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// Per-chair round history (drill) — every collection round for one machine,
+// newest first, with the time-windowed expected per round (ควรได้ช่วงนั้น).
+function PerChairRoundsPanel({
+  data,
+  closeHref,
+}: {
+  data: { chairCode: string; rounds: PerChairRoundTW[]; cumShortage: number | null };
+  closeHref: string;
+}) {
+  const { chairCode, rounds, cumShortage } = data;
+  return (
+    <div className="card" style={{ margin: "0 0 10px", padding: 12 }}>
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          ประวัติการเก็บ · ตู้ <span className="mono">{chairCode}</span>
+          {cumShortage != null && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 12,
+                color: cumShortage < -20 ? "var(--crit)" : "var(--text-3)",
+              }}
+            >
+              ขาดสะสม <strong className="mono">{fmtSigned(cumShortage)}</strong> ฿
+            </span>
+          )}
+        </div>
+        <Link href={closeHref} scroll={false} className="text-3" style={{ fontSize: 12 }}>
+          ✕ ปิด
+        </Link>
+      </div>
+      {rounds.length === 0 ? (
+        <div className="text-3" style={{ fontSize: 12, padding: "12px 0" }}>
+          ยังไม่มีรอบเก็บของตู้นี้
+        </div>
+      ) : (
+        <table className="tbl rc-ledger-tbl">
+          <thead>
+            <tr>
+              <th>เวลาเก็บ</th>
+              <th className="num">เก็บได้</th>
+              <th className="num">ควรได้ (ช่วงนั้น)</th>
+              <th className="num rc-tcol">ส่วนต่าง</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rounds.map((r, i) => {
+              const v = verdictDisplay(r.verdict);
+              return (
+                <tr key={`${r.collectedAt}-${i}`}>
+                  <td style={{ fontSize: 11.5 }}>{fmtCollectedAt(r.collectedAt)}</td>
+                  <td className="num mono">{fmtN(r.collected)}</td>
+                  <td className="num mono">
+                    {r.expected != null ? fmtN(r.expected) : <span className="text-muted">—</span>}
+                  </td>
+                  <td className="num mono rc-tcol" style={{ color: v.color, fontWeight: 600 }}>
+                    {r.variance != null ? (
+                      <>
+                        {fmtSigned(r.variance)} <span title={v.label}>{v.emoji}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-3)" }}>
+                        {v.emoji} {v.label}
+                      </span>
+                    )}
+                    {r.broken && (
+                      <span
+                        className="text-3"
+                        style={{ fontSize: 10, marginLeft: 4 }}
+                        title="ตู้มีปัญหารอบนี้"
+                      >
+                        ⚠️
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
