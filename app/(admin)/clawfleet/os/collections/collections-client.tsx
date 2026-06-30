@@ -308,10 +308,8 @@ function CollectionCard({
   const diffStr = gapWords(row.gap);
   const rowBg = open ? "#FCFCFD" : "#fff";
 
-  // เส้นทางเงิน (3-way): มิเตอร์ควรได้ ↔ เงินนับได้ ↔ ส่วนต่าง
-  const coinDelta = Math.round(row.expectedCash / 10); // ฿10/เหรียญ → จำนวนเหรียญ (ประมาณ)
-  // มิเตอร์ต่อเนื่อง (สำหรับ banner) — sample แสดง snapshot; real = ปิด=เปิด (กันตัดมิเตอร์)
-  const coinPrev = 18420;
+  // เส้นทางเงิน — เหรียญเข้า (ประมาณ ที่ ฿10/เหรียญ · มี ~ กำกับ)
+  const coinDelta = Math.round(row.expectedCash / 10);
 
   // เส้นทางตุ๊กตา
   const dollOk = row.prizeGap === 0;
@@ -444,13 +442,9 @@ function CollectionCard({
             </div>
           </div>
 
-          {/* continuity check banner */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 13, background: "#F2FAF5", border: "1px solid #CDE9D7", borderRadius: 10, padding: "11px 14px" }}>
-            <Check size={16} color="#15803D" style={{ flex: "0 0 16px" }} />
-            <span style={{ fontSize: 12, color: "#1A7A47", fontWeight: 500 }}>
-              มิเตอร์ต่อเนื่อง — รอบก่อนปิดที่ <b className="num">{coinPrev.toLocaleString("th-TH")}</b> = รอบนี้เปิดที่ <b className="num">{coinPrev.toLocaleString("th-TH")}</b> เลขไม่กระโดด (กันตัดมิเตอร์/ถอดล้าง)
-            </span>
-          </div>
+          {/* หมายเหตุ: แบนเนอร์ "มิเตอร์ต่อเนื่อง" ถูกเอาออก — เดิม hardcode 18420 ทำให้โชว์ไฟเขียว
+             "ผ่าน" กับทุกแถวโดยไม่ได้ตรวจจริง (ฟีเจอร์กันโกง ห้ามโชว์ผลปลอม). จะกลับมาใส่เมื่อ
+             query ส่งเลขมิเตอร์ปิดรอบก่อน/เปิดรอบนี้จริงมา (CollectionRow ยังไม่มี field นี้) */}
 
           {/* รูปจริงที่พนักงานถ่าย (anti-cheat) — แยกต่อตู้ · กดรูปเพื่อขยายตรวจ */}
           <div style={{ marginTop: 14 }}>

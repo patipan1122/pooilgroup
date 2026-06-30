@@ -398,7 +398,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }:
   const step2CountOk = isFilled(f.refill);
   const step3CountOk = state.meterDeferred ||
     (isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi));
-  const step4CountOk = isFilled(f.cash) && isFilled(f.price);
+  // ราคาขายไม่บังคับ (server ใช้ราคา loadout ที่ตั้งไว้ · ค่านี้ไม่ถูกส่งไป submit) — gate แค่เงินสดที่ต้องนับ
+  const step4CountOk = isFilled(f.cash);
   const stepCountSatisfied =
     state.step === 1 ? step1CountOk
       : state.step === 2 ? step2CountOk

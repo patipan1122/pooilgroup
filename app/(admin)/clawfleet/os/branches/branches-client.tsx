@@ -251,7 +251,7 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
         }}
       >
         <span style={{ fontWeight: 600, color: "#454B54" }}>สถานะตู้ (ตัวย่อในช่อง · ชี้เมาส์ดูได้):</span>
-        {(["good", "warn", "bad", "broken"] as DotKind[]).map((k) => {
+        {(["good", "warn", "broken"] as DotKind[]).map((k) => {
           const cfg = DOT[k];
           return (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 7 }}>

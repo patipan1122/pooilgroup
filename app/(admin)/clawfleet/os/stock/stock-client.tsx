@@ -78,7 +78,7 @@ type WarehouseItem = {
   hist: { id: string; to: string; qty: number; dateISO: string; status: ShipStatus }[];
 };
 type MachineProduct = { code: string; product: string; branch: string; sinceISO: string; ageDays: number };
-type Transfer = { to: string; status: ShipStatus; dateISO: string; items: string };
+type Transfer = { to: string; status: ShipStatus; dateISO: string; items: string; sample?: boolean };
 type ShipStatus = "received" | "received_diff" | "in_transit" | "pending";
 type Shipment = {
   id: string; to: string; summary: string; totSent: number; dateISO: string; status: ShipStatus;
@@ -179,9 +179,9 @@ const SAMPLE_MACHINES: MachineProduct[] = [
 ];
 
 const SAMPLE_TRANSFERS: Transfer[] = [
-  { to: "นนทบุรี", status: "in_transit", dateISO: "2026-06-28", items: "หมีบราวน์ L ×20 · แมวชมพู ×12" },
-  { to: "บางนา", status: "pending", dateISO: "2026-06-27", items: "ไดโนเสาร์ ×28 · เพนกวิน ×10" },
-  { to: "รังสิต", status: "received", dateISO: "2026-06-25", items: "หมีบราวน์ L ×40 · ไดโนเสาร์ ×30" },
+  { to: "นนทบุรี", status: "in_transit", dateISO: "2026-06-28", items: "หมีบราวน์ L ×20 · แมวชมพู ×12", sample: true },
+  { to: "บางนา", status: "pending", dateISO: "2026-06-27", items: "ไดโนเสาร์ ×28 · เพนกวิน ×10", sample: true },
+  { to: "รังสิต", status: "received", dateISO: "2026-06-25", items: "หมีบราวน์ L ×40 · ไดโนเสาร์ ×30", sample: true },
 ];
 
 const SAMPLE_SHIPMENTS: Shipment[] = [
@@ -639,10 +639,13 @@ function TransfersCard({ realBranches, products }: { realBranches: BranchOption[
       {transfers.map((t, i) => {
         const tn = SHIP_TONE[t.status];
         return (
-          <div key={i} style={{ padding: "14px 20px", borderBottom: "1px solid #F4F5F7" }}>
+          <div key={i} style={{ padding: "14px 20px", borderBottom: "1px solid #F4F5F7", opacity: t.sample ? 0.55 : 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13.5, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><ArrowRight size={14} /> สาขา{t.to}</span>
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: tn.bg, color: tn.color }}>{tn.label}</span>
+              {t.sample && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#F1F2F7", color: "#9AA1AB" }}>ตัวอย่าง</span>
+              )}
               <span style={{ flex: 1 }} />
               <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>{fmtDate(t.dateISO)}</span>
             </div>
