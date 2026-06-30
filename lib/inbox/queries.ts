@@ -17,6 +17,8 @@ export interface ConversationListItem {
   isLead: boolean;
   needsHuman: boolean;
   unreadCount: number;
+  isGroup: boolean;
+  branchLabel: string | null;
 }
 
 export interface ConversationFilter {
@@ -59,6 +61,8 @@ export async function listConversations(
       channelId: true,
       platform: true,
       displayName: true,
+      groupId: true,
+      branchLabel: true,
       lastMessageAt: true,
       status: true,
       topicTag: true,
@@ -90,6 +94,8 @@ export async function listConversations(
     isLead: r.isLead,
     needsHuman: r.needsHuman,
     unreadCount: r.unreadCount,
+    isGroup: !!r.groupId,
+    branchLabel: r.branchLabel,
   }));
 }
 
@@ -113,12 +119,16 @@ export interface ConversationDetail {
   needsHuman: boolean;
   contactPhone: string | null;
   contactNote: string | null;
+  isGroup: boolean;
+  groupName: string | null;
+  branchLabel: string | null;
   messages: {
     id: string;
     direction: "IN" | "OUT";
     body: string;
     sentByBot: boolean;
     createdAt: string;
+    senderName: string | null;
     attachment: MessageAttachment | null;
   }[];
 }
@@ -134,6 +144,9 @@ export async function getConversationWithMessages(
       channelId: true,
       platform: true,
       displayName: true,
+      groupId: true,
+      groupName: true,
+      branchLabel: true,
       status: true,
       topicTag: true,
       isUrgent: true,
@@ -150,6 +163,7 @@ export async function getConversationWithMessages(
           body: true,
           sentByBot: true,
           createdAt: true,
+          senderDisplayName: true,
           attachments: true,
         },
       },
@@ -170,12 +184,16 @@ export async function getConversationWithMessages(
     needsHuman: c.needsHuman,
     contactPhone: c.contactPhone,
     contactNote: c.contactNote,
+    isGroup: !!c.groupId,
+    groupName: c.groupName,
+    branchLabel: c.branchLabel,
     messages: c.messages.map((m) => ({
       id: m.id,
       direction: m.direction as "IN" | "OUT",
       body: m.body,
       sentByBot: m.sentByBot,
       createdAt: m.createdAt.toISOString(),
+      senderName: m.senderDisplayName,
       attachment: pickImageAttachment(m.attachments),
     })),
   };
@@ -211,4 +229,20 @@ export async function inboxCounts(orgId: string): Promise<InboxCounts> {
     prisma.inboxConversation.count({ where: { orgId, isLead: true, status: { not: "CLOSED" } } }),
   ]);
   return { open, needsHuman, urgent, leads };
+}
+
+export interface InboxPushUsage {
+  monthLabel: string;
+  pushCount: number;
+}
+
+// How many PUSH messages (counted toward LINE's monthly quota) we've sent this
+// calendar month — so the office can watch the free 300/month ceiling.
+export async function inboxPushUsage(orgId: string): Promise<InboxPushUsage> {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const pushCount = await prisma.inboxMessage.count({
+    where: { orgId, direction: "OUT", viaPush: true, createdAt: { gte: start } },
+  });
+  return { monthLabel: `${now.getMonth() + 1}/${now.getFullYear()}`, pushCount };
 }

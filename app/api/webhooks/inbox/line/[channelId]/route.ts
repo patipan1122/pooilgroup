@@ -23,8 +23,49 @@ export const runtime = "nodejs";
 interface LineEvent {
   type: string;
   replyToken?: string;
-  source?: { type?: string; userId?: string };
+  source?: { type?: string; userId?: string; groupId?: string; roomId?: string };
   message?: { id?: string; type?: string; text?: string; stickerId?: string };
+}
+
+// Sender's display name inside a group needs the group-member profile endpoint
+// (the plain /profile endpoint 404s for non-friends). Falls back to null silently.
+async function fetchLineName(
+  accessToken: string,
+  userId: string,
+  groupId: string | null,
+): Promise<string | null> {
+  const url =
+    groupId !== null
+      ? `https://api.line.me/v2/bot/group/${groupId}/member/${userId}`
+      : `https://api.line.me/v2/bot/profile/${userId}`;
+  try {
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { displayName?: string };
+    return j.displayName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchLineGroupName(
+  accessToken: string,
+  groupId: string,
+): Promise<string | null> {
+  try {
+    const r = await fetch(`https://api.line.me/v2/bot/group/${groupId}/summary`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { groupName?: string };
+    return j.groupName ?? null;
+  } catch {
+    return null;
+  }
 }
 interface LineWebhookBody {
   events?: LineEvent[];
@@ -113,8 +154,12 @@ export async function POST(
 
       for (const ev of body.events ?? []) {
         if (ev.type !== "message") continue;
-        const userId = ev.source?.userId;
-        if (!userId) continue;
+        const userId = ev.source?.userId ?? null;
+        // group chats (maid inbox) key on groupId; room = multi-person (no summary API)
+        const groupId = ev.source?.groupId ?? ev.source?.roomId ?? null;
+        const realGroupId = ev.source?.groupId ?? null;
+        if (!userId && !groupId) continue;
+        const isGroup = !!groupId;
 
         let bodyText: string;
         let attachments: unknown = null;
@@ -135,19 +180,12 @@ export async function POST(
         }
 
         let senderDisplayName: string | null = null;
-        if (accessToken) {
-          try {
-            const profResp = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-              signal: AbortSignal.timeout(2000),
-            });
-            if (profResp.ok) {
-              const prof = (await profResp.json()) as { displayName?: string };
-              senderDisplayName = prof.displayName ?? null;
-            }
-          } catch {
-            /* ignore */
-          }
+        let groupName: string | null = null;
+        if (accessToken && userId) {
+          senderDisplayName = await fetchLineName(accessToken, userId, realGroupId);
+        }
+        if (accessToken && realGroupId) {
+          groupName = await fetchLineGroupName(accessToken, realGroupId);
         }
 
         try {
@@ -155,7 +193,10 @@ export async function POST(
             channelId: ch.id,
             orgId: ch.orgId,
             platform: "LINE",
-            senderExternalId: userId,
+            senderExternalId: isGroup ? null : userId,
+            groupId: isGroup ? groupId : null,
+            groupName,
+            senderLineUserId: userId,
             senderDisplayName,
             body: bodyText,
             attachments,
@@ -189,7 +230,9 @@ export async function POST(
             }
           }
 
-          if (!res.duplicate && botEnabled) {
+          // Bot replies only to 1:1 chats. Group chats (maid inbox) are
+          // human-handled — never auto-reply into a staff group.
+          if (!res.duplicate && botEnabled && !isGroup && userId) {
             const botInput = {
               channel: ch,
               conversationId: res.conversationId,

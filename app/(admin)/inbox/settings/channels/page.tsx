@@ -72,6 +72,18 @@ export default async function InboxChannelsSettingsPage({
 
         <ChannelsManager initialChannels={channels} businesses={INBOX_BUSINESSES} />
 
+        {/* maid group binding — CEO 2026-06-30 */}
+        <a
+          href="/inbox/settings/groups"
+          className="mt-6 flex items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900 hover:bg-indigo-100"
+        >
+          <span className="text-lg">👥</span>
+          <span>
+            <b>ผูกกลุ่มแชตแม่บ้าน → สาขา</b> · สำหรับกลุ่ม LINE ที่เชิญบอทเข้าแล้ว
+            เลือกว่ากลุ่มไหน = สาขาไหน + ดูจำนวน push ที่ใช้เดือนนี้ →
+          </span>
+        </a>
+
         {/* PDPA / security note */}
         <div className="mt-6 rounded-2xl bg-zinc-50 border border-zinc-200 p-4 flex items-start gap-3">
           <ShieldCheck className="size-5 text-zinc-600 shrink-0 mt-0.5" />

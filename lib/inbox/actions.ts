@@ -20,6 +20,7 @@ async function loadOwnedConversation(id: string) {
       orgId: true,
       platform: true,
       externalUserId: true,
+      groupId: true,
       channelId: true,
       channel: { select: { accessTokenEnc: true } },
     },
@@ -38,7 +39,12 @@ export async function sendReply(conversationId: string, text: string) {
     throw new Error("ช่องทางนี้ยังไม่ได้ตั้ง Access Token — ส่งข้อความไม่ได้");
   }
 
-  const input = { body, recipientExternalId: convo.externalUserId, accessToken };
+  // Groups reply to the groupId; 1:1 to the user. A dashboard reply is always
+  // outside LINE's 1-min reply window → it goes out as a PUSH (counts toward the
+  // monthly quota) — recorded via viaPush so the counter stays honest.
+  const recipient = convo.groupId ?? convo.externalUserId;
+  if (!recipient) throw new Error("บทสนทนานี้ไม่มีปลายทาง — ส่งไม่ได้");
+  const input = { body, recipientExternalId: recipient, accessToken };
   const res =
     convo.platform === "LINE"
       ? await sendLineMessage(input)
@@ -54,6 +60,7 @@ export async function sendReply(conversationId: string, text: string) {
     createdById: session.user.id,
     externalId: res.externalId ?? null,
     error: res.ok ? null : res.error ?? "send failed",
+    viaPush: convo.platform === "LINE" ? true : null,
   });
 
   if (!res.ok) throw new Error(res.error || "ส่งข้อความไม่สำเร็จ");

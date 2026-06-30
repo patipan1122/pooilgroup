@@ -4755,7 +4755,16 @@ model InboxConversation {
   orgId          String                  @map("org_id") @db.Uuid
   channelId      String                  @map("channel_id") @db.Uuid
   platform       InboxPlatform
-  externalUserId String                  @map("external_user_id") // LINE userId / FB PSID
+  // 1:1 chats key on externalUserId (LINE userId / FB PSID). Group chats (CEO
+  // 2026-06-29 maid-inbox) leave it NULL and key on groupId instead. Postgres
+  // treats NULLs as distinct so the existing @@unique([channelId, externalUserId])
+  // still dedups 1:1 and never blocks group rows. A partial-unique index on
+  // (channelId, groupId) WHERE groupId IS NOT NULL dedups groups (added in SQL).
+  externalUserId String?                 @map("external_user_id") // LINE userId / FB PSID · NULL for groups
+  groupId        String?                 @map("line_group_id") // LINE group id (C…) · set for group chats
+  groupName      String?                 @map("group_name") // cached LINE group name
+  branchRefId    String?                 @map("branch_ref_id") // bound branch (chairops) id — set in settings
+  branchLabel    String?                 @map("branch_label") // cached branch name for display
   displayName    String?                 @map("display_name")
   status         InboxConversationStatus @default(OPEN)
   topicTag       String?                 @map("topic_tag") // bot-classified: scan_fail|money_lost|buy|feedback|strong|other
@@ -4777,6 +4786,9 @@ model InboxConversation {
   @@unique([channelId, externalUserId])
   @@index([orgId, status, lastMessageAt(sort: Desc)])
   @@index([orgId, lastMessageAt(sort: Desc)])
+  // group lookups + dedup — the matching partial-UNIQUE index lives in the SQL
+  // migration (Prisma can't express WHERE groupId IS NOT NULL).
+  @@index([channelId, groupId])
   @@map("inbox_conversations")
   @@schema("public")
 }
@@ -4793,6 +4805,12 @@ model InboxMessage {
   externalId     String?        @map("external_id") // provider-side message ID (idempotency)
   attachments    Json?
   errorMessage   String?        @map("error_message")
+  // Group chats: who actually sent this message (one group → many senders).
+  senderLineUserId  String?     @map("sender_line_user_id")
+  senderDisplayName String?     @map("sender_display_name")
+  // Outbound only: true = sent via push (counts toward LINE quota), false = reply
+  // token (free), null = inbound. Drives the monthly push counter.
+  viaPush        Boolean?       @map("via_push")
   createdById    String?        @map("created_by_id") @db.Uuid
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 

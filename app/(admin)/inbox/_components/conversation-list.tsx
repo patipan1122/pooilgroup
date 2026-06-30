@@ -79,9 +79,15 @@ export function ConversationList({
 
               <div className="mt-1 flex items-center gap-1.5">
                 <PlatformChip platform={c.platform} />
+                {c.isGroup && (
+                  <span className="inline-flex items-center rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
+                    👥 กลุ่ม
+                  </span>
+                )}
                 <span className="text-[11px] text-zinc-500 truncate">
                   {c.channelName}
                   {c.businessTag ? ` · ${businessLabel(c.businessTag)}` : ""}
+                  {c.branchLabel ? ` · ${c.branchLabel}` : ""}
                 </span>
               </div>
 

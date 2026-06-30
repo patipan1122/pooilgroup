@@ -13,8 +13,14 @@ export interface InboxIngestParams {
   channelId: string;
   orgId: string;
   platform: "LINE" | "FACEBOOK";
-  /** LINE userId / FB PSID — opaque per-channel identifier */
-  senderExternalId: string;
+  /** LINE userId / FB PSID — opaque per-channel identifier. NULL for group chats. */
+  senderExternalId?: string | null;
+  /** LINE group id — set for group chats (CEO maid-inbox). NULL for 1:1. */
+  groupId?: string | null;
+  /** Cached LINE group name (group chats only). */
+  groupName?: string | null;
+  /** The individual member who sent this message inside a group. */
+  senderLineUserId?: string | null;
   senderDisplayName?: string | null;
   body: string;
   attachments?: unknown;
@@ -55,18 +61,32 @@ export async function ingestInboundMessage(
   }
 
   const now = new Date();
-  const displayName = p.senderDisplayName?.trim() || null;
+  const isGroup = !!p.groupId;
+  const senderName = p.senderDisplayName?.trim() || null;
+  // Conversation title = group name for groups, sender name for 1:1.
+  const convoName = isGroup ? p.groupName?.trim() || null : senderName;
 
+  if (!isGroup && !p.senderExternalId) {
+    throw new Error("ingestInboundMessage: 1:1 message missing senderExternalId");
+  }
+
+  // Group chats key on (channel, groupId) via a partial-unique index → findFirst
+  // (Prisma can't findUnique a partial index). 1:1 keeps the exact existing path.
   const findConvo = () =>
-    prisma.inboxConversation.findUnique({
-      where: {
-        channelId_externalUserId: {
-          channelId: p.channelId,
-          externalUserId: p.senderExternalId,
-        },
-      },
-      select: { id: true, displayName: true, status: true },
-    });
+    isGroup
+      ? prisma.inboxConversation.findFirst({
+          where: { channelId: p.channelId, groupId: p.groupId },
+          select: { id: true, displayName: true, status: true, groupName: true },
+        })
+      : prisma.inboxConversation.findUnique({
+          where: {
+            channelId_externalUserId: {
+              channelId: p.channelId,
+              externalUserId: p.senderExternalId as string,
+            },
+          },
+          select: { id: true, displayName: true, status: true, groupName: true },
+        });
 
   let isNewConversation = false;
   let convo = await findConvo();
@@ -78,14 +98,16 @@ export async function ingestInboundMessage(
           orgId: p.orgId,
           channelId: p.channelId,
           platform: p.platform,
-          externalUserId: p.senderExternalId,
-          displayName,
+          externalUserId: isGroup ? null : (p.senderExternalId as string),
+          groupId: isGroup ? p.groupId : null,
+          groupName: isGroup ? convoName : null,
+          displayName: isGroup ? convoName ?? "กลุ่มแม่บ้าน" : convoName,
           status: "OPEN",
           lastMessageAt: now,
           lastInboundAt: now,
           unreadCount: 1,
         },
-        select: { id: true, displayName: true, status: true },
+        select: { id: true, displayName: true, status: true, groupName: true },
       });
       isNewConversation = true;
     } catch (e) {
@@ -103,7 +125,9 @@ export async function ingestInboundMessage(
     await prisma.inboxConversation.update({
       where: { id: convo.id },
       data: {
-        displayName: convo.displayName ?? displayName,
+        displayName: convo.displayName ?? convoName,
+        // backfill the group name once we learn it (LINE summary may lag)
+        groupName: isGroup && !convo.groupName ? convoName ?? undefined : undefined,
         lastMessageAt: now,
         lastInboundAt: now,
         unreadCount: { increment: 1 },
@@ -123,6 +147,9 @@ export async function ingestInboundMessage(
         body: p.body,
         externalId: p.externalId ?? null,
         attachments: (p.attachments as object) ?? undefined,
+        // group: record who in the group sent it (1:1 leaves these null = unchanged)
+        senderLineUserId: isGroup ? p.senderLineUserId ?? null : null,
+        senderDisplayName: isGroup ? senderName : null,
       },
       select: { id: true },
     });
@@ -163,6 +190,8 @@ export async function recordOutboundMessage(opts: {
   error?: string | null;
   /** e.g. { type: "image", url: "https://..." } — stored as-is on the row */
   attachments?: unknown;
+  /** true = sent via push (counts toward LINE quota), false = reply token (free) */
+  viaPush?: boolean | null;
 }) {
   const msg = await prisma.inboxMessage.create({
     data: {
@@ -177,6 +206,7 @@ export async function recordOutboundMessage(opts: {
       externalId: opts.externalId ?? null,
       errorMessage: opts.error ?? null,
       attachments: (opts.attachments as object) ?? undefined,
+      viaPush: opts.viaPush ?? null,
     },
     select: { id: true },
   });

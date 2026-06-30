@@ -145,6 +145,11 @@ export function ConversationDetailPane({ conversation, backHref }: Props) {
                 >
                   {isLine ? "LINE" : "Facebook"}
                 </span>
+                {conversation.isGroup && (
+                  <span className="inline-flex items-center rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
+                    👥 กลุ่ม
+                  </span>
+                )}
                 <p className="truncate text-base font-bold text-zinc-900">{name}</p>
               </div>
               <p className="mt-0.5 truncate text-xs text-zinc-500">
@@ -152,6 +157,7 @@ export function ConversationDetailPane({ conversation, backHref }: Props) {
                 {conversation.businessTag
                   ? ` · ${businessLabel(conversation.businessTag)}`
                   : ""}
+                {conversation.branchLabel ? ` · 📍 ${conversation.branchLabel}` : ""}
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -240,6 +246,12 @@ export function ConversationDetailPane({ conversation, backHref }: Props) {
                   key={m.id}
                   className={`flex flex-col gap-1 ${isOut ? "items-end" : "items-start"}`}
                 >
+                  {/* who sent it — only for inbound group messages (1 group, many maids) */}
+                  {!isOut && conversation.isGroup && m.senderName && (
+                    <span className="px-1 text-[10px] font-semibold text-zinc-500">
+                      {m.senderName}
+                    </span>
+                  )}
                   {hasImage && (
                     <a
                       href={m.attachment!.url}
@@ -315,7 +327,9 @@ export function ConversationDetailPane({ conversation, backHref }: Props) {
             </Button>
           </div>
           <p className="mt-1.5 text-[11px] text-zinc-400">
-            ข้อความจะถูกส่งออกทาง {isLine ? "LINE" : "Facebook"} ของช่องทางนี้
+            {conversation.isGroup
+              ? "ข้อความจะถูกส่งเข้ากลุ่ม LINE นี้ (นับเป็น push 1 ครั้ง)"
+              : `ข้อความจะถูกส่งออกทาง ${isLine ? "LINE" : "Facebook"} ของช่องทางนี้`}
           </p>
         </div>
       </div>
