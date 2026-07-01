@@ -171,6 +171,15 @@ export interface PeriodWindow {
     csvImport: DayDetailSourceTotal;
     officeProxy: DayDetailSourceTotal;
   };
+  // CEO 2026-07-01 · TIME-WINDOWED anti-fraud (per branch · meter-based · DISPLAY-ONLY).
+  // "ควรได้ตามเวลา" = Σ meter delta across machines in [prev collection time →
+  // this collection time] — the sales the machines actually made in the exact
+  // window the maid's round covers. Compared vs collectedSum (เก็บได้) to catch
+  // per-round skimming/rotation. null = ⚪ ไม่มีข้อมูลมิเตอร์ / org-level view.
+  expectedMeter: number | null;
+  varianceMeter: number | null; // collectedSum − expectedMeter (− = ขาด/น่าสงสัย)
+  verdictMeter: PerChairVerdict;
+  cumShortageMeter: number | null; // running Σ variance (ตัวจับหมุนเงินระยะยาว)
 }
 
 export interface ReconcileSidebarRow {
@@ -2034,6 +2043,10 @@ export async function getReconcilePeriods(args: {
         cumAfter: d.cumDrift,
         open: false,
         intent: Math.abs(diff) < 100 ? "ok" : "crit",
+        expectedMeter: null,
+        varianceMeter: null,
+        verdictMeter: "uncollected",
+        cumShortageMeter: null,
         collectedSum: 0,
         firstCollectedAt: null,
         lastCollectedAt: null,
@@ -2066,6 +2079,10 @@ export async function getReconcilePeriods(args: {
       cumAfter: lastDriftBefore,
       open: true,
       intent: "warn",
+      expectedMeter: null,
+      varianceMeter: null,
+      verdictMeter: "uncollected",
+      cumShortageMeter: null,
       collectedSum: 0,
       firstCollectedAt: null,
       lastCollectedAt: null,
@@ -2095,6 +2112,8 @@ export async function getReconcilePeriods(args: {
   });
   // wins are contiguous + ascending here (before reverse). Linear find is fine
   // for the per-branch collection volume.
+  // Raw collection instant (ms) per window = the boundary for time-windowed meter math.
+  const winLastColMs: (number | null)[] = wins.map(() => null);
   const findWin = (day: string): number => {
     for (let k = 0; k < wins.length; k++) {
       if (day >= wins[k].from && day <= wins[k].to) return k;
@@ -2120,6 +2139,73 @@ export async function getReconcilePeriods(args: {
     const ts = formatDateTime(c.collectedAt);
     if (w.firstCollectedAt == null) w.firstCollectedAt = ts; // asc → earliest first
     w.lastCollectedAt = ts; // asc → latest last
+    winLastColMs[idx] = c.collectedAt.getTime(); // asc → latest instant in window
+  }
+
+  // CEO 2026-07-01 · TIME-WINDOWED anti-fraud per round (per branch only · meter-based).
+  // For each round, "ควรได้ตามเวลา" = Σ machine meter delta in [prev collection
+  // instant → this collection instant] = the sales the machines actually made in
+  // the exact window the maid's round covers. Compare vs collectedSum (เก็บได้) →
+  // catch skimming/rotation this round. Meter/DISPLAY-ONLY — never touches the
+  // full-day cashSum/deposit/drift columns (those still power the deposit ledger).
+  if (branchId && periodCollections.length > 0) {
+    const earliest = periodCollections[0].collectedAt.getTime() - 2 * DAY_MS;
+    const { cash, coin } = await loadMeterSeries({ orgId, branchId, sinceMs: earliest });
+    const devices = new Set<string>([...cash.keys(), ...coin.keys()]);
+    // Σ machine meter delta over (t0, t1] · t0=null → cumulative from series start
+    // (first round = onboarding backlog, mirrors getReconcilePerChairTW). null when
+    // NO machine has meter data for the window (⚪ — never fabricate a shortage).
+    const meterDelta = (t0: number | null, t1: number): number | null => {
+      let sum = 0;
+      let any = false;
+      for (const code of devices) {
+        const cs = cash.get(code);
+        const co = coin.get(code);
+        const cashUp = meterAsOf(cs, t1);
+        const coinUp = meterAsOf(co, t1);
+        if (cashUp === null && coinUp === null) continue; // device silent in window
+        const cashLo = t0 !== null ? meterAsOf(cs, t0) : 0;
+        const coinLo = t0 !== null ? meterAsOf(co, t0) : 0;
+        const cd = (cashUp ?? cashLo ?? 0) - (cashLo ?? 0);
+        const kd = (coinUp ?? coinLo ?? 0) - (coinLo ?? 0);
+        if (cd < 0 || kd < 0) continue; // meter reset → skip device (don't corrupt Σ)
+        sum += cd + coinBahtOf(kd);
+        any = true;
+      }
+      return any ? Math.round(sum) : null;
+    };
+    const nowMs = Date.now();
+    let cum = 0;
+    let prevMs: number | null = null;
+    for (let i = 0; i < wins.length; i++) {
+      const w = wins[i];
+      if (w.open) {
+        // pending tail — money sitting in machines since the last collection (informational)
+        w.expectedMeter = meterDelta(prevMs, nowMs);
+        w.varianceMeter = null;
+        w.verdictMeter = "uncollected";
+        w.cumShortageMeter = cum === 0 ? null : Math.round(cum);
+        continue;
+      }
+      const t1 = winLastColMs[i];
+      if (t1 == null) {
+        w.verdictMeter = "incomplete";
+        continue;
+      }
+      const exp = meterDelta(prevMs, t1);
+      prevMs = t1;
+      if (exp == null) {
+        w.expectedMeter = null;
+        w.verdictMeter = "incomplete";
+        continue;
+      }
+      w.expectedMeter = exp;
+      const variance = Math.round(w.collectedSum - exp);
+      w.varianceMeter = variance;
+      w.verdictMeter = perChairVerdict(variance, exp);
+      cum += variance;
+      w.cumShortageMeter = Math.round(cum);
+    }
   }
 
   return wins.reverse().slice(0, 12);
