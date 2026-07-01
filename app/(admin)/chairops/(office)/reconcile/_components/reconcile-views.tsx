@@ -2597,6 +2597,19 @@ const PERIOD_SRC: Array<{
   { key: "officeProxy", emoji: "🏢", label: "แอดมิน" },
 ];
 
+// CEO 2026-07-01 · verdict badge for the time-windowed anti-fraud round check.
+const PERIOD_VERDICT: Record<
+  string,
+  { emoji: string; label: string; cls: string }
+> = {
+  ok: { emoji: "🟢", label: "ตรง", cls: "co-drift ok" },
+  over: { emoji: "🔵", label: "เก็บเกิน", cls: "" },
+  short: { emoji: "🔴", label: "ขาด·น่าสงสัย", cls: "co-drift crit" },
+  warn: { emoji: "🟡", label: "คลาดเคลื่อน", cls: "co-drift warn" },
+  incomplete: { emoji: "⚪", label: "ข้อมูลไม่ครบ", cls: "" },
+  uncollected: { emoji: "⚪", label: "ยังไม่เก็บ", cls: "" },
+};
+
 export function PeriodsTab({
   periods,
   branchId,
@@ -2624,8 +2637,9 @@ export function PeriodsTab({
         }}
       >
         <span>
-          🕒 <strong>เก็บล่าสุด</strong> = เวลาเก็บเงินจริงในรอบนั้น · รอบต่อกันเรื่อย (รอบก่อน→รอบนี้)
+          🕒 <strong>ตรวจตามเวลาจริง</strong> · ควรได้ = ยอดขายเครื่อง (มิเตอร์) ในช่วง <strong>เก็บรอบก่อน→รอบนี้</strong> · ต่าง = เก็บได้ − ควรได้ → จับหมุนเงิน/อมเงินรายรอบ
         </span>
+        <span>🟢 ตรง · 🔴 ขาดน่าสงสัย · 🟡 คลาดเคลื่อน · 🔵 เก็บเกิน · ⚪ ข้อมูลไม่ครบ</span>
         <span>คนเก็บ: 💵 แม่บ้าน · 📥 CSV · 🏢 แอดมิน</span>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -2646,11 +2660,18 @@ export function PeriodsTab({
           <tbody>
             {periods.map((p, i) => {
               const pills = PERIOD_SRC.filter((s) => p.bySource[s.key].count > 0);
-              const diffClass = p.open
-                ? ""
-                : Math.abs(p.diff ?? 0) < 100
-                  ? "co-drift ok"
-                  : "co-drift crit";
+              // Time-windowed anti-fraud mode = we have a meter-based expected for
+              // this round. Falls back to the full-day deposit view when there is
+              // no meter data (e.g. org-level view / branch без event file).
+              const meterMode = p.expectedMeter != null && !p.open;
+              const vd = PERIOD_VERDICT[p.verdictMeter];
+              const diffClass = meterMode
+                ? vd.cls
+                : p.open
+                  ? ""
+                  : Math.abs(p.diff ?? 0) < 100
+                    ? "co-drift ok"
+                    : "co-drift crit";
               return (
                 <tr key={i} className={p.open ? "rc-row-active" : ""}>
                   <td>
@@ -2696,8 +2717,21 @@ export function PeriodsTab({
                       ))
                     )}
                   </td>
-                  <td className="num mono rc-tcol" title="คาดว่าแม่บ้านควรส่ง">
-                    {fmtN(p.cashSum)}
+                  <td
+                    className="num mono rc-tcol"
+                    title={
+                      meterMode
+                        ? "ยอดขายเครื่อง (มิเตอร์) ในช่วงเวลาของรอบนี้"
+                        : p.open
+                          ? "เงินที่คาดว่ายังอยู่ในเครื่อง (ยังไม่เก็บ)"
+                          : "ยอดขายเต็มวัน (ไม่มีข้อมูลมิเตอร์)"
+                    }
+                  >
+                    {meterMode
+                      ? fmtN(p.expectedMeter as number)
+                      : p.open && p.expectedMeter != null
+                        ? fmtN(p.expectedMeter)
+                        : fmtN(p.cashSum)}
                   </td>
                   <td className="num mono">
                     {p.collectedSum > 0 ? fmtN(p.collectedSum) : "—"}
@@ -2718,32 +2752,64 @@ export function PeriodsTab({
                       <span className="text-muted">—</span>
                     )}
                   </td>
-                  <td className={"num mono " + diffClass} title={p.open ? "ยังไม่ปิดรอบ" : (p.diff ?? 0) < 0 ? "ขาด" : (p.diff ?? 0) > 0 ? "เกิน" : "ตรงพอดี"}>
-                    {p.open ? <span className="text-3">—</span> : fmtSigned(p.diff)}
-                  </td>
                   <td
-                    className={
-                      "num mono " +
-                      (p.cumAfter < -500
-                        ? "co-drift crit"
-                        : p.cumAfter < -100
-                          ? "co-drift warn"
-                          : "")
+                    className={"num mono " + diffClass}
+                    title={
+                      meterMode
+                        ? `${vd.label} · เก็บได้ − ควรได้`
+                        : p.open
+                          ? "ยังไม่ปิดรอบ"
+                          : (p.diff ?? 0) < 0
+                            ? "ขาด"
+                            : (p.diff ?? 0) > 0
+                              ? "เกิน"
+                              : "ตรงพอดี"
                     }
-                    title={`สะสม ${fmtSigned(p.cumBefore)} → ${fmtSigned(p.cumAfter)}`}
                   >
-                    {fmtSigned(p.cumAfter)}
+                    {meterMode ? (
+                      <span style={{ whiteSpace: "nowrap" }}>
+                        {vd.emoji} {fmtSigned(p.varianceMeter)}
+                      </span>
+                    ) : p.open ? (
+                      <span className="text-3">—</span>
+                    ) : (
+                      fmtSigned(p.diff)
+                    )}
                   </td>
+                  {(() => {
+                    const cumVal =
+                      p.cumShortageMeter != null ? p.cumShortageMeter : p.cumAfter;
+                    const isMeterCum = p.cumShortageMeter != null;
+                    return (
+                      <td
+                        className={
+                          "num mono " +
+                          (cumVal < -500
+                            ? "co-drift crit"
+                            : cumVal < -100
+                              ? "co-drift warn"
+                              : "")
+                        }
+                        title={
+                          isMeterCum
+                            ? "ขาดสะสมตามมิเตอร์ (ตัวจับหมุนเงินระยะยาว · โกงรอบเดียวโยกไม่พ้น)"
+                            : `สะสม ${fmtSigned(p.cumBefore)} → ${fmtSigned(p.cumAfter)}`
+                        }
+                      >
+                        {fmtSigned(cumVal)}
+                      </td>
+                    );
+                  })()}
                   <td style={{ whiteSpace: "nowrap" }}>
                     {branchId && (
                       <Link
-                        href={`/chairops/reconcile/${branchId}?day=${p.to}`}
+                        href={`/chairops/reconcile/${branchId}?view=perchair&from=${p.from}&to=${p.to}`}
                         className="rc-date"
-                        title="ดูรายวันของรอบนี้"
+                        title="กดดูรายตู้ในรอบนี้ (ตู้ไหนขาด)"
                         style={{ textDecoration: "none", color: "var(--accent)", fontSize: 11 }}
                         scroll={false}
                       >
-                        <Eye size={11} aria-hidden="true" /> ดู
+                        <Eye size={11} aria-hidden="true" /> รายตู้
                       </Link>
                     )}
                     {!p.open &&
