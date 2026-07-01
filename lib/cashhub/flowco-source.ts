@@ -29,6 +29,14 @@ export interface FlowcoDayAgg {
   transfer: number; // group 57 (THAI QR) + 58 (โอนเงิน) + 59 (True wallet)
   payOther: number; // group -1 (ส่วนลด/โปร), 4 (คูปอง), 902 (ใช้ภายใน)
   payTotal: number; // Σ วิธีจ่ายทั้งหมด (ไว้ตรวจ reconcile กับ totalSales)
+  anomalyCount: number; // จำนวนแถวชนิดน้ำมันที่ถูกกรองออกวันนั้น (ค่าเพี้ยน/มิเตอร์รีเซ็ต)
+}
+
+// ค่าที่เป็นไปไม่ได้สำหรับปั๊ม 1 ชนิด/วัน (meter reset / sync glitch) → กรองออก + นับไว้โชว์
+export const MAX_GRADE_LITERS = 100_000; // ลิตร/ชนิด/วัน
+export const MAX_GRADE_BAHT = 5_000_000; // บาท/ชนิด/วัน
+function isAnomalousGrade(q: number, a: number): boolean {
+  return q < 0 || a < 0 || q > MAX_GRADE_LITERS || a > MAX_GRADE_BAHT;
 }
 
 const PAGE = 1000;
@@ -137,6 +145,7 @@ export async function fetchFlowcoAggregates(
         transfer: 0,
         payOther: 0,
         payTotal: 0,
+        anomalyCount: 0,
       };
       map.set(k, a);
     }
@@ -146,9 +155,15 @@ export async function fetchFlowcoAggregates(
   for (const r of sales) {
     if (r.ste_id == null || !r.business_date) continue;
     const a = bucket(r.ste_id, r.business_date);
-    a.liters += num(r.sell_q);
+    const q = num(r.sell_q);
+    const amt = num(r.sell_a);
+    if (isAnomalousGrade(q, amt)) {
+      a.anomalyCount += 1; // ค่าเพี้ยน — ไม่รวมเข้ายอด แต่นับไว้โชว์
+      continue;
+    }
+    a.liters += q;
     a.testLiters += num(r.test_q);
-    a.totalSales += num(r.sell_a);
+    a.totalSales += amt;
     a.gradeCount += 1;
   }
 
@@ -167,6 +182,62 @@ export async function fetchFlowcoAggregates(
         ? -1
         : 1,
   );
+}
+
+export interface FlowcoGradeRow {
+  steId: number;
+  reportDate: string; // YYYY-MM-DD
+  gradeId: number;
+  gradeName: string;
+  liters: number;
+  sales: number;
+}
+
+/** อ่านยอดขายรายชนิดน้ำมัน (สำหรับกดขยายดูแยกประเภทน้ำมัน) — กรองแถวเพี้ยนออกแล้ว */
+export async function fetchFlowcoGradeRows(
+  admin: Admin,
+  dateFrom: string,
+  dateTo: string,
+  steId?: number | null,
+): Promise<FlowcoGradeRow[]> {
+  const out: FlowcoGradeRow[] = [];
+  let offset = 0;
+  for (;;) {
+    let query = admin
+      .from("po_fuel_sales_daily")
+      .select("ste_id,business_date,grade_id,grade_name,sell_q,sell_a")
+      .gte("business_date", dateFrom)
+      .lte("business_date", dateTo);
+    if (steId) query = query.eq("ste_id", steId);
+    const { data, error } = await query
+      .order("business_date", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`อ่านชนิดน้ำมันไม่สำเร็จ: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data as {
+      ste_id: number;
+      business_date: string;
+      grade_id: number;
+      grade_name: string;
+      sell_q: number | string | null;
+      sell_a: number | string | null;
+    }[]) {
+      const q = num(r.sell_q);
+      const a = num(r.sell_a);
+      if (isAnomalousGrade(q, a)) continue; // กรองแถวเพี้ยน
+      out.push({
+        steId: r.ste_id,
+        reportDate: r.business_date,
+        gradeId: r.grade_id,
+        gradeName: (r.grade_name ?? "").trim() || `เกรด ${r.grade_id}`,
+        liters: q,
+        sales: a,
+      });
+    }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return out;
 }
 
 /** รายชื่อ ste_id ที่มีข้อมูลจริง (ไว้เทียบกับลิสต์ 20 สาขา — จับตัวแปลกปลอม 3001/9999) */
