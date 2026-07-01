@@ -60,7 +60,7 @@ export default async function FlowcoReportPage({
         />
         <p className="text-[var(--ch-text-2)] text-xs flex items-center gap-1.5">
           <Info className="size-3.5 shrink-0" />
-          ข้อมูลรายวัน · เลือกสาขา + ช่วงวัน · สลับ รายวัน/รายเดือน · กดแถวเพื่อดูแยกชนิดน้ำมัน
+          เลือกสาขา + ช่วงวัน · สลับ รายวัน/รายเดือน · กดปุ่มดูแยกชนิดน้ำมัน หรือ แยกกะ (เช้า/ดึก)
         </p>
       </header>
 
@@ -113,6 +113,7 @@ export default async function FlowcoReportPage({
           totals={t}
           colLabel={mode === "month" ? "เดือน" : "วันที่"}
           fuelCols={report.fuelCols}
+          hasShift={report.hasShift}
         />
       </div>
 

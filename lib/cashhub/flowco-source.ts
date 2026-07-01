@@ -184,6 +184,72 @@ export async function fetchFlowcoAggregates(
   );
 }
 
+function addDaysYmd(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+export interface FlowcoShiftRow {
+  steId: number;
+  reportDate: string; // = biz_date - 1 (align กับ po_fuel_sales_daily.business_date)
+  shiftNo: number; // 1=กะเช้า, 2=กะดึก
+  baht: number;
+  liters: number;
+}
+
+/**
+ * อ่านยอดขายแยกกะ (po_fuel_shift_sales) สำหรับช่วง report date [dateFrom, dateTo].
+ * ⚠️ ตาราง shift ใช้ biz_date เหลื่อม +1 วันจาก sales_daily.business_date (พิสูจน์แล้ว)
+ * → ดึง biz_date ในช่วง [from+1, to+1] แล้ว map reportDate = biz_date - 1 ให้ยอดกะรวม = ยอดรายวันเป๊ะ.
+ */
+export async function fetchFlowcoShiftRows(
+  admin: Admin,
+  dateFrom: string,
+  dateTo: string,
+  steId?: number | null,
+): Promise<FlowcoShiftRow[]> {
+  const bizFrom = addDaysYmd(dateFrom, 1);
+  const bizTo = addDaysYmd(dateTo, 1);
+  const out: FlowcoShiftRow[] = [];
+  let offset = 0;
+  for (;;) {
+    let query = admin
+      .from("po_fuel_shift_sales")
+      .select("ste_id,biz_date,shift_no,baht,liters")
+      .gte("biz_date", bizFrom)
+      .lte("biz_date", bizTo);
+    if (steId) query = query.eq("ste_id", steId);
+    const { data, error } = await query
+      .order("biz_date", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`อ่านยอดกะไม่สำเร็จ: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data as {
+      ste_id: number;
+      biz_date: string;
+      shift_no: number;
+      baht: number | string | null;
+      liters: number | string | null;
+    }[]) {
+      const b = num(r.baht);
+      const l = num(r.liters);
+      if (b < 0 || b > MAX_GRADE_BAHT || l < 0 || l > MAX_GRADE_LITERS) continue; // กันเพี้ยน
+      out.push({
+        steId: r.ste_id,
+        reportDate: addDaysYmd(r.biz_date, -1), // align กับ business_date
+        shiftNo: r.shift_no === 2 ? 2 : 1,
+        baht: b,
+        liters: l,
+      });
+    }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return out;
+}
+
 export interface FlowcoGradeRow {
   steId: number;
   reportDate: string; // YYYY-MM-DD

@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchFlowcoAggregates,
   fetchFlowcoGradeRows,
+  fetchFlowcoShiftRows,
 } from "./flowco-source";
 import { resolveSteToBranch, FLOWCO_STATIONS } from "./flowco-branch-map";
 
@@ -55,6 +56,8 @@ export interface FlowcoReportRow {
   transfer: number;
   anomalyCount: number;
   fuelLiters: Record<string, number>; // หมวดน้ำมัน → ลิตร
+  shiftMorning: number; // ยอดขายกะเช้า (บาท)
+  shiftEvening: number; // ยอดขายกะดึก (บาท)
 }
 
 export interface FlowcoReportTotals {
@@ -65,6 +68,8 @@ export interface FlowcoReportTotals {
   credit: number;
   transfer: number;
   fuelLiters: Record<string, number>;
+  shiftMorning: number;
+  shiftEvening: number;
 }
 
 export interface FlowcoReport {
@@ -72,6 +77,7 @@ export interface FlowcoReport {
   branches: { steId: number; name: string }[];
   totals: FlowcoReportTotals;
   fuelCols: string[]; // หมวดน้ำมันที่มีข้อมูล (เรียงแล้ว) → คอลัมน์
+  hasShift: boolean; // มีข้อมูลแยกกะ (เช้า/ดึก) ไหม
   anomalyTotal: number;
   mode: FlowcoMode;
   steId: number | null;
@@ -95,9 +101,10 @@ export async function fetchFlowcoReport(
   const mode: FlowcoMode = q.mode === "month" ? "month" : "day";
   const steId = q.steId ?? null;
 
-  const [aggs, gradeRows, steMap] = await Promise.all([
+  const [aggs, gradeRows, shiftRows, steMap] = await Promise.all([
     fetchFlowcoAggregates(admin, q.dateFrom, q.dateTo),
     fetchFlowcoGradeRows(admin, q.dateFrom, q.dateTo, steId),
+    fetchFlowcoShiftRows(admin, q.dateFrom, q.dateTo, steId),
     resolveSteToBranch(admin, orgId),
   ]);
 
@@ -125,6 +132,8 @@ export async function fetchFlowcoReport(
         transfer: 0,
         anomalyCount: 0,
         fuelLiters: {},
+        shiftMorning: 0,
+        shiftEvening: 0,
       };
       rowMap.set(key, r);
     }
@@ -153,6 +162,17 @@ export async function fetchFlowcoReport(
     fuelTotal[bucket] = (fuelTotal[bucket] ?? 0) + g.liters;
   }
 
+  // ยอดขายแยกกะ (เช้า/ดึก) ต่อ row
+  let shiftGrand = 0;
+  for (const sh of shiftRows) {
+    if (!inScope(sh.steId)) continue;
+    const r = getRow(keyOf(sh.reportDate));
+    if (sh.shiftNo === 2) r.shiftEvening += sh.baht;
+    else r.shiftMorning += sh.baht;
+    shiftGrand += sh.baht;
+  }
+  const hasShift = shiftGrand > 0.5;
+
   const fuelCols = FUEL_ORDER.filter((b) => (fuelTotal[b] ?? 0) > 0.5);
   const rows = [...rowMap.values()].sort((x, y) => (x.key < y.key ? 1 : -1));
 
@@ -164,6 +184,8 @@ export async function fetchFlowcoReport(
     credit: 0,
     transfer: 0,
     fuelLiters: {},
+    shiftMorning: 0,
+    shiftEvening: 0,
   };
   for (const r of rows) {
     totals.liters += r.liters;
@@ -172,6 +194,8 @@ export async function fetchFlowcoReport(
     totals.card += r.card;
     totals.credit += r.credit;
     totals.transfer += r.transfer;
+    totals.shiftMorning += r.shiftMorning;
+    totals.shiftEvening += r.shiftEvening;
     for (const b of fuelCols)
       totals.fuelLiters[b] = (totals.fuelLiters[b] ?? 0) + (r.fuelLiters[b] ?? 0);
   }
@@ -186,6 +210,7 @@ export async function fetchFlowcoReport(
     branches,
     totals,
     fuelCols,
+    hasShift,
     anomalyTotal,
     mode,
     steId,
