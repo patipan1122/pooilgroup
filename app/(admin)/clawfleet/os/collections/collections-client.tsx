@@ -17,7 +17,7 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
-  X, ZoomIn, SearchX,
+  X, ZoomIn, SearchX, ShieldCheck,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
@@ -126,11 +126,20 @@ const TABS: { id: "all" | StatusKind; label: string }[] = [
 export function CollectionsClient({
   rows,
   branchOptions,
+  hasAnyRounds = false,
 }: {
   rows: CollectionRow[];
   branchOptions: BranchOption[];
+  // org นี้เคยเก็บเงินจริงไหม (มี CfCollectionSession ใด ๆ) — จาก server.
+  // true = เคยเก็บ → 0 anomaly = "ตรวจแล้วไม่พบผิดปกติ" (ไม่ใช่ตัวอย่าง)
+  hasAnyRounds?: boolean;
 }) {
-  const empty = rows.length === 0;
+  // rows = เฉพาะรอบที่ระบบ flag ผิดปกติ (ANOMALY_REVIEW).
+  //   - rows ว่าง + ไม่เคยเก็บเลย  → "ว่างจริง" → โชว์ตัวอย่างเพื่อให้เห็นภาพการตรวจ
+  //   - rows ว่าง + เคยเก็บแล้ว     → "ตรวจแล้ว ไม่พบผิดปกติ" (empty-state จริง · ห้ามโชว์ theft ปลอม)
+  const noRows = rows.length === 0;
+  const empty = noRows && !hasAnyRounds;        // ว่างจริง = โชว์ตัวอย่าง
+  const allClean = noRows && hasAnyRounds;      // เก็บแล้วสะอาด = empty-state บวก
   const data = empty ? SAMPLE_ROWS : rows;
   const branchOpts = branchOptions.length > 0
     ? [{ value: "all", label: "ทุกสาขา" }, ...branchOptions]
@@ -260,11 +269,20 @@ export function CollectionsClient({
         ))}
         {filtered.length === 0 && (
           <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
-            <EmptyState
-              icon={<SearchX size={30} />}
-              title="ไม่มีรอบเก็บในตัวกรองนี้"
-              sub="ลองเปลี่ยนสาขา หรือเลือกแท็บ “ทั้งหมด” เพื่อดูทุกรอบ"
-            />
+            {allClean ? (
+              // org เคยเก็บเงินแล้ว แต่ไม่มีรอบไหนถูก flag = สถานะที่ดี (ห้ามโชว์ theft ตัวอย่าง)
+              <EmptyState
+                icon={<ShieldCheck size={30} />}
+                title="ทุกรอบตรวจแล้ว · ไม่พบผิดปกติ"
+                sub="ทุกรอบเก็บเงินกระทบยอดตรงกับมิเตอร์ — ไม่มีรอบที่ต้องสอบ"
+              />
+            ) : (
+              <EmptyState
+                icon={<SearchX size={30} />}
+                title="ไม่มีรอบเก็บในตัวกรองนี้"
+                sub="ลองเปลี่ยนสาขา หรือเลือกแท็บ “ทั้งหมด” เพื่อดูทุกรอบ"
+              />
+            )}
           </div>
         )}
       </div>

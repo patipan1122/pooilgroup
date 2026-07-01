@@ -13,7 +13,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
-import { userBranchIds, assertCfAdmin } from "./role-guard";
+import { userBranchIds, assertCfAdmin, isCfAdmin, isCfBranchManager } from "./role-guard";
+import { getClawfleetPolicy } from "./policy";
 import {
   StartBranchSessionSchema,
   SubmitBranchEventSchema,
@@ -56,6 +57,13 @@ export async function reviewV2Session(
   const branchId = cf.branchId ?? cf.group?.branchId ?? null;
   if (allowed !== "ALL" && (!branchId || !allowed.includes(branchId))) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  // A1 (audit 2026-07-01 · CEO เคาะ "แอดมิน+ผจก.อนุมัติ"): ตรวจ/อนุมัติ/ปิดล็อกรอบผิดปกติ
+  // = ผู้จัดการสาขา + แอดมิน เท่านั้น (กันพนักงานเก็บเงิน/viewer อนุมัติกันเองปิดคดีโกง).
+  // เดิมเช็คแค่ requireSession + สิทธิ์สาขา → staff ในสาขาเดียวกันกด approve ได้.
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตรวจ/อนุมัติรอบได้" };
   }
 
   // F2 (segregation of duties · CEO 2026-06-02): ห้ามอนุมัติรอบที่ตัวเองเป็นคนปิด/เก็บ
@@ -143,6 +151,15 @@ export async function startBranchSession(input: unknown): Promise<ResultOf<{ id:
     revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { id: s.id, code: s.sessionCode } };
   } catch (e) {
+    // G1 (audit 2026-07-01): unique index cf_sessions_one_open_per_branch ชน (2 คนเปิดรอบสาขา
+    // เดียวกันพร้อมกัน) → P2002 = มีรอบเปิดอยู่แล้ว · ดึงมา resume แทน error (กัน 2 OPEN/สาขา)
+    if ((e as { code?: string }).code === "P2002") {
+      const ex = await prisma.cfCollectionSession.findFirst({
+        where: { orgId, branchId, status: "OPEN" },
+        select: { id: true, sessionCode: true },
+      });
+      if (ex) return { ok: true, data: { id: ex.id, code: ex.sessionCode } };
+    }
     return { ok: false, error: `เปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
@@ -183,13 +200,24 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     return { ok: false, error: "ตู้ไม่อยู่ในกลุ่มของรอบนี้" };
   }
 
-  // รูปมิเตอร์ = ตัวเลือก (CEO 2026-06-29 "ถ่ายได้-ข้ามได้") — การกระทบยอด/กันโกงใช้ตัวเลข
-  // (มิเตอร์เหรียญ↔เงินสด↔ตุ๊กตา) เป็นหลัก. รูปที่ถ่าย (PhotoCaptureButton→R2) เก็บเป็น
-  // หลักฐานเสริม · การข้ามถ่ายไม่บล็อก submit (เดิมบังคับ 5 รูป = พนง.ติดถ้าเน็ต/กล้องล่ม).
+  // รูปมิเตอร์ = ตัวเลือก โดย DEFAULT (CEO 2026-06-29 "ถ่ายได้-ข้ามได้").
+  // A5 (audit 2026-07-01): แต่ถ้าเจ้าของ "เปิดสวิตช์บังคับถ่ายรูป" (policy.photoRequired) →
+  // server บังคับด้วย (เดิมบังคับแค่ฝั่งจอมือถือ → ยิง action ตรง/bypass ส่งไม่มีรูปได้ =
+  // toggle ให้ความมั่นใจผิด). บังคับขั้นต่ำ = รูปเงินสด (ถ่ายที่สเต็ปเงิน · ไม่มี defer).
+  const policy = await getClawfleetPolicy();
+  if (policy.photoRequired && !data.photoCashUrl) {
+    return { ok: false, error: "นโยบายบังคับถ่ายรูป · ต้องแนบรูปเงินสดก่อนบันทึก" };
+  }
 
   const cashPerCoin = machine.loadouts[0]
     ? machine.loadouts[0].pricePerPlayCoins * 1000
     : CASH_PER_PLAY_CENTS;
+
+  // A2/A3 (audit 2026-07-01): ใช้สต๊อกตุ๊กตา "ก่อน" จากค่าจริงในระบบ (machine.lastDollStock ที่
+  // trigger cf_update_machine_mirror เขียนไว้ = stock_after ของรอบก่อน) เป็น baseline ของ
+  // การกระทบยอด — ไม่เชื่อ data.stockBefore จาก client (ปลอมได้ → ปั่น "ตุ๊กตาหาย=0" ผ่านได้).
+  // ผลพลอยได้: ปิดช่อง cross-round (ตุ๊กตาหายระหว่างรอบตอนตู้ว่าง) เพราะ baseline = ยอดจริงรอบก่อน.
+  const stockBaseline = machine.lastDollStock;
 
   // A1 baseline (30-day median revenue for this machine)
   const medianRow = await prisma.$queryRaw<{ median: number | null }[]>`
@@ -207,7 +235,7 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     cashCountedCents: data.cashCountedCents,
     dollMeterBefore: machine.lastDollMeter,
     dollMeterAfter: data.dollMeterAfter,
-    stockBefore: data.stockBefore,
+    stockBefore: stockBaseline, // A2/A3: ค่าจริงในระบบ ไม่ใช่ data.stockBefore จาก client
     stockAfter: data.stockAfter,
     refillQty: data.refillQty,
     cashPerCoinCents: cashPerCoin,
@@ -238,7 +266,7 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
           cashCountedCents: data.cashCountedCents,
           dollMeterBefore: machine.lastDollMeter,
           dollMeterAfter: data.dollMeterAfter,
-          stockBefore: data.stockBefore,
+          stockBefore: stockBaseline, // A2/A3: server-truth baseline (see above)
           stockAfter: data.stockAfter,
           refillQty: data.refillQty,
           // ⚠️ COLUMN→CONTENT MAPPING (column names DON'T match content — no migration to rename).
@@ -284,6 +312,11 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { id: ev.id } };
   } catch (e) {
+    // B1 (audit 2026-07-01): unique index กันกรอกตู้ซ้ำในรอบ (กด 2 ครั้ง/retry ชน) →
+    // P2002 = DB บังคับ atomic แทน read-then-write (กันนับเงิน+ตัดสต๊อก 2 เท่า)
+    if ((e as { code?: string }).code === "P2002") {
+      return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว" };
+    }
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
   }
 }

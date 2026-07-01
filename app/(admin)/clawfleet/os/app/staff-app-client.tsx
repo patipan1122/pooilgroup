@@ -22,7 +22,7 @@
  * we send the captured url (or "" when skipped). Backend column is String? (nullable).
  */
 
-import { useMemo, useReducer, useState, useTransition } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { Loader2, ChevronRight, Inbox, Check, X } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
@@ -93,6 +93,39 @@ function flattenReal(branches: GroupCollectBranch[]): AppMachine[] {
 
 const isDemo = (id: string) => id.startsWith("demo-");
 const CASH_PER_PLAY = 10; // ฿/ครั้ง — ⚠️ สมมติ (ราคาจริงต่อตู้ยังไม่ส่งมาฝั่ง client) → preview ADVISORY
+
+/* ─────────────────────────── draft offline persistence ───────────────────────────
+ * ร่างที่นับ+ถ่ายรูปแล้ว รอกรอกมิเตอร์ ต้องรอด refresh / LINE ปิด webview / สลับแอป
+ * (เดิมอยู่ใน React state อย่างเดียว → หาย → พนักงานต้องเดินกลับไปนับใหม่).
+ * เก็บลง localStorage แยกตาม org + พนักงานที่ล็อกอิน (กันร่างของคนอื่นปน).
+ */
+const DRAFTS_NS = "clawos:staff-drafts";
+function draftsKey(orgId: string, userName: string): string {
+  // namespace ต่อ org + ผู้ใช้ (userName = ตัวระบุพนักงานที่ล็อกอิน · normalize ช่องว่าง)
+  const who = (userName || "anon").trim() || "anon";
+  return `${DRAFTS_NS}:${orgId || "org"}:${who}`;
+}
+function loadDrafts(key: string): Record<string, Draft> {
+  if (typeof window === "undefined") return {}; // SSR guard
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, Draft>;
+  } catch {
+    return {}; // JSON เสีย/quota → เริ่มว่าง (ดีกว่า crash)
+  }
+}
+function saveDrafts(key: string, drafts: Record<string, Draft>): void {
+  if (typeof window === "undefined") return; // SSR guard
+  try {
+    if (Object.keys(drafts).length === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(drafts));
+  } catch {
+    /* quota/private-mode → เงียบ (persistence เป็น best-effort · ไม่ให้ล้ม flow) */
+  }
+}
 
 // counted/อ่านมิเตอร์เอง: null = "ยังไม่กรอก" (กันค่า default หลอก anti-cheat).
 // server ต้องการ number → ก่อนส่งต้องกรอกครบ (gating), เราจึง coerce ตอน submit.
@@ -358,6 +391,22 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }:
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  // ── offline persistence: ร่างต้องรอด refresh / LINE ปิด webview ──
+  // demo ไม่บันทึกจริง → ไม่ persist (กันร่าง demo ค้างข้ามรอบ)
+  const dkey = useMemo(() => draftsKey(orgId, userName), [orgId, userName]);
+  const hydrated = useRef(false);
+  // hydrate ครั้งเดียวตอน mount (SSR guard อยู่ใน loadDrafts) — คืนร่างที่ค้างไว้
+  useEffect(() => {
+    if (usingDemo) { hydrated.current = true; return; }
+    setDrafts(loadDrafts(dkey));
+    hydrated.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dkey]);
+  // persist ทุกครั้งที่ drafts เปลี่ยน (หลัง hydrate เสร็จ · กันเขียนทับด้วย {} ตอน mount)
+  useEffect(() => {
+    if (usingDemo || !hydrated.current) return;
+    saveDrafts(dkey, drafts);
+  }, [drafts, dkey, usingDemo]);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState(0);

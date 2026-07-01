@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, Monitor, ChevronRight, PackageOpen } from "lucide-react";
+import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, ShieldCheck, Monitor, ChevronRight, PackageOpen } from "lucide-react";
 import { Kpi, Card, Pill, AvgWinBar, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, avgWinMarkerPct, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 
@@ -52,6 +52,7 @@ export function DashboardClient({
   dailyPnl,
   lowStock,
   fleet,
+  hasRealData = false,
 }: {
   summary: { revenue: number; cost: number; profit: number; dollsOut: number; hasCost: boolean; avgBahtPerDoll: number | null; riskyBranches: number };
   branches: BranchRow[];
@@ -60,11 +61,18 @@ export function DashboardClient({
   dailyPnl: DailyPoint[];
   lowStock: LowStockItem[];
   fleet: Fleet;
+  // org นี้เคยเก็บเงินจริงไหม (มี CfCollectionSession) — จาก server. true = มีข้อมูลจริง
+  hasRealData?: boolean;
 }) {
   const router = useRouter();
-  const empty = branches.length === 0;
+  // "ว่างจริง" = ไม่มีสาขาจริง และไม่เคยเก็บเงินเลย → โชว์ตัวอย่างเพื่อให้เห็นภาพ.
+  // org จริงที่มีข้อมูล (มีสาขา หรือ เคยเก็บเงิน) → ห้ามโชว์ตัวอย่าง แม้ยังไม่มีธงแดง.
+  const empty = branches.length === 0 && !hasRealData;
   const rows = empty ? SAMPLE_BRANCHES : branches;
-  const alertRows = alerts.length === 0 ? SAMPLE_ALERTS : alerts;
+  // ธงแดง: โชว์ sample เฉพาะตอน "ว่างจริง" เท่านั้น · org จริงที่ 0 anomaly = ธงแดงว่างจริง (ไม่ปลอม)
+  const alertRows = empty ? SAMPLE_ALERTS : alerts;
+  // มีข้อมูลจริงแล้วแต่ไม่มีธงแดง = สถานะที่ดี (ทุกรอบปกติ) → โชว์ empty-state บวก ไม่ใช่ตัวเลขปลอม
+  const alertsClean = !empty && alertRows.length === 0;
   // กราฟรายวัน: ใช้ของจริงถ้ามี · ไม่งั้น sample (กราฟต้องมีอย่างน้อย 1 แท่งที่ >0 ถึงจะเป็น "จริง")
   const days = dailyPnl.length > 0 && dailyPnl.some((d) => d.profit + d.cost > 0) ? dailyPnl : SAMPLE_DAYS;
   const lowStockRows = lowStock.length > 0 ? lowStock : (empty ? SAMPLE_LOW_STOCK : []);
@@ -102,7 +110,11 @@ export function DashboardClient({
         <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" delta="หักต้นทุนตุ๊กตาแล้ว" deltaColor="#9AA1AB" />
         <Kpi icon={<Boxes size={16} />} iconTone="neutral" label="ตู้คีบทั้งหมด" value={`${num(totMachines)} ตู้`} delta={`${rows.length} สาขา`} deltaColor="#9AA1AB" />
         <Kpi icon={<Coins size={16} />} iconTone="amber" label="ต้นทุน/ตัว เฉลี่ย" value={costPerDoll == null ? "—" : bahtN(costPerDoll)} delta={costPerDoll == null ? "ยังไม่มีต้นทุนตั้งไว้" : "ต้นทุนตุ๊กตา ÷ ตัวที่ออก"} deltaColor="#9AA1AB" />
-        <Kpi icon={<ShieldAlert size={16} />} iconTone="red" label="ธงแดง · ต้องตรวจ" value={`${alertRows.length} รายการ`} valueColor="#B42318" delta={`${summary.riskyBranches || tooEasy + tooHard} สาขาเสี่ยง`} deltaColor="#C2756C" />
+        {alertsClean ? (
+          <Kpi icon={<ShieldCheck size={16} />} iconTone="green" label="ธงแดง · ต้องตรวจ" value="0 รายการ" valueColor="#15803D" delta="ทุกรอบปกติ" deltaColor="#9AA1AB" />
+        ) : (
+          <Kpi icon={<ShieldAlert size={16} />} iconTone="red" label="ธงแดง · ต้องตรวจ" value={`${alertRows.length} รายการ`} valueColor="#B42318" delta={empty ? `${summary.riskyBranches || tooEasy + tooHard} สาขาเสี่ยง` : `${summary.riskyBranches} สาขาเสี่ยง`} deltaColor="#C2756C" />
+        )}
       </div>
 
       {/* daily chart */}
@@ -173,8 +185,10 @@ export function DashboardClient({
           })}
         </Card>
 
-        <Card title="ธงแดง · ต้องตรวจสอบ" pad={false} right={<Pill tone="red">{alertRows.length}</Pill>}>
-          {alertRows.map((a, i) => {
+        <Card title="ธงแดง · ต้องตรวจสอบ" pad={alertsClean} right={alertsClean ? <Pill tone="green">0</Pill> : <Pill tone="red">{alertRows.length}</Pill>}>
+          {alertsClean ? (
+            <EmptyState icon={<ShieldCheck size={26} />} title="วันนี้ไม่มีธงแดง · ทุกรอบปกติ" sub="ทุกรอบเก็บเงินกระทบยอดตรง — ไม่มีรายการต้องตรวจ" />
+          ) : alertRows.map((a, i) => {
             const accent = a.tone === "red" ? "var(--co-red)" : a.tone === "amber" ? "var(--co-amber)" : "var(--co-border)";
             return (
               <div

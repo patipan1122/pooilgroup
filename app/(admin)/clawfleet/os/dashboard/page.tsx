@@ -6,9 +6,30 @@
 import { getBranchPnl, summarizeBranchPnl } from "@/lib/clawfleet/pnl-queries";
 import { getBranchMachineInfo, getDailyPnl, getDashboardLowStock } from "@/lib/clawfleet/dashboard-queries";
 import { loadAnomalies } from "@/lib/clawfleet/loaders";
+import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth/session";
+import { userBranchIds } from "@/lib/clawfleet/role-guard";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * org นี้มี "ข้อมูลจริง" หรือยัง (เคยเก็บเงินไหม) — scope ด้วย org + สาขาที่ user เห็น
+ * (เหมือน loaders อื่น). ใช้ตัดสินว่าจะโชว์ "ตัวอย่าง" (sample) หรือ empty-state จริง.
+ * query พัง/ยังไม่ migrate → false (แสดงตัวอย่างได้ · ปลอดภัยกว่าโชว์ empty ปลอม).
+ */
+async function orgHasAnyRounds(): Promise<boolean> {
+  try {
+    const session = await requireSession();
+    const orgId = session.user.org_id;
+    const branchIds = await userBranchIds(session);
+    const branchWhere = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
+    const n = await prisma.cfCollectionSession.count({ where: { orgId, ...branchWhere } });
+    return n > 0;
+  } catch {
+    return false;
+  }
+}
 
 export default async function DashboardPage() {
   let branchPnl: Awaited<ReturnType<typeof getBranchPnl>> = [];
@@ -16,13 +37,15 @@ export default async function DashboardPage() {
   let machineInfo: Awaited<ReturnType<typeof getBranchMachineInfo>> | null = null;
   let dailyPnl: Awaited<ReturnType<typeof getDailyPnl>> = [];
   let lowStock: Awaited<ReturnType<typeof getDashboardLowStock>> = [];
+  let hasRealData = false;
   try {
-    [branchPnl, anomalies, machineInfo, dailyPnl, lowStock] = await Promise.all([
+    [branchPnl, anomalies, machineInfo, dailyPnl, lowStock, hasRealData] = await Promise.all([
       getBranchPnl(),
       loadAnomalies("all"),
       getBranchMachineInfo(),
       getDailyPnl(7),
       getDashboardLowStock(6),
+      orgHasAnyRounds(),
     ]);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → ใช้ sample fallback
@@ -69,6 +92,7 @@ export default async function DashboardPage() {
       dailyPnl={dailyPnl}
       lowStock={lowStock}
       fleet={fleet}
+      hasRealData={hasRealData}
     />
   );
 }

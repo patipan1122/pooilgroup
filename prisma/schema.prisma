@@ -2037,6 +2037,7 @@ enum CfSessionStatus {
   CLOSED
   ANOMALY_REVIEW
   LOCKED
+  CANCELLED // audit 2026-07-01: รอบว่าง (0 event) ที่ cron auto-close เก็บกวาด (trigger ข้าม)
 
   @@schema("public")
 }

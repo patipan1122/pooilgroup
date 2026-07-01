@@ -56,6 +56,7 @@ async function handle(req: NextRequest) {
         { photoCashUrl: { not: null } },
         { photoMeterAfterUrl: { not: null } },
         { photoStockUrl: { not: null } },
+        { photoPrizeMeterUrl: { not: null } },
       ],
     },
     select: {
@@ -64,6 +65,7 @@ async function handle(req: NextRequest) {
       photoCashUrl: true,
       photoMeterAfterUrl: true,
       photoStockUrl: true,
+      photoPrizeMeterUrl: true,
       session: { select: { status: true } },
     },
     take: BATCH,
@@ -84,6 +86,7 @@ async function handle(req: NextRequest) {
       urlToKey(e.photoCashUrl),
       urlToKey(e.photoMeterAfterUrl),
       urlToKey(e.photoStockUrl),
+      urlToKey(e.photoPrizeMeterUrl),
     ].filter(Boolean) as string[];
     if (keys.length === 0) continue;
 
@@ -107,6 +110,7 @@ async function handle(req: NextRequest) {
         photoCashUrl: null,
         photoMeterAfterUrl: null,
         photoStockUrl: null,
+        photoPrizeMeterUrl: null,
         photosPurgedAt: new Date(),
       },
     });

@@ -6,15 +6,41 @@
  */
 import { loadAnomalies } from "@/lib/clawfleet/loaders";
 import { getV2Branches } from "@/lib/clawfleet/queries";
+import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth/session";
+import { userBranchIds } from "@/lib/clawfleet/role-guard";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * org นี้ "เคยเก็บเงิน" ไหม (มี CfCollectionSession ใด ๆ) — scope ด้วย org + สาขาที่ user เห็น.
+ * ใช้แยก "ยังไม่เคยเก็บเลย" (→ โชว์ตัวอย่าง) ออกจาก "เก็บแล้วแต่ไม่มีผิดปกติ" (→ empty-state จริง).
+ * query พัง/ยังไม่ migrate → false (โชว์ตัวอย่างได้ · ปลอดภัยกว่าโชว์ empty ปลอม).
+ */
+async function orgHasAnyRounds(): Promise<boolean> {
+  try {
+    const session = await requireSession();
+    const orgId = session.user.org_id;
+    const branchIds = await userBranchIds(session);
+    const branchWhere = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
+    const n = await prisma.cfCollectionSession.count({ where: { orgId, ...branchWhere } });
+    return n > 0;
+  } catch {
+    return false;
+  }
+}
+
 export default async function CollectionsPage() {
   let anomalies: Awaited<ReturnType<typeof loadAnomalies>> = [];
   let branches: Awaited<ReturnType<typeof getV2Branches>> = [];
+  let hasAnyRounds = false;
   try {
-    [anomalies, branches] = await Promise.all([loadAnomalies("all"), getV2Branches()]);
+    [anomalies, branches, hasAnyRounds] = await Promise.all([
+      loadAnomalies("all"),
+      getV2Branches(),
+      orgHasAnyRounds(),
+    ]);
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ sample fallback
   }
@@ -51,5 +77,5 @@ export default async function CollectionsPage() {
     sample: false,
   }));
 
-  return <CollectionsClient rows={rows} branchOptions={branchOptions} />;
+  return <CollectionsClient rows={rows} branchOptions={branchOptions} hasAnyRounds={hasAnyRounds} />;
 }

@@ -163,8 +163,21 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
         unit: number; oldBal: number; orgQtyBefore: number;
       }> = [];
       for (const a of agg.values()) {
+        // 🔒 B3 · ล็อกต่อ product — serialize การคำนวณต้นทุนเฉลี่ยถ่วงน้ำหนัก (transaction-level →
+        // ปลดอัตโนมัติตอน commit/rollback). กัน 2 การรับเข้าสินค้าตัวเดียวกันพร้อมกัน อ่าน orgQtyBefore/
+        // ต้นทุนเดิมก้อนเดียวกัน แล้วเขียนทับ cfProduct.unitCostCents ของกันและกัน (lost update).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${a.id}))`;
         // ต้นทุนเฉลี่ยของรายการรับเข้าครั้งนี้ (รวมทุกบรรทัดของ product เดียวกัน)
         const unit = a.qty > 0 ? Math.round(a.costTotal / a.qty) : a.oldCost;
+        // B2 · ห้ามต้นทุน 0 (หรือติดลบ) ไปเจือจางต้นทุนเฉลี่ยถ่วงน้ำหนัก — mirror guard ของ
+        // confirmShipmentReceived. ถ้าสินค้ายังไม่มีต้นทุนเดิมให้ fallback → reject ทั้งใบ.
+        // (ถ้ามีต้นทุนเดิม > 0 เราจะใช้ต้นทุนเดิมแทน ไม่ให้ 0 ทับของเดิม — ดูใน update loop)
+        if (unit <= 0 && a.oldCost <= 0) {
+          throw new Error(
+            `สินค้า "${a.name}" ยังไม่ได้ตั้งราคาทุน · ตั้งราคาทุนก่อนรับเข้าคลัง`,
+          );
+        }
+        // 🔒 อ่าน orgQtyBefore/ยอดคงคลัง "ภายใน lock" — ค่านี้คือความจริง ณ ขณะถือ lock (ไม่มีใครแทรก)
         const oldBal = await currentBalance(tx, orgId, branchId, a.id);
         const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
           where: { orgId, productId: a.id },
@@ -200,13 +213,17 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
 
       for (const w of work) {
         const newBal = w.oldBal + w.qty;
+        // B2 · ถ้ารายการรับเข้าครั้งนี้ไม่มีต้นทุน (unit ≤ 0) แต่สินค้ามีต้นทุนเดิม > 0 อยู่แล้ว
+        // → ห้ามให้ 0 มาเจือจาง/ทับต้นทุนเฉลี่ย · ใช้ต้นทุนเดิมเป็นต้นทุนของรายการนี้แทน
+        // (กรณีไม่มีต้นทุนเดิมเลยถูก reject ไปแล้วใน work loop ด้านบน)
+        const effUnit = w.unit > 0 ? w.unit : w.oldCost;
         // ต้นทุนเฉลี่ยถ่วงน้ำหนัก = (ของเก่า×ต้นทุนเก่า + ของใหม่×ต้นทุนใหม่) / รวม
         // ใช้ orgQtyBefore ที่ snapshot ครั้งเดียวก่อน loop (ไม่ re-aggregate กลาง loop
         // → ถ้ามี product ซ้ำหลายบรรทัด เรารวมเป็น w เดียวแล้ว ไม่ double-count)
         const orgQtyBefore = w.orgQtyBefore;
         const avgCost = orgQtyBefore + w.qty > 0
-          ? Math.round((w.oldCost * Math.max(0, orgQtyBefore) + w.unit * w.qty) / (Math.max(0, orgQtyBefore) + w.qty))
-          : w.unit;
+          ? Math.round((w.oldCost * Math.max(0, orgQtyBefore) + effUnit * w.qty) / (Math.max(0, orgQtyBefore) + w.qty))
+          : effUnit;
         await tx.cfProduct.update({ where: { id: w.id }, data: { unitCostCents: avgCost } });
         await tx.cfStockMovement.create({
           data: {
