@@ -124,6 +124,8 @@ function buildPayload(
     status: "submitted",
     submitted_by_id: userId,
     submitted_at: now,
+    // updated_at = NOT NULL ไม่มี default (Prisma @updatedAt) → ต้องใส่เอง (created_at มี default CURRENT_TIMESTAMP)
+    updated_at: now,
   };
 }
 
