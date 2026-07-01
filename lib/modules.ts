@@ -174,6 +174,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
+        href: "/cashhub/flowco",
+        label: "ยอดขายปั๊ม FlowCo",
+        icon: Fuel,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
         href: "/cashhub/import",
         label: "ศูนย์นำเข้าข้อมูล",
         icon: Upload,

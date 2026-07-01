@@ -150,10 +150,10 @@ export function FlowcoImportView({
         </ul>
         <div className="mt-4 flex flex-col sm:flex-row gap-2">
           <a
-            href="/cashhub/dashboard"
+            href="/cashhub/flowco"
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--ch-brand)] text-white px-4 py-2 min-h-[44px] w-full sm:w-auto text-sm font-semibold"
           >
-            ไปหน้าภาพรวม →
+            ดูรายงานยอดขาย FlowCo →
           </a>
           <button
             onClick={reset}
