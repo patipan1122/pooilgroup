@@ -17,6 +17,7 @@ interface Summary {
   same: number;
   changed: number;
   unmappedDays: number;
+  excludedDays: number;
   branches: number;
   baht: number;
   mappedStations: number;
@@ -33,6 +34,7 @@ interface Preview {
   summary: Summary;
   reconFlags: number;
   unmapped: Unmapped[];
+  excluded: Unmapped[];
   changedSample: Array<{
     branchName: string;
     reportDate: string;
@@ -48,6 +50,7 @@ interface CommitResult {
   total: number;
   unmappedDays: number;
   unmapped: Unmapped[];
+  excluded: Unmapped[];
   reconFlags: number;
   baht: number;
 }
@@ -259,6 +262,16 @@ export function FlowcoImportView({
                   .join(" · ")}{" "}
                 — จับคู่ก่อนถึงจะนำเข้าได้
               </div>
+            </div>
+          )}
+
+          {preview.excluded.length > 0 && (
+            <div className="rounded-xl bg-[var(--ch-bg-2)] px-3 py-2 text-xs text-[var(--ch-text-2)]">
+              ข้ามรหัสนอกลิสต์ 20 สาขา:{" "}
+              {preview.excluded
+                .map((u) => `${u.steId} (${baht(u.totalSales)})`)
+                .join(" · ")}{" "}
+              — ไม่นำเข้า (กันนับซ้ำ)
             </div>
           )}
 

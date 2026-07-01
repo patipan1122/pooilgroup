@@ -14,9 +14,12 @@ import {
   fetchFlowcoAggregates,
   type FlowcoDayAgg,
 } from "./flowco-source";
-import { resolveSteToBranch } from "./flowco-branch-map";
+import { resolveSteToBranch, FLOWCO_STATIONS } from "./flowco-branch-map";
 
 type Admin = SupabaseClient;
+
+/** allow-list นำเข้า = 20 สาขาตามลิสต์ CEO เท่านั้น. กัน ste แปลกปลอม (3001 ยอด0 · 9999 ฿22M อาจเป็นยอดรวม→นับซ้ำ) หลุดเข้ายอด. */
+const SEED_STE = new Set(FLOWCO_STATIONS.map((s) => s.steId));
 
 const SHIFT = "all";
 const EPS = 0.01;
@@ -57,12 +60,15 @@ export interface FlowcoPlanRow {
 export interface FlowcoPlan {
   rows: FlowcoPlanRow[];
   unmapped: { steId: number; days: number; totalSales: number }[];
+  /** ste ที่มีข้อมูลแต่อยู่นอกลิสต์ 20 สาขา (3001/9999) — ไม่นำเข้า กันนับซ้ำ */
+  excluded: { steId: number; days: number; totalSales: number }[];
   summary: {
     total: number; // แถวที่จับคู่ได้ทั้งหมด
     new: number;
     same: number;
     changed: number;
     unmappedDays: number;
+    excludedDays: number;
     branches: number;
     baht: number;
     mappedStations: number; // จำนวนสาขาที่จับคู่ไว้แล้วทั้งหมด (ไม่ขึ้นกับช่วงวัน)
@@ -143,21 +149,23 @@ export async function computeFlowcoPlan(
     resolveSteToBranch(admin, orgId),
   ]);
 
-  // split mapped vs unmapped
+  // split: excluded (นอกลิสต์ 20) → mapped → unmapped
   const mapped: FlowcoDayAgg[] = [];
   const unmappedMap = new Map<number, { steId: number; days: number; totalSales: number }>();
+  const excludedMap = new Map<number, { steId: number; days: number; totalSales: number }>();
+  const tally = (
+    m: Map<number, { steId: number; days: number; totalSales: number }>,
+    a: FlowcoDayAgg,
+  ) => {
+    const u = m.get(a.steId) ?? { steId: a.steId, days: 0, totalSales: 0 };
+    u.days += 1;
+    u.totalSales += a.totalSales;
+    m.set(a.steId, u);
+  };
   for (const a of aggs) {
-    if (steToBranch.has(a.steId)) mapped.push(a);
-    else {
-      const u = unmappedMap.get(a.steId) ?? {
-        steId: a.steId,
-        days: 0,
-        totalSales: 0,
-      };
-      u.days += 1;
-      u.totalSales += a.totalSales;
-      unmappedMap.set(a.steId, u);
-    }
+    if (!SEED_STE.has(a.steId)) tally(excludedMap, a); // นอกลิสต์ 20 → ไม่นำเข้า
+    else if (steToBranch.has(a.steId)) mapped.push(a);
+    else tally(unmappedMap, a);
   }
 
   // load existing daily_reports for the mapped branches within date range (one query)
@@ -237,15 +245,18 @@ export async function computeFlowcoPlan(
   }
 
   const unmapped = [...unmappedMap.values()].sort((a, b) => a.steId - b.steId);
+  const excluded = [...excludedMap.values()].sort((a, b) => a.steId - b.steId);
   return {
     rows,
     unmapped,
+    excluded,
     summary: {
       total: rows.length,
       new: rows.filter((r) => r.status === "new").length,
       same: rows.filter((r) => r.status === "same").length,
       changed: rows.filter((r) => r.status === "changed").length,
       unmappedDays: unmapped.reduce((s, u) => s + u.days, 0),
+      excludedDays: excluded.reduce((s, u) => s + u.days, 0),
       branches: branchIds.length,
       baht: r2(rows.reduce((s, r) => s + r.totalSales, 0)),
       mappedStations: steToBranch.size,

@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       summary: plan.summary,
       reconFlags: plan.reconFlags,
       unmapped: plan.unmapped,
+      excluded: plan.excluded,
       changedSample: plan.rows
         .filter((r) => r.status === "changed")
         .slice(0, 15)

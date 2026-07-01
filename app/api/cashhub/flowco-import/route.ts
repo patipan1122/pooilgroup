@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
           updated,
           same: plan.summary.same,
           unmappedDays: plan.summary.unmappedDays,
+          excludedDays: plan.summary.excludedDays,
           reconFlags: plan.reconFlags,
           baht: plan.summary.baht,
         },
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
       total: plan.summary.total,
       unmappedDays: plan.summary.unmappedDays,
       unmapped: plan.unmapped,
+      excluded: plan.excluded,
       reconFlags: plan.reconFlags,
       baht: plan.summary.baht,
     });
