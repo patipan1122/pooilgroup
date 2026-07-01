@@ -43,6 +43,10 @@ export const FLOWCO_STATIONS: FlowcoStation[] = [
   { steId: 1029, name: "สาขา 29 กม.1" },
   { steId: 1031, name: "สาขา 31 โตนด" },
   { steId: 1032, name: "สาขา 32 ปักธงชัย" },
+  // สำนักงานใหญ่ (ste 9999) — CEO ยืนยันเป็นสาขาจริง (13 หัวปั๊ม · ยอด ~10% ของ 20 สาขา
+  // = ไม่ใช่ยอดรวม/ไม่นับซ้ำ) → รวมในลิสต์นำเข้า. NB: ste 3001 "พระยาสุเรนท์" ยอด ฿0
+  // ไม่รวม (ยอดจริงของ 62 STATION มาจากระบบวายเอ็มพลัส source แยก).
+  { steId: 9999, name: "สำนักงานใหญ่" },
 ];
 
 const SEED_BY_STE = new Map(FLOWCO_STATIONS.map((s) => [s.steId, s]));
