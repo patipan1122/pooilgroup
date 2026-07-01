@@ -48,7 +48,7 @@ export default async function FlowcoReportPage({
   const t = report.totals;
 
   return (
-    <div className="p-3 sm:p-6 lg:p-8 max-w-5xl mx-auto ch-scope">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto ch-scope">
       <BackButton label="ศูนย์นำเข้าข้อมูล" fallbackHref="/cashhub/import" />
 
       <header className="mb-4 animate-fade-up flex flex-col gap-1.5">
