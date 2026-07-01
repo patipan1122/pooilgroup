@@ -45,6 +45,7 @@ export default async function ReconcileBranchPage({
     day?: string;
     pcv?: string;
     chair?: string;
+    month?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -110,6 +111,7 @@ export default async function ReconcileBranchPage({
         }
         chair={sp.chair}
         canManage={isSuperAdmin(session.poolUser.role)}
+        month={sp.month}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

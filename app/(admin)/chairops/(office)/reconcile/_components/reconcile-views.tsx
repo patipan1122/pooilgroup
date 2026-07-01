@@ -45,6 +45,9 @@ import {
   type ReconcileActivity,
   type ActivityDay,
   type ActivityPerson,
+  type ReconcileChecklist,
+  type ChecklistBranch,
+  type ChecklistCell,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -220,19 +223,22 @@ function SparkArea({ data }: { data: number[] }) {
 // ─────────────────────────────────────────────────────────────
 // Tabs (URL-driven · server <a> links)
 // ─────────────────────────────────────────────────────────────
+type ReconcileTabKey =
+  | "ledger"
+  | "timeline"
+  | "periods"
+  | "perchair"
+  | "checklist";
+
 export function ReconcileTabs({
   baseHref,
   active,
 }: {
   baseHref: string;
-  active: "ledger" | "timeline" | "periods" | "perchair";
+  active: ReconcileTabKey;
 }) {
-  const tab = (
-    key: "ledger" | "timeline" | "periods" | "perchair",
-    label: string,
-  ) => {
-    const href =
-      key === "ledger" ? baseHref : `${baseHref}?view=${key}`;
+  const tab = (key: ReconcileTabKey, label: string) => {
+    const href = key === "ledger" ? baseHref : `${baseHref}?view=${key}`;
     return (
       <Link
         href={href}
@@ -251,6 +257,7 @@ export function ReconcileTabs({
         {tab("timeline", "Timeline")}
         {tab("periods", "รอบเก็บ (Periods)")}
         {tab("perchair", "รายตู้")}
+        {tab("checklist", "✅ เช็คลิสต์")}
       </div>
     </div>
   );
@@ -2242,6 +2249,165 @@ export function ActivityTab({
       {data.days.map((d) => (
         <ActivityDayBlock key={d.date} day={d} />
       ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// CEO 2026-07-01 · "เช็คลิสต์" — monthly collection checklist grid.
+// rows = branches · columns = every day 1..N · cell = เก็บ/ฝาก/ไม่เก็บ.
+// Like a housekeeper work-check sheet for the whole month. Display-only.
+// ─────────────────────────────────────────────────────────────
+function checklistDot(c: ChecklistCell): {
+  cls: string;
+  label: string;
+} {
+  if (c.collected && c.deposited)
+    return { cls: "both", label: "เก็บ+ฝาก" };
+  if (c.collected) return { cls: "collect", label: "เก็บ (ยังไม่ฝาก)" };
+  if (c.deposited) return { cls: "deposit", label: "ฝาก" };
+  return { cls: "none", label: "ไม่มี" };
+}
+
+function ChecklistRow({
+  b,
+  chairHref,
+}: {
+  b: ChecklistBranch;
+  chairHref?: string;
+}) {
+  return (
+    <tr data-closed={b.isClosed ? "" : undefined}>
+      <th className="rc-ck-name" scope="row">
+        {chairHref ? (
+          <Link href={chairHref} className="rc-ck-branchlink" scroll={false}>
+            {b.name}
+          </Link>
+        ) : (
+          <span>{b.name}</span>
+        )}
+        {b.isClosed && (
+          <span className="text-3" style={{ fontSize: 9.5, marginLeft: 4 }}>
+            (ปิด)
+          </span>
+        )}
+        <span className="rc-ck-count" title="จำนวนวันที่มีการเก็บเดือนนี้">
+          {b.collectDays} วัน
+        </span>
+      </th>
+      {b.cells.map((c) => {
+        const d = checklistDot(c);
+        const title =
+          d.cls === "none"
+            ? `วันที่ ${c.day} · ไม่มีการเก็บ/ฝาก`
+            : `วันที่ ${c.day} · ${d.label}` +
+              (c.collected ? ` · เก็บ ${fmtN(c.collectedAmount)}฿` : "") +
+              (c.deposited ? ` · ฝาก ${fmtN(c.depositedAmount)}฿` : "");
+        return (
+          <td key={c.day} className="rc-ck-cell" title={title}>
+            {d.cls === "none" ? (
+              <span className="rc-ck-empty">–</span>
+            ) : (
+              <span className={"rc-ck-dot " + d.cls} />
+            )}
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
+export function ChecklistTab({
+  data,
+  makeMonthHref,
+  todayYm,
+  makeBranchHref,
+}: {
+  data: ReconcileChecklist | null;
+  makeMonthHref: (ym: string) => string;
+  /** current Bangkok month "YYYY-MM" — to show the "เดือนนี้" jump when away. */
+  todayYm: string;
+  /** optional per-branch link (open that branch's reconcile). */
+  makeBranchHref?: (branchId: string) => string;
+}) {
+  if (!data) {
+    return (
+      <div className="card" style={{ margin: "12px 0", padding: 18, fontSize: 13 }}>
+        ยังไม่มีข้อมูล
+      </div>
+    );
+  }
+  const thisMonthYm = `${data.year}-${String(data.month).padStart(2, "0")}`;
+  const days = Array.from({ length: data.daysInMonth }, (_, i) => i + 1);
+  return (
+    <div className="rc-ledger">
+      {/* month nav */}
+      <div
+        className="row"
+        style={{
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: "6px 2px 8px",
+        }}
+      >
+        <Link href={makeMonthHref(data.prevMonth)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+          ← เดือนก่อน
+        </Link>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{data.monthLabel}</span>
+        <Link href={makeMonthHref(data.nextMonth)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+          เดือนถัดไป →
+        </Link>
+        {thisMonthYm !== todayYm && (
+          <Link href={makeMonthHref(todayYm)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+            ⏱ เดือนนี้
+          </Link>
+        )}
+      </div>
+
+      {/* legend */}
+      <div className="row" style={{ gap: 12, flexWrap: "wrap", padding: "0 2px 10px", fontSize: 11.5 }}>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-ck-dot both" /> เก็บ+ฝาก
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-ck-dot collect" /> เก็บ (ยังไม่ฝาก)
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-ck-dot deposit" /> ฝากอย่างเดียว
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-ck-empty">–</span> ไม่มีการเก็บ
+        </span>
+      </div>
+
+      <div className="rc-ck-wrap">
+        <table className="rc-ck-tbl">
+          <thead>
+            <tr>
+              <th className="rc-ck-name rc-ck-corner">สาขา ({data.branches.length})</th>
+              {days.map((d) => (
+                <th key={d} className="rc-ck-dayhead">
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.branches.map((b) => (
+              <ChecklistRow
+                key={b.branchId}
+                b={b}
+                chairHref={makeBranchHref ? makeBranchHref(b.branchId) : undefined}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-3" style={{ fontSize: 11, padding: "8px 2px" }}>
+        เอาเมาส์ชี้แต่ละช่องเพื่อดูยอดเก็บ/ฝากของวันนั้น · กดชื่อสาขาเพื่อเข้าดูรายละเอียด ·
+        “–” = วันนั้นไม่มีการเก็บเงิน
+      </div>
     </div>
   );
 }

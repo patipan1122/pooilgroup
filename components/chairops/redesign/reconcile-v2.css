@@ -200,6 +200,86 @@
   opacity: 0.3;
 }
 
+/* CEO 2026-07-01 · เช็คลิสต์รายเดือน (สาขา × วัน) — sticky branch column + dots */
+.co-scope .rc-ck-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.co-scope .rc-ck-tbl {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  width: max-content;
+}
+.co-scope .rc-ck-tbl th,
+.co-scope .rc-ck-tbl td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border-soft, var(--border));
+}
+.co-scope .rc-ck-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  text-align: left;
+  font-weight: 500;
+  padding: 6px 10px;
+  min-width: 150px;
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 1px 0 0 var(--border);
+}
+.co-scope .rc-ck-corner {
+  z-index: 3;
+  background: var(--surface-soft);
+  font-weight: 600;
+}
+.co-scope .rc-ck-tbl tbody tr[data-closed] .rc-ck-name { opacity: 0.55; }
+.co-scope .rc-ck-branchlink {
+  color: var(--text);
+  text-decoration: none;
+}
+.co-scope .rc-ck-branchlink:hover { color: var(--accent); text-decoration: underline; }
+.co-scope .rc-ck-count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--text-3, #999);
+  font-weight: 400;
+}
+.co-scope .rc-ck-dayhead {
+  min-width: 28px;
+  padding: 5px 0;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-soft);
+}
+.co-scope .rc-ck-cell {
+  text-align: center;
+  padding: 4px 0;
+  min-width: 28px;
+}
+.co-scope .rc-ck-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.co-scope .rc-ck-dot.both { background: var(--ok); }
+.co-scope .rc-ck-dot.collect { background: var(--warn, #f59e0b); }
+.co-scope .rc-ck-dot.deposit {
+  background: transparent;
+  border: 2px solid var(--accent);
+}
+.co-scope .rc-ck-empty { color: var(--text-muted, #bbb); }
+
 /* CEO 2026-07-01 · เลขตู้ในตารางรายวัน = ลิงก์เจาะดูตู้เดียว */
 .co-scope .rc-chair-link {
   color: var(--accent);

@@ -35,6 +35,7 @@ export default async function ReconcileOrgPage({
     page?: string;
     day?: string;
     pcv?: string;
+    month?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -75,6 +76,7 @@ export default async function ReconcileOrgPage({
               : "daily"
         }
         canManage={canClosePeriod}
+        month={sp.month}
       />
     </div>
   );

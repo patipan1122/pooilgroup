@@ -2410,6 +2410,162 @@ export async function getReconcileActivity(args: {
 }
 
 // ----------------------------------------------------------------
+// CHECKLIST — monthly "who-collected-which-day" grid (branch × day)
+// CEO 2026-07-01: a manager's month-view checklist like the Google Sheet —
+// rows = branches, columns = every day 1..31 (no collapsing), each cell shows
+// เก็บ/ฝาก/ไม่เก็บ. DISPLAY-ONLY (reads collections+deposits · never money math).
+// ----------------------------------------------------------------
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+export interface ChecklistCell {
+  day: number; // 1..daysInMonth
+  collected: boolean;
+  deposited: boolean;
+  collectedAmount: number;
+  depositedAmount: number;
+}
+export interface ChecklistBranch {
+  branchId: string;
+  name: string;
+  isClosed: boolean;
+  cells: ChecklistCell[]; // length = daysInMonth, index 0 = day 1
+  collectDays: number;
+  totalCollected: number;
+  totalDeposited: number;
+}
+export interface ReconcileChecklist {
+  year: number;
+  month: number; // 1..12
+  daysInMonth: number;
+  monthLabel: string; // "กรกฎาคม 2569"
+  branches: ChecklistBranch[];
+  prevMonth: string; // "YYYY-MM"
+  nextMonth: string;
+  totalCollectEvents: number;
+}
+
+function shiftYm(year: number, month: number, delta: number): string {
+  const zero = month - 1 + delta;
+  const y = year + Math.floor(zero / 12);
+  const m = ((zero % 12) + 12) % 12;
+  return `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+export async function getReconcileChecklist(args: {
+  orgId: string;
+  year: number;
+  month: number; // 1..12
+}): Promise<ReconcileChecklist> {
+  const { orgId, year, month } = args;
+  const daysInMonth = new Date(year, month, 0).getDate(); // month 1-based → last day
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const collStart = new Date(`${ym}-01T00:00:00+07:00`);
+  const collEnd = new Date(
+    `${shiftYm(year, month, 1)}-01T00:00:00+07:00`,
+  );
+
+  const [branches, collections, deposits] = await Promise.all([
+    prisma.chairopsBranch.findMany({
+      where: { orgId, isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, closedAt: true },
+    }),
+    prisma.chairopsCashCollection.findMany({
+      where: {
+        orgId,
+        collectedAt: { gte: collStart, lt: collEnd },
+        deletedAt: null,
+      },
+      select: { branchId: true, collectedAt: true, countedAmount: true },
+    }),
+    prisma.chairopsCashDeposit.findMany({
+      where: { orgId, depositedAt: { gte: collStart, lt: collEnd } },
+      select: { branchId: true, depositedAt: true, depositedAmount: true },
+    }),
+  ]);
+
+  // branchId → (dayIndex 0-based → cell)
+  const grid = new Map<string, ChecklistCell[]>();
+  const ensure = (branchId: string): ChecklistCell[] => {
+    let cells = grid.get(branchId);
+    if (!cells) {
+      cells = Array.from({ length: daysInMonth }, (_, i) => ({
+        day: i + 1,
+        collected: false,
+        deposited: false,
+        collectedAmount: 0,
+        depositedAmount: 0,
+      }));
+      grid.set(branchId, cells);
+    }
+    return cells;
+  };
+  const dayIdxOf = (d: Date): number => {
+    // Bangkok day-of-month, 0-based. Window guarantees it's inside this month.
+    return Number(isoDay(d).slice(8, 10)) - 1;
+  };
+
+  let totalCollectEvents = 0;
+  for (const c of collections) {
+    const i = dayIdxOf(c.collectedAt);
+    if (i < 0 || i >= daysInMonth) continue;
+    const cell = ensure(c.branchId)[i];
+    cell.collected = true;
+    cell.collectedAmount += c.countedAmount;
+    totalCollectEvents += 1;
+  }
+  for (const d of deposits) {
+    const i = dayIdxOf(d.depositedAt);
+    if (i < 0 || i >= daysInMonth) continue;
+    const cell = ensure(d.branchId)[i];
+    cell.deposited = true;
+    cell.depositedAmount += d.depositedAmount;
+  }
+
+  const outBranches: ChecklistBranch[] = branches.map((b) => {
+    const cells = grid.get(b.id) ?? ensure(b.id);
+    let collectDays = 0;
+    let totalCollected = 0;
+    let totalDeposited = 0;
+    for (const cell of cells) {
+      if (cell.collected) {
+        collectDays += 1;
+        totalCollected += cell.collectedAmount;
+      }
+      totalDeposited += cell.depositedAmount;
+    }
+    return {
+      branchId: b.id,
+      name: b.name,
+      isClosed: b.closedAt != null,
+      cells,
+      collectDays,
+      totalCollected,
+      totalDeposited,
+    };
+  });
+  // Closed branches sink to the bottom (same intent as the sidebar sort).
+  outBranches.sort((a, b) => {
+    if (a.isClosed !== b.isClosed) return a.isClosed ? 1 : -1;
+    return a.name.localeCompare(b.name, "th");
+  });
+
+  return {
+    year,
+    month,
+    daysInMonth,
+    monthLabel: `${THAI_MONTHS[month - 1]} ${year + 543}`,
+    branches: outBranches,
+    prevMonth: shiftYm(year, month, -1),
+    nextMonth: shiftYm(year, month, 1),
+    totalCollectEvents,
+  };
+}
+
+// ----------------------------------------------------------------
 // SIDEBAR — branch list rows (cumulative drift chip + status dot)
 // ----------------------------------------------------------------
 export async function getReconcileSidebar(args: {

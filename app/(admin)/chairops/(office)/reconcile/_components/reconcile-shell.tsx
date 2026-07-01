@@ -21,6 +21,7 @@ import {
   getReconcilePerChairRoundsTW,
   getReconcilePerChairDetail,
   getReconcileActivity,
+  getReconcileChecklist,
   ledgerTotals,
   type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
@@ -39,6 +40,7 @@ import {
   PerChairDetailTab,
   PerChairViewToggle,
   ActivityTab,
+  ChecklistTab,
 } from "./reconcile-views";
 import { LedgerDateFilter } from "./ledger-date-filter";
 
@@ -46,10 +48,18 @@ import { LedgerDateFilter } from "./ledger-date-filter";
 // Preset windows (7/30/90) are smaller than this so they render in one page.
 const LEDGER_PAGE_SIZE = 120;
 
-export type ReconcileView = "ledger" | "timeline" | "periods" | "perchair";
+export type ReconcileView =
+  | "ledger"
+  | "timeline"
+  | "periods"
+  | "perchair"
+  | "checklist";
 
 export function normalizeView(raw: string | undefined): ReconcileView {
-  return raw === "timeline" || raw === "periods" || raw === "perchair"
+  return raw === "timeline" ||
+    raw === "periods" ||
+    raw === "perchair" ||
+    raw === "checklist"
     ? raw
     : "ledger";
 }
@@ -75,6 +85,7 @@ export async function ReconcileShell({
   perChairView = "daily",
   chair,
   canManage = false,
+  month,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -97,6 +108,8 @@ export async function ReconcileShell({
   chair?: string;
   /** CEO 2026-07-01: super_admin → show ปิด/เปิดสาขา button in the sidebar. */
   canManage?: boolean;
+  /** CEO 2026-07-01: checklist month "YYYY-MM" (default = current Bangkok month). */
+  month?: string;
 }) {
   const isOrg = branchId === null;
   const perChairDaily = perChairView === "daily";
@@ -199,6 +212,26 @@ export async function ReconcileShell({
   const perChairRounds =
     view === "perchair" && branchId && perChairSummary && chair
       ? await getReconcilePerChairRoundsTW({ orgId, branchId, chairCode: chair })
+      : null;
+
+  // CEO 2026-07-01: monthly collection checklist (branch × day grid). Org-wide
+  // regardless of the selected branch. Month via ?month=YYYY-MM (default now).
+  const todayYm = new Date(Date.now() + 7 * 3_600_000)
+    .toISOString()
+    .slice(0, 7);
+  // Validate BOTH shape and range — a hand-typed ?month=2026-13 / 2026-00 must
+  // not reach `new Date(...)` (→ Invalid Date → Prisma throw → 500). Fall back
+  // to the current month for anything out of 1..12 / a sane year.
+  const YM_RE = /^\d{4}-\d{2}$/;
+  let safeMonth = todayYm;
+  if (month && YM_RE.test(month)) {
+    const [y, m] = month.split("-").map(Number);
+    if (m >= 1 && m <= 12 && y >= 2000 && y <= 2100) safeMonth = month;
+  }
+  const [ckYear, ckMonth] = safeMonth.split("-").map(Number);
+  const checklist =
+    view === "checklist"
+      ? await getReconcileChecklist({ orgId, year: ckYear, month: ckMonth })
       : null;
 
   const defaultedLedger = (() => {
@@ -567,6 +600,19 @@ export async function ReconcileShell({
                 />
               )}
             </>
+          )}
+          {view === "checklist" && (
+            <ChecklistTab
+              data={checklist}
+              todayYm={todayYm}
+              makeMonthHref={(ym) => {
+                const usp = new URLSearchParams();
+                usp.set("view", "checklist");
+                usp.set("month", ym);
+                return `${baseHref}?${usp.toString()}`;
+              }}
+              makeBranchHref={(bid) => `/chairops/reconcile/${bid}`}
+            />
           )}
         </div>
       </main>
