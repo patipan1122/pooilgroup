@@ -59,12 +59,15 @@ const PERM_MATRIX: { feat: string; owner: Access; manager: Access; collector: Ac
 ];
 
 /* ── system policies (toggles · persist ใน Organization.settings.clawfleetPolicy) ──
- * key = field ของ ClawfleetPolicy (saveClawfleetPolicy รับ partial ตาม key นี้). */
-const POLICY_DEFS: { key: keyof ClawfleetPolicy; label: string; sub: string }[] = [
-  { key: "photoRequired", label: "บังคับถ่ายรูปก่อน–หลังเติม", sub: "พนักงานต้องแนบรูปทุกครั้งก่อนปิดรอบ" },
-  { key: "cashAlert", label: "เตือนเงินไม่ตรงทันที", sub: "ส่งแจ้งเตือน ผจก.สาขาเมื่อยอดต่างเกินเกณฑ์" },
-  { key: "lockConfig", label: "ล็อกค่าตู้รออนุมัติ", sub: "การเปลี่ยนความแรงคีบต้องให้เจ้าของอนุมัติก่อน" },
-  { key: "meterMatch", label: "มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน", sub: "บล็อกการปิดรอบถ้าเลขมิเตอร์ 2 ตัวไม่ตรง" },
+ * key = field ของ ClawfleetPolicy (saveClawfleetPolicy รับ partial ตาม key นี้).
+ * live = สวิตช์นี้มีผลจริงในระบบแล้ว. สวิตช์ที่ยังไม่ live → disable + ป้าย "เร็วๆนี้"
+ *        เพื่อไม่ให้ HQ เชื่อผิดว่าเปิดแล้วปลอดภัย ทั้งที่ยังไม่มีโค้ดบังคับใช้.
+ * (audit 2026-07-01: มีแค่ photoRequired ที่ actions.ts อ่านไปบังคับจริง · อีก 3 ยังไม่มี reader) */
+const POLICY_DEFS: { key: keyof ClawfleetPolicy; label: string; sub: string; live: boolean }[] = [
+  { key: "photoRequired", label: "บังคับถ่ายรูปก่อน–หลังเติม", sub: "พนักงานต้องแนบรูปทุกครั้งก่อนปิดรอบ", live: true },
+  { key: "cashAlert", label: "เตือนเงินไม่ตรงทันที", sub: "ส่งแจ้งเตือน ผจก.สาขาเมื่อยอดต่างเกินเกณฑ์", live: false },
+  { key: "lockConfig", label: "ล็อกค่าตู้รออนุมัติ", sub: "การเปลี่ยนความแรงคีบต้องให้เจ้าของอนุมัติก่อน", live: false },
+  { key: "meterMatch", label: "มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน", sub: "บล็อกการปิดรอบถ้าเลขมิเตอร์ 2 ตัวไม่ตรง", live: false },
 ];
 
 /* ── sample fallback (เมื่อ DB ว่าง) ─────────────────────────────────────── */
@@ -208,22 +211,40 @@ export function SettingsClient({
                   gap: 12,
                   padding: "14px 0",
                   borderTop: i === 0 ? "none" : "1px solid #F4F5F7",
-                  opacity: savingKey === p.key ? 0.6 : 1,
+                  opacity: savingKey === p.key ? 0.6 : p.live ? 1 : 0.72,
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{p.label}</div>
-                  <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 3, lineHeight: 1.4 }}>{p.sub}</div>
-                  {/* บอกสถานะปัจจุบันเป็นตัวอักษร — กันสับสนว่าเปิดหรือปิด */}
-                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 5, color: pol[p.key] ? "#15803D" : "#9AA1AB" }}>
-                    ตอนนี้: {pol[p.key] ? "เปิด" : "ปิด"}
-                    {savingKey === p.key && <span style={{ color: "#9AA1AB", fontWeight: 500 }}> · กำลังบันทึก…</span>}
+                  <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    {p.label}
+                    {/* สวิตช์ที่ยังไม่ทำงานจริง → ป้าย "เร็วๆนี้" กัน HQ เชื่อผิดว่าเปิดแล้วปลอดภัย */}
+                    {!p.live && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#7A5510", background: "#FCF3DC", border: "1px solid #F0E2BE", borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                        เร็วๆนี้
+                      </span>
+                    )}
                   </div>
+                  <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 3, lineHeight: 1.4 }}>{p.sub}</div>
+                  {p.live ? (
+                    /* บอกสถานะปัจจุบันเป็นตัวอักษร — กันสับสนว่าเปิดหรือปิด */
+                    <div style={{ fontSize: 11, fontWeight: 700, marginTop: 5, color: pol[p.key] ? "#15803D" : "#9AA1AB" }}>
+                      ตอนนี้: {pol[p.key] ? "เปิด" : "ปิด"}
+                      {savingKey === p.key && <span style={{ color: "#9AA1AB", fontWeight: 500 }}> · กำลังบันทึก…</span>}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, fontWeight: 600, marginTop: 5, color: "#B6BBC4" }}>
+                      ยังไม่เปิดใช้งาน — อยู่ระหว่างพัฒนา
+                    </div>
+                  )}
                 </div>
-                <Toggle
-                  on={pol[p.key]}
-                  onChange={(v) => togglePolicy(p.key, v)}
-                />
+                {p.live ? (
+                  <Toggle on={pol[p.key]} onChange={(v) => togglePolicy(p.key, v)} />
+                ) : (
+                  /* สวิตช์ตาย: กดไม่ได้จริง (pointerEvents none) + จางลง — โชว์ off เสมอ ไม่หลอกตา */
+                  <div style={{ pointerEvents: "none", opacity: 0.45 }} aria-disabled="true" title="ฟีเจอร์นี้กำลังพัฒนา ยังเปิดใช้ไม่ได้">
+                    <Toggle on={false} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

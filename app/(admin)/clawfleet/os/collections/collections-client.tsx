@@ -17,11 +17,12 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
-  X, ZoomIn, SearchX, ShieldCheck,
+  X, ZoomIn, SearchX, ShieldCheck, Download,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
 import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/actions";
+import { buildCsv } from "@/lib/clawfleet/csv";
 
 /* ───────── types ───────── */
 export type BranchOption = { value: string; label: string };
@@ -36,18 +37,23 @@ export type CollectionMachine = {
 export type CollectionRow = {
   id: string;
   code: string;
+  /** id สาขาจริง — ใช้กรอง dropdown แบบตรงตัว (ไม่ใช่ substring ชื่อ) */
+  branchId?: string;
   branch: string;
   staff: string;
   date: string;
   expectedCash: number; // บาท — มิเตอร์ควรได้
   actualCash: number; // บาท — เงินนับได้
-  gap: number; // บาท — เงินขาด (บวก = ขาด)
+  gap: number; // บาท — ส่วนต่าง เก็บทิศทาง: บวก = ขาด · ลบ = เกิน
   prizeExpected: number; // ตุ๊กตาควรหาย (มิเตอร์)
   prizeActual: number; // ตุ๊กตานับจริง
   prizeGap: number; // ตุ๊กตาหาย
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** มิเตอร์เหรียญรวมทั้งรอบจาก event จริง — มี = โชว์ delta×10 จริง · undefined/null = ประมาณจากยอด */
+  coinMeterBefore?: number | null;
+  coinMeterAfter?: number | null;
   /** ตู้ในรอบนี้ พร้อมรูปจริงต่อตู้ (real tier ส่งมา · sample = []) */
   machines: CollectionMachine[];
   sample: boolean;
@@ -66,27 +72,32 @@ const SAMPLE_BRANCHES: BranchOption[] = [
 
 const SAMPLE_ROWS: CollectionRow[] = [
   {
-    id: "s-CFS-000041", code: "CFS-000041", branch: "รังสิต", staff: "น้องเอ", date: "12 นาทีที่แล้ว",
+    id: "s-CFS-000041", code: "CFS-000041", branchId: "s-rs", branch: "รังสิต", staff: "น้องเอ", date: "12 นาทีที่แล้ว",
     expectedCash: 8400, actualCash: 5860, gap: 2540, prizeExpected: 32, prizeActual: 32, prizeGap: 0,
     severity: "P0", type: "cash_short", reason: "เงินสดน้อยกว่ามิเตอร์ ฿2,540 (30% ห่าง)", machines: [], sample: true,
   },
   {
-    id: "s-CFS-000038", code: "CFS-000038", branch: "บางแค", staff: "พี่สอง", date: "2 ชม.ที่แล้ว",
-    expectedCash: 6100, actualCash: 6100, gap: 0, prizeExpected: 28, prizeActual: 22, prizeGap: 6,
-    severity: "P1", type: "prize_short", reason: "ตุ๊กตาหาย 6 ตัว — มิเตอร์ตุ๊กต่ากับนับจริงไม่ตรง", machines: [], sample: true,
+    id: "s-CFS-000040", code: "CFS-000040", branchId: "s-lp", branch: "ลาดพร้าว", staff: "น้องบี", date: "40 นาทีที่แล้ว",
+    expectedCash: 4200, actualCash: 4380, gap: -180, prizeExpected: 18, prizeActual: 18, prizeGap: 0,
+    severity: "P1", type: "cash_short", reason: "เงินสดมากกว่ามิเตอร์ ฿180 — เงินเกิน ต้องสอบที่มา", machines: [], sample: true,
   },
   {
-    id: "s-CFS-000035", code: "CFS-000035", branch: "ลาดพร้าว", staff: "น้องบี", date: "เมื่อวาน",
+    id: "s-CFS-000038", code: "CFS-000038", branchId: "s-bk", branch: "บางแค", staff: "พี่สอง", date: "2 ชม.ที่แล้ว",
+    expectedCash: 6100, actualCash: 6100, gap: 0, prizeExpected: 28, prizeActual: 22, prizeGap: 6,
+    severity: "P0", type: "prize_short", reason: "ตุ๊กตาหาย 6 ตัว — มิเตอร์ตุ๊กตากับนับจริงไม่ตรง", machines: [], sample: true,
+  },
+  {
+    id: "s-CFS-000035", code: "CFS-000035", branchId: "s-lp", branch: "ลาดพร้าว", staff: "น้องบี", date: "เมื่อวาน",
     expectedCash: 5400, actualCash: 5380, gap: 20, prizeExpected: 24, prizeActual: 24, prizeGap: 0,
     severity: "P2", type: "cash_short", reason: "ส่วนต่าง ฿20 อยู่ในเกณฑ์ — ตรงกัน", machines: [], sample: true,
   },
   {
-    id: "s-CFS-000033", code: "CFS-000033", branch: "รังสิต", staff: "น้องเอ", date: "เมื่อวาน",
+    id: "s-CFS-000033", code: "CFS-000033", branchId: "s-rs", branch: "รังสิต", staff: "น้องเอ", date: "เมื่อวาน",
     expectedCash: 7200, actualCash: 7200, gap: 0, prizeExpected: 30, prizeActual: 30, prizeGap: 0,
     severity: "P2", type: "cash_short", reason: "ทุกตัวเลขตรงกัน — รอบสะอาด", machines: [], sample: true,
   },
   {
-    id: "s-CFS-000029", code: "CFS-000029", branch: "บางแค", staff: "พี่สอง", date: "2 วันก่อน",
+    id: "s-CFS-000029", code: "CFS-000029", branchId: "s-bk", branch: "บางแค", staff: "พี่สอง", date: "2 วันก่อน",
     expectedCash: 0, actualCash: 0, gap: 0, prizeExpected: 0, prizeActual: 0, prizeGap: 0,
     severity: "P1", type: "cash_short", reason: "มิเตอร์ไม่ขยับ 3 วัน — ตู้อาจเสีย/ไม่มีลูกค้า", machines: [], sample: true,
   },
@@ -98,7 +109,8 @@ const CASH_TOLERANCE = 50;
 
 function statusOf(r: CollectionRow): StatusKind {
   if (r.expectedCash === 0 && r.actualCash === 0 && r.gap === 0) return "broken";
-  if (r.gap > CASH_TOLERANCE || r.prizeGap > 0) return "diff";
+  // ส่วนต่างเกินเกณฑ์ "ทั้งขาดและเกิน" (|gap|) = ไม่ตรง · หรือตุ๊กตาหาย
+  if (Math.abs(r.gap) > CASH_TOLERANCE || r.prizeGap > 0) return "diff";
   return "match";
 }
 
@@ -154,18 +166,20 @@ export function CollectionsClient({
 
   const filtered = useMemo(() => {
     return data.filter((r) => {
-      const matchBranch = branch === "all" || r.branch.includes(branch) || branchOpts.find((o) => o.value === branch)?.label.startsWith(r.branch);
+      // กรองด้วย branchId ตรงตัว (ไม่ใช่ substring ชื่อ — เดิมสาขาชื่อคล้ายกันจะปนกัน)
+      const matchBranch = branch === "all" || r.branchId === branch;
       const matchTab = tab === "all" || statusOf(r) === tab;
       return matchBranch && matchTab;
     });
-  }, [data, branch, tab, branchOpts]);
+  }, [data, branch, tab]);
 
   /* summary strip */
   const total = data.length;
   const matchN = data.filter((r) => statusOf(r) === "match").length;
   const diffRows = data.filter((r) => statusOf(r) === "diff");
   const diffN = diffRows.length;
-  const diffSum = diffRows.reduce((s, r) => s + r.gap, 0);
+  // รวมขนาดส่วนต่าง (|gap|) — ทั้งขาดและเกินคือ exposure ที่ต้องสอบ (อย่าให้หักกลบกัน)
+  const diffSum = diffRows.reduce((s, r) => s + Math.abs(r.gap), 0);
   const brokenN = data.filter((r) => statusOf(r) === "broken").length;
 
   /* review wiring */
@@ -189,8 +203,62 @@ export function CollectionsClient({
     });
   };
 
+  /* ดาวน์โหลด CSV — export รอบที่กรองอยู่ตอนนี้ (ตาม สาขา + แท็บ) ให้เอาไปเปิด Excel/ทำรายงาน */
+  const downloadCsv = () => {
+    try {
+      const headers = [
+        { key: "code", label: "รหัสรอบ" },
+        { key: "branch", label: "สาขา" },
+        { key: "staff", label: "พนักงาน" },
+        { key: "date", label: "เมื่อ" },
+        { key: "status", label: "สถานะ" },
+        { key: "expectedCash", label: "มิเตอร์ควรได้ (บาท)" },
+        { key: "actualCash", label: "เงินนับได้ (บาท)" },
+        { key: "gap", label: "ส่วนต่าง (บาท · +ขาด/−เกิน)" },
+        { key: "prizeExpected", label: "ตุ๊กตาควรหาย" },
+        { key: "prizeActual", label: "ตุ๊กตานับจริง" },
+        { key: "prizeGap", label: "ตุ๊กตาหาย" },
+        { key: "severity", label: "ระดับ" },
+      ];
+      const STATUS_TH: Record<StatusKind, string> = {
+        match: "ตรงกัน", diff: "ไม่ตรง", broken: "ตู้เสีย/ไม่ขยับ",
+      };
+      const csvRows = filtered.map((r) => ({
+        code: r.code,
+        branch: r.branch,
+        staff: r.staff,
+        date: r.date,
+        status: STATUS_TH[statusOf(r)],
+        expectedCash: r.expectedCash,
+        actualCash: r.actualCash,
+        gap: r.gap,
+        prizeExpected: r.prizeExpected,
+        prizeActual: r.prizeActual,
+        prizeGap: r.prizeGap,
+        severity: r.severity,
+      }));
+      // buildCsv ใส่ BOM (﻿) นำหน้ามาให้แล้ว — ไม่ต้องเติมซ้ำ (กัน Excel อ่านภาษาไทยเพี้ยน)
+      const csv = buildCsv(headers, csvRows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `กระทบยอดตู้คีบ-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // ดาวน์โหลดพลาด (เบราว์เซอร์ไม่รองรับ / ไม่มีข้อมูล) → เงียบ ไม่ให้หน้าพัง
+    }
+  };
+
   return (
     <div>
+      {/* บอกให้ชัดว่านี่คือ "รอบเก็บทั้งหมด" ในช่วง 30 วัน ไม่ใช่แค่รอบผิดปกติ */}
+      <p style={{ fontSize: 12.5, color: "#6B7280", marginBottom: 14, lineHeight: 1.5 }}>
+        รอบเก็บเงิน<b style={{ color: "#1A1D21" }}>ทั้งหมด</b>ที่ปิดแล้วในช่วง 30 วันล่าสุด — กระทบยอดมิเตอร์ ↔ เงินสด ↔ ตุ๊กตา
+        ทุกรอบ (ไม่ใช่แค่รอบที่ระบบเตือน). ใช้แท็บ<b> ไม่ตรง</b> เพื่อดูเฉพาะรอบที่ต้องสอบ
+      </p>
+
       {empty && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A5510" }}>
           <AlertTriangle size={15} /> ยังไม่มีรอบเก็บเงินจริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพการตรวจ (จะเปลี่ยนเป็นข้อมูลจริงเมื่อเริ่มเก็บเงิน)
@@ -205,6 +273,8 @@ export function CollectionsClient({
           <select
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
+            aria-label="เลือกสาขา"
+            title="เลือกสาขา"
             style={{ border: "none", background: "transparent", fontSize: 13, fontWeight: 600, color: "#1A1D21", cursor: "pointer", outline: "none" }}
           >
             {branchOpts.map((o) => (
@@ -231,6 +301,23 @@ export function CollectionsClient({
             );
           })}
         </div>
+
+        <span style={{ flex: 1 }} />
+
+        {/* ดาวน์โหลด CSV — เอารอบที่กรองอยู่ตอนนี้ไปเปิด Excel/ทำรายงาน */}
+        <button
+          onClick={downloadCsv}
+          disabled={filtered.length === 0}
+          title={filtered.length === 0 ? "ไม่มีรอบให้ดาวน์โหลด" : "ดาวน์โหลดรอบที่กรองอยู่เป็นไฟล์ CSV"}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600,
+            padding: "7px 14px", borderRadius: 10, border: "1px solid #E3E6EA", background: "#fff",
+            color: filtered.length === 0 ? "#C2C7CF" : "#334155",
+            cursor: filtered.length === 0 ? "not-allowed" : "pointer",
+          }}
+        >
+          <Download size={14} /> ดาวน์โหลด CSV
+        </button>
       </div>
 
       {/* summary strip */}
@@ -326,8 +413,17 @@ function CollectionCard({
   const diffStr = gapWords(row.gap);
   const rowBg = open ? "#FCFCFD" : "#fff";
 
-  // เส้นทางเงิน — เหรียญเข้า (ประมาณ ที่ ฿10/เหรียญ · มี ~ กำกับ)
-  const coinDelta = Math.round(row.expectedCash / 10);
+  // เส้นทางเงิน — เหรียญเข้า
+  // มีมิเตอร์จริง (before/after รวมทั้งรอบจาก event) → delta จริง ×฿10 · ไม่มี → ประมาณจากยอด (ติดป้ายให้ชัด)
+  const meterBefore = row.coinMeterBefore;
+  const meterAfter = row.coinMeterAfter;
+  // narrow ด้วยตัวแปร local (ไม่ใช้ as) — meterDelta จะเป็น number เมื่อ hasRealMeter เท่านั้น
+  const meterDelta =
+    meterBefore != null && meterAfter != null && meterAfter >= meterBefore
+      ? meterAfter - meterBefore
+      : null;
+  const hasRealMeter = meterDelta != null;
+  const coinDelta = meterDelta != null ? meterDelta : Math.round(row.expectedCash / 10);
 
   // เส้นทางตุ๊กตา
   const dollOk = row.prizeGap === 0;
@@ -449,9 +545,30 @@ function CollectionCard({
                 <Arrow />
                 <ReconCell label="ส่วนต่าง" value={diffStr} color={diffColor} strong />
               </div>
-              <div style={{ fontSize: 12, color: "#5A6270" }}>
-                เหรียญเข้า ~<b className="num" style={{ color: "#1A1D21" }}>{coinDelta}</b> เหรียญ ×฿10 = <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.expectedCash)}</b>
-              </div>
+              {hasRealMeter ? (
+                // แสดงสมการ ×฿10 เฉพาะเมื่อ delta×10 ตรงกับ "ควรได้" จริง (ตู้ ฿10 ล้วน)
+                // ถ้าตู้เป็น ฿20/฿30 หรือปนโทเคน → delta×10 ≠ ควรได้ → ห้ามตอกสมการที่ไม่ balance
+                // (หลอกตาบนจอกันโกง) · โชว์แค่ delta มิเตอร์ + ควรได้ (ยังถูกต้อง)
+                Math.round(coinDelta * 10) === row.expectedCash ? (
+                  <div style={{ fontSize: 12, color: "#5A6270" }}>
+                    มิเตอร์เหรียญขยับ <b className="num" style={{ color: "#1A1D21" }}>{coinDelta}</b> เหรียญ
+                    {" "}(รวมทุกตู้ในรอบ) ×฿10 ={" "}
+                    <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.expectedCash)}</b>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: "#5A6270" }}>
+                    มิเตอร์เหรียญขยับ <b className="num" style={{ color: "#1A1D21" }}>{coinDelta}</b> เหรียญ
+                    {" "}(รวมทุกตู้ในรอบ) · ควรได้ ={" "}
+                    <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.expectedCash)}</b>
+                  </div>
+                )
+              ) : (
+                <div style={{ fontSize: 12, color: "#5A6270" }}>
+                  เหรียญเข้า <span style={{ color: "#9AA1AB" }}>≈</span> <b className="num" style={{ color: "#1A1D21" }}>{coinDelta}</b> เหรียญ · ควรได้ ={" "}
+                  <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.expectedCash)}</b>
+                  <span style={{ color: "#9AA1AB", fontSize: 11 }}> · ≈ ประมาณจากยอด (ไม่มีเลขมิเตอร์ในรอบนี้)</span>
+                </div>
+              )}
               {cashOk && row.gap !== 0 && (
                 <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 5 }}>
                   {gapWords(row.gap)} · ต่างไม่เกิน {bahtN(CASH_TOLERANCE)} = ถือว่าตรง

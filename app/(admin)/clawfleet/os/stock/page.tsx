@@ -16,6 +16,8 @@ import {
   getCfCounts,
   getCfLosses,
   getCfProductsForForms,
+  getCfBranchOnHandMap,
+  getCfMovements,
 } from "@/lib/clawfleet/stock-queries";
 import {
   StockClient,
@@ -28,6 +30,7 @@ import {
   type DocLossSeed,
   type WarehouseRowSeed,
   type ShipmentSeed,
+  type MovementSeed,
 } from "./stock-client";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +42,15 @@ const REASON_TH: Record<string, string> = {
   OTHER: "อื่น ๆ",
 };
 
-export default async function StockPage() {
+export default async function StockPage({
+  searchParams,
+}: {
+  // ?branch=<id> → เลือกสาขาที่จะโหลดเอกสาร (รับของ/นับ/ตัดของเสีย) มาแสดง (item #9)
+  searchParams?: Promise<{ branch?: string }>;
+}) {
+  const sp = searchParams ? await searchParams : undefined;
+  const requestedBranchId = typeof sp?.branch === "string" ? sp.branch : null;
+
   let branchSeeds: BranchStockSeed[] = [];
   // ปุ่ม "โอนสินค้า" / "ตรวจรับ" / สร้างเอกสาร ต้องเขียน DB จริง → ต้องมี id จริง (UUID)
   let realBranches: BranchOption[] = [];
@@ -50,7 +61,9 @@ export default async function StockPage() {
   let lossDocs: DocLossSeed[] = [];
   let warehouseRows: WarehouseRowSeed[] = [];
   let shipments: ShipmentSeed[] = [];
-  let docBranchId: string | null = null; // สาขาที่โหลดเอกสารจริงมา (= สาขาแรก)
+  let docBranchId: string | null = null; // สาขาที่โหลดเอกสารจริงมา (= สาขาที่เลือก หรือสาขาแรก)
+  let onHandMap: Record<string, number> = {}; // ยอด "ระบบมี" ต่อสินค้า ของสาขาเอกสาร (กันนับตาบอด)
+  let movements: MovementSeed[] = []; // ledger การเคลื่อนไหวสต๊อกของสาขาเอกสาร (สำหรับดาวน์โหลด CSV)
   // D1 maker-checker: ใครกำลังดู + มีสิทธิ์อนุมัติใบตัดของเสียไหม (ผจก.สาขา/แอดมิน)
   let viewerId = "";
   let canReviewLoss = false;
@@ -70,7 +83,10 @@ export default async function StockPage() {
     }
 
     if (branches.length > 0) {
-      const first = branches[0];
+      // สาขาเอกสาร = สาขาที่เลือกจาก ?branch (ถ้าอยู่ในลิสต์สาขาที่ user เห็น) ไม่งั้นสาขาแรก
+      // (item #9 · validate กับ branches ที่ getV2Branches คืน = สาขาที่ user มีสิทธิ์เห็นอยู่แล้ว)
+      const first =
+        (requestedBranchId && branches.find((b) => b.id === requestedBranchId)) || branches[0];
       docBranchId = first.id;
       let overview: Awaited<ReturnType<typeof getCfStockOverview>> | null = null;
       let branchStock: Awaited<ReturnType<typeof getV2BranchStock>> | null = null;
@@ -78,15 +94,32 @@ export default async function StockPage() {
       let counts: Awaited<ReturnType<typeof getCfCounts>> = [];
       let losses: Awaited<ReturnType<typeof getCfLosses>> = [];
       try {
-        [overview, branchStock, receipts, counts, losses] = await Promise.all([
+        [overview, branchStock, receipts, counts, losses, onHandMap] = await Promise.all([
           getCfStockOverview(orgId, first.id),
           getV2BranchStock(first.id),
           getCfReceipts(orgId, first.id),
           getCfCounts(orgId, first.id),
           getCfLosses(orgId, first.id),
+          getCfBranchOnHandMap(orgId, first.id),
         ]);
       } catch {
         // graceful: ตารางสต็อกยังว่าง → ปล่อยให้ client เติม sample
+      }
+
+      // ledger การเคลื่อนไหวสต๊อกของสาขาเอกสาร (สำหรับปุ่มดาวน์โหลด CSV · ไม่โชว์เป็นตารางใหญ่)
+      try {
+        const mv = await getCfMovements(orgId, first.id, 500);
+        movements = mv.map((m) => ({
+          id: m.id,
+          type: m.type,
+          productName: m.productName,
+          qty: m.qty,
+          reason: m.reason,
+          documentType: m.documentType,
+          occurredAt: m.occurredAt.toISOString(),
+        }));
+      } catch {
+        // graceful
       }
 
       receiptDocs = receipts.map((r) => ({
@@ -134,8 +167,9 @@ export default async function StockPage() {
         // graceful
       }
 
-      branchSeeds = branches.map((b, i) => {
-        const isFirst = i === 0;
+      branchSeeds = branches.map((b) => {
+        // "isFirst" = สาขาเอกสารที่โหลดข้อมูลจริงมา (อาจไม่ใช่ index 0 ถ้าเลือกสาขาอื่นผ่าน ?branch)
+        const isFirst = b.id === first.id;
         const dolls = isFirst && branchStock
           ? branchStock.stock.reduce((s, e) => s + e.warehouse + e.inMachines, 0)
           : 0;
@@ -176,7 +210,9 @@ export default async function StockPage() {
       lossDocs={lossDocs}
       warehouseRows={warehouseRows}
       shipments={shipments}
+      movements={movements}
       docBranchId={docBranchId}
+      onHandMap={onHandMap}
       viewerId={viewerId}
       canReviewLoss={canReviewLoss}
     />

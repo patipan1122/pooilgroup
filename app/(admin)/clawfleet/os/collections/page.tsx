@@ -1,46 +1,30 @@
 /**
  * ตู้คีบ OS — ตรวจเงิน & กระทบยอด (Collections / Audit)
- * Server: รอบเก็บเงินจริง (anomaly inbox) + รายชื่อสาขา (สำหรับตัวกรอง).
+ * Server: "รอบเก็บเงินทั้งหมด" ที่ปิดแล้วในช่วง 30 วันล่าสุด (ไม่ใช่แค่รอบผิดปกติ)
+ *         → การ์ดสรุป + แท็บ (ทั้งหมด/ตรงกัน/ไม่ตรง/ตู้เสีย) คำนวณจากชุดเต็มจริง.
  * ถ้า DB ว่าง → client ใช้ SAMPLE fallback + แบนเนอร์ "กำลังแสดงตัวอย่าง"
  * (ตาม pattern ClawFleet เดิม — ห้ามหน้าโล่ง).
  */
-import { loadAnomalies } from "@/lib/clawfleet/loaders";
-import { getV2Branches } from "@/lib/clawfleet/queries";
-import { prisma } from "@/lib/prisma";
-import { requireSession } from "@/lib/auth/session";
-import { userBranchIds } from "@/lib/clawfleet/role-guard";
+import { getV2AllRounds, getV2Branches, orgHasAnyRounds } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 
 export const dynamic = "force-dynamic";
 
-/**
- * org นี้ "เคยเก็บเงิน" ไหม (มี CfCollectionSession ใด ๆ) — scope ด้วย org + สาขาที่ user เห็น.
- * ใช้แยก "ยังไม่เคยเก็บเลย" (→ โชว์ตัวอย่าง) ออกจาก "เก็บแล้วแต่ไม่มีผิดปกติ" (→ empty-state จริง).
- * query พัง/ยังไม่ migrate → false (โชว์ตัวอย่างได้ · ปลอดภัยกว่าโชว์ empty ปลอม).
- */
-async function orgHasAnyRounds(): Promise<boolean> {
-  try {
-    const session = await requireSession();
-    const orgId = session.user.org_id;
-    const branchIds = await userBranchIds(session);
-    const branchWhere = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
-    const n = await prisma.cfCollectionSession.count({ where: { orgId, ...branchWhere } });
-    return n > 0;
-  } catch {
-    return false;
-  }
-}
-
 export default async function CollectionsPage() {
-  let anomalies: Awaited<ReturnType<typeof loadAnomalies>> = [];
+  let rounds: Awaited<ReturnType<typeof getV2AllRounds>>["rounds"] = [];
   let branches: Awaited<ReturnType<typeof getV2Branches>> = [];
+  // hasAnyRounds = org เคยมีรอบใด ๆ (ทุกสถานะ/ทุกเวลา) — ตัดสิน sample-vs-empty.
+  // total (รอบปิดใน 30 วัน) ใช้แค่ pagination/summary เท่านั้น.
   let hasAnyRounds = false;
   try {
-    [anomalies, branches, hasAnyRounds] = await Promise.all([
-      loadAnomalies("all"),
+    const [res, br, everHad] = await Promise.all([
+      getV2AllRounds(),
       getV2Branches(),
       orgHasAnyRounds(),
     ]);
+    rounds = res.rounds;
+    branches = br;
+    hasAnyRounds = everHad;
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ sample fallback
   }
@@ -50,30 +34,33 @@ export default async function CollectionsPage() {
     label: `${b.name} (${b.code})`,
   }));
 
-  // Map Anomaly → CollectionRow (รอบเก็บที่ระบบ flag = "ไม่ตรง")
-  // expectedCash/actualCash/gap จาก loader เป็น "บาท" แล้ว (v2 client โชว์ ฿gap ตรง ๆ)
-  const rows: CollectionRow[] = anomalies.map((a) => ({
-    id: a.id,
-    code: a.id,
-    branch: a.branchName ?? a.branchCode ?? "สาขา",
-    staff: a.staff || "—",
-    date: a.timeAgo ? `${a.timeAgo}ที่แล้ว` : a.timestamp || "—",
-    expectedCash: a.expectedCash,
-    actualCash: a.actualCash,
-    gap: a.gap,
-    prizeExpected: a.prizeExpected,
-    prizeActual: a.prizeActual,
-    prizeGap: a.prizeGap,
-    severity: a.severity,
-    type: a.type,
-    reason: a.reason || a.typeLabel || "ยอดไม่ตรงกับมิเตอร์",
+  // Map V2Round → CollectionRow (ทุกรอบที่ปิดแล้ว · ไม่ใช่แค่ผิดปกติ)
+  // expectedCash/actualCash/gap เป็น "บาท" แล้ว · gap เก็บทิศทาง (+ ขาด / − เกิน)
+  const rows: CollectionRow[] = rounds.map((r) => ({
+    id: r.id,
+    code: r.id,
+    branchId: r.branchId,
+    branch: r.branchName || r.branchCode || "สาขา",
+    staff: r.staff || "—",
+    date: r.timeAgo ? `${r.timeAgo}ที่แล้ว` : r.when || "—",
+    expectedCash: r.expectedCash,
+    actualCash: r.actualCash,
+    gap: r.gap,
+    prizeExpected: r.prizeExpected,
+    prizeActual: r.prizeActual,
+    prizeGap: r.prizeGap,
+    severity: r.severity,
+    type: r.type,
+    reason: r.reason || (r.type === "cash_short" ? "ยอดเงินไม่ตรงกับมิเตอร์" : "ตุ๊กตาหายไม่ตรงกับมิเตอร์"),
+    // มิเตอร์เหรียญจริงจาก event (รวมทั้งรอบ) — client โชว์ delta×10 จริง (ไม่ประมาณ)
+    coinMeterBefore: r.coinMeterBefore,
+    coinMeterAfter: r.coinMeterAfter,
     // รูปจริงที่พนักงานถ่ายต่อตู้ (anti-cheat) — ผ่าน eventToMachine → photoShots
-    machines: a.machines.map((m) => ({
+    machines: r.machines.map((m) => ({
       code: m.code,
       name: m.name,
       photoShots: m.photoShots ?? [],
     })),
-    // มิเตอร์ต่อเนื่อง: real loader ยังไม่ส่ง meter snapshot → ใช้ค่าประเมินจาก gap
     sample: false,
   }));
 

@@ -14,6 +14,7 @@ import { CfSessionStatus } from "@/lib/generated/prisma/client";
 import { requireSession, type Session } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
 import { getCfStockOverview, type CfStockProductRow } from "./stock-queries";
+import { bangkokStartOfDay } from "./pnl-queries";
 
 /** เกณฑ์ "ต้องเติมตุ๊กตา" — ตู้ที่ตุ๊กตาในตู้เหลือน้อย (mirror lastDollStock) */
 const MACHINE_REFILL_LEVEL = 8;
@@ -134,9 +135,8 @@ export async function getDailyPnl(days = 7): Promise<DailyPnlPoint[]> {
   const session = await requireSession();
   const { orgId, branchIds } = await scope(session);
 
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
-  from.setDate(from.getDate() - (days - 1));
+  // ต้นวันของ (days-1) วันก่อน ตามเวลาไทย (Asia/Bangkok) — ไม่อิงเวลาเครื่อง (Vercel=UTC เพี้ยน 7 ชม.)
+  const from = bangkokStartOfDay(days - 1);
 
   // ตู้คีบในขอบเขต → cost map (ต้นทุน/ตัว จาก active loadout)
   const machines = await prisma.cfMachine.findMany({
@@ -187,14 +187,14 @@ export async function getDailyPnl(days = 7): Promise<DailyPnlPoint[]> {
   }
 
   // สร้างซีรีส์ครบทุกวัน (เติม 0 วันที่ไม่มี event) เรียงเก่า→ใหม่
+  // ใช้ต้นวันเวลาไทยเป็นฐาน แล้ว +12 ชม. ก่อน format เพื่อกันปัดพลาดที่ขอบเที่ยงคืน UTC
   const out: DailyPnlPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const day = new Date();
-    day.setHours(0, 0, 0, 0);
-    day.setDate(day.getDate() - i);
-    const iso = fmt.format(day);
+    const dayMid = new Date(bangkokStartOfDay(i).getTime() + 12 * 60 * 60 * 1000);
+    const iso = fmt.format(dayMid);
     const a = agg.get(iso) ?? { revCents: 0, costCents: 0 };
-    const profitK = Math.max(0, (a.revCents - a.costCents) / 100 / 1000);
+    // กำไรจริง (ให้ติดลบได้เพื่อสะท้อนวันขาดทุน — หัวใจของโปรแกรมกันโกง)
+    const profitK = (a.revCents - a.costCents) / 100 / 1000;
     const costK = a.costCents / 100 / 1000;
     out.push({
       d: String(Number(iso.slice(8, 10))), // วันที่ (ตัด 0 นำหน้า)

@@ -48,27 +48,31 @@ async function handle(req: NextRequest) {
         // E2 (audit 2026-07-01): รอบว่าง (เปิดแล้วไม่กรอกอะไรเลย) — trigger G7 จะ RAISE ถ้า
         // สั่งปิด CLOSED/ANOMALY_REVIEW → เดิม catch แล้วข้าม = ค้าง OPEN ถาวร ลองซ้ำทุกคืน.
         // เก็บกวาดเป็น CANCELLED (trigger ข้าม เพราะไม่อยู่ใน CLOSED/ANOMALY_REVIEW).
-        await prisma.cfCollectionSession.update({
-          where: { id: s.id },
+        // R (ultrareview 2026-07-01 · manual-close race): guard status:"OPEN" ใน where →
+        // ถ้าพนักงานเพิ่งกดปิดรอบเอง (OPEN → CLOSED/ANOMALY_REVIEW) ระหว่าง cron ทำงาน
+        // updateMany จะ count=0 แล้วข้ามเงียบ ไม่เขียนทับสถานะที่ปิดไปแล้ว.
+        const upd = await prisma.cfCollectionSession.updateMany({
+          where: { id: s.id, status: "OPEN" },
           data: {
             status: "CANCELLED",
             reviewNote: `auto-cancelled by cron · รอบว่าง (0 รายการ) เปิดค้าง > ${DEFAULTS.SESSION_AUTO_CLOSE_HOURS} ชม.`,
           },
         });
-        cancelled += 1;
+        if (upd.count > 0) cancelled += 1;
       } else {
         // A4 (audit 2026-07-01): รอบที่มีรายการแต่พนักงานไม่กดปิด — เดิม cron ปิดเป็น CLOSED
         // ตรง ๆ · trigger คำนวณ cross-check เงินสด/ตุ๊กตา 2 ทางเฉพาะรอบ "กลุ่ม" ไม่ใช่รอบ "สาขา"
         // (นั่นอยู่ที่ app-layer closeBranchSession) → รอบสาขาถูกปิดสะอาดโดยไม่ตรวจเงินขาด =
         // ช่องหนี "เปิดรอบทิ้ง 24 ชม." → บังคับเข้า ANOMALY_REVIEW ให้คนตรวจเสมอ (ไม่ปิดเงียบ).
-        await prisma.cfCollectionSession.update({
-          where: { id: s.id },
+        // manual-close race guard (เหมือนด้านบน): เขียนเฉพาะรอบที่ยัง OPEN จริง
+        const upd = await prisma.cfCollectionSession.updateMany({
+          where: { id: s.id, status: "OPEN" },
           data: {
             status: "ANOMALY_REVIEW",
             reviewNote: `auto-closed by cron (เปิดค้าง > ${DEFAULTS.SESSION_AUTO_CLOSE_HOURS} ชม.) · ต้องตรวจ`,
           },
         });
-        review += 1;
+        if (upd.count > 0) review += 1;
       }
     } catch (e) {
       errored.push({ id: s.id, error: (e as Error).message });

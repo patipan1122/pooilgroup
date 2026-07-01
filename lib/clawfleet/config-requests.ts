@@ -196,14 +196,35 @@ export async function approveCfConfigRequest(id: string): Promise<Result> {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // 1) พลิกสถานะ + ประทับผู้ตรวจ
-      await tx.cfConfigRequest.update({
-        where: { id: req.id },
+      // 1) พลิกสถานะแบบ atomic claim — ป้องกันอนุมัติซ้อน 2 ครั้งพร้อมกัน (loadout ราคาซ้อน 2 ชุด)
+      //    updateMany where status="PENDING" → ถ้ามีคนแย่งอนุมัติก่อนแล้ว count จะเป็น 0 → โยน error
+      const claim = await tx.cfConfigRequest.updateMany({
+        where: { id: req.id, orgId, status: "PENDING" },
         data: {
           status: "APPROVED",
           reviewedById: session.user.id,
           reviewedByName: session.user.name ?? null,
           reviewedAt: new Date(),
+        },
+      });
+      if (claim.count !== 1) {
+        throw new Error("คำขอนี้เพิ่งถูกตรวจไปแล้ว");
+      }
+
+      // R7 audit — บันทึกร่องรอยการอนุมัติในทรานแซกชันเดียวกับการพลิกสถานะ/เปลี่ยนราคา
+      // (mirror reviewCfLoss) → ถ้า commit ราคาล้ม audit จะ rollback ตาม ไม่มีสถานะ APPROVED
+      // ลอยไร้ audit trail. ไม่ try/catch กลืน error แล้ว — audit ล้ม = ทั้งก้อน rollback.
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_CONFIG_APPROVE",
+          resourceType: "CF_CONFIG_REQUEST",
+          resourceId: req.id,
+          diff: {
+            old: { status: "PENDING", priceBaht: null },
+            new: { status: "APPROVED", priceBaht: req.priceBaht },
+          },
         },
       });
 
@@ -247,6 +268,7 @@ export async function approveCfConfigRequest(id: string): Promise<Result> {
         },
       });
     });
+
     revalidatePath(CONFIG_PATH);
     return { ok: true };
   } catch (e) {
@@ -266,17 +288,42 @@ export async function rejectCfConfigRequest(id: string, note?: string): Promise<
   if (!req) return { ok: false, error: "ไม่พบคำขอตั้งค่าตู้" };
   if (req.status !== "PENDING") return { ok: false, error: "คำขอนี้ถูกตรวจไปแล้ว" };
 
+  const cleanNote = note ? String(note).slice(0, 1000) : null;
+
   try {
-    await prisma.cfConfigRequest.update({
-      where: { id: req.id },
-      data: {
-        status: "REJECTED",
-        reviewedById: session.user.id,
-        reviewedByName: session.user.name ?? null,
-        reviewedAt: new Date(),
-        reviewNote: note ? String(note).slice(0, 1000) : null,
-      },
+    // R7 audit — พลิกสถานะ + บันทึกร่องรอยตีกลับในทรานแซกชันเดียวกัน (mirror approve/reviewCfLoss)
+    // → ถ้า audit ล้ม การตีกลับ rollback ตาม ไม่มีสถานะ REJECTED ลอยไร้ audit trail
+    await prisma.$transaction(async (tx) => {
+      // atomic claim — กันตีกลับซ้อน/ตีกลับหลังมีคนอนุมัติไปแล้วพร้อมกัน
+      const claim = await tx.cfConfigRequest.updateMany({
+        where: { id: req.id, orgId, status: "PENDING" },
+        data: {
+          status: "REJECTED",
+          reviewedById: session.user.id,
+          reviewedByName: session.user.name ?? null,
+          reviewedAt: new Date(),
+          reviewNote: cleanNote,
+        },
+      });
+      if (claim.count !== 1) {
+        throw new Error("คำขอนี้เพิ่งถูกตรวจไปแล้ว");
+      }
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_CONFIG_REJECT",
+          resourceType: "CF_CONFIG_REQUEST",
+          resourceId: req.id,
+          diff: {
+            old: { status: "PENDING" },
+            new: { status: "REJECTED", reviewNote: cleanNote },
+          },
+        },
+      });
     });
+
     revalidatePath(CONFIG_PATH);
     return { ok: true };
   } catch (e) {

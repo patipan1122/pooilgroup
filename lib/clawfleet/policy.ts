@@ -14,12 +14,19 @@ import { assertCfAdmin } from "./role-guard";
 const SETTINGS_PATH = "/clawfleet/os/settings";
 const POLICY_KEY = "clawfleetPolicy";
 
-/** นโยบาย 4 ข้อ (key ตรงกับ toggle ใน settings-client) */
+/** นโยบาย 4 ข้อ (key ตรงกับ toggle ใน settings-client)
+ *
+ * NOTE (audit 2026-07-01): ตอนนี้มีแค่ `photoRequired` ที่ถูกอ่านไปบังคับใช้จริง
+ * (lib/clawfleet/actions.ts — บล็อกปิดรอบถ้าไม่มีรูปเงินสด). อีก 3 ตัว
+ * (cashAlert / lockConfig / meterMatch) persist ลง DB ได้ แต่ยัง "ไม่มี reader"
+ * ที่เอาไปบังคับใช้ → ใน settings UI จึงถูก disable + ป้าย "เร็วๆนี้" กัน HQ เชื่อผิด.
+ * เมื่อเพิ่ม logic บังคับใช้จริงของแต่ละตัวแล้ว ค่อยเปลี่ยน live=true ใน settings-client.
+ */
 export type ClawfleetPolicy = {
-  photoRequired: boolean; // บังคับถ่ายรูปก่อน–หลังเติม
-  cashAlert: boolean; // เตือนเงินไม่ตรงทันที
-  lockConfig: boolean; // ล็อกค่าตู้รออนุมัติ
-  meterMatch: boolean; // มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน
+  photoRequired: boolean; // บังคับถ่ายรูปก่อน–หลังเติม (LIVE · actions.ts บังคับใช้)
+  cashAlert: boolean; // เตือนเงินไม่ตรงทันที (ยังไม่มี reader — UI disabled)
+  lockConfig: boolean; // ล็อกค่าตู้รออนุมัติ (ยังไม่มี reader — UI disabled)
+  meterMatch: boolean; // มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน (ยังไม่มี reader — UI disabled)
 };
 
 /** ดีฟอลต์ — safety ON ทั้งหมด ยกเว้น lockConfig (ตามดีไซน์เดิม off) */

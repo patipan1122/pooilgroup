@@ -1,5 +1,11 @@
 # AUDIT · ClawOS (ตู้คีบ OS) · 2026-07-01
 
+> ## 🔧 สถานะการแก้ (อัปเดต 2026-07-01 · CEO เคาะ "ทำจริงทั้งหมด")
+> **✅ Wave A DEPLOYED `setup 61264c53`** (migration cf_audit_wave_a): A1(P0 role-guard) · A2/A3(stockBefore server-side) · A5(photo server) · B1/G1(unique index+P2002) · B2/B3(cost-0+advisory lock) · A4/E2(cron→ANOMALY_REVIEW/CANCELLED) · E1(photo 5th col) · F1/F2(fake alerts) · F3(draft localStorage).
+> **✅ Wave B DEPLOYED `setup 73b3dd16`** (migration cf_audit_wave_b_prices + _lossapproval): **B4** (config-approve→loadout จริง + CfDeliveryLine ราคาขาย+ทุน · CEO #1) · **A6** (photo tamper: key สุ่ม + branch/lock auth · uuid-gate) · **D1** (write-off maker-checker ฿500→PENDING · ledger-on-approve). adversarial verify Wave B = 0 P0/P1 · 2 P2 (upload uuid-gate แก้แล้ว · canWriteOff program_admin = fail-closed documented).
+> **⏳ เหลือ (hand off):** **C1** custody→deposit (ฟีเจอร์ใหม่ · ติดตามเงินฝากธนาคาร คู่ขนาน ChairOps) · submitStockCount full-approval (ต้อง +status column) · canWriteOff รับ program_admin ที่ grant module (P2 consistency).
+
+
 > /auditbigteam · 16 personas (core 13 + A11Y + SRE + AUD) · adversarial Workflow (74 agents · discovery→verify) · 102 findings → **1 P0 + 20 P1 verified** + 44 P2.
 > SPEC-ONLY — no code written in this pass. All findings cite `file:line` + independently verified against source.
 > Module state: DEPLOYED prod `setup 01cace29` (3 build rounds + polish + correctness this session). Memory `clawos-make-real-all-features-2026-06-29`.

@@ -3,7 +3,7 @@
  * Server: P&L รายสาขา (จริง) + anomaly inbox (จริง). ถ้า DB ว่าง → sample fallback ในฝั่ง client
  * เพื่อไม่ให้หน้าโล่ง (ตาม pattern ClawFleet เดิม).
  */
-import { getBranchPnl, summarizeBranchPnl } from "@/lib/clawfleet/pnl-queries";
+import { getBranchPnl, summarizeBranchPnl, bangkokRangeLastDays } from "@/lib/clawfleet/pnl-queries";
 import { getBranchMachineInfo, getDailyPnl, getDashboardLowStock } from "@/lib/clawfleet/dashboard-queries";
 import { loadAnomalies } from "@/lib/clawfleet/loaders";
 import { prisma } from "@/lib/prisma";
@@ -38,9 +38,12 @@ export default async function DashboardPage() {
   let dailyPnl: Awaited<ReturnType<typeof getDailyPnl>> = [];
   let lowStock: Awaited<ReturnType<typeof getDashboardLowStock>> = [];
   let hasRealData = false;
+  // KPI "รายได้ (7 วัน)" ต้องครอบคลุมหน้าต่างเดียวกับกราฟ (7 วันล่าสุด เวลาไทย)
+  // ไม่งั้น getBranchPnl() default = วันนี้วันเดียว → KPI ต่ำกว่าที่ควร
+  const range7d = bangkokRangeLastDays(7);
   try {
     [branchPnl, anomalies, machineInfo, dailyPnl, lowStock, hasRealData] = await Promise.all([
-      getBranchPnl(),
+      getBranchPnl(range7d),
       loadAnomalies("all"),
       getBranchMachineInfo(),
       getDailyPnl(7),

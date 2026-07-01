@@ -178,25 +178,103 @@ export async function getCfMovements(orgId: string, branchId: string, limit = 10
   }));
 }
 
-/** สรุปภาพรวม KPI สำหรับแท็บภาพรวม */
-export async function getCfStockOverview(orgId: string, branchId: string): Promise<{
+/**
+ * มูลค่าสต๊อก "ณ วันปิดงวด" (as-of) — เดินตาม ledger จริง แทนที่จะใช้ต้นทุนปัจจุบันคูณยอดปัจจุบัน.
+ * ปัญหาเดิม: inventoryValueCents ใช้ cfProduct.unitCostCents (ต้นทุนเฉลี่ย "วันนี้") ซึ่งเปลี่ยนทุกครั้ง
+ *   ที่รับของใหม่ → มูลค่าย้อนหลังเพี้ยน (คิดของเก่าด้วยราคาวันนี้). งบการเงินต้องการมูลค่า ณ วันปิดจริง.
+ * วิธี: เดิน movement ทุกตัวถึง occurredAt ≤ asOf (จบวันนั้น) เรียงตามเวลา · เก็บ running balance ต่อ product
+ *   และ "ต้นทุนต่อชิ้น ณ ตอนนั้น" จาก movement ที่เพิ่มของเข้า (qty>0 · unitCostCents>0) — mirror
+ *   ต้นทุนเฉลี่ยถ่วงน้ำหนักแบบง่าย (ของเข้าคิดต้นทุนของ movement นั้น · ของออกคิดต้นทุนเฉลี่ยที่ถืออยู่).
+ * คืน มูลค่ารวม (สตางค์) = Σ (balance ต่อ product × ต้นทุนเฉลี่ย ณ asOf).
+ */
+export async function getCfInventoryValueAsOf(
+  orgId: string,
+  branchId: string,
+  asOf: Date,
+): Promise<number> {
+  // จบวันของ asOf (รวมทั้งวัน) — ปิดงวด ณ สิ้นวันนั้น
+  const cutoff = new Date(asOf);
+  cutoff.setHours(23, 59, 59, 999);
+
+  const moves = await prisma.cfStockMovement.findMany({
+    where: { orgId, branchId, occurredAt: { lte: cutoff } },
+    select: { productId: true, qty: true, unitCostCents: true, occurredAt: true },
+    orderBy: { occurredAt: "asc" },
+  });
+
+  // running weighted-avg ต่อ product: qty คงเหลือ + costPerUnit ที่ถืออยู่ (สตางค์)
+  const state = new Map<string, { qty: number; cost: number }>();
+  for (const m of moves) {
+    const cur = state.get(m.productId) ?? { qty: 0, cost: 0 };
+    if (m.qty > 0) {
+      // ของเข้า — ถ้า movement มีต้นทุน (>0) ใช้ต้นทุนนั้นถ่วงเฉลี่ย · ถ้าไม่มี คงต้นทุนเดิมไว้
+      const inCost = m.unitCostCents > 0 ? m.unitCostCents : cur.cost;
+      const newQty = cur.qty + m.qty;
+      cur.cost = newQty > 0
+        ? Math.round((cur.qty * cur.cost + m.qty * inCost) / newQty)
+        : inCost;
+      cur.qty = newQty;
+    } else {
+      // ของออก — ลดจำนวน · ต้นทุนต่อชิ้นคงเดิม (คิดของออกด้วยต้นทุนเฉลี่ยที่ถืออยู่)
+      cur.qty += m.qty; // qty เป็นลบ
+      if (cur.qty <= 0) { cur.qty = 0; cur.cost = 0; }
+    }
+    state.set(m.productId, cur);
+  }
+
+  let total = 0;
+  for (const s of state.values()) {
+    if (s.qty > 0) total += s.qty * s.cost;
+  }
+  return total;
+}
+
+/** สรุปภาพรวม KPI สำหรับแท็บภาพรวม · asOf (optional) = คิดมูลค่าสต๊อก ณ วันปิดงวดจาก ledger */
+export async function getCfStockOverview(
+  orgId: string,
+  branchId: string,
+  asOf?: Date,
+): Promise<{
   lowCount: number;
   skuCount: number;
   inventoryValueCents: number;
+  inventoryValueAsOf: Date | null;
   recentMovements: CfMovementRow[];
   lowProducts: CfStockProductRow[];
 }> {
   const products = await getCfBranchStockProducts(orgId, branchId);
   const lowProducts = products.filter((p) => p.warehouse <= p.reorderLevel);
-  const inventoryValueCents = products.reduce((s, p) => s + (p.warehouse + p.inMachines) * p.unitCostCents, 0);
+  // มูลค่าปัจจุบัน = ต้นทุนเฉลี่ยวันนี้ × ยอดปัจจุบัน · ถ้ามี asOf → เดิน ledger ตามต้นทุน ณ วันนั้น
+  const inventoryValueCents = asOf
+    ? await getCfInventoryValueAsOf(orgId, branchId, asOf)
+    : products.reduce((s, p) => s + (p.warehouse + p.inMachines) * p.unitCostCents, 0);
   const recentMovements = await getCfMovements(orgId, branchId, 8);
   return {
     lowCount: lowProducts.length,
     skuCount: products.length,
     inventoryValueCents,
+    inventoryValueAsOf: asOf ?? null,
     recentMovements,
     lowProducts,
   };
+}
+
+/**
+ * ยอด "ระบบมี" ต่อสินค้าในคลังสาขา (warehouse · machineId null) — สำหรับฟอร์มนับสต๊อก
+ * โชว์ยอดระบบข้าง ๆ ช่องนับ (กันนับตาบอด). คืน map productId → คงเหลือคลัง (อาจ 0/ติดลบถ้าเพี้ยน).
+ */
+export async function getCfBranchOnHandMap(
+  orgId: string,
+  branchId: string,
+): Promise<Record<string, number>> {
+  const moves = await prisma.cfStockMovement.groupBy({
+    by: ["productId"],
+    where: { orgId, branchId, machineId: null },
+    _sum: { qty: true },
+  });
+  const out: Record<string, number> = {};
+  for (const m of moves) out[m.productId] = m._sum.qty ?? 0;
+  return out;
 }
 
 /** สินค้าทั้งหมดของ org (สำหรับ dropdown ในฟอร์มรับเข้า/นับ/ของหาย) */

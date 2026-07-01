@@ -22,6 +22,10 @@ import {
   StartGroupSessionSchema,
   SubmitExchangerEventSchema,
   CloseGroupSessionSchema,
+  DEFAULTS,
+  ANOMALY_FLAGS,
+  FLAG_SEVERITY,
+  type AnomalyFlag,
 } from "./types";
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 
@@ -46,6 +50,7 @@ export async function reviewV2Session(
       groupId: true,
       group: { select: { branchId: true } },
       closedById: true,
+      status: true,
     },
   });
   // Mock/showcase row (not in DB yet) — report a soft failure; the client keeps
@@ -80,17 +85,47 @@ export async function reviewV2Session(
   const reviewNote =
     decision === "escalate" ? `[ESCALATE] ${note}`.trim() : note || null;
 
-  await prisma.cfCollectionSession.update({
-    where: { id: cf.id, orgId },
-    data: {
-      status,
-      reviewerId: session.user.id,
-      reviewedAt: new Date(),
-      reviewNote,
-    },
-  });
+  // R4 (ultrareview 2026-07-01 · idempotency): อนุมัติ/ตรวจได้เฉพาะรอบที่ปิดแล้วรอตรวจ
+  // (CLOSED/ANOMALY_REVIEW) เท่านั้น. เดิม update where:{id} เฉย ๆ → กด 2 ครั้ง หรือรอบที่
+  // ถูก LOCKED/OPEN ไปแล้วยังโดนเขียนทับสถานะได้ (เปิด LOCKED กลับมา OPEN = แก้ตัวเลขได้อีก).
+  if (cf.status !== "CLOSED" && cf.status !== "ANOMALY_REVIEW") {
+    return { ok: false, error: "รอบนี้ถูกตรวจไปแล้ว หรือสถานะไม่ถูกต้อง" };
+  }
 
-  revalidatePath("/clawfleet/os/collections");
+  try {
+    // R7 (audit): บันทึกใครตรวจ/ตัดสินใจอะไร ในทรานแซกชันเดียวกับการเปลี่ยนสถานะ
+    await prisma.$transaction(async (tx) => {
+      const upd = await tx.cfCollectionSession.updateMany({
+        // guard สถานะซ้ำใน where ด้วย → ถ้ามีอีก request ชิงตัดหน้า count=0
+        where: { id: cf.id, orgId, status: { in: ["CLOSED", "ANOMALY_REVIEW"] } },
+        data: {
+          status,
+          reviewerId: session.user.id,
+          reviewedAt: new Date(),
+          reviewNote,
+        },
+      });
+      if (upd.count === 0) {
+        throw new Error("รอบนี้ถูกตรวจไปแล้ว หรือสถานะไม่ถูกต้อง");
+      }
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: `CF_REVIEW_${decision.toUpperCase()}`,
+          resourceType: "CF_SESSION",
+          resourceId: cf.id,
+          diff: {
+            old: { status: cf.status },
+            new: { status, reviewNote },
+          },
+        },
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || "ตรวจรอบไม่สำเร็จ" };
+  }
+
   revalidatePath("/clawfleet/os/collections");
   revalidatePath("/clawfleet/os/dashboard");
   return { ok: true };
@@ -410,7 +445,6 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
       select: { id: true },
     });
     revalidatePath("/clawfleet/os/collections");
-    revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { status: cc.status, flags: cc.flags } };
   } catch (e) {
@@ -587,6 +621,7 @@ export async function closeGroupSession(
           coinMeterBefore: true, coinMeterAfter: true, cashCountedCents: true,
           dollMeterBefore: true, dollMeterAfter: true,
           stockBefore: true, stockAfter: true, refillQty: true,
+          promoCoinsDispensed: true,
         },
       },
     },
@@ -663,21 +698,98 @@ export async function closeGroupSession(
     : 0;
   const recordedCashCents = cc.actualCashCents + exchangerCashCents;
 
+  // ultrareview 2026-07-01 (finding #3): ตู้แลก token ต้อง reconcile เงินสดจริง ไม่ใช่ปล่อยผ่าน.
+  // เดิม expectedCashCents ของ token group = 0 เสมอ (claws ไม่มีเงิน) → เงินตู้แลก (actual)
+  // เทียบกับ 0 → variance บวกเสมอ ไม่มีวันจับ "เก็บเงินตู้แลกขาด".
+  // เงินที่ตู้แลก "ควร" ได้ = token ที่ขายเป็นเงิน × ราคา/token
+  //   token ขายเป็นเงิน = (มิเตอร์ token ขึ้น − token แจกจาก promo)
+  //   ราคา/token (cents) = 100 / baseCoinPerBaht  (baseCoinPerBaht = จำนวน token ต่อ ฿1)
+  let expectedCashCentsFinal = cc.expectedCashCents;
+  let cashVarianceBpsFinal = cc.cashVarianceBps;
+  if (isTokenGroup && cf.group?.exchangerId) {
+    const exId = cf.group.exchangerId;
+    const loadout = await prisma.cfExchangerLoadout.findFirst({
+      where: { orgId, machineId: exId, effectiveTo: null },
+      orderBy: { effectiveFrom: "desc" },
+      select: { baseCoinPerBaht: true },
+    });
+    const coinPerBaht = loadout ? Number(loadout.baseCoinPerBaht) : 1;
+    let exchangerExpectedCents = 0;
+    if (coinPerBaht > 0) {
+      for (const e of cf.events) {
+        if (e.machineId !== exId) continue;
+        const tokensOut = Math.max(0, e.coinMeterAfter - e.coinMeterBefore);
+        const tokensSold = Math.max(0, tokensOut - (e.promoCoinsDispensed ?? 0));
+        // ราคา/token = ฿(1/coinPerBaht) = (100/coinPerBaht) cents · ปัดเป็นจำนวนเต็ม cents
+        exchangerExpectedCents += Math.round((tokensSold * 100) / coinPerBaht);
+      }
+    }
+    expectedCashCentsFinal = cc.expectedCashCents + exchangerExpectedCents;
+    cashVarianceBpsFinal =
+      expectedCashCentsFinal > 0
+        ? Math.round(((recordedCashCents - expectedCashCentsFinal) / expectedCashCentsFinal) * 10000)
+        : 0;
+  }
+
+  // ultrareview 2026-07-01 (finding #5): ตู้แลก (token group) คำนวณเงินขาด/เกินแล้ว
+  // (expectedCashCentsFinal / cashVarianceBpsFinal) แต่ deriveBranchCrossCheck คิดจาก
+  // cash=0 → cc.flags ไม่มีธงเงินตู้แลกเลย → รอบเงินตู้แลกขาด/เกินปิดเป็น CLOSED เงียบ
+  // ไม่เข้า ANOMALY_REVIEW. ที่นี่จึง derive ธงเงินของตู้แลกเองจาก variance จริง
+  // (ใช้เพดาน cents เดียวกับ deriveBranchCrossCheck) แล้ว merge เข้ากับ cc.flags.
+  const mergedFlags: AnomalyFlag[] = [...cc.flags];
+  if (isTokenGroup) {
+    const exchangerVarianceCents = recordedCashCents - expectedCashCentsFinal;
+    if (exchangerVarianceCents < 0) {
+      // เงินตู้แลกขาด — |ขาด| เกินเพดานเตือน (฿100) → ยกธง
+      const shortCents = Math.abs(exchangerVarianceCents);
+      if (shortCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
+        // เกินเพดานเตือน = ขาดเยอะ (M3 · P1 บังคับตรวจ)
+        if (!mergedFlags.includes(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR)) {
+          mergedFlags.push(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR);
+        }
+      } else if (shortCents > 0) {
+        // ขาดเล็กน้อย (M2 · P2 เตือน)
+        if (
+          !mergedFlags.includes(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR) &&
+          !mergedFlags.includes(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR)
+        ) {
+          mergedFlags.push(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR);
+        }
+      }
+    } else if (exchangerVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
+      // เงินตู้แลกเกินก้อนใหญ่ (> ฿300) → M6 (P1) · เกินเพดานเตือน → M4 (P2)
+      if (exchangerVarianceCents > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
+        if (!mergedFlags.includes(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR)) {
+          mergedFlags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
+        }
+      } else if (!mergedFlags.includes(ANOMALY_FLAGS.M4_CASH_OVER)) {
+        mergedFlags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+      }
+    }
+  }
+
+  // ถ้ามีธง P0/P1 ใด ๆ → ต้องเข้า ANOMALY_REVIEW (mirror ตรรกะปิดรอบสาขา · P2 = เตือนเฉย ๆ
+  // ไม่ดันเข้า review). เดิม cc.status คิดจาก cc.flags เท่านั้น → ธงเงินตู้แลกที่เพิ่งเพิ่มถูกเมิน.
+  const hasEscalatingFlag = mergedFlags.some((f) => FLAG_SEVERITY[f] !== "P2");
+  const mergedStatus: "CLOSED" | "ANOMALY_REVIEW" =
+    cc.status === "ANOMALY_REVIEW" || hasEscalatingFlag ? "ANOMALY_REVIEW" : "CLOSED";
+
   try {
     await prisma.cfCollectionSession.update({
       where: { id: data.sessionId, status: "OPEN" },
       data: {
-        // trigger may override to ANOMALY_REVIEW if token mismatch
-        status: cc.status,
+        // trigger may override to ANOMALY_REVIEW if token mismatch;
+        // mergedStatus already escalates on token-exchanger cash short/over flags
+        status: mergedStatus,
         closedById: session.user.id,
-        expectedCashCents: cc.expectedCashCents,
+        expectedCashCents: expectedCashCentsFinal,
         actualCashCents: recordedCashCents,
         totalCashCents: recordedCashCents,
-        cashVarianceBps: cc.cashVarianceBps,
+        cashVarianceBps: cashVarianceBpsFinal,
         prizeMeterOut: cc.prizeMeterOut,
         prizeCountedOut: cc.prizeCountedOut,
         prizeVariance: cc.prizeVariance,
-        anomalyFlags: cc.flags,
+        anomalyFlags: mergedFlags,
         reviewNote: data.reviewNote,
       },
       select: { id: true },
@@ -688,11 +800,10 @@ export async function closeGroupSession(
       select: { status: true, anomalyFlags: true },
     });
     revalidatePath("/clawfleet/os/collections");
-    revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/dashboard");
     return {
       ok: true,
-      data: { status: after?.status ?? cc.status, flags: after?.anomalyFlags ?? cc.flags },
+      data: { status: after?.status ?? mergedStatus, flags: after?.anomalyFlags ?? mergedFlags },
     };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
@@ -714,6 +825,12 @@ export async function createDelivery(input: {
   const itemsCount = Math.max(0, Math.floor(Number(input?.itemsCount) || 0));
   const unitsCount = Math.max(1, Math.floor(Number(input?.unitsCount) || 0));
   if (!branchId) return { ok: false, error: "ไม่ระบุสาขา" };
+
+  // R5 (ultrareview 2026-07-01): สั่งของเข้าสาขา = การจัดการสต๊อก → เฉพาะผู้จัดการสาขา
+  // + แอดมินเท่านั้น (เดิมไม่มี role guard → พนักงานเก็บเงิน/viewer สั่งของได้).
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่สั่งของได้" };
+  }
 
   const allowed = await userBranchIds(session);
   if (allowed !== "ALL" && !allowed.includes(branchId)) {
@@ -1293,7 +1410,6 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
     revalidatePath(MANAGE_PATH);
     revalidatePath("/clawfleet/os/dashboard");
     revalidatePath("/clawfleet/os/stock");
-    revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { branches: branchCount, machines: machineCount, sessions: sessionCount } };
   } catch (e) {

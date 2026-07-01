@@ -6,11 +6,18 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
-import { StaffAppClient } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
+import { StaffAppClient, type StaffHistoryRow } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
 
 export const dynamic = "force-dynamic";
+
+// ต้นวันนี้ตามเวลาไทย (Asia/Bangkok = UTC+7) — กรองรอบที่ปิด "วันนี้"
+function startOfTodayBangkok(): Date {
+  const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  return new Date(Date.UTC(bkk.getUTCFullYear(), bkk.getUTCMonth(), bkk.getUTCDate(), 0, 0, 0) - 7 * 60 * 60 * 1000);
+}
 
 export default async function ClawfleetLiffPage() {
   let orgId = "";
@@ -36,16 +43,51 @@ export default async function ClawfleetLiffPage() {
 
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าอ่านไม่ได้ → ปล่อยว่าง
   let userName = "";
+  let userId = "";
   try {
     const session = await getSession();
     userName = session?.user.name ?? "";
+    userId = session?.user.id ?? "";
+    orgId = orgId || (session?.user.org_id ?? "");
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
 
+  // 📊 ความคืบหน้าวันนี้ + ประวัติการเก็บของฉันวันนี้ (ของจริง จาก cf_collection_events ที่ "ฉัน" เก็บ)
+  // graceful: อ่านไม่ได้ / ยังไม่ migrate → closedTodayCount=0, history=[] (แอปโชว์ empty state)
+  let closedTodayCount = 0;
+  let history: StaffHistoryRow[] = [];
+  if (orgId && userId) {
+    try {
+      const events = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, collectedById: userId, eventType: "COLLECTION", collectedAt: { gte: startOfTodayBangkok() } },
+        orderBy: { collectedAt: "desc" },
+        select: { collectedAt: true, cashCountedCents: true, anomalyFlags: true, machine: { select: { code: true } } },
+        take: 50,
+      });
+      closedTodayCount = events.length;
+      history = events.map((e) => ({
+        code: e.machine.code,
+        time: e.collectedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }),
+        cashBaht: Math.round(e.cashCountedCents / 100),
+        ok: e.anomalyFlags.length === 0,
+      }));
+    } catch {
+      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default (0 / [])
+    }
+  }
+
   return (
     <div className="clawos">
-      <StaffAppClient orgId={orgId} branches={branches} skus={skus} photoRequired={photoRequired} userName={userName} />
+      <StaffAppClient
+        orgId={orgId}
+        branches={branches}
+        skus={skus}
+        photoRequired={photoRequired}
+        userName={userName}
+        closedTodayCount={closedTodayCount}
+        history={history}
+      />
     </div>
   );
 }

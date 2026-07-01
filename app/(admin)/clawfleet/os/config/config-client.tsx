@@ -46,6 +46,8 @@ export function ConfigClient({
   const [errorByRow, setErrorByRow] = useState<Record<string, string>>({});
   // ยืนยันในหน้า (แทน window.confirm) — เก็บคำขอ+ผลที่กำลังจะทำ
   const [confirmFor, setConfirmFor] = useState<{ id: string; next: "approved" | "rejected" } | null>(null);
+  // เหตุผลตอนตีกลับ (ส่งเป็น note ให้ backend) — เคลียร์เมื่อปิดแถบยืนยัน
+  const [rejectNote, setRejectNote] = useState("");
 
   function showRowError(id: string, msg: string) {
     setErrorByRow((prev) => ({ ...prev, [id]: msg }));
@@ -65,18 +67,27 @@ export function ConfigClient({
 
   // กดปุ่ม → เปิดยืนยันในหน้า (ไม่เรียก action จนกว่าจะกด "ใช่")
   function requestDecide(req: CfConfigRequestView, next: "approved" | "rejected") {
+    setRejectNote("");
     setConfirmFor({ id: req.id, next });
+  }
+
+  // ปิดแถบยืนยัน + เคลียร์เหตุผลที่พิมพ์ค้าง
+  function cancelDecide() {
+    setConfirmFor(null);
+    setRejectNote("");
   }
 
   // ยืนยันแล้ว → เรียก action จริง (wiring เดิม)
   function confirmDecide(req: CfConfigRequestView, next: "approved" | "rejected") {
+    const note = rejectNote.trim();
     setConfirmFor(null);
+    setRejectNote("");
     setBusyId(req.id);
     startTransition(async () => {
       const res =
         next === "approved"
           ? await approveCfConfigRequest(req.id)
-          : await rejectCfConfigRequest(req.id);
+          : await rejectCfConfigRequest(req.id, note || undefined);
       setBusyId(null);
       if (!res.ok) {
         showRowError(req.id, res.error ?? "ทำรายการไม่สำเร็จ ลองอีกครั้ง");
@@ -198,18 +209,24 @@ export function ConfigClient({
                   <div style={{ background: "#F8F9FB", borderRadius: 11, padding: "12px 14px" }}>
                     <div style={{ fontSize: 10.5, color: "#9AA1AB", marginBottom: 7 }}>ปรับความแรงการคีบ</div>
                     {cf.clawFrom !== null && cf.clawTo !== null ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <span
-                          className="num"
-                          style={{ fontSize: 13.5, fontWeight: 700, color: "#9AA1AB", background: "#EFF1F4", borderRadius: 7, padding: "3px 9px" }}
-                        >
-                          {cf.clawFrom}
-                        </span>
-                        <ArrowRight size={14} color="#9AA1AB" style={{ flex: "0 0 14px" }} />
-                        <span className="num" style={{ fontSize: 14, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 7, padding: "3px 10px" }}>
-                          {cf.clawTo}
-                        </span>
-                      </div>
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <span
+                            className="num"
+                            style={{ fontSize: 13.5, fontWeight: 700, color: "#9AA1AB", background: "#EFF1F4", borderRadius: 7, padding: "3px 9px" }}
+                          >
+                            {cf.clawFrom}
+                          </span>
+                          <ArrowRight size={14} color="#9AA1AB" style={{ flex: "0 0 14px" }} />
+                          <span className="num" style={{ fontSize: 14, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 7, padding: "3px 10px" }}>
+                            {cf.clawTo}
+                          </span>
+                        </div>
+                        {/* ความจริง: อนุมัติแล้วปรับเฉพาะราคา — ความแรงคีบยังต้องไปตั้งที่ตู้เอง */}
+                        <div style={{ fontSize: 10, color: "#B08968", marginTop: 6, lineHeight: 1.4 }}>
+                          ยังไม่เชื่อมฮาร์ดแวร์ — อนุมัติแล้วปรับเฉพาะราคา
+                        </div>
+                      </>
                     ) : (
                       <div style={{ fontSize: 13.5, color: "#C5C9D0" }}>ไม่ระบุ</div>
                     )}
@@ -324,47 +341,76 @@ export function ConfigClient({
                   </div>
                 )}
 
-                {/* ยืนยันในหน้า (แทน window.confirm) — ใช่ / ยกเลิก */}
+                {/* ยืนยันในหน้า (แทน window.confirm) — ใช่ / ยกเลิก · ตอนตีกลับมีช่องเหตุผล */}
                 {isRowPending && confirmFor?.id === cf.id && (
                   <div
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      justifyContent: "flex-end",
                       background: confirmFor.next === "approved" ? "#F2FAF5" : "#FCEDEC",
                       border: `1px solid ${confirmFor.next === "approved" ? "#CDE9D7" : "#F0CFCB"}`,
                       borderRadius: 10,
                       padding: "12px 16px",
                     }}
                   >
-                    <span style={{ flex: 1, minWidth: 180, fontSize: 12.5, fontWeight: 600, color: confirmFor.next === "approved" ? "#15803D" : "#9B3127" }}>
-                      {confirmFor.next === "approved" ? "อนุมัติให้ตั้งค่า" : "ตีกลับคำขอ"}ตู้ {cf.machineCode} ({cf.branchName}) ?
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmFor(null)}
-                      className="co-tap"
+                    <div
                       style={{
-                        fontSize: 13, fontWeight: 600, color: "#5A6270", background: "#fff",
-                        border: "1px solid #DFE2E8", padding: "8px 16px", borderRadius: 9, cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        flexWrap: "wrap",
+                        justifyContent: "flex-end",
                       }}
                     >
-                      ยกเลิก
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => confirmDecide(cf, confirmFor.next)}
-                      className="co-tap"
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#fff",
-                        background: confirmFor.next === "approved" ? "#15803D" : "#B42318",
-                        border: "none", padding: "8px 18px", borderRadius: 9, cursor: "pointer",
-                      }}
-                    >
-                      {confirmFor.next === "approved" ? <Check size={15} /> : <X size={15} />} ใช่
-                    </button>
+                      <span style={{ flex: 1, minWidth: 180, fontSize: 12.5, fontWeight: 600, color: confirmFor.next === "approved" ? "#15803D" : "#9B3127" }}>
+                        {confirmFor.next === "approved" ? "อนุมัติให้ตั้งค่า" : "ตีกลับคำขอ"}ตู้ {cf.machineCode} ({cf.branchName}) ?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={cancelDecide}
+                        className="co-tap"
+                        style={{
+                          fontSize: 13, fontWeight: 600, color: "#5A6270", background: "#fff",
+                          border: "1px solid #DFE2E8", padding: "8px 16px", borderRadius: 9, cursor: "pointer",
+                        }}
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => confirmDecide(cf, confirmFor.next)}
+                        className="co-tap"
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#fff",
+                          background: confirmFor.next === "approved" ? "#15803D" : "#B42318",
+                          border: "none", padding: "8px 18px", borderRadius: 9, cursor: "pointer",
+                        }}
+                      >
+                        {confirmFor.next === "approved" ? <Check size={15} /> : <X size={15} />} ใช่
+                      </button>
+                    </div>
+
+                    {/* ช่องเหตุผลตอนตีกลับ (ไม่บังคับ) — ส่งให้ผู้เสนอรู้ว่าทำไมถูกตีกลับ */}
+                    {confirmFor.next === "rejected" && (
+                      <textarea
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        maxLength={1000}
+                        rows={2}
+                        placeholder="เหตุผลที่ตีกลับ (ไม่บังคับ) — เช่น ราคาสูงเกินไป / รอสรุปรอบหน้า"
+                        style={{
+                          width: "100%",
+                          marginTop: 12,
+                          fontSize: 12.5,
+                          color: "#9B3127",
+                          background: "#fff",
+                          border: "1px solid #F0CFCB",
+                          borderRadius: 9,
+                          padding: "9px 12px",
+                          resize: "vertical",
+                          fontFamily: "inherit",
+                          lineHeight: 1.5,
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </div>

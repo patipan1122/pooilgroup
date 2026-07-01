@@ -43,6 +43,10 @@ export const DEFAULTS = {
   GROUP_TOLERANCE_BPS: 500, // 5%
   CASH_VARIANCE_ACCEPTABLE_CENTS: 2000, // ฿20
   CASH_VARIANCE_WARN_CENTS: 10000, // ฿100
+  // เพดาน "เงินเกิน" ที่ต้องบังคับให้คนตรวจ (ultrareview 2026-07-01):
+  // เงินเกินเล็กน้อย = ทอนเงินพลาด (M4 · P2 เตือนเฉย ๆ) · เงินเกินก้อนใหญ่ =
+  // สัญญาณผิดปกติ (นับเกิน/สลับตู้/ยัดเงินคืน) → ต้องมีคนตรวจเหมือนเงินขาดก้อนใหญ่
+  CASH_OVER_MAJOR_CENTS: 30000, // ฿300
   DOLL_VARIANCE_ACCEPTABLE: 2, // ตัว
   DOLL_VARIANCE_PCT: 0.1, // 10%
   PROMO_DISCOUNT_PCT_MAX: 0.3, // 30%
@@ -287,6 +291,9 @@ export const ANOMALY_FLAGS = {
   M3_CASH_SHORT_MAJOR: "M3_CASH_SHORT_MAJOR",
   M4_CASH_OVER: "M4_CASH_OVER",
   M5_METER_NO_MOVE_BUT_CASH: "M5_METER_NO_MOVE_BUT_CASH",
+  // ultrareview 2026-07-01: เงินเกินก้อนใหญ่ (> CASH_OVER_MAJOR_CENTS) = P1 บังคับตรวจ
+  // (M4 เดิม P2 เตือนเฉย ๆ ไม่ดันเข้า review · เงินเกินเยอะเป็นสัญญาณผิดปกติ)
+  M6_CASH_OVER_MAJOR: "M6_CASH_OVER_MAJOR",
   // P — Product
   P2_DOLL_VARIANCE_MINOR: "P2_DOLL_VARIANCE_MINOR",
   P3_DOLL_VARIANCE_MAJOR: "P3_DOLL_VARIANCE_MAJOR",
@@ -322,6 +329,7 @@ export const FLAG_SEVERITY: Record<AnomalyFlag, "P0" | "P1" | "P2"> = {
   [ANOMALY_FLAGS.M2_CASH_SHORT_MINOR]: "P2",
   [ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR]: "P1",
   [ANOMALY_FLAGS.M4_CASH_OVER]: "P2",
+  [ANOMALY_FLAGS.M6_CASH_OVER_MAJOR]: "P1",
   [ANOMALY_FLAGS.M5_METER_NO_MOVE_BUT_CASH]: "P0",
   [ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR]: "P2",
   [ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR]: "P1",
@@ -344,6 +352,7 @@ export const FLAG_LABEL_TH: Record<AnomalyFlag, string> = {
   [ANOMALY_FLAGS.M2_CASH_SHORT_MINOR]: "เงินขาดเล็กน้อย",
   [ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR]: "เงินขาดเยอะ",
   [ANOMALY_FLAGS.M4_CASH_OVER]: "เงินเกิน",
+  [ANOMALY_FLAGS.M6_CASH_OVER_MAJOR]: "เงินเกินก้อนใหญ่ · ต้องตรวจ",
   [ANOMALY_FLAGS.M5_METER_NO_MOVE_BUT_CASH]: "มิเตอร์ไม่ขยับแต่มีเงิน",
   [ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR]: "ตุ๊กตาขาดเล็กน้อย",
   [ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR]: "ตุ๊กตาขาดเยอะ",

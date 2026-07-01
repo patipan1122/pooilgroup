@@ -66,6 +66,10 @@ export default async function ReportsPage() {
       });
     }
   }
+  // เรียงคนที่ "ยอดไม่ตรงมากสุด" ขึ้นก่อน (ให้ HQ เห็นคนที่ต้องจับตาบนสุด) แล้วตามด้วยชื่อ
+  staffQuality.sort(
+    (a, b) => (b.mismatch ?? 0) - (a.mismatch ?? 0) || a.name.localeCompare(b.name, "th"),
+  );
 
   return (
     <ReportsClient problemBranches={problemBranches} staffQuality={staffQuality} lowStock={lowStock} />

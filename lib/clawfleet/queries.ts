@@ -56,6 +56,19 @@ function timeAgo(d: Date): string {
   return `${Math.floor(hr / 24)} วัน`;
 }
 
+/**
+ * จัดระดับความรุนแรง (severity band) จากส่วนต่างเงิน % + ตุ๊กตาหาย.
+ * ใช้ร่วมกันทั้ง anomaly inbox และหน้ากระทบยอด (ให้ label ตรงกันทุกที่).
+ *   P0 = ห่างมาก (เงิน >25% หรือ ตุ๊กตาต่าง >4) · P1 = ห่างพอควร · P2 = ห่างเล็กน้อย/ในเกณฑ์
+ * gapPct = |ส่วนต่าง| เป็น % (ไม่คิดทิศทาง — ทั้งขาดและเกินถือว่าผิดปกติ)
+ */
+function severityOf(gapPct: number, prizeGap: number): "P0" | "P1" | "P2" {
+  const p = Math.abs(prizeGap);
+  if (gapPct > 25 || p > 4) return "P0";
+  if (gapPct > 8 || p > 0) return "P1";
+  return "P2";
+}
+
 async function scope(session: Session): Promise<{ orgId: string; branchIds: string[] | "ALL" }> {
   const bs = await userBranchIds(session);
   return { orgId: session.user.org_id, branchIds: bs };
@@ -194,8 +207,10 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
   return rows.map((s): Anomaly => {
     const expectedCash = Math.round((s.expectedCashCents ?? 0) / 100);
     const actualCash = Math.round((s.actualCashCents ?? 0) / 100);
-    const gap = Math.max(0, expectedCash - actualCash);
-    const gapPct = expectedCash > 0 ? (gap / expectedCash) * 100 : 0;
+    // ⚠️ gap เก็บทิศทาง: บวก = เงินขาด (นับได้น้อยกว่ามิเตอร์) · ลบ = เงินเกิน
+    // เดิม Math.max(0, ...) ปัดเงินเกินทิ้ง → ตรวจโกงพลาด (เงินเกินก็ผิดปกติ)
+    const gap = expectedCash - actualCash;
+    const gapPct = expectedCash > 0 ? (Math.abs(gap) / expectedCash) * 100 : 0;
     const prizeGap = s.prizeVariance ?? 0;
     const opened = s.openedAt;
     const closed = s.closedAt ?? s.openedAt;
@@ -215,7 +230,7 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
       branchName,
       branchCode,
       machineName,
-      severity: gapPct > 25 || Math.abs(prizeGap) > 4 ? "P0" : "P1",
+      severity: severityOf(gapPct, prizeGap),
       type: isCash ? "cash_short" : "prize_short",
       typeLabel: isCash ? "เงินขาด" : "ตุ๊กตาหาย",
       reason: s.anomalyFlags[0] ?? (isCash ? "เงินที่เก็บได้น้อยกว่าเลขมิเตอร์" : "ตุ๊กตาที่นับน้อยกว่าที่ระบบคำนวณ"),
@@ -236,6 +251,185 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
       machines,
     };
   });
+}
+
+// =============================================================
+// All collection rounds (หน้ากระทบยอด — "รอบเก็บทั้งหมด" ไม่ใช่แค่ผิดปกติ)
+// ดึงทุกรอบที่ปิดแล้ว (CLOSED / ANOMALY_REVIEW / LOCKED / CANCELLED) ในช่วงเวลา
+// เพื่อให้การ์ดสรุป + แท็บ (ทั้งหมด/ตรงกัน/ไม่ตรง/ตู้เสีย) คำนวณจากชุดเต็มจริง.
+// =============================================================
+
+/** สถานะรอบที่ "ปิดแล้ว" (นับเข้าหน้ากระทบยอด) — OPEN ไม่รวม เพราะยังเก็บไม่จบ */
+const CLOSED_STATUSES = ["CLOSED", "ANOMALY_REVIEW", "LOCKED", "CANCELLED"] as const;
+
+// เกณฑ์เงินขาด/เกินที่ "ถือว่าตรง" (บาท) — ต้องตรงกับ CASH_TOLERANCE ฝั่ง collections-client
+// (statusOf: |gap| <= นี้ = ตรงกัน) เพื่อ severity/type ไม่ขัดกับที่หน้าจอแสดง.
+const CASH_TOLERANCE_BAHT = 50;
+
+/** หนึ่งรอบเก็บสำหรับหน้ากระทบยอด (display shape · บาท + มิเตอร์จริง) */
+export type V2Round = {
+  id: string; // sessionCode
+  branchId: string;
+  branchName: string;
+  branchCode: string;
+  staff: string;
+  /** เวลาปิดรอบแบบอ่านง่าย (HH:mm · d MMM) */
+  when: string;
+  /** "x ชม.ที่แล้ว" / "x วัน" */
+  timeAgo: string;
+  status: string; // CfSessionStatus ดิบ (ไว้ทำ CSV / debug)
+  expectedCash: number; // บาท — มิเตอร์ควรได้
+  actualCash: number; // บาท — เงินนับได้
+  /** ส่วนต่าง (บาท) เก็บทิศทาง: บวก = ขาด · ลบ = เกิน */
+  gap: number;
+  prizeExpected: number;
+  prizeActual: number;
+  prizeGap: number; // ตุ๊กตาหาย (บวก = หาย)
+  severity: "P0" | "P1" | "P2";
+  type: "cash_short" | "prize_short";
+  reason: string;
+  /** มิเตอร์เหรียญรวมทั้งรอบ (จาก event จริง) — null = ไม่มี event ให้ derive */
+  coinMeterBefore: number | null;
+  coinMeterAfter: number | null;
+  /** ตู้ในรอบ + รูปจริงต่อตู้ (anti-cheat) */
+  machines: Machine[];
+};
+
+/** ผลลัพธ์แบบแบ่งหน้าของ getV2AllRounds */
+export type V2AllRoundsResult = {
+  rounds: V2Round[];
+  total: number; // จำนวนรอบทั้งหมดในช่วง (ก่อนตัดหน้า)
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * ดึง "รอบเก็บทั้งหมด" ที่ปิดแล้วในช่วงเวลา (default 30 วันล่าสุด) · แบ่งหน้ากัน payload บาน.
+ * @param opts.branchId  กรองสาขา (ถ้าอยู่นอก scope → คืนว่าง)
+ * @param opts.from/to   ช่วงวันที่ (ISO) · ไม่ใส่ = 30 วันล่าสุด
+ * @param opts.page      หน้า (เริ่ม 1) · pageSize คงที่ ~50
+ */
+export async function getV2AllRounds(opts?: {
+  branchId?: string;
+  from?: Date;
+  to?: Date;
+  page?: number;
+}): Promise<V2AllRoundsResult> {
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+  const branchWhere = effectiveBranchWhere(branchIds, opts?.branchId);
+
+  const pageSize = 50;
+  const page = Math.max(1, Math.floor(opts?.page ?? 1));
+
+  const from = opts?.from ?? (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+  const to = opts?.to;
+
+  const closedAtWhere: { gte: Date; lte?: Date } = { gte: from };
+  if (to) closedAtWhere.lte = to;
+
+  const where = {
+    orgId,
+    status: { in: [...CLOSED_STATUSES] },
+    closedAt: closedAtWhere,
+    ...(branchWhere ? { branchId: branchWhere } : {}),
+  };
+
+  const [total, rows] = await Promise.all([
+    prisma.cfCollectionSession.count({ where }),
+    prisma.cfCollectionSession.findMany({
+      where,
+      include: {
+        branch: { select: { name: true, code: true } },
+        openedBy: { select: { name: true } },
+        events: {
+          where: { eventType: "COLLECTION" },
+          include: { machine: { select: { code: true, nickname: true, kind: true } } },
+          orderBy: { collectedAt: "asc" },
+        },
+      },
+      orderBy: { closedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  const rounds: V2Round[] = rows.map((s): V2Round => {
+    const expectedCash = Math.round((s.expectedCashCents ?? 0) / 100);
+    const actualCash = Math.round((s.actualCashCents ?? s.totalCashCents ?? 0) / 100);
+    const gap = expectedCash - actualCash; // + = ขาด · − = เกิน
+    const gapPct = expectedCash > 0 ? (Math.abs(gap) / expectedCash) * 100 : 0;
+    const prizeGap = s.prizeVariance ?? 0;
+    const closed = s.closedAt ?? s.openedAt;
+
+    // รอบ "สะอาด" = เงินต่างไม่เกินเกณฑ์ + ตุ๊กตาไม่หาย → severity P2 · type ตามเงิน
+    // (กัน severityOf คืน P1 จาก gapPct>8 ทั้งที่ |gap| เล็ก · หน้าจอโชว์ "ตรงกัน" ระดับ P1 = ขัดกัน)
+    const isClean = Math.abs(gap) <= CASH_TOLERANCE_BAHT && prizeGap === 0;
+    const severity: "P0" | "P1" | "P2" = isClean ? "P2" : severityOf(gapPct, prizeGap);
+    // type = ตุ๊กตาหาย เฉพาะเมื่อตุ๊กตาหายจริง (prizeGap>0) · ไม่งั้นถือเป็นสายเงิน
+    const type: "cash_short" | "prize_short" = prizeGap > 0 ? "prize_short" : "cash_short";
+
+    const clawEvents = s.events.filter((e) => e.machine.kind === "CLAW");
+    const machines: Machine[] = clawEvents.map((e) => eventToMachine(e));
+
+    // มิเตอร์เหรียญรวมทั้งรอบจาก event จริง (ทุก kind — เหรียญเข้าตู้คีบ+เครื่องแลก)
+    // before = ผลรวม coinMeterBefore · after = ผลรวม coinMeterAfter → delta×10 = ควรได้จริง
+    const meterEvents = s.events;
+    const coinMeterBefore = meterEvents.length > 0
+      ? meterEvents.reduce((sum, e) => sum + e.coinMeterBefore, 0)
+      : null;
+    const coinMeterAfter = meterEvents.length > 0
+      ? meterEvents.reduce((sum, e) => sum + e.coinMeterAfter, 0)
+      : null;
+
+    return {
+      id: s.sessionCode,
+      branchId: s.branchId ?? "",
+      branchName: s.branch?.name ?? "",
+      branchCode: s.branch?.code ?? "",
+      staff: s.openedBy.name,
+      when: `${thaiTime(closed)} · ${thaiDateShort(closed)}`,
+      timeAgo: timeAgo(closed),
+      status: s.status,
+      expectedCash,
+      actualCash,
+      gap,
+      prizeExpected: s.prizeMeterOut ?? 0,
+      prizeActual: s.prizeCountedOut ?? 0,
+      prizeGap,
+      severity,
+      type,
+      reason: s.anomalyFlags[0] ?? "",
+      coinMeterBefore,
+      coinMeterAfter,
+      machines,
+    };
+  });
+
+  return { rounds, total, page, pageSize };
+}
+
+/**
+ * org (+scope สาขาของ user) นี้ "เคยมีรอบเก็บใด ๆ" ไหม — ทุกสถานะ · ทุกช่วงเวลา.
+ * ใช้แยก "ยังไม่เคยเก็บเลย" (โชว์ตัวอย่าง) ออกจาก "เคยเก็บแล้ว" (empty-state จริง).
+ * ต่างจาก total ใน getV2AllRounds ที่นับเฉพาะรอบปิดใน 30 วัน — org ที่มีรอบจริง
+ * แต่เกิน 30 วัน/ยัง OPEN ต้องไม่ถูกหลอกให้เห็นตัวอย่างปลอม.
+ */
+export async function orgHasAnyRounds(): Promise<boolean> {
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+  const count = await prisma.cfCollectionSession.count({
+    where: {
+      orgId,
+      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+    },
+  });
+  return count > 0;
 }
 
 /** หา anomaly เดียวตาม sessionCode (drill-in จาก Anomaly inbox · scope org+branch) */
@@ -263,8 +457,9 @@ export async function getV2Anomaly(sessionCode: string): Promise<Anomaly | null>
 
   const expectedCash = Math.round((s.expectedCashCents ?? 0) / 100);
   const actualCash = Math.round((s.actualCashCents ?? s.totalCashCents ?? 0) / 100);
-  const gap = Math.max(0, expectedCash - actualCash);
-  const gapPct = expectedCash > 0 ? (gap / expectedCash) * 100 : 0;
+  // gap เก็บทิศทาง: บวก = ขาด · ลบ = เกิน (ดู listV2Anomalies)
+  const gap = expectedCash - actualCash;
+  const gapPct = expectedCash > 0 ? (Math.abs(gap) / expectedCash) * 100 : 0;
   const prizeGap = s.prizeVariance ?? 0;
   const opened = s.openedAt;
   const closed = s.closedAt ?? s.openedAt;
@@ -283,7 +478,7 @@ export async function getV2Anomaly(sessionCode: string): Promise<Anomaly | null>
     branchName,
     branchCode,
     machineName,
-    severity: gapPct > 25 || Math.abs(prizeGap) > 4 ? "P0" : "P1",
+    severity: severityOf(gapPct, prizeGap),
     type: isCash ? "cash_short" : "prize_short",
     typeLabel: isCash ? "เงินขาด" : "ตุ๊กตาหาย",
     reason: s.anomalyFlags[0] ?? (isCash ? "เงินที่เก็บได้น้อยกว่าเลขมิเตอร์" : "ตุ๊กตาที่นับน้อยกว่าที่ระบบคำนวณ"),

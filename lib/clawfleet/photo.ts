@@ -12,12 +12,27 @@ export type PhotoPhase =
   | "prize_meter"
   | "stock_after";
 
+// 🛡️ path-safety: อนุญาตเฉพาะอักษร/ตัวเลข/._- (ไม่มี "/" ไม่มี "..") → กัน path traversal
+// เมื่อค่ามาจาก client. eventScopeId = "{sessionId}-{machineId}" (uuid สองก้อน ~73 ตัว) จึง
+// ตั้งเพดานยาว 128 ให้พอ · ก้อนสั้น (orgId/machineCode) ก็ผ่านเกณฑ์เดียวกัน.
+const SAFE_KEY_SEGMENT = /^[A-Za-z0-9._-]{1,128}$/;
+export function isSafeKeySegment(v: string): boolean {
+  // ".." (และ ".") เป็น traversal แม้จะ match charset ด้านบน → ปฏิเสธชัดเจน
+  if (v === "." || v === "..") return false;
+  // กัน ".." ที่แฝงเป็นส่วนหนึ่งของค่า (เช่น "a..b" ไม่ traversal แต่ "../" กันด้วย charset ที่ไม่มี "/")
+  return SAFE_KEY_SEGMENT.test(v);
+}
+
 export function photoKey(opts: {
   orgId: string;
   machineCode: string;
   eventId: string;
   phase: PhotoPhase;
 }): string {
+  // orgId/machineCode/eventId ถูกฝังเป็น path segment → ต้อง sanitize ก่อน (กัน traversal).
+  if (!isSafeKeySegment(opts.orgId)) throw new Error("invalid orgId for photo key");
+  if (!isSafeKeySegment(opts.machineCode)) throw new Error("invalid machineCode for photo key");
+  if (!isSafeKeySegment(opts.eventId)) throw new Error("invalid eventId for photo key");
   const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
   // 🛡️ anti-tamper: สุ่ม suffix ต่อการอัปทุกครั้ง → key ไม่ซ้ำ → อัปทับหลักฐานเดิมไม่ได้
   // (last-write-wins ของ R2 จะ overwrite ก็ต่อเมื่อ key เดียวกัน — เราทำให้ key ไม่มีวันซ้ำ)

@@ -527,6 +527,28 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
         });
       }
 
+      // R7 (audit 2026-07) · audit trail — บันทึกใครสร้างใบตัดของเสีย + มูลค่า/สถานะ (maker)
+      // ในทรานแซกชันเดียวกัน → ถ้าใบ rollback log ก็ rollback ตาม (ไม่มี log กำพร้า)
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_LOSS_CREATE",
+          resourceType: "CF_LOSS_DOC",
+          resourceId: loss.id,
+          diff: {
+            new: {
+              lossCode: loss.lossCode,
+              branchId,
+              reason,
+              totalCostCents: total,
+              status,
+              lines: work.map((w) => ({ productId: w.id, qty: w.qty, unitCostCents: w.cost })),
+            },
+          },
+        },
+      });
+
       return { lossId: loss.id, lossCode: loss.lossCode, totalCostCents: total, status };
     })
     .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
@@ -666,6 +688,22 @@ export async function reviewCfLoss(input: unknown): Promise<Result<{ lossId: str
         });
       }
 
+      // R7 (audit 2026-07) · audit trail — บันทึกใครอนุมัติ/ตีกลับ (checker) + จากสถานะไหนไปไหน
+      // ในทรานแซกชันเดียวกัน → ผูกกับ claim ที่สำเร็จ (ถ้า rollback log หายตาม)
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: decision === "approve" ? "CF_LOSS_APPROVE" : "CF_LOSS_REJECT",
+          resourceType: "CF_LOSS_DOC",
+          resourceId: head.id,
+          diff: {
+            old: { status: "PENDING" },
+            new: { status: newStatus, reviewNote: note || null, reportedById: head.reportedById },
+          },
+        },
+      });
+
       return { status: newStatus };
     })
     .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
@@ -703,6 +741,12 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
   const session = await requireSession();
   const orgId = session.user.org_id;
 
+  // role-rank guard (audit 2026-07 ultrareview) — โอนสต๊อก = ตัด/ย้ายสต๊อกจริง
+  // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามเขียนสต๊อก · mirror recordLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่โอนสต๊อกระหว่างสาขาได้");
+  }
+
   const product = await prisma.cfProduct.findFirst({
     where: { id: productId, orgId },
     select: { id: true, name: true, unitCostCents: true },
@@ -712,6 +756,10 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
   const transferCode = newTransferCode();
   const result = await prisma
     .$transaction(async (tx) => {
+      // 🔒 ล็อกต่อ product (transaction-level · hashtext เดียวกับ receiveStock) — serialize
+      // การอ่าน balance→เขียน movement กัน 2 การโอน/เบิกสินค้าตัวเดียวกันพร้อมกัน อ่าน balance
+      // ก้อนเดียวกันแล้วเขียนออกทั้งคู่ → สต๊อกติดลบ (each thought there was enough).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${productId}))`;
       const fromBal = await currentBalance(tx, orgId, fromBranchId, productId);
       if (fromBal < qty) throw new Error(`สาขาต้นทางเหลือ ${fromBal} ไม่พอโอน ${qty}`);
       const now = new Date();
@@ -761,6 +809,12 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
   const session = await requireSession();
   const orgId = session.user.org_id;
 
+  // role-rank guard (audit 2026-07 ultrareview) — เบิก/ตัดจ่าย = ตัดสต๊อกออกจริง
+  // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามเขียนสต๊อก · mirror recordLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่เบิก/ตัดจ่ายสต๊อกได้");
+  }
+
   const product = await prisma.cfProduct.findFirst({
     where: { id: productId, orgId }, select: { id: true, unitCostCents: true },
   });
@@ -768,6 +822,9 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
 
   const result = await prisma
     .$transaction(async (tx) => {
+      // 🔒 ล็อกต่อ product (transaction-level · hashtext เดียวกับ receiveStock) — serialize
+      // อ่าน balance→เขียน movement กัน 2 การเบิกสินค้าตัวเดียวกันพร้อมกันทำสต๊อกติดลบ.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${productId}))`;
       const bal = await currentBalance(tx, orgId, branchId, productId);
       if (bal < qty) throw new Error(`คลังเหลือ ${bal} ไม่พอเบิก ${qty}`);
       await tx.cfStockMovement.create({
@@ -822,6 +879,12 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
     return err((e as Error).message);
   }
   const { session, orgId } = ctx;
+
+  // role-rank guard (audit 2026-07 ultrareview) — สร้างใบกระจาย = เอกสารเคลื่อนสต๊อกคลังกลาง
+  // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามสร้าง · mirror recordLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่สร้างใบกระจายสินค้าได้");
+  }
 
   const result = await prisma
     .$transaction(async (tx) => {
@@ -928,6 +991,12 @@ export async function confirmShipmentReceived(
   }
   const { session, orgId } = ctx;
   if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบกระจายนี้");
+
+  // role-rank guard (audit 2026-07 ultrareview) — ตรวจรับ = รับของเข้าสต๊อก + ตั้งต้นทุน/ราคาขาย
+  // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามยืนยัน · mirror recordLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยืนยันตรวจรับใบกระจายได้");
+  }
 
   // idempotent guard (นอก tx · เร็ว) — รับแล้วห้ามรับซ้ำ
   if (head.status === "DELIVERED") {

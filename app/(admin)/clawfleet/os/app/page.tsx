@@ -7,10 +7,23 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
-import { StaffAppClient } from "./staff-app-client";
+import { prisma } from "@/lib/prisma";
+import { StaffAppClient, type StaffHistoryRow } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
 export const dynamic = "force-dynamic";
+
+// ต้นวันนี้ตามเวลาไทย (Asia/Bangkok = UTC+7) — ใช้กรองรอบที่ปิด "วันนี้"
+function startOfTodayBangkok(): Date {
+  const now = new Date();
+  // เลื่อนเป็นเวลาไทยแล้วตัดเวลาให้เหลือ 00:00 ของวันไทย จากนั้นแปลงกลับ UTC
+  const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const y = bkk.getUTCFullYear();
+  const m = bkk.getUTCMonth();
+  const d = bkk.getUTCDate();
+  // 00:00 ไทย = 17:00 UTC ของวันก่อนหน้า → ลบ 7 ชม.
+  return new Date(Date.UTC(y, m, d, 0, 0, 0) - 7 * 60 * 60 * 1000);
+}
 
 export default async function StaffAppPage() {
   let orgId = "";
@@ -27,11 +40,55 @@ export default async function StaffAppPage() {
 
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าไม่ login → ปล่อยว่าง (client ใช้ default)
   let userName = "";
+  let userId = "";
   try {
     const session = await getSession();
     userName = session?.user.name ?? "";
+    userId = session?.user.id ?? "";
+    orgId = orgId || (session?.user.org_id ?? "");
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
+  }
+
+  // 📊 ความคืบหน้าวันนี้ (ของจริง) + ประวัติการเก็บของฉันวันนี้ —
+  // นับ/ดึงจาก cf_collection_events ที่ "ฉัน" (userId) เก็บ ตั้งแต่ต้นวันไทย.
+  // ใช้ COLLECTION event เป็นตัวแทน "รอบที่เก็บเสร็จจริง" (draft ที่ยังไม่ปิด ไม่ถูกนับ).
+  // graceful: อ่านไม่ได้ / ยังไม่ migrate → closedTodayCount=0, history=[] (แอปโชว์ empty state).
+  let closedTodayCount = 0;
+  let history: StaffHistoryRow[] = [];
+  if (orgId && userId) {
+    try {
+      const since = startOfTodayBangkok();
+      const events = await prisma.cfCollectionEvent.findMany({
+        where: {
+          orgId,
+          collectedById: userId,
+          eventType: "COLLECTION",
+          collectedAt: { gte: since },
+        },
+        orderBy: { collectedAt: "desc" },
+        select: {
+          collectedAt: true,
+          cashCountedCents: true,
+          anomalyFlags: true,
+          machine: { select: { code: true } },
+        },
+        take: 50,
+      });
+      closedTodayCount = events.length;
+      history = events.map((e) => ({
+        code: e.machine.code,
+        time: e.collectedAt.toLocaleTimeString("th-TH", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Bangkok",
+        }),
+        cashBaht: Math.round(e.cashCountedCents / 100),
+        ok: e.anomalyFlags.length === 0,
+      }));
+    } catch {
+      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default (0 / [])
+    }
   }
 
   // นโยบายถ่ายรูป (photoRequired) — อ่าน server-side ส่งให้แอปพนักงานบังคับถ่ายรูป.
@@ -51,6 +108,8 @@ export default async function StaffAppPage() {
       skus={skus}
       photoRequired={photoRequired}
       userName={userName}
+      closedTodayCount={closedTodayCount}
+      history={history}
     />
   );
 }

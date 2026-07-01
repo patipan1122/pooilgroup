@@ -12,13 +12,13 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
-  Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock,
+  Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock, ScanLine, Download,
 } from "lucide-react";
 import { Card, Pill, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
 import {
   transferStock, receiveStock, submitStockCount, recordLoss, reviewCfLoss,
-  createShipment, confirmShipmentReceived,
+  createShipment, confirmShipmentReceived, lookupCfProductByBarcode,
 } from "@/lib/clawfleet/stock-actions";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
@@ -60,6 +60,11 @@ export type WarehouseRowSeed = {
 export type ShipmentSeed = {
   id: string; to: string; status: string; unitsCount: number; createdAt: string;
   lines: { lineId: string; name: string; sent: number; received: number | null }[];
+};
+/** ledger การเคลื่อนไหวสต๊อก (สำหรับดาวน์โหลด CSV · item #8) */
+export type MovementSeed = {
+  id: string; type: string; productName: string; qty: number;
+  reason: string | null; documentType: string | null; occurredAt: string;
 };
 
 /* ───────────────────────── view models ───────────────────────── */
@@ -235,7 +240,9 @@ export function StockClient({
   lossDocs,
   warehouseRows,
   shipments,
+  movements,
   docBranchId,
+  onHandMap,
   viewerId,
   canReviewLoss,
 }: {
@@ -247,10 +254,13 @@ export function StockClient({
   lossDocs: DocLossSeed[];
   warehouseRows: WarehouseRowSeed[];
   shipments: ShipmentSeed[];
+  movements: MovementSeed[];
   docBranchId: string | null;
+  onHandMap: Record<string, number>;
   viewerId: string;
   canReviewLoss: boolean;
 }) {
+  const router = useRouter();
   const empty = branches.length === 0;
 
   // map seed → BranchRow (เติมตัวเลขที่ query ไม่มีจาก sample เป็น proxy)
@@ -319,6 +329,28 @@ export function StockClient({
         })}
       </div>
 
+      {/* ตัวเลือกสาขาเอกสาร (item #9) — เอกสาร รับของ/นับ/ตัดของเสีย โหลดตามสาขาที่เลือก
+          (เปลี่ยน → นำทางไป ?branch=<id> → server โหลดเอกสารสาขานั้น). โชว์เฉพาะแท็บเอกสาร
+          และเมื่อมีสาขาจริงมากกว่า 1 (สาขาเดียวไม่ต้องเลือก) */}
+      {realBranches.length > 1 && (tab === "receipts" || tab === "counts" || tab === "losses") && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270" }}>ดูเอกสารของสาขา</span>
+          <select
+            aria-label="เลือกสาขาที่จะดูเอกสาร"
+            title="เลือกสาขาที่จะดูเอกสาร"
+            value={docBranchId ?? realBranches[0]?.id ?? ""}
+            onChange={(e) => {
+              const next = e.target.value;
+              router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(next)}`);
+            }}
+            style={{ ...FIELD_INPUT, width: "auto", minWidth: 180, padding: "8px 12px" }}
+          >
+            {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <span style={{ fontSize: 11, color: "#9AA1AB" }}>· เอกสารด้านล่างเป็นของสาขานี้</span>
+        </div>
+      )}
+
       {tab === "overview" && (
         <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} />
       )}
@@ -326,13 +358,13 @@ export function StockClient({
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
       )}
       {tab === "counts" && (
-        <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+        <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} onHandMap={onHandMap} />
       )}
       {tab === "losses" && (
         <LossesTab docs={lossDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} viewerId={viewerId} canReviewLoss={canReviewLoss} />
       )}
       {tab === "dist" && (
-        <DistributionTab realBranches={realBranches} products={products} shipments={shipments} defaultBranchId={defaultBranchId} />
+        <DistributionTab realBranches={realBranches} products={products} shipments={shipments} movements={movements} defaultBranchId={defaultBranchId} />
       )}
     </div>
   );
@@ -576,6 +608,102 @@ const FIELD_INPUT: React.CSSProperties = {
   width: "100%", fontSize: 13, padding: "10px 12px", borderRadius: 10,
   border: "1px solid #E3E6EA", background: "#fff", color: "#1A1D21", outline: "none",
 };
+
+/* ───────────────────────── barcode scan input (ยิงปืน → เพิ่มบรรทัด) ─────────────────────────
+ * ปืนบาร์โค้ด USB = พิมพ์โค้ด + กด Enter อัตโนมัติ. Enter → เรียก lookupCfProductByBarcode
+ * → เจอ → callback(productId) (auto เพิ่ม/โฟกัสบรรทัดสินค้านั้น) · ไม่เจอ → โชว์ error ใต้ช่อง.
+ */
+function BarcodeScanInput({
+  onHit,
+  placeholder = "ยิงบาร์โค้ดหรือพิมพ์รหัส แล้วกด Enter",
+}: {
+  onHit: (productId: string) => void;
+  placeholder?: string;
+}) {
+  const [code, setCode] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function scan() {
+    const raw = code.trim();
+    if (!raw) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await lookupCfProductByBarcode({ barcode: raw });
+      if (!res.ok) { setMsg({ ok: false, text: res.error }); return; }
+      onHit(res.data.id);
+      setMsg({ ok: true, text: `เพิ่ม “${res.data.name}” แล้ว` });
+      setCode(""); // ล้างช่องรอยิงตัวถัดไป
+    });
+  }
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", flex: "0 0 38px" }}>
+          <ScanLine size={17} />
+        </span>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scan(); } }}
+          placeholder={placeholder}
+          inputMode="text"
+          autoComplete="off"
+          style={{ ...FIELD_INPUT, flex: 1 }}
+        />
+        <button
+          type="button"
+          onClick={scan}
+          disabled={pending || !code.trim()}
+          style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: pending || !code.trim() ? "#A5A0EC" : "#4F46E5", border: "none", padding: "0 14px", height: 38, borderRadius: 10, cursor: pending || !code.trim() ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+        >
+          {pending ? "…" : "เพิ่ม"}
+        </button>
+      </div>
+      {msg && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: msg.ok ? "#15803D" : "#B42318" }}>{msg.text}</div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── CSV download helper (item #8) ─────────────────────────
+ * สร้าง CSV ฝั่ง client จากข้อมูลที่โหลดมาแล้ว (ไม่ยิง API เพิ่ม) → Blob → ดาวน์โหลด.
+ * ใส่ BOM (﻿) ให้ Excel ไทยอ่าน UTF-8 ไม่เพี้ยน · escape ค่าที่มี comma/quote/newline.
+ */
+function csvCell(v: string | number): string {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]): void {
+  const lines = [headers.map(csvCell).join(",")];
+  for (const r of rows) lines.push(r.map(csvCell).join(","));
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function csvDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
+}
+function CsvButton({ onClick, label = "ดาวน์โหลด CSV" }: { onClick: () => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{ fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
+    >
+      <Download size={13} /> {label}
+    </button>
+  );
+}
 
 /* ───────────────────────── transfers card (with + โอนสินค้า) ───────────────────────── */
 function TransfersCard({ realBranches, products }: { realBranches: BranchOption[]; products: ProductOption[] }) {
@@ -847,6 +975,84 @@ function LineEditor({
   );
 }
 
+/** line editor สำหรับ "นับสต็อก" — โชว์ "ระบบมี" + "ต่าง" สด (กันนับตาบอด · item #6)
+ *  onHandMap = null → ไม่โชว์คอลัมน์เทียบ (สาขาที่เลือกไม่ตรงกับที่โหลดยอดระบบมา) */
+function CountLineEditor({ products, lines, setLines, onHandMap }: {
+  products: ProductOption[];
+  lines: FormLine[];
+  setLines: (fn: (prev: FormLine[]) => FormLine[]) => void;
+  onHandMap: Record<string, number> | null;
+}) {
+  const setAt = (i: number, patch: Partial<FormLine>) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const removeAt = (i: number) => setLines((prev) => prev.filter((_, j) => j !== i));
+  const add = () => setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "" }]);
+  const showSys = onHandMap != null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {lines.map((l, i) => {
+        const sys = showSys && l.productId ? (onHandMap?.[l.productId] ?? 0) : null;
+        const countedRaw = Number(l.qty);
+        const validCount = l.qty.trim() !== "" && Number.isFinite(countedRaw) && Number.isInteger(countedRaw) && countedRaw >= 0;
+        const diff = sys != null && validCount ? countedRaw - sys : null;
+        const bigDiff = diff != null && Math.abs(diff) >= COUNT_DIFF_THRESHOLD;
+        return (
+          <div key={i} className={showSys ? "grid grid-cols-[1fr_74px_60px_70px_34px] gap-2 items-end" : "grid grid-cols-[1fr_96px_36px] gap-2 items-end"}>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+              <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+                <option value="">— เลือกสินค้า —</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>นับได้</label>}
+              <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+            </div>
+            {showSys && (
+              <>
+                <div>
+                  {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ระบบมี</label>}
+                  <div className="num" style={{ height: 38, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 10px", fontSize: 13, fontWeight: 600, color: sys == null ? "#C2C7CF" : "#5A6270", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10 }}>
+                    {sys == null ? "—" : num(sys)}
+                  </div>
+                </div>
+                <div>
+                  {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ต่าง</label>}
+                  <div className="num" style={{ height: 38, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 10px", fontSize: 13, fontWeight: 700, color: diff == null ? "#C2C7CF" : diff === 0 ? "#15803D" : bigDiff ? "#B42318" : "#B45309", background: bigDiff ? "#FCEDEC" : "transparent", borderRadius: 10 }}>
+                    {diff == null ? "—" : diff === 0 ? "✓" : `${diff > 0 ? "+" : ""}${num(diff)}`}
+                  </div>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => removeAt(i)}
+              disabled={lines.length <= 1}
+              title="ลบรายการ"
+              style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={add}
+        style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+      >
+        <Plus size={13} /> เพิ่มรายการ
+      </button>
+      {showSys && (
+        <div style={{ fontSize: 11, color: "#9AA1AB" }}>
+          “ระบบมี” = ยอดคงคลังสาขาตามบัญชี · “ต่าง” = นับได้ − ระบบมี · ต่าง ≥ {COUNT_DIFF_THRESHOLD} จะเด้งเข้าหน้าตรวจสอบอัตโนมัติ
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** parse + validate form lines → {productId, qty} (qty>0) · คืน error ถ้าไม่ผ่าน */
 function parseLines(lines: FormLine[]): { ok: true; data: { productId: string; qty: number }[] } | { ok: false; error: string } {
   const out: { productId: string; qty: number }[] = [];
@@ -915,6 +1121,22 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
     });
   }
 
+  // ยิงบาร์โค้ด → ถ้ามีบรรทัดของสินค้านี้อยู่แล้ว +จำนวน 1 · ถ้าไม่มีเพิ่มบรรทัดใหม่ qty=1
+  function onBarcodeHit(productId: string) {
+    setLinesWrap((prev) => {
+      const idx = prev.findIndex((l) => l.productId === productId);
+      if (idx >= 0) {
+        return prev.map((l, j) => (j === idx ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
+      }
+      // ถ้าบรรทัดแรกยังว่าง (ไม่เลือกสินค้า) ใช้บรรทัดนั้นเลย
+      const emptyIdx = prev.findIndex((l) => !l.productId);
+      if (emptyIdx >= 0) {
+        return prev.map((l, j) => (j === emptyIdx ? { productId, qty: "1" } : l));
+      }
+      return [...prev, { productId, qty: "1" }];
+    });
+  }
+
   function submit() {
     setError(null);
     const parsed = parseLines(lines);
@@ -938,6 +1160,13 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
       <DocListCard
         title="ใบรับสินค้าเข้าคลัง"
         sub="บันทึกของที่รับเข้าคลังสาขา · ต้นทุนเฉลี่ยถ่วงน้ำหนักอัปเดตอัตโนมัติ"
+        extra={docs.length > 0 ? (
+          <CsvButton onClick={() => downloadCsv(
+            `ใบรับสินค้า_${csvDate(new Date().toISOString())}.csv`,
+            ["เลขที่", "ผู้ขาย", "รายการ", "มูลค่า(บาท)", "วันที่"],
+            docs.map((d) => [d.code, d.supplier || "", d.itemsCount, Math.round(d.totalCostCents / 100), csvDate(d.createdAt)]),
+          )} />
+        ) : undefined}
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="รับของเข้า"
         empty={docs.length === 0}
@@ -983,6 +1212,7 @@ function ReceiptsTab({ docs, realBranches, products, defaultBranchId }: {
           </div>
           <div>
             <label style={FIELD_LABEL}>รายการรับเข้า</label>
+            <BarcodeScanInput onHit={onBarcodeHit} />
             <ReceiptLineEditor products={products} lines={lines} setLines={setLinesWrap} costs={costs} setCosts={setCosts} />
           </div>
           <div>
@@ -1044,8 +1274,11 @@ function ReceiptLineEditor({ products, lines, setLines, costs, setCosts }: {
 }
 
 /* ───────────────────────── COUNTS (นับสต็อก) ───────────────────────── */
-function CountsTab({ docs, realBranches, products, defaultBranchId }: {
+const COUNT_DIFF_THRESHOLD = 5; // |ต่าง| ต่อสินค้า ≥ 5 → เตือนแดง (mirror VARIANCE_ANOMALY_THRESHOLD)
+
+function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap }: {
   docs: DocCountSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+  onHandMap: Record<string, number>; // ยอด "ระบบมี" ต่อสินค้า (ของสาขาเอกสารที่ server โหลดมา)
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -1056,7 +1289,23 @@ function CountsTab({ docs, realBranches, products, defaultBranchId }: {
   const [error, setError] = useState<string | null>(null);
   const canCreate = realBranches.length >= 1 && products.length >= 1;
 
+  // ยอดระบบใช้ได้เมื่อฟอร์มนับ "สาขาเดียวกับ" สาขาเอกสารที่ server โหลด onHandMap มา
+  // ถ้าเลือกนับสาขาอื่นในฟอร์ม (branchId ≠ defaultBranchId) ยอดระบบจะไม่ตรง → ซ่อนคอลัมน์ กันเข้าใจผิด
+  const onHandUsable = branchId === defaultBranchId;
+
   function reset() { setBranchId(defaultBranchId); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
+
+  function setLinesWrap(fn: (prev: FormLine[]) => FormLine[]) { setLines(fn); }
+  // ยิงบาร์โค้ด → เพิ่มบรรทัดสินค้านั้น (นับ) · โฟกัสให้กรอกยอดนับ (ไม่ auto +1 เพราะ qty = ยอดนับจริง)
+  function onBarcodeHit(productId: string) {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.productId === productId);
+      if (idx >= 0) return prev; // มีบรรทัดสินค้านี้แล้ว — ให้ผู้ใช้กรอกยอดเอง
+      const emptyIdx = prev.findIndex((l) => !l.productId);
+      if (emptyIdx >= 0) return prev.map((l, j) => (j === emptyIdx ? { productId, qty: "" } : l));
+      return [...prev, { productId, qty: "" }];
+    });
+  }
 
   function submit() {
     setError(null);
@@ -1082,6 +1331,13 @@ function CountsTab({ docs, realBranches, products, defaultBranchId }: {
       <DocListCard
         title="ใบนับสต็อก"
         sub="นับของจริงในคลัง → ระบบปรับยอดให้ตรง · นับต่างมากจะเด้งเข้าหน้าตรวจสอบ"
+        extra={docs.length > 0 ? (
+          <CsvButton onClick={() => downloadCsv(
+            `ใบนับสต็อก_${csvDate(new Date().toISOString())}.csv`,
+            ["เลขที่", "ผู้นับ", "รายการ", "ผลต่างรวม", "วันที่"],
+            docs.map((d) => [d.code, d.countedBy || "", d.itemsCounted, d.totalDiff, csvDate(d.countedAt)]),
+          )} />
+        ) : undefined}
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="นับสต็อก"
         empty={docs.length === 0}
@@ -1123,7 +1379,18 @@ function CountsTab({ docs, realBranches, products, defaultBranchId }: {
           </div>
           <div>
             <label style={FIELD_LABEL}>รายการนับ (ใส่ยอดที่นับได้จริง)</label>
-            <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="นับได้" />
+            {!onHandUsable && (
+              <div style={{ fontSize: 11, color: "#B45309", background: "#FDF6EA", border: "1px solid #F0DEBB", borderRadius: 8, padding: "7px 10px", marginBottom: 8 }}>
+                ยอด “ระบบมี” แสดงได้เฉพาะสาขาที่เปิดดูอยู่ — เลือกนับสาขาอื่นจะไม่โชว์ยอดเทียบ
+              </div>
+            )}
+            <BarcodeScanInput onHit={onBarcodeHit} />
+            <CountLineEditor
+              products={products}
+              lines={lines}
+              setLines={setLinesWrap}
+              onHandMap={onHandUsable ? onHandMap : null}
+            />
           </div>
           <div>
             <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
@@ -1172,6 +1439,17 @@ function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, ca
 
   function reset() { setBranchId(defaultBranchId); setReason("DAMAGE"); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
 
+  // ยิงบาร์โค้ด → +จำนวน 1 ถ้ามีบรรทัดสินค้านี้แล้ว · ไม่งั้นเพิ่มบรรทัดใหม่ qty=1
+  function onBarcodeHit(productId: string) {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => l.productId === productId);
+      if (idx >= 0) return prev.map((l, j) => (j === idx ? { ...l, qty: String((Number(l.qty) || 0) + 1) } : l));
+      const emptyIdx = prev.findIndex((l) => !l.productId);
+      if (emptyIdx >= 0) return prev.map((l, j) => (j === emptyIdx ? { productId, qty: "1" } : l));
+      return [...prev, { productId, qty: "1" }];
+    });
+  }
+
   function submit() {
     setError(null);
     const parsed = parseLines(lines);
@@ -1207,6 +1485,16 @@ function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, ca
       <DocListCard
         title="ใบตัดของเสีย / ของหาย"
         sub="ตัดของชำรุด/สูญหาย/ตัดทิ้งออกจากคลัง · มูลค่าสูงต้องมีคนที่ 2 อนุมัติก่อนตัดสต๊อก"
+        extra={docs.length > 0 ? (
+          <CsvButton onClick={() => downloadCsv(
+            `ใบตัดของเสีย_${csvDate(new Date().toISOString())}.csv`,
+            ["เลขที่", "สาเหตุ", "รายการ", "มูลค่า(บาท)", "สถานะ", "ผู้อนุมัติ", "วันที่"],
+            docs.map((d) => [
+              d.code, d.reasonLabel, d.itemsCount, Math.round(d.totalCostCents / 100),
+              lossStatusPill(d.status).label, d.reviewedByName || "", csvDate(d.reportedAt),
+            ]),
+          )} />
+        ) : undefined}
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="ตัดของเสีย"
         empty={docs.length === 0}
@@ -1282,6 +1570,7 @@ function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, ca
           </div>
           <div>
             <label style={FIELD_LABEL}>รายการที่ตัด</label>
+            <BarcodeScanInput onHit={onBarcodeHit} />
             <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="จำนวน" />
           </div>
           <div>
@@ -1297,21 +1586,27 @@ function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, ca
 
 /* ───────────────────────── shared doc-list card ───────────────────────── */
 function DocListCard({
-  title, sub, onAdd, addLabel, empty, emptyTitle, emptySub, cols, head, children,
+  title, sub, onAdd, addLabel, empty, emptyTitle, emptySub, cols, head, children, extra,
 }: {
   title: string; sub: string; onAdd?: () => void; addLabel: string;
   empty: boolean; emptyTitle: string; emptySub: string;
   cols: string; head: React.ReactNode; children: React.ReactNode;
+  extra?: React.ReactNode; // ปุ่มเสริม (เช่น ดาวน์โหลด CSV) วางซ้ายปุ่มเพิ่ม
 }) {
   return (
     <Card
       title={title}
       sub={sub}
       pad={false}
-      right={onAdd && (
-        <button type="button" onClick={onAdd} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <Plus size={13} /> {addLabel}
-        </button>
+      right={(onAdd || extra) && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {extra}
+          {onAdd && (
+            <button type="button" onClick={onAdd} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: "#4F46E5", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Plus size={13} /> {addLabel}
+            </button>
+          )}
+        </div>
       )}
     >
       {empty ? (
@@ -1365,10 +1660,18 @@ function toShipVM(s: ShipmentSeed): ShipVM {
   };
 }
 
-function DistributionTab({ realBranches, products, shipments: shipmentSeeds, defaultBranchId }: {
+// ประเภท movement (enum DB) → ป้ายไทยอ่านง่ายใน CSV
+const MOVE_TYPE_TH: Record<string, string> = {
+  RECEIPT_IN: "รับเข้า", COUNT_ADJUST: "ปรับยอดนับ", LOSS_ADJUST: "ตัดของเสีย",
+  TRANSFER_OUT: "โอนออก", TRANSFER_IN: "โอนเข้า", WITHDRAW: "เบิก/ตัดจ่าย",
+  LOAD_TO_MACHINE: "เติมเข้าตู้",
+};
+
+function DistributionTab({ realBranches, products, shipments: shipmentSeeds, movements, defaultBranchId }: {
   realBranches: BranchOption[];
   products: ProductOption[];
   shipments: ShipmentSeed[];
+  movements: MovementSeed[];
   defaultBranchId: string;
 }) {
   const router = useRouter();
@@ -1463,6 +1766,23 @@ function DistributionTab({ realBranches, products, shipments: shipmentSeeds, def
           );
         })}
         <span style={{ flex: 1 }} />
+        {movements.length > 0 && (
+          <CsvButton
+            label="ledger สต๊อก (CSV)"
+            onClick={() => downloadCsv(
+              `ledger_สต๊อก_${csvDate(new Date().toISOString())}.csv`,
+              ["วันที่", "ประเภท", "สินค้า", "จำนวน", "เอกสาร", "หมายเหตุ"],
+              movements.map((m) => [
+                csvDate(m.occurredAt),
+                MOVE_TYPE_TH[m.type] ?? m.type,
+                m.productName,
+                m.qty,
+                m.documentType || "",
+                m.reason || "",
+              ]),
+            )}
+          />
+        )}
         {canCreate && (
           <button
             type="button"
@@ -1680,7 +2000,18 @@ function ShipmentLineEditor({ products, lines, setLines, salePrices, setSalePric
           <div key={i} className="grid grid-cols-[1fr_58px_82px_82px_34px] gap-2 items-end">
             <div>
               {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
-              <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+              <select
+                value={l.productId}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  setAt(i, { productId: pid });
+                  // item #7 · prefill ราคาทุนเป็น "ค่าจริง" (ต้นทุนเฉลี่ยเดิมของสินค้า · บาท)
+                  // เฉพาะเมื่อช่องทุนยังว่าง — ผู้ใช้แก้ทับได้ (ไม่ทับค่าที่พิมพ์เอง)
+                  const pc = products.find((p) => p.id === pid)?.unitCostCents ?? 0;
+                  if (pc > 0 && (costs[i] ?? "").trim() === "") setCostAt(i, String(Math.round(pc / 100)));
+                }}
+                style={FIELD_INPUT}
+              >
                 <option value="">— เลือก —</option>
                 {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>

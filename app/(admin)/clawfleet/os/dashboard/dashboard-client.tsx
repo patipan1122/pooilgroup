@@ -73,8 +73,13 @@ export function DashboardClient({
   const alertRows = empty ? SAMPLE_ALERTS : alerts;
   // มีข้อมูลจริงแล้วแต่ไม่มีธงแดง = สถานะที่ดี (ทุกรอบปกติ) → โชว์ empty-state บวก ไม่ใช่ตัวเลขปลอม
   const alertsClean = !empty && alertRows.length === 0;
-  // กราฟรายวัน: ใช้ของจริงถ้ามี · ไม่งั้น sample (กราฟต้องมีอย่างน้อย 1 แท่งที่ >0 ถึงจะเป็น "จริง")
-  const days = dailyPnl.length > 0 && dailyPnl.some((d) => d.profit + d.cost > 0) ? dailyPnl : SAMPLE_DAYS;
+  // กราฟรายวัน:
+  //  - org จริง (hasRealData) → ห้าม fallback SAMPLE เด็ดขาด · ใช้ dailyPnl จริง (แม้ทุกแท่ง = ฿0)
+  //    ถ้ายังไม่มีรอบเก็บใน 7 วันนี้ → chartEmptyReal=true โชว์ข้อความจริงแทนตัวเลขปลอม
+  //  - org ว่างจริง (empty) → โชว์ SAMPLE เพื่อให้เห็นภาพ
+  const hasRealDailyData = dailyPnl.length > 0 && dailyPnl.some((d) => Math.abs(d.profit) + Math.abs(d.cost) > 0);
+  const chartEmptyReal = hasRealData && !hasRealDailyData;
+  const days = hasRealData ? dailyPnl : (hasRealDailyData ? dailyPnl : SAMPLE_DAYS);
   const lowStockRows = lowStock.length > 0 ? lowStock : (empty ? SAMPLE_LOW_STOCK : []);
   const totRevenue = empty ? rows.reduce((s, b) => s + b.revenue, 0) : summary.revenue;
   const totProfit = empty ? rows.reduce((s, b) => s + b.profit, 0) : summary.profit;
@@ -94,7 +99,20 @@ export function DashboardClient({
   const tooEasy = rows.filter((b) => b.flag === "LOW" || b.flag === "LOSS").length;
   const good = rows.filter((b) => b.flag === "GOOD").length;
   const tooHard = rows.filter((b) => b.flag === "HIGH" || b.flag === "AMBER").length;
-  const maxBar = Math.max(1, ...days.map((d) => d.profit + d.cost));
+  // ยอดต่อวัน = รายได้จริง (กำไร + ต้นทุน) · กำไรติดลบได้ (วันขาดทุน) → ใช้ค่าสัมบูรณ์หา scale
+  // แท่งสูง = รายได้รวมวันนั้น · ส่วนสีน้ำเงิน = สัดส่วนกำไร (วันขาดทุน = ไม่มีแถบกำไร + ป้ายแดง)
+  const dayRevenue = (d: DailyPoint) => d.profit + d.cost;
+  const maxBar = Math.max(1, ...days.map((d) => Math.abs(dayRevenue(d))));
+
+  // KPI "เมื่อวาน" — แท่งก่อนแท่งสุดท้ายในซีรีส์จริง (index length-2) เทียบวันก่อนหน้า (length-3)
+  // ใช้เฉพาะ org จริงที่มีข้อมูลกราฟจริง · ต้องมีอย่างน้อย 2 วันถึงเทียบได้
+  const showYesterday = hasRealData && hasRealDailyData && days.length >= 2;
+  const yRevenue = showYesterday ? dayRevenue(days[days.length - 2]) : 0;
+  const prevRevenue = showYesterday && days.length >= 3 ? dayRevenue(days[days.length - 3]) : null;
+  const yDeltaPct =
+    prevRevenue != null && Math.abs(prevRevenue) > 0.0001
+      ? Math.round(((yRevenue - prevRevenue) / Math.abs(prevRevenue)) * 100)
+      : null;
 
   return (
     <div>
@@ -105,7 +123,21 @@ export function DashboardClient({
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-4">
+      <div className={`grid grid-cols-2 ${showYesterday ? "lg:grid-cols-6" : "lg:grid-cols-5"} gap-3.5 mb-4`}>
+        {showYesterday && (
+          <Kpi
+            icon={<Wallet size={16} />}
+            iconTone="neutral"
+            label="เมื่อวาน"
+            value={bahtN(Math.round(yRevenue * 1000))}
+            delta={
+              yDeltaPct == null
+                ? "เทียบวันก่อนไม่ได้"
+                : `${yDeltaPct >= 0 ? "▲" : "▼"} ${Math.abs(yDeltaPct)}% เทียบวันก่อน`
+            }
+            deltaColor={yDeltaPct == null ? "#9AA1AB" : deltaColor(yDeltaPct)}
+          />
+        )}
         <Kpi icon={<Wallet size={16} />} label="รายได้ (7 วัน)" value={bahtN(totRevenue)} />
         <Kpi icon={<TrendingUp size={16} />} iconTone="green" label="กำไรสุทธิ" value={bahtN(totProfit)} valueColor="#15803D" delta="หักต้นทุนตุ๊กตาแล้ว" deltaColor="#9AA1AB" />
         <Kpi icon={<Boxes size={16} />} iconTone="neutral" label="ตู้คีบทั้งหมด" value={`${num(totMachines)} ตู้`} delta={`${rows.length} สาขา`} deltaColor="#9AA1AB" />
@@ -124,18 +156,25 @@ export function DashboardClient({
           <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#6B7280" }}><span style={{ width: 10, height: 10, borderRadius: 3, background: "#EEF0F4" }} />ต้นทุนตุ๊กตา</span>
         </div>
       }>
+        {chartEmptyReal ? (
+          <EmptyState icon={<TrendingUp size={26} />} title="ยังไม่มีรอบเก็บใน 7 วันนี้" sub="กราฟจะแสดงรายได้–กำไรเมื่อมีรอบเก็บเงินปิดในช่วง 7 วันล่าสุด" />
+        ) : (
+        <>
         <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 18, height: 184, padding: "0 4px" }}>
           {/* baseline rule — เส้นฐานใต้แท่งกราฟ ให้ดูมีระดับอ้างอิง */}
           <div style={{ position: "absolute", left: 0, right: 0, bottom: 23, height: 1, background: "#EBEDF1", pointerEvents: "none" }} />
           {days.map((d, di) => {
-            const total = d.profit + d.cost;
-            const h = (total / maxBar) * 150;
-            const profitH = total > 0 ? (d.profit / total) * h : 0;
+            const revenue = d.profit + d.cost; // รายได้จริงต่อวัน (พันบาท)
+            const isLoss = d.profit < 0;       // วันขาดทุน = ต้นทุนตุ๊กตา > เงินที่เก็บได้
+            // แท่งสูงตามรายได้จริง (ค่าสัมบูรณ์ กันแท่งหาย/ติดลบเมื่อขาดทุน)
+            const h = (Math.abs(revenue) / maxBar) * 150;
+            // ส่วนสีน้ำเงิน = สัดส่วนกำไร (เฉพาะกำไรบวก) · วันขาดทุนไม่มีแถบกำไร
+            const profitH = !isLoss && revenue > 0 ? (d.profit / revenue) * h : 0;
             const isToday = di === days.length - 1; // แท่งขวาสุด = วันล่าสุด
             return (
               <div key={d.iso || `${d.d}-${di}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
-                <div className="num" style={{ fontSize: 10.5, fontWeight: 700, color: isToday ? "#4F46E5" : "#454B54", marginBottom: 4 }}>฿{total.toFixed(0)}k</div>
-                <div style={{ width: 30, height: h, borderRadius: "6px 6px 0 0", background: "#EEF0F4", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", boxShadow: isToday ? "0 0 0 2px rgba(79,70,229,0.22)" : undefined }}>
+                <div className="num" style={{ fontSize: 10.5, fontWeight: 700, color: isLoss ? "#B42318" : isToday ? "#4F46E5" : "#454B54", marginBottom: 4 }}>{isLoss ? "ขาดทุน" : `฿${revenue.toFixed(0)}k`}</div>
+                <div style={{ width: 30, height: h, borderRadius: "6px 6px 0 0", background: isLoss ? "#FBEAE8" : "#EEF0F4", display: "flex", flexDirection: "column", justifyContent: "flex-end", overflow: "hidden", boxShadow: isToday ? "0 0 0 2px rgba(79,70,229,0.22)" : undefined }}>
                   <div style={{ height: profitH, background: "#4F46E5" }} />
                 </div>
                 <div className="num" style={{ fontSize: 11, color: isToday ? "#4F46E5" : "#9AA1AB", fontWeight: isToday ? 700 : 400, marginTop: 6 }}>{d.d}</div>
@@ -150,6 +189,8 @@ export function DashboardClient({
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4F46E5" }} /> วันล่าสุด
           </span>
         </div>
+        </>
+        )}
       </Card>
 
       {/* P&L by branch + red flags */}

@@ -83,9 +83,15 @@ export function deriveEvent(input: EventInput): EventDerived {
     } else if (absCash > DEFAULTS.CASH_VARIANCE_ACCEPTABLE_CENTS) {
       flags.push(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR);
     }
-  } else if (cashVarianceCents > 5000) {
-    // > ฿50 over
-    flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+  } else if (cashVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
+    // R4b (ultrareview 2026-07-01): เกณฑ์เงินเกินเดิม hardcode ฿50 ทำให้ทอนพลาดนิดหน่อย
+    // ก็ติดธง → ใช้เพดานเดียวกับตอนปิดรอบ (CASH_VARIANCE_WARN_CENTS = ฿100).
+    // เกินก้อนใหญ่ (> CASH_OVER_MAJOR_CENTS) ยกระดับเป็น M6 (P1 บังคับตรวจ).
+    if (cashVarianceCents > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
+      flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
+    } else {
+      flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+    }
   }
 
   // M5: มิเตอร์ไม่ขยับแต่มีเงิน (BLOCK)
@@ -230,6 +236,8 @@ export function deriveBranchCrossCheck(
   // threshold must flag the round even if it nets clean against other machines.
   let perMachineCashShort = false;
   let perMachinePrizeBreach = false;
+  // ultrareview 2026-07-01: เงินเกินก้อนใหญ่ต่อตู้ ต้องไม่ถูกกลบด้วยการหักลบกับตู้อื่น
+  let perMachineCashOverMajor = false;
   for (const e of events) {
     const coinsDelta = Math.max(0, e.coinMeterAfter - e.coinMeterBefore);
     const evExpected = coinsDelta * e.cashPerCoinCents;
@@ -242,6 +250,9 @@ export function deriveBranchCrossCheck(
     const evPct = evExpected > 0 ? Math.abs(evVar / evExpected) : 0;
     if (evVar < 0 && (Math.abs(evVar) > DEFAULTS.CASH_VARIANCE_WARN_CENTS || evPct > 0.05)) {
       perMachineCashShort = true;
+    }
+    if (evVar > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
+      perMachineCashOverMajor = true;
     }
     const evPrizeMeter = Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
     const evPrizePhysical = e.stockBefore + e.refillQty - e.stockAfter;
@@ -269,7 +280,13 @@ export function deriveBranchCrossCheck(
         : ANOMALY_FLAGS.M2_CASH_SHORT_MINOR,
     );
   } else if (cashVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
-    flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+    // ultrareview 2026-07-01: เงินเกินก้อนใหญ่ (> ฿300) ต้องบังคับให้คนตรวจ ไม่ปิดเงียบ
+    // เหมือนเงินขาดก้อนใหญ่ (เงินเกินเยอะ = นับเกิน/สลับตู้/ยัดเงินคืน) → M6 (P1).
+    if (cashVarianceCents > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
+      flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
+    } else {
+      flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+    }
   }
   // ตุ๊กตาหาย (meter > counted) เกินเกณฑ์
   if (Math.abs(prizeVariance) > DEFAULTS.DOLL_VARIANCE_ACCEPTABLE) {
@@ -291,6 +308,10 @@ export function deriveBranchCrossCheck(
     !flags.includes(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR)
   ) {
     flags.push(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR);
+  }
+  // เงินเกินก้อนใหญ่ต่อตู้ ถูกกลบด้วย netting → ดันทั้งรอบเข้า review (mirror F5)
+  if (perMachineCashOverMajor && !flags.includes(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR)) {
+    flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
   }
   const status: "CLOSED" | "ANOMALY_REVIEW" = flags.length > 0 ? "ANOMALY_REVIEW" : "CLOSED";
 

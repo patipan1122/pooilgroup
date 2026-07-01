@@ -119,13 +119,41 @@ export type MachinePnl = {
 // =============================================================
 // helpers
 // =============================================================
+/** offset เวลาไทย (Asia/Bangkok = UTC+7) เป็นมิลลิวินาที */
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/**
+ * ต้นวัน (00:00:00.000 เวลาไทย) ของวันที่ "N วันก่อนวันนี้" คืนเป็น Date (UTC instant).
+ *
+ * ทำไมต้องมี: setHours(0,0,0,0) อิงเวลาเครื่อง — บน Vercel (UTC) จะตัดวันเพี้ยน 7 ชม.
+ * (รอบที่เก็บ 01:00–07:00 เวลาไทยจะถูกนับเป็นเมื่อวาน). helper นี้ตัดวันตามเวลาไทยจริง.
+ *
+ * วิธี: เลื่อน now ไปเป็นเวลาไทย → floor ลงต้นวัน (UTC math) → เลื่อนกลับเป็น UTC instant.
+ */
+export function bangkokStartOfDay(daysAgo = 0): Date {
+  const nowBkk = Date.now() + BKK_OFFSET_MS;
+  const dayStartBkk = Math.floor(nowBkk / 86_400_000) * 86_400_000 - daysAgo * 86_400_000;
+  return new Date(dayStartBkk - BKK_OFFSET_MS);
+}
+
+/** สิ้นวัน (23:59:59.999 เวลาไทย) ของวันนี้ คืนเป็น Date (UTC instant). */
+export function bangkokEndOfToday(): Date {
+  // ต้นวันพรุ่งนี้ (เวลาไทย) − 1ms = สิ้นวันนี้
+  return new Date(bangkokStartOfDay(-1).getTime() - 1);
+}
+
+/**
+ * ช่วงเวลา "N วันล่าสุด" ตามเวลาไทย (รวมวันนี้).
+ * days=7 → from = ต้นวันของ 6 วันก่อน · to = สิ้นวันนี้ (รวม 7 วัน).
+ */
+export function bangkokRangeLastDays(days: number): PnlRange {
+  return { from: bangkokStartOfDay(days - 1), to: bangkokEndOfToday() };
+}
+
 function defaultRange(filter?: PnlRange): PnlRange {
   if (filter) return filter;
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
-  const to = new Date();
-  to.setHours(23, 59, 59, 999);
-  return { from, to };
+  // default = วันนี้ (เวลาไทย) — ตัดวันตาม Asia/Bangkok ไม่อิงเวลาเครื่อง (Vercel=UTC เพี้ยน 7 ชม.)
+  return { from: bangkokStartOfDay(0), to: bangkokEndOfToday() };
 }
 
 function daysAgo(d: Date): number {

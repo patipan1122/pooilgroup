@@ -287,6 +287,14 @@ const initialState: WizardState = {
 };
 
 /* ─────────────────────────── public wrapper (renders twice) ─────────────────────────── */
+// ประวัติการเก็บของฉันวันนี้ (ของจริงจาก server · ดู page.tsx StaffHistoryRow)
+export type StaffHistoryRow = {
+  code: string;
+  time: string;
+  cashBaht: number;
+  ok: boolean;
+};
+
 type Props = {
   orgId: string;
   branches: GroupCollectBranch[];
@@ -295,9 +303,13 @@ type Props = {
   photoRequired: boolean;
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — "" = ไม่ทราบ → ใช้ default
   userName: string;
+  // จำนวนตู้ที่ "ฉัน" เก็บเสร็จจริงวันนี้ (จาก cf_collection_events) → progress bar
+  closedTodayCount: number;
+  // ประวัติรอบที่ปิดจริงวันนี้ (ของฉัน) → panel "ประวัติของฉัน"
+  history: StaffHistoryRow[];
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history }: Props) {
   const realMachines = useMemo(() => flattenReal(branches), [branches]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
@@ -309,10 +321,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName 
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} />
   );
 
   return (
@@ -383,11 +395,13 @@ type StaffAppProps = {
   // true = บังคับถ่ายรูปก่อนกดถัดไป/ส่ง (org policy photoRequired)
   photoRequired: boolean;
   userName: string;
+  closedTodayCount: number;
+  history: StaffHistoryRow[];
 };
 
 type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -650,8 +664,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }:
   // route + drafts derived for HOME
   const routeTotal = machines.length;
   const draftList = Object.values(drafts);
-  const routeDone = draftList.length;
-  const routePct = routeTotal > 0 ? Math.round((routeDone / routeTotal) * 100) : 0;
+  // ✅ "ตู้เก็บแล้ว" = รอบที่ปิดเสร็จจริงวันนี้ (closedTodayCount จาก server) ไม่ใช่ draft ที่ค้าง.
+  // draft = เก็บค้างรอกรอกมิเตอร์ (คนละความหมายกับ "เก็บเสร็จ"). DEMO ไม่มีข้อมูล server
+  // → fallback ใช้ draftList.length เพื่อให้ตัวอย่างยังขยับ progress ได้.
+  const routeDone = usingDemo ? draftList.length : closedTodayCount;
+  const routePct = routeTotal > 0 ? Math.min(100, Math.round((routeDone / routeTotal) * 100)) : 0;
 
   /* ═══════════════ RENDER ═══════════════ */
   const onHome = state.step === 0;
@@ -686,6 +703,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName }:
           tourStep={tourStep}
           setTourStep={setTourStep}
           skus={skus}
+          history={history}
+          usingDemo={usingDemo}
         />
       ) : (
         <FlowScreen
@@ -744,8 +763,23 @@ function HomeScreen(props: {
   tourStep: number;
   setTourStep: (n: number) => void;
   skus: CollectSku[];
+  history: StaffHistoryRow[];
+  usingDemo: boolean;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId } = props;
+  // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (ยังไม่มี assignment-per-staff · ดู crossFileNote).
+  // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
+  const branchGroups = useMemo(() => {
+    const map = new Map<string, AppMachine[]>();
+    for (const m of machines) {
+      const list = map.get(m.branch);
+      if (list) list.push(m);
+      else map.set(m.branch, [m]);
+    }
+    return Array.from(map.entries()); // [branchName, machines[]][]
+  }, [machines]);
+  // มีมากกว่า 1 สาขา → โชว์หัวข้อสาขาคั่น (สาขาเดียวไม่ต้องคั่น กันรก)
+  const showBranchHeaders = branchGroups.length > 1;
   // ชื่อจริงของพนักงานที่ล็อกอิน (จาก session) · ถ้าไม่ทราบ → "พนักงาน"
   const displayName = userName.trim() || "พนักงาน";
   const avatarChar = displayName.charAt(0) || "พ";
@@ -845,46 +879,56 @@ function HomeScreen(props: {
               <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีตู้ที่ได้รับมอบหมาย" sub="ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ" />
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {machines.map((m) => {
-                const isDraft = !!drafts[m.id];
-                const isOpening = openingId === m.id;
-                const tag = isDraft
-                  ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                  : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
-                // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
-                const dimmed = pending && !isOpening;
-                return (
-                  <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
-                    className={pending ? "" : "co-tap co-lift"}
-                    style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
-                    <span style={{ position: "relative", flex: "0 0 42px" }}>
-                      <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
-                      <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
-                      <div style={{ fontSize: 11, color: "#9AA1AB" }}>{isOpening ? "กำลังเปิดรอบ…" : tag.hint}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: showBranchHeaders ? 16 : 9 }}>
+              {branchGroups.map(([branchName, list]) => (
+                <div key={branchName} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                  {showBranchHeaders && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>{branchName}</span>
+                      <span className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#9AA1AB", background: "#F1F2F5", padding: "1px 8px", borderRadius: 20 }}>{list.length}</span>
                     </div>
-                    {isOpening ? (
-                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#4F46E5" }}>
-                        <Spinner color="#4F46E5" />
-                        เปิดรอบ
-                      </span>
-                    ) : (
-                      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
-                        <ChevronRight size={17} color="#C2C7CF" strokeWidth={2.2} />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                  )}
+                  {list.map((m) => {
+                    const isDraft = !!drafts[m.id];
+                    const isOpening = openingId === m.id;
+                    const tag = isDraft
+                      ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                      : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                    // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
+                    const dimmed = pending && !isOpening;
+                    return (
+                      <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
+                        className={pending ? "" : "co-tap co-lift"}
+                        style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
+                        <span style={{ position: "relative", flex: "0 0 42px" }}>
+                          <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                          <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
+                          <div style={{ fontSize: 11, color: "#9AA1AB" }}>{isOpening ? "กำลังเปิดรอบ…" : tag.hint}</div>
+                        </div>
+                        {isOpening ? (
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#4F46E5" }}>
+                            <Spinner color="#4F46E5" />
+                            เปิดรอบ
+                          </span>
+                        ) : (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
+                            <ChevronRight size={17} color="#C2C7CF" strokeWidth={2.2} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} />
       )}
     </div>
   );
@@ -899,7 +943,7 @@ const PANEL_TITLE: Record<Exclude<Panel, null>, string> = {
   tour: "เติมทัวร์ 7-11",
 };
 
-function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void; skus: CollectSku[] }) {
+function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void; skus: CollectSku[]; history: StaffHistoryRow[]; usingDemo: boolean }) {
   const { panel, onBack } = props;
   return (
     <div>
@@ -909,7 +953,7 @@ function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; t
         </button>
         <span style={{ fontSize: 15, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
       </div>
-      {panel === "history" && <HistoryPanel />}
+      {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} />}
       {panel === "repair" && <RepairPanel />}
       {panel === "stock" && <StockPanel />}
       {panel === "config" && <ConfigPanel />}
@@ -918,21 +962,39 @@ function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; t
   );
 }
 
-function HistoryPanel() {
-  const rows = [
-    { code: "RS-03", date: "วันนี้ 14:20", cash: "฿300", ok: true },
-    { code: "LP-01", date: "วันนี้ 13:50", cash: "฿620", ok: true },
-    { code: "RS-07", date: "เมื่อวาน 18:10", cash: "฿540", ok: false },
-    { code: "RS-04", date: "เมื่อวาน 17:30", cash: "฿420", ok: true },
+function HistoryPanel({ history, usingDemo }: { history: StaffHistoryRow[]; usingDemo: boolean }) {
+  // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
+  const demoRows: StaffHistoryRow[] = [
+    { code: "RS-03", time: "14:20", cashBaht: 300, ok: true },
+    { code: "LP-01", time: "13:50", cashBaht: 620, ok: true },
+    { code: "RS-07", time: "12:10", cashBaht: 540, ok: false },
   ];
+  const rows = usingDemo ? demoRows : history;
+
+  // ของจริงแต่ยังไม่มีรอบวันนี้ → empty state ซื่อสัตย์ (ไม่โชว์ mock)
+  if (!usingDemo && rows.length === 0) {
+    return (
+      <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+        <EmptyState
+          icon={<Inbox size={30} strokeWidth={1.6} />}
+          title="วันนี้ยังไม่มีรอบที่เก็บเสร็จ"
+          sub="เมื่อคุณเก็บเงินจบตู้ รายการจะขึ้นที่นี่"
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {rows.map((h) => (
-        <div key={h.code} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
+      {usingDemo && (
+        <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
+      )}
+      {rows.map((h, i) => (
+        <div key={`${h.code}-${h.time}-${i}`} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
           <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#4F46E5", flex: "0 0 50px" }}>{h.code}</span>
           <div style={{ flex: 1 }}>
-            <div className="num" style={{ fontSize: 13.5, fontWeight: 700 }}>{h.cash}</div>
-            <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{h.date}</div>
+            <div className="num" style={{ fontSize: 13.5, fontWeight: 700 }}>฿{h.cashBaht.toLocaleString("en-US")}</div>
+            <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>วันนี้ {h.time}</div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 11px", borderRadius: 20, background: h.ok ? "#E7F4EC" : "#FCEDEC", color: h.ok ? "#15803D" : "#B42318" }}>{h.ok ? "ตรง" : "ไม่ตรง"}</span>
         </div>

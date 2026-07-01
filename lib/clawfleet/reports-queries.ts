@@ -3,8 +3,10 @@
 // คุณภาพงานพนักงานเก็บเงิน ต่อคน ย้อนหลัง N วัน:
 //   rounds   = จำนวน "รอบเก็บ" ที่คนนั้นปิด (distinct session ที่ closedById = user
 //              · fallback openedById ถ้ายังไม่มี closedBy) ในช่วง
-//   mismatch = จำนวน event ที่คนนั้นเก็บแล้วมี anomalyFlags ไม่ว่าง
-//              + รอบ ANOMALY_REVIEW ที่คนนั้นปิด (ยอดไม่ตรง/ตุ๊กตาหาย)
+//   mismatch = จำนวน "ยอดไม่ตรงจริง" — นับเฉพาะรอบที่ตัดสินว่าผิดจริง/ต้องสอบ
+//              (session status = ANOMALY_REVIEW) เท่านั้น. รอบที่ผู้อนุมัติกด
+//              ผ่าน (CLOSED/LOCKED) = ถือว่าเคลียร์แล้ว → ไม่นับ แม้ event เคย
+//              ติดธง anomaly ตอนเก็บ (กัน false-alarm ทำสถิติพนักงานเสียเปล่า).
 //
 // ทุก query scope ด้วย orgId. ผูกกับ session/event ที่ "ปิดรอบแล้ว" เท่านั้น
 // (CLOSED/LOCKED/ANOMALY_REVIEW) — รอบที่ยังเปิดอยู่ยังไม่นับเป็นผลงาน.
@@ -14,6 +16,7 @@ import { CfSessionStatus } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
 import { getCfStockOverview } from "./stock-queries";
+import { bangkokStartOfDay } from "./pnl-queries";
 
 const CLOSED_STATUSES: CfSessionStatus[] = [
   CfSessionStatus.CLOSED,
@@ -25,7 +28,7 @@ const CLOSED_STATUSES: CfSessionStatus[] = [
 export type StaffPerf = {
   /** จำนวนรอบเก็บที่คนนี้ปิด */
   rounds: number;
-  /** จำนวนครั้งยอดไม่ตรง (event anomaly + รอบ review ที่ปิดเอง) */
+  /** จำนวนครั้งยอดไม่ตรง "จริง" — เฉพาะรอบที่ถูกตัดสิน escalate (ANOMALY_REVIEW) ที่คนนี้ปิด */
   mismatch: number;
 };
 
@@ -39,11 +42,11 @@ export async function getStaffPerformance(
   const session = await requireSession();
   const orgId = session.user.org_id;
   const days = Math.max(1, Math.min(180, Math.floor(opts.days ?? 30)));
-  const since = new Date();
-  since.setHours(0, 0, 0, 0);
-  since.setDate(since.getDate() - (days - 1));
+  // ต้นวันตามเวลาไทย (ไม่ใช่ setHours ที่อิงเวลาเครื่อง=UTC) — ให้ตรงกับ dashboard/pnl
+  const since = bangkokStartOfDay(days - 1);
 
-  // รอบที่ปิดแล้วในช่วง + ใครปิด/เปิด + event (เพื่อหา anomaly + คนเก็บ)
+  // รอบที่ปิดแล้วในช่วง + ใครปิด/เปิด. mismatch นับจาก "สถานะรอบที่ตัดสินแล้ว"
+  // (ANOMALY_REVIEW = ยอดไม่ตรงจริง) ไม่ใช่ธง anomaly ดิบตอนเก็บ → ไม่ต้องดึง event
   const sessions = await prisma.cfCollectionSession.findMany({
     where: {
       orgId,
@@ -54,10 +57,6 @@ export async function getStaffPerformance(
       status: true,
       openedById: true,
       closedById: true,
-      events: {
-        where: { eventType: "COLLECTION" },
-        select: { collectedById: true, anomalyFlags: true },
-      },
     },
   });
 
@@ -71,13 +70,11 @@ export async function getStaffPerformance(
   for (const s of sessions) {
     // "เจ้าของรอบ" = คนปิด (fallback คนเปิด) → นับเป็น 1 รอบเก็บ
     const owner = s.closedById ?? s.openedById;
-    if (owner) ensure(owner).rounds += 1;
-    // รอบที่ติดธง ANOMALY_REVIEW → ยอดไม่ตรง 1 ครั้งของเจ้าของรอบ
-    if (s.status === CfSessionStatus.ANOMALY_REVIEW && owner) ensure(owner).mismatch += 1;
-    // event ที่มี anomalyFlags → ยอดไม่ตรงของคนที่เก็บ event นั้น
-    for (const e of s.events) {
-      if (e.anomalyFlags.length > 0) ensure(e.collectedById).mismatch += 1;
-    }
+    if (!owner) continue;
+    ensure(owner).rounds += 1;
+    // นับ mismatch เฉพาะรอบที่ถูกตัดสินว่า "ผิดจริง/ต้องสอบ" (ANOMALY_REVIEW).
+    // รอบ CLOSED/LOCKED = ผู้อนุมัติกดผ่านแล้ว → ไม่นับ (กัน false-alarm).
+    if (s.status === CfSessionStatus.ANOMALY_REVIEW) ensure(owner).mismatch += 1;
   }
 
   return out;

@@ -4,7 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { uploadEventPhoto, validateImageBuffer } from "@/lib/clawfleet/photo";
+import { isSafeKeySegment, uploadEventPhoto, validateImageBuffer } from "@/lib/clawfleet/photo";
 import { userBranchIds } from "@/lib/clawfleet/role-guard";
 import { prisma } from "@/lib/prisma";
 
@@ -45,6 +45,11 @@ export async function POST(req: NextRequest) {
   }
   if (!machineCode || !eventScopeId || !PHASES.includes(phase)) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
+  }
+  // 🛡️ path-safety: machineCode/eventScopeId ถูกฝังลง object key (path segment) → ปฏิเสธค่าที่มี
+  // "/" หรือ ".." (path traversal) ก่อนสร้าง key. orgId ตรวจแล้วว่า == session.user.org_id (uuid ปลอดภัย).
+  if (!isSafeKeySegment(machineCode) || !isSafeKeySegment(eventScopeId)) {
+    return NextResponse.json({ error: "invalid field format" }, { status: 400 });
   }
 
   // 🛡️ Branch + lock authorization (anti-cheat evidence integrity)

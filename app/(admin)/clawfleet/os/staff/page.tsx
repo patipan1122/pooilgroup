@@ -1,11 +1,13 @@
 /**
  * ตู้คีบ OS — พนักงาน (Staff)
  * Server: Team data จริง (getTeamData) → ตารางพนักงานทุกสาขา + จัดการทีม (เชิญ/แก้สิทธิ์/ปิดใช้).
+ *         "รอบเก็บ" / "ยอดไม่ตรง" ต่อคน ดึงจาก getStaffPerformance ตัวเดียวกับหน้ารายงาน
+ *         (single source · ตัวเลข 2 หน้าตรงกันเสมอ).
  * ถ้า DB ว่าง → client ใช้ SAMPLE fallback + แบนเนอร์ "กำลังแสดงตัวอย่าง".
- * NOTE: "รอบเก็บ" / "ยอดไม่ตรง" ต่อคน ยังไม่มี metric จริง — ดู backend gap.
  * จัดการทีม (เพิ่ม/แก้สิทธิ์/ปิดใช้/สร้างลิงก์เชิญ) เปิดให้เฉพาะ admin-tier (isAdmin).
  */
 import { getTeamData } from "@/lib/clawfleet/admin-queries";
+import { getStaffPerformance } from "@/lib/clawfleet/reports-queries";
 import { requireSession } from "@/lib/auth/session";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { isCfAdmin } from "@/lib/clawfleet/role-guard";
@@ -20,8 +22,15 @@ export default async function StaffPage() {
   const isAdmin = isCfAdmin(session.user.role) || (await userIsModuleAdmin(session.user, "clawfleet"));
 
   let team: Awaited<ReturnType<typeof getTeamData>> | null = null;
+  // ผลงานต่อคน (รอบเก็บ/ยอดไม่ตรง 30 วัน) — single source เดียวกับหน้ารายงาน
+  let staffPerf: Awaited<ReturnType<typeof getStaffPerformance>> = new Map();
   try {
-    team = await getTeamData();
+    const [t, perf] = await Promise.all([
+      getTeamData(),
+      getStaffPerformance({ days: 30 }),
+    ]);
+    team = t;
+    staffPerf = perf;
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → sample fallback ในฝั่ง client
   }
@@ -37,6 +46,7 @@ export default async function StaffPage() {
         }
         continue;
       }
+      const perf = staffPerf.get(m.id);
       byId.set(m.id, {
         id: m.id,
         name: m.name,
@@ -45,8 +55,9 @@ export default async function StaffPage() {
         branchId: m.branchId,
         branchName: m.branchName,
         status: m.status,
-        rounds: null,
-        mismatch: null,
+        // ตัวเลขจริงจาก getStaffPerformance (ตรงกับหน้ารายงาน) · ถ้า DB ว่าง = Map ว่าง → 0
+        rounds: perf?.rounds ?? 0,
+        mismatch: perf?.mismatch ?? 0,
       });
     }
   }
