@@ -49,44 +49,41 @@ export async function POST(req: NextRequest) {
 
   // 🛡️ Branch + lock authorization (anti-cheat evidence integrity)
   // client ส่ง eventScopeId = "{sessionId}-{machineId}" (ดู staff-app-client.tsx).
-  // ดึง sessionId (uuid นำหน้า) ออกมาเพื่อยืนยันสิทธิ์สาขา + สถานะรอบก่อนรับรูป.
-  // โหมดตัวอย่าง (demo) ไม่มี session จริง → ปล่อยผ่าน (ไม่ใช่หลักฐานจริง อยู่ในเครื่องลูกค้าเท่านั้น).
+  // ⚠️ ห้ามเชื่อ prefix "demo-" จาก client เพื่อข้ามการตรวจ (client แก้ค่าได้ = bypass สิทธิ์).
+  // ตัดสินจาก "server state" แทน: ถ้า sessionId ที่ดึงมาเป็น uuid จริงและ resolve เป็นรอบจริง
+  // → บังคับสิทธิ์สาขา + สถานะล็อก. ถ้าไม่ใช่ uuid (โหมดตัวอย่าง/ค่าที่ปลอมมา) → ปล่อยผ่านได้
+  // เพราะคีย์รูปสุ่ม+เส้นทางแยก (photo.ts) ทับหลักฐานของจริงไม่ได้ และไม่ผูกกับ event จริง = ไม่มีผล.
   const sessionId = eventScopeId.slice(0, 36); // uuid = 36 ตัวอักษร
-  const isDemoScope = eventScopeId.startsWith("demo-");
-  if (!isDemoScope) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId);
+  if (isUuid) {
     const cfSession = await prisma.cfCollectionSession.findFirst({
       where: { id: sessionId, orgId: session.user.org_id },
-      // แก้สาขาจาก branchId ตรง ๆ (staff collect flow) หรือ group.branchId (legacy)
-      // ถ้าทั้งคู่ว่าง = ยืนยันเจ้าของไม่ได้ → ปฏิเสธ (ห้ามปล่อย session ที่ไร้สาขา)
       select: { status: true, branchId: true, group: { select: { branchId: true } } },
     });
-    if (!cfSession) {
-      return NextResponse.json(
-        { error: "ไม่พบรอบเก็บเงินนี้ในระบบ" },
-        { status: 403 },
-      );
-    }
-    // (b) หลักฐานถูกแช่แข็งเมื่อรอบถูกล็อก → ห้ามอัปทับ/เพิ่มรูปหลังล็อก
-    if (cfSession.status === "LOCKED") {
-      return NextResponse.json(
-        { error: "รอบนี้ถูกล็อกแล้ว · แก้ไข/แนบรูปหลักฐานเพิ่มไม่ได้" },
-        { status: 403 },
-      );
-    }
-    // (a) ต้องมีสิทธิ์เข้าถึงสาขาของรอบนี้ (แอดมิน/viewer = ALL, อื่น ๆ = สาขาที่สังกัด)
-    const branchId = cfSession.branchId ?? cfSession.group?.branchId;
-    if (!branchId) {
-      return NextResponse.json(
-        { error: "ไม่สามารถระบุสาขาของรอบนี้ได้" },
-        { status: 403 },
-      );
-    }
-    const allowed = await userBranchIds(session);
-    if (allowed !== "ALL" && !allowed.includes(branchId)) {
-      return NextResponse.json(
-        { error: "ไม่มีสิทธิ์แนบรูปให้สาขานี้" },
-        { status: 403 },
-      );
+    // resolve เป็นรอบจริง → บังคับสิทธิ์ (ไม่ resolve = uuid ที่ไม่มีจริง → ไม่มีผล ปล่อยได้)
+    if (cfSession) {
+      // (b) หลักฐานถูกแช่แข็งเมื่อรอบถูกล็อก → ห้ามอัปทับ/เพิ่มรูปหลังล็อก
+      if (cfSession.status === "LOCKED") {
+        return NextResponse.json(
+          { error: "รอบนี้ถูกล็อกแล้ว · แก้ไข/แนบรูปหลักฐานเพิ่มไม่ได้" },
+          { status: 403 },
+        );
+      }
+      // (a) ต้องมีสิทธิ์เข้าถึงสาขาของรอบนี้ (แอดมิน/viewer = ALL, อื่น ๆ = สาขาที่สังกัด)
+      const branchId = cfSession.branchId ?? cfSession.group?.branchId;
+      if (!branchId) {
+        return NextResponse.json(
+          { error: "ไม่สามารถระบุสาขาของรอบนี้ได้" },
+          { status: 403 },
+        );
+      }
+      const allowed = await userBranchIds(session);
+      if (allowed !== "ALL" && !allowed.includes(branchId)) {
+        return NextResponse.json(
+          { error: "ไม่มีสิทธิ์แนบรูปให้สาขานี้" },
+          { status: 403 },
+        );
+      }
     }
   }
 
