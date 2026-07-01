@@ -13,6 +13,7 @@ import {
   Users,
   Settings,
   Smartphone,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +42,7 @@ export const BACK_NAV: ClawNavItem[] = [
   { key: "stock", label: "คลังสินค้า", href: `${OS_BASE}/stock`, icon: PackageOpen, badge: "lowStock", roles: [...MGR] },
   { key: "collections", label: "ตรวจเงิน & กระทบยอด", href: `${OS_BASE}/collections`, icon: ScrollText, badge: "diffs", roles: [...MGR] },
   { key: "config", label: "ตั้งค่าตู้", href: `${OS_BASE}/config`, icon: SlidersHorizontal, badge: "pendingConfig", roles: [...MGR] },
+  { key: "repairs", label: "แจ้งซ่อม", href: `${OS_BASE}/repairs`, icon: Wrench, roles: [...MGR] },
   { key: "matrix", label: "รายงานเจาะสาขา", href: `${OS_BASE}/matrix`, icon: Grid3x3, roles: [...MGR, "viewer"] },
   { key: "reports", label: "รายงาน", href: `${OS_BASE}/reports`, icon: BarChart3, roles: [...MGR, "viewer"] },
   { key: "staff", label: "พนักงาน", href: `${OS_BASE}/staff`, icon: Users, roles: ["area_manager"] },
@@ -64,6 +66,7 @@ export const SCREEN_META: Record<string, { title: string; sub: string }> = {
   stock: { title: "คลังสินค้า", sub: "คลังกลาง + สต็อกสาขา · การโอน · หมุนเวียน FIFO" },
   collections: { title: "ตรวจเงิน & กระทบยอด", sub: "รอบเก็บเงินทุกตู้ · เทียบมิเตอร์กับเงินสด · ธงไม่ตรง" },
   config: { title: "ตั้งค่าตู้", sub: "คำขอปรับความแรงการคีบ/ราคา · รออนุมัติจากเจ้าของ" },
+  repairs: { title: "แจ้งซ่อม / ตู้เสีย", sub: "พนักงานแจ้งตู้เสียหน้างาน · ตามซ่อม · ปิดงาน · ตั้งมิเตอร์ใหม่หลังซ่อม" },
   matrix: { title: "รายงานเจาะสาขา", sub: "ทุกตู้ × รายวันย้อนหลัง ในตารางเดียว" },
   reports: { title: "รายงาน", sub: "ตู้มีปัญหา · สินค้าใกล้หมด · คุณภาพงานพนักงาน" },
   staff: { title: "พนักงาน", sub: "ทีมเก็บเงิน · เส้นทางดูแล · คุณภาพงาน" },

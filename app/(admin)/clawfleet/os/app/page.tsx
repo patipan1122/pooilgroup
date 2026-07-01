@@ -8,6 +8,7 @@ import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { StaffAppClient, type StaffHistoryRow } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -101,6 +102,15 @@ export default async function StaffAppPage() {
     // graceful: ใช้ default (ไม่บังคับ) เมื่ออ่าน policy ไม่ได้
   }
 
+  // 🛠️ ตั๋วแจ้งซ่อมล่าสุดของฉัน → RepairPanel (ตั๋วซ่อมของฉันล่าสุด).
+  // graceful: ยังไม่ migrate / query ล้ม → [] (RepairPanel โชว์ "ยังไม่มีตั๋วซ่อม").
+  let myRecentTickets: RepairTicketRow[] = [];
+  try {
+    myRecentTickets = await listMyRecentRepairTickets();
+  } catch {
+    // graceful: อ่านไม่ได้ → คงค่า default ([])
+  }
+
   return (
     <StaffAppClient
       orgId={orgId}
@@ -110,6 +120,7 @@ export default async function StaffAppPage() {
       userName={userName}
       closedTodayCount={closedTodayCount}
       history={history}
+      myRecentTickets={myRecentTickets}
     />
   );
 }

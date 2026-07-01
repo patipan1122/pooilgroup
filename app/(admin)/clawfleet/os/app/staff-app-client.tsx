@@ -31,6 +31,8 @@ import {
   submitBranchEvent,
   closeBranchSession,
 } from "@/lib/clawfleet/actions";
+import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
+import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type {
   GroupCollectBranch,
   CollectSku,
@@ -184,6 +186,9 @@ type WizardState = {
   machineId: string | null;
   form: Form;
   photos: Photos;
+  // slot ที่ "ถ่ายแล้ว" (นับทันที · ยังไม่มี url เพราะ upload วิ่งเบื้องหลัง/retry).
+  // ใช้ปลดล็อก gate photoRequired ทันทีที่ถ่าย — ไม่ให้ upload ล้มบล็อกพนักงานที่หน้างาน.
+  photosCaptured: Photos;
   meterDeferred: boolean;
   resumed: boolean;
   configSent: boolean;
@@ -194,6 +199,18 @@ const blankPhotos: Photos = {
   before: "", after: "", dollGear: "", dollDigi: "",
   coinGear: "", coinDigi: "", cash: "",
 };
+
+// sentinel: "ถ่ายแล้วแต่ยังไม่มี url" (upload เบื้องหลัง/retry) — ใช้ใน photosCaptured เท่านั้น
+// (photos จริงยังเก็บ url จาก R2). ปลดล็อก gate photoRequired ทันทีที่ถ่าย.
+const CAPTURED_MARK = "captured";
+/** map url ที่มีอยู่ → captured (ใช้ตอน resume ร่างที่มี url แล้ว) */
+function markCaptured(p: Photos): Photos {
+  const out = { ...blankPhotos };
+  (Object.keys(p) as (keyof Photos)[]).forEach((k) => {
+    out[k] = p[k] ? p[k] : "";
+  });
+  return out;
+}
 
 function formFor(m: AppMachine, skus: CollectSku[]): Form {
   const product = m.product || skus[0]?.name || "ตุ๊กตา";
@@ -223,8 +240,10 @@ type Action =
   | { type: "next" }
   | { type: "back" }
   | { type: "home" }
+  | { type: "skipMachine" } // ข้ามตู้เสีย 1 ตู้ · กลับหน้ารายการ แต่คง session สาขาไว้ (ตู้อื่นยังต้องเก็บ)
   | { type: "setForm"; key: keyof Form; value: number | string | null }
   | { type: "setPhoto"; key: keyof Photos; url: string }
+  | { type: "capturePhoto"; key: keyof Photos } // ถ่ายแล้ว (นับทันที · ยังรอ url)
   | { type: "toggleDefer" }
   | { type: "fillMeterNow" }
   | { type: "sendConfig" }
@@ -238,6 +257,7 @@ function reducer(s: WizardState, a: Action): WizardState {
         machineId: a.machine.id,
         form: formFor(a.machine, a.skus),
         photos: { ...blankPhotos },
+        photosCaptured: { ...blankPhotos },
         meterDeferred: false,
         resumed: false,
         configSent: false,
@@ -251,6 +271,8 @@ function reducer(s: WizardState, a: Action): WizardState {
         // resumed: count already done · รูปที่ถ่ายไว้ถูกเก็บใน draft แล้ว → คืนกลับมา
         // (เดิมรูปหาย → ถ้านโยบายบังคับถ่ายจะ submit ไม่ได้ = ค้าง เพราะเดินจากตู้มาแล้ว)
         photos: { ...a.draft.photos },
+        // มี url ในร่าง = ถือว่าถ่ายแล้ว (มาร์ค captured ให้ตรงกัน · กัน gate เด้งตอน resume)
+        photosCaptured: markCaptured(a.draft.photos),
         meterDeferred: false,
         resumed: true,
         configSent: false,
@@ -262,10 +284,19 @@ function reducer(s: WizardState, a: Action): WizardState {
       return { ...s, step: s.step <= 1 ? 0 : s.step - 1 };
     case "home":
       return { ...s, step: 0, machineId: null, resumed: false, meterDeferred: false, sessionId: null };
+    case "skipMachine":
+      // ข้าม "ตู้เสียตู้เดียว" ≠ ปิดรอบสาขา: กลับหน้ารายการตู้ไปเก็บตู้ที่เหลือต่อ · คง sessionId
+      // (backend session สาขายังเปิดค้างถูกต้อง · ตู้อื่นในสาขา reuse รอบเดิม · cron auto-close 24ชม
+      //  ครอบเคสตู้สุดท้าย/รอบว่าง) — กัน orphan โดยไม่ null sessionId ทิ้งถ้ายังมีตู้อื่นต้องเก็บ.
+      return { ...s, step: 0, machineId: null, resumed: false, meterDeferred: false };
     case "setForm":
       return { ...s, form: { ...s.form, [a.key]: a.value } };
     case "setPhoto":
-      return { ...s, photos: { ...s.photos, [a.key]: a.url } };
+      // upload สำเร็จ → เก็บ url จริง + มาร์ค captured (เผื่อ setPhoto มาก่อน capture ในบางเส้นทาง)
+      return { ...s, photos: { ...s.photos, [a.key]: a.url }, photosCaptured: { ...s.photosCaptured, [a.key]: a.url || s.photosCaptured[a.key] } };
+    case "capturePhoto":
+      // ถ่ายแล้ว (ยังไม่มี url) → มาร์ค captured เป็น sentinel "captured" เพื่อปลดล็อก gate ทันที
+      return { ...s, photosCaptured: { ...s.photosCaptured, [a.key]: CAPTURED_MARK } };
     case "toggleDefer":
       return { ...s, meterDeferred: !s.meterDeferred };
     case "fillMeterNow":
@@ -283,6 +314,7 @@ const initialState: WizardState = {
   step: 0, machineId: null,
   form: formFor(DEMO_MACHINES[0], DEMO_SKUS),
   photos: { ...blankPhotos },
+  photosCaptured: { ...blankPhotos },
   meterDeferred: false, resumed: false, configSent: false, sessionId: null,
 };
 
@@ -307,9 +339,11 @@ type Props = {
   closedTodayCount: number;
   // ประวัติรอบที่ปิดจริงวันนี้ (ของฉัน) → panel "ประวัติของฉัน"
   history: StaffHistoryRow[];
+  // ตั๋วแจ้งซ่อมล่าสุดของฉัน (จาก listMyRecentRepairTickets) → โชว์ใน RepairPanel. optional default [] กัน build พัง.
+  myRecentTickets?: RepairTicketRow[];
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [] }: Props) {
   const realMachines = useMemo(() => flattenReal(branches), [branches]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
@@ -321,10 +355,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} />
   );
 
   return (
@@ -397,11 +431,12 @@ type StaffAppProps = {
   userName: string;
   closedTodayCount: number;
   history: StaffHistoryRow[];
+  myRecentTickets: RepairTicketRow[];
 };
 
 type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -426,6 +461,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const [tourStep, setTourStep] = useState(0);
   // ตู้ที่กำลังเปิดรอบ (กดแล้วรอ startBranchSession ~2-3 วิ) → โชว์สปินเนอร์บนตู้นั้น
   const [openingId, setOpeningId] = useState<string | null>(null);
+  // ตู้ที่ "เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม" ในรอบนี้ (local เฉพาะเซสชันหน้าจอ · ไม่ persist)
+  // ใช้ติดป้าย "แจ้งซ่อมแล้ว · ข้าม" ในรายการตู้ → พนักงานไม่วนกลับมาบังคับกรอกมิเตอร์ตู้ที่เสีย
+  const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  // กำลังส่งแจ้งซ่อม-ข้าม (กดปุ่ม skip-broken ในขั้นมิเตอร์)
+  const [skipPending, setSkipPending] = useState(false);
 
   const machine = useMemo(
     () => machines.find((m) => m.id === state.machineId) ?? null,
@@ -474,7 +514,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   /* ── นโยบายถ่ายรูป: แต่ละขั้นต้องมีรูปครบไหมก่อนกดถัดไป/ส่ง ──
    * step 1 = ก่อนเติม · step 2 = หลังเติม · step 3 = มิเตอร์ (ตุ๊กตา + เหรียญ อย่างละ 1 รูป) · step 4 = เงินสด.
    * backend coalesce มิเตอร์เป็น 1 ช่อง/ตัว → บังคับอย่างน้อยฝั่งละ 1 (เฟืองหรือดิจิตอล). */
-  const ph = state.photos;
+  // gate ใช้ "ถ่ายแล้ว" (photosCaptured) ไม่ใช่ url — พนักงานถ่ายเสร็จ = ผ่านทันที
+  // (upload วิ่งเบื้องหลัง/retry เอง · เน็ตตกไม่บล็อกที่หน้างาน). captured รวม url สำเร็จด้วยแล้ว.
+  const ph = state.photosCaptured;
   // ขั้นมิเตอร์ที่กด "ถ่ายไว้ก่อน · กรอกทีหลัง" (defer) จะซ่อนปุ่มถ่าย → ห้ามบังคับถ่ายตอนนั้น (กันค้าง)
   const step3PhotoOk = (!!ph.dollGear || !!ph.dollDigi) && (!!ph.coinGear || !!ph.coinDigi);
   const stepPhotoSatisfied =
@@ -536,6 +578,49 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     dispatch({ type: "home" });
   }
 
+  /* ── ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ข้าม 1 ตู้ · ไม่ปิดรอบสาขา) ──
+   * แจ้งซ่อมของจริง (createRepairTicket) สำหรับตู้ปัจจุบัน แล้วมาร์ค skipped + กลับรายการตู้.
+   * ⚠️ คง cfCollectionSession ระดับสาขาไว้ (OPEN) — ข้ามตู้เดียวไม่ควรปิดรอบ เพราะตู้อื่นในสาขา
+   * ยังต้องเก็บต่อ (ตู้อื่น openMachine → startBranchSession reuse รอบ OPEN เดิม · cron auto-close
+   * 24ชม ครอบเคสตู้สุดท้ายถูกข้ามจนรอบว่าง). DEMO → ข้ามอย่างเดียว (ไม่มี backend). */
+  function skipBrokenMachine() {
+    if (!machine) return;
+    const m = machine;
+    setError(null);
+    // demo → ข้ามเฉย ๆ (ไม่มี backend แจ้งซ่อม)
+    if (isDemo(m.id)) {
+      setSkippedIds((prev) => new Set(prev).add(m.id));
+      setDrafts((p) => { const n = { ...p }; delete n[m.id]; return n; });
+      dispatch({ type: "skipMachine" });
+      return;
+    }
+    setSkipPending(true);
+    startTransition(async () => {
+      try {
+        const r = await createRepairTicket({
+          machineId: m.id,
+          symptom: "อ่านมิเตอร์ไม่ได้ / ตู้เสียหน้างาน",
+          note: "แจ้งจากแอปเก็บเงิน — พนักงานกดข้ามตู้นี้ในรอบเก็บ",
+        });
+        if (!r.ok) {
+          console.error("[clawos] skip-broken createRepairTicket failed:", r.error);
+          setError(r.error || "แจ้งซ่อมไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        // แจ้งซ่อมสำเร็จ → มาร์คข้าม + ลบร่างค้าง (ถ้ามี) + กลับรายการตู้ไปเก็บตู้ที่เหลือต่อ
+        // (คง session สาขาไว้ · ไม่ปิดรอบเพราะข้ามแค่ตู้เดียว · ตู้อื่นยังต้องเก็บในรอบเดิม)
+        setSkippedIds((prev) => new Set(prev).add(m.id));
+        setDrafts((p) => { const n = { ...p }; delete n[m.id]; return n; });
+        dispatch({ type: "skipMachine" });
+      } catch (e) {
+        console.error("[clawos] skip-broken threw:", e);
+        setError("แจ้งซ่อมไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      } finally {
+        setSkipPending(false);
+      }
+    });
+  }
+
   /* ── submit the round: REAL → submitBranchEvent + closeBranchSession; DEMO → optimistic ── */
   function submitRound() {
     if (!machine) return;
@@ -566,6 +651,29 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
 
     const sessionId = state.sessionId;
     const p = state.photos;
+
+    // ── หลักฐานกันโกง: ถ้านโยบายบังคับถ่าย + ถ่ายแล้วแต่ url ยังไม่มา (upload retry ค้าง) → รอ ──
+    // gate ตอนกรอกใช้ "ถ่ายแล้ว" (photosCaptured) แบบ optimistic เพื่อไม่บล็อกหน้างานเน็ตตก, แต่
+    // ตอนส่งรอบจริงต้องมี url จริงครบตาม policy — ไม่งั้น event บันทึกไม่มีรูปหลักฐานทั้งที่บังคับ.
+    // เช็คแบบ coalesce ให้ตรงกับ payload ที่ส่ง (มิเตอร์: เฟือง/ดิจิตอลอย่างใดอย่างหนึ่งพอ).
+    if (photoRequired) {
+      const cap = state.photosCaptured;
+      // slot ที่ "ถ่ายแล้ว" (มี capture mark/url) แต่ url จริงยังว่าง = upload ยังไม่เสร็จ
+      const coinCaptured = !!cap.coinDigi || !!cap.coinGear;
+      const prizeCaptured = !!cap.dollDigi || !!cap.dollGear;
+      const waitingUpload =
+        (!!cap.before && !p.before) ||
+        (!!cap.after && !p.after) ||
+        (!!cap.cash && !p.cash) ||
+        (coinCaptured && !(p.coinDigi || p.coinGear)) ||
+        (prizeCaptured && !(p.dollDigi || p.dollGear));
+      if (waitingUpload) {
+        // retry อัปโหลดวิ่งเบื้องหลังเอง (ไม่ต้องถ่ายซ้ำ) → พนักงานแค่รอ url ครบแล้วกดส่งอีกครั้ง
+        setError("⏳ กำลังส่งรูปหลักฐาน รอสักครู่แล้วกดบันทึกอีกครั้ง");
+        return;
+      }
+    }
+
     const refillQty = n0(f.refill);
     startTransition(async () => {
       const ev = await submitBranchEvent({
@@ -705,6 +813,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           skus={skus}
           history={history}
           usingDemo={usingDemo}
+          orgId={orgId}
+          repairMachines={machines}
+          myRecentTickets={myRecentTickets}
+          skippedIds={skippedIds}
         />
       ) : (
         <FlowScreen
@@ -720,11 +832,14 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           afterFill={afterFill}
           photos={state.photos}
           onPhoto={(k, url) => dispatch({ type: "setPhoto", key: k, url })}
+          onCapture={(k) => dispatch({ type: "capturePhoto", key: k })}
           photoRequired={photoRequired}
           photoBlocks={photoBlocks}
           countBlocks={countBlocks}
           meterDeferred={state.meterDeferred}
           toggleDefer={() => dispatch({ type: "toggleDefer" })}
+          onSkipBroken={skipBrokenMachine}
+          skipPending={skipPending}
           resumed={state.resumed}
           meterGroupVals={{ dollMeterEqual, coinMeterEqual }}
           recon={{ dollDelta, expectedCash, dollMatch, cashMatch, meterEqualOk, allMatch }}
@@ -765,8 +880,12 @@ function HomeScreen(props: {
   skus: CollectSku[];
   history: StaffHistoryRow[];
   usingDemo: boolean;
+  orgId: string;
+  repairMachines: AppMachine[];
+  myRecentTickets: RepairTicketRow[];
+  skippedIds: Set<string>;
 }) {
-  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId } = props;
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId, skippedIds } = props;
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (ยังไม่มี assignment-per-staff · ดู crossFileNote).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
@@ -891,15 +1010,18 @@ function HomeScreen(props: {
                   {list.map((m) => {
                     const isDraft = !!drafts[m.id];
                     const isOpening = openingId === m.id;
-                    const tag = isDraft
-                      ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                      : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                    const isSkipped = skippedIds.has(m.id);
+                    const tag = isSkipped
+                      ? { l: "แจ้งซ่อมแล้ว", c: "#B42318", bg: "#FCEDEC", iBg: "#FCEDEC", iC: "#B42318", dot: "#D8503F", hint: "ตู้เสีย · แจ้งซ่อม & ข้ามในรอบนี้แล้ว" }
+                      : isDraft
+                        ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                        : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
                     // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
                     const dimmed = pending && !isOpening;
                     return (
                       <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
                         className={pending ? "" : "co-tap co-lift"}
-                        style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
+                        style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isSkipped ? "#F3D4D0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
                         <span style={{ position: "relative", flex: "0 0 42px" }}>
                           <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
                           <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
@@ -928,7 +1050,7 @@ function HomeScreen(props: {
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} />
       )}
     </div>
   );
@@ -943,7 +1065,7 @@ const PANEL_TITLE: Record<Exclude<Panel, null>, string> = {
   tour: "เติมทัวร์ 7-11",
 };
 
-function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void; skus: CollectSku[]; history: StaffHistoryRow[]; usingDemo: boolean }) {
+function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void; skus: CollectSku[]; history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[] }) {
   const { panel, onBack } = props;
   return (
     <div>
@@ -954,7 +1076,7 @@ function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; t
         <span style={{ fontSize: 15, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
       </div>
       {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} />}
-      {panel === "repair" && <RepairPanel />}
+      {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
       {panel === "stock" && <StockPanel />}
       {panel === "config" && <ConfigPanel />}
       {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
@@ -1003,38 +1125,206 @@ function HistoryPanel({ history, usingDemo }: { history: StaffHistoryRow[]; usin
   );
 }
 
-function RepairPanel() {
-  const repairOptions = ["คีบไม่ทำงาน/อ่อน", "จอ/ไฟเสีย", "เหรียญติด", "ตุ๊กตาติดในตู้", "อื่นๆ"];
-  const repairList = [
-    { code: "BK-04", issue: "ไม่มีเงินเข้า สงสัยคีบเสีย", status: "กำลังซ่อม", c: "#B45309", bg: "#FCF1E2" },
-    { code: "RS-02", issue: "จอแสดงผลดับ", status: "รอช่าง", c: "#B42318", bg: "#FCEDEC" },
-  ];
+// อาการเสียมาตรฐาน (ปุ่มเลือกเร็ว) — "อื่นๆ" ให้พิมพ์อาการเอง
+const REPAIR_SYMPTOMS = ["คีบไม่ติด", "เหรียญค้าง", "จอดับ", "มิเตอร์เพี้ยน", "อื่นๆ"] as const;
+
+// ป้ายสถานะตั๋วซ่อม (ภาษาคน + สี)
+function repairStatusStyle(status: string): { label: string; c: string; bg: string } {
+  switch (status) {
+    case "OPEN": return { label: "รอช่าง", c: "#B42318", bg: "#FCEDEC" };
+    case "IN_PROGRESS": return { label: "กำลังซ่อม", c: "#B45309", bg: "#FCF1E2" };
+    case "RESOLVED": return { label: "ซ่อมแล้ว", c: "#15803D", bg: "#E7F4EC" };
+    case "CANCELLED": return { label: "ยกเลิก", c: "#6B7280", bg: "#F1F2F5" };
+    default: return { label: status, c: "#6B7280", bg: "#F1F2F5" };
+  }
+}
+
+function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
+  orgId: string; machines: AppMachine[]; usingDemo: boolean; myRecentTickets: RepairTicketRow[];
+}) {
+  // ตู้จริงเท่านั้น (โหมด demo ไม่มี backend → แจ้งซ่อมจริงไม่ได้ · โชว์ป้ายตัวอย่าง)
+  const realMachines = useMemo(() => machines.filter((m) => !isDemo(m.id)), [machines]);
+  const canSubmit = !usingDemo && realMachines.length > 0;
+
+  const [machineId, setMachineId] = useState<string>(realMachines[0]?.id ?? "");
+  const [symptom, setSymptom] = useState<string>(REPAIR_SYMPTOMS[0]);
+  const [otherSymptom, setOtherSymptom] = useState<string>(""); // เมื่อเลือก "อื่นๆ"
+  const [note, setNote] = useState<string>("");
+  const [photoUrl, setPhotoUrl] = useState<string>("");
+  const [meterReset, setMeterReset] = useState<boolean>(false);
+  const [propCoin, setPropCoin] = useState<string>(""); // เลขมิเตอร์เหรียญใหม่หลังซ่อม
+  const [propStock, setPropStock] = useState<string>(""); // สต๊อกตุ๊กตาใหม่หลังซ่อม
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  const selected = realMachines.find((m) => m.id === machineId) ?? null;
+  // อาการจริง = ที่เลือก · ถ้า "อื่นๆ" ใช้ที่พิมพ์ (fallback เป็น "อื่นๆ" กัน symptom ว่าง)
+  const effectiveSymptom = symptom === "อื่นๆ" ? otherSymptom.trim() || "อื่นๆ" : symptom;
+
   const lbl = { fontSize: 12, fontWeight: 600, color: "#454B54", display: "block", marginBottom: 5 } as const;
   const sel = { width: "100%", fontSize: 14, fontWeight: 600, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", cursor: "pointer" } as const;
+  const numInput = { width: "100%", fontSize: 15, fontWeight: 700, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" } as const;
+
+  function submit() {
+    if (!canSubmit || !selected) return;
+    setError(null);
+    setOkMsg(null);
+    // ถ้าขอรีเซ็ตมิเตอร์ → ต้องกรอกเลขเหรียญใหม่ + สต๊อกตุ๊กตาใหม่ให้ครบ (ผจก.เอาไปอนุมัติ)
+    const coinNum = propCoin === "" ? undefined : Number(propCoin);
+    const stockNum = propStock === "" ? undefined : Number(propStock);
+    if (meterReset && (coinNum === undefined || stockNum === undefined)) {
+      setError("ขอรีเซ็ตมิเตอร์ · กรอกเลขมิเตอร์เหรียญใหม่ + สต๊อกตุ๊กตาใหม่ให้ครบ");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const r = await createRepairTicket({
+          machineId: selected.id,
+          symptom: effectiveSymptom,
+          note: note.trim() || undefined,
+          photoUrls: photoUrl ? [photoUrl] : undefined,
+          meterResetRequested: meterReset,
+          proposedCoinMeter: meterReset ? coinNum : undefined,
+          proposedDollStock: meterReset ? stockNum : undefined,
+        });
+        if (!r.ok) {
+          console.error("[clawos] createRepairTicket failed:", r.error);
+          setError(r.error || "แจ้งซ่อมไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        // สำเร็จ → เคลียร์ฟอร์ม + โชว์ยืนยัน (รายการล่าสุดจะอัปเดตรอบถัดไปที่โหลดหน้า)
+        setOkMsg(`ส่งแจ้งซ่อมตู้ ${selected.code} แล้ว · ทีมช่างจะได้รับแจ้ง`);
+        setNote("");
+        setPhotoUrl("");
+        setMeterReset(false);
+        setPropCoin("");
+        setPropStock("");
+        setSymptom(REPAIR_SYMPTOMS[0]);
+        setOtherSymptom("");
+      } catch (e) {
+        console.error("[clawos] createRepairTicket threw:", e);
+        setError("แจ้งซ่อมไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-      <ComingSoonBanner text="หน้าแจ้งซ่อมยังไม่เปิดใช้จริง — เป็นตัวอย่างหน้าตา · เร็ว ๆ นี้" />
-      <div>
-        <label style={lbl}>เลือกตู้ที่เสีย</label>
-        <select style={sel}><option>RS-03 · รังสิต</option><option>RS-04 · รังสิต</option><option>BK-02 · บางแค</option><option>LP-01 · ลาดพร้าว</option></select>
-      </div>
-      <div>
-        <label style={lbl}>อาการเสีย</label>
-        <select style={sel}>{repairOptions.map((o) => <option key={o} value={o}>{o}</option>)}</select>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: 11, border: "1.5px dashed #C9CFD8", background: "#FAFBFC", color: "#6B7280", fontSize: 12.5, fontWeight: 600 }}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>แนบรูปอาการเสีย
-      </div>
-      <textarea placeholder="รายละเอียดเพิ่มเติม…" style={{ width: "100%", fontSize: 13, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", minHeight: 64, resize: "none" }} />
-      <ComingSoonButton label="ส่งแจ้งซ่อม (เร็ว ๆ นี้)" />
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54", marginTop: 4 }}>แจ้งซ่อมที่ค้างอยู่</div>
-      {repairList.map((rp) => (
-        <div key={rp.code} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
-          <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "#4F46E5", flex: "0 0 46px" }}>{rp.code}</span>
-          <span style={{ flex: 1, fontSize: 12, color: "#5A6270" }}>{rp.issue}</span>
-          <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: rp.bg, color: rp.c }}>{rp.status}</span>
+      {usingDemo && (
+        <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — แจ้งซ่อมจริงได้เมื่อมีตู้ในระบบ" />
+      )}
+      {!usingDemo && realMachines.length === 0 && (
+        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+          <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีตู้ในระบบ" sub="ติดต่อผู้ดูแลเพื่อเพิ่มตู้ก่อนแจ้งซ่อม" />
         </div>
-      ))}
+      )}
+
+      {canSubmit && (
+        <>
+          {error && (
+            <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+          )}
+          {okMsg && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#15803D", fontWeight: 600, lineHeight: 1.4 }}>
+              <Check size={15} strokeWidth={2.6} />{okMsg}
+            </div>
+          )}
+          <div>
+            <label style={lbl}>เลือกตู้ที่เสีย</label>
+            <select aria-label="เลือกตู้ที่เสีย" title="เลือกตู้ที่เสีย" value={machineId} onChange={(e) => setMachineId(e.target.value)} style={sel}>
+              {realMachines.map((m) => (
+                <option key={m.id} value={m.id}>{m.code} · {m.branch}{m.zone ? ` · ${m.zone}` : ""}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>อาการเสีย</label>
+            <select aria-label="อาการเสีย" title="อาการเสีย" value={symptom} onChange={(e) => setSymptom(e.target.value)} style={sel}>
+              {REPAIR_SYMPTOMS.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            {symptom === "อื่นๆ" && (
+              <input type="text" value={otherSymptom} onChange={(e) => setOtherSymptom(e.target.value)}
+                placeholder="พิมพ์อาการที่พบ…"
+                style={{ width: "100%", fontSize: 13.5, padding: "10px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", marginTop: 8 }} />
+            )}
+          </div>
+          <div>
+            <label style={lbl}>แนบรูปอาการเสีย (ถ่ายได้-ข้ามได้)</label>
+            <PhotoCaptureButton
+              label={photoUrl ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปอาการเสีย"}
+              value={photoUrl} onChange={setPhotoUrl}
+              orgId={orgId} machineCode={selected?.code ?? ""}
+              eventScopeId={`repair-${selected?.id ?? "none"}`} phase="stock" />
+          </div>
+          <div>
+            <label style={lbl}>รายละเอียดเพิ่มเติม</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น เสียงดังผิดปกติ · เกิดตอนไหน…"
+              style={{ width: "100%", fontSize: 13, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", minHeight: 64, resize: "none" }} />
+          </div>
+
+          {/* toggle: เปลี่ยน/รีเซ็ตมิเตอร์หลังซ่อม → ต้องผจก.อนุมัติเลขก่อนใช้ (กันโดนหาว่าโกง) */}
+          <button type="button" onClick={() => setMeterReset((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 13px", borderRadius: 11, cursor: "pointer", textAlign: "left", border: `1.5px solid ${meterReset ? "#C7C3F0" : "#E3E6EA"}`, background: meterReset ? "#EEF0FE" : "#fff" }}>
+            <span style={{ width: 40, height: 24, flex: "0 0 40px", borderRadius: 20, background: meterReset ? "#4F46E5" : "#D6DAE0", position: "relative", transition: "background .15s" }}>
+              <span style={{ position: "absolute", top: 2, left: meterReset ? 18 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+            </span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: meterReset ? "#4338CA" : "#454B54" }}>มิเตอร์รีเซ็ตหลังซ่อม</span>
+              <span style={{ display: "block", fontSize: 11, color: "#6B7280", lineHeight: 1.4 }}>เปิดเมื่อช่างเปลี่ยนบอร์ด/มิเตอร์ แล้วเลขเริ่มใหม่</span>
+            </span>
+          </button>
+
+          {meterReset && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 11, background: "#F8F8FE", border: "1px solid #E0DEF7", borderRadius: 12, padding: "13px 14px" }}>
+              <div style={{ display: "flex", gap: 8, fontSize: 11.5, color: "#4338CA", lineHeight: 1.45 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 16px", marginTop: 1 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                <span>ผจก.อนุมัติก่อนระบบใช้เลขนี้ (กันโดนหาว่าโกงตอนเลขมิเตอร์เปลี่ยน)</span>
+              </div>
+              <div>
+                <label style={lbl}>เลขมิเตอร์เหรียญใหม่ (หลังซ่อม)</label>
+                <input type="number" inputMode="numeric" value={propCoin} onChange={(e) => setPropCoin(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="อ่านเลขมิเตอร์ปัจจุบัน" className="num" style={numInput} />
+              </div>
+              <div>
+                <label style={lbl}>สต๊อกตุ๊กตาในตู้ตอนนี้ (ตัว)</label>
+                <input type="number" inputMode="numeric" value={propStock} onChange={(e) => setPropStock(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="นับตุ๊กตาในตู้" className="num" style={numInput} />
+              </div>
+            </div>
+          )}
+
+          <button type="button" onClick={submit} disabled={pending}
+            className={pending ? "" : "co-tap"}
+            style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
+            {pending ? "กำลังส่ง…" : "ส่งแจ้งซ่อม"}
+          </button>
+        </>
+      )}
+
+      {/* ตั๋วซ่อมของฉันล่าสุด (ของจริง จาก listMyRecentRepairTickets) */}
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54", marginTop: 4 }}>ตั๋วซ่อมของฉันล่าสุด</div>
+      {myRecentTickets.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#9AA1AB", background: "#F6F7FA", borderRadius: 11, padding: "12px 14px", lineHeight: 1.5 }}>
+          ยังไม่มีตั๋วซ่อม — เมื่อคุณแจ้งซ่อม รายการจะขึ้นที่นี่
+        </div>
+      ) : (
+        myRecentTickets.map((rp) => {
+          const st = repairStatusStyle(rp.status);
+          return (
+            <div key={rp.id} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
+              <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "#4F46E5", flex: "0 0 52px" }}>{rp.machineCode}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rp.symptom}</div>
+                {rp.meterResetRequested && (
+                  <div style={{ fontSize: 10.5, color: "#B45309", fontWeight: 600 }}>ขอรีเซ็ตมิเตอร์ · รอผจก.อนุมัติ</div>
+                )}
+              </div>
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: st.bg, color: st.c, whiteSpace: "nowrap" }}>{st.label}</span>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -1225,11 +1515,14 @@ function FlowScreen(props: {
   afterFill: number;
   photos: Photos;
   onPhoto: (k: keyof Photos, url: string) => void;
+  onCapture: (k: keyof Photos) => void;
   photoRequired: boolean;
   photoBlocks: boolean;
   countBlocks: boolean;
   meterDeferred: boolean;
   toggleDefer: () => void;
+  onSkipBroken: () => void; // ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม
+  skipPending: boolean;
   resumed: boolean;
   meterGroupVals: { dollMeterEqual: boolean; coinMeterEqual: boolean };
   recon: ReconData;
@@ -1277,7 +1570,7 @@ function FlowScreen(props: {
             <BigInput value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
             <div style={{ marginTop: 10 }}>
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้ก่อนเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.before}
-                onChange={(url) => props.onPhoto("before", url)}
+                onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} required={props.photoRequired} />
             </div>
             <div style={{ fontSize: 12, color: "#8A909A", display: "flex", alignItems: "center", gap: 7, marginTop: 14 }}>
@@ -1320,7 +1613,7 @@ function FlowScreen(props: {
                 </div>
               )}
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้หลังเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.after}
-                onChange={(url) => props.onPhoto("after", url)}
+                onChange={(url) => props.onPhoto("after", url)} onCaptured={() => props.onCapture("after")}
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} required={props.photoRequired} />
             </div>
           </div>
@@ -1349,14 +1642,14 @@ function FlowScreen(props: {
               <MeterGroup title="มิเตอร์ตุ๊กตา" prev={f.dollPrev} equalOk={props.meterGroupVals.dollMeterEqual} deferred={meterDeferred}
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo} photoRequired={props.photoRequired}
                 rows={[
-                  { label: "เฟือง (บน)", value: f.dollGear, onChange: props.setNum("dollGear"), photo: photos.dollGear, onPhoto: (url) => props.onPhoto("dollGear", url), phase: "prize_meter" },
-                  { label: "ดิจิตอล (ล่าง)", value: f.dollDigi, onChange: props.setNum("dollDigi"), photo: photos.dollDigi, onPhoto: (url) => props.onPhoto("dollDigi", url), phase: "prize_meter" },
+                  { label: "เฟือง (บน)", value: f.dollGear, onChange: props.setNum("dollGear"), photo: photos.dollGear, onPhoto: (url) => props.onPhoto("dollGear", url), onCaptured: () => props.onCapture("dollGear"), phase: "prize_meter" },
+                  { label: "ดิจิตอล (ล่าง)", value: f.dollDigi, onChange: props.setNum("dollDigi"), photo: photos.dollDigi, onPhoto: (url) => props.onPhoto("dollDigi", url), onCaptured: () => props.onCapture("dollDigi"), phase: "prize_meter" },
                 ]} />
               <MeterGroup title="มิเตอร์เหรียญ" prev={f.coinPrev} equalOk={props.meterGroupVals.coinMeterEqual} deferred={meterDeferred}
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} usingDemo={props.usingDemo} photoRequired={props.photoRequired}
                 rows={[
-                  { label: "เฟือง (บน)", value: f.coinGear, onChange: props.setNum("coinGear"), photo: photos.coinGear, onPhoto: (url) => props.onPhoto("coinGear", url), phase: "meter_after" },
-                  { label: "ดิจิตอล (ล่าง)", value: f.coinDigi, onChange: props.setNum("coinDigi"), photo: photos.coinDigi, onPhoto: (url) => props.onPhoto("coinDigi", url), phase: "meter_after" },
+                  { label: "เฟือง (บน)", value: f.coinGear, onChange: props.setNum("coinGear"), photo: photos.coinGear, onPhoto: (url) => props.onPhoto("coinGear", url), onCaptured: () => props.onCapture("coinGear"), phase: "meter_after" },
+                  { label: "ดิจิตอล (ล่าง)", value: f.coinDigi, onChange: props.setNum("coinDigi"), photo: photos.coinDigi, onPhoto: (url) => props.onPhoto("coinDigi", url), onCaptured: () => props.onCapture("coinDigi"), phase: "meter_after" },
                 ]} />
               <button type="button" onClick={props.toggleDefer}
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 11, borderRadius: 11, fontSize: 13, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${meterDeferred ? "#F0D8AE" : "#E3E6EA"}`, background: meterDeferred ? "#FCF1E2" : "#fff", color: meterDeferred ? "#B45309" : "#6B7280" }}>
@@ -1365,6 +1658,18 @@ function FlowScreen(props: {
                 ) : (
                   "ถ่ายไว้ก่อน · กรอกเลขทีหลัง (ในที่ร่ม)"
                 )}
+              </button>
+
+              {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ไม่บังคับกรอกมิเตอร์ครบ · ไม่ทำ session ค้าง) */}
+              <button type="button" disabled={props.skipPending}
+                onClick={() => {
+                  if (props.skipPending) return;
+                  const ok = window.confirm(`ตู้ ${machine?.code ?? "นี้"} เสีย/อ่านมิเตอร์ไม่ได้?\nระบบจะแจ้งซ่อมตู้นี้และข้ามไปเก็บตู้ถัดไป`);
+                  if (ok) props.onSkipBroken();
+                }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 11, borderRadius: 11, fontSize: 12.5, fontWeight: 600, cursor: props.skipPending ? "wait" : "pointer", border: "1.5px solid #F3D4D0", background: "#FDF6F5", color: "#B42318", opacity: props.skipPending ? 0.6 : 1 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                {props.skipPending ? "กำลังแจ้งซ่อม…" : "ตู้นี้เสีย/อ่านมิเตอร์ไม่ได้ — แจ้งซ่อม & ข้าม"}
               </button>
             </div>
           </div>
@@ -1377,7 +1682,7 @@ function FlowScreen(props: {
               <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
               <div style={{ marginTop: 10 }}>
                 <PhotoSlot label={`ถ่ายรูปเงินสด ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.cash}
-                  onChange={(url) => props.onPhoto("cash", url)}
+                  onChange={(url) => props.onPhoto("cash", url)} onCaptured={() => props.onCapture("cash")}
                   orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} required={props.photoRequired} />
               </div>
             </div>
@@ -1617,8 +1922,8 @@ type Phase = "meter_before" | "cash" | "meter_after" | "stock" | "prize_meter" |
  * Skipping is fine (value stays ""); shows a soft "ถ่ายได้-ข้ามได้" hint, never blocks.
  * In demo preview (no real session/upload backend) we render a disabled informational box.
  */
-function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, phase, disabled, required }: {
-  label: string; value: string; onChange: (url: string) => void;
+function PhotoSlot({ label, value, onChange, onCaptured, orgId, machineCode, eventScopeId, phase, disabled, required }: {
+  label: string; value: string; onChange: (url: string) => void; onCaptured?: () => void;
   orgId: string; machineCode: string; eventScopeId: string; phase: Phase; disabled?: boolean; required?: boolean;
 }) {
   if (disabled || !orgId || !machineCode) {
@@ -1631,7 +1936,7 @@ function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, p
   }
   return (
     <div>
-      <PhotoCaptureButton label={label} value={value} onChange={onChange}
+      <PhotoCaptureButton label={label} value={value} onChange={onChange} onCaptured={onCaptured}
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
       {!value && (
         required
@@ -1647,7 +1952,7 @@ function PhotoSlot({ label, value, onChange, orgId, machineCode, eventScopeId, p
 
 type MeterRow = {
   label: string; value: Counted; onChange: (v: string) => void;
-  photo: string; onPhoto: (url: string) => void; phase: Phase;
+  photo: string; onPhoto: (url: string) => void; onCaptured: () => void; phase: Phase;
 };
 function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, eventScopeId, usingDemo, photoRequired }: {
   title: string; prev: number; equalOk: boolean; deferred: boolean; rows: MeterRow[];
@@ -1682,7 +1987,7 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
               </div>
               {canCapture && !deferred && (
                 <PhotoCaptureButton label={r.photo ? "ถ่ายมิเตอร์แล้ว · แตะถ่ายใหม่" : `ถ่ายรูปมิเตอร์ ${photoRequired ? "(บังคับอย่างน้อย 1 รูป)" : "(ถ่ายได้-ข้ามได้)"}`}
-                  value={r.photo} onChange={r.onPhoto}
+                  value={r.photo} onChange={r.onPhoto} onCaptured={r.onCaptured}
                   orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={r.phase} />
               )}
             </div>

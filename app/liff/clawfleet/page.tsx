@@ -7,6 +7,7 @@ import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -77,6 +78,14 @@ export default async function ClawfleetLiffPage() {
     }
   }
 
+  // 🛠️ ตั๋วแจ้งซ่อมล่าสุดของฉัน → RepairPanel. graceful: อ่านไม่ได้ → [] (โชว์ "ยังไม่มีตั๋วซ่อม")
+  let myRecentTickets: RepairTicketRow[] = [];
+  try {
+    myRecentTickets = await listMyRecentRepairTickets();
+  } catch {
+    // graceful: คงค่า default ([])
+  }
+
   return (
     <div className="clawos">
       <StaffAppClient
@@ -87,6 +96,7 @@ export default async function ClawfleetLiffPage() {
         userName={userName}
         closedTodayCount={closedTodayCount}
         history={history}
+        myRecentTickets={myRecentTickets}
       />
     </div>
   );

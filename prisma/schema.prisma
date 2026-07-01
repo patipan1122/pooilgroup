@@ -2597,6 +2597,55 @@ model CfLossLine {
   @@schema("public")
 }
 
+// ultrareview Wave 2 (2026-07-01) — ระบบแจ้งซ่อม + rebaseline มิเตอร์หลังซ่อม (กันช่างโดนหาว่าโกง)
+// scalar FK (แบบ CfLossDoc) เลี่ยงแตะ model User/Organization/Branch. machineCode = snapshot กันต้อง join.
+model CfRepairTicket {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id") @db.Uuid
+  branchId            String    @map("branch_id") @db.Uuid
+  machineId           String    @map("machine_id") @db.Uuid
+  machineCode         String    @map("machine_code") // snapshot
+  symptom             String // คีบไม่ติด/เหรียญค้าง/จอดับ/มิเตอร์เพี้ยน/อื่นๆ
+  note                String?
+  photoUrls           String[]  @default([]) @map("photo_urls")
+  status              String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | CANCELLED
+  reportedById        String?   @map("reported_by_id") @db.Uuid
+  reportedByName      String    @map("reported_by_name")
+  reportedAt          DateTime  @default(now()) @map("reported_at") @db.Timestamptz(6)
+  // maker-checker rebaseline มิเตอร์: ช่าง "เสนอ" เลขใหม่ · ผจก./แอดมิน "อนุมัติ" ตอนปิดงาน จึงเขียน baseline จริง
+  meterResetRequested Boolean   @default(false) @map("meter_reset_requested")
+  proposedCoinMeter   Int?      @map("proposed_coin_meter")
+  proposedDollStock   Int?      @map("proposed_doll_stock")
+  meterAppliedAt      DateTime? @map("meter_applied_at") @db.Timestamptz(6)
+  resolvedById        String?   @map("resolved_by_id") @db.Uuid
+  resolvedByName      String?   @map("resolved_by_name")
+  resolvedAt          DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolutionNote      String?   @map("resolution_note")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, status, reportedAt(sort: Desc)])
+  @@index([orgId, machineId, reportedAt(sort: Desc)])
+  @@index([orgId, branchId, status])
+  @@map("cf_repair_tickets")
+  @@schema("public")
+}
+
+model CfRepairLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  action    String // REPORT | START | RESOLVE | RECALIBRATE | CANCEL | NOTE
+  byId      String?  @map("by_id") @db.Uuid
+  byName    String   @map("by_name")
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, ticketId, createdAt])
+  @@map("cf_repair_logs")
+  @@schema("public")
+}
+
 // =============================================================
 // ChairOps — massage-chair management for 30 branches
 // Lives in `chairops` schema (multi-schema · separate from public)
