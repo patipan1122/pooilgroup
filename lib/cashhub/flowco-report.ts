@@ -26,10 +26,20 @@ export interface FlowcoReportTotals {
   days: number;
 }
 
+export interface FlowcoBranchSummary {
+  steId: number;
+  name: string;
+  totalSales: number;
+  liters: number;
+  days: number;
+}
+
 export interface FlowcoReport {
   rows: FlowcoReportRow[];
   branches: { steId: number; name: string }[];
+  branchSummary: FlowcoBranchSummary[];
   totals: FlowcoReportTotals;
+  grandTotalSales: number; // ยอดรวมทุกสาขา (ไม่ขึ้นกับ filter สาขา)
   dateFrom: string;
   dateTo: string;
   steId: number | null;
@@ -58,8 +68,30 @@ export async function fetchFlowcoReport(
     return seed?.name ?? `สาขา ${ste}`;
   };
 
-  const rows: FlowcoReportRow[] = aggs
-    .filter((a) => SEED_STE.has(a.steId)) // เฉพาะสาขาในลิสต์ (กัน 3001/62 ที่ ฿0)
+  // เฉพาะสาขาในลิสต์ (กัน 3001/62 ที่ ฿0)
+  const seedAggs = aggs.filter((a) => SEED_STE.has(a.steId));
+
+  // สรุปต่อสาขา (ทุกสาขา — ไม่ขึ้นกับ filter) สำหรับการ์ดกดเลือกสาขา
+  const bsMap = new Map<number, FlowcoBranchSummary>();
+  for (const a of seedAggs) {
+    const b = bsMap.get(a.steId) ?? {
+      steId: a.steId,
+      name: nameOf(a.steId),
+      totalSales: 0,
+      liters: 0,
+      days: 0,
+    };
+    b.totalSales += a.totalSales;
+    b.liters += a.liters;
+    b.days += 1;
+    bsMap.set(a.steId, b);
+  }
+  const branchSummary = [...bsMap.values()].sort(
+    (a, b) => b.totalSales - a.totalSales,
+  );
+  const grandTotalSales = branchSummary.reduce((s, b) => s + b.totalSales, 0);
+
+  const rows: FlowcoReportRow[] = seedAggs
     .filter((a) => !q.steId || a.steId === q.steId)
     .map((a) => ({ ...a, branchName: nameOf(a.steId) }))
     .sort((x, y) =>
@@ -89,5 +121,14 @@ export async function fetchFlowcoReport(
     .sort((a, b) => a.steId - b.steId)
     .map((s) => ({ steId: s.steId, name: nameOf(s.steId) }));
 
-  return { rows, branches, totals, dateFrom: q.dateFrom, dateTo: q.dateTo, steId: q.steId ?? null };
+  return {
+    rows,
+    branches,
+    branchSummary,
+    totals,
+    grandTotalSales,
+    dateFrom: q.dateFrom,
+    dateTo: q.dateTo,
+    steId: q.steId ?? null,
+  };
 }

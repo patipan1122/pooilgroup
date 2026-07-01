@@ -79,6 +79,26 @@ export default async function FlowcoImportPage() {
         </div>
       )}
 
+      <Link
+        href="/cashhub/flowco"
+        className="flex items-center gap-3 rounded-2xl border-2 border-[var(--ch-brand)] bg-[var(--ch-brand-50,#eef1ff)] p-4 mb-4 transition-all animate-fade-up hover:shadow-sm"
+      >
+        <div className="size-10 rounded-xl flex items-center justify-center shrink-0 bg-white border border-[var(--ch-border)]">
+          <Fuel className="size-5 text-[var(--ch-brand)]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-sm text-[var(--ch-text)]">
+            ดูรายงานยอดขาย (กดดูรายสาขา · ตารางรายวัน · แยกวิธีจ่าย)
+          </p>
+          <p className="text-xs text-[var(--ch-text-2)] mt-0.5">
+            อ่านสด ๆ จาก FlowCo — เลือกสาขา + ช่วงวัน ดูยอดขาย/เงินสด/บัตร/โอน ได้เลย
+          </p>
+        </div>
+        <span className="text-xs font-semibold text-[var(--ch-brand)] shrink-0">
+          เปิดรายงาน →
+        </span>
+      </Link>
+
       <FlowcoImportView
         defaultFrom={range.min}
         defaultTo={range.max}

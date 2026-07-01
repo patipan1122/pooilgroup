@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Fuel, Info } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
@@ -88,6 +89,50 @@ export default async function FlowcoReportPage({
         <Kpi label="บัตร" value={baht(t.card)} tone />
         <Kpi label="เงินเชื่อ" value={baht(t.credit)} tone />
         <Kpi label="โอน/QR/wallet" value={baht(t.transfer)} tone />
+      </div>
+
+      {/* branch cards — กดเลือกสาขา */}
+      <div className="mt-4 animate-fade-up">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-bold text-[var(--ch-text)]">
+            เลือกสาขา (กดเพื่อดูรายวัน)
+          </p>
+          {steId !== null && (
+            <Link
+              href={`/cashhub/flowco?from=${from}&to=${to}`}
+              className="text-xs font-semibold text-[var(--ch-brand)]"
+            >
+              ← ดูทุกสาขา
+            </Link>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {report.branchSummary.map((b) => {
+            const active = b.steId === steId;
+            return (
+              <Link
+                key={b.steId}
+                href={`/cashhub/flowco?from=${from}&to=${to}&ste=${b.steId}`}
+                className={
+                  "rounded-xl border p-2.5 transition-all hover:shadow-sm " +
+                  (active
+                    ? "border-[var(--ch-brand)] bg-[var(--ch-brand-50,#eef1ff)] ring-1 ring-[var(--ch-brand)]"
+                    : "border-[var(--ch-border)] bg-white hover:border-[var(--ch-brand)]")
+                }
+              >
+                <div className="text-xs font-semibold text-[var(--ch-text)] truncate">
+                  {b.name}
+                </div>
+                <div className="text-base font-extrabold ch-tnum text-[var(--ch-brand)] mt-0.5">
+                  {baht(b.totalSales)}
+                </div>
+                <div className="text-[10px] text-[var(--ch-text-2)]">
+                  {b.days} วัน · {Math.round(b.liters).toLocaleString("th-TH")} ล.
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {/* table */}
