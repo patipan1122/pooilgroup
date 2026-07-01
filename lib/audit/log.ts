@@ -67,6 +67,8 @@ export type AuditAction =
   | "BULK_IMPORT_EV_REPORTS"
   // Gas-station (ปั๊ม 62 / วายเอ็มพลัส) daily sales + cash recon → cashhub_fuel_daily.
   | "BULK_IMPORT_FUEL_REPORTS"
+  // FlowCo (ปั๊มน้ำมัน PO Oil, 20 สาขา) daily sales จาก po_fuel_* → daily_reports.
+  | "BULK_IMPORT_FLOWCO_REPORTS"
   // Hotel daily-sales import from Google-Sheet/xlsx → cashhub_hotel_daily.
   | "IMPORT_HOTEL_SALES"
   // Café Amazon — auto-create daily IV into TRCloud from POS shift-close xlsx.

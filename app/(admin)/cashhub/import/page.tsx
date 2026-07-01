@@ -53,6 +53,15 @@ const SOURCES: ImportSource[] = [
     status: "coming_soon",
   },
   {
+    slug: "flowco",
+    emoji: "⛽",
+    Icon: Fuel,
+    title: "ปั๊มน้ำมัน FlowCo",
+    subtitle: "ยอดขายน้ำมันรายวัน 20 สาขา · ดึงจากระบบ FlowCo อัตโนมัติ",
+    status: "ready",
+    businessType: "fuel_station",
+  },
+  {
     slug: "fuel-trcloud",
     emoji: "⛽",
     Icon: Fuel,
