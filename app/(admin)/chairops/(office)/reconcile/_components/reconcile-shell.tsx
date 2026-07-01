@@ -527,7 +527,28 @@ export async function ReconcileShell({
                   }}
                 />
               ) : perChairDaily ? (
-                <PerChairDetailTab data={perChairDetail} isOrg={isOrg} />
+                <PerChairDetailTab
+                  data={perChairDetail}
+                  isOrg={isOrg}
+                  selectedChair={chair ?? null}
+                  chairHref={(c) => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    usp.set("chair", c);
+                    return `${baseHref}?${usp.toString()}`;
+                  }}
+                  backHref={(() => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    return `${baseHref}?${usp.toString()}`;
+                  })()}
+                />
               ) : (
                 <PerChairTab
                   data={perChair}

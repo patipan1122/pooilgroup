@@ -200,6 +200,19 @@
   opacity: 0.3;
 }
 
+/* CEO 2026-07-01 · เลขตู้ในตารางรายวัน = ลิงก์เจาะดูตู้เดียว */
+.co-scope .rc-chair-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-soft-border, var(--accent));
+  cursor: pointer;
+}
+.co-scope .rc-chair-link:hover {
+  text-decoration: none;
+  border-bottom-style: solid;
+  filter: brightness(0.92);
+}
+
 /* ────── Main ────── */
 .co-scope .rc-main {
   display: flex;
