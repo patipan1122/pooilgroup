@@ -14,6 +14,31 @@ import type { PrismaClient, Prisma } from "@/lib/generated/prisma/client";
 import type { EventKind, ParsedEventRow } from "./starthing-events";
 
 // ---------------------------------------------------------------------------
+// Store-name normalization (tolerant branch matching)
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a StarThing `storeName` (or a `ChairopsBranch.name`) into a stable
+ * comparison key so the two match despite cosmetic drift.
+ *
+ * StarThing exports carry a trailing store-code suffix like " (200)" that the
+ * branch record's name may or may not include. Exact-string matching therefore
+ * orphaned ~77% of POS events (e.g. file "Ck plaza (200)" ≠ branch "Ck plaza").
+ * We strip a trailing "(digits)" group, lowercase, and collapse whitespace so
+ * both sides converge to the same key.
+ *
+ * The backfill migration `20260701_chairops_reresolve_orphan_events.sql`
+ * MUST keep its SQL normalization identical to this function.
+ */
+export function normalizeStoreKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s*\(\s*\d+\s*\)\s*$/, "") // strip trailing " (200)" store code
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
 // Types — the diff-summary shape the UI is built against
 // ---------------------------------------------------------------------------
 
@@ -95,27 +120,46 @@ export async function computeEventDiff(
   kind: EventKind,
   badRowCount = 0,
 ): Promise<EventDiffResult> {
-  // 1) Resolve storeName → branchId via exact-match ChairopsBranch.name (never auto-create).
+  // 1) Resolve storeName → branchId via NORMALIZED match on ChairopsBranch.name.
+  //    Tolerant of a trailing " (store-code)" suffix + case/whitespace — exact
+  //    match previously orphaned ~77% of events because StarThing files carry a
+  //    "(200)" code the branch name may omit ("Ck plaza (200)" vs "Ck plaza").
+  //    NEVER auto-create (per [[pool-csv-import-must-diff-before-write]]);
+  //    ambiguous keys (≥2 branches normalize the same) stay UNMATCHED — we never
+  //    guess which branch a row belongs to.
   const uniqueStores = Array.from(new Set(parsedRows.map((r) => r.storeName)));
-  const branches = uniqueStores.length
-    ? await prisma.chairopsBranch.findMany({
-        where: { orgId, name: { in: uniqueStores } },
-        select: { id: true, name: true },
-      })
-    : [];
-  const branchIdByName = new Map<string, string>();
+  const orgBranches = await prisma.chairopsBranch.findMany({
+    where: { orgId },
+    select: { id: true, name: true },
+  });
+  const branchIdsByKey = new Map<string, string[]>();
   const branchNameById = new Map<string, string>();
-  for (const b of branches) {
-    branchIdByName.set(b.name, b.id);
+  for (const b of orgBranches) {
     branchNameById.set(b.id, b.name);
+    const key = normalizeStoreKey(b.name);
+    const arr = branchIdsByKey.get(key);
+    if (arr) arr.push(b.id);
+    else branchIdsByKey.set(key, [b.id]);
   }
+  /** Unique normalized match only → null when unmatched OR ambiguous. */
+  const resolveBranchId = (storeName: string): string | null => {
+    const ids = branchIdsByKey.get(normalizeStoreKey(storeName));
+    return ids && ids.length === 1 ? ids[0]! : null;
+  };
 
   // 2) Existing rowHashes for this org (batched IN query so we don't pull the whole table).
   const allHashes = Array.from(new Set(parsedRows.map((r) => r.rowHash)));
   const existingHashes = await fetchExistingHashes(prisma, orgId, kind, allHashes);
 
   // 3) Last existing eventAt per branch (for continuity gap detection).
-  const matchedBranchIds = Array.from(branchNameById.keys());
+  //    Only the branches actually referenced (and uniquely resolved) by this file.
+  const matchedBranchIds = Array.from(
+    new Set(
+      uniqueStores
+        .map((s) => resolveBranchId(s))
+        .filter((x): x is string => x !== null),
+    ),
+  );
   const lastExistingByBranch = await fetchLastExistingEventAt(
     prisma,
     orgId,
@@ -127,7 +171,7 @@ export async function computeEventDiff(
   const seenInFile = new Set<string>();
   const rows: ClassifiedEventRow[] = [];
   for (const r of parsedRows) {
-    const branchId = branchIdByName.get(r.storeName) ?? null;
+    const branchId = resolveBranchId(r.storeName);
     let bucket: ClassifiedEventRow["bucket"];
     if (existingHashes.has(r.rowHash)) {
       bucket = "duplicate";
@@ -201,7 +245,7 @@ export async function computeEventDiff(
   const perBranch = Array.from(perBranchMap.values()).sort((a, b) =>
     a.storeName < b.storeName ? -1 : a.storeName > b.storeName ? 1 : 0,
   );
-  const unmatchedBranches = uniqueStores.filter((s) => !branchIdByName.has(s));
+  const unmatchedBranches = uniqueStores.filter((s) => resolveBranchId(s) === null);
 
   const summary: EventDiffSummary = {
     kind,
