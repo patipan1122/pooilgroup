@@ -5,6 +5,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { uploadEventPhoto, validateImageBuffer } from "@/lib/clawfleet/photo";
+import { userBranchIds } from "@/lib/clawfleet/role-guard";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -43,6 +45,49 @@ export async function POST(req: NextRequest) {
   }
   if (!machineCode || !eventScopeId || !PHASES.includes(phase)) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
+  }
+
+  // 🛡️ Branch + lock authorization (anti-cheat evidence integrity)
+  // client ส่ง eventScopeId = "{sessionId}-{machineId}" (ดู staff-app-client.tsx).
+  // ดึง sessionId (uuid นำหน้า) ออกมาเพื่อยืนยันสิทธิ์สาขา + สถานะรอบก่อนรับรูป.
+  // โหมดตัวอย่าง (demo) ไม่มี session จริง → ปล่อยผ่าน (ไม่ใช่หลักฐานจริง อยู่ในเครื่องลูกค้าเท่านั้น).
+  const sessionId = eventScopeId.slice(0, 36); // uuid = 36 ตัวอักษร
+  const isDemoScope = eventScopeId.startsWith("demo-");
+  if (!isDemoScope) {
+    const cfSession = await prisma.cfCollectionSession.findFirst({
+      where: { id: sessionId, orgId: session.user.org_id },
+      // แก้สาขาจาก branchId ตรง ๆ (staff collect flow) หรือ group.branchId (legacy)
+      // ถ้าทั้งคู่ว่าง = ยืนยันเจ้าของไม่ได้ → ปฏิเสธ (ห้ามปล่อย session ที่ไร้สาขา)
+      select: { status: true, branchId: true, group: { select: { branchId: true } } },
+    });
+    if (!cfSession) {
+      return NextResponse.json(
+        { error: "ไม่พบรอบเก็บเงินนี้ในระบบ" },
+        { status: 403 },
+      );
+    }
+    // (b) หลักฐานถูกแช่แข็งเมื่อรอบถูกล็อก → ห้ามอัปทับ/เพิ่มรูปหลังล็อก
+    if (cfSession.status === "LOCKED") {
+      return NextResponse.json(
+        { error: "รอบนี้ถูกล็อกแล้ว · แก้ไข/แนบรูปหลักฐานเพิ่มไม่ได้" },
+        { status: 403 },
+      );
+    }
+    // (a) ต้องมีสิทธิ์เข้าถึงสาขาของรอบนี้ (แอดมิน/viewer = ALL, อื่น ๆ = สาขาที่สังกัด)
+    const branchId = cfSession.branchId ?? cfSession.group?.branchId;
+    if (!branchId) {
+      return NextResponse.json(
+        { error: "ไม่สามารถระบุสาขาของรอบนี้ได้" },
+        { status: 403 },
+      );
+    }
+    const allowed = await userBranchIds(session);
+    if (allowed !== "ALL" && !allowed.includes(branchId)) {
+      return NextResponse.json(
+        { error: "ไม่มีสิทธิ์แนบรูปให้สาขานี้" },
+        { status: 403 },
+      );
+    }
   }
 
   const buf = Buffer.from(await file.arrayBuffer());

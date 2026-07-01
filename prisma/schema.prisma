@@ -2389,6 +2389,9 @@ model CfDeliveryLine {
   productName String   @map("product_name") // snapshot เผื่อสินค้าถูกแก้ชื่อ/ลบ
   qty         Int // จำนวนที่ส่งตามใบ
   receivedQty Int      @default(0) @map("received_qty") // จำนวนที่สาขารับจริง (ตั้งตอนยืนยันรับ)
+  // ราคาที่แอดมินส่วนกลางระบุ ณ ตอนส่งของ (บังคับกรอก > 0) — ราคาขายสินค้า + ราคาทุน
+  salePriceBaht Int?   @map("sale_price_baht") // ราคาขาย (บาท/ครั้ง) — ตั้งเป็นราคาขายเริ่มต้นตอนสาขารับเข้า
+  unitCostCents Int    @default(0) @map("unit_cost_cents") // ราคาทุน (สตางค์) — ใช้เป็นต้นทุนตอนสาขารับเข้าคลัง
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -2556,6 +2559,12 @@ model CfLossDoc {
   photoUrls      String[]     @default([]) @map("photo_urls") // รูปของเสีย/หลักฐาน (R2 URLs)
   reportedById   String       @map("reported_by_id") @db.Uuid
   reportedAt     DateTime     @default(now()) @map("reported_at") @db.Timestamptz(6)
+  // D1 (audit 2026-07-01) maker-checker: ตัดของเสียมูลค่าสูงต้องมีคนที่ 2 อนุมัติ (กันซ่อน shrinkage)
+  status         String       @default("APPROVED") // PENDING | APPROVED | REJECTED (auto-APPROVED เมื่อต่ำกว่าเกณฑ์)
+  reviewedById   String?      @map("reviewed_by_id") @db.Uuid
+  reviewedByName String?      @map("reviewed_by_name")
+  reviewedAt     DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote     String?      @map("review_note")
 
   org      Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)

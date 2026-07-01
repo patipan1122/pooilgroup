@@ -146,27 +146,106 @@ export async function submitCfConfigRequest(input: unknown): Promise<ResultOf<{ 
   }
 }
 
-/** อนุมัติคำขอ (PENDING → APPROVED) · admin-tier เท่านั้น · org-scoped */
+/**
+ * อนุมัติคำขอ (PENDING → APPROVED) · admin-tier เท่านั้น · org-scoped.
+ *
+ * B4 (audit 2026-07-01) — อนุมัติต้อง "ทำจริง" ไม่ใช่แค่พลิกสถานะ:
+ * ถ้าคำขอมี priceBaht → เขียน loadout ใหม่ให้ตู้ในทรานแซกชันเดียวกับการพลิกสถานะ
+ * (ปิด loadout เดิม effectiveTo=now · เปิด loadout ใหม่ effectiveFrom=now · สินค้ายกมาจากเดิม)
+ * เพราะราคานี้คือ "ตัวหาร" ที่ reconcile ใช้ → ต้องเปลี่ยนของจริง ไม่งั้นเป็น approval theater.
+ *
+ * แปลงราคา: priceBaht → เหรียญ/ครั้ง (pricePerPlayCoins) ด้วยอัตรา 1 เหรียญ = 10 บาท
+ * (ตาม comment schema CfMachineLoadout · ปัดขึ้นอย่างน้อย 1 เหรียญ).
+ *
+ * clawFrom/clawTo (ความแรงคีบ) — ยังไม่มี field เก็บใน loadout/machine → บันทึกลง notes
+ * ของ loadout ใหม่ไว้เป็นหลักฐาน (ไม่ silently drop) และแจ้งใน briefing ว่ายังไม่ apply เชิงกลไก.
+ */
 export async function approveCfConfigRequest(id: string): Promise<Result> {
   const session = await assertCfAdmin();
   const orgId = session.user.org_id;
 
   const req = await prisma.cfConfigRequest.findFirst({
     where: { id, orgId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      machineId: true,
+      priceBaht: true,
+      clawFrom: true,
+      clawTo: true,
+      productName: true,
+    },
   });
   if (!req) return { ok: false, error: "ไม่พบคำขอตั้งค่าตู้" };
   if (req.status !== "PENDING") return { ok: false, error: "คำขอนี้ถูกตรวจไปแล้ว" };
 
+  // ถ้าคำขอ "เสนอปรับราคา" (มี priceBaht) แต่ผูกตู้ไม่ได้ → ห้ามอนุมัติแบบ half-apply
+  // (จะพลิกสถานะเป็นอนุมัติแต่ราคาตู้ไม่เปลี่ยน = theater เดิม) → fail ชัดเจน
+  const wantsPriceChange = req.priceBaht != null && req.priceBaht > 0;
+  if (wantsPriceChange && !req.machineId) {
+    return {
+      ok: false,
+      error: "คำขอนี้ขอปรับราคาแต่ไม่ได้ระบุตู้ที่จะปรับ · แก้คำขอให้ผูกตู้ก่อนอนุมัติ",
+    };
+  }
+
+  const clawNote =
+    req.clawFrom != null && req.clawTo != null
+      ? ` · ความแรงคีบ ${req.clawFrom}→${req.clawTo} (บันทึกไว้ · ยังไม่เชื่อมฮาร์ดแวร์)`
+      : "";
+
   try {
-    await prisma.cfConfigRequest.update({
-      where: { id: req.id },
-      data: {
-        status: "APPROVED",
-        reviewedById: session.user.id,
-        reviewedByName: session.user.name ?? null,
-        reviewedAt: new Date(),
-      },
+    await prisma.$transaction(async (tx) => {
+      // 1) พลิกสถานะ + ประทับผู้ตรวจ
+      await tx.cfConfigRequest.update({
+        where: { id: req.id },
+        data: {
+          status: "APPROVED",
+          reviewedById: session.user.id,
+          reviewedByName: session.user.name ?? null,
+          reviewedAt: new Date(),
+        },
+      });
+
+      if (!wantsPriceChange || !req.machineId) return; // ไม่ได้ขอปรับราคา = แค่อนุมัติ
+
+      // 2) หา loadout ที่ active อยู่ของตู้ (effectiveTo = null) — ต้องมีสินค้ายกมา
+      const active = await tx.cfMachineLoadout.findFirst({
+        where: { orgId, machineId: req.machineId, effectiveTo: null },
+        orderBy: { effectiveFrom: "desc" },
+        select: { id: true, productId: true },
+      });
+      if (!active) {
+        // ไม่มี loadout ตั้งต้น → ไม่รู้ว่าตู้ขายสินค้าอะไร → เปิด loadout ใหม่ไม่ได้อย่างปลอดภัย
+        // rollback ทั้งก้อน (รวมการพลิกสถานะ) → คำขอยังคง PENDING
+        throw new Error(
+          "ตู้นี้ยังไม่ได้ตั้งสินค้า/ราคาเริ่มต้น (loadout) · ตั้งค่าตู้ก่อนจึงจะอนุมัติปรับราคาได้",
+        );
+      }
+
+      // 3) ราคา baht → เหรียญ/ครั้ง (1 เหรียญ = 10 บาท · อย่างน้อย 1 เหรียญ)
+      const coins = Math.max(1, Math.round((req.priceBaht ?? 0) / 10));
+      const now = new Date();
+
+      // 4) ปิด loadout เดิม (effectiveTo = now)
+      await tx.cfMachineLoadout.update({
+        where: { id: active.id },
+        data: { effectiveTo: now },
+      });
+
+      // 5) เปิด loadout ใหม่ ราคาใหม่ · สินค้ายกมาจากเดิม · effectiveFrom = now
+      await tx.cfMachineLoadout.create({
+        data: {
+          orgId,
+          machineId: req.machineId,
+          productId: active.productId,
+          pricePerPlayCoins: coins,
+          effectiveFrom: now,
+          effectiveTo: null,
+          setById: session.user.id,
+          notes: `อนุมัติจากคำขอตั้งค่าตู้ · ราคาใหม่ ${req.priceBaht} บาท/ครั้ง (${coins} เหรียญ)${clawNote}`,
+        },
+      });
     });
     revalidatePath(CONFIG_PATH);
     return { ok: true };

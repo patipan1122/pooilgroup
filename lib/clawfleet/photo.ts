@@ -1,6 +1,7 @@
 // ClawFleet — photo upload helpers (R2)
 // Spec: docs/CLAWFLEET_PLAN.md §11
 
+import { randomUUID } from "node:crypto";
 import { putObject } from "@/lib/r2/upload";
 
 export type PhotoPhase =
@@ -18,7 +19,10 @@ export function photoKey(opts: {
   phase: PhotoPhase;
 }): string {
   const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
-  return `clawfleet/${opts.orgId}/${ym}/${opts.machineCode}/${opts.eventId}/${opts.phase}.webp`;
+  // 🛡️ anti-tamper: สุ่ม suffix ต่อการอัปทุกครั้ง → key ไม่ซ้ำ → อัปทับหลักฐานเดิมไม่ได้
+  // (last-write-wins ของ R2 จะ overwrite ก็ต่อเมื่อ key เดียวกัน — เราทำให้ key ไม่มีวันซ้ำ)
+  const rand = randomUUID().slice(0, 8);
+  return `clawfleet/${opts.orgId}/${ym}/${opts.machineCode}/${opts.eventId}/${opts.phase}-${rand}.webp`;
 }
 
 export async function uploadEventPhoto(opts: {

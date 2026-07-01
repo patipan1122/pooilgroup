@@ -122,6 +122,10 @@ export type CfLossRow = {
   itemsCount: number;
   photoCount: number;
   reportedAt: Date;
+  // D1 maker-checker (audit 2026-07-01): สถานะอนุมัติ + คนแจ้ง/คนอนุมัติ (สำหรับ pill + self-approve gate)
+  status: string; // PENDING | APPROVED | REJECTED
+  reportedById: string;
+  reviewedByName: string | null;
 };
 
 export async function getCfLosses(orgId: string, branchId: string): Promise<CfLossRow[]> {
@@ -140,6 +144,9 @@ export async function getCfLosses(orgId: string, branchId: string): Promise<CfLo
     itemsCount: r._count.lines,
     photoCount: r.photoUrls.length,
     reportedAt: r.reportedAt,
+    status: r.status,
+    reportedById: r.reportedById,
+    reviewedByName: r.reviewedByName,
   }));
 }
 

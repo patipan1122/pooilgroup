@@ -10,13 +10,27 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { assertCfAdmin, userBranchIds } from "./role-guard";
+import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager } from "./role-guard";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
 
 const STOCK_PATH = "/clawfleet/os/stock";
 const ANOMALY_PATH = "/clawfleet/os/collections";
+
+// ── D1 (audit 2026-07-01) · maker-checker การตัดของเสีย/ปรับยอด ─────────────
+// ตัดของเสีย/ของหาย (recordLoss) และปรับยอดนับกายภาพ (submitStockCount) เดิมมีแค่
+// assertBranchAccess (เป็นสมาชิกสาขา) → พนักงานเก็บของคนเดียวตัดของออกเท่าไหร่ก็ได้
+// และซ่อน shrinkage (นับให้ยอดลด) ได้โดยไม่มีคนที่ 2 เห็น. แก้ 2 ชั้น:
+//   1) role-rank guard — เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่ "สร้าง" ใบตัด/ปรับยอดใหญ่ได้
+//   2) มูลค่าเกินเกณฑ์ → ใบตัดของเสียเข้าสถานะ PENDING (รอคนที่ 2 อนุมัติ) และ
+//      "ยังไม่ตัดสต๊อกจริง" จนกว่าจะ APPROVED → กันซ่อนของหายก่อนมีคนตรวจ
+const LOSS_APPROVAL_THRESHOLD_CENTS = 50000; // ฿500 — เกินนี้ต้องมีคนที่ 2 อนุมัติ
+
+/** ผู้ที่มีสิทธิ์ "สร้าง/อนุมัติ" การตัดของเสีย/ปรับยอดใหญ่ = ผจก.สาขา + แอดมิน (ไม่ใช่พนักงานเก็บของ) */
+function canWriteOff(role: Parameters<typeof isCfAdmin>[0]): boolean {
+  return isCfAdmin(role) || isCfBranchManager(role);
+}
 
 // ── code-gen (human-readable · BE year · timestamp+random suffix · กันชนต่ำ) ──
 function beYearTwo(): string {
@@ -289,6 +303,15 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
   }
   const { session, orgId } = ctx;
 
+  // D1 · role-rank guard — ปรับยอดนับกายภาพ = ปรับสต๊อกได้ตรง ๆ (ซ่อน shrinkage ได้ถ้าปรับยอดลง)
+  // → เฉพาะผู้จัดการสาขา/แอดมินเท่านั้น (พนักงานเก็บของ/viewer นับได้แต่ไม่มีสิทธิ์ "ยืนยันปรับยอด").
+  // NOTE (partial vs recordLoss): CfStockCount ยังไม่มีคอลัมน์ status ในสคีมา (D1 ขยายเฉพาะ CfLossDoc)
+  //   → เพิ่มเฉพาะ role guard ที่นี่ · ปรับยอดลงก้อนใหญ่ยังตัดสต๊อกทันที (ไม่มี PENDING flow)
+  //   → ถ้าต้องการ maker-checker เต็มรูปแบบสำหรับการนับ ต้องเพิ่ม status ให้ CfStockCount + migration.
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยืนยันปรับยอดนับสต๊อกได้");
+  }
+
   const result = await prisma
     .$transaction(async (tx) => {
       const ids = lines.map((l) => l.productId);
@@ -426,7 +449,7 @@ const LossSchema = z.object({
     .min(1, "ยังไม่ได้ใส่รายการของหาย"),
 });
 
-export async function recordLoss(input: unknown): Promise<Result<{ lossCode: string; lossId: string; totalCostCents: number }>> {
+export async function recordLoss(input: unknown): Promise<Result<{ lossCode: string; lossId: string; totalCostCents: number; status: "PENDING" | "APPROVED" }>> {
   const parsed = LossSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
   const { branchId, reason, note, photoUrls, lines } = parsed.data;
@@ -438,6 +461,12 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
     return err((e as Error).message);
   }
   const { session, orgId } = ctx;
+
+  // D1 · role-rank guard — เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่สร้างใบตัดของเสียได้
+  // (พนักงานเก็บของ/viewer ตัดของออกจากคลังเองไม่ได้ · กันตัด/ซ่อนของหายลำพัง)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตัดของเสีย/ของหายได้");
+  }
 
   const result = await prisma
     .$transaction(async (tx) => {
@@ -457,6 +486,12 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
         work.push({ id: p.id, name: p.name, qty: l.qty, cost: p.unitCostCents, note: l.note ?? "" });
       }
 
+      // D1 · มูลค่าเกินเกณฑ์ → PENDING (รอคนที่ 2 อนุมัติ) · ต่ำกว่าเกณฑ์ → APPROVED อัตโนมัติ
+      // ⚠️ Ledger correctness: PENDING = ยังไม่ตัดสต๊อกจริง (ไม่เขียน LOSS_ADJUST movement)
+      //    → สต๊อกยังไม่ลดจนกว่าจะ APPROVED (กันซ่อน shrinkage ก่อนมีคนตรวจ).
+      const status: "PENDING" | "APPROVED" =
+        total > LOSS_APPROVAL_THRESHOLD_CENTS ? "PENDING" : "APPROVED";
+
       const loss = await tx.cfLossDoc.create({
         data: {
           orgId,
@@ -465,6 +500,7 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
           reason,
           note: note || null,
           totalCostCents: total,
+          status,
           photoUrls: photoUrls ?? [],
           reportedById: session.user.id,
           lines: {
@@ -481,28 +517,17 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
         select: { id: true, lossCode: true },
       });
 
-      for (const w of work) {
-        await tx.cfStockMovement.create({
-          data: {
-            orgId,
-            branchId,
-            type: "LOSS_ADJUST",
-            productId: w.id,
-            qty: -w.qty, // negative — ของหายออกจากคลัง
-            unitCostCents: w.cost,
-            occurredAt: new Date(),
-            createdById: session.user.id,
-            refTable: "cf_loss_docs",
-            refId: loss.id,
-            documentType: "loss_doc",
-            documentId: loss.id,
-            photoUrls: photoUrls ?? [],
-            reason: w.note || `ของหาย/เสียหาย (${reason})`,
-          },
+      // เขียน movement ตัดสต๊อก "เฉพาะ" ใบที่ APPROVED (auto ต่ำกว่าเกณฑ์) เท่านั้น.
+      // PENDING → ข้าม · ให้ reviewCfLoss เขียน movement ตอนอนุมัติ (single source of truth).
+      if (status === "APPROVED") {
+        await applyLossMovements(tx, {
+          orgId, branchId, lossId: loss.id, reason,
+          createdById: session.user.id, photoUrls: photoUrls ?? [],
+          work,
         });
       }
 
-      return { lossId: loss.id, lossCode: loss.lossCode, totalCostCents: total };
+      return { lossId: loss.id, lossCode: loss.lossCode, totalCostCents: total, status };
     })
     .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
 
@@ -510,6 +535,145 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
   revalidatePath(STOCK_PATH);
   revalidatePath("/clawfleet/os/dashboard");
   return { ok: true, data: result };
+}
+
+/**
+ * เขียน LOSS_ADJUST movement (ตัดสต๊อกออก · negative qty) ต่อสินค้าในใบตัดของเสีย.
+ * ใช้ร่วมกันระหว่าง recordLoss (auto-APPROVED) และ reviewCfLoss (อนุมัติใบ PENDING)
+ * → ให้ ledger เขียนที่เดียว (idempotent guard อยู่ที่ caller: PENDING/APPROVED status).
+ */
+async function applyLossMovements(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  args: {
+    orgId: string;
+    branchId: string;
+    lossId: string;
+    reason: string;
+    createdById: string;
+    photoUrls: string[];
+    work: Array<{ id: string; qty: number; cost: number; note: string }>;
+  },
+): Promise<void> {
+  const now = new Date();
+  for (const w of args.work) {
+    await tx.cfStockMovement.create({
+      data: {
+        orgId: args.orgId,
+        branchId: args.branchId,
+        type: "LOSS_ADJUST",
+        productId: w.id,
+        qty: -w.qty, // negative — ของหายออกจากคลัง
+        unitCostCents: w.cost,
+        occurredAt: now,
+        createdById: args.createdById,
+        refTable: "cf_loss_docs",
+        refId: args.lossId,
+        documentType: "loss_doc",
+        documentId: args.lossId,
+        photoUrls: args.photoUrls,
+        reason: w.note || `ของหาย/เสียหาย (${args.reason})`,
+      },
+    });
+  }
+}
+
+// =============================================================
+// 3b) อนุมัติ / ตีกลับ ใบตัดของเสีย (maker-checker · D1 audit 2026-07-01)
+//     - เฉพาะผู้จัดการสาขา/แอดมิน · self-approve guard (คนแจ้ง ≠ คนอนุมัติ)
+//     - approve → เขียน LOSS_ADJUST movement ตอนนี้ (สต๊อกลดจริง "เมื่ออนุมัติ")
+//     - reject → ไม่เขียน movement (ใบไม่เคยตัดสต๊อก · void) · stamp reviewer
+// =============================================================
+const ReviewLossSchema = z.object({
+  lossId: z.string().uuid("ใบตัดของเสียไม่ถูกต้อง"),
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().trim().max(500).optional(),
+});
+
+export async function reviewCfLoss(input: unknown): Promise<Result<{ lossId: string; status: "APPROVED" | "REJECTED" }>> {
+  const parsed = ReviewLossSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { lossId, decision, note } = parsed.data;
+
+  // หา branch ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา (admin = ทุกสาขา)
+  const head = await prisma.cfLossDoc.findFirst({
+    where: { id: lossId },
+    select: { id: true, orgId: true, branchId: true, status: true, reason: true, reportedById: true, photoUrls: true },
+  });
+  if (!head) return err("ไม่พบใบตัดของเสีย");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(head.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบตัดของเสียนี้");
+
+  // role-rank guard — เฉพาะผู้จัดการสาขา/แอดมิน (mirror reviewV2Session A1)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่อนุมัติ/ตีกลับใบตัดของเสียได้");
+  }
+
+  // self-approve guard (segregation of duties · F2) — คนแจ้ง ≠ คนอนุมัติ
+  if (head.reportedById === session.user.id) {
+    return err("อนุมัติ/ตีกลับใบที่ตัวเองแจ้งไม่ได้ · ให้คนอื่นตรวจ (maker ≠ checker)");
+  }
+
+  // ต้องเป็นใบ PENDING เท่านั้น — ตัดสินไปแล้ว (APPROVED/REJECTED) ห้ามตัดสินซ้ำ
+  if (head.status !== "PENDING") {
+    return err(
+      head.status === "APPROVED" ? "ใบนี้อนุมัติไปแล้ว" : "ใบนี้ถูกตีกลับไปแล้ว",
+    );
+  }
+
+  const newStatus: "APPROVED" | "REJECTED" = decision === "approve" ? "APPROVED" : "REJECTED";
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // 🔒 atomic claim — อนุมัติได้ครั้งเดียว: อัปเดตเฉพาะแถวที่ยัง PENDING.
+      // 2 คนกดอนุมัติพร้อมกัน → คนที่สอง match 0 แถว → no-op (ไม่เขียน movement ซ้ำ = ตัดสต๊อกซ้ำ)
+      const claim = await tx.cfLossDoc.updateMany({
+        where: { id: head.id, orgId, status: "PENDING" },
+        data: {
+          status: newStatus,
+          reviewedById: session.user.id,
+          reviewedByName: session.user.name || session.user.email || null,
+          reviewedAt: new Date(),
+          reviewNote: note || null,
+        },
+      });
+      if (claim.count !== 1) {
+        // คนอื่นตัดสินไปก่อนแล้ว (race) → no-op
+        throw new Error("ใบนี้เพิ่งถูกตัดสินไปแล้ว · รีเฟรชแล้วลองใหม่");
+      }
+
+      // approve → เขียน movement ตัดสต๊อก "ตอนนี้" (สต๊อกลดจริงเมื่ออนุมัติ)
+      // reject → ไม่เขียนอะไร (ใบ PENDING ไม่เคยตัดสต๊อก → void สะอาด · ไม่ต้องกลับรายการ)
+      if (newStatus === "APPROVED") {
+        const lines = await tx.cfLossLine.findMany({
+          where: { lossId: head.id, orgId },
+          select: { productId: true, qty: true, unitCostCents: true, note: true },
+        });
+        await applyLossMovements(tx, {
+          orgId,
+          branchId: head.branchId,
+          lossId: head.id,
+          reason: head.reason,
+          createdById: session.user.id,
+          photoUrls: head.photoUrls ?? [],
+          work: lines.map((l) => ({ id: l.productId, qty: l.qty, cost: l.unitCostCents, note: l.note ?? "" })),
+        });
+      }
+
+      return { status: newStatus };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/dashboard");
+  return { ok: true, data: { lossId, status: result.status } };
 }
 
 // =============================================================
@@ -638,6 +802,9 @@ const CreateShipmentSchema = z.object({
       z.object({
         productId: z.string().uuid(),
         qty: z.coerce.number().int().positive(),
+        // แอดมินส่วนกลางส่งของ = ต้องระบุราคาขาย + ราคาทุนของสินค้า ณ ตอนส่ง (บังคับ > 0)
+        salePriceBaht: z.coerce.number().int().positive("ระบุราคาขายของสินค้า (บาท) มากกว่า 0"),
+        unitCostCents: z.coerce.number().int().positive("ระบุราคาทุนของสินค้า (บาท) มากกว่า 0"),
       }),
     )
     .min(1, "ยังไม่ได้ใส่รายการสินค้าในใบกระจาย"),
@@ -666,13 +833,28 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
       const pmap = new Map(products.map((p) => [p.id, p]));
 
       // รวม qty ของ product ที่ซ้ำบรรทัด → 1 line ต่อ product (กันใบกระจายมีสินค้าซ้ำ)
-      const agg = new Map<string, { id: string; name: string; qty: number }>();
+      // ราคาขาย/ราคาทุน = ใช้ค่าจากบรรทัดล่าสุดของ product นั้น (บังคับ > 0 มาแล้วจาก Zod)
+      const agg = new Map<
+        string,
+        { id: string; name: string; qty: number; salePriceBaht: number; unitCostCents: number }
+      >();
       for (const l of lines) {
         const p = pmap.get(l.productId);
         if (!p) throw new Error(`ไม่พบสินค้า ${l.productId}`);
         const cur = agg.get(p.id);
-        if (cur) cur.qty += l.qty;
-        else agg.set(p.id, { id: p.id, name: p.name, qty: l.qty });
+        if (cur) {
+          cur.qty += l.qty;
+          cur.salePriceBaht = l.salePriceBaht;
+          cur.unitCostCents = l.unitCostCents;
+        } else {
+          agg.set(p.id, {
+            id: p.id,
+            name: p.name,
+            qty: l.qty,
+            salePriceBaht: l.salePriceBaht,
+            unitCostCents: l.unitCostCents,
+          });
+        }
       }
       const work = Array.from(agg.values());
       const itemsCount = work.length;
@@ -695,6 +877,8 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
               productId: w.id,
               productName: w.name,
               qty: w.qty,
+              salePriceBaht: w.salePriceBaht,
+              unitCostCents: w.unitCostCents,
             })),
           },
         },
@@ -761,7 +945,16 @@ export async function confirmShipmentReceived(
           id: true,
           branchId: true,
           status: true,
-          lines: { select: { id: true, productId: true, productName: true, qty: true } },
+          lines: {
+            select: {
+              id: true,
+              productId: true,
+              productName: true,
+              qty: true,
+              salePriceBaht: true,
+              unitCostCents: true,
+            },
+          },
         },
       });
       if (!d) throw new Error("ไม่พบใบกระจาย");
@@ -781,38 +974,81 @@ export async function confirmShipmentReceived(
         return { status: "DELIVERED", alreadyReceived: true };
       }
 
-      // ต้นทุนต่อชิ้น = ต้นทุนเฉลี่ยปัจจุบันของสินค้า (ห้าม 0 → ทำต้นทุนเฉลี่ยถ่วงน้ำหนักเพี้ยน)
+      // ต้นทุนต่อชิ้น = ราคาทุนที่แอดมินส่วนกลางระบุบนใบกระจาย (line.unitCostCents · บังคับ > 0 ตอนสร้างใบ)
+      // แถวเก่า (ก่อน migration wave B) จะมี unitCostCents = 0 → fallback ต้นทุนเฉลี่ยปัจจุบันของสินค้า
+      // เพื่อไม่ให้ใบเก่ายืนยันรับไม่ได้ · ห้าม 0 สุดท้าย (เจือจางต้นทุนเฉลี่ยถ่วงน้ำหนัก)
       const ids = d.lines.map((l) => l.productId);
       const products = await tx.cfProduct.findMany({
         where: { id: { in: ids }, orgId },
         select: { id: true, name: true, unitCostCents: true },
       });
-      const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+      const prodCostMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
       const nameMap = new Map(products.map((p) => [p.id, p.name]));
 
-      // รวมจำนวนรับจริงต่อ product (กัน product ซ้ำหลาย line) + snapshot ยอด org ก่อนเขียน
-      const agg = new Map<string, { id: string; qty: number; cost: number }>();
+      // รวมจำนวนรับจริงต่อ product (กัน product ซ้ำหลาย line) + รวมมูลค่าทุนเพื่อหาต้นทุนเฉลี่ยของครั้งนี้
+      // + carry ราคาขาย (บาท) ที่ระบุบนใบ → ตั้งเป็น defaultPriceCoins ของสินค้า
+      const agg = new Map<
+        string,
+        { id: string; qty: number; costTotalCents: number; salePriceBaht: number | null }
+      >();
       for (const ln of d.lines) {
         const recv = recvMap.get(ln.id);
         // clamp ≤ qty ในใบ (รับเกินจำนวนที่ส่งไม่ได้) · ไม่ส่งจำนวนมา = รับครบตามใบ
         const qty = recv == null ? ln.qty : Math.min(recv, ln.qty);
         await tx.cfDeliveryLine.update({ where: { id: ln.id }, data: { receivedQty: qty } });
         if (qty <= 0) continue;
-        const cost = costMap.get(ln.productId) ?? 0;
-        if (cost <= 0) {
+        // ต้นทุนจากใบก่อน · ถ้าใบเก่าไม่มี (0) → ต้นทุนเฉลี่ยปัจจุบันของสินค้า
+        const lineCost = ln.unitCostCents > 0 ? ln.unitCostCents : (prodCostMap.get(ln.productId) ?? 0);
+        if (lineCost <= 0) {
           // reject ทั้งใบ (rollback claim) แทนเขียน movement ทุน 0 ที่ทำต้นทุนเฉลี่ยเพี้ยน
           throw new Error(
             `สินค้า "${nameMap.get(ln.productId) ?? ln.productName}" ยังไม่ได้ตั้งราคาทุน · ตั้งราคาทุนก่อนรับเข้าคลัง`,
           );
         }
         const cur = agg.get(ln.productId);
-        if (cur) cur.qty += qty;
-        else agg.set(ln.productId, { id: ln.productId, qty, cost });
+        if (cur) {
+          cur.qty += qty;
+          cur.costTotalCents += lineCost * qty;
+          if (ln.salePriceBaht != null && ln.salePriceBaht > 0) cur.salePriceBaht = ln.salePriceBaht;
+        } else {
+          agg.set(ln.productId, {
+            id: ln.productId,
+            qty,
+            costTotalCents: lineCost * qty,
+            salePriceBaht: ln.salePriceBaht != null && ln.salePriceBaht > 0 ? ln.salePriceBaht : null,
+          });
+        }
       }
 
-      // รับเข้าสต๊อกสาขา — RECEIPT_IN movement (machineId null = คลังสาขา) · ตรรกะเดียวกับ receiveStock
+      // รับเข้าสต๊อกสาขา — RECEIPT_IN movement (machineId null = คลังสาขา) · ตรรกะเดียวกับ receiveStock:
+      // (1) ล็อกต่อ product กัน lost-update ต้นทุนเฉลี่ยถ่วงน้ำหนัก
+      // (2) อัปเดต cfProduct.unitCostCents = ต้นทุนเฉลี่ยถ่วงน้ำหนัก (org-wide)
+      // (3) ตั้ง defaultPriceCoins จากราคาขายบนใบ (baht → เหรียญ · 10 บาท = 1 เหรียญ · อย่างน้อย 1)
       const now = new Date();
       for (const a of agg.values()) {
+        // 🔒 ล็อกต่อ product (transaction-level) — serialize การคำนวณต้นทุนเฉลี่ยถ่วงน้ำหนัก
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${a.id}))`;
+        const unit = a.qty > 0 ? Math.round(a.costTotalCents / a.qty) : 0;
+        const oldCost = prodCostMap.get(a.id) ?? 0;
+        const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
+          where: { orgId, productId: a.id },
+          _sum: { qty: true },
+        });
+        const orgQtyBefore = Math.max(0, totalQtyAcrossOrg._sum.qty ?? 0);
+        const avgCost =
+          orgQtyBefore + a.qty > 0
+            ? Math.round((oldCost * orgQtyBefore + unit * a.qty) / (orgQtyBefore + a.qty))
+            : unit;
+
+        // อัปเดตต้นทุนเฉลี่ย + (ถ้ามีราคาขายบนใบ) ตั้งราคาขายเริ่มต้นของสินค้า
+        const productUpdate: { unitCostCents: number; defaultPriceCoins?: number } = {
+          unitCostCents: avgCost,
+        };
+        if (a.salePriceBaht != null && a.salePriceBaht > 0) {
+          productUpdate.defaultPriceCoins = Math.max(1, Math.round(a.salePriceBaht / 10));
+        }
+        await tx.cfProduct.update({ where: { id: a.id }, data: productUpdate });
+
         const oldBal = await currentBalance(tx, orgId, d.branchId, a.id);
         await tx.cfStockMovement.create({
           data: {
@@ -821,7 +1057,7 @@ export async function confirmShipmentReceived(
             type: "RECEIPT_IN",
             productId: a.id,
             qty: a.qty,
-            unitCostCents: a.cost,
+            unitCostCents: unit,
             occurredAt: now,
             createdById: session.user.id,
             refTable: "cf_deliveries",

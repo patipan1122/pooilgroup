@@ -12,12 +12,12 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
-  Boxes, ArrowRight, Plus, Trash2, Inbox,
+  Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock,
 } from "lucide-react";
 import { Card, Pill, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
 import {
-  transferStock, receiveStock, submitStockCount, recordLoss,
+  transferStock, receiveStock, submitStockCount, recordLoss, reviewCfLoss,
   createShipment, confirmShipmentReceived,
 } from "@/lib/clawfleet/stock-actions";
 
@@ -48,6 +48,10 @@ export type DocCountSeed = {
 export type DocLossSeed = {
   id: string; code: string; reasonLabel: string;
   itemsCount: number; totalCostCents: number; reportedAt: string;
+  // D1 maker-checker (audit 2026-07-01): สถานะอนุมัติ + คนแจ้ง + คนอนุมัติ
+  status: string; // PENDING | APPROVED | REJECTED
+  reportedById: string;
+  reviewedByName: string | null;
 };
 export type WarehouseRowSeed = {
   id: string; name: string; cat: string; qty: number; recvISO: string | null;
@@ -232,6 +236,8 @@ export function StockClient({
   warehouseRows,
   shipments,
   docBranchId,
+  viewerId,
+  canReviewLoss,
 }: {
   branches: BranchStockSeed[];
   realBranches: BranchOption[];
@@ -242,6 +248,8 @@ export function StockClient({
   warehouseRows: WarehouseRowSeed[];
   shipments: ShipmentSeed[];
   docBranchId: string | null;
+  viewerId: string;
+  canReviewLoss: boolean;
 }) {
   const empty = branches.length === 0;
 
@@ -321,7 +329,7 @@ export function StockClient({
         <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
       )}
       {tab === "losses" && (
-        <LossesTab docs={lossDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+        <LossesTab docs={lossDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} viewerId={viewerId} canReviewLoss={canReviewLoss} />
       )}
       {tab === "dist" && (
         <DistributionTab realBranches={realBranches} products={products} shipments={shipments} defaultBranchId={defaultBranchId} />
@@ -1136,8 +1144,16 @@ const LOSS_REASONS: { k: "DAMAGE" | "THEFT" | "OBSOLETE" | "OTHER"; label: strin
   { k: "OTHER", label: "อื่น ๆ" },
 ];
 
-function LossesTab({ docs, realBranches, products, defaultBranchId }: {
+/* สถานะใบตัดของเสีย → pill (D1 maker-checker) */
+function lossStatusPill(status: string): { bg: string; color: string; label: string; Icon: typeof Clock } {
+  if (status === "PENDING") return { bg: "#FCF1E2", color: "#B45309", label: "รออนุมัติ", Icon: Clock };
+  if (status === "REJECTED") return { bg: "#F1F2F7", color: "#5A6270", label: "ตีกลับ", Icon: X };
+  return { bg: "#E7F4EC", color: "#15803D", label: "อนุมัติแล้ว", Icon: Check };
+}
+
+function LossesTab({ docs, realBranches, products, defaultBranchId, viewerId, canReviewLoss }: {
   docs: DocLossSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
+  viewerId: string; canReviewLoss: boolean;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -1147,7 +1163,12 @@ function LossesTab({ docs, realBranches, products, defaultBranchId }: {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
   const [error, setError] = useState<string | null>(null);
+  // D1 · การอนุมัติ/ตีกลับต่อใบ (แยก transition จากฟอร์มสร้าง)
+  const [reviewing, setReviewing] = useState<string | null>(null); // lossId ที่กำลังตัดสิน
+  const [reviewErr, setReviewErr] = useState<string | null>(null);
+  const [reviewPending, startReview] = useTransition();
   const canCreate = realBranches.length >= 1 && products.length >= 1;
+  const pendingCount = docs.filter((d) => d.status === "PENDING").length;
 
   function reset() { setBranchId(defaultBranchId); setReason("DAMAGE"); setNote(""); setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null); }
 
@@ -1162,36 +1183,80 @@ function LossesTab({ docs, realBranches, products, defaultBranchId }: {
     });
   }
 
+  function review(lossId: string, decision: "approve" | "reject") {
+    setReviewErr(null);
+    setReviewing(lossId);
+    startReview(async () => {
+      const res = await reviewCfLoss({ lossId, decision });
+      setReviewing(null);
+      if (!res.ok) { setReviewErr(res.error); return; }
+      router.refresh();
+    });
+  }
+
   return (
     <div>
       {!canCreate && <NeedDataBanner msg="ยังตัดของเสียจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
+      {pendingCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#B45309", background: "#FDF6EA", border: "1px solid #F0DEBB", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+          <Clock size={15} style={{ flex: "0 0 15px" }} />
+          มีใบตัดของเสียมูลค่าสูง <b>{num(pendingCount)}</b> ใบ รออนุมัติ · {canReviewLoss ? "ตรวจแล้วกด อนุมัติ/ตีกลับ (คุณอนุมัติใบที่ตัวเองแจ้งไม่ได้)" : "รอผู้จัดการสาขา/แอดมินอนุมัติ"}
+        </div>
+      )}
+      {reviewErr && <div style={{ marginBottom: 12 }}><ErrorRow msg={reviewErr} /></div>}
       <DocListCard
         title="ใบตัดของเสีย / ของหาย"
-        sub="ตัดของชำรุด/สูญหาย/ตัดทิ้งออกจากคลัง · บันทึกมูลค่าที่เสียไป"
+        sub="ตัดของชำรุด/สูญหาย/ตัดทิ้งออกจากคลัง · มูลค่าสูงต้องมีคนที่ 2 อนุมัติก่อนตัดสต๊อก"
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
         addLabel="ตัดของเสีย"
         empty={docs.length === 0}
         emptyTitle="ยังไม่มีใบตัดของเสีย"
         emptySub="กด ตัดของเสีย เพื่อบันทึกของชำรุด/สูญหาย/ตัดทิ้ง"
-        cols="1fr 1.2fr 0.7fr 0.9fr 0.9fr"
-        head={<><span>เลขที่</span><span>สาเหตุ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+        cols="0.9fr 1fr 0.6fr 0.8fr 1.3fr 0.8fr"
+        head={<><span>เลขที่</span><span>สาเหตุ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>มูลค่า</span><span>สถานะ</span><span style={{ textAlign: "right" }}>วันที่</span></>}
       >
-        {docs.map((d) => (
-          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.9fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
-            <span style={{ color: "#454B54" }}>{d.reasonLabel}</span>
-            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)} รายการ</span>
-            <span className="num" style={{ textAlign: "right", fontWeight: 600, color: "#B42318" }}>{bahtN(Math.round(d.totalCostCents / 100))}</span>
-            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.reportedAt)}</span>
-          </div>
-        ))}
+        {docs.map((d) => {
+          const pill = lossStatusPill(d.status);
+          const isPending = d.status === "PENDING";
+          const isReporter = d.reportedById === viewerId;
+          // ปุ่มอนุมัติ/ตีกลับ = เฉพาะ ผจก./แอดมิน · ใบ PENDING · ไม่ใช่คนแจ้งเอง (maker ≠ checker)
+          const showReviewBtns = isPending && canReviewLoss && !isReporter;
+          const rowBusy = reviewPending && reviewing === d.id;
+          return (
+            <div key={d.id} style={{ display: "grid", gridTemplateColumns: "0.9fr 1fr 0.6fr 0.8fr 1.3fr 0.8fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, background: isPending ? "#FFFDF8" : undefined }}>
+              <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
+              <span style={{ color: "#454B54" }}>{d.reasonLabel}</span>
+              <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCount)}</span>
+              <span className="num" style={{ textAlign: "right", fontWeight: 600, color: d.status === "REJECTED" ? "#9AA1AB" : "#B42318", textDecoration: d.status === "REJECTED" ? "line-through" : undefined }}>{bahtN(Math.round(d.totalCostCents / 100))}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: pill.color, background: pill.bg, borderRadius: 999, padding: "3px 9px" }}>
+                  <pill.Icon size={12} /> {pill.label}
+                </span>
+                {showReviewBtns && (
+                  <span style={{ display: "inline-flex", gap: 6 }}>
+                    <button type="button" onClick={() => review(d.id, "approve")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#fff", background: rowBusy ? "#9BC4A8" : "#15803D", border: "none", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                      <Check size={12} /> อนุมัติ
+                    </button>
+                    <button type="button" onClick={() => review(d.id, "reject")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#B42318", background: "#fff", border: "1px solid #E7C6C2", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                      <X size={12} /> ตีกลับ
+                    </button>
+                  </span>
+                )}
+                {d.status !== "PENDING" && d.reviewedByName && (
+                  <span style={{ fontSize: 11, color: "#9AA1AB" }}>โดย {d.reviewedByName}</span>
+                )}
+              </span>
+              <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.reportedAt)}</span>
+            </div>
+          );
+        })}
       </DocListCard>
 
       <Modal
         open={adding}
         onClose={() => { if (!pending) { setAdding(false); reset(); } }}
         title="ตัดของเสีย / ของหาย"
-        sub="เลือกสาเหตุ + รายการ + จำนวน · ตัดออกจากคลังตามต้นทุนเฉลี่ยปัจจุบัน"
+        sub="เลือกสาเหตุ + รายการ + จำนวน · ตัดออกจากคลังตามต้นทุนเฉลี่ยปัจจุบัน · มูลค่าเกิน ฿500 จะเข้าสถานะ รออนุมัติ (ยังไม่ตัดสต๊อกจนกว่าคนที่ 2 อนุมัติ)"
         width={500}
         footer={
           <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
@@ -1477,11 +1542,23 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
   const [fromLocation, setFromLocation] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
+  // ราคาขาย (บาท) + ราคาทุน (บาท) ต่อรายการ — parallel arrays (แอดมินส่วนกลางต้องระบุ · บังคับ > 0)
+  const [salePrices, setSalePrices] = useState<string[]>([""]);
+  const [costs, setCosts] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setBranchId(defaultBranchId); setFromLocation(""); setNote("");
-    setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setError(null);
+    setLines([{ productId: products[0]?.id ?? "", qty: "" }]); setSalePrices([""]); setCosts([""]); setError(null);
+  }
+  // sync ความยาว salePrices/costs ให้ตรงกับ lines เสมอ
+  function setLinesWrap(fn: (prev: FormLine[]) => FormLine[]) {
+    setLines((prev) => {
+      const next = fn(prev);
+      setSalePrices((s) => next.map((_, i) => s[i] ?? ""));
+      setCosts((c) => next.map((_, i) => c[i] ?? ""));
+      return next;
+    });
   }
 
   function submit() {
@@ -1489,12 +1566,31 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
     if (!branchId) { setError("เลือกสาขาปลายทางก่อน"); return; }
     const parsed = parseLines(lines);
     if (!parsed.ok) { setError(parsed.error); return; }
+    // แอดมินส่วนกลางส่งของ = ต้องระบุราคาขาย + ราคาทุนทุกรายการ (บังคับ > 0) → เช็คก่อนส่ง
+    const payloadLines: { productId: string; qty: number; salePriceBaht: number; unitCostCents: number }[] = [];
+    for (let i = 0; i < parsed.data.length; i++) {
+      const d = parsed.data[i];
+      const idx = lines.findIndex((l) => l.productId === d.productId);
+      const saleRaw = idx >= 0 ? salePrices[idx] : "";
+      const costRaw = idx >= 0 ? costs[idx] : "";
+      const sale = Number(saleRaw);
+      const cost = Number(costRaw);
+      const pname = products.find((p) => p.id === d.productId)?.name ?? "สินค้า";
+      if (!saleRaw || !Number.isFinite(sale) || sale <= 0) { setError(`ระบุราคาขายของ "${pname}" (บาท) มากกว่า 0`); return; }
+      if (!costRaw || !Number.isFinite(cost) || cost <= 0) { setError(`ระบุราคาทุนของ "${pname}" (บาท) มากกว่า 0`); return; }
+      payloadLines.push({
+        productId: d.productId,
+        qty: d.qty,
+        salePriceBaht: Math.round(sale),
+        unitCostCents: Math.round(cost * 100),
+      });
+    }
     startTransition(async () => {
       const res = await createShipment({
         branchId,
         fromLocation: fromLocation || undefined,
         note: note || undefined,
-        lines: parsed.data,
+        lines: payloadLines,
       });
       if (!res.ok) { setError(res.error); return; }
       reset(); onDone();
@@ -1506,8 +1602,8 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
       open={open}
       onClose={() => { if (!pending) { reset(); onClose(); } }}
       title="สร้างใบกระจายสินค้า"
-      sub="คลังกลาง → สาขา · เลือกปลายทาง + รายการสินค้า + จำนวน"
-      width={520}
+      sub="คลังกลาง → สาขา · เลือกปลายทาง + รายการสินค้า + จำนวน + ราคาขาย/ราคาทุน"
+      width={560}
       footer={
         <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
           <button type="button" onClick={submit} disabled={pending} style={PRIMARY_BTN(pending)}>{pending ? "กำลังสร้าง…" : "สร้างใบกระจาย"}</button>
@@ -1527,8 +1623,16 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
           <input value={fromLocation} onChange={(e) => setFromLocation(e.target.value)} placeholder="คลังกลาง บางนา" style={FIELD_INPUT} />
         </div>
         <div>
-          <label style={FIELD_LABEL}>รายการสินค้า</label>
-          <LineEditor products={products} lines={lines} setLines={setLines} qtyLabel="ส่ง" />
+          <label style={FIELD_LABEL}>รายการสินค้า · ราคาขาย/ราคาทุน (บังคับกรอกทั้งคู่)</label>
+          <ShipmentLineEditor
+            products={products}
+            lines={lines}
+            setLines={setLinesWrap}
+            salePrices={salePrices}
+            setSalePrices={setSalePrices}
+            costs={costs}
+            setCosts={setCosts}
+          />
         </div>
         <div>
           <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
@@ -1537,10 +1641,72 @@ function CreateShipmentModal({ open, onClose, realBranches, products, defaultBra
         {error && <ErrorRow msg={error} />}
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "9px 12px" }}>
           <Boxes size={14} style={{ flex: "0 0 14px", color: "#9AA1AB" }} />
-          ใบกระจายเริ่มที่สถานะ “รอสาขารับ” — สต็อกสาขายังไม่เพิ่มจนกว่าสาขาจะกดตรวจรับ
+          ใบกระจายเริ่มที่สถานะ “รอสาขารับ” — สต็อกสาขายังไม่เพิ่มจนกว่าสาขาจะกดตรวจรับ · ตอนรับ ระบบจะใช้ราคาทุนตั้งต้นทุนเฉลี่ย และราคาขายตั้งราคาขายเริ่มต้นของสินค้า
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** line editor สำหรับ "ใบกระจาย" — มีช่องราคาขาย (บาท) + ราคาทุน (บาท) ต่อรายการ (บังคับ > 0) */
+function ShipmentLineEditor({ products, lines, setLines, salePrices, setSalePrices, costs, setCosts }: {
+  products: ProductOption[];
+  lines: FormLine[];
+  setLines: (fn: (prev: FormLine[]) => FormLine[]) => void;
+  salePrices: string[];
+  setSalePrices: (fn: (prev: string[]) => string[]) => void;
+  costs: string[];
+  setCosts: (fn: (prev: string[]) => string[]) => void;
+}) {
+  const setAt = (i: number, patch: Partial<FormLine>) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const setSaleAt = (i: number, v: string) => setSalePrices((prev) => prev.map((s, j) => (j === i ? v : s)));
+  const setCostAt = (i: number, v: string) => setCosts((prev) => prev.map((c, j) => (j === i ? v : c)));
+  const removeAt = (i: number) => {
+    setLines((prev) => prev.filter((_, j) => j !== i));
+    setSalePrices((prev) => prev.filter((_, j) => j !== i));
+    setCosts((prev) => prev.filter((_, j) => j !== i));
+  };
+  const add = () => {
+    setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "" }]);
+    setSalePrices((prev) => [...prev, ""]);
+    setCosts((prev) => [...prev, ""]);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {lines.map((l, i) => {
+        const defCost = products.find((p) => p.id === l.productId)?.unitCostCents ?? 0;
+        return (
+          <div key={i} className="grid grid-cols-[1fr_58px_82px_82px_34px] gap-2 items-end">
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+              <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+                <option value="">— เลือก —</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ส่ง</label>}
+              <input type="number" min={0} step={1} inputMode="numeric" value={l.qty} onChange={(e) => setAt(i, { qty: e.target.value })} placeholder="0" style={FIELD_INPUT} />
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ขาย (บาท)</label>}
+              <input type="number" min={0} step={1} inputMode="numeric" value={salePrices[i] ?? ""} onChange={(e) => setSaleAt(i, e.target.value)} placeholder="10" style={FIELD_INPUT} />
+            </div>
+            <div>
+              {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>ทุน (บาท)</label>}
+              <input type="number" min={0} step="0.01" inputMode="decimal" value={costs[i] ?? ""} onChange={(e) => setCostAt(i, e.target.value)} placeholder={defCost > 0 ? String(Math.round(defCost / 100)) : "0"} style={FIELD_INPUT} />
+            </div>
+            <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        );
+      })}
+      <button type="button" onClick={add} style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <Plus size={13} /> เพิ่มรายการ
+      </button>
+    </div>
   );
 }
 

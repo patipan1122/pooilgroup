@@ -9,7 +9,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getV2Branches, getV2BranchStock } from "@/lib/clawfleet/queries";
-import { requireCfSession, userBranchIds } from "@/lib/clawfleet/role-guard";
+import { requireCfSession, userBranchIds, isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 import {
   getCfStockOverview,
   getCfReceipts,
@@ -51,10 +51,15 @@ export default async function StockPage() {
   let warehouseRows: WarehouseRowSeed[] = [];
   let shipments: ShipmentSeed[] = [];
   let docBranchId: string | null = null; // สาขาที่โหลดเอกสารจริงมา (= สาขาแรก)
+  // D1 maker-checker: ใครกำลังดู + มีสิทธิ์อนุมัติใบตัดของเสียไหม (ผจก.สาขา/แอดมิน)
+  let viewerId = "";
+  let canReviewLoss = false;
 
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
+    viewerId = session.user.id;
+    canReviewLoss = isCfAdmin(session.user.role) || isCfBranchManager(session.user.role);
     const branches = await getV2Branches();
     realBranches = branches.map((b) => ({ id: b.id, name: b.name }));
     try {
@@ -107,6 +112,10 @@ export default async function StockPage() {
         itemsCount: l.itemsCount,
         totalCostCents: l.totalCostCents,
         reportedAt: l.reportedAt.toISOString(),
+        // D1 maker-checker: สถานะ + คนแจ้ง (client ใช้ตัดสินว่าโชว์ pill/ปุ่มอนุมัติหรือไม่)
+        status: l.status,
+        reportedById: l.reportedById,
+        reviewedByName: l.reviewedByName,
       }));
 
       // ── ยอดคลังกลางจริง (warehouse = movement machineId null) รวมทุกสาขาที่ user เห็น ──
@@ -168,6 +177,8 @@ export default async function StockPage() {
       warehouseRows={warehouseRows}
       shipments={shipments}
       docBranchId={docBranchId}
+      viewerId={viewerId}
+      canReviewLoss={canReviewLoss}
     />
   );
 }
