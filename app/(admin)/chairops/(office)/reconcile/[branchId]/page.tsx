@@ -18,6 +18,7 @@ import { redirect } from "next/navigation";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { thaiDate } from "@/lib/chairops/utils/format";
 import {
@@ -100,8 +101,15 @@ export default async function ReconcileBranchPage({
         allTime={sp.all === "1"}
         page={sp.page ? Number(sp.page) : 0}
         day={sp.day}
-        perChairDaily={sp.pcv !== "summary"}
+        perChairView={
+          sp.pcv === "summary"
+            ? "summary"
+            : sp.pcv === "activity"
+              ? "activity"
+              : "daily"
+        }
         chair={sp.chair}
+        canManage={isSuperAdmin(session.poolUser.role)}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

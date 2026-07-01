@@ -8,10 +8,11 @@
 // cumulative-drift chip (color by sign). Active row gets the accent left edge
 // via [data-active] (see reconcile-v2.css).
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { LayoutGrid, Search } from "lucide-react";
+import { LayoutGrid, Search, EyeOff, RotateCcw } from "lucide-react";
 import type { ReconcileSidebarRow } from "@/lib/chairops/queries/reconcile-v2";
+import { toggleBranchClosedAction } from "@/lib/chairops/reconcile/actions";
 
 function fmtCumDrift(n: number): string {
   const r = Math.round(n);
@@ -37,11 +38,24 @@ function cumClass(n: number): string {
   return "muted";
 }
 
+/**
+ * CEO 2026-07-01 · "กี่วันไม่ได้เก็บ" badge + color signal on each branch.
+ * เก็บวันนี้/1 วัน = เขียว (สด) · 2–3 วัน = เหลือง · 4 วันขึ้นไป/ไม่เคยเก็บ = แดง.
+ */
+function daysBadge(days: number): { text: string; tone: "fresh" | "mid" | "stale" } {
+  if (days >= 999) return { text: "ไม่เคยเก็บ", tone: "stale" };
+  if (days === 0) return { text: "เก็บวันนี้", tone: "fresh" };
+  if (days <= 1) return { text: `${days} วัน`, tone: "fresh" };
+  if (days <= 3) return { text: `${days} วัน`, tone: "mid" };
+  return { text: `${days} วัน`, tone: "stale" };
+}
+
 export function ReconcileSidebar({
   rows,
   activeBranchId,
   orgCumShortage,
   view,
+  canManage = false,
 }: {
   rows: ReconcileSidebarRow[];
   activeBranchId: string | null;
@@ -52,8 +66,17 @@ export function ReconcileSidebar({
    */
   orgCumShortage: number;
   view: string;
+  /** CEO 2026-07-01 · super_admin only — show the ปิด/เปิดสาขา button per row. */
+  canManage?: boolean;
 }) {
   const [q, setQ] = useState("");
+  const [pending, startTransition] = useTransition();
+
+  const handleToggleClosed = (branchId: string, closed: boolean) => {
+    startTransition(async () => {
+      await toggleBranchClosedAction(branchId, closed);
+    });
+  };
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -106,31 +129,55 @@ export function ReconcileSidebar({
           </div>
         </Link>
 
-        {filtered.map((b) => (
-          <Link
-            key={b.branchId}
-            href={`/chairops/reconcile/${b.branchId}${viewQs}`}
-            className="rc-side-row"
-            data-active={activeBranchId === b.branchId ? "" : undefined}
-          >
-            <div className="rc-side-dot" data-status={b.status} />
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="rc-side-name">{b.name}</div>
-              <div className="text-3" style={{ fontSize: 11 }}>
-                {b.daysSinceCollect === 0
-                  ? "เก็บวันนี้"
-                  : b.daysSinceCollect >= 999
-                    ? "ไม่เคยเก็บ"
-                    : b.daysSinceCollect >= 5
-                      ? `เก็บล่าสุด ${b.daysSinceCollect}d ↑`
-                      : `เก็บล่าสุด ${b.daysSinceCollect}d`}
-              </div>
+        {filtered.map((b) => {
+          const badge = daysBadge(b.daysSinceCollect);
+          return (
+            <div
+              key={b.branchId}
+              className="rc-side-rowwrap"
+              data-closed={b.isClosed ? "" : undefined}
+            >
+              <Link
+                href={`/chairops/reconcile/${b.branchId}${viewQs}`}
+                className="rc-side-row"
+                data-active={activeBranchId === b.branchId ? "" : undefined}
+              >
+                <div className="rc-side-dot" data-status={b.status} />
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="rc-side-name">{b.name}</div>
+                  <div style={{ marginTop: 2 }}>
+                    {b.isClosed ? (
+                      <span className="rc-days-badge closed">ปิด/ย้ายแล้ว</span>
+                    ) : (
+                      <span className={"rc-days-badge " + badge.tone}>
+                        {badge.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div
+                  className={"rc-side-cum mono co-drift " + cumClass(b.cumDrift)}
+                >
+                  {fmtCumDrift(b.cumDrift)}
+                </div>
+              </Link>
+              {canManage && (
+                <button
+                  type="button"
+                  className="rc-side-close"
+                  disabled={pending}
+                  onClick={() => handleToggleClosed(b.branchId, !b.isClosed)}
+                  title={
+                    b.isClosed ? "เปิดสาขาคืน" : "ปิดสาขา (ย้าย/เลิกกิจการ)"
+                  }
+                  aria-label={b.isClosed ? "เปิดสาขาคืน" : "ปิดสาขา"}
+                >
+                  {b.isClosed ? <RotateCcw size={13} /> : <EyeOff size={13} />}
+                </button>
+              )}
             </div>
-            <div className={"rc-side-cum mono co-drift " + cumClass(b.cumDrift)}>
-              {fmtCumDrift(b.cumDrift)}
-            </div>
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </aside>
   );

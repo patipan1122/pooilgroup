@@ -42,6 +42,9 @@ import {
   type ReconcilePerChairDetail,
   type PerChairDay,
   type PerChairDetailCell,
+  type ReconcileActivity,
+  type ActivityDay,
+  type ActivityPerson,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -1421,11 +1424,14 @@ function cumColor(cum: number): string {
 export function PerChairViewToggle({
   summaryHref,
   dailyHref,
+  activityHref,
   active,
 }: {
   summaryHref: string;
   dailyHref: string;
-  active: "summary" | "daily";
+  /** CEO 2026-07-01 · 3rd sub-view "ใครทำอะไร" (who did what). */
+  activityHref: string;
+  active: "summary" | "daily" | "activity";
 }) {
   return (
     <div className="rc-tabs-row" style={{ marginTop: 4 }}>
@@ -1445,6 +1451,14 @@ export function PerChairViewToggle({
           scroll={false}
         >
           📊 สรุปรวม
+        </Link>
+        <Link
+          href={activityHref}
+          className="rc-tab"
+          data-active={active === "activity" ? "" : undefined}
+          scroll={false}
+        >
+          🧑‍💼 ใครทำอะไร
         </Link>
       </div>
     </div>
@@ -1710,6 +1724,318 @@ export function PerChairDetailTab({
       )}
       {data.days.map((d) => (
         <PerChairDayBlock key={d.date} day={d} />
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// CEO 2026-07-01 · "ใครทำอะไร" (Activity) sub-view — 3rd per-chair tab.
+// Who reported/collected/deposited, day-by-day, with a per-person summary.
+// Display-only. Optional machine filter narrows the log to one ตู้.
+// ─────────────────────────────────────────────────────────────
+function roleLabelTH(role: string | null): string {
+  switch (role) {
+    case "MAID":
+      return "แม่บ้าน";
+    case "TECHNICIAN":
+      return "ช่าง";
+    case "OFFICE":
+      return "ออฟฟิศ";
+    case "MANAGER":
+      return "ผู้จัดการ";
+    case "ADMIN":
+      return "แอดมิน";
+    case "CEO":
+      return "CEO";
+    default:
+      return "—";
+  }
+}
+
+function activityKindMeta(kind: ActivityDay["events"][number]["kind"]): {
+  icon: string;
+  label: string;
+  color: string;
+} {
+  if (kind === "deposit")
+    return { icon: "🏦", label: "ฝากเงิน", color: "var(--ok)" };
+  if (kind === "import")
+    return { icon: "📥", label: "นำเข้า CSV", color: "#0369a1" };
+  return { icon: "💵", label: "เก็บเงิน", color: "var(--accent)" };
+}
+
+function ActivityPersonRow({ p }: { p: ActivityPerson }) {
+  return (
+    <div
+      className="row"
+      style={{
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderBottom: "1px solid var(--border)",
+        flexWrap: "wrap",
+      }}
+    >
+      <div className="row gap-1" style={{ alignItems: "center", minWidth: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
+        <span className="chip" style={{ fontSize: 10 }}>
+          {roleLabelTH(p.role)}
+        </span>
+        <span className="text-3" style={{ fontSize: 11 }}>
+          · ทำงาน {p.activeDays} วัน
+        </span>
+      </div>
+      <div className="row gap-2" style={{ fontSize: 12, flexWrap: "wrap" }}>
+        {p.collectCount > 0 && (
+          <span style={{ color: "var(--accent)" }}>
+            💵 เก็บ {p.collectCount} ครั้ง ·{" "}
+            <strong className="mono">{baht(p.collectTotal)}</strong>
+          </span>
+        )}
+        {p.depositCount > 0 && (
+          <span style={{ color: "var(--ok)" }}>
+            🏦 ฝาก {p.depositCount} ครั้ง ·{" "}
+            <strong className="mono">{baht(p.depositTotal)}</strong>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActivityDayBlock({ day }: { day: ActivityDay }) {
+  return (
+    <div
+      className="card"
+      style={{ margin: "0 0 12px", padding: 0, overflow: "hidden" }}
+    >
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+          flexWrap: "wrap",
+          padding: "8px 12px",
+          background: "var(--surface-soft)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div>
+          <span className="mono" style={{ fontWeight: 700, fontSize: 13 }}>
+            {day.date}
+          </span>
+          <span className="text-3" style={{ marginLeft: 6, fontSize: 11 }}>
+            {dayOfWeekTh(day.date)}
+          </span>
+        </div>
+        <div className="text-3" style={{ fontSize: 11.5 }}>
+          {day.collectTotal > 0 && (
+            <span style={{ color: "var(--accent)" }}>
+              เก็บ <strong className="mono">{baht(day.collectTotal)}</strong>
+            </span>
+          )}
+          {day.depositTotal > 0 && (
+            <span style={{ color: "var(--ok)", marginLeft: 10 }}>
+              ฝาก <strong className="mono">{baht(day.depositTotal)}</strong>
+            </span>
+          )}
+        </div>
+      </div>
+      <div>
+        {day.events.map((e, i) => {
+          const meta = activityKindMeta(e.kind);
+          return (
+            <div
+              key={`${e.time}-${e.kind}-${e.personName}-${i}`}
+              className="row"
+              style={{
+                gap: 8,
+                alignItems: "center",
+                padding: "7px 12px",
+                borderBottom:
+                  i < day.events.length - 1
+                    ? "1px solid var(--border-soft, var(--border))"
+                    : "none",
+                fontSize: 12.5,
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                className="mono text-3"
+                style={{ fontSize: 11, width: 40, flexShrink: 0 }}
+              >
+                {e.time}
+              </span>
+              <span style={{ color: meta.color, fontWeight: 600, width: 92, flexShrink: 0 }}>
+                {meta.icon} {meta.label}
+              </span>
+              <span className="grow" style={{ minWidth: 0 }}>
+                <strong>{e.personName}</strong>{" "}
+                <span className="chip" style={{ fontSize: 9.5 }}>
+                  {roleLabelTH(e.role)}
+                </span>
+                {e.chairCodes.length > 0 && (
+                  <span className="text-3" style={{ fontSize: 11 }}>
+                    {" "}
+                    · ตู้ {e.chairCodes.join(", ")}
+                  </span>
+                )}
+              </span>
+              <strong className="mono" style={{ flexShrink: 0 }}>
+                {baht(e.amount)}
+              </strong>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ActivityTab({
+  data,
+  isOrg,
+  makeChairHref,
+}: {
+  data: ReconcileActivity | null;
+  isOrg: boolean;
+  /** build a URL for this sub-view with a given machine filter (null = ทุกตู้). */
+  makeChairHref: (chair: string | null) => string;
+}) {
+  if (isOrg) {
+    return (
+      <div
+        className="card"
+        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
+      >
+        🔍 <strong>เลือกสาขาก่อน</strong> — รายงาน “ใครทำอะไร” ดูทีละสาขา
+        (กดสาขาทางซ้าย)
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div
+        className="card"
+        style={{ margin: "12px 0", padding: 18, fontSize: 13 }}
+      >
+        ยังไม่มีข้อมูล
+      </div>
+    );
+  }
+  const sel = data.selectedChair;
+  return (
+    <div className="rc-ledger">
+      <div className="text-3" style={{ fontSize: 11.5, padding: "6px 2px 4px" }}>
+        <strong>ใครทำอะไร</strong> — เก็บเงิน / ฝากเงิน / นำเข้า CSV รายวัน · ช่วง{" "}
+        <strong className="mono">{data.from}</strong> –{" "}
+        <strong className="mono">{data.to}</strong>
+        {sel && (
+          <>
+            {" "}
+            · กรองเฉพาะ <strong>ตู้ {sel}</strong>
+          </>
+        )}
+      </div>
+
+      {/* Machine filter — chips (server-side <Link>, no client JS) */}
+      {data.chairCodes.length > 0 && (
+        <div
+          className="row"
+          style={{ gap: 6, flexWrap: "wrap", padding: "2px 2px 10px" }}
+        >
+          <span className="text-3" style={{ fontSize: 11.5, alignSelf: "center" }}>
+            เลือกตู้:
+          </span>
+          <Link
+            href={makeChairHref(null)}
+            className="rc-tab"
+            data-active={sel === null ? "" : undefined}
+            scroll={false}
+            style={{ fontSize: 12, padding: "3px 10px" }}
+          >
+            ทุกตู้
+          </Link>
+          {data.chairCodes.map((cc) => (
+            <Link
+              key={cc}
+              href={makeChairHref(cc)}
+              className="rc-tab"
+              data-active={sel === cc ? "" : undefined}
+              scroll={false}
+              style={{ fontSize: 12, padding: "3px 10px" }}
+            >
+              {cc}
+            </Link>
+          ))}
+        </div>
+      )}
+      {sel && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 10px",
+            padding: "7px 12px",
+            fontSize: 11.5,
+            background: "var(--surface-soft)",
+          }}
+        >
+          ℹ️ กรองตู้ {sel} — แสดงเฉพาะ “การเก็บเงิน” ที่ระบุตู้นี้ ·
+          การฝากเงินเป็นก้อนรวมสาขา (แยกตู้ไม่ได้) จึงไม่แสดงในมุมกรองตู้
+        </div>
+      )}
+
+      {/* Per-person summary */}
+      {data.people.length > 0 ? (
+        <div
+          className="card"
+          style={{ margin: "0 0 14px", padding: 0, overflow: "hidden" }}
+        >
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "var(--surface-soft)",
+              borderBottom: "1px solid var(--border)",
+              fontWeight: 600,
+              fontSize: 12.5,
+            }}
+          >
+            👥 สรุปรายคน ({data.people.length} คน)
+          </div>
+          {data.people.map((p) => (
+            <ActivityPersonRow key={p.personKey} p={p} />
+          ))}
+        </div>
+      ) : (
+        <div
+          className="card"
+          style={{ margin: "0 0 14px", padding: 18, fontSize: 13 }}
+        >
+          ไม่มีการเก็บ/ฝากในช่วงนี้{sel ? ` สำหรับตู้ ${sel}` : ""}
+        </div>
+      )}
+
+      {data.truncated && (
+        <div
+          className="card"
+          style={{
+            margin: "0 0 8px",
+            padding: "8px 12px",
+            fontSize: 12,
+            background: "var(--surface-soft)",
+          }}
+        >
+          ℹ️ แสดง {data.maxDays} วันล่าสุดของช่วงที่เลือก —
+          เลือกช่วงวันเองด้านบนเพื่อดูช่วงเก่ากว่า
+        </div>
+      )}
+
+      {/* Daily log */}
+      {data.days.map((d) => (
+        <ActivityDayBlock key={d.date} day={d} />
       ))}
     </div>
   );

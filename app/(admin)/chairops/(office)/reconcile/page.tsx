@@ -67,7 +67,14 @@ export default async function ReconcileOrgPage({
         allTime={sp.all === "1"}
         page={sp.page ? Number(sp.page) : 0}
         day={sp.day}
-        perChairDaily={sp.pcv !== "summary"}
+        perChairView={
+          sp.pcv === "summary"
+            ? "summary"
+            : sp.pcv === "activity"
+              ? "activity"
+              : "daily"
+        }
+        canManage={canClosePeriod}
       />
     </div>
   );

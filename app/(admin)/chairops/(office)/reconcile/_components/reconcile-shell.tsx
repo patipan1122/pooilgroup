@@ -20,6 +20,7 @@ import {
   getReconcilePerChairTW,
   getReconcilePerChairRoundsTW,
   getReconcilePerChairDetail,
+  getReconcileActivity,
   ledgerTotals,
   type ReconcileDayDetail,
 } from "@/lib/chairops/queries/reconcile-v2";
@@ -37,6 +38,7 @@ import {
   PerChairTab,
   PerChairDetailTab,
   PerChairViewToggle,
+  ActivityTab,
 } from "./reconcile-views";
 import { LedgerDateFilter } from "./ledger-date-filter";
 
@@ -70,8 +72,9 @@ export async function ReconcileShell({
   allTime,
   page,
   day,
-  perChairDaily,
+  perChairView = "daily",
   chair,
+  canManage = false,
 }: {
   orgId: string;
   /** null = org-level "ทุกสาขารวม" view */
@@ -88,12 +91,17 @@ export async function ReconcileShell({
   page?: number;
   /** CEO 2026-06-25: drill-down — show one day's individual collection/deposit chunks. */
   day?: string;
-  /** CEO 2026-06-29: per-chair sub-view — true = รายวัน (per-day × per-chair matrix · default), false = สรุปรวม (window aggregate). */
-  perChairDaily?: boolean;
-  /** CEO 2026-06-29: drill — selected chairCode → show its per-round history in the summary sub-view. */
+  /** CEO 2026-06-29 + 07-01: per-chair sub-view — "daily" (per-day × per-chair matrix · default) · "summary" (window aggregate) · "activity" (ใครทำอะไร). */
+  perChairView?: "daily" | "summary" | "activity";
+  /** CEO 2026-06-29: drill — selected chairCode → per-round history (summary) or machine filter (activity). */
   chair?: string;
+  /** CEO 2026-07-01: super_admin → show ปิด/เปิดสาขา button in the sidebar. */
+  canManage?: boolean;
 }) {
   const isOrg = branchId === null;
+  const perChairDaily = perChairView === "daily";
+  const perChairSummary = perChairView === "summary";
+  const perChairActivity = perChairView === "activity";
   const baseHref = isOrg
     ? "/chairops/reconcile"
     : `/chairops/reconcile/${branchId}`;
@@ -151,7 +159,7 @@ export async function ReconcileShell({
   // matrix · the new default) and "สรุปรวม" (window aggregate · the original).
   // Only the active one is fetched. Both share the same date-filter window.
   const perChair =
-    view === "perchair" && branchId && !perChairDaily
+    view === "perchair" && branchId && perChairSummary
       ? await getReconcilePerChairTW({
           orgId,
           branchId,
@@ -172,10 +180,24 @@ export async function ReconcileShell({
           posCoverThrough: posThrough,
         })
       : null;
+  // CEO 2026-07-01: "ใครทำอะไร" activity log — who collected/deposited, day by
+  // day. ?chair= narrows the log to one machine. Loaded only for this sub-view.
+  const perChairActivityData =
+    view === "perchair" && branchId && perChairActivity
+      ? await getReconcileActivity({
+          orgId,
+          branchId,
+          from: safeFrom,
+          to: safeTo,
+          allTime,
+          posCoverThrough: posThrough,
+          chair: chair ?? null,
+        })
+      : null;
   // CEO 2026-06-29: drill — one chair's per-round history (newest first) for the
   // summary sub-view. Loaded only when a chair is selected via ?chair=.
   const perChairRounds =
-    view === "perchair" && branchId && !perChairDaily && chair
+    view === "perchair" && branchId && perChairSummary && chair
       ? await getReconcilePerChairRoundsTW({ orgId, branchId, chairCode: chair })
       : null;
 
@@ -267,6 +289,7 @@ export async function ReconcileShell({
         activeBranchId={branchId}
         orgCumShortage={orgCumShortage}
         view={view}
+        canManage={canManage}
       />
 
       <main className="rc-main">
@@ -476,10 +499,34 @@ export async function ReconcileShell({
                     if (allTime) usp.set("all", "1");
                     return `${baseHref}?${usp.toString()}`;
                   })()}
-                  active={perChairDaily ? "daily" : "summary"}
+                  activityHref={(() => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    usp.set("pcv", "activity");
+                    return `${baseHref}?${usp.toString()}`;
+                  })()}
+                  active={perChairView}
                 />
               )}
-              {perChairDaily ? (
+              {perChairActivity ? (
+                <ActivityTab
+                  data={perChairActivityData}
+                  isOrg={isOrg}
+                  makeChairHref={(c) => {
+                    const usp = new URLSearchParams();
+                    usp.set("view", "perchair");
+                    if (safeFrom) usp.set("from", safeFrom);
+                    if (safeTo) usp.set("to", safeTo);
+                    if (allTime) usp.set("all", "1");
+                    usp.set("pcv", "activity");
+                    if (c) usp.set("chair", c);
+                    return `${baseHref}?${usp.toString()}`;
+                  }}
+                />
+              ) : perChairDaily ? (
                 <PerChairDetailTab data={perChairDetail} isOrg={isOrg} />
               ) : (
                 <PerChairTab

@@ -180,6 +180,8 @@ export interface ReconcileSidebarRow {
   status: "ok" | "warn" | "critical" | "missed";
   cumDrift: number;
   daysSinceCollect: number;
+  /** CEO 2026-07-01 · closedAt != null → สาขาปิด/ย้ายแล้ว → pin to bottom + dim. */
+  isClosed: boolean;
 }
 
 // ----------------------------------------------------------------
@@ -2124,6 +2126,290 @@ export async function getReconcilePeriods(args: {
 }
 
 // ----------------------------------------------------------------
+// ACTIVITY — "ใครทำอะไร" (who did what) · per-person summary + per-day log
+// CEO 2026-07-01: a 3rd per-chair sub-view beside รายวัน/สรุปรวม. DISPLAY-ONLY —
+// reads the SAME collection/deposit rows the money tabs use, never touches the
+// drift/ledger math. Optional ?chair= narrows the log to ONE machine (collect
+// events whose chairBreakdown includes it); deposits are branch-level lumps so
+// they drop out of a machine-filtered view.
+// ----------------------------------------------------------------
+export type ActivityKind = "collect" | "import" | "deposit";
+
+export interface ActivityPerson {
+  /** maidId for collect/deposit · "imp:<userId>" for a CSV importer · "unknown". */
+  personKey: string;
+  name: string;
+  /** ChairopsUserRole (raw enum string) for the badge · null = unknown. */
+  role: string | null;
+  collectCount: number;
+  collectTotal: number;
+  depositCount: number;
+  depositTotal: number;
+  /** distinct Bangkok-days this person did anything in the window. */
+  activeDays: number;
+}
+
+export interface ActivityEvent {
+  kind: ActivityKind;
+  /** "HH:mm" Bangkok. */
+  time: string;
+  personName: string;
+  role: string | null;
+  amount: number;
+  /** machines touched (collect/import from chairBreakdown) · [] for deposits. */
+  chairCodes: string[];
+  /** CollectionSource for collect/import · null for deposits. */
+  source: string | null;
+}
+
+export interface ActivityDay {
+  date: string; // YYYY-MM-DD (Bangkok)
+  events: ActivityEvent[]; // newest-first within the day
+  collectTotal: number;
+  depositTotal: number;
+}
+
+export interface ReconcileActivity {
+  from: string;
+  to: string;
+  people: ActivityPerson[]; // most active first
+  days: ActivityDay[]; // newest-first
+  chairCodes: string[]; // machine filter options (sorted)
+  selectedChair: string | null;
+  truncated: boolean;
+  maxDays: number;
+}
+
+/** Safe extract of chairCodes from a ChairopsCashCollection.chairBreakdown JSON. */
+function chairCodesOfBreakdown(bd: unknown): string[] {
+  if (!bd || typeof bd !== "object") return [];
+  const lines = (bd as { lines?: unknown }).lines;
+  if (!Array.isArray(lines)) return [];
+  const out: string[] = [];
+  for (const l of lines) {
+    if (l && typeof l === "object") {
+      const cc = (l as { chairCode?: unknown }).chairCode;
+      if (typeof cc === "string" && cc.trim()) out.push(cc.trim());
+    }
+  }
+  return out;
+}
+
+export async function getReconcileActivity(args: {
+  orgId: string;
+  branchId: string;
+  from?: string;
+  to?: string;
+  allTime?: boolean;
+  posCoverThrough?: string | null;
+  chair?: string | null;
+}): Promise<ReconcileActivity> {
+  const { orgId, branchId } = args;
+  const selectedChair = args.chair?.trim() || null;
+
+  // Resolve [fromDay, toDay] — SAME window logic as getReconcilePerChairDetail.
+  let fromDay: string;
+  let toDay: string;
+  if (args.allTime) {
+    fromDay = "1970-01-01";
+    toDay = isoDay(new Date());
+  } else if (args.from || args.to) {
+    fromDay = args.from ?? "1970-01-01";
+    toDay = args.to ?? isoDay(new Date());
+  } else {
+    const anchor = args.posCoverThrough ?? isoDay(new Date());
+    fromDay = isoMinusDaysLocal(anchor, 29);
+    toDay = isoDay(new Date());
+  }
+  let truncated = false;
+  if (daysBetween(fromDay, toDay) + 1 > PER_CHAIR_DETAIL_MAX_DAYS) {
+    fromDay = isoMinusDaysLocal(toDay, PER_CHAIR_DETAIL_MAX_DAYS - 1);
+    truncated = true;
+  }
+
+  const collStart = new Date(fromDay + "T00:00:00+07:00");
+  const collEnd = new Date(new Date(toDay + "T00:00:00+07:00").getTime() + DAY_MS);
+
+  const [collections, deposits] = await Promise.all([
+    prisma.chairopsCashCollection.findMany({
+      where: {
+        orgId,
+        branchId,
+        collectedAt: { gte: collStart, lt: collEnd },
+        deletedAt: null,
+      },
+      orderBy: { collectedAt: "desc" },
+      select: {
+        collectedAt: true,
+        countedAmount: true,
+        source: true,
+        maidId: true,
+        importedById: true,
+        chairBreakdown: true,
+        maid: { select: { displayName: true, role: true } },
+        importer: { select: { displayName: true, role: true } },
+      },
+    }),
+    prisma.chairopsCashDeposit.findMany({
+      where: {
+        orgId,
+        branchId,
+        depositedAt: { gte: collStart, lt: collEnd },
+      },
+      orderBy: { depositedAt: "desc" },
+      select: {
+        depositedAt: true,
+        depositedAmount: true,
+        depositedByRole: true,
+        maidId: true,
+        maid: { select: { displayName: true, role: true } },
+      },
+    }),
+  ]);
+
+  // Machine filter options = every chairCode seen in the window's collections.
+  const chairOptions = new Set<string>();
+
+  type RawEvent = {
+    at: Date;
+    kind: ActivityKind;
+    personKey: string;
+    personName: string;
+    role: string | null;
+    amount: number;
+    chairCodes: string[];
+    source: string | null;
+  };
+  const raw: RawEvent[] = [];
+
+  for (const c of collections) {
+    const codes = chairCodesOfBreakdown(c.chairBreakdown);
+    codes.forEach((cc) => chairOptions.add(cc));
+    const isImport = c.source === "CSV_IMPORT";
+    if (isImport) {
+      raw.push({
+        at: c.collectedAt,
+        kind: "import",
+        personKey: c.importedById ? `imp:${c.importedById}` : "unknown",
+        personName: c.importer?.displayName ?? "ไม่ทราบผู้นำเข้า",
+        role: c.importer?.role ?? null,
+        amount: c.countedAmount,
+        chairCodes: codes,
+        source: c.source,
+      });
+    } else {
+      raw.push({
+        at: c.collectedAt,
+        kind: "collect",
+        personKey: c.maidId,
+        personName: c.maid?.displayName ?? "ไม่ทราบผู้เก็บ",
+        role: c.maid?.role ?? null,
+        amount: c.countedAmount,
+        chairCodes: codes,
+        source: c.source ?? "MAID_MANUAL",
+      });
+    }
+  }
+  for (const d of deposits) {
+    raw.push({
+      at: d.depositedAt,
+      kind: "deposit",
+      personKey: d.maidId,
+      personName: d.maid?.displayName ?? "ไม่ทราบผู้ฝาก",
+      role: d.depositedByRole ?? d.maid?.role ?? null,
+      amount: d.depositedAmount,
+      chairCodes: [],
+      source: null,
+    });
+  }
+
+  // Apply the machine filter: a selected chair keeps only collect/import events
+  // that touched it; deposits (branch-level lumps) can't be attributed → drop.
+  const filtered = selectedChair
+    ? raw.filter(
+        (e) => e.kind !== "deposit" && e.chairCodes.includes(selectedChair),
+      )
+    : raw;
+
+  // Per-person aggregate over the (filtered) events.
+  const peopleMap = new Map<string, ActivityPerson>();
+  const personDays = new Map<string, Set<string>>();
+  for (const e of filtered) {
+    let p = peopleMap.get(e.personKey);
+    if (!p) {
+      p = {
+        personKey: e.personKey,
+        name: e.personName,
+        role: e.role,
+        collectCount: 0,
+        collectTotal: 0,
+        depositCount: 0,
+        depositTotal: 0,
+        activeDays: 0,
+      };
+      peopleMap.set(e.personKey, p);
+      personDays.set(e.personKey, new Set());
+    }
+    if (e.kind === "deposit") {
+      p.depositCount += 1;
+      p.depositTotal += e.amount;
+    } else {
+      p.collectCount += 1;
+      p.collectTotal += e.amount;
+    }
+    personDays.get(e.personKey)!.add(isoDay(e.at));
+  }
+  for (const [k, days] of personDays) {
+    const p = peopleMap.get(k);
+    if (p) p.activeDays = days.size;
+  }
+  const people = [...peopleMap.values()].sort(
+    (a, b) =>
+      b.collectTotal + b.depositTotal - (a.collectTotal + a.depositTotal),
+  );
+
+  // Group into days (newest-first), events newest-first within each day.
+  const dayMap = new Map<string, ActivityDay>();
+  for (const e of filtered) {
+    const dayKey = isoDay(e.at);
+    let day = dayMap.get(dayKey);
+    if (!day) {
+      day = { date: dayKey, events: [], collectTotal: 0, depositTotal: 0 };
+      dayMap.set(dayKey, day);
+    }
+    const time = new Date(e.at.getTime() + 7 * 3_600_000)
+      .toISOString()
+      .slice(11, 16);
+    day.events.push({
+      kind: e.kind,
+      time,
+      personName: e.personName,
+      role: e.role,
+      amount: e.amount,
+      chairCodes: e.chairCodes,
+      source: e.source,
+    });
+    if (e.kind === "deposit") day.depositTotal += e.amount;
+    else day.collectTotal += e.amount;
+  }
+  const days = [...dayMap.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
+  for (const d of days) {
+    d.events.sort((a, b) => (a.time < b.time ? 1 : -1));
+  }
+
+  return {
+    from: fromDay,
+    to: toDay,
+    people,
+    days,
+    chairCodes: [...chairOptions].sort(),
+    selectedChair,
+    truncated,
+    maxDays: PER_CHAIR_DETAIL_MAX_DAYS,
+  };
+}
+
+// ----------------------------------------------------------------
 // SIDEBAR — branch list rows (cumulative drift chip + status dot)
 // ----------------------------------------------------------------
 export async function getReconcileSidebar(args: {
@@ -2134,7 +2420,7 @@ export async function getReconcileSidebar(args: {
     prisma.chairopsBranch.findMany({
       where: { orgId, isActive: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, mallGroup: true },
+      select: { id: true, name: true, mallGroup: true, closedAt: true },
     }),
     prisma.chairopsDrift.findMany({
       where: { orgId },
@@ -2170,9 +2456,19 @@ export async function getReconcileSidebar(args: {
       status,
       cumDrift,
       daysSinceCollect: daysSince,
+      isClosed: b.closedAt != null,
     };
   });
 
-  // Worst (most negative cumDrift) first to match mockup ordering.
-  return rows.sort((a, b) => a.cumDrift - b.cumDrift);
+  // CEO 2026-07-01: sort by COLLECTION RECENCY, not money.
+  // (CEO: "เรียงตามเก็บเงินดีกว่าเรียงยอด" — เก็บวันนี้เด้งบนสุด · ไม่เคยเก็บลงล่าง ·
+  // สาขาปิด/ย้ายแล้วอยู่ล่างสุด.) Fresh (daysSinceCollect asc) first; never-collected
+  // (999) naturally sinks; closed branches pinned below everything. Tiebreak by
+  // worst shortage first so within the same freshness the money-critical one leads.
+  return rows.sort((a, b) => {
+    if (a.isClosed !== b.isClosed) return a.isClosed ? 1 : -1;
+    if (a.daysSinceCollect !== b.daysSinceCollect)
+      return a.daysSinceCollect - b.daysSinceCollect;
+    return a.cumDrift - b.cumDrift;
+  });
 }

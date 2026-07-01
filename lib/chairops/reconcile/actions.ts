@@ -144,3 +144,56 @@ export async function closePeriodForOrg(): Promise<
     };
   }
 }
+
+// ────────────────────────────────────────────────────────────────
+// CEO 2026-07-01: "ปิดสาขา" (ย้าย/เลิกกิจการ) จากแถบซ้ายหน้าตรวจยอด.
+// ใช้ ChairopsBranch.closedAt (มีอยู่แล้ว · ไม่ต้อง migration) เป็นตัวมาร์ค UI —
+// สาขาที่ closedAt != null จะถูกดันไปล่างสุดของแถบ + หรี่สี · ยังเห็นได้ ยังไม่ลบ
+// ข้อมูล และ "ไม่แตะ" isActive → drift/ledger/รายงานยังคำนวณเหมือนเดิมทุกอย่าง.
+// เปิดคืนได้ (closed=false → closedAt=null). super_admin เท่านั้น (เหมือนปุ่มปิดงวด).
+export async function toggleBranchClosedAction(
+  branchId: string,
+  closed: boolean,
+): Promise<{ ok: true; closed: boolean } | { ok: false; error: string }> {
+  if (!branchId || typeof branchId !== "string") {
+    return { ok: false, error: "missing branchId" };
+  }
+  const session = await requireRole("OFFICE");
+  if (!isSuperAdmin(session.poolUser.role)) {
+    return {
+      ok: false,
+      error: "เฉพาะผู้ดูแลสูงสุด (super admin) เท่านั้นที่ปิด/เปิดสาขาได้",
+    };
+  }
+  // org-scope guard — กันแก้สาขาข้ามองค์กร (IDOR write).
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId: session.user.orgId },
+    select: { id: true, name: true, closedAt: true },
+  });
+  if (!branch) {
+    return { ok: false, error: "ไม่พบสาขา หรือไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+  try {
+    const nextClosedAt = closed ? new Date() : null;
+    await prisma.chairopsBranch.update({
+      where: { id: branchId },
+      data: { closedAt: nextClosedAt },
+    });
+    await writeAudit({
+      userId: session.user.id,
+      action: closed ? "branch.close" : "branch.reopen",
+      entity: "Branch",
+      entityId: branchId,
+      oldValue: { closedAt: branch.closedAt?.toISOString() ?? null },
+      newValue: { closedAt: nextClosedAt?.toISOString() ?? null },
+    });
+    revalidatePath("/chairops/reconcile");
+    revalidatePath(`/chairops/reconcile/${branchId}`);
+    return { ok: true, closed };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "ปิด/เปิดสาขาไม่สำเร็จ",
+    };
+  }
+}
