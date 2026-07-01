@@ -112,6 +112,7 @@ export default async function FlowcoReportPage({
           rows={report.rows}
           totals={t}
           colLabel={mode === "month" ? "เดือน" : "วันที่"}
+          fuelCols={report.fuelCols}
         />
       </div>
 

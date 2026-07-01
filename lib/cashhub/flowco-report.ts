@@ -1,6 +1,7 @@
 // FlowCo sales report — reads source po_fuel_* directly (always fresh, anomaly-filtered).
-// Supports day/month grouping + per-fuel-grade breakdown (for expandable rows).
+// Day/month grouping, with per-fuel-type LITERS shown as table columns.
 // Display-only. NB: FlowCo data is DAILY (no shift/กะ granularity in the source).
+// Verified: ยอดขาย (Σ sell_a) reconciles with payment table (~0.1%); liters sum correctly.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -11,6 +12,22 @@ import { resolveSteToBranch, FLOWCO_STATIONS } from "./flowco-branch-map";
 
 type Admin = SupabaseClient;
 const SEED_STE = new Set(FLOWCO_STATIONS.map((s) => s.steId));
+
+// จัดชื่อน้ำมันที่มั่ว (DIESEL หลาย id, "GASOHOL 95"/"GASOHOL95") → หมวดสะอาดสำหรับคอลัมน์
+const FUEL_ORDER = ["B7", "95", "B20", "91", "E20", "ดีเซล", "LPG", "E85", "อื่นๆ"];
+function canonicalFuel(name: string): string {
+  const n = (name || "").toUpperCase();
+  if (n.includes("B7")) return "B7";
+  if (n.includes("B20")) return "B20";
+  if (n.includes("95")) return "95";
+  if (n.includes("91")) return "91";
+  if (n.includes("E20") || n.includes("E 20")) return "E20";
+  if (n.includes("E85")) return "E85";
+  if (n.includes("LPG")) return "LPG";
+  if (n.includes("DIESEL") || n.includes("HSD") || n.includes("HIDIESEL"))
+    return "ดีเซล";
+  return "อื่นๆ";
+}
 
 const TH_MONTHS = [
   "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
@@ -27,13 +44,6 @@ function dayLabel(ymd: string): string {
 
 export type FlowcoMode = "day" | "month";
 
-export interface FlowcoGradeCell {
-  gradeId: number;
-  grade: string;
-  liters: number;
-  sales: number;
-}
-
 export interface FlowcoReportRow {
   key: string; // "2026-06-30" (day) หรือ "2026-06" (month)
   label: string;
@@ -44,8 +54,7 @@ export interface FlowcoReportRow {
   credit: number;
   transfer: number;
   anomalyCount: number;
-  days: number; // จำนวนวัน-สาขา ที่รวมในแถวนี้
-  grades: FlowcoGradeCell[];
+  fuelLiters: Record<string, number>; // หมวดน้ำมัน → ลิตร
 }
 
 export interface FlowcoReportTotals {
@@ -55,12 +64,14 @@ export interface FlowcoReportTotals {
   card: number;
   credit: number;
   transfer: number;
+  fuelLiters: Record<string, number>;
 }
 
 export interface FlowcoReport {
   rows: FlowcoReportRow[];
   branches: { steId: number; name: string }[];
   totals: FlowcoReportTotals;
+  fuelCols: string[]; // หมวดน้ำมันที่มีข้อมูล (เรียงแล้ว) → คอลัมน์
   anomalyTotal: number;
   mode: FlowcoMode;
   steId: number | null;
@@ -97,11 +108,8 @@ export async function fetchFlowcoReport(
     return seed?.name ?? `สาขา ${ste}`;
   };
   const keyOf = (date: string) => (mode === "month" ? date.slice(0, 7) : date);
-
-  // filter to report stations (+ branch filter)
   const inScope = (ste: number) => SEED_STE.has(ste) && (!steId || ste === steId);
 
-  // group aggregates → rows
   const rowMap = new Map<string, FlowcoReportRow>();
   const getRow = (key: string): FlowcoReportRow => {
     let r = rowMap.get(key);
@@ -116,8 +124,7 @@ export async function fetchFlowcoReport(
         credit: 0,
         transfer: 0,
         anomalyCount: 0,
-        days: 0,
-        grades: [],
+        fuelLiters: {},
       };
       rowMap.set(key, r);
     }
@@ -134,46 +141,40 @@ export async function fetchFlowcoReport(
     r.credit += a.credit;
     r.transfer += a.transfer;
     r.anomalyCount += a.anomalyCount;
-    r.days += 1;
   }
 
-  // group grade rows → per-row fuel-type cells (by gradeId)
-  const gradeByRow = new Map<string, Map<number, FlowcoGradeCell>>();
+  // per-row liters แยกตามหมวดน้ำมัน
+  const fuelTotal: Record<string, number> = {};
   for (const g of gradeRows) {
     if (!inScope(g.steId)) continue;
-    const rk = keyOf(g.reportDate);
-    let gm = gradeByRow.get(rk);
-    if (!gm) {
-      gm = new Map();
-      gradeByRow.set(rk, gm);
-    }
-    let cell = gm.get(g.gradeId);
-    if (!cell) {
-      cell = { gradeId: g.gradeId, grade: g.gradeName, liters: 0, sales: 0 };
-      gm.set(g.gradeId, cell);
-    }
-    cell.liters += g.liters;
-    cell.sales += g.sales;
-  }
-  for (const [rk, gm] of gradeByRow) {
-    const r = rowMap.get(rk);
-    if (r) r.grades = [...gm.values()].sort((x, y) => y.sales - x.sales);
+    const r = getRow(keyOf(g.reportDate));
+    const bucket = canonicalFuel(g.gradeName);
+    r.fuelLiters[bucket] = (r.fuelLiters[bucket] ?? 0) + g.liters;
+    fuelTotal[bucket] = (fuelTotal[bucket] ?? 0) + g.liters;
   }
 
-  // rows sorted newest first
+  const fuelCols = FUEL_ORDER.filter((b) => (fuelTotal[b] ?? 0) > 0.5);
   const rows = [...rowMap.values()].sort((x, y) => (x.key < y.key ? 1 : -1));
 
-  const totals = rows.reduce<FlowcoReportTotals>(
-    (t, r) => ({
-      liters: t.liters + r.liters,
-      totalSales: t.totalSales + r.totalSales,
-      cash: t.cash + r.cash,
-      card: t.card + r.card,
-      credit: t.credit + r.credit,
-      transfer: t.transfer + r.transfer,
-    }),
-    { liters: 0, totalSales: 0, cash: 0, card: 0, credit: 0, transfer: 0 },
-  );
+  const totals: FlowcoReportTotals = {
+    liters: 0,
+    totalSales: 0,
+    cash: 0,
+    card: 0,
+    credit: 0,
+    transfer: 0,
+    fuelLiters: {},
+  };
+  for (const r of rows) {
+    totals.liters += r.liters;
+    totals.totalSales += r.totalSales;
+    totals.cash += r.cash;
+    totals.card += r.card;
+    totals.credit += r.credit;
+    totals.transfer += r.transfer;
+    for (const b of fuelCols)
+      totals.fuelLiters[b] = (totals.fuelLiters[b] ?? 0) + (r.fuelLiters[b] ?? 0);
+  }
   const anomalyTotal = rows.reduce((s, r) => s + r.anomalyCount, 0);
 
   const branches = [...FLOWCO_STATIONS]
@@ -184,6 +185,7 @@ export async function fetchFlowcoReport(
     rows,
     branches,
     totals,
+    fuelCols,
     anomalyTotal,
     mode,
     steId,
