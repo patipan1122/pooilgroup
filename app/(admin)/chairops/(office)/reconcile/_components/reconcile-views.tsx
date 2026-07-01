@@ -1517,7 +1517,38 @@ function PerChairDayRow({
       </td>
       <td className="num mono">
         {c.hasCollection ? (
-          fmtN(c.collected)
+          <span
+            style={{
+              display: "inline-flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              lineHeight: 1.15,
+            }}
+          >
+            <span>{fmtN(c.collected)}</span>
+            {(() => {
+              const parts = [
+                c.collectedBySource.maidManual > 0
+                  ? `💵${fmtN(c.collectedBySource.maidManual)}`
+                  : null,
+                c.collectedBySource.officeProxy > 0
+                  ? `🏢${fmtN(c.collectedBySource.officeProxy)}`
+                  : null,
+                c.collectedBySource.csvImport > 0
+                  ? `📥${fmtN(c.collectedBySource.csvImport)}`
+                  : null,
+              ].filter(Boolean);
+              return parts.length > 0 ? (
+                <span
+                  className="text-3"
+                  style={{ fontSize: 9.5, fontWeight: 400, whiteSpace: "nowrap" }}
+                  title="ที่มาของเงินที่เก็บ: 💵 แม่บ้าน · 🏢 แอดมิน · 📥 CSV"
+                >
+                  {parts.join(" ")}
+                </span>
+              ) : null;
+            })()}
+          </span>
         ) : (
           <span className="text-muted">—</span>
         )}

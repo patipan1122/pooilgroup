@@ -1146,7 +1146,14 @@ export interface PerChairDetailCell {
   chairCode: string;
   generation: string | null;
   expected: number; // POS cash + coin baht for THIS chair on THIS day (ควรได้)
-  collected: number; // maid-counted for this chair this day (chairBreakdown · MAID_MANUAL)
+  collected: number; // total counted for this chair this day (all sources)
+  // CEO 2026-07-01 · split เก็บได้ per chair by WHO collected → the office can see
+  // where each machine's money came from (before it was one lumped number = "งง").
+  collectedBySource: {
+    maidManual: number; // 💵 แม่บ้านเก็บมือ (chairBreakdown จากแอปแม่บ้าน)
+    officeProxy: number; // 🏢 แอดมิน/ออฟฟิศเก็บแทน
+    csvImport: number; // 📥 นำเข้า CSV (ปกติไม่มีแยกตู้ → มักเป็น 0 ที่นี่)
+  };
   variance: number; // collected − expected (วันนั้น)
   cumVariance: number; // running Σ variance for this chair within the window (สะสม)
   hasPos: boolean;
@@ -1268,9 +1275,10 @@ export async function getReconcilePerChairDetail(args: {
 
   const genByCode = new Map(chairs.map((c) => [c.chairCode, c.generation]));
 
+  type CollSrc = { maidManual: number; officeProxy: number; csvImport: number };
   type DayBucket = {
     expByChair: Map<string, number>;
-    collByChair: Map<string, number>;
+    collByChair: Map<string, CollSrc>;
     brokenByChair: Set<string>;
     unattributedExpected: number;
     summary: PerChairDaySummary;
@@ -1341,7 +1349,12 @@ export async function getReconcilePerChairDetail(args: {
         if (amt > 0) b.summary.unattributedCollected += amt;
         continue;
       }
-      b.collByChair.set(code, (b.collByChair.get(code) ?? 0) + amt);
+      const cur =
+        b.collByChair.get(code) ?? { maidManual: 0, officeProxy: 0, csvImport: 0 };
+      if (source === "CSV_IMPORT") cur.csvImport += amt;
+      else if (source === "OFFICE_PROXY") cur.officeProxy += amt;
+      else cur.maidManual += amt;
+      b.collByChair.set(code, cur);
       const status = typeof ln.status === "string" ? ln.status : "";
       if (status && status !== "collected") b.brokenByChair.add(code);
     }
@@ -1378,7 +1391,16 @@ export async function getReconcilePerChairDetail(args: {
     ]);
     const cells: PerChairDetailCell[] = [...codes].map((code) => {
       const expected = Math.round(b.expByChair.get(code) ?? 0);
-      const collected = Math.round(b.collByChair.get(code) ?? 0);
+      const cs = b.collByChair.get(code);
+      const collectedBySource = {
+        maidManual: Math.round(cs?.maidManual ?? 0),
+        officeProxy: Math.round(cs?.officeProxy ?? 0),
+        csvImport: Math.round(cs?.csvImport ?? 0),
+      };
+      const collected =
+        collectedBySource.maidManual +
+        collectedBySource.officeProxy +
+        collectedBySource.csvImport;
       const variance = collected - expected;
       const cumVariance = (cumByChair.get(code) ?? 0) + variance;
       cumByChair.set(code, cumVariance);
@@ -1387,6 +1409,7 @@ export async function getReconcilePerChairDetail(args: {
         generation: genByCode.get(code) ?? null,
         expected,
         collected,
+        collectedBySource,
         variance,
         cumVariance,
         hasPos: b.expByChair.has(code),
