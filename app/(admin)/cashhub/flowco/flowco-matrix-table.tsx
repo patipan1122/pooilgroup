@@ -249,7 +249,8 @@ function FragmentRow({
   rowTotal: number;
   isMuted: (v: number) => boolean;
 }) {
-  const bg = stripe ? "bg-[color:rgba(59,79,246,0.035)]" : "bg-white";
+  // ⚠️ ต้องเป็นสีทึบ (ไม่ใช่ rgba โปร่งแสง) — ไม่งั้นคอลัมน์ตรึง sticky จะมองทะลุเห็นตัวเลขข้างหลังซ้อนกัน
+  const bg = stripe ? "bg-[#f6f7fc]" : "bg-white";
   const div = "border-r border-[color:rgba(0,0,0,0.05)]";
   return (
     <>
