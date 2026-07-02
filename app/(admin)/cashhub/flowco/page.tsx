@@ -5,9 +5,14 @@ import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
 import { TwoToneTitle } from "@/components/cashhub/redesign/two-tone-title";
 import { fetchFlowcoDateRange } from "@/lib/cashhub/flowco-source";
-import { fetchFlowcoReport, type FlowcoMode } from "@/lib/cashhub/flowco-report";
+import {
+  fetchFlowcoReport,
+  fetchFlowcoMatrix,
+  type FlowcoMode,
+} from "@/lib/cashhub/flowco-report";
 import { FlowcoReportFilters } from "./flowco-report-filters";
 import { FlowcoReportTable } from "./flowco-report-table";
+import { FlowcoMatrixTable } from "./flowco-matrix-table";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +28,19 @@ const baht = (n: number) => "฿" + Math.round(n).toLocaleString("th-TH");
 export default async function FlowcoReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; ste?: string; mode?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    ste?: string;
+    mode?: string;
+    view?: string;
+  }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin");
   const admin = adminClient();
   const sp = await searchParams;
 
+  const view: "table" | "matrix" = sp.view === "matrix" ? "matrix" : "table";
   const mode: FlowcoMode =
     sp.mode === "month" ? "month" : sp.mode === "shift" ? "shift" : "day";
   const range = await fetchFlowcoDateRange(admin);
@@ -39,6 +51,59 @@ export default async function FlowcoReportPage({
   const from =
     sp.from && YMD.test(sp.from) ? sp.from : defFrom < minD ? minD : defFrom;
   const steId = sp.ste && /^\d+$/.test(sp.ste) ? Number(sp.ste) : null;
+
+  // ── มุมมอง "สรุปทุกสาขา" (matrix) — แถว = สาขา · คอลัมน์ = เดือน/วัน ──
+  if (view === "matrix") {
+    const matrix = await fetchFlowcoMatrix(admin, session.user.org_id, {
+      dateFrom: from,
+      dateTo: to,
+      mode: mode === "month" ? "month" : "day",
+    });
+    return (
+      <div className="p-3 sm:p-6 lg:p-8 max-w-[1600px] mx-auto ch-scope">
+        <BackButton label="ศูนย์นำเข้าข้อมูล" fallbackHref="/cashhub/import" />
+        <header className="mb-4 animate-fade-up flex flex-col gap-1.5">
+          <SectionPill num="⛽" label="FlowCo · สรุปยอดขายปั๊ม ทุกสาขา" />
+          <TwoToneTitle first="สรุปยอดขาย" accent="ทุกสาขา" size={30} />
+          <p className="text-[var(--ch-text-2)] text-xs flex items-center gap-1.5">
+            <Info className="size-3.5 shrink-0" />
+            ทุกสาขาในหน้าเดียว · สลับ รายเดือน/รายวัน · รายวันกดขยายสาขาดูแยกกะ (เช้า/ดึก) ·
+            สลับ ยอดขาย/ลิตร
+          </p>
+        </header>
+
+        <FlowcoReportFilters
+          branches={matrix.rows.map((r) => ({ steId: r.steId, name: r.name }))}
+          from={from}
+          to={to}
+          ste={null}
+          mode={mode}
+          view="matrix"
+        />
+
+        <div className="mt-3 rounded-2xl border border-[var(--ch-border)] bg-white p-4 animate-fade-up flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-[11px] text-[var(--ch-text-2)]">
+              ยอดขายรวมทุกสาขา (ช่วงที่เลือก)
+            </div>
+            <div className="text-2xl font-extrabold ch-tnum text-[var(--ch-brand)]">
+              {baht(matrix.grandBaht)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] text-[var(--ch-text-2)]">ลิตรรวม</div>
+            <div className="text-lg font-bold ch-tnum text-[var(--ch-text)]">
+              {Math.round(matrix.grandLiters).toLocaleString("th-TH")} ล.
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 animate-fade-up">
+          <FlowcoMatrixTable matrix={matrix} />
+        </div>
+      </div>
+    );
+  }
 
   const report = await fetchFlowcoReport(admin, session.user.org_id, {
     dateFrom: from,
@@ -71,6 +136,7 @@ export default async function FlowcoReportPage({
         to={to}
         ste={steId}
         mode={mode}
+        view="table"
       />
 
       {report.anomalyTotal > 0 && (

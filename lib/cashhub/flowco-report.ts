@@ -245,6 +245,206 @@ export async function fetchFlowcoReport(
   };
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// รายงาน "สรุปทุกสาขา" (matrix) — แถว = สาขา · คอลัมน์ = เดือน/วัน · ค่า = ยอดขาย/ลิตร
+// อ่านสด ๆ จาก po_fuel_* (กรองค่าเพี้ยนแล้ว) · รายวัน+แยกกะ (เช้า/ดึก) ได้
+// ════════════════════════════════════════════════════════════════════════
+
+export type FlowcoMatrixMode = "day" | "month";
+
+export interface FlowcoMatrixCell {
+  baht: number;
+  liters: number;
+  mBaht: number; // ยอดกะเช้า (บาท)
+  mLit: number; // ลิตรกะเช้า
+  eBaht: number; // ยอดกะดึก (บาท)
+  eLit: number; // ลิตรกะดึก
+  anomaly: number;
+}
+
+export interface FlowcoMatrixRow {
+  steId: number;
+  name: string;
+  cells: Record<string, FlowcoMatrixCell>; // periodKey → cell
+  totalBaht: number;
+  totalLiters: number;
+  hasShiftData: boolean; // สาขานี้มีข้อมูลแยกกะไหม
+}
+
+export interface FlowcoMatrix {
+  mode: FlowcoMatrixMode;
+  periodKeys: string[]; // เรียงเก่า→ใหม่ (ซ้าย→ขวา)
+  periodLabels: string[];
+  rows: FlowcoMatrixRow[]; // ทุกสาขา (21) เรียงตาม steId
+  colTotals: Record<string, FlowcoMatrixCell>;
+  grandBaht: number;
+  grandLiters: number;
+  hasShift: boolean;
+  anomalyTotal: number;
+  dateFrom: string;
+  dateTo: string;
+}
+
+function addDaysYmdLocal(ymd: string, n: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** enumerate YYYY-MM keys ระหว่าง from..to (รวมปลายทั้งสอง) */
+function enumMonths(from: string, to: string): string[] {
+  const out: string[] = [];
+  let [y, m] = from.slice(0, 7).split("-").map(Number);
+  const [ty, tm] = to.slice(0, 7).split("-").map(Number);
+  // กันวนไม่จบ: cap 60 เดือน
+  for (let i = 0; i < 60; i++) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (y === ty && m === tm) break;
+    if (y > ty || (y === ty && m >= tm)) break;
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return out;
+}
+
+/** enumerate YYYY-MM-DD keys ระหว่าง from..to (รวมปลายทั้งสอง · cap 120 วัน กันตารางบวม) */
+function enumDays(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cur = from;
+  for (let i = 0; i < 400 && cur <= to; i++) {
+    out.push(cur);
+    cur = addDaysYmdLocal(cur, 1);
+  }
+  // ถ้ายาวเกิน 120 วัน เอาเฉพาะช่วงท้าย (วันล่าสุด) — กันตารางกว้างเกิน
+  return out.length > 120 ? out.slice(out.length - 120) : out;
+}
+
+const emptyMatrixCell = (): FlowcoMatrixCell => ({
+  baht: 0, liters: 0, mBaht: 0, mLit: 0, eBaht: 0, eLit: 0, anomaly: 0,
+});
+
+export interface FlowcoMatrixQuery {
+  dateFrom: string;
+  dateTo: string;
+  mode?: FlowcoMatrixMode;
+}
+
+export async function fetchFlowcoMatrix(
+  admin: Admin,
+  orgId: string,
+  q: FlowcoMatrixQuery,
+): Promise<FlowcoMatrix> {
+  const mode: FlowcoMatrixMode = q.mode === "month" ? "month" : "day";
+
+  const [aggs, shiftRows, steMap] = await Promise.all([
+    fetchFlowcoAggregates(admin, q.dateFrom, q.dateTo),
+    // แยกกะ เฉพาะโหมดรายวัน (รายเดือนไม่แตกกะ)
+    mode === "day"
+      ? fetchFlowcoShiftRows(admin, q.dateFrom, q.dateTo, null)
+      : Promise.resolve([]),
+    resolveSteToBranch(admin, orgId),
+  ]);
+
+  const nameOf = (ste: number): string => {
+    const mapped = steMap.get(ste)?.name;
+    if (mapped) return mapped.replace(/^ปั๊มน้ำมัน - /, "");
+    return FLOWCO_STATIONS.find((s) => s.steId === ste)?.name ?? `สาขา ${ste}`;
+  };
+
+  const periodKeys =
+    mode === "month"
+      ? enumMonths(q.dateFrom, q.dateTo)
+      : enumDays(q.dateFrom, q.dateTo);
+  const periodSet = new Set(periodKeys);
+  const periodLabels = periodKeys.map((k) =>
+    mode === "month" ? monthLabel(k) : dayLabel(k),
+  );
+  const keyOf = (date: string) => (mode === "month" ? date.slice(0, 7) : date);
+
+  // ทุกสาขา (21) เรียงตาม steId
+  const rows: FlowcoMatrixRow[] = [...FLOWCO_STATIONS]
+    .sort((a, b) => a.steId - b.steId)
+    .map((s) => ({
+      steId: s.steId,
+      name: nameOf(s.steId),
+      cells: {},
+      totalBaht: 0,
+      totalLiters: 0,
+      hasShiftData: false,
+    }));
+  const rowBySte = new Map(rows.map((r) => [r.steId, r]));
+  const cellOf = (row: FlowcoMatrixRow, pk: string): FlowcoMatrixCell => {
+    let c = row.cells[pk];
+    if (!c) { c = emptyMatrixCell(); row.cells[pk] = c; }
+    return c;
+  };
+
+  for (const a of aggs) {
+    const row = rowBySte.get(a.steId);
+    if (!row) continue; // นอกลิสต์ 21 สาขา
+    const pk = keyOf(a.reportDate);
+    if (!periodSet.has(pk)) continue;
+    const c = cellOf(row, pk);
+    c.baht += a.totalSales;
+    c.liters += a.liters;
+    c.anomaly += a.anomalyCount;
+  }
+
+  let shiftGrand = 0;
+  for (const sh of shiftRows) {
+    const row = rowBySte.get(sh.steId);
+    if (!row) continue;
+    const pk = keyOf(sh.reportDate);
+    if (!periodSet.has(pk)) continue;
+    const c = cellOf(row, pk);
+    if (sh.shiftNo === 2) { c.eBaht += sh.baht; c.eLit += sh.liters; }
+    else { c.mBaht += sh.baht; c.mLit += sh.liters; } // 1,3,4,5,6 → เช้า (ตรงกับรายงานเดิม)
+    row.hasShiftData = true;
+    shiftGrand += sh.baht;
+  }
+
+  // totals ต่อสาขา + ต่อคอลัมน์ + grand
+  const colTotals: Record<string, FlowcoMatrixCell> = {};
+  for (const pk of periodKeys) colTotals[pk] = emptyMatrixCell();
+  let grandBaht = 0;
+  let grandLiters = 0;
+  let anomalyTotal = 0;
+  for (const row of rows) {
+    for (const pk of periodKeys) {
+      const c = row.cells[pk];
+      if (!c) continue;
+      row.totalBaht += c.baht;
+      row.totalLiters += c.liters;
+      const ct = colTotals[pk]!;
+      ct.baht += c.baht;
+      ct.liters += c.liters;
+      ct.mBaht += c.mBaht;
+      ct.mLit += c.mLit;
+      ct.eBaht += c.eBaht;
+      ct.eLit += c.eLit;
+      ct.anomaly += c.anomaly;
+      anomalyTotal += c.anomaly;
+    }
+    grandBaht += row.totalBaht;
+    grandLiters += row.totalLiters;
+  }
+
+  return {
+    mode,
+    periodKeys,
+    periodLabels,
+    rows,
+    colTotals,
+    grandBaht,
+    grandLiters,
+    hasShift: shiftGrand > 0.5,
+    anomalyTotal,
+    dateFrom: q.dateFrom,
+    dateTo: q.dateTo,
+  };
+}
+
 // ── โหมดรายกะ: 1 แถว = 1 กะของ 1 วัน ──
 async function fetchShiftModeReport(
   admin: Admin,
