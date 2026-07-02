@@ -88,6 +88,12 @@ const cashCollectionInput = z.object({
   // anchor so a back-dated collectedAt can be flagged later. Optional → falls
   // back to now() when omitted (legacy/CSV paths).
   collectedAt: z.string().datetime({ offset: true }).optional().nullable(),
+  // P0 #3 (deep-review 2026-07-01): idempotency. The maid form generates ONE
+  // UUID per submission and reuses it on retry/double-tap. We derive the row's
+  // dedup hash from it so a second identical submit hits the (orgId,imageHash)
+  // unique index instead of double-counting the cash. Optional → legacy/office
+  // paths without it keep the old random-hash behaviour.
+  clientRequestId: z.string().uuid().optional().nullable(),
 });
 
 export type CashCollectionInput = z.infer<typeof cashCollectionInput>;
@@ -225,13 +231,20 @@ export async function createCashCollection(
   }
 
   // imageHash column is NOT NULL on the table; when the rollup photo is
-  // omitted, store a synthetic per-row hash (random) so the unique guard
-  // never trips on a NULL/empty value across collisions.
+  // omitted we still need a value for the (orgId, imageHash) unique guard.
+  //
+  // P0 #3 idempotency: if the client sent a clientRequestId, derive the hash
+  // DETERMINISTICALLY from it — a double-tap / network-retry reuses the same
+  // id → same hash → the unique index rejects the 2nd insert (caught below and
+  // returned as the first row = no double count). Only when there's neither a
+  // photo NOR a clientRequestId do we fall back to a random hash (legacy).
   const fallbackHash =
     data.imageHash ??
-    Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    (data.clientRequestId
+      ? await sha256HexOfString(`ccid:${data.clientRequestId}`)
+      : Array.from(crypto.getRandomValues(new Uint8Array(32)))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(""));
 
   // Resolve the real collection time. Reject a future time (entered-time gaming
   // / device-clock skew) and an absurdly old one (typo). When omitted, the row
@@ -331,12 +344,43 @@ export async function createCashCollection(
     revalidatePath("/chairops/collect");
     return { ok: true, data: { id: created.id } };
   } catch (err) {
+    // P0 #3 idempotency: a double-submit (double-tap / retry after a slow
+    // network) reuses the same clientRequestId → same synthetic imageHash → the
+    // (orgId, imageHash) unique index rejects the 2nd insert. Treat that as
+    // SUCCESS and return the row the FIRST submit created — never double-count.
+    if (
+      data.clientRequestId &&
+      err instanceof Error &&
+      err.message.includes("imageHash")
+    ) {
+      const existing = await prisma.chairopsCashCollection.findUnique({
+        where: {
+          orgId_imageHash: {
+            orgId: session.user.orgId,
+            imageHash: fallbackHash,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing) return { ok: true, data: { id: existing.id } };
+    }
     const msg =
       err instanceof Error && err.message.includes("imageHash")
         ? "รูปนี้เคยส่งแล้ว · ถ่ายรูปใหม่"
         : "บันทึกไม่สำเร็จ · กรุณาลองอีกครั้ง";
     return { ok: false, error: msg };
   }
+}
+
+/** SHA-256 hex of a UTF-8 string (server-side idempotency-key hashing). */
+async function sha256HexOfString(s: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(s),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // Per-problem-chair photo presign — one R2 URL for each broken chair photo.

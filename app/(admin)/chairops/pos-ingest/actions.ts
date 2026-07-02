@@ -48,6 +48,13 @@ import {
   baseHeaderText,
   headerCodepoints,
 } from "@/lib/chairops/pos-ingest/header-normalize";
+// P0 #4 (deep-review 2026-07-01): daily-revenue branch matching MUST use the
+// SAME normalizer as POS events (normalizeStoreKey — strips a trailing store
+// code like " (200)"). The old loosenShopName KEPT the digits ("ckplaza200"),
+// so a file named "Ck plaza (200)" resolved its events but NOT its daily sales
+// → drift/write-off silently lost that branch's revenue while the events tab
+// looked green. Single-source the key so both paths agree.
+import { normalizeStoreKey } from "@/lib/chairops/pos-ingest/event-diff";
 
 // ----- Types ----------------------------------------------------------------
 
@@ -368,13 +375,28 @@ function loosenShopName(s: string): string {
   return s.toLowerCase().replace(/[\s\-_().]+/g, "");
 }
 
+type BranchHit = { id: string; name: string };
+interface BranchCache {
+  byTab: Map<string, BranchHit>;
+  /** normalizeStoreKey → hit · null means AMBIGUOUS (2+ branches, never guess) */
+  byNorm: Map<string, BranchHit | null>;
+  byLoose: Map<string, BranchHit>;
+}
+
 function resolveBranchForRow(
   row: ParsedRow,
-  branchCache: { byTab: Map<string, { id: string; name: string }>; byLoose: Map<string, { id: string; name: string }> }
+  branchCache: BranchCache,
 ): { branchId: string | null; branchName: string | null } {
   if (!row.shopName) return { branchId: null, branchName: null };
+  // 1) exact tab/name/slug hit
   const direct = branchCache.byTab.get(row.shopName);
   if (direct) return { branchId: direct.id, branchName: direct.name };
+  // 2) normalized key — SAME formula as POS events (strips trailing " (200)"
+  //    store code + case/space). Ambiguous key (2+ branches) → stay unmatched.
+  const norm = branchCache.byNorm.get(normalizeStoreKey(row.shopName));
+  if (norm) return { branchId: norm.id, branchName: norm.name };
+  if (norm === null) return { branchId: null, branchName: null };
+  // 3) legacy punctuation-insensitive fallback (last resort)
   const loose = branchCache.byLoose.get(loosenShopName(row.shopName));
   if (loose) return { branchId: loose.id, branchName: loose.name };
   return { branchId: null, branchName: null };
@@ -470,14 +492,22 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
     where: { orgId, isActive: true },
     select: { id: true, name: true, tabName: true, slug: true },
   });
-  const byTab = new Map<string, { id: string; name: string }>();
-  const byLoose = new Map<string, { id: string; name: string }>();
+  const byTab = new Map<string, BranchHit>();
+  const byLoose = new Map<string, BranchHit>();
+  const byNorm = new Map<string, BranchHit | null>();
   for (const b of branches) {
     byTab.set(b.tabName, { id: b.id, name: b.name });
     byTab.set(b.name, { id: b.id, name: b.name });
     byTab.set(b.slug, { id: b.id, name: b.name });
     byLoose.set(loosenShopName(b.tabName), { id: b.id, name: b.name });
     byLoose.set(loosenShopName(b.name), { id: b.id, name: b.name });
+    // Normalized keys (name + tabName). If two DIFFERENT branches collapse to
+    // the same key, mark it ambiguous (null) → resolver refuses to guess.
+    for (const key of new Set([normalizeStoreKey(b.name), normalizeStoreKey(b.tabName)])) {
+      const cur = byNorm.get(key);
+      if (cur === undefined) byNorm.set(key, { id: b.id, name: b.name });
+      else if (cur && cur.id !== b.id) byNorm.set(key, null);
+    }
   }
 
   // SPEC §2.5 — StarThing branch resolution: exact-match `ChairopsBranch.name`,
@@ -485,14 +515,18 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
   if (starThingMeta) {
     const knownEntries: Array<[string, string]> = [];
     const unknown: string[] = [];
-    const branchByName = new Map(branches.map((b) => [b.name, b.id]));
     const uniqueStores = Array.from(
       new Set(starThingMeta.aggregatedRows.map((r) => r.storeName)),
     );
+    // Resolve with the SAME tiering as resolveBranchForRow: exact tab/name/slug,
+    // then normalizeStoreKey (unique only). Keeps daily aggregates and PosDaily
+    // rows agreeing with the events path (P0 #4).
     for (const s of uniqueStores) {
-      const id = branchByName.get(s);
-      if (id) knownEntries.push([s, id]);
-      else unknown.push(s);
+      const direct = byTab.get(s);
+      if (direct) { knownEntries.push([s, direct.id]); continue; }
+      const norm = byNorm.get(normalizeStoreKey(s));
+      if (norm) { knownEntries.push([s, norm.id]); continue; }
+      unknown.push(s); // undefined (no match) or null (ambiguous) → stays unknown
     }
     starThingMeta.knownBranchEntries = knownEntries;
     starThingMeta.unknownBranches = unknown;
@@ -517,7 +551,7 @@ export async function previewImport(formData: FormData): Promise<{ ok: true; imp
       branchName = manualBranchName;
       manualCount++;
     } else {
-      const r = resolveBranchForRow(row, { byTab, byLoose });
+      const r = resolveBranchForRow(row, { byTab, byNorm, byLoose });
       branchId = r.branchId;
       branchName = r.branchName;
       if (branchId) autoCount++;

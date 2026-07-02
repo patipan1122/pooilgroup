@@ -137,6 +137,9 @@ export function CollectNewForm({
   }
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // P0 #3 idempotency: one stable id per mounted form · reused on retry/
+  // double-tap so the server dedups instead of double-counting the cash.
+  const submissionIdRef = useRef<string>(newUuid());
   const [online, setOnline] = useState(true);
   const [notes, setNotes] = useState("");
   const draftIdRef = useRef<string>(newUuid());
@@ -356,6 +359,7 @@ export function CollectNewForm({
         imageHash: null,
         notes: notes.trim() || null,
         collectedAt: new Date(collectedAtMs ?? Date.now()).toISOString(),
+        clientRequestId: submissionIdRef.current,
       });
       if (!res.ok) {
         toast.error(res.error);

@@ -1737,15 +1737,38 @@ export async function getReconcilePerChairTW(args: {
       }
     }
 
+    // Cumulative shortage = Σ per-round (collected − meter delta) for rounds
+    // 2..N, computed round-by-round (NOT endpoint-only). meterAsOf() is a
+    // lifetime odometer, so we compare each round's collection against the meter
+    // DELTA since the previous round (comparing collected-so-far vs the raw
+    // odometer previously showed a fake six-figure shortage). Round 1 is
+    // excluded (no prior baseline). If any round in the span has a meter RESET
+    // (delta < 0 → unknowable) or lacks a usable baseline, the whole figure is
+    // null — never a silently mis-stated number that could hide a real shortage.
     let cumShortage: number | null = null;
     const lastEver = rounds.length ? rounds[rounds.length - 1] : null;
-    if (lastEver) {
-      const cashCum = meterAsOf(cashSeries, lastEver.t);
-      const coinCum = meterAsOf(coinSeries, lastEver.t);
-      if (cashCum !== null || coinCum !== null) {
-        const totalCollectedEver = rounds.reduce((s, r) => s + r.amount, 0);
-        const cumExpected = (cashCum ?? 0) + coinBahtOf(coinCum ?? 0);
-        cumShortage = Math.round(totalCollectedEver - cumExpected);
+    if (rounds.length >= 2) {
+      let sum = 0;
+      let ok = true;
+      for (let i = 1; i < rounds.length; i++) {
+        const cashLo = meterAsOf(cashSeries, rounds[i - 1].t);
+        const coinLo = meterAsOf(coinSeries, rounds[i - 1].t);
+        const cashHi = meterAsOf(cashSeries, rounds[i].t);
+        const coinHi = meterAsOf(coinSeries, rounds[i].t);
+        let cashDelta = 0;
+        let coinDelta = 0;
+        let anyStream = false;
+        // Require the SAME stream present at BOTH ends before trusting its delta
+        // (a stream present at only one endpoint would fabricate a bogus delta).
+        if (cashLo !== null && cashHi !== null) { cashDelta = cashHi - cashLo; anyStream = true; }
+        if (coinLo !== null && coinHi !== null) { coinDelta = coinHi - coinLo; anyStream = true; }
+        if (!anyStream) { ok = false; break; }
+        if (cashDelta < 0 || coinDelta < 0) { ok = false; break; } // reset → unknowable
+        const exp = Math.round(cashDelta + coinBahtOf(coinDelta));
+        sum += Math.round(rounds[i].amount) - exp;
+      }
+      if (ok) {
+        cumShortage = sum;
         cumShortageTotal += cumShortage;
       }
     }
@@ -1837,11 +1860,9 @@ export async function getReconcilePerChairRoundsTW(args: {
   const coinSeries = coin.get(chairCode);
 
   const out: PerChairRoundTW[] = [];
-  let totalCollected = 0;
   for (let i = 0; i < rounds.length; i++) {
     const r = rounds[i];
     const prior = i > 0 ? rounds[i - 1] : null;
-    totalCollected += r.amount;
     const cashUp = meterAsOf(cashSeries, r.t);
     const coinUp = meterAsOf(coinSeries, r.t);
     let expected: number | null = null;
@@ -1877,13 +1898,34 @@ export async function getReconcilePerChairRoundsTW(args: {
   }
   out.reverse();
 
-  const last = rounds[rounds.length - 1];
-  const cashCum = meterAsOf(cashSeries, last.t);
-  const coinCum = meterAsOf(coinSeries, last.t);
-  const cumShortage =
-    cashCum !== null || coinCum !== null
-      ? Math.round(totalCollected - ((cashCum ?? 0) + coinBahtOf(coinCum ?? 0)))
-      : null;
+  // Cumulative shortage = collected from the 2nd round onward minus the meter
+  // DELTA across that span. meterAsOf() is a lifetime odometer, so subtract the
+  // first-round baseline (comparing collected-so-far vs the raw odometer showed
+  // a fake six-figure shortage). The first round's pre-tracking take is
+  // unknowable → a single round yields null.
+  const firstEver = rounds[0];
+  const lastEver = rounds[rounds.length - 1];
+  let cumShortage: number | null = null;
+  if (lastEver.t > firstEver.t) {
+    const cashHi = meterAsOf(cashSeries, lastEver.t);
+    const coinHi = meterAsOf(coinSeries, lastEver.t);
+    const cashBase = meterAsOf(cashSeries, firstEver.t);
+    const coinBase = meterAsOf(coinSeries, firstEver.t);
+    if (
+      (cashHi !== null || coinHi !== null) &&
+      (cashBase !== null || coinBase !== null)
+    ) {
+      const expDelta =
+        (cashHi ?? 0) - (cashBase ?? 0) +
+        coinBahtOf((coinHi ?? 0) - (coinBase ?? 0));
+      if (expDelta >= 0) {
+        const collectedSinceBase = rounds
+          .slice(1)
+          .reduce((s, r) => s + r.amount, 0);
+        cumShortage = Math.round(collectedSinceBase - expDelta);
+      }
+    }
+  }
 
   return { chairCode, rounds: out, cumShortage };
 }
