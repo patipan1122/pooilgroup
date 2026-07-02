@@ -341,9 +341,12 @@ type Props = {
   history: StaffHistoryRow[];
   // ตั๋วแจ้งซ่อมล่าสุดของฉัน (จาก listMyRecentRepairTickets) → โชว์ใน RepairPanel. optional default [] กัน build พัง.
   myRecentTickets?: RepairTicketRow[];
+  // true = server กรอง route เหลือ "ตู้ที่มอบหมายให้ฉัน" แล้ว → โชว์หัวข้อ "ตู้ของฉันวันนี้ (N)".
+  // false/ไม่ส่ง = แสดงทุกตู้ในสาขาเหมือนเดิม (จัดกลุ่มตามสาขา · Wave 2). optional default กัน build พัง.
+  assignedOnly?: boolean;
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [] }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [], assignedOnly = false }: Props) {
   const realMachines = useMemo(() => flattenReal(branches), [branches]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
@@ -355,10 +358,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} />
   );
 
   return (
@@ -432,11 +435,13 @@ type StaffAppProps = {
   closedTodayCount: number;
   history: StaffHistoryRow[];
   myRecentTickets: RepairTicketRow[];
+  // true = route ถูกกรองเหลือ "ตู้ของฉัน" แล้ว (server) → HomeScreen โชว์หัวข้อ "ตู้ของฉันวันนี้"
+  assignedOnly: boolean;
 };
 
 type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets, assignedOnly }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -817,6 +822,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           repairMachines={machines}
           myRecentTickets={myRecentTickets}
           skippedIds={skippedIds}
+          assignedOnly={assignedOnly}
         />
       ) : (
         <FlowScreen
@@ -884,9 +890,11 @@ function HomeScreen(props: {
   repairMachines: AppMachine[];
   myRecentTickets: RepairTicketRow[];
   skippedIds: Set<string>;
+  // true = route ถูกกรองเหลือ "ตู้ของฉัน" (มีการมอบหมาย) → หัวข้อ "ตู้ของฉันวันนี้ (N)" + ไม่จัดกลุ่มสาขา
+  assignedOnly: boolean;
 }) {
-  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId, skippedIds } = props;
-  // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (ยังไม่มี assignment-per-staff · ดู crossFileNote).
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId, skippedIds, assignedOnly } = props;
+  // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
     const map = new Map<string, AppMachine[]>();
@@ -897,8 +905,11 @@ function HomeScreen(props: {
     }
     return Array.from(map.entries()); // [branchName, machines[]][]
   }, [machines]);
-  // มีมากกว่า 1 สาขา → โชว์หัวข้อสาขาคั่น (สาขาเดียวไม่ต้องคั่น กันรก)
-  const showBranchHeaders = branchGroups.length > 1;
+  // assignedOnly = "ตู้ของฉัน" (curated แล้ว) → ไม่ต้องคั่นสาขา แสดงเป็นรายการเดียว.
+  // ไม่งั้น: มีมากกว่า 1 สาขา → โชว์หัวข้อสาขาคั่น (สาขาเดียวไม่ต้องคั่น กันรก).
+  const showBranchHeaders = !assignedOnly && branchGroups.length > 1;
+  // หัวข้อรายการตู้: มอบหมายแล้ว → "ตู้ของฉันวันนี้ (N)" · ไม่งั้น → "ตู้ในเส้นทางวันนี้" เดิม
+  const routeHeading = assignedOnly ? `ตู้ของฉันวันนี้ (${machines.length})` : "ตู้ในเส้นทางวันนี้";
   // ชื่อจริงของพนักงานที่ล็อกอิน (จาก session) · ถ้าไม่ทราบ → "พนักงาน"
   const displayName = userName.trim() || "พนักงาน";
   const avatarChar = displayName.charAt(0) || "พ";
@@ -990,8 +1001,13 @@ function HomeScreen(props: {
             </div>
           )}
 
-          {/* route list */}
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#454B54" }}>ตู้ในเส้นทางวันนี้</div>
+          {/* route list — assignedOnly = "ตู้ของฉันวันนี้ (N)" · ไม่งั้น "ตู้ในเส้นทางวันนี้" */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#454B54" }}>{routeHeading}</span>
+            {assignedOnly && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "2px 9px", borderRadius: 20 }}>มอบหมายให้ฉัน</span>
+            )}
+          </div>
           {machines.length === 0 ? (
             // empty state — พนักงานยังไม่ได้รับมอบหมายตู้ (กันหน้าว่างเปล่าดูเหมือนพัง)
             <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>

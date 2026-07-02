@@ -9,6 +9,12 @@
  */
 import { getV2Branches } from "@/lib/clawfleet/queries";
 import { getMatrixData } from "@/lib/clawfleet/matrix-queries";
+import {
+  getMachineAssignments,
+  getAssignableStaff,
+  type AssignableStaff,
+} from "@/lib/clawfleet/assignment-queries";
+import { requireCfSession, userBranchIds, cfHasAdminPower, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 import { MatrixClient, type MatrixBranch, type MatrixSerialMachine } from "./matrix-client";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +31,10 @@ export default async function MatrixPage({
   let machines: MatrixSerialMachine[] = [];
   let isoDays: string[] = [];
   let activeBranchCode: string | null = sp.branch ?? null;
+  // Wave 3 — มอบหมายตู้ให้พนักงาน (ส่งเข้า client สำหรับ control ในหน้าเจาะตู้)
+  let assignments: Record<string, string> = {};
+  let staff: AssignableStaff[] = [];
+  let canManage = false;
 
   try {
     const rows = await getV2Branches();
@@ -36,13 +46,12 @@ export default async function MatrixPage({
     }));
 
     // เลือกสาขา: ตาม ?branch ถ้าอยู่ในรายการ ไม่งั้นสาขาแรก
-    const picked =
-      (sp.branch && branches.find((b) => b.code === sp.branch)?.code) ??
-      branches[0]?.code ??
-      null;
+    const pickedBranch =
+      (sp.branch ? branches.find((b) => b.code === sp.branch) : undefined) ?? branches[0] ?? null;
+    const picked = pickedBranch?.code ?? null;
     activeBranchCode = picked;
 
-    if (picked) {
+    if (picked && pickedBranch) {
       const data = await getMatrixData({ branchCode: picked, days });
       isoDays = data.isoDays;
       // serialize Map → record (Server→Client ต้องเป็น plain object)
@@ -57,6 +66,23 @@ export default async function MatrixPage({
           ]),
         ),
       }));
+
+      // มอบหมายตู้ (branch-scoped ด้วย branchId ของสาขาที่เลือก)
+      const branchId = pickedBranch.id;
+      const session = await requireCfSession();
+      // ผจก.สาขา/แอดมิน "ของสาขานี้" เท่านั้นถึงมอบหมายได้ · viewer มอบหมายไม่ได้ (read-only)
+      // admin-power ผ่านทุกสาขา · ผจก.สาขาต้องมี branchId ของสาขานี้อยู่ในสังกัด
+      const adminPower = await cfHasAdminPower(session);
+      if (adminPower) {
+        canManage = true;
+      } else if (isCfBranchManager(session.user.role)) {
+        const scope = await userBranchIds(session);
+        canManage = scope !== "ALL" && scope.includes(branchId);
+      } else {
+        canManage = false;
+      }
+      assignments = await getMachineAssignments(branchId);
+      if (canManage) staff = await getAssignableStaff(branchId);
     }
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้สาขาตัวอย่าง + เมทริกซ์ตัวอย่าง
@@ -69,6 +95,9 @@ export default async function MatrixPage({
       isoDays={isoDays}
       machines={machines}
       days={days}
+      assignments={assignments}
+      staff={staff}
+      canManage={canManage}
     />
   );
 }

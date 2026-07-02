@@ -1,28 +1,78 @@
 /**
  * ตู้คีบ OS — ตรวจเงิน & กระทบยอด (Collections / Audit)
- * Server: "รอบเก็บเงินทั้งหมด" ที่ปิดแล้วในช่วง 30 วันล่าสุด (ไม่ใช่แค่รอบผิดปกติ)
- *         → การ์ดสรุป + แท็บ (ทั้งหมด/ตรงกัน/ไม่ตรง/ตู้เสีย) คำนวณจากชุดเต็มจริง.
+ * Server: "รอบเก็บเงินทั้งหมด" ที่ปิดแล้วในช่วงวันที่ที่เลือก (default 30 วันล่าสุด)
+ *         → แบ่งหน้า (pageSize ~50) กัน payload บาน · total = จำนวนรอบจริงทั้งช่วง.
+ *         การ์ด "รอบทั้งหมด" ใช้ total จริง · การ์ด ตรงกัน/ไม่ตรง/ตู้เสีย นับจากหน้าปัจจุบัน
+ *         (ป้ายในหน้าอธิบายให้ชัด — client รู้แค่หน้าที่โหลดมา).
  * ถ้า DB ว่าง → client ใช้ SAMPLE fallback + แบนเนอร์ "กำลังแสดงตัวอย่าง"
  * (ตาม pattern ClawFleet เดิม — ห้ามหน้าโล่ง).
+ *
+ * ช่วงวันที่ + หน้า มาจาก searchParams (?from=&to=&page=) → soft-nav ผ่าน next/link ในฝั่ง client.
  */
 import { getV2AllRounds, getV2Branches, orgHasAnyRounds } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function CollectionsPage() {
+/** แปลง "YYYY-MM-DD" (จาก <input type=date>) → Date ต้นวัน/ปลายวัน · ค่าเสีย → undefined (graceful) */
+function parseDateStart(s?: string): Date | undefined {
+  if (!s) return undefined;
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+function parseDateEnd(s?: string): Date | undefined {
+  if (!s) return undefined;
+  const d = new Date(`${s}T23:59:59.999`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/** default ช่วง = 30 วันล่าสุด (ให้ค่า input ตรงกับที่ query ใช้จริงเมื่อไม่ได้เลือกเอง) */
+function defaultFromISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
+}
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default async function CollectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string; page?: string }>;
+}) {
+  const sp = await searchParams;
+
+  // ช่วงวันที่: ถ้าไม่ได้เลือก "หรือ" ค่าใน URL เป็นขยะ (parse ไม่ได้) → default 30 วันล่าสุด
+  // สำคัญ: fromISO/toISO ที่ส่งเข้า client (banner + input) ต้อง derive จากวันที่ parse "ผ่านจริง" เท่านั้น
+  //        ไม่งั้นค่าขยะใน ?from=xyz จะโชว์บนป้าย/ช่องกรอก ทั้งที่ query fallback 30 วันไปแล้ว (ป้ายไม่ตรง query)
+  const parsedFrom = parseDateStart(sp.from);
+  const parsedTo = parseDateEnd(sp.to);
+  const fromISO = parsedFrom ? sp.from! : defaultFromISO();
+  const toISO = parsedTo ? sp.to! : todayISO();
+  const from = parsedFrom ?? parseDateStart(fromISO);
+  const to = parsedTo ?? parseDateEnd(toISO);
+
+  const pageNum = Math.max(1, Math.floor(Number(sp.page) || 1));
+
   let rounds: Awaited<ReturnType<typeof getV2AllRounds>>["rounds"] = [];
   let branches: Awaited<ReturnType<typeof getV2Branches>> = [];
+  // total/page/pageSize จาก query — total = รอบทั้งหมดในช่วง (ก่อนตัดหน้า)
+  let total = 0;
+  let page = pageNum;
+  let pageSize = 50;
   // hasAnyRounds = org เคยมีรอบใด ๆ (ทุกสถานะ/ทุกเวลา) — ตัดสิน sample-vs-empty.
-  // total (รอบปิดใน 30 วัน) ใช้แค่ pagination/summary เท่านั้น.
   let hasAnyRounds = false;
   try {
     const [res, br, everHad] = await Promise.all([
-      getV2AllRounds(),
+      getV2AllRounds({ from, to, page: pageNum }),
       getV2Branches(),
       orgHasAnyRounds(),
     ]);
     rounds = res.rounds;
+    total = res.total;
+    page = res.page;
+    pageSize = res.pageSize;
     branches = br;
     hasAnyRounds = everHad;
   } catch {
@@ -64,5 +114,16 @@ export default async function CollectionsPage() {
     sample: false,
   }));
 
-  return <CollectionsClient rows={rows} branchOptions={branchOptions} hasAnyRounds={hasAnyRounds} />;
+  return (
+    <CollectionsClient
+      rows={rows}
+      branchOptions={branchOptions}
+      hasAnyRounds={hasAnyRounds}
+      total={total}
+      page={page}
+      pageSize={pageSize}
+      fromISO={fromISO}
+      toISO={toISO}
+    />
+  );
 }

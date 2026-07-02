@@ -2088,6 +2088,8 @@ model CfMachine {
   installedAt      DateTime?     @map("installed_at") @db.Date
   retiredAt        DateTime?     @map("retired_at") @db.Timestamptz(6)
   isActive         Boolean       @default(true) @map("is_active")
+  // ultrareview Wave 3 — มอบหมายตู้ให้พนักงานเก็บ (opt-in · null = ทุกคนในสาขาเก็บได้เหมือนเดิม)
+  assignedStaffId  String?       @map("assigned_staff_id") @db.Uuid
   notes            String?
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -2105,6 +2107,7 @@ model CfMachine {
   @@unique([orgId, code])
   @@index([orgId, branchId, kind, isActive])
   @@index([orgId, groupId])
+  @@index([orgId, assignedStaffId])
   @@map("cf_machines")
   @@schema("public")
 }

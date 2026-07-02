@@ -14,10 +14,11 @@
  *        · id ตัวอย่าง (sample) → optimistic ฝั่ง client (ไม่เรียก action)
  */
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type CSSProperties } from "react";
+import Link from "next/link";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
-  X, ZoomIn, SearchX, ShieldCheck, Download,
+  X, ZoomIn, SearchX, ShieldCheck, Download, Calendar, ChevronLeft,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
@@ -114,6 +115,18 @@ function statusOf(r: CollectionRow): StatusKind {
   return "match";
 }
 
+/** "YYYY-MM-DD" → "1 ก.ค. 68" (พ.ศ. ย่อ) · ค่าเสีย → คืน string เดิม (graceful) */
+function thaiDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12) return iso;
+  return `${d} ${months[mo - 1]} ${(y + 543) % 100}`;
+}
+
 /** เขียนส่วนต่างเป็นคำพูด: ตรงกัน / ขาด ฿x / เกิน ฿x (บวก=ขาด, ลบ=เกิน) */
 function gapWords(gap: number): string {
   if (gap === 0) return "ตรงกัน";
@@ -139,12 +152,24 @@ export function CollectionsClient({
   rows,
   branchOptions,
   hasAnyRounds = false,
+  total = 0,
+  page = 1,
+  pageSize = 50,
+  fromISO = "",
+  toISO = "",
 }: {
   rows: CollectionRow[];
   branchOptions: BranchOption[];
   // org นี้เคยเก็บเงินจริงไหม (มี CfCollectionSession ใด ๆ) — จาก server.
   // true = เคยเก็บ → 0 anomaly = "ตรวจแล้วไม่พบผิดปกติ" (ไม่ใช่ตัวอย่าง)
   hasAnyRounds?: boolean;
+  // total = รอบทั้งหมดในช่วงวันที่ (ก่อนตัดหน้า) จาก server · page/pageSize = หน้าปัจจุบัน
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — เติมค่า <input type=date> + คง state ใน link
+  fromISO?: string;
+  toISO?: string;
 }) {
   // rows = เฉพาะรอบที่ระบบ flag ผิดปกติ (ANOMALY_REVIEW).
   //   - rows ว่าง + ไม่เคยเก็บเลย  → "ว่างจริง" → โชว์ตัวอย่างเพื่อให้เห็นภาพการตรวจ
@@ -164,6 +189,39 @@ export function CollectionsClient({
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // ── ช่วงวันที่ (local input state) · กด "ดูช่วงนี้" → soft-nav ผ่าน <Link> (reset page=1) ──
+  const [fromInput, setFromInput] = useState(fromISO);
+  const [toInput, setToInput] = useState(toISO);
+
+  // ── pagination (จาก server · เฉพาะข้อมูลจริง · sample ไม่มีหน้า) ──
+  const isReal = !empty;
+  const pageCount = isReal ? Math.max(1, Math.ceil(total / Math.max(1, pageSize))) : 1;
+  const curPage = isReal ? Math.min(Math.max(1, page), pageCount) : 1;
+  const hasPrev = isReal && curPage > 1;
+  const hasNext = isReal && curPage < pageCount;
+  // มีหลายหน้า → การ์ดสรุป ตรงกัน/ไม่ตรง/ตู้เสีย นับจากหน้านี้เท่านั้น (ต้องติดป้าย)
+  const multiPage = isReal && pageCount > 1;
+  const perPageFoot = multiPage ? "นับจากหน้านี้" : undefined;
+
+  /** สร้าง href คงช่วงวันที่ + ระบุหน้า (soft-nav · ไม่ hard reload) */
+  const pageHref = (p: number) => {
+    const q = new URLSearchParams();
+    if (fromISO) q.set("from", fromISO);
+    if (toISO) q.set("to", toISO);
+    q.set("page", String(p));
+    return `?${q.toString()}`;
+  };
+  /** href เปลี่ยนช่วงวันที่ (จากค่า input) — reset page=1 เสมอ (ข้อมูลชุดใหม่) */
+  const rangeHref = (() => {
+    const q = new URLSearchParams();
+    if (fromInput) q.set("from", fromInput);
+    if (toInput) q.set("to", toInput);
+    q.set("page", "1");
+    return `?${q.toString()}`;
+  })();
+  // ช่วง input ต่างจากที่ query อยู่ตอนนี้ไหม (เปิดปุ่ม "ดูช่วงนี้" เฉพาะเมื่อเปลี่ยน)
+  const rangeDirty = fromInput !== fromISO || toInput !== toISO;
+
   const filtered = useMemo(() => {
     return data.filter((r) => {
       // กรองด้วย branchId ตรงตัว (ไม่ใช่ substring ชื่อ — เดิมสาขาชื่อคล้ายกันจะปนกัน)
@@ -173,8 +231,8 @@ export function CollectionsClient({
     });
   }, [data, branch, tab]);
 
-  /* summary strip */
-  const total = data.length;
+  /* summary strip — นับจาก data (หน้าปัจจุบัน หรือ sample) · total ทั้งช่วงใช้ prop `total` */
+  const pageTotal = data.length;
   const matchN = data.filter((r) => statusOf(r) === "match").length;
   const diffRows = data.filter((r) => statusOf(r) === "diff");
   const diffN = diffRows.length;
@@ -253,9 +311,11 @@ export function CollectionsClient({
 
   return (
     <div>
-      {/* บอกให้ชัดว่านี่คือ "รอบเก็บทั้งหมด" ในช่วง 30 วัน ไม่ใช่แค่รอบผิดปกติ */}
+      {/* บอกให้ชัดว่านี่คือ "รอบเก็บทั้งหมด" ในช่วงที่เลือก ไม่ใช่แค่รอบผิดปกติ */}
       <p style={{ fontSize: 12.5, color: "#6B7280", marginBottom: 14, lineHeight: 1.5 }}>
-        รอบเก็บเงิน<b style={{ color: "#1A1D21" }}>ทั้งหมด</b>ที่ปิดแล้วในช่วง 30 วันล่าสุด — กระทบยอดมิเตอร์ ↔ เงินสด ↔ ตุ๊กตา
+        รอบเก็บเงิน<b style={{ color: "#1A1D21" }}>ทั้งหมด</b>ที่ปิดแล้ว
+        {isReal && fromISO && toISO ? <> ในช่วง <b style={{ color: "#1A1D21" }}>{thaiDate(fromISO)}–{thaiDate(toISO)}</b></> : " ในช่วง 30 วันล่าสุด"}
+        {" "}— กระทบยอดมิเตอร์ ↔ เงินสด ↔ ตุ๊กตา
         ทุกรอบ (ไม่ใช่แค่รอบที่ระบบเตือน). ใช้แท็บ<b> ไม่ตรง</b> เพื่อดูเฉพาะรอบที่ต้องสอบ
       </p>
 
@@ -282,6 +342,45 @@ export function CollectionsClient({
             ))}
           </select>
         </div>
+
+        {/* ── ช่วงวันที่ (จาก/ถึง) · กด "ดูช่วงนี้" → soft-nav · sample = ปิด (ไม่มีข้อมูลจริง) ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 10, padding: "6px 10px", flexWrap: "wrap" }}>
+          <Calendar size={15} color="#6B7280" style={{ flex: "0 0 15px" }} />
+          <input
+            type="date"
+            value={fromInput}
+            max={toInput || undefined}
+            disabled={empty}
+            onChange={(e) => setFromInput(e.target.value)}
+            aria-label="วันที่เริ่มต้น"
+            title="วันที่เริ่มต้น"
+            style={{ border: "none", background: "transparent", fontSize: 12.5, fontWeight: 600, color: "#1A1D21", outline: "none", cursor: empty ? "not-allowed" : "pointer" }}
+          />
+          <span style={{ fontSize: 12, color: "#9AA1AB" }}>ถึง</span>
+          <input
+            type="date"
+            value={toInput}
+            min={fromInput || undefined}
+            disabled={empty}
+            onChange={(e) => setToInput(e.target.value)}
+            aria-label="วันที่สิ้นสุด"
+            title="วันที่สิ้นสุด"
+            style={{ border: "none", background: "transparent", fontSize: 12.5, fontWeight: 600, color: "#1A1D21", outline: "none", cursor: empty ? "not-allowed" : "pointer" }}
+          />
+          {empty ? (
+            <span style={{ fontSize: 11, color: "#C2C7CF", fontWeight: 600 }}>ดูช่วงนี้</span>
+          ) : rangeDirty ? (
+            <Link
+              href={rangeHref}
+              style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#4F46E5", padding: "5px 12px", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              ดูช่วงนี้
+            </Link>
+          ) : (
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: "#C2C7CF" }}>ดูช่วงนี้</span>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {TABS.map((t) => {
             const active = tab === t.id;
@@ -320,17 +419,35 @@ export function CollectionsClient({
         </button>
       </div>
 
-      {/* summary strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-[18px]">
-        <SummaryCard label="รอบเก็บทั้งหมด" value={`${total} รอบ`} />
-        <SummaryCard label="ตรงกัน" value={`${matchN} รอบ`} valueColor="#15803D" />
+      {/* summary strip
+          "รอบเก็บทั้งหมด" = total จริงทั้งช่วง (จาก server · ทุกหน้ารวมกัน).
+          ตรงกัน/ไม่ตรง/ตู้เสีย = นับจาก "หน้านี้" เท่านั้น (client มีแค่หน้าที่โหลด) → ติดป้ายให้ชัด. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-2.5">
+        <SummaryCard
+          label="รอบเก็บทั้งหมด"
+          value={`${isReal ? total : pageTotal} รอบ`}
+          foot={multiPage ? `แสดงหน้า ${curPage}/${pageCount} · ${pageTotal} รอบในหน้านี้` : undefined}
+          footColor="#9AA1AB"
+        />
+        <SummaryCard label="ตรงกัน" value={`${matchN} รอบ`} valueColor="#15803D" foot={perPageFoot} footColor="#9AA1AB" />
         <SummaryCard
           label="ไม่ตรง · ต้องสอบ" value={`${diffN} รอบ`} valueColor="#B42318"
           bg="#FFF9F8" border="#F3D9D5" labelColor="#B42318"
-          foot={`ส่วนต่างรวม ${bahtN(diffSum)}`} footColor="#C2756C"
+          foot={`ส่วนต่างรวม ${bahtN(diffSum)}${multiPage ? " · หน้านี้" : ""}`} footColor="#C2756C"
         />
-        <SummaryCard label="ตู้เสีย/ไม่ขยับ" value={`${brokenN} ตู้`} valueColor="#5A6270" />
+        <SummaryCard label="ตู้เสีย/ไม่ขยับ" value={`${brokenN} ตู้`} valueColor="#5A6270" foot={perPageFoot} footColor="#9AA1AB" />
       </div>
+
+      {/* หมายเหตุแบ่งหน้า: การ์ด ตรงกัน/ไม่ตรง/ตู้เสีย นับจากหน้าที่แสดงอยู่ ไม่ใช่ทั้งช่วง */}
+      {multiPage && (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12, fontSize: 11.5, color: "#8A6D3B", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 9, padding: "7px 12px" }}>
+          <Info size={13} color="#B98A2E" style={{ flex: "0 0 13px" }} />
+          <span>
+            รอบทั้งช่วง <b>{total}</b> รอบ แบ่งเป็น <b>{pageCount}</b> หน้า — ตัวเลข ตรงกัน/ไม่ตรง/ตู้เสีย ด้านบนนับจาก
+            <b> หน้านี้</b> ({data.length} รอบ) เท่านั้น · เลื่อนหน้าด้านล่างเพื่อดูรอบที่เหลือ
+          </span>
+        </div>
+      )}
 
       {/* คำอธิบายสี (legend) — ให้สีในรายการอ่านออกเองได้ */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 11, fontSize: 11.5, color: "#6B7280" }}>
@@ -373,8 +490,47 @@ export function CollectionsClient({
           </div>
         )}
       </div>
+
+      {/* ── ตัวเปลี่ยนหน้า (soft-nav ผ่าน <Link> · คงช่วงวันที่) · โชว์เฉพาะข้อมูลจริง & มีหลายหน้า ── */}
+      {multiPage && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 18 }}>
+          {hasPrev ? (
+            <Link href={pageHref(curPage - 1)} className="co-tap" style={pagerBtnStyle(true)}>
+              <ChevronLeft size={15} /> ก่อนหน้า
+            </Link>
+          ) : (
+            <span style={pagerBtnStyle(false)}>
+              <ChevronLeft size={15} /> ก่อนหน้า
+            </span>
+          )}
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "#5A6270", whiteSpace: "nowrap" }}>
+            หน้า <b className="num" style={{ color: "#1A1D21" }}>{curPage}</b> จาก <b className="num" style={{ color: "#1A1D21" }}>{pageCount}</b>
+          </span>
+          {hasNext ? (
+            <Link href={pageHref(curPage + 1)} className="co-tap" style={pagerBtnStyle(true)}>
+              ถัดไป <ChevronRight size={15} />
+            </Link>
+          ) : (
+            <span style={pagerBtnStyle(false)}>
+              ถัดไป <ChevronRight size={15} />
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+/** สไตล์ปุ่มเปลี่ยนหน้า — enabled = คลิกได้ (indigo) · disabled = จาง กดไม่ได้ */
+function pagerBtnStyle(enabled: boolean): CSSProperties {
+  return {
+    display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700,
+    padding: "8px 16px", borderRadius: 10, textDecoration: "none",
+    border: "1px solid #E3E6EA",
+    background: enabled ? "#fff" : "#F7F8FA",
+    color: enabled ? "#4F46E5" : "#C2C7CF",
+    cursor: enabled ? "pointer" : "not-allowed",
+  };
 }
 
 /* ───────── summary card ───────── */

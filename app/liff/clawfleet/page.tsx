@@ -20,6 +20,40 @@ function startOfTodayBangkok(): Date {
   return new Date(Date.UTC(bkk.getUTCFullYear(), bkk.getUTCMonth(), bkk.getUTCDate(), 0, 0, 0) - 7 * 60 * 60 * 1000);
 }
 
+/**
+ * กรอง route เหลือ "ตู้ของฉัน" เมื่อผู้เก็บคนนี้มีการมอบหมายตู้ (cf_machines.assigned_staff_id).
+ * มีตู้ assign ≥1 → คืน branches ที่ตัดเหลือเฉพาะตู้ของเขา (ทิ้งกลุ่ม/สาขาว่าง) · hasAssignment=true.
+ * ไม่มี assign → คืน branches เดิม (เห็นทุกตู้) · hasAssignment=false.
+ * graceful: อ่านไม่ได้ / ยังไม่ migrate → แสดงทุกตู้ (ไม่บล็อกการเก็บ).
+ */
+async function filterRouteToMine(
+  orgId: string,
+  userId: string,
+  branches: GroupCollectBranch[],
+): Promise<{ branches: GroupCollectBranch[]; hasAssignment: boolean }> {
+  if (!orgId || !userId) return { branches, hasAssignment: false };
+  try {
+    const mine = await prisma.cfMachine.findMany({
+      where: { orgId, assignedStaffId: userId, isActive: true },
+      select: { id: true },
+    });
+    if (mine.length === 0) return { branches, hasAssignment: false };
+    const mineIds = new Set(mine.map((m) => m.id));
+    const filtered = branches
+      .map((b) => ({
+        ...b,
+        groups: b.groups
+          .map((g) => ({ ...g, claws: g.claws.filter((c) => mineIds.has(c.id)) }))
+          .filter((g) => g.claws.length > 0),
+      }))
+      .filter((b) => b.groups.length > 0);
+    if (filtered.length === 0) return { branches, hasAssignment: false };
+    return { branches: filtered, hasAssignment: true };
+  } catch {
+    return { branches, hasAssignment: false };
+  }
+}
+
 export default async function ClawfleetLiffPage() {
   let orgId = "";
   let branches: GroupCollectBranch[] = [];
@@ -86,17 +120,21 @@ export default async function ClawfleetLiffPage() {
     // graceful: คงค่า default ([])
   }
 
+  // กรอง route เหลือ "ตู้ของฉัน" ถ้ามีการมอบหมาย (ไม่งั้นแสดงทุกตู้ในสาขาเหมือนเดิม)
+  const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
+
   return (
     <div className="clawos">
       <StaffAppClient
         orgId={orgId}
-        branches={branches}
+        branches={routeBranches}
         skus={skus}
         photoRequired={photoRequired}
         userName={userName}
         closedTodayCount={closedTodayCount}
         history={history}
         myRecentTickets={myRecentTickets}
+        assignedOnly={hasAssignment}
       />
     </div>
   );

@@ -11,9 +11,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarX } from "lucide-react";
+import { AlertTriangle, CalendarX, User } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
+import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
+
+export type AssignableStaff = { id: string; name: string };
 
 export type MatrixBranch = { id: string; code: string; name: string; machines: number };
 
@@ -115,7 +118,8 @@ const CELL_PAD: React.CSSProperties = {
 };
 
 type GridDay = MatrixSerialDay & { hasData: boolean };
-type GridMachine = { code: string; days: GridDay[] };
+// machineId = null เฉพาะ SAMPLE path (DB ว่าง) → มอบหมายไม่ได้
+type GridMachine = { machineId: string | null; code: string; days: GridDay[] };
 
 export function MatrixClient({
   branches,
@@ -123,17 +127,36 @@ export function MatrixClient({
   isoDays,
   machines,
   days,
+  assignments = {},
+  staff = [],
+  canManage = false,
 }: {
   branches: MatrixBranch[];
   initialBranch: string | null;
   isoDays: string[];
   machines: MatrixSerialMachine[];
   days: 20 | 30;
+  // Wave 3 — มอบหมายตู้ให้พนักงาน (map machineId → staffId · เฉพาะตู้ที่ถูก assign)
+  assignments?: Record<string, string>;
+  staff?: AssignableStaff[];
+  canManage?: boolean;
 }) {
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+
+  // ชื่อพนักงานจาก staffId (สำหรับป้าย "👤 ชื่อ")
+  const staffName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of staff) m.set(s.id, s.name);
+    return m;
+  }, [staff]);
+
+  // สถานะมอบหมาย (optimistic local) — เริ่มจาก assignments ที่ server ส่งมา
+  const [assignMap, setAssignMap] = useState<Record<string, string>>(assignments);
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   const branchCode = useMemo(() => {
     const found = initialBranch && rows.find((b) => b.code === initialBranch);
@@ -154,6 +177,47 @@ export function MatrixClient({
     startTransition(() => router.push(`/clawfleet/os/matrix?${params.toString()}`));
   };
 
+  /** มอบหมายตู้ให้พนักงาน (หรือยกเลิกเมื่อ staffId = null) — optimistic + rollback ถ้า fail */
+  const handleAssign = (machineId: string, staffId: string | null) => {
+    if (assigning) return;
+    const prev = assignMap[machineId] ?? null;
+    if (prev === staffId) return; // ไม่เปลี่ยน = ไม่ทำอะไร
+    setAssignError(null);
+    setAssigning(true);
+    // optimistic
+    setAssignMap((m) => {
+      const next = { ...m };
+      if (staffId) next[machineId] = staffId;
+      else delete next[machineId];
+      return next;
+    });
+    void assignMachineToStaff(machineId, staffId)
+      .then((res) => {
+        if (!res.ok) {
+          // rollback
+          setAssignMap((m) => {
+            const next = { ...m };
+            if (prev) next[machineId] = prev;
+            else delete next[machineId];
+            return next;
+          });
+          setAssignError(res.error);
+        } else {
+          router.refresh();
+        }
+      })
+      .catch((e: unknown) => {
+        setAssignMap((m) => {
+          const next = { ...m };
+          if (prev) next[machineId] = prev;
+          else delete next[machineId];
+          return next;
+        });
+        setAssignError(e instanceof Error ? e.message : "มอบหมายไม่สำเร็จ");
+      })
+      .finally(() => setAssigning(false));
+  };
+
   /* แถววัน (ใหม่→เก่า) + grid ค่าจริง (หรือ sample เมื่อ DB ว่าง) */
   const grid = useMemo(() => {
     // SAMPLE path — DB ว่าง: สร้าง deterministic จาก code (โชว์โครงหน้า)
@@ -162,6 +226,7 @@ export function MatrixClient({
       const sIso = sampleIsoDays(days);
       const sMachines = sampleMachines(branchCode, machineCount);
       const gm: GridMachine[] = sMachines.map((m, mi) => ({
+        machineId: null,
         code: m.code,
         days: sIso.map((_iso, di) => ({ ...sampleVals(seed0, m, mi, di), hasData: true })),
       }));
@@ -169,6 +234,7 @@ export function MatrixClient({
     }
     // REAL path — เรียงวันตาม isoDays (ใหม่→เก่า) · เติมช่องว่าง = ไม่มีข้อมูล
     const gm: GridMachine[] = machines.map((m) => ({
+      machineId: m.machineId,
       code: m.code,
       days: isoDays.map((iso) => {
         const d = m.days[iso];
@@ -343,6 +409,7 @@ export function MatrixClient({
     });
     const denomAll = cntAll || 1;
     return {
+      machineId: gm.machineId,
       code: gm.code,
       branch: branch?.name ?? "",
       avgCost: cntCost > 0 ? bahtN(Math.round(sc / cntCost)) : "—",
@@ -568,31 +635,59 @@ export function MatrixClient({
                 >
                   วันที่
                 </th>
-                {grid.machines.map((gm, i) => (
-                  <th
-                    key={gm.code}
-                    onClick={() => setDrillIdx(i)}
-                    style={{
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 2,
-                      background: "#F7F8FA",
-                      padding: "8px 8px 6px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#4F46E5",
-                      borderBottom: "1px solid #E3E6EA",
-                      borderRight: "1px solid #F0F1F4",
-                      minWidth: 66,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {gm.code}
-                    <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#A9AEB8", marginTop: 1 }}>
-                      กดดูตู้
-                    </span>
-                  </th>
-                ))}
+                {grid.machines.map((gm, i) => {
+                  const asgId = gm.machineId ? assignMap[gm.machineId] : undefined;
+                  const asgName = asgId ? staffName.get(asgId) : undefined;
+                  return (
+                    <th
+                      key={gm.code}
+                      onClick={() => setDrillIdx(i)}
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 2,
+                        background: "#F7F8FA",
+                        padding: "8px 8px 6px",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#4F46E5",
+                        borderBottom: "1px solid #E3E6EA",
+                        borderRight: "1px solid #F0F1F4",
+                        minWidth: 66,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {gm.code}
+                      {asgName ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 2,
+                            maxWidth: 78,
+                            marginTop: 2,
+                            padding: "1px 6px",
+                            borderRadius: 20,
+                            background: "#EEF0FE",
+                            color: "#4F46E5",
+                            fontSize: 8.5,
+                            fontWeight: 700,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={`มอบหมายให้ ${asgName}`}
+                        >
+                          <User size={8} /> {asgName}
+                        </span>
+                      ) : (
+                        <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#A9AEB8", marginTop: 1 }}>
+                          กดดูตู้
+                        </span>
+                      )}
+                    </th>
+                  );
+                })}
                 <th
                   style={{
                     position: "sticky",
@@ -771,6 +866,57 @@ export function MatrixClient({
                 </div>
               ))}
             </div>
+
+            {/* มอบหมายตู้ให้พนักงาน — เฉพาะ ผจก./แอดมิน + ตู้จริง (ไม่ใช่ตัวอย่าง) */}
+            {canManage && drill.machineId && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  padding: "12px 20px",
+                  borderBottom: "1px solid #EEF0F3",
+                  background: "#FAFBFF",
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "#5A6270" }}>
+                  <User size={14} /> มอบหมายให้
+                </span>
+                <select
+                  value={assignMap[drill.machineId] ?? ""}
+                  disabled={assigning || pending}
+                  onChange={(e) => {
+                    if (drill.machineId) handleAssign(drill.machineId, e.target.value || null);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 160,
+                    fontSize: 12.5,
+                    padding: "7px 10px",
+                    borderRadius: 8,
+                    border: "1px solid #D8DBE1",
+                    background: "#fff",
+                    color: "#1A1D21",
+                    cursor: assigning || pending ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <option value="">— ไม่มอบหมาย (ใครก็เก็บได้)</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                {assigning && <span style={{ fontSize: 11, color: "#9AA1AB" }}>กำลังบันทึก…</span>}
+                {assignError && <span style={{ fontSize: 11, color: "#B42318", width: "100%" }}>{assignError}</span>}
+                {staff.length === 0 && !assigning && (
+                  <span style={{ fontSize: 11, color: "#9AA1AB", width: "100%" }}>
+                    ยังไม่มีพนักงานผูกกับสาขานี้ — เพิ่มพนักงานเข้าสาขาก่อนถึงจะมอบหมายได้
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* daily history table */}
             <table className="num" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>

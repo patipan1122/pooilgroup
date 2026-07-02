@@ -245,6 +245,7 @@ export function StockClient({
   onHandMap,
   viewerId,
   canReviewLoss,
+  asOfISO,
 }: {
   branches: BranchStockSeed[];
   realBranches: BranchOption[];
@@ -259,6 +260,8 @@ export function StockClient({
   onHandMap: Record<string, number>;
   viewerId: string;
   canReviewLoss: boolean;
+  // มูลค่าสต๊อก ณ วันที่ (YYYY-MM-DD) · null = ปัจจุบัน (ใช้ต้นทุนวันนี้)
+  asOfISO: string | null;
 }) {
   const router = useRouter();
   const empty = branches.length === 0;
@@ -352,7 +355,7 @@ export function StockClient({
       )}
 
       {tab === "overview" && (
-        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} />
+        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} asOfISO={asOfISO} empty={empty} />
       )}
       {tab === "receipts" && (
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
@@ -400,14 +403,43 @@ function OverviewTab({
   realBranches,
   products,
   warehouseRows,
+  asOfISO,
+  empty,
 }: {
   branchRows: BranchRow[];
   realBranches: BranchOption[];
   products: ProductOption[];
   warehouseRows: WarehouseRowSeed[];
+  // มูลค่าสต๊อก ณ วันที่ (YYYY-MM-DD) · null = ปัจจุบัน
+  asOfISO: string | null;
+  // ไม่มีข้อมูลจริง (โหมดตัวอย่าง) → ปิด date picker (as-of คิดจาก ledger จริงเท่านั้น)
+  empty: boolean;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
+  const [asOfPending, startAsOfTransition] = useTransition();
+
+  // วันนี้ (YYYY-MM-DD ในโซน browser) = ค่า default + เพดานบนของ date picker (ย้อนหลังเท่านั้น)
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
+  const isBackdated = asOfISO !== null && asOfISO !== todayYmd;
+
+  // เปลี่ยนวันที่ → soft-nav ไป ?asof=... (คง ?branch เดิมไว้) · เลือกวันนี้/ว่าง → ถอด asof ออก
+  function applyAsOf(next: string) {
+    startAsOfTransition(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (!next || next === todayYmd) params.delete("asof");
+      else params.set("asof", next);
+      const qs = params.toString();
+      router.push(qs ? `/clawfleet/os/stock?${qs}` : "/clawfleet/os/stock");
+    });
+  }
 
   // คลังกลางจริง — ถ้า DB มีของจริงใช้จริง · ว่างจริงค่อย fallback ตัวอย่าง
   const hasRealWarehouse = warehouseRows.length > 0;
@@ -443,10 +475,39 @@ function OverviewTab({
         หลังบ้านดูแลคลังกลาง · พนักงานสาขาดูแลสต็อกสาขา — ทุกชิ้นมีวันรับเข้า เพื่อหมุนเวียนของเก่าออกก่อน (FIFO) และเช็คอายุสินค้า
       </div>
 
+      {/* มูลค่าสต๊อก ณ วันที่ — date picker (as-of) · คิดมูลค่าจาก ledger ย้อนหลัง
+          ปิดในโหมดตัวอย่าง (empty) เพราะ as-of ต้องมี movement จริงถึงจะคิดได้ */}
+      {!empty && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270" }}>มูลค่าสต๊อก ณ วันที่</span>
+          <input
+            type="date"
+            aria-label="เลือกวันที่คิดมูลค่าสต๊อก"
+            title="เลือกวันที่คิดมูลค่าสต๊อก (ย้อนหลังได้ · ค่าเริ่มต้น = วันนี้)"
+            value={asOfISO ?? todayYmd}
+            max={todayYmd}
+            disabled={asOfPending}
+            onChange={(e) => applyAsOf(e.target.value)}
+            style={{ ...FIELD_INPUT, width: "auto", minWidth: 160, padding: "8px 12px", cursor: asOfPending ? "wait" : "pointer" }}
+          />
+          {isBackdated ? (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: "#EEF0FE", color: "#4F46E5", whiteSpace: "nowrap" }}>
+              มูลค่า ณ {fmtDate(asOfISO!)}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "#9AA1AB", whiteSpace: "nowrap" }}>· ปัจจุบัน (ต้นทุนวันนี้)</span>
+          )}
+          {asOfPending && <span style={{ fontSize: 11, color: "#9AA1AB" }}>กำลังคิดใหม่…</span>}
+        </div>
+      )}
+
       {/* per-branch stock table */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 15, fontWeight: 700 }}>ภาพรวมสต็อกรายสาขา</span>
         <span style={{ fontSize: 12, color: "#9AA1AB" }}>ตุ๊กตา/มูลค่าสต็อก = ข้อมูลจริง · กดแถวเพื่อเจาะดูสาขานั้น + ใบรับสินค้า</span>
+        {isBackdated && (
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#4F46E5" }}>· มูลค่าคิด ณ {fmtDate(asOfISO!)}</span>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#9AA1AB", marginBottom: 12 }}>
         <span style={{ color: "#B6BBC4", fontWeight: 600 }}>≈</span>

@@ -14,6 +14,45 @@ import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data"
 
 export const dynamic = "force-dynamic";
 
+/**
+ * กรอง route เหลือ "ตู้ของฉัน" เมื่อผู้เก็บคนนี้มีการมอบหมายตู้ (cf_machines.assigned_staff_id).
+ * - ถ้ามีตู้ที่ assign ให้เขาอย่างน้อย 1 ตู้ → คืน branches ที่ตัดเหลือเฉพาะตู้ (claws) ที่เป็นของเขา
+ *   + ตัดกลุ่ม/สาขาที่ว่างทิ้ง (ไม่ให้หัวข้อสาขาลอยไม่มีตู้) · hasAssignment = true.
+ * - ถ้าไม่มีตู้ assign เลย → คืน branches เดิมทั้งหมด (fallback เห็นทุกตู้ในสาขา) · hasAssignment = false.
+ * graceful: อ่าน assignment ไม่ได้ (ยังไม่ migrate / query ล้ม) → fallback แสดงทุกตู้ (ไม่บล็อกการเก็บ).
+ */
+async function filterRouteToMine(
+  orgId: string,
+  userId: string,
+  branches: GroupCollectBranch[],
+): Promise<{ branches: GroupCollectBranch[]; hasAssignment: boolean }> {
+  if (!orgId || !userId) return { branches, hasAssignment: false };
+  try {
+    const mine = await prisma.cfMachine.findMany({
+      where: { orgId, assignedStaffId: userId, isActive: true },
+      select: { id: true },
+    });
+    if (mine.length === 0) return { branches, hasAssignment: false };
+    const mineIds = new Set(mine.map((m) => m.id));
+    // ตัดต้นไม้ branch>group>claw เหลือเฉพาะตู้ของฉัน · ทิ้งกลุ่ม/สาขาที่ว่าง
+    const filtered = branches
+      .map((b) => ({
+        ...b,
+        groups: b.groups
+          .map((g) => ({ ...g, claws: g.claws.filter((c) => mineIds.has(c.id)) }))
+          .filter((g) => g.claws.length > 0),
+      }))
+      .filter((b) => b.groups.length > 0);
+    // ถ้ากรองแล้วไม่เหลือตู้ในสโคปที่โหลดมา (เช่น ตู้ที่ assign อยู่คนละสาขาที่ไม่ได้โหลด)
+    // → fallback แสดงทุกตู้เดิม ดีกว่าโชว์หน้าว่าง
+    if (filtered.length === 0) return { branches, hasAssignment: false };
+    return { branches: filtered, hasAssignment: true };
+  } catch {
+    // graceful: ยังไม่ migrate / query ล้ม → แสดงทุกตู้เหมือนเดิม
+    return { branches, hasAssignment: false };
+  }
+}
+
 // ต้นวันนี้ตามเวลาไทย (Asia/Bangkok = UTC+7) — ใช้กรองรอบที่ปิด "วันนี้"
 function startOfTodayBangkok(): Date {
   const now = new Date();
@@ -111,16 +150,20 @@ export default async function StaffAppPage() {
     // graceful: อ่านไม่ได้ → คงค่า default ([])
   }
 
+  // กรอง route เหลือ "ตู้ของฉัน" ถ้ามีการมอบหมาย (ไม่งั้นแสดงทุกตู้ในสาขาเหมือนเดิม)
+  const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
+
   return (
     <StaffAppClient
       orgId={orgId}
-      branches={branches}
+      branches={routeBranches}
       skus={skus}
       photoRequired={photoRequired}
       userName={userName}
       closedTodayCount={closedTodayCount}
       history={history}
       myRecentTickets={myRecentTickets}
+      assignedOnly={hasAssignment}
     />
   );
 }

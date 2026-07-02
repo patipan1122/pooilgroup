@@ -44,7 +44,7 @@ export function isCfAdmin(role: Session["user"]["role"]): boolean {
  * program_admin explicitly granted ClawFleet admin (user_modules role=admin).
  * Grant-scoped — a program_admin of a DIFFERENT program gains NO ClawFleet power.
  */
-async function cfHasAdminPower(session: Session): Promise<boolean> {
+export async function cfHasAdminPower(session: Session): Promise<boolean> {
   return (
     isCfAdmin(session.user.role) ||
     (await userIsModuleAdmin(session.user, "clawfleet"))

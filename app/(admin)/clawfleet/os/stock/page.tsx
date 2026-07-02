@@ -46,10 +46,15 @@ export default async function StockPage({
   searchParams,
 }: {
   // ?branch=<id> → เลือกสาขาที่จะโหลดเอกสาร (รับของ/นับ/ตัดของเสีย) มาแสดง (item #9)
-  searchParams?: Promise<{ branch?: string }>;
+  // ?asof=YYYY-MM-DD → คิด "มูลค่าสต๊อก ณ วันที่" นั้นจาก ledger (default = วันนี้ · ไม่ใส่ = ปัจจุบัน)
+  searchParams?: Promise<{ branch?: string; asof?: string }>;
 }) {
   const sp = searchParams ? await searchParams : undefined;
   const requestedBranchId = typeof sp?.branch === "string" ? sp.branch : null;
+  // parse ?asof — รับเฉพาะ YYYY-MM-DD ที่เป็นวันที่จริงและไม่เกินวันนี้ (ย้อนหลังเท่านั้น)
+  const asOfDate = parseAsOf(typeof sp?.asof === "string" ? sp.asof : null);
+  // ส่งกลับ client เป็น string YYYY-MM-DD สำหรับ badge + ค่าเริ่มต้น date picker (null = ปัจจุบัน)
+  const asOfISO = asOfDate ? toYmd(asOfDate) : null;
 
   let branchSeeds: BranchStockSeed[] = [];
   // ปุ่ม "โอนสินค้า" / "ตรวจรับ" / สร้างเอกสาร ต้องเขียน DB จริง → ต้องมี id จริง (UUID)
@@ -95,7 +100,7 @@ export default async function StockPage({
       let losses: Awaited<ReturnType<typeof getCfLosses>> = [];
       try {
         [overview, branchStock, receipts, counts, losses, onHandMap] = await Promise.all([
-          getCfStockOverview(orgId, first.id),
+          getCfStockOverview(orgId, first.id, asOfDate ?? undefined),
           getV2BranchStock(first.id),
           getCfReceipts(orgId, first.id),
           getCfCounts(orgId, first.id),
@@ -215,8 +220,38 @@ export default async function StockPage({
       onHandMap={onHandMap}
       viewerId={viewerId}
       canReviewLoss={canReviewLoss}
+      asOfISO={asOfISO}
     />
   );
+}
+
+/** วันนี้เป็น string YYYY-MM-DD (โซนเซิร์ฟเวอร์) */
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * แปลง ?asof=YYYY-MM-DD → Date (ปิดสิ้นวันนั้นทำใน query แล้ว).
+ * คืน null ถ้า: ไม่ส่ง · รูปแบบผิด · ไม่ใช่วันจริง · เป็นวันนี้/อนาคต (ปัจจุบัน = ไม่ต้องคิด as-of).
+ */
+function parseAsOf(raw: string | null): Date | null {
+  if (!raw) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const day = Number(m[3]);
+  const d = new Date(y, mo - 1, day, 0, 0, 0, 0);
+  // ตรวจว่าเป็นวันจริง (กัน 2026-02-31 กลายเป็น มี.ค.)
+  if (d.getFullYear() !== y || d.getMonth() !== mo - 1 || d.getDate() !== day) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // วันนี้/อนาคต → ถือเป็น "ปัจจุบัน" (ไม่ส่ง asOf) เพื่อใช้ต้นทุนวันนี้ตามเดิม
+  if (d.getTime() >= today.getTime()) return null;
+  return d;
 }
 
 /**

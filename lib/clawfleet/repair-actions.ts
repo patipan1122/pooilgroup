@@ -20,6 +20,7 @@ import {
   requireCfSession,
   userBranchIds,
   isCfBranchManager,
+  cfHasAdminPower,
 } from "./role-guard";
 
 const REPAIRS_PATH = "/clawfleet/os/repairs";
@@ -193,12 +194,16 @@ export async function resolveRepairTicket(
   if (!ticket) return err("ไม่พบใบแจ้งซ่อม");
 
   // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขานี้" เท่านั้น
-  // ("ALL" = admin-power รวม program_admin → ผ่าน · ไม่งั้นต้องเป็น ผจก.สาขา + สาขาใบนี้อยู่ในสังกัด)
-  const scope = await userBranchIds(session);
-  const isChecker = scope === "ALL" || isCfBranchManager(session.user.role);
-  const branchOk = scope === "ALL" || scope.includes(ticket.branchId);
-  if (!isChecker || !branchOk) {
-    return err("เฉพาะผู้จัดการสาขา/แอดมินของสาขานี้เท่านั้นที่ปิดงานซ่อมได้");
+  // admin-power (แอดมิน+program_admin grant) ผ่านทุกสาขา · ผจก.สาขาเข้าเฉพาะสาขาตัวเอง ·
+  // viewer (read-only org-wide) เขียนไม่ได้ — ห้ามใช้ scope==="ALL" ตัดสิน admin (viewer ก็ได้ "ALL").
+  const adminPower = await cfHasAdminPower(session);
+  const isChecker = adminPower || isCfBranchManager(session.user.role);
+  if (!isChecker) return err("เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่ปิดงานซ่อมได้");
+  if (!adminPower) {
+    const scope = await userBranchIds(session);
+    if (scope !== "ALL" && !scope.includes(ticket.branchId)) {
+      return err("ไม่มีสิทธิ์ในสาขานี้");
+    }
   }
 
   if (ticket.status === "RESOLVED") return err("ใบนี้ปิดงานไปแล้ว");
@@ -343,12 +348,15 @@ export async function cancelRepairTicket(ticketId: string, note?: string): Promi
   });
   if (!ticket) return err("ไม่พบใบแจ้งซ่อม");
 
-  // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขานี้" เท่านั้น
-  const scope = await userBranchIds(session);
-  const isChecker = scope === "ALL" || isCfBranchManager(session.user.role);
-  const branchOk = scope === "ALL" || scope.includes(ticket.branchId);
-  if (!isChecker || !branchOk) {
-    return err("เฉพาะผู้จัดการสาขา/แอดมินของสาขานี้เท่านั้นที่ยกเลิกใบแจ้งซ่อมได้");
+  // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขานี้" เท่านั้น (viewer เขียนไม่ได้)
+  const adminPower = await cfHasAdminPower(session);
+  const isChecker = adminPower || isCfBranchManager(session.user.role);
+  if (!isChecker) return err("เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่ยกเลิกใบแจ้งซ่อมได้");
+  if (!adminPower) {
+    const scope = await userBranchIds(session);
+    if (scope !== "ALL" && !scope.includes(ticket.branchId)) {
+      return err("ไม่มีสิทธิ์ในสาขานี้");
+    }
   }
 
   if (ticket.status === "RESOLVED") return err("ใบนี้ปิดงานไปแล้ว · ยกเลิกไม่ได้");
@@ -406,12 +414,15 @@ export async function toggleMachineActive(machineId: string, isActive: boolean):
   });
   if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
 
-  // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขาตู้นี้" เท่านั้น
-  const scope = await userBranchIds(session);
-  const isChecker = scope === "ALL" || isCfBranchManager(session.user.role);
-  const branchOk = scope === "ALL" || scope.includes(machine.branchId);
-  if (!isChecker || !branchOk) {
-    return err("เฉพาะผู้จัดการสาขา/แอดมินของสาขานี้เท่านั้นที่เปิด/ปิดตู้ได้");
+  // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขาตู้นี้" เท่านั้น (viewer เขียนไม่ได้)
+  const adminPower = await cfHasAdminPower(session);
+  const isChecker = adminPower || isCfBranchManager(session.user.role);
+  if (!isChecker) return err("เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่เปิด/ปิดตู้ได้");
+  if (!adminPower) {
+    const scope = await userBranchIds(session);
+    if (scope !== "ALL" && !scope.includes(machine.branchId)) {
+      return err("ไม่มีสิทธิ์ในสาขานี้");
+    }
   }
 
   if (machine.isActive === isActive) {
