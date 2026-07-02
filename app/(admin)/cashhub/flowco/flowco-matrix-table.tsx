@@ -13,7 +13,14 @@ const TH_M = [
   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
 ];
 
-/** ป้ายคอลัมน์แบบสั้น (กันตารางกว้าง) */
+// ── layout tokens (ปรับที่เดียว คุมทั้งตาราง) ──
+// เว้นระยะให้หายใจ + เส้นแบ่งคอลัมน์บาง ๆ ให้ตากวาดตามง่าย
+const CELL = "px-3.5 py-2.5";
+const COLW = "min-w-[78px]";
+const DIVIDER = "border-r border-[color:rgba(0,0,0,0.05)]";
+const STICKY_L = "sticky left-0 z-20 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)]";
+const STICKY_R = "sticky right-0 z-20 border-l-2 border-[var(--ch-border)] shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.08)]";
+
 function shortLabel(key: string, mode: "day" | "month"): { top: string; sub: string } {
   const p = key.split("-").map(Number);
   if (mode === "month") {
@@ -58,10 +65,9 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
   const isMuted = (v: number) => v <= 0.5;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {/* ── toolbar ── */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* metric toggle */}
         <div className="inline-flex rounded-xl border border-[var(--ch-border)] p-0.5 bg-white">
           {(["baht", "liters"] as Metric[]).map((m) => (
             <button
@@ -81,7 +87,6 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
           ))}
         </div>
 
-        {/* shift split toggle (รายวันเท่านั้น) */}
         {canShift && (
           <button
             type="button"
@@ -99,17 +104,19 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
         )}
 
         <span className="text-[11px] text-[var(--ch-text-2)] ml-auto">
-          {mode === "month" ? "รายเดือน" : "รายวัน"} · {periodKeys.length} ช่วง · เลื่อนซ้าย/ขวาดูช่วงเก่า →
+          {mode === "month" ? "รายเดือน" : "รายวัน"} · {periodKeys.length} ช่วง · เลื่อนซ้าย/ขวา →
         </span>
       </div>
 
       {/* ── matrix ── */}
       <div className="rounded-2xl border border-[var(--ch-border)] bg-white overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="text-sm border-collapse">
+          <table className="text-sm border-collapse w-full">
             <thead>
               <tr className="text-[var(--ch-text-2)] text-xs bg-[var(--ch-bg-2)]">
-                <th className="px-3 py-2 font-semibold text-left sticky left-0 bg-[var(--ch-bg-2)] z-20 min-w-[180px]">
+                <th
+                  className={`${CELL} font-semibold text-left ${STICKY_L} bg-[var(--ch-bg-2)] min-w-[190px] ${DIVIDER}`}
+                >
                   สาขา
                 </th>
                 {periodKeys.map((k) => {
@@ -119,23 +126,25 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
                     <th
                       key={k}
                       className={
-                        "px-2.5 py-2 font-semibold text-right whitespace-nowrap min-w-[64px] " +
+                        `${CELL} font-semibold text-right whitespace-nowrap ${COLW} ${DIVIDER} ` +
                         (latest
                           ? "bg-[var(--ch-brand-50,#eef1ff)] text-[var(--ch-brand)]"
                           : "")
                       }
                     >
-                      {s.top}
-                      <span className="block text-[9px] font-normal opacity-70">
+                      <span className="text-[13px] leading-none">{s.top}</span>
+                      <span className="block text-[10px] font-normal opacity-60 mt-0.5">
                         {s.sub}
                       </span>
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 font-semibold text-center min-w-[76px]">
+                <th className={`${CELL} font-semibold text-center min-w-[84px] ${DIVIDER}`}>
                   เทรนด์
                 </th>
-                <th className="px-3 py-2 font-semibold text-right whitespace-nowrap min-w-[84px] bg-[var(--ch-bg-2)] sticky right-0 z-10">
+                <th
+                  className={`${CELL} font-semibold text-right whitespace-nowrap min-w-[92px] bg-[var(--ch-bg-2)] ${STICKY_R}`}
+                >
                   รวม
                 </th>
               </tr>
@@ -170,7 +179,7 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-[var(--ch-border)] font-bold bg-[var(--ch-bg-2)]">
-                <td className="px-3 py-2 sticky left-0 bg-[var(--ch-bg-2)] z-20">
+                <td className={`${CELL} ${STICKY_L} bg-[var(--ch-bg-2)] ${DIVIDER}`}>
                   รวมทุกสาขา
                 </td>
                 {periodKeys.map((k) => {
@@ -180,7 +189,7 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
                     <td
                       key={k}
                       className={
-                        "px-2.5 py-2 text-right ch-tnum whitespace-nowrap " +
+                        `${CELL} text-right ch-tnum whitespace-nowrap ${DIVIDER} ` +
                         (latest ? "bg-[var(--ch-brand-50,#eef1ff)] text-[var(--ch-brand)]" : "")
                       }
                     >
@@ -188,8 +197,10 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
                     </td>
                   );
                 })}
-                <td className="px-2 py-2" />
-                <td className="px-3 py-2 text-right ch-tnum whitespace-nowrap bg-[var(--ch-bg-2)] sticky right-0 z-10">
+                <td className={`${CELL} ${DIVIDER}`} />
+                <td
+                  className={`${CELL} text-right ch-tnum whitespace-nowrap bg-[var(--ch-bg-2)] ${STICKY_R}`}
+                >
                   {fmt(
                     metric === "baht" ? matrix.grandBaht : matrix.grandLiters,
                     metric,
@@ -202,14 +213,15 @@ export function FlowcoMatrixTable({ matrix }: { matrix: FlowcoMatrix }) {
       </div>
 
       <p className="text-[11px] text-[var(--ch-text-2)] text-center">
-        ทุกสาขา (21) · อ่านสด ๆ จาก FlowCo · กรองค่าเพี้ยนแล้ว · ช่องล่าสุดไฮไลต์สีฟ้า ·
+        ทุกสาขา ({rows.length}) · อ่านสด ๆ จาก FlowCo · กรองค่าเพี้ยนแล้ว · ช่องล่าสุดไฮไลต์สีฟ้า ·
         {metric === "baht" ? " ตัวเลข = บาท (M=ล้าน, K=พัน)" : " ตัวเลข = ลิตร (Ml=ล้านลิตร, Kl=พันลิตร)"}
       </p>
     </div>
   );
 }
 
-/** แถวสาขา 1 แถว + (ถ้าเปิดแยกกะ) สองแถวย่อย เช้า/ดึก */
+const CELLROW = "px-3.5 py-2.5";
+
 function FragmentRow({
   stripe,
   canExpand,
@@ -237,18 +249,20 @@ function FragmentRow({
   rowTotal: number;
   isMuted: (v: number) => boolean;
 }) {
-  const bg = stripe ? "bg-[color:rgba(0,0,0,0.015)]" : "bg-white";
+  const bg = stripe ? "bg-[color:rgba(59,79,246,0.035)]" : "bg-white";
+  const div = "border-r border-[color:rgba(0,0,0,0.05)]";
   return (
     <>
-      <tr className={"border-t border-[var(--ch-border)] " + bg}>
+      <tr className={"border-t border-[var(--ch-border)] " + bg + " hover:bg-[var(--ch-bg-2)]"}>
         <td
           className={
-            "px-3 py-2 whitespace-nowrap font-medium sticky left-0 z-10 " + bg +
+            `${CELLROW} whitespace-nowrap font-medium sticky left-0 z-10 ${div} shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] ` +
+            bg +
             (canExpand ? " cursor-pointer" : "")
           }
           onClick={canExpand ? onToggle : undefined}
         >
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             {canExpand ? (
               <ChevronRight
                 className={
@@ -269,21 +283,22 @@ function FragmentRow({
             <td
               key={k}
               className={
-                "px-2.5 py-2 text-right ch-tnum whitespace-nowrap " +
+                `${CELLROW} text-right ch-tnum whitespace-nowrap ${div} ` +
                 (latest ? "bg-[var(--ch-brand-50,#eef1ff)] font-semibold " : "") +
-                (isMuted(v) ? "text-[var(--ch-text-2)] opacity-50" : "text-[var(--ch-text)]")
+                (isMuted(v) ? "text-[var(--ch-text-2)] opacity-45" : "text-[var(--ch-text)]")
               }
             >
               {fmt(v, metric)}
             </td>
           );
         })}
-        <td className="px-2 py-1 text-center">
-          <Sparkline data={spark} width={72} height={20} className="inline-block" />
+        <td className={`px-3 py-1.5 text-center ${div}`}>
+          <Sparkline data={spark} width={80} height={22} className="inline-block" />
         </td>
         <td
           className={
-            "px-3 py-2 text-right ch-tnum font-bold whitespace-nowrap sticky right-0 z-10 " + bg
+            `${CELLROW} text-right ch-tnum font-bold whitespace-nowrap sticky right-0 z-10 border-l-2 border-[var(--ch-border)] shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.08)] ` +
+            bg
           }
         >
           {fmt(rowTotal, metric)}
@@ -292,24 +307,8 @@ function FragmentRow({
 
       {isOpen && (
         <>
-          <ShiftSubRow
-            icon="morning"
-            label="กะเช้า"
-            periodKeys={periodKeys}
-            lastKey={lastKey}
-            cells={cells}
-            metric={metric}
-            colSpanEnd
-          />
-          <ShiftSubRow
-            icon="evening"
-            label="กะดึก"
-            periodKeys={periodKeys}
-            lastKey={lastKey}
-            cells={cells}
-            metric={metric}
-            colSpanEnd
-          />
+          <ShiftSubRow icon="morning" label="กะเช้า" periodKeys={periodKeys} lastKey={lastKey} cells={cells} metric={metric} />
+          <ShiftSubRow icon="evening" label="กะดึก" periodKeys={periodKeys} lastKey={lastKey} cells={cells} metric={metric} />
         </>
       )}
     </>
@@ -330,16 +329,17 @@ function ShiftSubRow({
   lastKey: string | undefined;
   cells: Record<string, FlowcoMatrixCell>;
   metric: Metric;
-  colSpanEnd?: boolean;
 }) {
+  const div = "border-r border-[color:rgba(0,0,0,0.05)]";
+  const subBg = "bg-[#f4f6ff]";
   const pick = (c: FlowcoMatrixCell | undefined): number => {
     if (!c) return 0;
     if (icon === "morning") return metric === "baht" ? c.mBaht : c.mLit;
     return metric === "baht" ? c.eBaht : c.eLit;
   };
   return (
-    <tr className="border-t border-[var(--ch-border)] bg-[var(--ch-brand-50,#eef1ff)]/40">
-      <td className="px-3 py-1.5 whitespace-nowrap sticky left-0 z-10 bg-[#f4f6ff]">
+    <tr className={"border-t border-[color:rgba(0,0,0,0.04)] " + subBg}>
+      <td className={`px-3.5 py-1.5 whitespace-nowrap sticky left-0 z-10 ${div} shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] ${subBg}`}>
         <span className="inline-flex items-center gap-1 pl-5 text-xs text-[var(--ch-text-2)]">
           {icon === "morning" ? (
             <Sun className="size-3 text-amber-500" />
@@ -356,7 +356,7 @@ function ShiftSubRow({
           <td
             key={k}
             className={
-              "px-2.5 py-1.5 text-right ch-tnum text-xs whitespace-nowrap text-[var(--ch-text-2)] " +
+              `px-3.5 py-1.5 text-right ch-tnum text-xs whitespace-nowrap text-[var(--ch-text-2)] ${div} ` +
               (latest ? "bg-[var(--ch-brand-50,#eef1ff)] " : "")
             }
           >
@@ -364,8 +364,8 @@ function ShiftSubRow({
           </td>
         );
       })}
-      <td className="px-2 py-1.5 bg-[#f4f6ff]" />
-      <td className="px-3 py-1.5 bg-[#f4f6ff] sticky right-0 z-10" />
+      <td className={`px-3 py-1.5 ${div} ${subBg}`} />
+      <td className={`px-3.5 py-1.5 ${subBg} sticky right-0 z-10 border-l-2 border-[var(--ch-border)] shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.08)]`} />
     </tr>
   );
 }
