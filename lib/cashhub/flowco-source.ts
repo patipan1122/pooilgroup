@@ -239,9 +239,61 @@ export async function fetchFlowcoShiftRows(
       out.push({
         steId: r.ste_id,
         reportDate: addDaysYmd(r.biz_date, -1), // align กับ business_date
-        shiftNo: r.shift_no === 2 ? 2 : 1,
+        shiftNo: Number(r.shift_no) || 1, // 1=เช้า 2=ดึก 3+=กะพิเศษ (ตัดสต๊อค/สิ้นเดือน)
         baht: b,
         liters: l,
+      });
+    }
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return out;
+}
+
+export interface FlowcoShiftPayRow {
+  steId: number;
+  reportDate: string; // = biz_date - 1
+  shiftNo: number;
+  groupCode: number;
+  amt: number;
+}
+
+/** วิธีจ่ายแยกกะ (po_fuel_shift_payment) — align biz_date-1 เหมือน shift sales */
+export async function fetchFlowcoShiftPaymentRows(
+  admin: Admin,
+  dateFrom: string,
+  dateTo: string,
+  steId?: number | null,
+): Promise<FlowcoShiftPayRow[]> {
+  const bizFrom = addDaysYmd(dateFrom, 1);
+  const bizTo = addDaysYmd(dateTo, 1);
+  const out: FlowcoShiftPayRow[] = [];
+  let offset = 0;
+  for (;;) {
+    let query = admin
+      .from("po_fuel_shift_payment")
+      .select("ste_id,biz_date,shift_no,group_code,amt")
+      .gte("biz_date", bizFrom)
+      .lte("biz_date", bizTo);
+    if (steId) query = query.eq("ste_id", steId);
+    const { data, error } = await query
+      .order("biz_date", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`อ่านวิธีจ่ายรายกะไม่สำเร็จ: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data as {
+      ste_id: number;
+      biz_date: string;
+      shift_no: number;
+      group_code: number;
+      amt: number | string | null;
+    }[]) {
+      out.push({
+        steId: r.ste_id,
+        reportDate: addDaysYmd(r.biz_date, -1),
+        shiftNo: Number(r.shift_no) || 1,
+        groupCode: Number(r.group_code),
+        amt: num(r.amt),
       });
     }
     if (data.length < PAGE) break;

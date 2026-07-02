@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Calendar, Store } from "lucide-react";
 
-type Mode = "day" | "month";
+type Mode = "day" | "month" | "shift";
 
 export function FlowcoReportFilters({
   branches,
@@ -84,7 +84,7 @@ export function FlowcoReportFilters({
 
       {/* mode toggle */}
       <div className="inline-flex rounded-xl border border-[var(--ch-border)] p-0.5 self-start">
-        {(["day", "month"] as Mode[]).map((m) => (
+        {(["day", "month", "shift"] as Mode[]).map((m) => (
           <button
             key={m}
             type="button"
@@ -96,7 +96,7 @@ export function FlowcoReportFilters({
                 : "text-[var(--ch-text-2)]")
             }
           >
-            {m === "day" ? "รายวัน" : "รายเดือน"}
+            {m === "day" ? "รายวัน" : m === "month" ? "รายเดือน" : "รายกะ"}
           </button>
         ))}
       </div>

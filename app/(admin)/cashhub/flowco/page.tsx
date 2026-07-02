@@ -29,7 +29,8 @@ export default async function FlowcoReportPage({
   const admin = adminClient();
   const sp = await searchParams;
 
-  const mode: FlowcoMode = sp.mode === "month" ? "month" : "day";
+  const mode: FlowcoMode =
+    sp.mode === "month" ? "month" : sp.mode === "shift" ? "shift" : "day";
   const range = await fetchFlowcoDateRange(admin);
   const maxD = range.max ?? new Date().toISOString().slice(0, 10);
   const minD = range.min ?? maxD;
@@ -111,7 +112,7 @@ export default async function FlowcoReportPage({
         <FlowcoReportTable
           rows={report.rows}
           totals={t}
-          colLabel={mode === "month" ? "เดือน" : "วันที่"}
+          colLabel={mode === "month" ? "เดือน" : mode === "shift" ? "วัน · กะ" : "วันที่"}
           fuelCols={report.fuelCols}
           hasShift={report.hasShift}
         />

@@ -8,8 +8,23 @@ import {
   fetchFlowcoAggregates,
   fetchFlowcoGradeRows,
   fetchFlowcoShiftRows,
+  fetchFlowcoShiftPaymentRows,
+  payBucket,
 } from "./flowco-source";
 import { resolveSteToBranch, FLOWCO_STATIONS } from "./flowco-branch-map";
+
+/** ชื่อกะ (3-6 = เดา · ยืนยันกับ CEO: ตัดสต๊อค/สิ้นเดือน) */
+export const SHIFT_LABELS: Record<number, string> = {
+  1: "กะเช้า",
+  2: "กะดึก",
+  3: "กะตัดสต๊อค",
+  4: "กะสิ้นเดือน",
+  5: "กะพิเศษ 5",
+  6: "กะพิเศษ 6",
+};
+function shiftLabel(no: number): string {
+  return SHIFT_LABELS[no] ?? `กะ ${no}`;
+}
 
 type Admin = SupabaseClient;
 const SEED_STE = new Set(FLOWCO_STATIONS.map((s) => s.steId));
@@ -43,7 +58,7 @@ function dayLabel(ymd: string): string {
   return `${d} ${TH_MONTHS[m - 1]} ${y + 543}`;
 }
 
-export type FlowcoMode = "day" | "month";
+export type FlowcoMode = "day" | "month" | "shift";
 
 export interface FlowcoReportRow {
   key: string; // "2026-06-30" (day) หรือ "2026-06" (month)
@@ -98,8 +113,23 @@ export async function fetchFlowcoReport(
   orgId: string,
   q: FlowcoReportQuery,
 ): Promise<FlowcoReport> {
-  const mode: FlowcoMode = q.mode === "month" ? "month" : "day";
+  const mode: FlowcoMode =
+    q.mode === "month" ? "month" : q.mode === "shift" ? "shift" : "day";
   const steId = q.steId ?? null;
+
+  const nameOfFrom =
+    (steMap: Map<number, { id: string; name: string }>) =>
+    (ste: number): string => {
+      const mapped = steMap.get(ste)?.name;
+      if (mapped) return mapped.replace(/^ปั๊มน้ำมัน - /, "");
+      const seed = FLOWCO_STATIONS.find((s) => s.steId === ste);
+      return seed?.name ?? `สาขา ${ste}`;
+    };
+
+  // ── โหมดรายกะ: แต่ละแถว = 1 กะ (เช้า/ดึก/ตัดสต๊อค/สิ้นเดือน) พร้อมยอด+วิธีจ่ายต่อกะ ──
+  if (mode === "shift") {
+    return fetchShiftModeReport(admin, orgId, q, steId, nameOfFrom);
+  }
 
   const [aggs, gradeRows, shiftRows, steMap] = await Promise.all([
     fetchFlowcoAggregates(admin, q.dateFrom, q.dateTo),
@@ -108,12 +138,7 @@ export async function fetchFlowcoReport(
     resolveSteToBranch(admin, orgId),
   ]);
 
-  const nameOf = (ste: number): string => {
-    const mapped = steMap.get(ste)?.name;
-    if (mapped) return mapped.replace(/^ปั๊มน้ำมัน - /, "");
-    const seed = FLOWCO_STATIONS.find((s) => s.steId === ste);
-    return seed?.name ?? `สาขา ${ste}`;
-  };
+  const nameOf = nameOfFrom(steMap);
   const keyOf = (date: string) => (mode === "month" ? date.slice(0, 7) : date);
   const inScope = (ste: number) => SEED_STE.has(ste) && (!steId || ste === steId);
 
@@ -213,6 +238,115 @@ export async function fetchFlowcoReport(
     hasShift,
     anomalyTotal,
     mode,
+    steId,
+    branchName: steId ? nameOf(steId) : null,
+    dateFrom: q.dateFrom,
+    dateTo: q.dateTo,
+  };
+}
+
+// ── โหมดรายกะ: 1 แถว = 1 กะของ 1 วัน ──
+async function fetchShiftModeReport(
+  admin: Admin,
+  orgId: string,
+  q: FlowcoReportQuery,
+  steId: number | null,
+  nameOfFrom: (
+    m: Map<number, { id: string; name: string }>,
+  ) => (ste: number) => string,
+): Promise<FlowcoReport> {
+  const [shiftSales, shiftPays, steMap] = await Promise.all([
+    fetchFlowcoShiftRows(admin, q.dateFrom, q.dateTo, steId),
+    fetchFlowcoShiftPaymentRows(admin, q.dateFrom, q.dateTo, steId),
+    resolveSteToBranch(admin, orgId),
+  ]);
+  const nameOf = nameOfFrom(steMap);
+  const inScope = (ste: number) =>
+    SEED_STE.has(ste) && (!steId || ste === steId);
+
+  const rowMap = new Map<string, FlowcoReportRow>();
+  const shiftOf = new Map<string, number>(); // key → shiftNo (สำหรับ sort)
+  const getRow = (date: string, shiftNo: number): FlowcoReportRow => {
+    const key = `${date}__s${shiftNo}`;
+    let r = rowMap.get(key);
+    if (!r) {
+      r = {
+        key,
+        label: `${dayLabel(date)} · ${shiftLabel(shiftNo)}`,
+        liters: 0,
+        totalSales: 0,
+        cash: 0,
+        card: 0,
+        credit: 0,
+        transfer: 0,
+        anomalyCount: 0,
+        fuelLiters: {},
+        shiftMorning: 0,
+        shiftEvening: 0,
+      };
+      rowMap.set(key, r);
+      shiftOf.set(key, shiftNo);
+    }
+    return r;
+  };
+
+  for (const s of shiftSales) {
+    if (!inScope(s.steId)) continue;
+    const r = getRow(s.reportDate, s.shiftNo);
+    r.totalSales += s.baht;
+    r.liters += s.liters;
+  }
+  for (const p of shiftPays) {
+    if (!inScope(p.steId)) continue;
+    if (p.amt < 0 || p.amt > 5_000_000) continue; // กันเพี้ยน
+    const r = getRow(p.reportDate, p.shiftNo);
+    const b = payBucket(p.groupCode);
+    if (b === "cash") r.cash += p.amt;
+    else if (b === "card") r.card += p.amt;
+    else if (b === "credit") r.credit += p.amt;
+    else if (b === "transfer") r.transfer += p.amt;
+  }
+
+  // เรียง: วันใหม่ก่อน → กะเช้าก่อนกะดึก
+  const rows = [...rowMap.values()].sort((x, y) => {
+    const dx = x.key.slice(0, 10),
+      dy = y.key.slice(0, 10);
+    if (dx !== dy) return dx < dy ? 1 : -1;
+    return (shiftOf.get(x.key) ?? 0) - (shiftOf.get(y.key) ?? 0);
+  });
+
+  const totals: FlowcoReportTotals = {
+    liters: 0,
+    totalSales: 0,
+    cash: 0,
+    card: 0,
+    credit: 0,
+    transfer: 0,
+    fuelLiters: {},
+    shiftMorning: 0,
+    shiftEvening: 0,
+  };
+  for (const r of rows) {
+    totals.liters += r.liters;
+    totals.totalSales += r.totalSales;
+    totals.cash += r.cash;
+    totals.card += r.card;
+    totals.credit += r.credit;
+    totals.transfer += r.transfer;
+  }
+
+  const branches = [...FLOWCO_STATIONS]
+    .sort((a, b) => a.steId - b.steId)
+    .map((s) => ({ steId: s.steId, name: nameOf(s.steId) }));
+
+  return {
+    rows,
+    branches,
+    totals,
+    fuelCols: [],
+    hasShift: false,
+    anomalyTotal: 0,
+    mode: "shift",
     steId,
     branchName: steId ? nameOf(steId) : null,
     dateFrom: q.dateFrom,
