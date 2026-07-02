@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, ShieldCheck, Monitor, ChevronRight, PackageOpen } from "lucide-react";
+import { Wallet, TrendingUp, Boxes, Coins, AlertTriangle, ShieldAlert, ShieldCheck, Monitor, ChevronRight, PackageOpen, Banknote } from "lucide-react";
 import { Kpi, Card, Pill, AvgWinBar, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, avgWinMarkerPct, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 
@@ -13,6 +13,8 @@ type Alert = { title: string; detail: string; tag: string; tone: "red" | "amber"
 type DailyPoint = { d: string; iso: string; profit: number; cost: number };
 type LowStockItem = { name: string; loc: string; qty: number; color: string };
 type Fleet = { totalMachines: number; activeMachines: number; needRefill: number; broken: number };
+// สรุปเงินรอฝาก (custody→deposit): มาจาก getPendingDepositSummary() ฝั่ง server (หน่วยเป็นสตางค์)
+type PendingDeposit = { count: number; totalCents: number; overdueCount: number; overdueCents: number };
 
 /* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลขจาก design ── */
 const SAMPLE_BRANCHES: BranchRow[] = [
@@ -53,6 +55,7 @@ export function DashboardClient({
   lowStock,
   fleet,
   hasRealData = false,
+  pendingDeposit = { count: 0, totalCents: 0, overdueCount: 0, overdueCents: 0 },
 }: {
   summary: { revenue: number; cost: number; profit: number; dollsOut: number; hasCost: boolean; avgBahtPerDoll: number | null; riskyBranches: number };
   branches: BranchRow[];
@@ -63,8 +66,15 @@ export function DashboardClient({
   fleet: Fleet;
   // org นี้เคยเก็บเงินจริงไหม (มี CfCollectionSession) — จาก server. true = มีข้อมูลจริง
   hasRealData?: boolean;
+  // เงินที่แม่บ้านเก็บได้แต่ "ยังไม่ฝากธนาคาร" (ค้างมือ) — default 0 กัน build/hydrate พัง
+  pendingDeposit?: PendingDeposit;
 }) {
   const router = useRouter();
+  // เงินรอฝาก: แปลงสตางค์→บาท (bahtN รับหน่วยบาท) · โชว์เฉพาะ org จริง (empty=sample ไม่โชว์ตัวเลขปลอม)
+  const depoBaht = Math.round(pendingDeposit.totalCents / 100);
+  const depoOverdueBaht = Math.round(pendingDeposit.overdueCents / 100);
+  const hasPending = pendingDeposit.count > 0;
+  const hasOverdue = pendingDeposit.overdueCount > 0;
   // "ว่างจริง" = ไม่มีสาขาจริง และไม่เคยเก็บเงินเลย → โชว์ตัวอย่างเพื่อให้เห็นภาพ.
   // org จริงที่มีข้อมูล (มีสาขา หรือ เคยเก็บเงิน) → ห้ามโชว์ตัวอย่าง แม้ยังไม่มีธงแดง.
   const empty = branches.length === 0 && !hasRealData;
@@ -120,6 +130,54 @@ export function DashboardClient({
         <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A5510" }}>
           <AlertTriangle size={15} /> ยังไม่มีข้อมูลจริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ (จะเปลี่ยนเป็นข้อมูลจริงเมื่อเริ่มเก็บเงิน)
         </div>
+      )}
+
+      {/* เงินรอฝาก (custody→deposit) — โชว์เฉพาะ org จริง (empty=sample ห้ามโชว์ตัวเลขปลอม).
+          มีเงินค้างมือ → แถบเตือน (เกินกำหนด=แดง · ยังไม่เกิน=เหลือง) กดไปหน้าใบฝาก.
+          ฝากครบ (count=0) → แถบเขียวสั้นๆ ให้เจ้าของสบายใจ. */}
+      {!empty && (
+        hasPending ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push("/clawfleet/os/deposits")}
+            style={{
+              display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "13px 16px",
+              borderRadius: 12, cursor: "pointer",
+              background: hasOverdue ? "#FCECEA" : "#FBF3E4",
+              border: `1px solid ${hasOverdue ? "#F3CEC8" : "#EFDCB4"}`,
+            }}
+          >
+            <IconBox tone={hasOverdue ? "red" : "amber"} size={38} radius={10}>
+              <Banknote size={18} />
+            </IconBox>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: hasOverdue ? "#8A2018" : "#7A5510" }}>
+                💰 เงินรอฝาก <span className="num">{bahtN(depoBaht)}</span>{" "}
+                <span style={{ fontWeight: 500 }}>· <span className="num">{num(pendingDeposit.count)}</span> รอบค้างมือ</span>
+              </div>
+              {hasOverdue && (
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#B42318", marginTop: 2 }}>
+                  ⚠️ เกินกำหนด <span className="num">{num(pendingDeposit.overdueCount)}</span> รอบ · <span className="num">{bahtN(depoOverdueBaht)}</span> ยังไม่เข้าธนาคาร
+                </div>
+              )}
+              {!hasOverdue && (
+                <div style={{ fontSize: 12, color: "#8A6D2C", marginTop: 2 }}>เงินที่เก็บได้แต่ยังไม่ฝากเข้าธนาคาร — กดเพื่อดู/บันทึกการฝาก</div>
+              )}
+            </div>
+            <Pill tone={hasOverdue ? "red" : "amber"}>ดูใบฝาก</Pill>
+            <ChevronRight size={16} style={{ color: hasOverdue ? "#C2756C" : "#C2A85C", flex: "0 0 auto" }} />
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "10px 16px",
+              borderRadius: 12, background: "#EDF7F0", border: "1px solid #CDE9D6", fontSize: 12.5, color: "#15803D", fontWeight: 600,
+            }}
+          >
+            <ShieldCheck size={16} /> เงินเก็บฝากเข้าธนาคารครบแล้ว — ไม่มีเงินค้างมือ
+          </div>
+        )
       )}
 
       {/* KPIs */}

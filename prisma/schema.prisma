@@ -2245,6 +2245,8 @@ model CfCollectionSession {
   prizeCountedOut   Int?            @map("prize_counted_out")
   prizeVariance     Int?            @map("prize_variance")
   totalCashCents    Int             @default(0) @map("total_cash_cents")
+  // ultrareview Wave 4a — custody→deposit: null = เงินรอบนี้ยัง "ค้างมือ" ยังไม่ฝากธนาคาร
+  depositId         String?         @map("deposit_id") @db.Uuid
   anomalyFlags      String[]        @default([]) @map("anomaly_flags")
   reviewerId        String?         @map("reviewer_id") @db.Uuid
   reviewedAt        DateTime?       @map("reviewed_at") @db.Timestamptz(6)
@@ -2646,6 +2648,32 @@ model CfRepairLog {
 
   @@index([orgId, ticketId, createdAt])
   @@map("cf_repair_logs")
+  @@schema("public")
+}
+
+// ultrareview Wave 4a — custody→deposit: พิสูจน์ว่าเงินที่แม่บ้านเก็บได้ ถูกฝากเข้าธนาคารครบ
+// (ปิดจุดบอดเงินช่วง "มือพนักงาน → ธนาคาร"). 1 ใบฝากครอบได้หลายรอบ · reconcile เงินฝากจริง vs เงินเก็บ.
+model CfCashDeposit {
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  depositCode     String   @map("deposit_code") // DP-YYMMDD-NN · unique per org
+  amountCents     Int      @map("amount_cents") // เงินที่ฝากจริง (จากสลิป)
+  expectedCents   Int      @map("expected_cents") // Σ เงินเก็บของรอบที่ครอบ (snapshot ตอนฝาก)
+  varianceCents   Int      @map("variance_cents") // amount - expected (ลบ = ฝากขาด · บวก = ฝากเกิน)
+  status          String   @default("OK") // OK | SHORT | OVER
+  sessionCount    Int      @default(0) @map("session_count")
+  slipPhotoUrl    String?  @map("slip_photo_url")
+  note            String?
+  depositedById   String?  @map("deposited_by_id") @db.Uuid
+  depositedByName String   @map("deposited_by_name")
+  depositedAt     DateTime @map("deposited_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([orgId, depositCode])
+  @@index([orgId, branchId, depositedAt(sort: Desc)])
+  @@index([orgId, status])
+  @@map("cf_cash_deposits")
   @@schema("public")
 }
 

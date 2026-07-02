@@ -5,6 +5,7 @@
  */
 import { getBranchPnl, summarizeBranchPnl, bangkokRangeLastDays } from "@/lib/clawfleet/pnl-queries";
 import { getBranchMachineInfo, getDailyPnl, getDashboardLowStock } from "@/lib/clawfleet/dashboard-queries";
+import { getPendingDepositSummary, type PendingSummary } from "@/lib/clawfleet/deposit-queries";
 import { loadAnomalies } from "@/lib/clawfleet/loaders";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
@@ -53,6 +54,16 @@ export default async function DashboardPage() {
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → ใช้ sample fallback
   }
+
+  // เงินรอฝาก (custody→deposit) — โหลดแยก try-catch ของตัวเอง เพื่อไม่ให้ query ใหม่นี้
+  // ล้ม แล้วลาก dashboard ทั้งหน้าไปด้วย (ตาราง cf_cash_deposit อาจยังไม่ migrate ในบาง env).
+  let pendingDeposit: PendingSummary = { count: 0, totalCents: 0, overdueCount: 0, overdueCents: 0 };
+  try {
+    pendingDeposit = await getPendingDepositSummary();
+  } catch {
+    // graceful: ยังไม่ migrate/DB ว่าง → 0 (การ์ดจะซ่อนเอง ไม่โชว์ตัวเลขปลอม)
+  }
+
   const summary = summarizeBranchPnl(branchPnl);
 
   const branches = branchPnl.map((b) => ({
@@ -96,6 +107,7 @@ export default async function DashboardPage() {
       lowStock={lowStock}
       fleet={fleet}
       hasRealData={hasRealData}
+      pendingDeposit={pendingDeposit}
     />
   );
 }
