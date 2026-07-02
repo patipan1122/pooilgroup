@@ -10,7 +10,12 @@
 // ทุก query try-catch คืน default กันหน้าแตก.
 
 import { prisma } from "@/lib/prisma";
-import { requireCfSession, userBranchIds } from "./role-guard";
+import {
+  requireCfSession,
+  userBranchIds,
+  cfHasAdminPower,
+  isCfBranchManager,
+} from "./role-guard";
 
 // รอบที่ต้อง "ฝาก" ได้ = ปิดรอบแล้ว (มีเงินในมือ) แต่ยังไม่ฝาก
 const DEPOSITABLE_STATUSES = ["CLOSED", "LOCKED", "ANOMALY_REVIEW"] as const;
@@ -32,16 +37,27 @@ export type PendingDepositRow = {
 export type DepositRow = {
   id: string;
   depositCode: string;
+  branchId: string;
   branchName: string | null;
   amountCents: number;
   expectedCents: number;
   varianceCents: number;
   status: string; // OK | SHORT | OVER
+  // Wave 4b · maker-checker ใบฝากขาด (SHORT) — NONE/PENDING/APPROVED/REJECTED
+  //   SHORT ที่สร้างใหม่ → PENDING (รออนุมัติ "รับทราบเงินขาด") · OK/OVER → NONE (ไม่ต้องอนุมัติ)
+  approvalStatus: string;
+  reviewedByName: string | null; // ใครอนุมัติ/ตีกลับ (checker)
+  depositedById: string; // ผู้บันทึกฝาก (maker) — client ใช้เช็ก maker ≠ checker
   sessionCount: number;
   depositedByName: string;
   depositedAt: string; // ISO
   slipPhotoUrl: string | null;
   note: string | null;
+  // per-viewer review context (เหมือนกันทุกแถว · denormalize เพื่อไม่ต้องแก้ page.tsx ให้ส่ง prop เพิ่ม)
+  //   canReview = ผู้ใช้นี้เป็น ผจก.สาขา/แอดมิน (mirror auth ใน reviewCashDeposit)
+  //   currentUserId = ให้ client เทียบ maker ≠ checker (ห้ามอนุมัติใบที่ตัวเองฝาก) · action บังคับซ้ำอีกชั้น
+  canReview: boolean;
+  currentUserId: string;
 };
 
 export type PendingSummary = {
@@ -179,19 +195,29 @@ export async function getDepositHistory(opts?: {
       rows.map((r) => r.branchId),
     );
 
+    // per-viewer review context (denormalize ลงทุกแถว — page.tsx ไม่ต้องส่ง prop เพิ่ม)
+    const canReview = (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
+    const currentUserId = session.user.id;
+
     return rows.map((r) => ({
       id: r.id,
       depositCode: r.depositCode,
+      branchId: r.branchId,
       branchName: names.get(r.branchId) ?? null,
       amountCents: r.amountCents,
       expectedCents: r.expectedCents,
       varianceCents: r.varianceCents,
       status: r.status,
+      approvalStatus: r.approvalStatus,
+      reviewedByName: r.reviewedByName ?? null,
+      depositedById: r.depositedById ?? "", // nullable ใน schema → "" = ไม่ทราบ maker (client ถือว่าไม่ใช่ตัวเอง)
       sessionCount: r.sessionCount,
       depositedByName: r.depositedByName,
       depositedAt: r.depositedAt.toISOString(),
       slipPhotoUrl: r.slipPhotoUrl ?? null,
       note: r.note ?? null,
+      canReview,
+      currentUserId,
     }));
   } catch {
     return [];

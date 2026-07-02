@@ -98,6 +98,10 @@ export type CfCountRow = {
   itemsCounted: number;
   totalDiff: number;
   countedAt: Date;
+  // Wave 4b maker-checker: สถานะ + คนนับ/คนอนุมัติ (สำหรับ pill + self-approve gate)
+  status: string; // APPLIED | PENDING | APPROVED | REJECTED
+  countedById: string;
+  reviewedByName: string | null;
 };
 
 export async function getCfCounts(orgId: string, branchId: string): Promise<CfCountRow[]> {
@@ -108,6 +112,7 @@ export async function getCfCounts(orgId: string, branchId: string): Promise<CfCo
     select: {
       id: true, countCode: true, countedByName: true, note: true,
       itemsCounted: true, totalDiff: true, countedAt: true,
+      status: true, countedById: true, reviewedByName: true,
     },
   });
   return rows;

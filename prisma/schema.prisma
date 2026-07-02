@@ -2508,6 +2508,13 @@ model CfStockCount {
   countedById   String   @map("counted_by_id") @db.Uuid
   countedByName String?  @map("counted_by_name") // snapshot ชื่อผู้นับ
   countedAt     DateTime @default(now()) @map("counted_at") @db.Timestamptz(6)
+  // Wave 4b maker-checker: นับปรับยอดมูลค่าสูง ต้องคนที่ 2 อนุมัติก่อนตัดสต๊อกจริง (กันซ่อนของหาย)
+  // APPLIED = ปรับสต๊อกแล้ว (auto เมื่อต่ำกว่าเกณฑ์) · PENDING = รออนุมัติ (ยังไม่ตัดสต๊อก) · APPROVED/REJECTED
+  status        String   @default("APPLIED")
+  reviewedById  String?  @map("reviewed_by_id") @db.Uuid
+  reviewedByName String? @map("reviewed_by_name")
+  reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote    String?  @map("review_note")
 
   org     Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch  Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -2661,13 +2668,19 @@ model CfCashDeposit {
   amountCents     Int      @map("amount_cents") // เงินที่ฝากจริง (จากสลิป)
   expectedCents   Int      @map("expected_cents") // Σ เงินเก็บของรอบที่ครอบ (snapshot ตอนฝาก)
   varianceCents   Int      @map("variance_cents") // amount - expected (ลบ = ฝากขาด · บวก = ฝากเกิน)
-  status          String   @default("OK") // OK | SHORT | OVER
+  status          String   @default("OK") // OK | SHORT | OVER (verdict ส่วนต่าง)
   sessionCount    Int      @default(0) @map("session_count")
   slipPhotoUrl    String?  @map("slip_photo_url")
   note            String?
   depositedById   String?  @map("deposited_by_id") @db.Uuid
   depositedByName String   @map("deposited_by_name")
   depositedAt     DateTime @map("deposited_at") @db.Timestamptz(6)
+  // Wave 4b maker-checker: ฝากขาด (SHORT) ต้องคนที่ 2 อนุมัติ (คนถือเงินปิดจ๊อบขาดเองไม่ได้)
+  approvalStatus  String   @default("NONE") @map("approval_status") // NONE(OK/OVER) | PENDING | APPROVED | REJECTED
+  reviewedById    String?  @map("reviewed_by_id") @db.Uuid
+  reviewedByName  String?  @map("reviewed_by_name")
+  reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote      String?  @map("review_note")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@unique([orgId, depositCode])

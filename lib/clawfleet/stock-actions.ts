@@ -27,6 +27,12 @@ const ANOMALY_PATH = "/clawfleet/os/collections";
 //      "ยังไม่ตัดสต๊อกจริง" จนกว่าจะ APPROVED → กันซ่อนของหายก่อนมีคนตรวจ
 const LOSS_APPROVAL_THRESHOLD_CENTS = 50000; // ฿500 — เกินนี้ต้องมีคนที่ 2 อนุมัติ
 
+// ── Wave 4b · maker-checker การนับสต๊อกปรับยอดมูลค่าสูง (mirror recordLoss/reviewCfLoss) ─────
+// นับสต๊อกปรับยอด = เขียน COUNT_ADJUST movement ปรับสต๊อกได้ตรง ๆ (ปรับยอดลง = ซ่อน shrinkage ได้).
+// มูลค่าปรับ (Σ |line.diff × ต้นทุน|) เกินเกณฑ์ → ใบเข้าสถานะ PENDING (รอคนที่ 2) และ
+// "ยังไม่เขียน movement ปรับสต๊อกจริง" จนกว่าจะ APPROVED — เหมือน recordLoss ทุกประการ.
+const STOCKCOUNT_APPROVAL_CENTS = 50000; // ฿500 — มูลค่าปรับเกินนี้ต้องมีคนที่ 2 อนุมัติ
+
 /** ผู้ที่มีสิทธิ์ "สร้าง/อนุมัติ" การตัดของเสีย/ปรับยอดใหญ่ = ผจก.สาขา + แอดมิน (ไม่ใช่พนักงานเก็บของ) */
 function canWriteOff(role: Parameters<typeof isCfAdmin>[0]): boolean {
   return isCfAdmin(role) || isCfBranchManager(role);
@@ -290,7 +296,7 @@ const CountSchema = z.object({
     .min(1, "ยังไม่ได้ใส่รายการนับ"),
 });
 
-export async function submitStockCount(input: unknown): Promise<Result<{ countCode: string | null; countId: string | null; adjusted: number; skipped: number; anomaly: boolean }>> {
+export async function submitStockCount(input: unknown): Promise<Result<{ countCode: string | null; countId: string | null; adjusted: number; skipped: number; anomaly: boolean; status: "APPLIED" | "PENDING" }>> {
   const parsed = CountSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
   const { branchId, note, lines } = parsed.data;
@@ -305,9 +311,6 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
 
   // D1 · role-rank guard — ปรับยอดนับกายภาพ = ปรับสต๊อกได้ตรง ๆ (ซ่อน shrinkage ได้ถ้าปรับยอดลง)
   // → เฉพาะผู้จัดการสาขา/แอดมินเท่านั้น (พนักงานเก็บของ/viewer นับได้แต่ไม่มีสิทธิ์ "ยืนยันปรับยอด").
-  // NOTE (partial vs recordLoss): CfStockCount ยังไม่มีคอลัมน์ status ในสคีมา (D1 ขยายเฉพาะ CfLossDoc)
-  //   → เพิ่มเฉพาะ role guard ที่นี่ · ปรับยอดลงก้อนใหญ่ยังตัดสต๊อกทันที (ไม่มี PENDING flow)
-  //   → ถ้าต้องการ maker-checker เต็มรูปแบบสำหรับการนับ ต้องเพิ่ม status ให้ CfStockCount + migration.
   if (!canWriteOff(session.user.role)) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยืนยันปรับยอดนับสต๊อกได้");
   }
@@ -340,10 +343,17 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
       }
 
       if (diffs.length === 0) {
-        return { countId: null as string | null, countCode: null as string | null, adjusted: 0, skipped, anomaly: false };
+        return { countId: null as string | null, countCode: null as string | null, adjusted: 0, skipped, anomaly: false, status: "APPLIED" as const };
       }
 
       const totalDiff = diffs.reduce((s, d) => s + d.diff, 0);
+
+      // Wave 4b · มูลค่าปรับ (สตางค์) = Σ |ผลต่าง × ต้นทุนเฉลี่ยปัจจุบัน| ต่อรายการ (นับทั้งขึ้นและลง)
+      // เกินเกณฑ์ → PENDING (รอคนที่ 2) · ต่ำกว่าเกณฑ์ → APPLIED (เขียน movement ทันที · พฤติกรรมเดิม)
+      const adjustValueCents = diffs.reduce((s, d) => s + Math.abs(d.diff * d.cost), 0);
+      const status: "APPLIED" | "PENDING" =
+        adjustValueCents > STOCKCOUNT_APPROVAL_CENTS ? "PENDING" : "APPLIED";
+
       const count = await tx.cfStockCount.create({
         data: {
           orgId,
@@ -352,6 +362,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
           note: note || null,
           itemsCounted: diffs.length,
           totalDiff,
+          status,
           countedById: session.user.id,
           countedByName: session.user.name || session.user.email || null,
           lines: {
@@ -369,28 +380,39 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
         select: { id: true, countCode: true },
       });
 
-      for (const d of diffs) {
-        await tx.cfStockMovement.create({
-          data: {
-            orgId,
-            branchId,
-            type: "COUNT_ADJUST",
-            productId: d.id,
-            qty: d.diff, // signed delta (+/-)
-            expectedQty: d.before,
-            varianceQty: d.diff,
-            occurredAt: new Date(),
-            createdById: session.user.id,
-            refTable: "cf_stock_counts",
-            refId: count.id,
-            documentType: "stock_count",
-            documentId: count.id,
-            reason: d.reason || `นับต่าง · ${d.before}→${d.after}`,
-          },
+      // เขียน movement ปรับสต๊อก "เฉพาะ" ใบที่ APPLIED (ต่ำกว่าเกณฑ์) เท่านั้น.
+      // PENDING → ข้าม · ให้ reviewCfStockCount เขียน movement ตอนอนุมัติ (single source of truth
+      // → สต๊อกยังไม่ขยับจนกว่าคนที่ 2 อนุมัติ · กันซ่อน shrinkage ก่อนมีคนตรวจ).
+      if (status === "APPLIED") {
+        await applyStockCountMovements(tx, {
+          orgId, branchId, countId: count.id, createdById: session.user.id,
+          diffs: diffs.map((d) => ({ id: d.id, before: d.before, after: d.after, diff: d.diff, reason: d.reason })),
         });
       }
 
+      // R7 · audit trail — ใครสร้างใบนับ + มูลค่าปรับ/สถานะ (maker) ในทรานแซกชันเดียวกัน
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_STOCK_COUNT_CREATE",
+          resourceType: "CF_STOCK_COUNT",
+          resourceId: count.id,
+          diff: {
+            new: {
+              countCode: count.countCode,
+              branchId,
+              itemsCounted: diffs.length,
+              totalDiff,
+              adjustValueCents,
+              status,
+            },
+          },
+        },
+      });
+
       // นับต่างมาก → สร้าง sentinel anomaly session (เด้งเข้าหน้า Anomaly ที่มีอยู่แล้ว)
+      // สร้างได้ทั้ง APPLIED และ PENDING — anomaly = "ควรมีคนดู" ไม่ผูกกับการตัดสต๊อกจริง.
       let anomaly = false;
       if (Math.abs(totalDiff) >= VARIANCE_ANOMALY_THRESHOLD) {
         anomaly = true;
@@ -419,7 +441,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
         void lossCount;
       }
 
-      return { countId: count.id, countCode: count.countCode, adjusted: diffs.length, skipped, anomaly };
+      return { countId: count.id, countCode: count.countCode, adjusted: diffs.length, skipped, anomaly, status };
     })
     .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
 
@@ -428,6 +450,178 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
   revalidatePath(ANOMALY_PATH);
   revalidatePath("/clawfleet/os/dashboard");
   return { ok: true, data: result };
+}
+
+/**
+ * เขียน COUNT_ADJUST movement (ปรับยอดสต๊อกตามการนับ · signed delta) ต่อสินค้าในใบนับ.
+ * ใช้ร่วมกันระหว่าง submitStockCount (auto-APPLIED ต่ำกว่าเกณฑ์) และ reviewCfStockCount (อนุมัติใบ PENDING)
+ * → ให้ ledger เขียนที่เดียว (idempotent guard อยู่ที่ caller: APPLIED/APPROVED status · atomic claim).
+ * mirror applyLossMovements.
+ */
+async function applyStockCountMovements(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  args: {
+    orgId: string;
+    branchId: string;
+    countId: string;
+    createdById: string;
+    diffs: Array<{ id: string; before: number; after: number; diff: number; reason: string }>;
+  },
+): Promise<void> {
+  const now = new Date();
+  for (const d of args.diffs) {
+    await tx.cfStockMovement.create({
+      data: {
+        orgId: args.orgId,
+        branchId: args.branchId,
+        type: "COUNT_ADJUST",
+        productId: d.id,
+        qty: d.diff, // signed delta (+/-)
+        expectedQty: d.before,
+        varianceQty: d.diff,
+        occurredAt: now,
+        createdById: args.createdById,
+        refTable: "cf_stock_counts",
+        refId: args.countId,
+        documentType: "stock_count",
+        documentId: args.countId,
+        reason: d.reason || `นับต่าง · ${d.before}→${d.after}`,
+      },
+    });
+  }
+}
+
+// =============================================================
+// 2b) อนุมัติ / ตีกลับ ใบนับสต๊อกปรับยอดมูลค่าสูง (maker-checker · Wave 4b)
+//     mirror reviewCfLoss เป๊ะ:
+//     - เฉพาะผู้จัดการสาขา/แอดมิน · self-approve guard (คนนับ ≠ คนอนุมัติ)
+//     - approve → เขียน COUNT_ADJUST movement ตอนนี้ (สต๊อกขยับจริง "เมื่ออนุมัติ")
+//     - reject → ไม่เขียน movement (ใบไม่เคยปรับสต๊อก · void) · stamp reviewer
+// =============================================================
+const ReviewCountSchema = z.object({
+  countId: z.string().uuid("ใบนับสต๊อกไม่ถูกต้อง"),
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().trim().max(500).optional(),
+});
+
+export async function reviewCfStockCount(input: unknown): Promise<Result<{ countId: string; status: "APPROVED" | "REJECTED" }>> {
+  const parsed = ReviewCountSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { countId, decision, note } = parsed.data;
+
+  // หา branch ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา (admin = ทุกสาขา)
+  const head = await prisma.cfStockCount.findFirst({
+    where: { id: countId },
+    select: { id: true, orgId: true, branchId: true, status: true, countedById: true },
+  });
+  if (!head) return err("ไม่พบใบนับสต๊อก");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(head.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบนับสต๊อกนี้");
+
+  // role-rank guard — เฉพาะผู้จัดการสาขา/แอดมิน (mirror reviewCfLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่อนุมัติ/ตีกลับใบนับสต๊อกได้");
+  }
+
+  // self-approve guard (segregation of duties) — คนนับ ≠ คนอนุมัติ (maker ≠ checker)
+  if (head.countedById === session.user.id) {
+    return err("อนุมัติ/ตีกลับใบที่ตัวเองนับไม่ได้ · ให้คนอื่นตรวจ (maker ≠ checker)");
+  }
+
+  // ต้องเป็นใบ PENDING เท่านั้น — ตัดสินไปแล้ว (APPROVED/REJECTED/APPLIED) ห้ามตัดสินซ้ำ
+  if (head.status !== "PENDING") {
+    return err(
+      head.status === "APPROVED" || head.status === "APPLIED"
+        ? "ใบนี้ปรับยอดไปแล้ว"
+        : "ใบนี้ถูกตีกลับไปแล้ว",
+    );
+  }
+
+  const newStatus: "APPROVED" | "REJECTED" = decision === "approve" ? "APPROVED" : "REJECTED";
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // 🔒 atomic claim — อนุมัติได้ครั้งเดียว: อัปเดตเฉพาะแถวที่ยัง PENDING.
+      // 2 คนกดอนุมัติพร้อมกัน → คนที่สอง match 0 แถว → no-op (ไม่เขียน movement ซ้ำ = ปรับสต๊อกซ้ำ)
+      const claim = await tx.cfStockCount.updateMany({
+        where: { id: head.id, orgId, status: "PENDING" },
+        data: {
+          status: newStatus,
+          reviewedById: session.user.id,
+          reviewedByName: session.user.name || session.user.email || null,
+          reviewedAt: new Date(),
+          reviewNote: note || null,
+        },
+      });
+      if (claim.count !== 1) {
+        // คนอื่นตัดสินไปก่อนแล้ว (race) → no-op
+        throw new Error("ใบนี้เพิ่งถูกตัดสินไปแล้ว · รีเฟรชแล้วลองใหม่");
+      }
+
+      // approve → เขียน movement ปรับสต๊อก "ตอนนี้" (สต๊อกขยับจริงเมื่ออนุมัติ)
+      // reject → ไม่เขียนอะไร (ใบ PENDING ไม่เคยปรับสต๊อก → void สะอาด · ไม่ต้องกลับรายการ)
+      if (newStatus === "APPROVED") {
+        // ⚠️ ใช้ยอดระบบ ณ ตอนอนุมัติ (before ปัจจุบัน) เป็นฐานปรับ — ไม่ใช่ systemQty ที่บันทึกตอนนับ.
+        // ถ้ามี movement อื่นแทรกระหว่างรออนุมัติ (รับเข้า/โอน) systemQty เก่าจะ stale → ปรับด้วย delta เก่า
+        // จะทำยอดเพี้ยน. เป้าหมายคือ "ทำให้ยอดระบบ = ยอดที่นับได้ (countedQty)" → delta = countedQty − beforeNow.
+        const lines = await tx.cfStockCountLine.findMany({
+          where: { countId: head.id, orgId },
+          select: { productId: true, countedQty: true, reason: true },
+        });
+        const diffs: Array<{ id: string; before: number; after: number; diff: number; reason: string }> = [];
+        for (const l of lines) {
+          const before = await currentBalance(tx, orgId, head.branchId, l.productId);
+          if (l.countedQty === before) continue; // ยอดตรงแล้ว (ปรับไปแล้วทางอื่น) → ข้าม
+          diffs.push({
+            id: l.productId,
+            before,
+            after: l.countedQty,
+            diff: l.countedQty - before,
+            reason: l.reason ?? "",
+          });
+        }
+        if (diffs.length > 0) {
+          await applyStockCountMovements(tx, {
+            orgId,
+            branchId: head.branchId,
+            countId: head.id,
+            createdById: session.user.id,
+            diffs,
+          });
+        }
+      }
+
+      // R7 · audit trail — ใครอนุมัติ/ตีกลับ (checker) + จากสถานะไหนไปไหน ในทรานแซกชันเดียวกัน
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_STOCK_COUNT_REVIEW",
+          resourceType: "CF_STOCK_COUNT",
+          resourceId: head.id,
+          diff: {
+            old: { status: "PENDING" },
+            new: { status: newStatus, reviewNote: note || null, countedById: head.countedById, decision },
+          },
+        },
+      });
+
+      return { status: newStatus };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath(ANOMALY_PATH);
+  revalidatePath("/clawfleet/os/dashboard");
+  return { ok: true, data: { countId, status: result.status } };
 }
 
 // =============================================================

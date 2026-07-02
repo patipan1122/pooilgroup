@@ -17,7 +17,7 @@ import {
 import { Card, Pill, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
 import {
-  transferStock, receiveStock, submitStockCount, recordLoss, reviewCfLoss,
+  transferStock, receiveStock, submitStockCount, reviewCfStockCount, recordLoss, reviewCfLoss,
   createShipment, confirmShipmentReceived, lookupCfProductByBarcode,
 } from "@/lib/clawfleet/stock-actions";
 
@@ -44,6 +44,10 @@ export type DocReceiptSeed = {
 export type DocCountSeed = {
   id: string; code: string; countedBy: string | null;
   itemsCounted: number; totalDiff: number; countedAt: string;
+  // Wave 4b maker-checker: สถานะอนุมัติ + คนนับ + คนอนุมัติ
+  status: string; // APPLIED | PENDING | APPROVED | REJECTED
+  countedById: string;
+  reviewedByName: string | null;
 };
 export type DocLossSeed = {
   id: string; code: string; reasonLabel: string;
@@ -361,7 +365,7 @@ export function StockClient({
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
       )}
       {tab === "counts" && (
-        <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} onHandMap={onHandMap} />
+        <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} onHandMap={onHandMap} viewerId={viewerId} canReview={canReviewLoss} />
       )}
       {tab === "losses" && (
         <LossesTab docs={lossDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} viewerId={viewerId} canReviewLoss={canReviewLoss} />
@@ -1337,9 +1341,18 @@ function ReceiptLineEditor({ products, lines, setLines, costs, setCosts }: {
 /* ───────────────────────── COUNTS (นับสต็อก) ───────────────────────── */
 const COUNT_DIFF_THRESHOLD = 5; // |ต่าง| ต่อสินค้า ≥ 5 → เตือนแดง (mirror VARIANCE_ANOMALY_THRESHOLD)
 
-function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap }: {
+/* สถานะใบนับสต๊อก → pill (Wave 4b maker-checker) · APPLIED = ปรับแล้วอัตโนมัติ (ต่ำกว่าเกณฑ์) */
+function countStatusPill(status: string): { bg: string; color: string; label: string; Icon: typeof Clock } | null {
+  if (status === "PENDING") return { bg: "#FCF1E2", color: "#B45309", label: "รออนุมัติ", Icon: Clock };
+  if (status === "REJECTED") return { bg: "#F1F2F7", color: "#5A6270", label: "ตีกลับ", Icon: X };
+  if (status === "APPROVED") return { bg: "#E7F4EC", color: "#15803D", label: "อนุมัติแล้ว", Icon: Check };
+  return null; // APPLIED (ต่ำกว่าเกณฑ์ · ปรับทันที) → ไม่ต้องมี pill (ปกติ)
+}
+
+function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap, viewerId, canReview }: {
   docs: DocCountSeed[]; realBranches: BranchOption[]; products: ProductOption[]; defaultBranchId: string;
   onHandMap: Record<string, number>; // ยอด "ระบบมี" ต่อสินค้า (ของสาขาเอกสารที่ server โหลดมา)
+  viewerId: string; canReview: boolean; // Wave 4b: ใครกำลังดู + มีสิทธิ์อนุมัติใบนับ (ผจก./แอดมิน)
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -1348,7 +1361,23 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap }:
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<FormLine[]>([{ productId: products[0]?.id ?? "", qty: "" }]);
   const [error, setError] = useState<string | null>(null);
+  // Wave 4b · การอนุมัติ/ตีกลับต่อใบ (แยก transition จากฟอร์มสร้าง · mirror LossesTab)
+  const [reviewing, setReviewing] = useState<string | null>(null); // countId ที่กำลังตัดสิน
+  const [reviewErr, setReviewErr] = useState<string | null>(null);
+  const [reviewPending, startReview] = useTransition();
+  const pendingCount = docs.filter((d) => d.status === "PENDING").length;
   const canCreate = realBranches.length >= 1 && products.length >= 1;
+
+  function review(countId: string, decision: "approve" | "reject") {
+    setReviewErr(null);
+    setReviewing(countId);
+    startReview(async () => {
+      const res = await reviewCfStockCount({ countId, decision });
+      setReviewing(null);
+      if (!res.ok) { setReviewErr(res.error); return; }
+      router.refresh();
+    });
+  }
 
   // ยอดระบบใช้ได้เมื่อฟอร์มนับ "สาขาเดียวกับ" สาขาเอกสารที่ server โหลด onHandMap มา
   // ถ้าเลือกนับสาขาอื่นในฟอร์ม (branchId ≠ defaultBranchId) ยอดระบบจะไม่ตรง → ซ่อนคอลัมน์ กันเข้าใจผิด
@@ -1389,14 +1418,24 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap }:
   return (
     <div>
       {!canCreate && <NeedDataBanner msg="ยังนับสต็อกจริงไม่ได้ — ต้องมีสาขาและสินค้าในคลังอย่างน้อยอย่างละ 1 ก่อน" />}
+      {pendingCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#B45309", background: "#FDF6EA", border: "1px solid #F0DEBB", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+          <Clock size={15} style={{ flex: "0 0 15px" }} />
+          มีใบนับสต๊อกปรับยอดมูลค่าสูง <b>{num(pendingCount)}</b> ใบ รออนุมัติ (ยังไม่ตัดสต๊อก) · {canReview ? "ตรวจแล้วกด อนุมัติ/ตีกลับ (คุณอนุมัติใบที่ตัวเองนับไม่ได้)" : "รอผู้จัดการสาขา/แอดมินอนุมัติ"}
+        </div>
+      )}
+      {reviewErr && <div style={{ marginBottom: 12 }}><ErrorRow msg={reviewErr} /></div>}
       <DocListCard
         title="ใบนับสต็อก"
-        sub="นับของจริงในคลัง → ระบบปรับยอดให้ตรง · นับต่างมากจะเด้งเข้าหน้าตรวจสอบ"
+        sub="นับของจริงในคลัง → ระบบปรับยอดให้ตรง · นับต่างมากจะเด้งเข้าหน้าตรวจสอบ · มูลค่าปรับสูงต้องมีคนที่ 2 อนุมัติก่อนตัดสต๊อก"
         extra={docs.length > 0 ? (
           <CsvButton onClick={() => downloadCsv(
             `ใบนับสต็อก_${csvDate(new Date().toISOString())}.csv`,
-            ["เลขที่", "ผู้นับ", "รายการ", "ผลต่างรวม", "วันที่"],
-            docs.map((d) => [d.code, d.countedBy || "", d.itemsCounted, d.totalDiff, csvDate(d.countedAt)]),
+            ["เลขที่", "ผู้นับ", "รายการ", "ผลต่างรวม", "สถานะ", "ผู้อนุมัติ", "วันที่"],
+            docs.map((d) => [
+              d.code, d.countedBy || "", d.itemsCounted, d.totalDiff,
+              countStatusPill(d.status)?.label ?? "ปรับแล้ว", d.reviewedByName || "", csvDate(d.countedAt),
+            ]),
           )} />
         ) : undefined}
         onAdd={canCreate ? () => { reset(); setAdding(true); } : undefined}
@@ -1404,18 +1443,46 @@ function CountsTab({ docs, realBranches, products, defaultBranchId, onHandMap }:
         empty={docs.length === 0}
         emptyTitle="ยังไม่มีใบนับสต็อก"
         emptySub="กด นับสต็อก เพื่อบันทึกการนับของจริงในคลัง"
-        cols="1fr 1.2fr 0.7fr 0.8fr 0.9fr"
-        head={<><span>เลขที่</span><span>ผู้นับ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>ผลต่าง</span><span style={{ textAlign: "right" }}>วันที่</span></>}
+        cols="0.9fr 1fr 0.6fr 0.7fr 1.3fr 0.8fr"
+        head={<><span>เลขที่</span><span>ผู้นับ</span><span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>ผลต่าง</span><span>สถานะ</span><span style={{ textAlign: "right" }}>วันที่</span></>}
       >
-        {docs.map((d) => (
-          <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 0.7fr 0.8fr 0.9fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-            <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
-            <span style={{ color: "#454B54" }}>{d.countedBy || "—"}</span>
-            <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCounted)} รายการ</span>
-            <span className="num" style={{ textAlign: "right", fontWeight: 700, color: d.totalDiff === 0 ? "#15803D" : "#B42318" }}>{d.totalDiff > 0 ? "+" : ""}{num(d.totalDiff)}</span>
-            <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.countedAt)}</span>
-          </div>
-        ))}
+        {docs.map((d) => {
+          const pill = countStatusPill(d.status);
+          const isPending = d.status === "PENDING";
+          const isCounter = d.countedById === viewerId;
+          // ปุ่มอนุมัติ/ตีกลับ = เฉพาะ ผจก./แอดมิน · ใบ PENDING · ไม่ใช่คนนับเอง (maker ≠ checker)
+          const showReviewBtns = isPending && canReview && !isCounter;
+          const rowBusy = reviewPending && reviewing === d.id;
+          return (
+            <div key={d.id} style={{ display: "grid", gridTemplateColumns: "0.9fr 1fr 0.6fr 0.7fr 1.3fr 0.8fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, background: isPending ? "#FFFDF8" : undefined }}>
+              <span className="num" style={{ fontWeight: 700, color: "#4F46E5" }}>{d.code}</span>
+              <span style={{ color: "#454B54" }}>{d.countedBy || "—"}</span>
+              <span className="num" style={{ textAlign: "right" }}>{num(d.itemsCounted)} รายการ</span>
+              <span className="num" style={{ textAlign: "right", fontWeight: 700, color: d.status === "REJECTED" ? "#9AA1AB" : d.totalDiff === 0 ? "#15803D" : "#B42318", textDecoration: d.status === "REJECTED" ? "line-through" : undefined }}>{d.totalDiff > 0 ? "+" : ""}{num(d.totalDiff)}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {pill && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: pill.color, background: pill.bg, borderRadius: 999, padding: "3px 9px" }}>
+                    <pill.Icon size={12} /> {pill.label}
+                  </span>
+                )}
+                {showReviewBtns && (
+                  <span style={{ display: "inline-flex", gap: 6 }}>
+                    <button type="button" onClick={() => review(d.id, "approve")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#fff", background: rowBusy ? "#9BC4A8" : "#15803D", border: "none", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                      <Check size={12} /> อนุมัติ
+                    </button>
+                    <button type="button" onClick={() => review(d.id, "reject")} disabled={rowBusy} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color: "#B42318", background: "#fff", border: "1px solid #E7C6C2", borderRadius: 7, padding: "4px 9px", cursor: rowBusy ? "default" : "pointer" }}>
+                      <X size={12} /> ตีกลับ
+                    </button>
+                  </span>
+                )}
+                {d.status !== "PENDING" && d.status !== "APPLIED" && d.reviewedByName && (
+                  <span style={{ fontSize: 11, color: "#9AA1AB" }}>โดย {d.reviewedByName}</span>
+                )}
+              </span>
+              <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(d.countedAt)}</span>
+            </div>
+          );
+        })}
       </DocListCard>
 
       <Modal

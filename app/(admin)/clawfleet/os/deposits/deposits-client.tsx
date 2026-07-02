@@ -16,6 +16,7 @@
  */
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Wallet,
   Banknote,
@@ -33,7 +34,7 @@ import type {
   PendingDepositRow,
   DepositRow,
 } from "@/lib/clawfleet/deposit-queries";
-import { recordCashDeposit } from "@/lib/clawfleet/deposit-actions";
+import { recordCashDeposit, reviewCashDeposit } from "@/lib/clawfleet/deposit-actions";
 
 /* ── สถานะใบฝาก → ป้ายสี ─────────────────────────────────────────────────── */
 const DEPOSIT_STATUS_META: Record<string, { label: string; tone: Tone; accent: string; emoji: string }> = {
@@ -82,6 +83,17 @@ export function DepositsClient({
   const [pendingRows, setPendingRows] = useState<PendingDepositRow[]>(pending);
   const [historyRows, setHistoryRows] = useState<DepositRow[]>(history);
 
+  // per-viewer review context — denormalize มากับทุก DepositRow (page.tsx ไม่ได้ส่ง prop นี้แยก).
+  // ใช้ค่าจากแถวแรกที่มี (เหมือนกันทุกแถว) · ไม่มีประวัติเลย → fallback ปลอดภัย
+  //   (optimistic row เป็นใบที่ตัวเองเพิ่งฝาก → maker ≠ checker กันไม่ให้ตัวเองอนุมัติอยู่แล้ว).
+  const reviewCtx = useMemo(
+    () => ({
+      canReview: history[0]?.canReview ?? false,
+      currentUserId: history[0]?.currentUserId ?? "",
+    }),
+    [history],
+  );
+
   // รอบที่เลือกไว้ (Set ของ sessionId)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // ฟอร์มบันทึกฝาก
@@ -91,6 +103,48 @@ export function DepositsClient({
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const router = useRouter();
+
+  // ── review ใบฝากขาด (SHORT) — อนุมัติ/ตีกลับ ──
+  const [reviewingId, setReviewingId] = useState<string | null>(null); // ใบที่กำลังตัดสิน (disable ปุ่ม)
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [isReviewing, startReview] = useTransition();
+
+  function handleReview(depositId: string, decision: "approve" | "reject") {
+    setReviewError(null);
+    setReviewingId(depositId);
+    startReview(async () => {
+      const res = await reviewCashDeposit({ depositId, decision });
+      if (!res.ok) {
+        setReviewError(res.error || "ทำรายการไม่สำเร็จ ลองอีกครั้ง");
+        setReviewingId(null);
+        return;
+      }
+      if (decision === "approve") {
+        // approve → stamp ในแถวเดิม (รอบยังผูกใบ · ไม่ต้องดึงรายการรอฝากใหม่)
+        setHistoryRows((prev) =>
+          prev.map((r) =>
+            r.id === depositId
+              ? { ...r, approvalStatus: "APPROVED", reviewedByName: currentUserName || "—" }
+              : r,
+          ),
+        );
+        setReviewingId(null);
+      } else {
+        // reject → รอบถูกคืนกลับ "รอฝาก" ที่ server → refresh ดึงรายการรอฝาก + ประวัติที่อัปเดตจริง
+        setHistoryRows((prev) =>
+          prev.map((r) =>
+            r.id === depositId
+              ? { ...r, approvalStatus: "REJECTED", reviewedByName: currentUserName || "—" }
+              : r,
+          ),
+        );
+        setReviewingId(null);
+        router.refresh();
+      }
+    });
+  }
 
   // lightbox สลิป
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -180,11 +234,18 @@ export function DepositsClient({
       const newRow: DepositRow = {
         id: res.data.depositId,
         depositCode: res.data.depositCode || "รอซิงก์…",
+        branchId: selectedRows[0]?.branchId ?? "",
         branchName: depositBranchName,
         amountCents,
         expectedCents,
         varianceCents: res.data.varianceCents,
         status: res.data.status,
+        approvalStatus: res.data.approvalStatus,
+        reviewedByName: null,
+        // maker = ผู้ใช้ปัจจุบัน → maker ≠ checker กันตัวเองอนุมัติใบตัวเองอยู่แล้ว
+        depositedById: reviewCtx.currentUserId,
+        canReview: reviewCtx.canReview,
+        currentUserId: reviewCtx.currentUserId,
         sessionCount: sessionIds.length,
         depositedByName: currentUserName || "—",
         depositedAt: depositedAtISO,
@@ -306,7 +367,14 @@ export function DepositsClient({
           orgId={orgId}
         />
       ) : (
-        <HistoryTab rows={historyRows} onOpenSlip={setLightbox} />
+        <HistoryTab
+          rows={historyRows}
+          onOpenSlip={setLightbox}
+          onReview={handleReview}
+          reviewingId={reviewingId}
+          reviewBusy={isReviewing}
+          reviewError={reviewError}
+        />
       )}
 
       {/* lightbox สลิป */}
@@ -742,13 +810,28 @@ function PendingTab({
   );
 }
 
+/* ── ป้ายสถานะอนุมัติใบฝากขาด (SHORT · Wave 4b maker-checker) ─────────────── */
+const APPROVAL_META: Record<string, { label: string; bg: string; border: string; color: string }> = {
+  PENDING: { label: "⏳ รออนุมัติ", bg: "#FCF8EC", border: "#F0E2BE", color: "#7A5510" },
+  APPROVED: { label: "✅ อนุมัติแล้ว", bg: "#F2FAF5", border: "#CFE9D8", color: "#15803D" },
+  REJECTED: { label: "↩️ ตีกลับ", bg: "#FCEDEC", border: "#F0CFCB", color: "#9B3127" },
+};
+
 /* ══ แท็บ (2) ประวัติฝาก ═══════════════════════════════════════════════════ */
 function HistoryTab({
   rows,
   onOpenSlip,
+  onReview,
+  reviewingId,
+  reviewBusy,
+  reviewError,
 }: {
   rows: DepositRow[];
   onOpenSlip: (url: string) => void;
+  onReview: (depositId: string, decision: "approve" | "reject") => void;
+  reviewingId: string | null;
+  reviewBusy: boolean;
+  reviewError: string | null;
 }) {
   if (rows.length === 0) {
     return (
@@ -767,6 +850,12 @@ function HistoryTab({
       {rows.map((d) => {
         const sm = DEPOSIT_STATUS_META[d.status] ?? DEPOSIT_STATUS_META.OK;
         const isShort = d.status === "SHORT";
+        // maker-checker (Wave 4b) — เฉพาะใบ SHORT ที่รออนุมัติ + ผู้ใช้เป็น ผจก./แอดมิน + ไม่ใช่คนฝากเอง
+        const am = APPROVAL_META[d.approvalStatus] ?? null;
+        const isPendingReview = d.approvalStatus === "PENDING";
+        const isMaker = d.depositedById !== "" && d.depositedById === d.currentUserId;
+        const canActNow = isPendingReview && d.canReview && !isMaker;
+        const rowBusy = reviewBusy && reviewingId === d.id;
         return (
           <div
             key={d.id}
@@ -809,6 +898,28 @@ function HistoryTab({
                   </>
                 )}
               </Pill>
+              {/* ป้ายสถานะอนุมัติ (เฉพาะใบ SHORT ที่เข้า flow อนุมัติ · NONE ไม่โชว์) */}
+              {am && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    background: am.bg,
+                    border: `1px solid ${am.border}`,
+                    color: am.color,
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                  }}
+                >
+                  {am.label}
+                  {d.approvalStatus !== "PENDING" && d.reviewedByName && (
+                    <span style={{ fontWeight: 500 }}> · โดย {d.reviewedByName}</span>
+                  )}
+                </span>
+              )}
             </div>
 
             {/* ฝากจริง vs ควรฝาก */}
@@ -862,6 +973,95 @@ function HistoryTab({
                   <b>ฝากขาด {baht(Math.abs(d.varianceCents))}</b> — เงินที่เก็บได้เข้าธนาคารไม่ครบ
                   เป็นสัญญาณเงินหายช่วง “มือพนักงาน → ธนาคาร” ควรตรวจสอบ
                 </span>
+              </div>
+            )}
+
+            {/* ── maker-checker · ปุ่มอนุมัติ/ตีกลับ (เฉพาะ ผจก./แอดมิน ที่ไม่ใช่คนฝากใบนี้) ── */}
+            {canActNow && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px dashed #EDD9A8",
+                }}
+              >
+                <div style={{ fontSize: 11.5, color: "#7A5510" }}>
+                  ใบฝากขาดนี้ต้องมีผู้จัดการ/แอดมิน (ไม่ใช่คนฝาก) รับรอง —
+                  <b> อนุมัติ</b> ถ้ายอมรับว่าเงินขาดจริง หรือ <b>ตีกลับ</b> ให้ฝากใหม่ให้ครบ
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => onReview(d.id, "approve")}
+                    disabled={rowBusy}
+                    className="co-tap"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "#fff",
+                      background: "#15803D",
+                      border: "none",
+                      padding: "8px 16px",
+                      borderRadius: 9,
+                      cursor: rowBusy ? "not-allowed" : "pointer",
+                      opacity: rowBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Check size={14} /> {rowBusy ? "กำลังบันทึก…" : "อนุมัติ (รับทราบเงินขาด)"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onReview(d.id, "reject")}
+                    disabled={rowBusy}
+                    className="co-tap"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "#9B3127",
+                      background: "#fff",
+                      border: "1px solid #F0CFCB",
+                      padding: "8px 16px",
+                      borderRadius: 9,
+                      cursor: rowBusy ? "not-allowed" : "pointer",
+                      opacity: rowBusy ? 0.6 : 1,
+                    }}
+                  >
+                    ↩️ ตีกลับ (ให้ฝากใหม่)
+                  </button>
+                </div>
+                {reviewError && reviewingId === d.id && (
+                  <div
+                    role="alert"
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      fontSize: 12,
+                      color: "#9B3127",
+                    }}
+                  >
+                    <AlertTriangle size={14} color="#B42318" style={{ flex: "0 0 14px", marginTop: 1 }} />
+                    <span>{reviewError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ใบ PENDING แต่ผู้ใช้ไม่มีสิทธิ์ตัดสิน (คนฝากเอง / staff) — แจ้งว่ารอคนอื่นรับรอง */}
+            {isPendingReview && !canActNow && (
+              <div style={{ fontSize: 11.5, color: "#7A5510", marginTop: 10 }}>
+                {isMaker
+                  ? "รอผู้จัดการ/แอดมินคนอื่นรับรอง (คุณเป็นผู้บันทึกฝากใบนี้ · อนุมัติเองไม่ได้)"
+                  : "รอผู้จัดการ/แอดมินรับรองเงินขาด"}
               </div>
             )}
 

@@ -32,6 +32,37 @@ import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
 
+// ── นโยบาย "มิเตอร์ต้องตรง" (meterMatch · Wave 4b) ─────────────────────────
+// เมื่อเจ้าของเปิดสวิตช์ meterMatch (policy.meterMatch) → รอบที่ปิดแล้วมีธง "เกี่ยวกับมิเตอร์"
+// (มิเตอร์ไม่ต่อเนื่อง/ถอยหลัง · มิเตอร์ไม่ขยับแต่มีเงิน · ตุ๊กตาออกแต่เหรียญไม่ขยับ ·
+//  เหรียญขยับแต่ตุ๊กตาไม่ออก · เหรียญตู้แลก vs ตู้คีบไม่ตรง) → บังคับ status = ANOMALY_REVIEW.
+// ⚠️ ADDITIVE ONLY — ถ้า ON ทำได้แค่ "escalate ให้คนตรวจ" (เข้มขึ้น) · ห้ามปลด/ผ่อนการตรวจใด ๆ
+//    (ไม่มี case ที่ ON แล้ว status กลับจาก ANOMALY_REVIEW → CLOSED). ไม่ hard-block submit —
+//    รอบยังปิดได้ แค่ต้องผ่านการตรวจก่อน LOCK. OFF = พฤติกรรมเดิมทุกประการ.
+// เก็บเป็น Set<string> — รับทั้ง AnomalyFlag (typed) และ string[] จากคอลัมน์ anomalyFlags ใน DB
+// (ตอน read-back หลัง trigger) โดยไม่ต้อง cast กลบชนิด · ค่าที่ไม่ใช่ธงมิเตอร์ = has()→false ปลอดภัย.
+const METER_ANOMALY_FLAGS: ReadonlySet<string> = new Set<string>([
+  ANOMALY_FLAGS.C1_CONTINUITY_BREAK, // มิเตอร์ไม่ต่อจากรอบก่อน
+  ANOMALY_FLAGS.C2_METER_REGRESS, // มิเตอร์ถอยหลัง
+  ANOMALY_FLAGS.M5_METER_NO_MOVE_BUT_CASH, // มิเตอร์ไม่ขยับแต่มีเงิน
+  ANOMALY_FLAGS.P4_DOLL_NO_COIN, // ตุ๊กตาออกแต่เหรียญไม่ขยับ
+  ANOMALY_FLAGS.P5_COIN_NO_DOLL, // เหรียญขยับ ตุ๊กตาไม่ออก
+  ANOMALY_FLAGS.COIN_GROUP_MISMATCH, // เหรียญตู้แลก vs ตู้คีบ ไม่ตรง
+]);
+
+/**
+ * เมื่อ meterMatch เปิด + รอบมีธงเกี่ยวกับมิเตอร์ → ยกระดับ status เป็น ANOMALY_REVIEW.
+ * คืน status เดิมทุกกรณีอื่น (ปิด policy · ไม่มีธงมิเตอร์ · เป็น ANOMALY_REVIEW อยู่แล้ว).
+ */
+function escalateForMeterMatch(
+  meterMatchOn: boolean,
+  status: "CLOSED" | "ANOMALY_REVIEW",
+  flags: readonly string[],
+): "CLOSED" | "ANOMALY_REVIEW" {
+  if (!meterMatchOn || status === "ANOMALY_REVIEW") return status;
+  return flags.some((f) => METER_ANOMALY_FLAGS.has(f)) ? "ANOMALY_REVIEW" : status;
+}
+
 export type V2Decision = "approve" | "recheck" | "escalate";
 
 export async function reviewV2Session(
@@ -426,11 +457,16 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     })),
   );
 
+  // นโยบาย meterMatch (Wave 4b): เปิด → ถ้ารอบมีธงเกี่ยวกับมิเตอร์ บังคับเข้า ANOMALY_REVIEW
+  // (additive · escalate เท่านั้น · ไม่ปลดการตรวจ). ปิด → status = cc.status เดิม.
+  const policy = await getClawfleetPolicy();
+  const finalStatus = escalateForMeterMatch(policy.meterMatch, cc.status, cc.flags);
+
   try {
     await prisma.cfCollectionSession.update({
       where: { id: data.sessionId, status: "OPEN" },
       data: {
-        status: cc.status,
+        status: finalStatus,
         closedById: session.user.id,
         expectedCashCents: cc.expectedCashCents,
         actualCashCents: cc.actualCashCents,
@@ -446,7 +482,7 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     });
     revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/dashboard");
-    return { ok: true, data: { status: cc.status, flags: cc.flags } };
+    return { ok: true, data: { status: finalStatus, flags: cc.flags } };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
   }
@@ -771,8 +807,14 @@ export async function closeGroupSession(
   // ถ้ามีธง P0/P1 ใด ๆ → ต้องเข้า ANOMALY_REVIEW (mirror ตรรกะปิดรอบสาขา · P2 = เตือนเฉย ๆ
   // ไม่ดันเข้า review). เดิม cc.status คิดจาก cc.flags เท่านั้น → ธงเงินตู้แลกที่เพิ่งเพิ่มถูกเมิน.
   const hasEscalatingFlag = mergedFlags.some((f) => FLAG_SEVERITY[f] !== "P2");
-  const mergedStatus: "CLOSED" | "ANOMALY_REVIEW" =
+  const baseStatus: "CLOSED" | "ANOMALY_REVIEW" =
     cc.status === "ANOMALY_REVIEW" || hasEscalatingFlag ? "ANOMALY_REVIEW" : "CLOSED";
+
+  // นโยบาย meterMatch (Wave 4b): เปิด → ถ้ารอบมีธงเกี่ยวกับมิเตอร์ (รวม COIN_GROUP_MISMATCH
+  // ที่ trigger จะ append) บังคับเข้า ANOMALY_REVIEW. app-layer escalate ล่วงหน้าจาก mergedFlags
+  // ที่คำนวณได้ (additive · escalate เท่านั้น) · trigger ยังทำ token cross-check ของมันตามปกติ.
+  const policy = await getClawfleetPolicy();
+  const mergedStatus = escalateForMeterMatch(policy.meterMatch, baseStatus, mergedFlags);
 
   try {
     await prisma.cfCollectionSession.update({
@@ -780,6 +822,7 @@ export async function closeGroupSession(
       data: {
         // trigger may override to ANOMALY_REVIEW if token mismatch;
         // mergedStatus already escalates on token-exchanger cash short/over flags
+        //   + meterMatch policy (if on) on any meter-related flag
         status: mergedStatus,
         closedById: session.user.id,
         expectedCashCents: expectedCashCentsFinal,
@@ -799,11 +842,19 @@ export async function closeGroupSession(
       where: { id: data.sessionId, orgId },
       select: { status: true, anomalyFlags: true },
     });
+    // meterMatch guard บนผลหลัง trigger — ถ้า trigger append ธงมิเตอร์ (เช่น COIN_GROUP_MISMATCH)
+    // แล้วสถานะยังเป็น CLOSED → escalate ให้ผลลัพธ์ที่คืน (defensive · trigger ปกติ escalate เอง).
+    // สถานะอื่น (OPEN/LOCKED/ANOMALY_REVIEW) คืนตามที่ trigger เขียนจริง ไม่แตะ.
+    const afterFlags = after?.anomalyFlags ?? mergedFlags;
+    const returnedStatus: string =
+      after?.status === "CLOSED"
+        ? escalateForMeterMatch(policy.meterMatch, "CLOSED", afterFlags)
+        : (after?.status ?? mergedStatus);
     revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/dashboard");
     return {
       ok: true,
-      data: { status: after?.status ?? mergedStatus, flags: after?.anomalyFlags ?? mergedFlags },
+      data: { status: returnedStatus, flags: afterFlags },
     };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };

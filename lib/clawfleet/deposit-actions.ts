@@ -92,7 +92,7 @@ const RecordSchema = z.object({
  *  6) auditLog CF_CASH_DEPOSIT (amount/expected/variance/sessionIds · flag SHORT)
  */
 export async function recordCashDeposit(input: unknown): Promise<
-  ResultOf<{ depositId: string; depositCode: string; status: string; varianceCents: number }>
+  ResultOf<{ depositId: string; depositCode: string; status: string; varianceCents: number; approvalStatus: string }>
 > {
   const parsed = RecordSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
@@ -182,6 +182,12 @@ export async function recordCashDeposit(input: unknown): Promise<
         ? "SHORT"
         : "OVER";
 
+  // Wave 4b · maker-checker ใบฝากขาด — SHORT = เงินเข้าธนาคารไม่ครบ (สัญญาณเงินหายมือ→ธนาคาร)
+  //   → ตั้ง approvalStatus = PENDING (รอ ผจก./แอดมิน "รับทราบเงินขาด" หรือ "ตีกลับ ให้ฝากใหม่").
+  //   OK/OVER = ไม่ต้องอนุมัติ → NONE. (ยังผูกรอบ + สร้างใบตามเดิม · เงินอยู่ที่ธนาคารตามสลิปแล้ว
+  //   แต่ "ส่วนที่ขาด" ต้องมีคนที่ 2 รับรอง — mirror recordLoss ที่ค่าเกินเกณฑ์เข้า PENDING).
+  const approvalStatus: "NONE" | "PENDING" = status === "SHORT" ? "PENDING" : "NONE";
+
   const now = new Date();
   const depositCode = newDepositCode(now);
   const cleanNote = data.note ? data.note.slice(0, 2000) : null;
@@ -199,6 +205,7 @@ export async function recordCashDeposit(input: unknown): Promise<
           expectedCents,
           varianceCents,
           status,
+          approvalStatus, // SHORT → PENDING (รออนุมัติ) · OK/OVER → NONE
           sessionCount: sessionIds.length,
           slipPhotoUrl: slipUrl,
           note: cleanNote,
@@ -241,6 +248,7 @@ export async function recordCashDeposit(input: unknown): Promise<
               expectedCents,
               varianceCents,
               status,
+              approvalStatus,
               sessionIds,
               sessionCount: sessionIds.length,
             },
@@ -250,7 +258,7 @@ export async function recordCashDeposit(input: unknown): Promise<
       });
 
       // คืน depositCode (DP-code human-readable) ให้ client โชว์แทน uuid ที่ผู้ใช้อ่านไม่รู้เรื่อง
-      return { depositId: deposit.id, depositCode, status, varianceCents };
+      return { depositId: deposit.id, depositCode, status, varianceCents, approvalStatus };
     })
     .catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
 
@@ -259,4 +267,142 @@ export async function recordCashDeposit(input: unknown): Promise<
   revalidatePath(DEPOSITS_PATH);
   revalidatePath(DASHBOARD_PATH);
   return { ok: true, data: result };
+}
+
+// =============================================================
+// Wave 4b · อนุมัติ / ตีกลับ ใบฝากขาด (SHORT) — maker-checker
+//   mirror stock-actions.ts reviewCfLoss เป๊ะ:
+//     - เฉพาะ ผจก.สาขา/แอดมิน (cfHasAdminPower || isCfBranchManager) · branch-scoped ด้วย deposit.branchId
+//     - maker ≠ checker (คนอนุมัติ ≠ คนบันทึกฝาก · segregation of duties)
+//     - ต้องเป็นใบ approvalStatus = PENDING เท่านั้น · atomic claim (updateMany) กันอนุมัติซ้ำ/race
+//     - approve → APPROVED + stamp reviewer (เงินขาดถูก "รับทราบ" · รอบยังผูกใบเดิม)
+//     - reject  → REJECTED + un-set sessions.depositId = null (คืนรอบกลับ "รอฝาก" ให้ฝากใหม่) + stamp
+//     - ทั้งหมดใน $transaction เดียว + auditLog CF_CASH_DEPOSIT_REVIEW
+// =============================================================
+const ReviewDepositSchema = z.object({
+  depositId: z.string().uuid("ใบฝากไม่ถูกต้อง"),
+  decision: z.enum(["approve", "reject"]),
+  note: z.string().trim().max(500).optional(),
+});
+
+export async function reviewCashDeposit(
+  input: unknown,
+): Promise<ResultOf<{ depositId: string; approvalStatus: "APPROVED" | "REJECTED" }>> {
+  const parsed = ReviewDepositSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { depositId, decision, note } = parsed.data;
+
+  let session: Awaited<ReturnType<typeof requireCfSession>>;
+  try {
+    session = await requireCfSession();
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const orgId = session.user.org_id;
+
+  // หาใบฝากก่อน (org-scoped) เพื่อ assert สิทธิ์ตามสาขา + เช็ก maker + สถานะ
+  const head = await prisma.cfCashDeposit.findFirst({
+    where: { id: depositId, orgId },
+    select: {
+      id: true,
+      branchId: true,
+      status: true,
+      approvalStatus: true,
+      depositedById: true,
+    },
+  });
+  if (!head) return err("ไม่พบใบฝาก");
+
+  // role-rank guard — เฉพาะ ผจก.สาขา/แอดมิน (mirror auth ฝั่งสร้าง · ห้ามใช้ scope==="ALL" ตัดสิน)
+  const adminPower = await cfHasAdminPower(session);
+  const isManager = isCfBranchManager(session.user.role);
+  if (!adminPower && !isManager) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่อนุมัติ/ตีกลับใบฝากขาดได้");
+  }
+
+  // branch-scope สำหรับ non-admin (ผจก.) — ต้องเข้าถึงสาขาของใบฝากนี้
+  if (!adminPower) {
+    const scope = await userBranchIds(session);
+    if (scope !== "ALL" && !scope.includes(head.branchId)) {
+      return err("ไม่มีสิทธิ์ในสาขาของใบฝากนี้");
+    }
+  }
+
+  // maker ≠ checker (segregation of duties) — คนบันทึกฝาก ≠ คนอนุมัติ
+  if (head.depositedById === session.user.id) {
+    return err("อนุมัติ/ตีกลับใบที่ตัวเองบันทึกฝากไม่ได้ · ให้คนอื่นตรวจ (maker ≠ checker)");
+  }
+
+  // ต้องเป็นใบ SHORT ที่ยัง PENDING เท่านั้น — ตัดสินไปแล้วห้ามซ้ำ · NONE (OK/OVER) ไม่ต้องอนุมัติ
+  if (head.approvalStatus !== "PENDING") {
+    return err(
+      head.approvalStatus === "APPROVED"
+        ? "ใบนี้อนุมัติไปแล้ว"
+        : head.approvalStatus === "REJECTED"
+          ? "ใบนี้ถูกตีกลับไปแล้ว"
+          : "ใบนี้ไม่ต้องอนุมัติ (ไม่ใช่ใบฝากขาด)",
+    );
+  }
+
+  const newStatus: "APPROVED" | "REJECTED" = decision === "approve" ? "APPROVED" : "REJECTED";
+  const reviewerName = session.user.name || session.user.email || "ไม่ทราบชื่อ";
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // 🔒 atomic claim — ตัดสินได้ครั้งเดียว: อัปเดตเฉพาะแถวที่ยัง PENDING.
+      // 2 คนกดพร้อมกัน → คนที่สอง match 0 แถว → throw → rollback (ไม่ตัดสินซ้ำ/คืนรอบซ้ำ).
+      const claim = await tx.cfCashDeposit.updateMany({
+        where: { id: head.id, orgId, approvalStatus: "PENDING" },
+        data: {
+          approvalStatus: newStatus,
+          reviewedById: session.user.id,
+          reviewedByName: reviewerName,
+          reviewedAt: new Date(),
+          reviewNote: note || null,
+        },
+      });
+      if (claim.count !== 1) {
+        throw new Error("ใบนี้เพิ่งถูกตัดสินไปแล้ว · รีเฟรชแล้วลองใหม่");
+      }
+
+      // reject → คืนรอบกลับ "รอฝาก": un-set depositId ของทุกรอบที่ผูกใบนี้ → กลับไปฝากใหม่ได้.
+      // approve → ไม่ต้องแตะรอบ (เงินขาดถูกรับทราบ · รอบยังผูกใบเดิมเป็นหลักฐาน).
+      if (newStatus === "REJECTED") {
+        await tx.cfCollectionSession.updateMany({
+          where: { orgId, depositId: head.id },
+          data: { depositId: null },
+        });
+      }
+
+      // audit trail (ในทรานเดียว · rollback ตามถ้า claim ล้ม) — ใครอนุมัติ/ตีกลับ + จากสถานะไหนไปไหน
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_CASH_DEPOSIT_REVIEW",
+          resourceType: "CF_CASH_DEPOSIT",
+          resourceId: head.id,
+          diff: {
+            old: { approvalStatus: "PENDING" },
+            new: {
+              decision,
+              approvalStatus: newStatus,
+              reviewNote: note || null,
+              depositedById: head.depositedById,
+              // reject คืนรอบให้ฝากใหม่ (unlinked) · approve คงผูกรอบเดิมไว้
+              sessionsUnlinked: newStatus === "REJECTED",
+            },
+          },
+        },
+      });
+
+      return { approvalStatus: newStatus };
+    })
+    .catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+
+  revalidatePath(DEPOSITS_PATH);
+  revalidatePath(DASHBOARD_PATH);
+  return { ok: true, data: { depositId, approvalStatus: result.approvalStatus } };
 }

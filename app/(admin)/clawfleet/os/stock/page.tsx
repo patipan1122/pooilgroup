@@ -142,6 +142,10 @@ export default async function StockPage({
         itemsCounted: c.itemsCounted,
         totalDiff: c.totalDiff,
         countedAt: c.countedAt.toISOString(),
+        // Wave 4b maker-checker: สถานะ + ผู้นับ (client ใช้ตัดสิน pill/ปุ่มอนุมัติ · maker≠checker)
+        status: c.status,
+        countedById: c.countedById,
+        reviewedByName: c.reviewedByName,
       }));
       lossDocs = losses.map((l) => ({
         id: l.id,
