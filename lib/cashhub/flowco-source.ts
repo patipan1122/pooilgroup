@@ -58,6 +58,10 @@ async function fetchAllRows<T>(
       .gte(dateCol, from)
       .lte(dateCol, to)
       .order(dateCol, { ascending: true })
+      // 🔴 ต้องเรียงด้วย id (unique) เป็น tiebreaker เสมอ — ไม่งั้นแถวที่ dateCol ซ้ำกัน
+      // คร่อมขอบหน้า (>1000 แถว) จะถูก .range() ดึงซ้ำ/ตกหล่นแบบสุ่ม → ยอดพอง/เพี้ยน
+      // (po_fuel_* ทุกตารางมีคอลัมน์ id ที่ unique)
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`อ่านตาราง ${table} ไม่สำเร็จ: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -223,6 +227,7 @@ export async function fetchFlowcoShiftRows(
     if (steId) query = query.eq("ste_id", steId);
     const { data, error } = await query
       .order("biz_date", { ascending: true })
+      .order("id", { ascending: true }) // tiebreaker unique — กันแบ่งหน้าซ้ำ/ตกหล่น
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`อ่านยอดกะไม่สำเร็จ: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -278,6 +283,7 @@ export async function fetchFlowcoShiftPaymentRows(
     if (steId) query = query.eq("ste_id", steId);
     const { data, error } = await query
       .order("biz_date", { ascending: true })
+      .order("id", { ascending: true }) // tiebreaker unique — กันแบ่งหน้าซ้ำ/ตกหล่น
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`อ่านวิธีจ่ายรายกะไม่สำเร็จ: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -329,6 +335,7 @@ export async function fetchFlowcoGradeRows(
     if (steId) query = query.eq("ste_id", steId);
     const { data, error } = await query
       .order("business_date", { ascending: true })
+      .order("id", { ascending: true }) // tiebreaker unique — กันแบ่งหน้าซ้ำ/ตกหล่น
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`อ่านชนิดน้ำมันไม่สำเร็จ: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -367,6 +374,7 @@ export async function fetchFlowcoSteIds(admin: Admin): Promise<number[]> {
       .from("po_fuel_sales_daily")
       .select("ste_id")
       .order("ste_id", { ascending: true })
+      .order("id", { ascending: true }) // tiebreaker unique — กันแบ่งหน้าตกหล่น ste
       .range(offset, offset + PAGE - 1);
     if (error) throw new Error(`อ่าน ste_id ไม่สำเร็จ: ${error.message}`);
     if (!data || data.length === 0) break;
