@@ -180,6 +180,14 @@ export interface PeriodWindow {
   varianceMeter: number | null; // collectedSum − expectedMeter (− = ขาด/น่าสงสัย)
   verdictMeter: PerChairVerdict;
   cumShortageMeter: number | null; // running Σ variance (ตัวจับหมุนเงินระยะยาว)
+  // CEO 2026-07-04 · the EXACT clock window the expectedMeter ("ควรได้") was
+  // computed over = [เวลาเก็บรอบก่อน → เวลาเก็บรอบนี้], as the meter engine used
+  // it. NOT the previous row's time — incomplete rounds are skipped so prevMs may
+  // jump — so we surface the real boundary the math ran on. Formatted
+  // "YYYY-MM-DD HH:mm". start=null → onboarding backlog (ตั้งแต่เริ่มมีข้อมูล);
+  // both null → org-level view / no meter data (tooltip stays hidden).
+  meterWindowStart: string | null;
+  meterWindowEnd: string | null;
 }
 
 export interface ReconcileSidebarRow {
@@ -2112,6 +2120,8 @@ export async function getReconcilePeriods(args: {
         varianceMeter: null,
         verdictMeter: "uncollected",
         cumShortageMeter: null,
+        meterWindowStart: null,
+        meterWindowEnd: null,
         collectedSum: 0,
         firstCollectedAt: null,
         lastCollectedAt: null,
@@ -2148,6 +2158,8 @@ export async function getReconcilePeriods(args: {
       varianceMeter: null,
       verdictMeter: "uncollected",
       cumShortageMeter: null,
+      meterWindowStart: null,
+      meterWindowEnd: null,
       collectedSum: 0,
       firstCollectedAt: null,
       lastCollectedAt: null,
@@ -2250,6 +2262,8 @@ export async function getReconcilePeriods(args: {
         w.varianceMeter = null;
         w.verdictMeter = "uncollected";
         w.cumShortageMeter = cum === 0 ? null : Math.round(cum);
+        w.meterWindowStart = prevMs != null ? formatDateTime(new Date(prevMs)) : null;
+        w.meterWindowEnd = formatDateTime(new Date(nowMs));
         continue;
       }
       const t1 = winLastColMs[i];
@@ -2258,6 +2272,9 @@ export async function getReconcilePeriods(args: {
         continue;
       }
       const exp = meterDelta(prevMs, t1);
+      // record the exact window the meter math ran on (start=prevMs BEFORE advance)
+      w.meterWindowStart = prevMs != null ? formatDateTime(new Date(prevMs)) : null;
+      w.meterWindowEnd = formatDateTime(new Date(t1));
       prevMs = t1;
       if (exp == null) {
         w.expectedMeter = null;

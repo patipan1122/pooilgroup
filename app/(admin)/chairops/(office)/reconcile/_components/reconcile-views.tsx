@@ -2705,13 +2705,29 @@ export function PeriodsTab({
                     : "co-drift crit";
               return (
                 <tr key={i} className={p.open ? "rc-row-active" : ""}>
-                  <td>
+                  <td
+                    style={{ cursor: p.meterWindowEnd ? "help" : undefined }}
+                    title={
+                      p.meterWindowEnd
+                        ? `⏱ ช่วงเวลาที่ใช้คิด "ควรได้" (จากมิเตอร์ตู้)\n${p.meterWindowStart ?? "ตั้งแต่เริ่มมีข้อมูล"} → ${p.meterWindowEnd}`
+                        : undefined
+                    }
+                  >
                     <span className="mono" style={{ fontSize: 12 }}>
                       {p.from.slice(5)} → {p.to.slice(5)}
                     </span>{" "}
                     <span className="text-3" style={{ fontSize: 10.5 }}>
                       ({p.days} วัน)
                     </span>
+                    {p.meterWindowEnd && (
+                      <span
+                        className="text-3"
+                        style={{ marginLeft: 4, fontSize: 10 }}
+                        aria-hidden
+                      >
+                        🕐
+                      </span>
+                    )}
                     {p.open && (
                       <span
                         className="chip chip-warn"
