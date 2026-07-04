@@ -2257,8 +2257,10 @@ export async function getReconcilePeriods(args: {
     for (let i = 0; i < wins.length; i++) {
       const w = wins[i];
       if (w.open) {
-        // pending tail — money sitting in machines since the last collection (informational)
-        w.expectedMeter = meterDelta(prevMs, nowMs);
+        // pending tail — money sitting in machines since the last collection (informational).
+        // Needs a prior-collection baseline; without one (prevMs===null · สาขาไม่เคยเก็บ)
+        // meterDelta(null,now) = full lifetime odometer = garbage → show ⚪ not a giant number.
+        w.expectedMeter = prevMs != null ? meterDelta(prevMs, nowMs) : null;
         w.varianceMeter = null;
         w.verdictMeter = "uncollected";
         w.cumShortageMeter = cum === 0 ? null : Math.round(cum);
@@ -2275,7 +2277,21 @@ export async function getReconcilePeriods(args: {
       // record the exact window the meter math ran on (start=prevMs BEFORE advance)
       w.meterWindowStart = prevMs != null ? formatDateTime(new Date(prevMs)) : null;
       w.meterWindowEnd = formatDateTime(new Date(t1));
+      // CEO 2026-07-04 · the FIRST collected round (prevMs===null) has no prior baseline,
+      // so meterDelta(null,t1) = the ENTIRE lifetime odometer from series start (e.g.
+      // Robinsonปราจีน(600) = 42.9B = a 2^32 sentinel coin meter ×10). That is a pre-tracking
+      // backlog, NOT a real one-round shortage. Mirror getReconcilePerChair* (which sum only
+      // rounds 2..N · commit 3edf27f6): skip the opening round's expected/variance and keep it
+      // OUT of cumShortageMeter. Advance prevMs FIRST so round 2 gets its correct baseline.
+      const isOpeningRound = prevMs === null;
       prevMs = t1;
+      if (isOpeningRound) {
+        w.expectedMeter = null;
+        w.varianceMeter = null;
+        w.verdictMeter = "incomplete"; // renders ⚪/onboarding, not a fake crit
+        w.cumShortageMeter = null;
+        continue;
+      }
       if (exp == null) {
         w.expectedMeter = null;
         w.verdictMeter = "incomplete";
