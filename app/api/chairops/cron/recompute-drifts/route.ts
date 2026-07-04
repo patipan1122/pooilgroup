@@ -7,6 +7,7 @@
 // `allowMultipleRunsPerDay: true` because Vercel Cron hits this every 30 min.
 import { NextRequest, NextResponse } from "next/server";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
+import { syncBranchDailyFromPosDaily } from "@/lib/chairops/reconcile/branch-daily-sync";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
 import { runWithMonitor } from "@/lib/cron/runner";
 
@@ -22,9 +23,19 @@ export async function GET(request: NextRequest) {
       "chairops-recompute-drifts",
       async () => {
         const t0 = Date.now();
+        // 2026-07-04 · self-heal branch_daily_revenue from ChairopsPosDaily BEFORE
+        // recomputing drift, so drift is never computed on a silently-dropped
+        // branch rollup again. Heals 0 rows in steady state; > 0 = a gap existed.
+        const healed = await syncBranchDailyFromPosDaily();
+        if (healed > 0) {
+          console.warn(
+            `[branch-daily-sync] healed ${healed} missing branch_daily_revenue rows from ChairopsPosDaily — an importer storeName mismatch had silently dropped them`,
+          );
+        }
         const { snapshots, emitted } = await evaluateAndEmitAlerts();
         return NextResponse.json({
           ok: true,
+          branchDailyHealed: healed,
           snapshots: snapshots.length,
           emitted: emitted.length,
           ms: Date.now() - t0,

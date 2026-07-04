@@ -32,6 +32,7 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 import { sha256Hex } from "@/lib/chairops/utils/hash";
 import { canEditPastDay } from "@/lib/chairops/auth/role-guards";
 import { recomputeAllDrifts } from "@/lib/chairops/reconcile/drift-engine";
+import { syncBranchDailyFromPosDaily } from "@/lib/chairops/reconcile/branch-daily-sync";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import {
   autoResolvePosNotIngested,
@@ -1187,7 +1188,19 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   // here are invisible — wrap each in its own catch that logs to console
   // and the audit log so Sentry/Logflare picks it up.
   void Promise.allSettled([
-    recomputeAllDrifts(orgId).catch(async (err) => {
+    // 2026-07-04 · self-heal branch_daily_revenue from ChairopsPosDaily BEFORE
+    // recomputing drift, so an importer storeName mismatch can never leave the
+    // ledger/drift reading an incomplete branch rollup (see the Apr–Jun gap).
+    syncBranchDailyFromPosDaily()
+      .catch((err) => {
+        console.error(
+          "[pos-ingest commit] branch_daily self-heal failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return 0;
+      })
+      .then(() => recomputeAllDrifts(orgId))
+      .catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[pos-ingest commit] drift recompute failed:", msg);
       await writeAudit({
