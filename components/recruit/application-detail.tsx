@@ -70,6 +70,10 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
     size: number;
     mime: string;
   }>) ?? [];
+  // F1: résumé-read available only when there's a PDF/image the AI can open
+  const hasResumeFile = files.some(
+    (f) => f.mime === "application/pdf" || f.mime.startsWith("image/"),
+  );
 
   const status = app.status as ApplicationStatus;
   const initials = app.applicant.fullName.trim().charAt(0).toUpperCase() || "?";
@@ -180,6 +184,7 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
         currentTags={app.tags ?? []}
         aiStrengths={(app.aiStrengths as string[] | null) ?? null}
         aiRisks={(app.aiRisks as string[] | null) ?? null}
+        hasResumeFile={hasResumeFile}
         answersBySection={
           schema?.sections.map((section) => ({
             id: section.id,

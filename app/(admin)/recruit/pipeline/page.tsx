@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { type ApplicationStatus } from "@/lib/recruit/types";
-import { PipelineColumn } from "@/components/recruit/pipeline-column";
+import { PipelineBoard } from "@/components/recruit/pipeline-board";
 import { ApplicationDetail } from "@/components/recruit/application-detail";
 import { ViewToggle } from "@/components/recruit/view-toggle";
 import {
@@ -108,6 +108,31 @@ export default async function PipelinePage({
     "HIRED",
     "REJECTED",
   ];
+
+  // Serialize the grouped apps into plain card objects for the client board
+  // (Wave 3 multi-select lives in PipelineBoard — it must own all columns).
+  const mapCard = (a: (typeof apps)[number]) => ({
+    id: a.id,
+    applicantName: a.applicant.fullName,
+    phone: a.applicant.phone,
+    posting: a.posting.title,
+    aiScore: a.aiScore,
+    starRating: a.starRating,
+    flagged: a.flaggedBlacklist,
+    refId: a.refId,
+    tags: a.tags ?? [],
+    updatedAt:
+      (a.updatedAt ?? a.submittedAt ?? a.createdAt)?.toISOString() ?? null,
+  });
+  const groupedCards = {
+    NEW: grouped.NEW.map(mapCard),
+    SCREENING: grouped.SCREENING.map(mapCard),
+    INTERVIEW: grouped.INTERVIEW.map(mapCard),
+    OFFERED: grouped.OFFERED.map(mapCard),
+    HIRED: grouped.HIRED.map(mapCard),
+    REJECTED: grouped.REJECTED.map(mapCard),
+    WITHDRAWN: grouped.WITHDRAWN.map(mapCard),
+  } satisfies Record<ApplicationStatus, unknown[]>;
 
   const buildUrl = (next: SearchParams) => {
     const sp = new URLSearchParams();
@@ -286,8 +311,8 @@ export default async function PipelinePage({
           </div>
         )}
 
-        {/* Kanban board */}
-        <div className="flex-1 overflow-auto p-3 sm:p-5">
+        {/* Kanban board — mobile pb leaves room for the bulk-action bar (sits above the bottom nav) */}
+        <div className="flex-1 overflow-auto p-3 sm:p-5 pb-40 lg:pb-5">
           {apps.length === 0 ? (
             <div className="rounded-3xl border-2 border-dashed border-zinc-200 bg-white p-12 text-center max-w-2xl mx-auto mt-10">
               <InboxIcon className="size-12 mx-auto text-zinc-300" />
@@ -310,34 +335,15 @@ export default async function PipelinePage({
               <p className="lg:hidden mb-2 flex items-center justify-center gap-1 text-xs font-medium text-zinc-400">
                 ← ปัดเพื่อเลื่อนดูสถานะถัดไป →
               </p>
-              <div className="flex gap-3 min-w-max snap-x snap-mandatory lg:min-w-0 lg:snap-none lg:grid lg:grid-cols-3 xl:grid-cols-6">
-                {showStatuses.map((s) => (
-                <PipelineColumn
-                  key={s}
-                  status={s}
-                  applications={grouped[s].map((a) => ({
-                    id: a.id,
-                    applicantName: a.applicant.fullName,
-                    phone: a.applicant.phone,
-                    posting: a.posting.title,
-                    aiScore: a.aiScore,
-                    starRating: a.starRating,
-                    flagged: a.flaggedBlacklist,
-                    refId: a.refId,
-                    tags: a.tags ?? [],
-                    updatedAt: (a.updatedAt ?? a.submittedAt ?? a.createdAt)?.toISOString() ?? null,
-                  }))}
-                  canWrite={canWrite}
-                  selectHref={(id) =>
-                    buildUrl({
-                      posting: postingFilter ?? undefined,
-                      company: companyFilter ?? undefined,
-                      selected: id,
-                    })
-                  }
-                />
-                ))}
-              </div>
+              <PipelineBoard
+                showStatuses={showStatuses}
+                grouped={groupedCards}
+                canWrite={canWrite}
+                selectHrefBase={{
+                  posting: postingFilter ?? undefined,
+                  company: companyFilter ?? undefined,
+                }}
+              />
             </>
           )}
         </div>

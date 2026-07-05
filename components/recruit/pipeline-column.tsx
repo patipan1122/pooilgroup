@@ -51,6 +51,9 @@ interface Props {
   canWrite: boolean;
   /** Build URL for clicking a card (used by pipeline page to open slide-in detail) */
   selectHref?: (id: string) => string;
+  /** Multi-select (Wave 3): ids currently checked + toggle callback. Absent = no checkboxes. */
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 export function PipelineColumn({
@@ -58,6 +61,8 @@ export function PipelineColumn({
   applications,
   canWrite,
   selectHref,
+  selectedIds,
+  onToggleSelect,
 }: Props) {
   return (
     <div className="w-[82vw] max-w-[300px] snap-start sm:w-auto sm:max-w-none shrink-0 sm:shrink rounded-2xl border border-zinc-200 bg-zinc-50/40 overflow-hidden flex flex-col max-h-[80vh]">
@@ -85,6 +90,8 @@ export function PipelineColumn({
               currentStatus={status}
               canWrite={canWrite}
               cardHref={selectHref ? selectHref(a.id) : `/recruit/applications/${a.id}`}
+              selected={selectedIds?.has(a.id) ?? false}
+              onToggleSelect={onToggleSelect}
             />
           ))
         )}
@@ -98,11 +105,15 @@ function ApplicationCard({
   currentStatus,
   canWrite,
   cardHref,
+  selected,
+  onToggleSelect,
 }: {
   app: AppCard;
   currentStatus: ApplicationStatus;
   canWrite: boolean;
   cardHref: string;
+  selected: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [, startTransition] = useTransition();
@@ -157,20 +168,40 @@ function ApplicationCard({
 
   const overdue = isOverdue(currentStatus, app.updatedAt);
 
+  const selectable = canWrite && !!onToggleSelect;
+
   return (
     <div
-      className={`rounded-xl p-2.5 transition-colors ${
-        overdue
-          ? "border-2 border-red-300 bg-gradient-to-br from-red-50 to-white"
-          : "border border-zinc-200 bg-white hover:border-[var(--color-brand-400)]"
+      className={`relative rounded-xl p-2.5 transition-colors ${
+        selected
+          ? "border-2 border-[var(--color-brand-500)] bg-[var(--color-brand-50)]"
+          : overdue
+            ? "border-2 border-red-300 bg-gradient-to-br from-red-50 to-white"
+            : "border border-zinc-200 bg-white hover:border-[var(--color-brand-400)]"
       }`}
     >
+      {selectable && (
+        // Checkbox toggles selection · stopPropagation so it never triggers the
+        // card's <Link> navigation. Bigger tap target on top-left for mobile.
+        <label
+          className="absolute top-1.5 left-1.5 z-10 flex size-7 cursor-pointer items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect?.(app.id)}
+            className="size-4 rounded border-zinc-300 text-[var(--color-brand-600)] accent-[var(--color-brand-600)] focus:ring-[var(--color-brand-400)]"
+            aria-label={`เลือก ${app.applicantName}`}
+          />
+        </label>
+      )}
       {overdue && (
-        <div className="mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded">
+        <div className={`mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded ${selectable ? "ml-8" : ""}`}>
           🔥 เกิน SLA
         </div>
       )}
-      <Link href={cardHref} className="block">
+      <Link href={cardHref} className={`block ${selectable ? "pl-7" : ""}`}>
         <div className="flex items-start justify-between gap-1.5">
           <p className="font-bold text-zinc-900 text-sm truncate flex-1">
             {app.applicantName}

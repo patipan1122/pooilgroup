@@ -48,6 +48,7 @@ interface Props {
   currentTags: string[];
   aiStrengths: string[] | null;
   aiRisks: string[] | null;
+  hasResumeFile: boolean;
   answersBySection: Section[];
   filesNode: ReactNode;
   notes: Note[];
@@ -62,6 +63,7 @@ export function ApplicationTabs({
   currentTags,
   aiStrengths,
   aiRisks,
+  hasResumeFile,
   answersBySection,
   filesNode,
   notes,
@@ -154,6 +156,7 @@ export function ApplicationTabs({
               aiRisks={aiRisks}
               aiEvaluatedAt={null}
               canWrite={canWrite}
+              hasResumeFile={hasResumeFile}
             />
             {filesNode}
           </div>

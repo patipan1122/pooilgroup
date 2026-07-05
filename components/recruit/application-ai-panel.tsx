@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Bot, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Bot, FileText, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { scoreApplicationAction } from "@/app/(admin)/recruit/_actions/ai";
+import {
+  scoreApplicationAction,
+  scoreResumeAction,
+} from "@/app/(admin)/recruit/_actions/ai";
 
 interface Props {
   applicationId: string;
@@ -13,6 +16,7 @@ interface Props {
   aiRisks: string[] | null;
   aiEvaluatedAt: Date | null;
   canWrite: boolean;
+  hasResumeFile?: boolean;
 }
 
 export function ApplicationAIPanel({
@@ -23,6 +27,7 @@ export function ApplicationAIPanel({
   aiRisks: initialRisks,
   aiEvaluatedAt: initialEvalAt,
   canWrite,
+  hasResumeFile = false,
 }: Props) {
   const [score, setScore] = useState(initialScore);
   const [summary, setSummary] = useState(initialSummary);
@@ -47,6 +52,22 @@ export function ApplicationAIPanel({
     });
   }
 
+  function runResumeEval() {
+    startTransition(async () => {
+      try {
+        const result = await scoreResumeAction(applicationId);
+        setScore(result.score);
+        setSummary(result.summary);
+        setStrengths(result.strengths);
+        setRisks(result.risks);
+        setEvaluatedAt(new Date());
+        toast.success(`AI อ่านเรซูเม่เสร็จ · คะแนน ${result.score}`);
+      } catch (e) {
+        toast.error("อ่านเรซูเม่ไม่สำเร็จ: " + (e as Error).message);
+      }
+    });
+  }
+
   // Not yet evaluated
   if (score == null && !isPending) {
     return (
@@ -59,18 +80,32 @@ export function ApplicationAIPanel({
             </p>
           </div>
           {canWrite && (
-            <button
-              type="button"
-              onClick={runEval}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)] transition-colors"
-            >
-              <Bot className="size-4" />
-              ประเมินด้วย AI
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={runEval}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)] transition-colors"
+              >
+                <Bot className="size-4" />
+                ประเมินจากคำตอบ
+              </button>
+              {hasResumeFile && (
+                <button
+                  type="button"
+                  onClick={runResumeEval}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-brand-700)] bg-white border border-[var(--color-brand-300)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-50)] transition-colors"
+                >
+                  <FileText className="size-4" />
+                  อ่านเรซูเม่ + ให้คะแนน
+                </button>
+              )}
+            </div>
           )}
         </div>
         <p className="text-xs text-zinc-500 mt-2">
-          AI จะอ่านคำตอบ + JD แล้วให้คะแนน 0-100 พร้อมเหตุผล (ไม่ดูภาพ/อายุ/เพศ)
+          {hasResumeFile
+            ? "“ประเมินจากคำตอบ” = ใช้คำตอบในฟอร์ม · “อ่านเรซูเม่” = AI เปิดไฟล์ PDF/รูปอ่านจริง (ทั้งคู่ไม่ตัดสินจากรูป/อายุ/เพศ)"
+            : "AI จะอ่านคำตอบ + JD แล้วให้คะแนน 0-100 พร้อมเหตุผล (ไม่ดูภาพ/อายุ/เพศ)"}
         </p>
       </div>
     );
@@ -95,13 +130,25 @@ export function ApplicationAIPanel({
               <span className="text-base font-medium text-zinc-400 ml-1">/100</span>
             </span>
           )}
+          {canWrite && hasResumeFile && (
+            <button
+              type="button"
+              onClick={runResumeEval}
+              disabled={isPending}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--color-brand-700)] border border-[var(--color-brand-300)] rounded-lg px-2 py-1 hover:bg-[var(--color-brand-50)] disabled:opacity-40"
+              title="ให้ AI อ่านไฟล์เรซูเม่แล้วให้คะแนนใหม่"
+            >
+              <FileText className="size-3.5" />
+              อ่านเรซูเม่
+            </button>
+          )}
           {canWrite && (
             <button
               type="button"
               onClick={runEval}
               disabled={isPending}
               className="text-zinc-400 hover:text-[var(--color-brand-700)]"
-              title="ประเมินใหม่"
+              title="ประเมินใหม่จากคำตอบ"
             >
               {isPending ? (
                 <Loader2 className="size-4 animate-spin" />

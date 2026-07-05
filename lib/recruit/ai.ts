@@ -205,6 +205,109 @@ ${readableAnswers.join("\n")}
 }
 
 // =============================================================
+// 2b. Résumé File Scoring — HR กดปุ่ม "อ่านเรซูเม่ + ให้คะแนน"
+//     AI เปิดไฟล์ PDF/รูปจริง อ่านเนื้อหา แล้วให้คะแนน (รวมคำตอบในฟอร์มด้วย)
+// =============================================================
+
+/** MIME types Claude can read directly — PDF (document block) + images. Word/.docx NOT supported. */
+const RESUME_READABLE_MIMES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
+
+export function isResumeReadableMime(mime: string): boolean {
+  return (RESUME_READABLE_MIMES as readonly string[]).includes(mime);
+}
+
+export async function scoreResumeFile(input: {
+  jobTitle: string;
+  jobDescription?: string;
+  file: { bytes: Buffer; mime: string; name: string };
+  formAnswersText?: string; // readable "label: answer" lines (bias fields already stripped)
+  track?: { orgId: string; userId?: string | null };
+}): Promise<CandidateScore> {
+  const { bytes, mime, name } = input.file;
+  const b64 = bytes.toString("base64");
+
+  const filePart: Anthropic.ContentBlockParam =
+    mime === "application/pdf"
+      ? {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: b64 },
+        }
+      : {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mime as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            data: b64,
+          },
+        };
+
+  const prompt = `คุณคือผู้เชี่ยวชาญด้าน HR ประเมินผู้สมัครงานจาก "เรซูเม่/เอกสารแนบ" ที่ผู้สมัครส่งมา (ไฟล์: ${name})
+
+ตำแหน่ง: ${input.jobTitle}
+JD: ${input.jobDescription ?? "ไม่ระบุ"}
+${input.formAnswersText ? `\nคำตอบเพิ่มเติมจากฟอร์มสมัคร:\n${input.formAnswersText}` : ""}
+
+อ่านเนื้อหาในไฟล์แนบ (ประสบการณ์ การศึกษา ทักษะ ผลงาน) แล้วประเมิน คืน JSON:
+{
+  "score": <0-100>,
+  "summary": "<1-2 ประโยค สรุปว่าเหมาะกับตำแหน่งนี้แค่ไหน อ้างอิงจากเรซูเม่>",
+  "strengths": ["<จุดแข็ง 1>", "<จุดแข็ง 2>", "<จุดแข็ง 3>"],
+  "risks": ["<จุดเสี่ยง/จุดที่ต้องสัมภาษณ์เพิ่ม 1>", "<จุดเสี่ยง 2>"]
+}
+
+ข้อกำหนดสำคัญ:
+- คะแนน 80+ = แนะนำสัมภาษณ์ทันที · 50-79 = พิจารณาเทียบคนอื่น · <50 = อาจไม่ตรง requirement
+- ⚠️ ห้ามตัดสินจาก รูปถ่าย อายุ เพศ ศาสนา ภูมิลำเนา สถานภาพสมรส — ประเมินเฉพาะประสบการณ์/ทักษะ/ผลงานที่เกี่ยวกับงาน
+- ถ้าไฟล์อ่านไม่ออก/เบลอ/ไม่ใช่เรซูเม่ → ให้ score ต่ำ + ระบุใน risks ว่า "อ่านเอกสารไม่ได้"
+- ใช้ภาษาไทย ตรงไปตรงมา · คืนเฉพาะ JSON`;
+
+  // B-002: explicit timeout — vision อ่านไฟล์ช้ากว่า text จึงให้ 30s
+  const response = await anthropic.messages.create(
+    {
+      model: SONNET_MODEL,
+      max_tokens: 1000,
+      messages: [{ role: "user", content: [filePart, { type: "text", text: prompt }] }],
+    },
+    { timeout: 30_000 },
+  );
+  await trackRecruitUsage("recruit.score-resume", SONNET_MODEL, response, input.track);
+
+  const text =
+    response.content[0]?.type === "text" ? response.content[0].text : "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    return {
+      score: 0,
+      summary: "ไม่สามารถอ่านเรซูเม่ได้ · โปรดลองอีกครั้ง",
+      strengths: [],
+      risks: [],
+    };
+  }
+  try {
+    const parsed = JSON.parse(match[0]) as CandidateScore;
+    return {
+      score: Math.max(0, Math.min(100, Math.round(parsed.score))),
+      summary: parsed.summary,
+      strengths: parsed.strengths?.slice(0, 3) ?? [],
+      risks: parsed.risks?.slice(0, 3) ?? [],
+    };
+  } catch {
+    return {
+      score: 0,
+      summary: "ไม่สามารถอ่านเรซูเม่ได้ · โปรดลองอีกครั้ง",
+      strengths: [],
+      risks: [],
+    };
+  }
+}
+
+// =============================================================
 // 3. AI Chat — Support assistant (กดเปิดเอง · FAB)
 // =============================================================
 export async function chatSupport(input: {
@@ -244,6 +347,74 @@ ${input.context ? `\nContext ปัจจุบัน: ${input.context}` : ""}`;
   await trackRecruitUsage("recruit.chat-support", SONNET_MODEL, response, input.track);
 
   return response.content[0]?.type === "text" ? response.content[0].text : "";
+}
+
+// =============================================================
+// 4. Message Drafts — HR กดปุ่ม "ร่างด้วย AI" (นัดสัมภาษณ์/รับ/ปฏิเสธ/ขอเอกสาร)
+//     คืนข้อความ plain-text ให้ HR ตรวจ+แก้+กดส่งเอง · ไม่ auto-send
+// =============================================================
+export type DraftKind = "interview_invite" | "offer" | "reject" | "request_docs";
+
+const DRAFT_KIND_INSTRUCTION: Record<DraftKind, string> = {
+  interview_invite:
+    "ร่างข้อความ 'เชิญมาสัมภาษณ์' — ระบุวันเวลาสัมภาษณ์ตามที่ให้มาเป๊ะ ๆ (ห้ามแต่งวันเอง) บอกสถานที่/รูปแบบถ้ามี · น้ำเสียงยินดีและสุภาพ",
+  offer:
+    "ร่างข้อความ 'แจ้งผลผ่าน/เสนอรับเข้าทำงาน' — แสดงความยินดี บอกขั้นตอนถัดไปสั้น ๆ (ติดต่อกลับเพื่อยืนยัน)",
+  reject:
+    "ร่างข้อความ 'แจ้งผลไม่ผ่าน' — สุภาพ ให้เกียรติ ขอบคุณที่สมัคร ไม่ต้องลงรายละเอียดเหตุผล เปิดโอกาสสมัครตำแหน่งอื่นในอนาคต",
+  request_docs:
+    "ร่างข้อความ 'ขอเอกสารเพิ่มเติม' — บอกว่าต้องการเอกสารอะไร (ตามรายการที่ให้มา) สุภาพ กระชับ",
+};
+
+export async function draftMessage(input: {
+  kind: DraftKind;
+  candidateName: string;
+  postingTitle: string;
+  companyName?: string;
+  interviewWhen?: string; // pre-formatted Thai date — ONLY set by caller for interview_invite
+  interviewKind?: string;
+  interviewLocation?: string;
+  missingDocs?: string;
+  track?: { orgId: string; userId?: string | null };
+}): Promise<string> {
+  const details: string[] = [
+    `ชื่อผู้สมัคร: ${input.candidateName}`,
+    `ตำแหน่งที่สมัคร: ${input.postingTitle}`,
+  ];
+  if (input.companyName) details.push(`บริษัท: ${input.companyName}`);
+  if (input.kind === "interview_invite") {
+    if (input.interviewWhen)
+      details.push(`วันเวลานัดสัมภาษณ์ (ใช้ค่านี้เท่านั้น ห้ามเปลี่ยน): ${input.interviewWhen}`);
+    if (input.interviewKind) details.push(`รูปแบบ: ${input.interviewKind}`);
+    if (input.interviewLocation) details.push(`สถานที่: ${input.interviewLocation}`);
+  }
+  if (input.kind === "request_docs" && input.missingDocs)
+    details.push(`เอกสารที่ต้องขอ: ${input.missingDocs}`);
+
+  const systemPrompt = `คุณคือ HR ของ Pooilgroup ร่างข้อความสั้น ๆ ถึงผู้สมัครงาน
+สไตล์: ภาษาไทย · สุภาพ · เป็นกันเอง · กระชับ เหมาะกับแชท/อีเมล
+ข้อกำหนด:
+- ${DRAFT_KIND_INSTRUCTION[input.kind]}
+- ⚠️ ใช้เฉพาะข้อมูล/วันเวลา ที่ให้มาเท่านั้น ห้ามแต่งวันเวลาหรือรายละเอียดที่ไม่ได้ให้
+- ขึ้นต้นด้วยคำทักทายพร้อมชื่อผู้สมัคร · ลงท้ายแบบ HR
+- คืนเฉพาะ "ตัวข้อความ" ล้วน ๆ ไม่ต้องมีหัวข้อ/คำอธิบาย/เครื่องหมายคำพูดครอบ`;
+
+  const response = await anthropic.messages.create(
+    {
+      model: HAIKU_MODEL,
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: `ร่างข้อความจากข้อมูลนี้:\n${details.join("\n")}` },
+      ],
+    },
+    { timeout: 15_000 },
+  );
+  await trackRecruitUsage("recruit.draft-message", HAIKU_MODEL, response, input.track);
+
+  return response.content[0]?.type === "text"
+    ? response.content[0].text.trim()
+    : "";
 }
 
 function formatAnswer(val: unknown): string {

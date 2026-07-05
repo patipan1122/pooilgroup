@@ -4,7 +4,24 @@ import Link from "next/link";
 import { useState, useTransition, useEffect } from "react";
 import { toast } from "sonner";
 import { sendMessage, markThreadRead } from "@/lib/recruit/message-actions";
-import { Phone, Mail, MessageCircle, Send, ChevronLeft, AlertCircle } from "lucide-react";
+import { draftMessageAction } from "@/app/(admin)/recruit/_actions/ai";
+import {
+  Phone,
+  Mail,
+  MessageCircle,
+  Send,
+  ChevronLeft,
+  AlertCircle,
+  Sparkles,
+  Loader2,
+} from "lucide-react";
+
+const DRAFT_KINDS = [
+  { kind: "interview_invite", label: "เชิญสัมภาษณ์" },
+  { kind: "offer", label: "แจ้งผ่าน" },
+  { kind: "reject", label: "แจ้งไม่ผ่าน" },
+  { kind: "request_docs", label: "ขอเอกสารเพิ่ม" },
+] as const;
 
 interface Message {
   id: string;
@@ -46,6 +63,7 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
   const [channel, setChannel] = useState<"INAPP" | "EMAIL" | "LINE" | "SMS">("INAPP");
   const [body, setBody] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isDrafting, startDrafting] = useTransition();
 
   useEffect(() => {
     // Mark inbound messages read
@@ -70,6 +88,23 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
           toast.success("ส่งข้อความแล้ว");
         }
         setBody("");
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    });
+  }
+
+  // AI draft — fills the composer for HR to review + edit + send. Never auto-sends.
+  function draft(kind: (typeof DRAFT_KINDS)[number]["kind"]) {
+    startDrafting(async () => {
+      try {
+        const res = await draftMessageAction(thread.applicationId, kind);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        setBody(res.draft);
+        toast.success("ร่างข้อความแล้ว · แก้ไขก่อนส่งได้");
       } catch (e) {
         toast.error((e as Error).message);
       }
@@ -210,6 +245,26 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
           <AlertCircle className="size-3" />
           LINE / SMS ยังส่งจริงไม่ได้ (รอตั้งค่า Phase 2) · ตอนนี้ส่งได้ทาง ในระบบ และ Email
         </p>
+        {/* AI draft — ร่างข้อความให้ HR ตรวจ+แก้+ส่งเอง (ไม่ auto-send) */}
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          <span className="text-[11px] text-zinc-500 inline-flex items-center gap-1 font-medium">
+            <Sparkles className="size-3 text-[var(--color-brand-500)]" /> ร่างด้วย AI:
+          </span>
+          {DRAFT_KINDS.map((d) => (
+            <button
+              key={d.kind}
+              type="button"
+              onClick={() => draft(d.kind)}
+              disabled={isDrafting}
+              className="text-[11px] h-7 px-2.5 rounded-full font-bold border border-[var(--color-brand-200)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-50)] disabled:opacity-40"
+            >
+              {d.label}
+            </button>
+          ))}
+          {isDrafting && (
+            <Loader2 className="size-3.5 animate-spin text-[var(--color-brand-500)]" />
+          )}
+        </div>
         <div className="flex items-end gap-2">
           <textarea
             value={body}
