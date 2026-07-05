@@ -298,7 +298,155 @@ const documents: FormSection = {
   ],
 };
 
+// CEO 2026-07-05: ฟอร์มประวัติผู้สมัครแบบกรอกง่าย ๆ ครบในชุดเดียว
+// (ชื่อจริง + เบอร์ = core fields · ฟอร์มสมัครเก็บให้อัตโนมัติทุกใบ · ไม่ใส่ซ้ำ)
+const personalProfile: FormSection = {
+  id: "tpl_personal_full",
+  title: "ประวัติผู้สมัคร",
+  description:
+    "ชื่อเล่น · เพศ · อายุ · ประสบการณ์ · ความสามารถพิเศษ · แนบเรซูเม่ (ชื่อจริง + เบอร์ ระบบเก็บให้อัตโนมัติ)",
+  fields: [
+    {
+      id: "pf_nickname",
+      type: "short_text",
+      label: "ชื่อเล่น",
+      required: true,
+      maxLength: 40,
+    },
+    {
+      id: "pf_gender",
+      type: "radio",
+      label: "เพศ",
+      required: true,
+      options: [
+        { value: "male", label: "ชาย" },
+        { value: "female", label: "หญิง" },
+        { value: "other", label: "อื่น ๆ" },
+      ],
+    },
+    {
+      id: "pf_age",
+      type: "number",
+      label: "อายุ",
+      required: true,
+      min: 15,
+      max: 70,
+      unit: "ปี",
+    },
+    {
+      id: "pf_experience",
+      type: "long_text",
+      label: "ประสบการณ์ทำงานที่ผ่านมา",
+      required: false,
+      maxLength: 500,
+      placeholder:
+        "เช่น เคยเป็นแคชเชียร์ 7-11 · 2 ปี · ดูแลสต๊อกและปิดยอดรายวัน",
+    },
+    {
+      id: "pf_skills",
+      type: "short_text",
+      label: "ความสามารถพิเศษ",
+      required: false,
+      maxLength: 150,
+      helpText: "เช่น ขับรถยนต์/มอเตอร์ไซค์ · ใช้ Excel · ภาษาอังกฤษพอได้",
+    },
+    {
+      id: "pf_about",
+      type: "long_text",
+      label: "แนะนำตัวเอง + สิ่งที่ภูมิใจ",
+      required: false,
+      maxLength: 600,
+      placeholder:
+        "เล่าสั้น ๆ ว่าคุณเป็นคนแบบไหน · จุดเด่น · ผลงานหรือสิ่งที่ภูมิใจ",
+    },
+    {
+      id: "pf_resume",
+      type: "file",
+      label: "แนบเรซูเม่ / เอกสาร",
+      required: false,
+      accept: ["pdf", "jpg", "jpeg", "png", "doc", "docx"],
+      maxFiles: 3,
+      helpText: "แนะนำไฟล์ PDF (AI อ่านให้คะแนนได้) · ไม่เกิน 5 MB ต่อไฟล์",
+    },
+  ],
+};
+
+// CEO 2026-07-05: ชุดข้อสอบไอคิวแบบรูปภาพ (SVG วาดเอง · public/recruit-iq/)
+// ผ่านการตรวจปรปักษ์ (ทีมอิสระลองแก้ทุกข้อ) — เก็บเฉพาะข้อที่มีคำตอบเดียวชัดเจน
+// Part C: คำแนะนำ "ตำแหน่งไหนใช้ระดับไหน" ฝังใน description ของแต่ละชุด
+function iqImg(
+  tier: "easy" | "medium" | "hard",
+  n: number,
+  correct: string,
+  label: string,
+): Field {
+  return {
+    id: `iq_${tier}_${n}`,
+    type: "radio",
+    label,
+    required: true,
+    hasCorrectAnswer: true,
+    correctAnswer: correct,
+    correctPoints: 1,
+    imageUrl: `/recruit-iq/${tier}-${n}.svg`,
+    options: [
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+      { value: "c", label: "C" },
+      { value: "d", label: "D" },
+    ],
+  };
+}
+
+const iqEasy: FormSection = {
+  id: "tpl_iq_easy",
+  title: "ไอคิวจากรูป — ระดับง่าย",
+  description:
+    "6 ข้อ · เหมาะกับ หน้าร้าน/แคชเชียร์ · พนักงานทั่วไป/คลัง · มีรูป + เฉลย ให้คะแนนอัตโนมัติ",
+  fields: [
+    iqImg("easy", 1, "b", "รูปไหนควรอยู่ตรงเครื่องหมาย ?"),
+    iqImg("easy", 2, "c", "ช่องถัดไปควรมีกี่จุด ?"),
+    iqImg("easy", 3, "c", "รูปไหนที่แตกต่างจากรูปอื่น ?"),
+    iqImg("easy", 4, "b", "รูปไหนควรอยู่ตรงเครื่องหมาย ?"),
+    iqImg("easy", 5, "d", "รูปไหนควรอยู่ตรงเครื่องหมาย ?"),
+    iqImg("easy", 6, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ?"),
+  ],
+};
+
+const iqMedium: FormSection = {
+  id: "tpl_iq_medium",
+  title: "ไอคิวจากรูป — ระดับกลาง",
+  description:
+    "4 ข้อ · เหมาะกับ ช่างเทคนิค · ออฟฟิศ/บัญชี · โจทย์สองกฎซ้อน · มีเฉลย",
+  fields: [
+    iqImg("medium", 2, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (นับเพิ่มตามแนวนอน + รูปเปลี่ยนตามแนวตั้ง)"),
+    iqImg("medium", 4, "a", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (ครึ่งที่ทึบสลับไปอีกด้าน)"),
+    iqImg("medium", 5, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (ช่องที่ 3 = ช่อง 1 ซ้อนช่อง 2)"),
+    iqImg("medium", 6, "b", "รูปที่ 5 ควรเป็นแบบใด ? (สี่เหลี่ยมหมุน + จุดวิ่งรอบรูป)"),
+  ],
+};
+
+const iqHard: FormSection = {
+  id: "tpl_iq_hard",
+  title: "ไอคิวจากรูป — ระดับยาก",
+  description:
+    "3 ข้อ · เหมาะกับ หัวหน้า/ผู้จัดการ · ตำแหน่งที่ต้องคิดวิเคราะห์ · โจทย์หลายกฎ · มีเฉลย",
+  fields: [
+    iqImg("hard", 2, "c", "รูปถัดไป (ลำดับที่ 5) ควรเป็นรูปไหน ?"),
+    iqImg("hard", 5, "b", "รูปถัดไปในลำดับ ควรเป็นรูปไหน ?"),
+    iqImg("hard", 6, "b", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (⊕ = ชิ้นที่อยู่ในภาพเดียวเท่านั้น)"),
+  ],
+};
+
 export const SECTION_TEMPLATES: SectionTemplate[] = [
+  {
+    id: "personal_full",
+    name: "ประวัติผู้สมัคร (ครบ)",
+    description: "ชื่อเล่น · เพศ · อายุ · ประสบการณ์ · ความสามารถ · แนบเรซูเม่",
+    icon: "🧑",
+    accent: "brand",
+    section: personalProfile,
+  },
   {
     id: "personal",
     name: "ข้อมูลส่วนตัว",
@@ -325,11 +473,35 @@ export const SECTION_TEMPLATES: SectionTemplate[] = [
   },
   {
     id: "iq_image",
-    name: "ไอคิวจากรูป (วัดมิติ)",
-    description: "4 คำถาม + แนบรูปได้",
+    name: "ไอคิวจากรูป (แนบรูปเอง)",
+    description: "4 คำถาม · HR แนบรูปเอง",
     icon: "🖼",
     accent: "purple",
     section: iqImage,
+  },
+  {
+    id: "iq_easy",
+    name: "ไอคิวรูป — ระดับง่าย",
+    description: "6 ข้อ · หน้าร้าน/แคชเชียร์/ทั่วไป · มีรูป+เฉลย",
+    icon: "🟢",
+    accent: "green",
+    section: iqEasy,
+  },
+  {
+    id: "iq_medium",
+    name: "ไอคิวรูป — ระดับกลาง",
+    description: "4 ข้อ · ช่าง/ออฟฟิศ/บัญชี · มีรูป+เฉลย",
+    icon: "🟡",
+    accent: "amber",
+    section: iqMedium,
+  },
+  {
+    id: "iq_hard",
+    name: "ไอคิวรูป — ระดับยาก",
+    description: "3 ข้อ · หัวหน้า/ผู้จัดการ · มีรูป+เฉลย",
+    icon: "🔴",
+    accent: "purple",
+    section: iqHard,
   },
   {
     id: "documents",

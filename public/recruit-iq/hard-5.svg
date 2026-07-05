@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+  <!-- HARD 5 — Series with TWO simultaneous rules:
+       (R1) polygon gains ONE side each step: 3 -> 4 -> 5 -> [6]  (triangle, square, pentagon, hexagon)
+       (R2) polygon rotates +30deg CW each step: 0 -> 30 -> 60 -> [90]
+       Answer = HEXAGON (6 sides) rotated 90deg (flat-top).  Correct = B.
+       Distractors: pentagon rot60 (wrong side count) / hexagon rot0 pointy-top (wrong rotation) / heptagon rot90 (wrong side count). -->
+  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+
+  <!-- series frame -->
+  <rect x="40" y="90" width="640" height="200" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+
+  <!-- Fig 1: triangle rot 0 -->
+  <polygon points="0.00,-34.00 29.44,17.00 -29.44,17.00" transform="translate(120,180)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="120" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">1</text>
+
+  <!-- Fig 2: square rot 30 -->
+  <polygon points="17.00,-29.44 29.44,17.00 -17.00,29.44 -29.44,-17.00" transform="translate(255,180)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="255" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">2</text>
+
+  <!-- Fig 3: pentagon rot 60 -->
+  <polygon points="29.44,-17.00 25.27,22.75 -13.83,31.06 -33.81,-3.55 -7.07,-33.26" transform="translate(390,180)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="390" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">3</text>
+
+  <!-- Fig 4: MISSING -->
+  <rect x="483" y="138" width="84" height="84" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
+  <text x="525" y="196" text-anchor="middle" font-size="48" font-weight="700" fill="#6ea8fe">?</text>
+  <text x="525" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">4</text>
+
+  <!-- prompt -->
+  <text x="360" y="336" text-anchor="middle" font-size="20" fill="#9db4d8">รูปถัดไปในลำดับ ควรเป็นรูปไหน ?</text>
+
+  <!-- answer choices -->
+  <g>
+    <!-- A: pentagon rot 60 (wrong side count) -->
+    <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <polygon points="25.98,-15.00 22.29,20.07 -12.20,27.41 -29.84,-3.14 -6.24,-29.34" transform="translate(135,590)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+
+    <!-- B: hexagon rot 90 flat-top (CORRECT) -->
+    <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <polygon points="30.00,0.00 15.00,25.98 -15.00,25.98 -30.00,0.00 -15.00,-25.98 15.00,-25.98" transform="translate(290,590)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+
+    <!-- C: hexagon rot 0 pointy-top (wrong rotation) -->
+    <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <polygon points="0.00,-30.00 25.98,-15.00 25.98,15.00 0.00,30.00 -25.98,15.00 -25.98,-15.00" transform="translate(445,590)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+
+    <!-- D: heptagon rot 90 (wrong side count) -->
+    <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <polygon points="30.00,0.00 18.70,23.45 -6.68,29.25 -27.03,13.02 -27.03,-13.02 -6.68,-29.25 18.70,-23.45" transform="translate(600,590)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+  </g>
+
+  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ตัวอย่างข้อสอบไอคิว (ระดับยาก) · Buildly Recruit</text>
+</svg>

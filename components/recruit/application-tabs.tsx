@@ -11,7 +11,7 @@ import { ApplicationAIPanel } from "./application-ai-panel";
 import {
   type ApplicationStatus,
 } from "@/lib/recruit/types";
-import { User, Brain, FileText, Clock, Check, X } from "lucide-react";
+import { User, Brain, FileText, Clock, Check, X, Info } from "lucide-react";
 
 type TabKey = "profile" | "iq" | "answers" | "timeline";
 
@@ -288,6 +288,14 @@ function IQTab({
 
   return (
     <div className="space-y-3">
+      {/* Fairness/PDPA posture — IQ result is advisory, never the sole criterion */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2">
+        <Info className="size-3.5 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-800 leading-relaxed">
+          ผลไอคิวเป็น <b>ข้อมูลประกอบ</b> เท่านั้น ไม่ใช่เกณฑ์ตัดสินเดียว · ควรใช้ร่วมกับการสัมภาษณ์
+          ประสบการณ์ และทัศนคติ · เลือกระดับความยากของข้อสอบให้เหมาะกับตำแหน่งงาน
+        </p>
+      </div>
       {stats && stats.total > 0 && (
         <div className={`rounded-2xl ${verdict.bg} p-4 flex items-center gap-4`}>
           <div className="text-3xl font-extrabold font-display text-zinc-900">

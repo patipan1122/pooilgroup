@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+  <!-- Easy 6 — Rotation analogy (90° clockwise).
+       Top row shows the rule: triangle with notch/dot on TOP  ->  same triangle rotated so notch is on the RIGHT.
+       Question: square with notch on TOP  ->  [?]  = square with notch on the RIGHT.
+       Distractors: notch top / notch left / notch bottom. CORRECT = C. -->
+  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+
+  <!-- rule frame -->
+  <rect x="40" y="60" width="640" height="180" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+  <text x="360" y="98" text-anchor="middle" font-size="16" fill="#9db4d8">กฎการหมุน (ตัวอย่าง)</text>
+
+  <!-- rule: triangle, notch on top -->
+  <g transform="translate(150,165)">
+    <polygon points="0,-42 42,36 -42,36" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="0" cy="-42" r="9" fill="#6ea8fe"/>
+  </g>
+  <!-- arrow -->
+  <line x1="240" y1="165" x2="330" y2="165" stroke="#6ea8fe" stroke-width="2.5"/>
+  <polygon points="330,165 316,157 316,173" fill="#6ea8fe"/>
+  <!-- rule result: triangle rotated 90 CW, notch on right -->
+  <g transform="translate(430,165) rotate(90)">
+    <polygon points="0,-42 42,36 -42,36" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="0" cy="-42" r="9" fill="#6ea8fe"/>
+  </g>
+
+  <!-- question frame -->
+  <rect x="40" y="270" width="640" height="180" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+
+  <!-- question: square, notch on top -->
+  <g transform="translate(150,360)">
+    <rect x="-42" y="-42" width="84" height="84" rx="6" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <circle cx="0" cy="-42" r="9" fill="#6ea8fe"/>
+  </g>
+  <!-- arrow -->
+  <line x1="240" y1="360" x2="330" y2="360" stroke="#6ea8fe" stroke-width="2.5"/>
+  <polygon points="330,360 316,352 316,368" fill="#6ea8fe"/>
+  <!-- ? box -->
+  <rect x="378" y="312" width="104" height="96" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
+  <text x="430" y="378" text-anchor="middle" font-size="56" font-weight="700" fill="#6ea8fe">?</text>
+
+  <!-- prompt -->
+  <text x="360" y="492" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
+
+  <!-- answer choices -->
+  <g>
+    <!-- A: square, notch on TOP (unrotated) -->
+    <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(135,590)">
+      <rect x="-33" y="-33" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+      <circle cx="0" cy="-33" r="8" fill="#6ea8fe"/>
+    </g>
+    <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+
+    <!-- B: square, notch on LEFT -->
+    <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(290,590)">
+      <rect x="-33" y="-33" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+      <circle cx="-33" cy="0" r="8" fill="#6ea8fe"/>
+    </g>
+    <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+
+    <!-- C: square, notch on RIGHT (CORRECT) -->
+    <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(445,590)">
+      <rect x="-33" y="-33" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+      <circle cx="33" cy="0" r="8" fill="#6ea8fe"/>
+    </g>
+    <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+
+    <!-- D: square, notch on BOTTOM -->
+    <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(600,590)">
+      <rect x="-33" y="-33" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+      <circle cx="0" cy="33" r="8" fill="#6ea8fe"/>
+    </g>
+    <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+  </g>
+
+  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับง่าย) · Buildly Recruit</text>
+</svg>
