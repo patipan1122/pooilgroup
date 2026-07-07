@@ -978,18 +978,18 @@ function BookFilters({
 }
 
 function Row({
-  checked, onToggle, disabled, date, title, subtitle, detail, tag, channel, amountSatang, menu,
+  checked, onToggle, disabled, date, title, subtitle, detail, tag, channel, amountSatang, subAmount, menu,
   expandOpen, onExpand, expandContent,
 }: {
   checked: boolean; onToggle: () => void; disabled?: boolean;
-  date: string; title: string; subtitle?: string; detail?: string; tag?: string; channel?: string; amountSatang: number; menu?: React.ReactNode;
+  date: string; title: string; subtitle?: string; detail?: string; tag?: string; channel?: string; amountSatang: number; subAmount?: React.ReactNode; menu?: React.ReactNode;
   // optional expand/collapse — reveals a detail block beneath the resting row (keeps the row clean)
   expandOpen?: boolean; onExpand?: () => void; expandContent?: React.ReactNode;
 }) {
   const credit = amountSatang > 0;
   return (
     <div className={checked ? "bg-brand-50" : "hover:bg-zinc-50"}>
-      <div className="flex items-start gap-2 px-3 py-2">
+      <div className="flex items-start gap-2 px-3 py-1.5">
         {/* checkbox = the keyboard-operable control (labelled by row title); the body click is a mouse-only convenience */}
         <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled}
           aria-label={`เลือก ${title}${date ? ` (${date})` : ""}`}
@@ -1012,9 +1012,12 @@ function Row({
           )}
         </div>
         <div className="flex shrink-0 items-start gap-1">
-          <p className={`text-sm font-semibold tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
-            {credit ? "+" : "−"}฿{baht(amountSatang)}
-          </p>
+          <div className="text-right">
+            <p className={`text-sm font-semibold tabular-num ${credit ? "text-emerald-600" : "text-rose-600"}`}>
+              {credit ? "+" : "−"}฿{baht(amountSatang)}
+            </p>
+            {subAmount && <p className="text-[10px] leading-tight tabular-num text-zinc-400">{subAmount}</p>}
+          </div>
           {menu}
         </div>
       </div>
@@ -1040,11 +1043,11 @@ function BankRow({ m, checked, onToggle, menu }: {
       if (r.ok) setRaw(r.raw ?? {}); else setRawErr(r.error ?? "โหลดข้อมูลดิบไม่สำเร็จ");
     });
   };
-  // resting subtitle stays the short [txnType · ref1]; detail moves into the expander
-  const subtitle = [m.txnType, m.ref1].filter(Boolean).join(" · ");
+  // คู่ค้า = หัวข้อหลัก (title) · ประเภท·ช่องทาง = บรรทัดรอง · ยอดคงเหลือ = โชว์ในแถวเลย (แบบ statement/PEAK)
+  const subtitle = m.txnType || null;
+  const balanceLine = m.balanceSatang != null ? `คงเหลือ ฿${baht(m.balanceSatang)}` : null;
   const detailRows: { label: string; value: string }[] = [];
   if (m.channel) detailRows.push({ label: "ช่องทาง", value: m.channel });
-  if (m.balanceSatang != null) detailRows.push({ label: "ยอดคงเหลือ", value: `฿${baht(m.balanceSatang)}` });
   if (m.valueDate) detailRows.push({ label: "วันที่มีผล", value: m.valueDate });
   if (m.ref1) detailRows.push({ label: "อ้างอิง 1", value: m.ref1 });
   if (m.ref2) detailRows.push({ label: "คู่ค้า / อ้างอิง 2", value: m.ref2 });
@@ -1055,8 +1058,9 @@ function BankRow({ m, checked, onToggle, menu }: {
       onToggle={onToggle}
       date={m.date}
       title={m.description || "รายการธนาคาร"}
-      subtitle={subtitle}
+      subtitle={subtitle ?? undefined}
       amountSatang={m.amountSatang}
+      subAmount={balanceLine}
       menu={menu}
       expandOpen={open}
       onExpand={() => setOpen((v) => !v)}

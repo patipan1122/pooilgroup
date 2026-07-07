@@ -120,7 +120,7 @@ export default async function BankReconHubPage({
       <LedgerHeader title="กระทบยอดธนาคาร" scope={scope} />
 
       {/* ── Hero: latest data + portfolio stats + primary import CTA ───────── */}
-      <section className="mb-5 overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-soft">
+      <section className="mb-4 overflow-hidden rounded-2xl border border-zinc-100 bg-white shadow-soft">
         <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex items-center gap-3">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
@@ -189,13 +189,13 @@ export default async function BankReconHubPage({
 
       {/* ── ภาพรวมการกระทบยอดทุกบัญชี (กี่ % · count + ฿) ───────────────────────── */}
       {accounts.length > 0 && (
-        <div className="mb-5">
+        <div className="mb-4">
           <CoverageCard coverage={coverage} title="กระทบยอดไปกี่ % — ทุกบัญชีรวมกัน" subtitle={periodLabel} />
         </div>
       )}
 
-      {/* ── Workspace links: คลัง · คำขออนุมัติ · โยกเงิน · รายการพิเศษ ──────────── */}
-      <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      {/* ── Workspace links: คลัง · คำขออนุมัติ · โยกเงิน · รายการพิเศษ (แถบกระชับ) ── */}
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           { href: "archive",       label: "คลัง",          hint: "รายการที่กระทบยอดแล้ว", Icon: Archive },
           { href: "approvals",     label: "คำขออนุมัติ",   hint: "อนุมัติย้อนรายการ",      Icon: ClipboardCheck },
@@ -205,14 +205,15 @@ export default async function BankReconHubPage({
           <Link
             key={href}
             href={`/ledger/bank-recon/${href}?${cp}`}
-            className="press group flex items-center gap-3 rounded-2xl border border-zinc-100 bg-white p-3 transition-colors hover:border-brand-200 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-brand-300"
+            title={hint}
+            className="press group flex items-center gap-2 rounded-xl border border-zinc-100 bg-white px-3 py-2 transition-colors hover:border-brand-200 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-brand-300"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-              <Icon size={17} />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+              <Icon size={15} />
             </span>
             <span className="min-w-0">
-              <span className="block text-sm font-semibold text-zinc-800">{label}</span>
-              <span className="block truncate text-[11px] text-zinc-400">{hint}</span>
+              <span className="block text-[13px] font-semibold leading-tight text-zinc-800">{label}</span>
+              <span className="hidden truncate text-[10px] leading-tight text-zinc-400 sm:block">{hint}</span>
             </span>
           </Link>
         ))}
@@ -254,59 +255,55 @@ export default async function BankReconHubPage({
           </Link>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {Object.entries(
             accounts.reduce<Record<string, typeof accounts>>((acc, a) => {
               (acc[a.bankCode] ??= []).push(a); return acc;
             }, {}),
           ).map(([bankCode, list]) => (
             <div key={bankCode}>
-              <div className="mb-2.5 flex items-center gap-2">
-                <BankLogo code={bankCode} name={BANK_NAMES[bankCode]} size={26} />
+              <div className="mb-2 flex items-center gap-2">
+                <BankLogo code={bankCode} name={BANK_NAMES[bankCode]} size={22} />
                 <h3 className="text-sm font-semibold text-zinc-700">{BANK_NAMES[bankCode] ?? bankCode}</h3>
                 <span className="rounded-full bg-zinc-100 px-1.5 text-xs text-zinc-400">{list.length}</span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {list.map((acct) => {
                   const hasData = !!acct.lastImportedDate;
                   return (
                     <Link
                       key={acct.accountId}
                       href={`/ledger/bank-recon/${acct.accountId}?period=${period}&${cp}`}
-                      className="press group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-zinc-100 bg-white p-4 transition-colors hover:border-brand-200 hover:shadow-soft"
+                      className="press group relative flex flex-col gap-2 overflow-hidden rounded-xl border border-zinc-100 bg-white p-3 transition-colors hover:border-brand-200 hover:shadow-soft"
                     >
                       {/* status accent rail */}
-                      <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${accentClass(acct)}`} aria-hidden />
+                      <span className={`absolute inset-y-2.5 left-0 w-1 rounded-r-full ${accentClass(acct)}`} aria-hidden />
 
                       {/* header: logo + name + chevron */}
-                      <div className="flex items-start gap-3 pl-1.5">
-                        <BankLogo code={acct.bankCode} name={BANK_NAMES[acct.bankCode]} size={36} />
+                      <div className="flex items-start gap-2 pl-1.5">
+                        <BankLogo code={acct.bankCode} name={BANK_NAMES[acct.bankCode]} size={28} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-zinc-800">{acct.accountName}</p>
-                          <p className="font-mono text-xs text-zinc-400 tabular-num">{acct.accountNo}</p>
+                          <p className="truncate text-sm font-medium text-zinc-800">{acct.accountName}</p>
+                          <p className="font-mono text-[11px] text-zinc-400 tabular-num">{acct.accountNo}</p>
                         </div>
-                        <ChevronRight size={18} className="shrink-0 text-zinc-300 transition-colors group-hover:text-brand-500" />
+                        <ChevronRight size={16} className="shrink-0 text-zinc-300 transition-colors group-hover:text-brand-500" />
                       </div>
 
-                      {/* DATA FRESHNESS — the headline element */}
+                      {/* DATA FRESHNESS — บรรทัดเดียว กระชับ */}
                       {hasData ? (
-                        <div className="flex items-center gap-2.5 rounded-xl bg-brand-50/60 px-3 py-2 pl-3">
-                          <CalendarCheck2 size={18} className="shrink-0 text-brand-600" />
-                          <div className="min-w-0">
-                            <p className="text-[11px] leading-tight text-zinc-400">ข้อมูลถึงวันที่</p>
-                            <p className="text-sm font-semibold text-zinc-800 tabular-num">{thDate(acct.lastImportedDate)}</p>
-                          </div>
+                        <div className="flex items-center gap-1.5 rounded-lg bg-brand-50/60 px-2.5 py-1.5">
+                          <CalendarCheck2 size={14} className="shrink-0 text-brand-600" />
+                          <span className="text-[11px] text-zinc-400">ถึง</span>
+                          <span className="text-[13px] font-semibold text-zinc-800 tabular-num">{thDate(acct.lastImportedDate)}</span>
                           {acct.lastUploadedAt && (
-                            <p className="ml-auto shrink-0 text-right text-[11px] leading-tight text-zinc-400">
-                              นำเข้าเมื่อ<br />{thDate(acct.lastUploadedAt)}
-                            </p>
+                            <span className="ml-auto shrink-0 text-[10px] text-zinc-400">นำเข้า {thDate(acct.lastUploadedAt)}</span>
                           )}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/50 px-3 py-2 text-zinc-400">
-                          <CalendarOff size={18} className="shrink-0" />
-                          <p className="text-xs">ยังไม่มีข้อมูล · แตะเพื่อนำเข้า statement</p>
+                        <div className="flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-200 bg-zinc-50/50 px-2.5 py-1.5 text-zinc-400">
+                          <CalendarOff size={14} className="shrink-0" />
+                          <p className="text-[11px]">ยังไม่มีข้อมูล · แตะเพื่อนำเข้า statement</p>
                         </div>
                       )}
 
