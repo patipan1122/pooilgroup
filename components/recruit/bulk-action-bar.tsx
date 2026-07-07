@@ -22,6 +22,8 @@ const BULK_MOVE_STATUSES: ApplicationStatus[] = ["SCREENING", "REJECTED"];
 interface Props {
   /** ids currently selected across all columns */
   selectedIds: string[];
+  /** ids that already have an AI score — batch-score skips them (no double-spend) */
+  scoredIds?: Set<string>;
   /** clear the whole selection */
   onClear: () => void;
 }
@@ -33,7 +35,7 @@ interface Props {
  * Vercel timeout. Partial-failure safe (try/catch per item), idempotent
  * (running flag disables buttons), and refreshes the server list at the end.
  */
-export function BulkActionBar({ selectedIds, onClear }: Props) {
+export function BulkActionBar({ selectedIds, scoredIds, onClear }: Props) {
   const router = useRouter();
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ label: string; done: number; total: number } | null>(
@@ -45,8 +47,20 @@ export function BulkActionBar({ selectedIds, onClear }: Props) {
   async function runAiScore() {
     if (running || count === 0) return;
 
-    // Cap 20 — process only the first N; tell HR the rest carry over.
+    // Skip already-scored cards — re-scoring is silent double-spend.
     let ids = selectedIds;
+    if (scoredIds && scoredIds.size) {
+      const before = ids.length;
+      ids = ids.filter((id) => !scoredIds.has(id));
+      const skipped = before - ids.length;
+      if (skipped > 0) toast.message(`ข้าม ${skipped} คนที่ประเมินด้วย AI แล้ว`);
+    }
+    if (ids.length === 0) {
+      toast.message("คนที่เลือกประเมินด้วย AI ครบแล้ว");
+      return;
+    }
+
+    // Cap 20 — process only the first N; tell HR the rest carry over.
     if (ids.length > AI_SCORE_CAP) {
       ids = ids.slice(0, AI_SCORE_CAP);
       toast.message("ประเมินได้ทีละ 20 คน · ที่เหลือเลือกใหม่รอบหน้า");

@@ -48,6 +48,11 @@ export function PipelineBoard({ showStatuses, grouped, canWrite, selectHrefBase 
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
+  // ids already AI-scored — batch-score skips them (no silent double-spend).
+  const scoredIds = new Set<string>();
+  for (const s of showStatuses)
+    for (const c of grouped[s] ?? []) if (c.aiScore != null) scoredIds.add(c.id);
+
   function buildSelectHref(id: string) {
     const sp = new URLSearchParams();
     if (selectHrefBase.posting) sp.set("posting", selectHrefBase.posting);
@@ -73,7 +78,11 @@ export function PipelineBoard({ showStatuses, grouped, canWrite, selectHrefBase 
       </div>
 
       {canWrite && (
-        <BulkActionBar selectedIds={Array.from(selectedIds)} onClear={clearSelection} />
+        <BulkActionBar
+          selectedIds={Array.from(selectedIds)}
+          scoredIds={scoredIds}
+          onClear={clearSelection}
+        />
       )}
     </>
   );

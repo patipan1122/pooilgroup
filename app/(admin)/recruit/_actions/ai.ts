@@ -15,6 +15,7 @@ import {
   type FieldSuggestion,
 } from "@/lib/recruit/ai";
 import { getObject } from "@/lib/r2/upload";
+import { checkAiBudget } from "@/lib/ai/cost-cap";
 import { FormSchemaSchema } from "@/lib/recruit/types";
 
 export async function scoreApplicationAction(applicationId: string) {
@@ -22,6 +23,14 @@ export async function scoreApplicationAction(applicationId: string) {
   if (!canRecruitWrite(session.user.role)) {
     throw new Error("ไม่มีสิทธิ์");
   }
+  // Cost circuit-breaker — enforce the same AI caps the rest of the app does
+  // (batch-score fires this per item, so the hourly cap actually bites).
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "recruit.score-candidate",
+  });
+  if (!budget.allowed) throw new Error(budget.reason ?? "เกิน budget AI ชั่วคราว");
 
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
@@ -44,7 +53,7 @@ export async function scoreApplicationAction(applicationId: string) {
     where: { id: applicationId },
     data: {
       aiScore: result.score,
-      aiSummary: result.summary,
+      aiSummary: "[จากคำตอบ] " + result.summary,
       aiStrengths: result.strengths,
       aiRisks: result.risks,
       aiEvaluatedAt: new Date(),
@@ -70,6 +79,12 @@ export async function scoreResumeAction(applicationId: string) {
   if (!canRecruitWrite(session.user.role)) {
     throw new Error("ไม่มีสิทธิ์");
   }
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "recruit.score-resume",
+  });
+  if (!budget.allowed) throw new Error(budget.reason ?? "เกิน budget AI ชั่วคราว");
 
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
@@ -85,11 +100,19 @@ export async function scoreResumeAction(applicationId: string) {
     size: number;
     mime: string;
   }>;
-  const resume = files.find((f) => isResumeReadableMime(f.mime));
+  // Prefer a PDF résumé over an image so a face/selfie photo is not scored as
+  // the "résumé" (bias/PDPA); only fall back to an image if no PDF was attached.
+  const resume =
+    files.find((f) => f.mime === "application/pdf") ??
+    files.find((f) => isResumeReadableMime(f.mime));
   if (!resume) {
     throw new Error(
       "ไม่มีไฟล์ที่ AI อ่านได้ (รองรับ PDF / รูปภาพ) · ถ้าเป็นไฟล์ Word ให้แปลงเป็น PDF ก่อน",
     );
+  }
+  // Size guard — don't base64 a huge file into a vision call (cost/timeout).
+  if (resume.size > 5 * 1024 * 1024) {
+    throw new Error("ไฟล์เรซูเม่ใหญ่เกิน 5 MB — ขอไฟล์ที่เล็กกว่า หรือแปลงเป็น PDF");
   }
 
   const bytes = await getObject(resume.key);
@@ -137,7 +160,7 @@ export async function scoreResumeAction(applicationId: string) {
     where: { id: applicationId, orgId: session.user.org_id },
     data: {
       aiScore: result.score,
-      aiSummary: result.summary,
+      aiSummary: "[จากเรซูเม่] " + result.summary,
       aiStrengths: result.strengths,
       aiRisks: result.risks,
       aiEvaluatedAt: new Date(),
@@ -166,6 +189,13 @@ export async function draftMessageAction(
   if (!canRecruitWrite(session.user.role)) {
     return { ok: false, error: "ไม่มีสิทธิ์" };
   }
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "recruit.draft-message",
+  });
+  if (!budget.allowed)
+    return { ok: false, error: budget.reason ?? "เกิน budget AI ชั่วคราว" };
 
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
@@ -173,7 +203,12 @@ export async function draftMessageAction(
       applicant: { select: { fullName: true } },
       posting: { select: { title: true } },
       interviews: {
-        where: { status: { in: ["SCHEDULED", "CONFIRMED"] } },
+        // Only FUTURE interviews — an old, never-completed one must not be
+        // drafted as an invite to a date already in the past.
+        where: {
+          status: { in: ["SCHEDULED", "CONFIRMED"] },
+          scheduledAt: { gte: new Date() },
+        },
         orderBy: { scheduledAt: "asc" },
         take: 1,
         select: { scheduledAt: true, kind: true, location: true },

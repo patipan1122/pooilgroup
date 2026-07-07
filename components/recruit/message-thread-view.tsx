@@ -103,6 +103,11 @@ export function MessageThreadView({ thread }: { thread: Thread }) {
           toast.error(res.error);
           return;
         }
+        if (
+          body.trim() &&
+          !window.confirm("แทนที่ข้อความที่พิมพ์อยู่ด้วยร่าง AI?")
+        )
+          return;
         setBody(res.draft);
         toast.success("ร่างข้อความแล้ว · แก้ไขก่อนส่งได้");
       } catch (e) {

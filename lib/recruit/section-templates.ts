@@ -364,9 +364,9 @@ const personalProfile: FormSection = {
       type: "file",
       label: "แนบเรซูเม่ / เอกสาร",
       required: false,
-      accept: ["pdf", "jpg", "jpeg", "png", "doc", "docx"],
+      accept: ["pdf", "jpg", "jpeg", "png"],
       maxFiles: 3,
-      helpText: "แนะนำไฟล์ PDF (AI อ่านให้คะแนนได้) · ไม่เกิน 5 MB ต่อไฟล์",
+      helpText: "แนะนำไฟล์ PDF (AI อ่านให้คะแนนได้) · Word ให้แปลงเป็น PDF ก่อน · ไม่เกิน 5 MB",
     },
   ],
 };
@@ -384,7 +384,10 @@ function iqImg(
     id: `iq_${tier}_${n}`,
     type: "radio",
     label,
-    required: true,
+    // A11Y (audit 2026-07-07): NOT required — image-only puzzles can't be read by
+    // a screen reader, so blind/low-vision applicants must not be blocked from
+    // submitting. IQ is advisory; unanswered simply doesn't score.
+    required: false,
     hasCorrectAnswer: true,
     correctAnswer: correct,
     correctPoints: 1,
