@@ -2249,7 +2249,14 @@ export async function getReconcilePeriods(args: {
         sum += cd + coinBahtOf(kd);
         any = true;
       }
-      return any ? Math.round(sum) : null;
+      // CEO 2026-07-07 · a round whose Σ meter delta is exactly 0 means the meter is
+      // FROZEN — no new reading landed in this window (e.g. events orphaned to a NULL
+      // branch by a duplicate-branch name clash), NOT a real zero-sales round. Return
+      // null so the view falls back to full-day sales (⚪ "ไม่มีข้อมูลมิเตอร์") instead
+      // of a misleading "ควรได้ 0". Safe: negative deltas are already skipped above, so
+      // sum===0 ⟺ genuinely no metered movement (never hides a real shortage).
+      const total = Math.round(sum);
+      return any && total > 0 ? total : null;
     };
     const nowMs = Date.now();
     let cum = 0;

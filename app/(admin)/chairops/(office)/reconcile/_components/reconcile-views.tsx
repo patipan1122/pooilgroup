@@ -2696,6 +2696,22 @@ export function PeriodsTab({
               // no meter data (e.g. org-level view / branch без event file).
               const meterMode = p.expectedMeter != null && !p.open;
               const vd = PERIOD_VERDICT[p.verdictMeter];
+              // CEO 2026-07-07 · the meter time-window was hover-only (invisible on
+              // mobile). Show it inline. Same-day → HH:mm only; multi-day → MM-DD HH:mm.
+              const wSameDay =
+                p.meterWindowStart != null &&
+                p.meterWindowEnd != null &&
+                p.meterWindowStart.slice(0, 10) === p.meterWindowEnd.slice(0, 10);
+              const wStartTxt = p.meterWindowStart
+                ? wSameDay
+                  ? p.meterWindowStart.slice(11)
+                  : p.meterWindowStart.slice(5)
+                : "เริ่มมีข้อมูล";
+              const wEndTxt = p.meterWindowEnd
+                ? wSameDay
+                  ? p.meterWindowEnd.slice(11)
+                  : p.meterWindowEnd.slice(5)
+                : "";
               const diffClass = meterMode
                 ? vd.cls
                 : p.open
@@ -2720,13 +2736,12 @@ export function PeriodsTab({
                       ({p.days} วัน)
                     </span>
                     {p.meterWindowEnd && (
-                      <span
+                      <div
                         className="text-3"
-                        style={{ marginLeft: 4, fontSize: 10 }}
-                        aria-hidden
+                        style={{ fontSize: 10, marginTop: 1, whiteSpace: "nowrap" }}
                       >
-                        🕐
-                      </span>
+                        🕐 {wStartTxt} → {wEndTxt}
+                      </div>
                     )}
                     {p.open && (
                       <span

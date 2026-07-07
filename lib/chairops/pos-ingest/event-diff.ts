@@ -38,6 +38,14 @@ export function normalizeStoreKey(name: string): string {
     .trim();
 }
 
+/** Like normalizeStoreKey but KEEPS the trailing "(code)" — used as a
+ *  higher-priority exact key so two branches sharing a base name but differing
+ *  only by store code ("Robinsonปราจีน(600)" vs "(550)") each get a UNIQUE key
+ *  instead of colliding into one ambiguous key that resolves to NULL. */
+export function normalizeFullKey(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 // ---------------------------------------------------------------------------
 // Types — the diff-summary shape the UI is built against
 // ---------------------------------------------------------------------------
@@ -133,6 +141,7 @@ export async function computeEventDiff(
     select: { id: true, name: true },
   });
   const branchIdsByKey = new Map<string, string[]>();
+  const branchIdsByFullKey = new Map<string, string[]>();
   const branchNameById = new Map<string, string>();
   for (const b of orgBranches) {
     branchNameById.set(b.id, b.name);
@@ -140,9 +149,21 @@ export async function computeEventDiff(
     const arr = branchIdsByKey.get(key);
     if (arr) arr.push(b.id);
     else branchIdsByKey.set(key, [b.id]);
+    const fkey = normalizeFullKey(b.name);
+    const farr = branchIdsByFullKey.get(fkey);
+    if (farr) farr.push(b.id);
+    else branchIdsByFullKey.set(fkey, [b.id]);
   }
-  /** Unique normalized match only → null when unmatched OR ambiguous. */
+  /** Resolve storeName → branchId in two tiers, most-specific first:
+   *  1) EXACT full name (store code included) — disambiguates same-base-name
+   *     branches whose files DO carry the code (previously orphaned to NULL by
+   *     the ambiguity guard, e.g. "Robinsonปราจีน(600)" vs "(550)").
+   *  2) code-stripped normalized key — tolerant match when a file/branch omits
+   *     the code ("Ck plaza (200)" file vs "Ck plaza" branch).
+   *  Each tier returns null when it is ambiguous (≥2 branches) — never guess. */
   const resolveBranchId = (storeName: string): string | null => {
+    const full = branchIdsByFullKey.get(normalizeFullKey(storeName));
+    if (full && full.length === 1) return full[0]!;
     const ids = branchIdsByKey.get(normalizeStoreKey(storeName));
     return ids && ids.length === 1 ? ids[0]! : null;
   };
