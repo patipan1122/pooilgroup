@@ -463,6 +463,12 @@ function FieldInput({
             alt={`รูปประกอบคำถาม ${field.label}`}
             className="w-full max-h-72 object-contain"
             loading="lazy"
+            onError={(e) => {
+              const box = e.currentTarget.parentElement;
+              if (box)
+                box.innerHTML =
+                  '<p class="p-4 text-center text-xs text-zinc-400">รูปโหลดไม่ได้ · ข้ามข้อนี้ได้</p>';
+            }}
           />
         </div>
       )}

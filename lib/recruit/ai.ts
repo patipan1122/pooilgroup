@@ -282,12 +282,8 @@ ${input.formAnswersText ? `\nคำตอบเพิ่มเติมจาก
     response.content[0]?.type === "text" ? response.content[0].text : "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) {
-    return {
-      score: 0,
-      summary: "ไม่สามารถอ่านเรซูเม่ได้ · โปรดลองอีกครั้ง",
-      strengths: [],
-      risks: [],
-    };
+    // Fail loudly — the caller must NOT persist score 0 over a prior good score.
+    throw new Error("AI อ่านเรซูเม่ไม่สำเร็จ (อ่านไฟล์ไม่ออก) · ลองใหม่อีกครั้ง");
   }
   try {
     const parsed = JSON.parse(match[0]) as CandidateScore;
@@ -298,12 +294,8 @@ ${input.formAnswersText ? `\nคำตอบเพิ่มเติมจาก
       risks: parsed.risks?.slice(0, 3) ?? [],
     };
   } catch {
-    return {
-      score: 0,
-      summary: "ไม่สามารถอ่านเรซูเม่ได้ · โปรดลองอีกครั้ง",
-      strengths: [],
-      risks: [],
-    };
+    // Fail loudly — the caller must NOT persist score 0 over a prior good score.
+    throw new Error("AI อ่านเรซูเม่ไม่สำเร็จ (อ่านไฟล์ไม่ออก) · ลองใหม่อีกครั้ง");
   }
 }
 

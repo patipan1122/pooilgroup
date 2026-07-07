@@ -364,9 +364,9 @@ const personalProfile: FormSection = {
       type: "file",
       label: "แนบเรซูเม่ / เอกสาร",
       required: false,
-      accept: ["pdf", "jpg", "jpeg", "png", "doc", "docx"],
+      accept: ["pdf", "jpg", "jpeg", "png"],
       maxFiles: 3,
-      helpText: "แนะนำไฟล์ PDF (AI อ่านให้คะแนนได้) · ไม่เกิน 5 MB ต่อไฟล์",
+      helpText: "แนะนำไฟล์ PDF (AI อ่านให้คะแนนได้) · Word ให้แปลงเป็น PDF ก่อน · ไม่เกิน 5 MB",
     },
   ],
 };
@@ -384,7 +384,10 @@ function iqImg(
     id: `iq_${tier}_${n}`,
     type: "radio",
     label,
-    required: true,
+    // A11Y (audit 2026-07-07): NOT required — image-only puzzles can't be read by
+    // a screen reader, so blind/low-vision applicants must not be blocked from
+    // submitting. IQ is advisory; unanswered simply doesn't score.
+    required: false,
     hasCorrectAnswer: true,
     correctAnswer: correct,
     correctPoints: 1,
@@ -419,10 +422,9 @@ const iqMedium: FormSection = {
   id: "tpl_iq_medium",
   title: "ไอคิวจากรูป — ระดับกลาง",
   description:
-    "7 ข้อ · เหมาะกับ ช่างเทคนิค · ออฟฟิศ/บัญชี · โจทย์สองกฎซ้อน · มีเฉลย",
+    "6 ข้อ · เหมาะกับ ช่างเทคนิค · ออฟฟิศ/บัญชี · โจทย์สองกฎซ้อน · มีเฉลย",
   fields: [
     iqImg("medium", 2, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (นับเพิ่มตามแนวนอน + รูปเปลี่ยนตามแนวตั้ง)"),
-    iqImg("medium", 4, "a", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (ครึ่งที่ทึบสลับไปอีกด้าน)"),
     iqImg("medium", 5, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (ช่องที่ 3 = ช่อง 1 ซ้อนช่อง 2)"),
     iqImg("medium", 6, "b", "รูปที่ 5 ควรเป็นแบบใด ? (สี่เหลี่ยมหมุน + จุดวิ่งรอบรูป)"),
     iqImg("medium", 7, "c", "รูปไหนควรอยู่ตรงเครื่องหมาย ? (สัญลักษณ์หมุนทีละขั้น)"),
@@ -496,7 +498,7 @@ export const SECTION_TEMPLATES: SectionTemplate[] = [
   {
     id: "iq_medium",
     name: "ไอคิวรูป — ระดับกลาง",
-    description: "7 ข้อ · ช่าง/ออฟฟิศ/บัญชี · มีรูป+เฉลย",
+    description: "6 ข้อ · ช่าง/ออฟฟิศ/บัญชี · มีรูป+เฉลย",
     icon: "🟡",
     accent: "amber",
     section: iqMedium,

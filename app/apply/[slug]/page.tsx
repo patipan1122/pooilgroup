@@ -115,10 +115,28 @@ export default async function ApplyPage({
     );
   }
 
+  // SECURITY (audit 2026-07-07): strip answer keys before sending the schema to
+  // the public applicant browser — correctAnswer/etc must NEVER reach the client
+  // (view-source would reveal the IQ key). HR-side scoring re-reads the keys from
+  // posting.fieldSchema server-side, so grading is unaffected.
+  const publicSchema: FormSchema = {
+    ...schema,
+    sections: schema.sections.map((s) => ({
+      ...s,
+      fields: s.fields.map((f) => {
+        const clean = { ...f };
+        delete clean.correctAnswer;
+        delete clean.correctPoints;
+        delete clean.hasCorrectAnswer;
+        return clean;
+      }),
+    })),
+  };
+
   return (
     <ApplyClient
       slug={slug}
-      schema={schema}
+      schema={publicSchema}
       jobTitle={posting.title}
       jobDescription={posting.description ?? undefined}
       companyName={posting.company?.name ?? posting.org.name}

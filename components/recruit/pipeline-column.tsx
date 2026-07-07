@@ -184,7 +184,7 @@ function ApplicationCard({
         // Checkbox toggles selection · stopPropagation so it never triggers the
         // card's <Link> navigation. Bigger tap target on top-left for mobile.
         <label
-          className="absolute top-1.5 left-1.5 z-10 flex size-7 cursor-pointer items-center justify-center"
+          className="absolute top-0 left-0 z-10 flex size-11 cursor-pointer items-center justify-center"
           onClick={(e) => e.stopPropagation()}
         >
           <input
@@ -197,7 +197,7 @@ function ApplicationCard({
         </label>
       )}
       {overdue && (
-        <div className={`mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded ${selectable ? "ml-8" : ""}`}>
+        <div className={`mb-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded ${selectable ? "ml-10" : ""}`}>
           🔥 เกิน SLA
         </div>
       )}
