@@ -70,9 +70,12 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
     size: number;
     mime: string;
   }>) ?? [];
-  // F1: résumé-read available only when there's a PDF/image the AI can open
+  // F1: résumé-read available only when there's a PDF/image the AI can open.
+  // กันล้ม: ไฟล์เก่าบางแถวเก็บ mime เป็น null/ว่าง → f.mime.startsWith จะ throw ทั้งหน้า
   const hasResumeFile = files.some(
-    (f) => f.mime === "application/pdf" || f.mime.startsWith("image/"),
+    (f) =>
+      typeof f?.mime === "string" &&
+      (f.mime === "application/pdf" || f.mime.startsWith("image/")),
   );
 
   const status = app.status as ApplicationStatus;

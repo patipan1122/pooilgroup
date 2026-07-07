@@ -684,6 +684,7 @@ function renderInput(
           min={field.min}
           max={field.max}
           step={field.step ?? 1}
+          placeholder={field.placeholder}
           disabled={disabled}
           inputMode="numeric"
           className={`${base} h-12`}

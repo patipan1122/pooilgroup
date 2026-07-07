@@ -82,7 +82,15 @@ export const FieldSchema = z.object({
   correctAnswer: z.union([z.string(), z.array(z.string())]).optional(),
   correctPoints: z.number().int().positive().optional(),
   // Image prompt — render <img> above the question (e.g. "ภาพนี้คือ ซ้าย หรือ ขวา?")
-  imageUrl: z.string().url().optional(),
+  // รับได้ทั้ง URL เต็ม (R2 upload) และ path ในเครื่อง (/recruit-iq/easy-1.svg จาก template)
+  // เดิมใช้ .url() → path แบบ / ไม่ผ่าน → บันทึกฟอร์มไอคิวล้ม
+  imageUrl: z
+    .string()
+    .max(500)
+    .refine((v) => /^https?:\/\//.test(v) || v.startsWith("/"), {
+      message: "imageUrl ต้องเป็น URL เต็มหรือ path ที่ขึ้นต้นด้วย /",
+    })
+    .optional(),
   imageR2Key: z.string().optional(),
 });
 export type Field = z.infer<typeof FieldSchema>;

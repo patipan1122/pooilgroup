@@ -837,6 +837,22 @@ function FieldRow({
                 maxLength={500}
               />
 
+              {/* ตัวอย่างในช่อง (placeholder) — ข้อความจาง ๆ ที่เห็นก่อนผู้สมัครพิมพ์ */}
+              {(field.type === "short_text" ||
+                field.type === "long_text" ||
+                field.type === "number") && (
+                <input
+                  type="text"
+                  value={field.placeholder ?? ""}
+                  onChange={(e) => onUpdate({ placeholder: e.target.value })}
+                  disabled={readonly}
+                  placeholder="ตัวอย่างในช่อง (เช่น 'เช่น เคยขับรถบรรทุก 6 ล้อ 3 ปี')"
+                  className="w-full text-xs px-2 py-1.5 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+                  onClick={(e) => e.stopPropagation()}
+                  maxLength={200}
+                />
+              )}
+
               {/* Type-specific options */}
               {(field.type === "short_text" || field.type === "long_text") && (
                 <select
