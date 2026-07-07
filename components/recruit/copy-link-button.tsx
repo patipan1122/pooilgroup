@@ -16,7 +16,11 @@ export function CopyLinkButton({ slug, size = "sm" }: Props) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
-    const url = `${window.location.origin}/apply/${slug}`;
+    // Lock the shared link to the public domain (pooilgroup.com) instead of
+    // window.location.origin — otherwise, if HR opens the back-office via
+    // pooilgroup.vercel.app, the copied apply link gets frozen with "vercel".
+    const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+    const url = `${base}/apply/${slug}`;
     navigator.clipboard
       .writeText(url)
       .then(() => {

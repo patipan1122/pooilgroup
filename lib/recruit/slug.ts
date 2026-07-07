@@ -32,15 +32,61 @@ function cryptoRandomCode(len: number): string {
   return out;
 }
 
-/** Convert Thai/English string to URL-safe slug. */
+// Thai → Latin transliteration (readability only · uniqueness comes from the
+// random suffix). Rough RTGS-ish char map — NOT linguistically perfect, just
+// enough for a readable ASCII slug. Tone marks / unknown Thai chars → dropped.
+//
+// WHY ASCII-ONLY (2026-07-07): Next.js on Vercel does NOT match dynamic route
+// segments that contain non-ASCII (Thai) chars → /apply/<thai-slug> 404s at the
+// routing layer before the page ever runs. Keeping Thai in the slug (old regex
+// `[^฀-๿a-z0-9\s-]`) made every Thai-titled posting's apply link dead. So we
+// romanize Thai → ASCII here and strip anything non-[a-z0-9-].
+// NOTE: keys are quoted string literals on purpose — bare Thai vowel/tone-mark
+// keys (combining marks) are not valid JS identifiers and the SWC lexer (Node
+// strip-types + Vercel/Next build) rejects them.
+const THAI_TO_LATIN: Record<string, string> = {
+  // consonants
+  "ก": "k", "ข": "kh", "ฃ": "kh", "ค": "kh", "ฅ": "kh", "ฆ": "kh", "ง": "ng",
+  "จ": "ch", "ฉ": "ch", "ช": "ch", "ซ": "s", "ฌ": "ch", "ญ": "y",
+  "ฎ": "d", "ฏ": "t", "ฐ": "th", "ฑ": "th", "ฒ": "th", "ณ": "n",
+  "ด": "d", "ต": "t", "ถ": "th", "ท": "th", "ธ": "th", "น": "n",
+  "บ": "b", "ป": "p", "ผ": "ph", "ฝ": "f", "พ": "ph", "ฟ": "f", "ภ": "ph", "ม": "m",
+  "ย": "y", "ร": "r", "ฤ": "rue", "ล": "l", "ฦ": "lue", "ว": "w",
+  "ศ": "s", "ษ": "s", "ส": "s", "ห": "h", "ฬ": "l", "อ": "o", "ฮ": "h",
+  // vowels + carriers
+  "ะ": "a", "ั": "a", "า": "a", "ำ": "am", "ิ": "i", "ี": "i", "ึ": "ue", "ื": "ue",
+  "ุ": "u", "ู": "u", "เ": "e", "แ": "ae", "โ": "o", "ใ": "ai", "ไ": "ai", "ๅ": "a",
+  // thai digits
+  "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
+  "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9",
+};
+
+function romanizeThai(input: string): string {
+  // Leading vowels (เ แ โ ใ ไ) are written before their consonant but spoken
+  // after it — swap so the romanization reads in spoken order (แม่ → mae).
+  const reordered = input.replace(/([เแโใไ])([ก-ฮ])/g, "$2$1");
+  let out = "";
+  for (const ch of reordered) {
+    if (ch >= "฀" && ch <= "๿") {
+      out += THAI_TO_LATIN[ch] ?? ""; // tone marks / unmapped Thai → drop
+    } else {
+      out += ch; // latin / digits / space / dash pass through
+    }
+  }
+  return out;
+}
+
+/** Convert Thai/English string to an ASCII-safe URL slug. */
 export function slugify(input: string): string {
-  return input
+  return romanizeThai(input.normalize("NFC"))
     .toLowerCase()
     .trim()
-    .replace(/[^฀-๿a-z0-9\s-]/g, "") // keep Thai, alphanum, space, dash
+    .replace(/[^a-z0-9\s-]/g, "") // ASCII only — non-ASCII paths 404 on Vercel
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .slice(0, 60);
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
 }
 
 /** Generate a unique slug from title + random suffix. */

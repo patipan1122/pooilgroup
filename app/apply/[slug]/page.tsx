@@ -73,13 +73,30 @@ export default async function ApplyPage({
   const { slug } = await params;
   const { ref } = await searchParams;
 
-  const posting = await prisma.recruitJobPosting.findUnique({
+  let posting = await prisma.recruitJobPosting.findUnique({
     where: { slug },
     include: {
       company: { select: { name: true } },
       org: { select: { name: true } },
     },
   });
+
+  // Belt-and-suspenders: if the exact slug misses, resolve by the trailing
+  // random token (the "-abcd" suffix). Rescues links whose readable prefix was
+  // altered/re-slugified (e.g. an old Thai slug backfilled to ASCII) as long as
+  // the unique token still matches.
+  if (!posting) {
+    const token = slug.split("-").pop();
+    if (token && token.length >= 4) {
+      posting = await prisma.recruitJobPosting.findFirst({
+        where: { slug: { endsWith: `-${token}` } },
+        include: {
+          company: { select: { name: true } },
+          org: { select: { name: true } },
+        },
+      });
+    }
+  }
 
   if (!posting || posting.status === "DRAFT" || posting.status === "ARCHIVED") {
     return notFound();
