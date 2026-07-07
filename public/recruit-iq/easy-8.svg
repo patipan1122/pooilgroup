@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
   <!-- b2-easy-3 — NESTED SHAPE GROWS. Each cell = an outer square holding an inner circle.
        Outer square stays the same size; inner circle grows small -> medium -> large.
        CORRECT = A (square + large inner circle).
        Distractors: B square + medium circle (too small), C circle outer + large circle (wrong outer),
        D empty square (no inner shape). -->
-  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+  <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
   <!-- series frame -->
   <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
@@ -34,28 +34,48 @@
   <!-- answer choices : outer 84x84, centered per box. Box centers x = 135 / 290 / 445 / 600 ; cy 585 -->
   <g>
     <!-- A: square + large inner circle r34 (CORRECT) -->
+    <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="93" y="543" width="84" height="84" rx="8" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <circle cx="135" cy="585" r="34" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+    </g>
 
     <!-- B: square + medium inner circle r20 (wrong size) -->
+    <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="248" y="543" width="84" height="84" rx="8" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <circle cx="290" cy="585" r="20" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+    </g>
 
     <!-- C: circle outer + large inner circle (wrong outer shape) -->
+    <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <circle cx="445" cy="585" r="43" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <circle cx="445" cy="585" r="34" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+    </g>
 
     <!-- D: empty square (no inner shape) -->
+    <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="558" y="543" width="84" height="84" rx="8" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+    </g>
+
+    <!-- E: triangle outer + large inner circle (WRONG: outer shape should stay a square) -->
+    <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <polygon points="360,748 408,832 312,832" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="360" cy="805" r="26" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
+
+    <!-- F: square + tiny inner circle r10 (WRONG: inner circle should be large, not shrink) -->
+    <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="543" y="753" width="84" height="84" rx="8" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <circle cx="585" cy="795" r="10" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>
   </g>
 
-  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับง่าย) · Buildly Recruit</text>
+  <text x="360" y="955" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับง่าย) · Buildly Recruit</text>
 </svg>

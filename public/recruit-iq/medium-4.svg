@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
   <!-- Medium visual IQ — Analogy, reflect the shading across the shape.
        circle left-solid : circle right-solid :: square top-solid : ?
        The rule flips the shaded half to the opposite side.
        Answer = square bottom-solid → B.
        Distractors: A top-solid (unchanged), C left-solid (wrong axis),
        D fully-solid. -->
-  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+  <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
   <!-- puzzle frame -->
   <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
@@ -39,31 +39,51 @@
   <!-- answer choices -->
   <g>
     <!-- A: square top-solid (near-miss: unchanged) -->
+    <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="105" y="555" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <clipPath id="aTop"><rect x="105" y="555" width="60" height="30"/></clipPath>
     <rect x="105" y="555" width="60" height="60" rx="4" fill="#6ea8fe" clip-path="url(#aTop)"/>
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+    </g>
 
     <!-- B: square bottom-solid (CORRECT) -->
+    <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="260" y="555" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <clipPath id="bBot"><rect x="260" y="585" width="60" height="30"/></clipPath>
     <rect x="260" y="555" width="60" height="60" rx="4" fill="#6ea8fe" clip-path="url(#bBot)"/>
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+    </g>
 
     <!-- C: square left-solid (near-miss: wrong axis) -->
+    <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="415" y="555" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <clipPath id="cLef"><rect x="415" y="555" width="30" height="60"/></clipPath>
     <rect x="415" y="555" width="60" height="60" rx="4" fill="#6ea8fe" clip-path="url(#cLef)"/>
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+    </g>
 
     <!-- D: fully-solid square (near-miss: over-filled) -->
+    <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="570" y="555" width="60" height="60" rx="4" fill="#6ea8fe" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+    </g>
+
+    <!-- E: square right-solid (WRONG: flip is on wrong axis — should be top->bottom, not left->right) -->
+    <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="330" y="765" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <clipPath id="eRig"><rect x="360" y="765" width="30" height="60"/></clipPath>
+    <rect x="330" y="765" width="60" height="60" rx="4" fill="#6ea8fe" clip-path="url(#eRig)"/>
+    <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
+
+    <!-- F: empty square, no shaded half (WRONG: a half must stay solid) -->
+    <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="555" y="765" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>
   </g>
 
-  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ตัวอย่างข้อสอบไอคิว (ระดับกลาง) · Buildly Recruit</text>
+  <text x="360" y="955" text-anchor="middle" font-size="14" fill="#4a5b7e">ตัวอย่างข้อสอบไอคิว (ระดับกลาง) · Buildly Recruit</text>
 </svg>
