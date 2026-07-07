@@ -41,6 +41,8 @@ export default async function NewPostingPage() {
           closesAt: null,
           fieldSchema: EMPTY_FORM_SCHEMA,
           status: "DRAFT",
+          coverImageUrl: null,
+          caption: "",
         }}
       />
     </>

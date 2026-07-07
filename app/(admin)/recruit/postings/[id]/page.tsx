@@ -83,6 +83,13 @@ export default async function PostingDetailPage({
     // fallback
   }
 
+  const postingSettings =
+    posting.settings &&
+    typeof posting.settings === "object" &&
+    !Array.isArray(posting.settings)
+      ? (posting.settings as { coverImageUrl?: string; caption?: string })
+      : {};
+
   const canEdit = canRecruitWrite(session.user.role);
 
   // Compute stats
@@ -301,6 +308,7 @@ export default async function PostingDetailPage({
       <PostingEditor
         mode={canEdit ? "edit" : "view"}
         postingId={posting.id}
+        slug={posting.slug}
         companies={companies}
         initialData={{
           title: posting.title,
@@ -310,6 +318,8 @@ export default async function PostingDetailPage({
           closesAt: posting.closesAt?.toISOString().slice(0, 10) ?? null,
           fieldSchema: schema,
           status: posting.status as PostingStatus,
+          coverImageUrl: postingSettings.coverImageUrl ?? null,
+          caption: postingSettings.caption ?? "",
         }}
         canPublish={canEdit && posting.status === "DRAFT"}
         canClose={canEdit && posting.status === "OPEN"}

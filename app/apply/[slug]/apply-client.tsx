@@ -21,6 +21,7 @@ interface Props {
   jobDescription?: string;
   companyName: string;
   referralCode?: string;
+  coverImageUrl?: string;
 }
 
 export function ApplyClient({
@@ -30,6 +31,7 @@ export function ApplyClient({
   jobDescription,
   companyName,
   referralCode,
+  coverImageUrl,
 }: Props) {
   const router = useRouter();
   const [initialAnswers] = useState<Record<string, unknown>>(() => {
@@ -49,9 +51,24 @@ export function ApplyClient({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      {/* HERO — canvas Screen 03-1 */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-[var(--color-brand-600)] via-[var(--color-brand-700)] to-[var(--color-brand-900)] text-white">
-        <div className="max-w-2xl mx-auto px-5 sm:px-8 pt-10 pb-12 sm:pt-14 sm:pb-16">
+      {/* HERO — canvas Screen 03-1 (bg = workplace cover image if set) */}
+      <div className="relative overflow-hidden text-white">
+        {coverImageUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={coverImageUrl}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            {/* Dark brand overlay keeps white text legible over any photo */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-brand-900)]/92 via-[var(--color-brand-800)]/85 to-[var(--color-brand-700)]/80" />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-brand-600)] via-[var(--color-brand-700)] to-[var(--color-brand-900)]" />
+        )}
+        <div className="relative max-w-2xl mx-auto px-5 sm:px-8 pt-10 pb-12 sm:pt-14 sm:pb-16">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide bg-white/15 backdrop-blur px-3 py-1 rounded-full">
             <span className="size-1.5 rounded-full bg-emerald-300" />
             เปิดรับสมัคร
@@ -90,7 +107,7 @@ export function ApplyClient({
           </div>
         </div>
         {/* Bottom curve */}
-        <div className="h-6 bg-zinc-50 -mt-px rounded-t-[24px]" />
+        <div className="relative h-6 bg-zinc-50 -mt-px rounded-t-[24px]" />
       </div>
 
       {/* FORM CARD */}

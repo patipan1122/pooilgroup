@@ -168,6 +168,13 @@ export default async function ApplyPage({
     })),
   };
 
+  const applySettings =
+    posting.settings &&
+    typeof posting.settings === "object" &&
+    !Array.isArray(posting.settings)
+      ? (posting.settings as { coverImageUrl?: string })
+      : {};
+
   return (
     <ApplyClient
       slug={slug}
@@ -176,6 +183,7 @@ export default async function ApplyPage({
       jobDescription={posting.description ?? undefined}
       companyName={posting.company?.name ?? posting.org.name}
       referralCode={ref}
+      coverImageUrl={applySettings.coverImageUrl}
     />
   );
 }

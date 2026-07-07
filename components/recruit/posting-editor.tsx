@@ -17,10 +17,12 @@ import {
 import { FormBuilder } from "./form-builder";
 import { IPhonePreview } from "./iphone-preview";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ImageIcon, Sparkles } from "lucide-react";
 
 interface Props {
   mode: "create" | "edit" | "view";
   postingId?: string;
+  slug?: string;
   companies: Array<{ id: string; name: string; code: string }>;
   initialData: {
     title: string;
@@ -30,14 +32,20 @@ interface Props {
     closesAt: string | null;
     fieldSchema: FormSchema;
     status: PostingStatus;
+    coverImageUrl: string | null;
+    caption: string;
   };
   canPublish?: boolean;
   canClose?: boolean;
 }
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "";
+const COVER_MAX = 10 * 1024 * 1024;
+
 export function PostingEditor({
   mode,
   postingId,
+  slug,
   companies,
   initialData,
   canPublish,
@@ -52,8 +60,98 @@ export function PostingEditor({
   const [opensAt, setOpensAt] = useState(initialData.opensAt ?? "");
   const [closesAt, setClosesAt] = useState(initialData.closesAt ?? "");
   const [schema, setSchema] = useState<FormSchema>(initialData.fieldSchema);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(
+    initialData.coverImageUrl,
+  );
+  const [caption, setCaption] = useState(initialData.caption);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [pending, startTransition] = useTransition();
   const readonly = mode === "view";
+
+  const companyNameForCaption =
+    companies.find((c) => c.id === companyId)?.name ?? "";
+  const applyUrl = slug && APP_URL ? `${APP_URL}/apply/${slug}` : "";
+
+  async function uploadCover(file: File) {
+    if (!postingId) {
+      toast.error("บันทึกประกาศก่อน แล้วค่อยเพิ่มรูปหน้าปก");
+      return;
+    }
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      toast.error("รองรับเฉพาะรูป JPG / PNG / WEBP");
+      return;
+    }
+    if (file.size > COVER_MAX) {
+      toast.error(`รูปใหญ่เกิน 10 MB (รูปนี้ ${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const signResp = await fetch("/api/recruit/cover-upload", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          postingId,
+          fileName: file.name,
+          contentType: file.type,
+          size: file.size,
+        }),
+      });
+      if (!signResp.ok) {
+        const err = await signResp.json().catch(() => ({}));
+        toast.error(err.error ?? "ขออัปโหลดไม่สำเร็จ");
+        return;
+      }
+      const { url, publicUrl } = await signResp.json();
+      const putResp = await fetch(url, {
+        method: "PUT",
+        body: file,
+        headers: { "content-type": file.type },
+      });
+      if (!putResp.ok) {
+        toast.error("อัปโหลดรูปไม่สำเร็จ");
+        return;
+      }
+      setCoverImageUrl(publicUrl);
+      // Persist immediately so the cover survives even if HR forgets to save
+      await updatePosting(postingId, { coverImageUrl: publicUrl });
+      toast.success("อัปรูปหน้าปกแล้ว");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
+  async function removeCover() {
+    setCoverImageUrl(null);
+    if (postingId) {
+      try {
+        await updatePosting(postingId, { coverImageUrl: null });
+        toast.success("ลบรูปหน้าปกแล้ว");
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    }
+  }
+
+  function genCaption() {
+    const company = companyNameForCaption;
+    const jd = description.trim();
+    const lines = [
+      `🔔 รับสมัคร${title.trim() ? " " + title.trim() : "พนักงาน"}`,
+      company ? `📍 ${company}` : "",
+      "",
+      jd,
+      jd ? "" : "",
+      "✅ สนใจสมัคร กรอกใบสมัครออนไลน์ (ไม่ต้องล็อกอิน · ใช้เวลา 3-5 นาที):",
+      applyUrl || "(ลิงก์สมัครจะขึ้นหลังเปิดประกาศ)",
+      "",
+      "📱 สอบถามเพิ่มเติม ทักแชทเพจได้เลย",
+      company ? `#รับสมัครงาน #${company.replace(/\s+/g, "")}` : "#รับสมัครงาน",
+    ];
+    setCaption(lines.filter((l, i) => !(l === "" && lines[i - 1] === "")).join("\n").trim());
+  }
 
   function save() {
     startTransition(async () => {
@@ -70,6 +168,7 @@ export function PostingEditor({
             opensAt: opensAt || undefined,
             closesAt: closesAt || undefined,
             fieldSchema: schema,
+            caption: caption || undefined,
           });
           toast.success("สร้างประกาศแล้ว");
           router.push(`/recruit/postings/${result.id}`);
@@ -81,6 +180,8 @@ export function PostingEditor({
             opensAt: opensAt || null,
             closesAt: closesAt || null,
             fieldSchema: schema,
+            coverImageUrl,
+            caption,
           });
           toast.success("บันทึกแล้ว");
         }
@@ -118,6 +219,8 @@ export function PostingEditor({
       opensAt: opensAt || null,
       closesAt: closesAt || null,
       fieldSchema: schema,
+      coverImageUrl,
+      caption,
     });
   }
 
@@ -215,6 +318,123 @@ export function PostingEditor({
             maxLength={5000}
           />
         </Field>
+      </div>
+
+      {/* Cover image + share caption */}
+      <div className="rounded-3xl border border-zinc-200 bg-white p-5 sm:p-6 space-y-5">
+        <div>
+          <h2 className="text-sm font-bold text-zinc-900">
+            รูปหน้าปก + คำโพสต์รับสมัคร
+          </h2>
+          <p className="text-xs text-zinc-500 mt-1">
+            รูปสถานที่ทำงานจริงจะขึ้นเป็นพื้นหลังหน้าสมัคร และใช้แนบตอนไปโพสต์ Facebook / LINE
+          </p>
+        </div>
+
+        {/* Cover uploader */}
+        <div>
+          <span className="text-xs font-bold text-zinc-700 mb-1.5 block">
+            รูปหน้าปก / สถานที่ทำงาน
+          </span>
+          {coverImageUrl ? (
+            <div className="relative rounded-2xl overflow-hidden border border-zinc-200 aspect-[16/9] bg-zinc-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverImageUrl}
+                alt="รูปหน้าปกประกาศ"
+                className="w-full h-full object-cover"
+              />
+              {!readonly && (
+                <div className="absolute top-2 right-2 flex gap-2">
+                  <label className="cursor-pointer text-xs font-bold bg-white/90 backdrop-blur text-zinc-800 px-3 h-8 inline-flex items-center rounded-lg hover:bg-white shadow-sm">
+                    {uploadingCover ? "กำลังอัป..." : "เปลี่ยนรูป"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={uploadingCover}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadCover(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={removeCover}
+                    className="text-xs font-bold bg-white/90 backdrop-blur text-red-600 px-3 h-8 rounded-lg hover:bg-white shadow-sm"
+                  >
+                    ลบ
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <label
+              className={`flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-zinc-300 aspect-[16/9] text-center px-4 transition-colors ${
+                !postingId || uploadingCover || readonly
+                  ? "opacity-50 cursor-not-allowed"
+                  : "cursor-pointer hover:border-[var(--color-brand-400)] hover:bg-[var(--color-brand-50)]/40"
+              }`}
+            >
+              <ImageIcon className="size-7 text-zinc-400" />
+              <span className="text-sm font-bold text-zinc-600">
+                {uploadingCover ? "กำลังอัปโหลด..." : "แตะเพื่ออัปรูปสถานที่ทำงาน"}
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                JPG / PNG / WEBP · ไม่เกิน 10 MB
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={!postingId || uploadingCover || readonly}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadCover(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
+          {!postingId && (
+            <p className="text-[11px] text-amber-600 mt-1.5">
+              💡 บันทึกประกาศก่อน 1 ครั้ง แล้วปุ่มอัปรูปจะใช้งานได้
+            </p>
+          )}
+        </div>
+
+        {/* Caption */}
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <span className="text-xs font-bold text-zinc-700">
+              คำโพสต์รับสมัคร (เอาไปแปะ Facebook / LINE)
+            </span>
+            {!readonly && (
+              <button
+                type="button"
+                onClick={genCaption}
+                className="inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-700)] hover:underline"
+              >
+                <Sparkles className="size-3.5" />
+                สร้างอัตโนมัติ
+              </button>
+            )}
+          </div>
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            disabled={readonly}
+            rows={8}
+            placeholder="เขียนคำโพสต์รับสมัคร หรือกด ‘สร้างอัตโนมัติ’ แล้วแก้ได้ตามใจ"
+            className="w-full px-3 py-2.5 rounded-xl border border-zinc-300 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] disabled:bg-zinc-50"
+            maxLength={2000}
+          />
+          <p className="text-[11px] text-zinc-400 mt-1">
+            คำโพสต์นี้จะโผล่ในปุ่ม &ldquo;ชุดโพสต์&rdquo; หน้ารายการประกาศ · กดคัดลอกไปแปะได้เลย
+          </p>
+        </div>
       </div>
 
       {/* Form Builder */}

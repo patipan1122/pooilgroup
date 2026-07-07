@@ -28,6 +28,9 @@ export async function createPosting(input: {
   opensAt?: string;
   closesAt?: string;
   fieldSchema?: FormSchema;
+  // เก็บใน settings JSON (ไม่ต้อง migration): รูปหน้าปก + คำโพสต์รับสมัคร
+  coverImageUrl?: string;
+  caption?: string;
 }) {
   const session = await requireSession();
   if (!canRecruitWrite(session.user.role)) {
@@ -36,6 +39,10 @@ export async function createPosting(input: {
 
   const slug = makePostingSlug(input.title);
   const schema = input.fieldSchema ?? EMPTY_FORM_SCHEMA;
+
+  const settings: Record<string, unknown> = {};
+  if (input.coverImageUrl) settings.coverImageUrl = input.coverImageUrl;
+  if (input.caption !== undefined) settings.caption = input.caption;
 
   const posting = await prisma.recruitJobPosting.create({
     data: {
@@ -46,6 +53,7 @@ export async function createPosting(input: {
       slug,
       status: "DRAFT",
       fieldSchema: schema as object,
+      settings: settings as object,
       opensAt: input.opensAt ? new Date(input.opensAt) : null,
       closesAt: input.closesAt ? new Date(input.closesAt) : null,
       createdById: session.user.id,
@@ -75,6 +83,9 @@ export async function updatePosting(
     opensAt: string | null;
     closesAt: string | null;
     fieldSchema: FormSchema;
+    // settings JSON: coverImageUrl = "" หรือ null → ลบรูป
+    coverImageUrl: string | null;
+    caption: string;
   }>,
 ) {
   const session = await requireSession();
@@ -98,6 +109,21 @@ export async function updatePosting(
   if (input.fieldSchema !== undefined) {
     FormSchemaSchema.parse(input.fieldSchema);
     data.fieldSchema = input.fieldSchema as object;
+  }
+  // Merge cover/caption into settings JSON (กัน field อื่นใน settings หาย)
+  if (input.coverImageUrl !== undefined || input.caption !== undefined) {
+    const cur: Record<string, unknown> =
+      existing.settings &&
+      typeof existing.settings === "object" &&
+      !Array.isArray(existing.settings)
+        ? { ...(existing.settings as Record<string, unknown>) }
+        : {};
+    if (input.coverImageUrl !== undefined) {
+      if (input.coverImageUrl) cur.coverImageUrl = input.coverImageUrl;
+      else delete cur.coverImageUrl;
+    }
+    if (input.caption !== undefined) cur.caption = input.caption;
+    data.settings = cur as object;
   }
 
   await prisma.recruitJobPosting.update({

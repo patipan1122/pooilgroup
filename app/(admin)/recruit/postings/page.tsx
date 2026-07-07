@@ -18,6 +18,7 @@ import {
 } from "@/lib/recruit/types";
 import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame } from "lucide-react";
 import { CopyLinkButton } from "@/components/recruit/copy-link-button";
+import { ShareKitButton } from "@/components/recruit/share-kit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +168,12 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
   const { counts, sources, recentCount, daysOpen, urgent } = posting;
   const apply = posting._count.applications;
   const hasApps = apply > 0;
+  const settings =
+    posting.settings &&
+    typeof posting.settings === "object" &&
+    !Array.isArray(posting.settings)
+      ? (posting.settings as { coverImageUrl?: string; caption?: string })
+      : {};
 
   return (
     <div
@@ -255,18 +262,31 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
       )}
 
       {/* Share link + actions */}
-      <div className="flex items-center gap-2 mt-1">
-        <div className="flex-1 min-w-0 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600">
-          <LinkIcon className="size-3 text-zinc-400 shrink-0" />
-          <span className="truncate">/apply/{posting.slug}</span>
+      <div className="mt-1 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-2.5 py-1.5 font-mono text-[11px] text-zinc-600">
+            <LinkIcon className="size-3 text-zinc-400 shrink-0" />
+            <span className="truncate">/apply/{posting.slug}</span>
+          </div>
+          <CopyLinkButton slug={posting.slug} />
         </div>
-        <CopyLinkButton slug={posting.slug} />
-        <Link
-          href={`/recruit?posting=${posting.id}`}
-          className="text-xs h-9 px-3 inline-flex items-center rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-bold hover:bg-[var(--color-brand-100)] whitespace-nowrap"
-        >
-          ดู {apply} ใบ →
-        </Link>
+        <div className="flex items-center gap-2">
+          <ShareKitButton
+            postingId={posting.id}
+            slug={posting.slug}
+            title={posting.title}
+            companyName={posting.company?.name}
+            description={posting.description}
+            caption={settings.caption}
+            coverImageUrl={settings.coverImageUrl}
+          />
+          <Link
+            href={`/recruit?posting=${posting.id}`}
+            className="flex-1 text-center text-xs h-9 px-3 inline-flex items-center justify-center rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-bold hover:bg-[var(--color-brand-100)] whitespace-nowrap"
+          >
+            ดู {apply} ใบ →
+          </Link>
+        </div>
       </div>
     </div>
   );
