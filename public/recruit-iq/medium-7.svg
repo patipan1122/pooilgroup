@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+  <!-- b2-medium-1 — SYMBOL ROTATION. Chevron rotates 90° clockwise each cell (reading L->R, top->bottom).
+       Cycle: left(pt L) -> up -> right -> down -> left ...
+       Cells: [L, up, right] [down, L, up] [right, down, ?].  ? = chevron pointing LEFT.  CORRECT = C.
+       Chevron base drawn pointing LEFT (open to the right): tip at left, arms opening right.
+       rotate() angles: 0=left, 90=up, 180=right, 270=down. -->
+  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+
+  <!-- matrix frame -->
+  <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+
+  <!-- base chevron path (pointing LEFT): points chosen so tip is at (-26,0), arms open to the right -->
+  <!-- Row 1: left(0), up(90), right(180) -->
+  <g transform="translate(200,140) rotate(0)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g transform="translate(360,140) rotate(90)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g transform="translate(520,140) rotate(180)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+
+  <!-- Row 2: down(270), left(0), up(90) -->
+  <g transform="translate(200,260) rotate(270)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g transform="translate(360,260) rotate(0)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g transform="translate(520,260) rotate(90)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+
+  <!-- Row 3: right(180), down(270), ? -->
+  <g transform="translate(200,380) rotate(180)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g transform="translate(360,380) rotate(270)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <rect x="472" y="332" width="96" height="96" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
+  <text x="520" y="400" text-anchor="middle" font-size="60" font-weight="700" fill="#6ea8fe">?</text>
+
+  <!-- prompt -->
+  <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
+
+  <!-- answer choices -->
+  <g>
+    <!-- A: up (wrong rotation) -->
+    <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(135,585) rotate(90)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+    <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+
+    <!-- B: right (wrong rotation) -->
+    <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(290,585) rotate(180)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+    <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+
+    <!-- C: left (CORRECT) -->
+    <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(445,585) rotate(0)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+    <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+
+    <!-- D: down (wrong rotation) -->
+    <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <g transform="translate(600,585) rotate(270)"><polyline points="26,-26 -26,0 26,26" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></g>
+    <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+  </g>
+
+  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับกลาง) · Buildly Recruit</text>
+</svg>

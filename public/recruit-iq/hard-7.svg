@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+  <!-- B2 HARD 3 — Series of 4, pick the NEXT (5th). THREE independent streams:
+       (S1 X mark, CW around 4 corners): fig1 TL / fig2 TR / fig3 BR / fig4 BL / [fig5 TL]
+       (S2 O mark, CCW around 4 corners): fig1 TR / fig2 TL / fig3 BL / fig4 BR / [fig5 TR]
+       (S3 pointer, rotate +45deg CW each step): 0(up) / 45 / 90(right) / 135 / [180(down)]
+       Answer (5th) = X at TL, O at TR, pointer DOWN.  CORRECT = A.
+       Distractors each break exactly one stream. -->
+  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+
+  <!-- series frame -->
+  <rect x="40" y="90" width="640" height="210" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+
+  <!-- corner offsets from cell center: TL(-26,-26) TR(26,-26) BR(26,26) BL(-26,26)
+       X mark = two crossing lines (span ~9). O mark = small circle r9.
+       pointer = line from center out len24 + arrowhead, rotate via group. -->
+
+  <!-- ============ Fig 1: X=TL, O=TR, pointer up(0) · center (120,180) ============ -->
+  <rect x="82" y="142" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- X at TL (94,154) -->
+  <line x1="87" y1="147" x2="101" y2="161" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="101" y1="147" x2="87" y2="161" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- O at TR (146,154) -->
+  <circle cx="146" cy="154" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- pointer up -->
+  <g transform="translate(120,180) rotate(0)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="120" y="284" text-anchor="middle" font-size="16" fill="#9db4d8">1</text>
+
+  <!-- ============ Fig 2: X=TR, O=TL, pointer 45 · center (270,180) ============ -->
+  <rect x="232" y="142" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- O at TL (244,154) -->
+  <circle cx="244" cy="154" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- X at TR (296,154) -->
+  <line x1="289" y1="147" x2="303" y2="161" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="303" y1="147" x2="289" y2="161" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- pointer 45 -->
+  <g transform="translate(270,180) rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="270" y="284" text-anchor="middle" font-size="16" fill="#9db4d8">2</text>
+
+  <!-- ============ Fig 3: X=BR, O=BL, pointer 90(right) · center (420,180) ============ -->
+  <rect x="382" y="142" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- O at BL (394,206) -->
+  <circle cx="394" cy="206" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- X at BR (446,206) -->
+  <line x1="439" y1="199" x2="453" y2="213" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="453" y1="199" x2="439" y2="213" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- pointer 90 (right) -->
+  <g transform="translate(420,180) rotate(90)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="420" y="284" text-anchor="middle" font-size="16" fill="#9db4d8">3</text>
+
+  <!-- ============ Fig 4: X=BL, O=BR, pointer 135 · center (570,180) ============ -->
+  <rect x="532" y="142" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- X at BL (544,206) -->
+  <line x1="537" y1="199" x2="551" y2="213" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="551" y1="199" x2="537" y2="213" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- O at BR (596,206) -->
+  <circle cx="596" cy="206" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- pointer 135 -->
+  <g transform="translate(570,180) rotate(135)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="570" y="284" text-anchor="middle" font-size="16" fill="#9db4d8">4</text>
+
+  <!-- prompt -->
+  <text x="360" y="336" text-anchor="middle" font-size="20" fill="#9db4d8">รูปถัดไป (ลำดับที่ 5) ควรเป็นรูปไหน ?</text>
+
+  <!-- answer choices. box shape center (bx,585) with mini square 76x76 centered there.
+       corner offsets from center: TL(-26,-26) TR(26,-26) BR(26,26) BL(26,26->-26,26) -->
+
+  <!-- A: X=TL, O=TR, pointer DOWN (180) — CORRECT -->
+  <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+  <rect x="97" y="547" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- X at TL (109,559) -->
+  <line x1="102" y1="552" x2="116" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="116" y1="552" x2="102" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- O at TR (161,559) -->
+  <circle cx="161" cy="559" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- pointer down -->
+  <g transform="translate(135,585) rotate(180)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+
+  <!-- B: X=TL, O=TR, pointer UP (0) — POINTER wrong -->
+  <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+  <rect x="252" y="547" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- X at TL (264,559) -->
+  <line x1="257" y1="552" x2="271" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="271" y1="552" x2="257" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- O at TR (316,559) -->
+  <circle cx="316" cy="559" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- pointer up -->
+  <g transform="translate(290,585) rotate(0)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+
+  <!-- C: X=BL, O=TR, pointer DOWN — X wrong (continues CW to BL instead of wrapping to TL) -->
+  <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+  <rect x="407" y="547" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- O at TR (471,559) -->
+  <circle cx="471" cy="559" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- X at BL (419,611) -->
+  <line x1="412" y1="604" x2="426" y2="618" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="426" y1="604" x2="412" y2="618" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- pointer down -->
+  <g transform="translate(445,585) rotate(180)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+
+  <!-- D: X=TL, O=BR, pointer DOWN — O wrong (continues CCW to BR instead of wrapping to TR) -->
+  <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+  <rect x="562" y="547" width="76" height="76" rx="6" fill="none" stroke="#243352" stroke-width="1.5"/>
+  <!-- X at TL (574,559) -->
+  <line x1="567" y1="552" x2="581" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="581" y1="552" x2="567" y2="566" stroke="#6ea8fe" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- O at BR (626,611) -->
+  <circle cx="626" cy="611" r="9" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <!-- pointer down -->
+  <g transform="translate(600,585) rotate(180)">
+    <line x1="0" y1="0" x2="0" y2="-24" stroke="#9db4d8" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="0,-30 -5,-20 5,-20" fill="#9db4d8"/>
+  </g>
+  <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+
+  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับยาก) · Buildly Recruit</text>
+</svg>

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 780" font-family="system-ui, sans-serif">
+  <!-- b2-easy-2 — COUNT INCREASES. A row of cells, each holds a group of vertical bars.
+       Bar count grows by one each step: 1, 2, 3, then ? = 4.
+       CORRECT = D (four bars). Distractors: 3 bars, 5 bars, 2 bars. -->
+  <rect x="0" y="0" width="720" height="780" rx="18" fill="#0b1120"/>
+
+  <!-- series frame -->
+  <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+
+  <!-- four slots across the row, centered at x = 175 / 310 / 445 / 580 ; vertical center y = 250 -->
+  <!-- Bars: width 14, height 90, top y = 205, bottom y = 295. Spacing 26 between bar centers. -->
+
+  <!-- Slot 1: 1 bar -->
+  <rect x="168" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <text x="175" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">1</text>
+
+  <!-- Slot 2: 2 bars (centers 297,323) -->
+  <rect x="290" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <rect x="316" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <text x="310" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">2</text>
+
+  <!-- Slot 3: 3 bars (centers 419,445,471) -->
+  <rect x="412" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <rect x="438" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <rect x="464" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+  <text x="445" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">3</text>
+
+  <!-- Slot 4: MISSING -->
+  <rect x="530" y="192" width="100" height="116" rx="10" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
+  <text x="580" y="268" text-anchor="middle" font-size="52" font-weight="700" fill="#6ea8fe">?</text>
+
+  <!-- prompt -->
+  <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
+
+  <!-- answer choices : bars width 12, height 70, top y 552, bottom 622 ; spacing 22 -->
+  <g>
+    <!-- A: 3 bars (centers 113,135,157) -->
+    <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="107" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="129" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="151" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
+
+    <!-- B: 5 bars (centers 246,268,290,312,334) -->
+    <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="240" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="262" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="284" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="306" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="328" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
+
+    <!-- C: 2 bars (centers 434,456) -->
+    <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="428" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="450" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
+
+    <!-- D: 4 bars (centers 567,589,611,633) (CORRECT) -->
+    <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
+    <rect x="561" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="583" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="605" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <rect x="627" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
+    <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
+  </g>
+
+  <text x="360" y="740" text-anchor="middle" font-size="14" fill="#4a5b7e">ข้อสอบไอคิว (ระดับง่าย) · Buildly Recruit</text>
+</svg>
