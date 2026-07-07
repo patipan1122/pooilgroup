@@ -27,7 +27,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   // Lightweight metadata-only fetch (no schema/answer columns).
-  const posting = await prisma.recruitJobPosting.findUnique({
+  let posting = await prisma.recruitJobPosting.findUnique({
     where: { slug },
     select: {
       title: true,
@@ -37,6 +37,24 @@ export async function generateMetadata({
       org: { select: { name: true } },
     },
   });
+  // Same trailing-token fallback as the page component so a rescued link
+  // (e.g. old Thai slug backfilled to ASCII) gets the correct <title>, not
+  // "ไม่พบประกาศ".
+  if (!posting) {
+    const token = slug.split("-").pop();
+    if (token && token.length >= 4) {
+      posting = await prisma.recruitJobPosting.findFirst({
+        where: { slug: { endsWith: `-${token}` } },
+        select: {
+          title: true,
+          description: true,
+          status: true,
+          company: { select: { name: true } },
+          org: { select: { name: true } },
+        },
+      });
+    }
+  }
   if (!posting) {
     return { title: "ไม่พบประกาศ", robots: { index: false, follow: false } };
   }
