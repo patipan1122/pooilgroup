@@ -435,11 +435,11 @@ export async function commitImportAction(
     if (!cont.ok) return { ok: false, error: cont.message };
   }
 
-  // GUARD — never double-import. line_hash dedups only IDENTICAL re-imports of the
-  // SAME file (rowIndex is part of the hash). For overlapping/different files we also
-  // skip rows whose content already exists for this account in the same date range
-  // (same date + amount + running balance + ref1 = the same transaction) so a balance
-  // can't "jump" from importing the same money twice.
+  // GUARD — never double-import. เรากันซ้ำจาก "เนื้อหาแถวที่มีใน DB จริง" (ชั้นนี้) = วันที่+ยอด+
+  // ยอดคงเหลือ+ref1 → แถวที่มีอยู่แล้วถูกข้าม · แถวใหม่/ที่เคยตกหล่นถูกนำเข้า (re-upload ไฟล์เดิม
+  // จะเติมเฉพาะรายการที่หายไป ไม่เบิ้ล). ชั้น DB (computeLineHash) เป็นด่านสอง — ⚠️ D-2026-07-08
+  // แก้ให้รวม balance แล้ว (เดิมใช้ externalRef "แทน" balance → เงินฝากสด BBL เวลาชน = ทิ้งรายการจริง).
+  // ทั้ง 2 ชั้นตอนนี้รวม balance → 2 แถวคงเหลือต่างกัน = คนละรายการเสมอ ไม่มีวันทิ้งผิด.
   let duplicateSkipped = 0;
   let freshRows = groupRows;
   if (!isTemplate) {

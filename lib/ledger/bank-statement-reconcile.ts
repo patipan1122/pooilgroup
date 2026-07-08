@@ -57,14 +57,17 @@ export interface BankTxnRow {
  * both contain the May-1 deposit; the running BALANCE after that txn is identical in
  * both files, so the hash matches → UNIQUE(bank_account_id, line_hash) skips the dup.
  *
- * Disambiguator priority:
- *   1) externalRef (เวลาเกิดรายการจริง+เลขเครื่อง+คู่ค้า ที่ธนาคารให้มา เช่น SCB) — เสถียรที่สุด:
- *      ไม่ขยับแม้ export คนละช่วง (ต่างจากยอดคงเหลือที่ "เลื่อน" เมื่อชุดข้อมูลต่างกัน → เคยทำให้กันซ้ำหลุด).
- *   2) ถ้าไม่มี externalRef → ถอยไปใช้ running balance (พฤติกรรมเดิม สำหรับธนาคารที่ไม่มีเวลาจริง).
- * สองรายการวันเดียวยอดเท่ากันยังแยกกันได้ (externalRef หรือ balance ต่างกัน · manual-add ใช้ ref1="MANUAL-<n>").
+ * Disambiguator = running BALANCE (เสมอ) + externalRef (ถ้ามี).
+ *   running balance = ค่าที่ unique ต่อบรรทัดในสเตทเมนต์ต่อเนื่อง → สองรายการวันเดียวยอดเท่ากันแยกกันได้เสมอ.
+ *   externalRef (เวลาจริง+เลขเครื่อง+คู่ค้า เช่น SCB) = สัญญาณเสริม (ถ้ามี) · manual-add ใช้ ref1="MANUAL-<n>".
  *
- * ⚠️ การเปลี่ยนสูตรนี้: แถว SCB ที่นำเข้า "ก่อน" แก้ ถูก hash ด้วย balance → ถ้าเผลอ re-import ช่วงเดิม
- * อาจซ้ำได้ "1 รอบ" ก่อนนิ่ง → ใช้ "ล้างรายการซ้ำ" เก็บได้. ของใหม่ตั้งแต่แก้ = นิ่งถาวรไม่ว่าจะอัปทับกี่รอบ.
+ * ⚠️ D-2026-07-08 — เปลี่ยนจาก "externalRef แทน balance" → "balance เสมอ (+ externalRef)":
+ *   ของเดิมใช้ externalRef "แทน" balance → เงินฝากสด BBL (ไม่มีคู่ค้า/เลขเช็ค · เวลา+เครื่องชนกัน) = hash ซ้ำ
+ *   → INSERT ... ON CONFLICT DO NOTHING ทิ้งรายการจริง (เจอเงินหาย 14 จุด/3 บัญชี · ยอดคงเหลือไม่ต่อเนื่อง).
+ *   ตอนนี้รวม balance เสมอ → บรรทัดคงเหลือต่างกัน = คนละ hash → "ไม่มีวันทิ้งรายการจริง".
+ *   หมายเหตุ: แถวเก่า hash ด้วยสูตรเดิม (externalRef ไม่ถูกเก็บ · recompute ไม่ได้) → ด่านกันซ้ำจริงคือ
+ *   contentKey ระดับ app (อ่านยอดคงเหลือจาก DB ตรง ๆ · ใน bank-recon/_actions.ts) ซึ่งกันซ้ำได้โดยไม่พึ่ง hash
+ *   → re-upload ไฟล์ต้นฉบับ = เติมเฉพาะรายการที่หาย ไม่เบิ้ล (ใช้กู้ข้อมูล ส่วน 3).
  */
 export function computeLineHash(params: {
   accountNo: string;
@@ -72,15 +75,23 @@ export function computeLineHash(params: {
   amountSatang: number;
   balanceSatang: number;
   ref1: string | null;
-  externalRef?: string | null; // กุญแจเสถียรข้าม export (ถ้ามี → ใช้แทน balance)
+  externalRef?: string | null; // กุญแจเสริมข้าม export (ถ้ามี) — ไม่ใช้ "แทน" balance อีกต่อไป
   rowIndex?: number; // kept for callers' row_index column; NOT part of the hash
 }): string {
   const ext = params.externalRef?.trim();
+  // ⚠️ D-2026-07-08: ยอดคงเหลือ = ตัวแยกแต่ละบรรทัดที่ unique จริงในสเตทเมนต์ต่อเนื่อง → ต้องอยู่ในลายนิ้วมือเสมอ
+  //   เดิมใช้ externalRef "แทน" balance → เงินฝากสดที่ไม่มีคู่ค้า/เลขเช็ค (BBL) เวลา+เครื่องชนกัน = ลายนิ้วมือซ้ำ
+  //   → INSERT ... ON CONFLICT DO NOTHING ทิ้ง "รายการจริง" ที่คงเหลือคนละเลข → ยอดขาด/ไม่ต่อเนื่อง (เจอ 14 จุด/3 บัญชี)
+  //   ตอนนี้รวม balance + externalRef → 2 บรรทัดที่คงเหลือต่างกัน = คนละลายนิ้วมือเสมอ (นำเข้าครบ ไม่ทิ้งผิด)
+  //   · re-import ไฟล์เดิม (คงเหลือเท่าเดิม) ยัง dedup ได้ตามปกติ
+  //   หมายเหตุ: เปลี่ยนสูตรแล้ว hash ของแถวเก่า (สูตรเดิม · externalRef ไม่ถูกเก็บ recompute ไม่ได้) จะไม่ match
+  //   → การกู้ข้อมูล (ส่วน 3) ต้อง "ลบ batch เก่าก่อนนำเข้าใหม่" (clean slate) เพื่อไม่ให้ซ้ำ
   const parts = [
     params.accountNo,
     params.txnDate,
     String(params.amountSatang),
-    ext ? `x:${ext}` : String(params.balanceSatang), // เวลาจริง (เสถียร) > ยอดคงเหลือ (เลื่อนได้)
+    `b:${params.balanceSatang}`,
+    ext ? `x:${ext}` : "",
     params.ref1 ?? "",
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex");
