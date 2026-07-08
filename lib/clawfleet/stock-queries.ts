@@ -2,6 +2,7 @@
 // สต๊อกปัจจุบัน = ผลรวม signed qty ใน cf_stock_movements (ledger-derived · ไม่มีคอลัมน์ stock)
 
 import { prisma } from "@/lib/prisma";
+import { requireCfSession, userBranchIds } from "./role-guard";
 
 export type CfStockProductRow = {
   id: string;
@@ -9,6 +10,7 @@ export type CfStockProductRow = {
   barcode: string | null;
   name: string;
   category: string;
+  imageUrl: string | null; // รูปสินค้า (R2 · สำหรับ picker/การ์ดในมือถือ)
   unitCostCents: number;
   warehouse: number; // คงคลังสาขา (ไม่รวมในตู้)
   inMachines: number; // อยู่ในตู้
@@ -24,7 +26,7 @@ export async function getCfBranchStockProducts(
 ): Promise<CfStockProductRow[]> {
   const products = await prisma.cfProduct.findMany({
     where: { orgId, isActive: true },
-    select: { id: true, sku: true, barcode: true, name: true, category: true, unitCostCents: true },
+    select: { id: true, sku: true, barcode: true, name: true, category: true, imageUrl: true, unitCostCents: true },
     orderBy: { name: "asc" },
   });
   if (products.length === 0) return [];
@@ -50,6 +52,7 @@ export async function getCfBranchStockProducts(
       barcode: p.barcode,
       name: p.name,
       category: p.category,
+      imageUrl: p.imageUrl,
       unitCostCents: p.unitCostCents,
       warehouse: whMap.get(p.id) ?? 0,
       // ในตู้ = − (movement ของ LOAD_TO_MACHINE ที่ machineId != null) → ทำให้เป็นบวก
@@ -289,4 +292,174 @@ export async function getCfProductsForForms(orgId: string): Promise<Array<{ id: 
     select: { id: true, sku: true, barcode: true, name: true, unitCostCents: true },
     orderBy: { name: "asc" },
   });
+}
+
+// =============================================================
+// bigfeature (N6) — ใบกระจายขาเข้าที่ยัง "ไม่รับ" ของสาขา (สำหรับหน้ารับสินค้ามือถือ)
+//   status IN_TRANSIT หรือ SCHEDULED · เรียง eta/สร้างล่าสุด · แนบรายการ + จำนวนที่ระบุ/รับแล้ว
+// =============================================================
+export type CfInboundDeliveryRow = {
+  id: string;
+  status: string;
+  itemsCount: number;
+  unitsCount: number;
+  createdAt: Date;
+  lines: Array<{ productId: string; productName: string; qty: number; receivedQty: number }>;
+};
+
+/** ใบกระจายขาเข้าของสาขา (ยังไม่รับ · IN_TRANSIT/SCHEDULED) — พร้อมรายการต่อบรรทัด */
+export async function getInboundDeliveries(branchId: string): Promise<CfInboundDeliveryRow[]> {
+  const rows = await prisma.cfDelivery.findMany({
+    where: { branchId, status: { in: ["IN_TRANSIT", "SCHEDULED"] } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      status: true,
+      itemsCount: true,
+      unitsCount: true,
+      createdAt: true,
+      lines: {
+        select: { id: true, productId: true, productName: true, qty: true, receivedQty: true },
+        orderBy: { productName: "asc" },
+      },
+    },
+  });
+  return rows.map((d) => ({
+    id: d.id,
+    status: d.status,
+    itemsCount: d.itemsCount,
+    unitsCount: d.unitsCount,
+    createdAt: d.createdAt,
+    lines: d.lines.map((l) => ({
+      productId: l.productId,
+      productName: l.productName,
+      qty: l.qty,
+      receivedQty: l.receivedQty,
+    })),
+  }));
+}
+
+// =============================================================
+// surface-existing — ประวัติการเคลื่อนไหวรายสินค้า (per-product ledger · ใหม่→เก่า)
+//   ใช้โชว์ในหน้ารายละเอียดสินค้า/ตู้ · optional filter สาขา
+// =============================================================
+export type CfProductMovementRow = {
+  id: string;
+  type: string;
+  qty: number;
+  occurredAt: Date;
+  refTable: string | null;
+  refId: string | null;
+  machineId: string | null;
+  unitCostCents: number;
+};
+
+/** การเคลื่อนไหวของสินค้าตัวเดียว (ทุกสาขา หรือกรองสาขา) เรียงใหม่สุดก่อน */
+export async function getCfProductMovements(
+  productId: string,
+  branchId?: string,
+): Promise<CfProductMovementRow[]> {
+  const rows = await prisma.cfStockMovement.findMany({
+    where: { productId, ...(branchId ? { branchId } : {}) },
+    orderBy: { occurredAt: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      type: true,
+      qty: true,
+      occurredAt: true,
+      refTable: true,
+      refId: true,
+      machineId: true,
+      unitCostCents: true,
+    },
+  });
+  return rows;
+}
+
+// =============================================================
+// surface-existing — โหลดเอาต์ปัจจุบันของตู้ (สินค้า + ราคา/ครั้ง + รูป)
+//   CfMachineLoadout ที่ยัง active (effectiveTo IS NULL) join รูปสินค้า
+// =============================================================
+export type CfMachineLoadoutRow = {
+  productId: string;
+  productName: string;
+  imageUrl: string | null;
+  pricePerPlayCoins: number;
+  setAt: Date;
+};
+
+/** โหลดเอาต์ปัจจุบันของตู้ (product+ราคา+รูป) — effectiveTo IS NULL */
+export async function getMachineLoadout(machineId: string): Promise<CfMachineLoadoutRow[]> {
+  const rows = await prisma.cfMachineLoadout.findMany({
+    where: { machineId, effectiveTo: null },
+    orderBy: { effectiveFrom: "desc" },
+    select: {
+      productId: true,
+      pricePerPlayCoins: true,
+      effectiveFrom: true,
+      product: { select: { name: true, imageUrl: true } },
+    },
+  });
+  return rows.map((r) => ({
+    productId: r.productId,
+    productName: r.product.name,
+    imageUrl: r.product.imageUrl,
+    pricePerPlayCoins: r.pricePerPlayCoins,
+    setAt: r.effectiveFrom,
+  }));
+}
+
+// =============================================================
+// surface-existing — รายชื่อตู้ในสโคปผู้ใช้ (id/code/ชื่อ/สาขา) สำหรับ:
+//   1) เลือกตู้ → ดูโหลดเอาต์ (in-machine loadout view) ในหน้าคลัง
+//   2) ย้ายตู้ข้ามสาขา (reassign UI) ในหน้าสาขา
+// org-scoped + กรองตามสาขาที่ผู้ใช้เห็น (userBranchIds). คืน [] เมื่อ error (หน้าเรียกใน try/catch).
+// =============================================================
+export type CfMachineListRow = {
+  id: string;
+  code: string;
+  nickname: string | null;
+  branchId: string;
+  branchName: string;
+  kind: string; // CLAW | EXCHANGER
+  isActive: boolean;
+};
+
+/** รายชื่อตู้ทั้งหมดในสโคปผู้ใช้ พร้อมชื่อสาขา — เรียงตามสาขาแล้ว code */
+export async function getCfMachinesForBranchAdmin(): Promise<CfMachineListRow[]> {
+  try {
+    const session = await requireCfSession();
+    const orgId = session.user.org_id;
+    const branchIds = await userBranchIds(session);
+
+    const rows = await prisma.cfMachine.findMany({
+      where: {
+        orgId,
+        ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+      },
+      orderBy: [{ branchId: "asc" }, { code: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        nickname: true,
+        branchId: true,
+        kind: true,
+        isActive: true,
+        branch: { select: { name: true } },
+      },
+    });
+    return rows.map((m) => ({
+      id: m.id,
+      code: m.code,
+      nickname: m.nickname,
+      branchId: m.branchId,
+      branchName: m.branch?.name ?? "สาขา",
+      kind: m.kind,
+      isActive: m.isActive,
+    }));
+  } catch {
+    return [];
+  }
 }

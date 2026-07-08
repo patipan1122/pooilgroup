@@ -32,17 +32,66 @@ import {
   closeBranchSession,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
+import { submitStockCount, confirmShipmentReceived } from "@/lib/clawfleet/stock-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
+// bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
+import { BaselineForm } from "@/components/clawfleet/BaselineForm";
+import { MismatchGate } from "@/components/clawfleet/MismatchGate";
+import { ProductCountCard } from "@/components/clawfleet/ProductCountCard";
+import { BranchStockPicker } from "@/components/clawfleet/BranchStockPicker";
 import type {
   GroupCollectBranch,
   CollectSku,
   GroupMachine,
 } from "@/lib/clawfleet/group-data";
 
+/* ─────────────────────────── bigfeature prop types (from page loaders) ─────────────────────────── */
+// สินค้าในคลังสาขา (N3 นับสต๊อก · R4 picker เติม) — ตัดจาก CfStockProductRow เหลือที่ mobile ใช้
+export type BranchStockProduct = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  warehouse: number; // คงคลังสาขา (ไม่รวมในตู้)
+};
+// ใบกระจายขาเข้าที่ยังไม่รับ (N6 รับสินค้า) — mirror CfInboundDeliveryRow (+lineId สำหรับ confirmShipmentReceived)
+export type InboundDelivery = {
+  id: string;
+  status: string;
+  itemsCount: number;
+  unitsCount: number;
+  lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number }>;
+};
+
+// N3 · client idempotency key (crypto.randomUUID เมื่อมี · fallback timestamp+rand)
+function genClientKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `ck-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// N5 · payload ที่ส่งเข้า submitBranchEvent — เก็บไว้ resubmit พร้อม shortReason เมื่อ verdict=SHORT
+type SubmitBranchEventArgs = {
+  sessionId: string;
+  machineId: string;
+  coinMeterAfter: number;
+  dollMeterAfter: number;
+  cashCountedCents: number;
+  stockBefore: number;
+  refillQty: number;
+  stockAfter: number;
+  refillProductId?: string;
+  photoCoinMeterUrl: string;
+  photoPrizeMeterUrl: string;
+  photoStockBeforeUrl: string;
+  photoStockAfterUrl: string;
+  photoCashUrl: string;
+  shortReason?: string;
+};
+
 /* ─────────────────────────── demo fallback (no real DB) ────────────────────────── */
 type AppMachine = {
   id: string;
   code: string;
+  nickname: string | null;
   branch: string;
   zone: string;
   branchId: string;
@@ -51,6 +100,8 @@ type AppMachine = {
   lastDollMeter: number;
   lastCoinMeter: number;
   product: string;
+  // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP ⚪) → route ไปฟอร์มตั้งค่าครั้งแรกแทน wizard 6 ขั้น
+  awaitingSetup: boolean;
 };
 
 const DEMO_BRANCH_ID = "demo-branch-rs";
@@ -62,16 +113,16 @@ const DEMO_SKUS: CollectSku[] = [
 ];
 
 const DEMO_MACHINES: AppMachine[] = [
-  { id: "demo-RS-03", code: "RS-03", branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้" },
-  { id: "demo-RS-04", code: "RS-04", branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว" },
-  { id: "demo-RS-07", code: "RS-07", branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L" },
-  { id: "demo-RS-05", code: "RS-05", branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M" },
-  { id: "demo-BK-02", code: "BK-02", branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S" },
-  { id: "demo-LP-01", code: "LP-01", branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้" },
+  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false },
+  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false },
+  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false },
+  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false },
+  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false },
+  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false },
 ];
 
 /** flatten real Branch>Group>Claw → a flat machine route (CLAW only). */
-function flattenReal(branches: GroupCollectBranch[]): AppMachine[] {
+function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<string>): AppMachine[] {
   const out: AppMachine[] = [];
   for (const b of branches) {
     for (const g of b.groups) {
@@ -79,6 +130,8 @@ function flattenReal(branches: GroupCollectBranch[]): AppMachine[] {
         out.push({
           id: m.id,
           code: m.code,
+          // GroupMachine.name = nickname ?? code → nickname จริงเมื่อ name ต่างจาก code
+          nickname: m.name && m.name !== m.code ? m.name : null,
           branch: b.name,
           zone: g.name,
           branchId: b.id,
@@ -86,6 +139,7 @@ function flattenReal(branches: GroupCollectBranch[]): AppMachine[] {
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
           product: "",
+          awaitingSetup: awaitingSetupIds.has(m.id),
         });
       }
     }
@@ -139,6 +193,9 @@ type Form = {
   left: Counted; // คงเหลือก่อนเติม (นับจริง)
   refill: Counted; // เติมกี่ตัว (นับจริง)
   product: string;
+  // R4 · productId ที่เลือกจาก BranchStockPicker (คลังสาขาจริง · UUID) — null = ยังไม่เลือก/ใช้ dropdown เดิม.
+  // ส่งเข้า submitBranchEvent.refillProductId (server ตัดสต๊อก + upsert loadout). demo = null.
+  refillProductId: string | null;
   category: string;
   price: Counted; // ราคาขาย (กรอกเอง)
   // meters
@@ -222,6 +279,7 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     left: demo ? Math.max(0, m.lastStock - 5) : null,
     refill: demo ? 5 : null,
     product,
+    refillProductId: null,
     category: "ลิขสิทธิ์",
     price: demo ? 250 : null,
     dollPrev: m.lastDollMeter,
@@ -344,10 +402,17 @@ type Props = {
   // true = server กรอง route เหลือ "ตู้ที่มอบหมายให้ฉัน" แล้ว → โชว์หัวข้อ "ตู้ของฉันวันนี้ (N)".
   // false/ไม่ส่ง = แสดงทุกตู้ในสาขาเหมือนเดิม (จัดกลุ่มตามสาขา · Wave 2). optional default กัน build พัง.
   assignedOnly?: boolean;
+  // N1 · id ตู้ที่ยังไม่ตั้ง baseline (AWAITING_SETUP) — HOME จะ route ตู้เหล่านี้ไปฟอร์มตั้งค่าครั้งแรก
+  awaitingSetupIds?: string[];
+  // N3/R4 · สินค้าคลังสาขา แยกตาม branchId (นับสต๊อก + picker เติม). optional default {} กัน build พัง.
+  branchProducts?: Record<string, BranchStockProduct[]>;
+  // N6 · ใบกระจายขาเข้าที่ยังไม่รับ แยกตาม branchId (หน้ารับสินค้า). optional default {}.
+  inboundByBranch?: Record<string, InboundDelivery[]>;
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [], assignedOnly = false }: Props) {
-  const realMachines = useMemo(() => flattenReal(branches), [branches]);
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {} }: Props) {
+  const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
+  const realMachines = useMemo(() => flattenReal(branches, awaitingSet), [branches, awaitingSet]);
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
   const skuList = usingDemo || skus.length === 0 ? DEMO_SKUS : skus;
@@ -358,10 +423,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} />
   );
 
   return (
@@ -437,11 +502,16 @@ type StaffAppProps = {
   myRecentTickets: RepairTicketRow[];
   // true = route ถูกกรองเหลือ "ตู้ของฉัน" แล้ว (server) → HomeScreen โชว์หัวข้อ "ตู้ของฉันวันนี้"
   assignedOnly: boolean;
+  // N3/R4 · สินค้าคลังสาขา แยกตาม branchId
+  branchProducts: Record<string, BranchStockProduct[]>;
+  // N6 · ใบกระจายขาเข้าที่ยังไม่รับ แยกตาม branchId
+  inboundByBranch: Record<string, InboundDelivery[]>;
 };
 
-type Panel = "history" | "repair" | "stock" | "config" | "tour" | null;
+// "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
+type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets, assignedOnly }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets, assignedOnly, branchProducts, inboundByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -471,10 +541,26 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
   // กำลังส่งแจ้งซ่อม-ข้าม (กดปุ่ม skip-broken ในขั้นมิเตอร์)
   const [skipPending, setSkipPending] = useState(false);
+  // N1 · ตู้ที่กำลัง "ตั้งค่าครั้งแรก" (BaselineForm) — id หรือ null (ไม่อยู่ในโหมดตั้งค่า).
+  // แยกจาก wizard state ปกติ (ตู้ awaitingSetup ข้าม 6-step ไปฟอร์ม baseline เลย).
+  const [baselineMachineId, setBaselineMachineId] = useState<string | null>(null);
+  // N5 · ด่านเงินไม่ตรง — เมื่อ submitBranchEvent คืน needsReason (verdict=SHORT) → เก็บ payload
+  // เดิมไว้ resubmit พร้อม shortReason (ไม่ทำใหม่หมด · แค่เติมเหตุผล). null = ไม่มีด่าน.
+  const [pendingShort, setPendingShort] = useState<SubmitBranchEventArgs | null>(null);
 
   const machine = useMemo(
     () => machines.find((m) => m.id === state.machineId) ?? null,
     [machines, state.machineId],
+  );
+  // N1 · ตู้ที่กำลังตั้งค่าครั้งแรก (lookup แยก · ไม่ผูก wizard state)
+  const baselineMachine = useMemo(
+    () => machines.find((m) => m.id === baselineMachineId) ?? null,
+    [machines, baselineMachineId],
+  );
+  // R4 · สินค้าคลังของสาขา "ตู้ที่กำลังเก็บ" (สำหรับ picker เติม). ไม่มี → [] (picker โชว์ empty).
+  const activeBranchProducts = useMemo(
+    () => (machine ? branchProducts[machine.branchId] ?? [] : []),
+    [branchProducts, machine],
   );
 
   const f = state.form;
@@ -537,6 +623,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   /* ── open a machine: start a REAL session up-front (so submit can fire), else demo ── */
   function openMachine(m: AppMachine) {
     setError(null);
+    // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP) → ไปฟอร์ม "ตั้งค่าครั้งแรก" แทน 6-step wizard.
+    // (ตู้ยังไม่มี baseline → กระทบยอดเทียบอะไรไม่ได้ · ต้องบันทึกยอดตั้งต้นก่อน). demo ไม่มี awaitingSetup.
+    if (m.awaitingSetup && !isDemo(m.id)) {
+      setBaselineMachineId(m.id);
+      return;
+    }
     // resume draft → jump to meter entry
     const dr = drafts[m.id];
     if (dr) {
@@ -680,38 +772,62 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     }
 
     const refillQty = n0(f.refill);
+    // R4 · productId ที่เติม: ใช้ที่เลือกจาก BranchStockPicker (คลังสาขาจริง · UUID) ก่อน ·
+    // fallback หา SKU จากชื่อ (dropdown เดิม) เมื่อไม่มี picker/ไม่ได้เลือก.
+    const refillProductId =
+      refillQty > 0
+        ? (f.refillProductId ?? skus.find((s) => s.name === f.product)?.id)
+        : undefined;
+
+    const args: SubmitBranchEventArgs = {
+      sessionId,
+      machineId: machine.id,
+      coinMeterAfter: n0(f.coinDigi),
+      dollMeterAfter: n0(f.dollDigi),
+      cashCountedCents: Math.round(n0(f.cash) * 100),
+      // ⚠️ anti-cheat: stockBefore = สต๊อกรอบก่อน (lastDollStock = f.last) ไม่ใช่ที่นับตอนนี้.
+      // server: prizeCountedOut = stockBefore + refillQty − stockAfter = f.last − f.left = dispensed
+      // (ถ้าส่ง f.left จะได้ 0 เสมอ → ทุกตู้โดน flag ตุ๊กตาหายเท็จ + จับขโมยจริงไม่ได้)
+      stockBefore: f.last,
+      refillQty,
+      stockAfter: afterFill,
+      refillProductId,
+      // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
+      // (server accepts url | "" | undefined → a skipped photo never blocks the round).
+      // The meter step captures per-row (เฟือง/ดิจิตอล); backend has 1 slot per meter, so
+      // coalesce to whichever row was photographed.
+      photoCoinMeterUrl: p.coinDigi || p.coinGear || "",
+      photoPrizeMeterUrl: p.dollDigi || p.dollGear || "",
+      photoStockBeforeUrl: p.before || "",
+      photoStockAfterUrl: p.after || "",
+      photoCashUrl: p.cash || "",
+    };
+    sendEvent(args);
+  }
+
+  /* ── N5 · ส่ง event จริง (แยกจาก submitRound เพื่อ resubmit ได้พร้อม shortReason) ──
+   * flow: submitBranchEvent → ถ้า needsReason (verdict=SHORT) → เปิด MismatchGate เก็บ payload เดิมไว้.
+   * แม่บ้านเลือกเหตุผล → resubmit args เดิม + shortReason. OVER/OK/round-1 → ผ่านตามปกติ (server รับแล้ว).
+   * เมื่อ event ผ่าน → closeBranchSession → step 6 (done). ตรรกะ submit เดิมคงไว้ทุกอย่าง. */
+  function sendEvent(args: SubmitBranchEventArgs) {
+    const machineId = args.machineId;
     startTransition(async () => {
-      const ev = await submitBranchEvent({
-        sessionId,
-        machineId: machine.id,
-        coinMeterAfter: n0(f.coinDigi),
-        dollMeterAfter: n0(f.dollDigi),
-        cashCountedCents: Math.round(n0(f.cash) * 100),
-        // ⚠️ anti-cheat: stockBefore = สต๊อกรอบก่อน (lastDollStock = f.last) ไม่ใช่ที่นับตอนนี้.
-        // server: prizeCountedOut = stockBefore + refillQty − stockAfter = f.last − f.left = dispensed
-        // (ถ้าส่ง f.left จะได้ 0 เสมอ → ทุกตู้โดน flag ตุ๊กตาหายเท็จ + จับขโมยจริงไม่ได้)
-        stockBefore: f.last,
-        refillQty,
-        stockAfter: afterFill,
-        refillProductId:
-          refillQty > 0 ? skus.find((s) => s.name === f.product)?.id : undefined,
-        // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
-        // (server accepts url | "" | undefined → a skipped photo never blocks the round).
-        // The meter step captures per-row (เฟือง/ดิจิตอล); backend has 1 slot per meter, so
-        // coalesce to whichever row was photographed.
-        photoCoinMeterUrl: p.coinDigi || p.coinGear || "",
-        photoPrizeMeterUrl: p.dollDigi || p.dollGear || "",
-        photoStockBeforeUrl: p.before || "",
-        photoStockAfterUrl: p.after || "",
-        photoCashUrl: p.cash || "",
-      });
+      const ev = await submitBranchEvent(args);
       if (!ev.ok) {
+        // N5 · soft-gate: server บอกว่าเงินขาด (verdict=SHORT) แต่ยังไม่ให้เหตุผล → เปิดด่านเหตุผล
+        // (ไม่ใช่ error แข็ง · เก็บ payload เดิมไว้ resubmit พร้อม shortReason).
+        if (ev.needsReason) {
+          setPendingShort(args);
+          return;
+        }
         // เก็บ error ดิบไว้ใน console เท่านั้น · พนักงานเห็นข้อความง่าย ๆ
         console.error("[clawos] submitBranchEvent failed:", ev.error);
         setError("ส่งไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
         return;
       }
-      const close = await closeBranchSession({ sessionId });
+      // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
+      setPendingShort(null);
+      const close = await closeBranchSession({ sessionId: args.sessionId });
       if (!close.ok) {
         console.error("[clawos] closeBranchSession failed:", close.error);
         setError("ปิดรอบไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
@@ -719,11 +835,23 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       }
       setDrafts((p) => {
         const n = { ...p };
-        delete n[machine.id];
+        delete n[machineId];
         return n;
       });
       dispatch({ type: "next" }); // → step 6 (done)
     });
+  }
+
+  // N5 · แม่บ้านเลือกเหตุผลเงินขาดใน MismatchGate → resubmit payload เดิม + shortReason
+  function confirmShort(reason: string, note: string) {
+    if (!pendingShort) return;
+    setError(null);
+    const withReason: SubmitBranchEventArgs = {
+      ...pendingShort,
+      // เหตุผล + โน้ต (ถ้ามี) → รวมเป็น shortReason เดียว (server เก็บใน cf_collection_events.short_reason)
+      shortReason: note ? `${reason} · ${note}` : reason,
+    };
+    sendEvent(withReason);
   }
 
   function finishMachine() {
@@ -799,7 +927,20 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         </div>
       )}
 
-      {onHome ? (
+      {baselineMachine ? (
+        // N1 · ตั้งค่าครั้งแรก (แทน 6-step wizard สำหรับตู้ AWAITING_SETUP)
+        <BaselineScreen
+          machine={baselineMachine}
+          orgId={orgId}
+          products={branchProducts[baselineMachine.branchId] ?? []}
+          onBack={() => setBaselineMachineId(null)}
+          onDone={() => {
+            // ตั้งค่าเสร็จ → กลับหน้าหลัก · refresh ให้ server ส่ง awaitingSetup ใหม่ (ตู้ active แล้ว)
+            setBaselineMachineId(null);
+            if (typeof window !== "undefined") window.location.reload();
+          }}
+        />
+      ) : onHome ? (
         <HomeScreen
           userName={userName}
           panel={panel}
@@ -823,6 +964,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           myRecentTickets={myRecentTickets}
           skippedIds={skippedIds}
           assignedOnly={assignedOnly}
+          branchProducts={branchProducts}
+          inboundByBranch={inboundByBranch}
         />
       ) : (
         <FlowScreen
@@ -855,6 +998,18 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           skus={skus}
           onProduct={(v) => dispatch({ type: "setForm", key: "product", value: v })}
           onCategory={(v) => dispatch({ type: "setForm", key: "category", value: v })}
+          // R4 · สินค้าคลังสาขาของตู้นี้ + handler เลือกสินค้าเติมจาก picker (ตั้งทั้ง product+productId)
+          branchProducts={activeBranchProducts}
+          onPickRefill={(pid, name) => {
+            dispatch({ type: "setForm", key: "refillProductId", value: pid });
+            dispatch({ type: "setForm", key: "product", value: name });
+          }}
+          // N5 · ด่านเงินไม่ตรง — เปิดเมื่อ server คืน needsReason (verdict=SHORT). ยกเลิก = ล้าง payload ค้าง.
+          mismatchGate={
+            pendingShort
+              ? { active: true, onConfirmShort: confirmShort, onCancel: () => setPendingShort(null) }
+              : null
+          }
           // ขั้นเสร็จ (6): back = กลับหน้าหลัก+รีเซ็ต (กันย้อนเข้าไปแก้ยอดที่ส่งไปแล้ว)
           onBack={() => dispatch({ type: state.step >= 6 ? "home" : "back" })}
           primary={{ label: primaryLabel, color: primaryColor, action: primaryAction }}
@@ -892,8 +1047,16 @@ function HomeScreen(props: {
   skippedIds: Set<string>;
   // true = route ถูกกรองเหลือ "ตู้ของฉัน" (มีการมอบหมาย) → หัวข้อ "ตู้ของฉันวันนี้ (N)" + ไม่จัดกลุ่มสาขา
   assignedOnly: boolean;
+  // N3/R4 · สินค้าคลังสาขา (นับสต๊อก) · N6 · ใบกระจายขาเข้า (รับสินค้า) — แยกตาม branchId
+  branchProducts: Record<string, BranchStockProduct[]>;
+  inboundByBranch: Record<string, InboundDelivery[]>;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId, skippedIds, assignedOnly } = props;
+  // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
+  // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
+  const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
+  const stockProducts = props.branchProducts[primaryBranchId] ?? [];
+  const inboundDeliveries = props.inboundByBranch[primaryBranchId] ?? [];
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
@@ -1027,17 +1190,21 @@ function HomeScreen(props: {
                     const isDraft = !!drafts[m.id];
                     const isOpening = openingId === m.id;
                     const isSkipped = skippedIds.has(m.id);
+                    // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP) → ป้าย ⚪ neutral gray "ตั้งค่าครั้งแรก" (ไม่ใช่แดง)
+                    const isAwaiting = m.awaitingSetup;
                     const tag = isSkipped
                       ? { l: "แจ้งซ่อมแล้ว", c: "#B42318", bg: "#FCEDEC", iBg: "#FCEDEC", iC: "#B42318", dot: "#D8503F", hint: "ตู้เสีย · แจ้งซ่อม & ข้ามในรอบนี้แล้ว" }
-                      : isDraft
-                        ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                        : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                      : isAwaiting
+                        ? { l: "ตั้งค่าครั้งแรก", c: "#5A6270", bg: "#F1F2F7", iBg: "#F1F2F7", iC: "#5A6270", dot: "#A9AEB8", hint: "ตู้ใหม่ · แตะเพื่อบันทึกยอดตั้งต้น" }
+                        : isDraft
+                          ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                          : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
                     // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
                     const dimmed = pending && !isOpening;
                     return (
                       <button key={m.id} type="button" disabled={pending} onClick={() => onOpen(m)}
                         className={pending ? "" : "co-tap co-lift"}
-                        style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isSkipped ? "#F3D4D0" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
+                        style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isSkipped ? "#F3D4D0" : isAwaiting ? "#E1E3E9" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer", opacity: dimmed ? 0.5 : 1 }}>
                         <span style={{ position: "relative", flex: "0 0 42px" }}>
                           <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
                           <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
@@ -1066,22 +1233,29 @@ function HomeScreen(props: {
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} inboundDeliveries={inboundDeliveries} />
       )}
     </div>
   );
 }
 
-/* ─────────────────────────── PANELS (history/repair/stock/config/tour) ─────────────────────────── */
+/* ─────────────────────────── PANELS (history/repair/stock/receive/config/tour) ─────────────────────────── */
 const PANEL_TITLE: Record<Exclude<Panel, null>, string> = {
   history: "ประวัติการเก็บของฉัน",
   repair: "แจ้งซ่อมตู้",
-  stock: "เช็ก/นับสต็อกสาขา",
+  stock: "นับสต็อกสาขา",
+  receive: "รับสินค้าเข้าคลัง",
   config: "สถานะตั้งค่าตู้",
   tour: "เติมทัวร์ 7-11",
 };
 
-function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void; skus: CollectSku[]; history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[] }) {
+function PanelScreen(props: {
+  panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void;
+  skus: CollectSku[]; history: StaffHistoryRow[]; usingDemo: boolean; orgId: string;
+  repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
+  // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
+  branchId: string; branchCode: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
+}) {
   const { panel, onBack } = props;
   return (
     <div>
@@ -1093,9 +1267,42 @@ function PanelScreen(props: { panel: Exclude<Panel, null>; onBack: () => void; t
       </div>
       {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} />}
       {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
-      {panel === "stock" && <StockPanel />}
+      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} />}
+      {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} />}
       {panel === "config" && <ConfigPanel />}
       {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
+    </div>
+  );
+}
+
+/* ─────────────────── N1 · หน้าจอ "ตั้งค่าครั้งแรก" (แทน 6-step wizard สำหรับตู้ AWAITING_SETUP) ─────────────────── */
+function BaselineScreen({ machine, orgId, products, onBack, onDone }: {
+  machine: AppMachine; orgId: string; products: BranchStockProduct[]; onBack: () => void; onDone: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      {/* header กระชับ (back + ชื่อตู้) */}
+      <div style={{ padding: "4px 18px 12px", borderBottom: "1px solid #EAECEF" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <button type="button" onClick={onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700 }}>ตั้งค่าครั้งแรก · <span className="num">{machine.code}</span></div>
+            <div style={{ fontSize: 11, color: "#9AA1AB" }}>{machine.branch} · {machine.zone}</div>
+          </div>
+        </div>
+      </div>
+      {/* body — ฟอร์ม baseline (server ทำ money logic · ฟอร์มแค่เก็บ+ส่ง) */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px 24px" }}>
+        <BaselineForm
+          machine={{ id: machine.id, code: machine.code, nickname: machine.nickname }}
+          branchId={machine.branchId}
+          orgId={orgId}
+          products={products.map((p) => ({ id: p.id, name: p.name, imageUrl: p.imageUrl }))}
+          onDone={onDone}
+        />
+      </div>
     </div>
   );
 }
@@ -1345,27 +1552,218 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
   );
 }
 
-function StockPanel() {
-  const rows = [
-    { name: "ซานริโอ้ คิตตี้", left: 15 }, { name: "หมีน้ำตาล S", left: 8 },
-    { name: "โมจิหมีขาว", left: 30 }, { name: "หมีบราวน์ L", left: 22 },
-  ];
-  return (
-    <div>
-      <ComingSoonBanner text="หน้านับสต็อกยังไม่เปิดใช้จริง — เป็นตัวอย่างหน้าตา · เร็ว ๆ นี้" />
-      <div style={{ fontSize: 11.5, color: "#8A909A", margin: "12px 0", lineHeight: 1.5 }}>นับสต็อกในห้องสต็อกประจำสาขา แล้วกรอกจำนวนจริง ระบบจะเทียบกับยอดในระบบ</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        {rows.map((s) => (
-          <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "11px 13px" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-              <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ในระบบเหลือ <span className="num" style={{ color: s.left <= 10 ? "#B42318" : "#1A1D21", fontWeight: 700 }}>{s.left}</span> ตัว</div>
+/* ─────────────────── N3 · นับสต๊อกมือถือ (ProductCountCard list → submitStockCount DRAFT) ─────────────────── */
+function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products }: {
+  orgId: string; usingDemo: boolean; branchId: string; branchCode: string; products: BranchStockProduct[];
+}) {
+  // นับต่อสินค้า (null = ยังไม่นับ) · รูปหลักฐานต่อสินค้า (optional)
+  const [counts, setCounts] = useState<Record<string, number | null>>({});
+  const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  // clientKey เดียวต่อการเปิดหน้า (idempotency · กดส่งซ้ำ = ใบเดิม). reset เมื่อส่งสำเร็จ.
+  const [clientKey, setClientKey] = useState(() => genClientKey());
+
+  const countedLines = products
+    .map((p) => ({ productId: p.id, countedQty: counts[p.id] }))
+    .filter((l): l is { productId: string; countedQty: number } => l.countedQty != null);
+
+  const canSubmit = !usingDemo && !!branchId && countedLines.length > 0;
+
+  function submit() {
+    if (!canSubmit) return;
+    setError(null);
+    setOkMsg(null);
+    const photoUrls = Object.values(photos).filter(Boolean);
+    startTransition(async () => {
+      try {
+        const r = await submitStockCount({
+          branchId,
+          lines: countedLines,
+          photoUrls: photoUrls.length ? photoUrls : undefined,
+          clientKey,
+        });
+        if (!r.ok) {
+          console.error("[clawos] submitStockCount failed:", r.error);
+          setError(r.error || "บันทึกไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        // field-staff → server บังคับ DRAFT/PENDING (รอผจก.อนุมัติ · ไม่ตัดสต๊อกทันที)
+        setOkMsg("ส่งให้ผู้จัดการอนุมัติแล้ว · ยอดจะปรับหลังอนุมัติ");
+        setCounts({});
+        setPhotos({});
+        setClientKey(genClientKey()); // ใบใหม่รอบหน้า
+      } catch (e) {
+        console.error("[clawos] submitStockCount threw:", e);
+        setError("บันทึกไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  if (usingDemo || products.length === 0) {
+    return (
+      <div>
+        {usingDemo
+          ? <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — นับสต๊อกจริงได้เมื่อมีสินค้าในคลังสาขา" />
+          : (
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="คลังสาขานี้ยังไม่มีสินค้า" sub="รับสินค้าเข้าคลังก่อน แล้วค่อยนับสต๊อก" />
             </div>
-            <input type="number" inputMode="numeric" placeholder="นับจริง" className="num" style={{ width: 84, fontSize: 14, fontWeight: 700, padding: "9px 11px", border: "1.5px solid #E3E6EA", borderRadius: 10, background: "#fff", textAlign: "center" }} />
+          )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
+        นับของในคลังสาขาแล้วแตะ + ต่อสินค้า · ส่งแล้วผู้จัดการจะอนุมัติก่อนปรับยอด
+      </div>
+      {error && (
+        <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+      )}
+      {okMsg && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#15803D", fontWeight: 600, lineHeight: 1.4 }}>
+          <Check size={15} strokeWidth={2.6} />{okMsg}
+        </div>
+      )}
+      {products.map((p) => (
+        <ProductCountCard
+          key={p.id}
+          product={{ id: p.id, name: p.name, imageUrl: p.imageUrl }}
+          value={counts[p.id] ?? null}
+          onChange={(n) => setCounts((c) => ({ ...c, [p.id]: n }))}
+          orgId={orgId}
+          machineCode={branchCode}
+          eventScopeId={`stockcount-${branchId}`}
+          photoUrl={photos[p.id] ?? ""}
+          onPhoto={(url) => setPhotos((ph) => ({ ...ph, [p.id]: url }))}
+        />
+      ))}
+      <button type="button" onClick={submit} disabled={!canSubmit || pending}
+        className={!canSubmit || pending ? "" : "co-tap"}
+        style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: !canSubmit ? "#A8AEB8" : "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: !canSubmit || pending ? "not-allowed" : "pointer", opacity: pending ? 0.6 : 1 }}>
+        {pending ? "กำลังส่ง…" : countedLines.length > 0 ? `ส่งผลนับ ${countedLines.length} รายการให้ผู้จัดการ` : "นับอย่างน้อย 1 รายการก่อน"}
+      </button>
+    </div>
+  );
+}
+
+/* ─────────────────── N6 · รับสินค้ามือถือ (ใบกระจายขาเข้า → confirmShipmentReceived) ─────────────────── */
+function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries }: {
+  orgId: string; usingDemo: boolean; branchCode: string; deliveries: InboundDelivery[];
+}) {
+  if (usingDemo || deliveries.length === 0) {
+    return (
+      <div>
+        {usingDemo
+          ? <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รับสินค้าจริงได้เมื่อมีใบกระจายเข้าสาขา" />
+          : (
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีสินค้ารอรับ" sub="เมื่อมีใบกระจายส่งเข้าสาขา รายการจะขึ้นที่นี่" />
+            </div>
+          )}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
+        ตรวจของที่ส่งมา ปรับจำนวนที่รับจริง แล้วกดรับสินค้า (ถ่ายรูปเป็นหลักฐานได้)
+      </div>
+      {deliveries.map((d) => (
+        <DeliveryReceiveCard key={d.id} orgId={orgId} branchCode={branchCode} delivery={d} />
+      ))}
+    </div>
+  );
+}
+
+// การ์ด 1 ใบกระจาย — per-line stepper รับจริง + รูป → confirmShipmentReceived (atomic-claim ที่ server)
+function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
+  orgId: string; branchCode: string; delivery: InboundDelivery;
+}) {
+  // จำนวนที่รับจริงต่อบรรทัด — เริ่มด้วยค่าที่ระบุมา (qty) เป็นค่า default (รับครบ) · ปรับลงได้
+  const [received, setReceived] = useState<Record<string, number>>(() =>
+    Object.fromEntries(delivery.lines.map((l) => [l.productId, l.qty])),
+  );
+  const [photo, setPhoto] = useState<string>("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  // per-line stepper (keyed by productId) · confirmShipmentReceived ต้องการ lineId (มากับ prop)
+  const step = (pid: string, delta: number, max: number) =>
+    setReceived((r) => ({ ...r, [pid]: Math.max(0, Math.min(max, (r[pid] ?? 0) + delta)) }));
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const r = await confirmShipmentReceived({
+          deliveryId: delivery.id,
+          photoUrls: photo ? [photo] : undefined,
+          // receivedLines ต้องใช้ lineId — delivery.lines มี lineId มากับ prop (ดู mapping ใน page loader)
+          receivedLines: delivery.lines.map((l) => ({ lineId: l.lineId, receivedQty: received[l.productId] ?? 0 })),
+        });
+        if (!r.ok) {
+          console.error("[clawos] confirmShipmentReceived failed:", r.error);
+          setError(r.error || "รับสินค้าไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        // atomic-claim: ถ้าคนอื่นรับไปก่อน → alreadyReceived (ไม่ error) → โชว์ "รับแล้ว"
+        setDone(true);
+      } catch (e) {
+        console.error("[clawos] confirmShipmentReceived threw:", e);
+        setError("รับสินค้าไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  if (done) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 13, padding: "13px 15px" }}>
+        <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: "50%", background: "#15803D", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Check size={18} strokeWidth={2.6} />
+        </span>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#15803D" }}>รับสินค้าเข้าคลังแล้ว</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="co-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>ใบกระจาย {delivery.itemsCount} รายการ · {delivery.unitsCount} ชิ้น</span>
+        <span style={{ flex: 1 }} />
+        <span className="co-pill" style={{ background: "#F1F2F7", color: "#5A6270" }}>{delivery.status === "IN_TRANSIT" ? "กำลังส่ง" : "นัดส่ง"}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {delivery.lines.map((l) => (
+          <div key={l.lineId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</div>
+              <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ส่งมา <span className="num">{l.qty}</span> ชิ้น</div>
+            </div>
+            <button type="button" aria-label="ลด" onClick={() => step(l.productId, -1, l.qty)} disabled={(received[l.productId] ?? 0) <= 0}
+              style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
+            <span className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{received[l.productId] ?? 0}</span>
+            <button type="button" aria-label="เพิ่ม" onClick={() => step(l.productId, 1, l.qty)}
+              style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "none", background: "#4F46E5", color: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
           </div>
         ))}
       </div>
-      <div style={{ marginTop: 14 }}><ComingSoonButton label="บันทึกผลนับสต็อก (เร็ว ๆ นี้)" /></div>
+      <PhotoCaptureButton label={photo ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปตอนรับ (ถ่ายได้-ข้ามได้)"}
+        value={photo} onChange={setPhoto} orgId={orgId} machineCode={branchCode}
+        eventScopeId={`receive-${delivery.id}`} phase="goods_receipt" />
+      {error && (
+        <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+      )}
+      <button type="button" onClick={submit} disabled={pending}
+        className={pending ? "" : "co-tap"}
+        style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 13, borderRadius: 12, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
+        {pending ? "กำลังรับ…" : "กดรับสินค้า"}
+      </button>
     </div>
   );
 }
@@ -1548,6 +1946,11 @@ function FlowScreen(props: {
   skus: CollectSku[];
   onProduct: (v: string) => void;
   onCategory: (v: string) => void;
+  // R4 · สินค้าคลังสาขา (ตู้นี้) + handler เลือกจาก picker. [] → fallback dropdown เดิม.
+  branchProducts: BranchStockProduct[];
+  onPickRefill: (productId: string, name: string) => void;
+  // N5 · ด่านเงินไม่ตรง (verdict=SHORT) · null = ไม่มีด่าน.
+  mismatchGate: { active: boolean; onConfirmShort: (reason: string, note: string) => void; onCancel: () => void } | null;
   onBack: () => void;
   primary: { label: string; color: string; action: () => void };
   secondary: { label: string; action: () => void } | null;
@@ -1607,11 +2010,23 @@ function FlowScreen(props: {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <FieldLabel>สินค้าที่เติม</FieldLabel>
-                <select value={f.product} onChange={(e) => props.onProduct(e.target.value)} style={selectStyle}>
-                  {props.skus.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  {props.skus.every((s) => s.name !== f.product) && <option value={f.product}>{f.product}</option>}
-                </select>
+                <FieldLabel>สินค้าที่เติม (เลือกจากคลังสาขา)</FieldLabel>
+                {/* R4 · มีสินค้าคลังสาขาจริง → picker การ์ดมีรูป+ยอดคงคลัง · ไม่มี (demo/ว่าง) → dropdown เดิม */}
+                {props.branchProducts.length > 0 ? (
+                  <BranchStockPicker
+                    products={props.branchProducts}
+                    value={f.refillProductId}
+                    onPick={(pid) => {
+                      const p = props.branchProducts.find((x) => x.id === pid);
+                      if (p) props.onPickRefill(pid, p.name);
+                    }}
+                  />
+                ) : (
+                  <select value={f.product} onChange={(e) => props.onProduct(e.target.value)} style={selectStyle}>
+                    {props.skus.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    {props.skus.every((s) => s.name !== f.product) && <option value={f.product}>{f.product}</option>}
+                  </select>
+                )}
               </div>
               <div>
                 <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
@@ -1776,6 +2191,18 @@ function FlowScreen(props: {
                   )}
                 </div>
               )}
+
+              {/* N5 · ด่านเงินขาด — server คืน needsReason (verdict=SHORT) → ต้องเลือกเหตุผลก่อนส่งซ้ำ.
+                   verdict=SHORT เสมอเมื่อ needsReason (server กด OVER/OK/round-1 ผ่านเอง). */}
+              {props.mismatchGate?.active && (
+                <div style={{ marginTop: 14 }}>
+                  <MismatchGate
+                    verdict="SHORT"
+                    onConfirmShort={props.mismatchGate.onConfirmShort}
+                    onProceed={props.mismatchGate.onCancel}
+                  />
+                </div>
+              )}
             </div>
           )
         )}
@@ -1893,8 +2320,9 @@ function Icon({ paths, size = 17 }: { paths: string[]; size?: number }) {
 const QUICK_MENU: { key: Exclude<Panel, null>; label: string; d: string[] }[] = [
   { key: "history", label: "ประวัติของฉัน", d: ["M3 3v18h18", "m19 9-5 5-4-4-3 3"] },
   { key: "repair", label: "แจ้งซ่อม", d: ["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"] },
-  { key: "stock", label: "เช็คสต็อก", d: ["m7.5 4.27 9 5.15", "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z", "m3.3 7 8.7 5 8.7-5M12 22V12"] },
-  { key: "config", label: "ตั้งค่าตู้", d: ["M4 21v-7", "M4 10V3", "M12 21v-9", "M12 8V3", "M20 21v-5", "M20 12V3", "M1 14h6M9 8h6M17 16h6"] },
+  { key: "stock", label: "นับสต็อก", d: ["m7.5 4.27 9 5.15", "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z", "m3.3 7 8.7 5 8.7-5M12 22V12"] },
+  // N6 · รับสินค้า (ใบกระจายขาเข้า)
+  { key: "receive", label: "รับสินค้า", d: ["M16 16h6", "M19 13v6", "M12 3 2 8l10 5 10-5-10-5z", "M2 8v8l10 5", "M12 13v9"] },
 ];
 
 // แบนเนอร์ "เร็ว ๆ นี้" — บอกชัดว่าหน้านี้ยังเป็นตัวอย่าง ไม่บันทึกจริง (กันพนักงานเข้าใจผิดว่าส่งแล้ว)

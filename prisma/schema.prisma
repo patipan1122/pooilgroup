@@ -2088,6 +2088,10 @@ model CfMachine {
   installedAt      DateTime?     @map("installed_at") @db.Date
   retiredAt        DateTime?     @map("retired_at") @db.Timestamptz(6)
   isActive         Boolean       @default(true) @map("is_active")
+  // bigfeature (N1/N4) — รูปตู้ + ล็อก baseline ครั้งแรก (once-only). ตู้ใหม่ = false (AWAITING_SETUP)
+  photoUrl              String?   @map("photo_url")
+  isFirstBaselineLocked Boolean   @default(false) @map("is_first_baseline_locked")
+  firstBaselineAppliedAt DateTime? @map("first_baseline_applied_at") @db.Timestamptz(6)
   // ultrareview Wave 3 — มอบหมายตู้ให้พนักงานเก็บ (opt-in · null = ทุกคนในสาขาเก็บได้เหมือนเดิม)
   assignedStaffId  String?       @map("assigned_staff_id") @db.Uuid
   notes            String?
@@ -2245,6 +2249,8 @@ model CfCollectionSession {
   prizeCountedOut   Int?            @map("prize_counted_out")
   prizeVariance     Int?            @map("prize_variance")
   totalCashCents    Int             @default(0) @map("total_cash_cents")
+  // bigfeature (N1) — รอบตั้งค่าครั้งแรก (baseline) · revenue ยังนับ · verdict short/over ถูกกด
+  isBaseline        Boolean         @default(false) @map("is_baseline")
   // ultrareview Wave 4a — custody→deposit: null = เงินรอบนี้ยัง "ค้างมือ" ยังไม่ฝากธนาคาร
   depositId         String?         @map("deposit_id") @db.Uuid
   anomalyFlags      String[]        @default([]) @map("anomaly_flags")
@@ -2300,6 +2306,18 @@ model CfCollectionEvent {
   photoMeterAfterUrl  String?     @map("photo_meter_after_url")
   photoStockUrl       String?     @map("photo_stock_url")
   photosPurgedAt      DateTime?   @map("photos_purged_at") @db.Timestamptz(6)
+  // bigfeature (N1) — 4 มิเตอร์กายภาพ (baseline snapshot + ต่อรอบ) + รูปมิเตอร์แยก + รูปตู้ (nullable)
+  meterMoneyTop           Int?      @map("meter_money_top")
+  meterMoneyBottom        Int?      @map("meter_money_bottom")
+  meterDollTop            Int?      @map("meter_doll_top")
+  meterDollBottom         Int?      @map("meter_doll_bottom")
+  photoMoneyMeterTopUrl   String?   @map("photo_money_meter_top_url")
+  photoMoneyMeterBottomUrl String?  @map("photo_money_meter_bottom_url")
+  photoDollMeterTopUrl    String?   @map("photo_doll_meter_top_url")
+  photoDollMeterBottomUrl String?   @map("photo_doll_meter_bottom_url")
+  photoMachineUrl         String?   @map("photo_machine_url")
+  // bigfeature (N5) — เหตุผลเงินขาด (null เมื่อ OK/OVER/round-1)
+  shortReason             String?   @map("short_reason")
   // anomaly flags ราย event (เก็บแยกจาก session-level)
   anomalyFlags        String[]    @default([]) @map("anomaly_flags")
   notes               String?
@@ -2515,6 +2533,9 @@ model CfStockCount {
   reviewedByName String? @map("reviewed_by_name")
   reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewNote    String?  @map("review_note")
+  // bigfeature (N3) — รูปแนบตอนนับ (มือถือ) + client idempotency key (nullable · unique-per-org เมื่อ not null)
+  photoUrls     String[] @default([]) @map("photo_urls")
+  clientKey     String?  @map("client_key")
 
   org     Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch  Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -2522,6 +2543,9 @@ model CfStockCount {
   lines   CfStockCountLine[]
 
   @@unique([orgId, countCode])
+  // NB: idempotency uniqueness on (org_id, client_key) is a PARTIAL unique index
+  // (WHERE client_key IS NOT NULL) created in migration SQL — not modeled as @@unique
+  // here to avoid Prisma generating a conflicting non-partial index.
   @@index([orgId, branchId, countedAt(sort: Desc)])
   @@map("cf_stock_counts")
   @@schema("public")
@@ -2621,6 +2645,9 @@ model CfRepairTicket {
   note                String?
   photoUrls           String[]  @default([]) @map("photo_urls")
   status              String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | CANCELLED
+  // bigfeature (N1) — แยกงานซ่อมปกติ vs ตั้งค่าครั้งแรกใหม่ (redo) + ใครอนุมัติได้ (plain String กัน enum drift)
+  kind                String    @default("REPAIR") // REPAIR | FIRST_SETUP
+  approverRole        String?   @map("approver_role") // 'super_admin' สำหรับ FIRST_SETUP redo
   reportedById        String?   @map("reported_by_id") @db.Uuid
   reportedByName      String    @map("reported_by_name")
   reportedAt          DateTime  @default(now()) @map("reported_at") @db.Timestamptz(6)

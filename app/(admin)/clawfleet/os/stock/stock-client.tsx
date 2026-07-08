@@ -20,6 +20,7 @@ import {
   transferStock, receiveStock, submitStockCount, reviewCfStockCount, recordLoss, reviewCfLoss,
   createShipment, confirmShipmentReceived, lookupCfProductByBarcode,
 } from "@/lib/clawfleet/stock-actions";
+import { MachinesLoadoutTab, BranchMgmtLink, type MachineSeed, type LoadoutItemSeed } from "./machine-detail";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
 export type ReceiptSeed = { items: string; date: string; status: "received" | "pending" | "diff" };
@@ -233,7 +234,7 @@ function ageTag(days: number): WarehouseItem["tag"] {
 const TH_ITEM: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9AA1AB" };
 
 /* ───────────────────────── main ───────────────────────── */
-type StockTab = "overview" | "receipts" | "counts" | "losses" | "dist";
+type StockTab = "overview" | "receipts" | "counts" | "losses" | "dist" | "machines";
 
 export function StockClient({
   branches,
@@ -250,6 +251,8 @@ export function StockClient({
   viewerId,
   canReviewLoss,
   asOfISO,
+  machines,
+  loadoutByMachine,
 }: {
   branches: BranchStockSeed[];
   realBranches: BranchOption[];
@@ -266,6 +269,9 @@ export function StockClient({
   canReviewLoss: boolean;
   // มูลค่าสต๊อก ณ วันที่ (YYYY-MM-DD) · null = ปัจจุบัน (ใช้ต้นทุนวันนี้)
   asOfISO: string | null;
+  // surface-existing — รายชื่อตู้ + โหลดเอาต์ปัจจุบันต่อตู้ (สำหรับแท็บ "ไส้ในตู้")
+  machines: MachineSeed[];
+  loadoutByMachine: Record<string, LoadoutItemSeed[]>;
 }) {
   const router = useRouter();
   const empty = branches.length === 0;
@@ -306,6 +312,7 @@ export function StockClient({
     { k: "counts", label: "นับสต็อก" },
     { k: "losses", label: "ตัดของเสีย" },
     { k: "dist", label: "การกระจาย" },
+    { k: "machines", label: "ไส้ในตู้" },
   ];
 
   return (
@@ -316,24 +323,28 @@ export function StockClient({
         </div>
       )}
 
-      {/* tab switcher */}
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4, marginBottom: 18, width: "fit-content" }}>
-        {tabs.map(({ k, label }) => {
-          const active = tab === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setTab(k)}
-              style={{
-                border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 9,
-                background: active ? "#4F46E5" : "transparent", color: active ? "#fff" : "#6B7280", transition: "all .15s",
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
+      {/* tab switcher + ลิงก์จัดการสาขา (surface-existing: หน้าเปลี่ยนชื่อ/ลบสาขาที่หายาก) */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4, width: "fit-content" }}>
+          {tabs.map(({ k, label }) => {
+            const active = tab === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k)}
+                style={{
+                  border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 9,
+                  background: active ? "#4F46E5" : "transparent", color: active ? "#fff" : "#6B7280", transition: "all .15s",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <span style={{ flex: 1 }} />
+        <BranchMgmtLink />
       </div>
 
       {/* ตัวเลือกสาขาเอกสาร (item #9) — เอกสาร รับของ/นับ/ตัดของเสีย โหลดตามสาขาที่เลือก
@@ -372,6 +383,9 @@ export function StockClient({
       )}
       {tab === "dist" && (
         <DistributionTab realBranches={realBranches} products={products} shipments={shipments} movements={movements} defaultBranchId={defaultBranchId} />
+      )}
+      {tab === "machines" && (
+        <MachinesLoadoutTab machines={machines} loadoutByMachine={loadoutByMachine} />
       )}
     </div>
   );

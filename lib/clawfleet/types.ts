@@ -205,6 +205,9 @@ export const SubmitBranchEventSchema = z
     photoStockBeforeUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoStockUrl
     photoStockAfterUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoMeterBeforeUrl (reused slot)
     photoCashUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoCashUrl
+    // N5 (bigfeature) — เหตุผลเงินขาด (dropdown ฝั่งมือถือ). server บังคับเฉพาะเมื่อ verdict=SHORT
+    // (คำนวณด้วย computeCfDrift ฝั่ง server ไม่เชื่อค่า client). null/ว่าง = ยังไม่ให้เหตุผล.
+    shortReason: z.string().max(500).optional(),
     notes: z.string().max(1000).optional(),
   })
   .strict();

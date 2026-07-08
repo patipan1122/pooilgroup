@@ -13,7 +13,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
-import { userBranchIds, assertCfAdmin, isCfAdmin, isCfBranchManager } from "./role-guard";
+import { zUUID } from "@/lib/zod-helpers";
+import { userBranchIds, assertCfAdmin, isCfAdmin, isCfBranchManager, cfHasAdminPower } from "./role-guard";
 import { getClawfleetPolicy } from "./policy";
 import {
   StartBranchSessionSchema,
@@ -28,9 +29,19 @@ import {
   type AnomalyFlag,
 } from "./types";
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
+import { computeCfDrift } from "./drift";
 
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
+// N5 soft-gate: server คำนวณ SHORT แล้วยังไม่มีเหตุผล → คืน needsReason (ไม่ใช่ error แข็ง)
+// ให้จอมือถือเด้ง dropdown เหตุผล แล้วส่งซ้ำพร้อม shortReason.
+type SubmitBranchEventResult =
+  | { ok: true; data: { id: string } }
+  | { ok: false; error: string; needsReason?: boolean };
+
+// R4 sentinel — โยนจากใน $transaction เมื่อเติมเกินสต๊อกคลังสาขา · catch แปลงเป็น
+// error ข้อความชัด (แยกจาก DB error ทั่วไป) แล้ว rollback ทั้งก้อน (ไม่ตัดสต๊อกครึ่ง ๆ).
+class CfOverIssueError extends Error {}
 
 // ── นโยบาย "มิเตอร์ต้องตรง" (meterMatch · Wave 4b) ─────────────────────────
 // เมื่อเจ้าของเปิดสวิตช์ meterMatch (policy.meterMatch) → รอบที่ปิดแล้วมีธง "เกี่ยวกับมิเตอร์"
@@ -231,7 +242,7 @@ export async function startBranchSession(input: unknown): Promise<ResultOf<{ id:
 }
 
 /** กรอกข้อมูล 1 ตู้คีบในรอบสาขา (5 รูป · มิเตอร์ก่อนดึงจากระบบ) */
-export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: string }>> {
+export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEventResult> {
   const parsed = SubmitBranchEventSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const data = parsed.data;
@@ -275,6 +286,15 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     return { ok: false, error: "นโยบายบังคับถ่ายรูป · ต้องแนบรูปเงินสดก่อนบันทึก" };
   }
 
+  // P1 (audit 2026-07-08): server-side baseline guard. กฏ "ต้องตั้ง baseline ก่อนเก็บเงิน"
+  // เดิมบังคับเฉพาะฝั่งจอ (staff-app route ตู้ AWAITING_SETUP ไปฟอร์ม baseline) — action นี้
+  // เป็น raw POST ยิงตรงได้ → ตู้ที่ไม่เคยตั้ง baseline เก็บเงินแบบ round-1 (verdict ถูกกด) ตลอดชีพ
+  // → SHORT/OVER ไม่เด้ง เงินหายเงียบ. รอบ baseline จัดการโดย submitFirstBaseline เท่านั้น (คนล็อก);
+  // action นี้รับเฉพาะรอบ 2+ (ตู้ที่ล็อกแล้ว). staff-app route ตู้ที่ยังไม่ล็อกไป BaselineForm อยู่แล้ว → สอดคล้อง.
+  if (!machine.isFirstBaselineLocked) {
+    return { ok: false, error: "ตู้นี้ยังไม่ได้ตั้งค่าครั้งแรก · ต้องทำ baseline ก่อนเก็บเงิน" };
+  }
+
   const cashPerCoin = machine.loadouts[0]
     ? machine.loadouts[0].pricePerPlayCoins * 1000
     : CASH_PER_PLAY_CENTS;
@@ -294,9 +314,12 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
       AND collected_at > NOW() - INTERVAL '30 days'`;
   const medianRevenueCents = medianRow[0]?.median ?? null;
 
-  const derived = deriveEvent({
+  // FOUNDATION (blueprint §2): drift ผ่าน computeCfDrift ตัวเดียว (wrap deriveEvent · math เดิม).
+  // round-1 (ตู้ยังไม่ล็อก baseline) → verdict = null (revenue ยังนับ · short/over ถูกกด).
+  const isBaselineRound = !machine.isFirstBaselineLocked;
+  const derived = computeCfDrift({
     kind: "CLAW",
-    coinMeterBefore: machine.lastCoinMeter,
+    coinMeterBefore: machine.lastCoinMeter, // KEEP mirror (ไม่ใช่ odometer ดิบ)
     coinMeterAfter: data.coinMeterAfter,
     cashCountedCents: data.cashCountedCents,
     dollMeterBefore: machine.lastDollMeter,
@@ -306,8 +329,26 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
     refillQty: data.refillQty,
     cashPerCoinCents: cashPerCoin,
     medianRevenueCents,
+    isBaselineRound,
   });
+  // blockReason = data-integrity (C2/M5/P4) → บล็อกแม้ round-1 (ตัวเลขอ่านผิด)
   if (derived.blockReason) return { ok: false, error: derived.blockReason };
+
+  // N5 (blueprint §2 N5): server เป็นคนตัดสิน SHORT/OVER (ไม่เชื่อ client).
+  // verdict=SHORT + ยังไม่ให้เหตุผล → soft gate: คืน needsReason ให้จอเด้ง dropdown.
+  // verdict=OVER → รับได้ + บันทึก override marker (ธง M4/M6 มีอยู่แล้ว · เติม note).
+  // round-1 (verdict=null) → ไม่มี gate.
+  const shortReason = data.shortReason?.trim() || null;
+  const eventFlags: string[] = [...derived.flags];
+  let eventNotes = data.notes ?? null;
+  if (derived.verdict === "SHORT" && !shortReason) {
+    return { ok: false, error: "เงินขาด · เลือกเหตุผลก่อนบันทึก", needsReason: true };
+  }
+  if (derived.verdict === "OVER") {
+    // override marker — เงินเกินผ่านได้เงียบ ๆ แต่บันทึกไว้ว่ารับทั้งที่เกิน
+    const overNote = "[OVERRIDE] เงินเกิน · รับโดยไม่บล็อก";
+    eventNotes = eventNotes ? `${eventNotes}\n${overNote}` : overNote;
+  }
 
   const dup = await prisma.cfCollectionEvent.findFirst({
     where: { sessionId: data.sessionId, machineId: data.machineId, eventType: "COLLECTION" },
@@ -351,12 +392,27 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
           photoStockUrl: data.photoStockBeforeUrl,
           photoMeterBeforeUrl: data.photoStockAfterUrl,
           photoCashUrl: data.photoCashUrl,
-          anomalyFlags: derived.flags,
-          notes: data.notes,
+          anomalyFlags: eventFlags,
+          shortReason, // N5: เหตุผลเงินขาด (null เมื่อ OK/OVER/round-1)
+          notes: eventNotes,
         },
         select: { id: true },
       });
       if (data.refillQty > 0 && refillProductId) {
+        // R4 (blueprint §2 R4) — over-issue guard: เติมได้ไม่เกินสต๊อกคลังสาขาของสินค้านั้น.
+        // 🔒 advisory-lock ต่อ (branch,product) — serialize การอ่านยอด+ตัดสต๊อก กัน 2 การเติม
+        // พร้อมกันอ่านยอดคงคลังก้อนเดียวกันแล้วตัดเกิน (mirror receiveStock B3 pattern).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${refillProductId}))`;
+        const onHandAgg = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, productId: refillProductId, machineId: null },
+          _sum: { qty: true },
+        });
+        const warehouseOnHand = onHandAgg._sum.qty ?? 0;
+        if (data.refillQty > warehouseOnHand) {
+          throw new CfOverIssueError(
+            `สต๊อกสาขาไม่พอ · มี ${warehouseOnHand} ตัว · เติม ${data.refillQty} ตัวไม่ได้`,
+          );
+        }
         await tx.cfStockMovement.create({
           data: {
             orgId,
@@ -372,12 +428,40 @@ export async function submitBranchEvent(input: unknown): Promise<ResultOf<{ id: 
             reason: "เติมตุ๊กตาเข้าตู้",
           },
         });
+        // R4 loadout upsert — ให้ loadout "ในตู้" สะท้อนสินค้าที่เพิ่งเติม (สินค้า+ราคา/ครั้ง).
+        // ถ้าสินค้าปัจจุบันในตู้ ≠ สินค้าที่เติม → ปิดแถวเดิม (effectiveTo=now) เปิดแถวใหม่.
+        // ราคา/ครั้ง = ตามแถวปัจจุบัน (คงเดิม) · ถ้าไม่มี loadout เดิม → default 1 เหรียญ/ครั้ง.
+        const currentLoadout = machine.loadouts[0] ?? null;
+        if (!currentLoadout || currentLoadout.productId !== refillProductId) {
+          const now = new Date();
+          if (currentLoadout) {
+            await tx.cfMachineLoadout.update({
+              where: { id: currentLoadout.id },
+              data: { effectiveTo: now },
+            });
+          }
+          await tx.cfMachineLoadout.create({
+            data: {
+              orgId,
+              machineId: machine.id,
+              productId: refillProductId,
+              pricePerPlayCoins: currentLoadout?.pricePerPlayCoins ?? 1,
+              effectiveFrom: now,
+              setById: session.user.id,
+              notes: "ตั้งจากการเติมตุ๊กตา (refill)",
+            },
+          });
+        }
       }
       return created;
     });
     revalidatePath("/clawfleet/os/collections");
     return { ok: true, data: { id: ev.id } };
   } catch (e) {
+    // R4 over-issue → ข้อความชัด (สต๊อกสาขาไม่พอ) · transaction rollback แล้ว = ไม่มีของตัด
+    if (e instanceof CfOverIssueError) {
+      return { ok: false, error: e.message };
+    }
     // B1 (audit 2026-07-01): unique index กันกรอกตู้ซ้ำในรอบ (กด 2 ครั้ง/retry ชน) →
     // P2002 = DB บังคับ atomic แทน read-then-write (กันนับเงิน+ตัดสต๊อก 2 เท่า)
     if ((e as { code?: string }).code === "P2002") {
@@ -400,6 +484,7 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     select: {
       id: true,
       branchId: true,
+      isBaseline: true,
       events: {
         where: { eventType: "COLLECTION" },
         select: {
@@ -443,7 +528,7 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
     priceByMachine.set(m.id, m.loadouts[0] ? m.loadouts[0].pricePerPlayCoins * 1000 : CASH_PER_PLAY_CENTS);
   }
 
-  const cc = deriveBranchCrossCheck(
+  const ccRaw = deriveBranchCrossCheck(
     cf.events.map((e) => ({
       coinMeterBefore: e.coinMeterBefore,
       coinMeterAfter: e.coinMeterAfter,
@@ -456,6 +541,27 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
       cashPerCoinCents: priceByMachine.get(e.machineId) ?? CASH_PER_PLAY_CENTS,
     })),
   );
+
+  // FOUNDATION round-1 (blueprint §2 · CEO R1): รอบ baseline → revenue ยังนับ (expected/actual
+  // ยังบันทึกตามเดิม) แต่ "verdict" เงินขาด/เกิน (M2/M3/M4/M6) ถูกกด — ไม่มีรอบก่อนให้เทียบ.
+  // ธง data-integrity/ตุ๊กตา (C2/P*/…) ยังคงอยู่. wrap ไม่ fork: กรองธงเงินออกจากผล deriveBranchCrossCheck
+  // แล้วคำนวณ status ใหม่จากธงที่เหลือ.
+  const cc = cf.isBaseline
+    ? (() => {
+        const MONEY_VERDICT_FLAGS: ReadonlySet<string> = new Set<string>([
+          ANOMALY_FLAGS.M2_CASH_SHORT_MINOR,
+          ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR,
+          ANOMALY_FLAGS.M4_CASH_OVER,
+          ANOMALY_FLAGS.M6_CASH_OVER_MAJOR,
+        ]);
+        const keptFlags = ccRaw.flags.filter((f) => !MONEY_VERDICT_FLAGS.has(f));
+        return {
+          ...ccRaw,
+          flags: keptFlags,
+          status: keptFlags.length > 0 ? ("ANOMALY_REVIEW" as const) : ("CLOSED" as const),
+        };
+      })()
+    : ccRaw;
 
   // นโยบาย meterMatch (Wave 4b): เปิด → ถ้ารอบมีธงเกี่ยวกับมิเตอร์ บังคับเข้า ANOMALY_REVIEW
   // (additive · escalate เท่านั้น · ไม่ปลดการตรวจ). ปิด → status = cc.status เดิม.
@@ -1089,6 +1195,10 @@ export async function createCfMachine(input: unknown): Promise<ResultOf<{ id: st
         nickname: nickname || null,
         kind,
         qrToken: randomUUID(),
+        // bigfeature (N1): ตู้ใหม่ = AWAITING_SETUP ⚪ (isFirstBaselineLocked=false, ค่า default).
+        // ไม่เขียน INITIAL event ที่นี่ (baseline form เป็นคนเขียน INITIAL รอบแรกแล้ว lock ตู้)
+        // → partial-unique index cf_events_one_baseline_per_machine ยังว่าง ไม่มีอะไร pre-consume.
+        isFirstBaselineLocked: false,
       },
       select: { id: true },
     });
@@ -1163,6 +1273,91 @@ export async function retireCfMachine(machineId: string): Promise<Result> {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: `ปลดระวางตู้ไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * ย้ายตู้ไปสาขาอื่น (forward-only) — เฉพาะแอดมิน (assertCfAdmin).
+ * ⚠️ movements/events เก่ายังผูก branchId เดิม (ประวัติไม่ย้ายตาม) → เป็นการย้าย
+ * "ไปข้างหน้า" เท่านั้น: รอบเก็บ/สต๊อกใหม่หลังย้ายจะอยู่สาขาใหม่ · ของเก่าคงบริบทเดิม.
+ * กันย้ายเข้าสาขาที่ไม่ใช่ตู้คีบ/ไม่ใช่ org เดียวกัน.
+ */
+export async function reassignCfMachineBranch(
+  machineId: string,
+  newBranchId: string,
+): Promise<Result> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+  if (!machineId || !newBranchId) return { ok: false, error: "ไม่ระบุตู้หรือสาขาปลายทาง" };
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true, branchId: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้" };
+  if (machine.branchId === newBranchId) return { ok: false, error: "ตู้อยู่ในสาขานี้อยู่แล้ว" };
+
+  const branch = await prisma.branch.findFirst({
+    where: { id: newBranchId, orgId, businessType: "claw_machine" },
+    select: { id: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบปลายทาง หรือไม่อยู่ในองค์กรนี้" };
+
+  try {
+    await prisma.cfMachine.update({
+      where: { id: machineId },
+      // ย้ายเฉพาะ branchId · เคลียร์ groupId (กลุ่มผูกกับสาขาเดิม · ย้ายข้ามสาขา = หลุดกลุ่ม)
+      data: { branchId: newBranchId, groupId: null },
+    });
+    revalidatePath(MANAGE_PATH);
+    revalidatePath("/clawfleet/os/stock");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `ย้ายสาขาตู้ไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+const SetMachinePhotoSchema = z.object({
+  machineId: zUUID(),
+  photoUrl: z.string().url(), // absolute R2 url
+});
+
+/**
+ * ตั้ง/เปลี่ยนรูปตู้ (N4) — พนักงานในสาขาก็ทำได้ (branch-access · ไม่ต้องเป็นแอดมิน).
+ * เขียนทับรูปเดิม (เก็บล่าสุด · ไม่มีประวัติ). guard สิทธิ์เข้าถึงสาขาของตู้.
+ */
+export async function setMachinePhoto(input: unknown): Promise<Result> {
+  const parsed = SetMachinePhotoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { machineId, photoUrl } = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true, branchId: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้" };
+
+  // branch-access guard — NEVER gate write on userBranchIds()==='ALL' (viewer ก็ได้ ALL).
+  // ใช้ cfHasAdminPower หรือ membership สาขาจริง (userBranch) เท่านั้น.
+  if (!(await cfHasAdminPower(session))) {
+    const ub = await prisma.userBranch.findFirst({
+      where: { userId: session.user.id, branchId: machine.branchId },
+      select: { id: true },
+    });
+    if (!ub) return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  try {
+    await prisma.cfMachine.update({
+      where: { id: machineId },
+      data: { photoUrl },
+    });
+    revalidatePath(MANAGE_PATH);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `บันทึกรูปตู้ไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
 

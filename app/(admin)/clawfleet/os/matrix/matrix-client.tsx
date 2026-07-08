@@ -15,6 +15,7 @@ import { AlertTriangle, CalendarX, User } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
 import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
+import { ChecklistClient, type ChecklistBranch } from "./checklist-client";
 
 export type AssignableStaff = { id: string; name: string };
 
@@ -121,6 +122,8 @@ type GridDay = MatrixSerialDay & { hasData: boolean };
 // machineId = null เฉพาะ SAMPLE path (DB ว่าง) → มอบหมายไม่ได้
 type GridMachine = { machineId: string | null; code: string; days: GridDay[] };
 
+type MatrixView = "machine" | "branch";
+
 export function MatrixClient({
   branches,
   initialBranch,
@@ -130,6 +133,8 @@ export function MatrixClient({
   assignments = {},
   staff = [],
   canManage = false,
+  checklistIsoDays = [],
+  checklistBranches = [],
 }: {
   branches: MatrixBranch[];
   initialBranch: string | null;
@@ -140,11 +145,17 @@ export function MatrixClient({
   assignments?: Record<string, string>;
   staff?: AssignableStaff[];
   canManage?: boolean;
+  // Wave 2E1 — เช็คลิสต์ สาขา×วัน (READ-ONLY) จาก getCfChecklistGrid
+  checklistIsoDays?: string[];
+  checklistBranches?: ChecklistBranch[];
 }) {
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+
+  // แท็บมุมมอง: ตู้×วัน (เจาะลึกรายสาขา) | สาขา×วัน (เช็คลิสต์ทุกสาขา)
+  const [view, setView] = useState<MatrixView>("machine");
 
   // ชื่อพนักงานจาก staffId (สำหรับป้าย "👤 ชื่อ")
   const staffName = useMemo(() => {
@@ -425,6 +436,38 @@ export function MatrixClient({
 
   return (
     <div style={{ opacity: pending ? 0.6 : 1, transition: "opacity .15s" }}>
+      {/* มุมมอง: ตู้×วัน (เจาะลึกรายสาขา) | สาขา×วัน (เช็คลิสต์เก็บเงินทุกสาขา) */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 11, padding: 4, width: "fit-content" }}>
+        {([
+          { key: "machine", label: "ตู้ × วัน", sub: "เจาะลึกรายสาขา" },
+          { key: "branch", label: "สาขา × วัน", sub: "เช็คลิสต์เก็บเงิน" },
+        ] as const).map((t) => {
+          const on = t.key === view;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setView(t.key)}
+              style={{
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
+                padding: "7px 15px",
+                borderRadius: 8,
+                background: on ? "#4F46E5" : "transparent",
+                color: on ? "#fff" : "#5A6270",
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>{t.label}</div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: on ? "rgba(255,255,255,0.8)" : "#9AA1AB", marginTop: 1 }}>{t.sub}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {view === "branch" ? (
+        <ChecklistClient isoDays={checklistIsoDays} branches={checklistBranches} />
+      ) : (
+      <>
       {empty && (
         <div
           style={{
@@ -982,6 +1025,8 @@ export function MatrixClient({
           </>
         )}
       </Modal>
+      </>
+      )}
     </div>
   );
 }

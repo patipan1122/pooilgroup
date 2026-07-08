@@ -9,7 +9,9 @@ import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
-import { StaffAppClient, type StaffHistoryRow } from "./staff-app-client";
+import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
+import { getCfBranchStockProducts, getInboundDeliveries } from "@/lib/clawfleet/stock-queries";
+import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
 export const dynamic = "force-dynamic";
@@ -153,6 +155,9 @@ export default async function StaffAppPage() {
   // กรอง route เหลือ "ตู้ของฉัน" ถ้ามีการมอบหมาย (ไม่งั้นแสดงทุกตู้ในสาขาเหมือนเดิม)
   const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
 
+  // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker)
+  const { awaitingSetupIds, branchProducts, inboundByBranch } = await loadBigfeatureData(orgId, routeBranches);
+
   return (
     <StaffAppClient
       orgId={orgId}
@@ -164,6 +169,86 @@ export default async function StaffAppPage() {
       history={history}
       myRecentTickets={myRecentTickets}
       assignedOnly={hasAssignment}
+      awaitingSetupIds={awaitingSetupIds}
+      branchProducts={branchProducts}
+      inboundByBranch={inboundByBranch}
     />
   );
+}
+
+/**
+ * โหลดข้อมูล bigfeature (server-side · ทุกอย่าง org/สาขา-scoped ผ่าน query guard):
+ *  - awaitingSetupIds: ตู้ที่ยังไม่ตั้ง baseline (N1) → HOME route ไปฟอร์มตั้งค่าครั้งแรก
+ *  - branchProducts: สินค้าคลังต่อสาขา (N3 นับสต๊อก · R4 picker เติม)
+ *  - inboundByBranch: ใบกระจายขาเข้าที่ยังไม่รับ ต่อสาขา (N6 รับสินค้า)
+ * graceful: query ล้ม/ยังไม่ migrate → คืนค่าว่าง (แอปยังเดินได้ · demo/empty state).
+ */
+async function loadBigfeatureData(
+  orgId: string,
+  branches: GroupCollectBranch[],
+): Promise<{
+  awaitingSetupIds: string[];
+  branchProducts: Record<string, BranchStockProduct[]>;
+  inboundByBranch: Record<string, InboundDelivery[]>;
+}> {
+  const branchIds = branches.map((b) => b.id);
+  let awaitingSetupIds: string[] = [];
+  const branchProducts: Record<string, BranchStockProduct[]> = {};
+  const inboundByBranch: Record<string, InboundDelivery[]> = {};
+
+  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch };
+
+  try {
+    const awaiting = await getAwaitingSetupMachines();
+    awaitingSetupIds = awaiting.map((m) => m.id);
+  } catch {
+    // graceful: ยังไม่ migrate → ไม่มีตู้ awaiting (ทุกตู้เข้า wizard ปกติ)
+  }
+
+  await Promise.all(
+    branchIds.map(async (bid) => {
+      try {
+        const products = await getCfBranchStockProducts(orgId, bid);
+        branchProducts[bid] = products.map((p) => ({
+          id: p.id,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          warehouse: p.warehouse,
+        }));
+      } catch {
+        branchProducts[bid] = [];
+      }
+      try {
+        const inbound = await getInboundDeliveries(bid);
+        // getInboundDeliveries คืน line โดยไม่มี lineId แต่ confirmShipmentReceived ต้องใช้ lineId
+        // → ดึง lineId ต่อ (delivery,product) เพิ่มใน 1 query (page loader ทำได้ · ไม่แตะ lib/*)
+        const deliveryIds = inbound.map((d) => d.id);
+        const lineRows = deliveryIds.length
+          ? await prisma.cfDeliveryLine.findMany({
+              where: { deliveryId: { in: deliveryIds } },
+              select: { id: true, deliveryId: true, productId: true },
+            })
+          : [];
+        const lineIdMap = new Map<string, string>(); // `${deliveryId}:${productId}` → lineId
+        for (const lr of lineRows) lineIdMap.set(`${lr.deliveryId}:${lr.productId}`, lr.id);
+        inboundByBranch[bid] = inbound.map((d) => ({
+          id: d.id,
+          status: d.status,
+          itemsCount: d.itemsCount,
+          unitsCount: d.unitsCount,
+          lines: d.lines.map((l) => ({
+            lineId: lineIdMap.get(`${d.id}:${l.productId}`) ?? "",
+            productId: l.productId,
+            productName: l.productName,
+            qty: l.qty,
+            receivedQty: l.receivedQty,
+          })),
+        }));
+      } catch {
+        inboundByBranch[bid] = [];
+      }
+    }),
+  );
+
+  return { awaitingSetupIds, branchProducts, inboundByBranch };
 }

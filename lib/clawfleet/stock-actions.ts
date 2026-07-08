@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager } from "./role-guard";
+import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff } from "./role-guard";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
@@ -36,6 +36,23 @@ const STOCKCOUNT_APPROVAL_CENTS = 50000; // ฿500 — มูลค่าปร�
 /** ผู้ที่มีสิทธิ์ "สร้าง/อนุมัติ" การตัดของเสีย/ปรับยอดใหญ่ = ผจก.สาขา + แอดมิน (ไม่ใช่พนักงานเก็บของ) */
 function canWriteOff(role: Parameters<typeof isCfAdmin>[0]): boolean {
   return isCfAdmin(role) || isCfBranchManager(role);
+}
+
+/**
+ * N3 · พนักงานเก็บ (field-staff) ที่เป็น "สมาชิกจริงของสาขานี้" — ตรวจจาก user_branch โดยตรง.
+ * ⚠️ ห้ามใช้ userBranchIds()==='ALL' ตัดสิน (viewer ก็ได้ 'ALL') → ต้องยืนยันสมาชิกภาพจริงต่อสาขา.
+ * ใช้เปิดทางให้พนักงานสร้าง "ใบนับ DRAFT (PENDING)" เท่านั้น — ไม่มีสิทธิ์ปรับสต๊อกจริง.
+ */
+async function isRealBranchStaff(
+  session: Awaited<ReturnType<typeof requireSession>>,
+  branchId: string,
+): Promise<boolean> {
+  if (!isCfStaff(session.user.role)) return false;
+  const ub = await prisma.userBranch.findFirst({
+    where: { userId: session.user.id, branchId },
+    select: { id: true },
+  });
+  return !!ub;
 }
 
 // ── code-gen (human-readable · BE year · timestamp+random suffix · กันชนต่ำ) ──
@@ -285,6 +302,10 @@ const VARIANCE_ANOMALY_THRESHOLD = 5; // |ผลต่างรวม| ≥ 5 ต
 const CountSchema = z.object({
   branchId: z.string().uuid("สาขาไม่ถูกต้อง"),
   note: z.string().trim().max(500).optional(),
+  // N3 · รูปแนบตอนนับ (มือถือ) — R2 URLs (absolute) → .url() ใช้ได้
+  photoUrls: z.array(z.string().url()).max(10).optional(),
+  // N3 · client idempotency key — กดส่งซ้ำ/ออฟไลน์ retry → คืนใบเดิม no-op
+  clientKey: z.string().trim().min(1).max(200).optional(),
   lines: z
     .array(
       z.object({
@@ -299,7 +320,7 @@ const CountSchema = z.object({
 export async function submitStockCount(input: unknown): Promise<Result<{ countCode: string | null; countId: string | null; adjusted: number; skipped: number; anomaly: boolean; status: "APPLIED" | "PENDING" }>> {
   const parsed = CountSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { branchId, note, lines } = parsed.data;
+  const { branchId, note, photoUrls, clientKey, lines } = parsed.data;
 
   let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
   try {
@@ -309,10 +330,37 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
   }
   const { session, orgId } = ctx;
 
-  // D1 · role-rank guard — ปรับยอดนับกายภาพ = ปรับสต๊อกได้ตรง ๆ (ซ่อน shrinkage ได้ถ้าปรับยอดลง)
-  // → เฉพาะผู้จัดการสาขา/แอดมินเท่านั้น (พนักงานเก็บของ/viewer นับได้แต่ไม่มีสิทธิ์ "ยืนยันปรับยอด").
-  if (!canWriteOff(session.user.role)) {
-    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยืนยันปรับยอดนับสต๊อกได้");
+  // N3 · role gate — สองทาง:
+  //   (1) ผจก.สาขา/แอดมิน (canWriteOff) → พฤติกรรมเดิม (มูลค่า > เกณฑ์ → PENDING · ไม่งั้น APPLIED).
+  //   (2) พนักงานเก็บที่เป็น "สมาชิกจริงของสาขา" (isRealBranchStaff) → นับได้ แต่ "บังคับ" เป็น DRAFT (PENDING)
+  //       เท่านั้น · ไม่มีทางสร้าง APPLIED · ไม่เขียน movement ใด ๆ จนกว่า reviewCfStockCount จะอนุมัติ.
+  // ⚠️ ตรวจสมาชิกภาพจาก user_branch จริง — ไม่ใช้ userBranchIds()==='ALL' (viewer ก็ 'ALL' → เขียนไม่ได้).
+  const manager = canWriteOff(session.user.role);
+  const staffDraft = !manager && (await isRealBranchStaff(session, branchId));
+  if (!manager && !staffDraft) {
+    return err("ไม่มีสิทธิ์บันทึกใบนับสต๊อกของสาขานี้");
+  }
+
+  // N3 · idempotency — ถ้ามีใบนับ clientKey เดียวกันอยู่แล้ว (org + สาขา) → คืนใบเดิม no-op
+  // (กันกดส่งซ้ำ/ออฟไลน์ retry สร้างใบซ้ำ · เสริม partial-unique index (org_id, client_key) ใน DB)
+  if (clientKey) {
+    const existing = await prisma.cfStockCount.findFirst({
+      where: { orgId, clientKey },
+      select: { id: true, countCode: true, itemsCounted: true, status: true },
+    });
+    if (existing) {
+      return {
+        ok: true,
+        data: {
+          countId: existing.id,
+          countCode: existing.countCode,
+          adjusted: existing.itemsCounted,
+          skipped: 0,
+          anomaly: false,
+          status: (existing.status === "APPLIED" ? "APPLIED" : "PENDING") as "APPLIED" | "PENDING",
+        },
+      };
+    }
   }
 
   const result = await prisma
@@ -350,9 +398,11 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
 
       // Wave 4b · มูลค่าปรับ (สตางค์) = Σ |ผลต่าง × ต้นทุนเฉลี่ยปัจจุบัน| ต่อรายการ (นับทั้งขึ้นและลง)
       // เกินเกณฑ์ → PENDING (รอคนที่ 2) · ต่ำกว่าเกณฑ์ → APPLIED (เขียน movement ทันที · พฤติกรรมเดิม)
+      // N3 · พนักงานเก็บ (staffDraft) → "บังคับ" PENDING เสมอ ไม่ว่ามูลค่าเท่าไหร่ (ไม่มีทางสร้าง APPLIED
+      //   → ไม่เขียน movement จนกว่าคนที่ 2 อนุมัติ · รักษา maker-checker ไว้ทั้งหมด).
       const adjustValueCents = diffs.reduce((s, d) => s + Math.abs(d.diff * d.cost), 0);
       const status: "APPLIED" | "PENDING" =
-        adjustValueCents > STOCKCOUNT_APPROVAL_CENTS ? "PENDING" : "APPLIED";
+        staffDraft || adjustValueCents > STOCKCOUNT_APPROVAL_CENTS ? "PENDING" : "APPLIED";
 
       const count = await tx.cfStockCount.create({
         data: {
@@ -363,6 +413,8 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
           itemsCounted: diffs.length,
           totalDiff,
           status,
+          photoUrls: photoUrls ?? [],
+          clientKey: clientKey || null,
           countedById: session.user.id,
           countedByName: session.user.name || session.user.email || null,
           lines: {
@@ -443,9 +495,41 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
 
       return { countId: count.id, countCode: count.countCode, adjusted: diffs.length, skipped, anomaly, status };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => {
+      // N3 · idempotency race — 2 การส่งพร้อมกัน clientKey เดียวกัน → คนแพ้ชน partial-unique
+      // (org_id, client_key) → P2002. คืน no-op (ใบที่คนชนะสร้างไปแล้ว) แทน error หน้าจอ.
+      if (
+        clientKey &&
+        typeof e === "object" && e !== null && "code" in e &&
+        (e as { code?: string }).code === "P2002"
+      ) {
+        return { clientKeyConflict: true as const };
+      }
+      return { error: e instanceof Error ? e.message : String(e) };
+    });
 
-  if ("error" in result) return err(result.error);
+  if ("error" in result) return err(result.error ?? "ข้อมูลไม่ถูกต้อง");
+  // race no-op: อ่านใบที่คนชนะสร้างด้วย clientKey เดียวกัน แล้วคืนเป็น no-op
+  if ("clientKeyConflict" in result) {
+    const winner = await prisma.cfStockCount.findFirst({
+      where: { orgId, clientKey: clientKey! },
+      select: { id: true, countCode: true, itemsCounted: true, status: true },
+    });
+    if (winner) {
+      return {
+        ok: true,
+        data: {
+          countId: winner.id,
+          countCode: winner.countCode,
+          adjusted: winner.itemsCounted,
+          skipped: 0,
+          anomaly: false,
+          status: (winner.status === "APPLIED" ? "APPLIED" : "PENDING") as "APPLIED" | "PENDING",
+        },
+      };
+    }
+    return err("ใบนับนี้เพิ่งถูกบันทึกไปแล้ว · รีเฟรชแล้วลองใหม่");
+  }
   revalidatePath(STOCK_PATH);
   revalidatePath(ANOMALY_PATH);
   revalidatePath("/clawfleet/os/dashboard");
@@ -470,6 +554,11 @@ async function applyStockCountMovements(
 ): Promise<void> {
   const now = new Date();
   for (const d of args.diffs) {
+    // P2 (audit 2026-07-08): ล็อกต่อ (branch,product) ก่อนเขียน COUNT_ADJUST — serialize
+    // การเขียน movement ของสินค้าตัวเดียวกันในสาขาเดียวกัน (mirror R4 refill guard actions.ts:396).
+    // การ claim PENDING→APPROVED กัน race ระดับ "ใบ" อยู่แล้ว แต่ล็อกนี้กัน 2 การเขียนสต๊อกสินค้า
+    // ตัวเดียวกันจากคนละใบ/คนละทางพร้อมกัน อ่าน balance ก้อนเดียวกันแล้วเขียนทับ.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${args.branchId}), hashtext(${d.id}))`;
     await tx.cfStockMovement.create({
       data: {
         orgId: args.orgId,
@@ -1153,6 +1242,8 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
 
 const ConfirmShipmentSchema = z.object({
   deliveryId: z.string().uuid("ใบกระจายไม่ถูกต้อง"),
+  // N6 · รูปแนบตอนรับ (มือถือ) — R2 URLs (absolute) → .url() ใช้ได้ · เก็บเป็นหลักฐานบน RECEIPT_IN movement
+  photoUrls: z.array(z.string().url()).max(10).optional(),
   receivedLines: z
     .array(
       z.object({
@@ -1168,7 +1259,7 @@ export async function confirmShipmentReceived(
 ): Promise<Result<{ deliveryId: string; status: string; alreadyReceived: boolean }>> {
   const parsed = ConfirmShipmentSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { deliveryId, receivedLines } = parsed.data;
+  const { deliveryId, photoUrls, receivedLines } = parsed.data;
 
   // หา branchId ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา
   const head = await prisma.cfDelivery.findFirst({
@@ -1327,6 +1418,8 @@ export async function confirmShipmentReceived(
             refId: d.id,
             documentType: "transfer",
             documentId: d.id,
+            // N6 · รูปหลักฐานตอนรับ (มือถือ) — แนบบน RECEIPT_IN movement (CfDelivery ไม่มีคอลัมน์รูป)
+            photoUrls: photoUrls ?? [],
             reason: `ตรวจรับใบกระจาย · คงเหลือ ${oldBal + a.qty}`,
           },
         });
@@ -1377,4 +1470,62 @@ export async function seedCfSampleProducts(): Promise<Result<{ created: number; 
   });
   revalidatePath(STOCK_PATH);
   return { ok: true, data: { created: toCreate.length, skipped: CF_SAMPLE_PRODUCTS.length - toCreate.length } };
+}
+
+// =============================================================
+// surface-existing — โหลดประวัติการเคลื่อนไหวของสินค้าตัวเดียว (on-demand · lazy)
+//   หน้าคลังกดดูโหลดเอาต์ตู้ → กดสินค้า → เรียก action นี้โหลดประวัติ (ใหม่→เก่า).
+//   scope: admin/viewer เห็นทุกสาขา · ไม่งั้นกรองเฉพาะสาขาที่ผู้ใช้เป็นสมาชิก (org-scoped เสมอ).
+//   คืน movement rows แบบ display-only (ไม่แก้ข้อมูล) — ปลอดภัยเพราะ read-only + org+branch scope.
+// =============================================================
+export type CfProductMovementDisplayRow = {
+  id: string;
+  type: string;
+  qty: number;
+  occurredAt: string; // ISO (client แปลงวันที่เอง)
+  branchName: string;
+  machineCode: string | null;
+  refLabel: string | null; // อ้างอิงเอกสาร (refTable · เช่น cf_deliveries)
+};
+
+export async function loadCfProductMovements(
+  productId: string,
+): Promise<Result<CfProductMovementDisplayRow[]>> {
+  if (!productId) return err("ไม่ระบุสินค้า");
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const branchIds = await userBranchIds(session);
+
+  // ยืนยันสินค้าอยู่ใน org (กันหลุด org)
+  const product = await prisma.cfProduct.findFirst({ where: { id: productId, orgId }, select: { id: true } });
+  if (!product) return err("ไม่พบสินค้า");
+
+  const rows = await prisma.cfStockMovement.findMany({
+    where: {
+      productId,
+      orgId,
+      // ⚠️ อย่ากรองสิทธิ์ด้วย userBranchIds()==='ALL' — 'ALL' = เห็นทุกสาขา (admin/viewer) ถูกต้องแล้ว
+      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+    },
+    orderBy: { occurredAt: "desc" },
+    take: 200,
+    select: {
+      id: true, type: true, qty: true, occurredAt: true, refTable: true,
+      branch: { select: { name: true } },
+      machine: { select: { code: true } },
+    },
+  });
+
+  return {
+    ok: true,
+    data: rows.map((m) => ({
+      id: m.id,
+      type: m.type,
+      qty: m.qty,
+      occurredAt: m.occurredAt.toISOString(),
+      branchName: m.branch?.name ?? "สาขา",
+      machineCode: m.machine?.code ?? null,
+      refLabel: m.refTable,
+    })),
+  };
 }

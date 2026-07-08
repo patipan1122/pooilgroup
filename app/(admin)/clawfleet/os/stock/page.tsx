@@ -18,6 +18,8 @@ import {
   getCfProductsForForms,
   getCfBranchOnHandMap,
   getCfMovements,
+  getCfMachinesForBranchAdmin,
+  getMachineLoadout,
 } from "@/lib/clawfleet/stock-queries";
 import {
   StockClient,
@@ -32,6 +34,7 @@ import {
   type ShipmentSeed,
   type MovementSeed,
 } from "./stock-client";
+import type { MachineSeed, LoadoutItemSeed } from "./machine-detail";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +75,9 @@ export default async function StockPage({
   // D1 maker-checker: ใครกำลังดู + มีสิทธิ์อนุมัติใบตัดของเสียไหม (ผจก.สาขา/แอดมิน)
   let viewerId = "";
   let canReviewLoss = false;
+  // surface-existing — รายชื่อตู้ (ในสโคป user) + โหลดเอาต์ปัจจุบันต่อตู้ (สำหรับแท็บ "ไส้ในตู้")
+  let machines: MachineSeed[] = [];
+  let loadoutByMachine: Record<string, LoadoutItemSeed[]> = {};
 
   try {
     const session = await requireCfSession();
@@ -85,6 +91,33 @@ export default async function StockPage({
       products = ps.map((p) => ({ id: p.id, name: p.name, unitCostCents: p.unitCostCents }));
     } catch {
       // graceful: ยังไม่มีตาราง/สินค้า → ฟอร์มจะปิดการใช้งานเอง
+    }
+
+    // ── รายชื่อตู้ + โหลดเอาต์ปัจจุบันต่อตู้ (แท็บ "ไส้ในตู้") ──
+    // query กรองสาขาตามสิทธิ์อยู่แล้ว · โหลดเอาต์ต่อตู้เล็ก → โหลด eager (กด modal เปิดทันที)
+    try {
+      const ms = await getCfMachinesForBranchAdmin();
+      machines = ms.map((m) => ({
+        id: m.id,
+        code: m.code,
+        nickname: m.nickname,
+        branchName: m.branchName,
+        kind: m.kind,
+        isActive: m.isActive,
+      }));
+      const loadouts = await Promise.all(machines.map((m) => getMachineLoadout(m.id)));
+      loadoutByMachine = {};
+      machines.forEach((m, i) => {
+        loadoutByMachine[m.id] = loadouts[i].map((l) => ({
+          productId: l.productId,
+          productName: l.productName,
+          imageUrl: l.imageUrl,
+          pricePerPlayCoins: l.pricePerPlayCoins,
+          setAtISO: l.setAt.toISOString(),
+        }));
+      });
+    } catch {
+      // graceful: ยังไม่มีตู้/ยังไม่ migrate → แท็บจะขึ้น empty state
     }
 
     if (branches.length > 0) {
@@ -225,6 +258,8 @@ export default async function StockPage({
       viewerId={viewerId}
       canReviewLoss={canReviewLoss}
       asOfISO={asOfISO}
+      machines={machines}
+      loadoutByMachine={loadoutByMachine}
     />
   );
 }

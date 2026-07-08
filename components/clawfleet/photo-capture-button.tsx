@@ -46,7 +46,22 @@ export function PhotoCaptureButton({
   orgId: string;
   machineCode: string;
   eventScopeId: string;
-  phase: "meter_before" | "cash" | "meter_after" | "stock" | "prize_meter" | "stock_after";
+  phase:
+    | "meter_before"
+    | "cash"
+    | "meter_after"
+    | "stock"
+    | "prize_meter"
+    | "stock_after"
+    // bigfeature (N1/N4) — baseline capture + machine self-photo + 4-meter snapshot + goods-receipt/stock-count
+    | "machine"
+    | "money_meter_top"
+    | "money_meter_bottom"
+    | "doll_meter_top"
+    | "doll_meter_bottom"
+    | "baseline_stock"
+    | "goods_receipt"
+    | "stock_count";
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>(value ? "done" : "idle");

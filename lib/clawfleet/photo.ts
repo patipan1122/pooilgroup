@@ -10,7 +10,16 @@ export type PhotoPhase =
   | "meter_after"
   | "stock"
   | "prize_meter"
-  | "stock_after";
+  | "stock_after"
+  // N1 baseline / N4 machine photo / N6 goods-receipt / N3 stock-count (bigfeature 2026-07-08)
+  | "machine"
+  | "money_meter_top"
+  | "money_meter_bottom"
+  | "doll_meter_top"
+  | "doll_meter_bottom"
+  | "baseline_stock"
+  | "goods_receipt"
+  | "stock_count";
 
 // 🛡️ path-safety: อนุญาตเฉพาะอักษร/ตัวเลข/._- (ไม่มี "/" ไม่มี "..") → กัน path traversal
 // เมื่อค่ามาจาก client. eventScopeId = "{sessionId}-{machineId}" (uuid สองก้อน ~73 ตัว) จึง

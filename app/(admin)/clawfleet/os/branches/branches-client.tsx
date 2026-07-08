@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight } from "lucide-react";
-import { Kpi, IconBox, Pill } from "@/components/clawfleet/os/kit";
+import { useRouter } from "next/navigation";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck } from "lucide-react";
+import { Kpi, IconBox, Pill, Card, Modal } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
+import { reassignCfMachineBranch } from "@/lib/clawfleet/actions";
 
 /** สถานะตู้จริงจาก server (cfMachine): ดี / ต้องเติม / เสีย */
 export type ServerDotStatus = "good" | "warn" | "broken";
@@ -22,6 +24,17 @@ export type BranchRow = {
   /** สถานะรายตู้จริง (เรียงตาม code) — ว่าง = ไม่มีข้อมูลตู้ */
   dots: ServerDotStatus[];
 };
+
+/** surface-existing (reassign) — ตัวเลือกตู้ + สาขา (แอดมินเท่านั้น) */
+export type MachineOption = {
+  id: string;
+  code: string;
+  nickname: string | null;
+  branchId: string;
+  branchName: string;
+  isActive: boolean;
+};
+export type BranchOption = { id: string; name: string; code: string };
 
 /* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลข/สาขาแนวเดียวกับ dashboard ── */
 const SAMPLE_BRANCHES: BranchRow[] = [
@@ -49,7 +62,18 @@ function realDots(dots: ServerDotStatus[]): DotKind[] {
   return dots.map((d) => (d === "warn" ? "warn" : d === "broken" ? "broken" : "good"));
 }
 
-export function BranchesClient({ branches }: { branches: BranchRow[] }) {
+export function BranchesClient({
+  branches,
+  isAdmin = false,
+  machineOptions = [],
+  branchOptions = [],
+}: {
+  branches: BranchRow[];
+  // surface-existing (reassign) — โชว์การ์ด "ย้ายตู้ข้ามสาขา" เฉพาะแอดมิน (server assert อยู่แล้ว)
+  isAdmin?: boolean;
+  machineOptions?: MachineOption[];
+  branchOptions?: BranchOption[];
+}) {
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
   const [openId, setOpenId] = useState<string | null>(null);
@@ -234,6 +258,9 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
         })}
       </div>
 
+      {/* ── surface-existing: ย้ายตู้ข้ามสาขา (แอดมินเท่านั้น) ── */}
+      {isAdmin && <ReassignMachineCard machineOptions={machineOptions} branchOptions={branchOptions} />}
+
       {/* ── legend: ความหมายของช่องสถานะตู้ ── */}
       <div
         style={{
@@ -261,6 +288,180 @@ export function BranchesClient({ branches }: { branches: BranchRow[] }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * surface-existing — ย้ายตู้ข้ามสาขา (admin only · server = assertCfAdmin)
+ *  เลือกตู้ → เลือกสาขาปลายทาง → ยืนยัน → reassignCfMachineBranch.
+ *  ⚠️ ย้ายไปข้างหน้าเท่านั้น · ประวัติเก่า (การเก็บ/เคลื่อนไหว) คงสาขาเดิมไว้.
+ * ───────────────────────────────────────────────────────────────────────── */
+const R_FIELD: React.CSSProperties = {
+  width: "100%", fontSize: 13, padding: "10px 12px", borderRadius: 10,
+  border: "1px solid #E3E6EA", background: "#fff", color: "#1A1D21", outline: "none",
+};
+const R_LABEL: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#5A6270", marginBottom: 6, display: "block" };
+
+function ReassignMachineCard({
+  machineOptions,
+  branchOptions,
+}: {
+  machineOptions: MachineOption[];
+  branchOptions: BranchOption[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [machineId, setMachineId] = useState("");
+  const [toBranchId, setToBranchId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const canUse = machineOptions.length > 0 && branchOptions.length >= 2;
+  const selected = machineOptions.find((m) => m.id === machineId) ?? null;
+
+  function reset() {
+    setMachineId(""); setToBranchId(""); setError(null);
+  }
+  function openModal() {
+    reset();
+    setOkMsg(null);
+    setOpen(true);
+  }
+  function submit() {
+    setError(null);
+    if (!machineId) { setError("เลือกตู้ที่จะย้าย"); return; }
+    if (!toBranchId) { setError("เลือกสาขาปลายทาง"); return; }
+    if (selected && selected.branchId === toBranchId) { setError("ตู้อยู่ในสาขานี้อยู่แล้ว — เลือกสาขาอื่น"); return; }
+
+    startTransition(async () => {
+      const res = await reassignCfMachineBranch(machineId, toBranchId);
+      if (!res.ok) { setError(res.error); return; }
+      const mName = selected ? selected.code : "ตู้";
+      const bName = branchOptions.find((b) => b.id === toBranchId)?.name ?? "สาขาใหม่";
+      setOkMsg(`ย้าย ${mName} ไปสาขา ${bName} แล้ว`);
+      setOpen(false);
+      reset();
+      router.refresh();
+    });
+  }
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <Card
+        title="ย้ายตู้ข้ามสาขา"
+        sub="สำหรับแอดมิน — ย้ายตู้คีบไปอยู่สาขาอื่น (ประวัติเก่าคงสาขาเดิม · ย้ายไปข้างหน้าเท่านั้น)"
+        right={
+          <button
+            type="button"
+            onClick={openModal}
+            disabled={!canUse}
+            className="co-tap"
+            style={{
+              border: "none", cursor: canUse ? "pointer" : "not-allowed",
+              background: canUse ? "#4F46E5" : "#C7C4EE", color: "#fff",
+              fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 10,
+              display: "inline-flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+            }}
+          >
+            <Truck size={15} /> ย้ายตู้
+          </button>
+        }
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "#6B7280" }}>
+          <IconBox tone="neutral" size={38} radius={10} bg="#F1F2F7" color="#9AA1AB"><Cpu size={17} /></IconBox>
+          <div style={{ flex: 1 }}>
+            {canUse
+              ? <>มีตู้ในระบบ <b className="num" style={{ color: "#454B54" }}>{num(machineOptions.length)}</b> ตู้ · กด “ย้ายตู้” เพื่อเลือกตู้และสาขาปลายทาง</>
+              : "ต้องมีตู้อย่างน้อย 1 ตู้ และสาขาตู้คีบอย่างน้อย 2 สาขา ถึงจะย้ายได้"}
+          </div>
+        </div>
+        {okMsg && (
+          <div style={{ marginTop: 12, background: "#E7F4EC", border: "1px solid #BBE3C9", borderRadius: 10, padding: "10px 13px", fontSize: 12.5, color: "#15803D" }}>
+            {okMsg}
+          </div>
+        )}
+      </Card>
+
+      <Modal
+        open={open}
+        onClose={() => { if (!pending) { setOpen(false); reset(); } }}
+        width={500}
+        title="ย้ายตู้ไปสาขาอื่น"
+        sub="ประวัติการเก็บเงิน/สต๊อกเดิมจะยังผูกกับสาขาเดิม — ย้ายมีผลนับจากนี้ไป"
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "14px 20px" }}>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={pending}
+              style={{ flex: 1, border: "none", cursor: pending ? "wait" : "pointer", background: pending ? "#A5A0EC" : "#4F46E5", color: "#fff", fontSize: 13.5, fontWeight: 700, padding: "11px 0", borderRadius: 10 }}
+            >
+              {pending ? "กำลังย้าย…" : "ยืนยันย้ายตู้"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!pending) { setOpen(false); reset(); } }}
+              disabled={pending}
+              style={{ border: "1px solid #E3E6EA", background: "#fff", cursor: pending ? "not-allowed" : "pointer", color: "#6B7280", fontSize: 13.5, fontWeight: 600, padding: "11px 20px", borderRadius: 10 }}
+            >
+              ยกเลิก
+            </button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={R_LABEL}>ตู้ที่จะย้าย</label>
+            <select
+              aria-label="เลือกตู้ที่จะย้าย"
+              value={machineId}
+              onChange={(e) => { setMachineId(e.target.value); setError(null); }}
+              style={R_FIELD}
+            >
+              <option value="">— เลือกตู้ —</option>
+              {machineOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.code}{m.nickname ? ` (${m.nickname})` : ""} · อยู่ {m.branchName}{!m.isActive ? " · ปิดใช้งาน" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#9AA1AB", fontSize: 12 }}>
+            <span style={{ fontWeight: 600 }}>สาขาปัจจุบัน:</span>
+            <span style={{ color: "#454B54", fontWeight: 600 }}>{selected ? selected.branchName : "—"}</span>
+            <ArrowRight size={15} />
+            <span style={{ fontWeight: 600 }}>ปลายทาง</span>
+          </div>
+
+          <div>
+            <label style={R_LABEL}>สาขาปลายทาง</label>
+            <select
+              aria-label="เลือกสาขาปลายทาง"
+              value={toBranchId}
+              onChange={(e) => { setToBranchId(e.target.value); setError(null); }}
+              style={R_FIELD}
+            >
+              <option value="">— เลือกสาขา —</option>
+              {branchOptions
+                .filter((b) => !selected || b.id !== selected.branchId)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+                ))}
+            </select>
+          </div>
+
+          <div style={{ fontSize: 11.5, color: "#B45309", background: "#FCF6EC", border: "1px solid #F0E2BE", borderRadius: 9, padding: "9px 12px" }}>
+            หมายเหตุ: ตู้จะหลุดจากกลุ่ม (group) ของสาขาเดิมโดยอัตโนมัติ · ประวัติการเก็บเงินและการเคลื่อนไหวสต๊อกเดิมยังคงอยู่ที่สาขาเดิม (ย้ายมีผลนับจากนี้ไปเท่านั้น)
+          </div>
+
+          {error && (
+            <div style={{ background: "#FCEDEC", border: "1px solid #F5C6C2", borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: "#B42318" }}>{error}</div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

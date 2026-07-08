@@ -8,8 +8,10 @@ import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
+import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
+import { getCfBranchStockProducts, getInboundDeliveries } from "@/lib/clawfleet/stock-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
-import { StaffAppClient, type StaffHistoryRow } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
+import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
 
 export const dynamic = "force-dynamic";
@@ -123,6 +125,9 @@ export default async function ClawfleetLiffPage() {
   // กรอง route เหลือ "ตู้ของฉัน" ถ้ามีการมอบหมาย (ไม่งั้นแสดงทุกตู้ในสาขาเหมือนเดิม)
   const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
 
+  // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker)
+  const { awaitingSetupIds, branchProducts, inboundByBranch } = await loadBigfeatureData(orgId, routeBranches);
+
   return (
     <div className="clawos">
       <StaffAppClient
@@ -135,7 +140,83 @@ export default async function ClawfleetLiffPage() {
         history={history}
         myRecentTickets={myRecentTickets}
         assignedOnly={hasAssignment}
+        awaitingSetupIds={awaitingSetupIds}
+        branchProducts={branchProducts}
+        inboundByBranch={inboundByBranch}
       />
     </div>
   );
+}
+
+/**
+ * โหลดข้อมูล bigfeature (server-side · org/สาขา-scoped ผ่าน query guard) — เหมือน /clawfleet/os/app.
+ *  awaitingSetupIds (N1) · branchProducts (N3/R4) · inboundByBranch (N6).
+ * graceful: query ล้ม/ยังไม่ migrate → คืนค่าว่าง.
+ */
+async function loadBigfeatureData(
+  orgId: string,
+  branches: GroupCollectBranch[],
+): Promise<{
+  awaitingSetupIds: string[];
+  branchProducts: Record<string, BranchStockProduct[]>;
+  inboundByBranch: Record<string, InboundDelivery[]>;
+}> {
+  const branchIds = branches.map((b) => b.id);
+  let awaitingSetupIds: string[] = [];
+  const branchProducts: Record<string, BranchStockProduct[]> = {};
+  const inboundByBranch: Record<string, InboundDelivery[]> = {};
+
+  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch };
+
+  try {
+    const awaiting = await getAwaitingSetupMachines();
+    awaitingSetupIds = awaiting.map((m) => m.id);
+  } catch {
+    // graceful: ยังไม่ migrate → ไม่มีตู้ awaiting
+  }
+
+  await Promise.all(
+    branchIds.map(async (bid) => {
+      try {
+        const products = await getCfBranchStockProducts(orgId, bid);
+        branchProducts[bid] = products.map((p) => ({
+          id: p.id,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          warehouse: p.warehouse,
+        }));
+      } catch {
+        branchProducts[bid] = [];
+      }
+      try {
+        const inbound = await getInboundDeliveries(bid);
+        const deliveryIds = inbound.map((d) => d.id);
+        const lineRows = deliveryIds.length
+          ? await prisma.cfDeliveryLine.findMany({
+              where: { deliveryId: { in: deliveryIds } },
+              select: { id: true, deliveryId: true, productId: true },
+            })
+          : [];
+        const lineIdMap = new Map<string, string>();
+        for (const lr of lineRows) lineIdMap.set(`${lr.deliveryId}:${lr.productId}`, lr.id);
+        inboundByBranch[bid] = inbound.map((d) => ({
+          id: d.id,
+          status: d.status,
+          itemsCount: d.itemsCount,
+          unitsCount: d.unitsCount,
+          lines: d.lines.map((l) => ({
+            lineId: lineIdMap.get(`${d.id}:${l.productId}`) ?? "",
+            productId: l.productId,
+            productName: l.productName,
+            qty: l.qty,
+            receivedQty: l.receivedQty,
+          })),
+        }));
+      } catch {
+        inboundByBranch[bid] = [];
+      }
+    }),
+  );
+
+  return { awaitingSetupIds, branchProducts, inboundByBranch };
 }

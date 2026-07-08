@@ -22,6 +22,7 @@ import {
   isCfBranchManager,
   cfHasAdminPower,
 } from "./role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 
 const REPAIRS_PATH = "/clawfleet/os/repairs";
 
@@ -32,6 +33,16 @@ type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
 
 function err(message: string): { ok: false; error: string } {
   return { ok: false, error: message };
+}
+
+// FIRST_SETUP redo (ปลดล็อก baseline ตู้เพื่อตั้งใหม่) = super_admin คนเดียวเท่านั้น.
+// baseline = ตัวหารรายได้ → org_admin/program_admin/ผจก.สาขา ห้ามปลดล็อก (กันช่องโกง/ครหา).
+// ใช้ isSuperAdmin(role) ตรง ๆ · ไม่ reuse cfHasAdminPower/assertCfAdmin (มันเปิดให้ program_admin grant).
+function assertSuperAdminOnly(
+  session: Awaited<ReturnType<typeof requireCfSession>>,
+): boolean {
+  const role = session.actingAs ? session.actingAs.realUser.role : session.user.role;
+  return isSuperAdmin(role);
 }
 
 // CHECKER = ผจก.สาขา หรือ แอดมิน (program_admin ผ่าน user_modules grant) ที่เข้าถึง "สาขาของตู้/ใบนี้" ได้
@@ -139,6 +150,128 @@ export async function createRepairTicket(input: unknown): Promise<ResultOf<{ tic
 }
 
 // =============================================================
+// 1.5) N1 · FIRST_SETUP redo — อนุมัติ "ตั้งค่าครั้งแรกใหม่" (super_admin คนเดียว)
+//      ปลดล็อก baseline ตู้ → แม่บ้าน re-capture ได้. คนละ path กับ REPAIR (ไม่แตะ maker-checker เดิม).
+// =============================================================
+type FirstSetupTicket = {
+  id: string;
+  machineId: string;
+  branchId: string;
+  status: string;
+  kind: string;
+  reportedById: string | null;
+};
+
+/**
+ * อนุมัติใบ FIRST_SETUP redo — ปลดล็อก baseline ตู้ (isFirstBaselineLocked=false) เพื่อตั้งใหม่.
+ *
+ * สิทธิ์ = super_admin เท่านั้น (assertSuperAdminOnly) — ไม่ใช่ org_admin/program_admin/ผจก.สาขา.
+ * maker≠checker: คนขอตั้งใหม่ (reportedById) ห้ามอนุมัติเอง.
+ * atomic claim (status ∈ OPEN|IN_PROGRESS → RESOLVED · count!==1 = โดนปิดไปแล้ว).
+ * เขียน audit FIRST_SETUP_REDO + log RECALIBRATE ในทรานเดียว.
+ */
+async function resolveFirstSetupRedo(
+  session: Awaited<ReturnType<typeof requireCfSession>>,
+  ticket: FirstSetupTicket,
+  orgId: string,
+): Promise<Result> {
+  // super_admin คนเดียวเท่านั้น (baseline = ตัวหารรายได้)
+  if (!assertSuperAdminOnly(session)) {
+    return err("อนุมัติตั้งค่าครั้งแรกใหม่ได้เฉพาะ super admin เท่านั้น");
+  }
+
+  if (ticket.status === "RESOLVED") return err("ใบนี้ปิดงานไปแล้ว");
+  if (ticket.status === "CANCELLED") return err("ใบนี้ถูกยกเลิกไปแล้ว");
+
+  // maker≠checker — คนขอตั้งใหม่ห้ามอนุมัติเอง (segregation of duties)
+  if (ticket.reportedById && ticket.reportedById === session.user.id) {
+    return err("อนุมัติใบที่ตัวเองขอไม่ได้ · ให้ super admin คนอื่นอนุมัติ (คนเสนอ ≠ คนอนุมัติ)");
+  }
+
+  const byName = session.user.name || session.user.email || "ไม่ทราบชื่อ";
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      const now = new Date();
+
+      // atomic claim — อนุมัติได้ครั้งเดียว
+      const claim = await tx.cfRepairTicket.updateMany({
+        where: { id: ticket.id, orgId, status: { in: ["OPEN", "IN_PROGRESS"] } },
+        data: {
+          status: "RESOLVED",
+          resolvedById: session.user.id,
+          resolvedByName: byName,
+          resolvedAt: now,
+          meterAppliedAt: now,
+        },
+      });
+      if (claim.count !== 1) {
+        throw new Error("ใบนี้เพิ่งถูกปิดงานไปแล้ว · รีเฟรชแล้วลองใหม่");
+      }
+
+      // ปลดล็อก baseline ตู้ → แม่บ้าน re-capture ได้ (INITIAL event เดิมยังอยู่เป็นประวัติ ·
+      // partial-unique index บังคับ 1 INITIAL/ตู้ → การตั้งใหม่ต้องล้าง INITIAL เดิมด้วย ไม่งั้นชน P2002).
+      const machine = await tx.cfMachine.findFirst({
+        where: { id: ticket.machineId, orgId },
+        select: { isFirstBaselineLocked: true, firstBaselineAppliedAt: true },
+      });
+      if (!machine) throw new Error("ไม่พบตู้ที่จะปลดล็อก baseline ในองค์กรนี้");
+
+      await tx.cfMachine.update({
+        where: { id: ticket.machineId },
+        data: {
+          isFirstBaselineLocked: false,
+          firstBaselineAppliedAt: null,
+        },
+      });
+
+      // ล้าง INITIAL event เดิมของตู้ (VOID) เพื่อเปิดทาง baseline ใหม่ (partial-unique WHERE event_type='INITIAL').
+      // เปลี่ยน eventType → VOID (คงประวัติไว้ · ไม่ลบทิ้ง) → index ปล่อยแถวนั้น (WHERE ไม่ match แล้ว).
+      await tx.cfCollectionEvent.updateMany({
+        where: { orgId, machineId: ticket.machineId, eventType: "INITIAL" },
+        data: { eventType: "VOID" },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_FIRST_SETUP_REDO",
+          resourceType: "CF_MACHINE",
+          resourceId: ticket.machineId,
+          diff: {
+            old: {
+              isFirstBaselineLocked: machine.isFirstBaselineLocked,
+              firstBaselineAppliedAt: machine.firstBaselineAppliedAt,
+            },
+            new: { isFirstBaselineLocked: false, firstBaselineAppliedAt: null },
+            ticketId: ticket.id,
+            reportedById: ticket.reportedById,
+            approvedBy: byName,
+          },
+        },
+      });
+
+      await tx.cfRepairLog.create({
+        data: {
+          orgId,
+          ticketId: ticket.id,
+          action: "RECALIBRATE",
+          byId: session.user.id,
+          byName,
+          note: "อนุมัติตั้งค่าครั้งแรกใหม่ · ปลดล็อก baseline ตู้ (แม่บ้านตั้งใหม่ได้)",
+        },
+      });
+    })
+    .then(() => ({ ok: true as const }))
+    .catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(REPAIRS_PATH);
+  return { ok: true };
+}
+
+// =============================================================
 // 2) ปิดงานซ่อม (resolve) — ผจก./แอดมินเท่านั้น = CHECKER
 //    + maker-checker rebaseline มิเตอร์ (คนเสนอ ≠ คนอนุมัติ · mirror reviewCfLoss)
 // =============================================================
@@ -185,6 +318,7 @@ export async function resolveRepairTicket(
       machineId: true,
       branchId: true,
       status: true,
+      kind: true,
       reportedById: true,
       meterResetRequested: true,
       proposedCoinMeter: true,
@@ -192,6 +326,13 @@ export async function resolveRepairTicket(
     },
   });
   if (!ticket) return err("ไม่พบใบแจ้งซ่อม");
+
+  // N1 · FIRST_SETUP redo — คนละเส้นทางกับ REPAIR ปกติ.
+  // ปลดล็อก baseline ตู้ (isFirstBaselineLocked=false) เพื่อให้แม่บ้านตั้งค่าครั้งแรกใหม่ได้ ·
+  // อนุมัติได้เฉพาะ super_admin (ไม่ใช่ org_admin/program_admin/ผจก.สาขา) · maker≠checker.
+  if (ticket.kind === "FIRST_SETUP") {
+    return resolveFirstSetupRedo(session, ticket, orgId);
+  }
 
   // CHECKER guard + scope สาขา — ผจก.สาขา/แอดมิน "ของสาขานี้" เท่านั้น
   // admin-power (แอดมิน+program_admin grant) ผ่านทุกสาขา · ผจก.สาขาเข้าเฉพาะสาขาตัวเอง ·

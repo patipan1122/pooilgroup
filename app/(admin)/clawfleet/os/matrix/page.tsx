@@ -9,6 +9,7 @@
  */
 import { getV2Branches } from "@/lib/clawfleet/queries";
 import { getMatrixData } from "@/lib/clawfleet/matrix-queries";
+import { getCfChecklistGrid } from "@/lib/clawfleet/checklist-queries";
 import {
   getMachineAssignments,
   getAssignableStaff,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/clawfleet/assignment-queries";
 import { requireCfSession, userBranchIds, cfHasAdminPower, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 import { MatrixClient, type MatrixBranch, type MatrixSerialMachine } from "./matrix-client";
+import type { ChecklistBranch } from "./checklist-client";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +37,17 @@ export default async function MatrixPage({
   let assignments: Record<string, string> = {};
   let staff: AssignableStaff[] = [];
   let canManage = false;
+  // เช็คลิสต์ สาขา×วัน ย้อนหลัง 31 วัน (READ-ONLY · scope ผ่าน userBranchIds ในตัว query)
+  let checklistIsoDays: string[] = [];
+  let checklistBranches: ChecklistBranch[] = [];
+
+  try {
+    const checklist = await getCfChecklistGrid({ days: 31 });
+    checklistIsoDays = checklist.isoDays;
+    checklistBranches = checklist.branches;
+  } catch {
+    // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ตัวอย่าง
+  }
 
   try {
     const rows = await getV2Branches();
@@ -98,6 +111,8 @@ export default async function MatrixPage({
       assignments={assignments}
       staff={staff}
       canManage={canManage}
+      checklistIsoDays={checklistIsoDays}
+      checklistBranches={checklistBranches}
     />
   );
 }

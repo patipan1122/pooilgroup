@@ -17,6 +17,15 @@ const PHASES = [
   "stock",
   "prize_meter",
   "stock_after",
+  // N1 baseline / N4 machine photo / N6 goods-receipt / N3 stock-count (bigfeature 2026-07-08)
+  "machine",
+  "money_meter_top",
+  "money_meter_bottom",
+  "doll_meter_top",
+  "doll_meter_bottom",
+  "baseline_stock",
+  "goods_receipt",
+  "stock_count",
 ] as const;
 type Phase = (typeof PHASES)[number];
 
