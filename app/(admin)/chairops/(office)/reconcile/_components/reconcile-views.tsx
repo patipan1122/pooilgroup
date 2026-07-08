@@ -2889,19 +2889,9 @@ export function PeriodsTab({
                         <Eye size={11} aria-hidden="true" /> รายตู้
                       </Link>
                     )}
-                    {!p.open &&
-                      Math.abs(p.diff ?? 0) >= 100 &&
-                      (p.diff ?? 0) < 0 &&
-                      branchId && (
-                        <Link
-                          href={`/chairops/reconcile/${branchId}#write-off`}
-                          className="rc-date"
-                          title="สร้างใบตัดเงินขาด"
-                          style={{ textDecoration: "none", color: "var(--crit, #b91c1c)", fontSize: 11, marginLeft: 8 }}
-                        >
-                          <Minus size={11} aria-hidden="true" /> ตัด
-                        </Link>
-                      )}
+                    {/* CEO 2026-07-08: เอาปุ่มลัด "ตัด" ออก — มันคือปุ่ม "สร้างใบตัดเงินขาด"
+                        แต่โผล่จาก p.diff (เงินจริง ซ่อน) ทั้งที่คอลัมน์ "ต่าง" โชว์ varianceMeter
+                        → เด้งบนแถวที่เลขดูปกติ = สับสน. ตัดเงินทำที่ฟอร์มท้ายหน้า (#write-off) ที่เดียว. */}
                   </td>
                 </tr>
               );
