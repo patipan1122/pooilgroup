@@ -47,7 +47,8 @@ export const listMaidRoster = cache(async function listMaidRoster(
   const monthStart = firstOfMonthBkk();
 
   // 1. Pull every MAID + every branch in one shot (small data).
-  const [maids, branches, leavesToday, payAgg, leaveMonthAgg] = await Promise.all([
+  const [maids, branches, leavesToday, payAgg, leaveMonthAgg, branchCounts] =
+    await Promise.all([
     prisma.chairopsUser.findMany({
       where: { orgId, role: "MAID" },
       select: {
@@ -77,9 +78,18 @@ export const listMaidRoster = cache(async function listMaidRoster(
       where: { orgId, date: { gte: monthStart } },
       _count: { _all: true },
     }),
+    // multi-branch (CEO 2026-07-08): how many branches each maid actively manages.
+    prisma.chairopsMaidAssignment.groupBy({
+      by: ["userId"],
+      where: { orgId, isActive: true, endedAt: null },
+      _count: { _all: true },
+    }),
   ]);
 
   const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
+  const branchCountByMaid = new Map(
+    branchCounts.map((c) => [c.userId, c._count._all]),
+  );
   const leaveTodayByMaid = new Map(
     leavesToday.map((l) => [l.maidId, l.reason ?? ""]),
   );
@@ -112,6 +122,7 @@ export const listMaidRoster = cache(async function listMaidRoster(
       todayDayOffReason: todayLeave === "" ? null : todayLeave ?? null,
       thisMonthPaid: payByMaid.get(m.id) ?? 0,
       daysOffThisMonth: leaveCountByMaid.get(m.id) ?? 0,
+      branchCount: branchCountByMaid.get(m.id) ?? (m.primaryBranchId ? 1 : 0),
     };
   });
 

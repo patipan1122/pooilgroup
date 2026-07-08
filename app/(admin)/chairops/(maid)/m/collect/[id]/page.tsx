@@ -7,10 +7,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireExactRole } from "@/lib/chairops/auth/session";
-import {
-  canSeeBranch,
-  canUnlockCollection,
-} from "@/lib/chairops/auth/role-guards";
+import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
+import { canSeeBranch } from "@/lib/chairops/auth/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +52,7 @@ export default async function MaidCollectDetailPage({ params }: Props) {
   });
   if (!row) notFound();
 
-  if (!canSeeBranch(session.user, row.branchId)) {
+  if (!(await canSeeBranch(session.user, row.branchId))) {
     redirect("/chairops/m?error=forbidden");
   }
 

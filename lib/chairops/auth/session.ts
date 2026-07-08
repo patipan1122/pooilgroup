@@ -21,6 +21,7 @@
 // rows only. Their access goes through the same Pool login but auth-only.
 
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   requireSession as poolRequireSession,
@@ -37,11 +38,23 @@ import {
 } from "@/lib/auth/module-access";
 import { ensureChairopsUser } from "./ensure-user";
 import { rankOf } from "./role-guards";
+import {
+  getMaidActiveBranches,
+  resolveActiveBranchId,
+  ACTIVE_BRANCH_COOKIE,
+} from "./branch-scope";
 
 export interface Session {
   authUser: { id: string; email?: string | null };
   user: ChairopsUser;
   poolUser: DbUser;
+  /**
+   * MAID: every branch she actively manages (home + added). Empty for non-maids
+   * (they see all branches via canSeeBranch). The security-authoritative set.
+   */
+  branchIds: string[];
+  /** MAID: her home branch (true DB primaryBranchId) — default when no cookie. */
+  homeBranchId: string | null;
 }
 
 function deriveChairopsRoleFromPool(poolRole: DbUser["role"]): ChairopsUserRole {
@@ -80,7 +93,14 @@ export const getSession = cache(async (): Promise<Session | null> => {
   // used ChairOps before).
   const existing = await prisma.chairopsUser.findFirst({ where: { authUserId } });
   if (existing?.isActive && existing.role === ChairopsUserRole.ADMIN) {
-    return { authUser: { id: authUserId, email }, user: existing, poolUser: poolDbUser };
+    // ADMIN is never a maid → no branch scoping needed (sees all).
+    return {
+      authUser: { id: authUserId, email },
+      user: existing,
+      poolUser: poolDbUser,
+      branchIds: [],
+      homeBranchId: existing.primaryBranchId ?? null,
+    };
   }
 
   // Otherwise resolve the LIVE Pool authorisation and reconcile the row to match.
@@ -105,7 +125,32 @@ export const getSession = cache(async (): Promise<Session | null> => {
   });
   if (!user) return null;
 
-  return { authUser: { id: authUserId, email }, user, poolUser: poolDbUser };
+  // Multi-branch (CEO 2026-07-08): for a MAID, resolve the set of branches she
+  // manages + which one she is working in now (cookie ∩ set, default home), then
+  // OVERLOAD user.primaryBranchId to that active branch so every maid page/action
+  // — all of which read session.user.primaryBranchId — auto-scopes to it. This is
+  // a spread copy; it is NEVER written back to the DB (verified: no maid path
+  // persists session.user.primaryBranchId). Non-maids keep their row untouched.
+  let branchIds: string[] = [];
+  const homeBranchId = user.primaryBranchId ?? null;
+  let effectiveUser = user;
+  if (user.role === ChairopsUserRole.MAID) {
+    const branches = await getMaidActiveBranches(user.id);
+    branchIds = branches.map((b) => b.id);
+    // legacy safety: keep home in the set even if its assignment row is missing
+    if (homeBranchId && !branchIds.includes(homeBranchId)) branchIds.push(homeBranchId);
+    const cookieBranchId = (await cookies()).get(ACTIVE_BRANCH_COOKIE)?.value ?? null;
+    const activeBranchId = resolveActiveBranchId({ cookieBranchId, homeBranchId, branchIds });
+    effectiveUser = { ...user, primaryBranchId: activeBranchId };
+  }
+
+  return {
+    authUser: { id: authUserId, email },
+    user: effectiveUser,
+    poolUser: poolDbUser,
+    branchIds,
+    homeBranchId,
+  };
 });
 
 export async function requireAuth(): Promise<Session> {
@@ -137,8 +182,8 @@ export async function requireExactRole(role: ChairopsUserRole): Promise<Session>
 
 export async function requireBranch(branchId: string): Promise<Session> {
   const session = await requireAuth();
-  const { canSeeBranch } = await import("./role-guards");
-  if (!canSeeBranch(session.user, branchId)) {
+  const { canSeeBranch } = await import("./branch-scope");
+  if (!(await canSeeBranch(session.user, branchId))) {
     redirect("/chairops?error=forbidden");
   }
   return session;

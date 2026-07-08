@@ -17,6 +17,7 @@ import { notifyChannel } from "@/lib/chairops/line/messaging";
 import { ChairopsAlertKind, ChairopsAlertLevel, ChairopsAlertStatus } from "@/lib/generated/prisma/enums";
 import { requireCronSecret } from "@/lib/chairops/auth/cron-secret";
 import { DRIFT_DEFAULTS } from "@/lib/chairops/reconcile/drift-engine";
+import { getActiveMaidCoverage } from "@/lib/chairops/auth/branch-scope";
 import { runWithMonitor } from "@/lib/cron/runner";
 
 export const dynamic = "force-dynamic";
@@ -66,19 +67,15 @@ async function sopCheckHandler(): Promise<NextResponse> {
     });
   }
 
-  // BF1 — pre-compute (orgId, branchId) pairs whose primary maid is on
-  // recorded leave today. One indexed query — at 200-maid scale this is <5ms.
+  // BF1 — pre-compute branchIds whose covering maid is on recorded leave today,
+  // so we suppress the "missed collection" alert for those branches.
+  // Multi-branch (CEO 2026-07-08): resolve coverage from ACTIVE assignments (not
+  // primaryBranchId) so a maid who covers several branches suppresses the alert
+  // for EACH branch she covers when she is on leave — not only her home branch.
   const today = bkkTodayDate();
   const branchIds = drifts.map((d) => d.branchId);
-  const maidsAtBranches = await prisma.chairopsUser.findMany({
-    where: {
-      role: "MAID",
-      isActive: true,
-      primaryBranchId: { in: branchIds },
-    },
-    select: { id: true, primaryBranchId: true, displayName: true, orgId: true },
-  });
-  const maidIds = maidsAtBranches.map((m) => m.id);
+  const coverage = await getActiveMaidCoverage(branchIds);
+  const maidIds = [...new Set(coverage.map((c) => c.userId))];
   const leaves = maidIds.length
     ? await prisma.chairopsMaidDayOff.findMany({
         where: {
@@ -90,9 +87,9 @@ async function sopCheckHandler(): Promise<NextResponse> {
     : [];
   const leaveByMaidId = new Map(leaves.map((l) => [l.maidId, l.reason]));
   const leaveBranchIdSet = new Set<string>();
-  for (const m of maidsAtBranches) {
-    if (m.primaryBranchId && leaveByMaidId.has(m.id)) {
-      leaveBranchIdSet.add(m.primaryBranchId);
+  for (const c of coverage) {
+    if (leaveByMaidId.has(c.userId)) {
+      leaveBranchIdSet.add(c.branchId);
     }
   }
 

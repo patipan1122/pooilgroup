@@ -183,7 +183,7 @@ export function UserDetailForm({
         title="สาขาประจำ"
         hint={
           target.role === "MAID"
-            ? "แม่บ้านต้องมีสาขาประจำ (1 คน : 1 สาขา) — เปลี่ยนแล้วยอด collect ใหม่จะผูกสาขาใหม่ทันที"
+            ? "สาขาหลัก = สาขาเริ่มต้นบนมือถือ · แม่บ้านดูแลได้หลายสาขา — เพิ่ม/ถอดสาขาที่หน้า “แม่บ้าน”"
             : target.role === "OFFICE" || target.role === "MANAGER"
               ? "Wave-1 รองรับสาขาเดียว · Wave-2 จะมี multi-branch assignment"
               : undefined

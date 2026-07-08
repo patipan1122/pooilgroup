@@ -21,10 +21,18 @@ import {
   Wrench,
   Package,
   ArrowLeftCircle,
+  MapPin,
+  ChevronDown,
+  Check,
+  Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { setActiveBranch } from "../actions";
+
+type MaidBranch = { id: string; name: string };
 
 interface NavItem {
   href: string;
@@ -106,16 +114,127 @@ function ReturnToSelfBar({ adminName }: { adminName: string }) {
   );
 }
 
+// Branch switcher (multi-branch · CEO 2026-07-08). Sits under the header so the
+// ACTIVE branch is visible on every page. Hidden entirely for the 90% single-
+// branch case; a plain label for it would just add noise.
+function BranchSwitcher({
+  branches,
+  activeBranchId,
+  activeBranchName,
+}: {
+  branches: MaidBranch[];
+  activeBranchId: string | null;
+  activeBranchName: string | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  if (branches.length <= 1) return null; // single-branch maid → no switcher
+
+  function pick(id: string) {
+    if (id === activeBranchId) {
+      setOpen(false);
+      return;
+    }
+    startTransition(async () => {
+      const res = await setActiveBranch(id);
+      setOpen(false);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("สลับสาขาแล้ว");
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={pending}
+        className="flex w-full items-center gap-1.5 bg-emerald-700/40 px-4 py-1.5 text-left text-xs font-semibold text-white active:bg-emerald-700/60 disabled:opacity-70"
+        aria-haspopup="dialog"
+      >
+        {pending ? (
+          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+        ) : (
+          <MapPin className="size-4 shrink-0" aria-hidden />
+        )}
+        <span className="truncate">
+          กำลังทำงานที่ · {activeBranchName ?? "เลือกสาขา"}
+        </span>
+        <ChevronDown className="ml-auto size-4 shrink-0" aria-hidden />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="เลือกสาขา"
+        >
+          <div
+            className="w-full rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-300" />
+            <h2 className="mb-2 text-sm font-semibold text-zinc-900">
+              เลือกสาขาที่กำลังทำงาน
+            </h2>
+            <ul className="space-y-1">
+              {branches.map((b) => {
+                const isActive = b.id === activeBranchId;
+                return (
+                  <li key={b.id}>
+                    <button
+                      type="button"
+                      onClick={() => pick(b.id)}
+                      disabled={pending}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg border px-3 py-3 text-left text-sm font-medium active:bg-zinc-100 disabled:opacity-60",
+                        isActive
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                          : "border-zinc-200 text-zinc-800",
+                      )}
+                    >
+                      <MapPin className="size-4 shrink-0 text-zinc-400" aria-hidden />
+                      <span className="min-w-0 grow truncate">{b.name}</span>
+                      {isActive && (
+                        <Check className="size-4 shrink-0 text-emerald-600" aria-hidden />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function MaidShell({
   displayName,
   pendingDepositCount = 0,
   actingAsAdminName,
+  branches = [],
+  activeBranchId = null,
+  activeBranchName = null,
   children,
 }: {
   displayName: string;
   pendingDepositCount?: number;
   /** Set when a super_admin is impersonating this maid. Shows return-to-self bar. */
   actingAsAdminName?: string | null;
+  /** Branches the maid manages (multi-branch). Switcher shows only when >1. */
+  branches?: MaidBranch[];
+  activeBranchId?: string | null;
+  activeBranchName?: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "/chairops/m";
@@ -154,6 +273,11 @@ export function MaidShell({
             <UserCircle2 className="size-6" aria-hidden />
           </Link>
         </div>
+        <BranchSwitcher
+          branches={branches}
+          activeBranchId={activeBranchId}
+          activeBranchName={activeBranchName}
+        />
       </header>
 
       <main className="mx-auto w-full max-w-md px-3 py-4">{children}</main>

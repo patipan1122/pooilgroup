@@ -1,7 +1,8 @@
 import { requireExactRole } from "@/lib/chairops/auth/session";
+import { getMaidActiveBranches } from "@/lib/chairops/auth/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { Card, CardBody } from "@/components/ui/card";
-import { MapPin, Phone, User, Users } from "lucide-react";
+import { MapPin, Phone, Star, User, Users } from "lucide-react";
 import { MaidLogoutButton } from "./logout-button";
 import { ProfileEditWrapper } from "./profile-edit-wrapper";
 
@@ -18,25 +19,14 @@ export default async function MaidProfilePage() {
       emergencyContact: true,
       emergencyPhone: true,
       currentMainEmployer: true,
+      // NOTE: this is the TRUE home (direct DB read, not the session-overloaded
+      // active branch) — used to mark ⭐ สาขาหลัก in the branch list below.
       primaryBranchId: true,
-      secondaryBranchId: true,
     },
   });
 
-  const [primaryBranch, secondaryBranch] = await Promise.all([
-    user.primaryBranchId
-      ? prisma.chairopsBranch.findUnique({
-          where: { id: user.primaryBranchId },
-          select: { name: true },
-        })
-      : null,
-    user.secondaryBranchId
-      ? prisma.chairopsBranch.findUnique({
-          where: { id: user.secondaryBranchId },
-          select: { name: true },
-        })
-      : null,
-  ]);
+  // multi-branch (CEO 2026-07-08): show every branch she manages.
+  const branches = await getMaidActiveBranches(session.user.id);
 
   return (
     <div className="space-y-4">
@@ -68,19 +58,37 @@ export default async function MaidProfilePage() {
             {user.currentMainEmployer && (
               <Row icon={<Users className="h-5 w-5 text-zinc-400" />} label="งานประจำ" value={user.currentMainEmployer} />
             )}
-            <div className="border-t border-zinc-100 pt-3 space-y-2">
-              <Row
-                icon={<MapPin className="h-5 w-5 text-zinc-400" />}
-                label="สาขาหลัก"
-                value={primaryBranch?.name ?? "ยังไม่ผูกสาขา"}
-              />
-              {secondaryBranch && (
-                <Row
-                  icon={<MapPin className="h-5 w-5 text-amber-400" />}
-                  label="สาขาสำรอง (Cover)"
-                  value={secondaryBranch.name}
-                />
-              )}
+            <div className="border-t border-zinc-100 space-y-2 pt-3">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 shrink-0">
+                  <MapPin className="h-5 w-5 text-zinc-400" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-xs text-zinc-500">
+                    สาขาที่ดูแล ({branches.length})
+                  </div>
+                  {branches.length === 0 ? (
+                    <div className="font-medium text-zinc-900">ยังไม่ผูกสาขา</div>
+                  ) : (
+                    <ul className="mt-0.5 space-y-1">
+                      {branches.map((b) => (
+                        <li
+                          key={b.id}
+                          className="flex items-center gap-1.5 font-medium text-zinc-900"
+                        >
+                          {b.name}
+                          {b.id === user.primaryBranchId && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold text-amber-700">
+                              <Star className="size-2.5 fill-amber-400 text-amber-500" />
+                              หลัก
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             </div>
           </CardBody>
         </Card>

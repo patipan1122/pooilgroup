@@ -273,17 +273,23 @@ export async function assignBranch(
   }
 
   // Wave-0 fix: branch assign + audit atomic.
-  // BF1 fix · also wire ChairopsMaidAssignment for maids — close prior
-  // open assignment(s), open a new one for the new branch. P2002 from the
-  // partial unique index (1 open per maid) is surfaced as a friendly error.
+  // Multi-branch (CEO 2026-07-08): this "สาขาประจำ" control now sets the maid's
+  // HOME/default branch. It only ENSURES an active assignment for that branch
+  // (add if missing) — it does NOT close her other branches. Full add/remove
+  // lives on /chairops/maids/[id]. P2002 (duplicate active) is surfaced friendly.
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      if (target.role === ChairopsUserRole.MAID) {
-        await tx.chairopsMaidAssignment.updateMany({
-          where: { userId: target.id, isActive: true, endedAt: null },
-          data: { isActive: false, endedAt: new Date() },
+      if (target.role === ChairopsUserRole.MAID && parsed.data.branchId) {
+        const existing = await tx.chairopsMaidAssignment.findFirst({
+          where: {
+            userId: target.id,
+            branchId: parsed.data.branchId,
+            isActive: true,
+            endedAt: null,
+          },
+          select: { id: true },
         });
-        if (parsed.data.branchId) {
+        if (!existing) {
           await tx.chairopsMaidAssignment.create({
             data: {
               orgId: session.user.orgId,

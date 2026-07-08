@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
-import { canSeeBranch } from "@/lib/chairops/auth/role-guards";
+import { canSeeBranch } from "@/lib/chairops/auth/branch-scope";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -41,7 +41,7 @@ export async function assignTicket(
   if (!ticket) return { ok: false, error: "ไม่พบตั๋วซ่อม" };
 
   // HIGH-001: MANAGER must own this branch (canSeeBranch enforces branch isolation)
-  if (!canSeeBranch(session.user, ticket.branchId)) {
+  if (!(await canSeeBranch(session.user, ticket.branchId))) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงตั๋วของสาขานี้" };
   }
 
@@ -114,7 +114,7 @@ export async function updateStatus(
   // HIGH-001: managers/office can only act on tickets in their scope
   if (
     session.user.role !== "TECHNICIAN" &&
-    !canSeeBranch(session.user, ticket.branchId)
+    !(await canSeeBranch(session.user, ticket.branchId))
   ) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงตั๋วของสาขานี้" };
   }
@@ -201,7 +201,7 @@ export async function useParts(
   // HIGH-001: branch isolation
   if (
     session.user.role !== "TECHNICIAN" &&
-    !canSeeBranch(session.user, ticket.branchId)
+    !(await canSeeBranch(session.user, ticket.branchId))
   ) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงตั๋วของสาขานี้" };
   }
@@ -291,7 +291,7 @@ export async function closeTicket(
   // HIGH-001: branch isolation
   if (
     session.user.role !== "TECHNICIAN" &&
-    !canSeeBranch(session.user, ticket.branchId)
+    !(await canSeeBranch(session.user, ticket.branchId))
   ) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงตั๋วของสาขานี้" };
   }

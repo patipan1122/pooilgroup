@@ -3,7 +3,7 @@
 // Auth required. Branch-scoped (Maid only allowed for her primary branch).
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/chairops/auth/session";
-import { canSeeBranch } from "@/lib/chairops/auth/role-guards";
+import { canSeeBranch } from "@/lib/chairops/auth/branch-scope";
 import { prisma } from "@/lib/prisma";
 import {
   presignUpload,
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   if (!branch) {
     return NextResponse.json({ error: "branch-not-found" }, { status: 404 });
   }
-  if (!canSeeBranch(session.user, branch.id)) {
+  if (!(await canSeeBranch(session.user, branch.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

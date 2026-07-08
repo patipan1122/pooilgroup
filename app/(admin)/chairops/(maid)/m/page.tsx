@@ -9,6 +9,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { requireExactRole } from "@/lib/chairops/auth/session";
+import { getMaidActiveBranches } from "@/lib/chairops/auth/branch-scope";
 import { prisma } from "@/lib/prisma";
 import { readDriftSnapshot } from "@/lib/chairops/reconcile/drift-engine";
 import { ChairopsKpiTile } from "@/components/chairops/_kit";
@@ -186,6 +187,36 @@ export default async function MaidHomePage() {
   const pendingTotal = pendingAgg._sum.countedAmount ?? 0;
   const pendingCount = pendingAgg._count;
 
+  // Cross-branch reminder (multi-branch · CEO 2026-07-08): cash still un-deposited
+  // at her OTHER branches, so she doesn't go home thinking she's done while branch
+  // B still holds cash overnight.
+  const otherBranchIds = session.branchIds.filter((id) => id !== branchId);
+  const otherPending = otherBranchIds.length
+    ? await prisma.chairopsCashCollection.groupBy({
+        by: ["branchId"],
+        where: {
+          orgId: session.user.orgId,
+          maidId: session.user.id,
+          branchId: { in: otherBranchIds },
+          depositId: null,
+          deletedAt: null,
+        },
+        _sum: { countedAmount: true },
+      })
+    : [];
+  const otherBranchNameById = otherPending.length
+    ? new Map(
+        (await getMaidActiveBranches(session.user.id)).map((b) => [b.id, b.name]),
+      )
+    : new Map<string, string>();
+  const crossBranchPending = otherPending
+    .map((p) => ({
+      branchId: p.branchId,
+      name: otherBranchNameById.get(p.branchId) ?? "สาขาอื่น",
+      amount: Number(p._sum.countedAmount ?? 0),
+    }))
+    .filter((p) => p.amount > 0);
+
   const daysSinceLast =
     drift.lastCollectionAt != null ? ageDays(drift.lastCollectionAt) : null;
   const gapTone: "neutral" | "warning" | "danger" =
@@ -297,6 +328,29 @@ export default async function MaidHomePage() {
           </ul>
         </CardBody>
       </Card>
+
+      {/* Cross-branch reminder — เงินค้างฝากที่สาขาอื่น (multi-branch) */}
+      {crossBranchPending.length > 0 && (
+        <div
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-3"
+          role="status"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+            <Landmark className="size-4 shrink-0" aria-hidden />
+            ยังมีเงินค้างฝากที่สาขาอื่น
+          </div>
+          <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+            {crossBranchPending.map((p) => (
+              <li key={p.branchId}>
+                {p.name}: <span className="font-semibold">{baht(p.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px] text-amber-600">
+            สลับสาขาด้านบนเพื่อไปฝากเงินของสาขานั้น
+          </p>
+        </div>
+      )}
 
       {/* KPI row: gap + monthly running + pending-deposit */}
       <div className="grid grid-cols-2 gap-3">

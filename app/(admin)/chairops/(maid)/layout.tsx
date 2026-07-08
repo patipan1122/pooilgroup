@@ -15,7 +15,9 @@ import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import {
   getMaidUserRaw,
+  getSession as getChairSession,
 } from "@/lib/chairops/auth/session";
+import { getMaidActiveBranches } from "@/lib/chairops/auth/branch-scope";
 import { requireSession as poolRequireSession, getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { MaidShell } from "./_components/maid-shell";
@@ -65,14 +67,24 @@ export default async function MaidRouteGroupLayout({
     redirect("/chairops/m/onboarding");
   }
 
-  // Step 3: safe to query with active maid confirmed
-  const pendingDepositCount = rawUser.primaryBranchId
+  // Step 3: resolve the maid's ACTIVE branch (multi-branch · CEO 2026-07-08).
+  // getSession overloads primaryBranchId to the currently-selected branch, so the
+  // bottom-nav pending badge + the branch switcher both follow whatever branch she
+  // is viewing — not her fixed home branch.
+  const [chairSession, branches] = await Promise.all([
+    getChairSession(),
+    getMaidActiveBranches(rawUser.id),
+  ]);
+  const activeBranchId = chairSession?.user.primaryBranchId ?? null;
+  const activeBranch = branches.find((b) => b.id === activeBranchId) ?? null;
+
+  const pendingDepositCount = activeBranchId
     ? await prisma.chairopsCashCollection.count({
         where: {
           // soft-delete: hide rows deleted by super_admin (CEO 2026-06-30)
           deletedAt: null,
           orgId: rawUser.orgId,
-          branchId: rawUser.primaryBranchId,
+          branchId: activeBranchId,
           maidId: rawUser.id,
           depositId: null,
         },
@@ -85,6 +97,9 @@ export default async function MaidRouteGroupLayout({
         displayName={rawUser.displayName}
         pendingDepositCount={pendingDepositCount}
         actingAsAdminName={actingAsName}
+        branches={branches}
+        activeBranchId={activeBranchId}
+        activeBranchName={activeBranch?.name ?? null}
       >
         {children}
       </MaidShell>

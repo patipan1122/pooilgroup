@@ -676,3 +676,241 @@ export async function reassignMaidBranch(
     return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
   }
 }
+
+// ============================================================
+// Multi-branch coverage (CEO 2026-07-08) — a maid may manage MANY branches.
+// Source of truth = ChairopsMaidAssignment (active rows). primaryBranchId = the
+// HOME/default branch (the maid's default active branch on the mobile switcher).
+// All ADMIN-only + canManageUser-guarded + audited.
+// ============================================================
+
+const maidBranchSchema = z.object({
+  maidId: zUUID(),
+  branchId: zUUID(),
+});
+
+async function loadManageableMaid(
+  session: Awaited<ReturnType<typeof requireRole>>,
+  maidId: string,
+): Promise<
+  | { ok: true; target: NonNullable<Awaited<ReturnType<typeof prisma.chairopsUser.findFirst>>> }
+  | { ok: false; error: string }
+> {
+  const target = await prisma.chairopsUser.findFirst({
+    where: { id: maidId, orgId: session.user.orgId },
+  });
+  if (!target) return { ok: false, error: "ไม่พบแม่บ้าน" };
+  if (target.role !== ChairopsUserRole.MAID) return { ok: false, error: "ใช้ได้เฉพาะแม่บ้าน" };
+  if (!canManageUser(session.user, target)) {
+    return { ok: false, error: `คุณไม่มีสิทธิ์แก้ไขผู้ใช้ระดับ ${target.role}` };
+  }
+  return { ok: true, target };
+}
+
+/** เพิ่มสาขาให้แม่บ้านดูแล · idempotent (เพิ่มสาขาเดิมซ้ำ = ไม่ทำอะไร) */
+export async function addMaidBranch(formData: FormData): Promise<ActionResult> {
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+  const parsed = maidBranchSchema.safeParse({
+    maidId: formData.get("maidId"),
+    branchId: formData.get("branchId"),
+  });
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+
+  const loaded = await loadManageableMaid(session, parsed.data.maidId);
+  if (!loaded.ok) return loaded;
+  const { target } = loaded;
+
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: parsed.data.branchId, orgId: session.user.orgId },
+    select: { id: true, name: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขา" };
+
+  // idempotent: already-active assignment → no-op success
+  const existingActive = await prisma.chairopsMaidAssignment.findFirst({
+    where: {
+      userId: target.id,
+      branchId: parsed.data.branchId,
+      isActive: true,
+      endedAt: null,
+    },
+    select: { id: true },
+  });
+  if (existingActive) {
+    revalidatePath(`/chairops/maids/${target.id}`);
+    return { ok: true };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.chairopsMaidAssignment.create({
+        data: {
+          orgId: session.user.orgId,
+          userId: target.id,
+          branchId: parsed.data.branchId,
+          startedAt: new Date(),
+          isActive: true,
+        },
+      });
+      // If the maid had no home yet, make this her home (keeps the "maid always
+      // has a home" invariant + a sensible default active branch on mobile).
+      if (!target.primaryBranchId) {
+        await tx.chairopsUser.update({
+          where: { id: target.id },
+          data: { primaryBranchId: parsed.data.branchId },
+        });
+      }
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "maid.add_branch",
+          entity: "User",
+          entityId: target.id,
+          newValue: { branchId: parsed.data.branchId, branchName: branch.name },
+        },
+        tx,
+      );
+    });
+  } catch (e) {
+    // race: concurrent add of the same active (userId,branchId) → unique → treat ok
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      revalidatePath(`/chairops/maids/${target.id}`);
+      return { ok: true };
+    }
+    return { ok: false, error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" };
+  }
+
+  revalidatePath(`/chairops/maids/${target.id}`);
+  revalidatePath("/chairops/maids");
+  revalidatePath("/chairops");
+  return { ok: true };
+}
+
+/**
+ * ถอดสาขาออกจากแม่บ้าน · block เมื่อ:
+ *   1) เป็นสาขาหลัก (ต้องตั้งสาขาหลักใหม่ก่อน)
+ *   2) ยังมีเงินค้างฝากที่สาขานั้น (ถอดแล้วเงินจะลอย เข้าไม่ถึง)
+ */
+export async function removeMaidBranch(formData: FormData): Promise<ActionResult> {
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+  const parsed = maidBranchSchema.safeParse({
+    maidId: formData.get("maidId"),
+    branchId: formData.get("branchId"),
+  });
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+
+  const loaded = await loadManageableMaid(session, parsed.data.maidId);
+  if (!loaded.ok) return loaded;
+  const { target } = loaded;
+
+  // guard 1: ห้ามถอดสาขาหลัก
+  if (target.primaryBranchId === parsed.data.branchId) {
+    return {
+      ok: false,
+      error: "นี่คือสาขาหลัก — ตั้งสาขาหลักใหม่ก่อนถึงจะถอดสาขานี้ได้",
+    };
+  }
+
+  // guard 2: ห้ามถอดถ้ายังมีเงินค้างฝากที่สาขานั้น (กันเงินลอย/orphan)
+  const pending = await prisma.chairopsCashCollection.aggregate({
+    where: {
+      orgId: session.user.orgId,
+      branchId: parsed.data.branchId,
+      maidId: target.id,
+      depositId: null,
+      deletedAt: null,
+    },
+    _sum: { countedAmount: true },
+    _count: true,
+  });
+  if (pending._count > 0) {
+    const amt = Number(pending._sum.countedAmount ?? 0).toLocaleString();
+    return {
+      ok: false,
+      error: `แม่บ้านยังมีเงินค้างฝาก ฿${amt} (${pending._count} รอบ) ที่สาขานี้ — ต้องฝาก/ตัดเงินให้ครบก่อนถึงจะถอดสาขาได้`,
+    };
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const closed = await tx.chairopsMaidAssignment.updateMany({
+      where: {
+        userId: target.id,
+        branchId: parsed.data.branchId,
+        isActive: true,
+        endedAt: null,
+      },
+      data: { isActive: false, endedAt: new Date() },
+    });
+    if (closed.count === 0) return { closed: 0 };
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "maid.remove_branch",
+        entity: "User",
+        entityId: target.id,
+        oldValue: { branchId: parsed.data.branchId },
+      },
+      tx,
+    );
+    return { closed: closed.count };
+  });
+  if (result.closed === 0) return { ok: false, error: "แม่บ้านไม่ได้ผูกสาขานี้อยู่แล้ว" };
+
+  revalidatePath(`/chairops/maids/${target.id}`);
+  revalidatePath("/chairops/maids");
+  revalidatePath("/chairops");
+  return { ok: true };
+}
+
+/** ตั้งสาขาหลัก (home/default) ให้แม่บ้าน · สาขานั้นต้องอยู่ในลิสต์ที่ผูกไว้แล้ว */
+export async function setHomeBranch(formData: FormData): Promise<ActionResult> {
+  const session = await requireRole(ChairopsUserRole.ADMIN);
+  const parsed = maidBranchSchema.safeParse({
+    maidId: formData.get("maidId"),
+    branchId: formData.get("branchId"),
+  });
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+
+  const loaded = await loadManageableMaid(session, parsed.data.maidId);
+  if (!loaded.ok) return loaded;
+  const { target } = loaded;
+
+  if (target.primaryBranchId === parsed.data.branchId) return { ok: true }; // no-op
+
+  // home ต้องเป็นสาขาที่ผูกไว้อยู่ (active assignment)
+  const active = await prisma.chairopsMaidAssignment.findFirst({
+    where: {
+      userId: target.id,
+      branchId: parsed.data.branchId,
+      isActive: true,
+      endedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!active) {
+    return { ok: false, error: "ต้องเพิ่มสาขานี้ให้แม่บ้านก่อนถึงจะตั้งเป็นสาขาหลักได้" };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsUser.update({
+      where: { id: target.id },
+      data: { primaryBranchId: parsed.data.branchId },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "maid.set_home_branch",
+        entity: "User",
+        entityId: target.id,
+        oldValue: { primaryBranchId: target.primaryBranchId },
+        newValue: { primaryBranchId: parsed.data.branchId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/chairops/maids/${target.id}`);
+  revalidatePath("/chairops/maids");
+  revalidatePath("/chairops");
+  return { ok: true };
+}

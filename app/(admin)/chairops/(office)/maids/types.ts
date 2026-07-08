@@ -29,6 +29,7 @@ export interface MaidRosterRow {
   todayDayOffReason: string | null;
   thisMonthPaid: number; // sum of MaidDailyPay for current month
   daysOffThisMonth: number;
+  branchCount: number; // active branches this maid manages (multi-branch · 2026-07-08)
 }
 
 export interface MissedMaidVariantRow {

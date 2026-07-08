@@ -2939,9 +2939,12 @@ model ChairopsMaidAssignment {
   @@index([orgId])
   @@index([branchId, isActive])
   @@index([userId, isActive])
-  // NOTE: A partial unique index ((userId) WHERE endedAt IS NULL AND isActive)
-  // is enforced at the DB level via the BF1 migration. Prisma 5 cannot express
-  // partial indexes; rely on the SQL migration + P2002 handling in actions.
+  // NOTE: multi-branch (CEO 2026-07-08) — a maid may hold MANY active
+  // assignments (one per branch she manages). A partial unique index
+  // ((userId, branchId) WHERE endedAt IS NULL AND isActive) is enforced at the
+  // DB level via prisma/migrations/manual/20260708_chairops_maid_multibranch.sql
+  // (replaces the old 1-active-per-maid index). Prisma cannot express partial
+  // indexes; rely on the SQL migration + P2002 handling in addMaidBranch.
   @@schema("chairops")
 }
 

@@ -14,11 +14,12 @@ import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import { getMaidDetail } from "@/lib/chairops/queries/maid-roster";
+import { getMaidActiveBranches } from "@/lib/chairops/auth/branch-scope";
 import { baht, thaiDate } from "@/lib/chairops/utils/format";
 import { prisma } from "@/lib/prisma";
 import { LeaveRequestForm } from "../_components/leave-request-form";
 import { DeleteLeaveButton } from "../_components/delete-leave-button";
-import { ReassignBranchForm } from "../_components/reassign-branch-form";
+import { MultiBranchManager } from "../_components/multi-branch-manager";
 import { MaidProfileForm } from "../_components/maid-profile-form";
 
 export const dynamic = "force-dynamic";
@@ -45,8 +46,13 @@ export default async function MaidDetailPage({
     : [];
 
   const { maid, leaves, pay, assignments } = detail;
-  const currentBranch = assignments.find((a) => a.isActive);
-  const currentBranchName = currentBranch?.branchName ?? "ยังไม่ผูกสาขา";
+  // multi-branch (CEO 2026-07-08): a maid may manage several branches.
+  const assignedBranches = await getMaidActiveBranches(userId);
+  const assignedIds = new Set(assignedBranches.map((b) => b.id));
+  const addableBranches = branches.filter((b) => !assignedIds.has(b.id));
+  const homeBranchName =
+    assignedBranches.find((b) => b.id === maid.primaryBranchId)?.name ??
+    "ยังไม่ผูกสาขา";
 
   return (
     <div className="space-y-5">
@@ -60,7 +66,8 @@ export default async function MaidDetailPage({
           </div>
           <h1 className="text-xl font-bold text-zinc-900">{maid.displayName}</h1>
           <p className="text-sm text-zinc-500">
-            สาขา: <span className="font-medium text-zinc-700">{currentBranchName}</span>
+            สาขา: <span className="font-medium text-zinc-700">{homeBranchName}</span>
+            {assignedBranches.length > 1 ? ` · ดูแล ${assignedBranches.length} สาขา` : ""}
             {maid.phone ? ` · โทร ${maid.phone}` : ""}
           </p>
         </div>
@@ -88,19 +95,20 @@ export default async function MaidDetailPage({
           </div>
         )}
 
-        {/* Re-assign branch */}
+        {/* Branches the maid manages (multi-branch · CEO 2026-07-08) */}
         {canMutate && (
           <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-800">
-              <MapPin className="size-4 text-emerald-600" /> ย้ายสาขา
+              <MapPin className="size-4 text-emerald-600" /> สาขาที่ดูแล
             </div>
             <p className="mb-3 text-xs text-zinc-500">
-              ปิด assignment เก่า · เปิดใหม่อัตโนมัติ (1:1 แม่บ้าน-สาขา)
+              แม่บ้าน 1 คนดูแลได้หลายสาขา · ⭐ = สาขาหลัก (สาขาเริ่มต้นบนมือถือ)
             </p>
-            <ReassignBranchForm
+            <MultiBranchManager
               maidId={maid.id}
-              currentBranchId={maid.primaryBranchId}
-              branches={branches}
+              homeBranchId={maid.primaryBranchId}
+              assignedBranches={assignedBranches}
+              addableBranches={addableBranches}
             />
           </div>
         )}

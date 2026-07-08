@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole, requireExactRole } from "@/lib/chairops/auth/session";
-import { canSeeBranch } from "@/lib/chairops/auth/role-guards";
+import { canSeeBranch } from "@/lib/chairops/auth/branch-scope";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { presignUpload, damageKey } from "@/lib/chairops/storage/r2";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
@@ -164,7 +164,7 @@ export async function listMyBranchChairs(): Promise<
 > {
   const session = await requireExactRole("MAID");
   if (!session.user.primaryBranchId) return { ok: true, data: [] };
-  if (!canSeeBranch(session.user, session.user.primaryBranchId)) {
+  if (!(await canSeeBranch(session.user, session.user.primaryBranchId))) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
   }
   const chairs = await prisma.chairopsChair.findMany({

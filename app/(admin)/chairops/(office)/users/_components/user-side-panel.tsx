@@ -5,7 +5,6 @@
 import Link from "next/link";
 import { InviteMaidForm } from "../invite/invite-form";
 import { UserDetailForm } from "../[id]/user-detail-form";
-import { SecondaryBranchPicker } from "./secondary-branch-picker";
 import { canManageUser, canAssignRole } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
 import type { ChairopsUser } from "@/lib/generated/prisma/client";
@@ -109,11 +108,13 @@ export function UserPanel({
       />
 
       {user.role === ChairopsUserRole.MAID && manageable && (
-        <SecondaryBranchPicker
-          maidId={user.id}
-          currentSecondaryBranchId={user.secondaryBranchId ?? null}
-          branches={branches}
-        />
+        <Link
+          href={`/chairops/maids/${user.id}`}
+          className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+        >
+          <span>🏢 จัดการสาขาที่ดูแล (เพิ่มได้หลายสาขา)</span>
+          <ExternalLink className="size-3.5" aria-hidden />
+        </Link>
       )}
     </div>
   );

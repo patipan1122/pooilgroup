@@ -125,6 +125,11 @@ export default async function MaidRosterPage({
                 </td>
                 <td className="px-4 py-2.5 text-zinc-700">
                   {m.branchName ?? <span className="text-rose-600">ยังไม่ผูกสาขา</span>}
+                  {m.branchCount > 1 && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] font-semibold text-emerald-700">
+                      +{m.branchCount - 1} สาขา
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <span

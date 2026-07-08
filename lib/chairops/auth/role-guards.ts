@@ -27,14 +27,10 @@ export function canManageUser(actor: ChairopsUser, target: ChairopsUser): boolea
   return RANK[actor.role] > RANK[target.role];
 }
 
-export function canSeeBranch(actor: ChairopsUser, branchId: string): boolean {
-  // Admin/CEO/Manager see all
-  if (RANK[actor.role] >= RANK.MANAGER) return true;
-  // Office sees all (reconcile across branches)
-  if (actor.role === "OFFICE") return true;
-  // Maid sees only her own branch
-  return actor.primaryBranchId === branchId;
-}
+// NOTE: canSeeBranch moved to ./branch-scope.ts and is now ASYNC (multi-branch,
+// CEO 2026-07-08). A maid may manage several branches, so the check must read her
+// active ChairopsMaidAssignment rows — see lib/chairops/auth/branch-scope.ts.
+// Every caller MUST await it (un-awaited async = truthy Promise = always true).
 
 export function canWriteOff(actor: ChairopsUser, amount: number): boolean {
   // <500: MANAGER · ≥500: CEO (per v0.2 BR3 — pending confirm)
