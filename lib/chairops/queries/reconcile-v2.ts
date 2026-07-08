@@ -188,6 +188,15 @@ export interface PeriodWindow {
   // both null → org-level view / no meter data (tooltip stays hidden).
   meterWindowStart: string | null;
   meterWindowEnd: string | null;
+  // CEO 2026-07-08 · meter data for this branch is BATCHED and lags ~1 day. When the
+  // maid collected AFTER the last meter reading arrived (t1 > latest meter event),
+  // the meter never recorded through the collection → expectedMeter would be a
+  // misleadingly-LOW number (e.g. 20 when 660 was collected → a fake +640 "drift").
+  // meterPending flags those rounds → the view shows "⚪ รอมิเตอร์" instead of a
+  // number and drops the variance, so a data-lag never looks like a shortage.
+  // meterLatest = formatted time the meter data currently reaches ("อัปเดตถึง …").
+  meterPending: boolean;
+  meterLatest: string | null;
 }
 
 export interface ReconcileSidebarRow {
@@ -2122,6 +2131,8 @@ export async function getReconcilePeriods(args: {
         cumShortageMeter: null,
         meterWindowStart: null,
         meterWindowEnd: null,
+        meterPending: false,
+        meterLatest: null,
         collectedSum: 0,
         firstCollectedAt: null,
         lastCollectedAt: null,
@@ -2160,6 +2171,8 @@ export async function getReconcilePeriods(args: {
       cumShortageMeter: null,
       meterWindowStart: null,
       meterWindowEnd: null,
+      meterPending: false,
+      meterLatest: null,
       collectedSum: 0,
       firstCollectedAt: null,
       lastCollectedAt: null,
@@ -2229,6 +2242,14 @@ export async function getReconcilePeriods(args: {
     const earliest = periodCollections[0].collectedAt.getTime() - 2 * DAY_MS;
     const { cash, coin } = await loadMeterSeries({ orgId, branchId, sinceMs: earliest });
     const devices = new Set<string>([...cash.keys(), ...coin.keys()]);
+    // CEO 2026-07-08 · meter data is batched and lags ~1 day. latestMeterMs = the
+    // newest reading we actually have for this branch. A round whose collection (t1)
+    // is more than a small buffer PAST latestMeterMs has no meter coverage through
+    // the collection → its expected would be a misleadingly-low number → mark pending.
+    const METER_PENDING_BUFFER_MS = 2 * 60 * 60 * 1000; // 2h absorbs normal report cadence
+    let latestMeterMs = 0;
+    for (const s of cash.values()) if (s.length) latestMeterMs = Math.max(latestMeterMs, s[s.length - 1].t);
+    for (const s of coin.values()) if (s.length) latestMeterMs = Math.max(latestMeterMs, s[s.length - 1].t);
     // Σ machine meter delta over (t0, t1] · t0=null → cumulative from series start
     // (first round = onboarding backlog, mirrors getReconcilePerChairTW). null when
     // NO machine has meter data for the window (⚪ — never fabricate a shortage).
@@ -2278,6 +2299,23 @@ export async function getReconcilePeriods(args: {
       const t1 = winLastColMs[i];
       if (t1 == null) {
         w.verdictMeter = "incomplete";
+        continue;
+      }
+      // CEO 2026-07-08 · the meter data hasn't reached this collection yet (batched /
+      // machine offline). expectedMeter here would be computed on stale readings →
+      // fake shortage/surplus (e.g. ควรได้ 20 vs เก็บได้ 660). Flag pending → the view
+      // shows "⚪ รอมิเตอร์ (อัปเดตถึง …)" and drops the variance. Rounds are ascending,
+      // so once one is pending every newer round is too.
+      if (latestMeterMs > 0 && t1 - latestMeterMs > METER_PENDING_BUFFER_MS) {
+        w.meterWindowStart = prevMs != null ? formatDateTime(new Date(prevMs)) : null;
+        w.meterWindowEnd = formatDateTime(new Date(t1));
+        w.meterPending = true;
+        w.meterLatest = formatDateTime(new Date(latestMeterMs));
+        w.expectedMeter = null;
+        w.varianceMeter = null;
+        w.verdictMeter = "incomplete";
+        w.cumShortageMeter = cum === 0 ? null : Math.round(cum);
+        prevMs = t1;
         continue;
       }
       const exp = meterDelta(prevMs, t1);

@@ -2712,13 +2712,15 @@ export function PeriodsTab({
                   ? p.meterWindowEnd.slice(11)
                   : p.meterWindowEnd.slice(5)
                 : "";
-              const diffClass = meterMode
-                ? vd.cls
-                : p.open
-                  ? ""
-                  : Math.abs(p.diff ?? 0) < 100
-                    ? "co-drift ok"
-                    : "co-drift crit";
+              const diffClass = p.meterPending
+                ? "" // ข้อมูลมิเตอร์ยังไม่ครบ → ไม่ตัดสิน/ไม่ทาสี drift
+                : meterMode
+                  ? vd.cls
+                  : p.open
+                    ? ""
+                    : Math.abs(p.diff ?? 0) < 100
+                      ? "co-drift ok"
+                      : "co-drift crit";
               return (
                 <tr key={i} className={p.open ? "rc-row-active" : ""}>
                   <td
@@ -2782,18 +2784,29 @@ export function PeriodsTab({
                   <td
                     className="num mono rc-tcol"
                     title={
-                      meterMode
-                        ? "ยอดขายเครื่อง (มิเตอร์) ในช่วงเวลาของรอบนี้"
-                        : p.open
-                          ? "เงินที่คาดว่ายังอยู่ในเครื่อง (ยังไม่เก็บ)"
-                          : "ยอดขายเต็มวัน (ไม่มีข้อมูลมิเตอร์)"
+                      p.meterPending
+                        ? `มิเตอร์อัปเดตถึง ${p.meterLatest ?? "-"} เท่านั้น — ข้อมูลตู้ของรอบนี้ยังส่งมาไม่ครบ (ปกติมาช้า ~1 วัน) จึงยังคิด "ควรได้" ไม่ได้`
+                        : meterMode
+                          ? "ยอดขายเครื่อง (มิเตอร์) ในช่วงเวลาของรอบนี้"
+                          : p.open
+                            ? "เงินที่คาดว่ายังอยู่ในเครื่อง (ยังไม่เก็บ)"
+                            : "ยอดขายเต็มวัน (ไม่มีข้อมูลมิเตอร์)"
                     }
                   >
-                    {meterMode
-                      ? fmtN(p.expectedMeter as number)
-                      : p.open && p.expectedMeter != null
-                        ? fmtN(p.expectedMeter)
-                        : fmtN(p.cashSum)}
+                    {p.meterPending ? (
+                      <span
+                        className="text-3"
+                        style={{ whiteSpace: "nowrap", fontSize: 11 }}
+                      >
+                        ⚪ รอมิเตอร์
+                      </span>
+                    ) : meterMode ? (
+                      fmtN(p.expectedMeter as number)
+                    ) : p.open && p.expectedMeter != null ? (
+                      fmtN(p.expectedMeter)
+                    ) : (
+                      fmtN(p.cashSum)
+                    )}
                   </td>
                   <td className="num mono">
                     {p.collectedSum > 0 ? fmtN(p.collectedSum) : "—"}
@@ -2828,7 +2841,9 @@ export function PeriodsTab({
                               : "ตรงพอดี"
                     }
                   >
-                    {meterMode ? (
+                    {p.meterPending ? (
+                      <span className="text-3">—</span>
+                    ) : meterMode ? (
                       <span style={{ whiteSpace: "nowrap" }}>
                         {vd.emoji} {fmtSigned(p.varianceMeter)}
                       </span>
