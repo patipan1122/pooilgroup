@@ -259,10 +259,19 @@ export async function listBankLedger(params: {
            t.channel, t.ref1, t.amount_satang as "amountSatang", t.balance_satang as "balanceSatang",
            t.match_state as "matchState"
     FROM ledger_bank_txn t
+    -- ทิศของไฟล์ต่อ batch (กรุงเทพ=ใหม่→เก่า · อื่น ๆ=เก่า→ใหม่) → เรียงให้ใหม่สุดบนสุดเสมอ
+    -- เพื่อให้คอลัมน์ "คงเหลือ" ไหลต่อเนื่อง ไม่เด้งที่ขอบวัน (s=-1 ⇒ row_index น้อย=ใหม่)
+    LEFT JOIN (
+      SELECT batch_id,
+             CASE WHEN corr(row_index::float8, extract(epoch FROM txn_date)::float8) < 0 THEN -1 ELSE 1 END AS s
+      FROM ledger_bank_txn
+      WHERE bank_account_id = ${bankAccountId}::uuid AND org_id = ${orgId}::uuid
+      GROUP BY batch_id
+    ) d ON d.batch_id = t.batch_id
     WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
       AND t.company_id = ${companyId}::uuid
       AND t.txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
-    ORDER BY t.txn_date DESC, t.row_index DESC
+    ORDER BY t.txn_date DESC, (COALESCE(d.s,1) * t.row_index) DESC
     LIMIT 1000
   `;
   return rows.map((r) => ({
@@ -335,10 +344,20 @@ export async function accountSummary(params: {
     SELECT
       SUM(CASE WHEN amount_satang > 0 THEN amount_satang ELSE 0 END) as "inSat",
       SUM(CASE WHEN amount_satang < 0 THEN -amount_satang ELSE 0 END) as "outSat",
-      (SELECT balance_satang FROM ledger_bank_txn t2
+      -- closing = ยอดคงเหลือของรายการที่ "ใหม่สุดจริง" ในงวด. ไฟล์แต่ละธนาคารเรียงคนละทาง
+      -- (กรุงเทพ=ใหม่→เก่า · SCB/กสิกร/ทหารไทย=เก่า→ใหม่) → ตรวจทิศต่อ batch จาก corr(row_index,วันที่)
+      -- แล้วเรียงให้ใหม่สุดอยู่บนสุด (s=-1 ⇒ row_index น้อย=ใหม่). กัน closing เพี้ยน (ผิด ~฿23k เคสกรุงเทพ)
+      (SELECT t2.balance_satang FROM ledger_bank_txn t2
+       LEFT JOIN (
+         SELECT batch_id,
+                CASE WHEN corr(row_index::float8, extract(epoch FROM txn_date)::float8) < 0 THEN -1 ELSE 1 END AS s
+         FROM ledger_bank_txn
+         WHERE bank_account_id=${bankAccountId}::uuid AND org_id=${orgId}::uuid
+         GROUP BY batch_id
+       ) d2 ON d2.batch_id = t2.batch_id
        WHERE t2.bank_account_id=${bankAccountId}::uuid AND t2.org_id=${orgId}::uuid
          AND t2.txn_date BETWEEN ${periodStart}::date AND ${periodEnd}::date
-       ORDER BY t2.txn_date DESC, t2.row_index DESC LIMIT 1) as "lastBal",
+       ORDER BY t2.txn_date DESC, (COALESCE(d2.s,1) * t2.row_index) DESC LIMIT 1) as "lastBal",
       (SELECT MAX(txn_date)::text FROM ledger_bank_txn t3
        WHERE t3.bank_account_id=${bankAccountId}::uuid AND t3.org_id=${orgId}::uuid) as "lastImported"
     FROM ledger_bank_txn t
