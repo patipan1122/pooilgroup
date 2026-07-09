@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2, PackageCheck } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
+import { DcBarcodeGuess } from "@/components/dc/barcode-guess";
 import { DcLabelButton, type DcLabelItem } from "@/components/dc/label-print";
 import { lookupProduct, postReceive, type ReceiveLine } from "@/lib/dc/receive-actions";
 
@@ -82,6 +83,8 @@ export function ReceiveWorkspace({
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // รหัสที่ยิงแล้ว "ไม่พบในระบบเรา" → เดาชื่อจากอินเทอร์เน็ต (ยังต้องลงทะเบียนก่อนถึงรับเข้าได้)
+  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // ฉลากของ "ที่เพิ่งรับเข้าสำเร็จ" (snapshot หลังยืนยัน) สำหรับปุ่มปริ้น
   const [justReceived, setJustReceived] = useState<DcLabelItem[]>([]);
@@ -109,10 +112,12 @@ export function ReceiveWorkspace({
       if (lookingRef.current) return;
       lookingRef.current = true;
       setError(null);
+      setNotFoundCode(null);
       try {
         const res = await lookupProduct(code, warehouseId);
         if (!res.ok) {
           setError(res.error);
+          setNotFoundCode(code); // ไม่พบในระบบ → ลองเดาชื่อจากเน็ต
           return;
         }
         const p = res.product;
@@ -223,6 +228,9 @@ export function ReceiveWorkspace({
           {error}
         </div>
       )}
+
+      {/* เดาชื่อจากอินเทอร์เน็ต เมื่อยิงแล้วไม่พบในระบบ */}
+      {notFoundCode && <DcBarcodeGuess key={notFoundCode} code={notFoundCode} />}
 
       {/* รายการรับเข้า */}
       {lines.length === 0 ? (

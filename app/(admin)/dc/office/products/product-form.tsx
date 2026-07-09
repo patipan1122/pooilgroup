@@ -3,7 +3,7 @@
 // DC · ฟอร์มสินค้า (ใช้ทั้งสร้างใหม่ + แก้ไข) — เรียก server action ผ่าน
 // useTransition. สำเร็จ → เด้งกลับหน้ารายการสินค้า. โชว์ error เป็นภาษาไทย.
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   createProduct,
@@ -52,6 +52,7 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   // "🔍 ดึงข้อมูล" จากบาร์โค้ด (Open Food Facts · ฟรี) — เติมชื่อ+รูปให้ตอนลงของใหม่
   const [looking, setLooking] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "warn" | "info"; text: string } | null>(null);
+  const lastLookupRef = useRef<string>(""); // กันค้นซ้ำรหัสเดิม (ทั้งปุ่มและ auto-fire)
 
   function set<K extends keyof ProductFormValues>(key: K, v: ProductFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -63,6 +64,7 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       setLookupMsg({ tone: "warn", text: "ใส่เลขบาร์โค้ดก่อน แล้วกดดึงข้อมูล" });
       return;
     }
+    lastLookupRef.current = code;
     setLooking(true);
     setLookupMsg({ tone: "info", text: "กำลังค้นหาจากฐานข้อมูลสินค้าโลก…" });
     const r = await lookupBarcodeInfo(code);
@@ -88,6 +90,18 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       text: `พบ: ${r.name || "(ไม่มีชื่อในฐาน)"}${r.brand ? ` · ${r.brand}` : ""} — เติมให้แล้ว ตรวจ/แก้ได้`,
     });
   }
+
+  // ยิงปุ๊บเด้งเอง: พอบาร์โค้ดเป็น EAN ครบหลัก + ยังไม่มีชื่อ → ค้นให้อัตโนมัติ (debounce กันยิงถี่)
+  useEffect(() => {
+    const code = values.barcode.trim();
+    if (isEdit) return; // แก้ไขของเดิม ไม่ต้อง auto ค้น
+    if (values.name.trim()) return; // มีชื่อแล้ว ไม่ทับ (กดปุ่ม 🔍 เองได้ถ้าอยากค้นซ้ำ)
+    if (!/^(\d{8}|\d{12,14})$/.test(code)) return;
+    if (code === lastLookupRef.current) return;
+    const t = setTimeout(() => { void handleLookup(); }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.barcode]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -185,6 +199,10 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                 id="barcode"
                 value={values.barcode}
                 onChange={(e) => { set("barcode", e.target.value); setLookupMsg(null); }}
+                onKeyDown={(e) => {
+                  // ปืนยิงเสร็จส่ง Enter → กันฟอร์ม submit ก่อนเวลา + สั่งค้นข้อมูลแทน
+                  if (e.key === "Enter") { e.preventDefault(); void handleLookup(); }
+                }}
                 placeholder="เช่น 8851234567890"
                 inputMode="numeric"
                 autoComplete="off"

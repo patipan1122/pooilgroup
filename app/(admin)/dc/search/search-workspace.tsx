@@ -10,6 +10,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Search, MapPin, PackageSearch, History, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
+import { DcBarcodeGuess } from "@/components/dc/barcode-guess";
 import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
 import {
   searchProducts,
@@ -48,6 +49,8 @@ export function SearchWorkspace() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // รหัสที่ยิงแล้ว "ไม่พบในระบบเรา" → เอาไปเดาชื่อจากอินเทอร์เน็ต
+  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
 
   const busyRef = useRef(false);
 
@@ -76,10 +79,12 @@ export function SearchWorkspace() {
       if (busyRef.current) return;
       busyRef.current = true;
       setError(null);
+      setNotFoundCode(null);
       try {
         const res = await resolveCode({ code });
         if (!res.ok) {
           setError(res.error);
+          setNotFoundCode(code); // ไม่พบในระบบ → ลองเดาชื่อจากเน็ต
           return;
         }
         await openDetail(res.productId);
@@ -236,6 +241,9 @@ export function SearchWorkspace() {
           {error}
         </div>
       )}
+
+      {/* เดาชื่อจากอินเทอร์เน็ต เมื่อยิงแล้วไม่พบในระบบ */}
+      {notFoundCode && <DcBarcodeGuess key={notFoundCode} code={notFoundCode} />}
 
       {/* loading detail */}
       {loadingDetail && (
