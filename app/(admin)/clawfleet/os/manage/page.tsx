@@ -10,6 +10,7 @@
  * on-demand ผ่าน server action ตอนเปิดแผง (ไม่ preload ทุกตู้).
  */
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { requireCfSession, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 import { getV2ManageBranches, getV2Branches } from "@/lib/clawfleet/queries";
 import { getCfMachinesForBranchAdmin, getCfStockOverview, getCfWarehousesForBranch, getCfBranchStockProducts, type CfWarehouseRow } from "@/lib/clawfleet/stock-queries";
@@ -96,6 +97,22 @@ export default async function ManagePage() {
   // ── ตู้ที่ยังรอตั้งค่าครั้งแรก (⚪ AWAITING_SETUP) — set ไว้ให้ client วาด dot ──
   const awaitingIds = new Set(awaiting.map((m) => m.id));
 
+  // ── รูปตู้ (N4) — additive read: getV2ManageBranches ไม่ได้ select photoUrl (lib แตะไม่ได้)
+  //    → ดึงเบา ๆ เฉพาะ id+photoUrl ของตู้ในสาขาที่แสดง แล้ว map เข้า VM (ไม่กระทบ props เดิม) ──
+  const photoByMachine = new Map<string, string | null>();
+  try {
+    const machineIds = manageBranches.flatMap((b) => b.machines.map((m) => m.id));
+    if (machineIds.length > 0) {
+      const photos = await prisma.cfMachine.findMany({
+        where: { id: { in: machineIds } },
+        select: { id: true, photoUrl: true },
+      });
+      for (const p of photos) photoByMachine.set(p.id, p.photoUrl);
+    }
+  } catch {
+    // อ่านรูปไม่ได้ → thumbnail แสดง placeholder (ไม่ทำให้หน้าล้ม)
+  }
+
   const branches: ManageBranchVM[] = manageBranches.map((b) => {
     const stock = stockByBranch.get(b.id) ?? null;
     return {
@@ -112,6 +129,7 @@ export default async function ManagePage() {
         kind: m.kind,
         isActive: m.isActive,
         awaitingSetup: awaitingIds.has(m.id),
+        photoUrl: photoByMachine.get(m.id) ?? null, // N4 — รูปตู้ (thumbnail/lightbox)
       })),
       stock,
     };
@@ -135,6 +153,7 @@ export default async function ManagePage() {
       branchOptions={branchOptions}
       warehousesByBranch={warehousesByBranch}
       productsByBranch={productsByBranch}
+      isAdmin // หน้านี้อยู่หลัง admin-gate (ผู้ที่ไม่ใช่แอดมินถูก redirect ไปแล้ว)
     />
   );
 }
