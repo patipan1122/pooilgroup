@@ -111,7 +111,7 @@ export function ProductsClient({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ค้นหาชื่อ / SKU / บาร์โค้ด…"
-            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13.5, fontFamily: "inherit", color: "var(--ink)" }}
+            style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 16, fontFamily: "inherit", color: "var(--ink)" }}
           />
           <span
             role="button"
@@ -184,7 +184,7 @@ export function ProductsClient({
 
 function GridView({ rows }: { rows: ProductRow[] }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(196px,1fr))", gap: 14, marginTop: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(152px,1fr))", gap: 12, marginTop: 14 }}>
       {rows.map((p) => (
         <div key={p.id} className="dcx-card">
           <div style={{ position: "relative", aspectRatio: "1.35", background: p.catSoft, display: "flex", alignItems: "center", justifyContent: "center", color: p.catC, overflow: "hidden" }}>

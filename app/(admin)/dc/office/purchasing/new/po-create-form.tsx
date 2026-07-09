@@ -1108,36 +1108,36 @@ const optStyle: React.CSSProperties = { fontSize: 12, fontWeight: 500, color: "v
 const colHead: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: "var(--dc-muted, #5b6676)", flex: 1 };
 
 const selectStyle: React.CSSProperties = {
-  height: 42,
+  height: 44,
   width: "100%",
   borderRadius: 10,
   border: "1px solid var(--dc-line, #e7ebf2)",
   padding: "0 10px",
-  fontSize: 14,
+  fontSize: 16, // ≥16 กัน iOS Safari zoom ตอนโฟกัส
   background: "#fff",
   color: "var(--dc-ink, #1c2533)",
 };
 
 const cellInput: React.CSSProperties = {
-  height: 40,
+  height: 44,
   width: "100%",
   borderRadius: 10,
   border: "1px solid var(--dc-line, #e7ebf2)",
   padding: "0 10px",
-  fontSize: 14,
+  fontSize: 16, // ≥16 กัน iOS zoom
   background: "#fff",
   color: "var(--dc-ink, #1c2533)",
   fontVariantNumeric: "tabular-nums",
   outline: "none",
 };
 
-// แถวรายการ = เตี้ยกว่า (34px) ให้ดู lean
+// แถวรายการ = เตี้ยกว่าให้ดู lean · แต่ font ≥16 กัน iOS zoom + สูงพอนิ้วกด
 const cellInputSm: React.CSSProperties = {
-  height: 34,
+  height: 40,
   borderRadius: 8,
   border: "1px solid var(--dc-line, #e7ebf2)",
   padding: "0 8px",
-  fontSize: 13.5,
+  fontSize: 16,
   background: "#fff",
   color: "var(--dc-ink, #1c2533)",
   fontVariantNumeric: "tabular-nums",

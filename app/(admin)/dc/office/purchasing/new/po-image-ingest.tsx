@@ -6,8 +6,11 @@
 //   3) กด "เพิ่มเข้าใบ" → สร้างสินค้าใหม่ (ชื่อไทย+รูปครอป) หรือใช้ของเดิม → เติมแถวในฟอร์ม PO
 //
 // 💰 ไม่บันทึกเงิน/สั่งของตรงนี้ — แค่ช่วยคีย์. ผู้ใช้ยังกดบันทึก PO เองในฟอร์มหลัก.
+// 📱 มือถือ: modal = bottom-sheet (createPortal หนี stacking-trap) · input 16px กัน iOS zoom ·
+//    touch ≥44px · ปุ่มยืนยันติดล่างเสมอ · ล็อก body scroll ตอนเปิด.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Sparkles,
   Loader2,
@@ -77,6 +80,20 @@ export function PoImageIngest({
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const modalOpen = phase === "review" || phase === "committing";
+  // ล็อก body scroll ตอน modal เปิด (มือถือไม่ให้เลื่อนพื้นหลัง)
+  useEffect(() => {
+    if (!modalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [modalOpen]);
 
   function reset() {
     setPhase("idle");
@@ -210,8 +227,171 @@ export function PoImageIngest({
 
   const busy = phase === "uploading" || phase === "reading" || phase === "committing";
 
+  const modalUi = (
+    <div className="dcocr-overlay" style={overlay} onClick={() => !busy && reset()}>
+      <div className="dcocr-modal" style={modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalHead}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <Sparkles size={17} color="#2563eb" style={{ flex: "0 0 auto" }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#1c2533" }}>
+                ตรวจก่อนเพิ่มเข้าใบ ({includedRows.length} รายการ)
+              </div>
+              <div style={{ fontSize: 12, color: "#5b6676" }}>
+                AI อ่านให้แล้ว — แก้ชื่อ/จำนวน/ราคาได้ · เอาออกได้ · เงินต้องคุณตรวจเอง
+              </div>
+            </div>
+          </div>
+          <button type="button" onClick={reset} disabled={busy} style={ghostIcon} aria-label="ปิด">
+            <X size={20} />
+          </button>
+        </div>
+
+        {warnings.length > 0 && (
+          <div style={warnBox}>
+            {warnings.map((w, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                <AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 2 }} /> <span>{w}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ overflowY: "auto", flex: 1, display: "grid", gap: 8, padding: "4px 2px", WebkitOverflowScrolling: "touch" }}>
+          {rows.map((r) => (
+            <div
+              key={r.key}
+              style={{
+                ...rowCard,
+                opacity: r.include ? 1 : 0.5,
+                borderColor: r.rowError ? "#dc2626" : "#e7ebf2",
+              }}
+            >
+              {/* รูปครอป */}
+              <div style={thumbWrap}>
+                {r.croppedUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.croppedUrl} alt={r.nameTh} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <ImageIcon size={20} color="#8a94a3" />
+                )}
+                <span style={imgTag}>รูป {r.sourceImage}</span>
+              </div>
+
+              {/* ฟิลด์ */}
+              <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
+                <input
+                  className="dcocr-in"
+                  value={r.nameTh}
+                  onChange={(e) => patchRow(r.key, { nameTh: e.target.value, rowError: null })}
+                  placeholder="ชื่อสินค้า (ไทย)"
+                  style={nameInput}
+                />
+                {r.nameZh && (
+                  <div style={{ fontSize: 11, color: "#8a94a3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    จีน: {r.nameZh}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <label style={miniField}>
+                    <span style={miniLabel}>จำนวน</span>
+                    <input
+                      className="dcocr-in"
+                      value={r.qtyStr}
+                      onChange={(e) => patchRow(r.key, { qtyStr: e.target.value, rowError: null })}
+                      inputMode="numeric"
+                      style={{ ...miniInput, width: 72, textAlign: "center" }}
+                    />
+                  </label>
+                  <label style={miniField}>
+                    <span style={miniLabel}>ราคา ({sym})</span>
+                    <input
+                      className="dcocr-in"
+                      value={r.priceStr}
+                      onChange={(e) => patchRow(r.key, { priceStr: e.target.value, rowError: null })}
+                      inputMode="decimal"
+                      style={{ ...miniInput, width: 96, textAlign: "right" }}
+                    />
+                  </label>
+                  {/* จับคู่ของเดิม / สร้างใหม่ */}
+                  {r.matchProductId ? (
+                    <button
+                      type="button"
+                      onClick={() => patchRow(r.key, { useExisting: !r.useExisting })}
+                      style={{
+                        ...matchToggle,
+                        background: r.useExisting ? "#eaf3ec" : "#eef3fb",
+                        color: r.useExisting ? "#1f8a55" : "#1d4ed8",
+                      }}
+                      title={r.matchLabel ?? ""}
+                    >
+                      {r.useExisting ? <Link2 size={13} /> : <PlusCircle size={13} />}
+                      {r.useExisting ? "ใช้ของเดิม" : "สร้างใหม่"}
+                    </button>
+                  ) : (
+                    <span style={{ ...matchToggle, background: "#eef3fb", color: "#1d4ed8", cursor: "default" }}>
+                      <PlusCircle size={13} /> สร้างใหม่
+                    </span>
+                  )}
+                </div>
+                {r.useExisting && r.matchLabel && (
+                  <div style={{ fontSize: 11, color: "#1f8a55" }}>→ {r.matchLabel}</div>
+                )}
+                {r.rowError && (
+                  <div style={{ fontSize: 11.5, color: "#dc2626", fontWeight: 600 }}>{r.rowError}</div>
+                )}
+              </div>
+
+              {/* เอาออก */}
+              <button
+                type="button"
+                onClick={() => patchRow(r.key, { include: !r.include })}
+                style={ghostIcon}
+                aria-label={r.include ? "เอาออก" : "เอากลับ"}
+              >
+                {r.include ? <Trash2 size={18} /> : <PlusCircle size={18} />}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* ยอดรวม + ปุ่ม (ติดล่างเสมอ) */}
+        <div style={modalFoot}>
+          <div style={{ fontSize: 13, color: "#5b6676" }}>
+            ยอดรวม (ตามที่แก้):{" "}
+            <b style={{ color: "#1c2533", fontVariantNumeric: "tabular-nums" }}>
+              {sym}
+              {reviewSum.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </b>
+          </div>
+          {error && phase !== "committing" && (
+            <div style={{ fontSize: 12.5, color: "#dc2626", fontWeight: 600 }}>{error}</div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={reset} disabled={busy} style={cancelBtn}>
+              ยกเลิก
+            </button>
+            <button type="button" onClick={commit} disabled={busy || includedRows.length === 0} style={confirmBtn}>
+              {phase === "committing" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+              เพิ่ม {includedRows.length} รายการเข้าใบ
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
+      {/* มือถือ: กัน iOS zoom (input 16px) + bottom-sheet + touch */}
+      <style>{`
+        .dcocr-in{ font-size:16px !important; }
+        @media (max-width:600px){
+          .dcocr-overlay{ align-items:flex-end !important; padding:0 !important; }
+          .dcocr-modal{ width:100vw !important; max-width:100vw !important; max-height:94vh !important; border-radius:18px 18px 0 0 !important; }
+        }
+      `}</style>
+
       <input
         ref={fileRef}
         type="file"
@@ -246,157 +426,8 @@ export function PoImageIngest({
         </div>
       )}
 
-      {/* จอ review */}
-      {phase === "review" || phase === "committing" ? (
-        <div style={overlay} onClick={() => !busy && reset()}>
-          <div style={modal} onClick={(e) => e.stopPropagation()}>
-            <div style={modalHead}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Sparkles size={17} color="#2563eb" />
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#1c2533" }}>
-                    ตรวจก่อนเพิ่มเข้าใบ ({includedRows.length} รายการ)
-                  </div>
-                  <div style={{ fontSize: 12, color: "#5b6676" }}>
-                    AI อ่านให้แล้ว — แก้ชื่อ/จำนวน/ราคาได้ · เอาออกได้ · เงินต้องคุณตรวจเอง
-                  </div>
-                </div>
-              </div>
-              <button type="button" onClick={reset} disabled={busy} style={ghostIcon}>
-                <X size={18} />
-              </button>
-            </div>
-
-            {warnings.length > 0 && (
-              <div style={warnBox}>
-                {warnings.map((w, i) => (
-                  <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                    <AlertTriangle size={13} style={{ flex: "0 0 auto", marginTop: 2 }} /> <span>{w}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ overflowY: "auto", flex: 1, display: "grid", gap: 8, padding: "4px 2px" }}>
-              {rows.map((r) => (
-                <div
-                  key={r.key}
-                  style={{
-                    ...rowCard,
-                    opacity: r.include ? 1 : 0.5,
-                    borderColor: r.rowError ? "#dc2626" : "#e7ebf2",
-                  }}
-                >
-                  {/* รูปครอป */}
-                  <div style={thumbWrap}>
-                    {r.croppedUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={r.croppedUrl} alt={r.nameTh} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <ImageIcon size={20} color="#8a94a3" />
-                    )}
-                    <span style={imgTag}>รูป {r.sourceImage}</span>
-                  </div>
-
-                  {/* ฟิลด์ */}
-                  <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
-                    <input
-                      value={r.nameTh}
-                      onChange={(e) => patchRow(r.key, { nameTh: e.target.value, rowError: null })}
-                      placeholder="ชื่อสินค้า (ไทย)"
-                      style={nameInput}
-                    />
-                    {r.nameZh && (
-                      <div style={{ fontSize: 11, color: "#8a94a3", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        จีน: {r.nameZh}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <label style={miniField}>
-                        <span style={miniLabel}>จำนวน</span>
-                        <input
-                          value={r.qtyStr}
-                          onChange={(e) => patchRow(r.key, { qtyStr: e.target.value, rowError: null })}
-                          inputMode="numeric"
-                          style={{ ...miniInput, width: 62, textAlign: "center" }}
-                        />
-                      </label>
-                      <label style={miniField}>
-                        <span style={miniLabel}>ราคา ({sym})</span>
-                        <input
-                          value={r.priceStr}
-                          onChange={(e) => patchRow(r.key, { priceStr: e.target.value, rowError: null })}
-                          inputMode="decimal"
-                          style={{ ...miniInput, width: 84, textAlign: "right" }}
-                        />
-                      </label>
-                      {/* จับคู่ของเดิม / สร้างใหม่ */}
-                      {r.matchProductId ? (
-                        <button
-                          type="button"
-                          onClick={() => patchRow(r.key, { useExisting: !r.useExisting })}
-                          style={{
-                            ...matchToggle,
-                            background: r.useExisting ? "#eaf3ec" : "#eef3fb",
-                            color: r.useExisting ? "#1f8a55" : "#1d4ed8",
-                          }}
-                          title={r.matchLabel ?? ""}
-                        >
-                          {r.useExisting ? <Link2 size={12} /> : <PlusCircle size={12} />}
-                          {r.useExisting ? "ใช้ของเดิม" : "สร้างใหม่"}
-                        </button>
-                      ) : (
-                        <span style={{ ...matchToggle, background: "#eef3fb", color: "#1d4ed8", cursor: "default" }}>
-                          <PlusCircle size={12} /> สร้างใหม่
-                        </span>
-                      )}
-                    </div>
-                    {r.useExisting && r.matchLabel && (
-                      <div style={{ fontSize: 11, color: "#1f8a55" }}>→ {r.matchLabel}</div>
-                    )}
-                    {r.rowError && (
-                      <div style={{ fontSize: 11.5, color: "#dc2626", fontWeight: 600 }}>{r.rowError}</div>
-                    )}
-                  </div>
-
-                  {/* เอาออก */}
-                  <button
-                    type="button"
-                    onClick={() => patchRow(r.key, { include: !r.include })}
-                    style={ghostIcon}
-                    title={r.include ? "เอาออก" : "เอากลับ"}
-                  >
-                    {r.include ? <Trash2 size={16} /> : <PlusCircle size={16} />}
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* ยอดรวม + ปุ่ม */}
-            <div style={modalFoot}>
-              <div style={{ fontSize: 13, color: "#5b6676" }}>
-                ยอดรวม (ตามที่แก้):{" "}
-                <b style={{ color: "#1c2533", fontVariantNumeric: "tabular-nums" }}>
-                  {sym}
-                  {reviewSum.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </b>
-              </div>
-              {error && phase !== "committing" && (
-                <div style={{ fontSize: 12.5, color: "#dc2626", fontWeight: 600 }}>{error}</div>
-              )}
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" onClick={reset} disabled={busy} style={cancelBtn}>
-                  ยกเลิก
-                </button>
-                <button type="button" onClick={commit} disabled={busy || includedRows.length === 0} style={confirmBtn}>
-                  {phase === "committing" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                  เพิ่ม {includedRows.length} รายการเข้าใบ
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* จอ review — createPortal ไป body หนี stacking/overflow trap */}
+      {mounted && modalOpen ? createPortal(modalUi, document.body) : null}
     </>
   );
 }
@@ -408,12 +439,12 @@ const ingestBtn: React.CSSProperties = {
   justifyContent: "center",
   gap: 7,
   width: "100%",
-  height: 40,
+  height: 46,
   borderRadius: 10,
   border: "1.5px solid #c9d8f0",
   background: "linear-gradient(180deg,#f5f9ff,#eef3fb)",
   color: "#1d4ed8",
-  fontSize: 13.5,
+  fontSize: 14,
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -437,7 +468,7 @@ const errLine: React.CSSProperties = {
 const overlay: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  zIndex: 200,
+  zIndex: 2000,
   background: "rgba(20,28,44,.45)",
   display: "flex",
   alignItems: "center",
@@ -466,6 +497,7 @@ const modalFoot: React.CSSProperties = {
   gap: 8,
   borderTop: "1px solid #e7ebf2",
   paddingTop: 10,
+  background: "#fff",
 };
 const warnBox: React.CSSProperties = {
   display: "grid",
@@ -490,8 +522,8 @@ const rowCard: React.CSSProperties = {
 const thumbWrap: React.CSSProperties = {
   position: "relative",
   flex: "0 0 auto",
-  width: 58,
-  height: 58,
+  width: 60,
+  height: 60,
   borderRadius: 9,
   overflow: "hidden",
   background: "#f4f7fb",
@@ -513,23 +545,21 @@ const imgTag: React.CSSProperties = {
 };
 const nameInput: React.CSSProperties = {
   width: "100%",
-  height: 34,
-  borderRadius: 8,
+  height: 42,
+  borderRadius: 9,
   border: "1px solid #e7ebf2",
-  padding: "0 9px",
-  fontSize: 13.5,
+  padding: "0 10px",
   fontWeight: 600,
   color: "#1c2533",
   outline: "none",
 };
-const miniField: React.CSSProperties = { display: "grid", gap: 2 };
-const miniLabel: React.CSSProperties = { fontSize: 10.5, color: "#8a94a3", fontWeight: 600 };
+const miniField: React.CSSProperties = { display: "grid", gap: 3 };
+const miniLabel: React.CSSProperties = { fontSize: 11, color: "#8a94a3", fontWeight: 600 };
 const miniInput: React.CSSProperties = {
-  height: 32,
-  borderRadius: 8,
+  height: 44,
+  borderRadius: 9,
   border: "1px solid #e7ebf2",
-  padding: "0 8px",
-  fontSize: 13.5,
+  padding: "0 9px",
   fontVariantNumeric: "tabular-nums",
   outline: "none",
   color: "#1c2533",
@@ -538,23 +568,22 @@ const matchToggle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 5,
-  height: 32,
-  padding: "0 11px",
-  borderRadius: 8,
+  height: 44,
+  padding: "0 13px",
+  borderRadius: 9,
   border: "none",
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 700,
   cursor: "pointer",
-  alignSelf: "flex-end",
 };
 const ghostIcon: React.CSSProperties = {
   flex: "0 0 auto",
-  height: 32,
-  width: 32,
+  height: 44,
+  width: 44,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  borderRadius: 8,
+  borderRadius: 9,
   border: "none",
   background: "transparent",
   color: "#5b6676",
@@ -562,13 +591,13 @@ const ghostIcon: React.CSSProperties = {
 };
 const cancelBtn: React.CSSProperties = {
   flex: "0 0 auto",
-  height: 44,
+  height: 48,
   padding: "0 18px",
-  borderRadius: 11,
+  borderRadius: 12,
   border: "1px solid #e7ebf2",
   background: "#fff",
   color: "#5b6676",
-  fontSize: 14,
+  fontSize: 15,
   fontWeight: 700,
   cursor: "pointer",
 };
@@ -578,8 +607,8 @@ const confirmBtn: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: 7,
-  height: 44,
-  borderRadius: 11,
+  height: 48,
+  borderRadius: 12,
   border: "none",
   background: "#2563eb",
   color: "#fff",
