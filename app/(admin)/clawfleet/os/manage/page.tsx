@@ -12,9 +12,9 @@
 import { redirect } from "next/navigation";
 import { requireCfSession, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 import { getV2ManageBranches, getV2Branches } from "@/lib/clawfleet/queries";
-import { getCfMachinesForBranchAdmin, getCfStockOverview } from "@/lib/clawfleet/stock-queries";
+import { getCfMachinesForBranchAdmin, getCfStockOverview, getCfWarehousesForBranch, getCfBranchStockProducts, type CfWarehouseRow } from "@/lib/clawfleet/stock-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { ManageClient, type ManageBranchVM, type BranchStockVM, type MachineOption, type BranchOption } from "./manage-client";
+import { ManageClient, type ManageBranchVM, type BranchStockVM, type MachineOption, type BranchOption, type WarehouseVM, type TransferProductVM } from "./manage-client";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +52,9 @@ export default async function ManagePage() {
 
   // ── stock overview ต่อสาขา (คลังประจำสาขา) — parallel ทุกสาขา ──
   const stockByBranch = new Map<string, BranchStockVM>();
+  // ── คลังหลายห้องต่อสาขา (warehouses) + สินค้าต่อสาขา (สำหรับ modal โอนของ) ──
+  const warehousesByBranch: Record<string, WarehouseVM[]> = {};
+  const productsByBranch: Record<string, TransferProductVM[]> = {};
   await Promise.all(
     manageBranches.map(async (b) => {
       try {
@@ -64,6 +67,28 @@ export default async function ManagePage() {
         });
       } catch {
         // ข้ามสาขาที่อ่านคลังไม่ได้ (client โชว์ "—")
+      }
+      try {
+        const whs = await getCfWarehousesForBranch(orgId, b.id);
+        warehousesByBranch[b.id] = whs.map((w: CfWarehouseRow) => ({
+          id: w.id,
+          name: w.name,
+          isMain: w.isMain,
+          isActive: w.isActive,
+        }));
+      } catch {
+        warehousesByBranch[b.id] = [];
+      }
+      try {
+        // สินค้าที่มีในสาขานี้ (มีของ/เคยเคลื่อนไหว) — feed picker ใน modal โอนของ
+        const prods = await getCfBranchStockProducts(orgId, b.id);
+        productsByBranch[b.id] = prods.map((p) => ({
+          id: p.id,
+          name: p.name,
+          onHand: p.warehouse,
+        }));
+      } catch {
+        productsByBranch[b.id] = [];
       }
     }),
   );
@@ -108,6 +133,8 @@ export default async function ManagePage() {
       branches={branches}
       machineOptions={machineOptions}
       branchOptions={branchOptions}
+      warehousesByBranch={warehousesByBranch}
+      productsByBranch={productsByBranch}
     />
   );
 }

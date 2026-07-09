@@ -10,7 +10,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff } from "./role-guard";
+import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
+import { getBranchMainWarehouseId } from "./stock-queries";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
@@ -131,19 +132,67 @@ const ReceiveSchema = z.object({
  * ยอดคงคลัง "ในคลังสาขา" (warehouse) ของ product = ผลรวม signed qty ใน ledger
  * เฉพาะ movement ที่ machineId = null (ไม่นับของที่อยู่ในตู้) — match นิยาม warehouse
  * ใน stock-queries.ts (getCfBranchStockProducts ใช้ machineId: null เป็น warehouse).
- * ใช้กับ count / withdraw / transfer / receive ซึ่งทำกับคลังสาขาทั้งหมด.
+ * ใช้กับ count / withdraw / transfer / receive ซึ่งทำกับคลังสาขา.
+ *
+ * SAFETY INVARIANT (bigfeature 2026-07-09 · warehouse):
+ *   - warehouseId undefined → WHERE เดิมเป๊ะ {orgId,branchId,productId,machineId:null}
+ *     (รวมทุกห้อง = ยอดสาขาเดิม · zero regression · caller เดิมทุกตัวที่ยังไม่ส่ง warehouseId ได้พฤติกรรมเดิม)
+ *   - warehouseId === main (ต้องส่ง mainWarehouseId ด้วย) → เพิ่ม OR:[{warehouseId:main},{warehouseId:null}]
+ *     (แถว legacy NULL = ของห้องหลัก)
+ *   - warehouseId อื่น → เพิ่ม warehouseId เท่ากับ id ตรง ๆ (strict · ไม่รวม NULL)
  */
 async function currentBalance(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
   orgId: string,
   branchId: string,
   productId: string,
+  warehouseId?: string,
+  mainWarehouseId?: string,
 ): Promise<number> {
+  const whFilter: Record<string, unknown> =
+    warehouseId === undefined
+      ? {}
+      : mainWarehouseId && warehouseId === mainWarehouseId
+        ? { OR: [{ warehouseId }, { warehouseId: null }] }
+        : { warehouseId };
   const agg = await tx.cfStockMovement.aggregate({
-    where: { orgId, branchId, productId, machineId: null },
+    where: { orgId, branchId, productId, machineId: null, ...whFilter },
     _sum: { qty: true },
   });
   return agg._sum.qty ?? 0;
+}
+
+/**
+ * หา (หรือสร้างแบบ lazy) id คลังหลักของสาขา ภายใน tx — สำหรับ stamp warehouseId บน RECEIPT_IN/COUNT_ADJUST.
+ * ถ้าสาขายังไม่มีคลังหลัก (edge: backfill ข้ามเพราะ org ไม่มี user ตอน migrate) → สร้างคลังหลักให้ (idempotent
+ * ผ่าน partial-unique cf_warehouses_one_main_per_branch). ถ้าสร้างชนใครก่อน (race) → อ่านตัวที่มีอยู่กลับมา.
+ * คืน null เฉพาะเมื่อสร้างไม่ได้จริง ๆ → caller ปล่อย warehouseId เป็น null (= คลังหลักตาม INVARIANT · ปลอดภัย).
+ */
+async function ensureBranchMainWarehouseId(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  orgId: string,
+  branchId: string,
+  createdById: string,
+): Promise<string | null> {
+  const existing = await tx.cfWarehouse.findFirst({
+    where: { orgId, branchId, isMain: true },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  try {
+    const created = await tx.cfWarehouse.create({
+      data: { orgId, branchId, name: "คลังหลัก", isMain: true, sortOrder: 0, createdById },
+      select: { id: true },
+    });
+    return created.id;
+  } catch {
+    // race: partial-unique ชน → มีคนสร้างคลังหลักไปก่อน · อ่านตัวที่มีอยู่กลับมา
+    const again = await tx.cfWarehouse.findFirst({
+      where: { orgId, branchId, isMain: true },
+      select: { id: true },
+    });
+    return again?.id ?? null; // สร้างไม่ได้จริง → null (= main ตาม INVARIANT · ไม่ block งาน)
+  }
 }
 
 export async function receiveStock(input: unknown): Promise<Result<{ receiptCode: string; receiptId: string; totalCostCents: number }>> {
@@ -161,6 +210,10 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
 
   const result = await prisma
     .$transaction(async (tx) => {
+      // CEO rule 2 · ของรับเข้า default ลง "คลังหลัก" ของสาขา → stamp warehouseId บน movement + doc head.
+      // resolve/สร้างคลังหลักภายใน tx (atomic) · ถ้าสร้างไม่ได้จริง → null (= main ตาม INVARIANT · ไม่ block).
+      const mainWarehouseId = await ensureBranchMainWarehouseId(tx, orgId, branchId, session.user.id);
+
       const ids = lines.map((l) => l.productId);
       const products = await tx.cfProduct.findMany({
         where: { id: { in: ids }, orgId },
@@ -215,7 +268,11 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
           );
         }
         // 🔒 อ่าน orgQtyBefore/ยอดคงคลัง "ภายใน lock" — ค่านี้คือความจริง ณ ขณะถือ lock (ไม่มีใครแทรก)
-        const oldBal = await currentBalance(tx, orgId, branchId, a.id);
+        // scope = คลังหลัก (main includes NULL) เพราะของรับเข้าลงคลังหลัก · ถ้าไม่มี main (null) → aggregate เดิม
+        const oldBal =
+          mainWarehouseId != null
+            ? await currentBalance(tx, orgId, branchId, a.id, mainWarehouseId, mainWarehouseId)
+            : await currentBalance(tx, orgId, branchId, a.id);
         const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
           where: { orgId, productId: a.id },
           _sum: { qty: true },
@@ -228,6 +285,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
         data: {
           orgId,
           branchId,
+          warehouseId: mainWarehouseId, // CEO rule 2 · เอกสารรับเข้า scope = คลังหลัก (null ถ้าไม่มี main = main)
           receiptCode: newReceiptCode(),
           supplierName: supplierName || null,
           note: note || null,
@@ -266,6 +324,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
           data: {
             orgId,
             branchId,
+            warehouseId: mainWarehouseId, // CEO rule 2 · ของรับเข้าลงคลังหลัก (null = main ตาม INVARIANT)
             type: "RECEIPT_IN",
             productId: w.id,
             qty: w.qty,
@@ -301,6 +360,8 @@ const VARIANCE_ANOMALY_THRESHOLD = 5; // |ผลต่างรวม| ≥ 5 ต
 
 const CountSchema = z.object({
   branchId: z.string().uuid("สาขาไม่ถูกต้อง"),
+  // warehouse · เลือกห้องที่นับ (default = คลังหลักของสาขา) · picker โชว์เฉพาะสาขาที่มี >1 ห้อง
+  warehouseId: z.string().uuid("คลังไม่ถูกต้อง").optional(),
   note: z.string().trim().max(500).optional(),
   // N3 · รูปแนบตอนนับ (มือถือ) — R2 URLs (absolute) → .url() ใช้ได้
   photoUrls: z.array(z.string().url()).max(10).optional(),
@@ -320,7 +381,7 @@ const CountSchema = z.object({
 export async function submitStockCount(input: unknown): Promise<Result<{ countCode: string | null; countId: string | null; adjusted: number; skipped: number; anomaly: boolean; status: "APPLIED" | "PENDING" }>> {
   const parsed = CountSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { branchId, note, photoUrls, clientKey, lines } = parsed.data;
+  const { branchId, warehouseId: inputWarehouseId, note, photoUrls, clientKey, lines } = parsed.data;
 
   let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
   try {
@@ -365,6 +426,21 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
 
   const result = await prisma
     .$transaction(async (tx) => {
+      // warehouse · resolve ห้องที่นับ (default = คลังหลัก) · scope balance + stamp movement/head ตามห้องนี้.
+      // ถ้าส่ง warehouseId มา → ต้องเป็นห้องของสาขานี้จริง (กันสลับห้องข้ามสาขา). resolve main สำหรับ NULL-coalesce.
+      const mainWarehouseId = await ensureBranchMainWarehouseId(tx, orgId, branchId, session.user.id);
+      let chosenWarehouseId: string | null;
+      if (inputWarehouseId) {
+        const wh = await tx.cfWarehouse.findFirst({
+          where: { id: inputWarehouseId, orgId, branchId },
+          select: { id: true },
+        });
+        if (!wh) throw new Error("ไม่พบคลังที่เลือกในสาขานี้");
+        chosenWarehouseId = wh.id;
+      } else {
+        chosenWarehouseId = mainWarehouseId; // default = คลังหลัก (null ถ้าไม่มี main = main ตาม INVARIANT)
+      }
+
       const ids = lines.map((l) => l.productId);
       const products = await tx.cfProduct.findMany({
         where: { id: { in: ids }, orgId },
@@ -377,7 +453,11 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
       for (const l of lines) {
         const p = pmap.get(l.productId);
         if (!p) { skipped++; continue; }
-        const before = await currentBalance(tx, orgId, branchId, p.id);
+        // scope ยอดระบบตามห้องที่นับ (main → รวม NULL) · ถ้า chosen=null (ไม่มี main) → aggregate เดิม
+        const before =
+          chosenWarehouseId != null
+            ? await currentBalance(tx, orgId, branchId, p.id, chosenWarehouseId, mainWarehouseId ?? undefined)
+            : await currentBalance(tx, orgId, branchId, p.id);
         if (l.countedQty === before) { skipped++; continue; }
         diffs.push({
           id: p.id,
@@ -408,6 +488,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
         data: {
           orgId,
           branchId,
+          warehouseId: chosenWarehouseId, // ห้องที่นับ (null = คลังหลัก ตาม INVARIANT)
           countCode: newCountCode(),
           note: note || null,
           itemsCounted: diffs.length,
@@ -438,6 +519,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
       if (status === "APPLIED") {
         await applyStockCountMovements(tx, {
           orgId, branchId, countId: count.id, createdById: session.user.id,
+          warehouseId: chosenWarehouseId,
           diffs: diffs.map((d) => ({ id: d.id, before: d.before, after: d.after, diff: d.diff, reason: d.reason })),
         });
       }
@@ -549,6 +631,8 @@ async function applyStockCountMovements(
     branchId: string;
     countId: string;
     createdById: string;
+    // warehouse · ห้องที่นับ (null = คลังหลัก ตาม INVARIANT) → stamp บน COUNT_ADJUST movement
+    warehouseId: string | null;
     diffs: Array<{ id: string; before: number; after: number; diff: number; reason: string }>;
   },
 ): Promise<void> {
@@ -563,6 +647,7 @@ async function applyStockCountMovements(
       data: {
         orgId: args.orgId,
         branchId: args.branchId,
+        warehouseId: args.warehouseId, // ห้องที่นับ (null = คลังหลัก ตาม INVARIANT)
         type: "COUNT_ADJUST",
         productId: d.id,
         qty: d.diff, // signed delta (+/-)
@@ -601,7 +686,7 @@ export async function reviewCfStockCount(input: unknown): Promise<Result<{ count
   // หา branch ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา (admin = ทุกสาขา)
   const head = await prisma.cfStockCount.findFirst({
     where: { id: countId },
-    select: { id: true, orgId: true, branchId: true, status: true, countedById: true },
+    select: { id: true, orgId: true, branchId: true, status: true, countedById: true, warehouseId: true },
   });
   if (!head) return err("ไม่พบใบนับสต๊อก");
 
@@ -660,13 +745,20 @@ export async function reviewCfStockCount(input: unknown): Promise<Result<{ count
         // ⚠️ ใช้ยอดระบบ ณ ตอนอนุมัติ (before ปัจจุบัน) เป็นฐานปรับ — ไม่ใช่ systemQty ที่บันทึกตอนนับ.
         // ถ้ามี movement อื่นแทรกระหว่างรออนุมัติ (รับเข้า/โอน) systemQty เก่าจะ stale → ปรับด้วย delta เก่า
         // จะทำยอดเพี้ยน. เป้าหมายคือ "ทำให้ยอดระบบ = ยอดที่นับได้ (countedQty)" → delta = countedQty − beforeNow.
+        // warehouse · re-read balance scope ตามห้องที่ใบเก็บไว้ (head.warehouseId · null = คลังหลัก).
+        // resolve main สำหรับ NULL-coalesce (ห้องหลักต้องรวมแถว legacy NULL). stamp COUNT_ADJUST ห้องเดียวกัน.
+        const countMainWarehouseId = await getBranchMainWarehouseId(orgId, head.branchId);
+        const countWarehouseId: string | null = head.warehouseId ?? null;
         const lines = await tx.cfStockCountLine.findMany({
           where: { countId: head.id, orgId },
           select: { productId: true, countedQty: true, reason: true },
         });
         const diffs: Array<{ id: string; before: number; after: number; diff: number; reason: string }> = [];
         for (const l of lines) {
-          const before = await currentBalance(tx, orgId, head.branchId, l.productId);
+          const before =
+            countWarehouseId != null
+              ? await currentBalance(tx, orgId, head.branchId, l.productId, countWarehouseId, countMainWarehouseId ?? undefined)
+              : await currentBalance(tx, orgId, head.branchId, l.productId);
           if (l.countedQty === before) continue; // ยอดตรงแล้ว (ปรับไปแล้วทางอื่น) → ข้าม
           diffs.push({
             id: l.productId,
@@ -682,6 +774,7 @@ export async function reviewCfStockCount(input: unknown): Promise<Result<{ count
             branchId: head.branchId,
             countId: head.id,
             createdById: session.user.id,
+            warehouseId: countWarehouseId, // ห้องเดียวกับที่ใบเก็บไว้ (null = คลังหลัก)
             diffs,
           });
         }
@@ -1070,6 +1163,317 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
 }
 
 // =============================================================
+// 4b) คลังหลายห้องต่อสาขา (warehouses) — CRUD + โอนระหว่างห้อง (bigfeature 2026-07-09)
+//     SAFETY INVARIANT: warehouseId null = คลังหลัก · ทุก read เดิม (ไม่ส่ง warehouseId) ไม่เปลี่ยน.
+//     Role gate: createWarehouse/rename/setMain/deactivate = admin (cfHasAdminPower) · transfer = canWriteOff.
+//     ทุก action: assertBranchAccess (สมาชิกสาขา/admin) · Zod · transaction · friendly error · revalidate.
+// =============================================================
+const MANAGE_PATH = "/clawfleet/os/manage";
+
+/** admin gate ที่คืน Result error (ไม่ redirect เหมือน assertCfAdmin) — ใช้กับ action ที่ต้องแจ้งเตือนหน้าจอ */
+async function requireCfAdminResult(
+  session: Awaited<ReturnType<typeof requireSession>>,
+): Promise<string | null> {
+  const ok = await cfHasAdminPower(session);
+  return ok ? null : "เฉพาะแอดมิน ClawFleet เท่านั้นที่จัดการคลังได้";
+}
+
+const CreateWarehouseSchema = z.object({
+  branchId: z.string().uuid("สาขาไม่ถูกต้อง"),
+  name: z.string().trim().min(1, "ใส่ชื่อคลัง").max(120),
+  isMain: z.boolean().optional(),
+});
+
+export async function createWarehouse(input: unknown): Promise<Result<{ warehouseId: string }>> {
+  const parsed = CreateWarehouseSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { branchId, name, isMain } = parsed.data;
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  const adminErr = await requireCfAdminResult(session);
+  if (adminErr) return err(adminErr);
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // ล็อกต่อสาขา — serialize การสร้าง/ตั้งคลังหลัก กัน 2 คนตั้ง main พร้อมกันชน partial-unique
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${branchId}), hashtext('cf_warehouse'))`;
+      // ลำดับถัดไป (ต่อท้าย)
+      const last = await tx.cfWarehouse.aggregate({
+        where: { orgId, branchId },
+        _max: { sortOrder: true },
+      });
+      const sortOrder = (last._max.sortOrder ?? -1) + 1;
+      // ถ้าตั้งเป็นคลังหลัก → demote main เดิมก่อน (ในทรานแซกชันเดียว) ให้ partial-unique ผ่าน
+      if (isMain) {
+        await tx.cfWarehouse.updateMany({
+          where: { orgId, branchId, isMain: true },
+          data: { isMain: false },
+        });
+      }
+      const created = await tx.cfWarehouse.create({
+        data: { orgId, branchId, name, isMain: isMain ?? false, sortOrder, createdById: session.user.id },
+        select: { id: true },
+      });
+      return { warehouseId: created.id };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(MANAGE_PATH);
+  revalidatePath(STOCK_PATH);
+  return { ok: true, data: result };
+}
+
+const RenameWarehouseSchema = z.object({
+  warehouseId: z.string().uuid("คลังไม่ถูกต้อง"),
+  name: z.string().trim().min(1, "ใส่ชื่อคลัง").max(120),
+});
+
+export async function renameWarehouse(input: unknown): Promise<Result<{ warehouseId: string }>> {
+  const parsed = RenameWarehouseSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { warehouseId, name } = parsed.data;
+
+  // หา branch ของคลังก่อน เพื่อ assert สิทธิ์ตามสาขา
+  const wh = await prisma.cfWarehouse.findFirst({
+    where: { id: warehouseId },
+    select: { id: true, orgId: true, branchId: true },
+  });
+  if (!wh) return err("ไม่พบคลัง");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(wh.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (wh.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงคลังนี้");
+  const adminErr = await requireCfAdminResult(session);
+  if (adminErr) return err(adminErr);
+
+  await prisma.cfWarehouse.update({ where: { id: warehouseId }, data: { name } });
+  revalidatePath(MANAGE_PATH);
+  revalidatePath(STOCK_PATH);
+  return { ok: true, data: { warehouseId } };
+}
+
+const SetMainWarehouseSchema = z.object({
+  warehouseId: z.string().uuid("คลังไม่ถูกต้อง"),
+});
+
+export async function setMainWarehouse(input: unknown): Promise<Result<{ warehouseId: string }>> {
+  const parsed = SetMainWarehouseSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { warehouseId } = parsed.data;
+
+  const wh = await prisma.cfWarehouse.findFirst({
+    where: { id: warehouseId },
+    select: { id: true, orgId: true, branchId: true, isMain: true, isActive: true },
+  });
+  if (!wh) return err("ไม่พบคลัง");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(wh.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (wh.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงคลังนี้");
+  const adminErr = await requireCfAdminResult(session);
+  if (adminErr) return err(adminErr);
+  if (wh.isMain) return { ok: true, data: { warehouseId } }; // เป็นคลังหลักอยู่แล้ว → no-op
+  if (!wh.isActive) return err("คลังนี้ถูกปิดใช้อยู่ · เปิดใช้ก่อนจึงตั้งเป็นคลังหลักได้");
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${wh.branchId}), hashtext('cf_warehouse'))`;
+      // demote main เดิม → promote คลังนี้ (ในทรานแซกชันเดียว) ให้ partial-unique หนึ่ง main ผ่าน
+      await tx.cfWarehouse.updateMany({
+        where: { orgId, branchId: wh.branchId, isMain: true },
+        data: { isMain: false },
+      });
+      await tx.cfWarehouse.update({ where: { id: warehouseId }, data: { isMain: true } });
+      return { warehouseId };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(MANAGE_PATH);
+  revalidatePath(STOCK_PATH);
+  return { ok: true, data: result };
+}
+
+const DeactivateWarehouseSchema = z.object({
+  warehouseId: z.string().uuid("คลังไม่ถูกต้อง"),
+});
+
+export async function deactivateWarehouse(input: unknown): Promise<Result<{ warehouseId: string }>> {
+  const parsed = DeactivateWarehouseSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { warehouseId } = parsed.data;
+
+  const wh = await prisma.cfWarehouse.findFirst({
+    where: { id: warehouseId },
+    select: { id: true, orgId: true, branchId: true, isMain: true, isActive: true },
+  });
+  if (!wh) return err("ไม่พบคลัง");
+
+  let ctx: { session: Awaited<ReturnType<typeof requireSession>>; orgId: string };
+  try {
+    ctx = await assertBranchAccess(wh.branchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const { session, orgId } = ctx;
+  if (wh.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงคลังนี้");
+  const adminErr = await requireCfAdminResult(session);
+  if (adminErr) return err(adminErr);
+
+  // GUARD 1 · ห้ามปิดคลังหลัก (ทุกสาขาต้องมีคลังหลักเสมอ · NULL = main)
+  if (wh.isMain) return err("ปิดคลังหลักไม่ได้ · ตั้งคลังอื่นเป็นคลังหลักก่อน");
+  if (!wh.isActive) return { ok: true, data: { warehouseId } }; // ปิดอยู่แล้ว → no-op
+
+  // GUARD 2 · ห้ามปิดคลังที่ยังมีของค้าง (ต้องโอนออกให้หมดก่อน). ห้องอื่น = strict warehouseId (ไม่รวม NULL).
+  const onhand = await prisma.cfStockMovement.groupBy({
+    by: ["productId"],
+    where: { orgId, branchId: wh.branchId, machineId: null, warehouseId },
+    _sum: { qty: true },
+  });
+  const hasStock = onhand.some((r) => (r._sum.qty ?? 0) !== 0);
+  if (hasStock) return err("คลังนี้ยังมีสินค้าค้างอยู่ · โอนสินค้าออกให้หมดก่อนจึงปิดใช้ได้");
+
+  await prisma.cfWarehouse.update({ where: { id: warehouseId }, data: { isActive: false } });
+  revalidatePath(MANAGE_PATH);
+  revalidatePath(STOCK_PATH);
+  return { ok: true, data: { warehouseId } };
+}
+
+// โอนระหว่างคลัง (in-branch ห้อง→ห้อง · cross-branch → ลงคลังหลักสาขาปลายทาง) → 2 movement ใน 1 tx
+const TransferBetweenWarehousesSchema = z.object({
+  fromBranchId: z.string().uuid("สาขาต้นทางไม่ถูกต้อง"),
+  fromWarehouseId: z.string().uuid("คลังต้นทางไม่ถูกต้อง"),
+  toBranchId: z.string().uuid("สาขาปลายทางไม่ถูกต้อง"),
+  toWarehouseId: z.string().uuid("คลังปลายทางไม่ถูกต้อง").optional(),
+  productId: z.string().uuid(),
+  qty: z.coerce.number().int().positive(),
+  note: z.string().trim().max(300).optional(),
+});
+
+export async function transferBetweenWarehouses(input: unknown): Promise<Result<{ transferCode: string }>> {
+  const parsed = TransferBetweenWarehousesSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { fromBranchId, fromWarehouseId, toBranchId, toWarehouseId, productId, qty, note } = parsed.data;
+
+  // ต้องเข้าถึงได้ทั้งสองสาขา (admin = ผ่านทั้งหมด)
+  try {
+    await assertBranchAccess(fromBranchId);
+    await assertBranchAccess(toBranchId);
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  // role gate — โอนสต๊อก = ย้ายสต๊อกจริง → เฉพาะผู้จัดการสาขา/แอดมิน (mirror transferStock/recordLoss)
+  if (!canWriteOff(session.user.role)) {
+    return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่โอนสต๊อกได้");
+  }
+
+  const product = await prisma.cfProduct.findFirst({
+    where: { id: productId, orgId },
+    select: { id: true, unitCostCents: true },
+  });
+  if (!product) return err("ไม่พบสินค้า");
+
+  const transferCode = newTransferCode();
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // ยืนยันคลังต้นทางอยู่ในสาขาต้นทางจริง
+      const fromWh = await tx.cfWarehouse.findFirst({
+        where: { id: fromWarehouseId, orgId, branchId: fromBranchId },
+        select: { id: true, isMain: true },
+      });
+      if (!fromWh) throw new Error("ไม่พบคลังต้นทางในสาขาต้นทาง");
+
+      // resolve คลังปลายทาง:
+      //   - cross-branch (toBranch ≠ fromBranch) + ไม่ระบุ toWarehouseId → คลังหลักสาขาปลายทาง (CEO rule 4)
+      //   - ไม่งั้นใช้ toWarehouseId ที่ส่งมา (ต้องอยู่ในสาขาปลายทาง)
+      const crossBranch = toBranchId !== fromBranchId;
+      let destWarehouseId: string;
+      if (toWarehouseId) {
+        const toWh = await tx.cfWarehouse.findFirst({
+          where: { id: toWarehouseId, orgId, branchId: toBranchId },
+          select: { id: true },
+        });
+        if (!toWh) throw new Error("ไม่พบคลังปลายทางในสาขาปลายทาง");
+        destWarehouseId = toWh.id;
+      } else if (crossBranch) {
+        const destMain = await ensureBranchMainWarehouseId(tx, orgId, toBranchId, session.user.id);
+        if (!destMain) throw new Error("สาขาปลายทางยังไม่มีคลังหลัก · ตั้งคลังหลักก่อนโอน");
+        destWarehouseId = destMain;
+      } else {
+        throw new Error("โอนภายในสาขาเดียวกันต้องระบุคลังปลายทาง");
+      }
+
+      // in-branch ห้ามโอนคลังเดียวกัน
+      if (!crossBranch && destWarehouseId === fromWh.id) {
+        throw new Error("คลังต้นทางและปลายทางต้องต่างกัน");
+      }
+
+      // resolve main ของแต่ละสาขาเพื่อ NULL-coalesce เวลาอ่าน balance ห้องหลัก
+      const fromMain = fromWh.isMain
+        ? fromWh.id
+        : await getBranchMainWarehouseId(orgId, fromBranchId);
+      const toMain = await getBranchMainWarehouseId(orgId, toBranchId);
+
+      // 🔒 ล็อกต่อ (branch,warehouse,product) — serialize อ่าน balance→เขียน กัน 2 การโอนห้องเดียวกันติดลบ
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${fromBranchId + ":" + fromWarehouseId}), hashtext(${productId}))`;
+
+      const fromBal = await currentBalance(
+        tx, orgId, fromBranchId, productId, fromWarehouseId, fromMain ?? undefined,
+      );
+      if (fromBal < qty) throw new Error(`คลังต้นทางเหลือ ${fromBal} ไม่พอโอน ${qty}`);
+
+      const now = new Date();
+      // TRANSFER_OUT — ห้องต้นทาง (qty−)
+      await tx.cfStockMovement.create({
+        data: {
+          orgId, branchId: fromBranchId, warehouseId: fromWarehouseId, type: "TRANSFER_OUT",
+          productId, qty: -qty, unitCostCents: product.unitCostCents, occurredAt: now,
+          createdById: session.user.id, documentType: "transfer",
+          reason: note || `โอนออกระหว่างคลัง (${transferCode})`,
+        },
+      });
+      // TRANSFER_IN — ห้องปลายทาง (qty+) · ถ้าปลายทางเป็นคลังหลัก stamp id ห้องหลัก (ไม่ทิ้ง null)
+      const destWarehouseStamp = toMain && destWarehouseId === toMain ? toMain : destWarehouseId;
+      await tx.cfStockMovement.create({
+        data: {
+          orgId, branchId: toBranchId, warehouseId: destWarehouseStamp, type: "TRANSFER_IN",
+          productId, qty, unitCostCents: product.unitCostCents, occurredAt: now,
+          createdById: session.user.id, documentType: "transfer",
+          reason: note || `โอนเข้าระหว่างคลัง (${transferCode})`,
+        },
+      });
+      return { transferCode };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(MANAGE_PATH);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/dashboard");
+  return { ok: true, data: result };
+}
+
+// =============================================================
 // 5) เบิก/ตัดจ่าย (withdraw) — ตัดสต๊อกออกแบบมีเหตุผล (ใช้งานภายใน · ไม่ใช่ขาย/หาย)
 // =============================================================
 const WithdrawSchema = z.object({
@@ -1316,6 +1720,10 @@ export async function confirmShipmentReceived(
         return { status: "DELIVERED", alreadyReceived: true };
       }
 
+      // CEO rule 2 · ใบกระจายจ่าหน้าถึงสาขา → ของลง "คลังหลัก" ของสาขาปลายทาง.
+      // resolve/สร้างคลังหลักภายใน tx (atomic) · null ถ้าสร้างไม่ได้จริง (= main ตาม INVARIANT · ไม่ block).
+      const destMainWarehouseId = await ensureBranchMainWarehouseId(tx, orgId, d.branchId, session.user.id);
+
       // 🔒 atomic claim (กัน double-receive · 2 คนกดยืนยันใบเดียวพร้อมกัน):
       // updateMany ที่มีเงื่อนไข status ≠ DELIVERED จะล็อกแถว → คนที่สองรอ แล้ว Postgres re-check
       // WHERE กับค่าใหม่ (DELIVERED) = match 0 แถว → count=0 → no-op ไม่เขียน movement ซ้ำ.
@@ -1403,11 +1811,15 @@ export async function confirmShipmentReceived(
         }
         await tx.cfProduct.update({ where: { id: a.id }, data: productUpdate });
 
-        const oldBal = await currentBalance(tx, orgId, d.branchId, a.id);
+        const oldBal =
+          destMainWarehouseId != null
+            ? await currentBalance(tx, orgId, d.branchId, a.id, destMainWarehouseId, destMainWarehouseId)
+            : await currentBalance(tx, orgId, d.branchId, a.id);
         await tx.cfStockMovement.create({
           data: {
             orgId,
             branchId: d.branchId,
+            warehouseId: destMainWarehouseId, // CEO rule 2 · ของลงคลังหลักสาขาปลายทาง (null = main)
             type: "RECEIPT_IN",
             productId: a.id,
             qty: a.qty,

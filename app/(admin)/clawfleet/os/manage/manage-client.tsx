@@ -14,7 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Store, Cpu, Plus, Pencil, Trash2, Truck, PackageOpen, ChevronRight, Search,
-  AlertTriangle, PowerOff, History, Boxes, ArrowRight, Package,
+  AlertTriangle, PowerOff, History, Boxes, ArrowRight, Package, Warehouse, Star, Send,
 } from "lucide-react";
 import { Card, Modal, Pill, IconBox, Kpi, EmptyState } from "@/components/clawfleet/os/kit";
 import { baht, bahtN, num, type Tone } from "@/components/clawfleet/os/format";
@@ -22,6 +22,9 @@ import {
   createBranch, renameBranch, deleteBranch,
   createCfMachine, renameCfMachine, retireCfMachine, reassignCfMachineBranch,
 } from "@/lib/clawfleet/actions";
+import {
+  createWarehouse, renameWarehouse, setMainWarehouse, deactivateWarehouse, transferBetweenWarehouses,
+} from "@/lib/clawfleet/stock-actions";
 import { loadMachineDetail } from "./manage-detail-action";
 import type { MachineDetailData } from "@/lib/clawfleet/manage-queries";
 
@@ -53,6 +56,9 @@ export type ManageBranchVM = {
 };
 export type MachineOption = { id: string; code: string; nickname: string | null; branchId: string; branchName: string; isActive: boolean };
 export type BranchOption = { id: string; name: string; code: string };
+// คลังหลายห้องต่อสาขา (warehouse) + สินค้าต่อสาขา (สำหรับ modal โอนของ)
+export type WarehouseVM = { id: string; name: string; isMain: boolean; isActive: boolean };
+export type TransferProductVM = { id: string; name: string; onHand: number };
 
 /* ───────────────────────── shared field styles (ตรงกับ branches-client) ───────────────────────── */
 const FIELD: React.CSSProperties = { width: "100%", fontSize: 13, padding: "10px 12px", borderRadius: 10, border: "1px solid #E3E6EA", background: "#fff", color: "#1A1D21", outline: "none" };
@@ -92,10 +98,14 @@ export function ManageClient({
   branches,
   machineOptions,
   branchOptions,
+  warehousesByBranch,
+  productsByBranch,
 }: {
   branches: ManageBranchVM[];
   machineOptions: MachineOption[];
   branchOptions: BranchOption[];
+  warehousesByBranch: Record<string, WarehouseVM[]>;
+  productsByBranch: Record<string, TransferProductVM[]>;
 }) {
   const router = useRouter();
   const isEmpty = branches.length === 0;
@@ -110,10 +120,28 @@ export function ManageClient({
     | { t: "editMachine"; m: ManageMachineVM }
     | { t: "reassignMachine"; m: ManageMachineVM }
     | { t: "retireMachine"; m: ManageMachineVM }
-    | { t: "detail"; m: ManageMachineVM; branchName: string };
+    | { t: "detail"; m: ManageMachineVM; branchName: string }
+    // ── คลังหลายห้อง (warehouse) ──
+    | { t: "whCreate"; branchId: string; branchName: string }
+    | { t: "whRename"; id: string; current: string; branchName: string }
+    | { t: "whDeactivate"; id: string; name: string; branchName: string }
+    | { t: "whTransfer"; branchId: string; branchName: string };
   const [modal, setModal] = useState<ModalState>({ t: "none" });
   const close = () => setModal({ t: "none" });
   const refresh = () => router.refresh();
+
+  // ── ตั้งคลังหลัก (inline · ไม่ต้อง modal) — mirror useTransition + router.refresh ──
+  const [settingMainId, setSettingMainId] = useState<string | null>(null);
+  const [, startSetMain] = useTransition();
+  function onSetMain(warehouseId: string) {
+    setSettingMainId(warehouseId);
+    startSetMain(async () => {
+      const res = await setMainWarehouse({ warehouseId });
+      setSettingMainId(null);
+      if (res.ok) router.refresh();
+      // ถ้า error (เช่นคลังถูกปิดใช้) — เงียบ ๆ ไม่ให้ล้ม; แถวยังเดิม (การกดตั้งหลักบนห้อง active ปกติผ่านเสมอ)
+    });
+  }
 
   // flatten machines (+ ชื่อสาขา) สำหรับ ตู้ section
   const allMachines = useMemo(
@@ -269,7 +297,7 @@ export function ManageClient({
 
           {/* ══════════ คลังประจำสาขา ══════════ */}
           <div style={{ marginTop: 18 }}>
-            <Card title="คลังประจำสาขา" sub="คลังกลางของแต่ละสาขา — มูลค่าคงเหลือ · จำนวนสินค้า · ใกล้หมด (คลังห้องที่ 2 เป็นเฟสถัดไป)" pad={false}>
+            <Card title="คลังประจำสาขา" sub="คลังกลางของแต่ละสาขา — มูลค่าคงเหลือ · จำนวนสินค้า · ใกล้หมด" pad={false}>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                 {branches.map((b) => {
                   const s = b.stock;
@@ -298,6 +326,31 @@ export function ManageClient({
               </div>
             </Card>
           </div>
+
+          {/* ══════════ จัดการคลัง (หลายห้อง) ══════════ */}
+          <div style={{ marginTop: 18 }}>
+            <Card
+              title="จัดการคลัง (หลายห้อง)"
+              sub="แต่ละสาขามีได้หลายห้องเก็บของ · ⭐ คลังหลัก = ห้องรับของเข้าค่าเริ่มต้น · โอนของข้ามห้อง/ข้ามสาขาได้"
+              pad={false}
+            >
+              <div>
+                {branches.map((b) => (
+                  <BranchWarehousePanel
+                    key={b.id}
+                    branch={b}
+                    warehouses={warehousesByBranch[b.id] ?? []}
+                    onCreate={() => setModal({ t: "whCreate", branchId: b.id, branchName: b.name })}
+                    onRename={(w) => setModal({ t: "whRename", id: w.id, current: w.name, branchName: b.name })}
+                    onDeactivate={(w) => setModal({ t: "whDeactivate", id: w.id, name: w.name, branchName: b.name })}
+                    onSetMain={(w) => onSetMain(w.id)}
+                    onTransfer={() => setModal({ t: "whTransfer", branchId: b.id, branchName: b.name })}
+                    settingMainId={settingMainId}
+                  />
+                ))}
+              </div>
+            </Card>
+          </div>
         </>
       )}
 
@@ -310,6 +363,21 @@ export function ManageClient({
       {modal.t === "reassignMachine" && <ReassignMachineModal m={modal.m} branchOptions={branchOptions} onClose={close} onDone={refresh} />}
       {modal.t === "retireMachine" && <RetireMachineModal m={modal.m} onClose={close} onDone={refresh} />}
       {modal.t === "detail" && <MachineDetailPanel m={modal.m} branchName={modal.branchName} onClose={close} />}
+      {/* ── warehouse modals ── */}
+      {modal.t === "whCreate" && <CreateWarehouseModal branchId={modal.branchId} branchName={modal.branchName} onClose={close} onDone={refresh} />}
+      {modal.t === "whRename" && <RenameWarehouseModal id={modal.id} current={modal.current} branchName={modal.branchName} onClose={close} onDone={refresh} />}
+      {modal.t === "whDeactivate" && <DeactivateWarehouseModal id={modal.id} name={modal.name} branchName={modal.branchName} onClose={close} onDone={refresh} />}
+      {modal.t === "whTransfer" && (
+        <TransferWarehouseModal
+          fromBranchId={modal.branchId}
+          fromBranchName={modal.branchName}
+          branches={branches}
+          warehousesByBranch={warehousesByBranch}
+          products={productsByBranch[modal.branchId] ?? []}
+          onClose={close}
+          onDone={refresh}
+        />
+      )}
     </div>
   );
 }
@@ -321,6 +389,78 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
       <Search size={14} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9AA1AB" }} />
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         style={{ ...FIELD, padding: "8px 12px 8px 32px", fontSize: 12.5 }} />
+    </div>
+  );
+}
+
+/* ═══════════════════════ warehouse panel (per-branch · หลายห้อง) ═══════════════════════ */
+function BranchWarehousePanel({
+  branch, warehouses, onCreate, onRename, onDeactivate, onSetMain, onTransfer, settingMainId,
+}: {
+  branch: ManageBranchVM;
+  warehouses: WarehouseVM[];
+  onCreate: () => void;
+  onRename: (w: WarehouseVM) => void;
+  onDeactivate: (w: WarehouseVM) => void;
+  onSetMain: (w: WarehouseVM) => void;
+  onTransfer: () => void;
+  settingMainId: string | null;
+}) {
+  const activeWarehouses = warehouses.filter((w) => w.isActive);
+  return (
+    <div style={{ padding: "14px 20px", borderBottom: "1px solid #F4F5F7" }}>
+      {/* หัวแถวสาขา + ปุ่มเพิ่มคลัง/โอนของ */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: warehouses.length > 0 ? 11 : 0 }}>
+        <IconBox tone="neutral" size={38} radius={10} bg="#EEF0FE" color={BRAND}><Warehouse size={17} /></IconBox>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700 }}>{branch.name} <span style={{ fontSize: 11.5, fontWeight: 500, color: "#9AA1AB" }}>({branch.code})</span></div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 1 }}>
+            <span className="num">{activeWarehouses.length}</span> ห้องที่ใช้งาน{warehouses.length > activeWarehouses.length ? <> · <span className="num">{num(warehouses.length - activeWarehouses.length)}</span> ปิดใช้</> : ""}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <GhostBtn onClick={onTransfer}><Send size={13} /> โอนของ</GhostBtn>
+          <PrimaryBtn onClick={onCreate}><Plus size={14} /> เพิ่มคลัง</PrimaryBtn>
+        </div>
+      </div>
+
+      {/* รายการห้องในสาขานี้ */}
+      {warehouses.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#9AA1AB", background: "#F8F9FB", borderRadius: 9, padding: "10px 13px" }}>
+          ยังไม่มีคลังในสาขานี้ — กด “เพิ่มคลัง” เพื่อสร้างห้องเก็บของ (ห้องแรกจะเป็นคลังหลักอัตโนมัติ)
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {warehouses.map((w) => {
+            const inactive = !w.isActive;
+            return (
+              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8F9FB", borderRadius: 10, padding: "9px 12px", flexWrap: "wrap", opacity: inactive ? 0.65 : 1 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, flex: "0 0 26px", borderRadius: 7, background: w.isMain ? "#FEF6E0" : "#EEF0F3", color: w.isMain ? "#B7791F" : "#9AA1AB" }}>
+                  {w.isMain ? <Star size={13} fill="#F0B429" color="#F0B429" /> : <PackageOpen size={13} />}
+                </span>
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    {w.name}
+                    {w.isMain && <Pill tone="amber">⭐ คลังหลัก</Pill>}
+                    {inactive && <Pill tone="neutral">ปิดใช้</Pill>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                  <GhostBtn onClick={() => onRename(w)}><Pencil size={12} /> แก้ชื่อ</GhostBtn>
+                  {!w.isMain && w.isActive && (
+                    <GhostBtn onClick={() => onSetMain(w)} disabled={settingMainId === w.id}>
+                      <Star size={12} /> {settingMainId === w.id ? "กำลังตั้ง…" : "ตั้งเป็นคลังหลัก"}
+                    </GhostBtn>
+                  )}
+                  {!w.isMain && w.isActive && (
+                    <GhostBtn tone="danger" onClick={() => onDeactivate(w)}><PowerOff size={12} /> ปิดใช้</GhostBtn>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -716,4 +856,207 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 function Muted({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 12.5, color: "#9AA1AB" }}>{children}</div>;
+}
+
+/* ═══════════════════════ warehouse modals ═══════════════════════ */
+
+/* ── เพิ่มคลัง ── */
+function CreateWarehouseModal({ branchId, branchName, onClose, onDone }: { branchId: string; branchName: string; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  function submit() {
+    setErr(null);
+    if (!name.trim()) return setErr("ใส่ชื่อคลัง");
+    start(async () => {
+      const res = await createWarehouse({ branchId, name: name.trim() });
+      if (!res.ok) return setErr(res.error);
+      onClose(); onDone();
+    });
+  }
+  return (
+    <Modal open onClose={() => !pending && onClose()} width={470} title="เพิ่มคลัง (ห้องเก็บของ)" sub={`สาขา ${branchName}`}
+      footer={<ModalFooter onSubmit={submit} onCancel={() => !pending && onClose()} pending={pending} submitLabel="เพิ่มคลัง" />}>
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div><label style={LABEL}>ชื่อคลัง</label><input autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(null); }} placeholder="เช่น ห้องหลังร้าน · ตู้เย็น · ชั้น 2" style={FIELD} /></div>
+        <div style={{ fontSize: 11.5, color: "#6B7280", background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+          คลังหลัก (⭐) มีได้ห้องเดียวต่อสาขา · ห้องใหม่จะเป็นห้องธรรมดา ต้องกด “ตั้งเป็นคลังหลัก” ถ้าอยากให้เป็นห้องรับของเข้าค่าเริ่มต้น
+        </div>
+        {err && <ErrBox msg={err} />}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── แก้ชื่อคลัง ── */
+function RenameWarehouseModal({ id, current, branchName, onClose, onDone }: { id: string; current: string; branchName: string; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState(current);
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  function submit() {
+    setErr(null);
+    if (!name.trim()) return setErr("ใส่ชื่อคลัง");
+    start(async () => {
+      const res = await renameWarehouse({ warehouseId: id, name: name.trim() });
+      if (!res.ok) return setErr(res.error);
+      onClose(); onDone();
+    });
+  }
+  return (
+    <Modal open onClose={() => !pending && onClose()} width={470} title="แก้ชื่อคลัง" sub={`สาขา ${branchName} · เดิม: ${current}`}
+      footer={<ModalFooter onSubmit={submit} onCancel={() => !pending && onClose()} pending={pending} submitLabel="บันทึก" />}>
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div><label style={LABEL}>ชื่อคลัง</label><input autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(null); }} style={FIELD} /></div>
+        {err && <ErrBox msg={err} />}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── ปิดใช้คลัง (destructive confirm · surface server guard error) ── */
+function DeactivateWarehouseModal({ id, name, branchName, onClose, onDone }: { id: string; name: string; branchName: string; onClose: () => void; onDone: () => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  function submit() {
+    setErr(null);
+    start(async () => {
+      // server กันเอง: ปิดคลังหลักไม่ได้ · ปิดคลังที่ยังมีของค้างไม่ได้ (ต้องโอนออกก่อน) → แสดง error ตรง ๆ
+      const res = await deactivateWarehouse({ warehouseId: id });
+      if (!res.ok) return setErr(res.error);
+      onClose(); onDone();
+    });
+  }
+  return (
+    <Modal open onClose={() => !pending && onClose()} width={460} title="ปิดใช้คลัง" sub={`สาขา ${branchName} · ${name}`}
+      footer={<ModalFooter onSubmit={submit} onCancel={() => !pending && onClose()} pending={pending} submitLabel="ยืนยันปิดใช้คลัง" danger />}>
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 12.5, color: "#6B7280", background: "#F8F9FB", borderRadius: 9, padding: "11px 13px" }}>
+          ปิดใช้ = ห้องนี้จะไม่ขึ้นให้เลือกตอนรับของ/นับสต๊อก/เติมตู้อีก แต่ประวัติเดิมยังอยู่ครบ · ปิดได้เฉพาะห้องที่ <b>ไม่ใช่คลังหลัก</b> และ <b>ไม่มีของค้าง</b> (โอนออกให้หมดก่อน)
+        </div>
+        {err && <ErrBox msg={err} />}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── โอนของระหว่างคลัง (ในสาขา ห้อง→ห้อง · ข้ามสาขา → คลังหลักปลายทางอัตโนมัติ) ── */
+function TransferWarehouseModal({
+  fromBranchId, fromBranchName, branches, warehousesByBranch, products, onClose, onDone,
+}: {
+  fromBranchId: string;
+  fromBranchName: string;
+  branches: ManageBranchVM[];
+  warehousesByBranch: Record<string, WarehouseVM[]>;
+  products: TransferProductVM[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const fromWarehouses = (warehousesByBranch[fromBranchId] ?? []).filter((w) => w.isActive);
+  const [productId, setProductId] = useState("");
+  const [qty, setQty] = useState("");
+  const [fromWarehouseId, setFromWarehouseId] = useState(fromWarehouses.find((w) => w.isMain)?.id ?? fromWarehouses[0]?.id ?? "");
+  // ปลายทาง: "same" = ห้องอื่นในสาขาเดียวกัน · "cross" = สาขาอื่น (เข้าคลังหลักปลายทางอัตโนมัติ)
+  const [destMode, setDestMode] = useState<"same" | "cross">("same");
+  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [toBranchId, setToBranchId] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  // ห้องปลายทางในสาขาเดียวกัน (ตัดห้องต้นทางออก · เฉพาะ active)
+  const sameBranchDestOptions = fromWarehouses.filter((w) => w.id !== fromWarehouseId);
+  // สาขาอื่น (ตัดสาขาต้นทางออก)
+  const otherBranches = branches.filter((b) => b.id !== fromBranchId);
+  const selectedProduct = products.find((p) => p.id === productId);
+
+  function submit() {
+    setErr(null);
+    if (!productId) return setErr("เลือกสินค้าที่จะโอน");
+    const q = Number(qty);
+    if (!Number.isFinite(q) || q <= 0) return setErr("ใส่จำนวนที่จะโอน (มากกว่า 0)");
+    if (!fromWarehouseId) return setErr("เลือกคลังต้นทาง");
+    if (destMode === "same") {
+      if (!toWarehouseId) return setErr("เลือกคลังปลายทาง");
+      if (toWarehouseId === fromWarehouseId) return setErr("คลังต้นทางและปลายทางต้องต่างกัน");
+    } else {
+      if (!toBranchId) return setErr("เลือกสาขาปลายทาง");
+    }
+    start(async () => {
+      const res = await transferBetweenWarehouses({
+        fromBranchId,
+        fromWarehouseId,
+        toBranchId: destMode === "same" ? fromBranchId : toBranchId,
+        // ข้ามสาขา → ไม่ส่ง toWarehouseId → server เข้าคลังหลักสาขาปลายทางอัตโนมัติ
+        toWarehouseId: destMode === "same" ? toWarehouseId : undefined,
+        productId,
+        qty: q,
+        note: note.trim() || undefined,
+      });
+      if (!res.ok) return setErr(res.error);
+      onClose(); onDone();
+    });
+  }
+
+  return (
+    <Modal open onClose={() => !pending && onClose()} width={520} title="โอนของระหว่างคลัง" sub={`ต้นทาง: สาขา ${fromBranchName}`}
+      footer={<ModalFooter onSubmit={submit} onCancel={() => !pending && onClose()} pending={pending} submitLabel="ยืนยันโอน" />}>
+      <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* สินค้า */}
+        <div>
+          <label style={LABEL}>สินค้า</label>
+          {products.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#9AA1AB", background: "#F8F9FB", borderRadius: 9, padding: "10px 12px" }}>สาขานี้ยังไม่มีสินค้าในคลังให้โอน</div>
+          ) : (
+            <select autoFocus value={productId} onChange={(e) => { setProductId(e.target.value); setErr(null); }} style={FIELD}>
+              <option value="">— เลือกสินค้า —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name} (คงเหลือสาขา {p.onHand})</option>)}
+            </select>
+          )}
+        </div>
+        {/* จำนวน */}
+        <div>
+          <label style={LABEL}>จำนวนที่โอน{selectedProduct ? ` (คงเหลือสาขา ${selectedProduct.onHand})` : ""}</label>
+          <input inputMode="numeric" value={qty} onChange={(e) => { setQty(e.target.value.replace(/[^0-9]/g, "")); setErr(null); }} placeholder="เช่น 10" style={FIELD} />
+        </div>
+        {/* คลังต้นทาง */}
+        <div>
+          <label style={LABEL}>คลังต้นทาง (ในสาขา {fromBranchName})</label>
+          <select value={fromWarehouseId} onChange={(e) => { setFromWarehouseId(e.target.value); setErr(null); }} style={FIELD}>
+            {fromWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.isMain ? " ⭐" : ""}</option>)}
+          </select>
+        </div>
+        {/* ปลายทาง: toggle ห้องในสาขา / สาขาอื่น */}
+        <div>
+          <label style={LABEL}>โอนไปที่</label>
+          <div style={{ display: "flex", gap: 9, marginBottom: 10 }}>
+            {([["same", "ห้องอื่นในสาขานี้"], ["cross", "ไปสาขาอื่น"]] as const).map(([mode, label]) => (
+              <button key={mode} type="button" onClick={() => { setDestMode(mode); setErr(null); }}
+                style={{ flex: 1, cursor: "pointer", padding: "9px 0", borderRadius: 10, fontSize: 12.5, fontWeight: 700, border: `1.5px solid ${destMode === mode ? BRAND : "#E3E6EA"}`, background: destMode === mode ? "#EEF0FE" : "#fff", color: destMode === mode ? BRAND : "#6B7280" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {destMode === "same" ? (
+            <select value={toWarehouseId} onChange={(e) => { setToWarehouseId(e.target.value); setErr(null); }} style={FIELD}>
+              <option value="">— เลือกคลังปลายทาง —</option>
+              {sameBranchDestOptions.map((w) => <option key={w.id} value={w.id}>{w.name}{w.isMain ? " ⭐" : ""}</option>)}
+            </select>
+          ) : (
+            <>
+              <select value={toBranchId} onChange={(e) => { setToBranchId(e.target.value); setErr(null); }} style={FIELD}>
+                <option value="">— เลือกสาขาปลายทาง —</option>
+                {otherBranches.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+              </select>
+              {/* ปลายทางข้ามสาขา = คลังหลักอัตโนมัติ (disabled hint) */}
+              <input disabled value="เข้าคลังหลักของสาขาปลายทางอัตโนมัติ"
+                style={{ ...FIELD, marginTop: 8, background: "#F8F9FB", color: "#9AA1AB", cursor: "not-allowed" }} />
+            </>
+          )}
+        </div>
+        {/* หมายเหตุ */}
+        <div><label style={LABEL}>หมายเหตุ (ไม่บังคับ)</label><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น เกลี่ยของหน้าเทศกาล" style={FIELD} /></div>
+        {err && <ErrBox msg={err} />}
+      </div>
+    </Modal>
+  );
 }

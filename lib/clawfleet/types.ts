@@ -198,6 +198,10 @@ export const SubmitBranchEventSchema = z
     refillQty: z.number().int().min(0).default(0), // เติมจากคลังสาขา
     stockAfter: z.number().int().min(0), // ตุ๊กตาในตู้ หลังเติม (นับจริง)
     refillProductId: zUUID().optional(), // SKU ที่เติม (ตัดสต๊อกสาขา)
+    // bigfeature (E3) — คลัง (ห้อง) ที่หยิบตุ๊กตาไปเติม. ละไว้ = คลังหลัก (main).
+    // over-issue guard + LOAD_TO_MACHINE ต้อง scope ตามห้องนี้ (ไม่ใช่ยอดรวมทั้งสาขา) —
+    // ไม่งั้นห้องที่เลือกติดลบได้ทั้งที่อีกห้องมีของ.
+    warehouseId: z.string().uuid().optional(),
     // 5 รูป (R2 URLs) — OPTIONAL (CEO 2026-06-29 "ถ่ายได้-ข้ามได้"):
     // ถ่าย = อัป R2 จริงเป็นหลักฐานกันโกง · ข้าม = ส่งค่าว่าง/ไม่ส่ง (ไม่บล็อก submit)
     photoCoinMeterUrl: z.union([z.string().url(), z.literal("")]).optional(), // → photoMeterAfterUrl

@@ -10,7 +10,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries } from "@/lib/clawfleet/stock-queries";
+import { getCfBranchStockProducts, getInboundDeliveries, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -155,8 +155,8 @@ export default async function StaffAppPage() {
   // กรอง route เหลือ "ตู้ของฉัน" ถ้ามีการมอบหมาย (ไม่งั้นแสดงทุกตู้ในสาขาเหมือนเดิม)
   const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
 
-  // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker)
-  const { awaitingSetupIds, branchProducts, inboundByBranch } = await loadBigfeatureData(orgId, routeBranches);
+  // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker · WAVE-3b คลัง)
+  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
   return (
     <StaffAppClient
@@ -172,6 +172,7 @@ export default async function StaffAppPage() {
       awaitingSetupIds={awaitingSetupIds}
       branchProducts={branchProducts}
       inboundByBranch={inboundByBranch}
+      warehousesByBranch={warehousesByBranch}
     />
   );
 }
@@ -190,13 +191,16 @@ async function loadBigfeatureData(
   awaitingSetupIds: string[];
   branchProducts: Record<string, BranchStockProduct[]>;
   inboundByBranch: Record<string, InboundDelivery[]>;
+  // WAVE-3b · คลัง active ต่อสาขา (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
+  warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>>;
 }> {
   const branchIds = branches.map((b) => b.id);
   let awaitingSetupIds: string[] = [];
   const branchProducts: Record<string, BranchStockProduct[]> = {};
   const inboundByBranch: Record<string, InboundDelivery[]> = {};
+  const warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>> = {};
 
-  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch };
+  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
 
   try {
     const awaiting = await getAwaitingSetupMachines();
@@ -217,6 +221,16 @@ async function loadBigfeatureData(
         }));
       } catch {
         branchProducts[bid] = [];
+      }
+      try {
+        // WAVE-3b · คลัง active ของสาขา (main มาก่อน · getCfWarehousesForBranch sort isMain desc แล้ว)
+        // → ตัด id/name/isMain ให้ client ตัดสิน picker (>1 ห้อง = โชว์). graceful: ยังไม่ migrate → [].
+        const whs = await getCfWarehousesForBranch(orgId, bid);
+        warehousesByBranch[bid] = whs
+          .filter((w) => w.isActive)
+          .map((w) => ({ id: w.id, name: w.name, isMain: w.isMain }));
+      } catch {
+        warehousesByBranch[bid] = [];
       }
       try {
         const inbound = await getInboundDeliveries(bid);
@@ -250,5 +264,5 @@ async function loadBigfeatureData(
     }),
   );
 
-  return { awaitingSetupIds, branchProducts, inboundByBranch };
+  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
 }

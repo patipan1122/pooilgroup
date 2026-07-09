@@ -19,10 +19,98 @@ export type CfStockProductRow = {
 
 const CF_REORDER_LEVEL = 8; // ClawFleet ไม่มี reorderLevel ต่อ product → ใช้เกณฑ์รวม
 
-/** สต๊อกรายสินค้าในสาขา — แยก warehouse (ไม่ใช่ในตู้) กับ inMachines (machineId != null) */
+// =============================================================
+// Warehouse (คลังหลายห้องต่อสาขา) — bigfeature 2026-07-09
+//   SAFETY INVARIANT: warehouseId = null → คลังหลัก (main) ของสาขา.
+//   ทุก call site เดิมที่ "ไม่ส่ง warehouseId" ต้องได้ WHERE เดิมเป๊ะ (aggregate ทุกห้อง = ยอดสาขาเดิม)
+//   → zero regression. เฉพาะการอ่านต่อห้อง (per-warehouse) เท่านั้นที่ filter ตามห้อง.
+//   ห้องหลัก (main) → รวมแถว legacy NULL ด้วย (OR warehouse_id IS NULL). ห้องอื่น → เท่ากับ id ตรง ๆ (ไม่รวม NULL).
+// =============================================================
+
+/**
+ * คืน Prisma where-fragment สำหรับ scope ตามห้อง (warehouse):
+ *   - warehouseId undefined → {} (aggregate ทุกห้อง = พฤติกรรมเดิม · branch total ไม่เปลี่ยน)
+ *   - warehouseId === main   → { OR:[{warehouseId:main},{warehouseId:null}] } (แถว legacy NULL = ของห้องหลัก)
+ *   - warehouseId อื่น       → { warehouseId } (strict · ไม่รวม NULL)
+ * ⚠️ เมื่อจะ scope ห้องหลักต้องส่ง mainWarehouseId มาด้วย ไม่งั้นจะ treat เป็นห้องอื่น (strict).
+ */
+function warehouseWhere(
+  warehouseId?: string,
+  mainWarehouseId?: string,
+): Record<string, unknown> {
+  if (warehouseId === undefined) return {};
+  if (mainWarehouseId && warehouseId === mainWarehouseId) {
+    return { OR: [{ warehouseId }, { warehouseId: null }] };
+  }
+  return { warehouseId };
+}
+
+export type CfWarehouseRow = {
+  id: string;
+  name: string;
+  isMain: boolean;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+/** รายชื่อคลัง (ห้องเก็บ) ของสาขา — รวมทั้ง active + inactive · คลังหลัก (main) มาก่อนเสมอ */
+export async function getCfWarehousesForBranch(
+  orgId: string,
+  branchId: string,
+): Promise<CfWarehouseRow[]> {
+  const rows = await prisma.cfWarehouse.findMany({
+    where: { orgId, branchId },
+    orderBy: [{ isMain: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, isMain: true, isActive: true, sortOrder: true },
+  });
+  return rows;
+}
+
+/** id ของคลังหลัก (isMain) ของสาขา — null ถ้าสาขายังไม่มีคลังหลัก (แถว movement เก่ายังนับเป็น main ผ่าน NULL) */
+export async function getBranchMainWarehouseId(
+  orgId: string,
+  branchId: string,
+): Promise<string | null> {
+  const main = await prisma.cfWarehouse.findFirst({
+    where: { orgId, branchId, isMain: true },
+    select: { id: true },
+  });
+  return main?.id ?? null;
+}
+
+/**
+ * ยอด "ระบบมี" ต่อสินค้า เฉพาะห้อง (warehouse) ที่เลือก — สำหรับฟอร์มนับสต๊อกเมื่อเลือกห้อง.
+ * ห้องหลัก (main) → รวมแถว legacy NULL ด้วย. ห้องอื่น → เฉพาะแถวห้องนั้น. คงเงื่อนไข machineId:null (คลังสาขา ไม่รวมในตู้).
+ */
+export async function getCfBranchOnHandMapByWarehouse(
+  orgId: string,
+  branchId: string,
+  warehouseId: string,
+  mainWarehouseId?: string,
+): Promise<Record<string, number>> {
+  const moves = await prisma.cfStockMovement.groupBy({
+    by: ["productId"],
+    where: {
+      orgId,
+      branchId,
+      machineId: null,
+      ...warehouseWhere(warehouseId, mainWarehouseId),
+    },
+    _sum: { qty: true },
+  });
+  const out: Record<string, number> = {};
+  for (const m of moves) out[m.productId] = m._sum.qty ?? 0;
+  return out;
+}
+
+/** สต๊อกรายสินค้าในสาขา — แยก warehouse (ไม่ใช่ในตู้) กับ inMachines (machineId != null)
+ *  warehouseId (optional) — ละไว้ = รวมทุกห้อง (ยอดสาขาเดิม · พฤติกรรมเดิม) · ระบุ = เฉพาะห้องนั้น
+ *  (ห้องหลักต้องส่ง mainWarehouseId ด้วยเพื่อรวมแถว legacy NULL). inMachines ยังคิดทั้งสาขา (ไม่ผูกห้องใน v1). */
 export async function getCfBranchStockProducts(
   orgId: string,
   branchId: string,
+  warehouseId?: string,
+  mainWarehouseId?: string,
 ): Promise<CfStockProductRow[]> {
   const products = await prisma.cfProduct.findMany({
     where: { orgId, isActive: true },
@@ -32,9 +120,10 @@ export async function getCfBranchStockProducts(
   if (products.length === 0) return [];
 
   // ผลรวม qty ต่อ product — แยกเป็น "ในตู้" (machineId != null) กับ "คลังสาขา" (machineId null)
+  // warehouseId ละไว้ → warehouseWhere คืน {} → WHERE เดิมเป๊ะ (รวมทุกห้อง = ยอดสาขาเดิม · zero regression)
   const moves = await prisma.cfStockMovement.groupBy({
     by: ["productId"],
-    where: { orgId, branchId, machineId: null },
+    where: { orgId, branchId, machineId: null, ...warehouseWhere(warehouseId, mainWarehouseId) },
     _sum: { qty: true },
   });
   const inMachineMoves = await prisma.cfStockMovement.groupBy({
@@ -274,10 +363,13 @@ export async function getCfStockOverview(
 export async function getCfBranchOnHandMap(
   orgId: string,
   branchId: string,
+  warehouseId?: string,
+  mainWarehouseId?: string,
 ): Promise<Record<string, number>> {
+  // warehouseId ละไว้ → warehouseWhere คืน {} → WHERE เดิมเป๊ะ (รวมทุกห้อง · พฤติกรรมเดิม · zero regression)
   const moves = await prisma.cfStockMovement.groupBy({
     by: ["productId"],
-    where: { orgId, branchId, machineId: null },
+    where: { orgId, branchId, machineId: null, ...warehouseWhere(warehouseId, mainWarehouseId) },
     _sum: { qty: true },
   });
   const out: Record<string, number> = {};

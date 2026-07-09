@@ -61,6 +61,9 @@ export type InboundDelivery = {
   unitsCount: number;
   lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number }>;
 };
+// WAVE-3b · คลัง (ห้องเก็บ) ของสาขา ที่ยัง active — ขับ picker เติม (R4) + นับสต๊อก (N3).
+// picker โชว์เฉพาะเมื่อสาขามี >1 ห้อง (single-warehouse = ไม่มี picker · default คลังหลักเหมือนเดิม).
+export type BranchWarehouse = { id: string; name: string; isMain: boolean };
 
 // N3 · client idempotency key (crypto.randomUUID เมื่อมี · fallback timestamp+rand)
 function genClientKey(): string {
@@ -79,6 +82,8 @@ type SubmitBranchEventArgs = {
   refillQty: number;
   stockAfter: number;
   refillProductId?: string;
+  // WAVE-3b · R4 · ห้องที่หยิบของมาเติม (null/undefined = คลังหลัก ตาม INVARIANT). ส่งเฉพาะสาขา >1 ห้อง.
+  warehouseId?: string;
   photoCoinMeterUrl: string;
   photoPrizeMeterUrl: string;
   photoStockBeforeUrl: string;
@@ -196,6 +201,9 @@ type Form = {
   // R4 · productId ที่เลือกจาก BranchStockPicker (คลังสาขาจริง · UUID) — null = ยังไม่เลือก/ใช้ dropdown เดิม.
   // ส่งเข้า submitBranchEvent.refillProductId (server ตัดสต๊อก + upsert loadout). demo = null.
   refillProductId: string | null;
+  // WAVE-3b · R4 · ห้อง (warehouse) ที่หยิบของมาเติม — null = คลังหลัก (default · เมื่อสาขามี ≤1 ห้อง จะเป็น null เสมอ).
+  // ส่งเข้า submitBranchEvent.warehouseId (server ตัดสต๊อกจากห้องที่เลือก). picker โผล่เฉพาะสาขา >1 ห้อง.
+  refillWarehouseId: string | null;
   category: string;
   price: Counted; // ราคาขาย (กรอกเอง)
   // meters
@@ -280,6 +288,7 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     refill: demo ? 5 : null,
     product,
     refillProductId: null,
+    refillWarehouseId: null, // WAVE-3b · null = คลังหลัก (default) · ตั้งค่าเมื่อสาขา >1 ห้อง + ผู้ใช้เลือก
     category: "ลิขสิทธิ์",
     price: demo ? 250 : null,
     dollPrev: m.lastDollMeter,
@@ -408,9 +417,12 @@ type Props = {
   branchProducts?: Record<string, BranchStockProduct[]>;
   // N6 · ใบกระจายขาเข้าที่ยังไม่รับ แยกตาม branchId (หน้ารับสินค้า). optional default {}.
   inboundByBranch?: Record<string, InboundDelivery[]>;
+  // WAVE-3b · คลัง (ห้องเก็บ) active แยกตาม branchId — picker เติม (R4) + นับสต๊อก (N3).
+  // สาขาที่มี >1 ห้อง → โชว์ picker · ≤1 ห้อง → ไม่โชว์ (default คลังหลัก). optional default {}.
+  warehousesByBranch?: Record<string, BranchWarehouse[]>;
 };
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {} }: Props) {
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
   const realMachines = useMemo(() => flattenReal(branches, awaitingSet), [branches, awaitingSet]);
   const usingDemo = realMachines.length === 0;
@@ -423,10 +435,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} />
   );
 
   return (
@@ -506,12 +518,14 @@ type StaffAppProps = {
   branchProducts: Record<string, BranchStockProduct[]>;
   // N6 · ใบกระจายขาเข้าที่ยังไม่รับ แยกตาม branchId
   inboundByBranch: Record<string, InboundDelivery[]>;
+  // WAVE-3b · คลัง active แยกตาม branchId (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
+  warehousesByBranch: Record<string, BranchWarehouse[]>;
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets, assignedOnly, branchProducts, inboundByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -561,6 +575,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const activeBranchProducts = useMemo(
     () => (machine ? branchProducts[machine.branchId] ?? [] : []),
     [branchProducts, machine],
+  );
+  // WAVE-3b · R4 · คลัง (ห้อง) active ของสาขาตู้ที่กำลังเก็บ — ขับ picker "เติมจากคลัง".
+  // picker โผล่เฉพาะเมื่อ >1 ห้อง (single-warehouse = ไม่มี picker · default คลังหลักเหมือนเดิม).
+  const activeBranchWarehouses = useMemo(
+    () => (machine ? warehousesByBranch[machine.branchId] ?? [] : []),
+    [warehousesByBranch, machine],
   );
 
   const f = state.form;
@@ -792,6 +812,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       refillQty,
       stockAfter: afterFill,
       refillProductId,
+      // WAVE-3b · R4 · ห้องที่หยิบของมาเติม — ส่งเฉพาะเมื่อมีการเติม + เลือกห้อง (สาขา >1 ห้อง).
+      // null/ไม่ส่ง = server ตัดจากคลังหลัก (INVARIANT) → สาขา ≤1 ห้อง พฤติกรรมเดิมเป๊ะ.
+      warehouseId: refillQty > 0 && f.refillWarehouseId ? f.refillWarehouseId : undefined,
       // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
       // (server accepts url | "" | undefined → a skipped photo never blocks the round).
       // The meter step captures per-row (เฟือง/ดิจิตอล); backend has 1 slot per meter, so
@@ -966,6 +989,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           assignedOnly={assignedOnly}
           branchProducts={branchProducts}
           inboundByBranch={inboundByBranch}
+          warehousesByBranch={warehousesByBranch}
         />
       ) : (
         <FlowScreen
@@ -1004,6 +1028,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
             dispatch({ type: "setForm", key: "refillProductId", value: pid });
             dispatch({ type: "setForm", key: "product", value: name });
           }}
+          // WAVE-3b · R4 · คลัง active ของสาขานี้ (picker "เติมจากคลัง" · โผล่เมื่อ >1 ห้อง) + handler เลือกห้อง
+          branchWarehouses={activeBranchWarehouses}
+          onPickWarehouse={(wid) => dispatch({ type: "setForm", key: "refillWarehouseId", value: wid })}
           // N5 · ด่านเงินไม่ตรง — เปิดเมื่อ server คืน needsReason (verdict=SHORT). ยกเลิก = ล้าง payload ค้าง.
           mismatchGate={
             pendingShort
@@ -1050,12 +1077,15 @@ function HomeScreen(props: {
   // N3/R4 · สินค้าคลังสาขา (นับสต๊อก) · N6 · ใบกระจายขาเข้า (รับสินค้า) — แยกตาม branchId
   branchProducts: Record<string, BranchStockProduct[]>;
   inboundByBranch: Record<string, InboundDelivery[]>;
+  // WAVE-3b · N3 · คลัง active แยกตาม branchId (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
+  warehousesByBranch: Record<string, BranchWarehouse[]>;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
   // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
   const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
   const stockProducts = props.branchProducts[primaryBranchId] ?? [];
+  const stockWarehouses = props.warehousesByBranch[primaryBranchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
   const inboundDeliveries = props.inboundByBranch[primaryBranchId] ?? [];
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
@@ -1233,7 +1263,7 @@ function HomeScreen(props: {
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} inboundDeliveries={inboundDeliveries} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} />
       )}
     </div>
   );
@@ -1255,6 +1285,8 @@ function PanelScreen(props: {
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
   branchId: string; branchCode: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
+  // WAVE-3b · N3 · คลัง active ของสาขานี้ (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
+  stockWarehouses: BranchWarehouse[];
 }) {
   const { panel, onBack } = props;
   return (
@@ -1267,7 +1299,7 @@ function PanelScreen(props: {
       </div>
       {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} />}
       {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
-      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} />}
+      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} />}
       {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} />}
       {panel === "config" && <ConfigPanel />}
       {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
@@ -1553,8 +1585,10 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
 }
 
 /* ─────────────────── N3 · นับสต๊อกมือถือ (ProductCountCard list → submitStockCount DRAFT) ─────────────────── */
-function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products }: {
+function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, warehouses }: {
   orgId: string; usingDemo: boolean; branchId: string; branchCode: string; products: BranchStockProduct[];
+  // WAVE-3b · N3 · คลัง active ของสาขานี้ — picker "นับคลัง" โผล่เฉพาะเมื่อ >1 ห้อง (default คลังหลัก).
+  warehouses: BranchWarehouse[];
 }) {
   // นับต่อสินค้า (null = ยังไม่นับ) · รูปหลักฐานต่อสินค้า (optional)
   const [counts, setCounts] = useState<Record<string, number | null>>({});
@@ -1564,6 +1598,11 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products }: {
   const [okMsg, setOkMsg] = useState<string | null>(null);
   // clientKey เดียวต่อการเปิดหน้า (idempotency · กดส่งซ้ำ = ใบเดิม). reset เมื่อส่งสำเร็จ.
   const [clientKey, setClientKey] = useState(() => genClientKey());
+  // WAVE-3b · N3 · ห้องที่กำลังนับ — โผล่ picker เฉพาะสาขา >1 ห้อง. default = คลังหลัก (fallback ห้องแรก).
+  // null = ส่ง warehouseId ไม่ไป → server นับที่คลังหลัก (INVARIANT) → สาขา ≤1 ห้อง พฤติกรรมเดิมเป๊ะ.
+  const showWarehousePicker = warehouses.length > 1;
+  const mainWarehouseId = warehouses.find((w) => w.isMain)?.id ?? warehouses[0]?.id ?? "";
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>(mainWarehouseId);
 
   const countedLines = products
     .map((p) => ({ productId: p.id, countedQty: counts[p.id] }))
@@ -1583,6 +1622,9 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products }: {
           lines: countedLines,
           photoUrls: photoUrls.length ? photoUrls : undefined,
           clientKey,
+          // WAVE-3b · N3 · ส่งห้องที่นับ เฉพาะสาขา >1 ห้อง (มี picker) → server ตัด/นับที่ห้องนั้น.
+          // ≤1 ห้อง / ไม่มี picker → ไม่ส่ง → server นับที่คลังหลัก (INVARIANT · พฤติกรรมเดิม).
+          warehouseId: showWarehousePicker && selectedWarehouseId ? selectedWarehouseId : undefined,
         });
         if (!r.ok) {
           console.error("[clawos] submitStockCount failed:", r.error);
@@ -1626,6 +1668,18 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products }: {
       {okMsg && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#15803D", fontWeight: 600, lineHeight: 1.4 }}>
           <Check size={15} strokeWidth={2.6} />{okMsg}
+        </div>
+      )}
+      {/* WAVE-3b · N3 · เลือกคลัง (ห้อง) ที่กำลังนับ — โผล่เฉพาะสาขาที่มี >1 ห้อง.
+          สาขา ≤1 ห้อง → ไม่โชว์ (นับที่คลังหลัก · พฤติกรรมเดิมเป๊ะ · zero friction). */}
+      {showWarehousePicker && (
+        <div>
+          <FieldLabel>นับคลัง</FieldLabel>
+          <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} style={selectStyle}>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}{w.isMain ? " (คลังหลัก)" : ""}</option>
+            ))}
+          </select>
         </div>
       )}
       {products.map((p) => (
@@ -1949,6 +2003,9 @@ function FlowScreen(props: {
   // R4 · สินค้าคลังสาขา (ตู้นี้) + handler เลือกจาก picker. [] → fallback dropdown เดิม.
   branchProducts: BranchStockProduct[];
   onPickRefill: (productId: string, name: string) => void;
+  // WAVE-3b · R4 · คลัง active ของสาขานี้ (picker "เติมจากคลัง") + handler เลือกห้อง. picker โผล่เฉพาะ >1 ห้อง.
+  branchWarehouses: BranchWarehouse[];
+  onPickWarehouse: (warehouseId: string) => void;
   // N5 · ด่านเงินไม่ตรง (verdict=SHORT) · null = ไม่มีด่าน.
   mismatchGate: { active: boolean; onConfirmShort: (reason: string, note: string) => void; onCancel: () => void } | null;
   onBack: () => void;
@@ -2028,6 +2085,22 @@ function FlowScreen(props: {
                   </select>
                 )}
               </div>
+              {/* WAVE-3b · R4 · เลือกคลัง (ห้อง) ที่หยิบของมาเติม — โผล่เฉพาะสาขาที่มี >1 ห้อง.
+                  สาขา ≤1 ห้อง → ไม่โชว์ (default คลังหลัก · พฤติกรรมเดิมเป๊ะ · zero friction). */}
+              {props.branchWarehouses.length > 1 && (
+                <div>
+                  <FieldLabel>เติมจากคลัง</FieldLabel>
+                  <select
+                    value={f.refillWarehouseId ?? (props.branchWarehouses.find((w) => w.isMain)?.id ?? props.branchWarehouses[0]?.id ?? "")}
+                    onChange={(e) => props.onPickWarehouse(e.target.value)}
+                    style={selectStyle}
+                  >
+                    {props.branchWarehouses.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}{w.isMain ? " (คลังหลัก)" : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
                 <BigInput value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />

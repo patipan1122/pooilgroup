@@ -30,6 +30,7 @@ import {
 } from "./types";
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
+import { getBranchMainWarehouseId } from "./stock-queries";
 
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -358,6 +359,25 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
 
   const refillProductId = data.refillProductId ?? machine.loadouts[0]?.productId ?? null;
 
+  // E3 (bigfeature · warehouse) — ตัดสต๊อกจาก "ห้อง" ที่พนักงานเลือก (default = คลังหลัก).
+  //   mainId = id คลังหลักของสาขา (null ถ้ายังไม่มี → แถว movement เก่านับเป็น main ผ่าน NULL).
+  //   chosenWh = ห้องที่เลือก (จาก payload) หรือคลังหลัก. ถ้าทั้งคู่ null → fallback ยอดรวมสาขาเดิม
+  //   (aggregate ทุกห้อง) + stamp warehouseId null (= main ตาม INVARIANT) — ไม่ crash.
+  const mainId = refillProductId && data.refillQty > 0
+    ? await getBranchMainWarehouseId(orgId, machine.branchId)
+    : null;
+  const chosenWh = data.warehouseId ?? mainId; // null = คลังหลัก (aggregate เดิม)
+  // where-fragment ตามห้อง (mirror warehouseWhere ใน stock-queries/currentBalance):
+  //   chosenWh null            → {} (รวมทุกห้อง = ยอดสาขาเดิม · เข้ากับ movement เก่าที่ยังไม่มีห้อง)
+  //   chosenWh === main         → OR:[{id},{null}] (แถว legacy NULL = ของคลังหลัก)
+  //   chosenWh อื่น             → warehouseId ตรง ๆ (strict · ไม่รวม NULL)
+  const refillWhFilter: Record<string, unknown> =
+    chosenWh == null
+      ? {}
+      : mainId && chosenWh === mainId
+        ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
+        : { warehouseId: chosenWh };
+
   try {
     const ev = await prisma.$transaction(async (tx) => {
       const created = await tx.cfCollectionEvent.create({
@@ -399,18 +419,28 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
         select: { id: true },
       });
       if (data.refillQty > 0 && refillProductId) {
-        // R4 (blueprint §2 R4) — over-issue guard: เติมได้ไม่เกินสต๊อกคลังสาขาของสินค้านั้น.
-        // 🔒 advisory-lock ต่อ (branch,product) — serialize การอ่านยอด+ตัดสต๊อก กัน 2 การเติม
-        // พร้อมกันอ่านยอดคงคลังก้อนเดียวกันแล้วตัดเกิน (mirror receiveStock B3 pattern).
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${refillProductId}))`;
+        // R4 (blueprint §2 R4) — over-issue guard: เติมได้ไม่เกินสต๊อก "ในห้องที่เลือก" ของสินค้านั้น.
+        // ⚠️ E3 (#1 review check): อ่านยอดต้อง scope ตาม chosenWh (ห้องที่เลือก) ไม่ใช่ยอดรวมทั้งสาขา —
+        //    ไม่งั้น guard ผ่านด้วยของอีกห้อง แต่ตัดจากห้องที่เลือก → ห้องที่เลือกติดลบ.
+        // 🔒 advisory-lock ต่อ (branch,warehouse,product) — serialize 2 การเติมจากห้องเดียวกัน
+        //    (chosenWh อยู่ในกุญแจล็อก) กันอ่านยอดห้องเดียวกันก้อนเดียวแล้วตัดเกิน (mirror receiveStock).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${refillProductId}))`;
         const onHandAgg = await tx.cfStockMovement.aggregate({
-          where: { orgId, branchId: machine.branchId, productId: refillProductId, machineId: null },
+          where: {
+            orgId,
+            branchId: machine.branchId,
+            productId: refillProductId,
+            machineId: null,
+            ...refillWhFilter, // E3: scope ตามห้องที่เลือก (main รวม legacy NULL · ห้องอื่น strict)
+          },
           _sum: { qty: true },
         });
         const warehouseOnHand = onHandAgg._sum.qty ?? 0;
         if (data.refillQty > warehouseOnHand) {
+          // ระบุห้องในข้อความ (ถ้าเลือกห้องเจาะจง) — CEO จะได้รู้ว่าห้องไหนไม่พอ
+          const roomSuffix = data.warehouseId ? " ในคลังที่เลือก" : "";
           throw new CfOverIssueError(
-            `สต๊อกสาขาไม่พอ · มี ${warehouseOnHand} ตัว · เติม ${data.refillQty} ตัวไม่ได้`,
+            `สต๊อกในคลังที่เลือกไม่พอ${roomSuffix} · มี ${warehouseOnHand} ตัว · เติม ${data.refillQty} ตัวไม่ได้`,
           );
         }
         await tx.cfStockMovement.create({
@@ -420,6 +450,7 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
             type: "LOAD_TO_MACHINE",
             productId: refillProductId,
             machineId: machine.id,
+            warehouseId: chosenWh, // E3: attribute การตัดให้ห้องที่หยิบมา (null = คลังหลัก)
             qty: -data.refillQty,
             refTable: "cf_collection_events",
             refId: created.id,
@@ -1078,17 +1109,33 @@ export async function createBranch(input: unknown): Promise<ResultOf<{ id: strin
   }
 
   try {
-    const b = await prisma.branch.create({
-      data: {
-        orgId,
-        companyId,
-        code,
-        name,
-        businessType: "claw_machine",
-        province: province || null,
-        region: region || null,
-      },
-      select: { id: true },
+    // E1 (bigfeature · warehouse) — สร้างสาขา + คลังหลักในธุรกรรมเดียว (atomic)
+    // → ห้ามมีสาขาที่ไม่มีคลังหลัก. partial-unique cf_warehouses_one_main_per_branch
+    //   การันตี main เดียวต่อสาขา (idempotent-safe: main ตัวที่ 2 จะถูก reject).
+    const b = await prisma.$transaction(async (tx) => {
+      const branch = await tx.branch.create({
+        data: {
+          orgId,
+          companyId,
+          code,
+          name,
+          businessType: "claw_machine",
+          province: province || null,
+          region: region || null,
+        },
+        select: { id: true },
+      });
+      await tx.cfWarehouse.create({
+        data: {
+          orgId,
+          branchId: branch.id,
+          name: "คลังหลัก",
+          isMain: true,
+          sortOrder: 0,
+          createdById: session.user.id,
+        },
+      });
+      return branch;
     });
     revalidateManage();
     return { ok: true, data: { id: b.id } };

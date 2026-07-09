@@ -94,6 +94,7 @@ model Organization {
   cfCollectionSessions    CfCollectionSession[]
   cfCollectionEvents      CfCollectionEvent[]
   cfStockMovements        CfStockMovement[]
+  cfWarehouses            CfWarehouse[]
   cfDeliveries            CfDelivery[]
   cfDeliveryLines         CfDeliveryLine[]
   cfGoodsReceipts         CfGoodsReceipt[]
@@ -252,6 +253,7 @@ model User {
   cfSessionsReviewed       CfCollectionSession[]        @relation("CfSessionReviewer")
   cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
   cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
+  cfWarehousesCreated      CfWarehouse[]                @relation("CfWarehouseCreator")
   cfDeliveriesCreated      CfDelivery[]                 @relation("CfDeliveryCreator")
   cfReceiptsCreated        CfGoodsReceipt[]             @relation("CfReceiptCreator")
   cfStockCountsCounted     CfStockCount[]               @relation("CfCountCounter")
@@ -333,6 +335,7 @@ model Branch {
   cfMachines       CfMachine[]
   cfMachineGroups  CfMachineGroup[]
   cfStockMovements CfStockMovement[]
+  cfWarehouses     CfWarehouse[]
   cfSessions       CfCollectionSession[]
   cfDeliveries     CfDelivery[]
   cfGoodsReceipts  CfGoodsReceipt[]
@@ -2346,6 +2349,7 @@ model CfStockMovement {
   type          CfStockMoveType
   productId     String          @map("product_id") @db.Uuid
   machineId     String?         @map("machine_id") @db.Uuid // null สำหรับ RECEIVE / COUNT
+  warehouseId   String?         @map("warehouse_id") @db.Uuid // null = คลังหลัก (main) ของสาขา
   qty           Int // +/− signed (RECEIVE=+, LOAD_TO_MACHINE=-, COUNT=actual, ADJUST=delta)
   refTable      String?         @map("ref_table") // 'cf_collection_events' for LOAD
   refId         String?         @map("ref_id") @db.Uuid
@@ -2365,13 +2369,45 @@ model CfStockMovement {
   branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
   product   CfProduct    @relation(fields: [productId], references: [id], onDelete: Restrict)
   machine   CfMachine?   @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  warehouse CfWarehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   createdBy User         @relation("CfStockCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([orgId, branchId, occurredAt(sort: Desc)])
   @@index([orgId, productId, occurredAt(sort: Desc)])
   @@index([orgId, type, occurredAt(sort: Desc)])
   @@index([machineId, occurredAt(sort: Desc)])
+  @@index([orgId, branchId, warehouseId, productId])
   @@map("cf_stock_movements")
+  @@schema("public")
+}
+
+// =============================================================
+// CF.8b — cf_warehouses (หลายคลังต่อสาขา · multiple stock rooms per branch)
+// warehouse_id บน movement/receipt/count เป็น nullable · null = คลังหลัก (main) ของสาขา (SAFETY INVARIANT)
+// =============================================================
+model CfWarehouse {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  name        String
+  isMain      Boolean  @default(false) @map("is_main")
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy User         @relation("CfWarehouseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  movements CfStockMovement[]
+  receipts  CfGoodsReceipt[]
+  counts    CfStockCount[]
+
+  @@index([orgId, branchId, sortOrder])
+  // partial-unique one-main-per-branch enforced in SQL (cf_warehouses_one_main_per_branch,
+  // WHERE is_main) — not modeled as @@unique here to avoid a conflicting non-partial index.
+  @@map("cf_warehouses")
   @@schema("public")
 }
 
@@ -2435,6 +2471,7 @@ model CfGoodsReceipt {
   orgId          String   @map("org_id") @db.Uuid
   branchId       String   @map("branch_id") @db.Uuid
   receiptCode    String   @map("receipt_code") // GR-YYMMDD-NN · unique per org
+  warehouseId    String?  @map("warehouse_id") @db.Uuid // null = คลังหลัก (main) ของสาขา
   supplierName   String?  @map("supplier_name")
   note           String?
   totalCostCents Int      @default(0) @map("total_cost_cents")
@@ -2445,6 +2482,7 @@ model CfGoodsReceipt {
 
   org       Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch    Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse CfWarehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   createdBy User                 @relation("CfReceiptCreator", fields: [createdById], references: [id], onDelete: Restrict)
   lines     CfGoodsReceiptLine[]
 
@@ -2520,6 +2558,7 @@ model CfStockCount {
   orgId         String   @map("org_id") @db.Uuid
   branchId      String   @map("branch_id") @db.Uuid
   countCode     String   @map("count_code") // SC-YYMMDD-NN · unique per org
+  warehouseId   String?  @map("warehouse_id") @db.Uuid // null = คลังหลัก (main) ของสาขา
   note          String?
   itemsCounted  Int      @default(0) @map("items_counted") // จำนวนรายการที่ปรับ
   totalDiff     Int      @default(0) @map("total_diff") // ผลรวมส่วนต่าง (ชิ้น)
@@ -2539,6 +2578,7 @@ model CfStockCount {
 
   org     Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch  Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse CfWarehouse?      @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   counter User                @relation("CfCountCounter", fields: [countedById], references: [id], onDelete: Restrict)
   lines   CfStockCountLine[]
 
