@@ -275,7 +275,7 @@ const iqImage: FormSection = {
 const documents: FormSection = {
   id: "tpl_documents",
   title: "เอกสารแนบ",
-  description: "Resume + รูปถ่าย · 5 MB ต่อไฟล์",
+  description: "Resume (ไฟล์เล็ก) + รูปถ่าย + ลิงก์ผลงาน (ไฟล์ใหญ่ให้ทำเป็นลิงก์)",
   fields: [
     {
       id: "f_resume",
@@ -294,6 +294,17 @@ const documents: FormSection = {
       accept: ["jpg", "jpeg", "png"],
       maxFiles: 1,
       helpText: "รูปครึ่งตัว ชุดสุภาพ",
+    },
+    {
+      // CEO 2026-07-09: ผลงาน/portfolio ไฟล์ใหญ่ → ให้แนบเป็น "ลิงก์" แทนอัปไฟล์
+      // (ประหยัดที่เก็บ + ไม่ติดลิมิตขนาดไฟล์)
+      id: "f_portfolio_link",
+      type: "short_text",
+      label: "ลิงก์ผลงาน / Portfolio (ถ้ามี)",
+      required: false,
+      format: "url",
+      placeholder: "วางลิงก์ Google Drive / Google Sheet / เว็บผลงาน",
+      helpText: "ไฟล์ผลงานใหญ่ ๆ ให้ทำเป็นลิงก์แชร์ (เปิดสิทธิ์ให้ดูได้) แล้ววางที่นี่",
     },
   ],
 };
