@@ -13,6 +13,7 @@ import { TRANSFER_STATUS_LABEL } from "@/lib/dc/nav";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { TransferConfirm, type TransferConfirmData } from "./transfer-confirm";
+import { PrintButton } from "@/components/dc/print-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -116,9 +117,12 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
         <Link href="/dc/office/transfers" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink2)", marginBottom: 8, textDecoration: "none" }}>
           <ArrowLeft size={15} /> กลับรายการใบโอน
         </Link>
-        <div style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ใบโอน {transfer.transferCode}</h1>
-          <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>{data.fromName} → {data.destName}</p>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ใบโอน {transfer.transferCode}</h1>
+            <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>{data.fromName} → {data.destName}</p>
+          </div>
+          <PrintButton href={`/dc/office/transfers/${id}/print`} label="พิมพ์ใบโอน" />
         </div>
 
         <TransferConfirm data={data} />

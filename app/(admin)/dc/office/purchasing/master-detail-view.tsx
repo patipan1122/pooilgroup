@@ -13,6 +13,7 @@ import { Ship, Truck, ChevronDown, ImageIcon, CalendarDays, ArrowUpRight } from 
 import { getPoDetailForPanel, type PoPanelBundle } from "@/lib/dc/po-actions";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_FLOW_STATUSES, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
 import { PoDetail } from "./[id]/po-detail";
+import { PrintButton } from "@/components/dc/print-controls";
 import {
   type PoListItem,
   fmtMoney,
@@ -279,9 +280,12 @@ function PoCardMini({
               </div>
             ))}
           </div>
-          <Link href={`/dc/office/purchasing/${item.id}`} style={expandOpen}>
-            เปิดใบเต็ม <ArrowUpRight size={13} />
-          </Link>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 9, flexWrap: "wrap" }}>
+            <PrintButton href={`/dc/office/purchasing/${item.id}/print`} label="พิมพ์ PO" />
+            <Link href={`/dc/office/purchasing/${item.id}`} style={{ ...expandOpen, marginTop: 0 }}>
+              เปิดใบเต็ม <ArrowUpRight size={13} />
+            </Link>
+          </div>
         </div>
       )}
     </div>

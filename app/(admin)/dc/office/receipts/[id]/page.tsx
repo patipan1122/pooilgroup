@@ -11,6 +11,7 @@ import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { getGrnRemaining } from "@/lib/dc/movement-tracing";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DataTable } from "@/components/ui/data-table";
+import { PrintButton } from "@/components/dc/print-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +142,7 @@ export default async function DcGrnDetailPage({ params }: { params: Params }) {
               ) : null}
             </div>
           </div>
+          <PrintButton href={`/dc/office/receipts/${id}/print`} label="พิมพ์ใบรับ" />
         </div>
 
         {/* summary */}
