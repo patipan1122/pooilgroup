@@ -332,6 +332,8 @@ export async function POST(
               vat: 0,
               wht: 0,
               total: parsed.total,
+              // หลายรายการในบิลเดียว — "จด น้ำดื่ม 10, ข้าวไข่ดาว 50" → 2 บรรทัด (total=ผลรวม)
+              items: parsed.items,
               paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
               purchaseType: parsed.purchaseType,
               branchId: effectiveBranchId, // per-group branch (B3) → fallback channel branch

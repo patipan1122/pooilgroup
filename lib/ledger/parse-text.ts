@@ -9,7 +9,7 @@
 
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import { AiBudgetError } from "./ai-parse";
-import { normalizePurchaseType, type PurchaseType } from "./types";
+import { normalizePurchaseType, type PurchaseType, type ExpenseItem } from "./types";
 
 const MODEL = "gemini-2.0-flash-lite";
 const EST_INPUT_TOKENS = 260;
@@ -23,10 +23,18 @@ export interface ParsedTextExpense {
   purchaseType: PurchaseType | null;
   docDate: string | null; // YYYY-MM-DD
   note: string | null;
+  /** รายการสินค้าในบิลเดียว — "จด น้ำดื่ม 10, ข้าวไข่ดาว 50" → 2 รายการ (total = ผลรวม). */
+  items: ExpenseItem[];
   confidence: Record<string, number>;
 }
 
+interface RawItem {
+  name?: string | null;
+  qty?: number | null;
+  amount?: number | null;
+}
 interface RawText {
+  items?: RawItem[] | null;
   total?: number | null;
   vendor?: string | null;
   payment_method?: string | null;
@@ -45,18 +53,24 @@ function bangkokToday(): string {
 function prompt(today: string): string {
   return `คุณเป็นผู้ช่วยบันทึกค่าใช้จ่ายภาษาไทย วันนี้คือ ${today} (Asia/Bangkok)
 
-ผู้ใช้พิมพ์โน้ตค่าใช้จ่ายสั้น ๆ ดึงเป็น JSON เท่านั้น (ห้ามคำอธิบาย ห้าม markdown):
+ผู้ใช้พิมพ์โน้ตค่าใช้จ่ายสั้น ๆ — อาจมี "หลายรายการ" คั่นด้วย , หรือขึ้นบรรทัดใหม่ ดึงเป็น JSON เท่านั้น (ห้ามคำอธิบาย ห้าม markdown):
 {
-  "total": <จำนวนเงินเป็น number ไม่มีคอมม่า/฿ หรือ null ถ้าไม่มีตัวเลขเงินชัดเจน>,
-  "vendor": "<ชื่อร้าน/สิ่งที่ซื้อ เช่น กาแฟ, ค่าอาหารกลางวัน, แท็กซี่ หรือ null>",
+  "items": [
+    { "name": "<ชื่อสินค้า/สิ่งที่ซื้อ เช่น น้ำดื่ม, ข้าวไข่ดาว, ค่าแท็กซี่>", "qty": <จำนวนชิ้น number · ไม่ระบุ=1>, "amount": <ราคารวมของรายการนี้ number ไม่มีคอมม่า/฿> }
+  ],
+  "vendor": "<ชื่อร้าน ถ้าระบุชัด · ไม่มี=null>",
   "payment_method": "<cash | transfer | qr | credit_card หรือ null>",
-  "suggested_category": "<เดาหมวด ใช้ชื่อตรงผังนี้: ค่าน้ำมันยานพาหนะ, ค่าเดินทาง, ค่าไฟฟ้า, ค่าน้ำประปา, ค่าอินเทอร์เน็ต, ค่าเช่าสำนักงาน, วัสดุสิ้นเปลือง, ค่าจ้าง/บริการทั่วไป, ค่ารับรอง, ค่าใช้จ่ายเบ็ดเตล็ด หรือ null>",
+  "suggested_category": "<เดาหมวดรวมของบิล ใช้ชื่อตรงผังนี้: ค่าน้ำมันยานพาหนะ, ค่าเดินทาง, ค่าไฟฟ้า, ค่าน้ำประปา, ค่าอินเทอร์เน็ต, ค่าเช่าสำนักงาน, วัสดุสิ้นเปลือง, ค่าจ้าง/บริการทั่วไป, ค่ารับรอง, ค่าใช้จ่ายเบ็ดเตล็ด หรือ null>",
   "purchase_type": "<goods (ซื้อของ/สินค้า) | service (ค่าบริการ/ค่าจ้าง/ค่าเช่า) | construction (วัสดุก่อสร้าง/ต่อเติม) หรือ null>",
   "doc_date": "<YYYY-MM-DD แปลงจากคำเช่น 'เมื่อวาน'='${today} ลบ 1 วัน', 'วันนี้'='${today}'; ไม่ระบุ=null>",
   "note": "<ข้อความเดิมที่เหลือ หรือ null>",
   "confidence": { "total": <0..1>, "vendor": <0..1>, "category": <0..1> }
 }
-กฎ: ตัวเลขเป็น number ตรง ๆ · อ่านไม่ออก→null · ห้ามเดายอดเงิน (ถ้าไม่มีเลข total=null)`;
+กฎ:
+- แยกทุกรายการที่คั่นด้วย , หรือขึ้นบรรทัดใหม่ เป็น items แยกกัน (เช่น "น้ำดื่ม 10, ข้าวไข่ดาว 50" = 2 รายการ)
+- ราคาเป็น number ตรง ๆ · อ่านราคาของรายการไหนไม่ออก→ข้ามรายการนั้น (ห้ามเดาราคา)
+- ถ้าไม่มีรายการที่มีราคาชัดเจนเลย → "items": []
+- รายการเดียวก็ใส่ใน items 1 ตัว`;
 }
 
 function numOrNull(v: unknown): number | null {
@@ -121,14 +135,36 @@ export async function parseExpenseText(
     outputTokens: EST_OUTPUT_TOKENS,
   });
 
+  // แต่ละรายการต้องมีราคา (amount) — ตัดรายการที่อ่านราคาไม่ออกทิ้ง (ไม่เดา)
+  let items: ExpenseItem[] = (Array.isArray(parsed.items) ? parsed.items : [])
+    .map((it): ExpenseItem | null => {
+      const amount = numOrNull(it?.amount);
+      if (amount == null) return null;
+      const rawQty = numOrNull(it?.qty);
+      const qty = rawQty && rawQty > 0 ? rawQty : 1;
+      const name = (it?.name ?? "").trim() || "รายการ";
+      return { description: name, qty, unitPrice: amount / qty, amount, vatRate: null };
+    })
+    .filter((x): x is ExpenseItem => x !== null);
+
+  // Fallback: โมเดลตอบแบบเดิม (total เดี่ยว ไม่มี items) → ทำเป็น 1 รายการ
+  const legacyTotal = numOrNull(parsed.total);
+  if (items.length === 0 && legacyTotal != null) {
+    items = [{ description: parsed.vendor?.trim() || "รายการ", qty: 1, unitPrice: legacyTotal, amount: legacyTotal, vatRate: null }];
+  }
+
+  // total = ผลรวมของรายการที่มีราคา · ไม่มีเลย = null (webhook จะเตือนให้ใส่ยอด)
+  const total = items.length > 0 ? items.reduce((s, it) => s + it.amount, 0) : null;
+
   return {
-    total: numOrNull(parsed.total),
+    total,
     vendor: parsed.vendor?.trim() || null,
     paymentMethod: parsed.payment_method?.trim() || null,
     suggestedCategory: parsed.suggested_category?.trim() || null,
     purchaseType: normalizePurchaseType(parsed.purchase_type),
     docDate: parsed.doc_date ?? null,
     note: parsed.note?.trim() || null,
+    items,
     confidence: clampConf(parsed.confidence),
   };
 }
