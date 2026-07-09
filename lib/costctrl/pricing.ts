@@ -20,12 +20,22 @@ export const AI_PRICING_USD_PER_M = {
 
 export type KnownModel = keyof typeof AI_PRICING_USD_PER_M;
 
+// Model ids often carry a dated snapshot suffix (e.g. "claude-haiku-4-5-20251001").
+// The pricing map is keyed by the BASE id, so strip a trailing "-YYYYMMDD" before
+// lookup — otherwise dated ids miss the map and cost silently computes to $0.
+function lookupPricing(model: string): { in: number; out: number } | undefined {
+  const map = AI_PRICING_USD_PER_M as Record<string, { in: number; out: number }>;
+  if (map[model]) return map[model];
+  const base = model.replace(/-\d{8}$/, "");
+  return map[base];
+}
+
 export function computeAiCostUsd(
   model: string,
   inputTokens: number,
   outputTokens: number,
 ): number {
-  const p = (AI_PRICING_USD_PER_M as Record<string, { in: number; out: number }>)[model];
+  const p = lookupPricing(model);
   if (!p) return 0;
   return (inputTokens * p.in + outputTokens * p.out) / 1_000_000;
 }

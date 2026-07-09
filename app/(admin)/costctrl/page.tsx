@@ -120,7 +120,7 @@ export default async function CostCtrlOverviewPage() {
           return (
             <Link
               key={p.id}
-              href={`/costctrl/providers/${p.slug}`}
+              href={p.category === "ai" ? "/costctrl/ai" : `/costctrl/providers/${p.slug}`}
               className="block rounded-xl ring-1 ring-zinc-200 bg-white p-4 hover:ring-blue-300 hover:shadow-sm transition"
             >
               <div className="flex items-start justify-between gap-2 mb-3">
@@ -191,6 +191,10 @@ export default async function CostCtrlOverviewPage() {
                 <p className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-100 rounded px-2 py-1 mb-2">
                   💡 {p.planNote}
                 </p>
+              )}
+
+              {p.category === "ai" && (
+                <p className="text-[11px] font-medium text-blue-600 mb-2">→ ดูรายโมเดล &amp; แยกตามโปรแกรม</p>
               )}
 
               <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500">

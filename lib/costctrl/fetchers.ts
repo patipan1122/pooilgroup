@@ -26,24 +26,29 @@ type VercelCred = { token: string; teamId?: string };
 
 export async function fetchVercel(cred: VercelCred): Promise<FetcherResult> {
   try {
-    // Try Pro/Enterprise usage endpoint first (works for paid plans)
-    const fromIso = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
-    const toIso = new Date().toISOString();
+    // Try Pro/Enterprise usage endpoint first (works for paid plans).
+    // Vercel's /v1/usage expects `from`/`to` as UNIX millisecond timestamps —
+    // ISO strings are rejected with 400 invalid_time_range.
+    const now = new Date();
+    const fromMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    const toMs = Date.now();
     const url = new URL("https://api.vercel.com/v1/usage");
-    url.searchParams.set("from", fromIso);
-    url.searchParams.set("to", toIso);
+    url.searchParams.set("from", String(fromMs));
+    url.searchParams.set("to", String(toMs));
     if (cred.teamId) url.searchParams.set("teamId", cred.teamId);
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${cred.token}` },
       signal: AbortSignal.timeout(8000),
     });
 
-    if (res.status === 403 || res.status === 402) {
-      // Hobby plan — usage endpoint not available · degrade gracefully
+    if (res.status === 403 || res.status === 402 || res.status === 400) {
+      // Hobby/free plan: the usage endpoint is either not available (403/402)
+      // or rejects the request (400). On Hobby there is NO usage API at all, so
+      // degrade gracefully to a plan-info snapshot instead of a red error.
       return {
         ok: true,
         points: [
-          { metric: "plan", unit: "text", value: 0, costUsd: 0, raw: { plan: "hobby", note: "Vercel Hobby plan — usage API not available · ดูที่ vercel.com dashboard" } },
+          { metric: "plan", unit: "text", value: 0, costUsd: 0, raw: { plan: "hobby", note: "Vercel Hobby plan — usage API ไม่เปิด · ดูค่าจริงที่ vercel.com dashboard (บิล Hobby = $0 เว้นแต่ upgrade)" } },
           { metric: "cost_usd", unit: "USD", value: 0, costUsd: 0 },
         ],
       };
@@ -127,7 +132,14 @@ export async function fetchR2(cred: R2Cred): Promise<FetcherResult> {
     });
     if (!buckRes.ok) {
       const body = await buckRes.text().catch(() => "");
-      return { ok: false, error: `r2 buckets ${buckRes.status}: ${body.slice(0, 200)}` };
+      // Cloudflare error 10000 / 403 = wrong credential. The token here must be a
+      // Cloudflare API Token (NOT an R2 S3 access key), scoped to
+      // "Workers R2 Storage: Read" + "Account Analytics: Read", with a valid accountId.
+      const hint =
+        buckRes.status === 403 || body.includes("10000")
+          ? " · แก้: ใช้ Cloudflare API Token (ไม่ใช่ R2 Access Key) สิทธิ์ 'Workers R2 Storage: Read' + 'Account Analytics: Read' และตรวจ accountId ให้ถูก"
+          : "";
+      return { ok: false, error: `r2 buckets ${buckRes.status}: ${body.slice(0, 160)}${hint}` };
     }
     const buckJson: { result?: { buckets?: Array<{ name: string; creation_date?: string }> } } = await buckRes.json();
     const buckets = buckJson.result?.buckets ?? [];

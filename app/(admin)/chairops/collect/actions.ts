@@ -834,7 +834,7 @@ async function fetchImageAsBase64(
 export async function extractSlipAmount(
   slipPublicUrl: string,
 ): Promise<ActionResult<{ amount: number | null }>> {
-  await requireAuth();
+  const session = await requireAuth();
 
   if (!slipPublicUrl || typeof slipPublicUrl !== "string") {
     return { ok: false, error: "URL รูปสลิปไม่ถูกต้อง" };
@@ -869,6 +869,23 @@ export async function extractSlipAmount(
         },
       ],
     });
+
+    // บันทึกต้นทุน AI ให้ CostCtrl เห็นค่าอ่านสลิปของ ChairOps (เดิมไม่เคยถูกนับ →
+    // Claude เป็นตัวแพงที่สุด การไม่ log ทำให้รายงานต้นทุนต่ำกว่าจริง). Non-fatal.
+    try {
+      const { recordAiUsage } = await import("@/lib/ai/cost-cap");
+      await recordAiUsage({
+        userId: session.user.id,
+        orgId: session.user.orgId,
+        endpoint: "chairops.slip-ocr",
+        model: "claude-haiku-4-5-20251001",
+        moduleName: "chairops",
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+      });
+    } catch {
+      /* metering ต้องไม่ทำให้การอ่านสลิปพัง */
+    }
 
     const text =
       response.content[0]?.type === "text" ? response.content[0].text.trim() : "";

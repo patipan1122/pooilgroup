@@ -112,15 +112,17 @@ export async function aiAnswer(opts: {
 
     const out = (result.text ?? "").trim();
 
-    // Best-effort usage logging attributed to the channel creator.
-    if (opts.createdById) {
+    // Best-effort usage logging. ALWAYS log — a channel without a creator
+    // (createdById null) was previously skipped entirely, so those bot replies
+    // vanished from CostCtrl. user_id is nullable, so null is fine.
+    {
       const inTok = result.usageMetadata?.promptTokenCount ?? 0;
       const outTok = result.usageMetadata?.candidatesTokenCount ?? 0;
       await adminClient()
         .from("ai_usage")
         .insert({
           org_id: opts.orgId,
-          user_id: opts.createdById,
+          user_id: opts.createdById ?? null,
           endpoint: "inbox-bot",
           input_tokens: inTok,
           output_tokens: outTok,
