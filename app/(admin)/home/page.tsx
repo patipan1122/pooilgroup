@@ -8,6 +8,7 @@
 //   - เอกสาร DocuFlow → /docuflow
 // อ่าน feedback_module_isolation.md ก่อนแก้ไฟล์นี้
 
+import { Suspense } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -245,8 +246,16 @@ export default async function HomePage() {
           )}
         </section>
 
-        {/* Cross-module exec tile (admin tier only) */}
-        {isAdmin && <OperationsSummary orgId={orgId} />}
+        {/* Cross-module exec tile (admin tier only) — streamed via Suspense so
+            the fast shell (hero + favorites + system stats) paints first; the
+            operations counts stream in once their 5 Prisma queries resolve.
+            fallback=null: OperationsSummary can itself return null (clean days),
+            so a null fallback avoids a skeleton-then-vanish flash. */}
+        {isAdmin && (
+          <Suspense fallback={null}>
+            <OperationsSummary orgId={orgId} />
+          </Suspense>
+        )}
 
         {/* ============================================================
             ADMIN — pure Core actions only

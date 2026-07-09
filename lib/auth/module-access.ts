@@ -6,6 +6,7 @@
 //
 // Backfill: existing non-admin users were granted cashhub at migration time.
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { adminClient } from "@/lib/db/server";
 import type { DbUser } from "./session";
@@ -31,7 +32,7 @@ const MODULE_SLUGS = new Set<ModuleSlug>(
  * known modules unconditionally; everyone else gets only the modules
  * granted in the user_modules table (where is_active = true).
  */
-export async function loadUserModules(
+async function loadUserModulesUncached(
   user: DbUser,
 ): Promise<Set<ModuleSlug>> {
   if (isAdminTier(user.role)) {
@@ -54,6 +55,14 @@ export async function loadUserModules(
   }
   return modules;
 }
+
+// React cache() dedupes within a single request: the admin layout, /home and
+// /programs all call loadUserModules(session.user) — without this that is up to
+// 3 duplicate `user_modules` Supabase queries per hub navigation (non-admin
+// users). Same discipline as getSession(); keyed by the session.user object
+// identity, which is stable across the request because getSession() is also
+// cache()'d.
+export const loadUserModules = cache(loadUserModulesUncached);
 
 /**
  * Single-module check — convenience wrapper around loadUserModules.

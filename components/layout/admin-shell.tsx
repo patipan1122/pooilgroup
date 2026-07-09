@@ -231,7 +231,10 @@ export function AdminShell({
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     const sb = browserClient();
     await sb.auth.signOut().catch(() => {});
-    router.refresh();
+    // No router.refresh() here — the session is already cleared (server logout
+    // API + client signOut) so refreshing the current admin page just re-runs
+    // the layout Promise.all and flashes a blank screen before we leave. Go
+    // straight to /login.
     router.push("/login");
   }
 
