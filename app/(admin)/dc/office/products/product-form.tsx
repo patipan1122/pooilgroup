@@ -10,6 +10,7 @@ import {
   updateProduct,
   type CreateProductInput,
 } from "@/lib/dc/product-actions";
+import { lookupBarcodeInfo } from "@/lib/dc/barcode-lookup";
 import { DcProductType } from "@/lib/generated/prisma/enums";
 import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
 import { Field } from "@/components/ui/field";
@@ -48,8 +49,44 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // "🔍 ดึงข้อมูล" จากบาร์โค้ด (Open Food Facts · ฟรี) — เติมชื่อ+รูปให้ตอนลงของใหม่
+  const [looking, setLooking] = useState(false);
+  const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "warn" | "info"; text: string } | null>(null);
+
   function set<K extends keyof ProductFormValues>(key: K, v: ProductFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: v }));
+  }
+
+  async function handleLookup() {
+    const code = values.barcode.trim();
+    if (!code) {
+      setLookupMsg({ tone: "warn", text: "ใส่เลขบาร์โค้ดก่อน แล้วกดดึงข้อมูล" });
+      return;
+    }
+    setLooking(true);
+    setLookupMsg({ tone: "info", text: "กำลังค้นหาจากฐานข้อมูลสินค้าโลก…" });
+    const r = await lookupBarcodeInfo(code);
+    setLooking(false);
+    if (!r.found) {
+      setLookupMsg({
+        tone: "warn",
+        text:
+          r.reason === "invalid"
+            ? "เลขนี้ไม่ใช่บาร์โค้ดสากล (ต้องเป็นตัวเลข 8/12/13 หลัก) — กรอกชื่อเอง"
+            : "ไม่พบในฐานสาธารณะ — กรอกเอง (ปกติสำหรับของนำเข้าจีน/อะไหล่)",
+      });
+      return;
+    }
+    // เติมเฉพาะช่องที่ยังว่าง → ไม่ทับข้อมูลที่ผู้ใช้กรอกไว้เอง
+    setValues((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : r.name,
+      imageR2Path: prev.imageR2Path.trim() ? prev.imageR2Path : r.imageUrl ?? prev.imageR2Path,
+    }));
+    setLookupMsg({
+      tone: "ok",
+      text: `พบ: ${r.name || "(ไม่มีชื่อในฐาน)"}${r.brand ? ` · ${r.brand}` : ""} — เติมให้แล้ว ตรวจ/แก้ได้`,
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -141,15 +178,34 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
           </div>
         </Field>
 
-        <Field label="บาร์โค้ด" optional htmlFor="barcode">
-          <Input
-            id="barcode"
-            value={values.barcode}
-            onChange={(e) => set("barcode", e.target.value)}
-            placeholder="เช่น 8851234567890"
-            inputMode="numeric"
-            autoComplete="off"
-          />
+        <Field label="บาร์โค้ด" optional htmlFor="barcode" hint="ยิงบาร์โค้ดโรงงานแล้วกด 🔍 ให้ระบบลองเดาชื่อ+รูปให้">
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <Input
+                id="barcode"
+                value={values.barcode}
+                onChange={(e) => { set("barcode", e.target.value); setLookupMsg(null); }}
+                placeholder="เช่น 8851234567890"
+                inputMode="numeric"
+                autoComplete="off"
+              />
+            </div>
+            <Button type="button" variant="outline" onClick={handleLookup} loading={looking} disabled={looking}>
+              🔍 ดึงข้อมูล
+            </Button>
+          </div>
+          {lookupMsg && (
+            <p
+              style={{
+                marginTop: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                color: lookupMsg.tone === "ok" ? "#16a34a" : lookupMsg.tone === "warn" ? "#b45309" : "#6b7280",
+              }}
+            >
+              {lookupMsg.text}
+            </p>
+          )}
         </Field>
 
         <Field label="หน่วยนับ" htmlFor="unit">
@@ -196,6 +252,14 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
             placeholder="https://… หรือ path ใน R2"
             autoComplete="off"
           />
+          {values.imageR2Path.trim().startsWith("http") && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={values.imageR2Path}
+              alt="ตัวอย่างรูปสินค้า"
+              style={{ marginTop: 8, width: 96, height: 96, objectFit: "cover", borderRadius: 10, border: "1px solid var(--dc-line, #e4e4e7)" }}
+            />
+          )}
         </Field>
 
         {error && (
