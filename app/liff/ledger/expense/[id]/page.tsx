@@ -17,8 +17,10 @@ import { getSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
-import { resolveLedgerActor } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
+import { prisma } from "@/lib/prisma";
 import { LiffExpensePane } from "./LiffExpensePane";
+import { LiffPayeeRequest } from "./LiffPayeeRequest";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +108,22 @@ export default async function LedgerLiffExpensePage({
     ? `/ledger/expenses${companyQs}`
     : `/liff/ledger/my${companyQs}`;
 
+  // ── ขอโอนเงินบนมือถือ (จบในที่เดียว · CEO 2026-07-09) ─────────────────────────
+  // สิทธิ์เดียวกับที่ createPaymentRequestAction เช็ก (payment.request · super_admin bypass)
+  const companyId = scope.companyId;
+  const canRequestTransfer = companyId
+    ? await ledgerWebCanForRole(scope.orgId, session.user.role, "payment.request")
+    : false;
+  // ตั้งสาขา+หมวดครบ = ขอโอนได้ (ไม่งั้น server reject) · categoryId ว่าง/branchId null = ยังไม่ครบ
+  const classified = Boolean(expense.branchId && expense.categoryId);
+  // มีคำขอโอน active ของบิลนี้อยู่แล้วไหม (partial-unique กัน 1 บิล 2 คำขอ) → ไม่ให้ขอซ้ำ
+  const alreadyRequested =
+    companyId && canRequestTransfer
+      ? (await prisma.ledgerPaymentRequestBill.count({
+          where: { expenseId: id, orgId: scope.orgId, companyId, active: true },
+        })) > 0
+      : false;
+
   return (
     <div className="mx-auto w-full max-w-md px-3 pb-10">
       {/* Mobile header — back to list + น้องใบเสร็จ + context. Anchored Bainy-style. */}
@@ -148,6 +166,16 @@ export default async function LedgerLiffExpensePage({
         currentUserId={actor.userId}
         backHref={backHref}
       />
+
+      {companyId && (
+        <LiffPayeeRequest
+          expenseId={id}
+          companyId={companyId}
+          canRequest={canRequestTransfer}
+          classified={classified}
+          alreadyRequested={alreadyRequested}
+        />
+      )}
     </div>
   );
 }
