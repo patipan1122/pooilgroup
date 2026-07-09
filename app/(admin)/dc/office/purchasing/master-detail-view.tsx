@@ -67,16 +67,13 @@ export function MasterDetailView({
     });
   }, []);
 
-  // ถ้าใบที่เลือกหลุดออกจากลิสต์ที่กรอง → เด้งไปใบแรกของลิสต์ใหม่
+  // คงใบที่เลือกไว้เสมอถ้ามันยัง "อยู่ในระบบ" (items) — แม้เปลี่ยนสถานะจนหลุด "ชิปกรอง"
+  //   เดิม: เช็คกับ filtered → พอกดเลื่อนสถานะ ใบหลุดชิป → เด้งไปใบแรก (แผงขวากระโดดไปใบอื่น)
+  //   ตอนนี้: เด้งไปใบใหม่เฉพาะเมื่อใบที่เลือกหายจากระบบจริง (ถูกลบ) หรือยังไม่เคยเลือก
   useEffect(() => {
-    if (filtered.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !filtered.some((it) => it.id === selectedId)) {
-      setSelectedId(filtered[0].id);
-    }
-  }, [filtered, selectedId]);
+    if (selectedId && items.some((it) => it.id === selectedId)) return; // ใบยังอยู่ → คงไว้
+    setSelectedId(filtered.length > 0 ? filtered[0].id : null);
+  }, [items, filtered, selectedId]);
 
   // โหลด bundle ทุกครั้งที่ใบที่เลือกเปลี่ยน
   useEffect(() => {

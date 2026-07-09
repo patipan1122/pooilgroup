@@ -691,6 +691,45 @@ export async function markReadyToReceive(id: string): Promise<PoActionResult> {
   return { ok: true, id };
 }
 
+// ── ย้อนสถานะ 1 ขั้น (กดผิด) ─────────────────────────────────────────
+// เฉพาะช่วงขนส่งที่ "ไม่แตะเงิน/สต๊อก/บัญชี" → ย้อนได้ปลอดภัย:
+//   SHIPPED→ORDERED · ARRIVED_TH→SHIPPED · AT_WAREHOUSE→ARRIVED_TH · READY_TO_RECEIVE→AT_WAREHOUSE
+// 🔴 ห้ามย้อนออกจาก RECEIVED/PARTIAL/CLOSED — receivePo ตัดสต๊อก + คิดต้นทุน landed + ดัน TRCloud แล้ว
+//    (ย้อนสถานะเฉย ๆ = สถานะบอก "ยังไม่รับ" แต่ของ+บัญชีเข้าไปแล้ว → เพี้ยนถาวร) → ต้องทำใบกลับรายการแยก.
+const PO_REVERT_PREV: Partial<Record<DcPoStatus, DcPoStatus>> = {
+  [DcPoStatus.SHIPPED]: DcPoStatus.ORDERED,
+  [DcPoStatus.ARRIVED_TH]: DcPoStatus.SHIPPED,
+  [DcPoStatus.AT_WAREHOUSE]: DcPoStatus.ARRIVED_TH,
+  [DcPoStatus.READY_TO_RECEIVE]: DcPoStatus.AT_WAREHOUSE,
+};
+
+export async function revertPoStatus(id: string): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId } = g;
+
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id, orgId },
+    select: { id: true, status: true },
+  });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+
+  if (po.status === DcPoStatus.RECEIVED || po.status === DcPoStatus.PARTIAL || po.status === DcPoStatus.CLOSED) {
+    return { ok: false, error: "ย้อนไม่ได้ — ใบนี้รับเข้าคลังแล้ว (ตัดสต๊อก + ลงบัญชีไปแล้ว) · ถ้าต้องแก้ต้องทำใบกลับรายการ" };
+  }
+  const prev = PO_REVERT_PREV[po.status];
+  if (!prev) return { ok: false, error: "ย้อนสถานะขั้นนี้ไม่ได้" };
+
+  // idempotent: updateMany WHERE status=ปัจจุบัน → กดแข่ง/ซ้ำ = count 0 = no-op
+  const res = await prisma.dcPurchaseOrder.updateMany({
+    where: { id, orgId, status: po.status },
+    data: { status: prev },
+  });
+  if (res.count === 0) return { ok: false, error: "สถานะใบเปลี่ยนไปแล้ว ลองรีเฟรช" };
+  revalidate(id);
+  return { ok: true, id };
+}
+
 // ── สร้างสินค้า/ผู้ขายแบบเร็ว (inline ในฟอร์มใบสั่งซื้อ) ─────────────────
 
 export type QuickCreateProductResult =

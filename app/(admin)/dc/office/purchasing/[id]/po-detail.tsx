@@ -15,12 +15,13 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, Printer, History, ChevronDown } from "lucide-react";
+import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, Printer, History, ChevronDown, RotateCcw, Zap } from "lucide-react";
 import {
   markOrdered,
   markArrivedTh,
   markAtWarehouse,
   markReadyToReceive,
+  revertPoStatus,
   cancelPo,
   receivePo,
   recordPoPayment,
@@ -235,6 +236,8 @@ export function PoDetail({
 
   // ── ขั้นต่อไป (Pinpoint #2/#3): กดเปิดป๊อปอัปเลื่อนสถานะ + กรอกข้อมูลที่ขั้นนั้นต้องใช้ ──
   const [advanceOpen, setAdvanceOpen] = useState(false);
+  // นับครั้งที่ "รับเข้าคลัง" สำเร็จ → เด้งให้ตาราง "เทียบ PO↔ใบรับ" โหลดข้อมูลใหม่ (แก้ค้างเลข 0)
+  const [receiveVersion, setReceiveVersion] = useState(0);
   // #3 — แก้ผู้ขาย/เรต (Dialog)
   const [editOpen, setEditOpen] = useState(false);
   const NEXT_ACTION_LABEL: Record<string, string> = {
@@ -254,6 +257,15 @@ export function PoDetail({
   };
   const nextLabel = NEXT_ACTION_LABEL[status] ?? null;
   const showAdvance = canManage && !!nextLabel;
+  // ปุ่ม "ย้อนกลับ 1 ขั้น" (กดผิด) — เฉพาะช่วงขนส่งที่ปลอดภัย (ไม่แตะเงิน/สต๊อก) · ห้ามย้อนหลังรับเข้า
+  const REVERT_PREV_LABEL: Record<string, string> = {
+    SHIPPED: "สั่งแล้ว",
+    ARRIVED_TH: "ได้เลข Tracking",
+    AT_WAREHOUSE: "ถึงไทยแล้ว",
+    READY_TO_RECEIVE: "ถึงโกดังแล้ว",
+  };
+  const revertLabel = REVERT_PREV_LABEL[status] ?? null;
+  const showRevert = canManage && !!revertLabel;
   // #6 — ขั้น "รับเข้าคลังจริง" (READY_TO_RECEIVE/PARTIAL) ให้ปุ่มขั้นถัดไปเลื่อนไปฟอร์มรับเข้าด้านล่าง
   //   แทนการเปิด AdvanceModal (เพราะ receivePo อยู่ใน ReceiveSection แล้ว)
   const advanceScrollsToReceive = status === "READY_TO_RECEIVE" || status === "PARTIAL";
@@ -359,20 +371,41 @@ export function PoDetail({
           <Timeline status={status} isChina={isChina} awaitingTracking={awaitingTracking} />
 
           {/* ปุ่มเลื่อนขั้นถัดไป (Pinpoint #2/#3/#6) */}
-          {showAdvance && (
-            <button
-              type="button"
-              onClick={handleAdvanceClick}
-              disabled={pending}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                width: "100%", padding: "13px 16px", borderRadius: 12, border: "none", cursor: "pointer",
-                background: "var(--color-brand-600, #1c5fc4)", color: "#fff", fontSize: 15, fontWeight: 700,
-                fontFamily: "inherit", boxShadow: "0 2px 8px rgba(28,95,196,.25)",
-              }}
-            >
-              ⚡ ดำเนินการขั้นต่อไป: {nextLabel} →
-            </button>
+          {(showAdvance || showRevert) && (
+            <div style={{ display: "grid", gap: 8 }}>
+              {showAdvance && (
+                <button
+                  type="button"
+                  onClick={handleAdvanceClick}
+                  disabled={pending}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    width: "100%", padding: "13px 16px", borderRadius: 12, border: "none", cursor: "pointer",
+                    background: "var(--color-brand-600, #1c5fc4)", color: "#fff", fontSize: 15, fontWeight: 700,
+                    fontFamily: "inherit", boxShadow: "0 2px 8px rgba(28,95,196,.25)",
+                  }}
+                >
+                  <Zap size={17} aria-hidden /> ดำเนินการขั้นต่อไป: {nextLabel} →
+                </button>
+              )}
+              {/* ย้อนกลับ 1 ขั้น (กดผิด) — ปุ่มรอง เล็ก · ยืนยันก่อนย้อน · server กันย้อนหลังรับเข้าอยู่แล้ว */}
+              {showRevert && (
+                <button
+                  type="button"
+                  onClick={() => run(() => revertPoStatus(data.id), `ย้อนสถานะกลับไป “${revertLabel}” ?\n(ใช้ตอนกดผิด — ไม่กระทบเงิน/สต๊อก)`)}
+                  disabled={pending}
+                  title="กดผิด? ย้อนสถานะกลับ 1 ขั้น"
+                  style={{
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    justifySelf: "center", padding: "7px 14px", borderRadius: 9, cursor: "pointer",
+                    background: "transparent", border: "1px solid var(--dc-line, #e4e4e7)",
+                    color: "#71717a", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit",
+                  }}
+                >
+                  <RotateCcw size={13} aria-hidden /> ย้อนกลับ: {revertLabel}
+                </button>
+              )}
+            </div>
           )}
           {status === "RECEIVED" && <div style={{ fontSize: 13.5, color: "#167a41", fontWeight: 600 }}>รับสินค้าเข้าคลังครบแล้ว ✓</div>}
           {status === "CANCELLED" && <div style={{ fontSize: 13.5, color: "#b8362a", fontWeight: 600 }}>ใบนี้ถูกยกเลิก</div>}
@@ -526,13 +559,14 @@ export function PoDetail({
               warehouses={warehouses}
               defaultWarehouseId={data.warehouseId}
               atWarehouse={status === "READY_TO_RECEIVE" || status === "AT_WAREHOUSE"}
+              onReceived={() => { setReceiveVersion((v) => v + 1); refresh(); }}
             />
           </CollapseCard>
         </div>
       )}
 
-      {/* #12e — เทียบใบสั่งซื้อ vs ใบรับ (collapsible · โหลดสดจาก action) */}
-      <ReceivingCompare poId={data.id} status={status} />
+      {/* #12e — เทียบใบสั่งซื้อ vs ใบรับ (collapsible · โหลดสดจาก action · refreshKey เด้งโหลดใหม่หลังรับเข้า) */}
+      <ReceivingCompare poId={data.id} status={status} refreshKey={receiveVersion} />
     </div>
   );
 }
@@ -862,8 +896,9 @@ function CostAndPayment({
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [localErr, setLocalErr] = useState<string | null>(null);
 
-  // เปิดฟอร์มจ่ายได้เมื่อ ≥ ถึงโกดังแล้ว (มีของถึงแล้ว) — prefill จาก freightOwed (#4)
-  const canPayFreight = isChina && canManage && statusAtLeast(status, "AT_WAREHOUSE");
+  // เปิดฟอร์มจ่ายได้ตั้งแต่ "ถึงไทยแล้ว" (CEO 2026-07-09: บางเจ้าจ่ายตอนของถึงไทย บางเจ้าตอนถึงโกดัง)
+  //   — prefill จาก freightOwed (#4) · server (recordPoPayment) ไม่ล็อกสถานะอยู่แล้ว
+  const canPayFreight = isChina && canManage && statusAtLeast(status, "ARRIVED_TH");
   // prefill ตอนกดเปิดฟอร์ม (ใน handler ไม่ใช่ effect → กัน set-state-in-effect)
   function openPayForm() {
     if (freightOwedSatang != null && freightOwedSatang > 0 && !amount) setAmount(String(freightOwedSatang / 100));
@@ -958,7 +993,7 @@ function CostAndPayment({
             ) : freightEstThb != null ? (
               <span style={{ fontVariantNumeric: "tabular-nums", color: "#a1a1aa", fontWeight: 600 }}>~฿{fmt(freightEstThb)} (ประมาณ)</span>
             ) : (
-              <span style={{ color: "#a1a1aa", fontWeight: 600 }}>{statusAtLeast(status, "AT_WAREHOUSE") ? "รอกรอก" : "รอกรอก (เมื่อถึงโกดัง)"}</span>
+              <span style={{ color: "#a1a1aa", fontWeight: 600 }}>{statusAtLeast(status, "ARRIVED_TH") ? "รอกรอก" : "รอกรอก (เมื่อถึงไทย)"}</span>
             )}
           </div>
 
@@ -1215,26 +1250,33 @@ function AuditHistory({ poId }: { poId: string }) {
 }
 
 // ── #12e เทียบใบสั่งซื้อ vs ใบรับ (collapsible · โหลดสดจาก getPoReceivingSummary) ──────────
-function ReceivingCompare({ poId, status }: { poId: string; status: string }) {
+function ReceivingCompare({ poId, status, refreshKey }: { poId: string; status: string; refreshKey: number }) {
   const [summary, setSummary] = useState<PoReceiveSummary | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [loading, startLoad] = useTransition();
 
   // โชว์ก็ต่อเมื่อใบเดินมาถึงช่วงรับเข้าแล้ว (มี GRN ได้)
   const relevant = statusAtLeast(status, "AT_WAREHOUSE") || status === "PARTIAL" || status === "RECEIVED";
-  if (!relevant) return null;
 
-  function load() {
-    if (loaded) return;
+  // โหลดตอน mount + โหลดใหม่ทุกครั้งที่ refreshKey เปลี่ยน (หลังกดรับเข้า) → แก้ปัญหา "รับสะสม" ค้างเลข 0
+  //   (เดิม fetch-once แล้ว guard loaded ไม่ยอมโหลดซ้ำ · router.refresh ไม่ remount client → ค้างภาพเก่า)
+  useEffect(() => {
+    if (!relevant) return;
+    let alive = true;
     startLoad(async () => {
       const s = await getPoReceivingSummary(poId);
+      if (!alive) return;
       setSummary(s);
       setLoaded(true);
     });
-  }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poId, refreshKey, relevant]);
+
+  if (!relevant) return null;
 
   return (
-    <details className="dc-card" open onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) load(); }} style={{ display: "block" }}>
+    <details className="dc-card" open style={{ display: "block" }}>
       <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 750, color: "#18181b" }}>เทียบใบสั่งซื้อ vs ใบรับ</div>
@@ -1651,12 +1693,15 @@ function ReceiveSection({
   warehouses,
   defaultWarehouseId,
   atWarehouse,
+  onReceived,
 }: {
   poId: string;
   lines: PoLineData[];
   warehouses: WarehouseOption[];
   defaultWarehouseId: string | null;
   atWarehouse: boolean;
+  // เรียกหลังรับเข้าสำเร็จ → พ่อ (PoDetail) refetch bundle + เด้งตาราง "เทียบ" ให้โหลดใหม่
+  onReceived?: () => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -1704,7 +1749,9 @@ function ReceiveSection({
         if (!res.trcloudPosted && res.grnId) {
           setTrcloudPending({ grnId: res.grnId, reason: res.trcloudReason });
         }
-        router.refresh();
+        // แจ้งพ่อให้ refetch (สถานะ + ตาราง "เทียบ") ถ้ามี · ไม่มี (หน้า standalone) → router.refresh
+        if (onReceived) onReceived();
+        else router.refresh();
       } else {
         setError(res.error);
       }
