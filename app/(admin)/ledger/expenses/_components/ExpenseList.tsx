@@ -166,6 +166,10 @@ export function ExpenseList({
     (r) => !expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok,
   );
   const canRequest = checkedRows.length > 0 && !multiVendor && checkedNeedFix.length === 0;
+  // ขอโอนต้องมี "ปลายทางเงิน" อย่างน้อย 1 อย่าง (เลขบัญชี / พร้อมเพย์ / รูป QR) — กันขอโอนลอย
+  // ที่ผู้บริหารได้การ์ดแต่ไม่รู้จะโอนเข้าไหน (D-2026-07-09 CEO report).
+  const payeeHasAccount =
+    payee.acctNo.trim().length > 0 || payee.promptpay.trim().length > 0 || Boolean(payee.qrImageUrl);
 
   // Build a link to a row keeping company/branch/filter context.
   function rowHref(id: string) {
@@ -667,8 +671,14 @@ export function ExpenseList({
               <button
                 type="button"
                 onClick={runRequestTransfer}
-                disabled={pending || !canRequest}
-                title={!canRequest ? "ต้องระบุสาขา+หมวดทุกใบ + ผู้ขายเดียวกัน ก่อนขอโอน" : undefined}
+                disabled={pending || !canRequest || !payeeHasAccount}
+                title={
+                  !canRequest
+                    ? "ต้องระบุสาขา+หมวดทุกใบ + ผู้ขายเดียวกัน ก่อนขอโอน"
+                    : !payeeHasAccount
+                      ? "ต้องใส่เลขบัญชี / พร้อมเพย์ หรือแนบ QR ผู้รับ ก่อนขอโอน"
+                      : undefined
+                }
                 className="press inline-flex h-9 items-center gap-1 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
                 {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Banknote className="size-3.5" aria-hidden />}

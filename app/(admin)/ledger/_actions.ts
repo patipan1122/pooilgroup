@@ -3053,14 +3053,21 @@ export async function lookupPurchaseHistoryAction(
 }
 
 // ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────
-const zPayee = z.object({
-  acctName: z.string().trim().max(120).optional(),
-  bankCode: z.string().trim().max(8).optional(),
-  acctNo: z.string().trim().max(40).optional(),
-  promptpay: z.string().trim().max(40).optional(),
-  qrPayload: z.string().trim().max(1024).optional(),
-  qrImageUrl: z.string().trim().max(2048).optional(),
-});
+const zPayee = z
+  .object({
+    acctName: z.string().trim().max(120).optional(),
+    bankCode: z.string().trim().max(8).optional(),
+    acctNo: z.string().trim().max(40).optional(),
+    promptpay: z.string().trim().max(40).optional(),
+    qrPayload: z.string().trim().max(1024).optional(),
+    qrImageUrl: z.string().trim().max(2048).optional(),
+  })
+  // ต้องมี "ปลายทางเงิน" อย่างน้อย 1 อย่าง — กันขอโอนโดยไม่มีเลขบัญชี/พร้อมเพย์/QR
+  // (D-2026-07-09 · defense-in-depth คู่กับปุ่มที่ปิดไว้ฝั่ง client)
+  .refine(
+    (p) => Boolean(p.acctNo?.trim() || p.promptpay?.trim() || p.qrImageUrl?.trim() || p.qrPayload?.trim()),
+    { message: "ต้องระบุเลขบัญชี / พร้อมเพย์ หรือแนบ QR ผู้รับ ก่อนขอโอน" },
+  );
 
 /** Operation selects bills → "ขอโอนเงิน" → create the request + push the card to
  *  the executive (slip-intake) group. Single-company / classifiable bills only. */
@@ -3078,7 +3085,9 @@ export async function createPaymentRequestAction(
   }
   const ids = Array.isArray(billIds) ? billIds.filter((x) => typeof x === "string") : [];
   const payee = zPayee.safeParse(payeeRaw ?? {});
-  if (!payee.success) return { ok: false, error: "ข้อมูลบัญชีผู้รับไม่ถูกต้อง" };
+  if (!payee.success) {
+    return { ok: false, error: payee.error.issues[0]?.message ?? "ข้อมูลบัญชีผู้รับไม่ถูกต้อง" };
+  }
 
   const res = await createPaymentRequest({
     orgId, billIds: ids, payee: payee.data, requestedBy: session.user.id,

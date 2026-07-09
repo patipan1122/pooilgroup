@@ -55,9 +55,13 @@ export function LiffExpensePane({
       // LIFF (สมาชิก/หน้างาน) เห็นสถานะสี "ผิดตรงไหน" อ่านอย่างเดียว — ไม่โชว์ปุ่มแก้.
       canEditClaimability={false}
       showTrcloud={false}
-      // หลังยืนยัน/ลบสำเร็จ → เด้งกลับหน้ารายการ (แก้ "กดยืนยันแล้วไม่ไปต่อ").
-      onAfterFinish={() => {
-        router.push(backHref);
+      // ยืนยันแล้ว → อยู่หน้าบิลนั้นเลย (refresh ให้เห็นสถานะยืนยัน · ไม่เด้งไป home/รายการ
+      // = ตอบ CEO 2026-07-09 "ควรไปหน้าบิลนั้น ไม่ใช่เด้ง home ใหญ่") · ลบ/ยกเลิก → เด้งกลับรายการ
+      // (บิลหายจากหน้านี้แล้ว อยู่ต่อไม่มีอะไรให้ดู).
+      onAfterFinish={(action) => {
+        if (action === "delete" || action === "void") {
+          router.push(backHref);
+        }
         router.refresh();
       }}
     />

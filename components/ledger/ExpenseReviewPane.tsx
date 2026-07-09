@@ -340,7 +340,7 @@ export function ExpenseReviewPane({
   showSendToTrcloud?: boolean;
   /** เรียกหลังทำรายการ "เสร็จ" (ยืนยัน/ยกเลิก/ลบสำเร็จ) — LIFF เด้งกลับหน้ารายการ,
    *  เว็บ refresh. ไม่ส่งมา = อยู่หน้าเดิม (พฤติกรรมเดิม). */
-  onAfterFinish?: () => void;
+  onAfterFinish?: (action?: "confirm" | "delete" | "void") => void;
 }) {
   const [draft, setDraft] = useState<ExpenseDraft>({
     vendor: expense.vendor ?? "",
@@ -579,7 +579,7 @@ export function ExpenseReviewPane({
     startTransition(async () => {
       const res = await onSelfDelete(expense.id);
       setDelPending(false);
-      if (res.ok) onAfterFinish?.();
+      if (res.ok) onAfterFinish?.("delete");
       setMsg(
         res.ok
           ? { kind: "ok", text: "ลบรายการแล้ว (ขึ้นเป็น 'ยกเลิก')" }
@@ -612,7 +612,7 @@ export function ExpenseReviewPane({
     setMsg(null);
     startTransition(async () => {
       const res = await onVoid(expense.id);
-      if (res.ok) onAfterFinish?.();
+      if (res.ok) onAfterFinish?.("void");
       setMsg(
         res.ok
           ? { kind: "ok", text: "ยกเลิกแล้ว" }
@@ -1435,7 +1435,7 @@ export function ExpenseReviewPane({
                     // ใบครบ → confirmed บนเซิร์ฟเวอร์ → ต้อง refresh ให้สถานะ + ปุ่ม "ส่ง TRCloud"
                     // อัปเดต (ไม่งั้นค้าง disabled). web = soft refresh (คง savedFlash ไว้ ปุ่ม ✓
                     // ยังโชว์) · LIFF = กลับหน้ารายการ. plain save (ไม่ commit) ไม่ต้อง refresh.
-                    if (commit) onAfterFinish?.();
+                    if (commit) onAfterFinish?.("confirm");
                   } else {
                     setMsg({ kind: "err", text: res.error ?? "บันทึกไม่สำเร็จ" });
                   }
