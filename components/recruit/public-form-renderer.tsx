@@ -16,6 +16,8 @@ interface UploadedFile {
   size: number;
   mime: string;
   localUrl?: string;
+  url?: string; // Google Drive share link (when stored on Drive)
+  storage?: string; // "drive" | undefined (R2)
 }
 
 interface Props {
@@ -104,6 +106,41 @@ export function PublicFormRenderer({
     }
 
     try {
+      // Prefer Google Drive (org-connected). The endpoint returns
+      // { fallback: true } when Drive isn't connected / file too big → we drop
+      // to R2 below so the applicant is never blocked.
+      const driveForm = new FormData();
+      driveForm.append("slug", slug ?? "");
+      driveForm.append("file", file);
+      const driveResp = await fetch("/api/recruit/upload-drive", {
+        method: "POST",
+        body: driveForm,
+      });
+      if (driveResp.ok) {
+        const d = (await driveResp.json().catch(() => ({}))) as {
+          ok?: boolean;
+          storage?: string;
+          key?: string;
+          url?: string;
+          name?: string;
+        };
+        if (d?.ok && d.storage === "drive" && d.key) {
+          const entry: UploadedFile = {
+            key: d.key,
+            name: d.name ?? file.name,
+            size: file.size,
+            mime: file.type,
+            url: d.url,
+            storage: "drive",
+          };
+          setFiles((f) => ({ ...f, [fieldId]: [...(f[fieldId] ?? []), entry] }));
+          toast.success(`อัปโหลด ${file.name} แล้ว`);
+          return;
+        }
+        // else: d.fallback → continue to R2
+      }
+
+      // Fallback: R2 (browser PUT via presigned URL)
       // Step 1: get signed URL
       const signResp = await fetch("/api/recruit/upload", {
         method: "POST",

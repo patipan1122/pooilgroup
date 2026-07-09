@@ -18,7 +18,14 @@ interface SubmitInput {
   slug: string;
   applicant: { fullName: string; phone: string; email?: string };
   answers: Record<string, unknown>;
-  files: Array<{ key: string; name: string; size: number; mime: string }>;
+  files: Array<{
+    key: string;
+    name: string;
+    size: number;
+    mime: string;
+    url?: string; // Google Drive share link (Drive-stored files)
+    storage?: string; // "drive" | undefined (R2)
+  }>;
   referralCode?: string;
 }
 
@@ -55,8 +62,16 @@ export async function submitPublicApplication(
   if (input.files.length > 6) throw new Error("ไฟล์เกิน 6 ไฟล์");
 
   // file path security: every R2 key MUST be scoped to this org+slug
-  // (prevents an attacker from stuffing keys from other postings)
+  // (prevents an attacker from stuffing keys from other postings). Drive-stored
+  // files carry a Google file id (not an R2 key) + must have a drive.google.com
+  // link — validate those separately instead.
   for (const f of input.files) {
+    if (f.storage === "drive") {
+      if (!f.url || !/^https:\/\/(drive|docs)\.google\.com\//.test(f.url)) {
+        throw new Error("ไฟล์ Drive ไม่ถูกต้อง · ลองอัปโหลดใหม่");
+      }
+      continue;
+    }
     const expectedPrefix = `recruit/${posting.orgId}/${input.slug}/`;
     if (!f.key.startsWith(expectedPrefix)) {
       throw new Error("ไฟล์ผิดที่จัดเก็บ · ลองอัปโหลดใหม่");

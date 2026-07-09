@@ -7,6 +7,8 @@ interface FileEntry {
   name: string;
   size: number;
   mime: string;
+  url?: string; // Google Drive share link (when file stored on Drive)
+  storage?: string; // "drive" | undefined (R2)
 }
 
 const R2_PUBLIC_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? "";
@@ -22,7 +24,14 @@ export function ApplicationFiles({ files }: { files: FileEntry[] }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {files.map((f) => {
           const isImage = f.mime.startsWith("image/");
-          const url = R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${f.key}` : "";
+          // Drive-stored files carry their own share link; R2 files build one
+          // from the public bucket URL + key.
+          const url = f.url
+            ? f.url
+            : R2_PUBLIC_URL
+              ? `${R2_PUBLIC_URL}/${f.key}`
+              : "";
+          const onDrive = f.storage === "drive" || Boolean(f.url);
           return (
             <a
               key={f.key}
@@ -44,6 +53,11 @@ export function ApplicationFiles({ files }: { files: FileEntry[] }) {
                 </p>
                 <p className="text-[10px] text-zinc-500">
                   {formatSize(f.size)} · {f.mime.split("/")[1]?.toUpperCase()}
+                  {onDrive && (
+                    <span className="ml-1 text-green-600 font-bold">
+                      · Google Drive
+                    </span>
+                  )}
                 </p>
               </div>
               <Download className="size-4 text-zinc-400 group-hover:text-[var(--color-brand-700)] shrink-0" />
