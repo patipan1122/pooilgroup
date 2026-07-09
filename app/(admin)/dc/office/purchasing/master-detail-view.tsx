@@ -7,7 +7,9 @@
 // onChanged ของ <PoDetail> = refetch bundle ของใบนั้น + router.refresh() ลิสต์ (สถานะ/ป้ายอัปเดต).
 
 import { useEffect, useState, useTransition, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Ship, Truck, ChevronDown, ImageIcon, CalendarDays, ArrowUpRight } from "lucide-react";
 import { getPoDetailForPanel, type PoPanelBundle } from "@/lib/dc/po-actions";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_FLOW_STATUSES, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
 import { PoDetail } from "./[id]/po-detail";
@@ -17,6 +19,8 @@ import {
   fmtDate,
   moneySym,
   needsInput,
+  arrivalEstimate,
+  shipModeLabel,
 } from "./purchasing-workspace";
 
 const ALL = "__ALL__";
@@ -50,6 +54,8 @@ export function MasterDetailView({
 
   // ใบที่เลือก (ตั้งต้น = ใบแรกในลิสต์ที่กรองแล้ว)
   const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id ?? null);
+  // ใบที่ "กางดูสินค้า" อยู่ (accordion ในการ์ด) — มือถือดูได้เลยไม่ต้องเลื่อนไปแผงล่าง
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<PoPanelBundle | null>(null);
   const [loading, startLoad] = useTransition();
 
@@ -125,7 +131,11 @@ export function MasterDetailView({
                 key={it.id}
                 item={it}
                 active={it.id === selectedId}
-                onSelect={() => setSelectedId(it.id)}
+                expanded={it.id === expandedId}
+                onToggle={() => {
+                  setSelectedId(it.id); // อัปเดตแผงขวา (desktop) ด้วย
+                  setExpandedId((prev) => (prev === it.id ? null : it.id));
+                }}
               />
             ))
           )}
@@ -168,55 +178,144 @@ export function MasterDetailView({
 function PoCardMini({
   item,
   active,
-  onSelect,
+  expanded,
+  onToggle,
 }: {
   item: PoListItem;
   active: boolean;
-  onSelect: () => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const s = moneySym(item);
   const isThai = item.origin === "THAI";
+  const est = arrivalEstimate(item);
+  const ModeIcon = item.shipMode === "TRUCK" ? Truck : Ship;
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={active}
-      className={`dc-pur-card${active ? " is-active" : ""}`}
-      style={{ gap: 4, padding: "8px 11px", borderRadius: 11 }}
-      title={`${PO_ORIGIN_LABEL[item.origin] ?? item.origin} · ${item.poCode}`}
-    >
-      {/* บน: ผู้ขาย (+จุดสี origin) · ยอด */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
-          <span
-            aria-hidden
-            title={PO_ORIGIN_LABEL[item.origin] ?? item.origin}
-            style={{ flex: "0 0 auto", width: 7, height: 7, borderRadius: 999, background: isThai ? "#167a41" : "#2456b8" }}
-          />
-          <span className="dc-pur-card__supplier" style={{ fontSize: 14 }}>
-            {item.supplierName ?? "— ไม่ระบุผู้ขาย —"}
+    <div style={{ display: "grid", gap: expanded ? 4 : 0 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={active}
+        aria-expanded={expanded}
+        className={`dc-pur-card${active ? " is-active" : ""}`}
+        style={{ gap: 3, padding: "8px 11px", borderRadius: 11 }}
+        title={`${PO_ORIGIN_LABEL[item.origin] ?? item.origin} · ${item.poCode}`}
+      >
+        {/* บน: ผู้ขาย (+จุดสี origin) · ยอด */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
+            <span
+              aria-hidden
+              title={PO_ORIGIN_LABEL[item.origin] ?? item.origin}
+              style={{ flex: "0 0 auto", width: 7, height: 7, borderRadius: 999, background: isThai ? "#167a41" : "#2456b8" }}
+            />
+            <span className="dc-pur-card__supplier" style={{ fontSize: 14 }}>
+              {item.supplierName ?? "— ไม่ระบุผู้ขาย —"}
+            </span>
           </span>
-        </span>
-        <span className="dc-pur-card__total" style={{ fontSize: 14, flex: "0 0 auto" }}>
-          {s}
-          {fmtMoney(item.total, 0)}
-        </span>
-      </div>
-      {/* ล่าง: meta ย่อ + สถานะ (+ป้ายรอใส่ข้อมูลถ้ามี) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 11.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-          {item.poCode} · {item.lineCount} รก.{item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""} · {fmtDate(item.date)}
-        </span>
-        <span style={{ display: "inline-flex", gap: 5, alignItems: "center", flex: "0 0 auto" }}>
-          {needsInput(item) && <span className="dc-pur-badge-input" style={{ fontSize: 10, padding: "1px 7px" }}>รอใส่</span>}
-          <span className={`dc-st dc-st--${tone(item.status)}`} style={{ fontSize: 11, padding: "2px 8px" }}>
-            {PO_STATUS_LABEL[item.status] ?? item.status}
+          <span className="dc-pur-card__total" style={{ fontSize: 14, flex: "0 0 auto" }}>
+            {s}
+            {fmtMoney(item.total, 0)}
           </span>
-        </span>
-      </div>
-    </button>
+        </div>
+        {/* กลาง: meta ย่อ + สถานะ + ลูกศรกาง */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ fontSize: 11.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+            {item.poCode} · {item.lineCount} รก.{item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""}
+          </span>
+          <span style={{ display: "inline-flex", gap: 5, alignItems: "center", flex: "0 0 auto" }}>
+            {needsInput(item) && <span className="dc-pur-badge-input" style={{ fontSize: 10, padding: "1px 7px" }}>รอใส่</span>}
+            <span className={`dc-st dc-st--${tone(item.status)}`} style={{ fontSize: 11, padding: "2px 8px" }}>
+              {PO_STATUS_LABEL[item.status] ?? item.status}
+            </span>
+            <ChevronDown size={15} aria-hidden style={{ color: "var(--dc-muted,#5b6676)", transition: "transform .15s", transform: expanded ? "rotate(180deg)" : "none" }} />
+          </span>
+        </div>
+        {/* ล่าง (ใหม่): วันสั่ง + คาดว่าจะถึง (เรือ/รถ) — บรรทัดเล็ก */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--dc-muted,#5b6676)", flexWrap: "wrap", lineHeight: 1.3 }}>
+          <CalendarDays size={12} aria-hidden style={{ flex: "0 0 auto" }} />
+          <span>สั่ง {fmtDate(item.orderedAt ?? item.date)}</span>
+          {est ? (
+            <>
+              <span aria-hidden>·</span>
+              <ModeIcon size={12} aria-hidden style={{ flex: "0 0 auto" }} />
+              <span style={{ color: "#1d4ed8", fontWeight: 600 }}>
+                {shipModeLabel(item.shipMode)} {est.label}
+              </span>
+            </>
+          ) : needsInput(item) ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>รอเลขพัสดุ (ประเมินวันถึงไม่ได้)</span>
+            </>
+          ) : null}
+        </div>
+      </button>
+
+      {/* accordion: รายการสินค้าในใบ (กางดูในการ์ด — มือถือไม่ต้องเลื่อนไปแผงล่าง) */}
+      {expanded && (
+        <div style={expandBody}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--dc-muted,#5b6676)", marginBottom: 7 }}>
+            สินค้าในใบ ({item.lineCount})
+          </div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {item.lines.map((l, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={expandThumb}>
+                  {l.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={l.imageUrl} alt={l.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <ImageIcon size={14} color="#8a94a3" />
+                  )}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: "var(--dc-ink,#1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {l.name}
+                </span>
+                <span style={{ fontSize: 12.5, color: "var(--dc-muted,#5b6676)", fontVariantNumeric: "tabular-nums", flex: "0 0 auto" }}>×{l.qty}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", flex: "0 0 auto", minWidth: 54, textAlign: "right" }}>
+                  {s}{fmtMoney(l.qty * l.unitPrice, 0)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <Link href={`/dc/office/purchasing/${item.id}`} style={expandOpen}>
+            เปิดใบเต็ม <ArrowUpRight size={13} />
+          </Link>
+        </div>
+      )}
+    </div>
   );
 }
+
+const expandBody: React.CSSProperties = {
+  border: "1px solid var(--dc-line, #e7ebf2)",
+  borderRadius: 11,
+  padding: "10px 11px",
+  background: "var(--color-brand-50, #f7faff)",
+};
+const expandThumb: React.CSSProperties = {
+  flex: "0 0 auto",
+  width: 28,
+  height: 28,
+  borderRadius: 6,
+  overflow: "hidden",
+  background: "#fff",
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+const expandOpen: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  marginTop: 9,
+  fontSize: 12.5,
+  fontWeight: 700,
+  color: "#1d4ed8",
+  textDecoration: "none",
+};
 
 // ── skeleton ระหว่างโหลดแผงขวา ───────────────────────────────
 function PanelSkeleton() {

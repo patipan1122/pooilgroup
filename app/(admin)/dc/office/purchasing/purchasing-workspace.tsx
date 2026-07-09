@@ -17,6 +17,8 @@ import { BulkPayDrawer } from "@/components/dc/bulk-pay-drawer";
 import type { PoSupplierOption } from "@/lib/dc/po-actions";
 
 // ── shared types (ส่งมาจาก server) ───────────────────────────
+export type PoLineMini = { name: string; qty: number; unitPrice: number; imageUrl: string | null };
+
 export type PoListItem = {
   id: string;
   poCode: string;
@@ -29,6 +31,11 @@ export type PoListItem = {
   boxCount: number;
   hasTracking: boolean; // มีกล่องที่มีเลขพัสดุแล้วหรือยัง (ไว้ derive "รอใส่ข้อมูล")
   date: string; // ISO
+  orderedAt: string | null; // ISO — วันสั่ง
+  shipMode: string | null; // "SEA" | "TRUCK" | … (วิธีขนส่งของกล่องที่มีเลขพัสดุ)
+  trackingDate: string | null; // ISO — วันได้เลขพัสดุ (ฐานคำนวณวันถึง)
+  etaExplicit: string | null; // ISO — ETA ที่ตั้งไว้เอง (ถ้ามี = ใช้เลย)
+  lines: PoLineMini[]; // รายการสินค้าในใบ (ไว้กางดูในการ์ด)
 };
 
 export type PurchasingStats = {
@@ -56,6 +63,27 @@ export function moneySym(item: { origin: string; currency: string }): string {
 /** "รอใส่ข้อมูล" = ใบที่สั่งแล้ว/ได้เลขแล้ว แต่ยังไม่มีกล่องที่มีเลขพัสดุ (รอกรอก Tracking). */
 export function needsInput(item: PoListItem): boolean {
   return (item.status === "ORDERED" || item.status === "SHIPPED") && !item.hasTracking;
+}
+
+// ประเมินวันถึง (นับจากวันได้เลขพัสดุ): เรือ +14–20 วัน · รถ +7–10 วัน (CEO 2026-07-09)
+const ARRIVAL_DAYS: Record<string, [number, number]> = { SEA: [14, 20], TRUCK: [7, 10] };
+function dm(iso: string): string {
+  return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short" }).format(new Date(iso));
+}
+/** คืนข้อความ "คาดถึง …" หรือ null ถ้าประเมินไม่ได้ (ยังไม่มีเลขพัสดุ). */
+export function arrivalEstimate(item: PoListItem): { label: string; mode: string | null } | null {
+  if (item.etaExplicit) return { label: `คาดถึง ~${dm(item.etaExplicit)}`, mode: item.shipMode };
+  if (!item.trackingDate) return null;
+  const win = item.shipMode ? ARRIVAL_DAYS[item.shipMode] : null;
+  if (!win) return null;
+  const base = new Date(item.trackingDate);
+  const from = new Date(base); from.setDate(from.getDate() + win[0]);
+  const to = new Date(base); to.setDate(to.getDate() + win[1]);
+  return { label: `คาดถึง ${dm(from.toISOString())}–${dm(to.toISOString())}`, mode: item.shipMode };
+}
+/** ป้ายวิธีขนส่งแบบสั้น (ไทย). */
+export function shipModeLabel(mode: string | null): string {
+  return mode === "SEA" ? "เรือ" : mode === "TRUCK" ? "รถ" : mode === "AIR" ? "เครื่องบิน" : "";
 }
 
 export function PurchasingWorkspace({

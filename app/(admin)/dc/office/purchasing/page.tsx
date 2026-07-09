@@ -33,11 +33,18 @@ export default async function DcPurchasingPage() {
       supplier: { select: { name: true } },
       lines: {
         orderBy: { id: "asc" },
-        select: { id: true, qty: true, unitPriceCny: true },
+        select: {
+          id: true, qty: true, unitPriceCny: true,
+          product: { select: { name: true, imageR2Path: true } },
+        },
       },
-      shipments: { select: { trackingNo: true, status: true } },
+      shipments: { select: { trackingNo: true, status: true, mode: true, createdAt: true, eta: true } },
     },
   });
+
+  const r2Base = process.env.R2_PUBLIC_URL ?? "";
+  const imgUrl = (p: string | null) =>
+    p ? (p.startsWith("http") ? p : `${r2Base}/${p}`) : null;
 
   // สถิติ "งานค้างวันนี้" — นับระหว่าง map ครั้งเดียว
   let pendingTracking = 0; // สั่งแล้ว (ORDERED) แต่ยังไม่มีกล่องที่มีเลขพัสดุ
@@ -53,6 +60,11 @@ export default async function DcPurchasingPage() {
     if (po.status === "ORDERED" && !hasTracking) pendingTracking += 1;
     if (po.status === "AT_WAREHOUSE" || po.status === "ARRIVED_TH" || po.status === "PARTIAL") pendingGrn += 1;
 
+    // กล่องที่ใช้ประเมินวันถึง: เอากล่องที่มีเลขพัสดุก่อน (ไม่มี→กล่องแรก)
+    const trackedShip =
+      po.shipments.find((s) => (s.trackingNo ?? "").trim() !== "") ?? po.shipments[0] ?? null;
+    const hasTrackNo = !!trackedShip && (trackedShip.trackingNo ?? "").trim() !== "";
+
     return {
       id: po.id,
       poCode: po.poCode,
@@ -65,6 +77,17 @@ export default async function DcPurchasingPage() {
       boxCount,
       hasTracking,
       date: (po.orderedAt ?? po.createdAt).toISOString(),
+      orderedAt: po.orderedAt ? po.orderedAt.toISOString() : null,
+      shipMode: trackedShip?.mode ?? null,
+      // "วันได้เลข tracking" = วันที่สร้างกล่องที่มีเลขพัสดุ (setPoTracking สร้างกล่องพร้อมเลข)
+      trackingDate: hasTrackNo ? trackedShip!.createdAt.toISOString() : null,
+      etaExplicit: trackedShip?.eta ? trackedShip.eta.toISOString() : null,
+      lines: po.lines.map((l) => ({
+        name: l.product?.name ?? "—",
+        qty: l.qty,
+        unitPrice: Number(l.unitPriceCny),
+        imageUrl: imgUrl(l.product?.imageR2Path ?? null),
+      })),
     };
   });
 
