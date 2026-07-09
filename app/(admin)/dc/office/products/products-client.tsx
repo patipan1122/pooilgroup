@@ -40,24 +40,38 @@ export type ProductRow = {
 export type CatChip = { key: string; label: string; count: number };
 
 export function ProductsClient({
-  products, chips, total, lowCount,
+  products,
 }: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number }) {
   const [view, setView] = useState<"grid" | "table">("grid");
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
+  const [showSoldOut, setShowSoldOut] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // ซ่อนสินค้าที่คงเหลือ = 0 (ของใช้แล้วหมดไป · ซื้อ/สร้างใหม่เสมอ) — กด "แสดงของหมด" ดูได้
+  const soldOutCount = products.reduce((n, p) => n + (p.onhand <= 0 ? 1 : 0), 0);
+  const base = showSoldOut ? products : products.filter((p) => p.onhand > 0);
+
   const term = q.trim().toLowerCase();
-  const filtered = products.filter((p) => {
+  const filtered = base.filter((p) => {
     if (cat !== "all" && p.catKey !== cat) return false;
     if (lowOnly && !p.low) return false;
     if (term && !`${p.name} ${p.sku} ${p.barcode ?? ""}`.toLowerCase().includes(term)) return false;
     return true;
   });
 
-  const allChips: CatChip[] = [{ key: "all", label: "ทั้งหมด", count: total }, ...chips];
+  // chips + ตัวเลข คำนวณจากชุดที่มองเห็นจริง (สอดคล้องกับการซ่อนของหมด)
+  const byCat = new Map<string, CatChip>();
+  for (const p of base) {
+    const ex = byCat.get(p.catKey);
+    if (ex) ex.count++;
+    else byCat.set(p.catKey, { key: p.catKey, label: p.catLabel, count: 1 });
+  }
+  const dynChips = [...byCat.values()].sort((a, b) => b.count - a.count);
+  const lowCount = base.reduce((n, p) => n + (p.low ? 1 : 0), 0);
+  const allChips: CatChip[] = [{ key: "all", label: "ทั้งหมด", count: base.length }, ...dynChips];
 
   return (
     <div>
@@ -117,30 +131,47 @@ export function ProductsClient({
         </div>
       </div>
 
-      {/* category chips + low */}
+      {/* category chips + sold-out toggle + low */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         {allChips.map((c) => (
           <span key={c.key} className={cat === c.key ? "dcx-chip on" : "dcx-chip"} onClick={() => setCat(c.key)}>
             {c.label} · {c.count}
           </span>
         ))}
-        {lowCount > 0 ? (
-          <span
-            onClick={() => setLowOnly((v) => !v)}
-            style={{
-              marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600,
-              color: "#B45309", background: "#FEF1DE", padding: "7px 13px", borderRadius: 20, cursor: "pointer",
-              boxShadow: lowOnly ? "inset 0 0 0 1.5px #E0922F" : "none",
-            }}
-          >
-            <Svg size={14} sw={2} stroke="#B45309">{IcAlert}</Svg>ของใกล้หมด {lowCount}
-          </span>
-        ) : null}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {soldOutCount > 0 ? (
+            <span
+              onClick={() => setShowSoldOut((v) => !v)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600,
+                color: showSoldOut ? "#475569" : "#94A3B8", background: showSoldOut ? "#E7ECF3" : "#F1F4F8",
+                padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                boxShadow: showSoldOut ? "inset 0 0 0 1.5px #94A3B8" : "none",
+              }}
+            >
+              {showSoldOut ? "ซ่อนของหมด" : `แสดงของหมด ${soldOutCount}`}
+            </span>
+          ) : null}
+          {lowCount > 0 ? (
+            <span
+              onClick={() => setLowOnly((v) => !v)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600,
+                color: "#B45309", background: "#FEF1DE", padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                boxShadow: lowOnly ? "inset 0 0 0 1.5px #E0922F" : "none",
+              }}
+            >
+              <Svg size={14} sw={2} stroke="#B45309">{IcAlert}</Svg>ของใกล้หมด {lowCount}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
         <div style={{ marginTop: 28, textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>
-          ไม่พบสินค้าที่ตรงกับเงื่อนไข
+          {!showSoldOut && soldOutCount > 0 && base.length === 0
+            ? `สินค้าใช้หมดแล้วทั้งหมด (${soldOutCount} รายการ) — กด “แสดงของหมด” เพื่อดู`
+            : "ไม่พบสินค้าที่ตรงกับเงื่อนไข"}
         </div>
       ) : view === "grid" ? (
         <GridView rows={filtered} />
@@ -207,8 +238,13 @@ function TableView({ rows }: { rows: ProductRow[] }) {
           cells: {
             name: (
               <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 8, background: p.catSoft, color: p.catC, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Svg size={16} sw={1.5}>{IcImage}</Svg>
+                <span style={{ width: 30, height: 30, borderRadius: 8, background: p.catSoft, color: p.catC, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                  {p.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <Svg size={16} sw={1.5}>{IcImage}</Svg>
+                  )}
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--ink)" }}>{p.name}</div>

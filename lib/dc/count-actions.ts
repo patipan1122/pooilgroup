@@ -145,14 +145,17 @@ export async function listProductsForCount(input: {
 
     return {
       ok: true,
-      products: products.map((p) => ({
-        productId: p.id,
-        sku: p.sku,
-        name: p.name,
-        category: p.category,
-        unit: p.unit,
-        systemQty: p.balances[0]?.qtyOnHand ?? 0,
-      })),
+      // ซ่อนสินค้าที่คงเหลือ = 0 ในคลังนี้ (ของใช้แล้วหมดไป · CEO ขอ) — ยังสแกนตัวจริงได้ปกติ
+      products: products
+        .filter((p) => (p.balances[0]?.qtyOnHand ?? 0) > 0)
+        .map((p) => ({
+          productId: p.id,
+          sku: p.sku,
+          name: p.name,
+          category: p.category,
+          unit: p.unit,
+          systemQty: p.balances[0]?.qtyOnHand ?? 0,
+        })),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "โหลดรายการสินค้าไม่สำเร็จ" };

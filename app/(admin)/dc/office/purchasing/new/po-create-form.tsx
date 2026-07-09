@@ -46,6 +46,7 @@ import {
   type PoSupplierOption,
 } from "@/lib/dc/po-actions";
 import { Input } from "@/components/ui/input";
+import { PoImageIngest, type OcrAddedLine } from "./po-image-ingest";
 
 type Origin = "CHINA" | "THAI";
 type WarehouseOpt = { id: string; name: string };
@@ -182,6 +183,27 @@ export function PoCreateForm({
       if (key === activeKey) setActiveKey(next[next.length - 1].key);
       return next;
     });
+  }
+
+  // "แนบรูป → อ่านอัตโนมัติ": เติมแถวจากรายการที่ AI อ่าน+คนตรวจแล้ว
+  function addOcrLines(added: OcrAddedLine[]) {
+    if (added.length === 0) return;
+    const drafts: LineDraft[] = added.map((a) => ({
+      ...newLine(),
+      productId: a.productId,
+      productLabel: a.productLabel,
+      qty: a.qty,
+      unitPrice: a.unitPrice,
+      photoR2Key: a.photoR2Key,
+      photoUrl: a.photoUrl,
+    }));
+    setLines((prev) => {
+      // ถ้ามีแค่แถวเปล่าแถวเดียว → แทนที่เลย (ไม่ทิ้งแถวว่างไว้บนสุด)
+      const blankOnly = prev.length === 1 && !prev[0].productId && !prev[0].unitPrice;
+      return blankOnly ? drafts : [...prev, ...drafts];
+    });
+    setActiveKey(drafts[drafts.length - 1].key);
+    setError(null);
   }
 
   // ── สลับชนิดใบ จีน/ไทย ──
@@ -359,6 +381,11 @@ export function PoCreateForm({
           gridTemplateColumns: "1fr",
         }}
       >
+        {/* แนบรูปออเดอร์ 1688 → AI อ่าน → คนตรวจ → เติมแถวอัตโนมัติ */}
+        <div style={{ marginBottom: 12 }}>
+          <PoImageIngest origin={origin} sym={sym} onAddLines={addOcrLines} />
+        </div>
+
         <div className="dc-poline2-grid">
           {/* ซ้าย: ลิสต์แถวเตี้ย */}
           <div style={{ display: "grid", gap: 2, alignContent: "start" }}>
