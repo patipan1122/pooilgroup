@@ -89,11 +89,27 @@ export function slugify(input: string): string {
     .replace(/-+$/g, "");
 }
 
+// Cap the readable base so the public link stays short & trustworthy.
+// A romanized Thai title can balloon to 50+ chars ("พนักงานกาแฟพันธ์ไทย
+// สาขาข้างๆศาลเยาวชนโคกสูง" → 58 chars) which reads like a scam link on
+// Facebook/LINE. We keep just the first ~20 chars, preferring to cut on a
+// word boundary (dash) so we don't end mid-word when possible. Uniqueness
+// still comes from the random suffix, so trimming the base is safe.
+const SLUG_BASE_MAXLEN = 20;
+export function shortenBase(base: string): string {
+  if (base.length <= SLUG_BASE_MAXLEN) return base;
+  const cut = base.slice(0, SLUG_BASE_MAXLEN);
+  const lastDash = cut.lastIndexOf("-");
+  // Only honor a word boundary if it leaves a reasonable amount of text.
+  const trimmed = lastDash >= 10 ? cut.slice(0, lastDash) : cut;
+  return trimmed.replace(/-+$/g, "");
+}
+
 /** Generate a unique slug from title + random suffix. */
 export function makePostingSlug(title: string): string {
-  const base = slugify(title);
+  const base = shortenBase(slugify(title));
   const suffix = randomSuffix(4);
-  return base ? `${base}-${suffix}` : `post-${Date.now()}-${suffix}`;
+  return base ? `${base}-${suffix}` : `post-${suffix}`;
 }
 
 /**

@@ -63,7 +63,13 @@ export async function generateMetadata({
   const description =
     posting.description?.replace(/\s+/g, " ").slice(0, 160) ??
     `ส่งใบสมัครตำแหน่ง ${posting.title} กับ ${companyName} · ไม่ต้องล็อกอิน · PDPA ปลอดภัย`;
+  // Lock the share card to the public domain (pooilgroup.com) so Facebook/LINE
+  // never surface "…vercel.app" — even if the link was copied off the back-office
+  // URL. Hardcoded (not NEXT_PUBLIC_APP_URL, which is localhost in dev) so the
+  // displayed domain + the auto-generated opengraph-image URL are ALWAYS
+  // pooilgroup.com, regardless of environment.
   return {
+    metadataBase: new URL("https://pooilgroup.com"),
     title,
     description,
     robots: { index: false, follow: false },
@@ -72,9 +78,10 @@ export async function generateMetadata({
       description,
       type: "website",
       siteName: companyName,
+      url: `/apply/${slug}`,
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
     },
