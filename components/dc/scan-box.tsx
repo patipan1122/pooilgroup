@@ -3,7 +3,7 @@
 // DC · กล่องสแกน/พิมพ์รหัส (brand-skinned)
 //   • เครื่องยิง USB = คีย์บอร์ด → พิมพ์/ยิงโค้ด + Enter
 //   • พิมพ์มือได้เสมอ (EndUser hard-line: ไม่บังคับสแกน)
-//   • กล้อง = BarcodeDetector (Chrome/Android); iOS Safari → ใช้ USB/พิมพ์ (เติม @zxing เฟส 2)
+//   • กล้อง = BarcodeDetector (Chrome/Android · เร็ว) → ถ้าไม่มี (iPhone/iPad Safari) fallback @zxing (โหลดเฉพาะตอนเปิดกล้อง)
 
 import { useEffect, useRef, useState } from "react";
 import { ScanLine, Camera } from "lucide-react";
@@ -35,8 +35,6 @@ export function DcScanBox({ onScan, placeholder }: { onScan: (code: string) => v
     if (!isTouch()) inputRef.current?.focus();
   };
 
-  const camSupported = typeof window !== "undefined" && "BarcodeDetector" in window;
-
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <div style={{ position: "relative", flex: 1 }}>
@@ -61,7 +59,6 @@ export function DcScanBox({ onScan, placeholder }: { onScan: (code: string) => v
       </button>
       {camOpen && (
         <DcCameraScanner
-          supported={camSupported}
           onClose={() => setCamOpen(false)}
           onScan={(code) => { setCamOpen(false); submit(code); }}
         />
@@ -70,35 +67,56 @@ export function DcScanBox({ onScan, placeholder }: { onScan: (code: string) => v
   );
 }
 
-function DcCameraScanner({ supported, onScan, onClose }: { supported: boolean; onScan: (code: string) => void; onClose: () => void }) {
+function DcCameraScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [err, setErr] = useState<string | null>(
-    supported ? null : "อุปกรณ์นี้ (เช่น iPhone/iPad Safari) ยังสแกนกล้องไม่ได้ · ใช้เครื่องยิง USB หรือพิมพ์รหัสแทน",
-  );
+  const [err, setErr] = useState<string | null>(null);
+  // เก็บ callback ล่าสุดไว้ใน ref → effect รันครั้งเดียว ไม่ re-subscribe กล้องซ้ำเวลา parent re-render
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
 
   useEffect(() => {
-    if (!supported) return;
+    const hasCamera = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+    if (!hasCamera) {
+      setErr("อุปกรณ์นี้เปิดกล้องไม่ได้ · ใช้เครื่องยิง USB หรือพิมพ์รหัสแทน");
+      return;
+    }
+    const nativeSupported = "BarcodeDetector" in window;
     let stream: MediaStream | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
+    let zxingControls: { stop: () => void } | null = null;
     let stopped = false;
-    // @ts-expect-error BarcodeDetector = experimental browser API
-    const detector: BarcodeDetectorLike = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a", "upc_e", "qr_code"] });
 
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
-        const v = videoRef.current;
-        if (!v) return;
-        v.srcObject = stream;
-        await v.play();
-        timer = setInterval(async () => {
-          if (!videoRef.current) return;
-          try {
-            const hits = await detector.detect(videoRef.current);
-            if (hits.length > 0 && hits[0].rawValue) onScan(hits[0].rawValue);
-          } catch { /* no frame match = normal */ }
-        }, 300);
+        if (nativeSupported) {
+          // เร็ว: ตัวอ่านในเบราว์เซอร์ (Chrome/Android)
+          // @ts-expect-error BarcodeDetector = experimental browser API
+          const detector: BarcodeDetectorLike = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "code_39", "upc_a", "upc_e", "qr_code"] });
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
+          const v = videoRef.current;
+          if (!v) return;
+          v.srcObject = stream;
+          await v.play();
+          timer = setInterval(async () => {
+            if (!videoRef.current) return;
+            try {
+              const hits = await detector.detect(videoRef.current);
+              if (hits.length > 0 && hits[0].rawValue) onScanRef.current(hits[0].rawValue);
+            } catch { /* no frame match = normal */ }
+          }, 300);
+        } else {
+          // สำรอง: @zxing (iPhone/iPad Safari ที่ไม่มี BarcodeDetector) — โหลดเฉพาะตอนนี้ ไม่ถ่วง bundle หน้าอื่น
+          const { BrowserMultiFormatReader } = await import("@zxing/browser");
+          if (stopped || !videoRef.current) return;
+          const reader = new BrowserMultiFormatReader();
+          zxingControls = await reader.decodeFromConstraints(
+            { video: { facingMode: "environment" } },
+            videoRef.current,
+            (result) => { if (result) onScanRef.current(result.getText()); },
+          );
+          if (stopped) zxingControls.stop();
+        }
       } catch {
         setErr("เปิดกล้องไม่ได้ · อนุญาตการใช้กล้อง หรือใช้เครื่องยิง USB");
       }
@@ -108,8 +126,9 @@ function DcCameraScanner({ supported, onScan, onClose }: { supported: boolean; o
       stopped = true;
       if (timer) clearInterval(timer);
       if (stream) stream.getTracks().forEach((t) => t.stop());
+      if (zxingControls) zxingControls.stop();
     };
-  }, [supported, onScan]);
+  }, []);
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>

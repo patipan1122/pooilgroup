@@ -50,6 +50,9 @@ importers:
       '@zumer/snapdom':
         specifier: ^2.12.8
         version: 2.12.8
+      '@zxing/browser':
+        specifier: ^0.2.1
+        version: 0.2.1(@zxing/library@0.23.0)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -62,6 +65,9 @@ importers:
       date-fns-tz:
         specifier: ^3.2.0
         version: 3.2.0(date-fns@4.3.0)
+      jsbarcode:
+        specifier: ^3.12.3
+        version: 3.12.3
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
@@ -132,6 +138,9 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.0
+      '@types/jsbarcode':
+        specifier: ^3.11.4
+        version: 3.11.4
       '@types/leaflet':
         specifier: ^1.9.21
         version: 1.9.21
@@ -2064,6 +2073,9 @@ packages:
   '@types/geojson@7946.0.16':
     resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
 
+  '@types/jsbarcode@3.11.4':
+    resolution: {integrity: sha512-VBcpTAnEMH0Gbh8JpV14CgOtJjCYjsvR2FoDRyoYPE0gUxtApf8N4c+HKEOyz/iiIZkMzqrzBA3XX7+KgKxxsA==}
+
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -2347,6 +2359,18 @@ packages:
 
   '@zumer/snapdom@2.12.8':
     resolution: {integrity: sha512-dLX6ZMNjLveasn9yhcruOOfd8GBZBDp59F7iJoLlGf7BnGp0vfVsjxIZDIjN2UTZJN1KoJR/BXsxEnAyY7LuXA==}
+
+  '@zxing/browser@0.2.1':
+    resolution: {integrity: sha512-92pVfVDUXbc15xu9vIEmhNyqIEASMEkDF92CwT6T+7sg2EHXJRktH9CQKoQSXe51UtbNsj+Fm09H/JBWHMs/Sw==}
+    peerDependencies:
+      '@zxing/library': ^0.23.0
+
+  '@zxing/library@0.23.0':
+    resolution: {integrity: sha512-6fkkoFwP8CHxl6ugnPsj74PLJgX2iRv5zczGAyt5OBzQgxFhuhF0NCEc4t4OvSr8xAv2MRLlI0Iu9ZGDZQ2urA==}
+    engines: {node: '>= 24.0.0'}
+
+  '@zxing/text-encoding@0.9.0':
+    resolution: {integrity: sha512-U/4aVJ2mxI0aDNI8Uq0wEhMgY+u4CNtEb0om3+y3+niDAsoTCOB33UF0sxpzqzdqXLqmvc+vZyAt4O8pPdfkwA==}
 
   acorn-import-attributes@1.9.5:
     resolution: {integrity: sha512-n02Vykv5uA3eHGM/Z2dQrcD56kL8TyDb2p1+0P83PClMnC/nc+anbQRhIOWnSq4Ke/KvDPrY3C9hDtC/A3eHnQ==}
@@ -3387,6 +3411,9 @@ packages:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
     hasBin: true
 
+  jsbarcode@3.12.3:
+    resolution: {integrity: sha512-CuHU9hC6dPsHF5oVFMo8NW76uQVjH4L22CsP4hW+dNnGywJHC/B0ThA1CTDVLnxKLrrpYdicBLnd2xsgTfRnvg==}
+
   jsesc@3.1.0:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
@@ -4363,6 +4390,10 @@ packages:
     engines: {node: '>=18.12'}
     peerDependencies:
       typescript: '>=4.8.4'
+
+  ts-custom-error@3.3.1:
+    resolution: {integrity: sha512-5OX1tzOjxWEgsr/YEUWSuPrQ00deKLh6D7OTWcvNHm12/7QPyRh8SYpyWvA4IZv8H/+GQWQEh/kwo95Q9OVW1A==}
+    engines: {node: '>=14.0.0'}
 
   tsconfig-paths@3.15.0:
     resolution: {integrity: sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==}
@@ -6796,6 +6827,10 @@ snapshots:
 
   '@types/geojson@7946.0.16': {}
 
+  '@types/jsbarcode@3.11.4':
+    dependencies:
+      '@types/node': 20.19.41
+
   '@types/json-schema@7.0.15': {}
 
   '@types/json5@0.0.29': {}
@@ -7096,6 +7131,21 @@ snapshots:
   '@zip.js/zip.js@2.8.26': {}
 
   '@zumer/snapdom@2.12.8': {}
+
+  '@zxing/browser@0.2.1(@zxing/library@0.23.0)':
+    dependencies:
+      '@zxing/library': 0.23.0
+    optionalDependencies:
+      '@zxing/text-encoding': 0.9.0
+
+  '@zxing/library@0.23.0':
+    dependencies:
+      ts-custom-error: 3.3.1
+    optionalDependencies:
+      '@zxing/text-encoding': 0.9.0
+
+  '@zxing/text-encoding@0.9.0':
+    optional: true
 
   acorn-import-attributes@1.9.5(acorn@8.16.0):
     dependencies:
@@ -8312,6 +8362,8 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
+  jsbarcode@3.12.3: {}
+
   jsesc@3.1.0: {}
 
   json-bigint@1.0.0:
@@ -9283,6 +9335,8 @@ snapshots:
   ts-api-utils@2.5.0(typescript@5.9.3):
     dependencies:
       typescript: 5.9.3
+
+  ts-custom-error@3.3.1: {}
 
   tsconfig-paths@3.15.0:
     dependencies:

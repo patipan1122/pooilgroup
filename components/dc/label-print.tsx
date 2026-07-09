@@ -1,9 +1,11 @@
 "use client";
 
-// DC · พิมพ์ฉลาก QR 58มม. (เครื่องพิมพ์สติกเกอร์ความร้อน) — QR สร้างในเครื่อง (offline ได้)
+// DC · พิมพ์ฉลาก 58มม. (เครื่องพิมพ์สติกเกอร์ความร้อน) — สร้างในเครื่อง (offline ได้)
+//   บนป้าย 1 ดวงมีครบ 3 อย่าง: บาร์โค้ดแท่ง (ปืน 1D ยิงได้) + QR (มือถือ/ปืน 2D) + รหัสตัวหนังสือ (พิมพ์มือ/อ่านด้วยตา)
 import { useState } from "react";
 import { Printer } from "lucide-react";
 import { qrDataUrl } from "@/lib/dc/qr";
+import { code128DataUrl } from "@/lib/dc/barcode";
 
 export type DcLabelItem = { code: string; name: string; sku?: string | null; qty?: number };
 
@@ -13,13 +15,16 @@ export async function printDcLabels(items: DcLabelItem[]): Promise<void> {
   for (const it of items) {
     const copies = Math.max(1, it.qty ?? 1);
     const qr = await qrDataUrl(it.code, 200);
+    const barcode = code128DataUrl(it.code); // null ถ้ารหัสมีอักษรไทย → เหลือ QR+ตัวหนังสือ
+    const barcodeImg = barcode ? `<img src="${barcode}" class="bc" alt="" />` : "";
     for (let i = 0; i < copies; i++) {
       cards.push(`
         <div class="lbl">
-          <img src="${qr}" class="qr" alt="" />
-          <div class="meta">
-            <div class="name">${escapeHtml(it.name)}</div>
+          <div class="name">${escapeHtml(it.name)}</div>
+          ${barcodeImg}
+          <div class="row">
             <div class="code">${escapeHtml(it.sku || it.code)}</div>
+            <img src="${qr}" class="qr" alt="" />
           </div>
         </div>`);
     }
@@ -29,11 +34,12 @@ export async function printDcLabels(items: DcLabelItem[]): Promise<void> {
       @page { size: 58mm auto; margin: 0; }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: -apple-system, "IBM Plex Sans Thai", sans-serif; }
-      .lbl { width: 58mm; padding: 3mm; display: flex; gap: 3mm; align-items: center; page-break-after: always; }
-      .qr { width: 22mm; height: 22mm; }
-      .meta { flex: 1; min-width: 0; }
+      .lbl { width: 58mm; padding: 3mm; page-break-after: always; }
       .name { font-size: 11pt; font-weight: 700; line-height: 1.2; }
-      .code { font-size: 9pt; color: #333; margin-top: 1mm; font-family: monospace; }
+      .bc { display: block; width: 52mm; height: 12mm; margin: 1.5mm 0 0.5mm; }
+      .row { display: flex; justify-content: space-between; align-items: flex-end; gap: 2mm; margin-top: 0.5mm; }
+      .code { font-size: 10pt; color: #111; font-family: monospace; letter-spacing: 0.5px; word-break: break-all; }
+      .qr { width: 15mm; height: 15mm; flex-shrink: 0; }
     </style></head><body>${cards.join("")}
     <script>window.onload=function(){window.print();setTimeout(function(){window.close()},400)}</script>
     </body></html>`;
@@ -47,7 +53,7 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c));
 }
 
-export function DcLabelButton({ items, label = "พิมพ์ฉลาก QR" }: { items: DcLabelItem[]; label?: string }) {
+export function DcLabelButton({ items, label = "พิมพ์ฉลาก (บาร์โค้ด+QR)" }: { items: DcLabelItem[]; label?: string }) {
   const [busy, setBusy] = useState(false);
   return (
     <button
