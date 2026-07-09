@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { toNum } from "@/lib/rentspace/format";
 import { prisma } from "@/lib/prisma";
@@ -11,7 +12,10 @@ export const dynamic = "force-dynamic";
 
 export default async function RentSpaceSettingsPage() {
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) redirect("/403");
+  // เปิดให้แอดมินโมดูลเช่า (program admin) เข้าตั้งค่าได้ · ไม่ใช่แค่ super admin
+  if (!(await userIsModuleAdmin(session.user, "rentspace"))) redirect("/403");
+  // แต่สวิตช์ปลดล็อก (แก้/ลบ/ออกบิล·สัญญา) ตั้งได้เฉพาะ super admin (กัน self-escalation)
+  const canEditPerms = isSuperAdmin(session.user.role);
 
   const project = await getPrimaryProject(session.user.org_id);
 
@@ -86,7 +90,7 @@ export default async function RentSpaceSettingsPage() {
             : "ตั้งค่าโครงการเช่าครั้งแรก เพื่อเริ่มใช้งานระบบ"
         }
       />
-      <SettingsForm initial={initial} recurringCharges={recurringCharges} />
+      <SettingsForm initial={initial} recurringCharges={recurringCharges} canEditPerms={canEditPerms} />
     </RsPage>
   );
 }

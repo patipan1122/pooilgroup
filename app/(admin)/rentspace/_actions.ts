@@ -24,12 +24,6 @@ async function gateAdmin() {
   return session;
 }
 
-async function gateSuper() {
-  const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super_admin) เท่านั้น");
-  return session;
-}
-
 /** Anti-IDOR: throw unless the record exists within the caller's org. */
 async function ownGuard(exists: Promise<{ id: string } | null>, label: string): Promise<void> {
   if (!(await exists)) throw new Error(`ไม่พบ${label} หรือไม่มีสิทธิ์`);
@@ -181,7 +175,30 @@ export async function actSaveProject(input: {
   promptpayId?: string;
   paymentNote?: string;
 }) {
-  const session = await gateSuper();
+  const session = await gateAdmin();
+  const isSuper = isSuperAdmin(session.user.role);
+  // สวิตช์ปลดล็อก (แก้/ลบ/ออกบิล · แก้/ลบสัญญา) = การให้สิทธิ์คนอื่น → เฉพาะ super_admin
+  // ตั้งได้ (กัน module admin ปลดล็อกให้ตัวเอง). แม้ตอน "สร้างโครงการใหม่" module admin
+  // ก็ต้องไม่ honor input (ไม่งั้นตั้ง unlock=true ตอน create เพื่อ escalate ได้) →
+  // บังคับ default ปลอดภัยเสมอ (ออกบิลได้ · แก้/ลบไม่ได้).
+  const permFields = isSuper
+    ? {
+        billEditUnlocked: input.billEditUnlocked ?? false,
+        billDeleteUnlocked: input.billDeleteUnlocked ?? false,
+        billIssueUnlocked: input.billIssueUnlocked ?? true,
+        contractEditUnlocked: input.contractEditUnlocked ?? false,
+        contractDeleteUnlocked: input.contractDeleteUnlocked ?? false,
+      }
+    : !input.id
+      ? {
+          // non-super สร้างโครงการแรก → บังคับค่าปลอดภัย (ไม่เอาจาก input)
+          billEditUnlocked: false,
+          billDeleteUnlocked: false,
+          billIssueUnlocked: true,
+          contractEditUnlocked: false,
+          contractDeleteUnlocked: false,
+        }
+      : {}; // non-super แก้โครงการเดิม → ไม่แตะสวิตช์ปลดล็อกเลย
   const data = {
     name: input.name.trim(),
     slug: input.slug.trim() || "default",
@@ -197,20 +214,16 @@ export async function actSaveProject(input: {
     billDueDay: input.billDueDay ?? 5,
     autoBillEnabled: input.autoBillEnabled ?? true,
     view3dEnabled: input.view3dEnabled ?? true,
-    billEditUnlocked: input.billEditUnlocked ?? false,
-    billDeleteUnlocked: input.billDeleteUnlocked ?? false,
-    billIssueUnlocked: input.billIssueUnlocked ?? true,
     billCompanyName: input.billCompanyName?.trim() || null,
     billTaxId: input.billTaxId?.trim() || null,
     billBranch: input.billBranch?.trim() || null,
     billAddress: input.billAddress?.trim() || null,
-    contractEditUnlocked: input.contractEditUnlocked ?? false,
-    contractDeleteUnlocked: input.contractDeleteUnlocked ?? false,
     bankName: input.bankName?.trim() || null,
     bankAccountNo: input.bankAccountNo?.trim() || null,
     bankAccountHolder: input.bankAccountHolder?.trim() || null,
     promptpayId: input.promptpayId?.trim() || null,
     paymentNote: input.paymentNote?.trim() || null,
+    ...permFields,
   };
   let id = input.id;
   if (id) {
@@ -505,7 +518,7 @@ export async function actDeleteTenant(id: string) {
 
 // ───────── contract template ─────────
 export async function actSaveTemplate(input: { id?: string; name: string; bodyHtml: string; isDefault?: boolean }) {
-  const session = await gateSuper();
+  const session = await gateAdmin();
   let id = input.id;
   if (input.isDefault) {
     await prisma.rentalContractTemplate.updateMany({
@@ -528,7 +541,7 @@ export async function actSaveTemplate(input: { id?: string; name: string; bodyHt
 }
 
 export async function actDeleteTemplate(id: string) {
-  const session = await gateSuper();
+  const session = await gateAdmin();
   await ownGuard(prisma.rentalContractTemplate.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "แม่แบบ");
   await prisma.rentalContractTemplate.update({ where: { id }, data: { isActive: false } });
   revalidatePath("/rentspace/contracts/templates");
@@ -815,12 +828,28 @@ export async function actSaveMeterReading(input: {
   note?: string;
   isReset?: boolean;
   oldMeterFinal?: number;
+  /** เลขมิเตอร์ตั้งต้น (ครั้งก่อน) สำหรับห้องใหม่ที่ยังไม่มีประวัติเดือนก่อน —
+   *  ใช้เป็นฐานคำนวณหน่วยเดือนแรก แล้วเก็บเป็น meter.initialReading. */
+  openingReading?: number;
 }) {
   const session = await gateAdmin();
   await ownGuard(
     prisma.rentalUnit.findFirst({ where: { id: input.unitId, orgId: session.user.org_id }, select: { id: true } }),
     "ห้อง",
   );
+  // ── ล็อกมิเตอร์หลังวางบิล: งวดที่ออกบิลแล้ว (ยังไม่ยกเลิก) ห้ามแก้เลขมิเตอร์
+  //    เพราะบิลถูกส่งลูกค้าไปแล้ว การแก้เลขจะทำให้ยอดบิลกับมิเตอร์ไม่ตรงกัน.
+  //    super_admin ปลดล็อกแก้ได้ (เช่น แก้ที่คีย์ผิด) · คนอื่นต้องยกเลิกบิลก่อน.
+  if (!isSuperAdmin(session.user.role)) {
+    const billed = await prisma.rentalBill.findFirst({
+      where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" } },
+      select: { billNo: true },
+    });
+    if (billed)
+      throw new Error(
+        `งวดนี้ออกบิลแล้ว (${billed.billNo}) — แก้เลขมิเตอร์ไม่ได้ · ให้ผู้ดูแลระบบ (super admin) แก้ให้ หรือยกเลิกบิลก่อน`,
+      );
+  }
   // ensure a meter exists
   let meter = await prisma.rentalMeter.findUnique({
     where: { unitId_kind: { unitId: input.unitId, kind: input.kind } },
@@ -835,16 +864,42 @@ export async function actSaveMeterReading(input: {
   // "เลขตั้งต้น" → หน่วย = 0 ไม่คิดเงินทั้งมิเตอร์ (เลขมิเตอร์เป็นค่าสะสม จะเริ่มคิดหน่วย
   // จริงเดือนถัดไป). meter.initialReading ใช้เป็นฐานถ้าตั้งค่าไว้จริง (>0) เท่านั้น —
   // ค่า default 0 ไม่ถือเป็นฐาน (กันบั๊กบิลค่าไฟพุ่งเป็นเลขมิเตอร์ทั้งตัว).
-  const prevRow = await prisma.rentalMeterReading.findFirst({
-    where: { meterId: meter.id, period: { lt: input.period } },
-    orderBy: { period: "desc" },
-  });
-  const initial = toNum(meter.initialReading);
+  // prevRow = reading ล่าสุดก่อนงวดนี้ (ฐานคำนวณหน่วย) · existingRow = แถวงวดนี้ถ้ามีอยู่แล้ว
+  // (กรณีบันทึกซ้ำ — แก้เลข/แนบรูป) → คง "เลขก่อน" เดิมไว้ กันหน่วยเพี้ยนตอนแก้ซ้ำ.
+  const [prevRow, existingRow] = await Promise.all([
+    prisma.rentalMeterReading.findFirst({
+      where: { meterId: meter.id, period: { lt: input.period } },
+      orderBy: { period: "desc" },
+    }),
+    prisma.rentalMeterReading.findUnique({
+      where: { meterId_period: { meterId: meter.id, period: input.period } },
+      select: { prevReading: true },
+    }),
+  ]);
+  let initial = toNum(meter.initialReading);
+  // ห้องใหม่ (ไม่มีเดือนก่อน) + ผู้ใช้กรอก "เลขตั้งต้น" มาจริง → เก็บเป็นฐานถาวรของมิเตอร์นี้
+  // เพื่อให้บิลเดือนแรกคิดหน่วย (curr − ตั้งต้น) ได้จริง และแสดง "เลขก่อน" บนบิล.
+  // honor เลขที่กรอก "ทุกค่ารวม 0" (explicitOpening) → จอกับบิลตรงกันเสมอ · เขียน DB เฉพาะเมื่อค่าเปลี่ยน.
+  let explicitOpening: number | null = null;
+  if (!prevRow && input.openingReading != null && input.openingReading >= 0) {
+    explicitOpening = input.openingReading;
+    if (input.openingReading !== initial) {
+      await prisma.rentalMeter.update({
+        where: { id: meter.id },
+        data: { initialReading: input.openingReading },
+      });
+      initial = input.openingReading;
+    }
+  }
   const prevReading = prevRow
     ? toNum(prevRow.currReading)
-    : initial > 0
-      ? initial
-      : toNum(input.currReading); // เดือนแรก ไม่มีฐาน → ตั้งต้น หน่วย 0
+    : explicitOpening != null
+      ? explicitOpening // ผู้ใช้กรอกเลขตั้งต้นเอง (รวม 0) → ใช้ตามนั้น = จอกับบิลตรงกัน
+      : existingRow
+        ? toNum(existingRow.prevReading) // บันทึกซ้ำงวดเดิม → คงเลขก่อนเดิม (กันหน่วยเพี้ยนเป็น 0)
+        : initial > 0
+          ? initial
+          : toNum(input.currReading); // ไม่มีเดือนก่อน+ไม่มีตั้งต้น → ตั้งต้น=เลขนี้ หน่วย 0
   // resolve rate from contract → project default
   let rate = input.ratePerUnit;
   if (rate == null) {
@@ -1683,7 +1738,7 @@ export async function actSaveRecurringCharge(input: {
   isActive?: boolean;
   sort?: number;
 }) {
-  const session = await gateSuper();
+  const session = await gateAdmin();
   await ownGuard(
     prisma.rentalProject.findFirst({ where: { id: input.projectId, orgId: session.user.org_id }, select: { id: true } }),
     "โครงการ",
@@ -1726,7 +1781,7 @@ export async function actSaveRecurringCharge(input: {
 }
 
 export async function actDeleteRecurringCharge(id: string) {
-  const session = await gateSuper();
+  const session = await gateAdmin();
   await ownGuard(
     prisma.rentalRecurringCharge.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }),
     "รายการค่าใช้จ่าย",

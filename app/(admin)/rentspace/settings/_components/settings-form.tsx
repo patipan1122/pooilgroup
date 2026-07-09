@@ -92,9 +92,12 @@ function slugify(s: string): string {
 export default function SettingsForm({
   initial,
   recurringCharges = [],
+  canEditPerms = true,
 }: {
   initial: Initial | null;
   recurringCharges?: RecurringCharge[];
+  /** เฉพาะ super admin เห็น/ตั้งสวิตช์ปลดล็อก (แก้/ลบ/ออกบิล·สัญญา). module admin = false. */
+  canEditPerms?: boolean;
 }) {
   const router = useRouter();
   const isFirstTime = !initial;
@@ -570,6 +573,10 @@ export default function SettingsForm({
         />
       </section>
 
+      {/* สวิตช์ปลดล็อก = การให้สิทธิ์ทีมงาน → เฉพาะ super admin เห็น/ตั้งได้
+          (module admin ตั้งค่าอื่นได้ แต่ปลดล็อกให้ตัวเองไม่ได้ · กัน self-escalation) */}
+      {canEditPerms && (
+      <>
       {/* ── สิทธิ์จัดการบิล (เปิด-ปิดต่อการกระทำ · super_admin ตั้งได้คนเดียว) ── */}
       <section className="rs-card p-5 space-y-3">
         <SectionTitle
@@ -637,6 +644,8 @@ export default function SettingsForm({
           hint="เปิด = ลบสัญญาที่ยังไม่มีบิลได้ · ปิด = ปลอดภัย"
         />
       </section>
+      </>
+      )}
 
       {/* ── ค่าใช้จ่ายประจำ (เฉพาะเมื่อมีโครงการแล้ว) ── */}
       {initial?.id && (

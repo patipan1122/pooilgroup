@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { RsPage, RsHeader, RsBackLink } from "@/components/rentspace/ui";
 import { listTemplates } from "@/lib/rentspace/data";
 import { TemplateEditor } from "./_components/template-editor";
@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function TemplatesPage() {
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) redirect("/403");
+  // เปิดให้แอดมินโมดูลเช่า (program admin) จัดการแม่แบบสัญญาได้ · ไม่ใช่แค่ super admin
+  if (!(await userIsModuleAdmin(session.user, "rentspace"))) redirect("/403");
 
   const templates = await listTemplates(session.user.org_id);
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, Droplet, Check, Loader2, Camera, AlertTriangle, RotateCcw } from "lucide-react";
+import { Zap, Droplet, Check, Loader2, Camera, AlertTriangle, RotateCcw, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { formatBaht, periodLabel, prevPeriod, currentPeriod } from "@/lib/rentspace/format";
 import { actSaveMeterReading, actUploadFile } from "../../_actions";
@@ -34,6 +34,7 @@ export type BoardSide = {
   isReset: boolean;
   oldMeterFinal: number | null;
   prevUsage: number | null; // #1b หน่วยใช้เดือนก่อน (ไว้เทียบ %)
+  needsBaseline: boolean; // ห้องใหม่ ไม่มีเลขก่อน → ให้กรอก "เลขตั้งต้น" ก่อน
 };
 
 /** % เทียบหน่วยเดือนนี้กับเดือนก่อน (null = เทียบไม่ได้ ไม่มีฐาน). */
@@ -74,6 +75,8 @@ type SideState = {
   isReset: boolean; // มิเตอร์ครบรอบ / เปลี่ยนมิเตอร์
   oldFinal: string; // raw input value for เลขมิเตอร์เดิมก่อนเปลี่ยน (oldMeterFinal)
   prevUsage: number | null; // #1b หน่วยใช้เดือนก่อน
+  needsBaseline: boolean; // ห้องใหม่ ไม่มีเลขก่อน → ให้กรอก "เลขตั้งต้น"
+  baseline: string; // raw input for เลขตั้งต้น (opening reading) เมื่อ needsBaseline
 };
 
 type RowState = {
@@ -95,6 +98,8 @@ function initSide(s: BoardSide): SideState {
     isReset: s.isReset,
     oldFinal: s.oldMeterFinal != null ? String(s.oldMeterFinal) : "",
     prevUsage: s.prevUsage,
+    needsBaseline: s.needsBaseline,
+    baseline: "",
   };
 }
 
@@ -109,12 +114,20 @@ function parseReading(v: string): number | null {
 export default function MeterBoard({
   units,
   period,
+  billedUnitIds = [],
+  isSuper = false,
 }: {
   units: BoardUnit[];
   period: string;
+  billedUnitIds?: string[]; // ห้องที่ออกบิลงวดนี้แล้ว → ล็อกแก้มิเตอร์
+  isSuper?: boolean; // super admin ปลดล็อกแก้ได้ แม้ออกบิลแล้ว
 }) {
   const router = useRouter();
   const [navPending, startNav] = useTransition();
+  // งวดที่ออกบิลแล้ว → ล็อกแก้มิเตอร์ (คนทั่วไปแก้ไม่ได้ · super admin ปลดล็อกได้)
+  const billedSet = useMemo(() => new Set(billedUnitIds), [billedUnitIds]);
+  const isBilled = (unitId: string) => billedSet.has(unitId);
+  const isLocked = (unitId: string) => billedSet.has(unitId) && !isSuper;
 
   const [rows, setRows] = useState<Record<string, RowState>>(() => {
     const init: Record<string, RowState> = {};
@@ -182,8 +195,28 @@ export default function MeterBoard({
     });
   }
 
+  /** กรอก "เลขตั้งต้น" (opening) ห้องใหม่ที่ยังไม่มีเลขก่อน → ตั้งเป็นฐานคำนวณหน่วยเดือนแรก. */
+  function onBaselineChange(unitId: string, kind: Kind, value: string) {
+    const side = rows[unitId][kind];
+    const opening = parseReading(value);
+    const curr = parseReading(side.curr);
+    const oldFinal = parseReading(side.oldFinal);
+    setSide(unitId, kind, {
+      baseline: value,
+      prev: opening, // ใช้เป็น "ครั้งก่อน" ทันที → usage = curr − opening
+      usage: previewUsage(opening, curr, side.isReset, oldFinal),
+      dirty: true,
+      saved: false,
+    });
+  }
+
   async function saveSide(unitId: string, kind: Kind): Promise<boolean> {
     const side = rows[unitId][kind];
+    // ล็อก: งวดที่ออกบิลแล้ว แก้มิเตอร์ไม่ได้ (server ก็กันซ้ำ — นี่กันตั้งแต่หน้าจอ)
+    if (isLocked(unitId)) {
+      toast.error("งวดนี้ออกบิลแล้ว — แก้มิเตอร์ไม่ได้ · ให้ผู้ดูแลระบบ (super admin) แก้ให้");
+      return false;
+    }
     const curr = parseReading(side.curr);
     if (curr == null) return false; // empty / invalid → skip, never send NaN
     if (!side.dirty && side.saved) return true; // nothing to do
@@ -212,6 +245,7 @@ export default function MeterBoard({
         currReading: curr,
         isReset: side.isReset,
         oldMeterFinal: side.isReset && oldFinal != null ? oldFinal : undefined,
+        openingReading: side.needsBaseline ? parseReading(side.baseline) ?? undefined : undefined,
       });
       setSide(unitId, kind, {
         saving: false,
@@ -219,6 +253,7 @@ export default function MeterBoard({
         dirty: false,
         usage: res.usage,
         amount: res.amountThb,
+        needsBaseline: false, // จดแล้ว → มีเลขก่อนแล้ว ไม่ต้องกรอกตั้งต้นอีก
       });
       const u = unitMeta.get(unitId);
       const label = kind === "electric" ? "ค่าไฟ" : "ค่าน้ำ";
@@ -246,6 +281,10 @@ export default function MeterBoard({
   /** Upload a meter photo and attach it onto this kind's reading. */
   async function attachPhoto(unitId: string, kind: Kind, file: File) {
     const side = rows[unitId][kind];
+    if (isLocked(unitId)) {
+      toast.error("งวดนี้ออกบิลแล้ว — แก้มิเตอร์ไม่ได้ · ให้ผู้ดูแลระบบ (super admin) แก้ให้");
+      return;
+    }
     const curr = parseReading(side.curr);
     const oldFinal = parseReading(side.oldFinal);
     // require a reading value first — photo attaches onto the reading row
@@ -281,6 +320,7 @@ export default function MeterBoard({
         photoUrl: url,
         isReset: side.isReset,
         oldMeterFinal: side.isReset && oldFinal != null ? oldFinal : undefined,
+        openingReading: side.needsBaseline ? parseReading(side.baseline) ?? undefined : undefined,
       });
       setSide(unitId, kind, {
         uploading: false,
@@ -290,6 +330,7 @@ export default function MeterBoard({
         usage: res.usage,
         amount: res.amountThb,
         photoUrl: url,
+        needsBaseline: false,
       });
       const label = kind === "electric" ? "ไฟ" : "น้ำ";
       toast.success(`แนบรูปมิเตอร์${label}แล้ว`);
@@ -324,6 +365,7 @@ export default function MeterBoard({
     setSavingAll(true);
     let count = 0;
     for (const u of units) {
+      if (isLocked(u.id)) continue; // ห้องที่ออกบิลแล้ว → ข้าม (แก้ไม่ได้)
       for (const kind of ["electric", "water"] as Kind[]) {
         const side = rows[u.id][kind];
         if (side.dirty && parseReading(side.curr) != null) {
@@ -457,6 +499,8 @@ export default function MeterBoard({
             key={u.id}
             unit={u}
             row={rows[u.id]}
+            locked={isLocked(u.id)}
+            billed={isBilled(u.id)}
             inputRefs={inputRefs}
             refKey={refKey}
             onChange={onChange}
@@ -465,6 +509,7 @@ export default function MeterBoard({
             onAttach={attachPhoto}
             onToggleReset={toggleReset}
             onOldFinalChange={onOldFinalChange}
+            onBaselineChange={onBaselineChange}
             onSaveRoom={async (unitId) => {
               await saveSide(unitId, "electric");
               await saveSide(unitId, "water");
@@ -504,6 +549,8 @@ export default function MeterBoard({
           <tbody>
             {units.map((u) => {
               const r = rows[u.id];
+              const locked = isLocked(u.id);
+              const billed = isBilled(u.id);
               const rowDirty =
                 (r.electric.dirty && parseReading(r.electric.curr) != null) ||
                 (r.water.dirty && parseReading(r.water.curr) != null);
@@ -511,15 +558,18 @@ export default function MeterBoard({
                 <tr
                   key={u.id}
                   className="border-t"
-                  style={{ borderColor: "var(--rs-border)" }}
+                  style={{ borderColor: "var(--rs-border)", opacity: locked ? 0.72 : 1 }}
                 >
                   {/* sticky room column */}
                   <td
                     className="py-2.5 px-3 sticky left-0 z-10"
                     style={{ background: "var(--rs-bg)" }}
                   >
-                    <div className="font-semibold" style={{ color: "var(--rs-text)" }}>
-                      {u.code}
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold" style={{ color: "var(--rs-text)" }}>
+                        {u.code}
+                      </span>
+                      {billed && <BilledChip locked={locked} />}
                     </div>
                     {(u.name || u.tenant) && (
                       <div className="text-[11.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
@@ -534,6 +584,7 @@ export default function MeterBoard({
                     roomCode={u.code}
                     kind="electric"
                     side={r.electric}
+                    locked={locked}
                     inputRefs={inputRefs}
                     refKey={refKey}
                     onChange={onChange}
@@ -542,6 +593,7 @@ export default function MeterBoard({
                     onAttach={attachPhoto}
                     onToggleReset={toggleReset}
                     onOldFinalChange={onOldFinalChange}
+                    onBaselineChange={onBaselineChange}
                   />
 
                   {/* water */}
@@ -550,6 +602,7 @@ export default function MeterBoard({
                     roomCode={u.code}
                     kind="water"
                     side={r.water}
+                    locked={locked}
                     inputRefs={inputRefs}
                     refKey={refKey}
                     onChange={onChange}
@@ -558,6 +611,7 @@ export default function MeterBoard({
                     onAttach={attachPhoto}
                     onToggleReset={toggleReset}
                     onOldFinalChange={onOldFinalChange}
+                    onBaselineChange={onBaselineChange}
                   />
 
                   {/* per-row save */}
@@ -568,7 +622,7 @@ export default function MeterBoard({
                         await saveSide(u.id, "electric");
                         await saveSide(u.id, "water");
                       }}
-                      disabled={r.electric.saving || r.water.saving || !rowDirty}
+                      disabled={locked || r.electric.saving || r.water.saving || !rowDirty}
                       className="inline-flex items-center justify-center h-10 w-10 rounded-lg disabled:opacity-40"
                       style={{
                         background: rowDirty ? "var(--rs-brand)" : "var(--rs-bg-3)",
@@ -616,12 +670,35 @@ export default function MeterBoard({
   );
 }
 
+/** ป้ายบอกว่าห้องนี้ออกบิลงวดนี้แล้ว — locked=แก้ไม่ได้ (🔒) · super=ปลดล็อกแก้ได้ (🔓). */
+function BilledChip({ locked }: { locked: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+      style={
+        locked
+          ? { background: "var(--rs-bg-3)", color: "var(--rs-text-3)", border: "1px solid var(--rs-border)" }
+          : { background: "var(--rs-pending-soft)", color: "#8A6400", border: "1px solid #F6E0AE" }
+      }
+      title={
+        locked
+          ? "ออกบิลงวดนี้แล้ว — แก้เลขมิเตอร์ไม่ได้ (ให้ผู้ดูแลระบบ super admin แก้ให้)"
+          : "ออกบิลแล้ว — คุณเป็น super admin จึงยังปลดล็อกแก้ได้ (ระวัง: บิลกับมิเตอร์อาจไม่ตรง)"
+      }
+    >
+      {locked ? <Lock className="h-2.5 w-2.5" aria-hidden="true" /> : <Unlock className="h-2.5 w-2.5" aria-hidden="true" />}
+      ออกบิลแล้ว
+    </span>
+  );
+}
+
 /** The 3 cells for one side (prev · curr-input + photo · usage). */
 function SideCells({
   unitId,
   roomCode,
   kind,
   side,
+  locked,
   inputRefs,
   refKey,
   onChange,
@@ -630,11 +707,13 @@ function SideCells({
   onAttach,
   onToggleReset,
   onOldFinalChange,
+  onBaselineChange,
 }: {
   unitId: string;
   roomCode: string;
   kind: Kind;
   side: SideState;
+  locked: boolean;
   inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
   refKey: (unitId: string, kind: Kind) => string;
   onChange: (unitId: string, kind: Kind, value: string) => void;
@@ -643,6 +722,7 @@ function SideCells({
   onAttach: (unitId: string, kind: Kind, file: File) => void;
   onToggleReset: (unitId: string, kind: Kind) => void;
   onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
+  onBaselineChange: (unitId: string, kind: Kind, value: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const label = kind === "electric" ? "ไฟ" : "น้ำ";
@@ -650,10 +730,38 @@ function SideCells({
   const currNum = parseReading(side.curr);
   // rollover suspicion: a lower reading than last month with reset OFF
   const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
+  const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
   return (
     <>
       <td className="py-2.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
-        {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
+        {showBaseline ? (
+          <div className="flex flex-col items-end gap-0.5">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={side.baseline}
+              onChange={(e) => onBaselineChange(unitId, kind, e.target.value)}
+              onBlur={() => onBlur(unitId, kind)}
+              placeholder="ตั้งต้น"
+              aria-label={`เลขมิเตอร์ตั้งต้น ห้อง ${roomLabel} (${label})`}
+              title="ห้องใหม่ยังไม่มีเลขก่อน — กรอกเลขมิเตอร์ ณ วันเริ่มคิด (ครั้งก่อน)"
+              className="w-24 h-9 rounded-lg px-2 text-right tabular-nums text-[13px] outline-none focus:ring-2"
+              style={{
+                background: "var(--rs-bg-2)",
+                border: "1px dashed var(--rs-pending)",
+                color: "var(--rs-text)",
+                // @ts-expect-error css var for ring
+                "--tw-ring-color": "var(--rs-pending)",
+              }}
+            />
+            <span className="text-[9.5px]" style={{ color: "var(--rs-pending)" }}>ตั้งต้นห้องใหม่</span>
+          </div>
+        ) : side.prev != null ? (
+          side.prev.toLocaleString("th-TH")
+        ) : (
+          "—"
+        )}
       </td>
       <td className="py-1.5 px-2 text-right">
         <div className="flex flex-col items-end gap-1.5">
@@ -670,9 +778,10 @@ function SideCells({
               onChange={(e) => onChange(unitId, kind, e.target.value)}
               onKeyDown={(e) => onKeyDown(e, unitId, kind)}
               onBlur={() => onBlur(unitId, kind)}
-              placeholder="—"
+              disabled={locked}
+              placeholder={locked ? "🔒" : "—"}
               aria-label={`เลขมิเตอร์ล่าสุด ห้อง ${roomLabel} (${label})`}
-              className="w-24 h-10 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2"
+              className="w-24 h-10 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2 disabled:opacity-60"
               style={{
                 background: "var(--rs-bg-2)",
                 border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
@@ -850,6 +959,8 @@ function unitDone(row: RowState): boolean {
 function MobileUnitCard({
   unit,
   row,
+  locked,
+  billed,
   inputRefs,
   refKey,
   onChange,
@@ -858,10 +969,13 @@ function MobileUnitCard({
   onAttach,
   onToggleReset,
   onOldFinalChange,
+  onBaselineChange,
   onSaveRoom,
 }: {
   unit: BoardUnit;
   row: RowState;
+  locked: boolean;
+  billed: boolean;
   inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
   refKey: (unitId: string, kind: Kind) => string;
   onChange: (unitId: string, kind: Kind, value: string) => void;
@@ -870,6 +984,7 @@ function MobileUnitCard({
   onAttach: (unitId: string, kind: Kind, file: File) => void;
   onToggleReset: (unitId: string, kind: Kind) => void;
   onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
+  onBaselineChange: (unitId: string, kind: Kind, value: string) => void;
   onSaveRoom: (unitId: string) => void;
 }) {
   const done = unitDone(row);
@@ -880,12 +995,15 @@ function MobileUnitCard({
   const saving = row.electric.saving || row.water.saving;
 
   return (
-    <div className="rs-card p-3.5">
+    <div className="rs-card p-3.5" style={{ opacity: locked ? 0.78 : 1 }}>
       {/* header: รหัสห้อง + ชื่อ/ผู้เช่า + ชิปสถานะ */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-bold text-[16px] leading-tight" style={{ color: "var(--rs-text)" }}>
-            {unit.code}
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-[16px] leading-tight" style={{ color: "var(--rs-text)" }}>
+              {unit.code}
+            </span>
+            {billed && <BilledChip locked={locked} />}
           </div>
           {subtitle && (
             <div className="text-[12px] mt-0.5 truncate" style={{ color: "var(--rs-text-3)" }}>
@@ -911,6 +1029,7 @@ function MobileUnitCard({
         roomCode={unit.code}
         kind="electric"
         side={row.electric}
+        locked={locked}
         inputRefs={inputRefs}
         refKey={refKey}
         onChange={onChange}
@@ -919,6 +1038,7 @@ function MobileUnitCard({
         onAttach={onAttach}
         onToggleReset={onToggleReset}
         onOldFinalChange={onOldFinalChange}
+        onBaselineChange={onBaselineChange}
       />
       <MobileSide
         unitId={unit.id}
@@ -927,19 +1047,21 @@ function MobileUnitCard({
         side={row.water}
         inputRefs={inputRefs}
         refKey={refKey}
+        locked={locked}
         onChange={onChange}
         onKeyDown={onKeyDown}
         onBlur={onBlur}
         onAttach={onAttach}
         onToggleReset={onToggleReset}
         onOldFinalChange={onOldFinalChange}
+        onBaselineChange={onBaselineChange}
       />
 
       {/* save this room */}
       <button
         type="button"
         onClick={() => onSaveRoom(unit.id)}
-        disabled={saving || !rowDirty}
+        disabled={locked || saving || !rowDirty}
         className="mt-3 w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-[14px] disabled:opacity-40"
         style={{
           background: rowDirty ? "var(--rs-brand)" : "var(--rs-bg-3)",
@@ -964,6 +1086,7 @@ function MobileSide({
   roomCode,
   kind,
   side,
+  locked,
   inputRefs,
   refKey,
   onChange,
@@ -972,11 +1095,13 @@ function MobileSide({
   onAttach,
   onToggleReset,
   onOldFinalChange,
+  onBaselineChange,
 }: {
   unitId: string;
   roomCode: string;
   kind: Kind;
   side: SideState;
+  locked: boolean;
   inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
   refKey: (unitId: string, kind: Kind) => string;
   onChange: (unitId: string, kind: Kind, value: string) => void;
@@ -985,6 +1110,7 @@ function MobileSide({
   onAttach: (unitId: string, kind: Kind, file: File) => void;
   onToggleReset: (unitId: string, kind: Kind) => void;
   onOldFinalChange: (unitId: string, kind: Kind, value: string) => void;
+  onBaselineChange: (unitId: string, kind: Kind, value: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const isElec = kind === "electric";
@@ -993,6 +1119,7 @@ function MobileSide({
   const iconColor = isElec ? "var(--rs-pending)" : "var(--rs-info)";
   const currNum = parseReading(side.curr);
   const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
+  const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
 
   return (
     <div
@@ -1005,9 +1132,33 @@ function MobileSide({
           <Icon className="h-4 w-4" style={{ color: iconColor }} aria-hidden="true" />
           {label}
         </span>
-        <span className="text-[12.5px] tabular-nums" style={{ color: "var(--rs-text-3)" }}>
-          ครั้งก่อน: {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
-        </span>
+        {showBaseline ? (
+          <span className="inline-flex items-center gap-1.5 text-[12.5px]" style={{ color: "var(--rs-pending)" }}>
+            ตั้งต้น:
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={side.baseline}
+              onChange={(e) => onBaselineChange(unitId, kind, e.target.value)}
+              onBlur={() => onBlur(unitId, kind)}
+              placeholder="เลขตั้งต้น"
+              aria-label={`เลขมิเตอร์ตั้งต้น ห้อง ${roomCode} (${label})`}
+              className="w-28 h-9 rounded-lg px-2 text-right tabular-nums text-[14px] outline-none focus:ring-2"
+              style={{
+                background: "#fff",
+                border: "1px dashed var(--rs-pending)",
+                color: "var(--rs-text)",
+                // @ts-expect-error css var for ring
+                "--tw-ring-color": "var(--rs-pending)",
+              }}
+            />
+          </span>
+        ) : (
+          <span className="text-[12.5px] tabular-nums" style={{ color: "var(--rs-text-3)" }}>
+            ครั้งก่อน: {side.prev != null ? side.prev.toLocaleString("th-TH") : "—"}
+          </span>
+        )}
       </div>
 
       {/* full-width current reading input */}
@@ -1023,9 +1174,10 @@ function MobileSide({
           onChange={(e) => onChange(unitId, kind, e.target.value)}
           onKeyDown={(e) => onKeyDown(e, unitId, kind)}
           onBlur={() => onBlur(unitId, kind)}
-          placeholder="กรอกเลขมิเตอร์ล่าสุด"
+          disabled={locked}
+          placeholder={locked ? "🔒 ออกบิลแล้ว — แก้ไม่ได้" : "กรอกเลขมิเตอร์ล่าสุด"}
           aria-label={`เลขมิเตอร์ล่าสุด ห้อง ${roomCode} (${label})`}
-          className="w-full h-12 rounded-xl px-3 pr-10 text-[16px] tabular-nums outline-none focus:ring-2"
+          className="w-full h-12 rounded-xl px-3 pr-10 text-[16px] tabular-nums outline-none focus:ring-2 disabled:opacity-60"
           style={{
             background: "#fff",
             border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,

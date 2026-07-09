@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryProject, meterBoard } from "@/lib/rentspace/data";
 import {
@@ -18,6 +19,7 @@ export const dynamic = "force-dynamic";
 type MeterRow = {
   id: string;
   kind: "electric" | "water";
+  initialReading?: unknown; // เลขตั้งต้นของมิเตอร์ (ฐานเดือนแรก ถ้า >0)
   readings: {
     prevReading?: unknown;
     currReading?: unknown;
@@ -43,6 +45,7 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
       isReset: false,
       oldMeterFinal: null,
       prevUsage: null, // หน่วยเดือนก่อน (เติมทีหลังจาก prevUsageMap)
+      needsBaseline: false, // เติมทีหลังใน withCarry (ห้องใหม่ที่ไม่มีประวัติ)
     };
   }
   return {
@@ -54,6 +57,7 @@ function buildSide(meters: MeterRow[], kind: "electric" | "water"): BoardSide {
     isReset: !!reading.isReset,
     oldMeterFinal: reading.oldMeterFinal == null ? null : toNum(reading.oldMeterFinal),
     prevUsage: null, // หน่วยเดือนก่อน (เติมทีหลังจาก prevUsageMap)
+    needsBaseline: false,
   };
 }
 
@@ -82,21 +86,50 @@ export default async function MetersPage({
     );
   }
 
-  const rawUnits = await meterBoard(orgId, project.id, period);
+  // upspeed: ยิงพร้อมกัน — meterBoard (ห้อง+มิเตอร์งวดนี้) กับ "ห้องที่ออกบิลแล้ว"
+  // ไม่พึ่งกัน (billedUnitRows ใช้แค่ projectId+period) → Promise.all ลด wall-clock.
+  const [rawUnits, billedUnitRows] = await Promise.all([
+    meterBoard(orgId, project.id, period),
+    prisma.rentalBill.findMany({
+      where: { orgId, projectId: project.id, period, status: { not: "void" } },
+      select: { unitId: true },
+    }),
+  ]);
+  const billedUnitIds = new Set(billedUnitRows.map((b) => b.unitId));
 
-  // #1b — หน่วยใช้เดือนก่อน (ไว้โชว์ % เทียบในตาราง). อ่านอย่างเดียว 1 query.
+  // #1b — 2 อย่าง: (1) หน่วยใช้ "เดือนก่อนพอดี" ไว้โชว์ % เทียบ · (2) "เลขล่าสุดก่อนงวดนี้"
+  //   = "ครั้งก่อน" ที่ carry-forward มา. **ครั้งก่อน ต้องใช้ reading ล่าสุดที่ period < งวดนี้
+  //   (ไม่ใช่เดือนก่อนพอดี)** เพื่อให้ตรงกับที่ server (actSaveMeterReading.prevRow) คิดจริง —
+  //   ถ้ามีเดือนข้าม (ห้องว่าง 1 เดือน) จอกับบิลจะได้ไม่เพี้ยน (กัน P0 จ่ายเกิน/ขาด).
+  const ids = rawUnits.map((u) => u.id);
   const prev = prevPeriod(period);
-  const prevReadings = await prisma.rentalMeterReading.findMany({
-    where: { orgId, unitId: { in: rawUnits.map((u) => u.id) }, period: prev },
-    select: { unitId: true, kind: true, usage: true },
-  });
+  const [prevMonthRows, priorLatestRows] = await Promise.all([
+    prisma.rentalMeterReading.findMany({
+      where: { orgId, unitId: { in: ids }, period: prev },
+      select: { unitId: true, kind: true, usage: true },
+    }),
+    prisma.rentalMeterReading.findMany({
+      where: { orgId, unitId: { in: ids }, period: { lt: period }, currReading: { not: null } },
+      orderBy: [{ unitId: "asc" }, { kind: "asc" }, { period: "desc" }],
+      distinct: ["unitId", "kind"],
+      select: { unitId: true, kind: true, currReading: true },
+    }),
+  ]);
   const prevUsageMap = new Map<string, { electric: number | null; water: number | null }>();
-  for (const r of prevReadings) {
-    const cur = prevUsageMap.get(r.unitId) ?? { electric: null, water: null };
+  for (const r of prevMonthRows) {
     const usage = r.usage == null ? null : toNum(r.usage);
-    if (r.kind === "electric") cur.electric = usage;
-    else if (r.kind === "water") cur.water = usage;
-    prevUsageMap.set(r.unitId, cur);
+    const m = prevUsageMap.get(r.unitId) ?? { electric: null, water: null };
+    if (r.kind === "electric") m.electric = usage;
+    else if (r.kind === "water") m.water = usage;
+    prevUsageMap.set(r.unitId, m);
+  }
+  const prevCurrMap = new Map<string, { electric: number | null; water: number | null }>();
+  for (const r of priorLatestRows) {
+    const curr = r.currReading == null ? null : toNum(r.currReading);
+    const m = prevCurrMap.get(r.unitId) ?? { electric: null, water: null };
+    if (r.kind === "electric") m.electric = curr;
+    else if (r.kind === "water") m.water = curr;
+    prevCurrMap.set(r.unitId, m);
   }
 
   const units: BoardUnit[] = rawUnits.map((u) => {
@@ -104,14 +137,34 @@ export default async function MetersPage({
     const contract = u.contracts?.[0];
     const tenant = contract?.tenant ? tenantDisplayName(contract.tenant) : null;
     const pu = prevUsageMap.get(u.id);
+    const pc = prevCurrMap.get(u.id);
+
+    // เติม "ครั้งก่อน" อัตโนมัติเมื่อยังไม่จดงวดนี้:
+    //   1) เลขล่าสุดเดือนก่อน (carry-forward)  2) ถ้าไม่มี → initialReading (ตั้งต้นห้อง)
+    //   3) ถ้าไม่มีทั้งคู่ → needsBaseline = true (ห้องใหม่ ต้องกรอกเลขตั้งต้นเอง)
+    const withCarry = (kind: "electric" | "water"): BoardSide => {
+      const side = buildSide(meters, kind);
+      const meter = meters.find((m) => m.kind === kind);
+      const initial = meter?.initialReading != null ? toNum(meter.initialReading) : 0;
+      const carry = (kind === "electric" ? pc?.electric : pc?.water) ?? (initial > 0 ? initial : null);
+      const notYetRecorded = side.currReading == null;
+      const prevReading = notYetRecorded ? (side.prevReading ?? carry) : side.prevReading;
+      return {
+        ...side,
+        prevReading,
+        needsBaseline: notYetRecorded && prevReading == null,
+        prevUsage: (kind === "electric" ? pu?.electric : pu?.water) ?? null,
+      };
+    };
+
     return {
       id: u.id,
       code: u.code,
       name: u.name ?? null,
       building: u.building ?? null,
       tenant,
-      electric: { ...buildSide(meters, "electric"), prevUsage: pu?.electric ?? null },
-      water: { ...buildSide(meters, "water"), prevUsage: pu?.water ?? null },
+      electric: withCarry("electric"),
+      water: withCarry("water"),
     };
   });
 
@@ -126,11 +179,7 @@ export default async function MetersPage({
   const totalWater = units.reduce((s, u) => s + (u.water.amount ?? 0), 0);
 
   // #9d — ห้องที่ออกบิลได้ (มีสัญญาใช้งาน) + สถานะมิเตอร์ + ออกบิลงวดนี้แล้วหรือยัง
-  const billedUnitRows = await prisma.rentalBill.findMany({
-    where: { orgId, projectId: project.id, period, status: { not: "void" } },
-    select: { unitId: true },
-  });
-  const billedUnitIds = new Set(billedUnitRows.map((b) => b.unitId));
+  // (billedUnitIds คำนวณไว้ด้านบนแล้ว — ใช้ทั้งล็อกมิเตอร์และแผงออกบิล)
   const sideDone = new Map(units.map((u) => [u.id, u.electric.currReading != null && u.water.currReading != null]));
   const billRooms: BillRoom[] = rawUnits
     .filter((u) => (u.contracts?.length ?? 0) > 0)
@@ -176,7 +225,13 @@ export default async function MetersPage({
         <>
           {/* key={period} → รีเซ็ต state ของตาราง/แผงเลือกห้องเมื่อเปลี่ยนเดือน
               (กันบั๊กตัวเลขค้างเดือนเดิม #1a) */}
-          <MeterBoard key={period} units={units} period={period} />
+          <MeterBoard
+            key={period}
+            units={units}
+            period={period}
+            billedUnitIds={Array.from(billedUnitIds)}
+            isSuper={isSuperAdmin(session.user.role)}
+          />
           <SelectiveBillPanel key={period} projectId={project.id} period={period} rooms={billRooms} />
         </>
       )}
