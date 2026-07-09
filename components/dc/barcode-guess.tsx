@@ -31,8 +31,18 @@ export function DcBarcodeGuess({ code }: { code: string }) {
     );
   }
 
-  // ไม่เจอ = ไม่โชว์อะไรเพิ่ม (ปล่อยให้ข้อความ "ไม่พบในระบบ" เดิมทำงาน)
-  if (!result || !result.found) return null;
+  if (!result || !result.found) {
+    // รหัสไม่ใช่บาร์โค้ดสากล (เช่น SKU ภายใน) → เงียบ ไม่เกี่ยวกับฐานสินค้าโลก
+    if (!result || result.reason === "invalid") return null;
+    // เป็นบาร์โค้ดจริงแต่ฐานโลกไม่มี → บอกชัด (ไม่เงียบ จะได้ไม่ดูเหมือนพัง)
+    return (
+      <div className="dc-card" style={{ padding: "12px 14px", fontSize: 14, color: "var(--dc-muted, #6b7785)", fontWeight: 600, lineHeight: 1.5 }}>
+        🌐 ลองค้นในฐานสินค้าโลกแล้ว — <strong style={{ color: "var(--dc-ink, #1f2733)" }}>ไม่พบของชิ้นนี้</strong>
+        <br />
+        (ปกติสำหรับของนำเข้าจีน · อะไหล่ · หรือบางถุงที่ยังไม่มีใครลงฐาน) → กรอกชื่อเอง
+      </div>
+    );
+  }
 
   return (
     <div
