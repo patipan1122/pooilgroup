@@ -2,8 +2,9 @@
 
 // DC คลังกลาง · ใบสั่งซื้อจีน (China Purchase Order) — server actions.
 //
-// 💰 เงินออก → ต้องมี "อนุมัติ 1 คน" ก่อนถึงสถานะ "สั่งแล้ว" (workshop-locked):
-//   DRAFT → (submit) PENDING_APPROVAL → (approve) APPROVED → (markOrdered) ORDERED
+// 💰 เงินออก · #10 CEO เคาะ: "ไม่มีด่านอนุมัติ" — สร้าง "บันทึก & สั่งเลย" → ORDERED ทันที ·
+//   หรือเก็บร่างไว้ก่อน (DRAFT) แล้วค่อยกด "ยืนยันสั่งซื้อ" (markOrdered) → ORDERED ได้เลย.
+//   (submitForApproval/approvePo ยังคงไว้สำหรับใบเก่า/องค์กรที่อยากมีด่าน แต่ไม่บังคับ)
 //   ยกเลิกได้จาก DRAFT / PENDING_APPROVAL / APPROVED
 //
 // การ์ดสิทธิ์:
@@ -476,6 +477,10 @@ export async function approvePo(id: string): Promise<PoActionResult> {
 }
 
 /** ทำเครื่องหมายว่าสั่งแล้ว: APPROVED → ORDERED + orderedAt (เงินออกจริง) */
+// #10 CEO เคาะ: DC จัดซื้อ "ไม่มีด่านอนุมัติ" — ใบก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ) กด "ยืนยันสั่งซื้อ"
+// → ORDERED ได้เลย (ตรงกับ createPo(placeOrder) + UI po-detail ที่โชว์ปุ่มเดียวทุกสถานะก่อนสั่ง).
+// เดิม markOrdered ยังบังคับ APPROVED → ใบร่างติด "สั่งได้เฉพาะใบที่อนุมัติแล้ว" (backend ลืมแก้ตาม #10).
+const PO_PRE_ORDER: DcPoStatus[] = [DcPoStatus.DRAFT, DcPoStatus.PENDING_APPROVAL, DcPoStatus.APPROVED];
 export async function markOrdered(id: string): Promise<PoActionResult> {
   const g = await requireManager();
   if (!g.ok) return g;
@@ -486,12 +491,12 @@ export async function markOrdered(id: string): Promise<PoActionResult> {
     select: { id: true, status: true },
   });
   if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
-  if (po.status !== DcPoStatus.APPROVED) {
-    return { ok: false, error: "สั่งได้เฉพาะใบที่อนุมัติแล้ว" };
+  if (!PO_PRE_ORDER.includes(po.status)) {
+    return { ok: false, error: "ใบนี้สั่งไปแล้ว/ยกเลิกแล้ว — ยืนยันสั่งซื้อได้เฉพาะใบก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ)" };
   }
 
   const res = await prisma.dcPurchaseOrder.updateMany({
-    where: { id, orgId, status: DcPoStatus.APPROVED },
+    where: { id, orgId, status: { in: PO_PRE_ORDER } },
     data: { status: DcPoStatus.ORDERED, orderedAt: new Date() },
   });
   if (res.count === 0) return { ok: false, error: "สถานะใบเปลี่ยนไปแล้ว ลองรีเฟรช" };

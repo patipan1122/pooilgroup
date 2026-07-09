@@ -753,7 +753,7 @@ function Timeline({ status, isChina, awaitingTracking }: { status: string; isChi
     <div className="dc-card" style={{ display: "grid", gap: 10 }}>
       {preOrder && (
         <div style={{ fontSize: 12.5, color: "#92660a", fontWeight: 600, background: "#fef9e7", border: "1px solid #f4d77e", borderRadius: 8, padding: "5px 10px", justifySelf: "start" }}>
-          ก่อนสั่ง — รออนุมัติ/สั่งกับผู้ขาย
+          ก่อนสั่ง — กด “ยืนยันสั่งซื้อ” เมื่อสั่งกับผู้ขายแล้ว
         </div>
       )}
       {partial && (
