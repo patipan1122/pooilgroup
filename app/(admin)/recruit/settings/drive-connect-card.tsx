@@ -5,10 +5,16 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { HardDrive, CheckCircle2, ExternalLink } from "lucide-react";
+import { HardDrive, CheckCircle2, ExternalLink, FolderOpen } from "lucide-react";
 import { startRecruitDriveConnect } from "./drive-actions";
 
-export function DriveConnectCard({ connected }: { connected: boolean }) {
+export function DriveConnectCard({
+  connected,
+  folderUrl,
+}: {
+  connected: boolean;
+  folderUrl?: string | null;
+}) {
   const [loading, setLoading] = useState(false);
 
   async function connect() {
@@ -72,6 +78,18 @@ export function DriveConnectCard({ connected }: { connected: boolean }) {
                 ? "เชื่อมใหม่ / เปลี่ยนบัญชี Google"
                 : "เชื่อม Google Drive"}
           </button>
+
+          {connected && folderUrl && (
+            <a
+              href={folderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 ml-2 inline-flex items-center gap-2 h-10 px-4 rounded-xl border-2 border-green-200 bg-green-50 text-green-700 text-sm font-bold hover:bg-green-100 transition-colors"
+            >
+              <FolderOpen className="size-4" />
+              เปิดโฟลเดอร์ Google Drive
+            </a>
+          )}
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAdmin } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { getDriveConnection } from "@/lib/chairops/storage/drive";
+import { getRecruitDriveFolderLink } from "@/lib/recruit/drive";
 import { Section } from "@/components/ui/section";
 import { DriveConnectCard } from "./drive-connect-card";
 import {
@@ -48,6 +49,9 @@ export default async function SettingsPage() {
     ]);
 
   const driveConn = await getDriveConnection(session.user.org_id);
+  const driveFolderUrl = driveConn
+    ? await getRecruitDriveFolderLink(session.user.org_id)
+    : null;
 
   return (
     <div className="p-5 sm:p-8 max-w-5xl mx-auto space-y-6">
@@ -116,7 +120,10 @@ export default async function SettingsPage() {
 
       {/* Storage — Google Drive for applicant files */}
       <Section number="03" label="STORAGE" title="ที่เก็บไฟล์ผู้สมัคร">
-        <DriveConnectCard connected={Boolean(driveConn)} />
+        <DriveConnectCard
+          connected={Boolean(driveConn)}
+          folderUrl={driveFolderUrl}
+        />
       </Section>
 
       {/* Notifications */}

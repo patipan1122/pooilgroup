@@ -143,3 +143,22 @@ export async function isRecruitDriveReady(orgId: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Resolve a clickable link to the "Recruit — ใบสมัครงาน" folder in the org's
+ * Drive (so HR can open it in one click). Ensures the folder exists. Returns
+ * null if Drive isn't connected / anything fails.
+ */
+export async function getRecruitDriveFolderLink(
+  orgId: string,
+): Promise<string | null> {
+  try {
+    const session = await getDriveSession(orgId);
+    if (!session) return null;
+    const root = await ensureFolder(session.accessToken, RECRUIT_ROOT, null);
+    if (!root) return null;
+    return `https://drive.google.com/drive/folders/${root}`;
+  } catch {
+    return null;
+  }
+}
