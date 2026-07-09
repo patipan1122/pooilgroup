@@ -469,6 +469,8 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"] },
       { href: "/clawfleet/os/branches", label: "สาขา", icon: Store, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      // management hub — สร้าง/แก้/ลบ สาขา+ตู้ · ดูประวัติตู้ · คลังประจำสาขา (แอดมินเท่านั้น)
+      { href: "/clawfleet/os/manage", label: "จัดการ", icon: Layers, section: "หลังบ้าน", adminOnly: true },
       { href: "/clawfleet/os/stock", label: "คลังสินค้า", icon: PackageOpen, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/clawfleet/os/collections", label: "ตรวจเงิน & กระทบยอด", icon: Activity, section: "หลังบ้าน",

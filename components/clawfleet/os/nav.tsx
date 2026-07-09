@@ -15,6 +15,7 @@ import {
   Smartphone,
   Wrench,
   Wallet,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,8 @@ const MGR = ["area_manager", "branch_manager"] as const;
 export const BACK_NAV: ClawNavItem[] = [
   { key: "dashboard", label: "ภาพรวม", href: `${OS_BASE}/dashboard`, icon: LayoutDashboard, roles: [...MGR, "viewer"] },
   { key: "branches", label: "สาขา", href: `${OS_BASE}/branches`, icon: Store, roles: [...MGR] },
+  // management hub — CRUD สาขา+ตู้ · ประวัติตู้ · คลังประจำสาขา (admin-tier เท่านั้น · ไม่ใส่ roles)
+  { key: "manage", label: "จัดการ", href: `${OS_BASE}/manage`, icon: Layers },
   { key: "stock", label: "คลังสินค้า", href: `${OS_BASE}/stock`, icon: PackageOpen, badge: "lowStock", roles: [...MGR] },
   { key: "collections", label: "ตรวจเงิน & กระทบยอด", href: `${OS_BASE}/collections`, icon: ScrollText, badge: "diffs", roles: [...MGR] },
   // ฝากเงิน — ผู้เก็บ (staff) ต้องบันทึกฝากได้ด้วย → รวม staff นอกเหนือ ผจก.+แอดมิน
@@ -66,6 +69,7 @@ export type NavCounts = Partial<Record<NavBadgeKey, number>>;
 export const SCREEN_META: Record<string, { title: string; sub: string }> = {
   dashboard: { title: "ภาพรวมร้าน", sub: "สรุปกำไร–ขาดทุน · ตู้เสี่ยง · สุขภาพการตั้งค่าตู้ทุกสาขา" },
   branches: { title: "สาขา", sub: "ดูทุกสาขา · ตู้ในแต่ละสาขา · กดเจาะดูรายตู้" },
+  manage: { title: "จัดการ", sub: "สร้าง/แก้/ลบ สาขา+ตู้ · ย้าย/ปลดตู้ · ดูประวัติตู้ · คลังประจำสาขา" },
   stock: { title: "คลังสินค้า", sub: "คลังกลาง + สต็อกสาขา · การโอน · หมุนเวียน FIFO" },
   collections: { title: "ตรวจเงิน & กระทบยอด", sub: "รอบเก็บเงินทุกตู้ · เทียบมิเตอร์กับเงินสด · ธงไม่ตรง" },
   config: { title: "ตั้งค่าตู้", sub: "คำขอปรับความแรงการคีบ/ราคา · รออนุมัติจากเจ้าของ" },

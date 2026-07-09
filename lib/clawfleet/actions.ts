@@ -1026,7 +1026,11 @@ export async function createDelivery(input: {
 // (assertCfAdmin redirects ถ้าไม่มีสิทธิ์). ทุก action: Zod + try/catch + revalidate.
 // =============================================================
 
-const MANAGE_PATH = "/clawfleet/os/branches";
+const MANAGE_PATHS = ["/clawfleet/os/branches", "/clawfleet/os/manage"] as const;
+/** refresh both admin surfaces that share these CRUD actions (branches page + manage hub) */
+function revalidateManage() {
+  for (const p of MANAGE_PATHS) revalidatePath(p);
+}
 
 /** unique-violation จาก Prisma (รหัสซ้ำ) */
 function isUniqueViolation(e: unknown): boolean {
@@ -1086,7 +1090,7 @@ export async function createBranch(input: unknown): Promise<ResultOf<{ id: strin
       },
       select: { id: true },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true, data: { id: b.id } };
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: "รหัสสาขาซ้ำ · ใช้รหัสอื่น" };
@@ -1123,7 +1127,7 @@ export async function renameBranch(branchId: string, input: unknown): Promise<Re
         ...(parsed.data.code !== undefined ? { code: parsed.data.code } : {}),
       },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true };
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: "รหัสสาขาซ้ำ · ใช้รหัสอื่น" };
@@ -1153,11 +1157,11 @@ export async function deleteBranch(branchId: string): Promise<ResultOf<{ mode: "
   try {
     if (hasDependents) {
       await prisma.branch.update({ where: { id: branchId }, data: { isActive: false } });
-      revalidatePath(MANAGE_PATH);
+      revalidateManage();
       return { ok: true, data: { mode: "soft" } };
     }
     await prisma.branch.delete({ where: { id: branchId } });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true, data: { mode: "hard" } };
   } catch (e) {
     return { ok: false, error: `ลบสาขาไม่สำเร็จ: ${(e as Error).message}` };
@@ -1202,7 +1206,7 @@ export async function createCfMachine(input: unknown): Promise<ResultOf<{ id: st
       },
       select: { id: true },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true, data: { id: m.id } };
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: "รหัสตู้ซ้ำ · ใช้รหัสอื่น" };
@@ -1245,7 +1249,7 @@ export async function renameCfMachine(machineId: string, input: unknown): Promis
         ...(parsed.data.kind !== undefined ? { kind: parsed.data.kind } : {}),
       },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true };
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: "รหัสตู้ซ้ำ · ใช้รหัสอื่น" };
@@ -1269,7 +1273,7 @@ export async function retireCfMachine(machineId: string): Promise<Result> {
       where: { id: machineId },
       data: { isActive: false, retiredAt: new Date() },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: `ปลดระวางตู้ไม่สำเร็จ: ${(e as Error).message}` };
@@ -1309,7 +1313,7 @@ export async function reassignCfMachineBranch(
       // ย้ายเฉพาะ branchId · เคลียร์ groupId (กลุ่มผูกกับสาขาเดิม · ย้ายข้ามสาขา = หลุดกลุ่ม)
       data: { branchId: newBranchId, groupId: null },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     revalidatePath("/clawfleet/os/stock");
     return { ok: true };
   } catch (e) {
@@ -1354,7 +1358,7 @@ export async function setMachinePhoto(input: unknown): Promise<Result> {
       where: { id: machineId },
       data: { photoUrl },
     });
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: `บันทึกรูปตู้ไม่สำเร็จ: ${(e as Error).message}` };
@@ -1653,7 +1657,7 @@ export async function seedClawFleetDemo(): Promise<ResultOf<{ branches: number; 
       await seedCfStockDemo(orgId, userId, firstBranchId, [bearId, catId]);
     }
 
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     revalidatePath("/clawfleet/os/dashboard");
     revalidatePath("/clawfleet/os/stock");
     revalidatePath("/clawfleet/os/collections");
@@ -1807,7 +1811,7 @@ export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean 
     // ก็ปล่อยผ่าน ไม่ rollback การลบ demo ที่สำเร็จไปแล้ว (semantics เดิม .catch no-op)
     await prisma.company.deleteMany({ where: { orgId, code: `${DEMO_PREFIX}CO` } }).catch(() => {});
 
-    revalidatePath(MANAGE_PATH);
+    revalidateManage();
     revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { deleted: true } };
   } catch (e) {
