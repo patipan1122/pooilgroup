@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  SCREENING_VERDICTS,
+  SCREENING_VERDICT_LABELS,
+  SCREENING_VERDICT_ACTIVE_CLASS,
   TAG_COLORS,
   TAG_COLOR_CHIP,
   TAG_COLOR_LABELS,
@@ -12,22 +15,42 @@ import {
   parseTag,
   serializeTag,
   type ApplicationStatus,
+  type ScreeningVerdict,
   type TagColor,
 } from "@/lib/recruit/types";
 import {
   changeApplicationStatus,
   setApplicationRating,
   setApplicationTags,
+  setScreeningVerdict,
 } from "@/lib/recruit/actions";
 import { applyRulesToApplication } from "@/lib/recruit/rule-actions";
-import { Star, X, Plus, Zap, Loader2 } from "lucide-react";
+import {
+  Star,
+  X,
+  Plus,
+  Zap,
+  Loader2,
+  ThumbsUp,
+  ThumbsDown,
+  Meh,
+  type LucideIcon,
+} from "lucide-react";
 import { ScheduleInterviewButton } from "./schedule-interview-button";
+
+// ไอคอน Lucide ต่อผลคัดกรอง (แทนอิโมจิ · ตาม tokens Lucide-only · ความหมายเดิม)
+const VERDICT_ICON: Record<ScreeningVerdict, LucideIcon> = {
+  INTERESTING: ThumbsUp,
+  MAYBE: Meh,
+  NOT_INTERESTED: ThumbsDown,
+};
 
 interface Props {
   applicationId: string;
   currentStatus: ApplicationStatus;
   currentRating: number | null;
   currentTags: string[];
+  currentVerdict: ScreeningVerdict | null;
 }
 
 export function ApplicationActions({
@@ -35,9 +58,11 @@ export function ApplicationActions({
   currentStatus,
   currentRating,
   currentTags,
+  currentVerdict,
 }: Props) {
   const [status, setStatus] = useState(currentStatus);
   const [rating, setRating] = useState(currentRating);
+  const [verdict, setVerdict] = useState(currentVerdict);
   const [tags, setTags] = useState(currentTags);
   const [tagInput, setTagInput] = useState("");
   const [tagColor, setTagColor] = useState<TagColor>("green");
@@ -86,6 +111,24 @@ export function ApplicationActions({
         await setApplicationRating(applicationId, next);
       } catch (e) {
         setRating(prev);
+        toast.error((e as Error).message);
+      }
+    });
+  }
+
+  function changeVerdict(next: ScreeningVerdict) {
+    const prev = verdict;
+    // กดซ้ำอันเดิม = ยกเลิก (toggle)
+    const value = verdict === next ? null : next;
+    setVerdict(value);
+    startTransition(async () => {
+      try {
+        await setScreeningVerdict(applicationId, value);
+        toast.success(
+          value ? `คัดกรอง: ${SCREENING_VERDICT_LABELS[value]}` : "ล้างผลคัดกรอง",
+        );
+      } catch (e) {
+        setVerdict(prev);
         toast.error((e as Error).message);
       }
     });
@@ -146,6 +189,69 @@ export function ApplicationActions({
         </div>
       </div>
 
+      {/* คัดกรองเร็ว — ตัดสินรอบแรก (น่าสนใจ/พอใช้ได้/ไม่สนใจ) + ดาว · อยู่บนสุด กดง่ายสุด */}
+      <div className="rounded-xl border border-[var(--color-brand-100)] bg-[var(--color-brand-50)]/40 p-3 space-y-3">
+        <div>
+          <p className="text-xs text-zinc-500 font-bold mb-2">คัดกรองเร็ว</p>
+          <div className="flex flex-wrap gap-2">
+            {SCREENING_VERDICTS.map((v) => {
+              const Icon = VERDICT_ICON[v];
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => changeVerdict(v)}
+                  disabled={isPending}
+                  className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-xl text-sm font-bold border-2 transition-colors ${
+                    verdict === v
+                      ? SCREENING_VERDICT_ACTIVE_CLASS[v]
+                      : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+                  }`}
+                  aria-pressed={verdict === v}
+                >
+                  <Icon className="size-4" />
+                  {SCREENING_VERDICT_LABELS[v]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Rating */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-xs text-zinc-500 font-bold">ให้ดาว</p>
+          <div className="flex gap-0.5">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => changeRating(rating === n ? null : n)}
+                disabled={isPending}
+                className="size-10 inline-flex items-center justify-center hover:scale-110 transition-transform"
+                aria-label={`${n} ดาว`}
+              >
+                <Star
+                  className={`size-6 ${
+                    rating != null && rating >= n
+                      ? "fill-amber-400 text-amber-400"
+                      : "text-zinc-300"
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+          {rating != null && (
+            <button
+              type="button"
+              onClick={() => changeRating(null)}
+              className="text-xs text-zinc-500 hover:text-zinc-900 h-10 px-2"
+            >
+              ลบดาว
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Status pill row */}
       <div>
         <p className="text-xs text-zinc-500 font-bold mb-2">
@@ -168,42 +274,6 @@ export function ApplicationActions({
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Rating */}
-      <div className="flex items-center gap-3">
-        <p className="text-xs text-zinc-500 font-bold">
-          ให้ดาว
-        </p>
-        <div className="flex gap-0.5">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => changeRating(rating === n ? null : n)}
-              disabled={isPending}
-              className="size-10 inline-flex items-center justify-center hover:scale-110 transition-transform"
-              aria-label={`${n} ดาว`}
-            >
-              <Star
-                className={`size-6 ${
-                  rating != null && rating >= n
-                    ? "fill-amber-400 text-amber-400"
-                    : "text-zinc-300"
-                }`}
-              />
-            </button>
-          ))}
-        </div>
-        {rating != null && (
-          <button
-            type="button"
-            onClick={() => changeRating(null)}
-            className="text-xs text-zinc-500 hover:text-zinc-900 h-10 px-2"
-          >
-            ลบดาว
-          </button>
-        )}
       </div>
 
       {/* Tags */}

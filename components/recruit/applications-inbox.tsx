@@ -75,6 +75,16 @@ export async function ApplicationsInbox({
       ? apps.find((a) => a.id === selectedId)!
       : null;
 
+  // Table view href — keep the same filters (status / posting / query)
+  const tableHref = (() => {
+    const sp = new URLSearchParams();
+    if (currentStatus) sp.set("status", currentStatus);
+    if (currentPosting) sp.set("posting", currentPosting);
+    if (currentQuery) sp.set("q", currentQuery);
+    const qs = sp.toString();
+    return `/recruit/table${qs ? `?${qs}` : ""}`;
+  })();
+
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100dvh-60px-64px)] lg:h-[calc(100vh-60px)]">
       {/* PANE 1: Filters (left) — KPI strip + filters */}
@@ -267,6 +277,7 @@ export async function ApplicationsInbox({
               kanbanHref={`/recruit/pipeline${
                 currentPosting ? `?posting=${currentPosting}` : ""
               }`}
+              tableHref={tableHref}
             />
           </div>
           <div className="flex items-center justify-between text-xs">

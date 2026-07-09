@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import {
   type Field,
   type FormSchema,
+  type Gender,
+  GENDERS,
+  GENDER_LABELS,
   ALLOWED_FILE_MIMES,
   MAX_FILE_SIZE,
 } from "@/lib/recruit/types";
@@ -27,7 +30,7 @@ interface Props {
   companyName: string;
   slug?: string;
   onSubmit: (input: {
-    applicant: { fullName: string; phone: string; email?: string };
+    applicant: { fullName: string; phone: string; email?: string; gender?: string };
     answers: Record<string, unknown>;
     files: UploadedFile[];
   }) => Promise<void> | void;
@@ -68,6 +71,9 @@ export function PublicFormRenderer({
   const [fullName, setFullName] = useState((initialAnswers?.["_applicant_fullName"] as string) ?? "");
   const [phone, setPhone] = useState((initialAnswers?.["_applicant_phone"] as string) ?? "");
   const [email, setEmail] = useState((initialAnswers?.["_applicant_email"] as string) ?? "");
+  const [gender, setGender] = useState<Gender | "">(
+    (initialAnswers?.["_applicant_gender"] as Gender) ?? "",
+  );
 
   function setAnswer(fieldId: string, value: unknown) {
     setAnswers((a) => ({ ...a, [fieldId]: value }));
@@ -202,6 +208,10 @@ export function PublicFormRenderer({
       toast.error("เบอร์โทรไม่ถูกต้อง (9-10 หลัก · ขึ้น 0 หรือ +66)");
       return false;
     }
+    if (!gender) {
+      toast.error("เลือกเพศ");
+      return false;
+    }
     const newErrors: Record<string, string> = {};
     for (const section of schema.sections) {
       for (const field of section.fields) {
@@ -251,6 +261,7 @@ export function PublicFormRenderer({
           fullName: fullName.trim(),
           phone: phone.trim(),
           email: email.trim() || undefined,
+          gender: gender || undefined,
         },
         answers,
         files: allFiles,
@@ -349,6 +360,26 @@ export function PublicFormRenderer({
             />
           </Field>
         </div>
+        <Field label="เพศ" required>
+          <div className="flex gap-2">
+            {GENDERS.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGender(g)}
+                disabled={disabled}
+                aria-pressed={gender === g}
+                className={`flex-1 h-12 rounded-xl border-2 font-bold transition-colors ${
+                  gender === g
+                    ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]"
+                    : "border-zinc-200 text-zinc-700 hover:border-zinc-400"
+                }`}
+              >
+                {GENDER_LABELS[g]}
+              </button>
+            ))}
+          </div>
+        </Field>
       </section>
 
       {/* Sections from schema — colored dot per canvas Screen 03-8 */}

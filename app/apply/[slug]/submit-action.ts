@@ -11,12 +11,13 @@ import { sendStatusEmail } from "@/lib/recruit/email";
 import { normalizePhone } from "@/lib/repair/slug";
 import {
   FormSchemaSchema,
+  parseGender,
   type FormSchema,
 } from "@/lib/recruit/types";
 
 interface SubmitInput {
   slug: string;
-  applicant: { fullName: string; phone: string; email?: string };
+  applicant: { fullName: string; phone: string; email?: string; gender?: string };
   answers: Record<string, unknown>;
   files: Array<{
     key: string;
@@ -78,6 +79,9 @@ export async function submitPublicApplication(
     }
   }
 
+  // gender: รับเฉพาะค่าที่ valid (male|female|other) · อื่น ๆ = null
+  const gender = parseGender(input.applicant.gender);
+
   // 2. upsert applicant (dedup by normalized phone)
   let applicant = await prisma.recruitApplicant.findFirst({
     where: { orgId: posting.orgId, phone: normalizedPhone },
@@ -89,14 +93,21 @@ export async function submitPublicApplication(
         fullName: input.applicant.fullName.trim(),
         phone: normalizedPhone,
         email: input.applicant.email?.trim() || null,
+        gender,
       },
     });
-  } else if (input.applicant.email && !applicant.email) {
-    // backfill email if newly provided
-    await prisma.recruitApplicant.update({
-      where: { id: applicant.id },
-      data: { email: input.applicant.email.trim() },
-    });
+  } else {
+    // backfill email + gender if newly provided and previously missing
+    const patch: { email?: string; gender?: string } = {};
+    if (input.applicant.email && !applicant.email)
+      patch.email = input.applicant.email.trim();
+    if (gender && !applicant.gender) patch.gender = gender;
+    if (Object.keys(patch).length > 0) {
+      await prisma.recruitApplicant.update({
+        where: { id: applicant.id },
+        data: patch,
+      });
+    }
   }
 
   // 3. blacklist check (use normalized phone for consistent match)

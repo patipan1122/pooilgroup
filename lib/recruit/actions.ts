@@ -10,6 +10,7 @@ import {
   APPLICATION_STATUSES,
   EMPTY_FORM_SCHEMA,
   FormSchemaSchema,
+  SCREENING_VERDICTS,
   type ApplicationStatus,
   type FormSchema,
 } from "./types";
@@ -375,6 +376,48 @@ export async function setApplicationRating(
 
   revalidatePath(`/recruit/applications/${applicationId}`);
   revalidatePath("/recruit");
+}
+
+const VerdictEnum = z.enum(SCREENING_VERDICTS);
+
+// คัดกรองเร็ว — น่าสนใจ / พอใช้ได้ / ไม่สนใจ (แยกจากดาว + status pipeline)
+// verdict = null → ล้างผลคัดกรอง
+export async function setScreeningVerdict(
+  applicationId: string,
+  verdict: string | null,
+) {
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    throw new Error("ไม่มีสิทธิ์");
+  }
+  const parsed = verdict == null ? null : (VerdictEnum.parse(verdict) as string);
+
+  const app = await prisma.recruitApplication.findFirst({
+    where: { id: applicationId, orgId: session.user.org_id },
+    select: { id: true, screeningVerdict: true },
+  });
+  if (!app) throw new Error("ไม่พบใบสมัคร");
+
+  await prisma.recruitApplication.update({
+    where: { id: applicationId },
+    data: { screeningVerdict: parsed },
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_APPLICATION_NOTE_ADDED", // reuse existing audit type
+    resourceType: "recruit_application",
+    resourceId: applicationId,
+    diff: {
+      old: { screeningVerdict: app.screeningVerdict },
+      new: { screeningVerdict: parsed },
+    },
+  });
+
+  revalidatePath(`/recruit/applications/${applicationId}`);
+  revalidatePath("/recruit");
+  revalidatePath("/recruit/table");
 }
 
 export async function setApplicationTags(

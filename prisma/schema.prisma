@@ -1355,6 +1355,7 @@ model RecruitApplicant {
   fullName     String   @map("full_name")
   phone        String // primary identifier · CEO Q5: no national ID at apply
   email        String?
+  gender       String? // male | female | other · เก็บที่ตัวผู้สมัคร (per-person)
   lineId       String?  @map("line_id") // LINE basic ID (legacy · user-supplied)
   lineUserId   String?  @map("line_user_id") // LINE userId from webhook (per-channel · opaque)
   facebookPsid String?  @map("facebook_psid") // FB Page-scoped Sender ID
@@ -1390,6 +1391,7 @@ model RecruitApplication {
   flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
   blacklistReason  String?                  @map("blacklist_reason")
   starRating       Int?                     @map("star_rating") // 1-5 from HR
+  screeningVerdict String?                  @map("screening_verdict") // INTERESTING | MAYBE | NOT_INTERESTED · คัดกรองเร็ว
   tags             String[]                 @default([])
   source           String? // utm_source from public link
   draft            Boolean                  @default(false) // draft saved by applicant

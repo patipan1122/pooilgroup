@@ -264,6 +264,9 @@ export default async function PipelinePage({
               current="kanban"
               listHref={listHref}
               kanbanHref="/recruit/pipeline"
+              tableHref={`/recruit/table${
+                postingFilter ? `?posting=${postingFilter}` : ""
+              }`}
             />
             {canWrite && (
               <Link

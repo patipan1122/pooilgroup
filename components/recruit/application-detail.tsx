@@ -17,8 +17,12 @@ import {
   STATUS_TONE,
   FormSchemaSchema,
   TAG_COLOR_CHIP,
+  SCREENING_VERDICT_LABELS,
+  SCREENING_VERDICT_CHIP,
   parseTag,
+  parseScreeningVerdict,
   type ApplicationStatus,
+  type ScreeningVerdict,
   type FormSchema,
 } from "@/lib/recruit/types";
 import { ApplicationActions } from "./application-actions";
@@ -26,7 +30,22 @@ import { ApplicationNotes } from "./application-notes";
 import { ApplicationFiles } from "./application-files";
 import { ApplicationTabs } from "./application-tabs";
 import { thaiDateLong } from "@/lib/utils/format";
-import { Phone, Mail, MapPin, ShieldAlert } from "lucide-react";
+import {
+  Phone,
+  Mail,
+  MapPin,
+  ShieldAlert,
+  ThumbsUp,
+  ThumbsDown,
+  Meh,
+  type LucideIcon,
+} from "lucide-react";
+
+const VERDICT_ICON: Record<ScreeningVerdict, LucideIcon> = {
+  INTERESTING: ThumbsUp,
+  MAYBE: Meh,
+  NOT_INTERESTED: ThumbsDown,
+};
 
 interface Props {
   applicationId: string;
@@ -79,6 +98,8 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
   );
 
   const status = app.status as ApplicationStatus;
+  const verdict = parseScreeningVerdict(app.screeningVerdict);
+  const VerdictIcon = verdict ? VERDICT_ICON[verdict] : null;
   const initials = app.applicant.fullName.trim().charAt(0).toUpperCase() || "?";
 
   return (
@@ -121,6 +142,15 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
                   <span className="size-1.5 rounded-full bg-current opacity-70" />
                   {STATUS_LABELS[status]}
                 </Badge>
+                {verdict && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${SCREENING_VERDICT_CHIP[verdict]}`}
+                    title="ผลคัดกรองเร็ว"
+                  >
+                    {VerdictIcon && <VerdictIcon className="size-3" />}
+                    {SCREENING_VERDICT_LABELS[verdict]}
+                  </span>
+                )}
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 font-display leading-tight">
                 {app.applicant.fullName}
@@ -185,6 +215,7 @@ export async function ApplicationDetail({ applicationId, canWrite }: Props) {
         currentStatus={status}
         currentRating={app.starRating}
         currentTags={app.tags ?? []}
+        currentVerdict={verdict}
         aiStrengths={(app.aiStrengths as string[] | null) ?? null}
         aiRisks={(app.aiRisks as string[] | null) ?? null}
         hasResumeFile={hasResumeFile}

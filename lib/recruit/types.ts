@@ -355,3 +355,69 @@ export function serializeTag(color: TagColor, label: string): string {
   if (!clean) return "";
   return color === "zinc" && !clean.includes(":") ? clean : `${color}:${clean}`;
 }
+
+// =============================================================
+// Screening verdict — HR first-pass triage (น่าสนใจ / พอใช้ได้ / ไม่สนใจ)
+// Stored on recruit_applications.screening_verdict (nullable string)
+// แยกจาก starRating (0-5) และ status pipeline · ใช้ปัดคัดกรองรอบแรกให้ไว
+// =============================================================
+export const SCREENING_VERDICTS = [
+  "INTERESTING",
+  "MAYBE",
+  "NOT_INTERESTED",
+] as const;
+export type ScreeningVerdict = (typeof SCREENING_VERDICTS)[number];
+
+export const SCREENING_VERDICT_LABELS: Record<ScreeningVerdict, string> = {
+  INTERESTING: "น่าสนใจ",
+  MAYBE: "พอใช้ได้",
+  NOT_INTERESTED: "ไม่สนใจ",
+};
+
+export const SCREENING_VERDICT_EMOJI: Record<ScreeningVerdict, string> = {
+  INTERESTING: "👍",
+  MAYBE: "🤔",
+  NOT_INTERESTED: "👎",
+};
+
+// Active (selected) button styling per verdict
+export const SCREENING_VERDICT_ACTIVE_CLASS: Record<ScreeningVerdict, string> = {
+  INTERESTING: "border-green-500 bg-green-50 text-green-800",
+  MAYBE: "border-amber-500 bg-amber-50 text-amber-900",
+  NOT_INTERESTED: "border-red-500 bg-red-50 text-red-800",
+};
+
+// Compact solid chip (hero + table)
+export const SCREENING_VERDICT_CHIP: Record<ScreeningVerdict, string> = {
+  INTERESTING: "bg-green-100 text-green-800",
+  MAYBE: "bg-amber-100 text-amber-900",
+  NOT_INTERESTED: "bg-red-100 text-red-800",
+};
+
+/** Coerce an unknown DB value into a valid verdict or null. */
+export function parseScreeningVerdict(v: unknown): ScreeningVerdict | null {
+  return typeof v === "string" &&
+    (SCREENING_VERDICTS as readonly string[]).includes(v)
+    ? (v as ScreeningVerdict)
+    : null;
+}
+
+// =============================================================
+// Gender — เพศผู้สมัคร (stored on recruit_applicants.gender · nullable)
+// เก็บที่ตัวผู้สมัคร (per-person) ไม่ใช่ต่อใบสมัคร → dedup ตามเบอร์แล้วคงอยู่
+// =============================================================
+export const GENDERS = ["male", "female", "other"] as const;
+export type Gender = (typeof GENDERS)[number];
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  male: "ชาย",
+  female: "หญิง",
+  other: "อื่นๆ",
+};
+
+/** Coerce an unknown DB value into a valid gender or null. */
+export function parseGender(v: unknown): Gender | null {
+  return typeof v === "string" && (GENDERS as readonly string[]).includes(v)
+    ? (v as Gender)
+    : null;
+}

@@ -10,6 +10,7 @@ import { ApplicationNotes } from "./application-notes";
 import { ApplicationAIPanel } from "./application-ai-panel";
 import {
   type ApplicationStatus,
+  type ScreeningVerdict,
 } from "@/lib/recruit/types";
 import { User, Brain, FileText, Clock, Check, X, Info } from "lucide-react";
 
@@ -46,6 +47,7 @@ interface Props {
   currentStatus: ApplicationStatus;
   currentRating: number | null;
   currentTags: string[];
+  currentVerdict: ScreeningVerdict | null;
   aiStrengths: string[] | null;
   aiRisks: string[] | null;
   hasResumeFile: boolean;
@@ -61,6 +63,7 @@ export function ApplicationTabs({
   currentStatus,
   currentRating,
   currentTags,
+  currentVerdict,
   aiStrengths,
   aiRisks,
   hasResumeFile,
@@ -146,6 +149,7 @@ export function ApplicationTabs({
                 currentStatus={currentStatus}
                 currentRating={currentRating}
                 currentTags={currentTags}
+                currentVerdict={currentVerdict}
               />
             )}
             <ApplicationAIPanel
