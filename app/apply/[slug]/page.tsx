@@ -172,9 +172,11 @@ export default async function ApplyPage({
         delete clean.hasCorrectAnswer;
         // เฉลยหลุด (2026-07-10): ข้อสอบไอคิวจากรูปบางข้อฝัง "กฎวิธีแก้" ไว้ในวงเล็บท้าย label
         // (เช่น "...? (นับเพิ่มตามแนวนอน + รูปเปลี่ยนตามแนวตั้ง)") = บอกคำตอบผู้สมัคร.
-        // ตัดวงเล็บ "ท้ายสุด" ทิ้งก่อนส่งให้ผู้สมัคร — scope เฉพาะข้อ iq_* เพื่อไม่แตะวงเล็บ
-        // ที่ตั้งใจ (เช่น "(ลำดับที่ 5)" กลางประโยค). ครอบคลุมประกาศเก่าที่ baked label ไว้ใน DB แล้ว.
-        if (typeof clean.id === "string" && clean.id.startsWith("iq_")) {
+        // ตัดวงเล็บ "ท้ายสุด" ทิ้งก่อนส่งให้ผู้สมัคร โดยเช็คจาก imageUrl (/recruit-iq/) —
+        // ห้ามเช็คจาก id เพราะ id ถูกสุ่มใหม่ (f_xxxx) ตอน copy template ลง posting.fieldSchema.
+        // scope เฉพาะรูป IQ → ไม่แตะวงเล็บที่ตั้งใจ (เช่น "(ลำดับที่ 5)" กลางประโยค · "(ถ้ามี)").
+        // ครอบคลุมประกาศเก่าที่ baked label ไว้ใน DB แล้ว.
+        if (typeof clean.imageUrl === "string" && clean.imageUrl.includes("/recruit-iq/")) {
           clean.label = clean.label.replace(/\s*\([^)]*\)\s*$/u, "").trim();
         }
         return clean;
