@@ -72,6 +72,21 @@ export async function listLedgerInstallments(
     : [];
   const expById = new Map(exps.map((e) => [e.id, e]));
 
+  // ดึง payment requests (งวดที่ขอโอนตรง · P2-B) — สถานะงวดแท้ = ตาม request.state · สลิปจาก LedgerPayment
+  const reqIds = rows.map((r) => r.paidPaymentRequestId).filter((x): x is string => !!x);
+  const reqs = reqIds.length
+    ? await prisma.ledgerPaymentRequest.findMany({
+        where: { id: { in: reqIds }, orgId, companyId },
+        select: {
+          id: true,
+          state: true,
+          paidTotal: true,
+          payments: { select: { slipUrl: true, slipThumbUrl: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      })
+    : [];
+  const reqById = new Map(reqs.map((q) => [q.id, q]));
+
   let plannedTotal = 0;
   let paidTrustedTotal = 0;
   let paidPlannedTotal = 0;
@@ -85,7 +100,25 @@ export async function listLedgerInstallments(
     let slipOriginalUrl: string | null = null;
     let actualCashOut: number | null = null;
 
-    if (r.status === "paid") {
+    if (r.paidPaymentRequestId) {
+      // ขอโอนตรงจากงวด (P2-B): สถานะงวดแท้ = ตาม request state (DB งวดค้าง amber ตั้งแต่ตอนขอ ·
+      // ไม่มี hook อัปเดตงวดตอนสลิปเข้า → อ่านจาก request เป็น single-source-of-truth)
+      const q = reqById.get(r.paidPaymentRequestId);
+      if (!q || q.state === "cancelled" || q.state === "reversed" || q.state === "abnormal") {
+        status = "broken";
+      } else if (q.state === "paid") {
+        status = "paid";
+        const slip = q.payments[0];
+        slipThumbUrl = slip?.slipThumbUrl ?? null;
+        slipOriginalUrl = slip?.slipUrl ?? null;
+        actualCashOut = Number(q.paidTotal);
+        paidTrustedTotal += actualCashOut;
+        paidPlannedTotal += Number(r.plannedAmount);
+      } else {
+        // open/partial → ยังไม่โอนจริง (รอสลิป) → amber "ขอโอนแล้ว—รอโอน"
+        status = "paid_pending_slip";
+      }
+    } else if (r.status === "paid") {
       if (r.paidExpenseId) {
         const e = expById.get(r.paidExpenseId);
         // co-membership invariant: anchor ต้องยังติดโครงการนี้ + ไม่ void
@@ -98,9 +131,6 @@ export async function listLedgerInstallments(
           paidTrustedTotal += actualCashOut;
           paidPlannedTotal += Number(r.plannedAmount); // ฐานคิดเงินประกัน = ยอดสัญญาของงวดที่จ่ายจริง
         }
-      } else if (r.paidPaymentRequestId) {
-        // ผูก payment request (สลิปอยู่บน LedgerPayment) — v1 ยังไม่ resolve สลิปเส้นนี้; นับ trusted ไม่ได้จนกว่าจะ join
-        // (แสดงเป็น paid แต่ไม่มี thumb) — ปลอดภัยเพราะมี paidPaymentRequestId เป็นหลักฐาน
       } else {
         // paid แต่ไม่มี anchor ทั้ง 2 ทาง (เช่น บิลเงินสดถูก hard-delete → FK SET NULL) →
         // ห้ามค้างเขียวหลอก · ดาวน์เกรดเป็น broken ให้คนไปตรวจ

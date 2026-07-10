@@ -3396,16 +3396,162 @@ export async function revertInstallmentAction(installmentId: string): Promise<Ac
   if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
   const inst = await prisma.ledgerInstallment.findFirst({
     where: { id: installmentId, orgId },
-    select: { id: true, companyId: true },
+    select: { id: true, companyId: true, paidPaymentRequestId: true },
   });
   if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
   if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  // ถ้างวดผูกคำขอโอนอยู่ → จ่ายแล้ว(มีสลิป)=ย้อนไม่ได้ · ค้างอยู่=ยกเลิกคำขอก่อน
+  // (กันผู้บริหารโอนงวดที่ถูกย้อนแล้ว — คำขอต้องตายไปพร้อมงวด)
+  if (inst.paidPaymentRequestId) {
+    const req = await prisma.ledgerPaymentRequest.findFirst({
+      where: { id: inst.paidPaymentRequestId, orgId, companyId: inst.companyId },
+      select: { id: true, state: true },
+    });
+    if (req?.state === "paid") {
+      return { ok: false, error: "งวดนี้จ่ายเงินไปแล้ว (มีสลิป) — ย้อนไม่ได้ ต้องจัดการที่คำขอโอน" };
+    }
+    if (req && (req.state === "open" || req.state === "partial")) {
+      const c = await cancelPaymentRequest({
+        orgId,
+        companyId: inst.companyId,
+        requestId: req.id,
+        cancelledBy: access.session.user.id,
+      }).catch(() => ({ ok: false as const }));
+      // ยกเลิกไม่สำเร็จ (เช่น สลิปเพิ่งเข้า race) → อย่าเคลียร์ pointer (กันงวดหลุดจาก request ที่ยัง open)
+      if (!c.ok) return { ok: false, error: "ยกเลิกคำขอโอนไม่สำเร็จ (อาจเพิ่งจ่าย) — รีเฟรชแล้วลองใหม่" };
+    }
+  }
   await prisma.ledgerInstallment.update({
     where: { id: installmentId },
     data: { status: "planned", paidExpenseId: null, paidPaymentRequestId: null, paidAt: null, paidBy: null },
   });
   revalidatePath("/ledger/projects");
   return { ok: true };
+}
+
+/** ขอโอนเป็นงวด (P2-B 2026-07-10): สร้าง payment request "ตรงจากงวด" (ไม่ผูกบิล · matchSlipToRequest
+ *  มี guard billIds.length>0 รองรับ request ไร้บิล) → ส่งการ์ดเข้ากลุ่มผู้บริหาร → งวด = amber
+ *  "ขอโอนแล้ว—รอโอน" · เขียวอัตโนมัติเมื่อสลิปเข้า (request.state→'paid' · read reflect).
+ *  ยอด = plannedAmount เต็ม (ไม่หัก retention/WHT อัตโนมัติใน v1 — ผู้จ่าย/บัญชีปรับเอง · โชว์ประกันแยกในรายงาน). */
+export async function requestInstallmentTransferAction(
+  installmentId: string,
+  payeeRaw: unknown,
+): Promise<ActionResult & { requestId?: string }> {
+  if (!ledgerPayreqV1()) return { ok: false, error: "ระบบขอโอนเงินยังไม่เปิดใช้" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  const inst = await prisma.ledgerInstallment.findFirst({
+    where: { id: installmentId, orgId },
+    select: {
+      id: true, companyId: true, projectId: true, seq: true, label: true,
+      vendorLabel: true, plannedAmount: true, status: true,
+      paidPaymentRequestId: true, paidExpenseId: true,
+    },
+  });
+  if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
+  if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  // กันขอซ้ำ: งวดที่ผูก request/บิลแล้ว ต้องยกเลิก/ย้อนก่อน
+  if (inst.paidPaymentRequestId || inst.paidExpenseId) {
+    return { ok: false, error: "งวดนี้มีคำขอโอน/ผูกบิลอยู่แล้ว — ยกเลิก/ย้อนก่อน" };
+  }
+  const payee = zPayee.safeParse(payeeRaw ?? {});
+  if (!payee.success) return { ok: false, error: payee.error.issues[0]?.message ?? "ข้อมูลบัญชีผู้รับไม่ถูกต้อง" };
+  const amount = Math.round(Number(inst.plannedAmount) * 100) / 100;
+  if (amount <= 0) return { ok: false, error: "ยอดงวดต้องมากกว่า 0 ก่อนขอโอน" };
+
+  // สร้าง request + ผูกงวด ใน 1 transaction พร้อม conditional row-lock (กัน race "ขอโอนงวดเดียว
+  // 2 ครั้งพร้อมกัน" = โอนซ้ำ). ผู้ชนะเท่านั้นที่ updateMany เจอ (status=planned + ยังไม่ผูก) → count=1;
+  // ผู้แพ้ count=0 → throw → rollback request ที่เพิ่งสร้าง (ไม่มี orphan · การ์ดไม่ถูก push).
+  let requestId: string;
+  try {
+    requestId = await prisma.$transaction(async (tx) => {
+      const req = await tx.ledgerPaymentRequest.create({
+        data: {
+          orgId,
+          companyId: inst.companyId,
+          vendor: inst.vendorLabel ?? null,
+          payeeAcctName: payee.data.acctName ?? null,
+          payeeBankCode: payee.data.bankCode ?? null,
+          payeeAcctNo: payee.data.acctNo ?? null,
+          payeePromptpay: payee.data.promptpay ?? null,
+          payeeQrPayload: payee.data.qrPayload ?? null,
+          payeeQrImageUrl: payee.data.qrImageUrl ?? null,
+          billsGross: amount,
+          whtTotal: 0,
+          expectedTransfer: amount,
+          paidTotal: 0,
+          state: "open",
+          requestedBy: access.session.user.id,
+        },
+        select: { id: true },
+      });
+      const claimed = await tx.ledgerInstallment.updateMany({
+        where: {
+          id: installmentId,
+          orgId,
+          companyId: inst.companyId,
+          status: "planned",
+          paidPaymentRequestId: null,
+          paidExpenseId: null,
+        },
+        data: {
+          status: "paid_pending_slip",
+          paidPaymentRequestId: req.id,
+          paidAt: new Date(),
+          paidBy: access.session.user.id,
+        },
+      });
+      if (claimed.count !== 1) throw new Error("INSTALLMENT_RACE");
+      return req.id;
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "INSTALLMENT_RACE") {
+      return { ok: false, error: "งวดนี้เพิ่งถูกขอโอนไปแล้ว — รีเฟรชแล้วลองใหม่" };
+    }
+    console.error("[ledger:requestInstallmentTransferAction]", e);
+    return { ok: false, error: "สร้างคำขอโอนไม่สำเร็จ" };
+  }
+
+  // ส่งการ์ดเข้ากลุ่มผู้บริหาร (best-effort — LINE ล่มต้องไม่ล้ม request ที่อยู่ใน DB แล้ว)
+  try {
+    const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+    const detailPath = `/liff/ledger/payreq/${encodeURIComponent(requestId)}`;
+    const detailUrl = liffId ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}` : null;
+    const card = buildPaymentRequestCard({
+      vendor: inst.vendorLabel ?? null,
+      billsGross: amount,
+      whtTotal: 0,
+      expectedTransfer: amount,
+      payee: payee.data,
+      bills: [{ docCode: inst.label || `งวด ${inst.seq}`, amount }],
+      detailUrl,
+      receiptUrl: null,
+    });
+    const push = await pushFlexToSlipGroup(orgId, inst.companyId, card);
+    if (push.ok) {
+      await prisma.ledgerPaymentRequest
+        .update({
+          where: { id: requestId },
+          data: { pushedGroupId: push.groupId ?? null, pushedMessageId: push.messageId ?? null },
+        })
+        .catch(() => {});
+    }
+  } catch (e) {
+    console.error("[ledger:requestInstallmentTransferAction] push failed", e);
+  }
+  await audit({
+    orgId,
+    userId: access.session.user.id,
+    action: "LEDGER_PAYMENT_REQUESTED",
+    resourceType: "ledger_payment_request",
+    resourceId: requestId,
+    diff: { new: { installmentId, vendor: inst.vendorLabel, amount } },
+  });
+  revalidatePath("/ledger/projects");
+  return { ok: true, requestId };
 }
 
 // ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────

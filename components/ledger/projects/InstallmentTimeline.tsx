@@ -11,6 +11,7 @@ import type {
 } from "@/lib/ledger/installments";
 import { InstallmentStatusBadge } from "./InstallmentStatusBadge";
 import { MarkPaidSheet } from "./MarkPaidSheet";
+import { RequestTransferSheet } from "./RequestTransferSheet";
 import { InstallmentFormDialog } from "./InstallmentFormDialog";
 import { InstallmentRowActions } from "./InstallmentRowActions";
 
@@ -137,13 +138,22 @@ export function InstallmentTimeline({
                       {canManage && (
                         <div className="flex items-center gap-1.5">
                           {r.status === "planned" && (
-                            <MarkPaidSheet
-                              installmentId={r.id}
-                              installmentLabel={r.label}
-                              plannedAmount={r.plannedAmount}
-                              companyId={companyId}
-                              projectId={projectId}
-                            />
+                            <>
+                              <RequestTransferSheet
+                                installmentId={r.id}
+                                installmentLabel={r.label}
+                                seq={r.seq}
+                                plannedAmount={r.plannedAmount}
+                                companyId={companyId}
+                              />
+                              <MarkPaidSheet
+                                installmentId={r.id}
+                                installmentLabel={r.label}
+                                plannedAmount={r.plannedAmount}
+                                companyId={companyId}
+                                projectId={projectId}
+                              />
+                            </>
                           )}
                           {isAmber && (
                             <MarkPaidSheet

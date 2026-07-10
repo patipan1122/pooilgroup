@@ -10,7 +10,7 @@ const META: Record<
   { label: string; tone: "neutral" | "warning" | "success" | "danger"; Icon: typeof Clock }
 > = {
   planned: { label: "ยังไม่จ่าย", tone: "neutral", Icon: Circle },
-  paid_pending_slip: { label: "จ่ายแล้ว—รอสลิป", tone: "warning", Icon: Clock },
+  paid_pending_slip: { label: "รอโอน/รอสลิป", tone: "warning", Icon: Clock },
   paid: { label: "จ่ายแล้ว", tone: "success", Icon: Check },
   broken: { label: "สลิปหลุด/ตรวจสอบ", tone: "danger", Icon: CircleAlert },
   void: { label: "ยกเลิก", tone: "neutral", Icon: Ban },
