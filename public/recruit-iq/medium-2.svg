@@ -1,11 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
-  <!-- Medium visual IQ — 3x3 matrix, two rules:
-       count ACROSS = 1,2,3 dots per column; shape DOWN = row1 circles,
-       row2 squares, row3 triangles. Missing = row3/col3 = 3 triangles.
-       Answer C. Distractors: A 3 squares, B 2 triangles, D 3 circles. -->
+
   <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
-  <!-- matrix frame -->
   <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
 
   <defs>
@@ -14,61 +10,51 @@
     <polygon id="ut" points="0,-14 12,10 -12,10" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
   </defs>
 
-  <!-- Row 1 circles: 1, 2, 3 -->
   <use href="#uc" x="200" y="130"/>
   <use href="#uc" x="345" y="130"/><use href="#uc" x="375" y="130"/>
   <use href="#uc" x="490" y="130"/><use href="#uc" x="520" y="130"/><use href="#uc" x="550" y="130"/>
 
-  <!-- Row 2 squares: 1, 2, 3 -->
   <use href="#us" x="200" y="245"/>
   <use href="#us" x="345" y="245"/><use href="#us" x="375" y="245"/>
   <use href="#us" x="490" y="245"/><use href="#us" x="520" y="245"/><use href="#us" x="550" y="245"/>
 
-  <!-- Row 3 triangles: 1, 2, ? -->
   <use href="#ut" x="200" y="360"/>
   <use href="#ut" x="345" y="360"/><use href="#ut" x="375" y="360"/>
   <rect x="468" y="322" width="104" height="76" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
   <text x="520" y="380" text-anchor="middle" font-size="48" font-weight="700" fill="#6ea8fe">?</text>
 
-  <!-- prompt -->
   <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
 
-  <!-- answer choices -->
   <g>
-    <!-- A: 3 squares (near-miss: shape wrong) -->
+
     <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#us" x="105" y="587"/><use href="#us" x="135" y="587"/><use href="#us" x="165" y="587"/>
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
     </g>
 
-    <!-- B: 2 triangles (near-miss: count wrong) -->
     <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#ut" x="275" y="587"/><use href="#ut" x="305" y="587"/>
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
     </g>
 
-    <!-- C: 3 triangles (CORRECT) -->
     <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#ut" x="415" y="587"/><use href="#ut" x="445" y="587"/><use href="#ut" x="475" y="587"/>
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
     </g>
 
-    <!-- D: 3 circles (near-miss: shape wrong) -->
     <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#uc" x="570" y="587"/><use href="#uc" x="600" y="587"/><use href="#uc" x="630" y="587"/>
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
     </g>
 
-    <!-- E: 4 triangles (WRONG: count should be 3, not 4) -->
     <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#ut" x="315" y="797"/><use href="#ut" x="345" y="797"/><use href="#ut" x="375" y="797"/><use href="#ut" x="405" y="797"/>
     <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
 
-    <!-- F: 1 triangle (WRONG: count should be 3, not 1) -->
     <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <use href="#ut" x="585" y="797"/>
     <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>

@@ -1,52 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
-  <!-- Easy 4 — 2x2 matrix fill. Top: [empty circle][solid circle].
-       Bottom: [empty square][?]. Rule: right column = solid. Missing = solid square.
-       Distractors: empty square / solid circle / half square. CORRECT = B. -->
+
   <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
-  <!-- matrix frame -->
   <rect x="150" y="60" width="420" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
 
-  <!-- grid dividers -->
   <line x1="360" y1="72" x2="360" y2="428" stroke="#1e2b48" stroke-width="1.5"/>
   <line x1="162" y1="250" x2="558" y2="250" stroke="#1e2b48" stroke-width="1.5"/>
 
-  <!-- Row 1: empty circle / solid circle -->
   <circle cx="255" cy="160" r="46" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <circle cx="465" cy="160" r="46" fill="#6ea8fe" stroke="#6ea8fe" stroke-width="2.5"/>
 
-  <!-- Row 2: empty square / ? -->
   <rect x="209" y="294" width="92" height="92" rx="6" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="419" y="294" width="92" height="92" rx="6" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
   <text x="465" y="358" text-anchor="middle" font-size="56" font-weight="700" fill="#6ea8fe">?</text>
 
-  <!-- prompt -->
   <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
 
-  <!-- answer choices -->
   <g>
-    <!-- A: empty square -->
+
     <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="102" y="555" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
     </g>
 
-    <!-- B: solid square (CORRECT) -->
     <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="257" y="555" width="66" height="66" rx="5" fill="#6ea8fe" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
     </g>
 
-    <!-- C: solid circle -->
     <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <circle cx="445" cy="588" r="35" fill="#6ea8fe" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
     </g>
 
-    <!-- D: half-filled square -> row 2 col 1 -->
     <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="567" y="555" width="66" height="66" rx="5" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -54,12 +43,10 @@
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
     </g>
 
-    <!-- E: empty circle (WRONG - not solid, not square) -->
     <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <circle cx="360" cy="795" r="35" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
 
-    <!-- F: solid triangle (WRONG - solid but not a square) -->
     <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="585,760 623,828 547,828" fill="#6ea8fe" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
     <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>

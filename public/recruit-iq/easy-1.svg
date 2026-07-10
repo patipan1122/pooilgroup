@@ -1,66 +1,54 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
-  <!-- Easy 1 — 3x3 matrix. Rows: circle / star / square. Columns: small / medium / large.
-       Missing (bottom-right) = large square. CORRECT = B. -->
+
   <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
-  <!-- matrix frame -->
   <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
 
-  <!-- Row 1: circles small/medium/large -->
   <circle cx="200" cy="140" r="18" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <circle cx="360" cy="140" r="30" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <circle cx="520" cy="140" r="44" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
 
-  <!-- Row 2: stars small/medium/large -->
   <g transform="translate(200,260) scale(22)"><polygon points="0,-1 0.2245,-0.309 0.9511,-0.309 0.3633,0.118 0.5878,0.809 0,0.382 -0.5878,0.809 -0.3633,0.118 -0.9511,-0.309 -0.2245,-0.309" fill="none" stroke="#6ea8fe" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></g>
   <g transform="translate(360,260) scale(34)"><polygon points="0,-1 0.2245,-0.309 0.9511,-0.309 0.3633,0.118 0.5878,0.809 0,0.382 -0.5878,0.809 -0.3633,0.118 -0.9511,-0.309 -0.2245,-0.309" fill="none" stroke="#6ea8fe" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></g>
   <g transform="translate(520,260) scale(48)"><polygon points="0,-1 0.2245,-0.309 0.9511,-0.309 0.3633,0.118 0.5878,0.809 0,0.382 -0.5878,0.809 -0.3633,0.118 -0.9511,-0.309 -0.2245,-0.309" fill="none" stroke="#6ea8fe" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></g>
 
-  <!-- Row 3: squares small/medium/? -->
   <rect x="182" y="362" width="36" height="36" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="330" y="350" width="60" height="60" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="472" y="332" width="96" height="96" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
   <text x="520" y="398" text-anchor="middle" font-size="60" font-weight="700" fill="#6ea8fe">?</text>
 
-  <!-- prompt -->
   <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
 
-  <!-- answer choices -->
   <g>
-    <!-- A: small square -->
+
     <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="117" y="567" width="36" height="36" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
     </g>
 
-    <!-- B: large square (CORRECT) -->
     <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="250" y="547" width="80" height="80" rx="6" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
     </g>
 
-    <!-- C: large circle -->
     <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <circle cx="445" cy="587" r="40" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
     </g>
 
-    <!-- D: large star -> row 2 col 1 -->
     <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <g transform="translate(600,587) scale(42)"><polygon points="0,-1 0.2245,-0.309 0.9511,-0.309 0.3633,0.118 0.5878,0.809 0,0.382 -0.5878,0.809 -0.3633,0.118 -0.9511,-0.309 -0.2245,-0.309" fill="none" stroke="#6ea8fe" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></g>
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
     </g>
 
-    <!-- E: medium circle (WRONG - not a large square, wrong shape) -->
     <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <circle cx="360" cy="795" r="30" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
 
-    <!-- F: small star (WRONG - not a large square, wrong shape) -->
     <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <g transform="translate(585,795) scale(26)"><polygon points="0,-1 0.2245,-0.309 0.9511,-0.309 0.3633,0.118 0.5878,0.809 0,0.382 -0.5878,0.809 -0.3633,0.118 -0.9511,-0.309 -0.2245,-0.309" fill="none" stroke="#6ea8fe" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></g>
     <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>

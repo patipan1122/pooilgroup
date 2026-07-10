@@ -1,48 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
-  <!-- HARD 2 — Series (4 shown, pick the NEXT / 5th). THREE simultaneous rules:
-       (R1) triangle rotates 90deg CW each step: 0 -> 90 -> 180 -> 270 -> [0]
-       (R2) satellite dot moves CW around triangle: top -> right -> bottom -> left -> [top]
-       (R3) triangle is shaded on every-other figure: fig1 empty, fig2 solid, fig3 empty, fig4 solid -> [fig5 empty]
-       Answer (5th) = triangle rot 0 (upright), dot at TOP, UNSHADED.  Correct = C.
-       Distractors each break exactly one rule. -->
+
   <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
-  <!-- series frame -->
   <rect x="40" y="90" width="640" height="200" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
 
-  <!-- triangle base polygon (upward) centered origin: 0,-26 23,15 -23,15 -->
-
-  <!-- Fig 1: rot 0, dot top, empty -->
   <polygon points="0,-26 23,15 -23,15" transform="translate(120,180) rotate(0)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
   <circle cx="120" cy="140" r="6" fill="#6ea8fe"/>
   <text x="120" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">1</text>
 
-  <!-- Fig 2: rot 90cw, dot right, solid -->
   <polygon points="0,-26 23,15 -23,15" transform="translate(240,180) rotate(90)" fill="#6ea8fe" opacity="0.5" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
   <circle cx="280" cy="180" r="6" fill="#6ea8fe"/>
   <text x="240" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">2</text>
 
-  <!-- Fig 3: rot 180, dot bottom, empty -->
   <polygon points="0,-26 23,15 -23,15" transform="translate(360,180) rotate(180)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
   <circle cx="360" cy="220" r="6" fill="#6ea8fe"/>
   <text x="360" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">3</text>
 
-  <!-- Fig 4: rot 270cw, dot left, solid -->
   <polygon points="0,-26 23,15 -23,15" transform="translate(480,180) rotate(270)" fill="#6ea8fe" opacity="0.5" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
   <circle cx="440" cy="180" r="6" fill="#6ea8fe"/>
   <text x="480" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">4</text>
 
-  <!-- Fig 5: MISSING -->
   <rect x="562" y="138" width="84" height="84" rx="8" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
   <text x="604" y="196" text-anchor="middle" font-size="48" font-weight="700" fill="#6ea8fe">?</text>
   <text x="604" y="270" text-anchor="middle" font-size="16" fill="#9db4d8">5</text>
 
-  <!-- prompt -->
   <text x="360" y="336" text-anchor="middle" font-size="20" fill="#9db4d8">รูปถัดไป (ลำดับที่ 5) ควรเป็นรูปไหน ?</text>
 
-  <!-- answer choices — Row1: A,B,C · Row2: D,E,F -->
   <g>
-    <!-- A: rot 0 upright, dot RIGHT (wrong dot position), empty -->
+
     <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(135,593) rotate(0)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
@@ -50,7 +35,6 @@
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
     </g>
 
-    <!-- B: rot 90 (wrong rotation), dot top, empty -->
     <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(290,593) rotate(90)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
@@ -58,7 +42,6 @@
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
     </g>
 
-    <!-- C: rot 0 upright, dot TOP, empty (CORRECT) -->
     <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(445,593) rotate(0)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
@@ -66,7 +49,6 @@
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
     </g>
 
-    <!-- D: rot 0 upright, dot top, SOLID (wrong shading) -->
     <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(600,593) rotate(0)" fill="#6ea8fe" opacity="0.5" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
@@ -74,13 +56,11 @@
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
     </g>
 
-    <!-- E: rot 0 upright, dot BOTTOM (wrong dot position), empty -->
     <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(360,795) rotate(0)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
     <circle cx="360" cy="832" r="6" fill="#6ea8fe"/>
     <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
 
-    <!-- F: rot 180 inverted (wrong rotation), dot top, empty -->
     <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <polygon points="0,-24 21,14 -21,14" transform="translate(585,795) rotate(180)" fill="none" stroke="#6ea8fe" stroke-width="2.5" stroke-linejoin="round"/>
     <circle cx="585" cy="758" r="6" fill="#6ea8fe"/>

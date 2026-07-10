@@ -1,40 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980" font-family="system-ui, sans-serif">
-  <!-- b2-easy-2 — COUNT INCREASES. A row of cells, each holds a group of vertical bars.
-       Bar count grows by one each step: 1, 2, 3, then ? = 4.
-       CORRECT = D (four bars). Distractors: 3 bars, 5 bars, 2 bars. -->
+
   <rect x="0" y="0" width="720" height="980" rx="18" fill="#0b1120"/>
 
-  <!-- series frame -->
   <rect x="70" y="60" width="580" height="380" rx="14" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
 
-  <!-- four slots across the row, centered at x = 175 / 310 / 445 / 580 ; vertical center y = 250 -->
-  <!-- Bars: width 14, height 90, top y = 205, bottom y = 295. Spacing 26 between bar centers. -->
-
-  <!-- Slot 1: 1 bar -->
   <rect x="168" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <text x="175" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">1</text>
 
-  <!-- Slot 2: 2 bars (centers 297,323) -->
   <rect x="290" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="316" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <text x="310" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">2</text>
 
-  <!-- Slot 3: 3 bars (centers 419,445,471) -->
   <rect x="412" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="438" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <rect x="464" y="205" width="14" height="90" rx="4" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
   <text x="445" y="345" text-anchor="middle" font-size="18" fill="#9db4d8">3</text>
 
-  <!-- Slot 4: MISSING -->
   <rect x="530" y="192" width="100" height="116" rx="10" fill="none" stroke="#33436b" stroke-width="2" stroke-dasharray="7 7"/>
   <text x="580" y="268" text-anchor="middle" font-size="52" font-weight="700" fill="#6ea8fe">?</text>
 
-  <!-- prompt -->
   <text x="360" y="486" text-anchor="middle" font-size="20" fill="#9db4d8">รูปไหนควรอยู่ตรงเครื่องหมาย ?</text>
 
-  <!-- answer choices : bars width 12, height 70, top y 552, bottom 622 ; spacing 22 -->
   <g>
-    <!-- A: 3 bars (centers 113,135,157) -->
+
     <g transform="translate(0,0)">
     <rect x="70" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="107" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -43,7 +31,6 @@
     <text x="135" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">A</text>
     </g>
 
-    <!-- B: 5 bars (centers 246,268,290,312,334) -->
     <g transform="translate(70,0)">
     <rect x="225" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="240" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -54,7 +41,6 @@
     <text x="290" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">B</text>
     </g>
 
-    <!-- C: 2 bars (centers 434,456) -->
     <g transform="translate(140,0)">
     <rect x="380" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="428" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -62,7 +48,6 @@
     <text x="445" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">C</text>
     </g>
 
-    <!-- D: 4 bars (centers 567,589,611,633) (CORRECT) -->
     <g transform="translate(-465,210)">
     <rect x="535" y="520" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="561" y="552" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -72,7 +57,6 @@
     <text x="600" y="655" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">D</text>
     </g>
 
-    <!-- E: 6 bars (WRONG count; sequence should end at 4) centers 320,336,352,368,384,400 -->
     <rect x="295" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="314" y="762" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <rect x="330" y="762" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
@@ -82,7 +66,6 @@
     <rect x="394" y="762" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="360" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">E</text>
 
-    <!-- F: 1 bar (WRONG count; sequence should end at 4) center 585 -->
     <rect x="520" y="730" width="130" height="150" rx="12" fill="#0e1730" stroke="#1e2b48" stroke-width="1.5"/>
     <rect x="579" y="762" width="12" height="70" rx="3" fill="none" stroke="#6ea8fe" stroke-width="2.5"/>
     <text x="585" y="865" text-anchor="middle" font-size="22" font-weight="700" fill="#9db4d8">F</text>
