@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, Printer, History, ChevronDown, RotateCcw, Zap } from "lucide-react";
+import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, ImageDown, FileDown, History, ChevronDown, RotateCcw, Zap } from "lucide-react";
 import {
   markOrdered,
   markArrivedTh,
@@ -963,13 +963,18 @@ function CostAndPayment({
       title="ต้นทุน & การจ่ายเงิน"
       sub="ค่าของ (อ้างอิงราคาสินค้า) · ค่าขนส่งจีน-ไทย (บาท) · Landed"
       action={
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" onClick={exportCsv} className="dc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="ส่งออก CSV (เปิดใน Excel)">
             <Download size={13} /> CSV
           </button>
-          <button type="button" onClick={() => window.print()} className="dc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="พิมพ์ใบนี้">
-            <Printer size={13} /> พิมพ์
-          </button>
+          {/* 🖼️ ดาวน์โหลดรูป (ส่งลงไลน์) — ลิงก์ไป route /image (attachment PNG) */}
+          <a href={`/dc/office/purchasing/${data.id}/image`} download className="dc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }} title="บันทึกใบนี้เป็นรูป (ส่งลงไลน์ได้)">
+            <ImageDown size={13} /> รูป
+          </a>
+          {/* 📄 ดาวน์โหลด PDF — เปิดหน้าเอกสาร (AutoPrint เด้ง print → Save as PDF) */}
+          <a href={`/dc/office/purchasing/${data.id}/print`} target="_blank" rel="noopener noreferrer" className="dc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }} title="เปิดหน้าเอกสาร → บันทึกเป็น PDF">
+            <FileDown size={13} /> PDF
+          </a>
         </div>
       }
     >

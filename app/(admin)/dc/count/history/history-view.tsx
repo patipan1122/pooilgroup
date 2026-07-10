@@ -12,6 +12,7 @@ import {
   type CountSheetSummary,
   type CountSheetDetail,
 } from "@/lib/dc/count-actions";
+import { DcDocDownload } from "@/components/dc/print-controls";
 
 function fmtDateTime(iso: string): string {
   try {
@@ -264,8 +265,14 @@ function CountDetailSheet({ countId, onClose }: { countId: string; onClose: () =
           )}
         </div>
 
-        {/* footer */}
-        <div style={{ padding: "10px 16px 16px", borderTop: "1px solid var(--dc-line)" }}>
+        {/* footer — ดาวน์โหลด (รูป/PDF) + ปิด. ปุ่มดาวน์โหลดโชว์เมื่อโหลดใบสำเร็จแล้ว */}
+        <div style={{ padding: "10px 16px 16px", borderTop: "1px solid var(--dc-line)", display: "flex", flexDirection: "column", gap: 10 }}>
+          {detail && (
+            <DcDocDownload
+              pngHref={`/dc/count/${countId}/image`}
+              printHref={`/dc/count/${countId}/print`}
+            />
+          )}
           <button type="button" className="dc-btn-xl" onClick={onClose}>
             ปิด
           </button>
