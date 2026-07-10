@@ -68,13 +68,18 @@ export default async function DcProductsPage() {
   const onHand = new Map<string, number>();
   for (const b of balances) onHand.set(b.productId, (onHand.get(b.productId) ?? 0) + b.qtyOnHand);
 
+  // resolve รูปสินค้าเป็น URL เต็ม (R2 key หรือ http เต็ม) — เดิม drop R2 key ทิ้ง รูปเลยไม่ขึ้น
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
+
   const rows: ProductRow[] = productsRaw.map((p) => {
     const catLabel = (p.category?.trim() || PRODUCT_TYPE_LABEL[p.type] || p.type).trim();
     const catKey = p.category?.trim() || `__type_${p.type}`;
     const { c, soft } = catColor(catLabel);
     const oh = onHand.get(p.id) ?? 0;
     const low = p.reorderPoint != null && oh <= p.reorderPoint;
-    const img = p.imageR2Path?.startsWith("http") ? p.imageR2Path : null;
+    const img = toImageUrl(p.imageR2Path);
     return {
       id: p.id, name: p.name, sku: p.sku, barcode: p.barcode, unit: p.unit,
       catKey, catLabel, catC: c, catSoft: soft,

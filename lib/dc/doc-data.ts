@@ -51,6 +51,14 @@ async function loadOrg(orgId: string): Promise<{ name: string; logoUrl: string |
   return { name: org?.name ?? "บริษัท", logoUrl: org?.logoUrl ?? null };
 }
 
+// รูปสินค้า (R2 key หรือ http เต็ม) → URL เต็ม · null = ไม่มีรูป (pattern เดียวกับ floor/count actions)
+function toImageUrl(key: string | null | undefined): string | null {
+  if (!key) return null;
+  if (/^https?:\/\//.test(key)) return key;
+  const base = process.env.R2_PUBLIC_URL ?? "";
+  return base ? `${base}/${key}` : null;
+}
+
 // ════════════════════════════════════════════════════════════════════
 // ใบสั่งซื้อ (PO)
 // ════════════════════════════════════════════════════════════════════
@@ -68,7 +76,7 @@ export async function buildPoDocImage(id: string): Promise<DocImageInput | null>
         supplier: { select: { name: true } },
         lines: {
           orderBy: { id: "asc" },
-          select: { qty: true, unitPriceCny: true, product: { select: { name: true, sku: true } } },
+          select: { qty: true, unitPriceCny: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
         },
       },
     }),
@@ -89,6 +97,7 @@ export async function buildPoDocImage(id: string): Promise<DocImageInput | null>
     sum += lineTotal;
     const nameSku = `${l.product?.name ?? "—"}${l.product?.sku ? ` · ${l.product.sku}` : ""}`;
     return {
+      imageUrl: toImageUrl(l.product?.imageR2Path),
       cells: {
         name: nameSku,
         qty: money(l.qty, 0),
@@ -148,7 +157,7 @@ export async function buildTransferDocImage(id: string): Promise<DocImageInput |
         fromWarehouseId: true, toWarehouseId: true, toBranchId: true, toLabel: true, dispatchedByUserId: true,
         lines: {
           orderBy: { id: "asc" },
-          select: { qty: true, qtyReceived: true, product: { select: { name: true, sku: true } } },
+          select: { qty: true, qtyReceived: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
         },
       },
     }),
@@ -172,6 +181,7 @@ export async function buildTransferDocImage(id: string): Promise<DocImageInput |
     totRecv += l.qtyReceived ?? 0;
     const nameSku = `${l.product?.name ?? "—"}${l.product?.sku ? ` · ${l.product.sku}` : ""}`;
     return {
+      imageUrl: toImageUrl(l.product?.imageR2Path),
       cells: {
         name: nameSku,
         qty: n0(l.qty),
@@ -224,6 +234,7 @@ export async function buildCountDocImage(id: string): Promise<DocImageInput | nu
   const rows = sheet.lines.map((l) => {
     const nameSku = `${l.name}${l.sku && l.sku !== "—" ? ` · ${l.sku}` : ""}`;
     return {
+      imageUrl: l.imageUrl,
       cells: {
         name: nameSku,
         systemQty: `${n0(l.systemQty)}${l.unit ? ` ${l.unit}` : ""}`,

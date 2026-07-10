@@ -10,11 +10,12 @@
 // ★ style ตาม pattern bottom-sheet เดิมในหน้าโอน/เบิก (.dcx tokens + inline)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageIcon, X, ChevronLeft, Package } from "lucide-react";
+import { X, ChevronLeft, Package } from "lucide-react";
 import {
   listPosForMoveAction,
   getPoFulfillmentAction,
 } from "@/lib/dc/po-move-actions";
+import { DcThumb } from "@/components/dc/product-image";
 import type {
   ReceivablePoForMove,
   PoFulfillment,
@@ -415,7 +416,7 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                        <Thumb src={src} />
+                        <DcThumb url={src} alt={l.name} size={48} />
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 15.5, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
                             {l.name}
@@ -534,34 +535,6 @@ function Chip({
       }}
     >
       {label} <b style={{ fontWeight: 800 }}>{value}</b>
-    </span>
-  );
-}
-
-// รูปสินค้าเล็ก (fallback ไอคอนถ้าไม่มีรูป)
-function Thumb({ src, size = 48 }: { src?: string | null; size?: number }) {
-  return (
-    <span
-      aria-hidden
-      style={{
-        flexShrink: 0,
-        width: size,
-        height: size,
-        borderRadius: 10,
-        overflow: "hidden",
-        background: "var(--dc-canvas, #f1f4f9)",
-        border: "1px solid var(--dc-line, #e6eaf0)",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        <ImageIcon size={Math.round(size * 0.42)} color="var(--dc-subtle, #9aa4b2)" />
-      )}
     </span>
   );
 }

@@ -37,7 +37,7 @@ export default async function TransferPrintPage({ params }: { params: Promise<{ 
         fromWarehouseId: true, toWarehouseId: true, toBranchId: true, toLabel: true, dispatchedByUserId: true,
         lines: {
           orderBy: { id: "asc" },
-          select: { qty: true, qtyReceived: true, product: { select: { name: true, sku: true } } },
+          select: { qty: true, qtyReceived: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
         },
       },
     }),
@@ -54,17 +54,26 @@ export default async function TransferPrintPage({ params }: { params: Promise<{ 
   const whName = (wid: string | null) => (wid ? whs.find((w) => w.id === wid)?.name ?? "—" : "—");
   const destination = tf.toWarehouseId ? whName(tf.toWarehouseId) : tf.toLabel || branch?.name || "—";
 
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
+
   let totSend = 0;
   let totRecv = 0;
   const rows: PrintRow[] = tf.lines.map((l, i) => {
     totSend += l.qty;
     totRecv += l.qtyReceived ?? 0;
+    const img = toImageUrl(l.product?.imageR2Path);
     return {
       key: String(i),
       cells: {
         no: i + 1,
         name: (
           <>
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={img} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 4, verticalAlign: "middle", marginRight: 6, border: "1px solid #e5e7eb" }} />
+            ) : null}
             {l.product?.name ?? "—"}
             {l.product?.sku ? <span style={{ color: "#888", fontSize: 11 }}> · {l.product.sku}</span> : null}
           </>

@@ -42,21 +42,28 @@ export default async function CountPrintPage({ params }: { params: Promise<{ id:
   if (!res.ok) notFound();
   const sheet = res.sheet;
 
-  const rows: PrintRow[] = sheet.lines.map((l, i) => ({
-    key: String(i),
-    cells: {
-      no: i + 1,
-      name: (
-        <>
-          {l.name}
-          {l.sku && l.sku !== "—" ? <span style={{ color: "#888", fontSize: 11 }}> · {l.sku}</span> : null}
-        </>
-      ),
-      systemQty: `${n0(l.systemQty)}${l.unit ? ` ${l.unit}` : ""}`,
-      countedQty: n0(l.countedQty),
-      variance: varianceText(l.variance),
-    },
-  }));
+  const rows: PrintRow[] = sheet.lines.map((l, i) => {
+    const img = l.imageUrl;
+    return {
+      key: String(i),
+      cells: {
+        no: i + 1,
+        name: (
+          <>
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={img} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 4, verticalAlign: "middle", marginRight: 6, border: "1px solid #e5e7eb" }} />
+            ) : null}
+            {l.name}
+            {l.sku && l.sku !== "—" ? <span style={{ color: "#888", fontSize: 11 }}> · {l.sku}</span> : null}
+          </>
+        ),
+        systemQty: `${n0(l.systemQty)}${l.unit ? ` ${l.unit}` : ""}`,
+        countedQty: n0(l.countedQty),
+        variance: varianceText(l.variance),
+      },
+    };
+  });
 
   return (
     <>

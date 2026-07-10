@@ -22,7 +22,11 @@ export type DocImageColumn = {
   /** สัดส่วนความกว้าง (flex-grow). ปล่อยว่าง = 1 */
   flex?: number;
 };
-export type DocImageRow = { cells: Record<string, string> };
+export type DocImageRow = {
+  cells: Record<string, string>;
+  /** URL รูปสินค้าของแถวนี้ (http(s) เท่านั้น) — null/undefined = ไม่มีรูป (แสดงกล่องว่าง) */
+  imageUrl?: string | null;
+};
 export type DocImageMeta = { label: string; value: string };
 export type DocImageTotal = { label: string; value: string; strong?: boolean };
 
@@ -100,6 +104,43 @@ async function loadLogoDataUrl(logoUrl: string | null): Promise<string | null> {
   }
 }
 
+// ── ตรวจ "ไบต์จริง" ว่าเป็นรูป raster ที่ Satori/resvg เรนเดอร์ได้ชัวร์ ──────────
+//   ★ สำคัญ: ไม่เชื่อ content-type header เพราะไฟล์เสีย/SVG ที่ label ผิด ถ้าหลุดเข้า
+//   Satori จะ throw ข้าง in ตอน stream body (หลังส่ง 200 ไปแล้ว = กันไม่ได้) → พังทั้ง PNG.
+//   sniff magic-byte → รับเฉพาะ png/jpeg/gif/webp · อย่างอื่น (svg/avif/ขยะ) = null.
+function sniffRasterMime(b: Uint8Array): string | null {
+  if (b.length < 12) return null;
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png"; // ‰PNG
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg"; // JPEG
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return "image/gif"; // GIF8
+  if (
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && // RIFF
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 // WEBP
+  )
+    return "image/webp";
+  return null;
+}
+
+// ── รูปสินค้าต่อแถว → data URL (http(s) เท่านั้น). ทุก fail → null (ไม่ throw) ─────
+//   mirror loadLogoDataUrl แต่ "ไม่มี local fallback" — รูปสินค้าไม่มี = แสดงกล่องว่าง.
+//   guard: timeout 4s · ชนิดรูปตาม header + ไบต์จริง · ขนาด ≤ 5MB → กัน Satori crash/ค้าง.
+async function loadImageDataUrl(url: string): Promise<string | null> {
+  try {
+    if (!/^https?:\/\//.test(url)) return null; // ยิงเฉพาะ http(s)
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null;
+    const ct = r.headers.get("content-type") ?? "";
+    if (!/^image\/(png|jpe?g|gif|webp)/i.test(ct)) return null; // header ต้องเป็น raster ที่รองรับ
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.byteLength === 0 || buf.byteLength > 5_000_000) return null; // ว่าง/ใหญ่เกิน = ข้าม
+    const mime = sniffRasterMime(buf); // ★ ไบต์จริงต้องตรงด้วย ไม่เชื่อ header อย่างเดียว
+    if (!mime) return null;
+    return `data:${mime};base64,${Buffer.from(buf).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * เรนเดอร์เอกสารเป็นรูป PNG แล้วคืน Response (attachment → โหลดลงเครื่อง).
  * ★ เรียกจาก route handler ที่ตั้ง runtime="nodejs" (ต้องใช้ fs + Buffer + font fetch).
@@ -124,10 +165,15 @@ export async function renderDocImage(input: DocImageInput): Promise<Response> {
     "เลขที่หมายเหตุและอีกรายการดูครบใน PDF" +
     "0123456789.,-+/()฿¥ ";
 
-  const [fontRegular, fontBold, logo] = await Promise.all([
+  // มีแถวไหนแนบรูปไหม → ถ้ามี เพิ่มคอลัมน์รูปนำหน้า
+  const hasImages = shown.some((r) => !!r.imageUrl);
+
+  const [fontRegular, fontBold, logo, rowImgs] = await Promise.all([
     loadThaiFont(allText, 400),
     loadThaiFont(allText, 700),
     loadLogoDataUrl(input.org.logoUrl),
+    // preload รูปสินค้าทุกแถวพร้อมกัน (cap ที่ ROW_CAP=60 อยู่แล้วผ่าน shown) — fail = null
+    Promise.all(shown.map((r) => (r.imageUrl ? loadImageDataUrl(r.imageUrl) : Promise.resolve(null)))),
   ]);
 
   const colFlex = (c: DocImageColumn) => c.flex ?? 1;
@@ -138,7 +184,8 @@ export async function renderDocImage(input: DocImageInput): Promise<Response> {
   const headH = 96;
   const metaRows = Math.max((input.metaLeft ?? []).length, (input.metaRight ?? []).length);
   const metaH = metaRows > 0 ? 24 + metaRows * 22 : 8;
-  const tableH = 40 + shown.length * 34 + (overflow > 0 ? 34 : 0);
+  const rowH = hasImages ? 44 : 34; // แถวสูงขึ้นเมื่อมีรูป (กันภาพถูกตัด)
+  const tableH = 40 + shown.length * rowH + (overflow > 0 ? 34 : 0);
   const totalsH = (input.totals?.length ?? 0) * 28 + 12;
   const noteH = input.note ? 60 : 0;
   const footH = 60;
@@ -210,6 +257,21 @@ export async function renderDocImage(input: DocImageInput): Promise<Response> {
       <div style={{ display: "flex", flexDirection: "column", border: `1px solid ${LINE}` }}>
         {/* หัวตาราง */}
         <div style={{ display: "flex", background: HEAD_BG, borderBottom: `1px solid ${LINE}` }}>
+          {hasImages ? (
+            <div
+              style={{
+                display: "flex",
+                width: 46,
+                flexShrink: 0,
+                justifyContent: "center",
+                padding: "8px 6px",
+                fontSize: 12.5,
+                fontWeight: 700,
+              }}
+            >
+              รูป
+            </div>
+          ) : null}
           {input.columns.map((c) => (
             <div
               key={c.key}
@@ -234,6 +296,31 @@ export async function renderDocImage(input: DocImageInput): Promise<Response> {
         ) : (
           shown.map((r, ri) => (
             <div key={ri} style={{ display: "flex", borderBottom: `1px solid ${LINE}` }}>
+              {hasImages ? (
+                <div
+                  style={{
+                    display: "flex",
+                    width: 46,
+                    flexShrink: 0,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    padding: "4px 6px",
+                  }}
+                >
+                  {rowImgs[ri] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={rowImgs[ri]!}
+                      alt=""
+                      width={36}
+                      height={36}
+                      style={{ objectFit: "cover", border: `1px solid ${LINE}`, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <div style={{ display: "flex", width: 36, height: 36, border: `1px solid ${LINE}`, borderRadius: 6 }} />
+                  )}
+                </div>
+              ) : null}
               {input.columns.map((c) => (
                 <div
                   key={c.key}

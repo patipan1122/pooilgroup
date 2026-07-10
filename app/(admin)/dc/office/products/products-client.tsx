@@ -5,6 +5,7 @@
 import { useState, useRef } from "react";
 import Link from "next/link";
 import { DataTable } from "@/components/ui/data-table";
+import { DcThumb, DcLightbox } from "@/components/dc/product-image";
 
 type SvgProps = { size?: number; sw?: number; stroke?: string; fill?: string; children: React.ReactNode };
 function Svg({ size = 16, sw = 1.8, stroke = "currentColor", fill = "none", children }: SvgProps) {
@@ -182,6 +183,27 @@ export function ProductsClient({
   );
 }
 
+// รูปหน้าปกการ์ด (landscape) — คลิกเปิดรูปใหญ่ (lightbox) แทนการเข้าหน้า detail
+function CoverImage({ url, alt }: { url: string; alt: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={alt}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }}
+      />
+      {open ? <DcLightbox url={url} alt={alt} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
 function GridView({ rows }: { rows: ProductRow[] }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(152px,1fr))", gap: 12, marginTop: 14 }}>
@@ -189,8 +211,7 @@ function GridView({ rows }: { rows: ProductRow[] }) {
         <div key={p.id} className="dcx-card">
           <div style={{ position: "relative", aspectRatio: "1.35", background: p.catSoft, display: "flex", alignItems: "center", justifyContent: "center", color: p.catC, overflow: "hidden" }}>
             {p.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <CoverImage url={p.imageUrl} alt={p.name} />
             ) : (
               <Svg size={40} sw={1.4}>{IcImage}</Svg>
             )}
@@ -238,14 +259,7 @@ function TableView({ rows }: { rows: ProductRow[] }) {
           cells: {
             name: (
               <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                <span style={{ width: 30, height: 30, borderRadius: 8, background: p.catSoft, color: p.catC, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-                  {p.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <Svg size={16} sw={1.5}>{IcImage}</Svg>
-                  )}
-                </span>
+                <DcThumb url={p.imageUrl} alt={p.name} size={30} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--ink)" }}>{p.name}</div>
                   <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{p.sku}</div>

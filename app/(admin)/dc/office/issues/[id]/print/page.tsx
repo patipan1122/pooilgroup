@@ -36,22 +36,30 @@ export default async function IssuePrintPage({ params }: { params: Promise<{ id:
     prisma.dcStockMovement.findMany({
       where: { orgId, refType: "dc_issue", refId: id, kind: DcMoveKind.ISSUE },
       orderBy: { occurredAt: "asc" },
-      select: { qty: true, note: true, product: { select: { name: true, sku: true } } },
+      select: { qty: true, note: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
     }),
     issue.actorUserId ? prisma.user.findUnique({ where: { id: issue.actorUserId }, select: { name: true } }) : Promise.resolve(null),
   ]);
 
   const warehouseName = ctx.warehouses.find((w) => w.id === issue.warehouseId)?.name ?? "—";
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
   let totQty = 0;
   const rows: PrintRow[] = moves.map((m, i) => {
     const q = Math.abs(m.qty);
     totQty += q;
+    const img = toImageUrl(m.product?.imageR2Path);
     return {
       key: String(i),
       cells: {
         no: i + 1,
         name: (
           <>
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={img} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 4, verticalAlign: "middle", marginRight: 6, border: "1px solid #e5e7eb" }} />
+            ) : null}
             {m.product?.name ?? "—"}
             {m.product?.sku ? <span style={{ color: "#888", fontSize: 11 }}> · {m.product.sku}</span> : null}
           </>

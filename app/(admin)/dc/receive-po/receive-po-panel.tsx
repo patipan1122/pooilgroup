@@ -13,8 +13,9 @@
 //   • มือถือ/iPad: ซ้าย-ขวา ยุบเป็นบน-ล่างบนจอแคบ (flexWrap + minWidth)
 
 import { useCallback, useState } from "react";
-import { PackageCheck, ChevronDown, ChevronRight, Camera, Trash2, ImageOff } from "lucide-react";
+import { PackageCheck, ChevronDown, ChevronRight, Camera, Trash2 } from "lucide-react";
 import { receivePo } from "@/lib/dc/po-actions";
+import { DcThumb } from "@/components/dc/product-image";
 
 export type ReceivablePoLine = {
   productId: string;
@@ -379,32 +380,8 @@ function PoCard({
                     alignItems: "flex-start",
                   }}
                 >
-                  <div
-                    style={{
-                      width: 72,
-                      height: 72,
-                      flexShrink: 0,
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "var(--dc-surf2, #f4efe8)",
-                      border: "1px solid var(--dc-line, #e6eaf0)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--dc-muted, #9aa4b2)",
-                    }}
-                  >
-                    {img ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={img}
-                        alt={d.name}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    ) : (
-                      <ImageOff size={26} />
-                    )}
-                  </div>
+                  {/* รูปสินค้า (คลิกซูมได้) */}
+                  <DcThumb url={img} alt={d.name} size={72} />
                   <div style={{ minWidth: 0 }}>
                     <div
                       style={{

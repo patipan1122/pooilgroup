@@ -120,6 +120,7 @@ export type PickRow = {
   name: string;
   unit: string;
   onHand: number;
+  imageUrl: string | null; // URL รูปสินค้าเต็ม (null = ไม่มีรูป)
 };
 
 export type ListStockForPickResult =
@@ -170,11 +171,16 @@ export async function listStockForPick(args: {
     },
     select: {
       qtyOnHand: true,
-      product: { select: { id: true, sku: true, name: true, unit: true } },
+      product: { select: { id: true, sku: true, name: true, unit: true, imageR2Path: true } },
     },
     orderBy: { product: { name: "asc" } },
     take: 100,
   });
+
+  // resolve รูปสินค้าเป็น URL เต็ม (R2 key หรือ http เต็ม)
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
 
   const rows: PickRow[] = balances.map((b) => ({
     productId: b.product.id,
@@ -182,6 +188,7 @@ export async function listStockForPick(args: {
     name: b.product.name,
     unit: b.product.unit ?? "ชิ้น",
     onHand: b.qtyOnHand,
+    imageUrl: toImageUrl(b.product.imageR2Path),
   }));
 
   return { ok: true, rows };

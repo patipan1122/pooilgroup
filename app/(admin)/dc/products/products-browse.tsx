@@ -11,11 +11,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Search, ImageIcon, PackageSearch, ChevronRight } from "lucide-react";
+import { Search, PackageSearch, ChevronRight } from "lucide-react";
 import {
   listDcFloorProducts,
   type FloorProductRow,
 } from "@/lib/dc/floor-products-actions";
+import { DcThumb } from "@/components/dc/product-image";
 
 export function FloorProductsBrowse({
   warehouseId,
@@ -173,7 +174,7 @@ function ProductRow({ p }: { p: FloorProductRow }) {
           color: "inherit",
         }}
       >
-        <Thumb url={p.imageUrl} size={44} />
+        <DcThumb url={p.imageUrl} alt={p.name} size={44} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 650, fontSize: 15, color: "var(--dc-ink)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {p.name}
@@ -235,33 +236,5 @@ function CatChip({ label, active, onClick }: { label: string; active: boolean; o
     >
       {label}
     </button>
-  );
-}
-
-// รูปสินค้าเล็ก (สี่เหลี่ยม · fallback ไอคอนถ้าไม่มีรูป)
-function Thumb({ url, size = 44 }: { url?: string | null; size?: number }) {
-  return (
-    <span
-      aria-hidden
-      style={{
-        flexShrink: 0,
-        width: size,
-        height: size,
-        borderRadius: 9,
-        overflow: "hidden",
-        background: "var(--dc-canvas, #f1f4f9)",
-        border: "1px solid var(--dc-line)",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        <ImageIcon size={Math.round(size * 0.42)} color="var(--dc-subtle, #9aa4b2)" />
-      )}
-    </span>
   );
 }

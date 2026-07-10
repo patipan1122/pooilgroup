@@ -33,26 +33,36 @@ export default async function MovePrintPage({ params }: { params: Promise<{ id: 
     prisma.dcStockMovement.findMany({
       where: { orgId, refType: "dc_move", refId: id, kind: DcMoveKind.MOVE },
       orderBy: { occurredAt: "asc" },
-      select: { locationFrom: true, locationTo: true, product: { select: { name: true, sku: true } } },
+      select: { locationFrom: true, locationTo: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
     }),
     mv.actorUserId ? prisma.user.findUnique({ where: { id: mv.actorUserId }, select: { name: true } }) : Promise.resolve(null),
   ]);
 
   const warehouseName = ctx.warehouses.find((w) => w.id === mv.warehouseId)?.name ?? "—";
-  const rows: PrintRow[] = moves.map((m, i) => ({
-    key: String(i),
-    cells: {
-      no: i + 1,
-      name: (
-        <>
-          {m.product?.name ?? "—"}
-          {m.product?.sku ? <span style={{ color: "#888", fontSize: 11 }}> · {m.product.sku}</span> : null}
-        </>
-      ),
-      from: m.locationFrom || "-",
-      to: m.locationTo || "-",
-    },
-  }));
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
+  const rows: PrintRow[] = moves.map((m, i) => {
+    const img = toImageUrl(m.product?.imageR2Path);
+    return {
+      key: String(i),
+      cells: {
+        no: i + 1,
+        name: (
+          <>
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={img} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 4, verticalAlign: "middle", marginRight: 6, border: "1px solid #e5e7eb" }} />
+            ) : null}
+            {m.product?.name ?? "—"}
+            {m.product?.sku ? <span style={{ color: "#888", fontSize: 11 }}> · {m.product.sku}</span> : null}
+          </>
+        ),
+        from: m.locationFrom || "-",
+        to: m.locationTo || "-",
+      },
+    };
+  });
 
   return (
     <>

@@ -28,7 +28,7 @@ export default async function GrnPrintPage({ params }: { params: Promise<{ id: s
         grnCode: true, receivedAt: true, note: true, warehouseId: true, poId: true, receivedByUserId: true,
         lines: {
           orderBy: { id: "asc" },
-          select: { qtyExpected: true, qtyReceived: true, qtyDamaged: true, note: true, product: { select: { name: true, sku: true } } },
+          select: { qtyExpected: true, qtyReceived: true, qtyDamaged: true, note: true, product: { select: { name: true, sku: true, imageR2Path: true } } },
         },
       },
     }),
@@ -44,18 +44,26 @@ export default async function GrnPrintPage({ params }: { params: Promise<{ id: s
   ]);
 
   const warehouseName = ctx.warehouses.find((w) => w.id === grn.warehouseId)?.name ?? "—";
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
   let totReceived = 0;
   let totDamaged = 0;
 
   const rows: PrintRow[] = grn.lines.map((l, i) => {
     totReceived += l.qtyReceived;
     totDamaged += l.qtyDamaged;
+    const img = toImageUrl(l.product?.imageR2Path);
     return {
       key: String(i),
       cells: {
         no: i + 1,
         name: (
           <>
+            {img ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={img} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 4, verticalAlign: "middle", marginRight: 6, border: "1px solid #e5e7eb" }} />
+            ) : null}
             {l.product?.name ?? "—"}
             {l.product?.sku ? <span style={{ color: "#888", fontSize: 11 }}> · {l.product.sku}</span> : null}
             {l.note ? <div style={{ color: "#666", fontSize: 11 }}>{l.note}</div> : null}

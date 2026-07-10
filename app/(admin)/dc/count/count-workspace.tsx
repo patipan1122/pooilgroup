@@ -19,8 +19,9 @@
 //   • รายการนับ = ตารางอ่านง่าย (สินค้า | ระบบมี | นับได้ | ส่วนต่าง)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudOff, Save, Trash2, Check, List, Search, X, Plus, ImageIcon, CheckCheck } from "lucide-react";
+import { CloudOff, Save, Trash2, Check, List, Search, X, Plus, CheckCheck } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
+import { DcThumb } from "@/components/dc/product-image";
 import {
   lookupForCount,
   saveCountSheet,
@@ -533,7 +534,7 @@ function CountSheetRow({
       {/* สินค้า */}
       <td style={{ ...tdBase, paddingLeft: 12, minWidth: 180 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Thumb url={line.imageUrl} size={38} />
+          <DcThumb url={line.imageUrl} alt={line.name ?? line.code} size={38} />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, color: "var(--dc-ink)", lineHeight: 1.25 }}>
               {line.name ?? line.code}
@@ -858,7 +859,7 @@ function BrowseProductsSheet({
                       <tr key={p.productId}>
                         <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--dc-line)", minWidth: 180 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <Thumb url={p.imageUrl} />
+                            <DcThumb url={p.imageUrl} alt={p.name} size={40} />
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontWeight: 650, fontSize: 14.5, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.name}</div>
                               <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>
@@ -956,26 +957,5 @@ function CatChip({ label, active, onClick }: { label: string; active: boolean; o
     >
       {label}
     </button>
-  );
-}
-
-// รูปสินค้าเล็ก (สี่เหลี่ยม · fallback ไอคอนถ้าไม่มีรูป) — ใช้ทั้งตารางเลือก + แถวที่นับ
-function Thumb({ url, size = 40 }: { url?: string | null; size?: number }) {
-  return (
-    <span
-      aria-hidden
-      style={{
-        flexShrink: 0, width: size, height: size, borderRadius: 8, overflow: "hidden",
-        background: "var(--dc-canvas, #f1f4f9)", border: "1px solid var(--dc-line)",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-      }}
-    >
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        <ImageIcon size={Math.round(size * 0.42)} color="var(--dc-subtle, #9aa4b2)" />
-      )}
-    </span>
   );
 }

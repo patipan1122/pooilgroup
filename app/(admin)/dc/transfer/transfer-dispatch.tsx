@@ -14,6 +14,7 @@ import { FileText, List, Search, Trash2, Truck, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { MoveWorkspace } from "../move/move-workspace";
 import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
+import { DcThumb } from "@/components/dc/product-image";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
 import {
   lookupForTransfer,
@@ -834,42 +835,56 @@ export function TransferDispatch({
                     const inCart = pickedQtyByProduct.get(r.productId) ?? 0;
                     const remaining = Math.max(0, r.onHand - inCart);
                     return (
-                      <button
+                      <div
                         key={r.productId}
-                        type="button"
-                        onClick={() =>
-                          addProduct({ id: r.productId, sku: r.sku, name: r.name, unit: r.unit, onHand: r.onHand })
-                        }
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          textAlign: "left",
-                          width: "100%",
+                          gap: 10,
                           border: "1.5px solid var(--dc-line, #e6eaf0)",
                           background: inCart > 0 ? "var(--color-brand-50, #eef3fe)" : "#fff",
                           borderRadius: 12,
-                          padding: "12px 14px",
-                          cursor: "pointer",
+                          padding: "10px 12px",
                         }}
                       >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
-                            {r.name}
+                        {/* รูปสินค้า (คลิกซูม) — อยู่นอกปุ่ม "เลือก" กันคลิกชนกัน */}
+                        <DcThumb url={r.imageUrl} alt={r.name} size={44} />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            addProduct({ id: r.productId, sku: r.sku, name: r.name, unit: r.unit, onHand: r.onHand })
+                          }
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            textAlign: "left",
+                            flex: 1,
+                            minWidth: 0,
+                            border: "none",
+                            background: "transparent",
+                            padding: 0,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
+                              {r.name}
+                            </div>
+                            <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
+                              {r.sku}
+                              {inCart > 0 ? ` · หยิบแล้ว ${inCart}` : ""}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                            {r.sku}
-                            {inCart > 0 ? ` · หยิบแล้ว ${inCart}` : ""}
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: 17, fontWeight: 800, color: remaining > 0 ? "#1e8e4e" : "#c0392b" }}>
+                              เหลือ {remaining}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "var(--dc-muted, #6b7785)" }}>{r.unit}</div>
                           </div>
-                        </div>
-                        <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <div style={{ fontSize: 17, fontWeight: 800, color: remaining > 0 ? "#1e8e4e" : "#c0392b" }}>
-                            เหลือ {remaining}
-                          </div>
-                          <div style={{ fontSize: 11.5, color: "var(--dc-muted, #6b7785)" }}>{r.unit}</div>
-                        </div>
-                      </button>
+                        </button>
+                      </div>
                     );
                   })}
                 </div>

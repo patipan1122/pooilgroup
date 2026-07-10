@@ -498,6 +498,7 @@ export type CountSheetLineDetail = {
   systemQty: number;
   countedQty: number;
   variance: number;
+  imageUrl: string | null; // URL รูปสินค้าเต็ม (null = ไม่มีรูป)
 };
 
 export type CountSheetDetail = {
@@ -552,12 +553,17 @@ export async function getCountSheet(countId: string): Promise<GetCountSheetResul
     const products = productIds.length
       ? await prisma.dcProduct.findMany({
           where: { id: { in: productIds }, orgId },
-          select: { id: true, name: true, sku: true, unit: true },
+          select: { id: true, name: true, sku: true, unit: true, imageR2Path: true },
         })
       : [];
     const pById = new Map(products.map((p) => [p.id, p]));
 
     const names = await resolveActorNames(orgId, [head.actorUserId]);
+
+    // resolve รูปสินค้าเป็น URL เต็ม (R2 key หรือ http เต็ม)
+    const r2Public = process.env.R2_PUBLIC_URL ?? "";
+    const toImageUrl = (key: string | null | undefined): string | null =>
+      !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
 
     const lines: CountSheetLineDetail[] = head.lines.map((l) => {
       const p = pById.get(l.productId);
@@ -569,6 +575,7 @@ export async function getCountSheet(countId: string): Promise<GetCountSheetResul
         systemQty: l.systemQty,
         countedQty: l.countedQty,
         variance: l.variance,
+        imageUrl: toImageUrl(p?.imageR2Path),
       };
     });
 
