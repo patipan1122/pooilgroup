@@ -33,36 +33,43 @@ async function requireFloor(): Promise<{ orgId: string; userId: string }> {
  * สร้าง/หา "หัวใบเบิก" แบบ idempotent ด้วย batchKey (เซ็ตของบรรทัดที่เบิก).
  * กดเบิกซ้ำ (ชุดเดิม) → คืนใบเดิม ไม่สร้างซ้ำ. ชน unique (race) → อ่านซ้ำ.
  */
-async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string> {
-  const existing = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-  if (existing) return existing.id;
+async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string | null> {
   try {
+    const existing = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+    if (existing) return existing.id;
     const created = await prisma.dcIssue.create({
       data: { orgId, issueCode: genCode("ISS"), warehouseId, batchKey, actorUserId: userId },
       select: { id: true },
     });
     return created.id;
   } catch {
-    const again = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-    if (again) return again.id;
-    throw new Error("สร้างหัวใบเบิกไม่สำเร็จ");
+    // ตาราง dc.issues ยังไม่ถูกสร้าง (migration ยังไม่ apply) หรือชน unique (race) → best-effort
+    try {
+      const again = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+      return again?.id ?? null;
+    } catch {
+      return null; // ยังไม่มีตาราง → เบิกได้ปกติ (พิมพ์ใบไม่ได้จนกว่าจะ apply migration)
+    }
   }
 }
 
 /** สร้าง/หา "หัวใบย้าย" แบบ idempotent ด้วย batchKey. */
-async function ensureMoveHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string> {
-  const existing = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-  if (existing) return existing.id;
+async function ensureMoveHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string | null> {
   try {
+    const existing = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+    if (existing) return existing.id;
     const created = await prisma.dcMove.create({
       data: { orgId, moveCode: genCode("MOV"), warehouseId, batchKey, actorUserId: userId },
       select: { id: true },
     });
     return created.id;
   } catch {
-    const again = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-    if (again) return again.id;
-    throw new Error("สร้างหัวใบย้ายไม่สำเร็จ");
+    try {
+      const again = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+      return again?.id ?? null;
+    } catch {
+      return null; // ยังไม่มีตาราง → ย้ายได้ปกติ
+    }
   }
 }
 
@@ -143,7 +150,7 @@ export type PostIssueInput = {
 };
 
 export type PostIssueResult =
-  | { ok: true; posted: number; failed: { productId: string; error: string }[]; issueId: string }
+  | { ok: true; posted: number; failed: { productId: string; error: string }[]; issueId: string | null }
   | { ok: false; error: string };
 
 /**
@@ -198,8 +205,8 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
       kind: DcMoveKind.ISSUE,
       qty: -Math.abs(qty), // เบิกออก = ติดลบ
       sourceKey: sourceKey("issue", line.lineKey),
-      refType: "dc_issue", // ผูกกับหัวใบเบิก (เดิม floor_issue) → พิมพ์เป็นเอกสารได้
-      refId: issueId,
+      refType: issueId ? "dc_issue" : "floor_issue", // มีหัวใบ→ผูก(พิมพ์ได้) · ไม่มี(ยังไม่ migrate)→เดิม
+      refId: issueId ?? undefined,
       note: reason || "เบิกออก",
       actorUserId: userId,
     });
@@ -267,7 +274,7 @@ export async function lookupForMove(args: {
 }
 
 export type MoveLocationResult =
-  | { ok: true; location: string; moveId: string }
+  | { ok: true; location: string; moveId: string | null }
   | { ok: false; error: string };
 
 /**
@@ -316,8 +323,8 @@ export async function moveLocation(args: {
     locationFrom: from,
     locationTo: toLocation,
     sourceKey: sourceKey("move", lineKey),
-    refType: "dc_move", // ผูกกับหัวใบย้าย (เดิม floor_move)
-    refId: moveId,
+    refType: moveId ? "dc_move" : "floor_move",
+    refId: moveId ?? undefined,
     note: from ? `ย้าย ${from} → ${toLocation}` : `ตั้งตำแหน่ง ${toLocation}`,
     actorUserId: userId,
   });

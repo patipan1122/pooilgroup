@@ -178,7 +178,7 @@ export function IssueWorkspace({
         error: f.error,
       }));
       setFailedNotes(failed);
-      if (res.posted > 0) setLastIssueId(res.issueId); // เก็บไว้พิมพ์ใบเบิก
+      if (res.posted > 0 && res.issueId) setLastIssueId(res.issueId); // เก็บไว้พิมพ์ใบเบิก
 
       if (failed.length === 0) {
         setLines([]);

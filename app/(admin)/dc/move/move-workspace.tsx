@@ -106,7 +106,7 @@ export function MoveWorkspace({
         return;
       }
       showToast(`ย้าย ${picked.name} ไป ${res.location} แล้ว`);
-      setLastMoveId(res.moveId); // เก็บไว้พิมพ์ใบย้าย
+      if (res.moveId) setLastMoveId(res.moveId); // เก็บไว้พิมพ์ใบย้าย
       // พร้อมสแกนตัวถัดไป
       setPicked(null);
       setToLocation("");
