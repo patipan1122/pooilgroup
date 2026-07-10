@@ -8,6 +8,7 @@ import { requireDcManager } from "@/lib/dc/role-guard";
 import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { ProductsClient, type ProductRow, type CatChip } from "./products-client";
+import { OfficeWarehouseSelect } from "./office-warehouse-select";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +35,23 @@ function catColor(label: string): { c: string; soft: string } {
   return PALETTE[h % PALETTE.length];
 }
 
-export default async function DcProductsPage() {
+export default async function DcProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ wh?: string }>;
+}) {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
   const allowedIds = ctx.warehouses.map((w) => w.id);
+
+  // ตัวเลือกคลัง (office-only · ?wh=) — ค่าเริ่มต้น "รวมทุกคลัง" (ตัวเลขเท่าเดิม).
+  // 🔒 SECURITY (house rule optional-scope-param=auth-skip): assert scope ∈ allowedIds ที่ server เสมอ.
+  //    ถ้าส่ง wh ที่ไม่ได้รับสิทธิ์ → fall back เป็น aggregate (ห้าม query คลังที่ไม่ได้รับมอบหมาย).
+  const sp = await searchParams;
+  const scope = sp.wh && sp.wh !== "all" && allowedIds.includes(sp.wh) ? sp.wh : null;
+  // ค่าที่โชว์ใน select: ตรงกับ scope ที่ผ่านการตรวจแล้ว (param ที่ไม่ถูกสิทธิ์ → กลับเป็น "all")
+  const selectValue = scope ?? "all";
 
   const productsRaw = await prisma.dcProduct.findMany({
     where: { orgId, active: true },
@@ -53,7 +66,12 @@ export default async function DcProductsPage() {
   const [balances, poOpen, shipOpen, grnPending, poOrdered, shipInTransit] = await Promise.all([
     ids.length && allowedIds.length
       ? prisma.dcStockBalance.findMany({
-          where: { orgId, productId: { in: ids }, warehouseId: { in: allowedIds } },
+          // scope===null → รวมทุกคลังที่เห็นได้ (aggregate เดิม) · มีคลังเจาะจง → เฉพาะคลังนั้น (ผ่าน assert แล้ว)
+          where: {
+            orgId,
+            productId: { in: ids },
+            warehouseId: scope ? scope : { in: allowedIds },
+          },
           select: { productId: true, qtyOnHand: true },
         })
       : Promise.resolve([] as { productId: string; qtyOnHand: number }[]),
@@ -107,7 +125,20 @@ export default async function DcProductsPage() {
       badges={{ po: poOpen, ship: shipOpen, grn: grnPending }}
       taskStrip={{ tracking: poOrdered, grn: grnPending, inTransit: shipInTransit }}
     >
-      <ProductsClient products={rows} chips={chips} total={rows.length} lowCount={lowCount} />
+      <ProductsClient
+        products={rows}
+        chips={chips}
+        total={rows.length}
+        lowCount={lowCount}
+        headerExtra={
+          ctx.warehouses.length > 1 ? (
+            <OfficeWarehouseSelect
+              warehouses={ctx.warehouses.map((w) => ({ id: w.id, name: w.name }))}
+              value={selectValue}
+            />
+          ) : null
+        }
+      />
     </DcOfficeShell>
   );
 }

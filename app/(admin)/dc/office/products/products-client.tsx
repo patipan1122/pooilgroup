@@ -42,7 +42,8 @@ export type CatChip = { key: string; label: string; count: number };
 
 export function ProductsClient({
   products,
-}: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number }) {
+  headerExtra,
+}: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number; headerExtra?: React.ReactNode }) {
   const [view, setView] = useState<"grid" | "table">("grid");
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -82,7 +83,8 @@ export function ProductsClient({
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>สินค้า</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>หารูป–หมวดหมู่ได้ไว เห็นคงเหลือทันที · เลือกหลายชิ้นเพื่อ โอน / ตัดจ่าย / ลบ ได้เลย</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {headerExtra}
           <button
             type="button"
             onClick={() => setNotice("นำเข้า Excel — กำลังจะมาเร็ว ๆ นี้")}

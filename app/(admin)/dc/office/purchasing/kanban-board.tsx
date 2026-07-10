@@ -31,8 +31,11 @@ export function KanbanBoard({ items }: { items: PoListItem[] }) {
     for (const s of PO_FLOW_CORE) m[s] = [];
     const other: PoListItem[] = [];
     for (const it of items) {
-      if (m[it.status]) m[it.status].push(it);
-      else if (OTHER_STATUSES.includes(it.status)) other.push(it);
+      // ยุบด่าน "พร้อมรับเข้า" (READY_TO_RECEIVE · legacy) เข้าคอลัมน์ "ถึงโกดังแล้ว" (AT_WAREHOUSE)
+      // ไม่งั้นใบเก่าที่ค้าง READY_TO_RECEIVE จะหายจากบอร์ด (คอลัมน์ถูกตัดออกแล้ว)
+      const st = it.status === "READY_TO_RECEIVE" ? "AT_WAREHOUSE" : it.status;
+      if (m[st]) m[st].push(it);
+      else if (OTHER_STATUSES.includes(st)) other.push(it);
       // DRAFT/PENDING_APPROVAL/APPROVED ยังไม่ถึงขั้นในบอร์ด → ไม่แสดง (ดูในมุมมองรายการ)
     }
     return { m, other };

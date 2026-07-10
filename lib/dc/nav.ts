@@ -33,8 +33,7 @@ export type FloorTask = {
 export const FLOOR_TASKS: FloorTask[] = [
   { key: "receive", href: "/dc/receive", label: "รับเข้า", hint: "ของมาถึง · สแกน · นับ · ยืนยัน", icon: "PackagePlus", tone: "blue" },
   { key: "receive-po", href: "/dc/receive-po", label: "รับตาม PO", hint: "รับของที่สั่งจากจีน/ไทย เข้าคลัง", icon: "PackagePlus", tone: "blue" },
-  { key: "transfer", href: "/dc/transfer", label: "ส่ง / โอน", hint: "ส่งไปสาขา/คลังอื่น", icon: "Truck", tone: "green" },
-  { key: "move", href: "/dc/move", label: "ย้ายที่", hint: "ย้ายของระหว่างชั้นวาง", icon: "ArrowLeftRight", tone: "slate" },
+  { key: "transfer", href: "/dc/transfer", label: "ส่ง · โอน · ย้ายที่", hint: "ส่งไปสาขา/คลังอื่น หรือย้ายที่เก็บในคลัง", icon: "Truck", tone: "green" },
   { key: "count", href: "/dc/count", label: "นับสต๊อก", hint: "นับรอบ · ทำงานตอนเน็ตหลุดได้", icon: "ClipboardCheck", tone: "amber" },
   { key: "issue", href: "/dc/issue", label: "เบิกออก", hint: "เบิกของ/อะไหล่ออกจากคลัง", icon: "PackageMinus", tone: "red" },
   { key: "products", href: "/dc/products", label: "ดูสินค้า", hint: "ไล่ดูสินค้าทั้งหมด + รูป + คงเหลือ", icon: "Boxes", tone: "slate" },
@@ -61,7 +60,7 @@ export const PO_STATUS_LABEL: Record<string, string> = {
   SHIPPED: "ได้เลข Tracking",
   ARRIVED_TH: "ถึงไทยแล้ว",
   AT_WAREHOUSE: "ถึงโกดังแล้ว",
-  READY_TO_RECEIVE: "พร้อมรับเข้า",
+  READY_TO_RECEIVE: "ถึงโกดังแล้ว",
   RECEIVED: "รับสินค้าแล้ว",
   PARTIAL: "รับบางส่วน",
   CLOSED: "ปิดใบ",
@@ -77,13 +76,13 @@ export const PO_FLOW_STATUSES: string[] = [
   "SHIPPED",
   "ARRIVED_TH",
   "AT_WAREHOUSE",
-  "READY_TO_RECEIVE",
   "RECEIVED",
 ];
 
-// 5 คอลัมน์หลักของบอร์ดสถานะ (Kanban) ตาม mockup — ตัด DRAFT/PENDING/APPROVED ออก
+// คอลัมน์หลักของบอร์ดสถานะ (Kanban) ตาม mockup — ตัด DRAFT/PENDING/APPROVED ออก
 // (PARTIAL/CLOSED/CANCELLED แสดงในโซน "อื่น ๆ" ต่างหาก)
-export const PO_FLOW_CORE: string[] = ["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "READY_TO_RECEIVE", "RECEIVED"];
+// รวมด่าน "ถึงโกดังแล้ว" เป็นคอลัมน์เดียว (AT_WAREHOUSE) — READY_TO_RECEIVE (legacy) ถูก normalize เข้ามาที่คอลัมน์นี้
+export const PO_FLOW_CORE: string[] = ["ORDERED", "SHIPPED", "ARRIVED_TH", "AT_WAREHOUSE", "RECEIVED"];
 
 // ป้ายคอลัมน์ Kanban (สั้น ตรงตาม mockup) — แยกจาก PO_STATUS_LABEL ที่ใช้กับป้ายในหน้ารายละเอียด
 export const PO_KANBAN_LABEL: Record<string, string> = {
@@ -91,7 +90,7 @@ export const PO_KANBAN_LABEL: Record<string, string> = {
   SHIPPED: "ได้เลข Tracking",
   ARRIVED_TH: "ถึงไทยแล้ว",
   AT_WAREHOUSE: "ถึงโกดังแล้ว",
-  READY_TO_RECEIVE: "พร้อมรับเข้า",
+  READY_TO_RECEIVE: "ถึงโกดังแล้ว",
   RECEIVED: "รับแล้ว",
 };
 
@@ -100,8 +99,7 @@ export const PO_KANBAN_ACTION: Record<string, string> = {
   ORDERED: "ใส่เลข Tracking",
   SHIPPED: "อัปเดตขนส่ง",
   ARRIVED_TH: "ติดตามขนส่ง",
-  AT_WAREHOUSE: "ทำให้พร้อมรับ",
-  READY_TO_RECEIVE: "รับเข้า GRN",
+  AT_WAREHOUSE: "รับเข้า GRN",
   RECEIVED: "เปิดดูใบ",
 };
 

@@ -260,9 +260,10 @@ export function PoDetail({
     ORDERED: "ใส่เลข Tracking",
     SHIPPED: "ถึงไทยแล้ว",
     ARRIVED_TH: "ถึงโกดังแล้ว",
-    // #6 — ที่โกดังแล้ว: ปุ่มไม่รับเข้าอัตโนมัติ · "จ่ายค่าขนส่ง + พร้อมรับเข้า" (markReadyToReceive)
-    AT_WAREHOUSE: "พร้อมรับเข้า",
-    // #6 — พร้อมรับเข้าแล้ว → รับเข้าคลังจริง (เปิดฟอร์ม receivePo)
+    // Wave 2 — ยุบด่าน "พร้อมรับเข้า": ที่โกดังแล้ว → ปุ่มพาไปฟอร์มรับเข้าคลังตรง ๆ
+    // (ค่าขนส่งจีน-ไทยยังเป็นด่านบังคับที่ server ตอน receivePo — โชว์เตือน inline ในฟอร์ม)
+    AT_WAREHOUSE: "รับเข้าคลัง",
+    // READY_TO_RECEIVE (legacy) → ยังรับเข้าคลังจริง (เปิดฟอร์ม receivePo)
     READY_TO_RECEIVE: "รับเข้าคลัง",
     PARTIAL: "รับส่วนที่เหลือ",
   };
@@ -277,9 +278,11 @@ export function PoDetail({
   };
   const revertLabel = REVERT_PREV_LABEL[status] ?? null;
   const showRevert = canManage && !!revertLabel;
-  // #6 — ขั้น "รับเข้าคลังจริง" (READY_TO_RECEIVE/PARTIAL) ให้ปุ่มขั้นถัดไปเลื่อนไปฟอร์มรับเข้าด้านล่าง
-  //   แทนการเปิด AdvanceModal (เพราะ receivePo อยู่ใน ReceiveSection แล้ว)
-  const advanceScrollsToReceive = status === "READY_TO_RECEIVE" || status === "PARTIAL";
+  // Wave 2 — ขั้น "รับเข้าคลังจริง" ให้ปุ่มขั้นถัดไปเลื่อนไปฟอร์มรับเข้าด้านล่าง แทนการเปิด AdvanceModal
+  //   AT_WAREHOUSE ยุบด่าน "พร้อมรับเข้า" → กดปุ่มพาไปฟอร์ม receivePo ตรง ๆ (ข้าม markReadyToReceive)
+  //   (READY_TO_RECEIVE/PARTIAL = legacy · receivePo อยู่ใน ReceiveSection แล้ว)
+  const advanceScrollsToReceive =
+    status === "AT_WAREHOUSE" || status === "READY_TO_RECEIVE" || status === "PARTIAL";
   const handleAdvanceClick = () => {
     if (advanceScrollsToReceive) {
       document.getElementById("dc-receive-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -580,6 +583,8 @@ export function PoDetail({
               defaultWarehouseId={data.warehouseId}
               atWarehouse={status === "READY_TO_RECEIVE" || status === "AT_WAREHOUSE"}
               r2PublicUrl={r2PublicUrl}
+              isChina={isChina}
+              thaiFreightPaid={thaiFreightPaid}
               onReceived={() => { setReceiveVersion((v) => v + 1); refresh(); }}
             />
           </CollapseCard>
@@ -855,16 +860,17 @@ const TIMELINE_STEPS: { key: string; label: string; hint?: string }[] = [
   { key: "SHIPPED", label: "ได้เลข Tracking" },
   { key: "ARRIVED_TH", label: "ถึงไทยแล้ว" },
   { key: "AT_WAREHOUSE", label: "ถึงโกดังแล้ว" },
-  { key: "READY_TO_RECEIVE", label: "พร้อมรับเข้า", hint: "· จ่ายค่าขนส่งจีน-ไทย" },
   { key: "RECEIVED", label: "รับแล้ว" },
 ];
 
 // #15 — current step ของไทม์ไลน์ ต้อง map กับสถานะจริงแบบ index-based บน PO_FLOW_CORE
 // (source of truth ใน nav.ts) ไม่พึ่ง STATUS_RANK ที่ยังพ่วง DRAFT/PENDING/APPROVED → กัน index เลื่อน
-//   ORDERED→0 · SHIPPED→1 · ARRIVED_TH→2 · AT_WAREHOUSE→3 · READY_TO_RECEIVE→4 · RECEIVED→5
-//   PARTIAL → ถือว่าอยู่ที่ READY_TO_RECEIVE (รับบางส่วน) · CLOSED → RECEIVED
+//   ORDERED→0 · SHIPPED→1 · ARRIVED_TH→2 · AT_WAREHOUSE→3 · RECEIVED→4
+//   Wave 2 — ยุบด่าน "พร้อมรับเข้า": PARTIAL + READY_TO_RECEIVE (legacy) map เข้า AT_WAREHOUSE
+//   (ถ้าปล่อยให้ indexOf('READY_TO_RECEIVE') = -1 หลังตัดออกจาก PO_FLOW_CORE → ไทม์ไลน์พัง)
+//   CLOSED → RECEIVED
 function flowIndexOf(status: string): number {
-  if (status === "PARTIAL") return PO_FLOW_CORE.indexOf("READY_TO_RECEIVE");
+  if (status === "PARTIAL" || status === "READY_TO_RECEIVE") return PO_FLOW_CORE.indexOf("AT_WAREHOUSE");
   if (status === "CLOSED") return PO_FLOW_CORE.indexOf("RECEIVED");
   return PO_FLOW_CORE.indexOf(status); // -1 ถ้า pre-order/cancelled
 }
@@ -1812,6 +1818,8 @@ function ReceiveSection({
   defaultWarehouseId,
   atWarehouse,
   r2PublicUrl,
+  isChina,
+  thaiFreightPaid,
   onReceived,
 }: {
   poId: string;
@@ -1820,6 +1828,9 @@ function ReceiveSection({
   defaultWarehouseId: string | null;
   atWarehouse: boolean;
   r2PublicUrl: string;
+  // Wave 2 — ใบจีนที่ยังไม่จ่ายค่าขนส่งจีน-ไทย → โชว์เตือน inline (server receivePo ยังเป็นด่านบังคับจริง)
+  isChina: boolean;
+  thaiFreightPaid: boolean;
   // เรียกหลังรับเข้าสำเร็จ → พ่อ (PoDetail) refetch bundle + เด้งตาราง "เทียบ" ให้โหลดใหม่
   onReceived?: () => void;
 }) {
@@ -1925,6 +1936,22 @@ function ReceiveSection({
         ) : null
       }
     >
+      {isChina && !thaiFreightPaid && (
+        <div
+          style={{
+            background: "#fef9e7",
+            border: "1px solid #f4d77e",
+            borderRadius: 12,
+            padding: "11px 14px",
+            fontSize: 13,
+            color: "#92660a",
+            fontWeight: 600,
+          }}
+        >
+          ต้องจ่ายค่าขนส่งจีน-ไทยก่อนรับเข้า — บันทึกการจ่าย “ค่าขนส่งจีน-ไทย” ที่ด้านบน แล้วจึงกดรับเข้าคลังได้
+        </div>
+      )}
+
       {trcloudPending && (
         <div
           style={{

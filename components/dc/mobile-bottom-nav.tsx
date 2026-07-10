@@ -9,7 +9,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Boxes, PackagePlus, ShoppingCart, BarChart3, LayoutGrid, X,
-  Truck, ArrowLeftRight, ClipboardCheck, PackageMinus, Search, QrCode,
+  Truck, ClipboardCheck, PackageMinus, Search, QrCode,
   Building2, Ship, Warehouse, Users, GitCompare, LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
@@ -39,8 +39,7 @@ const FLOOR_MENU: Item[] = [
   { href: "/dc", label: "หน้าหลัก", icon: Boxes },
   { href: "/dc/receive", label: "รับเข้า", icon: PackagePlus },
   { href: "/dc/receive-po", label: "รับตาม PO", icon: PackagePlus },
-  { href: "/dc/transfer", label: "ส่ง / โอน", icon: Truck },
-  { href: "/dc/move", label: "ย้ายที่", icon: ArrowLeftRight },
+  { href: "/dc/transfer", label: "ส่ง · โอน · ย้ายที่", icon: Truck },
   { href: "/dc/count", label: "นับสต๊อก", icon: ClipboardCheck },
   { href: "/dc/issue", label: "เบิกออก", icon: PackageMinus },
   { href: "/dc/search", label: "ค้นหา", icon: Search },

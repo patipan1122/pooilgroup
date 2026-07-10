@@ -38,7 +38,9 @@ export default async function DcReceiptsPage() {
       },
     }),
     prisma.dcPurchaseOrder.findMany({
-      where: { orgId, status: DcPoStatus.AT_WAREHOUSE },
+      // Wave 2 — ยุบด่าน "พร้อมรับเข้า" เป็น "ถึงโกดังแล้ว": ต้องรวม READY_TO_RECEIVE (legacy)
+      //   ไม่งั้นใบเก่าที่ค้างสถานะนั้นจะหายจากลิสต์ "รอรับเข้า"
+      where: { orgId, status: { in: [DcPoStatus.AT_WAREHOUSE, DcPoStatus.READY_TO_RECEIVE] } },
       orderBy: { orderedAt: "desc" },
       take: 6,
       select: { id: true, poCode: true, supplier: { select: { name: true } }, _count: { select: { lines: true } } },

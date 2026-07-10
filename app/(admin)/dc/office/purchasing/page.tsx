@@ -60,7 +60,7 @@ export default async function DcPurchasingPage() {
     inTransit += po.shipments.filter((s) => s.status === "IN_TRANSIT").length;
 
     if (po.status === "ORDERED" && !hasTracking) pendingTracking += 1;
-    if (po.status === "AT_WAREHOUSE" || po.status === "ARRIVED_TH" || po.status === "PARTIAL") pendingGrn += 1;
+    if (po.status === "AT_WAREHOUSE" || po.status === "READY_TO_RECEIVE" || po.status === "ARRIVED_TH" || po.status === "PARTIAL") pendingGrn += 1;
 
     // กล่องที่ใช้ประเมินวันถึง: เอากล่องที่มีเลขพัสดุก่อน (ไม่มี→กล่องแรก)
     const trackedShip =

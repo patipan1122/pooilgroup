@@ -45,14 +45,21 @@ export function MasterDetailView({
   const router = useRouter();
   const [filter, setFilter] = useState<string>(ALL);
 
+  // ยุบ READY_TO_RECEIVE → AT_WAREHOUSE ให้ตรงกับบอร์ด/รายการอื่น (ยุบสถานะ "ถึงโกดังแล้ว")
+  //   ไม่งั้นใบเก่าที่ค้างสถานะ READY_TO_RECEIVE จะไม่โผล่ในชิป "ถึงโกดังแล้ว" (นับตกหล่น)
+  const foldStatus = (s: string) => (s === "READY_TO_RECEIVE" ? "AT_WAREHOUSE" : s);
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const it of items) c[it.status] = (c[it.status] ?? 0) + 1;
+    for (const it of items) {
+      const st = foldStatus(it.status);
+      c[st] = (c[st] ?? 0) + 1;
+    }
     return c;
   }, [items]);
 
   const filtered = useMemo(
-    () => (filter === ALL ? items : items.filter((it) => it.status === filter)),
+    () => (filter === ALL ? items : items.filter((it) => foldStatus(it.status) === filter)),
     [items, filter],
   );
 
