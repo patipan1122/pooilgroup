@@ -6,7 +6,7 @@
  */
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { userHasModuleAccess, isAdminTier } from "@/lib/auth/module-access";
+import { loadUserModules, isAdminTier } from "@/lib/auth/module-access";
 import { isModuleDisabled } from "@/lib/modules";
 import { CF_ALL_ROLES } from "@/lib/clawfleet/role-guard";
 import { OsChrome } from "@/components/clawfleet/os/os-header";
@@ -20,8 +20,12 @@ export default async function ClawOsLayout({ children }: { children: React.React
   const session = await requireSession();
   if (!(CF_ALL_ROLES as readonly string[]).includes(session.user.role)) redirect("/403");
   if (!isAdminTier(session.user.role)) {
-    const ok = await userHasModuleAccess(session.user, "clawfleet");
-    if (!ok) redirect("/403");
+    // loadUserModules self-heals ClawFleet access for staff assigned to a
+    // claw-machine branch (grantClawfleetIfBranchAssigned) — so invited field
+    // staff aren't wrongly bounced to /403 just because the invite flow never
+    // wrote their user_modules grant.
+    const mods = await loadUserModules(session.user);
+    if (!mods.has("clawfleet")) redirect("/403");
   }
 
   return (

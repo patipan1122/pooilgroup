@@ -153,6 +153,7 @@ export default async function ManagePage() {
       branchOptions={branchOptions}
       warehousesByBranch={warehousesByBranch}
       productsByBranch={productsByBranch}
+      orgId={orgId} // ส่งต่อให้ PhotoCaptureButton (แนบรูปตู้ขึ้น R2)
       isAdmin // หน้านี้อยู่หลัง admin-gate (ผู้ที่ไม่ใช่แอดมินถูก redirect ไปแล้ว)
     />
   );

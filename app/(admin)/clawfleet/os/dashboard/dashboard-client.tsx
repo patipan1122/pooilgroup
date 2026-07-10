@@ -16,36 +16,6 @@ type Fleet = { totalMachines: number; activeMachines: number; needRefill: number
 // สรุปเงินรอฝาก (custody→deposit): มาจาก getPendingDepositSummary() ฝั่ง server (หน่วยเป็นสตางค์)
 type PendingDeposit = { count: number; totalCents: number; overdueCount: number; overdueCents: number };
 
-/* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลขจาก design ── */
-const SAMPLE_BRANCHES: BranchRow[] = [
-  { branchId: "s1", code: "RS", name: "รังสิต", machines: 12, dolls: 168, revenue: 70300, profit: 41200, avgWin: 168, flag: "LOW" },
-  { branchId: "s2", code: "LP", name: "ลาดพร้าว", machines: 10, dolls: 142, revenue: 61000, profit: 36800, avgWin: 215, flag: "GOOD" },
-  { branchId: "s3", code: "BK", name: "บางแค", machines: 11, dolls: 121, revenue: 58500, profit: 30900, avgWin: 242, flag: "GOOD" },
-  { branchId: "s4", code: "BN", name: "บางนา", machines: 9, dolls: 98, revenue: 52400, profit: 28100, avgWin: 268, flag: "AMBER" },
-  { branchId: "s5", code: "NB", name: "นนทบุรี", machines: 8, dolls: 64, revenue: 44800, profit: 19500, avgWin: 410, flag: "HIGH" },
-  { branchId: "s6", code: "PT", name: "ปทุมธานี", machines: 10, dolls: 110, revenue: 49200, profit: 21300, avgWin: 198, flag: "GOOD" },
-  { branchId: "s7", code: "SP", name: "สมุทรปราการ", machines: 7, dolls: 88, revenue: 38900, profit: 17600, avgWin: 178, flag: "LOW" },
-  { branchId: "s8", code: "MB", name: "มีนบุรี", machines: 9, dolls: 95, revenue: 42600, profit: 22700, avgWin: 225, flag: "GOOD" },
-];
-const SAMPLE_ALERTS: Alert[] = [
-  { title: "เก็บเงินได้น้อยกว่ามิเตอร์", detail: "รังสิต · RS-03 · 12 นาทีก่อน", tag: "P0", tone: "red" },
-  { title: "ตู้ไม่ขยับ 3 วัน", detail: "นนทบุรี · NB-02 · วันนี้", tag: "P1", tone: "amber" },
-  { title: "เหรียญเข้ายอดไม่ตรง", detail: "บางแค · BK-05 · 2 ชม.ก่อน", tag: "P1", tone: "amber" },
-  { title: "ตุ๊กตาออกผิดปกติ", detail: "ลาดพร้าว · LP-01 · เมื่อวาน", tag: "P2", tone: "neutral" },
-  { title: "ยังไม่ปิดรอบเก็บเงิน", detail: "สมุทรปราการ · SP-02 · วันนี้", tag: "P2", tone: "neutral" },
-];
-/* sample fallback เมื่อ DB ว่าง */
-const SAMPLE_DAYS: DailyPoint[] = [
-  { d: "18", iso: "", profit: 24.2, cost: 12 }, { d: "19", iso: "", profit: 31, cost: 14 }, { d: "20", iso: "", profit: 28.5, cost: 13 },
-  { d: "21", iso: "", profit: 35, cost: 16 }, { d: "22", iso: "", profit: 30.1, cost: 14 }, { d: "23", iso: "", profit: 28.4, cost: 13 }, { d: "24", iso: "", profit: 32.7, cost: 15 },
-];
-const SAMPLE_LOW_STOCK: LowStockItem[] = [
-  { name: "หมีบราวน์ ไซต์ L", loc: "คลังกลาง", qty: 8, color: "#B42318" },
-  { name: "ไดโนเสาร์เขียว", loc: "คลังกลาง", qty: 14, color: "#B45309" },
-  { name: "แมวเหมียวชมพู", loc: "รังสิต", qty: 19, color: "#B45309" },
-  { name: "ยูนิคอร์น พาสเทล", loc: "ลาดพร้าว", qty: 22, color: "#B45309" },
-];
-
 export function DashboardClient({
   summary,
   branches,
@@ -75,37 +45,30 @@ export function DashboardClient({
   const depoOverdueBaht = Math.round(pendingDeposit.overdueCents / 100);
   const hasPending = pendingDeposit.count > 0;
   const hasOverdue = pendingDeposit.overdueCount > 0;
-  // "ว่างจริง" = ไม่มีสาขาจริง และไม่เคยเก็บเงินเลย → โชว์ตัวอย่างเพื่อให้เห็นภาพ.
-  // org จริงที่มีข้อมูล (มีสาขา หรือ เคยเก็บเงิน) → ห้ามโชว์ตัวอย่าง แม้ยังไม่มีธงแดง.
+  // "ว่างจริง" = ไม่มีสาขาจริง และไม่เคยเก็บเงินเลย → โชว์ empty-state (ไม่โชว์ตัวเลขปลอม).
+  // org จริงที่มีข้อมูล (มีสาขา หรือ เคยเก็บเงิน) → โชว์ของจริง แม้ยังไม่มีธงแดง.
   const empty = branches.length === 0 && !hasRealData;
-  const rows = empty ? SAMPLE_BRANCHES : branches;
-  // ธงแดง: โชว์ sample เฉพาะตอน "ว่างจริง" เท่านั้น · org จริงที่ 0 anomaly = ธงแดงว่างจริง (ไม่ปลอม)
-  const alertRows = empty ? SAMPLE_ALERTS : alerts;
+  // ห้าม fallback SAMPLE เด็ดขาด — ว่าง = อาร์เรย์ว่าง (โชว์ empty-state แทน)
+  const rows = empty ? [] : branches;
+  const alertRows = alerts;
   // มีข้อมูลจริงแล้วแต่ไม่มีธงแดง = สถานะที่ดี (ทุกรอบปกติ) → โชว์ empty-state บวก ไม่ใช่ตัวเลขปลอม
   const alertsClean = !empty && alertRows.length === 0;
-  // กราฟรายวัน:
-  //  - org จริง (hasRealData) → ห้าม fallback SAMPLE เด็ดขาด · ใช้ dailyPnl จริง (แม้ทุกแท่ง = ฿0)
-  //    ถ้ายังไม่มีรอบเก็บใน 7 วันนี้ → chartEmptyReal=true โชว์ข้อความจริงแทนตัวเลขปลอม
-  //  - org ว่างจริง (empty) → โชว์ SAMPLE เพื่อให้เห็นภาพ
+  // กราฟรายวัน: ใช้ dailyPnl จริงเสมอ (ไม่มี SAMPLE) · ถ้ายังไม่มีรอบเก็บใน 7 วันนี้ → chartEmptyReal โชว์ข้อความจริง
   const hasRealDailyData = dailyPnl.length > 0 && dailyPnl.some((d) => Math.abs(d.profit) + Math.abs(d.cost) > 0);
-  const chartEmptyReal = hasRealData && !hasRealDailyData;
-  const days = hasRealData ? dailyPnl : (hasRealDailyData ? dailyPnl : SAMPLE_DAYS);
-  const lowStockRows = lowStock.length > 0 ? lowStock : (empty ? SAMPLE_LOW_STOCK : []);
-  const totRevenue = empty ? rows.reduce((s, b) => s + b.revenue, 0) : summary.revenue;
-  const totProfit = empty ? rows.reduce((s, b) => s + b.profit, 0) : summary.profit;
-  const totMachines = empty ? rows.reduce((s, b) => s + b.machines, 0) : machineCount;
-  const avgWinAll = empty
-    ? Math.round(rows.reduce((s, b) => s + b.avgWin, 0) / rows.length)
-    : summary.avgBahtPerDoll == null ? 0 : Math.round(summary.avgBahtPerDoll);
+  const chartEmptyReal = !hasRealDailyData;
+  const days = dailyPnl;
+  const lowStockRows = lowStock;
+  const totRevenue = summary.revenue;
+  const totProfit = summary.profit;
+  const totMachines = machineCount;
+  const avgWinAll = summary.avgBahtPerDoll == null ? 0 : Math.round(summary.avgBahtPerDoll);
   // ต้นทุน/ตัว จริง = ต้นทุนตุ๊กตารวม ÷ จำนวนตุ๊กตาที่ออก (ไม่เดา) · null ถ้ายังไม่มีต้นทุนตั้งไว้/ไม่มีตุ๊กตาออก
   const costPerDoll =
     !empty && summary.hasCost && summary.dollsOut > 0
       ? Math.round(summary.cost / summary.dollsOut)
       : null;
-  // fleet overview: ใช้ของจริงถ้า DB ไม่ว่าง · ถ้า DB ว่าง (sample) → needRefill/broken ไม่รู้จริง = null
-  const fleetView = empty
-    ? { activeMachines: totMachines, needRefill: null as number | null, broken: null as number | null }
-    : { activeMachines: fleet.activeMachines, needRefill: fleet.needRefill, broken: fleet.broken };
+  // fleet overview: ใช้ของจริงเสมอ (ไม่มี sample) · org ว่าง = ตัวเลขจริง 0/null
+  const fleetView = { activeMachines: fleet.activeMachines, needRefill: fleet.needRefill, broken: fleet.broken };
   const tooEasy = rows.filter((b) => b.flag === "LOW" || b.flag === "LOSS").length;
   const good = rows.filter((b) => b.flag === "GOOD").length;
   const tooHard = rows.filter((b) => b.flag === "HIGH" || b.flag === "AMBER").length;
@@ -124,15 +87,22 @@ export function DashboardClient({
       ? Math.round(((yRevenue - prevRevenue) / Math.abs(prevRevenue)) * 100)
       : null;
 
+  // ว่างจริง (ไม่มีสาขา + ไม่เคยเก็บเงิน) → โชว์ empty-state ตรง ๆ · ไม่เรนเดอร์การ์ด/กราฟที่เต็มไปด้วยเลข 0
+  if (empty) {
+    return (
+      <div>
+        <EmptyState
+          icon={<Wallet size={30} />}
+          title="ยังไม่มีข้อมูลสรุป"
+          sub="เริ่มเก็บเงินก่อน เพื่อดูภาพรวมสาขา · กำไร · ธงแดง"
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
-      {empty && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A5510" }}>
-          <AlertTriangle size={15} /> ยังไม่มีข้อมูลจริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ (จะเปลี่ยนเป็นข้อมูลจริงเมื่อเริ่มเก็บเงิน)
-        </div>
-      )}
-
-      {/* เงินรอฝาก (custody→deposit) — โชว์เฉพาะ org จริง (empty=sample ห้ามโชว์ตัวเลขปลอม).
+      {/* เงินรอฝาก (custody→deposit) — org จริงเท่านั้น.
           มีเงินค้างมือ → แถบเตือน (เกินกำหนด=แดง · ยังไม่เกิน=เหลือง) กดไปหน้าใบฝาก.
           ฝากครบ (count=0) → แถบเขียวสั้นๆ ให้เจ้าของสบายใจ. */}
       {!empty && (

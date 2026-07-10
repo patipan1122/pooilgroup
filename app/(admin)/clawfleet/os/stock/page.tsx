@@ -325,12 +325,14 @@ async function loadWarehouseRows(
     _sum: { qty: true },
   });
   const totalMap = new Map(totals.map((t) => [t.productId, { qty: t._sum.qty ?? 0, last: t._max.occurredAt }]));
-  const distMap = new Map<string, { branch: string; qty: number }[]>();
+  // เก็บ branchId ในแต่ละแถว dist ด้วย — ให้ฝั่ง client เจาะดูรายสาขาโดย match ด้วย id
+  // (ไม่ใช่ชื่อสาขา) กันเคสสาขาชื่อซ้ำแล้วนับยอดขาด (branch.name ไม่ unique)
+  const distMap = new Map<string, { branchId: string; branch: string; qty: number }[]>();
   for (const r of perBranch) {
     const qty = r._sum.qty ?? 0;
     if (qty <= 0) continue;
     const arr = distMap.get(r.productId) ?? [];
-    arr.push({ branch: branchName.get(r.branchId) ?? "สาขา", qty });
+    arr.push({ branchId: r.branchId, branch: branchName.get(r.branchId) ?? "สาขา", qty });
     distMap.set(r.productId, arr);
   }
   const pcat = new Map(products.map((p) => [p.id, p]));

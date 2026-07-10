@@ -19,7 +19,7 @@ import {
   UserMinus,
   Link2,
 } from "lucide-react";
-import { Card, Pill, Modal } from "@/components/clawfleet/os/kit";
+import { Card, Pill, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { num, type Tone } from "@/components/clawfleet/os/format";
 import type { MemberStatus } from "@/lib/clawfleet/admin-queries";
 import {
@@ -27,6 +27,7 @@ import {
   updateCfStaffRole,
   removeCfStaff,
   regenInviteLink,
+  addCfStaffBranch,
 } from "@/lib/clawfleet/team-actions";
 
 export type BranchOpt = { id: string; name: string };
@@ -80,15 +81,8 @@ function initial(name: string): string {
   return (name.trim()[0] ?? "?").toUpperCase();
 }
 
-/* ── SAMPLE fallback (เมื่อ DB ว่าง) ── */
-const SAMPLE_STAFF: StaffRow[] = [
-  { id: "ss1", name: "สมชาย ใจดี", role: "staff", branchId: "", branchName: "รังสิต", status: "active", rounds: 24, mismatch: 0 },
-  { id: "ss2", name: "วิภา แสงทอง", role: "staff", branchId: "", branchName: "ลาดพร้าว", status: "active", rounds: 21, mismatch: 1 },
-  { id: "ss3", name: "ณัฐพล มั่นคง", role: "branch_manager", branchId: "", branchName: "บางแค", status: "active", rounds: 19, mismatch: 2 },
-  { id: "ss4", name: "ปนัดดา ทองคำ", role: "staff", branchId: "", branchName: "บางนา", status: "active", rounds: 17, mismatch: 4 },
-  { id: "ss5", name: "กิตติ ศรีสุข", role: "staff", branchId: "", branchName: "นนทบุรี", status: "invited", rounds: 0, mismatch: 0 },
-  { id: "ss6", name: "อรทัย พงษ์ไพร", role: "org_admin", branchId: "", branchName: "ทุกสาขา", status: "active", rounds: 0, mismatch: 0 },
-];
+// NOTE (CEO 2026-07-10): เดิมมี SAMPLE_STAFF โชว์พนักงานปลอมตอน DB ว่าง — ตัดทิ้ง
+// ให้โชว์ของจริงเท่านั้น (ว่าง = empty-state "ยังไม่มีพนักงาน" + ปุ่มเชิญ).
 
 /* ── inline button styles (ตรงธีม settings-client) ── */
 const PRIMARY_BTN: React.CSSProperties = {
@@ -161,11 +155,11 @@ export function StaffClient({
 }) {
   const router = useRouter();
   const empty = staff.length === 0;
-  const rows = empty ? SAMPLE_STAFF : staff;
-  const count = empty ? rows.length : totalStaff;
-  const hasRealMetrics = !empty && rows.some((r) => r.rounds != null);
+  const rows = staff; // ⛔ ไม่โชว์พนักงานตัวอย่างปลอมอีก (CEO: อยากเห็นของจริง)
+  const count = totalStaff;
+  const hasRealMetrics = rows.some((r) => r.rounds != null);
 
-  // จัดการทีมเปิดเฉพาะ admin + มีข้อมูลจริง (โหมดตัวอย่างปิด action เพราะ id ไม่จริง)
+  // จัดการทีมเปิดเฉพาะ admin (มีพนักงานจริงถึงจะมีแถวให้จัดการ)
   const canManage = isAdmin && !empty;
 
   const [isPending, startTransition] = useTransition();
@@ -186,6 +180,27 @@ export function StaffClient({
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(null);
   const [regenResult, setRegenResult] = useState<{ id: string; url: string; name: string } | null>(null);
 
+  /* ── "เพิ่มเข้าอีกสาขา" modal state (1 คน หลายสาขา) ── */
+  const [addBranchFor, setAddBranchFor] = useState<StaffRow | null>(null);
+  const [addBranchId, setAddBranchId] = useState("");
+  const [addBranchErr, setAddBranchErr] = useState<string | null>(null);
+
+  function openAddBranch(row: StaffRow) {
+    setAddBranchErr(null);
+    setAddBranchId(branches[0]?.id ?? "");
+    setAddBranchFor(row);
+  }
+  function submitAddBranch() {
+    if (!addBranchFor) return;
+    if (!addBranchId) { setAddBranchErr("เลือกสาขา"); return; }
+    setAddBranchErr(null);
+    startTransition(async () => {
+      const res = await addCfStaffBranch(addBranchFor.id, addBranchId);
+      if (res.ok) { setAddBranchFor(null); router.refresh(); }
+      else setAddBranchErr(res.error);
+    });
+  }
+
   function resetInvite() {
     setForm({ name: "", branchId: branches[0]?.id ?? "", role: "staff", email: "", phone: "" });
     setInviteResult(null);
@@ -203,9 +218,13 @@ export function StaffClient({
     if (!form.name.trim()) { setFormErr("กรอกชื่อพนักงาน"); return; }
     if (!form.branchId) { setFormErr("เลือกสาขา"); return; }
     startTransition(async () => {
+      // อีเมล = ไม่บังคับ 100% — ส่งไปเฉพาะเมื่อ "หน้าตาเป็นอีเมลจริง" เท่านั้น
+      // ค่าเว้นว่าง/ค่าขยะจาก autofill → undefined → ไม่มีทางทำให้เชิญพนักงานไม่ผ่าน
+      const em = form.email.trim();
+      const emailToSend = em && /.+@.+\..+/.test(em) ? em : undefined;
       const res = await inviteCfStaff({
         name: form.name.trim(),
-        email: form.email.trim() || undefined,
+        email: emailToSend,
         phone: form.phone.trim() || undefined,
         branchId: form.branchId,
         role: form.role,
@@ -258,22 +277,13 @@ export function StaffClient({
     <div>
       {empty && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A5510" }}>
-          <AlertTriangle size={15} /> ยังไม่มีพนักงานในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ{isAdmin ? " · กด “เพิ่มพนักงาน” เพื่อเชิญคนจริง" : ""}
+          <AlertTriangle size={15} /> ยังไม่มีพนักงานในระบบ{isAdmin ? " — กด “เพิ่มพนักงาน” เพื่อเชิญคนแรก" : ""}
         </div>
       )}
 
       <Card
-        title={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            พนักงานทั้งหมด
-            {empty && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7A5510", background: "#FCF3DC", border: "1px solid #F0E2BE", borderRadius: 20, padding: "2px 9px" }}>
-                ตัวอย่าง · ไม่ใช่บัญชีจริง
-              </span>
-            )}
-          </span>
-        }
-        sub={empty ? "รายชื่อด้านล่างเป็นตัวอย่างเพื่อให้เห็นภาพ — ยังไม่ใช่พนักงานจริง" : `${num(count)} คน · ทุกสาขา`}
+        title="พนักงานทั้งหมด"
+        sub={empty ? "ยังไม่มีพนักงานในระบบ" : `${num(count)} คน · ทุกสาขา`}
         pad={false}
         right={
           isAdmin ? (
@@ -333,6 +343,9 @@ export function StaffClient({
                                 <option key={a.value} value={a.value}>{a.label}</option>
                               ))}
                             </select>
+                            <button type="button" disabled={isPending} onClick={() => openAddBranch(st)} className="co-tap" style={GHOST_BTN} title="เพิ่มเข้าอีกสาขา (1 คนดูแลได้หลายสาขา)">
+                              <Plus size={12} /> สาขา
+                            </button>
                             {st.status === "invited" && (
                               <button type="button" disabled={isPending} onClick={() => regen(st)} className="co-tap" style={GHOST_BTN} title="สร้างลิงก์เชิญใหม่">
                                 <RefreshCw size={12} /> ลิงก์
@@ -361,6 +374,11 @@ export function StaffClient({
             })}
           </div>
         </div>
+        {rows.length === 0 && (
+          <div style={{ padding: "24px 22px" }}>
+            <EmptyState icon={<Plus size={26} />} title="ยังไม่มีพนักงาน" sub={isAdmin ? "กด “เพิ่มพนักงาน” ด้านบนเพื่อเชิญคนแรกเข้าสาขา" : "ยังไม่มีพนักงานในระบบ"} />
+          </div>
+        )}
         {!hasRealMetrics && !empty && (
           <div style={{ padding: "10px 22px", fontSize: 10.5, color: "#9AA1AB", fontStyle: "italic", borderTop: "1px solid #F4F5F7" }}>
             * &quot;รอบเก็บ&quot; และ &quot;ยอดไม่ตรง&quot; ต่อคน ยังไม่มี metric จริง (แสดง —) — ดูได้จากหน้าเก็บเงิน/ตรวจสอบ
@@ -444,10 +462,14 @@ export function StaffClient({
                 <div>
                   <label style={LABEL}>อีเมล <span style={{ color: "#9AA1AB", fontWeight: 400 }}>(ไม่บังคับ)</span></label>
                   <input
-                    type="email"
+                    // type="text" (ไม่ใช่ "email") + ปิด autofill — กัน browser/ตัวช่วยกรอก
+                    // ยัดค่าที่ไม่ใช่อีเมลเข้าช่องเงียบ ๆ แล้วทำให้สร้างพนักงานไม่ผ่าน
+                    type="text"
+                    inputMode="email"
+                    autoComplete="off"
                     value={form.email}
                     onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                    placeholder="name@email.com"
+                    placeholder="name@email.com (ไม่ต้องกรอกก็ได้)"
                     style={INPUT}
                   />
                 </div>
@@ -467,6 +489,41 @@ export function StaffClient({
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* ── เพิ่มเข้าอีกสาขา (1 คน ดูแลได้หลายสาขา) ── */}
+      <Modal
+        open={addBranchFor !== null}
+        onClose={() => setAddBranchFor(null)}
+        title="เพิ่มเข้าอีกสาขา"
+        sub={addBranchFor ? `ให้ “${addBranchFor.name}” ดูแลอีกสาขา — 1 คนดูแลได้หลายสาขา` : ""}
+        width={440}
+        footer={
+          <div style={{ padding: "12px 18px", display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+            {addBranchErr && <span style={{ fontSize: 12, color: "#B42318", marginRight: "auto" }}>{addBranchErr}</span>}
+            <button type="button" onClick={() => setAddBranchFor(null)} className="co-tap" style={{ ...GHOST_BTN, padding: "9px 14px", fontSize: 13, color: "#5A6270", border: "1px solid #DFE2E8" }}>ยกเลิก</button>
+            <button type="button" onClick={submitAddBranch} disabled={isPending} className="co-tap" style={{ ...PRIMARY_BTN, opacity: isPending ? 0.6 : 1 }}>
+              {isPending ? "กำลังเพิ่ม…" : "เพิ่มเข้าสาขา"}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px" }}>
+          <label style={LABEL}>เลือกสาขา <span style={{ color: "#B42318" }}>*</span></label>
+          <select
+            value={addBranchId}
+            onChange={(e) => setAddBranchId(e.target.value)}
+            style={{ ...INPUT, cursor: "pointer" }}
+          >
+            {branches.length === 0 && <option value="">— ไม่มีสาขา —</option>}
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <div style={{ marginTop: 10, fontSize: 11.5, color: "#6B7280", background: "#F8F9FB", borderRadius: 9, padding: "10px 12px" }}>
+            พนักงานจะเห็นตู้ของสาขาที่เพิ่มนี้ด้วย · ถ้าอยู่ในสาขานั้นแล้ว ระบบจะแจ้งเตือน (ไม่เพิ่มซ้ำ)
+          </div>
         </div>
       </Modal>
     </div>

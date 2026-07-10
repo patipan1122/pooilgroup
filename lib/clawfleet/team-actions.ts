@@ -338,3 +338,68 @@ export async function regenInviteLink(
     return { ok: false, error: `สร้างลิงก์เชิญใหม่ไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
+
+// =============================================================
+// เพิ่มพนักงานที่มีอยู่แล้วเข้าอีกสาขา — 1 คนดูแลได้หลายสาขา (CEO 2026-07-10)
+// DB รองรับอยู่แล้ว (UserBranch = N สาขาต่อคน) · ที่ขาดคือปุ่ม/แอ็กชันฝั่งจัดการทีม
+// =============================================================
+
+export async function addCfStaffBranch(
+  userId: string,
+  branchId: string,
+): Promise<Result> {
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  // ผู้เรียกต้องมีสิทธิ์จัดการ "สาขาปลายทาง" ที่จะเพิ่มพนักงานเข้า
+  const scope = await assertBranchInScope(session, branchId);
+  if (!scope.ok) return scope;
+
+  const target = await prisma.user.findFirst({
+    where: { id: userId, orgId },
+    select: { id: true, name: true, role: true },
+  });
+  if (!target) return { ok: false, error: "ไม่พบพนักงานในองค์กรนี้" };
+
+  // แอดมินองค์กร — จัดการสาขาที่หน้าผู้ใช้ส่วนกลาง (กันแตะสิทธิ์ระดับสูงจากหน้านี้)
+  const ADMIN_TIER = ["super_admin", "org_admin", "admin"];
+  if (ADMIN_TIER.includes(target.role)) {
+    return { ok: false, error: "พนักงานคนนี้เป็นแอดมินองค์กร · จัดการสาขาที่หน้าผู้ใช้ส่วนกลาง" };
+  }
+
+  // idempotent — เพิ่มซ้ำสาขาเดิมไม่พัง (กด 2 ครั้ง/มีอยู่แล้ว = แจ้งเฉย ๆ)
+  const existing = await prisma.userBranch.findFirst({
+    where: { userId, branchId },
+    select: { id: true, isActive: true },
+  });
+
+  try {
+    if (existing) {
+      if (existing.isActive) {
+        return { ok: false, error: "พนักงานอยู่ในสาขานี้อยู่แล้ว" };
+      }
+      // เคยอยู่แล้วถูกเอาออก (soft) → เปิดกลับ
+      await prisma.userBranch.update({
+        where: { id: existing.id },
+        data: { isActive: true },
+      });
+    } else {
+      await prisma.userBranch.create({
+        data: { orgId, userId, branchId, isActive: true },
+      });
+    }
+
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "UPDATE_USER",
+      resourceType: "user",
+      resourceId: userId,
+      diff: { new: { addedToBranch: branchId } },
+    });
+    revalidatePath(TEAM_PATH);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `เพิ่มเข้าสาขาไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}

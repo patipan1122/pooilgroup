@@ -71,38 +71,9 @@ const SAMPLE_BRANCHES: BranchOption[] = [
   { value: "s-bk", label: "บางแค (BK)" },
 ];
 
-const SAMPLE_ROWS: CollectionRow[] = [
-  {
-    id: "s-CFS-000041", code: "CFS-000041", branchId: "s-rs", branch: "รังสิต", staff: "น้องเอ", date: "12 นาทีที่แล้ว",
-    expectedCash: 8400, actualCash: 5860, gap: 2540, prizeExpected: 32, prizeActual: 32, prizeGap: 0,
-    severity: "P0", type: "cash_short", reason: "เงินสดน้อยกว่ามิเตอร์ ฿2,540 (30% ห่าง)", machines: [], sample: true,
-  },
-  {
-    id: "s-CFS-000040", code: "CFS-000040", branchId: "s-lp", branch: "ลาดพร้าว", staff: "น้องบี", date: "40 นาทีที่แล้ว",
-    expectedCash: 4200, actualCash: 4380, gap: -180, prizeExpected: 18, prizeActual: 18, prizeGap: 0,
-    severity: "P1", type: "cash_short", reason: "เงินสดมากกว่ามิเตอร์ ฿180 — เงินเกิน ต้องสอบที่มา", machines: [], sample: true,
-  },
-  {
-    id: "s-CFS-000038", code: "CFS-000038", branchId: "s-bk", branch: "บางแค", staff: "พี่สอง", date: "2 ชม.ที่แล้ว",
-    expectedCash: 6100, actualCash: 6100, gap: 0, prizeExpected: 28, prizeActual: 22, prizeGap: 6,
-    severity: "P0", type: "prize_short", reason: "ตุ๊กตาหาย 6 ตัว — มิเตอร์ตุ๊กตากับนับจริงไม่ตรง", machines: [], sample: true,
-  },
-  {
-    id: "s-CFS-000035", code: "CFS-000035", branchId: "s-lp", branch: "ลาดพร้าว", staff: "น้องบี", date: "เมื่อวาน",
-    expectedCash: 5400, actualCash: 5380, gap: 20, prizeExpected: 24, prizeActual: 24, prizeGap: 0,
-    severity: "P2", type: "cash_short", reason: "ส่วนต่าง ฿20 อยู่ในเกณฑ์ — ตรงกัน", machines: [], sample: true,
-  },
-  {
-    id: "s-CFS-000033", code: "CFS-000033", branchId: "s-rs", branch: "รังสิต", staff: "น้องเอ", date: "เมื่อวาน",
-    expectedCash: 7200, actualCash: 7200, gap: 0, prizeExpected: 30, prizeActual: 30, prizeGap: 0,
-    severity: "P2", type: "cash_short", reason: "ทุกตัวเลขตรงกัน — รอบสะอาด", machines: [], sample: true,
-  },
-  {
-    id: "s-CFS-000029", code: "CFS-000029", branchId: "s-bk", branch: "บางแค", staff: "พี่สอง", date: "2 วันก่อน",
-    expectedCash: 0, actualCash: 0, gap: 0, prizeExpected: 0, prizeActual: 0, prizeGap: 0,
-    severity: "P1", type: "cash_short", reason: "มิเตอร์ไม่ขยับ 3 วัน — ตู้อาจเสีย/ไม่มีลูกค้า", machines: [], sample: true,
-  },
-];
+// NOTE (CEO 2026-07-10): เดิมมี SAMPLE_ROWS (฿6,100 ฯลฯ) โชว์เป็น "ตัวอย่าง" ตอนยังไม่มี
+// ข้อมูลจริง — ทำให้ดูเหมือนมีเงินเก็บทั้งที่ยังไม่เคยเก็บ (สับสน/หลอกตา). ตัดทิ้ง →
+// ว่าง = โชว์ empty-state จริง (ดู neverCollected / allClean ด้านล่าง). ไม่โชว์เลขปลอมอีก.
 
 /* ───────── helpers ───────── */
 /** ส่วนต่างเงิน ไม่เกินเท่านี้ = ถือว่าตรง (display only — logic เดิมใช้ r.gap > 50) */
@@ -175,9 +146,11 @@ export function CollectionsClient({
   //   - rows ว่าง + ไม่เคยเก็บเลย  → "ว่างจริง" → โชว์ตัวอย่างเพื่อให้เห็นภาพการตรวจ
   //   - rows ว่าง + เคยเก็บแล้ว     → "ตรวจแล้ว ไม่พบผิดปกติ" (empty-state จริง · ห้ามโชว์ theft ปลอม)
   const noRows = rows.length === 0;
-  const empty = noRows && !hasAnyRounds;        // ว่างจริง = โชว์ตัวอย่าง
-  const allClean = noRows && hasAnyRounds;      // เก็บแล้วสะอาด = empty-state บวก
-  const data = empty ? SAMPLE_ROWS : rows;
+  // ⛔ เลิกโชว์ข้อมูลตัวอย่างปลอม (CEO: อยากเห็นข้อมูลจริง) — ว่าง = ว่างจริงเสมอ
+  const empty = false;
+  const neverCollected = noRows && !hasAnyRounds; // ยังไม่เคยเก็บเงินจริง → empty-state "เริ่มต้น"
+  const allClean = noRows && hasAnyRounds;        // เคยเก็บ + ไม่มี anomaly → empty-state "สะอาด"
+  const data = rows;                              // ใช้ข้อมูลจริงเสมอ
   const branchOpts = branchOptions.length > 0
     ? [{ value: "all", label: "ทุกสาขา" }, ...branchOptions]
     : SAMPLE_BRANCHES;
@@ -473,7 +446,14 @@ export function CollectionsClient({
         ))}
         {filtered.length === 0 && (
           <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
-            {allClean ? (
+            {neverCollected ? (
+              // ยังไม่เคยเก็บเงินจริงเลย — โชว์ empty-state ตรงไปตรงมา (ไม่ใช่ตัวเลขตัวอย่าง)
+              <EmptyState
+                icon={<Coins size={30} />}
+                title="ยังไม่มีรอบเก็บเงิน"
+                sub="เมื่อพนักงานเริ่มเก็บเงินจากตู้ รอบเก็บเงินจะขึ้นมาให้ตรวจกระทบยอดที่นี่"
+              />
+            ) : allClean ? (
               // org เคยเก็บเงินแล้ว แต่ไม่มีรอบไหนถูก flag = สถานะที่ดี (ห้ามโชว์ theft ตัวอย่าง)
               <EmptyState
                 icon={<ShieldCheck size={30} />}

@@ -28,6 +28,8 @@ import {
 } from "@/lib/clawfleet/stock-actions";
 import { loadMachineDetail } from "./manage-detail-action";
 import type { MachineDetailData } from "@/lib/clawfleet/manage-queries";
+import { setCfMachinePhoto } from "@/lib/clawfleet/machine-photo-actions";
+import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 
 /* ───────────────────────── types (view-models จาก server) ───────────────────────── */
 export type MachineKind = "CLAW" | "EXCHANGER";
@@ -120,6 +122,7 @@ export function ManageClient({
   branchOptions,
   warehousesByBranch,
   productsByBranch,
+  orgId,
   isAdmin = true,
 }: {
   branches: ManageBranchVM[];
@@ -127,6 +130,8 @@ export function ManageClient({
   branchOptions: BranchOption[];
   warehousesByBranch: Record<string, WarehouseVM[]>;
   productsByBranch: Record<string, TransferProductVM[]>;
+  /** org ของผู้ใช้ — ส่งต่อให้ PhotoCaptureButton (แนบรูปตู้ขึ้น R2) */
+  orgId: string;
   /** หน้านี้อยู่หลัง admin-gate อยู่แล้ว (page redirect ผู้ที่ไม่ใช่แอดมิน) — prop นี้ gate ปุ่ม CRUD ให้ชัด */
   isAdmin?: boolean;
 }) {
@@ -330,7 +335,7 @@ export function ManageClient({
       {modal.t === "reassignMachine" && <ReassignMachineModal m={modal.m} branchOptions={branchOptions} onClose={close} onDone={refresh} />}
       {modal.t === "retireMachine" && <RetireMachineModal m={modal.m} onClose={close} onDone={refresh} />}
       {modal.t === "detail" && <MachineDetailPanel m={modal.m} branchName={modal.branchName} onClose={close} />}
-      {modal.t === "photo" && <MachinePhotoLightbox m={modal.m} onClose={close} />}
+      {modal.t === "photo" && <MachinePhotoLightbox m={modal.m} orgId={orgId} isAdmin={isAdmin} onClose={close} onDone={refresh} />}
       {/* ── warehouse modals ── */}
       {modal.t === "whCreate" && <CreateWarehouseModal branchId={modal.branchId} branchName={modal.branchName} onClose={close} onDone={refresh} />}
       {modal.t === "whRename" && <RenameWarehouseModal id={modal.id} current={modal.current} branchName={modal.branchName} onClose={close} onDone={refresh} />}
@@ -527,22 +532,90 @@ function MachineThumb({ m, onClick }: { m: ManageMachineVM; onClick: () => void 
   );
 }
 
-/* lightbox รูปตู้ (N4) — Modal ขยายรูปเต็ม · ไม่มีรูป = ข้อความ */
-function MachinePhotoLightbox({ m, onClose }: { m: ManageMachineVM; onClose: () => void }) {
+/* lightbox + จัดการรูปตู้ (N4) — ดูรูปใหญ่ + แนบ/เปลี่ยน/ลบรูป (แอดมิน).
+ * upload: reuse PhotoCaptureButton (resize→WebP→POST /api/clawfleet/upload→R2 public url)
+ * แล้ว onChange(url) → setCfMachinePhoto(id, url) → refresh. ลบ = setCfMachinePhoto(id, null). */
+function MachinePhotoLightbox({
+  m, orgId, isAdmin, onClose, onDone,
+}: {
+  m: ManageMachineVM;
+  orgId: string;
+  isAdmin: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false); // true ระหว่างเขียนรูปลง DB (upload/ลบ)
+  const [pending, start] = useTransition();
+
+  // upload สำเร็จ (ได้ url จาก R2) → ผูก url เข้าตู้ในฐานข้อมูล
+  function onUploaded(url: string) {
+    setErr(null);
+    setSaving(true);
+    start(async () => {
+      const res = await setCfMachinePhoto(m.id, url);
+      setSaving(false);
+      if (!res.ok) return setErr(res.error);
+      onDone(); // refresh → thumbnail + lightbox เห็นรูปใหม่
+    });
+  }
+  // ลบรูปตู้ (photoUrl = null)
+  function onRemove() {
+    setErr(null);
+    setSaving(true);
+    start(async () => {
+      const res = await setCfMachinePhoto(m.id, null);
+      setSaving(false);
+      if (!res.ok) return setErr(res.error);
+      onDone();
+    });
+  }
+
+  const busy = saving || pending;
+
   return (
-    <Modal open onClose={onClose} width={640}
+    <Modal open onClose={() => !busy && onClose()} width={640}
       title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Camera size={16} color={BRAND} /> รูปตู้ · {m.code}{m.nickname ? ` (${m.nickname})` : ""}</span>}
       sub={m.kind === "EXCHANGER" ? "ตู้แลกเหรียญ" : "ตู้คีบ"}>
-      <div style={{ padding: 20 }}>
+      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
         {m.photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={m.photoUrl} alt={`รูปตู้ ${m.code}`} style={{ width: "100%", height: "auto", maxHeight: "70vh", objectFit: "contain", borderRadius: 12, background: "#F8F9FB", display: "block", margin: "0 auto" }} />
+          <img src={m.photoUrl} alt={`รูปตู้ ${m.code}`} style={{ width: "100%", height: "auto", maxHeight: "62vh", objectFit: "contain", borderRadius: 12, background: "#F8F9FB", display: "block", margin: "0 auto" }} />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "44px 20px", color: "#9AA1AB", background: "#F8F9FB", borderRadius: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "40px 20px", color: "#9AA1AB", background: "#F8F9FB", borderRadius: 12 }}>
             <ImageOff size={38} style={{ opacity: 0.6 }} />
             <div style={{ fontSize: 13.5, fontWeight: 600, color: "#5A6270" }}>ยังไม่มีรูปตู้</div>
-            <div style={{ fontSize: 12, textAlign: "center", maxWidth: 320 }}>รูปตู้จะถูกบันทึกอัตโนมัติเมื่อแม่บ้านถ่ายรูปตู้ตอนตั้งค่าครั้งแรก (baseline) ในมือถือ</div>
+            <div style={{ fontSize: 12, textAlign: "center", maxWidth: 340 }}>แนบรูปตู้ได้เลยด้านล่าง — หรือรูปจะถูกบันทึกอัตโนมัติเมื่อแม่บ้านถ่ายรูปตู้ตอนตั้งค่าครั้งแรก (baseline) ในมือถือ</div>
           </div>
+        )}
+
+        {/* ── แนบ/เปลี่ยน/ลบ รูป (แอดมินเท่านั้น · server assert ซ้ำ) ── */}
+        {isAdmin ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <PhotoCaptureButton
+              // key = photoUrl → รีเซ็ต state ปุ่มเมื่อรูปเปลี่ยน (ให้กด "เปลี่ยนรูป" ซ้ำได้)
+              key={m.photoUrl ?? "none"}
+              label={m.photoUrl ? "เปลี่ยนรูปตู้" : "แนบรูปตู้"}
+              value="" // จัดการ persist เอง (onChange) — ไม่ให้ปุ่มถือ url ค้าง
+              onChange={onUploaded}
+              orgId={orgId}
+              machineCode={m.code}
+              // ไม่ผูกกับรอบเก็บเงินจริง (ไม่ใช่ uuid session) → route ไม่ล็อกสิทธิ์รอบ · คีย์รูปแยกเส้นทาง
+              eventScopeId={`machine-photo-${m.id}`}
+              phase="machine"
+            />
+            {m.photoUrl && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <GhostBtn tone="danger" onClick={onRemove} disabled={busy}>
+                  <Trash2 size={13} /> {busy ? "กำลังบันทึก…" : "ลบรูปนี้"}
+                </GhostBtn>
+              </div>
+            )}
+            {saving && <div style={{ fontSize: 12, color: "#6B7280" }}>กำลังบันทึกรูปเข้าตู้…</div>}
+            {err && <ErrBox msg={err} />}
+          </div>
+        ) : (
+          !m.photoUrl && <div style={{ fontSize: 12, color: "#9AA1AB" }}>การแนบรูปตู้ต้องเป็นแอดมิน</div>
         )}
       </div>
     </Modal>

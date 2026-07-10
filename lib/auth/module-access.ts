@@ -27,6 +27,87 @@ const MODULE_SLUGS = new Set<ModuleSlug>(
   Object.keys(MODULES) as ModuleSlug[],
 );
 
+const CLAWFLEET_SLUG: ModuleSlug = "clawfleet";
+
+/**
+ * Self-healing ClawFleet entitlement.
+ *
+ * A user assigned to an active claw_machine branch must always be able to use
+ * ClawFleet. Historically the staff-invite + invite-accept flow granted the
+ * `role` + `user_branches` row but NEVER wrote the `user_modules[clawfleet]`
+ * grant — so freshly invited field staff landed on an EMPTY hub home (no
+ * program shown) and hit /403 when opening the ClawFleet app. This derives the
+ * grant from branch assignment and persists it (idempotent upsert), so:
+ *   - existing stuck staff heal on their very next page load, and
+ *   - every future invite is covered — no migration or backfill required.
+ *
+ * Only runs when clawfleet isn't already granted, and never breaks the render
+ * path: any failure is swallowed (the user simply keeps their current access).
+ */
+async function grantClawfleetIfBranchAssigned(
+  admin: ReturnType<typeof adminClient>,
+  user: DbUser,
+  modules: Set<ModuleSlug>,
+): Promise<void> {
+  if (!MODULE_SLUGS.has(CLAWFLEET_SLUG)) return; // module not registered
+  try {
+    // Active branch assignments for this user.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ub } = await (admin.from as any)("user_branches")
+      .select("branch_id")
+      .eq("org_id", user.org_id)
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+    const branchIds = ((ub ?? []) as Array<{ branch_id: string }>).map(
+      (r) => r.branch_id,
+    );
+    if (branchIds.length === 0) return;
+
+    // Is any assigned branch a claw-machine branch?
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: claw } = await (admin.from as any)("branches")
+      .select("id")
+      .eq("org_id", user.org_id)
+      .eq("business_type", "claw_machine")
+      .eq("is_active", true)
+      .in("id", branchIds)
+      .limit(1);
+    if (!claw || (claw as unknown[]).length === 0) return;
+
+    // Persist the grant — but PRESERVE an existing row's role: reactivating a
+    // previously-deactivated grant must NOT demote a program-admin (role='admin')
+    // back to 'member'. Check first → reactivate in place (role untouched) OR
+    // insert a fresh member grant.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingGrant } = await (admin.from as any)("user_modules")
+      .select("id, is_active")
+      .eq("org_id", user.org_id)
+      .eq("user_id", user.id)
+      .eq("module_name", CLAWFLEET_SLUG)
+      .maybeSingle();
+    if (existingGrant) {
+      if (!existingGrant.is_active) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin.from as any)("user_modules")
+          .update({ is_active: true, updated_at: new Date().toISOString() })
+          .eq("id", existingGrant.id);
+      }
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin.from as any)("user_modules").insert({
+        org_id: user.org_id,
+        user_id: user.id,
+        module_name: CLAWFLEET_SLUG,
+        is_active: true,
+        role: "member",
+      });
+    }
+    modules.add(CLAWFLEET_SLUG);
+  } catch {
+    // Self-heal is best-effort — never block a page render on it.
+  }
+}
+
 /**
  * Returns the set of modules the user can access. Admin tier sees all
  * known modules unconditionally; everyone else gets only the modules
@@ -53,6 +134,13 @@ async function loadUserModulesUncached(
       modules.add(row.module_name as ModuleSlug);
     }
   }
+
+  // Self-heal ClawFleet access for field staff assigned to a claw-machine
+  // branch (see grantClawfleetIfBranchAssigned). Skipped if already granted.
+  if (!modules.has(CLAWFLEET_SLUG)) {
+    await grantClawfleetIfBranchAssigned(admin, user, modules);
+  }
+
   return modules;
 }
 

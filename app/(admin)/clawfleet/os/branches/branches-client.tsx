@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck } from "lucide-react";
-import { Kpi, IconBox, Pill, Card, Modal } from "@/components/clawfleet/os/kit";
+import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import { reassignCfMachineBranch } from "@/lib/clawfleet/actions";
 
@@ -36,18 +36,6 @@ export type MachineOption = {
 };
 export type BranchOption = { id: string; name: string; code: string };
 
-/* ── sample fallback (เมื่อ DB ว่าง) — ตัวเลข/สาขาแนวเดียวกับ dashboard ── */
-const SAMPLE_BRANCHES: BranchRow[] = [
-  { branchId: "s1", code: "RS", name: "รังสิต", machines: 12, dolls: 168, revenue: 70300, profit: 41200, avgWin: 168, flag: "LOW", dots: [] },
-  { branchId: "s2", code: "LP", name: "ลาดพร้าว", machines: 10, dolls: 142, revenue: 61000, profit: 36800, avgWin: 215, flag: "GOOD", dots: [] },
-  { branchId: "s3", code: "BK", name: "บางแค", machines: 11, dolls: 121, revenue: 58500, profit: 30900, avgWin: 242, flag: "GOOD", dots: [] },
-  { branchId: "s4", code: "BN", name: "บางนา", machines: 9, dolls: 98, revenue: 52400, profit: 28100, avgWin: 268, flag: "AMBER", dots: [] },
-  { branchId: "s5", code: "NB", name: "นนทบุรี", machines: 8, dolls: 64, revenue: 44800, profit: 19500, avgWin: 410, flag: "HIGH", dots: [] },
-  { branchId: "s6", code: "PT", name: "ปทุมธานี", machines: 10, dolls: 110, revenue: 49200, profit: 21300, avgWin: 198, flag: "GOOD", dots: [] },
-  { branchId: "s7", code: "SP", name: "สมุทรปราการ", machines: 7, dolls: 88, revenue: 38900, profit: 17600, avgWin: 178, flag: "LOW", dots: [] },
-  { branchId: "s8", code: "MB", name: "มีนบุรี", machines: 9, dolls: 95, revenue: 42600, profit: 22700, avgWin: 225, flag: "GOOD", dots: [] },
-];
-
 /* ── per-machine status dots — ใช้ "สถานะตู้จริง" จาก server (cfMachine) เท่านั้น ──
  * ถ้าสาขาไม่มีข้อมูลตู้จริง (dots ว่าง) จะ "ไม่แสดง" แถบจุด — ไม่จำลอง เพื่อไม่ให้เข้าใจผิดว่าตู้สุขภาพดี/เสีย */
 type DotKind = "good" | "warn" | "broken";
@@ -75,34 +63,29 @@ export function BranchesClient({
   branchOptions?: BranchOption[];
 }) {
   const empty = branches.length === 0;
-  const rows = empty ? SAMPLE_BRANCHES : branches;
+  // ห้าม fallback SAMPLE — ใช้ข้อมูลจริงเสมอ · ว่าง = โชว์ empty-state
+  const rows = branches;
   const [openId, setOpenId] = useState<string | null>(null);
 
   const totMachines = rows.reduce((s, b) => s + b.machines, 0);
   const totRevenue = rows.reduce((s, b) => s + b.revenue, 0);
   const problem = rows.filter((b) => b.flag === "HIGH" || b.flag === "LOSS" || b.flag === "AMBER").length;
 
+  // ว่างจริง (ยังไม่มีสาขา) → โชว์ empty-state ตรง ๆ · ไม่เรนเดอร์ KPI/การ์ดที่เต็มไปด้วยเลข 0
+  if (empty) {
+    return (
+      <div>
+        <EmptyState
+          icon={<Store size={30} />}
+          title="ยังไม่มีสาขา"
+          sub="เพิ่มสาขาตู้คีบ + ผูกตู้เข้าสาขา เพื่อเริ่มเก็บเงิน"
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
-      {empty && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            background: "#FCF8EC",
-            border: "1px solid #F0E2BE",
-            borderRadius: 10,
-            padding: "9px 14px",
-            marginBottom: 16,
-            fontSize: 12,
-            color: "#7A5510",
-          }}
-        >
-          <AlertTriangle size={15} /> ยังไม่มีข้อมูลจริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ (จะเปลี่ยนเป็นข้อมูลจริงเมื่อเริ่มเก็บเงิน)
-        </div>
-      )}
-
       {/* ── 4 KPI summary cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
         <Kpi icon={<Store size={16} />} label="สาขาทั้งหมด" value={`${num(rows.length)} สาขา`} delta="ทั่วกรุงเทพฯ–ปริมณฑล" deltaColor="#9AA1AB" />
