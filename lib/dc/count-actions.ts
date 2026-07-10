@@ -83,6 +83,7 @@ export type CountProductRow = {
   category: string | null;
   unit: string | null;
   systemQty: number;
+  imageUrl: string | null; // รูปสินค้า (resolve เป็น URL เต็มฝั่ง server แล้ว) · null = ไม่มีรูป
 };
 
 export type ListProductsForCountResult =
@@ -134,6 +135,7 @@ export async function listProductsForCount(input: {
         name: true,
         category: true,
         unit: true,
+        imageR2Path: true,
         // ดึงเฉพาะ balance ของคลังที่นับ → systemQty
         balances: {
           where: { warehouseId: input.warehouseId },
@@ -142,6 +144,11 @@ export async function listProductsForCount(input: {
         },
       },
     });
+
+    // resolve รูปเป็น URL เต็มฝั่ง server (client อ่าน env ไม่ได้)
+    const r2Public = process.env.R2_PUBLIC_URL ?? "";
+    const toImageUrl = (key: string | null): string | null =>
+      !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
 
     return {
       ok: true,
@@ -155,6 +162,7 @@ export async function listProductsForCount(input: {
           category: p.category,
           unit: p.unit,
           systemQty: p.balances[0]?.qtyOnHand ?? 0,
+          imageUrl: toImageUrl(p.imageR2Path),
         })),
     };
   } catch (e) {

@@ -18,7 +18,7 @@
 //   • รายการนับ = ตารางอ่านง่าย (สินค้า | ระบบมี | นับได้ | ส่วนต่าง)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudOff, RefreshCw, Trash2, Check, List, Search, X, Plus } from "lucide-react";
+import { CloudOff, RefreshCw, Trash2, Check, List, Search, X, Plus, ImageIcon, CheckCheck } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import {
   lookupForCount,
@@ -37,6 +37,7 @@ type CountLine = {
   systemQty: number | null; // ยอดในระบบ ณ ตอน lookup (null = ยังไม่รู้)
   countedQty: number;
   resolving: boolean; // กำลัง lookup อยู่ (online)
+  imageUrl?: string | null; // รูปสินค้า (จากตาราง "ดูสินค้าทั้งหมด") — โชว์รูปเล็กในแถวนับ
 };
 
 const STORAGE_PREFIX = "dc.count.buffer.";
@@ -178,7 +179,7 @@ export function CountWorkspace({
   // ---- เพิ่มบรรทัดนับจากสินค้าที่ resolve แล้ว (ใช้ร่วมกันทั้งสแกน online + กดเลือกจากตาราง) ----
   // ★ tap-add จากตาราง = สแกน-add: สร้างบรรทัดนับด้วย productId + systemQty (ค่าเริ่ม countedQty = systemQty)
   const addProductLine = useCallback(
-    (p: { productId: string; sku: string; name: string; unit: string | null; systemQty: number }): "added" | "exists" => {
+    (p: { productId: string; sku: string; name: string; unit: string | null; systemQty: number; imageUrl?: string | null }): "added" | "exists" => {
       const exists = linesRef.current.find((l) => l.productId === p.productId);
       if (exists) {
         setToast({ kind: "ok", msg: `มีรายการ "${p.name}" อยู่แล้ว — แก้จำนวนได้เลย` });
@@ -193,6 +194,7 @@ export function CountWorkspace({
         systemQty: p.systemQty,
         countedQty: p.systemQty, // default = ยอดในระบบ
         resolving: false,
+        imageUrl: p.imageUrl ?? null,
       };
       setLines((prev) => [line, ...prev]);
       return "added";
@@ -467,17 +469,22 @@ function CountSheetRow({
   return (
     <tr>
       {/* สินค้า */}
-      <td style={{ ...tdBase, paddingLeft: 14, minWidth: 180 }}>
-        <div style={{ fontWeight: 700, color: "var(--dc-ink)", lineHeight: 1.25 }}>
-          {line.name ?? line.code}
-          {!resolved && (
-            <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: "#b07b15" }}>
-              · รอหาตอนซิงค์
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>
-          รหัส {line.code}
+      <td style={{ ...tdBase, paddingLeft: 12, minWidth: 180 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Thumb url={line.imageUrl} size={38} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, color: "var(--dc-ink)", lineHeight: 1.25 }}>
+              {line.name ?? line.code}
+              {!resolved && (
+                <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, color: "#b07b15" }}>
+                  · รอหาตอนซิงค์
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>
+              รหัส {line.code}
+            </div>
+          </div>
         </div>
       </td>
 
@@ -563,7 +570,7 @@ function BrowseProductsSheet({
   warehouseName: string;
   inSheetIds: Set<string>;
   onClose: () => void;
-  onPick: (p: { productId: string; sku: string; name: string; unit: string | null; systemQty: number }) => "added" | "exists";
+  onPick: (p: { productId: string; sku: string; name: string; unit: string | null; systemQty: number; imageUrl?: string | null }) => "added" | "exists";
 }) {
   const [cats, setCats] = useState<string[]>([]);
   const [activeCat, setActiveCat] = useState<string>(""); // "" = ทุกหมวด
@@ -611,8 +618,21 @@ function BrowseProductsSheet({
   }, [warehouseId, activeCat, q]);
 
   const handlePick = (p: CountProductRow) => {
-    onPick({ productId: p.productId, sku: p.sku, name: p.name, unit: p.unit, systemQty: p.systemQty });
+    onPick({ productId: p.productId, sku: p.sku, name: p.name, unit: p.unit, systemQty: p.systemQty, imageUrl: p.imageUrl });
     setJustAdded((prev) => new Set(prev).add(p.productId));
+  };
+
+  // เลือกทั้งหมด (เฉพาะที่โชว์อยู่ในลิสต์ตอนนี้ + ยังไม่ถูกเลือก)
+  const notYet = products.filter((p) => !(inSheetIds.has(p.productId) || justAdded.has(p.productId)));
+  const pickAll = () => {
+    for (const p of notYet) {
+      onPick({ productId: p.productId, sku: p.sku, name: p.name, unit: p.unit, systemQty: p.systemQty, imageUrl: p.imageUrl });
+    }
+    setJustAdded((prev) => {
+      const next = new Set(prev);
+      for (const p of notYet) next.add(p.productId);
+      return next;
+    });
   };
 
   return (
@@ -725,6 +745,27 @@ function BrowseProductsSheet({
           </div>
         )}
 
+        {/* แถบ "เลือกทั้งหมด" (เลือกทุกตัวที่โชว์อยู่เข้าใบนับทีเดียว) */}
+        {!loading && !error && products.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 16px 10px" }}>
+            <span style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>{products.length} รายการ</span>
+            <button
+              type="button"
+              onClick={pickAll}
+              disabled={notYet.length === 0}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 10,
+                border: "1.5px solid var(--color-brand-600)",
+                background: notYet.length === 0 ? "var(--dc-canvas)" : "var(--color-brand-50, #eef4ff)",
+                color: notYet.length === 0 ? "var(--dc-muted)" : "var(--color-brand-700)",
+                fontWeight: 700, fontSize: 13, cursor: notYet.length === 0 ? "default" : "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              <CheckCheck size={15} /> เลือกทั้งหมด{notYet.length > 0 ? ` (${notYet.length})` : ""}
+            </button>
+          </div>
+        )}
+
         {/* product table */}
         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
           {loading ? (
@@ -750,11 +791,16 @@ function BrowseProductsSheet({
                     const added = inSheetIds.has(p.productId) || justAdded.has(p.productId);
                     return (
                       <tr key={p.productId}>
-                        <td style={{ padding: "10px 12px 10px 14px", borderBottom: "1px solid var(--dc-line)", minWidth: 180 }}>
-                          <div style={{ fontWeight: 650, fontSize: 14.5, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.name}</div>
-                          <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>
-                            {p.sku}
-                            {p.category ? ` · ${p.category}` : ""}
+                        <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--dc-line)", minWidth: 180 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Thumb url={p.imageUrl} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 650, fontSize: 14.5, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.name}</div>
+                              <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>
+                                {p.sku}
+                                {p.category ? ` · ${p.category}` : ""}
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td
@@ -845,5 +891,26 @@ function CatChip({ label, active, onClick }: { label: string; active: boolean; o
     >
       {label}
     </button>
+  );
+}
+
+// รูปสินค้าเล็ก (สี่เหลี่ยม · fallback ไอคอนถ้าไม่มีรูป) — ใช้ทั้งตารางเลือก + แถวที่นับ
+function Thumb({ url, size = 40 }: { url?: string | null; size?: number }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        flexShrink: 0, width: size, height: size, borderRadius: 8, overflow: "hidden",
+        background: "var(--dc-canvas, #f1f4f9)", border: "1px solid var(--dc-line)",
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        <ImageIcon size={Math.round(size * 0.42)} color="var(--dc-subtle, #9aa4b2)" />
+      )}
+    </span>
   );
 }
