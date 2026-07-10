@@ -37,6 +37,7 @@ export const FLOOR_TASKS: FloorTask[] = [
   { key: "move", href: "/dc/move", label: "ย้ายที่", hint: "ย้ายของระหว่างชั้นวาง", icon: "ArrowLeftRight", tone: "slate" },
   { key: "count", href: "/dc/count", label: "นับสต๊อก", hint: "นับรอบ · ทำงานตอนเน็ตหลุดได้", icon: "ClipboardCheck", tone: "amber" },
   { key: "issue", href: "/dc/issue", label: "เบิกออก", hint: "เบิกของ/อะไหล่ออกจากคลัง", icon: "PackageMinus", tone: "red" },
+  { key: "products", href: "/dc/products", label: "ดูสินค้า", hint: "ไล่ดูสินค้าทั้งหมด + รูป + คงเหลือ", icon: "Boxes", tone: "slate" },
   { key: "search", href: "/dc/search", label: "ค้นหา", hint: "ของชิ้นนี้อยู่ไหน เหลือเท่าไหร่", icon: "Search", tone: "slate" },
   { key: "labels", href: "/dc/labels", label: "ปริ้นฉลาก", hint: "พิมพ์ QR แปะสินค้า", icon: "QrCode", tone: "blue" },
 ];

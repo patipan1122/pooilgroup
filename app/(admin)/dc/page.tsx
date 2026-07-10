@@ -2,7 +2,7 @@
 import Link from "next/link";
 import {
   PackagePlus, Truck, ArrowLeftRight, ClipboardCheck,
-  PackageMinus, Search, QrCode, type LucideIcon,
+  PackageMinus, Search, QrCode, Boxes, type LucideIcon,
 } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage } from "@/lib/dc/role-guard";
@@ -13,7 +13,7 @@ import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
 export const dynamic = "force-dynamic";
 
 const ICONS: Record<string, LucideIcon> = {
-  PackagePlus, Truck, ArrowLeftRight, ClipboardCheck, PackageMinus, Search, QrCode,
+  PackagePlus, Truck, ArrowLeftRight, ClipboardCheck, PackageMinus, Search, QrCode, Boxes,
 };
 
 export default async function DcFloorHome() {
