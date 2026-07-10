@@ -39,6 +39,7 @@ export function MoveWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [lastMoveId, setLastMoveId] = useState<string | null>(null); // ไว้พิมพ์ใบย้ายล่าสุด
 
   const lookingRef = useRef(false);
 
@@ -105,6 +106,7 @@ export function MoveWorkspace({
         return;
       }
       showToast(`ย้าย ${picked.name} ไป ${res.location} แล้ว`);
+      setLastMoveId(res.moveId); // เก็บไว้พิมพ์ใบย้าย
       // พร้อมสแกนตัวถัดไป
       setPicked(null);
       setToLocation("");
@@ -246,6 +248,18 @@ export function MoveWorkspace({
                 : "ย้ายที่"}
           </button>
         </div>
+      )}
+
+      {/* พิมพ์ใบย้ายล่าสุด (โผล่หลังย้ายสำเร็จ) */}
+      {lastMoveId && (
+        <a
+          href={`/dc/office/moves/${lastMoveId}/print`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, alignSelf: "center", minHeight: 46, padding: "0 20px", borderRadius: 12, border: "1.5px solid #c9d8f0", background: "linear-gradient(180deg,#f5f9ff,#eef3fb)", color: "#1d4ed8", fontSize: 15, fontWeight: 700, textDecoration: "none" }}
+        >
+          🖨️ พิมพ์ใบย้ายล่าสุด
+        </a>
       )}
 
       {/* toast สำเร็จ */}

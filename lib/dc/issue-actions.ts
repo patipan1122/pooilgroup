@@ -15,7 +15,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { canDcFloor } from "@/lib/dc/role-guard";
 import { assertWarehouseAllowed } from "@/lib/dc/access";
-import { sourceKey } from "@/lib/dc/codes";
+import { sourceKey, genCode } from "@/lib/dc/codes";
 import { prisma } from "@/lib/prisma";
 import { DcMoveKind } from "@/lib/generated/prisma/enums";
 import { recordMovement, findProductByCode, getOnHand } from "@/lib/dc/stock";
@@ -27,6 +27,43 @@ async function requireFloor(): Promise<{ orgId: string; userId: string }> {
     throw new Error("ไม่มีสิทธิ์ทำงานหน้าคลัง");
   }
   return { orgId: session.user.org_id, userId: session.user.id };
+}
+
+/**
+ * สร้าง/หา "หัวใบเบิก" แบบ idempotent ด้วย batchKey (เซ็ตของบรรทัดที่เบิก).
+ * กดเบิกซ้ำ (ชุดเดิม) → คืนใบเดิม ไม่สร้างซ้ำ. ชน unique (race) → อ่านซ้ำ.
+ */
+async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string> {
+  const existing = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+  if (existing) return existing.id;
+  try {
+    const created = await prisma.dcIssue.create({
+      data: { orgId, issueCode: genCode("ISS"), warehouseId, batchKey, actorUserId: userId },
+      select: { id: true },
+    });
+    return created.id;
+  } catch {
+    const again = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+    if (again) return again.id;
+    throw new Error("สร้างหัวใบเบิกไม่สำเร็จ");
+  }
+}
+
+/** สร้าง/หา "หัวใบย้าย" แบบ idempotent ด้วย batchKey. */
+async function ensureMoveHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string> {
+  const existing = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+  if (existing) return existing.id;
+  try {
+    const created = await prisma.dcMove.create({
+      data: { orgId, moveCode: genCode("MOV"), warehouseId, batchKey, actorUserId: userId },
+      select: { id: true },
+    });
+    return created.id;
+  } catch {
+    const again = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
+    if (again) return again.id;
+    throw new Error("สร้างหัวใบย้ายไม่สำเร็จ");
+  }
 }
 
 /** อ่านตำแหน่งจัดเก็บปัจจุบันของสินค้าในคลัง (null ถ้ายังไม่เคยกำหนด). */
@@ -106,7 +143,7 @@ export type PostIssueInput = {
 };
 
 export type PostIssueResult =
-  | { ok: true; posted: number; failed: { productId: string; error: string }[] }
+  | { ok: true; posted: number; failed: { productId: string; error: string }[]; issueId: string }
   | { ok: false; error: string };
 
 /**
@@ -143,6 +180,10 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
     return true;
   });
 
+  // สร้าง "หัวใบเบิก" ก่อน (idempotent · batchKey = เซ็ตของ lineKeys ที่เบิก) → ผูก movement เข้าใบ
+  const batchKey = "issue:" + uniqueLines.map((l) => l.lineKey).sort().join(",");
+  const issueId = await ensureIssueHeader(orgId, warehouseId, batchKey, userId);
+
   const failed: { productId: string; error: string }[] = [];
   let posted = 0;
 
@@ -157,7 +198,8 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
       kind: DcMoveKind.ISSUE,
       qty: -Math.abs(qty), // เบิกออก = ติดลบ
       sourceKey: sourceKey("issue", line.lineKey),
-      refType: "floor_issue",
+      refType: "dc_issue", // ผูกกับหัวใบเบิก (เดิม floor_issue) → พิมพ์เป็นเอกสารได้
+      refId: issueId,
       note: reason || "เบิกออก",
       actorUserId: userId,
     });
@@ -170,7 +212,7 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
     posted += 1;
   }
 
-  return { ok: true, posted, failed };
+  return { ok: true, posted, failed, issueId };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -225,7 +267,7 @@ export async function lookupForMove(args: {
 }
 
 export type MoveLocationResult =
-  | { ok: true; location: string }
+  | { ok: true; location: string; moveId: string }
   | { ok: false; error: string };
 
 /**
@@ -262,6 +304,9 @@ export async function moveLocation(args: {
 
   const from = await getLocation(warehouseId, productId);
 
+  // สร้าง "หัวใบย้าย" (idempotent · batchKey = lineKey) → ผูก movement เข้าใบ
+  const moveId = await ensureMoveHeader(orgId, warehouseId, "move:" + lineKey, userId);
+
   const res = await recordMovement({
     orgId,
     warehouseId,
@@ -271,11 +316,12 @@ export async function moveLocation(args: {
     locationFrom: from,
     locationTo: toLocation,
     sourceKey: sourceKey("move", lineKey),
-    refType: "floor_move",
+    refType: "dc_move", // ผูกกับหัวใบย้าย (เดิม floor_move)
+    refId: moveId,
     note: from ? `ย้าย ${from} → ${toLocation}` : `ตั้งตำแหน่ง ${toLocation}`,
     actorUserId: userId,
   });
 
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, location: toLocation };
+  return { ok: true, location: toLocation, moveId };
 }

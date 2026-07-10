@@ -73,6 +73,7 @@ export function IssueWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [lastIssueId, setLastIssueId] = useState<string | null>(null); // ไว้พิมพ์ใบเบิกล่าสุด
   // รายการที่เบิกไม่ผ่าน (เช่น สต๊อกไม่พอ) จากรอบล่าสุด — โชว์ให้ผู้ใช้รู้
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
@@ -177,6 +178,7 @@ export function IssueWorkspace({
         error: f.error,
       }));
       setFailedNotes(failed);
+      if (res.posted > 0) setLastIssueId(res.issueId); // เก็บไว้พิมพ์ใบเบิก
 
       if (failed.length === 0) {
         setLines([]);
@@ -365,6 +367,18 @@ export function IssueWorkspace({
           <PackageMinus size={20} />
           {busy ? "กำลังบันทึก…" : `ยืนยันเบิกออก (${totalQty} ชิ้น)`}
         </button>
+      )}
+
+      {/* พิมพ์ใบเบิกล่าสุด (โผล่หลังเบิกสำเร็จ) */}
+      {lastIssueId && (
+        <a
+          href={`/dc/office/issues/${lastIssueId}/print`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, alignSelf: "center", minHeight: 46, padding: "0 20px", borderRadius: 12, border: "1.5px solid #c9d8f0", background: "linear-gradient(180deg,#f5f9ff,#eef3fb)", color: "#1d4ed8", fontSize: 15, fontWeight: 700, textDecoration: "none" }}
+        >
+          🖨️ พิมพ์ใบเบิกล่าสุด
+        </a>
       )}
 
       {/* toast สำเร็จ */}

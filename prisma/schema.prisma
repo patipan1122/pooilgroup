@@ -8118,6 +8118,46 @@ model DcPurchaseOrder {
   @@schema("dc")
 }
 
+// หัว "ใบเบิกออก" — 1 การเบิก (batch) = 1 ใบ (มีเลขที่). รายการในใบ = DcStockMovement
+// ที่ refType="dc_issue" refId=this.id (ไม่มี line table แยก · reconstruct จาก movement).
+// idempotent: batchKey (จาก lineKeys ที่เบิก) — กดซ้ำ = ใบเดิม.
+model DcIssue {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  issueCode   String   @map("issue_code")
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  batchKey    String   @map("batch_key")
+  note        String?
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  issuedAt    DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([orgId, issueCode])
+  @@unique([orgId, batchKey])
+  @@index([orgId, issuedAt(sort: Desc)])
+  @@map("issues")
+  @@schema("dc")
+}
+
+// หัว "ใบย้ายที่" — 1 การย้าย = 1 ใบ. รายการ = DcStockMovement refType="dc_move" refId=this.id.
+model DcMove {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  moveCode    String   @map("move_code")
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  batchKey    String   @map("batch_key")
+  note        String?
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  movedAt     DateTime @default(now()) @map("moved_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([orgId, moveCode])
+  @@unique([orgId, batchKey])
+  @@index([orgId, movedAt(sort: Desc)])
+  @@map("moves")
+  @@schema("dc")
+}
+
 // บันทึกการจ่ายเงินต่อใบสั่งซื้อ (ledger · audit-trail ใคร/เมื่อไร/เท่าไร).
 // ใช้เป็น "ด่าน" — มีแถว GOODS แล้วจึงเลื่อนถึงโกดังได้ · มีแถว THAI_FREIGHT แล้วจึงรับเข้าได้.
 model DcPoPayment {
