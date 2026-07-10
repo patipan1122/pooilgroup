@@ -26,6 +26,20 @@ import {
 
 export type DestWarehouseOption = { id: string; name: string };
 
+// ★ handoff keys (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
+const PO_HANDOFF_KEY = "dc.pohandoff";
+const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
+
+// มี handoff ค้างใน sessionStorage ไหม (ใช้ force แท็บ "ส่ง/โอน" ตอน mount)
+function hasHandoff(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return !!(window.sessionStorage.getItem(PO_HANDOFF_KEY) || window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY));
+  } catch {
+    return false;
+  }
+}
+
 type Line = {
   lineKey: string;
   productId: string;
@@ -94,6 +108,11 @@ export function FloorTransferMove({
   r2PublicUrl?: string;
 }) {
   const [tab, setTab] = useState<"move" | "transfer">(initialTab);
+
+  // มี handoff (โอน/ตัดจ่าย จากหน้าสินค้า) → บังคับแท็บ "ส่ง/โอน" เพื่อให้ TransferDispatch รับของ
+  useEffect(() => {
+    if (hasHandoff()) setTab("transfer");
+  }, []);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -257,6 +276,40 @@ export function TransferDispatch({
   const clearPoRef = useCallback(() => {
     setSelectedPoId(null);
     setSelectedPoCode(null);
+  }, []);
+
+  // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
+  //   PO handoff → handlePoConfirm(sel) เดิม · general product handoff → addProduct loop (qty default 1)
+  //   ★ prefill = convenience default เท่านั้น: dispatchTransfer re-fetch getPoFulfillment + recordMovement
+  //     guard on-hand จริงฝั่ง server → prefilled qty ไม่ใช่ตัวเลข authoritative (house rule money-preview-must-match-server)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const poRaw = window.sessionStorage.getItem(PO_HANDOFF_KEY);
+      if (poRaw) {
+        const sel = JSON.parse(poRaw) as PoMoveSelection;
+        if (sel && Array.isArray(sel.lines) && sel.lines.length > 0) {
+          handlePoConfirm(sel);
+        }
+        window.sessionStorage.removeItem(PO_HANDOFF_KEY);
+        return; // PO handoff ชนะ (มีทั้งคู่ = ไม่ควรเกิด แต่กันไว้)
+      }
+      const prodRaw = window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY);
+      if (prodRaw) {
+        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string }[] };
+        if (parsed && Array.isArray(parsed.lines)) {
+          for (const l of parsed.lines) {
+            // general handoff ไม่มียอด/onHand จริง → ใส่ onHand=0 (จอเตือน "เหลือ 0" · server เป็นคนตัดสิน)
+            addProduct({ id: l.productId, sku: l.sku, name: l.name, unit: l.unit, onHand: 0 });
+          }
+        }
+        window.sessionStorage.removeItem(PRODUCT_HANDOFF_KEY);
+      }
+    } catch {
+      /* handoff เสีย → เมินเงียบ (ผู้ใช้เพิ่มเองได้) */
+    }
+    // mount-once: hydrate ครั้งเดียวตอนเข้าหน้า
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleScan = useCallback(

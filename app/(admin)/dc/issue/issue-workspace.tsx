@@ -18,6 +18,10 @@ import {
   type CountProductRow,
 } from "@/lib/dc/count-actions";
 
+// ★ handoff keys (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
+const PO_HANDOFF_KEY = "dc.pohandoff";
+const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
+
 type Line = {
   lineKey: string;
   productId: string;
@@ -215,6 +219,40 @@ export function IssueWorkspace({
   const clearPoRef = useCallback(() => {
     setSelectedPoId(null);
     setSelectedPoCode(null);
+  }, []);
+
+  // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
+  //   PO handoff → handlePoConfirm(sel) เดิม · general product handoff → addPickedProduct loop (qty default 1)
+  //   ★ prefill = convenience default เท่านั้น: postIssue re-fetch getPoFulfillment + guard on-hand จริงฝั่ง server
+  //     → prefilled qty ไม่ authoritative (house rule money-preview-must-match-server)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const poRaw = window.sessionStorage.getItem(PO_HANDOFF_KEY);
+      if (poRaw) {
+        const sel = JSON.parse(poRaw) as PoMoveSelection;
+        if (sel && Array.isArray(sel.lines) && sel.lines.length > 0) {
+          handlePoConfirm(sel);
+        }
+        window.sessionStorage.removeItem(PO_HANDOFF_KEY);
+        return; // PO handoff ชนะ
+      }
+      const prodRaw = window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY);
+      if (prodRaw) {
+        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string }[] };
+        if (parsed && Array.isArray(parsed.lines)) {
+          for (const l of parsed.lines) {
+            // general handoff ไม่มียอดจริง → systemQty=0 (จอเตือน "มีอยู่ 0" · server เป็นคนตัดสิน)
+            addPickedProduct({ productId: l.productId, sku: l.sku, name: l.name, unit: l.unit, category: null, systemQty: 0, imageUrl: null });
+          }
+        }
+        window.sessionStorage.removeItem(PRODUCT_HANDOFF_KEY);
+      }
+    } catch {
+      /* handoff เสีย → เมินเงียบ */
+    }
+    // mount-once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setQty = useCallback((lineKey: string, qty: number) => {

@@ -64,6 +64,7 @@ export default async function DcProductsPage() {
           warehouseName={ctx.activeWarehouse.name}
           categories={categories}
           initialProducts={initialProducts}
+          r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
         />
       )}
     </div>

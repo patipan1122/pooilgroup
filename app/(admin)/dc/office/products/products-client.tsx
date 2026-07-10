@@ -2,10 +2,15 @@
 
 // DC Redesign v2 · หน้าสินค้า (เนื้อใน) — การ์ด / ตาราง / กรองหมวด / ค้นหา / สแกน.
 // ตรงตาม prototype DC Redesign v2.dc.html (isProducts) + เพิ่มมุมมอง "ตาราง" (CEO ขอ).
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { DcThumb, DcLightbox } from "@/components/dc/product-image";
+
+// ★ handoff → หน้าโอน/เบิก ผ่าน sessionStorage (convenience default — ปลายทาง re-resolve จริง server)
+//   carry แค่ id + label (ไม่มี qty; general handoff = qty default 1 ที่ปลายทาง)
+const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
 
 type SvgProps = { size?: number; sw?: number; stroke?: string; fill?: string; children: React.ReactNode };
 function Svg({ size = 16, sw = 1.8, stroke = "currentColor", fill = "none", children }: SvgProps) {
@@ -44,13 +49,42 @@ export function ProductsClient({
   products,
   headerExtra,
 }: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number; headerExtra?: React.ReactNode }) {
+  const router = useRouter();
   const [view, setView] = useState<"grid" | "table">("grid");
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
   const [showSoldOut, setShowSoldOut] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // เลือกหลายชิ้น — สะสมข้ามหมวด/ค้นหา (เก็บ id ไว้ ไม่ล้างตอนเปลี่ยน filter)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // stash แถวที่ให้ไป → หน้าโอน/เบิก (carry แค่ id + label · ไม่มี qty → ปลายทาง default 1)
+  const stashAndGo = useCallback(
+    (rows: ProductRow[], target: "transfer" | "issue") => {
+      if (rows.length === 0) return;
+      const payload = {
+        lines: rows.map((p) => ({ productId: p.id, sku: p.sku, name: p.name, unit: p.unit })),
+      };
+      try {
+        window.sessionStorage.setItem(PRODUCT_HANDOFF_KEY, JSON.stringify(payload));
+      } catch {
+        /* private mode / quota — ปล่อยผ่าน */
+      }
+      router.push(target === "transfer" ? "/dc/transfer" : "/dc/issue");
+    },
+    [router],
+  );
 
   // ซ่อนสินค้าที่คงเหลือ = 0 (ของใช้แล้วหมดไป · ซื้อ/สร้างใหม่เสมอ) — กด "แสดงของหมด" ดูได้
   const soldOutCount = products.reduce((n, p) => n + (p.onhand <= 0 ? 1 : 0), 0);
@@ -177,10 +211,78 @@ export function ProductsClient({
             : "ไม่พบสินค้าที่ตรงกับเงื่อนไข"}
         </div>
       ) : view === "grid" ? (
-        <GridView rows={filtered} />
+        <GridView rows={filtered} selected={selected} onToggle={toggleSelect} onStash={stashAndGo} />
       ) : (
-        <TableView rows={filtered} />
+        <TableView rows={filtered} selected={selected} onToggle={toggleSelect} onStash={stashAndGo} />
       )}
+
+      {/* แถบเลือกหลายชิ้น (ติดล่าง) — โอน / ตัดจ่าย ทีเดียวหลายรายการ */}
+      {selected.size > 0 && (
+        <SelectionBar
+          count={selected.size}
+          onClear={() => setSelected(new Set())}
+          onTransfer={() => stashAndGo(products.filter((p) => selected.has(p.id)), "transfer")}
+          onIssue={() => stashAndGo(products.filter((p) => selected.has(p.id)), "issue")}
+        />
+      )}
+    </div>
+  );
+}
+
+// แถบล่างเลือกหลายชิ้น (.dcx tokens ให้เข้าหน้านี้)
+function SelectionBar({
+  count,
+  onClear,
+  onTransfer,
+  onIssue,
+}: {
+  count: number;
+  onClear: () => void;
+  onTransfer: () => void;
+  onIssue: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 40,
+        background: "#fff",
+        borderTop: "1px solid var(--border)",
+        padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+        boxShadow: "0 -6px 20px rgba(20,40,90,.08)",
+      }}
+    >
+      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ink)" }}>เลือก {count} รายการ</span>
+      <button
+        type="button"
+        onClick={onClear}
+        style={{ background: "none", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 12px", fontSize: 13, fontWeight: 600, color: "var(--ink2)", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        ล้าง
+      </button>
+      <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+        <button
+          type="button"
+          onClick={onIssue}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#FDECEC", color: "#C0392B", border: "1px solid #F3C9C4", borderRadius: 10, padding: "10px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          <Svg size={15}>{IcIssue}</Svg>ตัดจ่าย ({count})
+        </button>
+        <button
+          type="button"
+          onClick={onTransfer}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--primary)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 2px 6px rgba(31,79,214,.25)" }}
+        >
+          <Svg size={15}>{IcTransfer}</Svg>โอน ({count})
+        </button>
+      </div>
     </div>
   );
 }
@@ -206,19 +308,44 @@ function CoverImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
-function GridView({ rows }: { rows: ProductRow[] }) {
+function GridView({
+  rows,
+  selected,
+  onToggle,
+  onStash,
+}: {
+  rows: ProductRow[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onStash: (rows: ProductRow[], target: "transfer" | "issue") => void;
+}) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(152px,1fr))", gap: 12, marginTop: 14 }}>
-      {rows.map((p) => (
-        <div key={p.id} className="dcx-card">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(152px,1fr))", gap: 12, marginTop: 14, paddingBottom: 72 }}>
+      {rows.map((p) => {
+        const on = selected.has(p.id);
+        return (
+        <div key={p.id} className="dcx-card" style={on ? { outline: "2px solid var(--primary)", outlineOffset: -1 } : undefined}>
           <div style={{ position: "relative", aspectRatio: "1.35", background: p.catSoft, display: "flex", alignItems: "center", justifyContent: "center", color: p.catC, overflow: "hidden" }}>
             {p.imageUrl ? (
               <CoverImage url={p.imageUrl} alt={p.name} />
             ) : (
               <Svg size={40} sw={1.4}>{IcImage}</Svg>
             )}
+            {/* checkbox เลือกหลายชิ้น */}
+            <label
+              onClick={(e) => e.stopPropagation()}
+              style={{ position: "absolute", top: 6, right: 6, display: "grid", placeItems: "center", width: 28, height: 28, borderRadius: 8, background: "rgba(255,255,255,.9)", cursor: "pointer" }}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => onToggle(p.id)}
+                aria-label={`เลือก ${p.name}`}
+                style={{ width: 18, height: 18, cursor: "pointer" }}
+              />
+            </label>
             <span style={{ position: "absolute", top: 8, left: 8, fontSize: 10.5, fontWeight: 600, color: p.catC, background: p.catSoft, padding: "2px 8px", borderRadius: 6 }}>{p.catLabel}</span>
-            {p.low ? <span style={{ position: "absolute", top: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: "#DC5B53", padding: "2px 8px", borderRadius: 20 }}>ใกล้หมด</span> : null}
+            {p.low ? <span style={{ position: "absolute", bottom: 8, right: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: "#DC5B53", padding: "2px 8px", borderRadius: 20 }}>ใกล้หมด</span> : null}
           </div>
           <div style={{ padding: "12px 13px", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ lineHeight: 1.25 }}>
@@ -231,24 +358,36 @@ function GridView({ rows }: { rows: ProductRow[] }) {
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", borderTop: "1px solid var(--border)" }}>
-            <Link href="/dc/issue" className="dcx-cardbtn issue" style={{ borderRight: "1px solid var(--border)" }}><Svg size={14}>{IcIssue}</Svg>ตัดจ่าย</Link>
-            <Link href="/dc/transfer" className="dcx-cardbtn move" style={{ borderRight: "1px solid var(--border)" }}><Svg size={14}>{IcTransfer}</Svg>โอน</Link>
+            {/* prefill สินค้าตัวนี้แล้วไปหน้าตัดจ่าย/โอน (แก้ dead Link เดิมที่ไม่ prefill อะไร) */}
+            <button type="button" onClick={() => onStash([p], "issue")} className="dcx-cardbtn issue" style={{ borderRight: "1px solid var(--border)", background: "none", cursor: "pointer", fontFamily: "inherit" }}><Svg size={14}>{IcIssue}</Svg>ตัดจ่าย</button>
+            <button type="button" onClick={() => onStash([p], "transfer")} className="dcx-cardbtn move" style={{ borderRight: "1px solid var(--border)", background: "none", cursor: "pointer", fontFamily: "inherit" }}><Svg size={14}>{IcTransfer}</Svg>โอน</button>
             <Link href={`/dc/office/products/${p.id}`} className="dcx-cardbtn" style={{ padding: "9px 11px", borderRight: "1px solid var(--border)" }}><Svg size={15}>{IcImage}</Svg></Link>
             <Link href={`/dc/office/products/${p.id}`} className="dcx-cardbtn" style={{ padding: "9px 11px" }}><Svg size={15} sw={2}>{IcKebab}</Svg></Link>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 // ตาราง — ใช้ <DataTable> จริง (real <table> w-full ใน overflow-x-auto, auto-sizing)
 // แทน fake grid เดิม (fr/auto ไม่มี min-width:0 → คอลัมน์ยาวดันเหลื่อมซ้อน header).
-function TableView({ rows }: { rows: ProductRow[] }) {
+function TableView({
+  rows,
+  selected,
+  onToggle,
+}: {
+  rows: ProductRow[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onStash: (rows: ProductRow[], target: "transfer" | "issue") => void;
+}) {
   return (
-    <div style={{ marginTop: 14 }}>
+    <div style={{ marginTop: 14, paddingBottom: 72 }}>
       <DataTable
         columns={[
+          { key: "sel", header: "", align: "center", className: "w-10" },
           { key: "name", header: "สินค้า" },
           { key: "cat", header: "หมวด" },
           { key: "unit", header: "หน่วย" },
@@ -259,6 +398,18 @@ function TableView({ rows }: { rows: ProductRow[] }) {
           key: p.id,
           href: `/dc/office/products/${p.id}`,
           cells: {
+            sel: (
+              // stopPropagation กันคลิก checkbox แล้วเด้งเข้าหน้า detail (ทั้งแถวมี onClick นำทาง)
+              <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(p.id)}
+                  onChange={() => onToggle(p.id)}
+                  aria-label={`เลือก ${p.name}`}
+                  style={{ width: 18, height: 18, cursor: "pointer" }}
+                />
+              </span>
+            ),
             name: (
               <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
                 <DcThumb url={p.imageUrl} alt={p.name} size={30} />

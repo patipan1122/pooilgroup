@@ -66,6 +66,7 @@ export default async function DcCountPage() {
         <CountWorkspace
           warehouseId={ctx.activeWarehouse.id}
           warehouseName={ctx.activeWarehouse.name}
+          r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
         />
       )}
     </div>

@@ -19,7 +19,7 @@
 //   • รายการนับ = ตารางอ่านง่าย (สินค้า | ระบบมี | นับได้ | ส่วนต่าง)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudOff, Save, Trash2, Check, List, Search, X, Plus, CheckCheck } from "lucide-react";
+import { CloudOff, Save, Trash2, Check, List, Search, X, Plus, CheckCheck, FileText, ChevronLeft, Package } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { DcThumb } from "@/components/dc/product-image";
 import {
@@ -29,6 +29,8 @@ import {
   listProductsForCount,
   type CountProductRow,
 } from "@/lib/dc/count-actions";
+import { listPosForMoveAction, getPoFulfillmentAction } from "@/lib/dc/po-move-actions";
+import type { ReceivablePoForMove, PoFulfillment } from "@/lib/dc/po-fulfillment";
 
 type CountLine = {
   lineKey: string;
@@ -83,9 +85,11 @@ function newLineKey(): string {
 export function CountWorkspace({
   warehouseId,
   warehouseName,
+  r2PublicUrl,
 }: {
   warehouseId: string;
   warehouseName: string;
+  r2PublicUrl: string;
 }) {
   const [lines, setLines] = useState<CountLine[]>([]);
   const [note, setNote] = useState("");
@@ -94,6 +98,7 @@ export function CountWorkspace({
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
   const [savedCode, setSavedCode] = useState<string | null>(null); // เลขที่ใบนับที่เพิ่งบันทึก
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [poBrowseOpen, setPoBrowseOpen] = useState(false); // เลือกสินค้าที่จะนับ "ตามใบ PO"
   const linesRef = useRef<CountLine[]>([]);
   const noteRef = useRef("");
   const syncingRef = useRef(false);
@@ -308,6 +313,18 @@ export function CountWorkspace({
           <List size={20} />
           ดูสินค้าทั้งหมด — เลือกสินค้าที่จะนับเอง
         </button>
+
+        {/* ปุ่มนับตามใบ PO — เลือกใบ PO แล้วกดนับทีละสินค้าในใบ (online เท่านั้น) */}
+        <button
+          type="button"
+          className="dc-btn-xl dc-btn-xl--ghost"
+          disabled={!online}
+          onClick={() => setPoBrowseOpen(true)}
+          title={online ? undefined : "นับตามใบ PO ต้องต่อเน็ต"}
+        >
+          <FileText size={20} />
+          นับตามใบ PO — เลือกสินค้าจากใบสั่งซื้อ
+        </button>
         {!online && (
           <div style={{ fontSize: 13, color: "var(--dc-muted)", lineHeight: 1.5 }}>
             เน็ตหลุดอยู่ — นับต่อได้เลย (ยิง/พิมพ์รหัส) ระบบเก็บไว้ในเครื่อง พอเน็ตกลับมาจะซิงค์ให้อัตโนมัติ
@@ -404,6 +421,18 @@ export function CountWorkspace({
           warehouseName={warehouseName}
           inSheetIds={inSheetIds}
           onClose={() => setBrowseOpen(false)}
+          onPick={(p) => addProductLine(p)}
+        />
+      )}
+
+      {/* ---- ป็อปอัป "นับตามใบ PO" (เลือกสินค้าจากใบ PO ที่รับเข้าคลังนี้) ---- */}
+      {poBrowseOpen && (
+        <PoCountPickerSheet
+          warehouseId={warehouseId}
+          warehouseName={warehouseName}
+          inSheetIds={inSheetIds}
+          r2PublicUrl={r2PublicUrl}
+          onClose={() => setPoBrowseOpen(false)}
           onPick={(p) => addProductLine(p)}
         />
       )}
@@ -957,5 +986,274 @@ function CatChip({ label, active, onClick }: { label: string; active: boolean; o
     >
       {label}
     </button>
+  );
+}
+
+// ====================================================================
+// "นับตามใบ PO" — เลือกใบ PO (ที่รับเข้าคลังนี้) → กด "นับ" ทีละสินค้าในใบ
+//   ★ ใช้ getPoFulfillment ชุดเต็ม (รวมแถว onHand=0) — ไม่ใช้ cap ของ po-move-picker
+//     (นับต้องเห็นสินค้าที่ระบบว่า 0 ด้วย เผื่อจริง ๆ มีของ) · ไม่มี write ที่นี่:
+//     กด "นับ" = addProductLine (systemQty = onHand) เหมือนกดจากตาราง → บันทึกผ่าน saveCountSheet เดิม
+// ====================================================================
+function PoCountPickerSheet({
+  warehouseId,
+  warehouseName,
+  inSheetIds,
+  r2PublicUrl,
+  onClose,
+  onPick,
+}: {
+  warehouseId: string;
+  warehouseName: string;
+  inSheetIds: Set<string>;
+  r2PublicUrl: string;
+  onClose: () => void;
+  onPick: (p: { productId: string; sku: string; name: string; unit: string | null; systemQty: number; imageUrl?: string | null }) => "added" | "exists";
+}) {
+  const [pos, setPos] = useState<ReceivablePoForMove[]>([]);
+  const [posLoading, setPosLoading] = useState(false);
+  const [posError, setPosError] = useState<string | null>(null);
+
+  const [detail, setDetail] = useState<PoFulfillment | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<Set<string>>(new Set());
+
+  // โหลดลิสต์ใบ PO ตอนเปิด (เฉพาะใบที่รับเข้าคลังนี้ — filter ใน action แล้ว)
+  useEffect(() => {
+    let cancelled = false;
+    setPosLoading(true);
+    setPosError(null);
+    void (async () => {
+      try {
+        const res = await listPosForMoveAction(warehouseId);
+        if (cancelled) return;
+        if (!res.ok) {
+          setPosError(res.error);
+          setPos([]);
+        } else {
+          setPos(res.pos);
+        }
+      } catch {
+        if (!cancelled) {
+          setPosError("โหลดรายการใบ PO ไม่สำเร็จ ลองอีกครั้ง");
+          setPos([]);
+        }
+      } finally {
+        if (!cancelled) setPosLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [warehouseId]);
+
+  const openPo = async (poId: string) => {
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetail(null);
+    setJustAdded(new Set());
+    try {
+      const res = await getPoFulfillmentAction(poId, warehouseId);
+      if (!res.ok) {
+        setDetailError(res.error);
+        return;
+      }
+      setDetail(res.data);
+    } catch {
+      setDetailError("โหลดใบ PO ไม่สำเร็จ ลองอีกครั้ง");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const backToList = () => {
+    setDetail(null);
+    setDetailError(null);
+    setJustAdded(new Set());
+  };
+
+  // รูปสินค้าจาก getPoFulfillment เป็น "path ดิบ" — ต้อง resolve เป็น URL ก่อนโชว์/บันทึกลงใบนับ
+  //   (ไม่งั้นรูปเสีย + path ดิบถูกฝังลง count row) · logic เดียวกับ imageSrc ใน po-move-picker
+  const toImg = (p: string | null): string | null =>
+    !p ? null : /^https?:\/\//.test(p) ? p : `${r2PublicUrl}/${p.replace(/^\/+/, "")}`;
+
+  // กด "นับ" → addProductLine ด้วย systemQty = onHand (ยอดในระบบ ณ ตอนนี้)
+  const handlePick = (l: PoFulfillment["lines"][number]) => {
+    onPick({ productId: l.productId, sku: l.sku, name: l.name, unit: l.unit, systemQty: l.onHand, imageUrl: toImg(l.imageR2Path) });
+    setJustAdded((prev) => new Set(prev).add(l.productId));
+  };
+
+  // นับทั้งใบ (ทุกแถวที่ยังไม่อยู่ในชีต) — ใช้ชุดเต็มรวม onHand=0
+  const notYet = detail ? detail.lines.filter((l) => !(inSheetIds.has(l.productId) || justAdded.has(l.productId))) : [];
+  const pickAll = () => {
+    for (const l of notYet) {
+      onPick({ productId: l.productId, sku: l.sku, name: l.name, unit: l.unit, systemQty: l.onHand, imageUrl: toImg(l.imageR2Path) });
+    }
+    setJustAdded((prev) => {
+      const next = new Set(prev);
+      for (const l of notYet) next.add(l.productId);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="นับตามใบ PO"
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(20,28,45,0.32)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "var(--dc-paper)", width: "100%", maxWidth: 760, maxHeight: "90vh", borderTopLeftRadius: 20, borderTopRightRadius: 20, display: "flex", flexDirection: "column", boxShadow: "0 -8px 34px rgba(20,40,90,0.22)" }}
+      >
+        {/* header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "16px 16px 12px", borderBottom: "1px solid var(--dc-line)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            {detail && (
+              <button
+                type="button"
+                onClick={backToList}
+                aria-label="เลือกใบอื่น"
+                style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, border: "1.5px solid var(--dc-line)", background: "var(--dc-paper)", display: "grid", placeItems: "center", cursor: "pointer", color: "var(--dc-ink)" }}
+              >
+                <ChevronLeft size={20} />
+              </button>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink)" }}>{detail ? detail.poCode : "นับตามใบ PO"}</div>
+              <div style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>
+                {detail ? `${detail.supplierName ?? "ไม่ระบุผู้ขาย"} · กด "นับ" สินค้าที่จะนับ` : `คลัง ${warehouseName} · เลือกใบ PO`}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            style={{ flexShrink: 0, width: 40, height: 40, borderRadius: 10, border: "1.5px solid var(--dc-line)", background: "var(--dc-paper)", display: "grid", placeItems: "center", cursor: "pointer", color: "var(--dc-muted)" }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+          {!detail ? (
+            posError ? (
+              <div style={{ padding: 24, textAlign: "center", color: "#c0392b", fontSize: 15, fontWeight: 600 }}>{posError}</div>
+            ) : posLoading ? (
+              <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>กำลังโหลด…</div>
+            ) : pos.length === 0 ? (
+              <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>ยังไม่มีใบ PO ที่รับเข้าคลังนี้</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {pos.map((p) => (
+                  <button
+                    key={p.poId}
+                    type="button"
+                    onClick={() => void openPo(p.poId)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", border: "1.5px solid var(--dc-line)", background: "var(--dc-paper)", borderRadius: 12, padding: "13px 14px", cursor: "pointer" }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.poCode}</div>
+                      <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
+                    </div>
+                    <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
+                      <Package size={15} /> {p.lineCount} รายการ
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : detailLoading ? (
+            <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>กำลังโหลดใบ…</div>
+          ) : detailError ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#c0392b", fontSize: 15, fontWeight: 600 }}>{detailError}</div>
+          ) : detail.lines.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "var(--dc-muted)", fontSize: 14 }}>ใบนี้ไม่มีรายการสินค้า</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* นับทั้งใบ */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>{detail.lines.length} รายการในใบ</span>
+                <button
+                  type="button"
+                  onClick={pickAll}
+                  disabled={notYet.length === 0}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 10,
+                    border: "1.5px solid var(--color-brand-600)",
+                    background: notYet.length === 0 ? "var(--dc-canvas)" : "var(--color-brand-50, #eef4ff)",
+                    color: notYet.length === 0 ? "var(--dc-muted)" : "var(--color-brand-700)",
+                    fontWeight: 700, fontSize: 13, cursor: notYet.length === 0 ? "default" : "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  <CheckCheck size={15} /> นับทั้งใบ{notYet.length > 0 ? ` (${notYet.length})` : ""}
+                </button>
+              </div>
+
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460 }}>
+                  <thead>
+                    <tr>
+                      <Th style={{ textAlign: "left", paddingLeft: 14 }}>สินค้า</Th>
+                      <Th style={{ textAlign: "right" }}>ระบบมี</Th>
+                      <Th style={{ width: 96, textAlign: "center" }} aria-label="เลือก" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.lines.map((l) => {
+                      const added = inSheetIds.has(l.productId) || justAdded.has(l.productId);
+                      return (
+                        <tr key={l.productId}>
+                          <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--dc-line)", minWidth: 180 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <DcThumb url={toImg(l.imageR2Path)} alt={l.name} size={40} />
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 650, fontSize: 14.5, color: "var(--dc-ink)", lineHeight: 1.25 }}>{l.name}</div>
+                                <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1 }}>{l.sku}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--dc-line)", textAlign: "right", whiteSpace: "nowrap", fontWeight: 600, color: "var(--dc-ink)" }}>
+                            {l.onHand}
+                            {l.unit ? <span style={{ color: "var(--dc-muted)", fontWeight: 400, fontSize: 12.5 }}> {l.unit}</span> : null}
+                          </td>
+                          <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--dc-line)", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => handlePick(l)}
+                              disabled={added}
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 10,
+                                border: "none", cursor: added ? "default" : "pointer", fontWeight: 700, fontSize: 13.5,
+                                background: added ? "var(--dc-canvas)" : "var(--color-brand-600)",
+                                color: added ? "var(--dc-muted)" : "#fff", whiteSpace: "nowrap",
+                              }}
+                            >
+                              {added ? (<><Check size={15} /> เลือกแล้ว</>) : (<><Plus size={15} /> นับ</>)}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* footer */}
+        <div style={{ padding: "10px 16px 16px", borderTop: "1px solid var(--dc-line)" }}>
+          <button type="button" className="dc-btn-xl" onClick={onClose}>
+            เสร็จ — กลับไปนับ
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
