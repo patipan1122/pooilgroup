@@ -28,6 +28,26 @@ export default async function DcCountPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Link
+            href="/dc/count/history"
+            className="dc-btn-ghost"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "9px 14px",
+              borderRadius: 10,
+              border: "1.5px solid var(--dc-line)",
+              background: "var(--dc-paper)",
+              color: "var(--dc-ink)",
+              fontWeight: 700,
+              fontSize: 14,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            ดูประวัติใบนับ
+          </Link>
           <DcWarehousePicker warehouses={ctx.warehouses} activeId={ctx.activeWarehouseId} />
           <DcModeSwitch canManage={canManage} />
         </div>

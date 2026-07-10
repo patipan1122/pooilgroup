@@ -10,7 +10,8 @@
 // filter หมวด + ค้นหา ยิงไป listDcFloorProducts ใหม่ทุกครั้ง.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, ImageIcon, PackageSearch } from "lucide-react";
+import Link from "next/link";
+import { Search, ImageIcon, PackageSearch, ChevronRight } from "lucide-react";
 import {
   listDcFloorProducts,
   type FloorProductRow,
@@ -159,50 +160,55 @@ export function FloorProductsBrowse({
 function ProductRow({ p }: { p: FloorProductRow }) {
   const empty = p.systemQty <= 0;
   return (
-    <li
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "11px 14px",
-        borderBottom: "1px solid var(--dc-line)",
-        opacity: empty ? 0.62 : 1,
-      }}
-    >
-      <Thumb url={p.imageUrl} size={44} />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontWeight: 650, fontSize: 15, color: "var(--dc-ink)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {p.name}
+    <li style={{ borderBottom: "1px solid var(--dc-line)", opacity: empty ? 0.62 : 1 }}>
+      {/* แตะทั้งแถว → ประวัติสินค้า (per-product log) */}
+      <Link
+        href={`/dc/products/${p.productId}`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 14px",
+          textDecoration: "none",
+          color: "inherit",
+        }}
+      >
+        <Thumb url={p.imageUrl} size={44} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 650, fontSize: 15, color: "var(--dc-ink)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {p.name}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {p.sku}
+            {p.category ? ` · ${p.category}` : ""}
+          </div>
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {p.sku}
-          {p.category ? ` · ${p.category}` : ""}
+        <div style={{ flexShrink: 0, textAlign: "right", whiteSpace: "nowrap" }}>
+          {empty ? (
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "#b0563a",
+                background: "#fdecec",
+                borderRadius: 8,
+                padding: "3px 9px",
+              }}
+            >
+              หมด
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "var(--dc-ink)" }}>{p.systemQty}</span>
+              {p.unit ? (
+                <span style={{ fontSize: 12.5, color: "var(--dc-muted)", fontWeight: 500 }}> {p.unit}</span>
+              ) : null}
+            </>
+          )}
         </div>
-      </div>
-      <div style={{ flexShrink: 0, textAlign: "right", whiteSpace: "nowrap" }}>
-        {empty ? (
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 12.5,
-              fontWeight: 700,
-              color: "#b0563a",
-              background: "#fdecec",
-              borderRadius: 8,
-              padding: "3px 9px",
-            }}
-          >
-            หมด
-          </span>
-        ) : (
-          <>
-            <span style={{ fontSize: 18, fontWeight: 800, color: "var(--dc-ink)" }}>{p.systemQty}</span>
-            {p.unit ? (
-              <span style={{ fontSize: 12.5, color: "var(--dc-muted)", fontWeight: 500 }}> {p.unit}</span>
-            ) : null}
-          </>
-        )}
-      </div>
+        <ChevronRight size={18} color="var(--dc-subtle, #9aa4b2)" style={{ flexShrink: 0 }} />
+      </Link>
     </li>
   );
 }

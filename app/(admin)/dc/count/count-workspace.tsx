@@ -7,8 +7,9 @@
 //   2. บัฟเฟอร์ทั้งหมดเก็บใน localStorage แยกตาม warehouseId
 //   3. ONLINE: ยิง/พิมพ์รหัส → lookupForCount ทันที (รู้ชื่อ + ยอดในระบบ)
 //      OFFLINE: เก็บแค่ code ไว้ → ค่อย resolve ชื่อ/ยอดตอนซิงค์
-//   4. "ซิงค์" → syncCounts(); server idempotent ผ่าน sourceKey("count", lineKey)
-//      → ยิงซ้ำปลอดภัย. รัน auto ตอนกลับมา online (window 'online' event)
+//   4. "บันทึกใบนับ" → saveCountSheet(); สร้างเอกสาร "ใบนับ" (เลขที่+ใครนับ+หมายเหตุ) +
+//      ปรับสต๊อก. server idempotent ผ่าน sourceKey("count", lineKey) → ยิงซ้ำปลอดภัย.
+//      รัน auto (silent) ตอนกลับมา online (window 'online' event)
 //   5. badge "ออฟไลน์ — เก็บในเครื่อง N รายการ" เมื่อ offline หรือมีของยังไม่ซิงค์
 //
 // ★ เพิ่มใหม่ (CEO #5 — อย่าบังคับนับทั้งหมด):
@@ -18,11 +19,11 @@
 //   • รายการนับ = ตารางอ่านง่าย (สินค้า | ระบบมี | นับได้ | ส่วนต่าง)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudOff, RefreshCw, Trash2, Check, List, Search, X, Plus, ImageIcon, CheckCheck } from "lucide-react";
+import { CloudOff, Save, Trash2, Check, List, Search, X, Plus, ImageIcon, CheckCheck } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import {
   lookupForCount,
-  syncCounts,
+  saveCountSheet,
   listCategoriesForCount,
   listProductsForCount,
   type CountProductRow,
@@ -86,12 +87,16 @@ export function CountWorkspace({
   warehouseName: string;
 }) {
   const [lines, setLines] = useState<CountLine[]>([]);
+  const [note, setNote] = useState("");
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [savedCode, setSavedCode] = useState<string | null>(null); // เลขที่ใบนับที่เพิ่งบันทึก
   const [browseOpen, setBrowseOpen] = useState(false);
   const linesRef = useRef<CountLine[]>([]);
+  const noteRef = useRef("");
   const syncingRef = useRef(false);
+  noteRef.current = note;
 
   // keep refs in sync (เพื่อให้ event handler/auto-sync เห็นค่าล่าสุด)
   linesRef.current = lines;
@@ -115,21 +120,23 @@ export function CountWorkspace({
     setLines((prev) => prev.filter((l) => l.lineKey !== lineKey));
   }, []);
 
-  // ---- ซิงค์เข้าระบบ ----
-  const doSync = useCallback(async (): Promise<void> => {
+  // ---- บันทึกใบนับ (สร้างเอกสาร "ใบนับ" + ปรับสต๊อก) ----
+  //   silent=true → auto ตอนกลับมา online (ไม่เด้ง error ถ้าไม่มีรายการพร้อม)
+  const doSave = useCallback(async (silent = false): Promise<void> => {
     if (syncingRef.current) return;
     const current = linesRef.current;
     // ส่งเฉพาะบรรทัดที่ resolve แล้ว (มี productId) — offline ที่ยังไม่ resolve ส่งไม่ได้
     const ready = current.filter((l) => l.productId && Number.isFinite(l.countedQty));
     if (ready.length === 0) {
-      setToast({ kind: "err", msg: "ไม่มีรายการพร้อมซิงค์ (บางรายการยังหาสินค้าไม่เจอ)" });
+      if (!silent) setToast({ kind: "err", msg: "ไม่มีรายการพร้อมบันทึก (บางรายการยังหาสินค้าไม่เจอ)" });
       return;
     }
     syncingRef.current = true;
     setSyncing(true);
     try {
-      const res = await syncCounts({
+      const res = await saveCountSheet({
         warehouseId,
+        note: noteRef.current.trim() || null,
         lines: ready.map((l) => ({
           productId: l.productId as string,
           countedQty: l.countedQty,
@@ -142,9 +149,16 @@ export function CountWorkspace({
       }
       const syncedSet = new Set(res.synced);
       setLines((prev) => prev.filter((l) => !syncedSet.has(l.lineKey)));
-      setToast({ kind: "ok", msg: `ซิงค์เข้าระบบแล้ว ${res.synced.length} รายการ` });
+      setNote("");
+      setSavedCode(res.countCode);
+      setToast({
+        kind: "ok",
+        msg: res.countCode
+          ? `บันทึกใบนับ ${res.countCode} แล้ว (${res.synced.length} รายการ)`
+          : `บันทึกแล้ว ${res.synced.length} รายการ`,
+      });
     } catch (e) {
-      setToast({ kind: "err", msg: e instanceof Error ? e.message : "ซิงค์ไม่สำเร็จ" });
+      setToast({ kind: "err", msg: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" });
     } finally {
       syncingRef.current = false;
       setSyncing(false);
@@ -155,8 +169,8 @@ export function CountWorkspace({
   useEffect(() => {
     function handleOnline() {
       setOnline(true);
-      // กลับมา online → ลองซิงค์อัตโนมัติ ถ้ามีของค้าง
-      if (linesRef.current.some((l) => l.productId)) void doSync();
+      // กลับมา online → บันทึกใบนับอัตโนมัติ (silent) ถ้ามีของค้าง
+      if (linesRef.current.some((l) => l.productId)) void doSave(true);
     }
     function handleOffline() {
       setOnline(false);
@@ -167,7 +181,7 @@ export function CountWorkspace({
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [doSync]);
+  }, [doSave]);
 
   // ---- auto-dismiss toast ----
   useEffect(() => {
@@ -311,21 +325,69 @@ export function CountWorkspace({
         <CountSheet lines={lines} onChangeQty={updateLine} onRemove={removeLine} />
       )}
 
-      {/* ---- ปุ่มซิงค์ ---- */}
+      {/* ---- หมายเหตุ + ปุ่มบันทึกใบนับ ---- */}
       {lines.length > 0 && (
-        <button
-          type="button"
-          className="dc-btn-xl"
-          disabled={syncing || !online || lines.every((l) => !l.productId)}
-          onClick={() => void doSync()}
+        <div className="dc-card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--dc-ink)" }}>หมายเหตุ (ไม่บังคับ)</span>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="เช่น นับรอบสิ้นเดือน / นับหลังจัดชั้น…"
+              maxLength={200}
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: 11,
+                border: "1.5px solid var(--dc-line-strong, var(--dc-line))",
+                fontSize: 15,
+                color: "var(--dc-ink)",
+                background: "var(--dc-paper)",
+                outline: "none",
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="dc-btn-xl"
+            disabled={syncing || !online || lines.every((l) => !l.productId)}
+            onClick={() => void doSave()}
+          >
+            <Save size={20} className={syncing ? "dc-spin" : undefined} />
+            {syncing ? "กำลังบันทึก…" : `บันทึกใบนับ (${unsynced})`}
+          </button>
+          <div style={{ fontSize: 12.5, color: "var(--dc-muted)", textAlign: "center", lineHeight: 1.5 }}>
+            บันทึกแล้วจะได้ “ใบนับ” 1 ใบ (มีเลขที่ · ใครนับ · ส่วนต่างขาด/เกิน) ปรับสต๊อกให้ตรงกับที่นับได้
+          </div>
+        </div>
+      )}
+      {savedCode && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "#eaf6ee",
+            border: "1.5px solid #bfe3cb",
+            color: "#1f6b3e",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
         >
-          <RefreshCw size={20} className={syncing ? "dc-spin" : undefined} />
-          {syncing ? "กำลังซิงค์…" : `ซิงค์เข้าระบบ (${unsynced})`}
-        </button>
+          <Check size={17} />
+          <span>
+            บันทึกใบนับ <strong>{savedCode}</strong> เรียบร้อย —{" "}
+            <a href="/dc/count/history" style={{ color: "#1f6b3e", textDecoration: "underline", fontWeight: 700 }}>
+              ดูประวัติใบนับ
+            </a>
+          </span>
+        </div>
       )}
       {!online && lines.length > 0 && (
         <div style={{ fontSize: 13, color: "var(--dc-muted)", textAlign: "center" }}>
-          ซิงค์ไม่ได้ตอนนี้ (ออฟไลน์) — พอเน็ตกลับมาจะซิงค์ให้เอง หรือกดซิงค์เองได้
+          บันทึกไม่ได้ตอนนี้ (ออฟไลน์) — พอเน็ตกลับมาจะบันทึกให้เอง หรือกดบันทึกเองได้
         </div>
       )}
       {online && unresolved > 0 && (
@@ -518,7 +580,7 @@ function CountSheetRow({
         </div>
       </td>
 
-      {/* ส่วนต่าง */}
+      {/* ส่วนต่าง (ขาด − / เกิน +) */}
       <td style={{ ...tdBase, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700, color: varianceColor }}>
         {variance === null ? (
           "—"
@@ -527,7 +589,10 @@ function CountSheetRow({
             <Check size={14} /> ตรง
           </span>
         ) : (
-          `${variance > 0 ? "+" : ""}${variance}`
+          <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.15 }}>
+            <span>{`${variance > 0 ? "+" : ""}${variance}`}</span>
+            <span style={{ fontSize: 11, fontWeight: 700 }}>{variance > 0 ? "เกิน" : "ขาด"}</span>
+          </span>
         )}
       </td>
 

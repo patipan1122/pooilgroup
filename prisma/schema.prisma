@@ -8196,6 +8196,48 @@ model DcIssue {
   @@schema("dc")
 }
 
+// หัว "ใบนับ" (stock count sheet) — 1 การนับ (session) = 1 ใบ (มีเลขที่ + ใครนับ + หมายเหตุ).
+// รายการที่นับ = DcStockCountLine (เก็บ systemQty/countedQty/variance snapshot ตอนบันทึก) +
+// COUNT_ADJUST movement ที่ refType="dc_count" refId=this.id (ที่ delta ≠ 0). additive metadata
+// ล้วน · idempotency ของสต๊อกยังอยู่ที่ sourceKey("count", lineKey) เดิม (ใบนับไม่แตะ).
+model DcStockCount {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  countCode   String   @map("count_code")
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  note        String?
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  countedAt   DateTime @default(now()) @map("counted_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lines DcStockCountLine[]
+
+  @@unique([orgId, countCode])
+  @@index([orgId, countedAt(sort: Desc)])
+  @@map("stock_counts")
+  @@schema("dc")
+}
+
+// 1 บรรทัดในใบนับ — snapshot ยอด "ระบบมี" (systemQty) vs "นับได้" (countedQty) + ส่วนต่าง
+// (variance = countedQty − systemQty · ขาด = ติดลบ · เกิน = บวก). เก็บถาวรเป็นประวัติ
+// (ไม่ derive ใหม่ตอนอ่าน — ยอดในระบบตอนนับอาจเปลี่ยนไปแล้ว).
+model DcStockCountLine {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  countId    String   @map("count_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  systemQty  Int      @map("system_qty")
+  countedQty Int      @map("counted_qty")
+  variance   Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  count DcStockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+
+  @@index([countId])
+  @@map("stock_count_lines")
+  @@schema("dc")
+}
+
 // หัว "ใบย้ายที่" — 1 การย้าย = 1 ใบ. รายการ = DcStockMovement refType="dc_move" refId=this.id.
 model DcMove {
   id          String   @id @default(uuid()) @db.Uuid
