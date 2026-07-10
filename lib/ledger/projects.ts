@@ -9,6 +9,7 @@ export type LedgerProjectRow = {
   name: string;
   status: string; // active | archived
   budgetTotal: number | null;
+  retentionPct: number; // % เงินประกันผลงานหักทุกงวด (P2 · 0=ไม่มี)
   startedAt: Date | null;
   endedAt: Date | null;
   note: string | null;
@@ -19,6 +20,7 @@ function toRow(p: {
   name: string;
   status: string;
   budgetTotal: unknown;
+  retentionPct: unknown;
   startedAt: Date | null;
   endedAt: Date | null;
   note: string | null;
@@ -28,6 +30,7 @@ function toRow(p: {
     name: p.name,
     status: p.status,
     budgetTotal: p.budgetTotal == null ? null : Number(p.budgetTotal),
+    retentionPct: p.retentionPct == null ? 0 : Number(p.retentionPct),
     startedAt: p.startedAt,
     endedAt: p.endedAt,
     note: p.note,
@@ -52,6 +55,7 @@ export async function listLedgerProjects(
       name: true,
       status: true,
       budgetTotal: true,
+      retentionPct: true,
       startedAt: true,
       endedAt: true,
       note: true,
@@ -73,6 +77,7 @@ export async function getLedgerProject(
       name: true,
       status: true,
       budgetTotal: true,
+      retentionPct: true,
       startedAt: true,
       endedAt: true,
       note: true,

@@ -3065,6 +3065,7 @@ export async function lookupPurchaseHistoryAction(
 const zProject = z.object({
   name: z.string().trim().min(1, "ต้องมีชื่อโครงการ").max(120),
   budgetTotal: z.coerce.number().min(0).max(9_999_999_999).nullable().optional(),
+  retentionPct: z.coerce.number().min(0).max(100).optional(), // % เงินประกันผลงาน (P2)
   startedAt: z.string().trim().max(10).optional(), // YYYY-MM-DD
   endedAt: z.string().trim().max(10).optional(),
   note: z.string().trim().max(1000).optional(),
@@ -3098,6 +3099,7 @@ export async function createProjectAction(
         companyId: cid.companyId,
         name,
         budgetTotal: parsed.data.budgetTotal ?? null,
+        retentionPct: parsed.data.retentionPct ?? 0,
         startedAt: parsed.data.startedAt ? new Date(parsed.data.startedAt) : null,
         endedAt: parsed.data.endedAt ? new Date(parsed.data.endedAt) : null,
         note: parsed.data.note ?? null,
@@ -3139,6 +3141,7 @@ export async function updateProjectAction(projectId: string, raw: unknown): Prom
       data: {
         ...(d.name !== undefined ? { name: d.name.trim() } : {}),
         ...(d.budgetTotal !== undefined ? { budgetTotal: d.budgetTotal } : {}),
+        ...(d.retentionPct !== undefined ? { retentionPct: d.retentionPct } : {}),
         ...(d.startedAt !== undefined ? { startedAt: d.startedAt ? new Date(d.startedAt) : null } : {}),
         ...(d.endedAt !== undefined ? { endedAt: d.endedAt ? new Date(d.endedAt) : null } : {}),
         ...(d.note !== undefined ? { note: d.note ?? null } : {}),

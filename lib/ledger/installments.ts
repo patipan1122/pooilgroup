@@ -35,12 +35,15 @@ export type ProjectInstallmentSummary = {
   paidTrustedTotal: number; // Σ โอนจริง เฉพาะงวด green (นับได้จริง)
   amberCount: number; // งวด "จ่ายแล้ว—รอสลิป" (ยังไม่นับ trusted)
   brokenCount: number; // งวดที่ anchor หลุด
+  paidPlannedTotal: number; // Σ ยอดสัญญาของงวดที่จ่ายจริง (green)
+  retentionHeld: number; // เงินประกันคงค้าง = retentionPct% × paidPlannedTotal (P2 · display-only)
 };
 
 export async function listLedgerInstallments(
   orgId: string,
   companyId: string,
   projectId: string,
+  retentionPct = 0, // % เงินประกันผลงาน (จาก LedgerProject · P2)
 ): Promise<ProjectInstallmentSummary> {
   const rows = await prisma.ledgerInstallment.findMany({
     where: { orgId, companyId, projectId },
@@ -71,6 +74,7 @@ export async function listLedgerInstallments(
 
   let plannedTotal = 0;
   let paidTrustedTotal = 0;
+  let paidPlannedTotal = 0;
   let amberCount = 0;
   let brokenCount = 0;
 
@@ -92,6 +96,7 @@ export async function listLedgerInstallments(
           slipOriginalUrl = e.originalUrl ?? null;
           actualCashOut = Number(e.total) - Number(e.wht);
           paidTrustedTotal += actualCashOut;
+          paidPlannedTotal += Number(r.plannedAmount); // ฐานคิดเงินประกัน = ยอดสัญญาของงวดที่จ่ายจริง
         }
       } else if (r.paidPaymentRequestId) {
         // ผูก payment request (สลิปอยู่บน LedgerPayment) — v1 ยังไม่ resolve สลิปเส้นนี้; นับ trusted ไม่ได้จนกว่าจะ join
@@ -122,5 +127,7 @@ export async function listLedgerInstallments(
     };
   });
 
-  return { rows: out, plannedTotal, paidTrustedTotal, amberCount, brokenCount };
+  // เงินประกันคงค้าง = % × ยอดสัญญาของงวดที่จ่ายจริง (ปัดทศนิยม 2) · display-only ไม่มี engine คืน
+  const retentionHeld = Math.round(((retentionPct || 0) / 100) * paidPlannedTotal * 100) / 100;
+  return { rows: out, plannedTotal, paidTrustedTotal, amberCount, brokenCount, paidPlannedTotal, retentionHeld };
 }

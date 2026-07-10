@@ -56,7 +56,7 @@ export default async function ProjectDetailPage({
 
   const [cost, installments, actor] = await Promise.all([
     projectCostSummary({ orgId: scope.orgId, companyId: scope.companyId, projectId: id }),
-    listLedgerInstallments(scope.orgId, scope.companyId, id),
+    listLedgerInstallments(scope.orgId, scope.companyId, id, project.retentionPct),
     resolveLedgerActor(),
   ]);
   const canManage = actor ? await ledgerWebCan(actor, "project.manage") : false;
@@ -101,6 +101,7 @@ export default async function ProjectDetailPage({
                   id: project.id,
                   name: project.name,
                   budgetTotal: project.budgetTotal,
+                  retentionPct: project.retentionPct,
                   startedAt: project.startedAt,
                   endedAt: project.endedAt,
                   note: project.note,
@@ -145,6 +146,21 @@ export default async function ProjectDetailPage({
 
             {/* ลิ้นชักภาษี */}
             <TaxDetailDrawer vatTotal={cost.vatTotal} whtTotal={cost.whtTotal} />
+
+            {/* เงินประกันผลงาน — โชว์เฉพาะโครงการที่ตั้ง % ไว้ */}
+            {project.retentionPct > 0 && (
+              <div className="mt-4 flex items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium text-zinc-600">เงินประกันคงค้าง</p>
+                  <p className="mt-0.5 text-[11px] text-zinc-400">
+                    หัก {project.retentionPct}% ทุกงวด
+                  </p>
+                </div>
+                <p className="text-lg font-semibold tabular-nums text-zinc-900">
+                  {baht(installments.retentionHeld)}
+                </p>
+              </div>
+            )}
 
             {/* แถบเทียบงบ vs จ่ายจริง */}
             {hasBudget && (

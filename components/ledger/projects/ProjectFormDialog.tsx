@@ -16,6 +16,7 @@ type Initial = {
   id: string;
   name: string;
   budgetTotal: number | null;
+  retentionPct: number;
   startedAt: Date | null;
   endedAt: Date | null;
   note: string | null;
@@ -45,6 +46,9 @@ export function ProjectFormDialog({
   const [budget, setBudget] = useState(
     initial?.budgetTotal != null ? String(initial.budgetTotal) : "",
   );
+  const [retVal, setRetVal] = useState(
+    initial?.retentionPct ? String(initial.retentionPct) : "",
+  );
   const [startedAt, setStartedAt] = useState(toDateInput(initial?.startedAt ?? null));
   const [endedAt, setEndedAt] = useState(toDateInput(initial?.endedAt ?? null));
   const [note, setNote] = useState(initial?.note ?? "");
@@ -69,6 +73,7 @@ export function ProjectFormDialog({
     const payload = {
       name: name.trim(),
       budgetTotal: budget.trim() ? Number(budget) : null,
+      retentionPct: retVal.trim() ? Number(retVal) : 0,
       startedAt: startedAt || undefined,
       endedAt: endedAt || undefined,
       note: note.trim() || undefined,
@@ -83,6 +88,7 @@ export function ProjectFormDialog({
         if (mode === "create") {
           setName("");
           setBudget("");
+          setRetVal("");
           setStartedAt("");
           setEndedAt("");
           setNote("");
@@ -175,18 +181,36 @@ export function ProjectFormDialog({
                   autoFocus
                 />
               </div>
-              <div>
-                <label className={labelCls}>งบประมาณโครงการ (ไม่บังคับ)</label>
-                <input
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="เช่น 500000"
-                  className={inputCls}
-                />
-                <p className="mt-1 text-[11px] text-zinc-400">
-                  ใส่ไว้เพื่อดูแถบเทียบยอดจ่ายจริง — เว้นว่างได้
-                </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>งบประมาณโครงการ (ไม่บังคับ)</label>
+                  <input
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="เช่น 500000"
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-400">
+                    ใส่ไว้เพื่อดูแถบเทียบยอดจ่ายจริง — เว้นว่างได้
+                  </p>
+                </div>
+                <div>
+                  <label className={labelCls}>เงินประกันผลงาน (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={retVal}
+                    onChange={(e) => setRetVal(e.target.value)}
+                    placeholder="เช่น 5"
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-400">
+                    หักไว้ทุกงวด คืนเมื่อหมดประกัน (0 = ไม่มี)
+                  </p>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

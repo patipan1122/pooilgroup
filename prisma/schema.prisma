@@ -6359,6 +6359,7 @@ model LedgerProject {
   name        String
   status      String    @default("active") // active | archived
   budgetTotal Decimal?  @map("budget_total") @db.Decimal(15, 2) // งบทั้งโครงการ — เทียบกับ "ยอดจ่ายจริง" (total−WHT · CEO 2026-07-09)
+  retentionPct Decimal  @default(0) @map("retention_pct") @db.Decimal(5, 2) // % เงินประกันผลงานหักทุกงวด (P2 · 0=ไม่มี · display-only ไม่มี engine คืนอัตโนมัติ)
   startedAt   DateTime? @map("started_at") @db.Date
   endedAt     DateTime? @map("ended_at") @db.Date
   note        String?
