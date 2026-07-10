@@ -82,32 +82,39 @@ function hasBank(b?: BillPaymentInfo): boolean {
   return !!(b && (b.bankName || b.bankAccountNo || b.bankAccountHolder || b.promptpayId || b.paymentNote));
 }
 
-/** บล็อกแสดงเลขมิเตอร์ ก่อน→หลัง = ใช้ N หน่วย (ไฟ/น้ำ). */
+/** บล็อกแสดงเลขมิเตอร์ ก่อน→หลัง = ใช้ N หน่วย × เรต = เงิน (ไฟ/น้ำ) —
+ *  โชว์ที่มาของค่าน้ำ-ไฟให้ลูกค้าเห็นชัด (โปร่งใส ตรวจสอบได้เอง ว่าไม่มีคิดเกิน). */
 function MeterDetailBlock({ meters }: { meters: { electric?: MeterDetail; water?: MeterDetail } }) {
   const rows: { icon: React.ReactNode; label: string; m: MeterDetail }[] = [];
-  if (meters.electric) rows.push({ icon: <Zap className="h-3.5 w-3.5" />, label: "ไฟ", m: meters.electric });
-  if (meters.water) rows.push({ icon: <Droplet className="h-3.5 w-3.5" />, label: "น้ำ", m: meters.water });
+  if (meters.electric) rows.push({ icon: <Zap className="h-3.5 w-3.5" />, label: "ค่าไฟ", m: meters.electric });
+  if (meters.water) rows.push({ icon: <Droplet className="h-3.5 w-3.5" />, label: "ค่าน้ำ", m: meters.water });
   if (rows.length === 0) return null;
   return (
     <div
       className="mt-3 rounded-xl px-3.5 py-2.5"
       style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}
     >
-      <div className="text-[11.5px] font-semibold uppercase mb-1.5" style={{ color: "var(--rs-text-3)" }}>
-        การอ่านมิเตอร์งวดนี้
+      <div className="text-[11.5px] font-semibold uppercase mb-2" style={{ color: "var(--rs-text-3)" }}>
+        รายละเอียดค่าน้ำ-ไฟ (คำนวณจากมิเตอร์)
       </div>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {rows.map((r) => (
-          <div key={r.label} className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-            <span className="inline-flex items-center" style={{ color: "var(--rs-text-3)" }}>
-              {r.icon}
-            </span>
-            <span style={{ color: "var(--rs-text)" }}>{r.label}:</span>
-            <span className="tabular-nums">
-              เลขก่อน <b style={{ color: "var(--rs-text)" }}>{r.m.prev.toLocaleString()}</b> →{" "}
-              เลขหลัง <b style={{ color: "var(--rs-text)" }}>{r.m.curr.toLocaleString()}</b> ={" "}
-              ใช้ <b style={{ color: "var(--rs-text)" }}>{r.m.usage.toLocaleString()}</b> หน่วย
-            </span>
+          <div key={r.label} className="text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+            {/* บรรทัด 1: ป้าย + ยอดเงินของหมวดนี้ (เด่น) */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: "var(--rs-text)" }}>
+                <span className="inline-flex items-center" style={{ color: "var(--rs-text-3)" }}>{r.icon}</span>
+                {r.label}
+              </span>
+              <b className="tabular-nums" style={{ color: "var(--rs-text)" }}>{formatBaht(r.m.amount)}</b>
+            </div>
+            {/* บรรทัด 2: ที่มา — เลขก่อน→เลขหลัง = หน่วย × เรต */}
+            <div className="tabular-nums mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+              เลขก่อน <b style={{ color: "var(--rs-text-2)" }}>{r.m.prev.toLocaleString()}</b> →{" "}
+              เลขหลัง <b style={{ color: "var(--rs-text-2)" }}>{r.m.curr.toLocaleString()}</b> ={" "}
+              ใช้ <b style={{ color: "var(--rs-text-2)" }}>{r.m.usage.toLocaleString()}</b> หน่วย ×{" "}
+              <b style={{ color: "var(--rs-text-2)" }}>{r.m.rate.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b> บาท/หน่วย
+            </div>
           </div>
         ))}
       </div>
