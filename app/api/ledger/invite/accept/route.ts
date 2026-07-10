@@ -32,12 +32,21 @@ interface VerifyResult {
   error?: string;
 }
 
-/** Mint a fresh, LEDGER-ONLY Pool user (isolated from ChairOps) so a promoted
- *  LINE person can hold a session + ledger admin. Returns the Pool user id. */
-async function ensureLedgerAdminPoolUser(
+/** Mint a fresh, LEDGER-ONLY Pool user (isolated from ChairOps) so an invited LINE
+ *  person can hold a session (line_login_sub binding, so LINE-login resolves them)
+ *  AND be found by resolveLedgerActor via their member row. Returns the Pool user id.
+ *
+ *  `asAdmin` grants the ledger module at admin level (owner self-claim). A plain field
+ *  member gets a NON-admin grant — that grant only exists to pass requireLedgerAccess
+ *  (which every non-admin caller needs); their real ledger rights come from the member
+ *  row's role via can(), not from the module role. Without this Pool user + grant, an
+ *  invited staff is trapped on "บัญชียังไม่เปิดใช้งาน" after a successful join, because
+ *  line-login can't resolve a session and resolveLedgerActor returns null (fix 2026-07-10). */
+async function ensureLedgerPoolUser(
   admin: ReturnType<typeof adminClient>,
   orgId: string,
   displayName: string | null,
+  opts: { asAdmin: boolean },
 ): Promise<string | null> {
   const email = `ledger-${randomUUID().slice(0, 8)}@ledger.local`;
   const { data, error } = await admin.auth.admin.createUser({
@@ -52,17 +61,24 @@ async function ensureLedgerAdminPoolUser(
         id: data.user.id,
         orgId,
         email,
-        name: (displayName ?? "").trim().slice(0, 100) || "ผู้ดูแลบัญชี",
-        role: UserRole.staff, // NOT org-admin — ledger admin comes from the member row
+        name: (displayName ?? "").trim().slice(0, 100) || (opts.asAdmin ? "ผู้ดูแลบัญชี" : "พนักงานบัญชี"),
+        role: UserRole.staff, // NOT org-admin — ledger rights come from the member row
         isActive: true,
       },
     });
-    await prisma.userModule.create({
-      data: { orgId, userId: data.user.id, moduleName: "ledger", isActive: true, role: "admin" },
-    });
+    // Grant the ledger MODULE only to an owner claim (admin). A plain field member gets
+    // NO module grant on purpose — that keeps the web back-office (assertModuleEnabled)
+    // closed to them (CEO lock: staff are LINE-only), while their LIFF actions still pass
+    // because requireLedgerAccess admits a resolved ledger_line_member (their member row
+    // IS their access). Downstream per-action capability gates still apply.
+    if (opts.asAdmin) {
+      await prisma.userModule.create({
+        data: { orgId, userId: data.user.id, moduleName: "ledger", isActive: true, role: "admin" },
+      });
+    }
     return data.user.id;
   } catch (e) {
-    console.error("[ledger:invite-accept] ensureLedgerAdminPoolUser failed", e);
+    console.error("[ledger:invite-accept] ensureLedgerPoolUser failed", e);
     await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
     return null;
   }
@@ -131,14 +147,30 @@ export async function POST(req: NextRequest) {
   const memberRole = isAdminClaim ? "admin" : invite.role;
   const admin = adminClient();
 
-  // 3. Resolve which Pool account (if any) this login sub binds to.
-  //    - explicit target (owner self-claim / promote existing Pool user), or
-  //    - admin_claim with no target → mint a fresh ledger-only Pool user.
+  // 3. Resolve which Pool account this login sub binds to. EVERY invited member now
+  //    gets a Pool account (not just admin_claim) — without it, LINE-login can't resolve
+  //    a session and resolveLedgerActor returns null, trapping the staffer on
+  //    "บัญชียังไม่เปิดใช้งาน" AFTER a successful join (bug fixed 2026-07-10).
+  //    - explicit target (owner self-claim / promote existing Pool user) → use it.
+  //    - else reuse the Pool user already bound to this login sub (idempotent re-open —
+  //      never mint a duplicate on a second click / retry).
+  //    - else mint a fresh ledger-only Pool user (admin grant for admin_claim, else member).
   let poolUserId: string | null = invite.targetPoolUserId;
-  if (!poolUserId && isAdminClaim) {
-    poolUserId = await ensureLedgerAdminPoolUser(admin, invite.orgId, displayName);
-    if (!poolUserId) {
-      return NextResponse.json({ ok: false, error: "สร้างบัญชีผู้ดูแลไม่สำเร็จ" }, { status: 500 });
+  if (!poolUserId) {
+    const existing = await prisma.user.findFirst({
+      where: { lineLoginSub: lineUserId },
+      select: { id: true },
+    });
+    if (existing) {
+      poolUserId = existing.id;
+    } else {
+      poolUserId = await ensureLedgerPoolUser(admin, invite.orgId, displayName, { asAdmin: isAdminClaim });
+      if (!poolUserId) {
+        return NextResponse.json(
+          { ok: false, error: isAdminClaim ? "สร้างบัญชีผู้ดูแลไม่สำเร็จ" : "สร้างบัญชีพนักงานไม่สำเร็จ" },
+          { status: 500 },
+        );
+      }
     }
   }
 

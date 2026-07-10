@@ -54,7 +54,7 @@ import {
   trcloudPushConfigured,
   type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
-import { resolveLedgerActor, actorCanReachBranch, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
 import { encryptToken, decryptToken } from "@/lib/recruit/channel-crypto";
@@ -84,7 +84,14 @@ async function requireLedgerAccess(): Promise<
   }
   if (!isAdminTier(session.user.role)) {
     const has = await userHasModuleAccess(session.user, "ledger");
-    if (!has) return { ok: false, error: "ไม่มีสิทธิ์ใช้งานโมดูลนี้" };
+    if (!has) {
+      // A LINE field member has NO Pool module grant on purpose (staff are LINE-only,
+      // web stays closed to them). But their ledger_line_member row IS a legitimate
+      // access grant — admit them here so LIFF actions (edit-own, ขอโอน) work. This only
+      // gets them INTO the action; every per-action capability/ownership gate still applies.
+      const actor = await resolveLedgerActor();
+      if (!actor) return { ok: false, error: "ไม่มีสิทธิ์ใช้งานโมดูลนี้" };
+    }
   }
   return { ok: true, session };
 }
@@ -3052,6 +3059,352 @@ export async function lookupPurchaseHistoryAction(
   return { ok: true, hits: res.hits, trend: res.trend, vendorCompare: res.vendorCompare };
 }
 
+// ── โครงการชั่วคราว (job-costing · F2 2026-07-10) ────────────────────────────
+// project = มิติ display/report แนวขวาง (Buildly-side · ไม่ push TRCloud · ไม่แตะ GL).
+// จัดการโครงการ = project.manage (admin/บัญชี) · แท็กบิล = own-row/edit_others (staff แท็กเองได้).
+const zProject = z.object({
+  name: z.string().trim().min(1, "ต้องมีชื่อโครงการ").max(120),
+  budgetTotal: z.coerce.number().min(0).max(9_999_999_999).nullable().optional(),
+  startedAt: z.string().trim().max(10).optional(), // YYYY-MM-DD
+  endedAt: z.string().trim().max(10).optional(),
+  note: z.string().trim().max(1000).optional(),
+});
+
+/** สร้างโครงการ. Idempotent บน (org,company,ชื่อ) — ชนชื่อ = คืนตัวเดิม ไม่ 500
+ *  (กัน race หน้างาน/double-tap · RULE I). gated ด้วย project.manage. */
+export async function createProjectAction(
+  companyId: string,
+  raw: unknown,
+): Promise<ActionResult & { projectId?: string }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์จัดการโครงการ" };
+  }
+  const cid = requireActorCompanyId(actor, companyId);
+  if (!cid.ok) return { ok: false, error: cid.error };
+  const parsed = zProject.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const name = parsed.data.name.trim();
+  try {
+    // upsert = idempotent: ชนชื่อ (unique org,company,name) → คืนตัวเดิม (update no-op)
+    const proj = await prisma.ledgerProject.upsert({
+      where: { orgId_companyId_name: { orgId, companyId: cid.companyId, name } },
+      create: {
+        orgId,
+        companyId: cid.companyId,
+        name,
+        budgetTotal: parsed.data.budgetTotal ?? null,
+        startedAt: parsed.data.startedAt ? new Date(parsed.data.startedAt) : null,
+        endedAt: parsed.data.endedAt ? new Date(parsed.data.endedAt) : null,
+        note: parsed.data.note ?? null,
+        createdBy: session.user.id,
+      },
+      update: {},
+      select: { id: true },
+    });
+    revalidatePath("/ledger/projects");
+    return { ok: true, projectId: proj.id };
+  } catch (e) {
+    console.error("[ledger:createProjectAction]", e);
+    return { ok: false, error: "สร้างโครงการไม่สำเร็จ" };
+  }
+}
+
+/** แก้ไขโครงการ (ชื่อ/งบ/วัน/โน้ต). gated project.manage. ชื่อซ้ำ → error เป็นมิตร. */
+export async function updateProjectAction(projectId: string, raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์จัดการโครงการ" };
+  }
+  const parsed = zProject.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const proj = await prisma.ledgerProject.findFirst({
+    where: { id: projectId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!proj) return { ok: false, error: "ไม่พบโครงการ" };
+  if (actor.companyId && actor.companyId !== proj.companyId) return { ok: false, error: "คนละบริษัท" };
+  const d = parsed.data;
+  try {
+    await prisma.ledgerProject.update({
+      where: { id: projectId },
+      data: {
+        ...(d.name !== undefined ? { name: d.name.trim() } : {}),
+        ...(d.budgetTotal !== undefined ? { budgetTotal: d.budgetTotal } : {}),
+        ...(d.startedAt !== undefined ? { startedAt: d.startedAt ? new Date(d.startedAt) : null } : {}),
+        ...(d.endedAt !== undefined ? { endedAt: d.endedAt ? new Date(d.endedAt) : null } : {}),
+        ...(d.note !== undefined ? { note: d.note ?? null } : {}),
+      },
+    });
+  } catch (e) {
+    console.error("[ledger:updateProjectAction]", e);
+    return { ok: false, error: "แก้ไขไม่สำเร็จ — ชื่อโครงการอาจซ้ำ" };
+  }
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
+/** ปิด/เปิดโครงการ (soft-archive — ไม่ลบข้อมูล · รายงานย้อนหลังยังเปิดได้). gated project.manage. */
+export async function archiveProjectAction(projectId: string, archived = true): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์จัดการโครงการ" };
+  }
+  const proj = await prisma.ledgerProject.findFirst({
+    where: { id: projectId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!proj) return { ok: false, error: "ไม่พบโครงการ" };
+  if (actor.companyId && actor.companyId !== proj.companyId) return { ok: false, error: "คนละบริษัท" };
+  await prisma.ledgerProject.update({
+    where: { id: projectId },
+    data: { status: archived ? "archived" : "active" },
+  });
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
+/** แท็ก/ถอดโครงการออกจากบิล (1 แตะ). สิทธิ์ = own-row หรือ edit_others (เหมือน saveExpense) —
+ *  staff แท็กบิลตัวเองได้โดยไม่ต้องมี project.manage. projectId=null = ถอดป้าย. */
+export async function setExpenseProjectAction(
+  expenseId: string,
+  projectId: string | null,
+): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const { row } = await loadScoped(session, expenseId);
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (row.status === "void") return { ok: false, error: "รายการถูกยกเลิก แก้ไม่ได้" };
+  const canEditOthers =
+    (await userIsModuleAdmin(session.user, "ledger")) ||
+    (await ledgerWebCanForRole(orgId, session.user.role, "expense.confirm"));
+  if (row.createdBy !== session.user.id && !canEditOthers) {
+    return { ok: false, error: "ไม่มีสิทธิ์แก้ไขรายการของผู้อื่น" };
+  }
+  // กันแท็กข้ามบริษัท — โครงการต้องอยู่บริษัทเดียวกับบิล และยัง active
+  if (projectId) {
+    const proj = await prisma.ledgerProject.findFirst({
+      where: { id: projectId, orgId, companyId: row.companyId, status: "active" },
+      select: { id: true },
+    });
+    if (!proj) return { ok: false, error: "ไม่พบโครงการนี้ (หรือปิดไปแล้ว)" };
+  }
+  await prisma.ledgerExpense.updateMany({
+    where: { id: expenseId, orgId, companyId: row.companyId },
+    data: { projectId: projectId ?? null },
+  });
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_UPDATED",
+    resourceType: "ledger_expense",
+    resourceId: expenseId,
+    diff: { new: { projectId } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true };
+}
+
+// ── งวดงาน (installments · F3 2026-07-10) ───────────────────────────────────
+// งวด = plan-row ผูกโครงการ · จัดการ = project.manage · 'paid' ต้องผูก anchor จริง (บิลในโครงการ)
+// = มีสลิป · amber "จ่ายแล้ว—รอสลิป" = จ่ายก่อนสลิปมาทีหลัง (CEO 2026-07-09). ❌ ไม่แตะ expense.paymentStatus.
+const zInstallment = z.object({
+  seq: z.coerce.number().int().min(1).max(999).optional(),
+  label: z.string().trim().max(60).optional(),
+  vendorLabel: z.string().trim().max(120).nullable().optional(),
+  dueDate: z.string().trim().max(10).optional(), // YYYY-MM-DD
+  plannedAmount: z.coerce.number().min(0).max(9_999_999_999),
+});
+
+/** โครงการของงวด + ตรวจสิทธิ์ project.manage + company scope. ใช้ซ้ำในทุก action งวด. */
+async function guardInstallmentProject(projectId: string): Promise<
+  | { ok: true; orgId: string; companyId: string; userId: string }
+  | { ok: false; error: string }
+> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return { ok: false, error: access.error };
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  }
+  const proj = await prisma.ledgerProject.findFirst({
+    where: { id: projectId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!proj) return { ok: false, error: "ไม่พบโครงการ" };
+  if (actor.companyId && actor.companyId !== proj.companyId) return { ok: false, error: "คนละบริษัท" };
+  return { ok: true, orgId, companyId: proj.companyId, userId: access.session.user.id };
+}
+
+export async function createInstallmentAction(
+  projectId: string,
+  raw: unknown,
+): Promise<ActionResult & { installmentId?: string }> {
+  const g = await guardInstallmentProject(projectId);
+  if (!g.ok) return g;
+  const parsed = zInstallment.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const d = parsed.data;
+  let seq = d.seq;
+  if (seq == null) {
+    const last = await prisma.ledgerInstallment.findFirst({
+      where: { orgId: g.orgId, companyId: g.companyId, projectId },
+      orderBy: { seq: "desc" },
+      select: { seq: true },
+    });
+    seq = (last?.seq ?? 0) + 1;
+  }
+  const inst = await prisma.ledgerInstallment.create({
+    data: {
+      orgId: g.orgId,
+      companyId: g.companyId,
+      projectId,
+      seq,
+      label: d.label?.trim() || `งวด ${seq}`,
+      vendorLabel: d.vendorLabel ?? null,
+      dueDate: d.dueDate ? new Date(d.dueDate) : null,
+      plannedAmount: d.plannedAmount,
+      createdBy: g.userId,
+    },
+    select: { id: true },
+  });
+  revalidatePath("/ledger/projects");
+  return { ok: true, installmentId: inst.id };
+}
+
+export async function updateInstallmentAction(installmentId: string, raw: unknown): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  const inst = await prisma.ledgerInstallment.findFirst({
+    where: { id: installmentId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
+  if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  const parsed = zInstallment.partial().safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const d = parsed.data;
+  await prisma.ledgerInstallment.update({
+    where: { id: installmentId },
+    data: {
+      ...(d.seq !== undefined ? { seq: d.seq } : {}),
+      ...(d.label !== undefined ? { label: d.label.trim() } : {}),
+      ...(d.vendorLabel !== undefined ? { vendorLabel: d.vendorLabel ?? null } : {}),
+      ...(d.dueDate !== undefined ? { dueDate: d.dueDate ? new Date(d.dueDate) : null } : {}),
+      ...(d.plannedAmount !== undefined ? { plannedAmount: d.plannedAmount } : {}),
+    },
+  });
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
+export async function deleteInstallmentAction(installmentId: string): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  const inst = await prisma.ledgerInstallment.findFirst({
+    where: { id: installmentId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
+  if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  await prisma.ledgerInstallment.delete({ where: { id: installmentId } });
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
+/** มาร์คงวด "จ่ายแล้ว". expenseId = ผูกบิลจริง (เขียว · ต้องอยู่ในโครงการนี้ = มีสลิป) ·
+ *  ไม่ส่ง expenseId = amber "จ่ายแล้ว—รอสลิป". กันบิลเดียวผูกหลายงวด (clash). */
+export async function markInstallmentPaidAction(
+  installmentId: string,
+  opts: { expenseId?: string | null } = {},
+): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  const inst = await prisma.ledgerInstallment.findFirst({
+    where: { id: installmentId, orgId },
+    select: { id: true, companyId: true, projectId: true, status: true, paidExpenseId: true },
+  });
+  if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
+  if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  // กันทับ anchor เดิมเงียบ ๆ: งวดที่ผูกบิลแล้ว (green) ต้องกดย้อนก่อน (amber "รอสลิป" ยังอัปเป็น green ได้)
+  if (inst.status === "paid" && inst.paidExpenseId) {
+    return { ok: false, error: "งวดนี้ผูกบิลแล้ว — กดย้อนกลับก่อนถึงจะเปลี่ยนบิล" };
+  }
+
+  const expenseId = opts.expenseId ?? null;
+  if (expenseId) {
+    // anchor เขียว: บิลต้องอยู่ในโครงการนี้ (= มีสลิป/หลักฐาน) + ไม่ void
+    const exp = await prisma.ledgerExpense.findFirst({
+      where: { id: expenseId, orgId, companyId: inst.companyId, projectId: inst.projectId, status: { not: "void" } },
+      select: { id: true },
+    });
+    if (!exp) return { ok: false, error: "บิลที่เลือกต้องอยู่ในโครงการนี้ (ติดป้ายโครงการก่อน)" };
+    // กันบิลเดียวผูกหลายงวด
+    const clash = await prisma.ledgerInstallment.findFirst({
+      where: { orgId, companyId: inst.companyId, paidExpenseId: expenseId, id: { not: installmentId } },
+      select: { id: true },
+    });
+    if (clash) return { ok: false, error: "บิลนี้ถูกผูกกับงวดอื่นแล้ว" };
+    await prisma.ledgerInstallment.update({
+      where: { id: installmentId },
+      data: { status: "paid", paidExpenseId: expenseId, paidAt: new Date(), paidBy: access.session.user.id },
+    });
+  } else {
+    // amber — จ่ายก่อน สลิปมาทีหลัง. ยังไม่นับ trusted จนกว่าจะผูกบิลจริง.
+    await prisma.ledgerInstallment.update({
+      where: { id: installmentId },
+      data: { status: "paid_pending_slip", paidExpenseId: null, paidAt: new Date(), paidBy: access.session.user.id },
+    });
+  }
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
+/** ย้อนงวดกลับ "ยังไม่จ่าย" (เคลียร์ anchor). gated project.manage. */
+export async function revertInstallmentAction(installmentId: string): Promise<ActionResult> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const orgId = access.session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "project.manage"))) return { ok: false, error: "ไม่มีสิทธิ์จัดการงวดงาน" };
+  const inst = await prisma.ledgerInstallment.findFirst({
+    where: { id: installmentId, orgId },
+    select: { id: true, companyId: true },
+  });
+  if (!inst) return { ok: false, error: "ไม่พบงวดงาน" };
+  if (actor.companyId && actor.companyId !== inst.companyId) return { ok: false, error: "คนละบริษัท" };
+  await prisma.ledgerInstallment.update({
+    where: { id: installmentId },
+    data: { status: "planned", paidExpenseId: null, paidPaymentRequestId: null, paidAt: null, paidBy: null },
+  });
+  revalidatePath("/ledger/projects");
+  return { ok: true };
+}
+
 // ── ขอโอนเงิน (payment request) — LEDGER_PAYREQ_V1 ───────────────────────────
 const zPayee = z
   .object({
@@ -3080,13 +3433,37 @@ export async function createPaymentRequestAction(
   if (!access.ok) return access;
   const { session } = access;
   const orgId = session.user.org_id;
-  if (!(await ledgerWebCanForRole(orgId, session.user.role, "payment.request"))) {
+  // Gate by the actor's LEDGER role (member row via resolveLedgerActor), NOT the Pool
+  // role — a LINE staff member has payment.request=✅ in the matrix but Pool role "staff"
+  // makes ledgerWebCanForRole return false. ledgerWebCan resolves the true ledger role so
+  // staff can ขอโอน from the LIFF; admin/accountant web callers still pass unchanged.
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "payment.request"))) {
     return { ok: false, error: "ไม่มีสิทธิ์ขอโอนเงิน" };
   }
   const ids = Array.isArray(billIds) ? billIds.filter((x) => typeof x === "string") : [];
   const payee = zPayee.safeParse(payeeRaw ?? {});
   if (!payee.success) {
     return { ok: false, error: payee.error.issues[0]?.message ?? "ข้อมูลบัญชีผู้รับไม่ถูกต้อง" };
+  }
+
+  // 🔒 Scope guard (2026-07-10 · money-critical): a member may ขอโอน ONLY bills in THEIR
+  // company + branch scope. Before F1, only admin/accountant (allBranches) reached this
+  // action so no bind was needed; enabling staff ขอโอน exposes it → bind billIds to the
+  // actor here, mirroring actorCanReachBranch used by the LIFF edit actions. Admin/
+  // accountant (companyId=null, allBranches=true) skip both checks unchanged.
+  if (ids.length) {
+    const scopeRows = await prisma.ledgerExpense.findMany({
+      where: { id: { in: ids }, orgId },
+      select: { id: true, companyId: true, branchId: true },
+    });
+    if (scopeRows.length !== ids.length) return { ok: false, error: "บางบิลไม่พบ หรือไม่มีสิทธิ์" };
+    if (actor.companyId && scopeRows.some((r) => r.companyId !== actor.companyId)) {
+      return { ok: false, error: "มีบิลอยู่คนละบริษัทกับสิทธิ์ของคุณ" };
+    }
+    if (!actor.allBranches && scopeRows.some((r) => !actorCanReachBranch(actor, r.branchId))) {
+      return { ok: false, error: "มีบิลนอกสาขาที่คุณดูแล" };
+    }
   }
 
   const res = await createPaymentRequest({

@@ -24,6 +24,8 @@ export interface DashboardScope {
   orgId: string;
   companyId: string;
   branchId?: string | null;
+  /** โครงการชั่วคราว (job-costing · F2) — filter รายงานเฉพาะโครงการนี้. */
+  projectId?: string | null;
   /** YYYY-MM — defaults to current month (Asia/Bangkok) when omitted. */
   period?: string | null;
 }
@@ -73,6 +75,7 @@ function baseWhere(scope: DashboardScope): Prisma.LedgerExpenseWhereInput {
     status: { in: [...SPEND_STATUS] },
   };
   if (scope.branchId) where.branchId = scope.branchId;
+  if (scope.projectId) where.projectId = scope.projectId; // F2 · กรองรายงานตามโครงการ (คง orgId+companyId scoping)
   return where;
 }
 
@@ -89,6 +92,61 @@ function withPeriod(
 // ---------------------------------------------------------------------------
 // Aggregations
 // ---------------------------------------------------------------------------
+
+export interface ProjectCostSummary {
+  /** ต้นทุนสุทธิ (Σ subtotal · ไม่รวม VAT/WHT) = พาดหัว "ต้นทุนงาน" ตามหลักบัญชี. */
+  netTotal: number;
+  /** VAT ซื้อ (Σ vat) — ในลิ้นชักภาษี. */
+  vatTotal: number;
+  /** หัก ณ ที่จ่าย (Σ wht). */
+  whtTotal: number;
+  /** ยอดเต็มบิล (Σ total). */
+  grossTotal: number;
+  /** ยอดจ่ายจริง = grossTotal − whtTotal (เงินออกจริง) = basis เทียบงบ (CEO 2026-07-09). */
+  cashOut: number;
+  /** จำนวนบิลที่นับ (confirmed+locked). */
+  count: number;
+  /** บิลที่แท็กโครงการนี้แต่ยัง draft (รอตรวจ) — โชว์แยกกันดู "หาย" (critic gap). */
+  pendingCount: number;
+  pendingTotal: number;
+}
+
+/** รายงานต้นทุนต่อโครงการ (F2). ยอดหลักนับเฉพาะ confirmed+locked (เท่ากับที่เหลือของ ledger) +
+ *  บรรทัด "รอตรวจ" (draft) แยก → ยอดหลัก + รอตรวจ = Σ ทุกบิลที่ติดป้ายโครงการ. companyId scoping
+ *  มาจาก baseWhere (hardcode org+company · projectId บังคับ). ไม่ใส่ period = ต้นทุนตลอดโครงการ. */
+export async function projectCostSummary(
+  scope: DashboardScope & { projectId: string },
+): Promise<ProjectCostSummary> {
+  const [spend, pending] = await Promise.all([
+    prisma.ledgerExpense.aggregate({
+      where: baseWhere(scope), // status ∈ confirmed/locked + org+company+projectId
+      _sum: { subtotal: true, vat: true, wht: true, total: true },
+      _count: true,
+    }),
+    prisma.ledgerExpense.aggregate({
+      where: {
+        orgId: scope.orgId,
+        companyId: scope.companyId,
+        projectId: scope.projectId,
+        status: "draft",
+      },
+      _sum: { total: true },
+      _count: true,
+    }),
+  ]);
+  const grossTotal = dec(spend._sum.total);
+  const whtTotal = dec(spend._sum.wht);
+  return {
+    netTotal: dec(spend._sum.subtotal),
+    vatTotal: dec(spend._sum.vat),
+    whtTotal,
+    grossTotal,
+    cashOut: grossTotal - whtTotal,
+    count: spend._count,
+    pendingCount: pending._count,
+    pendingTotal: dec(pending._sum.total),
+  };
+}
 
 export interface SpendTotals {
   /** Real spend (confirmed+locked) in the period. */

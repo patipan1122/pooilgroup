@@ -85,6 +85,10 @@ export interface Expense {
   total: number;
   categoryId: string | null;
   categoryName?: string | null;
+  /** โครงการชั่วคราว (job-costing · F2) — orthogonal tag. null/undefined = ไม่ผูกโครงการ. */
+  projectId?: string | null;
+  /** ชื่อโครงการ (resolve ฝั่ง page จาก id→name map · queries ไม่ join relation). */
+  projectName?: string | null;
   paymentMethod: string | null;
   // — Bainy-parity fields —
   docType: ExpenseDocType;

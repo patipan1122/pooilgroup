@@ -87,6 +87,7 @@ export function serializeExpense(row: ExpenseRow): Expense {
     total: dec(row.total),
     categoryId: row.categoryId,
     categoryName: row.category?.name ?? null,
+    projectId: row.projectId ?? null,
     paymentMethod: row.paymentMethod,
     docType: (row.docType as ExpenseDocType) ?? "tax_invoice",
     vendorDocNumber: row.vendorDocNumber,
@@ -147,6 +148,8 @@ export interface ExpenseListFilter {
   branchId?: string | null;
   status?: ExpenseStatus | ExpenseStatus[];
   categoryId?: string | null;
+  /** กรองตามโครงการชั่วคราว (job-costing · F2). null/undefined = ทุกโครงการ (รวมที่ไม่ผูก). */
+  projectId?: string | null;
   /** กรองตามประเภทเอกสาร เช่น "quotation" สำหรับแท็บ "รอใบกำกับ" (D1). */
   docType?: ExpenseDocType | ExpenseDocType[];
   /** กรองตามสถานะจ่ายเงิน — ใช้ดึง "บิลค้างจ่าย" มาจับคู่สลิป (D4). */
@@ -199,6 +202,7 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     where.status = Array.isArray(f.status) ? { in: f.status } : f.status;
   }
   if (f.categoryId) where.categoryId = f.categoryId;
+  if (f.projectId) where.projectId = f.projectId;
   if (f.docType) {
     where.docType = Array.isArray(f.docType) ? { in: f.docType } : f.docType;
   }
@@ -314,6 +318,7 @@ const EXPENSE_SUMMARY_SELECT = {
   wht: true,
   total: true,
   categoryId: true,
+  projectId: true,
   paymentMethod: true,
   docType: true,
   vendorDocNumber: true,
@@ -380,6 +385,7 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     total: dec(row.total),
     categoryId: row.categoryId,
     categoryName: row.category?.name ?? null,
+    projectId: row.projectId ?? null,
     paymentMethod: row.paymentMethod,
     docType: (row.docType as ExpenseDocType) ?? "tax_invoice",
     vendorDocNumber: row.vendorDocNumber,

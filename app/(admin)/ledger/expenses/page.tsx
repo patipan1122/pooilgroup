@@ -15,6 +15,7 @@ import { LedgerHeader, NoCompanyState } from "../_components/LedgerHeader";
 import { CompanyBranchPicker } from "../_components/CompanyBranchPicker";
 import { ExpenseSearch } from "./_components/ExpenseSearch";
 import { listExpensesSummary, getExpense, listCategories, summarizeCompleteness } from "../_data";
+import { listLedgerProjects } from "@/lib/ledger/projects";
 import { ExpenseList } from "./_components/ExpenseList";
 import { ExpenseStatusTabs } from "./_components/ExpenseStatusTabs";
 import { CompletenessSummaryStrip } from "./_components/CompletenessSummaryStrip";
@@ -45,6 +46,7 @@ export default async function ExpensesPage({
     branch?: string;
     status?: string;
     category?: string;
+    project?: string; // filter by โครงการ (job-costing · F2)
     q?: string;
     selected?: string;
     tr?: string; // TRCloud send filter: "sent" | "unsent"
@@ -91,6 +93,7 @@ export default async function ExpensesPage({
   const statusFilter: LedgerStatusValue | LedgerStatusValue[] =
     status ?? (["draft", "confirmed", "locked"] as LedgerStatusValue[]);
   const categoryId = sp.category || undefined;
+  const projectId = sp.project || undefined;
   const q = sp.q?.trim() || undefined;
   const selected = sp.selected?.trim() || undefined;
   const tr = sp.tr === "sent" || sp.tr === "unsent" ? sp.tr : undefined;
@@ -127,6 +130,7 @@ export default async function ExpensesPage({
     branchId: scope.branchId,
     status: statusFilter,
     categoryId,
+    projectId,
     trcloudPushed,
     search: q,
   };
@@ -138,7 +142,7 @@ export default async function ExpensesPage({
     "expense.confirm",
   );
 
-  const [expensesResult, categories, completenessSummary] = await Promise.all([
+  const [expensesResult, categories, completenessSummary, projectRows] = await Promise.all([
     listExpensesSummary({
       ...summaryFilter,
       completeness: cc,
@@ -150,8 +154,12 @@ export default async function ExpensesPage({
     }),
     listCategories(scope.orgId, scope.companyId),
     summarizeCompleteness(summaryFilter),
+    // โครงการ active — ใช้เป็นตัวเลือก picker (แท็กบิล) + id→name map (chip อ่านอย่างเดียวในรายการ).
+    listLedgerProjects(scope.orgId, scope.companyId, { includeArchived: false }).catch(() => []),
   ]);
   const { expenses: allRows } = expensesResult;
+  const projectOptions = projectRows.map((p) => ({ value: p.id, label: p.name }));
+  const projectNameById = new Map(projectRows.map((p) => [p.id, p.name] as const));
 
   // D4 source tabs — narrow the SCOPE rows by the active tab's source/owner
   // predicate (rows already carry `source` + `createdBy` from the summary select).
@@ -173,7 +181,11 @@ export default async function ExpensesPage({
       : "blocked";
   };
   const tabRows = allRows.filter(matchesTab);
-  const rows = pay ? tabRows.filter((r) => payOf(r) === pay) : tabRows;
+  const rowsBase = pay ? tabRows.filter((r) => payOf(r) === pay) : tabRows;
+  // resolve ชื่อโครงการให้แต่ละแถว (queries ไม่ join relation → เติมจาก map ที่ดึงมาแล้ว · ถูก).
+  const rows = rowsBase.map((r) =>
+    r.projectId ? { ...r, projectName: projectNameById.get(r.projectId) ?? null } : r,
+  );
   const payCounts = { eligible: 0, requested: 0, paid: 0 };
   for (const r of tabRows) {
     const p = payOf(r);
@@ -189,6 +201,7 @@ export default async function ExpensesPage({
     companyId: scope.companyId,
     ...(scope.branchId ? { branchId: scope.branchId } : {}),
     ...(categoryId ? { categoryId } : {}),
+    ...(projectId ? { projectId } : {}),
     ...(cc
       ? {
           completenessStatus:
@@ -316,6 +329,7 @@ export default async function ExpensesPage({
   if (sp.branch) baseParams.set("branch", sp.branch);
   if (status) baseParams.set("status", status);
   if (categoryId) baseParams.set("category", categoryId);
+  if (projectId) baseParams.set("project", projectId);
   if (tr) baseParams.set("tr", tr);
   if (cc) baseParams.set("cc", cc);
   if (docType) baseParams.set("dt", docType);
@@ -451,6 +465,8 @@ export default async function ExpensesPage({
           baseParams={baseParams.toString()}
           status={status}
           categoryId={categoryId}
+          projectId={projectId}
+          projects={projectOptions}
           tr={tr}
           cc={cc}
           q={q}
@@ -518,6 +534,7 @@ export default async function ExpensesPage({
                 sort: c.sort,
               }))}
               branches={scope.branches}
+              projects={projectOptions}
               canEditClaimability={canEditClaimability}
               currentUserId={session.user.id}
               payreqEnabled={ledgerPayreqV1()}

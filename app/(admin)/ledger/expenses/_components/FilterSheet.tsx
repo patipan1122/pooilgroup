@@ -66,6 +66,10 @@ export interface FilterSheetProps {
   cc?: "green" | "yellow" | "red";
   categoryId?: string;
   categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
+  /** โครงการที่กรองอยู่ (?project=) — optional job-costing tag. */
+  projectId?: string;
+  /** ตัวเลือกโครงการ active — ไม่ส่ง/ว่าง = ซ่อนแถวกรองโครงการ. */
+  projects?: Array<{ value: string; label: string }>;
   /** แหล่งที่มา (?tab=) — moved into the popover (was a top tab strip). */
   tab?: ExpenseTab;
   /** เรียงลำดับ (?sort=) — moved into the popover (LeanUX · was a top select).
@@ -92,6 +96,7 @@ function activeCount(p: FilterSheetProps): number {
   if (p.tr) n += 1;
   if (p.cc) n += 1;
   if (p.categoryId) n += 1;
+  if (p.projectId) n += 1;
   if (p.status === "locked" || p.status === "void") n += 1;
   return n;
 }
@@ -143,7 +148,7 @@ function ChipTablist<T extends string>({
 }
 
 /** The actual controls inside the popover/sheet. */
-function FilterControls({ status, tr, cc, categoryId, categories, tab, sort, onSet }: FilterSheetProps) {
+function FilterControls({ status, tr, cc, categoryId, categories, projectId, projects, tab, sort, onSet }: FilterSheetProps) {
   return (
     <>
       <div className="space-y-1">
@@ -217,6 +222,25 @@ function FilterControls({ status, tr, cc, categoryId, categories, tab, sort, onS
           ))}
         </select>
       </div>
+      {/* โครงการ (F2) — โชว์เฉพาะตอนมีโครงการ active (progressive disclosure · ไม่โผล่ถ้าไม่มี). */}
+      {projects && projects.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-zinc-500">โครงการ</p>
+          <select
+            aria-label="กรองตามโครงการ"
+            value={projectId ?? ""}
+            onChange={(e) => onSet("project", e.target.value)}
+            className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]"
+          >
+            <option value="">ทุกโครงการ</option>
+            {projects.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </>
   );
 }

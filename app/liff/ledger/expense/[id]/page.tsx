@@ -17,7 +17,8 @@ import { getSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
-import { resolveLedgerActor, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, ledgerWebCan } from "@/lib/ledger/liff-auth";
+import { listLedgerProjects } from "@/lib/ledger/projects";
 import { prisma } from "@/lib/prisma";
 import { LiffExpensePane } from "./LiffExpensePane";
 import { LiffPayeeRequest } from "./LiffPayeeRequest";
@@ -71,14 +72,19 @@ export default async function LedgerLiffExpensePage({
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, { company: sp.company });
 
-  const [expense, categories] = await Promise.all([
+  const [expense, categories, projectRows] = await Promise.all([
     scope.companyId
       ? getExpense({ orgId: scope.orgId, companyId: scope.companyId, id, withSlip: true }).catch(() => null)
       : Promise.resolve(null),
     scope.companyId
       ? listCategories(scope.orgId, scope.companyId)
       : Promise.resolve([] as Awaited<ReturnType<typeof listCategories>>),
+    // โครงการ active สำหรับ picker (แท็กบิลเข้าโครงการ · F2). company-scoped เสมอ.
+    scope.companyId
+      ? listLedgerProjects(scope.orgId, scope.companyId, { includeArchived: false }).catch(() => [])
+      : Promise.resolve([] as Awaited<ReturnType<typeof listLedgerProjects>>),
   ]);
+  const projectOptions = projectRows.map((p) => ({ value: p.id, label: p.name }));
 
   if (!expense) {
     return (
@@ -109,10 +115,13 @@ export default async function LedgerLiffExpensePage({
     : `/liff/ledger/my${companyQs}`;
 
   // ── ขอโอนเงินบนมือถือ (จบในที่เดียว · CEO 2026-07-09) ─────────────────────────
-  // สิทธิ์เดียวกับที่ createPaymentRequestAction เช็ก (payment.request · super_admin bypass)
+  // สิทธิ์เดียวกับที่ createPaymentRequestAction เช็ก (payment.request · super_admin bypass).
+  // ต้องเช็กด้วย ledger role ของ actor (ledgerWebCan) — ไม่ใช่ Pool role (ledgerWebCanForRole):
+  // พนักงานไลน์ (member) มีสิทธิ์ payment.request=✅ ใน matrix แต่ Pool role="staff" ทำให้
+  // ledgerWebCanForRole คืน false → เดิมพนักงานไม่เห็นปุ่มขอโอนเลย (fix 2026-07-10).
   const companyId = scope.companyId;
   const canRequestTransfer = companyId
-    ? await ledgerWebCanForRole(scope.orgId, session.user.role, "payment.request")
+    ? await ledgerWebCan(actor, "payment.request")
     : false;
   // ตั้งสาขา+หมวดครบ = ขอโอนได้ (ไม่งั้น server reject) · categoryId ว่าง/branchId null = ยังไม่ครบ
   const classified = Boolean(expense.branchId && expense.categoryId);
@@ -165,6 +174,7 @@ export default async function LedgerLiffExpensePage({
         canConfirm={actor.canConfirm}
         currentUserId={actor.userId}
         backHref={backHref}
+        projects={projectOptions}
       />
 
       {companyId && (

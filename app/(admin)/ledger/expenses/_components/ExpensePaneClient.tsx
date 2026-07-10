@@ -9,6 +9,7 @@ import type {
   LedgerActionResult,
 } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseRow, CategoryOption, BranchOption } from "@/components/ledger/_kit/types";
+import type { ProjectOption } from "@/components/ledger/ProjectPicker";
 import {
   saveExpense,
   confirmExpense,
@@ -19,6 +20,7 @@ import {
   requestDeleteExpense,
   ensureCentralBranch,
   createPaymentRequestAction,
+  setExpenseProjectAction,
 } from "../../_actions";
 
 export function ExpensePaneClient({
@@ -30,11 +32,14 @@ export function ExpensePaneClient({
   currentUserId,
   payreqEnabled = false,
   showSendToTrcloud = true,
+  projects,
 }: {
   expense: ExpenseRow;
   replacement?: ExpenseRow | null;
   categories: CategoryOption[];
   branches: BranchOption[];
+  /** โครงการ (F2) active ของบริษัทนี้ — ไม่ส่งมา = ซ่อนช่องโครงการ. */
+  projects?: ProjectOption[];
   /** นักบัญชี/แอดมิน → ปรับ "ขอคืนได้?" + แนบใบทดแทนได้ (gate เดียวกับ confirm). */
   canEditClaimability?: boolean;
   /** Pool user id ของคนที่ล็อกอิน — ใช้ตัดสิน self-delete (ลบเอง) vs ขอลบ. */
@@ -67,6 +72,10 @@ export function ExpensePaneClient({
         requestDeleteExpense(id, reason)
       }
       onEnsureCentralBranch={(companyId: string) => ensureCentralBranch(companyId)}
+      projects={projects}
+      onSetProject={(id: string, projectId: string | null): Promise<LedgerActionResult> =>
+        setExpenseProjectAction(id, projectId)
+      }
       onRequestPayout={
         payreqEnabled
           ? (): Promise<LedgerActionResult> => createPaymentRequestAction([expense.id], {})

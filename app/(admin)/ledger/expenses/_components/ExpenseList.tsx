@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, FolderOpen } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -67,6 +67,8 @@ export function ExpenseList({
   baseParams,
   status,
   categoryId,
+  projectId,
+  projects,
   tr,
   cc,
   q,
@@ -91,6 +93,10 @@ export function ExpenseList({
   baseParams: string;
   status?: LedgerStatusValue;
   categoryId?: string;
+  /** โครงการที่กรองอยู่ (?project=) — ในตัวกรอง (progressive disclosure). */
+  projectId?: string;
+  /** ตัวเลือกโครงการ active สำหรับ dropdown ในตัวกรอง. */
+  projects?: Array<{ value: string; label: string }>;
   tr?: "sent" | "unsent";
   /** ภาษีซื้อ color filter (?cc=) — green/yellow/red. */
   cc?: "green" | "yellow" | "red";
@@ -194,6 +200,7 @@ export function ExpenseList({
     sp.delete("tr");
     sp.delete("cc");
     sp.delete("category");
+    sp.delete("project");
     sp.delete("tab");
     sp.delete("nr");
     if (selectedId) sp.set("selected", selectedId);
@@ -408,6 +415,8 @@ export function ExpenseList({
               cc={cc}
               categoryId={categoryId}
               categories={categories}
+              projectId={projectId}
+              projects={projects}
               tab={tab}
               sort={sort}
               onSet={setParam}
@@ -979,6 +988,17 @@ export function ExpenseList({
                       >
                         {r.categoryName}
                       </Link>
+                    )}
+
+                    {/* โครงการ chip — read-only tag (brand-blue). โชว์เมื่อบิลผูกโครงการ. */}
+                    {r.projectId && r.projectName && (
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-[var(--color-brand-50)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-brand-700)]"
+                        title={`โครงการ: ${r.projectName}`}
+                      >
+                        <FolderOpen className="size-2.5" aria-hidden />
+                        {r.projectName}
+                      </span>
                     )}
 
                     {/* สถานะการโอนต่อใบ (CEO 2026-06-08): โอนแล้ว(เขียวเข้ม) · รอโอน(ฟ้า) ·

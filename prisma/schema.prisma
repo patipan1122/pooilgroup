@@ -6347,6 +6347,59 @@ model LedgerCategory {
   @@schema("public")
 }
 
+// โครงการชั่วคราว (job-costing · F2 2026-07-10) — แท็กค่าใช้จ่ายเข้าโครงการ เช่น "รีโนเวทตึก A"
+// แล้วดูรายงานต้นทุนแยกได้. เป็นมิติ display/report แนวขวาง (เหมือน branch/category):
+//   ❌ ไม่ใช่ผัง GL (ไม่มี trcloud fields · category→GL ยังศักดิ์สิทธิ์) · ❌ ไม่ push เข้า TRCloud
+//   ❌ ห้ามสับสน/ต่อ FK กับ RentalProject (lease ERP · Cascade children · คนละโมดูล)
+// ลบ = soft-archive (status='archived') เท่านั้น · expense.projectId → SET NULL (ไม่ทำใบเสร็จหาย).
+model LedgerProject {
+  id          String    @id @default(uuid()) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  name        String
+  status      String    @default("active") // active | archived
+  budgetTotal Decimal?  @map("budget_total") @db.Decimal(15, 2) // งบทั้งโครงการ — เทียบกับ "ยอดจ่ายจริง" (total−WHT · CEO 2026-07-09)
+  startedAt   DateTime? @map("started_at") @db.Date
+  endedAt     DateTime? @map("ended_at") @db.Date
+  note        String?
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, companyId, name])
+  @@index([orgId, companyId, status])
+  @@map("ledger_project")
+  @@schema("public")
+}
+
+// งวดงาน (progress/installment payment · F3 2026-07-10) — ตารางงวดผูกกับโครงการ (งวด 1/2/3).
+// จ่ายผ่าน money path เดิม (createPaymentRequest) → 'paid' ต้องผูก paidPaymentRequestId (สลิปจริงบน
+// LedgerPayment) หรือ paidExpenseId (เงินสด). ❌ ห้ามเขียน LedgerExpense.paymentStatus.
+// plannedAmount = ยอดสัญญาเต็ม (gross) · โชว์ "โอนจริง" = gross−WHT จาก payment request (CEO 2026-07-09).
+model LedgerInstallment {
+  id                   String    @id @default(uuid()) @db.Uuid
+  orgId                String    @map("org_id") @db.Uuid
+  companyId            String    @map("company_id") @db.Uuid
+  projectId            String    @map("project_id") @db.Uuid // NOT NULL — งวดต้องอยู่ใต้โครงการ (บังคับ F3-after-F2)
+  seq                  Int       @default(1)
+  label                String    @default("") // "งวด 1", "มัดจำ", "งวดสุดท้าย"
+  vendorLabel          String?   @map("vendor_label") // ผู้รับเหมา (free-text · ไม่มี master/rollup ใน LIGHT)
+  dueDate              DateTime? @map("due_date") @db.Date
+  plannedAmount        Decimal   @default(0) @map("planned_amount") @db.Decimal(15, 2) // ยอดสัญญา (gross)
+  status               String    @default("planned") // planned | paid_pending_slip(amber) | paid | broken | void
+  paidPaymentRequestId String?   @map("paid_payment_request_id") @db.Uuid // ปลายทางหลัก (สลิปอยู่ที่นี่)
+  paidExpenseId        String?   @map("paid_expense_id") @db.Uuid // fallback เงินสด
+  paidAt               DateTime? @map("paid_at") @db.Timestamptz(6)
+  paidBy               String?   @map("paid_by") @db.Uuid
+  createdBy            String?   @map("created_by") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, companyId, projectId, seq])
+  @@map("ledger_installment")
+  @@schema("public")
+}
+
 // ค่าใช้จ่าย (core) — 1 ใบเสร็จ/สลิป = 1 row
 model LedgerExpense {
   id                    String              @id @default(uuid()) @db.Uuid
@@ -6364,6 +6417,7 @@ model LedgerExpense {
   wht                   Decimal             @default(0) @db.Decimal(15, 2) // หัก ณ ที่จ่าย
   total                 Decimal             @default(0) @db.Decimal(15, 2)
   categoryId            String?             @map("category_id") @db.Uuid
+  projectId             String?             @map("project_id") @db.Uuid // โครงการชั่วคราว (job-costing · F2) — orthogonal tag, null=ไม่ผูกโครงการ. FK ON DELETE SET NULL (migration).
   paymentMethod         String?             @map("payment_method")
   originalUrl           String?             @map("original_url") // Drive (P1.5) / R2
   thumbUrl              String?             @map("thumb_url") // R2
@@ -6440,6 +6494,7 @@ model LedgerExpense {
 
   @@unique([orgId, companyId, docCode])
   @@index([orgId, companyId, branchId, status])
+  @@index([orgId, companyId, projectId, status])
   @@index([orgId, companyId, status, docDate(sort: Desc)])
   @@index([orgId, companyId, categoryId])
   @@index([sha256]) // dedup lookup

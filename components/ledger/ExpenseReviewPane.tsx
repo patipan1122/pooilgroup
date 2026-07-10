@@ -54,6 +54,8 @@ import { DocTag, PaymentTag } from "./_kit/StatusTags";
 import { AmountInput } from "./_kit/AmountInput";
 import { BranchPicker } from "@/app/(admin)/ledger/_components/BranchPicker";
 import { SearchableSelect } from "./SearchableSelect";
+import { ProjectPicker, type ProjectOption } from "./ProjectPicker";
+import { FolderOpen } from "lucide-react";
 import type { ExpenseRow, CategoryOption, BranchOption } from "./_kit/types";
 import type {
   ExpenseItem,
@@ -160,6 +162,12 @@ export type RequestDeleteAction = (
 export type EnsureCentralBranchAction = (
   companyId: string,
 ) => Promise<LedgerActionResult & { branchId?: string }>;
+/** แท็ก "โครงการ" ให้บิลนี้ (setExpenseProjectAction) — projectId=null = ล้างแท็ก.
+ *  own-row/edit_others gated ฝั่ง server. optional เสมอ · ไม่บล็อกการบันทึก. */
+export type SetExpenseProjectAction = (
+  expenseId: string,
+  projectId: string | null,
+) => Promise<LedgerActionResult>;
 
 // ── ภาษีซื้อ copy maps (deterministic, ไม่ใช้ AI) ──
 const COMPLETENESS_META: Record<
@@ -296,6 +304,8 @@ export function ExpenseReviewPane({
   onRequestDelete,
   onEnsureCentralBranch,
   onRequestPayout,
+  projects,
+  onSetProject,
   currentUserId,
   readOnly = false,
   canConfirm = true,
@@ -325,6 +335,11 @@ export function ExpenseReviewPane({
   /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — server หาเลขบัญชีจากบิล/ผู้ขายเดิมให้เอง.
    *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
   onRequestPayout?: () => Promise<LedgerActionResult>;
+  /** โครงการ (F2) ที่เลือกได้สำหรับบริษัทนี้ (active เท่านั้น) — ไม่ส่งมา = ซ่อนช่องโครงการ. */
+  projects?: ProjectOption[];
+  /** แท็กบิลนี้เข้าโครงการ (setExpenseProjectAction) — เรียกทันทีที่เปลี่ยน · null=ล้าง.
+   *  ไม่ส่งมา = ซ่อนช่องโครงการ (เช่นยังไม่เปิดฟีเจอร์). */
+  onSetProject?: SetExpenseProjectAction;
   /** id ของผู้ใช้ปัจจุบัน — ใช้เช็คว่ารายการนี้ "ของฉัน" ไหม (UX gate; server re-checks). */
   currentUserId?: string | null;
   /** locked/void → ดูอย่างเดียว */
@@ -537,6 +552,52 @@ export function ExpenseReviewPane({
     () => branches.find((b) => b.name === "สำนักงาน (ส่วนกลาง)"),
     [branches],
   );
+
+  // ── โครงการ (F2 · job-costing) — แท็กเสริม ไม่บังคับ · ไม่บล็อกการบันทึก ─────────
+  // ค่าเริ่มต้น = ที่บิลผูกไว้ · ถ้าบิลนี้ยังไม่ผูก (ร่างใหม่) → "จำโครงการล่าสุดที่เลือก"
+  // (localStorage) มา pre-select ให้ใน picker — แต่ *ไม่* เขียน DB จนกว่าจะแตะเอง.
+  const PROJECT_LS_KEY = "ledger:lastProjectId";
+  const [projectId, setProjectId] = useState<string>(expense.projectId ?? "");
+  const [projectMsg, setProjectMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [projectPending, setProjectPending] = useState(false);
+  // pre-select โครงการล่าสุด (เฉพาะร่างใหม่ที่ยังไม่ผูก + ตัวเลือกยังมีอยู่) — display เท่านั้น.
+  useEffect(() => {
+    if (expense.projectId || expense.status !== "draft" || !projects?.length) return;
+    try {
+      const last = localStorage.getItem(PROJECT_LS_KEY);
+      if (last && projects.some((p) => p.value === last)) setProjectId(last);
+    } catch {
+      /* localStorage อาจถูกปิด (LINE webview) — ข้ามได้ */
+    }
+    // ตั้งครั้งเดียวตอน mount ต่อบิล
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expense.id]);
+
+  function handleSetProject(next: string | null) {
+    if (!onSetProject) return;
+    const prev = projectId;
+    setProjectId(next ?? "");
+    setProjectMsg(null);
+    setProjectPending(true);
+    // จำไว้ใช้ pre-select บิลถัดไป (เฉพาะตอนเลือกจริง · ล้าง = ไม่แตะ memory).
+    if (next) {
+      try {
+        localStorage.setItem(PROJECT_LS_KEY, next);
+      } catch {
+        /* noop */
+      }
+    }
+    startTransition(async () => {
+      const res = await onSetProject(expense.id, next);
+      setProjectPending(false);
+      if (res.ok) {
+        setProjectMsg({ kind: "ok", text: next ? "ผูกโครงการแล้ว" : "ล้างโครงการแล้ว" });
+      } else {
+        setProjectId(prev); // rollback UI ถ้า server ปฏิเสธ
+        setProjectMsg({ kind: "err", text: res.error ?? "ตั้งโครงการไม่สำเร็จ" });
+      }
+    });
+  }
 
   // ── delete control (D2) — เช็คฝั่ง client ว่า "ลบเองได้ไหม" (server re-checks):
   //    ของฉัน + ร่าง + ยังไม่ส่ง TRCloud + ภายใน 5 นาที. ────────────────────────────────
@@ -787,6 +848,36 @@ export function ExpenseReviewPane({
                 )}
               </div>
             </div>
+
+            {/* โครงการ (ถ้ามี) — แท็กงาน/โปรเจกต์เสริม (F2 · job-costing). ไม่บังคับ ·
+                ไม่กันการบันทึก · เลือ 1 แตะ · แตะแล้วผูกทันที (setExpenseProjectAction). */}
+            {projects && onSetProject && projects.length > 0 && (
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <label className="flex items-center gap-1 text-xs font-semibold text-zinc-600">
+                    <FolderOpen className="size-3.5 text-[var(--color-brand-600)]" aria-hidden />
+                    โครงการ (ถ้ามี)
+                  </label>
+                  <span className="text-[11px] text-zinc-400">ไม่บังคับ</span>
+                </div>
+                <ProjectPicker
+                  value={projectId}
+                  options={projects}
+                  onChange={handleSetProject}
+                  disabled={locked || projectPending}
+                />
+                {projectMsg && (
+                  <p
+                    className={cn(
+                      "mt-1.5 text-[11px] font-medium",
+                      projectMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600",
+                    )}
+                  >
+                    {projectMsg.text}
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           {/* 2 · ข้อมูลร้านค้า & เอกสาร */}

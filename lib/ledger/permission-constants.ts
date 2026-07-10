@@ -25,6 +25,7 @@ export const LEDGER_CAPABILITIES = [
   "scope.all_branches", // เห็นทุกสาขา (ไม่งั้นเฉพาะสาขาที่ดูแล)
   "expense.edit_others", // แก้ไข/ลบรายการของคนอื่น
   "payment.request", // ขอโอนเงิน (เลือกบิล → ส่งคำขอเข้ากลุ่มผู้บริหาร)
+  "project.manage", // สร้าง/ปิดโครงการชั่วคราว + จัดงวดงาน (F2/F3)
 ] as const;
 export type LedgerCapability = (typeof LEDGER_CAPABILITIES)[number];
 
@@ -78,6 +79,10 @@ export const CAPABILITY_LABEL: Record<
     title: "ขอโอนเงิน",
     desc: "เลือกบิลแล้วส่งคำขอโอนเข้ากลุ่มผู้บริหาร",
   },
+  "project.manage": {
+    title: "จัดการโครงการ/งวดงาน",
+    desc: "สร้าง-ปิดโครงการชั่วคราว และตั้ง/ปิดงวดงาน",
+  },
 };
 
 /** Code defaults — used when no DB override row exists for (org, role, cap). */
@@ -92,6 +97,7 @@ export const PERMISSION_DEFAULTS: Record<
     "scope.all_branches": false,
     "expense.edit_others": false,
     "payment.request": true, // ops requests transfers — the core daily action
+    "project.manage": false, // staff แท็กบิลเข้าโครงการได้ (ผ่าน edit-own) แต่ไม่สร้าง/ปิดโครงการ
   },
   accountant: {
     "expense.confirm": true,
@@ -100,6 +106,7 @@ export const PERMISSION_DEFAULTS: Record<
     "scope.all_branches": true,
     "expense.edit_others": true,
     "payment.request": true,
+    "project.manage": true,
   },
   admin: {
     "expense.confirm": true,
@@ -108,6 +115,7 @@ export const PERMISSION_DEFAULTS: Record<
     "scope.all_branches": true,
     "expense.edit_others": true,
     "payment.request": true,
+    "project.manage": true,
   },
   external_accountant: {
     "expense.confirm": false,
@@ -116,6 +124,7 @@ export const PERMISSION_DEFAULTS: Record<
     "scope.all_branches": true,
     "expense.edit_others": false,
     "payment.request": false, // external accountant doesn't initiate payments
+    "project.manage": false, // ดู/ส่งออกอย่างเดียว — ไม่จัดการโครงการ
   },
 };
 
