@@ -42,14 +42,19 @@ async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: s
       select: { id: true },
     });
     return created.id;
-  } catch {
-    // ตาราง dc.issues ยังไม่ถูกสร้าง (migration ยังไม่ apply) หรือชน unique (race) → best-effort
+  } catch (e) {
+    // ชน unique (race · กดพร้อมกัน batchKey เดิม) → อีกฝั่งสร้างไปแล้ว → อ่านใบเดิมกลับ.
     try {
       const again = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-      return again?.id ?? null;
+      if (again) return again.id;
     } catch {
-      return null; // ยังไม่มีตาราง → เบิกได้ปกติ (พิมพ์ใบไม่ได้จนกว่าจะ apply migration)
+      /* re-read ก็พังด้วย → ตกลงไป log ด้านล่าง */
     }
+    // ★ มาถึงตรงนี้ = create พังจริง (ไม่ใช่แค่ race) — เดิมกลืน error เงียบ ทำให้ dc.issues ว่างเปล่า
+    //   ตลอดโดยไม่มีใครรู้. surface ไว้ให้ diagnose ได้ · แต่ยัง degrade เป็น null เพื่อไม่บล็อกการเบิก
+    //   (สต๊อกยังหักปกติ · แค่พิมพ์ใบไม่ได้จนกว่าจะแก้/apply migration dc.issues).
+    console.error("[dc:ensureIssueHeader] create failed", e);
+    return null;
   }
 }
 
@@ -63,13 +68,17 @@ async function ensureMoveHeader(orgId: string, warehouseId: string, batchKey: st
       select: { id: true },
     });
     return created.id;
-  } catch {
+  } catch (e) {
+    // ชน unique (race · กดพร้อมกัน batchKey เดิม) → อ่านใบเดิมกลับ.
     try {
       const again = await prisma.dcMove.findFirst({ where: { orgId, batchKey }, select: { id: true } });
-      return again?.id ?? null;
+      if (again) return again.id;
     } catch {
-      return null; // ยังไม่มีตาราง → ย้ายได้ปกติ
+      /* re-read พังด้วย → ตกลงไป log */
     }
+    // ★ create พังจริง — เดิมกลืนเงียบ. surface ไว้ · degrade เป็น null (ย้ายได้ปกติ · แค่พิมพ์ใบไม่ได้).
+    console.error("[dc:ensureMoveHeader] create failed", e);
+    return null;
   }
 }
 

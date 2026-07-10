@@ -944,12 +944,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: Wallet2,
         roles: ["super_admin", "org_admin", "admin", "area_manager"],
       },
-      {
-        href: "/ledger/projects",
-        label: "โครงการ",
-        icon: FolderTree,
-        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-      },
       // ── ตั้งค่า ──
       {
         href: "/ledger/settings",
@@ -1183,6 +1177,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/dc/office/transfers",
         label: "การโอน",
         icon: Truck,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/dc/office/issue",
+        label: "เบิกออก",
+        icon: PackageMinus,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {

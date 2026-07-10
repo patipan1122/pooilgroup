@@ -8,9 +8,14 @@
 //   • ปุ่มยืนยัน busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · โชว์รายการที่เบิกไม่ผ่านรายบรรทัด
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2, PackageMinus } from "lucide-react";
+import { Trash2, PackageMinus, List, Search, X, Plus, Check, ImageIcon } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { lookupForIssue, postIssue, type IssueLine } from "@/lib/dc/issue-actions";
+import {
+  listCategoriesForCount,
+  listProductsForCount,
+  type CountProductRow,
+} from "@/lib/dc/count-actions";
 
 type Line = {
   lineKey: string;
@@ -74,6 +79,7 @@ export function IssueWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [lastIssueId, setLastIssueId] = useState<string | null>(null); // ไว้พิมพ์ใบเบิกล่าสุด
+  const [browseOpen, setBrowseOpen] = useState(false); // ป็อปอัป "ดูสินค้า / เลือกจากรายการ"
   // รายการที่เบิกไม่ผ่าน (เช่น สต๊อกไม่พอ) จากรอบล่าสุด — โชว์ให้ผู้ใช้รู้
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
@@ -136,6 +142,40 @@ export function IssueWorkspace({
       }
     },
     [warehouseId],
+  );
+
+  // กดเลือกจากป็อปอัป "ดูสินค้า" → เพิ่มบรรทัดแบบเดียวกับสแกน (มีอยู่แล้ว = +1).
+  // คืน "added" / "exists" ให้ป็อปอัปโชว์สถานะปุ่ม. หมายเหตุ: listProductsForCount ไม่ส่ง
+  // location มา → ใช้ null (สแกนตัวจริงจะเติม location ให้ · ตรงนี้เป็นแค่ตัวช่วยหาสินค้า).
+  const addPickedProduct = useCallback(
+    (p: CountProductRow): "added" | "exists" => {
+      let outcome: "added" | "exists" = "added";
+      setLines((prev) => {
+        const idx = prev.findIndex((l) => l.productId === p.productId);
+        if (idx >= 0) {
+          outcome = "exists";
+          const next = [...prev];
+          next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            lineKey: newLineKey(),
+            productId: p.productId,
+            sku: p.sku,
+            name: p.name,
+            unit: p.unit ?? "ชิ้น",
+            onHand: p.systemQty,
+            location: null,
+            qty: 1,
+            reason: "",
+          },
+        ];
+      });
+      return outcome;
+    },
+    [],
   );
 
   const setQty = useCallback((lineKey: string, qty: number) => {
@@ -204,6 +244,29 @@ export function IssueWorkspace({
           ยิงบาร์โค้ด หรือ พิมพ์รหัสสินค้า — เบิกออกจากคลัง {warehouseName}
         </div>
         <DcScanBox onScan={handleScan} placeholder="ยิงบาร์โค้ด / พิมพ์ SKU แล้วกด Enter…" />
+        {/* หาสินค้าไม่เจอ/ไม่มีบาร์โค้ด → ไล่ดูจากรายการ (มีรูป + คงเหลือ) แล้วกดเลือก */}
+        <button
+          type="button"
+          onClick={() => setBrowseOpen(true)}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            minHeight: 46,
+            borderRadius: 12,
+            border: "1.5px solid var(--dc-line-strong, #c9d3e0)",
+            background: "var(--dc-paper, #fff)",
+            color: "var(--dc-ink, #1f2733)",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <List size={18} /> ดูสินค้า / เลือกจากรายการ
+        </button>
       </div>
 
       {/* error */}
@@ -381,6 +444,17 @@ export function IssueWorkspace({
         </a>
       )}
 
+      {/* ป็อปอัป "ดูสินค้า / เลือกจากรายการ" — ไล่ดูสินค้า (มีรูป + คงเหลือ) แล้วกดเลือกเข้าใบเบิก */}
+      {browseOpen && (
+        <BrowseProductsSheet
+          warehouseId={warehouseId}
+          warehouseName={warehouseName}
+          inSheetIds={new Set(lines.map((l) => l.productId))}
+          onClose={() => setBrowseOpen(false)}
+          onPick={addPickedProduct}
+        />
+      )}
+
       {/* toast สำเร็จ */}
       {toast && (
         <div
@@ -407,5 +481,340 @@ export function IssueWorkspace({
         </div>
       )}
     </div>
+  );
+}
+
+// ====================================================================
+// ป็อปอัป "ดูสินค้า / เลือกจากรายการ" — เดียวกับหน้านับสต๊อก (BrowseProductsSheet)
+//   • reuse listProductsForCount (มีรูป + คงเหลือ + ซ่อนของหมด = ถูกต้องสำหรับเบิก:
+//     เบิกของที่ไม่มีในสต๊อกไม่ได้อยู่แล้ว)
+//   • กดเลือก → onPick → เพิ่มบรรทัดเบิก (เหมือนสแกน · มีอยู่แล้ว = +1)
+// ====================================================================
+
+function BrowseProductsSheet({
+  warehouseId,
+  warehouseName,
+  inSheetIds,
+  onClose,
+  onPick,
+}: {
+  warehouseId: string;
+  warehouseName: string;
+  inSheetIds: Set<string>;
+  onClose: () => void;
+  onPick: (p: CountProductRow) => "added" | "exists";
+}) {
+  const [cats, setCats] = useState<string[]>([]);
+  const [activeCat, setActiveCat] = useState<string>(""); // "" = ทุกหมวด
+  const [q, setQ] = useState("");
+  const [products, setProducts] = useState<CountProductRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // optimistic: id ที่เพิ่งกดเลือก (ก่อน parent ส่ง inSheetIds กลับมา)
+  const [justAdded, setJustAdded] = useState<Set<string>>(new Set());
+
+  // โหลดหมวดหมู่ครั้งเดียวตอนเปิด
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const list = await listCategoriesForCount();
+      if (!cancelled) setCats(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // โหลดสินค้า (debounce ค้นหา) ทุกครั้งที่ category/q เปลี่ยน
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const t = setTimeout(() => {
+      void (async () => {
+        const res = await listProductsForCount({
+          warehouseId,
+          category: activeCat || undefined,
+          q: q.trim() || undefined,
+        });
+        if (cancelled) return;
+        if (res.ok) setProducts(res.products);
+        else setError(res.error);
+        setLoading(false);
+      })();
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [warehouseId, activeCat, q]);
+
+  const handlePick = (p: CountProductRow) => {
+    onPick(p);
+    setJustAdded((prev) => new Set(prev).add(p.productId));
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="ดูสินค้า — เลือกสินค้าที่จะเบิกออก"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9998,
+        background: "rgba(20,28,45,0.32)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--dc-paper, #fff)",
+          width: "100%",
+          maxWidth: 760,
+          maxHeight: "90vh",
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 -8px 34px rgba(20,40,90,0.22)",
+        }}
+      >
+        {/* header */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "16px 16px 12px",
+            borderBottom: "1px solid var(--dc-line, #e6eaf0)",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink, #1f2733)" }}>ดูสินค้า</div>
+            <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)" }}>
+              คลัง {warehouseName} · กดเลือกสินค้าที่จะเบิกออก
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            style={{
+              flexShrink: 0,
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              border: "1.5px solid var(--dc-line, #e6eaf0)",
+              background: "var(--dc-paper, #fff)",
+              display: "grid",
+              placeItems: "center",
+              cursor: "pointer",
+              color: "var(--dc-muted, #6b7785)",
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* search */}
+        <div style={{ padding: "12px 16px 8px" }}>
+          <div style={{ position: "relative" }}>
+            <Search
+              size={17}
+              style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--dc-subtle, #9aa4b2)" }}
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="ค้นหาชื่อ / รหัส / บาร์โค้ด…"
+              style={{
+                width: "100%",
+                padding: "11px 12px 11px 36px",
+                borderRadius: 12,
+                border: "1.5px solid var(--dc-line-strong, #c9d3e0)",
+                fontSize: 15,
+                color: "var(--dc-ink, #1f2733)",
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* category chips */}
+        {cats.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              padding: "4px 16px 12px",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <CatChip label="ทุกหมวด" active={activeCat === ""} onClick={() => setActiveCat("")} />
+            {cats.map((c) => (
+              <CatChip key={c} label={c} active={activeCat === c} onClick={() => setActiveCat(c)} />
+            ))}
+          </div>
+        )}
+
+        {/* product table */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 28, color: "var(--dc-muted, #6b7785)", fontSize: 14 }}>กำลังโหลด…</div>
+          ) : error ? (
+            <div style={{ textAlign: "center", padding: 28, color: "#c0392b", fontSize: 14 }}>{error}</div>
+          ) : products.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 28, color: "var(--dc-muted, #6b7785)", fontSize: 14 }}>
+              ไม่พบสินค้า{q.trim() ? ` ที่ตรงกับ “${q.trim()}”` : " ที่มีของในคลังนี้"}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", paddingLeft: 14, fontSize: 12, color: "var(--dc-muted, #6b7785)", fontWeight: 700, padding: "8px 12px" }}>สินค้า</th>
+                    <th style={{ textAlign: "right", fontSize: 12, color: "var(--dc-muted, #6b7785)", fontWeight: 700, padding: "8px 12px" }}>มีอยู่</th>
+                    <th style={{ width: 96, textAlign: "center" }} aria-label="เลือก" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.map((p) => {
+                    const added = inSheetIds.has(p.productId) || justAdded.has(p.productId);
+                    return (
+                      <tr key={p.productId}>
+                        <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--dc-line, #e6eaf0)", minWidth: 180 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Thumb url={p.imageUrl} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 650, fontSize: 14.5, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>{p.name}</div>
+                              <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 1 }}>
+                                {p.sku}
+                                {p.category ? ` · ${p.category}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: "10px 12px",
+                            borderBottom: "1px solid var(--dc-line, #e6eaf0)",
+                            textAlign: "right",
+                            whiteSpace: "nowrap",
+                            fontWeight: 600,
+                            color: "var(--dc-ink, #1f2733)",
+                          }}
+                        >
+                          {p.systemQty}
+                          {p.unit ? (
+                            <span style={{ color: "var(--dc-muted, #6b7785)", fontWeight: 400, fontSize: 12.5 }}> {p.unit}</span>
+                          ) : null}
+                        </td>
+                        <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--dc-line, #e6eaf0)", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => handlePick(p)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              padding: "8px 12px",
+                              borderRadius: 10,
+                              border: "none",
+                              cursor: "pointer",
+                              fontWeight: 700,
+                              fontSize: 13.5,
+                              background: added ? "var(--dc-canvas, #f1f4f9)" : "var(--color-brand-600, #2563eb)",
+                              color: added ? "var(--dc-muted, #6b7785)" : "#fff",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {added ? (
+                              <>
+                                <Check size={15} /> ในใบแล้ว
+                              </>
+                            ) : (
+                              <>
+                                <Plus size={15} /> เบิก
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* footer */}
+        <div style={{ padding: "10px 16px 16px", borderTop: "1px solid var(--dc-line, #e6eaf0)" }}>
+          <button type="button" className="dc-btn-xl" onClick={onClose}>
+            เสร็จ — กลับไปเบิก
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flexShrink: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "7px 14px",
+        borderRadius: 999,
+        fontSize: 13.5,
+        fontWeight: 650,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        border: active ? "1.5px solid var(--color-brand-600, #2563eb)" : "1.5px solid var(--dc-line, #e6eaf0)",
+        background: active ? "var(--color-brand-600, #2563eb)" : "var(--dc-paper, #fff)",
+        color: active ? "#fff" : "var(--dc-muted, #6b7785)",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// รูปสินค้าเล็ก (fallback ไอคอนถ้าไม่มีรูป)
+function Thumb({ url, size = 40 }: { url?: string | null; size?: number }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        flexShrink: 0,
+        width: size,
+        height: size,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "var(--dc-canvas, #f1f4f9)",
+        border: "1px solid var(--dc-line, #e6eaf0)",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ) : (
+        <ImageIcon size={Math.round(size * 0.42)} color="var(--dc-subtle, #9aa4b2)" />
+      )}
+    </span>
   );
 }
