@@ -6,6 +6,8 @@ import { Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { TRANSFER_STATUS_LABEL } from "@/lib/dc/nav";
 import { DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
@@ -78,6 +80,7 @@ export default async function DcTransfersPage() {
   };
 
   const inTransitCount = transfers.filter((t) => t.status === DcTransferStatus.IN_TRANSIT).length;
+  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบโอน = super_admin เท่านั้น
   const chrome = await getDcOfficeChrome(orgId);
 
   return (
@@ -121,6 +124,7 @@ export default async function DcTransfersPage() {
                 <th style={{ ...cellHead, textAlign: "right" }}>รายการ</th>
                 <th style={cellHead}>สถานะ</th>
                 <th style={cellHead}>ส่งเมื่อ</th>
+                {canDelete && <th style={{ ...cellHead, textAlign: "right" }}>ลบ</th>}
               </tr>
             </thead>
             <tbody>
@@ -159,6 +163,11 @@ export default async function DcTransfersPage() {
                     <td style={{ ...cell, color: "#52525b", fontVariantNumeric: "tabular-nums" }}>
                       {fmtDate(t.dispatchedAt)}
                     </td>
+                    {canDelete && (
+                      <td style={{ ...cell, textAlign: "right" }}>
+                        <DcDeleteButton docType="transfer" docId={t.id} docCode={t.transferCode} size="sm" />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

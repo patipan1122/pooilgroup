@@ -40,6 +40,7 @@ import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } fr
 import { retryTrcloud } from "@/lib/dc/grn-actions";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL, PO_FLOW_CORE } from "@/lib/dc/nav";
 import { Dialog } from "@/components/ui/dialog";
+import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 
 // ── types (props จาก server) ──────────────────────────────────
 export type PoLineData = {
@@ -161,6 +162,7 @@ export function PoDetail({
   thaiFreightPaid,
   warehouses,
   canManage,
+  canDelete = false,
   r2PublicUrl,
   onChanged,
   freightOwedSatang,
@@ -172,6 +174,8 @@ export function PoDetail({
   thaiFreightPaid: boolean;
   warehouses: WarehouseOption[];
   canManage: boolean;
+  // super_admin เท่านั้น — โชว์ปุ่ม "ลบใบสั่งซื้อ" (hard-delete + คืนสต๊อก). default false = ซ่อน.
+  canDelete?: boolean;
   r2PublicUrl: string;
   onChanged?: () => void;
   // #4/#13 — ระบบบันทึกยอดค่าขนส่งไว้แล้ว → เอามา prefill ช่องจ่าย (แก้ได้)
@@ -410,17 +414,26 @@ export function PoDetail({
           {status === "RECEIVED" && <div style={{ fontSize: 13.5, color: "#167a41", fontWeight: 600 }}>รับสินค้าเข้าคลังครบแล้ว ✓</div>}
           {status === "CANCELLED" && <div style={{ fontSize: 13.5, color: "#b8362a", fontWeight: 600 }}>ใบนี้ถูกยกเลิก</div>}
 
-          {/* ยกเลิกใบ — ทำได้เฉพาะก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ) · ไม่ใช่ปุ่มซ้ำกับ advance */}
-          {canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") && (
-            <button
-              type="button"
-              className="dc-btn-xl dc-btn-xl--danger"
-              style={{ ...btnSmall, justifySelf: "start" }}
-              disabled={pending}
-              onClick={() => run(() => cancelPo(data.id), "ยืนยันยกเลิกใบสั่งซื้อนี้?")}
-            >
-              ยกเลิกใบ
-            </button>
+          {/* ยกเลิกใบ + ลบใบ — จัดเรียงเป็นแถวเดียว (ลบ = super_admin เท่านั้น) */}
+          {((canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED")) || canDelete) && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              {/* ยกเลิกใบ — ทำได้เฉพาะก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ) · ไม่ใช่ปุ่มซ้ำกับ advance */}
+              {canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") && (
+                <button
+                  type="button"
+                  className="dc-btn-xl dc-btn-xl--danger"
+                  style={{ ...btnSmall }}
+                  disabled={pending}
+                  onClick={() => run(() => cancelPo(data.id), "ยืนยันยกเลิกใบสั่งซื้อนี้?")}
+                >
+                  ยกเลิกใบ
+                </button>
+              )}
+              {/* ลบใบสั่งซื้อ (hard-delete + คืนสต๊อก/TRCloud) — super_admin เท่านั้น */}
+              {canDelete && (
+                <DcDeleteButton docType="po" docId={data.id} docCode={data.poCode} label="🗑️ ลบใบสั่งซื้อ" onDeleted={refresh} />
+              )}
+            </div>
           )}
 
           {/* #3 — ประวัติการแก้ผู้ขาย/เรต (collapsible · โหลดสดจาก action) */}

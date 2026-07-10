@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { type PoPaymentData } from "@/lib/dc/po-actions";
@@ -239,6 +240,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           freightRatesConfigured={freightRatesConfigured}
           warehouses={warehouses}
           canManage={canDcManage(ctx.session.user.role)}
+          canDelete={isSuperAdmin(ctx.session.user.role)}
           r2PublicUrl={r2Public}
         />
       </div>

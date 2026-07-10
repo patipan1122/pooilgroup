@@ -33,10 +33,13 @@ function tone(status: string): string {
 export function MasterDetailView({
   items,
   canManage,
+  canDelete = false,
   r2PublicUrl,
 }: {
   items: PoListItem[];
   canManage: boolean;
+  // super_admin เท่านั้น — ส่งต่อให้ <PoDetail> โชว์ปุ่มลบใบสั่งซื้อ
+  canDelete?: boolean;
   r2PublicUrl: string;
 }) {
   const router = useRouter();
@@ -160,6 +163,7 @@ export function MasterDetailView({
               freightRatesConfigured={bundle.freightRatesConfigured}
               warehouses={bundle.warehouses}
               canManage={canManage}
+              canDelete={canDelete}
               r2PublicUrl={r2PublicUrl || bundle.r2PublicUrl}
               onChanged={handleChanged}
             />

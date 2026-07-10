@@ -8475,3 +8475,30 @@ model DcFxRate {
   @@map("fx_rates")
   @@schema("dc")
 }
+
+// ประวัติการลบเอกสาร DC (CEO 2026-07-10) — เก็บ snapshot เต็มก่อน hard-delete + สรุปการคืนสต๊อก/TRCloud.
+// ลบเอกสารได้เฉพาะ super_admin (CEO) ช่วง trial · ทุกการลบทิ้ง log ไว้ตรวจย้อน/กู้คืนได้.
+//   • docType: po | grn | transfer | issue | move | shipment
+//   • cascadedFrom* = ถูกลบตามใบแม่ (เช่น GRN ที่หายเพราะลบ PO) → docId/type ของใบแม่
+//   • snapshot = header+lines+related ตอนก่อนลบ (JSON · กู้คืน/ตรวจย้อนได้)
+//   • reversal = สรุปว่าคืนสต๊อกกี่รายการ + TRCloud ทำอะไร (ลบเอกสาร/ข้าม/ล้มเหลว)
+model DcDeletionLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  docType          String   @map("doc_type")
+  docId            String   @map("doc_id") @db.Uuid
+  docCode          String   @map("doc_code")
+  snapshot         Json
+  reversal         Json?
+  cascadedFromType String?  @map("cascaded_from_type")
+  cascadedFromId   String?  @map("cascaded_from_id") @db.Uuid
+  note             String?
+  deletedByUserId  String   @map("deleted_by_user_id") @db.Uuid
+  deletedByName    String?  @map("deleted_by_name")
+  deletedAt        DateTime @default(now()) @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([orgId, deletedAt(sort: Desc)])
+  @@index([orgId, docType])
+  @@map("deletion_logs")
+  @@schema("dc")
+}

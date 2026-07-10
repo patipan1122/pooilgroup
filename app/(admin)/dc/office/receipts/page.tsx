@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { DcPoStatus } from "@/lib/generated/prisma/enums";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DataTable } from "@/components/ui/data-table";
@@ -21,6 +23,7 @@ export default async function DcReceiptsPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
+  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบรับ = super_admin เท่านั้น
 
   const [chrome, grns, pendingPos] = await Promise.all([
     getDcOfficeChrome(orgId),
@@ -120,6 +123,7 @@ export default async function DcReceiptsPage() {
             { key: "date", header: "วันที่" },
             { key: "recv", header: "รับ", align: "center" },
             { key: "status", header: "สถานะ", align: "right" },
+            ...(canDelete ? [{ key: "del", header: "ลบ", align: "right" as const }] : []),
           ]}
           rows={rows.map((g) => ({
             key: g.id,
@@ -146,6 +150,9 @@ export default async function DcReceiptsPage() {
                   {g.ok ? "รับครบ" : "รับไม่ครบ"}
                 </span>
               ),
+              ...(canDelete
+                ? { del: <DcDeleteButton docType="grn" docId={g.id} docCode={g.grnCode} size="sm" /> }
+                : {}),
             },
           }))}
           emptyState={

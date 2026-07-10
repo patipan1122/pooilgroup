@@ -4,6 +4,7 @@
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { canDcManage, requireDcManager } from "@/lib/dc/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { listSuppliersForPo } from "@/lib/dc/po-actions";
@@ -17,6 +18,7 @@ export default async function DcPurchasingPage() {
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
   const canManage = canDcManage(ctx.session.user.role);
+  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบ = super_admin เท่านั้น
 
   // โหลดใบ + ผู้ขาย + บรรทัด + กล่อง (เลขพัสดุ/สถานะ) — ใหม่สุดก่อน
   const pos = await prisma.dcPurchaseOrder.findMany({
@@ -115,6 +117,7 @@ export default async function DcPurchasingPage() {
           items={items}
           stats={stats}
           canManage={canManage}
+          canDelete={canDelete}
           r2PublicUrl={r2PublicUrl}
           warehouses={warehouses}
           suppliers={suppliers}

@@ -90,6 +90,7 @@ export function PurchasingWorkspace({
   items,
   stats,
   canManage,
+  canDelete = false,
   r2PublicUrl,
   warehouses,
   suppliers,
@@ -99,6 +100,8 @@ export function PurchasingWorkspace({
   items: PoListItem[];
   stats: PurchasingStats;
   canManage: boolean;
+  // super_admin เท่านั้น — โชว์ปุ่มลบใบสั่งซื้อในแผงรายละเอียด
+  canDelete?: boolean;
   r2PublicUrl: string;
   warehouses: WarehouseOpt[];
   suppliers: PoSupplierOption[];
@@ -138,7 +141,7 @@ export function PurchasingWorkspace({
           ยังไม่มีใบสั่งซื้อ — กด “＋ สั่งซื้อ” เพื่อสร้างใบแรก
         </div>
       ) : view === "detail" ? (
-        <MasterDetailView items={items} canManage={canManage} r2PublicUrl={r2PublicUrl} />
+        <MasterDetailView items={items} canManage={canManage} canDelete={canDelete} r2PublicUrl={r2PublicUrl} />
       ) : (
         <KanbanBoard items={items} />
       )}

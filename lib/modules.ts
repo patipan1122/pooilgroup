@@ -1180,9 +1180,23 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
+        // รายการใบย้ายที่ (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
+        href: "/dc/office/moves",
+        label: "ใบย้ายที่",
+        icon: ArrowLeftRight,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
         href: "/dc/office/issue",
         label: "เบิกออก",
         icon: PackageMinus,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        // รายการใบเบิก (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
+        href: "/dc/office/issues",
+        label: "รายการใบเบิก",
+        icon: ScrollText,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
@@ -1208,6 +1222,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "รายงาน",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "viewer"],
+      },
+      {
+        // ประวัติการลบเอกสาร — super_admin เท่านั้น (page เองก็ redirect กันอีกชั้น)
+        href: "/dc/office/deletions",
+        label: "ประวัติการลบ",
+        icon: History,
+        roles: ["super_admin"],
       },
       {
         href: "/dc/office/permissions",
