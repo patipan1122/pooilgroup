@@ -8186,6 +8186,8 @@ model DcIssue {
   warehouseId String   @map("warehouse_id") @db.Uuid
   batchKey    String   @map("batch_key")
   note        String?
+  // "เบิกอ้างใบ PO" — documentary link (เบิกของจากใบ PO ใบไหน) · ยอด "เหลือในใบ" นับรวมการเบิกนี้ด้วย
+  poId        String?  @map("po_id") @db.Uuid
   actorUserId String?  @map("actor_user_id") @db.Uuid
   issuedAt    DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -8193,6 +8195,7 @@ model DcIssue {
   @@unique([orgId, issueCode])
   @@unique([orgId, batchKey])
   @@index([orgId, issuedAt(sort: Desc)])
+  @@index([orgId, poId])
   @@map("issues")
   @@schema("dc")
 }
@@ -8413,11 +8416,17 @@ model DcTransfer {
   confirmedByUserId  String?            @map("confirmed_by_user_id") @db.Uuid
   confirmedAt        DateTime?          @map("confirmed_at") @db.Timestamptz(6)
   note               String?
+  // "โอนอ้างใบ PO" — documentary link (ไม่ใช่ physical lot). ยอด "เหลือในใบ PO" = รับเข้า − โอน/เบิกที่ tag poId นี้.
+  poId               String?            @map("po_id") @db.Uuid
+  // ค่าขนส่งไทย-ไทย ของ "ใบโอนนี้" — บันทึกเป็นค่าใช้จ่าย (ไม่บวกเข้าต้นทุนสินค้า/cost layer)
+  thaiFreightSatang  Int                @default(0) @map("thai_freight_satang")
+  thaiFreightNote    String?            @map("thai_freight_note")
 
   lines DcTransferLine[]
 
   @@unique([orgId, transferCode])
   @@index([orgId, status])
+  @@index([orgId, poId])
   @@map("transfers")
   @@schema("dc")
 }

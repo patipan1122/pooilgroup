@@ -8,8 +8,9 @@
 //   • ปุ่มยืนยัน busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · โชว์รายการที่เบิกไม่ผ่านรายบรรทัด
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2, PackageMinus, List, Search, X, Plus, Check, ImageIcon } from "lucide-react";
+import { Trash2, PackageMinus, List, Search, X, Plus, Check, ImageIcon, FileText } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
+import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
 import { lookupForIssue, postIssue, type IssueLine } from "@/lib/dc/issue-actions";
 import {
   listCategoriesForCount,
@@ -70,9 +71,11 @@ function newLineKey(): string {
 export function IssueWorkspace({
   warehouseId,
   warehouseName,
+  r2PublicUrl,
 }: {
   warehouseId: string;
   warehouseName: string;
+  r2PublicUrl?: string;
 }) {
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
@@ -80,6 +83,9 @@ export function IssueWorkspace({
   const [toast, setToast] = useState<string | null>(null);
   const [lastIssueId, setLastIssueId] = useState<string | null>(null); // ไว้พิมพ์ใบเบิกล่าสุด
   const [browseOpen, setBrowseOpen] = useState(false); // ป็อปอัป "ดูสินค้า / เลือกจากรายการ"
+  const [poPickerOpen, setPoPickerOpen] = useState(false); // ตัวเลือก "เบิกเป็นใบ PO"
+  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+  const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
   // รายการที่เบิกไม่ผ่าน (เช่น สต๊อกไม่พอ) จากรอบล่าสุด — โชว์ให้ผู้ใช้รู้
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
@@ -178,6 +184,39 @@ export function IssueWorkspace({
     [],
   );
 
+  // รับผลจากตัวเลือกใบ PO → เติมบรรทัดเบิกตามจำนวนที่เลือก (มีอยู่แล้ว = ตั้งจำนวนใหม่) + จำ poId/poCode
+  const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
+    setSelectedPoId(sel.poId);
+    setSelectedPoCode(sel.poCode);
+    setLines((prev) => {
+      const next = [...prev];
+      for (const pl of sel.lines) {
+        const idx = next.findIndex((l) => l.productId === pl.productId);
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], qty: pl.qty, onHand: Math.max(next[idx].onHand, pl.qty) };
+        } else {
+          next.push({
+            lineKey: newLineKey(),
+            productId: pl.productId,
+            sku: pl.sku,
+            name: pl.name,
+            unit: pl.unit,
+            onHand: pl.qty,
+            location: null,
+            qty: pl.qty,
+            reason: "",
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const clearPoRef = useCallback(() => {
+    setSelectedPoId(null);
+    setSelectedPoCode(null);
+  }, []);
+
   const setQty = useCallback((lineKey: string, qty: number) => {
     setLines((prev) =>
       prev.map((l) => (l.lineKey === lineKey ? { ...l, qty: Math.max(1, Math.trunc(qty || 1)) } : l)),
@@ -206,7 +245,7 @@ export function IssueWorkspace({
         reason: l.reason.trim() || undefined,
         lineKey: l.lineKey,
       }));
-      const res = await postIssue({ warehouseId, lines: payload });
+      const res = await postIssue({ warehouseId, lines: payload, poId: selectedPoId || undefined });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -222,6 +261,8 @@ export function IssueWorkspace({
 
       if (failed.length === 0) {
         setLines([]);
+        setSelectedPoId(null);
+        setSelectedPoCode(null);
         showToast(`เบิกออกแล้ว ${res.posted} รายการ`);
       } else {
         // เก็บเฉพาะบรรทัดที่ยังเบิกไม่สำเร็จไว้ให้แก้ไข
@@ -234,7 +275,7 @@ export function IssueWorkspace({
     } finally {
       setBusy(false);
     }
-  }, [busy, lines, warehouseId, showToast]);
+  }, [busy, lines, warehouseId, showToast, selectedPoId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -267,7 +308,69 @@ export function IssueWorkspace({
         >
           <List size={18} /> ดูสินค้า / เลือกจากรายการ
         </button>
+        <button
+          type="button"
+          onClick={() => setPoPickerOpen(true)}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            minHeight: 46,
+            borderRadius: 12,
+            border: "1.5px solid var(--dc-line-strong, #c9d3e0)",
+            background: "var(--dc-paper, #fff)",
+            color: "var(--dc-ink, #1f2733)",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <FileText size={18} /> เลือกจากใบ PO
+        </button>
       </div>
+
+      {/* กำลังเบิกจากใบ PO — banner + ยกเลิกอ้างอิง */}
+      {selectedPoCode && (
+        <div
+          className="dc-card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "12px 14px",
+            background: "var(--color-brand-50, #eef3fe)",
+            border: "1.5px solid var(--color-brand-600, #2563eb)",
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" />
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+              กำลังเบิกจากใบ {selectedPoCode}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={clearPoRef}
+            style={{
+              flexShrink: 0,
+              border: "1.5px solid var(--color-brand-600, #2563eb)",
+              background: "#fff",
+              color: "var(--color-brand-700, #1d4ed8)",
+              borderRadius: 10,
+              padding: "6px 12px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            ยกเลิกอ้างอิงใบ
+          </button>
+        </div>
+      )}
 
       {/* error */}
       {error && (
@@ -454,6 +557,16 @@ export function IssueWorkspace({
           onPick={addPickedProduct}
         />
       )}
+
+      {/* ตัวเลือก "เบิกเป็นใบ PO" */}
+      <PoMovePicker
+        open={poPickerOpen}
+        onClose={() => setPoPickerOpen(false)}
+        warehouseId={warehouseId}
+        r2PublicUrl={r2PublicUrl || undefined}
+        mode="issue"
+        onConfirm={handlePoConfirm}
+      />
 
       {/* toast สำเร็จ */}
       {toast && (

@@ -61,6 +61,7 @@ export default async function DcTransferPage({
           warehouseId={ctx.activeWarehouseId}
           warehouseName={ctx.activeWarehouse.name}
           warehouses={destWarehouses}
+          r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
         />
       )}
     </div>

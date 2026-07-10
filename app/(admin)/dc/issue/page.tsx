@@ -45,6 +45,7 @@ export default async function DcIssuePage() {
         <IssueWorkspace
           warehouseId={ctx.activeWarehouseId}
           warehouseName={ctx.activeWarehouse.name}
+          r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
         />
       )}
     </div>

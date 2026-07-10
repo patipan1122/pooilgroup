@@ -25,6 +25,7 @@ import { sourceKey, transferCode } from "@/lib/dc/codes";
 import { prisma } from "@/lib/prisma";
 import { DcMoveKind, DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { recordMovement, findProductByCode, getOnHand } from "@/lib/dc/stock";
+import { getPoFulfillment } from "@/lib/dc/po-fulfillment";
 
 // ════════════════════════════════════════════════════════════════════
 // helpers
@@ -210,6 +211,11 @@ export type DispatchTransferInput = {
   /** ย้ายในไซต์เดียวกัน → รับเข้าทันที (เฉพาะ WAREHOUSE) */
   sameSite?: boolean;
   note?: string;
+  /** โอน "อ้างใบ PO" ใบนี้ (documentary) — กันไม่ให้โอนเกิน "เหลือในใบ" */
+  poId?: string;
+  /** ค่าขนส่งไทย-ไทยของใบโอนนี้ (satang) — บันทึกเป็นค่าใช้จ่าย (ไม่บวกเข้าต้นทุนสินค้า) */
+  thaiFreightSatang?: number;
+  thaiFreightNote?: string;
   lines: DispatchLine[];
 };
 
@@ -282,6 +288,33 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
     }
   }
 
+  // โอน "อ้างใบ PO" → กันไม่ให้โอนเกิน "เหลือในใบ PO" (documentary ledger ไม่ให้ติดลบ).
+  // หมายเหตุ: นี่เป็นการกันเชิงเอกสาร · การตัดสต๊อกจริงตัดจาก onHand ด้านบนเสมอ.
+  const poId = (input.poId ?? "").trim() || null;
+  if (poId) {
+    const ful = await getPoFulfillment(orgId, poId, { warehouseId: from });
+    if (!ful) return { ok: false, error: "ไม่พบใบ PO ที่อ้างอิง" };
+    const remainByProduct = new Map(ful.lines.map((l) => [l.productId, l.remaining]));
+    const wantByProduct = new Map<string, number>();
+    for (const l of lines) {
+      wantByProduct.set(l.productId, (wantByProduct.get(l.productId) ?? 0) + l.qty);
+    }
+    for (const [pid, want] of wantByProduct) {
+      const remain = remainByProduct.get(pid) ?? 0;
+      if (want > remain) {
+        const nm = ful.lines.find((l) => l.productId === pid)?.name ?? "สินค้า";
+        return {
+          ok: false,
+          error: `โอนเกินยอดที่เหลือในใบ PO — "${nm}" เหลือให้โอน/เบิก ${remain} แต่จะโอน ${want}`,
+        };
+      }
+    }
+  }
+
+  // ค่าขนส่งไทย-ไทย (บันทึกบนหัวใบ · ไม่แตะต้นทุนสินค้า/cost layer)
+  const thaiFreightSatang = Math.max(0, Math.trunc(Number(input.thaiFreightSatang) || 0));
+  const thaiFreightNote = (input.thaiFreightNote ?? "").trim() || null;
+
   // อ่านต้นทุนล่าสุดต่อบรรทัด (carry ตามของไป)
   const enriched = await Promise.all(
     lines.map(async (l) => {
@@ -309,6 +342,9 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
         dispatchedByUserId: userId,
         ...(sameSite ? { confirmedByUserId: userId, confirmedAt: new Date() } : {}),
         note: (input.note ?? "").trim() || null,
+        poId,
+        thaiFreightSatang,
+        thaiFreightNote,
         lines: {
           create: enriched.map((l) => ({
             orgId,

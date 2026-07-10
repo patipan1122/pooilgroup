@@ -38,6 +38,7 @@ import {
 } from "@/lib/dc/po-actions";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
+import type { PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
 import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL, PO_FLOW_CORE } from "@/lib/dc/nav";
 import { Dialog } from "@/components/ui/dialog";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
@@ -53,6 +54,8 @@ export type PoLineData = {
   unitPriceCny: number; // ราคา/หน่วยในสกุลของใบ
   unitPriceThb: number | null;
   photoR2Key: string | null;
+  // รูปสินค้าจากคลัง (DcProduct.imageR2Path) — ใช้โชว์ thumbnail ตอนรับเข้า
+  imageR2Path: string | null;
   note: string | null;
 };
 
@@ -167,6 +170,7 @@ export function PoDetail({
   onChanged,
   freightOwedSatang,
   freightRatesConfigured,
+  fulfillment,
 }: {
   data: PoDetailData;
   payments: PoPaymentData[];
@@ -178,6 +182,9 @@ export function PoDetail({
   canDelete?: boolean;
   r2PublicUrl: string;
   onChanged?: () => void;
+  // หลักฐานการกระจายสินค้า (โอน/เบิกจากใบนี้ · เหลือในใบ · สต๊อกจริง) — read-only
+  // optional: call site เดิมยังไม่ส่งมา → undefined = ไม่แสดง section
+  fulfillment?: PoFulfillment | null;
   // #4/#13 — ระบบบันทึกยอดค่าขนส่งไว้แล้ว → เอามา prefill ช่องจ่าย (แก้ได้)
   // optional: call site ที่ยังไม่ส่งมา (ของเดิม) จะ undefined → ฟอร์ม fallback ว่าง
   // goodsOwedSatang ยังรับได้ (ด่าน "ค่าของ" ถูกตัดออกแล้ว · ไม่ใช้ใน UI · กัน caller เดิมพัง)
@@ -572,6 +579,7 @@ export function PoDetail({
               warehouses={warehouses}
               defaultWarehouseId={data.warehouseId}
               atWarehouse={status === "READY_TO_RECEIVE" || status === "AT_WAREHOUSE"}
+              r2PublicUrl={r2PublicUrl}
               onReceived={() => { setReceiveVersion((v) => v + 1); refresh(); }}
             />
           </CollapseCard>
@@ -580,7 +588,99 @@ export function PoDetail({
 
       {/* #12e — เทียบใบสั่งซื้อ vs ใบรับ (collapsible · โหลดสดจาก action · refreshKey เด้งโหลดใหม่หลังรับเข้า) */}
       <ReceivingCompare poId={data.id} status={status} refreshKey={receiveVersion} />
+
+      {/* หลักฐานการกระจายสินค้า — โอน/เบิกจากใบนี้ · เหลือในใบ · สต๊อกจริง (read-only) */}
+      {fulfillment && fulfillment.lines.length > 0 && (
+        <FulfillmentLedger fulfillment={fulfillment} r2PublicUrl={r2PublicUrl} />
+      )}
     </div>
+  );
+}
+
+// ── หลักฐานการกระจายสินค้า (read-only) ──────────────────────────
+// เชื่อมโยง: สั่ง → รับเข้า → โอน/เบิกที่อ้างใบนี้ → เหลือในใบ · + สต๊อกจริงในคลังตอนนี้
+//   เหลือในใบ = รับเข้า − (โอน/เบิกที่อ้างใบนี้) · คงเหลือจริง = ยอดสต๊อกในคลังตอนนี้ (ทุกคลัง)
+//   ไม่มี mutation — แสดงอย่างเดียว (reuse รูปแบบ thumbnail จาก ReceiveSection)
+function FulfillmentLedger({ fulfillment, r2PublicUrl }: { fulfillment: PoFulfillment; r2PublicUrl: string }) {
+  // รูปสินค้า (imageR2Path) → public URL (แนวเดียวกับ receiveImgUrl ของ ReceiveSection)
+  function imgUrl(l: PoFulfillmentLine): string | null {
+    const key = l.imageR2Path;
+    if (!key) return null;
+    if (/^https?:\/\//.test(key)) return key;
+    return r2PublicUrl ? `${r2PublicUrl}/${key}` : null;
+  }
+  const t = fulfillment.totals;
+
+  return (
+    <details className="dc-card" open style={{ display: "block" }}>
+      <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 750, color: "#18181b" }}>การกระจายสินค้า — โอน/เบิก จากใบนี้</div>
+          <div style={{ fontSize: 12.5, color: "#71717a", marginTop: 2 }}>สั่ง / รับเข้า / โอน-เบิกที่อ้างใบนี้ / เหลือในใบ / สต๊อกจริง</div>
+        </div>
+        <ChevronDown size={18} className="dc-collapse-chevron" style={{ color: "#a1a1aa", flex: "0 0 auto" }} />
+      </summary>
+      <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>
+                <th style={cellHead}>รูป</th>
+                <th style={cellHead}>สินค้า</th>
+                <th style={{ ...cellHead, textAlign: "right" }}>สั่ง</th>
+                <th style={{ ...cellHead, textAlign: "right" }}>รับเข้า</th>
+                <th style={{ ...cellHead, textAlign: "right" }}>โอน/เบิกแล้ว</th>
+                <th style={{ ...cellHead, textAlign: "right" }}>เหลือในใบ</th>
+                <th style={{ ...cellHead, textAlign: "right" }}>คงเหลือจริง</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fulfillment.lines.map((l) => {
+                const url = imgUrl(l);
+                // เหลือในใบ: > 0 = ยังไม่ได้กระจายหมด (ส้ม) · ≤ 0 = กระจายครบ/เกิน (เทา)
+                const remainColor = l.remaining > 0 ? "#b06a0a" : "#71717a";
+                return (
+                  <tr key={l.productId} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
+                    <td style={cell}>
+                      {url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={url} alt={l.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--dc-line, #e4e4e7)" }} />
+                      ) : (
+                        <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
+                          <ImageIcon size={16} />
+                        </div>
+                      )}
+                    </td>
+                    <td style={cell}>
+                      <div style={{ fontWeight: 600, color: "#18181b" }}>{l.name}</div>
+                      <div style={{ fontSize: 12, color: "#a1a1aa", fontVariantNumeric: "tabular-nums" }}>{l.sku}</div>
+                    </td>
+                    <td style={{ ...cell, textAlign: "right", color: "#71717a", fontVariantNumeric: "tabular-nums" }}>{l.ordered} {l.unit}</td>
+                    <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{l.received}</td>
+                    <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{l.movedOut}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: remainColor }}>{l.remaining} {l.unit}</td>
+                    <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#18181b" }}>{l.onHand} {l.unit}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop: "2px solid var(--dc-line, #e4e4e7)", background: "#fafafa", fontVariantNumeric: "tabular-nums" }}>
+                <td style={cell} colSpan={2}><b>รวมทั้งใบ</b></td>
+                <td style={{ ...cell, textAlign: "right", color: "#71717a" }}>{t.ordered}</td>
+                <td style={{ ...cell, textAlign: "right" }}>{t.received}</td>
+                <td style={{ ...cell, textAlign: "right" }}>{t.movedOut}</td>
+                <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: t.remaining > 0 ? "#b06a0a" : "#71717a" }}>{t.remaining}</td>
+                <td style={{ ...cell, textAlign: "right" }}>—</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#a1a1aa", padding: "0 2px" }}>
+          เหลือในใบ = รับเข้า − (โอน/เบิกที่อ้างใบนี้) · คงเหลือจริง = ยอดสต๊อกในคลังตอนนี้
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -1711,6 +1811,7 @@ function ReceiveSection({
   warehouses,
   defaultWarehouseId,
   atWarehouse,
+  r2PublicUrl,
   onReceived,
 }: {
   poId: string;
@@ -1718,6 +1819,7 @@ function ReceiveSection({
   warehouses: WarehouseOption[];
   defaultWarehouseId: string | null;
   atWarehouse: boolean;
+  r2PublicUrl: string;
   // เรียกหลังรับเข้าสำเร็จ → พ่อ (PoDetail) refetch bundle + เด้งตาราง "เทียบ" ให้โหลดใหม่
   onReceived?: () => void;
 }) {
@@ -1732,12 +1834,32 @@ function ReceiveSection({
   );
   const [note, setNote] = useState("");
   // จำนวนรับ/เสียหายต่อบรรทัด — ตั้งต้นรับเต็มจำนวนที่สั่ง
-  const [recv, setRecv] = useState<Record<string, { rec: number; dmg: number }>>(
-    () => Object.fromEntries(lines.map((l) => [l.id, { rec: l.qty, dmg: 0 }])),
+  //   dmgTouched = ผู้ใช้แก้ช่อง "เสียหาย" เองแล้วหรือยัง → ถ้าแก้เองแล้วห้าม auto-fill ทับ
+  const [recv, setRecv] = useState<Record<string, { rec: number; dmg: number; dmgTouched: boolean }>>(
+    () => Object.fromEntries(lines.map((l) => [l.id, { rec: l.qty, dmg: 0, dmgTouched: false }])),
   );
 
-  function setLine(id: string, patch: Partial<{ rec: number; dmg: number }>) {
+  function setLine(id: string, patch: Partial<{ rec: number; dmg: number; dmgTouched: boolean }>) {
     setRecv((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
+  }
+
+  // รูปสินค้า (imageR2Path) หรือ fallback รูปในบรรทัด PO (photoR2Key) → public URL
+  function receiveImgUrl(l: PoLineData): string | null {
+    const key = l.imageR2Path ?? l.photoR2Key;
+    if (!key) return null;
+    if (/^https?:\/\//.test(key)) return key;
+    return r2PublicUrl ? `${r2PublicUrl}/${key}` : null;
+  }
+
+  // เปลี่ยน "รับจริง": ถ้ารับน้อยกว่าสั่ง → เติม "เสียหาย" อัตโนมัติ = สั่ง − รับ (ยังไม่แตะถ้าผู้ใช้แก้เอง)
+  function onRecvChange(l: PoLineData, rec: number) {
+    setRecv((r) => {
+      const cur = r[l.id];
+      const shortfall = Math.max(0, l.qty - rec);
+      // เติมค่าอัตโนมัติเฉพาะบรรทัดที่ผู้ใช้ยังไม่แก้ช่องเสียหายเอง (dmgTouched = false)
+      const nextDmg = cur?.dmgTouched ? (cur.dmg ?? 0) : shortfall;
+      return { ...r, [l.id]: { ...cur, rec, dmg: nextDmg } };
+    });
   }
 
   function submit() {
@@ -1851,6 +1973,7 @@ function ReceiveSection({
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>
+                  <th style={cellHead}>รูป</th>
                   <th style={cellHead}>สินค้า</th>
                   <th style={{ ...cellHead, textAlign: "right" }}>สั่ง</th>
                   <th style={{ ...cellHead, textAlign: "right" }}>รับจริง</th>
@@ -1858,8 +1981,20 @@ function ReceiveSection({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((l) => (
+                {lines.map((l) => {
+                  const imgUrl = receiveImgUrl(l);
+                  return (
                   <tr key={l.id} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
+                    <td style={cell}>
+                      {imgUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={imgUrl} alt={l.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--dc-line, #e4e4e7)" }} />
+                      ) : (
+                        <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
+                          <ImageIcon size={16} />
+                        </div>
+                      )}
+                    </td>
                     <td style={cell}>
                       <div style={{ fontWeight: 600, color: "#18181b" }}>{l.name}</div>
                       <div style={{ fontSize: 12, color: "#a1a1aa" }}>{l.sku}</div>
@@ -1868,7 +2003,7 @@ function ReceiveSection({
                     <td style={{ ...cell, textAlign: "right" }}>
                       <input
                         value={String(recv[l.id]?.rec ?? 0)}
-                        onChange={(e) => setLine(l.id, { rec: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })}
+                        onChange={(e) => onRecvChange(l, Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
                         inputMode="numeric"
                         style={{ ...inp, width: 80, textAlign: "right" }}
                       />
@@ -1876,15 +2011,16 @@ function ReceiveSection({
                     <td style={{ ...cell, textAlign: "right" }}>
                       <input
                         value={String(recv[l.id]?.dmg ?? 0)}
-                        onChange={(e) => setLine(l.id, { dmg: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })}
+                        onChange={(e) => setLine(l.id, { dmg: Math.max(0, Math.trunc(Number(e.target.value) || 0)), dmgTouched: true })}
                         inputMode="numeric"
                         style={{ ...inp, width: 80, textAlign: "right" }}
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {lines.length === 0 && (
-                  <tr><td style={{ ...cell, color: "#a1a1aa" }} colSpan={4}>ใบนี้ไม่มีรายการสินค้า</td></tr>
+                  <tr><td style={{ ...cell, color: "#a1a1aa" }} colSpan={5}>ใบนี้ไม่มีรายการสินค้า</td></tr>
                 )}
               </tbody>
             </table>

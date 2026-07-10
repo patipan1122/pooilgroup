@@ -1426,6 +1426,8 @@ export type PanelLine = {
   unitPriceCny: number;
   unitPriceThb: number | null;
   photoR2Key: string | null;
+  // รูปสินค้าจากคลัง (DcProduct.imageR2Path) — ใช้โชว์ thumbnail ตอนรับเข้า
+  imageR2Path: string | null;
   note: string | null;
 };
 
@@ -1497,7 +1499,7 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
         orderBy: { id: "asc" },
         select: {
           id: true, qty: true, unitPriceCny: true, unitPriceThb: true, photoR2Key: true, note: true,
-          product: { select: { id: true, sku: true, name: true, unit: true } },
+          product: { select: { id: true, sku: true, name: true, unit: true, imageR2Path: true } },
         },
       },
     },
@@ -1607,6 +1609,7 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
       unitPriceCny: Number(l.unitPriceCny),
       unitPriceThb: l.unitPriceThb != null ? Number(l.unitPriceThb) : null,
       photoR2Key: l.photoR2Key,
+      imageR2Path: l.product.imageR2Path,
       note: l.note,
     })),
     boxes: boxes.map((b) => ({

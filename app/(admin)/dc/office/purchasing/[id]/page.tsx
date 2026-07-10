@@ -13,6 +13,7 @@ import { DcOfficeShell } from "@/components/dc/office-shell";
 import { type PoPaymentData } from "@/lib/dc/po-actions";
 import { freightForBox } from "@/lib/dc/freight";
 import { loadFreightRates } from "@/lib/dc/freight-rates";
+import { getPoFulfillment } from "@/lib/dc/po-fulfillment";
 import { DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { PoDetail, type PoDetailData } from "./po-detail";
 
@@ -68,7 +69,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           unitPriceThb: true,
           photoR2Key: true,
           note: true,
-          product: { select: { id: true, sku: true, name: true, unit: true } },
+          product: { select: { id: true, sku: true, name: true, unit: true, imageR2Path: true } },
         },
       },
     },
@@ -190,6 +191,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
       unitPriceCny: Number(l.unitPriceCny),
       unitPriceThb: l.unitPriceThb != null ? Number(l.unitPriceThb) : null,
       photoR2Key: l.photoR2Key,
+      imageR2Path: l.product.imageR2Path,
       note: l.note,
     })),
     boxes: boxes.map((b) => ({
@@ -217,6 +219,10 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
 
   const r2Public = process.env.R2_PUBLIC_URL ?? "";
 
+  // หลักฐานเก็บ: โอน/เบิกจากใบนี้ไปเท่าไร · เหลือในใบเท่าไร · สต๊อกจริงเหลือเท่าไร
+  //   ไม่ส่ง warehouseId → onHand = ยอดรวมทุกคลัง ("ของจริงเหลือทั้งหมด")
+  const fulfillment = await getPoFulfillment(orgId, id);
+
   const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
   return (
@@ -242,6 +248,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           canManage={canDcManage(ctx.session.user.role)}
           canDelete={isSuperAdmin(ctx.session.user.role)}
           r2PublicUrl={r2Public}
+          fulfillment={fulfillment}
         />
       </div>
     </DcOfficeShell>

@@ -46,6 +46,8 @@ type LineDraft = {
   qtyOrdered: number;
   qtyReceived: number;
   qtyDamaged: number;
+  /** ผู้ใช้แก้ช่อง "เสียหาย" เองแล้วหรือยัง → ถ้าแก้เองแล้วห้าม auto-fill ทับ */
+  damagedTouched: boolean;
   /** R2 key ของรูปที่ "ถ่ายใหม่ตอนรับ" (อัปผ่าน /api/dc/upload) */
   photoKeys: string[];
   /** public URL ของรูปที่ถ่ายใหม่ (ไว้โชว์ thumbnail) — เรียงตรงกับ photoKeys */
@@ -180,6 +182,7 @@ function PoCard({
       qtyOrdered: l.qtyOrdered,
       qtyReceived: l.qtyOrdered,
       qtyDamaged: 0,
+      damagedTouched: false,
       photoKeys: [],
       photoUrls: [],
       uploading: false,
@@ -201,12 +204,18 @@ function PoCard({
 
   const setReceived = useCallback((productId: string, qty: number) => {
     setDrafts((prev) =>
-      prev.map((d) => (d.productId === productId ? { ...d, qtyReceived: toInt(qty) } : d)),
+      prev.map((d) => {
+        if (d.productId !== productId) return d;
+        const rec = toInt(qty);
+        // รับน้อยกว่าสั่ง → เติม "เสียหาย" อัตโนมัติ = สั่ง − รับ (เว้นบรรทัดที่ผู้ใช้แก้เสียหายเอง)
+        const nextDamaged = d.damagedTouched ? d.qtyDamaged : Math.max(0, d.qtyOrdered - rec);
+        return { ...d, qtyReceived: rec, qtyDamaged: nextDamaged };
+      }),
     );
   }, []);
   const setDamaged = useCallback((productId: string, qty: number) => {
     setDrafts((prev) =>
-      prev.map((d) => (d.productId === productId ? { ...d, qtyDamaged: toInt(qty) } : d)),
+      prev.map((d) => (d.productId === productId ? { ...d, qtyDamaged: toInt(qty), damagedTouched: true } : d)),
     );
   }, []);
 

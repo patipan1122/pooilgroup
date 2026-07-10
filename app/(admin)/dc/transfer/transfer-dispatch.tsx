@@ -10,9 +10,10 @@
 //     • ปุ่มส่งออก busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · buffer ใน localStorage กันลิสต์หาย
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { List, Search, Trash2, Truck, X } from "lucide-react";
+import { FileText, List, Search, Trash2, Truck, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { MoveWorkspace } from "../move/move-workspace";
+import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
 import {
   lookupForTransfer,
@@ -83,11 +84,13 @@ export function FloorTransferMove({
   warehouseId,
   warehouseName,
   warehouses,
+  r2PublicUrl,
 }: {
   initialTab: "move" | "transfer";
   warehouseId: string;
   warehouseName: string;
   warehouses: DestWarehouseOption[];
+  r2PublicUrl?: string;
 }) {
   const [tab, setTab] = useState<"move" | "transfer">(initialTab);
 
@@ -130,6 +133,7 @@ export function FloorTransferMove({
           fromWarehouseId={warehouseId}
           fromWarehouseName={warehouseName}
           warehouses={warehouses}
+          r2PublicUrl={r2PublicUrl}
         />
       )}
     </div>
@@ -140,10 +144,12 @@ export function TransferDispatch({
   fromWarehouseId,
   fromWarehouseName,
   warehouses,
+  r2PublicUrl,
 }: {
   fromWarehouseId: string;
   fromWarehouseName: string;
   warehouses: DestWarehouseOption[];
+  r2PublicUrl?: string;
 }) {
   // ปลายทางที่เลือกได้ = คลังอื่น (ไม่รวมต้นทาง)
   const destWarehouses = warehouses.filter((w) => w.id !== fromWarehouseId);
@@ -160,6 +166,15 @@ export function TransferDispatch({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // ---- "เลือกจากใบ PO" (โอนเป็นใบ) ----
+  const [poPickerOpen, setPoPickerOpen] = useState(false);
+  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+  const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
+
+  // ---- ค่าขนส่งไทย-ไทย (บาท → ส่งเป็นสตางค์ตอน dispatch) ----
+  const [freightBaht, setFreightBaht] = useState("");
+  const [freightNote, setFreightNote] = useState("");
 
   // ---- "เลือกจากรายการ" (tap-select) ----
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -211,6 +226,37 @@ export function TransferDispatch({
     },
     [],
   );
+
+  // รับผลจากตัวเลือกใบ PO → เติมบรรทัดตามจำนวนที่เลือก (มีอยู่แล้ว = ตั้งค่าจำนวนใหม่) + จำ poId/poCode ไว้
+  const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
+    setSelectedPoId(sel.poId);
+    setSelectedPoCode(sel.poCode);
+    setLines((prev) => {
+      const next = [...prev];
+      for (const pl of sel.lines) {
+        const idx = next.findIndex((l) => l.productId === pl.productId);
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], qty: pl.qty, onHand: Math.max(next[idx].onHand, pl.qty) };
+        } else {
+          next.push({
+            lineKey: newLineKey(),
+            productId: pl.productId,
+            sku: pl.sku,
+            name: pl.name,
+            unit: pl.unit,
+            onHand: pl.qty,
+            qty: pl.qty,
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const clearPoRef = useCallback(() => {
+    setSelectedPoId(null);
+    setSelectedPoCode(null);
+  }, []);
 
   const handleScan = useCallback(
     async (code: string) => {
@@ -296,6 +342,11 @@ export function TransferDispatch({
         lineKey: l.lineKey,
       }));
 
+      // baht → satang (สตางค์): round(บาท × 100) · กัน NaN/ติดลบ → 0 (money-critical)
+      const thaiFreightSatang = Math.max(0, Math.round((parseFloat(freightBaht) || 0) * 100));
+      const poIdArg = selectedPoId || undefined;
+      const freightNoteArg = freightNote.trim() || undefined;
+
       const res = await dispatchTransfer(
         destMode === "warehouse"
           ? {
@@ -305,6 +356,9 @@ export function TransferDispatch({
               sameSite,
               note: note.trim() || undefined,
               lines: payload,
+              poId: poIdArg,
+              thaiFreightSatang,
+              thaiFreightNote: freightNoteArg,
             }
           : {
               fromWarehouseId,
@@ -312,6 +366,9 @@ export function TransferDispatch({
               toLabel: toLabel.trim(),
               note: note.trim() || undefined,
               lines: payload,
+              poId: poIdArg,
+              thaiFreightSatang,
+              thaiFreightNote: freightNoteArg,
             },
       );
 
@@ -322,6 +379,10 @@ export function TransferDispatch({
 
       setLines([]);
       setNote("");
+      setFreightBaht("");
+      setFreightNote("");
+      setSelectedPoId(null);
+      setSelectedPoCode(null);
       if (res.status === "CONFIRMED") {
         showToast(`ส่ง + รับเข้าแล้ว ${totalQty} ชิ้น (อยู่ที่เดียวกัน)`);
       } else {
@@ -332,7 +393,7 @@ export function TransferDispatch({
     } finally {
       setBusy(false);
     }
-  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast]);
+  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast, freightBaht, freightNote, selectedPoId]);
 
   // จำนวนที่หยิบไปแล้วต่อสินค้า (ใช้คำนวณ "เหลือ" ในลิสต์เลือก)
   const pickedQtyByProduct = new Map<string, number>();
@@ -451,7 +512,69 @@ export function TransferDispatch({
         >
           <List size={18} /> เลือกจากรายการสินค้า
         </button>
+        <button
+          type="button"
+          onClick={() => setPoPickerOpen(true)}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            border: "1.5px solid var(--dc-line-strong, #c9d3e0)",
+            background: "var(--dc-paper, #fff)",
+            color: "var(--dc-ink, #1f2733)",
+            borderRadius: 12,
+            padding: "12px 14px",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <FileText size={18} /> เลือกจากใบ PO
+        </button>
       </div>
+
+      {/* กำลังโอนจากใบ PO — banner + ยกเลิกอ้างอิง */}
+      {selectedPoCode && (
+        <div
+          className="dc-card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "12px 14px",
+            background: "var(--color-brand-50, #eef3fe)",
+            border: "1.5px solid var(--color-brand-600, #2563eb)",
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" />
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+              กำลังโอนจากใบ {selectedPoCode}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={clearPoRef}
+            style={{
+              flexShrink: 0,
+              border: "1.5px solid var(--color-brand-600, #2563eb)",
+              background: "#fff",
+              color: "var(--color-brand-700, #1d4ed8)",
+              borderRadius: 10,
+              padding: "6px 12px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            ยกเลิกอ้างอิงใบ
+          </button>
+        </div>
+      )}
 
       {/* error */}
       {error && (
@@ -529,9 +652,60 @@ export function TransferDispatch({
         </div>
       )}
 
-      {/* หมายเหตุ (ไม่บังคับ) */}
+      {/* ค่าขนส่งไทย-ไทย + หมายเหตุ (ไม่บังคับ) */}
       {lines.length > 0 && (
-        <div className="dc-card" style={{ padding: 14 }}>
+        <div className="dc-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 160 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dc-ink, #1f2733)" }}>
+                ค่าขนส่งไทย-ไทย (บาท)
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={freightBaht}
+                onChange={(e) => setFreightBaht(e.target.value)}
+                placeholder="0"
+                aria-label="ค่าขนส่งไทย-ไทย (บาท)"
+                style={{
+                  width: "100%",
+                  border: "1.5px solid var(--dc-line, #e6eaf0)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: "var(--dc-ink, #1f2733)",
+                  background: "#fff",
+                  boxSizing: "border-box",
+                }}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: 2, minWidth: 180 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dc-muted, #6b7785)" }}>
+                หมายเหตุค่าขนส่ง (ไม่บังคับ)
+              </span>
+              <input
+                type="text"
+                value={freightNote}
+                onChange={(e) => setFreightNote(e.target.value)}
+                placeholder="เช่น ขนส่งเอกชน / ค่ารถ"
+                aria-label="หมายเหตุค่าขนส่ง"
+                style={{
+                  width: "100%",
+                  border: "1.5px solid var(--dc-line, #e6eaf0)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: "var(--dc-ink, #1f2733)",
+                  background: "#fff",
+                  boxSizing: "border-box",
+                }}
+              />
+            </label>
+          </div>
           <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: "var(--dc-muted, #6b7785)" }}>
             <span style={{ whiteSpace: "nowrap" }}>หมายเหตุ</span>
             <input
@@ -716,6 +890,16 @@ export function TransferDispatch({
           </div>
         </div>
       )}
+
+      {/* ตัวเลือก "โอนเป็นใบ PO" */}
+      <PoMovePicker
+        open={poPickerOpen}
+        onClose={() => setPoPickerOpen(false)}
+        warehouseId={fromWarehouseId}
+        r2PublicUrl={r2PublicUrl || undefined}
+        mode="transfer"
+        onConfirm={handlePoConfirm}
+      />
 
       {/* toast */}
       {toast && (

@@ -14,12 +14,15 @@ import { ReceivePoList, type ReceivablePo } from "./receive-po-panel";
 
 export const dynamic = "force-dynamic";
 
-// ใบที่ "สั่งแล้วแต่ยังไม่ได้รับเข้า" — กำลังเดินทาง/ถึงโกดังแล้ว
+// ใบที่ "สั่งแล้วแต่ยังไม่ได้รับเข้า" — กำลังเดินทาง/ถึงโกดัง/พร้อมรับเข้า/รับบางส่วน
+// ⚠️ ต้องตรงกับ RECEIVABLE ใน po-actions.receivePo (ไม่งั้นใบ "พร้อมรับเข้า" หายจากหน้ารับ)
 const RECEIVABLE_STATUSES: DcPoStatus[] = [
   DcPoStatus.ORDERED,
   DcPoStatus.SHIPPED,
   DcPoStatus.ARRIVED_TH,
   DcPoStatus.AT_WAREHOUSE,
+  DcPoStatus.READY_TO_RECEIVE,
+  DcPoStatus.PARTIAL,
 ];
 
 export default async function DcReceivePoPage() {

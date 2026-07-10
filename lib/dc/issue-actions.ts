@@ -19,6 +19,7 @@ import { sourceKey, genCode } from "@/lib/dc/codes";
 import { prisma } from "@/lib/prisma";
 import { DcMoveKind } from "@/lib/generated/prisma/enums";
 import { recordMovement, findProductByCode, getOnHand } from "@/lib/dc/stock";
+import { getPoFulfillment } from "@/lib/dc/po-fulfillment";
 
 /** Guard: ต้อง login + มีสิทธิ์ทำงานหน้าคลัง. คืน {orgId, userId}. */
 async function requireFloor(): Promise<{ orgId: string; userId: string }> {
@@ -33,12 +34,12 @@ async function requireFloor(): Promise<{ orgId: string; userId: string }> {
  * สร้าง/หา "หัวใบเบิก" แบบ idempotent ด้วย batchKey (เซ็ตของบรรทัดที่เบิก).
  * กดเบิกซ้ำ (ชุดเดิม) → คืนใบเดิม ไม่สร้างซ้ำ. ชน unique (race) → อ่านซ้ำ.
  */
-async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: string, userId: string): Promise<string | null> {
+async function ensureIssueHeader(orgId: string, warehouseId: string, batchKey: string, userId: string, poId: string | null): Promise<string | null> {
   try {
     const existing = await prisma.dcIssue.findFirst({ where: { orgId, batchKey }, select: { id: true } });
     if (existing) return existing.id;
     const created = await prisma.dcIssue.create({
-      data: { orgId, issueCode: genCode("ISS"), warehouseId, batchKey, actorUserId: userId },
+      data: { orgId, issueCode: genCode("ISS"), warehouseId, batchKey, actorUserId: userId, poId },
       select: { id: true },
     });
     return created.id;
@@ -155,6 +156,8 @@ export type IssueLine = {
 
 export type PostIssueInput = {
   warehouseId: string;
+  /** เบิก "อ้างใบ PO" ใบนี้ (documentary) — กันไม่ให้เบิกเกิน "เหลือในใบ" */
+  poId?: string;
   lines: IssueLine[];
 };
 
@@ -196,9 +199,35 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
     return true;
   });
 
+  // เบิก "อ้างใบ PO" → กันไม่ให้เบิกเกิน "เหลือในใบ PO" (documentary · การตัดสต๊อกจริงยัง guard ที่ recordMovement)
+  const poId = (input.poId ?? "").trim() || null;
+  if (poId) {
+    const ful = await getPoFulfillment(orgId, poId, { warehouseId });
+    if (!ful) return { ok: false, error: "ไม่พบใบ PO ที่อ้างอิง" };
+    const remainByProduct = new Map(ful.lines.map((l) => [l.productId, l.remaining]));
+    const wantByProduct = new Map<string, number>();
+    for (const l of uniqueLines) {
+      wantByProduct.set(l.productId, (wantByProduct.get(l.productId) ?? 0) + Math.trunc(l.qty));
+    }
+    for (const [pid, want] of wantByProduct) {
+      const remain = remainByProduct.get(pid) ?? 0;
+      if (want > remain) {
+        const nm = ful.lines.find((l) => l.productId === pid)?.name ?? "สินค้า";
+        return { ok: false, error: `เบิกเกินยอดที่เหลือในใบ PO — "${nm}" เหลือ ${remain} แต่จะเบิก ${want}` };
+      }
+    }
+  }
+
   // สร้าง "หัวใบเบิก" ก่อน (idempotent · batchKey = เซ็ตของ lineKeys ที่เบิก) → ผูก movement เข้าใบ
   const batchKey = "issue:" + uniqueLines.map((l) => l.lineKey).sort().join(",");
-  const issueId = await ensureIssueHeader(orgId, warehouseId, batchKey, userId);
+  const issueId = await ensureIssueHeader(orgId, warehouseId, batchKey, userId, poId);
+
+  // เบิก "อ้างใบ PO" แต่สร้างหัวใบไม่สำเร็จ → หยุดทั้งใบก่อนตัดสต๊อก
+  // (ไม่งั้น movement จะติด refType="floor_issue" ที่ ledger "เหลือในใบ" นับไม่เห็น → ยอดเพี้ยน).
+  // กรณีไม่อ้าง PO ยัง degrade แบบเดิม (ตัดสต๊อกได้ · แค่พิมพ์ใบไม่ได้).
+  if (poId && !issueId) {
+    return { ok: false, error: "บันทึกหัวใบเบิกไม่สำเร็จ ยังไม่ได้ตัดสต๊อก — ลองใหม่อีกครั้ง" };
+  }
 
   const failed: { productId: string; error: string }[] = [];
   let posted = 0;

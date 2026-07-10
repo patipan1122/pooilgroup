@@ -63,6 +63,8 @@ type LineDraft = {
   qtyExpected: string;
   qtyReceived: string;
   qtyDamaged: string;
+  // ผู้ใช้แก้ช่อง "เสียหาย" เองแล้วหรือยัง → ถ้าแก้เองแล้วห้าม auto-fill ทับ
+  damagedTouched: boolean;
   note: string;
 };
 
@@ -75,6 +77,7 @@ function newLine(seed?: Partial<LineDraft>): LineDraft {
     qtyExpected: seed?.qtyExpected ?? "",
     qtyReceived: seed?.qtyReceived ?? "",
     qtyDamaged: seed?.qtyDamaged ?? "",
+    damagedTouched: seed?.damagedTouched ?? false,
     note: seed?.note ?? "",
   };
 }
@@ -196,6 +199,21 @@ function NoPoGrnForm({
 
   function setLine(key: string, patch: Partial<LineDraft>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+  // เปลี่ยน "รับจริง": ถ้ารับน้อยกว่าคาดว่าจะรับ → เติม "เสียหาย" อัตโนมัติ = คาด − รับ
+  //   (เฉพาะบรรทัดที่ผู้ใช้ยังไม่แก้ช่องเสียหายเอง)
+  function onReceivedChange(key: string, value: string) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const expected = num(l.qtyExpected);
+        const received = num(value);
+        const shortfall = Math.max(0, expected - received);
+        const nextDamaged =
+          !l.damagedTouched && expected > 0 ? String(shortfall) : l.qtyDamaged;
+        return { ...l, qtyReceived: value, qtyDamaged: nextDamaged };
+      }),
+    );
   }
   function addLine() {
     setLines((prev) => [...prev, newLine()]);
@@ -430,10 +448,10 @@ function NoPoGrnForm({
                   <Input id={`e-${l.key}`} value={l.qtyExpected} onChange={(e) => setLine(l.key, { qtyExpected: e.target.value })} inputMode="numeric" placeholder="0" disabled={locked} />
                 </Field>
                 <Field label="รับจริง" required htmlFor={`r-${l.key}`}>
-                  <Input id={`r-${l.key}`} value={l.qtyReceived} onChange={(e) => setLine(l.key, { qtyReceived: e.target.value })} inputMode="numeric" placeholder="0" disabled={locked} />
+                  <Input id={`r-${l.key}`} value={l.qtyReceived} onChange={(e) => onReceivedChange(l.key, e.target.value)} inputMode="numeric" placeholder="0" disabled={locked} />
                 </Field>
                 <Field label="เสียหาย" optional htmlFor={`d-${l.key}`}>
-                  <Input id={`d-${l.key}`} value={l.qtyDamaged} onChange={(e) => setLine(l.key, { qtyDamaged: e.target.value })} inputMode="numeric" placeholder="0" disabled={locked} />
+                  <Input id={`d-${l.key}`} value={l.qtyDamaged} onChange={(e) => setLine(l.key, { qtyDamaged: e.target.value, damagedTouched: true })} inputMode="numeric" placeholder="0" disabled={locked} />
                 </Field>
               </div>
 
@@ -556,6 +574,8 @@ type PoLineDraft = {
   remaining: number;
   qtyReceived: string;
   qtyDamaged: string;
+  // ผู้ใช้แก้ช่อง "เสียหาย" เองแล้วหรือยัง → ถ้าแก้เองแล้วห้าม auto-fill ทับ
+  damagedTouched: boolean;
 };
 
 function PoReceiveForm({
@@ -587,6 +607,7 @@ function PoReceiveForm({
       // default รับจริง = คงค้าง (ไม่ติดลบ); ถ้ารับครบแล้ว → 0
       qtyReceived: String(Math.max(0, p.remaining)),
       qtyDamaged: "",
+      damagedTouched: false,
     })),
   );
   const [error, setError] = useState<string | null>(null);
@@ -595,6 +616,19 @@ function PoReceiveForm({
 
   function setDraft(productId: string, patch: Partial<PoLineDraft>) {
     setDrafts((prev) => prev.map((d) => (d.productId === productId ? { ...d, ...patch } : d)));
+  }
+  // เปลี่ยน "รับจริง": ถ้ารับน้อยกว่าที่สั่ง → เติม "เสียหาย" อัตโนมัติ = สั่ง − รับ
+  //   (เฉพาะบรรทัดที่ผู้ใช้ยังไม่แก้ช่องเสียหายเอง)
+  function onReceivedChange(productId: string, value: string) {
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.productId !== productId) return d;
+        const shortfall = Math.max(0, d.ordered - num(value));
+        const nextDamaged =
+          !d.damagedTouched && d.ordered > 0 ? String(shortfall) : d.qtyDamaged;
+        return { ...d, qtyReceived: value, qtyDamaged: nextDamaged };
+      }),
+    );
   }
 
   const totalReceived = useMemo(
@@ -733,7 +767,7 @@ function PoReceiveForm({
                   <Input
                     id={`por-${d.productId}`}
                     value={d.qtyReceived}
-                    onChange={(e) => setDraft(d.productId, { qtyReceived: e.target.value })}
+                    onChange={(e) => onReceivedChange(d.productId, e.target.value)}
                     inputMode="numeric"
                     placeholder="0"
                   />
@@ -742,7 +776,7 @@ function PoReceiveForm({
                   <Input
                     id={`pod-${d.productId}`}
                     value={d.qtyDamaged}
-                    onChange={(e) => setDraft(d.productId, { qtyDamaged: e.target.value })}
+                    onChange={(e) => setDraft(d.productId, { qtyDamaged: e.target.value, damagedTouched: true })}
                     inputMode="numeric"
                     placeholder="0"
                   />
