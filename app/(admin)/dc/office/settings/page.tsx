@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { getFreightRateSettings, setFreightRate } from "@/lib/dc/freight-actions";
+import { DcDriveCard } from "./dc-drive-card";
 
 type Mode = "TRUCK" | "SEA";
 
@@ -100,8 +101,21 @@ export default function DcSettingsPage() {
       <div className="dcx" style={{ display: "block" }}>
         {/* header */}
         <div style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ตั้งค่า · เรตค่าขนส่ง</h1>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ตั้งค่า DC คลังกลาง</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>
+            ที่เก็บรูปสินค้า (Google Drive) · เรตค่าขนส่งจีน–ไทย
+          </p>
+        </div>
+
+        {/* Google Drive · ที่เก็บรูปสินค้า (CEO 2026-07-11: เชื่อมในหน้า DC เอง ไม่ต้องไปหาที่ recruit) */}
+        <div style={{ marginBottom: 22 }}>
+          <DcDriveCard />
+        </div>
+
+        {/* เรตค่าขนส่ง */}
+        <div style={{ marginBottom: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--ink)" }}>เรตค่าขนส่งจีน–ไทย</h2>
+          <p style={{ margin: "3px 0 0", color: "var(--muted)", fontSize: 13 }}>
             ใช้คิดค่าขนส่งอัตโนมัติ = ปริมาตร CBM × เรตนี้ ตอนจ่ายเงินและคิดต้นทุนนำเข้า
           </p>
         </div>
