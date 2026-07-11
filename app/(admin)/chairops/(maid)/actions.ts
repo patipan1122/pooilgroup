@@ -7,11 +7,42 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import {
+  getMaidActiveBranches,
   getMaidBranchIds,
   ACTIVE_BRANCH_COOKIE,
 } from "@/lib/chairops/auth/branch-scope";
 
 type Result = { ok: true } | { ok: false; error: string };
+
+type MaidBranchState = {
+  ok: true;
+  branches: Array<{ id: string; name: string }>;
+  activeBranchId: string | null;
+  activeBranchName: string | null;
+};
+
+/**
+ * สาขา "สด" ของแม่บ้านคนที่ล็อกอินอยู่ (รายชื่อสาขาที่ดูแล + สาขาที่กำลังทำงาน).
+ *
+ * ทำไมต้องมี action นี้: ตัวสลับสาขา (BranchSwitcher) รับ props มาจาก layout ซึ่ง
+ * Next.js แคชไว้ฝั่ง client + LINE LIFF/PWA เปิดหน้าค้างไว้ → สาขาที่แอดมิน "เพิ่งเพิ่ม"
+ * จะไม่โผล่จนกว่าจะ full reload. client เรียก action นี้ตอนเปิด/กลับมาโฟกัสแอป เพื่อ
+ * อ่านสาขาจริงจาก DB ใหม่ → เพิ่มสาขาแล้วเห็นทันทีโดยไม่ต้องปิด-เปิดแอป.
+ * (ตรรกะ activeBranchId เหมือน layout เป๊ะ = session.user.primaryBranchId ที่ overload
+ * เป็นสาขาจาก cookie ∩ ชุดสาขา — ปลอดภัยเรื่องเงิน · การสลับจริงยัง validate ที่ server.)
+ */
+export async function getMaidBranchState(): Promise<MaidBranchState> {
+  const session = await requireExactRole("MAID");
+  const branches = await getMaidActiveBranches(session.user.id);
+  const activeBranchId = session.user.primaryBranchId ?? null;
+  const activeBranch = branches.find((b) => b.id === activeBranchId) ?? null;
+  return {
+    ok: true,
+    branches,
+    activeBranchId,
+    activeBranchName: activeBranch?.name ?? null,
+  };
+}
 
 /**
  * แม่บ้านสลับ "สาขาที่กำลังทำงานอยู่" (สลับทีละสาขา). เก็บใน cookie แล้ว getSession

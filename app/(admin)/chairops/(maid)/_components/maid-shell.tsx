@@ -28,9 +28,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { setActiveBranch } from "../actions";
+import { setActiveBranch, getMaidBranchState } from "../actions";
 
 type MaidBranch = { id: string; name: string };
 
@@ -115,12 +115,12 @@ function ReturnToSelfBar({ adminName }: { adminName: string }) {
 }
 
 // Branch switcher (multi-branch · CEO 2026-07-08). Sits under the header so the
-// ACTIVE branch is visible on every page. Hidden entirely for the 90% single-
-// branch case; a plain label for it would just add noise.
+// ACTIVE branch is visible on every page. Hidden entirely for the single-branch
+// case; a plain label for it would just add noise.
 function BranchSwitcher({
-  branches,
-  activeBranchId,
-  activeBranchName,
+  branches: initialBranches,
+  activeBranchId: initialActiveId,
+  activeBranchName: initialActiveName,
 }: {
   branches: MaidBranch[];
   activeBranchId: string | null;
@@ -129,6 +129,39 @@ function BranchSwitcher({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // props มาจาก layout ที่ Next.js แคชฝั่ง client + LINE LIFF/PWA เปิดหน้าค้าง →
+  // สาขาที่แอดมิน "เพิ่งเพิ่ม" จะไม่โผล่จน full reload. เก็บเป็น state แล้วอ่านสาขาจริง
+  // จาก server ใหม่ตอน mount + ตอนแม่บ้านกลับมาที่แอป (focus/visible) → เพิ่มสาขาแล้ว
+  // สลับได้ทันทีโดยไม่ต้องปิด-เปิดแอปเอง. (การสลับจริงยัง validate ที่ server เหมือนเดิม.)
+  const [branches, setBranches] = useState(initialBranches);
+  const [activeBranchId, setActiveBranchId] = useState(initialActiveId);
+  const [activeBranchName, setActiveBranchName] = useState(initialActiveName);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      getMaidBranchState()
+        .then((live) => {
+          if (cancelled || !live?.ok) return;
+          setBranches(live.branches);
+          setActiveBranchId(live.activeBranchId);
+          setActiveBranchName(live.activeBranchName);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const onFocus = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, []);
 
   if (branches.length <= 1) return null; // single-branch maid → no switcher
 
@@ -144,6 +177,9 @@ function BranchSwitcher({
         toast.error(res.error);
         return;
       }
+      // optimistic: อัปเดตติ๊กถูก + แถบเขียวทันที แล้ว refresh หน้าให้ตามสาขาใหม่
+      setActiveBranchId(id);
+      setActiveBranchName(branches.find((b) => b.id === id)?.name ?? null);
       toast.success("สลับสาขาแล้ว");
       router.refresh();
     });
