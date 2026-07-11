@@ -8076,6 +8076,10 @@ model DcStockMovement {
   costLayerId    String?      @map("cost_layer_id") @db.Uuid
   refType        String?      @map("ref_type")
   refId          String?      @map("ref_id") @db.Uuid
+  // Pinpoint #2 (multi-PO) — attribute a source-outbound movement (ISSUE/TRANSFER_OUT) หรือ reversal (RETURN_IN)
+  // ต่อ "ใบ PO" ราย movement → getPoFulfillment นับ movedOut แบบ NET ต่อใบได้ (โอน/เบิกจากหลายใบพร้อมกัน).
+  // ★ ตั้งเฉพาะ source-out + reversal เท่านั้น · ห้ามตั้งบน TRANSFER_IN ปลายทาง (กันปน).
+  poId           String?      @map("po_id") @db.Uuid
   sourceKey      String       @map("source_key")
   postStatus     DcPostStatus @default(NA) @map("post_status")
   note           String?
@@ -8093,6 +8097,7 @@ model DcStockMovement {
   @@index([orgId, warehouseId, occurredAt(sort: Desc)])
   @@index([orgId, productId, occurredAt(sort: Desc)])
   @@index([postStatus])
+  @@index([orgId, poId])
   @@map("stock_movements")
   @@schema("dc")
 }
@@ -8440,6 +8445,7 @@ model DcTransferLine {
   qtyReceived    Int?    @map("qty_received")
   costLayerId    String? @map("cost_layer_id") @db.Uuid
   unitCostSatang Int?    @map("unit_cost_satang")
+  poId           String? @map("po_id") @db.Uuid // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (โอนจากหลายใบ) · ใช้ตอน cancel คืน po_id
 
   transfer DcTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
   product  DcProduct  @relation(fields: [productId], references: [id], onDelete: Restrict)

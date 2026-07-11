@@ -51,7 +51,12 @@ type Line = {
   onHand: number;
   qty: number;
   imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — null = โชว์ไอคอน placeholder
+  poId: string | null; // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (โอนจากหลายใบ) · null = เพิ่มเอง/สแกน
+  poCode: string | null;
 };
+
+// ใบ PO ที่กำลังอ้างอิง (สะสมได้หลายใบ — Pinpoint #2)
+type SelectedPo = { poId: string; poCode: string; poLineCount: number };
 
 type DestMode = "warehouse" | "module";
 
@@ -203,9 +208,7 @@ export function TransferDispatch({
 
   // ---- "เลือกจากใบ PO" (โอนเป็นใบ) ----
   const [poPickerOpen, setPoPickerOpen] = useState(false);
-  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
-  const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
-  const [selectedPoLineCount, setSelectedPoLineCount] = useState<number>(0); // จำนวนรายการ "ทั้งใบ" PO ที่อ้างอิง
+  const [selectedPos, setSelectedPos] = useState<SelectedPo[]>([]); // ใบ PO ที่อ้างอิง (สะสมหลายใบ · Pinpoint #2)
 
   // ---- ค่าขนส่งไทย-ไทย (บาท → ส่งเป็นสตางค์ตอน dispatch) ----
   const [freightBaht, setFreightBaht] = useState("");
@@ -261,6 +264,8 @@ export function TransferDispatch({
             onHand: p.onHand,
             qty: 1,
             imageUrl: p.imageUrl ?? null,
+            poId: null,
+            poCode: null,
           },
         ];
       });
@@ -268,15 +273,20 @@ export function TransferDispatch({
     [],
   );
 
-  // รับผลจากตัวเลือกใบ PO → เติมบรรทัดตามจำนวนที่เลือก (มีอยู่แล้ว = ตั้งค่าจำนวนใหม่) + จำ poId/poCode ไว้
+  // รับผลจากตัวเลือกใบ PO → สะสมบรรทัด (เปิด picker หลายรอบ = โอนจากหลายใบ · Pinpoint #2)
+  //   match ตาม (productId + poId) → สินค้าเดียวกันจากคนละใบ = คนละบรรทัด (จำได้ว่ามาจากใบไหน)
   const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
-    setSelectedPoId(sel.poId);
-    setSelectedPoCode(sel.poCode);
-    setSelectedPoLineCount(sel.poLineCount ?? sel.lines.length); // fallback เผื่อ handoff เก่าไม่มีฟิลด์นี้
+    setSelectedPos((prev) => {
+      const lineCount = sel.poLineCount ?? sel.lines.length;
+      if (prev.some((p) => p.poId === sel.poId)) {
+        return prev.map((p) => (p.poId === sel.poId ? { ...p, poCode: sel.poCode, poLineCount: lineCount } : p));
+      }
+      return [...prev, { poId: sel.poId, poCode: sel.poCode, poLineCount: lineCount }];
+    });
     setLines((prev) => {
       const next = [...prev];
       for (const pl of sel.lines) {
-        const idx = next.findIndex((l) => l.productId === pl.productId);
+        const idx = next.findIndex((l) => l.productId === pl.productId && l.poId === sel.poId);
         if (idx >= 0) {
           next[idx] = {
             ...next[idx],
@@ -294,6 +304,8 @@ export function TransferDispatch({
             onHand: pl.qty,
             qty: pl.qty,
             imageUrl: pl.imageUrl ?? null,
+            poId: sel.poId,
+            poCode: sel.poCode,
           });
         }
       }
@@ -301,10 +313,16 @@ export function TransferDispatch({
     });
   }, []);
 
+  // ยกเลิกอ้างอิงใบ PO ใบเดียว → ลบบรรทัดที่มาจากใบนั้น + เอาใบออก
+  const clearOnePo = useCallback((poId: string) => {
+    setSelectedPos((prev) => prev.filter((p) => p.poId !== poId));
+    setLines((prev) => prev.filter((l) => l.poId !== poId));
+  }, []);
+
+  // ยกเลิกอ้างอิงทุกใบ → ลบบรรทัดจากใบ PO ทั้งหมด (เก็บบรรทัดที่เพิ่มเอง/สแกน)
   const clearPoRef = useCallback(() => {
-    setSelectedPoId(null);
-    setSelectedPoCode(null);
-    setSelectedPoLineCount(0);
+    setSelectedPos([]);
+    setLines((prev) => prev.filter((l) => l.poId == null));
   }, []);
 
   // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
@@ -430,11 +448,13 @@ export function TransferDispatch({
         productId: l.productId,
         qty: l.qty,
         lineKey: l.lineKey,
+        poId: l.poId ?? undefined, // Pinpoint #2 — poId ต่อบรรทัด (โอนจากหลายใบ) · server cap ต่อใบ
       }));
 
       // baht → satang (สตางค์): round(บาท × 100) · กัน NaN/ติดลบ → 0 (money-critical)
       const thaiFreightSatang = Math.max(0, Math.round((parseFloat(freightBaht) || 0) * 100));
-      const poIdArg = selectedPoId || undefined;
+      // header poId ไม่ตั้ง — ให้ per-line poId ใน payload เป็นตัวขับ (กันบรรทัดที่เพิ่มเอง/สแกน ถูก attribute ผิดใบ)
+      const poIdArg: string | undefined = undefined;
       const freightNoteArg = freightNote.trim() || undefined;
 
       const res = await dispatchTransfer(
@@ -486,8 +506,7 @@ export function TransferDispatch({
       setNote("");
       setFreightBaht("");
       setFreightNote("");
-      setSelectedPoId(null);
-      setSelectedPoCode(null);
+      setSelectedPos([]);
       if (res.status === "CONFIRMED") {
         showToast(`ส่ง + รับเข้าแล้ว ${totalQty} ชิ้น (อยู่ที่เดียวกัน)`);
       } else {
@@ -498,7 +517,7 @@ export function TransferDispatch({
     } finally {
       setBusy(false);
     }
-  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast, freightBaht, freightNote, selectedPoId, isClawTarget, selectedClawBranch]);
+  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast, freightBaht, freightNote, isClawTarget, selectedClawBranch]);
 
   // จำนวนที่หยิบไปแล้วต่อสินค้า (ใช้คำนวณ "เหลือ" ในลิสต์เลือก)
   const pickedQtyByProduct = new Map<string, number>();
@@ -683,48 +702,61 @@ export function TransferDispatch({
         </button>
       </div>
 
-      {/* กำลังโอนจากใบ PO — banner + ยกเลิกอ้างอิง */}
-      {selectedPoCode && (
+      {/* กำลังโอนจากใบ PO — สะสมได้หลายใบ (Pinpoint #2) */}
+      {selectedPos.length > 0 && (
         <div
           className="dc-card"
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            flexDirection: "column",
             gap: 10,
             padding: "12px 14px",
             background: "var(--color-brand-50, #eef3fe)",
             border: "1.5px solid var(--color-brand-600, #2563eb)",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
-            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
-                กำลังโอนจากใบ {selectedPoCode}
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)", opacity: 0.9, marginTop: 2 }}>
-                ใบนี้มี {selectedPoLineCount} รายการ · หยิบมา {lines.length} รายการ ({totalQty} ชิ้น)
-              </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+                กำลังโอนจาก {selectedPos.length} ใบ PO · รวม {lines.filter((l) => l.poId != null).length} รายการ ({totalQty} ชิ้น)
+              </span>
             </div>
+            {selectedPos.length > 1 && (
+              <button
+                type="button"
+                onClick={clearPoRef}
+                style={{ flexShrink: 0, border: "1.5px solid var(--color-brand-600, #2563eb)", background: "#fff", color: "var(--color-brand-700, #1d4ed8)", borderRadius: 10, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                ล้างทุกใบ
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={clearPoRef}
-            style={{
-              flexShrink: 0,
-              border: "1.5px solid var(--color-brand-600, #2563eb)",
-              background: "#fff",
-              color: "var(--color-brand-700, #1d4ed8)",
-              borderRadius: 10,
-              padding: "6px 12px",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            ยกเลิกอ้างอิงใบ
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {selectedPos.map((po) => {
+              const poLines = lines.filter((l) => l.poId === po.poId);
+              const qty = poLines.reduce((s, l) => s + l.qty, 0);
+              return (
+                <span
+                  key={po.poId}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid var(--color-brand-600, #2563eb)", borderRadius: 999, padding: "5px 6px 5px 12px" }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>{po.poCode}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted, #6b7785)" }}>
+                    หยิบ {poLines.length}/{po.poLineCount} ({qty} ชิ้น)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => clearOnePo(po.poId)}
+                    aria-label={`เอาใบ ${po.poCode} ออก`}
+                    style={{ display: "grid", placeItems: "center", width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--color-brand-50, #eef3fe)", color: "var(--color-brand-700, #1d4ed8)", cursor: "pointer" }}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -767,6 +799,11 @@ export function TransferDispatch({
                       <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
                         {l.sku} · เหลือ {l.onHand} {l.unit}
                       </div>
+                      {l.poCode && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, padding: "2px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "var(--color-brand-50, #eef3fe)", color: "var(--color-brand-700, #1d4ed8)", border: "1px solid var(--color-brand-600, #2563eb)" }}>
+                          <FileText size={11} /> จาก {l.poCode}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button

@@ -34,7 +34,12 @@ type Line = {
   qty: number;
   reason: string;
   imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — null = โชว์ไอคอน placeholder
+  poId: string | null; // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (เบิกจากหลายใบพร้อมกัน) · null = เพิ่มเอง/สแกน
+  poCode: string | null; // เลขใบ PO (โชว์ป้ายต่อบรรทัด)
 };
+
+// ใบ PO ที่กำลังอ้างอิง (สะสมได้หลายใบ — Pinpoint #2)
+type SelectedPo = { poId: string; poCode: string; poLineCount: number };
 
 // ★ บัฟเฟอร์รายการที่พิมพ์/ยิงไว้ใน localStorage แยกตามคลัง — กันลิสต์หายตอนรีเฟรช/เน็ตหลุด
 const STORAGE_PREFIX = "dc.issue.";
@@ -90,9 +95,7 @@ export function IssueWorkspace({
   const [lastIssueId, setLastIssueId] = useState<string | null>(null); // ไว้พิมพ์ใบเบิกล่าสุด
   const [browseOpen, setBrowseOpen] = useState(false); // ป็อปอัป "ดูสินค้า / เลือกจากรายการ"
   const [poPickerOpen, setPoPickerOpen] = useState(false); // ตัวเลือก "เบิกเป็นใบ PO"
-  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
-  const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
-  const [selectedPoLineCount, setSelectedPoLineCount] = useState<number>(0); // จำนวนรายการ "ทั้งใบ" PO ที่อ้างอิง
+  const [selectedPos, setSelectedPos] = useState<SelectedPo[]>([]); // ใบ PO ที่อ้างอิง (สะสมหลายใบ · Pinpoint #2)
   // รายการที่เบิกไม่ผ่าน (เช่น สต๊อกไม่พอ) จากรอบล่าสุด — โชว์ให้ผู้ใช้รู้
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
@@ -146,6 +149,8 @@ export function IssueWorkspace({
               qty: 1,
               reason: "",
               imageUrl: null, // สแกน/lookup ยังไม่คืนรูป → placeholder
+              poId: null,
+              poCode: null,
             },
           ];
         });
@@ -185,6 +190,8 @@ export function IssueWorkspace({
             qty: 1,
             reason: "",
             imageUrl: p.imageUrl, // ดูสินค้า/browse มีรูปมาให้แล้ว
+            poId: null,
+            poCode: null,
           },
         ];
       });
@@ -193,15 +200,20 @@ export function IssueWorkspace({
     [],
   );
 
-  // รับผลจากตัวเลือกใบ PO → เติมบรรทัดเบิกตามจำนวนที่เลือก (มีอยู่แล้ว = ตั้งจำนวนใหม่) + จำ poId/poCode
+  // รับผลจากตัวเลือกใบ PO → สะสมบรรทัดเบิก (เปิด picker หลายรอบ = เบิกจากหลายใบ · Pinpoint #2)
+  //   match ตาม (productId + poId) → สินค้าเดียวกันจากคนละใบ = คนละบรรทัด (จำได้ว่ามาจากใบไหน)
   const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
-    setSelectedPoId(sel.poId);
-    setSelectedPoCode(sel.poCode);
-    setSelectedPoLineCount(sel.poLineCount ?? sel.lines.length); // fallback เผื่อ handoff เก่าไม่มีฟิลด์นี้
+    setSelectedPos((prev) => {
+      const lineCount = sel.poLineCount ?? sel.lines.length;
+      if (prev.some((p) => p.poId === sel.poId)) {
+        return prev.map((p) => (p.poId === sel.poId ? { ...p, poCode: sel.poCode, poLineCount: lineCount } : p));
+      }
+      return [...prev, { poId: sel.poId, poCode: sel.poCode, poLineCount: lineCount }];
+    });
     setLines((prev) => {
       const next = [...prev];
       for (const pl of sel.lines) {
-        const idx = next.findIndex((l) => l.productId === pl.productId);
+        const idx = next.findIndex((l) => l.productId === pl.productId && l.poId === sel.poId);
         if (idx >= 0) {
           next[idx] = {
             ...next[idx],
@@ -221,6 +233,8 @@ export function IssueWorkspace({
             qty: pl.qty,
             reason: "",
             imageUrl: pl.imageUrl ?? null,
+            poId: sel.poId,
+            poCode: sel.poCode,
           });
         }
       }
@@ -228,10 +242,16 @@ export function IssueWorkspace({
     });
   }, []);
 
+  // ยกเลิกอ้างอิงใบ PO ใบเดียว → ลบบรรทัดที่มาจากใบนั้น + เอาใบออกจากรายการ
+  const clearOnePo = useCallback((poId: string) => {
+    setSelectedPos((prev) => prev.filter((p) => p.poId !== poId));
+    setLines((prev) => prev.filter((l) => l.poId !== poId));
+  }, []);
+
+  // ยกเลิกอ้างอิงทุกใบ → ลบบรรทัดที่มาจากใบ PO ทั้งหมด (เก็บบรรทัดที่เพิ่มเอง/สแกนไว้)
   const clearPoRef = useCallback(() => {
-    setSelectedPoId(null);
-    setSelectedPoCode(null);
-    setSelectedPoLineCount(0);
+    setSelectedPos([]);
+    setLines((prev) => prev.filter((l) => l.poId == null));
   }, []);
 
   // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
@@ -295,8 +315,9 @@ export function IssueWorkspace({
         qty: l.qty,
         reason: l.reason.trim() || undefined,
         lineKey: l.lineKey,
+        poId: l.poId ?? undefined, // Pinpoint #2 — poId ต่อบรรทัด (เบิกจากหลายใบ) · server cap ต่อใบ
       }));
-      const res = await postIssue({ warehouseId, lines: payload, poId: selectedPoId || undefined });
+      const res = await postIssue({ warehouseId, lines: payload });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -312,13 +333,13 @@ export function IssueWorkspace({
 
       if (failed.length === 0) {
         setLines([]);
-        setSelectedPoId(null);
-        setSelectedPoCode(null);
+        setSelectedPos([]);
         showToast(`เบิกออกแล้ว ${res.posted} รายการ`);
       } else {
         // เก็บเฉพาะบรรทัดที่ยังเบิกไม่สำเร็จไว้ให้แก้ไข
         const failedIds = new Set(res.failed.map((f) => f.productId));
         setLines((prev) => prev.filter((l) => failedIds.has(l.productId)));
+        setSelectedPos((prev) => prev.filter((p) => lines.some((l) => l.poId === p.poId && failedIds.has(l.productId))));
         showToast(`เบิกสำเร็จ ${res.posted} · ไม่ผ่าน ${failed.length}`);
       }
     } catch {
@@ -326,7 +347,7 @@ export function IssueWorkspace({
     } finally {
       setBusy(false);
     }
-  }, [busy, lines, warehouseId, showToast, selectedPoId]);
+  }, [busy, lines, warehouseId, showToast]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -383,48 +404,61 @@ export function IssueWorkspace({
         </button>
       </div>
 
-      {/* กำลังเบิกจากใบ PO — banner + ยกเลิกอ้างอิง */}
-      {selectedPoCode && (
+      {/* กำลังเบิกจากใบ PO — สะสมได้หลายใบ (Pinpoint #2) */}
+      {selectedPos.length > 0 && (
         <div
           className="dc-card"
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            flexDirection: "column",
             gap: 10,
             padding: "12px 14px",
             background: "var(--color-brand-50, #eef3fe)",
             border: "1.5px solid var(--color-brand-600, #2563eb)",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
-            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
-                กำลังเบิกจากใบ {selectedPoCode}
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)", opacity: 0.9, marginTop: 2 }}>
-                ใบนี้มี {selectedPoLineCount} รายการ · หยิบมา {lines.length} รายการ ({totalQty} ชิ้น)
-              </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+                กำลังเบิกจาก {selectedPos.length} ใบ PO · รวม {lines.filter((l) => l.poId != null).length} รายการ ({totalQty} ชิ้น)
+              </span>
             </div>
+            {selectedPos.length > 1 && (
+              <button
+                type="button"
+                onClick={clearPoRef}
+                style={{ flexShrink: 0, border: "1.5px solid var(--color-brand-600, #2563eb)", background: "#fff", color: "var(--color-brand-700, #1d4ed8)", borderRadius: 10, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                ล้างทุกใบ
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={clearPoRef}
-            style={{
-              flexShrink: 0,
-              border: "1.5px solid var(--color-brand-600, #2563eb)",
-              background: "#fff",
-              color: "var(--color-brand-700, #1d4ed8)",
-              borderRadius: 10,
-              padding: "6px 12px",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            ยกเลิกอ้างอิงใบ
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {selectedPos.map((po) => {
+              const poLines = lines.filter((l) => l.poId === po.poId);
+              const qty = poLines.reduce((s, l) => s + l.qty, 0);
+              return (
+                <span
+                  key={po.poId}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid var(--color-brand-600, #2563eb)", borderRadius: 999, padding: "5px 6px 5px 12px" }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>{po.poCode}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted, #6b7785)" }}>
+                    หยิบ {poLines.length}/{po.poLineCount} ({qty} ชิ้น)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => clearOnePo(po.poId)}
+                    aria-label={`เอาใบ ${po.poCode} ออก`}
+                    style={{ display: "grid", placeItems: "center", width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--color-brand-50, #eef3fe)", color: "var(--color-brand-700, #1d4ed8)", cursor: "pointer" }}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -493,6 +527,11 @@ export function IssueWorkspace({
                         {l.sku} · มีอยู่ {l.onHand} {l.unit}
                         {l.location ? ` · ที่ ${l.location}` : ""}
                       </div>
+                      {l.poCode && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, padding: "2px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "var(--color-brand-50, #eef3fe)", color: "var(--color-brand-700, #1d4ed8)", border: "1px solid var(--color-brand-600, #2563eb)" }}>
+                          <FileText size={11} /> จาก {l.poCode}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button

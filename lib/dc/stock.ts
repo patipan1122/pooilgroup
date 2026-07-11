@@ -31,6 +31,12 @@ export type RecordMovementInput = {
   costLayerId?: string | null;
   refType?: string | null;
   refId?: string | null;
+  /**
+   * Pinpoint #2 — ผูก movement source-outbound (ISSUE/TRANSFER_OUT) หรือ reversal (RETURN_IN)
+   * กับ "ใบ PO" เพื่อให้ getPoFulfillment นับ movedOut ต่อใบได้ (โอน/เบิกจากหลายใบ).
+   * ★ ตั้งเฉพาะ source-out + reversal เท่านั้น · ห้ามตั้งบน TRANSFER_IN ปลายทาง.
+   */
+  poId?: string | null;
   note?: string | null;
   locationFrom?: string | null;
   locationTo?: string | null;
@@ -102,6 +108,7 @@ export async function recordMovement(input: RecordMovementInput): Promise<Record
           costLayerId: input.costLayerId ?? null,
           refType: input.refType ?? null,
           refId: input.refId ?? null,
+          poId: input.poId ?? null,
           sourceKey: input.sourceKey,
           postStatus: input.postStatus ?? DcPostStatus.NA,
           note: input.note ?? null,

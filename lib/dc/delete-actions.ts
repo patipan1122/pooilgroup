@@ -365,7 +365,7 @@ export async function deleteTransfer(transferId: string): Promise<DeleteDocResul
     ? []
     : await prisma.dcStockMovement.findMany({
         where: { orgId, refType: { in: ["dc_transfer", "dc_transfer_auto"] }, refId: id },
-        select: { id: true, warehouseId: true, productId: true, qty: true, kind: true, unitCostSatang: true, costLayerId: true },
+        select: { id: true, warehouseId: true, productId: true, qty: true, kind: true, unitCostSatang: true, costLayerId: true, poId: true },
       });
 
   let reversed = 0;
@@ -379,6 +379,9 @@ export async function deleteTransfer(transferId: string): Promise<DeleteDocResul
       productId: m.productId,
       kind: m.qty < 0 ? DcMoveKind.RETURN_IN : DcMoveKind.COUNT_ADJUST,
       qty: -m.qty,
+      // Pinpoint #2 — คืน po_id เดิม: source-out(TRANSFER_OUT→RETURN_IN) net movedOut=0 ·
+      //   dest-in(TRANSFER_IN po_id=null→COUNT_ADJUST po_id=null) ไม่ถูกนับอยู่แล้ว
+      poId: m.poId,
       inTransitDelta: clearInTransit ? -Math.abs(m.qty) : 0,
       unitCostSatang: m.unitCostSatang,
       costLayerId: m.costLayerId,
@@ -432,7 +435,7 @@ export async function deleteIssue(issueId: string): Promise<DeleteDocResult> {
 
   const movements = await prisma.dcStockMovement.findMany({
     where: { orgId, refType: "dc_issue", refId: id },
-    select: { id: true, warehouseId: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true },
+    select: { id: true, warehouseId: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true, poId: true },
   });
 
   // เบิกออก qty เป็นลบ → คืน qty บวก (RETURN_IN). ไม่มีทางติดลบ.
@@ -445,6 +448,7 @@ export async function deleteIssue(issueId: string): Promise<DeleteDocResult> {
       productId: m.productId,
       kind: DcMoveKind.RETURN_IN,
       qty: -m.qty,
+      poId: m.poId, // Pinpoint #2 — คืน po_id เดิม → getPoFulfillment net movedOut กลับเป็น 0
       unitCostSatang: m.unitCostSatang,
       costLayerId: m.costLayerId,
       sourceKey: sourceKey("issue-del", id, m.id),

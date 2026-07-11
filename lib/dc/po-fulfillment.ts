@@ -12,7 +12,7 @@
 //   ยังตัดจากยอดรวมต่อคลัง (onHand guard เดิม). remaining ใช้กันไม่ให้ ledger ของใบติดลบ.
 
 import { prisma } from "@/lib/prisma";
-import { DcMoveKind, DcTransferStatus } from "@/lib/generated/prisma/enums";
+import { DcMoveKind } from "@/lib/generated/prisma/enums";
 
 export type PoFulfillmentLine = {
   productId: string;
@@ -104,47 +104,24 @@ export async function getPoFulfillment(
     for (const g of grouped) receivedByProduct.set(g.productId, g._sum.qtyReceived ?? 0);
   }
 
-  // โอนออกที่ tag ใบนี้ (ไม่นับใบยกเลิก) → movedOut ต่อ product
+  // โอน/เบิกออกที่ tag "ใบ PO นี้" → movedOut ต่อ product (Pinpoint #2 · multi-PO)
+  //   นับจาก movement.po_id โดยตรง (per-line) — รองรับโอน/เบิกจากหลายใบพร้อมกัน (header poId เดียวใช้ไม่ได้).
+  //   NET: ISSUE/TRANSFER_OUT qty<0 (ออก) + reversal RETURN_IN qty>0 (คืน จาก cancel/delete) → movedOut = -Σqty
+  //   → ใบยกเลิก/ลบ: out −N + reversal +N = 0 อัตโนมัติ (movement ledger เป็น immutable + compensating).
+  //   ★ po_id ตั้งเฉพาะ source-out + reversal เท่านั้น (ไม่แตะ TRANSFER_IN ปลายทาง) → sum สะอาด.
   const movedByProduct = new Map<string, number>();
-  const transfers = await prisma.dcTransfer.findMany({
-    where: { orgId, poId, status: { not: DcTransferStatus.CANCELLED } },
-    select: { id: true },
+  const movedGrouped = await prisma.dcStockMovement.groupBy({
+    by: ["productId"],
+    where: {
+      orgId,
+      poId,
+      kind: { in: [DcMoveKind.ISSUE, DcMoveKind.TRANSFER_OUT, DcMoveKind.RETURN_IN] },
+    },
+    _sum: { qty: true },
   });
-  const transferIds = transfers.map((t) => t.id);
-  if (transferIds.length > 0) {
-    // นับจาก movement TRANSFER_OUT "ที่เกิดจริง" (ไม่ใช่แถวบรรทัด) — ใบที่ dispatch ล้มกลางคัน
-    // (สร้างบรรทัดแล้วแต่ movement บางบรรทัดไม่เกิด) จะไม่ inflate movedOut → self-correcting เหมือนฝั่งเบิก.
-    // TRANSFER_OUT qty เป็นค่าติดลบ → นับเป็นจำนวนที่ออก = |Σ| · ใบยกเลิกถูกกรองออกแล้ว (transferIds ไม่รวม CANCELLED).
-    const grouped = await prisma.dcStockMovement.groupBy({
-      by: ["productId"],
-      where: {
-        orgId,
-        kind: DcMoveKind.TRANSFER_OUT,
-        refType: "dc_transfer",
-        refId: { in: transferIds },
-      },
-      _sum: { qty: true },
-    });
-    for (const g of grouped) movedByProduct.set(g.productId, Math.abs(g._sum.qty ?? 0));
-  }
-
-  // เบิกออกที่ tag ใบนี้ → movement ISSUE ที่ refId ∈ issues(poId=ใบนี้)
-  const issues = await prisma.dcIssue.findMany({
-    where: { orgId, poId },
-    select: { id: true },
-  });
-  const issueIds = issues.map((i) => i.id);
-  if (issueIds.length > 0) {
-    const grouped = await prisma.dcStockMovement.groupBy({
-      by: ["productId"],
-      where: { orgId, kind: DcMoveKind.ISSUE, refType: "dc_issue", refId: { in: issueIds } },
-      _sum: { qty: true },
-    });
-    // qty ของ ISSUE เป็นค่าติดลบ → นับเป็นจำนวนที่เบิกออก = |Σ|
-    for (const g of grouped) {
-      const abs = Math.abs(g._sum.qty ?? 0);
-      movedByProduct.set(g.productId, (movedByProduct.get(g.productId) ?? 0) + abs);
-    }
+  for (const g of movedGrouped) {
+    const net = -(g._sum.qty ?? 0); // ออก(ลบ)→บวก · คืน(บวก)→ลบ · clamp ≥0 กัน reversal เกิน
+    movedByProduct.set(g.productId, Math.max(0, net));
   }
 
   // onHand ต่อ product (ที่คลังที่ระบุ · ไม่งั้นรวมทุกคลัง)

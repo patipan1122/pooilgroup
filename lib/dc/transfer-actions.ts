@@ -210,6 +210,8 @@ export type DispatchLine = {
   qty: number;
   /** uuid ต่อบรรทัด (client สร้างตอนเพิ่ม) — idempotency key */
   lineKey: string;
+  /** Pinpoint #2 — บรรทัดนี้โอนจากใบ PO ไหน (โอนจากหลายใบพร้อมกัน) · ถ้าไม่มี → ใช้ header poId */
+  poId?: string;
 };
 
 export type DispatchTransferInput = {
@@ -302,7 +304,7 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
       seen.add(l.lineKey);
       return true;
     })
-    .map((l) => ({ productId: l.productId, qty: Math.trunc(l.qty), lineKey: l.lineKey }));
+    .map((l) => ({ productId: l.productId, qty: Math.trunc(l.qty), lineKey: l.lineKey, poId: (l.poId ?? "").trim() || null }));
 
   if (lines.length === 0) return { ok: false, error: "ยังไม่มีรายการส่งออก" };
 
@@ -316,13 +318,22 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
 
   // โอน "อ้างใบ PO" → กันไม่ให้โอนเกิน "เหลือในใบ PO" (documentary ledger ไม่ให้ติดลบ).
   // หมายเหตุ: นี่เป็นการกันเชิงเอกสาร · การตัดสต๊อกจริงตัดจาก onHand ด้านบนเสมอ.
-  const poId = (input.poId ?? "").trim() || null;
-  if (poId) {
-    const ful = await getPoFulfillment(orgId, poId, { warehouseId: from });
+  //   Pinpoint #2 · โอนจากหลายใบพร้อมกัน → poId ต่อบรรทัด (fallback = header input.poId) · cap แยกต่อใบ
+  const headerPoId = (input.poId ?? "").trim() || null;
+  const effPoOf = (l: { poId: string | null }): string | null => l.poId || headerPoId;
+  const linesByPo = new Map<string, typeof lines>();
+  for (const l of lines) {
+    const lp = effPoOf(l);
+    if (!lp) continue;
+    if (!linesByPo.has(lp)) linesByPo.set(lp, []);
+    linesByPo.get(lp)!.push(l);
+  }
+  for (const [lp, plines] of linesByPo) {
+    const ful = await getPoFulfillment(orgId, lp, { warehouseId: from });
     if (!ful) return { ok: false, error: "ไม่พบใบ PO ที่อ้างอิง" };
     const remainByProduct = new Map(ful.lines.map((l) => [l.productId, l.remaining]));
     const wantByProduct = new Map<string, number>();
-    for (const l of lines) {
+    for (const l of plines) {
       wantByProduct.set(l.productId, (wantByProduct.get(l.productId) ?? 0) + l.qty);
     }
     for (const [pid, want] of wantByProduct) {
@@ -331,11 +342,13 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
         const nm = ful.lines.find((l) => l.productId === pid)?.name ?? "สินค้า";
         return {
           ok: false,
-          error: `โอนเกินยอดที่เหลือในใบ PO — "${nm}" เหลือให้โอน/เบิก ${remain} แต่จะโอน ${want}`,
+          error: `โอนเกินยอดที่เหลือในใบ PO ${ful.poCode} — "${nm}" เหลือให้โอน/เบิก ${remain} แต่จะโอน ${want}`,
         };
       }
     }
   }
+  // header poId = ใบหลัก (input.poId หรือใบแรกที่บรรทัดอ้าง) · การนับ movedOut ใช้ movement.po_id ต่อบรรทัด
+  const poId = headerPoId ?? (lines.map(effPoOf).find((p): p is string => !!p) ?? null);
 
   // ค่าขนส่งไทย-ไทย (บันทึกบนหัวใบ · ไม่แตะต้นทุนสินค้า/cost layer)
   const thaiFreightSatang = Math.max(0, Math.trunc(Number(input.thaiFreightSatang) || 0));
@@ -378,6 +391,7 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
             qty: l.qty,
             unitCostSatang: l.unitCostSatang,
             costLayerId: l.costLayerId,
+            poId: l.poId ?? headerPoId, // Pinpoint #2 — บรรทัดนี้มาจากใบ PO ไหน (ใช้ตอน cancel คืน po_id)
             // sameSite รับเข้าทันที → qtyReceived = qty (ครบ)
             ...(sameSite ? { qtyReceived: l.qty } : {}),
           })),
@@ -400,6 +414,7 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
       kind: DcMoveKind.TRANSFER_OUT,
       qty: -Math.abs(l.qty),
       inTransitDelta: Math.abs(l.qty),
+      poId: l.poId ?? headerPoId, // Pinpoint #2 — ผูก TRANSFER_OUT กับใบ PO ของบรรทัดนี้ (นับ movedOut ต่อใบ)
       unitCostSatang: l.unitCostSatang,
       costLayerId: l.costLayerId,
       sourceKey: sourceKey("tfo", transferId, l.lineKey),
@@ -813,7 +828,7 @@ export async function cancelTransfer(transferId: string): Promise<CancelTransfer
       transferCode: true,
       fromWarehouseId: true,
       status: true,
-      lines: { select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true } },
+      lines: { select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true, poId: true } },
     },
   });
   if (!transfer) return { ok: false, error: "ไม่พบใบโอน" };
@@ -832,6 +847,7 @@ export async function cancelTransfer(transferId: string): Promise<CancelTransfer
         kind: DcMoveKind.RETURN_IN,
         qty: Math.abs(line.qty),
         inTransitDelta: -Math.abs(line.qty),
+        poId: line.poId, // Pinpoint #2 — คืน po_id เดิม → getPoFulfillment net movedOut กลับเป็น 0
         unitCostSatang: line.unitCostSatang,
         costLayerId: line.costLayerId,
         sourceKey: sourceKey("tfcancel", id, line.id),

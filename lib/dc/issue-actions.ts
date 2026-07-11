@@ -152,11 +152,13 @@ export type IssueLine = {
   reason?: string;
   /** uuid ต่อบรรทัด (client สร้างตอนเพิ่ม) — ใช้ทำ idempotency key */
   lineKey: string;
+  /** Pinpoint #2 — บรรทัดนี้เบิกจากใบ PO ไหน (เบิกจากหลายใบพร้อมกัน) · ถ้าไม่มี → ใช้ header poId */
+  poId?: string;
 };
 
 export type PostIssueInput = {
   warehouseId: string;
-  /** เบิก "อ้างใบ PO" ใบนี้ (documentary) — กันไม่ให้เบิกเกิน "เหลือในใบ" */
+  /** เบิก "อ้างใบ PO" ใบนี้ (documentary) — กันไม่ให้เบิกเกิน "เหลือในใบ" · fallback ถ้าบรรทัดไม่ระบุ poId เอง */
   poId?: string;
   lines: IssueLine[];
 };
@@ -200,27 +202,41 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
   });
 
   // เบิก "อ้างใบ PO" → กันไม่ให้เบิกเกิน "เหลือในใบ PO" (documentary · การตัดสต๊อกจริงยัง guard ที่ recordMovement)
-  const poId = (input.poId ?? "").trim() || null;
-  if (poId) {
-    const ful = await getPoFulfillment(orgId, poId, { warehouseId });
+  //   Pinpoint #2 · เบิกจากหลายใบพร้อมกัน → poId ต่อบรรทัด (fallback = header input.poId) · cap แยกต่อใบ
+  const headerPoId = (input.poId ?? "").trim() || null;
+  const effPoOf = (l: IssueLine): string | null => (l.poId ?? "").trim() || headerPoId;
+
+  // group บรรทัดตามใบ PO → cap แต่ละใบด้วย "เหลือในใบ" ของใบนั้น
+  const linesByPo = new Map<string, IssueLine[]>();
+  for (const l of uniqueLines) {
+    const lp = effPoOf(l);
+    if (!lp) continue; // ไม่อ้างใบ → ไม่ cap ระดับ PO (physical guard ที่ recordMovement เป็นตัวคุมจริง)
+    if (!linesByPo.has(lp)) linesByPo.set(lp, []);
+    linesByPo.get(lp)!.push(l);
+  }
+  for (const [lp, plines] of linesByPo) {
+    const ful = await getPoFulfillment(orgId, lp, { warehouseId });
     if (!ful) return { ok: false, error: "ไม่พบใบ PO ที่อ้างอิง" };
     const remainByProduct = new Map(ful.lines.map((l) => [l.productId, l.remaining]));
     const wantByProduct = new Map<string, number>();
-    for (const l of uniqueLines) {
+    for (const l of plines) {
       wantByProduct.set(l.productId, (wantByProduct.get(l.productId) ?? 0) + Math.trunc(l.qty));
     }
     for (const [pid, want] of wantByProduct) {
       const remain = remainByProduct.get(pid) ?? 0;
       if (want > remain) {
         const nm = ful.lines.find((l) => l.productId === pid)?.name ?? "สินค้า";
-        return { ok: false, error: `เบิกเกินยอดที่เหลือในใบ PO — "${nm}" เหลือ ${remain} แต่จะเบิก ${want}` };
+        return { ok: false, error: `เบิกเกินยอดที่เหลือในใบ PO ${ful.poCode} — "${nm}" เหลือ ${remain} แต่จะเบิก ${want}` };
       }
     }
   }
 
   // สร้าง "หัวใบเบิก" ก่อน (idempotent · batchKey = เซ็ตของ lineKeys ที่เบิก) → ผูก movement เข้าใบ
+  //   header poId = ใบหลัก (input.poId หรือใบแรกที่บรรทัดอ้าง) เพื่อ display/พิมพ์ · การนับ movedOut ใช้ movement.po_id
+  const primaryPoId = headerPoId ?? (uniqueLines.map(effPoOf).find((p): p is string => !!p) ?? null);
   const batchKey = "issue:" + uniqueLines.map((l) => l.lineKey).sort().join(",");
-  const issueId = await ensureIssueHeader(orgId, warehouseId, batchKey, userId, poId);
+  const issueId = await ensureIssueHeader(orgId, warehouseId, batchKey, userId, primaryPoId);
+  const poId = primaryPoId; // คงชื่อเดิมไว้ให้ guard ด้านล่างอ่านต่อได้
 
   // เบิก "อ้างใบ PO" แต่สร้างหัวใบไม่สำเร็จ → หยุดทั้งใบก่อนตัดสต๊อก
   // (ไม่งั้น movement จะติด refType="floor_issue" ที่ ledger "เหลือในใบ" นับไม่เห็น → ยอดเพี้ยน).
@@ -242,6 +258,7 @@ export async function postIssue(input: PostIssueInput): Promise<PostIssueResult>
       productId: line.productId,
       kind: DcMoveKind.ISSUE,
       qty: -Math.abs(qty), // เบิกออก = ติดลบ
+      poId: effPoOf(line), // Pinpoint #2 — ผูกกับใบ PO ของบรรทัดนี้ (นับ movedOut ต่อใบ)
       sourceKey: sourceKey("issue", line.lineKey),
       refType: issueId ? "dc_issue" : "floor_issue", // มีหัวใบ→ผูก(พิมพ์ได้) · ไม่มี(ยังไม่ migrate)→เดิม
       refId: issueId ?? undefined,
