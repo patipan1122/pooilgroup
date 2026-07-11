@@ -67,7 +67,38 @@ function startOfTodayBangkok(): Date {
   return new Date(Date.UTC(y, m, d, 0, 0, 0) - 7 * 60 * 60 * 1000);
 }
 
-export default async function StaffAppPage() {
+// B3 · วันที่ไทยของ "วันนี้" ในรูป YYYY-MM-DD (ใช้เป็น default ของ date picker ประวัติ)
+function todayBangkokYmd(): string {
+  const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const y = bkk.getUTCFullYear();
+  const m = String(bkk.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(bkk.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// B3 · ขอบเขตของ "วัน" ตามเวลาไทย จาก YYYY-MM-DD → [gte, lt] ในรูป UTC.
+// ymd ไม่ valid (ไม่ตรง pattern) → fallback เป็นวันนี้. ใช้กรองประวัติของวันที่เลือก (look-back).
+function bangkokDayRange(ymd: string): { gte: Date; lt: Date; ymd: string } {
+  const safe = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : todayBangkokYmd();
+  const [y, m, d] = safe.split("-").map(Number);
+  // 00:00 ไทยของวันนั้น = ลบ 7 ชม. จาก UTC midnight · lt = +1 วัน (ต้นวันถัดไป)
+  const gte = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const lt = new Date(gte.getTime() + 24 * 60 * 60 * 1000);
+  return { gte, lt, ymd: safe };
+}
+
+export default async function StaffAppPage({
+  searchParams,
+}: {
+  // B3 · Next 15 ส่ง searchParams เป็น Promise — อ่าน ?date=YYYY-MM-DD เพื่อดูประวัติย้อนหลัง
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  // B3 · วันที่ที่เลือกดูประวัติ (default = วันนี้ตามเวลาไทย)
+  const sp = await searchParams;
+  const rawDate = typeof sp.date === "string" ? sp.date : "";
+  const dayRange = bangkokDayRange(rawDate || todayBangkokYmd());
+  const selectedDate = dayRange.ymd;
+
   let orgId = "";
   let branches: GroupCollectBranch[] = [];
   let skus: CollectSku[] = [];
@@ -92,44 +123,65 @@ export default async function StaffAppPage() {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
 
-  // 📊 ความคืบหน้าวันนี้ (ของจริง) + ประวัติการเก็บของฉันวันนี้ —
-  // นับ/ดึงจาก cf_collection_events ที่ "ฉัน" (userId) เก็บ ตั้งแต่ต้นวันไทย.
+  // 📊 ความคืบหน้าวันนี้ (progress bar · ยึด "วันนี้" เสมอ) + ประวัติการเก็บของ "วันที่เลือก" —
+  // นับ/ดึงจาก cf_collection_events ที่ "ฉัน" (userId) เก็บ.
+  //  - closedTodayCount = รอบที่ปิดจริง "วันนี้" (progress bar หน้าหลัก ไม่ผูกกับ date picker)
+  //  - history = รอบของ "วันที่เลือก" (B3 · date picker ดูย้อนหลังได้ · READ-ONLY ไม่แตะเงิน)
   // ใช้ COLLECTION event เป็นตัวแทน "รอบที่เก็บเสร็จจริง" (draft ที่ยังไม่ปิด ไม่ถูกนับ).
   // graceful: อ่านไม่ได้ / ยังไม่ migrate → closedTodayCount=0, history=[] (แอปโชว์ empty state).
   let closedTodayCount = 0;
   let history: StaffHistoryRow[] = [];
   if (orgId && userId) {
+    // progress bar "วันนี้" — นับแยกจากประวัติที่เลือก (กันเลือกวันอื่นแล้ว progress เพี้ยน)
     try {
-      const since = startOfTodayBangkok();
+      closedTodayCount = await prisma.cfCollectionEvent.count({
+        where: {
+          orgId,
+          collectedById: userId,
+          eventType: "COLLECTION",
+          collectedAt: { gte: startOfTodayBangkok() },
+        },
+      });
+    } catch {
+      // graceful: คงค่า default (0)
+    }
+    // ประวัติของ "วันที่เลือก" (ในช่วงเวลาไทยของวันนั้น · gte..lt)
+    try {
       const events = await prisma.cfCollectionEvent.findMany({
         where: {
           orgId,
           collectedById: userId,
           eventType: "COLLECTION",
-          collectedAt: { gte: since },
+          collectedAt: { gte: dayRange.gte, lt: dayRange.lt },
         },
         orderBy: { collectedAt: "desc" },
         select: {
           collectedAt: true,
           cashCountedCents: true,
           anomalyFlags: true,
-          machine: { select: { code: true } },
+          coinMeterAfter: true,
+          machine: { select: { code: true, branch: { select: { name: true } } } },
         },
         take: 50,
       });
-      closedTodayCount = events.length;
       history = events.map((e) => ({
         code: e.machine.code,
+        // B3 · สาขาของตู้ (โชว์ในประวัติ · ช่วยจำว่าเก็บที่ไหน)
+        branch: e.machine.branch.name,
+        // B3 · วันที่ไทยของรอบ (YYYY-MM-DD) · ใช้ label เมื่อดูย้อนหลัง
+        date: selectedDate,
         time: e.collectedAt.toLocaleTimeString("th-TH", {
           hour: "2-digit",
           minute: "2-digit",
           timeZone: "Asia/Bangkok",
         }),
         cashBaht: Math.round(e.cashCountedCents / 100),
+        // B3 · เลขมิเตอร์เหรียญที่บันทึกไว้ (look-back หลักฐานตัวเลขที่กรอก)
+        coinMeter: e.coinMeterAfter,
         ok: e.anomalyFlags.length === 0,
       }));
     } catch {
-      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default (0 / [])
+      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default ([])
     }
   }
 
@@ -167,6 +219,7 @@ export default async function StaffAppPage() {
       userName={userName}
       closedTodayCount={closedTodayCount}
       history={history}
+      selectedDate={selectedDate}
       myRecentTickets={myRecentTickets}
       assignedOnly={hasAssignment}
       awaitingSetupIds={awaitingSetupIds}

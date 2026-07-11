@@ -22,6 +22,24 @@ function startOfTodayBangkok(): Date {
   return new Date(Date.UTC(bkk.getUTCFullYear(), bkk.getUTCMonth(), bkk.getUTCDate(), 0, 0, 0) - 7 * 60 * 60 * 1000);
 }
 
+// B3 · วันที่ไทยของ "วันนี้" ในรูป YYYY-MM-DD (default ของ date picker ประวัติ) — sync กับ /clawfleet/os/app
+function todayBangkokYmd(): string {
+  const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const y = bkk.getUTCFullYear();
+  const m = String(bkk.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(bkk.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// B3 · ขอบเขต "วัน" ตามเวลาไทย จาก YYYY-MM-DD → [gte, lt] (UTC). ไม่ valid → fallback วันนี้.
+function bangkokDayRange(ymd: string): { gte: Date; lt: Date; ymd: string } {
+  const safe = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : todayBangkokYmd();
+  const [y, m, d] = safe.split("-").map(Number);
+  const gte = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - 7 * 60 * 60 * 1000);
+  const lt = new Date(gte.getTime() + 24 * 60 * 60 * 1000);
+  return { gte, lt, ymd: safe };
+}
+
 /**
  * กรอง route เหลือ "ตู้ของฉัน" เมื่อผู้เก็บคนนี้มีการมอบหมายตู้ (cf_machines.assigned_staff_id).
  * มีตู้ assign ≥1 → คืน branches ที่ตัดเหลือเฉพาะตู้ของเขา (ทิ้งกลุ่ม/สาขาว่าง) · hasAssignment=true.
@@ -56,7 +74,18 @@ async function filterRouteToMine(
   }
 }
 
-export default async function ClawfleetLiffPage() {
+export default async function ClawfleetLiffPage({
+  searchParams,
+}: {
+  // B3 · Next 15 ส่ง searchParams เป็น Promise — อ่าน ?date=YYYY-MM-DD เพื่อดูประวัติย้อนหลัง
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  // B3 · วันที่ที่เลือกดูประวัติ (default = วันนี้ตามเวลาไทย)
+  const sp = await searchParams;
+  const rawDate = typeof sp.date === "string" ? sp.date : "";
+  const dayRange = bangkokDayRange(rawDate || todayBangkokYmd());
+  const selectedDate = dayRange.ymd;
+
   let orgId = "";
   let branches: GroupCollectBranch[] = [];
   let skus: CollectSku[] = [];
@@ -90,27 +119,41 @@ export default async function ClawfleetLiffPage() {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
 
-  // 📊 ความคืบหน้าวันนี้ + ประวัติการเก็บของฉันวันนี้ (ของจริง จาก cf_collection_events ที่ "ฉัน" เก็บ)
+  // 📊 ความคืบหน้าวันนี้ (progress bar · ยึด "วันนี้") + ประวัติการเก็บของ "วันที่เลือก" (B3 · ดูย้อนหลัง)
+  //  - closedTodayCount = รอบที่ปิดจริง "วันนี้" (progress bar หน้าหลัก ไม่ผูก date picker)
+  //  - history = รอบของ "วันที่เลือก" (READ-ONLY · ไม่แตะเงิน) — sync กับ /clawfleet/os/app
   // graceful: อ่านไม่ได้ / ยังไม่ migrate → closedTodayCount=0, history=[] (แอปโชว์ empty state)
   let closedTodayCount = 0;
   let history: StaffHistoryRow[] = [];
   if (orgId && userId) {
     try {
-      const events = await prisma.cfCollectionEvent.findMany({
+      closedTodayCount = await prisma.cfCollectionEvent.count({
         where: { orgId, collectedById: userId, eventType: "COLLECTION", collectedAt: { gte: startOfTodayBangkok() } },
+      });
+    } catch {
+      // graceful: คงค่า default (0)
+    }
+    try {
+      const events = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, collectedById: userId, eventType: "COLLECTION", collectedAt: { gte: dayRange.gte, lt: dayRange.lt } },
         orderBy: { collectedAt: "desc" },
-        select: { collectedAt: true, cashCountedCents: true, anomalyFlags: true, machine: { select: { code: true } } },
+        select: {
+          collectedAt: true, cashCountedCents: true, anomalyFlags: true, coinMeterAfter: true,
+          machine: { select: { code: true, branch: { select: { name: true } } } },
+        },
         take: 50,
       });
-      closedTodayCount = events.length;
       history = events.map((e) => ({
         code: e.machine.code,
+        branch: e.machine.branch.name, // B3 · สาขาของตู้
+        date: selectedDate, // B3 · วันที่ไทยของรอบ (YYYY-MM-DD)
         time: e.collectedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }),
         cashBaht: Math.round(e.cashCountedCents / 100),
+        coinMeter: e.coinMeterAfter, // B3 · เลขมิเตอร์เหรียญที่บันทึกไว้ (look-back)
         ok: e.anomalyFlags.length === 0,
       }));
     } catch {
-      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default (0 / [])
+      // graceful: ยังไม่ migrate / query ล้ม → คงค่า default ([])
     }
   }
 
@@ -138,6 +181,7 @@ export default async function ClawfleetLiffPage() {
         userName={userName}
         closedTodayCount={closedTodayCount}
         history={history}
+        selectedDate={selectedDate}
         myRecentTickets={myRecentTickets}
         assignedOnly={hasAssignment}
         awaitingSetupIds={awaitingSetupIds}
