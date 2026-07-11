@@ -17,7 +17,8 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage } from "@/lib/dc/role-guard";
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
-import { getObject, putObject } from "@/lib/r2/upload";
+import { getObject } from "@/lib/r2/upload";
+import { storeDcProductImage } from "@/lib/dc/product-image-store";
 
 const PRIMARY_MODEL = "gemini-3.1-flash-lite";
 const FALLBACK_MODEL = "gemini-2.5-flash-lite";
@@ -114,6 +115,16 @@ function toStr(v: unknown): string | null {
     return s.length ? s : null;
   }
   return null;
+}
+
+/** ทำชื่อไฟล์รูปสินค้าให้ปลอดภัย (ตัดอักขระต้องห้ามใน Drive/OS · จำกัดความยาว). */
+function safeImageName(s: string): string {
+  const base = (s || "dc-product")
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .trim()
+    .slice(0, 60) || "dc-product";
+  return base;
 }
 
 /** [ymin,xmin,ymax,xmax] 0-1000 → พิกเซลจริง (clamp ในกรอบภาพ) หรือ null ถ้าไม่สมเหตุผล. */
@@ -295,9 +306,16 @@ export async function ingestPoImages(input: {
               .extract(region)
               .jpeg({ quality: 82 })
               .toBuffer();
-            const ck = `dc/po/${orgId}/${randomUUID()}.jpg`;
-            croppedUrl = await putObject(ck, cropBuf, "image/jpeg");
-            croppedKey = ck;
+            // เก็บ 2 ที่: R2 (สำเนาย่อ · แสดงผล) + Drive (ต้นฉบับครอป · best-effort).
+            // croppedUrl = R2 display URL เสมอ → เก็บเป็นรูปสินค้าได้เหมือนเดิม.
+            const stored = await storeDcProductImage({
+              orgId,
+              bytes: cropBuf,
+              mimeType: "image/jpeg",
+              name: `${safeImageName(nameTh)}-${randomUUID().slice(0, 8)}.jpg`,
+            });
+            croppedUrl = stored.url;
+            croppedKey = stored.key;
           } catch {
             /* ครอปไม่ได้ → ปล่อยรูป null */
           }
