@@ -1097,6 +1097,11 @@ function PoCountPickerSheet({
     });
   };
 
+  // ความคืบหน้าการนับในใบนี้ (Pinpoint #4) — เลือกนับไปแล้วกี่รายการจากทั้งใบ
+  const poTotalLines = detail ? detail.lines.length : 0;
+  const poPickedCount = poTotalLines - notYet.length;
+  const poPickedPct = poTotalLines > 0 ? Math.round((100 * poPickedCount) / poTotalLines) : 0;
+
   return (
     <div
       role="dialog"
@@ -1176,6 +1181,29 @@ function PoCountPickerSheet({
             <div style={{ padding: 24, textAlign: "center", color: "var(--dc-muted)", fontSize: 14 }}>ใบนี้ไม่มีรายการสินค้า</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* ความคืบหน้าการนับในใบนี้ (Pinpoint #4) */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--dc-ink)" }}>
+                    นับไปแล้ว <b style={{ color: "var(--color-brand-700)" }}>{poPickedCount}</b>/{poTotalLines} รายการ
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: poPickedPct === 100 ? "#1e8e4e" : "var(--color-brand-700)", fontVariantNumeric: "tabular-nums" }}>
+                    {poPickedPct}%
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: "var(--dc-canvas, #eef1f6)", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${poPickedPct}%`,
+                      borderRadius: 999,
+                      background: poPickedPct === 100 ? "#1e8e4e" : "var(--color-brand-600, #2563eb)",
+                      transition: "width 0.25s ease",
+                    }}
+                  />
+                </div>
+              </div>
+
               {/* นับทั้งใบ */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>{detail.lines.length} รายการในใบ</span>

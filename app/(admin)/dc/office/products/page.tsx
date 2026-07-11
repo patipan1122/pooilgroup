@@ -130,6 +130,8 @@ export default async function DcProductsPage({
         chips={chips}
         total={rows.length}
         lowCount={lowCount}
+        r2PublicUrl={r2Public}
+        warehouseId={scope ?? undefined}
         headerExtra={
           ctx.warehouses.length > 1 ? (
             <OfficeWarehouseSelect

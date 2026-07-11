@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { DcThumb, DcLightbox } from "@/components/dc/product-image";
+import { OfficePoBrowse } from "@/components/dc/office-po-browse";
 
 // ★ handoff → หน้าโอน/เบิก ผ่าน sessionStorage (convenience default — ปลายทาง re-resolve จริง server)
 //   carry แค่ id + label (ไม่มี qty; general handoff = qty default 1 ที่ปลายทาง)
@@ -48,8 +49,11 @@ export type CatChip = { key: string; label: string; count: number };
 export function ProductsClient({
   products,
   headerExtra,
-}: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number; headerExtra?: React.ReactNode }) {
+  r2PublicUrl,
+  warehouseId,
+}: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number; headerExtra?: React.ReactNode; r2PublicUrl?: string; warehouseId?: string }) {
   const router = useRouter();
+  const [mode, setMode] = useState<"products" | "po">("products"); // Pinpoint #8 — ดูตามใบ PO
   const [view, setView] = useState<"grid" | "table">("grid");
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -132,6 +136,32 @@ export function ProductsClient({
         </div>
       </div>
 
+      {/* มุมมอง: รายการสินค้า / ดูตามใบ PO (Pinpoint #8) */}
+      <div role="tablist" aria-label="มุมมองสินค้า" style={{ display: "flex", gap: 2, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        {([["products", "รายการสินค้า"], ["po", "ดูตามใบ PO"]] as const).map(([m, label]) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => setMode(m)}
+            style={{
+              background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
+              padding: "9px 14px", fontSize: 14, fontWeight: mode === m ? 700 : 600,
+              color: mode === m ? "var(--primary)" : "var(--ink2)",
+              borderBottom: mode === m ? "2.5px solid var(--primary)" : "2.5px solid transparent",
+              marginBottom: -1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === "po" ? (
+        <OfficePoBrowse warehouseId={warehouseId} r2PublicUrl={r2PublicUrl} />
+      ) : (
+      <>
       {notice ? (
         <div style={{ marginBottom: 12, background: "#FEF1DE", color: "#B45309", border: "1px solid #F3D9C0", borderRadius: 10, padding: "9px 14px", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
           <Svg size={15} sw={2} stroke="#B45309">{IcAlert}</Svg>{notice}
@@ -224,6 +254,8 @@ export function ProductsClient({
           onTransfer={() => stashAndGo(products.filter((p) => selected.has(p.id)), "transfer")}
           onIssue={() => stashAndGo(products.filter((p) => selected.has(p.id)), "issue")}
         />
+      )}
+      </>
       )}
     </div>
   );
