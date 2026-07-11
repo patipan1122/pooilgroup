@@ -125,6 +125,10 @@ export async function getGroupCollectData(): Promise<{
 
   // index machines by group + the exchanger lookup
   const machinesByGroup = new Map<string, GroupMachine[]>();
+  // ตู้คีบที่ยังไม่ถูกจัดเข้ากลุ่ม (เช่น import เข้ามาใหม่ · groupId ว่าง) → รวมเป็นกลุ่ม
+  // แสดงผล "ตู้ในสาขา" ต่อสาขา เพื่อให้พนักงานเห็น+เก็บเงินได้ (แทนที่จะขึ้นหน้าตัวอย่าง).
+  // เก็บเป็น session ระดับสาขา (groupId null) → ไม่ผูก FK กลุ่ม · reconcile แบบ CASH ปกติ.
+  const ungroupedClawByBranch = new Map<string, GroupMachine[]>();
   const machineById = new Map<string, (typeof machines)[number]>();
   for (const m of machines) {
     machineById.set(m.id, m);
@@ -132,12 +136,18 @@ export async function getGroupCollectData(): Promise<{
       const list = machinesByGroup.get(m.groupId) ?? [];
       list.push(toMachine(m));
       machinesByGroup.set(m.groupId, list);
+    } else if (m.kind === "CLAW") {
+      const list = ungroupedClawByBranch.get(m.branchId) ?? [];
+      list.push(toMachine(m));
+      ungroupedClawByBranch.set(m.branchId, list);
     }
   }
 
   // index OPEN sessions by group + branch
   const openByGroup = new Map<string, { sessionId: string; code: string; collected: string[] }>();
   const firstOpenByBranch = new Map<string, { id: string; code: string }>();
+  // รอบระดับสาขา (groupId ว่าง) → ใช้กับกลุ่ม "ตู้ในสาขา" (ตู้ที่ยังไม่จัดกลุ่ม)
+  const collectedByBranch = new Map<string, { sessionId: string; code: string; collected: string[] }>();
   for (const s of openSessions) {
     if (s.groupId && !openByGroup.has(s.groupId)) {
       openByGroup.set(s.groupId, {
@@ -148,6 +158,13 @@ export async function getGroupCollectData(): Promise<{
     }
     if (s.branchId && !firstOpenByBranch.has(s.branchId)) {
       firstOpenByBranch.set(s.branchId, { id: s.id, code: s.sessionCode });
+    }
+    if (!s.groupId && s.branchId && !collectedByBranch.has(s.branchId)) {
+      collectedByBranch.set(s.branchId, {
+        sessionId: s.id,
+        code: s.sessionCode,
+        collected: s.events.map((e) => e.machineId),
+      });
     }
   }
 
@@ -176,7 +193,19 @@ export async function getGroupCollectData(): Promise<{
     userId: session.user.id,
     branches: branches.map((b) => {
       const first = firstOpenByBranch.get(b.id) ?? null;
-      const branchGroups = groupsByBranch.get(b.id) ?? [];
+      const branchGroups = [...(groupsByBranch.get(b.id) ?? [])];
+      // ต่อท้ายกลุ่ม "ตู้ในสาขา" (ตู้คีบที่ยังไม่ได้จัดกลุ่ม) ถ้ามี → พนักงานเห็น+เก็บได้
+      const ungrouped = ungroupedClawByBranch.get(b.id) ?? [];
+      if (ungrouped.length > 0) {
+        branchGroups.push({
+          id: `ungrouped-${b.id}`,
+          name: "ตู้ในสาขา",
+          type: "CASH",
+          exchanger: null,
+          claws: ungrouped,
+          toleranceBps: 0,
+        });
+      }
       const openByGroupId: GroupCollectBranch["openByGroupId"] = {};
       for (const g of branchGroups) {
         const open = openByGroup.get(g.id);
@@ -187,6 +216,15 @@ export async function getGroupCollectData(): Promise<{
             collectedMachineIds: open.collected,
           };
         }
+      }
+      // กลุ่ม "ตู้ในสาขา" ใช้รอบระดับสาขา (groupId null) → ผูกกับ session สาขาที่เปิดอยู่
+      const bc = collectedByBranch.get(b.id);
+      if (ungrouped.length > 0 && bc) {
+        openByGroupId[`ungrouped-${b.id}`] = {
+          sessionId: bc.sessionId,
+          code: bc.code,
+          collectedMachineIds: bc.collected,
+        };
       }
       return {
         id: b.id,
