@@ -42,6 +42,8 @@ export type TransferConfirmData = {
   note: string | null;
   statusLabel: string;
   lines: TransferConfirmLine[];
+  /** Wave 6 — ถ้าปลายทางเป็นสาขาตู้คีบ (ClawFleet) = ชื่อสาขา · null ถ้าไม่ใช่ (ของจะเข้าสโตร์สาขาเมื่อรับ) */
+  clawfleetBranchName?: string | null;
   /** คนดูมีสิทธิ์ "รับเข้า" คลังปลายทางนี้ไหม (default true = หลังบ้าน/ผู้จัดการ) */
   canReceive?: boolean;
   /** คนดูมีสิทธิ์ "ยกเลิกใบโอน" ไหม (default true = ผู้จัดการ) */
@@ -146,6 +148,28 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
           {data.confirmedAt ? ` · ปิดเมื่อ ${data.confirmedAt}` : ""}
         </div>
         {data.note && <div style={{ fontSize: 14, color: "#52525b" }}>หมายเหตุ: {data.note}</div>}
+        {/* Wave 6 — ปลายทางสาขาตู้คีบ: บอกชัดว่า "รับแล้ว" ของจะเข้าสโตร์สาขาจริง */}
+        {data.clawfleetBranchName && (
+          <div
+            style={{
+              marginTop: 2,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              alignSelf: "flex-start",
+              background: "#eef2ff",
+              color: "#3730a3",
+              border: "1px solid #c7d2fe",
+              borderRadius: 10,
+              padding: "8px 12px",
+              fontSize: 13.5,
+              fontWeight: 600,
+              lineHeight: 1.4,
+            }}
+          >
+            🕹️ ปลายทาง: ตู้คีบ {data.clawfleetBranchName} — รับแล้วของจะเข้าสโตร์สาขา
+          </div>
+        )}
       </div>
 
       {error && (

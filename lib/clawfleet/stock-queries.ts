@@ -377,6 +377,30 @@ export async function getCfBranchOnHandMap(
   return out;
 }
 
+/**
+ * สาขาตู้คีบ (ClawFleet) ที่ผู้ใช้ปัจจุบัน "ส่งของไปได้" — สำหรับ dropdown ปลายทางในหน้าโอนของ DC.
+ *   scope ตามสิทธิ์เหมือน stock-queries อื่น ๆ (userBranchIds): แอดมิน/viewer = 'ALL' · อื่น = เฉพาะสาขาที่สังกัด.
+ *   คืนเฉพาะ businessType='claw_machine' + isActive. { id, name }.
+ */
+export async function listClawfleetBranchTargets(
+  orgId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const session = await requireCfSession();
+  if (session.user.org_id !== orgId) return [];
+  const allowed = await userBranchIds(session);
+  const rows = await prisma.branch.findMany({
+    where: {
+      orgId,
+      businessType: "claw_machine",
+      isActive: true,
+      ...(allowed === "ALL" ? {} : { id: { in: allowed } }),
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  return rows;
+}
+
 /** สินค้าทั้งหมดของ org (สำหรับ dropdown ในฟอร์มรับเข้า/นับ/ของหาย) */
 export async function getCfProductsForForms(orgId: string): Promise<Array<{ id: string; sku: string; barcode: string | null; name: string; unitCostCents: number }>> {
   return prisma.cfProduct.findMany({

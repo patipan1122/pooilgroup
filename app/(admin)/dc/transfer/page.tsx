@@ -9,6 +9,7 @@ import { getDcContext } from "@/lib/dc/access";
 import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
+import { listClawfleetBranchTargets } from "@/lib/clawfleet/stock-queries";
 import { FloorTransferMove, type DestWarehouseOption } from "./transfer-dispatch";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export default async function DcTransferPage({
     id: w.id,
     name: w.name,
   }));
+
+  // Wave 6 — สาขาตู้คีบ (ClawFleet) ปลายทางที่ผู้ใช้ส่งของไปได้ (scoped ตามสิทธิ์) → dropdown ในโหมด "สาขา/โมดูล"
+  const clawBranches = await listClawfleetBranchTargets(ctx.session.user.org_id);
 
   return (
     <div className="dc-page">
@@ -61,6 +65,7 @@ export default async function DcTransferPage({
           warehouseId={ctx.activeWarehouseId}
           warehouseName={ctx.activeWarehouse.name}
           warehouses={destWarehouses}
+          clawBranches={clawBranches}
           r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
         />
       )}

@@ -46,6 +46,9 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
       fromWarehouseId: true,
       toWarehouseId: true,
       toLabel: true,
+      // Wave 6 — ปลายทางสาขาตู้คีบ (ClawFleet): toModule/toBranchId ระบุว่าของจะเข้าสโตร์สาขาจริง
+      toModule: true,
+      toBranchId: true,
       sameSite: true,
       dispatchedAt: true,
       confirmedAt: true,
@@ -88,6 +91,17 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
       ? whName.get(transfer.toWarehouseId) ?? "คลังปลายทาง"
       : transfer.toLabel ?? "สาขา/โมดูล";
 
+  // Wave 6 — ปลายทางเป็นสาขาตู้คีบ (ClawFleet) ไหม → โชว์ badge "ของจะเข้าสโตร์สาขา"
+  //   (businessType=claw_machine ยืนยันว่าเป็นสาขาตู้คีบจริง · match เงื่อนไข confirmTransfer)
+  let clawfleetBranchName: string | null = null;
+  if (transfer.destType === DcTransferDestType.MODULE && transfer.toBranchId) {
+    const branch = await prisma.branch.findFirst({
+      where: { id: transfer.toBranchId, orgId, businessType: "claw_machine" },
+      select: { name: true },
+    });
+    if (branch) clawfleetBranchName = branch.name;
+  }
+
   const data: TransferConfirmData = {
     id: transfer.id,
     transferCode: transfer.transferCode,
@@ -99,6 +113,7 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
     dispatchedAt: fmtDate(transfer.dispatchedAt),
     confirmedAt: transfer.confirmedAt ? fmtDate(transfer.confirmedAt) : null,
     note: transfer.note,
+    clawfleetBranchName,
     statusLabel: TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status,
     lines: transfer.lines.map((l) => {
       const p = prodById.get(l.productId);

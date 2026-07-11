@@ -25,6 +25,8 @@ import {
 } from "@/lib/dc/transfer-actions";
 
 export type DestWarehouseOption = { id: string; name: string };
+/** Wave 6 — สาขาตู้คีบ (ClawFleet) ที่เลือกเป็นปลายทางได้ */
+export type ClawBranchOption = { id: string; name: string };
 
 // ★ handoff keys (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
 const PO_HANDOFF_KEY = "dc.pohandoff";
@@ -99,12 +101,14 @@ export function FloorTransferMove({
   warehouseId,
   warehouseName,
   warehouses,
+  clawBranches = [],
   r2PublicUrl,
 }: {
   initialTab: "move" | "transfer";
   warehouseId: string;
   warehouseName: string;
   warehouses: DestWarehouseOption[];
+  clawBranches?: ClawBranchOption[];
   r2PublicUrl?: string;
 }) {
   const [tab, setTab] = useState<"move" | "transfer">(initialTab);
@@ -153,6 +157,7 @@ export function FloorTransferMove({
           fromWarehouseId={warehouseId}
           fromWarehouseName={warehouseName}
           warehouses={warehouses}
+          clawBranches={clawBranches}
           r2PublicUrl={r2PublicUrl}
         />
       )}
@@ -164,21 +169,29 @@ export function TransferDispatch({
   fromWarehouseId,
   fromWarehouseName,
   warehouses,
+  clawBranches = [],
   r2PublicUrl,
 }: {
   fromWarehouseId: string;
   fromWarehouseName: string;
   warehouses: DestWarehouseOption[];
+  clawBranches?: ClawBranchOption[];
   r2PublicUrl?: string;
 }) {
   // ปลายทางที่เลือกได้ = คลังอื่น (ไม่รวมต้นทาง)
   const destWarehouses = warehouses.filter((w) => w.id !== fromWarehouseId);
+  const hasClawBranches = clawBranches.length > 0;
 
   const [destMode, setDestMode] = useState<DestMode>(
     destWarehouses.length > 0 ? "warehouse" : "module",
   );
   const [toWarehouseId, setToWarehouseId] = useState<string>(destWarehouses[0]?.id ?? "");
   const [toLabel, setToLabel] = useState("");
+  // Wave 6 — โหมด "สาขา/โมดูล" เลือกได้ 2 แบบ: ตู้คีบ (ClawFleet · เขียนเข้าสโตร์สาขาจริง) หรือ อื่น ๆ (label อิสระ)
+  const [moduleTargetType, setModuleTargetType] = useState<"clawfleet" | "other">(
+    hasClawBranches ? "clawfleet" : "other",
+  );
+  const [toBranchId, setToBranchId] = useState<string>(clawBranches[0]?.id ?? "");
   const [sameSite, setSameSite] = useState(false);
   const [note, setNote] = useState("");
 
@@ -382,8 +395,15 @@ export function TransferDispatch({
 
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
+  // ปลายทางพร้อมส่งไหม: คลัง→ต้องเลือกคลัง · โมดูล ClawFleet→ต้องเลือกสาขา · โมดูลอื่น→ต้องพิมพ์ชื่อ
+  const isClawTarget = destMode === "module" && moduleTargetType === "clawfleet" && hasClawBranches;
   const destOk =
-    destMode === "warehouse" ? !!toWarehouseId : toLabel.trim().length > 0;
+    destMode === "warehouse"
+      ? !!toWarehouseId
+      : isClawTarget
+        ? !!toBranchId
+        : toLabel.trim().length > 0;
+  const selectedClawBranch = clawBranches.find((b) => b.id === toBranchId) ?? null;
 
   const dispatch = useCallback(async () => {
     if (busy || lines.length === 0 || !destOk) return;
@@ -414,16 +434,31 @@ export function TransferDispatch({
               thaiFreightSatang,
               thaiFreightNote: freightNoteArg,
             }
-          : {
-              fromWarehouseId,
-              destType: DcTransferDestType.MODULE,
-              toLabel: toLabel.trim(),
-              note: note.trim() || undefined,
-              lines: payload,
-              poId: poIdArg,
-              thaiFreightSatang,
-              thaiFreightNote: freightNoteArg,
-            },
+          : isClawTarget && selectedClawBranch
+            ? {
+                // Wave 6 — ปลายทางตู้คีบ (ClawFleet): ส่ง toBranchId + toModule='clawfleet' + label=ชื่อสาขา
+                //   → ตอนกดยืนยันรับ ของจะเข้า "สโตร์สาขา" ของสาขานี้จริง (per-branch)
+                fromWarehouseId,
+                destType: DcTransferDestType.MODULE,
+                toBranchId: selectedClawBranch.id,
+                toModule: "clawfleet",
+                toLabel: selectedClawBranch.name,
+                note: note.trim() || undefined,
+                lines: payload,
+                poId: poIdArg,
+                thaiFreightSatang,
+                thaiFreightNote: freightNoteArg,
+              }
+            : {
+                fromWarehouseId,
+                destType: DcTransferDestType.MODULE,
+                toLabel: toLabel.trim(),
+                note: note.trim() || undefined,
+                lines: payload,
+                poId: poIdArg,
+                thaiFreightSatang,
+                thaiFreightNote: freightNoteArg,
+              },
       );
 
       if (!res.ok) {
@@ -447,7 +482,7 @@ export function TransferDispatch({
     } finally {
       setBusy(false);
     }
-  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast, freightBaht, freightNote, selectedPoId]);
+  }, [busy, lines, destOk, destMode, fromWarehouseId, toWarehouseId, sameSite, note, toLabel, totalQty, showToast, freightBaht, freightNote, selectedPoId, isClawTarget, selectedClawBranch]);
 
   // จำนวนที่หยิบไปแล้วต่อสินค้า (ใช้คำนวณ "เหลือ" ในลิสต์เลือก)
   const pickedQtyByProduct = new Map<string, number>();
@@ -523,17 +558,59 @@ export function TransferDispatch({
           )
         ) : (
           <>
-            <input
-              type="text"
-              value={toLabel}
-              onChange={(e) => setToLabel(e.target.value)}
-              placeholder="พิมพ์ชื่อสาขา/โมดูลปลายทาง เช่น Playland เซ็นทรัล, ตู้คีบ A1"
-              style={selectStyle}
-              aria-label="ปลายทาง (สาขา/โมดูล)"
-            />
-            <div style={{ marginTop: 8, fontSize: 13, color: "var(--dc-muted, #6b7785)", lineHeight: 1.5 }}>
-              บันทึก &quot;ส่งออก&quot; ก่อน → ปลายทางกด &quot;ยืนยันส่งถึง&quot; ที่หลังบ้านเพื่อปิดใบ
-            </div>
+            {/* Wave 6 — เลือกชนิดปลายทาง: ตู้คีบ (เขียนเข้าสโตร์สาขาจริง) หรือ อื่น ๆ (พิมพ์ชื่อเอง) */}
+            {hasClawBranches && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setModuleTargetType("clawfleet")}
+                  style={destToggleStyle(moduleTargetType === "clawfleet", false)}
+                >
+                  ตู้คีบ (ClawFleet)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModuleTargetType("other")}
+                  style={destToggleStyle(moduleTargetType === "other", false)}
+                >
+                  อื่น ๆ
+                </button>
+              </div>
+            )}
+
+            {isClawTarget ? (
+              <>
+                <select
+                  value={toBranchId}
+                  onChange={(e) => setToBranchId(e.target.value)}
+                  style={selectStyle}
+                  aria-label="สาขาตู้คีบปลายทาง"
+                >
+                  {clawBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ marginTop: 8, fontSize: 13, color: "var(--dc-muted, #6b7785)", lineHeight: 1.5 }}>
+                  เมื่อสาขายืนยัน &quot;รับของ&quot; → ของจะเข้า <strong>สโตร์สาขา</strong> ของตู้คีบนี้อัตโนมัติ (ต้นทุนตามของไป)
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={toLabel}
+                  onChange={(e) => setToLabel(e.target.value)}
+                  placeholder="พิมพ์ชื่อสาขา/โมดูลปลายทาง เช่น Playland เซ็นทรัล, ตู้คีบ A1"
+                  style={selectStyle}
+                  aria-label="ปลายทาง (สาขา/โมดูล)"
+                />
+                <div style={{ marginTop: 8, fontSize: 13, color: "var(--dc-muted, #6b7785)", lineHeight: 1.5 }}>
+                  บันทึก &quot;ส่งออก&quot; ก่อน → ปลายทางกด &quot;ยืนยันส่งถึง&quot; ที่หลังบ้านเพื่อปิดใบ
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

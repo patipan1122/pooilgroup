@@ -9,9 +9,14 @@
 //     ต้นทุน "ตามของไป" — carry unitCostSatang/costLayerId ของต้นทางมาที่ใบรับปลายทาง
 //     (การโอนไม่ใช่การตีราคาใหม่ revaluation).
 //   • sameSite=true (ย้ายในไซต์เดียวกัน ปลายทางเป็น DC warehouse ที่เราคุมเอง) → รับเข้าทันที (auto-confirm)
-//   • ปลายทาง = MODULE/สาขา (Playland/ตู้คีบ/สาขา · destType=MODULE) → บันทึก dispatch (TRANSFER_OUT) อย่างเดียว
-//     แล้วกด "ยืนยันส่งถึง" (1 tap) ปิดใบเป็น CONFIRMED. การ "เขียนเข้า" ledger ของโมดูลอื่นเป็น PHASE 3
-//     — ที่นี่ห้ามแตะตารางโมดูลอื่น เพียงปิดใบ DC + ลด in-transit ของต้นทาง.
+//   • ปลายทาง = MODULE/สาขา (destType=MODULE) → บันทึก dispatch (TRANSFER_OUT) อย่างเดียว แล้วกด
+//     "ยืนยันส่งถึง" (1 tap) ปิดใบเป็น CONFIRMED.
+//       - ถ้าปลายทางเป็น "สาขาตู้คีบ" (ClawFleet · toBranchId + businessType=claw_machine) → Wave 6:
+//         เขียนสต๊อกเข้า "สโตร์สาขา" (คลังหลัก) ของสาขานั้นจริง (receiveDcTransferIntoBranchTx) +
+//         อัปเดตต้นทุนเฉลี่ยถ่วงน้ำหนัก. ต้นทุน carry 1:1 (satang == cents · ไม่สเกล).
+//         ★ SHARED TX (Fix 1): status-claim + in-transit decrement + CF-receive อยู่ tx เดียว (all-or-nothing ·
+//         ข้าม schema dc↔public ได้ · ไม่มี stock-loss/double-decrement).
+//       - ปลายทาง MODULE อื่น (label อิสระ) → ยังปิดใบเฉย ๆ (ไม่เขียนเข้าโมดูลอื่น) เหมือนเดิม.
 //   • autoPromoteStaleTransfers — ใบ IN_TRANSIT ที่ค้างเกิน N ชม. → WAREHOUSE: รับเข้าอัตโนมัติ + mark
 //     AUTO_UNVERIFIED (ติดธง ไม่หายเงียบ ๆ) · MODULE: mark AUTO_UNVERIFIED + ปิด in-transit. (reconcile job เรียก)
 //
@@ -26,6 +31,8 @@ import { prisma } from "@/lib/prisma";
 import { DcMoveKind, DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { recordMovement, findProductByCode, getOnHand } from "@/lib/dc/stock";
 import { getPoFulfillment } from "@/lib/dc/po-fulfillment";
+import { resolveClawfleetProduct, isClawfleetBranch, assertClawfleetBranchInOrg } from "@/lib/dc/product-link";
+import { receiveDcTransferIntoBranchTx } from "@/lib/clawfleet/stock-actions";
 
 // ════════════════════════════════════════════════════════════════════
 // helpers
@@ -272,6 +279,18 @@ export async function dispatchTransfer(input: DispatchTransferInput): Promise<Di
     if (!toLabel && !toModule && !toBranchId) {
       return { ok: false, error: "ยังไม่ได้ระบุปลายทาง (สาขา/โมดูล)" };
     }
+    // ★ FIX 5 / Fix 2 (dispatch-side · server-side scope · กัน crafted toBranchId ข้าม org):
+    //   - toModule='clawfleet' → ต้องมี toBranchId ที่เป็น "สาขาตู้คีบของ org ผู้เรียกจริง"
+    //     (orgId ตรง + claw_machine + active) — picker หน้าจอ scope แค่ UI.
+    //   - มี toBranchId (โมดูลอื่น) → อย่างน้อยต้องเป็นสาขาใน org ผู้เรียก (กันชี้ข้าม org).
+    if (toModule === "clawfleet") {
+      if (!toBranchId) return { ok: false, error: "ยังไม่ได้เลือกสาขาปลายทาง (ตู้คีบ)" };
+      const chk = await assertClawfleetBranchInOrg(orgId, toBranchId);
+      if (!chk.ok) return { ok: false, error: chk.error };
+    } else if (toBranchId) {
+      const b = await prisma.branch.findFirst({ where: { id: toBranchId, orgId }, select: { id: true } });
+      if (!b) return { ok: false, error: "ไม่พบสาขาปลายทางในองค์กรนี้" };
+    }
   }
 
   // กรอง + ดีดูปบรรทัด (qty>0, มี productId+lineKey, lineKey ไม่ซ้ำในใบ)
@@ -449,6 +468,34 @@ async function decrementSourceInTransit(warehouseId: string, productId: string, 
   }
 }
 
+/** tx-aware variant ของ decrementSourceInTransit — ทำงานบน tx ที่ caller ส่งเข้ามา (SHARED TX · Fix 1).
+ *  math เดียวกัน: atomic { decrement } + clamp กัน negative. ไม่ throw ถ้าไม่มี balance row (P2025 → no-op). */
+async function decrementSourceInTransitTx(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  warehouseId: string,
+  productId: string,
+  n: number,
+): Promise<void> {
+  if (n <= 0) return;
+  try {
+    const updated = await tx.dcStockBalance.update({
+      where: { warehouseId_productId: { warehouseId, productId } },
+      data: { qtyInTransit: { decrement: n } },
+      select: { qtyInTransit: true },
+    });
+    if ((updated.qtyInTransit ?? 0) < 0) {
+      await tx.dcStockBalance.update({
+        where: { warehouseId_productId: { warehouseId, productId } },
+        data: { qtyInTransit: 0 },
+      });
+    }
+  } catch (e) {
+    // ไม่มี balance row (P2025) → no-op · error อื่น = rethrow
+    //   (อยู่ใน SHARED TX: ถ้ากลืน error จริง = tx commit ทั้งที่ตัด in-transit ไม่สำเร็จ = in-transit ค้างเกิน)
+    if ((e as { code?: string } | null)?.code !== "P2025") throw e;
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════
 // confirm (ปลายทางรับ — 1 tap หรือ รายบรรทัดถ้าไม่ครบ)
 // ════════════════════════════════════════════════════════════════════
@@ -486,6 +533,10 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
       fromWarehouseId: true,
       destType: true,
       toWarehouseId: true,
+      // Wave 6 — ปลายทางโมดูล/สาขา (ClawFleet): toModule/toBranchId ระบุว่าเป็นสาขาตู้คีบ
+      toModule: true,
+      toBranchId: true,
+      toLabel: true,
       status: true,
       lines: {
         select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true },
@@ -520,6 +571,148 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
     return { ok: false, error: "ใบนี้ถูกยกเลิกแล้ว" };
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Wave 6 · ปลายทาง = สาขาตู้คีบ (ClawFleet) → เขียนสต๊อกเข้า "สโตร์สาขา" จริง
+  // ══════════════════════════════════════════════════════════════════════
+  // ตรวจว่าใบนี้ปลายทางเป็นสาขาตู้คีบไหม: MODULE + มี toBranchId + (toModule=clawfleet หรือสาขานั้น
+  // businessType=claw_machine). ถ้าใช่ → resolve mapping DcProduct↔CfProduct "ก่อน" status-claim.
+  //
+  // ★ ATOMICITY (chosen: SHARED TX · Fix 1) — status-claim + qtyReceived + source in-transit decrement +
+  //   CF-receive ทำใน prisma.$transaction เดียว (ดูบล็อก "FIX 1 — SHARED TX" ด้านล่าง). no-silent-loss:
+  //     1) resolve ทุก mapping "นอก tx" ก่อน (อาจ auto-create CfProduct · idempotent) → พัง = คืน error โดยยัง
+  //        ไม่แตะสถานะ/in-transit/CF เลย (ไม่มีอะไรค้าง)
+  //     2) เข้า tx เดียว: claim IN_TRANSIT→CONFIRMED → qtyReceived → ลด in-transit → receiveDcTransferIntoBranchTx
+  //     3) ถ้าอะไรใน tx throw → rollback ทั้งก้อน (ใบยัง IN_TRANSIT · in-transit ครบ · CF ว่าง) → error retryable
+  const isClawfleetDest =
+    transfer.destType === DcTransferDestType.MODULE &&
+    !!transfer.toBranchId &&
+    (transfer.toModule === "clawfleet" || (await isClawfleetBranch(orgId, transfer.toBranchId)));
+
+  // ★ CROSS-ORG GUARD (Fix 2): ก่อนเขียนสต๊อกเข้า ClawFleet ยืนยันสาขาปลายทางเป็น
+  //   "สาขาตู้คีบของ org ผู้เรียกจริง" (orgId ตรง + claw_machine + active). isClawfleetDest ยอม
+  //   short-circuit ผ่าน toModule==='clawfleet' โดยไม่เช็ค org → ต้อง re-assert ตรงนี้ก่อน tx.
+  if (isClawfleetDest && transfer.toBranchId) {
+    const chk = await assertClawfleetBranchInOrg(orgId, transfer.toBranchId);
+    if (!chk.ok) return { ok: false, error: chk.error };
+  }
+
+  // resolve mapping ทุกบรรทัด "ก่อน" reserve — พังตรงนี้ = ยังไม่แตะสถานะใบเลย (block confirm ปลอดภัย).
+  let cfLinesByLineId: Map<string, { cfProductId: string; unitCostSatang: number }> | null = null;
+  if (isClawfleetDest && transfer.toBranchId) {
+    try {
+      // ดึงข้อมูลสินค้า DC (sku/barcode/name/รูป) เพื่อ match/สร้าง CfProduct
+      const dcProdIds = [...new Set(transfer.lines.map((l) => l.productId))];
+      const dcProducts = await prisma.dcProduct.findMany({
+        where: { id: { in: dcProdIds }, orgId },
+        select: { id: true, sku: true, barcode: true, name: true, imageR2Path: true },
+      });
+      const r2Public = process.env.R2_PUBLIC_URL ?? "";
+      const toImageUrl = (key: string | null): string | null =>
+        !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
+      const dcById = new Map(dcProducts.map((p) => [p.id, p]));
+
+      cfLinesByLineId = new Map();
+      for (const line of transfer.lines) {
+        const dp = dcById.get(line.productId);
+        if (!dp) throw new Error("ไม่พบข้อมูลสินค้าในใบโอน");
+        // ★ 1:1 satang → cents (ไม่สเกล) — ต้นทุนที่พกมากับใบ (null = 0 · ไม่ทับต้นทุนเดิม CF ด้าน receive)
+        const unitCostSatang = Math.max(0, Math.trunc(line.unitCostSatang ?? 0));
+        const { cfProductId } = await resolveClawfleetProduct(
+          orgId,
+          { id: dp.id, sku: dp.sku, barcode: dp.barcode, name: dp.name, imageUrl: toImageUrl(dp.imageR2Path) },
+          unitCostSatang,
+          userId,
+        );
+        cfLinesByLineId.set(line.id, { cfProductId, unitCostSatang });
+      }
+    } catch (e) {
+      // mapping พัง → ยังไม่ reserve/confirm อะไรเลย → คืน error ให้ผู้ใช้เห็นชัด (retry ได้)
+      return { ok: false, error: e instanceof Error ? e.message : "จับคู่สินค้าเข้าสโตร์สาขาไม่สำเร็จ" };
+    }
+  }
+
+  // map qtyReceived ที่ส่งมา (รายบรรทัด) → default = qty เต็ม (รับครบ)
+  const recvByLine = new Map<string, number>();
+  for (const r of input.lines ?? []) {
+    if (r.lineId && Number.isFinite(r.qtyReceived)) {
+      recvByLine.set(r.lineId, Math.max(0, Math.trunc(r.qtyReceived)));
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ★ FIX 1 — CROSS-SCHEMA ATOMICITY (SHARED TX) · ปลายทาง = สาขาตู้คีบ (ClawFleet)
+  // ══════════════════════════════════════════════════════════════════════
+  // ปัญหาเดิม: status-claim → decrement in-transit → CF-write ทำ "แยกกัน" → ถ้า CF-write พัง
+  //   in-transit ที่ลดไปแล้ว "ไม่ถูกคืน" (stock loss) + retry ลดซ้ำ (double-decrement).
+  // แก้: ทำ 4 อย่างใน $transaction เดียว (Prisma multiSchema = DB เดียว → 1 tx ครอบ dc + public ได้):
+  //   (1) atomic status-claim IN_TRANSIT→CONFIRMED (updateMany · count===0 = คนอื่นชนะไปแล้ว → sentinel)
+  //   (2) อัปเดต qtyReceived รายบรรทัด (tx)
+  //   (3) ลด in-transit ต้นทาง (tx · atomic decrement · gated ด้วย claim ข้อ 1 → ทำครั้งเดียว)
+  //   (4) receiveDcTransferIntoBranchTx(tx, …) เขียนสต๊อก+ต้นทุน CF (idempotency guard refTable/refId ใน tx)
+  //  ถ้า "อะไรก็ตาม" ใน tx throw (ยกเว้น sentinel) → rollback ทั้งก้อน → ใบยัง IN_TRANSIT · in-transit ครบ ·
+  //  CF ไม่ถูกเขียน → คืน error retryable. mapping resolve (resolveClawfleetProduct) ทำ "นอก" tx แล้ว
+  //  (อาจ auto-create CfProduct · idempotent) → tx สั้น.
+  const ALREADY_CONFIRMED = "__ALREADY_CONFIRMED__";
+  if (isClawfleetDest && transfer.toBranchId && cfLinesByLineId) {
+    const branchId = transfer.toBranchId;
+    const cfMap = cfLinesByLineId;
+    try {
+      await prisma.$transaction(async (tx) => {
+        // (1) atomic status-claim — คนเดียวที่ count===1 เท่านั้นเดินต่อ
+        const claim = await tx.dcTransfer.updateMany({
+          where: { id: transferId, orgId, status: DcTransferStatus.IN_TRANSIT },
+          data: { status: DcTransferStatus.CONFIRMED, confirmedByUserId: userId, confirmedAt: new Date() },
+        });
+        if (claim.count === 0) {
+          // ใบถูกยืนยันไปแล้ว (กดซ้ำ/แข่งแพ้/cron) → sentinel → rollback (ไม่ทำ 2-4) → นอก tx คืน ok
+          throw new Error(ALREADY_CONFIRMED);
+        }
+
+        // (2) qtyReceived รายบรรทัด + (3) ลด in-transit ต้นทาง (atomic decrement บน tx)
+        const cfLines: { cfProductId: string; qty: number; unitCostSatang: number }[] = [];
+        for (const line of transfer.lines) {
+          const received = recvByLine.has(line.id) ? (recvByLine.get(line.id) as number) : line.qty;
+          await tx.dcTransferLine.update({ where: { id: line.id }, data: { qtyReceived: received } });
+
+          // ลด in-transit ต้นทางตามจำนวนที่ "ส่งออก" (qty) — ของออกจาก in-transit ครบ (mirror decrementSourceInTransit)
+          await decrementSourceInTransitTx(tx, transfer.fromWarehouseId, line.productId, line.qty);
+
+          const m = cfMap.get(line.id);
+          if (m && received > 0) {
+            cfLines.push({ cfProductId: m.cfProductId, qty: received, unitCostSatang: m.unitCostSatang });
+          }
+        }
+
+        // (4) เขียนสต๊อก+ต้นทุน ClawFleet ใน tx เดียวกัน (idempotency refTable/refId ใน tx)
+        if (cfLines.length > 0) {
+          await receiveDcTransferIntoBranchTx(tx, {
+            orgId,
+            branchId,
+            transferId,
+            transferCode: transfer.transferCode,
+            actorUserId: userId,
+            lines: cfLines,
+          });
+        }
+      }, { timeout: 20000, maxWait: 5000 });
+      // ↑ tx นี้หลายบรรทัด + advisory lock (บล็อกได้) → default 5s แคบไป · ตั้ง 20s กัน rollback หลอก
+      //   (ยัง safe: timeout = rollback = ไม่มี partial write · retry ผ่าน claim+idempotency)
+    } catch (e) {
+      // sentinel = ใบถูกยืนยันไปแล้ว → ถือว่าสำเร็จ (ไม่ใช่ error) · rollback ทำให้ไม่มีผลข้างเคียง
+      if (e instanceof Error && e.message === ALREADY_CONFIRMED) return { ok: true };
+      // อื่น ๆ = rollback ทั้งก้อน (ใบยัง IN_TRANSIT · in-transit ครบ · CF ว่าง) → คืน error retryable
+      return {
+        ok: false,
+        error:
+          (e instanceof Error ? e.message : "เขียนสต๊อกเข้าสโตร์สาขาไม่สำเร็จ") + " — ลองกดยืนยันรับอีกครั้ง",
+      };
+    }
+    return { ok: true };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // NON-ClawFleet paths (WAREHOUSE dest · plain MODULE label) — โครงสร้างเดิม (ไม่แตะ)
+  // ══════════════════════════════════════════════════════════════════════
   // ★ ATOMIC STATUS-RESERVE (จังหวะแรก · ก่อนแตะของ): จองสถานะเป็น CONFIRMED ทันที
   // เงื่อนไข WHERE status=IN_TRANSIT → คนเดียวเท่านั้นที่ count===1 (ชนะการแข่ง).
   // ใครมาทีหลัง/cron/กดซ้ำ → row ไม่ใช่ IN_TRANSIT แล้ว → count===0 → คืน ok เลย
@@ -535,14 +728,6 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
   if (reserved.count === 0) {
     // แพ้การแข่ง / ใบถูกปิดไปแล้วระหว่างทาง → ถือว่าสำเร็จ ไม่รันซ้ำ
     return { ok: true };
-  }
-
-  // map qtyReceived ที่ส่งมา (รายบรรทัด) → default = qty เต็ม (รับครบ)
-  const recvByLine = new Map<string, number>();
-  for (const r of input.lines ?? []) {
-    if (r.lineId && Number.isFinite(r.qtyReceived)) {
-      recvByLine.set(r.lineId, Math.max(0, Math.trunc(r.qtyReceived)));
-    }
   }
 
   const isWarehouseDest = transfer.destType === DcTransferDestType.WAREHOUSE && !!transfer.toWarehouseId;
@@ -587,7 +772,8 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
         await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
       }
     } else {
-      // MODULE dest → ปิดใบเฉย ๆ: ลด in-transit ต้นทาง (ไม่เขียนเข้าโมดูลอื่น — PHASE 3)
+      // MODULE dest (ปลายทาง label อิสระ · ไม่ใช่สาขาตู้คีบ) → ปิดใบเฉย ๆ: ลด in-transit ต้นทาง.
+      //   (ClawFleet-dest ถูกจัดการไปก่อนแล้วใน SHARED TX ด้านบน + return · ไม่มาถึงตรงนี้)
       for (const line of transfer.lines) {
         await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
       }
@@ -752,6 +938,9 @@ export async function autoPromoteStaleTransfers(
         }
         promotedWarehouse += 1;
       } else {
+        // MODULE dest (รวมสาขาตู้คีบ ClawFleet) → ปิด in-transit + ติดธง AUTO_UNVERIFIED เท่านั้น.
+        // ★ Wave 6: ปลายทาง ClawFleet "ห้าม" auto-เขียนสต๊อก/ต้นทุนเข้าสโตร์สาขาที่นี่ — งานเงินต้องมีคน
+        //   ยืนยันรับด้วยมือ (confirmTransfer) เท่านั้น. cron แค่กันใบค้างหาย (ติดธง) ไม่แตะเงินอัตโนมัติ.
         for (const line of transfer.lines) {
           await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
         }

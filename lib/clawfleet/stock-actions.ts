@@ -1849,6 +1849,149 @@ export async function confirmShipmentReceived(
 }
 
 // =============================================================
+// 5b) รับ "ใบโอนจาก DC" เข้าสโตร์สาขาตู้คีบ (cross-module — DC → ClawFleet)
+//   เรียกจาก lib/dc/transfer-actions.ts (confirmTransfer) เมื่อปลายทางใบโอน DC = สาขาตู้คีบ.
+//   ★ modeled 1:1 บน confirmShipmentReceived receive-core: คลังหลักสาขา + ต้นทุนเฉลี่ยถ่วงน้ำหนัก
+//     + advisory lock ต่อ product + idempotency guard (refTable/refId).
+//
+//   ⚠️ COST SCALE (money-critical): line.unitCostSatang (DC) → unitCostCents (CF) เป็น 1:1 integer copy.
+//      ทั้งสองฝั่งคือ "บาท × 100" (satang == cents) → ห้าม ×100 / ÷100 เด็ดขาด. (ดู assert ในลูป)
+//
+//   AUTHZ: ฟังก์ชันนี้ "ไม่" re-assert สิทธิ์สาขา — caller (confirmTransfer ใน DC) ตรวจสิทธิ์รับโอน
+//   (canDcManage + destType MODULE) มาแล้ว. orgId/branchId/actorUserId ส่งเข้ามาตรง ๆ (ไม่มี CF session).
+//
+//   IDEMPOTENCY: ก่อนเขียนใด ๆ เช็ค CfStockMovement (refTable='dc_transfers', refId=transferId) — มีแล้ว
+//   = เคยรับไปแล้ว → { alreadyReceived:true } (ไม่เขียนซ้ำ). ทำให้ retry ปลอดภัย (ไม่ double-write สต๊อก).
+//
+//   ATOMICITY: มี 2 หน้า —
+//     • receiveDcTransferIntoBranchTx(tx, …) — ทำงานบน tx ที่ caller ส่งมา (SHARED TX). ใช้เมื่อ DC ต้องการ
+//       ให้ status-claim + line + source in-transit decrement + CF receive อยู่ tx เดียวกัน (all-or-nothing
+//       ข้าม schema · Prisma multiSchema = DB เดียว → 1 tx ครอบ dc + public ได้). advisory lock
+//       (pg_advisory_xact_lock) ยังทำงานใน outer tx ปกติ.
+//     • receiveDcTransferIntoBranch(args) — thin wrapper: เปิด $transaction ของตัวเองแล้วเรียก Tx variant
+//       (สำหรับ caller เดิม/อื่นที่ไม่มี tx). พฤติกรรมเดิมทุกอย่าง.
+// =============================================================
+type CfTxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+export type ReceiveDcTransferArgs = {
+  orgId: string;
+  branchId: string;
+  transferId: string;
+  transferCode: string;
+  actorUserId: string;
+  lines: { cfProductId: string; qty: number; unitCostSatang: number }[];
+};
+
+/** SHARED-TX variant — ทำงานทั้งหมดบน `tx` ที่ caller ส่งเข้ามา (ไม่เปิด tx ใหม่). ดู header comment ด้านบน. */
+export async function receiveDcTransferIntoBranchTx(
+  tx: CfTxClient,
+  { orgId, branchId, transferId, transferCode, actorUserId, lines }: ReceiveDcTransferArgs,
+): Promise<{ received: true; alreadyReceived: boolean }> {
+  {
+    // ── IDEMPOTENCY GUARD (ก่อนเขียนอะไรทั้งสิ้น) ──────────────────────────
+    // เคยมี movement ของใบโอนนี้แล้ว = รับไปแล้ว (คนก่อน/retry ก่อน) → no-op ไม่เขียนซ้ำ.
+    const already = await tx.cfStockMovement.findFirst({
+      where: { orgId, refTable: "dc_transfers", refId: transferId },
+      select: { id: true },
+    });
+    if (already) return { received: true as const, alreadyReceived: true };
+
+    // ปลายทาง = คลังหลัก (สโตร์สาขา) ของสาขาตู้คีบ (สาขาใครสาขามัน · scoped per-branch).
+    // null = main ตาม INVARIANT (currentBalance/movement รวมแถว NULL เป็นห้องหลัก).
+    const destMainWarehouseId = await ensureBranchMainWarehouseId(tx, orgId, branchId, actorUserId);
+
+    // รวมจำนวน + มูลค่าทุนต่อ product (กัน product ซ้ำหลายบรรทัด → double-count ต้นทุนเฉลี่ย)
+    const agg = new Map<string, { id: string; qty: number; costTotalCents: number }>();
+    for (const ln of lines) {
+      const qty = Math.max(0, Math.trunc(ln.qty));
+      if (qty <= 0) continue;
+      // ★ 1:1 satang → cents (ไม่สเกล). assert กันพลาดในอนาคต: ต้องเป็นจำนวนเต็ม ≥ 0.
+      const unitCents = Math.trunc(ln.unitCostSatang);
+      if (!Number.isInteger(unitCents) || unitCents < 0) {
+        throw new Error(`ต้นทุนไม่ถูกต้องสำหรับสินค้า ${ln.cfProductId} (ใบโอน ${transferCode})`);
+      }
+      const cur = agg.get(ln.cfProductId);
+      if (cur) {
+        cur.qty += qty;
+        cur.costTotalCents += unitCents * qty;
+      } else {
+        agg.set(ln.cfProductId, { id: ln.cfProductId, qty, costTotalCents: unitCents * qty });
+      }
+    }
+
+    // ต้นทุนเดิมของแต่ละ product (ก่อนรับ) — อ่านครั้งเดียวก่อนลูป
+    const prodIds = [...agg.keys()];
+    const products = await tx.cfProduct.findMany({
+      where: { id: { in: prodIds }, orgId },
+      select: { id: true, unitCostCents: true },
+    });
+    const prodCostMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+
+    const now = new Date();
+    // เรียง product ตาม id ก่อนล็อก → ลำดับล็อกคงที่ทุกใบ กัน AB-BA deadlock
+    //   (2 ใบโอนที่มีสินค้าชุดเดียวกันแต่คนละลำดับบรรทัด จะล็อกลำดับเดียวกันเสมอ)
+    const aggSorted = [...agg.values()].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    for (const a of aggSorted) {
+      // 🔒 advisory lock ต่อ product (transaction-level) — serialize ต้นทุนเฉลี่ยถ่วงน้ำหนัก
+      //   (mirror confirmShipmentReceived · ปลดอัตโนมัติตอน commit/rollback).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${a.id}))`;
+      // ต้นทุนเฉลี่ยของ "ครั้งนี้" = มูลค่ารวม / จำนวน (cents · 1:1 จาก satang)
+      const unit = a.qty > 0 ? Math.round(a.costTotalCents / a.qty) : 0;
+      const oldCost = prodCostMap.get(a.id) ?? 0;
+      const totalQtyAcrossOrg = await tx.cfStockMovement.aggregate({
+        where: { orgId, productId: a.id },
+        _sum: { qty: true },
+      });
+      const orgQtyBefore = Math.max(0, totalQtyAcrossOrg._sum.qty ?? 0);
+      // weighted-avg (org-wide) — ถ้าต้นทุนครั้งนี้ 0 และมีต้นทุนเดิม > 0 → คงต้นทุนเดิม (ไม่ให้ 0 เจือจาง)
+      const effUnit = unit > 0 ? unit : oldCost;
+      const avgCost =
+        orgQtyBefore + a.qty > 0
+          ? Math.round((oldCost * orgQtyBefore + effUnit * a.qty) / (orgQtyBefore + a.qty))
+          : effUnit;
+      await tx.cfProduct.update({ where: { id: a.id }, data: { unitCostCents: avgCost } });
+
+      const oldBal =
+        destMainWarehouseId != null
+          ? await currentBalance(tx, orgId, branchId, a.id, destMainWarehouseId, destMainWarehouseId)
+          : await currentBalance(tx, orgId, branchId, a.id);
+      await tx.cfStockMovement.create({
+        data: {
+          orgId,
+          branchId,
+          warehouseId: destMainWarehouseId, // สโตร์สาขา (null = main ตาม INVARIANT)
+          machineId: null, // ★ ลงสโตร์สาขา ไม่ใช่ในตู้ (machine refill เป็น step แยกของ ClawFleet)
+          type: "TRANSFER_IN",
+          productId: a.id,
+          qty: a.qty,
+          // ★ COST SCALE — 1:1 satang→cents (unit = ต้นทุนต่อชิ้นของครั้งนี้ · ไม่สเกล)
+          unitCostCents: unit,
+          occurredAt: now,
+          createdById: actorUserId,
+          refTable: "dc_transfers",
+          refId: transferId,
+          documentType: "transfer",
+          documentId: transferId,
+          reason: `รับโอนจาก DC ${transferCode} · คงเหลือ ${oldBal + a.qty}`,
+        },
+      });
+    }
+
+    return { received: true as const, alreadyReceived: false };
+  }
+}
+
+/**
+ * Thin wrapper (พฤติกรรมเดิม) — เปิด $transaction ของตัวเองแล้วเรียก Tx variant.
+ * ใช้โดย caller ที่ "ไม่มี" tx ของตัวเอง. all-or-nothing ในใบเดียว (เหมือนเดิมทุกอย่าง).
+ */
+export async function receiveDcTransferIntoBranch(
+  args: ReceiveDcTransferArgs,
+): Promise<{ received: true; alreadyReceived: boolean }> {
+  return prisma.$transaction((tx) => receiveDcTransferIntoBranchTx(tx, args));
+}
+
+// =============================================================
 // 6) สินค้าตัวอย่าง (idempotent) — ให้คลังมีของให้รับเข้า/นับ/ตัด
 // =============================================================
 const CF_SAMPLE_PRODUCTS: Array<{ sku: string; barcode: string; name: string; category: "PLUSH" | "TOY" | "KEYCHAIN" | "MODEL"; costBaht: number }> = [
