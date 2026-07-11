@@ -88,9 +88,12 @@ export function DcLightbox({
         alt={alt ?? ""}
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: "100%",
-          maxHeight: "100%",
+          // บังคับความกว้างให้ใหญ่ (รูปครอป 1688 ตัวเล็ก → ขยายเต็ม ไม่โชว์จิ๋วกลางจอ)
+          width: "min(92vw, 720px)",
+          height: "auto",
+          maxHeight: "86vh",
           objectFit: "contain",
+          background: "#fff",
           borderRadius: 12,
           boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
           cursor: "default",
