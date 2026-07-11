@@ -14,6 +14,7 @@ import { Check, AlertTriangle, XCircle } from "lucide-react";
 import { confirmTransfer, cancelTransfer } from "@/lib/dc/transfer-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusPill } from "@/components/ui/status-pill";
+import { DcThumb } from "@/components/dc/product-image";
 import { DcTransferStatus } from "@/lib/generated/prisma/enums";
 
 export type TransferConfirmLine = {
@@ -24,6 +25,8 @@ export type TransferConfirmLine = {
   qty: number;
   qtyReceived: number | null;
   unitCostSatang: number | null;
+  /** URL รูปสินค้า (ถ้ามี) — โชว์ thumb หน้าชื่อ. optional (หลังบ้านเดิมไม่ส่งก็ได้) */
+  imageUrl?: string | null;
 };
 
 export type TransferConfirmData = {
@@ -39,6 +42,10 @@ export type TransferConfirmData = {
   note: string | null;
   statusLabel: string;
   lines: TransferConfirmLine[];
+  /** คนดูมีสิทธิ์ "รับเข้า" คลังปลายทางนี้ไหม (default true = หลังบ้าน/ผู้จัดการ) */
+  canReceive?: boolean;
+  /** คนดูมีสิทธิ์ "ยกเลิกใบโอน" ไหม (default true = ผู้จัดการ) */
+  canCancel?: boolean;
 };
 
 const STATUS_TONE: Record<string, "neutral" | "brand" | "success" | "warning" | "danger" | "info"> = {
@@ -67,6 +74,8 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
   const isOpen =
     data.status === DcTransferStatus.IN_TRANSIT || data.status === DcTransferStatus.DISPATCHED;
   const isModuleDest = data.destType === "MODULE";
+  const canReceive = data.canReceive ?? true; // ปุ่มรับ = โชว์เฉพาะคนที่รับคลังนี้ได้จริง
+  const canCancel = data.canCancel ?? true; // ปุ่มยกเลิก = เฉพาะผู้จัดการ
 
   const setRecv = useCallback((lineId: string, v: number) => {
     setReceived((prev) => ({ ...prev, [lineId]: Math.max(0, Math.trunc(v || 0)) }));
@@ -187,8 +196,13 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
             {data.lines.map((l) => (
               <tr key={l.id} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
                 <td style={cell}>
-                  <div style={{ fontWeight: 700, color: "var(--dc-ink, #1f2733)" }}>{l.name}</div>
-                  <div style={{ fontSize: 12, color: "#71717a" }}>{l.sku}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {l.imageUrl !== undefined && <DcThumb url={l.imageUrl} alt={l.name} size={40} />}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: "var(--dc-ink, #1f2733)" }}>{l.name}</div>
+                      <div style={{ fontSize: 12, color: "#71717a" }}>{l.sku}</div>
+                    </div>
+                  </div>
                 </td>
                 <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
                   {l.qty} {l.unit}
@@ -230,8 +244,25 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
         </table>
       </div>
 
-      {/* ปุ่มยืนยัน (เฉพาะใบที่ยังเปิด) */}
-      {isOpen && !partialMode && (
+      {/* ผู้ดูใบที่ไม่ได้สังกัดคลังปลายทาง (เช่น คนต้นทางเปิดดู) — เห็นใบได้ แต่กดรับไม่ได้ */}
+      {isOpen && !canReceive && (
+        <div
+          style={{
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "#f4f7fc",
+            color: "#5b6676",
+            fontSize: 14,
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          รับเข้าได้เฉพาะพนักงานคลังปลายทาง
+        </div>
+      )}
+
+      {/* ปุ่มยืนยัน (เฉพาะใบที่ยังเปิด + คนที่รับคลังนี้ได้) */}
+      {isOpen && canReceive && !partialMode && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button type="button" className="dc-btn-xl" onClick={confirmAll} disabled={busy}>
             <Check size={22} />
@@ -251,7 +282,7 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
         </div>
       )}
 
-      {isOpen && partialMode && (
+      {isOpen && canReceive && partialMode && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button type="button" className="dc-btn-xl" onClick={confirmPartial} disabled={busy}>
             <Check size={22} />
@@ -268,8 +299,8 @@ export function TransferConfirm({ data }: { data: TransferConfirmData }) {
         </div>
       )}
 
-      {/* ยกเลิกใบ (คืนของกลับต้นทาง) */}
-      {isOpen && (
+      {/* ยกเลิกใบ (คืนของกลับต้นทาง) — เฉพาะผู้จัดการ */}
+      {isOpen && canCancel && (
         <ConfirmDialog
           trigger={
             <button

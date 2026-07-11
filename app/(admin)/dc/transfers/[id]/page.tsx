@@ -1,19 +1,18 @@
-// DC · หลังบ้าน · รายละเอียดใบโอน + ยืนยันปลายทางรับ (1 tap หรือ รายบรรทัดถ้าไม่ครบ)
-//   • IN_TRANSIT → โชว์ปุ่มใหญ่ "✓ ถึงแล้ว ครบ" / "⚠ ไม่ครบ/เสียหาย" (กรอกจำนวนรับรายบรรทัด)
-//   • CONFIRMED / AUTO_UNVERIFIED → อ่านอย่างเดียว + badge
-//   • ต้นทุนที่พกมา (carried cost) โชว์รายบรรทัด
+// DC · หน้าคลัง · รายละเอียดใบโอน + ยืนยันปลายทางรับ (floor)
+//   • gate: requireDcFloor + scope คลัง — เปิดได้เฉพาะใบที่ from- หรือ to-warehouse
+//     อยู่ในคลังที่ผู้ใช้ผูกสิทธิ์ (กันเปิดใบของไซต์อื่นด้วยการเดา id).
+//   • reuse <TransferConfirm> เดียวกับหลังบ้าน → ผู้รับเห็นปุ่ม "✓ ถึงแล้ว ครบ" / "⚠ ไม่ครบ/เสียหาย".
+//   • การรับจริงเรียก confirmTransfer เดิม (atomic status-reserve · กันกดซ้ำ) — ไม่มี write path ที่สอง.
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { getDcContext } from "@/lib/dc/access";
-import { requireDcManager } from "@/lib/dc/role-guard";
-import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
+import { getDcContext, getAllowedWarehouses } from "@/lib/dc/access";
+import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { TRANSFER_STATUS_LABEL } from "@/lib/dc/nav";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
-import { DcOfficeShell } from "@/components/dc/office-shell";
-import { TransferConfirm, type TransferConfirmData } from "./transfer-confirm";
-import { DcDocDownload } from "@/components/dc/print-controls";
+import { TransferConfirm, type TransferConfirmData } from "@/app/(admin)/dc/office/transfers/[id]/transfer-confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +29,9 @@ function fmtDate(d: Date | null): string {
   }).format(d);
 }
 
-export default async function DcTransferDetailPage({ params }: { params: Params }) {
+export default async function DcTransferFloorDetailPage({ params }: { params: Params }) {
   const ctx = await getDcContext();
-  requireDcManager(ctx.session.user.role);
+  requireDcFloor(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
 
   const { id } = await params;
@@ -58,6 +57,15 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
   });
   if (!transfer) notFound();
 
+  // ── SCOPE GATE: เปิดได้เฉพาะใบที่ from- หรือ to-warehouse ∈ คลังที่ผู้ใช้ผูกสิทธิ์ ──
+  // (กันพนักงานเดา id เปิดดูใบของคลัง/ไซต์ที่ไม่ได้รับมอบหมาย)
+  const allowed = await getAllowedWarehouses(ctx.session);
+  const allowedIds = new Set(allowed.map((w) => w.id));
+  const inScope =
+    allowedIds.has(transfer.fromWarehouseId) ||
+    (!!transfer.toWarehouseId && allowedIds.has(transfer.toWarehouseId));
+  if (!inScope) notFound();
+
   // ชื่อคลัง (ต้นทาง + ปลายทาง warehouse)
   const whIds = [transfer.fromWarehouseId, transfer.toWarehouseId].filter(Boolean) as string[];
   const warehouses = whIds.length
@@ -68,7 +76,7 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
     : [];
   const whName = new Map(warehouses.map((w) => [w.id, w.name]));
 
-  // ชื่อสินค้ารายบรรทัด
+  // สินค้ารายบรรทัด (+ รูป)
   const productIds = [...new Set(transfer.lines.map((l) => l.productId))];
   const products = productIds.length
     ? await prisma.dcProduct.findMany({
@@ -78,7 +86,7 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
     : [];
   const prodById = new Map(products.map((p) => [p.id, p]));
 
-  // resolve รูปสินค้าเป็น URL เต็มฝั่ง server (client อ่าน env ไม่ได้)
+  // resolve รูปเป็น URL เต็มฝั่ง server
   const r2Public = process.env.R2_PUBLIC_URL ?? "";
   const toImageUrl = (key: string | null | undefined): string | null =>
     !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
@@ -100,6 +108,10 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
     confirmedAt: transfer.confirmedAt ? fmtDate(transfer.confirmedAt) : null,
     note: transfer.note,
     statusLabel: TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status,
+    // ปุ่มรับ = โชว์เฉพาะคนที่ผูกสิทธิ์ "คลังปลายทาง" (คนต้นทางเปิดดูได้แต่กดรับไม่ได้)
+    canReceive: !!transfer.toWarehouseId && allowedIds.has(transfer.toWarehouseId),
+    // ปุ่มยกเลิกใบโอน = เฉพาะผู้จัดการ (staff เห็นแต่ปุ่มไม่ได้)
+    canCancel: canDcManage(ctx.session.user.role),
     lines: transfer.lines.map((l) => {
       const p = prodById.get(l.productId);
       return {
@@ -115,27 +127,33 @@ export default async function DcTransferDetailPage({ params }: { params: Params 
     }),
   };
 
-  const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
-
   return (
-    <DcOfficeShell active="transfer" {...dcShellChrome(ctx, chrome)}>
-      <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
-        <Link href="/dc/office/transfers" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink2)", marginBottom: 8, textDecoration: "none" }}>
+    <div className="dc-page">
+      <div style={{ marginBottom: 12 }}>
+        <Link
+          href="/dc/transfers"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: "var(--dc-muted)",
+            textDecoration: "none",
+          }}
+        >
           <ArrowLeft size={15} /> กลับรายการใบโอน
         </Link>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ใบโอน {transfer.transferCode}</h1>
-            <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>{data.fromName} → {data.destName}</p>
-          </div>
-          <DcDocDownload
-            pngHref={`/dc/office/transfers/${id}/image`}
-            printHref={`/dc/office/transfers/${id}/print`}
-          />
-        </div>
-
-        <TransferConfirm data={data} />
       </div>
-    </DcOfficeShell>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dc-ink)" }}>
+          ใบโอน {transfer.transferCode}
+        </h1>
+        <p style={{ margin: "5px 0 0", color: "var(--dc-muted)", fontSize: 14 }}>
+          {data.fromName} → {data.destName}
+        </p>
+      </div>
+
+      <TransferConfirm data={data} />
+    </div>
   );
 }

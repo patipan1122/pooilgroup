@@ -469,7 +469,9 @@ export type ConfirmTransferResult = { ok: true } | { ok: false; error: string };
  */
 export async function confirmTransfer(input: ConfirmTransferInput): Promise<ConfirmTransferResult> {
   const session = await requireSession();
-  if (!canDcManage(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์ยืนยันรับโอน (ต้องเป็นหลังบ้าน)" };
+  // พนักงานหน้างาน (floor) กด "รับของเข้า" ได้ — แต่ล็อกตามคลังที่ผูกสิทธิ์ (ตรวจ toWarehouseId
+  // หลังโหลดใบด้านล่าง). widen จาก manager-only → floor + hard per-warehouse binding.
+  if (!canDcFloor(session.user.role)) return { ok: false, error: "ไม่มีสิทธิ์ยืนยันรับโอน" };
   const orgId = session.user.org_id;
   const userId = session.user.id;
 
@@ -491,6 +493,24 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
     },
   });
   if (!transfer) return { ok: false, error: "ไม่พบใบโอน" };
+
+  // ── AUTHORIZATION (per-warehouse binding) ──────────────────────────────
+  // WAREHOUSE dest → floor รับได้ แต่ต้องผูกสิทธิ์คลังปลายทาง (assertWarehouseAllowed)
+  //   → กันพนักงานยืนยันรับเข้า "คลังที่ไม่ได้รับมอบหมาย".
+  // MODULE dest → ปิดใบเข้าสาขา/โมดูล = งานหลังบ้าน → ยังคง manager-only เหมือนเดิม.
+  if (transfer.destType === DcTransferDestType.WAREHOUSE) {
+    if (!transfer.toWarehouseId) return { ok: false, error: "ใบโอนนี้ไม่มีคลังปลายทาง" };
+    try {
+      await assertWarehouseAllowed(session, transfer.toWarehouseId);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "ไม่มีสิทธิ์รับเข้าคลังนี้" };
+    }
+  } else {
+    // MODULE dest — เดิม manager-only (ยืนยันส่งถึงสาขา/โมดูล = งานหลังบ้าน)
+    if (!canDcManage(session.user.role)) {
+      return { ok: false, error: "ไม่มีสิทธิ์ยืนยันส่งถึงสาขา/โมดูล (ต้องเป็นหลังบ้าน)" };
+    }
+  }
 
   // idempotent — ปิดไปแล้วก็ถือว่าสำเร็จ
   if (transfer.status === DcTransferStatus.CONFIRMED || transfer.status === DcTransferStatus.AUTO_UNVERIFIED) {

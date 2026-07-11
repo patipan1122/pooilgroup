@@ -14,6 +14,7 @@ import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
+import { DcThumb } from "@/components/dc/product-image";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +56,19 @@ export default async function DcTransfersPage() {
       sameSite: true,
       dispatchedAt: true,
       _count: { select: { lines: true } },
+      lines: {
+        take: 1,
+        select: { product: { select: { imageR2Path: true } } },
+      },
     },
   });
+
+  // resolve รูปสินค้าแรกของแต่ละใบเป็น URL เต็มฝั่ง server (client อ่าน env ไม่ได้)
+  const r2Public = process.env.R2_PUBLIC_URL ?? "";
+  const toImageUrl = (key: string | null | undefined): string | null =>
+    !key ? null : /^https?:\/\//.test(key) ? key : r2Public ? `${r2Public}/${key}` : null;
+  const firstImageOf = (t: (typeof transfers)[number]): string | null =>
+    toImageUrl(t.lines[0]?.product?.imageR2Path);
 
   // join ชื่อคลัง (ต้นทาง + ปลายทางที่เป็น warehouse)
   const whIds = new Set<string>();
@@ -119,6 +131,7 @@ export default async function DcTransfersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#71717a", background: "#fafafa" }}>
+                <th style={{ ...cellHead, width: 52 }}></th>
                 <th style={cellHead}>เลขที่</th>
                 <th style={cellHead}>ต้นทาง → ปลายทาง</th>
                 <th style={{ ...cellHead, textAlign: "right" }}>รายการ</th>
@@ -138,6 +151,9 @@ export default async function DcTransfersPage() {
                       background: isInTransit ? "#fffbf5" : undefined,
                     }}
                   >
+                    <td style={{ ...cell, width: 52 }}>
+                      <DcThumb url={firstImageOf(t)} alt={t.transferCode} size={40} />
+                    </td>
                     <td style={cell}>
                       <Link
                         href={`/dc/office/transfers/${t.id}`}
