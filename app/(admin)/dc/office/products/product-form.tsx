@@ -16,6 +16,7 @@ import { PRODUCT_TYPE_LABEL } from "@/lib/dc/nav";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DcProductPhotoButton } from "@/components/dc/product-photo-button";
 
 export type ProductFormValues = {
   id?: string;
@@ -262,7 +263,15 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
           />
         </Field>
 
-        <Field label="ลิงก์รูปสินค้า (imageR2Path)" optional htmlFor="imageR2Path">
+        <Field
+          label="รูปสินค้า"
+          optional
+          hint="ถ่ายรูป หรือวางลิงก์"
+          htmlFor="imageR2Path"
+        >
+          <div style={{ marginBottom: 8 }}>
+            <DcProductPhotoButton onUploaded={(url) => set("imageR2Path", url)} />
+          </div>
           <Input
             id="imageR2Path"
             value={values.imageR2Path}

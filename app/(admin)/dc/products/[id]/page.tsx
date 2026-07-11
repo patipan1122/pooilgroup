@@ -9,6 +9,7 @@ import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { getProductStockLog } from "@/lib/dc/count-actions";
 import { ProductLogView } from "./product-log-view";
+import { ProductPhotoEditor } from "./product-photo-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,14 @@ export default async function DcProductLogPage({ params }: { params: Promise<{ i
           </Link>
           <DcModeSwitch canManage={canManage} />
         </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <ProductPhotoEditor
+          productId={res.product.id}
+          imageUrl={res.product.imageUrl}
+          productName={res.product.name}
+        />
       </div>
 
       <ProductLogView

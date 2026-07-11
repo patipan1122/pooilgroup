@@ -23,6 +23,12 @@ export function DcLightbox({
   alt?: string;
   onClose: () => void;
 }) {
+  // คลิกที่รูป → ซูมเข้า/ออก (ไม่ปิด lightbox) · reset ทุกครั้งที่เปิดรูปใหม่
+  const [zoomed, setZoomed] = useState(false);
+  useEffect(() => {
+    setZoomed(false);
+  }, [url]);
+
   // ปิดด้วย Escape + ล็อกสกอลล์พื้นหลังตอนเปิด
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,8 +59,10 @@ export function DcLightbox({
         zIndex: 10000,
         background: "rgba(8,12,20,0.86)",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: zoomed ? "flex-start" : "center",
+        justifyContent: zoomed ? "flex-start" : "center",
+        // ตอนซูม → เลื่อน/แพนดูรูปใหญ่ได้ (backdrop คลิกปิดยังทำงานเพราะเป็น div ตัวนี้)
+        overflow: zoomed ? "auto" : "hidden",
         padding: 24,
       }}
     >
@@ -78,6 +86,7 @@ export function DcLightbox({
           display: "grid",
           placeItems: "center",
           cursor: "pointer",
+          zIndex: 1, // อยู่เหนือรูปตอนซูม (รูปใหญ่ไม่ทับปุ่มปิด)
         }}
       >
         <X size={24} />
@@ -86,17 +95,32 @@ export function DcLightbox({
       <img
         src={url}
         alt={alt ?? ""}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          // คลิกรูป = สลับซูม (ไม่ปิด lightbox) → กัน bubble ไปโดน backdrop
+          e.stopPropagation();
+          setZoomed((z) => !z);
+        }}
         style={{
-          // บังคับความกว้างให้ใหญ่ (รูปครอป 1688 ตัวเล็ก → ขยายเต็ม ไม่โชว์จิ๋วกลางจอ)
-          width: "min(92vw, 720px)",
-          height: "auto",
-          maxHeight: "86vh",
-          objectFit: "contain",
           background: "#fff",
           borderRadius: 12,
           boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
-          cursor: "default",
+          ...(zoomed
+            ? {
+                // ซูมเข้า → ขยายใหญ่ + ปล่อยให้ overflow scroll ของ backdrop พาแพนดู
+                width: "min(170vw, 1400px)",
+                height: "auto",
+                maxHeight: "none",
+                margin: "auto", // จัดกลางเมื่อรูปเล็กกว่าจอ
+                cursor: "zoom-out",
+              }
+            : {
+                // ปกติ → พอดีจอ (รูปครอป 1688 ตัวเล็ก → ขยายเต็ม ไม่โชว์จิ๋วกลางจอ)
+                width: "min(92vw, 720px)",
+                height: "auto",
+                maxHeight: "86vh",
+                objectFit: "contain",
+                cursor: "zoom-in",
+              }),
         }}
       />
     </div>

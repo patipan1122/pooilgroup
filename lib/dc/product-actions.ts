@@ -153,6 +153,29 @@ export async function toggleProductActive(
   return { ok: true, id };
 }
 
+/**
+ * ตั้ง/เปลี่ยน "รูปสินค้า" อย่างเดียว (ใช้จากหน้าหน้าบ้าน — พนักงานถ่ายรูปของจริง).
+ * เบา ๆ: ไม่ต้องส่งฟิลด์อื่นครบเหมือน updateProduct · scope ด้วย orgId (กันข้ามองค์กร).
+ * ต้อง login (requireSession) — ไม่บังคับสิทธิ์ manage เพราะเป็นงานหน้าร้านของ floor staff.
+ */
+export async function setProductImage(
+  productId: string,
+  imageR2Path: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const res = await prisma.dcProduct.updateMany({
+    where: { id: productId, orgId },
+    data: { imageR2Path: cleanStr(imageR2Path) },
+  });
+  if (res.count === 0) return { ok: false, error: "ไม่พบสินค้านี้ในองค์กรของคุณ" };
+
+  revalidatePath(`/dc/products/${productId}`);
+  revalidatePath(PRODUCTS_PATH);
+  return { ok: true };
+}
+
 // ---- ตัวอย่างสินค้า (demo seed) ----
 type SeedRow = {
   sku: string;
