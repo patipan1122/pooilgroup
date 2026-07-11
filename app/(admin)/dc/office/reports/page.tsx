@@ -198,6 +198,7 @@ async function OverviewTab({
         description="มูลค่า = ประมาณการจากต้นทุนนำเข้าล่าสุด · มูลค่าจริงดูที่บัญชี (TRCloud)"
       >
         <DataTable
+          stickyHeader={false}
           columns={[
             { key: "name", header: "สินค้า" },
             { key: "type", header: "ประเภท" },
@@ -248,6 +249,7 @@ async function LowStockTab({ orgId, scopeIds }: { orgId: string; scopeIds: strin
       description="คงเหลือน้อยกว่าจุดสั่งซื้อที่ตั้งไว้ — ควรเตรียมสั่งเพิ่ม"
     >
       <DataTable
+        stickyHeader={false}
         columns={[
           { key: "name", header: "สินค้า" },
           { key: "wh", header: "คลัง" },

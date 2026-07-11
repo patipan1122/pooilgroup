@@ -25,6 +25,12 @@ interface DataTableProps {
   rows: TableRow[];
   emptyState?: ReactNode;
   className?: string;
+  /**
+   * หัวตารางติดขอบบนตอนเลื่อน (sticky). default = true.
+   * ตั้ง false เมื่อตารางอยู่ใน layout ที่ sticky offset ไม่ตรง (เช่น DcOfficeShell)
+   * ทำให้หัวตารางลอยมาทับแถวแรก — ปิด sticky = หัวอยู่บนสุดตามปกติ.
+   */
+  stickyHeader?: boolean;
 }
 
 const alignClass = {
@@ -55,6 +61,7 @@ export function DataTable({
   rows,
   emptyState,
   className,
+  stickyHeader = true,
 }: DataTableProps) {
   const router = useRouter();
 
@@ -79,7 +86,8 @@ export function DataTable({
                 <th
                   key={c.key}
                   className={cn(
-                    "px-4 py-3 text-xs font-semibold text-zinc-600 sticky top-14 sm:top-16 z-20 bg-white border-b border-zinc-200 shadow-sm",
+                    "px-4 py-3 text-xs font-semibold text-zinc-600 bg-white border-b border-zinc-200",
+                    stickyHeader && "sticky top-14 sm:top-16 z-20 shadow-sm",
                     alignClass[c.align ?? "left"],
                     c.className,
                   )}

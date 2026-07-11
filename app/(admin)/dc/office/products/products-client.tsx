@@ -386,6 +386,7 @@ function TableView({
   return (
     <div style={{ marginTop: 14, paddingBottom: 72 }}>
       <DataTable
+        stickyHeader={false}
         columns={[
           { key: "sel", header: "", align: "center", className: "w-10" },
           { key: "name", header: "สินค้า" },

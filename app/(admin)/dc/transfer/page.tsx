@@ -5,6 +5,7 @@
 //   ?mode=move → default แท็บ "ย้ายที่" · ไม่ใส่ / mode อื่น → default "ส่ง/โอน"
 //   /dc/move ยัง redirect มาที่ ?mode=move (ดู move/page.tsx)
 import Link from "next/link";
+import { History } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
@@ -45,6 +46,14 @@ export default async function DcTransferPage({
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Link
+            href="/dc/transfers"
+            className="dc-chip"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", whiteSpace: "nowrap" }}
+            title="ดูประวัติใบโอน — ใบที่ส่งออก + รอรับเข้า"
+          >
+            <History size={15} aria-hidden /> ประวัติใบโอน
+          </Link>
           <DcWarehousePicker warehouses={ctx.warehouses} activeId={ctx.activeWarehouseId} />
           <DcModeSwitch canManage={canManage} />
         </div>

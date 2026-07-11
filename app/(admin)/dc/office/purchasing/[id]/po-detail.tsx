@@ -364,17 +364,24 @@ export function PoDetail({
                   {totalThb != null && <div style={{ fontSize: 12.5, color: "#71717a" }}>≈ ฿{fmt(totalThb)}</div>}
                   {totalCbm > 0 && <div style={{ fontSize: 12.5, color: "#71717a", marginTop: 2 }}>ปริมาตรรวม ~{fmt(totalCbm, 4)} m³</div>}
                 </div>
-                {/* #3 — แก้ผู้ขาย/เรต (server ล็อกเองถ้าจ่ายแล้ว/รับแล้ว) */}
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => setEditOpen(true)}
-                    className="dc-chip"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-                    title="แก้ผู้ขาย / เรต"
-                  >
-                    <Pencil size={13} /> แก้ผู้ขาย/เรต
-                  </button>
+                {/* #3 แก้ผู้ขาย/เรต + ลบใบ (Pinpoint #5: ย้ายปุ่มลบขึ้นหัวใบ · ไอคอนเล็ก super_admin) */}
+                {(canManage || canDelete) && (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => setEditOpen(true)}
+                        className="dc-chip"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                        title="แก้ผู้ขาย / เรต"
+                      >
+                        <Pencil size={13} /> แก้ผู้ขาย/เรต
+                      </button>
+                    )}
+                    {canDelete && (
+                      <DcDeleteButton docType="po" docId={data.id} docCode={data.poCode} size="sm" onDeleted={refresh} />
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -441,35 +448,28 @@ export function PoDetail({
               disabled={pending}
               title="ย้อนการรับเข้าคลัง — คืนสต๊อก + ล้างต้นทุน + ยกเลิก TRCloud (super_admin)"
               style={{
-                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-                justifySelf: "start", padding: "7px 14px", borderRadius: 9, cursor: "pointer",
-                background: "transparent", border: "1px solid #e6b6ae",
-                color: "#b8362a", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit",
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+                justifySelf: "start", padding: "4px 10px", borderRadius: 8, cursor: "pointer",
+                background: "transparent", border: "1px solid var(--dc-line, #e4e4e7)",
+                color: "#8a94a2", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit",
               }}
             >
-              <RotateCcw size={13} aria-hidden /> ย้อนการรับเข้าคลัง
+              <RotateCcw size={12} aria-hidden /> ย้อนการรับเข้าคลัง
             </button>
           )}
 
-          {/* ยกเลิกใบ + ลบใบ — จัดเรียงเป็นแถวเดียว (ลบ = super_admin เท่านั้น) */}
-          {((canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED")) || canDelete) && (
+          {/* ยกเลิกใบ — ทำได้เฉพาะก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ) · ปุ่มลบย้ายขึ้นหัวใบแล้ว (Pinpoint #5) */}
+          {canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") && (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              {/* ยกเลิกใบ — ทำได้เฉพาะก่อนสั่ง (ร่าง/รออนุมัติ/อนุมัติ) · ไม่ใช่ปุ่มซ้ำกับ advance */}
-              {canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED") && (
-                <button
-                  type="button"
-                  className="dc-btn-xl dc-btn-xl--danger"
-                  style={{ ...btnSmall }}
-                  disabled={pending}
-                  onClick={() => run(() => cancelPo(data.id), "ยืนยันยกเลิกใบสั่งซื้อนี้?")}
-                >
-                  ยกเลิกใบ
-                </button>
-              )}
-              {/* ลบใบสั่งซื้อ (hard-delete + คืนสต๊อก/TRCloud) — super_admin เท่านั้น */}
-              {canDelete && (
-                <DcDeleteButton docType="po" docId={data.id} docCode={data.poCode} label="🗑️ ลบใบสั่งซื้อ" onDeleted={refresh} />
-              )}
+              <button
+                type="button"
+                className="dc-btn-xl dc-btn-xl--danger"
+                style={{ ...btnSmall }}
+                disabled={pending}
+                onClick={() => run(() => cancelPo(data.id), "ยืนยันยกเลิกใบสั่งซื้อนี้?")}
+              >
+                ยกเลิกใบ
+              </button>
             </div>
           )}
 

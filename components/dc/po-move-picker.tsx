@@ -544,10 +544,10 @@ function Chip({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 4,
-        padding: "3px 8px",
+        gap: 5,
+        padding: strong ? "5px 11px" : "4px 9px",
         borderRadius: 999,
-        fontSize: 11.5,
+        fontSize: strong ? 13.5 : 12.5, // ตัวใหญ่ขึ้น (เดิม 11.5) — CEO อ่านเลข "เหลือในใบ/คงเหลือจริง" ยาก
         fontWeight: strong ? 800 : 600,
         background: c.bg,
         color: c.fg,
@@ -555,7 +555,7 @@ function Chip({
         whiteSpace: "nowrap",
       }}
     >
-      {label} <b style={{ fontWeight: 800 }}>{value}</b>
+      {label} <b style={{ fontWeight: 800, fontSize: strong ? 17 : 15.5 }}>{value}</b>
     </span>
   );
 }

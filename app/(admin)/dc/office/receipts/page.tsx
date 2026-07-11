@@ -117,6 +117,7 @@ export default async function DcReceiptsPage() {
         {/* ประวัติการรับเข้า — ตารางจริง (DataTable) แทน fake grid (#11: คอลัมน์ทับกันเวลาข้อความยาว) */}
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>ประวัติการรับเข้า</div>
         <DataTable
+          stickyHeader={false}
           columns={[
             { key: "grn", header: "เลข GRN" },
             { key: "po", header: "อ้างอิง PO" },

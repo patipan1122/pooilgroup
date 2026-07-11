@@ -362,12 +362,12 @@ function PoCard({
                 key={d.productId}
                 style={{
                   border: "1px solid var(--dc-line, #e6eaf0)",
-                  borderRadius: 14,
-                  padding: 14,
+                  borderRadius: 12,
+                  padding: 10,
                   display: "flex",
                   flexWrap: "wrap",
-                  gap: 14,
-                  alignItems: "stretch",
+                  gap: 12,
+                  alignItems: "center",
                 }}
               >
                 {/* ========== ซ้าย: รูป + จำนวนสั่ง + ชื่อ ========== */}
@@ -376,41 +376,39 @@ function PoCard({
                     flex: "1 1 180px",
                     minWidth: 160,
                     display: "flex",
-                    gap: 12,
-                    alignItems: "flex-start",
+                    gap: 10,
+                    alignItems: "center",
                   }}
                 >
                   {/* รูปสินค้า (คลิกซูมได้) */}
-                  <DcThumb url={img} alt={d.name} size={72} />
+                  <DcThumb url={img} alt={d.name} size={50} />
                   <div style={{ minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: 700,
                         color: "var(--dc-ink, #1f2733)",
-                        lineHeight: 1.25,
+                        lineHeight: 1.2,
                       }}
                     >
                       {d.name}
                     </div>
                     <div
-                      style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}
+                      style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 1, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}
                     >
-                      {d.sku}
-                    </div>
-                    <div
-                      style={{
-                        display: "inline-block",
-                        marginTop: 8,
-                        padding: "3px 10px",
-                        borderRadius: 999,
-                        background: "var(--dc-surf2, #f4efe8)",
-                        color: "var(--dc-ink, #1f2733)",
-                        fontSize: 13,
-                        fontWeight: 700,
-                      }}
-                    >
-                      สั่ง {d.qtyOrdered} {d.unit}
+                      <span>{d.sku}</span>
+                      <span
+                        style={{
+                          padding: "1px 8px",
+                          borderRadius: 999,
+                          background: "var(--dc-surf2, #f4efe8)",
+                          color: "var(--dc-ink, #1f2733)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        สั่ง {d.qtyOrdered} {d.unit}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -421,23 +419,24 @@ function PoCard({
                     flex: "1 1 200px",
                     minWidth: 180,
                     display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 10,
                   }}
                 >
-                  {/* รับจริง (ใหญ่) */}
-                  <div>
+                  {/* รับจริง (compact stepper — Pinpoint #1) */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div
                       style={{
-                        fontSize: 13,
+                        fontSize: 12.5,
                         fontWeight: 700,
                         color: "var(--dc-ink, #1f2733)",
-                        marginBottom: 6,
+                        whiteSpace: "nowrap",
                       }}
                     >
                       รับจริง
                     </div>
-                    <div className="dc-qty">
+                    <div className="dc-qty dc-qty--sm">
                       <button
                         type="button"
                         onClick={() => setReceived(d.productId, d.qtyReceived - 1)}
@@ -468,8 +467,8 @@ function PoCard({
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
-                      fontSize: 13,
+                      gap: 7,
+                      fontSize: 12.5,
                       fontWeight: 600,
                       color: "var(--dc-muted, #6b7785)",
                     }}
@@ -483,11 +482,11 @@ function PoCard({
                       onChange={(e) => setDamaged(d.productId, Number(e.target.value))}
                       aria-label="จำนวนที่เสียหาย"
                       style={{
-                        width: 84,
+                        width: 60,
                         border: "1.5px solid var(--dc-line, #e6eaf0)",
-                        borderRadius: 10,
-                        padding: "8px 10px",
-                        fontSize: 16,
+                        borderRadius: 9,
+                        padding: "6px 8px",
+                        fontSize: 15,
                         fontWeight: 700,
                         color: "var(--dc-ink, #1f2733)",
                         background: "#fff",
@@ -501,20 +500,21 @@ function PoCard({
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 8,
-                        padding: "10px 14px",
-                        borderRadius: 10,
+                        gap: 6,
+                        padding: "6px 11px",
+                        borderRadius: 9,
                         border: "1.5px solid var(--dc-line, #e6eaf0)",
                         background: "#fff",
                         color: "var(--dc-ink, #1f2733)",
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: 700,
                         cursor: d.uploading ? "wait" : "pointer",
                         opacity: d.uploading ? 0.6 : 1,
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      <Camera size={18} />
-                      {d.uploading ? "กำลังอัป…" : "ถ่ายรูป / แนบรูปของที่รับ"}
+                      <Camera size={16} />
+                      {d.uploading ? "กำลังอัป…" : "ถ่ายรูป"}
                       <input
                         type="file"
                         accept="image/*"

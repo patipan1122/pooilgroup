@@ -180,6 +180,11 @@
   color: var(--dc-ink);
 }
 
+/* ตัวนับแบบเล็ก — สำหรับลิสต์ที่มีหลายแถว (เช่น รับตามใบ PO) ให้แต่ละแถวเตี้ยลง (Pinpoint #1) */
+.dc-qty--sm { gap: 6px; }
+.dc-qty--sm button { width: 40px; min-height: 40px; border-radius: 10px; font-size: 19px; }
+.dc-qty--sm input { font-size: 20px; border-radius: 10px; }
+
 /* offline badge */
 .dc-offline-badge {
   display: inline-flex;

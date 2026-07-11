@@ -106,6 +106,7 @@ export default async function DcReconcilePage() {
           }
         >
           <DataTable
+            stickyHeader={false}
             columns={[
               { key: "name", header: "สินค้า" },
               { key: "onHand", header: "คงเหลือ", align: "right" },

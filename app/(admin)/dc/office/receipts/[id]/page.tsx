@@ -159,6 +159,7 @@ export default async function DcGrnDetailPage({ params }: { params: Params }) {
         </div>
 
         <DataTable
+          stickyHeader={false}
           className="!rounded-[15px]"
           columns={[
             { key: "product", header: "สินค้า" },
