@@ -250,6 +250,17 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
   const session = await requireSession();
   const orgId = session.user.org_id;
 
+  // เติมตุ๊กตา "หลาย SKU" — ยอดเติมรวม = ผลบวกทุกไลน์ (ใช้ในกระทบยอด + เก็บ event.refillQty เดียว
+  // → คณิตศาสตร์ "ตุ๊กตาหาย" เดิมไม่พัง). ไม่ส่ง refillLines (จอเก่า/เติม SKU เดียว) → fallback เดิม.
+  const refillLines: { productId: string; qty: number; warehouseId?: string }[] =
+    data.refillLines && data.refillLines.length > 0
+      ? data.refillLines
+      : data.refillProductId && data.refillQty > 0
+        ? [{ productId: data.refillProductId, qty: data.refillQty, warehouseId: data.warehouseId }]
+        : [];
+  const effectiveRefillQty =
+    refillLines.length > 0 ? refillLines.reduce((s, l) => s + l.qty, 0) : data.refillQty;
+
   const machine = await prisma.cfMachine.findFirst({
     where: { id: data.machineId, orgId, isActive: true, kind: "CLAW" },
     include: { loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" } } },
@@ -278,14 +289,9 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     return { ok: false, error: "ตู้ไม่อยู่ในกลุ่มของรอบนี้" };
   }
 
-  // รูปมิเตอร์ = ตัวเลือก โดย DEFAULT (CEO 2026-06-29 "ถ่ายได้-ข้ามได้").
-  // A5 (audit 2026-07-01): แต่ถ้าเจ้าของ "เปิดสวิตช์บังคับถ่ายรูป" (policy.photoRequired) →
-  // server บังคับด้วย (เดิมบังคับแค่ฝั่งจอมือถือ → ยิง action ตรง/bypass ส่งไม่มีรูปได้ =
-  // toggle ให้ความมั่นใจผิด). บังคับขั้นต่ำ = รูปเงินสด (ถ่ายที่สเต็ปเงิน · ไม่มี defer).
-  const policy = await getClawfleetPolicy();
-  if (policy.photoRequired && !data.photoCashUrl) {
-    return { ok: false, error: "นโยบายบังคับถ่ายรูป · ต้องแนบรูปเงินสดก่อนบันทึก" };
-  }
+  // รูป = ตัวเลือกทั้งหมด (CEO 2026-07-11 "เงินสดไม่ต้องถ่ายรูป"). เดิม A5 บังคับรูปเงินสดเมื่อ
+  // policy.photoRequired เปิด → ทำให้ "กดส่งไม่ผ่าน" ทั้งที่จอบอกว่ารูปไม่บังคับ (client/server ไม่ตรง)
+  // แล้ว error จริงถูกกลบเป็น "เช็คสัญญาณเน็ต" → เอาด่านบังคับรูปเงินสดออก ไม่บล็อกการส่งอีก.
 
   // P1 (audit 2026-07-08): server-side baseline guard. กฏ "ต้องตั้ง baseline ก่อนเก็บเงิน"
   // เดิมบังคับเฉพาะฝั่งจอ (staff-app route ตู้ AWAITING_SETUP ไปฟอร์ม baseline) — action นี้
@@ -327,7 +333,7 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     dollMeterAfter: data.dollMeterAfter,
     stockBefore: stockBaseline, // A2/A3: ค่าจริงในระบบ ไม่ใช่ data.stockBefore จาก client
     stockAfter: data.stockAfter,
-    refillQty: data.refillQty,
+    refillQty: effectiveRefillQty, // ยอดเติมรวมทุก SKU
     cashPerCoinCents: cashPerCoin,
     medianRevenueCents,
     isBaselineRound,
@@ -357,26 +363,10 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
   });
   if (dup) return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว" };
 
-  const refillProductId = data.refillProductId ?? machine.loadouts[0]?.productId ?? null;
-
-  // E3 (bigfeature · warehouse) — ตัดสต๊อกจาก "ห้อง" ที่พนักงานเลือก (default = คลังหลัก).
-  //   mainId = id คลังหลักของสาขา (null ถ้ายังไม่มี → แถว movement เก่านับเป็น main ผ่าน NULL).
-  //   chosenWh = ห้องที่เลือก (จาก payload) หรือคลังหลัก. ถ้าทั้งคู่ null → fallback ยอดรวมสาขาเดิม
-  //   (aggregate ทุกห้อง) + stamp warehouseId null (= main ตาม INVARIANT) — ไม่ crash.
-  const mainId = refillProductId && data.refillQty > 0
-    ? await getBranchMainWarehouseId(orgId, machine.branchId)
-    : null;
-  const chosenWh = data.warehouseId ?? mainId; // null = คลังหลัก (aggregate เดิม)
-  // where-fragment ตามห้อง (mirror warehouseWhere ใน stock-queries/currentBalance):
-  //   chosenWh null            → {} (รวมทุกห้อง = ยอดสาขาเดิม · เข้ากับ movement เก่าที่ยังไม่มีห้อง)
-  //   chosenWh === main         → OR:[{id},{null}] (แถว legacy NULL = ของคลังหลัก)
-  //   chosenWh อื่น             → warehouseId ตรง ๆ (strict · ไม่รวม NULL)
-  const refillWhFilter: Record<string, unknown> =
-    chosenWh == null
-      ? {}
-      : mainId && chosenWh === mainId
-        ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
-        : { warehouseId: chosenWh };
+  // E3 (bigfeature · warehouse) — คลังหลักของสาขา (id · null ถ้ายังไม่ตั้ง → แถว movement เก่านับเป็น
+  //   main ผ่าน NULL). อ่านครั้งเดียว ใช้เป็น default ห้องที่หักเมื่อไลน์ไม่ระบุ warehouseId.
+  const branchMainId =
+    refillLines.length > 0 ? await getBranchMainWarehouseId(orgId, machine.branchId) : null;
 
   try {
     const ev = await prisma.$transaction(async (tx) => {
@@ -395,7 +385,7 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
           dollMeterAfter: data.dollMeterAfter,
           stockBefore: stockBaseline, // A2/A3: server-truth baseline (see above)
           stockAfter: data.stockAfter,
-          refillQty: data.refillQty,
+          refillQty: effectiveRefillQty, // ยอดเติมรวมทุก SKU
           // ⚠️ COLUMN→CONTENT MAPPING (column names DON'T match content — no migration to rename).
           // The 5 captured photos are packed into 5 existing columns. When you READ these back,
           // map column → REAL meaning using this table (do NOT trust the column name):
@@ -418,29 +408,29 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
         },
         select: { id: true },
       });
-      if (data.refillQty > 0 && refillProductId) {
-        // R4 (blueprint §2 R4) — over-issue guard: เติมได้ไม่เกินสต๊อก "ในห้องที่เลือก" ของสินค้านั้น.
-        // ⚠️ E3 (#1 review check): อ่านยอดต้อง scope ตาม chosenWh (ห้องที่เลือก) ไม่ใช่ยอดรวมทั้งสาขา —
-        //    ไม่งั้น guard ผ่านด้วยของอีกห้อง แต่ตัดจากห้องที่เลือก → ห้องที่เลือกติดลบ.
-        // 🔒 advisory-lock ต่อ (branch,warehouse,product) — serialize 2 การเติมจากห้องเดียวกัน
-        //    (chosenWh อยู่ในกุญแจล็อก) กันอ่านยอดห้องเดียวกันก้อนเดียวแล้วตัดเกิน (mirror receiveStock).
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${refillProductId}))`;
+      // เติมทีละ SKU (แต่ละไลน์ = 1 แถว LOAD_TO_MACHINE · หักคลังห้องที่เลือก · atomic ใน tx เดียว).
+      // guard/lock ต่อไลน์เหมือนเดิม — 2 SKU ในไลน์เดียวกันหักคนละล็อก ไม่ชนกัน.
+      for (const line of refillLines) {
+        // ห้องที่หยิบ: ระบุมา = ห้องนั้น · ไม่ระบุ = คลังหลัก (null = aggregate ยอดทุกห้อง = เดิม)
+        const chosenWh = line.warehouseId ?? branchMainId;
+        const whFilter: Record<string, unknown> =
+          chosenWh == null
+            ? {}
+            : branchMainId && chosenWh === branchMainId
+              ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
+              : { warehouseId: chosenWh };
+        // 🔒 advisory-lock ต่อ (branch,ห้อง,สินค้า) — serialize การเติมพร้อมกัน กันอ่านยอดก้อนเดียวแล้วตัดเกิน
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${line.productId}))`;
+        // R4 over-issue guard — เติมได้ไม่เกินสต๊อก "ในห้องที่เลือก" ของสินค้านั้น (scope ตาม whFilter).
         const onHandAgg = await tx.cfStockMovement.aggregate({
-          where: {
-            orgId,
-            branchId: machine.branchId,
-            productId: refillProductId,
-            machineId: null,
-            ...refillWhFilter, // E3: scope ตามห้องที่เลือก (main รวม legacy NULL · ห้องอื่น strict)
-          },
+          where: { orgId, branchId: machine.branchId, productId: line.productId, machineId: null, ...whFilter },
           _sum: { qty: true },
         });
         const warehouseOnHand = onHandAgg._sum.qty ?? 0;
-        if (data.refillQty > warehouseOnHand) {
-          // ระบุห้องในข้อความ (ถ้าเลือกห้องเจาะจง) — CEO จะได้รู้ว่าห้องไหนไม่พอ
-          const roomSuffix = data.warehouseId ? " ในคลังที่เลือก" : "";
+        if (line.qty > warehouseOnHand) {
+          const roomSuffix = line.warehouseId ? " ในคลังที่เลือก" : "";
           throw new CfOverIssueError(
-            `สต๊อกในคลังที่เลือกไม่พอ${roomSuffix} · มี ${warehouseOnHand} ตัว · เติม ${data.refillQty} ตัวไม่ได้`,
+            `สต๊อกไม่พอ${roomSuffix} · มี ${warehouseOnHand} ตัว · เติม ${line.qty} ตัวไม่ได้`,
           );
         }
         await tx.cfStockMovement.create({
@@ -448,10 +438,10 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
             orgId,
             branchId: machine.branchId,
             type: "LOAD_TO_MACHINE",
-            productId: refillProductId,
+            productId: line.productId,
             machineId: machine.id,
-            warehouseId: chosenWh, // E3: attribute การตัดให้ห้องที่หยิบมา (null = คลังหลัก)
-            qty: -data.refillQty,
+            warehouseId: chosenWh, // attribute การตัดให้ห้องที่หยิบ (null = คลังหลัก)
+            qty: -line.qty,
             refTable: "cf_collection_events",
             refId: created.id,
             occurredAt: new Date(),
@@ -459,27 +449,43 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
             reason: "เติมตุ๊กตาเข้าตู้",
           },
         });
-        // R4 loadout upsert — ให้ loadout "ในตู้" สะท้อนสินค้าที่เพิ่งเติม (สินค้า+ราคา/ครั้ง).
-        // ถ้าสินค้าปัจจุบันในตู้ ≠ สินค้าที่เติม → ปิดแถวเดิม (effectiveTo=now) เปิดแถวใหม่.
-        // ราคา/ครั้ง = ตามแถวปัจจุบัน (คงเดิม) · ถ้าไม่มี loadout เดิม → default 1 เหรียญ/ครั้ง.
+      }
+      // loadout (ราคา/ครั้ง + สินค้าตัวแทนของตู้):
+      //   เติม SKU เดียว + ต่างจากของเดิม → ปิดเก่า/เปิดใหม่ (พฤติกรรมเดิม · ราคาคงตามแถวเดิม).
+      //   เติมหลาย SKU → แตะเฉพาะถ้าตู้ยังไม่มี loadout เลย (สร้างให้ SKU ที่เติมเยอะสุด · default 1 เหรียญ)
+      //   — ไม่ churn ราคาเมื่อมี loadout อยู่แล้ว (หลาย SKU ในตู้ track ผ่าน stock ledger ไม่ใช่ loadout).
+      if (refillLines.length > 0) {
         const currentLoadout = machine.loadouts[0] ?? null;
-        if (!currentLoadout || currentLoadout.productId !== refillProductId) {
-          const now = new Date();
-          if (currentLoadout) {
-            await tx.cfMachineLoadout.update({
-              where: { id: currentLoadout.id },
-              data: { effectiveTo: now },
+        const now = new Date();
+        if (refillLines.length === 1) {
+          const only = refillLines[0];
+          if (!currentLoadout || currentLoadout.productId !== only.productId) {
+            if (currentLoadout) {
+              await tx.cfMachineLoadout.update({ where: { id: currentLoadout.id }, data: { effectiveTo: now } });
+            }
+            await tx.cfMachineLoadout.create({
+              data: {
+                orgId,
+                machineId: machine.id,
+                productId: only.productId,
+                pricePerPlayCoins: currentLoadout?.pricePerPlayCoins ?? 1,
+                effectiveFrom: now,
+                setById: session.user.id,
+                notes: "ตั้งจากการเติมตุ๊กตา (refill)",
+              },
             });
           }
+        } else if (!currentLoadout) {
+          const primary = [...refillLines].sort((a, b) => b.qty - a.qty)[0];
           await tx.cfMachineLoadout.create({
             data: {
               orgId,
               machineId: machine.id,
-              productId: refillProductId,
-              pricePerPlayCoins: currentLoadout?.pricePerPlayCoins ?? 1,
+              productId: primary.productId,
+              pricePerPlayCoins: 1,
               effectiveFrom: now,
               setById: session.user.id,
-              notes: "ตั้งจากการเติมตุ๊กตา (refill)",
+              notes: "ตั้งจากการเติมตุ๊กตาหลาย SKU (refill)",
             },
           });
         }
@@ -500,6 +506,38 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     }
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
   }
+}
+
+// ตั้ง/แก้ "ชื่อเล่น" ตู้ (CEO 2026-07-11): พนักงานส่วนใหญ่ดูตู้เองแล้วรู้ → ให้ตั้งชื่อที่จำง่ายได้เอง.
+// ไม่ยุ่งรหัสตู้ (code) เดิม (code = แค่ป้ายชื่อ · ตู้สแกนด้วย qrToken). ว่าง = ล้างชื่อเล่น.
+const RenameMachineNicknameSchema = z.object({
+  machineId: zUUID(),
+  nickname: z.string().max(60),
+});
+export async function renameMachineNickname(input: unknown): Promise<Result> {
+  const parsed = RenameMachineNicknameSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { machineId, nickname } = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId, isActive: true },
+    select: { id: true, branchId: true },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้" };
+  // สิทธิ์ = สมาชิกสาขานี้ (พนักงานเก็บเงินสาขาเดียวกับตู้) หรือแอดมิน (ALL)
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(machine.branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์แก้ตู้สาขานี้" };
+  }
+  const clean = nickname.trim();
+  await prisma.cfMachine.update({
+    where: { id: machine.id },
+    data: { nickname: clean.length > 0 ? clean : null },
+  });
+  revalidatePath("/clawfleet/os/app");
+  revalidatePath("/clawfleet/os/manage");
+  return { ok: true };
 }
 
 /** ปิดรอบสาขา · 2-way cross-check (เงิน + ตุ๊กตา) */

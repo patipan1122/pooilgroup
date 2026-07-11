@@ -197,7 +197,19 @@ export const SubmitBranchEventSchema = z
     stockBefore: z.number().int().min(0), // ตุ๊กตาในตู้ ก่อนเติม (นับจริง)
     refillQty: z.number().int().min(0).default(0), // เติมจากคลังสาขา
     stockAfter: z.number().int().min(0), // ตุ๊กตาในตู้ หลังเติม (นับจริง)
-    refillProductId: zUUID().optional(), // SKU ที่เติม (ตัดสต๊อกสาขา)
+    refillProductId: zUUID().optional(), // SKU ที่เติม (ตัดสต๊อกสาขา) · legacy/เติม SKU เดียว
+    // 2026-07-11 — เติมตุ๊กตา "หลาย SKU" ต่อตู้ (CEO: 1 ตู้มีได้หลาย SKU · เลือกจากคลัง · ระบุกี่ตัว).
+    // ส่งมาเมื่อไร → ยอดเติมรวม = ผลบวกทุกไลน์ (แทน refillQty/refillProductId เดิม) · หัก 1 แถว/ไลน์.
+    refillLines: z
+      .array(
+        z.object({
+          productId: zUUID(),
+          qty: z.number().int().positive(),
+          warehouseId: z.string().uuid().optional(), // ห้องที่หยิบ · ละไว้ = คลังหลัก
+        }),
+      )
+      .max(30)
+      .optional(),
     // bigfeature (E3) — คลัง (ห้อง) ที่หยิบตุ๊กตาไปเติม. ละไว้ = คลังหลัก (main).
     // over-issue guard + LOAD_TO_MACHINE ต้อง scope ตามห้องนี้ (ไม่ใช่ยอดรวมทั้งสาขา) —
     // ไม่งั้นห้องที่เลือกติดลบได้ทั้งที่อีกห้องมีของ.

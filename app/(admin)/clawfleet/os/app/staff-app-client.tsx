@@ -31,6 +31,7 @@ import {
   startBranchSession,
   submitBranchEvent,
   closeBranchSession,
+  renameMachineNickname,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
@@ -81,6 +82,14 @@ function genClientKey(): string {
   return `ck-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// 🆕 2026-07-11 · เติมตุ๊กตา "หลาย SKU" ต่อตู้ (CEO: 1 ตู้มีได้หลายตัว · เลือกจากคลัง · ระบุกี่ตัว/ตัว).
+// 1 ไลน์ = SKU 1 ตัว + จำนวน. server รับใน refillLines[] → หัก 1 แถว/ไลน์ · total = Σ qty.
+type RefillLine = {
+  productId: string; // UUID สินค้าคลังสาขา (BranchStockProduct.id)
+  name: string; // ชื่อสินค้า (โชว์บนการ์ด · ไม่ส่ง server)
+  qty: number; // จำนวนที่เติม (>0 เมื่อจะส่ง · 0 = ยังไม่ระบุ)
+};
+
 // N5 · payload ที่ส่งเข้า submitBranchEvent — เก็บไว้ resubmit พร้อม shortReason เมื่อ verdict=SHORT
 type SubmitBranchEventArgs = {
   sessionId: string;
@@ -92,6 +101,8 @@ type SubmitBranchEventArgs = {
   refillQty: number;
   stockAfter: number;
   refillProductId?: string;
+  // 🆕 เติมหลาย SKU — 1 แถว/ไลน์ · server ใช้ Σ qty เป็น total (แทน refillQty/refillProductId เดิม).
+  refillLines?: { productId: string; qty: number; warehouseId?: string }[];
   // WAVE-3b · R4 · ห้องที่หยิบของมาเติม (null/undefined = คลังหลัก ตาม INVARIANT). ส่งเฉพาะสาขา >1 ห้อง.
   warehouseId?: string;
   photoCoinMeterUrl: string;
@@ -198,6 +209,52 @@ function saveDrafts(key: string, drafts: Record<string, Draft>): void {
   }
 }
 
+/* ─────────────────────────── WIP autosave (กันข้อมูลหายระหว่างกรอก) ───────────────────────────
+ * TASK A · ระหว่างพนักงานเดิน wizard 4 ขั้น (นับ/เติม/มิเตอร์/เงินสด) ข้อมูลอยู่ใน React state อย่างเดียว.
+ * submit ล้ม / สลับแอป / refresh → หายหมด. WIP = snapshot เบา ๆ ต่อ (session+machine) autosave ทุกครั้งที่เปลี่ยน.
+ * ต่างจาก "drafts" (deferred meter · เก็บตอนกด "บันทึกค้าง") — WIP เป็น safety net อัตโนมัติ · draft ชนะเสมอถ้ามีทั้งคู่.
+ * key = clawos:wip:v1:${sessionId}:${machineId} (แยกต่อรอบ+ตู้). ไม่ persist ตอน demo (ไม่มี sessionId). */
+const WIP_NS = "clawos:wip:v1";
+function wipKey(sessionId: string, machineId: string): string {
+  return `${WIP_NS}:${sessionId}:${machineId}`;
+}
+// snapshot เบา: form ทั้งก้อน (รวม refillLines) + ขั้นปัจจุบัน. รูปเก็บใน form? ไม่ — รูปคือ Photos (แยก)
+// แต่ url รูปเป็น R2 string อยู่ใน state.photos → เก็บด้วยเพื่อ resume ไม่ต้องถ่ายซ้ำ.
+type WipSnapshot = { form: Form; photos: Photos; step: number };
+function saveWip(sessionId: string | null, machineId: string, snap: WipSnapshot): void {
+  if (typeof window === "undefined" || !sessionId) return; // SSR + demo guard
+  try {
+    window.localStorage.setItem(wipKey(sessionId, machineId), JSON.stringify(snap));
+  } catch {
+    /* quota/private-mode → เงียบ (best-effort) */
+  }
+}
+function loadWip(sessionId: string | null, machineId: string): WipSnapshot | null {
+  if (typeof window === "undefined" || !sessionId) return null;
+  try {
+    const raw = window.localStorage.getItem(wipKey(sessionId, machineId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const snap = parsed as Partial<WipSnapshot>;
+    if (!snap.form || typeof snap.form !== "object" || typeof snap.step !== "number") return null;
+    // กัน snapshot เก่า (ก่อนมี refillLines) พังตอน hydrate → เติม default ให้ครบ
+    const form: Form = { ...snap.form, refillLines: Array.isArray(snap.form.refillLines) ? snap.form.refillLines : [] };
+    const photos: Photos = snap.photos && typeof snap.photos === "object" ? { ...blankPhotos, ...snap.photos } : { ...blankPhotos };
+    return { form, photos, step: snap.step };
+  } catch {
+    return null; // JSON เสีย → ทิ้ง (ดีกว่า crash)
+  }
+}
+function clearWip(sessionId: string | null, machineId: string): void {
+  if (typeof window === "undefined" || !sessionId) return;
+  try {
+    window.localStorage.removeItem(wipKey(sessionId, machineId));
+  } catch {
+    /* เงียบ */
+  }
+}
+
 // counted/อ่านมิเตอร์เอง: null = "ยังไม่กรอก" (กันค่า default หลอก anti-cheat).
 // server ต้องการ number → ก่อนส่งต้องกรอกครบ (gating), เราจึง coerce ตอน submit.
 type Counted = number | null;
@@ -206,7 +263,10 @@ type Counted = number | null;
 type Form = {
   last: number; // ตุ๊กตารอบก่อน (ระบบ · reference)
   left: Counted; // คงเหลือก่อนเติม (นับจริง)
-  refill: Counted; // เติมกี่ตัว (นับจริง)
+  refill: Counted; // เติมกี่ตัว (นับจริง · fallback เมื่อไม่มี refillLines — สาขาไม่มีสต๊อก)
+  // 🆕 เติมหลาย SKU — 1 ไลน์/SKU (เลือกจากคลังสาขา + จำนวน). ว่าง [] = ใช้ f.refill ตัวเดียว (fallback).
+  // total เติม (พรีวิว + payload) = Σ lines.qty เมื่อมีไลน์ · = f.refill เมื่อไม่มี. money-safe: จอ = server.
+  refillLines: RefillLine[];
   product: string;
   // R4 · productId ที่เลือกจาก BranchStockPicker (คลังสาขาจริง · UUID) — null = ยังไม่เลือก/ใช้ dropdown เดิม.
   // ส่งเข้า submitBranchEvent.refillProductId (server ตัดสต๊อก + upsert loadout). demo = null.
@@ -299,6 +359,7 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     last: m.lastStock,
     left: demo ? Math.max(0, m.lastStock - 5) : null,
     refill: demo ? 5 : null,
+    refillLines: [], // 🆕 เริ่มว่าง — เพิ่มไลน์เมื่อสาขามีสต๊อก + ผู้ใช้เลือก SKU
     product,
     refillProductId: null,
     refillWarehouseId: null, // WAVE-3b · null = คลังหลัก (default) · ตั้งค่าเมื่อสาขา >1 ห้อง + ผู้ใช้เลือก
@@ -318,12 +379,19 @@ type Action =
   | { type: "open"; machine: AppMachine; skus: CollectSku[]; sessionId: string | null }
   | { type: "openPhotoHub"; machine: AppMachine; skus: CollectSku[]; sessionId: string | null } // B1 · เปิดตู้เข้าหน้า "ถ่ายรูปก่อน"
   | { type: "resume"; draft: Draft }
+  // TASK A · คืน WIP snapshot ที่ autosave ไว้ (กันข้อมูลหายกลางคัน) — form+photos+step. draft ชนะ WIP.
+  | { type: "hydrateWip"; snapshot: WipSnapshot }
   | { type: "next" }
   | { type: "back" }
   | { type: "home" }
   | { type: "skipMachine" } // ข้ามตู้เสีย 1 ตู้ · กลับหน้ารายการ แต่คง session สาขาไว้ (ตู้อื่นยังต้องเก็บ)
   | { type: "exitPhotoHub" } // B1 · จากหน้าถ่ายรูป → เข้า 6-step wizard ปกติ (กรอกเลขต่อ)
   | { type: "setForm"; key: keyof Form; value: number | string | null }
+  // 🆕 เติมหลาย SKU — เพิ่ม/แก้จำนวน/ลบไลน์ · setRefillLines ใช้ตอน hydrate WIP (คืนทั้งชุด)
+  | { type: "addRefillLine"; productId: string; name: string }
+  | { type: "setRefillLineQty"; productId: string; qty: number }
+  | { type: "removeRefillLine"; productId: string }
+  | { type: "setRefillLines"; lines: RefillLine[] }
   | { type: "setPhoto"; key: keyof Photos; url: string }
   | { type: "capturePhoto"; key: keyof Photos } // ถ่ายแล้ว (นับทันที · ยังรอ url)
   | { type: "toggleDefer" }
@@ -376,6 +444,16 @@ function reducer(s: WizardState, a: Action): WizardState {
         photoHub: false,
         sessionId: a.draft.sessionId,
       };
+    case "hydrateWip":
+      // TASK A · คืน WIP ที่ค้างไว้ทับ state ที่เพิ่ง open (คงตู้+session เดิม · แค่เติม form/photos/step กลับ).
+      // step clamp 1..5 (ไม่คืนไป done/home · WIP เก็บเฉพาะระหว่างกรอก). photosCaptured มาร์คจาก url ที่มี.
+      return {
+        ...s,
+        form: { ...a.snapshot.form },
+        photos: { ...a.snapshot.photos },
+        photosCaptured: markCaptured(a.snapshot.photos),
+        step: Math.min(5, Math.max(1, a.snapshot.step)),
+      };
     case "next":
       return { ...s, step: Math.min(6, s.step + 1) };
     case "back":
@@ -392,6 +470,29 @@ function reducer(s: WizardState, a: Action): WizardState {
       return { ...s, step: 0, machineId: null, resumed: false, meterDeferred: false, photoHub: false };
     case "setForm":
       return { ...s, form: { ...s.form, [a.key]: a.value } };
+    case "addRefillLine": {
+      // กัน SKU ซ้ำ — ถ้ามีไลน์ productId นี้แล้ว ไม่เพิ่มซ้ำ (merge = คงไลน์เดิม · ผู้ใช้ปรับ qty เอง)
+      if (s.form.refillLines.some((l) => l.productId === a.productId)) return s;
+      const line: RefillLine = { productId: a.productId, name: a.name, qty: 0 };
+      return { ...s, form: { ...s.form, refillLines: [...s.form.refillLines, line] } };
+    }
+    case "setRefillLineQty":
+      return {
+        ...s,
+        form: {
+          ...s.form,
+          refillLines: s.form.refillLines.map((l) =>
+            l.productId === a.productId ? { ...l, qty: Math.max(0, a.qty) } : l,
+          ),
+        },
+      };
+    case "removeRefillLine":
+      return {
+        ...s,
+        form: { ...s.form, refillLines: s.form.refillLines.filter((l) => l.productId !== a.productId) },
+      };
+    case "setRefillLines":
+      return { ...s, form: { ...s.form, refillLines: a.lines } };
     case "setPhoto":
       // upload สำเร็จ → เก็บ url จริง + มาร์ค captured (เผื่อ setPhoto มาก่อน capture ในบางเส้นทาง)
       return { ...s, photos: { ...s.photos, [a.key]: a.url }, photosCaptured: { ...s.photosCaptured, [a.key]: a.url || s.photosCaptured[a.key] } };
@@ -607,6 +708,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     if (usingDemo || !hydrated.current) return;
     saveDrafts(dkey, drafts);
   }, [drafts, dkey, usingDemo]);
+  // TASK A · WIP autosave — debounce timer (กันพิมพ์แล้วเขียนถี่) · เคลียร์ตอน unmount.
+  const wipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (wipTimer.current) clearTimeout(wipTimer.current); }, []);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState(0);
@@ -666,9 +770,35 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   );
 
   const f = state.form;
+
+  /* ── TASK A · WIP autosave (debounce ~400ms) ──
+   * เขียน snapshot form+photos+step ลง localStorage ทุกครั้งที่มีการเปลี่ยน ระหว่างอยู่ใน wizard (step 1-5).
+   * ไม่ gate ด้วย upload-pending — เลข/ข้อความต้อง save ทันทีไม่ว่ารูปจะกำลังอัปหรือไม่ (url รูปที่มีแล้วก็ save ไปด้วย).
+   * real machine + มี sessionId เท่านั้น (demo/ไม่มี session = ข้าม · saveWip guard ให้อยู่แล้ว). */
+  useEffect(() => {
+    if (usingDemo) return;
+    const mid = state.machineId;
+    const sid = state.sessionId;
+    // เขียนเฉพาะระหว่างกรอก (1-5) · home(0)/done(6) ไม่ต้อง (submit สำเร็จจะเคลียร์ WIP เอง)
+    if (!mid || !sid || state.step < 1 || state.step > 5) return;
+    if (wipTimer.current) clearTimeout(wipTimer.current);
+    const snap: WipSnapshot = { form: state.form, photos: state.photos, step: state.step };
+    wipTimer.current = setTimeout(() => saveWip(sid, mid, snap), 400);
+    return () => { if (wipTimer.current) clearTimeout(wipTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.form, state.photos, state.step, state.machineId, state.sessionId, usingDemo]);
+
+  // 🆕 เติมหลาย SKU — ไลน์ที่มีจำนวน >0 (ที่จะส่งจริง) + ยอดรวมเติม.
+  // MONEY-SAFE INVARIANT: total ที่โชว์บนจอ = ที่ server จะคิด (server: มี refillLines → Σ qty · ไม่มี → refillQty).
+  // → มีไลน์: total = Σ lines.qty (ตรงกับ server) · ไม่มีไลน์ (fallback สาขาไม่มีสต๊อก): total = f.refill.
+  const refillLinesActive = f.refillLines.filter((l) => l.qty > 0);
+  const hasRefillLines = refillLinesActive.length > 0;
+  const refillTotal = hasRefillLines
+    ? refillLinesActive.reduce((sum, l) => sum + l.qty, 0)
+    : n0(f.refill);
   // พรีวิวคำนวณด้วย n0() (null→0) แต่ "ตรง/ไม่ตรง" จะโชว์เฉพาะเมื่อ field ที่เกี่ยวกรอกครบ
   const dispensed = Math.max(0, f.last - n0(f.left));
-  const afterFill = n0(f.left) + n0(f.refill);
+  const afterFill = n0(f.left) + refillTotal;
   const dollDelta = n0(f.dollDigi) - f.dollPrev;
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
   const expectedCash = coinDelta * CASH_PER_PLAY;
@@ -691,7 +821,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
    * (DEMO ใส่ค่าให้แล้ว → ผ่านอัตโนมัติ · REAL = ว่าง → ต้องกรอกจริง)
    * step1 นับเหลือ · step2 เติมกี่ตัว · step3 มิเตอร์ 4 ช่อง (เว้นเมื่อ defer) · step4 เงินสด+ราคา */
   const step1CountOk = isFilled(f.left);
-  const step2CountOk = isFilled(f.refill);
+  // 🆕 step2 ผ่านเมื่อ: มีไลน์เติม >0 (หลาย SKU) · หรือ fallback กรอก f.refill (สาขาไม่มีสต๊อก).
+  // "เติม 0 ตัว" (ไม่เติมรอบนี้) ยังผ่านได้ทาง fallback f.refill=0 (isFilled(0)=true).
+  const step2CountOk = hasRefillLines || isFilled(f.refill);
   const step3CountOk = state.meterDeferred ||
     (isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi));
   // ราคาขายไม่บังคับ (server ใช้ราคา loadout ที่ตั้งไว้ · ค่านี้ไม่ถูกส่งไป submit) — gate แค่เงินสดที่ต้องนับ
@@ -780,6 +912,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           return;
         }
         dispatch({ type: "open", machine: m, skus, sessionId: r.data.id });
+        // TASK A · ไม่มี deferred draft (เช็คไปแล้วด้านบน) → ถ้ามี WIP ค้างของ (รอบนี้+ตู้นี้) คืนกลับ.
+        // form ที่เพิ่ง open เป็นค่าเริ่ม (ว่าง) → hydrate ทับได้ปลอดภัย (WIP = safety net · draft ชนะไปแล้ว).
+        const wip = loadWip(r.data.id, m.id);
+        if (wip) dispatch({ type: "hydrateWip", snapshot: wip });
       } finally {
         setOpeningId(null);
       }
@@ -817,6 +953,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           return;
         }
         dispatch({ type: "openPhotoHub", machine: m, skus, sessionId: r.data.id });
+        // TASK A · คืน WIP ค้าง (ถ้ามี) เหมือน openMachine — รูป/เลขที่กรอกไว้ไม่หายเมื่อกลับเข้ามาถ่ายต่อ
+        const wip = loadWip(r.data.id, m.id);
+        if (wip) dispatch({ type: "hydrateWip", snapshot: wip });
       } finally {
         setOpeningId(null);
       }
@@ -841,6 +980,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       sessionId: state.sessionId,
     };
     setDrafts((p) => ({ ...p, [machine.id]: d }));
+    // TASK A · deferred draft เก็บ form+รูปครบแล้ว (เป็น persistence หลักของตู้นี้) → เคลียร์ WIP ที่ซ้ำซ้อน.
+    // (deferred draft ชนะ WIP ตอน re-entry อยู่แล้ว · เคลียร์เพื่อไม่ให้เศษค้าง localStorage)
+    clearWip(state.sessionId, machine.id);
     dispatch({ type: "home" });
   }
 
@@ -877,6 +1019,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         // (คง session สาขาไว้ · ไม่ปิดรอบเพราะข้ามแค่ตู้เดียว · ตู้อื่นยังต้องเก็บในรอบเดิม)
         setSkippedIds((prev) => new Set(prev).add(m.id));
         setDrafts((p) => { const n = { ...p }; delete n[m.id]; return n; });
+        clearWip(state.sessionId, m.id); // TASK A · ข้ามตู้เสีย = ทิ้งรอบตู้นี้ → เคลียร์ WIP ค้าง
         dispatch({ type: "skipMachine" });
       } catch (e) {
         console.error("[clawos] skip-broken threw:", e);
@@ -908,8 +1051,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       return;
     }
     // safety net: ช่องที่ต้องนับ/อ่านเองต้องกรอกครบก่อนส่ง (ปุ่มถูก gate ไว้แล้ว · กันหลุดซ้ำ)
-    // → จะได้ไม่ส่ง 0 ปลอมเข้าระบบ anti-cheat
-    if (!isFilled(f.left) || !isFilled(f.refill) || !isFilled(f.cash) ||
+    // → จะได้ไม่ส่ง 0 ปลอมเข้าระบบ anti-cheat. 🆕 เติม: มีไลน์ >0 หรือกรอก f.refill (fallback) อย่างใดอย่างหนึ่ง.
+    if (!isFilled(f.left) || (!hasRefillLines && !isFilled(f.refill)) || !isFilled(f.cash) ||
         !isFilled(f.dollDigi) || !isFilled(f.coinDigi)) {
       setError("กรอกตัวเลขที่นับ/อ่านมิเตอร์ให้ครบก่อนบันทึก");
       return;
@@ -940,11 +1083,23 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       }
     }
 
-    const refillQty = n0(f.refill);
-    // R4 · productId ที่เติม: ใช้ที่เลือกจาก BranchStockPicker (คลังสาขาจริง · UUID) ก่อน ·
-    // fallback หา SKU จากชื่อ (dropdown เดิม) เมื่อไม่มี picker/ไม่ได้เลือก.
+    // 🆕 เติมหลาย SKU (money-safe): refillTotal = ที่โชว์บนจอ = ที่ server จะคิด (Σ lines.qty เมื่อมีไลน์ · f.refill เมื่อไม่มี).
+    const refillQty = refillTotal;
+    // ห้องที่หยิบของมาเติม (สาขา >1 ห้อง เท่านั้น · ≤1 ห้อง = null → คลังหลัก INVARIANT).
+    const refillWarehouseId = f.refillWarehouseId ?? undefined;
+    // มีไลน์เติม (หลาย SKU) → ส่ง refillLines[] · แต่ละไลน์แนบ warehouseId (ห้องเดียวกันทุกไลน์รอบนี้).
+    // server: มี refillLines → total = Σ qty · หัก 1 แถว/ไลน์ (refillQty/refillProductId ถูก override).
+    const refillLines = hasRefillLines
+      ? refillLinesActive.map((l) => ({
+          productId: l.productId,
+          qty: l.qty,
+          warehouseId: refillWarehouseId,
+        }))
+      : undefined;
+    // R4 (legacy single-SKU) · productId ที่เติม: ใช้ที่เลือกจาก BranchStockPicker ก่อน · fallback หา SKU จากชื่อ.
+    // ใช้เฉพาะ fallback (ไม่มี refillLines) — server unused เมื่อ refillLines present.
     const refillProductId =
-      refillQty > 0
+      !hasRefillLines && refillQty > 0
         ? (f.refillProductId ?? skus.find((s) => s.name === f.product)?.id)
         : undefined;
 
@@ -960,6 +1115,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       stockBefore: f.last,
       refillQty,
       stockAfter: afterFill,
+      // 🆕 หลาย SKU — ส่งเมื่อมีไลน์เติม >0 · server จะใช้แทน refillQty/refillProductId (หัก 1 แถว/ไลน์).
+      refillLines,
       refillProductId,
       // WAVE-3b · R4 · ห้องที่หยิบของมาเติม — ส่งเฉพาะเมื่อมีการเติม + เลือกห้อง (สาขา >1 ห้อง).
       // null/ไม่ส่ง = server ตัดจากคลังหลัก (INVARIANT) → สาขา ≤1 ห้อง พฤติกรรมเดิมเป๊ะ.
@@ -984,33 +1141,42 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   function sendEvent(args: SubmitBranchEventArgs) {
     const machineId = args.machineId;
     startTransition(async () => {
-      const ev = await submitBranchEvent(args);
-      if (!ev.ok) {
-        // N5 · soft-gate: server บอกว่าเงินขาด (verdict=SHORT) แต่ยังไม่ให้เหตุผล → เปิดด่านเหตุผล
-        // (ไม่ใช่ error แข็ง · เก็บ payload เดิมไว้ resubmit พร้อม shortReason).
-        if (ev.needsReason) {
-          setPendingShort(args);
+      try {
+        const ev = await submitBranchEvent(args);
+        if (!ev.ok) {
+          // N5 · soft-gate: server บอกว่าเงินขาด (verdict=SHORT) แต่ยังไม่ให้เหตุผล → เปิดด่านเหตุผล
+          // (ไม่ใช่ error แข็ง · เก็บ payload เดิมไว้ resubmit พร้อม shortReason).
+          if (ev.needsReason) {
+            setPendingShort(args);
+            return;
+          }
+          // แสดง "เหตุผลจริง" จาก server (เช่น ต้องตั้ง baseline · สต๊อกไม่พอ · มิเตอร์น้อยกว่าครั้งก่อน)
+          // แทนข้อความเน็ตลอย ๆ → พนักงานแก้ตรงจุดได้. console เก็บ raw ไว้ debug.
+          console.error("[clawos] submitBranchEvent failed:", ev.error);
+          setError(ev.error || "บันทึกไม่สำเร็จ · ลองใหม่อีกครั้ง");
           return;
         }
-        // เก็บ error ดิบไว้ใน console เท่านั้น · พนักงานเห็นข้อความง่าย ๆ
-        console.error("[clawos] submitBranchEvent failed:", ev.error);
+        // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
+        setPendingShort(null);
+        const close = await closeBranchSession({ sessionId: args.sessionId });
+        if (!close.ok) {
+          console.error("[clawos] closeBranchSession failed:", close.error);
+          setError(close.error || "ปิดรอบไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        setDrafts((p) => {
+          const n = { ...p };
+          delete n[machineId];
+          return n;
+        });
+        // TASK A · ปิดรอบสำเร็จ → เคลียร์ WIP ของตู้นี้ (ข้อมูลถูกบันทึกเข้าระบบแล้ว · ไม่ต้อง safety net อีก)
+        clearWip(args.sessionId, machineId);
+        dispatch({ type: "next" }); // → step 6 (done)
+      } catch (e) {
+        // action reject จริง ๆ (เน็ตหลุด/เซิร์ฟเวอร์ล่ม) → อันนี้ค่อยบอกให้เช็คเน็ต
+        console.error("[clawos] submit threw:", e);
         setError("ส่งไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
-        return;
       }
-      // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
-      setPendingShort(null);
-      const close = await closeBranchSession({ sessionId: args.sessionId });
-      if (!close.ok) {
-        console.error("[clawos] closeBranchSession failed:", close.error);
-        setError("ปิดรอบไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่อีกครั้ง");
-        return;
-      }
-      setDrafts((p) => {
-        const n = { ...p };
-        delete n[machineId];
-        return n;
-      });
-      dispatch({ type: "next" }); // → step 6 (done)
     });
   }
 
@@ -1203,6 +1369,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           // WAVE-3b · R4 · คลัง active ของสาขานี้ (picker "เติมจากคลัง" · โผล่เมื่อ >1 ห้อง) + handler เลือกห้อง
           branchWarehouses={activeBranchWarehouses}
           onPickWarehouse={(wid) => dispatch({ type: "setForm", key: "refillWarehouseId", value: wid })}
+          // 🆕 เติมหลาย SKU — ไลน์ปัจจุบัน + handlers เพิ่ม/แก้จำนวน/ลบ · total ที่ตรงกับ server
+          refillLines={f.refillLines}
+          refillTotal={refillTotal}
+          onAddRefillLine={(pid, name) => dispatch({ type: "addRefillLine", productId: pid, name })}
+          onSetRefillLineQty={(pid, qty) => dispatch({ type: "setRefillLineQty", productId: pid, qty })}
+          onRemoveRefillLine={(pid) => dispatch({ type: "removeRefillLine", productId: pid })}
           // N5 · ด่านเงินไม่ตรง — เปิดเมื่อ server คืน needsReason (verdict=SHORT). ยกเลิก = ล้าง payload ค้าง.
           mismatchGate={
             pendingShort
@@ -1535,7 +1707,8 @@ function BaselineScreen({ machine, orgId, products, onBack, onDone }: {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 700 }}>ตั้งค่าครั้งแรก · <span className="num">{machine.code}</span></div>
+            {/* TASK C · ชื่อเล่นเด่น + รหัสเป็นรอง (baseline form มีช่องตั้งชื่อเล่นเองอยู่แล้ว) */}
+            <MachineHeaderTitle prefix="ตั้งค่าครั้งแรก" machine={machine} />
             <div style={{ fontSize: 11, color: "#9AA1AB" }}>{machine.branch} · {machine.zone}</div>
           </div>
         </div>
@@ -2329,6 +2502,99 @@ function DollThumb({ imageUrl }: { imageUrl: string | null }) {
   );
 }
 
+/* TASK C · หัวข้อชื่อตู้ — ชื่อเล่นเด่น (ใหญ่) + รหัสเป็นรอง (เล็ก) เมื่อมีชื่อเล่น · ไม่มี → โชว์รหัสเหมือนเดิม. */
+function MachineHeaderTitle({ prefix, machine }: { prefix: string; machine: AppMachine | null }) {
+  if (!machine) {
+    return <div style={{ fontSize: 14.5, fontWeight: 700 }}>{prefix} · <span className="num">—</span></div>;
+  }
+  if (machine.nickname) {
+    return (
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prefix} · {machine.nickname}</div>
+        <div style={{ fontSize: 10.5, color: "#B0B6BF", fontWeight: 600 }} className="num">{machine.code}</div>
+      </div>
+    );
+  }
+  return <div style={{ fontSize: 14.5, fontWeight: 700 }}>{prefix} · <span className="num">{machine.code}</span></div>;
+}
+
+/* TASK C · sheet ตั้ง "ชื่อเล่น" ตู้ (bottom-sheet · mirror ReturnDollsSheet) — text field + บันทึก/ยกเลิก.
+ * บันทึก → renameMachineNickname({machineId,nickname}) ใน startTransition · {ok:false} โชว์ error ·
+ * สำเร็จ → router.refresh() (server ส่งชื่อใหม่กลับ) + ปิด. ว่าง = ล้างชื่อเล่น (server รับ ""). */
+function NicknameSheet({ machine, onClose }: { machine: AppMachine; onClose: () => void }) {
+  const router = useRouter();
+  const [name, setName] = useState(machine.nickname ?? "");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function save() {
+    if (pending) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await renameMachineNickname({ machineId: machine.id, nickname: name.trim() });
+        if (!res.ok) {
+          setError(res.error || "ตั้งชื่อไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        router.refresh(); // reload loader → machine.nickname อัปเดตทั้งรายการ/หัวข้อ
+        onClose();
+      } catch {
+        setError("ตั้งชื่อไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`ตั้งชื่อเล่นตู้ ${machine.code}`}
+      style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+    >
+      <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: pending ? "default" : "pointer" }} />
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>ตั้งชื่อเล่นตู้</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ <span className="num">{machine.code}</span> · {machine.branch}</div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }} className="co-tap"
+            style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={17} color="#5A6270" strokeWidth={2.2} />
+          </button>
+        </div>
+
+        <FieldLabel>ชื่อเล่น (จำง่าย — เว้นว่างเพื่อล้างชื่อ)</FieldLabel>
+        <input type="text" value={name} maxLength={60} placeholder="เช่น ตู้หน้าประตู, ตู้คิตตี้"
+          onChange={(e) => setName(e.target.value)} autoFocus
+          style={{ width: "100%", fontSize: 16, fontWeight: 600, padding: "12px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+
+        {error && (
+          <div style={{ marginTop: 10, background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button type="button" onClick={() => { if (!pending) onClose(); }}
+            style={{ flex: "0 0 auto", minHeight: 50, fontSize: 14, fontWeight: 700, color: "#5A6270", background: "#F1F2F5", border: "none", padding: "0 20px", borderRadius: 13, cursor: pending ? "default" : "pointer" }}>
+            ยกเลิก
+          </button>
+          <button type="button" onClick={save} disabled={pending}
+            className={pending ? "" : "co-tap"}
+            style={{ flex: 1, minHeight: 50, fontSize: 14.5, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 14, borderRadius: 13, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
+            {pending ? "กำลังบันทึก…" : "บันทึกชื่อ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfigPanel() {
   const rows = [
     { code: "RS-03", status: "ตั้งค่าแล้ว", note: "ความแรง 50% · รอเจ้าของตรวจ", ok: true },
@@ -2617,6 +2883,12 @@ function FlowScreen(props: {
   // WAVE-3b · R4 · คลัง active ของสาขานี้ (picker "เติมจากคลัง") + handler เลือกห้อง. picker โผล่เฉพาะ >1 ห้อง.
   branchWarehouses: BranchWarehouse[];
   onPickWarehouse: (warehouseId: string) => void;
+  // 🆕 เติมหลาย SKU — ไลน์ที่เลือกไว้ + ยอดรวม (ตรงกับ server) + handlers เพิ่ม/แก้จำนวน/ลบ.
+  refillLines: RefillLine[];
+  refillTotal: number;
+  onAddRefillLine: (productId: string, name: string) => void;
+  onSetRefillLineQty: (productId: string, qty: number) => void;
+  onRemoveRefillLine: (productId: string) => void;
   // N5 · ด่านเงินไม่ตรง (verdict=SHORT) · null = ไม่มีด่าน.
   mismatchGate: { active: boolean; onConfirmShort: (reason: string, note: string) => void; onCancel: () => void } | null;
   onBack: () => void;
@@ -2628,6 +2900,8 @@ function FlowScreen(props: {
 }) {
   const { step, form: f, dispensed, afterFill, photos, meterDeferred, recon, machine } = props;
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
+  // TASK C · sheet ตั้งชื่อเล่นตู้ (เปิดจากปุ่ม ✎ ในหัว) — ปิดเมื่อ demo (ไม่มี backend)
+  const [nicknameOpen, setNicknameOpen] = useState(false);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -2638,8 +2912,18 @@ function FlowScreen(props: {
           <button type="button" onClick={props.onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
+          {/* TASK C · ชื่อเล่นเด่น + รหัสเป็นรอง (เมื่อไม่มีชื่อเล่น → โชว์รหัสเหมือนเดิม) + ปุ่ม ✎ ตั้งชื่อ */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 700 }}>เก็บเงิน · <span className="num">{machine?.code ?? "—"}</span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+              <MachineHeaderTitle prefix="เก็บเงิน" machine={machine} />
+              {machine && !props.usingDemo && (
+                <button type="button" aria-label="ตั้งชื่อเล่นตู้" onClick={() => setNicknameOpen(true)} className="co-tap"
+                  style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "3px 8px", borderRadius: 20, cursor: "pointer" }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  ตั้งชื่อ
+                </button>
+              )}
+            </div>
             <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
           </div>
           {/* FIX-3 · "เลือกตู้อื่น" — กลับหน้ารายการตู้กลางคัน (คง session สาขา · ไม่ปิดรอบ). โชว์ระหว่างกรอก (1-5) */}
@@ -2686,37 +2970,11 @@ function FlowScreen(props: {
           <div>
             <div style={{ display: "flex", gap: 9, background: "#EEF0FE", borderRadius: 11, padding: "11px 13px", marginBottom: 16 }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M12 5v14M5 12h14" /></svg>
-              <span style={{ fontSize: 11.5, color: "#3F3AC0", lineHeight: 1.45 }}>ระบุว่าเติม<b>สินค้าอะไร</b>เข้าไป<b>กี่ตัว</b> แล้วถ่ายรูปยืนยันหลังเติม (รูปที่ 2)</span>
+              <span style={{ fontSize: 11.5, color: "#3F3AC0", lineHeight: 1.45 }}>เลือก<b>สินค้าที่เติม</b> (เติมได้<b>หลายตัว</b>) แล้วระบุ<b>กี่ตัว</b>ต่อสินค้า · ถ่ายรูปยืนยันหลังเติม (รูปที่ 2)</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                {/* FIX-4 · ป้ายชัดว่า "เติมตุ๊กตาอะไร" และอ้างอิงสต็อกสาขา (picker โชว์รูป+ยอดคงคลังของแต่ละตัว) */}
-                <FieldLabel>เติมตุ๊กตาอะไร (จากสต็อกสาขา)</FieldLabel>
-                {/* R4 · มีสินค้าคลังสาขาจริง → picker การ์ดมีรูป+ยอดคงคลัง · ไม่มี (demo/ว่าง) → dropdown เดิม */}
-                {props.branchProducts.length > 0 ? (
-                  <>
-                    <BranchStockPicker
-                      products={props.branchProducts}
-                      value={f.refillProductId}
-                      onPick={(pid) => {
-                        const p = props.branchProducts.find((x) => x.id === pid);
-                        if (p) props.onPickRefill(pid, p.name);
-                      }}
-                    />
-                    {/* FIX-4 · บอกว่าตัวเลข "คงเหลือ" บนการ์ด = สต็อกในคลังสาขา · เติมแล้วจะหักออกจากคลังนี้ */}
-                    <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.45, marginTop: 7 }}>
-                      เลขคงเหลือบนการ์ด = สต็อกในคลังสาขา · เติมเข้าตู้แล้วระบบจะหักออกจากคลังให้
-                    </div>
-                  </>
-                ) : (
-                  <select value={f.product} onChange={(e) => props.onProduct(e.target.value)} style={selectStyle}>
-                    {props.skus.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    {props.skus.every((s) => s.name !== f.product) && <option value={f.product}>{f.product}</option>}
-                  </select>
-                )}
-              </div>
               {/* WAVE-3b · R4 · เลือกคลัง (ห้อง) ที่หยิบของมาเติม — โผล่เฉพาะสาขาที่มี >1 ห้อง.
-                  สาขา ≤1 ห้อง → ไม่โชว์ (default คลังหลัก · พฤติกรรมเดิมเป๊ะ · zero friction). */}
+                  สาขา ≤1 ห้อง → ไม่โชว์ (default คลังหลัก · พฤติกรรมเดิมเป๊ะ · zero friction). วางบนสุด (ใช้ร่วมทุกไลน์). */}
               {props.branchWarehouses.length > 1 && (
                 <div>
                   <FieldLabel>เติมจากคลัง</FieldLabel>
@@ -2731,20 +2989,42 @@ function FlowScreen(props: {
                   </select>
                 </div>
               )}
-              <div>
-                <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
-                {/* FIX-2 · พิมพ์เลขได้ตรง ๆ + ปุ่ม −/+ ปรับทีละตัว */}
-                <CountField value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />
-              </div>
-              {/* รวมหลังเติม = ก่อนเติม(นับ) + เติม → โชว์เมื่อกรอกครบ (กันค่าหลอก) */}
-              {f.left != null && f.refill != null ? (
+              {/* 🆕 R4-multi · มีสินค้าคลังสาขาจริง → รายการเติมหลาย SKU (การ์ดต่อไลน์: รูป+ชื่อ+คงคลัง+จำนวน).
+                  ไม่มี (demo/ว่าง) → fallback dropdown + จำนวนเดียว (พฤติกรรมเดิม · ไม่ hard-block). */}
+              {props.branchProducts.length > 0 ? (
+                <RefillLinesEditor
+                  products={props.branchProducts}
+                  lines={props.refillLines}
+                  onAdd={props.onAddRefillLine}
+                  onSetQty={props.onSetRefillLineQty}
+                  onRemove={props.onRemoveRefillLine}
+                />
+              ) : (
+                <>
+                  <div>
+                    {/* FIX-4 · ป้ายชัดว่า "เติมตุ๊กตาอะไร" — สาขานี้ไม่มีสต็อกในระบบ → เลือกจากรายชื่อ SKU */}
+                    <FieldLabel>เติมตุ๊กตาอะไร</FieldLabel>
+                    <select value={f.product} onChange={(e) => props.onProduct(e.target.value)} style={selectStyle}>
+                      {props.skus.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {props.skus.every((s) => s.name !== f.product) && <option value={f.product}>{f.product}</option>}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
+                    {/* FIX-2 · พิมพ์เลขได้ตรง ๆ + ปุ่ม −/+ ปรับทีละตัว */}
+                    <CountField value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />
+                  </div>
+                </>
+              )}
+              {/* รวมหลังเติม = ก่อนเติม(นับ) + เติมรวมทุก SKU → โชว์เมื่อนับก่อนเติมแล้ว (กันค่าหลอก) */}
+              {f.left != null ? (
                 <div style={{ background: "#EEF0FE", borderRadius: 11, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#4F46E5" }}>รวมหลังเติม (ก่อนเติม {f.left} + เติม {f.refill})</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#4F46E5" }}>รวมหลังเติม (ก่อนเติม {f.left} + เติม {props.refillTotal})</span>
                   <span className="num" style={{ fontSize: 20, fontWeight: 700, color: "#4F46E5" }}>{afterFill} ตัว</span>
                 </div>
               ) : (
                 <div style={{ background: "#F6F7FA", borderRadius: 11, padding: "13px 16px", fontSize: 12.5, color: "#9AA1AB" }}>
-                  กรอกจำนวนที่เติม — ระบบจะรวมยอดหลังเติมให้
+                  นับตุ๊กตาก่อนเติม (ขั้นก่อนหน้า) — ระบบจะรวมยอดหลังเติมให้
                 </div>
               )}
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้หลังเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.after}
@@ -2986,6 +3266,11 @@ function FlowScreen(props: {
           </button>
         )}
       </div>
+
+      {/* TASK C · sheet ตั้งชื่อเล่นตู้ (overlay) — เปิดจากปุ่ม ✎ ในหัว */}
+      {nicknameOpen && machine && (
+        <NicknameSheet machine={machine} onClose={() => setNicknameOpen(false)} />
+      )}
     </div>
   );
 }
@@ -3107,6 +3392,126 @@ function CountField({ value, onChange, size = 20, placeholder = "นับแล
         onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))} className="num"
         style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: size, fontWeight: 700, padding: "13px 10px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
       <button type="button" aria-label="เพิ่ม" onClick={() => nudge(1)} className="co-tap" style={btnStyle}>+</button>
+    </div>
+  );
+}
+
+/* 🆕 2026-07-11 · RefillLinesEditor — เติมตุ๊กตา "หลาย SKU" ต่อตู้ (CEO: 1 ตู้มีได้หลายตัว).
+ * แต่ละไลน์ = สินค้าคลังสาขา 1 ตัว (รูป+ชื่อ+คงคลัง) + จำนวนที่เติม (พิมพ์ได้ + −/+ · clamp ≤ คงคลัง).
+ * "+ เพิ่ม SKU อีก" = เปิด BranchStockPicker เลือกตัวใหม่ (กันเลือกซ้ำ · ตัวที่เลือกแล้วถูกกรอง/disable).
+ * รวมเติม = Σ qty (โชว์บาร์ล่าง). ไม่บล็อกเมื่อคลังหมด (server enforce) — เตือน amber เฉย ๆ. */
+function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
+  products: BranchStockProduct[];
+  lines: RefillLine[];
+  onAdd: (productId: string, name: string) => void;
+  onSetQty: (productId: string, qty: number) => void;
+  onRemove: (productId: string) => void;
+}) {
+  // เปิด/ปิด picker เลือก SKU (โชว์ตอน "+ เพิ่ม SKU" · ครั้งแรกยังไม่มีไลน์ = เปิดค้างให้เลือกเลย)
+  const [adding, setAdding] = useState(false);
+  const pickedIds = new Set(lines.map((l) => l.productId));
+  // ตัวที่ยังไม่ถูกเลือก (กันซ้ำ · ตัวที่เลือกแล้วหายจาก picker) — ถ้าหมด = ปิดปุ่มเพิ่ม
+  const remaining = products.filter((p) => !pickedIds.has(p.id));
+  const total = lines.reduce((s, l) => s + Math.max(0, l.qty), 0);
+  const showPicker = adding || lines.length === 0; // ครั้งแรก: เปิด picker ให้เลือกเลย
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <FieldLabel>เติมตุ๊กตาอะไร (จากสต็อกสาขา) · เลือกได้หลายตัว</FieldLabel>
+
+      {/* ไลน์ที่เลือกแล้ว — การ์ดต่อ SKU (รูป + ชื่อ + คงคลัง + จำนวน + ลบ) */}
+      {lines.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {lines.map((l) => {
+            const prod = products.find((p) => p.id === l.productId);
+            const warehouse = prod?.warehouse ?? 0;
+            const over = l.qty > warehouse; // เกินคงคลัง → เตือน amber (ไม่บล็อก · server กันจริง)
+            return (
+              <div key={l.productId} style={{ border: `1.5px solid ${over ? "#F0D8AE" : "#E8EAED"}`, background: over ? "#FEFBF3" : "#fff", borderRadius: 14, padding: "11px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                  <DollThumb imageUrl={prod?.imageUrl ?? null} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
+                    <div style={{ fontSize: 11, color: over ? "#B45309" : "#9AA1AB" }} className="num">คงเหลือในคลัง {warehouse} ตัว</div>
+                  </div>
+                  {/* ลบไลน์นี้ */}
+                  <button type="button" aria-label="ลบสินค้านี้" onClick={() => onRemove(l.productId)} className="co-tap"
+                    style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    <X size={16} color="#9AA1AB" strokeWidth={2.2} />
+                  </button>
+                </div>
+                {/* จำนวนที่เติม — พิมพ์ได้ + −/+ · clamp [0, คงคลัง] */}
+                <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10 }}>
+                  <button type="button" aria-label="ลด" onClick={() => onSetQty(l.productId, Math.max(0, l.qty - 1))} disabled={l.qty <= 0} className="co-tap"
+                    style={{ width: 46, height: 46, flex: "0 0 46px", borderRadius: 11, border: "1.5px solid #E3E6EA", background: "#F6F7FA", fontSize: 22, fontWeight: 700, color: "#454B54", display: "flex", alignItems: "center", justifyContent: "center", cursor: l.qty <= 0 ? "not-allowed" : "pointer", opacity: l.qty <= 0 ? 0.5 : 1 }}>−</button>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0"
+                    value={l.qty === 0 ? "" : String(l.qty)}
+                    onChange={(e) => {
+                      // strip อักขระที่ไม่ใช่ตัวเลข + clamp ไม่ให้เกินคงคลัง (mirror CountField · money-safe)
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      onSetQty(l.productId, raw === "" ? 0 : Math.min(warehouse, Number(raw)));
+                    }}
+                    className="num"
+                    style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 18, fontWeight: 700, padding: "11px 10px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+                  <button type="button" aria-label="เพิ่ม" onClick={() => onSetQty(l.productId, Math.min(warehouse, l.qty + 1))} disabled={l.qty >= warehouse} className="co-tap"
+                    style={{ width: 46, height: 46, flex: "0 0 46px", borderRadius: 11, border: "none", background: "#4F46E5", color: "#fff", fontSize: 22, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", cursor: l.qty >= warehouse ? "not-allowed" : "pointer", opacity: l.qty >= warehouse ? 0.5 : 1 }}>+</button>
+                </div>
+                {over && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FCF1E2", borderRadius: 8, padding: "6px 10px" }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                    เกินคงคลัง ({warehouse}) — ปรับจำนวนก่อนบันทึก
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* เพิ่ม SKU — picker การ์ด (โชว์เมื่อกด "+ เพิ่ม" หรือยังไม่มีไลน์) · กันซ้ำ (แสดงเฉพาะ remaining) */}
+      {showPicker ? (
+        remaining.length > 0 ? (
+          <div style={{ border: "1.5px dashed #C7C3F0", background: "#FAFAFE", borderRadius: 14, padding: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4338CA", marginBottom: 9 }}>เลือกสินค้าที่จะเติม</div>
+            <BranchStockPicker
+              products={remaining}
+              value={null}
+              onPick={(pid) => {
+                const p = remaining.find((x) => x.id === pid);
+                if (p) onAdd(pid, p.name);
+                setAdding(false); // เลือกแล้ว → ปิด picker (กดเพิ่มอีกได้)
+              }}
+            />
+            {lines.length > 0 && (
+              <button type="button" onClick={() => setAdding(false)} className="co-tap"
+                style={{ width: "100%", marginTop: 10, fontSize: 12.5, fontWeight: 600, color: "#6B7280", background: "transparent", border: "none", padding: "8px 0 2px", cursor: "pointer" }}>
+                ยกเลิก
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: 11.5, color: "#9AA1AB", textAlign: "center", padding: "10px 0" }}>เลือกครบทุกสินค้าในคลังแล้ว</div>
+        )
+      ) : (
+        remaining.length > 0 && (
+          <button type="button" onClick={() => setAdding(true)} className="co-tap co-lift"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, borderRadius: 12, border: "1.5px dashed #C7C3F0", background: "#F5F5FE", color: "#4338CA", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
+            เพิ่ม SKU อีก
+          </button>
+        )
+      )}
+
+      {/* running total — รวมเติมทุก SKU (ตรงกับที่ server จะคิด) */}
+      <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.45 }}>
+        เลขคงเหลือ = สต็อกในคลังสาขา · เติมเข้าตู้แล้วระบบจะหักออกจากคลังให้
+      </div>
+      {lines.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F6F7FA", borderRadius: 11, padding: "11px 14px" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "#5A6270" }}>รวมเติม ({lines.length} รายการ)</span>
+          <span className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{total} ตัว</span>
+        </div>
+      )}
     </div>
   );
 }
