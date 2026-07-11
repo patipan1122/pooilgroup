@@ -328,11 +328,13 @@ function PoBrowseView({
       const payload = {
         poId: detail.poId,
         poCode: detail.poCode,
+        poLineCount: detail.lines.length, // ให้หน้าปลายทางโชว์ "ใบนี้มี X รายการ"
         lines: checkedLines.map((l) => ({
           productId: l.productId,
           sku: l.sku,
           name: l.name,
           unit: l.unit,
+          imageUrl: imageSrc(l.imageR2Path, r2PublicUrl), // แนบรูปไปด้วย → หน้าปลายทางโชว์รูปได้
           // display qty = ไม่เกินของจริงในคลัง (min เหลือในใบ, คงเหลือจริง) → เลขที่โชว์ = เลขที่ server ตัดได้จริง
           qty: Math.max(0, Math.min(l.remaining, l.onHand)), // ปลายทาง re-resolve จริงฝั่ง server อีกชั้น
         })),
@@ -344,7 +346,7 @@ function PoBrowseView({
       }
       router.push(target === "transfer" ? "/dc/transfer" : "/dc/issue");
     },
-    [detail, checkedLines, router],
+    [detail, checkedLines, router, r2PublicUrl],
   );
 
   // ── ชั้น 1: ลิสต์ใบ PO ──

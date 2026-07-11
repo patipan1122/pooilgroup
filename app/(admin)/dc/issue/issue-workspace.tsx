@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash2, PackageMinus, List, Search, X, Plus, Check, ImageIcon, FileText } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
+import { DcThumb } from "@/components/dc/product-image";
 import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
 import { lookupForIssue, postIssue, type IssueLine } from "@/lib/dc/issue-actions";
 import {
@@ -32,6 +33,7 @@ type Line = {
   location: string | null;
   qty: number;
   reason: string;
+  imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — null = โชว์ไอคอน placeholder
 };
 
 // ★ บัฟเฟอร์รายการที่พิมพ์/ยิงไว้ใน localStorage แยกตามคลัง — กันลิสต์หายตอนรีเฟรช/เน็ตหลุด
@@ -90,6 +92,7 @@ export function IssueWorkspace({
   const [poPickerOpen, setPoPickerOpen] = useState(false); // ตัวเลือก "เบิกเป็นใบ PO"
   const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
   const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
+  const [selectedPoLineCount, setSelectedPoLineCount] = useState<number>(0); // จำนวนรายการ "ทั้งใบ" PO ที่อ้างอิง
   // รายการที่เบิกไม่ผ่าน (เช่น สต๊อกไม่พอ) จากรอบล่าสุด — โชว์ให้ผู้ใช้รู้
   const [failedNotes, setFailedNotes] = useState<{ name: string; error: string }[]>([]);
 
@@ -142,6 +145,7 @@ export function IssueWorkspace({
               location: p.location,
               qty: 1,
               reason: "",
+              imageUrl: null, // สแกน/lookup ยังไม่คืนรูป → placeholder
             },
           ];
         });
@@ -180,6 +184,7 @@ export function IssueWorkspace({
             location: null,
             qty: 1,
             reason: "",
+            imageUrl: p.imageUrl, // ดูสินค้า/browse มีรูปมาให้แล้ว
           },
         ];
       });
@@ -192,12 +197,18 @@ export function IssueWorkspace({
   const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
     setSelectedPoId(sel.poId);
     setSelectedPoCode(sel.poCode);
+    setSelectedPoLineCount(sel.poLineCount ?? sel.lines.length); // fallback เผื่อ handoff เก่าไม่มีฟิลด์นี้
     setLines((prev) => {
       const next = [...prev];
       for (const pl of sel.lines) {
         const idx = next.findIndex((l) => l.productId === pl.productId);
         if (idx >= 0) {
-          next[idx] = { ...next[idx], qty: pl.qty, onHand: Math.max(next[idx].onHand, pl.qty) };
+          next[idx] = {
+            ...next[idx],
+            qty: pl.qty,
+            onHand: Math.max(next[idx].onHand, pl.qty),
+            imageUrl: pl.imageUrl ?? next[idx].imageUrl, // เติมรูปจากใบ PO ถ้ามี
+          };
         } else {
           next.push({
             lineKey: newLineKey(),
@@ -209,6 +220,7 @@ export function IssueWorkspace({
             location: null,
             qty: pl.qty,
             reason: "",
+            imageUrl: pl.imageUrl ?? null,
           });
         }
       }
@@ -219,6 +231,7 @@ export function IssueWorkspace({
   const clearPoRef = useCallback(() => {
     setSelectedPoId(null);
     setSelectedPoCode(null);
+    setSelectedPoLineCount(0);
   }, []);
 
   // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
@@ -384,11 +397,16 @@ export function IssueWorkspace({
             border: "1.5px solid var(--color-brand-600, #2563eb)",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" />
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
-              กำลังเบิกจากใบ {selectedPoCode}
-            </span>
+          <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+                กำลังเบิกจากใบ {selectedPoCode}
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)", opacity: 0.9, marginTop: 2 }}>
+                ใบนี้มี {selectedPoLineCount} รายการ · หยิบมา {lines.length} รายการ ({totalQty} ชิ้น)
+              </div>
+            </div>
           </div>
           <button
             type="button"
@@ -465,13 +483,16 @@ export function IssueWorkspace({
             return (
               <div key={l.lineKey} className="dc-card" style={{ padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
-                      {l.name}
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                      {l.sku} · มีอยู่ {l.onHand} {l.unit}
-                      {l.location ? ` · ที่ ${l.location}` : ""}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+                    <DcThumb url={l.imageUrl} alt={l.name} size={48} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
+                        {l.name}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
+                        {l.sku} · มีอยู่ {l.onHand} {l.unit}
+                        {l.location ? ` · ที่ ${l.location}` : ""}
+                      </div>
                     </div>
                   </div>
                   <button

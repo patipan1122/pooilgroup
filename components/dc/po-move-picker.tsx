@@ -28,12 +28,14 @@ export type PoMoveConfirmLine = {
   name: string;
   unit: string;
   qty: number;
+  imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — ให้หน้าฟอร์มโชว์รูปต่อได้
 };
 
 export type PoMoveSelection = {
   poId: string;
   poCode: string;
   lines: PoMoveConfirmLine[];
+  poLineCount: number; // จำนวนรายการสินค้า "ทั้งใบ" PO (ไว้โชว์ "ใบนี้มี X รายการ")
 };
 
 type Props = {
@@ -132,9 +134,10 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
           return;
         }
         setDetail(res.data);
-        // default: เลือกเท่าที่โอน/เบิกได้จริงต่อแถว (min(เหลือในใบ, คงเหลือจริง))
+        // default: เริ่มทุกแถวที่ 0 — ให้ผู้ใช้เลือกเองว่าจะหยิบตัวไหนกี่ชิ้น (กันเผลอเบิก/โอนเต็มใบ)
+        //   อยากหยิบทั้งใบเร็ว ๆ → กดปุ่ม "เลือกทั้งหมด (ทั้งใบ)" เติมเต็มให้ทีเดียว
         const init: Record<string, number> = {};
-        for (const l of res.data.lines) init[l.productId] = capOf(l);
+        for (const l of res.data.lines) init[l.productId] = 0;
         setQtyByProduct(init);
       } catch {
         setDetailError("โหลดใบ PO ไม่สำเร็จ ลองอีกครั้ง");
@@ -173,16 +176,28 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
     for (const l of detail.lines) {
       const q = qtyByProduct[l.productId] ?? 0;
       if (q > 0) {
-        lines.push({ productId: l.productId, sku: l.sku, name: l.name, unit: l.unit, qty: q });
+        lines.push({
+          productId: l.productId,
+          sku: l.sku,
+          name: l.name,
+          unit: l.unit,
+          qty: q,
+          imageUrl: imageSrc(l.imageR2Path, r2PublicUrl), // แนบรูปไปด้วย → หน้าฟอร์มโชว์รูปได้
+        });
         count += q;
       }
     }
     return { count, rows: lines.length, lines };
-  }, [detail, qtyByProduct]);
+  }, [detail, qtyByProduct, r2PublicUrl]);
 
   const confirm = useCallback(() => {
     if (!detail || selected.lines.length === 0) return;
-    onConfirm({ poId: detail.poId, poCode: detail.poCode, lines: selected.lines });
+    onConfirm({
+      poId: detail.poId,
+      poCode: detail.poCode,
+      lines: selected.lines,
+      poLineCount: detail.lines.length,
+    });
     onClose();
   }, [detail, selected.lines, onConfirm, onClose]);
 
@@ -393,6 +408,12 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
                 >
                   ล้าง
                 </button>
+              </div>
+
+              {/* สรุป: ใบนี้มีกี่รายการ · เลือกแล้วกี่รายการ (ขยับตามที่ปรับ) */}
+              <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", fontWeight: 600 }}>
+                ใบนี้มี <b style={{ color: "var(--dc-ink, #1f2733)" }}>{detail.lines.length}</b> รายการ · เลือกแล้ว{" "}
+                <b style={{ color: "var(--color-brand-700, #1d4ed8)" }}>{selected.rows}</b> รายการ ({selected.count} ชิ้น)
               </div>
 
               {detail.lines.length === 0 ? (

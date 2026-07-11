@@ -50,6 +50,7 @@ type Line = {
   unit: string;
   onHand: number;
   qty: number;
+  imageUrl: string | null; // รูปสินค้า (resolve แล้ว) — null = โชว์ไอคอน placeholder
 };
 
 type DestMode = "warehouse" | "module";
@@ -204,6 +205,7 @@ export function TransferDispatch({
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
   const [selectedPoCode, setSelectedPoCode] = useState<string | null>(null);
+  const [selectedPoLineCount, setSelectedPoLineCount] = useState<number>(0); // จำนวนรายการ "ทั้งใบ" PO ที่อ้างอิง
 
   // ---- ค่าขนส่งไทย-ไทย (บาท → ส่งเป็นสตางค์ตอน dispatch) ----
   const [freightBaht, setFreightBaht] = useState("");
@@ -235,12 +237,17 @@ export function TransferDispatch({
 
   // เพิ่มสินค้า 1 ชิ้นเข้าลิสต์ (ใช้ทั้งสแกนและกดเลือก) — มีอยู่แล้ว → +1, ไม่มี → บรรทัดใหม่
   const addProduct = useCallback(
-    (p: { id: string; sku: string; name: string; unit: string; onHand: number }) => {
+    (p: { id: string; sku: string; name: string; unit: string; onHand: number; imageUrl?: string | null }) => {
       setLines((prev) => {
         const idx = prev.findIndex((l) => l.productId === p.id);
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = { ...next[idx], qty: next[idx].qty + 1, onHand: p.onHand };
+          next[idx] = {
+            ...next[idx],
+            qty: next[idx].qty + 1,
+            onHand: p.onHand,
+            imageUrl: p.imageUrl ?? next[idx].imageUrl, // เติมรูปถ้ามีมาใหม่
+          };
           return next;
         }
         return [
@@ -253,6 +260,7 @@ export function TransferDispatch({
             unit: p.unit,
             onHand: p.onHand,
             qty: 1,
+            imageUrl: p.imageUrl ?? null,
           },
         ];
       });
@@ -264,12 +272,18 @@ export function TransferDispatch({
   const handlePoConfirm = useCallback((sel: PoMoveSelection) => {
     setSelectedPoId(sel.poId);
     setSelectedPoCode(sel.poCode);
+    setSelectedPoLineCount(sel.poLineCount ?? sel.lines.length); // fallback เผื่อ handoff เก่าไม่มีฟิลด์นี้
     setLines((prev) => {
       const next = [...prev];
       for (const pl of sel.lines) {
         const idx = next.findIndex((l) => l.productId === pl.productId);
         if (idx >= 0) {
-          next[idx] = { ...next[idx], qty: pl.qty, onHand: Math.max(next[idx].onHand, pl.qty) };
+          next[idx] = {
+            ...next[idx],
+            qty: pl.qty,
+            onHand: Math.max(next[idx].onHand, pl.qty),
+            imageUrl: pl.imageUrl ?? next[idx].imageUrl, // เติมรูปจากใบ PO ถ้ามี
+          };
         } else {
           next.push({
             lineKey: newLineKey(),
@@ -279,6 +293,7 @@ export function TransferDispatch({
             unit: pl.unit,
             onHand: pl.qty,
             qty: pl.qty,
+            imageUrl: pl.imageUrl ?? null,
           });
         }
       }
@@ -289,6 +304,7 @@ export function TransferDispatch({
   const clearPoRef = useCallback(() => {
     setSelectedPoId(null);
     setSelectedPoCode(null);
+    setSelectedPoLineCount(0);
   }, []);
 
   // ---- hydrate จาก handoff (หน้าสินค้า floor/office) ตอน mount ----
@@ -681,11 +697,16 @@ export function TransferDispatch({
             border: "1.5px solid var(--color-brand-600, #2563eb)",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" />
-            <span style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
-              กำลังโอนจากใบ {selectedPoCode}
-            </span>
+          <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+            <FileText size={18} color="var(--color-brand-700, #1d4ed8)" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>
+                กำลังโอนจากใบ {selectedPoCode}
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-brand-700, #1d4ed8)", opacity: 0.9, marginTop: 2 }}>
+                ใบนี้มี {selectedPoLineCount} รายการ · หยิบมา {lines.length} รายการ ({totalQty} ชิ้น)
+              </div>
+            </div>
           </div>
           <button
             type="button"
@@ -737,12 +758,15 @@ export function TransferDispatch({
             return (
               <div key={l.lineKey} className="dc-card" style={{ padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
-                      {l.name}
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                      {l.sku} · เหลือ {l.onHand} {l.unit}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+                    <DcThumb url={l.imageUrl} alt={l.name} size={48} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
+                        {l.name}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
+                        {l.sku} · เหลือ {l.onHand} {l.unit}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -982,7 +1006,7 @@ export function TransferDispatch({
                         <button
                           type="button"
                           onClick={() =>
-                            addProduct({ id: r.productId, sku: r.sku, name: r.name, unit: r.unit, onHand: r.onHand })
+                            addProduct({ id: r.productId, sku: r.sku, name: r.name, unit: r.unit, onHand: r.onHand, imageUrl: r.imageUrl })
                           }
                           style={{
                             display: "flex",
