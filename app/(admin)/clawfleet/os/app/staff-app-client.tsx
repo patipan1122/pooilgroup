@@ -607,6 +607,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // N5 · ด่านเงินไม่ตรง — เมื่อ submitBranchEvent คืน needsReason (verdict=SHORT) → เก็บ payload
   // เดิมไว้ resubmit พร้อม shortReason (ไม่ทำใหม่หมด · แค่เติมเหตุผล). null = ไม่มีด่าน.
   const [pendingShort, setPendingShort] = useState<SubmitBranchEventArgs | null>(null);
+  // FIX-1 · money-safe บันทึกค้าง: ถ้ากด "บันทึกค้าง" ก่อน upload รูปเสร็จ → ร่างจะเก็บรูปเป็น "" (หาย).
+  // → กันไม่ให้ saveDraft ทำงานตราบใดที่ยังมีรูปอัปโหลดค้าง (photosCaptured มี แต่ photos ยังว่าง).
+  // แต่ต้องมี "ทางออก": ถ้า upload ค้างนานเกิน (เน็ตตก/ล้ม) → หลัง ~8 วิ ปล่อยให้บันทึกได้ (offline-tolerant
+  // ตามปรัชญา sentinel เดิม · ร่างจะเก็บ url ที่มาทันเท่านั้น · retry อัปโหลดวิ่งต่อเบื้องหลัง).
+  const [allowSaveDespitePending, setAllowSaveDespitePending] = useState(false);
 
   const machine = useMemo(
     () => machines.find((m) => m.id === state.machineId) ?? null,
@@ -676,15 +681,41 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const ph = state.photosCaptured;
   // ขั้นมิเตอร์ที่กด "ถ่ายไว้ก่อน · กรอกทีหลัง" (defer) จะซ่อนปุ่มถ่าย → ห้ามบังคับถ่ายตอนนั้น (กันค้าง)
   const step3PhotoOk = (!!ph.dollGear || !!ph.dollDigi) && (!!ph.coinGear || !!ph.coinDigi);
+  // FIX-5 · รูปเงินสด "ไม่บังคับ" เสมอ (ถ่ายได้-ข้ามได้) — step 4 ผ่านได้โดยไม่ต้องมีรูปเงินสด.
+  // เหตุผล: เงินสดเป็นตัวเลขที่นับ+กระทบยอดกับมิเตอร์อยู่แล้ว · รูปเป็นหลักฐานเสริม ไม่ควรบล็อกการส่ง.
   const stepPhotoSatisfied =
     state.step === 1 ? !!ph.before
       : state.step === 2 ? !!ph.after
         : state.step === 3 ? (state.meterDeferred ? true : step3PhotoOk)
-          : state.step === 4 ? !!ph.cash
+          : state.step === 4 ? true // รูปเงินสดไม่บังคับ → step 4 ไม่บล็อกด้วยรูป
             : true; // step 5/6 ไม่มีช่องถ่าย
   // บังคับเฉพาะเมื่อนโยบายเปิด + ขั้นที่มีรูป (1-4)
   const photoStepActive = photoRequired && state.step >= 1 && state.step <= 4;
   const photoBlocks = photoStepActive && !stepPhotoSatisfied;
+
+  /* ── FIX-1 · นับรูปที่ "ถ่ายแล้วแต่ upload ยังไม่เสร็จ" (photosCaptured มี · photos ยังว่าง) ──
+   * slot ที่ upload ค้าง = เสี่ยง saveDraft เก็บรูปเป็น "" → resume แล้วรูปหาย. ใช้กันปุ่มบันทึกค้าง. */
+  const pr = state.photos;
+  const pc = state.photosCaptured;
+  const uploadingCount = (Object.keys(blankPhotos) as (keyof Photos)[]).filter(
+    (k) => !!pc[k] && !pr[k],
+  ).length;
+  // ยังมีรูปอัปโหลดค้างไหม (และยังไม่หมดเวลา escape) → true = ปุ่มบันทึกค้างต้องรอ
+  const uploadPending = uploadingCount > 0 && !allowSaveDespitePending;
+  // ── safety timeout: ถ้ามีรูปค้าง ตั้งเวลา ~8 วิ แล้วปล่อยให้บันทึกได้ (เน็ตตก/upload ล้มจะได้ไม่ค้างถาวร) ──
+  // reset ทุกครั้งที่ "จำนวนรูปค้าง" เปลี่ยน (ถ่ายเพิ่ม/upload เสร็จ) → นับ 8 วิ ใหม่จากการถ่ายล่าสุด.
+  useEffect(() => {
+    if (uploadingCount === 0) {
+      // ไม่มีรูปค้าง → เคลียร์ flag escape (กลับสู่โหมดปกติ · การถ่ายรอบหน้าจะ gate ใหม่)
+      if (allowSaveDespitePending) setAllowSaveDespitePending(false);
+      return;
+    }
+    // มีรูปค้าง → รีเซ็ต escape flag เป็น false ก่อน (การถ่ายใหม่ต้องรอ upload รอบใหม่) แล้วตั้งเวลา 8 วิ
+    setAllowSaveDespitePending(false);
+    const t = setTimeout(() => setAllowSaveDespitePending(true), 8000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadingCount]);
 
   /* ── open a machine: start a REAL session up-front (so submit can fire), else demo ── */
   function openMachine(m: AppMachine) {
@@ -763,6 +794,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
 
   function saveDraft() {
     if (!machine) return;
+    // FIX-1 · defensive: อย่าเพิ่งบันทึกถ้ายังมีรูปอัปโหลดค้าง (photosCaptured มี · photos ยังว่าง)
+    // — ถ้าบันทึกตอนนี้ ร่างจะเก็บรูปเป็น "" → resume แล้วรูปหาย. ปุ่มถูก gate ไว้แล้ว (uploadPending)
+    // นี่คือ safety net ชั้นสอง. เมื่อ escape timeout (8วิ) หมด → allowSaveDespitePending=true → ผ่าน.
+    if (uploadPending) return;
     const d: Draft = {
       machineId: machine.id,
       code: machine.code,
@@ -980,7 +1015,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
 
   if (state.step === 5) {
     if (!meterReady) {
-      primaryLabel = "บันทึกค้างไว้ · ไปเก็บตู้อื่น";
+      // FIX-1 · ถ้ายังมีรูปอัปโหลดค้าง → เปลี่ยนป้าย + disable (กัน saveDraft เก็บรูปเป็น "" = หายตอน resume)
+      primaryLabel = uploadPending ? "⏳ กำลังอัปโหลดรูป… รอสักครู่" : "บันทึกค้างไว้ · ไปเก็บตู้อื่น";
       primaryColor = "#B45309";
       primaryAction = saveDraft;
       secondaryLabel = "หรือกรอกเลขมิเตอร์ตอนนี้เลย";
@@ -996,8 +1032,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     primaryAction = finishMachine;
   }
 
-  // กันกดถัดไป/ส่ง เมื่อ: กำลังส่ง · ยังถ่ายรูปไม่ครบ (นโยบาย) · หรือยังกรอกตัวเลขที่ต้องนับไม่ครบ
-  const primaryDisabled = pending || photoBlocks || countBlocks;
+  // กันกดถัดไป/ส่ง เมื่อ: กำลังส่ง · ยังถ่ายรูปไม่ครบ (นโยบาย) · ยังกรอกตัวเลขที่ต้องนับไม่ครบ ·
+  // FIX-1 · ปุ่ม "บันทึกค้าง" (step 5 + meterDeferred) ต้องรอ upload รูปเสร็จก่อน (uploadPending)
+  const savingDraftStep = state.step === 5 && !meterReady;
+  const primaryDisabled = pending || photoBlocks || countBlocks || (savingDraftStep && uploadPending);
 
   const stepLabels: Record<number, string> = {
     1: "นับตุ๊กตาก่อนเติม",
@@ -1057,6 +1095,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onPhoto={(k, url) => dispatch({ type: "setPhoto", key: k, url })}
           onCapture={(k) => dispatch({ type: "capturePhoto", key: k })}
           onSaveDraft={saveDraft}
+          // FIX-1 · รอ upload รูปเสร็จก่อนบันทึกค้าง (กันรูปหาย)
+          uploadPending={uploadPending}
           onContinue={() => dispatch({ type: "exitPhotoHub" })}
           onBack={() => dispatch({ type: "home" })}
         />
@@ -1138,6 +1178,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           }
           // ขั้นเสร็จ (6): back = กลับหน้าหลัก+รีเซ็ต (กันย้อนเข้าไปแก้ยอดที่ส่งไปแล้ว)
           onBack={() => dispatch({ type: state.step >= 6 ? "home" : "back" })}
+          // FIX-3 · "เลือกตู้อื่น" — กลับหน้ารายการตู้กลางคัน (คง session สาขาไว้ · home ไม่ทิ้งรอบผิด)
+          onExitToList={() => dispatch({ type: "home" })}
           primary={{ label: primaryLabel, color: primaryColor, action: primaryAction }}
           secondary={secondaryAction ? { label: secondaryLabel, action: secondaryAction } : null}
           pending={pending}
@@ -2164,6 +2206,7 @@ function PhotoHubScreen(props: {
   onPhoto: (k: keyof Photos, url: string) => void;
   onCapture: (k: keyof Photos) => void;
   onSaveDraft: () => void; // บันทึกค้าง (เก็บรูป+ฟอร์ม) → ไปหน้าหลัก เก็บตู้อื่นต่อ
+  uploadPending: boolean; // FIX-1 · ยังมีรูปอัปโหลดค้าง → disable ปุ่มบันทึกค้าง (กันรูปหาย)
   onContinue: () => void; // ไปกรอกตัวเลขต่อ (เข้า wizard ขั้น 1)
   onBack: () => void;
 }) {
@@ -2230,11 +2273,17 @@ function PhotoHubScreen(props: {
 
       {/* bottom bar — บันทึกค้าง (รัวไปตู้ต่อไป) เป็น primary · กรอกตัวเลขต่อ เป็น secondary */}
       <div style={{ padding: "14px 18px 22px", borderTop: "1px solid #EAECEF", background: "#fff" }}>
-        <button type="button" onClick={props.onSaveDraft} disabled={props.usingDemo}
-          className={props.usingDemo ? "" : "co-tap co-pbtn"}
-          style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: props.usingDemo ? "not-allowed" : "pointer", background: "#B45309", opacity: props.usingDemo ? 0.55 : 1, boxShadow: props.usingDemo ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
-          บันทึกค้าง · ไปตู้ต่อไป
-        </button>
+        {/* FIX-1 · disable ตอน demo หรือมีรูปอัปโหลดค้าง (uploadPending) → กันบันทึกก่อนรูปขึ้น = รูปหาย */}
+        {(() => {
+          const saveDisabled = props.usingDemo || props.uploadPending;
+          return (
+            <button type="button" onClick={props.onSaveDraft} disabled={saveDisabled}
+              className={saveDisabled ? "" : "co-tap co-pbtn"}
+              style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: saveDisabled ? "not-allowed" : "pointer", background: "#B45309", opacity: saveDisabled ? 0.55 : 1, boxShadow: saveDisabled ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
+              {props.uploadPending ? "⏳ กำลังอัปโหลดรูป… รอสักครู่" : "บันทึกค้าง · ไปตู้ต่อไป"}
+            </button>
+          );
+        })()}
         {props.usingDemo && (
           <div style={{ fontSize: 10.5, color: "#9AA1AB", textAlign: "center", marginTop: 6 }}>โหมดตัวอย่าง — บันทึกค้างจริงได้เมื่อมีตู้ในระบบ</div>
         )}
@@ -2288,6 +2337,7 @@ function FlowScreen(props: {
   // N5 · ด่านเงินไม่ตรง (verdict=SHORT) · null = ไม่มีด่าน.
   mismatchGate: { active: boolean; onConfirmShort: (reason: string, note: string) => void; onCancel: () => void } | null;
   onBack: () => void;
+  onExitToList: () => void; // FIX-3 · กลับหน้ารายการตู้กลางคัน (เลือกตู้อื่น)
   primary: { label: string; color: string; action: () => void };
   secondary: { label: string; action: () => void } | null;
   pending: boolean;
@@ -2301,6 +2351,7 @@ function FlowScreen(props: {
       {/* header — กระชับ (back + ชื่อตู้ + ขั้น) ให้เนื้อหาขึ้นถึง ⅓ บน */}
       <div style={{ padding: "4px 18px 10px", borderBottom: "1px solid #EAECEF" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          {/* back = ย้อนทีละขั้น (พฤติกรรมเดิม) */}
           <button type="button" onClick={props.onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
@@ -2308,7 +2359,16 @@ function FlowScreen(props: {
             <div style={{ fontSize: 14.5, fontWeight: 700 }}>เก็บเงิน · <span className="num">{machine?.code ?? "—"}</span></div>
             <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
           </div>
-          <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>{stepIndicator}</span>
+          {/* FIX-3 · "เลือกตู้อื่น" — กลับหน้ารายการตู้กลางคัน (คง session สาขา · ไม่ปิดรอบ). โชว์ระหว่างกรอก (1-5) */}
+          {step <= 5 ? (
+            <button type="button" onClick={props.onExitToList} className="co-tap"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, flex: "0 0 auto", fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "6px 11px", borderRadius: 20, cursor: "pointer" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+              เลือกตู้อื่น
+            </button>
+          ) : (
+            <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>{stepIndicator}</span>
+          )}
         </div>
         {step <= 5 && <StepStrip step={step} />}
       </div>
@@ -2322,7 +2382,8 @@ function FlowScreen(props: {
               <span style={{ fontSize: 12.5, color: "#5A6270" }}>รอบที่แล้วในตู้มีตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{f.last} ตัว</b></span>
             </div>
             <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
-            <BigInput value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
+            {/* FIX-2 · พิมพ์เลขได้ตรง ๆ (เช่น 90) + ปุ่ม −/+ ปรับทีละตัว */}
+            <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
             <div style={{ marginTop: 10 }}>
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้ก่อนเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.before}
                 onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
@@ -2346,17 +2407,24 @@ function FlowScreen(props: {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <FieldLabel>สินค้าที่เติม (เลือกจากคลังสาขา)</FieldLabel>
+                {/* FIX-4 · ป้ายชัดว่า "เติมตุ๊กตาอะไร" และอ้างอิงสต็อกสาขา (picker โชว์รูป+ยอดคงคลังของแต่ละตัว) */}
+                <FieldLabel>เติมตุ๊กตาอะไร (จากสต็อกสาขา)</FieldLabel>
                 {/* R4 · มีสินค้าคลังสาขาจริง → picker การ์ดมีรูป+ยอดคงคลัง · ไม่มี (demo/ว่าง) → dropdown เดิม */}
                 {props.branchProducts.length > 0 ? (
-                  <BranchStockPicker
-                    products={props.branchProducts}
-                    value={f.refillProductId}
-                    onPick={(pid) => {
-                      const p = props.branchProducts.find((x) => x.id === pid);
-                      if (p) props.onPickRefill(pid, p.name);
-                    }}
-                  />
+                  <>
+                    <BranchStockPicker
+                      products={props.branchProducts}
+                      value={f.refillProductId}
+                      onPick={(pid) => {
+                        const p = props.branchProducts.find((x) => x.id === pid);
+                        if (p) props.onPickRefill(pid, p.name);
+                      }}
+                    />
+                    {/* FIX-4 · บอกว่าตัวเลข "คงเหลือ" บนการ์ด = สต็อกในคลังสาขา · เติมแล้วจะหักออกจากคลังนี้ */}
+                    <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.45, marginTop: 7 }}>
+                      เลขคงเหลือบนการ์ด = สต็อกในคลังสาขา · เติมเข้าตู้แล้วระบบจะหักออกจากคลังให้
+                    </div>
+                  </>
                 ) : (
                   <select value={f.product} onChange={(e) => props.onProduct(e.target.value)} style={selectStyle}>
                     {props.skus.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
@@ -2382,7 +2450,8 @@ function FlowScreen(props: {
               )}
               <div>
                 <FieldLabel>เติมเข้าไปกี่ตัว</FieldLabel>
-                <BigInput value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />
+                {/* FIX-2 · พิมพ์เลขได้ตรง ๆ + ปุ่ม −/+ ปรับทีละตัว */}
+                <CountField value={f.refill} onChange={props.setNum("refill")} size={18} placeholder="กรอกจำนวนที่เติม" />
               </div>
               {/* รวมหลังเติม = ก่อนเติม(นับ) + เติม → โชว์เมื่อกรอกครบ (กันค่าหลอก) */}
               {f.left != null && f.refill != null ? (
@@ -2469,9 +2538,11 @@ function FlowScreen(props: {
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
               <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
               <div style={{ marginTop: 10 }}>
-                <PhotoSlot label={`ถ่ายรูปเงินสด ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.cash}
+                {/* FIX-5 · รูปเงินสด "ไม่บังคับ" เสมอ (ถ่ายได้-ข้ามได้) — required=false ไม่ว่านโยบายจะเปิดไหม.
+                    เงินสดกระทบยอดกับมิเตอร์อยู่แล้ว · รูปเป็นหลักฐานเสริม ไม่ควรบล็อกการส่งรอบ. */}
+                <PhotoSlot label="ถ่ายรูปเงินสด (ถ่ายได้-ข้ามได้)" value={photos.cash}
                   onChange={(url) => props.onPhoto("cash", url)} onCaptured={() => props.onCapture("cash")}
-                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} required={props.photoRequired} />
+                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} required={false} />
               </div>
             </div>
             <div style={{ borderTop: "1px solid #EEF0F2", paddingTop: 15 }}>
@@ -2729,6 +2800,31 @@ function BigInput({ value, onChange, size = 20, placeholder = "นับแล�
     <input type="number" inputMode="numeric" pattern="[0-9]*" value={value == null ? "" : String(value)} placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)} className="num"
       style={{ width: "100%", fontSize: size, fontWeight: 700, padding: "13px 14px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+  );
+}
+
+/* FIX-2 · ช่องนับที่ "พิมพ์เลขได้" + ปุ่ม −/+ (สำหรับ นับตุ๊กตา step 1 / เติม step 2).
+ * เดิมมีแต่ปุ่มปรับทีละตัว → กรอก "90" ตรง ๆ ไม่ได้ ต้องกดหลายสิบครั้ง. เพิ่ม input พิมพ์ได้ตรงกลาง.
+ * ใช้ inputMode="numeric" + strip อักขระที่ไม่ใช่ตัวเลข (mirror RepairPanel) กันคีย์บอร์ดมือถือใส่ตัวอักษร/จุด.
+ * onChange = setNum(key) เดิม (รับ string · ว่าง=null) → −/+ ส่ง string ตัวเลขใหม่ (ต่ำสุด 0). */
+function CountField({ value, onChange, size = 20, placeholder = "นับแล้วกรอก" }: { value: Counted; onChange: (v: string) => void; size?: number; placeholder?: string }) {
+  const cur = value == null ? 0 : value;
+  const nudge = (delta: number) => onChange(String(Math.max(0, cur + delta)));
+  const btnStyle = {
+    width: 52, height: 52, flex: "0 0 52px", borderRadius: 12, border: "1.5px solid #E3E6EA",
+    background: "#F6F7FA", fontSize: 24, fontWeight: 700, color: "#454B54",
+    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+  } as const;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+      <button type="button" aria-label="ลด" onClick={() => nudge(-1)} className="co-tap" style={btnStyle}>−</button>
+      {/* type=text + inputMode=numeric → คีย์บอร์ดตัวเลข + พิมพ์ "90" ได้ตรง ๆ · strip ให้เหลือแต่ตัวเลข */}
+      <input type="text" inputMode="numeric" pattern="[0-9]*"
+        value={value == null ? "" : String(value)} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))} className="num"
+        style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: size, fontWeight: 700, padding: "13px 10px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+      <button type="button" aria-label="เพิ่ม" onClick={() => nudge(1)} className="co-tap" style={btnStyle}>+</button>
+    </div>
   );
 }
 
