@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
 import { getCfBranchStockProducts, getInboundDeliveries, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
-import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "./staff-app-client";
+import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
 export const dynamic = "force-dynamic";
@@ -210,6 +210,11 @@ export default async function StaffAppPage({
   // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker · WAVE-3b คลัง)
   const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
+  // 🆕 คืนตุ๊กตาเข้าคลัง (return-dolls) — ต่อตู้: ตุ๊กตาที่ "อยู่ในตู้ตอนนี้" (ราย SKU + รูป + จำนวน)
+  //   + ต่อสาขา: "ของว่างในคลัง" ต่อสินค้า (คลัง − ในตู้) เพื่อโชว์ยอดคลังเพิ่มขึ้นหลังคืน.
+  //   คิดจาก ledger จริง (source of truth) — เลขที่โชว์ = เลขที่ server จะ enforce.
+  const { inMachineByMachine, netAvailableByBranch } = await loadReturnDollsData(orgId, routeBranches);
+
   return (
     <StaffAppClient
       orgId={orgId}
@@ -226,8 +231,118 @@ export default async function StaffAppPage({
       branchProducts={branchProducts}
       inboundByBranch={inboundByBranch}
       warehousesByBranch={warehousesByBranch}
+      inMachineByMachine={inMachineByMachine}
+      netAvailableByBranch={netAvailableByBranch}
     />
   );
+}
+
+/**
+ * โหลดข้อมูลสำหรับ "คืนตุ๊กตาจากตู้เข้าคลัง" (return-dolls · ราย SKU · READ-ONLY display):
+ *  - inMachineByMachine: map machineId → รายการตุ๊กตาที่ "อยู่ในตู้ตอนนี้" (name/sku/imageUrl/qty)
+ *      qty ในตู้ = |Σ qty ของ movement ที่ machineId = ตู้นี้| (ledger = source of truth) · เก็บเฉพาะ qty > 0.
+ *      คำนวณ 1 grouped query ต่อสาขา (by machineId+productId · where machineId in [...]) แล้ว map ตามตู้.
+ *  - netAvailableByBranch: map branchId → { productId → "ของว่างในคลัง" } = คลัง(warehouse) − ในตู้(inMachines)
+ *      mirror getCfBranchStockProducts (warehouse=machineId null · inMachines=|Σ machineId not null|).
+ *      ใช้โชว์ context "ของว่างในคลัง A → A+N" หลังคืน (เลขจาก server · ไม่ใช่ client เดา).
+ * graceful: query ล้ม/ยังไม่ migrate → คืนค่าว่าง (แอปเดินได้ · sheet โชว์ empty).
+ */
+async function loadReturnDollsData(
+  orgId: string,
+  branches: GroupCollectBranch[],
+): Promise<{
+  inMachineByMachine: Record<string, InMachineDoll[]>;
+  netAvailableByBranch: Record<string, Record<string, number>>;
+}> {
+  const inMachineByMachine: Record<string, InMachineDoll[]> = {};
+  const netAvailableByBranch: Record<string, Record<string, number>> = {};
+  if (!orgId || branches.length === 0) return { inMachineByMachine, netAvailableByBranch };
+
+  await Promise.all(
+    branches.map(async (b) => {
+      try {
+        // id ตู้ทั้งหมดของสาขา (จาก tree ที่ผู้ใช้เห็น · CLAW ทุกกลุ่ม)
+        const machineIds = b.groups.flatMap((g) => g.claws.map((c) => c.id));
+        if (machineIds.length === 0) {
+          netAvailableByBranch[b.id] = {};
+          return;
+        }
+
+        // 1) ในตู้ต่อ (ตู้, สินค้า) — 1 grouped query ต่อสาขา (efficient · machineId in [...])
+        const inMachineMoves = await prisma.cfStockMovement.groupBy({
+          by: ["machineId", "productId"],
+          where: { orgId, branchId: b.id, machineId: { in: machineIds } },
+          _sum: { qty: true },
+        });
+
+        // 2) ยอดคลังสาขา (warehouse = machineId null) ต่อสินค้า — สำหรับ net-available
+        const warehouseMoves = await prisma.cfStockMovement.groupBy({
+          by: ["productId"],
+          where: { orgId, branchId: b.id, machineId: null },
+          _sum: { qty: true },
+        });
+
+        // สินค้าทั้งหมดที่โผล่ (ในตู้ + คลัง) → join ชื่อ/รูป/sku ครั้งเดียว
+        const productIds = Array.from(
+          new Set([
+            ...inMachineMoves.map((m) => m.productId),
+            ...warehouseMoves.map((m) => m.productId),
+          ]),
+        );
+        const products = productIds.length
+          ? await prisma.cfProduct.findMany({
+              where: { id: { in: productIds }, orgId },
+              select: { id: true, name: true, sku: true, imageUrl: true },
+            })
+          : [];
+        const pmap = new Map(products.map((p) => [p.id, p]));
+
+        // ในตู้ต่อสินค้ารวมทั้งสาขา (สำหรับ net-available) + ต่อตู้ (สำหรับ sheet)
+        const inMachineByProduct = new Map<string, number>();
+        for (const m of inMachineMoves) {
+          const mid = m.machineId;
+          if (!mid) continue;
+          const qty = Math.abs(m._sum.qty ?? 0);
+          const p = pmap.get(m.productId);
+          if (!p) continue;
+          // ต่อสินค้า (รวมทุกตู้ในสาขา) — ใช้คิด net-available
+          inMachineByProduct.set(m.productId, (inMachineByProduct.get(m.productId) ?? 0) + qty);
+          // ต่อตู้ — เฉพาะที่ยังมีของในตู้ (qty > 0)
+          if (qty > 0) {
+            (inMachineByMachine[mid] ??= []).push({
+              productId: p.id,
+              name: p.name,
+              sku: p.sku,
+              imageUrl: p.imageUrl,
+              qty,
+            });
+          }
+        }
+
+        // net-available ต่อสินค้า = คลัง − ในตู้ (mirror getCfBranchStockProducts)
+        const warehouseByProduct = new Map(warehouseMoves.map((m) => [m.productId, m._sum.qty ?? 0]));
+        const netMap: Record<string, number> = {};
+        for (const pid of productIds) {
+          const warehouse = warehouseByProduct.get(pid) ?? 0;
+          const inMachine = inMachineByProduct.get(pid) ?? 0;
+          netMap[pid] = warehouse - inMachine;
+        }
+        netAvailableByBranch[b.id] = netMap;
+
+        // เรียงรายการในตู้แต่ละตู้ตามชื่อ (อ่านง่าย)
+        for (const mid of machineIds) {
+          if (inMachineByMachine[mid]) {
+            inMachineByMachine[mid].sort((a, x) => a.name.localeCompare(x.name, "th"));
+          }
+        }
+      } catch {
+        // graceful: ยังไม่ migrate / query ล้ม → คงค่าว่างของสาขานี้
+        netAvailableByBranch[b.id] = netAvailableByBranch[b.id] ?? {};
+      }
+    }),
+  );
+
+  return { inMachineByMachine, netAvailableByBranch };
 }
 
 /**

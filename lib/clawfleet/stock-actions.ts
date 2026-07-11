@@ -1531,6 +1531,115 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
 }
 
 // =============================================================
+// 6b) คืนตุ๊กตาจากตู้กลับเข้าคลังสาขา (machine → room · ราย SKU)
+//   ผกผันของการเติม: refill เขียน {machineId:ตู้, qty:−N} (ในตู้ = |Σ| = +N).
+//   คืน = {machineId:ตู้, qty:+N} แถวเดียว → |Σ| ลด → "ในตู้" ลด · "ของว่างในคลัง"
+//   (= คลัง − ในตู้) เพิ่มขึ้นเอง. ❌ ห้ามเพิ่มแถว machineId:null เพื่อดันเลขคลัง —
+//   คลัง(machineId null) เป็น gross-received รวมของในตู้อยู่แล้ว → บวกซ้ำ = ของเกิน.
+//   สิทธิ์: พนักงานสมาชิกสาขา (isRealBranchStaff) + ผจก./แอดมิน (canWriteOff) —
+//   ย้ายในสาขา ไม่ใช่เบิกออกจากบริษัท · ตรวจเจอตอนนับสต๊อก · audit ทุกครั้ง.
+//   idempotent: clientKey (UUID จาก client) → refId กันกดซ้ำ (double-tap = ของเกิน).
+// =============================================================
+
+const ReturnDollsSchema = z.object({
+  machineId: z.string().min(1),
+  productId: z.string().min(1, "เลือกตุ๊กตาที่จะคืน"),
+  qty: z.number().int().positive("จำนวนคืนต้องมากกว่า 0"),
+  // client-generated UUID ต่อการกด 1 ครั้ง (refId เป็น @db.Uuid) → กันกดซ้ำ
+  clientKey: z.string().uuid().optional(),
+});
+
+export async function returnDollsToStock(
+  input: unknown,
+): Promise<Result<{ inMachineAfter: number }>> {
+  const parsed = ReturnDollsSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { machineId, productId, qty, clientKey } = parsed.data;
+
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true, branchId: true },
+  });
+  if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
+
+  // สิทธิ์: พนักงานที่เป็นสมาชิกจริงของสาขานี้ หรือ ผจก.สาขา/แอดมิน
+  const allowed =
+    canWriteOff(session.user.role) || (await isRealBranchStaff(session, machine.branchId));
+  if (!allowed) return err("ไม่มีสิทธิ์คืนตุ๊กตาของสาขานี้");
+
+  const product = await prisma.cfProduct.findFirst({
+    where: { id: productId, orgId },
+    select: { id: true, unitCostCents: true },
+  });
+  if (!product) return err("ไม่พบสินค้า");
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // 🔒 ล็อกต่อ (branch, product) — serialize การคืนซ้อน (อ่านยอดในตู้→เขียน กันคืนเกิน)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${productId}))`;
+
+      // กันกดซ้ำ: ถ้ามี movement คืนที่ clientKey นี้แล้ว → no-op (คืนยอดปัจจุบัน)
+      if (clientKey) {
+        const dup = await tx.cfStockMovement.findFirst({
+          where: {
+            orgId,
+            branchId: machine.branchId,
+            machineId,
+            refTable: "cf_return_dolls",
+            refId: clientKey,
+          },
+          select: { id: true },
+        });
+        if (dup) {
+          const cur = await tx.cfStockMovement.aggregate({
+            where: { orgId, branchId: machine.branchId, machineId, productId },
+            _sum: { qty: true },
+          });
+          return { inMachineAfter: Math.abs(cur._sum.qty ?? 0) };
+        }
+      }
+
+      // ยอด "ในตู้" ของสินค้านี้ตอนนี้ = |Σ qty ที่ machineId = ตู้นี้ + productId นี้|
+      const inMachineAgg = await tx.cfStockMovement.aggregate({
+        where: { orgId, branchId: machine.branchId, machineId, productId },
+        _sum: { qty: true },
+      });
+      const inMachine = Math.abs(inMachineAgg._sum.qty ?? 0);
+      if (qty > inMachine) {
+        throw new Error(`ในตู้มีของนี้ ${inMachine} ตัว · คืน ${qty} ตัวไม่ได้`);
+      }
+
+      // แถวเดียว = ผกผันของ refill → ในตู้ ↓ (คลัง gross ไม่แตะ = ไม่นับซ้ำ)
+      await tx.cfStockMovement.create({
+        data: {
+          orgId,
+          branchId: machine.branchId,
+          type: "ADJUST",
+          productId,
+          machineId: machine.id,
+          qty, // + → ลด |Σ machineId=ตู้| → "ในตู้" ลด
+          unitCostCents: product.unitCostCents,
+          refTable: clientKey ? "cf_return_dolls" : null,
+          refId: clientKey ?? null,
+          occurredAt: new Date(),
+          createdById: session.user.id,
+          reason: "คืนตุ๊กตาจากตู้เข้าคลัง",
+        },
+      });
+      return { inMachineAfter: inMachine - qty };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/app");
+  return { ok: true, data: result };
+}
+
+// =============================================================
 // 7) ใบกระจายสินค้า (delivery / shipment) คลังกลาง → สาขา
 //    createShipment: สร้างใบ (status SCHEDULED) + รายการสินค้า (cf_delivery_lines)
 //    confirmShipmentReceived: ตั้ง receivedQty + status DELIVERED + รับเข้าสต๊อกสาขา

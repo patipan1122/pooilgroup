@@ -24,7 +24,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
@@ -33,7 +33,7 @@ import {
   closeBranchSession,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
-import { submitStockCount, confirmShipmentReceived } from "@/lib/clawfleet/stock-actions";
+import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 // bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
 import { BaselineForm } from "@/components/clawfleet/BaselineForm";
@@ -65,6 +65,15 @@ export type InboundDelivery = {
 // WAVE-3b · คลัง (ห้องเก็บ) ของสาขา ที่ยัง active — ขับ picker เติม (R4) + นับสต๊อก (N3).
 // picker โชว์เฉพาะเมื่อสาขามี >1 ห้อง (single-warehouse = ไม่มี picker · default คลังหลักเหมือนเดิม).
 export type BranchWarehouse = { id: string; name: string; isMain: boolean };
+// 🆕 ตุ๊กตาที่ "อยู่ในตู้ตอนนี้" (ราย SKU) — ขับ sheet คืนตุ๊กตาเข้าคลัง (return-dolls).
+// qty มาจาก server ledger (|Σ machineId=ตู้|) = เลขที่ server จะ enforce ตอนคืน (ไม่ใช่ client เดา).
+export type InMachineDoll = {
+  productId: string;
+  name: string;
+  sku: string;
+  imageUrl: string | null;
+  qty: number; // ในตู้ตอนนี้ (ตัว)
+};
 
 // N3 · client idempotency key (crypto.randomUUID เมื่อมี · fallback timestamp+rand)
 function genClientKey(): string {
@@ -453,6 +462,10 @@ type Props = {
   // WAVE-3b · คลัง (ห้องเก็บ) active แยกตาม branchId — picker เติม (R4) + นับสต๊อก (N3).
   // สาขาที่มี >1 ห้อง → โชว์ picker · ≤1 ห้อง → ไม่โชว์ (default คลังหลัก). optional default {}.
   warehousesByBranch?: Record<string, BranchWarehouse[]>;
+  // 🆕 ตุ๊กตาที่ "อยู่ในตู้ตอนนี้" แยกตาม machineId (ขับ sheet คืนตุ๊กตาเข้าคลัง). optional default {}.
+  inMachineByMachine?: Record<string, InMachineDoll[]>;
+  // 🆕 "ของว่างในคลัง" ต่อสินค้า แยกตาม branchId (คลัง − ในตู้) — โชว์ยอดคลังหลังคืน. optional default {}.
+  netAvailableByBranch?: Record<string, Record<string, number>>;
 };
 
 // B3 · วันนี้ตามเวลาไทย (client-side fallback เมื่อ server ไม่ส่ง selectedDate) — YYYY-MM-DD
@@ -464,7 +477,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -479,10 +492,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
 
   return (
@@ -566,12 +579,15 @@ type StaffAppProps = {
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · คลัง active แยกตาม branchId (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, BranchWarehouse[]>;
+  // 🆕 ตุ๊กตาในตู้ตอนนี้ (แยกตาม machineId) + ของว่างในคลังต่อสินค้า (แยกตาม branchId) — sheet คืนตุ๊กตา
+  inMachineByMachine: Record<string, InMachineDoll[]>;
+  netAvailableByBranch: Record<string, Record<string, number>>;
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -607,6 +623,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // N5 · ด่านเงินไม่ตรง — เมื่อ submitBranchEvent คืน needsReason (verdict=SHORT) → เก็บ payload
   // เดิมไว้ resubmit พร้อม shortReason (ไม่ทำใหม่หมด · แค่เติมเหตุผล). null = ไม่มีด่าน.
   const [pendingShort, setPendingShort] = useState<SubmitBranchEventArgs | null>(null);
+  // 🆕 คืนตุ๊กตาเข้าคลัง — ตู้ที่กำลังเปิด bottom-sheet คืน (null = ปิด). local เฉพาะหน้าจอ.
+  const [returnMachineId, setReturnMachineId] = useState<string | null>(null);
   // FIX-1 · money-safe บันทึกค้าง: ถ้ากด "บันทึกค้าง" ก่อน upload รูปเสร็จ → ร่างจะเก็บรูปเป็น "" (หาย).
   // → กันไม่ให้ saveDraft ทำงานตราบใดที่ยังมีรูปอัปโหลดค้าง (photosCaptured มี แต่ photos ยังว่าง).
   // แต่ต้องมี "ทางออก": ถ้า upload ค้างนานเกิน (เน็ตตก/ล้ม) → หลัง ~8 วิ ปล่อยให้บันทึกได้ (offline-tolerant
@@ -632,6 +650,19 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const activeBranchWarehouses = useMemo(
     () => (machine ? warehousesByBranch[machine.branchId] ?? [] : []),
     [warehousesByBranch, machine],
+  );
+  // 🆕 คืนตุ๊กตา — ตู้ที่กำลังเปิด sheet + ตุ๊กตาในตู้ + "ของว่างในคลัง" ต่อสินค้าของสาขานั้น.
+  const returnMachine = useMemo(
+    () => machines.find((m) => m.id === returnMachineId) ?? null,
+    [machines, returnMachineId],
+  );
+  const returnDolls = useMemo(
+    () => (returnMachineId ? inMachineByMachine[returnMachineId] ?? [] : []),
+    [inMachineByMachine, returnMachineId],
+  );
+  const returnNetAvailable = useMemo(
+    () => (returnMachine ? netAvailableByBranch[returnMachine.branchId] ?? {} : {}),
+    [netAvailableByBranch, returnMachine],
   );
 
   const f = state.form;
@@ -1113,6 +1144,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           draftList={draftList}
           onOpen={openMachine}
           onOpenPhotoHub={openMachinePhotoHub}
+          onReturn={(m) => { setError(null); setReturnMachineId(m.id); }}
+          inMachineByMachine={inMachineByMachine}
           pending={pending}
           openingId={openingId}
           tourStep={tourStep}
@@ -1186,6 +1219,17 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           primaryDisabled={primaryDisabled}
         />
       )}
+
+      {/* 🆕 คืนตุ๊กตาจากตู้เข้าคลัง — bottom-sheet overlay (ราย SKU + รูป + ยืนยันจำนวนเดิม) */}
+      {returnMachine && (
+        <ReturnDollsSheet
+          machine={returnMachine}
+          dolls={returnDolls}
+          netAvailable={returnNetAvailable}
+          usingDemo={usingDemo}
+          onClose={() => setReturnMachineId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1203,6 +1247,9 @@ function HomeScreen(props: {
   draftList: Draft[];
   onOpen: (m: AppMachine) => void;
   onOpenPhotoHub: (m: AppMachine) => void; // B1 · เปิดตู้เข้าหน้า "ถ่ายรูปก่อน"
+  // 🆕 เปิด sheet "คืนตุ๊กตาจากตู้เข้าคลัง" ของตู้นี้ + map ตุ๊กตาในตู้ (โชว์ปุ่มเฉพาะตู้ที่มีของในตู้)
+  onReturn: (m: AppMachine) => void;
+  inMachineByMachine: Record<string, InMachineDoll[]>;
   pending: boolean;
   openingId: string | null;
   tourStep: number;
@@ -1223,7 +1270,7 @@ function HomeScreen(props: {
   // WAVE-3b · N3 · คลัง active แยกตาม branchId (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, BranchWarehouse[]>;
 }) {
-  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, pending, openingId, skippedIds, assignedOnly } = props;
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
   // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
   const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
@@ -1376,6 +1423,9 @@ function HomeScreen(props: {
                     const dimmed = pending && !isOpening;
                     // B1 · ปุ่มลัด "ถ่ายรูปก่อน" โชว์เฉพาะตู้ที่ยัง "รอเก็บ" (ยังไม่มีร่าง/ไม่เสีย/ตั้ง baseline แล้ว)
                     const canPhotoFirst = !isDraft && !isSkipped && !isAwaiting;
+                    // 🆕 คืนตุ๊กตา — โชว์ปุ่มเฉพาะตู้ที่ "มีของในตู้ตอนนี้" (จาก server ledger · ไม่ใช่ demo/ตู้เสีย)
+                    const dollCount = inMachineByMachine[m.id]?.length ?? 0;
+                    const canReturn = dollCount > 0 && !isSkipped && !isAwaiting;
                     return (
                       <div key={m.id} style={{ display: "flex", alignItems: "stretch", gap: 8, opacity: dimmed ? 0.5 : 1 }}>
                         <button type="button" disabled={pending} onClick={() => onOpen(m)}
@@ -1408,6 +1458,15 @@ function HomeScreen(props: {
                             style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#F5F5FE", border: "1px solid #D9D6F5", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#4F46E5" }}>
                             <Camera size={19} strokeWidth={2} />
                             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>ถ่ายก่อน</span>
+                          </button>
+                        )}
+                        {/* 🆕 ปุ่ม "คืนตุ๊กตา" — เอาตุ๊กตาออกจากตู้ กลับเข้าคลังสาขา (ราย SKU + รูป) */}
+                        {canReturn && (
+                          <button type="button" disabled={pending} aria-label={`คืนตุ๊กตาจากตู้ ${m.code} เข้าคลัง`} title="เอาตุ๊กตาออก / คืนเข้าคลัง"
+                            onClick={() => onReturn(m)} className={pending ? "" : "co-tap"}
+                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#EFFAF3", border: "1px solid #C8E9D3", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#15803D" }}>
+                            <PackageOpen size={19} strokeWidth={2} />
+                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>คืนของ</span>
                           </button>
                         )}
                       </div>
@@ -2043,6 +2102,230 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
         {pending ? "กำลังรับ…" : "กดรับสินค้า"}
       </button>
     </div>
+  );
+}
+
+/* ─────────────────── 🆕 คืนตุ๊กตาจากตู้เข้าคลัง (return-dolls · ราย SKU + รูป + ยืนยันจำนวนเดิม) ───────────────────
+ * bottom-sheet มือถือ · 3 ขั้นในจอเดียว:
+ *   1) เลือกตุ๊กตาที่จะคืน (รายการในตู้ · รูป + ชื่อ/SKU + "ในตู้ N ตัว") — มีตัวเดียว preselect
+ *   2) ยืนยันจำนวนเดิม (โชว์ "ในตู้ N ตัว" เด่น ๆ · ให้กดยืนยันก่อนกรอกจำนวนคืน)
+ *   3) กรอกจำนวนที่เอาออก/คืน (พิมพ์ได้ · −/+ · clamp [0, ในตู้]) + โชว์ "ของว่างในคลัง A → A+N"
+ * ทุกเลขที่โชว์มาจาก server loader (dolls[].qty, netAvailable) — ไม่ใช่ client เดา (ตรงกับที่ server enforce).
+ * clientKey = crypto.randomUUID ครั้งเดียวตอนเปิด sheet (stable ข้าม retry) → กดซ้ำ/double-tap = คืนครั้งเดียว. */
+function ReturnDollsSheet({ machine, dolls, netAvailable, usingDemo, onClose }: {
+  machine: AppMachine;
+  dolls: InMachineDoll[];
+  netAvailable: Record<string, number>; // productId → "ของว่างในคลัง" (คลัง − ในตู้) จาก server
+  usingDemo: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  // เลือกตัวเดียวอัตโนมัติเมื่อในตู้มีสินค้าเดียว (CEO: "มีตัวเดียว preselect")
+  const [selectedId, setSelectedId] = useState<string | null>(dolls.length === 1 ? dolls[0].productId : null);
+  // ยืนยันจำนวนเดิม (CEO: "ยืนยันจำนวนเดิม") — ต้องกดก่อนถึงจะกรอกจำนวนคืนได้
+  const [qtyConfirmed, setQtyConfirmed] = useState(false);
+  // จำนวนที่เอาออก/คืน (null = ยังไม่กรอก) — พิมพ์ได้ + −/+ · clamp ตอน submit
+  const [qty, setQty] = useState<Counted>(null);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  // clientKey เดียวต่อการ "เปิด sheet 1 ครั้ง" (idempotency · UUID) — stable ข้าม retry (double-tap ไม่คืนซ้ำ)
+  const [clientKey] = useState(() => genClientKey());
+
+  const selected = dolls.find((d) => d.productId === selectedId) ?? null;
+  const inMachineQty = selected?.qty ?? 0;
+  const qtyNum = qty == null ? 0 : qty;
+  // ยอดคืนต้องอยู่ใน [1, ในตู้] — เกิน/≤0 = บล็อกส่ง (server ก็ enforce อีกชั้น)
+  const qtyValid = qtyNum > 0 && qtyNum <= inMachineQty;
+  const nudge = (delta: number) => {
+    const next = Math.max(0, Math.min(inMachineQty, qtyNum + delta));
+    setQty(next);
+  };
+  // "ของว่างในคลัง" ปัจจุบัน + หลังคืน (จาก server net-available · โชว์ให้เห็นคลังเพิ่มขึ้น)
+  const roomNow = selected ? netAvailable[selected.productId] ?? 0 : 0;
+  const roomAfter = roomNow + qtyNum;
+
+  // เปลี่ยนสินค้าที่เลือก → รีเซ็ตขั้นยืนยัน + จำนวน (กันจำนวนของตัวก่อนหน้าค้าง)
+  function pick(pid: string) {
+    setSelectedId(pid);
+    setQtyConfirmed(false);
+    setQty(null);
+    setError(null);
+    setOkMsg(null);
+  }
+
+  function submit() {
+    if (!selected || !qtyValid || pending) return;
+    setError(null);
+    setOkMsg(null);
+    // demo → optimistic (ไม่มี backend · ปิด sheet)
+    if (usingDemo || isDemo(machine.id)) {
+      setOkMsg(`คืน ${qtyNum} ตัวเข้าคลังแล้ว (ตัวอย่าง)`);
+      setTimeout(onClose, 900);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const res = await returnDollsToStock({
+          machineId: machine.id,
+          productId: selected.productId,
+          qty: qtyNum,
+          clientKey, // UUID เดียวต่อ sheet → กดซ้ำ = คืนครั้งเดียว (idempotent ที่ server)
+        });
+        if (!res.ok) {
+          setError(res.error || "คืนไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return; // ค้างที่ sheet ให้เห็น error (ไม่ปิด)
+        }
+        // เลขที่โชว์ = server-computed (inMachineAfter) — ยอดจริงหลังคืน
+        setOkMsg(`คืน ${qtyNum} ตัวเข้าคลังแล้ว · เหลือในตู้ ${res.data.inMachineAfter}`);
+        router.refresh(); // reload loader → ยอดในตู้/ของว่างในคลังอัปเดต
+        setTimeout(onClose, 1100);
+      } catch {
+        setError("คืนไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`คืนตุ๊กตาจากตู้ ${machine.code} เข้าคลัง`}
+      style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+    >
+      {/* backdrop — แตะเพื่อปิด (ยกเว้นกำลังส่ง) */}
+      <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: pending ? "default" : "pointer" }} />
+      {/* sheet */}
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", maxHeight: "88%", overflowY: "auto", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4 }}>
+          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#EFFAF3", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <PackageOpen size={18} strokeWidth={2} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>เอาตุ๊กตาออก · คืนเข้าคลัง</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ <span className="num">{machine.code}</span> · {machine.branch}</div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }} className="co-tap"
+            style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={17} color="#5A6270" strokeWidth={2.2} />
+          </button>
+        </div>
+
+        {dolls.length === 0 ? (
+          <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14, marginTop: 10 }}>
+            <EmptyState icon={<Inbox size={28} strokeWidth={1.6} />} title="ตู้นี้ไม่มีตุ๊กตาในตู้" sub="เติมตุ๊กตาก่อน แล้วค่อยคืนเข้าคลัง" />
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+            {/* 1) เลือกตุ๊กตาที่จะคืน — รายการในตู้ (รูป + ชื่อ/SKU + ในตู้ N ตัว) */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54" }}>เลือกตุ๊กตาที่จะคืน</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {dolls.map((d) => {
+                const active = d.productId === selectedId;
+                return (
+                  <button key={d.productId} type="button" onClick={() => pick(d.productId)}
+                    className="co-tap"
+                    style={{ display: "flex", alignItems: "center", gap: 11, minHeight: 60, background: active ? "#F2FBF5" : "#fff", border: `1.5px solid ${active ? "#BFE6CB" : "#E8EAED"}`, borderRadius: 13, padding: "10px 12px", textAlign: "left", cursor: "pointer" }}>
+                    <DollThumb imageUrl={d.imageUrl} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                      <div style={{ fontSize: 11, color: "#9AA1AB" }} className="num">{d.sku} · ในตู้ {d.qty} ตัว</div>
+                    </div>
+                    {active && <Check size={18} color="#15803D" strokeWidth={2.6} />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {selected && (
+              <>
+                {/* 2) ยืนยันจำนวนเดิม — โชว์ "ในตู้ N ตัว" เด่น · กดยืนยันก่อนกรอกจำนวนคืน */}
+                <div style={{ background: "#F6F7FA", border: "1px solid #E8EAED", borderRadius: 14, padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11.5, color: "#6B7280" }}>ตอนนี้ในตู้มี</div>
+                    <div className="num" style={{ fontSize: 24, fontWeight: 700, color: "#1A1D21" }}>{inMachineQty} <span style={{ fontSize: 13, fontWeight: 600, color: "#6B7280" }}>ตัว</span></div>
+                  </div>
+                  {qtyConfirmed ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: "#15803D", background: "#E7F4EC", borderRadius: 20, padding: "6px 12px" }}>
+                      <Check size={14} strokeWidth={2.6} /> ยืนยันแล้ว
+                    </span>
+                  ) : (
+                    <button type="button" onClick={() => setQtyConfirmed(true)} className="co-tap"
+                      style={{ minHeight: 44, fontSize: 13, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: "10px 16px", borderRadius: 11, cursor: "pointer" }}>
+                      ยืนยันจำนวนนี้
+                    </button>
+                  )}
+                </div>
+
+                {/* 3) กรอกจำนวนที่เอาออก/คืน — พิมพ์ได้ + −/+ · clamp [0, ในตู้] (เปิดหลังยืนยัน) */}
+                {qtyConfirmed && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <FieldLabel>จำนวนที่เอาออก / คืน</FieldLabel>
+                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                      <button type="button" aria-label="ลด" onClick={() => nudge(-1)} disabled={qtyNum <= 0} className="co-tap"
+                        style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: 12, border: "1.5px solid #E3E6EA", background: "#F6F7FA", fontSize: 24, fontWeight: 700, color: "#454B54", display: "flex", alignItems: "center", justifyContent: "center", cursor: qtyNum <= 0 ? "not-allowed" : "pointer", opacity: qtyNum <= 0 ? 0.5 : 1 }}>−</button>
+                      <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0"
+                        value={qty == null ? "" : String(qty)}
+                        onChange={(e) => {
+                          // strip อักขระที่ไม่ใช่ตัวเลข + clamp ไม่ให้เกินยอดในตู้ (mirror CountField)
+                          const raw = e.target.value.replace(/[^0-9]/g, "");
+                          if (raw === "") { setQty(null); return; }
+                          setQty(Math.min(inMachineQty, Number(raw)));
+                        }}
+                        className="num"
+                        style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 22, fontWeight: 700, padding: "13px 10px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+                      <button type="button" aria-label="เพิ่ม" onClick={() => nudge(1)} disabled={qtyNum >= inMachineQty} className="co-tap"
+                        style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: 12, border: "none", background: "#4F46E5", color: "#fff", fontSize: 24, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", cursor: qtyNum >= inMachineQty ? "not-allowed" : "pointer", opacity: qtyNum >= inMachineQty ? 0.5 : 1 }}>+</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9AA1AB" }} className="num">คืนได้สูงสุด {inMachineQty} ตัว</div>
+
+                    {/* 4) context: ของว่างในคลังของ SKU นี้ เพิ่มขึ้นหลังคืน (เลขจาก server net-available) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EFFAF3", border: "1px solid #C8E9D3", borderRadius: 11, padding: "10px 13px" }}>
+                      <span style={{ fontSize: 12, color: "#256B3E" }}>ของว่างในคลังของ SKU นี้</span>
+                      <span style={{ flex: 1 }} />
+                      <span className="num" style={{ fontSize: 13.5, fontWeight: 700, color: "#256B3E" }}>{roomNow}</span>
+                      <ChevronRight size={14} color="#7FBF97" strokeWidth={2.4} />
+                      <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#15803D" }}>{roomAfter}</span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {error && (
+              <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+            )}
+            {okMsg && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "9px 12px", fontSize: 12, color: "#15803D", fontWeight: 600, lineHeight: 1.4 }}>
+                <Check size={15} strokeWidth={2.6} />{okMsg}
+              </div>
+            )}
+
+            {/* ปุ่มคืน — บล็อกถ้ายังไม่เลือก/ยังไม่ยืนยัน/จำนวนไม่ถูกต้อง (server enforce ซ้ำอีกชั้น) */}
+            <button type="button" onClick={submit} disabled={!selected || !qtyConfirmed || !qtyValid || pending || !!okMsg}
+              className={(!selected || !qtyConfirmed || !qtyValid || pending || !!okMsg) ? "" : "co-tap"}
+              style={{ width: "100%", minHeight: 50, fontSize: 14.5, fontWeight: 700, color: "#fff", background: (!qtyConfirmed || !qtyValid || !!okMsg) ? "#A8AEB8" : "#15803D", border: "none", padding: 14, borderRadius: 13, cursor: (!selected || !qtyConfirmed || !qtyValid || pending || !!okMsg) ? "not-allowed" : "pointer", opacity: pending ? 0.6 : 1, marginTop: 2 }}>
+              {pending ? "กำลังคืน…" : qtyValid ? `คืน ${qtyNum} ตัวเข้าคลัง` : "เลือกตุ๊กตา + ใส่จำนวนก่อน"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// รูปตุ๊กตาเล็ก (thumbnail) — มีรูป = แสดงรูป · ไม่มี = กล่อง placeholder (mirror ProductCountCard)
+function DollThumb({ imageUrl }: { imageUrl: string | null }) {
+  if (imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={imageUrl} alt="" style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: 11, objectFit: "cover", background: "#F1F2F5" }} />;
+  }
+  return (
+    <span style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: 11, background: "#F1F2F5", color: "#B9BEC7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Inbox size={18} strokeWidth={1.7} />
+    </span>
   );
 }
 
