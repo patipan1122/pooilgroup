@@ -1236,6 +1236,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         icon: UsersIcon,
         adminOnly: true,
       },
+      {
+        // ตั้งค่า DC — เรตค่าขนส่งจีน-ไทย + เชื่อม Google Drive (ที่เก็บรูปสินค้า)
+        href: "/dc/office/settings",
+        label: "ตั้งค่า",
+        icon: Settings,
+        adminOnly: true,
+      },
     ],
   },
 };
