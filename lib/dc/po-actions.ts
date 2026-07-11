@@ -785,7 +785,7 @@ export async function unreceivePo(poIdRaw: string): Promise<PoActionResult> {
   // ── pre-flight (all-or-nothing): ใบรับ "ทุกใบ" ต้องย้อนได้ก่อน แตะอะไร ──
   //    กันเคส PO หลายใบรับ ที่ใบแรกย้อนได้แต่ใบหลังถูกเบิกออกไปแล้ว → ลบครึ่งใบ (เหมือน deletePurchaseOrder)
   const blocked = await assertReceiptsReversible(orgId, grns.map((g) => g.id));
-  if (blocked) return { ok: false, error: blocked };
+  if (blocked) return { ok: false, error: blocked.message };
 
   // ลบทีละใบผ่าน deleteGoodsReceipt (reuse: block-if-issued + stock reversal + TRCloud void + outbox + log).
   // pre-flight ผ่านแล้ว → ปกติลบครบ · ลบก่อน (ตัดสต๊อก) แล้วค่อย flip สถานะ.

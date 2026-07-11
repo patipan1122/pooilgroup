@@ -29,7 +29,8 @@ import { deleteStockIn } from "@/lib/ledger/trcloud-inventory";
 
 export type DeleteDocResult =
   | { ok: true; summary: string }
-  | { ok: false; error: string };
+  // blockedProductId → ลบไม่ได้เพราะของถูกเบิก/โอนออก · client เด้งไปหน้า timeline สินค้าตัวนี้เพื่อจัดการก่อนลบ
+  | { ok: false; error: string; blockedProductId?: string };
 
 type Deleter = { orgId: string; userId: string; userName: string };
 
@@ -127,10 +128,13 @@ async function loadGrn(orgId: string, grnId: string): Promise<GrnRecord | null> 
 }
 
 /**
- * ตรวจว่าใบรับ (GRN) เหล่านี้ "ย้อนได้ไหม" — ถ้าของถูกเบิก/โอนออกไปจนสต๊อกจะติดลบ → คืนชื่อสินค้าที่ติด.
- * คืน null = ย้อนได้ทั้งหมด · คืน string = เหตุผลบล็อก.
+ * ตรวจว่าใบรับ (GRN) เหล่านี้ "ย้อนได้ไหม" — ถ้าของถูกเบิก/โอนออกไปจนสต๊อกจะติดลบ → คืนเหตุผล + สินค้าที่ติด.
+ * คืน null = ย้อนได้ทั้งหมด · คืน { message, productId } = เหตุผลบล็อก + สินค้าตัวแรกที่ติด (ให้ client ลิงก์ timeline).
  */
-export async function assertReceiptsReversible(orgId: string, grnIds: string[]): Promise<string | null> {
+export async function assertReceiptsReversible(
+  orgId: string,
+  grnIds: string[],
+): Promise<{ message: string; productId: string } | null> {
   if (grnIds.length === 0) return null;
   const movements = await prisma.dcStockMovement.findMany({
     where: { orgId, refType: "grn", refId: { in: grnIds } },
@@ -150,7 +154,10 @@ export async function assertReceiptsReversible(orgId: string, grnIds: string[]):
     if (onHand < g.qty) {
       const p = await prisma.dcProduct.findUnique({ where: { id: g.productId }, select: { name: true, sku: true } });
       const name = p ? `${p.name} (${p.sku})` : g.productId;
-      return `สินค้า "${name}" ถูกเบิก/โอนออกไปแล้ว (คงเหลือ ${onHand} แต่รับเข้าไว้ ${g.qty}) — ลบใบรับไม่ได้ ต้องคืน/ปรับของก่อน`;
+      return {
+        message: `สินค้า "${name}" ถูกเบิก/โอนออกไปแล้ว (คงเหลือ ${onHand} แต่รับเข้าไว้ ${g.qty}) — ลบใบรับไม่ได้ ต้องคืน/ปรับของก่อน`,
+        productId: g.productId,
+      };
     }
   }
   return null;
@@ -260,7 +267,7 @@ export async function deleteGoodsReceipt(grnId: string): Promise<DeleteDocResult
   if (!grn) return { ok: false, error: "ไม่พบใบรับสินค้านี้ในองค์กรของคุณ" };
 
   const blocked = await assertReceiptsReversible(g.deleter.orgId, [id]);
-  if (blocked) return { ok: false, error: blocked };
+  if (blocked) return { ok: false, error: blocked.message, blockedProductId: blocked.productId };
 
   const res = await deleteGrnCore(grn, g.deleter);
   if (res.ok) revalidateDc();
@@ -297,7 +304,7 @@ export async function deletePurchaseOrder(poId: string): Promise<DeleteDocResult
 
   // pre-flight: ใบรับทั้งหมดต้องย้อนได้ (ไม่งั้นบล็อกทั้ง PO ก่อนแตะอะไร)
   const blocked = await assertReceiptsReversible(orgId, grnIds);
-  if (blocked) return { ok: false, error: blocked };
+  if (blocked) return { ok: false, error: blocked.message, blockedProductId: blocked.productId };
 
   // 1) ลบใบรับทีละใบ (คืนสต๊อก + TRCloud + log · cascadedFrom = po)
   let receiptsDeleted = 0;

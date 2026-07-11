@@ -295,7 +295,7 @@ export function CountWorkspace({
             <span className="dc-offline-badge">
               <CloudOff size={13} />
               {online
-                ? `เก็บในเครื่อง ${unsynced} รายการ — ยังไม่ซิงค์`
+                ? `นับค้างไว้ ${unsynced} รายการ · ยังไม่บันทึก — กดปุ่ม “บันทึกใบนับ” ด้านล่าง`
                 : `ออฟไลน์ — เก็บในเครื่อง ${unsynced} รายการ`}
             </span>
           )}
@@ -1155,22 +1155,42 @@ function PoCountPickerSheet({
               <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>ยังไม่มีใบ PO ที่รับเข้าคลังนี้</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pos.map((p) => (
-                  <button
-                    key={p.poId}
-                    type="button"
-                    onClick={() => void openPo(p.poId)}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", border: "1.5px solid var(--dc-line)", background: "var(--dc-paper)", borderRadius: 12, padding: "13px 14px", cursor: "pointer" }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.poCode}</div>
-                      <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
-                    </div>
-                    <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
-                      <Package size={15} /> {p.lineCount} รายการ
-                    </div>
-                  </button>
-                ))}
+                {pos.map((p) => {
+                  // Fix 5a — ความคืบหน้าการนับต่อใบ "ตั้งแต่หน้าเลือก": เทียบ productIds ในใบ vs ที่อยู่ในใบนับแล้ว
+                  const counted = p.productIds.filter((id) => inSheetIds.has(id)).length;
+                  const total = p.productIds.length;
+                  const done = total > 0 && counted >= total;
+                  const some = counted > 0 && !done;
+                  return (
+                    <button
+                      key={p.poId}
+                      type="button"
+                      onClick={() => void openPo(p.poId)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", border: `1.5px solid ${done ? "#bfe3cb" : "var(--dc-line)"}`, background: done ? "#f2fbf5" : "var(--dc-paper)", borderRadius: 12, padding: "13px 14px", cursor: "pointer" }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.poCode}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
+                      </div>
+                      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
+                          <Package size={15} /> {p.lineCount} รายการ
+                        </span>
+                        {done ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 800, color: "#1f8a55", whiteSpace: "nowrap" }}>
+                            <Check size={13} /> นับครบแล้ว
+                          </span>
+                        ) : some ? (
+                          <span style={{ fontSize: 12, fontWeight: 800, color: "#b07b15", whiteSpace: "nowrap" }}>
+                            นับแล้ว {counted}/{total}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>ยังไม่ได้นับ</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )
           ) : detailLoading ? (

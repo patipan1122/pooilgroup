@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Package, FileText, Search } from "lucide-react";
-import { listPosForMoveAction, getPoFulfillmentAction } from "@/lib/dc/po-move-actions";
+import { listOfficePosForBrowse, getOfficePoFulfillment } from "@/lib/dc/po-move-actions";
 import { DcThumb } from "@/components/dc/product-image";
 import type { ReceivablePoForMove, PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
 
@@ -44,7 +44,7 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
     setPosError(null);
     void (async () => {
       try {
-        const res = await listPosForMoveAction(warehouseId);
+        const res = await listOfficePosForBrowse(warehouseId);
         if (cancelled) return;
         if (!res.ok) {
           setPosError(res.error);
@@ -72,7 +72,7 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
       setDetailError(null);
       setDetail(null);
       try {
-        const res = await getPoFulfillmentAction(poId, warehouseId);
+        const res = await getOfficePoFulfillment(poId, warehouseId);
         if (!res.ok) {
           setDetailError(res.error);
           return;
@@ -125,6 +125,15 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
                 {detail.supplierName ?? "ไม่ระบุผู้ขาย"} · {detail.lines.length} รายการในใบ
               </div>
             </div>
+
+            {/* คำอธิบายป้าย — กัน CEO งงว่าเลขแต่ละตัวคืออะไร (โดยเฉพาะ "เหลือในใบ" vs "คงเหลือจริง") */}
+            {detail.lines.length > 0 && (
+              <div style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.6, background: "#f7f8fb", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 13px", marginBottom: 12 }}>
+                <b style={{ color: "var(--ink)" }}>เหลือในใบ</b> = ของจากใบนี้ที่ยังไม่ถูกเบิก/โอนออก (ปรับไม่ให้เกินของจริง) ·{" "}
+                <b style={{ color: "var(--ink)" }}>คงเหลือจริง</b> = ของจริงในคลังตอนนี้ ·{" "}
+                <b style={{ color: "var(--ink)" }}>เบิก/โอนแล้ว</b> = เบิก/โอนออกโดยอ้าง “ใบ PO นี้”
+              </div>
+            )}
 
             {detail.lines.length === 0 ? (
               <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14, background: "#fff", border: "1px solid var(--border)", borderRadius: 14 }}>

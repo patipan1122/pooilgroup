@@ -5,11 +5,15 @@
 //   received  = Σ DcGoodsReceiptLine.qtyReceived (รับเข้าจริงกี่ชิ้น · จาก GRN ของใบนี้)
 //   movedOut  = Σ โอน (DcTransferLine ที่ transfer.poId=ใบนี้ · ไม่นับ CANCELLED)
 //             + Σ เบิก (ISSUE movement ที่ผูก DcIssue.poId=ใบนี้)
-//   remaining = max(0, received − movedOut)      ("เหลือในใบ PO นี้" ที่ยังไม่ถูกโอน/เบิกออก)
+//   remaining = max(0, min(received − movedOut, onHand))  ("เหลือในใบ" — cap ไม่ให้เกินของจริง)
 //   onHand    = ยอดคงเหลือจริงในคลัง (DcStockBalance) — แสดงคู่กันเพื่อเห็นทั้ง "ในใบ" และ "ของจริง"
 //
 // ★ money/stock note: poId เป็น "หลักฐานเชื่อมโยง" ไม่ได้ล็อกล็อตทางกายภาพ. การตัดสต๊อกจริง
 //   ยังตัดจากยอดรวมต่อคลัง (onHand guard เดิม). remaining ใช้กันไม่ให้ ledger ของใบติดลบ.
+// ★ cap remaining ≤ onHand (2026-07-11 · CEO): ถ้าของถูกเบิก/โอนออกแบบ "ไม่ได้อ้างใบ PO"
+//   (movement ไม่มี po_id) → movedOut นับไม่ถึง → doc-remaining ค้างสูงเกินจริง (เช่น เหลือในใบ 24
+//   ทั้งที่คงเหลือจริง 0 = เลขผี). cap ที่ onHand ให้ทั้ง ledger/picker/count ไม่มีวันโชว์หรือปล่อย
+//   เบิก "ของที่ไม่มีอยู่จริง". consumer (po-move-picker/products-browse) cap ซ้ำที่ onHand อยู่แล้ว.
 
 import { prisma } from "@/lib/prisma";
 import { DcMoveKind } from "@/lib/generated/prisma/enums";
@@ -40,13 +44,14 @@ export type PoFulfillment = {
 
 /**
  * รายละเอียด fulfillment ของใบ PO ใบเดียว (per-product ledger + onHand).
- * scope ด้วย orgId เสมอ. onHand อ่านที่ warehouseId ถ้าระบุ (ไม่งั้นรวมทุกคลัง).
+ * scope ด้วย orgId เสมอ. onHand อ่านที่ warehouseId ถ้าระบุ ·
+ *   warehouseIds (หลายคลัง) → รวม onHand ข้ามคลังที่มีสิทธิ์ (office "รวมทุกคลัง") · ไม่ระบุเลย = ทุกคลัง.
  * คืน null ถ้าไม่พบใบใน org.
  */
 export async function getPoFulfillment(
   orgId: string,
   poId: string,
-  opts?: { warehouseId?: string },
+  opts?: { warehouseId?: string; warehouseIds?: string[] },
 ): Promise<PoFulfillment | null> {
   const po = await prisma.dcPurchaseOrder.findFirst({
     where: { id: poId, orgId },
@@ -131,7 +136,11 @@ export async function getPoFulfillment(
       where: {
         orgId,
         productId: { in: productIds },
-        ...(opts?.warehouseId ? { warehouseId: opts.warehouseId } : {}),
+        ...(opts?.warehouseId
+          ? { warehouseId: opts.warehouseId }
+          : opts?.warehouseIds && opts.warehouseIds.length
+            ? { warehouseId: { in: opts.warehouseIds } }
+            : {}),
       },
       select: { productId: true, qtyOnHand: true },
     });
@@ -145,7 +154,9 @@ export async function getPoFulfillment(
     const ordered = orderedByProduct.get(pid) ?? 0;
     const received = receivedByProduct.get(pid) ?? 0;
     const movedOut = movedByProduct.get(pid) ?? 0;
-    const remaining = Math.max(0, received - movedOut);
+    const onHand = onHandByProduct.get(pid) ?? 0;
+    // "เหลือในใบ" = received − movedOut แต่ "ไม่เกินของจริงในคลัง" (onHand) — กันเลขผี (ดูหัวไฟล์).
+    const remaining = Math.max(0, Math.min(received - movedOut, onHand));
     return {
       productId: pid,
       sku: m.sku,
@@ -156,7 +167,7 @@ export async function getPoFulfillment(
       received,
       movedOut,
       remaining,
-      onHand: onHandByProduct.get(pid) ?? 0,
+      onHand,
     };
   });
   // เรียง: มีของเหลือให้โอน/เบิกก่อน แล้วตามชื่อ
@@ -190,20 +201,27 @@ export type ReceivablePoForMove = {
   supplierName: string | null;
   status: string;
   lineCount: number;
+  /** productId (unique) ของสินค้าในใบ — ใช้โชว์ความคืบหน้าการนับต่อใบตั้งแต่หน้าเลือก (count picker). */
+  productIds: string[];
   receivedAt: Date | null;
 };
 
 /**
  * รายการใบ PO ที่ "เคยรับเข้าคลังแล้ว" (มี GRN) → เอาไว้ให้ผู้ใช้เลือกตอนโอน/เบิก "เป็นใบ PO".
- * ถ้าระบุ warehouseId → เฉพาะใบที่รับเข้าคลังนั้น (ให้ตรงกับคลังต้นทางที่จะโอน/เบิก).
+ * ระบุ warehouseId → เฉพาะใบที่รับเข้าคลังนั้น · warehouseIds → หลายคลัง (office รวมทุกคลังที่มีสิทธิ์).
  * scope orgId เสมอ · เรียงใบที่รับล่าสุดก่อน · จำกัด 100 ใบ.
  */
 export async function listReceivablePosForMove(
   orgId: string,
-  warehouseId?: string,
+  opts?: { warehouseId?: string; warehouseIds?: string[] },
 ): Promise<ReceivablePoForMove[]> {
+  const whFilter = opts?.warehouseId
+    ? { warehouseId: opts.warehouseId }
+    : opts?.warehouseIds && opts.warehouseIds.length
+      ? { warehouseId: { in: opts.warehouseIds } }
+      : {};
   const grns = await prisma.dcGoodsReceipt.findMany({
-    where: { orgId, ...(warehouseId ? { warehouseId } : {}) },
+    where: { orgId, ...whFilter },
     select: { poId: true, receivedAt: true },
     orderBy: { receivedAt: "desc" },
   });
@@ -224,19 +242,24 @@ export async function listReceivablePosForMove(
       poCode: true,
       status: true,
       supplier: { select: { name: true } },
-      _count: { select: { lines: true } },
+      lines: { select: { productId: true } },
     },
   });
 
   return pos
-    .map((p) => ({
-      poId: p.id,
-      poCode: p.poCode,
-      supplierName: p.supplier?.name ?? null,
-      status: p.status,
-      lineCount: p._count.lines,
-      receivedAt: latestReceivedByPo.get(p.id) ?? null,
-    }))
+    .map((p) => {
+      // unique products ต่อใบ (fulfillment detail ก็ group ต่อ product) → lineCount + productIds ตรงกัน
+      const productIds = [...new Set(p.lines.map((l) => l.productId))];
+      return {
+        poId: p.id,
+        poCode: p.poCode,
+        supplierName: p.supplier?.name ?? null,
+        status: p.status,
+        lineCount: productIds.length,
+        productIds,
+        receivedAt: latestReceivedByPo.get(p.id) ?? null,
+      };
+    })
     .sort((a, b) => (b.receivedAt?.getTime() ?? 0) - (a.receivedAt?.getTime() ?? 0))
     .slice(0, 100);
 }

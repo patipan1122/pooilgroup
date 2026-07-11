@@ -78,6 +78,13 @@ export function DcDeleteButton({
       if (res.ok) {
         onDeleted?.();
         router.refresh();
+      } else if (res.blockedProductId) {
+        // ลบไม่ได้เพราะของถูกเบิก/โอนออกไปแล้ว → ไม่ตันเหมือน alert เดิม:
+        //   เสนอพาไปหน้า "ประวัติสินค้า" (timeline) ดูว่าของไปใบไหน แล้วย้อน/ปรับก่อน ค่อยกลับมาลบ
+        const go = window.confirm(
+          `${res.error}\n\nกด “ตกลง” เพื่อไปดูประวัติสินค้าตัวนี้ (ของถูกเบิก/โอนไปใบไหน) แล้วย้อน/ปรับก่อนค่อยลบ`,
+        );
+        if (go) router.push(`/dc/office/products/${res.blockedProductId}/timeline`);
       } else {
         window.alert(res.error);
       }
