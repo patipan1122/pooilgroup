@@ -130,7 +130,7 @@ async function loadGrn(orgId: string, grnId: string): Promise<GrnRecord | null> 
  * ตรวจว่าใบรับ (GRN) เหล่านี้ "ย้อนได้ไหม" — ถ้าของถูกเบิก/โอนออกไปจนสต๊อกจะติดลบ → คืนชื่อสินค้าที่ติด.
  * คืน null = ย้อนได้ทั้งหมด · คืน string = เหตุผลบล็อก.
  */
-async function assertReceiptsReversible(orgId: string, grnIds: string[]): Promise<string | null> {
+export async function assertReceiptsReversible(orgId: string, grnIds: string[]): Promise<string | null> {
   if (grnIds.length === 0) return null;
   const movements = await prisma.dcStockMovement.findMany({
     where: { orgId, refType: "grn", refId: { in: grnIds } },

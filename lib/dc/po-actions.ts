@@ -23,17 +23,19 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
 import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
 import { postGrn } from "@/lib/dc/grn-actions";
 import { computePoFreightSatang } from "@/lib/dc/freight";
 import { loadFreightRates } from "@/lib/dc/freight-rates";
+import { deleteGoodsReceipt, assertReceiptsReversible } from "@/lib/dc/delete-actions";
 
 const LIST_PATH = "/dc/office/purchasing";
 
 export type PoActionResult =
-  | { ok: true; id: string }
+  | { ok: true; id: string; message?: string; warn?: string }
   | { ok: false; error: string };
 
 /** จุดเริ่มของใบ: จีน (สั่งเป็นหยวน) หรือ ไทย (ซื้อในประเทศ เป็นบาท) */
@@ -728,6 +730,85 @@ export async function revertPoStatus(id: string): Promise<PoActionResult> {
   if (res.count === 0) return { ok: false, error: "สถานะใบเปลี่ยนไปแล้ว ลองรีเฟรช" };
   revalidate(id);
   return { ok: true, id };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Wave 5 · ย้อนการรับเข้าคลัง (unreceive PO) — 💰 MONEY-CRITICAL
+// ────────────────────────────────────────────────────────────────────────────
+// เจตนา: super_admin กด "ย้อนการรับเข้า" ใบที่รับแล้ว → "เหมือนไม่เคยรับ":
+//   ลบใบรับ (GRN) ของใบนี้ทั้งหมดผ่าน deleteGoodsReceipt (โค้ดที่ ship+เทสแล้ว) →
+//   ตัดสต๊อกกลับ + ล้างต้นทุน (cost-layer) + void เอกสาร TRCloud + ลบ outbox +
+//   เขียน DcDeletionLog (snapshot กู้ได้) แล้วดึงสถานะใบกลับ AT_WAREHOUSE.
+//   ไม่มีใบรับค้างสถานะกำกวมให้ระบบอื่นอ่านผิด → ไม่มี double-reversal /
+//   TRCloud re-post / badge เพี้ยน / picker ผี.
+//
+// 🏗️ ความปลอดภัย (RULE I · money guardrails):
+//   • block-if-issued — deleteGoodsReceipt เรียก assertReceiptsReversible เอง
+//     (ถ้าของถูกเบิก/โอนออกไปแล้ว → คืน error → เราหยุด · ไม่ย้อนสถานะ)
+//   • stock reversal / TRCloud void / outbox delete / DcDeletionLog — สืบทอดจาก deleteGoodsReceipt ทั้งหมด
+//   • ORDER: ลบ GRN (ตัดสต๊อก) ก่อน แล้วค่อย flip สถานะ →
+//     ถ้า flip พลาด GRN หายแล้ว → received=0 → retry แค่ re-flip สถานะ (converge)
+//   • CAS flip: updateMany WHERE status ∈ {RECEIVED, PARTIAL} → race-safe
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ย้อนการรับเข้า "ทั้งใบสั่งซื้อ" (unreceive PO) — ลบใบรับ (GRN) ทุกใบผ่าน deleteGoodsReceipt
+ * (โค้ดที่ ship+เทสแล้ว) แล้วดึงสถานะใบกลับ AT_WAREHOUSE. super_admin เท่านั้น.
+ */
+export async function unreceivePo(poIdRaw: string): Promise<PoActionResult> {
+  // 🔒 super_admin gate — เหมือน delete-actions (requireDeleter ใช้ isSuperAdmin ข้างใน).
+  //    ผ่าน deleteGoodsReceipt ก็ตรวจซ้ำอีกชั้น แต่เรากันตั้งแต่ต้นทางเพื่อ error ที่ชัด + ได้ orgId.
+  const session = await requireSession();
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "ย้อนการรับเข้าได้เฉพาะผู้ดูแลสูงสุด (CEO/super_admin) เท่านั้น" };
+  }
+  const orgId = session.user.org_id;
+  const poId = (poIdRaw ?? "").trim();
+  if (!poId) return { ok: false, error: "ไม่พบใบสั่งซื้อ" };
+
+  // โหลดใบ (org-scoped)
+  const po = await prisma.dcPurchaseOrder.findFirst({
+    where: { id: poId, orgId },
+    select: { id: true, poCode: true, status: true },
+  });
+  if (!po) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+  if (po.status !== DcPoStatus.RECEIVED && po.status !== DcPoStatus.PARTIAL) {
+    return { ok: false, error: "ใบนี้ยังไม่ได้รับเข้า จึงย้อนไม่ได้" };
+  }
+
+  // ใบรับ (GRN) ทั้งหมดของใบนี้ — ลบทุกใบ (ย้อนการรับเข้าเต็ม)
+  const grns = await prisma.dcGoodsReceipt.findMany({
+    where: { orgId, poId },
+    select: { id: true, grnCode: true },
+  });
+
+  // ── pre-flight (all-or-nothing): ใบรับ "ทุกใบ" ต้องย้อนได้ก่อน แตะอะไร ──
+  //    กันเคส PO หลายใบรับ ที่ใบแรกย้อนได้แต่ใบหลังถูกเบิกออกไปแล้ว → ลบครึ่งใบ (เหมือน deletePurchaseOrder)
+  const blocked = await assertReceiptsReversible(orgId, grns.map((g) => g.id));
+  if (blocked) return { ok: false, error: blocked };
+
+  // ลบทีละใบผ่าน deleteGoodsReceipt (reuse: block-if-issued + stock reversal + TRCloud void + outbox + log).
+  // pre-flight ผ่านแล้ว → ปกติลบครบ · ลบก่อน (ตัดสต๊อก) แล้วค่อย flip สถานะ.
+  const trWarns: string[] = [];
+  for (const grn of grns) {
+    const res = await deleteGoodsReceipt(grn.id);
+    if (!res.ok) return { ok: false, error: res.error }; // block-if-issued → คืน error ตรง ๆ + ไม่ย้อนสถานะ
+    // deleteGoodsReceipt คืน DeleteDocResult (ไม่มี field warn) — เตือน TRCloud ฝังใน summary
+    if (res.summary.includes("TRCloud ต้องลบเอง")) trWarns.push(grn.grnCode);
+  }
+
+  // ── ลบ GRN หมดแล้ว → flip สถานะกลับ AT_WAREHOUSE ด้วย CAS (race-safe · เฉพาะจาก RECEIVED/PARTIAL) ──
+  await prisma.dcPurchaseOrder.updateMany({
+    where: { id: poId, orgId, status: { in: [DcPoStatus.RECEIVED, DcPoStatus.PARTIAL] } },
+    data: { status: DcPoStatus.AT_WAREHOUSE },
+  });
+
+  revalidate(poId);
+  const warn = trWarns.length
+    ? `TRCloud ต้องลบเอง — โปรดลบเอกสารรับเข้าในบัญชี TRCloud ด้วยมือ: ${trWarns.join(", ")}`
+    : undefined;
+  const message = `ย้อนการรับเข้าของ ${po.poCode} แล้ว — ดึงกลับสถานะ 'ถึงโกดังแล้ว'${warn ? ` (⚠️ ${warn})` : ""}`;
+  return { ok: true, id: poId, message, ...(warn ? { warn } : {}) };
 }
 
 // ── สร้างสินค้า/ผู้ขายแบบเร็ว (inline ในฟอร์มใบสั่งซื้อ) ─────────────────

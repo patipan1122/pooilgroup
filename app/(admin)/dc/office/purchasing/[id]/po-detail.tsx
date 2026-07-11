@@ -22,6 +22,7 @@ import {
   markAtWarehouse,
   markReadyToReceive,
   revertPoStatus,
+  unreceivePo,
   cancelPo,
   receivePo,
   recordPoPayment,
@@ -215,6 +216,9 @@ export function PoDetail({
     startTransition(async () => {
       const res = await action();
       if (res.ok) {
+        // คำเตือนหลังทำสำเร็จ (เช่น ย้อนรับเข้า: TRCloud ลบไม่สำเร็จ ต้องลบเอง) — เด้งให้ CEO เห็นแน่ ๆ
+        const warn = (res as { warn?: string | null }).warn;
+        if (warn) window.alert(warn);
         after?.();
         refresh();
       } else {
@@ -423,6 +427,29 @@ export function PoDetail({
           )}
           {status === "RECEIVED" && <div style={{ fontSize: 13.5, color: "#167a41", fontWeight: 600 }}>รับสินค้าเข้าคลังครบแล้ว ✓</div>}
           {status === "CANCELLED" && <div style={{ fontSize: 13.5, color: "#b8362a", fontWeight: 600 }}>ใบนี้ถูกยกเลิก</div>}
+
+          {/* Wave 5 — ย้อนการรับเข้าคลัง (unreceive) — super_admin เท่านั้น · เฉพาะใบที่รับแล้ว (RECEIVED/PARTIAL) */}
+          {canDelete && (status === "RECEIVED" || status === "PARTIAL") && (
+            <button
+              type="button"
+              onClick={() =>
+                run(
+                  () => unreceivePo(data.id),
+                  `⚠️ ย้อนการรับเข้าคลังของ ${data.poCode}?\nระบบจะตัดของที่รับเข้าออกจากสต๊อก + ล้างต้นทุนนำเข้า + ยกเลิกเอกสาร TRCloud แล้วดึงใบกลับสถานะ 'ถึงโกดังแล้ว'. ถ้าของถูกเบิก/โอนออกไปแล้วจะทำไม่ได้ — ต้องยกเลิกใบเบิก/ใบโอนก่อน`,
+                )
+              }
+              disabled={pending}
+              title="ย้อนการรับเข้าคลัง — คืนสต๊อก + ล้างต้นทุน + ยกเลิก TRCloud (super_admin)"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                justifySelf: "start", padding: "7px 14px", borderRadius: 9, cursor: "pointer",
+                background: "transparent", border: "1px solid #e6b6ae",
+                color: "#b8362a", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit",
+              }}
+            >
+              <RotateCcw size={13} aria-hidden /> ย้อนการรับเข้าคลัง
+            </button>
+          )}
 
           {/* ยกเลิกใบ + ลบใบ — จัดเรียงเป็นแถวเดียว (ลบ = super_admin เท่านั้น) */}
           {((canManage && (status === "DRAFT" || status === "PENDING_APPROVAL" || status === "APPROVED")) || canDelete) && (
