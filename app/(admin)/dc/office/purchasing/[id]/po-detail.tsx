@@ -37,6 +37,7 @@ import {
   type PoAuditEntry,
   type PoReceiveSummary,
 } from "@/lib/dc/po-actions";
+import { DcThumb } from "@/components/dc/product-image";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
 import type { PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
@@ -540,8 +541,7 @@ export function PoDetail({
                 <tr key={l.id} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
                   <td style={cell}>
                     {l.photoR2Key ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={photoUrl(l.photoR2Key)} alt={l.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--dc-line, #e4e4e7)" }} />
+                      <DcThumb url={photoUrl(l.photoR2Key)} alt={l.name} size={44} />
                     ) : (
                       <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
                         <ImageIcon size={16} />
@@ -675,8 +675,7 @@ function FulfillmentLedger({ fulfillment, r2PublicUrl }: { fulfillment: PoFulfil
                   <tr key={l.productId} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
                     <td style={cell}>
                       {url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={url} alt={l.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--dc-line, #e4e4e7)" }} />
+                        <DcThumb url={url} alt={l.name} size={44} />
                       ) : (
                         <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
                           <ImageIcon size={16} />
@@ -2041,8 +2040,7 @@ function ReceiveSection({
                   <tr key={l.id} style={{ borderTop: "1px solid var(--dc-line, #f0f0f2)" }}>
                     <td style={cell}>
                       {imgUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={imgUrl} alt={l.name} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--dc-line, #e4e4e7)" }} />
+                        <DcThumb url={imgUrl} alt={l.name} size={44} />
                       ) : (
                         <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
                           <ImageIcon size={16} />
