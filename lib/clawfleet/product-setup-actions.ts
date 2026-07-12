@@ -1,0 +1,271 @@
+"use server";
+
+// ClawFleet · ตู้คีบ OS — N1b "เพิ่มสินค้าใหม่ตอนตั้งค่าตู้ครั้งแรก" (MONEY/STOCK-SENSITIVE)
+// -----------------------------------------------------------------------------
+// ทำไมมี (CEO 2026-07-12):
+//   ตู้เก่าที่เพิ่งลงระบบมักมี "ตุ๊กตาเก่าอยู่ในตู้แล้ว" ที่ไม่เคยอยู่ในทะเบียนสินค้า.
+//   ตอน "ตั้งค่าตู้ครั้งแรก" (first-time setup) แม่บ้าน/พนักงานสาขา ถ่ายรูป + ตั้งชื่อ+SKU +
+//   นับว่ามีในตู้กี่ตัว → ระบบสร้างสินค้าใหม่ + บันทึกยอด "ในตู้" ตั้งต้น (ไม่มีต้นทุน).
+//   ต้นทุนจริงมาทีหลังจากการรับเข้า DC (receiving) — พนักงานไม่รู้ต้นทุน → ห้ามกรอก/ห้ามเขียนต้นทุน.
+//
+// สิทธิ์ (CEO decision):
+//   - "ตอนตั้งค่าครั้งแรก" (ตู้ยัง !isFirstBaselineLocked) + เป็นพนักงานสมาชิกจริงของสาขานั้น → เพิ่มได้
+//   - "เวลาอื่น" (ตู้ตั้งค่าไปแล้ว) → ต้องผู้จัดการ/แอดมิน (approval) เท่านั้น
+//   → gate ที่ server เสมอ (ไม่ใช่แค่ซ่อนปุ่มใน UI).
+//
+// money/stock invariant (mirror lib/clawfleet/actions.ts LOAD_TO_MACHINE + stock-actions returnDolls):
+//   "ในตู้" ของสินค้า = |Σ qty ของแถวที่ machineId = ตู้นี้ + productId นี้| (ดู stock-queries.ts:132-152).
+//   refill LOAD_TO_MACHINE เขียน qty เป็น "ลบ" (actions.ts:447) → |Σ| = จำนวนในตู้.
+//   opening ของเราต้องได้ semantics เดียวกัน → เขียน type=LOAD_TO_MACHINE, qty = −qty, machineId=ตู้.
+//   ⚠️ warehouseId = null และ "ไม่หักคลัง" — ตุ๊กตาเก่าอยู่ในตู้อยู่แล้ว ไม่ได้หยิบจากชั้นคลัง
+//   (ต่างจาก refill ที่หักของบนชั้น). เราแค่ประกาศ "ในตู้มีของตั้งต้นเท่านี้" → ไม่มี over-issue guard.
+//
+// idempotency (double-tap / offline retry ต้องไม่ได้ 2 สินค้า หรือ 2× ตุ๊กตา):
+//   clientKey (UUID จาก client · 1 ครั้ง/กด) → เก็บใน movement.refId (refTable='cf_setup_product').
+//   advisory-lock (branch, sku) ก่อนเขียน → serialize การกดพร้อมกัน → findFirst dedup แล้วค่อยสร้าง
+//   (mirror returnDollsToStock stock-actions.ts:1608-1630). ซ้ำ → คืนผลเดิม (สินค้าเดิม · ยอดเดิม).
+//   สร้างสินค้า + movement ใน $transaction เดียว → ถ้าชื่อ/SKU ชน (P2002) tx rollback ทั้งก้อน
+//   → ไม่มี movement กำพร้า (orphan). ต้นทุนเป็น 0 เสมอ → ไม่ชน cost>0 guard ใด ๆ.
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { requireCfSession, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
+import { getBranchMainWarehouseId } from "./stock-queries";
+
+const APP_PATHS = [
+  "/clawfleet/os/app",
+  "/clawfleet/os/stock",
+  "/liff/clawfleet",
+];
+
+type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+
+function err(message: string): { ok: false; error: string } {
+  return { ok: false, error: message };
+}
+
+const AddSetupProductSchema = z.object({
+  machineId: z.string().uuid("ไม่ระบุตู้"),
+  branchId: z.string().uuid("ไม่ระบุสาขา"),
+  name: z.string().trim().min(1, "กรุณากรอกชื่อสินค้า").max(200),
+  sku: z.string().trim().min(1, "กรุณากรอกรหัส SKU").max(80),
+  imageUrl: z.string().trim().url("ลิงก์รูปไม่ถูกต้อง").max(1000).optional(),
+  qty: z.number().int("จำนวนต้องเป็นจำนวนเต็ม").positive("จำนวนตุ๊กตาต้องมากกว่า 0").max(100_000),
+  // client-generated UUID ต่อการกด 1 ครั้ง (refId เป็น @db.Uuid) → กันกดซ้ำ (double-tap)
+  clientKey: z.string().uuid("clientKey ไม่ถูกต้อง"),
+});
+
+export type AddSetupProductInput = z.input<typeof AddSetupProductSchema>;
+
+const SETUP_REF_TABLE = "cf_setup_product";
+
+/**
+ * เพิ่มสินค้าใหม่ (SKU) + บันทึกตุ๊กตาตั้งต้น "ในตู้" ระหว่าง "ตั้งค่าตู้ครั้งแรก".
+ *
+ * ทำใน $transaction เดียว (atomic · ไม่มี half-written):
+ *   1) advisory-lock (branch, sku) — serialize การเพิ่มซ้อน/กดพร้อมกัน
+ *   2) idempotency: มี movement cf_setup_product ที่ refId=clientKey แล้ว → คืนผลเดิม (no-op)
+ *   3) สร้าง CfProduct { name, sku, imageUrl, unitCostCents:0, defaultPriceCoins default }
+ *      → SKU ชน [orgId,sku] = P2002 → ข้อความเป็นมิตร "มี SKU นี้แล้ว"
+ *   4) เขียน 1 opening movement { type:LOAD_TO_MACHINE, qty:−qty, machineId, warehouseId:null,
+ *      unitCostCents:0, refTable:cf_setup_product, refId:clientKey } → "ในตู้" = |Σ| = qty
+ *   5) เปิดแถว CfMachineLoadout (effectiveTo=null) ให้สินค้าใหม่เป็นของในตู้ (ถ้ายังไม่มี)
+ *   6) audit_log
+ *
+ * สิทธิ์: (ตู้ยังไม่ล็อก baseline + เป็นพนักงานสมาชิกจริงของสาขา) หรือ (ผู้จัดการ/แอดมิน).
+ */
+export async function addSetupProductWithDolls(
+  input: AddSetupProductInput,
+): Promise<Result<{ productId: string; inMachineAfter: number }>> {
+  const parsed = AddSetupProductSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const data = parsed.data;
+
+  let session: Awaited<ReturnType<typeof requireCfSession>>;
+  try {
+    session = await requireCfSession();
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const orgId = session.user.org_id;
+
+  // โหลดตู้ (org scope) — ต้องอยู่ในสาขาที่ระบุ (กัน spoof machineId ข้ามสาขา)
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: data.machineId, orgId, branchId: data.branchId },
+    select: { id: true, branchId: true, isFirstBaselineLocked: true },
+  });
+  if (!machine) return err("ไม่พบตู้ในสาขานี้");
+
+  // ── สิทธิ์ (SERVER-SIDE · CEO decision) ─────────────────────────────────────
+  // อนุญาตถ้า: (ตู้ยัง "ตั้งค่าครั้งแรก" = ยังไม่ล็อก baseline) และเป็นพนักงานสมาชิกจริงของสาขานั้น
+  //   หรือ เป็นผู้จัดการ/แอดมิน (canManage) — จัดการได้ทุกเวลา.
+  // ⚠️ ห้าม gate ด้วย userBranchIds()==='ALL' (viewer ก็ได้ 'ALL') → เช็ก membership จริง (UserBranch).
+  const canManage = isCfAdmin(session.user.role) || isCfBranchManager(session.user.role) || (await cfHasAdminPower(session));
+  let allowed = canManage;
+  if (!allowed) {
+    // พนักงานสมาชิกจริงของสาขา (isCfStaff + UserBranch) และตู้ยังตั้งค่าครั้งแรกอยู่เท่านั้น
+    if (!machine.isFirstBaselineLocked && isCfStaff(session.user.role)) {
+      const ub = await prisma.userBranch.findFirst({
+        where: { userId: session.user.id, branchId: machine.branchId },
+        select: { id: true },
+      });
+      allowed = !!ub;
+    }
+  }
+  if (!allowed) {
+    return err(
+      "เพิ่มสินค้าใหม่ได้เฉพาะตอนตั้งค่าตู้ครั้งแรก · หลังจากนั้นต้องให้ผู้จัดการอนุมัติ",
+    );
+  }
+
+  // sanitize
+  const name = data.name.trim();
+  const sku = data.sku.trim();
+  if (!name) return err("กรุณากรอกชื่อสินค้า");
+  if (!sku) return err("กรุณากรอกรหัส SKU");
+
+  // ── SKU dedup ก่อนเข้า tx (ข้อความเป็นมิตร) — unique [orgId,sku] เป็นด่านสุดท้ายใน tx ด้วย ──
+  const dupSku = await prisma.cfProduct.findFirst({
+    where: { orgId, sku },
+    select: { id: true },
+  });
+  if (dupSku) return err("รหัส SKU นี้มีอยู่แล้ว เลือกจากรายการที่มี");
+
+  const byName = session.user.name || session.user.email || "ไม่ทราบชื่อ";
+  const now = new Date();
+  // คลังหลักของสาขา — stamp บนแถว "ยอดเข้าคลัง (+N)" ให้ scope ตรงกับ RECEIPT_IN (null = ยังไม่มี main = main)
+  const mainWarehouseId = await getBranchMainWarehouseId(orgId, machine.branchId);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) 🔒 advisory-lock (branch, sku) — serialize การเพิ่มพร้อมกัน (อ่าน dedup→เขียน กันซ้ำ)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${sku}))`;
+
+      // 2) idempotency: มี opening movement ที่ clientKey นี้แล้ว → คืนผลเดิม (double-tap / retry)
+      const dup = await tx.cfStockMovement.findFirst({
+        where: {
+          orgId,
+          branchId: machine.branchId,
+          machineId: machine.id,
+          refTable: SETUP_REF_TABLE,
+          refId: data.clientKey,
+        },
+        select: { productId: true },
+      });
+      if (dup) {
+        const cur = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, machineId: machine.id, productId: dup.productId },
+          _sum: { qty: true },
+        });
+        return { productId: dup.productId, inMachineAfter: Math.abs(cur._sum.qty ?? 0) };
+      }
+
+      // 3) สร้างสินค้าใหม่ — ไม่มีต้นทุน (unitCostCents:0) · ราคาขาย/กล่อง default.
+      //    SKU ชน [orgId,sku] → P2002 → rollback ทั้ง tx (ไม่มี movement กำพร้า).
+      const product = await tx.cfProduct.create({
+        data: {
+          orgId,
+          sku,
+          name,
+          imageUrl: data.imageUrl ?? null,
+          unitCostCents: 0, // ไม่มีต้นทุน — พนักงานไม่รู้ราคา (มาทีหลังจากการรับเข้า DC)
+          // category / defaultPriceCoins ใช้ค่า default ของ schema (PLUSH / 1)
+        },
+        select: { id: true },
+      });
+
+      // 4) opening dolls-in-machine = 2 แถว "สมดุล" ให้ net-shelf = 0 (เหมือน refill ที่มี receipt +N นำ):
+      //    (A) +N เข้าคลัง (ADJUST · ยอดตุ๊กตาเก่าเข้าระบบ · ไม่มีต้นทุน)  (B) −N โหลดเข้าตู้ (LOAD_TO_MACHINE)
+      //    → net-shelf (Σ ทุกแถว) = 0 (ชั้นว่างจริง · ของอยู่ในตู้) · "ในตู้" = |Σ machineId=ตู้| = N
+      //    ★ ถ้าเขียนแถวเดียว −N → net-shelf = −N "ผี" → บล็อกเติม/รับของครั้งหน้าเพี้ยน (M−N) — adversarial review เจอ
+      //    idempotency: dedup (step 2) หาแถว machineId=ตู้ · 2 แถวเขียนใน tx เดียว → replay คืนผลเดิมทั้งคู่
+      await tx.cfStockMovement.create({
+        data: {
+          orgId,
+          branchId: machine.branchId,
+          type: "ADJUST",
+          productId: product.id,
+          machineId: null,
+          warehouseId: mainWarehouseId,
+          qty: data.qty, // +N เข้าคลัง (ยอดตั้งต้น · ไม่มีต้นทุน)
+          unitCostCents: 0,
+          refTable: SETUP_REF_TABLE,
+          refId: data.clientKey,
+          occurredAt: now,
+          createdById: session.user.id,
+          reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าเข้าระบบ)",
+        },
+      });
+      await tx.cfStockMovement.create({
+        data: {
+          orgId,
+          branchId: machine.branchId,
+          type: "LOAD_TO_MACHINE",
+          productId: product.id,
+          machineId: machine.id,
+          warehouseId: null,
+          qty: -data.qty, // −N → |Σ machineId=ตู้| = N (semantics เดียวกับ refill)
+          unitCostCents: 0,
+          refTable: SETUP_REF_TABLE,
+          refId: data.clientKey,
+          occurredAt: now,
+          createdById: session.user.id,
+          reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (โหลดเข้าตู้)",
+        },
+      });
+
+      // 5) เปิดแถว loadout ให้สินค้าใหม่เป็นของในตู้ (รองรับหลาย SKU ต่อตู้ — ไม่ปิดของเดิม).
+      //    เช็คก่อนว่ามีแถว current (effectiveTo=null) ของสินค้านี้ในตู้แล้วหรือยัง (กันซ้ำถ้า replay หลุด lock).
+      const existingLoadout = await tx.cfMachineLoadout.findFirst({
+        where: { orgId, machineId: machine.id, productId: product.id, effectiveTo: null },
+        select: { id: true },
+      });
+      if (!existingLoadout) {
+        await tx.cfMachineLoadout.create({
+          data: {
+            orgId,
+            machineId: machine.id,
+            productId: product.id,
+            pricePerPlayCoins: 1, // default · baseline สนใจ "มีสินค้าอะไรในตู้" · ราคาปรับทีหลัง
+            effectiveFrom: now,
+            effectiveTo: null,
+            setById: session.user.id,
+            notes: `เพิ่มสินค้าใหม่ตอนตั้งค่าตู้ครั้งแรก · จำนวน ${data.qty}`,
+          },
+        });
+      }
+
+      // 6) audit trail (anti-fraud · ใครเพิ่มสินค้า/ยอดตั้งต้นเท่าไร)
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_SETUP_PRODUCT_ADDED",
+          resourceType: "CF_PRODUCT",
+          resourceId: product.id,
+          diff: {
+            machineId: machine.id,
+            branchId: machine.branchId,
+            addedBy: byName,
+            sku,
+            name,
+            qty: data.qty,
+            firstSetup: !machine.isFirstBaselineLocked,
+          },
+        },
+      });
+
+      return { productId: product.id, inMachineAfter: data.qty };
+    });
+
+    for (const p of APP_PATHS) revalidatePath(p);
+    return { ok: true, data: result };
+  } catch (e) {
+    // P2002 = ชน unique [orgId,sku] (มีคนสร้าง SKU นี้ไปก่อนพร้อมกัน) → เป็นมิตร
+    if ((e as { code?: string }).code === "P2002") {
+      return err("รหัส SKU นี้มีอยู่แล้ว เลือกจากรายการที่มี");
+    }
+    return err(`เพิ่มสินค้าไม่สำเร็จ: ${(e as Error).message}`);
+  }
+}

@@ -61,7 +61,9 @@ export function PhotoCaptureButton({
     | "doll_meter_bottom"
     | "baseline_stock"
     | "goods_receipt"
-    | "stock_count";
+    | "stock_count"
+    // N1b — รูปสินค้าใหม่ที่เพิ่มตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าในตู้)
+    | "product_setup";
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>(value ? "done" : "idle");
