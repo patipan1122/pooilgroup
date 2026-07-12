@@ -20,6 +20,9 @@ export interface ProductCountCardProps {
   /** จำนวนที่นับได้ · null = ยังไม่นับ (โชว์ placeholder ไม่ใช่ 0) */
   value: number | null;
   onChange: (n: number) => void;
+  /** ระบบว่ามีเท่าไร (คงคลังสาขาตาม ledger) — DISPLAY hint เทียบตอนนับ · undefined = ไม่โชว์.
+   *  ★ server คิดส่วนต่างจริงตอนส่ง (money-safe) — เลขนี้แค่ช่วยไม่ให้นับตาบอด ไม่ใช่เลขที่ตัดยอด. */
+  expected?: number;
   /** บริบทสำหรับ PhotoCaptureButton (อัปรูปขึ้น R2) */
   orgId?: string;
   machineCode?: string;
@@ -33,6 +36,7 @@ export function ProductCountCard({
   product,
   value,
   onChange,
+  expected,
   orgId = "",
   machineCode = "",
   eventScopeId = "",
@@ -40,6 +44,15 @@ export function ProductCountCard({
   onPhoto,
 }: ProductCountCardProps) {
   const counted = value != null;
+  // เทียบกับ "ระบบว่ามี" — โชว์เฉพาะเมื่อรู้ค่า expected (undefined = ไม่โชว์ · call site เก่าไม่พัง).
+  //   ส่วนต่าง = นับได้ − ระบบว่ามี (เขียว = ตรง · เหลือง = เกิน · แดง = ขาด). DISPLAY hint เท่านั้น.
+  const hasExpected = expected != null;
+  // narrow ชัด (TS strict ไม่ไหลผ่าน const boolean) — ต่างสด = นับได้ − ระบบว่ามี
+  const diff = expected != null && value != null ? value - expected : null;
+  const diffColor = diff == null ? "#9AA1AB" : diff === 0 ? "#15803D" : diff > 0 ? "#B45309" : "#B42318";
+  const diffBg = diff == null ? "#F1F2F7" : diff === 0 ? "#EFFAF3" : diff > 0 ? "#FCF1E2" : "#FDECEA";
+  const diffBorder = diff == null ? "#E3E6EA" : diff === 0 ? "#C8E9D3" : diff > 0 ? "#F0DDBE" : "#F5CFC9";
+  const diffText = diff == null ? "" : diff === 0 ? "ตรงพอดี" : `${diff > 0 ? "+" : ""}${num(diff)}`;
   // item 9 · ราคาขาย = coins/เล่น × 10 (1 coin ≈ 10 บาท) — DISPLAY เท่านั้น (ไม่ให้แก้ที่นี่)
   const priceCoins = product.defaultPriceCoins;
   const priceBaht = priceCoins != null ? priceCoins * 10 : null;
@@ -87,6 +100,18 @@ export function ProductCountCard({
             <span style={{ fontSize: 11.5, color: counted ? "#5A6270" : "#9AA1AB", fontWeight: 500 }}>
               {counted ? "นับได้แล้ว" : "ยังไม่นับ"}
             </span>
+            {/* ★ "ระบบว่ามี" — เทียบตอนนับ (ไม่นับตาบอด) · pill เทากลาง · DISPLAY เท่านั้น */}
+            {hasExpected && (
+              <span className="num" style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#5A6270", background: "#F1F2F7", border: "1px solid #E3E6EA", borderRadius: 20, padding: "1px 8px" }}>
+                ระบบว่ามี {num(expected!)}
+              </span>
+            )}
+            {/* ★ ส่วนต่างสด (นับได้ − ระบบว่ามี) — เขียวตรง · เหลืองเกิน · แดงขาด · server คิดจริงตอนส่ง */}
+            {diff != null && (
+              <span className="num" style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 700, color: diffColor, background: diffBg, border: `1px solid ${diffBorder}`, borderRadius: 20, padding: "1px 8px" }}>
+                ต่าง {diffText}
+              </span>
+            )}
           </div>
         </div>
         {/* ตัวเลขที่นับ — ว่าง = "—" เทา (neutral) · มีค่า = เข้ม */}

@@ -37,7 +37,7 @@ import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
-import type { CfReceivedDoc } from "@/lib/clawfleet/stock-queries";
+import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
 // bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
 import { BaselineForm } from "@/components/clawfleet/BaselineForm";
 import { MismatchGate } from "@/components/clawfleet/MismatchGate";
@@ -576,6 +576,8 @@ type Props = {
   onHandByBranch?: Record<string, Record<string, number>>;
   // F2 · ประวัติ "รับแล้ว" แยกตาม branchId (จาก ledger · READ-ONLY) — แท็บ "รับแล้ว" ในหน้ารับสินค้า. optional default {}.
   receivedByBranch?: Record<string, CfReceivedDoc[]>;
+  // F3 · ประวัติ "ใบนับสต๊อก" แยกตาม branchId (จาก CfStockCount · READ-ONLY) — แท็บ "ประวัติใบนับ" ในหน้านับสต๊อก. optional default {}.
+  countsByBranch?: Record<string, CfCountRow[]>;
   // WAVE-3b · คลัง (ห้องเก็บ) active แยกตาม branchId — picker เติม (R4) + นับสต๊อก (N3).
   // สาขาที่มี >1 ห้อง → โชว์ picker · ≤1 ห้อง → ไม่โชว์ (default คลังหลัก). optional default {}.
   warehousesByBranch?: Record<string, BranchWarehouse[]>;
@@ -594,7 +596,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -609,10 +611,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
 
   return (
@@ -699,6 +701,8 @@ type StaffAppProps = {
   // F1 · คลังตอนนี้ต่อสินค้า แยกตาม branchId · F2 · ประวัติรับแล้ว แยกตาม branchId
   onHandByBranch: Record<string, Record<string, number>>;
   receivedByBranch: Record<string, CfReceivedDoc[]>;
+  // F3 · ประวัติใบนับ แยกตาม branchId (แท็บ "ประวัติใบนับ" ในหน้านับสต๊อก)
+  countsByBranch: Record<string, CfCountRow[]>;
   // 🆕 ตุ๊กตาในตู้ตอนนี้ (แยกตาม machineId) + ของว่างในคลังต่อสินค้า (แยกตาม branchId) — sheet คืนตุ๊กตา
   inMachineByMachine: Record<string, InMachineDoll[]>;
   netAvailableByBranch: Record<string, Record<string, number>>;
@@ -707,7 +711,7 @@ type StaffAppProps = {
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -1358,6 +1362,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           warehousesByBranch={warehousesByBranch}
           onHandByBranch={onHandByBranch}
           receivedByBranch={receivedByBranch}
+          countsByBranch={countsByBranch}
         />
       ) : (
         <FlowScreen
@@ -1482,9 +1487,10 @@ function HomeScreen(props: {
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · N3 · คลัง active แยกตาม branchId (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, BranchWarehouse[]>;
-  // F1 · คลังตอนนี้ต่อสินค้า · F2 · ประวัติรับแล้ว — แยกตาม branchId
+  // F1 · คลังตอนนี้ต่อสินค้า · F2 · ประวัติรับแล้ว · F3 · ประวัติใบนับ — แยกตาม branchId
   onHandByBranch: Record<string, Record<string, number>>;
   receivedByBranch: Record<string, CfReceivedDoc[]>;
+  countsByBranch: Record<string, CfCountRow[]>;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, onChange, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
@@ -1496,6 +1502,8 @@ function HomeScreen(props: {
   // F1 · คลังตอนนี้ต่อสินค้าของสาขานี้ · F2 · ประวัติรับแล้วของสาขานี้ (ส่งเข้าหน้ารับสินค้า)
   const onHandByProduct = props.onHandByBranch[primaryBranchId] ?? {};
   const receivedDocs = props.receivedByBranch[primaryBranchId] ?? [];
+  // F3 · ประวัติใบนับของสาขานี้ (ส่งเข้าหน้านับสต๊อก → แท็บ "ประวัติใบนับ")
+  const countDocs = props.countsByBranch[primaryBranchId] ?? [];
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
@@ -1713,7 +1721,7 @@ function HomeScreen(props: {
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} />
       )}
     </div>
   );
@@ -1740,6 +1748,8 @@ function PanelScreen(props: {
   // F1 · คลังตอนนี้ต่อสินค้า (การ์ดรับ "N → N+รับ") · F2 · ประวัติรับแล้ว (แท็บ "รับแล้ว")
   onHandByProduct: Record<string, number>;
   receivedDocs: CfReceivedDoc[];
+  // F3 · ประวัติใบนับ (แท็บ "ประวัติใบนับ" ในหน้านับสต๊อก)
+  countDocs: CfCountRow[];
 }) {
   const { panel, onBack } = props;
   return (
@@ -1752,7 +1762,7 @@ function PanelScreen(props: {
       </div>
       {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} />}
       {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
-      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} />}
+      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
       {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
       {panel === "config" && <ConfigPanel />}
       {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
@@ -2107,11 +2117,15 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
 }
 
 /* ─────────────────── N3 · นับสต๊อกมือถือ (ProductCountCard list → submitStockCount DRAFT) ─────────────────── */
-function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, warehouses }: {
+function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, warehouses, countDocs }: {
   orgId: string; usingDemo: boolean; branchId: string; branchCode: string; products: BranchStockProduct[];
   // WAVE-3b · N3 · คลัง active ของสาขานี้ — picker "นับคลัง" โผล่เฉพาะเมื่อ >1 ห้อง (default คลังหลัก).
   warehouses: BranchWarehouse[];
+  // F3 · ประวัติใบนับล่าสุดของสาขานี้ (READ-ONLY · แท็บ "ประวัติใบนับ")
+  countDocs: CfCountRow[];
 }) {
+  // F3 · แท็บ "นับใหม่" | "ประวัติใบนับ" — default = นับใหม่ (งานหลัก)
+  const [tab, setTab] = useState<"count" | "history">("count");
   // นับต่อสินค้า (null = ยังไม่นับ) · รูปหลักฐานต่อสินค้า (optional)
   const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [photos, setPhotos] = useState<Record<string, string>>({});
@@ -2165,22 +2179,27 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
     });
   }
 
-  if (usingDemo || products.length === 0) {
-    return (
-      <div>
-        {usingDemo
-          ? <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — นับสต๊อกจริงได้เมื่อมีสินค้าในคลังสาขา" />
-          : (
-            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
-              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="คลังสาขานี้ยังไม่มีสินค้า" sub="รับสินค้าเข้าคลังก่อน แล้วค่อยนับสต๊อก" />
-            </div>
-          )}
-      </div>
-    );
+  // demo → ยังไม่มีข้อมูลจริง (ไม่มีทั้งนับจริง+ประวัติ) → banner เดียว
+  if (usingDemo) {
+    return <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — นับสต๊อกจริงได้เมื่อมีสินค้าในคลังสาขา" />;
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* F3 · segment control — นับใหม่ | ประวัติใบนับ (N) */}
+      <div style={{ display: "flex", gap: 6, background: "#F1F2F5", padding: 4, borderRadius: 12 }}>
+        <SegmentBtn active={tab === "count"} onClick={() => setTab("count")} label="นับใหม่" />
+        <SegmentBtn active={tab === "history"} onClick={() => setTab("history")} label={`ประวัติใบนับ (${countDocs.length})`} />
+      </div>
+
+      {tab === "history" ? (
+        <CountHistoryList countDocs={countDocs} />
+      ) : products.length === 0 ? (
+        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+          <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="คลังสาขานี้ยังไม่มีสินค้า" sub="รับสินค้าเข้าคลังก่อน แล้วค่อยนับสต๊อก" />
+        </div>
+      ) : (
+      <>
       <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
         นับของในคลังสาขาแล้วแตะ + ต่อสินค้า · ส่งแล้วผู้จัดการจะอนุมัติก่อนปรับยอด
       </div>
@@ -2210,6 +2229,7 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
           product={{ id: p.id, name: p.name, imageUrl: p.imageUrl, sku: p.sku, defaultPriceCoins: p.defaultPriceCoins }}
           value={counts[p.id] ?? null}
           onChange={(n) => setCounts((c) => ({ ...c, [p.id]: n }))}
+          expected={p.warehouse}
           orgId={orgId}
           machineCode={branchCode}
           eventScopeId={`stockcount-${branchId}`}
@@ -2222,6 +2242,87 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
         style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: !canSubmit ? "#A8AEB8" : "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: !canSubmit || pending ? "not-allowed" : "pointer", opacity: pending ? 0.6 : 1 }}>
         {pending ? "กำลังส่ง…" : countedLines.length > 0 ? `ส่งผลนับ ${countedLines.length} รายการให้ผู้จัดการ` : "นับอย่างน้อย 1 รายการก่อน"}
       </button>
+      </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────── F3 · ประวัติใบนับ (list of CfCountRow → การ์ด + ดาวน์โหลดใบนับ PNG) ─────────────────── */
+function CountHistoryList({ countDocs }: { countDocs: CfCountRow[] }) {
+  if (countDocs.length === 0) {
+    return (
+      <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+        <EmptyState icon={<History size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติใบนับ" sub="เมื่อนับสต๊อกและส่งแล้ว ใบนับจะเก็บไว้ที่นี่ (ไม่หาย)" />
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
+        ใบนับที่ส่งแล้ว · กด &ldquo;ดูใบนับ&rdquo; เพื่อดาวน์โหลดเป็นรูป (ส่งลงไลน์ได้)
+      </div>
+      {countDocs.map((doc) => (
+        <CountHistoryCard key={doc.id} doc={doc} />
+      ))}
+    </div>
+  );
+}
+
+// F3 · สถานะใบนับ → ป้าย (สี + ข้อความไทย). PENDING = เด่นสุด (ยังไม่ตัดยอด · รอผจก.)
+function countStatusPill(status: string): { label: string; color: string; bg: string } {
+  switch (status) {
+    case "APPLIED": return { label: "ปรับยอดแล้ว", color: "#15803D", bg: "#E7F4EC" };
+    case "APPROVED": return { label: "อนุมัติแล้ว", color: "#15803D", bg: "#E7F4EC" };
+    case "PENDING": return { label: "รอผู้จัดการอนุมัติ", color: "#B45309", bg: "#FCF1E2" };
+    case "REJECTED": return { label: "ไม่อนุมัติ", color: "#B42318", bg: "#FDECEA" };
+    default: return { label: status, color: "#5A6270", bg: "#F1F2F7" };
+  }
+}
+
+// F3 · การ์ดประวัติ "ใบนับ" 1 ใบ — code/วันที่/ผู้นับ + จำนวนรายการ + ส่วนต่างรวม + สถานะ + ปุ่มดาวน์โหลด
+function CountHistoryCard({ doc }: { doc: CfCountRow }) {
+  const when = doc.countedAt.toLocaleDateString("th-TH", {
+    day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok",
+  });
+  const pill = countStatusPill(doc.status);
+  // ส่วนต่างรวม: 0 = ตรงพอดี (เขียว) · เกิน/ขาด = เหลือง/แดง (mirror ProductCountCard diff)
+  const diff = doc.totalDiff;
+  const diffColor = diff === 0 ? "#15803D" : diff > 0 ? "#B45309" : "#B42318";
+  const diffText = diff === 0 ? "ตรงพอดี" : `${diff > 0 ? "+" : ""}${diff.toLocaleString("en-US")}`;
+  // Feature 3 · route ดาวน์โหลดใบนับเป็นรูป PNG (attachment) — ผูกกับ countId
+  const imageHref = `/clawfleet/os/app/count/${doc.id}/image`;
+  return (
+    <div className="co-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>{doc.countCode}</span>
+        <span style={{ flex: 1 }} />
+        <span className="co-pill" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span>
+      </div>
+      <div style={{ fontSize: 11, color: "#8A909A", display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+        <span>{when}</span>
+        {doc.countedByName ? <span>· ผู้นับ {doc.countedByName}</span> : null}
+        {doc.reviewedByName ? <span>· อนุมัติ {doc.reviewedByName}</span> : null}
+      </div>
+      {/* สรุป: จำนวนรายการที่นับ · ส่วนต่างรวม (ขาด/เกิน) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span className="num" style={{ fontSize: 12, fontWeight: 600, color: "#5A6270", background: "#F1F2F7", border: "1px solid #E3E6EA", borderRadius: 20, padding: "2px 9px" }}>
+          {doc.itemsCounted.toLocaleString("en-US")} รายการ
+        </span>
+        <span className="num" style={{ fontSize: 12, fontWeight: 700, color: diffColor, background: diff === 0 ? "#EFFAF3" : diff > 0 ? "#FCF1E2" : "#FDECEA", border: `1px solid ${diff === 0 ? "#C8E9D3" : diff > 0 ? "#F0DDBE" : "#F5CFC9"}`, borderRadius: 20, padding: "2px 9px" }}>
+          ส่วนต่างรวม {diffText}
+        </span>
+      </div>
+      {doc.status === "PENDING" && (
+        <div style={{ background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "8px 11px", fontSize: 11, color: "#7A5510", lineHeight: 1.45 }}>
+          ยังไม่ปรับยอด · รอผู้จัดการอนุมัติก่อน แล้วสต๊อกจะปรับตามใบนี้
+        </div>
+      )}
+      {/* Feature 3 · ดาวน์โหลดใบนับเป็นรูป (route ตั้ง Content-Disposition: attachment) */}
+      <a href={imageHref} download
+        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 44, fontSize: 13, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 11, textDecoration: "none", cursor: "pointer" }}>
+        <ImageDown size={16} /> ดูใบนับ / ดาวน์โหลด
+      </a>
     </div>
   );
 }

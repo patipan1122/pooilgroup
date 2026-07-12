@@ -9,7 +9,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, type CfReceivedDoc } from "@/lib/clawfleet/stock-queries";
+import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -170,7 +170,7 @@ export default async function ClawfleetLiffPage({
 
   // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker · WAVE-3b คลัง)
   //   + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว)
-  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch } = await loadBigfeatureData(orgId, routeBranches);
+  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
   return (
     <div className="clawos">
@@ -191,6 +191,7 @@ export default async function ClawfleetLiffPage({
         warehousesByBranch={warehousesByBranch}
         onHandByBranch={onHandByBranch}
         receivedByBranch={receivedByBranch}
+        countsByBranch={countsByBranch}
       />
     </div>
   );
@@ -216,6 +217,8 @@ async function loadBigfeatureData(
   onHandByBranch: Record<string, Record<string, number>>;
   // F2 · ประวัติ "รับแล้ว" ต่อสาขา (จาก ledger · READ-ONLY)
   receivedByBranch: Record<string, CfReceivedDoc[]>;
+  // F3 · ประวัติ "ใบนับสต๊อก" ล่าสุดต่อสาขา (จาก CfStockCount · READ-ONLY)
+  countsByBranch: Record<string, CfCountRow[]>;
 }> {
   const branchIds = branches.map((b) => b.id);
   let awaitingSetupIds: string[] = [];
@@ -224,9 +227,10 @@ async function loadBigfeatureData(
   const warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>> = {};
   const onHandByBranch: Record<string, Record<string, number>> = {};
   const receivedByBranch: Record<string, CfReceivedDoc[]> = {};
+  const countsByBranch: Record<string, CfCountRow[]> = {};
 
   if (!orgId || branchIds.length === 0)
-    return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
+    return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch };
 
   try {
     const awaiting = await getAwaitingSetupMachines();
@@ -259,6 +263,13 @@ async function loadBigfeatureData(
       } catch {
         // graceful: ยังไม่ migrate / query ล้ม → ประวัติว่าง (แท็บ "รับแล้ว" โชว์ empty)
         receivedByBranch[bid] = [];
+      }
+      try {
+        // F3 · ประวัติ "ใบนับสต๊อก" ล่าสุดของสาขา (จาก CfStockCount · READ-ONLY · scope orgId+branchId)
+        countsByBranch[bid] = await getCfCounts(orgId, bid);
+      } catch {
+        // graceful: ยังไม่ migrate / query ล้ม → ประวัติว่าง (แท็บ "ประวัติใบนับ" โชว์ empty)
+        countsByBranch[bid] = [];
       }
       try {
         // WAVE-3b · คลัง active ของสาขา (main มาก่อน · sort ใน query แล้ว). graceful: ยังไม่ migrate → [].
@@ -304,5 +315,5 @@ async function loadBigfeatureData(
     }),
   );
 
-  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
+  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch };
 }
