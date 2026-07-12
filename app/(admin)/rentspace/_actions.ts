@@ -567,6 +567,7 @@ export async function actSaveContract(input: {
   unitId: string;
   tenantId: string;
   templateId?: string;
+  contractDate?: string;
   startDate: string;
   endDate?: string;
   rentAmountThb: number;
@@ -594,6 +595,7 @@ export async function actSaveContract(input: {
     unitId: input.unitId,
     tenantId: input.tenantId,
     templateId: input.templateId ?? null,
+    contractDate: input.contractDate ? new Date(input.contractDate) : null,
     startDate: new Date(input.startDate),
     endDate: input.endDate ? new Date(input.endDate) : null,
     rentAmountThb: input.rentAmountThb,
@@ -815,6 +817,57 @@ export async function actRecordDeposit(input: {
   await logAudit(session, "RENTSPACE_DEPOSIT_RECORDED", "rental_deposit", d.id, { kind: input.kind });
   revalidatePath(`/rentspace/contracts/${input.contractId}`);
   return { id: d.id };
+}
+
+// ───────── เอกสารแนบสัญญา (RentalDocument ownerType=contract) ─────────
+export async function actAddContractDocument(input: {
+  contractId: string;
+  label?: string;
+  dataUrl: string;
+}) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
+    "สัญญา",
+  );
+  const url = await uploadDataUrl(session.user.org_id, "contract-doc", input.dataUrl);
+  const m = input.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  const mime = m?.[1] ?? null;
+  // ประมาณขนาดไฟล์จริงจากความยาว base64 (4 ตัวอักษร ≈ 3 ไบต์)
+  const sizeBytes = m ? Math.round((m[2].replace(/=+$/, "").length * 3) / 4) : null;
+  const doc = await prisma.rentalDocument.create({
+    data: {
+      id: randomUUID(),
+      orgId: session.user.org_id,
+      ownerType: "contract",
+      ownerId: input.contractId,
+      label: input.label?.trim() || null,
+      url,
+      mime,
+      sizeBytes,
+      uploadedBy: session.user.id,
+    },
+  });
+  await logAudit(session, "RENTSPACE_CONTRACT_DOC_ADDED", "rental_document", doc.id, {
+    contractId: input.contractId,
+  });
+  revalidatePath(`/rentspace/contracts/${input.contractId}`);
+  return { id: doc.id, url: doc.url, label: doc.label, mime: doc.mime, sizeBytes: doc.sizeBytes };
+}
+
+export async function actDeleteContractDocument(docId: string) {
+  const session = await gateAdmin();
+  const doc = await prisma.rentalDocument.findFirst({
+    where: { id: docId, orgId: session.user.org_id, ownerType: "contract" },
+    select: { id: true, ownerId: true },
+  });
+  if (!doc) throw new Error("ไม่พบเอกสาร หรือไม่มีสิทธิ์");
+  await prisma.rentalDocument.delete({ where: { id: docId } });
+  await logAudit(session, "RENTSPACE_CONTRACT_DOC_REMOVED", "rental_document", docId, {
+    contractId: doc.ownerId,
+  });
+  revalidatePath(`/rentspace/contracts/${doc.ownerId}`);
+  return { ok: true };
 }
 
 // ───────── meters ─────────

@@ -7378,6 +7378,9 @@ model RentalContract {
   tenantId         String                  @map("tenant_id") @db.Uuid
   templateId       String?                 @map("template_id") @db.Uuid
   contractNo       String                  @map("contract_no")
+  // วันที่ "ทำสัญญา ณ วันที่" — แยกจาก startDate (วันเริ่มเช่า) เพื่อรองรับการคีย์สัญญาย้อนหลัง
+  // null = ใช้ createdAt แทน (สัญญาเก่าที่ยังไม่ได้ระบุ)
+  contractDate     DateTime?               @map("contract_date") @db.Date
   startDate        DateTime                @map("start_date") @db.Date
   endDate          DateTime?               @map("end_date") @db.Date
   rentAmountThb    Decimal                 @default(0) @map("rent_amount_thb") @db.Decimal(15, 2)

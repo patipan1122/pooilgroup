@@ -110,6 +110,8 @@ export type AuditAction =
   | "RENTSPACE_DISCOUNT_DECIDED"
   | "RENTSPACE_TENANTS_IMPORTED"
   | "RENTSPACE_SETTINGS_UPDATED"
+  | "RENTSPACE_CONTRACT_DOC_ADDED"
+  | "RENTSPACE_CONTRACT_DOC_REMOVED"
   // Telegram inline-keyboard reject flow: stores pending state so the next
   // text reply from the same Telegram user resolves into the rejection reason.
   | "TELEGRAM_PENDING_REJECT"

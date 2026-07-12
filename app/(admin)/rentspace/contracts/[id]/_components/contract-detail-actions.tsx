@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, Check, PenLine, Download, X, Pencil, Trash2 } from "lucide-react";
+import { Copy, Check, PenLine, Download, X, Pencil, Trash2, Paperclip, FileText, Upload } from "lucide-react";
 import {
   actGenerateSignLink,
   actTerminateContract,
@@ -13,8 +13,31 @@ import {
   actRequestContractEdit,
   actDecideContractEdit,
   actDeleteContract,
+  actAddContractDocument,
+  actDeleteContractDocument,
 } from "../../../_actions";
-import { currentPeriod } from "@/lib/rentspace/format";
+import { periodLabel } from "@/lib/rentspace/format";
+
+/** จำนวนเดือนนับรวมปลายทาง · ผิดลำดับ = 0 */
+function monthsInclusive(startPeriod: string, endPeriod: string): number {
+  if (!startPeriod || !endPeriod) return 0;
+  const [ys, ms] = startPeriod.split("-").map(Number);
+  const [ye, me] = endPeriod.split("-").map(Number);
+  if (!ys || !ms || !ye || !me) return 0;
+  const diff = (ye - ys) * 12 + (me - ms);
+  return diff >= 0 ? diff + 1 : 0;
+}
+/** งวด + n เดือน (YYYY-MM) */
+function addPeriodStr(period: string, add: number): string {
+  if (!period) return "";
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return "";
+  const d = new Date(y, m - 1 + add, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function baht(n: number): string {
+  return n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
 
 const LATE_FEE_OPTIONS: Record<string, string> = {
   none: "ไม่คิดค่าปรับ",
@@ -168,11 +191,20 @@ export function BillingTermsEditor({
   const [lateFeeValue, setLateFeeValue] = useState(initial.lateFeeValue ? String(initial.lateFeeValue) : "");
   const [graceDays, setGraceDays] = useState(String(initial.lateFeeGraceDays ?? 7));
   const [promo, setPromo] = useState(initial.promoDiscountThb ? String(initial.promoDiscountThb) : "");
-  const [promoMonths, setPromoMonths] = useState(initial.promoMonths ? String(initial.promoMonths) : "");
-  const [promoStart, setPromoStart] = useState(initial.promoStartPeriod || currentPeriod());
+  const [promoStart, setPromoStart] = useState(initial.promoStartPeriod || "");
+  const [promoEnd, setPromoEnd] = useState(
+    initial.promoStartPeriod && initial.promoMonths
+      ? addPeriodStr(initial.promoStartPeriod, initial.promoMonths - 1)
+      : "",
+  );
   const [issueDay, setIssueDay] = useState(initial.billIssueDay ? String(initial.billIssueDay) : "");
+  const promoMonthsCount = monthsInclusive(promoStart, promoEnd);
 
   function save() {
+    if (num(promo) > 0 && promoMonthsCount <= 0) {
+      toast.error("กรุณาเลือกช่วงเดือนส่วนลด (เดือนเริ่มต้องไม่เกินเดือนสิ้นสุด)");
+      return;
+    }
     start(async () => {
       try {
         await actUpdateContractBilling({
@@ -181,8 +213,8 @@ export function BillingTermsEditor({
           lateFeeValue: num(lateFeeValue),
           lateFeeGraceDays: Number(graceDays) || 0,
           promoDiscountThb: num(promo),
-          promoMonths: Number(promoMonths) || 0,
-          promoStartPeriod: promoStart.trim() || undefined,
+          promoMonths: num(promo) > 0 ? promoMonthsCount : 0,
+          promoStartPeriod: num(promo) > 0 && promoStart ? promoStart : undefined,
           billIssueDay: issueDay ? Number(issueDay) : null,
         });
         toast.success("บันทึกเงื่อนไขแล้ว — มีผลกับบิลรอบถัดไป");
@@ -239,24 +271,36 @@ export function BillingTermsEditor({
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ส่วนลด/เดือน (บาท)</label>
-          <input inputMode="decimal" style={inputStyle} value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="0" />
-        </div>
-        <div>
-          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ลดกี่เดือน</label>
-          <input type="number" min={0} style={inputStyle} value={promoMonths} onChange={(e) => setPromoMonths(e.target.value)} placeholder="0" />
-        </div>
+      <div>
+        <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ส่วนลด/เดือน (บาท)</label>
+        <input inputMode="decimal" style={inputStyle} value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="0" />
       </div>
-      {(Number(promoMonths) || 0) > 0 && (
-        <div>
-          <label className={lbl} style={{ color: "var(--rs-text-2)" }}>งวดเริ่มโปร (YYYY-MM · เว้นว่าง = งวดปัจจุบัน)</label>
-          <input type="month" style={inputStyle} value={promoStart} onChange={(e) => setPromoStart(e.target.value)} />
-          <div className="text-[11px] mt-1" style={{ color: "var(--rs-text-2)" }}>
-            ส่วนลดจะเริ่มนับจากงวดนี้ ไม่นับงวดเก่าที่ผ่านมาแล้ว
+      {num(promo) > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={lbl} style={{ color: "var(--rs-text-2)" }}>เริ่มลด (เดือน)</label>
+              <input type="month" style={inputStyle} value={promoStart} onChange={(e) => setPromoStart(e.target.value)} />
+            </div>
+            <div>
+              <label className={lbl} style={{ color: "var(--rs-text-2)" }}>ลดถึงเดือน</label>
+              <input type="month" style={inputStyle} value={promoEnd} min={promoStart || undefined} onChange={(e) => setPromoEnd(e.target.value)} />
+            </div>
           </div>
-        </div>
+          {promoMonthsCount > 0 ? (
+            <div className="text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}>
+              ลด ฿{baht(num(promo))}/เดือน · {periodLabel(promoStart)}
+              {promoMonthsCount > 1 ? ` – ${periodLabel(promoEnd)}` : ""} ({promoMonthsCount} เดือน) · รวม ฿{baht(num(promo) * promoMonthsCount)}
+            </div>
+          ) : (
+            <div className="text-[12px]" style={{ color: "var(--rs-danger)" }}>
+              เลือกช่วงเดือน (เดือนเริ่มต้องไม่เกินเดือนสิ้นสุด)
+            </div>
+          )}
+          <div className="text-[11px]" style={{ color: "var(--rs-text-2)" }}>
+            ส่วนลดจะใช้กับบิลในช่วงเดือนที่เลือก ไม่ย้อนงวดเก่าที่ออกบิลไปแล้ว
+          </div>
+        </>
       )}
       <div>
         <label className={lbl} style={{ color: "var(--rs-text-2)" }}>วันวางบิล (1-28 · เว้นว่าง = ตามโครงการ)</label>
@@ -581,5 +625,145 @@ export function DeleteContractButton({ contractId }: { contractId: string }) {
     >
       <Trash2 className="h-4 w-4" /> ลบสัญญา
     </button>
+  );
+}
+
+// ───────── เอกสารแนบประกอบสัญญา (สำเนาบัตร · ทะเบียนพาณิชย์ · เอกสารอื่น) ─────────
+type ContractDoc = {
+  id: string;
+  label: string | null;
+  url: string;
+  mime: string | null;
+  sizeBytes: number | null;
+};
+
+function humanSize(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function ContractAttachments({
+  contractId,
+  documents,
+}: {
+  contractId: string;
+  documents: ContractDoc[];
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [label, setLabel] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function upload() {
+    const f = fileRef.current?.files?.[0];
+    if (!f) return toast.error("กรุณาเลือกไฟล์");
+    if (f.size > 8 * 1024 * 1024) return toast.error("ไฟล์ใหญ่เกิน 8MB");
+    start(async () => {
+      try {
+        const dataUrl = await fileToDataUrl(f);
+        await actAddContractDocument({ contractId, label: label.trim() || undefined, dataUrl });
+        toast.success("แนบเอกสารแล้ว");
+        setLabel("");
+        if (fileRef.current) fileRef.current.value = "";
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "แนบเอกสารไม่สำเร็จ");
+      }
+    });
+  }
+
+  function remove(docId: string) {
+    if (!confirm("ยืนยันลบเอกสารแนบนี้?")) return;
+    start(async () => {
+      try {
+        await actDeleteContractDocument(docId);
+        toast.success("ลบเอกสารแล้ว");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Paperclip className="h-4 w-4" style={{ color: "var(--rs-brand)" }} />
+        <h2 className="font-bold" style={{ color: "var(--rs-text)" }}>
+          เอกสารแนบประกอบสัญญา
+        </h2>
+      </div>
+
+      {documents.length === 0 ? (
+        <div className="text-center py-6" style={{ color: "var(--rs-text-3)" }}>
+          <Paperclip className="h-7 w-7 mx-auto mb-2 opacity-60" />
+          <p className="text-[13px]">
+            ยังไม่มีเอกสารแนบ — แนบสำเนาบัตรประชาชน ทะเบียนพาณิชย์ หรือเอกสารอื่นได้ที่นี่
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {documents.map((doc) => {
+            const isPdf = doc.mime?.includes("pdf");
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+                style={{ border: "1px solid var(--rs-border)", background: "var(--rs-bg-2)" }}
+              >
+                <a
+                  href={doc.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 min-w-0 flex-1"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" style={{ color: isPdf ? "var(--rs-danger)" : "var(--rs-brand)" }} />
+                  <span className="text-[13px] truncate" style={{ color: "var(--rs-text)" }}>
+                    {doc.label || (isPdf ? "เอกสาร PDF" : "เอกสารแนบ")}
+                  </span>
+                  {doc.sizeBytes ? (
+                    <span className="text-[11px] flex-shrink-0" style={{ color: "var(--rs-text-3)" }}>
+                      {humanSize(doc.sizeBytes)}
+                    </span>
+                  ) : null}
+                </a>
+                <button
+                  onClick={() => remove(doc.id)}
+                  disabled={pending}
+                  className="p-1 rounded-lg hover:bg-black/5 flex-shrink-0"
+                  aria-label="ลบเอกสาร"
+                >
+                  <Trash2 className="h-4 w-4" style={{ color: "var(--rs-danger)" }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="space-y-2 pt-1">
+        <input
+          className="w-full h-10 px-3 rounded-lg text-[13px]"
+          style={{ border: "1px solid var(--rs-border)", background: "var(--rs-bg-2)", color: "var(--rs-text)" }}
+          placeholder="ชื่อเอกสาร (เช่น สำเนาบัตร ปชช.) — ไม่บังคับ"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          className="text-[13px] w-full"
+        />
+        <button className="rs-btn w-full justify-center min-h-[44px] sm:min-h-0" onClick={upload} disabled={pending}>
+          <Upload className="h-4 w-4" /> {pending ? "กำลังแนบ…" : "แนบเอกสาร"}
+        </button>
+        <p className="text-[11px]" style={{ color: "var(--rs-text-3)" }}>
+          รองรับรูปภาพและ PDF · ไม่เกิน 8MB ต่อไฟล์
+        </p>
+      </div>
+    </div>
   );
 }

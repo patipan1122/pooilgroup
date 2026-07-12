@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, X, FileText, Check, ChevronLeft, ChevronRight, Search, DoorOpen, User, Eye, AlertTriangle } from "lucide-react";
 import { actSaveContract, actSaveTenant } from "../../_actions";
-import { ContractPreview, type ContractPreviewProject } from "@/components/rentspace/contract-preview";
+import { type ContractPreviewProject } from "@/components/rentspace/contract-preview";
+import { RentalContractDocument } from "@/components/rentspace/contract-document";
+import {
+  contractPlaceholders,
+  fillPlaceholders,
+  bankInfoLine,
+  type ContractDocData,
+} from "@/lib/rentspace/contract-doc";
+import { periodLabel } from "@/lib/rentspace/format";
 
 type Unit = {
   id: string;
@@ -33,6 +41,7 @@ type EditInitial = {
   unitId: string;
   tenantId: string;
   templateId?: string | null;
+  contractDate?: string | null;
   startDate: string;
   endDate?: string | null;
   rentAmountThb: number;
@@ -47,6 +56,7 @@ type EditInitial = {
   lateFeeGraceDays?: number | null;
   promoDiscountThb?: number | null;
   promoMonths?: number | null;
+  promoStartPeriod?: string | null;
   billIssueDay?: number | null;
   customTermsHtml?: string | null;
   note?: string | null;
@@ -96,6 +106,24 @@ function addMonths(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** จำนวนเดือนแบบนับรวมปลายทาง (ก.ค.→ธ.ค. = 6) · ผิดลำดับ = 0 */
+function monthsInclusive(startPeriod: string, endPeriod: string): number {
+  if (!startPeriod || !endPeriod) return 0;
+  const [ys, ms] = startPeriod.split("-").map(Number);
+  const [ye, me] = endPeriod.split("-").map(Number);
+  if (!ys || !ms || !ye || !me) return 0;
+  const diff = (ye - ys) * 12 + (me - ms);
+  return diff >= 0 ? diff + 1 : 0;
+}
+/** งวด + n เดือน (YYYY-MM) */
+function addPeriodStr(period: string, add: number): string {
+  if (!period) return "";
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return "";
+  const d = new Date(y, m - 1 + add, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 const STEPS = ["เลือกห้องว่าง", "ผู้เช่า", "เงื่อนไขการเช่า", "ทบทวน"] as const;
 
 export function ContractForm({
@@ -133,6 +161,8 @@ export function ContractForm({
   const [unitId, setUnitId] = useState(editInitial?.unitId ?? "");
   const [tenantId, setTenantId] = useState(editInitial?.tenantId ?? "");
   const [templateId, setTemplateId] = useState(defaultTemplate);
+  // "ทำ ณ วันที่" — แยกจากวันเริ่มเช่า · ระบุย้อนหลังได้ (คีย์สัญญาเก่า)
+  const [contractDate, setContractDate] = useState(editInitial?.contractDate ?? today);
   const [startDate, setStartDate] = useState(editInitial?.startDate ?? today);
   const [endDate, setEndDate] = useState(editInitial?.endDate ?? "");
   const [termMonths, setTermMonths] = useState(""); // ตัวช่วยคำนวณวันสิ้นสุด
@@ -146,7 +176,13 @@ export function ContractForm({
   const [lateFeeValue, setLateFeeValue] = useState(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
   const [lateFeeGraceDays, setLateFeeGraceDays] = useState(String(editInitial?.lateFeeGraceDays ?? 7));
   const [promoDiscount, setPromoDiscount] = useState(editInitial?.promoDiscountThb ? String(editInitial.promoDiscountThb) : "");
-  const [promoMonths, setPromoMonths] = useState(editInitial?.promoMonths ? String(editInitial.promoMonths) : "");
+  // ส่วนลด = ช่วงเดือน "เริ่ม → ถึง" (คำนวณจำนวนเดือนเอง)
+  const [promoStart, setPromoStart] = useState(editInitial?.promoStartPeriod ?? "");
+  const [promoEnd, setPromoEnd] = useState(
+    editInitial?.promoStartPeriod && editInitial?.promoMonths
+      ? addPeriodStr(editInitial.promoStartPeriod, editInitial.promoMonths - 1)
+      : "",
+  );
   const [billIssueDay, setBillIssueDay] = useState(editInitial?.billIssueDay ? String(editInitial.billIssueDay) : "");
   const [note, setNote] = useState(editInitial?.note ?? "");
   // เนื้อหาสัญญาแบบแก้ได้อิสระ — โหลดจากแม่แบบ/สัญญาเดิม แล้วปรับสดได้
@@ -199,6 +235,7 @@ export function ContractForm({
     setUnitId(editInitial?.unitId ?? "");
     setTenantId(editInitial?.tenantId ?? "");
     setTemplateId(defaultTemplate);
+    setContractDate(editInitial?.contractDate ?? today);
     setStartDate(editInitial?.startDate ?? today);
     setEndDate(editInitial?.endDate ?? "");
     setTermMonths("");
@@ -212,7 +249,12 @@ export function ContractForm({
     setLateFeeValue(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
     setLateFeeGraceDays(String(editInitial?.lateFeeGraceDays ?? 7));
     setPromoDiscount(editInitial?.promoDiscountThb ? String(editInitial.promoDiscountThb) : "");
-    setPromoMonths(editInitial?.promoMonths ? String(editInitial.promoMonths) : "");
+    setPromoStart(editInitial?.promoStartPeriod ?? "");
+    setPromoEnd(
+      editInitial?.promoStartPeriod && editInitial?.promoMonths
+        ? addPeriodStr(editInitial.promoStartPeriod, editInitial.promoMonths - 1)
+        : "",
+    );
     setBillIssueDay(editInitial?.billIssueDay ? String(editInitial.billIssueDay) : "");
     setNote(editInitial?.note ?? "");
     setCustomTermsHtml(editInitial?.customTermsHtml ?? "");
@@ -254,23 +296,67 @@ export function ContractForm({
   }
 
   // ── ค่าที่ส่งให้พรีวิว (อัปเดตสดตามฟอร์ม) ──────────────────────
+  // ชื่อผู้เช่าจริง — "" = ยังไม่เลือก (พรีวิวโชว์ placeholder ชัด แทนคำว่า "ผู้เช่า" ที่ดูเหมือนบั๊ก)
   const previewTenantName =
-    selectedTenant ? tenantLabel(selectedTenant) : newTenantValid ? ntName : "ผู้เช่า";
+    selectedTenant ? tenantLabel(selectedTenant) : newTenantValid ? ntName : "";
   const previewBody = customTermsHtml.trim()
     ? customTermsHtml
     : templates.find((t) => t.id === templateId)?.bodyHtml ?? "";
-  const previewValues = {
+  const depositMonthsPreview =
+    num(rentAmount) > 0 ? Math.round((num(depositAmount) / num(rentAmount)) * 10) / 10 : 0;
+  const promoMonthsCount = monthsInclusive(promoStart, promoEnd);
+  const promoPerMonth = num(promoDiscount);
+
+  const previewFilledBody = previewBody.trim()
+    ? fillPlaceholders(
+        previewBody,
+        contractPlaceholders({
+          rentAmountThb: num(rentAmount),
+          depositAmountThb: num(depositAmount),
+          depositMonths: depositMonthsPreview,
+          rentDueDay: Number(rentDueDay) || 5,
+          startDate: startDate || today,
+          endDate: endDate || null,
+          madeOn: contractDate || today,
+          unit: { code: selectedUnit?.code ?? "—", name: selectedUnit?.name ?? null },
+          tenant: { bizName: previewTenantName || "ผู้เช่า" } as never,
+          project,
+        }),
+      )
+    : null;
+
+  const previewDoc: ContractDocData = {
+    madeOn: contractDate || today,
+    projectName: project.name,
+    lessorName: project.billCompanyName?.trim() || project.name,
+    lessorAddress: project.address ?? null,
     tenantName: previewTenantName,
+    tenantPhone: selectedTenant?.phones?.[0] ?? null,
     unitCode: selectedUnit?.code ?? "—",
     unitName: selectedUnit?.name ?? null,
-    rentAmountThb: num(rentAmount),
-    depositAmountThb: num(depositAmount),
-    depositMonths:
-      num(rentAmount) > 0 ? Math.round((num(depositAmount) / num(rentAmount)) * 10) / 10 : 0,
-    rentDueDay: Number(rentDueDay) || 5,
-    startDate,
+    startDate: startDate || null,
     endDate: endDate || null,
+    rentDueDay: Number(rentDueDay) || 5,
+    rentAmountThb: num(rentAmount),
     vatPercent: num(vatPercent),
+    depositAmountThb: num(depositAmount),
+    depositMonths: depositMonthsPreview,
+    electricRate: electricRate ? num(electricRate) : null,
+    waterRate: waterRate ? num(waterRate) : null,
+    lateFee:
+      lateFeeType !== "none"
+        ? { type: lateFeeType, value: num(lateFeeValue), graceDays: Number(lateFeeGraceDays) || 0 }
+        : null,
+    promo:
+      promoPerMonth > 0 && promoMonthsCount > 0
+        ? { perMonth: promoPerMonth, months: promoMonthsCount, startPeriod: promoStart || null }
+        : null,
+    bankLine: bankInfoLine(project) || null,
+    promptpayId: project.promptpayId ?? null,
+    paymentNote: project.paymentNote ?? null,
+    customBodyHtml: previewFilledBody,
+    attachments: [],
+    signature: null,
   };
 
   // ── ตัวช่วย deposit / term ───────────────────────────────────
@@ -314,6 +400,8 @@ export function ContractForm({
     if (!tenantId && !newTenantValid) return toast.error("กรุณาเลือกผู้เช่า");
     if (num(rentAmount) <= 0) return toast.error("กรุณากรอกค่าเช่า");
     if (!startDate) return toast.error("กรุณาเลือกวันเริ่มสัญญา");
+    if (promoPerMonth > 0 && promoMonthsCount <= 0)
+      return toast.error("ใส่ส่วนลดแล้ว กรุณาเลือกช่วงเดือน (เดือนเริ่มต้องไม่เกินเดือนสิ้นสุด)");
 
     start(async () => {
       try {
@@ -337,6 +425,7 @@ export function ContractForm({
           unitId,
           tenantId: finalTenantId,
           templateId: templateId || undefined,
+          contractDate: contractDate || undefined,
           startDate,
           endDate: endDate || undefined,
           rentAmountThb: num(rentAmount),
@@ -348,8 +437,9 @@ export function ContractForm({
           lateFeeType,
           lateFeeValue: num(lateFeeValue),
           lateFeeGraceDays: Number(lateFeeGraceDays) || 7,
-          promoDiscountThb: promoDiscount ? num(promoDiscount) : undefined,
-          promoMonths: promoMonths ? Number(promoMonths) : undefined,
+          promoDiscountThb: promoPerMonth > 0 ? promoPerMonth : undefined,
+          promoMonths: promoPerMonth > 0 ? promoMonthsCount : undefined,
+          promoStartPeriod: promoPerMonth > 0 && promoStart ? promoStart : undefined,
           billIssueDay: billIssueDay ? Number(billIssueDay) : undefined,
           customTermsHtml: customTermsHtml.trim() || undefined,
           note: note || undefined,
@@ -659,31 +749,9 @@ export function ContractForm({
               {/* STEP 3 — เงื่อนไขการเช่า */}
               {step === 2 && (
                 <div className="space-y-4">
-                  <Field label="แม่แบบสัญญา (ไม่บังคับ)">
-                    <select className="rs-input" value={templateId} onChange={(e) => onPickTemplate(e.target.value)}>
-                      <option value="">— ไม่ใช้แม่แบบ —</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.isDefault ? " (ค่าเริ่มต้น)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  {/* เนื้อสัญญาแบบแก้ได้อิสระ — โหลดจากแม่แบบ แล้วปรับสด เห็นในพรีวิวทันที */}
-                  <Field label="เนื้อหาสัญญา (แก้ไขได้ · ใช้ {{tenantName}} {{rentAmount}} ฯลฯ เป็นตัวแปร)">
-                    <textarea
-                      className="rs-input min-h-[120px] font-mono"
-                      value={customTermsHtml}
-                      onChange={(e) => setCustomTermsHtml(e.target.value)}
-                      placeholder="เว้นว่าง = ใช้เนื้อสัญญามาตรฐาน · พิมพ์/วาง HTML หรือข้อความเพื่อกำหนดเอง"
-                    />
-                  </Field>
-                  <p className="text-[11.5px] -mt-2" style={{ color: "var(--rs-text-3)" }}>
-                    ตัวแปรที่ใช้ได้: {"{{tenantName}} {{unitCode}} {{rentAmount}} {{depositAmount}} {{depositMonths}} {{rentDueDay}} {{startDate}} {{endDate}} {{landlordName}} {{bankInfo}} {{today}}"}
-                  </p>
-
+                  <div className="text-[12.5px] font-semibold" style={{ color: "var(--rs-text-2)" }}>
+                    ค่าเช่าและกำหนดชำระ
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Field label="ค่าเช่า/เดือน (บาท) *">
@@ -717,8 +785,20 @@ export function ContractForm({
                     </div>
                   </div>
 
+                  <Field label="วันที่ทำสัญญา (ทำ ณ วันที่)">
+                    <input
+                      type="date"
+                      className="rs-input"
+                      value={contractDate}
+                      onChange={(e) => setContractDate(e.target.value)}
+                    />
+                  </Field>
+                  <p className="text-[11.5px] -mt-2" style={{ color: "var(--rs-text-3)" }}>
+                    วันที่หัวสัญญา — ระบุย้อนหลังได้ ถ้าคีย์สัญญาเก่าเข้าระบบ
+                  </p>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="วันเริ่มสัญญา *">
+                    <Field label="วันเริ่มสัญญา (เริ่มเช่า) *">
                       <input
                         type="date"
                         className="rs-input"
@@ -803,19 +883,33 @@ export function ContractForm({
                     </Field>
                   </div>
 
-                  {/* #3 ส่วนลดส่งเสริมการขาย (โปรโมชั่น) — ลดต่อเดือน × จำนวนเดือน */}
+                  {/* #3/#4 ส่วนลดโปรโมชั่น — ระบุเป็นช่วงเดือน "เริ่ม → ถึง" */}
                   <div className="rounded-xl p-3" style={{ border: "1px dashed var(--rs-border)", background: "var(--rs-bg-2)" }}>
                     <div className="text-[12.5px] font-semibold mb-2" style={{ color: "var(--rs-text-2)" }}>
-                      ส่วนลดโปรโมชั่น (ถ้ามี) — ลดอัตโนมัติทุกบิลตามจำนวนเดือนที่กำหนด
+                      ส่วนลดโปรโมชั่น (ถ้ามี) — ลดอัตโนมัติทุกบิลในช่วงเดือนที่กำหนด
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="ลดต่อเดือน (บาท)">
-                        <input inputMode="decimal" className="rs-input" value={promoDiscount} onChange={(e) => setPromoDiscount(e.target.value)} placeholder="0" />
+                    <Field label="ลดต่อเดือน (บาท)">
+                      <input inputMode="decimal" className="rs-input" value={promoDiscount} onChange={(e) => setPromoDiscount(e.target.value)} placeholder="0" />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <Field label="เริ่มลด (เดือน)">
+                        <input type="month" className="rs-input" value={promoStart} onChange={(e) => setPromoStart(e.target.value)} />
                       </Field>
-                      <Field label="เป็นเวลา (เดือน)">
-                        <input type="number" min={0} className="rs-input" value={promoMonths} onChange={(e) => setPromoMonths(e.target.value)} placeholder="0" />
+                      <Field label="ลดถึงเดือน">
+                        <input type="month" className="rs-input" value={promoEnd} min={promoStart || undefined} onChange={(e) => setPromoEnd(e.target.value)} />
                       </Field>
                     </div>
+                    {promoPerMonth > 0 &&
+                      (promoMonthsCount > 0 ? (
+                        <div className="text-[12px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}>
+                          ลด ฿{baht(promoPerMonth)}/เดือน · {periodLabel(promoStart)}
+                          {promoMonthsCount > 1 ? ` – ${periodLabel(promoEnd)}` : ""} ({promoMonthsCount} เดือน) · รวม ฿{baht(promoPerMonth * promoMonthsCount)}
+                        </div>
+                      ) : (
+                        <div className="text-[12px] mt-2" style={{ color: "var(--rs-danger)" }}>
+                          กรุณาเลือกช่วงเดือน (เดือนเริ่มต้องไม่เกินเดือนสิ้นสุด)
+                        </div>
+                      ))}
                   </div>
 
                   {/* #9c วันวางบิลเฉพาะสัญญานี้ (ถ้าต่างจากค่ากลางโครงการ) */}
@@ -831,6 +925,33 @@ export function ContractForm({
                       <input inputMode="decimal" className="rs-input" value={waterRate} onChange={(e) => setWaterRate(e.target.value)} placeholder="ตามโครงการ" />
                     </Field>
                   </div>
+
+                  {/* เนื้อสัญญา/แม่แบบ — ย้ายมาท้ายสุด (คนส่วนใหญ่ใช้เนื้อมาตรฐาน · ช่องเงินสำคัญกว่าจึงขึ้นก่อน) */}
+                  <div className="text-[12.5px] font-semibold mt-2" style={{ color: "var(--rs-text-2)" }}>
+                    เนื้อหาสัญญา (ถ้าต้องการปรับเอง)
+                  </div>
+                  <Field label="แม่แบบสัญญา (ไม่บังคับ)">
+                    <select className="rs-input" value={templateId} onChange={(e) => onPickTemplate(e.target.value)}>
+                      <option value="">— ไม่ใช้แม่แบบ —</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.isDefault ? " (ค่าเริ่มต้น)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="เนื้อหาสัญญา (แก้ไขได้ · ใช้ {{tenantName}} {{rentAmount}} ฯลฯ เป็นตัวแปร)">
+                    <textarea
+                      className="rs-input min-h-[120px] font-mono"
+                      value={customTermsHtml}
+                      onChange={(e) => setCustomTermsHtml(e.target.value)}
+                      placeholder="เว้นว่าง = ใช้เนื้อสัญญามาตรฐาน · พิมพ์/วาง HTML หรือข้อความเพื่อกำหนดเอง"
+                    />
+                  </Field>
+                  <p className="text-[11.5px] -mt-2" style={{ color: "var(--rs-text-3)" }}>
+                    ตัวแปรที่ใช้ได้: {"{{tenantName}} {{unitCode}} {{rentAmount}} {{depositAmount}} {{depositMonths}} {{rentDueDay}} {{startDate}} {{endDate}} {{landlordName}} {{bankInfo}} {{today}}"}
+                  </p>
 
                   <Field label="หมายเหตุ">
                     <textarea className="rs-input min-h-[64px]" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -933,8 +1054,8 @@ export function ContractForm({
               <Eye className="h-4 w-4" style={{ color: "var(--rs-brand)" }} /> ตัวอย่างสัญญา (อัปเดตสด)
             </div>
             <div className="flex-1 overflow-y-auto p-4" style={{ background: "var(--rs-bg-3)" }}>
-              <div className="mx-auto shadow-sm rounded-lg overflow-hidden" style={{ maxWidth: 720 }}>
-                <ContractPreview values={previewValues} project={project} bodyHtml={previewBody} />
+              <div className="mx-auto shadow-sm rounded-lg overflow-hidden" style={{ maxWidth: 794 }}>
+                <RentalContractDocument data={previewDoc} />
               </div>
             </div>
           </div>
@@ -962,7 +1083,7 @@ export function ContractForm({
             </div>
             <div className="flex-1 overflow-y-auto p-3" style={{ background: "var(--rs-bg-3)" }}>
               <div className="mx-auto shadow-sm rounded-lg overflow-hidden bg-white">
-                <ContractPreview values={previewValues} project={project} bodyHtml={previewBody} />
+                <RentalContractDocument data={previewDoc} />
               </div>
             </div>
           </div>
