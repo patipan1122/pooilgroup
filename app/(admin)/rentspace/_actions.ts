@@ -72,7 +72,7 @@ export async function actGetUnitDrawer(unitId: string) {
   const unit = await prisma.rentalUnit.findFirst({
     where: { id: unitId, orgId },
     include: {
-      contracts: { where: { status: { in: ["active", "expiring"] } }, take: 1, orderBy: { startDate: "desc" }, include: { tenant: true } },
+      contracts: { where: { status: { in: ["active", "expiring", "expired"] } }, take: 1, orderBy: { startDate: "desc" }, include: { tenant: true } },
       meters: { include: { readings: { orderBy: { period: "desc" }, take: 1 } } },
       bills: {
         orderBy: { period: "desc" },
@@ -323,7 +323,7 @@ export async function actDeleteUnit(id: string) {
     "ห้อง",
   );
   const active = await prisma.rentalContract.count({
-    where: { unitId: id, status: { in: ["active", "expiring"] } },
+    where: { unitId: id, status: { in: ["active", "expiring", "expired"] } },
   });
   if (active > 0) throw new Error("ลบไม่ได้ — มีสัญญาที่ยังใช้งานอยู่");
   await prisma.rentalUnit.update({ where: { id }, data: { isActive: false, status: "inactive" } });
@@ -507,7 +507,7 @@ export async function actDeleteTenant(id: string) {
     "ผู้เช่า",
   );
   const active = await prisma.rentalContract.count({
-    where: { tenantId: id, status: { in: ["active", "expiring"] } },
+    where: { tenantId: id, status: { in: ["active", "expiring", "expired"] } },
   });
   if (active > 0) throw new Error("ลบไม่ได้ — ผู้เช่ามีสัญญาที่ยังใช้งานอยู่");
   await prisma.rentalTenant.update({ where: { id }, data: { isActive: false } });
@@ -1031,8 +1031,8 @@ export async function actCreateBill(contractId: string, period: string, issue = 
   // super_admin ออกบิลได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตออกบิล" (เปิดเป็นค่าเริ่มต้น)
   if (!isSuperAdmin(session.user.role) && !contract.project.billIssueUnlocked)
     throw new Error("ยังไม่ได้เปิดสิทธิ์ออกบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
-  // ออกบิลได้เฉพาะสัญญาที่ยังใช้งานอยู่ (UI กรองแล้ว แต่ guard ฝั่ง server กัน API ตรง)
-  if (!["active", "expiring"].includes(contract.status)) {
+  // ออกบิลได้เฉพาะสัญญาที่ยังใช้งาน/หมดอายุ (เช่าต่อรายเดือน) — กันเฉพาะ draft/terminated (ย้ายออกแล้ว)
+  if (!["active", "expiring", "expired"].includes(contract.status)) {
     throw new Error("ออกบิลได้เฉพาะสัญญาที่ใช้งานอยู่ (สัญญานี้สถานะ " + contract.status + ")");
   }
   const res = await createBillForContract(contract, period, {
@@ -1057,7 +1057,7 @@ export async function actBillingPreview(projectId: string, period: string) {
   const { buildBill } = await import("@/lib/rentspace/billing");
   const { tenantDisplayName } = await import("@/lib/rentspace/format");
   const contracts = await prisma.rentalContract.findMany({
-    where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring"] } },
+    where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring", "expired"] } },
     include: { project: true, unit: true, tenant: true },
     orderBy: { unit: { code: "asc" } },
   });
@@ -1143,7 +1143,7 @@ export async function actPreviewBillsForUnits(
     where: {
       orgId: session.user.org_id,
       projectId,
-      status: { in: ["active", "expiring"] },
+      status: { in: ["active", "expiring", "expired"] },
       unitId: { in: unitIds },
     },
     include: { project: true, unit: true, tenant: true },
@@ -1213,7 +1213,7 @@ export async function actGenerateMonthlyBills(projectId: string, period: string)
       throw new Error("ยังไม่ได้เปิดสิทธิ์ออกบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
   }
   const contracts = await prisma.rentalContract.findMany({
-    where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring"] } },
+    where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring", "expired"] } },
     include: { project: true, unit: true },
   });
   let created = 0;
@@ -1237,7 +1237,7 @@ export async function actGenerateBillsForUnits(projectId: string, period: string
     where: {
       orgId: session.user.org_id,
       projectId,
-      status: { in: ["active", "expiring"] },
+      status: { in: ["active", "expiring", "expired"] },
       unitId: { in: unitIds },
     },
     include: { project: true, unit: true },

@@ -64,7 +64,7 @@ export async function rentMatrix(
         building: true,
         baseRentThb: true,
         contracts: {
-          where: { status: { in: ["active", "expiring"] } },
+          where: { status: { in: ["active", "expiring", "expired"] } },
           orderBy: { startDate: "desc" },
           take: 1,
           select: {

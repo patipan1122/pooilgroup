@@ -29,7 +29,7 @@ export async function listUnitsWithState(orgId: string, projectId: string) {
     include: {
       buildingRef: { select: { id: true, name: true, zone: true, sortOrder: true } },
       contracts: {
-        where: { status: { in: ["active", "expiring"] } },
+        where: { status: { in: ["active", "expiring", "expired"] } },
         orderBy: { startDate: "desc" },
         take: 1,
         include: { tenant: true },
@@ -183,7 +183,7 @@ export async function expiringContracts(orgId: string, projectId: string, days =
     where: {
       orgId,
       projectId,
-      status: { in: ["active", "expiring"] },
+      status: { in: ["active", "expiring", "expired"] },
       endDate: { gte: today, lte: horizon },
     },
     orderBy: { endDate: "asc" },
@@ -214,7 +214,7 @@ export async function meterBoard(orgId: string, projectId: string, period: strin
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     include: {
       meters: { include: { readings: { where: { period }, take: 1 } } },
-      contracts: { where: { status: { in: ["active", "expiring"] } }, take: 1, include: { tenant: true } },
+      contracts: { where: { status: { in: ["active", "expiring", "expired"] } }, take: 1, include: { tenant: true } },
     },
   });
   // เรียงห้องแบบเลขธรรมชาติ: DB เรียง code เป็น "ตัวอักษร" → A2/10, A2/11 มาก่อน A2/2.
@@ -323,7 +323,7 @@ export async function projectKpis(orgId: string, projectId: string) {
 export async function billingCycle(orgId: string, projectId: string, period = currentPeriod()) {
   // billable = units with an active/expiring contract
   const contracts = await prisma.rentalContract.findMany({
-    where: { orgId, projectId, status: { in: ["active", "expiring"] } },
+    where: { orgId, projectId, status: { in: ["active", "expiring", "expired"] } },
     select: { unitId: true },
   });
   const unitIds = [...new Set(contracts.map((c) => c.unitId))];

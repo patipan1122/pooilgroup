@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { Phone, Gauge, FileText, History } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { getUnitDetail } from "@/lib/rentspace/data";
-import { formatBaht, thaiDateLong, tenantDisplayName, toNum } from "@/lib/rentspace/format";
+import { formatBaht, thaiDateLong, tenantDisplayName, toNum, currentPeriod, periodLabel } from "@/lib/rentspace/format";
 import { RsPage, RsHeader, RsBadge, RsBackLink, RsCard } from "@/components/rentspace/ui";
 import UnitForm from "../_components/unit-form";
+import { UnitBillAction } from "../_components/unit-bill-action";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,15 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
   const unit = await getUnitDetail(session.user.org_id, id);
   if (!unit) notFound();
 
+  // สัญญาที่ยัง "ใช้งาน/หมดอายุ" (เช่าต่อรายเดือน) = ผู้เช่าปัจจุบัน · กันเฉพาะ draft/terminated
   const activeContract =
-    unit.contracts.find((c) => c.status === "active" || c.status === "expiring") ?? unit.contracts[0] ?? null;
+    unit.contracts.find((c) => ["active", "expiring", "expired"].includes(c.status)) ?? unit.contracts[0] ?? null;
+
+  // สถานะบิลงวดปัจจุบัน + ออกบิลได้ไหม
+  const period = currentPeriod();
+  const currentBill = unit.bills.find((b) => b.period === period && b.status !== "void") ?? null;
+  const billableContract =
+    activeContract && ["active", "expiring", "expired"].includes(activeContract.status) ? activeContract : null;
 
   return (
     <RsPage>
@@ -87,6 +95,17 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
             ยังไม่มีสัญญาที่ใช้งานอยู่สำหรับห้องนี้
           </p>
         )}
+
+        {/* ออกบิลงวดนี้ + สถานะ — กดออกบิลจากหน้าห้องได้เลย */}
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--rs-border)" }}>
+          <UnitBillAction
+            contractId={billableContract?.id ?? null}
+            period={period}
+            periodLabelText={periodLabel(period)}
+            currentBillId={currentBill?.id ?? null}
+            currentBillStatus={currentBill?.status ?? null}
+          />
+        </div>
       </RsCard>
 
       {/* (b) มิเตอร์ */}

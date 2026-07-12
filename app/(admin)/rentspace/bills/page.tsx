@@ -85,7 +85,10 @@ export default async function BillsPage({
     .reverse()
     .slice(0, 6);
 
-  const activeContracts = contracts.filter((c) => c.status === "active" || c.status === "expiring");
+  // รวม "หมดอายุ (expired)" ด้วย — ผู้เช่ายังอยู่ (เช่าต่อรายเดือน) ต้องออกบิลได้ · กันเฉพาะ draft/terminated
+  const activeContracts = contracts.filter(
+    (c) => c.status === "active" || c.status === "expiring" || c.status === "expired",
+  );
 
   // floor grouping key for "เลือกทั้งชั้น": building + numeric floor when present.
   function floorKeyOf(u: { building: string | null; floor: number | null }): string {
