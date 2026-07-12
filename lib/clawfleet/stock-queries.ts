@@ -13,6 +13,8 @@ export type CfStockProductRow = {
   category: string;
   imageUrl: string | null; // รูปสินค้า (R2 · สำหรับ picker/การ์ดในมือถือ)
   unitCostCents: number;
+  // ราคาขาย (coins/เล่น 1 ครั้ง · 1 coin ≈ 10 บาท) — DISPLAY เท่านั้น (ไม่ใช่ต้นทุน) → หน้าสินค้าโชว์ "ราคาขาย"
+  defaultPriceCoins: number;
   warehouse: number; // คงคลังสาขา (ไม่รวมในตู้)
   inMachines: number; // อยู่ในตู้
   reorderLevel: number; // เกณฑ์เตือนใกล้หมด (cf ไม่มี field → ค่าคงที่)
@@ -115,7 +117,7 @@ export async function getCfBranchStockProducts(
 ): Promise<CfStockProductRow[]> {
   const products = await prisma.cfProduct.findMany({
     where: { orgId, isActive: true },
-    select: { id: true, sku: true, barcode: true, name: true, category: true, imageUrl: true, unitCostCents: true },
+    select: { id: true, sku: true, barcode: true, name: true, category: true, imageUrl: true, unitCostCents: true, defaultPriceCoins: true },
     orderBy: { name: "asc" },
   });
   if (products.length === 0) return [];
@@ -144,6 +146,7 @@ export async function getCfBranchStockProducts(
       category: p.category,
       imageUrl: p.imageUrl,
       unitCostCents: p.unitCostCents,
+      defaultPriceCoins: p.defaultPriceCoins,
       warehouse: whMap.get(p.id) ?? 0,
       // ในตู้ = − (movement ของ LOAD_TO_MACHINE ที่ machineId != null) → ทำให้เป็นบวก
       inMachines: Math.abs(imMap.get(p.id) ?? 0),

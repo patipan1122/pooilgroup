@@ -16,6 +16,7 @@ const LOW_STOCK_THRESHOLD = 8; // ต่ำกว่านี้ = เตือ�
 export interface BranchStockPickerProduct {
   id: string;
   name: string;
+  sku: string; // รหัสสินค้า (SKU) — โชว์บนแถวรายการ (item 6 · CEO: "ต้องโชว์ว่าเป็น SKU อะไร")
   imageUrl: string | null;
   warehouse: number; // คงคลังสาขา (ไม่รวมในตู้)
 }
@@ -47,8 +48,10 @@ export function BranchStockPicker({ products, value, onPick }: BranchStockPicker
     );
   }
 
+  // item 6 · รายการแนวตั้ง (compact row) — สแกน/เลือกง่ายกว่าการ์ด 2 คอลัมน์:
+  //   รูปเล็ก (40px) + ชื่อ + SKU (muted) ซ้าย · ป้ายคงคลังชิดขวา · เลือกแล้ว = เส้นม่วง + ติ๊ก.
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {products.map((p) => {
         const selected = value === p.id;
         const empty = p.warehouse <= 0;
@@ -58,71 +61,70 @@ export function BranchStockPicker({ products, value, onPick }: BranchStockPicker
             key={p.id}
             type="button"
             onClick={() => onPick(p.id)}
-            className="co-tap co-lift"
+            className="co-tap"
             style={{
               textAlign: "left",
-              padding: 11,
-              borderRadius: 14,
-              cursor: "pointer",
-              background: "#fff",
-              border: selected ? "2px solid #4F46E5" : "1.5px solid #E8EAED",
-              boxShadow: selected ? "0 0 0 3px rgba(79,70,229,0.10)" : "none",
               display: "flex",
-              flexDirection: "column",
-              gap: 9,
+              alignItems: "center",
+              gap: 11,
+              minHeight: 56,
+              padding: "9px 12px",
+              borderRadius: 13,
+              cursor: "pointer",
+              background: selected ? "#F5F5FE" : "#fff",
+              border: selected ? "2px solid #4F46E5" : "1.5px solid #E8EAED",
+              boxShadow: selected ? "0 0 0 3px rgba(79,70,229,0.08)" : "none",
             }}
           >
-            <div style={{ position: "relative" }}>
-              <PickerThumb imageUrl={p.imageUrl} name={p.name} />
-              {selected && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    background: "#4F46E5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                </span>
-              )}
+            <PickerThumb imageUrl={p.imageUrl} name={p.name} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 700,
+                  color: "#1A1D21",
+                  lineHeight: 1.25,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.name}
+              </div>
+              {/* SKU — เล็ก muted ใต้ชื่อ (item 6 · CEO ต้องเห็นว่าเป็น SKU อะไร) */}
+              <div className="num" style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.sku}
+              </div>
             </div>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#1A1D21",
-                lineHeight: 1.25,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                minHeight: 32,
-              }}
-            >
-              {p.name}
-            </div>
-            {/* ยอดคงคลัง — 0/ใกล้หมด = amber เตือน (ไม่บล็อก) · ปกติ = neutral */}
+            {/* ยอดคงคลัง — ป้ายชิดขวา · 0/ใกล้หมด = amber เตือน (ไม่บล็อก) · ปกติ = neutral */}
             <span
               className="co-pill num"
               style={{
-                alignSelf: "flex-start",
+                flex: "0 0 auto",
                 background: empty ? "#FCEDEC" : low ? "#FCF1E2" : "#F1F2F7",
                 color: empty ? "#B42318" : low ? "#B45309" : "#5A6270",
               }}
             >
               {empty ? "คลังหมด" : `คลัง ${num(p.warehouse)}${low ? " · ใกล้หมด" : ""}`}
             </span>
+            {selected && (
+              <span
+                style={{
+                  flex: "0 0 22px",
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "#4F46E5",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </span>
+            )}
           </button>
         );
       })}
@@ -130,7 +132,7 @@ export function BranchStockPicker({ products, value, onPick }: BranchStockPicker
   );
 }
 
-/* ── รูปสินค้าในการ์ด picker (มี → แสดง · null → placeholder) ─────────────── */
+/* ── รูปสินค้าในแถว picker (มี → แสดง · null → placeholder) · 40px thumbnail ─── */
 function PickerThumb({ imageUrl, name }: { imageUrl: string | null; name: string }) {
   if (imageUrl) {
     return (
@@ -138,15 +140,16 @@ function PickerThumb({ imageUrl, name }: { imageUrl: string | null; name: string
       <img
         src={imageUrl}
         alt={name}
-        style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, objectFit: "cover", background: "#F1F2F7", display: "block" }}
+        style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, objectFit: "cover", background: "#F1F2F7", display: "block" }}
       />
     );
   }
   return (
     <div
       style={{
-        width: "100%",
-        aspectRatio: "1 / 1",
+        width: 40,
+        height: 40,
+        flex: "0 0 40px",
         borderRadius: 10,
         background: "#F1F2F7",
         display: "flex",
@@ -155,7 +158,7 @@ function PickerThumb({ imageUrl, name }: { imageUrl: string | null; name: string
         color: "#A9AEB8",
       }}
     >
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
         <rect x="3" y="3" width="18" height="18" rx="3" />
         <circle cx="8.5" cy="8.5" r="1.6" />
         <path d="m21 15-5-5L5 21" />

@@ -395,8 +395,10 @@ async function loadBigfeatureData(
         branchProducts[bid] = products.map((p) => ({
           id: p.id,
           name: p.name,
+          sku: p.sku, // item 6 · โชว์ SKU บนรายการเติม/นับ
           imageUrl: p.imageUrl,
           warehouse: p.warehouse,
+          defaultPriceCoins: p.defaultPriceCoins, // item 9 · ราคาขาย (display) บนหน้าสินค้า
         }));
         // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
         onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));

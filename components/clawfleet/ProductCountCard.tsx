@@ -15,7 +15,8 @@ import { num } from "@/components/clawfleet/os/format";
 const MAX_COUNT = 100_000;
 
 export interface ProductCountCardProps {
-  product: { id: string; name: string; imageUrl: string | null };
+  // sku/defaultPriceCoins optional (บาง call site เก่ายังไม่ส่ง) — DISPLAY เท่านั้น (item 9)
+  product: { id: string; name: string; imageUrl: string | null; sku?: string; defaultPriceCoins?: number };
   /** จำนวนที่นับได้ · null = ยังไม่นับ (โชว์ placeholder ไม่ใช่ 0) */
   value: number | null;
   onChange: (n: number) => void;
@@ -39,6 +40,9 @@ export function ProductCountCard({
   onPhoto,
 }: ProductCountCardProps) {
   const counted = value != null;
+  // item 9 · ราคาขาย = coins/เล่น × 10 (1 coin ≈ 10 บาท) — DISPLAY เท่านั้น (ไม่ให้แก้ที่นี่)
+  const priceCoins = product.defaultPriceCoins;
+  const priceBaht = priceCoins != null ? priceCoins * 10 : null;
   // stepper: กดครั้งแรกจากว่าง → เริ่มที่ 0 (แล้ว +1) · กันติดลบ · กันเกิน cap
   const step = (delta: number) => {
     const base = value ?? 0;
@@ -70,8 +74,19 @@ export function ProductCountCard({
           >
             {product.name}
           </div>
-          <div style={{ marginTop: 3, fontSize: 11.5, color: counted ? "#5A6270" : "#9AA1AB", fontWeight: 500 }}>
-            {counted ? "นับได้แล้ว" : "ยังไม่นับ"}
+          <div style={{ marginTop: 3, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+            {/* item 9 · ราคาขาย (ตั้งขายเท่าไร) — pill สีเขียว · DISPLAY เท่านั้น */}
+            {priceBaht != null && (
+              <span className="num" style={{ display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 700, color: "#15803D", background: "#EFFAF3", border: "1px solid #C8E9D3", borderRadius: 20, padding: "1px 8px" }}>
+                ราคาขาย ฿{priceBaht}
+              </span>
+            )}
+            {product.sku && (
+              <span className="num" style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600 }}>{product.sku}</span>
+            )}
+            <span style={{ fontSize: 11.5, color: counted ? "#5A6270" : "#9AA1AB", fontWeight: 500 }}>
+              {counted ? "นับได้แล้ว" : "ยังไม่นับ"}
+            </span>
           </div>
         </div>
         {/* ตัวเลขที่นับ — ว่าง = "—" เทา (neutral) · มีค่า = เข้ม */}
