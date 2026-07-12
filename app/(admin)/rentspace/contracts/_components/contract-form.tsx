@@ -476,7 +476,8 @@ export function ContractForm({
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
-          onClick={close}
+          /* CEO 2026-07-12: ไม่ปิดตอนแตะพื้นหลัง (เดิม onClick={close} → เลื่อน/แตะขอบพลาด = ปิด งานหาย)
+             ปิดได้เฉพาะปุ่ม X หรือกดบันทึกเท่านั้น */
         >
           <div
             className="w-full sm:max-w-2xl lg:max-w-5xl max-h-[92vh] sm:max-h-[88vh] flex"
@@ -656,6 +657,21 @@ export function ContractForm({
                       )}
                     </button>
                   </div>
+
+                  {/* CEO 2026-07-12: โชว์ผู้เช่าปัจจุบันของสัญญาที่กำลังแก้ ให้เห็นชัดบนสุด (ไม่ต้องเลื่อนหาในลิสต์) */}
+                  {isEdit && selectedTenant && !newTenantMode && (
+                    <div
+                      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5"
+                      style={{ border: "1.5px solid var(--rs-brand)", background: "var(--rs-brand-50)" }}
+                    >
+                      <User className="h-4 w-4 flex-shrink-0" style={{ color: "var(--rs-brand)" }} />
+                      <div className="min-w-0">
+                        <div className="text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>ผู้เช่าปัจจุบันของสัญญานี้</div>
+                        <div className="font-bold text-[14px] truncate" style={{ color: "var(--rs-text)" }}>{tenantLabel(selectedTenant)}</div>
+                      </div>
+                      <span className="ml-auto flex-shrink-0 text-[12px] font-semibold" style={{ color: "var(--rs-brand)" }}>เลือกไว้แล้ว ✓</span>
+                    </div>
+                  )}
 
                   {newTenantMode ? (
                     <div className="rounded-xl p-3 space-y-3" style={{ border: "1px solid var(--rs-border)", background: "var(--rs-bg-2)" }}>
@@ -941,6 +957,12 @@ export function ContractForm({
                       ))}
                     </select>
                   </Field>
+                  {/* CEO 2026-07-12: โชว์แม่แบบที่สัญญานี้ใช้อยู่ให้ชัด (เลือกไว้ให้แล้วในช่องด้านบน) */}
+                  {isEdit && templateId && (
+                    <p className="text-[11.5px] -mt-1.5" style={{ color: "var(--rs-brand)" }}>
+                      ● แม่แบบที่สัญญานี้ใช้อยู่: <b>{templates.find((t) => t.id === templateId)?.name ?? "—"}</b>
+                    </p>
+                  )}
                   <Field label="เนื้อหาสัญญา (แก้ไขได้ · ใช้ {{tenantName}} {{rentAmount}} ฯลฯ เป็นตัวแปร)">
                     <textarea
                       className="rs-input min-h-[120px] font-mono"
