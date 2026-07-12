@@ -11,11 +11,12 @@
 // org/branch-scoped: ทุก write ตรวจว่า branch + user อยู่ใน org ของผู้เรียก และ
 // (ถ้าไม่ใช่ admin org-wide) อยู่ในสาขาที่ผู้เรียกดูแล.
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { assertCfAdmin, userBranchIds, canCfManage } from "./role-guard";
@@ -116,49 +117,61 @@ export async function inviteCfStaff(
 
   const token = makeInviteToken();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+  const nowIso = new Date().toISOString();
 
-  try {
-    const user = await prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          orgId,
-          name,
-          email,
-          phone,
-          role,
-          isActive: false, // pending จนกว่าจะกดลิงก์เชิญ
-          mustChangePassword: true,
-          invitedBy: session.user.id,
-          inviteToken: token,
-          inviteExpiresAt: expiresAt,
-        },
-        select: { id: true },
-      });
-      await tx.userBranch.create({
-        data: { orgId, userId: created.id, branchId, isActive: true },
-      });
-      return created;
-    });
+  // เขียนผ่าน Supabase adminClient เหมือนหน้าเชิญเดิม (POST /api/admin/users) ที่บันทึกได้จริงมาตลอด.
+  // เดิมใช้ prisma.$transaction → บน prod แถวไม่ลง DB จริงทั้งที่ action ตอบ success
+  // → invite ล่องหน เปิดลิงก์เจอ "ไม่พบ invite" (ยืนยันจาก DB: token ที่สร้างไม่มีอยู่จริง).
+  const admin = adminClient();
+  const userId = randomUUID();
 
-    await audit({
-      orgId,
-      userId: session.user.id,
-      action: "CREATE_USER",
-      resourceType: "user",
-      resourceId: user.id,
-      diff: { new: { name, email, role, branchId, via: "clawfleet_team_invite" } },
-    });
-
-    const inviteUrl = `${await requestBaseUrl()}/invite/${token}`;
-    revalidatePath(TEAM_PATH);
-    return { ok: true, data: { userId: user.id, inviteUrl, name } };
-  } catch (e) {
-    // P2002 = unique violation (อีเมล/อื่น ๆ)
-    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+  const { error: insertErr } = await admin.from("users").insert({
+    id: userId,
+    org_id: orgId,
+    name,
+    email,
+    phone,
+    role,
+    is_active: false, // pending จนกว่าจะกดลิงก์เชิญ
+    must_change_password: true,
+    invited_by: session.user.id,
+    invite_token: token,
+    invite_expires_at: expiresAt.toISOString(),
+    updated_at: nowIso,
+  });
+  if (insertErr) {
+    // 23505 = unique violation (อีเมลซ้ำ)
+    if (insertErr.code === "23505") {
       return { ok: false, error: "ข้อมูลซ้ำกับพนักงานที่มีอยู่ (อีเมล) · ตรวจอีกครั้ง" };
     }
-    return { ok: false, error: `เชิญพนักงานไม่สำเร็จ: ${(e as Error).message}` };
+    return { ok: false, error: `เชิญพนักงานไม่สำเร็จ: ${insertErr.message}` };
   }
+
+  const { error: branchErr } = await admin.from("user_branches").insert({
+    id: randomUUID(),
+    org_id: orgId,
+    user_id: userId,
+    branch_id: branchId,
+    is_active: true,
+  });
+  if (branchErr) {
+    // กัน user ค้าง (orphan pending) ถ้าผูกสาขาไม่ผ่าน → ลบทิ้งให้เชิญใหม่ได้
+    await admin.from("users").delete().eq("id", userId);
+    return { ok: false, error: `ผูกสาขาไม่สำเร็จ: ${branchErr.message}` };
+  }
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "CREATE_USER",
+    resourceType: "user",
+    resourceId: userId,
+    diff: { new: { name, email, role, branchId, via: "clawfleet_team_invite" } },
+  });
+
+  const inviteUrl = `${await requestBaseUrl()}/invite/${token}`;
+  revalidatePath(TEAM_PATH);
+  return { ok: true, data: { userId, inviteUrl, name } };
 }
 
 // =============================================================
@@ -318,25 +331,32 @@ export async function regenInviteLink(
   const token = makeInviteToken();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
-  try {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { inviteToken: token, inviteExpiresAt: expiresAt, isActive: false },
-    });
-    await audit({
-      orgId,
-      userId: session.user.id,
-      action: "UPDATE_USER",
-      resourceType: "user",
-      resourceId: userId,
-      diff: { new: { reissuedInvite: true } },
-    });
-    const inviteUrl = `${await requestBaseUrl()}/invite/${token}`;
-    revalidatePath(TEAM_PATH);
-    return { ok: true, data: { inviteUrl, name: target.name } };
-  } catch (e) {
-    return { ok: false, error: `สร้างลิงก์เชิญใหม่ไม่สำเร็จ: ${(e as Error).message}` };
+  // อัปเดต token ผ่าน adminClient (วิธีเดียวกับ inviteCfStaff/resend-invite ที่บันทึกได้จริง)
+  const admin = adminClient();
+  const { error: updErr } = await admin
+    .from("users")
+    .update({
+      invite_token: token,
+      invite_expires_at: expiresAt.toISOString(),
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+  if (updErr) {
+    return { ok: false, error: `สร้างลิงก์เชิญใหม่ไม่สำเร็จ: ${updErr.message}` };
   }
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "UPDATE_USER",
+    resourceType: "user",
+    resourceId: userId,
+    diff: { new: { reissuedInvite: true } },
+  });
+  const inviteUrl = `${await requestBaseUrl()}/invite/${token}`;
+  revalidatePath(TEAM_PATH);
+  return { ok: true, data: { inviteUrl, name: target.name } };
 }
 
 // =============================================================

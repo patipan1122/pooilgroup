@@ -1313,7 +1313,14 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         <BaselineScreen
           machine={baselineMachine}
           orgId={orgId}
-          products={branchProducts[baselineMachine.branchId] ?? []}
+          // สินค้า "ในตู้นี้" ต้อง scope ต่อตู้จริง (inMachineByMachine) ไม่ใช่ทั้งสาขา —
+          // เดิมส่ง branchProducts[branchId] → สินค้าของตู้อื่นในสาขารั่วมาโชว์ทุกตู้
+          // (เช่น "หมี" ที่ใส่ตู้ A โผล่ตู้ B) + ยังถูก submit เป็น loadout ตั้งต้นตู้นี้ผิด ๆ.
+          products={(inMachineByMachine[baselineMachine.id] ?? []).map((p) => ({
+            id: p.productId,
+            name: p.name,
+            imageUrl: p.imageUrl,
+          }))}
           onBack={() => setBaselineMachineId(null)}
           onDone={() => {
             // ตั้งค่าเสร็จ → กลับหน้าหลัก · refresh ให้ server ส่ง awaitingSetup ใหม่ (ตู้ active แล้ว)
@@ -1786,7 +1793,7 @@ function PanelScreen(props: {
 
 /* ─────────────────── N1 · หน้าจอ "ตั้งค่าครั้งแรก" (แทน 6-step wizard สำหรับตู้ AWAITING_SETUP) ─────────────────── */
 function BaselineScreen({ machine, orgId, products, onBack, onDone }: {
-  machine: AppMachine; orgId: string; products: BranchStockProduct[]; onBack: () => void; onDone: () => void;
+  machine: AppMachine; orgId: string; products: { id: string; name: string; imageUrl: string | null }[]; onBack: () => void; onDone: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
