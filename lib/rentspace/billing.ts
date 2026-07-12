@@ -375,9 +375,24 @@ export async function createBillForContract(
 ): Promise<{ created: boolean; billId: string }> {
   const existing = await prisma.rentalBill.findUnique({
     where: { contractId_period: { contractId: contract.id, period } },
-    select: { id: true },
+    select: { id: true, status: true, paidAmount: true },
   });
-  if (existing) return { created: false, billId: existing.id };
+  // มีบิลที่ยัง "ไม่ถูกยกเลิก" ในงวดนี้แล้ว → คืนใบเดิม (idempotent · กันออกซ้ำ)
+  if (existing && existing.status !== "void") return { created: false, billId: existing.id };
+  // บิลงวดนี้ถูกยกเลิก (void) แต่แถวยังกิน @@unique([contractId, period]) อยู่ →
+  // ลบใบที่ยกเลิกทิ้งเพื่อ "ออกบิลงวดเดิมใหม่" ได้ (bug: เดิม early-return ใบ void เลยออกใหม่ไม่ได้)
+  // กันเงินหาย: ถ้าใบที่ยกเลิกยังมีประวัติการชำระ ไม่ลบเงียบ ๆ — ให้ผู้ใช้จัดการใบเดิมก่อน
+  if (existing && existing.status === "void") {
+    if (toNum(existing.paidAmount) > 0)
+      throw new Error("บิลงวดนี้ถูกยกเลิกแต่ยังมีประวัติการชำระเงินอยู่ — กรุณาลบบิลเดิมก่อนออกบิลใหม่");
+    await prisma.$transaction([
+      prisma.rentalDiscount.deleteMany({ where: { billId: existing.id } }),
+      prisma.rentalPayment.deleteMany({ where: { billId: existing.id } }),
+      prisma.rentalBillItem.deleteMany({ where: { billId: existing.id } }),
+      // deleteMany (ไม่ throw ถ้าแถวหายไปแล้วจาก request คู่ขนาน) → race-safe
+      prisma.rentalBill.deleteMany({ where: { id: existing.id, status: "void" } }),
+    ]);
+  }
 
   const built = await buildBill(contract, period);
   const vatPercent = toNum(contract.vatPercent);

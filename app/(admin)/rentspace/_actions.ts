@@ -1081,9 +1081,10 @@ export async function actBillingPreview(projectId: string, period: string) {
 
     const existing = await prisma.rentalBill.findUnique({
       where: { contractId_period: { contractId: c.id, period } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (existing) {
+    // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
+    if (existing && existing.status !== "void") {
       // already billed → list it flagged, but it won't be re-billed
       rows.push({ code, tenant, rent: 0, utility: 0, total: 0, hasMeter: true, alreadyBilled: true });
       continue;
@@ -1157,9 +1158,10 @@ export async function actPreviewBillsForUnits(
 
     const existing = await prisma.rentalBill.findUnique({
       where: { contractId_period: { contractId: c.id, period } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (existing) {
+    // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
+    if (existing && existing.status !== "void") {
       rows.push({
         unitId: c.unitId, code, tenant, alreadyBilled: true,
         rent: 0, electric: 0, water: 0, lateFee: 0, discount: 0, vat: 0, total: 0,
