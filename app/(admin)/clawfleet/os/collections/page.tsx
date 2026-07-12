@@ -94,7 +94,10 @@ export default async function CollectionsPage({
   // expectedCash/actualCash/gap เป็น "บาท" แล้ว · gap เก็บทิศทาง (+ ขาด / − เกิน)
   const rows: CollectionRow[] = rounds.map((r) => ({
     id: r.id,
-    code: r.id,
+    // id ตัวจริง (sessionCode) ใช้กดตรวจ/รีวิว — คงไว้.
+    // "code" = ชื่อที่โชว์บนการ์ด: รอบตั้งต้น sessionCode เป็น "BASE-<uuid>..." อ่านไม่รู้เรื่อง
+    // → โชว์ "รอบตั้งต้น · <เวลา · วันที่>" (สาขาต่อท้ายให้เองที่การ์ด) · รอบเก็บปกติ (CFS-...) คงเดิม.
+    code: r.isBaseline ? `รอบตั้งต้น · ${r.when}` : r.id,
     branchId: r.branchId,
     branch: r.branchName || r.branchCode || "สาขา",
     staff: r.staff || "—",

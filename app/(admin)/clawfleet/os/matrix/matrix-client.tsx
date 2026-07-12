@@ -433,6 +433,13 @@ export function MatrixClient({
   }, [drillIdx, grid, branch]);
 
   const noData = !empty && grid.machines.length === 0;
+  // สาขา "ตั้งตู้แล้ว (มีตู้จริง) แต่ทุกช่องไม่มีข้อมูล" = ยังไม่เคยมีรอบเก็บเงินจริง
+  // (รอบตั้งต้น/baseline เป็น event INITIAL ไม่ใช่ COLLECTION → ตารางนี้ไม่นับ → เห็น "—" เต็มจอ)
+  // แยกจากตารางว่างเปล่าด้วยแบนเนอร์อธิบาย ไม่ให้ดูเหมือนระบบพัง.
+  const machinesNoCollections =
+    !empty &&
+    grid.machines.length > 0 &&
+    grid.machines.every((m) => m.days.every((d) => !d.hasData));
 
   return (
     <div style={{ opacity: pending ? 0.6 : 1, transition: "opacity .15s" }}>
@@ -577,6 +584,34 @@ export function MatrixClient({
           })}
         </div>
       </div>
+
+      {/* สาขามีตู้แล้วแต่ยังไม่มีรอบเก็บเงินจริง — อธิบายให้ชัด ไม่ให้ตาราง "—" เต็มจอดูเหมือนพัง */}
+      {machinesNoCollections && (
+        <div
+          style={{
+            display: "flex",
+            gap: 9,
+            alignItems: "flex-start",
+            background: "#EEF2FF",
+            border: "1px solid #C7D2FE",
+            borderRadius: 10,
+            padding: "11px 15px",
+            marginBottom: 14,
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            color: "#3730A3",
+          }}
+        >
+          <AlertTriangle size={16} style={{ flex: "0 0 16px", marginTop: 1 }} />
+          <span>
+            <b>สาขานี้ตั้งตู้แล้ว ({machineCount} ตู้) แต่ยังไม่มีรอบเก็บเงินจริง</b> — ข้อมูลในตารางจะขึ้นเมื่อพนักงานบันทึก
+            การเก็บเงินรอบแรก
+            <span style={{ display: "block", color: "#6366F1", fontSize: 11.5, marginTop: 3 }}>
+              รอบ “ตั้งต้น” ที่ตั้งไว้เป็นการตั้งค่ามิเตอร์เริ่มต้น (เงินที่ค้างในตู้ตอนเริ่มนับ) — ไม่นับเป็นยอดเก็บรายวัน จึงยังไม่แสดงในตารางนี้
+            </span>
+          </span>
+        </div>
+      )}
 
       {/* legend */}
       <div
