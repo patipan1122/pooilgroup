@@ -749,6 +749,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     () => (machine ? branchProducts[machine.branchId] ?? [] : []),
     [branchProducts, machine],
   );
+  // 🆕 net "ของบนชั้นจริง" ต่อสินค้า (คลัง − ในตู้) ของสาขาตู้ที่กำลังเก็บ — ให้ picker เติม clamp/โชว์ net
+  // ให้ตรงกับที่ server enforce (guard เติม = net). ไม่มีใน map = ยังไม่เคยรับเข้า → 0.
+  const activeRefillNet = useMemo(
+    () => (machine ? netAvailableByBranch[machine.branchId] ?? {} : {}),
+    [netAvailableByBranch, machine],
+  );
   // WAVE-3b · R4 · คลัง (ห้อง) active ของสาขาตู้ที่กำลังเก็บ — ขับ picker "เติมจากคลัง".
   // picker โผล่เฉพาะเมื่อ >1 ห้อง (single-warehouse = ไม่มี picker · default คลังหลักเหมือนเดิม).
   const activeBranchWarehouses = useMemo(
@@ -1362,6 +1368,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onCategory={(v) => dispatch({ type: "setForm", key: "category", value: v })}
           // R4 · สินค้าคลังสาขาของตู้นี้ + handler เลือกสินค้าเติมจาก picker (ตั้งทั้ง product+productId)
           branchProducts={activeBranchProducts}
+          refillNetById={activeRefillNet}
           onPickRefill={(pid, name) => {
             dispatch({ type: "setForm", key: "refillProductId", value: pid });
             dispatch({ type: "setForm", key: "product", value: name });
@@ -2879,6 +2886,8 @@ function FlowScreen(props: {
   onCategory: (v: string) => void;
   // R4 · สินค้าคลังสาขา (ตู้นี้) + handler เลือกจาก picker. [] → fallback dropdown เดิม.
   branchProducts: BranchStockProduct[];
+  // 🆕 net "ของบนชั้นจริง" ต่อ productId (คลัง − ในตู้) — picker เติมใช้ clamp/โชว์ให้ตรง server guard
+  refillNetById: Record<string, number>;
   onPickRefill: (productId: string, name: string) => void;
   // WAVE-3b · R4 · คลัง active ของสาขานี้ (picker "เติมจากคลัง") + handler เลือกห้อง. picker โผล่เฉพาะ >1 ห้อง.
   branchWarehouses: BranchWarehouse[];
@@ -2994,6 +3003,7 @@ function FlowScreen(props: {
               {props.branchProducts.length > 0 ? (
                 <RefillLinesEditor
                   products={props.branchProducts}
+                  netById={props.refillNetById}
                   lines={props.refillLines}
                   onAdd={props.onAddRefillLine}
                   onSetQty={props.onSetRefillLineQty}
@@ -3400,8 +3410,9 @@ function CountField({ value, onChange, size = 20, placeholder = "นับแล
  * แต่ละไลน์ = สินค้าคลังสาขา 1 ตัว (รูป+ชื่อ+คงคลัง) + จำนวนที่เติม (พิมพ์ได้ + −/+ · clamp ≤ คงคลัง).
  * "+ เพิ่ม SKU อีก" = เปิด BranchStockPicker เลือกตัวใหม่ (กันเลือกซ้ำ · ตัวที่เลือกแล้วถูกกรอง/disable).
  * รวมเติม = Σ qty (โชว์บาร์ล่าง). ไม่บล็อกเมื่อคลังหมด (server enforce) — เตือน amber เฉย ๆ. */
-function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
+function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove }: {
   products: BranchStockProduct[];
+  netById: Record<string, number>;
   lines: RefillLine[];
   onAdd: (productId: string, name: string) => void;
   onSetQty: (productId: string, qty: number) => void;
@@ -3410,8 +3421,10 @@ function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
   // เปิด/ปิด picker เลือก SKU (โชว์ตอน "+ เพิ่ม SKU" · ครั้งแรกยังไม่มีไลน์ = เปิดค้างให้เลือกเลย)
   const [adding, setAdding] = useState(false);
   const pickedIds = new Set(lines.map((l) => l.productId));
-  // ตัวที่ยังไม่ถูกเลือก (กันซ้ำ · ตัวที่เลือกแล้วหายจาก picker) — ถ้าหมด = ปิดปุ่มเพิ่ม
-  const remaining = products.filter((p) => !pickedIds.has(p.id));
+  // 🆕 remap "คงคลัง" → net "ของบนชั้นจริง" (คลัง − ในตู้) ให้ตรงกับ server guard เติม (net-per-room).
+  const netProducts = products.map((p) => ({ ...p, warehouse: Math.max(0, netById[p.id] ?? 0) }));
+  // ตัวที่ยังไม่ถูกเลือก + มีของบนชั้น (net>0) — net≤0 ซ่อน (กันเพิ่มแล้วกรอกไม่ได้) · หมด = ปิดปุ่มเพิ่ม
+  const remaining = netProducts.filter((p) => !pickedIds.has(p.id) && p.warehouse > 0);
   const total = lines.reduce((s, l) => s + Math.max(0, l.qty), 0);
   const showPicker = adding || lines.length === 0; // ครั้งแรก: เปิด picker ให้เลือกเลย
 
@@ -3423,16 +3436,16 @@ function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
       {lines.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {lines.map((l) => {
-            const prod = products.find((p) => p.id === l.productId);
-            const warehouse = prod?.warehouse ?? 0;
-            const over = l.qty > warehouse; // เกินคงคลัง → เตือน amber (ไม่บล็อก · server กันจริง)
+            const prod = netProducts.find((p) => p.id === l.productId);
+            const warehouse = prod?.warehouse ?? 0; // net ของบนชั้นจริง
+            const over = l.qty > warehouse; // เกินของบนชั้น → เตือน amber (ไม่บล็อก · server กันจริง)
             return (
               <div key={l.productId} style={{ border: `1.5px solid ${over ? "#F0D8AE" : "#E8EAED"}`, background: over ? "#FEFBF3" : "#fff", borderRadius: 14, padding: "11px 12px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                   <DollThumb imageUrl={prod?.imageUrl ?? null} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
-                    <div style={{ fontSize: 11, color: over ? "#B45309" : "#9AA1AB" }} className="num">คงเหลือในคลัง {warehouse} ตัว</div>
+                    <div style={{ fontSize: 11, color: over ? "#B45309" : "#9AA1AB" }} className="num">บนชั้น (พร้อมเติม) {warehouse} ตัว</div>
                   </div>
                   {/* ลบไลน์นี้ */}
                   <button type="button" aria-label="ลบสินค้านี้" onClick={() => onRemove(l.productId)} className="co-tap"
@@ -3459,7 +3472,7 @@ function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
                 {over && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FCF1E2", borderRadius: 8, padding: "6px 10px" }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
-                    เกินคงคลัง ({warehouse}) — ปรับจำนวนก่อนบันทึก
+                    เกินของบนชั้น ({warehouse}) — ปรับจำนวนก่อนบันทึก
                   </div>
                 )}
               </div>
@@ -3504,7 +3517,7 @@ function RefillLinesEditor({ products, lines, onAdd, onSetQty, onRemove }: {
 
       {/* running total — รวมเติมทุก SKU (ตรงกับที่ server จะคิด) */}
       <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.45 }}>
-        เลขคงเหลือ = สต็อกในคลังสาขา · เติมเข้าตู้แล้วระบบจะหักออกจากคลังให้
+        เลขบนชั้น = ของว่างพร้อมเติม (หักที่อยู่ในตู้แล้ว) · เติมเข้าตู้ ระบบหักออกจากคลังให้
       </div>
       {lines.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F6F7FA", borderRadius: 11, padding: "11px 14px" }}>

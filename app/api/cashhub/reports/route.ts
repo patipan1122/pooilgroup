@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit/log";
 import { getRequestMeta } from "@/lib/audit/request-meta";
 import { withDbDefaults } from "@/lib/db/insert";
 import { can } from "@/lib/auth/permissions";
+import { isCashHubBranch } from "@/lib/auth/branch-access";
 import { sendTelegramMessage, sendToAdminChat } from "@/lib/telegram/send";
 import { sendNotification } from "@/lib/notifications/send";
 import {
@@ -93,6 +94,15 @@ export async function POST(req: NextRequest) {
 
   if (!branch) {
     return NextResponse.json({ error: "ไม่พบสาขา" }, { status: 404 });
+  }
+
+  // กันเงินตู้คีบหล่นผิด silo — claw_machine ใช้ ClawFleet (cfCollectionEvent) ไม่ใช่ daily_reports.
+  // แม้ UI ซ่อนแล้ว ก็กันการยิง action ตรง (defense-in-depth).
+  if (!isCashHubBranch(branch.business_type)) {
+    return NextResponse.json(
+      { error: "สาขาตู้คีบใช้แอป ClawFleet · กรุณาเก็บเงินในแอปตู้คีบ" },
+      { status: 422 },
+    );
   }
 
   // Check user_branches link unless admin

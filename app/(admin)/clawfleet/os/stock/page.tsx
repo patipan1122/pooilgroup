@@ -313,26 +313,51 @@ async function loadWarehouseRows(
   if (products.length === 0) return [];
 
   // ยอดคลังต่อ product (รวมทุกสาขา) + ยอดต่อ product×สาขา (สำหรับ distribution bar)
-  const totals = await prisma.cfStockMovement.groupBy({
-    by: ["productId"],
-    where: { orgId, machineId: null, ...branchFilter },
-    _sum: { qty: true },
-    _max: { occurredAt: true },
-  });
-  const perBranch = await prisma.cfStockMovement.groupBy({
-    by: ["productId", "branchId"],
-    where: { orgId, machineId: null, ...branchFilter },
-    _sum: { qty: true },
-  });
+  // machineId null = GROSS (รับเข้าคลัง · ยังไม่หักที่ยกไปตู้) · machineId NOT null = ที่โหลดเข้าตู้แล้ว
+  // net "บนชั้น" = gross − inMachines (ของที่หยิบมาโหลดได้จริง) — display-only ไม่แตะ ledger writes
+  const [totals, machineTotals, perBranch, perBranchMachines] = await Promise.all([
+    prisma.cfStockMovement.groupBy({
+      by: ["productId"],
+      where: { orgId, machineId: null, ...branchFilter },
+      _sum: { qty: true },
+      _max: { occurredAt: true },
+    }),
+    prisma.cfStockMovement.groupBy({
+      by: ["productId"],
+      where: { orgId, machineId: { not: null }, ...branchFilter },
+      _sum: { qty: true },
+    }),
+    prisma.cfStockMovement.groupBy({
+      by: ["productId", "branchId"],
+      where: { orgId, machineId: null, ...branchFilter },
+      _sum: { qty: true },
+    }),
+    prisma.cfStockMovement.groupBy({
+      by: ["productId", "branchId"],
+      where: { orgId, machineId: { not: null }, ...branchFilter },
+      _sum: { qty: true },
+    }),
+  ]);
   const totalMap = new Map(totals.map((t) => [t.productId, { qty: t._sum.qty ?? 0, last: t._max.occurredAt }]));
+  // in-machines ต่อ product (abs ของผลรวม signed — ledger บันทึกตอนโหลดเข้าตู้เป็นเลขติดลบฝั่งตู้)
+  const machineMap = new Map(machineTotals.map((t) => [t.productId, Math.abs(t._sum.qty ?? 0)]));
+  // in-machines ต่อ product×สาขา (สำหรับคิด net รายสาขาในหน้าเจาะสาขา)
+  const branchMachineMap = new Map<string, number>();
+  for (const r of perBranchMachines) branchMachineMap.set(`${r.productId}|${r.branchId}`, Math.abs(r._sum.qty ?? 0));
   // เก็บ branchId ในแต่ละแถว dist ด้วย — ให้ฝั่ง client เจาะดูรายสาขาโดย match ด้วย id
   // (ไม่ใช่ชื่อสาขา) กันเคสสาขาชื่อซ้ำแล้วนับยอดขาด (branch.name ไม่ unique)
-  const distMap = new Map<string, { branchId: string; branch: string; qty: number }[]>();
+  // qty=gross ต่อสาขา · inMachines=ที่โหลดเข้าตู้ในสาขานั้น (client คิด net=qty−inMachines รายสาขาเอง)
+  const distMap = new Map<string, { branchId: string; branch: string; qty: number; inMachines: number }[]>();
   for (const r of perBranch) {
     const qty = r._sum.qty ?? 0;
     if (qty <= 0) continue;
     const arr = distMap.get(r.productId) ?? [];
-    arr.push({ branchId: r.branchId, branch: branchName.get(r.branchId) ?? "สาขา", qty });
+    arr.push({
+      branchId: r.branchId,
+      branch: branchName.get(r.branchId) ?? "สาขา",
+      qty,
+      inMachines: branchMachineMap.get(`${r.productId}|${r.branchId}`) ?? 0,
+    });
     distMap.set(r.productId, arr);
   }
   const pcat = new Map(products.map((p) => [p.id, p]));
@@ -340,11 +365,14 @@ async function loadWarehouseRows(
   return Array.from(totalMap.entries())
     .map(([productId, v]) => {
       const p = pcat.get(productId);
+      const inMachines = machineMap.get(productId) ?? 0;
       return {
         id: productId,
         name: p?.name ?? "สินค้า",
         cat: p?.category ?? "OTHER",
-        qty: v.qty,
+        qty: v.qty, // gross (รวมของในตู้) — เก็บไว้เป็นยอดรวมทั้งหมด/compat
+        inMachines, // ที่โหลดเข้าตู้แล้ว
+        net: v.qty - inMachines, // "บนชั้น" = หยิบมาโหลดได้จริง (อาจติดลบถ้าข้อมูล drift → โชว์ตามจริง)
         recvISO: v.last ? v.last.toISOString() : null,
         dist: (distMap.get(productId) ?? []).sort((a, b) => b.qty - a.qty),
       };

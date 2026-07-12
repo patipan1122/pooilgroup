@@ -39,6 +39,16 @@ export function canFillReports(role: DbUser["role"]): boolean {
 }
 
 /**
+ * True if this branch type submits cash via CashHub (`daily_reports`).
+ * ตู้คีบ (claw_machine) ใช้ ClawFleet (`cfCollectionEvent`) คนละ silo — ต้องกันออกจาก /liff/report
+ * ไม่งั้นเงินตู้คีบหล่นเข้า daily_reports หายจากการกระทบยอด ClawFleet (CEO 2026-07-11).
+ * NOTE: กรองแค่ claw_machine — ไม่รวม massage_chair (ยังไม่ยืนยันว่า ChairOps ใช้ silo ไหน · กันพัง).
+ */
+export function isCashHubBranch(businessType: string): boolean {
+  return businessType !== "claw_machine";
+}
+
+/**
  * Returns list of branches a user can fill reports for.
  * - cross-branch roles → all active branches
  * - others → only assigned (user_branches)

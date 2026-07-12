@@ -59,8 +59,9 @@ export type DocLossSeed = {
   reviewedByName: string | null;
 };
 export type WarehouseRowSeed = {
-  id: string; name: string; cat: string; qty: number; recvISO: string | null;
-  dist: { branchId: string; branch: string; qty: number }[];
+  // qty = gross (รวมของในตู้) · inMachines = ที่โหลดเข้าตู้ · net = บนชั้น (หยิบมาโหลดได้จริง)
+  id: string; name: string; cat: string; qty: number; inMachines: number; net: number; recvISO: string | null;
+  dist: { branchId: string; branch: string; qty: number; inMachines: number }[];
 };
 export type ShipmentSeed = {
   id: string; to: string; status: string; unitsCount: number; createdAt: string;
@@ -86,9 +87,10 @@ type BranchRow = {
   receipts: ReceiptSeed[];
 };
 type WarehouseItem = {
-  id: string; name: string; cat: string; qty: number; recvISO: string;
+  // qty = gross (รวมทั้งหมด) · inMachines = ในตู้ · net = บนชั้น (พร้อมโหลด)
+  id: string; name: string; cat: string; qty: number; inMachines: number; net: number; recvISO: string;
   tag: "ใหม่" | "ปกติ" | "เก่า"; ageDays: number;
-  dist: { branchId: string; branch: string; qty: number }[];
+  dist: { branchId: string; branch: string; qty: number; inMachines: number }[];
   hist: { id: string; to: string; qty: number; dateISO: string; status: ShipStatus }[];
 };
 type Transfer = { to: string; status: ShipStatus; dateISO: string; items: string };
@@ -305,6 +307,8 @@ function toWarehouseItem(r: WarehouseRowSeed): WarehouseItem {
     name: r.name,
     cat: CAT_TH[r.cat] ?? r.cat,
     qty: r.qty,
+    inMachines: r.inMachines,
+    net: r.net,
     recvISO: r.recvISO ?? "",
     tag: ageTag(ageDays),
     ageDays,
@@ -378,8 +382,8 @@ function OverviewTab({
     for (const w of warehouseAll) {
       const here = w.dist.find((d) => d.branchId === viewBranchId);
       if (!here || here.qty <= 0) continue;
-      // เจาะสาขา → qty = ยอดของสาขานี้ · dist = เหลือแค่สาขานี้ (modal ก็โฟกัสสาขานี้)
-      rows.push({ ...w, qty: here.qty, dist: [here] });
+      // เจาะสาขา → qty/inMachines/net = ยอดของสาขานี้ · dist = เหลือแค่สาขานี้ (modal ก็โฟกัสสาขานี้)
+      rows.push({ ...w, qty: here.qty, inMachines: here.inMachines, net: here.qty - here.inMachines, dist: [here] });
     }
     return rows;
   }, [scoped, warehouseAll, viewBranchId]);
@@ -582,7 +586,7 @@ function OverviewTab({
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 640 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "10px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
-              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>{scoped ? "คงเหลือสาขานี้" : "คงเหลือ"}</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
+              <span>สินค้า</span><span>หมวด</span><span style={{ textAlign: "right" }}>บนชั้น · ในตู้</span><span style={{ textAlign: "right" }}>รับเข้าล่าสุด</span><span style={{ textAlign: "right" }}>รับมาแล้ว (วัน)</span><span style={{ textAlign: "right" }}>สถานะอายุ</span>
             </div>
             {warehouse.length === 0 ? (
               <div style={{ padding: "10px 4px" }}>
@@ -594,15 +598,23 @@ function OverviewTab({
               </div>
             ) : warehouse.map((w) => {
               const t = AGE_TONE[w.tag];
-              const low = w.qty <= 20;
+              // "ใกล้หมด" คิดจาก net (บนชั้น) — ของที่หยิบมาโหลดตู้ได้จริง ไม่ใช่ gross ที่รวมของในตู้ไปแล้ว
+              const low = w.net <= 20;
+              const neg = w.net < 0; // ข้อมูล drift → net ติดลบ (โชว์ตามจริง เตือนด้วยสี ไม่ clamp)
               return (
                 <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
                   <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
                     {w.name}
-                    {low && <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
+                    {low && !neg && <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
                   </span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{w.cat}</span>
-                  <span className="num" style={{ textAlign: "right", fontWeight: 700, color: low ? "#B42318" : "#1A1D21" }}>{num(w.qty)}</span>
+                  {/* บนชั้น (net = รับเข้า − ที่โหลดเข้าตู้) = headline · ในตู้ = secondary (โชว์เฉพาะเมื่อ >0) */}
+                  <span style={{ textAlign: "right", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.25 }}>
+                    <span className="num" style={{ fontWeight: 700, color: neg ? "#B42318" : low ? "#B45309" : "#1A1D21" }}>{num(w.net)}</span>
+                    {w.inMachines > 0 && (
+                      <span className="num" style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 500 }}>ในตู้ {num(w.inMachines)}</span>
+                    )}
+                  </span>
                   <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? fmtDate(w.recvISO) : "—"}</span>
                   <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{w.recvISO ? `${w.ageDays} วัน` : "—"}</span>
                   <span style={{ textAlign: "right" }}>
@@ -915,10 +927,15 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
     >
       {item && (
         <div style={{ padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 }}>
-            <span style={{ fontSize: 12, color: "#9AA1AB" }}>คงเหลือ (SKU นี้)</span>
-            <span className="num" style={{ fontSize: 22, fontWeight: 700 }}>{num(item.qty)}</span>
+          {/* บนชั้น (net) = headline · ในตู้ + รวมทั้งหมด (gross) = ยอดย่อยให้เห็นว่าของไม่หาย */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 12, color: "#9AA1AB" }}>บนชั้น (พร้อมโหลด)</span>
+            <span className="num" style={{ fontSize: 22, fontWeight: 700, color: item.net < 0 ? "#B42318" : "#1A1D21" }}>{num(item.net)}</span>
             <span style={{ fontSize: 12, color: "#9AA1AB" }}>ชิ้น</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14, fontSize: 12, color: "#6B7280" }}>
+            <span>ในตู้ <span className="num" style={{ fontWeight: 600 }}>{num(item.inMachines)}</span></span>
+            <span>รวมทั้งหมด <span className="num" style={{ fontWeight: 600 }}>{num(item.qty)}</span></span>
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>กระจายอยู่ที่สาขา (สต็อกสาขา)</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>

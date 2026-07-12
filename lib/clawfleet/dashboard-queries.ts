@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { CfSessionStatus } from "@/lib/generated/prisma/client";
 import { requireSession, type Session } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
-import { getCfStockOverview, type CfStockProductRow } from "./stock-queries";
+import { getCfBranchStockProducts, type CfStockProductRow } from "./stock-queries";
 import { bangkokStartOfDay } from "./pnl-queries";
 
 /** เกณฑ์ "ต้องเติมตุ๊กตา" — ตู้ที่ตุ๊กตาในตู้เหลือน้อย (mirror lastDollStock) */
@@ -219,7 +219,9 @@ export type DashboardLowStock = {
 
 /**
  * สินค้าใกล้หมดทั่วทุกสาขา (เรียงน้อยสุดก่อน · เอา top N).
- * ใช้ getCfStockOverview รายสาขา (มี lowProducts + reorderLevel ในตัว) แล้วรวม.
+ * เกณฑ์ + ยอดที่โชว์ = NET "บนชั้น" (warehouse − inMachines) = ของที่หยิบมาโหลดตู้ได้จริง.
+ * เดิมใช้ gross (warehouse) → ของ 100 ตัวแต่โหลดเข้าตู้ 98 (เหลือ 2 บนชั้น) จะไม่เตือน = พลาด.
+ * ดึงรายสินค้าตรงจาก getCfBranchStockProducts (มีทั้ง warehouse+inMachines) แล้วกรองด้วย net.
  */
 export async function getDashboardLowStock(limit = 6): Promise<DashboardLowStock[]> {
   const session = await requireSession();
@@ -236,23 +238,26 @@ export async function getDashboardLowStock(limit = 6): Promise<DashboardLowStock
   });
   if (branches.length === 0) return [];
 
-  const overviews = await Promise.all(
-    branches.map(async (b) => ({ branch: b, ov: await getCfStockOverview(orgId, b.id) })),
+  const perBranch = await Promise.all(
+    branches.map(async (b) => ({ branch: b, products: await getCfBranchStockProducts(orgId, b.id) })),
   );
 
-  const items: DashboardLowStock[] = [];
-  for (const { branch, ov } of overviews) {
-    for (const p of ov.lowProducts as CfStockProductRow[]) {
+  const items: (DashboardLowStock & { net: number })[] = [];
+  for (const { branch, products } of perBranch) {
+    for (const p of products as CfStockProductRow[]) {
+      const net = p.warehouse - p.inMachines; // บนชั้น = พร้อมโหลด
+      if (net > p.reorderLevel) continue; // ไม่ใกล้หมด (คิดจากบนชั้นจริง ไม่ใช่ gross)
       items.push({
         name: p.name,
         loc: branch.name,
-        qty: p.warehouse,
+        qty: net, // โชว์ยอดบนชั้น (ตรงกับเกณฑ์ที่ใช้ตัดสิน)
+        net,
         // หมด/ติดลบ = แดง · ใกล้หมด (<=reorder) = เหลือง
-        color: p.warehouse <= 0 ? "#B42318" : "#B45309",
+        color: net <= 0 ? "#B42318" : "#B45309",
       });
     }
   }
 
-  items.sort((a, b) => a.qty - b.qty);
-  return items.slice(0, limit);
+  items.sort((a, b) => a.net - b.net);
+  return items.slice(0, limit).map(({ net: _net, ...rest }) => rest);
 }

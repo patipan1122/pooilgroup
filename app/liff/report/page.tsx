@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { adminClient } from "@/lib/db/server";
-import { loadManageableBranches } from "@/lib/auth/branch-access";
+import { loadManageableBranches, isCashHubBranch } from "@/lib/auth/branch-access";
 import { bkkToday } from "@/lib/utils/format";
 import { BranchPicker, type PickerBranch } from "./branch-picker";
 
@@ -21,7 +21,8 @@ export default async function LiffReportEntryPage() {
   const admin = adminClient();
 
   const branches = await loadManageableBranches(session.user);
-  const activeBranches = branches.filter((b) => b.is_active);
+  // กันสาขาตู้คีบออกจาก CashHub — เงินตู้คีบต้องเข้า ClawFleet ไม่ใช่ daily_reports (คนละ silo)
+  const activeBranches = branches.filter((b) => b.is_active && isCashHubBranch(b.business_type));
 
   // 1 branch → redirect direct (no picker needed)
   if (activeBranches.length === 1) {
@@ -29,6 +30,25 @@ export default async function LiffReportEntryPage() {
   }
 
   if (activeBranches.length === 0) {
+    // มีแต่สาขาตู้คีบ → พาไปแอป ClawFleet (ไม่ใช่ "ยังไม่ผูกสาขา")
+    const hasClawOnly = branches.some((b) => b.is_active && !isCashHubBranch(b.business_type));
+    if (hasClawOnly) {
+      return (
+        <div className="p-6 max-w-md mx-auto text-center">
+          <div className="text-5xl mb-4">🎮</div>
+          <h1 className="font-semibold text-lg mb-2">สาขาตู้คีบใช้แอปอีกตัว</h1>
+          <p className="text-sm text-zinc-500 mb-6">
+            เก็บเงินตู้คีบ ทำในแอป ClawFleet ไม่ใช่ที่นี่ (เงินจะเข้าระบบตู้คีบให้อัตโนมัติ)
+          </p>
+          <a
+            href="/clawfleet/os/app"
+            className="inline-block px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-semibold"
+          >
+            → ไปแอปตู้คีบ
+          </a>
+        </div>
+      );
+    }
     return (
       <div className="p-6 max-w-md mx-auto text-center">
         <div className="text-5xl mb-4">🤷‍♀️</div>

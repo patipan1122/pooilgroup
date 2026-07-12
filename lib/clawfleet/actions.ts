@@ -421,16 +421,19 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
               : { warehouseId: chosenWh };
         // 🔒 advisory-lock ต่อ (branch,ห้อง,สินค้า) — serialize การเติมพร้อมกัน กันอ่านยอดก้อนเดียวแล้วตัดเกิน
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${line.productId}))`;
-        // R4 over-issue guard — เติมได้ไม่เกินสต๊อก "ในห้องที่เลือก" ของสินค้านั้น (scope ตาม whFilter).
+        // R4 over-issue guard — เติมได้ไม่เกิน "ของบนชั้นจริง" (NET) ของสินค้านั้นในห้องที่เลือก.
+        // NET = Σ ทุกแถวของสินค้าในห้อง (รับเข้า − โหลดเข้าตู้ − เบิก + คืน) — ไม่ filter machineId.
+        // (เดิม machineId:null = GROSS รับเข้ารวม ไม่หักตุ๊กตาที่โหลดเข้าตู้ไปแล้ว → เติมเกินของบนชั้นได้
+        //  → net ติดลบ. machine rows แนบ warehouseId ห้องที่โหลด → scope ตาม whFilter ถูกต้องต่อห้อง.)
         const onHandAgg = await tx.cfStockMovement.aggregate({
-          where: { orgId, branchId: machine.branchId, productId: line.productId, machineId: null, ...whFilter },
+          where: { orgId, branchId: machine.branchId, productId: line.productId, ...whFilter },
           _sum: { qty: true },
         });
-        const warehouseOnHand = onHandAgg._sum.qty ?? 0;
-        if (line.qty > warehouseOnHand) {
+        const shelfOnHand = onHandAgg._sum.qty ?? 0;
+        if (line.qty > shelfOnHand) {
           const roomSuffix = line.warehouseId ? " ในคลังที่เลือก" : "";
           throw new CfOverIssueError(
-            `สต๊อกไม่พอ${roomSuffix} · มี ${warehouseOnHand} ตัว · เติม ${line.qty} ตัวไม่ได้`,
+            `ตุ๊กตาบนชั้นไม่พอ${roomSuffix} · บนชั้นมี ${shelfOnHand} ตัว · เติม ${line.qty} ตัวไม่ได้`,
           );
         }
         await tx.cfStockMovement.create({
