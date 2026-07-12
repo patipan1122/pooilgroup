@@ -81,24 +81,29 @@ export function ApplicationAIPanel({
           </div>
           {canWrite && (
             <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={runEval}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)] transition-colors"
-              >
-                <Bot className="size-4" />
-                ประเมินจากคำตอบ
-              </button>
+              {/* มีเรซูเม่ → ดันปุ่มอ่านเรซูเม่ขึ้นเป็นปุ่มหลัก (แม่นกว่า · เห็นทั้งไฟล์) */}
               {hasResumeFile && (
                 <button
                   type="button"
                   onClick={runResumeEval}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-brand-700)] bg-white border border-[var(--color-brand-300)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-50)] transition-colors"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)] transition-colors"
                 >
                   <FileText className="size-4" />
                   อ่านเรซูเม่ + ให้คะแนน
                 </button>
               )}
+              <button
+                type="button"
+                onClick={runEval}
+                className={
+                  hasResumeFile
+                    ? "inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-brand-700)] bg-white border border-[var(--color-brand-300)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-50)] transition-colors"
+                    : "inline-flex items-center gap-1.5 text-xs font-bold text-white bg-[var(--color-brand-600)] px-3 py-2 rounded-lg hover:bg-[var(--color-brand-700)] transition-colors"
+                }
+              >
+                <Bot className="size-4" />
+                ประเมินจากคำตอบ
+              </button>
             </div>
           )}
         </div>

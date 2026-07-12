@@ -12,16 +12,25 @@ import { prisma } from "@/lib/prisma";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  FormSchemaSchema,
   parseScreeningVerdict,
   parseGender,
   type ApplicationStatus,
 } from "@/lib/recruit/types";
+import {
+  getAnswerColumns,
+  formatAnswerValue,
+  type AppFileMeta,
+} from "@/lib/recruit/answers";
 import { computeIqStats } from "@/lib/recruit/iq";
 import { thaiDateLong } from "@/lib/utils/format";
 import { ViewToggle } from "@/components/recruit/view-toggle";
+import { PostingSelect } from "@/components/recruit/posting-select";
+import { BatchAiButton } from "@/components/recruit/batch-ai-button";
 import {
   ApplicationsTable,
   type TableRow,
+  type AnswerColumnMeta,
 } from "@/components/recruit/applications-table";
 import { ChevronLeft, ChevronRight, Plus, SearchX } from "lucide-react";
 
@@ -95,8 +104,15 @@ export default async function RecruitTablePage({
               { createdAt: "desc" as const },
             ];
 
-  const [filteredTotal, apps, countsByStatus, verdictCounts, agg, postings] =
-    await Promise.all([
+  const [
+    filteredTotal,
+    apps,
+    countsByStatus,
+    verdictCounts,
+    agg,
+    postings,
+    batchList,
+  ] = await Promise.all([
       prisma.recruitApplication.count({ where }),
       prisma.recruitApplication.findMany({
         where,
@@ -114,6 +130,7 @@ export default async function RecruitTablePage({
           flaggedBlacklist: true,
           submittedAt: true,
           answers: true,
+          files: true,
           applicant: { select: { fullName: true, phone: true, gender: true } },
           posting: { select: { title: true, fieldSchema: true } },
         },
@@ -138,6 +155,12 @@ export default async function RecruitTablePage({
         select: { id: true, title: true },
         orderBy: { createdAt: "desc" },
         take: 50,
+      }),
+      // Batch AI targets — เบา ๆ แค่ id + มีคะแนนหรือยัง (ครอบทั้งตัวกรอง ไม่ใช่แค่หน้านี้)
+      prisma.recruitApplication.findMany({
+        where,
+        select: { id: true, aiScore: true },
+        take: 500,
       }),
     ]);
 
@@ -169,21 +192,52 @@ export default async function RecruitTablePage({
     ? postingTitleById.get(postingFilter) ?? "ตำแหน่งที่เลือก"
     : null;
 
-  const rows: TableRow[] = apps.map((a) => ({
-    id: a.id,
-    refId: a.refId,
-    fullName: a.applicant.fullName,
-    phone: a.applicant.phone,
-    gender: parseGender(a.applicant.gender),
-    postingTitle: a.posting.title,
-    iq: computeIqStats(a.posting.fieldSchema, a.answers),
-    aiScore: a.aiScore,
-    starRating: a.starRating,
-    verdict: parseScreeningVerdict(a.screeningVerdict),
-    status: a.status as ApplicationStatus,
-    tags: a.tags ?? [],
-    flagged: a.flaggedBlacklist,
-    submittedAt: a.submittedAt ? thaiDateLong(a.submittedAt) : null,
+  // คอลัมน์คำตอบ — กางเฉพาะเมื่อเลือกตำแหน่ง (ทุกคนในตำแหน่งใช้ชุดคำถามเดียวกัน)
+  const answerCols =
+    postingFilter && apps.length > 0
+      ? (() => {
+          const parsed = FormSchemaSchema.safeParse(apps[0].posting.fieldSchema);
+          return parsed.success ? getAnswerColumns(parsed.data) : [];
+        })()
+      : [];
+  const answerColumns: AnswerColumnMeta[] = answerCols.map((c) => ({
+    id: c.id,
+    label: c.label,
+    long: c.long,
+  }));
+
+  const rows: TableRow[] = apps.map((a) => {
+    const rawAnswers = (a.answers ?? {}) as Record<string, unknown>;
+    const answers: Record<string, string> = {};
+    for (const c of answerCols) {
+      answers[c.id] = formatAnswerValue(c.field, rawAnswers[c.id]);
+    }
+    const files = Array.isArray(a.files)
+      ? (a.files as unknown as AppFileMeta[])
+      : [];
+    return {
+      id: a.id,
+      refId: a.refId,
+      fullName: a.applicant.fullName,
+      phone: a.applicant.phone,
+      gender: parseGender(a.applicant.gender),
+      postingTitle: a.posting.title,
+      iq: computeIqStats(a.posting.fieldSchema, a.answers),
+      aiScore: a.aiScore,
+      starRating: a.starRating,
+      verdict: parseScreeningVerdict(a.screeningVerdict),
+      status: a.status as ApplicationStatus,
+      tags: a.tags ?? [],
+      flagged: a.flaggedBlacklist,
+      submittedAt: a.submittedAt ? thaiDateLong(a.submittedAt) : null,
+      files,
+      answers,
+    };
+  });
+
+  const batchTargets = batchList.map((b) => ({
+    id: b.id,
+    scored: b.aiScore != null,
   }));
 
   // URL builder — preserve filters
@@ -260,20 +314,44 @@ export default async function RecruitTablePage({
           <SummaryTile label="คัดกรอง: ไม่สนใจ" value={String(vNot)} accent="red" />
         </div>
 
-        {/* Filters: search + status chips */}
+        {/* Filters: search + posting + batch AI + status chips */}
         <div className="flex flex-col gap-3">
-          <form action="/recruit/table" method="GET" className="flex items-center gap-2">
-            {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
-            {postingFilter && <input type="hidden" name="posting" value={postingFilter} />}
-            {sort !== "recent" && <input type="hidden" name="sort" value={sort} />}
-            <input
-              type="search"
-              name="q"
-              defaultValue={query}
-              placeholder="ค้นชื่อ / เบอร์ / เลขใบสมัคร..."
-              className="w-full sm:max-w-xs text-sm rounded-xl border border-zinc-200 h-10 px-3 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+          <div className="flex flex-wrap items-center gap-2">
+            <form
+              action="/recruit/table"
+              method="GET"
+              className="flex items-center gap-2"
+            >
+              {statusFilter && (
+                <input type="hidden" name="status" value={statusFilter} />
+              )}
+              {postingFilter && (
+                <input type="hidden" name="posting" value={postingFilter} />
+              )}
+              {sort !== "recent" && (
+                <input type="hidden" name="sort" value={sort} />
+              )}
+              <input
+                type="search"
+                name="q"
+                defaultValue={query}
+                placeholder="ค้นชื่อ / เบอร์ / เลขใบสมัคร..."
+                className="w-full sm:max-w-xs text-sm rounded-xl border border-zinc-200 h-10 px-3 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+              />
+            </form>
+            <PostingSelect
+              postings={postings}
+              currentPosting={postingFilter}
+              status={statusFilter}
+              q={query}
+              sort={sort}
             />
-          </form>
+            {canWrite && (
+              <div className="ml-auto">
+                <BatchAiButton targets={batchTargets} />
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             <StatusChip
@@ -326,6 +404,8 @@ export default async function RecruitTablePage({
               canWrite={canWrite}
               currentSort={sort}
               sortLinks={sortLinks}
+              answerColumns={answerColumns}
+              storageKey={postingFilter ?? "all"}
             />
 
             {/* Pagination */}

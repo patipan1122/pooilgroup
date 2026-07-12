@@ -17,6 +17,7 @@ import {
 import { getObject } from "@/lib/r2/upload";
 import { checkAiBudget } from "@/lib/ai/cost-cap";
 import { FormSchemaSchema } from "@/lib/recruit/types";
+import { buildBiasSafeAnswerLines } from "@/lib/recruit/answers";
 
 export async function scoreApplicationAction(applicationId: string) {
   const session = await requireSession();
@@ -266,6 +267,131 @@ export async function draftMessageAction(
   });
 
   return { ok: true, draft };
+}
+
+/**
+ * ประเมินผู้สมัคร 1 คน แบบ "ฉลาด" — อ่านเรซูเม่ถ้ามี (PDF/รูป) ไม่มีก็ประเมินจากคำตอบ.
+ * ใช้กับปุ่ม batch (ประเมินหลายคนรวด) — คืน result object แทน throw เพื่อไม่ให้ loop หยุด
+ * เพราะคนเดียวพลาด. budget เกิน/ไม่มีสิทธิ์ = stop:true → ให้ batch หยุดทั้งชุด.
+ */
+export async function smartScoreApplicationAction(
+  applicationId: string,
+): Promise<
+  | { ok: true; score: number; mode: "resume" | "answers" }
+  | { ok: false; error: string; stop?: boolean }
+> {
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    return { ok: false, error: "ไม่มีสิทธิ์", stop: true };
+  }
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "recruit.score-candidate",
+  });
+  if (!budget.allowed) {
+    return { ok: false, error: budget.reason ?? "เกิน budget AI ชั่วคราว", stop: true };
+  }
+
+  const app = await prisma.recruitApplication.findFirst({
+    where: { id: applicationId, orgId: session.user.org_id },
+    include: {
+      posting: { select: { title: true, description: true, fieldSchema: true } },
+    },
+  });
+  if (!app) return { ok: false, error: "ไม่พบใบสมัคร" };
+
+  const schemaParsed = FormSchemaSchema.safeParse(app.posting.fieldSchema);
+  const answers = (app.answers ?? {}) as Record<string, unknown>;
+
+  const files = (app.files ?? []) as Array<{
+    key: string;
+    name: string;
+    size: number;
+    mime: string;
+  }>;
+  // PDF (เรซูเม่จริง) ก่อน → ไม่มีก็รูปที่ AI อ่านได้ · ข้ามไฟล์ใหญ่เกิน 5MB
+  const resume =
+    files.find((f) => f.mime === "application/pdf") ??
+    files.find((f) => isResumeReadableMime(f.mime));
+  const readableResume =
+    resume && resume.size <= 5 * 1024 * 1024 ? resume : null;
+
+  try {
+    if (readableResume) {
+      const bytes = await getObject(readableResume.key);
+      let formAnswersText: string | undefined;
+      if (schemaParsed.success) {
+        const lines = buildBiasSafeAnswerLines(schemaParsed.data, answers);
+        formAnswersText = lines.length ? lines.join("\n") : undefined;
+      }
+      const result = await scoreResumeFile({
+        jobTitle: app.posting.title,
+        jobDescription: app.posting.description ?? undefined,
+        file: { bytes, mime: readableResume.mime, name: readableResume.name },
+        formAnswersText,
+        track: { orgId: session.user.org_id, userId: session.user.id },
+      });
+      await prisma.recruitApplication.updateMany({
+        where: { id: applicationId, orgId: session.user.org_id },
+        data: {
+          aiScore: result.score,
+          aiSummary: "[จากเรซูเม่] " + result.summary,
+          aiStrengths: result.strengths,
+          aiRisks: result.risks,
+          aiEvaluatedAt: new Date(),
+        },
+      });
+      await audit({
+        orgId: session.user.org_id,
+        userId: session.user.id,
+        action: "RECRUIT_AI_SCORED_RESUME",
+        resourceType: "recruit_application",
+        resourceId: applicationId,
+        diff: { new: { score: result.score, file: readableResume.name, batch: true } },
+      });
+      revalidatePath("/recruit");
+      revalidatePath("/recruit/table");
+      revalidatePath(`/recruit/applications/${applicationId}`);
+      return { ok: true, score: result.score, mode: "resume" };
+    }
+
+    // ไม่มีไฟล์ที่อ่านได้ → ประเมินจากคำตอบ
+    if (!schemaParsed.success) {
+      return { ok: false, error: "ฟอร์มไม่ถูกต้อง อ่านคำตอบไม่ได้" };
+    }
+    const result = await scoreCandidate({
+      jobTitle: app.posting.title,
+      jobDescription: app.posting.description ?? undefined,
+      formSchema: schemaParsed.data,
+      answers,
+      track: { orgId: session.user.org_id, userId: session.user.id },
+    });
+    await prisma.recruitApplication.updateMany({
+      where: { id: applicationId, orgId: session.user.org_id },
+      data: {
+        aiScore: result.score,
+        aiSummary: "[จากคำตอบ] " + result.summary,
+        aiStrengths: result.strengths,
+        aiRisks: result.risks,
+        aiEvaluatedAt: new Date(),
+      },
+    });
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: "RECRUIT_AI_SCORED",
+      resourceType: "recruit_application",
+      resourceId: applicationId,
+      diff: { new: { score: result.score, batch: true } },
+    });
+    revalidatePath("/recruit");
+    revalidatePath("/recruit/table");
+    revalidatePath(`/recruit/applications/${applicationId}`);
+    return { ok: true, score: result.score, mode: "answers" };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 export async function suggestFieldsAction(input: {

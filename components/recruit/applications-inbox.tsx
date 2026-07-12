@@ -15,6 +15,8 @@ import {
   type ApplicationStatus,
 } from "@/lib/recruit/types";
 import { ApplicationDetail } from "./application-detail";
+import { FileQuickOpen } from "./file-quick-open";
+import type { AppFileMeta } from "@/lib/recruit/answers";
 import { thaiDateLong } from "@/lib/utils/format";
 import { ClipboardList, KanbanSquare, ListChecks, Plus, Inbox, SearchX, CalendarCheck, Users, MessageCircle, Bolt, Share2, BarChart3, Zap } from "lucide-react";
 import { ViewToggle } from "./view-toggle";
@@ -314,7 +316,11 @@ export async function ApplicationsInbox({
               clearHref={buildUrl({})}
             />
           ) : (
-            apps.map((app) => (
+            apps.map((app) => {
+              const files = Array.isArray(app.files)
+                ? (app.files as unknown as AppFileMeta[])
+                : [];
+              return (
               <Link
                 key={app.id}
                 href={buildUrl({
@@ -373,6 +379,7 @@ export async function ApplicationsInbox({
                         #{app.refId.slice(-6)}
                       </span>
                     )}
+                    <FileQuickOpen files={files} />
                   </div>
                   <span className="text-[11px] text-zinc-400 shrink-0">
                     {app.submittedAt
@@ -402,7 +409,8 @@ export async function ApplicationsInbox({
                   </div>
                 )}
               </Link>
-            ))
+              );
+            })
           )}
         </div>
       </section>

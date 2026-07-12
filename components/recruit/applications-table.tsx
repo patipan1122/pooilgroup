@@ -2,8 +2,10 @@
 
 // Excel-style table view — ผู้สมัครทั้งหมดเป็นแถว · กดเปลี่ยนสถานะ/คัดกรองในตารางได้เลย
 // เรียงคอลัมน์ (server-side) · แบ่งหน้าที่หน้าแม่ · สรุปคะแนนอยู่แถบบน (หน้าแม่)
+// + กางคำตอบทุกข้อเป็นคอลัมน์ (เมื่อเลือกตำแหน่ง) · ซ่อน/โชว์คอลัมน์ได้ (จำในเครื่อง)
+// + คอลัมน์ "ไฟล์" กดเปิดเรซูเม่/รูปได้เลย · ชื่อผู้สมัครติดขอบซ้ายตอนเลื่อนแนวนอน
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -20,10 +22,12 @@ import {
   type ScreeningVerdict,
   type Gender,
 } from "@/lib/recruit/types";
+import type { AppFileMeta } from "@/lib/recruit/answers";
 import {
   changeApplicationStatus,
   setScreeningVerdict,
 } from "@/lib/recruit/actions";
+import { FileQuickOpen } from "./file-quick-open";
 import {
   Star,
   ArrowDown,
@@ -32,8 +36,16 @@ import {
   ThumbsUp,
   ThumbsDown,
   Meh,
+  Columns3,
+  Check,
   type LucideIcon,
 } from "lucide-react";
+
+export interface AnswerColumnMeta {
+  id: string;
+  label: string;
+  long: boolean;
+}
 
 export interface TableRow {
   id: string;
@@ -50,6 +62,8 @@ export interface TableRow {
   tags: string[];
   flagged: boolean;
   submittedAt: string | null;
+  files: AppFileMeta[];
+  answers: Record<string, string>; // fieldId → ข้อความที่จัดรูปแล้ว (เฉพาะ answerColumns)
 }
 
 interface Props {
@@ -57,6 +71,8 @@ interface Props {
   canWrite: boolean;
   currentSort: string;
   sortLinks: { name: string; ai: string; star: string; recent: string };
+  answerColumns: AnswerColumnMeta[];
+  storageKey: string; // namespace เก็บ pref ซ่อนคอลัมน์ (ต่อตำแหน่ง)
 }
 
 // Lucide icon per verdict (แทนอิโมจิ · โปร + คงความหมาย · ตาม tokens Lucide-only)
@@ -77,57 +93,244 @@ const TONE_DOT: Record<string, string> = {
   neutral: "bg-zinc-400",
 };
 
+// คอลัมน์พื้นฐานที่ซ่อน/โชว์ได้ (ชื่อ + ปุ่มเปิดเต็มหน้า = โชว์ตลอด)
+const HIDEABLE_BASE: { key: string; label: string }[] = [
+  { key: "files", label: "ไฟล์แนบ" },
+  { key: "position", label: "ตำแหน่ง" },
+  { key: "gender", label: "เพศ" },
+  { key: "iq", label: "IQ" },
+  { key: "ai", label: "AI" },
+  { key: "star", label: "ดาว" },
+  { key: "verdict", label: "คัดกรอง" },
+  { key: "status", label: "สถานะ" },
+  { key: "tags", label: "ป้าย" },
+  { key: "submittedAt", label: "วันสมัคร" },
+];
+
 export function ApplicationsTable({
   rows,
   canWrite,
   currentSort,
   sortLinks,
+  answerColumns,
+  storageKey,
 }: Props) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const prefKey = `recruit-table-cols:${storageKey}`;
+
+  // โหลด/บันทึกค่าที่ซ่อนไว้ในเครื่อง (ไม่แตะ DB · ต่อผู้ใช้ต่อเบราว์เซอร์)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(prefKey);
+      if (raw) setHidden(new Set(JSON.parse(raw) as string[]));
+      else setHidden(new Set());
+    } catch {
+      setHidden(new Set());
+    }
+  }, [prefKey]);
+
+  function toggle(key: string) {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(prefKey, JSON.stringify([...next]));
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  }
+
+  function showAll() {
+    setHidden(new Set());
+    try {
+      localStorage.removeItem(prefKey);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const vis = (key: string) => !hidden.has(key);
+
+  const allToggles = useMemo(
+    () => [
+      ...HIDEABLE_BASE,
+      ...answerColumns.map((c) => ({ key: `ans:${c.id}`, label: c.label })),
+    ],
+    [answerColumns],
+  );
+  const hiddenCount = hidden.size;
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-      <table className="w-full min-w-[1080px] text-sm border-collapse">
-        <thead className="sticky top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
-          <tr className="text-left text-[11px] text-zinc-500">
-            <SortableTh
-              label="ชื่อ / ประวัติ"
-              href={sortLinks.name}
-              active={currentSort === "name"}
-              dir="asc"
-              className="pl-4"
-            />
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">ตำแหน่ง</th>
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">เพศ</th>
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">IQ</th>
-            <SortableTh
-              label="AI"
-              href={sortLinks.ai}
-              active={currentSort === "ai"}
-              dir="desc"
-            />
-            <SortableTh
-              label="ดาว"
-              href={sortLinks.star}
-              active={currentSort === "star"}
-              dir="desc"
-            />
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">คัดกรอง</th>
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">สถานะ</th>
-            <th className="px-3 py-2.5 font-bold whitespace-nowrap">ป้าย</th>
-            <SortableTh
-              label="วันสมัคร"
-              href={sortLinks.recent}
-              active={currentSort === "recent"}
-              dir="desc"
-            />
-            <th className="px-3 py-2.5" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <Row key={row.id} row={row} canWrite={canWrite} />
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-2">
+      {/* แถบเครื่องมือคอลัมน์ */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] text-zinc-400">
+          {answerColumns.length > 0
+            ? `กางคำตอบ ${answerColumns.length} ข้อเป็นคอลัมน์แล้ว · ปัดตารางแนวนอนเพื่อดูครบ`
+            : "เลือกตำแหน่งด้านบนเพื่อกางคำตอบทุกข้อเป็นคอลัมน์"}
+        </p>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-zinc-200 bg-white text-xs font-bold text-zinc-700 hover:border-zinc-400"
+          >
+            <Columns3 className="size-3.5" />
+            คอลัมน์
+            {hiddenCount > 0 && (
+              <span className="ml-0.5 rounded-full bg-zinc-900 text-white text-[10px] px-1.5 py-0.5 tabular-nums">
+                ซ่อน {hiddenCount}
+              </span>
+            )}
+          </button>
+
+          {menuOpen && (
+            <>
+              {/* backdrop กดปิด */}
+              <button
+                type="button"
+                aria-label="ปิดเมนูคอลัมน์"
+                className="fixed inset-0 z-30 cursor-default"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="absolute right-0 z-40 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl">
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">
+                    เลือกคอลัมน์ที่จะโชว์
+                  </span>
+                  {hiddenCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={showAll}
+                      className="text-[11px] font-bold text-[var(--color-brand-700)] hover:underline"
+                    >
+                      แสดงทั้งหมด
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {allToggles.map((c) => {
+                    const shown = vis(c.key);
+                    return (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => toggle(c.key)}
+                        className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-zinc-50"
+                      >
+                        <span
+                          className={`size-4 shrink-0 grid place-items-center rounded border ${
+                            shown
+                              ? "bg-[var(--color-brand-600)] border-[var(--color-brand-600)] text-white"
+                              : "border-zinc-300 text-transparent"
+                          }`}
+                        >
+                          <Check className="size-3" />
+                        </span>
+                        <span
+                          className={`truncate ${shown ? "text-zinc-800 font-medium" : "text-zinc-400"}`}
+                        >
+                          {c.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full min-w-[1080px] text-sm border-collapse">
+          <thead className="sticky top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
+            <tr className="text-left text-[11px] text-zinc-500">
+              <SortableTh
+                label="ชื่อ / ประวัติ"
+                href={sortLinks.name}
+                active={currentSort === "name"}
+                dir="asc"
+                className="pl-4 sticky left-0 z-30 bg-white border-r border-zinc-100"
+              />
+              {vis("files") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">ไฟล์</th>
+              )}
+              {vis("position") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">ตำแหน่ง</th>
+              )}
+              {vis("gender") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">เพศ</th>
+              )}
+              {vis("iq") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">IQ</th>
+              )}
+              {vis("ai") && (
+                <SortableTh
+                  label="AI"
+                  href={sortLinks.ai}
+                  active={currentSort === "ai"}
+                  dir="desc"
+                />
+              )}
+              {vis("star") && (
+                <SortableTh
+                  label="ดาว"
+                  href={sortLinks.star}
+                  active={currentSort === "star"}
+                  dir="desc"
+                />
+              )}
+              {vis("verdict") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">คัดกรอง</th>
+              )}
+              {vis("status") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">สถานะ</th>
+              )}
+              {vis("tags") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">ป้าย</th>
+              )}
+              {/* คอลัมน์คำตอบ (ตามตำแหน่งที่เลือก) */}
+              {answerColumns.map(
+                (c) =>
+                  vis(`ans:${c.id}`) && (
+                    <th
+                      key={c.id}
+                      className="px-3 py-2.5 font-bold whitespace-nowrap max-w-[220px] truncate"
+                      title={c.label}
+                    >
+                      {c.label}
+                    </th>
+                  ),
+              )}
+              {vis("submittedAt") && (
+                <SortableTh
+                  label="วันสมัคร"
+                  href={sortLinks.recent}
+                  active={currentSort === "recent"}
+                  dir="desc"
+                />
+              )}
+              <th className="px-3 py-2.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <Row
+                key={row.id}
+                row={row}
+                canWrite={canWrite}
+                vis={vis}
+                answerColumns={answerColumns}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -168,7 +371,17 @@ function SortableTh({
   );
 }
 
-function Row({ row, canWrite }: { row: TableRow; canWrite: boolean }) {
+function Row({
+  row,
+  canWrite,
+  vis,
+  answerColumns,
+}: {
+  row: TableRow;
+  canWrite: boolean;
+  vis: (key: string) => boolean;
+  answerColumns: AnswerColumnMeta[];
+}) {
   const [status, setStatus] = useState<ApplicationStatus>(row.status);
   const [verdict, setVerdict] = useState<ScreeningVerdict | null>(row.verdict);
   const [isPending, startTransition] = useTransition();
@@ -205,9 +418,9 @@ function Row({ row, canWrite }: { row: TableRow; canWrite: boolean }) {
   const ReadonlyVerdictIcon = verdict ? VERDICT_ICON[verdict] : null;
 
   return (
-    <tr className="border-b border-zinc-100 even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40 align-middle transition-colors">
-      {/* ชื่อ + เบอร์ + refId */}
-      <td className="pl-4 pr-3 py-2.5">
+    <tr className="group border-b border-zinc-100 even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40 align-top transition-colors">
+      {/* ชื่อ + เบอร์ + refId — ติดขอบซ้าย */}
+      <td className="pl-4 pr-3 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-[var(--color-brand-50)]/60 border-r border-zinc-100">
         <Link
           href={`/recruit/applications/${row.id}`}
           className="font-bold text-zinc-900 hover:text-[var(--color-brand-700)] hover:underline"
@@ -225,157 +438,203 @@ function Row({ row, canWrite }: { row: TableRow; canWrite: boolean }) {
         </div>
       </td>
 
+      {/* ไฟล์แนบ — กดเปิดเรซูเม่/รูปได้เลย */}
+      {vis("files") && (
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          <FileQuickOpen files={row.files} variant="cell" />
+        </td>
+      )}
+
       {/* ตำแหน่ง */}
-      <td className="px-3 py-2.5 text-zinc-600 max-w-[160px] truncate" title={row.postingTitle}>
-        {row.postingTitle}
-      </td>
+      {vis("position") && (
+        <td
+          className="px-3 py-2.5 text-zinc-600 max-w-[160px] truncate"
+          title={row.postingTitle}
+        >
+          {row.postingTitle}
+        </td>
+      )}
 
       {/* เพศ */}
-      <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
-        {row.gender ? GENDER_LABELS[row.gender] : <span className="text-zinc-300">—</span>}
-      </td>
+      {vis("gender") && (
+        <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
+          {row.gender ? (
+            GENDER_LABELS[row.gender]
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+      )}
 
       {/* IQ ข้อถูก */}
-      <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
-        {row.iq ? (
-          <span
-            className={`font-bold ${
-              row.iq.correct >= row.iq.total * 0.7
-                ? "text-green-700"
-                : row.iq.correct >= row.iq.total * 0.5
-                  ? "text-amber-600"
-                  : "text-red-600"
-            }`}
-          >
-            {row.iq.correct}
-            <span className="text-zinc-400 font-normal">/{row.iq.total}</span>
-          </span>
-        ) : (
-          <span className="text-zinc-300">—</span>
-        )}
-      </td>
+      {vis("iq") && (
+        <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+          {row.iq ? (
+            <span
+              className={`font-bold ${
+                row.iq.correct >= row.iq.total * 0.7
+                  ? "text-green-700"
+                  : row.iq.correct >= row.iq.total * 0.5
+                    ? "text-amber-600"
+                    : "text-red-600"
+              }`}
+            >
+              {row.iq.correct}
+              <span className="text-zinc-400 font-normal">/{row.iq.total}</span>
+            </span>
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+      )}
 
       {/* AI score */}
-      <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
-        {row.aiScore != null ? (
-          <span
-            className={`font-bold ${
-              row.aiScore >= 75
-                ? "text-green-700"
-                : row.aiScore >= 50
-                  ? "text-amber-600"
-                  : "text-red-600"
-            }`}
-          >
-            {row.aiScore}
-          </span>
-        ) : (
-          <span className="text-zinc-300">—</span>
-        )}
-      </td>
+      {vis("ai") && (
+        <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+          {row.aiScore != null ? (
+            <span
+              className={`font-bold ${
+                row.aiScore >= 75
+                  ? "text-green-700"
+                  : row.aiScore >= 50
+                    ? "text-amber-600"
+                    : "text-red-600"
+              }`}
+            >
+              {row.aiScore}
+            </span>
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+      )}
 
       {/* ดาว */}
-      <td className="px-3 py-2.5 whitespace-nowrap">
-        {row.starRating != null ? (
-          <span className="inline-flex items-center gap-0.5 text-amber-500">
-            <Star className="size-3.5 fill-amber-400 text-amber-400" />
-            <span className="tabular-nums text-zinc-700 font-medium">
-              {row.starRating}
+      {vis("star") && (
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          {row.starRating != null ? (
+            <span className="inline-flex items-center gap-0.5 text-amber-500">
+              <Star className="size-3.5 fill-amber-400 text-amber-400" />
+              <span className="tabular-nums text-zinc-700 font-medium">
+                {row.starRating}
+              </span>
             </span>
-          </span>
-        ) : (
-          <span className="text-zinc-300">—</span>
-        )}
-      </td>
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+      )}
 
       {/* คัดกรอง — inline 3 ปุ่มไอคอน */}
-      <td className="px-3 py-2.5 whitespace-nowrap">
-        {canWrite ? (
-          <div className="flex items-center gap-1">
-            {SCREENING_VERDICTS.map((v) => {
-              const Icon = VERDICT_ICON[v];
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => changeVerdict(v)}
-                  disabled={isPending}
-                  title={SCREENING_VERDICT_LABELS[v]}
-                  aria-label={SCREENING_VERDICT_LABELS[v]}
-                  aria-pressed={verdict === v}
-                  className={`size-7 grid place-items-center rounded-lg border transition-colors ${
-                    verdict === v
-                      ? SCREENING_VERDICT_ACTIVE_CLASS[v]
-                      : "border-zinc-200 bg-white text-zinc-400 hover:text-zinc-700 hover:border-zinc-300"
-                  }`}
-                >
-                  <Icon className="size-3.5" />
-                </button>
-              );
-            })}
-          </div>
-        ) : ReadonlyVerdictIcon ? (
-          <ReadonlyVerdictIcon className="size-4 text-zinc-500" />
-        ) : (
-          <span className="text-zinc-300">—</span>
-        )}
-      </td>
+      {vis("verdict") && (
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          {canWrite ? (
+            <div className="flex items-center gap-1">
+              {SCREENING_VERDICTS.map((v) => {
+                const Icon = VERDICT_ICON[v];
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => changeVerdict(v)}
+                    disabled={isPending}
+                    title={SCREENING_VERDICT_LABELS[v]}
+                    aria-label={SCREENING_VERDICT_LABELS[v]}
+                    aria-pressed={verdict === v}
+                    className={`size-7 grid place-items-center rounded-lg border transition-colors ${
+                      verdict === v
+                        ? SCREENING_VERDICT_ACTIVE_CLASS[v]
+                        : "border-zinc-200 bg-white text-zinc-400 hover:text-zinc-700 hover:border-zinc-300"
+                    }`}
+                  >
+                    <Icon className="size-3.5" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : ReadonlyVerdictIcon ? (
+            <ReadonlyVerdictIcon className="size-4 text-zinc-500" />
+          ) : (
+            <span className="text-zinc-300">—</span>
+          )}
+        </td>
+      )}
 
       {/* สถานะ — จุดสี + inline select */}
-      <td className="px-3 py-2.5 whitespace-nowrap">
-        {canWrite ? (
-          <div className="inline-flex items-center gap-1.5">
-            <span
-              className={`size-2 rounded-full shrink-0 ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
-            />
-            <select
-              value={status}
-              onChange={(e) => changeStatus(e.target.value as ApplicationStatus)}
-              disabled={isPending}
-              className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)] disabled:opacity-50"
-            >
-              {APPLICATION_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700">
-            <span
-              className={`size-2 rounded-full ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
-            />
-            {STATUS_LABELS[status]}
-          </span>
-        )}
-      </td>
+      {vis("status") && (
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          {canWrite ? (
+            <div className="inline-flex items-center gap-1.5">
+              <span
+                className={`size-2 rounded-full shrink-0 ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
+              />
+              <select
+                value={status}
+                onChange={(e) =>
+                  changeStatus(e.target.value as ApplicationStatus)
+                }
+                disabled={isPending}
+                className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)] disabled:opacity-50"
+              >
+                {APPLICATION_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700">
+              <span
+                className={`size-2 rounded-full ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
+              />
+              {STATUS_LABELS[status]}
+            </span>
+          )}
+        </td>
+      )}
 
       {/* ป้าย */}
-      <td className="px-3 py-2.5 max-w-[160px]">
-        <div className="flex flex-wrap gap-1">
-          {row.tags.slice(0, 3).map((raw) => {
-            const { color, label } = parseTag(raw);
-            return (
-              <span
-                key={raw}
-                className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${TAG_COLOR_CHIP[color]}`}
-              >
-                {label}
+      {vis("tags") && (
+        <td className="px-3 py-2.5 max-w-[160px]">
+          <div className="flex flex-wrap gap-1">
+            {row.tags.slice(0, 3).map((raw) => {
+              const { color, label } = parseTag(raw);
+              return (
+                <span
+                  key={raw}
+                  className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${TAG_COLOR_CHIP[color]}`}
+                >
+                  {label}
+                </span>
+              );
+            })}
+            {row.tags.length > 3 && (
+              <span className="text-[10px] text-zinc-400">
+                +{row.tags.length - 3}
               </span>
-            );
-          })}
-          {row.tags.length > 3 && (
-            <span className="text-[10px] text-zinc-400">+{row.tags.length - 3}</span>
-          )}
-          {row.tags.length === 0 && <span className="text-zinc-300">—</span>}
-        </div>
-      </td>
+            )}
+            {row.tags.length === 0 && <span className="text-zinc-300">—</span>}
+          </div>
+        </td>
+      )}
+
+      {/* คอลัมน์คำตอบ */}
+      {answerColumns.map(
+        (c) =>
+          vis(`ans:${c.id}`) && (
+            <td key={c.id} className="px-3 py-2.5 max-w-[240px] align-top">
+              <AnswerCell value={row.answers[c.id] ?? ""} long={c.long} />
+            </td>
+          ),
+      )}
 
       {/* วันสมัคร */}
-      <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-zinc-500">
-        {row.submittedAt ?? "ยังไม่ส่ง"}
-      </td>
+      {vis("submittedAt") && (
+        <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-zinc-500">
+          {row.submittedAt ?? "ยังไม่ส่ง"}
+        </td>
+      )}
 
       {/* เปิดเต็มหน้า */}
       <td className="px-3 py-2.5">
@@ -388,5 +647,28 @@ function Row({ row, canWrite }: { row: TableRow; canWrite: boolean }) {
         </Link>
       </td>
     </tr>
+  );
+}
+
+/** เซลล์คำตอบ — ตัดสั้น 2 บรรทัด กดขยายดูเต็มได้ (ค่าว่าง = —) */
+function AnswerCell({ value, long }: { value: string; long: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!value) return <span className="text-zinc-300">—</span>;
+
+  const isTruncatable = long || value.length > 40;
+  if (!isTruncatable) {
+    return <span className="text-zinc-700 text-[13px]">{value}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((e) => !e)}
+      title={expanded ? "กดเพื่อย่อ" : value}
+      className={`text-left text-zinc-700 text-[13px] hover:text-zinc-900 ${
+        expanded ? "" : "line-clamp-2"
+      }`}
+    >
+      {value}
+    </button>
   );
 }
