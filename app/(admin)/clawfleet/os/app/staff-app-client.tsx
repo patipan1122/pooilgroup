@@ -32,6 +32,7 @@ import {
   submitBranchEvent,
   closeBranchSession,
   renameMachineNickname,
+  attachEventPhotos,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
@@ -544,6 +545,14 @@ export type StaffHistoryRow = {
   branch?: string; // สาขาของตู้ (ช่วยจำว่าเก็บที่ไหน)
   date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — label เมื่อดูย้อนหลัง
   coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก)
+  // item 8 · รอบตั้งต้น (baseline) — ป้าย "การตั้งค่าครั้งแรก" (indigo)
+  isBaseline?: boolean;
+  // item 5/8 · รูปหลักฐานยังไม่ครบ — ป้าย "รูปยังไม่ครบ" (amber) + ปุ่ม "แนบรูปเพิ่ม"
+  photosMissing?: boolean;
+  // item 5 · id ของ event (แนบรูปเพิ่มทีหลัง → attachEventPhotos)
+  eventId?: string;
+  // item 5 · ชนิด event (INITIAL = baseline → phase รูปคนละชุด · COLLECTION = รอบปกติ)
+  eventType?: string;
 };
 
 type Props = {
@@ -1425,6 +1434,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           secondary={secondaryAction ? { label: secondaryLabel, action: secondaryAction } : null}
           pending={pending}
           primaryDisabled={primaryDisabled}
+          // item 7 · "record & go" — บันทึกค้าง (form+รูป) ไปตู้ต่อ โดยไม่ต้องผ่านมิเตอร์/รูปก่อน.
+          //  reuse saveDraft เดิม (resume ที่ step 3 มิเตอร์ · money-safe: รอบยังไม่ปิดจนกรอกมิเตอร์).
+          //  uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหายตอน resume). demo → ไม่มี backend → ซ่อน.
+          onSaveDraft={saveDraft}
+          saveDraftBlocked={uploadPending}
         />
       )}
 
@@ -1760,7 +1774,7 @@ function PanelScreen(props: {
         </button>
         <span style={{ fontSize: 15, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
       </div>
-      {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} />}
+      {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} />}
       {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
       {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
       {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -1863,16 +1877,21 @@ function HistoryDatePicker({ viewDate }: { viewDate: string }) {
   );
 }
 
-function HistoryPanel({ history, viewDate, usingDemo }: { history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean }) {
+function HistoryPanel({ history, viewDate, usingDemo, orgId }: { history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
+  //  item 8 · demo แสดงตัวอย่างป้าย "การตั้งค่าครั้งแรก" + "รูปยังไม่ครบ" ให้เห็นหน้าตา (ไม่มีปุ่มแนบจริง)
   const demoRows: StaffHistoryRow[] = [
-    { code: "RS-03", branch: "รังสิต", time: "14:20", cashBaht: 300, coinMeter: 210, ok: true },
-    { code: "LP-01", branch: "ลาดพร้าว", time: "13:50", cashBaht: 620, coinMeter: 158, ok: true },
+    { code: "RS-03", branch: "รังสิต", time: "14:20", cashBaht: 300, coinMeter: 210, ok: true, isBaseline: true },
+    { code: "LP-01", branch: "ลาดพร้าว", time: "13:50", cashBaht: 620, coinMeter: 158, ok: true, photosMissing: true },
     { code: "RS-07", branch: "รังสิต", time: "12:10", cashBaht: 540, coinMeter: 302, ok: false },
   ];
   const rows = usingDemo ? demoRows : history;
   const dayLabel = ymdLabelThai(viewDate, todayYmd);
+
+  // item 5 · แถวที่กำลังเปิด sheet "แนบรูปเพิ่ม" (null = ปิด) + set ของ eventId ที่แนบครบแล้ว (เคลียร์ป้ายทันที)
+  const [attachRow, setAttachRow] = useState<StaffHistoryRow | null>(null);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1893,21 +1912,190 @@ function HistoryPanel({ history, viewDate, usingDemo }: { history: StaffHistoryR
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {rows.map((h, i) => (
-            <div key={`${h.code}-${h.time}-${i}`} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "12px 13px", minHeight: 60 }}>
-              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#4F46E5", flex: "0 0 52px" }}>{h.code}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="num" style={{ fontSize: 14, fontWeight: 700 }}>฿{h.cashBaht.toLocaleString("en-US")}</div>
-                <div style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {h.branch ? `${h.branch} · ` : ""}{dayLabel} {h.time}
-                  {h.coinMeter != null ? <> · มิเตอร์ <span className="num">{h.coinMeter.toLocaleString("en-US")}</span></> : null}
+          {rows.map((h, i) => {
+            // item 5 · แนบครบแล้วในเซสชันนี้ → ไม่โชว์ป้าย/ปุ่มอีก (optimistic · ไม่ต้อง reload)
+            const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
+            // ปุ่มแนบรูปจริงได้เมื่อ: ไม่ใช่ demo · มี eventId · ยังขาดรูป
+            const canAttach = !usingDemo && !!h.eventId && stillMissing;
+            return (
+              <div key={`${h.code}-${h.time}-${i}`} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "12px 13px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11, minHeight: 40 }}>
+                  <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#4F46E5", flex: "0 0 52px" }}>{h.code}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span className="num" style={{ fontSize: 14, fontWeight: 700 }}>฿{h.cashBaht.toLocaleString("en-US")}</span>
+                      {/* item 8 · ป้าย "การตั้งค่าครั้งแรก" (indigo) — รอบตั้งต้น ไม่ใช่รอบเก็บปกติ */}
+                      {h.isBaseline && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#EEF0FE", color: "#4F46E5" }}>การตั้งค่าครั้งแรก</span>
+                      )}
+                      {/* item 5/8 · ป้าย "รูปยังไม่ครบ" (amber) — ยังขาดรูปหลักฐาน (ไม่นับรูปเงินสด) */}
+                      {stillMissing && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FCF1E2", color: "#B45309" }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
+                          รูปยังไม่ครบ
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {h.branch ? `${h.branch} · ` : ""}{dayLabel} {h.time}
+                      {h.coinMeter != null ? <> · มิเตอร์ <span className="num">{h.coinMeter.toLocaleString("en-US")}</span></> : null}
+                    </div>
+                  </div>
+                  {/* baseline ไม่โชว์ ตรง/ไม่ตรง (ไม่มีรอบก่อนไว้เทียบ) */}
+                  {!h.isBaseline && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: h.ok ? "#E7F4EC" : "#FCEDEC", color: h.ok ? "#15803D" : "#B42318" }}>{h.ok ? "ตรง" : "ไม่ตรง"}</span>
+                  )}
                 </div>
+                {/* item 5 · ปุ่ม "แนบรูปเพิ่ม" — เปิด sheet ถ่ายรูปที่ยังขาด แล้ว attachEventPhotos */}
+                {canAttach && (
+                  <button type="button" onClick={() => setAttachRow(h)} className="co-tap"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginTop: 10, padding: "9px 12px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "1.5px solid #F0D8AE", background: "#FFFBF3", color: "#B45309" }}>
+                    <Camera size={15} strokeWidth={2.2} />
+                    แนบรูปเพิ่ม
+                  </button>
+                )}
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: h.ok ? "#E7F4EC" : "#FCEDEC", color: h.ok ? "#15803D" : "#B42318" }}>{h.ok ? "ตรง" : "ไม่ตรง"}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      {/* item 5 · sheet แนบรูปเพิ่มทีหลัง (ถ่ายรูปที่ขาด → attachEventPhotos → เคลียร์ป้าย) */}
+      {attachRow && attachRow.eventId && (
+        <AttachPhotosSheet
+          orgId={orgId}
+          eventId={attachRow.eventId}
+          machineCode={attachRow.code}
+          isBaseline={attachRow.eventType === "INITIAL" || attachRow.isBaseline === true}
+          onClose={() => setAttachRow(null)}
+          onResolved={(eventId) => {
+            setResolvedIds((prev) => {
+              const n = new Set(prev);
+              n.add(eventId);
+              return n;
+            });
+            setAttachRow(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────── item 5 · แนบรูปเพิ่มทีหลัง (attach later) ───────────────
+ * พนักงานถ่ายรูปหลักฐานไม่ทันตอนเก็บ (รีบ/เน็ตตก) → กลับมาแนบเพิ่มจากหน้าประวัติ.
+ * ถ่ายช่องที่ขาด (reuse PhotoCaptureButton · upload R2) → เก็บ url ต่อ "คอลัมน์ DB" →
+ * กด "บันทึกรูปที่แนบ" → attachEventPhotos (เขียนเฉพาะคอลัมน์ที่ยังว่าง · idempotent).
+ * รูปเงินสดไม่แสดง (optional · ไม่นับใน "ครบ/ไม่ครบ"). */
+// phase = ป้ายจัดหมวด upload R2 (subset ของ union ใน PhotoCaptureButton) — ตรงกับ slot ที่ใช้แนบ
+type AttachPhase =
+  | "meter_after" | "prize_meter" | "stock" | "stock_after"
+  | "money_meter_top" | "money_meter_bottom" | "doll_meter_top" | "doll_meter_bottom"
+  | "machine" | "baseline_stock";
+type AttachSlot = {
+  col: string; // คอลัมน์ DB ที่ attachEventPhotos จะเขียน
+  label: string;
+  phase: AttachPhase;
+};
+// COLLECTION — 4 รูปหลักฐาน (มิเตอร์เหรียญ/ตุ๊กตา/สต็อกก่อน/สต็อกหลัง)
+const ATTACH_SLOTS_COLLECTION: AttachSlot[] = [
+  { col: "photoMeterAfterUrl", label: "มิเตอร์เหรียญ", phase: "meter_after" },
+  { col: "photoPrizeMeterUrl", label: "มิเตอร์ตุ๊กตา", phase: "prize_meter" },
+  { col: "photoStockUrl", label: "สต็อกก่อนเติม", phase: "stock" },
+  { col: "photoMeterBeforeUrl", label: "สต็อกหลังเติม", phase: "stock_after" },
+];
+// INITIAL/baseline — 4 มิเตอร์กายภาพ + รูปตู้ + สต็อกตั้งต้น
+const ATTACH_SLOTS_BASELINE: AttachSlot[] = [
+  { col: "photoMoneyMeterTopUrl", label: "มิเตอร์เงิน (บน)", phase: "money_meter_top" },
+  { col: "photoMoneyMeterBottomUrl", label: "มิเตอร์เงิน (ล่าง)", phase: "money_meter_bottom" },
+  { col: "photoDollMeterTopUrl", label: "มิเตอร์ตุ๊กตา (บน)", phase: "doll_meter_top" },
+  { col: "photoDollMeterBottomUrl", label: "มิเตอร์ตุ๊กตา (ล่าง)", phase: "doll_meter_bottom" },
+  { col: "photoMachineUrl", label: "รูปตู้", phase: "machine" },
+  { col: "photoStockUrl", label: "สต็อกตั้งต้น", phase: "baseline_stock" },
+];
+
+function AttachPhotosSheet({ orgId, eventId, machineCode, isBaseline, onClose, onResolved }: {
+  orgId: string; eventId: string; machineCode: string; isBaseline: boolean;
+  onClose: () => void; onResolved: (eventId: string) => void;
+}) {
+  const slots = isBaseline ? ATTACH_SLOTS_BASELINE : ATTACH_SLOTS_COLLECTION;
+  // url ที่ถ่ายได้ ต่อคอลัมน์ (ว่าง = ยังไม่ถ่าย). eventScopeId ผูกกับ event เดิม (upload key ไม่ชนรอบใหม่)
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const eventScopeId = `attach-${eventId}`;
+  const capturedCount = Object.values(urls).filter(Boolean).length;
+
+  function save() {
+    // เก็บเฉพาะ url จริง (ถ่ายแล้ว upload เสร็จ) — ยังไม่มีเลย → เตือนให้ถ่ายก่อน
+    const photos: Record<string, string> = {};
+    for (const s of slots) if (urls[s.col]) photos[s.col] = urls[s.col];
+    if (Object.keys(photos).length === 0) {
+      setError("ยังไม่มีรูปที่ถ่าย · ถ่ายอย่างน้อย 1 รูปก่อนบันทึก");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await attachEventPhotos({ eventId, photos });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        // ครบแล้ว (ไม่ขาดรูป) → เคลียร์ป้ายในลิสต์ · ยังขาดอยู่ → ปิด sheet เฉย ๆ (แนบได้บางส่วน)
+        if (!res.data.photosMissing) {
+          onResolved(eventId);
+        } else {
+          onClose();
+        }
+      } catch {
+        // action reject จริง (เน็ต/เซิร์ฟล่ม) — ต่างจาก business error ด้านบน
+        setError("บันทึกไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(20,22,28,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, maxHeight: "88vh", overflowY: "auto", background: "#fff", borderRadius: "18px 18px 0 0", padding: "18px 18px 26px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#FCF1E2", color: "#B45309", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Camera size={19} strokeWidth={2.1} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>แนบรูปเพิ่ม · ตู้ {machineCode}</div>
+            <div style={{ fontSize: 11, color: "#9AA1AB" }}>ถ่ายรูปหลักฐานที่ยังขาด แล้วกดบันทึก (ตัวเลขที่ส่งไปแล้วไม่เปลี่ยน)</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="ปิด" style={{ width: 32, height: 32, flex: "0 0 32px", borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={17} strokeWidth={2.2} color="#454B54" />
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ margin: "10px 0 0", background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "14px 0 4px" }}>
+          {slots.map((s) => (
+            <PhotoCaptureButton
+              key={s.col}
+              label={s.label}
+              value={urls[s.col] ?? ""}
+              onChange={(url) => setUrls((p) => ({ ...p, [s.col]: url }))}
+              orgId={orgId}
+              machineCode={machineCode}
+              eventScopeId={eventScopeId}
+              phase={s.phase}
+            />
+          ))}
+        </div>
+        <div style={{ fontSize: 10.5, color: "#9AA1AB", margin: "8px 0 14px" }}>ถ่ายช่องไหนก่อนก็ได้ · ช่องที่มีรูปอยู่แล้วในระบบจะไม่ถูกทับ</div>
+
+        <button type="button" onClick={save} disabled={pending || capturedCount === 0} className={pending || capturedCount === 0 ? "" : "co-tap"}
+          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", borderRadius: 12, cursor: pending || capturedCount === 0 ? "not-allowed" : "pointer", background: "#B45309", opacity: pending || capturedCount === 0 ? 0.55 : 1 }}>
+          {pending ? "กำลังบันทึก…" : capturedCount === 0 ? "ถ่ายรูปก่อน" : `บันทึกรูปที่แนบ (${capturedCount})`}
+        </button>
+      </div>
     </div>
   );
 }
@@ -3247,6 +3435,9 @@ function FlowScreen(props: {
   secondary: { label: string; action: () => void } | null;
   pending: boolean;
   primaryDisabled: boolean;
+  // item 7 · "record & go" — บันทึกค้าง (form+รูป) ไปเก็บตู้อื่นต่อ (surface จาก step เติม/เงินสด)
+  onSaveDraft: () => void;
+  saveDraftBlocked: boolean; // ยังมีรูปอัปโหลดค้าง → รอก่อน (กันรูปหาย)
 }) {
   const { step, form: f, dispensed, afterFill, photos, meterDeferred, recon, machine } = props;
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
@@ -3611,6 +3802,25 @@ function FlowScreen(props: {
           style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: props.primaryDisabled ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1, boxShadow: props.primaryDisabled ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
           {props.primary.label}
         </button>
+        {/* item 7 · "record & go" — ที่ขั้นเงินสด(4) โชว์ปุ่มเด่นให้ "บันทึกค้างไว้ · ไปตู้ต่อ"
+            เก็บ เติม+เงินสด+รูป ไว้แล้ว → ไปเก็บตู้อื่นต่อได้เลย ไม่ต้องกรอกมิเตอร์ก่อน
+            (reuse saveDraft · resume ที่มิเตอร์ทีหลัง · money-safe: รอบยังไม่ปิดจนกรอกมิเตอร์).
+            เลือกขั้น 4 (ไม่ใช่ขั้นเติม 2) เพื่อให้เงินสดถูกเก็บก่อน · ที่ขั้น 3 มีปุ่ม defer เดิมอยู่แล้ว.
+            ซ่อนตอน demo (ไม่มี backend) · uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหาย). */}
+        {!props.usingDemo && props.step === 4 && (
+          <button type="button" onClick={props.onSaveDraft} disabled={props.saveDraftBlocked}
+            className={props.saveDraftBlocked ? "" : "co-tap"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, marginTop: 9, fontSize: 14, fontWeight: 700, color: "#B45309", border: "1.5px solid #F0D8AE", padding: "12px 16px", borderRadius: 13, cursor: props.saveDraftBlocked ? "not-allowed" : "pointer", background: "#FFFBF3", opacity: props.saveDraftBlocked ? 0.6 : 1 }}>
+            {props.saveDraftBlocked ? (
+              "⏳ กำลังอัปโหลดรูป… รอสักครู่"
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
+                บันทึกค้างไว้ · ไปตู้ต่อ
+              </>
+            )}
+          </button>
+        )}
         {props.secondary && (
           <button type="button" onClick={props.secondary.action} style={{ width: "100%", minHeight: 44, fontSize: 13, fontWeight: 600, color: "#6B7280", border: "none", padding: "11px 0 2px", background: "transparent", cursor: "pointer" }}>
             {props.secondary.label}

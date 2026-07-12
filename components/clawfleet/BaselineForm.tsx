@@ -3,17 +3,20 @@
 // ClawFleet · ตู้คีบ OS — bigfeature WAVE 2D · N1 ฟอร์ม "ตั้งค่าครั้งแรก" (P0 · mobile)
 // -----------------------------------------------------------------------------
 // แม่บ้านไปเก็บตู้ครั้งแรก → บันทึก baseline snapshot (ทำได้ครั้งเดียวต่อตู้ · redo ต้องเจ้าของอนุมัติ):
-//   - นับตุ๊กตาในตู้ตอนนี้ (stepper · เริ่ม "ว่าง" ไม่ใช่ 0) · เติมเพิ่มกี่ตัว (stepper) · เงินสด (input)
-//   - 4 มิเตอร์กายภาพ "ว่างทั้งหมด" (เงินบน/เงินล่าง/ตุ๊กตาบน/ตุ๊กตาล่าง) — แต่ละตัวมีรูปของตัวเอง
-//     · per-meter fallback: มิเตอร์ตัวไหนอ่านไม่ออก → เว้นว่างได้ "ถ้าแนบรูปมิเตอร์ตัวนั้น" (รูป=หลักฐาน)
+//   - นับตุ๊กตาในตู้ตอนนี้ (พิมพ์เลขได้ + −/+ · เริ่ม "ว่าง" ไม่ใช่ 0) · เติมเพิ่มกี่ตัว · เงินสด (input)
+//   - 4 มิเตอร์กายภาพ "ว่างทั้งหมด" (เงินบน/เงินล่าง/ตุ๊กตาบน/ตุ๊กตาล่าง) — แต่ละตัวมีรูปของตัวเอง (รูป optional)
+//     · gate = อย่างน้อย 1 หน้าปัดต่อคู่ (เงิน บน-หรือ-ล่าง · ตุ๊กตา บน-หรือ-ล่าง) ให้ตรงกับ server (top ?? bottom)
+//       → ตู้ที่หน้าปัดล่างเสีย/อ่านไม่ออก ยังตั้ง baseline ได้จากตัวบน
 //     · ห้าม pre-fill มิเตอร์ (กัน confirm-bias — แม่บ้านต้องกรอกเลขจริงที่เห็น)
-//   - รูปตู้ (machine) + รายการสินค้าในตู้ (loadout · แสดงอย่างเดียว)
+//   - รูปตู้ (machine) + รายการสินค้าในตู้ (loadout · แสดง) + เพิ่มสินค้าใหม่ตอนตั้งค่า (AddProductPanel)
+//   - ตั้งชื่อเล่นตู้ได้ตั้งแต่หน้านี้ (✎ ที่หัวข้อ → renameMachineNickname · reflect ทันทีไม่ต้อง reload)
 // submit → submitFirstBaseline({... clientKey=randomUUID}) · ถ้าตู้ตั้งแล้ว → ข้อความเป็นมิตร · ok → onDone().
 // ⚪ neutral = ช่องว่าง (ยังไม่กรอก) ไม่ใช่แดง. money logic ทำที่ server — ฟอร์มแค่เก็บ+ส่ง.
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { submitFirstBaseline } from "@/lib/clawfleet/baseline-actions";
 import { addSetupProductWithDolls } from "@/lib/clawfleet/product-setup-actions";
+import { renameMachineNickname } from "@/lib/clawfleet/actions";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 
 const MAX_COUNT = 100_000;
@@ -55,6 +58,10 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   });
   const [machinePhoto, setMachinePhoto] = useState<string>("");
 
+  // ชื่อเล่นตู้ (แก้ได้ตั้งแต่หน้านี้) — sheet เปิด/ปิด + ชื่อปัจจุบัน (reflect หลัง rename โดยไม่ต้อง reload)
+  const [nickname, setNickname] = useState<string | null>(machine.nickname);
+  const [nickSheet, setNickSheet] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,11 +71,6 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   // scope id เดียวต่อการเปิดฟอร์ม (ให้ PhotoCaptureButton จัด queue รูปแยกจากตู้/รอบอื่น)
   const [scopeId] = useState(() => `baseline-${machine.id}`);
 
-  const stepDoll = (setter: (n: number | null) => void, cur: number | null, delta: number) => {
-    const next = Math.max(0, Math.min(MAX_COUNT, (cur ?? 0) + delta));
-    setter(next);
-  };
-
   const setMeter = (key: MeterKey, raw: string) => {
     // รับเฉพาะตัวเลข (ว่างได้) — ไม่เด้ง error ระหว่างพิมพ์
     const cleaned = raw.replace(/[^\d]/g, "");
@@ -77,11 +79,6 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   const setMeterPhoto = (key: MeterKey, url: string) => {
     setMeterPhotos((m) => ({ ...m, [key]: url }));
   };
-
-  // มิเตอร์ตัวไหน "ว่าง + ไม่มีรูป" = ยังไม่ครบ (ต้องเลข หรือ รูป อย่างใดอย่างหนึ่ง)
-  const meterIncomplete = METERS.filter(
-    (m) => meterVals[m.key].trim() === "" && !meterPhotos[m.key],
-  );
 
   const parseMeter = (key: MeterKey): number | null => {
     const v = meterVals[key].trim();
@@ -94,8 +91,16 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
       setError("กรุณานับตุ๊กตาในตู้ตอนนี้ก่อน");
       return;
     }
-    if (meterIncomplete.length > 0) {
-      setError(`${meterIncomplete[0].label} ยังว่าง — กรอกเลข หรือถ่ายรูปแทน`);
+    // เลขมิเตอร์ = anchor · ต้องมีอย่างน้อย 1 หน้าปัดต่อคู่ (เงิน บน/ล่าง · ตุ๊กตา บน/ล่าง)
+    // ให้ตรงกับ server + คณิต (top ?? bottom) · ตู้ที่หน้าปัดล่างเสียยังตั้งได้จากตัวบน
+    const moneyMeterFilled = meterVals.moneyTop.trim() !== "" || meterVals.moneyBottom.trim() !== "";
+    const dollMeterFilled = meterVals.dollTop.trim() !== "" || meterVals.dollBottom.trim() !== "";
+    if (!moneyMeterFilled) {
+      setError("มิเตอร์เงิน ยังไม่ได้กรอกเลข — กรอกอย่างน้อย 1 หน้าปัด (บนหรือล่าง)");
+      return;
+    }
+    if (!dollMeterFilled) {
+      setError("มิเตอร์ตุ๊กตา ยังไม่ได้กรอกเลข — กรอกอย่างน้อย 1 หน้าปัด (บนหรือล่าง)");
       return;
     }
     const cashBaht = cash.trim() === "" ? 0 : Number(cash);
@@ -153,25 +158,42 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           <path d="M12 2 4 5v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V5z" />
           <path d="m9 12 2 2 4-4" />
         </svg>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#3F3AC0" }}>ตั้งค่าครั้งแรก · ทำได้ครั้งเดียว</div>
-          <div style={{ fontSize: 12, color: "#5A54C8", marginTop: 2, lineHeight: 1.45 }}>
-            ตู้ {machine.code}{machine.nickname ? ` · ${machine.nickname}` : ""} — บันทึกยอดตั้งต้น (ตุ๊กตา · เงิน · มิเตอร์) เพื่อเริ่มนับรอบต่อไป.
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#3F3AC0", flex: 1, minWidth: 0 }}>
+              ตั้งค่าครั้งแรก · ทำได้ครั้งเดียว
+            </div>
+            {/* ✎ ตั้งชื่อเล่นตู้ ตั้งแต่หน้านี้ */}
+            <button
+              type="button"
+              onClick={() => setNickSheet(true)}
+              className="co-tap"
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                padding: "5px 10px", borderRadius: 9,
+                border: "1px solid #C7C3F0", background: "#fff",
+                color: "#4F46E5", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              {nickname ? "แก้ชื่อ" : "ตั้งชื่อ"}
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: "#5A54C8", marginTop: 3, lineHeight: 1.45 }}>
+            ตู้ {machine.code}{nickname ? ` · ${nickname}` : ""} — บันทึกยอดตั้งต้น (ตุ๊กตา · เงิน · มิเตอร์) เพื่อเริ่มนับรอบต่อไป.
             แก้ไขทีหลังต้อง<b> เจ้าของอนุมัติ</b>.
           </div>
         </div>
       </div>
 
-      {/* นับตุ๊กตาในตู้ตอนนี้ (stepper · ว่าง) */}
-      <Section title="ตุ๊กตาในตู้ตอนนี้" hint="นับที่เห็นจริงในตู้ (ยังไม่เติม)">
-        <Stepper value={dollCount} unit="ตัว" placeholder="นับแล้วแตะ +"
-          onDec={() => stepDoll(setDollCount, dollCount, -1)} onInc={() => stepDoll(setDollCount, dollCount, 1)} />
+      {/* นับตุ๊กตาในตู้ตอนนี้ (พิมพ์เลขได้ + −/+ · ว่าง) */}
+      <Section title="ตุ๊กตาในตู้ตอนนี้" hint="นับที่เห็นจริงในตู้ (ยังไม่เติม) · พิมพ์เลขได้เลย">
+        <CountField value={dollCount} onChange={setDollCount} placeholder="นับแล้วพิมพ์เลข" />
       </Section>
 
-      {/* เติมเพิ่ม (stepper · ว่าง) */}
+      {/* เติมเพิ่ม (พิมพ์เลขได้ + −/+ · ว่าง) */}
       <Section title="เติมตุ๊กตาเพิ่ม" hint="ใส่เพิ่มเข้าไปกี่ตัว (ไม่เติม = ข้ามได้)">
-        <Stepper value={dollsAdded} unit="ตัว" placeholder="แตะ + ถ้ามีเติม"
-          onDec={() => stepDoll(setDollsAdded, dollsAdded, -1)} onInc={() => stepDoll(setDollsAdded, dollsAdded, 1)} />
+        <CountField value={dollsAdded} onChange={setDollsAdded} placeholder="พิมพ์จำนวนที่เติม" />
       </Section>
 
       {/* เงินสด */}
@@ -332,6 +354,20 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
       >
         {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่าครั้งแรก"}
       </button>
+
+      {/* sheet ตั้งชื่อเล่น (inline · reuse renameMachineNickname) */}
+      {nickSheet && (
+        <NicknameSheet
+          machineId={machine.id}
+          machineCode={machine.code}
+          initial={nickname ?? ""}
+          onClose={() => setNickSheet(false)}
+          onSaved={(name) => {
+            setNickname(name.trim().length > 0 ? name.trim() : null);
+            setNickSheet(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -345,6 +381,51 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
         {hint && <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>{hint}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+/* ── CountField — ช่องนับ "พิมพ์เลขได้" + ปุ่ม −/+ (mirror staff-app-client CountField).
+ * value=null → ช่องว่าง + placeholder (ไม่โชว์ 0 หลอกว่ากรอกแล้ว). onChange รับ number|null.
+ * พิมพ์ "120" ตรง ๆ ได้ · strip อักขระที่ไม่ใช่ตัวเลข · −/+ ปรับทีละ 1 (ต่ำสุด 0). */
+function CountField({
+  value,
+  onChange,
+  placeholder = "นับแล้วพิมพ์เลข",
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  placeholder?: string;
+}) {
+  const cur = value == null ? 0 : value;
+  const nudge = (delta: number) => onChange(Math.max(0, Math.min(MAX_COUNT, cur + delta)));
+  const btnStyle = {
+    width: 54, height: 54, flex: "0 0 54px", borderRadius: 12, border: "1.5px solid #E3E6EA",
+    background: "#F6F7FA", fontSize: 24, fontWeight: 700, color: "#454B54",
+    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+  } as const;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+      <button type="button" aria-label="ลด" onClick={() => nudge(-1)} className="co-tap" style={btnStyle}>−</button>
+      {/* type=text + inputMode=numeric → คีย์บอร์ดตัวเลข + พิมพ์ "120" ได้ตรง ๆ · ว่าง = null */}
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value == null ? "" : String(value)}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/[^0-9]/g, "");
+          onChange(raw === "" ? null : Math.min(MAX_COUNT, Number(raw)));
+        }}
+        className="num"
+        style={{
+          flex: 1, minWidth: 0, textAlign: "center", fontSize: 22, fontWeight: 700,
+          padding: "13px 10px", border: "1.5px solid #E3E6EA", borderRadius: 12, background: "#fff",
+        }}
+      />
+      <button type="button" aria-label="เพิ่ม" onClick={() => nudge(1)} className="co-tap"
+        style={{ ...btnStyle, border: "none", background: "#4F46E5", color: "#fff" }}>+</button>
     </div>
   );
 }
@@ -606,6 +687,96 @@ function AddProductPanel({
       >
         {busy ? "กำลังเพิ่ม…" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
       </button>
+    </div>
+  );
+}
+
+/* ── NicknameSheet — bottom-sheet ตั้งชื่อเล่นตู้ (mirror staff-app-client NicknameSheet).
+ * บันทึก → renameMachineNickname({machineId,nickname}) ใน startTransition · {ok:false} โชว์ error ·
+ * สำเร็จ → onSaved(name) (parent อัปเดตชื่อในหัวข้อเอง · ไม่ต้อง reload). ว่าง = ล้างชื่อเล่น (server รับ ""). */
+function NicknameSheet({
+  machineId,
+  machineCode,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  machineId: string;
+  machineCode: string;
+  initial: string;
+  onClose: () => void;
+  onSaved: (name: string) => void;
+}) {
+  const [name, setName] = useState(initial);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function save() {
+    if (pending) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await renameMachineNickname({ machineId, nickname: name.trim() });
+        if (!res.ok) {
+          setError(res.error || "ตั้งชื่อไม่สำเร็จ · ลองใหม่อีกครั้ง");
+          return;
+        }
+        onSaved(name);
+      } catch {
+        setError("ตั้งชื่อไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`ตั้งชื่อเล่นตู้ ${machineCode}`}
+      style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+    >
+      <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: pending ? "default" : "pointer" }} />
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>ตั้งชื่อเล่นตู้</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ <span className="num">{machineCode}</span></div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }} className="co-tap"
+            style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <label style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", display: "block", marginBottom: 6 }}>
+          ชื่อเล่น (จำง่าย — เว้นว่างเพื่อล้างชื่อ)
+        </label>
+        <input type="text" value={name} maxLength={60} placeholder="เช่น ตู้หน้าประตู, ตู้คิตตี้"
+          onChange={(e) => setName(e.target.value)} autoFocus
+          style={{ width: "100%", fontSize: 16, fontWeight: 600, padding: "12px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff" }} />
+
+        {error && (
+          <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: "#B45309", background: "#FCF1E2", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 12px" }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={() => { if (!pending) onClose(); }} className="co-tap"
+            style={{ flex: 1, padding: 13, borderRadius: 12, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 14.5, fontWeight: 700, cursor: pending ? "default" : "pointer" }}>
+            ยกเลิก
+          </button>
+          <button type="button" onClick={save} disabled={pending} className="co-tap"
+            style={{ flex: 2, padding: 13, borderRadius: 12, border: "none", background: pending ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: pending ? "wait" : "pointer" }}>
+            {pending ? "กำลังบันทึก…" : "บันทึกชื่อ"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

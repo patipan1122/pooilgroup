@@ -44,6 +44,34 @@ type SubmitBranchEventResult =
 // error ข้อความชัด (แยกจาก DB error ทั่วไป) แล้ว rollback ทั้งก้อน (ไม่ตัดสต๊อกครึ่ง ๆ).
 class CfOverIssueError extends Error {}
 
+// รูปที่แนบทีหลัง — รับ url จริง (http) เท่านั้น · ค่าว่าง = ไม่ส่ง (ข้าม)
+const zAttachUrl = z.union([z.string().url(), z.literal("")]);
+
+// ── "รูปยังไม่ครบ" (photos incomplete) — derived · ไม่มี schema flag ──────────
+// นับ "รูปหลักฐานที่คาดว่าต้องมี" ที่ยัง null สำหรับ event (photosPurgedAt ต้อง null ก่อนเรียก).
+// รูปเงินสด (photoCashUrl) = optional ไม่นับ (CEO 2026-07-11 "เงินสดไม่ต้องถ่าย").
+//  - COLLECTION: มิเตอร์เหรียญ + มิเตอร์ตุ๊กตา + สต็อกก่อนเติม + สต็อกหลังเติม (4 ช่อง)
+//  - INITIAL/baseline: 4 รูปมิเตอร์กายภาพ + รูปตู้ (ไม่นับ photoStockUrl — baseline ไม่มีช่องถ่ายรูปสต็อก)
+// ⚠️ ต้องตรงกับ HistoryPanel (page.tsx) + office chip (collections-client) เป๊ะ (ใช้ label/คอลัมน์ชุดเดียวกัน).
+function deriveEventPhotoCompleteness(
+  eventType: string,
+  cols: Record<string, string | null>,
+): { missingCount: number; expectedCount: number } {
+  const expectedCols =
+    eventType === "INITIAL"
+      ? [
+          "photoMoneyMeterTopUrl",
+          "photoMoneyMeterBottomUrl",
+          "photoDollMeterTopUrl",
+          "photoDollMeterBottomUrl",
+          "photoMachineUrl",
+        ]
+      : ["photoMeterAfterUrl", "photoPrizeMeterUrl", "photoStockUrl", "photoMeterBeforeUrl"];
+  let missingCount = 0;
+  for (const c of expectedCols) if (cols[c] == null) missingCount++;
+  return { missingCount, expectedCount: expectedCols.length };
+}
+
 // ── นโยบาย "มิเตอร์ต้องตรง" (meterMatch · Wave 4b) ─────────────────────────
 // เมื่อเจ้าของเปิดสวิตช์ meterMatch (policy.meterMatch) → รอบที่ปิดแล้วมีธง "เกี่ยวกับมิเตอร์"
 // (มิเตอร์ไม่ต่อเนื่อง/ถอยหลัง · มิเตอร์ไม่ขยับแต่มีเงิน · ตุ๊กตาออกแต่เหรียญไม่ขยับ ·
@@ -541,6 +569,113 @@ export async function renameMachineNickname(input: unknown): Promise<Result> {
   revalidatePath("/clawfleet/os/app");
   revalidatePath("/clawfleet/os/manage");
   return { ok: true };
+}
+
+// ── แนบรูปเพิ่มทีหลัง (attach later) — พนักงานถ่ายรูปหลักฐานไม่ทันตอนเก็บ (รีบ/สัญญาณตก)
+//    → กลับมาแนบเพิ่มจากหน้าประวัติได้ (item 5). รูปเป็น "หลักฐานเสริม" · ไม่แตะเงิน/มิเตอร์/กระทบยอด.
+//
+// คอลัมน์รูปของ event เก็บหลักฐานตามความหมายจริง (ดู submitBranchEvent write-side):
+//   photoMeterAfterUrl = มิเตอร์เหรียญ · photoPrizeMeterUrl = มิเตอร์ตุ๊กตา
+//   photoStockUrl = สต็อกก่อนเติม · photoMeterBeforeUrl = สต็อกหลังเติม (reused slot) · photoCashUrl = เงินสด
+//   (baseline/INITIAL ใช้ photoMoney*/photoDoll*/photoMachine เพิ่ม — รับได้เผื่อแนบรูปรอบตั้งต้น)
+// รูปเงินสด (photoCashUrl) = optional · ไม่นับใน "ครบ/ไม่ครบ" (CEO 2026-07-11).
+const AttachEventPhotosSchema = z.object({
+  eventId: zUUID(),
+  photos: z
+    .object({
+      photoMeterAfterUrl: zAttachUrl.optional(),
+      photoPrizeMeterUrl: zAttachUrl.optional(),
+      photoStockUrl: zAttachUrl.optional(),
+      photoMeterBeforeUrl: zAttachUrl.optional(),
+      photoCashUrl: zAttachUrl.optional(),
+      photoMoneyMeterTopUrl: zAttachUrl.optional(),
+      photoMoneyMeterBottomUrl: zAttachUrl.optional(),
+      photoDollMeterTopUrl: zAttachUrl.optional(),
+      photoDollMeterBottomUrl: zAttachUrl.optional(),
+      photoMachineUrl: zAttachUrl.optional(),
+    })
+    .strict(),
+});
+
+/**
+ * แนบรูปหลักฐานเพิ่มให้ event ที่เก็บไปแล้ว (item 5) — idempotent · money-safe (แตะเฉพาะคอลัมน์รูป).
+ *  - สิทธิ์: สมาชิกสาขาของตู้ (เหมือน submitBranchEvent) หรือแอดมิน
+ *  - เขียนเฉพาะคอลัมน์ที่ "ยังว่าง (null)" — ไม่ทับรูปเดิม (กันเขียนทับหลักฐานที่ถ่ายไว้แล้ว)
+ *  - purge แล้ว (photosPurgedAt != null) → no-op (รูปถูกลบตามนโยบายเก็บ · แนบเพิ่มไม่ได้)
+ *  - คืน completeness (missing/total) เพื่อจอเคลียร์ป้าย "รูปยังไม่ครบ" ได้ทันที
+ */
+export async function attachEventPhotos(
+  input: unknown,
+): Promise<ResultOf<{ photosMissing: boolean; missingCount: number }>> {
+  const parsed = AttachEventPhotosSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { eventId, photos } = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  // resolve event → machine → branch (org-scoped)
+  const ev = await prisma.cfCollectionEvent.findFirst({
+    where: { id: eventId, orgId },
+    select: {
+      id: true,
+      eventType: true,
+      photosPurgedAt: true,
+      machine: { select: { branchId: true } },
+      photoMeterAfterUrl: true,
+      photoPrizeMeterUrl: true,
+      photoStockUrl: true,
+      photoMeterBeforeUrl: true,
+      photoCashUrl: true,
+      photoMoneyMeterTopUrl: true,
+      photoMoneyMeterBottomUrl: true,
+      photoDollMeterTopUrl: true,
+      photoDollMeterBottomUrl: true,
+      photoMachineUrl: true,
+    },
+  });
+  if (!ev) return { ok: false, error: "ไม่พบรายการเก็บเงินนี้" };
+
+  // branch-access guard (เหมือน submitBranchEvent / renameMachineNickname)
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(ev.machine.branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  // รูปถูกลบตามนโยบายเก็บแล้ว → แนบเพิ่มไม่มีความหมาย (no-op · ไม่ error เพื่อ idempotent)
+  if (ev.photosPurgedAt) {
+    return { ok: false, error: "รูปของรายการนี้ถูกลบตามนโยบายเก็บแล้ว · แนบเพิ่มไม่ได้" };
+  }
+
+  // เขียนเฉพาะคอลัมน์ที่ "ยังว่าง" + ผู้ใช้ส่ง url ใหม่มา (ไม่ทับรูปเดิม · idempotent)
+  const data: Record<string, string> = {};
+  for (const [col, url] of Object.entries(photos)) {
+    if (!url) continue; // ไม่ส่ง / ส่งค่าว่าง → ข้าม
+    const current = (ev as Record<string, unknown>)[col];
+    if (current == null) data[col] = url; // ยังว่างเท่านั้น → เติม
+  }
+  if (Object.keys(data).length > 0) {
+    await prisma.cfCollectionEvent.update({ where: { id: ev.id }, data });
+  }
+
+  // completeness หลังอัปเดต — นับ "รูปหลักฐานที่คาดว่าต้องมี" ตามชนิด event (ไม่นับเงินสด).
+  // สร้าง record คอลัมน์รูปล้วน ๆ (ค่าเดิม + ที่เพิ่งเติม) — เลี่ยง cast ทั้ง ev (มี Date/relation ปน)
+  const mergedCols: Record<string, string | null> = {
+    photoMeterAfterUrl: ev.photoMeterAfterUrl,
+    photoPrizeMeterUrl: ev.photoPrizeMeterUrl,
+    photoStockUrl: ev.photoStockUrl,
+    photoMeterBeforeUrl: ev.photoMeterBeforeUrl,
+    photoMoneyMeterTopUrl: ev.photoMoneyMeterTopUrl,
+    photoMoneyMeterBottomUrl: ev.photoMoneyMeterBottomUrl,
+    photoDollMeterTopUrl: ev.photoDollMeterTopUrl,
+    photoDollMeterBottomUrl: ev.photoDollMeterBottomUrl,
+    photoMachineUrl: ev.photoMachineUrl,
+    ...data,
+  };
+  const { missingCount } = deriveEventPhotoCompleteness(ev.eventType, mergedCols);
+
+  revalidatePath("/clawfleet/os/collections");
+  revalidatePath("/clawfleet/os/app");
+  return { ok: true, data: { photosMissing: missingCount > 0, missingCount } };
 }
 
 /** ปิดรอบสาขา · 2-way cross-check (เงิน + ตุ๊กตา) */

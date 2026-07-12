@@ -16,8 +16,10 @@
 //   แต่ห้าม gate ด้วย userBranchIds()==='ALL' (viewer ก็ได้ "ALL") → เช็ก membership จริง
 //   (UserBranch) หรือ cfHasAdminPower.
 //
-// per-meter fallback (CEO R2): มิเตอร์ตัวไหนอ่านไม่ออก → เว้นว่าง (null) ได้ ถ้าแนบรูปมิเตอร์นั้น
-//   (รูป = หลักฐานแทนตัวเลข). มิเตอร์ที่ไม่ null ต้องเป็นจำนวนเต็ม ≥ 0.
+// photos OPTIONAL (CEO 2026-07-12): รูปไม่บล็อกการบันทึกอีกต่อไป — "ตัวเลข" คือ anchor.
+//   แทนที่ "มิเตอร์ OR รูป" → เป็น "มิเตอร์ต้องมีเลข (non-null), รูปเสริมได้ (optional)".
+//   รอบที่ยังไม่แนบรูป (photo_* = null) = "ยังไม่ครบ (incomplete)" — task อื่นอ่านจากคอลัมน์รูป null เอง.
+//   มิเตอร์ที่ไม่ null ต้องเป็นจำนวนเต็ม ≥ 0 (schema เดิม).
 //
 // idempotency: clientKey ต่อการกด → ถ้ามี baseline event ที่ clientKey นี้อยู่แล้ว = no-op คืนของเดิม
 //   (offline retry / double-tap ไม่สร้างซ้ำ). เก็บ clientKey ใน CfCollectionEvent.notes marker.
@@ -119,25 +121,17 @@ export async function submitFirstBaseline(input: {
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
   const data = parsed.data;
 
-  // per-meter fallback (CEO R2): มิเตอร์ตัวไหน "ว่าง" (null) ต้องมี "รูปมิเตอร์ตัวนั้น" เป็นหลักฐาน.
-  // ตัวไหนมีเลขก็ไม่ต้องบังคับรูป. (รูปเป็น optional โดยรวม แต่ถ้าเว้นเลข = ต้องมีรูป.)
-  const meterChecks: { value: number | null; photo: string | undefined; label: string }[] = [
-    { value: data.meterMoneyTop, photo: data.photoMoneyMeterTopUrl, label: "มิเตอร์เงินบน" },
-    { value: data.meterMoneyBottom, photo: data.photoMoneyMeterBottomUrl, label: "มิเตอร์เงินล่าง" },
-    { value: data.meterDollTop, photo: data.photoDollMeterTopUrl, label: "มิเตอร์ตุ๊กตาบน" },
-    { value: data.meterDollBottom, photo: data.photoDollMeterBottomUrl, label: "มิเตอร์ตุ๊กตาล่าง" },
-  ];
-  for (const m of meterChecks) {
-    if (m.value === null && !m.photo) {
-      return err(`${m.label} อ่านไม่ออก · ต้องแนบรูปมิเตอร์ตัวนี้เป็นหลักฐาน`);
-    }
+  // ✅ NUMBERS = anchor (CEO 2026-07-12): รูปทุกใบ optional (ไม่บล็อกการบันทึก) แต่ "เลขมิเตอร์" ต้องมี
+  //   อย่างน้อย 1 หน้าปัดต่อคู่ (เงิน: บน-หรือ-ล่าง · ตุ๊กตา: บน-หรือ-ล่าง) ให้ตรงกับที่คณิตใช้จริง
+  //   (bestCoinReading = top ?? bottom). ตู้ที่หน้าปัดล่างเสีย/อ่านไม่ออก → ยังตั้ง baseline ได้จากตัวบน.
+  //   ว่างทั้งคู่ = anchor คู่นั้นพัง → บล็อก. เดิม "มิเตอร์ OR รูป" → "มิเตอร์ต้องมีเลข ≥1/คู่, รูปเสริม".
+  const moneyMeterOk = data.meterMoneyTop !== null || data.meterMoneyBottom !== null;
+  const dollMeterOk = data.meterDollTop !== null || data.meterDollBottom !== null;
+  if (!moneyMeterOk) {
+    return err("มิเตอร์เงิน ยังไม่ได้กรอกเลข — ต้องมีอย่างน้อย 1 หน้าปัด (บนหรือล่าง)");
   }
-
-  // P2 (audit 2026-07-08): มิเตอร์ "เงิน" ต้องมีเลขจริงอย่างน้อย 1 ตำแหน่ง — ห้าม photo-only.
-  // ถ้าปล่อยมิเตอร์เงินว่างทั้งคู่ → bestCoinReading fallback = machine.lastCoinMeter (=0 ตู้ใหม่)
-  // → coin baseline = 0 (ไร้ความหมาย) → revenue รอบจริงรอบแรกพองผิด. รูปแทนได้เฉพาะมิเตอร์ตุ๊กตา.
-  if (data.meterMoneyTop === null && data.meterMoneyBottom === null) {
-    return err("มิเตอร์เงินต้องกรอกเลขอย่างน้อย 1 ตำแหน่ง (รูปแทนได้เฉพาะมิเตอร์ตุ๊กตา)");
+  if (!dollMeterOk) {
+    return err("มิเตอร์ตุ๊กตา ยังไม่ได้กรอกเลข — ต้องมีอย่างน้อย 1 หน้าปัด (บนหรือล่าง)");
   }
 
   let session: Awaited<ReturnType<typeof requireCfSession>>;

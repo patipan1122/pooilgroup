@@ -671,6 +671,13 @@ function CollectionCard({
     return out;
   })();
 
+  // item 5 (office side) · "รูปยังไม่ครบ" — ตู้ในรอบนี้ยังขาดรูปหลักฐาน (มิเตอร์/สต็อก) ที่ url=null.
+  //  ไม่นับรูปเงินสด (label "เงินสด" · optional · CEO 2026-07-11) — สอดคล้องกับฝั่งมือถือ (deriveHistoryPhotosMissing).
+  //  เฉพาะ real tier ที่มี machines[].photoShots จริง (sample = [] → ไม่โชว์ชิป).
+  const photosMissing = row.machines.some((m) =>
+    m.photoShots.some((s) => s.label !== "เงินสด" && !s.url),
+  );
+
   // เส้นทางเงิน — เหรียญเข้า
   // มีมิเตอร์จริง (before/after รวมทั้งรอบจาก event) → delta จริง ×฿10 · ไม่มี → ประมาณจากยอด (ติดป้ายให้ชัด)
   const meterBefore = row.coinMeterBefore;
@@ -759,6 +766,13 @@ function CollectionCard({
           {/* เช็คตุ๊กตา at-a-glance — ออกตรงมิเตอร์ไหม (CEO ขอ) */}
           <Stat label="ตุ๊กตา" value={baseline ? "ตั้งต้น" : dollStr} color={baseline ? "#4F46E5" : dollStatColor} />
         </div>
+        {/* item 5 · ชิปเล็ก "รูปยังไม่ครบ" (amber · จาง) — ตู้ในรอบยังขาดรูปหลักฐาน (ไม่นับรูปเงินสด).
+            ใช้ได้ทั้งรอบปกติและรอบตั้งต้น (isBaseline) · แค่ context ไม่ใช่ error → วางก่อนป้ายสถานะ ไม่แย่งสายตา. */}
+        {photosMissing && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: "#FCF1E2", color: "#B45309", whiteSpace: "nowrap" }}>
+            <ImageOff size={12} /> รูปยังไม่ครบ
+          </span>
+        )}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 20, background: meta.bg, color: meta.color, whiteSpace: "nowrap" }}>
           {meta.label}
         </span>

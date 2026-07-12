@@ -22,8 +22,12 @@ const POLICY_KEY = "clawfleetPolicy";
  * ที่เอาไปบังคับใช้ → ใน settings UI จึงถูก disable + ป้าย "เร็วๆนี้" กัน HQ เชื่อผิด.
  * เมื่อเพิ่ม logic บังคับใช้จริงของแต่ละตัวแล้ว ค่อยเปลี่ยน live=true ใน settings-client.
  */
+// ⚠️ NOTE (CEO 2026-07-12): photoRequired ใช้เฉพาะ "รอบเก็บปกติ" (actions.ts) เท่านั้น.
+//   หน้า "ตั้งค่าครั้งแรก" (baseline-actions.ts) รูปทุกใบ OPTIONAL เสมอ — ไม่บล็อกด้วย policy ตัวนี้.
+//   baseline ต้องการ "เลขมิเตอร์ครบ" เป็น anchor แทน (รูปเป็นตัวเสริม, null = incomplete).
+//   ห้ามเอา photoRequired ไป gate baseline ในอนาคต (จะทำให้แม่บ้านตั้งตู้ไม่ได้ตอนกล้อง/เน็ตมีปัญหา).
 export type ClawfleetPolicy = {
-  photoRequired: boolean; // บังคับถ่ายรูปก่อน–หลังเติม (LIVE · actions.ts บังคับใช้)
+  photoRequired: boolean; // บังคับถ่ายรูปก่อน–หลังเติม (LIVE · actions.ts บังคับใช้ · ไม่ใช้กับ baseline)
   cashAlert: boolean; // เตือนเงินไม่ตรงทันที (ยังไม่มี reader — UI disabled)
   lockConfig: boolean; // ล็อกค่าตู้รออนุมัติ (ยังไม่มี reader — UI disabled)
   meterMatch: boolean; // มิเตอร์เฟือง + ดิจิตอลต้องเท่ากัน (ยังไม่มี reader — UI disabled)

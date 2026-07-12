@@ -16,6 +16,30 @@ import "@/app/(admin)/clawfleet/os/clawos.css";
 
 export const dynamic = "force-dynamic";
 
+// item 5/8 · "รูปยังไม่ครบ" (photos incomplete) — derived · ไม่มี schema flag.
+// ต้องตรงกับ deriveEventPhotoCompleteness ใน lib/clawfleet/actions.ts เป๊ะ (คอลัมน์ชุดเดียวกัน).
+// นับ "รูปหลักฐานที่คาดว่าต้องมี" ที่ยัง null — รูปเงินสด (photoCashUrl) ไม่นับ (optional · CEO 2026-07-11).
+//   COLLECTION: มิเตอร์เหรียญ + มิเตอร์ตุ๊กตา + สต็อกก่อนเติม + สต็อกหลังเติม
+//   INITIAL/baseline: 4 รูปมิเตอร์กายภาพ + รูปตู้ (ไม่นับ photoStockUrl — baseline ไม่มีช่องถ่ายรูปสต็อก)
+function deriveHistoryPhotosMissing(e: {
+  eventType: string;
+  photoMeterAfterUrl: string | null;
+  photoPrizeMeterUrl: string | null;
+  photoStockUrl: string | null;
+  photoMeterBeforeUrl: string | null;
+  photoMoneyMeterTopUrl: string | null;
+  photoMoneyMeterBottomUrl: string | null;
+  photoDollMeterTopUrl: string | null;
+  photoDollMeterBottomUrl: string | null;
+  photoMachineUrl: string | null;
+}): boolean {
+  const expected: (string | null)[] =
+    e.eventType === "INITIAL"
+      ? [e.photoMoneyMeterTopUrl, e.photoMoneyMeterBottomUrl, e.photoDollMeterTopUrl, e.photoDollMeterBottomUrl, e.photoMachineUrl]
+      : [e.photoMeterAfterUrl, e.photoPrizeMeterUrl, e.photoStockUrl, e.photoMeterBeforeUrl];
+  return expected.some((u) => u == null);
+}
+
 // ต้นวันนี้ตามเวลาไทย (Asia/Bangkok = UTC+7) — กรองรอบที่ปิด "วันนี้"
 function startOfTodayBangkok(): Date {
   const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
@@ -134,11 +158,20 @@ export default async function ClawfleetLiffPage({
       // graceful: คงค่า default (0)
     }
     try {
+      // item 8 · เลือก session.isBaseline (แยกป้าย "การตั้งค่าครั้งแรก") + คอลัมน์รูปหลักฐาน
+      //  + eventType/photosPurgedAt/id เพื่อ derive "รูปยังไม่ครบ" (ดู deriveHistoryPhotosMissing).
+      //  รวม INITIAL ด้วย (เดิมกรอง COLLECTION อย่างเดียว → รอบตั้งต้นไม่โผล่) เพื่อให้ป้าย baseline มีที่แสดง.
       const events = await prisma.cfCollectionEvent.findMany({
-        where: { orgId, collectedById: userId, eventType: "COLLECTION", collectedAt: { gte: dayRange.gte, lt: dayRange.lt } },
+        where: { orgId, collectedById: userId, eventType: { in: ["COLLECTION", "INITIAL"] }, collectedAt: { gte: dayRange.gte, lt: dayRange.lt } },
         orderBy: { collectedAt: "desc" },
         select: {
+          id: true, eventType: true, photosPurgedAt: true,
           collectedAt: true, cashCountedCents: true, anomalyFlags: true, coinMeterAfter: true,
+          // รูปหลักฐาน (COLLECTION 4 ช่อง + baseline 4 มิเตอร์/รูปตู้) — derive "ยังไม่ครบ"
+          photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true,
+          photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true,
+          photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
+          session: { select: { isBaseline: true } }, // item 8 · รอบตั้งต้น
           machine: { select: { code: true, branch: { select: { name: true } } } },
         },
         take: 50,
@@ -151,6 +184,12 @@ export default async function ClawfleetLiffPage({
         cashBaht: Math.round(e.cashCountedCents / 100),
         coinMeter: e.coinMeterAfter, // B3 · เลขมิเตอร์เหรียญที่บันทึกไว้ (look-back)
         ok: e.anomalyFlags.length === 0,
+        // item 8 · รอบตั้งต้น = event ชนิด INITIAL หรือ session.isBaseline
+        isBaseline: e.eventType === "INITIAL" || e.session?.isBaseline === true,
+        eventId: e.id,
+        eventType: e.eventType,
+        // item 5/8 · "รูปยังไม่ครบ" — derived (ดู deriveHistoryPhotosMissing) · purge แล้ว = ไม่ถือว่าขาด
+        photosMissing: e.photosPurgedAt == null && deriveHistoryPhotosMissing(e),
       }));
     } catch {
       // graceful: ยังไม่ migrate / query ล้ม → คงค่า default ([])
