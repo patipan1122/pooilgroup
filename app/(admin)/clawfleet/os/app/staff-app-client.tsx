@@ -35,6 +35,7 @@ import {
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
+import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 // bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
 import { BaselineForm } from "@/components/clawfleet/BaselineForm";
@@ -55,12 +56,19 @@ export type BranchStockProduct = {
   imageUrl: string | null;
   warehouse: number; // คงคลังสาขา (ไม่รวมในตู้)
 };
-// ใบกระจายขาเข้าที่ยังไม่รับ (N6 รับสินค้า) — mirror CfInboundDeliveryRow (+lineId สำหรับ confirmShipmentReceived)
+// ใบกระจายขาเข้าที่ยังไม่รับ (N6 รับสินค้า) — mirror CfInboundDeliveryRow (+lineId สำหรับ confirm)
+//   source = write path ที่ปุ่มกดรับต้อง route ไป (คนละ server action · คนละ idempotency guard):
+//     "cf_delivery" → confirmShipmentReceived  ·  "dc_transfer" → confirmTransfer(transferId)
+export type InboundSource = "cf_delivery" | "dc_transfer";
 export type InboundDelivery = {
   id: string;
   status: string;
   itemsCount: number;
   unitsCount: number;
+  // source ละไว้/undefined → ถือเป็น "cf_delivery" (พาธเดิม · เช่น LIFF ที่ surface แค่ cfDelivery) →
+  //   ปุ่มกดรับ route ไป confirmShipmentReceived. "dc_transfer" เท่านั้นที่ route ไป confirmTransfer.
+  source?: InboundSource;
+  transferId?: string; // มีเฉพาะ source="dc_transfer" (ใบโอนจากคลังกลาง DC)
   lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number }>;
 };
 // WAVE-3b · คลัง (ห้องเก็บ) ของสาขา ที่ยัง active — ขับ picker เติม (R4) + นับสต๊อก (N3).
@@ -2202,26 +2210,48 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
 }) {
   // จำนวนที่รับจริงต่อบรรทัด — เริ่มด้วยค่าที่ระบุมา (qty) เป็นค่า default (รับครบ) · ปรับลงได้
   const [received, setReceived] = useState<Record<string, number>>(() =>
-    Object.fromEntries(delivery.lines.map((l) => [l.productId, l.qty])),
+    Object.fromEntries(delivery.lines.map((l) => [l.lineId, l.qty])),
   );
   const [photo, setPhoto] = useState<string>("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // per-line stepper (keyed by productId) · confirmShipmentReceived ต้องการ lineId (มากับ prop)
-  const step = (pid: string, delta: number, max: number) =>
-    setReceived((r) => ({ ...r, [pid]: Math.max(0, Math.min(max, (r[pid] ?? 0) + delta)) }));
+  // per-line stepper (keyed by lineId · ไม่ใช่ productId — ใบเดียวมีสินค้าซ้ำหลายบรรทัดได้ → ต้องแยกช่องรับต่อบรรทัด)
+  const step = (lineId: string, delta: number, max: number) =>
+    setReceived((r) => ({ ...r, [lineId]: Math.max(0, Math.min(max, (r[lineId] ?? 0) + delta)) }));
 
   function submit() {
     setError(null);
     startTransition(async () => {
       try {
+        // route ตาม source — ห้ามสลับ write path (คนละ idempotency guard · สลับ = รับซ้ำ/ไม่ตรง refTable):
+        //   dc_transfer → confirmTransfer(transferId) · cf_delivery → confirmShipmentReceived(deliveryId)
+        if (delivery.source === "dc_transfer") {
+          if (!delivery.transferId) {
+            setError("ใบโอนไม่ถูกต้อง · ลองรีเฟรชแล้วรับใหม่");
+            return;
+          }
+          // qtyReceived ราย line (default = ที่ส่งมา) — mirror transfer-confirm.tsx confirmPartial
+          const r = await confirmTransfer({
+            transferId: delivery.transferId,
+            lines: delivery.lines.map((l) => ({ lineId: l.lineId, qtyReceived: received[l.lineId] ?? 0 })),
+          });
+          if (!r.ok) {
+            console.error("[clawos] confirmTransfer failed:", r.error);
+            setError(r.error || "รับสินค้าไม่สำเร็จ · ลองใหม่อีกครั้ง");
+            return;
+          }
+          // idempotent: ถ้าคนอื่น/ผู้จัดการยืนยันไปก่อน → ok เลย (server คืน ok) → โชว์ "รับแล้ว"
+          setDone(true);
+          return;
+        }
+
         const r = await confirmShipmentReceived({
           deliveryId: delivery.id,
           photoUrls: photo ? [photo] : undefined,
           // receivedLines ต้องใช้ lineId — delivery.lines มี lineId มากับ prop (ดู mapping ใน page loader)
-          receivedLines: delivery.lines.map((l) => ({ lineId: l.lineId, receivedQty: received[l.productId] ?? 0 })),
+          receivedLines: delivery.lines.map((l) => ({ lineId: l.lineId, receivedQty: received[l.lineId] ?? 0 })),
         });
         if (!r.ok) {
           console.error("[clawos] confirmShipmentReceived failed:", r.error);
@@ -2231,7 +2261,7 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
         // atomic-claim: ถ้าคนอื่นรับไปก่อน → alreadyReceived (ไม่ error) → โชว์ "รับแล้ว"
         setDone(true);
       } catch (e) {
-        console.error("[clawos] confirmShipmentReceived threw:", e);
+        console.error("[clawos] confirm receive threw:", e);
         setError("รับสินค้าไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
       }
     });
@@ -2262,10 +2292,10 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
               <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</div>
               <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ส่งมา <span className="num">{l.qty}</span> ชิ้น</div>
             </div>
-            <button type="button" aria-label="ลด" onClick={() => step(l.productId, -1, l.qty)} disabled={(received[l.productId] ?? 0) <= 0}
+            <button type="button" aria-label="ลด" onClick={() => step(l.lineId, -1, l.qty)} disabled={(received[l.lineId] ?? 0) <= 0}
               style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
-            <span className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{received[l.productId] ?? 0}</span>
-            <button type="button" aria-label="เพิ่ม" onClick={() => step(l.productId, 1, l.qty)}
+            <span className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{received[l.lineId] ?? 0}</span>
+            <button type="button" aria-label="เพิ่ม" onClick={() => step(l.lineId, 1, l.qty)}
               style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "none", background: "#4F46E5", color: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
           </div>
         ))}

@@ -343,11 +343,11 @@ export function TransferDispatch({
       }
       const prodRaw = window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY);
       if (prodRaw) {
-        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string }[] };
+        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string; imageUrl?: string | null; onHand?: number }[] };
         if (parsed && Array.isArray(parsed.lines)) {
           for (const l of parsed.lines) {
-            // general handoff ไม่มียอด/onHand จริง → ใส่ onHand=0 (จอเตือน "เหลือ 0" · server เป็นคนตัดสิน)
-            addProduct({ id: l.productId, sku: l.sku, name: l.name, unit: l.unit, onHand: 0 });
+            // carry รูป + onHand จากหน้าสินค้า (prefill/แสดงผลเท่านั้น · server re-guard on-hand จริงตอน dispatch)
+            addProduct({ id: l.productId, sku: l.sku, name: l.name, unit: l.unit, onHand: l.onHand ?? 0, imageUrl: l.imageUrl ?? null });
           }
         }
         window.sessionStorage.removeItem(PRODUCT_HANDOFF_KEY);

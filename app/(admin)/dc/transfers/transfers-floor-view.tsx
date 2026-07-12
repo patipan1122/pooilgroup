@@ -8,12 +8,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Truck, Inbox } from "lucide-react";
+import { Truck, Inbox, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { StatusPill } from "@/components/ui/status-pill";
 import { DcThumb } from "@/components/dc/product-image";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TRANSFER_STATUS_LABEL } from "@/lib/dc/nav";
 import type { TransferListRow } from "@/lib/dc/transfer-list-actions";
+import { TransferExpandPanel } from "@/app/(admin)/dc/office/transfers/transfers-office-rows";
 
 // tone ป้ายสถานะ — copy จาก office/transfers/page.tsx (~20-26)
 const STATUS_TONE: Record<string, "neutral" | "brand" | "success" | "warning" | "danger" | "info"> = {
@@ -49,6 +50,7 @@ export function TransfersFloorView({
   incoming: TransferListRow[];
 }) {
   const [tab, setTab] = useState<Tab>(incoming.length > 0 ? "incoming" : "outgoing");
+  const [openId, setOpenId] = useState<string | null>(null); // ใบที่กาง (ทีละใบ)
   const rows = tab === "incoming" ? incoming : outgoing;
 
   return (
@@ -112,60 +114,107 @@ export function TransfersFloorView({
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.map((r) => (
-            <Link
-              key={r.id}
-              href={`/dc/transfers/${r.id}`}
-              className="dc-card"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 14px",
-                textDecoration: "none",
-                border: "1.5px solid var(--dc-line)",
-                color: "inherit",
-              }}
-            >
-              <DcThumb url={r.firstImageUrl} alt={r.transferCode} size={48} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span
-                    style={{
-                      fontWeight: 800,
-                      fontSize: 15,
-                      color: "var(--dc-ink)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {r.transferCode}
-                  </span>
-                  <StatusPill tone={STATUS_TONE[r.status] ?? "neutral"} size="sm" dot>
-                    {TRANSFER_STATUS_LABEL[r.status] ?? r.status}
-                  </StatusPill>
-                  {tab === "outgoing" && r.dispatchedByMe && (
-                    <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>ฉันส่งเอง</span>
-                  )}
-                </div>
+          {rows.map((r) => {
+            const open = openId === r.id;
+            return (
+              <div
+                key={r.id}
+                className="dc-card"
+                style={{
+                  border: `1.5px solid ${open ? "var(--dc-ink)" : "var(--dc-line)"}`,
+                  padding: 0,
+                  overflow: "hidden",
+                }}
+              >
+                {/* หัวแถว — กดที่ไหนก็กาง/ยุบ (ยกเว้นรูป+ลิงก์เปิดเต็มหน้า) */}
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={open}
+                  onClick={() => setOpenId(open ? null : r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenId(open ? null : r.id);
+                    }
+                  }}
                   style={{
-                    marginTop: 3,
-                    fontSize: 13,
-                    color: "var(--dc-muted)",
                     display: "flex",
-                    flexWrap: "wrap",
-                    gap: "2px 12px",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    color: "inherit",
                   }}
                 >
-                  <span>
-                    {tab === "incoming" ? `จาก: ${r.fromLabel}` : `ไป: ${r.destLabel}`}
+                  <span style={{ color: "var(--dc-muted)", flexShrink: 0, display: "inline-flex" }}>
+                    {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                   </span>
-                  <span>{fmtDate(r.dispatchedAt)}</span>
-                  <span>{r.lineCount} รายการ</span>
+                  <DcThumb url={r.firstImageUrl} alt={r.transferCode} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        style={{
+                          fontWeight: 800,
+                          fontSize: 15,
+                          color: "var(--dc-ink)",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {r.transferCode}
+                      </span>
+                      <StatusPill tone={STATUS_TONE[r.status] ?? "neutral"} size="sm" dot>
+                        {TRANSFER_STATUS_LABEL[r.status] ?? r.status}
+                      </StatusPill>
+                      {tab === "outgoing" && r.dispatchedByMe && (
+                        <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>ฉันส่งเอง</span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 13,
+                        color: "var(--dc-muted)",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "2px 12px",
+                      }}
+                    >
+                      <span>{tab === "incoming" ? `จาก: ${r.fromLabel}` : `ไป: ${r.destLabel}`}</span>
+                      <span>{fmtDate(r.dispatchedAt)}</span>
+                      <span>{r.lineCount} รายการ</span>
+                    </div>
+                  </div>
+                  {/* เปิดเต็มหน้า (รับ/ยืนยัน) — หยุด bubble ไม่ให้ toggle */}
+                  <Link
+                    href={`/dc/transfers/${r.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    title="เปิดเต็มหน้า"
+                    style={{
+                      flexShrink: 0,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "6px 10px",
+                      borderRadius: 9,
+                      border: "1px solid var(--dc-line)",
+                      background: "var(--dc-paper)",
+                      color: "var(--dc-ink)",
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <ExternalLink size={14} /> เปิดเต็มหน้า
+                  </Link>
                 </div>
+
+                {/* แผงบรรทัดสินค้า + ปุ่มพิมพ์ (โหลด lazy · reuse ตัวเดียวกับหลังบ้าน) */}
+                {open && <TransferExpandPanel transferId={r.id} />}
               </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

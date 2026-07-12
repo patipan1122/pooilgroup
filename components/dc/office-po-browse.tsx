@@ -126,12 +126,11 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
               </div>
             </div>
 
-            {/* คำอธิบายป้าย — กัน CEO งงว่าเลขแต่ละตัวคืออะไร (โดยเฉพาะ "เหลือในใบ" vs "คงเหลือจริง") */}
+            {/* คำอธิบายป้าย — เน้น "คงเหลือจริง" (ตัวเด่นบนการ์ด) + อธิบายแถวสรุปย่อ (สั่ง→รับ→ออก→เหลือ) */}
             {detail.lines.length > 0 && (
               <div style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.6, background: "#f7f8fb", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 13px", marginBottom: 12 }}>
-                <b style={{ color: "var(--ink)" }}>เหลือในใบ</b> = ของจากใบนี้ที่ยังไม่ถูกเบิก/โอนออก (ปรับไม่ให้เกินของจริง) ·{" "}
-                <b style={{ color: "var(--ink)" }}>คงเหลือจริง</b> = ของจริงในคลังตอนนี้ ·{" "}
-                <b style={{ color: "var(--ink)" }}>เบิก/โอนแล้ว</b> = เบิก/โอนออกโดยอ้าง “ใบ PO นี้”
+                <b style={{ color: "var(--ink)" }}>คงเหลือจริง</b> (เลขตัวใหญ่) = ของจริงในคลังตอนนี้ ·{" "}
+                แถวเล็กด้านล่างคือที่มา: <b style={{ color: "var(--ink)" }}>สั่ง</b> → <b style={{ color: "var(--ink)" }}>รับ</b> (รับเข้า) → <b style={{ color: "var(--ink)" }}>ออก</b> (เบิก/โอนโดยอ้างใบนี้) → <b style={{ color: "var(--ink)" }}>เหลือในใบ</b> (ยังไม่ถูกเบิก · ไม่เกินของจริง)
               </div>
             )}
 
@@ -205,37 +204,61 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
   );
 }
 
-// การ์ดสินค้า 1 รายการในใบ PO (read-only) — รูป + ชื่อ + chips ยอด
+// การ์ดสินค้า 1 รายการในใบ PO (read-only)
+//   • ตัวเอก = "คงเหลือจริง" (onHand) เลขใหญ่ + สีสถานะ (เขียว>0 / แดงหมด) — สิ่งที่ผู้ใช้อยากรู้ที่สุด
+//   • ที่มาของยอด (สั่ง→รับ→ออก→เหลือในใบ) = แถวสรุปย่อ ตัวเล็ก สีจาง ไม่แย่งสายตา
 function PoLineCard({ line, imgSrc }: { line: PoFulfillmentLine; imgSrc: string | null }) {
+  const inStock = line.onHand > 0;
+  // สีสถานะ reuse โทนเดิมของ PoChip (ok/warn) = เขียว/แดงชุด DC status — ไม่เพิ่มสีใหม่
+  const hero = inStock
+    ? { bg: "#eafaf0", fg: "#1e8e4e", bd: "#bfe6cd" }
+    : { bg: "#fdecea", fg: "#c0392b", bd: "#f5c6c0" };
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "#fff", border: "1px solid var(--border)", borderRadius: 14, padding: 12 }}>
       <DcThumb url={imgSrc} alt={line.name} size={52} />
+
+      {/* ซ้าย: ชื่อ/SKU + แถวสรุปย่อ (ที่มาของยอด) */}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 15.5, fontWeight: 700, color: "var(--ink)", lineHeight: 1.25 }}>{line.name}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 1 }}>{line.sku}</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-          <PoChip label="สั่ง" value={line.ordered} />
-          <PoChip label="รับเข้า" value={line.received} />
-          <PoChip label="เบิก/โอนแล้ว" value={line.movedOut} />
-          <PoChip label="เหลือในใบ" value={line.remaining} tone="brand" />
-          <PoChip label="คงเหลือจริง" value={line.onHand} tone={line.onHand > 0 ? "ok" : "warn"} />
+
+        {/* สั่ง 113 → รับ 113 → ออก 40 → เหลือในใบ 73 (จาง เล็ก · หนึ่งบรรทัด · ล้นแล้วเลื่อนแนวนอน) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, color: "var(--ink2)", overflowX: "auto", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+          <FlowStep label="สั่ง" value={line.ordered} />
+          <FlowArrow />
+          <FlowStep label="รับ" value={line.received} />
+          <FlowArrow />
+          <FlowStep label="ออก" value={line.movedOut} />
+          <FlowArrow />
+          <FlowStep label="เหลือในใบ" value={line.remaining} accent />
         </div>
+      </div>
+
+      {/* ขวา: HERO — คงเหลือจริง เลขใหญ่ + สถานะสี */}
+      <div
+        style={{
+          flexShrink: 0, minWidth: 78, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          padding: "8px 12px", borderRadius: 12, background: hero.bg, border: `1px solid ${hero.bd}`,
+        }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 600, color: hero.fg, opacity: 0.85, whiteSpace: "nowrap", lineHeight: 1 }}>คงเหลือจริง</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: hero.fg, lineHeight: 1.1, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{line.onHand}</div>
+        {!inStock && <div style={{ fontSize: 10.5, fontWeight: 700, color: hero.fg, marginTop: 1 }}>หมด</div>}
       </div>
     </div>
   );
 }
 
-function PoChip({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "neutral" | "brand" | "ok" | "warn" }) {
-  const palette: Record<string, { bg: string; fg: string; bd: string }> = {
-    neutral: { bg: "var(--surf2, #f4f5f8)", fg: "var(--muted, #6b7280)", bd: "var(--border, #e6e8ee)" },
-    brand: { bg: "#eef3fe", fg: "#1d4ed8", bd: "#c7d7fb" },
-    ok: { bg: "#eafaf0", fg: "#1e8e4e", bd: "#bfe6cd" },
-    warn: { bg: "#fdecea", fg: "#c0392b", bd: "#f5c6c0" },
-  };
-  const c = palette[tone];
+// ก้อนเดียวในแถวสรุปย่อ: ป้ายจาง + เลขเข้ม (accent = "เหลือในใบ" ใช้สี brand ให้เด่นกว่านิดในกลุ่มรอง)
+function FlowStep({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: c.bg, color: c.fg, border: `1px solid ${c.bd}`, whiteSpace: "nowrap" }}>
-      {label} <b style={{ fontWeight: 800, fontSize: 13.5 }}>{value}</b>
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 3 }}>
+      <span style={{ color: "var(--muted)" }}>{label}</span>
+      <b style={{ fontWeight: 700, fontSize: 13, color: accent ? "var(--primary)" : "var(--ink)" }}>{value}</b>
     </span>
   );
+}
+
+function FlowArrow() {
+  return <span style={{ color: "var(--muted)", opacity: 0.6 }}>→</span>;
 }

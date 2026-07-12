@@ -151,7 +151,25 @@ export async function assertReceiptsReversible(
   for (const g of need.values()) {
     if (g.qty <= 0) continue;
     const onHand = await getOnHand(g.warehouseId, g.productId);
-    if (onHand < g.qty) {
+    if (onHand >= g.qty) continue; // ของยังอยู่ครบ → ย้อนได้ ไม่ต้องเช็คต่อ
+
+    // คงเหลือน้อยกว่าที่รับเข้า — แยกสาเหตุ:
+    //   • ถูกเบิก/โอนออกจริง (ISSUE/TRANSFER_OUT) → ย้อนไม่ได้ (จะทำเอกสารปลายทางลอย/สต๊อกติดลบ) → BLOCK
+    //   • หายเพราะนับสต๊อก (COUNT_ADJUST · ของไม่เคยมีจริง) โดยไม่มีเบิก/โอน → ALLOW (deleteGrnCore จะ clamp ไม่ให้ติดลบ)
+    const movedOut = await prisma.dcStockMovement.aggregate({
+      where: {
+        orgId,
+        warehouseId: g.warehouseId,
+        productId: g.productId,
+        kind: { in: [DcMoveKind.ISSUE, DcMoveKind.TRANSFER_OUT, DcMoveKind.RETURN_IN] },
+      },
+      _sum: { qty: true },
+    });
+    // NET เบิก/โอนออกจริง = ออก (ISSUE/TRANSFER_OUT qty<0) หัก คืน (RETURN_IN qty>0) = -Σqty (clamp ≥0)
+    //   • ใบเบิก/โอนที่ถูกยกเลิก/คืนหมด → net 0 = ไม่บล็อกเก้อ (mirror getPoFulfillment ·ดู [[feedback-documentary-ledger-sum-events-not-child-rows]])
+    //   • ยังมี net ออกจริง → บล็อก (conservative · scope คลัง×สินค้า → ไม่มีทาง wrong-allow แม้ issue ไม่ tag poId)
+    const movedOutQty = Math.max(0, -(movedOut._sum.qty ?? 0));
+    if (movedOutQty > 0) {
       const p = await prisma.dcProduct.findUnique({ where: { id: g.productId }, select: { name: true, sku: true } });
       const name = p ? `${p.name} (${p.sku})` : g.productId;
       return {
@@ -159,6 +177,7 @@ export async function assertReceiptsReversible(
         productId: g.productId,
       };
     }
+    // movedOutQty === 0 → ของหายจากการนับสต๊อก ไม่ใช่เบิก/โอน → ปล่อยให้ลบได้
   }
   return null;
 }
@@ -181,16 +200,30 @@ async function deleteGrnCore(
     prisma.dcStockMovement.findMany({ where: { orgId, refType: "grn", refId: grn.id } }),
   ]);
 
-  // 1) คืนสต๊อก — ตัดของที่รับเข้าออก (compensating: qty ตรงข้าม). ติดลบ = BLOCK.
+  // 1) คืนสต๊อก — ตัดของที่รับเข้าออก (compensating: qty ตรงข้าม).
+  //    CLAMP: ตัดออกได้มากสุดแค่ที่มีอยู่จริง (min(m.qty, onHand ปัจจุบัน)) → on-hand ไม่มีทางติดลบ.
+  //    กรณีของหายจากการนับสต๊อก (assertReceiptsReversible ปล่อยผ่านแล้ว) จะ clamp เหลือ 0 → จบที่ max(0, onHand-received).
+  //    ★ ติดตาม running on-hand ต่อ (คลัง×สินค้า) เอง เพราะใบเดียวอาจมีหลายบรรทัดของสินค้าตัวเดียวกัน
+  //      → ถ้าเรียก getOnHand ใหม่ทุกบรรทัดจะ clamp ผิด (recordMovement เพิ่งลด balance ไปแล้ว).
+  const runningOnHand = new Map<string, number>();
   let reversed = 0;
   for (const m of movements) {
     if (m.qty === 0) continue;
+    const k = `${m.warehouseId}|${m.productId}`;
+    let onHand = runningOnHand.get(k);
+    if (onHand === undefined) {
+      onHand = await getOnHand(m.warehouseId, m.productId);
+    }
+    // ตัดออกได้มากสุด = min(ที่รับเข้าในบรรทัดนี้, ที่มีอยู่จริงตอนนี้) · ถ้า onHand=0 → cut=0 (ข้ามการบันทึก)
+    const cut = Math.min(m.qty, Math.max(0, onHand));
+    runningOnHand.set(k, onHand - cut);
+    if (cut === 0) continue; // ไม่มีของให้ตัด (หายจากนับสต๊อกไปแล้ว) → ไม่ต้องบันทึก movement
     const back = await recordMovement({
       orgId,
       warehouseId: m.warehouseId,
       productId: m.productId,
       kind: DcMoveKind.COUNT_ADJUST,
-      qty: -m.qty, // รับเข้าเป็นบวก → ตัดออกเป็นลบ
+      qty: -cut, // รับเข้าเป็นบวก → ตัดออกเป็นลบ (clamp แล้ว ไม่ติดลบ)
       unitCostSatang: m.unitCostSatang,
       sourceKey: sourceKey("grn-del", grn.id, m.id),
       refType: "dc_grn_delete",

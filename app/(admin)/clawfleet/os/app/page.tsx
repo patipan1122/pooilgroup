@@ -10,7 +10,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
+import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -401,25 +401,27 @@ async function loadBigfeatureData(
         warehousesByBranch[bid] = [];
       }
       try {
-        const inbound = await getInboundDeliveries(bid);
-        // getInboundDeliveries คืน line โดยไม่มี lineId แต่ confirmShipmentReceived ต้องใช้ lineId
-        // → ดึง lineId ต่อ (delivery,product) เพิ่มใน 1 query (page loader ทำได้ · ไม่แตะ lib/*)
-        const deliveryIds = inbound.map((d) => d.id);
-        const lineRows = deliveryIds.length
-          ? await prisma.cfDeliveryLine.findMany({
-              where: { deliveryId: { in: deliveryIds } },
-              select: { id: true, deliveryId: true, productId: true },
-            })
-          : [];
-        const lineIdMap = new Map<string, string>(); // `${deliveryId}:${productId}` → lineId
-        for (const lr of lineRows) lineIdMap.set(`${lr.deliveryId}:${lr.productId}`, lr.id);
-        inboundByBranch[bid] = inbound.map((d) => ({
+        // 2 แหล่งของ "ของรอรับ" ที่รวมในหน้ามือถือ (ต่างกันที่ write path):
+        //   • cfDelivery (source=cf_delivery) → รับด้วย confirmShipmentReceived
+        //   • ใบโอนจากคลังกลาง DC ปลายทางสาขาตู้คีบนี้ (source=dc_transfer) → รับด้วย confirmTransfer
+        // ทั้งคู่คืน lineId มากับใบแล้ว (cf=DeliveryLine.id · dc=DcTransferLine.id) → ไม่ต้อง lookup แยก.
+        const [deliveries, dcTransfers] = await Promise.all([
+          getInboundDeliveries(bid),
+          getInboundDcTransfers(bid),
+        ]);
+        // รวม 2 แหล่ง แล้วเรียงใหม่สุดก่อน (dispatchedAt/createdAt) — ของล่าสุดขึ้นบน
+        const merged = [...deliveries, ...dcTransfers].sort(
+          (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+        );
+        inboundByBranch[bid] = merged.map((d) => ({
           id: d.id,
           status: d.status,
           itemsCount: d.itemsCount,
           unitsCount: d.unitsCount,
+          source: d.source,
+          transferId: d.transferId,
           lines: d.lines.map((l) => ({
-            lineId: lineIdMap.get(`${d.id}:${l.productId}`) ?? "",
+            lineId: l.lineId,
             productId: l.productId,
             productName: l.productName,
             qty: l.qty,

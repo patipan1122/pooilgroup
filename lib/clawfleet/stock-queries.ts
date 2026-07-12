@@ -2,6 +2,7 @@
 // สต๊อกปัจจุบัน = ผลรวม signed qty ใน cf_stock_movements (ledger-derived · ไม่มีคอลัมน์ stock)
 
 import { prisma } from "@/lib/prisma";
+import { DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { requireCfSession, userBranchIds } from "./role-guard";
 
 export type CfStockProductRow = {
@@ -413,17 +414,34 @@ export async function getCfProductsForForms(orgId: string): Promise<Array<{ id: 
 // =============================================================
 // bigfeature (N6) — ใบกระจายขาเข้าที่ยัง "ไม่รับ" ของสาขา (สำหรับหน้ารับสินค้ามือถือ)
 //   status IN_TRANSIT หรือ SCHEDULED · เรียง eta/สร้างล่าสุด · แนบรายการ + จำนวนที่ระบุ/รับแล้ว
+//
+//   ★ 2 แหล่งของ "ของรอรับ" ที่หน้ามือถือรวมกัน — ต่างกันที่ "เครื่องรับ" (write path) คนละตัว:
+//     • source="cf_delivery" → ใบ cfDelivery (ในโมดูล ClawFleet เอง) → รับด้วย confirmShipmentReceived
+//     • source="dc_transfer"  → ใบโอนจากคลังกลาง DC (destType=MODULE + สาขาตู้คีบ) → รับด้วย confirmTransfer
+//       (เข้าเครื่องเงินตัวเดียว receiveDcTransferIntoBranchTx · idempotency refTable='dc_transfers').
+//   ★ discriminator `source` บังคับให้ปุ่ม "กดรับ" route ถูก write path — กันรับซ้ำข้ามชนิด (guard คนละ refTable).
 // =============================================================
+export type CfInboundSource = "cf_delivery" | "dc_transfer";
 export type CfInboundDeliveryRow = {
   id: string;
   status: string;
   itemsCount: number;
   unitsCount: number;
   createdAt: Date;
-  lines: Array<{ productId: string; productName: string; qty: number; receivedQty: number }>;
+  // แหล่ง/write-path ของใบนี้ (ปุ่มกดรับ route ตามค่านี้) · dc_transfer → มี transferId
+  source: CfInboundSource;
+  transferId?: string;
+  lines: Array<{
+    // lineId มากับใบเลย (cfDelivery = DeliveryLine.id · dc_transfer = DcTransferLine.id) — ไม่ต้อง lookup แยก
+    lineId: string;
+    productId: string;
+    productName: string;
+    qty: number;
+    receivedQty: number;
+  }>;
 };
 
-/** ใบกระจายขาเข้าของสาขา (ยังไม่รับ · IN_TRANSIT/SCHEDULED) — พร้อมรายการต่อบรรทัด */
+/** ใบกระจายขาเข้าของสาขา (ยังไม่รับ · IN_TRANSIT/SCHEDULED) — พร้อมรายการต่อบรรทัด (source=cf_delivery) */
 export async function getInboundDeliveries(branchId: string): Promise<CfInboundDeliveryRow[]> {
   const rows = await prisma.cfDelivery.findMany({
     where: { branchId, status: { in: ["IN_TRANSIT", "SCHEDULED"] } },
@@ -447,13 +465,78 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
     itemsCount: d.itemsCount,
     unitsCount: d.unitsCount,
     createdAt: d.createdAt,
+    source: "cf_delivery" as const,
     lines: d.lines.map((l) => ({
+      lineId: l.id,
       productId: l.productId,
       productName: l.productName,
       qty: l.qty,
       receivedQty: l.receivedQty,
     })),
   }));
+}
+
+/**
+ * ใบโอนจากคลังกลาง DC ที่ "ปลายทาง = สาขาตู้คีบนี้" และยัง "ไม่รับ" (สำหรับหน้ารับสินค้ามือถือ).
+ *   เงื่อนไข: destType=MODULE + toBranchId=branchId + status=IN_TRANSIT (dispatched แล้ว ยังไม่ปิด/รับ).
+ *   สาขาต้องเป็นตู้คีบจริง (businessType='claw_machine' · active) — กันใบโอนไปโมดูลอื่นหลุดมาโผล่.
+ *   คืนรูปเดียวกับ CfInboundDeliveryRow แต่ source='dc_transfer' + transferId (ปุ่มกดรับ → confirmTransfer).
+ *   lineId = DcTransferLine.id (ใช้ตอนรับ "ไม่ครบ" ราย line ผ่าน confirmTransfer({lines})).
+ *   qty = ที่ส่งออก · receivedQty = qtyReceived (null → 0 · ยังไม่รับ). itemsCount/unitsCount คิดจาก line.
+ */
+export async function getInboundDcTransfers(branchId: string): Promise<CfInboundDeliveryRow[]> {
+  if (!branchId) return [];
+  // สาขานี้เป็นตู้คีบจริงไหม (กันใบ MODULE ที่ toBranchId ชี้สาขาประเภทอื่น)
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, businessType: "claw_machine", isActive: true },
+    select: { id: true },
+  });
+  if (!branch) return [];
+
+  const rows = await prisma.dcTransfer.findMany({
+    where: {
+      toBranchId: branchId,
+      destType: DcTransferDestType.MODULE,
+      status: DcTransferStatus.IN_TRANSIT,
+    },
+    orderBy: { dispatchedAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      status: true,
+      dispatchedAt: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          qtyReceived: true,
+          product: { select: { id: true, name: true } },
+        },
+      },
+    },
+  });
+
+  return rows.map((t) => {
+    const lines = t.lines.map((l) => ({
+      lineId: l.id,
+      productId: l.product.id,
+      productName: l.product.name,
+      qty: l.qty,
+      receivedQty: l.qtyReceived ?? 0,
+    }));
+    // เรียงตามชื่อสินค้า (mirror cfDelivery lines orderBy productName)
+    lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
+    return {
+      id: t.id,
+      status: t.status,
+      itemsCount: lines.length,
+      unitsCount: lines.reduce((s, l) => s + l.qty, 0),
+      createdAt: t.dispatchedAt,
+      source: "dc_transfer" as const,
+      transferId: t.id,
+      lines,
+    };
+  });
 }
 
 // =============================================================

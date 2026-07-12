@@ -78,7 +78,7 @@ export function ProductsClient({
     (rows: ProductRow[], target: "transfer" | "issue") => {
       if (rows.length === 0) return;
       const payload = {
-        lines: rows.map((p) => ({ productId: p.id, sku: p.sku, name: p.name, unit: p.unit })),
+        lines: rows.map((p) => ({ productId: p.id, sku: p.sku, name: p.name, unit: p.unit, imageUrl: p.imageUrl, onHand: p.onhand })),
       };
       try {
         window.sessionStorage.setItem(PRODUCT_HANDOFF_KEY, JSON.stringify(payload));

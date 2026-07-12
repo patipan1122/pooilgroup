@@ -572,9 +572,32 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
       return { ok: false, error: e instanceof Error ? e.message : "ไม่มีสิทธิ์รับเข้าคลังนี้" };
     }
   } else {
-    // MODULE dest — เดิม manager-only (ยืนยันส่งถึงสาขา/โมดูล = งานหลังบ้าน)
+    // MODULE dest — 2 ทางที่ยืนยันได้ (อย่างใดอย่างหนึ่ง):
+    //   (A) ผู้จัดการหลังบ้าน (canDcManage) — พาธเดิม ทุก MODULE dest.
+    //   (B) พนักงานที่ "สังกัดสาขาปลายทางนั้นจริง" (userBranch: userId+toBranchId) — เฉพาะปลายทาง
+    //       ที่เป็น "สาขาตู้คีบ" (ClawFleet · MODULE + toBranchId) เพื่อให้พนักงานหน้าสาขา
+    //       กดรับของเข้าสโตร์สาขาตัวเองได้จากแอปมือถือ.
+    //   ★ SERVER-SIDE branch-scope (ไม่ใช่แค่ซ่อนปุ่มใน UI): ต้องมีแถว userBranch ผูก user กับ
+    //     toBranchId ของ "ใบนี้" เท่านั้น → พนักงานสาขา A ยืนยันใบที่ปลายทางสาขา B ไม่ได้เด็ดขาด.
+    //     (mirror รูปแบบเดียวกับ ClawFleet role-guard assertCanAccessBranch: prisma.userBranch.findFirst)
     if (!canDcManage(session.user.role)) {
-      return { ok: false, error: "ไม่มีสิทธิ์ยืนยันส่งถึงสาขา/โมดูล (ต้องเป็นหลังบ้าน)" };
+      const branchId = transfer.toBranchId;
+      let allowedByBranch = false;
+      if (branchId) {
+        // ปลายทางต้องเป็น "สาขาตู้คีบของ org ผู้เรียก" จริง (orgId ตรง + claw_machine + active) —
+        // กัน MODULE label อิสระ/สาขาประเภทอื่นถูกเปิดสิทธิ์รับผ่าน branch-membership.
+        const chk = await assertClawfleetBranchInOrg(orgId, branchId);
+        if (chk.ok) {
+          const ub = await prisma.userBranch.findFirst({
+            where: { userId, branchId },
+            select: { id: true },
+          });
+          allowedByBranch = !!ub;
+        }
+      }
+      if (!allowedByBranch) {
+        return { ok: false, error: "ไม่มีสิทธิ์ยืนยันส่งถึงสาขา/โมดูล (ต้องเป็นหลังบ้านหรือพนักงานสาขาปลายทาง)" };
+      }
     }
   }
 
@@ -647,10 +670,15 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
   }
 
   // map qtyReceived ที่ส่งมา (รายบรรทัด) → default = qty เต็ม (รับครบ)
+  // ★ MONEY GUARD (server-side cap): รับได้ไม่เกิน "จำนวนที่ส่งออกจริง" ของบรรทัดนั้น (line.qty).
+  //   ถ้าไม่ cap: client ส่ง qtyReceived=999 ทั้งที่ส่งออก 5 → สต๊อก+ต้นทุนเฉลี่ย CF พองผิด · in-transit ลดแค่ 5
+  //   (เดิม trust client · path นี้เพิ่งเปิดให้ staff มือถือกดรับ → ต้อง clamp ที่ server ไม่ใช่แค่ UI · [[money-feature-client-preview-must-match-server]]).
+  const dispatchedByLine = new Map(transfer.lines.map((l) => [l.id, l.qty]));
   const recvByLine = new Map<string, number>();
   for (const r of input.lines ?? []) {
     if (r.lineId && Number.isFinite(r.qtyReceived)) {
-      recvByLine.set(r.lineId, Math.max(0, Math.trunc(r.qtyReceived)));
+      const cap = dispatchedByLine.get(r.lineId) ?? 0; // lineId ไม่ตรงใบ → cap 0 → ถูกละทิ้ง
+      recvByLine.set(r.lineId, Math.min(cap, Math.max(0, Math.trunc(r.qtyReceived))));
     }
   }
 
