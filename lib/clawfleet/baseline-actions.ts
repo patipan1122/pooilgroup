@@ -243,8 +243,21 @@ export async function submitFirstBaseline(input: {
       });
 
       // 3) snapshot loadout → เปิดแถว current (effectiveTo=null) ตามที่ส่งมา
+      //    ⚠️ ต้องกันชน unique `cf_loadouts_one_active_per_machine` (1 ตู้ = loadout active
+      //    ได้แค่ 1 แถว · บน machine_id ล้วน). ถ้าสินค้าถูกเพิ่มไปแล้วผ่าน AddProductPanel/
+      //    addSetupProductWithDolls มันมี loadout current อยู่แล้ว → create ซ้ำ = P2002 →
+      //    ทั้ง baseline ล้ม + catch เหมาเป็น "ตู้นี้ตั้งค่าครั้งแรกไปแล้ว" (หลอกตา · ตู้ไม่ถูกล็อกจริง).
+      //    → ข้ามสินค้าที่มี loadout current แล้ว + เคารพเพดาน 1 active/ตู้.
       if (data.loadout && data.loadout.length > 0) {
+        const activeLoadouts = await tx.cfMachineLoadout.findMany({
+          where: { orgId, machineId: machine.id, effectiveTo: null },
+          select: { productId: true },
+        });
+        const loadedIds = new Set(activeLoadouts.map((r) => r.productId));
+        let machineHasActive = loadedIds.size > 0; // เพดาน 1 active/ตู้
         for (const line of data.loadout) {
+          if (loadedIds.has(line.productId)) continue; // มีในตู้แล้ว → ไม่ต้องเปิดซ้ำ
+          if (machineHasActive) continue; // ตู้เต็มช่อง active แล้ว → เปิดเพิ่มไม่ได้ (กันชน unique)
           await tx.cfMachineLoadout.create({
             data: {
               orgId,
@@ -259,6 +272,8 @@ export async function submitFirstBaseline(input: {
               notes: `baseline setup · จำนวน ${line.qty}`,
             },
           });
+          loadedIds.add(line.productId);
+          machineHasActive = true;
         }
       }
 
