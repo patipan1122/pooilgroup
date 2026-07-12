@@ -11,6 +11,10 @@ interface Props {
     emergencyContact: string | null;
     emergencyPhone: string | null;
     currentMainEmployer: string | null;
+    idCardNumber: string | null;
+    homeAddress: string | null;
+    idCardImageUrl: string | null;
+    idCardFileName: string | null;
   };
   children: React.ReactNode;
 }

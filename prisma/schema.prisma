@@ -2867,6 +2867,17 @@ enum CollectionSource {
   @@schema("chairops")
 }
 
+// Maid employment-contract lifecycle (CEO 2026-07-12). DRAFT = being filled /
+// previewed · SIGNED = maid signed online (immutable · locked) · VOID =
+// superseded/cancelled by admin.
+enum ChairopsContractStatus {
+  DRAFT
+  SIGNED
+  VOID
+
+  @@schema("chairops")
+}
+
 model ChairopsBranch {
   id          String    @id @default(uuid())
   orgId       String
@@ -2952,6 +2963,12 @@ model ChairopsUser {
   emergencyPhone      String?            @map("emergency_phone")
   currentMainEmployer String?            @map("current_main_employer")
   onboardingComplete  Boolean            @default(false) @map("onboarding_complete")
+  // F4b: ID card + address for the employment contract (CEO 2026-07-12).
+  // idCardImageUrl points at a PRIVATE Drive/R2 object (PDPA-sensitive).
+  idCardNumber        String?            @map("id_card_number")
+  idCardImageUrl      String?            @map("id_card_image_url")
+  idCardFileName      String?            @map("id_card_file_name")
+  homeAddress         String?            @map("home_address")
   // F7: deactivation reason + audit trail
   deactivatedAt       DateTime?          @map("deactivated_at") @db.Timestamptz(6)
   deactivatedById     String?            @map("deactivated_by_id")
@@ -2982,6 +2999,9 @@ model ChairopsUser {
   daysOffCreated          ChairopsMaidDayOff[]        @relation("chairops_maid_dayoff_created_by")
   dailyPay                ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_maid")
   dailyPayPaid            ChairopsMaidDailyPay[]      @relation("chairops_maid_dailypay_paid_by")
+  // F4b — employment contracts (CEO 2026-07-12)
+  contracts               ChairopsMaidContract[]      @relation("chairops_contract_maid")
+  contractsCreated        ChairopsMaidContract[]      @relation("chairops_contract_created_by")
 
   @@unique([orgId, authUserId])
   @@unique([orgId, email])
@@ -3056,6 +3076,68 @@ model ChairopsMaidDailyPay {
   @@unique([orgId, maidId, date])
   @@index([orgId, date])
   @@index([maidId, date(sort: Desc)])
+  @@schema("chairops")
+}
+
+// F4b · Maid employment contract (CEO 2026-07-12) — "สัญญาจ้างเหมาทำความสะอาด
+// และเก็บเงินนำส่งธนาคาร". The maid fills the fields, previews a rendered copy,
+// attaches an ID-card image, then signs online (single-party — the company is
+// pre-authorised). Once SIGNED the row is IMMUTABLE (all party/wage/account
+// values are SNAPSHOTTED here, not read live from ChairopsUser, so later
+// profile edits never rewrite a signed contract). See maids contract flow.
+model ChairopsMaidContract {
+  id        String                 @id @default(uuid())
+  orgId     String
+  maidId    String
+  status    ChairopsContractStatus @default(DRAFT)
+
+  // ── Party snapshot (ผู้รับจ้าง) ──────────────────────────────────────────
+  maidName     String
+  idCardNumber String?
+  address      String?
+  phone        String?
+
+  // ── ข้อ 2 · ค่าจ้าง + การชำระเงิน ──────────────────────────────────────
+  monthlyWage   Int? // ค่าจ้างต่อเดือน (บาท)
+  payDayOfMonth Int? // โอนเงินเดือนภายในวันที่ X ของเดือน
+
+  // บัญชีรับเงินเดือนของแม่บ้าน (snapshot)
+  salaryBankName    String?
+  salaryAccountNo   String?
+  salaryAccountName String?
+
+  // บัญชีบริษัทที่แม่บ้านต้องนำเงินที่เก็บได้ไปฝาก (JP Sync)
+  companyBankName    String?
+  companyAccountNo   String?
+  companyAccountName String? @default("บริษัท เจพีซิงค์กรุ๊ป จำกัด")
+  companyAccountType String? // ออมทรัพย์ / กระแสรายวัน
+
+  // ── ข้อ 4 · ระยะเวลาสัญญา ──────────────────────────────────────────────
+  startDate DateTime? @db.Date
+  endDate   DateTime? @db.Date
+
+  // ── แนบบัตรประชาชน (PDPA-sensitive · private storage) ───────────────────
+  idCardImageUrl String?
+
+  // ── ลายเซ็นออนไลน์ (ผู้รับจ้าง) ────────────────────────────────────────
+  signatureImageUrl String? // drawn signature PNG (R2/Drive)
+  signedName        String? // typed full name at signing
+  signedAt          DateTime?
+  signedIp          String?
+
+  // ── สำเนาสัญญาที่เซ็นแล้ว (ไฟล์ที่ดาวน์โหลด/ส่ง Drive ได้) ──────────────
+  documentUrl  String?
+  documentName String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  maid      ChairopsUser  @relation("chairops_contract_maid", fields: [maidId], references: [id])
+  createdBy ChairopsUser? @relation("chairops_contract_created_by", fields: [createdById], references: [id])
+
+  @@index([orgId, maidId])
+  @@index([orgId, status])
   @@schema("chairops")
 }
 

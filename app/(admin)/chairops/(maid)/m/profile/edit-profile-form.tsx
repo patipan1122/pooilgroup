@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { updateMaidProfile } from "@/app/(admin)/chairops/users/actions";
+import { IdCardUpload } from "@/components/chairops/id-card-upload";
 
 type FormState = { ok: boolean; error?: string } | null;
 
@@ -14,6 +15,10 @@ interface Props {
     emergencyContact: string | null;
     emergencyPhone: string | null;
     currentMainEmployer: string | null;
+    idCardNumber: string | null;
+    homeAddress: string | null;
+    idCardImageUrl: string | null;
+    idCardFileName: string | null;
   };
   onCancel: () => void;
 }
@@ -105,6 +110,36 @@ export function EditProfileForm({ defaultValues, onCancel }: Props) {
         name="currentMainEmployer"
         placeholder="เช่น อิสระ / บริษัท ABC"
         defaultValue={defaultValues.currentMainEmployer ?? undefined}
+      />
+
+      <div className="border-t border-zinc-100 pt-3">
+        <p className="text-sm font-semibold text-zinc-800">บัตรประชาชน + ที่อยู่</p>
+        <p className="text-xs text-zinc-500">ใช้สำหรับสัญญาจ้าง</p>
+      </div>
+      <Field
+        label="เลขบัตรประชาชน"
+        name="idCardNumber"
+        type="tel"
+        placeholder="เลข 13 หลัก"
+        defaultValue={defaultValues.idCardNumber ?? undefined}
+      />
+      <div className="space-y-1.5">
+        <label htmlFor="homeAddress" className="block text-sm font-medium text-zinc-800">
+          ที่อยู่ตามบัตร
+        </label>
+        <textarea
+          id="homeAddress"
+          name="homeAddress"
+          rows={2}
+          defaultValue={defaultValues.homeAddress ?? ""}
+          placeholder="บ้านเลขที่ / ถนน / ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์"
+          className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-base text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+      <IdCardUpload
+        name="idCard"
+        initialUrl={defaultValues.idCardImageUrl}
+        initialName={defaultValues.idCardFileName}
       />
 
       {state && !state.ok && (

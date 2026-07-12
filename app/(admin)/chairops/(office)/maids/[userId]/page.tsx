@@ -46,6 +46,22 @@ export default async function MaidDetailPage({
     : [];
 
   const { maid, leaves, pay, assignments } = detail;
+
+  // ID card + online contract (CEO 2026-07-12) — ADMIN+ visibility only.
+  const [idInfo, contract] = canMutate
+    ? await Promise.all([
+        prisma.chairopsUser.findUnique({
+          where: { id: userId },
+          select: { idCardNumber: true, idCardImageUrl: true, homeAddress: true },
+        }),
+        prisma.chairopsMaidContract.findFirst({
+          where: { orgId: session.user.orgId, maidId: userId, status: { not: "VOID" } },
+          orderBy: { createdAt: "desc" },
+          select: { status: true, signedAt: true },
+        }),
+      ])
+    : [null, null];
+
   // multi-branch (CEO 2026-07-08): a maid may manage several branches.
   const assignedBranches = await getMaidActiveBranches(userId);
   const assignedIds = new Set(assignedBranches.map((b) => b.id));
@@ -173,6 +189,51 @@ export default async function MaidDetailPage({
               contractFileName={maid.contractFileName}
             />
           </div>
+        </section>
+      )}
+
+      {/* เอกสาร — บัตร ปชช. + สัญญาออนไลน์ (ADMIN+ · CEO 2026-07-12) */}
+      {canMutate && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+            <Pencil className="size-4 text-zinc-500" /> เอกสาร · บัตรประชาชน + สัญญา
+          </div>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-zinc-500">บัตรประชาชน</dt>
+              <dd className="font-medium text-zinc-900">
+                {idInfo?.idCardNumber
+                  ? `•••• •••• ${idInfo.idCardNumber.replace(/\D/g, "").slice(-4)}`
+                  : idInfo?.idCardImageUrl
+                    ? "แนบรูปแล้ว"
+                    : "ยังไม่มีข้อมูล"}
+                {idInfo?.idCardImageUrl && (
+                  <a
+                    href={idInfo.idCardImageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-xs font-normal text-blue-600 hover:underline"
+                  >
+                    ดูรูป
+                  </a>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">สัญญาจ้าง (เซ็นออนไลน์)</dt>
+              <dd className="font-medium">
+                {contract?.status === "SIGNED" ? (
+                  <span className="text-emerald-700">
+                    เซ็นแล้ว{contract.signedAt ? ` · ${thaiDate(contract.signedAt)}` : ""}
+                  </span>
+                ) : contract ? (
+                  <span className="text-amber-700">ร่างไว้ · ยังไม่เซ็น</span>
+                ) : (
+                  <span className="text-zinc-400">ยังไม่มีสัญญา</span>
+                )}
+              </dd>
+            </div>
+          </dl>
         </section>
       )}
 

@@ -32,6 +32,41 @@ export interface MaidRosterRow {
   branchCount: number; // active branches this maid manages (multi-branch · 2026-07-08)
 }
 
+// ── Branch-first roster (CEO 2026-07-12) — "ดูตามสาขา" ────────────────────
+// Full today-status per maid so the office can see, per branch, WHO is there
+// and WHAT they have done today (collected / deposited / cleaned).
+export interface MaidTodayActivity {
+  onLeave: boolean;
+  leaveReason: string | null;
+  collectedCount: number; // # cash-collection rounds today (deletedAt null)
+  collectedLastAt: string | null; // ISO ts of latest collection today
+  deposited: boolean; // any bank deposit today
+  cleaned: boolean; // any cleanliness report filed today
+}
+
+export interface MaidInBranch extends MaidTodayActivity {
+  userId: string;
+  displayName: string;
+  phone: string | null;
+  isPrimary: boolean; // this branch is the maid's home (primaryBranchId)
+  otherBranchCount: number; // # OTHER active branches this maid also covers
+}
+
+export interface BranchRosterGroup {
+  branchId: string;
+  branchName: string;
+  tabName: string;
+  maids: MaidInBranch[]; // empty ⇒ render "ไม่มีแม่บ้าน"
+}
+
+export interface BranchRosterView {
+  branches: BranchRosterGroup[];
+  // active maids with NO branch assignment at all (so nothing is hidden)
+  unassignedMaids: { userId: string; displayName: string; phone: string | null }[];
+  branchesWithoutMaid: number;
+  onLeaveToday: number;
+}
+
 export interface MissedMaidVariantRow {
   branchId: string;
   branchName: string;

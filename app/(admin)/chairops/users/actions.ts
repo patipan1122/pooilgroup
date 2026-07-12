@@ -1013,7 +1013,18 @@ const onboardingSchema = z.object({
     .max(30)
     .regex(/^[0-9\- ]+$/, "เลขบัญชีกรอกเฉพาะตัวเลข"),
   bankAccountName: z.string().trim().min(1, "ต้องระบุชื่อบัญชี").max(100),
+  // บัตร ปชช. + ที่อยู่ (CEO 2026-07-12) — optional · กรอกทีหลังในโปรไฟล์/สัญญาได้
+  idCardNumber: z.string().trim().max(20).optional(),
+  homeAddress: z.string().trim().max(500).optional(),
+  idCardImageUrl: z.string().trim().max(1000).optional(),
+  idCardFileName: z.string().trim().max(300).optional(),
 });
+
+// "" → null (empty optional strings are cleared, not stored as blanks)
+function blankToNull(v: string | undefined): string | null {
+  const t = (v ?? "").trim();
+  return t === "" ? null : t;
+}
 
 export async function submitOnboarding(formData: FormData): Promise<ActionResult> {
   const session = await requireExactRole("MAID");
@@ -1031,6 +1042,10 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
     bankName: formData.get("bankName"),
     bankAccountNo: formData.get("bankAccountNo"),
     bankAccountName: formData.get("bankAccountName"),
+    idCardNumber: formData.get("idCardNumber") ?? undefined,
+    homeAddress: formData.get("homeAddress") ?? undefined,
+    idCardImageUrl: formData.get("idCardImageUrl") ?? undefined,
+    idCardFileName: formData.get("idCardFileName") ?? undefined,
   });
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
@@ -1047,6 +1062,10 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
         bankName: parsed.data.bankName,
         bankAccountNo: parsed.data.bankAccountNo,
         bankAccountName: parsed.data.bankAccountName,
+        idCardNumber: blankToNull(parsed.data.idCardNumber),
+        homeAddress: blankToNull(parsed.data.homeAddress),
+        idCardImageUrl: blankToNull(parsed.data.idCardImageUrl),
+        idCardFileName: blankToNull(parsed.data.idCardFileName),
         onboardingComplete: true,
         // Clear invite token after successful onboarding
         inviteToken: null,
@@ -1080,6 +1099,11 @@ const profileUpdateSchema = z.object({
   emergencyContact: z.string().min(2, "ระบุชื่อผู้ติดต่อ").max(80),
   emergencyPhone: z.string().min(9, "เบอร์ฉุกเฉินไม่ถูกต้อง").max(20).regex(/^[0-9+\-() ]+$/, "เบอร์ไม่ถูกต้อง"),
   currentMainEmployer: z.string().max(100).optional(),
+  // บัตร ปชช. + ที่อยู่ (CEO 2026-07-12) — optional
+  idCardNumber: z.string().trim().max(20).optional(),
+  homeAddress: z.string().trim().max(500).optional(),
+  idCardImageUrl: z.string().trim().max(1000).optional(),
+  idCardFileName: z.string().trim().max(300).optional(),
 });
 
 export async function updateMaidProfile(formData: FormData): Promise<ActionResult> {
@@ -1091,9 +1115,17 @@ export async function updateMaidProfile(formData: FormData): Promise<ActionResul
     emergencyContact: formData.get("emergencyContact"),
     emergencyPhone: formData.get("emergencyPhone"),
     currentMainEmployer: formData.get("currentMainEmployer") ?? undefined,
+    idCardNumber: formData.get("idCardNumber") ?? undefined,
+    homeAddress: formData.get("homeAddress") ?? undefined,
+    idCardImageUrl: formData.get("idCardImageUrl") ?? undefined,
+    idCardFileName: formData.get("idCardFileName") ?? undefined,
   });
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  // ID-card fields are only present when the profile edit form includes them —
+  // omit from the update when the inputs weren't rendered (avoid clearing).
+  const hasIdCardInputs = formData.has("idCardImageUrl");
 
   await prisma.$transaction(async (tx) => {
     await tx.chairopsUser.update({
@@ -1104,6 +1136,14 @@ export async function updateMaidProfile(formData: FormData): Promise<ActionResul
         emergencyContact: parsed.data.emergencyContact,
         emergencyPhone: parsed.data.emergencyPhone,
         currentMainEmployer: parsed.data.currentMainEmployer ?? null,
+        ...(hasIdCardInputs
+          ? {
+              idCardNumber: blankToNull(parsed.data.idCardNumber),
+              homeAddress: blankToNull(parsed.data.homeAddress),
+              idCardImageUrl: blankToNull(parsed.data.idCardImageUrl),
+              idCardFileName: blankToNull(parsed.data.idCardFileName),
+            }
+          : {}),
       },
     });
     await writeAudit(

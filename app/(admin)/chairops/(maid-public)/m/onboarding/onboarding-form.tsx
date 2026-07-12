@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { submitOnboarding } from "@/app/(admin)/chairops/users/actions";
+import { IdCardUpload } from "@/components/chairops/id-card-upload";
 
 type FormState = { ok: boolean; error?: string } | null;
 
@@ -48,6 +49,26 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
         required
       />
       <Field label="ชื่อบัญชี" name="bankAccountName" placeholder="ชื่อเจ้าของบัญชี" required />
+
+      {/* บัตรประชาชน + ที่อยู่ (CEO 2026-07-12) — สำหรับสัญญาจ้าง · กรอกทีหลังได้ */}
+      <div className="pt-2">
+        <p className="text-sm font-semibold text-zinc-800">บัตรประชาชน + ที่อยู่</p>
+        <p className="text-xs text-zinc-500">ใช้สำหรับทำสัญญาจ้าง (จะกรอกทีหลังในเมนูโปรไฟล์ก็ได้)</p>
+      </div>
+      <Field label="เลขบัตรประชาชน" name="idCardNumber" type="tel" placeholder="เลข 13 หลัก" />
+      <div className="space-y-1.5">
+        <label htmlFor="homeAddress" className="block text-sm font-medium text-[var(--co-text)]">
+          ที่อยู่ตามบัตร
+        </label>
+        <textarea
+          id="homeAddress"
+          name="homeAddress"
+          rows={2}
+          placeholder="บ้านเลขที่ / ถนน / ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์"
+          className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+      </div>
+      <IdCardUpload name="idCard" label="รูปบัตรประชาชน (ถ้ามี)" />
 
       {state && !state.ok && (
         <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{state.error}</p>
