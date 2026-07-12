@@ -20,13 +20,13 @@ import {
 import {
   getAnswerColumns,
   formatAnswerValue,
+  parsePostingAiBrief,
   type AppFileMeta,
 } from "@/lib/recruit/answers";
 import { computeIqStats } from "@/lib/recruit/iq";
 import { thaiDateLong } from "@/lib/utils/format";
 import { ViewToggle } from "@/components/recruit/view-toggle";
 import { PostingSelect } from "@/components/recruit/posting-select";
-import { BatchAiButton } from "@/components/recruit/batch-ai-button";
 import {
   ApplicationsTable,
   type TableRow,
@@ -126,13 +126,20 @@ export default async function RecruitTablePage({
           aiScore: true,
           starRating: true,
           screeningVerdict: true,
+          aiSummary: true,
           tags: true,
           flaggedBlacklist: true,
           submittedAt: true,
           answers: true,
           files: true,
           applicant: { select: { fullName: true, phone: true, gender: true } },
-          posting: { select: { title: true, fieldSchema: true } },
+          posting: {
+            select: {
+              title: true,
+              fieldSchema: true,
+              settings: true,
+            },
+          },
         },
       }),
       prisma.recruitApplication.groupBy({
@@ -224,6 +231,7 @@ export default async function RecruitTablePage({
       postingTitle: a.posting.title,
       iq: computeIqStats(a.posting.fieldSchema, a.answers),
       aiScore: a.aiScore,
+      aiSummary: a.aiSummary,
       starRating: a.starRating,
       verdict: parseScreeningVerdict(a.screeningVerdict),
       status: a.status as ApplicationStatus,
@@ -239,6 +247,16 @@ export default async function RecruitTablePage({
     id: b.id,
     scored: b.aiScore != null,
   }));
+
+  // ตำแหน่งที่เลือก (สำหรับปุ่มข้อมูลตำแหน่ง AI + gate batch) — ดึง aiBrief จาก settings
+  const postingProp =
+    postingFilter && apps.length > 0
+      ? {
+          id: postingFilter,
+          title: apps[0].posting.title,
+          aiBrief: parsePostingAiBrief(apps[0].posting.settings),
+        }
+      : null;
 
   // URL builder — preserve filters
   const buildUrl = (next: Partial<SearchParams>) => {
@@ -346,11 +364,6 @@ export default async function RecruitTablePage({
               q={query}
               sort={sort}
             />
-            {canWrite && (
-              <div className="ml-auto">
-                <BatchAiButton targets={batchTargets} />
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -406,6 +419,8 @@ export default async function RecruitTablePage({
               sortLinks={sortLinks}
               answerColumns={answerColumns}
               storageKey={postingFilter ?? "all"}
+              posting={postingProp}
+              batchTargets={batchTargets}
             />
 
             {/* Pagination */}

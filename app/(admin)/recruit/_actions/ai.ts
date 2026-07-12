@@ -17,7 +17,12 @@ import {
 import { getObject } from "@/lib/r2/upload";
 import { checkAiBudget } from "@/lib/ai/cost-cap";
 import { FormSchemaSchema } from "@/lib/recruit/types";
-import { buildBiasSafeAnswerLines } from "@/lib/recruit/answers";
+import {
+  buildBiasSafeAnswerLines,
+  buildJobContext,
+  parsePostingAiBrief,
+  type PostingAiBrief,
+} from "@/lib/recruit/answers";
 
 export async function scoreApplicationAction(applicationId: string) {
   const session = await requireSession();
@@ -36,15 +41,26 @@ export async function scoreApplicationAction(applicationId: string) {
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
     include: {
-      posting: { select: { title: true, description: true, fieldSchema: true } },
+      posting: {
+        select: {
+          title: true,
+          description: true,
+          fieldSchema: true,
+          settings: true,
+        },
+      },
     },
   });
   if (!app) throw new Error("ไม่พบใบสมัคร");
 
   const schema = FormSchemaSchema.parse(app.posting.fieldSchema);
+  const jobContext = buildJobContext(
+    app.posting.description,
+    parsePostingAiBrief(app.posting.settings),
+  );
   const result = await scoreCandidate({
     jobTitle: app.posting.title,
-    jobDescription: app.posting.description ?? undefined,
+    jobDescription: jobContext || undefined,
     formSchema: schema,
     answers: (app.answers ?? {}) as Record<string, unknown>,
     track: { orgId: session.user.org_id, userId: session.user.id },
@@ -90,7 +106,14 @@ export async function scoreResumeAction(applicationId: string) {
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
     include: {
-      posting: { select: { title: true, description: true, fieldSchema: true } },
+      posting: {
+        select: {
+          title: true,
+          description: true,
+          fieldSchema: true,
+          settings: true,
+        },
+      },
     },
   });
   if (!app) throw new Error("ไม่พบใบสมัคร");
@@ -147,9 +170,13 @@ export async function scoreResumeAction(applicationId: string) {
     formAnswersText = undefined;
   }
 
+  const jobContext = buildJobContext(
+    app.posting.description,
+    parsePostingAiBrief(app.posting.settings),
+  );
   const result = await scoreResumeFile({
     jobTitle: app.posting.title,
-    jobDescription: app.posting.description ?? undefined,
+    jobDescription: jobContext || undefined,
     file: { bytes, mime: resume.mime, name: resume.name },
     formAnswersText,
     track: { orgId: session.user.org_id, userId: session.user.id },
@@ -296,13 +323,25 @@ export async function smartScoreApplicationAction(
   const app = await prisma.recruitApplication.findFirst({
     where: { id: applicationId, orgId: session.user.org_id },
     include: {
-      posting: { select: { title: true, description: true, fieldSchema: true } },
+      posting: {
+        select: {
+          title: true,
+          description: true,
+          fieldSchema: true,
+          settings: true,
+        },
+      },
     },
   });
   if (!app) return { ok: false, error: "ไม่พบใบสมัคร" };
 
   const schemaParsed = FormSchemaSchema.safeParse(app.posting.fieldSchema);
   const answers = (app.answers ?? {}) as Record<string, unknown>;
+  const jobContext =
+    buildJobContext(
+      app.posting.description,
+      parsePostingAiBrief(app.posting.settings),
+    ) || undefined;
 
   const files = (app.files ?? []) as Array<{
     key: string;
@@ -327,7 +366,7 @@ export async function smartScoreApplicationAction(
       }
       const result = await scoreResumeFile({
         jobTitle: app.posting.title,
-        jobDescription: app.posting.description ?? undefined,
+        jobDescription: jobContext,
         file: { bytes, mime: readableResume.mime, name: readableResume.name },
         formAnswersText,
         track: { orgId: session.user.org_id, userId: session.user.id },
@@ -362,7 +401,7 @@ export async function smartScoreApplicationAction(
     }
     const result = await scoreCandidate({
       jobTitle: app.posting.title,
-      jobDescription: app.posting.description ?? undefined,
+      jobDescription: jobContext,
       formSchema: schemaParsed.data,
       answers,
       track: { orgId: session.user.org_id, userId: session.user.id },
@@ -408,4 +447,52 @@ export async function suggestFieldsAction(input: {
     ...input,
     track: { orgId: session.user.org_id, userId: session.user.id },
   });
+}
+
+/**
+ * บันทึก "ข้อมูลตำแหน่งสำหรับ AI" (about/สาขา/ดูแลกี่คน/ทักษะ) ลง posting.settings.aiBrief.
+ * 0 migration — merge เข้า settings JSON เดิม (ไม่ทับ key อื่น). ให้ AI ประเมินตรงงานจริง.
+ */
+export async function savePostingAiBrief(
+  postingId: string,
+  brief: PostingAiBrief,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    return { ok: false, error: "ไม่มีสิทธิ์" };
+  }
+  const posting = await prisma.recruitJobPosting.findFirst({
+    where: { id: postingId, orgId: session.user.org_id },
+    select: { settings: true },
+  });
+  if (!posting) return { ok: false, error: "ไม่พบตำแหน่ง" };
+
+  // เก็บเฉพาะ key ที่มีค่า (ไม่ใส่ undefined ลง JSON)
+  const clean: Record<string, string> = {};
+  if (brief.about?.trim()) clean.about = brief.about.trim();
+  if (brief.workplace?.trim()) clean.workplace = brief.workplace.trim();
+  if (brief.headcount?.trim()) clean.headcount = brief.headcount.trim();
+  if (brief.skills?.trim()) clean.skills = brief.skills.trim();
+
+  const prevSettings =
+    posting.settings && typeof posting.settings === "object"
+      ? (posting.settings as Record<string, unknown>)
+      : {};
+
+  await prisma.recruitJobPosting.updateMany({
+    where: { id: postingId, orgId: session.user.org_id },
+    data: { settings: { ...prevSettings, aiBrief: clean } as object },
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_POSTING_UPDATED",
+    resourceType: "recruit_job_posting",
+    resourceId: postingId,
+    diff: { new: { aiBrief: clean } },
+  });
+
+  revalidatePath("/recruit/table");
+  return { ok: true };
 }

@@ -3,9 +3,10 @@
 // Excel-style table view — ผู้สมัครทั้งหมดเป็นแถว · กดเปลี่ยนสถานะ/คัดกรองในตารางได้เลย
 // เรียงคอลัมน์ (server-side) · แบ่งหน้าที่หน้าแม่ · สรุปคะแนนอยู่แถบบน (หน้าแม่)
 // + กางคำตอบทุกข้อเป็นคอลัมน์ (เมื่อเลือกตำแหน่ง) · ซ่อน/โชว์คอลัมน์ได้ (จำในเครื่อง)
-// + คอลัมน์ "ไฟล์" กดเปิดเรซูเม่/รูปได้เลย · ชื่อผู้สมัครติดขอบซ้ายตอนเลื่อนแนวนอน
+// + คอลัมน์ "ไฟล์" กดเปิดเรซูเม่/รูป · ชื่อผู้สมัครติดขอบซ้าย · ติ๊กเลือกคน → AI batch
+// + คอลัมน์ "สรุป AI" (คะแนน + คำตัดสิน + สรุปอ่านง่าย) · ปุ่มข้อมูลตำแหน่งสำหรับ AI
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -22,12 +23,18 @@ import {
   type ScreeningVerdict,
   type Gender,
 } from "@/lib/recruit/types";
-import type { AppFileMeta } from "@/lib/recruit/answers";
+import {
+  aiVerdict,
+  type AppFileMeta,
+  type PostingAiBrief,
+} from "@/lib/recruit/answers";
 import {
   changeApplicationStatus,
   setScreeningVerdict,
 } from "@/lib/recruit/actions";
 import { FileQuickOpen } from "./file-quick-open";
+import { BatchAiButton } from "./batch-ai-button";
+import { PositionBriefModal } from "./position-brief-modal";
 import {
   Star,
   ArrowDown,
@@ -38,6 +45,7 @@ import {
   Meh,
   Columns3,
   Check,
+  Briefcase,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +64,7 @@ export interface TableRow {
   postingTitle: string;
   iq: { correct: number; total: number } | null;
   aiScore: number | null;
+  aiSummary: string | null;
   starRating: number | null;
   verdict: ScreeningVerdict | null;
   status: ApplicationStatus;
@@ -73,6 +82,8 @@ interface Props {
   sortLinks: { name: string; ai: string; star: string; recent: string };
   answerColumns: AnswerColumnMeta[];
   storageKey: string; // namespace เก็บ pref ซ่อนคอลัมน์ (ต่อตำแหน่ง)
+  posting: { id: string; title: string; aiBrief: PostingAiBrief | null } | null;
+  batchTargets: Array<{ id: string; scored: boolean }>;
 }
 
 // Lucide icon per verdict (แทนอิโมจิ · โปร + คงความหมาย · ตาม tokens Lucide-only)
@@ -93,13 +104,20 @@ const TONE_DOT: Record<string, string> = {
   neutral: "bg-zinc-400",
 };
 
+const VERDICT_TEXT: Record<"green" | "amber" | "red", string> = {
+  green: "text-green-700",
+  amber: "text-amber-600",
+  red: "text-red-600",
+};
+
 // คอลัมน์พื้นฐานที่ซ่อน/โชว์ได้ (ชื่อ + ปุ่มเปิดเต็มหน้า = โชว์ตลอด)
 const HIDEABLE_BASE: { key: string; label: string }[] = [
   { key: "files", label: "ไฟล์แนบ" },
   { key: "position", label: "ตำแหน่ง" },
   { key: "gender", label: "เพศ" },
   { key: "iq", label: "IQ" },
-  { key: "ai", label: "AI" },
+  { key: "ai", label: "คะแนน AI" },
+  { key: "aisummary", label: "สรุป AI" },
   { key: "star", label: "ดาว" },
   { key: "verdict", label: "คัดกรอง" },
   { key: "status", label: "สถานะ" },
@@ -114,9 +132,16 @@ export function ApplicationsTable({
   sortLinks,
   answerColumns,
   storageKey,
+  posting,
+  batchTargets,
 }: Props) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [brief, setBrief] = useState<PostingAiBrief | null>(
+    posting?.aiBrief ?? null,
+  );
+  const [briefOpen, setBriefOpen] = useState(false);
   const prefKey = `recruit-table-cols:${storageKey}`;
 
   // โหลด/บันทึกค่าที่ซ่อนไว้ในเครื่อง (ไม่แตะ DB · ต่อผู้ใช้ต่อเบราว์เซอร์)
@@ -129,6 +154,12 @@ export function ApplicationsTable({
       setHidden(new Set());
     }
   }, [prefKey]);
+
+  // เปลี่ยนตำแหน่ง/หน้า → ล้างการติ๊ก + sync brief
+  useEffect(() => {
+    setSelected(new Set());
+    setBrief(posting?.aiBrief ?? null);
+  }, [posting?.id, posting?.aiBrief]);
 
   function toggle(key: string) {
     setHidden((prev) => {
@@ -153,6 +184,24 @@ export function ApplicationsTable({
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someSelected = selected.size > 0 && !allPageSelected;
+  function toggleAllPage() {
+    setSelected((prev) => {
+      if (rows.every((r) => prev.has(r.id))) return new Set();
+      return new Set(rows.map((r) => r.id));
+    });
+  }
+
   const vis = (key: string) => !hidden.has(key);
 
   const allToggles = useMemo(
@@ -163,85 +212,119 @@ export function ApplicationsTable({
     [answerColumns],
   );
   const hiddenCount = hidden.size;
+  const hasBrief = Boolean(brief?.about && brief.about.trim().length >= 5);
 
   return (
     <div className="space-y-2">
-      {/* แถบเครื่องมือคอลัมน์ */}
-      <div className="flex items-center justify-between gap-2">
+      {/* แถบเครื่องมือ */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-zinc-400">
           {answerColumns.length > 0
             ? `กางคำตอบ ${answerColumns.length} ข้อเป็นคอลัมน์แล้ว · ปัดตารางแนวนอนเพื่อดูครบ`
             : "เลือกตำแหน่งด้านบนเพื่อกางคำตอบทุกข้อเป็นคอลัมน์"}
         </p>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-zinc-200 bg-white text-xs font-bold text-zinc-700 hover:border-zinc-400"
-          >
-            <Columns3 className="size-3.5" />
-            คอลัมน์
-            {hiddenCount > 0 && (
-              <span className="ml-0.5 rounded-full bg-zinc-900 text-white text-[10px] px-1.5 py-0.5 tabular-nums">
-                ซ่อน {hiddenCount}
-              </span>
-            )}
-          </button>
+        <div className="flex items-center gap-2">
+          {/* ข้อมูลตำแหน่งสำหรับ AI */}
+          {canWrite && posting && (
+            <button
+              type="button"
+              onClick={() => setBriefOpen(true)}
+              className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-bold transition-colors ${
+                hasBrief
+                  ? "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400"
+                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              }`}
+              title="บอก AI ว่าตำแหน่งนี้คืออะไร เพื่อประเมินให้ตรงงาน"
+            >
+              <Briefcase className="size-3.5" />
+              ข้อมูลตำแหน่ง
+              {!hasBrief && (
+                <span className="size-1.5 rounded-full bg-amber-500" />
+              )}
+            </button>
+          )}
 
-          {menuOpen && (
-            <>
-              {/* backdrop กดปิด */}
-              <button
-                type="button"
-                aria-label="ปิดเมนูคอลัมน์"
-                className="fixed inset-0 z-30 cursor-default"
-                onClick={() => setMenuOpen(false)}
-              />
-              <div className="absolute right-0 z-40 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl">
-                <div className="flex items-center justify-between px-2 py-1.5">
-                  <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">
-                    เลือกคอลัมน์ที่จะโชว์
-                  </span>
-                  {hiddenCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={showAll}
-                      className="text-[11px] font-bold text-[var(--color-brand-700)] hover:underline"
-                    >
-                      แสดงทั้งหมด
-                    </button>
-                  )}
-                </div>
-                <div className="mt-1 space-y-0.5">
-                  {allToggles.map((c) => {
-                    const shown = vis(c.key);
-                    return (
+          {/* คอลัมน์ */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border border-zinc-200 bg-white text-xs font-bold text-zinc-700 hover:border-zinc-400"
+            >
+              <Columns3 className="size-3.5" />
+              คอลัมน์
+              {hiddenCount > 0 && (
+                <span className="ml-0.5 rounded-full bg-zinc-900 text-white text-[10px] px-1.5 py-0.5 tabular-nums">
+                  ซ่อน {hiddenCount}
+                </span>
+              )}
+            </button>
+
+            {menuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="ปิดเมนูคอลัมน์"
+                  className="fixed inset-0 z-30 cursor-default"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="absolute right-0 z-40 mt-2 w-64 max-h-[60vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">
+                      เลือกคอลัมน์ที่จะโชว์
+                    </span>
+                    {hiddenCount > 0 && (
                       <button
-                        key={c.key}
                         type="button"
-                        onClick={() => toggle(c.key)}
-                        className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-zinc-50"
+                        onClick={showAll}
+                        className="text-[11px] font-bold text-[var(--color-brand-700)] hover:underline"
                       >
-                        <span
-                          className={`size-4 shrink-0 grid place-items-center rounded border ${
-                            shown
-                              ? "bg-[var(--color-brand-600)] border-[var(--color-brand-600)] text-white"
-                              : "border-zinc-300 text-transparent"
-                          }`}
-                        >
-                          <Check className="size-3" />
-                        </span>
-                        <span
-                          className={`truncate ${shown ? "text-zinc-800 font-medium" : "text-zinc-400"}`}
-                        >
-                          {c.label}
-                        </span>
+                        แสดงทั้งหมด
                       </button>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div className="mt-1 space-y-0.5">
+                    {allToggles.map((c) => {
+                      const shown = vis(c.key);
+                      return (
+                        <button
+                          key={c.key}
+                          type="button"
+                          onClick={() => toggle(c.key)}
+                          className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-zinc-50"
+                        >
+                          <span
+                            className={`size-4 shrink-0 grid place-items-center rounded border ${
+                              shown
+                                ? "bg-[var(--color-brand-600)] border-[var(--color-brand-600)] text-white"
+                                : "border-zinc-300 text-transparent"
+                            }`}
+                          >
+                            <Check className="size-3" />
+                          </span>
+                          <span
+                            className={`truncate ${shown ? "text-zinc-800 font-medium" : "text-zinc-400"}`}
+                          >
+                            {c.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </>
+              </>
+            )}
+          </div>
+
+          {/* ประเมินด้วย AI (batch) */}
+          {canWrite && (
+            <BatchAiButton
+              selectedIds={[...selected]}
+              targets={batchTargets}
+              postingSelected={Boolean(posting)}
+              hasBrief={hasBrief}
+              onEditBrief={() => setBriefOpen(true)}
+            />
           )}
         </div>
       </div>
@@ -250,13 +333,31 @@ export function ApplicationsTable({
         <table className="w-full min-w-[1080px] text-sm border-collapse">
           <thead className="sticky top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
             <tr className="text-left text-[11px] text-zinc-500">
-              <SortableTh
-                label="ชื่อ / ประวัติ"
-                href={sortLinks.name}
-                active={currentSort === "name"}
-                dir="asc"
-                className="pl-4 sticky left-0 z-30 bg-white border-r border-zinc-100"
-              />
+              {/* ชื่อ + checkbox เลือก (ติดขอบซ้าย) */}
+              <th className="pl-4 pr-3 py-2.5 font-bold whitespace-nowrap sticky left-0 z-30 bg-white border-r border-zinc-100">
+                <div className="flex items-center gap-2">
+                  {canWrite && (
+                    <SelectAllCheckbox
+                      checked={allPageSelected}
+                      indeterminate={someSelected}
+                      onChange={toggleAllPage}
+                    />
+                  )}
+                  <Link
+                    href={sortLinks.name}
+                    className={`inline-flex items-center gap-1 hover:text-zinc-900 ${
+                      currentSort === "name" ? "text-[var(--color-brand-700)]" : ""
+                    }`}
+                  >
+                    ชื่อ / ประวัติ
+                    {currentSort === "name" ? (
+                      <ArrowUp className="size-3" />
+                    ) : (
+                      <ArrowDown className="size-3 opacity-30" />
+                    )}
+                  </Link>
+                </div>
+              </th>
               {vis("files") && (
                 <th className="px-3 py-2.5 font-bold whitespace-nowrap">ไฟล์</th>
               )}
@@ -271,11 +372,14 @@ export function ApplicationsTable({
               )}
               {vis("ai") && (
                 <SortableTh
-                  label="AI"
+                  label="คะแนน AI"
                   href={sortLinks.ai}
                   active={currentSort === "ai"}
                   dir="desc"
                 />
+              )}
+              {vis("aisummary") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">สรุป AI</th>
               )}
               {vis("star") && (
                 <SortableTh
@@ -294,7 +398,6 @@ export function ApplicationsTable({
               {vis("tags") && (
                 <th className="px-3 py-2.5 font-bold whitespace-nowrap">ป้าย</th>
               )}
-              {/* คอลัมน์คำตอบ (ตามตำแหน่งที่เลือก) */}
               {answerColumns.map(
                 (c) =>
                   vis(`ans:${c.id}`) && (
@@ -326,12 +429,53 @@ export function ApplicationsTable({
                 canWrite={canWrite}
                 vis={vis}
                 answerColumns={answerColumns}
+                selected={selected.has(row.id)}
+                onToggleSelect={toggleSelect}
               />
             ))}
           </tbody>
         </table>
       </div>
+
+      {briefOpen && posting && (
+        <PositionBriefModal
+          key={posting.id}
+          postingId={posting.id}
+          postingTitle={posting.title}
+          initial={brief}
+          onClose={() => setBriefOpen(false)}
+          onSaved={(b) => {
+            setBrief(b);
+            setBriefOpen(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function SelectAllCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate && !checked;
+  }, [indeterminate, checked]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      title="เลือก/ยกเลิกทั้งหน้านี้"
+      className="size-4 shrink-0 accent-[var(--color-brand-600)] cursor-pointer"
+    />
   );
 }
 
@@ -376,11 +520,15 @@ function Row({
   canWrite,
   vis,
   answerColumns,
+  selected,
+  onToggleSelect,
 }: {
   row: TableRow;
   canWrite: boolean;
   vis: (key: string) => boolean;
   answerColumns: AnswerColumnMeta[];
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(row.status);
   const [verdict, setVerdict] = useState<ScreeningVerdict | null>(row.verdict);
@@ -416,29 +564,57 @@ function Row({
   }
 
   const ReadonlyVerdictIcon = verdict ? VERDICT_ICON[verdict] : null;
+  const verdictAi = aiVerdict(row.aiScore);
 
   return (
-    <tr className="group border-b border-zinc-100 even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40 align-top transition-colors">
-      {/* ชื่อ + เบอร์ + refId — ติดขอบซ้าย */}
-      <td className="pl-4 pr-3 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-[var(--color-brand-50)]/60 border-r border-zinc-100">
-        <Link
-          href={`/recruit/applications/${row.id}`}
-          className="font-bold text-zinc-900 hover:text-[var(--color-brand-700)] hover:underline"
-        >
-          {row.fullName}
-        </Link>
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-0.5">
-          <span className="tabular-nums">{row.phone}</span>
-          {row.refId && <span className="font-mono">#{row.refId.slice(-6)}</span>}
-          {row.flagged && (
-            <span className="text-red-600 font-bold" title="ตรงกับ Blacklist">
-              ⚠
-            </span>
+    <tr
+      className={`group border-b border-zinc-100 align-top transition-colors ${
+        selected
+          ? "bg-[var(--color-brand-50)]/60"
+          : "even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40"
+      }`}
+    >
+      {/* ชื่อ + checkbox + เบอร์ + refId — ติดขอบซ้าย */}
+      <td
+        className={`pl-4 pr-3 py-2.5 sticky left-0 z-10 border-r border-zinc-100 ${
+          selected
+            ? "bg-[var(--color-brand-50)]"
+            : "bg-white group-hover:bg-[var(--color-brand-50)]/60"
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          {canWrite && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(row.id)}
+              className="mt-0.5 size-4 shrink-0 accent-[var(--color-brand-600)] cursor-pointer"
+              aria-label={`เลือก ${row.fullName}`}
+            />
           )}
+          <div className="min-w-0">
+            <Link
+              href={`/recruit/applications/${row.id}`}
+              className="font-bold text-zinc-900 hover:text-[var(--color-brand-700)] hover:underline"
+            >
+              {row.fullName}
+            </Link>
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-0.5">
+              <span className="tabular-nums">{row.phone}</span>
+              {row.refId && (
+                <span className="font-mono">#{row.refId.slice(-6)}</span>
+              )}
+              {row.flagged && (
+                <span className="text-red-600 font-bold" title="ตรงกับ Blacklist">
+                  ⚠
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </td>
 
-      {/* ไฟล์แนบ — กดเปิดเรซูเม่/รูปได้เลย */}
+      {/* ไฟล์แนบ */}
       {vis("files") && (
         <td className="px-3 py-2.5 whitespace-nowrap">
           <FileQuickOpen files={row.files} variant="cell" />
@@ -488,24 +664,40 @@ function Row({
         </td>
       )}
 
-      {/* AI score */}
+      {/* คะแนน AI + คำตัดสิน */}
       {vis("ai") && (
-        <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+        <td className="px-3 py-2.5 whitespace-nowrap">
           {row.aiScore != null ? (
-            <span
-              className={`font-bold ${
-                row.aiScore >= 75
-                  ? "text-green-700"
-                  : row.aiScore >= 50
-                    ? "text-amber-600"
-                    : "text-red-600"
-              }`}
-            >
-              {row.aiScore}
-            </span>
+            <div className="leading-tight">
+              <span
+                className={`font-bold tabular-nums ${
+                  row.aiScore >= 75
+                    ? "text-green-700"
+                    : row.aiScore >= 50
+                      ? "text-amber-600"
+                      : "text-red-600"
+                }`}
+              >
+                {row.aiScore}
+              </span>
+              {verdictAi && (
+                <span
+                  className={`block text-[10px] font-bold ${VERDICT_TEXT[verdictAi.tone]}`}
+                >
+                  {verdictAi.label}
+                </span>
+              )}
+            </div>
           ) : (
             <span className="text-zinc-300">—</span>
           )}
+        </td>
+      )}
+
+      {/* สรุป AI (อ่านง่าย · กดขยาย) */}
+      {vis("aisummary") && (
+        <td className="px-3 py-2.5 max-w-[280px] align-top">
+          <AiSummaryCell summary={row.aiSummary} />
         </td>
       )}
 
@@ -525,7 +717,7 @@ function Row({
         </td>
       )}
 
-      {/* คัดกรอง — inline 3 ปุ่มไอคอน */}
+      {/* คัดกรอง */}
       {vis("verdict") && (
         <td className="px-3 py-2.5 whitespace-nowrap">
           {canWrite ? (
@@ -560,7 +752,7 @@ function Row({
         </td>
       )}
 
-      {/* สถานะ — จุดสี + inline select */}
+      {/* สถานะ */}
       {vis("status") && (
         <td className="px-3 py-2.5 whitespace-nowrap">
           {canWrite ? (
@@ -670,5 +862,36 @@ function AnswerCell({ value, long }: { value: string; long: boolean }) {
     >
       {value}
     </button>
+  );
+}
+
+/** เซลล์สรุป AI — แยกป้ายที่มา (เรซูเม่/คำตอบ) + ข้อความสรุป กดขยายได้ */
+function AiSummaryCell({ summary }: { summary: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!summary) return <span className="text-zinc-300">—</span>;
+
+  // aiSummary เก็บเป็น "[จากเรซูเม่] ..." / "[จากคำตอบ] ..."
+  const m = summary.match(/^\[(.+?)\]\s*([\s\S]*)$/);
+  const source = m ? m[1] : null;
+  const text = m ? m[2] : summary;
+
+  return (
+    <div className="space-y-1">
+      {source && (
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-brand-100)] text-[var(--color-brand-700)]">
+          {source}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        title={expanded ? "กดเพื่อย่อ" : text}
+        className={`block text-left text-zinc-700 text-[13px] leading-snug hover:text-zinc-900 ${
+          expanded ? "" : "line-clamp-3"
+        }`}
+      >
+        {text}
+      </button>
+    </div>
   );
 }

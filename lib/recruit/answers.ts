@@ -8,6 +8,67 @@
 
 import type { Field, FormSchema } from "./types";
 
+// =============================================================
+// ข้อมูลตำแหน่งสำหรับ AI (เก็บใน RecruitJobPosting.settings.aiBrief)
+// ให้ AI รู้จักงานจริง → ประเมินตรงตำแหน่ง/สาขา ไม่เดา · 0 migration (settings=Json)
+// =============================================================
+export interface PostingAiBrief {
+  about?: string; // ตำแหน่งนี้ทำอะไร (หน้าที่หลัก)
+  workplace?: string; // สาขา / สถานที่ทำงาน
+  headcount?: string; // ดูแลลูกน้องกี่คน (เก็บเป็น string กันค่าว่าง)
+  skills?: string; // ทักษะ/คุณสมบัติสำคัญ
+}
+
+/** parse ค่า aiBrief จาก settings JSON แบบปลอดภัย */
+export function parsePostingAiBrief(settings: unknown): PostingAiBrief | null {
+  if (!settings || typeof settings !== "object") return null;
+  const b = (settings as Record<string, unknown>).aiBrief;
+  if (!b || typeof b !== "object") return null;
+  const rec = b as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const brief: PostingAiBrief = {
+    about: str(rec.about),
+    workplace: str(rec.workplace),
+    headcount: str(rec.headcount),
+    skills: str(rec.skills),
+  };
+  return brief;
+}
+
+/** ตำแหน่งนี้มีข้อมูลพอให้ AI ประเมินตรงหรือยัง (ต้องกรอก "ทำอะไร" อย่างน้อย) */
+export function hasEnoughJobContext(
+  description: string | null | undefined,
+  brief: PostingAiBrief | null,
+): boolean {
+  return Boolean(brief?.about && brief.about.trim().length >= 5);
+}
+
+/** รวม JD + aiBrief เป็นข้อความบริบทงานสำหรับป้อน prompt */
+export function buildJobContext(
+  description: string | null | undefined,
+  brief: PostingAiBrief | null,
+): string {
+  const parts: string[] = [];
+  if (description && description.trim()) parts.push(description.trim());
+  if (brief) {
+    if (brief.about?.trim()) parts.push(`หน้าที่หลักของตำแหน่ง: ${brief.about.trim()}`);
+    if (brief.workplace?.trim()) parts.push(`สาขา/สถานที่ทำงาน: ${brief.workplace.trim()}`);
+    if (brief.headcount?.trim()) parts.push(`ดูแลลูกน้อง: ${brief.headcount.trim()} คน`);
+    if (brief.skills?.trim()) parts.push(`ทักษะ/คุณสมบัติสำคัญ: ${brief.skills.trim()}`);
+  }
+  return parts.join("\n");
+}
+
+/** คำตัดสินสั้น ๆ จากคะแนน AI (0-100) — ให้ CEO อ่านปราดเดียวรู้ */
+export function aiVerdict(
+  score: number | null | undefined,
+): { label: string; tone: "green" | "amber" | "red" } | null {
+  if (score == null) return null;
+  if (score >= 75) return { label: "เหมาะมาก", tone: "green" };
+  if (score >= 50) return { label: "พอพิจารณา", tone: "amber" };
+  return { label: "อาจไม่ตรง", tone: "red" };
+}
+
 export interface AppFileMeta {
   key: string;
   name: string;
