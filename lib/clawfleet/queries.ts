@@ -288,6 +288,9 @@ export type V2Round = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** รอบตั้งต้น (baseline) — ตั้งค่ามิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
+   *  ห้ามจัดเป็น "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ทำให้ดูเหมือนเงินเกินทั้งที่ปกติ) */
+  isBaseline: boolean;
   /** มิเตอร์เหรียญรวมทั้งรอบ (จาก event จริง) — null = ไม่มี event ให้ derive */
   coinMeterBefore: number | null;
   coinMeterAfter: number | null;
@@ -405,6 +408,7 @@ export async function getV2AllRounds(opts?: {
       severity,
       type,
       reason: s.anomalyFlags[0] ?? "",
+      isBaseline: s.isBaseline,
       coinMeterBefore,
       coinMeterAfter,
       machines,

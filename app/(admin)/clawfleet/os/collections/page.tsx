@@ -26,14 +26,20 @@ function parseDateEnd(s?: string): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+/** วันที่ตามปฏิทินไทย (Asia/Bangkok) — ให้ default ฝั่ง server ตรงกับปุ่มลัดฝั่ง client (local ไทย)
+ *  เดิม toISOString() = UTC → ช่วงเที่ยงคืน–ตี 7 น. วันที่ต่างจากไทย 1 วัน (ปุ่มลัดไฮไลต์เพี้ยน) */
+function bangkokISO(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  // en-CA → รูปแบบ "YYYY-MM-DD"
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(d);
+}
 /** default ช่วง = 30 วันล่าสุด (ให้ค่า input ตรงกับที่ query ใช้จริงเมื่อไม่ได้เลือกเอง) */
 function defaultFromISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
+  return bangkokISO(-30);
 }
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return bangkokISO(0);
 }
 
 export default async function CollectionsPage({
@@ -102,6 +108,8 @@ export default async function CollectionsPage({
     severity: r.severity,
     type: r.type,
     reason: r.reason || (r.type === "cash_short" ? "ยอดเงินไม่ตรงกับมิเตอร์" : "ตุ๊กตาหายไม่ตรงกับมิเตอร์"),
+    // รอบตั้งต้น — client แยกป้าย/ไม่นับเป็น "ไม่ตรง" (กัน expectedCash=0 ดูเหมือนเงินเกิน)
+    isBaseline: r.isBaseline,
     // มิเตอร์เหรียญจริงจาก event (รวมทั้งรอบ) — client โชว์ delta×10 จริง (ไม่ประมาณ)
     coinMeterBefore: r.coinMeterBefore,
     coinMeterAfter: r.coinMeterAfter,

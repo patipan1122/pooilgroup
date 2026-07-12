@@ -9,7 +9,7 @@
  */
 
 import Link from "next/link";
-import { AlertTriangle, Boxes, ChevronRight, Download, PackageSearch, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Boxes, ChevronRight, Download, PackageSearch, ShieldCheck, Store } from "lucide-react";
 import { Card, Pill, IconBox, EmptyState } from "@/components/clawfleet/os/kit";
 import { num, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import type { MemberStatus } from "@/lib/clawfleet/admin-queries";
@@ -255,6 +255,22 @@ export function ReportsClient({
           <AlertTriangle size={15} /> ยังไม่มีข้อมูลจริงในระบบ — กำลังแสดง<b> ตัวอย่าง</b> เพื่อให้เห็นภาพ (จะเปลี่ยนเป็นข้อมูลจริงเมื่อเริ่มเก็บเงิน)
         </div>
       )}
+
+      {/* ── แกลเลอรีตู้ (รายงานใหม่ · กดเข้าดูตู้ทุกตู้พร้อมรูป) ── */}
+      <Link
+        href="/clawfleet/os/reports/gallery"
+        className="co-card co-rowlink"
+        style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", marginBottom: 18, textDecoration: "none", color: "inherit" }}
+      >
+        <IconBox tone="brand" size={40} radius={11}><Store size={19} /></IconBox>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: "#1A1D21" }}>แกลเลอรีตู้ · ดูสินค้าในตู้แต่ละสาขา</div>
+          <div style={{ fontSize: 12, color: "#8A909A", marginTop: 2 }}>
+            เลือกสาขา → เห็นตู้ทุกตู้พร้อมรูป · สินค้าในตู้ · ราคาเล่น · ทุนรวม เหมือนเดินดูหน้าร้าน
+          </div>
+        </div>
+        <ChevronRight size={18} color="#C2C7CF" />
+      </Link>
 
       {/* ── 2-col: ตู้ที่มีปัญหา + สินค้าใกล้หมด ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mb-[18px]">

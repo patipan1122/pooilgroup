@@ -52,6 +52,9 @@ export type CollectionRow = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** รอบตั้งต้น (baseline) — ตั้งมิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
+   *  แยกป้าย "รอบตั้งต้น" ไม่ปนกับ "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ดูเหมือนเงินเกินทั้งที่ปกติ) */
+  isBaseline?: boolean;
   /** มิเตอร์เหรียญรวมทั้งรอบจาก event จริง — มี = โชว์ delta×10 จริง · undefined/null = ประมาณจากยอด */
   coinMeterBefore?: number | null;
   coinMeterAfter?: number | null;
@@ -61,7 +64,12 @@ export type CollectionRow = {
 };
 
 type ReviewState = "pending" | "reviewed" | "rechecked" | "escalated";
-type StatusKind = "match" | "diff" | "broken";
+type StatusKind = "match" | "diff" | "broken" | "baseline";
+
+/** รอบตั้งต้นไหม — เชื่อ flag จาก server ก่อน · เผื่อไว้เช็ครหัส BASE- (belt-and-suspenders) */
+function isBaselineRow(r: CollectionRow): boolean {
+  return r.isBaseline === true || r.code.startsWith("BASE-");
+}
 
 /* ───────── sample fallback (จาก design) ───────── */
 const SAMPLE_BRANCHES: BranchOption[] = [
@@ -80,6 +88,8 @@ const SAMPLE_BRANCHES: BranchOption[] = [
 const CASH_TOLERANCE = 50;
 
 function statusOf(r: CollectionRow): StatusKind {
+  // รอบตั้งต้นมาก่อนทุกเงื่อนไข — ไม่มีมิเตอร์เก่าให้เทียบ ห้ามตัดสินว่า "เกิน/ไม่ตรง"
+  if (isBaselineRow(r)) return "baseline";
   if (r.expectedCash === 0 && r.actualCash === 0 && r.gap === 0) return "broken";
   // ส่วนต่างเกินเกณฑ์ "ทั้งขาดและเกิน" (|gap|) = ไม่ตรง · หรือตุ๊กตาหาย
   if (Math.abs(r.gap) > CASH_TOLERANCE || r.prizeGap > 0) return "diff";
@@ -109,6 +119,8 @@ const STATUS_META: Record<StatusKind, { label: string; bg: string; color: string
   match: { label: "ตรงกัน", bg: "#E7F4EC", color: "#15803D" },
   diff: { label: "ไม่ตรง · ต้องสอบ", bg: "#FCEDEC", color: "#B42318" },
   broken: { label: "ตู้เสีย/ไม่ขยับ", bg: "#EFF1F4", color: "#5A6270" },
+  // รอบตั้งต้น = indigo จาง (ข้อมูล ไม่ใช่ error) — อ่านออกทันทีว่า "ปกติ ไม่ต้องตกใจ"
+  baseline: { label: "รอบตั้งต้น", bg: "#EEF0FE", color: "#4F46E5" },
 };
 
 const TABS: { id: "all" | StatusKind; label: string }[] = [
@@ -116,6 +128,7 @@ const TABS: { id: "all" | StatusKind; label: string }[] = [
   { id: "match", label: "ตรงกัน" },
   { id: "diff", label: "ไม่ตรง" },
   { id: "broken", label: "ตู้เสีย" },
+  { id: "baseline", label: "รอบตั้งต้น" },
 ];
 
 /* ───────── component ───────── */
@@ -195,6 +208,32 @@ export function CollectionsClient({
   // ช่วง input ต่างจากที่ query อยู่ตอนนี้ไหม (เปิดปุ่ม "ดูช่วงนี้" เฉพาะเมื่อเปลี่ยน)
   const rangeDirty = fromInput !== fromISO || toInput !== toISO;
 
+  // ── ปุ่มลัดช่วงเวลา (วันนี้/เมื่อวาน/7 วัน/เดือนนี้) ──
+  // ใช้ "วันตามปฏิทินเครื่อง" (local) ให้ตรงกับที่ server parse (parseDateStart ใช้ T00:00:00 local)
+  const quickRanges = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const isoLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const now = new Date();
+    const todayI = isoLocal(now);
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    const wk = new Date(now); wk.setDate(now.getDate() - 6);
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return [
+      { key: "today", label: "วันนี้", from: todayI, to: todayI },
+      { key: "yesterday", label: "เมื่อวาน", from: isoLocal(yest), to: isoLocal(yest) },
+      { key: "7d", label: "7 วัน", from: isoLocal(wk), to: todayI },
+      { key: "month", label: "เดือนนี้", from: isoLocal(firstOfMonth), to: todayI },
+    ];
+  }, []);
+  /** href ปุ่มลัด — set ช่วง + reset page=1 (soft-nav เหมือน rangeHref) */
+  const quickHref = (from: string, to: string) => {
+    const q = new URLSearchParams();
+    q.set("from", from);
+    q.set("to", to);
+    q.set("page", "1");
+    return `?${q.toString()}`;
+  };
+
   const filtered = useMemo(() => {
     return data.filter((r) => {
       // กรองด้วย branchId ตรงตัว (ไม่ใช่ substring ชื่อ — เดิมสาขาชื่อคล้ายกันจะปนกัน)
@@ -204,14 +243,22 @@ export function CollectionsClient({
     });
   }, [data, branch, tab]);
 
-  /* summary strip — นับจาก data (หน้าปัจจุบัน หรือ sample) · total ทั้งช่วงใช้ prop `total` */
+  /* summary strip — นับจาก data (หน้าปัจจุบัน หรือ sample) · total ทั้งช่วงใช้ prop `total`
+     แยก "เงิน" กับ "ตุ๊กตา" คนละการ์ด (CEO: อยากเห็นเช็คตุ๊กตาชัด ๆ) · baseline ไม่นับเป็นปัญหา */
   const pageTotal = data.length;
   const matchN = data.filter((r) => statusOf(r) === "match").length;
-  const diffRows = data.filter((r) => statusOf(r) === "diff");
-  const diffN = diffRows.length;
-  // รวมขนาดส่วนต่าง (|gap|) — ทั้งขาดและเกินคือ exposure ที่ต้องสอบ (อย่าให้หักกลบกัน)
-  const diffSum = diffRows.reduce((s, r) => s + Math.abs(r.gap), 0);
+  const baselineN = data.filter((r) => statusOf(r) === "baseline").length;
   const brokenN = data.filter((r) => statusOf(r) === "broken").length;
+
+  // เงินไม่ตรง — เฉพาะรอบจริง (ไม่ใช่ baseline) ที่ |ส่วนต่าง| เกินเกณฑ์ · รวมขนาด exposure (ไม่หักกลบ)
+  const moneyDiffRows = data.filter((r) => !isBaselineRow(r) && Math.abs(r.gap) > CASH_TOLERANCE);
+  const moneyDiffN = moneyDiffRows.length;
+  const moneyDiffSum = moneyDiffRows.reduce((s, r) => s + Math.abs(r.gap), 0);
+
+  // ตุ๊กตาหาย — รอบจริงที่ตุ๊กตานับได้น้อยกว่าที่มิเตอร์บอกว่าออก (เสี่ยงโกง/ตู้พัง)
+  const dollShortRows = data.filter((r) => !isBaselineRow(r) && r.prizeGap > 0);
+  const dollShortN = dollShortRows.length;
+  const dollMissingTotal = dollShortRows.reduce((s, r) => s + r.prizeGap, 0);
 
   /* review wiring */
   const setReview = (id: string, st: ReviewState) =>
@@ -252,7 +299,7 @@ export function CollectionsClient({
         { key: "severity", label: "ระดับ" },
       ];
       const STATUS_TH: Record<StatusKind, string> = {
-        match: "ตรงกัน", diff: "ไม่ตรง", broken: "ตู้เสีย/ไม่ขยับ",
+        match: "ตรงกัน", diff: "ไม่ตรง", broken: "ตู้เสีย/ไม่ขยับ", baseline: "รอบตั้งต้น",
       };
       const csvRows = filtered.map((r) => ({
         code: r.code,
@@ -354,6 +401,20 @@ export function CollectionsClient({
           )}
         </div>
 
+        {/* ปุ่มลัดช่วงเวลา — กดปุ๊บกรองเลย ไม่ต้องเปิดปฏิทินทีละช่อง (CEO ขอ วันนี้/เมื่อวาน) */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {quickRanges.map((q) => {
+            const active = fromISO === q.from && toISO === q.to;
+            return empty ? (
+              <span key={q.key} style={quickChipStyle(false, active)}>{q.label}</span>
+            ) : (
+              <Link key={q.key} href={quickHref(q.from, q.to)} className="co-tap" style={quickChipStyle(true, active)}>
+                {q.label}
+              </Link>
+            );
+          })}
+        </div>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {TABS.map((t) => {
             const active = tab === t.id;
@@ -402,14 +463,42 @@ export function CollectionsClient({
           foot={multiPage ? `แสดงหน้า ${curPage}/${pageCount} · ${pageTotal} รอบในหน้านี้` : undefined}
           footColor="#9AA1AB"
         />
-        <SummaryCard label="ตรงกัน" value={`${matchN} รอบ`} valueColor="#15803D" foot={perPageFoot} footColor="#9AA1AB" />
+        <SummaryCard label="ตรงกันหมด" value={`${matchN} รอบ`} valueColor="#15803D" foot={perPageFoot} footColor="#9AA1AB" />
+        {/* การ์ดเงิน (แยกจากตุ๊กตา) — เขียว/จางเมื่อ 0 · แดงเมื่อมีรอบต้องสอบ */}
         <SummaryCard
-          label="ไม่ตรง · ต้องสอบ" value={`${diffN} รอบ`} valueColor="#B42318"
-          bg="#FFF9F8" border="#F3D9D5" labelColor="#B42318"
-          foot={`ส่วนต่างรวม ${bahtN(diffSum)}${multiPage ? " · หน้านี้" : ""}`} footColor="#C2756C"
+          label="เงินไม่ตรง · ต้องสอบ" value={`${moneyDiffN} รอบ`}
+          valueColor={moneyDiffN > 0 ? "#B42318" : "#5A6270"}
+          bg={moneyDiffN > 0 ? "#FFF9F8" : "#fff"} border={moneyDiffN > 0 ? "#F3D9D5" : "#E8EAED"}
+          labelColor={moneyDiffN > 0 ? "#B42318" : "#6B7280"}
+          foot={moneyDiffN > 0 ? `ส่วนต่างรวม ${bahtN(moneyDiffSum)}${multiPage ? " · หน้านี้" : ""}` : "เงินตรงทุกรอบ ✓"}
+          footColor={moneyDiffN > 0 ? "#C2756C" : "#8FA99A"}
         />
-        <SummaryCard label="ตู้เสีย/ไม่ขยับ" value={`${brokenN} ตู้`} valueColor="#5A6270" foot={perPageFoot} footColor="#9AA1AB" />
+        {/* การ์ดตุ๊กตา (เช็คตุ๊กตาออกตรงมิเตอร์ไหม) — ส้มเมื่อมีหาย · จาง/เขียวเมื่อครบ */}
+        <SummaryCard
+          label="ตุ๊กตาหาย · ไม่ตรงมิเตอร์" value={`${dollShortN} รอบ`}
+          valueColor={dollShortN > 0 ? "#B45309" : "#5A6270"}
+          bg={dollShortN > 0 ? "#FCF8EC" : "#fff"} border={dollShortN > 0 ? "#F0E2BE" : "#E8EAED"}
+          labelColor={dollShortN > 0 ? "#B45309" : "#6B7280"}
+          foot={dollShortN > 0 ? `รวมหาย ${dollMissingTotal} ตัว${multiPage ? " · หน้านี้" : ""}` : "ตุ๊กตาครบทุกรอบ ✓"}
+          footColor={dollShortN > 0 ? "#B98A2E" : "#8FA99A"}
+        />
       </div>
+
+      {/* บรรทัดรอง — รอบตั้งต้น + ตู้เสีย (บริบท ไม่ใช่ปัญหา) โชว์เป็นชิปจาง ไม่ให้แย่งสายตาการ์ดหลัก */}
+      {(baselineN > 0 || brokenN > 0) && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {baselineN > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "1px solid #DEE0FB", borderRadius: 20, padding: "5px 13px" }}>
+              <ShieldCheck size={13} /> รอบตั้งต้น {baselineN} รอบ · ปกติ ไม่ต้องสอบ
+            </span>
+          )}
+          {brokenN > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#5A6270", background: "#EFF1F4", border: "1px solid #E3E6EA", borderRadius: 20, padding: "5px 13px" }}>
+              <AlertTriangle size={13} /> ตู้เสีย/ไม่ขยับ {brokenN} ตู้
+            </span>
+          )}
+        </div>
+      )}
 
       {/* หมายเหตุแบ่งหน้า: การ์ด ตรงกัน/ไม่ตรง/ตู้เสีย นับจากหน้าที่แสดงอยู่ ไม่ใช่ทั้งช่วง */}
       {multiPage && (
@@ -501,6 +590,18 @@ export function CollectionsClient({
   );
 }
 
+/** สไตล์ชิปปุ่มลัดช่วงเวลา — active = indigo ทึบ · enabled = ขาวกดได้ · disabled = จาง */
+function quickChipStyle(enabled: boolean, active: boolean): CSSProperties {
+  return {
+    fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 8,
+    textDecoration: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center",
+    border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA",
+    background: active ? "#4F46E5" : "#fff",
+    color: active ? "#fff" : enabled ? "#5A6270" : "#C2C7CF",
+    cursor: enabled ? "pointer" : "not-allowed",
+  };
+}
+
 /** สไตล์ปุ่มเปลี่ยนหน้า — enabled = คลิกได้ (indigo) · disabled = จาง กดไม่ได้ */
 function pagerBtnStyle(enabled: boolean): CSSProperties {
   return {
@@ -549,6 +650,27 @@ function CollectionCard({
   const diffStr = gapWords(row.gap);
   const rowBg = open ? "#FCFCFD" : "#fff";
 
+  // baseline = รอบตั้งต้น (ตั้งมิเตอร์ครั้งแรก) — ห้ามโชว์ "ควรได้/ส่วนต่าง" ให้ตกใจ
+  const baseline = st === "baseline";
+  // ตุ๊กตา at-a-glance สำหรับหัวแถว (CEO ขอเห็นเช็คตุ๊กตาชัด) — ตรง/หาย X/— (ไม่มีข้อมูล)
+  const dollHasData = row.prizeExpected !== 0 || row.prizeActual !== 0;
+  const dollStr = !dollHasData ? "—" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : "ตรง";
+  const dollStatColor = row.prizeGap > 0 ? "#B45309" : "#15803D";
+  // รูปหลักฐานจริงทั้งรอบ (ทุกตู้) — โชว์เป็นบล็อกตัวอย่างตอนยังไม่กดกาง
+  // interleave 1 รูป/ตู้ ก่อน → รอบหลายตู้เห็นครบทุกตู้ในแถบย่อ (ไม่ให้ตู้แรกกินโควตาหมด)
+  const previewShots = (() => {
+    const perMachine = row.machines.map((m) => m.photoShots.filter((s) => s.url));
+    const out: { label: string; url: string | null }[] = [];
+    const maxLen = perMachine.reduce((n, a) => Math.max(n, a.length), 0);
+    for (let i = 0; i < maxLen; i++) {
+      for (const arr of perMachine) {
+        const shot = arr[i];
+        if (shot) out.push(shot);
+      }
+    }
+    return out;
+  })();
+
   // เส้นทางเงิน — เหรียญเข้า
   // มีมิเตอร์จริง (before/after รวมทั้งรอบจาก event) → delta จริง ×฿10 · ไม่มี → ประมาณจากยอด (ติดป้ายให้ชัด)
   const meterBefore = row.coinMeterBefore;
@@ -568,11 +690,12 @@ function CollectionCard({
 
   // แนะนำ action
   const action =
-    st === "broken" ? "ตู้ไม่ขยับ — ส่งช่างเช็คเซ็นเซอร์/มอเตอร์ ก่อนเปิดรอบถัดไป"
-      : row.gap > 50 ? "เงินขาดเกินเกณฑ์ — เรียกพนักงานยืนยันยอด + เทียบรูปเงินสดกับมิเตอร์"
-        : row.prizeGap > 0 ? "ตุ๊กตาหาย — ตรวจสต๊อกในตู้ + รูปก่อน/หลังเติม"
-          : "ทุกตัวเลขตรงกัน — อนุมัติเข้ารายงานได้เลย";
-  const actionColor = st === "diff" ? "#B42318" : st === "broken" ? "#B45309" : "#15803D";
+    baseline ? "รอบตั้งต้น — ตั้งค่ามิเตอร์ครั้งแรกของตู้ ถือว่าปกติ · อนุมัติเพื่อเริ่มนับรอบถัดไป"
+      : st === "broken" ? "ตู้ไม่ขยับ — ส่งช่างเช็คเซ็นเซอร์/มอเตอร์ ก่อนเปิดรอบถัดไป"
+        : row.gap > 50 ? "เงินขาดเกินเกณฑ์ — เรียกพนักงานยืนยันยอด + เทียบรูปเงินสดกับมิเตอร์"
+          : row.prizeGap > 0 ? "ตุ๊กตาหาย — ตรวจสต๊อกในตู้ + รูปก่อน/หลังเติม"
+            : "ทุกตัวเลขตรงกัน — อนุมัติเข้ารายงานได้เลย";
+  const actionColor = baseline ? "#4F46E5" : st === "diff" ? "#B42318" : st === "broken" ? "#B45309" : "#15803D";
 
   const reviewed = reviewState !== "pending";
   const reviewedLabel =
@@ -614,7 +737,7 @@ function CollectionCard({
         style={{ display: "flex", alignItems: "center", gap: 16, padding: "15px 20px", cursor: "pointer", width: "100%", background: "transparent", border: "none", textAlign: "left", flexWrap: "wrap" }}
       >
         <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: meta.bg, color: meta.color }}>
-          {st === "match" ? <Check size={18} /> : st === "broken" ? <AlertTriangle size={17} /> : <AlertTriangle size={17} />}
+          {st === "match" ? <Check size={18} /> : st === "baseline" ? <ShieldCheck size={17} /> : <AlertTriangle size={17} />}
         </span>
         <div style={{ flex: "0 0 158px", minWidth: 130 }}>
           <div className="num" style={{ fontSize: 14.5, fontWeight: 700 }}>
@@ -622,10 +745,19 @@ function CollectionCard({
           </div>
           <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>{row.staff} · {row.date}</div>
         </div>
-        <div style={{ display: "flex", gap: 26, flex: 1, minWidth: 220, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 24, flex: 1, minWidth: 220, flexWrap: "wrap" }}>
           <Stat label="เก็บเงินได้" value={bahtN(row.actualCash)} />
-          <Stat label="มิเตอร์ควรได้" value={bahtN(row.expectedCash)} />
-          <Stat label="ส่วนต่าง" value={diffStr} color={diffColor} />
+          {baseline ? (
+            // baseline: ไม่โชว์ "ควรได้/ส่วนต่าง" (ไม่มีมิเตอร์เก่าเทียบ) — โชว์ว่าเป็นยอดตั้งต้น
+            <Stat label="ประเภท" value="ยอดตั้งต้น" color="#4F46E5" />
+          ) : (
+            <>
+              <Stat label="มิเตอร์ควรได้" value={bahtN(row.expectedCash)} />
+              <Stat label="ส่วนต่างเงิน" value={diffStr} color={diffColor} />
+            </>
+          )}
+          {/* เช็คตุ๊กตา at-a-glance — ออกตรงมิเตอร์ไหม (CEO ขอ) */}
+          <Stat label="ตุ๊กตา" value={baseline ? "ตั้งต้น" : dollStr} color={baseline ? "#4F46E5" : dollStatColor} />
         </div>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, padding: "6px 13px", borderRadius: 20, background: meta.bg, color: meta.color, whiteSpace: "nowrap" }}>
           {meta.label}
@@ -635,9 +767,49 @@ function CollectionCard({
         </span>
       </button>
 
+      {/* บล็อกรูปหลักฐาน (เห็นตั้งแต่ยังไม่กดกาง) — CEO: "ต้องมีบล็อกรูปให้ดู" · กดรูปเพื่อขยายเทียบเลข */}
+      {!open && previewShots.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 20px 14px 74px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "#9AA1AB", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+            <ZoomIn size={12} /> รูปหลักฐาน
+          </span>
+          {previewShots.slice(0, 6).map((s, i) => (
+            <button
+              key={`${s.label}-${i}`}
+              type="button"
+              onClick={() => setLightbox({ url: s.url as string, label: s.label })}
+              title={`${s.label} — กดเพื่อดูรูปเต็ม`}
+              className="co-tap co-lift"
+              style={{ width: 54, height: 40, borderRadius: 8, overflow: "hidden", border: "1px solid #E8EAED", padding: 0, cursor: "pointer", background: "#EFF1F4", flex: "0 0 54px" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
+              <img src={s.url as string} alt={s.label} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </button>
+          ))}
+          {previewShots.length > 6 && (
+            <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600 }}>+{previewShots.length - 6} รูป</span>
+          )}
+        </div>
+      )}
+
       {/* drill-down */}
       {open && (
         <div style={{ padding: "4px 20px 20px" }}>
+          {baseline ? (
+            // รอบตั้งต้น — อธิบายให้ชัดว่าปกติ ไม่ใช่ "เงินเกิน" (เดิมโชว์ "เกิน ฿100" ทำ CEO งง)
+            <div style={{ borderTop: "1px dashed #E2E5EA", paddingTop: 16 }}>
+              <div style={{ background: "#EEF0FE", border: "1px solid #DEE0FB", borderRadius: 12, padding: "15px 17px", display: "flex", gap: 11, alignItems: "flex-start" }}>
+                <ShieldCheck size={20} color="#4F46E5" style={{ flex: "0 0 20px", marginTop: 1 }} />
+                <div style={{ fontSize: 12.5, color: "#3F3D6B", lineHeight: 1.65 }}>
+                  <b style={{ color: "#4F46E5" }}>รอบตั้งต้น (baseline)</b> — ตั้งค่ามิเตอร์เริ่มต้นของตู้ครั้งแรก
+                  ยังไม่มีรอบก่อนหน้าไว้เทียบ ระบบจึง<b>ยังไม่คิด “ควรได้/ส่วนต่าง”</b> ในรอบนี้<br />
+                  เงินที่เก็บได้ <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.actualCash)}</b>
+                  {dollHasData && <> · ตุ๊กตาตั้งต้น <b className="num" style={{ color: "#1A1D21" }}>{row.prizeActual} ตัว</b></>}
+                  {" "}บันทึกเป็น<b>ยอดเริ่มต้น</b>ของตู้ — ถือว่าปกติ ไม่ต้องสอบ · รอบถัดไปจะเริ่มกระทบยอดกับมิเตอร์จริง
+                </div>
+              </div>
+            </div>
+          ) : (
           <div style={{ borderTop: "1px dashed #E2E5EA", paddingTop: 16 }} className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
             {/* doll track */}
             <div style={{ background: dollOk ? "#F7F8FA" : "#FFF9F8", borderRadius: 12, padding: "15px 16px" }}>
@@ -712,6 +884,7 @@ function CollectionCard({
               )}
             </div>
           </div>
+          )}
 
           {/* หมายเหตุ: แบนเนอร์ "มิเตอร์ต่อเนื่อง" ถูกเอาออก — เดิม hardcode 18420 ทำให้โชว์ไฟเขียว
              "ผ่าน" กับทุกแถวโดยไม่ได้ตรวจจริง (ฟีเจอร์กันโกง ห้ามโชว์ผลปลอม). จะกลับมาใส่เมื่อ
@@ -760,47 +933,6 @@ function CollectionCard({
             </div>
           </div>
 
-          {/* lightbox overlay — กดรูปแล้วขยายเต็ม · กดพื้นหลัง/ปุ่มปิด */}
-          {lightbox && (
-            <div
-              role="dialog"
-              aria-modal="true"
-              onClick={() => setLightbox(null)}
-              style={{
-                position: "fixed", inset: 0, zIndex: 90, background: "rgba(13,15,20,0.9)",
-                backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
-                display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-              }}
-            >
-              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "#fff", fontSize: 13, fontWeight: 700, background: "rgba(255,255,255,0.1)", padding: "5px 12px", borderRadius: 20 }}>
-                    <ZoomIn size={13} /> {lightbox.label}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <button
-                    type="button"
-                    onClick={() => setLightbox(null)}
-                    aria-label="ปิดรูป"
-                    className="co-tap"
-                    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, width: 36, height: 36, cursor: "pointer" }}
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-                {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
-                <img
-                  src={lightbox.url}
-                  alt={lightbox.label}
-                  style={{ maxWidth: "92vw", maxHeight: "76vh", objectFit: "contain", borderRadius: 12, background: "#000", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
-                />
-                <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
-                  กดพื้นหลังหรือปุ่มปิดเพื่อออก
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* recommended action + review buttons */}
           <div style={{ marginTop: 14, background: "#F8F9FB", borderRadius: 11, padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 12 }}>
@@ -822,6 +954,47 @@ function CollectionCard({
                   ยังไม่ได้ตรวจ
                 </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* lightbox overlay (card-level — เปิดได้ทั้งจากบล็อกรูปตัวอย่าง และตอนกางเต็ม) */}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightbox(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 90, background: "rgba(13,15,20,0.9)",
+            backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "#fff", fontSize: 13, fontWeight: 700, background: "rgba(255,255,255,0.1)", padding: "5px 12px", borderRadius: 20 }}>
+                <ZoomIn size={13} /> {lightbox.label}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                onClick={() => setLightbox(null)}
+                aria-label="ปิดรูป"
+                className="co-tap"
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: 10, width: 36, height: 36, cursor: "pointer" }}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element — เลี่ยง next/image remote-domain config */}
+            <img
+              src={lightbox.url}
+              alt={lightbox.label}
+              style={{ maxWidth: "92vw", maxHeight: "76vh", objectFit: "contain", borderRadius: 12, background: "#000", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}
+            />
+            <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
+              กดพื้นหลังหรือปุ่มปิดเพื่อออก
             </div>
           </div>
         </div>
