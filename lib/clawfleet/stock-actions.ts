@@ -163,6 +163,33 @@ async function currentBalance(
 }
 
 /**
+ * "ของบนชั้นจริง" (NET) = Σ ทุกแถวของสินค้าในสาขา[/ห้อง] — รับเข้า − โหลดเข้าตู้ − เบิก + คืน.
+ * ต่างจาก currentBalance (GROSS · filter machineId:null = ยอดรับเข้ารวม ไม่หักตุ๊กตาที่โหลดเข้าตู้ไปแล้ว).
+ * ใช้ใน over-issue guard เบิก/โอน เท่านั้น — กันเบิก/โอนเกินของบนชั้น (gross จะยอมให้เกิน → net ติดลบ).
+ * แถวโหลด/คืนแนบ warehouseId ห้องที่หยิบ → scope ตาม whFilter ถูกต้องต่อห้อง (mirror currentBalance).
+ */
+async function currentNetShelf(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  orgId: string,
+  branchId: string,
+  productId: string,
+  warehouseId?: string,
+  mainWarehouseId?: string,
+): Promise<number> {
+  const whFilter: Record<string, unknown> =
+    warehouseId === undefined
+      ? {}
+      : mainWarehouseId && warehouseId === mainWarehouseId
+        ? { OR: [{ warehouseId }, { warehouseId: null }] }
+        : { warehouseId };
+  const agg = await tx.cfStockMovement.aggregate({
+    where: { orgId, branchId, productId, ...whFilter },
+    _sum: { qty: true },
+  });
+  return agg._sum.qty ?? 0;
+}
+
+/**
  * หา (หรือสร้างแบบ lazy) id คลังหลักของสาขา ภายใน tx — สำหรับ stamp warehouseId บน RECEIPT_IN/COUNT_ADJUST.
  * ถ้าสาขายังไม่มีคลังหลัก (edge: backfill ข้ามเพราะ org ไม่มี user ตอน migrate) → สร้างคลังหลักให้ (idempotent
  * ผ่าน partial-unique cf_warehouses_one_main_per_branch). ถ้าสร้างชนใครก่อน (race) → อ่านตัวที่มีอยู่กลับมา.
@@ -1136,8 +1163,8 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
       // การอ่าน balance→เขียน movement กัน 2 การโอน/เบิกสินค้าตัวเดียวกันพร้อมกัน อ่าน balance
       // ก้อนเดียวกันแล้วเขียนออกทั้งคู่ → สต๊อกติดลบ (each thought there was enough).
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${productId}))`;
-      const fromBal = await currentBalance(tx, orgId, fromBranchId, productId);
-      if (fromBal < qty) throw new Error(`สาขาต้นทางเหลือ ${fromBal} ไม่พอโอน ${qty}`);
+      const fromBal = await currentNetShelf(tx, orgId, fromBranchId, productId);
+      if (fromBal < qty) throw new Error(`สาขาต้นทางเหลือบนชั้น ${fromBal} ไม่พอโอน ${qty}`);
       const now = new Date();
       await tx.cfStockMovement.create({
         data: {
@@ -1437,10 +1464,10 @@ export async function transferBetweenWarehouses(input: unknown): Promise<Result<
       // 🔒 ล็อกต่อ (branch,warehouse,product) — serialize อ่าน balance→เขียน กัน 2 การโอนห้องเดียวกันติดลบ
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${fromBranchId + ":" + fromWarehouseId}), hashtext(${productId}))`;
 
-      const fromBal = await currentBalance(
+      const fromBal = await currentNetShelf(
         tx, orgId, fromBranchId, productId, fromWarehouseId, fromMain ?? undefined,
       );
-      if (fromBal < qty) throw new Error(`คลังต้นทางเหลือ ${fromBal} ไม่พอโอน ${qty}`);
+      if (fromBal < qty) throw new Error(`คลังต้นทางเหลือบนชั้น ${fromBal} ไม่พอโอน ${qty}`);
 
       const now = new Date();
       // TRANSFER_OUT — ห้องต้นทาง (qty−)
@@ -1512,8 +1539,8 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
       // 🔒 ล็อกต่อ product (transaction-level · hashtext เดียวกับ receiveStock) — serialize
       // อ่าน balance→เขียน movement กัน 2 การเบิกสินค้าตัวเดียวกันพร้อมกันทำสต๊อกติดลบ.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${productId}))`;
-      const bal = await currentBalance(tx, orgId, branchId, productId);
-      if (bal < qty) throw new Error(`คลังเหลือ ${bal} ไม่พอเบิก ${qty}`);
+      const bal = await currentNetShelf(tx, orgId, branchId, productId);
+      if (bal < qty) throw new Error(`บนชั้นเหลือ ${bal} ไม่พอเบิก ${qty}`);
       await tx.cfStockMovement.create({
         data: {
           orgId, branchId, type: "WITHDRAW", productId,
