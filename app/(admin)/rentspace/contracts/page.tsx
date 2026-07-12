@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
-import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
+import { RsPage, RsHeader, RsKpi, RsEmpty, RsBackLink } from "@/components/rentspace/ui";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName } from "@/lib/rentspace/format";
 import { listContracts, getPrimaryProject, listUnitsWithState, listTenants, listTemplates } from "@/lib/rentspace/data";
 import { ContractForm } from "./_components/contract-form";
+import { ContractsList, type ContractRow } from "./_components/contracts-list";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,22 @@ export default async function ContractsPage() {
 
   // ห้องที่เปิดทำสัญญาได้ = ว่าง/จอง
   const vacantUnits = units.filter((u) => u.status === "vacant" || u.status === "reserved");
+
+  // แถวสำหรับ list (ค้นหา/กรอง client-side) — จัดรูปแบบ + คำนวณสถานะแสดงผลฝั่ง server
+  const rows: ContractRow[] = contracts.map((c) => ({
+    id: c.id,
+    contractNo: c.contractNo,
+    unitCode: c.unit.code,
+    unitName: c.unit.name ?? null,
+    tenantName: tenantDisplayName(c.tenant),
+    rentText: formatBaht(toNum(c.rentAmountThb)),
+    rangeText: `${thaiDateLong(c.startDate)}${c.endDate ? ` – ${thaiDateLong(c.endDate)}` : " – ไม่มีกำหนด"}`,
+    status: c.status,
+    showStatus:
+      (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate) ? "expiring" : c.status,
+    tenantSigned: c.tenantSigned,
+    editPending: c.editStatus === "pending",
+  }));
 
   // ข้อมูลโครงการ/บัญชีรับเงิน → ส่งให้พรีวิวสัญญาในฟอร์ม
   const previewProject = project
@@ -84,134 +100,7 @@ export default async function ContractsPage() {
           action={newContractBtn}
         />
       ) : (
-        <>
-        <RsCard className="overflow-hidden hidden lg:block">
-          <div className="overflow-x-auto">
-            <table className="rs-table w-full text-sm">
-              <thead>
-                <tr style={{ color: "var(--rs-text-2)" }} className="text-left text-[12.5px]">
-                  <th className="px-4 py-2.5 font-semibold">เลขที่สัญญา</th>
-                  <th className="px-4 py-2.5 font-semibold">ห้อง</th>
-                  <th className="px-4 py-2.5 font-semibold">ผู้เช่า</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">ค่าเช่า/เดือน</th>
-                  <th className="px-4 py-2.5 font-semibold">ระยะสัญญา</th>
-                  <th className="px-4 py-2.5 font-semibold">สถานะ</th>
-                  <th className="px-4 py-2.5 font-semibold text-center">เซ็นแล้ว</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contracts.map((c) => {
-                  const showStatus =
-                    (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate)
-                      ? "expiring"
-                      : c.status;
-                  return (
-                    <tr
-                      key={c.id}
-                      className="border-t hover:bg-[var(--rs-bg-2)] transition"
-                      style={{ borderColor: "var(--rs-border)" }}
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/rentspace/contracts/${c.id}`}
-                          className="font-semibold inline-flex items-center gap-1.5"
-                          style={{ color: "var(--rs-brand)" }}
-                        >
-                          <FileText className="h-3.5 w-3.5" /> {c.contractNo}
-                        </Link>
-                        {c.editStatus === "pending" && (
-                          <span
-                            className="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-                            style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
-                          >
-                            รอแก้ไข
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
-                        {c.unit.code}
-                        {c.unit.name ? <span style={{ color: "var(--rs-text-3)" }}> · {c.unit.name}</span> : null}
-                      </td>
-                      <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
-                        {tenantDisplayName(c.tenant)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text)" }}>
-                        {formatBaht(toNum(c.rentAmountThb))}
-                      </td>
-                      <td className="px-4 py-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-                        {thaiDateLong(c.startDate)}
-                        {c.endDate ? ` – ${thaiDateLong(c.endDate)}` : " – ไม่มีกำหนด"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <RsBadge kind="contract" status={showStatus} />
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {c.tenantSigned ? (
-                          <span style={{ color: "var(--rs-ok)" }} className="font-bold">
-                            ✓
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--rs-text-3)" }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </RsCard>
-
-        {/* Mobile: tappable cards (เลี่ยงตาราง 7 คอลัมน์ที่ล้นบนมือถือ) */}
-        <div className="space-y-2 lg:hidden">
-          {contracts.map((c) => {
-            const showStatus =
-              (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate)
-                ? "expiring"
-                : c.status;
-            return (
-              <RsMobileCard
-                key={c.id}
-                href={`/rentspace/contracts/${c.id}`}
-                title={
-                  <div className="min-w-0">
-                    <div className="inline-flex items-center gap-1.5 flex-wrap">
-                      <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--rs-brand)" }} />
-                      <span className="truncate">{c.contractNo}</span>
-                      {c.editStatus === "pending" && (
-                        <span
-                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                          style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
-                        >
-                          รอแก้ไข
-                        </span>
-                      )}
-                    </div>
-                    <div className="truncate text-[12px] font-normal" style={{ color: "var(--rs-text-3)" }}>
-                      {c.unit.code}
-                      {c.unit.name ? ` · ${c.unit.name}` : ""}
-                    </div>
-                  </div>
-                }
-                titleRight={<RsBadge kind="contract" status={showStatus} />}
-              >
-                <RsField label="ผู้เช่า" value={tenantDisplayName(c.tenant)} />
-                <RsField label="ค่าเช่า/เดือน" value={formatBaht(toNum(c.rentAmountThb))} align="right" />
-                <RsField
-                  label="ระยะสัญญา"
-                  value={`${thaiDateLong(c.startDate)}${c.endDate ? ` – ${thaiDateLong(c.endDate)}` : " – ไม่มีกำหนด"}`}
-                  full
-                />
-                <RsField
-                  label="เซ็นแล้ว"
-                  value={c.tenantSigned ? "✓ เซ็นแล้ว" : "ยังไม่เซ็น"}
-                  tone={c.tenantSigned ? "ok" : "muted"}
-                />
-              </RsMobileCard>
-            );
-          })}
-        </div>
-        </>
+        <ContractsList rows={rows} />
       )}
     </RsPage>
   );

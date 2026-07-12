@@ -13,6 +13,9 @@ type ProjectLike = {
   bankName?: string | null;
   bankAccountNo?: string | null;
   bankAccountHolder?: string | null;
+  address?: string | null;
+  electricRate?: unknown;
+  waterRate?: unknown;
 };
 
 type ContractLike = {
@@ -24,12 +27,61 @@ type ContractLike = {
   endDate?: Date | string | null;
   /** "ทำ ณ วันที่" — ถ้ามีจะใช้แทนวันนี้ในตัวแปร {{today}} (รองรับสัญญาย้อนหลัง) */
   madeOn?: Date | string | null;
+  contractNo?: string | null;
+  vatPercent?: unknown;
+  electricRate?: unknown;
+  waterRate?: unknown;
+  lateFeeType?: string | null;
+  lateFeeValue?: unknown;
+  lateFeeGraceDays?: number | null;
+  promoDiscountThb?: unknown;
   unit: { code: string; name?: string | null };
-  tenant: Parameters<typeof tenantDisplayName>[0];
+  tenant: Parameters<typeof tenantDisplayName>[0] & {
+    idCardNo?: string | null;
+    taxId?: string | null;
+    address?: string | null;
+    phones?: string[] | null;
+  };
   project: ProjectLike;
   template?: { bodyHtml: string } | null;
   customTermsHtml?: string | null;
 };
+
+/** ป้ายค่าปรับล่าช้าแบบสั้น (ใช้ในตัวแปร {{lateFee}}) */
+function lateFeeText(type?: string | null, value?: unknown): string {
+  const v = toNum(value);
+  if (!type || type === "none") return "ไม่คิดค่าปรับ";
+  if (type === "fixed") return `${formatBaht(v)} บาท/ครั้ง`;
+  if (type === "percent_total") return `${v}% ของยอดค้าง`;
+  if (type === "per_day") return `${formatBaht(v)} บาท/วัน`;
+  return "—";
+}
+
+/** รายการตัวแปรที่ใช้ในแม่แบบสัญญาได้ (แหล่งความจริงเดียว — ใช้ทั้งหน้าแม่แบบและ wizard) */
+export const TEMPLATE_VARS: { key: string; label: string }[] = [
+  { key: "tenantName", label: "ชื่อผู้เช่า" },
+  { key: "tenantIdCard", label: "เลขบัตร/ภาษีผู้เช่า" },
+  { key: "tenantAddress", label: "ที่อยู่ผู้เช่า" },
+  { key: "tenantPhone", label: "เบอร์ผู้เช่า" },
+  { key: "unitCode", label: "ห้อง/ยูนิต" },
+  { key: "rentAmount", label: "ค่าเช่า/เดือน" },
+  { key: "depositAmount", label: "เงินประกัน" },
+  { key: "depositMonths", label: "จำนวนเดือนประกัน" },
+  { key: "rentDueDay", label: "วันครบกำหนดชำระ" },
+  { key: "electricRate", label: "ค่าไฟ/หน่วย" },
+  { key: "waterRate", label: "ค่าน้ำ/หน่วย" },
+  { key: "vatPercent", label: "VAT %" },
+  { key: "lateFee", label: "ค่าปรับล่าช้า" },
+  { key: "promoDiscount", label: "ส่วนลด/เดือน" },
+  { key: "startDate", label: "วันเริ่มสัญญา" },
+  { key: "endDate", label: "วันสิ้นสุด" },
+  { key: "contractNo", label: "เลขที่สัญญา" },
+  { key: "projectName", label: "ชื่อโครงการ" },
+  { key: "landlordName", label: "ชื่อผู้ให้เช่า" },
+  { key: "lessorAddress", label: "ที่อยู่ผู้ให้เช่า" },
+  { key: "bankInfo", label: "บัญชีรับชำระ" },
+  { key: "today", label: "วันที่ทำสัญญา" },
+];
 
 /** ข้อสัญญามาตรฐาน: ภาษีที่ดิน/สิ่งปลูกสร้าง + ค่าส่วนกลาง — ใช้ในแม่แบบ/พรีวิว */
 export const LAND_TAX_CLAUSE =
@@ -48,17 +100,31 @@ export function bankInfoLine(p: ProjectLike): string {
 
 export function contractPlaceholders(c: ContractLike): Record<string, string> {
   const depMonths = toNum(c.depositMonths);
+  const elec = toNum(c.electricRate) || toNum(c.project.electricRate);
+  const water = toNum(c.waterRate) || toNum(c.project.waterRate);
+  const vat = toNum(c.vatPercent);
+  const promo = toNum(c.promoDiscountThb);
   return {
     tenantName: tenantDisplayName(c.tenant),
+    tenantIdCard: maskIdCard(c.tenant.idCardNo ?? c.tenant.taxId) ?? "—",
+    tenantAddress: c.tenant.address ?? "—",
+    tenantPhone: c.tenant.phones?.[0] ?? "—",
     unitCode: c.unit.name ? `${c.unit.code} (${c.unit.name})` : c.unit.code,
     rentAmount: formatBaht(toNum(c.rentAmountThb)),
-    startDate: thaiDateLong(c.startDate),
-    endDate: c.endDate ? thaiDateLong(c.endDate) : "ไม่มีกำหนด",
     depositAmount: formatBaht(toNum(c.depositAmountThb)),
     depositMonths: depMonths > 0 ? `${depMonths}` : "—",
     rentDueDay: c.rentDueDay != null ? `${c.rentDueDay}` : "—",
+    electricRate: elec > 0 ? formatBaht(elec) : "—",
+    waterRate: water > 0 ? formatBaht(water) : "—",
+    vatPercent: vat > 0 ? `${vat}` : "0",
+    lateFee: lateFeeText(c.lateFeeType, c.lateFeeValue),
+    promoDiscount: promo > 0 ? formatBaht(promo) : "—",
+    startDate: thaiDateLong(c.startDate),
+    endDate: c.endDate ? thaiDateLong(c.endDate) : "ไม่มีกำหนด",
+    contractNo: c.contractNo ?? "—",
     projectName: c.project.name,
     landlordName: c.project.billCompanyName?.trim() || c.project.name,
+    lessorAddress: c.project.address ?? "—",
     bankInfo: bankInfoLine(c.project),
     today: thaiDateLong(c.madeOn ?? new Date()),
   };

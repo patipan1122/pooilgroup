@@ -11,6 +11,7 @@ import {
   contractPlaceholders,
   fillPlaceholders,
   bankInfoLine,
+  TEMPLATE_VARS,
   type ContractDocData,
 } from "@/lib/rentspace/contract-doc";
 import { periodLabel } from "@/lib/rentspace/format";
@@ -318,6 +319,12 @@ export function ContractForm({
           startDate: startDate || today,
           endDate: endDate || null,
           madeOn: contractDate || today,
+          vatPercent: num(vatPercent),
+          electricRate: electricRate ? num(electricRate) : undefined,
+          waterRate: waterRate ? num(waterRate) : undefined,
+          lateFeeType,
+          lateFeeValue: num(lateFeeValue),
+          promoDiscountThb: promoPerMonth,
           unit: { code: selectedUnit?.code ?? "—", name: selectedUnit?.name ?? null },
           tenant: { bizName: previewTenantName || "ผู้เช่า" } as never,
           project,
@@ -957,12 +964,16 @@ export function ContractForm({
                       ))}
                     </select>
                   </Field>
-                  {/* CEO 2026-07-12: โชว์แม่แบบที่สัญญานี้ใช้อยู่ให้ชัด (เลือกไว้ให้แล้วในช่องด้านบน) */}
-                  {isEdit && templateId && (
+                  {/* CEO 2026-07-12: โชว์แม่แบบที่สัญญานี้ใช้อยู่ให้ชัด · ครอบกรณีเนื้อกำหนดเอง (ไม่ผูกแม่แบบ) */}
+                  {isEdit && templateId ? (
                     <p className="text-[11.5px] -mt-1.5" style={{ color: "var(--rs-brand)" }}>
                       ● แม่แบบที่สัญญานี้ใช้อยู่: <b>{templates.find((t) => t.id === templateId)?.name ?? "—"}</b>
                     </p>
-                  )}
+                  ) : isEdit && customTermsHtml.trim() ? (
+                    <p className="text-[11.5px] -mt-1.5" style={{ color: "var(--rs-text-2)" }}>
+                      ● สัญญานี้ใช้ <b>เนื้อสัญญากำหนดเอง</b> (ไม่ได้ผูกกับแม่แบบ) — แก้ในช่องด้านล่างได้
+                    </p>
+                  ) : null}
                   <Field label="เนื้อหาสัญญา (แก้ไขได้ · ใช้ {{tenantName}} {{rentAmount}} ฯลฯ เป็นตัวแปร)">
                     <textarea
                       className="rs-input min-h-[120px] font-mono"
@@ -971,9 +982,21 @@ export function ContractForm({
                       placeholder="เว้นว่าง = ใช้เนื้อสัญญามาตรฐาน · พิมพ์/วาง HTML หรือข้อความเพื่อกำหนดเอง"
                     />
                   </Field>
-                  <p className="text-[11.5px] -mt-2" style={{ color: "var(--rs-text-3)" }}>
-                    ตัวแปรที่ใช้ได้: {"{{tenantName}} {{unitCode}} {{rentAmount}} {{depositAmount}} {{depositMonths}} {{rentDueDay}} {{startDate}} {{endDate}} {{landlordName}} {{bankInfo}} {{today}}"}
-                  </p>
+                  <div className="-mt-2 flex flex-wrap gap-1 items-center">
+                    <span className="text-[11.5px] mr-0.5" style={{ color: "var(--rs-text-3)" }}>แทรกตัวแปร (กดเพื่อเติม):</span>
+                    {TEMPLATE_VARS.map((v) => (
+                      <button
+                        key={v.key}
+                        type="button"
+                        onClick={() => setCustomTermsHtml((b) => `${b}{{${v.key}}}`)}
+                        className="text-[10.5px] px-1.5 py-0.5 rounded font-mono"
+                        style={{ background: "var(--rs-bg-2)", color: "var(--rs-brand)", border: "1px solid var(--rs-border)" }}
+                        title={v.label}
+                      >
+                        {`{{${v.key}}}`}
+                      </button>
+                    ))}
+                  </div>
 
                   <Field label="หมายเหตุ">
                     <textarea className="rs-input min-h-[64px]" value={note} onChange={(e) => setNote(e.target.value)} />

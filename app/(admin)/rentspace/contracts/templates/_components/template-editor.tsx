@@ -3,21 +3,36 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, X, Trash2, FileText } from "lucide-react";
+import { Plus, X, Trash2, FileText, Eye } from "lucide-react";
 import { actSaveTemplate, actDeleteTemplate } from "../../../_actions";
+import { TEMPLATE_VARS, contractPlaceholders, fillPlaceholders } from "@/lib/rentspace/contract-doc";
 
 type Template = { id: string; name: string; bodyHtml: string; isDefault: boolean };
 
-const PLACEHOLDERS = [
-  ["{{tenantName}}", "ชื่อผู้เช่า"],
-  ["{{unitCode}}", "ห้อง/ยูนิต"],
-  ["{{rentAmount}}", "ค่าเช่า"],
-  ["{{startDate}}", "วันเริ่ม"],
-  ["{{endDate}}", "วันสิ้นสุด"],
-  ["{{depositAmount}}", "เงินประกัน"],
-  ["{{projectName}}", "ชื่อโครงการ"],
-  ["{{today}}", "วันที่วันนี้"],
-];
+// ค่าตัวอย่างสำหรับพรีวิวแม่แบบ (เติมตัวแปรจริงให้เห็นหน้าตาก่อนบันทึก)
+const SAMPLE_VALUES = contractPlaceholders({
+  rentAmountThb: 12000,
+  depositAmountThb: 24000,
+  depositMonths: 2,
+  rentDueDay: 5,
+  startDate: "2026-01-01",
+  endDate: "2026-12-31",
+  contractNo: "CT2026-0001",
+  vatPercent: 0,
+  electricRate: 8,
+  waterRate: 18,
+  lateFeeType: "fixed",
+  lateFeeValue: 500,
+  promoDiscountThb: 0,
+  unit: { code: "A101", name: "ร้านตัวอย่าง" },
+  tenant: {
+    bizName: "บริษัท ตัวอย่าง จำกัด",
+    idCardNo: "1234567890123",
+    address: "123 ถนนตัวอย่าง ต.ในเมือง อ.เมือง",
+    phones: ["081-234-5678"],
+  } as never,
+  project: { name: "โครงการตัวอย่าง", address: "456 ถนนโครงการ", electricRate: 8, waterRate: 18 },
+});
 
 export const DEFAULT_TEMPLATE_HTML = `<h2 style="text-align:center">สัญญาเช่าพื้นที่ / ห้องเช่าเพื่อการพาณิชย์</h2>
 <p style="text-align:right">ทำที่ {{projectName}}<br/>วันที่ {{today}}</p>
@@ -32,7 +47,7 @@ export const DEFAULT_TEMPLATE_HTML = `<h2 style="text-align:center">สัญญ
 
 <p><b>ข้อ 4. เงินประกัน</b><br/>ผู้เช่าวางเงินประกันจำนวน <b>{{depositAmount}}</b> ให้แก่ผู้ให้เช่าในวันทำสัญญา เพื่อเป็นหลักประกันการปฏิบัติตามสัญญา ผู้ให้เช่าจะคืนเงินประกันเมื่อสิ้นสุดสัญญาและผู้เช่าส่งมอบพื้นที่คืนในสภาพเรียบร้อย หักด้วยค่าเสียหาย/ค่าใช้จ่ายค้างชำระ (ถ้ามี)</p>
 
-<p><b>ข้อ 5. ค่าน้ำ ค่าไฟ และค่าใช้จ่ายอื่น</b><br/>ผู้เช่าเป็นผู้รับผิดชอบค่าน้ำประปา ค่าไฟฟ้า และค่าใช้จ่ายส่วนกลางตามที่เกิดขึ้นจริงในแต่ละเดือน</p>
+<p><b>ข้อ 5. ค่าน้ำ ค่าไฟ และค่าใช้จ่ายอื่น</b><br/>ผู้เช่าเป็นผู้รับผิดชอบค่าน้ำประปา (หน่วยละ {{waterRate}} บาท) ค่าไฟฟ้า (หน่วยละ {{electricRate}} บาท) และค่าใช้จ่ายส่วนกลางตามที่เกิดขึ้นจริงในแต่ละเดือน</p>
 
 <p><b>ข้อ 6. การบำรุงรักษา</b><br/>ผู้เช่าจะดูแลรักษาพื้นที่เช่าให้อยู่ในสภาพดี และไม่ดัดแปลง ต่อเติม โดยไม่ได้รับความยินยอมเป็นลายลักษณ์อักษรจากผู้ให้เช่า</p>
 
@@ -55,6 +70,7 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
   const [name, setName] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [isDefault, setIsDefault] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   function openNew() {
     setEditing("new");
@@ -182,34 +198,55 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
                 style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)", color: "var(--rs-text-2)" }}
               >
                 <div className="font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
-                  ตัวแปรที่ใช้ได้ (คลิกเพื่อแทรก):
+                  ตัวแปรที่ใช้ได้ (คลิกเพื่อแทรก) — ระบบเติมค่าจริงให้ตอนออกสัญญา:
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {PLACEHOLDERS.map(([ph, label]) => (
+                  {TEMPLATE_VARS.map((v) => (
                     <button
-                      key={ph}
+                      key={v.key}
                       type="button"
-                      onClick={() => setBodyHtml((b) => `${b}${ph}`)}
+                      onClick={() => setBodyHtml((b) => `${b}{{${v.key}}}`)}
                       className="rs-chip"
-                      title={label}
+                      title={v.label}
                     >
-                      {ph}
+                      {`{{${v.key}}}`}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
-                  เนื้อหาสัญญา (รองรับ HTML)
-                </label>
-                <textarea
-                  className="rs-t-input font-mono min-h-[320px]"
-                  value={bodyHtml}
-                  onChange={(e) => setBodyHtml(e.target.value)}
-                  placeholder={DEFAULT_TEMPLATE_HTML}
-                />
-                {!bodyHtml.trim() && (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[13px] font-semibold" style={{ color: "var(--rs-text)" }}>
+                    เนื้อหาสัญญา (รองรับ HTML)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview((v) => !v)}
+                    className="inline-flex items-center gap-1 text-[12.5px] font-semibold"
+                    style={{ color: "var(--rs-brand)" }}
+                  >
+                    <Eye className="h-4 w-4" /> {showPreview ? "ซ่อนตัวอย่าง" : "ดูตัวอย่าง"}
+                  </button>
+                </div>
+                {showPreview ? (
+                  <div
+                    className="rounded-lg p-4 min-h-[320px] max-h-[420px] overflow-y-auto text-[13px] leading-relaxed"
+                    style={{ border: "1px solid var(--rs-border)", background: "#fff", color: "#111" }}
+                    // พรีวิวเนื้อแม่แบบที่ผู้ดูแลเขียนเอง + เติมค่าตัวอย่าง (ไม่ใช่ user input ทั่วไป)
+                    dangerouslySetInnerHTML={{
+                      __html: fillPlaceholders(bodyHtml.trim() || DEFAULT_TEMPLATE_HTML, SAMPLE_VALUES),
+                    }}
+                  />
+                ) : (
+                  <textarea
+                    className="rs-t-input font-mono min-h-[320px]"
+                    value={bodyHtml}
+                    onChange={(e) => setBodyHtml(e.target.value)}
+                    placeholder={DEFAULT_TEMPLATE_HTML}
+                  />
+                )}
+                {!showPreview && !bodyHtml.trim() && (
                   <button
                     type="button"
                     className="mt-1.5 text-[12.5px] font-medium"
@@ -219,6 +256,9 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
                     ใช้แม่แบบมาตรฐาน (ภาษาไทย) เป็นจุดเริ่มต้น
                   </button>
                 )}
+                <p className="mt-1.5 text-[11px]" style={{ color: "var(--rs-text-3)" }}>
+                  ตัวอย่างใช้ข้อมูลสมมติ (ค่าเช่า 12,000 · ค่าไฟ 8 · ค่าน้ำ 18) — ของจริงจะเติมตามสัญญาแต่ละใบ
+                </p>
               </div>
 
               <label className="flex items-center gap-2 text-[13.5px]" style={{ color: "var(--rs-text)" }}>
