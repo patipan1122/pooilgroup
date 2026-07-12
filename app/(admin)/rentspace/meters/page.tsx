@@ -109,7 +109,9 @@ export default async function MetersPage({
       select: { unitId: true, kind: true, usage: true },
     }),
     prisma.rentalMeterReading.findMany({
-      where: { orgId, unitId: { in: ids }, period: { lt: period }, currReading: { not: null } },
+      // currReading เป็นคอลัมน์ non-nullable (default 0) → กรอง { not: null } ไม่ได้
+      // (Prisma 7 โยน ValidationError ทำหน้าล่มทั้งหน้า) และไม่มีความหมายเพราะไม่มีแถวว่าง
+      where: { orgId, unitId: { in: ids }, period: { lt: period } },
       orderBy: [{ unitId: "asc" }, { kind: "asc" }, { period: "desc" }],
       distinct: ["unitId", "kind"],
       select: { unitId: true, kind: true, currReading: true },
