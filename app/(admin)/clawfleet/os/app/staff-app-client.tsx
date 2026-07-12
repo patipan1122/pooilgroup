@@ -24,7 +24,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, ImageDown, History } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
@@ -37,6 +37,7 @@ import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
+import type { CfReceivedDoc } from "@/lib/clawfleet/stock-queries";
 // bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
 import { BaselineForm } from "@/components/clawfleet/BaselineForm";
 import { MismatchGate } from "@/components/clawfleet/MismatchGate";
@@ -69,7 +70,8 @@ export type InboundDelivery = {
   //   ปุ่มกดรับ route ไป confirmShipmentReceived. "dc_transfer" เท่านั้นที่ route ไป confirmTransfer.
   source?: InboundSource;
   transferId?: string; // มีเฉพาะ source="dc_transfer" (ใบโอนจากคลังกลาง DC)
-  lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number }>;
+  // F1 · imageUrl ต่อบรรทัด (รูปสินค้า · URL เต็ม/null) → thumbnail บนการ์ดรับ
+  lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number; imageUrl?: string | null }>;
 };
 // WAVE-3b · คลัง (ห้องเก็บ) ของสาขา ที่ยัง active — ขับ picker เติม (R4) + นับสต๊อก (N3).
 // picker โชว์เฉพาะเมื่อสาขามี >1 ห้อง (single-warehouse = ไม่มี picker · default คลังหลักเหมือนเดิม).
@@ -568,6 +570,10 @@ type Props = {
   branchProducts?: Record<string, BranchStockProduct[]>;
   // N6 · ใบกระจายขาเข้าที่ยังไม่รับ แยกตาม branchId (หน้ารับสินค้า). optional default {}.
   inboundByBranch?: Record<string, InboundDelivery[]>;
+  // F1 · ยอด "คลังตอนนี้" ต่อสินค้า แยกตาม branchId (productId → คงคลังสาขา) — โชว์ "คลังตอนนี้ N → หลังรับ N+x". optional default {}.
+  onHandByBranch?: Record<string, Record<string, number>>;
+  // F2 · ประวัติ "รับแล้ว" แยกตาม branchId (จาก ledger · READ-ONLY) — แท็บ "รับแล้ว" ในหน้ารับสินค้า. optional default {}.
+  receivedByBranch?: Record<string, CfReceivedDoc[]>;
   // WAVE-3b · คลัง (ห้องเก็บ) active แยกตาม branchId — picker เติม (R4) + นับสต๊อก (N3).
   // สาขาที่มี >1 ห้อง → โชว์ picker · ≤1 ห้อง → ไม่โชว์ (default คลังหลัก). optional default {}.
   warehousesByBranch?: Record<string, BranchWarehouse[]>;
@@ -586,7 +592,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -601,10 +607,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
 
   return (
@@ -688,6 +694,9 @@ type StaffAppProps = {
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · คลัง active แยกตาม branchId (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, BranchWarehouse[]>;
+  // F1 · คลังตอนนี้ต่อสินค้า แยกตาม branchId · F2 · ประวัติรับแล้ว แยกตาม branchId
+  onHandByBranch: Record<string, Record<string, number>>;
+  receivedByBranch: Record<string, CfReceivedDoc[]>;
   // 🆕 ตุ๊กตาในตู้ตอนนี้ (แยกตาม machineId) + ของว่างในคลังต่อสินค้า (แยกตาม branchId) — sheet คืนตุ๊กตา
   inMachineByMachine: Record<string, InMachineDoll[]>;
   netAvailableByBranch: Record<string, Record<string, number>>;
@@ -696,7 +705,7 @@ type StaffAppProps = {
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -1342,6 +1351,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           branchProducts={branchProducts}
           inboundByBranch={inboundByBranch}
           warehousesByBranch={warehousesByBranch}
+          onHandByBranch={onHandByBranch}
+          receivedByBranch={receivedByBranch}
         />
       ) : (
         <FlowScreen
@@ -1456,6 +1467,9 @@ function HomeScreen(props: {
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · N3 · คลัง active แยกตาม branchId (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, BranchWarehouse[]>;
+  // F1 · คลังตอนนี้ต่อสินค้า · F2 · ประวัติรับแล้ว — แยกตาม branchId
+  onHandByBranch: Record<string, Record<string, number>>;
+  receivedByBranch: Record<string, CfReceivedDoc[]>;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
@@ -1464,6 +1478,9 @@ function HomeScreen(props: {
   const stockProducts = props.branchProducts[primaryBranchId] ?? [];
   const stockWarehouses = props.warehousesByBranch[primaryBranchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
   const inboundDeliveries = props.inboundByBranch[primaryBranchId] ?? [];
+  // F1 · คลังตอนนี้ต่อสินค้าของสาขานี้ · F2 · ประวัติรับแล้วของสาขานี้ (ส่งเข้าหน้ารับสินค้า)
+  const onHandByProduct = props.onHandByBranch[primaryBranchId] ?? {};
+  const receivedDocs = props.receivedByBranch[primaryBranchId] ?? [];
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
@@ -1665,7 +1682,7 @@ function HomeScreen(props: {
           )}
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} />
+        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} />
       )}
     </div>
   );
@@ -1689,6 +1706,9 @@ function PanelScreen(props: {
   branchId: string; branchCode: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
   // WAVE-3b · N3 · คลัง active ของสาขานี้ (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
   stockWarehouses: BranchWarehouse[];
+  // F1 · คลังตอนนี้ต่อสินค้า (การ์ดรับ "N → N+รับ") · F2 · ประวัติรับแล้ว (แท็บ "รับแล้ว")
+  onHandByProduct: Record<string, number>;
+  receivedDocs: CfReceivedDoc[];
 }) {
   const { panel, onBack } = props;
   return (
@@ -1702,7 +1722,7 @@ function PanelScreen(props: {
       {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} />}
       {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
       {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} />}
-      {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} />}
+      {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
       {panel === "config" && <ConfigPanel />}
       {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
     </div>
@@ -2176,37 +2196,132 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
 }
 
 /* ─────────────────── N6 · รับสินค้ามือถือ (ใบกระจายขาเข้า → confirmShipmentReceived) ─────────────────── */
-function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries }: {
+function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries, onHandByProduct, receivedDocs }: {
   orgId: string; usingDemo: boolean; branchCode: string; deliveries: InboundDelivery[];
+  onHandByProduct: Record<string, number>; // F1 · คลังตอนนี้ต่อสินค้า
+  receivedDocs: CfReceivedDoc[]; // F2 · ประวัติรับแล้ว
 }) {
-  if (usingDemo || deliveries.length === 0) {
-    return (
-      <div>
-        {usingDemo
-          ? <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รับสินค้าจริงได้เมื่อมีใบกระจายเข้าสาขา" />
-          : (
-            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
-              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีสินค้ารอรับ" sub="เมื่อมีใบกระจายส่งเข้าสาขา รายการจะขึ้นที่นี่" />
-            </div>
-          )}
-      </div>
-    );
+  // F2 · แท็บ "รอรับ" | "รับแล้ว" — default = รอรับ (งานที่ต้องทำก่อน)
+  const [tab, setTab] = useState<"pending" | "received">("pending");
+
+  if (usingDemo) {
+    return <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รับสินค้าจริงได้เมื่อมีใบกระจายเข้าสาขา" />;
   }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
-        ตรวจของที่ส่งมา ปรับจำนวนที่รับจริง แล้วกดรับสินค้า (ถ่ายรูปเป็นหลักฐานได้)
+      {/* segment control — รอรับ (N) | รับแล้ว (N) */}
+      <div style={{ display: "flex", gap: 6, background: "#F1F2F5", padding: 4, borderRadius: 12 }}>
+        <SegmentBtn active={tab === "pending"} onClick={() => setTab("pending")} label={`รอรับ (${deliveries.length})`} />
+        <SegmentBtn active={tab === "received"} onClick={() => setTab("received")} label={`รับแล้ว (${receivedDocs.length})`} />
       </div>
-      {deliveries.map((d) => (
-        <DeliveryReceiveCard key={d.id} orgId={orgId} branchCode={branchCode} delivery={d} />
-      ))}
+
+      {tab === "pending" ? (
+        deliveries.length === 0 ? (
+          <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+            <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีสินค้ารอรับ" sub="เมื่อมีใบกระจายส่งเข้าสาขา รายการจะขึ้นที่นี่" />
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
+              ตรวจของที่ส่งมา ปรับจำนวนที่รับจริง แล้วกดรับสินค้า (ถ่ายรูปเป็นหลักฐานได้)
+            </div>
+            {deliveries.map((d) => (
+              <DeliveryReceiveCard key={d.id} orgId={orgId} branchCode={branchCode} delivery={d} onHandByProduct={onHandByProduct} />
+            ))}
+          </>
+        )
+      ) : receivedDocs.length === 0 ? (
+        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+          <EmptyState icon={<History size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติการรับ" sub="ใบที่รับเข้าคลังแล้วจะเก็บไว้ที่นี่ (ไม่หาย)" />
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
+            ใบที่รับเข้าคลังแล้ว · กด &ldquo;ดูใบรับ&rdquo; เพื่อดาวน์โหลดเป็นรูป (ส่งลงไลน์ได้)
+          </div>
+          {receivedDocs.map((doc) => (
+            <ReceivedHistoryCard key={`${doc.source}-${doc.id}`} doc={doc} />
+          ))}
+        </>
+      )}
     </div>
   );
 }
 
+// ปุ่ม segment (รอรับ/รับแล้ว) — active = พื้นขาว ยกตัว · inactive = โปร่ง
+function SegmentBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        flex: 1, minHeight: 38, borderRadius: 9, border: "none", cursor: "pointer",
+        fontSize: 12.5, fontWeight: 700,
+        background: active ? "#fff" : "transparent",
+        color: active ? "#1A1D21" : "#7A828C",
+        boxShadow: active ? "0 1px 3px rgba(16,24,40,0.10)" : "none",
+      }}>
+      {label}
+    </button>
+  );
+}
+
+// F2 · การ์ดประวัติ "รับแล้ว" 1 ใบ — code/วันที่/ผู้รับ + thumbnail รายการ + ปุ่มดาวน์โหลดใบรับ (Feature 3)
+function ReceivedHistoryCard({ doc }: { doc: CfReceivedDoc }) {
+  const when = doc.receivedAt.toLocaleDateString("th-TH", {
+    day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok",
+  });
+  // Feature 3 · route ดาวน์โหลดใบรับเป็นรูป PNG (attachment) — ผูกกับ refId ของเอกสารต้นทาง
+  const imageHref = `/clawfleet/os/app/receipt/${doc.id}/image`;
+  return (
+    <div className="co-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 11 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>{doc.code}</span>
+        <span style={{ flex: 1 }} />
+        <span className="co-pill" style={{ background: "#E7F4EC", color: "#15803D" }}>รับแล้ว {doc.unitsCount} ชิ้น</span>
+      </div>
+      <div style={{ fontSize: 11, color: "#8A909A", display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+        <span>{when}</span>
+        {doc.receivedByName ? <span>· ผู้รับ {doc.receivedByName}</span> : null}
+        <span>· {doc.source === "dc_transfer" ? "โอนจากคลังกลาง" : "ใบกระจาย"}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {doc.lines.map((l, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ProductThumb imageUrl={l.imageUrl} />
+            <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</div>
+            <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{l.qty} ชิ้น</span>
+          </div>
+        ))}
+      </div>
+      {/* Feature 3 · ดาวน์โหลดใบรับเป็นรูป (route ตั้ง Content-Disposition: attachment) */}
+      <a href={imageHref} download
+        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 44, fontSize: 13, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 11, textDecoration: "none", cursor: "pointer" }}>
+        <ImageDown size={16} /> ดูใบรับ / ดาวน์โหลด
+      </a>
+    </div>
+  );
+}
+
+// รูปสินค้า thumbnail (มือถือ) — มีรูป = <img> · ไม่มี = กล่อง placeholder (ไอคอนกล่อง)
+function ProductThumb({ imageUrl, size = 38 }: { imageUrl?: string | null; size?: number }) {
+  if (imageUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={imageUrl} alt="" style={{ width: size, height: size, flex: `0 0 ${size}px`, objectFit: "cover", borderRadius: 9, border: "1px solid #E7EAF0", background: "#F6F7F9" }} />
+    );
+  }
+  return (
+    <span style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: 9, border: "1px solid #E7EAF0", background: "#F6F7F9", display: "flex", alignItems: "center", justifyContent: "center", color: "#C2C7D0" }}>
+      <PackageOpen size={size * 0.5} strokeWidth={1.6} />
+    </span>
+  );
+}
+
 // การ์ด 1 ใบกระจาย — per-line stepper รับจริง + รูป → confirmShipmentReceived (atomic-claim ที่ server)
-function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
+//   F1 · โชว์ thumbnail สินค้า + "คลังตอนนี้ N → หลังรับ N+รับ" (display only · server ledger คือ source จริง)
+function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
   orgId: string; branchCode: string; delivery: InboundDelivery;
+  onHandByProduct: Record<string, number>;
 }) {
   // จำนวนที่รับจริงต่อบรรทัด — เริ่มด้วยค่าที่ระบุมา (qty) เป็นค่า default (รับครบ) · ปรับลงได้
   const [received, setReceived] = useState<Record<string, number>>(() =>
@@ -2286,19 +2401,31 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery }: {
         <span className="co-pill" style={{ background: "#F1F2F7", color: "#5A6270" }}>{delivery.status === "IN_TRANSIT" ? "กำลังส่ง" : "นัดส่ง"}</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {delivery.lines.map((l) => (
-          <div key={l.lineId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</div>
-              <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ส่งมา <span className="num">{l.qty}</span> ชิ้น</div>
+        {delivery.lines.map((l) => {
+          const rcv = received[l.lineId] ?? 0;
+          // F1 · คลังตอนนี้ต่อสินค้า (จาก server ledger) → "คลังตอนนี้ N → หลังรับ N+รับ" (display · เลขจริง = ที่ server คิด)
+          const onHand = onHandByProduct[l.productId];
+          const hasOnHand = typeof onHand === "number";
+          return (
+            <div key={l.lineId} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <ProductThumb imageUrl={l.imageUrl} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</div>
+                <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ส่งมา <span className="num">{l.qty}</span> ชิ้น</div>
+                {hasOnHand ? (
+                  <div style={{ fontSize: 10.5, color: "#4F46E5", marginTop: 1 }}>
+                    คลังตอนนี้ <span className="num">{onHand}</span> → หลังรับ <span className="num">{onHand + rcv}</span>
+                  </div>
+                ) : null}
+              </div>
+              <button type="button" aria-label="ลด" onClick={() => step(l.lineId, -1, l.qty)} disabled={rcv <= 0}
+                style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
+              <span className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{rcv}</span>
+              <button type="button" aria-label="เพิ่ม" onClick={() => step(l.lineId, 1, l.qty)}
+                style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "none", background: "#4F46E5", color: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
             </div>
-            <button type="button" aria-label="ลด" onClick={() => step(l.lineId, -1, l.qty)} disabled={(received[l.lineId] ?? 0) <= 0}
-              style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
-            <span className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{received[l.lineId] ?? 0}</span>
-            <button type="button" aria-label="เพิ่ม" onClick={() => step(l.lineId, 1, l.qty)}
-              style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, border: "none", background: "#4F46E5", color: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <PhotoCaptureButton label={photo ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปตอนรับ (ถ่ายได้-ข้ามได้)"}
         value={photo} onChange={setPhoto} orgId={orgId} machineCode={branchCode}

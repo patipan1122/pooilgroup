@@ -10,7 +10,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
+import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, type CfReceivedDoc } from "@/lib/clawfleet/stock-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -208,7 +208,8 @@ export default async function StaffAppPage({
   const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
 
   // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker · WAVE-3b คลัง)
-  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch } = await loadBigfeatureData(orgId, routeBranches);
+  //   + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว)
+  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
   // 🆕 คืนตุ๊กตาเข้าคลัง (return-dolls) — ต่อตู้: ตุ๊กตาที่ "อยู่ในตู้ตอนนี้" (ราย SKU + รูป + จำนวน)
   //   + ต่อสาขา: "ของว่างในคลัง" ต่อสินค้า (คลัง − ในตู้) เพื่อโชว์ยอดคลังเพิ่มขึ้นหลังคืน.
@@ -231,6 +232,8 @@ export default async function StaffAppPage({
       branchProducts={branchProducts}
       inboundByBranch={inboundByBranch}
       warehousesByBranch={warehousesByBranch}
+      onHandByBranch={onHandByBranch}
+      receivedByBranch={receivedByBranch}
       inMachineByMachine={inMachineByMachine}
       netAvailableByBranch={netAvailableByBranch}
     />
@@ -361,14 +364,22 @@ async function loadBigfeatureData(
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · คลัง active ต่อสาขา (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>>;
+  // F1 · ยอด "คลังตอนนี้" ต่อสินค้า ต่อสาขา (productId → คงคลังสาขา) — โชว์ "คลังตอนนี้ N → หลังรับ N+x"
+  //   derive จาก branchProducts (warehouse = คงคลังสาขา · ไม่ต้อง query ซ้ำ) — เลขจาก server ledger.
+  onHandByBranch: Record<string, Record<string, number>>;
+  // F2 · ประวัติ "รับแล้ว" ต่อสาขา (จาก ledger · READ-ONLY)
+  receivedByBranch: Record<string, CfReceivedDoc[]>;
 }> {
   const branchIds = branches.map((b) => b.id);
   let awaitingSetupIds: string[] = [];
   const branchProducts: Record<string, BranchStockProduct[]> = {};
   const inboundByBranch: Record<string, InboundDelivery[]> = {};
   const warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>> = {};
+  const onHandByBranch: Record<string, Record<string, number>> = {};
+  const receivedByBranch: Record<string, CfReceivedDoc[]> = {};
 
-  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
+  if (!orgId || branchIds.length === 0)
+    return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
 
   try {
     const awaiting = await getAwaitingSetupMachines();
@@ -387,8 +398,18 @@ async function loadBigfeatureData(
           imageUrl: p.imageUrl,
           warehouse: p.warehouse,
         }));
+        // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
+        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));
       } catch {
         branchProducts[bid] = [];
+        onHandByBranch[bid] = {};
+      }
+      try {
+        // F2 · ประวัติ "รับแล้ว" ล่าสุดของสาขา (จาก movement ledger · READ-ONLY · scope orgId+branchId)
+        receivedByBranch[bid] = await getReceivedHistory(orgId, bid, 50);
+      } catch {
+        // graceful: ยังไม่ migrate / query ล้ม → ประวัติว่าง (แท็บ "รับแล้ว" โชว์ empty)
+        receivedByBranch[bid] = [];
       }
       try {
         // WAVE-3b · คลัง active ของสาขา (main มาก่อน · getCfWarehousesForBranch sort isMain desc แล้ว)
@@ -426,6 +447,7 @@ async function loadBigfeatureData(
             productName: l.productName,
             qty: l.qty,
             receivedQty: l.receivedQty,
+            imageUrl: l.imageUrl, // F1 · รูปสินค้า → thumbnail บนการ์ดรับ
           })),
         }));
       } catch {
@@ -434,5 +456,5 @@ async function loadBigfeatureData(
     }),
   );
 
-  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
+  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
 }

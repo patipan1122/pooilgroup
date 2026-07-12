@@ -438,8 +438,19 @@ export type CfInboundDeliveryRow = {
     productName: string;
     qty: number;
     receivedQty: number;
+    // รูปสินค้า (CfProduct.imageUrl · URL เต็ม) — โชว์ thumbnail บนการ์ดรับสินค้า · null = ไม่มีรูป
+    imageUrl: string | null;
   }>;
 };
+
+// รูปสินค้าจาก R2 key (หรือ URL เต็ม) → URL เต็ม · null = ไม่มีรูป (pattern เดียวกับ lib/dc/doc-data.ts)
+//   ใช้กับ DcProduct.imageR2Path (ใบโอน DC ที่ยังไม่รับ · ยังไม่มี CfProduct). CfProduct.imageUrl เป็น URL เต็มอยู่แล้ว.
+function toCfImageUrl(key: string | null | undefined): string | null {
+  if (!key) return null;
+  if (/^https?:\/\//.test(key)) return key;
+  const base = process.env.R2_PUBLIC_URL ?? "";
+  return base ? `${base}/${key}` : null;
+}
 
 /** ใบกระจายขาเข้าของสาขา (ยังไม่รับ · IN_TRANSIT/SCHEDULED) — พร้อมรายการต่อบรรทัด (source=cf_delivery) */
 export async function getInboundDeliveries(branchId: string): Promise<CfInboundDeliveryRow[]> {
@@ -459,6 +470,19 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
       },
     },
   });
+
+  // F1 · รูปสินค้าต่อบรรทัด — DeliveryLine เก็บ productId (snapshot ชื่อ) แต่ไม่ join product ตรง ๆ
+  //   → รวม productId ทุกใบแล้ว join CfProduct ครั้งเดียว (efficient · N ใบ = 1 query รูป). ไม่มี = null.
+  const cfProductIds = Array.from(new Set(rows.flatMap((d) => d.lines.map((l) => l.productId))));
+  const cfImgMap = new Map<string, string | null>();
+  if (cfProductIds.length > 0) {
+    const products = await prisma.cfProduct.findMany({
+      where: { id: { in: cfProductIds } },
+      select: { id: true, imageUrl: true },
+    });
+    for (const p of products) cfImgMap.set(p.id, p.imageUrl);
+  }
+
   return rows.map((d) => ({
     id: d.id,
     status: d.status,
@@ -472,6 +496,7 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
       productName: l.productName,
       qty: l.qty,
       receivedQty: l.receivedQty,
+      imageUrl: cfImgMap.get(l.productId) ?? null,
     })),
   }));
 }
@@ -510,7 +535,9 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
           id: true,
           qty: true,
           qtyReceived: true,
-          product: { select: { id: true, name: true } },
+          // F1 · imageR2Path ของสินค้า DC (ปลายทาง) — ยังไม่มี CfProduct จนกว่าจะกดรับ (map ตอน confirm)
+          //   → ใช้รูปของ DcProduct ที่โชว์อยู่แล้ว (แปลง R2 key → URL เต็ม). null = ไม่มีรูป.
+          product: { select: { id: true, name: true, imageR2Path: true } },
         },
       },
     },
@@ -523,6 +550,7 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       productName: l.product.name,
       qty: l.qty,
       receivedQty: l.qtyReceived ?? 0,
+      imageUrl: toCfImageUrl(l.product.imageR2Path),
     }));
     // เรียงตามชื่อสินค้า (mirror cfDelivery lines orderBy productName)
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
@@ -537,6 +565,172 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       lines,
     };
   });
+}
+
+// =============================================================
+// F2 — "ประวัติรับสินค้าเข้าคลัง" (received history) ที่หน้ามือถือ
+//   อ่านจาก LEDGER จริง (cf_stock_movements type RECEIPT_IN/TRANSFER_IN) = source of truth —
+//   ไม่ sum จาก child rows ของเอกสารแม่ (memory feedback-documentary-ledger-sum-events-not-child-rows:
+//   ถ้าเอกสารแม่ commit ไม่ atomic ครึ่งใบจะเพี้ยน · ledger movement เขียนใน tx เดียวกับการรับ = ตรงเสมอ).
+//   collapse ทุก movement ที่ (refTable, refId) เดียวกัน = "1 ใบที่รับแล้ว" · resolve เอกสารต้นทางเพื่อเอา code.
+//   READ-ONLY — ไม่เขียน movement/สต๊อก/ต้นทุนใด ๆ.
+// =============================================================
+export type CfReceivedDocLine = {
+  productName: string;
+  qty: number; // จำนวนที่รับจริง (จาก movement.qty · +)
+  imageUrl: string | null; // CfProduct.imageUrl (URL เต็ม) · null = ไม่มีรูป
+};
+export type CfReceivedDoc = {
+  id: string; // = refId (id เอกสารต้นทาง: cfDelivery.id หรือ dcTransfer.id)
+  source: "cf_delivery" | "dc_transfer";
+  code: string; // deliveryCode/transferCode (ถ้า resolve เอกสารต้นทางไม่ได้ → fallback สั้น)
+  receivedAt: Date; // เวลารับ (movement.occurredAt ล่าสุดในกลุ่ม)
+  receivedById: string | null; // ผู้รับ (movement.createdById)
+  receivedByName: string | null; // ชื่อผู้รับ (resolve จาก User)
+  photoUrls: string[]; // รูปหลักฐานตอนรับ (cf เท่านั้น — แนบบน RECEIPT_IN movement · dc ไม่มี)
+  unitsCount: number; // รวมชิ้นที่รับ (Σ qty)
+  lines: CfReceivedDocLine[];
+};
+
+/**
+ * ประวัติ "รับสินค้าเข้าคลัง" ล่าสุดของสาขา (READ-ONLY · จาก ledger).
+ *   อ่าน CfStockMovement type IN (RECEIPT_IN, TRANSFER_IN) ของสาขา เรียง occurredAt ใหม่→เก่า
+ *   → collapse เป็น "ใบที่รับแล้ว" ต่อ (refTable, refId) · limit = จำนวนใบ (ไม่ใช่จำนวน movement).
+ *   source: refTable 'cf_deliveries' → cf_delivery (code = CfDelivery.??) · 'dc_transfers' → dc_transfer (transferCode).
+ *   ผู้รับ/เวลา: จาก movement (createdById/occurredAt) — CfDelivery ไม่มีคอลัมน์ receivedAt/receivedById.
+ *   scope: orgId + branchId เสมอ (ไม่รั่วข้ามสาขา).
+ */
+export async function getReceivedHistory(
+  orgId: string,
+  branchId: string,
+  limit = 50,
+): Promise<CfReceivedDoc[]> {
+  if (!orgId || !branchId) return [];
+
+  // ดึง movement RECEIPT_IN/TRANSFER_IN ของสาขา (ใหม่→เก่า). ดึงเผื่อหลาย movement/ใบ → cap ที่ limit*40 บรรทัด
+  //   (พอสำหรับ ~limit ใบที่มีสินค้าไม่เกิน 40 ชนิด/ใบ) กัน payload บาน · แล้ว collapse เป็นใบ.
+  const moves = await prisma.cfStockMovement.findMany({
+    where: { orgId, branchId, type: { in: ["RECEIPT_IN", "TRANSFER_IN"] } },
+    orderBy: { occurredAt: "desc" },
+    take: Math.max(limit, 1) * 40,
+    select: {
+      productId: true,
+      qty: true,
+      occurredAt: true,
+      createdById: true,
+      refTable: true,
+      refId: true,
+      photoUrls: true,
+    },
+  });
+  if (moves.length === 0) return [];
+
+  // collapse ตาม (refTable, refId) — 1 กลุ่ม = 1 ใบที่รับแล้ว. movement ที่ไม่มี ref (refId null) ข้าม
+  //   (ประวัติต้องผูกกับเอกสารต้นทางเพื่อออก "ใบรับ" ได้). รักษาลำดับใหม่→เก่าตาม movement แรกที่เจอ.
+  type Group = {
+    refTable: string;
+    refId: string;
+    occurredAt: Date; // ล่าสุดในกลุ่ม
+    createdById: string;
+    photoUrls: string[];
+    // รวม qty ต่อ product (product ซ้ำหลาย movement/ใบ → รวมเป็นบรรทัดเดียว)
+    qtyByProduct: Map<string, number>;
+  };
+  const groups: Group[] = [];
+  const byKey = new Map<string, Group>();
+  for (const m of moves) {
+    if (!m.refId || !m.refTable) continue;
+    const key = `${m.refTable}::${m.refId}`;
+    let g = byKey.get(key);
+    if (!g) {
+      g = {
+        refTable: m.refTable,
+        refId: m.refId,
+        occurredAt: m.occurredAt,
+        createdById: m.createdById,
+        photoUrls: [],
+        qtyByProduct: new Map(),
+      };
+      byKey.set(key, g);
+      groups.push(g);
+    }
+    // occurredAt ล่าสุดของกลุ่ม (moves เรียง desc อยู่แล้ว → ตัวแรกที่เจอคือล่าสุด · คงไว้)
+    if (m.photoUrls.length > 0) g.photoUrls.push(...m.photoUrls);
+    g.qtyByProduct.set(m.productId, (g.qtyByProduct.get(m.productId) ?? 0) + m.qty);
+  }
+
+  // เอาเฉพาะ limit ใบแรก (ใหม่สุด) → แล้วค่อย resolve เอกสาร/ชื่อ/รูป (ประหยัด query)
+  const top = groups.slice(0, limit);
+  if (top.length === 0) return [];
+
+  const cfIds = top.filter((g) => g.refTable === "cf_deliveries").map((g) => g.refId);
+  const dcIds = top.filter((g) => g.refTable === "dc_transfers").map((g) => g.refId);
+  const productIds = Array.from(new Set(top.flatMap((g) => [...g.qtyByProduct.keys()])));
+  const userIds = Array.from(new Set(top.map((g) => g.createdById)));
+
+  const [cfDeliveries, dcTransfers, products, users] = await Promise.all([
+    cfIds.length
+      ? prisma.cfDelivery.findMany({
+          where: { id: { in: cfIds }, orgId, branchId, status: "DELIVERED" },
+          select: { id: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+    dcIds.length
+      ? prisma.dcTransfer.findMany({
+          where: { id: { in: dcIds }, orgId, toBranchId: branchId, status: DcTransferStatus.CONFIRMED },
+          select: { id: true, transferCode: true },
+        })
+      : Promise.resolve([]),
+    productIds.length
+      ? prisma.cfProduct.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, name: true, imageUrl: true },
+        })
+      : Promise.resolve([]),
+    userIds.length
+      ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const cfSet = new Set(cfDeliveries.map((d) => d.id));
+  const dcMap = new Map(dcTransfers.map((t) => [t.id, t.transferCode]));
+  const pMap = new Map(products.map((p) => [p.id, p]));
+  const uMap = new Map(users.map((u) => [u.id, u.name]));
+
+  const out: CfReceivedDoc[] = [];
+  for (const g of top) {
+    const isCf = g.refTable === "cf_deliveries";
+    // resolve เอกสารต้นทาง (สถานะ + scope ถูกต้อง) — ไม่พบ = ข้าม (กันโชว์ใบที่ไม่ตรงสาขา/ถูกลบ/ยังไม่ปิด)
+    if (isCf && !cfSet.has(g.refId)) continue;
+    if (!isCf && !dcMap.has(g.refId)) continue;
+
+    const lines: CfReceivedDocLine[] = [];
+    let unitsCount = 0;
+    for (const [pid, qty] of g.qtyByProduct) {
+      const p = pMap.get(pid);
+      unitsCount += qty;
+      lines.push({
+        productName: p?.name ?? "— สินค้า —",
+        qty,
+        imageUrl: p?.imageUrl ?? null,
+      });
+    }
+    lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
+
+    out.push({
+      id: g.refId,
+      source: isCf ? "cf_delivery" : "dc_transfer",
+      // cf_deliveries ไม่มี "code" คอลัมน์ → ใช้ id ท่อนสั้น · dc_transfers ใช้ transferCode จริง
+      code: isCf ? `รับ-${g.refId.slice(0, 8)}` : dcMap.get(g.refId) ?? `รับ-${g.refId.slice(0, 8)}`,
+      receivedAt: g.occurredAt,
+      receivedById: g.createdById,
+      receivedByName: uMap.get(g.createdById) ?? null,
+      photoUrls: g.photoUrls,
+      unitsCount,
+      lines,
+    });
+  }
+  return out;
 }
 
 // =============================================================

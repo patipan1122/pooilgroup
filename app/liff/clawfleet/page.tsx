@@ -9,7 +9,7 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries, getCfWarehousesForBranch } from "@/lib/clawfleet/stock-queries";
+import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, type CfReceivedDoc } from "@/lib/clawfleet/stock-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -169,7 +169,8 @@ export default async function ClawfleetLiffPage({
   const { branches: routeBranches, hasAssignment } = await filterRouteToMine(orgId, userId, branches);
 
   // 🆕 bigfeature data (N1 baseline · N3 stock-count · N6 goods-receipt · R4 refill picker · WAVE-3b คลัง)
-  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch } = await loadBigfeatureData(orgId, routeBranches);
+  //   + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว)
+  const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
   return (
     <div className="clawos">
@@ -188,6 +189,8 @@ export default async function ClawfleetLiffPage({
         branchProducts={branchProducts}
         inboundByBranch={inboundByBranch}
         warehousesByBranch={warehousesByBranch}
+        onHandByBranch={onHandByBranch}
+        receivedByBranch={receivedByBranch}
       />
     </div>
   );
@@ -195,7 +198,8 @@ export default async function ClawfleetLiffPage({
 
 /**
  * โหลดข้อมูล bigfeature (server-side · org/สาขา-scoped ผ่าน query guard) — เหมือน /clawfleet/os/app.
- *  awaitingSetupIds (N1) · branchProducts (N3/R4) · inboundByBranch (N6).
+ *  awaitingSetupIds (N1) · branchProducts (N3/R4) · inboundByBranch (N6)
+ *  + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว).
  * graceful: query ล้ม/ยังไม่ migrate → คืนค่าว่าง.
  */
 async function loadBigfeatureData(
@@ -207,14 +211,22 @@ async function loadBigfeatureData(
   inboundByBranch: Record<string, InboundDelivery[]>;
   // WAVE-3b · คลัง active ต่อสาขา (picker เติม R4 + นับสต๊อก N3 · โชว์เมื่อ >1 ห้อง)
   warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>>;
+  // F1 · ยอด "คลังตอนนี้" ต่อสินค้า ต่อสาขา (productId → คงคลังสาขา) — โชว์ "คลังตอนนี้ N → หลังรับ N+x"
+  //   derive จาก branchProducts (warehouse = คงคลังสาขา · ไม่ต้อง query ซ้ำ) — เลขจาก server ledger.
+  onHandByBranch: Record<string, Record<string, number>>;
+  // F2 · ประวัติ "รับแล้ว" ต่อสาขา (จาก ledger · READ-ONLY)
+  receivedByBranch: Record<string, CfReceivedDoc[]>;
 }> {
   const branchIds = branches.map((b) => b.id);
   let awaitingSetupIds: string[] = [];
   const branchProducts: Record<string, BranchStockProduct[]> = {};
   const inboundByBranch: Record<string, InboundDelivery[]> = {};
   const warehousesByBranch: Record<string, Array<{ id: string; name: string; isMain: boolean }>> = {};
+  const onHandByBranch: Record<string, Record<string, number>> = {};
+  const receivedByBranch: Record<string, CfReceivedDoc[]> = {};
 
-  if (!orgId || branchIds.length === 0) return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
+  if (!orgId || branchIds.length === 0)
+    return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
 
   try {
     const awaiting = await getAwaitingSetupMachines();
@@ -233,8 +245,18 @@ async function loadBigfeatureData(
           imageUrl: p.imageUrl,
           warehouse: p.warehouse,
         }));
+        // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
+        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));
       } catch {
         branchProducts[bid] = [];
+        onHandByBranch[bid] = {};
+      }
+      try {
+        // F2 · ประวัติ "รับแล้ว" ล่าสุดของสาขา (จาก movement ledger · READ-ONLY · scope orgId+branchId)
+        receivedByBranch[bid] = await getReceivedHistory(orgId, bid, 50);
+      } catch {
+        // graceful: ยังไม่ migrate / query ล้ม → ประวัติว่าง (แท็บ "รับแล้ว" โชว์ empty)
+        receivedByBranch[bid] = [];
       }
       try {
         // WAVE-3b · คลัง active ของสาขา (main มาก่อน · sort ใน query แล้ว). graceful: ยังไม่ migrate → [].
@@ -246,27 +268,32 @@ async function loadBigfeatureData(
         warehousesByBranch[bid] = [];
       }
       try {
-        const inbound = await getInboundDeliveries(bid);
-        const deliveryIds = inbound.map((d) => d.id);
-        const lineRows = deliveryIds.length
-          ? await prisma.cfDeliveryLine.findMany({
-              where: { deliveryId: { in: deliveryIds } },
-              select: { id: true, deliveryId: true, productId: true },
-            })
-          : [];
-        const lineIdMap = new Map<string, string>();
-        for (const lr of lineRows) lineIdMap.set(`${lr.deliveryId}:${lr.productId}`, lr.id);
-        inboundByBranch[bid] = inbound.map((d) => ({
+        // 2 แหล่งของ "ของรอรับ" ที่รวมในหน้ามือถือ (ต่างกันที่ write path):
+        //   • cfDelivery (source=cf_delivery) → รับด้วย confirmShipmentReceived
+        //   • ใบโอนจากคลังกลาง DC ปลายทางสาขาตู้คีบนี้ (source=dc_transfer) → รับด้วย confirmTransfer
+        // ทั้งคู่คืน lineId มากับใบแล้ว (cf=DeliveryLine.id · dc=DcTransferLine.id) → ไม่ต้อง lookup แยก.
+        const [deliveries, dcTransfers] = await Promise.all([
+          getInboundDeliveries(bid),
+          getInboundDcTransfers(bid),
+        ]);
+        // รวม 2 แหล่ง แล้วเรียงใหม่สุดก่อน (dispatchedAt/createdAt) — ของล่าสุดขึ้นบน
+        const merged = [...deliveries, ...dcTransfers].sort(
+          (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+        );
+        inboundByBranch[bid] = merged.map((d) => ({
           id: d.id,
           status: d.status,
           itemsCount: d.itemsCount,
           unitsCount: d.unitsCount,
+          source: d.source,
+          transferId: d.transferId,
           lines: d.lines.map((l) => ({
-            lineId: lineIdMap.get(`${d.id}:${l.productId}`) ?? "",
+            lineId: l.lineId,
             productId: l.productId,
             productName: l.productName,
             qty: l.qty,
             receivedQty: l.receivedQty,
+            imageUrl: l.imageUrl, // F1 · รูปสินค้า → thumbnail บนการ์ดรับ
           })),
         }));
       } catch {
@@ -275,5 +302,5 @@ async function loadBigfeatureData(
     }),
   );
 
-  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch };
+  return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch };
 }
