@@ -140,7 +140,13 @@ export const getSession = cache(async (): Promise<Session | null> => {
     // legacy safety: keep home in the set even if its assignment row is missing
     if (homeBranchId && !branchIds.includes(homeBranchId)) branchIds.push(homeBranchId);
     const cookieBranchId = (await cookies()).get(ACTIVE_BRANCH_COOKIE)?.value ?? null;
-    const activeBranchId = resolveActiveBranchId({ cookieBranchId, homeBranchId, branchIds });
+    const activeBranchId = resolveActiveBranchId({
+      dbActiveBranchId: user.activeBranchId,
+      dbActiveSetAt: user.activeBranchSetAt,
+      cookieBranchId,
+      homeBranchId,
+      branchIds,
+    });
     effectiveUser = { ...user, primaryBranchId: activeBranchId };
   }
 

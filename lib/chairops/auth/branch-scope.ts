@@ -49,16 +49,43 @@ export async function getMaidBranchIds(actor: ChairopsUser): Promise<string[]> {
 }
 
 /**
- * Which branch the maid is working in RIGHT NOW. The cookie is client-controlled,
- * so it only wins if it is genuinely in her assigned set (intersection). Else the
- * home branch (when still assigned); else the first assigned branch; else null.
+ * How long a maid's picked branch stays active before auto-reverting to home.
+ * Was the cookie maxAge (12h) — kept identical so behaviour doesn't change: she
+ * reverts to her home branch the next day (กันลืมว่าค้างอยู่สาขาไหนข้ามวัน).
+ */
+export const ACTIVE_BRANCH_TTL_MS = 60 * 60 * 12 * 1000;
+
+/**
+ * Which branch the maid is working in RIGHT NOW.
+ *
+ * Priority (all guarded by the intersection with her assigned set):
+ *   1. DB `activeBranchId` — the source of truth. It survives the LINE in-app
+ *      browser dropping the cookie, and it works across devices. Honoured only
+ *      while still within the 12h TTL (daily reset to home).
+ *   2. Cookie — a client fast-path for normal browsers (set alongside the DB write).
+ *   3. Home branch (when still assigned); else the first assigned branch; else null.
+ *
+ * The cookie/DB are client-triggered, so each only wins if it is genuinely in her
+ * assigned set (intersection) — the keystone that stops cross-branch money access.
  */
 export function resolveActiveBranchId(opts: {
+  dbActiveBranchId?: string | null;
+  dbActiveSetAt?: Date | null;
   cookieBranchId: string | null;
   homeBranchId: string | null;
   branchIds: string[];
+  now?: Date;
 }): string | null {
-  const { cookieBranchId, homeBranchId, branchIds } = opts;
+  const { dbActiveBranchId, dbActiveSetAt, cookieBranchId, homeBranchId, branchIds } = opts;
+  const now = opts.now ?? new Date();
+  if (
+    dbActiveBranchId &&
+    branchIds.includes(dbActiveBranchId) &&
+    dbActiveSetAt &&
+    now.getTime() - dbActiveSetAt.getTime() < ACTIVE_BRANCH_TTL_MS
+  ) {
+    return dbActiveBranchId;
+  }
   if (cookieBranchId && branchIds.includes(cookieBranchId)) return cookieBranchId;
   if (homeBranchId && branchIds.includes(homeBranchId)) return homeBranchId;
   return branchIds[0] ?? homeBranchId ?? null;

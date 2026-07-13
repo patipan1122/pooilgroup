@@ -2976,6 +2976,12 @@ model ChairopsUser {
   offboardingNote     String?            @map("offboarding_note")
   // S1: cover branch (secondary assignment)
   secondaryBranchId   String?            @map("secondary_branch_id")
+  // F8: durable "active working branch" (CEO 2026-07-13). Was cookie-only, but the
+  // cookie was silently dropped inside LINE's in-app browser → tapping a branch
+  // reverted. Now server-authoritative. activeBranchSetAt keeps the old 12h TTL
+  // (revert to home next day) that the cookie maxAge used to give.
+  activeBranchId      String?            @map("active_branch_id")
+  activeBranchSetAt   DateTime?          @map("active_branch_set_at") @db.Timestamptz(6)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 

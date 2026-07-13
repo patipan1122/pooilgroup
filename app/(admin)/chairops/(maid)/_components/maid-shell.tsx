@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { setActiveBranch, getMaidBranchState } from "../actions";
 
@@ -137,6 +137,9 @@ function BranchSwitcher({
   const [branches, setBranches] = useState(initialBranches);
   const [activeBranchId, setActiveBranchId] = useState(initialActiveId);
   const [activeBranchName, setActiveBranchName] = useState(initialActiveName);
+  // สาขาที่ผู้ใช้ "เพิ่งกดเลือก" — กันไม่ให้ refetch (mount/focus) ที่คร่อมจังหวะเขียน
+  // DB เด้งค่ากลับเป็นสาขาเดิม. เคลียร์เมื่อ server ตอบสาขาเดียวกับที่กดแล้ว (ตามทัน).
+  const justPickedRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +148,10 @@ function BranchSwitcher({
         .then((live) => {
           if (cancelled || !live?.ok) return;
           setBranches(live.branches);
+          if (justPickedRef.current && live.activeBranchId !== justPickedRef.current) {
+            return; // server ยังตามไม่ทัน — คงค่าที่เพิ่งเลือกไว้
+          }
+          justPickedRef.current = null;
           setActiveBranchId(live.activeBranchId);
           setActiveBranchName(live.activeBranchName);
         })
@@ -178,6 +185,7 @@ function BranchSwitcher({
         return;
       }
       // optimistic: อัปเดตติ๊กถูก + แถบเขียวทันที แล้ว refresh หน้าให้ตามสาขาใหม่
+      justPickedRef.current = id;
       setActiveBranchId(id);
       setActiveBranchName(branches.find((b) => b.id === id)?.name ?? null);
       toast.success("สลับสาขาแล้ว");

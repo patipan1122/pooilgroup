@@ -5,6 +5,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
 import { requireExactRole } from "@/lib/chairops/auth/session";
 import {
   getMaidActiveBranches,
@@ -48,9 +49,12 @@ export async function getMaidBranchState(): Promise<MaidBranchState> {
  * แม่บ้านสลับ "สาขาที่กำลังทำงานอยู่" (สลับทีละสาขา). เก็บใน cookie แล้ว getSession
  * จะ overload primaryBranchId ให้เป็นสาขานี้ในรอบถัดไป → ทุกหน้า/action ตามสาขานี้.
  *
- * SECURITY: cookie เป็นค่าที่ client แก้ได้ จึงต้อง validate ฝั่ง server ทุกครั้งว่า
- * branchId อยู่ในชุดสาขาที่แม่บ้านคนนี้ถูก assign จริง (getMaidBranchIds) — ป้องกัน
- * การตั้ง cookie เป็นสาขาที่ไม่ใช่ของตัวเองแล้วเห็น/เขียนเงินข้ามสาขา.
+ * SECURITY: ทั้ง DB และ cookie ถูก trigger จาก client จึงต้อง validate ฝั่ง server
+ * ทุกครั้งว่า branchId อยู่ในชุดสาขาที่แม่บ้านคนนี้ถูก assign จริง (getMaidBranchIds)
+ * — ป้องกันการตั้งเป็นสาขาที่ไม่ใช่ของตัวเองแล้วเห็น/เขียนเงินข้ามสาขา.
+ *
+ * เก็บลง DB เป็นหลัก (server-authoritative): cookie เดิมถูก LINE in-app browser ทิ้ง
+ * เงียบ ๆ → กดสลับแล้วเด้งกลับสาขาเดิม. DB อยู่รอดข้ามทุก webview/อุปกรณ์.
  */
 export async function setActiveBranch(branchId: string): Promise<Result> {
   const session = await requireExactRole("MAID");
@@ -58,9 +62,18 @@ export async function setActiveBranch(branchId: string): Promise<Result> {
   if (!allowed.includes(branchId)) {
     return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
   }
+  // แหล่งความจริง — getSession อ่านค่านี้ก่อน cookie. activeBranchSetAt = เวลาเซ็ต
+  // (getSession เช็ค TTL 12 ชม. → พรุ่งนี้ default กลับสาขาหลักเหมือน cookie เดิม).
+  await prisma.chairopsUser.update({
+    where: { id: session.user.id },
+    data: { activeBranchId: branchId, activeBranchSetAt: new Date() },
+  });
+  // cookie ยังตั้งเป็น fast-path ฝั่ง client (เบราว์เซอร์ปกติ). เพิ่ม secure เพราะ
+  // เสิร์ฟผ่าน HTTPS เสมอ — webview บางตัวทิ้ง cookie ที่ไม่มีธง secure.
   const store = await cookies();
   store.set(ACTIVE_BRANCH_COOKIE, branchId, {
     httpOnly: true,
+    secure: true,
     sameSite: "lax",
     path: "/chairops",
     // 12 ชม. — พรุ่งนี้ default กลับสาขาหลัก (กันลืมว่าค้างอยู่สาขาไหนข้ามวัน)
