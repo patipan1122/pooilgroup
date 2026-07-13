@@ -12,6 +12,7 @@ import {
   type ApplicationStatus,
   type ScreeningVerdict,
 } from "@/lib/recruit/types";
+import { partitionIqSections } from "@/lib/recruit/iq-sections";
 import { User, Brain, FileText, Clock, Check, X, Info } from "lucide-react";
 
 type TabKey = "profile" | "iq" | "answers" | "timeline";
@@ -74,26 +75,24 @@ export function ApplicationTabs({
 }: Props) {
   const [tab, setTab] = useState<TabKey>("profile");
 
-  // Split sections: IQ-flagged section vs regular answers
-  const iqSection = answersBySection.find(
-    (s) =>
-      s.id === "iq_test" ||
-      s.title.toLowerCase().includes("iq") ||
-      s.title.includes("ไอคิว"),
-  );
-  const otherSections = answersBySection.filter((s) => s !== iqSection);
+  // แยกหมวด: "ทุกหมวด IQ" vs คำตอบทั่วไป — ใช้ helper กลาง (ห้าม .find หมวดเดียว)
+  // ประกาศเดียวมี IQ ได้หลายหมวด (ตัวหนังสือ + ไอคิวจากรูป ง่าย/กลาง/ยาก) ต้องนับให้ครบทุกหมวด
+  const { iqSections, otherSections } = partitionIqSections(answersBySection);
+  const hasIq = iqSections.length > 0;
 
-  // Count IQ correct
-  const iqStats = iqSection
-    ? iqSection.fields.reduce(
-        (acc, f) => {
-          if (!f.hasCorrectAnswer) return acc;
-          acc.total++;
-          if (isCorrect(f)) acc.correct++;
-          return acc;
-        },
-        { correct: 0, total: 0 },
-      )
+  // นับ IQ ถูก/ทั้งหมด ข้ามทุกหมวด IQ
+  const iqStats = hasIq
+    ? iqSections
+        .flatMap((s) => s.fields)
+        .reduce(
+          (acc, f) => {
+            if (!f.hasCorrectAnswer) return acc;
+            acc.total++;
+            if (isCorrect(f)) acc.correct++;
+            return acc;
+          },
+          { correct: 0, total: 0 },
+        )
     : null;
 
   return (
@@ -107,7 +106,7 @@ export function ApplicationTabs({
             Icon={User}
             label="โปรไฟล์"
           />
-          {iqSection && (
+          {hasIq && (
             <TabButton
               active={tab === "iq"}
               onClick={() => setTab("iq")}
@@ -166,8 +165,8 @@ export function ApplicationTabs({
           </div>
         )}
 
-        {tab === "iq" && iqSection && (
-          <IQTab section={iqSection} stats={iqStats} />
+        {tab === "iq" && hasIq && (
+          <IQTab sections={iqSections} stats={iqStats} />
         )}
 
         {tab === "answers" && (
@@ -276,10 +275,10 @@ function isCorrect(f: FieldAnswer): boolean {
 }
 
 function IQTab({
-  section,
+  sections,
   stats,
 }: {
-  section: Section;
+  sections: Section[];
   stats: { correct: number; total: number } | null;
 }) {
   const passingPct = stats && stats.total > 0 ? stats.correct / stats.total : 0;
@@ -314,11 +313,16 @@ function IQTab({
           </div>
         </div>
       )}
-      <div className="rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100">
-        {section.fields.map((f) => {
-          const correct = f.hasCorrectAnswer ? isCorrect(f) : null;
-          return (
-            <div key={f.id} className="p-4">
+      {sections.map((section) => (
+        <div key={section.id} className="space-y-1.5">
+          {sections.length > 1 && (
+            <p className="text-xs text-zinc-500 font-bold">{section.title}</p>
+          )}
+          <div className="rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100">
+            {section.fields.map((f) => {
+              const correct = f.hasCorrectAnswer ? isCorrect(f) : null;
+              return (
+                <div key={f.id} className="p-4">
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <p className="text-sm font-medium text-zinc-900 flex-1 min-w-0 break-words">
                   {f.label}
@@ -361,8 +365,10 @@ function IQTab({
               )}
             </div>
           );
-        })}
-      </div>
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

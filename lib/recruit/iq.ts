@@ -3,6 +3,7 @@
 // Logic ต้องตรงกับ ApplicationTabs (isCorrect) เป๊ะ ไม่งั้นตัวเลขในตารางจะไม่ตรงกับหน้าประวัติ
 
 import { FormSchemaSchema } from "./types";
+import { partitionIqSections } from "./iq-sections";
 
 export interface IqStats {
   correct: number;
@@ -30,29 +31,27 @@ export function computeIqStats(
     return null;
   }
 
-  const iqSection = schema.sections.find(
-    (s) =>
-      s.id === "iq_test" ||
-      s.title.toLowerCase().includes("iq") ||
-      s.title.includes("ไอคิว"),
-  );
-  if (!iqSection) return null;
+  // นับ "ทุกหมวด IQ" ไม่ใช่หมวดแรกหมวดเดียว (ประกาศเดียวมี IQ ได้หลายหมวด เช่น ตัวหนังสือ + ไอคิวจากรูป)
+  const { iqSections } = partitionIqSections(schema.sections);
+  if (iqSections.length === 0) return null;
 
   const ans = (answers ?? {}) as Record<string, unknown>;
   let correct = 0;
   let total = 0;
 
-  for (const f of iqSection.fields) {
-    if (!f.hasCorrectAnswer || f.correctAnswer == null) continue;
-    total++;
-    const rawValue = serializeRaw(ans[f.id]);
-    if (Array.isArray(f.correctAnswer)) {
-      if (f.correctAnswer.includes(rawValue)) correct++;
-    } else if (
-      String(f.correctAnswer).trim().toLowerCase() ===
-      String(rawValue).trim().toLowerCase()
-    ) {
-      correct++;
+  for (const section of iqSections) {
+    for (const f of section.fields) {
+      if (!f.hasCorrectAnswer || f.correctAnswer == null) continue;
+      total++;
+      const rawValue = serializeRaw(ans[f.id]);
+      if (Array.isArray(f.correctAnswer)) {
+        if (f.correctAnswer.includes(rawValue)) correct++;
+      } else if (
+        String(f.correctAnswer).trim().toLowerCase() ===
+        String(rawValue).trim().toLowerCase()
+      ) {
+        correct++;
+      }
     }
   }
 

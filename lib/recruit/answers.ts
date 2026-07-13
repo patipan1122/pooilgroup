@@ -7,6 +7,7 @@
 // - buildBiasSafeAnswerLines() → บรรทัด "label: value" สำหรับป้อน AI (ตัด อายุ/เพศ/รูป)
 
 import type { Field, FormSchema } from "./types";
+import { isIqSection } from "./iq-sections";
 
 // =============================================================
 // ข้อมูลตำแหน่งสำหรับ AI (เก็บใน RecruitJobPosting.settings.aiBrief)
@@ -85,23 +86,15 @@ export interface AnswerColumn {
   field: Field; // เก็บไว้ format ค่าฝั่ง server (ไม่ส่งต่อไป client)
 }
 
-/** ตรวจว่า section นี้คือส่วน "ข้อสอบ IQ" หรือไม่ (ตรรกะเดียวกับ computeIqStats). */
-function isIqSection(title: string, id: string): boolean {
-  return (
-    id === "iq_test" ||
-    title.toLowerCase().includes("iq") ||
-    title.includes("ไอคิว")
-  );
-}
-
 /**
  * คอลัมน์คำตอบที่ควรกางในตาราง = ทุก field ที่ไม่ใช่ข้อสอบ IQ และไม่ใช่ไฟล์แนบ.
  * (ไฟล์แนบมีคอลัมน์ "ไฟล์" แยกอยู่แล้ว · ข้อสอบ IQ สรุปเป็นคอลัมน์ IQ x/y)
+ * ตรวจ IQ ด้วย isIqSection กลาง (lib/recruit/iq-sections) — ตรงกับ computeIqStats + ApplicationTabs.
  */
 export function getAnswerColumns(schema: FormSchema): AnswerColumn[] {
   const cols: AnswerColumn[] = [];
   for (const section of schema.sections) {
-    if (isIqSection(section.title, section.id)) continue;
+    if (isIqSection(section.id, section.title)) continue;
     for (const field of section.fields) {
       if (field.type === "file") continue;
       if (field.hasCorrectAnswer) continue; // เผื่อข้อสอบหลุดอยู่นอก section IQ
