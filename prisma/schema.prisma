@@ -2017,7 +2017,6 @@ enum CfMachineKind {
 enum CfEventType {
   INITIAL // กรอกครั้งเดียวตอนตั้งตู้ใหม่
   COLLECTION // รอบเก็บปกติ
-  REFILL_ONLY // เปลี่ยน/เติมตุ๊กตาอย่างเดียว (ไม่เก็บเงิน · ไม่อ่านมิเตอร์) — ขยับ mirror เฉพาะส่วนสลับ (−N+M)
   VOID // soft delete event
 
   @@schema("public")
@@ -2303,8 +2302,6 @@ model CfCollectionEvent {
   stockBefore         Int?        @map("stock_before")
   stockAfter          Int?        @map("stock_after")
   refillQty           Int?        @map("refill_qty")
-  // REFILL_ONLY (2026-07-13) — จำนวนตุ๊กตาที่คืนเข้าคลัง (N) ในรอบเปลี่ยนตุ๊กตาไม่เก็บเงิน · AUDIT only
-  dollsReturnedToStock Int?       @map("dolls_returned_to_stock")
   // EXCHANGER only (nullable for CLAW)
   promoCoinsDispensed Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
   // photos (R2 URLs) · 5 per machine in v2 (coin meter · prize meter · prize before · prize after · cash)

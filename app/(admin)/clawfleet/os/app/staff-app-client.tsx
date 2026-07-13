@@ -33,11 +33,10 @@ import {
   closeBranchSession,
   renameMachineNickname,
   attachEventPhotos,
-  submitRefillOnly,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
-import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
+import { submitStockCount, confirmShipmentReceived, returnDollsToStock, refillDollsToMachine } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
@@ -1376,7 +1375,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onOpen={openMachine}
           onOpenPhotoHub={openMachinePhotoHub}
           onReturn={(m) => { setError(null); setReturnChangeMode(false); setReturnMachineId(m.id); }}
-          // [C] "เปลี่ยน" → เปิด sheet ใหม่ (submitRefillOnly · atomic · mirror-correct) แทน changeMode เดิมที่ bypass mirror.
+          // [C] "เปลี่ยน" → เปิด sheet "เปลี่ยน/เติม" (return+refill · รอบเก็บเงินจริง reconcile ให้ · ชิ้น 3).
           onChange={(m) => { setError(null); setRefillMachineId(m.id); }}
           onRefillOnly={(m) => { setError(null); setRefillMachineId(m.id); }}
           inMachineByMachine={inMachineByMachine}
@@ -1749,7 +1748,7 @@ function HomeScreen(props: {
                             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>ถ่ายก่อน</span>
                           </button>
                         )}
-                        {/* [C] (CEO 2026-07-13) · ปุ่ม "เปลี่ยน/เติม" — เปลี่ยน/เติมตุ๊กตาโดยไม่เก็บเงิน (atomic submitRefillOnly · mirror-correct) */}
+                        {/* [C] (CEO 2026-07-13) · ปุ่ม "เปลี่ยน/เติม" — เปลี่ยน/เติมตุ๊กตาไม่เก็บเงิน (return+refill · reconcile ตอนเก็บเงินจริง) */}
                         {canChange && (
                           <button type="button" disabled={pending} aria-label={`เปลี่ยน/เติมตุ๊กตา ตู้ ${m.code}`} title="เปลี่ยน/เติมตุ๊กตา (ไม่เก็บเงิน · เอาตัวเก่าออก+เติมใหม่)"
                             onClick={() => onChange(m)} className={pending ? "" : "co-tap"}
@@ -2862,7 +2861,8 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
-  const [clientKey] = useState(() => crypto.randomUUID());
+  const [returnKey] = useState(() => crypto.randomUUID());
+  const [refillKey] = useState(() => crypto.randomUUID());
   const returnDoll = dolls.find((d) => d.productId === returnSelId) ?? null;
   const returnMax = returnDoll?.qty ?? 0;
   const returnQtyNum = returnQty == null ? 0 : Math.min(returnMax, Math.max(0, returnQty));
@@ -2892,17 +2892,17 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
     setError(null); setOkMsg(null);
     startTransition(async () => {
       try {
-        // atomic · อัปเดต mirror ถูกต้อง (ต่างจาก return+refill 2 call เดิมที่ bypass mirror = ยอดเพี้ยน).
-        const res = await submitRefillOnly({
-          machineId: machine.id,
-          stockBefore: countNow ?? inMachineTotal,
-          dollsReturnedToStock: returnQtyNum,
-          returnProductId: returnQtyNum > 0 ? (returnSelId ?? undefined) : undefined,
-          refillLines: refillN > 0 && sel ? [{ productId: sel.id, qty: refillN }] : [],
-          clientKey,
-        });
-        if (!res.ok) { setError(res.error || "บันทึกไม่สำเร็จ · ลองใหม่"); return; }
-        setOkMsg(`บันทึกแล้ว · ในตู้ตอนนี้ ${res.data.stockAfter} ตัว`);
+        // เอาตัวเก่าออก→คืนคลัง แล้วเติมตัวใหม่ ผ่าน action เดิม (returnDollsToStock/refillDollsToMachine).
+        // รอบเก็บเงินจริงจะกระทบยอด movement "ระหว่างรอบ" เหล่านี้ให้เอง (ทีม reconcile ชิ้น 3 · bfff71bc).
+        if (returnQtyNum > 0 && returnSelId) {
+          const r = await returnDollsToStock({ machineId: machine.id, productId: returnSelId, qty: returnQtyNum, clientKey: returnKey });
+          if (!r.ok) { setError(r.error || "เอาออกไม่สำเร็จ · ลองใหม่"); return; }
+        }
+        if (refillN > 0 && sel) {
+          const r = await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: refillN, clientKey: refillKey });
+          if (!r.ok) { setError(r.error || "เติมไม่สำเร็จ · ลองใหม่"); return; }
+        }
+        setOkMsg("บันทึกแล้ว · ปรับตุ๊กตาในตู้เรียบร้อย");
         router.refresh();
         setTimeout(onClose, 1100);
       } catch {
