@@ -465,12 +465,16 @@ function reducer(s: WizardState, a: Action): WizardState {
         form: { ...a.snapshot.form },
         photos: { ...a.snapshot.photos },
         photosCaptured: markCaptured(a.snapshot.photos),
-        step: Math.min(5, Math.max(1, a.snapshot.step)),
+        // [STEP] map WIP เก่า (1-5) → ขั้นจริงใหม่ {1,3,5} (2→1 · 4→3).
+        step: a.snapshot.step <= 2 ? 1 : a.snapshot.step <= 4 ? 3 : 5,
       };
     case "next":
-      return { ...s, step: Math.min(6, s.step + 1) };
+      // [STEP] (CEO 2026-07-13) รวม 5→3 สเต็ป · ขั้น "จริง" = 1(นับ+เติม) · 3(มิเตอร์+เงินสด) · 5(กระทบยอด).
+      // next กระโดด 1→3→5→6 (ขั้น 2/4 ถูกรวม render เข้ากับ 1/3 ไม่ใช่ current step แล้ว).
+      return { ...s, step: s.step >= 5 ? 6 : s.step >= 3 ? 5 : 3 };
     case "back":
-      return { ...s, step: s.step <= 1 ? 0 : s.step - 1 };
+      // [STEP] back กระโดด 5→3→1→home (0).
+      return { ...s, step: s.step >= 5 ? 3 : s.step >= 3 ? 1 : 0 };
     case "home":
       return { ...s, step: 0, machineId: null, resumed: false, meterDeferred: false, photoHub: false, sessionId: null };
     case "exitPhotoHub":
@@ -883,13 +887,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     (isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi));
   // ราคาขายไม่บังคับ (server ใช้ราคา loadout ที่ตั้งไว้ · ค่านี้ไม่ถูกส่งไป submit) — gate แค่เงินสดที่ต้องนับ
   const step4CountOk = isFilled(f.cash);
+  // [STEP] (CEO 2026-07-13) ขั้น 1 = นับ+เติม (ต้อง count && refill) · ขั้น 3 = มิเตอร์+เงินสด (meter && cash).
   const stepCountSatisfied =
-    state.step === 1 ? step1CountOk
-      : state.step === 2 ? step2CountOk
-        : state.step === 3 ? step3CountOk
-          : state.step === 4 ? step4CountOk
-            : true; // step 5/6 ไม่มีช่องนับ
-  const countBlocks = state.step >= 1 && state.step <= 4 && !stepCountSatisfied;
+    state.step === 1 ? (step1CountOk && step2CountOk)
+      : state.step === 3 ? (step3CountOk && step4CountOk)
+        : true; // ขั้น 5 (กระทบยอด) ไม่มีช่องนับ
+  const countBlocks = (state.step === 1 || state.step === 3) && !stepCountSatisfied;
 
   /* ── นโยบายถ่ายรูป: แต่ละขั้นต้องมีรูปครบไหมก่อนกดถัดไป/ส่ง ──
    * step 1 = ก่อนเติม · step 2 = หลังเติม · step 3 = มิเตอร์ (ตุ๊กตา + เหรียญ อย่างละ 1 รูป) · step 4 = เงินสด.
@@ -901,14 +904,13 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const step3PhotoOk = (!!ph.dollGear || !!ph.dollDigi) && (!!ph.coinGear || !!ph.coinDigi);
   // FIX-5 · รูปเงินสด "ไม่บังคับ" เสมอ (ถ่ายได้-ข้ามได้) — step 4 ผ่านได้โดยไม่ต้องมีรูปเงินสด.
   // เหตุผล: เงินสดเป็นตัวเลขที่นับ+กระทบยอดกับมิเตอร์อยู่แล้ว · รูปเป็นหลักฐานเสริม ไม่ควรบล็อกการส่ง.
+  // [STEP] ขั้น 1 (นับ+เติม): บังคับรูปก่อนเติมเสมอ + หลังเติมเฉพาะเมื่อเติมจริง (refillTotal>0) ·
+  //         ขั้น 3 (มิเตอร์+เงินสด): รูปมิเตอร์ (เงินสดไม่ถ่ายรูปแล้ว).
   const stepPhotoSatisfied =
-    state.step === 1 ? !!ph.before
-      : state.step === 2 ? !!ph.after
-        : state.step === 3 ? (state.meterDeferred ? true : step3PhotoOk)
-          : state.step === 4 ? true // รูปเงินสดไม่บังคับ → step 4 ไม่บล็อกด้วยรูป
-            : true; // step 5/6 ไม่มีช่องถ่าย
-  // บังคับเฉพาะเมื่อนโยบายเปิด + ขั้นที่มีรูป (1-4)
-  const photoStepActive = photoRequired && state.step >= 1 && state.step <= 4;
+    state.step === 1 ? (!!ph.before && (refillTotal > 0 ? !!ph.after : true))
+      : state.step === 3 ? (state.meterDeferred ? true : step3PhotoOk)
+        : true; // ขั้น 5 ไม่มีช่องถ่าย
+  const photoStepActive = photoRequired && (state.step === 1 || state.step === 3);
   const photoBlocks = photoStepActive && !stepPhotoSatisfied;
 
   /* ── FIX-1 · นับรูปที่ "ถ่ายแล้วแต่ upload ยังไม่เสร็จ" (photosCaptured มี · photos ยังว่าง) ──
@@ -1289,11 +1291,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const savingDraftStep = state.step === 5 && !meterReady;
   const primaryDisabled = pending || photoBlocks || countBlocks || (savingDraftStep && uploadPending);
 
+  // [STEP] label ตามขั้นจริงใหม่ {1,3,5,6}
   const stepLabels: Record<number, string> = {
-    1: "นับตุ๊กตาก่อนเติม",
-    2: "เติมตุ๊กตา",
-    3: "มิเตอร์ (เฟือง+ดิจิตอล)",
-    4: "เงินสด & ราคาในตู้",
+    1: "นับ + เติมตุ๊กตา",
+    3: "มิเตอร์ + เงินสด",
     5: "กระทบยอด",
     6: "เสร็จสมบูรณ์",
   };
@@ -3675,8 +3676,13 @@ function FlowScreen(props: {
           </div>
         )}
 
-        {step === 2 && (
-          <div>
+        {/* [STEP] ส่วน "เติมตุ๊กตา" — รวมอยู่หน้าเดียวกับ "นับ" (ขั้น 1) · คั่นด้วยเส้น+หัวข้อ. */}
+        {step === 1 && (
+          <div style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #EDEFF2" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#2A2740", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 24, height: 24, borderRadius: 7, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px" }}><Package size={14} strokeWidth={2.2} /></span>
+              เติมตุ๊กตา <span style={{ fontSize: 11, fontWeight: 600, color: "#9AA1AB" }}>(ข้ามได้ถ้าไม่เติม)</span>
+            </div>
             <div style={{ display: "flex", gap: 9, background: "#EEF0FE", borderRadius: 11, padding: "11px 13px", marginBottom: 16 }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M12 5v14M5 12h14" /></svg>
               <span style={{ fontSize: 11.5, color: "#3F3AC0", lineHeight: 1.45 }}>เลือก<b>สินค้าที่เติม</b> (เติมได้<b>หลายตัว</b>) แล้วระบุ<b>กี่ตัว</b>ต่อสินค้า · ถ่ายรูปยืนยันหลังเติม (รูปที่ 2)</span>
@@ -3805,9 +3811,14 @@ function FlowScreen(props: {
           </div>
         )}
 
-        {step === 4 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* [STEP] ส่วน "เงินสด + ราคาในตู้" — รวมอยู่หน้าเดียวกับ "มิเตอร์" (ขั้น 3) · คั่นด้วยเส้น+หัวข้อ. */}
+        {step === 3 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20, paddingTop: 18, borderTop: "1px solid #EDEFF2" }}>
             <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#2A2740", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 24, height: 24, borderRadius: 7, background: "#E7F4EC", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px" }}><Banknote size={14} strokeWidth={2.2} /></span>
+                เงินสด
+              </div>
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
               <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
               {/* (CEO 2026-07-13) เอา "ถ่ายรูปเงินสด" ออก — กรอกเงินด้วยมืออย่างเดียว. */}
@@ -3970,7 +3981,7 @@ function FlowScreen(props: {
             (reuse saveDraft · resume ที่มิเตอร์ทีหลัง · money-safe: รอบยังไม่ปิดจนกรอกมิเตอร์).
             เลือกขั้น 4 (ไม่ใช่ขั้นเติม 2) เพื่อให้เงินสดถูกเก็บก่อน · ที่ขั้น 3 มีปุ่ม defer เดิมอยู่แล้ว.
             ซ่อนตอน demo (ไม่มี backend) · uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหาย). */}
-        {!props.usingDemo && props.step === 4 && (
+        {!props.usingDemo && props.step === 3 && (
           <button type="button" onClick={props.onSaveDraft} disabled={props.saveDraftBlocked}
             className={props.saveDraftBlocked ? "" : "co-tap"}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, marginTop: 9, fontSize: 14, fontWeight: 700, color: "#B45309", border: "1.5px solid #F0D8AE", padding: "12px 16px", borderRadius: 13, cursor: props.saveDraftBlocked ? "not-allowed" : "pointer", background: "#FFFBF3", opacity: props.saveDraftBlocked ? 0.6 : 1 }}>
@@ -4000,13 +4011,11 @@ function FlowScreen(props: {
 }
 
 /* ─────────────────────────── small UI helpers ─────────────────────────── */
-// แถบความคืบหน้า 5 ขั้น (อ่านปราดเดียว) — เสร็จ=ติ๊ก · กำลังทำ=เด่น · เหลือ=จาง.
-// VISUAL ONLY: อ่านค่า step จาก reducer ตรง ๆ ไม่แตะ step logic.
+// [STEP] แถบความคืบหน้า 3 ขั้น (อ่านปราดเดียว) — เสร็จ=ติ๊ก · กำลังทำ=เด่น · เหลือ=จาง.
+// VISUAL ONLY: อ่านค่า step จาก reducer ตรง ๆ (ขั้นจริง {1,3,5}) ไม่แตะ step logic.
 const STEP_STRIP = [
-  { n: 1, t: "นับ" },
-  { n: 2, t: "เติม" },
-  { n: 3, t: "มิเตอร์" },
-  { n: 4, t: "เงินสด" },
+  { n: 1, t: "นับ + เติม" },
+  { n: 3, t: "มิเตอร์ + เงินสด" },
   { n: 5, t: "กระทบยอด" },
 ];
 function StepStrip({ step }: { step: number }) {
