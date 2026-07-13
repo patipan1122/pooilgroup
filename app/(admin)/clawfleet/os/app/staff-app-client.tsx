@@ -3891,6 +3891,28 @@ function FlowScreen(props: {
                 </div>
               </div>
 
+              {/* [E+] (CEO 2026-07-13) สรุปที่กรอกทั้งหมด + แก้ inline ในหน้าเดียว — ตรงไหนไม่ตรงไฮไลต์แดง
+                  กดแก้ค่าได้ตรงนี้เลย ระบบคำนวณใหม่ทันที (ไม่ต้องเด้งกลับสเต็ปเก่า 2 ครั้ง). */}
+              <div style={{ marginTop: 14, border: "1px solid #EAECEF", borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", padding: "10px 14px", background: "#F8F9FB", borderBottom: "1px solid #EEF0F2" }}>สรุปที่กรอก — ตรงไหนแดง กดแก้ได้เลย (ไม่ต้องย้อนกลับ)</div>
+                {([
+                  { key: "left" as const, label: "ตุ๊กตาเหลือในตู้", bad: isFilled(f.left) && !recon.dollMatch },
+                  { key: "dollDigi" as const, label: "มิเตอร์ตุ๊กตา (ดิจิตอล)", bad: isFilled(f.dollDigi) && !recon.dollMatch },
+                  { key: "coinDigi" as const, label: "มิเตอร์เหรียญ (ดิจิตอล)", bad: isFilled(f.coinDigi) && !props.meterGroupVals.coinMeterEqual },
+                  { key: "cash" as const, label: "เงินสดที่นับได้ (฿)", bad: false },
+                ]).map((row, i) => (
+                  <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i === 0 ? "none" : "1px solid #F1F2F5", background: row.bad ? "#FEF6F5" : "#fff" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: row.bad ? "#B42318" : "#3A3F46" }}>{row.label}</div>
+                      {row.bad && <div style={{ fontSize: 10.5, color: "#C0392B", marginTop: 1 }}>ไม่ตรงกับมิเตอร์ — ตรวจแล้วแก้ตรงนี้</div>}
+                    </div>
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={f[row.key] == null ? "" : String(f[row.key])}
+                      onChange={(e) => props.setNum(row.key)(e.target.value)} placeholder="—" className="num"
+                      style={{ width: 96, flex: "0 0 96px", textAlign: "right", fontSize: 15, fontWeight: 700, padding: "9px 11px", border: `1.5px solid ${row.bad ? "#E9A79E" : "#E3E6EA"}`, borderRadius: 10, background: "#fff" }} />
+                  </div>
+                ))}
+              </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
                 <ReconRow title="มิเตอร์เฟือง = ดิจิตอล" a={`ตุ๊กตา ${props.meterGroupVals.dollMeterEqual ? "ตรง" : "ต่างกัน"}`} b={`เหรียญ ${props.meterGroupVals.coinMeterEqual ? "ตรง" : "ต่างกัน"}`} ok={recon.meterEqualOk} />
                 <ReconRow title="มิเตอร์ตุ๊กตา ↔ ตุ๊กตาที่หาย" a={`มิเตอร์เพิ่ม ${recon.dollDelta} ครั้ง`} b={`ตุ๊กตาหาย ${dispensed} ตัว`} ok={recon.dollMatch} />
