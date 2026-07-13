@@ -7,11 +7,12 @@
 // แล้วโชว์ตารางให้ตรวจ. ปุ่มยืนยันบันทึกจริงเปิดในเฟสถัดไป (ยังไม่เขียน DB ในเฟสนี้).
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { previewCollectionsFile } from "./actions";
+import { previewCollectionsFile, commitCollectionsImport } from "./actions";
 import type { PreviewRow, PreviewResult } from "./types";
 
 const KIND_TONE: Record<
@@ -28,6 +29,7 @@ interface PreviewState extends PreviewResult {
 }
 
 export function ClawImportShell() {
+  const router = useRouter();
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -49,6 +51,29 @@ export function ClawImportShell() {
       toast.success(
         `อ่านไฟล์เรียบร้อย · ${res.counts.ready} แถวพร้อม · ${res.counts.dedup} ซ้ำ · ${res.counts.invalid} ผิด`,
       );
+    });
+  }
+
+  function onCommit() {
+    if (!preview || preview.counts.ready === 0) {
+      toast.error("ไม่มีแถวที่จะบันทึก");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const res = await commitCollectionsImport(preview.payload, preview.payloadSig);
+      if (!res.ok) {
+        setError(res.error);
+        toast.error(res.error);
+        return;
+      }
+      toast.success(
+        `บันทึกสำเร็จ ${res.committed} แถว` +
+          (res.skippedAtCommit > 0 ? ` · ข้ามซ้ำ ${res.skippedAtCommit} แถว` : ""),
+      );
+      setPreview(null);
+      setFilename(null);
+      router.refresh();
     });
   }
 
@@ -208,14 +233,19 @@ export function ClawImportShell() {
 
           <footer className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-zinc-500">
-              ✅ นี่คือหน้าพรีวิว · <strong>ยังไม่บันทึกลงระบบ</strong> ตรวจตัวเลขให้ครบก่อน
+              ตรวจตัวเลขให้ครบก่อนกดยืนยัน · บันทึกแล้วยกเลิกทั้งชุดได้ที่ “ประวัติการนำเข้า” ด้านล่าง
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={onCancel} disabled={isPending}>
                 ยกเลิก
               </Button>
-              <Button type="button" size="lg" disabled title="เปิดในเฟสถัดไป">
-                ยืนยันบันทึกจริง (กำลังทำต่อ)
+              <Button
+                type="button"
+                size="lg"
+                onClick={onCommit}
+                disabled={isPending || preview.counts.ready === 0}
+              >
+                {isPending ? "กำลังบันทึก…" : `ยืนยันบันทึกจริง · ${preview.counts.ready} แถว`}
               </Button>
             </div>
           </footer>

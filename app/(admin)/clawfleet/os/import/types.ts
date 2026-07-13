@@ -105,3 +105,14 @@ export interface CommitResult {
 }
 
 export type CommitResponse = CommitResult | { ok: false; error: string };
+
+/** สรุป 1 ชุดนำเข้า (สำหรับหน้าประวัติ + undo). */
+export interface ImportBatchSummary {
+  batchId: string;
+  count: number;
+  machines: number;
+  totalBaht: number;
+  firstDay: string | null;
+  lastDay: string | null;
+  createdAt: string;
+}

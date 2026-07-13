@@ -9,12 +9,15 @@ import { ChevronLeft } from "lucide-react";
 import { assertCfAdmin } from "@/lib/clawfleet/role-guard";
 import { Card, CardBody } from "@/components/ui/card";
 import { ClawImportShell } from "./import-shell";
+import { ImportHistory } from "./import-history";
+import { listRecentImportBatches } from "./actions";
 import { IMPORT_HEADER_LABELS } from "./types";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClawImportPage() {
   await assertCfAdmin();
+  const batches = await listRecentImportBatches(10);
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
@@ -80,6 +83,16 @@ export default async function ClawImportPage() {
       </Card>
 
       <ClawImportShell />
+
+      <Card>
+        <CardBody className="space-y-2 p-4">
+          <div className="text-sm font-semibold text-zinc-800">ประวัติการนำเข้า</div>
+          <p className="text-xs text-zinc-500">
+            แต่ละชุด = 1 ครั้งที่กดยืนยัน · กด “ยกเลิกทั้งชุด” เพื่อลบข้อมูลที่นำเข้าและคืนสถานะตู้ให้เหมือนเดิม
+          </p>
+          <ImportHistory batches={batches} />
+        </CardBody>
+      </Card>
     </div>
   );
 }
