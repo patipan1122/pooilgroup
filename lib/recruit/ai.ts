@@ -4,12 +4,193 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Field, FormSchema } from "./types";
 
+// AI provider — Gemini เป็นหลัก (ฟรี) → Claude สำรอง (จ่าย) ตามแพตเทิร์นทั้งระบบ pooilgroup
+// [[pooilgroup-ai-providers-gemini-primary-claude-fallback-2026-07-08]]
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const HAIKU_MODEL = "claude-haiku-4-5";
-const SONNET_MODEL = "claude-sonnet-4-5";
+const GEMINI_MODEL = "gemini-2.5-flash";
+const HAIKU_MODEL = "claude-haiku-4-5"; // Claude fallback — งานเบา
+const SONNET_MODEL = "claude-sonnet-4-5"; // Claude fallback — งานหนัก/อ่านไฟล์
+
+const hasGemini = () => !!process.env.GEMINI_API_KEY;
+const hasClaude = () => !!process.env.ANTHROPIC_API_KEY;
+
+/**
+ * ไม่มี AI provider ไหนใช้ได้เลย (ไม่ตั้งค่า หรือ ล่มทั้งคู่). batch loop ต้อง "หยุดทั้งชุด"
+ * ไม่ใช่วนต่อจนครบแล้วโชว์ success ปลอม.
+ */
+export class AiUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiUnavailableError";
+  }
+}
+
+type ResumeFile = { bytes: Buffer; mime: string; name: string };
+
+interface AiRequest {
+  prompt: string;
+  system?: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  file?: ResumeFile;
+  claudeModel: string; // Claude fallback tier
+  maxTokens: number;
+  timeoutMs: number;
+  endpoint: string;
+  track?: { orgId: string; userId?: string | null };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
+/** เรียก Gemini (ตัวหลัก · ฟรี) — รองรับทั้งข้อความ + อ่านไฟล์ PDF/รูป (inlineData) */
+async function runGemini(req: AiRequest): Promise<string> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+  const parts: Array<Record<string, unknown>> = [];
+  if (req.file) {
+    parts.push({
+      inlineData: {
+        mimeType: req.file.mime,
+        data: req.file.bytes.toString("base64"),
+      },
+    });
+  }
+  parts.push({ text: req.prompt });
+
+  const contents: Array<{
+    role: "user" | "model";
+    parts: Array<Record<string, unknown>>;
+  }> = [];
+  for (const h of (req.history ?? []).slice(-6)) {
+    contents.push({
+      role: h.role === "user" ? "user" : "model",
+      parts: [{ text: h.content }],
+    });
+  }
+  contents.push({ role: "user", parts });
+
+  const result = await withTimeout(
+    ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: {
+        ...(req.system ? { systemInstruction: req.system } : {}),
+        maxOutputTokens: req.maxTokens,
+        // ปิด thinking — งานเราเป็น JSON/ข้อความสั้น · กัน thinking กิน token จนคืนค่าว่าง
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+    req.timeoutMs,
+    "gemini",
+  );
+
+  const usage = result.usageMetadata;
+  await trackRecruitUsage(
+    req.endpoint,
+    GEMINI_MODEL,
+    {
+      usage: {
+        input_tokens: usage?.promptTokenCount ?? 0,
+        output_tokens: usage?.candidatesTokenCount ?? 0,
+      },
+    },
+    req.track,
+  );
+
+  const text = result.text ?? "";
+  if (!text.trim()) throw new Error("gemini คืนค่าว่าง");
+  return text;
+}
+
+/** เรียก Claude (สำรอง · จ่าย) — โครงสร้างเดิม + รองรับไฟล์ (document/image block) */
+async function runClaude(req: AiRequest): Promise<string> {
+  let userContent: Anthropic.MessageParam["content"] | undefined;
+  if (req.file) {
+    const b64 = req.file.bytes.toString("base64");
+    const filePart: Anthropic.ContentBlockParam =
+      req.file.mime === "application/pdf"
+        ? {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: b64 },
+          }
+        : {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: req.file.mime as
+                | "image/jpeg"
+                | "image/png"
+                | "image/webp"
+                | "image/gif",
+              data: b64,
+            },
+          };
+    userContent = [filePart, { type: "text", text: req.prompt }];
+  }
+
+  const messages: Anthropic.MessageParam[] = [];
+  for (const h of req.history ?? []) {
+    messages.push({ role: h.role, content: h.content });
+  }
+  messages.push({ role: "user", content: userContent ?? req.prompt });
+
+  const response = await anthropic.messages.create(
+    {
+      model: req.claudeModel,
+      max_tokens: req.maxTokens,
+      ...(req.system ? { system: req.system } : {}),
+      messages,
+    },
+    { timeout: req.timeoutMs },
+  );
+  await trackRecruitUsage(req.endpoint, req.claudeModel, response, req.track);
+  return response.content[0]?.type === "text" ? response.content[0].text : "";
+}
+
+/**
+ * Gemini หลัก → Claude สำรอง. โยน AiUnavailableError เฉพาะเมื่อ "ทุก provider" ใช้ไม่ได้
+ * (ไม่ตั้งค่า หรือ ล่มทั้งคู่) → caller/loop จะได้หยุดทั้งชุด ไม่โชว์ success ปลอม.
+ */
+async function runAI(req: AiRequest): Promise<string> {
+  const geminiOn = hasGemini();
+  const claudeOn = hasClaude();
+  if (!geminiOn && !claudeOn) {
+    throw new AiUnavailableError(
+      "ยังไม่ได้ตั้งค่า AI (ไม่มีทั้ง GEMINI_API_KEY และ ANTHROPIC_API_KEY)",
+    );
+  }
+
+  const problems: string[] = [];
+  if (geminiOn) {
+    try {
+      return await runGemini(req);
+    } catch (e) {
+      const msg = (e as Error).message;
+      problems.push(`Gemini: ${msg}`);
+      console.warn(`[recruit ai] gemini failed (${req.endpoint}): ${msg}`);
+    }
+  }
+  if (claudeOn) {
+    try {
+      return await runClaude(req);
+    } catch (e) {
+      const msg = (e as Error).message;
+      problems.push(`Claude: ${msg}`);
+      console.warn(`[recruit ai] claude failed (${req.endpoint}): ${msg}`);
+    }
+  }
+  throw new AiUnavailableError(`AI ประเมินไม่สำเร็จ · ${problems.join(" · ")}`);
+}
 
 /** Best-effort cost tracking — never block AI flow on metering failure */
 async function trackRecruitUsage(
@@ -81,19 +262,14 @@ export async function suggestFields(input: {
 - คำถามต้องเป็นภาษาไทย เข้าใจง่าย
 - คืนเฉพาะ JSON · ห้ามอธิบายเพิ่ม`;
 
-  // B-002: explicit timeout — Anthropic call should fail fast if unreachable
-  const response = await anthropic.messages.create(
-    {
-      model: HAIKU_MODEL,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
-    },
-    { timeout: 15_000 },
-  );
-  await trackRecruitUsage("recruit.suggest-fields", HAIKU_MODEL, response, input.track);
-
-  const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+  const text = await runAI({
+    prompt,
+    claudeModel: HAIKU_MODEL,
+    maxTokens: 2000,
+    timeoutMs: 15_000,
+    endpoint: "recruit.suggest-fields",
+    track: input.track,
+  });
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
   try {
@@ -164,19 +340,14 @@ ${readableAnswers.join("\n")}
 - ใช้ภาษาไทย ตรงไปตรงมา
 - คืนเฉพาะ JSON`;
 
-  // B-002: explicit timeout
-  const response = await anthropic.messages.create(
-    {
-      model: SONNET_MODEL,
-      max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }],
-    },
-    { timeout: 20_000 },
-  );
-  await trackRecruitUsage("recruit.score-candidate", SONNET_MODEL, response, input.track);
-
-  const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+  const text = await runAI({
+    prompt,
+    claudeModel: SONNET_MODEL,
+    maxTokens: 1000,
+    timeoutMs: 20_000,
+    endpoint: "recruit.score-candidate",
+    track: input.track,
+  });
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) {
     return {
@@ -229,23 +400,7 @@ export async function scoreResumeFile(input: {
   formAnswersText?: string; // readable "label: answer" lines (bias fields already stripped)
   track?: { orgId: string; userId?: string | null };
 }): Promise<CandidateScore> {
-  const { bytes, mime, name } = input.file;
-  const b64 = bytes.toString("base64");
-
-  const filePart: Anthropic.ContentBlockParam =
-    mime === "application/pdf"
-      ? {
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: b64 },
-        }
-      : {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: mime as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-            data: b64,
-          },
-        };
+  const { name } = input.file;
 
   const prompt = `คุณคือผู้เชี่ยวชาญด้าน HR ประเมินผู้สมัครงานจาก "เรซูเม่/เอกสารแนบ" ที่ผู้สมัครส่งมา (ไฟล์: ${name})
 
@@ -267,19 +422,16 @@ ${input.formAnswersText ? `\nคำตอบเพิ่มเติมจาก
 - ถ้าไฟล์อ่านไม่ออก/เบลอ/ไม่ใช่เรซูเม่ → ให้ score ต่ำ + ระบุใน risks ว่า "อ่านเอกสารไม่ได้"
 - ใช้ภาษาไทย ตรงไปตรงมา · คืนเฉพาะ JSON`;
 
-  // B-002: explicit timeout — vision อ่านไฟล์ช้ากว่า text จึงให้ 30s
-  const response = await anthropic.messages.create(
-    {
-      model: SONNET_MODEL,
-      max_tokens: 1000,
-      messages: [{ role: "user", content: [filePart, { type: "text", text: prompt }] }],
-    },
-    { timeout: 30_000 },
-  );
-  await trackRecruitUsage("recruit.score-resume", SONNET_MODEL, response, input.track);
-
-  const text =
-    response.content[0]?.type === "text" ? response.content[0].text : "";
+  // vision อ่านไฟล์ช้ากว่า text → 30s · Gemini อ่าน PDF/รูปได้ (inlineData) · Claude สำรอง
+  const text = await runAI({
+    prompt,
+    file: input.file,
+    claudeModel: SONNET_MODEL,
+    maxTokens: 1000,
+    timeoutMs: 30_000,
+    endpoint: "recruit.score-resume",
+    track: input.track,
+  });
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) {
     // Fail loudly — the caller must NOT persist score 0 over a prior good score.
@@ -320,25 +472,16 @@ export async function chatSupport(input: {
 สไตล์: ภาษาไทย · ตรงไปตรงมา · กระชับ · ใช้ bullet เมื่อ list หลายข้อ
 ${input.context ? `\nContext ปัจจุบัน: ${input.context}` : ""}`;
 
-  const messages = (input.history ?? []).map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
-  messages.push({ role: "user", content: input.message });
-
-  // B-002: explicit timeout
-  const response = await anthropic.messages.create(
-    {
-      model: SONNET_MODEL,
-      max_tokens: 1500,
-      system: systemPrompt,
-      messages: messages as Anthropic.MessageParam[],
-    },
-    { timeout: 20_000 },
-  );
-  await trackRecruitUsage("recruit.chat-support", SONNET_MODEL, response, input.track);
-
-  return response.content[0]?.type === "text" ? response.content[0].text : "";
+  return runAI({
+    prompt: input.message,
+    system: systemPrompt,
+    history: input.history,
+    claudeModel: SONNET_MODEL,
+    maxTokens: 1500,
+    timeoutMs: 20_000,
+    endpoint: "recruit.chat-support",
+    track: input.track,
+  });
 }
 
 // =============================================================
@@ -391,22 +534,16 @@ export async function draftMessage(input: {
 - ขึ้นต้นด้วยคำทักทายพร้อมชื่อผู้สมัคร · ลงท้ายแบบ HR
 - คืนเฉพาะ "ตัวข้อความ" ล้วน ๆ ไม่ต้องมีหัวข้อ/คำอธิบาย/เครื่องหมายคำพูดครอบ`;
 
-  const response = await anthropic.messages.create(
-    {
-      model: HAIKU_MODEL,
-      max_tokens: 600,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: `ร่างข้อความจากข้อมูลนี้:\n${details.join("\n")}` },
-      ],
-    },
-    { timeout: 15_000 },
-  );
-  await trackRecruitUsage("recruit.draft-message", HAIKU_MODEL, response, input.track);
-
-  return response.content[0]?.type === "text"
-    ? response.content[0].text.trim()
-    : "";
+  const text = await runAI({
+    prompt: `ร่างข้อความจากข้อมูลนี้:\n${details.join("\n")}`,
+    system: systemPrompt,
+    claudeModel: HAIKU_MODEL,
+    maxTokens: 600,
+    timeoutMs: 15_000,
+    endpoint: "recruit.draft-message",
+    track: input.track,
+  });
+  return text.trim();
 }
 
 function formatAnswer(val: unknown): string {

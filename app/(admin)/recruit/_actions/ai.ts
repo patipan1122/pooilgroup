@@ -11,6 +11,7 @@ import {
   isResumeReadableMime,
   draftMessage,
   suggestFields,
+  AiUnavailableError,
   type DraftKind,
   type FieldSuggestion,
 } from "@/lib/recruit/ai";
@@ -429,7 +430,9 @@ export async function smartScoreApplicationAction(
     revalidatePath(`/recruit/applications/${applicationId}`);
     return { ok: true, score: result.score, mode: "answers" };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    // AI ล่มทั้ง Gemini + Claude → หยุดทั้งชุด (ไม่วนต่อจนครบแล้วเด้ง success ปลอม)
+    const stop = e instanceof AiUnavailableError;
+    return { ok: false, error: (e as Error).message, stop };
   }
 }
 

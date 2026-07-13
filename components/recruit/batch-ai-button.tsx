@@ -77,6 +77,7 @@ export function BatchAiButton({
     let ok = 0;
     let fail = 0;
     let done = 0;
+    let stopped = false; // หยุดกลางคัน (AI ล่ม/หมดสิทธิ์/เกิน budget) — โชว์ error ไปแล้ว
     setProgress({ done: 0, ok: 0, fail: 0, total: ids.length });
 
     for (const id of ids) {
@@ -88,6 +89,7 @@ export function BatchAiButton({
           fail++;
           if (res.stop) {
             toast.error(`หยุดไว้ที่ ${done + 1} คน — ${res.error}`);
+            stopped = true;
             done++;
             setProgress({ done, ok, fail, total: ids.length });
             break;
@@ -96,6 +98,7 @@ export function BatchAiButton({
       } catch (e) {
         fail++;
         toast.error("หยุด — " + (e as Error).message);
+        stopped = true;
         done++;
         setProgress({ done, ok, fail, total: ids.length });
         break;
@@ -106,9 +109,16 @@ export function BatchAiButton({
 
     setRunning(false);
     stopRef.current = false;
-    toast.success(
-      `ประเมินเสร็จ ${ok} คน${fail > 0 ? ` · พลาด/ข้าม ${fail}` : ""}`,
-    );
+    // ห้ามเด้ง "เสร็จ" ปลอมเมื่อไม่มีใครสำเร็จ — ให้ error จริงเด่นแทน
+    if (ok > 0) {
+      toast.success(
+        `ประเมินเสร็จ ${ok} คน${fail > 0 ? ` · พลาด/ข้าม ${fail}` : ""}`,
+      );
+    } else if (!stopped && fail > 0) {
+      toast.error(
+        `ประเมินไม่สำเร็จสักคน (${fail}) — ระบบ AI อาจมีปัญหาชั่วคราว · ลองใหม่อีกครั้ง`,
+      );
+    }
     router.refresh();
   }
 
