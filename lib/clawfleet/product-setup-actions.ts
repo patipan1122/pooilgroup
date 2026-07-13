@@ -269,3 +269,153 @@ export async function addSetupProductWithDolls(
     return err(`เพิ่มสินค้าไม่สำเร็จ: ${(e as Error).message}`);
   }
 }
+
+// -----------------------------------------------------------------------------
+// N1c (CEO 2026-07-13) · บันทึกจำนวนตุ๊กตา "ในตู้" ตอนตั้งค่าครั้งแรก สำหรับสินค้าที่
+// มี SKU อยู่แล้ว (ไม่สร้าง product ใหม่ · ต่างจาก addSetupProductWithDolls).
+// ใช้ตอน CEO อยากกรอก "ตุ๊กตาในตู้ตอนนี้" เป็นรายการ SKU (หมี 3 · กระต่าย 4) แทนเลขรวม.
+//
+// money/stock: เขียน 2 แถวสมดุลเหมือน addSetupProductWithDolls (ADJUST +N คลัง / LOAD −N ตู้)
+//   → "ในตู้" = N · net-shelf = 0. ADD-ONCE ต่อสินค้า (ตู้ baseline ว่าง — ไม่รองรับแก้จำนวน:
+//   ถ้าสินค้ามีในตู้อยู่แล้ว (Σ≠0) → ปฏิเสธ กันสแต็กซ้ำ). idempotent ด้วย clientKey.
+// -----------------------------------------------------------------------------
+const AddExistingSetupSchema = z.object({
+  machineId: z.string().uuid("ไม่ระบุตู้"),
+  branchId: z.string().uuid("ไม่ระบุสาขา"),
+  productId: z.string().uuid("ไม่ระบุสินค้า"),
+  qty: z.number().int("จำนวนต้องเป็นจำนวนเต็ม").positive("จำนวนตุ๊กตาต้องมากกว่า 0").max(100_000),
+  clientKey: z.string().uuid("clientKey ไม่ถูกต้อง"),
+});
+export type AddExistingSetupInput = z.input<typeof AddExistingSetupSchema>;
+
+export async function addExistingProductDollsAtSetup(
+  input: AddExistingSetupInput,
+): Promise<Result<{ productId: string; inMachineAfter: number }>> {
+  const parsed = AddExistingSetupSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const data = parsed.data;
+
+  let session: Awaited<ReturnType<typeof requireCfSession>>;
+  try {
+    session = await requireCfSession();
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: data.machineId, orgId, branchId: data.branchId },
+    select: { id: true, branchId: true, isFirstBaselineLocked: true },
+  });
+  if (!machine) return err("ไม่พบตู้ในสาขานี้");
+
+  // สิทธิ์ (เหมือน addSetupProductWithDolls · gate ที่ server เสมอ)
+  const canManage =
+    isCfAdmin(session.user.role) || isCfBranchManager(session.user.role) || (await cfHasAdminPower(session));
+  let allowed = canManage;
+  if (!allowed && !machine.isFirstBaselineLocked && isCfStaff(session.user.role)) {
+    const ub = await prisma.userBranch.findFirst({
+      where: { userId: session.user.id, branchId: machine.branchId },
+      select: { id: true },
+    });
+    allowed = !!ub;
+  }
+  if (!allowed) {
+    return err("บันทึกตุ๊กตาในตู้ได้เฉพาะตอนตั้งค่าตู้ครั้งแรก · หลังจากนั้นต้องให้ผู้จัดการอนุมัติ");
+  }
+
+  // สินค้าต้องอยู่ในทะเบียนของ org นี้
+  const product = await prisma.cfProduct.findFirst({
+    where: { id: data.productId, orgId },
+    select: { id: true },
+  });
+  if (!product) return err("ไม่พบสินค้านี้ในทะเบียน");
+
+  const mainWarehouseId = await getBranchMainWarehouseId(orgId, machine.branchId);
+  const now = new Date();
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // advisory-lock (branch, productId) — serialize การกดพร้อมกัน
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${data.productId}))`;
+
+      // idempotency: clientKey นี้เขียนไปแล้ว → คืนผลเดิม
+      const dup = await tx.cfStockMovement.findFirst({
+        where: {
+          orgId,
+          branchId: machine.branchId,
+          machineId: machine.id,
+          refTable: SETUP_REF_TABLE,
+          refId: data.clientKey,
+        },
+        select: { productId: true },
+      });
+      if (dup) {
+        const cur = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, machineId: machine.id, productId: dup.productId },
+          _sum: { qty: true },
+        });
+        return { productId: dup.productId, inMachineAfter: Math.abs(cur._sum.qty ?? 0) };
+      }
+
+      // กันสแต็ก: สินค้านี้มีในตู้อยู่แล้ว (Σ machineId=ตู้ ≠ 0) → ปฏิเสธ (ตู้ baseline ควรว่าง)
+      const already = await tx.cfStockMovement.aggregate({
+        where: { orgId, branchId: machine.branchId, machineId: machine.id, productId: data.productId },
+        _sum: { qty: true },
+      });
+      if (Math.abs(already._sum.qty ?? 0) !== 0) {
+        throw new Error("สินค้านี้มีในตู้อยู่แล้ว");
+      }
+
+      // 2 แถวสมดุล (เหมือน addSetupProductWithDolls)
+      await tx.cfStockMovement.create({
+        data: {
+          orgId, branchId: machine.branchId, type: "ADJUST", productId: data.productId,
+          machineId: null, warehouseId: mainWarehouseId, qty: data.qty, unitCostCents: 0,
+          refTable: SETUP_REF_TABLE, refId: data.clientKey, occurredAt: now,
+          createdById: session.user.id, reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าเข้าระบบ)",
+        },
+      });
+      await tx.cfStockMovement.create({
+        data: {
+          orgId, branchId: machine.branchId, type: "LOAD_TO_MACHINE", productId: data.productId,
+          machineId: machine.id, warehouseId: null, qty: -data.qty, unitCostCents: 0,
+          refTable: SETUP_REF_TABLE, refId: data.clientKey, occurredAt: now,
+          createdById: session.user.id, reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (โหลดเข้าตู้)",
+        },
+      });
+
+      const existingLoadout = await tx.cfMachineLoadout.findFirst({
+        where: { orgId, machineId: machine.id, productId: data.productId, effectiveTo: null },
+        select: { id: true },
+      });
+      if (!existingLoadout) {
+        await tx.cfMachineLoadout.create({
+          data: {
+            orgId, machineId: machine.id, productId: data.productId, pricePerPlayCoins: 1,
+            effectiveFrom: now, effectiveTo: null, setById: session.user.id,
+            notes: `ตั้งค่าตู้ครั้งแรก · จำนวน ${data.qty}`,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          orgId, userId: session.user.id, action: "CF_SETUP_PRODUCT_DOLLS_SET",
+          resourceType: "CF_PRODUCT", resourceId: data.productId,
+          diff: { machineId: machine.id, branchId: machine.branchId, qty: data.qty, firstSetup: !machine.isFirstBaselineLocked },
+        },
+      });
+
+      return { productId: data.productId, inMachineAfter: data.qty };
+    });
+
+    for (const p of APP_PATHS) revalidatePath(p);
+    return { ok: true, data: result };
+  } catch (e) {
+    if ((e as Error).message === "สินค้านี้มีในตู้อยู่แล้ว") {
+      return err("สินค้านี้มีในตู้อยู่แล้ว — ถ้าจำนวนผิดต้องแก้ที่ผู้จัดการ");
+    }
+    return err(`บันทึกไม่สำเร็จ: ${(e as Error).message}`);
+  }
+}
