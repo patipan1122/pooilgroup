@@ -10,7 +10,7 @@ import { zUUID } from "@/lib/zod-helpers";
 export const MACHINE_KINDS = ["CLAW", "EXCHANGER"] as const;
 export type MachineKind = (typeof MACHINE_KINDS)[number];
 
-export const EVENT_TYPES = ["INITIAL", "COLLECTION", "VOID"] as const;
+export const EVENT_TYPES = ["INITIAL", "COLLECTION", "REFILL_ONLY", "VOID"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 export const STOCK_MOVE_TYPES = [
@@ -228,6 +228,42 @@ export const SubmitBranchEventSchema = z
   })
   .strict();
 export type SubmitBranchEventInput = z.infer<typeof SubmitBranchEventSchema>;
+
+// =============================================================
+// REFILL_ONLY (2026-07-13) — "เปลี่ยนตุ๊กตาโดยไม่เก็บเงิน"
+// พนักงานสลับตุ๊กตา: คืนของเก่า N ตัวเข้าคลัง + เติมของใหม่ M ตัวจากคลัง — ไม่เก็บเงิน · ไม่อ่านมิเตอร์.
+// mirror (last_doll_stock) ขยับเฉพาะส่วนสลับ (−N+M) → การคีบก่อนสลับยังถูกจับที่รอบเก็บเงินถัดไป.
+//   stockBefore = ค่านับจริงของพนักงาน (เก็บไว้ AUDIT อย่างเดียว · ไม่ใช้คำนวณ mirror)
+//   dollsReturnedToStock = N (คืนเข้าคลัง) · refillLines = M (เติมจากคลัง)
+// =============================================================
+export const SubmitRefillOnlySchema = z
+  .object({
+    machineId: zUUID(),
+    qrToken: z.string().min(1).optional(), // optional (พนง.อยู่สาขาตัวเองแล้ว)
+    stockBefore: z.number().int().min(0), // ตุ๊กตาในตู้ ก่อนสลับ (นับจริง · AUDIT only)
+    dollsReturnedToStock: z.number().int().min(0), // N — เอาของเก่าออกคืนคลัง
+    // สินค้าที่คืน (บังคับเมื่อ N>0 · ตรวจใน action). ต้องเป็นของที่อยู่ในตู้ตอนนี้.
+    returnProductId: zUUID().optional(),
+    // M — เติมของใหม่จากคลัง (หลาย SKU) · หัก 1 แถว/ไลน์ · ยอดเติมรวม = ผลบวกทุกไลน์.
+    refillLines: z
+      .array(
+        z.object({
+          productId: zUUID(),
+          qty: z.number().int().positive(),
+          warehouseId: z.string().uuid().optional(), // ห้องที่หยิบ · ละไว้ = คลังหลัก
+        }),
+      )
+      .max(30)
+      .default([]),
+    // idempotency — client-generated UUID ต่อการกด 1 ครั้ง (refId เป็น @db.Uuid) → กันกดซ้ำ · REQUIRED
+    clientKey: zUUID(),
+    // 2 รูป (R2 URLs) — OPTIONAL: ตุ๊กตาก่อนสลับ · หลังสลับ
+    photoStockBeforeUrl: z.union([z.string().url(), z.literal("")]).optional(),
+    photoStockAfterUrl: z.union([z.string().url(), z.literal("")]).optional(),
+    notes: z.string().max(1000).optional(),
+  })
+  .strict();
+export type SubmitRefillOnlyInput = z.infer<typeof SubmitRefillOnlySchema>;
 
 // ปิดรอบ branch → 2-way cross-check (เงิน + ตุ๊กตา) app-layer
 export const CloseBranchSessionSchema = z.object({

@@ -19,6 +19,7 @@ import { getClawfleetPolicy } from "./policy";
 import {
   StartBranchSessionSchema,
   SubmitBranchEventSchema,
+  SubmitRefillOnlySchema,
   CloseBranchSessionSchema,
   StartGroupSessionSchema,
   SubmitExchangerEventSchema,
@@ -421,6 +422,9 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
 
   try {
     const ev = await prisma.$transaction(async (tx) => {
+      // P0-2b · per-MACHINE lock (additive safety · ไม่แตะ money math ด้านล่างเลย) — serialize
+      //   COLLECTION กับ REFILL_ONLY บนตู้เดียวกัน กันสองรอบชนมิลลิวินาที (mirror trigger match 0 แถว).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cf_machine:" + machine.id}))`;
       const created = await tx.cfCollectionEvent.create({
         data: {
           orgId,
@@ -557,6 +561,294 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     // P2002 = DB บังคับ atomic แทน read-then-write (กันนับเงิน+ตัดสต๊อก 2 เท่า)
     if ((e as { code?: string }).code === "P2002") {
       return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว" };
+    }
+    return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+// =============================================================
+// REFILL_ONLY — "เปลี่ยนตุ๊กตาโดยไม่เก็บเงิน" (Option C-mirror · CEO 2026-07-13)
+// พนักงานสลับตุ๊กตา: เอาของเก่า N ตัวออกคืนคลัง + เติมของใหม่ M ตัวจากคลัง — ไม่เก็บเงิน · ไม่อ่านมิเตอร์.
+//
+// MONEY MODEL (LOCKED): baseline การกระทบยอดคือ machine.lastDollStock (mirror ที่ trigger เขียน).
+//   stockAfter (→ กลายเป็น mirror ใหม่) = machine.lastDollStock − N + M  (mirror-based · ไม่ใช่ค่านับ stockBefore)
+//   → mirror ขยับเฉพาะ "ส่วนที่สลับตั้งใจ" (−N+M) เท่านั้น · การคีบก่อนสลับไม่ถูกดูดกลืน
+//     → ยังถูกจับที่รอบ COLLECTION ถัดไป (dispensed = lastDollStock + refill − stockAfter คงเดิม) → ไม่ต้องอ่านมิเตอร์.
+//   FREEZE 2 มิเตอร์: coinBefore=coinAfter=lastCoinMeter · dollBefore=dollAfter=lastDollMeter
+//     (trigger copy coin_meter_after/doll_meter_after ดิบเข้า mirror → ถ้าไม่ freeze = รีเซ็ตมิเตอร์ → รายได้/ขโมยปลอมรอบหน้า).
+//   ไม่มี drift/verdict/SHORT-gate (ไม่มีเงิน · มิเตอร์ไม่ขยับ). guard = stockAfter≥0 · NET over-issue ต่อไลน์เติม · ในตู้≥N ต่อการคืน.
+export async function submitRefillOnly(
+  input: unknown,
+): Promise<ResultOf<{ id: string; stockAfter: number }>> {
+  const parsed = SubmitRefillOnlySchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const data = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const N = data.dollsReturnedToStock;
+  const refillLines = data.refillLines ?? [];
+  const refillTotal = refillLines.reduce((s, l) => s + l.qty, 0);
+
+  // ไม่มีอะไรให้ทำ (ไม่คืน + ไม่เติม) → reject (กันสร้าง event เปล่าที่ไม่ขยับ mirror)
+  if (N === 0 && refillLines.length === 0) {
+    return { ok: false, error: "ต้องมีการคืนหรือเติมตุ๊กตาอย่างน้อย 1 อย่าง" };
+  }
+  // คืน N>0 ต้องระบุว่าคืนสินค้าตัวไหน
+  if (N > 0 && !data.returnProductId) {
+    return { ok: false, error: "เลือกตุ๊กตาที่จะเอาออก (คืนเข้าคลัง)" };
+  }
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: data.machineId, orgId, isActive: true, kind: "CLAW" },
+    include: { loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" } } },
+  });
+  if (!machine) return { ok: false, error: "ไม่พบตู้คีบ" };
+
+  // branch-access guard
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(machine.branchId)) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+  if (data.qrToken && machine.qrToken !== data.qrToken) {
+    return { ok: false, error: "QR ไม่ตรงกับตู้นี้ · สแกนใหม่" };
+  }
+  // baseline ต้องล็อกก่อน (เหมือน submitBranchEvent) — mirror ต้องมี baseline ก่อนถึงจะขยับได้ถูก
+  if (!machine.isFirstBaselineLocked) {
+    return { ok: false, error: "ตู้นี้ยังไม่ได้ตั้งค่าครั้งแรก · ต้องทำ baseline ก่อน" };
+  }
+
+  // Idempotency (pre-tx fast path) — ถ้ากดซ้ำ (clientKey เดิม) เจอ movement เดิม → คืน event เดิม (no-op).
+  // ผูก clientKey กับ movement (refTable 'cf_refill_only' · refId=clientKey · documentId=event.id).
+  // P2-2: คืน event ที่ผูกกับ clientKey นี้เป๊ะ (ผ่าน documentId) ไม่ใช่ REFILL_ONLY ล่าสุดของตู้ (อาจเป็น clientKey อื่น).
+  const existing = await prisma.cfStockMovement.findFirst({
+    where: { orgId, branchId: machine.branchId, refTable: "cf_refill_only", refId: data.clientKey },
+    select: { documentId: true },
+  });
+  if (existing?.documentId) {
+    const ev = await prisma.cfCollectionEvent.findFirst({
+      where: { orgId, machineId: machine.id, id: existing.documentId },
+      select: { id: true, stockAfter: true },
+    });
+    if (ev) return { ok: true, data: { id: ev.id, stockAfter: ev.stockAfter ?? 0 } };
+  }
+
+  // stockAfter (→ mirror ใหม่) = mirror − N + M · guard ≥ 0 (กัน mirror ติดลบ)
+  const stockAfter = machine.lastDollStock - N + refillTotal;
+  if (stockAfter < 0) {
+    return {
+      ok: false,
+      error: `คืน ${N} ตัวมากกว่าจำนวนในระบบ (${machine.lastDollStock}) · ยอดหลังสลับติดลบ`,
+    };
+  }
+
+  // P0-2: mirror trigger เขียนเฉพาะเมื่อ NEW.collected_at > last_event_at (strict) — ถ้า REFILL_ONLY
+  //   ชนมิลลิวินาทีเดียวกับ event ล่าสุด (COLLECTION/REFILL_ONLY อื่น) trigger match 0 แถว → mirror ไม่ขยับ
+  //   ทั้งที่ stock movement ลงแล้ว → รอบ COLLECTION ถัดไป dispensed เพี้ยน (−N+M). บังคับ collectedAt
+  //   ให้ "ชนะ" event ล่าสุดของตู้อย่างน้อย 1ms เสมอ (คู่กับ per-machine lock ด้านล่างที่ serialize รอบ).
+  const collectedAt = new Date(
+    Math.max(Date.now(), (machine.lastEventAt ? machine.lastEventAt.getTime() : 0) + 1),
+  );
+
+  // คลังหลักของสาขา — default ห้องที่หักเมื่อไลน์เติมไม่ระบุ warehouseId (เหมือน submitBranchEvent)
+  const branchMainId =
+    refillLines.length > 0 ? await getBranchMainWarehouseId(orgId, machine.branchId) : null;
+
+  try {
+    const ev = await prisma.$transaction(async (tx) => {
+      // ── P0-1a · LOCK FIRST (ก่อน dup-check) — advisory lock ต่อ clientKey ──
+      //   ทำ dup-check ก่อน lock (แบบเดิม) = 2 request clientKey เดียวกัน ผ่าน check ทั้งคู่ → หักคลัง 2 เท่า.
+      //   ล็อกก่อนตรวจ (mirror pattern จาก returnDollsToStock stock-actions.ts:1609) → request ที่ 2 รอ
+      //   จน request แรก commit → เห็นแถว dup → replay no-op. (partial unique index เป็น backstop ระดับ DB.)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cf_refill_only:" + data.clientKey}))`;
+      // ── P0-2b · per-MACHINE lock — serialize REFILL_ONLY กับ COLLECTION บนตู้เดียวกัน ──
+      //   กัน REFILL_ONLY กับ COLLECTION (หรือ REFILL_ONLY 2 อัน) แทรกกันจนชนมิลลิวินาที (คู่กับ collectedAt bump).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cf_machine:" + machine.id}))`;
+
+      // ── กันกดซ้ำใน tx (หลัง lock) — idempotency guard ชั้นสอง (pre-tx อาจแข่งกัน) ──
+      // P2-2: ตัว anchor movement ของคำสั่งนี้เก็บ event.id ไว้ที่ documentId (ผูก clientKey→event ตรงตัว)
+      //   → replay คืน event ของ clientKey นี้เป๊ะ (ไม่ใช่ REFILL_ONLY ล่าสุด createdAt desc ที่อาจเป็น clientKey อื่น).
+      const dupInTx = await tx.cfStockMovement.findFirst({
+        where: { orgId, branchId: machine.branchId, refTable: "cf_refill_only", refId: data.clientKey },
+        select: { documentId: true },
+      });
+      if (dupInTx) {
+        const prev = dupInTx.documentId
+          ? await tx.cfCollectionEvent.findFirst({
+              where: { orgId, machineId: machine.id, id: dupInTx.documentId },
+              select: { id: true, stockAfter: true },
+            })
+          : null;
+        // คืน event เดิม — สร้าง sentinel เพื่อ short-circuit นอก tx
+        return { __idempotent: true, id: prev?.id ?? "", stockAfter: prev?.stockAfter ?? stockAfter } as const;
+      }
+
+      // 1) สร้าง REFILL_ONLY event — FREEZE 2 มิเตอร์ (before==after==mirror ปัจจุบัน)
+      //    stockAfter = mirror − N + M (mirror-based · ไม่ใช่ค่านับ) → trigger เขียนเข้า mirror ใหม่.
+      //    stockBefore = ค่านับจริง (AUDIT only) · cashCountedCents=0 · sessionId=null (ไม่อยู่ในรอบ).
+      const created = await tx.cfCollectionEvent.create({
+        data: {
+          orgId,
+          sessionId: null,
+          machineId: machine.id,
+          eventType: "REFILL_ONLY",
+          collectedAt, // P0-2: strictly beats machine.lastEventAt so the mirror trigger always fires
+          collectedById: session.user.id,
+          // FREEZE — trigger copy coin_meter_after/doll_meter_after ดิบเข้า mirror → ต้อง = ค่าปัจจุบันเป๊ะ
+          coinMeterBefore: machine.lastCoinMeter,
+          coinMeterAfter: machine.lastCoinMeter,
+          cashCountedCents: 0, // ไม่เก็บเงิน
+          dollMeterBefore: machine.lastDollMeter,
+          dollMeterAfter: machine.lastDollMeter,
+          stockBefore: data.stockBefore, // AUDIT only — ไม่ใช้คำนวณ mirror
+          stockAfter, // → mirror ใหม่ (mirror − N + M)
+          refillQty: refillTotal, // M
+          dollsReturnedToStock: N, // N (audit)
+          // รูป (2 ช่อง) — reuse slot เดิม (photoStockUrl = ก่อน · photoMeterBeforeUrl = หลัง · ตรงกับ COLLECTION)
+          photoStockUrl: data.photoStockBeforeUrl || null,
+          photoMeterBeforeUrl: data.photoStockAfterUrl || null,
+          anomalyFlags: [],
+          notes: data.notes ?? null,
+        },
+        select: { id: true },
+      });
+
+      // 2) เติม M — หัก 1 แถว LOAD_TO_MACHINE ต่อไลน์ (reuse block เดียวกับ submitBranchEvent ~441-483)
+      //    advisory-lock ต่อ (branch,ห้อง,สินค้า) · NET over-issue guard · qty:-line.qty · refId=event.id
+      for (const line of refillLines) {
+        const chosenWh = line.warehouseId ?? branchMainId;
+        const whFilter: Record<string, unknown> =
+          chosenWh == null
+            ? {}
+            : branchMainId && chosenWh === branchMainId
+              ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
+              : { warehouseId: chosenWh };
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${line.productId}))`;
+        const onHandAgg = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, productId: line.productId, ...whFilter },
+          _sum: { qty: true },
+        });
+        const shelfOnHand = onHandAgg._sum.qty ?? 0;
+        if (line.qty > shelfOnHand) {
+          const roomSuffix = line.warehouseId ? " ในคลังที่เลือก" : "";
+          throw new CfOverIssueError(
+            `ตุ๊กตาบนชั้นไม่พอ${roomSuffix} · บนชั้นมี ${shelfOnHand} ตัว · เติม ${line.qty} ตัวไม่ได้`,
+          );
+        }
+        await tx.cfStockMovement.create({
+          data: {
+            orgId,
+            branchId: machine.branchId,
+            type: "LOAD_TO_MACHINE",
+            productId: line.productId,
+            machineId: machine.id,
+            warehouseId: chosenWh,
+            qty: -line.qty,
+            refTable: "cf_collection_events",
+            refId: created.id,
+            occurredAt: new Date(),
+            createdById: session.user.id,
+            reason: "เติมตุ๊กตาเข้าตู้ (เปลี่ยนตุ๊กตา)",
+          },
+        });
+      }
+
+      // 3) คืน N — 1 แถว ADJUST qty:+N (ผกผัน refill · "ในตู้" ↓) + in-machine guard.
+      //    (inline logic จาก returnDollsToStock ~1607-1658 · refId=clientKey · lock ต่อ (branch,product).)
+      if (N > 0 && data.returnProductId) {
+        const returnPid = data.returnProductId;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${returnPid}))`;
+        const product = await tx.cfProduct.findFirst({
+          where: { id: returnPid, orgId },
+          select: { id: true, unitCostCents: true },
+        });
+        if (!product) throw new CfOverIssueError("ไม่พบสินค้าที่จะคืน");
+        // "ในตู้" ของสินค้านี้ = |Σ qty ที่ machineId=ตู้นี้ + productId นี้| (รวมแถวเติมที่เพิ่งเขียนใน tx นี้)
+        const inMachineAgg = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, machineId: machine.id, productId: returnPid },
+          _sum: { qty: true },
+        });
+        const inMachine = Math.abs(inMachineAgg._sum.qty ?? 0);
+        if (N > inMachine) {
+          throw new CfOverIssueError(`ในตู้มีของนี้ ${inMachine} ตัว · เอาออก ${N} ตัวไม่ได้`);
+        }
+        await tx.cfStockMovement.create({
+          data: {
+            orgId,
+            branchId: machine.branchId,
+            type: "ADJUST",
+            productId: returnPid,
+            machineId: machine.id,
+            qty: N, // + → ลด |Σ machineId=ตู้| → "ในตู้" ลด (ผกผัน refill · คลัง gross ไม่แตะ)
+            unitCostCents: product.unitCostCents,
+            refTable: "cf_refill_only",
+            refId: data.clientKey, // idempotency anchor (pre-tx/in-tx dup check ใช้แถวนี้)
+            documentId: created.id, // P2-2: ผูก clientKey → event นี้ (replay คืน event ที่ถูกต้อง)
+            occurredAt: new Date(),
+            createdById: session.user.id,
+            reason: "คืนตุ๊กตาจากตู้เข้าคลัง (เปลี่ยนตุ๊กตา)",
+          },
+        });
+      } else {
+        // ไม่มีการคืน (N=0 · เติมอย่างเดียว) → ยังต้องผูก clientKey กับ event นี้ให้ idempotency ทำงาน.
+        // เขียน movement marker qty:0 บนสินค้าที่เติมเยอะสุด (ไม่กระทบยอดสต๊อก · เป็นแค่ anchor).
+        const anchorPid = [...refillLines].sort((a, b) => b.qty - a.qty)[0]?.productId;
+        if (anchorPid) {
+          await tx.cfStockMovement.create({
+            data: {
+              orgId,
+              branchId: machine.branchId,
+              type: "ADJUST",
+              productId: anchorPid,
+              machineId: machine.id,
+              qty: 0, // marker เท่านั้น — ไม่กระทบยอด (idempotency anchor สำหรับ N=0)
+              refTable: "cf_refill_only",
+              refId: data.clientKey,
+              documentId: created.id, // P2-2: ผูก clientKey → event นี้ (replay คืน event ที่ถูกต้อง)
+              occurredAt: new Date(),
+              createdById: session.user.id,
+              reason: "เปลี่ยนตุ๊กตา (เติมอย่างเดียว · idempotency marker)",
+            },
+          });
+        }
+      }
+
+      // 4) เปิด loadout row ให้ SKU ใหม่ที่ยังไม่มี (สินค้านี้เป็นของในตู้ · pattern จาก refillDollsToMachine)
+      for (const line of refillLines) {
+        const existingLoadout = await tx.cfMachineLoadout.findFirst({
+          where: { orgId, machineId: machine.id, productId: line.productId, effectiveTo: null },
+          select: { id: true },
+        });
+        if (!existingLoadout) {
+          await tx.cfMachineLoadout.create({
+            data: {
+              orgId,
+              machineId: machine.id,
+              productId: line.productId,
+              pricePerPlayCoins: machine.loadouts[0]?.pricePerPlayCoins ?? 1,
+              effectiveFrom: new Date(),
+              effectiveTo: null,
+              setById: session.user.id,
+              notes: "ตั้งจากการเปลี่ยนตุ๊กตา (refill-only)",
+            },
+          });
+        }
+      }
+
+      return { __idempotent: false, id: created.id, stockAfter } as const;
+    });
+
+    revalidatePath("/clawfleet/os/app");
+    revalidatePath("/clawfleet/os/collections");
+    return { ok: true, data: { id: ev.id, stockAfter: ev.stockAfter } };
+  } catch (e) {
+    // over-issue / in-machine guard → ข้อความชัด (rollback แล้ว = ไม่มีของตัดครึ่ง)
+    if (e instanceof CfOverIssueError) {
+      return { ok: false, error: e.message };
+    }
+    // กันกดซ้ำชนกันจริง (unique/แข่ง) → รายงานเป็นซ้ำ (event ถูกสร้างโดย request แรกแล้ว)
+    if ((e as { code?: string }).code === "P2002") {
+      return { ok: false, error: "รายการนี้ถูกบันทึกไปแล้ว (กดซ้ำ)" };
     }
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
   }

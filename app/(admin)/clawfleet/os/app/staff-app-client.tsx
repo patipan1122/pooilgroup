@@ -24,7 +24,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, PackagePlus, ImageDown, History, RefreshCw } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, Package, Banknote, PackageOpen, PackagePlus, ImageDown, History, RefreshCw } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
@@ -33,9 +33,10 @@ import {
   closeBranchSession,
   renameMachineNickname,
   attachEventPhotos,
+  submitRefillOnly,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
-import { submitStockCount, confirmShipmentReceived, returnDollsToStock, refillDollsToMachine } from "@/lib/clawfleet/stock-actions";
+import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
@@ -1374,7 +1375,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onOpen={openMachine}
           onOpenPhotoHub={openMachinePhotoHub}
           onReturn={(m) => { setError(null); setReturnChangeMode(false); setReturnMachineId(m.id); }}
-          onChange={(m) => { setError(null); setReturnChangeMode(true); setReturnMachineId(m.id); }}
+          // [C] "เปลี่ยน" → เปิด sheet ใหม่ (submitRefillOnly · atomic · mirror-correct) แทน changeMode เดิมที่ bypass mirror.
+          onChange={(m) => { setError(null); setRefillMachineId(m.id); }}
           onRefillOnly={(m) => { setError(null); setRefillMachineId(m.id); }}
           inMachineByMachine={inMachineByMachine}
           pending={pending}
@@ -1491,6 +1493,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           machine={refillMachine}
           products={refillProducts}
           netById={refillNet}
+          dolls={inMachineByMachine[refillMachine.id] ?? []}
           onClose={() => setRefillMachineId(null)}
         />
       )}
@@ -1743,13 +1746,13 @@ function HomeScreen(props: {
                             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>ถ่ายก่อน</span>
                           </button>
                         )}
-                        {/* item 7 · ปุ่ม "เปลี่ยน" — เอาตัวเก่าออก (คืน) แล้วเติมตัวใหม่ (reuse flow คืน + เติม · ไม่มี write ใหม่) */}
+                        {/* [C] (CEO 2026-07-13) · ปุ่ม "เปลี่ยน/เติม" — เปลี่ยน/เติมตุ๊กตาโดยไม่เก็บเงิน (atomic submitRefillOnly · mirror-correct) */}
                         {canChange && (
-                          <button type="button" disabled={pending} aria-label={`เปลี่ยนตุ๊กตาในตู้ ${m.code}`} title="เปลี่ยนตุ๊กตา = คืนตัวเก่าก่อน แล้วเติมใหม่"
+                          <button type="button" disabled={pending} aria-label={`เปลี่ยน/เติมตุ๊กตา ตู้ ${m.code}`} title="เปลี่ยน/เติมตุ๊กตา (ไม่เก็บเงิน · เอาตัวเก่าออก+เติมใหม่)"
                             onClick={() => onChange(m)} className={pending ? "" : "co-tap"}
                             style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#FFF7ED", border: "1px solid #FBDCB4", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#B45309" }}>
                             <RefreshCw size={18} strokeWidth={2} />
-                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>เปลี่ยน</span>
+                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>เปลี่ยน/เติม</span>
                           </button>
                         )}
                         {/* 🆕 ปุ่ม "คืนตุ๊กตา" — เอาตุ๊กตาออกจากตู้ กลับเข้าคลังสาขา (ราย SKU + รูป) */}
@@ -1761,14 +1764,9 @@ function HomeScreen(props: {
                             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>คืนของ</span>
                           </button>
                         )}
-                        {/* ชิ้น 2 (CEO 2026-07-13) · ปุ่ม "เติม" — เติมตุ๊กตาอย่างเดียว (โหลดคลัง→ตู้ · ไม่ต้องทำรอบเก็บเงินเต็ม) */}
-                        {canRefillOnly && (
-                          <button type="button" disabled={pending} aria-label={`เติมตุ๊กตาเข้าตู้ ${m.code}`} title="เติมตุ๊กตาอย่างเดียว (โหลดจากคลังเข้าตู้)"
-                            onClick={() => onRefillOnly(m)} className={pending ? "" : "co-tap"}
-                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#F5F5FE", border: "1px solid #D9D6F5", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#4F46E5" }}>
-                            <PackagePlus size={19} strokeWidth={2} />
-                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>เติม</span>
-                          </button>
+                        {/* onRefillOnly ยังคงไว้เผื่อ entry อื่น · ปุ่มหลักใช้ onChange (relabel ด้านบน) */}
+                        {false && canRefillOnly && (
+                          <button type="button" onClick={() => onRefillOnly(m)}>เปลี่ยน/เติม</button>
                         )}
                       </div>
                         {/* item 8 · "ตอนนี้ในตู้" — chips ราย SKU (คิตตี้ ×5 · หมีบราวน์ ×3) จาก server ledger · display-only */}
@@ -2819,19 +2817,28 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
 /* ── ชิ้น 2 (CEO 2026-07-13) · RefillDollsSheet — เติมตุ๊กตา "อย่างเดียว" (โหลดคลัง→ตู้) ──
    เลือก SKU จากคลังสาขา (BranchStockPicker · net บนชั้นจริง) + จำนวน → refillDollsToMachine.
    ไม่ต้องทำรอบเก็บเงินเต็ม · guard เกินคลัง + idempotent (clientKey) อยู่ที่ server. */
-function RefillDollsSheet({ machine, products, netById, onClose }: {
+function RefillDollsSheet({ machine, products, netById, dolls, onClose }: {
   machine: AppMachine;
   products: BranchStockProduct[];
   netById: Record<string, number>;
+  dolls: InMachineDoll[];
   onClose: () => void;
 }) {
   const router = useRouter();
   const [selId, setSelId] = useState<string | null>(null);
   const [qty, setQty] = useState<number | null>(null);
+  // [C] เปลี่ยนตุ๊กตา (ไม่เก็บเงิน): เอาตัวเก่าออก→คืนคลัง (returnSel/Qty) + นับที่เหลือ (countNow · audit).
+  const inMachineTotal = dolls.reduce((s, d) => s + d.qty, 0);
+  const [returnSelId, setReturnSelId] = useState<string | null>(null);
+  const [returnQty, setReturnQty] = useState<number | null>(null);
+  const [countNow, setCountNow] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [clientKey] = useState(() => crypto.randomUUID());
+  const returnDoll = dolls.find((d) => d.productId === returnSelId) ?? null;
+  const returnMax = returnDoll?.qty ?? 0;
+  const returnQtyNum = returnQty == null ? 0 : Math.min(returnMax, Math.max(0, returnQty));
 
   // สินค้าคลัง → picker (warehouse = net บนชั้นจริง · mirror RefillLinesEditor · money-safe)
   const netProducts = useMemo(
@@ -2849,18 +2856,30 @@ function RefillDollsSheet({ machine, products, netById, onClose }: {
     setQty(Math.min(shelf, Math.max(0, Number(cleaned)))); // clamp ไม่ให้เกินบนชั้น (server กันซ้ำอีกชั้น)
   }
 
+  // [C] เติมกี่ตัว (M) · ต้อง valid (ไม่เกินบนชั้น) จึงนับ · ส่งได้เมื่อ เอาออก(N)>0 หรือ เติม(M)>0.
+  const refillN = sel && qtyValid ? qtyNum : 0;
+  const canSubmit = (returnQtyNum > 0 || refillN > 0) && !pending;
+
   function submit() {
-    if (!sel || !qtyValid || pending) return;
+    if (!canSubmit) return;
     setError(null); setOkMsg(null);
     startTransition(async () => {
       try {
-        const res = await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: qtyNum, clientKey });
-        if (!res.ok) { setError(res.error || "เติมไม่สำเร็จ · ลองใหม่"); return; }
-        setOkMsg(`เติม ${qtyNum} ตัวเข้าตู้แล้ว · ในตู้ ${res.data.inMachineAfter} ตัว`);
+        // atomic · อัปเดต mirror ถูกต้อง (ต่างจาก return+refill 2 call เดิมที่ bypass mirror = ยอดเพี้ยน).
+        const res = await submitRefillOnly({
+          machineId: machine.id,
+          stockBefore: countNow ?? inMachineTotal,
+          dollsReturnedToStock: returnQtyNum,
+          returnProductId: returnQtyNum > 0 ? (returnSelId ?? undefined) : undefined,
+          refillLines: refillN > 0 && sel ? [{ productId: sel.id, qty: refillN }] : [],
+          clientKey,
+        });
+        if (!res.ok) { setError(res.error || "บันทึกไม่สำเร็จ · ลองใหม่"); return; }
+        setOkMsg(`บันทึกแล้ว · ในตู้ตอนนี้ ${res.data.stockAfter} ตัว`);
         router.refresh();
         setTimeout(onClose, 1100);
       } catch {
-        setError("เติมไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+        setError("บันทึกไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
       }
     });
   }
@@ -2877,8 +2896,8 @@ function RefillDollsSheet({ machine, products, netById, onClose }: {
             <PackagePlus size={18} strokeWidth={2} />
           </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>เติมตุ๊กตา (อย่างเดียว)</div>
-            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ {machine.code} · โหลดจากคลังเข้าตู้</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>เปลี่ยน / เติมตุ๊กตา</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ {machine.code} · ไม่เก็บเงิน · เอาตัวเก่าออก + เติมใหม่</div>
           </div>
           <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
             style={{ background: "none", border: "none", color: "#9AA1AB", cursor: "pointer", padding: 4 }}>
@@ -2892,7 +2911,50 @@ function RefillDollsSheet({ machine, products, netById, onClose }: {
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เลือกตุ๊กตาที่จะเติม (จากคลังสาขา)</div>
+            {/* [C] ตอนนี้ในตู้ (SKU+จำนวน) + นับที่เหลือจริง */}
+            {dolls.length > 0 && (
+              <div style={{ marginBottom: 13 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>ตอนนี้ในตู้ ({inMachineTotal} ตัว)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {dolls.map((d) => (
+                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8F7FE", border: "1px solid #E9E5F9", borderRadius: 11, padding: "8px 11px" }}>
+                      <DollThumb imageUrl={d.imageUrl} name={d.name} size={30} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                      <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 7 }}>ตอนนี้ในตู้เหลือกี่ตัว (นับจริง)</div>
+              <input inputMode="numeric" value={countNow == null ? "" : String(countNow)}
+                onChange={(e) => { const c = e.target.value.replace(/[^\d]/g, ""); setCountNow(c === "" ? null : Number(c)); }}
+                placeholder={inMachineTotal > 0 ? `เช่น ${inMachineTotal}` : "นับแล้วกรอก"} className="co-input num" style={{ fontSize: 16, fontWeight: 700 }} />
+            </div>
+
+            {/* [C] เอาตัวเก่าออก → คืนคลัง (ตุ๊กตายังดี ไม่นับเป็นที่ลูกค้าคีบ) */}
+            {dolls.length > 0 && (
+              <div style={{ marginBottom: 16, border: "1px solid #F0D8AE", background: "#FEFBF3", borderRadius: 13, padding: "12px 13px" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#7A5510", marginBottom: 9 }}>เอาตัวเก่าออก → คืนคลัง <span style={{ fontWeight: 600, color: "#B08442" }}>(ข้ามได้)</span></div>
+                <select value={returnSelId ?? ""} onChange={(e) => { setReturnSelId(e.target.value || null); setReturnQty(null); }}
+                  style={{ width: "100%", padding: "11px 12px", fontSize: 14, fontWeight: 600, border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", color: "#2A2740" }}>
+                  <option value="">— ไม่เอาออก —</option>
+                  {dolls.map((d) => <option key={d.productId} value={d.productId}>{d.name} (ในตู้ {d.qty})</option>)}
+                </select>
+                {returnSelId && (
+                  <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 9 }}>
+                    <span style={{ fontSize: 12, color: "#7A5510", fontWeight: 600 }}>เอาออกกี่ตัว</span>
+                    <input inputMode="numeric" value={returnQty == null ? "" : String(returnQty)}
+                      onChange={(e) => { const c = e.target.value.replace(/[^\d]/g, ""); setReturnQty(c === "" ? null : Math.min(returnMax, Number(c))); }}
+                      placeholder={`≤ ${returnMax}`} className="num" style={{ width: 90, textAlign: "center", fontSize: 15, fontWeight: 700, padding: "9px 10px", border: "1.5px solid #E3E6EA", borderRadius: 10 }} />
+                    <span style={{ fontSize: 11, color: "#B08442" }}>สูงสุด {returnMax}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เติมตัวใหม่ (จากคลังสาขา · ข้ามได้)</div>
             <BranchStockPicker products={netProducts} value={selId} onPick={(pid) => { setSelId(pid); setQty(null); }} />
 
             {sel && (
@@ -2908,9 +2970,11 @@ function RefillDollsSheet({ machine, products, netById, onClose }: {
 
             {error && <div style={{ marginTop: 12, fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
 
-            <button type="button" disabled={!qtyValid || pending} onClick={submit} className={pending ? "" : "co-tap"}
-              style={{ marginTop: 16, width: "100%", padding: 14, borderRadius: 13, border: "none", background: (!qtyValid || pending) ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 15, fontWeight: 700, cursor: (!qtyValid || pending) ? "default" : "pointer" }}>
-              {pending ? "กำลังเติม…" : qtyValid ? `เติม ${qtyNum} ตัวเข้าตู้` : sel ? "ใส่จำนวน (ไม่เกินบนชั้น)" : "เลือกตุ๊กตาก่อน"}
+            <button type="button" disabled={!canSubmit} onClick={submit} className={pending ? "" : "co-tap"}
+              style={{ marginTop: 16, width: "100%", padding: 14, borderRadius: 13, border: "none", background: !canSubmit ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 15, fontWeight: 700, cursor: !canSubmit ? "default" : "pointer" }}>
+              {pending ? "กำลังบันทึก…" : canSubmit
+                ? `บันทึก${returnQtyNum > 0 ? ` · เอาออก ${returnQtyNum}` : ""}${refillN > 0 ? ` · เติม ${refillN}` : ""}`
+                : "เลือก “เอาออก” หรือ “เติม” อย่างน้อย 1 อย่าง"}
             </button>
           </>
         )}

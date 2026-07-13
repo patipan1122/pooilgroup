@@ -64,7 +64,9 @@ export async function getMachineRecentCollections(
     if (!machine) return [];
 
     const rows = await prisma.cfCollectionEvent.findMany({
-      where: { orgId, machineId },
+      // P2-1: REFILL_ONLY (เปลี่ยนตุ๊กตาไม่เก็บเงิน · cash=0) ไม่ใช่ "รอบเก็บเงิน" — ถ้าไม่กรอง
+      //   จะโผล่เป็นแถวเก็บเงิน ฿0 หลอกในแผงจัดการ. panel นี้แสดงเฉพาะรอบเก็บเงินจริง.
+      where: { orgId, machineId, eventType: "COLLECTION" },
       orderBy: { collectedAt: "desc" },
       take: Math.max(1, Math.min(50, limit)),
       select: {
