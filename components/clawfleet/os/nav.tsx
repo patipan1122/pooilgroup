@@ -16,6 +16,7 @@ import {
   Wrench,
   Wallet,
   Layers,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,6 +44,8 @@ export const BACK_NAV: ClawNavItem[] = [
   { key: "branches", label: "สาขา", href: `${OS_BASE}/branches`, icon: Store, roles: [...MGR] },
   // management hub — CRUD สาขา+ตู้ · ประวัติตู้ · คลังประจำสาขา (admin-tier เท่านั้น · ไม่ใส่ roles)
   { key: "manage", label: "จัดการ", href: `${OS_BASE}/manage`, icon: Layers },
+  // นำเข้าเก็บเงิน/เติมตุ๊กตาจาก Excel ทีเดียวหลายตู้หลายวัน (admin-tier เท่านั้น)
+  { key: "import", label: "นำเข้า Excel", href: `${OS_BASE}/import`, icon: Upload },
   { key: "stock", label: "คลังสินค้า", href: `${OS_BASE}/stock`, icon: PackageOpen, badge: "lowStock", roles: [...MGR] },
   { key: "collections", label: "ตรวจเงิน & กระทบยอด", href: `${OS_BASE}/collections`, icon: ScrollText, badge: "diffs", roles: [...MGR] },
   // ฝากเงิน — ผู้เก็บ (staff) ต้องบันทึกฝากได้ด้วย → รวม staff นอกเหนือ ผจก.+แอดมิน
@@ -70,6 +73,7 @@ export const SCREEN_META: Record<string, { title: string; sub: string }> = {
   dashboard: { title: "ภาพรวมร้าน", sub: "สรุปกำไร–ขาดทุน · ตู้เสี่ยง · สุขภาพการตั้งค่าตู้ทุกสาขา" },
   branches: { title: "สาขา", sub: "ดูทุกสาขา · ตู้ในแต่ละสาขา · กดเจาะดูรายตู้" },
   manage: { title: "จัดการ", sub: "สร้าง/แก้/ลบ สาขา+ตู้ · ย้าย/ปลดตู้ · ดูประวัติตู้ · คลังประจำสาขา" },
+  import: { title: "นำเข้าข้อมูล (Excel)", sub: "กรอกเก็บเงิน/เติมตุ๊กตาลง Excel ทีเดียวหลายตู้หลายวัน · พรีวิวก่อนบันทึก · ยกเลิกทั้งชุดได้" },
   stock: { title: "คลังสินค้า", sub: "คลังกลาง + สต็อกสาขา · การโอน · หมุนเวียน FIFO" },
   collections: { title: "ตรวจเงิน & กระทบยอด", sub: "รอบเก็บเงินทุกตู้ · เทียบมิเตอร์กับเงินสด · ธงไม่ตรง" },
   config: { title: "ตั้งค่าตู้", sub: "คำขอปรับความแรงการคีบ/ราคา · รออนุมัติจากเจ้าของ" },

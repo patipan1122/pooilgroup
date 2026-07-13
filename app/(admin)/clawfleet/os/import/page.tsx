@@ -4,8 +4,6 @@
 // แอดมิน ClawFleet เท่านั้น. โหลด template → กรอกหลายตู้/หลายวัน → อัปโหลด → พรีวิว.
 // การ parse/ตรวจ/กันซ้ำ อยู่ใน ./actions.ts. หน้านี้เป็น server shell · พรีวิวรันฝั่ง client.
 
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { assertCfAdmin } from "@/lib/clawfleet/role-guard";
 import { Card, CardBody } from "@/components/ui/card";
 import { ClawImportShell } from "./import-shell";
@@ -20,23 +18,7 @@ export default async function ClawImportPage() {
   const batches = await listRecentImportBatches(10);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <Link
-        href="/clawfleet/os/dashboard"
-        className="inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-zinc-600 hover:text-zinc-900"
-      >
-        <ChevronLeft className="h-5 w-5" aria-hidden="true" /> กลับภาพรวม
-      </Link>
-
-      <header className="space-y-1">
-        <p className="text-xs font-semibold text-zinc-500">นำเข้า · ตู้คีบ OS</p>
-        <h1 className="text-xl font-bold text-zinc-900">นำเข้าข้อมูลเก็บเงิน / เติมตุ๊กตา (Excel)</h1>
-        <p className="text-sm text-zinc-500">
-          กรอกลง Excel ทีเดียวหลายตู้ + หลายวัน แล้วอัปโหลดเข้ามา · มีหน้าพรีวิวให้ตรวจก่อนบันทึกจริง ·
-          รองรับ .xlsx และ .csv · ไม่ต้องระบุ SKU/ชื่อตุ๊กตา
-        </p>
-      </header>
-
+    <div className="mx-auto max-w-4xl space-y-4">
       <Card>
         <CardBody className="space-y-2 p-4 text-sm">
           <div className="font-semibold text-zinc-800">วิธีใช้</div>
