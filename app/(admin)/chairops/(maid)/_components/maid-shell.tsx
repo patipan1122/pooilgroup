@@ -27,6 +27,7 @@ import {
   Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils/cn";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -213,14 +214,18 @@ function BranchSwitcher({
         <ChevronDown className="ml-auto size-4 shrink-0" aria-hidden />
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-end bg-black/40"
-          onClick={() => setOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="เลือกสาขา"
-        >
+      {/* Portal to <body> so the sheet escapes the header's stacking context
+          (sticky z-30). ไม่งั้นแถบเมนูล่าง (fixed z-40 ที่ root) จะลอยทับกล่อง
+          เลือกสาขา → บังสาขาที่ 2 กดไม่ได้. */}
+      {open &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-end bg-black/40"
+            onClick={() => setOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="เลือกสาขา"
+          >
           <div
             className="w-full rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
             onClick={(e) => e.stopPropagation()}
@@ -256,8 +261,9 @@ function BranchSwitcher({
               })}
             </ul>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
