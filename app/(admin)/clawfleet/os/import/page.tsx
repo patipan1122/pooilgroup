@@ -60,6 +60,12 @@ export default async function ClawImportPage() {
             >
               ⬇ ดาวน์โหลด template (.xlsx) — เติมสาขา+ตู้ให้แล้ว
             </a>
+            <a
+              href="/api/clawfleet/import/collections/machine-list"
+              className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100"
+            >
+              📋 ดาวน์โหลดรายชื่อสาขา+รหัสตู้ (ไฟล์แยก · กันกรอกผิด)
+            </a>
           </div>
         </CardBody>
       </Card>
