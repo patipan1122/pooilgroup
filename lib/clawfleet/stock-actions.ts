@@ -1667,6 +1667,144 @@ export async function returnDollsToStock(
 }
 
 // =============================================================
+// 6c) เติมตุ๊กตาเข้าตู้ "อย่างเดียว" (standalone · CEO 2026-07-13) — คลังสาขา → ตู้ ราย SKU
+//   ผกผันของ returnDollsToStock · semantics เดียวกับ refill ในรอบเก็บเงิน (actions.ts LOAD_TO_MACHINE)
+//   แต่ไม่ต้องทำรอบเก็บเงินเต็ม (ไม่มีมิเตอร์/เงิน). ใช้ตอน "เปลี่ยน/เติมตุ๊กตาอย่างเดียว".
+//   - เขียน 1 แถว LOAD_TO_MACHINE {machineId:ตู้, warehouseId:ห้อง, qty:−N} → "ในตู้" = |Σ| +N
+//   - over-issue guard: NET บนชั้น (Σ ทุกแถวในห้อง · รวม machine rows ที่ลบแล้ว) ≥ N (memory net vs gross)
+//   - สิทธิ์เดียวกับคืน (พนักงานสมาชิกสาขา + ผจก./แอดมิน) · idempotent clientKey (cf_refill_dolls)
+//   - เปิด loadout row ให้สินค้าถ้ายังไม่มี (สินค้านี้เป็นของในตู้)
+// =============================================================
+
+const RefillDollsSchema = z.object({
+  machineId: z.string().min(1),
+  productId: z.string().min(1, "เลือกตุ๊กตาที่จะเติม"),
+  qty: z.number().int().positive("จำนวนเติมต้องมากกว่า 0"),
+  warehouseId: z.string().uuid().optional(), // ห้องที่หยิบ · ละไว้ = คลังหลัก
+  clientKey: z.string().uuid().optional(),
+});
+
+export async function refillDollsToMachine(
+  input: unknown,
+): Promise<Result<{ inMachineAfter: number; shelfAfter: number }>> {
+  const parsed = RefillDollsSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const { machineId, productId, qty, warehouseId, clientKey } = parsed.data;
+
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  const machine = await prisma.cfMachine.findFirst({
+    where: { id: machineId, orgId },
+    select: { id: true, branchId: true },
+  });
+  if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
+
+  const allowed =
+    canWriteOff(session.user.role) || (await isRealBranchStaff(session, machine.branchId));
+  if (!allowed) return err("ไม่มีสิทธิ์เติมตุ๊กตาของสาขานี้");
+
+  const product = await prisma.cfProduct.findFirst({
+    where: { id: productId, orgId },
+    select: { id: true, unitCostCents: true },
+  });
+  if (!product) return err("ไม่พบสินค้า");
+
+  const branchMainId = await getBranchMainWarehouseId(orgId, machine.branchId);
+  const chosenWh = warehouseId ?? branchMainId;
+  // scope ต่อห้อง (คลังหลักรวมแถว warehouseId:null เดิม · เหมือน actions.ts refill)
+  const whFilter: Record<string, unknown> =
+    chosenWh == null
+      ? {}
+      : branchMainId && chosenWh === branchMainId
+        ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
+        : { warehouseId: chosenWh };
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // 🔒 lock ต่อ (branch:ห้อง, product) — serialize การเติมพร้อมกัน
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${productId}))`;
+
+      // กันกดซ้ำ: clientKey นี้เติมไปแล้ว → คืนยอดปัจจุบัน
+      if (clientKey) {
+        const dup = await tx.cfStockMovement.findFirst({
+          where: { orgId, branchId: machine.branchId, machineId, refTable: "cf_refill_dolls", refId: clientKey },
+          select: { id: true },
+        });
+        if (dup) {
+          const inAgg = await tx.cfStockMovement.aggregate({
+            where: { orgId, branchId: machine.branchId, machineId, productId },
+            _sum: { qty: true },
+          });
+          const shelfAgg = await tx.cfStockMovement.aggregate({
+            where: { orgId, branchId: machine.branchId, productId, ...whFilter },
+            _sum: { qty: true },
+          });
+          return { inMachineAfter: Math.abs(inAgg._sum.qty ?? 0), shelfAfter: shelfAgg._sum.qty ?? 0 };
+        }
+      }
+
+      // R4 over-issue guard — NET บนชั้น (Σ ทุกแถวในห้อง) ต้อง ≥ qty
+      const onHandAgg = await tx.cfStockMovement.aggregate({
+        where: { orgId, branchId: machine.branchId, productId, ...whFilter },
+        _sum: { qty: true },
+      });
+      const shelfOnHand = onHandAgg._sum.qty ?? 0;
+      if (qty > shelfOnHand) {
+        const roomSuffix = warehouseId ? " ในคลังที่เลือก" : "";
+        throw new Error(`ตุ๊กตาบนชั้นไม่พอ${roomSuffix} · บนชั้นมี ${shelfOnHand} ตัว · เติม ${qty} ตัวไม่ได้`);
+      }
+
+      const inBeforeAgg = await tx.cfStockMovement.aggregate({
+        where: { orgId, branchId: machine.branchId, machineId, productId },
+        _sum: { qty: true },
+      });
+      const inBefore = Math.abs(inBeforeAgg._sum.qty ?? 0);
+
+      await tx.cfStockMovement.create({
+        data: {
+          orgId,
+          branchId: machine.branchId,
+          type: "LOAD_TO_MACHINE",
+          productId,
+          machineId: machine.id,
+          warehouseId: chosenWh,
+          qty: -qty, // −N → |Σ machineId=ตู้| +N
+          unitCostCents: product.unitCostCents,
+          refTable: clientKey ? "cf_refill_dolls" : null,
+          refId: clientKey ?? null,
+          occurredAt: new Date(),
+          createdById: session.user.id,
+          reason: "เติมตุ๊กตาเข้าตู้ (เติมอย่างเดียว)",
+        },
+      });
+
+      // เปิด loadout row ให้สินค้าถ้ายังไม่มี (สินค้านี้เป็นของในตู้)
+      const existingLoadout = await tx.cfMachineLoadout.findFirst({
+        where: { orgId, machineId: machine.id, productId, effectiveTo: null },
+        select: { id: true },
+      });
+      if (!existingLoadout) {
+        await tx.cfMachineLoadout.create({
+          data: {
+            orgId, machineId: machine.id, productId, pricePerPlayCoins: 1,
+            effectiveFrom: new Date(), effectiveTo: null, setById: session.user.id,
+            notes: `เติมตุ๊กตาอย่างเดียว · จำนวน ${qty}`,
+          },
+        });
+      }
+
+      return { inMachineAfter: inBefore + qty, shelfAfter: shelfOnHand - qty };
+    })
+    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return err(result.error);
+  revalidatePath(STOCK_PATH);
+  revalidatePath("/clawfleet/os/app");
+  return { ok: true, data: result };
+}
+
+// =============================================================
 // 7) ใบกระจายสินค้า (delivery / shipment) คลังกลาง → สาขา
 //    createShipment: สร้างใบ (status SCHEDULED) + รายการสินค้า (cf_delivery_lines)
 //    confirmShipmentReceived: ตั้ง receivedQty + status DELIVERED + รับเข้าสต๊อกสาขา
