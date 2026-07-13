@@ -32,6 +32,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireCfSession, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
 import { getBranchMainWarehouseId } from "./stock-queries";
+import { PRODUCT_CATEGORIES } from "./types";
 
 const APP_PATHS = [
   "/clawfleet/os/app",
@@ -418,4 +419,171 @@ export async function addExistingProductDollsAtSetup(
     }
     return err(`บันทึกไม่สำเร็จ: ${(e as Error).message}`);
   }
+}
+
+// -----------------------------------------------------------------------------
+// N1d (CEO 2026-07-13) · "เพิ่ม SKU ใหม่ + แนบรูปเอง" ตอนเก็บเงิน (collect flow)
+// -----------------------------------------------------------------------------
+// ทำไมมี:
+//   CfProduct.imageUrl มีในสคีมาแต่ "ไม่เคยมีโค้ดที่ไหนเขียนค่านี้เลย" (audit ยืนยัน 0 writer)
+//   → รูปสินค้าทั้งหมดเป็น null. CEO อยากให้พนักงานสร้าง SKU ใหม่ + แนบรูปได้ทันทีหน้าตู้.
+//
+// นี่คือ "แค่ทะเบียนสินค้า" (pure catalog insert) — ต่างจาก addSetupProductWithDolls:
+//   - ★ ไม่แตะ stock / loadout / movement / money เลย (MONEY-SAFE) → สร้างชื่อ SKU ในทะเบียนอย่างเดียว
+//   - ★ key point: เขียน imageUrl ลง DB จริง (เส้นทาง write คอลัมน์ใหม่)
+//   - การใส่ตุ๊กตา "ในตู้" เป็นคนละขั้น → ใช้ addExistingProductDollsAtSetup ต่อได้
+//
+// สิทธิ์ (mirror addSetupProductWithDolls · gate ที่ server เสมอ):
+//   canManage (admin/ผู้จัดการ/admin-power) หรือ staff ที่เป็นสมาชิกจริงของสาขา (UserBranch).
+//   ⚠️ ไม่ gate ด้วย userBranchIds()==='ALL' (viewer ได้ 'ALL' ด้วย) → เช็ก UserBranch membership จริง.
+//
+// idempotency: catalog ไม่มี movement ให้เก็บ clientKey → ใช้ unique [orgId,sku] เป็นตัว dedup
+//   (double-tap ด้วย sku เดิม → คืนสินค้าเดิม ไม่ error). advisory-lock (org, sku) serialize การกดพร้อมกัน.
+//   sku ที่ auto-gen → retry เมื่อชน (P2002) เหมือน DC quickCreateProduct.
+// -----------------------------------------------------------------------------
+const CreateBranchProductSchema = z.object({
+  branchId: z.string().uuid("ไม่ระบุสาขา"),
+  name: z.string().trim().min(1, "กรุณากรอกชื่อสินค้า").max(200),
+  sku: z.string().trim().max(80).optional(),
+  category: z.enum(PRODUCT_CATEGORIES).optional(),
+  // R2 url ที่ client อัปไว้แล้ว (ผ่าน POST /api/clawfleet/upload) หรือ "" ถ้าไม่มีรูป
+  imageUrl: z.union([z.string().trim().url("ลิงก์รูปไม่ถูกต้อง").max(1000), z.literal("")]).optional(),
+  priceCents: z.number().int().min(0, "ราคาต้องไม่ติดลบ").max(100_000_000).optional(),
+  clientKey: z.string().uuid("clientKey ไม่ถูกต้อง").optional(),
+});
+export type CreateBranchProductInput = z.input<typeof CreateBranchProductSchema>;
+
+/** SKU อัตโนมัติ: คำนำหน้าจากหมวด (ตัวอักษรล้วน ≤4) + รหัสสุ่ม (กันชนด้วย retry P2002). */
+function autoCfSku(category: string): string {
+  const letters = category.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+  const prefix = letters.length >= 2 ? `CF-${letters}` : "CF-SKU";
+  // 6 อักขระสุ่ม A-Z0-9 (ไม่รวมตัวสับสน O/0/I/1) → พอกันชนภายใน retry 5 รอบ
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let rand = "";
+  for (let i = 0; i < 6; i++) rand += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return `${prefix}-${rand}`;
+}
+
+/**
+ * สร้างสินค้าใหม่ (SKU) ในทะเบียนของ org พร้อมแนบรูป — pure catalog insert.
+ *
+ * ★ MONEY-SAFE: ไม่แตะ stock / loadout / movement / mirror — สร้างแถว CfProduct อย่างเดียว.
+ * ★ เขียน imageUrl ลง DB (เส้นทาง write คอลัมน์นี้ที่ก่อนหน้าไม่มีใครเขียน).
+ *
+ * สิทธิ์: canManage หรือ staff ที่มี UserBranch ของ branchId.
+ * idempotency: unique [orgId,sku] — sku เดิม → คืนสินค้าเดิม (ไม่ error) · sku auto-gen → retry ชน.
+ */
+export async function createBranchProduct(
+  input: CreateBranchProductInput,
+): Promise<Result<{ id: string; sku: string; name: string; imageUrl: string | null }>> {
+  const parsed = CreateBranchProductSchema.safeParse(input);
+  if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
+  const data = parsed.data;
+
+  let session: Awaited<ReturnType<typeof requireCfSession>>;
+  try {
+    session = await requireCfSession();
+  } catch (e) {
+    return err((e as Error).message);
+  }
+  const orgId = session.user.org_id;
+
+  // ── สิทธิ์ (SERVER-SIDE · mirror addSetupProductWithDolls) ─────────────────
+  // canManage → ได้ทุกเวลา. staff → ต้องเป็นสมาชิกจริงของสาขา (UserBranch) ที่ระบุ.
+  // ⚠️ ไม่ใช้ userBranchIds()==='ALL' (viewer ก็ได้ 'ALL') → เช็ก membership จริง.
+  const canManage =
+    isCfAdmin(session.user.role) || isCfBranchManager(session.user.role) || (await cfHasAdminPower(session));
+  let allowed = canManage;
+  if (!allowed && isCfStaff(session.user.role)) {
+    const ub = await prisma.userBranch.findFirst({
+      where: { userId: session.user.id, branchId: data.branchId },
+      select: { id: true },
+    });
+    allowed = !!ub;
+  }
+  if (!allowed) return err("ไม่มีสิทธิ์เพิ่มสินค้าให้สาขานี้");
+
+  // branch ต้องเป็นของ org นี้ (กัน spoof branchId ข้าม org)
+  const branch = await prisma.branch.findFirst({
+    where: { id: data.branchId, orgId },
+    select: { id: true },
+  });
+  if (!branch) return err("ไม่พบสาขานี้");
+
+  const name = data.name.trim();
+  if (!name) return err("กรุณากรอกชื่อสินค้า");
+  const category = data.category ?? "PLUSH";
+  // "" (ไม่มีรูป) → null · url จริง → เก็บตามนั้น
+  const imageUrl = data.imageUrl && data.imageUrl.length > 0 ? data.imageUrl : null;
+  const explicitSku = data.sku?.trim() || "";
+
+  try {
+    // ── กรณีระบุ SKU เอง: dedup ก่อน (คืนของเดิมถ้ามี · idempotent) แล้วค่อยสร้าง ──
+    if (explicitSku) {
+      const existing = await prisma.cfProduct.findFirst({
+        where: { orgId, sku: explicitSku },
+        select: { id: true, sku: true, name: true, imageUrl: true },
+      });
+      if (existing) {
+        // idempotent: SKU นี้มีแล้ว → คืนของเดิม (ไม่ error · double-tap / retry ปลอดภัย)
+        return { ok: true, data: { id: existing.id, sku: existing.sku, name: existing.name, imageUrl: existing.imageUrl } };
+      }
+      const created = await prisma.$transaction(async (tx) => {
+        // advisory-lock (org, sku) — serialize การกดพร้อมกันที่ sku เดียวกัน (อ่าน→เขียน)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${explicitSku}))`;
+        const again = await tx.cfProduct.findFirst({
+          where: { orgId, sku: explicitSku },
+          select: { id: true, sku: true, name: true, imageUrl: true },
+        });
+        if (again) return again;
+        return tx.cfProduct.create({
+          data: {
+            orgId,
+            sku: explicitSku,
+            name,
+            category,
+            imageUrl, // ★ เขียนรูปลง DB
+            unitCostCents: 0, // ต้นทุนมาทีหลังจากการรับเข้า DC · พนักงานไม่รู้ราคา
+            // defaultPriceCoins ใช้ default schema (1) · priceCents เป็นคนละหน่วย ไม่ map (ดู report)
+          },
+          select: { id: true, sku: true, name: true, imageUrl: true },
+        });
+      });
+      revalidateAppPaths();
+      return { ok: true, data: { id: created.id, sku: created.sku, name: created.name, imageUrl: created.imageUrl } };
+    }
+
+    // ── กรณี auto-gen SKU: retry เมื่อชน unique [orgId,sku] (P2002) สูงสุด 5 รอบ ──
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const sku = autoCfSku(category);
+      try {
+        const created = await prisma.cfProduct.create({
+          data: {
+            orgId,
+            sku,
+            name,
+            category,
+            imageUrl, // ★ เขียนรูปลง DB
+            unitCostCents: 0,
+          },
+          select: { id: true, sku: true, name: true, imageUrl: true },
+        });
+        revalidateAppPaths();
+        return { ok: true, data: { id: created.id, sku: created.sku, name: created.name, imageUrl: created.imageUrl } };
+      } catch (e) {
+        if ((e as { code?: string }).code === "P2002" && attempt < 4) continue; // สุ่มชน → สุ่มใหม่
+        throw e;
+      }
+    }
+    return err("สร้างรหัส SKU ไม่สำเร็จ (ชนซ้ำ) · ลองอีกครั้ง");
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") {
+      return err("รหัส SKU นี้มีอยู่แล้ว เลือกจากรายการที่มี");
+    }
+    return err(`เพิ่มสินค้าไม่สำเร็จ: ${(e as Error).message}`);
+  }
+}
+
+function revalidateAppPaths(): void {
+  for (const p of APP_PATHS) revalidatePath(p);
 }

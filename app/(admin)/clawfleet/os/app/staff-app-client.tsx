@@ -36,6 +36,7 @@ import {
   submitRefillOnly,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
+import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
@@ -1494,6 +1495,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           products={refillProducts}
           netById={refillNet}
           dolls={inMachineByMachine[refillMachine.id] ?? []}
+          orgId={orgId}
+          usingDemo={usingDemo}
           onClose={() => setRefillMachineId(null)}
         />
       )}
@@ -2817,16 +2820,40 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
 /* ── ชิ้น 2 (CEO 2026-07-13) · RefillDollsSheet — เติมตุ๊กตา "อย่างเดียว" (โหลดคลัง→ตู้) ──
    เลือก SKU จากคลังสาขา (BranchStockPicker · net บนชั้นจริง) + จำนวน → refillDollsToMachine.
    ไม่ต้องทำรอบเก็บเงินเต็ม · guard เกินคลัง + idempotent (clientKey) อยู่ที่ server. */
-function RefillDollsSheet({ machine, products, netById, dolls, onClose }: {
+function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo, onClose }: {
   machine: AppMachine;
   products: BranchStockProduct[];
   netById: Record<string, number>;
   dolls: InMachineDoll[];
+  orgId: string;
+  usingDemo: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [selId, setSelId] = useState<string | null>(null);
   const [qty, setQty] = useState<number | null>(null);
+  // [B+] เพิ่ม SKU ใหม่ + แนบรูป ตรงนี้เลย (reuse createBranchProduct + PhotoCaptureButton R2).
+  const [showAddSku, setShowAddSku] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newImg, setNewImg] = useState("");
+  const [addPending, startAddSku] = useTransition();
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [addKey, setAddKey] = useState(() => crypto.randomUUID());
+  function saveNewSku() {
+    const name = newName.trim();
+    if (!name || addPending) return;
+    setAddErr(null);
+    startAddSku(async () => {
+      try {
+        const res = await createBranchProduct({ branchId: machine.branchId, name, imageUrl: newImg || "", clientKey: addKey });
+        if (!res.ok) { setAddErr(res.error || "เพิ่มไม่สำเร็จ · ลองใหม่"); return; }
+        setShowAddSku(false); setNewName(""); setNewImg(""); setAddKey(crypto.randomUUID());
+        router.refresh(); // โหลดคลังใหม่ → SKU ใหม่โผล่ใน picker
+      } catch {
+        setAddErr("เพิ่มไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
   // [C] เปลี่ยนตุ๊กตา (ไม่เก็บเงิน): เอาตัวเก่าออก→คืนคลัง (returnSel/Qty) + นับที่เหลือ (countNow · audit).
   const inMachineTotal = dolls.reduce((s, d) => s + d.qty, 0);
   const [returnSelId, setReturnSelId] = useState<string | null>(null);
@@ -2956,6 +2983,34 @@ function RefillDollsSheet({ machine, products, netById, dolls, onClose }: {
 
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เติมตัวใหม่ (จากคลังสาขา · ข้ามได้)</div>
             <BranchStockPicker products={netProducts} value={selId} onPick={(pid) => { setSelId(pid); setQty(null); }} />
+
+            {/* [B+] (CEO 2026-07-13) shortcut เพิ่มตุ๊กตาแบบใหม่ (ยังไม่มีในคลัง) + แนบรูป → createBranchProduct.
+                หมายเหตุ: เพิ่มเป็น "แบบสินค้า" ในคลัง (ยังไม่มีสต๊อก) — ต้องรับของเข้าคลังก่อนถึงเติมได้. */}
+            {!showAddSku ? (
+              <button type="button" onClick={() => setShowAddSku(true)}
+                style={{ marginTop: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: "#F5F5FE", border: "1px dashed #C7C3EE", borderRadius: 11, padding: "10px 13px", color: "#4F46E5", fontSize: 12.5, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+                <PackagePlus size={15} strokeWidth={2.2} /> เพิ่มตุ๊กตาแบบใหม่ + แนบรูป
+              </button>
+            ) : (
+              <div style={{ marginTop: 10, border: "1px solid #E9E5F9", background: "#FAFAFE", borderRadius: 13, padding: "13px 13px" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เพิ่มตุ๊กตาแบบใหม่เข้าคลัง</div>
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="ชื่อตุ๊กตา (เช่น หมีบราวน์ ไซซ์ L)" className="co-input" style={{ fontSize: 14, marginBottom: 10 }} />
+                {!usingDemo && (
+                  <div style={{ marginBottom: 10 }}>
+                    <PhotoCaptureButton label={newImg ? "เปลี่ยนรูปตุ๊กตา" : "ถ่าย/แนบรูปตุ๊กตา (ไม่บังคับ)"} value={newImg}
+                      onChange={(url) => setNewImg(url)} orgId={orgId} machineCode={machine.code} eventScopeId={`newsku-${machine.id}`} phase="machine" />
+                  </div>
+                )}
+                {addErr && <div style={{ fontSize: 12, color: "#B42318", fontWeight: 600, marginBottom: 8 }}>{addErr}</div>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={() => { setShowAddSku(false); setAddErr(null); }} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #E3E6EA", background: "#fff", color: "#6B7280", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>ยกเลิก</button>
+                  <button type="button" disabled={!newName.trim() || addPending} onClick={saveNewSku}
+                    style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: (!newName.trim() || addPending) ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 700, cursor: (!newName.trim() || addPending) ? "default" : "pointer" }}>
+                    {addPending ? "กำลังเพิ่ม…" : "เพิ่มเข้าคลัง"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {sel && (
               <div style={{ marginTop: 14 }}>
