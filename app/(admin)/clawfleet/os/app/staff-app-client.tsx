@@ -3444,8 +3444,9 @@ function PhotoHubScreen(props: {
   onBack: () => void;
 }) {
   const { machine, photos } = props;
-  // นับรูปที่ถ่ายแล้ว (มี url) — โชว์ความคืบหน้า "ถ่ายแล้ว N/7"
-  const slotKeys: (keyof Photos)[] = ["before", "after", "coinGear", "coinDigi", "dollGear", "dollDigi", "cash"];
+  // นับรูปที่ถ่ายแล้ว (มี url) — โชว์ความคืบหน้า "ถ่ายแล้ว N/6".
+  // (CEO 2026-07-13) เอา "cash" ออก — เงินสดกรอกมือ ไม่ถ่ายรูปแล้ว.
+  const slotKeys: (keyof Photos)[] = ["before", "after", "coinGear", "coinDigi", "dollGear", "dollDigi"];
   const takenCount = slotKeys.filter((k) => !!photos[k]).length;
   // demo ไม่มี backend upload → บันทึกค้างจริงไม่ได้ (saveDraft ข้าม demo อยู่แล้ว) · ปุ่มยังกดดู flow ได้
   const slot = (key: keyof Photos, label: string, phase: Phase) => (
@@ -3465,10 +3466,10 @@ function PhotoHubScreen(props: {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 700 }}>ถ่ายรูปก่อน · <span className="num">{machine?.code ?? "—"}</span></div>
+            <div style={{ fontSize: 14.5, fontWeight: 700 }}>ถ่ายรูปบันทึกด่วน · <span className="num">{machine?.code ?? "—"}</span></div>
             <div style={{ fontSize: 11, color: "#9AA1AB" }}>{machine ? `${machine.branch} · ${machine.zone}` : ""}</div>
           </div>
-          <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>ถ่ายแล้ว {takenCount}/7</span>
+          <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>ถ่ายแล้ว {takenCount}/{slotKeys.length}</span>
         </div>
       </div>
 
@@ -3497,10 +3498,7 @@ function PhotoHubScreen(props: {
             {slot("dollGear", "มิเตอร์ตุ๊กตา · เฟือง (บน)", "prize_meter")}
             {slot("dollDigi", "มิเตอร์ตุ๊กตา · ดิจิตอล (ล่าง)", "prize_meter")}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {groupTitle("เงินสด")}
-            {slot("cash", "เงินสดที่นับได้", "cash")}
-          </div>
+          {/* (CEO 2026-07-13) เอากลุ่ม "เงินสด" ออก — เงินสดกรอกมือ ไม่ถ่ายรูปแล้ว. */}
         </div>
       </div>
 
@@ -3790,13 +3788,7 @@ function FlowScreen(props: {
             <div>
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
               <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
-              <div style={{ marginTop: 10 }}>
-                {/* FIX-5 · รูปเงินสด "ไม่บังคับ" เสมอ (ถ่ายได้-ข้ามได้) — required=false ไม่ว่านโยบายจะเปิดไหม.
-                    เงินสดกระทบยอดกับมิเตอร์อยู่แล้ว · รูปเป็นหลักฐานเสริม ไม่ควรบล็อกการส่งรอบ. */}
-                <PhotoSlot label="ถ่ายรูปเงินสด (ถ่ายได้-ข้ามได้)" value={photos.cash}
-                  onChange={(url) => props.onPhoto("cash", url)} onCaptured={() => props.onCapture("cash")}
-                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="cash" disabled={props.usingDemo} required={false} />
-              </div>
+              {/* (CEO 2026-07-13) เอา "ถ่ายรูปเงินสด" ออก — กรอกเงินด้วยมืออย่างเดียว. */}
             </div>
             <div style={{ borderTop: "1px solid #EEF0F2", paddingTop: 15 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
@@ -3860,8 +3852,9 @@ function FlowScreen(props: {
                   )}
                 </span>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>{recon.allMatch ? "มิเตอร์ & ตุ๊กตา ตรงกัน" : "พบยอดไม่ตรง"}</div>
-                  <div style={{ fontSize: 12, opacity: 0.9 }}>{recon.allMatch ? "เงินสดเทียบกับมิเตอร์เป็นค่าประมาณ — ระบบจะกระทบยอดจริงให้" : "กรุณาตรวจสอบตุ๊กตา/มิเตอร์ก่อนส่ง"}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>{recon.allMatch ? "มิเตอร์ & ตุ๊กตา ตรงกัน" : "พบยอดไม่ตรง — เตือนเฉย ๆ"}</div>
+                  {/* (CEO 2026-07-13) แดง = เตือน ไม่ได้ห้ามส่ง — พนักงานเคยเข้าใจผิดว่ากดยืนยันไม่ได้. */}
+                  <div style={{ fontSize: 12, opacity: 0.92 }}>{recon.allMatch ? "เงินสดเทียบกับมิเตอร์เป็นค่าประมาณ — ระบบจะกระทบยอดจริงให้" : "ตรวจตัวเลข/รูปให้ชัวร์ · มั่นใจแล้วกด “ยืนยันส่งข้อมูล” ด้านล่างได้เลย"}</div>
                 </div>
               </div>
 
