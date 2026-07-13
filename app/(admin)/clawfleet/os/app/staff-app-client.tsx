@@ -24,7 +24,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, ImageDown, History, RefreshCw } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, PackagePlus, ImageDown, History, RefreshCw } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import {
@@ -35,7 +35,7 @@ import {
   attachEventPhotos,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
-import { submitStockCount, confirmShipmentReceived, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
+import { submitStockCount, confirmShipmentReceived, returnDollsToStock, refillDollsToMachine } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
@@ -763,6 +763,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const [returnMachineId, setReturnMachineId] = useState<string | null>(null);
   // item 7 · เปิด sheet คืนในโหมด "เปลี่ยน" (header hint "คืนตัวเก่าก่อน แล้วเติมใหม่" + ปุ่มเติมต่อหลังคืน).
   const [returnChangeMode, setReturnChangeMode] = useState(false);
+  // ชิ้น 2 (CEO 2026-07-13) · เติมตุ๊กตา "อย่างเดียว" — ตู้ที่กำลังเปิด sheet เติม (null = ปิด).
+  const [refillMachineId, setRefillMachineId] = useState<string | null>(null);
   // FIX-1 · money-safe บันทึกค้าง: ถ้ากด "บันทึกค้าง" ก่อน upload รูปเสร็จ → ร่างจะเก็บรูปเป็น "" (หาย).
   // → กันไม่ให้ saveDraft ทำงานตราบใดที่ยังมีรูปอัปโหลดค้าง (photosCaptured มี แต่ photos ยังว่าง).
   // แต่ต้องมี "ทางออก": ถ้า upload ค้างนานเกิน (เน็ตตก/ล้ม) → หลัง ~8 วิ ปล่อยให้บันทึกได้ (offline-tolerant
@@ -807,6 +809,19 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const returnNetAvailable = useMemo(
     () => (returnMachine ? netAvailableByBranch[returnMachine.branchId] ?? {} : {}),
     [netAvailableByBranch, returnMachine],
+  );
+  // ชิ้น 2 · เติมตุ๊กตาอย่างเดียว — ตู้ + สินค้าคลังสาขา + net "ของบนชั้นจริง" ของสาขานั้น
+  const refillMachine = useMemo(
+    () => machines.find((m) => m.id === refillMachineId) ?? null,
+    [machines, refillMachineId],
+  );
+  const refillProducts = useMemo(
+    () => (refillMachine ? branchProducts[refillMachine.branchId] ?? [] : []),
+    [branchProducts, refillMachine],
+  );
+  const refillNet = useMemo(
+    () => (refillMachine ? netAvailableByBranch[refillMachine.branchId] ?? {} : {}),
+    [netAvailableByBranch, refillMachine],
   );
 
   const f = state.form;
@@ -1359,6 +1374,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onOpenPhotoHub={openMachinePhotoHub}
           onReturn={(m) => { setError(null); setReturnChangeMode(false); setReturnMachineId(m.id); }}
           onChange={(m) => { setError(null); setReturnChangeMode(true); setReturnMachineId(m.id); }}
+          onRefillOnly={(m) => { setError(null); setRefillMachineId(m.id); }}
           inMachineByMachine={inMachineByMachine}
           pending={pending}
           openingId={openingId}
@@ -1467,6 +1483,15 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           }}
         />
       )}
+      {/* ชิ้น 2 · sheet เติมตุ๊กตาอย่างเดียว (โหลดคลัง→ตู้ · refillDollsToMachine) */}
+      {refillMachine && (
+        <RefillDollsSheet
+          machine={refillMachine}
+          products={refillProducts}
+          netById={refillNet}
+          onClose={() => setRefillMachineId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1488,6 +1513,8 @@ function HomeScreen(props: {
   onReturn: (m: AppMachine) => void;
   // item 7 · "เปลี่ยน" — เปิด sheet คืน (โหมดเปลี่ยน · header hint + ปุ่มเติมต่อ) · reuse flow คืน+เติม (ไม่มี write ใหม่)
   onChange: (m: AppMachine) => void;
+  // ชิ้น 2 · "เติม" — เปิด sheet เติมตุ๊กตาอย่างเดียว (โหลดคลัง→ตู้ · ไม่ต้องทำรอบเก็บเงินเต็ม)
+  onRefillOnly: (m: AppMachine) => void;
   inMachineByMachine: Record<string, InMachineDoll[]>;
   pending: boolean;
   openingId: string | null;
@@ -1513,7 +1540,7 @@ function HomeScreen(props: {
   receivedByBranch: Record<string, CfReceivedDoc[]>;
   countsByBranch: Record<string, CfCountRow[]>;
 }) {
-  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, onChange, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, onChange, onRefillOnly, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
   // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
   const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
@@ -1675,6 +1702,8 @@ function HomeScreen(props: {
                     const dolls = inMachineByMachine[m.id] ?? [];
                     const dollCount = dolls.length;
                     const canReturn = dollCount > 0 && !isSkipped && !isAwaiting;
+                    // ชิ้น 2 · "เติม" เปิดได้แม้ตู้ว่าง (ตู้ตั้งค่าแล้ว · ไม่ใช่ draft/รอตั้งค่า/ข้าม)
+                    const canRefillOnly = !isDraft && !isSkipped && !isAwaiting;
                     // item 7 · "เปลี่ยน" — ตู้ที่มีของ + เปิดเก็บ/เติมได้ (ไม่เสีย/ตั้งค่าแล้ว) → เปิด sheet คืน (โหมดเปลี่ยน)
                     const canChange = canReturn && !isDraft;
                     return (
@@ -1728,6 +1757,15 @@ function HomeScreen(props: {
                             style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#EFFAF3", border: "1px solid #C8E9D3", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#15803D" }}>
                             <PackageOpen size={19} strokeWidth={2} />
                             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>คืนของ</span>
+                          </button>
+                        )}
+                        {/* ชิ้น 2 (CEO 2026-07-13) · ปุ่ม "เติม" — เติมตุ๊กตาอย่างเดียว (โหลดคลัง→ตู้ · ไม่ต้องทำรอบเก็บเงินเต็ม) */}
+                        {canRefillOnly && (
+                          <button type="button" disabled={pending} aria-label={`เติมตุ๊กตาเข้าตู้ ${m.code}`} title="เติมตุ๊กตาอย่างเดียว (โหลดจากคลังเข้าตู้)"
+                            onClick={() => onRefillOnly(m)} className={pending ? "" : "co-tap"}
+                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#F5F5FE", border: "1px solid #D9D6F5", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#4F46E5" }}>
+                            <PackagePlus size={19} strokeWidth={2} />
+                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>เติม</span>
                           </button>
                         )}
                       </div>
@@ -2776,6 +2814,109 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
  *   3) กรอกจำนวนที่เอาออก/คืน (พิมพ์ได้ · −/+ · clamp [0, ในตู้]) + โชว์ "ของว่างในคลัง A → A+N"
  * ทุกเลขที่โชว์มาจาก server loader (dolls[].qty, netAvailable) — ไม่ใช่ client เดา (ตรงกับที่ server enforce).
  * clientKey = crypto.randomUUID ครั้งเดียวตอนเปิด sheet (stable ข้าม retry) → กดซ้ำ/double-tap = คืนครั้งเดียว. */
+/* ── ชิ้น 2 (CEO 2026-07-13) · RefillDollsSheet — เติมตุ๊กตา "อย่างเดียว" (โหลดคลัง→ตู้) ──
+   เลือก SKU จากคลังสาขา (BranchStockPicker · net บนชั้นจริง) + จำนวน → refillDollsToMachine.
+   ไม่ต้องทำรอบเก็บเงินเต็ม · guard เกินคลัง + idempotent (clientKey) อยู่ที่ server. */
+function RefillDollsSheet({ machine, products, netById, onClose }: {
+  machine: AppMachine;
+  products: BranchStockProduct[];
+  netById: Record<string, number>;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [selId, setSelId] = useState<string | null>(null);
+  const [qty, setQty] = useState<number | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [clientKey] = useState(() => crypto.randomUUID());
+
+  // สินค้าคลัง → picker (warehouse = net บนชั้นจริง · mirror RefillLinesEditor · money-safe)
+  const netProducts = useMemo(
+    () => products.map((p) => ({ ...p, warehouse: Math.max(0, netById[p.id] ?? 0) })),
+    [products, netById],
+  );
+  const sel = netProducts.find((p) => p.id === selId) ?? null;
+  const shelf = sel?.warehouse ?? 0;
+  const qtyNum = qty == null ? 0 : qty;
+  const qtyValid = qtyNum > 0 && qtyNum <= shelf;
+
+  function setQtyClamped(raw: string) {
+    const cleaned = raw.replace(/[^\d]/g, "");
+    if (cleaned === "") { setQty(null); return; }
+    setQty(Math.min(shelf, Math.max(0, Number(cleaned)))); // clamp ไม่ให้เกินบนชั้น (server กันซ้ำอีกชั้น)
+  }
+
+  function submit() {
+    if (!sel || !qtyValid || pending) return;
+    setError(null); setOkMsg(null);
+    startTransition(async () => {
+      try {
+        const res = await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: qtyNum, clientKey });
+        if (!res.ok) { setError(res.error || "เติมไม่สำเร็จ · ลองใหม่"); return; }
+        setOkMsg(`เติม ${qtyNum} ตัวเข้าตู้แล้ว · ในตู้ ${res.data.inMachineAfter} ตัว`);
+        router.refresh();
+        setTimeout(onClose, 1100);
+      } catch {
+        setError("เติมไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      }
+    });
+  }
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`เติมตุ๊กตาเข้าตู้ ${machine.code}`}
+      style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: pending ? "default" : "pointer" }} />
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", maxHeight: "88%", overflowY: "auto", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F5F5FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <PackagePlus size={18} strokeWidth={2} />
+          </span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>เติมตุ๊กตา (อย่างเดียว)</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ {machine.code} · โหลดจากคลังเข้าตู้</div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
+            style={{ background: "none", border: "none", color: "#9AA1AB", cursor: "pointer", padding: 4 }}>
+            <X size={20} strokeWidth={2} />
+          </button>
+        </div>
+
+        {okMsg ? (
+          <div style={{ borderRadius: 14, background: "#EFFAF3", border: "1px solid #C8E9D3", color: "#15803D", padding: "14px 16px", fontSize: 14, fontWeight: 700, textAlign: "center" }}>
+            {okMsg}
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เลือกตุ๊กตาที่จะเติม (จากคลังสาขา)</div>
+            <BranchStockPicker products={netProducts} value={selId} onPick={(pid) => { setSelId(pid); setQty(null); }} />
+
+            {sel && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54" }}>เติมกี่ตัว</span>
+                  <span style={{ fontSize: 11.5, color: shelf > 0 ? "#9AA1AB" : "#B42318", fontWeight: 600 }}>บนชั้นมี {shelf} ตัว</span>
+                </div>
+                <input inputMode="numeric" value={qty == null ? "" : String(qty)} onChange={(e) => setQtyClamped(e.target.value)}
+                  placeholder="กรอกจำนวนที่เติม" className="co-input num" style={{ fontSize: 18, fontWeight: 700 }} />
+              </div>
+            )}
+
+            {error && <div style={{ marginTop: 12, fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
+
+            <button type="button" disabled={!qtyValid || pending} onClick={submit} className={pending ? "" : "co-tap"}
+              style={{ marginTop: 16, width: "100%", padding: 14, borderRadius: 13, border: "none", background: (!qtyValid || pending) ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 15, fontWeight: 700, cursor: (!qtyValid || pending) ? "default" : "pointer" }}>
+              {pending ? "กำลังเติม…" : qtyValid ? `เติม ${qtyNum} ตัวเข้าตู้` : sel ? "ใส่จำนวน (ไม่เกินบนชั้น)" : "เลือกตุ๊กตาก่อน"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ReturnDollsSheet({ machine, dolls, netAvailable, usingDemo, changeMode = false, onClose, onRefill }: {
   machine: AppMachine;
   dolls: InMachineDoll[];
