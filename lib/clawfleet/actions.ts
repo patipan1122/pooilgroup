@@ -338,7 +338,30 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
   // trigger cf_update_machine_mirror เขียนไว้ = stock_after ของรอบก่อน) เป็น baseline ของ
   // การกระทบยอด — ไม่เชื่อ data.stockBefore จาก client (ปลอมได้ → ปั่น "ตุ๊กตาหาย=0" ผ่านได้).
   // ผลพลอยได้: ปิดช่อง cross-round (ตุ๊กตาหายระหว่างรอบตอนตู้ว่าง) เพราะ baseline = ยอดจริงรอบก่อน.
-  const stockBaseline = machine.lastDollStock;
+  // ชิ้น 3 (CEO 2026-07-13) · กระทบยอดต้องรู้การเติม/เอาออกตุ๊กตา "ระหว่างรอบ" (quick actions
+  // refillDollsToMachine / returnDollsToStock ที่พนักงานทำตอนไม่มีเวลาทำรอบเต็ม). movement เหล่านี้
+  // ไม่อัปเดต lastDollStock (trigger ยิงเฉพาะ collection event) → baseline เดิมจะพลาดของที่เติม/เอาออก
+  // ระหว่างทาง → "ตุ๊กตาที่ลูกค้าคีบได้" เพี้ยน. ดึงมาบวกเข้า baseline (server-side · ไม่เชื่อ client):
+  //   in-machine delta ต่อ movement = −qty (LOAD qty ลบ → +ในตู้ · return ADJUST qty บวก → −ในตู้)
+  //   นับเฉพาะ occurredAt > lastEventAt (หลังรอบก่อน) + refTable ∈ quick actions (ไม่ใช่ cf_collection_events)
+  //   → นับครั้งเดียว (รอบถัดไปเริ่มนับจาก event รอบนี้เป็นต้นไป · ledger เก่าไม่ถูกนับซ้ำ).
+  let stockBaseline = machine.lastDollStock;
+  if (machine.lastEventAt) {
+    const interimAgg = await prisma.cfStockMovement.aggregate({
+      where: {
+        orgId,
+        machineId: machine.id,
+        occurredAt: { gt: machine.lastEventAt },
+        // ทุก action ที่เติมตุ๊กตาเข้าตู้ "นอกรอบเก็บเงิน" (money-review 2026-07-13):
+        //   cf_refill_dolls (เติมอย่างเดียว) · cf_return_dolls (เอาออก/เปลี่ยน) ·
+        //   cf_setup_product (ผจก.เพิ่มสินค้า/ยอดตุ๊กตาในตู้ที่ล็อกแล้วระหว่างรอบ — LOAD machineId=ตู้)
+        // ไม่รวม cf_collection_events (การเติมของรอบนี้ นับผ่าน effectiveRefillQty แล้ว).
+        refTable: { in: ["cf_refill_dolls", "cf_return_dolls", "cf_setup_product"] },
+      },
+      _sum: { qty: true },
+    });
+    stockBaseline += -(interimAgg._sum.qty ?? 0); // +เติมระหว่างทาง −เอาออกระหว่างทาง
+  }
 
   // A1 baseline (30-day median revenue for this machine)
   const medianRow = await prisma.$queryRaw<{ median: number | null }[]>`
