@@ -46,6 +46,9 @@ type Initial = {
   electricRate: number;
   waterRate: number;
   vatPercent: number;
+  vatOnRent: boolean;
+  vatOnElectric: boolean;
+  vatOnWater: boolean;
   billDueDay: number;
   lateFeeType: LateFeeType;
   lateFeeValue: number;
@@ -114,6 +117,9 @@ export default function SettingsForm({
   const [electricRate, setElectricRate] = useState(str(initial?.electricRate ?? 7));
   const [waterRate, setWaterRate] = useState(str(initial?.waterRate ?? 18));
   const [vatPercent, setVatPercent] = useState(str(initial?.vatPercent ?? 0));
+  const [vatOnRent, setVatOnRent] = useState(initial?.vatOnRent ?? true);
+  const [vatOnElectric, setVatOnElectric] = useState(initial?.vatOnElectric ?? false);
+  const [vatOnWater, setVatOnWater] = useState(initial?.vatOnWater ?? false);
   const [billDueDay, setBillDueDay] = useState(str(initial?.billDueDay ?? 5));
   const [lateFeeType, setLateFeeType] = useState<LateFeeType>(initial?.lateFeeType ?? "none");
   const [lateFeeValue, setLateFeeValue] = useState(str(initial?.lateFeeValue ?? 0));
@@ -200,6 +206,9 @@ export default function SettingsForm({
           electricRate: electricRate.trim() ? Number(electricRate) : undefined,
           waterRate: waterRate.trim() ? Number(waterRate) : undefined,
           vatPercent: vatPercent.trim() ? Number(vatPercent) : undefined,
+          vatOnRent,
+          vatOnElectric,
+          vatOnWater,
           billDueDay: billDueDay.trim() ? Number(billDueDay) : undefined,
           lateFeeType,
           lateFeeValue:
@@ -479,6 +488,39 @@ export default function SettingsForm({
               onChange={(e) => setVatPercent(e.target.value)}
             />
           </Field>
+        </div>
+        {/* คิด VAT กับรายการไหน — ค่าเริ่มต้นของทั้งโครงการ (แต่ละห้องแก้ทับได้ในสัญญา) */}
+        <div className="mt-1">
+          <div className="text-[12.5px] font-semibold mb-1" style={{ color: "var(--rs-text-2)" }}>
+            คิด VAT กับรายการไหน
+          </div>
+          <p className="text-[11.5px] mb-2" style={{ color: "var(--rs-text-3)" }}>
+            ค่าเริ่มต้นของทั้งโครงการ — แต่ละห้องแก้ทับได้ในหน้าสัญญา ·
+            ค่าเช่าอสังหาฯ มักได้รับยกเว้น VAT · น้ำ/ไฟ ที่เรียกเก็บถือเป็นบริการ (คิด VAT ได้)
+          </p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {(
+              [
+                ["ค่าเช่า", vatOnRent, setVatOnRent],
+                ["ค่าไฟ", vatOnElectric, setVatOnElectric],
+                ["ค่าน้ำ", vatOnWater, setVatOnWater],
+              ] as const
+            ).map(([label, val, setter]) => (
+              <label
+                key={label}
+                className="flex items-center gap-2 text-[13px] cursor-pointer"
+                style={{ color: "var(--rs-text)" }}
+              >
+                <input type="checkbox" checked={val} onChange={(e) => setter(e.target.checked)} />
+                {label}
+              </label>
+            ))}
+          </div>
+          {vatPercent.trim() === "" || Number(vatPercent) === 0 ? (
+            <p className="text-[11.5px] mt-2" style={{ color: "var(--rs-pending)" }}>
+              ⚠️ ตอนนี้ VAT (%) = 0 → บิลจะไม่คิด VAT ทุกรายการ (ต้องตั้ง % ให้มากกว่า 0 ก่อน)
+            </p>
+          ) : null}
         </div>
       </section>
 

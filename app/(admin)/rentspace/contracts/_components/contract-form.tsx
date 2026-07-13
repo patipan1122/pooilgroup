@@ -50,6 +50,9 @@ type EditInitial = {
   depositAmountThb: number;
   depositMonths?: number | null;
   vatPercent?: number | null;
+  vatOnRent?: boolean | null;
+  vatOnElectric?: boolean | null;
+  vatOnWater?: boolean | null;
   electricRate?: number | null;
   waterRate?: number | null;
   lateFeeType?: "none" | "fixed" | "percent_total" | "per_day";
@@ -81,6 +84,15 @@ const LATE_FEE_LABELS: Record<string, string> = {
 function num(v: string): number {
   const n = Number(v.replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
+}
+
+// VAT override รายห้อง: boolean|null → ค่า select ("" = ตามโครงการ · "on"/"off")
+function vatTri(v: boolean | null | undefined): "" | "on" | "off" {
+  return v == null ? "" : v ? "on" : "off";
+}
+// ค่า select → ค่าที่ส่งเข้า action (null = ใช้ตามโครงการ)
+function vatTriVal(s: string): boolean | null {
+  return s === "" ? null : s === "on";
 }
 
 function baht(n: number): string {
@@ -173,6 +185,10 @@ export function ContractForm({
   const [vatPercent, setVatPercent] = useState(String(editInitial?.vatPercent ?? 0));
   const [electricRate, setElectricRate] = useState(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
   const [waterRate, setWaterRate] = useState(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
+  // VAT รายรายการเฉพาะห้องนี้ (แก้ทับโครงการ) — "" = ตามโครงการ · "on" = คิด · "off" = ไม่คิด
+  const [vatOnRent, setVatOnRent] = useState(vatTri(editInitial?.vatOnRent));
+  const [vatOnElectric, setVatOnElectric] = useState(vatTri(editInitial?.vatOnElectric));
+  const [vatOnWater, setVatOnWater] = useState(vatTri(editInitial?.vatOnWater));
   const [lateFeeType, setLateFeeType] = useState<"none" | "fixed" | "percent_total" | "per_day">(editInitial?.lateFeeType ?? "none");
   const [lateFeeValue, setLateFeeValue] = useState(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
   const [lateFeeGraceDays, setLateFeeGraceDays] = useState(String(editInitial?.lateFeeGraceDays ?? 7));
@@ -246,6 +262,9 @@ export function ContractForm({
     setVatPercent(String(editInitial?.vatPercent ?? 0));
     setElectricRate(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
     setWaterRate(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
+    setVatOnRent(vatTri(editInitial?.vatOnRent));
+    setVatOnElectric(vatTri(editInitial?.vatOnElectric));
+    setVatOnWater(vatTri(editInitial?.vatOnWater));
     setLateFeeType(editInitial?.lateFeeType ?? "none");
     setLateFeeValue(editInitial?.lateFeeValue ? String(editInitial.lateFeeValue) : "");
     setLateFeeGraceDays(String(editInitial?.lateFeeGraceDays ?? 7));
@@ -439,6 +458,9 @@ export function ContractForm({
           rentDueDay: Number(rentDueDay) || 5,
           depositAmountThb: num(depositAmount),
           vatPercent: num(vatPercent),
+          vatOnRent: vatTriVal(vatOnRent),
+          vatOnElectric: vatTriVal(vatOnElectric),
+          vatOnWater: vatTriVal(vatOnWater),
           electricRate: electricRate ? num(electricRate) : undefined,
           waterRate: waterRate ? num(waterRate) : undefined,
           lateFeeType,
@@ -871,6 +893,33 @@ export function ContractForm({
                   <Field label="VAT (%)">
                     <input inputMode="decimal" className="rs-input" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} placeholder="0" />
                   </Field>
+
+                  {/* คิด VAT กับรายการไหน — เฉพาะห้องนี้ (ปล่อย "ตามโครงการ" ถ้าไม่ต่าง) */}
+                  <div className="rounded-xl p-3" style={{ border: "1px dashed var(--rs-border)", background: "var(--rs-bg-2)" }}>
+                    <div className="text-[12.5px] font-semibold mb-1" style={{ color: "var(--rs-text-2)" }}>
+                      คิด VAT กับรายการไหน (ห้องนี้)
+                    </div>
+                    <div className="text-[11.5px] mb-2" style={{ color: "var(--rs-text-3)" }}>
+                      ปล่อย “ตามโครงการ” ถ้าไม่ต่างจากค่ากลาง · เลือกเองเมื่อห้องนี้ต่างจากโครงการ
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {(
+                        [
+                          ["ค่าเช่า", vatOnRent, setVatOnRent],
+                          ["ค่าไฟ", vatOnElectric, setVatOnElectric],
+                          ["ค่าน้ำ", vatOnWater, setVatOnWater],
+                        ] as const
+                      ).map(([label, val, setter]) => (
+                        <Field key={label} label={label}>
+                          <select className="rs-input" value={val} onChange={(e) => setter(e.target.value as "" | "on" | "off")}>
+                            <option value="">ตามโครงการ</option>
+                            <option value="on">คิด VAT</option>
+                            <option value="off">ไม่คิด VAT</option>
+                          </select>
+                        </Field>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <Field label="ค่าปรับล่าช้า">

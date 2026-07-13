@@ -50,6 +50,36 @@ export function defaultVatable(kind: string, vatPercent: number): boolean {
   return kind === "rent" ? vatPercent > 0 : false;
 }
 
+/**
+ * รายการไหน "คิด VAT" — ตั้งค่าได้ต่อโครงการ (ค่าเริ่มต้น) + แก้ทับรายห้องได้ในสัญญา.
+ * ค่าเช่าอสังหาฯ ยกเว้น VAT ตามปกติ · น้ำ/ไฟ ที่เรียกเก็บถือเป็นบริการ = คิด VAT ได้.
+ * VAT เป็น 0 = ไม่คิดทุกรายการ. รวมศูนย์จุดเดียว create/แก้บิลไม่หลุดจาก config.
+ */
+export function vatableFor(
+  kind: string,
+  vatPercent: number,
+  cfg: { rent: boolean; electric: boolean; water: boolean },
+): boolean {
+  if (!(vatPercent > 0)) return false;
+  if (kind === "rent") return cfg.rent;
+  if (kind === "electric") return cfg.electric;
+  if (kind === "water") return cfg.water;
+  return false; // ค่าปรับล่าช้า / pass-through อื่น ๆ ไม่คิด VAT
+}
+
+/** รวม config VAT รายรายการ: สัญญา (override รายห้อง) → โครงการ (ค่าเริ่มต้น). */
+export function vatableConfig(contract: Contract): {
+  rent: boolean;
+  electric: boolean;
+  water: boolean;
+} {
+  return {
+    rent: contract.vatOnRent ?? contract.project.vatOnRent,
+    electric: contract.vatOnElectric ?? contract.project.vatOnElectric,
+    water: contract.vatOnWater ?? contract.project.vatOnWater,
+  };
+}
+
 /** จำนวนเดือนระหว่างสองงวด YYYY-MM (p2 − p1) — ติดลบถ้า p2 ก่อน p1 */
 export function monthsBetween(p1: string, p2: string): number {
   const [y1, m1] = p1.split("-").map(Number);
@@ -155,6 +185,8 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   const notes: string[] = [];
   const items: BuiltBill["items"] = [];
   const vatPercent = toNum(contract.vatPercent);
+  // config VAT รายรายการ (โครงการ + override รายห้อง) — ตัดสินว่า item ไหนคิด VAT
+  const vcfg = vatableConfig(contract);
 
   // 1) rent — prorate the FIRST month by move-in date (เข้าอยู่กลางเดือน คิดตามวันจริง)
   const fullRent = effectiveRent(contract, period);
@@ -176,7 +208,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
     qty: 1,
     unitPrice: rentAmount,
     amount: rentAmount,
-    vatable: defaultVatable("rent", vatPercent),
+    vatable: vatableFor("rent", vatPercent, vcfg),
     sort: 1,
   });
 
@@ -195,7 +227,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       qty: toNum(elec.usage),
       unitPrice: toNum(elec.ratePerUnit),
       amount: electricAmount,
-      vatable: defaultVatable("electric", vatPercent),
+      vatable: vatableFor("electric", vatPercent, vcfg),
       sort: 2,
     });
   } else notes.push("ยังไม่ได้จดมิเตอร์ไฟเดือนนี้");
@@ -206,7 +238,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       qty: toNum(water.usage),
       unitPrice: toNum(water.ratePerUnit),
       amount: waterAmount,
-      vatable: defaultVatable("water", vatPercent),
+      vatable: vatableFor("water", vatPercent, vcfg),
       sort: 3,
     });
   } else notes.push("ยังไม่ได้จดมิเตอร์น้ำเดือนนี้");

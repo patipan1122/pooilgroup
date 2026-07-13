@@ -151,6 +151,10 @@ export async function actSaveProject(input: {
   electricRate?: number;
   waterRate?: number;
   vatPercent?: number;
+  // รายการที่คิด VAT (ค่าเริ่มต้นของทั้งโครงการ)
+  vatOnRent?: boolean;
+  vatOnElectric?: boolean;
+  vatOnWater?: boolean;
   lateFeeType?: "none" | "fixed" | "percent_total" | "per_day";
   lateFeeValue?: number;
   lateFeeGraceDays?: number;
@@ -208,6 +212,9 @@ export async function actSaveProject(input: {
     electricRate: input.electricRate ?? 7,
     waterRate: input.waterRate ?? 18,
     vatPercent: input.vatPercent ?? 0,
+    vatOnRent: input.vatOnRent ?? true,
+    vatOnElectric: input.vatOnElectric ?? false,
+    vatOnWater: input.vatOnWater ?? false,
     lateFeeType: input.lateFeeType ?? "none",
     lateFeeValue: input.lateFeeValue ?? 0,
     lateFeeGraceDays: input.lateFeeGraceDays ?? 7,
@@ -575,6 +582,10 @@ export async function actSaveContract(input: {
   depositAmountThb?: number;
   depositMonths?: number;
   vatPercent?: number;
+  // แก้ทับ VAT รายรายการเฉพาะห้องนี้ (null/undefined = ใช้ตามค่าโครงการ)
+  vatOnRent?: boolean | null;
+  vatOnElectric?: boolean | null;
+  vatOnWater?: boolean | null;
   electricRate?: number;
   waterRate?: number;
   lateFeeType?: "none" | "fixed" | "percent_total" | "per_day";
@@ -603,6 +614,9 @@ export async function actSaveContract(input: {
     depositAmountThb: input.depositAmountThb ?? 0,
     depositMonths: input.depositMonths ?? 0,
     vatPercent: input.vatPercent ?? 0,
+    vatOnRent: input.vatOnRent ?? null,
+    vatOnElectric: input.vatOnElectric ?? null,
+    vatOnWater: input.vatOnWater ?? null,
     electricRate: input.electricRate ?? null,
     waterRate: input.waterRate ?? null,
     lateFeeType: input.lateFeeType ?? "none",

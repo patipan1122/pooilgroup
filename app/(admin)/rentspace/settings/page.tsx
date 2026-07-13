@@ -53,6 +53,9 @@ export default async function RentSpaceSettingsPage() {
         electricRate: toNum(project.electricRate),
         waterRate: toNum(project.waterRate),
         vatPercent: toNum(project.vatPercent),
+        vatOnRent: project.vatOnRent,
+        vatOnElectric: project.vatOnElectric,
+        vatOnWater: project.vatOnWater,
         billDueDay: project.billDueDay ?? 5,
         lateFeeType: project.lateFeeType as
           | "none"
