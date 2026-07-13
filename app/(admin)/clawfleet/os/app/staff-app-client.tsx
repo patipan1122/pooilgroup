@@ -1402,6 +1402,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           usingDemo={usingDemo}
           eventScopeId={`${state.sessionId ?? "demo"}-${machine?.id ?? "none"}`}
           machine={machine}
+          inMachineDolls={state.machineId ? (inMachineByMachine[state.machineId] ?? []) : []}
           step={state.step}
           stepLabel={stepLabels[state.step] ?? ""}
           form={f}
@@ -3150,15 +3151,17 @@ function ReturnDollsSheet({ machine, dolls, netAvailable, usingDemo, changeMode 
 
 // รูปตุ๊กตาเล็ก (thumbnail) — มีรูป = แสดงรูป · ไม่มี = กล่อง placeholder (mirror ProductCountCard)
 //   size (optional · default 44) — RefillLinesEditor ใช้ 32px (แถวเล็ก compact · item 6).
-function DollThumb({ imageUrl, size = 44 }: { imageUrl: string | null; size?: number }) {
+function DollThumb({ imageUrl, name, size = 44 }: { imageUrl: string | null; name?: string; size?: number }) {
   const radius = size >= 40 ? 11 : 9;
   if (imageUrl) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={imageUrl} alt="" style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: radius, objectFit: "cover", background: "#F1F2F5" }} />;
   }
+  // [B] · ไม่มีรูป → โชว์อักษรแรกของชื่อ (ถ้ามี name) ไม่งั้น icon Inbox (backward-compat).
+  const letter = name?.trim().charAt(0).toUpperCase();
   return (
-    <span style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: radius, background: "#F1F2F5", color: "#B9BEC7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <Inbox size={Math.round(size * 0.4)} strokeWidth={1.7} />
+    <span style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: radius, background: letter ? "#EDEAFB" : "#F1F2F5", color: letter ? "#6D5DD3" : "#B9BEC7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(size * 0.42), fontWeight: 700 }}>
+      {letter ? letter : <Inbox size={Math.round(size * 0.4)} strokeWidth={1.7} />}
     </span>
   );
 }
@@ -3534,6 +3537,7 @@ function FlowScreen(props: {
   usingDemo: boolean;
   eventScopeId: string;
   machine: AppMachine | null;
+  inMachineDolls: InMachineDoll[]; // [B] SKU + จำนวนที่อยู่ในตู้ตอนนี้ (โชว์ที่ step นับ)
   step: number;
   stepLabel: string;
   form: Form;
@@ -3635,6 +3639,24 @@ function FlowScreen(props: {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
               <span style={{ fontSize: 12.5, color: "#5A6270" }}>รอบที่แล้วในตู้มีตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{f.last} ตัว</b></span>
             </div>
+            {/* [B] (CEO 2026-07-13) โชว์ว่าในตู้ตอนนี้มี SKU อะไรบ้าง (รูป+ชื่อ+จำนวน) — ดึงจาก inMachineByMachine. */}
+            {props.inMachineDolls.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>ในตู้ตอนนี้ (แยกตามแบบ)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {props.inMachineDolls.map((d) => (
+                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 11, background: "#F8F7FE", border: "1px solid #E9E5F9", borderRadius: 12, padding: "9px 12px" }}>
+                      <DollThumb imageUrl={d.imageUrl} name={d.name} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                        {d.sku ? <div style={{ fontSize: 10.5, color: "#9AA1AB" }} className="num">{d.sku}</div> : null}
+                      </div>
+                      <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
             {/* FIX-2 · พิมพ์เลขได้ตรง ๆ (เช่น 90) + ปุ่ม −/+ ปรับทีละตัว */}
             <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
@@ -4140,7 +4162,8 @@ function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove
                     <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
                     {/* SKU (เล็ก muted) + ของบนชั้น พร้อมเติม — บรรทัดเดียว */}
                     <div style={{ fontSize: 10.5, color: over ? "#B45309" : "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="num">
-                      {prod?.sku ? `${prod.sku} · ` : ""}บนชั้น {warehouse} ตัว
+                      {/* [D] (CEO 2026-07-13) โชว์ SKU เหลือบนชั้น "หลังเติม" (net − qty) ต่อไลน์. */}
+                      {prod?.sku ? `${prod.sku} · ` : ""}บนชั้น {warehouse} ตัว{l.qty > 0 ? ` → เหลือ ${Math.max(0, warehouse - l.qty)} หลังเติม` : ""}
                     </div>
                   </div>
                   {/* จำนวนที่เติม — stepper เล็ก · พิมพ์ได้ + −/+ · clamp [0, คงคลัง] · money-safe */}
