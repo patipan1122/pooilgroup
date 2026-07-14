@@ -37,6 +37,7 @@ export function PhotoCaptureButton({
   machineCode,
   eventScopeId,
   phase,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -64,6 +65,8 @@ export function PhotoCaptureButton({
     | "stock_count"
     // N1b — รูปสินค้าใหม่ที่เพิ่มตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าในตู้)
     | "product_setup";
+  // compact = ไอคอนกล้องเล็ก (46px) วางในบรรทัดเดียวกับช่องกรอก (เช่น มิเตอร์) — logic เหมือนเดิมทุกอย่าง
+  compact?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>(value ? "done" : "idle");
@@ -260,6 +263,64 @@ export function PhotoCaptureButton({
   const hasPhoto = !!value || state === "captured" || state === "uploading" || state === "retry" || state === "done";
   const isBusy = state === "uploading";
   const isRetry = state === "retry";
+
+  // ── compact: ไอคอนกล้องเล็ก 46px (วางในแถวเดียวกับช่องกรอกเลข เช่น มิเตอร์) ──
+  // logic ถ่าย/คิว/อัปโหลดเหมือนปุ่มใหญ่ทุกอย่าง — ต่างแค่ visual shell
+  if (compact) {
+    const tone = hasPhoto
+      ? isRetry
+        ? { bd: "#FCD9A8", bg: "#FEF6EA", fg: "#B45309" }
+        : { bd: "#A7E3C0", bg: "#EAF7EF", fg: "#15803D" }
+      : error
+        ? { bd: "#F3B4B4", bg: "#FDECEC", fg: "#DC2626" }
+        : { bd: "#E3E6EA", bg: "#F6F7FA", fg: "#7A828C" };
+    return (
+      <>
+        <input
+          ref={ref}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+            e.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          aria-label={label}
+          title={hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : label}
+          onClick={() => ref.current?.click()}
+          className="co-tap"
+          style={{
+            width: 46,
+            height: 46,
+            flex: "0 0 46px",
+            borderRadius: 11,
+            border: `1.5px solid ${tone.bd}`,
+            background: tone.bg,
+            color: tone.fg,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          {isBusy ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : isRetry ? (
+            <RefreshCw className="h-5 w-5" strokeWidth={2.4} />
+          ) : hasPhoto ? (
+            <Check className="h-5 w-5" strokeWidth={2.6} />
+          ) : (
+            <Camera className="h-5 w-5" />
+          )}
+        </button>
+      </>
+    );
+  }
 
   return (
     <div>

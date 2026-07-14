@@ -3,15 +3,19 @@
 // ClawFleet · ตู้คีบ OS — bigfeature WAVE 2D · N1 ฟอร์ม "ตั้งค่าครั้งแรก" (P0 · mobile)
 // -----------------------------------------------------------------------------
 // แม่บ้านไปเก็บตู้ครั้งแรก → บันทึก baseline snapshot (ทำได้ครั้งเดียวต่อตู้ · redo ต้องเจ้าของอนุมัติ):
-//   - นับตุ๊กตาในตู้ตอนนี้ (พิมพ์เลขได้ + −/+ · เริ่ม "ว่าง" ไม่ใช่ 0) · เติมเพิ่มกี่ตัว · เงินสด (input)
+//   - ตุ๊กตา "ในตู้ตอนนี้" = รายการต่อ SKU (ยอดรวมระบบคิดให้) · เติมเพิ่มกี่ตัว · เงินสด (input)
 //   - 4 มิเตอร์กายภาพ "ว่างทั้งหมด" (เงินบน/เงินล่าง/ตุ๊กตาบน/ตุ๊กตาล่าง) — แต่ละตัวมีรูปของตัวเอง (รูป optional)
 //     · gate = อย่างน้อย 1 หน้าปัดต่อคู่ (เงิน บน-หรือ-ล่าง · ตุ๊กตา บน-หรือ-ล่าง) ให้ตรงกับ server (top ?? bottom)
-//       → ตู้ที่หน้าปัดล่างเสีย/อ่านไม่ออก ยังตั้ง baseline ได้จากตัวบน
 //     · ห้าม pre-fill มิเตอร์ (กัน confirm-bias — แม่บ้านต้องกรอกเลขจริงที่เห็น)
-//   - รูปตู้ (machine) + รายการสินค้าในตู้ (loadout · แสดง) + เพิ่มสินค้าใหม่ตอนตั้งค่า (AddProductPanel)
+//   - รูปตู้ (machine) + รายการสินค้าในตู้ (loadout) — เพิ่ม SKU ผ่าน sheet เดียว (จากคลัง / เพิ่มใหม่)
 //   - ตั้งชื่อเล่นตู้ได้ตั้งแต่หน้านี้ (✎ ที่หัวข้อ → renameMachineNickname · reflect ทันทีไม่ต้อง reload)
 // submit → submitFirstBaseline({... clientKey=randomUUID}) · ถ้าตู้ตั้งแล้ว → ข้อความเป็นมิตร · ok → onDone().
 // ⚪ neutral = ช่องว่าง (ยังไม่กรอก) ไม่ใช่แดง. money logic ทำที่ server — ฟอร์มแค่เก็บ+ส่ง.
+//
+// 🎨 LeanUX 2026-07-14 (CEO — ย่อหน้าให้สั้น·ใช้ง่าย):
+//   1) มิเตอร์ = 1 การ์ด แต่ละตัวย่อเหลือ [ช่องเลข] + ไอคอนกล้องเล็ก (compact) บรรทัดเดียว (เดิมปุ่มถ่ายรูปกล่องใหญ่ 88px)
+//   2) เพิ่มสินค้าในตู้ = ปุ่มเล็กปุ่มเดียว → bottom-sheet รวม 2 แท็บ (เลือกจากคลัง / เพิ่มใหม่) — ไม่มีฟอร์มยาวค้างในหน้า
+//   3) "ตุ๊กตาในตู้ตอนนี้" = การ์ดสรุปเลขรวม + กดขยายดูรายการ SKU (หุบไว้เป็น default)
 
 import { useState, useTransition } from "react";
 import { submitFirstBaseline } from "@/lib/clawfleet/baseline-actions";
@@ -24,7 +28,7 @@ import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button"
 
 const MAX_COUNT = 100_000;
 
-// สินค้าใหม่ที่เพิ่งเพิ่มตอนตั้งค่าตู้ครั้งแรก (server สร้าง product + บันทึกยอด "ในตู้" ให้แล้ว)
+// สินค้าที่บันทึกว่า "อยู่ในตู้" ตอนตั้งค่าครั้งแรก (มีในทะเบียนแล้ว หรือเพิ่งเพิ่มใหม่ — server persist ยอดต่อ SKU ให้แล้ว)
 type AddedProduct = { id: string; name: string; sku: string; qty: number; imageUrl: string | null };
 
 // 1 มิเตอร์ในฟอร์ม — value ว่าง (null) หรือเลข · photo url ที่ถ่ายแล้ว · phase สำหรับ PhotoCaptureButton
@@ -47,11 +51,9 @@ export interface BaselineFormProps {
 }
 
 export function BaselineForm({ machine, branchId, orgId, products, onDone }: BaselineFormProps) {
-  // ค่าตุ๊กตา/เงิน — เริ่ม "ว่าง" (null) เสมอ (ไม่ใช่ 0)
-  // ตุ๊กตา "ในตู้ตอนนี้" = รายการต่อ SKU (CEO 2026-07-13) · ยอดรวม = ผลบวก (ระบบคิดให้)
+  // ตุ๊กตา "ในตู้ตอนนี้" = รายการต่อ SKU (persist ทันทีต่อ SKU) · ยอดรวม = ผลบวก (ระบบคิดให้)
+  const [inMachine, setInMachine] = useState<AddedProduct[]>([]);
   const [dollsAdded, setDollsAdded] = useState<number | null>(null);
-  // สินค้าที่มีในทะเบียนแล้ว + จำนวนที่บันทึกว่าอยู่ในตู้ (persist ทันทีต่อ SKU)
-  const [savedExisting, setSavedExisting] = useState<AddedProduct[]>([]);
   const [cash, setCash] = useState<string>(""); // บาท (string เพื่อให้ช่องว่างได้จริง)
 
   // 4 มิเตอร์ + รูปของแต่ละตัว — ว่างหมด (ห้าม pre-fill)
@@ -63,37 +65,32 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   });
   const [machinePhoto, setMachinePhoto] = useState<string>("");
 
-  // ชื่อเล่นตู้ (แก้ได้ตั้งแต่หน้านี้) — sheet เปิด/ปิด + ชื่อปัจจุบัน (reflect หลัง rename โดยไม่ต้อง reload)
+  // ชื่อเล่นตู้ (แก้ได้ตั้งแต่หน้านี้)
   const [nickname, setNickname] = useState<string | null>(machine.nickname);
   const [nickSheet, setNickSheet] = useState(false);
+
+  // sheet เพิ่มสินค้า + toggle ขยายรายการ SKU
+  const [addSheet, setAddSheet] = useState(false);
+  const [showList, setShowList] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // N1b · สินค้าใหม่ที่เพิ่มตอนตั้งค่าครั้งแรก (server บันทึก product + ยอดในตู้ ทันทีที่กด "เพิ่ม")
-  const [addedProducts, setAddedProducts] = useState<AddedProduct[]>([]);
-
-  // ยอดรวมตุ๊กตา "ในตู้ตอนนี้" = ผลบวกทุก SKU (มีอยู่แล้วที่บันทึก + เพิ่มใหม่) — ระบบคิดให้
-  const totalInMachine =
-    savedExisting.reduce((s, p) => s + p.qty, 0) + addedProducts.reduce((s, p) => s + p.qty, 0);
-  // id สินค้าที่ "อยู่ในตู้" แล้ว (กันเลือกซ้ำในตัวเลือกสินค้าที่มีอยู่)
-  const inMachineIds = new Set<string>([
-    ...savedExisting.map((p) => p.id),
-    ...addedProducts.map((p) => p.id),
-  ]);
+  // ยอดรวมตุ๊กตา "ในตู้ตอนนี้" = ผลบวกทุก SKU (ระบบคิดให้ · ตรงกับที่ server บันทึกต่อ SKU)
+  const totalInMachine = inMachine.reduce((s, p) => s + p.qty, 0);
+  // id สินค้าที่ "อยู่ในตู้" แล้ว (กันเลือกซ้ำใน picker)
+  const inMachineIds = new Set<string>(inMachine.map((p) => p.id));
 
   // scope id เดียวต่อการเปิดฟอร์ม (ให้ PhotoCaptureButton จัด queue รูปแยกจากตู้/รอบอื่น)
   const [scopeId] = useState(() => `baseline-${machine.id}`);
 
   const setMeter = (key: MeterKey, raw: string) => {
-    // รับเฉพาะตัวเลข (ว่างได้) — ไม่เด้ง error ระหว่างพิมพ์
     const cleaned = raw.replace(/[^\d]/g, "");
     setMeterVals((m) => ({ ...m, [key]: cleaned }));
   };
   const setMeterPhoto = (key: MeterKey, url: string) => {
     setMeterPhotos((m) => ({ ...m, [key]: url }));
   };
-
   const parseMeter = (key: MeterKey): number | null => {
     const v = meterVals[key].trim();
     return v === "" ? null : Number(v);
@@ -102,8 +99,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   async function handleSubmit() {
     setError(null);
     // ตุ๊กตาในตู้ = ผลรวมต่อ SKU (totalInMachine) · ตู้ว่างจริง (0) ก็ตั้งได้ · มิเตอร์คือด่านหลัก
-    // เลขมิเตอร์ = anchor · ต้องมีอย่างน้อย 1 หน้าปัดต่อคู่ (เงิน บน/ล่าง · ตุ๊กตา บน/ล่าง)
-    // ให้ตรงกับ server + คณิต (top ?? bottom) · ตู้ที่หน้าปัดล่างเสียยังตั้งได้จากตัวบน
+    // เลขมิเตอร์ = anchor · ต้องมีอย่างน้อย 1 หน้าปัดต่อคู่ ให้ตรงกับ server + คณิต (top ?? bottom)
     const moneyMeterFilled = meterVals.moneyTop.trim() !== "" || meterVals.moneyBottom.trim() !== "";
     const dollMeterFilled = meterVals.dollTop.trim() !== "" || meterVals.dollBottom.trim() !== "";
     if (!moneyMeterFilled) {
@@ -136,7 +132,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         photoMoneyMeterBottomUrl: meterPhotos.moneyBottom || undefined,
         photoDollMeterTopUrl: meterPhotos.dollTop || undefined,
         photoDollMeterBottomUrl: meterPhotos.dollBottom || undefined,
-        // per-SKU ถูก persist แล้วผ่าน addSetup/addExisting (loadout เปิดแล้ว) → ไม่ส่งซ้ำ
+        // per-SKU ถูก persist แล้วผ่าน addSetup/addExisting (sheet) → ไม่ส่งซ้ำ
         loadout: [],
         clientKey: crypto.randomUUID(),
       });
@@ -155,7 +151,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
-      {/* header — ทำได้ครั้งเดียว */}
+      {/* header — ทำได้ครั้งเดียว + ✎ ตั้งชื่อเล่น */}
       <div
         style={{
           background: "#EEF0FE",
@@ -175,7 +171,6 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
             <div style={{ fontSize: 15, fontWeight: 700, color: "#3F3AC0", flex: 1, minWidth: 0 }}>
               ตั้งค่าครั้งแรก · ทำได้ครั้งเดียว
             </div>
-            {/* ✎ ตั้งชื่อเล่นตู้ ตั้งแต่หน้านี้ */}
             <button
               type="button"
               onClick={() => setNickSheet(true)}
@@ -198,20 +193,82 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         </div>
       </div>
 
-      {/* ตุ๊กตาในตู้ตอนนี้ = ยอดรวมจากรายการ SKU ในหัวข้อ "สินค้าในตู้นี้" ด้านล่าง (ระบบคิดให้) */}
-      <Section title="ตุ๊กตาในตู้ตอนนี้" hint="ยอดรวมจากรายการสินค้าในตู้ด้านล่าง (ระบบคิดให้)">
-        <div className="co-card" style={{ padding: "14px 16px", display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 26, fontWeight: 800, color: totalInMachine > 0 ? "#1A1D21" : "#C1C5CC" }}>
-            {totalInMachine.toLocaleString("th-TH")}
-          </span>
-          <span style={{ fontSize: 13, color: "#9AA1AB", fontWeight: 600 }}>ตัว · รวมทุก SKU</span>
+      {/* ── ตุ๊กตาในตู้ตอนนี้ — ยอดรวม (ระบบคิดให้) + กดขยายดูรายการ SKU + ปุ่มเล็กเพิ่มสินค้า → sheet ── */}
+      <div className="co-card" style={{ padding: 15, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>ตุ๊กตาในตู้ตอนนี้</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>ยอดรวมทุก SKU (ระบบคิดให้)</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
+            <span style={{ fontSize: 28, fontWeight: 800, color: totalInMachine > 0 ? "#1A1D21" : "#C1C5CC", lineHeight: 1 }}>
+              {totalInMachine.toLocaleString("th-TH")}
+            </span>
+            <span style={{ fontSize: 12.5, color: "#9AA1AB", fontWeight: 600 }}>ตัว</span>
+          </div>
         </div>
+
+        {/* กดขยายดูรายการ SKU (หุบไว้ default) — โชว์ปุ่มเฉพาะเมื่อมีของในตู้ */}
+        {inMachine.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowList((v) => !v)}
+              className="co-tap"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                width: "100%", padding: "8px 0", borderRadius: 10, cursor: "pointer",
+                border: "1px solid #ECEDF3", background: "#F8F9FC",
+                color: "#4F46E5", fontSize: 12.5, fontWeight: 700,
+              }}
+            >
+              {showList ? "ซ่อนรายการ" : `ดูรายการ (${inMachine.length} ชนิด)`}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: showList ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+            {showList && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {inMachine.map((p) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <ProductThumb imageUrl={p.imageUrl} name={p.name} size={36} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      {p.sku && <div style={{ fontSize: 11, color: "#9AA1AB" }}>{p.sku}</div>}
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>
+                      {p.qty.toLocaleString("th-TH")} <span style={{ fontSize: 11.5, fontWeight: 600, color: "#9AA1AB" }}>ตัว</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
         {totalInMachine === 0 && (
-          <div style={{ fontSize: 12, color: "#9AA1AB", marginTop: 6, lineHeight: 1.4 }}>
-            ระบุสินค้า + จำนวนที่หัวข้อ “สินค้าในตู้นี้” ด้านล่าง (ตู้ว่างจริงข้ามได้)
+          <div style={{ fontSize: 12, color: "#9AA1AB", lineHeight: 1.4 }}>
+            ยังไม่ได้ระบุสินค้า — แตะปุ่มด้านล่างเพื่อเพิ่ม (ตู้ว่างจริงข้ามได้)
           </div>
         )}
-      </Section>
+
+        {/* ปุ่มเล็กปุ่มเดียว → เปิด sheet (จากคลัง / เพิ่มใหม่) */}
+        <button
+          type="button"
+          onClick={() => setAddSheet(true)}
+          className="co-tap"
+          style={{
+            width: "100%", padding: "11px 14px", borderRadius: 12,
+            border: "1.5px dashed #C7CBF5", background: "#F7F8FF",
+            color: "#4F46E5", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          เพิ่มสินค้าในตู้
+        </button>
+      </div>
 
       {/* เติมเพิ่ม (พิมพ์เลขได้ + −/+ · ว่าง) */}
       <Section title="เติมตุ๊กตาเพิ่ม" hint="ใส่เพิ่มเข้าไปกี่ตัว (ไม่เติม = ข้ามได้)">
@@ -230,12 +287,12 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         />
       </Section>
 
-      {/* 4 มิเตอร์กายภาพ — ว่างหมด + รูปต่อตัว */}
-      <div className="co-card" style={{ padding: 15, display: "flex", flexDirection: "column", gap: 13 }}>
+      {/* ── 4 มิเตอร์ — 1 การ์ด · แต่ละตัวย่อ [ช่องเลข] + ไอคอนกล้องเล็ก บรรทัดเดียว ── */}
+      <div className="co-card" style={{ padding: 15, display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>อ่านมิเตอร์ 4 ตัว</div>
           <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2, lineHeight: 1.4 }}>
-            กรอกเลขที่เห็นจริง · <b>อ่านไม่ได้? ถ่ายรูปแทน</b> (รูปเป็นหลักฐานได้)
+            กรอกเลขที่เห็นจริง · <b>อ่านไม่ได้? แตะกล้อง 📷 ถ่ายรูปแทน</b>
           </div>
         </div>
         {METERS.map((m) => {
@@ -243,9 +300,9 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           const hasPhoto = !!meterPhotos[m.key];
           const done = filled || hasPhoto;
           return (
-            <div key={m.key} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <div key={m.key} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#454B54", flex: 1 }}>{m.label}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", flex: 1 }}>{m.label}</span>
                 <span
                   className="co-pill"
                   style={{ background: done ? "#E7F4EC" : "#F1F2F7", color: done ? "#15803D" : "#9AA1AB" }}
@@ -253,31 +310,41 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
                   {filled ? "กรอกแล้ว" : hasPhoto ? "มีรูป" : "ยังว่าง"}
                 </span>
               </div>
-              <input
-                value={meterVals[m.key]}
-                onChange={(e) => setMeter(m.key, e.target.value)}
-                inputMode="numeric"
-                placeholder="อ่านเลขมิเตอร์"
-                className="co-input num"
-                style={{ fontSize: 16, fontWeight: 600 }}
-              />
-              <PhotoCaptureButton
-                label="อ่านไม่ได้? ถ่ายรูปแทน"
-                value={meterPhotos[m.key]}
-                onChange={(url) => setMeterPhoto(m.key, url)}
-                orgId={orgId}
-                machineCode={machine.code}
-                eventScopeId={scopeId}
-                phase={m.phase}
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  value={meterVals[m.key]}
+                  onChange={(e) => setMeter(m.key, e.target.value)}
+                  inputMode="numeric"
+                  placeholder="อ่านเลขมิเตอร์"
+                  className="co-input num"
+                  style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600 }}
+                />
+                <PhotoCaptureButton
+                  compact
+                  label={`ถ่ายรูป ${m.label}`}
+                  value={meterPhotos[m.key]}
+                  onChange={(url) => setMeterPhoto(m.key, url)}
+                  orgId={orgId}
+                  machineCode={machine.code}
+                  eventScopeId={scopeId}
+                  phase={m.phase}
+                />
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* รูปตู้ */}
-      <Section title="รูปตู้" hint="ถ่ายรูปหน้าตู้ไว้เป็นหลักฐานตั้งต้น">
+      {/* รูปตู้ — compact (ข้อความ + ไอคอนกล้องเล็ก) */}
+      <div className="co-card" style={{ padding: 15, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>รูปตู้ (ไม่บังคับ)</div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>
+            {machinePhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : "ถ่ายหน้าตู้ไว้เป็นหลักฐานตั้งต้น"}
+          </div>
+        </div>
         <PhotoCaptureButton
+          compact
           label="ถ่ายรูปตู้"
           value={machinePhoto}
           onChange={setMachinePhoto}
@@ -286,55 +353,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           eventScopeId={scopeId}
           phase="machine"
         />
-      </Section>
-
-      {/* สินค้าในตู้นี้ — ระบุทีละ SKU + จำนวน (ยอดรวมคิดให้ด้านบน) */}
-      <Section title="สินค้าในตู้นี้" hint="ระบุตุ๊กตาทีละชนิด (SKU) + จำนวน · เลือกที่มีอยู่ หรือเพิ่มใหม่">
-        {savedExisting.length === 0 && addedProducts.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "2px 0", lineHeight: 1.4 }}>
-            ยังไม่ได้ระบุสินค้าในตู้ — เลือกสินค้าที่มีอยู่ หรือเพิ่มใหม่ ด้านล่าง
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...savedExisting, ...addedProducts].map((p) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {p.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.imageUrl} alt={p.name} style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 9, objectFit: "cover", background: "#F1F2F7" }} />
-                ) : (
-                  <div style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 9, background: "#F1F2F7", display: "flex", alignItems: "center", justifyContent: "center", color: "#A9AEB8" }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="m21 15-5-5L5 21" /></svg>
-                  </div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21" }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: "#9AA1AB" }}>
-                    {p.sku ? `${p.sku} · ` : ""}{p.qty.toLocaleString("th-TH")} ตัวในตู้
-                  </div>
-                </div>
-                <span className="co-pill" style={{ background: "#E7F4EC", color: "#15803D" }}>บันทึกแล้ว</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* เลือกสินค้าที่มีอยู่แล้วในทะเบียน + จำนวนในตู้ (persist ต่อ SKU) */}
-        <ExistingProductPanel
-          machine={machine}
-          branchId={branchId}
-          products={products.filter((p) => !inMachineIds.has(p.id))}
-          onSaved={(p) => setSavedExisting((cur) => [...cur, p])}
-        />
-
-          {/* ＋ เพิ่มสินค้าใหม่ (ตุ๊กตาเก่าที่อยู่ในตู้อยู่แล้ว) — เฉพาะตอนตั้งค่าครั้งแรก */}
-          <AddProductPanel
-            machine={machine}
-            branchId={branchId}
-            orgId={orgId}
-            scopeId={scopeId}
-            onAdded={(p) => setAddedProducts((cur) => [...cur, p])}
-          />
-        </Section>
+      </div>
 
       {error && (
         <div
@@ -377,6 +396,22 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่าครั้งแรก"}
       </button>
 
+      {/* sheet เพิ่มสินค้าในตู้ (จากคลัง / เพิ่มใหม่) — persist ต่อ SKU ทันที */}
+      {addSheet && (
+        <AddProductSheet
+          machine={machine}
+          branchId={branchId}
+          orgId={orgId}
+          scopeId={scopeId}
+          existingProducts={products.filter((p) => !inMachineIds.has(p.id))}
+          onSaved={(p) => {
+            setInMachine((cur) => [...cur, p]);
+            setShowList(true);
+          }}
+          onClose={() => setAddSheet(false)}
+        />
+      )}
+
       {/* sheet ตั้งชื่อเล่น (inline · reuse renameMachineNickname) */}
       {nickSheet && (
         <NicknameSheet
@@ -407,9 +442,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-/* ── CountField — ช่องนับ "พิมพ์เลขได้" + ปุ่ม −/+ (mirror staff-app-client CountField).
- * value=null → ช่องว่าง + placeholder (ไม่โชว์ 0 หลอกว่ากรอกแล้ว). onChange รับ number|null.
- * พิมพ์ "120" ตรง ๆ ได้ · strip อักขระที่ไม่ใช่ตัวเลข · −/+ ปรับทีละ 1 (ต่ำสุด 0). */
+/* ── CountField — ช่องนับ "พิมพ์เลขได้" + ปุ่ม −/+ (mirror staff-app-client CountField). */
 function CountField({
   value,
   onChange,
@@ -429,7 +462,6 @@ function CountField({
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
       <button type="button" aria-label="ลด" onClick={() => nudge(-1)} className="co-tap" style={btnStyle}>−</button>
-      {/* type=text + inputMode=numeric → คีย์บอร์ดตัวเลข + พิมพ์ "120" ได้ตรง ๆ · ว่าง = null */}
       <input
         type="text"
         inputMode="numeric"
@@ -537,43 +569,94 @@ function StepBtn({
   );
 }
 
-/* ── N1b · เพิ่มสินค้าใหม่ตอนตั้งค่าครั้งแรก (ตุ๊กตาเก่าในตู้) ────────────────
-   compact inline sheet: ชื่อ + SKU + รูป + จำนวน (stepper) → addSetupProductWithDolls.
-   server สร้าง product + บันทึกยอด "ในตู้" ทันที (idempotent · clientKey ใหม่ทุกครั้งที่กด). */
-function AddProductPanel({
+/* thumbnail สินค้า (รูป หรือ placeholder icon) */
+function ProductThumb({ imageUrl, name, size = 38 }: { imageUrl: string | null; name: string; size?: number }) {
+  if (imageUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={imageUrl} alt={name} style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: 9, objectFit: "cover", background: "#F1F2F7" }} />
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, flex: `0 0 ${size}px`, borderRadius: 9, background: "#F1F2F7", display: "flex", alignItems: "center", justifyContent: "center", color: "#A9AEB8" }}>
+      <svg width={size * 0.47} height={size * 0.47} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="m21 15-5-5L5 21" /></svg>
+    </div>
+  );
+}
+
+/* ── AddProductSheet — bottom-sheet เพิ่มสินค้าในตู้ (LeanUX 2026-07-14) ────────────
+   รวม 2 ทางเดิม (เลือกจากคลัง / เพิ่มใหม่) เป็นชีทเดียว สลับด้วยแท็บ:
+     · จากคลัง → addExistingProductDollsAtSetup (เลือก SKU ที่มีในทะเบียน + จำนวน)
+     · เพิ่มใหม่ → addSetupProductWithDolls (ชื่อ + SKU + รูป + จำนวน · server สร้าง product ให้)
+   persist ต่อ SKU ทันทีที่บันทึก (idempotent · clientKey ใหม่ทุกครั้ง) → onSaved(p) แล้วรีเซ็ตฟอร์ม
+   (ค้างชีทไว้ให้เพิ่มตัวถัดไปเร็ว) · picker อัปเดตเองเพราะ parent กรองตัวที่เข้าตู้แล้วออก. */
+function AddProductSheet({
   machine,
   branchId,
   orgId,
   scopeId,
-  onAdded,
+  existingProducts,
+  onSaved,
+  onClose,
 }: {
   machine: { id: string; code: string };
   branchId: string;
   orgId: string;
   scopeId: string;
-  onAdded: (p: AddedProduct) => void;
+  existingProducts: { id: string; name: string; imageUrl: string | null }[];
+  onSaved: (p: AddedProduct) => void;
+  onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // แท็บเริ่มต้น: มีของในคลังให้เลือก → "จากคลัง" · ไม่มี → "เพิ่มใหม่"
+  const [tab, setTab] = useState<"existing" | "new">(existingProducts.length > 0 ? "existing" : "new");
+
+  // จากคลัง
+  const [selId, setSelId] = useState<string>("");
+  const [exQty, setExQty] = useState<number | null>(null);
+  // เพิ่มใหม่
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [photo, setPhoto] = useState("");
-  const [qty, setQty] = useState<number | null>(null);
+  const [newQty, setNewQty] = useState<number | null>(null);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
-  function reset() {
-    setName(""); setSku(""); setPhoto(""); setQty(null); setError(null);
+  const sel = existingProducts.find((p) => p.id === selId) ?? null;
+
+  function resetExisting() { setSelId(""); setExQty(null); }
+  function resetNew() { setName(""); setSku(""); setPhoto(""); setNewQty(null); }
+
+  async function saveExisting() {
+    setError(null);
+    if (!sel) { setError("เลือกสินค้าก่อน"); return; }
+    if (exQty == null || exQty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
+    setBusy(true);
+    try {
+      const res = await addExistingProductDollsAtSetup({
+        machineId: machine.id,
+        branchId,
+        productId: sel.id,
+        qty: exQty,
+        clientKey: crypto.randomUUID(),
+      });
+      if (!res.ok) { setError(res.error); setBusy(false); return; }
+      onSaved({ id: sel.id, name: sel.name, sku: "", qty: exQty, imageUrl: sel.imageUrl });
+      setFlash(`เพิ่ม “${sel.name}” แล้ว`);
+      resetExisting();
+    } catch {
+      setError("บันทึกไม่สำเร็จ · ลองอีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  const stepQty = (delta: number) =>
-    setQty((cur) => Math.max(0, Math.min(MAX_COUNT, (cur ?? 0) + delta)));
-
-  async function handleAdd() {
+  async function addNew() {
     setError(null);
     if (name.trim() === "") { setError("กรอกชื่อสินค้าก่อน"); return; }
     if (sku.trim() === "") { setError("กรอกรหัส SKU ก่อน"); return; }
-    if (qty == null || qty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
-
+    if (newQty == null || newQty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
     setBusy(true);
     try {
       const res = await addSetupProductWithDolls({
@@ -582,17 +665,13 @@ function AddProductPanel({
         name: name.trim(),
         sku: sku.trim(),
         imageUrl: photo || undefined,
-        qty,
-        clientKey: crypto.randomUUID(), // UUID ใหม่ต่อการกด 1 ครั้ง → idempotency (double-tap ปลอดภัย)
+        qty: newQty,
+        clientKey: crypto.randomUUID(),
       });
-      if (!res.ok) {
-        setError(res.error);
-        setBusy(false);
-        return;
-      }
-      onAdded({ id: res.data.productId, name: name.trim(), sku: sku.trim(), qty, imageUrl: photo || null });
-      reset();
-      setOpen(false);
+      if (!res.ok) { setError(res.error); setBusy(false); return; }
+      onSaved({ id: res.data.productId, name: name.trim(), sku: sku.trim(), qty: newQty, imageUrl: photo || null });
+      setFlash(`เพิ่ม “${name.trim()}” แล้ว`);
+      resetNew();
     } catch {
       setError("เพิ่มสินค้าไม่สำเร็จ · ลองอีกครั้ง");
     } finally {
@@ -600,233 +679,156 @@ function AddProductPanel({
     }
   }
 
-  if (!open) {
+  const tabBtn = (key: "existing" | "new", text: string) => {
+    const on = tab === key;
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { setTab(key); setError(null); }}
         className="co-tap"
         style={{
-          marginTop: 4,
-          width: "100%",
-          padding: "12px 14px",
-          borderRadius: 12,
-          border: "1.5px dashed #C7CBF5",
-          background: "#F7F8FF",
-          color: "#4F46E5",
-          fontSize: 13.5,
-          fontWeight: 700,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 7,
+          flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
+          background: on ? "#fff" : "transparent",
+          color: on ? "#4F46E5" : "#6B7280",
+          fontSize: 13, fontWeight: 700,
+          boxShadow: on ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
         }}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-        ＋ เพิ่มสินค้าในตู้นี้
+        {text}
       </button>
     );
-  }
+  };
 
   return (
     <div
-      style={{
-        marginTop: 4,
-        border: "1.5px solid #D9DBFB",
-        background: "#FAFBFF",
-        borderRadius: 13,
-        padding: 14,
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`เพิ่มสินค้าในตู้ ${machine.code}`}
+      style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#3F3AC0" }}>เพิ่มสินค้าใหม่</span>
-        <button
-          type="button"
-          onClick={() => { reset(); setOpen(false); }}
-          style={{ background: "none", border: "none", color: "#9AA1AB", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
-        >
-          ยกเลิก
+      <button type="button" aria-label="ปิด" onClick={() => { if (!busy) onClose(); }}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: busy ? "default" : "pointer" }} />
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)", maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>เพิ่มสินค้าในตู้</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ <span className="num">{machine.code}</span> · เพิ่มได้หลายชนิด</div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={() => { if (!busy) onClose(); }} className="co-tap"
+            style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        {/* แท็บสลับ */}
+        <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 11, background: "#F1F2F7", marginBottom: 14 }}>
+          {tabBtn("existing", "เลือกจากคลัง")}
+          {tabBtn("new", "เพิ่มใหม่")}
+        </div>
+
+        {flash && (
+          <div style={{ marginBottom: 12, fontSize: 12.5, fontWeight: 700, color: "#15803D", background: "#E7F4EC", border: "1px solid #B7E3C6", borderRadius: 10, padding: "9px 12px", display: "flex", alignItems: "center", gap: 7 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            {flash} · เพิ่มตัวถัดไปได้เลย
+          </div>
+        )}
+
+        {tab === "existing" ? (
+          existingProducts.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: "#9AA1AB", textAlign: "center", padding: "18px 0", lineHeight: 1.5 }}>
+              ไม่มีสินค้าในคลังให้เลือกแล้ว<br />(เพิ่มใหม่ได้ที่แท็บ “เพิ่มใหม่”)
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                {existingProducts.map((p) => {
+                  const on = p.id === selId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelId(p.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: on ? "1.5px solid #4F46E5" : "1.5px solid #ECEDF6", background: on ? "#EEF0FF" : "#fff", cursor: "pointer", textAlign: "left" }}
+                    >
+                      <ProductThumb imageUrl={p.imageUrl} name={p.name} size={34} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      {on && <span style={{ color: "#4F46E5", fontWeight: 800 }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
+                <Stepper value={exQty} unit="ตัว" placeholder="นับแล้วแตะ +"
+                  onDec={() => setExQty((c) => Math.max(0, (c ?? 0) - 1))}
+                  onInc={() => setExQty((c) => Math.min(MAX_COUNT, (c ?? 0) + 1))} />
+              </div>
+              {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
+              <button type="button" disabled={busy} onClick={saveExisting} className="co-tap"
+                style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: busy ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+                {busy ? "กำลังบันทึก…" : "บันทึกในตู้"}
+              </button>
+            </div>
+          )
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="ชื่อสินค้า (เช่น หมีบราวน์ L)"
+              className="co-input"
+              style={{ fontSize: 15, fontWeight: 600 }}
+              maxLength={200}
+            />
+            <input
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              placeholder="รหัส SKU (เช่น BROWN-L)"
+              className="co-input"
+              style={{ fontSize: 15, fontWeight: 600 }}
+              maxLength={80}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: "#454B54" }}>
+                {photo ? "ถ่ายรูปตุ๊กตาแล้ว · แตะเพื่อถ่ายใหม่" : "ถ่ายรูปตุ๊กตา (ไม่บังคับ)"}
+              </span>
+              <PhotoCaptureButton
+                compact
+                label="ถ่ายรูปตุ๊กตา"
+                value={photo}
+                onChange={setPhoto}
+                orgId={orgId}
+                machineCode={machine.code}
+                eventScopeId={`${scopeId}-newprod`}
+                phase="product_setup"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
+              <Stepper value={newQty} unit="ตัว" placeholder="นับแล้วแตะ +"
+                onDec={() => setNewQty((c) => Math.max(0, (c ?? 0) - 1))}
+                onInc={() => setNewQty((c) => Math.min(MAX_COUNT, (c ?? 0) + 1))} />
+            </div>
+            {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
+            <button type="button" disabled={busy} onClick={addNew} className="co-tap"
+              style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: busy ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+              {busy ? "กำลังเพิ่ม…" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
+            </button>
+          </div>
+        )}
+
+        {/* ปุ่มปิด/เสร็จ */}
+        <button type="button" onClick={() => { if (!busy) onClose(); }} className="co-tap"
+          style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 12, border: "1.5px solid #E3E6EA", background: "#fff", color: "#5A6270", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+          เสร็จแล้ว
         </button>
       </div>
-
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="ชื่อสินค้า (เช่น หมีบราวน์ L)"
-        className="co-input"
-        style={{ fontSize: 15, fontWeight: 600 }}
-        maxLength={200}
-      />
-      <input
-        value={sku}
-        onChange={(e) => setSku(e.target.value)}
-        placeholder="รหัส SKU (เช่น BROWN-L)"
-        className="co-input"
-        style={{ fontSize: 15, fontWeight: 600 }}
-        maxLength={80}
-      />
-
-      <PhotoCaptureButton
-        label="ถ่ายรูปตุ๊กตา"
-        value={photo}
-        onChange={setPhoto}
-        orgId={orgId}
-        machineCode={machine.code}
-        eventScopeId={`${scopeId}-newprod`}
-        phase="product_setup"
-      />
-
-      <div>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
-        <Stepper value={qty} unit="ตัว" placeholder="นับแล้วแตะ +"
-          onDec={() => stepQty(-1)} onInc={() => stepQty(1)} />
-      </div>
-
-      {error && (
-        <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>
-      )}
-
-      <button
-        type="button"
-        disabled={busy}
-        onClick={handleAdd}
-        className="co-tap"
-        style={{
-          width: "100%",
-          padding: 13,
-          borderRadius: 12,
-          border: "none",
-          background: busy ? "#B9BCF0" : "#4F46E5",
-          color: "#fff",
-          fontSize: 14.5,
-          fontWeight: 700,
-          cursor: busy ? "wait" : "pointer",
-        }}
-      >
-        {busy ? "กำลังเพิ่ม…" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
-      </button>
     </div>
   );
 }
 
-/* ── N1c · เลือกสินค้าที่มีอยู่ในทะเบียน + ใส่จำนวนในตู้ (CEO 2026-07-13) ───────────
-   picker สินค้าที่มีอยู่ (ยังไม่อยู่ในตู้) + จำนวน → addExistingProductDollsAtSetup
-   (persist ต่อ SKU ทันที · idempotent clientKey). */
-function ExistingProductPanel({
-  machine,
-  branchId,
-  products,
-  onSaved,
-}: {
-  machine: { id: string; code: string };
-  branchId: string;
-  products: { id: string; name: string; imageUrl: string | null }[];
-  onSaved: (p: AddedProduct) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [selId, setSelId] = useState<string>("");
-  const [qty, setQty] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const sel = products.find((p) => p.id === selId) ?? null;
-  const stepQty = (d: number) => setQty((c) => Math.max(0, Math.min(MAX_COUNT, (c ?? 0) + d)));
-  function reset() { setSelId(""); setQty(null); setError(null); }
-
-  async function handleSave() {
-    setError(null);
-    if (!sel) { setError("เลือกสินค้าก่อน"); return; }
-    if (qty == null || qty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
-    setBusy(true);
-    try {
-      const res = await addExistingProductDollsAtSetup({
-        machineId: machine.id,
-        branchId,
-        productId: sel.id,
-        qty,
-        clientKey: crypto.randomUUID(),
-      });
-      if (!res.ok) { setError(res.error); setBusy(false); return; }
-      onSaved({ id: sel.id, name: sel.name, sku: "", qty, imageUrl: sel.imageUrl });
-      reset();
-      setOpen(false);
-    } catch {
-      setError("บันทึกไม่สำเร็จ · ลองอีกครั้ง");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (products.length === 0) return null; // ไม่มีสินค้าให้เลือก (ว่าง/เลือกหมดแล้ว)
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="co-tap"
-        style={{ marginTop: 4, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px dashed #C7CBF5", background: "#F7F8FF", color: "#4F46E5", fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
-      >
-        ＋ เลือกสินค้าที่มีอยู่ + ใส่จำนวน
-      </button>
-    );
-  }
-
-  return (
-    <div style={{ marginTop: 4, border: "1.5px solid #D9DBFB", background: "#FAFBFF", borderRadius: 13, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#3F3AC0" }}>เลือกสินค้าที่มีอยู่</span>
-        <button type="button" onClick={() => { reset(); setOpen(false); }} style={{ background: "none", border: "none", color: "#9AA1AB", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>ยกเลิก</button>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
-        {products.map((p) => {
-          const on = p.id === selId;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setSelId(p.id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: on ? "1.5px solid #4F46E5" : "1.5px solid #ECEDF6", background: on ? "#EEF0FF" : "#fff", cursor: "pointer", textAlign: "left" }}
-            >
-              {p.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.imageUrl} alt={p.name} style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 8, objectFit: "cover", background: "#F1F2F7" }} />
-              ) : (
-                <div style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 8, background: "#F1F2F7", display: "flex", alignItems: "center", justifyContent: "center", color: "#A9AEB8" }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.6" /><path d="m21 15-5-5L5 21" /></svg>
-                </div>
-              )}
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: "#1A1D21" }}>{p.name}</span>
-              {on && <span style={{ color: "#4F46E5", fontWeight: 800 }}>✓</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
-        <Stepper value={qty} unit="ตัว" placeholder="นับแล้วแตะ +" onDec={() => stepQty(-1)} onInc={() => stepQty(1)} />
-      </div>
-      {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
-      <button
-        type="button"
-        disabled={busy}
-        onClick={handleSave}
-        className="co-tap"
-        style={{ width: "100%", padding: 13, borderRadius: 12, border: "none", background: busy ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}
-      >
-        {busy ? "กำลังบันทึก…" : "บันทึกในตู้"}
-      </button>
-    </div>
-  );
-}
-
-/* ── NicknameSheet — bottom-sheet ตั้งชื่อเล่นตู้ (mirror staff-app-client NicknameSheet).
- * บันทึก → renameMachineNickname({machineId,nickname}) ใน startTransition · {ok:false} โชว์ error ·
- * สำเร็จ → onSaved(name) (parent อัปเดตชื่อในหัวข้อเอง · ไม่ต้อง reload). ว่าง = ล้างชื่อเล่น (server รับ ""). */
+/* ── NicknameSheet — bottom-sheet ตั้งชื่อเล่นตู้ (mirror staff-app-client NicknameSheet). */
 function NicknameSheet({
   machineId,
   machineCode,
