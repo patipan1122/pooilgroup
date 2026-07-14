@@ -85,14 +85,16 @@ export async function uploadDcImageToDrive(opts: {
   bytes: Buffer;
   mimeType: string;
   name: string;
+  /** โฟลเดอร์ปลายทางใต้ root ของแอป (default = "DC-รูปสินค้า") — แยกที่เก็บได้ เช่น ใบสั่งซื้อ */
+  folder?: string;
 }): Promise<{ driveFileId: string; driveUrl: string } | null> {
   try {
     const session = await getDriveSession(opts.orgId);
     if (!session) return null; // องค์กรยังไม่เชื่อม Drive → fallback R2 อย่างเดียว
-    // สร้าง/หาโฟลเดอร์ "DC-รูปสินค้า" ใต้ root ของแอป (idempotent find-or-create)
+    // สร้าง/หาโฟลเดอร์ปลายทางใต้ root ของแอป (idempotent find-or-create)
     const folderId = await ensureFolder(
       session.accessToken,
-      DC_IMAGE_FOLDER,
+      opts.folder ?? DC_IMAGE_FOLDER,
       session.rootFolderId,
     );
     if (!folderId) return null;

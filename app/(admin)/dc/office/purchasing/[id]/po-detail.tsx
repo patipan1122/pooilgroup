@@ -29,6 +29,10 @@ import {
   deletePoPayment,
   setPoTracking,
   updatePo,
+  setPoTitle,
+  updatePoLine,
+  quickCreateSupplier,
+  type UpdatePoLineInput,
   getPoAuditHistory,
   getPoReceivingSummary,
   listSuppliersForPo,
@@ -36,6 +40,7 @@ import {
   type PoPaymentData,
   type PoAuditEntry,
   type PoReceiveSummary,
+  type PoSourceImage,
 } from "@/lib/dc/po-actions";
 import { DcThumb } from "@/components/dc/product-image";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
@@ -85,11 +90,13 @@ export type BoxData = {
 export type PoDetailData = {
   id: string;
   poCode: string;
+  title: string | null;
   status: string;
   origin: string;
   currency: string;
   fxRate: number | null;
   note: string | null;
+  sourceImages: PoSourceImage[];
   supplierName: string | null;
   warehouseId: string | null;
   warehouseName: string | null;
@@ -256,6 +263,12 @@ export function PoDetail({
   const [receiveVersion, setReceiveVersion] = useState(0);
   // #3 — แก้ผู้ขาย/เรต (Dialog)
   const [editOpen, setEditOpen] = useState(false);
+  // แก้ "รายการสินค้า" ในใบ (Dialog) — บรรทัดที่กำลังแก้
+  const [editingLine, setEditingLine] = useState<PoLineData | null>(null);
+  // ล็อกจำนวน/ราคา (money) เมื่อจ่ายเงิน/รับเข้าแล้ว — ชื่อ/รูปยังแก้ได้ (server เป็นด่านจริง)
+  const moneyLocked =
+    ["RECEIVED", "PARTIAL", "CANCELLED", "CLOSED"].includes(data.status) ||
+    payments.length > 0;
   const NEXT_ACTION_LABEL: Record<string, string> = {
     // #10 — ไม่มีด่านอนุมัติแล้ว · ใบใหม่เป็น ORDERED ทันที
     // ใบเก่าที่ยัง DRAFT/รออนุมัติ/อนุมัติ → ปุ่มเดียว "ยืนยันสั่งซื้อ" (markOrdered)
@@ -336,6 +349,13 @@ export function PoDetail({
           <div className="dc-card" style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
               <div style={{ display: "grid", gap: 6 }}>
+                <PoTitleEditor
+                  poId={data.id}
+                  poCode={data.poCode}
+                  title={data.title}
+                  canManage={canManage}
+                  onSaved={refresh}
+                />
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span className={`dc-st dc-st--${tone(status)}`}>{PO_STATUS_LABEL[status] ?? status}</span>
                   <span className={`dc-st dc-st--${isChina ? "ship" : "ok"}`} style={{ fontSize: 11 }}>
@@ -523,6 +543,18 @@ export function PoDetail({
         onDone={() => { setEditOpen(false); refresh(); }}
       />
 
+      {/* Dialog แก้ "รายการสินค้า" (ชื่อ/รหัส/จำนวน/ราคา/รูป) */}
+      <EditLineDialog
+        key={editingLine?.id ?? "none"}
+        poId={data.id}
+        line={editingLine}
+        sym={s}
+        r2PublicUrl={r2PublicUrl}
+        moneyLocked={moneyLocked}
+        onClose={() => setEditingLine(null)}
+        onDone={() => { setEditingLine(null); refresh(); }}
+      />
+
       {/* #7 — เนื้อหายาว ๆ ยุบเป็น collapsible เพื่อให้พอดีจอ ไม่ต้อง scroll ยาว */}
       <CollapseCard title="รายการสินค้า" sub={`${data.lines.length} รายการ · ของที่สั่งในใบนี้`} defaultOpen>
         <div style={{ overflowX: "auto" }}>
@@ -552,6 +584,17 @@ export function PoDetail({
                     <div style={{ fontWeight: 600, color: "#18181b" }}>{l.name}</div>
                     <div style={{ fontSize: 12, color: "#a1a1aa", fontVariantNumeric: "tabular-nums" }}>{l.sku}</div>
                     {l.note && <div style={{ fontSize: 12, color: "#a1a1aa" }}>{l.note}</div>}
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingLine(l)}
+                        className="dc-chip"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 12, padding: "3px 9px" }}
+                        title="แก้ชื่อ / รหัส / จำนวน / ราคา / รูป"
+                      >
+                        <Pencil size={11} /> แก้รายการ
+                      </button>
+                    )}
                   </td>
                   <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{l.qty} {l.unit}</td>
                   <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
@@ -577,6 +620,46 @@ export function PoDetail({
           </table>
         </div>
       </CollapseCard>
+
+      {/* รูปต้นฉบับที่ AI สแกน — เก็บเป็นลิงก์ Drive ไว้ย้อนตรวจ (Task 3) */}
+      {data.sourceImages.length > 0 && (
+        <CollapseCard
+          title="รูปต้นฉบับที่สแกน"
+          sub={`${data.sourceImages.length} รูป · AI อ่านรายการมาจากรูปพวกนี้ — กดเปิดดูของจริงได้`}
+          defaultOpen={false}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {data.sourceImages.map((img, i) => {
+              const thumb = img.r2Key ? photoUrl(img.r2Key) : null;
+              const href = img.driveUrl ?? thumb;
+              return (
+                <a
+                  key={i}
+                  href={href ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "grid", gap: 6, justifyItems: "center", textDecoration: "none",
+                    color: "#3b5bdb", fontSize: 12, fontWeight: 600,
+                  }}
+                  title={img.driveUrl ? "เปิดต้นฉบับใน Google Drive" : "เปิดรูปต้นฉบับ"}
+                >
+                  {thumb ? (
+                    <DcThumb url={thumb} alt={`รูปต้นฉบับ ${i + 1}`} size={76} />
+                  ) : (
+                    <div style={{ width: 76, height: 76, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
+                      <ImageIcon size={20} />
+                    </div>
+                  )}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    <ImageIcon size={12} /> รูปที่ {i + 1}
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        </CollapseCard>
+      )}
 
       {/* 3) กล่อง/พัสดุ — collapsible */}
       <CollapseCard
@@ -1286,6 +1369,9 @@ function EditPoDialog({
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [supplierId, setSupplierId] = useState<string>("");
   const [fxRate, setFxRate] = useState<string>(data.fxRate != null ? String(data.fxRate) : "");
+  // เพิ่มผู้ขายใหม่ "ตรงนี้เลย" (ไม่ต้องออกไปหน้าอื่น)
+  const [newVendor, setNewVendor] = useState("");
+  const [addingVendor, setAddingVendor] = useState(false);
 
   // โหลด dropdown ผู้ขาย + sync supplierId กับใบปัจจุบัน (จับคู่ตามชื่อ เพราะ data ไม่มี supplierId)
   useEffect(() => {
@@ -1304,6 +1390,24 @@ function EditPoDialog({
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  async function addVendor() {
+    const name = newVendor.trim();
+    if (!name || addingVendor) return;
+    setErr(null);
+    setAddingVendor(true);
+    const res = await quickCreateSupplier({ name });
+    setAddingVendor(false);
+    if (res.ok) {
+      setSuppliers((prev) =>
+        [...prev, res.supplier].sort((a, b) => a.name.localeCompare(b.name, "th")),
+      );
+      setSupplierId(res.supplier.id);
+      setNewVendor("");
+    } else {
+      setErr(res.error);
+    }
+  }
 
   function submit() {
     setErr(null);
@@ -1331,6 +1435,28 @@ function EditPoDialog({
             ))}
           </select>
         </label>
+        {/* เพิ่มผู้ขายใหม่ในคลิกเดียว — ไม่ต้องออกไปหน้าอื่นก่อน */}
+        <div style={{ display: "grid", gap: 5 }}>
+          <span style={{ fontSize: 11.5, color: "#71717a" }}>ยังไม่มีผู้ขายในรายการ? เพิ่มใหม่ตรงนี้เลย</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              value={newVendor}
+              onChange={(e) => setNewVendor(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVendor(); } }}
+              placeholder="ชื่อผู้ขายใหม่"
+              style={{ ...inp, flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={() => void addVendor()}
+              disabled={addingVendor || !newVendor.trim()}
+              className="dc-btn-xl"
+              style={btnSmall}
+            >
+              {addingVendor ? "…" : "＋ สร้าง"}
+            </button>
+          </div>
+        </div>
         {isChina && (
           <label style={lbl}>
             เรต ฿/¥ (1 หยวน = ฿ ?)
@@ -1343,6 +1469,237 @@ function EditPoDialog({
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button type="button" onClick={onClose} className="dc-btn-xl dc-btn-xl--ghost" style={btnSmall} disabled={pending}>ยกเลิก</button>
           <button type="button" onClick={submit} className="dc-btn-xl" style={btnSmall} disabled={pending}>บันทึก</button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+// ── ตั้ง/แก้ "ชื่อเรียกใบ" inline (คู่กับเลข PO · setPoTitle แก้ได้ตลอด) ──────────────
+function PoTitleEditor({
+  poId,
+  poCode,
+  title,
+  canManage,
+  onSaved,
+}: {
+  poId: string;
+  poCode: string;
+  title: string | null;
+  canManage: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(title ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // sync ค่าเมื่อ title จาก server เปลี่ยน (เลือกใบอื่นในแผง master-detail · component ไม่ remount)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVal(title ?? "");
+  }, [title]);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setErr(null);
+    const res = await setPoTitle(poId, val.trim() || null);
+    setSaving(false);
+    if (res.ok) { setEditing(false); onSaved(); }
+    else setErr(res.error);
+  }
+
+  if (editing) {
+    return (
+      <div style={{ display: "grid", gap: 5 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            value={val}
+            autoFocus
+            onChange={(e) => setVal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void save(); }
+              if (e.key === "Escape") { setEditing(false); setVal(title ?? ""); }
+            }}
+            placeholder="ตั้งชื่อเรียกใบนี้ (เช่น ตุ๊กตาล็อตสงกรานต์)"
+            style={{ ...inp, flex: 1, minWidth: 180, fontSize: 15, fontWeight: 700 }}
+          />
+          <button type="button" onClick={() => void save()} disabled={saving} className="dc-btn-xl" style={btnSmall}>{saving ? "…" : "บันทึก"}</button>
+          <button type="button" onClick={() => { setEditing(false); setVal(title ?? ""); }} disabled={saving} className="dc-btn-xl dc-btn-xl--ghost" style={btnSmall}>ยกเลิก</button>
+        </div>
+        {err && <div style={{ fontSize: 12, color: "#b8362a", fontWeight: 600 }}>{err}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      {title ? (
+        <span style={{ fontSize: 18, fontWeight: 800, color: "#18181b", letterSpacing: "-.01em" }}>{title}</span>
+      ) : (
+        canManage && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="dc-chip"
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5 }}
+          >
+            <Plus size={13} /> ตั้งชื่อเรียกใบนี้
+          </button>
+        )
+      )}
+      <span style={{ fontSize: 12.5, color: "#a1a1aa", fontVariantNumeric: "tabular-nums" }}>เลขที่ {poCode}</span>
+      {title && canManage && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="dc-chip"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, padding: "2px 8px" }}
+          title="แก้ชื่อเรียกใบ"
+        >
+          <Pencil size={11} /> แก้ชื่อ
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── แก้ "รายการสินค้า" ในใบ (ชื่อ/รหัส/หน่วย/รูป = ตัวสินค้า · จำนวน/ราคา = เฉพาะใบ · updatePoLine) ──
+function EditLineDialog({
+  poId,
+  line,
+  sym,
+  r2PublicUrl,
+  moneyLocked,
+  onClose,
+  onDone,
+}: {
+  poId: string;
+  line: PoLineData | null;
+  sym: string;
+  r2PublicUrl: string;
+  moneyLocked: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  // ค่าเริ่มต้นจาก props ตรง ๆ — call site ใส่ key={line.id} → remount ค่าใหม่เมื่อเปลี่ยนบรรทัด
+  // (ไม่ต้องใช้ effect sync → เลี่ยง cascading render)
+  const [name, setName] = useState(line?.name ?? "");
+  const [sku, setSku] = useState(line?.sku ?? "");
+  const [unit, setUnit] = useState(line?.unit ?? "");
+  const [qty, setQty] = useState(line ? String(line.qty) : "");
+  const [price, setPrice] = useState(line ? String(line.unitPriceCny) : "");
+  const [photoR2Key, setPhotoR2Key] = useState<string | null>(line?.photoR2Key ?? null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!line) return null;
+  const ln = line;
+
+  const previewUrl = photoR2Key
+    ? (/^https?:\/\//.test(photoR2Key) ? photoR2Key : r2PublicUrl ? `${r2PublicUrl}/${photoR2Key}` : null)
+    : null;
+
+  async function pickPhoto(file: File | undefined) {
+    if (!file) return;
+    setUploading(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/dc/upload", { method: "POST", body: fd });
+      const j = (await res.json()) as { ok: true; key: string } | { ok: false; error: string };
+      if (j.ok) setPhotoR2Key(j.key);
+      else setErr(j.error);
+    } catch {
+      setErr("อัปโหลดรูปไม่สำเร็จ ลองอีกครั้ง");
+    }
+    setUploading(false);
+  }
+
+  async function save() {
+    if (saving || uploading) return;
+    if (!name.trim()) { setErr("กรุณากรอกชื่อสินค้า"); return; }
+    if (!sku.trim()) { setErr("กรุณากรอกรหัสสินค้า (SKU)"); return; }
+    setSaving(true);
+    setErr(null);
+    const patch: UpdatePoLineInput = {
+      name: name.trim(),
+      sku: sku.trim(),
+      unit: unit.trim() || null,
+    };
+    if (photoR2Key !== ln.photoR2Key) patch.photoR2Key = photoR2Key;
+    if (!moneyLocked) {
+      patch.qty = Number(qty) || 0;
+      patch.unitPriceCny = Number(price) || 0;
+    }
+    const res = await updatePoLine(poId, ln.id, patch);
+    setSaving(false);
+    if (res.ok) {
+      const warn = (res as { warn?: string | null }).warn;
+      if (warn) window.alert(warn);
+      onDone();
+    } else {
+      setErr(res.error);
+    }
+  }
+
+  return (
+    <Dialog open={!!line} onClose={onClose} title="แก้รายการสินค้า" backdrop="soft" className="sm:max-w-md">
+      <div style={{ display: "grid", gap: 12 }}>
+        {err && <div style={{ background: "#fdeaea", border: "1px solid #f3c7c2", color: "#b8362a", borderRadius: 8, padding: "9px 12px", fontSize: 13.5, fontWeight: 600 }}>{err}</div>}
+
+        {/* รูปสินค้า */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {previewUrl ? (
+            <DcThumb url={previewUrl} alt={name} size={56} />
+          ) : (
+            <div style={{ width: 56, height: 56, borderRadius: 8, border: "1px dashed var(--dc-line, #d4d4d8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c4c4cc" }}>
+              <ImageIcon size={18} />
+            </div>
+          )}
+          <label className="dc-chip" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13 }}>
+            {uploading ? "กำลังอัป…" : "เปลี่ยนรูป"}
+            <input type="file" accept="image/*" hidden onChange={(e) => { void pickPhoto(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+          </label>
+        </div>
+
+        <label style={lbl}>
+          ชื่อสินค้า
+          <input value={name} onChange={(e) => setName(e.target.value)} style={inp} />
+        </label>
+        <label style={lbl}>
+          รหัสสินค้า (SKU)
+          <input value={sku} onChange={(e) => setSku(e.target.value)} style={inp} />
+        </label>
+        <label style={lbl}>
+          หน่วย
+          <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="เช่น ชิ้น / กล่อง" style={inp} />
+        </label>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <label style={lbl}>
+            จำนวน
+            <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" disabled={moneyLocked} style={{ ...inp, opacity: moneyLocked ? 0.5 : 1 }} />
+          </label>
+          <label style={lbl}>
+            ราคา/หน่วย ({sym})
+            <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" disabled={moneyLocked} style={{ ...inp, opacity: moneyLocked ? 0.5 : 1 }} />
+          </label>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: moneyLocked ? "#92660a" : "#71717a" }}>
+          ชื่อ/รหัส/หน่วย/รูป = แก้ที่ตัวสินค้า (มีผลทุกใบที่ใช้สินค้านี้)
+          {moneyLocked
+            ? " · จำนวน/ราคาแก้ไม่ได้ — ใบนี้จ่ายเงิน/รับเข้าคลังแล้ว"
+            : " · จำนวน/ราคา = เฉพาะใบนี้"}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" onClick={onClose} className="dc-btn-xl dc-btn-xl--ghost" style={btnSmall} disabled={saving}>ยกเลิก</button>
+          <button type="button" onClick={() => void save()} className="dc-btn-xl" style={btnSmall} disabled={saving || uploading}>{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
         </div>
       </div>
     </Dialog>

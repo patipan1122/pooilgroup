@@ -147,6 +147,9 @@ export function PoCreateForm({
     initialFxRate != null ? String(initialFxRate) : "",
   );
   const [note, setNote] = useState("");
+  const [title, setTitle] = useState("");
+  // R2 key ของรูปต้นฉบับที่ AI สแกน (สะสมข้ามการสแกนหลายรอบ) → ส่งไปเก็บเป็นลิงก์ Drive ตอนบันทึก
+  const [sourceImageKeys, setSourceImageKeys] = useState<string[]>([]);
   const [lines, setLines] = useState<LineDraft[]>([newLine()]);
   const [activeKey, setActiveKey] = useState<string>(lines[0].key); // รายการที่เลือกดู (right pane)
   const [error, setError] = useState<string | null>(null);
@@ -279,8 +282,10 @@ export function PoCreateForm({
       warehouseId: warehouseId || null,
       fxRate: isChina ? fx : null, // ไทยไม่มีเรต
       note: note.trim() || null,
+      title: title.trim() || null,
       lines: payloadLines,
       placeOrder,
+      sourceImageKeys: sourceImageKeys.length > 0 ? sourceImageKeys : undefined,
     };
 
     setPendingMode(placeOrder ? "order" : "draft");
@@ -383,7 +388,14 @@ export function PoCreateForm({
       >
         {/* แนบรูปออเดอร์ 1688 → AI อ่าน → คนตรวจ → เติมแถวอัตโนมัติ */}
         <div style={{ marginBottom: 12 }}>
-          <PoImageIngest origin={origin} sym={sym} onAddLines={addOcrLines} />
+          <PoImageIngest
+            origin={origin}
+            sym={sym}
+            onAddLines={addOcrLines}
+            onSourceImages={(keys) =>
+              setSourceImageKeys((prev) => [...new Set([...prev, ...keys])])
+            }
+          />
         </div>
 
         <div className="dc-poline2-grid">
@@ -426,8 +438,17 @@ export function PoCreateForm({
         </div>
       </div>
 
-      {/* ── โน้ตใบ + ยอดรวม ── */}
+      {/* ── ชื่อเรียกใบ + โน้ตใบ + ยอดรวม ── */}
       <div className={cardClass} style={{ ...cardStyle, display: "grid", gap: 12 }}>
+        <label style={fieldWrap}>
+          <span style={labelStyle}>ชื่อเรียกใบนี้ <span style={optStyle}>(ไม่บังคับ · ช่วยให้หาใบง่ายกว่าเลข PO)</span></span>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="เช่น ตุ๊กตาหมีล็อตสงกรานต์ / อะไหล่ตู้คีบรอบ 2"
+            autoComplete="off"
+          />
+        </label>
         <label style={fieldWrap}>
           <span style={labelStyle}>โน้ตใบสั่งซื้อ <span style={optStyle}>(ไม่บังคับ)</span></span>
           <Input

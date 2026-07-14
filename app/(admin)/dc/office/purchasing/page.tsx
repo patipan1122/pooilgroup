@@ -27,6 +27,7 @@ export default async function DcPurchasingPage() {
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       origin: true,
       currency: true,
@@ -70,6 +71,7 @@ export default async function DcPurchasingPage() {
     return {
       id: po.id,
       poCode: po.poCode,
+      title: po.title,
       status: po.status,
       origin: po.origin,
       currency: po.currency,

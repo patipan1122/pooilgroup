@@ -22,6 +22,7 @@ export type PoLineMini = { name: string; qty: number; unitPrice: number; imageUr
 export type PoListItem = {
   id: string;
   poCode: string;
+  title: string | null;
   status: string;
   origin: string;
   currency: string;

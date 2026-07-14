@@ -69,10 +69,13 @@ export function PoImageIngest({
   origin,
   sym,
   onAddLines,
+  onSourceImages,
 }: {
   origin: "CHINA" | "THAI";
   sym: string;
   onAddLines: (lines: OcrAddedLine[]) => void;
+  /** ส่ง R2 key ของ "รูปต้นฉบับ" ที่สแกน กลับให้ฟอร์ม → เก็บเป็นลิงก์ Drive ตอนบันทึกใบ */
+  onSourceImages?: (keys: string[]) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -81,6 +84,8 @@ export function PoImageIngest({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  // รูปต้นฉบับที่อัปเข้า R2 (สะสมข้ามการเลือกหลายรอบในเซสชันเดียว) — ส่งกลับตอน commit
+  const [sourceKeys, setSourceKeys] = useState<string[]>([]);
 
   useEffect(() => setMounted(true), []);
 
@@ -101,6 +106,7 @@ export function PoImageIngest({
     setWarnings([]);
     setError(null);
     setProgress("");
+    setSourceKeys([]);
   }
 
   async function onPick(files: FileList | null) {
@@ -144,6 +150,8 @@ export function PoImageIngest({
       })),
     );
     setWarnings(res.warnings);
+    // เก็บ key รูปต้นฉบับไว้ (อ่านสำเร็จแล้ว) → ส่งไปเก็บ Drive ตอน commit
+    setSourceKeys((prev) => [...new Set([...prev, ...keys])]);
     setPhase("review");
   }
 
@@ -222,6 +230,7 @@ export function PoImageIngest({
     }
 
     onAddLines(out);
+    onSourceImages?.(sourceKeys);
     reset();
   }
 

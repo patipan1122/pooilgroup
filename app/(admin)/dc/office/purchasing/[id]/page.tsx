@@ -48,11 +48,13 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       origin: true,
       currency: true,
       fxRate: true,
       note: true,
+      sourceImages: true,
       warehouseId: true,
       createdByUserId: true,
       approvedByUserId: true,
@@ -168,11 +170,15 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
   const data: PoDetailData = {
     id: po.id,
     poCode: po.poCode,
+    title: po.title,
     status: po.status,
     origin: po.origin,
     currency: po.currency,
     fxRate,
     note: po.note,
+    sourceImages: Array.isArray(po.sourceImages)
+      ? (po.sourceImages as unknown as PoDetailData["sourceImages"])
+      : [],
     supplierName: po.supplier?.name ?? null,
     warehouseId: po.warehouseId,
     warehouseName,
@@ -232,7 +238,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           <ArrowLeft size={15} /> กลับรายการใบสั่งซื้อ
         </Link>
         <div style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>ใบสั่งซื้อ {po.poCode}</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.01em" }}>{po.title ?? `ใบสั่งซื้อ ${po.poCode}`}</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>รายการสินค้า · กล่อง/พัสดุ · เปลี่ยนสถานะ · รับเข้าคลัง</p>
         </div>
 

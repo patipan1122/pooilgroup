@@ -8263,6 +8263,10 @@ model DcPurchaseOrder {
   currency         String     @default("CNY")
   fxRate           Decimal?   @map("fx_rate") @db.Decimal(12, 6)
   note             String?
+  // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (label · ไม่บังคับ) — ช่วยหาใบง่ายกว่าเลข PO สุ่ม
+  title            String?
+  // รูปต้นฉบับที่ AI สแกน (best-effort) — array ของ { driveUrl, driveFileId, r2Key } เผื่อย้อนตรวจ
+  sourceImages     Json?      @map("source_images")
   createdByUserId  String     @map("created_by_user_id") @db.Uuid
   approvedByUserId String?    @map("approved_by_user_id") @db.Uuid
   approvedAt       DateTime?  @map("approved_at") @db.Timestamptz(6)

@@ -227,6 +227,12 @@ function PoCardMini({
             {fmtMoney(item.total, 0)}
           </span>
         </div>
+        {/* ชื่อเรียกใบ (ถ้าตั้งไว้) — หาใบง่ายกว่าเลข PO */}
+        {item.title && (
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--dc-ink,#1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
+            {item.title}
+          </div>
+        )}
         {/* กลาง: meta ย่อ + สถานะ + ลูกศรกาง */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span style={{ fontSize: 11.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>

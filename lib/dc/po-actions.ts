@@ -27,6 +27,8 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
 import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
+import { getObject } from "@/lib/r2/upload";
+import { uploadDcImageToDrive } from "@/lib/dc/drive-store";
 import { postGrn } from "@/lib/dc/grn-actions";
 import { computePoFreightSatang } from "@/lib/dc/freight";
 import { loadFreightRates } from "@/lib/dc/freight-rates";
@@ -56,10 +58,26 @@ export type CreatePoInput = {
   warehouseId?: string | null;
   fxRate?: number | null;
   note?: string | null;
+  /** ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (ไม่บังคับ) */
+  title?: string | null;
   lines: PoLineInput[];
   /** true = บันทึกแล้วเป็น "สั่งแล้ว" ทันที (ไม่มีด่านอนุมัติ · CEO D-#10) · false/undefined = เก็บร่างไว้ก่อน */
   placeOrder?: boolean;
+  /** R2 key ของรูปต้นฉบับที่ AI สแกน (dc/po/<orgId>/…) → เก็บเป็นลิงก์ Drive ไว้ย้อนตรวจ (best-effort) */
+  sourceImageKeys?: string[];
 };
+
+/** รูปต้นฉบับที่ AI สแกน (เก็บเป็น Json array บน DcPurchaseOrder.sourceImages). */
+export type PoSourceImage = {
+  /** ลิงก์เปิดดูบน Google Drive (viewer) — null ถ้าองค์กรยังไม่เชื่อม Drive / อัปไม่สำเร็จ */
+  driveUrl: string | null;
+  driveFileId: string | null;
+  /** R2 key ต้นฉบับ (fallback ดูรูปได้แม้ Drive พลาด) */
+  r2Key: string;
+};
+
+/** โฟลเดอร์ Drive สำหรับรูปต้นฉบับใบสั่งซื้อ (แยกจาก "DC-รูปสินค้า"). */
+const PO_SOURCE_DRIVE_FOLDER = "DC-ใบสั่งซื้อ (รูปต้นฉบับ)";
 
 export type UpdatePoInput = {
   supplierId?: string | null;
@@ -180,6 +198,64 @@ function buildLineData(
   };
 }
 
+/**
+ * เก็บ "รูปต้นฉบับ" ที่ AI สแกน (R2 dc/po/<orgId>/…) ขึ้น Google Drive แล้วผูกลิงก์กับใบ.
+ * 🏗️ Best-effort ทั้งหมด: อ่านไฟล์ไม่ได้ / Drive ไม่เชื่อม / อัปพลาด → ข้ามรูปนั้น (ไม่ throw · ใบไม่พัง).
+ *   ถ้า Drive พลาด ยังเก็บ r2Key ไว้ → เปิดดูจาก R2 ได้ (fallback). กัน cross-org: key ต้องขึ้นต้น dc/po/<orgId>/.
+ */
+async function persistPoSourceImages(
+  orgId: string,
+  poId: string,
+  rawKeys: string[],
+): Promise<void> {
+  const keys = [
+    ...new Set(
+      (rawKeys ?? [])
+        .map((k) => (typeof k === "string" ? k.trim() : ""))
+        .filter(Boolean),
+    ),
+  ]
+    .filter((k) => k.startsWith(`dc/po/${orgId}/`))
+    .slice(0, 12);
+  if (keys.length === 0) return;
+
+  const out: PoSourceImage[] = [];
+  for (const key of keys) {
+    let driveUrl: string | null = null;
+    let driveFileId: string | null = null;
+    try {
+      const buf = await getObject(key);
+      const mimeType = key.endsWith(".png")
+        ? "image/png"
+        : key.endsWith(".webp")
+          ? "image/webp"
+          : "image/jpeg";
+      const drive = await uploadDcImageToDrive({
+        orgId,
+        bytes: buf,
+        mimeType,
+        name: `PO-${key.split("/").pop() ?? randomUUID().slice(0, 8)}`,
+        folder: PO_SOURCE_DRIVE_FOLDER,
+      });
+      driveUrl = drive?.driveUrl ?? null;
+      driveFileId = drive?.driveFileId ?? null;
+    } catch {
+      /* อ่าน/อัปไม่ได้ → เก็บ r2Key อย่างเดียว */
+    }
+    out.push({ driveUrl, driveFileId, r2Key: key });
+  }
+
+  try {
+    await prisma.dcPurchaseOrder.update({
+      where: { id: poId },
+      data: { sourceImages: out as unknown as Prisma.InputJsonValue },
+    });
+    revalidate(poId);
+  } catch {
+    /* เขียนลิงก์ไม่สำเร็จก็ปล่อย — ใบยังอยู่ครบ */
+  }
+}
+
 // ── สร้างใบ (DRAFT) ──────────────────────────────────────────
 
 export async function createPo(input: CreatePoInput): Promise<PoActionResult> {
@@ -242,6 +318,7 @@ export async function createPo(input: CreatePoInput): Promise<PoActionResult> {
         currency,
         fxRate: fxRate != null ? dec(fxRate) : null,
         note: cleanStr(input.note),
+        title: cleanStr(input.title),
         createdByUserId: userId,
         lines: {
           create: lines.map((l) => buildLineData(orgId, l, origin, fxRate)),
@@ -250,6 +327,10 @@ export async function createPo(input: CreatePoInput): Promise<PoActionResult> {
       select: { id: true },
     });
     revalidate(po.id);
+    // เก็บรูปต้นฉบับที่สแกน → Drive (best-effort · ไม่ทำให้ใบพังถ้า Drive มีปัญหา)
+    if (input.sourceImageKeys && input.sourceImageKeys.length > 0) {
+      await persistPoSourceImages(orgId, po.id, input.sourceImageKeys);
+    }
     return { ok: true, id: po.id };
   } catch {
     return { ok: false, error: "สร้างใบสั่งซื้อไม่สำเร็จ ลองอีกครั้ง" };
@@ -414,6 +495,162 @@ export async function removeLine(
   if (res.count === 0) return { ok: false, error: "ไม่พบรายการนี้" };
   revalidate(poId);
   return { ok: true, id: poId };
+}
+
+// ── ตั้ง/แก้ "ชื่อเรียกใบ" (label เฉย ๆ · ไม่กระทบเงิน/สถานะ → แก้ได้ตลอด) ──────
+export async function setPoTitle(
+  poId: string,
+  title: string | null,
+): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId } = g;
+  const res = await prisma.dcPurchaseOrder.updateMany({
+    where: { id: poId, orgId },
+    data: { title: cleanStr(title) },
+  });
+  if (res.count === 0) return { ok: false, error: "ไม่พบใบสั่งซื้อนี้ในองค์กรของคุณ" };
+  revalidate(poId);
+  return { ok: true, id: poId };
+}
+
+// ── แก้ "รายการสินค้า" ในใบ (แก้ชื่อ/SKU/หน่วย/รูป/จำนวน/ราคา) ────────────────
+//  🏗️ RULE I:
+//   • ชื่อ/SKU/หน่วย/รูป → แก้ที่ตัวสินค้า (DcProduct master · มีผลทุกใบที่ใช้สินค้าตัวนี้) — แก้ได้ตลอด
+//   • จำนวน/ราคา → แก้เฉพาะบรรทัดใบนี้ (money) — ล็อกหลังจ่ายเงิน/รับเข้าคลัง (กันยอดบัญชีเพี้ยน)
+//     ถ้าล็อกแล้วยังขอแก้จำนวน/ราคา → เซฟชื่อ/รูปให้ + คืน warn (ไม่เงียบ · ไม่แตะเงิน)
+//   • unitPriceThb คิดใหม่จากเรตของใบเสมอ (server-authoritative)
+export type UpdatePoLineInput = {
+  name?: string | null;
+  sku?: string | null;
+  unit?: string | null;
+  /** รูปใหม่ (R2 key) → อัปเดตทั้ง thumbnail บรรทัด + รูปสินค้า master · undefined = ไม่แตะรูป */
+  photoR2Key?: string | null;
+  qty?: number | null;
+  unitPriceCny?: number | null;
+};
+
+export async function updatePoLine(
+  poId: string,
+  lineId: string,
+  input: UpdatePoLineInput,
+): Promise<PoActionResult> {
+  const g = await requireManager();
+  if (!g.ok) return g;
+  const { orgId, userId } = g;
+
+  const line = await prisma.dcPurchaseLine.findFirst({
+    where: { id: lineId, poId, orgId },
+    select: {
+      id: true,
+      qty: true,
+      unitPriceCny: true,
+      productId: true,
+      po: { select: { status: true, origin: true, fxRate: true } },
+      product: { select: { id: true, sku: true, name: true, unit: true } },
+    },
+  });
+  if (!line) return { ok: false, error: "ไม่พบรายการนี้ในใบสั่งซื้อของคุณ" };
+  const po = line.po;
+
+  // ── ฟิลด์ตัวสินค้า (master) ── (undefined = ไม่ส่งมา = ไม่แตะ)
+  const name = input.name !== undefined ? cleanStr(input.name) : undefined;
+  const sku = input.sku !== undefined ? cleanStr(input.sku) : undefined;
+  const unit = input.unit !== undefined ? cleanStr(input.unit) : undefined;
+  const newPhoto = input.photoR2Key !== undefined ? cleanStr(input.photoR2Key) : undefined;
+  if (input.name !== undefined && !name) return { ok: false, error: "กรุณากรอกชื่อสินค้า" };
+  if (input.sku !== undefined && !sku) return { ok: false, error: "กรุณากรอกรหัสสินค้า (SKU)" };
+
+  // ── ฟิลด์เงิน (บรรทัด) + guard ล็อก ──
+  const LOCKED: DcPoStatus[] = [
+    DcPoStatus.RECEIVED,
+    DcPoStatus.PARTIAL,
+    DcPoStatus.CANCELLED,
+    DcPoStatus.CLOSED,
+  ];
+  const paidCount = await prisma.dcPoPayment.count({ where: { orgId, poId } });
+  const moneyLocked = LOCKED.includes(po.status) || paidCount > 0;
+
+  const wantQty = input.qty != null ? Math.max(1, Math.trunc(input.qty)) : null;
+  const wantPrice = input.unitPriceCny != null ? posNum(input.unitPriceCny) : null;
+  const curPrice = Number(line.unitPriceCny);
+  const wantsMoneyChange =
+    (wantQty != null && wantQty !== line.qty) ||
+    (wantPrice != null && wantPrice !== curPrice);
+
+  let warn: string | undefined;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // 1) ตัวสินค้า (เฉพาะที่เปลี่ยนจริง · ไม่ทับ barcode/category/reorderPoint/type)
+      const prodData: Prisma.DcProductUpdateInput = {};
+      if (name && name !== line.product.name) prodData.name = name;
+      if (sku && sku !== line.product.sku) prodData.sku = sku;
+      if (unit && unit !== line.product.unit) prodData.unit = unit;
+      if (newPhoto) prodData.imageR2Path = newPhoto;
+      if (Object.keys(prodData).length > 0) {
+        await tx.dcProduct.update({ where: { id: line.productId }, data: prodData });
+      }
+
+      // 2) บรรทัดใบ (รูป thumbnail เสมอ · จำนวน/ราคาเฉพาะเมื่อไม่ล็อก)
+      const lineData: Prisma.DcPurchaseLineUpdateInput = {};
+      if (newPhoto !== undefined) lineData.photoR2Key = newPhoto;
+      if (wantsMoneyChange) {
+        if (moneyLocked) {
+          warn =
+            "บันทึกชื่อ/รูปแล้ว — แต่แก้จำนวน/ราคาไม่ได้ (ใบนี้จ่ายเงิน/รับเข้าคลังแล้ว)";
+        } else {
+          const fx =
+            po.origin === DcPoOrigin.THAI
+              ? 1
+              : po.fxRate != null
+                ? Number(po.fxRate)
+                : null;
+          const finalQty = wantQty ?? line.qty;
+          const finalPrice = wantPrice ?? curPrice;
+          const thb =
+            po.origin === DcPoOrigin.THAI
+              ? finalPrice
+              : fx != null
+                ? finalPrice * fx
+                : null;
+          lineData.qty = finalQty;
+          lineData.unitPriceCny = dec(finalPrice);
+          lineData.unitPriceThb = thb != null ? dec(thb) : null;
+        }
+      }
+      if (Object.keys(lineData).length > 0) {
+        await tx.dcPurchaseLine.update({ where: { id: line.id }, data: lineData });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId,
+          action: "DC_PO_LINE_UPDATE",
+          resourceType: "dc_purchase_line",
+          resourceId: line.id,
+          diff: {
+            old: { name: line.product.name, sku: line.product.sku, qty: line.qty, priceCny: curPrice },
+            new: {
+              name: name ?? line.product.name,
+              sku: sku ?? line.product.sku,
+              qty: wantQty ?? line.qty,
+              priceCny: wantPrice ?? curPrice,
+              moneyApplied: wantsMoneyChange && !moneyLocked,
+            },
+          },
+        },
+      });
+    });
+  } catch (e) {
+    if (errCode(e) === "P2002") {
+      return { ok: false, error: `มีสินค้ารหัส "${sku}" อยู่แล้ว — ใช้รหัสอื่น` };
+    }
+    return { ok: false, error: "แก้ไขรายการไม่สำเร็จ ลองอีกครั้ง" };
+  }
+  revalidate(poId);
+  return { ok: true, id: poId, warn };
 }
 
 // ── เปลี่ยนสถานะ (state machine · idempotent ด้วย WHERE status) ──
@@ -1531,11 +1768,13 @@ export type PanelBox = {
 export type PanelData = {
   id: string;
   poCode: string;
+  title: string | null;
   status: string;
   origin: string;
   currency: string;
   fxRate: number | null;
   note: string | null;
+  sourceImages: PoSourceImage[];
   supplierName: string | null;
   warehouseId: string | null;
   warehouseName: string | null;
@@ -1573,7 +1812,7 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
   const po = await prisma.dcPurchaseOrder.findFirst({
     where: { id: poId, orgId },
     select: {
-      id: true, poCode: true, status: true, origin: true, currency: true, fxRate: true, note: true,
+      id: true, poCode: true, title: true, status: true, origin: true, currency: true, fxRate: true, note: true, sourceImages: true,
       warehouseId: true, createdByUserId: true, approvedByUserId: true, approvedAt: true, orderedAt: true, createdAt: true,
       supplier: { select: { name: true } },
       lines: {
@@ -1667,11 +1906,15 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
   const data: PanelData = {
     id: po.id,
     poCode: po.poCode,
+    title: po.title,
     status: po.status,
     origin: po.origin,
     currency: po.currency,
     fxRate: po.fxRate != null ? Number(po.fxRate) : null,
     note: po.note,
+    sourceImages: Array.isArray(po.sourceImages)
+      ? (po.sourceImages as unknown as PoSourceImage[])
+      : [],
     supplierName: po.supplier?.name ?? null,
     warehouseId: po.warehouseId,
     warehouseName,
