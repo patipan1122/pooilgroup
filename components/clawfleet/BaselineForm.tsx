@@ -145,6 +145,11 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         setBusy(false);
         return;
       }
+      // ดีไซน์ใหม่ · ตั้งชื่อตู้จากช่องกรอกด้านบน (ถ้าเปลี่ยน) — reuse renameMachineNickname (ไม่บล็อก baseline)
+      const nn = (nickname ?? "").trim();
+      if (nn && nn !== (machine.nickname ?? "")) {
+        try { await renameMachineNickname({ machineId: machine.id, nickname: nn }); } catch { /* baseline บันทึกแล้ว · ชื่อพลาดไม่เป็นไร */ }
+      }
       onDone();
     } catch {
       setError("บันทึกไม่สำเร็จ · ลองอีกครั้ง");
@@ -154,46 +159,12 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
-      {/* header — ทำได้ครั้งเดียว + ✎ ตั้งชื่อเล่น */}
-      <div
-        style={{
-          background: "#EEF0FE",
-          border: "1px solid #D9DBFB",
-          borderRadius: 14,
-          padding: "14px 16px",
-          display: "flex",
-          gap: 11,
-        }}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 20px", marginTop: 1 }}>
-          <path d="M12 2 4 5v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V5z" />
-          <path d="m9 12 2 2 4-4" />
-        </svg>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#3F3AC0", flex: 1, minWidth: 0 }}>
-              ตั้งค่าครั้งแรก · ทำได้ครั้งเดียว
-            </div>
-            <button
-              type="button"
-              onClick={() => setNickSheet(true)}
-              className="co-tap"
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "5px 10px", borderRadius: 9,
-                border: "1px solid #C7C3F0", background: "#fff",
-                color: "#4F46E5", fontSize: 12, fontWeight: 700, cursor: "pointer",
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-              {nickname ? "แก้ชื่อ" : "ตั้งชื่อ"}
-            </button>
-          </div>
-          <div style={{ fontSize: 12, color: "#5A54C8", marginTop: 3, lineHeight: 1.45 }}>
-            ตู้ {machine.code}{nickname ? ` · ${nickname}` : ""} — บันทึกยอดตั้งต้น (ตุ๊กตา · เงิน · มิเตอร์) เพื่อเริ่มนับรอบต่อไป.
-            แก้ไขทีหลังต้อง<b> เจ้าของอนุมัติ</b>.
-          </div>
-        </div>
+      {/* ชื่อตู้ (ดีไซน์ใหม่ · ช่องกรอกในหน้าเลย แทนการ์ดใหญ่ + sheet ตั้งชื่อ) */}
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>ชื่อตู้</div>
+        <input value={nickname ?? ""} onChange={(e) => setNickname(e.target.value.length ? e.target.value : null)} placeholder="เช่น แดนแดง 01"
+          style={{ width: "100%", fontSize: 15, fontWeight: 700, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 5, lineHeight: 1.4 }}>ตั้งค่าครั้งแรก · ทำครั้งเดียว · ตู้ {machine.code} — แก้ไขทีหลังต้อง<b>เจ้าของอนุมัติ</b></div>
       </div>
 
       {/* ── ราคาขายของตู้นี้ (ราคาเดียวต่อตู้) — ดีไซน์ใหม่ ── */}
@@ -222,43 +193,20 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           </div>
         </div>
 
-        {/* กดขยายดูรายการ SKU (หุบไว้ default) — โชว์ปุ่มเฉพาะเมื่อมีของในตู้ */}
+        {/* รายการ SKU ในตู้ (ดีไซน์ใหม่ · โชว์เลยไม่ต้องกดขยาย · รูป+ชื่อ+ขาย+จำนวน) */}
         {inMachine.length > 0 && (
-          <>
-            <button
-              type="button"
-              onClick={() => setShowList((v) => !v)}
-              className="co-tap"
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                width: "100%", padding: "8px 0", borderRadius: 10, cursor: "pointer",
-                border: "1px solid #ECEDF3", background: "#F8F9FC",
-                color: "#4F46E5", fontSize: 12.5, fontWeight: 700,
-              }}
-            >
-              {showList ? "ซ่อนรายการ" : `ดูรายการ (${inMachine.length} ชนิด)`}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: showList ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-            {showList && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {inMachine.map((p) => (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <ProductThumb imageUrl={p.imageUrl} name={p.name} size={36} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: "#9AA1AB" }}>{[p.sku, machinePrice ? `ขาย ฿${machinePrice}` : null].filter(Boolean).join(" · ") || "—"}</div>
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>
-                      {p.qty.toLocaleString("th-TH")} <span style={{ fontSize: 11.5, fontWeight: 600, color: "#9AA1AB" }}>ตัว</span>
-                    </span>
-                  </div>
-                ))}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {inMachine.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid #F2F3F5" }}>
+                <ProductThumb imageUrl={p.imageUrl} name={p.name} size={38} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "#9AA1AB" }}>{[p.sku, machinePrice ? `ขาย ฿${machinePrice}` : null].filter(Boolean).join(" · ") || "—"}</div>
+                </div>
+                <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>×{p.qty.toLocaleString("th-TH")}</span>
               </div>
-            )}
-          </>
+            ))}
+          </div>
         )}
 
         {totalInMachine === 0 && (
@@ -284,11 +232,6 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         </button>
       </div>
 
-      {/* เติมเพิ่ม (พิมพ์เลขได้ + −/+ · ว่าง) */}
-      <Section title="เติมตุ๊กตาเพิ่ม" hint="ใส่เพิ่มเข้าไปกี่ตัว (ไม่เติม = ข้ามได้)">
-        <CountField value={dollsAdded} onChange={setDollsAdded} placeholder="พิมพ์จำนวนที่เติม" />
-      </Section>
-
       {/* เงินสด */}
       <Section title="เงินสดในตู้ (บาท)" hint="นับเงินในตู้ตอนตั้งต้น">
         <input
@@ -301,52 +244,33 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         />
       </Section>
 
-      {/* ── 4 มิเตอร์ — 1 การ์ด · แต่ละตัวย่อ [ช่องเลข] + ไอคอนกล้องเล็ก บรรทัดเดียว ── */}
-      <div className="co-card" style={{ padding: 15, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>อ่านมิเตอร์ 4 ตัว</div>
-          <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2, lineHeight: 1.4 }}>
-            กรอกเลขที่เห็นจริง · <b>อ่านไม่ได้? แตะกล้อง 📷 ถ่ายรูปแทน</b>
-          </div>
+      {/* ── อ่านมิเตอร์ 4 ตัว — 2x2 grid (ดีไซน์ใหม่) ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>อ่านมิเตอร์ 4 ตัว</span>
+          <span className="num" style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#F1F2F5", color: "#6B7280" }}>
+            {METERS.filter((m) => meterVals[m.key].trim() !== "" || !!meterPhotos[m.key]).length}/4
+          </span>
         </div>
-        {METERS.map((m) => {
-          const filled = meterVals[m.key].trim() !== "";
-          const hasPhoto = !!meterPhotos[m.key];
-          const done = filled || hasPhoto;
-          return (
-            <div key={m.key} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", flex: 1 }}>{m.label}</span>
-                <span
-                  className="co-pill"
-                  style={{ background: done ? "#E7F4EC" : "#F1F2F7", color: done ? "#15803D" : "#9AA1AB" }}
-                >
-                  {filled ? "กรอกแล้ว" : hasPhoto ? "มีรูป" : "ยังว่าง"}
-                </span>
+        <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2, lineHeight: 1.4 }}>กรอกเลขที่เห็นจริง · อ่านไม่ได้? แตะกล้องถ่ายรูปแทน</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+          {METERS.map((m) => {
+            const filled = meterVals[m.key].trim() !== "";
+            const hasPhoto = !!meterPhotos[m.key];
+            const done = filled || hasPhoto;
+            return (
+              <div key={m.key} style={{ background: done ? "#F4FBF6" : "#fff", border: `1.5px solid ${done ? "#BFE6CB" : "#E3E6EA"}`, borderRadius: 11, padding: "9px 10px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>{m.label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input value={meterVals[m.key]} onChange={(e) => setMeter(m.key, e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+                    style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                  <PhotoCaptureButton compact label={`ถ่ายรูป ${m.label}`} value={meterPhotos[m.key]} onChange={(url) => setMeterPhoto(m.key, url)} orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase={m.phase} />
+                </div>
+                {hasPhoto && !filled && <div style={{ fontSize: 10, color: "#15803D", fontWeight: 700, marginTop: 5 }}>✓ ถ่ายรูปแล้ว</div>}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  value={meterVals[m.key]}
-                  onChange={(e) => setMeter(m.key, e.target.value)}
-                  inputMode="numeric"
-                  placeholder="อ่านเลขมิเตอร์"
-                  className="co-input num"
-                  style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600 }}
-                />
-                <PhotoCaptureButton
-                  compact
-                  label={`ถ่ายรูป ${m.label}`}
-                  value={meterPhotos[m.key]}
-                  onChange={(url) => setMeterPhoto(m.key, url)}
-                  orgId={orgId}
-                  machineCode={machine.code}
-                  eventScopeId={scopeId}
-                  phase={m.phase}
-                />
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* รูปตู้ — compact (ข้อความ + ไอคอนกล้องเล็ก) */}
@@ -400,14 +324,14 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           padding: 15,
           borderRadius: 13,
           border: "none",
-          background: busy ? "#B9BCF0" : "#4F46E5",
+          background: busy ? "#8FC7A6" : "#15803D",
           color: "#fff",
           fontSize: 15.5,
           fontWeight: 700,
           cursor: busy ? "wait" : "pointer",
         }}
       >
-        {busy ? "กำลังบันทึก…" : "บันทึกการตั้งค่าครั้งแรก"}
+        {busy ? "กำลังบันทึก…" : "บันทึกยอดตั้งต้น · เริ่มนับรอบ"}
       </button>
 
       {/* sheet เพิ่มสินค้าในตู้ (จากคลัง / เพิ่มใหม่) — persist ต่อ SKU ทันที */}

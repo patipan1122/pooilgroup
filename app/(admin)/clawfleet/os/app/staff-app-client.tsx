@@ -2926,25 +2926,21 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={`เติมตุ๊กตาเข้าตู้ ${machine.code}`}
-      style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-      <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
-        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: pending ? "default" : "pointer" }} />
-      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", maxHeight: "88%", overflowY: "auto", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)" }}>
-        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F5F5FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <PackagePlus size={18} strokeWidth={2} />
-          </span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>เปลี่ยน / เติมตุ๊กตา</div>
-            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้ {machine.code} · ไม่เก็บเงิน · เอาตัวเก่าออก + เติมใหม่</div>
-          </div>
-          <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }}
-            style={{ background: "none", border: "none", color: "#9AA1AB", cursor: "pointer", padding: 4 }}>
-            <X size={20} strokeWidth={2} />
-          </button>
+    <div role="dialog" aria-modal="true" aria-label={`เปลี่ยน/เติมตุ๊กตา ตู้ ${machine.code}`}
+      style={{ position: "absolute", inset: 0, zIndex: 40, background: "#F4F5F7", display: "flex", flexDirection: "column" }}>
+      {/* header เต็มจอ (ดีไซน์ใหม่ · แทน bottom-sheet) */}
+      <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 11, padding: "10px 18px 12px" }}>
+        <button type="button" aria-label="ปิด" onClick={() => { if (!pending) onClose(); }} className="co-tap"
+          style={{ width: 36, height: 36, flex: "0 0 36px", borderRadius: 11, background: "#fff", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: pending ? "default" : "pointer" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>เปลี่ยนตุ๊กตา · {machine.code}</div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ไม่เก็บมิเตอร์ · ไม่เก็บเงิน</div>
         </div>
+      </div>
+      {/* scroll body */}
+      <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "6px 18px 22px" }}>
 
         {okMsg ? (
           <div style={{ borderRadius: 14, background: "#EFFAF3", border: "1px solid #C8E9D3", color: "#15803D", padding: "14px 16px", fontSize: 14, fontWeight: 700, textAlign: "center" }}>
@@ -3045,12 +3041,22 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
               </div>
             )}
 
+            {/* สรุปรอบเปลี่ยนตุ๊กตา (ดีไซน์ใหม่) */}
+            {(returnQtyNum > 0 || refillN > 0) && (
+              <div style={{ background: "#EEF6FF", border: "1px solid #CFE2F5", borderRadius: 12, padding: "13px 15px", marginTop: 16 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#1D6FB8", marginBottom: 9 }}>สรุปรอบเปลี่ยนตุ๊กตา</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>เอาออก / คืนคลัง</span><span className="num" style={{ fontWeight: 700, color: "#C0392B" }}>{returnQtyNum} ตัว</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>เติมเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: "#15803D" }}>+{refillN} ตัว</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>ในตู้หลังปรับ (ประมาณ)</span><span className="num" style={{ fontWeight: 700 }}>{Math.max(0, inMachineTotal - returnQtyNum + refillN)} ตัว</span></div>
+              </div>
+            )}
+
             {error && <div style={{ marginTop: 12, fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
 
             <button type="button" disabled={!canSubmit} onClick={submit} className={pending ? "" : "co-tap"}
-              style={{ marginTop: 16, width: "100%", padding: 14, borderRadius: 13, border: "none", background: !canSubmit ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 15, fontWeight: 700, cursor: !canSubmit ? "default" : "pointer" }}>
+              style={{ marginTop: 16, width: "100%", padding: 15, borderRadius: 13, border: "none", background: !canSubmit ? "#B7C6BC" : "#15803D", color: "#fff", fontSize: 15, fontWeight: 700, cursor: !canSubmit ? "default" : "pointer" }}>
               {pending ? "กำลังบันทึก…" : canSubmit
-                ? `บันทึก${returnQtyNum > 0 ? ` · เอาออก ${returnQtyNum}` : ""}${refillN > 0 ? ` · เติม ${refillN}` : ""}`
+                ? `ยืนยันเปลี่ยนตุ๊กตา${returnQtyNum > 0 ? ` · เอาออก ${returnQtyNum}` : ""}${refillN > 0 ? ` · เติม ${refillN}` : ""}`
                 : "เลือก “เอาออก” หรือ “เติม” อย่างน้อย 1 อย่าง"}
             </button>
           </>
