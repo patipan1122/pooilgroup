@@ -3744,6 +3744,37 @@ function FlowScreen(props: {
   // ── ดีไซน์ใหม่ · หน้ากระทบยอด: overlay ดูรูป + การ์ดที่กางแก้ (VISUAL — money math มาจาก recon/props ตามเดิม) ──
   const [photoView, setPhotoView] = useState<null | "meter" | "after">(null);
   const [reconFix, setReconFix] = useState<null | "cash" | "dolls">(null);
+  // ── ดีไซน์ใหม่ · สเต็ป 1 นับตุ๊กตาเหลือ "รายตัว/SKU" → รวมเป็น f.left (สัญญาเดินเงินเดิมไม่เปลี่ยน · left = Σ) ──
+  const inDolls = props.inMachineDolls;
+  const [remainBySku, setRemainBySku] = useState<Record<string, string>>({});
+  const remainInitRef = useRef<string | null>(null);
+  useEffect(() => {
+    const mid = machine?.id ?? "";
+    if (remainInitRef.current === mid) return;
+    remainInitRef.current = mid;
+    const init: Record<string, string> = {};
+    let sum = 0;
+    for (const d of inDolls) { init[d.productId] = String(d.qty); sum += d.qty; }
+    setRemainBySku(init);
+    // fresh (ยังไม่นับ) + มี SKU ในตู้ → prefill รวม = ในตู้ปัจจุบัน (พนักงานปรับลดตามที่ออก) · resume ไม่ทับ
+    if (f.left == null && inDolls.length > 0) props.setNum("left")(String(sum));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine?.id]);
+  const syncLeftFromSku = (next: Record<string, string>) => {
+    const sum = Object.values(next).reduce((a, v) => a + (parseInt(v || "0", 10) || 0), 0);
+    props.setNum("left")(String(sum)); // ยอดรวมรายตัว = ยอดที่ส่งเข้าระบบ (money-safe)
+  };
+  const setRemainSku = (pid: string, raw: string) => {
+    const v = (raw || "").replace(/[^0-9]/g, "");
+    const next = { ...remainBySku, [pid]: v };
+    setRemainBySku(next); syncLeftFromSku(next);
+  };
+  const nudgeRemainSku = (pid: string, delta: number) => {
+    const cur = parseInt(remainBySku[pid] || "0", 10) || 0;
+    const next = { ...remainBySku, [pid]: String(Math.max(0, cur + delta)) };
+    setRemainBySku(next); syncLeftFromSku(next);
+  };
+  const remainSkuTotal = Object.values(remainBySku).reduce((a, v) => a + (parseInt(v || "0", 10) || 0), 0);
   const cashN = n0(f.cash);
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
   const moneyDiff = cashN - recon.expectedCash;
@@ -3808,27 +3839,36 @@ function FlowScreen(props: {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
               <span style={{ fontSize: 12.5, color: "#5A6270" }}>รอบที่แล้วในตู้มีตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{f.last} ตัว</b></span>
             </div>
-            {/* [B] (CEO 2026-07-13) โชว์ว่าในตู้ตอนนี้มี SKU อะไรบ้าง (รูป+ชื่อ+จำนวน) — ดึงจาก inMachineByMachine. */}
-            {props.inMachineDolls.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>ในตู้ตอนนี้ (แยกตามแบบ)</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {props.inMachineDolls.map((d) => (
-                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 11, background: "#F8F7FE", border: "1px solid #E9E5F9", borderRadius: 12, padding: "9px 12px" }}>
-                      <DollThumb imageUrl={d.imageUrl} name={d.name} />
+            {/* ── นับตุ๊กตาเหลือ "รายตัว/SKU" (ดีไซน์ใหม่ · รวม = ยอดที่ส่งระบบ) ── */}
+            {inDolls.length > 0 ? (
+              <div style={{ marginBottom: 4 }}>
+                <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม) — นับรายตัว</FieldLabel>
+                <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden" }}>
+                  {inDolls.map((d) => (
+                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: "1px solid #F2F3F5" }}>
+                      <DollThumb imageUrl={d.imageUrl} name={d.name} size={38} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                        {(d.sku || d.unitCostCents) ? <div style={{ fontSize: 10.5, color: "#9AA1AB" }} className="num">{[d.sku, d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null].filter(Boolean).join(" · ")}</div> : null}
+                        <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                        <div className="num" style={{ fontSize: 10, color: "#9AA1AB", marginTop: 2 }}>{[d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null, `เดิม ${d.qty}`].filter(Boolean).join(" · ")}</div>
                       </div>
-                      <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
+                      <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
+                      <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                      <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
                     </div>
                   ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "#FAFBFC" }}>
+                    <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้รวม <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว</span>
+                    <span className="num" style={{ fontSize: 11.5, color: "#8A909A" }}>ออกไป {dispensed} ตัว</span>
+                  </div>
                 </div>
               </div>
+            ) : (
+              <>
+                <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
+                {/* ตู้ยังไม่มี SKU ในระบบ → นับรวมทีเดียว (fallback) */}
+                <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
+              </>
             )}
-            <FieldLabel>ตุ๊กตาคงเหลือในตู้ (ก่อนเติม)</FieldLabel>
-            {/* FIX-2 · พิมพ์เลขได้ตรง ๆ (เช่น 90) + ปุ่ม −/+ ปรับทีละตัว */}
-            <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
             <div style={{ marginTop: 10 }}>
               <PhotoSlot label={`ถ่ายรูปสินค้าในตู้ก่อนเติม ${props.photoRequired ? "(บังคับ)" : "(ถ่ายได้-ข้ามได้)"}`} value={photos.before}
                 onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
