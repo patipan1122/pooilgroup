@@ -72,6 +72,8 @@ const SubmitBaselineSchema = z.object({
   photoMoneyMeterBottomUrl: zPhotoUrl.optional(),
   photoDollMeterTopUrl: zPhotoUrl.optional(),
   photoDollMeterBottomUrl: zPhotoUrl.optional(),
+  // ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียวต่อตู้ · บาท×100) · optional · display/reference (ไม่แตะกระทบยอดเงิน)
+  sellPriceCents: z.number().int("ราคาต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "ราคาติดลบไม่ได้").max(10_000_000).optional(),
   loadout: z
     .array(
       z.object({
@@ -105,6 +107,7 @@ export async function submitFirstBaseline(input: {
   dollCountNow: number;
   dollsAdded: number;
   cashCents: number;
+  sellPriceCents?: number; // ราคาขายตุ๊กตาต่อตู้ (ราคาเดียว · บาท×100) · optional
   meterMoneyTop: number | null;
   meterMoneyBottom: number | null;
   meterDollTop: number | null;
@@ -285,6 +288,8 @@ export async function submitFirstBaseline(input: {
           firstBaselineAppliedAt: now,
           // รูปตู้ล่าสุด (N4) — ถ้าแนบมา เก็บลง CfMachine.photoUrl ด้วย
           ...(data.photoMachineUrl ? { photoUrl: data.photoMachineUrl } : {}),
+          // ราคาขายตุ๊กตาต่อตู้ (ราคาเดียว) — ตั้งตอนตั้งค่าครั้งแรก · เก็บถ้าส่งมา
+          ...(data.sellPriceCents != null ? { sellPriceCents: data.sellPriceCents } : {}),
         },
       });
 

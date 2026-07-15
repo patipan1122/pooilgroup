@@ -88,6 +88,7 @@ export type InMachineDoll = {
   sku: string;
   imageUrl: string | null;
   qty: number; // ในตู้ตอนนี้ (ตัว)
+  unitCostCents?: number | null; // ราคาทุน/ตัว (บาท×100) — โชว์อย่างเดียว (ดีไซน์ใหม่)
 };
 
 // N3 · client idempotency key (crypto.randomUUID เมื่อมี · fallback timestamp+rand)
@@ -1378,6 +1379,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           // [C] "เปลี่ยน" → เปิด sheet "เปลี่ยน/เติม" (return+refill · รอบเก็บเงินจริง reconcile ให้ · ชิ้น 3).
           onChange={(m) => { setError(null); setRefillMachineId(m.id); }}
           onRefillOnly={(m) => { setError(null); setRefillMachineId(m.id); }}
+          onSetup={() => {
+            // ดีไซน์ใหม่ · CTA ตั้งค่าตู้ใหม่ → เปิด BaselineForm ให้ตู้ที่ยังรอตั้งค่า (AWAITING_SETUP) ตัวแรก.
+            const need = machines.find((m) => m.awaitingSetup && !isDemo(m.id));
+            if (need) { setError(null); setBaselineMachineId(need.id); return; }
+            setError("ยังไม่มีตู้ใหม่ที่รอตั้งค่า · ตู้ที่เพิ่มเข้ามาใหม่จะขึ้นตรงนี้ให้ตั้งค่าครั้งแรก");
+          }}
           inMachineByMachine={inMachineByMachine}
           pending={pending}
           openingId={openingId}
@@ -1522,6 +1529,8 @@ function HomeScreen(props: {
   onChange: (m: AppMachine) => void;
   // ชิ้น 2 · "เติม" — เปิด sheet เติมตุ๊กตาอย่างเดียว (โหลดคลัง→ตู้ · ไม่ต้องทำรอบเก็บเงินเต็ม)
   onRefillOnly: (m: AppMachine) => void;
+  // ดีไซน์ใหม่ · CTA "ตั้งค่าตู้ใหม่ (ครั้งแรก)" บนหน้าหลัก → เปิด BaselineForm ให้ตู้ที่รอตั้งค่า
+  onSetup: () => void;
   inMachineByMachine: Record<string, InMachineDoll[]>;
   pending: boolean;
   openingId: string | null;
@@ -1547,7 +1556,7 @@ function HomeScreen(props: {
   receivedByBranch: Record<string, CfReceivedDoc[]>;
   countsByBranch: Record<string, CfCountRow[]>;
 }) {
-  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onOpenPhotoHub, onReturn, onChange, onRefillOnly, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
+  const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onChange, onSetup, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
   // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
   const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
@@ -1581,61 +1590,80 @@ function HomeScreen(props: {
   // ทักทายตามเวลา (เช้า/บ่าย/เย็น/ค่ำ)
   const hr = new Date().getHours();
   const greet = hr < 12 ? "สวัสดีตอนเช้า" : hr < 16 ? "สวัสดีตอนบ่าย" : hr < 19 ? "สวัสดีตอนเย็น" : "สวัสดีตอนค่ำ";
+  // ดีไซน์ใหม่ · วันที่ไทยย่อ (มุมขวาหัวสีม่วง) + ชื่อสาขา (ถ้าหลายสาขา = "N สาขา")
+  const todayLabel = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
+  const branchLabel = branchGroups.length === 1 ? branchGroups[0][0] : `${branchGroups.length} สาขา`;
+  // ตู้ที่ "เก็บแล้ววันนี้" (จาก history รอบ COLLECTION ของวันที่กำลังดู) → ป้าย "เก็บแล้ว" + ปุ่ม "ดูใบ" (ดีไซน์ใหม่)
+  const doneCodesToday = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of props.history) {
+      if (!h.isBaseline && (h.eventType === "COLLECTION" || h.eventType === undefined)) set.add(h.code);
+    }
+    return set;
+  }, [props.history]);
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 24px" }}>
-      {/* greeting */}
-      <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "8px 0 18px" }}>
-        <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{avatarChar}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, color: "#9AA1AB" }}>{greet}</div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{displayName}</div>
-        </div>
-        <span style={{ width: 38, height: 38, borderRadius: 11, background: "#fff", border: "1px solid #E8EAED", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-        </span>
-      </div>
-
-      {/* route progress */}
-      <div style={{ background: "linear-gradient(135deg,#4F46E5,#6D5CE8)", borderRadius: 16, padding: "18px 20px", color: "#fff", marginBottom: 18 }}>
-        <div style={{ fontSize: 12, opacity: 0.85 }}>รอบเก็บเงินวันนี้ · เส้นทางรังสิต–ลาดพร้าว</div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 6 }}>
-          <span className="num" style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-1px" }}>{routeDone}/{routeTotal}</span>
-          <span style={{ fontSize: 13, opacity: 0.85, paddingBottom: 6 }}>ตู้เก็บแล้ว</span>
-        </div>
-        <div style={{ height: 6, background: "rgba(255,255,255,0.25)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${routePct}%`, background: "#fff", borderRadius: 6 }} />
-        </div>
-      </div>
-
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {panel === null ? (
         <>
-          {/* quick menu */}
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 9, color: "#454B54" }}>เมนูลัด</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
-            {QUICK_MENU.map((mn) => (
-              <button key={mn.key} type="button" onClick={() => setPanel(mn.key)} className="co-tap co-lift"
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minHeight: 72, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 6px", cursor: "pointer" }}>
-                <span style={{ width: 34, height: 34, borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon paths={mn.d} size={17} />
-                </span>
-                <span style={{ fontSize: 10.5, fontWeight: 600, textAlign: "center", lineHeight: 1.2 }}>{mn.label}</span>
-              </button>
-            ))}
+          {/* ── indigo header · ทักทาย + ความคืบหน้ารอบ (ดีไซน์ใหม่) ── */}
+          <div style={{ flex: "0 0 auto", padding: "10px 20px 20px", background: "linear-gradient(160deg,#4F46E5,#5B4FE8)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, fontWeight: 700, color: "#fff" }}>{avatarChar}</div>
+              <div style={{ flex: 1, lineHeight: 1.25, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: "#C9C7F6" }}>{greet}</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+              </div>
+              <div style={{ textAlign: "right", color: "#fff", flex: "0 0 auto" }}>
+                <div className="num" style={{ fontSize: 12, color: "#C9C7F6" }}>{todayLabel}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{branchLabel}</div>
+              </div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.13)", borderRadius: 16, padding: "15px 17px", marginTop: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 13, color: "#E4E3FB", fontWeight: 600 }}>รอบเก็บเงินวันนี้</span>
+                <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{routeDone}/{routeTotal} ตู้</span>
+              </div>
+              <div style={{ height: 8, background: "rgba(255,255,255,0.22)", borderRadius: 6, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${routePct}%`, background: "#fff", borderRadius: 6 }} />
+              </div>
+            </div>
           </div>
 
-          {/* tour CTA */}
-          <button type="button" onClick={() => { setPanel("tour"); props.setTourStep(0); }} className="co-tap co-lift"
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, minHeight: 64, textAlign: "left", border: "none", cursor: "pointer", background: "linear-gradient(100deg,#4F46E5,#6D5DF0)", color: "#fff", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
-            <span style={{ width: 40, height: 40, borderRadius: 11, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M3 9h18M4 9v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9 6 4h12l2 5" /></svg>
-            </span>
-            <span style={{ flex: 1 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>เริ่มทัวร์เติมตู้ 7-11</span>
-              <span style={{ display: "block", fontSize: 11.5, opacity: 0.85 }}>เบิกตุ๊กตา → ไล่เติม 8 ตู้ → คืนของเหลือ</span>
-            </span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
-          </button>
+          {/* ── scroll body ── */}
+          <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "16px 18px 24px" }}>
+            {/* quick actions · 4 การ์ดสี (ดีไซน์ใหม่) */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9, marginBottom: 18 }}>
+              {([
+                { key: "history" as const, label: "ประวัติเก็บ", bg: "#EEF0FE", color: "#4F46E5", d: ["M12 8v4l3 2", "M3.05 11a9 9 0 1 1 .5 4", "M3 3v5h5"] },
+                { key: "repair" as const, label: "แจ้งซ่อม", bg: "#FCF1E2", color: "#B45309", d: ["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"] },
+                { key: "stock" as const, label: "นับสต๊อก", bg: "#E7F4EC", color: "#15803D", d: ["M20 7 12 3 4 7v10l8 4 8-4z", "M4 7l8 4 8-4M12 11v10"] },
+                { key: "receive" as const, label: "รับสินค้า", bg: "#EAF1FB", color: "#2563C9", d: ["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", "M3.3 7 12 12l8.7-5M12 22V12"] },
+              ]).map((a) => (
+                <button key={a.key} type="button" onClick={() => setPanel(a.key)} className="co-tap co-lift"
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minHeight: 74, background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "12px 4px", cursor: "pointer" }}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, background: a.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={a.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {a.d.map((dd, i) => (<path key={i} d={dd} />))}
+                    </svg>
+                  </span>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: "#454B54", textAlign: "center", lineHeight: 1.2 }}>{a.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* setup CTA · ตั้งค่าตู้ใหม่ (ครั้งแรก) (ดีไซน์ใหม่ · แทนปุ่มทัวร์เดิม) */}
+            <button type="button" onClick={onSetup} className="co-tap co-lift"
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", border: "1px solid #E3E6EA", cursor: "pointer", background: "#fff", borderRadius: 14, padding: "13px 15px", marginBottom: 18 }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="1.9"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
+              </span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>ตั้งค่าตู้ใหม่ (ครั้งแรก)</span>
+                <span style={{ display: "block", fontSize: 11.5, color: "#9AA1AB" }}>ตั้งชื่อตู้ · เพิ่มสินค้า · ราคา · มิเตอร์</span>
+              </span>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C2C7CF" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
 
           {/* drafts */}
           {draftList.length > 0 && (
@@ -1692,86 +1720,54 @@ function HomeScreen(props: {
                     const isDraft = !!drafts[m.id];
                     const isOpening = openingId === m.id;
                     const isSkipped = skippedIds.has(m.id);
-                    // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP) → ป้าย ⚪ neutral gray "ตั้งค่าครั้งแรก" (ไม่ใช่แดง)
                     const isAwaiting = m.awaitingSetup;
-                    const tag = isSkipped
-                      ? { l: "แจ้งซ่อมแล้ว", c: "#B42318", bg: "#FCEDEC", iBg: "#FCEDEC", iC: "#B42318", dot: "#D8503F", hint: "ตู้เสีย · แจ้งซ่อม & ข้ามในรอบนี้แล้ว" }
-                      : isAwaiting
-                        ? { l: "ตั้งค่าครั้งแรก", c: "#5A6270", bg: "#F1F2F7", iBg: "#F1F2F7", iC: "#5A6270", dot: "#A9AEB8", hint: "ตู้ใหม่ · แตะเพื่อบันทึกยอดตั้งต้น" }
-                        : isDraft
-                          ? { l: "ค้างมิเตอร์", c: "#B45309", bg: "#FCF1E2", iBg: "#FCF1E2", iC: "#B45309", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
-                          : { l: "รอเก็บ", c: "#4F46E5", bg: "#EEF0FE", iBg: "#EEF0FE", iC: "#4F46E5", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
-                    // ระหว่างมีตู้กำลังเปิดรอบ → dim ตู้อื่น, ตู้ที่กดโชว์สปินเนอร์ (กันรู้สึกค้าง/พัง)
-                    const dimmed = pending && !isOpening;
-                    // B1 · ปุ่มลัด "ถ่ายรูปก่อน" โชว์เฉพาะตู้ที่ยัง "รอเก็บ" (ยังไม่มีร่าง/ไม่เสีย/ตั้ง baseline แล้ว)
-                    const canPhotoFirst = !isDraft && !isSkipped && !isAwaiting;
-                    // 🆕 คืนตุ๊กตา — โชว์ปุ่มเฉพาะตู้ที่ "มีของในตู้ตอนนี้" (จาก server ledger · ไม่ใช่ demo/ตู้เสีย)
                     const dolls = inMachineByMachine[m.id] ?? [];
-                    const dollCount = dolls.length;
-                    const canReturn = dollCount > 0 && !isSkipped && !isAwaiting;
-                    // ชิ้น 2 · "เติม" เปิดได้แม้ตู้ว่าง (ตู้ตั้งค่าแล้ว · ไม่ใช่ draft/รอตั้งค่า/ข้าม)
-                    const canRefillOnly = !isDraft && !isSkipped && !isAwaiting;
-                    // item 7 · "เปลี่ยน" — ตู้ที่มีของ + เปิดเก็บ/เติมได้ (ไม่เสีย/ตั้งค่าแล้ว) → เปิด sheet คืน (โหมดเปลี่ยน)
-                    const canChange = canReturn && !isDraft;
+                    // เก็บแล้ววันนี้ (จาก history) → ป้าย "เก็บแล้ว" + ปุ่ม "ดูใบ" (ดีไซน์ใหม่)
+                    const isDone = !isDraft && !isSkipped && !isAwaiting && doneCodesToday.has(m.code);
+                    const st = isSkipped
+                      ? { tag: "แจ้งซ่อมแล้ว", tagC: "#B42318", tagBg: "#FCEDEC", badgeBg: "#FCEDEC", badgeC: "#B42318", border: "#F3D4D0", dot: "#D8503F", hint: "ตู้เสีย · แจ้งซ่อม & ข้ามในรอบนี้" }
+                      : isAwaiting
+                        ? { tag: "ตั้งค่าครั้งแรก", tagC: "#5A6270", tagBg: "#F1F2F7", badgeBg: "#F1F2F7", badgeC: "#5A6270", border: "#E1E3E9", dot: "#A9AEB8", hint: "ตู้ใหม่ · แตะเพื่อบันทึกยอดตั้งต้น" }
+                        : isDraft
+                          ? { tag: "ค้างมิเตอร์", tagC: "#B45309", tagBg: "#FCF1E2", badgeBg: "#FCF1E2", badgeC: "#B45309", border: "#F0E2BE", dot: "#E8A33D", hint: "ถ่ายรูป+นับแล้ว · รอกรอกเลขมิเตอร์" }
+                          : isDone
+                            ? { tag: "เก็บแล้ว", tagC: "#15803D", tagBg: "#E7F4EC", badgeBg: "#F1F2F5", badgeC: "#9AA1AB", border: "#E8EAED", dot: "#15803D", hint: "เก็บเงินแล้ววันนี้" }
+                            : { tag: "รอเก็บ", tagC: "#4F46E5", tagBg: "#EEF0FE", badgeBg: "#EEF0FE", badgeC: "#4F46E5", border: "#DADBF8", dot: "#4F46E5", hint: "แตะเพื่อเริ่มเก็บเงิน" };
+                    const dimmed = pending && !isOpening;
+                    const title = m.nickname?.trim() || m.branch;
                     return (
                       <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 6, opacity: dimmed ? 0.5 : 1 }}>
-                      <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
-                        <button type="button" disabled={pending} onClick={() => onOpen(m)}
-                          className={pending ? "" : "co-tap co-lift"}
-                          style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, minHeight: 64, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : isSkipped ? "#F3D4D0" : isAwaiting ? "#E1E3E9" : isDraft ? "#F0E2BE" : "#E8EAED"}`, borderRadius: 13, padding: "12px 14px", textAlign: "left", cursor: pending ? "wait" : "pointer" }}>
-                          <span style={{ position: "relative", flex: "0 0 42px" }}>
-                            <span className="num" style={{ width: 42, height: 42, borderRadius: 12, background: tag.iBg, color: tag.iC, fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
-                            <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: tag.dot, border: "2px solid #fff" }} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : st.border}`, borderRadius: 13, padding: "9px 10px" }}>
+                          <span style={{ position: "relative", flex: "0 0 38px" }}>
+                            <span className="num" style={{ width: 38, height: 38, borderRadius: 10, background: st.badgeBg, color: st.badgeC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                            <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: st.dot, border: "2px solid #fff" }} />
                           </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 600 }}>{m.branch} <span style={{ color: "#9AA1AB", fontWeight: 400, fontSize: 12 }}>· {m.zone}</span></div>
-                            <div style={{ fontSize: 11, color: "#9AA1AB" }}>{isOpening ? "กำลังเปิดรอบ…" : tag.hint}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
+                            <div style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isOpening ? "กำลังเปิดรอบ…" : `${m.branch} · ${m.zone}`}</div>
                           </div>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: st.tagBg, color: st.tagC, whiteSpace: "nowrap" }}>{st.tag}</span>
                           {isOpening ? (
-                            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#4F46E5" }}>
-                              <Spinner color="#4F46E5" />
-                              เปิดรอบ
-                            </span>
+                            <span style={{ width: 52, flex: "0 0 52px", display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner color="#4F46E5" /></span>
+                          ) : isSkipped ? null : isAwaiting ? (
+                            <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#4F46E5" color="#fff" label="ตั้งค่า"
+                              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>} />
+                          ) : isDraft ? (
+                            <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#FCF1E2" color="#B45309" label="กรอกต่อ"
+                              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>} />
+                          ) : isDone ? (
+                            <RowActionBtn onClick={() => setPanel("history")} bg="#E7F4EC" color="#15803D" label="ดูใบ"
+                              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
                           ) : (
-                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.l}</span>
-                              <ChevronRight size={17} color="#C2C7CF" strokeWidth={2.2} />
-                            </span>
+                            <>
+                              <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#4F46E5" color="#fff" label="เก็บเงิน"
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="2" y="7" width="20" height="12" rx="2" /><path d="M2 11h20M7 15h4" /></svg>} />
+                              <RowActionBtn onClick={() => onChange(m)} disabled={pending} bg="#EEF0FE" color="#4F46E5" label="เปลี่ยน/เติม"
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>} />
+                            </>
                           )}
-                        </button>
-                        {/* B1 · ปุ่มลัด "📸 ถ่ายรูปก่อน" — เข้าหน้ารวมถ่ายรูปทุกช่อง แล้วบันทึกค้าง ไปตู้ต่อไป */}
-                        {canPhotoFirst && (
-                          <button type="button" disabled={pending} aria-label={`ถ่ายรูปก่อน ตู้ ${m.code}`} title="ถ่ายรูปก่อน"
-                            onClick={() => onOpenPhotoHub(m)} className={pending ? "" : "co-tap"}
-                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#F5F5FE", border: "1px solid #D9D6F5", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#4F46E5" }}>
-                            <Camera size={19} strokeWidth={2} />
-                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>ถ่ายก่อน</span>
-                          </button>
-                        )}
-                        {/* [C] (CEO 2026-07-13) · ปุ่ม "เปลี่ยน/เติม" — เปลี่ยน/เติมตุ๊กตาไม่เก็บเงิน (return+refill · reconcile ตอนเก็บเงินจริง) */}
-                        {canChange && (
-                          <button type="button" disabled={pending} aria-label={`เปลี่ยน/เติมตุ๊กตา ตู้ ${m.code}`} title="เปลี่ยน/เติมตุ๊กตา (ไม่เก็บเงิน · เอาตัวเก่าออก+เติมใหม่)"
-                            onClick={() => onChange(m)} className={pending ? "" : "co-tap"}
-                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#FFF7ED", border: "1px solid #FBDCB4", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#B45309" }}>
-                            <RefreshCw size={18} strokeWidth={2} />
-                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>เปลี่ยน/เติม</span>
-                          </button>
-                        )}
-                        {/* 🆕 ปุ่ม "คืนตุ๊กตา" — เอาตุ๊กตาออกจากตู้ กลับเข้าคลังสาขา (ราย SKU + รูป) */}
-                        {canReturn && (
-                          <button type="button" disabled={pending} aria-label={`คืนตุ๊กตาจากตู้ ${m.code} เข้าคลัง`} title="เอาตุ๊กตาออก / คืนเข้าคลัง"
-                            onClick={() => onReturn(m)} className={pending ? "" : "co-tap"}
-                            style={{ flex: "0 0 56px", width: 56, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#EFFAF3", border: "1px solid #C8E9D3", borderRadius: 13, cursor: pending ? "wait" : "pointer", color: "#15803D" }}>
-                            <PackageOpen size={19} strokeWidth={2} />
-                            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>คืนของ</span>
-                          </button>
-                        )}
-                        {/* onRefillOnly ยังคงไว้เผื่อ entry อื่น · ปุ่มหลักใช้ onChange (relabel ด้านบน) */}
-                        {false && canRefillOnly && (
-                          <button type="button" onClick={() => onRefillOnly(m)}>เปลี่ยน/เติม</button>
-                        )}
-                      </div>
-                        {/* item 8 · "ตอนนี้ในตู้" — chips ราย SKU (คิตตี้ ×5 · หมีบราวน์ ×3) จาก server ledger · display-only */}
+                        </div>
+                        {/* item 8 · "ตอนนี้ในตู้" — chips ราย SKU จาก server ledger · display-only */}
                         <InMachineStrip dolls={dolls} isSkipped={isSkipped} isAwaiting={isAwaiting} />
                       </div>
                     );
@@ -1780,11 +1776,25 @@ function HomeScreen(props: {
               ))}
             </div>
           )}
+          </div>
         </>
       ) : (
         <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} />
       )}
     </div>
+  );
+}
+
+/* ดีไซน์ใหม่ · ปุ่มลัดในแถวตู้ (52px · ไอคอน+ป้าย) — เก็บเงิน/เปลี่ยน-เติม/ตั้งค่า/กรอกต่อ/ดูใบ */
+function RowActionBtn({ onClick, disabled, bg, color, label, icon }: {
+  onClick: () => void; disabled?: boolean; bg: string; color: string; label: string; icon: React.ReactNode;
+}) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className={disabled ? "" : "co-tap"}
+      style={{ width: 52, flex: "0 0 52px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: "6px 2px", borderRadius: 10, border: "none", background: bg, cursor: disabled ? "wait" : "pointer" }}>
+      {icon}
+      <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1, color }}>{label}</span>
+    </button>
   );
 }
 
@@ -1814,19 +1824,23 @@ function PanelScreen(props: {
 }) {
   const { panel, onBack } = props;
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 16 }}>
-        <button type="button" onClick={onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {/* header — แถบขาว back + ชื่อ (ดีไซน์ใหม่ · panel chrome) */}
+      <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 11, padding: "12px 18px", borderBottom: "1px solid #EAECEF", background: "#fff" }}>
+        <button type="button" onClick={onBack} className="co-tap" style={{ width: 36, height: 36, flex: "0 0 36px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
         </button>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
+        <span style={{ fontSize: 16, fontWeight: 700 }}>{PANEL_TITLE[panel]}</span>
       </div>
-      {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} />}
-      {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
-      {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
-      {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
-      {panel === "config" && <ConfigPanel />}
-      {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
+      {/* scroll body */}
+      <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
+        {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} />}
+        {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
+        {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
+        {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
+        {panel === "config" && <ConfigPanel />}
+        {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
+      </div>
     </div>
   );
 }
@@ -2938,6 +2952,11 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
           </div>
         ) : (
           <>
+            {/* ดีไซน์ใหม่ · แถบอธิบาย "เปลี่ยนตุ๊กตาอย่างเดียว ไม่เก็บเงิน" */}
+            <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#EEF0FE", borderRadius: 11, padding: "10px 12px", marginBottom: 14 }}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 17px" }}><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+              <span style={{ fontSize: 11.5, color: "#4F46E5", lineHeight: 1.4 }}>รีบ/เมื่อว่าง? เปลี่ยนตุ๊กตาอย่างเดียว → เอาตัวเก่าออก เติมใหม่ โดยไม่ต้องเก็บเงิน · รอบเก็บเงินจริงจะกระทบยอดให้เอง</span>
+            </div>
             {/* [C] ตอนนี้ในตู้ (SKU+จำนวน) + นับที่เหลือจริง */}
             {dolls.length > 0 && (
               <div style={{ marginBottom: 13 }}>
@@ -2946,7 +2965,10 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                   {dolls.map((d) => (
                     <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8F7FE", border: "1px solid #E9E5F9", borderRadius: 11, padding: "8px 11px" }}>
                       <DollThumb imageUrl={d.imageUrl} name={d.name} size={30} />
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                        {d.unitCostCents ? <div className="num" style={{ fontSize: 10, color: "#9AA1AB" }}>ทุน ฿{Math.round(d.unitCostCents / 100)}</div> : null}
+                      </div>
                       <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
                     </div>
                   ))}
@@ -3713,9 +3735,30 @@ function FlowScreen(props: {
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
   // TASK C · sheet ตั้งชื่อเล่นตู้ (เปิดจากปุ่ม ✎ ในหัว) — ปิดเมื่อ demo (ไม่มี backend)
   const [nicknameOpen, setNicknameOpen] = useState(false);
+  // ── ดีไซน์ใหม่ · หน้ากระทบยอด: overlay ดูรูป + การ์ดที่กางแก้ (VISUAL — money math มาจาก recon/props ตามเดิม) ──
+  const [photoView, setPhotoView] = useState<null | "meter" | "after">(null);
+  const [reconFix, setReconFix] = useState<null | "cash" | "dolls">(null);
+  const cashN = n0(f.cash);
+  const coinDelta = n0(f.coinDigi) - f.coinPrev;
+  const moneyDiff = cashN - recon.expectedCash;
+  const photoOk = !!photos.before && !!photos.after;
+  const dollsOk = recon.dollMatch;
+  const meterOk = recon.meterEqualOk;
+  const cashOk = recon.cashMatch; // ADVISORY (client เดา ฿10/เกม) — ไม่นับเป็น issue
+  const photoIssue = props.photoRequired && !photoOk;
+  const reconIssues = (dollsOk ? 0 : 1) + (meterOk ? 0 : 1) + (photoIssue ? 1 : 0);
+  const allGood = recon.allMatch && !photoIssue;
+  const costPerDoll = dispensed > 0 ? Math.round(cashN / dispensed) : 0;
+  // ต้นทุนคีบ/ตัว ควรอยู่ ฿150–350 (retune advice) — VISUAL แนะนำ ไม่บล็อกการส่ง
+  let retuneLabel = "กำลังดี", retuneColor = "#15803D", retuneBg = "#E7F4EC", retuneHint = "";
+  let needRetune = false;
+  if (dispensed === 0) { retuneLabel = "ไม่มีตุ๊กตาออก"; retuneColor = "#C0392B"; retuneBg = "#FBECEC"; needRetune = true; retuneHint = "ไม่มีตุ๊กตาออกเลย อาจตั้งยากไปหรือตู้เสีย"; }
+  else if (costPerDoll < 150) { retuneLabel = "ออกง่ายไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวต่ำ กำไรน้อย ควรตั้งให้ยากขึ้น"; }
+  else if (costPerDoll > 350) { retuneLabel = "ออกยากไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวสูง ลูกค้าคีบยาก เสี่ยงเสียลูกค้า"; }
+  const wrongMachine = coinDelta < 0 || recon.dollDelta < 0 || Math.abs(recon.dollDelta - dispensed) > 20 || Math.abs(moneyDiff) > 300;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* header — กระชับ (back + ชื่อตู้ + ขั้น) ให้เนื้อหาขึ้นถึง ⅓ บน */}
       <div style={{ padding: "4px 18px 10px", borderBottom: "1px solid #EAECEF" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -3769,7 +3812,7 @@ function FlowScreen(props: {
                       <DollThumb imageUrl={d.imageUrl} name={d.name} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: "#2A2740", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                        {d.sku ? <div style={{ fontSize: 10.5, color: "#9AA1AB" }} className="num">{d.sku}</div> : null}
+                        {(d.sku || d.unitCostCents) ? <div style={{ fontSize: 10.5, color: "#9AA1AB" }} className="num">{[d.sku, d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null].filter(Boolean).join(" · ")}</div> : null}
                       </div>
                       <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
                     </div>
@@ -3930,40 +3973,23 @@ function FlowScreen(props: {
           </div>
         )}
 
-        {/* [STEP] ส่วน "เงินสด + ราคาในตู้" — รวมอยู่หน้าเดียวกับ "มิเตอร์" (ขั้น 3) · คั่นด้วยเส้น+หัวข้อ. */}
+        {/* [STEP] เงินสด + พรีวิว "ระบบคำนวณให้อัตโนมัติ" (ดีไซน์ใหม่ · ราคาตั้งในหน้าตั้งค่าตู้แล้ว ไม่ต้องกรอกตรงนี้) */}
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20, paddingTop: 18, borderTop: "1px solid #EDEFF2" }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#2A2740", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 24, height: 24, borderRadius: 7, background: "#E7F4EC", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px" }}><Banknote size={14} strokeWidth={2.2} /></span>
-                เงินสด
+                เงินสดที่เก็บได้
               </div>
               <FieldLabel>เงินสดที่นับได้จริง (บาท)</FieldLabel>
               <BigInput value={f.cash} onChange={props.setNum("cash")} placeholder="นับเงินแล้วกรอก" />
-              {/* (CEO 2026-07-13) เอา "ถ่ายรูปเงินสด" ออก — กรอกเงินด้วยมืออย่างเดียว. */}
             </div>
-            <div style={{ borderTop: "1px solid #EEF0F2", paddingTop: 15 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M12 3v6" /><path d="M8 9h8l-1.2 4.2a3 3 0 0 1-2.88 2.18h-.84a3 3 0 0 1-2.88-2.18Z" /><path d="M12 15.5V21" /><path d="M8.5 21h7" /></svg>
-                <span style={{ fontSize: 13.5, fontWeight: 700 }}>สินค้าในตู้นี้</span>
-                <span style={{ fontSize: 11, color: "#9AA1AB" }}>ตั้งราคา/ประเภท</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#F6F7FA", borderRadius: 11, padding: "11px 14px", marginBottom: 12 }}>
-                <span style={{ fontSize: 11, color: "#9AA1AB" }}>สินค้าที่เติม:</span>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: "#4F46E5" }}>{f.product}</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div>
-                  <FieldLabel small>ประเภท</FieldLabel>
-                  <select value={f.category} onChange={(e) => props.onCategory(e.target.value)} style={selectStyle}>
-                    {["ลิขสิทธิ์", "ตุ๊กตาทั่วไป", "ของเล่น/พรีเมียม"].map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <FieldLabel small>ราคาขายสินค้า (บาท) — ใช้ตัดสต็อก &amp; ดูต้นทุนคีบ</FieldLabel>
-                  <BigInput value={f.price} onChange={props.setNum("price")} size={16} placeholder="ระบุราคา" />
-                </div>
-              </div>
+            {/* ระบบคำนวณให้อัตโนมัติ — พรีวิวก่อนไปหน้ากระทบยอด (เลขตรงกับที่ server จะกระทบยอด) */}
+            <div style={{ background: "#F1F2FE", border: "1px solid #DEE0FA", borderRadius: 12, padding: "13px 15px" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", marginBottom: 9 }}>ระบบคำนวณให้อัตโนมัติ</div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{dispensed} ตัว</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700 }}>+{recon.dollDelta}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700 }}>฿{recon.expectedCash}</span></div>
             </div>
           </div>
         )}
@@ -3995,49 +4021,96 @@ function FlowScreen(props: {
             </div>
           ) : (
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 18px", borderRadius: 15, color: "#fff", background: recon.allMatch ? "linear-gradient(135deg,#15914A,#1FA559)" : "linear-gradient(135deg,#C0392B,#D8503F)" }}>
-                <span style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,255,255,0.22)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {recon.allMatch ? (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              <div style={{ display: "flex", alignItems: "center", gap: 13, background: allGood ? "#E7F4EC" : "#FBECEC", border: `1px solid ${allGood ? "#BFE6CB" : "#EBC6C2"}`, borderRadius: 14, padding: "15px 16px", marginBottom: 14 }}>
+                <span style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: "50%", background: allGood ? "#15803D" : "#C0392B", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {allGood ? (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
                   ) : (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
                   )}
                 </span>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700 }}>{recon.allMatch ? "มิเตอร์ & ตุ๊กตา ตรงกัน" : "พบยอดไม่ตรง — เตือนเฉย ๆ"}</div>
+                <div style={{ flex: 1 }}>
                   {/* (CEO 2026-07-13) แดง = เตือน ไม่ได้ห้ามส่ง — พนักงานเคยเข้าใจผิดว่ากดยืนยันไม่ได้. */}
-                  <div style={{ fontSize: 12, opacity: 0.92 }}>{recon.allMatch ? "เงินสดเทียบกับมิเตอร์เป็นค่าประมาณ — ระบบจะกระทบยอดจริงให้" : "ตรวจตัวเลข/รูปให้ชัวร์ · มั่นใจแล้วกด “ยืนยันส่งข้อมูล” ด้านล่างได้เลย"}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: allGood ? "#15803D" : "#C0392B" }}>{allGood ? "ยอดตรงกันทั้งหมด" : `พบ ${reconIssues} จุดไม่ตรง`}</div>
+                  <div style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>{allGood ? "มิเตอร์ เงินสด ตุ๊กตา และรูป สอดคล้องกัน — ยืนยันส่งได้เลย" : "จุดสีแดงด้านล่าง ตรวจแล้วแก้ให้ตรงก่อนยืนยัน (แดง = เตือน ไม่ได้ห้ามส่ง)"}</div>
                 </div>
               </div>
 
-              {/* [E+] (CEO 2026-07-13) สรุปที่กรอกทั้งหมด + แก้ inline ในหน้าเดียว — ตรงไหนไม่ตรงไฮไลต์แดง
-                  กดแก้ค่าได้ตรงนี้เลย ระบบคำนวณใหม่ทันที (ไม่ต้องเด้งกลับสเต็ปเก่า 2 ครั้ง). */}
-              <div style={{ marginTop: 14, border: "1px solid #EAECEF", borderRadius: 14, overflow: "hidden" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", padding: "10px 14px", background: "#F8F9FB", borderBottom: "1px solid #EEF0F2" }}>สรุปที่กรอก — ตรงไหนแดง กดแก้ได้เลย (ไม่ต้องย้อนกลับ)</div>
-                {([
-                  { key: "left" as const, label: "ตุ๊กตาเหลือในตู้", bad: isFilled(f.left) && !recon.dollMatch },
-                  { key: "dollDigi" as const, label: "มิเตอร์ตุ๊กตา (ดิจิตอล)", bad: isFilled(f.dollDigi) && !recon.dollMatch },
-                  { key: "coinDigi" as const, label: "มิเตอร์เหรียญ (ดิจิตอล)", bad: isFilled(f.coinDigi) && !props.meterGroupVals.coinMeterEqual },
-                  { key: "cash" as const, label: "เงินสดที่นับได้ (฿)", bad: false },
-                ]).map((row, i) => (
-                  <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i === 0 ? "none" : "1px solid #F1F2F5", background: row.bad ? "#FEF6F5" : "#fff" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: row.bad ? "#B42318" : "#3A3F46" }}>{row.label}</div>
-                      {row.bad && <div style={{ fontSize: 10.5, color: "#C0392B", marginTop: 1 }}>ไม่ตรงกับมิเตอร์ — ตรวจแล้วแก้ตรงนี้</div>}
-                    </div>
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={f[row.key] == null ? "" : String(f[row.key])}
-                      onChange={(e) => props.setNum(row.key)(e.target.value)} placeholder="—" className="num"
-                      style={{ width: 96, flex: "0 0 96px", textAlign: "right", fontSize: 15, fontWeight: 700, padding: "9px 11px", border: `1.5px solid ${row.bad ? "#E9A79E" : "#E3E6EA"}`, borderRadius: 10, background: "#fff" }} />
+              {/* สรุปรอบนี้ + ต้นทุนคีบ/ตัว + retune advice (ดีไซน์ใหม่) */}
+              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 11 }}>สรุปรอบนี้ · {machine?.code ?? "—"}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
+                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบที่แล้วมีตุ๊กตา</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{f.last} ตัว</div></div>
+                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้ (หลังเติม)</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{afterFill} ตัว</div></div>
+                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{dispensed} ตัว</div></div>
+                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บเงินได้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{cashN.toLocaleString("en-US")}</div></div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13, paddingTop: 12, borderTop: "1px solid #F0F1F4" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ต้นทุนคีบ/ตัว (เงินที่ได้ ÷ ออก)</div>
+                    <div className="num" style={{ fontSize: 15, fontWeight: 700 }}>฿{costPerDoll} <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 500 }}>ควรอยู่ ฿150–350</span></div>
                   </div>
-                ))}
+                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: retuneBg, color: retuneColor, whiteSpace: "nowrap" }}>{retuneLabel}</span>
+                </div>
+                {needRetune && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "9px 11px" }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
+                    <span style={{ fontSize: 11.5, color: "#8A5A12", lineHeight: 1.4 }}>{retuneHint} → เสนอปรับตั้งค่าตู้ได้ด้านล่าง (รอเจ้าของอนุมัติ)</span>
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-                <ReconRow title="มิเตอร์เฟือง = ดิจิตอล" a={`ตุ๊กตา ${props.meterGroupVals.dollMeterEqual ? "ตรง" : "ต่างกัน"}`} b={`เหรียญ ${props.meterGroupVals.coinMeterEqual ? "ตรง" : "ต่างกัน"}`} ok={recon.meterEqualOk} />
-                <ReconRow title="มิเตอร์ตุ๊กตา ↔ ตุ๊กตาที่หาย" a={`มิเตอร์เพิ่ม ${recon.dollDelta} ครั้ง`} b={`ตุ๊กตาหาย ${dispensed} ตัว`} ok={recon.dollMatch} />
-                {/* ADVISORY: ราคา/เกมจริงต่อตู้ยังไม่ส่งมา client (เดา ฿10) → โชว์เป็น "ประมาณ" ไม่ฟันธงแดง · ตัวจริง server เช็ค */}
-                <ReconRow title="เงินสด ↔ มิเตอร์เหรียญ" a={`นับได้ ฿${n0(f.cash)}`} b={`ประมาณ ฿${recon.expectedCash} (ที่ ฿10/เกม)`} ok={recon.cashMatch} advisory />
-              </div>
+              {/* ตัวเลขต่างจากปกติมากผิดปกติ → เตือนตรวจว่ากรอกถูกตู้/ถูกช่อง (ดีไซน์ใหม่) */}
+              {wrongMachine && (
+                <div style={{ display: "flex", gap: 10, background: "#FBECEC", border: "1px solid #E9B8B4", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.1" style={{ flex: "0 0 18px", marginTop: 1 }}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                  <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 700, color: "#C0392B" }}>ตัวเลขต่างจากปกติมากผิดปกติ</div><div style={{ fontSize: 11.5, color: "#93453C", marginTop: 3, lineHeight: 1.45 }}>ลองตรวจว่ากรอกถูกตู้ ({machine?.code ?? "—"}) ถูกช่องหรือไม่ ก่อนยืนยัน</div></div>
+                </div>
+              )}
+
+              {/* การ์ดคำแนะนำ · ตุ๊กตา / เงินสด / มิเตอร์ / รูป (ดีไซน์ใหม่) */}
+              <ReconCard ok={dollsOk} title={dollsOk ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "ตุ๊กตาออก ไม่ตรงมิเตอร์"}
+                detail={`นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} → เหลือ ${n0(f.left)}) · มิเตอร์ตุ๊กตา +${recon.dollDelta}`}
+                actions={!dollsOk ? <ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : "แก้เลข"} color="#fff" bg="#C0392B" /> : undefined}
+                expanded={reconFix === "dolls" ? (
+                  <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
+                    <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>แก้จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num"
+                        style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                      <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
+                    </div>
+                  </div>
+                ) : undefined} />
+
+              <ReconCard ok={cashOk} title={cashOk ? "เงินสด ตรงกับมิเตอร์" : `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}`}
+                detail={`เก็บได้ ฿${cashN} · มิเตอร์เหรียญเพิ่ม ${coinDelta} → คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)`}
+                actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
+                expanded={reconFix === "cash" ? (
+                  <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
+                    <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>กรอกยอดเงินที่นับใหม่ (บาท)</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input type="text" inputMode="numeric" value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} className="num"
+                        style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                      <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
+                    </div>
+                  </div>
+                ) : undefined} />
+
+              <ReconCard ok={meterOk} title={meterOk ? "มิเตอร์ บน=ล่าง ครบ 4 ช่อง" : "มิเตอร์ บน/ล่าง ไม่เท่ากัน"}
+                detail={`เงิน ${n0(f.coinGear)}/${n0(f.coinDigi)} · ตุ๊กตา ${n0(f.dollGear)}/${n0(f.dollDigi)}`}
+                actions={
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <ReconPill onClick={() => setPhotoView("meter")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
+                      icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
+                    {!meterOk && <ReconPill onClick={props.onBack} label="กลับไปแก้" color="#fff" bg="#C0392B" />}
+                  </span>
+                } />
+
+              <ReconCard ok={photoOk} title={photoOk ? "รูป ครบ 2/2" : "รูป ยังไม่ครบ"}
+                detail={`ก่อนเติม ${photos.before ? "✓ ถ่ายแล้ว" : "✗ ยังไม่ถ่าย"} · หลังเติม ${photos.after ? "✓ ถ่ายแล้ว" : "✗ ยังไม่ถ่าย"}`}
+                actions={photoOk ? <ReconPill onClick={() => setPhotoView("after")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
+                  icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} /> : undefined} />
 
               {props.tooHard && (
                 <div style={{ marginTop: 14, background: "#FCF1E2", border: "1px solid #F0D8AE", borderRadius: 12, padding: "14px 16px" }}>
@@ -4142,6 +4215,31 @@ function FlowScreen(props: {
           </button>
         )}
       </div>
+
+      {/* ดีไซน์ใหม่ · ป๊อปอัปดูรูป (มิเตอร์/หลังเติม) — เปิดจากปุ่ม "ดูรูป" บนการ์ดกระทบยอด */}
+      {photoView && (
+        <div onClick={() => setPhotoView(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 30, background: "rgba(20,22,28,0.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 26 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", width: "100%", maxWidth: 320 }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "13px 16px", borderBottom: "1px solid #EEF0F3" }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{photoView === "meter" ? "รูปมิเตอร์" : "รูปหลังเติม"}</span>
+              <button type="button" onClick={() => setPhotoView(null)} style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            {(() => {
+              const url = photoView === "meter" ? (photos.coinDigi || photos.coinGear || photos.dollDigi || photos.dollGear || "") : (photos.after || "");
+              return url
+                ? <img src={url} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain", background: "#0F1116", display: "block" }} />
+                : (
+                  <div style={{ height: 240, background: "linear-gradient(135deg,#EBEDF2,#DDE0E7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#A2A9B4" }}>
+                    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#A2A9B4" strokeWidth="1.6"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                    <span style={{ fontSize: 12 }}>ยังไม่มีรูป{machine?.code ? ` · ${machine.code}` : ""}</span>
+                  </div>
+                );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* TASK C · sheet ตั้งชื่อเล่นตู้ (overlay) — เปิดจากปุ่ม ✎ ในหัว */}
       {nicknameOpen && machine && (
@@ -4479,6 +4577,37 @@ function MeterGroup({ title, prev, equalOk, deferred, rows, orgId, machineCode, 
       </div>
       <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 9 }}>รอบที่แล้ว <span className="num">{prev}</span></div>
     </div>
+  );
+}
+
+/* ดีไซน์ใหม่ · การ์ดคำแนะนำในหน้ากระทบยอด (✓/✗ + รายละเอียด + ปุ่มดูรูป/แก้ + กล่องแก้ inline) */
+function ReconCard({ ok, title, detail, actions, expanded }: {
+  ok: boolean; title: string; detail: string; actions?: React.ReactNode; expanded?: React.ReactNode;
+}) {
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${ok ? "#E8EAED" : "#EBC6C2"}`, borderLeft: `4px solid ${ok ? "#15803D" : "#C0392B"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: "50%", background: ok ? "#E7F4EC" : "#FBECEC", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {ok
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>}
+        </span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: ok ? "#166534" : "#B02A1C" }}>{title}</span>
+        {actions}
+      </div>
+      <div style={{ fontSize: 11.5, color: "#6B7280", marginTop: 7, paddingLeft: 31, lineHeight: 1.45 }}>{detail}</div>
+      {expanded}
+    </div>
+  );
+}
+
+/* ดีไซน์ใหม่ · ปุ่มเล็กบนการ์ดกระทบยอด (ดูรูป / แก้ไข / กลับไปแก้) */
+function ReconPill({ onClick, label, color, bg, icon }: { onClick: () => void; label: string; color: string; bg: string; icon?: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="co-tap"
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color, background: bg, border: "none", padding: "5px 10px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap" }}>
+      {icon}{label}
+    </button>
   );
 }
 

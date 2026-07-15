@@ -2100,6 +2100,8 @@ model CfMachine {
   // ultrareview Wave 3 — มอบหมายตู้ให้พนักงานเก็บ (opt-in · null = ทุกคนในสาขาเก็บได้เหมือนเดิม)
   assignedStaffId  String?       @map("assigned_staff_id") @db.Uuid
   notes            String?
+  // ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียวต่อตู้ · บาท×100) · ตั้งตอนตั้งค่าครั้งแรก · display/reference (ไม่แตะกระทบยอดเงิน)
+  sellPriceCents   Int?          @map("sell_price_cents")
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 

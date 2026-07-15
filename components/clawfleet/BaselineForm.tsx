@@ -55,6 +55,8 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   const [inMachine, setInMachine] = useState<AddedProduct[]>([]);
   const [dollsAdded, setDollsAdded] = useState<number | null>(null);
   const [cash, setCash] = useState<string>(""); // บาท (string เพื่อให้ช่องว่างได้จริง)
+  // ดีไซน์ใหม่ · ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียว · บาท) — ตั้งตอนตั้งค่าครั้งแรก (display/reference)
+  const [machinePrice, setMachinePrice] = useState<string>("");
 
   // 4 มิเตอร์ + รูปของแต่ละตัว — ว่างหมด (ห้าม pre-fill)
   const [meterVals, setMeterVals] = useState<Record<MeterKey, string>>({
@@ -123,6 +125,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         dollCountNow: totalInMachine,
         dollsAdded: dollsAdded ?? 0,
         cashCents: Math.round(cashBaht * 100),
+        sellPriceCents: machinePrice.trim() === "" ? undefined : Math.round(Number(machinePrice) * 100),
         meterMoneyTop: parseMeter("moneyTop"),
         meterMoneyBottom: parseMeter("moneyBottom"),
         meterDollTop: parseMeter("dollTop"),
@@ -193,6 +196,17 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         </div>
       </div>
 
+      {/* ── ราคาขายของตู้นี้ (ราคาเดียวต่อตู้) — ดีไซน์ใหม่ ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#EEF0FE", border: "1px solid #DADBF8", borderRadius: 12, padding: "11px 14px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#3730B0" }}>ราคาขายของตู้นี้</div>
+          <div style={{ fontSize: 10.5, color: "#7C7FC4" }}>ตั้งราคาเดียวต่อตู้ (ตุ๊กตาทุกแบบในตู้นี้ราคาเท่ากัน)</div>
+        </div>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#4F46E5" }}>฿</span>
+        <input value={machinePrice} onChange={(e) => setMachinePrice(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder="0" className="num"
+          style={{ width: 82, fontSize: 16, fontWeight: 700, textAlign: "right", padding: "7px 10px", border: "1.5px solid #C4C8FA", borderRadius: 9, color: "#4F46E5", background: "#fff", flex: "0 0 82px" }} />
+      </div>
+
       {/* ── ตุ๊กตาในตู้ตอนนี้ — ยอดรวม (ระบบคิดให้) + กดขยายดูรายการ SKU + ปุ่มเล็กเพิ่มสินค้า → sheet ── */}
       <div className="co-card" style={{ padding: 15, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -235,7 +249,7 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
                     <ProductThumb imageUrl={p.imageUrl} name={p.name} size={36} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      {p.sku && <div style={{ fontSize: 11, color: "#9AA1AB" }}>{p.sku}</div>}
+                      <div style={{ fontSize: 11, color: "#9AA1AB" }}>{[p.sku, machinePrice ? `ขาย ฿${machinePrice}` : null].filter(Boolean).join(" · ") || "—"}</div>
                     </div>
                     <span style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>
                       {p.qty.toLocaleString("th-TH")} <span style={{ fontSize: 11.5, fontWeight: 600, color: "#9AA1AB" }}>ตัว</span>

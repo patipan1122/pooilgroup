@@ -296,7 +296,7 @@ async function loadReturnDollsData(
         const products = productIds.length
           ? await prisma.cfProduct.findMany({
               where: { id: { in: productIds }, orgId },
-              select: { id: true, name: true, sku: true, imageUrl: true },
+              select: { id: true, name: true, sku: true, imageUrl: true, unitCostCents: true },
             })
           : [];
         const pmap = new Map(products.map((p) => [p.id, p]));
@@ -319,6 +319,7 @@ async function loadReturnDollsData(
               sku: p.sku,
               imageUrl: p.imageUrl,
               qty,
+              unitCostCents: p.unitCostCents,
             });
           }
         }
