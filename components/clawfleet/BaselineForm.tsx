@@ -24,6 +24,8 @@ import {
   addExistingProductDollsAtSetup,
 } from "@/lib/clawfleet/product-setup-actions";
 import { renameMachineNickname } from "@/lib/clawfleet/actions";
+// ดีไซน์ใหม่ · ปุ่ม +/− ต่อ SKU ในหน้าตั้งค่า — ใช้ตัวบันทึกเดิม (money-safe · ยึด inMachineAfter จาก server)
+import { refillDollsToMachine, returnDollsToStock } from "@/lib/clawfleet/stock-actions";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 
 const MAX_COUNT = 100_000;
@@ -66,6 +68,9 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
     moneyTop: "", moneyBottom: "", dollTop: "", dollBottom: "",
   });
   const [machinePhoto, setMachinePhoto] = useState<string>("");
+  // ดีไซน์ใหม่ · รูปตุ๊กตา "ก่อน/หลังใส่" — เก็บช่องเดียวกับรอบเก็บเงิน (photoStockUrl / photoMeterBeforeUrl)
+  const [photoBefore, setPhotoBefore] = useState<string>("");
+  const [photoAfter, setPhotoAfter] = useState<string>("");
 
   // ชื่อเล่นตู้ (แก้ได้ตั้งแต่หน้านี้)
   const [nickname, setNickname] = useState<string | null>(machine.nickname);
@@ -78,8 +83,31 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ดีไซน์ใหม่ · กำลังปรับจำนวนราย SKU (productId) — กันกดรัวซ้อน
+  const [adjusting, setAdjusting] = useState<string | null>(null);
+
   // ยอดรวมตุ๊กตา "ในตู้ตอนนี้" = ผลบวกทุก SKU (ระบบคิดให้ · ตรงกับที่ server บันทึกต่อ SKU)
   const totalInMachine = inMachine.reduce((s, p) => s + p.qty, 0);
+
+  /** ดีไซน์ใหม่ · +1 = เติมจากชั้น→ตู้ · −1 = คืนตู้→ชั้น · ใช้ action เดิม แล้วยึดเลข inMachineAfter จาก server (จอ = server) */
+  async function adjustQty(p: AddedProduct, delta: number) {
+    if (adjusting || busy) return;
+    if (delta < 0 && p.qty <= 0) return;
+    setAdjusting(p.id);
+    setError(null);
+    try {
+      const res = delta > 0
+        ? await refillDollsToMachine({ machineId: machine.id, productId: p.id, qty: 1, clientKey: crypto.randomUUID() })
+        : await returnDollsToStock({ machineId: machine.id, productId: p.id, qty: 1, clientKey: crypto.randomUUID() });
+      if (!res.ok) { setError(res.error || "ปรับจำนวนไม่สำเร็จ · ลองใหม่"); return; }
+      const after = res.data.inMachineAfter; // เลขจริงจาก server (ไม่เดาเอง)
+      setInMachine((cur) => cur.map((x) => (x.id === p.id ? { ...x, qty: after } : x)).filter((x) => x.qty > 0));
+    } catch {
+      setError("ปรับจำนวนไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+    } finally {
+      setAdjusting(null);
+    }
+  }
   // id สินค้าที่ "อยู่ในตู้" แล้ว (กันเลือกซ้ำใน picker)
   const inMachineIds = new Set<string>(inMachine.map((p) => p.id));
 
@@ -131,6 +159,8 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
         meterDollTop: parseMeter("dollTop"),
         meterDollBottom: parseMeter("dollBottom"),
         photoMachineUrl: machinePhoto || undefined,
+        photoStockBeforeUrl: photoBefore || undefined,
+        photoStockAfterUrl: photoAfter || undefined,
         photoMoneyMeterTopUrl: meterPhotos.moneyTop || undefined,
         photoMoneyMeterBottomUrl: meterPhotos.moneyBottom || undefined,
         photoDollMeterTopUrl: meterPhotos.dollTop || undefined,
@@ -203,7 +233,12 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                   <div style={{ fontSize: 11, color: "#9AA1AB" }}>{[p.sku, machinePrice ? `ขาย ฿${machinePrice}` : null].filter(Boolean).join(" · ") || "—"}</div>
                 </div>
-                <span className="num" style={{ fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>×{p.qty.toLocaleString("th-TH")}</span>
+                {/* ดีไซน์ใหม่ · +/− ต่อ SKU (− คืนตู้→ชั้น · + เติมชั้น→ตู้ · เลขยึดจาก server) */}
+                <button type="button" disabled={adjusting === p.id || busy} onClick={() => adjustQty(p, -1)} className="co-tap"
+                  style={{ width: 29, height: 29, flex: "0 0 29px", borderRadius: 8, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", opacity: adjusting === p.id ? 0.45 : 1 }}>−</button>
+                <span className="num" style={{ width: 30, textAlign: "center", fontSize: 15, fontWeight: 700, color: "#4F46E5" }}>{p.qty.toLocaleString("th-TH")}</span>
+                <button type="button" disabled={adjusting === p.id || busy} onClick={() => adjustQty(p, 1)} className="co-tap"
+                  style={{ width: 29, height: 29, flex: "0 0 29px", borderRadius: 8, background: "#EEF0FE", border: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer", opacity: adjusting === p.id ? 0.45 : 1 }}>+</button>
               </div>
             ))}
           </div>
@@ -270,6 +305,21 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── รูปยืนยัน (ก่อน/หลังใส่ตุ๊กตา) — ดีไซน์ใหม่ ── */}
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>รูปยืนยัน (ก่อน/หลังใส่ตุ๊กตา)</div>
+        <div style={{ display: "flex", gap: 9 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PhotoCaptureButton label={photoBefore ? "ก่อนใส่ ✓" : "ถ่ายก่อนใส่"} value={photoBefore} onChange={setPhotoBefore}
+              orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="stock" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PhotoCaptureButton label={photoAfter ? "หลังใส่ ✓" : "ถ่ายหลังใส่"} value={photoAfter} onChange={setPhotoAfter}
+              orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="stock_after" />
+          </div>
         </div>
       </div>
 

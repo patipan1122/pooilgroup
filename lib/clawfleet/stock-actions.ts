@@ -1572,6 +1572,8 @@ const ReturnDollsSchema = z.object({
   machineId: z.string().min(1),
   productId: z.string().min(1, "เลือกตุ๊กตาที่จะคืน"),
   qty: z.number().int().positive("จำนวนคืนต้องมากกว่า 0"),
+  // ดีไซน์ใหม่ · รูปยืนยันตอนเปลี่ยนตุ๊กตา — เก็บใน movement.receiptR2Key (ช่อง R2 ที่ movement ชนิดนี้ไม่ได้ใช้)
+  photoUrl: z.string().max(600).optional(),
   // client-generated UUID ต่อการกด 1 ครั้ง (refId เป็น @db.Uuid) → กันกดซ้ำ
   clientKey: z.string().uuid().optional(),
 });
@@ -1581,7 +1583,7 @@ export async function returnDollsToStock(
 ): Promise<Result<{ inMachineAfter: number }>> {
   const parsed = ReturnDollsSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { machineId, productId, qty, clientKey } = parsed.data;
+  const { machineId, productId, qty, clientKey, photoUrl } = parsed.data;
 
   const session = await requireSession();
   const orgId = session.user.org_id;
@@ -1654,6 +1656,7 @@ export async function returnDollsToStock(
           occurredAt: new Date(),
           createdById: session.user.id,
           reason: "คืนตุ๊กตาจากตู้เข้าคลัง",
+          receiptR2Key: photoUrl || null, // ดีไซน์ใหม่ · รูปยืนยัน (ก่อนใส่) ตอนเปลี่ยนตุ๊กตา
         },
       });
       return { inMachineAfter: inMachine - qty };
@@ -1680,6 +1683,8 @@ const RefillDollsSchema = z.object({
   machineId: z.string().min(1),
   productId: z.string().min(1, "เลือกตุ๊กตาที่จะเติม"),
   qty: z.number().int().positive("จำนวนเติมต้องมากกว่า 0"),
+  // ดีไซน์ใหม่ · รูปยืนยันตอนเปลี่ยนตุ๊กตา — เก็บใน movement.receiptR2Key
+  photoUrl: z.string().max(600).optional(),
   warehouseId: z.string().uuid().optional(), // ห้องที่หยิบ · ละไว้ = คลังหลัก
   clientKey: z.string().uuid().optional(),
 });
@@ -1689,7 +1694,7 @@ export async function refillDollsToMachine(
 ): Promise<Result<{ inMachineAfter: number; shelfAfter: number }>> {
   const parsed = RefillDollsSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { machineId, productId, qty, warehouseId, clientKey } = parsed.data;
+  const { machineId, productId, qty, warehouseId, clientKey, photoUrl } = parsed.data;
 
   const session = await requireSession();
   const orgId = session.user.org_id;
@@ -1776,6 +1781,7 @@ export async function refillDollsToMachine(
           occurredAt: new Date(),
           createdById: session.user.id,
           reason: "เติมตุ๊กตาเข้าตู้ (เติมอย่างเดียว)",
+          receiptR2Key: photoUrl || null, // ดีไซน์ใหม่ · รูปยืนยัน (หลังใส่) ตอนเปลี่ยนตุ๊กตา
         },
       });
 

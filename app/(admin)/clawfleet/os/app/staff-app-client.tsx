@@ -299,6 +299,9 @@ type Form = {
   coinGear: Counted;
   coinDigi: Counted;
   cash: Counted; // นับเงินจริง
+  // ดีไซน์ใหม่ · ตุ๊กตาที่ "คืนเข้าชั้น" ระหว่างรอบนี้ (ไม่ใช่ลูกค้าคีบ) — ใช้หัก "ตุ๊กตาออก" ให้ตรงกับที่ server
+  // กระทบยอด (server หัก interim cf_return_dolls ให้เอง) · ไม่ถูกส่งใน submit → สัญญาเดินเงินเดิมไม่เปลี่ยน
+  returnedTotal: number;
 };
 
 /** field ที่พนักงานต้องนับ/อ่านเอง (ไม่ใช่ค่าจากระบบ) */
@@ -387,6 +390,7 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     coinGear: demo ? m.lastCoinMeter + 30 : null,
     coinDigi: demo ? m.lastCoinMeter + 30 : null,
     cash: demo ? 300 : null,
+    returnedTotal: 0, // ยังไม่คืนอะไรตอนเปิดรอบ
   };
 }
 
@@ -412,6 +416,8 @@ type Action =
   | { type: "toggleDefer" }
   | { type: "fillMeterNow" }
   | { type: "sendConfig" }
+  // ดีไซน์ใหม่ · คืนตุ๊กตาเข้าชั้นระหว่างรอบ (สะสมไว้หัก "ตุ๊กตาออก" ให้ตรง server)
+  | { type: "addReturned"; qty: number }
   | { type: "setSession"; sessionId: string };
 
 function reducer(s: WizardState, a: Action): WizardState {
@@ -524,6 +530,9 @@ function reducer(s: WizardState, a: Action): WizardState {
       return { ...s, step: 3, meterDeferred: false };
     case "sendConfig":
       return { ...s, configSent: true };
+    // ดีไซน์ใหม่ · สะสมจำนวนที่คืนเข้าชั้นระหว่างรอบ (หัก "ออก" ตอนพรีวิว · server หัก interim ให้เองตอนกระทบยอด)
+    case "addReturned":
+      return { ...s, form: { ...s.form, returnedTotal: (s.form.returnedTotal ?? 0) + a.qty } };
     case "setSession":
       return { ...s, sessionId: a.sessionId };
     default:
@@ -858,7 +867,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     ? refillLinesActive.reduce((sum, l) => sum + l.qty, 0)
     : n0(f.refill);
   // พรีวิวคำนวณด้วย n0() (null→0) แต่ "ตรง/ไม่ตรง" จะโชว์เฉพาะเมื่อ field ที่เกี่ยวกรอกครบ
-  const dispensed = Math.max(0, f.last - n0(f.left));
+  // ดีไซน์ใหม่ · หัก "ที่คืนเข้าชั้นระหว่างรอบ" ออก — ตัวที่คืนไม่ใช่ลูกค้าคีบ
+  //   mirror server: prizeOut = stockBefore + refill − stockAfter − interim(cf_return_dolls)
+  //   → ตรงกับมิเตอร์ตุ๊กตา (มิเตอร์เดินเฉพาะตัวที่ออกจริง) · จอ = server (money-safe)
+  const returnedThisRound = f.returnedTotal ?? 0;
+  const dispensed = Math.max(0, f.last - n0(f.left) - returnedThisRound);
   const afterFill = n0(f.left) + refillTotal;
   const dollDelta = n0(f.dollDigi) - f.dollPrev;
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
@@ -1473,6 +1486,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           //  uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหายตอน resume). demo → ไม่มี backend → ซ่อน.
           onSaveDraft={saveDraft}
           saveDraftBlocked={uploadPending}
+          // ดีไซน์ใหม่ · คืนตุ๊กตาเข้าชั้นระหว่างรอบ → สะสมไว้หัก "ตุ๊กตาออก" (server หัก interim ให้เองตอนกระทบยอด)
+          onReturned={(qty) => dispatch({ type: "addReturned", qty })}
         />
       )}
 
@@ -2877,6 +2892,9 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [returnKey] = useState(() => crypto.randomUUID());
   const [refillKey] = useState(() => crypto.randomUUID());
+  // ดีไซน์ใหม่ · รูปยืนยัน ก่อน/หลังใส่ตุ๊กตา — เก็บลง movement.receiptR2Key (คืน→ก่อน · เติม→หลัง)
+  const [swapPhotoBefore, setSwapPhotoBefore] = useState<string>("");
+  const [swapPhotoAfter, setSwapPhotoAfter] = useState<string>("");
   const returnDoll = dolls.find((d) => d.productId === returnSelId) ?? null;
   const returnMax = returnDoll?.qty ?? 0;
   const returnQtyNum = returnQty == null ? 0 : Math.min(returnMax, Math.max(0, returnQty));
@@ -2909,11 +2927,11 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
         // เอาตัวเก่าออก→คืนคลัง แล้วเติมตัวใหม่ ผ่าน action เดิม (returnDollsToStock/refillDollsToMachine).
         // รอบเก็บเงินจริงจะกระทบยอด movement "ระหว่างรอบ" เหล่านี้ให้เอง (ทีม reconcile ชิ้น 3 · bfff71bc).
         if (returnQtyNum > 0 && returnSelId) {
-          const r = await returnDollsToStock({ machineId: machine.id, productId: returnSelId, qty: returnQtyNum, clientKey: returnKey });
+          const r = await returnDollsToStock({ machineId: machine.id, productId: returnSelId, qty: returnQtyNum, clientKey: returnKey, photoUrl: swapPhotoBefore || undefined });
           if (!r.ok) { setError(r.error || "เอาออกไม่สำเร็จ · ลองใหม่"); return; }
         }
         if (refillN > 0 && sel) {
-          const r = await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: refillN, clientKey: refillKey });
+          const r = await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: refillN, clientKey: refillKey, photoUrl: swapPhotoAfter || undefined });
           if (!r.ok) { setError(r.error || "เติมไม่สำเร็จ · ลองใหม่"); return; }
         }
         setOkMsg("บันทึกแล้ว · ปรับตุ๊กตาในตู้เรียบร้อย");
@@ -3038,6 +3056,23 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                 </div>
                 <input inputMode="numeric" value={qty == null ? "" : String(qty)} onChange={(e) => setQtyClamped(e.target.value)}
                   placeholder="กรอกจำนวนที่เติม" className="co-input num" style={{ fontSize: 18, fontWeight: 700 }} />
+              </div>
+            )}
+
+            {/* ── รูปยืนยัน (ก่อน/หลังใส่ตุ๊กตา) — ดีไซน์ใหม่ ── */}
+            {!usingDemo && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>รูปยืนยัน (ก่อน/หลังใส่ตุ๊กตา)</div>
+                <div style={{ display: "flex", gap: 9 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PhotoCaptureButton label={swapPhotoBefore ? "ก่อนใส่ ✓" : "ถ่ายก่อนใส่"} value={swapPhotoBefore} onChange={setSwapPhotoBefore}
+                      orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PhotoCaptureButton label={swapPhotoAfter ? "หลังใส่ ✓" : "ถ่ายหลังใส่"} value={swapPhotoAfter} onChange={setSwapPhotoAfter}
+                      orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock_after" />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -3736,6 +3771,8 @@ function FlowScreen(props: {
   // item 7 · "record & go" — บันทึกค้าง (form+รูป) ไปเก็บตู้อื่นต่อ (surface จาก step เติม/เงินสด)
   onSaveDraft: () => void;
   saveDraftBlocked: boolean; // ยังมีรูปอัปโหลดค้าง → รอก่อน (กันรูปหาย)
+  // ดีไซน์ใหม่ · คืนตุ๊กตาเข้าชั้นระหว่างรอบ → สะสม returnedTotal (หัก "ตุ๊กตาออก" ให้ตรง server)
+  onReturned: (qty: number) => void;
 }) {
   const { step, form: f, dispensed, afterFill, photos, meterDeferred, recon, machine } = props;
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
@@ -3775,6 +3812,28 @@ function FlowScreen(props: {
     setRemainBySku(next); syncLeftFromSku(next);
   };
   const remainSkuTotal = Object.values(remainBySku).reduce((a, v) => a + (parseInt(v || "0", 10) || 0), 0);
+  // ── ดีไซน์ใหม่ · คืนตุ๊กตา "รายตัว" เข้าชั้น ระหว่างรอบเก็บเงิน (ใช้ returnDollsToStock เดิม · money-safe) ──
+  const [returningSku, setReturningSku] = useState<string | null>(null);
+  const [returnedBySku, setReturnedBySku] = useState<Record<string, number>>({});
+  const [returnErr, setReturnErr] = useState<string | null>(null);
+  async function returnSkuToShelf(d: InMachineDoll) {
+    const qty = parseInt(remainBySku[d.productId] || "0", 10) || 0;
+    if (qty <= 0 || returningSku || !machine || props.usingDemo) return;
+    setReturningSku(d.productId);
+    setReturnErr(null);
+    try {
+      const res = await returnDollsToStock({ machineId: machine.id, productId: d.productId, qty, clientKey: crypto.randomUUID() });
+      if (!res.ok) { setReturnErr(res.error || "คืนไม่สำเร็จ · ลองใหม่"); return; }
+      props.onReturned(qty); // หัก "ออก" (ตัวที่คืนไม่ใช่ลูกค้าคีบ)
+      setReturnedBySku((cur) => ({ ...cur, [d.productId]: (cur[d.productId] ?? 0) + qty }));
+      const next = { ...remainBySku, [d.productId]: "0" }; // คืนหมดแล้ว → เหลือในตู้ 0
+      setRemainBySku(next); syncLeftFromSku(next);
+    } catch {
+      setReturnErr("คืนไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+    } finally {
+      setReturningSku(null);
+    }
+  }
   const cashN = n0(f.cash);
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
   const moneyDiff = cashN - recon.expectedCash;
@@ -3850,6 +3909,16 @@ function FlowScreen(props: {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
                         <div className="num" style={{ fontSize: 10, color: "#9AA1AB", marginTop: 2 }}>{[d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null, `เดิม ${d.qty}`].filter(Boolean).join(" · ")}</div>
+                        {/* ดีไซน์ใหม่ · คืนเข้าชั้น (ตัวที่คืน = ไม่นับว่าลูกค้าคีบ · หักออกจาก "ตุ๊กตาออก" ให้ตรง server) */}
+                        {returnedBySku[d.productId] ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, color: "#15803D", marginTop: 3 }}>✓ คืนเข้าชั้น {returnedBySku[d.productId]} ตัว</span>
+                        ) : !props.usingDemo ? (
+                          <button type="button" disabled={returningSku === d.productId} onClick={() => returnSkuToShelf(d)}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 600, color: "#6B7280", background: "none", border: "none", padding: 0, marginTop: 3, cursor: "pointer" }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
+                            {returningSku === d.productId ? "กำลังคืน…" : "คืนเข้าชั้น"}
+                          </button>
+                        ) : null}
                       </div>
                       <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
                       <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" style={{ width: 40, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
@@ -3858,8 +3927,10 @@ function FlowScreen(props: {
                   ))}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "#FAFBFC" }}>
                     <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้รวม <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว</span>
-                    <span className="num" style={{ fontSize: 11.5, color: "#8A909A" }}>ออกไป {dispensed} ตัว</span>
+                    {(f.returnedTotal ?? 0) > 0 && <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#15803D", whiteSpace: "nowrap" }}>↩ คืนชั้น {f.returnedTotal}</span>}
+                    <span className="num" style={{ fontSize: 11.5, color: "#8A909A", whiteSpace: "nowrap" }}>ออกไป {dispensed} ตัว</span>
                   </div>
+                  {returnErr && <div style={{ padding: "8px 13px", fontSize: 11.5, color: "#B42318", fontWeight: 600, background: "#FDF3F2" }}>{returnErr}</div>}
                 </div>
               </div>
             ) : (

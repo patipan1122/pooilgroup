@@ -74,6 +74,9 @@ const SubmitBaselineSchema = z.object({
   photoDollMeterBottomUrl: zPhotoUrl.optional(),
   // ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียวต่อตู้ · บาท×100) · optional · display/reference (ไม่แตะกระทบยอดเงิน)
   sellPriceCents: z.number().int("ราคาต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "ราคาติดลบไม่ได้").max(10_000_000).optional(),
+  // ดีไซน์ใหม่ · รูปตุ๊กตา "ก่อน/หลังใส่" ตอนตั้งค่า — ยืมช่องเดียวกับรอบเก็บเงิน (photoStockUrl / photoMeterBeforeUrl)
+  photoStockBeforeUrl: zPhotoUrl.optional(),
+  photoStockAfterUrl: zPhotoUrl.optional(),
   loadout: z
     .array(
       z.object({
@@ -108,6 +111,8 @@ export async function submitFirstBaseline(input: {
   dollsAdded: number;
   cashCents: number;
   sellPriceCents?: number; // ราคาขายตุ๊กตาต่อตู้ (ราคาเดียว · บาท×100) · optional
+  photoStockBeforeUrl?: string; // รูปตุ๊กตาก่อนใส่ (ตั้งค่า) · optional
+  photoStockAfterUrl?: string; // รูปตุ๊กตาหลังใส่ (ตั้งค่า) · optional
   meterMoneyTop: number | null;
   meterMoneyBottom: number | null;
   meterDollTop: number | null;
@@ -241,6 +246,11 @@ export async function submitFirstBaseline(input: {
           photoDollMeterTopUrl: data.photoDollMeterTopUrl ?? null,
           photoDollMeterBottomUrl: data.photoDollMeterBottomUrl ?? null,
           photoMachineUrl: data.photoMachineUrl ?? null,
+          // ดีไซน์ใหม่ · รูปตุ๊กตาก่อน/หลังใส่ — ยืมช่องเดียวกับ submitBranchEvent (ดู comment mapping ที่ actions.ts)
+          //   photoStockUrl       = ตุ๊กตาก่อนใส่ (stock before)
+          //   photoMeterBeforeUrl = ตุ๊กตาหลังใส่ (stock after · reused slot)
+          photoStockUrl: data.photoStockBeforeUrl ?? null,
+          photoMeterBeforeUrl: data.photoStockAfterUrl ?? null,
           notes: clientKeyNote(data.clientKey),
         },
       });
