@@ -92,7 +92,7 @@ function revalidateDc() {
     "/dc/office/receipts",
     "/dc/office/transfers",
     "/dc/office/issue",
-    "/dc/move",
+    "/dc/transfer", // หน้ารวม เบิก·โอน·ย้าย (เดิม revalidate "/dc/move" ซึ่งตอนนี้เป็นแค่ redirect)
     "/dc/office/deletions",
     "/dc/office/products",
   ]) {

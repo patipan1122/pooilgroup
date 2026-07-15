@@ -33,10 +33,10 @@ export type FloorTask = {
 export const FLOOR_TASKS: FloorTask[] = [
   { key: "receive", href: "/dc/receive", label: "รับเข้า", hint: "ของมาถึง · สแกน · นับ · ยืนยัน", icon: "PackagePlus", tone: "blue" },
   { key: "receive-po", href: "/dc/receive-po", label: "รับตาม PO", hint: "รับของที่สั่งจากจีน/ไทย เข้าคลัง", icon: "PackagePlus", tone: "blue" },
-  { key: "transfer", href: "/dc/transfer", label: "ส่ง · โอน · ย้ายที่", hint: "ส่งไปสาขา/คลังอื่น หรือย้ายที่เก็บในคลัง", icon: "Truck", tone: "green" },
+  { key: "transfer", href: "/dc/transfer?tab=transfer", label: "โอน · ย้ายที่", hint: "ส่งไปสาขา/คลังอื่น หรือย้ายที่เก็บในคลัง", icon: "Truck", tone: "green" },
   { key: "transfers", href: "/dc/transfers", label: "ใบที่ฉันส่ง / รอรับ", hint: "ดูของที่ส่งออก + ของรอรับเข้าคลังนี้", icon: "Truck", tone: "green" },
   { key: "count", href: "/dc/count", label: "นับสต๊อก", hint: "นับรอบ · ทำงานตอนเน็ตหลุดได้", icon: "ClipboardCheck", tone: "amber" },
-  { key: "issue", href: "/dc/issue", label: "เบิกออก", hint: "เบิกของ/อะไหล่ออกจากคลัง", icon: "PackageMinus", tone: "red" },
+  { key: "issue", href: "/dc/transfer?tab=issue", label: "เบิกออก", hint: "เบิกของ/อะไหล่ออกจากคลัง", icon: "PackageMinus", tone: "red" },
   { key: "products", href: "/dc/products", label: "ดูสินค้า", hint: "ไล่ดูสินค้าทั้งหมด + รูป + คงเหลือ", icon: "Boxes", tone: "slate" },
   { key: "search", href: "/dc/search", label: "ค้นหา", hint: "ของชิ้นนี้อยู่ไหน เหลือเท่าไหร่", icon: "Search", tone: "slate" },
   { key: "labels", href: "/dc/labels", label: "ปริ้นฉลาก", hint: "พิมพ์ QR แปะสินค้า", icon: "QrCode", tone: "blue" },

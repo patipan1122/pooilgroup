@@ -1,20 +1,42 @@
-// DC · หลังบ้าน · "เบิกออก" — เบิกของออกจากคลังจากฝั่ง office (เดิม /dc/issue มีแต่หน้าคลัง).
-// ใช้ IssueWorkspace ตัวเดียวกับหน้าคลัง (สแกน/พิมพ์รหัส + ป็อปอัป "ดูสินค้า" เลือกจากรายการ)
-// แต่ห่อด้วย DcOfficeShell (กรอบ/เมนูหลังบ้านเดียวกับหน้าอื่น) + มีตัวเลือกคลังให้เลือกก่อนเบิก.
+// DC · หลังบ้าน · หน้ารวม "เบิก · โอน · ย้ายที่" — 3 งานที่เอาของออกจากคลัง ไว้หน้าเดียว กดสลับแท็บ
+//   ใช้ <DcOutboundTabs> ตัวเดียวกับหน้าคลัง (floor) → flow/สัญญาณตัดสต๊อกเหมือนกันเป๊ะ ต่างแค่กรอบหลังบ้าน + ตัวเลือกคลัง
+//   สิทธิ์: หน้า = requireDcManager · ตัว action ทั้ง 3 (postIssue/dispatchTransfer/moveLocation) ยัง guard canDcFloor ของตัวเองอยู่
+//          (DC_MANAGER_ROLES ⊂ DC_FLOOR_ROLES → ผู้จัดการยิงได้ทั้ง 3 งาน)
+//   ?tab=issue|transfer|move → เปิดแท็บนั้น · ไม่ใส่ = "เบิกออก" (ความหมายเดิมของ /dc/office/issue)
 import Link from "next/link";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
-import { IssueWorkspace } from "../../issue/issue-workspace";
+import { listClawfleetBranchTargets } from "@/lib/clawfleet/stock-queries";
+import {
+  DcOutboundTabs,
+  resolveOutboundTab,
+  type DestWarehouseOption,
+} from "../../transfer/transfer-dispatch";
 
 export const dynamic = "force-dynamic";
 
-export default async function DcOfficeIssuePage() {
+export default async function DcOfficeIssuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string; tab?: string }>;
+}) {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
+
+  const sp = await searchParams;
+  const initialTab = resolveOutboundTab(sp ?? {}, "issue");
+
+  // คลังปลายทางที่เลือกได้ = คลังที่ allowed ทั้งหมด ยกเว้นคลังต้นทาง (กรองใน client)
+  const destWarehouses: DestWarehouseOption[] = ctx.warehouses.map((w) => ({
+    id: w.id,
+    name: w.name,
+  }));
+  // สาขาตู้คีบ (ClawFleet) ที่เป็นปลายทางโอนได้ (scoped ตามสิทธิ์)
+  const clawBranches = await listClawfleetBranchTargets(ctx.session.user.org_id);
 
   return (
     <DcOfficeShell {...dcShellChrome(ctx, chrome)}>
@@ -30,9 +52,11 @@ export default async function DcOfficeIssuePage() {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>เบิกออก</h1>
+            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>
+              เบิก · โอน · ย้ายที่
+            </h1>
             <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>
-              เบิกของ/อะไหล่ออกจากคลัง — สแกน/พิมพ์รหัส หรือกด “ดูสินค้า” เลือกจากรายการ
+              เอาของออกจากคลัง — เลือกงานจากแท็บด้านล่าง แล้วสแกน/พิมพ์รหัส หรือกดเลือกจากรายการ
               {ctx.activeWarehouse ? ` · คลัง ${ctx.activeWarehouse.name}` : ""}
             </p>
           </div>
@@ -47,9 +71,13 @@ export default async function DcOfficeIssuePage() {
             </Link>
           </div>
         ) : (
-          <IssueWorkspace
+          <DcOutboundTabs
+            initialTab={initialTab}
             warehouseId={ctx.activeWarehouseId}
             warehouseName={ctx.activeWarehouse.name}
+            warehouses={destWarehouses}
+            clawBranches={clawBranches}
+            r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
           />
         )}
       </div>

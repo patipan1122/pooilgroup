@@ -1,9 +1,12 @@
 "use client";
 
-// DC · หน้ารวมงานหน้าคลัง (client):
-//   <FloorTransferMove> = toggle บนสุด 2 โหมด + render flow ที่เลือก
-//     • "ย้ายที่เก็บ — ในคลังนี้"  → <MoveWorkspace> (move flow เดิม: lookupForMove + moveLocation)
-//     • "ส่ง / โอน — ไปคลัง/สาขาอื่น" → <TransferDispatch> (transfer flow เดิม: lookupForTransfer + dispatchTransfer)
+// DC · หน้ารวมงาน "เอาของออกจากคลัง" (client):
+//   <DcOutboundTabs> = แท็บบนสุด 3 งาน + render flow ที่เลือก (ใช้ทั้งหน้าคลัง floor และหลังบ้าน office)
+//     • "เบิกออก"  → <IssueWorkspace>  (issue flow เดิม: lookupForIssue + postIssue)
+//     • "โอนออก"  → <TransferDispatch> (transfer flow เดิม: lookupForTransfer + dispatchTransfer)
+//     • "ย้ายที่"  → <MoveWorkspace>   (move flow เดิม: lookupForMove + moveLocation)
+//   ★ แต่ละแท็บถือ buffer/รายการของตัวเอง (คนละ localStorage key) → สลับแท็บของไม่ปนกัน
+//   ★ แท็บเป็นแค่เปลือก — ไม่แตะสัญญาณตัดสต๊อกของทั้ง 3 flow
 //   <TransferDispatch> = เลือกปลายทาง → สแกน/พิมพ์รหัส "หรือ" กดเลือกจากรายการ → นับจำนวน → ส่งออก.
 //     • เพิ่มทาง "เลือกจากรายการ" = ลิสต์สินค้าที่มีของจริง (listStockForPick) กดเพื่อเพิ่ม + โชว์ "เหลือ N"
 //     • ★ lineKey (uuid) สร้างตอน "เพิ่ม" บรรทัด → ส่งซ้ำ = no-op (idempotent)
@@ -13,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, List, Search, Trash2, Truck, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { MoveWorkspace } from "../move/move-workspace";
+import { IssueWorkspace } from "../issue/issue-workspace";
 import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
 import { DcThumb } from "@/components/dc/product-image";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
@@ -28,19 +32,8 @@ export type DestWarehouseOption = { id: string; name: string };
 /** Wave 6 — สาขาตู้คีบ (ClawFleet) ที่เลือกเป็นปลายทางได้ */
 export type ClawBranchOption = { id: string; name: string };
 
-// ★ handoff keys (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
-const PO_HANDOFF_KEY = "dc.pohandoff";
-const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
-
-// มี handoff ค้างใน sessionStorage ไหม (ใช้ force แท็บ "ส่ง/โอน" ตอน mount)
-function hasHandoff(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return !!(window.sessionStorage.getItem(PO_HANDOFF_KEY) || window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY));
-  } catch {
-    return false;
-  }
-}
+// ★ handoff (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
+import { readDcHandoff, clearDcHandoffs, PO_HANDOFF_KEY, PRODUCT_HANDOFF_KEY } from "@/lib/dc/handoff";
 
 type Line = {
   lineKey: string;
@@ -99,10 +92,45 @@ function newLineKey(): string {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// FloorTransferMove — toggle บนสุด: ย้ายที่ (ในคลัง) ⇄ ส่ง/โอน (ข้ามคลัง)
+// DcOutboundTabs — แท็บบนสุด: เบิกออก · โอนออก · ย้ายที่
 // ════════════════════════════════════════════════════════════════════
 
-export function FloorTransferMove({
+export type OutboundTab = "issue" | "transfer" | "move";
+
+/** แปลง ?tab= / ?mode= (ลิงก์เก่า) → แท็บที่จะเปิด · ค่าอื่น/ไม่ใส่ = fallback */
+export function resolveOutboundTab(
+  params: { tab?: string; mode?: string },
+  fallback: OutboundTab,
+): OutboundTab {
+  const raw = params.tab ?? params.mode; // mode=move คือลิงก์เก่าของ /dc/move
+  if (raw === "issue" || raw === "transfer" || raw === "move") return raw;
+  return fallback;
+}
+
+// คำอธิบายความต่างของ 3 งาน — CEO เคยสับสนว่า "โอน" กับ "ย้าย" ต่างกันยังไง
+// → แท็บสั้นเพื่อความหนาแน่น แต่ยังกางคำอธิบายของแท็บที่เลือกอยู่ให้อ่านได้เสมอ
+const OUTBOUND_TABS: { key: OutboundTab; label: string; desc: string; tone: string }[] = [
+  {
+    key: "issue",
+    label: "เบิกออก",
+    desc: "เบิกของ/อะไหล่ออกไปใช้ — ของออกจากคลังถาวร ไม่มีปลายทางให้กดรับ",
+    tone: "#c0392b",
+  },
+  {
+    key: "transfer",
+    label: "โอนออก",
+    desc: "ส่งของไปคลัง DC อื่น หรือสาขา/โมดูล — ปลายทางต้องกดรับเข้าอีกที",
+    tone: "#1b7f4d",
+  },
+  {
+    key: "move",
+    label: "ย้ายที่",
+    desc: "ย้ายของจากช่อง/ชั้นวางหนึ่ง ไปอีกช่องในคลังเดียวกัน — ยอดคงเหลือรวมไม่เปลี่ยน",
+    tone: "#2D6CB1",
+  },
+];
+
+export function DcOutboundTabs({
   initialTab,
   warehouseId,
   warehouseName,
@@ -110,53 +138,63 @@ export function FloorTransferMove({
   clawBranches = [],
   r2PublicUrl,
 }: {
-  initialTab: "move" | "transfer";
+  initialTab: OutboundTab;
   warehouseId: string;
   warehouseName: string;
   warehouses: DestWarehouseOption[];
   clawBranches?: ClawBranchOption[];
   r2PublicUrl?: string;
 }) {
-  const [tab, setTab] = useState<"move" | "transfer">(initialTab);
+  const [tab, setTab] = useState<OutboundTab>(initialTab);
 
-  // มี handoff (โอน/ตัดจ่าย จากหน้าสินค้า) → บังคับแท็บ "ส่ง/โอน" เพื่อให้ TransferDispatch รับของ
+  // ★ ไม่มีการ "เด้งแท็บอัตโนมัติ" จากของฝากอีกแล้ว — แท็บมาจาก ?tab= บน URL อย่างเดียว
+  //   หน้าสินค้ากด "เบิก"/"โอน" → push ?tab=issue / ?tab=transfer อยู่แล้ว = URL บอกเจตนาครบ
+  //   เดิมเด้งตามของฝาก → ของฝากที่ค้างอยู่ (เช่น ตอนยังไม่ได้เลือกคลัง หน้าไม่ทันโหลดตัวรับ)
+  //   จะมาทับแท็บที่ผู้ใช้เพิ่งกดเลือกเองทีหลัง = ของออกผิดทางแบบเงียบ ๆ
+  //   ของฝากที่ไม่มีใครมากิน → หมดอายุเองใน 10 นาที (ดู lib/dc/handoff.ts)
+
+  // สลับแท็บ → sync ?tab= บน URL (ไม่ rerender server) เพื่อให้ refresh/แชร์ลิงก์แล้วอยู่แท็บเดิม
   useEffect(() => {
-    if (hasHandoff()) setTab("transfer");
-  }, []);
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("tab") === tab) return;
+      url.searchParams.set("tab", tab);
+      url.searchParams.delete("mode"); // ลิงก์เก่า — ไม่ต้องพาไปด้วย
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      /* URL API พัง — ไม่เป็นไร แท็บยังใช้ได้ */
+    }
+  }, [tab]);
+
+  const active = OUTBOUND_TABS.find((t) => t.key === tab) ?? OUTBOUND_TABS[0];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* toggle อธิบายความต่างชัด ๆ (CEO สับสนว่า 2 หน้านี้ต่างกันยังไง) */}
       <div className="dc-card" style={{ padding: 10 }}>
         <div role="tablist" aria-label="เลือกงาน" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "move"}
-            onClick={() => setTab("move")}
-            style={tabStyle(tab === "move")}
-          >
-            <div style={{ fontSize: 16, fontWeight: 800 }}>ย้ายที่เก็บ — ในคลังนี้</div>
-            <div style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.85, marginTop: 2, lineHeight: 1.35 }}>
-              ย้ายของจากช่อง/ชั้นวางหนึ่ง ไปอีกช่องในคลังเดียวกัน
-            </div>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "transfer"}
-            onClick={() => setTab("transfer")}
-            style={tabStyle(tab === "transfer")}
-          >
-            <div style={{ fontSize: 16, fontWeight: 800 }}>ส่ง / โอน — ไปคลัง/สาขาอื่น</div>
-            <div style={{ fontSize: 12.5, fontWeight: 600, opacity: 0.85, marginTop: 2, lineHeight: 1.35 }}>
-              ส่งของออกจากคลังนี้ ไปคลัง DC อื่น หรือสาขา/โมดูล
-            </div>
-          </button>
+          {OUTBOUND_TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              style={outboundTabStyle(tab === t.key, t.tone)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {/* คำอธิบายของแท็บที่เลือก — กันสับสนว่างานไหนคืออะไร */}
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink2, #5b6675)", marginTop: 8, lineHeight: 1.4 }}>
+          {active.desc}
         </div>
       </div>
 
-      {tab === "move" ? (
+      {tab === "issue" ? (
+        <IssueWorkspace warehouseId={warehouseId} warehouseName={warehouseName} r2PublicUrl={r2PublicUrl} />
+      ) : tab === "move" ? (
         <MoveWorkspace warehouseId={warehouseId} warehouseName={warehouseName} />
       ) : (
         <TransferDispatch
@@ -329,28 +367,30 @@ export function TransferDispatch({
   //   PO handoff → handlePoConfirm(sel) เดิม · general product handoff → addProduct loop (qty default 1)
   //   ★ prefill = convenience default เท่านั้น: dispatchTransfer re-fetch getPoFulfillment + recordMovement
   //     guard on-hand จริงฝั่ง server → prefilled qty ไม่ใช่ตัวเลข authoritative (house rule money-preview-must-match-server)
+  //   ★ กินเฉพาะของที่ฝากมาให้ "โอน" เท่านั้น (readDcHandoff เช็ค intent ให้) — ของที่ฝากมาให้ "เบิก" ปล่อยไว้
+  //     กินแล้วล้างทั้ง 2 คีย์เสมอ (เดิม PO handoff return ทิ้ง product handoff ค้าง → ไป prefill งานอื่นทีหลัง)
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const poRaw = window.sessionStorage.getItem(PO_HANDOFF_KEY);
-      if (poRaw) {
-        const sel = JSON.parse(poRaw) as PoMoveSelection;
-        if (sel && Array.isArray(sel.lines) && sel.lines.length > 0) {
+      const sel = readDcHandoff<PoMoveSelection>(PO_HANDOFF_KEY, "transfer");
+      if (sel) {
+        if (Array.isArray(sel.lines) && sel.lines.length > 0) {
           handlePoConfirm(sel);
         }
-        window.sessionStorage.removeItem(PO_HANDOFF_KEY);
+        clearDcHandoffs();
         return; // PO handoff ชนะ (มีทั้งคู่ = ไม่ควรเกิด แต่กันไว้)
       }
-      const prodRaw = window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY);
-      if (prodRaw) {
-        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string; imageUrl?: string | null; onHand?: number }[] };
-        if (parsed && Array.isArray(parsed.lines)) {
+      const parsed = readDcHandoff<{
+        lines: { productId: string; sku: string; name: string; unit: string; imageUrl?: string | null; onHand?: number }[];
+      }>(PRODUCT_HANDOFF_KEY, "transfer");
+      if (parsed) {
+        if (Array.isArray(parsed.lines)) {
           for (const l of parsed.lines) {
             // carry รูป + onHand จากหน้าสินค้า (prefill/แสดงผลเท่านั้น · server re-guard on-hand จริงตอน dispatch)
             addProduct({ id: l.productId, sku: l.sku, name: l.name, unit: l.unit, onHand: l.onHand ?? 0, imageUrl: l.imageUrl ?? null });
           }
         }
-        window.sessionStorage.removeItem(PRODUCT_HANDOFF_KEY);
+        clearDcHandoffs();
       }
     } catch {
       /* handoff เสีย → เมินเงียบ (ผู้ใช้เพิ่มเองได้) */
@@ -1163,16 +1203,18 @@ function destToggleStyle(active: boolean, disabled: boolean): React.CSSPropertie
   };
 }
 
-function tabStyle(active: boolean): React.CSSProperties {
+// แท็บ pill — แท็บที่เลือกทึบด้วยสีประจำงาน (เบิก=แดง · โอน=เขียว · ย้าย=น้ำเงิน) ให้รู้ทันทีว่ากำลังทำอะไรอยู่
+function outboundTabStyle(active: boolean, tone: string): React.CSSProperties {
   return {
-    flex: 1,
-    minWidth: 200,
-    textAlign: "left",
-    border: active ? "2px solid var(--color-brand-600, #2D6CB1)" : "1.5px solid var(--dc-line, #e6eaf0)",
-    background: active ? "var(--color-brand-50, #eef3fe)" : "#fff",
-    color: active ? "var(--color-brand-700, #1d4ed8)" : "var(--dc-ink, #1f2733)",
-    borderRadius: 14,
-    padding: "12px 14px",
+    minWidth: 96,
+    minHeight: 44, // แตะบน iPad ได้สบาย
+    padding: "9px 20px",
+    border: active ? `1.5px solid ${tone}` : "1.5px solid var(--dc-line, #e6eaf0)",
+    background: active ? tone : "#fff",
+    color: active ? "#fff" : "var(--dc-ink, #1f2733)",
+    borderRadius: 999,
+    fontSize: 15,
+    fontWeight: active ? 800 : 700,
     cursor: "pointer",
   };
 }

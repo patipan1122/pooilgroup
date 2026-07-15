@@ -19,9 +19,8 @@ import {
   type CountProductRow,
 } from "@/lib/dc/count-actions";
 
-// ★ handoff keys (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
-const PO_HANDOFF_KEY = "dc.pohandoff";
-const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
+// ★ handoff (จากหน้าสินค้า floor/office) — prefill สะดวก เท่านั้น (server re-resolve จริง)
+import { readDcHandoff, clearDcHandoffs, PO_HANDOFF_KEY, PRODUCT_HANDOFF_KEY } from "@/lib/dc/handoff";
 
 type Line = {
   lineKey: string;
@@ -258,28 +257,31 @@ export function IssueWorkspace({
   //   PO handoff → handlePoConfirm(sel) เดิม · general product handoff → addPickedProduct loop (qty default 1)
   //   ★ prefill = convenience default เท่านั้น: postIssue re-fetch getPoFulfillment + guard on-hand จริงฝั่ง server
   //     → prefilled qty ไม่ authoritative (house rule money-preview-must-match-server)
+  //   ★ กินเฉพาะของที่ฝากมาให้ "เบิก" เท่านั้น (readDcHandoff เช็ค intent ให้) — ของที่ฝากมาให้ "โอน" ปล่อยไว้
+  //     กินแล้วล้างทั้ง 2 คีย์เสมอ (เดิม PO handoff return ทิ้ง product handoff ค้าง → ไป prefill งานอื่นทีหลัง)
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const poRaw = window.sessionStorage.getItem(PO_HANDOFF_KEY);
-      if (poRaw) {
-        const sel = JSON.parse(poRaw) as PoMoveSelection;
-        if (sel && Array.isArray(sel.lines) && sel.lines.length > 0) {
+      const sel = readDcHandoff<PoMoveSelection>(PO_HANDOFF_KEY, "issue");
+      if (sel) {
+        if (Array.isArray(sel.lines) && sel.lines.length > 0) {
           handlePoConfirm(sel);
         }
-        window.sessionStorage.removeItem(PO_HANDOFF_KEY);
+        clearDcHandoffs();
         return; // PO handoff ชนะ
       }
-      const prodRaw = window.sessionStorage.getItem(PRODUCT_HANDOFF_KEY);
-      if (prodRaw) {
-        const parsed = JSON.parse(prodRaw) as { lines: { productId: string; sku: string; name: string; unit: string }[] };
-        if (parsed && Array.isArray(parsed.lines)) {
+      const parsed = readDcHandoff<{ lines: { productId: string; sku: string; name: string; unit: string }[] }>(
+        PRODUCT_HANDOFF_KEY,
+        "issue",
+      );
+      if (parsed) {
+        if (Array.isArray(parsed.lines)) {
           for (const l of parsed.lines) {
             // general handoff ไม่มียอดจริง → systemQty=0 (จอเตือน "มีอยู่ 0" · server เป็นคนตัดสิน)
             addPickedProduct({ productId: l.productId, sku: l.sku, name: l.name, unit: l.unit, category: null, systemQty: 0, imageUrl: null });
           }
         }
-        window.sessionStorage.removeItem(PRODUCT_HANDOFF_KEY);
+        clearDcHandoffs();
       }
     } catch {
       /* handoff เสีย → เมินเงียบ */

@@ -1,9 +1,9 @@
-// DC · หน้ารวม "ส่ง/โอน + ย้ายที่" (floor) — รวม 2 งานที่ CEO สับสนว่าต่างกันยังไง ไว้หน้าเดียว
-//   มี toggle บนสุด เลือกได้ 2 โหมด (อธิบายความต่างชัด ๆ):
-//     • "ย้ายที่เก็บ — ในคลังนี้"  → ย้ายช่องเก็บภายในคลังเดียว (move flow · moveLocation)
-//     • "ส่ง / โอน — ไปคลัง/สาขาอื่น" → ส่งของข้ามคลัง/สาขา (transfer flow · dispatchTransfer)
-//   ?mode=move → default แท็บ "ย้ายที่" · ไม่ใส่ / mode อื่น → default "ส่ง/โอน"
-//   /dc/move ยัง redirect มาที่ ?mode=move (ดู move/page.tsx)
+// DC · หน้ารวม "เบิกออก + โอนออก + ย้ายที่" (floor) — 3 งานที่เอาของออกจากคลัง ไว้หน้าเดียว กดสลับแท็บ
+//     • "เบิกออก" → เบิกของออกไปใช้ ไม่มีปลายทาง (issue flow · postIssue)
+//     • "โอนออก" → ส่งของข้ามคลัง/สาขา ปลายทางกดรับ (transfer flow · dispatchTransfer)
+//     • "ย้ายที่" → ย้ายช่องเก็บภายในคลังเดียว (move flow · moveLocation)
+//   ?tab=issue|transfer|move → เปิดแท็บนั้น · ไม่ใส่ = "โอนออก" (ความหมายเดิมของ /dc/transfer — กันคนบุ๊กมาร์กงง)
+//   ลิงก์เก่า /dc/issue + /dc/move redirect มาที่นี่พร้อม ?tab= (ดู issue/page.tsx · move/page.tsx) · ?mode=move ยังรับอยู่
 import Link from "next/link";
 import { History } from "lucide-react";
 import { getDcContext } from "@/lib/dc/access";
@@ -11,21 +11,21 @@ import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
 import { listClawfleetBranchTargets } from "@/lib/clawfleet/stock-queries";
-import { FloorTransferMove, type DestWarehouseOption } from "./transfer-dispatch";
+import { DcOutboundTabs, resolveOutboundTab, type DestWarehouseOption } from "./transfer-dispatch";
 
 export const dynamic = "force-dynamic";
 
 export default async function DcTransferPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; tab?: string }>;
 }) {
   const ctx = await getDcContext();
   requireDcFloor(ctx.session.user.role);
   const canManage = canDcManage(ctx.session.user.role);
 
   const sp = await searchParams;
-  const initialTab: "move" | "transfer" = sp?.mode === "move" ? "move" : "transfer";
+  const initialTab = resolveOutboundTab(sp ?? {}, "transfer");
 
   // คลังปลายทางที่เลือกได้ = คลังที่ allowed ทั้งหมด ยกเว้นคลังต้นทาง (กรองใน client)
   const destWarehouses: DestWarehouseOption[] = ctx.warehouses.map((w) => ({
@@ -40,7 +40,7 @@ export default async function DcTransferPage({
     <div className="dc-page">
       <div className="dc-head">
         <div>
-          <div className="dc-h1">ส่ง / โอน · ย้ายที่</div>
+          <div className="dc-h1">เบิก · โอน · ย้ายที่</div>
           <div className="dc-sub">
             {ctx.activeWarehouse ? `คลัง: ${ctx.activeWarehouse.name}` : "ยังไม่มีคลัง"}
           </div>
@@ -69,7 +69,7 @@ export default async function DcTransferPage({
           )}
         </div>
       ) : (
-        <FloorTransferMove
+        <DcOutboundTabs
           initialTab={initialTab}
           warehouseId={ctx.activeWarehouseId}
           warehouseName={ctx.activeWarehouse.name}

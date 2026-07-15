@@ -31,7 +31,7 @@ function quickTabs(canManage: boolean): Item[] {
     { href: "/dc", label: "หน้าคลัง", icon: Boxes },
     { href: "/dc/receive", label: "รับเข้า", icon: PackagePlus },
     { href: "/dc/count", label: "นับ", icon: ClipboardCheck },
-    { href: "/dc/issue", label: "เบิกออก", icon: PackageMinus },
+    { href: "/dc/transfer?tab=issue", label: "เบิกออก", icon: PackageMinus },
   ];
 }
 
@@ -39,9 +39,9 @@ const FLOOR_MENU: Item[] = [
   { href: "/dc", label: "หน้าหลัก", icon: Boxes },
   { href: "/dc/receive", label: "รับเข้า", icon: PackagePlus },
   { href: "/dc/receive-po", label: "รับตาม PO", icon: PackagePlus },
-  { href: "/dc/transfer", label: "ส่ง · โอน · ย้ายที่", icon: Truck },
+  // 3 งาน "เอาของออก" รวมหน้าเดียว 3 แท็บ — เดิมแยก "ส่ง·โอน·ย้ายที่" กับ "เบิกออก"
+  { href: "/dc/transfer?tab=issue", label: "เบิก · โอน · ย้าย", icon: Truck },
   { href: "/dc/count", label: "นับสต๊อก", icon: ClipboardCheck },
-  { href: "/dc/issue", label: "เบิกออก", icon: PackageMinus },
   { href: "/dc/search", label: "ค้นหา", icon: Search },
   { href: "/dc/labels", label: "ปริ้นฉลาก", icon: QrCode },
 ];
@@ -52,7 +52,7 @@ const OFFICE_MENU: Item[] = [
   // #16 ผู้ขาย + ขนส่ง ยุบเข้าแท็บใน "สั่งซื้อ" (PurchasingSubnav) — ไม่ลิสต์เป็นเมนูแยก
   { href: "/dc/office/products", label: "สินค้า", icon: Boxes },
   { href: "/dc/office/receipts", label: "ใบรับสินค้า", icon: ClipboardCheck },
-  { href: "/dc/office/transfers", label: "การโอน", icon: Truck },
+  { href: "/dc/office/transfers", label: "ใบโอน", icon: Truck },
   { href: "/dc/office/warehouses", label: "โกดัง", icon: Warehouse },
   { href: "/dc/office/reports", label: "รายงาน", icon: BarChart3 },
   { href: "/dc/office/reconcile", label: "กระทบยอด", icon: GitCompare },
@@ -60,9 +60,11 @@ const OFFICE_MENU: Item[] = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === "/dc") return pathname === "/dc";
-  if (href === "/dc/office") return pathname === "/dc/office";
-  return pathname === href || pathname.startsWith(href + "/");
+  // href อาจมี query (เมนูที่เปิดแท็บเจาะจง) แต่ pathname ไม่มี → ตัดทิ้งก่อนเทียบ
+  const path = href.split("?")[0];
+  if (path === "/dc") return pathname === "/dc";
+  if (path === "/dc/office") return pathname === "/dc/office";
+  return pathname === path || pathname.startsWith(path + "/");
 }
 
 export function DcMobileNav({ canManage }: { canManage: boolean }) {

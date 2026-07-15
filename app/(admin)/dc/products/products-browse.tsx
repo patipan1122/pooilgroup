@@ -21,9 +21,9 @@ import { listPosForMoveAction, getPoFulfillmentAction } from "@/lib/dc/po-move-a
 import type { ReceivablePoForMove, PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
 import { DcThumb } from "@/components/dc/product-image";
 
-// ★ handoff ที่โยนไปหน้าโอน/เบิก ผ่าน sessionStorage (convenience default เท่านั้น —
+// ★ handoff ที่โยนไปหน้า "เบิก · โอน · ย้ายที่" (convenience default เท่านั้น —
 //   หน้าปลายทาง re-resolve onHand/remaining จริงฝั่ง server เสมอ) → carry แค่ id + display qty + label.
-const PO_HANDOFF_KEY = "dc.pohandoff";
+import { writeDcHandoff, PO_HANDOFF_KEY } from "@/lib/dc/handoff";
 
 export function FloorProductsBrowse({
   warehouseId,
@@ -339,12 +339,9 @@ function PoBrowseView({
           qty: Math.max(0, Math.min(l.remaining, l.onHand)), // ปลายทาง re-resolve จริงฝั่ง server อีกชั้น
         })),
       };
-      try {
-        window.sessionStorage.setItem(PO_HANDOFF_KEY, JSON.stringify(payload));
-      } catch {
-        /* private mode / quota — ปล่อยผ่าน (หน้าปลายทางจะเปิดเปล่า) */
-      }
-      router.push(target === "transfer" ? "/dc/transfer" : "/dc/issue");
+      // ปั๊ม intent ไปด้วย → หน้าปลายทางเปิดแท็บตามที่คนกดตั้งใจ ไม่ต้องเดา
+      writeDcHandoff(PO_HANDOFF_KEY, payload, target);
+      router.push(target === "transfer" ? "/dc/transfer?tab=transfer" : "/dc/transfer?tab=issue");
     },
     [detail, checkedLines, router, r2PublicUrl],
   );

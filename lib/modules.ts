@@ -1104,6 +1104,9 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
     status: "active",
     basePath: "/dc",
     nav: [
+      // ★ ทุก item ใส่ section ของตัวเอง (ไม่ใช่แค่ตัวแรกของกลุ่ม) — เมนูถูกกรองตาม role ก่อน render
+      //   ถ้า section ติดอยู่กับ item ที่ role นั้นมองไม่เห็น หัวข้อกลุ่มจะหายไปทั้งกลุ่ม
+      //   (admin-shell โชว์หัวข้อเมื่อ section "เปลี่ยน" จาก item ก่อนหน้า → ใส่ครบทุกตัวแล้วปลอดภัยเสมอ)
       // ----- หน้าคลัง (floor · iPad ปุ่มใหญ่) -----
       {
         href: "/dc",
@@ -1115,42 +1118,37 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       {
         href: "/dc/receive",
         label: "รับเข้า",
+        section: "หน้าคลัง",
         icon: PackagePlus,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
       },
       {
-        href: "/dc/transfer",
-        label: "ส่ง / โอน",
+        // 3 งาน "เอาของออก" รวมเป็นหน้าเดียว 3 แท็บ — เดิมแยก 3 เมนู (ส่ง/โอน · ย้ายที่ · เบิกออก)
+        // /dc/issue + /dc/move ยัง redirect เข้าแท็บที่ถูกให้ลิงก์เก่า
+        href: "/dc/transfer?tab=issue",
+        label: "เบิก · โอน · ย้าย",
+        section: "หน้าคลัง",
         icon: Truck,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
-      },
-      {
-        href: "/dc/move",
-        label: "ย้ายที่",
-        icon: ArrowLeftRight,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
       },
       {
         href: "/dc/count",
         label: "นับสต๊อก",
+        section: "หน้าคลัง",
         icon: ClipboardCheck,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
-      },
-      {
-        href: "/dc/issue",
-        label: "เบิกออก",
-        icon: PackageMinus,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
       },
       {
         href: "/dc/search",
         label: "ค้นหา",
+        section: "หน้าคลัง",
         icon: Search,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff", "viewer"],
       },
       {
         href: "/dc/labels",
         label: "ปริ้นฉลาก",
+        section: "หน้าคลัง",
         icon: QrCode,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "staff"],
       },
@@ -1163,21 +1161,33 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "viewer"],
       },
       {
+        // หลังบ้านก็รวม 3 งาน "เอาของออก" เป็นหน้าเดียว 3 แท็บ (คนละกรอบกับหน้าคลัง แต่ flow เดียวกัน)
+        href: "/dc/office/issue",
+        label: "เบิก · โอน · ย้าย",
+        section: "หลังบ้าน",
+        icon: PackageMinus,
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
         href: "/dc/office/purchasing",
         label: "สั่งซื้อจีน",
+        section: "หลังบ้าน",
         icon: ShoppingCart,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       // #16 ยุบ "ผู้ขาย" + "ขนส่ง/ชิปเมนต์" ออกจากเมนู — เข้าถึงผ่านแท็บใน "สั่งซื้อจีน" (PurchasingSubnav) แทน
+      // ----- เอกสาร (ประวัติใบต่าง ๆ · อ่าน/พิมพ์/ลบ) -----
       {
         href: "/dc/office/receipts",
         label: "ใบรับสินค้า",
         icon: ClipboardCheck,
+        section: "เอกสาร",
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
         href: "/dc/office/transfers",
-        label: "การโอน",
+        label: "ใบโอน",
+        section: "เอกสาร",
         icon: Truck,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
@@ -1185,56 +1195,60 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // รายการใบย้ายที่ (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
         href: "/dc/office/moves",
         label: "ใบย้ายที่",
+        section: "เอกสาร",
         icon: ArrowLeftRight,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/dc/office/issue",
-        label: "เบิกออก",
-        icon: PackageMinus,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
         // รายการใบเบิก (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
         href: "/dc/office/issues",
-        label: "รายการใบเบิก",
+        label: "ใบเบิก",
+        section: "เอกสาร",
         icon: ScrollText,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
+      // ----- ข้อมูล & รายงาน -----
       {
         href: "/dc/office/products",
         label: "สินค้า",
         icon: Boxes,
+        section: "ข้อมูล & รายงาน",
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
         href: "/dc/office/warehouses",
         label: "โกดัง",
+        section: "ข้อมูล & รายงาน",
         icon: Warehouse,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
         href: "/dc/office/reconcile",
         label: "กระทบยอด",
+        section: "ข้อมูล & รายงาน",
         icon: GitCompare,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       {
         href: "/dc/office/reports",
         label: "รายงาน",
+        section: "ข้อมูล & รายงาน",
         icon: BarChart3,
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager", "viewer"],
       },
+      // ----- ผู้ดูแล -----
       {
         // ประวัติการลบเอกสาร — super_admin เท่านั้น (page เองก็ redirect กันอีกชั้น)
         href: "/dc/office/deletions",
         label: "ประวัติการลบ",
         icon: History,
+        section: "ผู้ดูแล",
         roles: ["super_admin"],
       },
       {
         href: "/dc/office/permissions",
         label: "สิทธิ์พนักงาน",
+        section: "ผู้ดูแล",
         icon: UsersIcon,
         adminOnly: true,
       },
@@ -1242,6 +1256,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // ตั้งค่า DC — เรตค่าขนส่งจีน-ไทย + เชื่อม Google Drive (ที่เก็บรูปสินค้า)
         href: "/dc/office/settings",
         label: "ตั้งค่า",
+        section: "ผู้ดูแล",
         icon: Settings,
         adminOnly: true,
       },

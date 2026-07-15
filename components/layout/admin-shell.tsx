@@ -809,18 +809,21 @@ function SidebarLink({
   /** When > 0 a red pill is shown on the right (open items needing attention). */
   badgeCount?: number;
 }) {
+  // href อาจมี query (เช่น "/dc/transfer?tab=issue" — เมนูที่เปิดแท็บเจาะจง) แต่ usePathname() ไม่มี query
+  // → ตัด query ทิ้งก่อนเทียบ ไม่งั้นเมนูนั้นไม่มีวัน active
+  const hrefPath = href.split("?")[0];
   // Indented (child) links: match exact only — they shouldn't claim deeper paths.
   // Non-indented (parent/standalone) links: match exact OR descendants — but we
   // also exclude /settings parent from claiming /settings/* (children handle those).
   const SETTINGS_CHILDREN = ["/settings/notifications", "/settings/security", "/settings/backup"];
   const active = indent
-    ? pathname === href
-    : href === "/settings"
+    ? pathname === hrefPath
+    : hrefPath === "/settings"
     ? pathname === "/settings" ||
       (pathname.startsWith("/settings/") &&
         !SETTINGS_CHILDREN.some((c) => pathname === c || pathname.startsWith(c + "/")))
-    : pathname === href ||
-      (href !== "/home" && pathname.startsWith(href + "/"));
+    : pathname === hrefPath ||
+      (hrefPath !== "/home" && pathname.startsWith(hrefPath + "/"));
   return (
     <Link
       href={href}

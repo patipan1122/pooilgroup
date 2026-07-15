@@ -8,10 +8,9 @@ import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { DcThumb, DcLightbox } from "@/components/dc/product-image";
 import { OfficePoBrowse } from "@/components/dc/office-po-browse";
-
-// ★ handoff → หน้าโอน/เบิก ผ่าน sessionStorage (convenience default — ปลายทาง re-resolve จริง server)
+// ★ handoff → หน้า "เบิก · โอน · ย้ายที่" (convenience default — ปลายทาง re-resolve จริง server)
 //   carry แค่ id + label (ไม่มี qty; general handoff = qty default 1 ที่ปลายทาง)
-const PRODUCT_HANDOFF_KEY = "dc.producthandoff";
+import { writeDcHandoff, PRODUCT_HANDOFF_KEY } from "@/lib/dc/handoff";
 
 type SvgProps = { size?: number; sw?: number; stroke?: string; fill?: string; children: React.ReactNode };
 function Svg({ size = 16, sw = 1.8, stroke = "currentColor", fill = "none", children }: SvgProps) {
@@ -80,12 +79,9 @@ export function ProductsClient({
       const payload = {
         lines: rows.map((p) => ({ productId: p.id, sku: p.sku, name: p.name, unit: p.unit, imageUrl: p.imageUrl, onHand: p.onhand })),
       };
-      try {
-        window.sessionStorage.setItem(PRODUCT_HANDOFF_KEY, JSON.stringify(payload));
-      } catch {
-        /* private mode / quota — ปล่อยผ่าน */
-      }
-      router.push(target === "transfer" ? "/dc/transfer" : "/dc/issue");
+      // ปั๊ม intent ไปด้วย → หน้าปลายทางเปิดแท็บตามที่คนกดตั้งใจ ไม่ต้องเดา
+      writeDcHandoff(PRODUCT_HANDOFF_KEY, payload, target);
+      router.push(target === "transfer" ? "/dc/transfer?tab=transfer" : "/dc/transfer?tab=issue");
     },
     [router],
   );
