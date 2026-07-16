@@ -540,7 +540,8 @@ function reducer(s: WizardState, a: Action): WizardState {
     case "addRefillLine": {
       // กัน SKU ซ้ำ — ถ้ามีไลน์ productId นี้แล้ว ไม่เพิ่มซ้ำ (merge = คงไลน์เดิม · ผู้ใช้ปรับ qty เอง)
       if (s.form.refillLines.some((l) => l.productId === a.productId)) return s;
-      const line: RefillLine = { productId: a.productId, name: a.name, qty: 0 };
+      // เริ่มที่ 1 (แตะจาก catalog = ตั้งใจเติมอย่างน้อย 1 · ตาม mockup) — เดิมเริ่ม 0 ต้องกด + ซ้ำ
+      const line: RefillLine = { productId: a.productId, name: a.name, qty: 1 };
       return { ...s, form: { ...s.form, refillLines: [...s.form.refillLines, line] } };
     }
     case "setRefillLineQty":
@@ -1311,8 +1312,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   let primaryLabel = "ถัดไป";
   let primaryColor = "#4F46E5";
   let primaryAction: () => void = () => dispatch({ type: "next" });
-  let secondaryLabel = "";
-  let secondaryAction: (() => void) | null = null;
+  // ปุ่มรองใต้ปุ่มหลัก — ตอนนี้ไม่มีขั้นไหนใช้ (การ์ดแก้ inline แทนการเด้งข้ามขั้น) · คงโครงไว้เผื่ออนาคต
+  const secondaryLabel = "";
+  const secondaryAction: (() => void) | null = null;
 
   if (state.step === 1) {
     primaryLabel = "ถัดไป · มิเตอร์ + เงินสด";
@@ -2319,18 +2321,35 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
             </div>
           )}
           <div>
+            {/* mockup PANEL-repair: เลือกตู้เป็นการ์ดแตะ (ไม่ใช่ dropdown) — เห็นทุกตู้ในแวบเดียว */}
             <label style={lbl}>เลือกตู้ที่เสีย</label>
-            <select aria-label="เลือกตู้ที่เสีย" title="เลือกตู้ที่เสีย" value={machineId} onChange={(e) => setMachineId(e.target.value)} style={sel}>
-              {realMachines.map((m) => (
-                <option key={m.id} value={m.id}>{m.code} · {m.branch}{m.zone ? ` · ${m.zone}` : ""}</option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+              {realMachines.map((m) => {
+                const on = machineId === m.id;
+                return (
+                  <button key={m.id} type="button" onClick={() => setMachineId(m.id)} className="co-tap"
+                    style={{ flex: "0 0 auto", minWidth: 96, textAlign: "left", border: `1.5px solid ${on ? "#4F46E5" : "#E8EAED"}`, background: on ? "#F5F5FE" : "#fff", borderRadius: 11, padding: "8px 11px", cursor: "pointer" }}>
+                    <span className="num" style={{ display: "block", fontSize: 12, fontWeight: 700, color: on ? "#4F46E5" : "#1A1D21" }}>{m.nickname ?? m.code}</span>
+                    <span style={{ display: "block", fontSize: 10, color: "#9AA1AB", marginTop: 1 }}>{m.code}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
+            {/* mockup: อาการเสียเป็นชิปแตะเร็ว (เลือกแล้ว = ทึบม่วง) */}
             <label style={lbl}>อาการเสีย</label>
-            <select aria-label="อาการเสีย" title="อาการเสีย" value={symptom} onChange={(e) => setSymptom(e.target.value)} style={sel}>
-              {REPAIR_SYMPTOMS.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+              {REPAIR_SYMPTOMS.map((o) => {
+                const on = symptom === o;
+                return (
+                  <button key={o} type="button" onClick={() => setSymptom(o)} className="co-tap"
+                    style={{ fontSize: 12, fontWeight: 600, padding: "7px 13px", borderRadius: 20, border: `1.5px solid ${on ? "#4F46E5" : "#E3E6EA"}`, background: on ? "#4F46E5" : "#fff", color: on ? "#fff" : "#5A6270", cursor: "pointer" }}>
+                    {o}
+                  </button>
+                );
+              })}
+            </div>
             {symptom === "อื่นๆ" && (
               <input type="text" value={otherSymptom} onChange={(e) => setOtherSymptom(e.target.value)}
                 placeholder="พิมพ์อาการที่พบ…"
@@ -2339,7 +2358,7 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
           </div>
           <div>
             <label style={lbl}>แนบรูปอาการเสีย (ถ่ายได้-ข้ามได้)</label>
-            <PhotoCaptureButton
+            <PhotoCaptureButton slim
               label={photoUrl ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปอาการเสีย"}
               value={photoUrl} onChange={setPhotoUrl}
               orgId={orgId} machineCode={selected?.code ?? ""}
@@ -4278,8 +4297,8 @@ function FlowScreen(props: {
             )}
 
             {/* ── การ์ดผลตรวจ 4 ใบ (ตุ๊กตา/เงิน/มิเตอร์/รูป) — ขาด = กรอก/ถ่ายตรงนั้นเลย ── */}
-            <ReconCard ok={dollsOk}
-              title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "ตุ๊กตา — รอเลขมิเตอร์"}
+            <ReconCard ok={dollsOk} wait={!dollsMissing && !dollsMismatch && !meterFilled}
+              title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "นับแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={dollsMissing ? "นับที่เหลือในตู้แล้วกรอกตรงนี้ได้เลย — ระบบคำนวณตุ๊กตาที่ออกให้"
                 : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา +${recon.dollDelta}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
@@ -4294,8 +4313,8 @@ function FlowScreen(props: {
                 </div>
               ) : undefined} />
 
-            <ReconCard ok={cashOk}
-              title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "เงินสด — รอเลขมิเตอร์"}
+            <ReconCard ok={cashOk} wait={!cashMissing && !cashMismatch && !meterFilled}
+              title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "กรอกแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={cashMissing ? "นับเงินในตู้แล้วกรอกตรงนี้ได้เลย"
                 : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ +${coinDelta} → คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : cashMissing ? "กรอกเลย" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
@@ -4337,7 +4356,7 @@ function FlowScreen(props: {
                 </div>
               ) : undefined} />
 
-            <ReconCard ok={!photoMissing}
+            <ReconCard ok={photoOk} wait={!photoOk && !photoMissing}
               title={photoMissing ? "รูปยังไม่ครบ — แนบตรงนี้ได้เลย" : photoOk ? "รูปหลักฐาน ครบ 2/2" : "รูปหลักฐาน (ไม่บังคับ)"}
               detail={`ก่อนเติม ${props.photosCaptured.before ? "✓" : "— ยังไม่แนบ"} · หลังเติม ${props.photosCaptured.after ? "✓" : "— ยังไม่แนบ"}`}
               actions={
@@ -4750,18 +4769,26 @@ function PhotoTile({ label, value, captured, onChange, onCaptured, orgId, machin
 }
 
 /* ดีไซน์ใหม่ · การ์ดคำแนะนำในหน้ากระทบยอด (✓/✗ + รายละเอียด + ปุ่มดูรูป/แก้ + กล่องแก้ inline) */
-function ReconCard({ ok, title, detail, actions, expanded }: {
-  ok: boolean; title: string; detail: string; actions?: React.ReactNode; expanded?: React.ReactNode;
+function ReconCard({ ok, wait, title, detail, actions, expanded }: {
+  // wait = ยังตัดสินไม่ได้ (รอข้อมูลช่องอื่น เช่น มิเตอร์) → เหลืองนาฬิกา ไม่ใช่ ✗ แดง (ไม่นับเป็น "จุดผิด")
+  ok: boolean; wait?: boolean; title: string; detail: string; actions?: React.ReactNode; expanded?: React.ReactNode;
 }) {
+  const tone = ok
+    ? { bd: "#E8EAED", accent: "#15803D", circle: "#E7F4EC", text: "#166534" }
+    : wait
+      ? { bd: "#F0E2BE", accent: "#D9A83C", circle: "#FCF6EC", text: "#8A5A12" }
+      : { bd: "#EBC6C2", accent: "#C0392B", circle: "#FBECEC", text: "#B02A1C" };
   return (
-    <div style={{ background: "#fff", border: `1px solid ${ok ? "#E8EAED" : "#EBC6C2"}`, borderLeft: `4px solid ${ok ? "#15803D" : "#C0392B"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 9 }}>
+    <div style={{ background: "#fff", border: `1px solid ${tone.bd}`, borderLeft: `4px solid ${tone.accent}`, borderRadius: 12, padding: "12px 14px", marginBottom: 9 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: "50%", background: ok ? "#E7F4EC" : "#FBECEC", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ width: 22, height: 22, flex: "0 0 22px", borderRadius: "50%", background: tone.circle, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {ok
             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>}
+            : wait
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4l3 2" /></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>}
         </span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: ok ? "#166534" : "#B02A1C" }}>{title}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: tone.text }}>{title}</span>
         {actions}
       </div>
       <div style={{ fontSize: 11.5, color: "#6B7280", marginTop: 7, paddingLeft: 31, lineHeight: 1.45 }}>{detail}</div>

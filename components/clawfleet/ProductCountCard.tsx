@@ -166,9 +166,9 @@ export function ProductCountCard({
         </StepBtn>
       </div>
 
-      {/* แนบรูปหลักฐานการนับ */}
-      <PhotoCaptureButton
-        label="ถ่ายรูปตอนนับ (ถ่ายได้-ข้ามได้)"
+      {/* แนบรูปหลักฐานการนับ — slim บรรทัดเดียว (เดิมกล่อง 88px ต่อทุก SKU = หน้ายาว 7 จอ) */}
+      <PhotoCaptureButton slim
+        label={photoUrl ? "รูปตอนนับ ✓" : "ถ่ายรูปตอนนับ (ข้ามได้)"}
         value={photoUrl}
         onChange={(url) => onPhoto?.(url)}
         orgId={orgId}
