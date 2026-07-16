@@ -7,7 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { requireDcManager, requireDcFloor } from "@/lib/dc/role-guard";
+import { requireDcManager, requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { getAllowedWarehouses } from "@/lib/dc/access";
 import { getCountSheet } from "@/lib/dc/count-actions";
 import { PO_STATUS_LABEL, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
@@ -146,7 +146,9 @@ export async function buildPoDocImage(id: string): Promise<DocImageInput | null>
 // ════════════════════════════════════════════════════════════════════
 export async function buildTransferDocImage(id: string): Promise<DocImageInput | null> {
   const session = await requireSession();
-  requireDcManager(session.user.role);
+  // เปิดให้ floor role โหลดรูปใบโอนได้ (ปุ่มปริ้นอยู่ในลิสต์หน้าคลังด้วย)
+  // — staff เช็ค warehouse scope หลังโหลดใบ (ด้านล่าง) · manager ขึ้นไป org-wide เหมือนเดิม
+  requireDcFloor(session.user.role);
   const orgId = session.user.org_id;
 
   const [tf, org] = await Promise.all([
@@ -164,6 +166,16 @@ export async function buildTransferDocImage(id: string): Promise<DocImageInput |
     loadOrg(orgId),
   ]);
   if (!tf) return null;
+
+  // ── SCOPE GATE (เฉพาะ role ต่ำกว่า manager): from/to ต้อง ∈ คลังที่ผูกสิทธิ์ ──
+  if (!canDcManage(session.user.role)) {
+    const allowed = await getAllowedWarehouses(session);
+    const allowedIds = new Set(allowed.map((w) => w.id));
+    const inScope =
+      allowedIds.has(tf.fromWarehouseId) ||
+      (!!tf.toWarehouseId && allowedIds.has(tf.toWarehouseId));
+    if (!inScope) return null;
+  }
 
   const whIds = [tf.fromWarehouseId, tf.toWarehouseId].filter((x): x is string => !!x);
   const [whs, branch, dispatcher] = await Promise.all([

@@ -2,7 +2,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
-import { requireDcManager } from "@/lib/dc/role-guard";
+import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcPrintDoc, type PrintRow } from "@/components/dc/print-doc";
 import { AutoPrint } from "@/components/dc/print-controls";
 
@@ -26,7 +26,10 @@ function longDate(d: Date | null): string {
 export default async function TransferPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await getDcContext();
-  requireDcManager(ctx.session.user.role);
+  // ปุ่มปริ้นอยู่ในลิสต์หน้าคลัง (floor) ด้วย — เปิดให้ floor role พิมพ์ได้
+  // แต่ staff เห็นเฉพาะใบที่เกี่ยวกับคลังตัวเอง (scope check ด้านล่าง หลังโหลดใบ)
+  // · manager ขึ้นไป = org-wide เหมือนเดิม
+  requireDcFloor(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
 
   const [tf, org] = await Promise.all([
@@ -44,6 +47,17 @@ export default async function TransferPrintPage({ params }: { params: Promise<{ 
     prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
   ]);
   if (!tf) notFound();
+
+  // ── SCOPE GATE (เฉพาะ role ต่ำกว่า manager): from- หรือ to-warehouse ต้อง ∈
+  // คลังที่ผูกสิทธิ์ (ctx.warehouses) — กันเดา id ปริ้นใบของไซต์อื่น
+  // (pattern เดียวกับ transfer-detail-action.ts)
+  if (!canDcManage(ctx.session.user.role)) {
+    const allowedIds = new Set(ctx.warehouses.map((w) => w.id));
+    const inScope =
+      allowedIds.has(tf.fromWarehouseId) ||
+      (!!tf.toWarehouseId && allowedIds.has(tf.toWarehouseId));
+    if (!inScope) notFound();
+  }
 
   const whIds = [tf.fromWarehouseId, tf.toWarehouseId].filter((x): x is string => !!x);
   const [whs, branch, dispatcher] = await Promise.all([
