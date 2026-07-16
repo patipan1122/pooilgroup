@@ -38,6 +38,7 @@ export function PhotoCaptureButton({
   eventScopeId,
   phase,
   compact = false,
+  slim = false,
 }: {
   label: string;
   value: string;
@@ -67,6 +68,8 @@ export function PhotoCaptureButton({
     | "product_setup";
   // compact = ไอคอนกล้องเล็ก (46px) วางในบรรทัดเดียวกับช่องกรอก (เช่น มิเตอร์) — logic เหมือนเดิมทุกอย่าง
   compact?: boolean;
+  // slim = ปุ่มบรรทัดเดียว ~44px (รูปก่อน/หลังเติม ตาม mockup) — logic เหมือนเดิมทุกอย่าง
+  slim?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>(value ? "done" : "idle");
@@ -317,6 +320,55 @@ export function PhotoCaptureButton({
           ) : (
             <Camera className="h-5 w-5" />
           )}
+        </button>
+      </>
+    );
+  }
+
+  // ── slim: ปุ่มบรรทัดเดียว ~44px (mockup "ถ่ายก่อนเติม" → "ก่อนเติม ✓") — logic ถ่าย/คิว/อัปโหลดเดิมทุกอย่าง ──
+  // ว่าง = เส้นประเทา · ถ่ายแล้ว = ขอบเขียวทึบ · retry = amber · แตะซ้ำ = ถ่ายใหม่ (ไม่ใช่ toggle ลบ)
+  if (slim) {
+    const tone = hasPhoto
+      ? isRetry
+        ? { bd: "1.5px solid #F0D8AE", bg: "#FFFBF3", fg: "#B45309" }
+        : { bd: "1.5px solid #BFE6CB", bg: "#F2FBF5", fg: "#15803D" }
+      : error
+        ? { bd: "1.5px dashed #F3B4B4", bg: "#FDECEC", fg: "#DC2626" }
+        : { bd: "1.5px dashed #C9CFD8", bg: "#FAFBFC", fg: "#6B7280" };
+    return (
+      <>
+        <input
+          ref={ref}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+            e.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          title={hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : label}
+          onClick={() => ref.current?.click()}
+          className="co-tap"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            width: "100%", minHeight: 44, padding: "12px 8px", borderRadius: 11,
+            border: tone.bd, background: tone.bg, color: tone.fg,
+            fontSize: 12, fontWeight: 700, cursor: "pointer", lineHeight: 1.2,
+          }}
+        >
+          {isBusy ? (
+            <Loader2 className="h-4 w-4 animate-spin" style={{ flex: "0 0 16px" }} />
+          ) : isRetry ? (
+            <RefreshCw className="h-4 w-4" strokeWidth={2.2} style={{ flex: "0 0 16px" }} />
+          ) : (
+            <Camera className="h-4 w-4" strokeWidth={1.9} style={{ flex: "0 0 16px" }} />
+          )}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
         </button>
       </>
     );

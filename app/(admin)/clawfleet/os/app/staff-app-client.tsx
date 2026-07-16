@@ -143,6 +143,8 @@ type AppMachine = {
   product: string;
   // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP ⚪) → route ไปฟอร์มตั้งค่าครั้งแรกแทน wizard 6 ขั้น
   awaitingSetup: boolean;
+  // ราคาขายตุ๊กตาต่อตู้ (สตางค์) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup SW-03)
+  sellPriceCents: number | null;
 };
 
 const DEMO_BRANCH_ID = "demo-branch-rs";
@@ -154,12 +156,12 @@ const DEMO_SKUS: CollectSku[] = [
 ];
 
 const DEMO_MACHINES: AppMachine[] = [
-  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false },
-  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false },
-  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false },
-  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false },
-  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false },
-  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false },
+  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000 },
 ];
 
 /** flatten real Branch>Group>Claw → a flat machine route (CLAW only). */
@@ -177,6 +179,7 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           zone: g.name,
           branchId: b.id,
           lastStock: m.lastDollStock,
+          sellPriceCents: m.sellPriceCents,
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
           product: "",
@@ -1317,16 +1320,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     primaryLabel = "ถัดไป · กระทบยอด";
   } else if (state.step === 5) {
     if (!submitReady) {
-      // ยังกรอกไม่ครบ → ไม่ปิดรอบ (กันยอดผิด) แต่ "ไม่ทิ้งงาน": บันทึกค้างไว้ให้ · กลับมากรอกทีหลังได้
-      // FIX-1 · ถ้ายังมีรูปอัปโหลดค้าง → เปลี่ยนป้าย + disable (กัน saveDraft เก็บรูปเป็น "" = หายตอน resume)
-      primaryLabel = uploadPending ? "⏳ กำลังอัปโหลดรูป… รอสักครู่" : "บันทึกค้างไว้ · ไปเก็บตู้อื่น";
-      primaryColor = "#B45309";
-      primaryAction = saveDraft;
-      // ⚠️ ต้องพาไป "ขั้นที่ขาดจริง" — ถ้าขาดรูป/ยังไม่นับ ต้องกลับขั้น 1 (ขั้น 3 ไม่มีช่องถ่ายรูปก่อน/หลัง)
-      //    เดิมส่งไปขั้น 3 ตายตัว → ขาดรูปแล้วกดปุ่มนี้จะวนไม่จบ ปิดรอบไม่ได้ทั้งที่ถือเงินอยู่
-      const firstUnmetStep = (!isFilled(f.left) || photoRequiredMissing) ? 1 : 3;
-      secondaryLabel = firstUnmetStep === 1 ? "หรือกลับไปนับ/ถ่ายรูปให้ครบตอนนี้" : "หรือกลับไปกรอกเงินสด/มิเตอร์ตอนนี้";
-      secondaryAction = () => dispatch({ type: "goStep", step: firstUnmetStep });
+      // นโยบายผสม (CEO 2026-07-16 · mockup-match): เลข/รูปยังไม่ครบ → ปุ่มหลักเทา no-op ตาม mockup
+      // ("ยังมี N จุดผิด · แก้ให้ครบก่อน") — กรอก/ถ่ายได้ในการ์ดแดงบนหน้านี้เลย ไม่ต้องเด้งไปไหน
+      // · "บันทึกค้างไว้" ยังอยู่เป็นปุ่มรอง (FlowScreen โชว์ให้ที่ขั้น 5 เมื่อไม่พร้อม) — งานไม่ทิ้ง
+      primaryLabel = `ยังมี ${missingForSubmit.length} จุดผิด · แก้ให้ครบก่อน`;
+      primaryColor = "#F1F2F5";
+      primaryAction = () => {};
     } else {
       // แดง = เตือน ไม่ได้ห้ามส่ง (CEO 2026-07-13) → กดยืนยันได้เสมอเมื่อเลขครบ
       primaryLabel = pending ? "กำลังส่ง..." : allMatch ? "ยืนยันกระทบยอด" : "ยืนยันส่งข้อมูล (มีจุดไม่ตรง)";
@@ -3024,8 +3023,15 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "6px 18px 22px" }}>
 
         {okMsg ? (
-          <div style={{ borderRadius: 14, background: "#EFFAF3", border: "1px solid #C8E9D3", color: "#15803D", padding: "14px 16px", fontSize: 14, fontWeight: 700, textAlign: "center" }}>
-            {okMsg}
+          /* overlay เขียวเต็มจอ "เปลี่ยนตุ๊กตาสำเร็จ" (mockup SWAP-09) */
+          <div style={{ position: "absolute", inset: 0, zIndex: 30, background: "rgba(21,128,61,0.96)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 26 }}>
+            <div style={{ width: 82, height: 82, borderRadius: "50%", background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+              <Check size={46} strokeWidth={2.4} color="#fff" />
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 8 }}>เปลี่ยนตุ๊กตาสำเร็จ</div>
+            <div style={{ fontSize: 13.5, color: "#fff", opacity: 0.9, lineHeight: 1.6, maxWidth: 280 }}>
+              บันทึกรอบเปลี่ยนตุ๊กตาตู้ <span className="num">{machine.code}</span> แล้ว<br />ไม่มีการเก็บเงินในรอบนี้
+            </div>
           </div>
         ) : (
           <>
@@ -3054,7 +3060,12 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                           </span>
                         ) : (
                           <>
-                            {d.unitCostCents ? <div className="num" style={{ fontSize: 10, color: "#9AA1AB", marginTop: 1 }}>ทุน ฿{Math.round(d.unitCostCents / 100)}</div> : null}
+                            {/* mockup SW-03: "ทุน ฿90 · ขาย ฿250" (ขาย = ราคาต่อตู้จากหน้าตั้งค่า) */}
+                            {(d.unitCostCents || machine.sellPriceCents) ? (
+                              <div className="num" style={{ fontSize: 10, color: "#9AA1AB", marginTop: 1 }}>
+                                {[d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null, machine.sellPriceCents ? `ขาย ฿${Math.round(machine.sellPriceCents / 100)}` : null].filter(Boolean).join(" · ")}
+                              </div>
+                            ) : null}
                             <button type="button" onClick={() => setReturnedSku((c) => ({ ...c, [d.productId]: true }))}
                               style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 600, color: "#6B7280", background: "none", border: "none", padding: 0, marginTop: 3, cursor: "pointer" }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
@@ -3166,12 +3177,12 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                 <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 11, border: "1.5px dashed #C9CFD8", background: "#FAFBFC", fontSize: 12, fontWeight: 700, color: "#9AA1AB" }}>ตัวอย่าง · ถ่ายรูปไม่ได้</div>
               ) : (
                 <>
-                  <div style={{ flex: 1, minWidth: 0, borderRadius: 11, overflow: "hidden", border: `1.5px ${swapPhotoBefore ? "solid #BFE6CB" : "dashed #C9CFD8"}`, background: swapPhotoBefore ? "#F2FBF5" : "#FAFBFC" }}>
-                    <PhotoCaptureButton label={swapPhotoBefore ? "ก่อนเติม ✓" : "ถ่ายก่อนเติม"} value={swapPhotoBefore} onChange={setSwapPhotoBefore}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PhotoCaptureButton slim label={swapPhotoBefore ? "ก่อนเติม ✓" : "ถ่ายก่อนเติม"} value={swapPhotoBefore} onChange={setSwapPhotoBefore}
                       orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock" />
                   </div>
-                  <div style={{ flex: 1, minWidth: 0, borderRadius: 11, overflow: "hidden", border: `1.5px ${swapPhotoAfter ? "solid #BFE6CB" : "dashed #C9CFD8"}`, background: swapPhotoAfter ? "#F2FBF5" : "#FAFBFC" }}>
-                    <PhotoCaptureButton label={swapPhotoAfter ? "หลังเติม ✓" : "ถ่ายหลังเติม"} value={swapPhotoAfter} onChange={setSwapPhotoAfter}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PhotoCaptureButton slim label={swapPhotoAfter ? "หลังเติม ✓" : "ถ่ายหลังเติม"} value={swapPhotoAfter} onChange={setSwapPhotoAfter}
                       orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock_after" />
                   </div>
                 </>
@@ -3887,7 +3898,7 @@ function FlowScreen(props: {
   const [nicknameOpen, setNicknameOpen] = useState(false);
   // ── ดีไซน์ใหม่ · หน้ากระทบยอด: overlay ดูรูป + การ์ดที่กางแก้ (VISUAL — money math มาจาก recon/props ตามเดิม) ──
   const [photoView, setPhotoView] = useState<null | "meter" | "after">(null);
-  const [reconFix, setReconFix] = useState<null | "cash" | "dolls">(null);
+  const [reconFix, setReconFix] = useState<null | "cash" | "dolls" | "meter" | "photo">(null);
   // ── ดีไซน์ใหม่ · สเต็ป 1 นับตุ๊กตาเหลือ "รายตัว/SKU" → รวมเป็น f.left (สัญญาเดินเงินเดิมไม่เปลี่ยน · left = Σ) ──
   // เก็บใน f.remainBySku (ไม่ใช่ state ในจอ) → บันทึกค้าง/กลับมาทำต่อ แล้วเลขรายตัวยังตรงกับ left เสมอ.
   const inDolls = props.inMachineDolls;
@@ -3944,19 +3955,34 @@ function FlowScreen(props: {
     }
   }
   const cashN = n0(f.cash);
-  // ยังกรอกไม่ครบ → หน้ากระทบยอดโชว์จอ "บันทึกค้างไว้" แทน (ปิดรอบด้วยเลขไม่ครบ = ยอดผิด)
-  const notReady = props.missingForSubmit.length > 0;
   // นโยบายบริษัทบังคับรูป + ยังไม่ถ่าย → เตือนที่ขั้น 1 (ไม่บล็อก · แค่ให้รู้ตั้งแต่ยังอยู่หน้าตู้)
   const photoGateWarn = props.photoRequired && !(props.photosCaptured.before && props.photosCaptured.after);
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
   const moneyDiff = cashN - recon.expectedCash;
-  const photoOk = !!photos.before && !!photos.after;
-  const dollsOk = recon.dollMatch;
-  const meterOk = recon.meterEqualOk;
-  const cashOk = recon.cashMatch; // ADVISORY (client เดา ฿10/เกม) — ไม่นับเป็น issue
-  const photoIssue = props.photoRequired && !photoOk;
-  const reconIssues = (dollsOk ? 0 : 1) + (meterOk ? 0 : 1) + (photoIssue ? 1 : 0);
-  const allGood = recon.allMatch && !photoIssue;
+  /* ── หน้ากระทบยอด (mockup-match 2026-07-16 · CEO: "จบในหน้าเดียว ห้ามจอบล็อก") ──
+   * โชว์สรุป + การ์ดผลตรวจ 4 ใบเสมอ · ข้อมูลที่ "ขาด" = การ์ดแดงพร้อมช่องกรอก/ปุ่มถ่ายตรงนั้นเลย
+   * แต่ละการ์ดมี 2 เฉดแดง: ขาด (ยังไม่กรอก/ไม่ถ่าย = บล็อกปิดรอบ) vs ไม่ตรง (เลขครบแต่แย้งกัน = เตือน กดส่งได้ · มติ 13 ก.ค.) */
+  const meterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi);
+  const photoOk = !!props.photosCaptured.before && !!props.photosCaptured.after; // ถ่ายแล้วนับเลย (upload วิ่งเบื้องหลัง)
+  const dollsMissing = !isFilled(f.left);
+  const dollsMismatch = !dollsMissing && meterFilled && recon.dollDelta !== dispensed;
+  const cashMissing = !isFilled(f.cash);
+  const cashMismatch = !cashMissing && meterFilled && moneyDiff !== 0; // ADVISORY (≈฿10/เกม · server ใช้ราคาจริง)
+  const meterMissing = !meterFilled;
+  const meterUnequal = meterFilled && !recon.meterEqualOk;
+  const photoMissing = props.photoRequired && !photoOk;
+  const dollsOk = !dollsMissing && !dollsMismatch && meterFilled;
+  const meterOk = meterFilled && recon.meterEqualOk;
+  const cashOk = !cashMissing && !cashMismatch && meterFilled;
+  // จำนวน "จุดแดง" บนจอ (โชว์ใน hero · ตรง mockup "พบ N จุดผิดปกติ") — รวมทั้งขาดและไม่ตรง
+  const reconIssues =
+    (dollsMissing || dollsMismatch ? 1 : 0) +
+    (cashMissing || cashMismatch ? 1 : 0) +
+    (meterMissing || meterUnequal ? 1 : 0) +
+    (photoMissing ? 1 : 0);
+  const allGood = reconIssues === 0;
+  // ยังกรอกไม่ครบ (บล็อกปุ่มยืนยันจริง · missingForSubmit มาจาก StaffApp = ตัวเดียวกับตาข่าย submitRound)
+  const notReady = props.missingForSubmit.length > 0;
   const costPerDoll = dispensed > 0 ? Math.round(cashN / dispensed) : 0;
   // ต้นทุนคีบ/ตัว ควรอยู่ ฿150–350 (retune advice) — VISUAL แนะนำ ไม่บล็อกการส่ง
   let retuneLabel = "กำลังดี", retuneColor = "#15803D", retuneBg = "#E7F4EC", retuneHint = "";
@@ -4041,7 +4067,8 @@ function FlowScreen(props: {
                   );
                 })}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "#FAFBFC" }}>
-                  <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้ <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว <span style={{ color: "#B6BBC4" }}>· รอบก่อน {f.last} · ออก {dispensed}</span></span>
+                  {/* mockup โชว์แค่ "เหลือในตู้ N ตัว" (+ คืนสโตร์เมื่อมี) — เลข "ออก" ไปโผล่หน้ากระทบยอด */}
+                  <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้ <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว</span>
                   {(f.returnedTotal ?? 0) > 0 && <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#15803D", whiteSpace: "nowrap" }}>↩ คืนสโตร์ {f.returnedTotal} ตัว</span>}
                 </div>
                 {returnErr && <div style={{ padding: "8px 13px", fontSize: 11.5, color: "#B42318", fontWeight: 600, background: "#FDF3F2" }}>{returnErr}</div>}
@@ -4093,18 +4120,12 @@ function FlowScreen(props: {
               </div>
             )}
 
-            {/* ── รูปยืนยัน (ก่อน/หลังเติม) — 2 ปุ่มเรียงคู่ตามตัวอย่าง · ไม่บล็อกการกดถัดไป ── */}
+            {/* ── รูปยืนยัน (ก่อน/หลังเติม) — 2 ปุ่ม slim เรียงคู่ตาม mockup · ไม่บล็อกการกดถัดไป ──
+                คำเตือนนโยบายรูป ย่อเหลือท้ายหัวข้อบรรทัดเดียว (กล่อง amber เดิมกินที่ · CEO สั่งย่อ) */}
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", margin: "14px 0 8px" }}>
-              รูปยืนยัน (ก่อน/หลังเติม) <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ถ่ายทีหลังได้</span>
+              รูปยืนยัน (ก่อน/หลังเติม)
+              {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
             </div>
-            {/* เตือน "ตอนยังยืนอยู่หน้าตู้" — ไม่บล็อก แต่บอกตรง ๆ ว่าเดี๋ยวปิดรอบไม่ได้ถ้าไม่มีรูป
-                (ถ้าไม่เตือนตรงนี้ พนักงานจะไปรู้ตอนอยู่ไกลตู้แล้ว → ได้รูปมั่ว ๆ ที่ไม่มีค่าเป็นหลักฐาน) */}
-            {photoGateWarn && (
-              <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#FFFBF3", border: "1px solid #F0D8AE", borderRadius: 10, padding: "9px 12px", marginBottom: 9, fontSize: 11.5, fontWeight: 600, color: "#B45309", lineHeight: 1.4 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flex: "0 0 15px" }}><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
-                ถ่ายตอนนี้เลยดีกว่า — บริษัทตั้งให้ต้องมีรูปก่อนปิดรอบ (กดถัดไปก่อนได้ แต่ต้องกลับมาถ่าย)
-              </div>
-            )}
             <div style={{ display: "flex", gap: 9 }}>
               <PhotoTile label="ก่อนเติม" value={photos.before} captured={!!props.photosCaptured.before}
                 onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
@@ -4182,218 +4203,237 @@ function FlowScreen(props: {
                 style={{ flex: 1, minWidth: 0, fontSize: 22, fontWeight: 700, padding: "6px 4px", border: "none", background: "transparent", outline: "none" }} />
               <span style={{ fontSize: 12, color: "#9AA1AB" }}>บาท</span>
             </div>
-            {/* ระบบคำนวณให้อัตโนมัติ — พรีวิวก่อนไปหน้ากระทบยอด (เลขตรงกับที่ server จะกระทบยอด) */}
+            {/* ระบบคำนวณให้อัตโนมัติ — พรีวิวก่อนไปหน้ากระทบยอด (เลขตรงกับที่ server จะกระทบยอด)
+                มิเตอร์ยังไม่กรอก → โชว์ "—" (เดิมโชว์ "+-12 / ฿-90" เลขหลอกจาก null→0 ลบค่ารอบก่อน) */}
             <div style={{ background: "#F1F2FE", border: "1px solid #DEE0FA", borderRadius: 12, padding: "13px 15px" }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", marginBottom: 9 }}>ระบบคำนวณให้อัตโนมัติ</div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{dispensed} ตัว</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700 }}>+{recon.dollDelta}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700 }}>฿{recon.expectedCash}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.left) ? `${dispensed} ตัว` : "—"}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.dollDigi) ? `+${recon.dollDelta}` : "—"}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.coinDigi) ? `฿${recon.expectedCash}` : "—"}</span></div>
             </div>
           </div>
         )}
 
         {step === 5 && (
-          notReady ? (
-            // ยังกรอกไม่ครบ (มิเตอร์/เงินสด/นับเหลือ) → ปิดรอบไม่ได้ (กันยอดผิดเข้าระบบ)
-            // แต่ไม่ทิ้งงาน: ปุ่มล่าง = "บันทึกค้างไว้ · ไปเก็บตู้อื่น" · secondary = "กลับไปกรอกให้ครบ"
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "20px 8px" }}>
-              <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#FCF1E2", color: "#B45309", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="9" /></svg>
-              </div>
-              <div style={{ fontSize: 16.5, fontWeight: 700, marginBottom: 6 }}>ยังกรอกไม่ครบ · ปิดรอบไม่ได้</div>
-              <div style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.6, maxWidth: 285, marginBottom: 14 }}>
-                ที่กรอก/ถ่ายไว้ — <b style={{ color: "#1A1D21" }}>เก็บไว้ครบแล้ว ไม่หาย</b>. กด <b style={{ color: "#B45309" }}>บันทึกค้างไว้</b> ไปเก็บตู้อื่นต่อ แล้วกลับมากรอกให้ครบทีหลังได้
-              </div>
-              {/* ขาดอะไรบ้าง — บอกตรง ๆ ให้รู้ว่าต้องกลับไปเติมตรงไหน */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", maxWidth: 300, marginBottom: 14 }}>
-                {props.missingForSubmit.map((m) => (
-                  <div key={m} style={{ display: "flex", alignItems: "center", gap: 8, background: "#FFFBF3", border: "1px solid #F0D8AE", borderRadius: 10, padding: "9px 12px", fontSize: 12, fontWeight: 600, color: "#B45309" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flex: "0 0 14px" }}><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
-                    ยังไม่ได้กรอก: {m}
-                  </div>
-                ))}
-              </div>
-              {/* สรุปสั้น ๆ ของที่เก็บไว้แล้ว (อ่านปราดเดียว · กันกังวลว่าข้อมูลหาย) */}
-              <div style={{ display: "flex", gap: 9, width: "100%", maxWidth: 300 }}>
-                <div style={{ flex: 1, background: "#F2FBF5", border: "1px solid #CDE9D7", borderRadius: 12, padding: "11px 8px" }}>
-                  <div style={{ fontSize: 10, color: "#6B7280", marginBottom: 2 }}>เงินสด</div>
-                  <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#15803D" }}>฿{n0(f.cash).toLocaleString("en-US")}</div>
-                </div>
-                <div style={{ flex: 1, background: "#F6F7FA", border: "1px solid #E8EAED", borderRadius: 12, padding: "11px 8px" }}>
-                  <div style={{ fontSize: 10, color: "#6B7280", marginBottom: 2 }}>ตุ๊กตาออก</div>
-                  <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{dispensed}</div>
+          <div>
+            {/* ═══ กระทบยอด — จบในหน้าเดียวเสมอ (mockup C3) · ไม่มีจอบล็อกอีกต่อไป ═══ */}
+            {/* hero: เขียว = ครบ+ตรงหมด · แดง = มีจุดต้องดู (บอกจำนวน + ความหมายตรงเงื่อนไขปุ่มจริง) */}
+            <div style={{ display: "flex", alignItems: "center", gap: 13, background: allGood ? "#E7F4EC" : "#FBECEC", border: `1px solid ${allGood ? "#BFE6CB" : "#EBC6C2"}`, borderRadius: 14, padding: "15px 16px", marginBottom: 14 }}>
+              <span style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: "50%", background: allGood ? "#15803D" : "#C0392B", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {allGood ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                )}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: allGood ? "#15803D" : "#C0392B" }}>{allGood ? "ยอดตรงกันทั้งหมด" : `พบ ${reconIssues} จุดผิดปกติ`}</div>
+                <div style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
+                  {allGood ? "มิเตอร์ เงินสด ตุ๊กตา และรูป สอดคล้องกัน — ยืนยันส่งได้เลย"
+                    : notReady ? "จุดสีแดงกรอก/ถ่ายได้ตรงนั้นเลย — ครบแล้วปุ่มยืนยันจะเปิด" : "แดง = เตือน · ตรวจสอบแล้วกดยืนยันได้"}
                 </div>
               </div>
             </div>
-          ) : (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 13, background: allGood ? "#E7F4EC" : "#FBECEC", border: `1px solid ${allGood ? "#BFE6CB" : "#EBC6C2"}`, borderRadius: 14, padding: "15px 16px", marginBottom: 14 }}>
-                <span style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: "50%", background: allGood ? "#15803D" : "#C0392B", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {allGood ? (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                  ) : (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+
+            {/* สรุปรอบนี้ (2×2) + คืนสโตร์ + ต้นทุน/retune — โชว์เสมอ (ช่องที่ยังไม่กรอก = "—") */}
+            <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 11 }}>สรุปรอบนี้ · {machine?.code ?? "—"}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
+                <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบที่แล้วมีตุ๊กตา</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{f.last} ตัว</div></div>
+                <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้ (หลังเติม)</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{isFilled(f.left) ? `${afterFill} ตัว` : "—"}</div></div>
+                <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{isFilled(f.left) ? `${dispensed} ตัว` : "—"}</div></div>
+                <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บเงินได้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>{isFilled(f.cash) ? `฿${cashN.toLocaleString("en-US")}` : "—"}</div></div>
+              </div>
+              {(f.returnedTotal ?? 0) > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 11, fontSize: 11.5, color: "#15803D", fontWeight: 600 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
+                  คืนเข้าสโตร์รอบนี้ {f.returnedTotal} ตัว (ไม่นับเป็นลูกค้าคีบ)
+                </div>
+              )}
+              {isFilled(f.cash) && isFilled(f.left) && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13, paddingTop: 12, borderTop: "1px solid #F0F1F4" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ต้นทุนเฉลี่ย/ตัว (เก็บได้ ÷ ออก)</div>
+                      <div className="num" style={{ fontSize: 15, fontWeight: 700 }}>฿{costPerDoll} <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 500 }}>ควรอยู่ ฿150–350</span></div>
+                    </div>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: retuneBg, color: retuneColor, whiteSpace: "nowrap" }}>{retuneLabel}</span>
+                  </div>
+                  {needRetune && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "9px 11px" }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
+                      <span style={{ fontSize: 11.5, color: "#8A5A12", lineHeight: 1.4 }}>{retuneHint} → เสนอปรับตั้งค่าตู้ได้ด้านล่าง (รอเจ้าของอนุมัติ)</span>
+                    </div>
                   )}
+                </>
+              )}
+            </div>
+
+            {/* ตัวเลขต่างจากปกติมากผิดปกติ → เตือนตรวจว่ากรอกถูกตู้ (เฉพาะเมื่อกรอกครบพอจะตัดสิน) */}
+            {!notReady && wrongMachine && (
+              <div style={{ display: "flex", gap: 10, background: "#FBECEC", border: "1px solid #E9B8B4", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.1" style={{ flex: "0 0 18px", marginTop: 1 }}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 700, color: "#C0392B" }}>ตัวเลขต่างจากปกติมากผิดปกติ</div><div style={{ fontSize: 11.5, color: "#93453C", marginTop: 3, lineHeight: 1.45 }}>ลองตรวจว่ากรอกถูกตู้ ({machine?.code ?? "—"}) ถูกช่องหรือไม่ ก่อนยืนยัน</div></div>
+              </div>
+            )}
+
+            {/* ── การ์ดผลตรวจ 4 ใบ (ตุ๊กตา/เงิน/มิเตอร์/รูป) — ขาด = กรอก/ถ่ายตรงนั้นเลย ── */}
+            <ReconCard ok={dollsOk}
+              title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "ตุ๊กตา — รอเลขมิเตอร์"}
+              detail={dollsMissing ? "นับที่เหลือในตู้แล้วกรอกตรงนี้ได้เลย — ระบบคำนวณตุ๊กตาที่ออกให้"
+                : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา +${recon.dollDelta}` : ""}`}
+              actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
+              expanded={reconFix === "dolls" ? (
+                <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
+                  <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num" placeholder="นับแล้วกรอก"
+                      style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                    <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
+                  </div>
+                </div>
+              ) : undefined} />
+
+            <ReconCard ok={cashOk}
+              title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "เงินสด — รอเลขมิเตอร์"}
+              detail={cashMissing ? "นับเงินในตู้แล้วกรอกตรงนี้ได้เลย"
+                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ +${coinDelta} → คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)` : ""}`}
+              actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : cashMissing ? "กรอกเลย" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
+              expanded={reconFix === "cash" ? (
+                <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
+                  <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>ยอดเงินสดที่นับได้ (บาท)</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="text" inputMode="numeric" value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} className="num" placeholder="นับเงินแล้วกรอก"
+                      style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                    <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
+                  </div>
+                </div>
+              ) : undefined} />
+
+            <ReconCard ok={meterOk}
+              title={meterMissing ? "ยังไม่ได้กรอกเลขมิเตอร์ 4 ช่อง" : meterUnequal ? "มิเตอร์ บน/ล่าง ไม่เท่ากัน" : "มิเตอร์ บน=ล่าง · ครบ 4 ตัว"}
+              detail={`เงิน ${isFilled(f.coinGear) ? n0(f.coinGear) : "—"}/${isFilled(f.coinDigi) ? n0(f.coinDigi) : "—"} · ตุ๊กตา ${isFilled(f.dollGear) ? n0(f.dollGear) : "—"}/${isFilled(f.dollDigi) ? n0(f.dollDigi) : "—"}`}
+              actions={
+                <span style={{ display: "flex", gap: 6 }}>
+                  <ReconPill onClick={() => setPhotoView("meter")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
+                    icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
+                  <ReconPill onClick={() => setReconFix(reconFix === "meter" ? null : "meter")} label={reconFix === "meter" ? "ปิด" : meterOk ? "แก้เลข" : "กรอกเลย"} color={meterOk ? "#4F46E5" : "#fff"} bg={meterOk ? "#EEF0FE" : "#C0392B"} />
                 </span>
-                <div style={{ flex: 1 }}>
-                  {/* (CEO 2026-07-13) แดง = เตือน ไม่ได้ห้ามส่ง — พนักงานเคยเข้าใจผิดว่ากดยืนยันไม่ได้. */}
-                  <div style={{ fontSize: 16, fontWeight: 700, color: allGood ? "#15803D" : "#C0392B" }}>{allGood ? "ยอดตรงกันทั้งหมด" : `พบ ${reconIssues} จุดไม่ตรง`}</div>
-                  <div style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>{allGood ? "มิเตอร์ เงินสด ตุ๊กตา และรูป สอดคล้องกัน — ยืนยันส่งได้เลย" : "จุดสีแดงด้านล่าง ตรวจแล้วแก้ให้ตรงก่อนยืนยัน (แดง = เตือน ไม่ได้ห้ามส่ง)"}</div>
-                </div>
-              </div>
-
-              {/* สรุปรอบนี้ + ต้นทุนคีบ/ตัว + retune advice (ดีไซน์ใหม่) */}
-              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 11 }}>สรุปรอบนี้ · {machine?.code ?? "—"}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
-                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบที่แล้วมีตุ๊กตา</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{f.last} ตัว</div></div>
-                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้ (หลังเติม)</div><div className="num" style={{ fontSize: 17, fontWeight: 700 }}>{afterFill} ตัว</div></div>
-                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{dispensed} ตัว</div></div>
-                  <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บเงินได้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{cashN.toLocaleString("en-US")}</div></div>
-                </div>
-                {/* คืนเข้าสโตร์รอบนี้ — ตัวที่คืน ไม่ถูกนับเป็น "ลูกค้าคีบ" (ตรงกับที่ server กระทบยอด) */}
-                {(f.returnedTotal ?? 0) > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 11, fontSize: 11.5, color: "#15803D", fontWeight: 600 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
-                    คืนเข้าสโตร์รอบนี้ {f.returnedTotal} ตัว (ไม่นับเป็นลูกค้าคีบ)
+              }
+              expanded={reconFix === "meter" ? (
+                // กรอกมิเตอร์ตรงนี้ได้เลย — ช่องเดียวกับขั้น 2 (state ตัวเดียวกัน · แค่ render ซ้ำ)
+                <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
+                  <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>เลขมิเตอร์ 4 ช่อง (บน = ล่าง)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {METER_CELLS.map((c) => (
+                      <div key={c.key}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>{c.label}</div>
+                        <input value={f[c.key] == null ? "" : String(f[c.key])} onChange={(e) => props.setNum(c.key)(e.target.value)} inputMode="numeric" className="num"
+                          style={{ width: "100%", minWidth: 0, fontSize: 14, fontWeight: 700, padding: "7px 9px", border: "1px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
+                      </div>
+                    ))}
                   </div>
+                  <button type="button" onClick={() => setReconFix(null)} style={{ width: "100%", marginTop: 9, fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 10, borderRadius: 9, cursor: "pointer" }}>ใช้เลขนี้</button>
+                </div>
+              ) : undefined} />
+
+            <ReconCard ok={!photoMissing}
+              title={photoMissing ? "รูปยังไม่ครบ — แนบตรงนี้ได้เลย" : photoOk ? "รูปหลักฐาน ครบ 2/2" : "รูปหลักฐาน (ไม่บังคับ)"}
+              detail={`ก่อนเติม ${props.photosCaptured.before ? "✓" : "— ยังไม่แนบ"} · หลังเติม ${props.photosCaptured.after ? "✓" : "— ยังไม่แนบ"}`}
+              actions={
+                <span style={{ display: "flex", gap: 6 }}>
+                  {photoOk && <ReconPill onClick={() => setPhotoView("after")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
+                    icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />}
+                  {!photoOk && <ReconPill onClick={() => setReconFix(reconFix === "photo" ? null : "photo")} label={reconFix === "photo" ? "ปิด" : "แนบรูป"} color="#fff" bg={photoMissing ? "#C0392B" : "#4F46E5"} />}
+                </span>
+              }
+              expanded={reconFix === "photo" ? (
+                // ถ่ายจริงตรงนี้เลย (PhotoTile จริง อัปโหลดจริง — ไม่ใช่ปุ่มติ๊กหลอกแบบ mockup)
+                <div style={{ margin: "10px 0 2px 31px", display: "flex", gap: 8 }}>
+                  <PhotoTile label="ก่อนเติม" value={photos.before} captured={!!props.photosCaptured.before}
+                    onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
+                    orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} />
+                  <PhotoTile label="หลังเติม" value={photos.after} captured={!!props.photosCaptured.after}
+                    onChange={(url) => props.onPhoto("after", url)} onCaptured={() => props.onCapture("after")}
+                    orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} />
+                </div>
+              ) : undefined} />
+
+            {props.tooHard && (
+              <div style={{ marginTop: 14, background: "#FCF1E2", border: "1px solid #F0D8AE", borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#7A5510" }}>ตู้นี้อาจตั้งยากเกินไป</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#7A5510", lineHeight: 1.5, marginBottom: 11 }}>เก็บเงินได้ <b className="num">฿{n0(f.cash)}</b> แต่ตุ๊กตาออก <b>0 ตัว</b> เสี่ยงเสียลูกค้า ต้องการเสนอปรับความแรงการคีบไหม?</div>
+                {props.configSent ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#15803D", background: "#E7F4EC", borderRadius: 10, padding: "11px 14px" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>ส่งคำขอตั้งค่าแล้ว · สถานะ “รอตรวจ”
+                  </div>
+                ) : (
+                  <button type="button" onClick={props.sendConfig} style={{ width: "100%", fontSize: 13, fontWeight: 600, color: "#fff", background: "#B45309", border: "none", padding: 11, borderRadius: 10, cursor: "pointer" }}>เสนอตั้งค่าตู้ใหม่ (ส่งให้เจ้าของตรวจ)</button>
                 )}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13, paddingTop: 12, borderTop: "1px solid #F0F1F4" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ต้นทุนเฉลี่ย/ตัว (เก็บได้ ÷ ออก)</div>
-                    <div className="num" style={{ fontSize: 15, fontWeight: 700 }}>฿{costPerDoll} <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 500 }}>ควรอยู่ ฿150–350</span></div>
-                  </div>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: retuneBg, color: retuneColor, whiteSpace: "nowrap" }}>{retuneLabel}</span>
-                </div>
-                {needRetune && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "9px 11px" }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" style={{ flex: "0 0 15px" }}><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
-                    <span style={{ fontSize: 11.5, color: "#8A5A12", lineHeight: 1.4 }}>{retuneHint} → เสนอปรับตั้งค่าตู้ได้ด้านล่าง (รอเจ้าของอนุมัติ)</span>
-                  </div>
-                )}
               </div>
+            )}
 
-              {/* ตัวเลขต่างจากปกติมากผิดปกติ → เตือนตรวจว่ากรอกถูกตู้/ถูกช่อง (ดีไซน์ใหม่) */}
-              {wrongMachine && (
-                <div style={{ display: "flex", gap: 10, background: "#FBECEC", border: "1px solid #E9B8B4", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C0392B" strokeWidth="2.1" style={{ flex: "0 0 18px", marginTop: 1 }}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
-                  <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 700, color: "#C0392B" }}>ตัวเลขต่างจากปกติมากผิดปกติ</div><div style={{ fontSize: 11.5, color: "#93453C", marginTop: 3, lineHeight: 1.45 }}>ลองตรวจว่ากรอกถูกตู้ ({machine?.code ?? "—"}) ถูกช่องหรือไม่ ก่อนยืนยัน</div></div>
-                </div>
-              )}
-
-              {/* การ์ดคำแนะนำ · ตุ๊กตา / เงินสด / มิเตอร์ / รูป (ดีไซน์ใหม่) */}
-              <ReconCard ok={dollsOk} title={dollsOk ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "ตุ๊กตาออก ไม่ตรงมิเตอร์"}
-                detail={`นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} → เหลือ ${n0(f.left)}) · มิเตอร์ตุ๊กตา +${recon.dollDelta}`}
-                actions={!dollsOk ? <ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : "แก้เลข"} color="#fff" bg="#C0392B" /> : undefined}
-                expanded={reconFix === "dolls" ? (
-                  <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
-                    <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>แก้จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num"
-                        style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
-                      <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
-                    </div>
-                  </div>
-                ) : undefined} />
-
-              <ReconCard ok={cashOk} title={cashOk ? "เงินสด ตรงกับมิเตอร์" : `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}`}
-                detail={`เก็บได้ ฿${cashN} · มิเตอร์เหรียญเพิ่ม ${coinDelta} → คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)`}
-                actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
-                expanded={reconFix === "cash" ? (
-                  <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
-                    <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>กรอกยอดเงินที่นับใหม่ (บาท)</div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input type="text" inputMode="numeric" value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} className="num"
-                        style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
-                      <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
-                    </div>
-                  </div>
-                ) : undefined} />
-
-              <ReconCard ok={meterOk} title={meterOk ? "มิเตอร์ บน=ล่าง ครบ 4 ช่อง" : "มิเตอร์ บน/ล่าง ไม่เท่ากัน"}
-                detail={`เงิน ${n0(f.coinGear)}/${n0(f.coinDigi)} · ตุ๊กตา ${n0(f.dollGear)}/${n0(f.dollDigi)}`}
-                actions={
-                  <span style={{ display: "flex", gap: 6 }}>
-                    <ReconPill onClick={() => setPhotoView("meter")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
-                      icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
-                    {!meterOk && <ReconPill onClick={props.onBack} label="กลับไปแก้" color="#fff" bg="#C0392B" />}
-                  </span>
-                } />
-
-              <ReconCard ok={photoOk} title={photoOk ? "รูป ครบ 2/2" : "รูป ยังไม่ครบ"}
-                detail={`ก่อนเติม ${photos.before ? "✓ ถ่ายแล้ว" : "✗ ยังไม่ถ่าย"} · หลังเติม ${photos.after ? "✓ ถ่ายแล้ว" : "✗ ยังไม่ถ่าย"}`}
-                actions={photoOk ? <ReconPill onClick={() => setPhotoView("after")} label="ดูรูป" color="#4F46E5" bg="#EEF0FE"
-                  icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} /> : undefined} />
-
-              {props.tooHard && (
-                <div style={{ marginTop: 14, background: "#FCF1E2", border: "1px solid #F0D8AE", borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#7A5510" }}>ตู้นี้อาจตั้งยากเกินไป</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "#7A5510", lineHeight: 1.5, marginBottom: 11 }}>เก็บเงินได้ <b className="num">฿{n0(f.cash)}</b> แต่ตุ๊กตาออก <b>0 ตัว</b> เสี่ยงเสียลูกค้า ต้องการเสนอปรับความแรงการคีบไหม?</div>
-                  {props.configSent ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#15803D", background: "#E7F4EC", borderRadius: 10, padding: "11px 14px" }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>ส่งคำขอตั้งค่าแล้ว · สถานะ “รอตรวจ”
-                    </div>
-                  ) : (
-                    <button type="button" onClick={props.sendConfig} style={{ width: "100%", fontSize: 13, fontWeight: 600, color: "#fff", background: "#B45309", border: "none", padding: 11, borderRadius: 10, cursor: "pointer" }}>เสนอตั้งค่าตู้ใหม่ (ส่งให้เจ้าของตรวจ)</button>
-                  )}
-                </div>
-              )}
-
-              {/* N5 · ด่านเงินขาด — server คืน needsReason (verdict=SHORT) → ต้องเลือกเหตุผลก่อนส่งซ้ำ.
-                   verdict=SHORT เสมอเมื่อ needsReason (server กด OVER/OK/round-1 ผ่านเอง). */}
-              {props.mismatchGate?.active && (
-                <div style={{ marginTop: 14 }}>
-                  <MismatchGate
-                    verdict="SHORT"
-                    onConfirmShort={props.mismatchGate.onConfirmShort}
-                    onProceed={props.mismatchGate.onCancel}
-                  />
-                </div>
-              )}
-            </div>
-          )
+            {/* N5 · ด่านเงินขาด — server คืน needsReason (verdict=SHORT) → ต้องเลือกเหตุผลก่อนส่งซ้ำ */}
+            {props.mismatchGate?.active && (
+              <div style={{ marginTop: 14 }}>
+                <MismatchGate
+                  verdict="SHORT"
+                  onConfirmShort={props.mismatchGate.onConfirmShort}
+                  onProceed={props.mismatchGate.onCancel}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {step === 6 && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", paddingTop: 36 }}>
-            <div style={{ position: "relative", marginBottom: 18 }}>
-              <div style={{ position: "absolute", inset: -10, borderRadius: "50%", background: "#E7F4EC", opacity: 0.55 }} />
-              <div style={{ position: "relative", width: 88, height: 88, borderRadius: "50%", background: "#15803D", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 28px -10px rgba(21,128,61,0.55)" }}>
-                <Check size={44} strokeWidth={2.4} />
+          /* overlay เขียวเต็มจอ "กระทบยอดสำเร็จ" (mockup C3-16) — แทนหน้าขาวเดิม */
+          <div style={{ position: "absolute", inset: 0, zIndex: 25, background: "rgba(21,128,61,0.96)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 26 }}>
+            <div style={{ width: 82, height: 82, borderRadius: "50%", background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+              <Check size={46} strokeWidth={2.4} color="#fff" />
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 8 }}>กระทบยอดสำเร็จ</div>
+            <div style={{ fontSize: 13.5, color: "#fff", opacity: 0.9, lineHeight: 1.6, maxWidth: 280, marginBottom: 14 }}>
+              บันทึกรอบเก็บเงินของตู้ <span className="num">{machine?.code ?? "—"}</span> แล้ว<br />ข้อมูลถูกส่งเข้าระบบกันโกงอัตโนมัติ
+            </div>
+            <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300, marginBottom: 22 }}>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.14)", borderRadius: 13, padding: "12px 10px" }}>
+                <div style={{ fontSize: 10.5, color: "#D9F0E2", marginBottom: 3 }}>เก็บเงิน</div>
+                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#fff" }}>฿{n0(f.cash).toLocaleString("en-US")}</div>
+              </div>
+              <div style={{ flex: 1, background: "rgba(255,255,255,0.14)", borderRadius: 13, padding: "12px 10px" }}>
+                <div style={{ fontSize: 10.5, color: "#D9F0E2", marginBottom: 3 }}>ตุ๊กตาออก</div>
+                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#fff" }}>{dispensed} <span style={{ fontSize: 12, fontWeight: 600, color: "#D9F0E2" }}>ตัว</span></div>
               </div>
             </div>
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 6 }}>บันทึกรอบเก็บเงินแล้ว</div>
-            <div style={{ fontSize: 12.5, color: "#9AA1AB", lineHeight: 1.55, maxWidth: 260, marginBottom: 18 }}>ส่งข้อมูลเข้าระบบหลังบ้านเรียบร้อย · ตู้ <span className="num">{machine?.code ?? "—"}</span></div>
-            <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300 }}>
-              <div style={{ flex: 1, background: "#F2FBF5", border: "1px solid #CDE9D7", borderRadius: 13, padding: "13px 10px" }}>
-                <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>เก็บเงิน</div>
-                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#15803D" }}>฿{n0(f.cash).toLocaleString("en-US")}</div>
-              </div>
-              <div style={{ flex: 1, background: "#F6F7FA", border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 10px" }}>
-                <div style={{ fontSize: 10.5, color: "#6B7280", marginBottom: 3 }}>ตุ๊กตาออก</div>
-                <div className="num" style={{ fontSize: 19, fontWeight: 700, color: "#1A1D21" }}>{dispensed} <span style={{ fontSize: 12, fontWeight: 600, color: "#9AA1AB" }}>ตัว</span></div>
-              </div>
-            </div>
+            <button type="button" onClick={props.primary.action} className="co-tap"
+              style={{ fontSize: 13.5, fontWeight: 700, color: "#15803D", background: "#fff", border: "none", padding: "12px 26px", borderRadius: 12, cursor: "pointer" }}>
+              กลับหน้าแรก
+            </button>
           </div>
         )}
       </div>
 
-      {/* bottom bar — sticky · พื้นทึบ · ปุ่มหลักเต็มกว้าง แตะถนัด (≥48px) */}
+      {/* bottom bar — sticky · พื้นทึบ · ปุ่มหลักเต็มกว้าง แตะถนัด (≥48px)
+          ปุ่มเทา (#F1F2F5) = สถานะ "ยังมี N จุดผิด" ตาม mockup → ตัวหนังสือเทา ไม่มีเงา no-op */}
       <div style={{ padding: "14px 18px 22px", borderTop: "1px solid #EAECEF", background: "#fff" }}>
-        <button type="button" onClick={props.primary.action} disabled={props.primaryDisabled}
-          className={props.primaryDisabled ? "" : "co-tap co-pbtn"}
-          style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: props.primaryDisabled ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1, boxShadow: props.primaryDisabled ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
-          {props.primary.label}
-        </button>
-        {/* item 7 · "record & go" — ที่ขั้นเงินสด(4) โชว์ปุ่มเด่นให้ "บันทึกค้างไว้ · ไปตู้ต่อ"
-            เก็บ เติม+เงินสด+รูป ไว้แล้ว → ไปเก็บตู้อื่นต่อได้เลย ไม่ต้องกรอกมิเตอร์ก่อน
-            (reuse saveDraft · resume ที่มิเตอร์ทีหลัง · money-safe: รอบยังไม่ปิดจนกรอกมิเตอร์).
-            เลือกขั้น 4 (ไม่ใช่ขั้นเติม 2) เพื่อให้เงินสดถูกเก็บก่อน · ที่ขั้น 3 มีปุ่ม defer เดิมอยู่แล้ว.
+        {(() => {
+          const greyState = props.primary.color === "#F1F2F5";
+          return (
+            <button type="button" onClick={props.primary.action} disabled={props.primaryDisabled}
+              className={props.primaryDisabled || greyState ? "" : "co-tap co-pbtn"}
+              style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: greyState ? "#9AA1AB" : "#fff", border: "none", padding: "14px 16px", borderRadius: 13, cursor: props.primaryDisabled || greyState ? "not-allowed" : "pointer", background: props.primary.color, opacity: props.primaryDisabled ? 0.55 : 1, boxShadow: props.primaryDisabled || greyState ? "none" : "0 8px 18px -10px rgba(27,30,42,0.5)" }}>
+              {props.primary.label}
+            </button>
+          );
+        })()}
+        {/* "บันทึกค้างไว้ · ไปตู้ต่อ" — ขั้นมิเตอร์ (รีบ) + ขั้นกระทบยอดที่ยังกรอกไม่ครบ (งานไม่ทิ้ง)
+            (reuse saveDraft · resume กลับมากรอกต่อ · money-safe: รอบยังไม่ปิดจนเลขครบ)
             ซ่อนตอน demo (ไม่มี backend) · uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหาย). */}
-        {!props.usingDemo && props.step === 3 && (
+        {!props.usingDemo && (props.step === 3 || (props.step === 5 && notReady)) && (
           <button type="button" onClick={props.onSaveDraft} disabled={props.saveDraftBlocked}
             className={props.saveDraftBlocked ? "" : "co-tap"}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, marginTop: 9, fontSize: 14, fontWeight: 700, color: "#B45309", border: "1.5px solid #F0D8AE", padding: "12px 16px", borderRadius: 13, cursor: props.saveDraftBlocked ? "not-allowed" : "pointer", background: "#FFFBF3", opacity: props.saveDraftBlocked ? 0.6 : 1 }}>
@@ -4563,6 +4603,11 @@ function CountField({ value, onChange, size = 20, placeholder = "นับแล
  * แต่ละไลน์ = สินค้าคลังสาขา 1 ตัว (รูป+ชื่อ+คงคลัง) + จำนวนที่เติม (พิมพ์ได้ + −/+ · clamp ≤ คงคลัง).
  * "+ เพิ่ม SKU อีก" = เปิด BranchStockPicker เลือกตัวใหม่ (กันเลือกซ้ำ · ตัวที่เลือกแล้วถูกกรอง/disable).
  * รวมเติม = Σ qty (โชว์บาร์ล่าง). ไม่บล็อกเมื่อคลังหมด (server enforce) — เตือน amber เฉย ๆ. */
+/* ดีไซน์ใหม่ (mockup-match 2026-07-16) · โซนเติมตุ๊กตาแบบตัวอย่างเป๊ะ:
+ *  - ไลน์ที่เลือก = pill สีม่วงอ่อน (bg #F4F5FE · ชื่อ #3730B0 · − ขาว/+ ทึบ) → ต่างจากการ์ดนับสีขาว (แก้ "ตาลาย")
+ *  - catalog พับไว้หลังปุ่มเส้นประ "เลือก SKU จากคลังมาเติม" · เลือกแล้วปิดเอง (เดิมกางถาวร 9 แถว = หน้ายาว 1.77 จอ)
+ *  - − ที่จำนวน 1 = เอาไลน์ออก (พฤติกรรม mockup) · สัญญา onAdd/onSetQty/onRemove เดิมทุกตัว (money-safe)
+ */
 function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove }: {
   products: BranchStockProduct[];
   netById: Record<string, number>;
@@ -4571,67 +4616,34 @@ function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove
   onSetQty: (productId: string, qty: number) => void;
   onRemove: (productId: string) => void;
 }) {
-  // เปิด/ปิด picker เลือก SKU (โชว์ตอน "+ เพิ่ม SKU" · ครั้งแรกยังไม่มีไลน์ = เปิดค้างให้เลือกเลย)
-  const [adding, setAdding] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const pickedIds = new Set(lines.map((l) => l.productId));
-  // 🆕 remap "คงคลัง" → net "ของบนชั้นจริง" (คลัง − ในตู้) ให้ตรงกับ server guard เติม (net-per-room).
+  // remap "คงคลัง" → net "ของบนชั้นจริง" (คลัง − ในตู้) ให้ตรงกับ server guard เติม (net-per-room)
   const netProducts = products.map((p) => ({ ...p, warehouse: Math.max(0, netById[p.id] ?? 0) }));
-  // ตัวที่ยังไม่ถูกเลือก + มีของบนชั้น (net>0) — net≤0 ซ่อน (กันเพิ่มแล้วกรอกไม่ได้) · หมด = ปิดปุ่มเพิ่ม
-  const remaining = netProducts.filter((p) => !pickedIds.has(p.id) && p.warehouse > 0);
-  const total = lines.reduce((s, l) => s + Math.max(0, l.qty), 0);
-  const showPicker = adding || lines.length === 0; // ครั้งแรก: เปิด picker ให้เลือกเลย
+  const remaining = netProducts.filter((p) => !pickedIds.has(p.id));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <FieldLabel>เติมตุ๊กตาอะไร (จากสต็อกสาขา) · เลือกได้หลายตัว</FieldLabel>
-
-      {/* ไลน์ที่เลือกแล้ว — การ์ดต่อ SKU (รูป + ชื่อ + คงคลัง + จำนวน + ลบ) */}
+    <div>
+      {/* ไลน์ที่เลือกแล้ว — indigo pill (mockup C1-12) */}
       {lines.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 9 }}>
           {lines.map((l) => {
             const prod = netProducts.find((p) => p.id === l.productId);
-            const warehouse = prod?.warehouse ?? 0; // net ของบนชั้นจริง
-            const over = l.qty > warehouse; // เกินของบนชั้น → เตือน amber (ไม่บล็อก · server กันจริง)
-            // item 6 · แถวเล็กแนวนอน: รูป 32px + ชื่อ + SKU (muted) ซ้าย · stepper เล็กชิดขวา (การ์ดใหญ่เลือกยาก)
+            const cap = prod?.warehouse ?? 0;
+            const over = l.qty > cap; // เกินของบนชั้น → เตือน (ไม่บล็อก · server กันจริง)
             return (
-              <div key={l.productId} style={{ border: `1.5px solid ${over ? "#F0D8AE" : "#E8EAED"}`, background: over ? "#FEFBF3" : "#fff", borderRadius: 12, padding: "9px 10px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <DollThumb imageUrl={prod?.imageUrl ?? null} size={32} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
-                    {/* SKU (เล็ก muted) + ของบนชั้น พร้อมเติม — บรรทัดเดียว */}
-                    <div style={{ fontSize: 10.5, color: over ? "#B45309" : "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="num">
-                      {/* [D] (CEO 2026-07-13) โชว์ SKU เหลือบนชั้น "หลังเติม" (net − qty) ต่อไลน์. */}
-                      {prod?.sku ? `${prod.sku} · ` : ""}บนชั้น {warehouse} ตัว{l.qty > 0 ? ` → เหลือ ${Math.max(0, warehouse - l.qty)} หลังเติม` : ""}
-                    </div>
-                  </div>
-                  {/* จำนวนที่เติม — stepper เล็ก · พิมพ์ได้ + −/+ · clamp [0, คงคลัง] · money-safe */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "0 0 auto" }}>
-                    <button type="button" aria-label="ลด" onClick={() => onSetQty(l.productId, Math.max(0, l.qty - 1))} disabled={l.qty <= 0} className="co-tap"
-                      style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 9, border: "1.5px solid #E3E6EA", background: "#F6F7FA", fontSize: 18, fontWeight: 700, color: "#454B54", display: "flex", alignItems: "center", justifyContent: "center", cursor: l.qty <= 0 ? "not-allowed" : "pointer", opacity: l.qty <= 0 ? 0.5 : 1 }}>−</button>
-                    <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="0"
-                      value={l.qty === 0 ? "" : String(l.qty)}
-                      onChange={(e) => {
-                        // strip อักขระที่ไม่ใช่ตัวเลข + clamp ไม่ให้เกินคงคลัง (mirror CountField · money-safe)
-                        const raw = e.target.value.replace(/[^0-9]/g, "");
-                        onSetQty(l.productId, raw === "" ? 0 : Math.min(warehouse, Number(raw)));
-                      }}
-                      className="num"
-                      style={{ width: 44, flex: "0 0 44px", textAlign: "center", fontSize: 16, fontWeight: 700, padding: "8px 4px", border: "1.5px solid #E3E6EA", borderRadius: 9, background: "#fff" }} />
-                    <button type="button" aria-label="เพิ่ม" onClick={() => onSetQty(l.productId, Math.min(warehouse, l.qty + 1))} disabled={l.qty >= warehouse} className="co-tap"
-                      style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 9, border: "none", background: "#4F46E5", color: "#fff", fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", cursor: l.qty >= warehouse ? "not-allowed" : "pointer", opacity: l.qty >= warehouse ? 0.5 : 1 }}>+</button>
-                    {/* ลบไลน์นี้ */}
-                    <button type="button" aria-label="ลบสินค้านี้" onClick={() => onRemove(l.productId)} className="co-tap"
-                      style={{ width: 30, height: 34, flex: "0 0 30px", borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <X size={15} color="#9AA1AB" strokeWidth={2.2} />
-                    </button>
-                  </div>
+              <div key={l.productId}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F4F5FE", border: `1px solid ${over ? "#F0D9A8" : "#DDDFF7"}`, borderRadius: 12, padding: "8px 11px" }}>
+                  <DollThumb imageUrl={prod?.imageUrl ?? null} name={l.name} size={32} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: "#3730B0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+                  <span className="tap" onClick={() => (l.qty <= 1 ? onRemove(l.productId) : onSetQty(l.productId, l.qty - 1))}
+                    style={{ width: 27, height: 27, flex: "0 0 27px", borderRadius: 7, background: "#fff", border: "1px solid #DADBF8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>−</span>
+                  <span className="num" style={{ width: 26, textAlign: "center", fontSize: 14, fontWeight: 700, color: "#3730B0" }}>{l.qty}</span>
+                  <span className="tap" onClick={() => onSetQty(l.productId, Math.min(cap, l.qty + 1))}
+                    style={{ width: 27, height: 27, flex: "0 0 27px", borderRadius: 7, background: l.qty >= cap ? "#C7CBF5" : "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", cursor: "pointer", userSelect: "none" }}>+</span>
                 </div>
                 {over && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11, fontWeight: 600, color: "#B45309", background: "#FCF1E2", borderRadius: 8, padding: "6px 10px" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
-                    เกินของบนชั้น ({warehouse}) — ปรับจำนวนก่อนบันทึก
-                  </div>
+                  <div style={{ fontSize: 10.5, color: "#B45309", fontWeight: 600, margin: "4px 2px 0" }}>เกินของบนชั้น (มี {cap}) — ระบบจะเติมได้ไม่เกินที่มีจริง</div>
                 )}
               </div>
             );
@@ -4639,48 +4651,37 @@ function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove
         </div>
       )}
 
-      {/* เพิ่ม SKU — picker การ์ด (โชว์เมื่อกด "+ เพิ่ม" หรือยังไม่มีไลน์) · กันซ้ำ (แสดงเฉพาะ remaining) */}
-      {showPicker ? (
-        remaining.length > 0 ? (
-          <div style={{ border: "1.5px dashed #C7C3F0", background: "#FAFAFE", borderRadius: 14, padding: 12 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4338CA", marginBottom: 9 }}>เลือกสินค้าที่จะเติม</div>
-            <BranchStockPicker
-              products={remaining}
-              value={null}
-              onPick={(pid) => {
-                const p = remaining.find((x) => x.id === pid);
-                if (p) onAdd(pid, p.name);
-                setAdding(false); // เลือกแล้ว → ปิด picker (กดเพิ่มอีกได้)
-              }}
-            />
-            {lines.length > 0 && (
-              <button type="button" onClick={() => setAdding(false)} className="co-tap"
-                style={{ width: "100%", marginTop: 10, fontSize: 12.5, fontWeight: 600, color: "#6B7280", background: "transparent", border: "none", padding: "8px 0 2px", cursor: "pointer" }}>
-                ยกเลิก
-              </button>
-            )}
-          </div>
-        ) : (
-          <div style={{ fontSize: 11.5, color: "#9AA1AB", textAlign: "center", padding: "10px 0" }}>เลือกครบทุกสินค้าในคลังแล้ว</div>
-        )
-      ) : (
-        remaining.length > 0 && (
-          <button type="button" onClick={() => setAdding(true)} className="co-tap co-lift"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, borderRadius: 12, border: "1.5px dashed #C7C3F0", background: "#F5F5FE", color: "#4338CA", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
-            เพิ่ม SKU อีก
-          </button>
-        )
-      )}
+      {/* ปุ่มเส้นประ เปิด/ปิด catalog (mockup C1-13) */}
+      <button type="button" onClick={() => setCatalogOpen((v) => !v)} className="co-tap"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", background: "#fff", border: "1.5px dashed #C4C8FA", borderRadius: 11, padding: 11, fontSize: 12.5, fontWeight: 700, color: "#4F46E5", cursor: "pointer", marginBottom: 9 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
+        เลือก SKU จากคลังมาเติม
+      </button>
 
-      {/* running total — รวมเติมทุก SKU (ตรงกับที่ server จะคิด) */}
-      <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.45 }}>
-        เลขบนชั้น = ของว่างพร้อมเติม (หักที่อยู่ในตู้แล้ว) · เติมเข้าตู้ ระบบหักออกจากคลังให้
-      </div>
-      {lines.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F6F7FA", borderRadius: 11, padding: "11px 14px" }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "#5A6270" }}>รวมเติม ({lines.length} รายการ)</span>
-          <span className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{total} ตัว</span>
+      {/* catalog — เปิดเมื่อกดเท่านั้น · แตะแถว = เพิ่ม 1 ตัว + ปิดเอง (mockup C1-14) */}
+      {catalogOpen && (
+        <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 9 }}>
+          {remaining.length === 0 && (
+            <div style={{ padding: "12px 13px", fontSize: 12, color: "#9AA1AB" }}>{netProducts.length === 0 ? "คลังสาขานี้ยังไม่มีสินค้า" : "เลือกครบทุกแบบแล้ว"}</div>
+          )}
+          {remaining.map((c) => {
+            const out = c.warehouse <= 0;
+            return (
+              <div key={c.id} onClick={() => { if (out) return; onAdd(c.id, c.name); setCatalogOpen(false); }} className={out ? undefined : "co-tap"}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", borderBottom: "1px solid #F2F3F5", cursor: out ? "default" : "pointer", opacity: out ? 0.5 : 1 }}>
+                <DollThumb imageUrl={c.imageUrl} name={c.name} size={34} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                  <div className="num" style={{ fontSize: 10.5, color: out ? "#B42318" : "#9AA1AB" }}>{out ? "คลังหมด" : `คลังเหลือ ${c.warehouse}`}</div>
+                </div>
+                {!out && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "5px 10px", borderRadius: 8 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.6"><path d="M12 5v14M5 12h14" /></svg>เติม
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -4733,21 +4734,16 @@ function PhotoTile({ label, value, captured, onChange, onCaptured, orgId, machin
   orgId: string; machineCode: string; eventScopeId: string; phase: Phase; disabled?: boolean;
 }) {
   const on = !!value || captured;
-  const wrap: React.CSSProperties = {
-    flex: 1, minWidth: 0, borderRadius: 11, overflow: "hidden",
-    border: `1.5px ${on ? "solid" : "dashed"} ${on ? "#BFE6CB" : "#C9CFD8"}`,
-    background: on ? "#F2FBF5" : "#FAFBFC",
-  };
   if (disabled || !orgId || !machineCode) {
     return (
-      <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "12px 8px", fontSize: 12, fontWeight: 700, color: "#9AA1AB" }}>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "12px 8px", minHeight: 44, borderRadius: 11, border: "1.5px dashed #C9CFD8", background: "#FAFBFC", fontSize: 12, fontWeight: 700, color: "#9AA1AB" }}>
         <Camera size={16} strokeWidth={1.9} />ถ่าย{label}
       </div>
     );
   }
   return (
-    <div style={wrap}>
-      <PhotoCaptureButton label={on ? `${label} ✓` : `ถ่าย${label}`} value={value} onChange={onChange} onCaptured={onCaptured}
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <PhotoCaptureButton slim label={on ? `${label} ✓` : `ถ่าย${label}`} value={value} onChange={onChange} onCaptured={onCaptured}
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
     </div>
   );

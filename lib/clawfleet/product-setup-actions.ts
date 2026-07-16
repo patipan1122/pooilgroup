@@ -216,10 +216,11 @@ export async function addSetupProductWithDolls(
         },
       });
 
-      // 5) เปิดแถว loadout ให้สินค้าใหม่เป็นของในตู้ (รองรับหลาย SKU ต่อตู้ — ไม่ปิดของเดิม).
-      //    เช็คก่อนว่ามีแถว current (effectiveTo=null) ของสินค้านี้ในตู้แล้วหรือยัง (กันซ้ำถ้า replay หลุด lock).
+      // 5) เปิดแถว loadout ให้เฉพาะเมื่อตู้ยังไม่มี active เลย — DB จริงมี unique
+      //    `cf_loadouts_one_active_per_machine` (1 ตู้ = 1 แถว active) · ราย SKU จริงอยู่ที่ ledger
+      //    (เดิมเช็คแค่สินค้าตัวเอง → SKU ที่ 2 ของตู้ = P2002 ล้มทั้งก้อน)
       const existingLoadout = await tx.cfMachineLoadout.findFirst({
-        where: { orgId, machineId: machine.id, productId: product.id, effectiveTo: null },
+        where: { orgId, machineId: machine.id, effectiveTo: null },
         select: { id: true },
       });
       if (!existingLoadout) {
@@ -386,8 +387,9 @@ export async function addExistingProductDollsAtSetup(
         },
       });
 
+      // เคารพเพดาน 1 active/ตู้ (unique cf_loadouts_one_active_per_machine) — เช็คทั้งตู้ ไม่ใช่แค่สินค้านี้
       const existingLoadout = await tx.cfMachineLoadout.findFirst({
-        where: { orgId, machineId: machine.id, productId: data.productId, effectiveTo: null },
+        where: { orgId, machineId: machine.id, effectiveTo: null },
         select: { id: true },
       });
       if (!existingLoadout) {

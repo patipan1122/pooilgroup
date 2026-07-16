@@ -21,6 +21,8 @@ export type GroupMachine = {
   lastDollMeter: number;
   lastDollStock: number;
   qrToken: string;
+  // ราคาขายตุ๊กตาต่อตู้ (สตางค์ · ตั้งในหน้าตั้งค่าตู้) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup)
+  sellPriceCents: number | null;
 };
 
 export type CollectGroup = {
@@ -56,6 +58,7 @@ function toMachine(m: {
   lastDollMeter: number;
   lastDollStock: number;
   qrToken: string;
+  sellPriceCents: number | null;
 }): GroupMachine {
   return {
     id: m.id,
@@ -66,6 +69,7 @@ function toMachine(m: {
     lastDollMeter: m.lastDollMeter,
     lastDollStock: m.lastDollStock,
     qrToken: m.qrToken,
+    sellPriceCents: m.sellPriceCents,
   };
 }
 
@@ -104,7 +108,7 @@ export async function getGroupCollectData(): Promise<{
       where: { orgId, branchId: { in: branchIds }, isActive: true },
       select: {
         id: true, code: true, nickname: true, kind: true, branchId: true, groupId: true,
-        lastCoinMeter: true, lastDollMeter: true, lastDollStock: true, qrToken: true,
+        lastCoinMeter: true, lastDollMeter: true, lastDollStock: true, qrToken: true, sellPriceCents: true,
       },
       orderBy: { code: "asc" },
     }),

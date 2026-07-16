@@ -112,6 +112,17 @@ export async function lookupCfProductByBarcode(
 // 1) รับของเข้า (goods receipt) → สต๊อก... จริงๆ ClawFleet สต๊อก = ผลรวม ledger
 //    (ไม่มีคอลัมน์ stock บน cf_products) → ต้นทุนเฉลี่ยถ่วงน้ำหนัก update บน product
 // =============================================================
+/** แปลง error จาก transaction เป็นข้อความที่พนักงานอ่านได้ —
+ *  guard ของเราโยน Error ภาษาไทยอยู่แล้ว (ส่งต่อตรง ๆ) · error ระบบ (prisma/เน็ต · ภาษาอังกฤษ)
+ *  ห้ามหลุดถึงหน้าจอ (เคยโชว์ "Invalid prisma.cfMachineLoadout.create()..." ใส่พนักงาน 2026-07-16)
+ *  → log ไว้ฝั่ง server แล้วคืนข้อความกลาง ๆ แทน */
+function txErrMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/[\u0E00-\u0E7F]/.test(msg)) return msg; // มีอักษรไทย = ข้อความ guard ที่ตั้งใจโชว์
+  console.error("[clawfleet stock tx]", msg);
+  return "บันทึกไม่สำเร็จ · ระบบขัดข้อง ลองใหม่อีกครั้ง (ถ้าซ้ำแจ้งแอดมิน)";
+}
+
 const ReceiveSchema = z.object({
   branchId: z.string().uuid("สาขาไม่ถูกต้อง"),
   supplierName: z.string().trim().max(200).optional(),
@@ -371,7 +382,7 @@ export async function receiveStock(input: unknown): Promise<Result<{ receiptCode
 
       return { receiptId: receipt.id, receiptCode: receipt.receiptCode, totalCostCents: total };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -824,7 +835,7 @@ export async function reviewCfStockCount(input: unknown): Promise<Result<{ count
 
       return { status: newStatus };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -954,7 +965,7 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
 
       return { lossId: loss.id, lossCode: loss.lossCode, totalCostCents: total, status };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1109,7 +1120,7 @@ export async function reviewCfLoss(input: unknown): Promise<Result<{ lossId: str
 
       return { status: newStatus };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1182,7 +1193,7 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
       });
       return { transferCode };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1249,7 +1260,7 @@ export async function createWarehouse(input: unknown): Promise<Result<{ warehous
       });
       return { warehouseId: created.id };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(MANAGE_PATH);
@@ -1330,7 +1341,7 @@ export async function setMainWarehouse(input: unknown): Promise<Result<{ warehou
       await tx.cfWarehouse.update({ where: { id: warehouseId }, data: { isMain: true } });
       return { warehouseId };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(MANAGE_PATH);
@@ -1491,7 +1502,7 @@ export async function transferBetweenWarehouses(input: unknown): Promise<Result<
       });
       return { transferCode };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(MANAGE_PATH);
@@ -1550,7 +1561,7 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
       });
       return { balanceAfter: bal - qty };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1661,7 +1672,7 @@ export async function returnDollsToStock(
       });
       return { inMachineAfter: inMachine - qty };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1785,12 +1796,17 @@ export async function refillDollsToMachine(
         },
       });
 
-      // เปิด loadout row ให้สินค้าถ้ายังไม่มี (สินค้านี้เป็นของในตู้)
-      const existingLoadout = await tx.cfMachineLoadout.findFirst({
-        where: { orgId, machineId: machine.id, productId, effectiveTo: null },
+      // เปิด loadout row ให้สินค้าถ้าตู้ยังไม่มี loadout active เลย
+      // ⚠️ DB จริงมี unique `cf_loadouts_one_active_per_machine` (machine_id WHERE effective_to IS NULL)
+      //    = ตู้มี active ได้แถวเดียว (index legacy · ไม่อยู่ใน schema.prisma) — เดิมเช็คแค่ "สินค้านี้"
+      //    → ตู้เก่าที่มี loadout ของสินค้าอื่นค้างอยู่ (เช่นจาก baseline รุ่นแรก) เติม SKU ใหม่ = P2002
+      //    โชว์ error prisma ดิบใส่พนักงาน + เติมไม่ได้เลย. ราย SKU จริง track ที่ stock ledger อยู่แล้ว
+      //    → มี active อยู่แล้ว (สินค้าไหนก็ตาม) = ไม่ต้องแตะ loadout.
+      const anyActiveLoadout = await tx.cfMachineLoadout.findFirst({
+        where: { orgId, machineId: machine.id, effectiveTo: null },
         select: { id: true },
       });
-      if (!existingLoadout) {
+      if (!anyActiveLoadout) {
         await tx.cfMachineLoadout.create({
           data: {
             orgId, machineId: machine.id, productId, pricePerPlayCoins: 1,
@@ -1802,7 +1818,7 @@ export async function refillDollsToMachine(
 
       return { inMachineAfter: inBefore + qty, shelfAfter: shelfOnHand - qty };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -1916,7 +1932,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
       });
       return { deliveryId: delivery.id };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
@@ -2120,7 +2136,7 @@ export async function confirmShipmentReceived(
       // (สถานะ DELIVERED ถูกตั้งแล้วตอน claim ด้านบน)
       return { status: "DELIVERED", alreadyReceived: false };
     })
-    .catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+    .catch((e) => ({ error: txErrMessage(e) }));
 
   if ("error" in result) return err(result.error);
   revalidatePath(STOCK_PATH);
