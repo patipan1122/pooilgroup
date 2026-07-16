@@ -74,6 +74,13 @@ export type InboundDelivery = {
   //   ปุ่มกดรับ route ไป confirmShipmentReceived. "dc_transfer" เท่านั้นที่ route ไป confirmTransfer.
   source?: InboundSource;
   transferId?: string; // มีเฉพาะ source="dc_transfer" (ใบโอนจากคลังกลาง DC)
+  // ── doc-first (CEO 2026-07-16) · หัวใบ: เห็นเป็น "ใบ" ก่อน กดแล้วค่อยเห็นรายละเอียด ──
+  docCode?: string | null; // เลขใบจริง (TF-…) · cf_delivery ไม่มี → UI โชว์ "ใบกระจาย"
+  fromName?: string | null; // ส่งมาจากไหน (ชื่อคลังต้นทาง / fromLocation)
+  senderName?: string | null; // ใครส่ง
+  note?: string | null; // หมายเหตุบนใบส่ง
+  poCode?: string | null; // เลขใบ PO ที่ใบโอนอ้าง (มีเฉพาะ dc + อ้าง PO)
+  sentAt?: Date | null; // ส่งมาวันไหน (dispatchedAt / createdAt)
   // F1 · imageUrl ต่อบรรทัด (รูปสินค้า · URL เต็ม/null) → thumbnail บนการ์ดรับ
   lines: Array<{ lineId: string; productId: string; productName: string; qty: number; receivedQty: number; imageUrl?: string | null }>;
 };
@@ -1391,6 +1398,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
             name: p.name,
             imageUrl: p.imageUrl,
           }))}
+          // CEO 2026-07-16 · ของที่ "มีในคลังสาขา" (เช่น เพิ่งรับจากใบโอน DC) ต้องเลือกเข้าตู้ได้
+          //   — แยก prop จาก products (ในตู้นี้) → ไม่ทำ loadout ตั้งต้นเพี้ยน (บั๊กสินค้ารั่วข้ามตู้เดิม)
+          branchStock={branchProducts[baselineMachine.branchId] ?? []}
+          // ★ NET shelf (คลัง − ในตู้ทุกตู้) = เลขเดียวกับที่ server กันหยิบเกิน (ห้ามใช้ GROSS warehouse
+          //   — bug-class gross-vs-net 2026-07-12: จอบอก 10 แต่ server ให้หยิบได้ 4)
+          netById={netAvailableByBranch[baselineMachine.branchId] ?? {}}
           onBack={() => setBaselineMachineId(null)}
           onDone={() => {
             // ตั้งค่าเสร็จ → กลับหน้าหลัก · refresh ให้ server ส่ง awaitingSetup ใหม่ (ตู้ active แล้ว)
@@ -1900,8 +1913,13 @@ function PanelScreen(props: {
 }
 
 /* ─────────────────── N1 · หน้าจอ "ตั้งค่าครั้งแรก" (แทน 6-step wizard สำหรับตู้ AWAITING_SETUP) ─────────────────── */
-function BaselineScreen({ machine, orgId, products, onBack, onDone }: {
-  machine: AppMachine; orgId: string; products: { id: string; name: string; imageUrl: string | null }[]; onBack: () => void; onDone: () => void;
+function BaselineScreen({ machine, orgId, products, branchStock = [], netById = {}, onBack, onDone }: {
+  machine: AppMachine; orgId: string; products: { id: string; name: string; imageUrl: string | null }[];
+  // ของในคลังสาขา (ยังไม่อยู่ตู้นี้ · เช่น เพิ่งรับจากใบโอน) → picker "เลือกจากคลัง" ใน AddProductSheet
+  branchStock?: BranchStockProduct[];
+  // NET ว่างจริงบนชั้น ต่อ productId (= เลขที่ server enforce ตอน refill)
+  netById?: Record<string, number>;
+  onBack: () => void; onDone: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -1925,6 +1943,8 @@ function BaselineScreen({ machine, orgId, products, onBack, onDone }: {
           branchId={machine.branchId}
           orgId={orgId}
           products={products.map((p) => ({ id: p.id, name: p.name, imageUrl: p.imageUrl }))}
+          // ★ ส่ง NET (ว่างจริงบนชั้น) เป็นตัวเลขที่จอโชว์/แคป — ไม่ใช่ GROSS warehouse (จอ = server)
+          branchStock={branchStock.map((p) => ({ id: p.id, name: p.name, sku: p.sku, imageUrl: p.imageUrl, warehouse: netById[p.id] ?? 0 }))}
           onDone={onDone}
         />
       </div>
@@ -2692,13 +2712,41 @@ function GoodsReceivePanel({ orgId, usingDemo, branchCode, deliveries, onHandByP
           <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
             ใบที่รับเข้าคลังแล้ว · กด &ldquo;ดูใบรับ&rdquo; เพื่อดาวน์โหลดเป็นรูป (ส่งลงไลน์ได้)
           </div>
-          {receivedDocs.map((doc) => (
-            <ReceivedHistoryCard key={`${doc.source}-${doc.id}`} doc={doc} />
+          {/* CEO 2026-07-16 · ประวัติรับของจัดกลุ่มตามวัน (เดิมกองรวมไม่รู้ใบไหนวันไหน) */}
+          {groupReceivedByDay(receivedDocs).map((g) => (
+            <div key={g.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#5A6270", marginTop: 4 }}>{g.label} · {g.docs.length} ใบ</div>
+              {g.docs.map((doc) => (
+                <ReceivedHistoryCard key={`${doc.source}-${doc.id}`} doc={doc} />
+              ))}
+            </div>
           ))}
         </>
       )}
     </div>
   );
+}
+
+// จัดกลุ่มใบรับแล้วตาม "วัน" (เวลาไทย) — หัวข้อ วันนี้/เมื่อวาน/วันที่ · เรียงใหม่→เก่า (docs มาเรียงแล้ว)
+function groupReceivedByDay(docs: CfReceivedDoc[]): { key: string; label: string; docs: CfReceivedDoc[] }[] {
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" });
+  const today = fmt.format(new Date());
+  const yesterday = fmt.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const out: { key: string; label: string; docs: CfReceivedDoc[] }[] = [];
+  const byKey = new Map<string, { key: string; label: string; docs: CfReceivedDoc[] }>();
+  for (const d of docs) {
+    const key = fmt.format(new Date(d.receivedAt));
+    let g = byKey.get(key);
+    if (!g) {
+      const label = key === today ? "วันนี้" : key === yesterday ? "เมื่อวาน"
+        : new Date(d.receivedAt).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit", timeZone: "Asia/Bangkok" });
+      g = { key, label, docs: [] };
+      byKey.set(key, g);
+      out.push(g);
+    }
+    g.docs.push(d);
+  }
+  return out;
 }
 
 // ปุ่ม segment (รอรับ/รับแล้ว) — active = พื้นขาว ยกตัว · inactive = โปร่ง
@@ -2736,6 +2784,10 @@ function ReceivedHistoryCard({ doc }: { doc: CfReceivedDoc }) {
         {doc.receivedByName ? <span>· ผู้รับ {doc.receivedByName}</span> : null}
         <span>· {doc.source === "dc_transfer" ? "โอนจากคลังกลาง" : "ใบกระจาย"}</span>
       </div>
+      {/* หมายเหตุตอนรับ (ใบรับจริง · doc-first) — ใบเก่าก่อนฟีเจอร์ไม่มี → ซ่อน */}
+      {doc.note ? (
+        <div style={{ fontSize: 11, color: "#5A6270", background: "#F7F8FA", borderRadius: 9, padding: "7px 10px", lineHeight: 1.45 }}>หมายเหตุ: {doc.note}</div>
+      ) : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {doc.lines.map((l, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2745,11 +2797,28 @@ function ReceivedHistoryCard({ doc }: { doc: CfReceivedDoc }) {
           </div>
         ))}
       </div>
-      {/* Feature 3 · ดาวน์โหลดใบรับเป็นรูป (route ตั้ง Content-Disposition: attachment) */}
-      <a href={imageHref} download
-        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 44, fontSize: 13, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 11, textDecoration: "none", cursor: "pointer" }}>
-        <ImageDown size={16} /> ดูใบรับ / ดาวน์โหลด
-      </a>
+      {/* รูปหลักฐานตอนรับ (จากใบรับจริง + movement) — thumbnail แถวเดียว */}
+      {doc.photoUrls.length > 0 ? (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+          {doc.photoUrls.slice(0, 6).map((u, i) => (
+            <a key={i} href={u} target="_blank" rel="noreferrer" style={{ flex: "0 0 auto" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 9, border: "1px solid #E7EAF0" }} />
+            </a>
+          ))}
+        </div>
+      ) : null}
+      {/* Feature 3 · ดาวน์โหลดใบรับเป็นรูป + ปริ้น (CEO 2026-07-16: กดปริ้นใบรับสินค้าได้) */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <a href={imageHref} download
+          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 44, fontSize: 13, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 11, textDecoration: "none", cursor: "pointer" }}>
+          <ImageDown size={16} /> ดูใบรับ
+        </a>
+        <a href={`/clawfleet/os/app/receipt/${doc.id}/print`} target="_blank" rel="noreferrer"
+          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 44, fontSize: 13, fontWeight: 700, color: "#5A6270", background: "#F1F2F7", border: "none", borderRadius: 11, textDecoration: "none", cursor: "pointer" }}>
+          🖨 ปริ้นใบรับ
+        </a>
+      </div>
     </div>
   );
 }
@@ -2780,9 +2849,54 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
     Object.fromEntries(delivery.lines.map((l) => [l.lineId, l.qty])),
   );
   const [photo, setPhoto] = useState<string>("");
+  // doc-first (CEO 2026-07-16) · หมายเหตุตอนรับ — ลงใบรับจริง (CfGoodsReceipt)
+  const [note, setNote] = useState<string>("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // doc-first (CEO 2026-07-16): ขึ้นเป็น "ใบ" ก่อน — กดหัวใบค่อยกางรายละเอียด/ฟอร์มรับ
+  const [open, setOpen] = useState(false);
+
+  // ── กันข้อมูลหาย (CEO 2026-07-16): draft จำนวน/หมายเหตุที่กรอกค้าง → localStorage ต่อใบ ──
+  //   รูปมีคิว IndexedDB ของ PhotoCaptureButton อยู่แล้ว · เดิมจำนวนที่ปรับ+หมายเหตุหายตอนรีเฟรช/สลับหน้า
+  const draftKey = `clawos:receive-draft:v1:${delivery.source ?? "cf_delivery"}:${delivery.id}`;
+  // restore "หลัง mount" (ไม่อ่านใน initializer — กัน hydration mismatch เพราะ server render ค่า default)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { received?: Record<string, number>; note?: string; ts?: number };
+      if (!d || typeof d !== "object") return;
+      // draft เก่าเกิน 3 วัน = ทิ้ง (ของอาจถูกคนอื่นรับไปแล้ว · กันค่าเก่าหลอน)
+      if (typeof d.ts === "number" && Date.now() - d.ts > 3 * 24 * 60 * 60 * 1000) { localStorage.removeItem(draftKey); return; }
+      if (d.received) {
+        setReceived((cur) => {
+          const next = { ...cur };
+          for (const l of delivery.lines) {
+            const v = d.received?.[l.lineId];
+            if (typeof v === "number" && Number.isFinite(v)) next[l.lineId] = Math.max(0, Math.min(l.qty, Math.trunc(v)));
+          }
+          return next;
+        });
+      }
+      if (typeof d.note === "string" && d.note) setNote(d.note);
+      setOpen(true); // มีงานกรอกค้าง → กางใบให้เห็นทันที
+    } catch { /* draft พัง/อ่านไม่ได้ → เริ่มค่า default ตามเดิม */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // save อัตโนมัติ (debounce 400ms) — เก็บเฉพาะตอน "แตะฟอร์มแล้ว" (ต่างจากค่า default) · default = ลบ draft
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const isDefault = !note && delivery.lines.every((l) => (received[l.lineId] ?? 0) === l.qty);
+        if (isDefault) { localStorage.removeItem(draftKey); return; }
+        localStorage.setItem(draftKey, JSON.stringify({ received, note, ts: Date.now() }));
+      } catch { /* storage เต็ม/ถูกปิด → ข้าม (ไม่บล็อกงานรับ) */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [received, note, draftKey, delivery.lines]);
+  // รับสำเร็จ → ล้าง draft ของใบนี้ (กันเด้งกลับมาโชว์ค่าเก่า)
+  const clearDraft = () => { try { localStorage.removeItem(draftKey); } catch { /* no-op */ } };
 
   // per-line stepper (keyed by lineId · ไม่ใช่ productId — ใบเดียวมีสินค้าซ้ำหลายบรรทัดได้ → ต้องแยกช่องรับต่อบรรทัด)
   const step = (lineId: string, delta: number, max: number) =>
@@ -2800,9 +2914,12 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
             return;
           }
           // qtyReceived ราย line (default = ที่ส่งมา) — mirror transfer-confirm.tsx confirmPartial
+          // + note/รูป → ลงใบรับจริง (เดิมรูป dc path อัปโหลดแล้วหายเงียบ)
           const r = await confirmTransfer({
             transferId: delivery.transferId,
             lines: delivery.lines.map((l) => ({ lineId: l.lineId, qtyReceived: received[l.lineId] ?? 0 })),
+            note: note.trim() || undefined,
+            photoUrls: photo ? [photo] : undefined,
           });
           if (!r.ok) {
             console.error("[clawos] confirmTransfer failed:", r.error);
@@ -2810,12 +2927,14 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
             return;
           }
           // idempotent: ถ้าคนอื่น/ผู้จัดการยืนยันไปก่อน → ok เลย (server คืน ok) → โชว์ "รับแล้ว"
+          clearDraft();
           setDone(true);
           return;
         }
 
         const r = await confirmShipmentReceived({
           deliveryId: delivery.id,
+          note: note.trim() || undefined,
           photoUrls: photo ? [photo] : undefined,
           // receivedLines ต้องใช้ lineId — delivery.lines มี lineId มากับ prop (ดู mapping ใน page loader)
           receivedLines: delivery.lines.map((l) => ({ lineId: l.lineId, receivedQty: received[l.lineId] ?? 0 })),
@@ -2826,6 +2945,7 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
           return;
         }
         // atomic-claim: ถ้าคนอื่นรับไปก่อน → alreadyReceived (ไม่ error) → โชว์ "รับแล้ว"
+        clearDraft();
         setDone(true);
       } catch (e) {
         console.error("[clawos] confirm receive threw:", e);
@@ -2834,24 +2954,64 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
     });
   }
 
+  // หัวใบ: เลขใบจริง (TF-…) · cf_delivery ไม่มีเลขใบ → เรียก "ใบกระจาย"
+  const docTitle = delivery.docCode || "ใบกระจาย";
+  // ส่งมาวันไหน (RSC ส่ง Date ได้ · กัน string ที่หลุดมาจาก path เก่าด้วย new Date)
+  const sent = delivery.sentAt ? new Date(delivery.sentAt) : null;
+  const sentLabel = sent
+    ? sent.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" })
+    : null;
+
   if (done) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 13, padding: "13px 15px" }}>
         <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: "50%", background: "#15803D", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Check size={18} strokeWidth={2.6} />
         </span>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#15803D" }}>รับสินค้าเข้าคลังแล้ว</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#15803D" }}>รับสินค้าเข้าคลังแล้ว · {docTitle}</div>
       </div>
     );
   }
 
   return (
-    <div className="co-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>ใบกระจาย {delivery.itemsCount} รายการ · {delivery.unitsCount} ชิ้น</span>
-        <span style={{ flex: 1 }} />
-        <span className="co-pill" style={{ background: "#F1F2F7", color: "#5A6270" }}>{delivery.status === "IN_TRANSIT" ? "กำลังส่ง" : "นัดส่ง"}</span>
-      </div>
+    <div className="co-card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: open ? 12 : 0 }}>
+      {/* หัวใบ (doc-first) — กดเพื่อกาง/พับรายละเอียด */}
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>{docTitle}</span>
+            <span className="co-pill" style={{ background: "#F1F2F7", color: "#5A6270" }}>{delivery.status === "IN_TRANSIT" ? "กำลังส่ง" : "นัดส่ง"}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#8A909A", marginTop: 2, display: "flex", flexWrap: "wrap", gap: "1px 8px" }}>
+            {delivery.fromName ? <span>จาก {delivery.fromName}</span> : null}
+            {sentLabel ? <span>· ส่ง {sentLabel}</span> : null}
+            <span>· {delivery.itemsCount} รายการ · <span className="num">{delivery.unitsCount}</span> ชิ้น</span>
+          </div>
+        </div>
+        <ChevronRight size={17} style={{ flex: "0 0 17px", color: "#9AA1AB", transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+      </button>
+
+      {!open ? null : (<>
+      {/* รายละเอียดหัวใบ: ใครส่ง / อ้าง PO / หมายเหตุ + ปุ่มดูใบส่ง (เฉพาะใบโอน DC) */}
+      {(delivery.senderName || delivery.poCode || delivery.note || (delivery.source === "dc_transfer" && delivery.transferId)) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "#F7F8FA", borderRadius: 11, padding: "9px 12px" }}>
+          <div style={{ fontSize: 11, color: "#5A6270", display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+            {delivery.senderName ? <span>ผู้ส่ง {delivery.senderName}</span> : null}
+            {delivery.poCode ? <span>· อ้างใบสั่งซื้อ {delivery.poCode}</span> : null}
+          </div>
+          {delivery.note ? (
+            <div style={{ fontSize: 11, color: "#5A6270", lineHeight: 1.45 }}>หมายเหตุ: {delivery.note}</div>
+          ) : null}
+          {delivery.source === "dc_transfer" && delivery.transferId ? (
+            // ดูใบส่งฉบับเต็ม (PNG) — route ฝั่ง clawfleet เช็คสิทธิ์สาขาปลายทางเอง (ไม่เปิดหลังบ้าน DC)
+            <a href={`/clawfleet/os/app/transfer/${delivery.transferId}/image`} target="_blank" rel="noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#4F46E5", textDecoration: "none" }}>
+              <ImageDown size={14} /> ดูใบส่งฉบับเต็ม
+            </a>
+          ) : null}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {delivery.lines.map((l) => {
           const rcv = received[l.lineId] ?? 0;
@@ -2879,9 +3039,15 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
           );
         })}
       </div>
-      <PhotoCaptureButton label={photo ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปตอนรับ (ถ่ายได้-ข้ามได้)"}
-        value={photo} onChange={setPhoto} orgId={orgId} machineCode={branchCode}
-        eventScopeId={`receive-${delivery.id}`} phase="goods_receipt" />
+      {/* หมายเหตุ + กล้อง ในบรรทัดเดียว (RULE L · เดิม dropzone 88px เต็มแถว → compact 46px) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500}
+          placeholder="หมายเหตุตอนรับ (ไม่บังคับ)"
+          style={{ flex: 1, minWidth: 0, minHeight: 46, fontSize: 13, padding: "0 12px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", color: "#1A1D21", outline: "none" }} />
+        <PhotoCaptureButton label={photo ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปตอนรับ (ถ่ายได้-ข้ามได้)"}
+          value={photo} onChange={setPhoto} orgId={orgId} machineCode={branchCode}
+          eventScopeId={`receive-${delivery.id}`} phase="goods_receipt" compact />
+      </div>
       {error && (
         <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
       )}
@@ -2890,6 +3056,7 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
         style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 13, borderRadius: 12, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
         {pending ? "กำลังรับ…" : "กดรับสินค้า"}
       </button>
+      </>)}
     </div>
   );
 }

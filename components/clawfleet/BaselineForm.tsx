@@ -49,10 +49,13 @@ export interface BaselineFormProps {
   branchId: string;
   orgId: string;
   products: { id: string; name: string; imageUrl: string | null }[];
+  // CEO 2026-07-16 · ของใน "คลังสาขา" (เช่น เพิ่งรับจากใบโอน DC) — เลือกเข้าตู้ได้จากแท็บ "เลือกจากคลัง"
+  //   เดิม picker เห็นเฉพาะของที่เคยอยู่ตู้นี้ → SKU ที่เพิ่งรับเข้าคลังเลือกไม่ได้ + "เพิ่มใหม่" ติด SKU ซ้ำ = ทางตัน
+  branchStock?: { id: string; name: string; sku: string; imageUrl: string | null; warehouse: number }[];
   onDone: () => void;
 }
 
-export function BaselineForm({ machine, branchId, orgId, products, onDone }: BaselineFormProps) {
+export function BaselineForm({ machine, branchId, orgId, products, branchStock = [], onDone }: BaselineFormProps) {
   // ตุ๊กตา "ในตู้ตอนนี้" = รายการต่อ SKU (persist ทันทีต่อ SKU) · ยอดรวม = ผลบวก (ระบบคิดให้)
   const [inMachine, setInMachine] = useState<AddedProduct[]>([]);
   const [dollsAdded, setDollsAdded] = useState<number | null>(null);
@@ -392,6 +395,8 @@ export function BaselineForm({ machine, branchId, orgId, products, onDone }: Bas
           orgId={orgId}
           scopeId={scopeId}
           existingProducts={products.filter((p) => !inMachineIds.has(p.id))}
+          // ของในคลังสาขาที่ยังไม่อยู่ตู้นี้ + มีของจริง (>0) — โชว์พร้อมป้าย "ในคลัง N ชิ้น"
+          warehouseProducts={branchStock.filter((p) => !inMachineIds.has(p.id) && p.warehouse > 0)}
           onSaved={(p) => {
             setInMachine((cur) => [...cur, p]);
             setShowList(true);
@@ -584,6 +589,7 @@ function AddProductSheet({
   orgId,
   scopeId,
   existingProducts,
+  warehouseProducts = [],
   onSaved,
   onClose,
 }: {
@@ -592,11 +598,22 @@ function AddProductSheet({
   orgId: string;
   scopeId: string;
   existingProducts: { id: string; name: string; imageUrl: string | null }[];
+  // ของในคลังสาขา (ยังไม่อยู่ตู้นี้ · เช่น เพิ่งรับจากใบโอน DC) — โชว์พร้อม "ในคลัง N ชิ้น"
+  warehouseProducts?: { id: string; name: string; sku: string; imageUrl: string | null; warehouse: number }[];
   onSaved: (p: AddedProduct) => void;
   onClose: () => void;
 }) {
+  // รายการให้เลือก = ของในคลังสาขา + เคยอยู่ตู้นี้ (dedup ด้วย id)
+  // ★ ตัวคลังชนะเสมอ: SKU ที่มีทั้งบนชั้นและเคยอยู่ตู้ → เดินเส้น refill (เติมซ้ำได้ · ตัดชั้นจริง)
+  //   ถ้าให้ตัว setup ชนะ จะชน guard "สินค้านี้มีในตู้อยู่แล้ว" = ทางตันตอนกลับเข้ามาตั้งค่าต่อ
+  const pickList: { id: string; name: string; imageUrl: string | null; warehouse: number | null }[] = [
+    ...warehouseProducts.map((w) => ({ id: w.id, name: w.name, imageUrl: w.imageUrl, warehouse: w.warehouse as number | null })),
+    ...existingProducts
+      .filter((e) => !warehouseProducts.some((w) => w.id === e.id))
+      .map((p) => ({ ...p, warehouse: null as number | null })),
+  ];
   // แท็บเริ่มต้น: มีของในคลังให้เลือก → "จากคลัง" · ไม่มี → "เพิ่มใหม่"
-  const [tab, setTab] = useState<"existing" | "new">(existingProducts.length > 0 ? "existing" : "new");
+  const [tab, setTab] = useState<"existing" | "new">(pickList.length > 0 ? "existing" : "new");
 
   // จากคลัง
   const [selId, setSelId] = useState<string>("");
@@ -611,7 +628,7 @@ function AddProductSheet({
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
-  const sel = existingProducts.find((p) => p.id === selId) ?? null;
+  const sel = pickList.find((p) => p.id === selId) ?? null;
 
   function resetExisting() { setSelId(""); setExQty(null); }
   function resetNew() { setName(""); setSku(""); setPhoto(""); setNewQty(null); }
@@ -622,15 +639,24 @@ function AddProductSheet({
     if (exQty == null || exQty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
     setBusy(true);
     try {
-      const res = await addExistingProductDollsAtSetup({
-        machineId: machine.id,
-        branchId,
-        productId: sel.id,
-        qty: exQty,
-        clientKey: crypto.randomUUID(),
-      });
+      // ★ STOCK-SAFE · แยกเส้นทางตามแหล่งของ:
+      //   ของจากคลังสาขา (warehouse != null · เช่น เพิ่งรับจากใบโอน DC) → refillDollsToMachine
+      //     = ตัดยอดชั้นวางจริง + โหลดเข้าตู้ (server กันหยิบเกินคลัง) — ห้ามใช้เส้นทาง setup
+      //     เพราะ setup "เสกยอดตั้งต้น" (ADJUST +N) → ของบนชั้นไม่ถูกตัด = สต๊อกพองเงียบ
+      //   ของเดิมที่เคยอยู่ตู้นี้ (นับตุ๊กตาเก่าเข้าระบบ) → addExistingProductDollsAtSetup (2 แถวสมดุลเดิม)
+      const fromWarehouse = sel.warehouse != null;
+      const res = fromWarehouse
+        ? await refillDollsToMachine({ machineId: machine.id, productId: sel.id, qty: exQty, clientKey: crypto.randomUUID() })
+        : await addExistingProductDollsAtSetup({
+            machineId: machine.id,
+            branchId,
+            productId: sel.id,
+            qty: exQty,
+            clientKey: crypto.randomUUID(),
+          });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
-      onSaved({ id: sel.id, name: sel.name, sku: "", qty: exQty, imageUrl: sel.imageUrl });
+      // ยึดเลขจากการตอบของ server (inMachineAfter) — ไม่เดาเอง (จอ = server)
+      onSaved({ id: sel.id, name: sel.name, sku: "", qty: res.data.inMachineAfter, imageUrl: sel.imageUrl });
       setFlash(`เพิ่ม “${sel.name}” แล้ว`);
       resetExisting();
     } catch {
@@ -723,14 +749,14 @@ function AddProductSheet({
         )}
 
         {tab === "existing" ? (
-          existingProducts.length === 0 ? (
+          pickList.length === 0 ? (
             <div style={{ fontSize: 12.5, color: "#9AA1AB", textAlign: "center", padding: "18px 0", lineHeight: 1.5 }}>
               ไม่มีสินค้าในคลังให้เลือกแล้ว<br />(เพิ่มใหม่ได้ที่แท็บ “เพิ่มใหม่”)
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-                {existingProducts.map((p) => {
+                {pickList.map((p) => {
                   const on = p.id === selId;
                   return (
                     <button
@@ -741,16 +767,25 @@ function AddProductSheet({
                     >
                       <ProductThumb imageUrl={p.imageUrl} name={p.name} size={34} />
                       <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      {/* ของจากคลังสาขา (เช่น เพิ่งรับจากใบโอน) — บอกจำนวนที่มีให้หยิบ */}
+                      {p.warehouse != null && (
+                        <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 700, color: "#15803D", background: "#E7F4EC", borderRadius: 7, padding: "2px 7px" }}>
+                          ในคลัง <span className="num">{p.warehouse}</span>
+                        </span>
+                      )}
                       {on && <span style={{ color: "#4F46E5", fontWeight: 800 }}>✓</span>}
                     </button>
                   );
                 })}
               </div>
               <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>
+                  {sel?.warehouse != null ? <>หยิบจากคลังใส่ตู้กี่ตัว (มีในคลัง <span className="num">{sel.warehouse}</span>)</> : "มีในตู้กี่ตัว"}
+                </div>
                 <Stepper value={exQty} unit="ตัว" placeholder="นับแล้วแตะ +"
                   onDec={() => setExQty((c) => Math.max(0, (c ?? 0) - 1))}
-                  onInc={() => setExQty((c) => Math.min(MAX_COUNT, (c ?? 0) + 1))} />
+                  // ของจากคลัง → แคปที่ NET ว่างจริงบนชั้น (เลขเดียวกับที่ server กันเกิน) · ของเดิมในตู้ → MAX_COUNT
+                  onInc={() => setExQty((c) => Math.min(sel?.warehouse ?? MAX_COUNT, (c ?? 0) + 1))} />
               </div>
               {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
               <button type="button" disabled={busy} onClick={saveExisting} className="co-tap"

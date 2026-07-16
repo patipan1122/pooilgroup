@@ -519,6 +519,10 @@ export type ConfirmTransferInput = {
   transferId: string;
   /** ถ้าไม่ส่ง → รับครบทุกบรรทัดตามที่ส่งออก (1-tap "ครบ") */
   lines?: { lineId: string; qtyReceived: number }[];
+  /** หมายเหตุตอนรับ (มือถือสาขา) — ลงใบรับ CfGoodsReceipt (doc-first · CEO 2026-07-16) */
+  note?: string;
+  /** รูปหลักฐานตอนรับ (R2 URLs) — ลงใบรับ (เดิมถ่ายแล้วหายเงียบเพราะไม่ผูกอะไร) */
+  photoUrls?: string[];
 };
 
 export type ConfirmTransferResult = { ok: true } | { ok: false; error: string };
@@ -728,6 +732,11 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
 
         // (4) เขียนสต๊อก+ต้นทุน ClawFleet ใน tx เดียวกัน (idempotency refTable/refId ใน tx)
         if (cfLines.length > 0) {
+          // sanitize input จาก client: note ตัด 500 ตัวอักษร · รูปเอาเฉพาะ URL จริง สูงสุด 10
+          const recvNote = (input.note ?? "").trim().slice(0, 500) || null;
+          const recvPhotos = (input.photoUrls ?? [])
+            .filter((u): u is string => typeof u === "string" && u.length <= 600 && /^https?:\/\//.test(u))
+            .slice(0, 10);
           await receiveDcTransferIntoBranchTx(tx, {
             orgId,
             branchId,
@@ -735,6 +744,8 @@ export async function confirmTransfer(input: ConfirmTransferInput): Promise<Conf
             transferCode: transfer.transferCode,
             actorUserId: userId,
             lines: cfLines,
+            note: recvNote,
+            photoUrls: recvPhotos,
           });
         }
       }, { timeout: 20000, maxWait: 5000 });

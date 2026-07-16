@@ -84,7 +84,8 @@ export async function buildClawFleetReceiveDocImage(
     ],
     rows,
     totals: [{ label: "รวมรับเข้า (ชิ้น)", value: n0(doc.unitsCount), strong: true }],
-    note: null,
+    // หมายเหตุตอนรับ (ใบรับจริง CfGoodsReceipt · doc-first) — ใบเก่าก่อนฟีเจอร์ = null (ไม่โชว์)
+    note: doc.note,
   };
 }
 

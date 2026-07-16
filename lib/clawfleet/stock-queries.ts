@@ -434,6 +434,12 @@ export type CfInboundDeliveryRow = {
   // แหล่ง/write-path ของใบนี้ (ปุ่มกดรับ route ตามค่านี้) · dc_transfer → มี transferId
   source: CfInboundSource;
   transferId?: string;
+  // ── ข้อมูล "หัวใบ" (doc-first · CEO 2026-07-16: ต้องเห็นเป็นใบก่อน ค่อยกดดูรายละเอียด) ──
+  docCode: string | null; // เลขใบจริง (dc = transferCode "TF-…") · cf_delivery ไม่มีคอลัมน์ code → null (UI โชว์ "ใบกระจาย")
+  fromName: string | null; // ส่งมาจากไหน (dc = ชื่อคลังต้นทาง · cf = fromLocation)
+  senderName: string | null; // ใครส่ง (dc = dispatchedBy · cf = createdBy)
+  note: string | null; // หมายเหตุบนใบส่ง
+  poCode: string | null; // ใบ PO ที่ใบโอนอ้างถึง (dc + มี poId เท่านั้น) · null = ไม่อ้าง
   lines: Array<{
     // lineId มากับใบเลย (cfDelivery = DeliveryLine.id · dc_transfer = DcTransferLine.id) — ไม่ต้อง lookup แยก
     lineId: string;
@@ -467,6 +473,10 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
       itemsCount: true,
       unitsCount: true,
       createdAt: true,
+      // doc-first · หัวใบ: ส่งจากไหน/ใครสร้าง/หมายเหตุ (cfDelivery ไม่มีคอลัมน์ code)
+      fromLocation: true,
+      note: true,
+      createdBy: { select: { name: true } },
       lines: {
         select: { id: true, productId: true, productName: true, qty: true, receivedQty: true },
         orderBy: { productName: "asc" },
@@ -493,6 +503,11 @@ export async function getInboundDeliveries(branchId: string): Promise<CfInboundD
     unitsCount: d.unitsCount,
     createdAt: d.createdAt,
     source: "cf_delivery" as const,
+    docCode: null, // cfDelivery ไม่มีคอลัมน์เลขใบ → UI โชว์ "ใบกระจาย" + วันที่แทน
+    fromName: d.fromLocation || null,
+    senderName: d.createdBy?.name ?? null,
+    note: d.note ?? null,
+    poCode: null,
     lines: d.lines.map((l) => ({
       lineId: l.id,
       productId: l.productId,
@@ -533,6 +548,12 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       id: true,
       status: true,
       dispatchedAt: true,
+      // doc-first · หัวใบ: เลขใบ TF / คลังต้นทาง / ผู้ส่ง / หมายเหตุ / ใบ PO ที่อ้าง
+      transferCode: true,
+      fromWarehouseId: true,
+      dispatchedByUserId: true,
+      note: true,
+      poId: true,
       lines: {
         select: {
           id: true,
@@ -545,6 +566,19 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       },
     },
   });
+
+  // resolve หัวใบแบบ batch (N ใบ = 3 query · ไม่ N×3): ชื่อคลังต้นทาง + ชื่อผู้ส่ง + เลข PO
+  const whIds = Array.from(new Set(rows.map((t) => t.fromWarehouseId)));
+  const senderIds = Array.from(new Set(rows.map((t) => t.dispatchedByUserId)));
+  const poIds = Array.from(new Set(rows.map((t) => t.poId).filter((x): x is string => !!x)));
+  const [whs, senders, pos] = await Promise.all([
+    whIds.length ? prisma.dcWarehouse.findMany({ where: { id: { in: whIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    senderIds.length ? prisma.user.findMany({ where: { id: { in: senderIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    poIds.length ? prisma.dcPurchaseOrder.findMany({ where: { id: { in: poIds } }, select: { id: true, poCode: true } }) : Promise.resolve([]),
+  ]);
+  const whMap = new Map(whs.map((w) => [w.id, w.name]));
+  const senderMap = new Map(senders.map((u) => [u.id, u.name]));
+  const poMap = new Map(pos.map((p) => [p.id, p.poCode]));
 
   return rows.map((t) => {
     const lines = t.lines.map((l) => ({
@@ -565,6 +599,11 @@ export async function getInboundDcTransfers(branchId: string): Promise<CfInbound
       createdAt: t.dispatchedAt,
       source: "dc_transfer" as const,
       transferId: t.id,
+      docCode: t.transferCode,
+      fromName: whMap.get(t.fromWarehouseId) ?? null,
+      senderName: senderMap.get(t.dispatchedByUserId) ?? null,
+      note: t.note ?? null,
+      poCode: t.poId ? poMap.get(t.poId) ?? null : null,
       lines,
     };
   });
@@ -590,7 +629,8 @@ export type CfReceivedDoc = {
   receivedAt: Date; // เวลารับ (movement.occurredAt ล่าสุดในกลุ่ม)
   receivedById: string | null; // ผู้รับ (movement.createdById)
   receivedByName: string | null; // ชื่อผู้รับ (resolve จาก User)
-  photoUrls: string[]; // รูปหลักฐานตอนรับ (cf เท่านั้น — แนบบน RECEIPT_IN movement · dc ไม่มี)
+  photoUrls: string[]; // รูปหลักฐานตอนรับ (ใบรับจริง + movement · dedup แล้ว)
+  note: string | null; // หมายเหตุตอนรับ (จากใบรับจริง CfGoodsReceipt · ใบเก่าก่อนฟีเจอร์ = null)
   unitsCount: number; // รวมชิ้นที่รับ (Σ qty)
   lines: CfReceivedDocLine[];
 };
@@ -668,10 +708,20 @@ export async function getReceivedHistory(
 
   const cfIds = top.filter((g) => g.refTable === "cf_deliveries").map((g) => g.refId);
   const dcIds = top.filter((g) => g.refTable === "dc_transfers").map((g) => g.refId);
+  const allRefIds = top.map((g) => g.refId);
   const productIds = Array.from(new Set(top.flatMap((g) => [...g.qtyByProduct.keys()])));
   const userIds = Array.from(new Set(top.map((g) => g.createdById)));
 
-  const [cfDeliveries, dcTransfers, products, users] = await Promise.all([
+  // ใบรับจริง (CfGoodsReceipt · doc-first) ที่ผูกกับเอกสารต้นทางกลุ่มนี้ — ใบรับใหม่มีเลขใบ/หมายเหตุ/รูป
+  //   ใบเก่า (รับก่อนฟีเจอร์นี้) ไม่มีแถว → fallback ledger-derived เหมือนเดิม (graceful)
+  const receiptsP = allRefIds.length
+    ? prisma.cfGoodsReceipt.findMany({
+        where: { orgId, branchId, refId: { in: allRefIds }, refTable: { in: ["cf_deliveries", "dc_transfers"] } },
+        select: { refTable: true, refId: true, receiptCode: true, note: true, photoUrls: true },
+      })
+    : Promise.resolve([]);
+
+  const [cfDeliveries, dcTransfers, products, users, receipts] = await Promise.all([
     cfIds.length
       ? prisma.cfDelivery.findMany({
           where: { id: { in: cfIds }, orgId, branchId, status: "DELIVERED" },
@@ -693,12 +743,14 @@ export async function getReceivedHistory(
     userIds.length
       ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
       : Promise.resolve([]),
+    receiptsP,
   ]);
 
   const cfSet = new Set(cfDeliveries.map((d) => d.id));
   const dcMap = new Map(dcTransfers.map((t) => [t.id, t.transferCode]));
   const pMap = new Map(products.map((p) => [p.id, p]));
   const uMap = new Map(users.map((u) => [u.id, u.name]));
+  const rcMap = new Map(receipts.map((r) => [`${r.refTable}::${r.refId}`, r]));
 
   const out: CfReceivedDoc[] = [];
   for (const g of top) {
@@ -720,15 +772,19 @@ export async function getReceivedHistory(
     }
     lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
 
+    // ใบรับจริง (ถ้ามี · ใบที่รับหลังฟีเจอร์ doc-first) — เลขใบ GR- จริง + หมายเหตุ + รูปบนใบ
+    const rc = rcMap.get(`${g.refTable}::${g.refId}`);
     out.push({
       id: g.refId,
       source: isCf ? "cf_delivery" : "dc_transfer",
-      // cf_deliveries ไม่มี "code" คอลัมน์ → ใช้ id ท่อนสั้น · dc_transfers ใช้ transferCode จริง
-      code: isCf ? `รับ-${g.refId.slice(0, 8)}` : dcMap.get(g.refId) ?? `รับ-${g.refId.slice(0, 8)}`,
+      // ลำดับเลขใบ: ใบรับจริง (GR-) > transferCode (TF-) > id ท่อนสั้น (ใบเก่าก่อนฟีเจอร์)
+      code: rc?.receiptCode ?? (isCf ? `รับ-${g.refId.slice(0, 8)}` : dcMap.get(g.refId) ?? `รับ-${g.refId.slice(0, 8)}`),
       receivedAt: g.occurredAt,
       receivedById: g.createdById,
       receivedByName: uMap.get(g.createdById) ?? null,
-      photoUrls: g.photoUrls,
+      // รวมรูปจากใบรับจริง + movement (dedup) — ใบเก่า dc ไม่มีรูปเลย · ใบใหม่มีบนใบรับ
+      photoUrls: Array.from(new Set([...(rc?.photoUrls ?? []), ...g.photoUrls])),
+      note: rc?.note ?? null,
       unitsCount,
       lines,
     });

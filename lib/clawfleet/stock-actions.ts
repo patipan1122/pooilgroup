@@ -1942,6 +1942,8 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
 
 const ConfirmShipmentSchema = z.object({
   deliveryId: z.string().uuid("ใบกระจายไม่ถูกต้อง"),
+  // doc-first (CEO 2026-07-16) · หมายเหตุตอนรับ — ลงใบรับ CfGoodsReceipt
+  note: z.string().max(500).optional(),
   // N6 · รูปแนบตอนรับ (มือถือ) — R2 URLs (absolute) → .url() ใช้ได้ · เก็บเป็นหลักฐานบน RECEIPT_IN movement
   photoUrls: z.array(z.string().url()).max(10).optional(),
   receivedLines: z
@@ -1959,7 +1961,7 @@ export async function confirmShipmentReceived(
 ): Promise<Result<{ deliveryId: string; status: string; alreadyReceived: boolean }>> {
   const parsed = ConfirmShipmentSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
-  const { deliveryId, photoUrls, receivedLines } = parsed.data;
+  const { deliveryId, note, photoUrls, receivedLines } = parsed.data;
 
   // หา branchId ของใบก่อน เพื่อ assert สิทธิ์ตามสาขา
   const head = await prisma.cfDelivery.findFirst({
@@ -2133,6 +2135,38 @@ export async function confirmShipmentReceived(
         });
       }
 
+      // ── ใบรับจริง (doc-first · CEO 2026-07-16) — เอกสารถาวรใน tx เดียวกับ movement ───────
+      //   claim (DELIVERED) ด้านบน = ผู้ชนะคนเดียวมาถึงตรงนี้ + unique(orgId,refTable,refId) ที่ DB
+      //   = 1 ใบกระจาย → 1 ใบรับ เสมอ (idempotency จริง ไม่ใช่แค่ในโค้ด)
+      const aggList = [...agg.values()];
+      if (aggList.length > 0) {
+        await tx.cfGoodsReceipt.create({
+          data: {
+            orgId,
+            branchId: d.branchId,
+            warehouseId: destMainWarehouseId,
+            receiptCode: newReceiptCode(),
+            supplierName: "ใบกระจายจากส่วนกลาง",
+            note: note?.trim() ? note.trim() : null,
+            totalCostCents: aggList.reduce((s, a) => s + a.costTotalCents, 0),
+            status: "RECEIVED",
+            photoUrls: photoUrls ?? [],
+            refTable: "cf_deliveries",
+            refId: d.id,
+            createdById: session.user.id,
+            lines: {
+              create: aggList.map((a) => ({
+                orgId,
+                productId: a.id,
+                productName: nameMap.get(a.id) ?? "— สินค้า —",
+                quantity: a.qty,
+                unitCostCents: a.qty > 0 ? Math.round(a.costTotalCents / a.qty) : 0,
+              })),
+            },
+          },
+        });
+      }
+
       // (สถานะ DELIVERED ถูกตั้งแล้วตอน claim ด้านบน)
       return { status: "DELIVERED", alreadyReceived: false };
     })
@@ -2176,12 +2210,15 @@ export type ReceiveDcTransferArgs = {
   transferCode: string;
   actorUserId: string;
   lines: { cfProductId: string; qty: number; unitCostSatang: number }[];
+  // doc-first (CEO 2026-07-16) · ใบรับจริง: หมายเหตุ + รูปหลักฐานตอนรับ (เดิมรูป dc path อัปโหลดแล้วหายเงียบ)
+  note?: string | null;
+  photoUrls?: string[];
 };
 
 /** SHARED-TX variant — ทำงานทั้งหมดบน `tx` ที่ caller ส่งเข้ามา (ไม่เปิด tx ใหม่). ดู header comment ด้านบน. */
 export async function receiveDcTransferIntoBranchTx(
   tx: CfTxClient,
-  { orgId, branchId, transferId, transferCode, actorUserId, lines }: ReceiveDcTransferArgs,
+  { orgId, branchId, transferId, transferCode, actorUserId, lines, note, photoUrls }: ReceiveDcTransferArgs,
 ): Promise<{ received: true; alreadyReceived: boolean }> {
   {
     // ── IDEMPOTENCY GUARD (ก่อนเขียนอะไรทั้งสิ้น) ──────────────────────────
@@ -2215,13 +2252,14 @@ export async function receiveDcTransferIntoBranchTx(
       }
     }
 
-    // ต้นทุนเดิมของแต่ละ product (ก่อนรับ) — อ่านครั้งเดียวก่อนลูป
+    // ต้นทุนเดิมของแต่ละ product (ก่อนรับ) — อ่านครั้งเดียวก่อนลูป (+name → snapshot ลงใบรับ)
     const prodIds = [...agg.keys()];
     const products = await tx.cfProduct.findMany({
       where: { id: { in: prodIds }, orgId },
-      select: { id: true, unitCostCents: true },
+      select: { id: true, name: true, unitCostCents: true },
     });
     const prodCostMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+    const prodNameMap = new Map(products.map((p) => [p.id, p.name]));
 
     const now = new Date();
     // เรียง product ตาม id ก่อนล็อก → ลำดับล็อกคงที่ทุกใบ กัน AB-BA deadlock
@@ -2269,6 +2307,38 @@ export async function receiveDcTransferIntoBranchTx(
           documentType: "transfer",
           documentId: transferId,
           reason: `รับโอนจาก DC ${transferCode} · คงเหลือ ${oldBal + a.qty}`,
+        },
+      });
+    }
+
+    // ── ใบรับจริง (doc-first · CEO 2026-07-16) — เอกสารถาวรใน tx เดียวกับ movement ─────────
+    //   ref = ใบโอนต้นทาง (unique(orgId,refTable,refId) ที่ DB = 1 ใบโอน → 1 ใบรับ · idempotency จริง)
+    //   note/รูปที่ถ่ายตอนรับ ผูกลงใบนี้ (เดิมรูปฝั่ง dc อัปโหลด R2 แล้วไม่ผูกอะไรเลย = หายเงียบ)
+    if (aggSorted.length > 0) {
+      const totalCostCents = aggSorted.reduce((s, a) => s + a.costTotalCents, 0);
+      await tx.cfGoodsReceipt.create({
+        data: {
+          orgId,
+          branchId,
+          warehouseId: destMainWarehouseId,
+          receiptCode: newReceiptCode(),
+          supplierName: `โอนจากคลังกลาง · ${transferCode}`,
+          note: note?.trim() ? note.trim() : null,
+          totalCostCents,
+          status: "RECEIVED",
+          photoUrls: photoUrls ?? [],
+          refTable: "dc_transfers",
+          refId: transferId,
+          createdById: actorUserId,
+          lines: {
+            create: aggSorted.map((a) => ({
+              orgId,
+              productId: a.id,
+              productName: prodNameMap.get(a.id) ?? "— สินค้า —",
+              quantity: a.qty,
+              unitCostCents: a.qty > 0 ? Math.round(a.costTotalCents / a.qty) : 0,
+            })),
+          },
         },
       });
     }

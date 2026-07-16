@@ -2481,6 +2481,10 @@ model CfGoodsReceipt {
   totalCostCents Int      @default(0) @map("total_cost_cents")
   status         String   @default("RECEIVED") // RECEIVED (อนาคต: DRAFT/CANCELLED)
   photoUrls      String[] @default([]) @map("photo_urls") // รูปใบเสร็จ/ของที่รับเข้า (R2 URLs)
+  // doc-first (CEO 2026-07-16) · เอกสารต้นทางที่ใบรับนี้เกิดจาก: 'dc_transfers' | 'cf_deliveries' · null = รับเข้าตรง (manual)
+  //   unique(orgId, refTable, refId) = idempotency จริงระดับ DB (1 ใบส่ง → 1 ใบรับ) · แถว null ไม่ชนกัน (Postgres NULL-distinct)
+  refTable       String?  @map("ref_table")
+  refId          String?  @map("ref_id") @db.Uuid
   createdById    String   @map("created_by_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -2491,6 +2495,7 @@ model CfGoodsReceipt {
   lines     CfGoodsReceiptLine[]
 
   @@unique([orgId, receiptCode])
+  @@unique([orgId, refTable, refId])
   @@index([orgId, branchId, createdAt(sort: Desc)])
   @@map("cf_goods_receipts")
   @@schema("public")

@@ -455,6 +455,13 @@ async function loadBigfeatureData(
           unitsCount: d.unitsCount,
           source: d.source,
           transferId: d.transferId,
+          // doc-first · หัวใบ (เลขใบ TF / จากไหน / ใครส่ง / วันส่ง / หมายเหตุ / PO)
+          docCode: d.docCode,
+          fromName: d.fromName,
+          senderName: d.senderName,
+          note: d.note,
+          poCode: d.poCode,
+          sentAt: d.createdAt,
           lines: d.lines.map((l) => ({
             lineId: l.lineId,
             productId: l.productId,

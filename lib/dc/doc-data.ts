@@ -147,10 +147,35 @@ export async function buildPoDocImage(id: string): Promise<DocImageInput | null>
 export async function buildTransferDocImage(id: string): Promise<DocImageInput | null> {
   const session = await requireSession();
   // เปิดให้ floor role โหลดรูปใบโอนได้ (ปุ่มปริ้นอยู่ในลิสต์หน้าคลังด้วย)
-  // — staff เช็ค warehouse scope หลังโหลดใบ (ด้านล่าง) · manager ขึ้นไป org-wide เหมือนเดิม
+  // — staff เช็ค warehouse scope ก่อนสร้างเอกสาร · manager ขึ้นไป org-wide เหมือนเดิม
   requireDcFloor(session.user.role);
   const orgId = session.user.org_id;
 
+  // ── SCOPE GATE (เฉพาะ role ต่ำกว่า manager): from/to ของใบต้อง ∈ คลังที่ผูกสิทธิ์ ──
+  //    โหลด warehouse id ของใบก่อน (query เบา) — กัน floor เดา id ปริ้นใบของไซต์อื่น
+  //    (scope นี้เป็นเรื่องของ DC เท่านั้น → อยู่ที่นี่ ไม่ยัดเข้า Core · route clawfleet ทำ scope สาขาเอง)
+  if (!canDcManage(session.user.role)) {
+    const scope = await prisma.dcTransfer.findFirst({
+      where: { id, orgId },
+      select: { fromWarehouseId: true, toWarehouseId: true },
+    });
+    if (!scope) return null;
+    const allowed = await getAllowedWarehouses(session);
+    const allowedIds = new Set(allowed.map((w) => w.id));
+    const inScope =
+      allowedIds.has(scope.fromWarehouseId) ||
+      (!!scope.toWarehouseId && allowedIds.has(scope.toWarehouseId));
+    if (!inScope) return null;
+  }
+  return buildTransferDocImageCore(orgId, id);
+}
+
+/**
+ * แกนสร้างใบโอน (ไม่มีด่านสิทธิ์ในตัว) — caller ต้องเช็คสิทธิ์เองก่อนเรียก:
+ *   • ฝั่ง DC → buildTransferDocImage (requireDcManager ครอบ)
+ *   • ฝั่งพนักงานสาขาปลายทาง → route /clawfleet/os/app/transfer/[id]/image (เช็ค toBranchId + สิทธิ์เข้าสาขา)
+ */
+export async function buildTransferDocImageCore(orgId: string, id: string): Promise<DocImageInput | null> {
   const [tf, org] = await Promise.all([
     prisma.dcTransfer.findFirst({
       where: { id, orgId },
@@ -166,16 +191,6 @@ export async function buildTransferDocImage(id: string): Promise<DocImageInput |
     loadOrg(orgId),
   ]);
   if (!tf) return null;
-
-  // ── SCOPE GATE (เฉพาะ role ต่ำกว่า manager): from/to ต้อง ∈ คลังที่ผูกสิทธิ์ ──
-  if (!canDcManage(session.user.role)) {
-    const allowed = await getAllowedWarehouses(session);
-    const allowedIds = new Set(allowed.map((w) => w.id));
-    const inScope =
-      allowedIds.has(tf.fromWarehouseId) ||
-      (!!tf.toWarehouseId && allowedIds.has(tf.toWarehouseId));
-    if (!inScope) return null;
-  }
 
   const whIds = [tf.fromWarehouseId, tf.toWarehouseId].filter((x): x is string => !!x);
   const [whs, branch, dispatcher] = await Promise.all([
