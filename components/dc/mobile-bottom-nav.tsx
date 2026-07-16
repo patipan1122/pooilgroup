@@ -51,20 +51,26 @@ const OFFICE_MENU: Item[] = [
   { href: "/dc/office/purchasing", label: "สั่งซื้อ", icon: ShoppingCart },
   // #16 ผู้ขาย + ขนส่ง ยุบเข้าแท็บใน "สั่งซื้อ" (PurchasingSubnav) — ไม่ลิสต์เป็นเมนูแยก
   { href: "/dc/office/products", label: "สินค้า", icon: Boxes },
-  { href: "/dc/office/receipts", label: "ใบรับสินค้า", icon: ClipboardCheck },
-  { href: "/dc/office/transfers", label: "ใบโอน", icon: Truck },
+  // เวฟ 2: เอกสาร 4 ใบ (รับ/โอน/ย้าย/เบิก) รวมเป็นแท็บในหน้าเดียว — เข้าที่ใบรับสินค้าแล้วสลับแท็บ
+  { href: "/dc/office/receipts", label: "เอกสารคลัง", icon: ClipboardCheck },
   { href: "/dc/office/warehouses", label: "โกดัง", icon: Warehouse },
   { href: "/dc/office/reports", label: "รายงาน", icon: BarChart3 },
   { href: "/dc/office/reconcile", label: "กระทบยอด", icon: GitCompare },
   { href: "/dc/office/permissions", label: "สิทธิ์", icon: Users },
 ];
 
+// เมนูเดียวที่ครอบหลาย route (ยุบเป็นแท็บ) — ให้ไฮไลต์ค้างทุกแท็บของกลุ่ม ไม่ใช่เฉพาะ route แรก
+const ACTIVE_PREFIXES: Record<string, string[]> = {
+  "/dc/office/receipts": ["/dc/office/transfers", "/dc/office/moves", "/dc/office/issues"],
+};
+
 function isActive(pathname: string, href: string): boolean {
   // href อาจมี query (เมนูที่เปิดแท็บเจาะจง) แต่ pathname ไม่มี → ตัดทิ้งก่อนเทียบ
   const path = href.split("?")[0];
   if (path === "/dc") return pathname === "/dc";
   if (path === "/dc/office") return pathname === "/dc/office";
-  return pathname === path || pathname.startsWith(path + "/");
+  if (pathname === path || pathname.startsWith(path + "/")) return true;
+  return (ACTIVE_PREFIXES[path] ?? []).some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
 export function DcMobileNav({ canManage }: { canManage: boolean }) {

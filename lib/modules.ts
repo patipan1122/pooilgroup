@@ -105,6 +105,12 @@ export interface NavItem {
    * Modules opt in independently · zero impact on modules that don't set it.
    */
   section?: string;
+  /**
+   * Extra pathname prefixes that should ALSO light this item up — for a menu item
+   * that fronts several sibling routes merged into tabs (e.g. "เอกสารคลัง" fronting
+   * receipts/transfers/moves/issues). Compared with the same exact-or-descendant rule as href.
+   */
+  activePrefixes?: string[];
 }
 
 export interface ModuleConfig {
@@ -1176,35 +1182,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       // #16 ยุบ "ผู้ขาย" + "ขนส่ง/ชิปเมนต์" ออกจากเมนู — เข้าถึงผ่านแท็บใน "สั่งซื้อจีน" (PurchasingSubnav) แทน
-      // ----- เอกสาร (ประวัติใบต่าง ๆ · อ่าน/พิมพ์/ลบ) -----
+      // ----- เอกสาร (เวฟ 2: ยุบ 4 เมนู → หน้าเดียว 4 แท็บ ผ่าน DcDocsSubnav — แบบเดียวกับ #16 สั่งซื้อจีน) -----
+      // ใบรับสินค้า · ใบโอน · ใบย้ายที่ · ใบเบิก ยังเป็น 4 route เดิม (บุ๊กมาร์ก/ลิงก์เก่าใช้ได้) แค่เข้าผ่านแท็บ
       {
         href: "/dc/office/receipts",
-        label: "ใบรับสินค้า",
+        label: "เอกสารคลัง",
         icon: ClipboardCheck,
         section: "เอกสาร",
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
-      {
-        href: "/dc/office/transfers",
-        label: "ใบโอน",
-        section: "เอกสาร",
-        icon: Truck,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
-      {
-        // รายการใบย้ายที่ (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
-        href: "/dc/office/moves",
-        label: "ใบย้ายที่",
-        section: "เอกสาร",
-        icon: ArrowLeftRight,
-        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
-      },
-      {
-        // รายการใบเบิก (ประวัติ) — ปุ่มลบต่อแถวเป็น super_admin เท่านั้น (หน้าเปิดให้ผู้จัดการ DC ดู)
-        href: "/dc/office/issues",
-        label: "ใบเบิก",
-        section: "เอกสาร",
-        icon: ScrollText,
+        // ให้เมนูไฮไลต์ค้างไว้ทุกแท็บของกลุ่มเอกสาร ไม่ใช่เฉพาะใบรับสินค้า
+        activePrefixes: ["/dc/office/transfers", "/dc/office/moves", "/dc/office/issues"],
         roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
       },
       // ----- ข้อมูล & รายงาน -----

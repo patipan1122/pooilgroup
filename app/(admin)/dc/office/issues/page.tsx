@@ -9,6 +9,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { DcDocsSubnav } from "@/components/dc/docs-subnav";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export default async function DcIssuesPage() {
   return (
     <DcOfficeShell {...dcShellChrome(ctx, chrome)}>
       <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <DcDocsSubnav active="issues" />
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>รายการใบเบิก</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>

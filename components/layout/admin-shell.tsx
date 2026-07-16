@@ -663,6 +663,7 @@ function SidebarBody({
                     label={it.label}
                     pathname={pathname}
                     onNavigate={onNavigate}
+                    activePrefixes={it.activePrefixes}
                   />
                 </Fragment>
               );
@@ -798,6 +799,7 @@ function SidebarLink({
   onNavigate,
   indent,
   badgeCount,
+  activePrefixes,
 }: {
   href: string;
   icon: LucideIcon;
@@ -808,6 +810,8 @@ function SidebarLink({
   indent?: boolean;
   /** When > 0 a red pill is shown on the right (open items needing attention). */
   badgeCount?: number;
+  /** Extra prefixes that also count as active (เมนูเดียวครอบหลาย route ที่ยุบเป็นแท็บ). */
+  activePrefixes?: string[];
 }) {
   // href อาจมี query (เช่น "/dc/transfer?tab=issue" — เมนูที่เปิดแท็บเจาะจง) แต่ usePathname() ไม่มี query
   // → ตัด query ทิ้งก่อนเทียบ ไม่งั้นเมนูนั้นไม่มีวัน active
@@ -823,7 +827,8 @@ function SidebarLink({
       (pathname.startsWith("/settings/") &&
         !SETTINGS_CHILDREN.some((c) => pathname === c || pathname.startsWith(c + "/")))
     : pathname === hrefPath ||
-      (hrefPath !== "/home" && pathname.startsWith(hrefPath + "/"));
+      (hrefPath !== "/home" && pathname.startsWith(hrefPath + "/")) ||
+      (activePrefixes ?? []).some((p) => pathname === p || pathname.startsWith(p + "/"));
   return (
     <Link
       href={href}

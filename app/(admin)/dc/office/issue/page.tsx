@@ -10,6 +10,8 @@ import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
 import { listClawfleetBranchTargets } from "@/lib/clawfleet/stock-queries";
+import { getRecentMovements } from "@/lib/dc/reports";
+import { DcRecentActivityPanel } from "@/components/dc/recent-activity-panel";
 import {
   DcOutboundTabs,
   resolveOutboundTab,
@@ -37,6 +39,12 @@ export default async function DcOfficeIssuePage({
   }));
   // สาขาตู้คีบ (ClawFleet) ที่เป็นปลายทางโอนได้ (scoped ตามสิทธิ์)
   const clawBranches = await listClawfleetBranchTargets(ctx.session.user.org_id);
+
+  // เวฟ 2 — แผง "ประวัติล่าสุด (Log)" ด้านขวา (mockup CEO) · อ่านจาก ledger เดียวกับหน้ารายงาน
+  // ดึงเฉพาะคลังที่เลือกอยู่ (ctx.activeWarehouseId ผ่านการเช็คสิทธิ์ใน getDcContext แล้ว)
+  const recent = ctx.activeWarehouseId
+    ? await getRecentMovements(ctx.session.user.org_id, { warehouseId: ctx.activeWarehouseId, limit: 12 })
+    : [];
 
   return (
     <DcOfficeShell {...dcShellChrome(ctx, chrome)}>
@@ -71,14 +79,31 @@ export default async function DcOfficeIssuePage({
             </Link>
           </div>
         ) : (
-          <DcOutboundTabs
-            initialTab={initialTab}
-            warehouseId={ctx.activeWarehouseId}
-            warehouseName={ctx.activeWarehouse.name}
-            warehouses={destWarehouses}
-            clawBranches={clawBranches}
-            r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
-          />
+          <>
+            {/* 2 คอลัมน์บนจอกว้าง: งานหลักซ้าย · แผง Log ขวา — จอแคบ (<1350px — sidebar หลักกินไป 256px) แผง Log ตกลงมาต่อท้าย */}
+            <div
+              className="dc-outbound-grid"
+              style={{
+                display: "grid",
+                gap: 16,
+                gridTemplateColumns: "minmax(0, 1fr) 330px",
+                alignItems: "start",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <DcOutboundTabs
+                  initialTab={initialTab}
+                  warehouseId={ctx.activeWarehouseId}
+                  warehouseName={ctx.activeWarehouse.name}
+                  warehouses={destWarehouses}
+                  clawBranches={clawBranches}
+                  r2PublicUrl={process.env.R2_PUBLIC_URL ?? ""}
+                />
+              </div>
+              <DcRecentActivityPanel rows={recent} />
+            </div>
+            <style>{`@media (max-width: 1350px) { .dc-outbound-grid { grid-template-columns: minmax(0, 1fr) !important; } }`}</style>
+          </>
         )}
       </div>
     </DcOfficeShell>

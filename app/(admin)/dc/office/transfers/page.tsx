@@ -9,6 +9,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { DcDocsSubnav } from "@/components/dc/docs-subnav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TransfersOfficeRows, type OfficeTransferRow } from "./transfers-office-rows";
 
@@ -100,6 +101,7 @@ export default async function DcTransfersPage() {
   return (
     <DcOfficeShell active="transfer" {...dcShellChrome(ctx, chrome)}>
       <div className="dc-page dc-page--wide" style={{ padding: 0, maxWidth: "none", margin: 0 }}>
+        <DcDocsSubnav active="transfers" />
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ใบโอน (ส่ง / รับระหว่างคลัง)</h1>
           <p style={{ margin: "5px 0 0", color: "var(--ink2)", fontSize: 14 }}>ส่งของออก 2 จังหวะ — ปลายทางกดยืนยันรับ · ต้นทุนตามของไป</p>

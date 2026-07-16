@@ -11,6 +11,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
+import { DcDocsSubnav } from "@/components/dc/docs-subnav";
 import { DataTable } from "@/components/ui/data-table";
 
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ export default async function DcReceiptsPage() {
       taskStrip={chrome.taskStrip}
     >
       <div>
+        <DcDocsSubnav active="receipts" />
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: "-.01em" }}>ใบรับสินค้า (GRN)</h1>
