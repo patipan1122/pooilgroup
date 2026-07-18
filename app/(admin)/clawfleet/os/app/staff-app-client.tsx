@@ -608,13 +608,26 @@ const initialState: WizardState = {
 // B3 · เพิ่ม branch/date/coinMeter → date picker ดูย้อนหลังได้ (เก็บที่ไหน · เลขมิเตอร์ที่กรอก).
 // branch/date/coinMeter optional เพื่อ backward-compat (ถ้ามี caller เดิมส่งไม่ครบ ก็ไม่พัง).
 export type StaffHistoryRow = {
+  // CEO 2026-07-18 · ชนิดรายการ (ป้ายในประวัติ): เก็บเงิน / เปลี่ยนตุ๊กตา / ตั้งค่าครั้งแรก
+  kind?: "collect" | "swap" | "baseline";
   code: string;
+  nickname?: string | null;
   time: string;
   cashBaht: number;
   ok: boolean;
   branch?: string; // สาขาของตู้ (ช่วยจำว่าเก็บที่ไหน)
-  date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — label เมื่อดูย้อนหลัง
+  date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — ใช้จัดกลุ่มตามวัน
   coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก)
+  dollMeter?: number; // เลขมิเตอร์ตุ๊กตา
+  // รายละเอียดรอบ (โชว์ในหน้า detail หน้าเดียว)
+  stockBefore?: number;
+  stockAfter?: number;
+  dollsOut?: number;
+  shortReason?: string; // เหตุผลเงินขาด / ไม่แนบรูป
+  photos?: { url: string; label: string }[]; // รูปหลักฐาน (มี url จริง) — กดดูขยายได้
+  // swap
+  swapReturned?: number;
+  swapRefilled?: number;
   // item 8 · รอบตั้งต้น (baseline) — ป้าย "การตั้งค่าครั้งแรก" (indigo)
   isBaseline?: boolean;
   // item 5/8 · รูปหลักฐานยังไม่ครบ — ป้าย "รูปยังไม่ครบ" (amber) + ปุ่ม "แนบรูปเพิ่ม"
@@ -1960,7 +1973,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} />}
+        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2033,124 +2046,175 @@ function ymdLabelThai(ymd: string, todayYmd: string): string {
 
 // B3 · date picker ประวัติ — เปลี่ยน ?date= → server re-query (หน้าเป็น force-dynamic).
 // prev/next วัน + native date input · กันเลือกอนาคต (max = วันนี้). READ-ONLY ไม่แตะเงิน.
-function HistoryDatePicker({ viewDate }: { viewDate: string }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const todayYmd = clientTodayBangkokYmd();
-  const isToday = viewDate >= todayYmd; // >= กัน edge เผื่อ clock ต่างเล็กน้อย
-  const go = (ymd: string) => {
-    // ไม่ให้ไปวันอนาคต (ไม่มีข้อมูล)
-    const target = ymd > todayYmd ? todayYmd : ymd;
-    router.push(`${pathname}?date=${target}`);
-  };
-  const chip = (active: boolean) =>
-    ({ minHeight: 44, padding: "8px 14px", borderRadius: 11, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
-       border: `1.5px solid ${active ? "#C7C3F0" : "#E3E6EA"}`, background: active ? "#EEF0FE" : "#fff",
-       color: active ? "#4338CA" : "#5A6270", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 } as const);
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-      <button type="button" aria-label="วันก่อนหน้า" onClick={() => go(shiftYmd(viewDate, -1))} className="co-tap"
-        style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: 11, border: "1.5px solid #E3E6EA", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#5A6270" }}>
-        <ChevronLeft size={18} strokeWidth={2.2} />
-      </button>
-      {/* native date input — แตะเลือกวันไหนก็ได้ (label ทับด้วยข้อความไทยให้อ่านง่าย) */}
-      <label style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 44, borderRadius: 11, border: "1.5px solid #E3E6EA", background: "#fff", cursor: "pointer", padding: "0 10px" }}>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>{ymdLabelThai(viewDate, todayYmd)}</span>
-        <input type="date" aria-label="เลือกวันที่ดูประวัติ" value={viewDate} max={todayYmd}
-          onChange={(e) => { if (e.target.value) go(e.target.value); }}
-          style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
-      </label>
-      <button type="button" disabled={isToday} aria-label="วันถัดไป" onClick={() => go(shiftYmd(viewDate, 1))} className={isToday ? "" : "co-tap"}
-        style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: 11, border: "1.5px solid #E3E6EA", background: isToday ? "#F4F5F7" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: isToday ? "not-allowed" : "pointer", color: isToday ? "#C2C7CF" : "#5A6270", opacity: isToday ? 0.7 : 1 }}>
-        <ChevronRight size={18} strokeWidth={2.2} />
-      </button>
-      {!isToday && (
-        <button type="button" onClick={() => go(todayYmd)} className="co-tap" style={chip(false)}>วันนี้</button>
-      )}
-    </div>
-  );
+// CEO 2026-07-18 · ป้ายชนิดรายการในประวัติ (เก็บเงิน / เปลี่ยนตุ๊กตา / ตั้งค่าครั้งแรก)
+function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: string } {
+  const kind = h.kind ?? (h.isBaseline ? "baseline" : "collect");
+  if (kind === "swap") return { label: "เปลี่ยนตุ๊กตา", c: "#4F46E5", bg: "#EEF0FE" };
+  if (kind === "baseline") return { label: "ตั้งค่าครั้งแรก", c: "#B45309", bg: "#FCF1E2" };
+  return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, viewDate, usingDemo, orgId }: { history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string }) {
+function HistoryPanel({ history, usingDemo, orgId }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
-  //  item 8 · demo แสดงตัวอย่างป้าย "การตั้งค่าครั้งแรก" + "รูปยังไม่ครบ" ให้เห็นหน้าตา (ไม่มีปุ่มแนบจริง)
   const demoRows: StaffHistoryRow[] = [
-    { code: "RS-03", branch: "รังสิต", time: "14:20", cashBaht: 300, coinMeter: 210, ok: true, isBaseline: true },
-    { code: "LP-01", branch: "ลาดพร้าว", time: "13:50", cashBaht: 620, coinMeter: 158, ok: true, photosMissing: true },
-    { code: "RS-07", branch: "รังสิต", time: "12:10", cashBaht: 540, coinMeter: 302, ok: false },
+    { kind: "collect", code: "RS-03", branch: "รังสิต", date: todayYmd, time: "14:20", cashBaht: 300, coinMeter: 210, dollsOut: 3, stockBefore: 10, stockAfter: 7, ok: true, photos: [] },
+    { kind: "swap", code: "LP-01", branch: "ลาดพร้าว", date: todayYmd, time: "13:50", cashBaht: 0, swapReturned: 2, swapRefilled: 5, ok: true },
+    { kind: "collect", code: "RS-07", branch: "รังสิต", date: shiftYmd(todayYmd, -1), time: "12:10", cashBaht: 540, coinMeter: 302, dollsOut: 4, ok: false },
   ];
   const rows = usingDemo ? demoRows : history;
-  const dayLabel = ymdLabelThai(viewDate, todayYmd);
 
-  // item 5 · แถวที่กำลังเปิด sheet "แนบรูปเพิ่ม" (null = ปิด) + set ของ eventId ที่แนบครบแล้ว (เคลียร์ป้ายทันที)
+  // item 5 · แถวที่กำลังเปิด sheet "แนบรูปเพิ่ม" + set ของ eventId ที่แนบครบแล้ว (เคลียร์ป้ายทันที)
   const [attachRow, setAttachRow] = useState<StaffHistoryRow | null>(null);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
+  // CEO 2026-07-18 · กดแถว → เปิด detail (สรุปหน้าเดียว + ดูรูปขยาย) · รูปที่กำลังขยาย (lightbox)
+  const [detail, setDetail] = useState<StaffHistoryRow | null>(null);
+  const [zoom, setZoom] = useState<{ url: string; label: string } | null>(null);
+
+  // จัดกลุ่มตามวัน (รายการเรียงใหม่→เก่าอยู่แล้ว) → หัววัน + การ์ด
+  const groups: { date: string; label: string; items: StaffHistoryRow[] }[] = [];
+  for (const h of rows) {
+    const d = h.date ?? todayYmd;
+    let g = groups.find((x) => x.date === d);
+    if (!g) { g = { date: d, label: ymdLabelThai(d, todayYmd), items: [] }; groups.push(g); }
+    g.items.push(h);
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* B3 · date picker (demo ก็โชว์ได้ · แค่ข้อมูลเป็นตัวอย่าง) */}
-      {!usingDemo && <HistoryDatePicker viewDate={viewDate} />}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {usingDemo && (
         <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
       )}
 
-      {/* ของจริงแต่ "วันที่เลือก" ไม่มีรอบ → empty state ซื่อสัตย์ (ยังโชว์ picker ให้เปลี่ยนวันได้) */}
       {!usingDemo && rows.length === 0 ? (
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
-          <EmptyState
-            icon={<Inbox size={30} strokeWidth={1.6} />}
-            title={viewDate === todayYmd ? "วันนี้ยังไม่มีรอบที่เก็บเสร็จ" : `${dayLabel} ไม่มีรอบที่เก็บ`}
-            sub={viewDate === todayYmd ? "เมื่อคุณเก็บเงินจบตู้ รายการจะขึ้นที่นี่" : "ลองเลือกวันอื่นด้านบนเพื่อดูย้อนหลัง"}
-          />
+          <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติการเก็บ"
+            sub="เมื่อคุณเก็บเงิน / เปลี่ยนตุ๊กตาจบตู้ รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {rows.map((h, i) => {
-            // item 5 · แนบครบแล้วในเซสชันนี้ → ไม่โชว์ป้าย/ปุ่มอีก (optimistic · ไม่ต้อง reload)
-            const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
-            // ปุ่มแนบรูปจริงได้เมื่อ: ไม่ใช่ demo · มี eventId · ยังขาดรูป
-            const canAttach = !usingDemo && !!h.eventId && stillMissing;
-            return (
-              <div key={`${h.code}-${h.time}-${i}`} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "12px 13px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 11, minHeight: 40 }}>
-                  <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#4F46E5", flex: "0 0 52px" }}>{h.code}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span className="num" style={{ fontSize: 14, fontWeight: 700 }}>฿{h.cashBaht.toLocaleString("en-US")}</span>
-                      {/* item 8 · ป้าย "การตั้งค่าครั้งแรก" (indigo) — รอบตั้งต้น ไม่ใช่รอบเก็บปกติ */}
-                      {h.isBaseline && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#EEF0FE", color: "#4F46E5" }}>การตั้งค่าครั้งแรก</span>
-                      )}
-                      {/* item 5/8 · ป้าย "รูปยังไม่ครบ" (amber) — ยังขาดรูปหลักฐาน (ไม่นับรูปเงินสด) */}
-                      {stillMissing && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FCF1E2", color: "#B45309" }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
-                          รูปยังไม่ครบ
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {h.branch ? `${h.branch} · ` : ""}{dayLabel} {h.time}
-                      {h.coinMeter != null ? <> · มิเตอร์ <span className="num">{h.coinMeter.toLocaleString("en-US")}</span></> : null}
-                    </div>
+        groups.map((g) => (
+          <div key={g.date} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#9AA1AB", padding: "0 2px" }}>{g.label}</div>
+            {g.items.map((h, i) => {
+              const tag = historyKindTag(h);
+              const isSwap = (h.kind ?? "collect") === "swap";
+              const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
+              return (
+                <button key={`${h.code}-${h.time}-${i}`} type="button" onClick={() => setDetail(h)} className="co-tap"
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "11px 13px", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", flex: "0 0 auto" }}>{h.nickname || h.code}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.label}</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: 10.5, color: "#9AA1AB" }} className="num">{h.time}</span>
                   </div>
-                  {/* baseline ไม่โชว์ ตรง/ไม่ตรง (ไม่มีรอบก่อนไว้เทียบ) */}
-                  {!h.isBaseline && (
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: h.ok ? "#E7F4EC" : "#FCEDEC", color: h.ok ? "#15803D" : "#B42318" }}>{h.ok ? "ตรง" : "ไม่ตรง"}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "#5A6270", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {isSwap
+                        ? `${h.swapReturned ? `คืน ${h.swapReturned} ` : ""}${h.swapRefilled ? `เติม ${h.swapRefilled} ` : ""}ตัว`.trim()
+                        : <>เก็บได้ <b className="num" style={{ color: "#15803D" }}>฿{h.cashBaht.toLocaleString("en-US")}</b>{h.dollsOut != null ? <> · ตุ๊กตาออก <span className="num">{h.dollsOut}</span></> : null}</>}
+                      {h.branch ? <span style={{ color: "#B6BBC4" }}> · {h.branch}</span> : null}
+                    </span>
+                    {stillMissing && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FCF1E2", color: "#B45309", whiteSpace: "nowrap" }}>รูปยังไม่ครบ</span>
+                    )}
+                    {!isSwap && !h.isBaseline && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: h.ok ? "#E7F4EC" : "#FCEDEC", color: h.ok ? "#15803D" : "#B42318" }}>{h.ok ? "ตรง" : "ไม่ตรง"}</span>
+                    )}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C2C7CF" strokeWidth="2.4" strokeLinecap="round"><path d="M9 6l6 6-6 6" /></svg>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))
+      )}
+
+      {/* CEO 2026-07-18 · detail รอบเดียว — สรุปหน้าเดียว + ดูรูปขยาย + แนบรูปเพิ่ม (แก้ไข = แนบรูปอย่างเดียว) */}
+      {detail && (
+        <div role="dialog" aria-modal="true" onClick={() => setDetail(null)}
+          style={{ position: "absolute", inset: 0, zIndex: 40, background: "rgba(20,22,28,0.5)", display: "flex", alignItems: "flex-end" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxHeight: "88%", overflowY: "auto", background: "#F4F5F7", borderRadius: "20px 20px 0 0", padding: "16px 18px 24px" }}>
+            <div style={{ width: 40, height: 4, borderRadius: 4, background: "#D8DCE2", margin: "0 auto 14px" }} />
+            {(() => {
+              const tag = historyKindTag(detail);
+              const isSwap = (detail.kind ?? "collect") === "swap";
+              const dayLabel = ymdLabelThai(detail.date ?? todayYmd, todayYmd);
+              const stillMissing = !!detail.photosMissing && !(detail.eventId && resolvedIds.has(detail.eventId));
+              const canAttach = !usingDemo && !!detail.eventId && !isSwap;
+              return (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontSize: 18, fontWeight: 700 }}>{detail.nickname || detail.code}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: tag.bg, color: tag.c }}>{tag.label}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9AA1AB", marginBottom: 14 }}>{detail.branch ? `${detail.branch} · ` : ""}{dayLabel} · {detail.time}</div>
+
+                  {/* สรุปตัวเลข */}
+                  <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12 }}>
+                    {isSwap ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
+                        <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>คืนเข้าสโตร์</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#C0392B" }}>{detail.swapReturned ?? 0} ตัว</div></div>
+                        <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติมเข้าตู้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>+{detail.swapRefilled ?? 0} ตัว</div></div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
+                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บเงินได้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{detail.cashBaht.toLocaleString("en-US")}</div></div>
+                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{detail.dollsOut ?? "—"} ตัว</div></div>
+                          {detail.stockBefore != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบก่อนมี</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockBefore} ตัว</div></div>}
+                          {detail.stockAfter != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockAfter} ตัว</div></div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 16, marginTop: 12, paddingTop: 11, borderTop: "1px solid #F0F1F4", fontSize: 11.5, color: "#6B7280" }}>
+                          {detail.coinMeter != null && <span>มิเตอร์เหรียญ <b className="num" style={{ color: "#1A1D21" }}>{detail.coinMeter.toLocaleString("en-US")}</b></span>}
+                          {detail.dollMeter != null && <span>มิเตอร์ตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{detail.dollMeter.toLocaleString("en-US")}</b></span>}
+                        </div>
+                        {detail.shortReason && (
+                          <div style={{ marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "8px 11px", fontSize: 11.5, color: "#8A5A12" }}>หมายเหตุ: {detail.shortReason}</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* รูปหลักฐาน — กดขยายได้ (CEO: ดูรูปขยาย · ให้ครบ) */}
+                  {!isSwap && (
+                    <>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>รูปหลักฐาน {detail.photos && detail.photos.length > 0 ? `(${detail.photos.length})` : ""}</div>
+                      {detail.photos && detail.photos.length > 0 ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                          {detail.photos.map((ph) => (
+                            <button key={ph.url} type="button" onClick={() => setZoom(ph)} className="co-tap"
+                              style={{ border: "1px solid #E3E6EA", borderRadius: 10, overflow: "hidden", padding: 0, cursor: "pointer", background: "#fff" }}>
+                              <img src={ph.url} alt={ph.label} style={{ width: "100%", height: 82, objectFit: "cover", display: "block" }} />
+                              <div style={{ fontSize: 9.5, color: "#6B7280", padding: "4px 5px", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ph.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 11, padding: "14px 12px", fontSize: 12, color: "#9AA1AB", textAlign: "center", marginBottom: 12 }}>รอบนี้ยังไม่มีรูปหลักฐาน</div>
+                      )}
+                      {canAttach && (
+                        <button type="button" onClick={() => { setAttachRow(detail); setDetail(null); }} className="co-tap"
+                          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", padding: "12px", borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${stillMissing ? "#F0D8AE" : "#C7C3F0"}`, background: stillMissing ? "#FFFBF3" : "#F5F5FE", color: stillMissing ? "#B45309" : "#4338CA" }}>
+                          <Camera size={16} strokeWidth={2.2} />
+                          {stillMissing ? "แนบรูปที่ยังขาด" : "แนบรูปเพิ่ม / ถ่ายใหม่"}
+                        </button>
+                      )}
+                    </>
                   )}
-                </div>
-                {/* item 5 · ปุ่ม "แนบรูปเพิ่ม" — เปิด sheet ถ่ายรูปที่ยังขาด แล้ว attachEventPhotos */}
-                {canAttach && (
-                  <button type="button" onClick={() => setAttachRow(h)} className="co-tap"
-                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginTop: 10, padding: "9px 12px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "1.5px solid #F0D8AE", background: "#FFFBF3", color: "#B45309" }}>
-                    <Camera size={15} strokeWidth={2.2} />
-                    แนบรูปเพิ่ม
-                  </button>
-                )}
-              </div>
-            );
-          })}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* lightbox ดูรูปขยายเต็มจอ */}
+      {zoom && (
+        <div onClick={() => setZoom(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 55, background: "rgba(10,12,16,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 10 }}>{zoom.label}</div>
+          <img src={zoom.url} alt={zoom.label} style={{ maxWidth: "100%", maxHeight: "78%", objectFit: "contain", borderRadius: 12 }} />
+          <div style={{ fontSize: 12, color: "#9AA1AB", marginTop: 12 }}>แตะที่ไหนก็ได้เพื่อปิด</div>
         </div>
       )}
 
@@ -2163,11 +2227,7 @@ function HistoryPanel({ history, viewDate, usingDemo, orgId }: { history: StaffH
           isBaseline={attachRow.eventType === "INITIAL" || attachRow.isBaseline === true}
           onClose={() => setAttachRow(null)}
           onResolved={(eventId) => {
-            setResolvedIds((prev) => {
-              const n = new Set(prev);
-              n.add(eventId);
-              return n;
-            });
+            setResolvedIds((prev) => { const n = new Set(prev); n.add(eventId); return n; });
             setAttachRow(null);
           }}
         />
@@ -2175,6 +2235,7 @@ function HistoryPanel({ history, viewDate, usingDemo, orgId }: { history: StaffH
     </div>
   );
 }
+
 
 /* ─────────────── item 5 · แนบรูปเพิ่มทีหลัง (attach later) ───────────────
  * พนักงานถ่ายรูปหลักฐานไม่ทันตอนเก็บ (รีบ/เน็ตตก) → กลับมาแนบเพิ่มจากหน้าประวัติ.
@@ -2525,6 +2586,10 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
 }) {
   // F3 · แท็บ "นับใหม่" | "ประวัติใบนับ" — default = นับใหม่ (งานหลัก)
   const [tab, setTab] = useState<"count" | "history">("count");
+  // CEO 2026-07-18 · ต้อง "สร้างใบนับ" ก่อน แล้วนับทั้งตู้/คลังรวดเดียว (ให้รู้สึกเป็นเอกสาร ไม่งงว่านับทีละตัวกดส่ง)
+  const [sheetStarted, setSheetStarted] = useState(false);
+  // CEO 2026-07-18 · แตะรูปสินค้า → ดูขยาย (lightbox)
+  const [zoomImg, setZoomImg] = useState<{ url: string; name: string } | null>(null);
   // นับต่อสินค้า (null = ยังไม่นับ) · รูปหลักฐานต่อสินค้า (optional)
   const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [photos, setPhotos] = useState<Record<string, string>>({});
@@ -2567,10 +2632,11 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
           return;
         }
         // field-staff → server บังคับ DRAFT/PENDING (รอผจก.อนุมัติ · ไม่ตัดสต๊อกทันที)
-        setOkMsg("ส่งให้ผู้จัดการอนุมัติแล้ว · ยอดจะปรับหลังอนุมัติ");
+        setOkMsg("ส่งใบนับให้ผู้จัดการอนุมัติแล้ว · ยอดจะปรับหลังอนุมัติ");
         setCounts({});
         setPhotos({});
         setClientKey(genClientKey()); // ใบใหม่รอบหน้า
+        setSheetStarted(false); // ปิดใบ → กลับหน้าเริ่ม (สร้างใบใหม่)
       } catch (e) {
         console.error("[clawos] submitStockCount threw:", e);
         setError("บันทึกไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
@@ -2597,10 +2663,38 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="คลังสาขานี้ยังไม่มีสินค้า" sub="รับสินค้าเข้าคลังก่อน แล้วค่อยนับสต๊อก" />
         </div>
+      ) : !sheetStarted ? (
+        // CEO 2026-07-18 · หน้าเริ่ม "สร้างใบนับ" — กดก่อน แล้วค่อยนับทั้งคลังรวดเดียว (เหมือนเปิดเอกสารใหม่)
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "18px 16px", textAlign: "center" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 5 }}>สร้างใบนับสต๊อก</div>
+            <div style={{ fontSize: 12.5, color: "#6B7280", lineHeight: 1.5, marginBottom: 16 }}>เปิดใบใหม่ 1 ใบ แล้วนับ<b>ทั้งคลัง {products.length} รายการรวดเดียว</b> · ส่งจบเป็นใบเดียว ผู้จัดการอนุมัติก่อนปรับยอด</div>
+            <button type="button" onClick={() => { setSheetStarted(true); setOkMsg(null); setError(null); }} className="co-tap"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", borderRadius: 13, cursor: "pointer" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
+              สร้างใบนับใหม่
+            </button>
+          </div>
+          {okMsg && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#15803D", fontWeight: 600 }}>
+              <Check size={15} strokeWidth={2.6} />{okMsg}
+            </div>
+          )}
+          {countDocs.length > 0 && (
+            <button type="button" onClick={() => setTab("history")} style={{ fontSize: 12.5, fontWeight: 600, color: "#4F46E5", background: "none", border: "none", cursor: "pointer" }}>
+              ดูประวัติใบนับ ({countDocs.length}) →
+            </button>
+          )}
+        </div>
       ) : (
       <>
-      <div style={{ fontSize: 11.5, color: "#8A909A", lineHeight: 1.5 }}>
-        นับของในคลังสาขาแล้วแตะ + ต่อสินค้า · ส่งแล้วผู้จัดการจะอนุมัติก่อนปรับยอด
+      {/* หัวใบนับ — บอกว่ากำลังนับทั้งคลัง (เอกสารเดียว) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#EEF0FE", borderRadius: 11, padding: "10px 13px" }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 17px" }}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+        <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "#4F46E5", lineHeight: 1.4 }}>ใบนับใหม่ · นับให้ครบทั้ง {products.length} รายการ แล้วส่งเป็นใบเดียว</span>
       </div>
       {error && (
         <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
@@ -2634,6 +2728,7 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
           eventScopeId={`stockcount-${branchId}`}
           photoUrl={photos[p.id] ?? ""}
           onPhoto={(url) => setPhotos((ph) => ({ ...ph, [p.id]: url }))}
+          onImageTap={(url, name) => setZoomImg({ url, name })}
         />
       ))}
       <button type="button" onClick={submit} disabled={!canSubmit || pending}
@@ -2642,6 +2737,16 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
         {pending ? "กำลังส่ง…" : countedLines.length > 0 ? `ส่งผลนับ ${countedLines.length} รายการให้ผู้จัดการ` : "นับอย่างน้อย 1 รายการก่อน"}
       </button>
       </>
+      )}
+
+      {/* CEO 2026-07-18 · lightbox ดูรูปสินค้าขยาย */}
+      {zoomImg && (
+        <div onClick={() => setZoomImg(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 55, background: "rgba(10,12,16,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 10 }}>{zoomImg.name}</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoomImg.url} alt={zoomImg.name} style={{ maxWidth: "100%", maxHeight: "78%", objectFit: "contain", borderRadius: 12 }} />
+          <div style={{ fontSize: 12, color: "#9AA1AB", marginTop: 12 }}>แตะที่ไหนก็ได้เพื่อปิด</div>
+        </div>
       )}
     </div>
   );

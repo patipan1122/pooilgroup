@@ -30,6 +30,8 @@ export interface ProductCountCardProps {
   /** url รูปที่ถ่ายแล้ว (ถ้ามี) + callback เมื่อได้ url จริง */
   photoUrl?: string;
   onPhoto?: (url: string) => void;
+  /** CEO 2026-07-18 · แตะรูปสินค้า → ดูขยาย (parent เปิด lightbox) */
+  onImageTap?: (url: string, name: string) => void;
 }
 
 export function ProductCountCard({
@@ -42,6 +44,7 @@ export function ProductCountCard({
   eventScopeId = "",
   photoUrl = "",
   onPhoto,
+  onImageTap,
 }: ProductCountCardProps) {
   const counted = value != null;
   // เทียบกับ "ระบบว่ามี" — โชว์เฉพาะเมื่อรู้ค่า expected (undefined = ไม่โชว์ · call site เก่าไม่พัง).
@@ -70,7 +73,7 @@ export function ProductCountCard({
     >
       {/* หัวการ์ด: รูป + ชื่อ + ตัวเลขที่นับ */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <ProductThumb imageUrl={product.imageUrl} name={product.name} />
+        <ProductThumb imageUrl={product.imageUrl} name={product.name} onZoom={onImageTap} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -181,15 +184,15 @@ export function ProductCountCard({
 }
 
 /* ── รูปสินค้า (มี → แสดง · null → placeholder กล่อง) ─────────────────────── */
-function ProductThumb({ imageUrl, name }: { imageUrl: string | null; name: string }) {
+function ProductThumb({ imageUrl, name, onZoom }: { imageUrl: string | null; name: string; onZoom?: (url: string, name: string) => void }) {
   if (imageUrl) {
+    // CEO 2026-07-18 · แตะรูปสินค้า → ดูขยาย (มี onZoom)
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={imageUrl}
-        alt={name}
-        style={{ width: 56, height: 56, flex: "0 0 56px", borderRadius: 12, objectFit: "cover", background: "#F1F2F7" }}
-      />
+      <button type="button" onClick={onZoom ? () => onZoom(imageUrl, name) : undefined} className={onZoom ? "co-tap" : undefined}
+        style={{ width: 56, height: 56, flex: "0 0 56px", borderRadius: 12, overflow: "hidden", border: "none", padding: 0, background: "#F1F2F7", cursor: onZoom ? "zoom-in" : "default" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={imageUrl} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      </button>
     );
   }
   return (

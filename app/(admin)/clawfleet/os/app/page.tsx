@@ -145,41 +145,87 @@ export default async function StaffAppPage({
     } catch {
       // graceful: คงค่า default (0)
     }
-    // ประวัติของ "วันที่เลือก" (ในช่วงเวลาไทยของวันนั้น · gte..lt)
+    // CEO 2026-07-18 · ประวัติ "รวมทุกวัน" (ไม่ต้องเลือกวัน) — ดึงย้อนหลัง ~45 วัน แล้วจัดกลุ่มตามวันในจอ.
+    // รวม 3 ชนิด: เก็บเงิน (COLLECTION) · ตั้งค่าครั้งแรก (INITIAL) · เปลี่ยนตุ๊กตา (movement cf_return/refill_dolls).
+    // READ-ONLY · ไม่แตะเงิน · graceful: query ล้ม → คงค่า default ([]).
+    const HISTORY_SINCE = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    const ymdBangkok = (d: Date) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    const timeBangkok = (d: Date) =>
+      d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
     try {
       const events = await prisma.cfCollectionEvent.findMany({
         where: {
           orgId,
           collectedById: userId,
-          eventType: "COLLECTION",
-          collectedAt: { gte: dayRange.gte, lt: dayRange.lt },
+          eventType: { in: ["COLLECTION", "INITIAL"] },
+          collectedAt: { gte: HISTORY_SINCE },
         },
         orderBy: { collectedAt: "desc" },
         select: {
-          collectedAt: true,
-          cashCountedCents: true,
-          anomalyFlags: true,
-          coinMeterAfter: true,
-          machine: { select: { code: true, branch: { select: { name: true } } } },
+          id: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
+          coinMeterAfter: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, shortReason: true,
+          photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
+          photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
+          machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
         },
-        take: 50,
+        take: 80,
       });
-      history = events.map((e) => ({
-        code: e.machine.code,
-        // B3 · สาขาของตู้ (โชว์ในประวัติ · ช่วยจำว่าเก็บที่ไหน)
-        branch: e.machine.branch.name,
-        // B3 · วันที่ไทยของรอบ (YYYY-MM-DD) · ใช้ label เมื่อดูย้อนหลัง
-        date: selectedDate,
-        time: e.collectedAt.toLocaleTimeString("th-TH", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Asia/Bangkok",
-        }),
-        cashBaht: Math.round(e.cashCountedCents / 100),
-        // B3 · เลขมิเตอร์เหรียญที่บันทึกไว้ (look-back หลักฐานตัวเลขที่กรอก)
-        coinMeter: e.coinMeterAfter,
-        ok: e.anomalyFlags.length === 0,
-      }));
+      const collectRows: StaffHistoryRow[] = events.map((e) => {
+        const isBaseline = e.eventType === "INITIAL";
+        // รูปหลักฐาน (เฉพาะที่มี url) พร้อม label สำหรับตัวดูรูปในหน้าประวัติ
+        const photoDefs: Array<[string | null, string]> = isBaseline
+          ? [[e.photoMoneyMeterTopUrl, "มิเตอร์เงิน (บน)"], [e.photoMoneyMeterBottomUrl, "มิเตอร์เงิน (ล่าง)"], [e.photoDollMeterTopUrl, "มิเตอร์ตุ๊กตา (บน)"], [e.photoDollMeterBottomUrl, "มิเตอร์ตุ๊กตา (ล่าง)"], [e.photoMachineUrl, "รูปตู้"], [e.photoStockUrl, "สต็อกตั้งต้น"]]
+          : [[e.photoStockUrl, "สต็อกก่อนเติม"], [e.photoMeterBeforeUrl, "สต็อกหลังเติม"], [e.photoPrizeMeterUrl, "มิเตอร์ตุ๊กตา"], [e.photoMeterAfterUrl, "มิเตอร์เหรียญ"], [e.photoCashUrl, "เงินสด"]];
+        const photos = photoDefs.filter(([u]) => !!u).map(([u, label]) => ({ url: u as string, label }));
+        // "รูปยังไม่ครบ" (ไม่นับรูปเงินสด) — ใช้ป้าย amber + ปุ่มแนบเพิ่ม (เดิม)
+        const requiredCount = isBaseline ? 6 : 4;
+        const photosMissing = photos.filter((p) => p.label !== "เงินสด").length < requiredCount;
+        const dollsOut = e.stockBefore != null && e.stockAfter != null ? Math.max(0, e.stockBefore - e.stockAfter) : undefined;
+        return {
+          kind: isBaseline ? "baseline" : "collect",
+          code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name,
+          date: ymdBangkok(e.collectedAt), time: timeBangkok(e.collectedAt),
+          cashBaht: Math.round(e.cashCountedCents / 100),
+          coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
+          stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
+          shortReason: e.shortReason ?? undefined,
+          ok: e.anomalyFlags.length === 0, isBaseline, eventId: e.id, eventType: e.eventType,
+          photos, photosMissing,
+        };
+      });
+
+      // เปลี่ยนตุ๊กตา — movement cf_return_dolls (คืน · qty>0) + cf_refill_dolls (เติม · qty<0) ของฉัน,
+      // จัดกลุ่มตาม (ตู้ + นาที) = 1 การกด "เปลี่ยน" (แต่ละ SKU เขียน movement แยก · clientKey คนละตัว).
+      let swapRows: StaffHistoryRow[] = [];
+      try {
+        const moves = await prisma.cfStockMovement.findMany({
+          where: { orgId, createdById: userId, refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] }, occurredAt: { gte: HISTORY_SINCE } },
+          orderBy: { occurredAt: "desc" },
+          select: { qty: true, refTable: true, occurredAt: true, machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } } },
+          take: 200,
+        });
+        const groups = new Map<string, { code: string; nickname: string | null; branch: string; at: Date; returned: number; refilled: number }>();
+        for (const m of moves) {
+          if (!m.machine) continue;
+          const minute = new Date(m.occurredAt); minute.setSeconds(0, 0);
+          const key = `${m.machine.code}|${minute.toISOString()}`;
+          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, at: m.occurredAt, returned: 0, refilled: 0 };
+          if (m.refTable === "cf_return_dolls") g.returned += Math.abs(m.qty);
+          else g.refilled += Math.abs(m.qty);
+          groups.set(key, g);
+        }
+        swapRows = [...groups.values()].map((g) => ({
+          kind: "swap" as const, code: g.code, nickname: g.nickname, branch: g.branch,
+          date: ymdBangkok(g.at), time: timeBangkok(g.at), cashBaht: 0, ok: true,
+          swapReturned: g.returned, swapRefilled: g.refilled,
+        }));
+      } catch {
+        // graceful: movement query ล้ม → ไม่มี swap ในประวัติ (collect ยังโชว์ได้)
+      }
+
+      // รวม + เรียงใหม่ตามเวลา (date+time) จากใหม่→เก่า
+      history = [...collectRows, ...swapRows].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     } catch {
       // graceful: ยังไม่ migrate / query ล้ม → คงค่า default ([])
     }
