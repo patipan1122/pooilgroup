@@ -1336,6 +1336,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // ยกเลิกอัตโนมัติเมื่อ: ออกจากขั้นกระทบยอด · กำลังส่งอยู่ · หมดเวลา escape (เน็ตล้ม → กลับไปเป็นบล็อกให้กดเอง)
   useEffect(() => {
     if (!autoSubmitPending) return;
+    // set-state ใน effect ตั้งใจ (orchestrate auto-submit) — pattern เดียวกับ effect อื่นในไฟล์นี้
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (state.step !== 5 || pending) { setAutoSubmitPending(false); return; }
     if (uploadingCount === 0) {
       setAutoSubmitPending(false);

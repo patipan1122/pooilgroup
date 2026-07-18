@@ -148,6 +148,8 @@ export default async function StaffAppPage({
     // CEO 2026-07-18 · ประวัติ "รวมทุกวัน" (ไม่ต้องเลือกวัน) — ดึงย้อนหลัง ~45 วัน แล้วจัดกลุ่มตามวันในจอ.
     // รวม 3 ชนิด: เก็บเงิน (COLLECTION) · ตั้งค่าครั้งแรก (INITIAL) · เปลี่ยนตุ๊กตา (movement cf_return/refill_dolls).
     // READ-ONLY · ไม่แตะเงิน · graceful: query ล้ม → คงค่า default ([]).
+    // Date.now() ใน Server Component (รันครั้งเดียวต่อ request · ไม่ใช่ React render loop) — ปลอดภัย
+    // eslint-disable-next-line react-hooks/purity
     const HISTORY_SINCE = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const ymdBangkok = (d: Date) =>
       new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
