@@ -4205,7 +4205,7 @@ function PhotoSkipReasonSheet({ onCancel, onConfirm }: { onCancel: () => void; o
           })}
         </div>
         {pick === "อื่นๆ" && (
-          <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="พิมพ์เหตุผล…" autoFocus
+          <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="พิมพ์เหตุผล…" autoFocus maxLength={200}
             style={{ width: "100%", fontSize: 14, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, marginBottom: 12 }} />
         )}
         <button type="button" disabled={!reason} onClick={() => reason && onConfirm(reason)}

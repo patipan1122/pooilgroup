@@ -164,7 +164,7 @@ export default async function StaffAppPage({
         orderBy: { collectedAt: "desc" },
         select: {
           id: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
-          coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, shortReason: true, notes: true,
+          coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true, shortReason: true, notes: true,
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
@@ -181,8 +181,9 @@ export default async function StaffAppPage({
         // "รูปยังไม่ครบ" = ขาดรูปที่ "บังคับจริง" เท่านั้น (มิเตอร์=ไม่บังคับ) — ตรงกับ close-gate: collect ต้องมีก่อน/หลังเติม.
         //   baseline ไม่มี close-gate บังคับรูป → ไม่ขึ้นป้าย (กันนกป้าย amber บนรอบปกติ). ตรงกับปรปักษ์ #4.
         const photosMissing = isBaseline ? false : !(e.photoStockUrl && e.photoMeterBeforeUrl);
-        // ตุ๊กตาออก = มิเตอร์ตุ๊กตาเดิน (นับตัวที่ออกจริง) — ไม่ใช่ stockBefore−stockAfter (นั่นรวมเติมด้วย → เพี้ยน).
-        const dollsOut = e.dollMeterAfter != null && e.dollMeterBefore != null ? Math.max(0, e.dollMeterAfter - e.dollMeterBefore) : undefined;
+        // ตุ๊กตาออก = ก่อน + เติม − หลัง (prizeCountedOut) — สูตรเดียวกับหน้าเก็บเงิน + หน้าผู้จัดการเป๊ะ
+        //   (stockAfter รวมเติมแล้ว → +refillQty หักล้างพอดี) · ไม่ใช้ meter delta เพราะรอบ "ไม่ตรง" จะเลขไม่ตรงกัน 3 ที่.
+        const dollsOut = e.stockBefore != null && e.stockAfter != null ? Math.max(0, e.stockBefore + (e.refillQty ?? 0) - e.stockAfter) : undefined;
         return {
           kind: isBaseline ? "baseline" : "collect",
           code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name,
@@ -190,8 +191,8 @@ export default async function StaffAppPage({
           cashBaht: Math.round(e.cashCountedCents / 100),
           coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
           stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
-          // แสดงทั้งเหตุผลเงินขาด (shortReason) และหมายเหตุอื่น เช่น 'ไม่แนบรูป' (notes) — คนละช่อง
-          shortReason: [e.shortReason, e.notes].filter(Boolean).join(" · ") || undefined,
+          // แสดงเหตุผลเงินขาด (shortReason) + หมายเหตุที่พนักงานควรเห็น (notes) — กรอง marker ภายใน [OVERRIDE] ออก
+          shortReason: [e.shortReason, e.notes?.includes("[OVERRIDE]") ? null : e.notes].filter(Boolean).join(" · ") || undefined,
           ok: e.anomalyFlags.length === 0, isBaseline, eventId: e.id, eventType: e.eventType,
           photos, photosMissing,
         };
