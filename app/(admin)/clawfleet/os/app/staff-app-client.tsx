@@ -840,6 +840,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // แต่ต้องมี "ทางออก": ถ้า upload ค้างนานเกิน (เน็ตตก/ล้ม) → หลัง ~8 วิ ปล่อยให้บันทึกได้ (offline-tolerant
   // ตามปรัชญา sentinel เดิม · ร่างจะเก็บ url ที่มาทันเท่านั้น · retry อัปโหลดวิ่งต่อเบื้องหลัง).
   const [allowSaveDespitePending, setAllowSaveDespitePending] = useState(false);
+  // CEO 2026-07-18 · กดยืนยันแล้วรูปยังอัปไม่เสร็จ → ค้างเป็น "รอส่งอัตโนมัติ" แทนบล็อกให้กดซ้ำเอง
+  const [autoSubmitPending, setAutoSubmitPending] = useState(false);
+  // CEO 2026-07-18 · เหตุผลที่ปิดรอบโดยไม่มีรูป (นโยบายบังคับ) — มีค่า = ผ่านด่านรูปได้ · เก็บลง shortReason
+  const [photoSkipReason, setPhotoSkipReason] = useState<string | null>(null);
+  const [photoReasonOpen, setPhotoReasonOpen] = useState(false);
 
   const machine = useMemo(
     () => machines.find((m) => m.id === state.machineId) ?? null,
@@ -957,9 +962,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
    * และรอบที่เงินไม่ตรงจะไม่มีรูปให้ตรวจย้อนเลย. รูปมิเตอร์ = ไม่บังคับ (ใช้ตอนอ่านเลขไม่ออก · ตามตัวอย่าง). */
   const stockPhotosOk = !!state.photosCaptured.before && !!state.photosCaptured.after;
   const photoRequiredMissing = photoRequired && !stockPhotosOk;
-  // ปิดรอบได้ต่อเมื่อเลขที่ server ใช้คิดเงินครบจริง (นับเหลือ + เงินสด + มิเตอร์ 4 ช่อง) + รูปตามนโยบาย.
-  // ขาดข้อใดข้อหนึ่ง → ไม่ยอมส่ง (กันยอด 0 หลอกเข้าระบบ) → เสนอ "บันทึกค้างไว้" แทน.
-  const submitReady = isFilled(f.left) && isFilled(f.cash) && meterFilled && !photoRequiredMissing;
+  // เลขที่ server ใช้คิดเงินครบไหม (นับเหลือ + เงินสด + มิเตอร์ 4 ช่อง) — ขาด = ปิดรอบไม่ได้จริง (กันยอด 0 หลอก)
+  const numbersReady = isFilled(f.left) && isFilled(f.cash) && meterFilled;
+  // CEO 2026-07-18 · รูปบังคับแต่ไม่ถ่าย → ปิดรอบได้ "ถ้าใส่เหตุผล" (ไม่บล็อกตาย · เก็บ shortReason ไว้ตรวจ)
+  const needPhotoReason = numbersReady && photoRequiredMissing;
+  // ปิดรอบได้เลย = เลขครบ + (รูปครบ หรือ ใส่เหตุผลข้ามรูปแล้ว)
+  const submitReady = numbersReady && (!photoRequiredMissing || !!photoSkipReason);
   const meterReady = submitReady;
   // ยังไม่ครบอะไรบ้าง → บอกตรง ๆ ที่ขั้นกระทบยอด (พร้อมปุ่มบันทึกค้าง · ไม่ทิ้งงาน)
   const missingForSubmit: string[] = [];
@@ -995,6 +1003,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   /* ── open a machine: start a REAL session up-front (so submit can fire), else demo ── */
   function openMachine(m: AppMachine) {
     setError(null);
+    setPhotoSkipReason(null); setPhotoReasonOpen(false); setAutoSubmitPending(false); // เปิดตู้ใหม่ = เริ่มเหตุผลรูปใหม่
     // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP) → ไปฟอร์ม "ตั้งค่าครั้งแรก" แทน 6-step wizard.
     // (ตู้ยังไม่มี baseline → กระทบยอดเทียบอะไรไม่ได้ · ต้องบันทึกยอดตั้งต้นก่อน). demo ไม่มี awaitingSetup.
     if (m.awaitingSetup && !isDemo(m.id)) {
@@ -1142,10 +1151,17 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     });
   }
 
-  /* ── submit the round: REAL → submitBranchEvent + closeBranchSession; DEMO → optimistic ── */
-  function submitRound() {
+  // CEO 2026-07-18 · ปิดรอบไม่มีรูป: ตั้ง reason แล้วยิงเลย (ส่ง reason ตรง กัน state ยังไม่อัปเดตในทิคเดียว)
+  function submitRoundWithPhotoReason(reason: string) {
+    submitRound(reason);
+  }
+
+  /* ── submit the round: REAL → submitBranchEvent + closeBranchSession; DEMO → optimistic ──
+   * photoReasonArg = เหตุผลปิดรอบไม่มีรูป (ส่งตรงจากปุ่ม · bypass ด่านรูป) — ปกติอ่านจาก state */
+  function submitRound(photoReasonArg?: string) {
     if (!machine) return;
     setError(null);
+    const effPhotoReason = photoReasonArg ?? photoSkipReason;
 
     // demo → optimistic, jump to done (ไม่มี server)
     if (isDemo(machine.id)) {
@@ -1165,7 +1181,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     // safety net: ช่องที่ server ใช้คิดเงินต้องกรอกครบก่อนปิดรอบ → กันส่ง 0 ปลอมเข้าระบบ anti-cheat.
     // ⚠️ "เติมกี่ตัว" ไม่อยู่ในด่านนี้แล้ว (CEO 2026-07-15): ไม่เติม = เติม 0 ตัว ซึ่งถูกต้องอยู่แล้ว
     //    (refillTotal coalesce null→0) — เดิมบังคับให้กรอกช่องเติม ทำให้รอบที่ "ไม่ได้เติม" ส่งไม่ได้.
-    if (!submitReady) {
+    // เลขต้องครบเสมอ · รูปข้ามได้ถ้ามีเหตุผล (effPhotoReason) ตามนโยบาย CEO 2026-07-18
+    const okToClose = numbersReady && (!photoRequiredMissing || !!effPhotoReason);
+    if (!okToClose) {
       setError(`ยังกรอกไม่ครบ: ${missingForSubmit.join(" · ")} — กรอกให้ครบก่อนปิดรอบ (หรือกดบันทึกค้างไว้)`);
       return;
     }
@@ -1189,8 +1207,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         (coinCaptured && !(p.coinDigi || p.coinGear)) ||
         (prizeCaptured && !(p.dollDigi || p.dollGear));
       if (waitingUpload) {
-        // retry อัปโหลดวิ่งเบื้องหลังเอง (ไม่ต้องถ่ายซ้ำ) → พนักงานแค่รอ url ครบแล้วกดส่งอีกครั้ง
-        setError("⏳ กำลังส่งรูปหลักฐาน รอสักครู่แล้วกดบันทึกอีกครั้ง");
+        // CEO 2026-07-18 · เดิมบล็อกให้กดเองซ้ำ ("รอสักครู่แล้วกดอีกครั้ง") = พนักงานงงว่ากดไม่ได้.
+        // ใหม่: จำเจตนา "ส่ง" ไว้ → พอ url รูปครบ (queue อัปเสร็จเอง) useEffect จะยิง submit ให้อัตโนมัติ
+        //       กดครั้งเดียวจบ · รูปไม่หาย (ส่ง url จริงครบ). ระหว่างรอโชว์สปินเนอร์บนปุ่ม.
+        setAutoSubmitPending(true);
+        setError(null);
         return;
       }
     }
@@ -1242,6 +1263,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       photoStockBeforeUrl: p.before || "",
       photoStockAfterUrl: p.after || "",
       photoCashUrl: p.cash || "",
+      // CEO 2026-07-18 · ปิดรอบโดยไม่มีรูป (นโยบายบังคับ) → แนบเหตุผลไว้ตรวจย้อนหลัง (เก็บใน shortReason)
+      ...(effPhotoReason ? { shortReason: `ไม่แนบรูป: ${effPhotoReason}` } : {}),
     };
     sendEvent(args);
   }
@@ -1292,6 +1315,23 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
     });
   }
 
+  // CEO 2026-07-18 · auto-submit — พอกดยืนยันแล้วรูปยังอัปไม่เสร็จ (autoSubmitPending) รอจน url ครบ
+  // (uploadingCount===0) แล้วยิง submitRound ให้เอง · กดครั้งเดียวจบ ไม่ต้องกดซ้ำ · รูปไม่หาย.
+  // ยกเลิกอัตโนมัติเมื่อ: ออกจากขั้นกระทบยอด · กำลังส่งอยู่ · หมดเวลา escape (เน็ตล้ม → กลับไปเป็นบล็อกให้กดเอง)
+  useEffect(() => {
+    if (!autoSubmitPending) return;
+    if (state.step !== 5 || pending) { setAutoSubmitPending(false); return; }
+    if (uploadingCount === 0) {
+      setAutoSubmitPending(false);
+      submitRound();
+    } else if (allowSaveDespitePending) {
+      // 8 วิ แล้วยังอัปไม่เสร็จ (เน็ตตก) → เลิกออโต้ · แจ้งให้กดเอง (queue ยัง retry อยู่)
+      setAutoSubmitPending(false);
+      setError("รูปยังส่งไม่ขึ้น (เน็ตช้า) · กด “ยืนยัน” อีกครั้งเมื่อสัญญาณกลับมา — รูปไม่หาย ระบบส่งซ้ำให้เอง");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSubmitPending, uploadingCount, allowSaveDespitePending, state.step, pending]);
+
   // N5 · แม่บ้านเลือกเหตุผลเงินขาดใน MismatchGate → resubmit payload เดิม + shortReason
   function confirmShort(reason: string, note: string) {
     if (!pendingShort) return;
@@ -1328,16 +1368,22 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   } else if (state.step === 3) {
     primaryLabel = "ถัดไป · กระทบยอด";
   } else if (state.step === 5) {
-    if (!submitReady) {
-      // นโยบายผสม (CEO 2026-07-16 · mockup-match): เลข/รูปยังไม่ครบ → ปุ่มหลักเทา no-op ตาม mockup
-      // ("ยังมี N จุดผิด · แก้ให้ครบก่อน") — กรอก/ถ่ายได้ในการ์ดแดงบนหน้านี้เลย ไม่ต้องเด้งไปไหน
+    if (needPhotoReason && !photoSkipReason) {
+      // CEO 2026-07-18 · เลขครบแล้ว ขาดแค่รูป (นโยบายบังคับ) → กดปิดรอบได้ แต่ต้องใส่เหตุผลก่อน
+      primaryLabel = "ปิดรอบ · ไม่มีรูป (ใส่เหตุผล)";
+      primaryColor = "#B45309";
+      primaryAction = () => setPhotoReasonOpen(true);
+    } else if (!submitReady) {
+      // นโยบายผสม (CEO 2026-07-16 · mockup-match): เลขยังไม่ครบ → ปุ่มหลักเทา no-op ตาม mockup
+      // ("ยังมี N จุดผิด · แก้ให้ครบก่อน") — กรอกได้ในการ์ดแดงบนหน้านี้เลย ไม่ต้องเด้งไปไหน
       // · "บันทึกค้างไว้" ยังอยู่เป็นปุ่มรอง (FlowScreen โชว์ให้ที่ขั้น 5 เมื่อไม่พร้อม) — งานไม่ทิ้ง
       primaryLabel = `ยังมี ${missingForSubmit.length} จุดผิด · แก้ให้ครบก่อน`;
       primaryColor = "#F1F2F5";
       primaryAction = () => {};
     } else {
       // แดง = เตือน ไม่ได้ห้ามส่ง (CEO 2026-07-13) → กดยืนยันได้เสมอเมื่อเลขครบ
-      primaryLabel = pending ? "กำลังส่ง..." : allMatch ? "ยืนยันกระทบยอด" : "ยืนยันส่งข้อมูล (มีจุดไม่ตรง)";
+      // autoSubmitPending = กดแล้ว รอรูปอัปเสร็จ → โชว์ "กำลังส่งรูป…" ระบบยิงให้เอง (CEO 2026-07-18)
+      primaryLabel = pending ? "กำลังส่ง..." : autoSubmitPending ? "⏳ กำลังส่งรูป… เดี๋ยวบันทึกให้เลย" : allMatch ? "ยืนยันกระทบยอด" : "ยืนยันส่งข้อมูล (มีจุดไม่ตรง)";
       primaryColor = allMatch ? "#15803D" : "#B42318";
       primaryAction = submitRound;
     }
@@ -1350,7 +1396,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // กันกดถัดไป/ส่ง เมื่อ: กำลังส่ง · ยังถ่ายรูปไม่ครบ (นโยบาย) · ยังกรอกตัวเลขที่ต้องนับไม่ครบ ·
   // FIX-1 · ปุ่ม "บันทึกค้าง" (step 5 + meterDeferred) ต้องรอ upload รูปเสร็จก่อน (uploadPending)
   const savingDraftStep = state.step === 5 && !meterReady;
-  const primaryDisabled = pending || (savingDraftStep && uploadPending);
+  const primaryDisabled = pending || autoSubmitPending || (savingDraftStep && uploadPending);
 
   // [STEP] label ตามขั้นจริงใหม่ {1,3,5,6}
   const stepLabels: Record<number, string> = {
@@ -1540,6 +1586,19 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           // ดีไซน์ใหม่ · คืนตุ๊กตาเข้าชั้นระหว่างรอบ → สะสมไว้หัก "ตุ๊กตาออก" (server หัก interim ให้เองตอนกระทบยอด)
           onReturned={(qty) => dispatch({ type: "addReturned", qty })}
           onSetRemainBySku={(map) => dispatch({ type: "setRemainBySku", map })}
+        />
+      )}
+
+      {/* CEO 2026-07-18 · ปิดรอบไม่มีรูป → เลือกเหตุผลก่อน (เก็บลง shortReason · แล้วยิง submit ให้เลย) */}
+      {photoReasonOpen && (
+        <PhotoSkipReasonSheet
+          onCancel={() => setPhotoReasonOpen(false)}
+          onConfirm={(reason) => {
+            setPhotoSkipReason(reason);
+            setPhotoReasonOpen(false);
+            // ตั้ง reason แล้วยิง submit ทันที (submitReady จะเป็น true หลัง state อัปเดต) — ใช้ arg ตรง กัน stale
+            submitRoundWithPhotoReason(reason);
+          }}
         />
       )}
 
@@ -4006,6 +4065,47 @@ function PhotoHubScreen(props: {
         )}
         <button type="button" onClick={props.onContinue} style={{ width: "100%", minHeight: 44, fontSize: 13, fontWeight: 600, color: "#4F46E5", border: "none", padding: "11px 0 2px", background: "transparent", cursor: "pointer" }}>
           กรอกตัวเลขต่อเลย (นับ → เติม → มิเตอร์ → เงินสด)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* CEO 2026-07-18 · sheet เลือกเหตุผลปิดรอบโดยไม่มีรูป (นโยบายบังคับถ่าย แต่มั่นใจว่าถูก) —
+   เก็บลง shortReason ให้เจ้าของตรวจย้อนหลังได้ · เลือกชิป หรือพิมพ์เอง */
+const PHOTO_SKIP_REASONS = ["รีบ · เก็บตู้ต่อ", "เน็ตช้า ถ่ายไม่ขึ้น", "กล้อง/ตู้มีปัญหา"] as const;
+function PhotoSkipReasonSheet({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (reason: string) => void }) {
+  const [pick, setPick] = useState<string>("");
+  const [other, setOther] = useState<string>("");
+  const reason = pick === "อื่นๆ" ? other.trim() : pick;
+  return (
+    <div role="dialog" aria-modal="true" onClick={onCancel}
+      style={{ position: "absolute", inset: 0, zIndex: 45, background: "rgba(20,22,28,0.5)", display: "flex", alignItems: "flex-end" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#fff", borderRadius: "20px 20px 0 0", padding: "18px 18px 22px" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px" }} />
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>ปิดรอบโดยไม่มีรูป</div>
+        <div style={{ fontSize: 12.5, color: "#6B7280", marginBottom: 14, lineHeight: 1.45 }}>บริษัทตั้งให้ต้องมีรูป — เลือกเหตุผลสั้น ๆ ว่าทำไมรอบนี้ไม่มี (เจ้าของเห็นในประวัติ)</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+          {[...PHOTO_SKIP_REASONS, "อื่นๆ"].map((r) => {
+            const on = pick === r;
+            return (
+              <button key={r} type="button" onClick={() => setPick(r)} className="co-tap"
+                style={{ fontSize: 12.5, fontWeight: 600, padding: "9px 14px", borderRadius: 20, border: `1.5px solid ${on ? "#B45309" : "#E3E6EA"}`, background: on ? "#FCF6EC" : "#fff", color: on ? "#B45309" : "#5A6270", cursor: "pointer" }}>
+                {r}
+              </button>
+            );
+          })}
+        </div>
+        {pick === "อื่นๆ" && (
+          <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="พิมพ์เหตุผล…" autoFocus
+            style={{ width: "100%", fontSize: 14, padding: "11px 13px", border: "1.5px solid #E3E6EA", borderRadius: 11, marginBottom: 12 }} />
+        )}
+        <button type="button" disabled={!reason} onClick={() => reason && onConfirm(reason)}
+          style={{ width: "100%", minHeight: 50, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", borderRadius: 13, background: reason ? "#15803D" : "#B7C6BC", cursor: reason ? "pointer" : "default" }}>
+          ยืนยันปิดรอบ
+        </button>
+        <button type="button" onClick={onCancel} style={{ width: "100%", minHeight: 42, marginTop: 6, fontSize: 13, fontWeight: 600, color: "#6B7280", background: "transparent", border: "none", cursor: "pointer" }}>
+          กลับไปถ่ายรูป
         </button>
       </div>
     </div>
