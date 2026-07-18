@@ -164,7 +164,7 @@ export default async function StaffAppPage({
         orderBy: { collectedAt: "desc" },
         select: {
           id: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
-          coinMeterAfter: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, shortReason: true,
+          coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, shortReason: true, notes: true,
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
@@ -178,10 +178,11 @@ export default async function StaffAppPage({
           ? [[e.photoMoneyMeterTopUrl, "มิเตอร์เงิน (บน)"], [e.photoMoneyMeterBottomUrl, "มิเตอร์เงิน (ล่าง)"], [e.photoDollMeterTopUrl, "มิเตอร์ตุ๊กตา (บน)"], [e.photoDollMeterBottomUrl, "มิเตอร์ตุ๊กตา (ล่าง)"], [e.photoMachineUrl, "รูปตู้"], [e.photoStockUrl, "สต็อกตั้งต้น"]]
           : [[e.photoStockUrl, "สต็อกก่อนเติม"], [e.photoMeterBeforeUrl, "สต็อกหลังเติม"], [e.photoPrizeMeterUrl, "มิเตอร์ตุ๊กตา"], [e.photoMeterAfterUrl, "มิเตอร์เหรียญ"], [e.photoCashUrl, "เงินสด"]];
         const photos = photoDefs.filter(([u]) => !!u).map(([u, label]) => ({ url: u as string, label }));
-        // "รูปยังไม่ครบ" (ไม่นับรูปเงินสด) — ใช้ป้าย amber + ปุ่มแนบเพิ่ม (เดิม)
-        const requiredCount = isBaseline ? 6 : 4;
-        const photosMissing = photos.filter((p) => p.label !== "เงินสด").length < requiredCount;
-        const dollsOut = e.stockBefore != null && e.stockAfter != null ? Math.max(0, e.stockBefore - e.stockAfter) : undefined;
+        // "รูปยังไม่ครบ" = ขาดรูปที่ "บังคับจริง" เท่านั้น (มิเตอร์=ไม่บังคับ) — ตรงกับ close-gate: collect ต้องมีก่อน/หลังเติม.
+        //   baseline ไม่มี close-gate บังคับรูป → ไม่ขึ้นป้าย (กันนกป้าย amber บนรอบปกติ). ตรงกับปรปักษ์ #4.
+        const photosMissing = isBaseline ? false : !(e.photoStockUrl && e.photoMeterBeforeUrl);
+        // ตุ๊กตาออก = มิเตอร์ตุ๊กตาเดิน (นับตัวที่ออกจริง) — ไม่ใช่ stockBefore−stockAfter (นั่นรวมเติมด้วย → เพี้ยน).
+        const dollsOut = e.dollMeterAfter != null && e.dollMeterBefore != null ? Math.max(0, e.dollMeterAfter - e.dollMeterBefore) : undefined;
         return {
           kind: isBaseline ? "baseline" : "collect",
           code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name,
@@ -189,7 +190,8 @@ export default async function StaffAppPage({
           cashBaht: Math.round(e.cashCountedCents / 100),
           coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
           stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
-          shortReason: e.shortReason ?? undefined,
+          // แสดงทั้งเหตุผลเงินขาด (shortReason) และหมายเหตุอื่น เช่น 'ไม่แนบรูป' (notes) — คนละช่อง
+          shortReason: [e.shortReason, e.notes].filter(Boolean).join(" · ") || undefined,
           ok: e.anomalyFlags.length === 0, isBaseline, eventId: e.id, eventType: e.eventType,
           photos, photosMissing,
         };

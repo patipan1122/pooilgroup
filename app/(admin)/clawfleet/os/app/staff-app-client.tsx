@@ -132,7 +132,8 @@ type SubmitBranchEventArgs = {
   photoStockBeforeUrl: string;
   photoStockAfterUrl: string;
   photoCashUrl: string;
-  shortReason?: string;
+  shortReason?: string; // เหตุผล "เงินขาด" (ด่านกันโกง server) — ห้ามใช้เก็บอย่างอื่น
+  notes?: string; // หมายเหตุทั่วไป (เช่น "ไม่แนบรูป: ...") — ไม่กระทบด่านเงินขาด
 };
 
 /* ─────────────────────────── demo fallback (no real DB) ────────────────────────── */
@@ -1276,8 +1277,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       photoStockBeforeUrl: p.before || "",
       photoStockAfterUrl: p.after || "",
       photoCashUrl: p.cash || "",
-      // CEO 2026-07-18 · ปิดรอบโดยไม่มีรูป (นโยบายบังคับ) → แนบเหตุผลไว้ตรวจย้อนหลัง (เก็บใน shortReason)
-      ...(effPhotoReason ? { shortReason: `ไม่แนบรูป: ${effPhotoReason}` } : {}),
+      // CEO 2026-07-18 · ปิดรอบโดยไม่มีรูป → เก็บเหตุผลใน `notes` (ไม่ใช่ shortReason!)
+      //   ⚠️ shortReason = ช่องเหตุผล "เงินขาด" ที่ server ใช้เป็นด่านกันโกง — ถ้าเอามาใส่เหตุผลรูป
+      //   จะทำให้รอบที่เงินขาดจริงข้ามด่าน (server เห็น shortReason มีค่า = ผ่าน). notes ปลอดภัย ไม่แตะด่าน.
+      ...(effPhotoReason ? { notes: `ไม่แนบรูป: ${effPhotoReason}` } : {}),
     };
     sendEvent(args);
   }
