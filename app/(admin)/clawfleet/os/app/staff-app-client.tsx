@@ -22,7 +22,7 @@
  * we send the captured url (or "" when skipped). Backend column is String? (nullable).
  */
 
-import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, PackagePlus, ImageDown, History, RefreshCw } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
@@ -154,6 +154,9 @@ type AppMachine = {
   awaitingSetup: boolean;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup SW-03)
   sellPriceCents: number | null;
+  // CEO 2026-07-19 · รอบก่อน (โชว์ตอนเริ่มเก็บ · วันไทยพร้อมโชว์ · null = ยังไม่เคย)
+  lastCollectedAt?: string | null;
+  lastRefillAt?: string | null;
 };
 
 const DEMO_BRANCH_ID = "demo-branch-rs";
@@ -191,6 +194,8 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           sellPriceCents: m.sellPriceCents,
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
+          lastCollectedAt: m.lastCollectedAt,
+          lastRefillAt: m.lastRefillAt,
           product: "",
           awaitingSetup: awaitingSetupIds.has(m.id),
         });
@@ -629,6 +634,9 @@ export type StaffHistoryRow = {
   meterMoneyTop?: number; meterMoneyBottom?: number; // มิเตอร์เงิน บน/ล่าง (กายภาพ)
   meterDollTop?: number; meterDollBottom?: number; // มิเตอร์ตุ๊กตา บน/ล่าง (กายภาพ)
   refillQty?: number; // จำนวนที่เติมเข้าตู้รอบนี้
+  // CEO 2026-07-19 · ใบสรุป fix-form: ราคาขาย/ตัว + ราย SKU ที่เติมรอบนี้ (name+qty+รูป)
+  sellPriceCents?: number;
+  refillSkus?: { name: string; qty: number; imageUrl?: string | null }[];
   // รายละเอียดรอบ (โชว์ในหน้า detail หน้าเดียว)
   stockBefore?: number;
   stockAfter?: number;
@@ -638,6 +646,9 @@ export type StaffHistoryRow = {
   // swap
   swapReturned?: number;
   swapRefilled?: number;
+  // CEO 2026-07-19 · ใบเปลี่ยนตุ๊กตา — ราย SKU ที่คืน/เติม (name+qty+รูป)
+  swapReturnedSkus?: { name: string; qty: number; imageUrl?: string | null }[];
+  swapRefilledSkus?: { name: string; qty: number; imageUrl?: string | null }[];
   // item 8 · รอบตั้งต้น (baseline) — ป้าย "การตั้งค่าครั้งแรก" (indigo)
   isBaseline?: boolean;
   // item 5/8 · รูปหลักฐานยังไม่ครบ — ป้าย "รูปยังไม่ครบ" (amber) + ปุ่ม "แนบรูปเพิ่ม"
@@ -2234,50 +2245,96 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                   </div>
                   <div style={{ fontSize: 12, color: "#9AA1AB", marginBottom: 14 }}>{detail.branch ? `${detail.branch} · ` : ""}{dayLabel} · {detail.time}</div>
 
-                  {/* สรุปตัวเลข */}
-                  <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12 }}>
+                  {/* CEO 2026-07-19 · ฟอร์มมาตรฐาน (fix-form) — ทุกช่องโชว์เสมอ · ไม่มีข้อมูล = "—" · ย่อสั้น */}
+                  {(() => {
+                    // helper โชว์เลข/ค่า หรือ "—" (ไม่มีข้อมูล)
+                    const nd = (v?: number | null) => (v != null ? v.toLocaleString("en-US") : "—");
+                    const baht = (v?: number | null) => (v != null ? `฿${v.toLocaleString("en-US")}` : "—");
+                    const price = detail.sellPriceCents != null ? Math.round(detail.sellPriceCents / 100) : null;
+                    const cell = (label: string, value: ReactNode, color?: string) => (
+                      <div><div style={{ fontSize: 10, color: "#9AA1AB" }}>{label}</div><div className="num" style={{ fontSize: 15, fontWeight: 700, color: color ?? "#1A1D21" }}>{value}</div></div>
+                    );
+                    const skuList = (skus: { name: string; qty: number; imageUrl?: string | null }[] | undefined, prefix: string, color: string, empty: string) => (
+                      skus && skus.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {skus.map((s, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                              <ProductThumb imageUrl={s.imageUrl} size={30} />
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color }}>{prefix}{s.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div style={{ fontSize: 11.5, color: "#B6BBC4" }}>{empty}</div>
+                    );
+                    return (
+                  <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", marginBottom: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                     {isSwap ? (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
-                        <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>คืนเข้าสโตร์</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#C0392B" }}>{detail.swapReturned ?? 0} ตัว</div></div>
-                        <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติมเข้าตู้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>+{detail.swapRefilled ?? 0} ตัว</div></div>
-                      </div>
+                      <>
+                        {/* SWAP · สรุป */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px" }}>
+                          {cell("คืนเข้าสโตร์", `${nd(detail.swapReturned)} ตัว`, "#C0392B")}
+                          {cell("เติมเข้าตู้", `+${nd(detail.swapRefilled)} ตัว`, "#15803D")}
+                          {cell("ราคาขาย/ตัว", baht(price))}
+                        </div>
+                        <div style={{ borderTop: "1px solid #F0F1F4", paddingTop: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 7 }}>ตุ๊กตาที่คืน</div>
+                          {skuList(detail.swapReturnedSkus, "", "#C0392B", "— ไม่มีการคืน")}
+                        </div>
+                        <div style={{ borderTop: "1px solid #F0F1F4", paddingTop: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 7 }}>ตุ๊กตาที่เติม</div>
+                          {skuList(detail.swapRefilledSkus, "+", "#15803D", "— ไม่มีการเติม")}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: "#B6BBC4" }}>รายการเปลี่ยนตุ๊กตา — ไม่มีข้อมูลเงิน / มิเตอร์ / รูป</div>
+                      </>
                     ) : (
                       <>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
-                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บได้จริง</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{detail.cashBaht.toLocaleString("en-US")}</div></div>
-                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{detail.dollsOut ?? "—"} ตัว</div></div>
-                          {detail.stockBefore != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบก่อนมี</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockBefore} ตัว</div></div>}
-                          {detail.stockAfter != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockAfter} ตัว</div></div>}
+                        {/* BLOCK 1 · เงิน (โชว์เสมอ) */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: detail.expectedCashBaht == null ? "#F7F8FA" : detail.ok ? "#F0FAF3" : "#FEF3F2", border: `1px solid ${detail.expectedCashBaht == null ? "#EAECEF" : detail.ok ? "#CDEBD7" : "#F3D4D0"}`, borderRadius: 10, padding: "10px 12px" }}>
+                          <div><div style={{ fontSize: 10, color: "#9AA1AB" }}>ได้จริง (นับได้)</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>{baht(detail.cashBaht)}</div></div>
+                          <div><div style={{ fontSize: 10, color: "#9AA1AB" }}>ควรได้ (มิเตอร์)</div><div className="num" style={{ fontSize: 14, fontWeight: 700 }}>{baht(detail.expectedCashBaht)}</div></div>
+                          <span style={{ flex: 1 }} />
+                          {detail.cashDiffBaht == null ? <span style={{ fontSize: 12, color: "#B6BBC4" }}>—</span>
+                            : detail.cashDiffBaht !== 0 ? <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: detail.cashDiffBaht < 0 ? "#B42318" : "#B45309" }}>{detail.cashDiffBaht < 0 ? `ขาด ฿${Math.abs(detail.cashDiffBaht).toLocaleString("en-US")}` : `เกิน ฿${detail.cashDiffBaht.toLocaleString("en-US")}`}</span>
+                            : <span style={{ fontSize: 12.5, fontWeight: 700, color: "#15803D" }}>ตรงพอดี</span>}
                         </div>
-                        {/* #1 CEO 2026-07-19 · เทียบเงินจริง: ควรได้ (จากมิเตอร์) vs นับได้ → ขาด/เกิน (เลข reconcile จาก server) */}
-                        {detail.expectedCashBaht != null && (
-                          <div style={{ marginTop: 11, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: detail.ok ? "#F0FAF3" : "#FEF3F2", border: `1px solid ${detail.ok ? "#CDEBD7" : "#F3D4D0"}`, borderRadius: 10, padding: "9px 12px" }}>
-                            <span style={{ fontSize: 11, color: "#6B7280" }}>ควรได้ (มิเตอร์) <b className="num" style={{ color: "#1A1D21" }}>฿{detail.expectedCashBaht.toLocaleString("en-US")}</b></span>
-                            <span style={{ fontSize: 11, color: "#6B7280" }}>· นับได้ <b className="num" style={{ color: "#1A1D21" }}>฿{detail.cashBaht.toLocaleString("en-US")}</b></span>
-                            <span style={{ flex: 1 }} />
-                            {detail.cashDiffBaht != null && detail.cashDiffBaht !== 0 ? (
-                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: detail.cashDiffBaht < 0 ? "#B42318" : "#B45309" }}>
-                                {detail.cashDiffBaht < 0 ? `ขาด ฿${Math.abs(detail.cashDiffBaht).toLocaleString("en-US")}` : `เกิน ฿${detail.cashDiffBaht.toLocaleString("en-US")}`}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#15803D" }}>ตรงพอดี</span>
-                            )}
+                        {/* BLOCK 2 · ตุ๊กตา (ก่อนเติม + เติม − ออก = คงเหลือ) + ราคาขาย */}
+                        <div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px 8px" }}>
+                            {cell("ก่อนเติม", `${nd(detail.stockBefore)}`)}
+                            {cell("เติม", `+${nd(detail.refillQty)}`, "#15803D")}
+                            {cell("ออกไป", `${nd(detail.dollsOut)}`, "#4F46E5")}
+                            {cell("คงเหลือ", `${nd(detail.stockAfter)}`)}
                           </div>
-                        )}
-                        {/* มิเตอร์ (CEO 2026-07-19) · เห็น บน/ล่าง + รอบก่อน→รอบนี้ (+delta = ยอดจริง) + เติม */}
-                        <div style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid #F0F1F4", display: "flex", flexDirection: "column", gap: 9 }}>
-                          <MeterDetailRow label="มิเตอร์เหรียญ" before={detail.coinMeterBefore} after={detail.coinMeter} top={detail.meterMoneyTop} bottom={detail.meterMoneyBottom} />
-                          <MeterDetailRow label="มิเตอร์ตุ๊กตา" after={detail.dollMeter} top={detail.meterDollTop} bottom={detail.meterDollBottom} />
-                          {detail.refillQty != null && detail.refillQty > 0 && (
-                            <div style={{ fontSize: 11.5, color: "#6B7280" }}>เติมเข้าตู้รอบนี้ <b className="num" style={{ color: "#15803D" }}>+{detail.refillQty.toLocaleString("en-US")}</b> ตัว</div>
+                          <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 7 }}>ราคาขาย/ตัว <b className="num" style={{ color: "#5A6270" }}>{baht(price)}</b></div>
+                        </div>
+                        {/* BLOCK 3 · มิเตอร์ 4 ตัว (เงินบน/ล่าง · ตุ๊กตาบน/ล่าง) — โชว์ครบเสมอ */}
+                        <div style={{ borderTop: "1px solid #F0F1F4", paddingTop: 11 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>มิเตอร์ 4 ตัว</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px" }}>
+                            {cell("เงิน · บน", nd(detail.meterMoneyTop))}
+                            {cell("เงิน · ล่าง", nd(detail.meterMoneyBottom))}
+                            {cell("ตุ๊กตา · บน", nd(detail.meterDollTop))}
+                            {cell("ตุ๊กตา · ล่าง", nd(detail.meterDollBottom))}
+                          </div>
+                          {detail.coinMeterBefore != null && detail.coinMeter != null && (
+                            <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 7 }}>เหรียญ รอบก่อน <span className="num">{nd(detail.coinMeterBefore)}</span> → รอบนี้ <b className="num" style={{ color: "#1A1D21" }}>{nd(detail.coinMeter)}</b> <b className="num" style={{ color: "#15803D" }}>(+{Math.max(0, detail.coinMeter - detail.coinMeterBefore).toLocaleString("en-US")})</b></div>
                           )}
                         </div>
-                        {detail.shortReason && (
-                          <div style={{ marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "8px 11px", fontSize: 11.5, color: "#8A5A12" }}>หมายเหตุ: {detail.shortReason}</div>
-                        )}
+                        {/* BLOCK 4 · ราย SKU ที่เติมรอบนี้ */}
+                        <div style={{ borderTop: "1px solid #F0F1F4", paddingTop: 11 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", marginBottom: 7 }}>ตุ๊กตาที่เติมรอบนี้</div>
+                          {skuList(detail.refillSkus, "+", "#15803D", "— ไม่ได้เติมรอบนี้")}
+                        </div>
+                        {/* BLOCK 6 · หมายเหตุ (โชว์เสมอ) */}
+                        <div style={{ borderTop: "1px solid #F0F1F4", paddingTop: 10, fontSize: 11.5, color: detail.shortReason ? "#8A5A12" : "#B6BBC4" }}>
+                          หมายเหตุ: {detail.shortReason || "—"}
+                        </div>
                       </>
                     )}
                   </div>
+                    );
+                  })()}
 
                   {/* รูปหลักฐาน — กดขยายได้ (CEO: ดูรูปขยาย · ให้ครบ) */}
                   {!isSwap && (
@@ -4611,6 +4668,19 @@ function FlowScreen(props: {
         {/* ═══ ขั้น 1 · นับ + เติม (ดีไซน์ใหม่ · จบในหน้าเดียว ไม่มีด่านบังคับ) ═══ */}
         {step === 1 && (
           <div>
+            {/* CEO 2026-07-19 · รอบก่อน — เก็บล่าสุด / เติมล่าสุด (วันไหน) · ช่วยพนักงานรู้ว่าตู้นี้เพิ่งทำอะไร */}
+            {machine && !props.usingDemo && (machine.lastCollectedAt !== undefined || machine.lastRefillAt !== undefined) && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "#5A6270", background: "#F1F2F5", padding: "5px 10px", borderRadius: 20 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2"><rect x="2" y="7" width="20" height="12" rx="2" /><path d="M2 11h20" /></svg>
+                  เก็บล่าสุด <b className="num" style={{ color: "#1A1D21" }}>{machine.lastCollectedAt || "ยังไม่เคย"}</b>
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "#5A6270", background: "#F1F2F5", padding: "5px 10px", borderRadius: 20 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                  เติมล่าสุด <b className="num" style={{ color: "#1A1D21" }}>{machine.lastRefillAt || "ยังไม่เคย"}</b>
+                </span>
+              </div>
+            )}
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>นับตุ๊กตาในตู้ (ก่อนเติม)</div>
             {/* ── นับเหลือ "รายตัว/SKU" · รวม = f.left = ยอดที่ส่งระบบ (สัญญาเดินเงินเดิม) ── */}
             {perSkuMode ? (

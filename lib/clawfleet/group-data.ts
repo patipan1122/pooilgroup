@@ -23,7 +23,16 @@ export type GroupMachine = {
   qrToken: string;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์ · ตั้งในหน้าตั้งค่าตู้) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup)
   sellPriceCents: number | null;
+  // CEO 2026-07-19 · รอบก่อน (โชว์ตอนเริ่มเก็บ) — วันไทยพร้อมโชว์ (คิดที่ server กัน tz)
+  lastCollectedAt: string | null; // เก็บ/มีevent ล่าสุด (จาก lastEventAt · รวม baseline)
+  lastRefillAt: string | null; // เติมตุ๊กตาล่าสุด (LOAD_TO_MACHINE)
 };
+
+// วันไทยแบบสั้น "19 ก.ค. 69" (server-side · client ไม่มี tz formatter)
+function thaiShortDate(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit", timeZone: "Asia/Bangkok" }).format(d);
+}
 
 export type CollectGroup = {
   id: string;
@@ -59,7 +68,8 @@ function toMachine(m: {
   lastDollStock: number;
   qrToken: string;
   sellPriceCents: number | null;
-}): GroupMachine {
+  lastEventAt: Date | null;
+}, lastRefillAt: Date | null): GroupMachine {
   return {
     id: m.id,
     code: m.code,
@@ -70,6 +80,8 @@ function toMachine(m: {
     lastDollStock: m.lastDollStock,
     qrToken: m.qrToken,
     sellPriceCents: m.sellPriceCents,
+    lastCollectedAt: thaiShortDate(m.lastEventAt),
+    lastRefillAt: thaiShortDate(lastRefillAt),
   };
 }
 
@@ -109,6 +121,7 @@ export async function getGroupCollectData(): Promise<{
       select: {
         id: true, code: true, nickname: true, kind: true, branchId: true, groupId: true,
         lastCoinMeter: true, lastDollMeter: true, lastDollStock: true, qrToken: true, sellPriceCents: true,
+        lastEventAt: true, // CEO 2026-07-19 · "เก็บล่าสุด" รอบก่อน
       },
       orderBy: { code: "asc" },
     }),
@@ -127,6 +140,25 @@ export async function getGroupCollectData(): Promise<{
     }),
   ]);
 
+  // CEO 2026-07-19 · "เติมล่าสุด" ต่อตู้ — max(occurredAt) ของ movement เติมเข้าตู้ (standalone + ในรอบเก็บ)
+  //   (lastEventAt มิเรอร์ให้แล้ว = เก็บล่าสุด · เติมไม่มิเรอร์ → groupBy เพิ่ม 1 query · index occurredAt)
+  const lastRefillByMachine = new Map<string, Date>();
+  try {
+    const machineIds = machines.map((m) => m.id);
+    if (machineIds.length > 0) {
+      const refillAgg = await prisma.cfStockMovement.groupBy({
+        by: ["machineId"],
+        where: { orgId, machineId: { in: machineIds }, type: "LOAD_TO_MACHINE", refTable: { in: ["cf_refill_dolls", "cf_collection_events"] } },
+        _max: { occurredAt: true },
+      });
+      for (const r of refillAgg) {
+        if (r.machineId && r._max.occurredAt) lastRefillByMachine.set(r.machineId, r._max.occurredAt);
+      }
+    }
+  } catch {
+    // graceful: query ล้ม → ไม่มี "เติมล่าสุด" (โชว์ "ยังไม่เคยเติม")
+  }
+
   // index machines by group + the exchanger lookup
   const machinesByGroup = new Map<string, GroupMachine[]>();
   // ตู้คีบที่ยังไม่ถูกจัดเข้ากลุ่ม (เช่น import เข้ามาใหม่ · groupId ว่าง) → รวมเป็นกลุ่ม
@@ -138,11 +170,11 @@ export async function getGroupCollectData(): Promise<{
     machineById.set(m.id, m);
     if (m.groupId) {
       const list = machinesByGroup.get(m.groupId) ?? [];
-      list.push(toMachine(m));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null));
       machinesByGroup.set(m.groupId, list);
     } else if (m.kind === "CLAW") {
       const list = ungroupedClawByBranch.get(m.branchId) ?? [];
-      list.push(toMachine(m));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null));
       ungroupedClawByBranch.set(m.branchId, list);
     }
   }

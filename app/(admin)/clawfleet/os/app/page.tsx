@@ -184,7 +184,8 @@ export default async function StaffAppPage({
           meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true,
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
-          machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
+          // sellPriceCents = ราคาขายตุ๊กตา/ตัว (display · CEO 2026-07-19 ในใบสรุป) — ไม่กระทบยอดเงิน
+          machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { name: true } } } },
           // reconcile จริงที่ server คิดตอนปิดรอบ (บน session) — CEO 2026-07-19 "ตรง/ไม่ตรง" ต้องเทียบเงินจริง
           //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
           session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
@@ -205,6 +206,30 @@ export default async function StaffAppPage({
           seenMachine.add(key);
           if (e.eventType === "COLLECTION" && ymdBangkok(e.collectedAt) === todayYmdBkk) editableEventIds.add(e.id);
         }
+      }
+      // CEO 2026-07-19 · ราย SKU ที่ "เติม" ในแต่ละรอบเก็บ — movement LOAD_TO_MACHINE ที่ผูก event (refTable/refId)
+      //   (ตุ๊กตา "ก่อนเติมราย SKU" ของรอบเก่าไม่มีในระบบ · event เก็บแค่ยอดรวม → โชว์ราย SKU ที่เติมแทน ซึ่งผูก event ได้จริง)
+      const refillSkusByEvent = new Map<string, Array<{ name: string; qty: number; imageUrl: string | null }>>();
+      try {
+        const eventIds = events.map((e) => e.id);
+        if (eventIds.length > 0) {
+          const refillMoves = await prisma.cfStockMovement.findMany({
+            where: { orgId, refTable: "cf_collection_events", refId: { in: eventIds }, type: "LOAD_TO_MACHINE" },
+            select: { refId: true, qty: true, product: { select: { name: true, imageUrl: true } } },
+          });
+          for (const rm of refillMoves) {
+            if (!rm.refId) continue;
+            const arr = refillSkusByEvent.get(rm.refId) ?? [];
+            const name = rm.product?.name ?? "— สินค้า —";
+            // รวม SKU ชื่อเดียวกัน (หลาย movement รอบเดียว) เป็นแถวเดียว (ปรปักษ์ #2)
+            const ex = arr.find((x) => x.name === name);
+            if (ex) ex.qty += Math.abs(rm.qty);
+            else arr.push({ name, qty: Math.abs(rm.qty), imageUrl: rm.product?.imageUrl ?? null });
+            refillSkusByEvent.set(rm.refId, arr);
+          }
+        }
+      } catch {
+        // graceful: query ล้ม → ไม่มีราย SKU เติม (โชว์ยอดรวมได้)
       }
       const collectRows: StaffHistoryRow[] = events.map((e) => {
         const isBaseline = e.eventType === "INITIAL";
@@ -247,6 +272,9 @@ export default async function StaffAppPage({
           ok: cashOk, isBaseline, eventId: e.id, eventType: e.eventType,
           // #3 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own)
           canEditNumbers: editableEventIds.has(e.id),
+          // CEO 2026-07-19 · ราคาขาย/ตัว + ราย SKU ที่เติมรอบนี้ (ใบสรุป fix-form)
+          sellPriceCents: e.machine.sellPriceCents ?? undefined,
+          refillSkus: refillSkusByEvent.get(e.id),
           photos, photosMissing,
         };
       });
@@ -258,23 +286,36 @@ export default async function StaffAppPage({
         const moves = await prisma.cfStockMovement.findMany({
           where: { orgId, createdById: userId, refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] }, occurredAt: { gte: HISTORY_SINCE } },
           orderBy: { occurredAt: "desc" },
-          select: { qty: true, refTable: true, occurredAt: true, machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } } },
+          // CEO 2026-07-19 · เพิ่มราย SKU (คืน/เติม) + ราคาขาย → ใบเปลี่ยนตุ๊กตาเห็นไส้ใน
+          select: { qty: true, refTable: true, occurredAt: true, product: { select: { name: true, imageUrl: true } }, machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { name: true } } } } },
           take: 400,
         });
-        const groups = new Map<string, { code: string; nickname: string | null; branch: string; at: Date; returned: number; refilled: number }>();
+        type SwapSku = { name: string; qty: number; imageUrl: string | null };
+        type SwapGroup = { code: string; nickname: string | null; branch: string; at: Date; returned: number; refilled: number; sellPriceCents: number | null; returnedSkus: SwapSku[]; refilledSkus: SwapSku[] };
+        const groups = new Map<string, SwapGroup>();
         for (const m of moves) {
           if (!m.machine) continue;
           const minute = new Date(m.occurredAt); minute.setSeconds(0, 0);
           const key = `${m.machine.code}|${minute.toISOString()}`;
-          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, at: m.occurredAt, returned: 0, refilled: 0 };
-          if (m.refTable === "cf_return_dolls") g.returned += Math.abs(m.qty);
-          else g.refilled += Math.abs(m.qty);
+          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, at: m.occurredAt, returned: 0, refilled: 0, sellPriceCents: m.machine.sellPriceCents ?? null, returnedSkus: [], refilledSkus: [] };
+          const name = m.product?.name ?? "— สินค้า —";
+          const qtyAbs = Math.abs(m.qty);
+          // รวม SKU ชื่อเดียวกันเป็นแถวเดียว (ปรปักษ์ #2)
+          const mergeInto = (list: SwapSku[]) => {
+            const ex = list.find((x) => x.name === name);
+            if (ex) ex.qty += qtyAbs;
+            else list.push({ name, qty: qtyAbs, imageUrl: m.product?.imageUrl ?? null });
+          };
+          if (m.refTable === "cf_return_dolls") { g.returned += qtyAbs; mergeInto(g.returnedSkus); }
+          else { g.refilled += qtyAbs; mergeInto(g.refilledSkus); }
           groups.set(key, g);
         }
         swapRows = [...groups.values()].map((g) => ({
           kind: "swap" as const, code: g.code, nickname: g.nickname, branch: g.branch,
           date: ymdBangkok(g.at), time: timeBangkok(g.at), cashBaht: 0, ok: true,
           swapReturned: g.returned, swapRefilled: g.refilled,
+          sellPriceCents: g.sellPriceCents ?? undefined,
+          swapReturnedSkus: g.returnedSkus, swapRefilledSkus: g.refilledSkus,
         }));
       } catch {
         // graceful: movement query ล้ม → ไม่มี swap ในประวัติ (collect ยังโชว์ได้)
