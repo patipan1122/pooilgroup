@@ -618,8 +618,13 @@ export type StaffHistoryRow = {
   ok: boolean;
   branch?: string; // สาขาของตู้ (ช่วยจำว่าเก็บที่ไหน)
   date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — ใช้จัดกลุ่มตามวัน
-  coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก)
-  dollMeter?: number; // เลขมิเตอร์ตุ๊กตา
+  coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก · = after)
+  dollMeter?: number; // เลขมิเตอร์ตุ๊กตา (= after)
+  // มิเตอร์ "ก่อน" + บน/ล่าง กายภาพ (CEO 2026-07-19: ใบต้องเห็นมิเตอร์ บน/ล่าง + คิด delta ได้)
+  coinMeterBefore?: number; // มิเตอร์เหรียญปิดรอบก่อน → delta = after − before = ยอดจริง
+  meterMoneyTop?: number; meterMoneyBottom?: number; // มิเตอร์เงิน บน/ล่าง (กายภาพ)
+  meterDollTop?: number; meterDollBottom?: number; // มิเตอร์ตุ๊กตา บน/ล่าง (กายภาพ)
+  refillQty?: number; // จำนวนที่เติมเข้าตู้รอบนี้
   // รายละเอียดรอบ (โชว์ในหน้า detail หน้าเดียว)
   stockBefore?: number;
   stockAfter?: number;
@@ -647,8 +652,10 @@ type Props = {
   photoRequired: boolean;
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — "" = ไม่ทราบ → ใช้ default
   userName: string;
-  // จำนวนตู้ที่ "ฉัน" เก็บเสร็จจริงวันนี้ (จาก cf_collection_events) → progress bar
+  // จำนวนตู้ (distinct) ที่ "ฉัน" เก็บเสร็จจริงวันนี้ (จาก cf_collection_events) → progress bar
   closedTodayCount: number;
+  // "วันนี้" ตามเวลาไทย (คิดที่ server กัน tz drift) — ใช้กรอง "เก็บแล้ววันนี้". optional: ไม่ส่ง → fallback client clock
+  todayYmd?: string;
   // ประวัติรอบที่ปิดจริง "ของวันที่เลือก" (ของฉัน) → panel "ประวัติของฉัน"
   history: StaffHistoryRow[];
   // B3 · วันที่ที่กำลังดูประวัติ (YYYY-MM-DD ตามเวลาไทย · default = วันนี้). ขับ date picker ในประวัติ.
@@ -689,7 +696,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -704,10 +711,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
 
   return (
@@ -779,6 +786,7 @@ type StaffAppProps = {
   photoRequired: boolean;
   userName: string;
   closedTodayCount: number;
+  todayYmd?: string; // "วันนี้" (เวลาไทย · จาก server) → กรอง "เก็บแล้ววันนี้"
   history: StaffHistoryRow[];
   // B3 · วันที่ที่กำลังดูประวัติ (YYYY-MM-DD ตามเวลาไทย)
   viewDate: string;
@@ -804,7 +812,7 @@ type StaffAppProps = {
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -1494,6 +1502,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       ) : onHome ? (
         <HomeScreen
           userName={userName}
+          todayYmd={todayYmd}
           panel={panel}
           setPanel={setPanel}
           routeTotal={routeTotal}
@@ -1657,6 +1666,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
 /* ─────────────────────────── HOME ─────────────────────────── */
 function HomeScreen(props: {
   userName: string;
+  todayYmd?: string; // "วันนี้" (เวลาไทย · server) → กรอง "เก็บแล้ววันนี้"
   panel: Panel;
   setPanel: (p: Panel) => void;
   routeTotal: number;
@@ -1737,14 +1747,29 @@ function HomeScreen(props: {
   // ดีไซน์ใหม่ · วันที่ไทยย่อ (มุมขวาหัวสีม่วง) + ชื่อสาขา (ถ้าหลายสาขา = "N สาขา")
   const todayLabel = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
   const branchLabel = branchGroups.length === 1 ? branchGroups[0][0] : `${branchGroups.length} สาขา`;
-  // ตู้ที่ "เก็บแล้ววันนี้" (จาก history รอบ COLLECTION ของวันที่กำลังดู) → ป้าย "เก็บแล้ว" + ปุ่ม "ดูใบ" (ดีไซน์ใหม่)
+  // "วันนี้" เวลาไทย (จาก server กัน tz drift · fallback client clock ถ้าไม่ส่ง)
+  const todayYmd = props.todayYmd ?? clientTodayBangkokYmd();
+  // 🔴 FIX (CEO 2026-07-19) · ตู้ "เก็บแล้ววันนี้" = รอบ COLLECTION ที่ date === วันนี้เท่านั้น
+  //   เดิมวน history ทั้ง 45 วัน ไม่กรองวัน → ตู้ที่เก็บเมื่อวาน/40 วันก่อนขึ้น "เก็บแล้ว" ค้าง → พนักงานข้ามเก็บ = เงินตกหล่น.
   const doneCodesToday = useMemo(() => {
     const set = new Set<string>();
     for (const h of props.history) {
+      if (h.date !== todayYmd) continue; // ← กรองเฉพาะวันนี้ (ข้ามวัน = รีเซ็ตเป็น "รอเก็บ" เก็บใหม่ได้)
       if (!h.isBaseline && (h.eventType === "COLLECTION" || h.eventType === undefined)) set.add(h.code);
     }
     return set;
-  }, [props.history]);
+  }, [props.history, todayYmd]);
+  // CEO 2026-07-19 · "ดูใบ" ต้องเปิดใบรอบนั้นเลย (ไม่เด้งเข้า list) → เก็บ row ที่จะเปิด detail ค้างไว้
+  //   ส่งต่อให้ HistoryPanel เปิด detail อัตโนมัติเมื่อสลับเข้าแท็บประวัติ.
+  const [historyFocus, setHistoryFocus] = useState<StaffHistoryRow | null>(null);
+  // เปิดใบ "รอบเก็บล่าสุดวันนี้" ของตู้ code นี้ (มี eventId · ไม่ใช่ swap/baseline) — history เรียงใหม่→เก่าแล้ว
+  const openDocFor = (code: string) => {
+    const row = props.history.find(
+      (h) => h.code === code && h.date === todayYmd && !h.isBaseline && (h.eventType === "COLLECTION" || h.eventType === undefined),
+    );
+    if (row) { setHistoryFocus(row); props.setPanel("history"); }
+    else props.setPanel("history"); // fallback: ไม่เจอ row → เปิด list เฉย ๆ (ไม่ค้าง)
+  };
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -1900,8 +1925,13 @@ function HomeScreen(props: {
                             <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#FCF1E2" color="#B45309" label="กรอกต่อ"
                               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>} />
                           ) : isDone ? (
-                            <RowActionBtn onClick={() => setPanel("history")} bg="#E7F4EC" color="#15803D" label="ดูใบ"
-                              icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
+                            // CEO 2026-07-19 · เก็บแล้ววันนี้ → "ดูใบ" (เปิดใบรอบนั้นเลย) + "เก็บซ้ำ" (เก็บได้หลายรอบ/วัน)
+                            <>
+                              <RowActionBtn onClick={() => openDocFor(m.code)} bg="#E7F4EC" color="#15803D" label="ดูใบ"
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
+                              <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#EEF0FE" color="#4F46E5" label="เก็บซ้ำ"
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>} />
+                            </>
                           ) : (
                             <>
                               <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#4F46E5" color="#fff" label="เก็บเงิน"
@@ -1923,7 +1953,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => setPanel(null)} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -1965,6 +1995,9 @@ function PanelScreen(props: {
   receivedDocs: CfReceivedDoc[];
   // F3 · ประวัติใบนับ (แท็บ "ประวัติใบนับ" ในหน้านับสต๊อก)
   countDocs: CfCountRow[];
+  // CEO 2026-07-19 · "ดูใบ" จากหน้าหลัก → เปิด detail รอบนี้อัตโนมัติในแท็บประวัติ (null = ไม่เจาะจง)
+  historyFocus?: StaffHistoryRow | null;
+  onHistoryFocusConsumed?: () => void;
 }) {
   const { panel, onBack } = props;
   return (
@@ -1978,7 +2011,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} />}
+        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2052,6 +2085,38 @@ function ymdLabelThai(ymd: string, todayYmd: string): string {
 // B3 · date picker ประวัติ — เปลี่ยน ?date= → server re-query (หน้าเป็น force-dynamic).
 // prev/next วัน + native date input · กันเลือกอนาคต (max = วันนี้). READ-ONLY ไม่แตะเงิน.
 // CEO 2026-07-18 · ป้ายชนิดรายการในประวัติ (เก็บเงิน / เปลี่ยนตุ๊กตา / ตั้งค่าครั้งแรก)
+// มิเตอร์ 1 ประเภท ในหน้า detail — โชว์ รอบก่อน→รอบนี้ (+delta) + กายภาพ บน/ล่าง
+//   ⚠️ ใช้ `!= null` ทุกจุด (มิเตอร์ = 0 เป็นค่าจริง ห้าม truthy) — QA/BE/FIN จับ
+function MeterDetailRow({ label, before, after, top, bottom }: {
+  label: string; before?: number; after?: number; top?: number; bottom?: number;
+}) {
+  const n = (v: number) => v.toLocaleString("en-US");
+  const hasBoth = before != null && after != null;
+  const delta = hasBoth ? Math.max(0, (after as number) - (before as number)) : null;
+  const hasPhysical = top != null || bottom != null;
+  if (after == null && !hasPhysical) return null; // ไม่มีข้อมูลมิเตอร์เลย → ไม่โชว์
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "#9AA1AB", flex: "0 0 auto" }}>{label}</span>
+        {hasBoth ? (
+          <span style={{ fontSize: 12, color: "#5A6270" }}>
+            <span className="num">{n(before as number)}</span> → <b className="num" style={{ color: "#1A1D21" }}>{n(after as number)}</b>
+            {delta != null && <b className="num" style={{ color: "#15803D", marginLeft: 6 }}>(+{n(delta)})</b>}
+          </span>
+        ) : after != null ? (
+          <b className="num" style={{ fontSize: 12.5, color: "#1A1D21" }}>{n(after)}</b>
+        ) : null}
+      </div>
+      {hasPhysical && (
+        <div style={{ fontSize: 10.5, color: "#9AA1AB", paddingLeft: 2 }}>
+          กายภาพ: บน <span className="num" style={{ color: "#5A6270" }}>{top != null ? n(top) : "—"}</span> · ล่าง <span className="num" style={{ color: "#5A6270" }}>{bottom != null ? n(bottom) : "—"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: string } {
   const kind = h.kind ?? (h.isBaseline ? "baseline" : "collect");
   if (kind === "swap") return { label: "เปลี่ยนตุ๊กตา", c: "#4F46E5", bg: "#EEF0FE" };
@@ -2059,7 +2124,7 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, usingDemo, orgId }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string }) {
+function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusConsumed }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
@@ -2073,8 +2138,13 @@ function HistoryPanel({ history, usingDemo, orgId }: { history: StaffHistoryRow[
   const [attachRow, setAttachRow] = useState<StaffHistoryRow | null>(null);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
   // CEO 2026-07-18 · กดแถว → เปิด detail (สรุปหน้าเดียว + ดูรูปขยาย) · รูปที่กำลังขยาย (lightbox)
-  const [detail, setDetail] = useState<StaffHistoryRow | null>(null);
+  const [detail, setDetail] = useState<StaffHistoryRow | null>(initialFocus);
   const [zoom, setZoom] = useState<{ url: string; label: string } | null>(null);
+  // CEO 2026-07-19 · "ดูใบ" จากหน้าหลัก → เปิด detail ใบนั้นทันทีเมื่อ mount/เปลี่ยน focus (แล้ว clear ที่ parent)
+  useEffect(() => {
+    if (initialFocus) { setDetail(initialFocus); onFocusConsumed?.(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFocus]);
 
   // จัดกลุ่มตามวัน (รายการเรียงใหม่→เก่าอยู่แล้ว) → หัววัน + การ์ด
   const groups: { date: string; label: string; items: StaffHistoryRow[] }[] = [];
@@ -2170,9 +2240,13 @@ function HistoryPanel({ history, usingDemo, orgId }: { history: StaffHistoryRow[
                           {detail.stockBefore != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบก่อนมี</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockBefore} ตัว</div></div>}
                           {detail.stockAfter != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockAfter} ตัว</div></div>}
                         </div>
-                        <div style={{ display: "flex", gap: 16, marginTop: 12, paddingTop: 11, borderTop: "1px solid #F0F1F4", fontSize: 11.5, color: "#6B7280" }}>
-                          {detail.coinMeter != null && <span>มิเตอร์เหรียญ <b className="num" style={{ color: "#1A1D21" }}>{detail.coinMeter.toLocaleString("en-US")}</b></span>}
-                          {detail.dollMeter != null && <span>มิเตอร์ตุ๊กตา <b className="num" style={{ color: "#1A1D21" }}>{detail.dollMeter.toLocaleString("en-US")}</b></span>}
+                        {/* มิเตอร์ (CEO 2026-07-19) · เห็น บน/ล่าง + รอบก่อน→รอบนี้ (+delta = ยอดจริง) + เติม */}
+                        <div style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid #F0F1F4", display: "flex", flexDirection: "column", gap: 9 }}>
+                          <MeterDetailRow label="มิเตอร์เหรียญ" before={detail.coinMeterBefore} after={detail.coinMeter} top={detail.meterMoneyTop} bottom={detail.meterMoneyBottom} />
+                          <MeterDetailRow label="มิเตอร์ตุ๊กตา" after={detail.dollMeter} top={detail.meterDollTop} bottom={detail.meterDollBottom} />
+                          {detail.refillQty != null && detail.refillQty > 0 && (
+                            <div style={{ fontSize: 11.5, color: "#6B7280" }}>เติมเข้าตู้รอบนี้ <b className="num" style={{ color: "#15803D" }}>+{detail.refillQty.toLocaleString("en-US")}</b> ตัว</div>
+                          )}
                         </div>
                         {detail.shortReason && (
                           <div style={{ marginTop: 10, background: "#FCF6EC", border: "1px solid #F0D9A8", borderRadius: 10, padding: "8px 11px", fontSize: 11.5, color: "#8A5A12" }}>หมายเหตุ: {detail.shortReason}</div>

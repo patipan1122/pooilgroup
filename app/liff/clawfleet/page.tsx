@@ -151,9 +151,12 @@ export default async function ClawfleetLiffPage({
   let history: StaffHistoryRow[] = [];
   if (orgId && userId) {
     try {
-      closedTodayCount = await prisma.cfCollectionEvent.count({
+      // progress = จำนวน "ตู้ (distinct)" ที่เก็บวันนี้ (ไม่ใช่จำนวน event · เก็บซ้ำ/วันไม่ทำบาร์โป่ง)
+      const doneToday = await prisma.cfCollectionEvent.groupBy({
+        by: ["machineId"],
         where: { orgId, collectedById: userId, eventType: "COLLECTION", collectedAt: { gte: startOfTodayBangkok() } },
       });
+      closedTodayCount = doneToday.length;
     } catch {
       // graceful: คงค่า default (0)
     }
@@ -220,6 +223,7 @@ export default async function ClawfleetLiffPage({
         photoRequired={photoRequired}
         userName={userName}
         closedTodayCount={closedTodayCount}
+        todayYmd={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())}
         history={history}
         selectedDate={selectedDate}
         myRecentTickets={myRecentTickets}

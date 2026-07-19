@@ -134,7 +134,10 @@ export default async function StaffAppPage({
   if (orgId && userId) {
     // progress bar "วันนี้" — นับแยกจากประวัติที่เลือก (กันเลือกวันอื่นแล้ว progress เพี้ยน)
     try {
-      closedTodayCount = await prisma.cfCollectionEvent.count({
+      // progress "N/M ตู้" = จำนวน "ตู้ (distinct)" ที่เก็บวันนี้ — ไม่ใช่จำนวน event
+      //   (CEO 2026-07-19: เก็บ 1 ตู้ได้หลายรอบ/วัน → นับ event จะทำบาร์ทะลุ 100% + ยอดโป่ง · Devil/AUD)
+      const doneToday = await prisma.cfCollectionEvent.groupBy({
+        by: ["machineId"],
         where: {
           orgId,
           collectedById: userId,
@@ -142,6 +145,7 @@ export default async function StaffAppPage({
           collectedAt: { gte: startOfTodayBangkok() },
         },
       });
+      closedTodayCount = doneToday.length;
     } catch {
       // graceful: คงค่า default (0)
     }
@@ -153,6 +157,15 @@ export default async function StaffAppPage({
     const HISTORY_SINCE = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const ymdBangkok = (d: Date) =>
       new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    // ล้าง marker ภายในออกจาก notes ก่อนโชว์ (idempotency/override hack ฝังใน notes) —
+    //   replace เฉพาะ token `[BASELINE_KEY]<key>` / `[OVERRIDE]` แล้วเก็บข้อความจริงที่เหลือ.
+    //   ⚠️ ห้าม strip `[...]` แบบโลภ (จะกินหมายเหตุจริงเช่น "[ด่วน] ตู้เสีย") — bug-class ที่ FIN/QA/AUD จับ:
+    //   filter เดิม `includes("[OVERRIDE]") ? null` ทิ้ง "ทั้งโน้ต" → เหตุผลเงินขาด/หมายเหตุพนักงานหายจาก trail.
+    const cleanNote = (notes: string | null | undefined): string | undefined => {
+      if (!notes) return undefined;
+      const cleaned = notes.replace(/\[BASELINE_KEY\]\S*/g, "").replace(/\[OVERRIDE\]/g, "").trim();
+      return cleaned.length > 0 ? cleaned : undefined;
+    };
     const timeBangkok = (d: Date) =>
       d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
     try {
@@ -166,12 +179,14 @@ export default async function StaffAppPage({
         orderBy: { collectedAt: "desc" },
         select: {
           id: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
-          coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true, shortReason: true, notes: true,
+          coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true, shortReason: true, notes: true,
+          // มิเตอร์กายภาพ บน/ล่าง (เงิน+ตุ๊กตา) — CEO อยากเห็นบน/ล่างในใบ (schema เก็บอยู่แล้ว · select ต้นทุน ~0)
+          meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true,
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
         },
-        take: 80,
+        take: 150,
       });
       const collectRows: StaffHistoryRow[] = events.map((e) => {
         const isBaseline = e.eventType === "INITIAL";
@@ -192,9 +207,14 @@ export default async function StaffAppPage({
           date: ymdBangkok(e.collectedAt), time: timeBangkok(e.collectedAt),
           cashBaht: Math.round(e.cashCountedCents / 100),
           coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
+          // มิเตอร์ "ก่อน" (baseline ปิดครั้งก่อน) + บน/ล่าง กายภาพ → detail คิด delta + โชว์บน/ล่างได้ (บัญชี reconcile)
+          coinMeterBefore: e.coinMeterBefore ?? undefined,
+          meterMoneyTop: e.meterMoneyTop ?? undefined, meterMoneyBottom: e.meterMoneyBottom ?? undefined,
+          meterDollTop: e.meterDollTop ?? undefined, meterDollBottom: e.meterDollBottom ?? undefined,
+          refillQty: e.refillQty ?? undefined,
           stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
-          // แสดงเหตุผลเงินขาด (shortReason) + หมายเหตุที่พนักงานควรเห็น (notes) — กรอง marker ภายใน [OVERRIDE] ออก
-          shortReason: [e.shortReason, e.notes?.includes("[OVERRIDE]") ? null : e.notes].filter(Boolean).join(" · ") || undefined,
+          // เหตุผลเงินขาด (shortReason) + หมายเหตุพนักงาน (notes ที่ล้าง marker แล้ว) — ดู cleanNote()
+          shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
           ok: e.anomalyFlags.length === 0, isBaseline, eventId: e.id, eventType: e.eventType,
           photos, photosMissing,
         };
@@ -208,7 +228,7 @@ export default async function StaffAppPage({
           where: { orgId, createdById: userId, refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] }, occurredAt: { gte: HISTORY_SINCE } },
           orderBy: { occurredAt: "desc" },
           select: { qty: true, refTable: true, occurredAt: true, machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } } },
-          take: 200,
+          take: 400,
         });
         const groups = new Map<string, { code: string; nickname: string | null; branch: string; at: Date; returned: number; refilled: number }>();
         for (const m of moves) {
@@ -267,6 +287,10 @@ export default async function StaffAppPage({
   //   คิดจาก ledger จริง (source of truth) — เลขที่โชว์ = เลขที่ server จะ enforce.
   const { inMachineByMachine, netAvailableByBranch } = await loadReturnDollsData(orgId, routeBranches);
 
+  // "วันนี้" ตามเวลาไทย (คิดที่ server กัน tz drift ฝั่ง client — QA จับ 23:59/00:01) → ใช้กรอง "เก็บแล้ววันนี้"
+  // eslint-disable-next-line react-hooks/purity
+  const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
   return (
     <StaffAppClient
       orgId={orgId}
@@ -275,6 +299,7 @@ export default async function StaffAppPage({
       photoRequired={photoRequired}
       userName={userName}
       closedTodayCount={closedTodayCount}
+      todayYmd={todayYmd}
       history={history}
       selectedDate={selectedDate}
       myRecentTickets={myRecentTickets}
