@@ -1406,12 +1406,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       primaryColor = "#B45309";
       primaryAction = () => setPhotoReasonOpen(true);
     } else if (!submitReady) {
-      // นโยบายผสม (CEO 2026-07-16 · mockup-match): เลขยังไม่ครบ → ปุ่มหลักเทา no-op ตาม mockup
-      // ("ยังมี N จุดผิด · แก้ให้ครบก่อน") — กรอกได้ในการ์ดแดงบนหน้านี้เลย ไม่ต้องเด้งไปไหน
-      // · "บันทึกค้างไว้" ยังอยู่เป็นปุ่มรอง (FlowScreen โชว์ให้ที่ขั้น 5 เมื่อไม่พร้อม) — งานไม่ทิ้ง
-      primaryLabel = `ยังมี ${missingForSubmit.length} จุดผิด · แก้ให้ครบก่อน`;
-      primaryColor = "#F1F2F5";
-      primaryAction = () => {};
+      // เลขยังไม่ครบ → ปุ่มบอกจำนวนจุดที่ขาด
+      // 🔴 CEO 2026-07-19 · เดิมกดแล้ว "ไม่เกิดอะไร" (no-op) → พนักงานงงว่าผิดตรงไหน →
+      //   กดแล้วต้องบอกชัดว่าขาดช่องไหน (setError รายชื่อ missingForSubmit) ไม่ใช่เงียบ
+      primaryLabel = `ยังกรอกไม่ครบ ${missingForSubmit.length} จุด · แตะดูว่าขาดอะไร`;
+      primaryColor = "#FCE9E7";
+      primaryAction = () => setError(`ยังไม่ได้กรอก: ${missingForSubmit.join(" · ")} — กรอกให้ครบในการ์ดสีแดงด้านบน แล้วปุ่มจะกดส่งได้ (หรือกด "บันทึกค้างไว้" เก็บไว้ก่อน)`);
     } else {
       // แดง = เตือน ไม่ได้ห้ามส่ง (CEO 2026-07-13) → กดยืนยันได้เสมอเมื่อเลขครบ
       // autoSubmitPending = กดแล้ว รอรูปอัปเสร็จ → โชว์ "กำลังส่งรูป…" ระบบยิงให้เอง (CEO 2026-07-18)
