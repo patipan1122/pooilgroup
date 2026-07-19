@@ -27,6 +27,8 @@ import {
   type DispatchLine,
   type PickRow,
 } from "@/lib/dc/transfer-actions";
+// OutboundTab + resolveOutboundTab อยู่ในไฟล์ server-safe แยก (Server Component เรียก resolveOutboundTab ตอน render ไม่ได้ถ้าอยู่ในไฟล์ "use client")
+import type { OutboundTab } from "./outbound-tab";
 
 export type DestWarehouseOption = { id: string; name: string };
 /** Wave 6 — สาขาตู้คีบ (ClawFleet) ที่เลือกเป็นปลายทางได้ */
@@ -94,18 +96,7 @@ function newLineKey(): string {
 // ════════════════════════════════════════════════════════════════════
 // DcOutboundTabs — แท็บบนสุด: เบิกออก · โอนออก · ย้ายที่
 // ════════════════════════════════════════════════════════════════════
-
-export type OutboundTab = "issue" | "transfer" | "move";
-
-/** แปลง ?tab= / ?mode= (ลิงก์เก่า) → แท็บที่จะเปิด · ค่าอื่น/ไม่ใส่ = fallback */
-export function resolveOutboundTab(
-  params: { tab?: string; mode?: string },
-  fallback: OutboundTab,
-): OutboundTab {
-  const raw = params.tab ?? params.mode; // mode=move คือลิงก์เก่าของ /dc/move
-  if (raw === "issue" || raw === "transfer" || raw === "move") return raw;
-  return fallback;
-}
+// type OutboundTab + resolveOutboundTab ย้ายไป ./outbound-tab (server-safe) แล้ว
 
 // คำอธิบายความต่างของ 3 งาน — CEO เคยสับสนว่า "โอน" กับ "ย้าย" ต่างกันยังไง
 // → แท็บสั้นเพื่อความหนาแน่น แต่ยังกางคำอธิบายของแท็บที่เลือกอยู่ให้อ่านได้เสมอ

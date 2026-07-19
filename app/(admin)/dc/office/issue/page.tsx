@@ -14,9 +14,9 @@ import { getRecentMovements } from "@/lib/dc/reports";
 import { DcRecentActivityPanel } from "@/components/dc/recent-activity-panel";
 import {
   DcOutboundTabs,
-  resolveOutboundTab,
   type DestWarehouseOption,
 } from "../../transfer/transfer-dispatch";
+import { resolveOutboundTab } from "../../transfer/outbound-tab";
 
 export const dynamic = "force-dynamic";
 

@@ -11,7 +11,8 @@ import { requireDcFloor, canDcManage } from "@/lib/dc/role-guard";
 import { DcModeSwitch } from "@/components/dc/mode-switch";
 import { DcWarehousePicker } from "@/components/dc/warehouse-picker";
 import { listClawfleetBranchTargets } from "@/lib/clawfleet/stock-queries";
-import { DcOutboundTabs, resolveOutboundTab, type DestWarehouseOption } from "./transfer-dispatch";
+import { DcOutboundTabs, type DestWarehouseOption } from "./transfer-dispatch";
+import { resolveOutboundTab } from "./outbound-tab";
 
 export const dynamic = "force-dynamic";
 
