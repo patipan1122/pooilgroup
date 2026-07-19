@@ -4863,12 +4863,40 @@ function FlowScreen(props: {
               actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "dolls" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
-                  <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num" placeholder="นับแล้วกรอก"
-                      style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
-                    <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
-                  </div>
+                  {/* CEO 2026-07-19 · โชว์ SKU เก่าที่ค้างในตู้ (รูป+ชื่อ) → กรอกจำนวนเหลือรายตัว · รวม = f.left (money-safe · เหมือนสเต็ป 1) */}
+                  {perSkuMode ? (
+                    <>
+                      <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>ตุ๊กตาที่เหลือในตู้ — กรอกทีละแบบ (ก่อนเติม)</div>
+                      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 10, overflow: "hidden" }}>
+                        {inDolls.map((d) => (
+                          <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", borderBottom: "1px solid #F2F3F5" }}>
+                            <DollThumb imageUrl={d.imageUrl} name={d.name} size={32} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                              {d.sku ? <div style={{ fontSize: 10, color: "#9AA1AB" }}>{d.sku}</div> : null}
+                            </div>
+                            <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 28, height: 28, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
+                            <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder="0" style={{ width: 40, textAlign: "center", fontSize: 15, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                            <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 28, height: 28, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", alignItems: "center", padding: "8px 11px", background: "#FAFBFC" }}>
+                          <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>รวมเหลือในตู้</span>
+                          <b className="num" style={{ fontSize: 13.5, color: "#4F46E5" }}>{remainSkuTotal} ตัว</b>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => setReconFix(null)} style={{ width: "100%", marginTop: 9, fontSize: 12.5, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer" }}>ใช้เลขนี้</button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num" placeholder="นับแล้วกรอก"
+                          style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                        <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : undefined} />
 
