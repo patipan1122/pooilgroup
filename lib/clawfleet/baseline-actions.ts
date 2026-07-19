@@ -179,12 +179,16 @@ export async function submitFirstBaseline(input: {
   }
 
   // idempotency (offline retry / double-tap) — baseline INITIAL ที่ clientKey นี้มีอยู่แล้ว → คืนของเดิม
+  //   AUD 2026-07-19: เช็คคอลัมน์ clientKey จริง (index) เป็นหลัก + fallback notes marker สำหรับแถวเก่าก่อน migration
   const existing = await prisma.cfCollectionEvent.findFirst({
     where: {
       orgId,
       machineId: machine.id,
       eventType: "INITIAL",
-      notes: { contains: clientKeyNote(data.clientKey) },
+      OR: [
+        { clientKey: data.clientKey },
+        { notes: { contains: clientKeyNote(data.clientKey) } }, // legacy rows (marker ใน notes)
+      ],
     },
     select: { id: true, sessionId: true },
   });
@@ -219,13 +223,14 @@ export async function submitFirstBaseline(input: {
         select: { id: true },
       });
 
-      // 2) INITIAL event (partial-unique lock ตู้ครั้งเดียว) — clientKey ฝังใน notes
+      // 2) INITIAL event (partial-unique lock ตู้ครั้งเดียว) — clientKey เป็นคอลัมน์จริง (ไม่ใช่ marker ใน notes)
       await tx.cfCollectionEvent.create({
         data: {
           orgId,
           sessionId: cfSession.id,
           machineId: machine.id,
           eventType: "INITIAL",
+          clientKey: data.clientKey,
           collectedAt: now,
           collectedById: session.user.id,
           coinMeterBefore: machine.lastCoinMeter,
@@ -251,7 +256,8 @@ export async function submitFirstBaseline(input: {
           //   photoMeterBeforeUrl = ตุ๊กตาหลังใส่ (stock after · reused slot)
           photoStockUrl: data.photoStockBeforeUrl ?? null,
           photoMeterBeforeUrl: data.photoStockAfterUrl ?? null,
-          notes: clientKeyNote(data.clientKey),
+          // notes = ว่างสำหรับ baseline (clientKey ย้ายไปคอลัมน์แล้ว · ไม่มี marker รั่วออกจอ)
+          notes: null,
         },
       });
 

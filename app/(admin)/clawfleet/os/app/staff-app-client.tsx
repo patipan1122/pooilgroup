@@ -614,8 +614,11 @@ export type StaffHistoryRow = {
   code: string;
   nickname?: string | null;
   time: string;
-  cashBaht: number;
-  ok: boolean;
+  cashBaht: number; // เงินที่นับได้จริง (actual)
+  // #1 CEO 2026-07-19 · เงินที่ "ควรได้" จากมิเตอร์ + ส่วนต่าง (+เกิน / −ขาด) — reconcile จริงจาก server
+  expectedCashBaht?: number;
+  cashDiffBaht?: number;
+  ok: boolean; // = เงินตรงมิเตอร์ (|ขาด/เกิน| ≤ ฿20) เมื่อมี reconcile · ไม่งั้น fallback ไม่มีธง anomaly
   branch?: string; // สาขาของตู้ (ช่วยจำว่าเก็บที่ไหน)
   date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — ใช้จัดกลุ่มตามวัน
   coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก · = after)
@@ -2235,11 +2238,26 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                     ) : (
                       <>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "11px 12px" }}>
-                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บเงินได้</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{detail.cashBaht.toLocaleString("en-US")}</div></div>
+                          <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เก็บได้จริง</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#15803D" }}>฿{detail.cashBaht.toLocaleString("en-US")}</div></div>
                           <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาออกไป</div><div className="num" style={{ fontSize: 17, fontWeight: 700, color: "#4F46E5" }}>{detail.dollsOut ?? "—"} ตัว</div></div>
                           {detail.stockBefore != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>รอบก่อนมี</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockBefore} ตัว</div></div>}
                           {detail.stockAfter != null && <div><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตอนนี้ในตู้</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{detail.stockAfter} ตัว</div></div>}
                         </div>
+                        {/* #1 CEO 2026-07-19 · เทียบเงินจริง: ควรได้ (จากมิเตอร์) vs นับได้ → ขาด/เกิน (เลข reconcile จาก server) */}
+                        {detail.expectedCashBaht != null && (
+                          <div style={{ marginTop: 11, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: detail.ok ? "#F0FAF3" : "#FEF3F2", border: `1px solid ${detail.ok ? "#CDEBD7" : "#F3D4D0"}`, borderRadius: 10, padding: "9px 12px" }}>
+                            <span style={{ fontSize: 11, color: "#6B7280" }}>ควรได้ (มิเตอร์) <b className="num" style={{ color: "#1A1D21" }}>฿{detail.expectedCashBaht.toLocaleString("en-US")}</b></span>
+                            <span style={{ fontSize: 11, color: "#6B7280" }}>· นับได้ <b className="num" style={{ color: "#1A1D21" }}>฿{detail.cashBaht.toLocaleString("en-US")}</b></span>
+                            <span style={{ flex: 1 }} />
+                            {detail.cashDiffBaht != null && detail.cashDiffBaht !== 0 ? (
+                              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: detail.cashDiffBaht < 0 ? "#B42318" : "#B45309" }}>
+                                {detail.cashDiffBaht < 0 ? `ขาด ฿${Math.abs(detail.cashDiffBaht).toLocaleString("en-US")}` : `เกิน ฿${detail.cashDiffBaht.toLocaleString("en-US")}`}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#15803D" }}>ตรงพอดี</span>
+                            )}
+                          </div>
+                        )}
                         {/* มิเตอร์ (CEO 2026-07-19) · เห็น บน/ล่าง + รอบก่อน→รอบนี้ (+delta = ยอดจริง) + เติม */}
                         <div style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid #F0F1F4", display: "flex", flexDirection: "column", gap: 9 }}>
                           <MeterDetailRow label="มิเตอร์เหรียญ" before={detail.coinMeterBefore} after={detail.coinMeter} top={detail.meterMoneyTop} bottom={detail.meterMoneyBottom} />

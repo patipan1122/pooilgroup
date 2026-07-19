@@ -185,6 +185,9 @@ export default async function StaffAppPage({
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           machine: { select: { code: true, nickname: true, branch: { select: { name: true } } } },
+          // reconcile จริงที่ server คิดตอนปิดรอบ (บน session) — CEO 2026-07-19 "ตรง/ไม่ตรง" ต้องเทียบเงินจริง
+          //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
+          session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
         },
         take: 150,
       });
@@ -201,11 +204,21 @@ export default async function StaffAppPage({
         // ตุ๊กตาออก = ก่อน + เติม − หลัง (prizeCountedOut) — สูตรเดียวกับหน้าเก็บเงิน + หน้าผู้จัดการเป๊ะ
         //   (stockAfter รวมเติมแล้ว → +refillQty หักล้างพอดี) · ไม่ใช้ meter delta เพราะรอบ "ไม่ตรง" จะเลขไม่ตรงกัน 3 ที่.
         const dollsOut = e.stockBefore != null && e.stockAfter != null ? Math.max(0, e.stockBefore + (e.refillQty ?? 0) - e.stockAfter) : undefined;
+        // #1 CEO 2026-07-19 · "ตรง/ไม่ตรง" = เทียบ "เงินที่ควรได้ (จากมิเตอร์)" กับ "เงินที่นับได้" จริง
+        //   ใช้เลข reconcile ที่ server คิดตอนปิดรอบ (session.expected/actualCashCents) — ไม่ re-derive
+        //   ตรง = |นับได้ − ควรได้| ≤ ฿20 (CASH_VARIANCE_ACCEPTABLE_CENTS) · ขาด/เกิน = นับได้ − ควรได้
+        const expectedCents = e.session?.expectedCashCents;
+        const actualCents = e.session?.actualCashCents ?? e.cashCountedCents;
+        const cashDiffCents = expectedCents != null ? actualCents - expectedCents : null; // + เกิน · − ขาด
+        const cashOk = cashDiffCents != null ? Math.abs(cashDiffCents) <= 2000 : e.anomalyFlags.length === 0;
         return {
           kind: isBaseline ? "baseline" : "collect",
           code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name,
           date: ymdBangkok(e.collectedAt), time: timeBangkok(e.collectedAt),
           cashBaht: Math.round(e.cashCountedCents / 100),
+          // #1 · ควรได้ (จากมิเตอร์) + ส่วนต่าง (ขาด/เกิน) — โชว์ในใบให้บัญชี reconcile ได้
+          expectedCashBaht: expectedCents != null ? Math.round(expectedCents / 100) : undefined,
+          cashDiffBaht: cashDiffCents != null ? Math.round(cashDiffCents / 100) : undefined,
           coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
           // มิเตอร์ "ก่อน" (baseline ปิดครั้งก่อน) + บน/ล่าง กายภาพ → detail คิด delta + โชว์บน/ล่างได้ (บัญชี reconcile)
           coinMeterBefore: e.coinMeterBefore ?? undefined,
@@ -215,7 +228,8 @@ export default async function StaffAppPage({
           stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
           // เหตุผลเงินขาด (shortReason) + หมายเหตุพนักงาน (notes ที่ล้าง marker แล้ว) — ดู cleanNote()
           shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
-          ok: e.anomalyFlags.length === 0, isBaseline, eventId: e.id, eventType: e.eventType,
+          // #1 · ok = เงินตรงมิเตอร์จริง (ไม่ใช่แค่ไม่มีธง) เมื่อมี reconcile · ไม่มี → fallback ธง anomaly เดิม
+          ok: cashOk, isBaseline, eventId: e.id, eventType: e.eventType,
           photos, photosMissing,
         };
       });

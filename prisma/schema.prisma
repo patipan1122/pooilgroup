@@ -2328,6 +2328,9 @@ model CfCollectionEvent {
   // anomaly flags ราย event (เก็บแยกจาก session-level)
   anomalyFlags        String[]    @default([]) @map("anomaly_flags")
   notes               String?
+  // idempotency key (offline retry / double-tap) — เดิมฝังใน notes marker [BASELINE_KEY] (fake-safety · AUD 2026-07-19)
+  //   ย้ายมาเป็นคอลัมน์จริง + partial unique index (org_id, client_key) → กันซ้ำที่ DB ไม่ใช่ substring บน free-text
+  clientKey           String?     @map("client_key")
   createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -2339,6 +2342,8 @@ model CfCollectionEvent {
   @@index([orgId, machineId, collectedAt(sort: Desc)])
   @@index([sessionId])
   @@index([orgId, eventType, collectedAt(sort: Desc)])
+  // idempotency จริงระดับ DB — 1 clientKey = 1 event ต่อ org (NULL ไม่ชนกัน · Postgres NULLS DISTINCT)
+  @@unique([orgId, clientKey])
   @@map("cf_collection_events")
   @@schema("public")
 }
