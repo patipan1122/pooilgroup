@@ -4785,8 +4785,9 @@ function FlowScreen(props: {
             <div style={{ background: "#F1F2FE", border: "1px solid #DEE0FA", borderRadius: 12, padding: "13px 15px" }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", marginBottom: 9 }}>ระบบคำนวณให้อัตโนมัติ</div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.left) ? `${dispensed} ตัว` : "—"}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.dollDigi) ? `+${recon.dollDelta}` : "—"}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.coinDigi) ? `฿${recon.expectedCash}` : "—"}</span></div>
+              {/* CEO 2026-07-19 · เครื่องหมายเดียว (บวก=+ ลบ=− ไม่ใช่ "+-") · ลบ = มิเตอร์น้อยกว่ารอบก่อน (กรอกผิด/ผิดตู้) */}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: recon.dollDelta < 0 ? "#B42318" : undefined }}>{isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta} (น้อยกว่ารอบก่อน?)` : `+${recon.dollDelta}`) : "—"}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700, color: recon.expectedCash < 0 ? "#B42318" : undefined }}>{isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `฿${recon.expectedCash}`) : "—"}</span></div>
             </div>
           </div>
         )}
@@ -4858,7 +4859,7 @@ function FlowScreen(props: {
             <ReconCard ok={dollsOk} wait={!dollsMissing && !dollsMismatch && !meterFilled}
               title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "นับแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={dollsMissing ? "นับที่เหลือในตู้แล้วกรอกตรงนี้ได้เลย — ระบบคำนวณตุ๊กตาที่ออกให้"
-                : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา +${recon.dollDelta}` : ""}`}
+                : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา ${recon.dollDelta < 0 ? recon.dollDelta : `+${recon.dollDelta}`}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "dolls" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
@@ -4874,7 +4875,7 @@ function FlowScreen(props: {
             <ReconCard ok={cashOk} wait={!cashMissing && !cashMismatch && !meterFilled}
               title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "กรอกแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={cashMissing ? "นับเงินในตู้แล้วกรอกตรงนี้ได้เลย"
-                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ +${coinDelta} → คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)` : ""}`}
+                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ ${coinDelta < 0 ? coinDelta : `+${coinDelta}`} → ${recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)`}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : cashMissing ? "กรอกเลย" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "cash" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
@@ -5034,23 +5035,53 @@ function FlowScreen(props: {
       {/* ดีไซน์ใหม่ · ป๊อปอัปดูรูป (มิเตอร์/หลังเติม) — เปิดจากปุ่ม "ดูรูป" บนการ์ดกระทบยอด */}
       {photoView && (
         <div onClick={() => setPhotoView(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 30, background: "rgba(20,22,28,0.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 26 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", width: "100%", maxWidth: 320 }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "13px 16px", borderBottom: "1px solid #EEF0F3" }}>
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{photoView === "meter" ? "รูปมิเตอร์" : "รูปหลังเติม"}</span>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", width: "100%", maxWidth: 340, maxHeight: "86%", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "13px 16px", borderBottom: "1px solid #EEF0F3", flex: "0 0 auto" }}>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{photoView === "meter" ? "รูปมิเตอร์ 4 รูป" : "รูปหลังเติม"}</span>
               <button type="button" onClick={() => setPhotoView(null)} style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
             {(() => {
-              const url = photoView === "meter" ? (photos.coinDigi || photos.coinGear || photos.dollDigi || photos.dollGear || "") : (photos.after || "");
-              return url
-                ? <img src={url} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain", background: "#0F1116", display: "block" }} />
-                : (
-                  <div style={{ height: 240, background: "linear-gradient(135deg,#EBEDF2,#DDE0E7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#A2A9B4" }}>
-                    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#A2A9B4" strokeWidth="1.6"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3.5" /></svg>
-                    <span style={{ fontSize: 12 }}>ยังไม่มีรูป{machine?.code ? ` · ${machine.code}` : ""}</span>
-                  </div>
-                );
+              // CEO 2026-07-19 · มิเตอร์โชว์ครบ 4 รูป (เงินบน/ล่าง · ตุ๊กตาบน/ล่าง) ไว้ตรวจตอนกรอกมิเตอร์ใหม่
+              const meterShots: { label: string; url: string }[] = [
+                { label: "เงิน · บน (เฟือง)", url: photos.coinGear || "" },
+                { label: "เงิน · ล่าง (ดิจิตอล)", url: photos.coinDigi || "" },
+                { label: "ตุ๊กตา · บน (เฟือง)", url: photos.dollGear || "" },
+                { label: "ตุ๊กตา · ล่าง (ดิจิตอล)", url: photos.dollDigi || "" },
+              ];
+              const noneMeter = meterShots.every((m) => !m.url);
+              const after = photos.after || "";
+              return (
+                <div style={{ overflowY: "auto", padding: photoView === "meter" ? 12 : 0 }}>
+                  {photoView === "meter" ? (
+                    noneMeter ? (
+                      <div style={{ height: 200, background: "linear-gradient(135deg,#EBEDF2,#DDE0E7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#A2A9B4", borderRadius: 10 }}>
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#A2A9B4" strokeWidth="1.6"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                        <span style={{ fontSize: 12 }}>ยังไม่มีรูปมิเตอร์</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {meterShots.map((m) => (
+                          <div key={m.label} style={{ border: "1px solid #E7EAF0", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+                            {m.url
+                              ? <img src={m.url} alt={m.label} style={{ width: "100%", height: 110, objectFit: "cover", display: "block", background: "#0F1116" }} />
+                              : <div style={{ height: 110, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, color: "#B6BBC4" }}>ยังไม่มีรูป</div>}
+                            <div style={{ fontSize: 10, color: "#6B7280", padding: "5px 6px", textAlign: "center", borderTop: "1px solid #EEF0F3" }}>{m.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : after
+                    ? <img src={after} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain", background: "#0F1116", display: "block" }} />
+                    : (
+                      <div style={{ height: 240, background: "linear-gradient(135deg,#EBEDF2,#DDE0E7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#A2A9B4" }}>
+                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#A2A9B4" strokeWidth="1.6"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                        <span style={{ fontSize: 12 }}>ยังไม่มีรูป{machine?.code ? ` · ${machine.code}` : ""}</span>
+                      </div>
+                    )}
+                </div>
+              );
             })()}
           </div>
         </div>
