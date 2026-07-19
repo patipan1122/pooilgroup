@@ -178,7 +178,7 @@ export default async function StaffAppPage({
         },
         orderBy: { collectedAt: "desc" },
         select: {
-          id: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
+          id: true, machineId: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
           coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true, shortReason: true, notes: true,
           // มิเตอร์กายภาพ บน/ล่าง (เงิน+ตุ๊กตา) — CEO อยากเห็นบน/ล่างในใบ (schema เก็บอยู่แล้ว · select ต้นทุน ~0)
           meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true,
@@ -191,6 +191,21 @@ export default async function StaffAppPage({
         },
         take: 150,
       });
+      // #3 CEO 2026-07-19 · "แก้เลขในใบ" ได้เฉพาะ COLLECTION ล่าสุดของตู้ + วันนี้ (own = ทุกแถวอยู่แล้ว)
+      //   events เรียง desc → แถวแรกต่อ machineId ที่เป็น COLLECTION วันนี้ = ล่าสุด (editable) · server เช็คซ้ำอีกชั้น
+      const todayYmdBkk = ymdBangkok(new Date(Date.now()));
+      const editableEventIds = new Set<string>();
+      {
+        const seenMachine = new Set<string>();
+        for (const e of events) {
+          const mid = (e as { machineId?: string }).machineId;
+          // แถวแรกสุด (ใหม่สุด) ของแต่ละตู้ — ถ้าเป็น COLLECTION วันนี้ → editable
+          const key = mid ?? e.id;
+          if (seenMachine.has(key)) continue;
+          seenMachine.add(key);
+          if (e.eventType === "COLLECTION" && ymdBangkok(e.collectedAt) === todayYmdBkk) editableEventIds.add(e.id);
+        }
+      }
       const collectRows: StaffHistoryRow[] = events.map((e) => {
         const isBaseline = e.eventType === "INITIAL";
         // รูปหลักฐาน (เฉพาะที่มี url) พร้อม label สำหรับตัวดูรูปในหน้าประวัติ
@@ -230,6 +245,8 @@ export default async function StaffAppPage({
           shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
           // #1 · ok = เงินตรงมิเตอร์จริง (ไม่ใช่แค่ไม่มีธง) เมื่อมี reconcile · ไม่มี → fallback ธง anomaly เดิม
           ok: cashOk, isBaseline, eventId: e.id, eventType: e.eventType,
+          // #3 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own)
+          canEditNumbers: editableEventIds.has(e.id),
           photos, photosMissing,
         };
       });

@@ -33,6 +33,7 @@ import {
   closeBranchSession,
   renameMachineNickname,
   attachEventPhotos,
+  editCollectionRound,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
@@ -645,6 +646,8 @@ export type StaffHistoryRow = {
   eventId?: string;
   // item 5 · ชนิด event (INITIAL = baseline → phase รูปคนละชุด · COLLECTION = รอบปกติ)
   eventType?: string;
+  // #3 CEO 2026-07-19 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own) — server เช็คซ้ำอีกชั้น
+  canEditNumbers?: boolean;
 };
 
 type Props = {
@@ -2143,6 +2146,9 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
   // CEO 2026-07-18 · กดแถว → เปิด detail (สรุปหน้าเดียว + ดูรูปขยาย) · รูปที่กำลังขยาย (lightbox)
   const [detail, setDetail] = useState<StaffHistoryRow | null>(initialFocus);
   const [zoom, setZoom] = useState<{ url: string; label: string } | null>(null);
+  // #3 CEO 2026-07-19 · แก้เลขในใบเดิม (เฉพาะรอบล่าสุด+own+วันนี้)
+  const [editRow, setEditRow] = useState<StaffHistoryRow | null>(null);
+  const router = useRouter();
   // CEO 2026-07-19 · "ดูใบ" จากหน้าหลัก → เปิด detail ใบนั้นทันทีเมื่อ mount/เปลี่ยน focus (แล้ว clear ที่ parent)
   useEffect(() => {
     if (initialFocus) { setDetail(initialFocus); onFocusConsumed?.(); }
@@ -2297,6 +2303,14 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                           {stillMissing ? "แนบรูปที่ยังขาด" : "แนบรูปเพิ่ม / ถ่ายใหม่"}
                         </button>
                       )}
+                      {/* #3 CEO 2026-07-19 · แก้เลขในใบเดิม (เฉพาะรอบล่าสุด+own+วันนี้ · server เช็คซ้ำ) */}
+                      {!usingDemo && detail.canEditNumbers && detail.eventId && (
+                        <button type="button" onClick={() => { setEditRow(detail); setDetail(null); }} className="co-tap"
+                          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", border: "1.5px solid #E3E6EA", background: "#F1F2F5", color: "#454B54" }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                          แก้เลข (เงิน / มิเตอร์)
+                        </button>
+                      )}
                     </>
                   )}
                 </>
@@ -2329,6 +2343,81 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
           }}
         />
       )}
+
+      {/* #3 · sheet แก้เลขในใบเดิม (เงิน/มิเตอร์) → editCollectionRound → refresh */}
+      {editRow && editRow.eventId && (
+        <EditRoundSheet
+          row={editRow}
+          onClose={() => setEditRow(null)}
+          onSaved={() => { setEditRow(null); router.refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─────────────── #3 CEO 2026-07-19 · แก้เลขในใบเก็บเดิม (เงิน/มิเตอร์) ───────────────
+ * พนักงานกรอกเงิน/มิเตอร์ผิดแล้วกดส่งไป → แก้ตัวเลขในใบเดิมได้ (เฉพาะรอบล่าสุดของตู้ · วันนี้ · own).
+ * server (editCollectionRound) re-reconcile ทั้งรอบ + อัปเดต mirror + audit log · เช็คสิทธิ์/เงื่อนไขซ้ำอีกชั้น. */
+function EditRoundSheet({ row, onClose, onSaved }: { row: StaffHistoryRow; onClose: () => void; onSaved: () => void }) {
+  const [cash, setCash] = useState<string>(String(row.cashBaht ?? ""));
+  const [coin, setCoin] = useState<string>(row.coinMeter != null ? String(row.coinMeter) : "");
+  const [doll, setDoll] = useState<string>(row.dollMeter != null ? String(row.dollMeter) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const digits = (s: string) => s.replace(/[^\d]/g, "");
+
+  async function save() {
+    setError(null);
+    const cashN = Number(digits(cash));
+    const coinN = Number(digits(coin));
+    if (!row.eventId) { setError("ไม่พบใบ"); return; }
+    if (!Number.isFinite(cashN) || !Number.isFinite(coinN) || coin.trim() === "") { setError("กรอกเงิน + มิเตอร์เหรียญให้ครบ"); return; }
+    setBusy(true);
+    try {
+      const r = await editCollectionRound({
+        eventId: row.eventId,
+        cashCents: Math.round(cashN * 100),
+        coinMeterAfter: coinN,
+        dollMeterAfter: doll.trim() === "" ? null : Number(digits(doll)),
+      });
+      if (!r.ok) { setError(r.error || "แก้ไม่สำเร็จ · ลองใหม่"); setBusy(false); return; }
+      onSaved();
+    } catch {
+      setError("แก้ไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
+      setBusy(false);
+    }
+  }
+
+  const field = (label: string, val: string, set: (s: string) => void, suffix: string) => (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#454B54", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1.5px solid #E3E6EA", borderRadius: 11, padding: "0 12px", background: "#fff" }}>
+        <input inputMode="numeric" value={val} onChange={(e) => set(e.target.value)}
+          style={{ flex: 1, minWidth: 0, minHeight: 46, fontSize: 15, border: "none", outline: "none", background: "transparent", color: "#1A1D21" }} className="num" />
+        <span style={{ fontSize: 12, color: "#9AA1AB", flex: "0 0 auto" }}>{suffix}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div role="dialog" aria-modal="true" onClick={() => { if (!busy) onClose(); }}
+      style={{ position: "absolute", inset: 0, zIndex: 50, background: "rgba(20,22,28,0.5)", display: "flex", alignItems: "flex-end" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#F4F5F7", borderRadius: "20px 20px 0 0", padding: "16px 18px 24px", display: "flex", flexDirection: "column", gap: 13 }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#D8DCE2", margin: "0 auto 2px" }} />
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>แก้เลขในใบ · {row.nickname || row.code}</div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>แก้ได้เฉพาะรอบล่าสุดของตู้วันนี้ · ระบบจะคิดเงินควรได้/ส่วนต่างใหม่ให้</div>
+        </div>
+        {field("เงินที่นับได้ (บาท)", cash, setCash, "บาท")}
+        {field("มิเตอร์เหรียญ (หลังเก็บ)", coin, setCoin, "")}
+        {field("มิเตอร์ตุ๊กตา (หลังเก็บ · ไม่บังคับ)", doll, setDoll, "")}
+        {error && <div style={{ fontSize: 12, color: "#B42318", fontWeight: 600 }}>{error}</div>}
+        <button type="button" disabled={busy} onClick={save} className="co-tap"
+          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", background: busy ? "#8FA0EC" : "#4F46E5", border: "none", borderRadius: 12, cursor: busy ? "wait" : "pointer" }}>
+          {busy ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
+        </button>
+      </div>
     </div>
   );
 }
