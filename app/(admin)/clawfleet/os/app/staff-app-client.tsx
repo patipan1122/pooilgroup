@@ -207,6 +207,9 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
 
 const isDemo = (id: string) => id.startsWith("demo-");
 const CASH_PER_PLAY = 10; // ฿/ครั้ง — ⚠️ สมมติ (ราคาจริงต่อตู้ยังไม่ส่งมาฝั่ง client) → preview ADVISORY
+// จอ "ตรง/ไม่ตรง" ยอมคลาดได้ ±2 ตัว = DEFAULTS.DOLL_VARIANCE_ACCEPTABLE ที่ server (lib/clawfleet/types.ts)
+// เดิมจอใช้ === (ต่างแค่ 1 ตัวก็แดง) ทั้งที่ server ถือว่ารับได้ → CEO 2026-07-20 "จอแดงง่ายเกิน"
+const DOLL_MATCH_TOL = 2;
 
 /* ─────────────────────────── draft offline persistence ───────────────────────────
  * ร่างที่นับ+ถ่ายรูปแล้ว รอกรอกมิเตอร์ ต้องรอด refresh / LINE ปิด webview / สลับแอป
@@ -971,7 +974,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   //   mirror server: prizeOut = stockBefore + refill − stockAfter − interim(cf_return_dolls)
   //   → ตรงกับมิเตอร์ตุ๊กตา (มิเตอร์เดินเฉพาะตัวที่ออกจริง) · จอ = server (money-safe)
   const returnedThisRound = f.returnedTotal ?? 0;
-  const dispensed = Math.max(0, f.last - n0(f.left) - returnedThisRound);
+  // rawDispensed = รอบก่อน − ที่นับได้ − ที่คืนเข้าชั้น · ปกติ ≥0 (ตัวที่ลูกค้าคีบออก)
+  // ติดลบ = "นับได้ + คืนเข้าชั้น" มากกว่ารอบก่อน → มีตุ๊กตาเกินคาด (นับซ้ำ/มีคนเติมไม่ลงระบบ)
+  const rawDispensed = f.last - n0(f.left) - returnedThisRound;
+  const dispensed = Math.max(0, rawDispensed);
+  // CEO 2026-07-20 · ตุ๊กตาเกิน = ส่วนที่นับได้เกินกว่าที่ควรมี (เดิม Math.max ปัดหายเงียบ ไม่โชว์ให้พนักงานเห็น)
+  const overCount = Math.max(0, -rawDispensed);
   const afterFill = n0(f.left) + refillTotal;
   const dollDelta = n0(f.dollDigi) - f.dollPrev;
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
@@ -982,13 +990,15 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const dollMeterEqual = dollMeterFilled && n0(f.dollGear) === n0(f.dollDigi);
   const coinMeterEqual = coinMeterFilled && n0(f.coinGear) === n0(f.coinDigi);
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
-  const dollMatch = isFilled(f.left) && dollMeterFilled && dollDelta === dispensed;
+  // ตรงกับ server: ตุ๊กตาตรง = ต่างจากมิเตอร์ไม่เกิน ±2 ตัว (ไม่ใช่เป๊ะ) · มีเกิน = ถือว่าไม่ตรงเสมอ
+  const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && Math.abs(dollDelta - dispensed) <= DOLL_MATCH_TOL;
   // ⚠️ cashMatch = ADVISORY เท่านั้น: client เดา ฿10/เกม (CASH_PER_PLAY) เพราะราคาจริงต่อตู้
   // ยังไม่ถูกส่งมา client → สาขา ฿20/เกม จะดู "ไม่ตรง" ทั้งที่ถูก. ตัวจริง = server reconcile.
   // จึง "ไม่" รวม cashMatch เข้า allMatch (กัน banner/ปุ่มแดงหลอก) — โชว์เป็นคำแนะนำ "ประมาณ".
   const cashMatch = isFilled(f.cash) && coinMeterFilled && n0(f.cash) === expectedCash;
   const allMatch = dollMatch && meterEqualOk;
-  const tooHard = isFilled(f.cash) && isFilled(f.left) && dispensed <= 0 && n0(f.cash) >= 200;
+  // "ตู้ตั้งยาก" = ออก 0 ตัวจริง ๆ · ถ้าเป็นเพราะนับเกิน (overCount>0) ไม่ใช่ตู้ยาก → อย่าเด้ง
+  const tooHard = isFilled(f.cash) && isFilled(f.left) && overCount === 0 && dispensed <= 0 && n0(f.cash) >= 200;
 
   /* ── ดีไซน์ใหม่ (CEO 2026-07-15) · "ถัดไป = เซฟ" — ขั้น 1/2 ไม่บล็อกเลย ──────────────
    * เดิม: ไม่เติม/ไม่ถ่ายรูป → กดถัดไปไม่ได้ → พนักงานติดหน้างาน (ตุ๊กตาหมดก็ไม่ได้เติม · รีบ).
@@ -1574,6 +1584,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           form={f}
           setNum={setNum}
           dispensed={dispensed}
+          overCount={overCount}
           afterFill={afterFill}
           photos={state.photos}
           photosCaptured={state.photosCaptured}
@@ -4580,6 +4591,7 @@ function FlowScreen(props: {
   form: Form;
   setNum: (key: keyof Form) => (v: string) => void;
   dispensed: number;
+  overCount: number;
   afterFill: number;
   photos: Photos;
   // ถ่ายแล้ว (ยังอาจ upload ไม่เสร็จ) — ใช้โชว์ "✓" ทันทีที่ถ่าย ไม่ต้องรอเน็ต
@@ -4632,7 +4644,7 @@ function FlowScreen(props: {
   // ดีไซน์ใหม่ · เขียนที่นับรายตัวกลับเข้า form (ให้ร่าง/WIP เก็บไปด้วย)
   onSetRemainBySku: (map: Record<string, string>) => void;
 }) {
-  const { step, form: f, dispensed, afterFill, photos, recon, machine } = props;
+  const { step, form: f, dispensed, overCount, afterFill, photos, recon, machine } = props;
   const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
   // TASK C · sheet ตั้งชื่อเล่นตู้ (เปิดจากปุ่ม ✎ ในหัว) — ปิดเมื่อ demo (ไม่มี backend)
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -4705,7 +4717,8 @@ function FlowScreen(props: {
   const meterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi);
   const photoOk = !!props.photosCaptured.before && !!props.photosCaptured.after; // ถ่ายแล้วนับเลย (upload วิ่งเบื้องหลัง)
   const dollsMissing = !isFilled(f.left);
-  const dollsMismatch = !dollsMissing && meterFilled && recon.dollDelta !== dispensed;
+  // นับเกิน = ไม่ตรงเสมอ · ไม่งั้นยอมคลาด ±2 ตัว (ตรงกับ server · เดิม !== ทำให้ต่าง 1 ตัวก็แดง)
+  const dollsMismatch = !dollsMissing && meterFilled && (overCount > 0 || Math.abs(recon.dollDelta - dispensed) > DOLL_MATCH_TOL);
   const cashMissing = !isFilled(f.cash);
   const cashMismatch = !cashMissing && meterFilled && moneyDiff !== 0; // ADVISORY (≈฿10/เกม · server ใช้ราคาจริง)
   const meterMissing = !meterFilled;
@@ -4727,7 +4740,8 @@ function FlowScreen(props: {
   // ต้นทุนคีบ/ตัว ควรอยู่ ฿150–350 (retune advice) — VISUAL แนะนำ ไม่บล็อกการส่ง
   let retuneLabel = "กำลังดี", retuneColor = "#15803D", retuneBg = "#E7F4EC", retuneHint = "";
   let needRetune = false;
-  if (dispensed === 0) { retuneLabel = "ไม่มีตุ๊กตาออก"; retuneColor = "#C0392B"; retuneBg = "#FBECEC"; needRetune = true; retuneHint = "ไม่มีตุ๊กตาออกเลย อาจตั้งยากไปหรือตู้เสีย"; }
+  if (overCount > 0) { retuneLabel = `ตุ๊กตาเกิน +${overCount}`; retuneColor = "#B42318"; retuneBg = "#FBECEC"; retuneHint = ""; } // นับเกิน ≠ ตู้ตั้งยาก → ไม่เสนอปรับคีบ
+  else if (dispensed === 0) { retuneLabel = "ไม่มีตุ๊กตาออก"; retuneColor = "#C0392B"; retuneBg = "#FBECEC"; needRetune = true; retuneHint = "ไม่มีตุ๊กตาออกเลย อาจตั้งยากไปหรือตู้เสีย"; }
   else if (costPerDoll < 150) { retuneLabel = "ออกง่ายไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวต่ำ กำไรน้อย ควรตั้งให้ยากขึ้น"; }
   else if (costPerDoll > 350) { retuneLabel = "ออกยากไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวสูง ลูกค้าคีบยาก เสี่ยงเสียลูกค้า"; }
   const wrongMachine = coinDelta < 0 || recon.dollDelta < 0 || Math.abs(recon.dollDelta - dispensed) > 20 || Math.abs(moneyDiff) > 300;
@@ -4823,6 +4837,7 @@ function FlowScreen(props: {
                   {/* mockup โชว์แค่ "เหลือในตู้ N ตัว" (+ คืนสโตร์เมื่อมี) — เลข "ออก" ไปโผล่หน้ากระทบยอด */}
                   <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้ <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว</span>
                   {(f.returnedTotal ?? 0) > 0 && <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#15803D", whiteSpace: "nowrap" }}>↩ คืนสโตร์ {f.returnedTotal} ตัว</span>}
+                  {overCount > 0 && <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#B42318", background: "#FEECEA", padding: "2px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>⚠️ ตุ๊กตาเกิน +{overCount}</span>}
                 </div>
                 {returnErr && <div style={{ padding: "8px 13px", fontSize: 11.5, color: "#B42318", fontWeight: 600, background: "#FDF3F2" }}>{returnErr}</div>}
               </div>
@@ -4831,6 +4846,7 @@ function FlowScreen(props: {
                 {/* ตู้ยังไม่มี SKU ในระบบ → นับรวมทีเดียว (fallback) */}
                 <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
                 <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 6 }}>รอบก่อนมี {f.last} ตัว · กรอกที่นับได้ ระบบคำนวณตุ๊กตาที่ออกให้</div>
+                {overCount > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: "#B42318", marginTop: 4 }}>⚠️ นับได้เกินกว่ารอบก่อน +{overCount} ตัว — เช็คนับซ้ำ หรือมีคนเติมไม่ลงระบบ</div>}
               </div>
             )}
 
@@ -4961,6 +4977,7 @@ function FlowScreen(props: {
             <div style={{ background: "#F1F2FE", border: "1px solid #DEE0FA", borderRadius: 12, padding: "13px 15px" }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", marginBottom: 9 }}>ระบบคำนวณให้อัตโนมัติ</div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.left) ? `${dispensed} ตัว` : "—"}</span></div>
+              {overCount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#B42318" }}>ตุ๊กตาเกินจากที่คาด</span><span className="num" style={{ fontWeight: 700, color: "#B42318" }}>+{overCount} ตัว</span></div>}
               {/* CEO 2026-07-19 · เครื่องหมายเดียว (บวก=+ ลบ=− ไม่ใช่ "+-") · ลบ = มิเตอร์น้อยกว่ารอบก่อน (กรอกผิด/ผิดตู้) */}
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: recon.dollDelta < 0 ? "#B42318" : undefined }}>{isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta} (น้อยกว่ารอบก่อน?)` : `+${recon.dollDelta}`) : "—"}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700, color: recon.expectedCash < 0 ? "#B42318" : undefined }}>{isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `฿${recon.expectedCash}`) : "—"}</span></div>
@@ -5004,6 +5021,12 @@ function FlowScreen(props: {
                   คืนเข้าสโตร์รอบนี้ {f.returnedTotal} ตัว (ไม่นับเป็นลูกค้าคีบ)
                 </div>
               )}
+              {overCount > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11, background: "#FEECEA", border: "1px solid #F3C6C0", borderRadius: 10, padding: "9px 11px", fontSize: 11.5, color: "#B42318", fontWeight: 700, lineHeight: 1.4 }}>
+                  <span style={{ fontSize: 14 }}>⚠️</span>
+                  <span>นับได้เกินกว่ารอบก่อน <b className="num">+{overCount} ตัว</b> — เช็คนับซ้ำ หรือมีคนเติมไม่ลงระบบ</span>
+                </div>
+              )}
               {isFilled(f.cash) && isFilled(f.left) && (
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 13, paddingTop: 12, borderTop: "1px solid #F0F1F4" }}>
@@ -5033,8 +5056,9 @@ function FlowScreen(props: {
 
             {/* ── การ์ดผลตรวจ 4 ใบ (ตุ๊กตา/เงิน/มิเตอร์/รูป) — ขาด = กรอก/ถ่ายตรงนั้นเลย ── */}
             <ReconCard ok={dollsOk} wait={!dollsMissing && !dollsMismatch && !meterFilled}
-              title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "นับแล้ว — รอเลขมิเตอร์เทียบ"}
+              title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : overCount > 0 ? `ตุ๊กตาเกินจากที่คาด +${overCount} ตัว` : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "นับแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={dollsMissing ? "นับที่เหลือในตู้แล้วกรอกตรงนี้ได้เลย — ระบบคำนวณตุ๊กตาที่ออกให้"
+                : overCount > 0 ? `นับได้ ${n0(f.left)}${(f.returnedTotal ?? 0) > 0 ? ` + คืนชั้น ${f.returnedTotal}` : ""} มากกว่ารอบก่อน ${f.last} อยู่ ${overCount} ตัว — เช็คนับซ้ำ/มีคนเติมไม่ลงระบบ`
                 : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา ${recon.dollDelta < 0 ? recon.dollDelta : `+${recon.dollDelta}`}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "dolls" ? (

@@ -1,5 +1,7 @@
 "use client";
-// Photo capture button — 1-tap camera, client-side resize to ~150KB WebP, upload to R2.
+// Photo capture button — 1-tap: มือถือเด้งเมนูให้เลือก "ถ่ายรูป / เลือกจากคลังภาพ" เอง
+// (เอา capture="environment" ออก · CEO 2026-07-20 อยากแนบรูปเก่าได้ ไม่ใช่ถ่ายอย่างเดียว)
+// client-side resize to ~150KB WebP, upload to R2.
 // No npm dep — uses canvas API.
 //
 // ทนเน็ตตก + ทนการปิดแอป (field-app · พนักงานอยู่หน้าตู้ 7-11 สัญญาณอ่อน):
@@ -283,7 +285,6 @@ export function PhotoCaptureButton({
           ref={ref}
           type="file"
           accept="image/*"
-          capture="environment"
           className="sr-only"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -341,7 +342,6 @@ export function PhotoCaptureButton({
           ref={ref}
           type="file"
           accept="image/*"
-          capture="environment"
           className="sr-only"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -380,7 +380,6 @@ export function PhotoCaptureButton({
         ref={ref}
         type="file"
         accept="image/*"
-        capture="environment"
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0];
