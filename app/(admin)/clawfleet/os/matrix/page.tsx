@@ -75,7 +75,7 @@ export default async function MatrixPage({
         days: Object.fromEntries(
           [...m.byDay.entries()].map(([iso, c]) => [
             iso,
-            { cash: c.cash, dolls: c.dolls, cost: c.cost, swapped: c.swapped },
+            { cash: c.cash, dolls: c.dolls, cost: c.cost, swapped: c.swapped, baseline: c.baseline, anomaly: c.anomaly },
           ]),
         ),
       }));

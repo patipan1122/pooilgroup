@@ -1,11 +1,12 @@
 // ClawFleet · Matrix (รายงานเจาะสาขา) query layer — server-only.
 //
 // เมทริกซ์ "ตู้ × วัน" สำหรับสาขาเดียว: ต่อตู้ ต่อวันย้อนหลัง N วัน รวมจาก
-// cf_collection_events (เฉพาะ COLLECTION ในรอบที่ปิดแล้ว) →
-//   cash   = เงินที่เก็บได้/วัน (บาท)               = SUM(cash_counted_cents)/100
-//   dolls  = ตุ๊กตาที่ออก/วัน (ตัว)                  = SUM(doll_meter_after − doll_meter_before)
-//   cost   = ต้นทุน/ตัวเฉลี่ย/วัน (บาท)              = cash / dolls (avg บาท/ตุ๊กตา · = ตัวชี้วัด P&L)
-//   swapped= มีการเปลี่ยนตุ๊กตา (refill) ในวันนั้น
+// cf_collection_events (COLLECTION + INITIAL/ตั้งต้น ในรอบที่ปิดแล้ว · D-025) →
+//   cash   = รายได้/วัน (บาท) = รอบเก็บจริง + ยอดตั้งต้น = SUM(cash_counted_cents)/100
+//            (นับ baseline เป็นรายได้ ให้ตรงกับ ฝากเงิน/hub/P&L — CEO 2026-07-20)
+//   dolls  = ตุ๊กตาที่ออก/วัน (ตัว) = SUM(doll_meter Δ) เฉพาะ COLLECTION (ไม่รวมมิเตอร์สะสมตอนตั้งต้น)
+//   cost   = บาท/ตุ๊กตา 1 ตัว = (เงินรอบเก็บจริง) / dolls (ไม่รวมยอดตั้งต้น · = ตัวชี้วัด P&L)
+//   swapped= มีการเปลี่ยนตุ๊กตา (refill) ในวันนั้น · baseline= มียอดตั้งต้น · anomaly= มีรอบรอตรวจ
 //
 // "ต้นทุน/ตัว" ในเมทริกซ์ = "บาทต่อตุ๊กตา 1 ตัว" (revenue/dolls) — ตัวชี้วัดเดียวกับ pnl-queries
 // (band 180–280 = กำลังดี). ไม่ใช่ต้นทุนของจาก loadout.
@@ -24,14 +25,18 @@ function prismaInUuid(ids: string[]): Prisma.Sql {
 export type MatrixDayCell = {
   /** ISO day ตามเวลาไทย "YYYY-MM-DD" */
   isoDay: string;
-  /** เงินเก็บได้รวม/วัน (บาท) */
+  /** เงินเก็บได้รวม/วัน (บาท) = รอบเก็บจริง + ยอดตั้งต้น (baseline) · ให้ตรงกับ ฝากเงิน/hub/P&L (D-025) */
   cash: number;
-  /** ตุ๊กตาออกรวม/วัน (ตัว) */
+  /** ตุ๊กตาออกรวม/วัน (ตัว) — เฉพาะรอบเก็บจริง ไม่รวมมิเตอร์สะสมตอนตั้งต้น */
   dolls: number;
-  /** บาท/ตุ๊กตา 1 ตัว (null ถ้าไม่มีตุ๊กตาออก) */
+  /** บาท/ตุ๊กตา 1 ตัว (null ถ้าไม่มีตุ๊กตาออก) — คิดจากเงินรอบเก็บจริงเท่านั้น ไม่รวมยอดตั้งต้น */
   cost: number | null;
   /** มี refill (เปลี่ยนตุ๊กตา) ในวันนั้นไหม */
   swapped: boolean;
+  /** วันนี้มี "ยอดตั้งต้น" (ตั้งค่าตู้ครั้งแรก) รวมอยู่ในเงินไหม → ให้ client ติดป้ายแยก */
+  baseline: boolean;
+  /** มีรอบที่ยัง "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม → client ติดธงเตือน */
+  anomaly: boolean;
   /** มี event จริงในวันนั้นไหม (แยก "ไม่มีข้อมูล" ออกจาก "0 บาท") */
   hasData: boolean;
 };
@@ -56,8 +61,11 @@ type RawRow = {
   machine_id: string;
   iso_day: string;
   cash_cents: bigint | number | null;
+  coll_cash_cents: bigint | number | null;
   dolls: bigint | number | null;
   swaps: bigint | number | null;
+  has_baseline: boolean | null;
+  anomaly: boolean | null;
   events: bigint | number | null;
 };
 
@@ -137,14 +145,18 @@ export async function getMatrixData(
       e.machine_id::text AS machine_id,
       to_char((e.collected_at AT TIME ZONE 'Asia/Bangkok')::date, 'YYYY-MM-DD') AS iso_day,
       SUM(e.cash_counted_cents)::bigint AS cash_cents,
-      SUM(GREATEST(0, COALESCE(e.doll_meter_after, 0) - COALESCE(e.doll_meter_before, 0)))::bigint AS dolls,
+      SUM(e.cash_counted_cents) FILTER (WHERE e.event_type = 'COLLECTION')::bigint AS coll_cash_cents,
+      SUM(GREATEST(0, COALESCE(e.doll_meter_after, 0) - COALESCE(e.doll_meter_before, 0)))
+        FILTER (WHERE e.event_type = 'COLLECTION')::bigint AS dolls,
       COUNT(*) FILTER (WHERE COALESCE(e.refill_qty, 0) > 0)::bigint AS swaps,
+      bool_or(e.event_type = 'INITIAL') AS has_baseline,
+      bool_or(s.status = 'ANOMALY_REVIEW') AS anomaly,
       COUNT(*)::bigint AS events
     FROM cf_collection_events e
     JOIN cf_collection_sessions s ON s.id = e.session_id
     WHERE e.org_id = ${orgId}::uuid
       AND e.machine_id IN (${prismaInUuid(machineIds)})
-      AND e.event_type = 'COLLECTION'
+      AND e.event_type IN ('COLLECTION', 'INITIAL')
       AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW')
       AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
     GROUP BY e.machine_id, iso_day
@@ -153,17 +165,22 @@ export async function getMatrixData(
   // 4. ประกอบ map ต่อตู้
   const byMachine = new Map<string, Map<string, MatrixDayCell>>();
   for (const r of rows) {
-    const cashCents = toNum(r.cash_cents);
-    const dolls = toNum(r.dolls);
+    const cashCents = toNum(r.cash_cents); // รวม baseline = รายได้ (ให้ตรงกับ ฝากเงิน/hub/P&L)
+    const collCashCents = toNum(r.coll_cash_cents); // เฉพาะรอบเก็บจริง → ใช้คิดต้นทุน/ตัว
+    const dolls = toNum(r.dolls); // เฉพาะรอบเก็บจริง (ไม่รวมมิเตอร์ตั้งต้น)
     const events = toNum(r.events);
     if (events === 0) continue;
     const cash = Math.round(cashCents / 100);
+    const collCash = Math.round(collCashCents / 100);
     const cell: MatrixDayCell = {
       isoDay: r.iso_day,
       cash,
       dolls,
-      cost: dolls > 0 ? Math.round(cash / dolls) : null,
+      // ต้นทุน/ตัว = บาทต่อตุ๊กตา คิดจาก "รอบเก็บจริง" เท่านั้น (ยอดตั้งต้นไม่ได้มาจากการปล่อยตุ๊กตา)
+      cost: dolls > 0 ? Math.round(collCash / dolls) : null,
       swapped: toNum(r.swaps) > 0,
+      baseline: r.has_baseline === true,
+      anomaly: r.anomaly === true,
       hasData: true,
     };
     let m = byMachine.get(r.machine_id);

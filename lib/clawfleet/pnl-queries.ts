@@ -10,7 +10,7 @@
 // ทุก threshold เป็นค่าคงที่ด้านล่าง (ปรับได้ที่เดียว).
 
 import { prisma } from "@/lib/prisma";
-import { CfSessionStatus } from "@/lib/generated/prisma/client";
+import { CfSessionStatus, CfEventType } from "@/lib/generated/prisma/client";
 import { requireSession, type Session } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
 
@@ -264,20 +264,25 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
       branchId: true,
       group: { select: { branchId: true } },
       events: {
-        where: { eventType: "COLLECTION" },
-        select: { machineId: true, cashCountedCents: true, dollMeterBefore: true, dollMeterAfter: true },
+        // นับ COLLECTION + INITIAL/ตั้งต้น: baseline cash = รายได้ (ให้สรุปสาขาตรงกับรายรอบ drill-in
+        // ที่ fallback totalCashCents อยู่แล้ว → ปิดบั๊ก "สรุป ≠ Σ รายรอบ" · CEO 2026-07-20 D-025)
+        where: { eventType: { in: [CfEventType.COLLECTION, CfEventType.INITIAL] } },
+        select: { machineId: true, eventType: true, cashCountedCents: true, dollMeterBefore: true, dollMeterAfter: true },
       },
     },
   });
 
   // 4. รวมยอดต่อสาขา + ต่อตู้ (ตู้ใช้นับ riskyMachines)
-  type Agg = { revCents: number; dolls: number; costCents: number; hasCost: boolean; sessions: number };
+  //    revCents     = รายได้รวม (COLLECTION + ยอดตั้งต้น) → ใช้โชว์ "รายได้/กำไร" ให้ตรง deposit/matrix
+  //    collRevCents = เฉพาะรอบเก็บจริง → ใช้คิด บาท/ตุ๊กตา (avg) + ธงเสี่ยง เท่านั้น
+  //    (ยอดตั้งต้นเป็นเงินก้อนเดียวตอนรับตู้ · ถ้าปนเข้าอัตราต่อตัว จะกลบตู้ขาดทุนให้ดูเขียว · D-025)
+  type Agg = { revCents: number; collRevCents: number; dolls: number; costCents: number; hasCost: boolean; sessions: number };
   const branchAgg = new Map<string, Agg>();
   const machineAgg = new Map<string, Agg>(); // machineId → agg (สำหรับธงรายตู้)
 
   const ensure = (m: Map<string, Agg>, k: string): Agg => {
     let a = m.get(k);
-    if (!a) { a = { revCents: 0, dolls: 0, costCents: 0, hasCost: false, sessions: 0 }; m.set(k, a); }
+    if (!a) { a = { revCents: 0, collRevCents: 0, dolls: 0, costCents: 0, hasCost: false, sessions: 0 }; m.set(k, a); }
     return a;
   };
 
@@ -290,17 +295,23 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
       // ผูก event → branch ของ machine (กัน machine ย้ายสาขา) · ถ้าไม่เจอใช้ bId
       const evBranch = machineToBranch.get(e.machineId) ?? bId;
       if (!branchIdSet.has(evBranch)) continue;
-      const dolls = Math.max(0, (e.dollMeterAfter ?? 0) - (e.dollMeterBefore ?? 0));
+      // ตุ๊กตาออก + ต้นทุนต่อตัว = เฉพาะรอบเก็บจริง · INITIAL/ตั้งต้น นับเฉพาะเงิน (มิเตอร์สะสม ≠ ตุ๊กตาปล่อยจริง)
+      const dolls = e.eventType === CfEventType.COLLECTION
+        ? Math.max(0, (e.dollMeterAfter ?? 0) - (e.dollMeterBefore ?? 0))
+        : 0;
       const unitCost = costMap.get(e.machineId);
       const cost = unitCost != null ? dolls * unitCost : 0;
+      const collRev = e.eventType === CfEventType.COLLECTION ? e.cashCountedCents : 0;
       const ba = ensure(branchAgg, evBranch);
       ba.revCents += e.cashCountedCents;
+      ba.collRevCents += collRev;
       ba.dolls += dolls;
       ba.costCents += cost;
       if (unitCost != null) ba.hasCost = true;
 
       const ma = ensure(machineAgg, e.machineId);
       ma.revCents += e.cashCountedCents;
+      ma.collRevCents += collRev;
       ma.dolls += dolls;
       ma.costCents += cost;
       if (unitCost != null) ma.hasCost = true;
@@ -312,8 +323,9 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
   for (const [mId, ma] of machineAgg) {
     const bId = machineToBranch.get(mId);
     if (!bId) continue;
-    const avg = ma.dolls > 0 ? (ma.revCents / 100) / ma.dolls : null;
-    const profit = (ma.revCents - ma.costCents) / 100;
+    // ธงเสี่ยง = ผลงาน "รอบเก็บจริง" เท่านั้น (ยอดตั้งต้นไม่นับ กันกลบตู้ขาดทุน)
+    const avg = ma.dolls > 0 ? (ma.collRevCents / 100) / ma.dolls : null;
+    const profit = (ma.collRevCents - ma.costCents) / 100;
     const f = pnlFlag(avg, profit, ma.hasCost);
     if (f.flag === "LOW" || f.flag === "LOSS" || f.flag === "HIGH") {
       riskyByBranch.set(bId, (riskyByBranch.get(bId) ?? 0) + 1);
@@ -322,12 +334,14 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
 
   // 6. ประกอบผลลัพธ์
   const result: BranchPnl[] = branches.map((b) => {
-    const a = branchAgg.get(b.id) ?? { revCents: 0, dolls: 0, costCents: 0, hasCost: false, sessions: 0 };
-    const revenue = a.revCents / 100;
+    const a = branchAgg.get(b.id) ?? { revCents: 0, collRevCents: 0, dolls: 0, costCents: 0, hasCost: false, sessions: 0 };
+    const revenue = a.revCents / 100; // รายได้โชว์ = รวมยอดตั้งต้น (ตรงกับ deposit/matrix)
+    const collRevenue = a.collRevCents / 100; // เฉพาะรอบเก็บจริง → คิดอัตราต่อตัว + ธง
     const cost = a.costCents / 100;
     const profit = revenue - cost;
-    const avg = a.dolls > 0 ? revenue / a.dolls : null;
-    const flag = pnlFlag(avg, profit, a.hasCost);
+    // บาท/ตุ๊กตา + ธงเสี่ยง = รอบเก็บจริงเท่านั้น (ยอดตั้งต้นไม่ปนอัตราต่อตัว)
+    const avg = a.dolls > 0 ? collRevenue / a.dolls : null;
+    const flag = pnlFlag(avg, collRevenue - cost, a.hasCost);
     return {
       branchId: b.id,
       name: b.name,

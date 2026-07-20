@@ -22,7 +22,16 @@ export type AssignableStaff = { id: string; name: string };
 export type MatrixBranch = { id: string; code: string; name: string; machines: number };
 
 /** ค่ารายวันต่อตู้ (serialized จาก server · cost = null เมื่อไม่มีตุ๊กตาออก) */
-export type MatrixSerialDay = { cash: number; dolls: number; cost: number | null; swapped: boolean };
+export type MatrixSerialDay = {
+  cash: number;
+  dolls: number;
+  cost: number | null;
+  swapped: boolean;
+  /** เงินวันนี้มี "ยอดตั้งต้น" (ตั้งค่าตู้ครั้งแรก) รวมอยู่ไหม → ติดป้ายแยก */
+  baseline: boolean;
+  /** มีรอบ "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม */
+  anomaly: boolean;
+};
 /** ตู้ + map isoDay → ค่ารายวัน (เฉพาะวันที่มี event) */
 export type MatrixSerialMachine = {
   machineId: string;
@@ -81,6 +90,8 @@ function sampleVals(seed0: number, m: SampleSeed, mi: number, d: number): Matrix
     cash: 280 + Math.round(mrng(seed0 + mi * 17 + d * 5 + 2) * 520),
     dolls: 4 + Math.round(mrng(seed0 + mi * 13 + d * 11 + 3) * 22),
     swapped: phase === 0,
+    baseline: false,
+    anomaly: false,
   };
 }
 /** สร้าง isoDays ตัวอย่าง (วันจริงย้อนหลัง · ใช้เฉพาะ sample path) */
@@ -120,7 +131,7 @@ const CELL_PAD: React.CSSProperties = {
 
 type GridDay = MatrixSerialDay & { hasData: boolean };
 // machineId = null เฉพาะ SAMPLE path (DB ว่าง) → มอบหมายไม่ได้
-type GridMachine = { machineId: string | null; code: string; days: GridDay[] };
+type GridMachine = { machineId: string | null; code: string; nickname: string | null; days: GridDay[] };
 
 type MatrixView = "machine" | "branch";
 
@@ -239,7 +250,8 @@ export function MatrixClient({
       const gm: GridMachine[] = sMachines.map((m, mi) => ({
         machineId: null,
         code: m.code,
-        days: sIso.map((_iso, di) => ({ ...sampleVals(seed0, m, mi, di), hasData: true })),
+        nickname: null,
+        days: sIso.map((_iso, di) => ({ ...sampleVals(seed0, m, mi, di), baseline: false, anomaly: false, hasData: true })),
       }));
       return { iso: sIso, machines: gm };
     }
@@ -247,9 +259,10 @@ export function MatrixClient({
     const gm: GridMachine[] = machines.map((m) => ({
       machineId: m.machineId,
       code: m.code,
+      nickname: m.nickname,
       days: isoDays.map((iso) => {
         const d = m.days[iso];
-        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, hasData: false };
+        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, baseline: false, anomaly: false, hasData: false };
         return { ...d, hasData: true };
       }),
     }));
@@ -260,11 +273,12 @@ export function MatrixClient({
   const matrix = useMemo(() => {
     const cols = grid.machines.length;
     const colCost = new Array<number>(cols).fill(0);
+    const colCostCnt = new Array<number>(cols).fill(0); // นับเฉพาะวันที่มีต้นทุน/ตัวจริง (วันตั้งต้นไม่นับ)
     const colCash = new Array<number>(cols).fill(0);
     const colDoll = new Array<number>(cols).fill(0);
     const colCnt = new Array<number>(cols).fill(0);
 
-    type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; style: React.CSSProperties };
+    type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; baseline: boolean; anomaly: boolean; style: React.CSSProperties };
     const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string }[] = [];
 
     grid.iso.forEach((iso, di) => {
@@ -277,16 +291,20 @@ export function MatrixClient({
           return {
             rows: [{ v: "—", style: { color: "#B6BBC4" } }],
             swapped: false,
+            baseline: false,
+            anomaly: false,
             style: { ...CELL_PAD, background: "#F4F5F7", color: "#B6BBC4" },
           };
         }
-        // cost = null (ไม่มีตุ๊กตาออก) → ถือเป็น 0 สำหรับ band/heat แต่โชว์ "—" ในโหมด cost
+        // cost = null (ไม่มีตุ๊กตาออก · เช่น วันตั้งต้น) → โชว์ "—" + พื้น neutral (ไม่ใช่ส้ม "ปล่อยง่าย")
+        // และไม่นับเข้าค่าเฉลี่ยต้นทุน/ตัว กันวันตั้งต้นดึงคอลัมน์ให้ดูแดง
+        const hasCostVal = rv.cost != null;
         const costVal = rv.cost ?? 0;
-        colCost[mi] += costVal;
+        if (hasCostVal) { colCost[mi] += costVal; colCostCnt[mi] += 1; }
         colCash[mi] += rv.cash;
         colDoll[mi] += rv.dolls;
         colCnt[mi] += 1;
-        const cb = costBand(costVal);
+        const cb = hasCostVal ? costBand(costVal) : { bg: "#F3F4F6", co: "#9AA0AA" };
         let bg: string;
         let cellRows: { v: string; style: React.CSSProperties }[];
         let primary: number;
@@ -316,10 +334,17 @@ export function MatrixClient({
         return {
           rows: cellRows,
           swapped: rv.swapped,
+          baseline: rv.baseline,
+          anomaly: rv.anomaly,
           style: {
             ...CELL_PAD,
             background: bg,
-            ...(rv.swapped ? { boxShadow: "inset 0 0 0 2px #4F46E5" } : {}),
+            // รอตรวจ (anomaly) เด่นสุด → กรอบส้ม · ไม่งั้น refill → กรอบคราม
+            ...(rv.anomaly
+              ? { boxShadow: "inset 0 0 0 2px #F97316" }
+              : rv.swapped
+                ? { boxShadow: "inset 0 0 0 2px #4F46E5" }
+                : {}),
           },
         };
       });
@@ -334,7 +359,7 @@ export function MatrixClient({
 
     const footer = grid.machines.map((_gm, mi) => {
       const cnt = colCnt[mi] || 1;
-      const aCost = Math.round(colCost[mi] / cnt);
+      const aCost = colCostCnt[mi] > 0 ? Math.round(colCost[mi] / colCostCnt[mi]) : 0; // เฉลี่ยเฉพาะวันที่มีต้นทุนจริง
       const aCash = Math.round(colCash[mi] / cnt);
       const aDoll = Math.round(colDoll[mi] / cnt);
       const cb = costBand(aCost);
@@ -433,8 +458,8 @@ export function MatrixClient({
   }, [drillIdx, grid, branch]);
 
   const noData = !empty && grid.machines.length === 0;
-  // สาขา "ตั้งตู้แล้ว (มีตู้จริง) แต่ทุกช่องไม่มีข้อมูล" = ยังไม่เคยมีรอบเก็บเงินจริง
-  // (รอบตั้งต้น/baseline เป็น event INITIAL ไม่ใช่ COLLECTION → ตารางนี้ไม่นับ → เห็น "—" เต็มจอ)
+  // สาขา "ตั้งตู้แล้ว (มีตู้จริง) แต่ทุกช่องไม่มีข้อมูลในช่วงนี้" = ยังไม่มีทั้งยอดตั้งต้นและรอบเก็บ
+  // (baseline/ตั้งต้น = INITIAL · รอบเก็บ = COLLECTION → ตอนนี้นับทั้งคู่เป็นรายได้ · D-025)
   // แยกจากตารางว่างเปล่าด้วยแบนเนอร์อธิบาย ไม่ให้ดูเหมือนระบบพัง.
   const machinesNoCollections =
     !empty &&
@@ -604,10 +629,10 @@ export function MatrixClient({
         >
           <AlertTriangle size={16} style={{ flex: "0 0 16px", marginTop: 1 }} />
           <span>
-            <b>สาขานี้ตั้งตู้แล้ว ({machineCount} ตู้) แต่ยังไม่มีรอบเก็บเงินจริง</b> — ข้อมูลในตารางจะขึ้นเมื่อพนักงานบันทึก
-            การเก็บเงินรอบแรก
+            <b>สาขานี้ตั้งตู้แล้ว ({machineCount} ตู้) แต่ยังไม่มีความเคลื่อนไหวในช่วง {days} วันนี้</b> — ตัวเลขในตารางจะขึ้น
+            ทันทีที่พนักงานบันทึกการตั้งค่าตู้ (ยอดตั้งต้น) หรือเก็บเงินรอบจริง
             <span style={{ display: "block", color: "#6366F1", fontSize: 11.5, marginTop: 3 }}>
-              รอบ “ตั้งต้น” ที่ตั้งไว้เป็นการตั้งค่ามิเตอร์เริ่มต้น (เงินที่ค้างในตู้ตอนเริ่มนับ) — ไม่นับเป็นยอดเก็บรายวัน จึงยังไม่แสดงในตารางนี้
+              ทั้ง “ยอดตั้งต้น” (เงินที่นับได้ตอนตั้งค่าตู้ครั้งแรก) และรอบเก็บเงินปกติ — นับเป็นรายได้เหมือนกัน ให้ตรงกับหน้าฝากเงินและ P&L
             </span>
           </span>
         </div>
@@ -641,6 +666,14 @@ export function MatrixClient({
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCEDEC", display: "inline-block" }} />
           คีบยากไป (ลูกค้าหนี) <span className="num" style={{ color: "#A9AEB8" }}>&gt;฿280</span>
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#B45309" }}>ตต</span>
+          = มียอดตั้งต้น
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F97316", display: "inline-block" }} />
+          รอตรวจ
         </span>
         <span style={{ flex: 1 }} />
         <span>หน่วย: {METRIC_UNIT[metric]}</span>
@@ -736,6 +769,11 @@ export function MatrixClient({
                       }}
                     >
                       {gm.code}
+                      {gm.nickname ? (
+                        <span style={{ display: "block", fontSize: 9.5, fontWeight: 500, color: "#8A90A0", lineHeight: 1.1 }}>
+                          {gm.nickname}
+                        </span>
+                      ) : null}
                       {asgName ? (
                         <span
                           style={{
@@ -825,6 +863,20 @@ export function MatrixClient({
                             borderRadius: "50%",
                             background: "#4F46E5",
                           }}
+                        />
+                      )}
+                      {c.baseline && (
+                        <span
+                          title="มียอดตั้งต้น (ตั้งค่าตู้ครั้งแรก)"
+                          style={{ position: "absolute", bottom: 2, left: 3, fontSize: 8, fontWeight: 700, color: "#B45309", lineHeight: 1 }}
+                        >
+                          ตต
+                        </span>
+                      )}
+                      {c.anomaly && (
+                        <span
+                          title="มีรอบรอตรวจ (ยอดน่าสงสัย)"
+                          style={{ position: "absolute", top: 3, left: 3, width: 5, height: 5, borderRadius: "50%", background: "#F97316" }}
                         />
                       )}
                     </td>
