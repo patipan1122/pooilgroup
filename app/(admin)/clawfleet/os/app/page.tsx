@@ -261,7 +261,7 @@ export default async function StaffAppPage({
           cashDiffBaht: cashDiffCents != null ? Math.round(cashDiffCents / 100) : undefined,
           coinMeter: e.coinMeterAfter, dollMeter: e.dollMeterAfter ?? undefined,
           // มิเตอร์ "ก่อน" (baseline ปิดครั้งก่อน) + บน/ล่าง กายภาพ → detail คิด delta + โชว์บน/ล่างได้ (บัญชี reconcile)
-          coinMeterBefore: e.coinMeterBefore ?? undefined,
+          coinMeterBefore: e.coinMeterBefore ?? undefined, dollMeterBefore: e.dollMeterBefore ?? undefined,
           meterMoneyTop: e.meterMoneyTop ?? undefined, meterMoneyBottom: e.meterMoneyBottom ?? undefined,
           meterDollTop: e.meterDollTop ?? undefined, meterDollBottom: e.meterDollBottom ?? undefined,
           refillQty: e.refillQty ?? undefined,

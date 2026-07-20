@@ -631,6 +631,7 @@ export type StaffHistoryRow = {
   dollMeter?: number; // เลขมิเตอร์ตุ๊กตา (= after)
   // มิเตอร์ "ก่อน" + บน/ล่าง กายภาพ (CEO 2026-07-19: ใบต้องเห็นมิเตอร์ บน/ล่าง + คิด delta ได้)
   coinMeterBefore?: number; // มิเตอร์เหรียญปิดรอบก่อน → delta = after − before = ยอดจริง
+  dollMeterBefore?: number; // มิเตอร์ตุ๊กตาปิดรอบก่อน → detail โชว์ ก่อน→หลาย (+delta) เหมือน mockup
   meterMoneyTop?: number; meterMoneyBottom?: number; // มิเตอร์เงิน บน/ล่าง (กายภาพ)
   meterDollTop?: number; meterDollBottom?: number; // มิเตอร์ตุ๊กตา บน/ล่าง (กายภาพ)
   refillQty?: number; // จำนวนที่เติมเข้าตู้รอบนี้
@@ -2145,9 +2146,9 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
-    { kind: "collect", code: "LP-11", branch: "ลาดพร้าว", date: todayYmd, time: "09:20", cashBaht: 480, expectedCashBaht: 480, cashDiffBaht: 0, coinMeter: 258, coinMeterBefore: 210, dollMeter: 109, refillQty: 4, sellPriceCents: 25000, dollsOut: 4, stockBefore: 8, stockAfter: 12, ok: true, refillSkus: [{ name: "หมีน้ำตาล S", qty: 3 }, { name: "หมีขาว M", qty: 1 }], photos: [] },
+    { kind: "collect", code: "LP-11", branch: "ลาดพร้าว", date: todayYmd, time: "09:20", cashBaht: 480, expectedCashBaht: 480, cashDiffBaht: 0, coinMeter: 258, coinMeterBefore: 210, dollMeter: 109, dollMeterBefore: 105, refillQty: 4, sellPriceCents: 25000, dollsOut: 4, stockBefore: 8, stockAfter: 12, ok: true, refillSkus: [{ name: "หมีน้ำตาล S", qty: 3 }, { name: "หมีขาว M", qty: 1 }], photos: [] },
     { kind: "swap", code: "DL03-02", branch: "โนนแดง", date: shiftYmd(todayYmd, -1), time: "16:40", cashBaht: 0, swapReturned: 1, swapRefilled: 6, ok: true, swapRefilledSkus: [{ name: "ซานริโอ้ คิตตี้", qty: 6 }] },
-    { kind: "collect", code: "DL03-01", branch: "โนนแดง", date: shiftYmd(todayYmd, -2), time: "14:12", cashBaht: 300, expectedCashBaht: 340, cashDiffBaht: -40, coinMeter: 148, coinMeterBefore: 100, dollMeter: 86, refillQty: 7, sellPriceCents: 25000, dollsOut: 2, stockBefore: 7, stockAfter: 12, ok: false, shortReason: "เก็บเงินได้ ฿300 แต่มิเตอร์เหรียญขึ้น ฿480 (ต่าง −฿40 หลังหักทอน)", refillSkus: [{ name: "หมีน้ำตาล S", qty: 7 }], photos: [] },
+    { kind: "collect", code: "DL03-01", branch: "โนนแดง", date: shiftYmd(todayYmd, -2), time: "14:12", cashBaht: 300, expectedCashBaht: 340, cashDiffBaht: -40, coinMeter: 148, coinMeterBefore: 100, dollMeter: 86, dollMeterBefore: 84, refillQty: 7, sellPriceCents: 25000, dollsOut: 2, stockBefore: 7, stockAfter: 12, ok: false, shortReason: "เก็บเงินได้ ฿300 แต่มิเตอร์เหรียญขึ้น ฿480 (ต่าง −฿40 หลังหักทอน)", refillSkus: [{ name: "หมีน้ำตาล S", qty: 7 }], photos: [] },
   ];
   const rows = usingDemo ? demoRows : history;
 
@@ -2323,8 +2324,18 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
               const statusLabel = isSwap ? "เปลี่ยนตุ๊กตา · ไม่เก็บเงิน" : detail.isBaseline ? "ตั้งค่าครั้งแรก" : detail.ok ? "ยอดตรง" : "ยอดไม่ตรง · ตรวจแล้ว";
               const price = detail.sellPriceCents != null ? Math.round(detail.sellPriceCents / 100) : null;
               const nd = (v?: number | null) => (v != null ? v.toLocaleString("en-US") : "—");
-              // ราย SKU: 1 ชนิด+มี dollsOut → "ออก N" เป๊ะ · หลายชนิด → "เติม N" (D2 · 2026-07-20)
+              // ราย SKU: 1 ชนิด+มี dollsOut → "ออก N" เป๊ะ · หลายชนิด → "—" (per-SKU out ไม่ได้เก็บ · D2 2026-07-20)
               const skuOne = (detail.refillSkus?.length ?? 0) === 1 && !isSwap && detail.dollsOut != null;
+              // มิเตอร์ ก่อน→หลัง (ค่าจริงจาก server · ไม่ derive) + delta · match = meter delta ตรงกับที่นับไหม
+              const dollMeterDelta = detail.dollMeterBefore != null && detail.dollMeter != null ? detail.dollMeter - detail.dollMeterBefore : null;
+              const coinMeterDelta = detail.coinMeterBefore != null && detail.coinMeter != null ? detail.coinMeter - detail.coinMeterBefore : null;
+              const meterMatch = dollMeterDelta != null && detail.dollsOut != null ? dollMeterDelta === detail.dollsOut : null;
+              const meterRow = (label: string, before?: number, after?: number, deltaColor?: string, deltaPrefix?: string) => (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #F2F3F5" }}>
+                  <span style={{ fontSize: 12, color: "#5A6270" }}>{label}</span>
+                  <span className="num" style={{ fontSize: 12.5 }}>{nd(before)} → <b style={{ color: "#1A1D21" }}>{nd(after)}</b>{before != null && after != null && <b style={{ color: deltaColor ?? "#4F46E5", marginLeft: 6 }}>({deltaPrefix ?? "+"}{(after - before).toLocaleString("en-US")})</b>}</span>
+                </div>
+              );
               return (
                 <>
                   {/* การ์ดหัว — code badge + ชนิด·สาขา + วัน·เวลา + โดย + แถบสถานะ + เหตุผล */}
@@ -2381,75 +2392,73 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                         <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 14px" }}><div className="num" style={{ fontSize: 20, fontWeight: 800 }}>{nd(detail.dollsOut)}</div><div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 3 }}>ตุ๊กตาออก</div></div>
                       </div>
 
-                      {/* นับตุ๊กตา — ก่อนเติม / เติมเพิ่ม / หลังเติม */}
-                      {(detail.stockBefore != null || detail.refillQty != null || detail.stockAfter != null) && (
-                        <>
-                          <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>นับตุ๊กตา</div>
-                          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "6px 14px", marginBottom: 12 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>ก่อนเติม (เหลือในตู้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockBefore)} ตัว</span></div>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>เติมเพิ่ม</span><span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>+{nd(detail.refillQty)} ตัว</span></div>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>หลังเติม (ในตู้ตอนนี้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockAfter)} ตัว</span></div>
-                          </div>
-                        </>
-                      )}
-
-                      {/* สินค้าในตู้ — ราย SKU (1 ชนิด=ออก N · หลายชนิด=เติม N) */}
-                      {detail.refillSkus && detail.refillSkus.length > 0 && (
-                        <>
-                          <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>สินค้าในตู้</div>
-                          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, overflow: "hidden", marginBottom: 12 }}>
-                            {detail.refillSkus.map((s, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: i ? "1px solid #F2F3F5" : "none" }}>
-                                <ProductThumb imageUrl={s.imageUrl} size={32} />
-                                <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                                {price != null && <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>฿{price}/ตัว</span>}
-                                <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "#4F46E5" }}>{skuOne ? `ออก ${detail.dollsOut}` : `เติม ${s.qty}`}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-
-                      {/* มิเตอร์ — เหรียญ รอบก่อน→รอบนี้ (delta) · ตุ๊กตา (กายภาพ บน/ล่าง ถ้ามี) + ป้ายตรง/ไม่ตรง */}
-                      {(detail.coinMeter != null || detail.dollMeter != null || detail.meterMoneyTop != null || detail.meterDollTop != null) && (
-                        <>
-                          <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>มิเตอร์</div>
-                          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "6px 14px", marginBottom: 12, display: "flex", flexDirection: "column" }}>
-                            {(detail.dollMeter != null || detail.meterDollTop != null || detail.meterDollBottom != null) && (
-                              <div style={{ padding: "9px 0", borderBottom: "1px solid #F2F3F5" }}>
-                                <MeterDetailRow label="มิเตอร์ตุ๊กตา" after={detail.dollMeter} top={detail.meterDollTop} bottom={detail.meterDollBottom} />
-                              </div>
-                            )}
-                            {(detail.coinMeter != null || detail.meterMoneyTop != null || detail.meterMoneyBottom != null) && (
-                              <div style={{ padding: "9px 0", borderBottom: "1px solid #F2F3F5" }}>
-                                <MeterDetailRow label="มิเตอร์เหรียญ" before={detail.coinMeterBefore} after={detail.coinMeter} top={detail.meterMoneyTop} bottom={detail.meterMoneyBottom} />
-                              </div>
-                            )}
-                            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 0" }}>
-                              <span style={{ width: 7, height: 7, borderRadius: "50%", background: accent, flex: "0 0 7px" }} />
-                              <span style={{ fontSize: 11.5, fontWeight: 600, color: accent }}>{detail.ok ? "มิเตอร์ตรงกับที่นับ ✓" : "มิเตอร์ไม่ตรงกับที่นับ"}</span>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {/* รูปที่แนบ */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "2px 2px 7px" }}>
-                        <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600 }}>รูปที่แนบ</span>
-                        {detail.photos && detail.photos.length > 0 && <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>{detail.photos.length} รูป</span>}
+                      {/* นับตุ๊กตา — ก่อนเติม / เติมเพิ่ม / หลังเติม (โชว์เสมอ · ไม่มีข้อมูล = "—") */}
+                      <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>นับตุ๊กตา</div>
+                      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "6px 14px", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>ก่อนเติม (เหลือในตู้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockBefore)} ตัว</span></div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>เติมเพิ่ม</span><span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>+{nd(detail.refillQty)} ตัว</span></div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>หลังเติม (ในตู้ตอนนี้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockAfter)} ตัว</span></div>
                       </div>
-                      {detail.photos && detail.photos.length > 0 ? (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                          {detail.photos.map((ph) => (
-                            <button key={ph.url} type="button" onClick={() => setZoom(ph)} className="co-tap" style={{ border: "1px solid #E8EAED", borderRadius: 11, overflow: "hidden", padding: 0, cursor: "pointer", background: "#fff" }}>
-                              <img src={ph.url} alt={ph.label} style={{ width: "100%", height: 82, objectFit: "cover", display: "block" }} />
-                              <div style={{ fontSize: 9.5, color: "#6B7280", textAlign: "center", padding: "5px 3px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ph.label}</div>
-                            </button>
-                          ))}
+
+                      {/* สินค้าในตู้ — ราย SKU (โชว์เสมอ · ฿ราคา/ตัว · ออก N ต่อชนิด · 1 ชนิด=เลขจริง · หลายชนิด=—) */}
+                      <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>สินค้าในตู้</div>
+                      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, overflow: "hidden", marginBottom: 12 }}>
+                        {detail.refillSkus && detail.refillSkus.length > 0 ? detail.refillSkus.map((s, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: i ? "1px solid #F2F3F5" : "none" }}>
+                            <ProductThumb imageUrl={s.imageUrl} size={32} />
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                            <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>{price != null ? `฿${price}` : "—"}/ตัว</span>
+                            <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "#4F46E5" }}>ออก {skuOne ? detail.dollsOut : "—"}</span>
+                          </div>
+                        )) : (
+                          <div style={{ padding: "12px 14px", fontSize: 11.5, color: "#B6BBC4" }}>— ไม่มีข้อมูลสินค้าในตู้รอบนี้</div>
+                        )}
+                      </div>
+
+                      {/* มิเตอร์ — ตุ๊กตา/เหรียญ ก่อน→หลัง (+delta) + ป้ายตรง/ไม่ตรง (โชว์เสมอ · ไม่มี = "—") */}
+                      <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>มิเตอร์</div>
+                      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "6px 14px", marginBottom: 12, display: "flex", flexDirection: "column" }}>
+                        {meterRow("มิเตอร์ตุ๊กตา", detail.dollMeterBefore, detail.dollMeter, "#4F46E5", "+")}
+                        {meterRow("มิเตอร์เหรียญ", detail.coinMeterBefore, detail.coinMeter, "#15803D", "+฿")}
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 0" }}>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: meterMatch == null ? "#9AA1AB" : meterMatch ? "#15803D" : "#C0392B", flex: "0 0 7px" }} />
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: meterMatch == null ? "#9AA1AB" : meterMatch ? "#15803D" : "#C0392B" }}>{meterMatch == null ? "ยังไม่มีมิเตอร์ครบสองรอบ" : meterMatch ? "มิเตอร์ตรงกับที่นับ ✓" : "มิเตอร์ไม่ตรงกับที่นับ"}</span>
                         </div>
-                      ) : (
-                        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 11, padding: "14px 12px", fontSize: 12, color: "#9AA1AB", textAlign: "center", marginBottom: 12 }}>รอบนี้ยังไม่มีรูปหลักฐาน</div>
-                      )}
+                      </div>
+
+                      {/* รูปที่แนบ — ช่องรูปมาตรฐานครบทุกช่อง (มีจริง=รูปกดขยาย · ไม่มี=ช่องว่าง placeholder · เหมือน mockup) */}
+                      {(() => {
+                        const slots = detail.isBaseline
+                          ? ["มิเตอร์เงิน (บน)", "มิเตอร์เงิน (ล่าง)", "มิเตอร์ตุ๊กตา (บน)", "มิเตอร์ตุ๊กตา (ล่าง)", "รูปตู้", "สต็อกตั้งต้น"]
+                          : ["สต็อกก่อนเติม", "สต็อกหลังเติม", "มิเตอร์ตุ๊กตา", "มิเตอร์เหรียญ", "เงินสด"];
+                        const have = detail.photos ?? [];
+                        return (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "2px 2px 7px" }}>
+                              <span style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600 }}>รูปที่แนบ</span>
+                              <span className="num" style={{ fontSize: 11, color: "#9AA1AB" }}>{have.length}/{slots.length} รูป</span>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                              {slots.map((label) => {
+                                const ph = have.find((p) => p.label === label);
+                                return ph ? (
+                                  <button key={label} type="button" onClick={() => setZoom(ph)} className="co-tap" style={{ border: "1px solid #E8EAED", borderRadius: 11, overflow: "hidden", padding: 0, cursor: "pointer", background: "#fff" }}>
+                                    <img src={ph.url} alt={ph.label} style={{ width: "100%", height: 82, objectFit: "cover", display: "block" }} />
+                                    <div style={{ fontSize: 9.5, color: "#6B7280", textAlign: "center", padding: "5px 3px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+                                  </button>
+                                ) : (
+                                  <div key={label} style={{ border: "1px dashed #D6DAE0", borderRadius: 11, overflow: "hidden", background: "#FAFBFC" }}>
+                                    <div style={{ height: 82, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C2C7CF" strokeWidth="1.6"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>
+                                    </div>
+                                    <div style={{ fontSize: 9.5, color: "#9AA1AB", textAlign: "center", padding: "5px 3px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        );
+                      })()}
 
                       {canAttach && (
                         <button type="button" onClick={() => { setAttachRow(detail); setDetail(null); }} className="co-tap"
