@@ -4658,20 +4658,9 @@ function FlowScreen(props: {
   // per-SKU ใช้ได้เมื่อ: ตู้มี SKU + (ยังไม่นับ → seed ให้ | เคยนับรายตัวไว้ → ของเดิม).
   // ร่างเก่าที่นับไว้แล้วแต่ไม่มีรายตัว (ก่อนอัปเดตนี้) → ใช้ช่องนับรวมแทน · กันเลขรายตัวเก่าเขียนทับ left ที่นับจริง
   const perSkuMode = inDolls.length > 0 && (f.left == null || Object.keys(remainBySku).length > 0);
-  const remainInitRef = useRef<string | null>(null);
-  useEffect(() => {
-    const mid = machine?.id ?? "";
-    if (remainInitRef.current === mid) return;
-    remainInitRef.current = mid;
-    // seed เฉพาะรอบสด (ยังไม่นับ + ยังไม่มีรายตัว) — resume/WIP มีค่าอยู่แล้ว ห้ามทับ
-    if (f.left != null || Object.keys(remainBySku).length > 0 || inDolls.length === 0) return;
-    const init: Record<string, string> = {};
-    let sum = 0;
-    for (const d of inDolls) { init[d.productId] = String(d.qty); sum += d.qty; }
-    props.onSetRemainBySku(init);
-    props.setNum("left")(String(sum)); // prefill รวม = ในตู้ปัจจุบัน (พนักงานปรับลดตามที่ออก)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine?.id]);
+  // CEO 2026-07-20 · ไม่ prefill เลขที่คาดไว้อีกต่อไป → ช่องว่าง + placeholder "รอบก่อน N" จาง ๆ
+  //   บังคับพนักงานนับ+พิมพ์จริง (กันกดผ่านโดยไม่นับ) · f.left = null จนกว่าจะกรอก → submit บล็อกเอง (isFilled)
+  //   resume/WIP ที่เคยกรอกไว้ยังอยู่ครบ (remainBySku/f.left มีค่าแล้ว · ไม่ถูกล้าง)
   const commitRemain = (next: Record<string, string>) => {
     props.onSetRemainBySku(next);
     const sum = Object.values(next).reduce((a, v) => a + (parseInt(v || "0", 10) || 0), 0);
@@ -4826,7 +4815,7 @@ function FlowScreen(props: {
                       {ret === 0 && (
                         <>
                           <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
-                          <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" style={{ width: 38, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                          <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder={String(d.qty)} style={{ width: 38, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
                           <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
                         </>
                       )}
@@ -4844,7 +4833,7 @@ function FlowScreen(props: {
             ) : (
               <div style={{ marginBottom: 16 }}>
                 {/* ตู้ยังไม่มี SKU ในระบบ → นับรวมทีเดียว (fallback) */}
-                <CountField value={f.left} onChange={props.setNum("left")} placeholder="นับแล้วกรอก" />
+                <CountField value={f.left} onChange={props.setNum("left")} placeholder={f.last != null ? `รอบก่อน ${f.last}` : "นับแล้วกรอก"} />
                 <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 6 }}>รอบก่อนมี {f.last} ตัว · กรอกที่นับได้ ระบบคำนวณตุ๊กตาที่ออกให้</div>
                 {overCount > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: "#B42318", marginTop: 4 }}>⚠️ นับได้เกินกว่ารอบก่อน +{overCount} ตัว — เช็คนับซ้ำ หรือมีคนเติมไม่ลงระบบ</div>}
               </div>
@@ -4935,6 +4924,7 @@ function FlowScreen(props: {
                     <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>{c.label}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <input value={f[c.key] == null ? "" : String(f[c.key])} onChange={(e) => props.setNum(c.key)(e.target.value)} inputMode="numeric" className="num"
+                        placeholder={(c.pair === "coin" ? f.coinPrev : f.dollPrev) != null ? `รอบก่อน ${c.pair === "coin" ? f.coinPrev : f.dollPrev}` : ""}
                         style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
                       {!props.usingDemo && machine?.code ? (
                         <PhotoCaptureButton compact label="" value={photos[c.photoKey]} onChange={(url) => props.onPhoto(c.photoKey, url)} onCaptured={() => props.onCapture(c.photoKey)}
@@ -5076,7 +5066,7 @@ function FlowScreen(props: {
                               {d.sku ? <div style={{ fontSize: 10, color: "#9AA1AB" }}>{d.sku}</div> : null}
                             </div>
                             <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 28, height: 28, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
-                            <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder="0" style={{ width: 40, textAlign: "center", fontSize: 15, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                            <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder={String(d.qty)} style={{ width: 40, textAlign: "center", fontSize: 15, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
                             <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 28, height: 28, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
                           </div>
                         ))}
@@ -5091,7 +5081,7 @@ function FlowScreen(props: {
                     <>
                       <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 9 }}>จำนวนตุ๊กตาที่เหลือในตู้ (ก่อนเติม)</div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num" placeholder="นับแล้วกรอก"
+                        <input type="text" inputMode="numeric" value={f.left == null ? "" : String(f.left)} onChange={(e) => props.setNum("left")(e.target.value)} className="num" placeholder={f.last != null ? `รอบก่อน ${f.last}` : "นับแล้วกรอก"}
                           style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
                         <button type="button" onClick={() => setReconFix(null)} style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: "10px 16px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>ใช้เลขนี้</button>
                       </div>
@@ -5135,6 +5125,7 @@ function FlowScreen(props: {
                       <div key={c.key}>
                         <div style={{ fontSize: 10, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>{c.label}</div>
                         <input value={f[c.key] == null ? "" : String(f[c.key])} onChange={(e) => props.setNum(c.key)(e.target.value)} inputMode="numeric" className="num"
+                          placeholder={(c.pair === "coin" ? f.coinPrev : f.dollPrev) != null ? `รอบก่อน ${c.pair === "coin" ? f.coinPrev : f.dollPrev}` : ""}
                           style={{ width: "100%", minWidth: 0, fontSize: 14, fontWeight: 700, padding: "7px 9px", border: "1px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
                       </div>
                     ))}
