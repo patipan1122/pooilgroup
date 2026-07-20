@@ -91,8 +91,8 @@ function statusOf(r: CollectionRow): StatusKind {
   // รอบตั้งต้นมาก่อนทุกเงื่อนไข — ไม่มีมิเตอร์เก่าให้เทียบ ห้ามตัดสินว่า "เกิน/ไม่ตรง"
   if (isBaselineRow(r)) return "baseline";
   if (r.expectedCash === 0 && r.actualCash === 0 && r.gap === 0) return "broken";
-  // ส่วนต่างเกินเกณฑ์ "ทั้งขาดและเกิน" (|gap|) = ไม่ตรง · หรือตุ๊กตาหาย
-  if (Math.abs(r.gap) > CASH_TOLERANCE || r.prizeGap > 0) return "diff";
+  // ส่วนต่างเกินเกณฑ์ "ทั้งขาดและเกิน" (|gap|) = ไม่ตรง · หรือตุ๊กตาไม่ตรงมิเตอร์ (หาย prizeGap>0 / เกิน prizeGap<0)
+  if (Math.abs(r.gap) > CASH_TOLERANCE || r.prizeGap !== 0) return "diff";
   return "match";
 }
 
@@ -259,6 +259,11 @@ export function CollectionsClient({
   const dollShortRows = data.filter((r) => !isBaselineRow(r) && r.prizeGap > 0);
   const dollShortN = dollShortRows.length;
   const dollMissingTotal = dollShortRows.reduce((s, r) => s + r.prizeGap, 0);
+  // ตุ๊กตาเกิน — นับได้มากกว่าที่มิเตอร์บอกว่าออก (prizeGap<0 · นับซ้ำ/เติมไม่ลงระบบ) · CEO 2026-07-20 "โชว์ตามจริงทุกฝั่ง"
+  const dollOverRows = data.filter((r) => !isBaselineRow(r) && r.prizeGap < 0);
+  const dollOverN = dollOverRows.length;
+  const dollOverTotal = dollOverRows.reduce((s, r) => s + -r.prizeGap, 0);
+  const dollIssueN = dollShortN + dollOverN;
 
   /* review wiring */
   const setReview = (id: string, st: ReviewState) =>
@@ -295,7 +300,7 @@ export function CollectionsClient({
         { key: "gap", label: "ส่วนต่าง (บาท · +ขาด/−เกิน)" },
         { key: "prizeExpected", label: "ตุ๊กตาควรหาย" },
         { key: "prizeActual", label: "ตุ๊กตานับจริง" },
-        { key: "prizeGap", label: "ตุ๊กตาหาย" },
+        { key: "prizeGap", label: "ตุ๊กตา (+หาย/−เกิน)" },
         { key: "severity", label: "ระดับ" },
       ];
       const STATUS_TH: Record<StatusKind, string> = {
@@ -473,14 +478,14 @@ export function CollectionsClient({
           foot={moneyDiffN > 0 ? `ส่วนต่างรวม ${bahtN(moneyDiffSum)}${multiPage ? " · หน้านี้" : ""}` : "เงินตรงทุกรอบ ✓"}
           footColor={moneyDiffN > 0 ? "#C2756C" : "#8FA99A"}
         />
-        {/* การ์ดตุ๊กตา (เช็คตุ๊กตาออกตรงมิเตอร์ไหม) — ส้มเมื่อมีหาย · จาง/เขียวเมื่อครบ */}
+        {/* การ์ดตุ๊กตา (เช็คตุ๊กตาออกตรงมิเตอร์ไหม) — ส้มเมื่อมีหาย/เกิน · จาง/เขียวเมื่อครบ */}
         <SummaryCard
-          label="ตุ๊กตาหาย · ไม่ตรงมิเตอร์" value={`${dollShortN} รอบ`}
-          valueColor={dollShortN > 0 ? "#B45309" : "#5A6270"}
-          bg={dollShortN > 0 ? "#FCF8EC" : "#fff"} border={dollShortN > 0 ? "#F0E2BE" : "#E8EAED"}
-          labelColor={dollShortN > 0 ? "#B45309" : "#6B7280"}
-          foot={dollShortN > 0 ? `รวมหาย ${dollMissingTotal} ตัว${multiPage ? " · หน้านี้" : ""}` : "ตุ๊กตาครบทุกรอบ ✓"}
-          footColor={dollShortN > 0 ? "#B98A2E" : "#8FA99A"}
+          label="ตุ๊กตาไม่ตรงมิเตอร์" value={`${dollIssueN} รอบ`}
+          valueColor={dollIssueN > 0 ? "#B45309" : "#5A6270"}
+          bg={dollIssueN > 0 ? "#FCF8EC" : "#fff"} border={dollIssueN > 0 ? "#F0E2BE" : "#E8EAED"}
+          labelColor={dollIssueN > 0 ? "#B45309" : "#6B7280"}
+          foot={dollIssueN > 0 ? `${[dollShortN > 0 ? `หาย ${dollMissingTotal}` : "", dollOverN > 0 ? `เกิน ${dollOverTotal}` : ""].filter(Boolean).join(" · ")} ตัว${multiPage ? " · หน้านี้" : ""}` : "ตุ๊กตาครบทุกรอบ ✓"}
+          footColor={dollIssueN > 0 ? "#B98A2E" : "#8FA99A"}
         />
       </div>
 
@@ -654,8 +659,8 @@ function CollectionCard({
   const baseline = st === "baseline";
   // ตุ๊กตา at-a-glance สำหรับหัวแถว (CEO ขอเห็นเช็คตุ๊กตาชัด) — ตรง/หาย X/— (ไม่มีข้อมูล)
   const dollHasData = row.prizeExpected !== 0 || row.prizeActual !== 0;
-  const dollStr = !dollHasData ? "—" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : "ตรง";
-  const dollStatColor = row.prizeGap > 0 ? "#B45309" : "#15803D";
+  const dollStr = !dollHasData ? "—" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : row.prizeGap < 0 ? `เกิน ${-row.prizeGap}` : "ตรง";
+  const dollStatColor = row.prizeGap !== 0 ? "#B45309" : "#15803D";
   // รูปหลักฐานจริงทั้งรอบ (ทุกตู้) — โชว์เป็นบล็อกตัวอย่างตอนยังไม่กดกาง
   // interleave 1 รูป/ตู้ ก่อน → รอบหลายตู้เห็นครบทุกตู้ในแถบย่อ (ไม่ให้ตู้แรกกินโควตาหมด)
   const previewShots = (() => {
@@ -701,7 +706,8 @@ function CollectionCard({
       : st === "broken" ? "ตู้ไม่ขยับ — ส่งช่างเช็คเซ็นเซอร์/มอเตอร์ ก่อนเปิดรอบถัดไป"
         : row.gap > 50 ? "เงินขาดเกินเกณฑ์ — เรียกพนักงานยืนยันยอด + เทียบรูปเงินสดกับมิเตอร์"
           : row.prizeGap > 0 ? "ตุ๊กตาหาย — ตรวจสต๊อกในตู้ + รูปก่อน/หลังเติม"
-            : "ทุกตัวเลขตรงกัน — อนุมัติเข้ารายงานได้เลย";
+            : row.prizeGap < 0 ? "ตุ๊กตาเกิน — นับได้มากกว่าที่มิเตอร์บอก เช็คนับซ้ำ หรือมีคนเติมไม่ลงระบบ"
+              : "ทุกตัวเลขตรงกัน — อนุมัติเข้ารายงานได้เลย";
   const actionColor = baseline ? "#4F46E5" : st === "diff" ? "#B42318" : st === "broken" ? "#B45309" : "#15803D";
 
   const reviewed = reviewState !== "pending";
@@ -832,7 +838,7 @@ function CollectionCard({
                 <span style={{ fontSize: 13, fontWeight: 700 }}>เส้นทางตุ๊กตา</span>
                 <span style={{ flex: 1 }} />
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: dollOk ? "#15803D" : "#B42318" }}>
-                  {dollOk ? "ตรงกัน" : `หาย ${row.prizeGap} ตัว`}
+                  {dollOk ? "ตรงกัน" : row.prizeGap > 0 ? `หาย ${row.prizeGap} ตัว` : `เกิน ${-row.prizeGap} ตัว`}
                 </span>
               </div>
               <div className="num" style={{ fontSize: 12.5, color: "#5A6270", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -840,12 +846,13 @@ function CollectionCard({
                 <span style={{ color: "#C2C7CF" }}>→</span>
                 <span><b style={{ color: "#1A1D21" }}>นับจริง {row.prizeActual}</b></span>
                 <span style={{ background: "#fff", border: "1px solid #E3E6EA", borderRadius: 6, padding: "1px 7px", fontWeight: 600, color: dollOk ? "#4F46E5" : "#B42318" }}>
-                  {dollOk ? "ตรง" : `ต่าง ${row.prizeGap}`}
+                  {dollOk ? "ตรง" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : `เกิน ${-row.prizeGap}`}
                 </span>
               </div>
               <div style={{ fontSize: 12.5, color: "#5A6270" }}>
                 ตุ๊กตาควรหาย <b className="num" style={{ color: "#1A1D21" }}>{row.prizeExpected} ตัว</b> · นับจริงได้ <b className="num" style={{ color: "#1A1D21" }}>{row.prizeActual} ตัว</b>
                 {row.prizeGap > 0 && <> · หาย <b className="num" style={{ color: "#B42318" }}>{row.prizeGap} ตัว</b></>}
+                {row.prizeGap < 0 && <> · เกิน <b className="num" style={{ color: "#B42318" }}>{-row.prizeGap} ตัว</b></>}
               </div>
             </div>
 

@@ -23,6 +23,8 @@ export type GroupMachine = {
   qrToken: string;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์ · ตั้งในหน้าตั้งค่าตู้) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup)
   sellPriceCents: number | null;
+  // ค่าเล่นต่อครั้ง (เหรียญ · loadout ที่ active · 1 เหรียญ = ฿10) — client ใช้คิดเงินคาด preview ให้ตรง server (เดิม hardcode ฿10)
+  pricePerPlayCoins: number;
   // CEO 2026-07-19 · รอบก่อน (โชว์ตอนเริ่มเก็บ) — วันไทยพร้อมโชว์ (คิดที่ server กัน tz)
   lastCollectedAt: string | null; // เก็บ/มีevent ล่าสุด (จาก lastEventAt · รวม baseline)
   lastRefillAt: string | null; // เติมตุ๊กตาล่าสุด (LOAD_TO_MACHINE)
@@ -68,6 +70,7 @@ function toMachine(m: {
   lastDollStock: number;
   qrToken: string;
   sellPriceCents: number | null;
+  loadouts: { pricePerPlayCoins: number }[];
   lastEventAt: Date | null;
 }, lastRefillAt: Date | null): GroupMachine {
   return {
@@ -80,6 +83,8 @@ function toMachine(m: {
     lastDollStock: m.lastDollStock,
     qrToken: m.qrToken,
     sellPriceCents: m.sellPriceCents,
+    // active loadout = effectiveTo:null (เหมือน actions.ts) · ไม่มี → default 1 เหรียญ (฿10)
+    pricePerPlayCoins: m.loadouts[0]?.pricePerPlayCoins ?? 1,
     lastCollectedAt: thaiShortDate(m.lastEventAt),
     lastRefillAt: thaiShortDate(lastRefillAt),
   };
@@ -121,6 +126,8 @@ export async function getGroupCollectData(): Promise<{
       select: {
         id: true, code: true, nickname: true, kind: true, branchId: true, groupId: true,
         lastCoinMeter: true, lastDollMeter: true, lastDollStock: true, qrToken: true, sellPriceCents: true,
+        // ค่าเล่นต่อครั้ง (loadout ที่ active) — เหมือน actions.ts เป๊ะ → client คิดเงินคาดตรง server
+        loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } },
         lastEventAt: true, // CEO 2026-07-19 · "เก็บล่าสุด" รอบก่อน
       },
       orderBy: { code: "asc" },

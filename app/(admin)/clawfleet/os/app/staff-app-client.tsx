@@ -154,6 +154,8 @@ type AppMachine = {
   awaitingSetup: boolean;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup SW-03)
   sellPriceCents: number | null;
+  // ค่าเล่นต่อครั้ง (เหรียญ · 1 เหรียญ = ฿10) — ใช้คิดเงินคาด preview ให้ตรง server (เดิม hardcode ฿10)
+  pricePerPlayCoins: number;
   // CEO 2026-07-19 · รอบก่อน (โชว์ตอนเริ่มเก็บ · วันไทยพร้อมโชว์ · null = ยังไม่เคย)
   lastCollectedAt?: string | null;
   lastRefillAt?: string | null;
@@ -168,12 +170,12 @@ const DEMO_SKUS: CollectSku[] = [
 ];
 
 const DEMO_MACHINES: AppMachine[] = [
-  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000 },
-  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false , sellPriceCents: 25000 },
-  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false , sellPriceCents: 25000 },
-  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false , sellPriceCents: 25000 },
-  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false , sellPriceCents: 25000 },
-  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000 },
+  { id: "demo-RS-03", code: "RS-03", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 10, lastDollMeter: 105, lastCoinMeter: 210, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
+  { id: "demo-RS-04", code: "RS-04", nickname: null, branch: "รังสิต", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 12, lastDollMeter: 88, lastCoinMeter: 540, product: "โมจิหมีขาว", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
+  { id: "demo-RS-07", code: "RS-07", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 9, lastDollMeter: 150, lastCoinMeter: 300, product: "หมีบราวน์ L", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
+  { id: "demo-RS-05", code: "RS-05", nickname: null, branch: "รังสิต", zone: "โซน B", branchId: DEMO_BRANCH_ID, lastStock: 11, lastDollMeter: 120, lastCoinMeter: 410, product: "คุมะ ไซส์ M", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
+  { id: "demo-BK-02", code: "BK-02", nickname: null, branch: "บางแค", zone: "โซน C", branchId: DEMO_BRANCH_ID, lastStock: 8, lastDollMeter: 212, lastCoinMeter: 880, product: "หมีน้ำตาล S", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
+  { id: "demo-LP-01", code: "LP-01", nickname: null, branch: "ลาดพร้าว", zone: "โซน A", branchId: DEMO_BRANCH_ID, lastStock: 7, lastDollMeter: 64, lastCoinMeter: 150, product: "ซานริโอ้ คิตตี้", awaitingSetup: false , sellPriceCents: 25000, pricePerPlayCoins: 1 },
 ];
 
 /** flatten real Branch>Group>Claw → a flat machine route (CLAW only). */
@@ -192,6 +194,7 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           branchId: b.id,
           lastStock: m.lastDollStock,
           sellPriceCents: m.sellPriceCents,
+          pricePerPlayCoins: m.pricePerPlayCoins,
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
           lastCollectedAt: m.lastCollectedAt,
@@ -206,7 +209,7 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
 }
 
 const isDemo = (id: string) => id.startsWith("demo-");
-const CASH_PER_PLAY = 10; // ฿/ครั้ง — ⚠️ สมมติ (ราคาจริงต่อตู้ยังไม่ส่งมาฝั่ง client) → preview ADVISORY
+const CASH_PER_PLAY = 10; // ฿/ครั้ง — fallback เมื่อตู้ยังไม่มี loadout (ปกติใช้ราคาจริง machine.pricePerPlayCoins×10)
 // จอ "ตรง/ไม่ตรง" ยอมคลาดได้ ±2 ตัว = DEFAULTS.DOLL_VARIANCE_ACCEPTABLE ที่ server (lib/clawfleet/types.ts)
 // เดิมจอใช้ === (ต่างแค่ 1 ตัวก็แดง) ทั้งที่ server ถือว่ารับได้ → CEO 2026-07-20 "จอแดงง่ายเกิน"
 const DOLL_MATCH_TOL = 2;
@@ -983,7 +986,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const afterFill = n0(f.left) + refillTotal;
   const dollDelta = n0(f.dollDigi) - f.dollPrev;
   const coinDelta = n0(f.coinDigi) - f.coinPrev;
-  const expectedCash = coinDelta * CASH_PER_PLAY;
+  // ราคาต่อเล่นจริงต่อตู้ (loadout · 1 เหรียญ=฿10) — ตรงกับ server · ไม่มี → fallback ฿10 (CASH_PER_PLAY)
+  const pricePerPlayBaht = machine?.pricePerPlayCoins ? machine.pricePerPlayCoins * 10 : CASH_PER_PLAY;
+  const expectedCash = coinDelta * pricePerPlayBaht;
   // ความ "ตรง" จะตัดสินก็ต่อเมื่อกรอกครบ (กัน false ตรง/ไม่ตรง ตอนช่องยังว่าง)
   const dollMeterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
   const coinMeterFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
@@ -1597,7 +1602,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           skipPending={skipPending}
           resumed={state.resumed}
           meterGroupVals={{ dollMeterEqual, coinMeterEqual }}
-          recon={{ dollDelta, expectedCash, dollMatch, cashMatch, meterEqualOk, allMatch }}
+          recon={{ dollDelta, expectedCash, pricePerPlayBaht, dollMatch, cashMatch, meterEqualOk, allMatch }}
           tooHard={tooHard}
           configSent={state.configSent}
           sendConfig={() => dispatch({ type: "sendConfig" })}
@@ -4578,7 +4583,7 @@ function PhotoSkipReasonSheet({ onCancel, onConfirm }: { onCancel: () => void; o
 }
 
 /* ─────────────────────────── FLOW (6-step wizard) ─────────────────────────── */
-type ReconData = { dollDelta: number; expectedCash: number; dollMatch: boolean; cashMatch: boolean; meterEqualOk: boolean; allMatch: boolean };
+type ReconData = { dollDelta: number; expectedCash: number; pricePerPlayBaht: number; dollMatch: boolean; cashMatch: boolean; meterEqualOk: boolean; allMatch: boolean };
 
 function FlowScreen(props: {
   orgId: string;
@@ -4970,7 +4975,7 @@ function FlowScreen(props: {
               {overCount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#B42318" }}>ตุ๊กตาเกินจากที่คาด</span><span className="num" style={{ fontWeight: 700, color: "#B42318" }}>+{overCount} ตัว</span></div>}
               {/* CEO 2026-07-19 · เครื่องหมายเดียว (บวก=+ ลบ=− ไม่ใช่ "+-") · ลบ = มิเตอร์น้อยกว่ารอบก่อน (กรอกผิด/ผิดตู้) */}
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: recon.dollDelta < 0 ? "#B42318" : undefined }}>{isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta} (น้อยกว่ารอบก่อน?)` : `+${recon.dollDelta}`) : "—"}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (≈฿10/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700, color: recon.expectedCash < 0 ? "#B42318" : undefined }}>{isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `฿${recon.expectedCash}`) : "—"}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (฿{recon.pricePerPlayBaht}/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700, color: recon.expectedCash < 0 ? "#B42318" : undefined }}>{isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `฿${recon.expectedCash}`) : "—"}</span></div>
             </div>
           </div>
         )}
@@ -5093,7 +5098,7 @@ function FlowScreen(props: {
             <ReconCard ok={cashOk} wait={!cashMissing && !cashMismatch && !meterFilled}
               title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "กรอกแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={cashMissing ? "นับเงินในตู้แล้วกรอกตรงนี้ได้เลย"
-                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ ${coinDelta < 0 ? coinDelta : `+${coinDelta}`} → ${recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `คาดว่าได้ ฿${recon.expectedCash} (ประมาณ ฿10/เกม)`}` : ""}`}
+                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ ${coinDelta < 0 ? coinDelta : `+${coinDelta}`} → ${recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `คาดว่าได้ ฿${recon.expectedCash} (฿${recon.pricePerPlayBaht}/เกม)`}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : cashMissing ? "กรอกเลย" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "cash" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
