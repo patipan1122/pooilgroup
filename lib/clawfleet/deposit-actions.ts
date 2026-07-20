@@ -182,11 +182,14 @@ export async function recordCashDeposit(input: unknown): Promise<
         ? "SHORT"
         : "OVER";
 
-  // Wave 4b · maker-checker ใบฝากขาด — SHORT = เงินเข้าธนาคารไม่ครบ (สัญญาณเงินหายมือ→ธนาคาร)
-  //   → ตั้ง approvalStatus = PENDING (รอ ผจก./แอดมิน "รับทราบเงินขาด" หรือ "ตีกลับ ให้ฝากใหม่").
-  //   OK/OVER = ไม่ต้องอนุมัติ → NONE. (ยังผูกรอบ + สร้างใบตามเดิม · เงินอยู่ที่ธนาคารตามสลิปแล้ว
-  //   แต่ "ส่วนที่ขาด" ต้องมีคนที่ 2 รับรอง — mirror recordLoss ที่ค่าเกินเกณฑ์เข้า PENDING).
-  const approvalStatus: "NONE" | "PENDING" = status === "SHORT" ? "PENDING" : "NONE";
+  // Wave 4b · maker-checker ใบฝากที่ "ยอดไม่ตรง" — ต้องมีคนที่ 2 รับรอง (ผจก./แอดมิน).
+  //   SHORT = เงินเข้าธนาคารไม่ครบ (เงินหายมือ→ธนาคาร) · OVER = ฝากเกินยอดที่ควรได้
+  //   (fix 2026-07-20: เดิม OVER → NONE ผ่านอัตโนมัติ → พิมพ์ผิด/ยัดยอดเกิน = ยอด "ฝากเข้าธนาคาร"
+  //    บวมปลอมโดยไม่มีใครตรวจ. ตอนนี้ทั้งขาดและเกิน (นอกเกณฑ์ ±฿20) เข้า PENDING เหมือนกัน).
+  //   OK (อยู่ในเกณฑ์) = ไม่ต้องอนุมัติ → NONE. (ยังผูกรอบ + สร้างใบตามเดิม · เงินอยู่ที่ธนาคาร
+  //   ตามสลิปแล้ว · แต่ "ส่วนต่าง" ต้องมีคนที่ 2 รับรอง).
+  const approvalStatus: "NONE" | "PENDING" =
+    status === "SHORT" || status === "OVER" ? "PENDING" : "NONE";
 
   const now = new Date();
   const depositCode = newDepositCode(now);

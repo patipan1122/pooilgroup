@@ -31,6 +31,7 @@ import {
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
+import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
 type Result = { ok: true } | { ok: false; error: string };
 type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -643,6 +644,7 @@ export async function attachEventPhotos(
       id: true,
       eventType: true,
       photosPurgedAt: true,
+      session: { select: { status: true } },
       machine: { select: { branchId: true } },
       photoMeterAfterUrl: true,
       photoPrizeMeterUrl: true,
@@ -669,9 +671,21 @@ export async function attachEventPhotos(
     return { ok: false, error: "รูปของรายการนี้ถูกลบตามนโยบายเก็บแล้ว · แนบเพิ่มไม่ได้" };
   }
 
+  // 🔒 หลักฐานถูก "แช่แข็ง" เมื่อรอบถูกล็อก (ตรวจ+อนุมัติแล้ว) → ห้ามแนบรูปย้อนหลัง
+  // (fix 2026-07-20: เดิมไม่เช็ค status → พนักงานเติมรูปที่ขาดหลังรอบถูกตรวจ/ล็อกได้ = audit
+  //  trail กันโกงเสียน้ำหนัก. defense-in-depth คู่กับ upload route ที่ปิด attach-path ด้วย.)
+  if (ev.session?.status === "LOCKED") {
+    return { ok: false, error: "รอบนี้ถูกล็อกแล้ว · แนบรูปหลักฐานเพิ่มไม่ได้" };
+  }
+
   // เขียนเฉพาะคอลัมน์ที่ "ยังว่าง" + ผู้ใช้ส่ง url ใหม่มา (ไม่ทับรูปเดิม · idempotent)
   const data: Record<string, string> = {};
   for (const [col, url] of Object.entries(photos)) {
+    if (url && !isAllowedPhotoUrl(url)) {
+      // 🔒 รูปหลักฐานต้องเป็นไฟล์ที่อัปโหลดผ่านระบบเรา (อยู่ใต้ R2_PUBLIC_URL) เท่านั้น —
+      // กัน client ยัด URL ภายนอก (แก้/ลบทีหลังได้ = ไม่ immutable) เป็นหลักฐาน (fix 2026-07-20).
+      return { ok: false, error: "ลิงก์รูปไม่ถูกต้อง · ต้องเป็นรูปที่ถ่าย/อัปโหลดผ่านแอปเท่านั้น" };
+    }
     if (!url) continue; // ไม่ส่ง / ส่งค่าว่าง → ข้าม
     const current = (ev as Record<string, unknown>)[col];
     if (current == null) data[col] = url; // ยังว่างเท่านั้น → เติม

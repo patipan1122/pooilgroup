@@ -233,9 +233,10 @@ export async function getDepositHistory(opts?: {
  * where เดียวกับ getPendingDeposits เป๊ะ: status ∈ depositable · depositId=null · totalCashCents>0 · org+branch scope.
  * overdue = closedAt <= (now - (OVERDUE_DAYS+1) วัน) (ตรงกับ daysOverdue > OVERDUE_DAYS ใน list).
  *
- * ข้อจำกัด: branch scope ที่นี่กรองด้วย branchId ตรง ๆ (field cfCollectionSession.branchId) เท่านั้น —
- * รอบ legacy ที่ผูกสาขาผ่าน group.branchId (branchId=null) จะไม่ถูกนับใน scope non-ALL (aggregate ที่ DB
- * join ผ่าน group ไม่ได้สะดวก). viewer ที่เห็น ALL นับครบทุกรอบ. คืน 0 เมื่อ error.
+ * branch scope: viewer ที่เห็น ALL นับทุกรอบ · non-ALL นับรอบที่ branchId อยู่ในสิทธิ์ "หรือ" รอบ
+ * legacy ที่ branchId=null แต่ group.branchId อยู่ในสิทธิ์ (fix 2026-07-20: เดิม aggregate กรอง branchId
+ * ตรง ๆ อย่างเดียว → รอบ legacy หลุด → ยอดรวมการ์ด < ผลรวมแถวใน list ที่ resolve branchId ?? group.branchId
+ * · ตอนนี้ OR relation filter ให้ตรงกับ list เป๊ะ). คืน 0 เมื่อ error.
  */
 export async function getPendingDepositSummary(): Promise<PendingSummary> {
   const empty: PendingSummary = { count: 0, totalCents: 0, overdueCount: 0, overdueCents: 0 };
@@ -244,13 +245,22 @@ export async function getPendingDepositSummary(): Promise<PendingSummary> {
     const orgId = session.user.org_id;
     const branchIds = await userBranchIds(session);
 
-    // where ฐาน = เงื่อนไข depositable เดียวกับ getPendingDeposits + branch scope (ตรงจาก field branchId)
+    // where ฐาน = เงื่อนไข depositable เดียวกับ getPendingDeposits + branch scope.
+    // non-ALL: match branchId ในสิทธิ์ "หรือ" (legacy) branchId=null + group.branchId ในสิทธิ์ —
+    // ให้ตรงกับ getPendingDeposits ที่ resolve branchId ?? group.branchId (ไม่งั้นยอดรวม understate).
     const baseWhere = {
       orgId,
       status: { in: [...DEPOSITABLE_STATUSES] },
       depositId: null,
       totalCashCents: { gt: 0 },
-      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+      ...(branchIds === "ALL"
+        ? {}
+        : {
+            OR: [
+              { branchId: { in: branchIds } },
+              { branchId: null, group: { branchId: { in: branchIds } } },
+            ],
+          }),
     };
 
     // ยอดรวม/จำนวนทั้งหมด (ไม่ cap) จาก aggregate

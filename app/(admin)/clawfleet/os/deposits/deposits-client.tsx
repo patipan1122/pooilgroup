@@ -850,7 +850,9 @@ function HistoryTab({
       {rows.map((d) => {
         const sm = DEPOSIT_STATUS_META[d.status] ?? DEPOSIT_STATUS_META.OK;
         const isShort = d.status === "SHORT";
-        // maker-checker (Wave 4b) — เฉพาะใบ SHORT ที่รออนุมัติ + ผู้ใช้เป็น ผจก./แอดมิน + ไม่ใช่คนฝากเอง
+        // คำเรียกส่วนต่างตามทิศ (SHORT/OVER) — ใช้ในข้อความ maker-checker ให้อ่านถูกทั้งขาดและเกิน
+        const varianceWord = d.status === "OVER" ? "เงินเกิน" : "เงินขาด";
+        // maker-checker (Wave 4b) — ใบยอดไม่ตรง (SHORT/OVER) ที่รออนุมัติ + ผู้ใช้เป็น ผจก./แอดมิน + ไม่ใช่คนฝากเอง
         const am = APPROVAL_META[d.approvalStatus] ?? null;
         const isPendingReview = d.approvalStatus === "PENDING";
         const isMaker = d.depositedById !== "" && d.depositedById === d.currentUserId;
@@ -989,8 +991,8 @@ function HistoryTab({
                 }}
               >
                 <div style={{ fontSize: 11.5, color: "#7A5510" }}>
-                  ใบฝากขาดนี้ต้องมีผู้จัดการ/แอดมิน (ไม่ใช่คนฝาก) รับรอง —
-                  <b> อนุมัติ</b> ถ้ายอมรับว่าเงินขาดจริง หรือ <b>ตีกลับ</b> ให้ฝากใหม่ให้ครบ
+                  ใบฝาก{varianceWord}นี้ (ยอดไม่ตรง) ต้องมีผู้จัดการ/แอดมิน (ไม่ใช่คนฝาก) รับรอง —
+                  <b> อนุมัติ</b> ถ้ายอมรับว่า{varianceWord}จริง หรือ <b>ตีกลับ</b> ให้ฝากใหม่ให้ยอดตรง
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button
@@ -1013,7 +1015,7 @@ function HistoryTab({
                       opacity: rowBusy ? 0.6 : 1,
                     }}
                   >
-                    <Check size={14} /> {rowBusy ? "กำลังบันทึก…" : "อนุมัติ (รับทราบเงินขาด)"}
+                    <Check size={14} /> {rowBusy ? "กำลังบันทึก…" : `อนุมัติ (รับทราบ${varianceWord})`}
                   </button>
                   <button
                     type="button"
@@ -1061,7 +1063,7 @@ function HistoryTab({
               <div style={{ fontSize: 11.5, color: "#7A5510", marginTop: 10 }}>
                 {isMaker
                   ? "รอผู้จัดการ/แอดมินคนอื่นรับรอง (คุณเป็นผู้บันทึกฝากใบนี้ · อนุมัติเองไม่ได้)"
-                  : "รอผู้จัดการ/แอดมินรับรองเงินขาด"}
+                  : `รอผู้จัดการ/แอดมินรับรอง${varianceWord}`}
               </div>
             )}
 

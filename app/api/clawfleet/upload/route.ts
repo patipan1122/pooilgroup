@@ -99,6 +99,37 @@ export async function POST(req: NextRequest) {
         );
       }
     }
+  } else if (eventScopeId.startsWith("attach-")) {
+    // แนบรูปเพิ่มทีหลัง (attachEventPhotos flow) — eventScopeId = "attach-{eventId}".
+    // (fix 2026-07-20: เดิม slice(0,36) ของ "attach-…" ไม่ใช่ uuid → isUuid=false → ข้ามด่าน
+    //  LOCKED/สิทธิ์ทั้งบล็อก → อัปรูปเข้ารอบที่ล็อกแล้วได้). resolve event → session แล้ว
+    //  บังคับล็อก+สิทธิ์สาขาเหมือน path ปกติ.
+    const eventId = eventScopeId.slice("attach-".length);
+    const isEventUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId);
+    if (isEventUuid) {
+      const ev = await prisma.cfCollectionEvent.findFirst({
+        where: { id: eventId, orgId: session.user.org_id },
+        select: {
+          session: { select: { status: true } },
+          machine: { select: { branchId: true } },
+        },
+      });
+      if (ev) {
+        if (ev.session?.status === "LOCKED") {
+          return NextResponse.json(
+            { error: "รอบนี้ถูกล็อกแล้ว · แนบรูปหลักฐานเพิ่มไม่ได้" },
+            { status: 403 },
+          );
+        }
+        const allowed = await userBranchIds(session);
+        if (allowed !== "ALL" && !allowed.includes(ev.machine.branchId)) {
+          return NextResponse.json(
+            { error: "ไม่มีสิทธิ์แนบรูปให้สาขานี้" },
+            { status: 403 },
+          );
+        }
+      }
+    }
   }
 
   const buf = Buffer.from(await file.arrayBuffer());

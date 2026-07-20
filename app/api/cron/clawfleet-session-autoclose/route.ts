@@ -5,6 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DEFAULTS } from "@/lib/clawfleet/types";
+import { computeBranchCloseCrossCheck } from "@/lib/clawfleet/branch-close";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ async function handle(req: NextRequest) {
       status: "OPEN",
       openedAt: { lt: cutoff },
     },
-    select: { id: true, sessionCode: true, openedAt: true, _count: { select: { events: true } } },
+    select: { id: true, orgId: true, sessionCode: true, openedAt: true, _count: { select: { events: true } } },
     take: 100,
   });
 
@@ -60,17 +61,33 @@ async function handle(req: NextRequest) {
         });
         if (upd.count > 0) cancelled += 1;
       } else {
-        // A4 (audit 2026-07-01): รอบที่มีรายการแต่พนักงานไม่กดปิด — เดิม cron ปิดเป็น CLOSED
-        // ตรง ๆ · trigger คำนวณ cross-check เงินสด/ตุ๊กตา 2 ทางเฉพาะรอบ "กลุ่ม" ไม่ใช่รอบ "สาขา"
-        // (นั่นอยู่ที่ app-layer closeBranchSession) → รอบสาขาถูกปิดสะอาดโดยไม่ตรวจเงินขาด =
-        // ช่องหนี "เปิดรอบทิ้ง 24 ชม." → บังคับเข้า ANOMALY_REVIEW ให้คนตรวจเสมอ (ไม่ปิดเงียบ).
-        // manual-close race guard (เหมือนด้านบน): เขียนเฉพาะรอบที่ยัง OPEN จริง
+        // A4 (audit 2026-07-01 · fix 2026-07-20): รอบมีรายการแต่พนักงานไม่กดปิด.
+        // เดิม cron แค่พลิก status = ANOMALY_REVIEW เฉย ๆ → totalCashCents ค้าง default 0 +
+        // ไม่มีธงเงินขาด/ตุ๊กตาหาย → เงินไม่เข้าลิสต์ "เงินค้างมือต้องฝาก" + หนีระบบตรวจ.
+        // ตอนนี้: run cross-check เดียวกับกดปิดเอง (computeBranchCloseCrossCheck) ให้ครบ —
+        // แต่ยัง "บังคับ ANOMALY_REVIEW เสมอ" เพราะพนักงานไม่ยอมปิดเอง = ต้องมีคนตรวจ
+        // (ไม่ปิดเงียบเป็น CLOSED แม้เงินจะตรง). รอบกลุ่ม/คำนวณไม่ได้ → cc = null → fallback flip.
+        // manual-close race guard (เหมือนด้านบน): เขียนเฉพาะรอบที่ยัง OPEN จริง.
+        const cc = await computeBranchCloseCrossCheck(s.orgId, s.id);
         const upd = await prisma.cfCollectionSession.updateMany({
           where: { id: s.id, status: "OPEN" },
-          data: {
-            status: "ANOMALY_REVIEW",
-            reviewNote: `auto-closed by cron (เปิดค้าง > ${DEFAULTS.SESSION_AUTO_CLOSE_HOURS} ชม.) · ต้องตรวจ`,
-          },
+          data: cc
+            ? {
+                status: "ANOMALY_REVIEW",
+                expectedCashCents: cc.expectedCashCents,
+                actualCashCents: cc.actualCashCents,
+                cashVarianceBps: cc.cashVarianceBps,
+                prizeMeterOut: cc.prizeMeterOut,
+                prizeCountedOut: cc.prizeCountedOut,
+                prizeVariance: cc.prizeVariance,
+                totalCashCents: cc.totalCashCents,
+                anomalyFlags: cc.anomalyFlags,
+                reviewNote: `auto-closed by cron (เปิดค้าง > ${DEFAULTS.SESSION_AUTO_CLOSE_HOURS} ชม.) · คำนวณเงินขาด/ตุ๊กตาให้แล้ว · ต้องตรวจ`,
+              }
+            : {
+                status: "ANOMALY_REVIEW",
+                reviewNote: `auto-closed by cron (เปิดค้าง > ${DEFAULTS.SESSION_AUTO_CLOSE_HOURS} ชม.) · ต้องตรวจ`,
+              },
         });
         if (upd.count > 0) review += 1;
       }
