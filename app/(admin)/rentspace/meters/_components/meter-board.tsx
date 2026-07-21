@@ -729,7 +729,7 @@ function SideCells({
   const roomLabel = roomCode; // ป้ายกำกับห้องสำหรับ screen reader (aria-label)
   const currNum = parseReading(side.curr);
   // rollover suspicion: a lower reading than last month with reset OFF
-  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
+  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum > 0 && currNum < side.prev;
   const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
   // #2 — แถวคุม "มิเตอร์เต็ม/เปลี่ยน" ทำให้ทุกแถวสูงเกิน → ซ่อนเป็นค่าเริ่มต้น
   //   เผยเฉพาะเมื่อ (ก) เปิดใช้อยู่แล้ว (ข) เลขน่าสงสัย (ค) ผู้ใช้กดปุ่ม ↺ เอง
@@ -1142,7 +1142,7 @@ function MobileSide({
   const Icon = isElec ? Zap : Droplet;
   const iconColor = isElec ? "var(--rs-pending)" : "var(--rs-info)";
   const currNum = parseReading(side.curr);
-  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
+  const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum > 0 && currNum < side.prev;
   const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
 
   return (
