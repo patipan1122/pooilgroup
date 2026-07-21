@@ -50,6 +50,7 @@ import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { createDraftExpense } from "@/lib/ledger/actions";
 import {
   pushExpenseToTrcloud,
+  convertExpensePoToAp,
   deleteTrcloudAp,
   trcloudPushConfigured,
   type PushableExpense,
@@ -106,6 +107,8 @@ const itemSchema = z.object({
 });
 const patchSchema = z.object({
   vendor: z.string().trim().max(200),
+  // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (โชว์แทน docCode) — optional so older callers still validate.
+  title: z.string().trim().max(200).optional(),
   vendorTaxId: z.string().trim().max(20),
   docDate: z.string().trim().max(10),
   categoryId: z.string().trim().max(40),
@@ -140,6 +143,7 @@ export type ExpensePatch = z.infer<typeof patchSchema>;
 /** Thai field labels for patchSchema keys — so a validation error names the field. */
 const FIELD_LABEL_TH: Record<string, string> = {
   vendor: "ชื่อร้านค้า",
+  title: "ชื่อเรียกใบ",
   vendorTaxId: "เลขผู้เสียภาษี",
   docDate: "วันที่เอกสาร",
   categoryId: "หมวด",
@@ -178,6 +182,8 @@ function zodErrorMessage(err: z.ZodError): string {
 function toData(p: ExpensePatch) {
   return {
     vendor: p.vendor || null,
+    // undefined = ไม่แตะ (older caller) · ""→null (ล้างชื่อ = กลับไปใช้ docCode) · มีค่า = เก็บชื่อ
+    title: p.title === undefined ? undefined : p.title || null,
     vendorTaxId: p.vendorTaxId || null,
     docDate: p.docDate ? new Date(p.docDate) : null,
     categoryId: p.categoryId || null,
@@ -1747,6 +1753,102 @@ export async function sendExpenseToTrcloud(
   revalidatePath("/ledger");
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, docNo: res.docNo, warning: quotationWarning };
+}
+
+/**
+ * แปลง PO ตั้งต้น → AP (ลงบัญชีจริง). CEO 2026-07-21: พอได้สลิปโอน หรือกดเองในโปรแกรม →
+ * สร้างใบ AP ที่ "ผังบัญชีถูกอัตโนมัติ" (Dr ค่าใช้จ่าย GL + Dr ภาษีซื้อ 1432000 / Cr เจ้าหนี้
+ * 2101000 · TRCloud ลงให้จาก acc_code+tax_report+AP type) เป็น "ร่าง" ให้บัญชี approve —
+ * พนักงานไม่ต้องเลือกเดบิต/เครดิตเอง (แก้ปัญหาเลือกผิด). Idempotent + accountant-tier.
+ */
+export async function convertExpenseToAp(
+  id: string,
+): Promise<ActionResult & { apDocNo?: string | null; alreadyAp?: boolean }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลแปลงเป็น AP ได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud" };
+  }
+  const orgId = session.user.org_id;
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId },
+    select: {
+      companyId: true,
+      trcloudDocId: true,
+      trcloudDocNo: true,
+      trcloudApDocId: true,
+      trcloudApDocNo: true,
+    },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (row.trcloudApDocId) return { ok: true, alreadyAp: true, apDocNo: row.trcloudApDocNo }; // แปลงแล้ว
+  // ต้องส่งเข้า TRCloud เป็น PO ตั้งต้นก่อน จึงจะแปลงเป็น AP ได้
+  if (!isTrcloudSent(row.trcloudDocId)) {
+    return { ok: false, error: "ต้องส่งเข้า TRCloud (PO) ก่อน แล้วจึงแปลงเป็น AP" };
+  }
+  const loaded = await loadPushable(orgId, id, row.companyId);
+  if (!loaded) return { ok: false, error: "ไม่พบรายการ" };
+  if (loaded.status !== "confirmed" && loaded.status !== "locked") {
+    return { ok: false, error: "แปลงเป็น AP ได้เฉพาะรายการที่ยืนยันแล้ว" };
+  }
+  // สลิปโอน (ถ้ามี · จับคู่กับใบนี้แล้ว) → แนบลิงก์เข้าใบ AP
+  const slip = await prisma.ledgerPayment.findFirst({
+    where: { matchedExpenseId: id, orgId, slipUrl: { not: null } },
+    orderBy: { paidAt: "desc" },
+    select: { slipUrl: true },
+  });
+  // po_id ตัวเลข (ไม่ใช่ sentinel "sent"/"pending"/"error") → ใช้ลบ PO seed หลังแปลง
+  const poDocId = row.trcloudDocId && /^\d+$/.test(row.trcloudDocId) ? row.trcloudDocId : null;
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_AP_CONVERT_STARTED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { docCode: loaded.pushable.docCode, total: loaded.pushable.total } },
+  });
+
+  const res = await convertExpensePoToAp(loaded.pushable, { poDocId, slipUrl: slip?.slipUrl ?? null });
+  if (!res.ok) {
+    await prisma.ledgerExpense.updateMany({
+      where: { id, orgId, companyId: row.companyId },
+      data: { trcloudApError: res.error.slice(0, 500) },
+    });
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "LEDGER_EXPENSE_AP_CONVERT_FAILED",
+      resourceType: "ledger_expense",
+      resourceId: id,
+      diff: { new: { error: res.error.slice(0, 500) } },
+    });
+    return { ok: false, error: res.error };
+  }
+  await prisma.ledgerExpense.updateMany({
+    where: { id, orgId, companyId: row.companyId },
+    data: {
+      trcloudApDocId: res.apDocId ?? "sent",
+      trcloudApDocNo: res.apDocNo,
+      trcloudApAt: new Date(),
+      trcloudApError: null,
+    },
+  });
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_AP_CONVERTED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { trcloudApDocNo: res.apDocNo, trcloudApDocId: res.apDocId } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  return { ok: true, apDocNo: res.apDocNo };
 }
 
 /** Push MANY confirmed expenses (multi-select). Company-scoped like bulkConfirm:

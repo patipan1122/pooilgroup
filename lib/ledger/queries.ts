@@ -76,6 +76,7 @@ export function serializeExpense(row: ExpenseRow): Expense {
     companyId: row.companyId,
     branchId: row.branchId,
     docCode: row.docCode,
+    title: row.title,
     status: row.status as ExpenseStatus,
     source: row.source as Expense["source"],
     vendor: row.vendor,
@@ -116,6 +117,9 @@ export function serializeExpense(row: ExpenseRow): Expense {
     trcloudDocNo: row.trcloudDocNo,
     trcloudPushedAt: iso(row.trcloudPushedAt),
     trcloudError: row.trcloudError,
+    trcloudApDocId: row.trcloudApDocId,
+    trcloudApDocNo: row.trcloudApDocNo,
+    trcloudApError: row.trcloudApError,
     // — Input-VAT claimability (ภาษีซื้อ) —
     buyerTaxIdSnapshot: row.buyerTaxIdSnapshot,
     buyerNameSnapshot: row.buyerNameSnapshot,
@@ -246,6 +250,8 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     where.OR = [
       { vendor: { contains: f.search, mode: "insensitive" } },
       { docCode: { contains: f.search, mode: "insensitive" } },
+      // ค้นด้วย "ชื่อเรียกใบ" ที่ผู้ใช้ตั้งเอง (โชว์แทน docCode) ได้ด้วย.
+      { title: { contains: f.search, mode: "insensitive" } },
       { vendorTaxId: { contains: f.search } },
       { note: { contains: f.search, mode: "insensitive" } },
       // Search line-item descriptions too — where "น้ำแข็ง" actually lives
@@ -308,6 +314,7 @@ const EXPENSE_SUMMARY_SELECT = {
   companyId: true,
   branchId: true,
   docCode: true,
+  title: true,
   status: true,
   source: true,
   vendor: true,
@@ -343,6 +350,9 @@ const EXPENSE_SUMMARY_SELECT = {
   trcloudDocNo: true,
   trcloudPushedAt: true,
   trcloudError: true,
+  // AP: list ต้องการแค่ id+no (ทำลิงก์ "เปิดใน TRCloud" + ป้าย "AP แล้ว") — ไม่ต้อง error.
+  trcloudApDocId: true,
+  trcloudApDocNo: true,
   // — Input-VAT claimability (ภาษีซื้อ) — the list dots + claimable filter read these —
   buyerTaxIdSnapshot: true,
   buyerNameSnapshot: true,
@@ -374,6 +384,7 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     companyId: row.companyId,
     branchId: row.branchId,
     docCode: row.docCode,
+    title: row.title,
     status: row.status as ExpenseStatus,
     source: row.source as Expense["source"],
     vendor: row.vendor,
@@ -414,6 +425,9 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
     trcloudDocNo: row.trcloudDocNo,
     trcloudPushedAt: iso(row.trcloudPushedAt),
     trcloudError: row.trcloudError,
+    trcloudApDocId: row.trcloudApDocId,
+    trcloudApDocNo: row.trcloudApDocNo,
+    trcloudApError: null, // ไม่ได้ select ใน summary — list ไม่ใช้ error
     // — Input-VAT claimability (ภาษีซื้อ) —
     buyerTaxIdSnapshot: row.buyerTaxIdSnapshot,
     buyerNameSnapshot: row.buyerNameSnapshot,

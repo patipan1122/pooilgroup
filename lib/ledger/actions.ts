@@ -492,6 +492,7 @@ export interface UpdateExpenseInput {
   categoryId?: string | null;
   paymentMethod?: string | null;
   note?: string | null;
+  title?: string | null; // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (null/"" = ล้างชื่อ กลับไปใช้ docCode)
   branchId?: string | null;
   items?: ExpenseItem[]; // when provided, replaces existing items
   // — Bainy-parity fields —
@@ -570,6 +571,7 @@ export async function updateExpense(
           categoryId: input.categoryId === undefined ? undefined : input.categoryId,
           paymentMethod: input.paymentMethod ?? undefined,
           note: input.note ?? undefined,
+          title: input.title === undefined ? undefined : (input.title?.trim() || null),
           branchId: input.branchId === undefined ? undefined : input.branchId,
           docType: input.docType ?? undefined,
           vendorDocNumber: input.vendorDocNumber === undefined ? undefined : input.vendorDocNumber,

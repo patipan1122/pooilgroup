@@ -74,6 +74,8 @@ export interface Expense {
   companyId: string;
   branchId: string | null;
   docCode: string;
+  /** ชื่อเรียกใบที่ผู้ใช้ตั้งเอง — โชว์แทน docCode เมื่อมีค่า · null/ว่าง = ใช้ docCode. */
+  title?: string | null;
   status: ExpenseStatus;
   source: ExpenseSource;
   vendor: string | null;
@@ -127,6 +129,11 @@ export interface Expense {
   trcloudDocNo: string | null;
   trcloudPushedAt: string | null;
   trcloudError: string | null;
+  // — TRCloud AP (แปลง PO ตั้งต้น → ใบกำกับภาษีซื้อ AP · ลงบัญชีจริง) — mirror ของ trcloudDoc* —
+  //   null = ยังไม่แปลงเป็น AP · set = แปลงแล้ว (draft ให้บัญชี approve).
+  trcloudApDocId: string | null;
+  trcloudApDocNo: string | null;
+  trcloudApError: string | null;
   // — Input-VAT claimability (ภาษีซื้อ) — สถานะสี + ผลตรวจผู้ซื้อ + ใบทดแทน —
   buyerTaxIdSnapshot: string | null;
   buyerNameSnapshot: string | null;

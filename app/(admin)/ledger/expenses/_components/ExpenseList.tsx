@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, FolderOpen } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, FolderOpen, ExternalLink } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -15,6 +15,7 @@ import { LedgerEmptyState } from "@/components/ledger/Brand";
 import { SearchableSelect } from "@/components/ledger/SearchableSelect";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import { trcloudState } from "@/lib/ledger/trcloud-state";
+import { trcloudDocUrl } from "@/lib/ledger/trcloud-url";
 import {
   bulkConfirm,
   bulkVoid,
@@ -789,6 +790,10 @@ export function ExpenseList({
             const isPending = trState === "pending";
             const pushed = trState === "sent";
             const pushErr = trState === "error";
+            // เปิดใน TRCloud — ลิงก์ตรงไป AP (ถ้าแปลงแล้ว) ไม่งั้น PO ที่ push. null = ไม่มี id ตัวเลข.
+            const trcloudUrl = pushed
+              ? trcloudDocUrl({ apDocId: r.trcloudApDocId, poDocId: r.trcloudDocId })
+              : null;
             // D1 surfacing — show legacy/incomplete rows missing สาขา/หมวด so they
             // can be remediated (some were confirmed before the gate existed).
             const gate = expenseConfirmability({
@@ -856,11 +861,18 @@ export function ExpenseList({
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
-                        <span className="font-mono tabular-nums">{r.docCode}</span>
+                        {/* ชื่อเรียกใบที่ผู้ใช้ตั้งเอง โชว์แทนรหัส (มี=ชื่อธรรมดา · ไม่มี=รหัส font-mono) */}
+                        <span className={r.title ? "truncate font-medium text-zinc-600" : "font-mono tabular-nums"}>
+                          {r.title || r.docCode}
+                        </span>
                         {r.docDate && (
-                          <span className="tabular-nums">· {r.docDate.slice(5)}</span>
+                          <span className="shrink-0 tabular-nums">· {r.docDate.slice(5)}</span>
                         )}
                       </div>
+                      {/* มีชื่อเรียกแล้ว → ยังโชว์รหัสใบตัวเล็กไว้ให้ตามเอกสารเจอ. */}
+                      {r.title ? (
+                        <div className="truncate font-mono text-xs text-zinc-500">{r.docCode}</div>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
                       <div className="text-sm font-semibold tabular-nums text-zinc-900">
@@ -904,13 +916,39 @@ export function ExpenseList({
                       </span>
                     )}
                     {pushed && (
-                      <span
-                        className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700"
-                        title={r.trcloudDocNo ? `TRCloud: ${r.trcloudDocNo}` : "ส่งเข้า TRCloud แล้ว"}
-                      >
-                        <CloudCheck className="size-3" />
-                        {r.trcloudDocNo ? `TRCloud ${r.trcloudDocNo}` : "ส่ง TRCloud แล้ว"}
-                      </span>
+                      <>
+                        <span
+                          className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700"
+                          title={
+                            r.trcloudApDocId
+                              ? `AP: ${r.trcloudApDocNo ?? "แปลงแล้ว"}`
+                              : r.trcloudDocNo
+                                ? `TRCloud: ${r.trcloudDocNo}`
+                                : "ส่งเข้า TRCloud แล้ว"
+                          }
+                        >
+                          <CloudCheck className="size-3" />
+                          {r.trcloudApDocId
+                            ? r.trcloudApDocNo
+                              ? `AP ${r.trcloudApDocNo}`
+                              : "AP แล้ว"
+                            : r.trcloudDocNo
+                              ? `TRCloud ${r.trcloudDocNo}`
+                              : "ส่ง TRCloud แล้ว"}
+                        </span>
+                        {trcloudUrl && (
+                          <a
+                            href={trcloudUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="เปิดเอกสารใน TRCloud"
+                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100"
+                          >
+                            <ExternalLink className="size-3" /> เปิดใน TRCloud
+                          </a>
+                        )}
+                      </>
                     )}
                     {pushErr && (
                       <span

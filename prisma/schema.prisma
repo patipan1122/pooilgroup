@@ -6508,6 +6508,7 @@ model LedgerExpense {
   companyId             String              @map("company_id") @db.Uuid
   branchId              String?             @map("branch_id") @db.Uuid
   docCode               String              @map("doc_code") // EXP-YYYYMM-NNNN
+  title                 String?             // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (โชว์แทน docCode เมื่อมี) — null=ใช้ docCode
   status                LedgerExpenseStatus @default(draft)
   source                LedgerExpenseSource @default(web)
   vendor                String?
@@ -6558,6 +6559,11 @@ model LedgerExpense {
   // ประเภทการซื้อที่ AI อ่านจากบิล → ใช้เลือก SKU อัตโนมัติตอน push (goods=JPS-100 /
   // service=JPS-101 / construction=JPS-103). null = ให้ push เดาจากชื่อประเภทค่าใช้จ่าย.
   trcloudPurchaseType   String?             @map("trcloud_purchase_type")
+  // — PO→AP conversion (ลงบัญชีจริง, CEO 2026-07-21) — พอได้สลิป/กดเอง → PO ตั้งต้นกลายเป็น AP.
+  trcloudApDocId        String?             @map("trcloud_ap_doc_id") // id ของ AP ที่ลงบัญชีจริงใน TRCloud
+  trcloudApDocNo        String?             @map("trcloud_ap_doc_no") // เลขที่เอกสาร AP
+  trcloudApAt           DateTime?           @map("trcloud_ap_at") @db.Timestamptz(6)
+  trcloudApError        String?             @map("trcloud_ap_error")
   // — Inventory STOCK-IN (รับเข้าสต๊อก, LEDGER_STOCKIN_V1) — แยกจาก AP-expense push.
   trcloudStockinDocId   String?             @map("trcloud_stockin_doc_id")
   trcloudStockinNo      String?             @map("trcloud_stockin_no")

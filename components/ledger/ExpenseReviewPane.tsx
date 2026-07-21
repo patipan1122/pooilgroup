@@ -12,7 +12,8 @@
 // Server actions มาจาก props (parent ฉีดจาก lib/ledger/actions หรือ local
 // fallback — ดู NOTE[ledger-partition-B] ใน _kit/types.ts).
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { registerDraftSaver } from "@/lib/ledger/draft-save-registry";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -78,6 +79,8 @@ export type ExpenseDraft = {
   wht: number;
   total: number;
   note: string;
+  // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (โชว์แทน docCode) — ว่าง = กลับไปใช้รหัสใบ.
+  title: string;
   // — Bainy-parity fields —
   docType: ExpenseDocType;
   vendorDocNumber: string;
@@ -369,6 +372,7 @@ export function ExpenseReviewPane({
     wht: expense.wht,
     total: expense.total,
     note: expense.note ?? "",
+    title: expense.title ?? "",
     docType: expense.docType ?? "tax_invoice",
     vendorDocNumber: expense.vendorDocNumber ?? "",
     vendorAddress: expense.vendorAddress ?? "",
@@ -382,6 +386,14 @@ export function ExpenseReviewPane({
     inputVatBlockReason: expense.inputVatBlockReason ?? null,
     items: expense.items ?? [],
   });
+  // Bridge: ให้ปุ่ม "ส่งเข้า TRCloud" (คนละ island บนหน้า admin) เซฟ draft ล่าสุดก่อนส่งได้
+  // เสมอ (กันเปลี่ยนสาขาแล้วยังไม่เซฟ → ส่งค่าเก่า · CEO 2026-07-21). draftRef = ค่าล่าสุด.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(
+    () => registerDraftSaver(expense.id, async () => (await onSave(expense.id, draftRef.current)).ok),
+    [expense.id, onSave],
+  );
   const [pending, startTransition] = useTransition();
   // CEO 2026-06-10: feedback อยู่ "ที่ปุ่ม" — กดบันทึกสำเร็จ → ปุ่มเปลี่ยนเป็น "✓ บันทึกแล้ว"
   // (สีเขียว 3 วิ) แทน popup เด้ง. รู้ทันทีว่าเซฟแล้ว.
@@ -706,10 +718,23 @@ export function ExpenseReviewPane({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-mono text-lg font-bold tracking-tight text-zinc-900">
-            {expense.docCode}
-          </div>
-          <div className="mt-0.5 text-xs text-zinc-500">
+          {/* ชื่อเรียกใบ — พิมพ์ชื่อที่จำง่ายแทนรหัส EXP-… ได้เลย (เว้นว่าง = โชว์รหัสใบเป็น ghost).
+              gate การแก้เหมือนช่องอื่น (disabled=locked) — ล็อกเมื่อส่ง TRCloud/ยกเลิกแล้ว. */}
+          <input
+            value={draft.title}
+            disabled={locked}
+            onChange={(e) => set("title", e.target.value)}
+            placeholder={expense.docCode}
+            aria-label="ชื่อเรียกใบ (เว้นว่าง = ใช้รหัสใบ)"
+            className="-mx-1 w-full min-w-0 rounded-md bg-transparent px-1 text-lg font-bold tracking-tight text-zinc-900 outline-none placeholder:font-mono placeholder:font-bold placeholder:text-zinc-400 focus:bg-zinc-50 disabled:cursor-default disabled:text-zinc-900"
+          />
+          {/* มีชื่อเรียกแล้ว → ยังโชว์รหัสใบตัวเล็กไว้ให้ตามเอกสารเจอ. */}
+          {draft.title.trim() && (
+            <div className="mt-0.5 px-1 font-mono text-xs text-zinc-500">
+              {expense.docCode}
+            </div>
+          )}
+          <div className="mt-0.5 px-1 text-xs text-zinc-500">
             ที่มา:{" "}
             {expense.source === "line"
               ? "LINE"
@@ -730,6 +755,14 @@ export function ExpenseReviewPane({
               trcloudDocId={expense.trcloudDocId}
               trcloudDocNo={expense.trcloudDocNo}
               trcloudError={expense.trcloudError}
+              trcloudApDocId={expense.trcloudApDocId}
+              trcloudApDocNo={expense.trcloudApDocNo}
+              trcloudApError={expense.trcloudApError}
+              // auto-save ฟอร์มที่เปิดอยู่ก่อนส่ง — กันส่งด้วยข้อมูล/สาขาเก่า.
+              onBeforeSend={async () => {
+                const r = await onSave(expense.id, draft);
+                return r.ok;
+              }}
             />
           )}
           {/* "ออกเอกสาร" = งานบัญชีฝั่งเว็บ — ปิดใน LIFF member edit (showTrcloud=false)
@@ -1556,6 +1589,13 @@ export function ExpenseReviewPane({
                 trcloudDocId={expense.trcloudDocId}
                 trcloudDocNo={expense.trcloudDocNo}
                 trcloudError={expense.trcloudError}
+                trcloudApDocId={expense.trcloudApDocId}
+                trcloudApDocNo={expense.trcloudApDocNo}
+                trcloudApError={expense.trcloudApError}
+                onBeforeSend={async () => {
+                  const r = await onSave(expense.id, draft);
+                  return r.ok;
+                }}
                 compact
               />
             )}

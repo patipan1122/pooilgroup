@@ -220,9 +220,9 @@ export function UploadReceiptButton({
     }
   }
 
-  async function runJob(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
-    const all = Array.from(fileList);
+  async function runJob(files: File[]) {
+    if (files.length === 0) return;
+    const all = files;
     const valid = all.filter((f) => isAcceptable(f) && f.size <= MAX_BYTES);
     const rejected = all.length - valid.length;
 
@@ -285,9 +285,11 @@ export function UploadReceiptButton({
         capture="environment"
         className="sr-only"
         onChange={(e) => {
-          const fl = e.target.files;
+          // อ่านไฟล์ออกมาก่อน "แล้วค่อย" ล้าง input — ถ้าล้างก่อน FileList (fl) จะว่างทันที
+          // (browser reset) → runJob ได้ของว่าง → เงียบ ไม่ขึ้นใบ (บั๊กเดิม)
+          const files = Array.from(e.target.files ?? []);
           e.target.value = "";
-          void runJob(fl);
+          void runJob(files);
         }}
         aria-label="ถ่ายรูปใบเสร็จ"
         tabIndex={-1}
@@ -299,9 +301,11 @@ export function UploadReceiptButton({
         multiple
         className="sr-only"
         onChange={(e) => {
-          const fl = e.target.files;
+          // อ่านไฟล์ออกมาก่อน "แล้วค่อย" ล้าง input — ถ้าล้างก่อน FileList (fl) จะว่างทันที
+          // (browser reset) → runJob ได้ของว่าง → เงียบ ไม่ขึ้นใบ (บั๊กเดิม)
+          const files = Array.from(e.target.files ?? []);
           e.target.value = "";
-          void runJob(fl);
+          void runJob(files);
         }}
         aria-label="เลือกรูปหรือไฟล์ PDF ใบเสร็จ"
         tabIndex={-1}

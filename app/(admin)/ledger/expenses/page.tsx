@@ -217,6 +217,8 @@ export default async function ExpensesPage({
           OR: [
             { vendor: { contains: q, mode: "insensitive" } },
             { docCode: { contains: q, mode: "insensitive" } },
+            // ค้นด้วยชื่อเรียกใบที่ผู้ใช้ตั้งเอง (ให้ตัวนับแท็บตรงกับผลค้นในลิสต์).
+            { title: { contains: q, mode: "insensitive" } },
             { vendorTaxId: { contains: q } },
           ],
         }
@@ -553,6 +555,9 @@ export default async function ExpensesPage({
               trcloudDocId={selectedExpense.trcloudDocId}
               trcloudDocNo={selectedExpense.trcloudDocNo}
               trcloudError={selectedExpense.trcloudError}
+              trcloudApDocId={selectedExpense.trcloudApDocId}
+              trcloudApDocNo={selectedExpense.trcloudApDocNo}
+              trcloudApError={selectedExpense.trcloudApError}
               stockinNo={stockinNo}
               stockSkus={stockSkus}
               stockInEnabled={canStockIn}

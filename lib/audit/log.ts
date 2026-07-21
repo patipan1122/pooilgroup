@@ -176,6 +176,10 @@ export type AuditAction =
   | "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_STARTED"
   | "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED"
   | "LEDGER_EXPENSE_TRCLOUD_AP_DELETED"
+  // PO→AP conversion (ลงบัญชีจริง) — CEO 2026-07-21.
+  | "LEDGER_EXPENSE_AP_CONVERT_STARTED"
+  | "LEDGER_EXPENSE_AP_CONVERT_FAILED"
+  | "LEDGER_EXPENSE_AP_CONVERTED"
   // TRCloud mapping settings (GL code, SKU, department/project) updated by admin.
   | "LEDGER_CATEGORY_UPDATED"
   // LINE Official Account connect for receipt capture. Stores encrypted Channel

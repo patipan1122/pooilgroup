@@ -510,6 +510,119 @@ export async function pushExpenseToTrcloud(
   return { ok: true, docId, docNo };
 }
 
+// ── PO → AP conversion (ลงบัญชีจริง) ─────────────────────────────────────────
+// CEO 2026-07-21: พอได้สลิปโอน หรือกดเองในโปรแกรม → แปลง PO ตั้งต้นเป็น AP (ใบกำกับภาษีซื้อ)
+// ที่ลงบัญชีจริง. ผังบัญชี Dr ค่าใช้จ่าย(GL) + Dr ภาษีซื้อ 1432000 / Cr เจ้าหนี้ 2101000 →
+// TRCloud ลงให้อัตโนมัติจาก acc_code(รายบรรทัด) + tax_report + AP type → พนักงานไม่ต้องเลือก
+// เดบิต/เครดิตเอง (แก้ปัญหาเลือกผิด). AP เป็น "ร่าง" (approve_status=wait) ให้บัญชี approve ก่อน post.
+//
+// วิธี: สร้าง AP แบบ standalone ผ่าน ap/create.php (แบบเดียวกับ path รับเข้าคลังที่พิสูจน์แล้ว)
+// แล้วลบ PO ตั้งต้นทิ้ง (PO เป็น seed doc ไม่ post GL). ไม่ใช้ช่อง `po` linkage เพราะ TRCloud
+// ต้องการ id ตัวเลขและ error ง่าย ("Linkage ID cannot be ZERO", live test 2026-07-21) —
+// reference=docCode ผูก PO↔AP เชิงตรรกะอยู่แล้ว.
+const AP_TYPE_CASH   = process.env.TRCLOUD_AP_TYPE_CASH   ?? "Cash[AP]";
+const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
+
+export async function convertExpensePoToAp(
+  e: PushableExpense,
+  opts: { poDocId?: string | null; slipUrl?: string | null } = {},
+): Promise<{ ok: true; apDocId: string | null; apDocNo: string | null } | { ok: false; error: string }> {
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
+  }
+  // SKU + GL auto-resolve (เหมือน push PO): SKU 1 ใน 3, GL จากหมวด (ไม่มี → 5919999).
+  const eff: PushableExpense = {
+    ...e,
+    trcloudProductCode: resolveEffectiveSku(e),
+    categoryAccCode: e.categoryAccCode || GL_FALLBACK,
+  };
+  if (!eff.branchTrcloudDepartment) {
+    return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
+  }
+  const scope: Scope = { orgId: eff.orgId, companyId: eff.companyId };
+
+  // 1) vendor → contact_id
+  const contact = await resolveContactId(scope, {
+    vendor: e.vendor, vendorTaxId: e.vendorTaxId, vendorAddress: e.vendorAddress,
+  });
+  if (!contact.ok) return { ok: false, error: `คู่ค้า: ${contact.error}` };
+
+  // 2) line items (fixed SKU + acc_code GL)
+  const built = await buildLines(scope, eff);
+  if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
+
+  // 3) idempotency — AP อาจมีอยู่แล้ว (retry หลัง timeout). เจอ = คืนเลย ไม่สร้างซ้ำ.
+  {
+    const sr = await post("ap/search.php", { keyword: e.docCode, limit: "5" });
+    const list = asArr(sr.data?.data) ?? asArr(sr.data?.result) ?? asArr(sr.data?.body) ?? [];
+    for (const row of list) {
+      const o = asObj(row);
+      const ref = pick(o, "reference", "ref");
+      if (ref && ref.trim() === e.docCode.trim()) {
+        const apDocId = pick(o, "expense_id", "id", "document_id");
+        const apDocNo = pick(o, "document_number", "no");
+        if (apDocId || apDocNo) return { ok: true, apDocId, apDocNo };
+      }
+    }
+  }
+
+  // 4) create AP (บัญชีจริง). ใบเสนอราคา / VAT ขอคืนไม่ได้ → tax_report=0 (ไม่เข้า ภ.พ.30).
+  const issue = toIsoDate(e.docDate);
+  const taxReport = e.docType === "quotation" || !eff.inputVatClaimable ? "0" : "1";
+  const apType = (e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
+  const slipNote = opts.slipUrl ? ` · สลิปโอน: ${opts.slipUrl}` : "";
+  const payload: Json = {
+    issue_date: issue,
+    due_date: issue,
+    tax_date: issue,
+    company_format: "JPS_AP",
+    document_number: "",
+    payment_term: "0",
+    reference: e.docCode,
+    discount: "0",
+    wht: String(round2(e.wht)),
+    tax_option: "in",           // ราคา VAT-inclusive (ค่าใช้จ่ายเก็บยอดรวม VAT)
+    tax_report: taxReport,
+    type: apType,               // Cash[AP] จ่ายแล้ว / Credit[AP] ค้างจ่าย (Cr เจ้าหนี้)
+    approve_status: "wait",     // ร่าง — บัญชี approve ก่อน post
+    department: eff.branchTrcloudDepartment,
+    project: eff.branchTrcloudProject ?? "",
+    invoice_note: (e.note ? `${e.note} · ` : "") + `LedgerLine · อ้างอิง ${e.docCode}${slipNote}`,
+    ...(opts.slipUrl ? { url: opts.slipUrl } : {}), // แนบลิงก์สลิปโอน (ถ้า TRCloud รับ)
+    customer: {
+      group_code: "S",
+      code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
+      name: e.vendor || "ไม่ระบุชื่อผู้ขาย",
+      organization: e.vendor || "",
+      branch: "00000",
+      address: e.vendorAddress || "-",
+      email: "",
+      telephone: "",
+      tax_id: digitsOnly(e.vendorTaxId),
+      contact_type: "normal",
+      contact_id: contact.ref.contactId,
+      add_contact: "0",
+    },
+    product: built.lines,
+  };
+
+  const r = await post("ap/create.php", payload);
+  if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
+  const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
+  const apDocId = pick(inner, "id", "expense_id", "document_id", "doc") ?? pick(r.data, "id", "expense_id", "document_id");
+  const apDocNo = pick(inner, "document_number", "no") ?? pick(r.data, "document_number", "no");
+  if (!apDocId && !apDocNo) {
+    return { ok: false, error: `TRCloud ไม่คืนเลขเอกสาร AP — แปลงไม่สำเร็จ (${errMsg(r)})` };
+  }
+
+  // 5) ลบ PO ตั้งต้นทิ้ง (best-effort) — PO เป็น seed doc ไม่ post GL, กัน draft ค้างซ้ำใน TRCloud.
+  //    AP สร้างสำเร็จแล้วสำคัญกว่า — PO ลบไม่ได้ก็ปล่อย (แค่ draft ค้าง ไม่กระทบบัญชี).
+  if (opts.poDocId) {
+    await post("po/delete.php", { id: opts.poDocId });
+  }
+  return { ok: true, apDocId, apDocNo };
+}
+
 /** Delete a pushed doc ("ยกเลิกการส่ง" / test cleanup). Tries PO first (current model),
  *  then falls back to AP so docs pushed before the AP→PO switch can still be cancelled. */
 export async function deleteTrcloudAp(docId: string): Promise<{ ok: boolean; error?: string }> {
