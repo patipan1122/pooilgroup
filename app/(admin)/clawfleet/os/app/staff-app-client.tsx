@@ -3836,7 +3836,7 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
             )}
 
             {/* ── 2 · เติมสินค้า (เลือกจากคลังสาขา) (mockup HIST-21) ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 9px" }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", flex: 1 }}>2 · เติมสินค้า (เลือกจากคลังสาขา)</span>
             </div>
@@ -3912,22 +3912,22 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
 
             {/* ── สรุปเติม/คืน/หลังเติม · 3 กล่องแนวนอน (mockup HIST-23) ── */}
             <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 11, padding: 9, textAlign: "center" }}>
+              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 10, padding: 7, textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: "#6B7280" }}>เติมรวม</div>
                 <div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#4F46E5" }}>+{swapRefillTotal}</div>
               </div>
-              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 11, padding: 9, textAlign: "center" }}>
+              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 10, padding: 7, textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: "#6B7280" }}>คืนสโตว์</div>
                 <div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#B45309" }}>{swapReturnedTotal}</div>
               </div>
-              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 11, padding: 9, textAlign: "center" }}>
+              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 10, padding: 7, textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div>
                 <div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{swapNow}</div>
               </div>
             </div>
 
             {/* ── 3 · แนบรูปก่อนเติม / หลังเติม (mockup HIST-24) ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 9px" }} />
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>3 · แนบรูปก่อนเติม / หลังเติม <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ไม่บังคับ</span></div>
             <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
               {usingDemo ? (
@@ -4893,8 +4893,8 @@ function FlowScreen(props: {
   const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
     const prev = key === "coinGear" || key === "coinDigi" ? f.coinPrev : f.dollPrev;
     return (
-      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "8px 10px" }}>
-        <div style={{ fontSize: 10, color: "#9AA1AB", marginBottom: 4 }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 10, padding: "6px 9px" }}>
+        <div style={{ fontSize: 10, color: "#9AA1AB", marginBottom: 3 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
             placeholder={prev != null ? `รอบก่อน ${prev}` : "เลข"}
@@ -4944,7 +4944,7 @@ function FlowScreen(props: {
       </div>
 
       {/* body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px 14px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "6px 18px 12px" }}>
         {/* ═══ ขั้น 1 · นับ + เติม (ดีไซน์ใหม่ · จบในหน้าเดียว ไม่มีด่านบังคับ) ═══ */}
         {step === 1 && (
           <div>
@@ -4957,7 +4957,7 @@ function FlowScreen(props: {
             )}
             {/* CEO 2026-07-19 · รอบก่อน — เก็บล่าสุด / เติมล่าสุด (วันไหน) · ช่วยพนักงานรู้ว่าตู้นี้เพิ่งทำอะไร */}
             {machine && !props.usingDemo && (machine.lastCollectedAt !== undefined || machine.lastRefillAt !== undefined) && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "#5A6270", background: "#F1F2F5", padding: "5px 10px", borderRadius: 20 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2"><rect x="2" y="7" width="20" height="12" rx="2" /><path d="M2 11h20" /></svg>
                   เก็บล่าสุด <b className="num" style={{ color: "#1A1D21" }}>{machine.lastCollectedAt || "ยังไม่เคย"}</b>
@@ -4971,12 +4971,12 @@ function FlowScreen(props: {
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>1 · สินค้าในตู้ปัจจุบัน · นับที่เหลือ</div>
             {/* ── นับเหลือ "รายตัว/SKU" · รวม = f.left = ยอดที่ส่งระบบ (สัญญาเดินเงินเดิม) ── */}
             {perSkuMode ? (
-              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 11 }}>
                 {inDolls.map((d) => {
                   const ret = returnedBySku[d.productId] ?? 0;
                   return (
-                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid #F2F3F5", background: ret ? "#F2FBF5" : "#fff" }}>
-                      <DollThumb imageUrl={d.imageUrl} name={d.name} size={36} />
+                    <div key={d.productId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderBottom: "1px solid #F2F3F5", background: ret ? "#F2FBF5" : "#fff" }}>
+                      <DollThumb imageUrl={d.imageUrl} name={d.name} size={32} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
                         {/* คืนเข้าสโตร์ = ตัวที่คืน ไม่นับว่าลูกค้าคีบ (หักออกจาก "ตุ๊กตาออก" ให้ตรง server) */}
@@ -4992,15 +4992,15 @@ function FlowScreen(props: {
                       </div>
                       {ret === 0 && (
                         <>
-                          <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
-                          <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder={String(d.qty)} style={{ width: 38, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
-                          <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
+                          <span className="tap" onClick={() => nudgeRemainSku(d.productId, -1)} style={{ width: 26, height: 26, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
+                          <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemainSku(d.productId, e.target.value)} inputMode="numeric" className="num" placeholder={String(d.qty)} style={{ width: 34, textAlign: "center", fontSize: 15, fontWeight: 700, padding: "4px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+                          <span className="tap" onClick={() => nudgeRemainSku(d.productId, 1)} style={{ width: 26, height: 26, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
                         </>
                       )}
                     </div>
                   );
                 })}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "#FAFBFC" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", background: "#FAFBFC" }}>
                   {/* mockup โชว์แค่ "เหลือในตู้ N ตัว" (+ คืนสโตร์เมื่อมี) — เลข "ออก" ไปโผล่หน้ากระทบยอด */}
                   <span style={{ flex: 1, fontSize: 11.5, color: "#8A909A" }}>เหลือในตู้ <b className="num" style={{ color: "#4F46E5" }}>{remainSkuTotal}</b> ตัว</span>
                   {(f.returnedTotal ?? 0) > 0 && <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#15803D", whiteSpace: "nowrap" }}>↩ คืนสโตร์ {f.returnedTotal} ตัว</span>}
@@ -5018,7 +5018,7 @@ function FlowScreen(props: {
             )}
 
             {/* ── 2 · เติมสินค้า (เลือกจากที่เบิกมา) ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 9px" }}>2 · เติมสินค้า (เลือกจากที่เบิกมา) <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ไม่เติมก็ได้</span></div>
             {props.branchWarehouses.length > 1 && (
               <div style={{ marginBottom: 9 }}>
@@ -5056,29 +5056,29 @@ function FlowScreen(props: {
 
             {/* ── สรุปเติม/คืน/หลังเติม · 3 กล่องแนวนอน (mockup section 2 pills) ── */}
             <div style={{ display: "flex", gap: 7, margin: "4px 0 0" }}>
-              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>เติมรวม</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#4F46E5" }}>{props.refillTotal}</div></div>
-              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>คืนสโตว์</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#B45309" }}>{f.returnedTotal ?? 0}</div></div>
-              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div><div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{isFilled(f.left) ? afterFill : "—"}</div></div>
+              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 10, padding: 7, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>เติมรวม</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#4F46E5" }}>{props.refillTotal}</div></div>
+              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 10, padding: 7, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>คืนสโตว์</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#B45309" }}>{f.returnedTotal ?? 0}</div></div>
+              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 10, padding: 7, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div><div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{isFilled(f.left) ? afterFill : "—"}</div></div>
             </div>
 
             {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง) ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง)</div>
-            <div style={{ display: "flex", gap: 7, marginBottom: 6 }}>
+            <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
               {meterCell("dollGear", "prize_meter", "บน (เฟือง)")}
               {meterCell("dollDigi", "prize_meter", "ล่าง (ดิจิตอล)")}
             </div>
-            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollEqColor, margin: "0 2px 14px" }}>{dollEqLabel} · รอบก่อน {f.dollPrev ?? "—"} · ตุ๊กตาออก {isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta}?` : recon.dollDelta) : "—"}</div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollEqColor, margin: "0 2px 8px" }}>{dollEqLabel} · รอบก่อน {f.dollPrev ?? "—"} · ตุ๊กตาออก {isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta}?` : recon.dollDelta) : "—"}</div>
 
             {/* ── 4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง) ── */}
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง)</div>
-            <div style={{ display: "flex", gap: 7, marginBottom: 6 }}>
+            <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
               {meterCell("coinGear", "meter_after", "บน (เฟือง)")}
               {meterCell("coinDigi", "meter_after", "ล่าง (ดิจิตอล)")}
             </div>
-            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinEqColor, margin: "0 2px 10px" }}>{coinEqLabel} · รอบก่อน {f.coinPrev ?? "—"} · มิเตอร์ควรได้ {isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "?" : `฿${recon.expectedCash}`) : "—"}</div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinEqColor, margin: "0 2px 7px" }}>{coinEqLabel} · รอบก่อน {f.coinPrev ?? "—"} · มิเตอร์ควรได้ {isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "?" : `฿${recon.expectedCash}`) : "—"}</div>
 
-            <div style={{ fontSize: 11, color: "#9AA1AB", margin: "0 2px 12px" }}>อ่านไม่ได้? แตะกล้องในช่องเพื่อถ่ายรูปมิเตอร์แทน (ใช้เป็นหลักฐาน) · กรอกทีหลังได้</div>
+            <div style={{ fontSize: 11, color: "#9AA1AB", margin: "0 2px 7px" }}>อ่านไม่ได้? แตะกล้องในช่องเพื่อถ่ายรูปมิเตอร์แทน (ใช้เป็นหลักฐาน) · กรอกทีหลังได้</div>
             {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) */}
             <button type="button" disabled={props.skipPending}
               onClick={() => {
@@ -5086,13 +5086,13 @@ function FlowScreen(props: {
                 const ok = window.confirm(`ตู้ ${machine?.code ?? "นี้"} เสีย/อ่านมิเตอร์ไม่ได้?\nระบบจะแจ้งซ่อมตู้นี้และข้ามไปเก็บตู้ถัดไป`);
                 if (ok) props.onSkipBroken();
               }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, marginBottom: 16, fontSize: 11.5, fontWeight: 600, color: "#B42318", cursor: props.skipPending ? "wait" : "pointer", opacity: props.skipPending ? 0.6 : 1 }}>
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, marginBottom: 10, fontSize: 11.5, fontWeight: 600, color: "#B42318", cursor: props.skipPending ? "wait" : "pointer", opacity: props.skipPending ? 0.6 : 1 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
               {props.skipPending ? "กำลังแจ้งซ่อม…" : "ตู้นี้เสีย/อ่านมิเตอร์ไม่ได้ — แจ้งซ่อม & ข้าม"}
             </button>
 
             {/* ── 5 · แนบรูปก่อนเติม / หลังเติม ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 9px" }} />
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>
               5 · แนบรูปก่อนเติม / หลังเติม
               {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
@@ -5107,16 +5107,16 @@ function FlowScreen(props: {
             </div>
 
             {/* ── 6 · เงินสดที่เก็บได้ (บาท) + ตั้งค่าตู้ ── */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
             <label style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", display: "block", margin: "0 2px 8px" }}>6 · เงินสดที่เก็บได้ (บาท)</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 14px" }}>
-              <span style={{ fontSize: 22, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "9px 13px" }}>
+              <span style={{ fontSize: 20, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
               <input value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} inputMode="numeric" className="num" placeholder="นับเงินแล้วกรอก"
-                style={{ flex: 1, minWidth: 0, fontSize: 22, fontWeight: 700, padding: "6px 4px", border: "none", background: "transparent", outline: "none" }} />
+                style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, padding: "5px 4px", border: "none", background: "transparent", outline: "none" }} />
               <span style={{ fontSize: 12, color: "#9AA1AB" }}>บาท</span>
             </div>
             {/* ตั้งค่าตู้ · หมวด + ราคาขาย/ตัว (เสนอ → เจ้าของอนุมัติ · ไม่เขียน sellPrice ตรง · money-safe) */}
-            <div style={{ borderTop: "1px solid #EEF0F2", margin: "14px 0 0", paddingTop: 14 }}>
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "9px 0 0", paddingTop: 9 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "#454B54", flex: "0 0 auto" }}>ตั้งค่าตู้</label>
                 <select value={CATEGORY_OPTIONS.includes(f.category) ? f.category : CATEGORY_OPTIONS[0]} onChange={(e) => props.onCategory(e.target.value)}
