@@ -82,7 +82,8 @@ export async function rentMatrix(
       },
     }),
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, period: { startsWith: `${year}-` } },
+      // ตัดบิลยกเลิก/ร่าง ออกจากยอดรวม matrix (ไม่งั้นรวมยอดเกินจริง + ไม่ตรงหน้า analytics)
+      where: { orgId, projectId, period: { startsWith: `${year}-` }, status: { notIn: ["void", "draft"] } },
       select: {
         id: true,
         unitId: true,

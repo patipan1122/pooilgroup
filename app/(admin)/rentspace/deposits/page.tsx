@@ -51,7 +51,7 @@ export default async function DepositsPage() {
   return (
     <RsPage>
       <RsBackLink href="/rentspace" label="กลับหน้าหลัก" />
-      <RsHeader title="เงินประกัน" subtitle="ภาพรวมเงินประกันถือครองทุกห้องในโครงการ" />
+      <RsHeader title="เงินประกัน" subtitle="ภาพรวมเงินประกันถือครองทุกห้อง ทุกโครงการ" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <RsKpi

@@ -160,6 +160,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
       vatable: c.vatable,
     })),
     tenantSigned: contract.tenantSigned,
+    status: contract.status,
   };
 
   // ─── เอกสาร A4 ฉบับเต็ม (ใช้ component รวมศูนย์เดียวกับพรีวิว/หน้าเซ็น) ───

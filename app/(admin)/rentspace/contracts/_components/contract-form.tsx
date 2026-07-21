@@ -80,6 +80,8 @@ type EditInitial = {
   charges?: { kind: string; label: string; amountThb: number; vatable: boolean }[];
   /** เซ็นแล้วหรือยัง — ใช้โชว์แบนเนอร์เตือนตอนแก้ */
   tenantSigned?: boolean;
+  /** สถานะสัญญา — draft = แก้แล้วเลือกได้ว่ายังเป็นร่างหรือเริ่มสัญญา (กันแก้ร่างแล้วบังคับ active) */
+  status?: string | null;
 };
 
 function tenantLabel(t: Tenant): string {
@@ -191,6 +193,8 @@ export function ContractForm({
   const defaultTemplate = editInitial?.templateId ?? templates.find((t) => t.isDefault)?.id ?? "";
   const isEdit = !!editInitial;
   const editSigned = !!editInitial?.tenantSigned;
+  // แก้สัญญาที่ยังเป็น "ร่าง" → ให้เลือกได้ว่าบันทึกร่างต่อ หรือเริ่มสัญญา (ไม่บังคับ active เหมือนเดิม)
+  const isEditingDraft = isEdit && !editSigned && editInitial?.status === "draft";
 
   // ── form state (prefill จาก editInitial ถ้ามี) ─────────────────
   const [unitId, setUnitId] = useState(editInitial?.unitId ?? "");
@@ -544,7 +548,7 @@ export function ContractForm({
           waterRate: waterRate ? num(waterRate) : undefined,
           lateFeeType,
           lateFeeValue: num(lateFeeValue),
-          lateFeeGraceDays: Number(lateFeeGraceDays) || 7,
+          lateFeeGraceDays: lateFeeGraceDays.trim() === "" ? 7 : Number(lateFeeGraceDays),
           promoDiscountThb: promoPerMonth > 0 ? promoPerMonth : undefined,
           promoMonths: promoPerMonth > 0 ? promoMonthsCount : undefined,
           promoStartPeriod: promoPerMonth > 0 && promoStart ? promoStart : undefined,
@@ -1325,6 +1329,15 @@ export function ContractForm({
                 >
                   ถัดไป <ChevronRight className="h-4 w-4" />
                 </button>
+              ) : isEditingDraft ? (
+                <>
+                  <button className="rs-btn rs-btn-ghost flex-1 justify-center min-h-[44px] sm:min-h-0 basis-[120px]" disabled={pending} onClick={() => submit(false)}>
+                    {pending ? "กำลังบันทึก…" : "บันทึกร่าง"}
+                  </button>
+                  <button className="rs-btn flex-1 justify-center min-h-[44px] sm:min-h-0 basis-[160px]" disabled={pending} onClick={() => submit(true)}>
+                    {pending ? "กำลังบันทึก…" : "บันทึก + เริ่มสัญญา"}
+                  </button>
+                </>
               ) : isEdit ? (
                 <button className="rs-btn flex-1 justify-center min-h-[44px] sm:min-h-0" disabled={pending} onClick={() => submit(true)}>
                   {pending ? "กำลังบันทึก…" : editSigned ? "บันทึก + ออกฉบับแก้ไข" : "บันทึกการแก้ไข"}

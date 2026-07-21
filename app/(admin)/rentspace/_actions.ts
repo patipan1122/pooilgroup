@@ -675,6 +675,15 @@ export async function actSaveContract(input: {
   activate?: boolean;
 }) {
   const session = await gateAdmin();
+  // แก้สัญญา + เปลี่ยนห้อง → จำห้องเดิมไว้ เพื่อปล่อยให้ว่างท้ายฟังก์ชัน (กันห้องเก่าค้าง "เช่าอยู่")
+  const prevUnitId = input.id
+    ? (
+        await prisma.rentalContract.findFirst({
+          where: { id: input.id, orgId: session.user.org_id },
+          select: { unitId: true },
+        })
+      )?.unitId ?? null
+    : null;
   const data = {
     projectId: input.projectId,
     unitId: input.unitId,
@@ -837,6 +846,22 @@ export async function actSaveContract(input: {
   if (input.activate) {
     await prisma.rentalUnit.update({ where: { id: input.unitId }, data: { status: "occupied" } });
   }
+  // เปลี่ยนห้องตอนแก้สัญญา → ปล่อยห้องเดิมให้ว่าง ถ้าไม่มีสัญญา active อื่นใช้อยู่ (กันห้องเก่าค้าง occupied)
+  if (prevUnitId && prevUnitId !== input.unitId) {
+    const otherActive = await prisma.rentalContract.count({
+      where: {
+        unitId: prevUnitId,
+        orgId: session.user.org_id,
+        status: { in: ["active", "expiring", "expired"] },
+        ...(id ? { id: { not: id } } : {}),
+      },
+    });
+    if (otherActive === 0) {
+      await prisma.rentalUnit
+        .update({ where: { id: prevUnitId }, data: { status: "vacant" } })
+        .catch(() => {});
+    }
+  }
   await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", id, { unitId: input.unitId });
   revalidatePath("/rentspace/contracts");
   revalidatePath("/rentspace");
@@ -944,6 +969,21 @@ export async function actRecordDeposit(input: {
     prisma.rentalContract.findFirst({ where: { id: input.contractId, orgId: session.user.org_id }, select: { id: true } }),
     "สัญญา",
   );
+  if (!(input.amountThb > 0)) throw new Error("จำนวนเงินต้องมากกว่า 0");
+  // กันยอดติดลบ: คืน/หัก/ริบ เกินเงินประกันที่ถือครองจริงไม่ได้ (server = source of truth)
+  if (input.kind !== "collect") {
+    const rows = await prisma.rentalDeposit.findMany({
+      where: { contractId: input.contractId, orgId: session.user.org_id },
+      select: { kind: true, amountThb: true },
+    });
+    const balance = rows.reduce(
+      (s, r) => s + (r.kind === "collect" ? toNum(r.amountThb) : -toNum(r.amountThb)),
+      0,
+    );
+    if (input.amountThb > balance + 0.001) {
+      throw new Error(`คืน/หัก/ริบได้ไม่เกินเงินประกันคงเหลือ (${balance.toLocaleString("th-TH")} บาท)`);
+    }
+  }
   const d = await prisma.rentalDeposit.create({
     data: {
       id: randomUUID(),
@@ -1649,6 +1689,8 @@ export async function actRecordPayment(input: {
   if (!bill) throw new Error("ไม่พบบิล");
   // ห้ามรับชำระบิลที่ถูกยกเลิกไปแล้ว
   if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกไปแล้ว ไม่สามารถรับชำระได้");
+  // server = source of truth: ยอดชำระต้องมากกว่า 0 (กัน 0/ติดลบ ทำ paidAmount เพี้ยน)
+  if (!(input.amountThb > 0)) throw new Error("จำนวนเงินต้องมากกว่า 0");
   // กันรับชำระซ้ำ (double-click / network retry / หลายแท็บ): บิล+ยอด+วิธี+วันเดียวกัน ภายใน 2 นาที = ซ้ำ
   const dupSince = new Date(Date.now() - 120_000);
   const dup = await prisma.rentalPayment.findFirst({
@@ -1708,6 +1750,21 @@ export async function actRecordCombinedPayment(input: {
   );
   const amount = round2(input.amountThb);
   if (amount <= 0) throw new Error("กรุณาระบุยอดชำระ");
+  // กันรับชำระรวมซ้ำ (double-tap / network retry / หลายแท็บ): ถ้ามีการชำระของผู้เช่ารายนี้
+  // วันเดียวกันที่เพิ่งบันทึกใน 90 วิ และรวมยอดครอบยอดนี้แล้ว = ถือว่าซ้ำ ไม่จัดสรรใหม่
+  const dupSince = new Date(Date.now() - 90_000);
+  const recentPays = await prisma.rentalPayment.findMany({
+    where: {
+      paidOn: new Date(input.paidOn),
+      createdAt: { gte: dupSince },
+      bill: { orgId: session.user.org_id, tenantId: input.tenantId },
+    },
+    select: { amountThb: true },
+  });
+  if (recentPays.length > 0) {
+    const recentSum = recentPays.reduce((s, p) => s + toNum(p.amountThb), 0);
+    if (recentSum >= amount - 0.01) return { ok: true, deduped: true, billsPaid: 0, allocated: 0, leftover: amount };
+  }
   // บิลค้างของผู้เช่ารายนี้ทุกห้อง — จัดสรรจากบิลเก่าสุดก่อน
   const bills = await prisma.rentalBill.findMany({
     where: { orgId: session.user.org_id, tenantId: input.tenantId, status: { in: ["issued", "partial", "overdue"] } },

@@ -327,7 +327,8 @@ export async function projectKpis(orgId: string, projectId: string) {
       select: { totalAmount: true, paidAmount: true, status: true },
     }),
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, period },
+      // ตัดบิลยกเลิก/ร่าง — "ออกบิลเดือนนี้" ต้องนับเฉพาะบิลที่ออกจริง (ให้ตรง billingCycle/analytics)
+      where: { orgId, projectId, period, status: { notIn: ["void", "draft"] } },
       select: { totalAmount: true, paidAmount: true },
     }),
   ]);
