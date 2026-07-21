@@ -2246,27 +2246,9 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
     g.items.push(h);
   }
 
-  // mockup · แท็บวันที่เลือก (default = วันล่าสุดที่มีรอบ) — 45 วันโหลดมาแล้ว ไม่ต้องมีปฏิทิน
-  const [selDate, setSelDate] = useState<string>("");
-  const activeDate = groups.find((g) => g.date === selDate)?.date ?? groups[0]?.date ?? todayYmd;
-  const activeGroup = groups.find((g) => g.date === activeDate);
-
-  // สรุปยอดของวันที่เลือก (collect เท่านั้นสำหรับเงิน/ตุ๊กตา · swap นับแยก)
+  // mockup · ชนิดของรายการ (collect = เงิน+ตุ๊กตา · swap = เปลี่ยน/เติม · baseline = ตั้งค่าครั้งแรก)
+  // ประวัติ = วันซ้อนกันเป็น section (mockup) → ยอดต่อวันคำนวณในลูปด้วยสูตรเดียวกับ authoritative (ไม่ derive เงินใหม่)
   const kindOf = (h: StaffHistoryRow) => h.kind ?? (h.isBaseline ? "baseline" : "collect");
-  const dayItems = activeGroup?.items ?? [];
-  const sumCash = dayItems.reduce((a, h) => a + (kindOf(h) === "collect" ? (h.cashBaht || 0) : 0), 0);
-  const sumDolls = dayItems.reduce((a, h) => a + (kindOf(h) === "collect" ? (h.dollsOut || 0) : 0), 0);
-  const nRounds = dayItems.length;
-  const nSwaps = dayItems.filter((h) => kindOf(h) === "swap").length;
-  const nBad = dayItems.filter((h) => kindOf(h) === "collect" && !h.ok).length;
-  // ชื่อวันเต็ม (ไทย · พ.ศ. 2 หลัก) สำหรับหัวการ์ดสรุป
-  const absDateThai = (ymd: string) => {
-    const [y, m, d] = ymd.split("-").map(Number);
-    const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-    return `${d} ${months[m - 1] ?? ""} ${String((y + 543) % 100).padStart(2, "0")}`;
-  };
-  const activeLabel = ymdLabelThai(activeDate, todayYmd);
-  const heroTitle = /^\d/.test(activeLabel) ? activeLabel : `${activeLabel} · ${absDateThai(activeDate)}`;
 
   // ไอคอนสถานะในแถว (mockup: ✓ เขียว / ✗ แดง / ⇄ น้ำเงิน / ธง baseline)
   const statusSquare = (h: StaffHistoryRow) => {
@@ -2304,72 +2286,67 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
             sub="เมื่อคุณเก็บเงิน / เปลี่ยนตุ๊กตาจบตู้ รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
         </div>
       ) : (
-        <>
-          {/* mockup · แท็บวัน (scroll) — label + N รอบ + จุดแดงถ้ามีรอบยอดไม่ตรง */}
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, margin: "0 -2px" }}>
-            {groups.map((g) => {
-              const active = g.date === activeDate;
-              const bad = g.items.some((h) => kindOf(h) === "collect" && !h.ok);
-              return (
-                <button key={g.date} type="button" onClick={() => setSelDate(g.date)} className="co-tap"
-                  style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 2, minWidth: 78, padding: "8px 13px", borderRadius: 12, position: "relative", cursor: "pointer", textAlign: "left", background: active ? "#4F46E5" : "#fff", border: `1.5px solid ${active ? "#4F46E5" : "#E3E6EA"}` }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: active ? "#fff" : "#454B54" }}>{g.label}</span>
-                  <span className="num" style={{ fontSize: 10, color: active ? "#CFCBFA" : "#9AA1AB" }}>{g.items.length} รอบ</span>
-                  {bad && <span style={{ position: "absolute", top: 8, right: 10, width: 7, height: 7, borderRadius: "50%", background: "#C0392B" }} />}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* mockup · การ์ดสรุปยอดของวันที่เลือก (indigo gradient · 2×2) */}
-          <div style={{ background: "linear-gradient(135deg,#4F46E5,#6D5CE8)", borderRadius: 15, padding: "15px 17px", color: "#fff" }}>
-            <div style={{ fontSize: 11.5, color: "#CFCBFA", fontWeight: 600, marginBottom: 11 }}>{heroTitle}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px 10px" }}>
-              <div><div className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>฿{sumCash.toLocaleString("en-US")}</div><div style={{ fontSize: 10.5, color: "#CFCBFA", marginTop: 3 }}>เก็บได้รวม</div></div>
-              <div><div className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{sumDolls.toLocaleString("en-US")}</div><div style={{ fontSize: 10.5, color: "#CFCBFA", marginTop: 3 }}>ตุ๊กตาออกรวม</div></div>
-              <div><div className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{nRounds}</div><div style={{ fontSize: 10.5, color: "#CFCBFA", marginTop: 3 }}>จำนวนรอบ</div></div>
-              <div><div className="num" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{nSwaps}</div><div style={{ fontSize: 10.5, color: "#CFCBFA", marginTop: 3 }}>เปลี่ยนตุ๊กตา</div></div>
-            </div>
-            {nBad > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, background: "rgba(255,255,255,0.14)", borderRadius: 10, padding: "8px 11px" }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" style={{ flex: "0 0 15px" }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
-                <span style={{ fontSize: 11.5, fontWeight: 600 }}>มี {nBad} รอบยอดไม่ตรง — ตรวจแล้ว</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* mockup · ประวัติ = วันซ้อนกันเป็น section (หัววัน + เส้นคั่น + ยอดวัน · ชิปสรุป · แถวกดได้)
+              45 วันโหลดมาแล้ว → เลื่อนดูทุกวันได้เลย (ไม่ต้องมีแท็บ/ปฏิทิน) */}
+          {groups.map((g) => {
+            // ยอดต่อวัน — สูตรเดียวกับ authoritative (collect เท่านั้นเข้าเงิน · swap นับแยก) · ไม่ derive เงินใหม่
+            const dayCash = g.items.reduce((a, h) => a + (kindOf(h) === "collect" ? (h.cashBaht || 0) : 0), 0);
+            const nCollect = g.items.filter((h) => kindOf(h) === "collect").length;
+            const nSwap = g.items.filter((h) => kindOf(h) === "swap").length;
+            return (
+              <div key={g.date}>
+                {/* หัววัน — ป้ายวัน + เส้นคั่นบาง + ยอดเงินรวมของวัน (เขียว · ชิดขวา) = ค่าเดียวกับ mockup */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>{g.label}</span>
+                  <span style={{ flex: 1, height: 1, background: "#EEF0F2" }} />
+                  <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#15803D" }}>฿{dayCash.toLocaleString("en-US")}</span>
+                </div>
+                {/* สรุปวัน — 2 ชิปนับ (เก็บเงิน / เปลี่ยน-เติม) · ชิป "ยังไม่เก็บ" ของ mockup ตัดออก (ไม่มีแหล่งข้อมูลในแถวจริง) */}
+                <div style={{ display: "flex", gap: 7, marginBottom: 10 }}>
+                  <div style={{ flex: 1, background: "#F2FBF5", borderRadius: 10, padding: 8, textAlign: "center" }}>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 800, color: "#15803D" }}>{nCollect}</div>
+                    <div style={{ fontSize: 9.5, color: "#6B7280" }}>เก็บเงิน</div>
+                  </div>
+                  <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 10, padding: 8, textAlign: "center" }}>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 800, color: "#4F46E5" }}>{nSwap}</div>
+                    <div style={{ fontSize: 9.5, color: "#6B7280" }}>เปลี่ยน/เติม</div>
+                  </div>
+                </div>
+                {/* แถวรอบของวันนี้ — กดได้ → detail → แก้เลข (chevron คงไว้) */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {g.items.map((h, i) => {
+                    const sq = statusSquare(h);
+                    const tag = historyKindTag(h);
+                    const k = kindOf(h);
+                    const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
+                    const cashPositive = k === "collect" && h.cashBaht > 0;
+                    const cashColor = k === "collect" && !h.ok ? "#C0392B" : cashPositive ? "#15803D" : "#B0B5BD";
+                    return (
+                      <button key={`${h.code}-${h.time}-${i}`} type="button" onClick={() => setDetail(h)} className="co-tap"
+                        style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: sq.bg, border: "1px solid #E8EAED", borderRadius: 11, padding: "9px 12px", cursor: "pointer" }}>
+                        <span style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>{sq.node}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span className="num" style={{ fontSize: 12.5, fontWeight: 700 }}>{h.nickname || h.code}</span>
+                            <span style={{ fontSize: 10.5, color: "#8A909A" }}>· {tag.label}</span>
+                            {stillMissing && <span style={{ fontSize: 9.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: "#FCF1E2", color: "#B45309" }}>รูปยังไม่ครบ</span>}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rowNote(h)}{h.branch ? ` · ${h.branch}` : ""}</div>
+                        </div>
+                        <div style={{ textAlign: "right", flex: "0 0 auto" }}>
+                          <div className="num" style={{ fontSize: 13.5, fontWeight: 800, color: cashColor }}>{cashPositive ? `฿${h.cashBaht.toLocaleString("en-US")}` : "—"}</div>
+                          <div className="num" style={{ fontSize: 10, color: "#B0B5BD", marginTop: 2 }}>{h.time}</div>
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" strokeWidth="2" style={{ flex: "0 0 16px" }}><path d="m9 18 6-6-6-6" /></svg>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* mockup · รายการรอบเก็บของวันที่เลือก */}
-          <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "0 2px -4px" }}>รายการรอบเก็บ</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {dayItems.map((h, i) => {
-              const sq = statusSquare(h);
-              const tag = historyKindTag(h);
-              const k = kindOf(h);
-              const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
-              const cashPositive = k === "collect" && h.cashBaht > 0;
-              const cashColor = k === "collect" && !h.ok ? "#C0392B" : cashPositive ? "#15803D" : "#B0B5BD";
-              return (
-                <button key={`${h.code}-${h.time}-${i}`} type="button" onClick={() => setDetail(h)} className="co-tap"
-                  style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "11px 13px", cursor: "pointer" }}>
-                  <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, background: sq.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{sq.node}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{h.nickname || h.code}</span>
-                      <span style={{ fontSize: 10.5, color: "#8A909A" }}>{tag.label}</span>
-                      {stillMissing && <span style={{ fontSize: 9.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: "#FCF1E2", color: "#B45309" }}>รูปยังไม่ครบ</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rowNote(h)}{h.branch ? ` · ${h.branch}` : ""}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flex: "0 0 auto" }}>
-                    <div className="num" style={{ fontSize: 14, fontWeight: 800, color: cashColor }}>{cashPositive ? `฿${h.cashBaht.toLocaleString("en-US")}` : "—"}</div>
-                    <div className="num" style={{ fontSize: 10, color: "#B0B5BD", marginTop: 2 }}>{h.time}</div>
-                  </div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" strokeWidth="2" style={{ flex: "0 0 16px" }}><path d="m9 18 6-6-6-6" /></svg>
-                </button>
-              );
-            })}
-          </div>
-        </>
+            );
+          })}
+        </div>
       )}
 
       {/* mockup · หน้ารายละเอียดรอบเก็บ (เต็มจอ · แทน list) — ข้อมูลชุดเดิม จัดใหม่ตามตัวอย่าง */}
@@ -3835,21 +3812,13 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                                 {[d.unitCostCents ? `ทุน ฿${Math.round(d.unitCostCents / 100)}` : null, machine.sellPriceCents ? `ขาย ฿${Math.round(machine.sellPriceCents / 100)}` : null].filter(Boolean).join(" · ")}
                               </div>
                             ) : null}
-                            <button type="button" onClick={() => setReturnedSku((c) => ({ ...c, [d.productId]: true }))}
-                              style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 600, color: "#6B7280", background: "none", border: "none", padding: 0, marginTop: 3, cursor: "pointer" }}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
-                              คืนเข้าสโตร์
-                            </button>
                           </>
                         )}
                       </div>
                       {!ret && (
-                        <>
-                          <span className="tap" onClick={() => nudgeRemain(d.productId, -1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer", userSelect: "none" }}>−</span>
-                          <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemain(d.productId, e.target.value)} inputMode="numeric" className="num" style={{ width: 38, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
-                          <span className="tap" onClick={() => nudgeRemain(d.productId, 1)} style={{ width: 29, height: 29, borderRadius: 8, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer", userSelect: "none" }}>+</span>
-                        </>
+                        <input value={remainBySku[d.productId] ?? ""} onChange={(e) => setRemain(d.productId, e.target.value)} inputMode="numeric" className="num" style={{ width: 52, textAlign: "center", fontSize: 16, fontWeight: 700, padding: "5px 2px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
                       )}
+                      <span className="co-tap" onClick={() => setReturnedSku((c) => { if (c[d.productId]) { const n = { ...c }; delete n[d.productId]; return n; } return { ...c, [d.productId]: true }; })} style={{ padding: "6px 12px", borderRadius: 8, fontWeight: 700, fontSize: 11.5, background: ret ? "#E7F4EC" : "#F1F2F5", color: ret ? "#15803D" : "#6B7280", flex: "0 0 auto" }}>{ret ? "✓ คืน" : "คืน"}</span>
                     </div>
                   );
                 })}
@@ -3868,7 +3837,6 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 9px" }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", flex: 1 }}>2 · เติมสินค้า (เลือกจากคลังสาขา)</span>
-              <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#15803D", background: "#E7F4EC", padding: "3px 9px", borderRadius: 20 }}>+{swapRefillTotal} ตัว</span>
             </div>
             {refillEntries.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 9 }}>
@@ -5058,7 +5026,7 @@ function FlowScreen(props: {
             {/* ── รูปยืนยัน (ก่อน/หลังเติม) — 2 ปุ่ม slim เรียงคู่ตาม mockup · ไม่บล็อกการกดถัดไป ──
                 คำเตือนนโยบายรูป ย่อเหลือท้ายหัวข้อบรรทัดเดียว (กล่อง amber เดิมกินที่ · CEO สั่งย่อ) */}
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", margin: "14px 0 8px" }}>
-              รูปยืนยัน (ก่อน/หลังเติม)
+              แนบรูปก่อนเติม / หลังเติม
               {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
             </div>
             <div style={{ display: "flex", gap: 9 }}>

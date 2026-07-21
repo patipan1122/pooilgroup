@@ -192,6 +192,11 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
+      {/* intro banner · อธิบายว่าหน้านี้คืออะไร (ตั้งค่าครั้งแรก) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#EEF0FE", border: "1px solid #DDE0FA", borderRadius: 11, padding: "10px 12px", marginBottom: 12 }}>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth={2} style={{ flex: "0 0 16px" }}><circle cx={12} cy={12} r={10} /><path d="M12 6v6l4 2" /></svg>
+        <span style={{ fontSize: 11.5, color: "#4F46E5", lineHeight: 1.4 }}>บันทึกยอดตั้งต้น (ตุ๊กตา · เงิน · มิเตอร์) — ทำครั้งเดียวตอนเริ่มใช้ตู้</span>
+      </div>
       {/* ชื่อตู้ (ดีไซน์ใหม่ · ช่องกรอกในหน้าเลย แทนการ์ดใหญ่ + sheet ตั้งชื่อ) */}
       <div>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>ชื่อตู้</div>
