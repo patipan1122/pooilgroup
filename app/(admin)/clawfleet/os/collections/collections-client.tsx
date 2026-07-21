@@ -249,6 +249,9 @@ export function CollectionsClient({
   const matchN = data.filter((r) => statusOf(r) === "match").length;
   const baselineN = data.filter((r) => statusOf(r) === "baseline").length;
   const brokenN = data.filter((r) => statusOf(r) === "broken").length;
+  // สัดส่วน "ตรงกัน" ในหน้านี้ — ใช้เป็นแถบ progress บนการ์ดหลัก (mockup hero) · display จากตัวนับจริงเท่านั้น
+  const reconciledPct = pageTotal > 0 ? Math.round((matchN / pageTotal) * 100) : 0;
+  const totalShown = isReal ? total : pageTotal;
 
   // เงินไม่ตรง — เฉพาะรอบจริง (ไม่ใช่ baseline) ที่ |ส่วนต่าง| เกินเกณฑ์ · รวมขนาด exposure (ไม่หักกลบ)
   const moneyDiffRows = data.filter((r) => !isBaselineRow(r) && Math.abs(r.gap) > CASH_TOLERANCE);
@@ -462,11 +465,15 @@ export function CollectionsClient({
           "รอบเก็บทั้งหมด" = total จริงทั้งช่วง (จาก server · ทุกหน้ารวมกัน).
           ตรงกัน/ไม่ตรง/ตู้เสีย = นับจาก "หน้านี้" เท่านั้น (client มีแค่หน้าที่โหลด) → ติดป้ายให้ชัด. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-2.5">
-        <SummaryCard
-          label="รอบเก็บทั้งหมด"
-          value={`${isReal ? total : pageTotal} รอบ`}
-          foot={multiPage ? `แสดงหน้า ${curPage}/${pageCount} · ${pageTotal} รอบในหน้านี้` : undefined}
-          footColor="#9AA1AB"
+        {/* การ์ดหลัก (hero · indigo gradient) — รอบทั้งหมด + แถบสัดส่วน "ตรงกัน" ให้เห็นภาพรวมกระทบยอดเด่น ๆ */}
+        <HeroCard
+          total={totalShown}
+          matchN={matchN}
+          pageTotal={pageTotal}
+          pct={reconciledPct}
+          multiPage={multiPage}
+          curPage={curPage}
+          pageCount={pageCount}
         />
         <SummaryCard label="ตรงกันหมด" value={`${matchN} รอบ`} valueColor="#15803D" foot={perPageFoot} footColor="#9AA1AB" />
         {/* การ์ดเงิน (แยกจากตุ๊กตา) — เขียว/จางเมื่อ 0 · แดงเมื่อมีรอบต้องสอบ */}
@@ -523,6 +530,12 @@ export function CollectionsClient({
         <LegendDot color="#B42318" label="แดง = ไม่ตรง · ต้องสอบ" />
         <LegendDot color="#9AA1AB" label="เทา = ตู้เสีย/ไม่ขยับ" />
         <span style={{ color: "#9AA1AB" }}>· ส่วนต่างไม่เกิน {bahtN(CASH_TOLERANCE)} = ถือว่าตรง</span>
+      </div>
+
+      {/* หัวรายการ (mockup) — บอกว่านี่คือรอบที่เก็บมาแล้ว + ใบ้ว่าแตะแถวไม่ตรงเพื่อเจาะดูสาเหตุ/ข้อมูลดิบ/รูป */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 11 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#454B54" }}>รอบที่เก็บมาแล้ว · ตรวจกระทบยอด</span>
+        <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>แตะแถวไม่ตรงเพื่อดูสาเหตุ · ข้อมูลดิบ · รูปย้อนหลัง</span>
       </div>
 
       {/* list */}
@@ -617,6 +630,30 @@ function pagerBtnStyle(enabled: boolean): CSSProperties {
     color: enabled ? "#4F46E5" : "#C2C7CF",
     cursor: enabled ? "pointer" : "not-allowed",
   };
+}
+
+/* ───────── hero card (mockup gradient · รอบทั้งหมด + แถบตรงกัน) ───────── */
+function HeroCard({
+  total, matchN, pageTotal, pct, multiPage, curPage, pageCount,
+}: {
+  total: number; matchN: number; pageTotal: number; pct: number;
+  multiPage: boolean; curPage: number; pageCount: number;
+}) {
+  return (
+    <div style={{ background: "linear-gradient(135deg,#4F46E5,#6D5CE8)", borderRadius: 14, padding: "16px 18px", color: "#fff" }}>
+      <div style={{ fontSize: 12, color: "#D7D5FA", marginBottom: 9 }}>รอบเก็บเงินทั้งหมด</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+        <span className="num" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{total}</span>
+        <span className="num" style={{ fontSize: 15, color: "#CFCBFA" }}>รอบ</span>
+      </div>
+      <div style={{ height: 7, background: "rgba(255,255,255,0.22)", borderRadius: 6, marginTop: 11, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: "#fff", borderRadius: 6 }} />
+      </div>
+      <div className="num" style={{ fontSize: 11, color: "#D7D5FA", marginTop: 6 }}>
+        ตรงกัน {matchN}/{pageTotal} รอบ{multiPage ? ` · หน้า ${curPage}/${pageCount}` : ""} · {pct}%
+      </div>
+    </div>
+  );
 }
 
 /* ───────── summary card ───────── */
@@ -737,6 +774,29 @@ function CollectionCard({
 
   // severity left-accent — แดง=ไม่ตรง · เทา=ตู้เสีย · เขียว=ตรงกัน (อ่านระดับได้ตั้งแต่ขอบซ้าย)
   const accent = st === "diff" ? "#B42318" : st === "broken" ? "#9AA1AB" : "#15803D";
+
+  // ── แผงเจาะสำหรับรอบ "ไม่ตรง" (mockup c.isDiff) — ข้อมูลดิบ + checklist สาเหตุ ──
+  //   ทั้งหมดเป็น DISPLAY ของฟิลด์ที่มีอยู่แล้วบน row (ไม่คิดเงินใหม่ · ไม่แตะ reconcile math)
+  const rawRows: { k: string; v: string }[] = [
+    {
+      k: "มิเตอร์เหรียญ (ก่อน → หลัง)",
+      v: meterBefore != null && meterAfter != null ? `${meterBefore} → ${meterAfter}` : "— ไม่มีเลขมิเตอร์ในรอบนี้",
+    },
+    { k: "มิเตอร์ควรได้", v: bahtN(row.expectedCash) },
+    { k: "เงินสดนับได้", v: bahtN(row.actualCash) },
+    { k: "ส่วนต่างเงิน", v: diffStr },
+    { k: "ตุ๊กตา ควรหาย → นับจริง", v: `${row.prizeExpected} → ${row.prizeActual} ตัว` },
+    { k: "พนักงานเก็บ", v: row.staff },
+  ];
+  // สาเหตุที่เป็นไปได้ — likely=true เมื่อข้อมูลจริงชี้ไปทางนั้น (ติดป้าย "น่าจะใช่") · ไม่ใช่การคำนวณเงิน
+  const causeChecks: { likely: boolean; label: string; hint: string }[] = [
+    { likely: row.gap > CASH_TOLERANCE, label: "เงินขาด — เก็บไม่ครบ/หยิบออก", hint: "เงินสดที่นับได้น้อยกว่าที่มิเตอร์บอกว่าควรได้ · เทียบรูปเงินสดกับเลขมิเตอร์" },
+    { likely: row.gap < -CASH_TOLERANCE, label: "เงินเกิน — ทอน/นับเกิน", hint: "เงินสดมากกว่าที่มิเตอร์บอก · อาจนับซ้ำ หรือมีเงินรอบก่อนตกค้างในตู้" },
+    { likely: row.prizeGap > 0, label: "ตุ๊กตาหาย — คนหยิบ/ตู้คายเกิน", hint: `มิเตอร์บอกออก ${row.prizeExpected} แต่นับได้ ${row.prizeActual} · ตรวจสต๊อกในตู้ + รูปก่อน/หลังเติม` },
+    { likely: row.prizeGap < 0, label: "ตุ๊กตาเกิน — เติมไม่ลงระบบ", hint: "นับได้มากกว่าที่มิเตอร์บอกว่าออก · อาจมีคนเติมตุ๊กตาโดยไม่บันทึก" },
+    { likely: photosMissing, label: "รูปหลักฐานไม่ครบ — ตรวจย้อนไม่ได้", hint: "บางตู้ยังไม่มีรูปมิเตอร์/สต๊อก · เรียกพนักงานส่งรูปเพิ่มเพื่อยืนยัน" },
+    { likely: false, label: "กรอกเลขมิเตอร์ผิด", hint: "ลองเทียบเลขในรูปมิเตอร์กับเลขที่กรอก — พิมพ์ตกหลัก/สลับตัวเลขทำให้ส่วนต่างเพี้ยน" },
+  ];
 
   return (
     <div
@@ -953,6 +1013,42 @@ function CollectionCard({
               })}
             </div>
           </div>
+
+          {/* c.isDiff — ข้อมูลดิบของตู้นี้ + checklist สาเหตุ (เฉพาะรอบ "ไม่ตรง · ต้องสอบ") */}
+          {st === "diff" && (
+            <div style={{ marginTop: 14 }} className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+              {/* ข้อมูลดิบ */}
+              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54", marginBottom: 10 }}>ข้อมูลดิบของตู้นี้ (ใช้วิเคราะห์)</div>
+                {rawRows.map((rw, i) => (
+                  <div key={rw.k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: i < rawRows.length - 1 ? "1px solid #F4F5F7" : "none" }}>
+                    <span style={{ flex: 1, fontSize: 11.5, color: "#6B7280" }}>{rw.k}</span>
+                    <span className="num" style={{ fontSize: 12, fontWeight: 600, color: "#1A1D21" }}>{rw.v}</span>
+                  </div>
+                ))}
+              </div>
+              {/* สาเหตุที่เป็นไปได้ — ไล่ตรวจทีละข้อ */}
+              <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#454B54", marginBottom: 10 }}>สาเหตุที่เป็นไปได้ — ไล่ตรวจทีละข้อ</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {causeChecks.map((cc) => (
+                    <div key={cc.label} style={{ display: "flex", alignItems: "flex-start", gap: 9, background: cc.likely ? "#FFF9F8" : "#F7F8FA", border: `1px solid ${cc.likely ? "#F3D9D5" : "#EFF1F4"}`, borderRadius: 9, padding: "8px 11px" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: cc.likely ? "#B42318" : "#C2C7CF", flex: "0 0 8px", marginTop: 4 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#3A3F47" }}>{cc.label}</span>
+                          {cc.likely && (
+                            <span style={{ fontSize: 9.5, fontWeight: 700, color: "#B42318", background: "#FBDAD5", padding: "1px 7px", borderRadius: 20 }}>น่าจะใช่</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 2, lineHeight: 1.4 }}>{cc.hint}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* recommended action + review buttons */}
           <div style={{ marginTop: 14, background: "#F8F9FB", borderRadius: 11, padding: "14px 16px" }}>

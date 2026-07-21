@@ -862,6 +862,13 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [tourStep, setTourStep] = useState(0);
+  // ทัวร์เติมตู้ 7-11 · state ต้องอยู่ระดับ StaffApp (ไม่ใช่ใน TourPanel) เพราะระหว่างเข้าจอเก็บเงินรายตู้
+  // (FlowScreen) HomeScreen จะ unmount → ถ้าเก็บใน TourPanel จำนวนที่เบิก/สถานะฝากเงินจะหายทุกครั้ง.
+  //   tourDraw: productId → จำนวนที่ตั้งใจเบิกใส่กระเป๋า (planning bag · ไม่ตัดสต๊อกซ้ำ — สต๊อกถูกตัดครั้งเดียว
+  //             ตอนเติมจริงผ่าน submitBranchEvent/LOAD_TO_MACHINE ซึ่งเป็น money-path ที่ห้ามแตะ).
+  //   tourDeposited: กดฝากเงินรวบยอดแล้ว (เงินถูกบันทึกรายตู้ไปแล้วตอนปิดรอบ · ปุ่มนี้ = ยืนยัน/ล็อกจอ).
+  const [tourDraw, setTourDraw] = useState<Record<string, number>>({});
+  const [tourDeposited, setTourDeposited] = useState(false);
   // ตู้ที่กำลังเปิดรอบ (กดแล้วรอ startBranchSession ~2-3 วิ) → โชว์สปินเนอร์บนตู้นั้น
   const [openingId, setOpeningId] = useState<string | null>(null);
   // ตู้ที่ "เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม" ในรอบนี้ (local เฉพาะเซสชันหน้าจอ · ไม่ persist)
@@ -1561,6 +1568,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           openingId={openingId}
           tourStep={tourStep}
           setTourStep={setTourStep}
+          tourDraw={tourDraw}
+          setTourDraw={setTourDraw}
+          tourDeposited={tourDeposited}
+          setTourDeposited={setTourDeposited}
           skus={skus}
           history={history}
           viewDate={viewDate}
@@ -1724,6 +1735,11 @@ function HomeScreen(props: {
   openingId: string | null;
   tourStep: number;
   setTourStep: (n: number) => void;
+  // ทัวร์เติมตู้ 7-11 · state ยกมาจาก StaffApp (persist ข้ามการเข้าจอเก็บเงินรายตู้)
+  tourDraw: Record<string, number>;
+  setTourDraw: (updater: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => void;
+  tourDeposited: boolean;
+  setTourDeposited: (v: boolean) => void;
   skus: CollectSku[];
   history: StaffHistoryRow[];
   viewDate: string; // B3 · วันที่ที่ดูประวัติ (YYYY-MM-DD)
@@ -1778,8 +1794,7 @@ function HomeScreen(props: {
   // ทักทายตามเวลา (เช้า/บ่าย/เย็น/ค่ำ)
   const hr = new Date().getHours();
   const greet = hr < 12 ? "สวัสดีตอนเช้า" : hr < 16 ? "สวัสดีตอนบ่าย" : hr < 19 ? "สวัสดีตอนเย็น" : "สวัสดีตอนค่ำ";
-  // ดีไซน์ใหม่ · วันที่ไทยย่อ (มุมขวาหัวสีม่วง) + ชื่อสาขา (ถ้าหลายสาขา = "N สาขา")
-  const todayLabel = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
+  // ชื่อสาขา (ถ้าหลายสาขา = "N สาขา") — subtitle การ์ดคืบหน้ารอบ
   const branchLabel = branchGroups.length === 1 ? branchGroups[0][0] : `${branchGroups.length} สาขา`;
   // "วันนี้" เวลาไทย (จาก server กัน tz drift · fallback client clock ถ้าไม่ส่ง)
   const todayYmd = props.todayYmd ?? clientTodayBangkokYmd();
@@ -1809,44 +1824,45 @@ function HomeScreen(props: {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {panel === null ? (
         <>
-          {/* ── indigo header · ทักทาย + ความคืบหน้ารอบ (ดีไซน์ใหม่) ── */}
-          <div style={{ flex: "0 0 auto", padding: "10px 20px 20px", background: "linear-gradient(160deg,#4F46E5,#5B4FE8)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, fontWeight: 700, color: "#fff" }}>{avatarChar}</div>
-              <div style={{ flex: 1, lineHeight: 1.25, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: "#C9C7F6" }}>{greet}</div>
-                <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+          {/* ── scroll body · ทุกอย่างเลื่อนพร้อมกัน (mockup: single overflow) ── */}
+          <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "8px 18px 24px" }}>
+            {/* ทักทาย (บนพื้นสว่าง · avatar วงกลม + กระดิ่ง) — mockup HIST-01 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "8px 0 18px" }}>
+              <div style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>{avatarChar}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: "#9AA1AB" }}>{greet}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
               </div>
-              <div style={{ textAlign: "right", color: "#fff", flex: "0 0 auto" }}>
-                <div className="num" style={{ fontSize: 12, color: "#C9C7F6" }}>{todayLabel}</div>
-                <div style={{ fontSize: 12, fontWeight: 600, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{branchLabel}</div>
-              </div>
+              <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#fff", border: "1px solid #E8EAED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+              </span>
             </div>
-            <div style={{ background: "rgba(255,255,255,0.13)", borderRadius: 16, padding: "15px 17px", marginTop: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 13, color: "#E4E3FB", fontWeight: 600 }}>รอบเก็บเงินวันนี้</span>
-                <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>{routeDone}/{routeTotal} ตู้</span>
+
+            {/* การ์ดคืบหน้ารอบ (gradient ม่วง · เลขใหญ่) — mockup HIST-02 */}
+            <div style={{ background: "linear-gradient(135deg,#4F46E5,#6D5CE8)", borderRadius: 16, padding: "18px 20px", color: "#fff", marginBottom: 18 }}>
+              <div style={{ fontSize: 12, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>รอบเก็บเงินวันนี้ · {branchLabel}</div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 6 }}>
+                <span className="num" style={{ fontSize: 32, fontWeight: 700, letterSpacing: -1, lineHeight: 1 }}>{routeDone}/{routeTotal}</span>
+                <span style={{ fontSize: 13, opacity: 0.85, paddingBottom: 4 }}>ตู้เก็บแล้ว</span>
               </div>
-              <div style={{ height: 8, background: "rgba(255,255,255,0.22)", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: 6, background: "rgba(255,255,255,0.25)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${routePct}%`, background: "#fff", borderRadius: 6 }} />
               </div>
             </div>
-          </div>
 
-          {/* ── scroll body ── */}
-          <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "16px 18px 24px" }}>
-            {/* quick actions · 4 การ์ดสี (ดีไซน์ใหม่) */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9, marginBottom: 18 }}>
+            {/* เมนูลัด · 4 การ์ด (ไอคอนม่วงเดียวกัน) — mockup HIST-03 */}
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 9, color: "#454B54" }}>เมนูลัด</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
               {([
-                { key: "history" as const, label: "ประวัติเก็บ", bg: "#EEF0FE", color: "#4F46E5", d: ["M12 8v4l3 2", "M3.05 11a9 9 0 1 1 .5 4", "M3 3v5h5"] },
-                { key: "repair" as const, label: "แจ้งซ่อม", bg: "#FCF1E2", color: "#B45309", d: ["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"] },
-                { key: "stock" as const, label: "นับสต๊อก", bg: "#E7F4EC", color: "#15803D", d: ["M20 7 12 3 4 7v10l8 4 8-4z", "M4 7l8 4 8-4M12 11v10"] },
-                { key: "receive" as const, label: "รับสินค้า", bg: "#EAF1FB", color: "#2563C9", d: ["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", "M3.3 7 12 12l8.7-5M12 22V12"] },
+                { key: "history" as const, label: "ประวัติเก็บ", d: ["M12 8v4l3 2", "M3.05 11a9 9 0 1 1 .5 4", "M3 3v5h5"] },
+                { key: "repair" as const, label: "แจ้งซ่อม", d: ["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"] },
+                { key: "stock" as const, label: "นับสต๊อก", d: ["M20 7 12 3 4 7v10l8 4 8-4z", "M4 7l8 4 8-4M12 11v10"] },
+                { key: "receive" as const, label: "รับสินค้า", d: ["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", "M3.3 7 12 12l8.7-5M12 22V12"] },
               ]).map((a) => (
                 <button key={a.key} type="button" onClick={() => setPanel(a.key)} className="co-tap co-lift"
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minHeight: 74, background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "12px 4px", cursor: "pointer" }}>
-                  <span style={{ width: 38, height: 38, borderRadius: 11, background: a.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={a.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 6px", cursor: "pointer" }}>
+                  <span style={{ width: 34, height: 34, borderRadius: 10, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       {a.d.map((dd, i) => (<path key={i} d={dd} />))}
                     </svg>
                   </span>
@@ -1855,17 +1871,17 @@ function HomeScreen(props: {
               ))}
             </div>
 
-            {/* setup CTA · ตั้งค่าตู้ใหม่ (ครั้งแรก) (ดีไซน์ใหม่ · แทนปุ่มทัวร์เดิม) */}
-            <button type="button" onClick={onSetup} className="co-tap co-lift"
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", border: "1px solid #E3E6EA", cursor: "pointer", background: "#fff", borderRadius: 14, padding: "13px 15px", marginBottom: 18 }}>
-              <span style={{ width: 40, height: 40, borderRadius: 11, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 40px" }}>
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="1.9"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
+            {/* ปุ่มเริ่มทัวร์เติมตู้ 7-11 (gradient) — mockup HIST-04 · เปิด panel tour ที่มีอยู่ */}
+            <button type="button" onClick={() => setPanel("tour")} className="co-tap co-lift"
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", border: "none", cursor: "pointer", background: "linear-gradient(100deg,#4F46E5,#6D5DF0)", color: "#fff", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+              <span style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M3 9h18M4 9v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9 6 4h12l2 5" /></svg>
               </span>
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>ตั้งค่าตู้ใหม่ (ครั้งแรก)</span>
-                <span style={{ display: "block", fontSize: 11.5, color: "#9AA1AB" }}>ตั้งชื่อตู้ · เพิ่มสินค้า · ราคา · มิเตอร์</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>เริ่มทัวร์เติมตู้ 7-11</span>
+                <span style={{ display: "block", fontSize: 11.5, opacity: 0.85 }}>เบิกตุ๊กตา → ไล่เติม 8 ตู้ → คืนของเหลือ</span>
               </span>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C2C7CF" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
             </button>
 
           {/* drafts */}
@@ -1896,6 +1912,19 @@ function HomeScreen(props: {
               </div>
             </div>
           )}
+
+          {/* setup CTA · ตั้งค่าตู้ใหม่ (ครั้งแรก) — mockup HIST-05 (ขาว border) */}
+          <button type="button" onClick={onSetup} className="co-tap co-lift"
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, textAlign: "left", border: "1px solid #E3E6EA", cursor: "pointer", background: "#fff", borderRadius: 13, padding: "12px 14px", marginBottom: 10 }}>
+            <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="1.9"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /><circle cx="12" cy="12" r="4" /></svg>
+            </span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: "#1A1D21" }}>ตั้งค่าตู้ใหม่ (ครั้งแรก)</span>
+              <span style={{ display: "block", fontSize: 11, color: "#9AA1AB" }}>บันทึกยอดตั้งต้น — ตุ๊กตา · เงิน · มิเตอร์</span>
+            </span>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C2C7CF" strokeWidth="2.4"><path d="M9 18l6-6-6-6" /></svg>
+          </button>
 
           {/* route list — assignedOnly = "ตู้ของฉันวันนี้ (N)" · ไม่งั้น "ตู้ในเส้นทางวันนี้" */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -1987,7 +2016,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -2018,6 +2047,15 @@ const PANEL_TITLE: Record<Exclude<Panel, null>, string> = {
 
 function PanelScreen(props: {
   panel: Exclude<Panel, null>; onBack: () => void; tourStep: number; setTourStep: (n: number) => void;
+  // ทัวร์ 7-11 · เบิก/เติม/คืน (state ยกจาก StaffApp) + ตู้ในเส้นทาง + เปิดจอเก็บเงินรายตู้ (money engine เดิม)
+  tourDraw: Record<string, number>;
+  setTourDraw: (updater: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => void;
+  tourDeposited: boolean;
+  setTourDeposited: (v: boolean) => void;
+  tourMachines: AppMachine[];
+  onOpenTourMachine: (m: AppMachine) => void;
+  todayYmd: string;
+  onExitTour: () => void;
   skus: CollectSku[]; history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string;
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
@@ -2050,7 +2088,23 @@ function PanelScreen(props: {
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
         {panel === "config" && <ConfigPanel />}
-        {panel === "tour" && <TourPanel tourStep={props.tourStep} setTourStep={props.setTourStep} />}
+        {panel === "tour" && (
+          <TourPanel
+            tourStep={props.tourStep}
+            setTourStep={props.setTourStep}
+            tourDraw={props.tourDraw}
+            setTourDraw={props.setTourDraw}
+            tourDeposited={props.tourDeposited}
+            setTourDeposited={props.setTourDeposited}
+            machines={props.tourMachines}
+            onOpenMachine={props.onOpenTourMachine}
+            stockProducts={props.stockProducts}
+            onHandByProduct={props.onHandByProduct}
+            history={props.history}
+            todayYmd={props.todayYmd}
+            onExit={props.onExitTour}
+          />
+        )}
       </div>
     </div>
   );
@@ -3634,7 +3688,6 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   }
   // ── ดีไซน์ใหม่ (CEO 2026-07-15) · เปลี่ยนตุ๊กตา = นับรายตัว/SKU + คืนเข้าสโตร์รายตัว + เติมได้หลาย SKU ──
   // ทุกอย่างเป็น "ร่างบนจอ" จนกว่าจะกดยืนยัน → กด "เลิก" ถอนได้ (ยังไม่แตะ server) · money-safe.
-  const inMachineTotal = dolls.reduce((s, d) => s + d.qty, 0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -3686,8 +3739,6 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   //    → ตุ๊กตาออก = รอบก่อน − ที่นับได้ทั้งหมด (ตัวที่คืนไม่ใช่ลูกค้าคีบ) ตรงกับที่ server กระทบยอด.
   const swapRemainTotal = dolls.filter((d) => !returnedSku[d.productId]).reduce((a, d) => a + qtyOf(d.productId), 0);
   const swapReturnedTotal = dolls.filter((d) => returnedSku[d.productId]).reduce((a, d) => a + qtyOf(d.productId), 0);
-  const swapCountedTotal = dolls.reduce((a, d) => a + qtyOf(d.productId), 0);
-  const swapDispensed = Math.max(0, inMachineTotal - swapCountedTotal);
   const refillEntries = Object.entries(refills).filter(([, q]) => q > 0);
   const swapRefillTotal = refillEntries.reduce((a, [, q]) => a + q, 0);
   const swapNow = swapRemainTotal + swapRefillTotal;
@@ -3750,14 +3801,17 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
           </div>
         ) : (
           <>
-            {/* ดีไซน์ใหม่ · แถบอธิบาย "เปลี่ยนตุ๊กตาอย่างเดียว ไม่เก็บเงิน" */}
-            <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#EEF0FE", borderRadius: 11, padding: "10px 12px", marginBottom: 14 }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2" style={{ flex: "0 0 17px" }}><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
-              <span style={{ fontSize: 11.5, color: "#4F46E5", lineHeight: 1.4 }}>รีบ/ไม่ว่าง? เปลี่ยนตุ๊กตาอย่างเดียว — ระบุที่เหลือ เติม แนบรูป จบ</span>
+            {/* ── การ์ดหัว · code + สาขา + คำอธิบาย (mockup HIST-19) ── */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#EEF0FE", border: "1px solid #DDD8F7", borderRadius: 12, padding: "9px 12px", marginBottom: 14 }}>
+              <span className="num" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, background: "#fff", color: "#4F46E5", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{machine.code}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{machine.nickname?.trim() || machine.branch}</div>
+                <div style={{ fontSize: 10.5, color: "#4F46E5" }}>เปลี่ยน/เติมตุ๊กตาอย่างเดียว · ไม่เปิดมิเตอร์ · ไม่เก็บเงิน</div>
+              </div>
             </div>
 
-            {/* ── นับตุ๊กตาในตู้ (รายตัว/SKU) + คืนเข้าสโตร์รายตัว ── */}
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>นับตุ๊กตาในตู้</div>
+            {/* ── 1 · สินค้าในตู้ปัจจุบัน · นับที่เหลือ (mockup HIST-20) ── */}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>1 · สินค้าในตู้ปัจจุบัน · นับที่เหลือ</div>
             {dolls.length > 0 ? (
               <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
                 {dolls.map((d) => {
@@ -3810,9 +3864,10 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
               <div style={{ background: "#F6F7FA", borderRadius: 11, padding: "13px 15px", fontSize: 12, color: "#9AA1AB", marginBottom: 16 }}>ตู้นี้ยังไม่มีตุ๊กตาในระบบ — เลือก SKU จากคลังมาเติมได้เลย</div>
             )}
 
-            {/* ── เติมตุ๊กตา (หลาย SKU · เลือกจากคลัง) ── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>เติมตุ๊กตา</span>
+            {/* ── 2 · เติมสินค้า (เลือกจากคลังสาขา) (mockup HIST-21) ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 9px" }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", flex: 1 }}>2 · เติมสินค้า (เลือกจากคลังสาขา)</span>
               <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#15803D", background: "#E7F4EC", padding: "3px 9px", borderRadius: 20 }}>+{swapRefillTotal} ตัว</span>
             </div>
             {refillEntries.length > 0 && (
@@ -3885,8 +3940,25 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
               </div>
             )}
 
-            {/* ── รูปยืนยัน (ก่อน/หลังเติม) · ไม่บังคับ ── */}
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", margin: "10px 0 8px" }}>รูปยืนยัน (ก่อน/หลังเติม) <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ไม่บังคับ</span></div>
+            {/* ── สรุปเติม/คืน/หลังเติม · 3 กล่องแนวนอน (mockup HIST-23) ── */}
+            <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
+              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 11, padding: 9, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#6B7280" }}>เติมรวม</div>
+                <div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#4F46E5" }}>+{swapRefillTotal}</div>
+              </div>
+              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 11, padding: 9, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#6B7280" }}>คืนสโตว์</div>
+                <div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#B45309" }}>{swapReturnedTotal}</div>
+              </div>
+              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 11, padding: 9, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div>
+                <div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{swapNow}</div>
+              </div>
+            </div>
+
+            {/* ── 3 · แนบรูปก่อนเติม / หลังเติม (mockup HIST-24) ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 12px" }} />
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>3 · แนบรูปก่อนเติม / หลังเติม <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ไม่บังคับ</span></div>
             <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
               {usingDemo ? (
                 <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 11, border: "1.5px dashed #C9CFD8", background: "#FAFBFC", fontSize: 12, fontWeight: 700, color: "#9AA1AB" }}>ตัวอย่าง · ถ่ายรูปไม่ได้</div>
@@ -3904,23 +3976,13 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
               )}
             </div>
 
-            {/* ── สรุปรอบเปลี่ยนตุ๊กตา (ประเมินจากที่นับ · รอบเก็บเงินจริงจะกระทบยอดให้เอง) ── */}
-            <div style={{ background: "#EEF6FF", border: "1px solid #CFE2F5", borderRadius: 12, padding: "13px 15px" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#1D6FB8", marginBottom: 9 }}>สรุปรอบเปลี่ยนตุ๊กตา</div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกไป (รอบก่อน − เหลือ)</span><span className="num" style={{ fontWeight: 700, color: "#C0392B" }}>{swapDispensed} ตัว</span></div>
-              {swapReturnedTotal > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>คืนเข้าสโตร์</span><span className="num" style={{ fontWeight: 700, color: "#15803D" }}>↩ {swapReturnedTotal} ตัว</span></div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>เติมเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: "#15803D" }}>+{swapRefillTotal} ตัว</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>ตอนนี้ในตู้</span><span className="num" style={{ fontWeight: 700 }}>{swapNow} ตัว</span></div>
-            </div>
-
             {error && <div style={{ marginTop: 12, fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
 
+            {/* บันทึก (mockup HIST-25) — disabled จนกว่าจะคืน/เติมอย่างน้อย 1 (money-safe) */}
             <button type="button" disabled={!canSubmit} onClick={submit} className={pending ? "" : "co-tap"}
               style={{ marginTop: 16, width: "100%", padding: 15, borderRadius: 13, border: "none", background: !canSubmit ? "#F1F2F5" : "#15803D", color: !canSubmit ? "#9AA1AB" : "#fff", fontSize: 14.5, fontWeight: 700, cursor: !canSubmit ? "default" : "pointer" }}>
               {pending ? "กำลังบันทึก…" : canSubmit
-                ? `ยืนยันเปลี่ยนตุ๊กตา${swapReturnedTotal > 0 ? ` · คืน ${swapReturnedTotal}` : ""}${swapRefillTotal > 0 ? ` · เติม ${swapRefillTotal}` : ""}`
+                ? "บันทึกการเปลี่ยน/เติม · กลับหน้าหลัก"
                 : "กด “คืนเข้าสโตร์” หรือเลือก SKU มาเติม อย่างน้อย 1 อย่าง"}
             </button>
           </>
@@ -4320,36 +4382,85 @@ function ConfigPanel() {
   );
 }
 
-/* ─────────────────────────── TOUR (3 steps เบิก → เติม → คืน) ─────────────────────────── */
-const TOUR_PRODUCTS = [
-  { key: "kitty", name: "ซานริโอ้ คิตตี้", def: 90 },
-  { key: "mochi", name: "โมจิหมีขาว", def: 80 },
-  { key: "brown", name: "หมีน้ำตาล S", def: 80 },
-  { key: "kuma", name: "คุมะ ไซส์ M", def: 50 },
-];
-const TOUR_MACHINES = [
-  { code: "7-LP", branch: "ลาดพร้าว", need: 36 }, { code: "7-RS", branch: "รังสิต", need: 40 },
-  { code: "7-BK", branch: "บางแค", need: 28 }, { code: "7-SN", branch: "ศรีนครินทร์", need: 34 },
-  { code: "7-ON", branch: "อ่อนนุช", need: 30 }, { code: "7-NB", branch: "นนทบุรี", need: 32 },
-  { code: "7-BN", branch: "บางนา", need: 30 }, { code: "7-RK", branch: "รามคำแหง", need: 30 },
-];
+/* ─────────────────────────── TOUR (3 ขั้น เบิก → เติม → คืน · ตู้ 7-11) ───────────────────────────
+ * ⚠️ MONEY-SAFE ARCHITECTURE (RULE I) — อ่านก่อนแก้:
+ *  • "กระเป๋า" (bag) = ตัวเลข planning ในหน่วยความจำเท่านั้น · ไม่ตัดสต๊อกที่ขั้นเบิก.
+ *    สต๊อกตุ๊กตาถูกตัด "ครั้งเดียว" ตอนเติมจริงผ่าน submitBranchEvent → LOAD_TO_MACHINE (money-path เดิม
+ *    ที่ห้ามแตะ). ถ้าขั้นเบิกตัดสต๊อกอีกที = ตัดซ้ำสองเด้ง → คลังเพี้ยน (data-consistency พัง).
+ *  • จอเก็บเงิน+เติม "รายตู้" ในทัวร์ = route เข้า FlowScreen จริง (onOpenMachine → openMachine) —
+ *    ใช้เครื่องคิดเงิน/กระทบยอด/idempotency ชุดเดียวกับหน้าหลัก 100% (ไม่ rebuild money flow).
+ *  • ตัวเลขทุกช่อง (เก็บได้ · ตุ๊กตาออก · เติม · ตู้ที่เก็บแล้ว) อ่านจาก history ของ server (รอบที่ปิดจริง)
+ *    → เลขบนจอ = เลขที่ server คิด เสมอ. bagLeft = เบิก − เติมจริง(server). คืนคลัง = bagLeft.
+ *  • "ฝากเงินรวบยอด" = ยืนยัน/ล็อกจอ (เงินถูกบันทึกรายตู้ไปแล้วตอนปิดรอบ) → กดซ้ำไม่ทำให้เงินเพิ่ม
+ *    (idempotent โดยธรรมชาติ · ไม่มี write ใหม่). ledger ฝากเงินถาวรระดับทัวร์ = ต้อง migration (followup). */
 
-function TourPanel({ tourStep, setTourStep }: { tourStep: number; setTourStep: (n: number) => void }) {
-  const [draw, setDraw] = useState<Record<string, number>>(() =>
-    Object.fromEntries(TOUR_PRODUCTS.map((p) => [p.key, p.def])),
-  );
-  const [filled, setFilled] = useState<Record<string, boolean>>({});
+function TourPanel({
+  tourStep, setTourStep, tourDraw, setTourDraw, tourDeposited, setTourDeposited,
+  machines, onOpenMachine, stockProducts, onHandByProduct, history, todayYmd, onExit,
+}: {
+  tourStep: number; setTourStep: (n: number) => void;
+  tourDraw: Record<string, number>;
+  setTourDraw: (u: Record<string, number> | ((p: Record<string, number>) => Record<string, number>)) => void;
+  tourDeposited: boolean; setTourDeposited: (v: boolean) => void;
+  machines: AppMachine[];
+  onOpenMachine: (m: AppMachine) => void;
+  stockProducts: BranchStockProduct[];
+  onHandByProduct: Record<string, number>;
+  history: StaffHistoryRow[];
+  todayYmd: string;
+  onExit: () => void;
+}) {
+  const baht = (n: number) => "฿" + Math.round(n).toLocaleString("en-US");
 
-  const totalDrawn = TOUR_PRODUCTS.reduce((a, p) => a + (draw[p.key] || 0), 0);
-  const usedDolls = TOUR_MACHINES.filter((m) => filled[m.code]).reduce((a, m) => a + m.need, 0);
-  const filledCount = TOUR_MACHINES.filter((m) => filled[m.code]).length;
+  // ตู้ในเส้นทาง = ตู้ที่ตั้ง baseline แล้ว (ตู้รอตั้งค่ายังเก็บเงินไม่ได้ · ไม่นับในทัวร์)
+  const routeMachines = machines.filter((m) => !m.awaitingSetup);
+
+  // รอบเก็บ "วันนี้" ของตู้ (จาก server · money-correct) — money-review P1 2026-07-21:
+  //   รวม "ทุก" รอบ COLLECTION วันนี้ต่อตู้ (ไม่ใช่ .find รอบแรก) → ยอดฝากรวมไม่ขาด ถ้าตู้เก็บ >1 รอบ/วัน
+  //   สูตรเดียวกับ HistoryPanel sumCash (authoritative day view)
+  const rowsFor = (code: string) =>
+    history.filter(
+      (h) => h.code === code && h.date === todayYmd && !h.isBaseline && (h.eventType === "COLLECTION" || h.eventType === undefined),
+    );
+
+  const stat = routeMachines.map((m) => {
+    const rows = rowsFor(m.code);
+    return {
+      m,
+      filled: rows.length > 0,
+      cash: rows.reduce((a, r) => a + (r.cashBaht ?? 0), 0),
+      dollsOut: rows.reduce((a, r) => a + (r.dollsOut ?? 0), 0),
+      refill: rows.reduce((a, r) => a + (r.refillQty ?? 0), 0),
+      refillSkus: rows.flatMap((r) => r.refillSkus ?? []),
+    };
+  });
+
+  const drawnProducts = stockProducts.filter((p) => (tourDraw[p.id] || 0) > 0);
+  const totalDrawn = stockProducts.reduce((a, p) => a + (tourDraw[p.id] || 0), 0);
+  const usedDolls = stat.reduce((a, s) => a + (s.filled ? s.refill : 0), 0);
+  const filledCount = stat.filter((s) => s.filled).length;
+  const cashTotal = stat.reduce((a, s) => a + s.cash, 0);
   const bagLeft = Math.max(0, totalDrawn - usedDolls);
-  const fillPct = Math.round((filledCount / TOUR_MACHINES.length) * 100);
+  const fillPct = routeMachines.length ? Math.round((filledCount / routeMachines.length) * 100) : 0;
 
+  // เติมจริงราย SKU (จับคู่ตามชื่อ SKU ที่ server บันทึกในรอบ) → กระทบยอด เบิก = เติม + คืน
+  const usedByName: Record<string, number> = {};
+  for (const s of stat) {
+    if (!s.filled) continue;
+    for (const rs of s.refillSkus) usedByName[rs.name] = (usedByName[rs.name] || 0) + rs.qty;
+  }
+
+  const dollSvg = (sz: number) => (
+    <svg width={sz} height={sz} viewBox="0 0 24 24" fill="#B98BA8"><circle cx="6.5" cy="6" r="2.4" /><circle cx="17.5" cy="6" r="2.4" /><circle cx="12" cy="13.5" r="6.5" /></svg>
+  );
   const pill = (n: number) => {
     const active = tourStep === n, done = tourStep > n;
     return { flex: 1, textAlign: "center" as const, fontSize: 11, fontWeight: 700, padding: "7px 4px", borderRadius: 8, background: active ? "#4F46E5" : done ? "#E7F4EC" : "#F1F2F5", color: active ? "#fff" : done ? "#15803D" : "#9AA1AB" };
   };
+  const stepQty = (id: string, delta: number, cap: number) =>
+    setTourDraw((prev) => ({ ...prev, [id]: Math.max(0, Math.min(cap, (prev[id] || 0) + delta)) }));
+
+  const finish = () => { setTourStep(0); setTourDraw({}); setTourDeposited(false); onExit(); };
 
   return (
     <div>
@@ -4359,63 +4470,92 @@ function TourPanel({ tourStep, setTourStep }: { tourStep: number; setTourStep: (
         <span style={pill(2)}>3 · คืน</span>
       </div>
 
+      {/* ─── ขั้น 1 · เบิก (SKU จากคลังกลางจริง · ±1 · cap ตามของบนชั้น) ─── */}
       {tourStep === 0 && (
         <div>
-          <div style={{ background: "#EEF0FE", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: "#4F46E5", lineHeight: 1.5 }}>เบิกตุ๊กตาจากคลังกลางก่อนออกทัวร์ — ปรับจำนวนให้พอสำหรับ 8 ตู้ 7-11</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {TOUR_PRODUCTS.map((p) => (
-              <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "11px 13px" }}>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{p.name}</span>
-                <button type="button" onClick={() => setDraw((d) => ({ ...d, [p.key]: Math.max(0, (d[p.key] || 0) - 10) }))} style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: "pointer" }}>−</button>
-                <span className="num" style={{ width: 42, textAlign: "center", fontSize: 15, fontWeight: 700 }}>{draw[p.key]}</span>
-                <button type="button" onClick={() => setDraw((d) => ({ ...d, [p.key]: (d[p.key] || 0) + 10 }))} style={{ width: 30, height: 30, borderRadius: 9, background: "#EEF0FE", border: "none", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: "pointer" }}>+</button>
-              </div>
-            ))}
-          </div>
+          <div style={{ background: "#EEF0FE", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: "#4F46E5", lineHeight: 1.5 }}>เลือก SKU จากคลังกลางเพื่อเบิก — ปรับจำนวนให้พอสำหรับ {routeMachines.length || 8} ตู้ 7-11</div>
+          {stockProducts.length === 0 ? (
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 12, padding: "22px 14px", textAlign: "center", fontSize: 12.5, color: "#9AA1AB" }}>ยังไม่มีสินค้าในคลังสาขา — รับสินค้าเข้าคลังก่อนเริ่มทัวร์</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {stockProducts.map((p) => {
+                const qty = tourDraw[p.id] || 0;
+                const avail = onHandByProduct[p.id] ?? p.warehouse; // NET บนชั้นจริง (server) = cap กันเบิกเกิน
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 11, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "10px 12px" }}>
+                    <span style={{ width: 44, height: 44, flex: "0 0 44px", borderRadius: 11, background: "#F6EEF3", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                      {p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : dollSvg(24)}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                      <div className="num" style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 2 }}>คลัง {avail} · ฿{(p.defaultPriceCoins * 10).toLocaleString("en-US")}/เล่น</div>
+                    </div>
+                    <button type="button" onClick={() => stepQty(p.id, -1, avail)} disabled={qty <= 0} style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", fontSize: 18, fontWeight: 700, color: "#454B54", cursor: qty <= 0 ? "default" : "pointer", opacity: qty <= 0 ? 0.4 : 1 }}>−</button>
+                    <span className="num" style={{ width: 42, textAlign: "center", fontSize: 15, fontWeight: 700 }}>{qty}</span>
+                    <button type="button" onClick={() => stepQty(p.id, 1, avail)} disabled={qty >= avail} style={{ width: 30, height: 30, borderRadius: 9, background: "#EEF0FE", border: "none", fontSize: 18, fontWeight: 700, color: "#4F46E5", cursor: qty >= avail ? "default" : "pointer", opacity: qty >= avail ? 0.4 : 1 }}>+</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1A1D21", color: "#fff", borderRadius: 12, padding: "13px 16px", marginTop: 16 }}>
             <span style={{ fontSize: 13, opacity: 0.8 }}>รวมเบิกจากคลังกลาง</span>
             <span className="num" style={{ fontSize: 20, fontWeight: 700 }}>{totalDrawn} ตัว</span>
           </div>
-          <button type="button" onClick={() => setTourStep(1)} style={tourBtn("#4F46E5")}>ยืนยันเบิก · เริ่มไล่เติม →</button>
+          <button type="button" onClick={() => setTourStep(1)} disabled={totalDrawn <= 0}
+            style={{ ...tourBtn("#4F46E5"), opacity: totalDrawn <= 0 ? 0.45 : 1, cursor: totalDrawn <= 0 ? "default" : "pointer" }}>
+            {totalDrawn <= 0 ? "เลือกตุ๊กตาที่จะเบิกก่อน" : "ยืนยันเบิก · เริ่มไล่เติม →"}
+          </button>
         </div>
       )}
 
+      {/* ─── ขั้น 2 · เติม (ลิสต์ตู้จริง · แตะ = เข้าจอเก็บเงิน FlowScreen จริง) ─── */}
       {tourStep === 1 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
             <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#9AA1AB" }}>ตุ๊กตาในกระเป๋า (เหลือ)</div><div className="num" style={{ fontSize: 20, fontWeight: 700, color: "#4F46E5" }}>{bagLeft} ตัว</div></div>
-            <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "#9AA1AB" }}>เติมแล้ว</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{filledCount}/{TOUR_MACHINES.length} ตู้</div></div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#9AA1AB" }}>เก็บได้แล้ว</div><div className="num" style={{ fontSize: 15, fontWeight: 700, color: "#15803D" }}>{baht(cashTotal)}</div></div>
+            <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "#9AA1AB" }}>เก็บแล้ว</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{filledCount}/{routeMachines.length} ตู้</div></div>
           </div>
           <div style={{ height: 7, background: "#EDEFF2", borderRadius: 6, overflow: "hidden", marginBottom: 16 }}><span style={{ display: "block", height: "100%", width: `${fillPct}%`, background: "#4F46E5", borderRadius: 6, transition: "width .2s" }} /></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {TOUR_MACHINES.map((m) => {
-              const done = !!filled[m.code];
-              return (
-                <button key={m.code} type="button" onClick={() => setFilled((s) => ({ ...s, [m.code]: !s[m.code] }))}
-                  style={{ display: "flex", alignItems: "center", gap: 11, background: done ? "#F2FBF5" : "#fff", border: `1px solid ${done ? "#BFE6CB" : "#E8EAED"}`, borderRadius: 12, padding: "11px 13px", cursor: "pointer", textAlign: "left" }}>
-                  <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, background: "#F1F2F7", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>7-11 {m.branch}</div><div style={{ fontSize: 11, color: "#9AA1AB" }}>เติม {m.need} ตัว</div></div>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: done ? "#E7F4EC" : "#F1F2F7", color: done ? "#15803D" : "#9AA1AB", whiteSpace: "nowrap" }}>{done ? <>เติมแล้ว <Check size={13} strokeWidth={2.8} /></> : "แตะเพื่อเติม"}</span>
+          {routeMachines.length === 0 ? (
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 12, padding: "22px 14px", textAlign: "center", fontSize: 12.5, color: "#9AA1AB" }}>ยังไม่มีตู้ในเส้นทางวันนี้</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {stat.map((s) => (
+                <button key={s.m.id} type="button" onClick={() => onOpenMachine(s.m)}
+                  style={{ display: "flex", alignItems: "center", gap: 11, background: s.filled ? "#F2FBF5" : "#fff", border: `1px solid ${s.filled ? "#BFE6CB" : "#E8EAED"}`, borderRadius: 12, padding: "11px 13px", cursor: "pointer", textAlign: "left" }}>
+                  <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, background: "#F1F2F7", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.m.code}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.m.nickname?.trim() || `7-11 ${s.m.branch}`}</div>
+                    <div style={{ fontSize: 11, color: "#9AA1AB" }}>{s.filled ? <>เติม {s.refill} · <span className="num">{baht(s.cash)}</span></> : "ยังไม่เก็บ · แตะเพื่อเริ่ม"}</div>
+                  </div>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: s.filled ? "#E7F4EC" : "#EEF0FE", color: s.filled ? "#15803D" : "#4F46E5", whiteSpace: "nowrap" }}>{s.filled ? <>เก็บแล้ว <Check size={13} strokeWidth={2.8} /></> : "แตะเพื่อเก็บ"}</span>
                 </button>
-              );
-            })}
-          </div>
-          <button type="button" onClick={() => setTourStep(2)} style={tourBtn("#15803D")}>ไปคืนของเหลือ →</button>
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={() => setTourStep(2)} style={tourBtn("#15803D")}>ไปคืนของ · สรุป &amp; ฝากเงิน →</button>
         </div>
       )}
 
+      {/* ─── ขั้น 3 · คืน (กระทบยอดตุ๊กตา + สรุปเงินรายตู้ + ฝากเงินรวบยอด) ─── */}
       {tourStep === 2 && (
         <div>
-          <div style={{ background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: "#B45309", lineHeight: 1.5 }}>คืนตุ๊กตาที่เหลือกลับคลังกลาง — ระบบกระทบยอด เบิก = เติม + คืน อัตโนมัติ</div>
+          <div style={{ background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: "#B45309", lineHeight: 1.5 }}>คืนตุ๊กตาที่เหลือกลับคลังกลาง + สรุปเงินที่เก็บได้ทุกตู้ แล้วฝากเงินเข้าระบบ</div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "2px 2px 7px" }}>กระทบยอดตุ๊กตา (เบิก = เติม + คืน)</div>
           <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.7fr", padding: "10px 14px", fontSize: 10.5, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
               <span>สินค้า</span><span style={{ textAlign: "right" }}>เบิก</span><span style={{ textAlign: "right" }}>เติม</span><span style={{ textAlign: "right" }}>คืน</span>
             </div>
-            {TOUR_PRODUCTS.map((p) => {
-              const drawn = draw[p.key] || 0;
-              const used = totalDrawn > 0 ? Math.round((usedDolls * drawn) / totalDrawn) : 0;
+            {drawnProducts.length === 0 ? (
+              <div style={{ padding: "16px 14px", fontSize: 12, color: "#9AA1AB", textAlign: "center" }}>ยังไม่ได้เบิกตุ๊กตาในทัวร์นี้</div>
+            ) : drawnProducts.map((p) => {
+              const drawn = tourDraw[p.id] || 0;
+              const used = Math.min(drawn, usedByName[p.name] || 0);
               return (
-                <div key={p.key} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.7fr", padding: "11px 14px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 12.5 }}>
+                <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.7fr", padding: "11px 14px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 12.5 }}>
                   <span style={{ fontWeight: 600 }}>{p.name}</span>
                   <span className="num" style={{ textAlign: "right" }}>{drawn}</span>
                   <span className="num" style={{ textAlign: "right", color: "#15803D" }}>{used}</span>
@@ -4424,12 +4564,44 @@ function TourPanel({ tourStep, setTourStep }: { tourStep: number; setTourStep: (
               );
             })}
           </div>
-          <div style={{ display: "flex", gap: 9, marginBottom: 6 }}>
+          <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
             <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 11, padding: 11, textAlign: "center" }}><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เบิกไป</div><div className="num" style={{ fontSize: 16, fontWeight: 700 }}>{totalDrawn}</div></div>
             <div style={{ flex: 1, background: "#F2FBF5", borderRadius: 11, padding: 11, textAlign: "center" }}><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติมไป</div><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#15803D" }}>{usedDolls}</div></div>
             <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 11, padding: 11, textAlign: "center" }}><div style={{ fontSize: 10.5, color: "#9AA1AB" }}>คืนคลัง</div><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#B45309" }}>{bagLeft}</div></div>
           </div>
-          <button type="button" onClick={() => { setTourStep(0); setFilled({}); }} style={tourBtn("#4F46E5")}>ยืนยันคืน · จบทัวร์</button>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "2px 2px 7px" }}>สรุปเงินที่เก็บได้ · รายตู้</div>
+          <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
+            {filledCount === 0 ? (
+              <div style={{ padding: "16px 14px", fontSize: 12, color: "#9AA1AB", textAlign: "center" }}>ยังไม่มีตู้ที่เก็บเงินในทัวร์นี้</div>
+            ) : stat.filter((s) => s.filled).map((s) => (
+              <div key={s.m.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", borderBottom: "1px solid #F4F5F7" }}>
+                <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 10, background: "#F1F2F7", color: "#B45309", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.m.code}</span>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.m.nickname?.trim() || `7-11 ${s.m.branch}`}</div><div className="num" style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติม {s.refill} · ตุ๊กตาออก {s.dollsOut}</div></div>
+                <span className="num" style={{ fontSize: 14, fontWeight: 800, color: "#15803D" }}>{baht(s.cash)}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", background: "#1A1D21", color: "#fff" }}>
+              <span style={{ fontSize: 13 }}>รวมเงินที่ต้องฝาก</span>
+              <span className="num" style={{ fontSize: 20, fontWeight: 800 }}>{baht(cashTotal)}</span>
+            </div>
+          </div>
+
+          {!tourDeposited ? (
+            <button type="button" onClick={() => setTourDeposited(true)} disabled={filledCount === 0}
+              style={{ width: "100%", fontSize: 14.5, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 14, borderRadius: 13, cursor: filledCount === 0 ? "default" : "pointer", opacity: filledCount === 0 ? 0.45 : 1 }}>
+              {filledCount === 0 ? "ยังไม่มีเงินให้ฝาก" : `ฝากเงิน ${baht(cashTotal)} เข้าระบบ`}
+            </button>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#F2FBF5", border: "1px solid #BFE6CB", borderRadius: 12, padding: "13px 15px", marginBottom: 12 }}>
+                <Check size={18} strokeWidth={2.4} color="#15803D" style={{ flex: "0 0 18px" }} />
+                <span style={{ fontSize: 12.5, color: "#15803D", fontWeight: 700 }}>ฝากเงิน {baht(cashTotal)} เข้าระบบแล้ว · คืนตุ๊กตาครบ</span>
+              </div>
+              <button type="button" onClick={finish}
+                style={{ width: "100%", fontSize: 14.5, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 14, borderRadius: 13, cursor: "pointer" }}>จบทัวร์</button>
+            </>
+          )}
         </div>
       )}
     </div>

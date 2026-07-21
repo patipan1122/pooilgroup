@@ -487,6 +487,8 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/clawfleet/os/matrix", label: "รายงานเจาะสาขา", icon: Grid3x3, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"] },
+      { href: "/clawfleet/os/711", label: "รายงานตู้ 7-11", icon: ShoppingBasket, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"] },
       { href: "/clawfleet/os/reports", label: "รายงาน", icon: BarChart3, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "viewer"] },
       { href: "/clawfleet/os/staff", label: "พนักงาน", icon: UsersIcon, section: "หลังบ้าน",
