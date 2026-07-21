@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { resolveContractBody } from "@/lib/rentspace/contract-doc";
 
 /**
  * Public e-sign action — no admin session required.
@@ -21,7 +22,13 @@ export async function actSignContract(input: {
 
   const contract = await prisma.rentalContract.findUnique({
     where: { signToken: input.token },
-    select: { id: true, orgId: true, unitId: true, tenantSigned: true, status: true },
+    include: {
+      unit: true,
+      tenant: true,
+      project: true,
+      template: true,
+      recurringCharges: { where: { isActive: true }, orderBy: { sort: "asc" } },
+    },
   });
   if (!contract) throw new Error("ไม่พบสัญญา");
   if (contract.tenantSigned) {
@@ -33,6 +40,12 @@ export async function actSignContract(input: {
     throw new Error("สัญญานี้สิ้นสุดแล้ว ไม่สามารถเซ็นได้");
   }
 
+  // "ล็อกฉบับเซ็น" — snapshot ข้อความสัญญา ณ วันเซ็น ลง customTermsHtml (เฉพาะที่ยังไม่มี)
+  // เพื่อให้เอกสารบนจอ = สิ่งที่ผู้เช่าเซ็นเป๊ะ แม้แม่แบบมาตรฐาน/ค่าตั้งจะเปลี่ยนภายหลัง.
+  const frozenBody = contract.customTermsHtml?.trim()
+    ? null
+    : resolveContractBody(contract) || null;
+
   await prisma.rentalContract.update({
     where: { id: contract.id },
     data: {
@@ -41,6 +54,7 @@ export async function actSignContract(input: {
       signerName,
       signatureDataUrl: input.signatureDataUrl,
       status: "active",
+      ...(frozenBody ? { customTermsHtml: frozenBody } : {}),
     },
   });
   // เมื่อเซ็นแล้ว = สัญญามีผล → ห้องมีผู้เช่า

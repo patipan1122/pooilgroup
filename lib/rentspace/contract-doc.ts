@@ -592,7 +592,13 @@ export function docDataFromContract(
     bankLine: bankInfoLine(c.project) || null,
     promptpayId: c.project.promptpayId ?? null,
     paymentNote: c.project.paymentNote ?? null,
-    customBodyHtml: resolveContractBody({ ...c, madeOn }) || null,
+    // "ล็อกฉบับเซ็น": สัญญาที่เซ็นแล้วและไม่มีข้อความกำหนดเอง/แม่แบบ → ใช้ข้อสัญญาเดิม
+    // (fallback ในคอมโพเนนต์ = สิ่งที่ผู้เช่าเห็นตอนเซ็น) ไม่สลับเป็นแม่แบบมาตรฐานใหม่ย้อนหลัง.
+    // สัญญาใหม่ที่เซ็นหลังจากนี้จะถูก snapshot ข้อความลง customTermsHtml ตอนเซ็น (actSignContract) → ไม่เข้าเงื่อนไขนี้.
+    customBodyHtml:
+      c.tenantSigned && !c.customTermsHtml?.trim() && !c.template?.bodyHtml?.trim()
+        ? null
+        : resolveContractBody({ ...c, madeOn }) || null,
     attachments: opts?.attachments ?? [],
     signature: {
       signed: !!c.tenantSigned,
