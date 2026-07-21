@@ -368,6 +368,9 @@ const METER_CELLS = [
   key: CountedKey; photoKey: keyof Photos; label: string; pair: "coin" | "doll"; phase: Phase;
 }>;
 
+// หมวดตู้ (เสนอ config → เจ้าของอนุมัติ · ไม่เขียน sellPrice ตรง) — TODO[mockup-match]: ให้ CEO ยืนยันรายการจริง
+const CATEGORY_OPTIONS: string[] = ["ลิขสิทธิ์", "ทั่วไป (โนเนม)", "พรีเมียม", "มือสอง"];
+
 // Each slot holds the R2 url returned by PhotoCaptureButton ("" = not taken / skipped).
 type Photos = {
   before: string;
@@ -535,16 +538,16 @@ function reducer(s: WizardState, a: Action): WizardState {
         form: { ...a.snapshot.form },
         photos: { ...a.snapshot.photos },
         photosCaptured: markCaptured(a.snapshot.photos),
-        // [STEP] map WIP เก่า (1-5) → ขั้นจริงใหม่ {1,3,5} (2→1 · 4→3).
-        step: a.snapshot.step <= 2 ? 1 : a.snapshot.step <= 4 ? 3 : 5,
+        // [STEP] (CEO 2026-07-21) ยุบเหลือ 2 หน้า · WIP เก่ายังกรอกไม่ครบ → หน้า 1/2 (step 1) · ถึงกระทบยอดแล้ว → step 5.
+        step: a.snapshot.step >= 5 ? 5 : 1,
       };
     case "next":
-      // [STEP] (CEO 2026-07-13) รวม 5→3 สเต็ป · ขั้น "จริง" = 1(นับ+เติม) · 3(มิเตอร์+เงินสด) · 5(กระทบยอด).
-      // next กระโดด 1→3→5→6 (ขั้น 2/4 ถูกรวม render เข้ากับ 1/3 ไม่ใช่ current step แล้ว).
-      return { ...s, step: s.step >= 5 ? 6 : s.step >= 3 ? 5 : 3 };
+      // [STEP] (CEO 2026-07-21) ยุบเหลือ 2 หน้า ตาม mockup ระบบตู้คีบ · หน้า 1/2 = นับ+เติม+มิเตอร์+เงินสด (step 1) · หน้า 2/2 = กระทบยอด (step 5).
+      // next กระโดด 1→5→6 (ขั้นมิเตอร์เดิม step 3 ถูกรวมเข้า render ของ step 1 · money logic คงเดิม).
+      return { ...s, step: s.step >= 5 ? 6 : 5 };
     case "back":
-      // [STEP] back กระโดด 5→3→1→home (0).
-      return { ...s, step: s.step >= 5 ? 3 : s.step >= 3 ? 1 : 0 };
+      // [STEP] back กระโดด 5→1→home (0).
+      return { ...s, step: s.step >= 5 ? 1 : 0 };
     case "home":
       return { ...s, step: 0, machineId: null, resumed: false, meterDeferred: false, photoHub: false, sessionId: null };
     case "exitPhotoHub":
@@ -590,10 +593,11 @@ function reducer(s: WizardState, a: Action): WizardState {
     case "toggleDefer":
       return { ...s, meterDeferred: !s.meterDeferred };
     case "goStep":
-      // เฉพาะขั้นกรอกจริง {1,3,5} · ห้ามกระโดดข้ามไปหน้า "เสร็จ" (6) ที่ต้องผ่าน submit เท่านั้น
-      return a.step === 1 || a.step === 3 || a.step === 5 ? { ...s, step: a.step } : s;
+      // เฉพาะขั้นกรอกจริง {1,5} · ห้ามกระโดดข้ามไปหน้า "เสร็จ" (6) ที่ต้องผ่าน submit เท่านั้น
+      return a.step === 1 || a.step === 5 ? { ...s, step: a.step } : s;
     case "fillMeterNow":
-      return { ...s, step: 3, meterDeferred: false };
+      // มิเตอร์อยู่หน้า 1/2 แล้ว (ยุบ 2 หน้า) → เด้งกลับหน้า 1 ให้กรอก
+      return { ...s, step: 1, meterDeferred: false };
     case "sendConfig":
       return { ...s, configSent: true };
     // ดีไซน์ใหม่ · สะสมจำนวนที่คืนเข้าชั้นระหว่างรอบ (หัก "ออก" ตอนพรีวิว · server หัก interim ให้เองตอนกระทบยอด)
@@ -1430,9 +1434,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const secondaryAction: (() => void) | null = null;
 
   if (state.step === 1) {
-    primaryLabel = "ถัดไป · มิเตอร์ + เงินสด";
-  } else if (state.step === 3) {
-    primaryLabel = "ถัดไป · กระทบยอด";
+    // [STEP] หน้า 1/2 กรอกครบทุกอย่าง (นับ+เติม+มิเตอร์+เงินสด) → ไปหน้ากระทบยอด (mockup "ตรวจสอบยอด →")
+    primaryLabel = "ตรวจสอบยอด →";
   } else if (state.step === 5) {
     if (needPhotoReason && !photoSkipReason) {
       // CEO 2026-07-18 · เลขครบแล้ว ขาดแค่รูป (นโยบายบังคับ) → กดปิดรอบได้ แต่ต้องใส่เหตุผลก่อน
@@ -1464,11 +1467,10 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const savingDraftStep = state.step === 5 && !meterReady;
   const primaryDisabled = pending || autoSubmitPending || (savingDraftStep && uploadPending);
 
-  // [STEP] label ตามขั้นจริงใหม่ {1,3,5,6}
+  // [STEP] label ตาม 2 หน้า {1,5,6} — หน้า 1/2 กรอกครบ · หน้า 2/2 กระทบยอด
   const stepLabels: Record<number, string> = {
-    1: "นับ + เติมตุ๊กตา",
-    3: "มิเตอร์ + เงินสด",
-    5: "กระทบยอด",
+    1: "นับ · เติม · มิเตอร์ · เงินสด",
+    5: "ตรวจสอบยอด",
     6: "เสร็จสมบูรณ์",
   };
 
@@ -3758,8 +3760,8 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>เปลี่ยนตุ๊กตา · {machine.code}</div>
-          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ไม่เก็บมิเตอร์ · ไม่เก็บเงิน</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>เปลี่ยน/เติมตุ๊กตา</div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>ไม่เปิดมิเตอร์ · ไม่เก็บเงิน</div>
         </div>
       </div>
       {/* scroll body */}
@@ -4790,7 +4792,7 @@ function FlowScreen(props: {
   onSetRemainBySku: (map: Record<string, string>) => void;
 }) {
   const { step, form: f, dispensed, overCount, afterFill, photos, recon, machine } = props;
-  const stepIndicator = step <= 5 ? `ขั้นที่ ${step}/5` : "เสร็จ";
+  const stepIndicator = step === 5 ? "ขั้นที่ 2/2" : step === 6 ? "เสร็จ" : "ขั้นที่ 1/2";
   // TASK C · sheet ตั้งชื่อเล่นตู้ (เปิดจากปุ่ม ✎ ในหัว) — ปิดเมื่อ demo (ไม่มี backend)
   const [nicknameOpen, setNicknameOpen] = useState(false);
   // ── ดีไซน์ใหม่ · หน้ากระทบยอด: overlay ดูรูป + การ์ดที่กางแก้ (VISUAL — money math มาจาก recon/props ตามเดิม) ──
@@ -4880,6 +4882,32 @@ function FlowScreen(props: {
   else if (costPerDoll > 350) { retuneLabel = "ออกยากไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวสูง ลูกค้าคีบยาก เสี่ยงเสียลูกค้า"; }
   const wrongMachine = coinDelta < 0 || recon.dollDelta < 0 || Math.abs(recon.dollDelta - dispensed) > 20 || Math.abs(moneyDiff) > 300;
 
+  // ── มิเตอร์ 2 หมวด (ตุ๊กตา/เหรียญ) · หน้า 1/2 · hint บรรทัดใต้หมวด = "ตัวเลขแจ้งเตือนในหน้า" (CEO 2026-07-21) ──
+  const dollPairFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
+  const coinPairFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
+  const dollEqLabel = !dollPairFilled ? "บน=ล่าง" : props.meterGroupVals.dollMeterEqual ? "บน=ล่าง ✓" : "บน≠ล่าง";
+  const coinEqLabel = !coinPairFilled ? "บน=ล่าง" : props.meterGroupVals.coinMeterEqual ? "บน=ล่าง ✓" : "บน≠ล่าง";
+  const dollEqColor = !dollPairFilled ? "#9AA1AB" : props.meterGroupVals.dollMeterEqual ? "#15803D" : "#B45309";
+  const coinEqColor = !coinPairFilled ? "#9AA1AB" : props.meterGroupVals.coinMeterEqual ? "#15803D" : "#B45309";
+  // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
+  const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
+    const prev = key === "coinGear" || key === "coinDigi" ? f.coinPrev : f.dollPrev;
+    return (
+      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "8px 10px" }}>
+        <div style={{ fontSize: 10, color: "#9AA1AB", marginBottom: 4 }}>{label}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
+            placeholder={prev != null ? `รอบก่อน ${prev}` : "เลข"}
+            style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, padding: "5px 8px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
+          {!props.usingDemo && machine?.code ? (
+            <PhotoCaptureButton compact label="" value={photos[key]} onChange={(url) => props.onPhoto(key, url)} onCaptured={() => props.onCapture(key)}
+              orgId={props.orgId} machineCode={machine.code} eventScopeId={props.eventScopeId} phase={phase} />
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* header — กระชับ (back + ชื่อตู้ + ขั้น) ให้เนื้อหาขึ้นถึง ⅓ บน */}
@@ -4903,18 +4931,16 @@ function FlowScreen(props: {
             </div>
             <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
           </div>
-          {/* FIX-3 · "เลือกตู้อื่น" — กลับหน้ารายการตู้กลางคัน (คง session สาขา · ไม่ปิดรอบ). โชว์ระหว่างกรอก (1-5) */}
-          {step <= 5 ? (
-            <button type="button" onClick={props.onExitToList} className="co-tap"
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, flex: "0 0 auto", fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "6px 11px", borderRadius: 20, cursor: "pointer" }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M15 18l-6-6 6-6" /></svg>
-              เลือกตู้อื่น
+          {/* mockup: "บันทึกร่าง" (บันทึกค้าง → ไปเก็บตู้อื่น) + ป้าย "ขั้นที่ N/2" — ตรง header ตัวอย่างเป๊ะ */}
+          {step === 1 && !props.usingDemo && (
+            <button type="button" onClick={props.onSaveDraft} disabled={props.saveDraftBlocked} className={props.saveDraftBlocked ? "" : "co-tap"}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto", fontSize: 11.5, fontWeight: 700, color: "#B45309", background: "#FCF3DF", border: "none", padding: "6px 11px", borderRadius: 20, cursor: props.saveDraftBlocked ? "not-allowed" : "pointer", opacity: props.saveDraftBlocked ? 0.55 : 1 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>
+              บันทึกร่าง
             </button>
-          ) : (
-            <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20 }}>{stepIndicator}</span>
           )}
+          <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "4px 10px", borderRadius: 20, flex: "0 0 auto" }}>{stepIndicator}</span>
         </div>
-        {step <= 5 && <StepStrip step={step} onGo={props.onGoStep} />}
       </div>
 
       {/* body */}
@@ -4922,6 +4948,13 @@ function FlowScreen(props: {
         {/* ═══ ขั้น 1 · นับ + เติม (ดีไซน์ใหม่ · จบในหน้าเดียว ไม่มีด่านบังคับ) ═══ */}
         {step === 1 && (
           <div>
+            {props.resumed && (
+              // resume ร่างที่เก็บค้าง — form + photos คืนครบ · กรอกให้ครบเพื่อไปกระทบยอด
+              <div style={{ display: "flex", gap: 9, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "12px 13px", marginBottom: 12 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M20 6 9 17l-5-5" /></svg>
+                <span style={{ fontSize: 11.5, color: "#15803D", lineHeight: 1.5 }}>กลับมากรอกของตู้ที่<b>เก็บค้างไว้</b> — <b>รูปและตัวเลขที่กรอกไว้ยังอยู่ครบ</b> กรอกให้ครบเพื่อไปกระทบยอด</span>
+              </div>
+            )}
             {/* CEO 2026-07-19 · รอบก่อน — เก็บล่าสุด / เติมล่าสุด (วันไหน) · ช่วยพนักงานรู้ว่าตู้นี้เพิ่งทำอะไร */}
             {machine && !props.usingDemo && (machine.lastCollectedAt !== undefined || machine.lastRefillAt !== undefined) && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
@@ -4935,7 +4968,7 @@ function FlowScreen(props: {
                 </span>
               </div>
             )}
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>นับตุ๊กตาในตู้ (ก่อนเติม)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>1 · สินค้าในตู้ปัจจุบัน · นับที่เหลือ</div>
             {/* ── นับเหลือ "รายตัว/SKU" · รวม = f.left = ยอดที่ส่งระบบ (สัญญาเดินเงินเดิม) ── */}
             {perSkuMode ? (
               <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
@@ -4984,11 +5017,9 @@ function FlowScreen(props: {
               </div>
             )}
 
-            {/* ── เติมตุ๊กตา (ข้ามได้ · ไม่เติมก็กดถัดไปได้) ── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>เติมตุ๊กตา <span style={{ fontWeight: 600, color: "#B6BBC4" }}>(ไม่เติมก็ได้)</span></span>
-              <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#15803D", background: "#E7F4EC", padding: "3px 9px", borderRadius: 20 }}>+{props.refillTotal} ตัว</span>
-            </div>
+            {/* ── 2 · เติมสินค้า (เลือกจากที่เบิกมา) ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 9px" }}>2 · เติมสินค้า (เลือกจากที่เบิกมา) <span style={{ fontWeight: 600, color: "#B6BBC4" }}>· ไม่เติมก็ได้</span></div>
             {props.branchWarehouses.length > 1 && (
               <div style={{ marginBottom: 9 }}>
                 {/* WAVE-3b · R4 · เลือกห้องคลังที่หยิบของมาเติม — โผล่เฉพาะสาขาที่มี >1 ห้อง */}
@@ -5023,66 +5054,32 @@ function FlowScreen(props: {
               </div>
             )}
 
-            {/* ── รูปยืนยัน (ก่อน/หลังเติม) — 2 ปุ่ม slim เรียงคู่ตาม mockup · ไม่บล็อกการกดถัดไป ──
-                คำเตือนนโยบายรูป ย่อเหลือท้ายหัวข้อบรรทัดเดียว (กล่อง amber เดิมกินที่ · CEO สั่งย่อ) */}
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", margin: "14px 0 8px" }}>
-              แนบรูปก่อนเติม / หลังเติม
-              {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
+            {/* ── สรุปเติม/คืน/หลังเติม · 3 กล่องแนวนอน (mockup section 2 pills) ── */}
+            <div style={{ display: "flex", gap: 7, margin: "4px 0 0" }}>
+              <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>เติมรวม</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#4F46E5" }}>{props.refillTotal}</div></div>
+              <div style={{ flex: 1, background: "#FCF8EC", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>คืนสโตว์</div><div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#B45309" }}>{f.returnedTotal ?? 0}</div></div>
+              <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 11, padding: 9, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div><div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{isFilled(f.left) ? afterFill : "—"}</div></div>
             </div>
-            <div style={{ display: "flex", gap: 9 }}>
-              <PhotoTile label="ก่อนเติม" value={photos.before} captured={!!props.photosCaptured.before}
-                onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} />
-              <PhotoTile label="หลังเติม" value={photos.after} captured={!!props.photosCaptured.after}
-                onChange={(url) => props.onPhoto("after", url)} onCaptured={() => props.onCapture("after")}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} />
-            </div>
-          </div>
-        )}
 
-        {step === 3 && (
-          <div>
-            {props.resumed && (
-              // B2 · resume ร่างที่เก็บค้าง — reducer คืน form (จำนวน+เงิน) + photos จาก draft ครบ
-              // (ดู case "resume": photos: {...a.draft.photos}). copy เดิมบอก "รูปต้องถ่ายใหม่" = ผิด → แก้ให้ตรงจริง.
-              <div style={{ display: "flex", gap: 9, background: "#E7F4EC", border: "1px solid #BFE6CB", borderRadius: 11, padding: "12px 13px", marginBottom: 12 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2" style={{ flex: "0 0 17px", marginTop: 1 }}><path d="M20 6 9 17l-5-5" /></svg>
-                <span style={{ fontSize: 11.5, color: "#15803D", lineHeight: 1.5 }}>กลับมากรอกมิเตอร์ของตู้ที่<b>เก็บค้างไว้</b> — <b>รูปและตัวเลขที่กรอกไว้ยังอยู่ครบ</b> กรอกเลขมิเตอร์ให้ครบเพื่อปิดรอบ</span>
-              </div>
-            )}
-            {/* ── มิเตอร์ 4 ตัว · ตาราง 2×2 + กล้องต่อช่อง (ดีไซน์ใหม่ · แทนการ์ด 2 ก้อนเดิม) ── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>มิเตอร์ 4 ตัว (บน = ล่าง)</span>
-              <span className="num" style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: meterOk ? "#E7F4EC" : "#FCF1E2", color: meterOk ? "#15803D" : "#B45309" }}>{meterOk ? "บน=ล่าง ✓" : "บน≠ล่าง"}</span>
+            {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง) ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง)</div>
+            <div style={{ display: "flex", gap: 7, marginBottom: 6 }}>
+              {meterCell("dollGear", "prize_meter", "บน (เฟือง)")}
+              {meterCell("dollDigi", "prize_meter", "ล่าง (ดิจิตอล)")}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 8 }}>
-              {METER_CELLS.map((c) => {
-                // สีกรอบต่อ "คู่" (เงิน/ตุ๊กตา): กรอกครบแล้วเท่ากัน = เขียว · ไม่เท่า = ส้ม · ยังไม่ครบ = เทา
-                const pairOk = c.pair === "coin" ? props.meterGroupVals.coinMeterEqual : props.meterGroupVals.dollMeterEqual;
-                const pairFilled = c.pair === "coin"
-                  ? isFilled(f.coinGear) && isFilled(f.coinDigi)
-                  : isFilled(f.dollGear) && isFilled(f.dollDigi);
-                const bg = !pairFilled ? "#fff" : pairOk ? "#F4FBF6" : "#FCF6EC";
-                const bd = !pairFilled ? "#E3E6EA" : pairOk ? "#BFE6CB" : "#F0D9A8";
-                return (
-                  <div key={c.key} style={{ background: bg, border: `1.5px solid ${bd}`, borderRadius: 11, padding: "9px 10px" }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>{c.label}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <input value={f[c.key] == null ? "" : String(f[c.key])} onChange={(e) => props.setNum(c.key)(e.target.value)} inputMode="numeric" className="num"
-                        placeholder={(c.pair === "coin" ? f.coinPrev : f.dollPrev) != null ? `รอบก่อน ${c.pair === "coin" ? f.coinPrev : f.dollPrev}` : ""}
-                        style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
-                      {!props.usingDemo && machine?.code ? (
-                        <PhotoCaptureButton compact label="" value={photos[c.photoKey]} onChange={(url) => props.onPhoto(c.photoKey, url)} onCaptured={() => props.onCapture(c.photoKey)}
-                          orgId={props.orgId} machineCode={machine.code} eventScopeId={props.eventScopeId} phase={c.phase} />
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 16 }}>อ่านไม่ได้? แตะกล้องเพื่อถ่ายรูปมิเตอร์แทน (ใช้เป็นหลักฐาน) · กรอกทีหลังได้ กด “ถัดไป” ไว้ก่อนได้เลย</div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollEqColor, margin: "0 2px 14px" }}>{dollEqLabel} · รอบก่อน {f.dollPrev ?? "—"} · ตุ๊กตาออก {isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta}?` : recon.dollDelta) : "—"}</div>
 
-            {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว · ของเดิมกินที่ครึ่งจอ) */}
+            {/* ── 4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง) ── */}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง)</div>
+            <div style={{ display: "flex", gap: 7, marginBottom: 6 }}>
+              {meterCell("coinGear", "meter_after", "บน (เฟือง)")}
+              {meterCell("coinDigi", "meter_after", "ล่าง (ดิจิตอล)")}
+            </div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinEqColor, margin: "0 2px 10px" }}>{coinEqLabel} · รอบก่อน {f.coinPrev ?? "—"} · มิเตอร์ควรได้ {isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "?" : `฿${recon.expectedCash}`) : "—"}</div>
+
+            <div style={{ fontSize: 11, color: "#9AA1AB", margin: "0 2px 12px" }}>อ่านไม่ได้? แตะกล้องในช่องเพื่อถ่ายรูปมิเตอร์แทน (ใช้เป็นหลักฐาน) · กรอกทีหลังได้</div>
+            {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) */}
             <button type="button" disabled={props.skipPending}
               onClick={() => {
                 if (props.skipPending) return;
@@ -5093,29 +5090,44 @@ function FlowScreen(props: {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>
               {props.skipPending ? "กำลังแจ้งซ่อม…" : "ตู้นี้เสีย/อ่านมิเตอร์ไม่ได้ — แจ้งซ่อม & ข้าม"}
             </button>
-          </div>
-        )}
 
-        {/* [STEP] เงินสด + พรีวิว "ระบบคำนวณให้อัตโนมัติ" (ดีไซน์ใหม่ · ราคาตั้งในหน้าตั้งค่าตู้แล้ว ไม่ต้องกรอกตรงนี้) */}
-        {step === 3 && (
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>เงินสดที่เก็บได้</div>
-            {/* ช่อง ฿ ใหญ่แถวเดียว (ตามตัวอย่าง) — แทนป้าย+BigInput เดิมที่กิน 2 บรรทัด */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+            {/* ── 5 · แนบรูปก่อนเติม / หลังเติม ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 12px" }} />
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>
+              5 · แนบรูปก่อนเติม / หลังเติม
+              {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
+            </div>
+            <div style={{ display: "flex", gap: 9 }}>
+              <PhotoTile label="ก่อนเติม" value={photos.before} captured={!!props.photosCaptured.before}
+                onChange={(url) => props.onPhoto("before", url)} onCaptured={() => props.onCapture("before")}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock" disabled={props.usingDemo} />
+              <PhotoTile label="หลังเติม" value={photos.after} captured={!!props.photosCaptured.after}
+                onChange={(url) => props.onPhoto("after", url)} onCaptured={() => props.onCapture("after")}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} />
+            </div>
+
+            {/* ── 6 · เงินสดที่เก็บได้ (บาท) + ตั้งค่าตู้ ── */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "16px 0 12px" }} />
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", display: "block", margin: "0 2px 8px" }}>6 · เงินสดที่เก็บได้ (บาท)</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 14px" }}>
               <span style={{ fontSize: 22, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
               <input value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} inputMode="numeric" className="num" placeholder="นับเงินแล้วกรอก"
                 style={{ flex: 1, minWidth: 0, fontSize: 22, fontWeight: 700, padding: "6px 4px", border: "none", background: "transparent", outline: "none" }} />
               <span style={{ fontSize: 12, color: "#9AA1AB" }}>บาท</span>
             </div>
-            {/* ระบบคำนวณให้อัตโนมัติ — พรีวิวก่อนไปหน้ากระทบยอด (เลขตรงกับที่ server จะกระทบยอด)
-                มิเตอร์ยังไม่กรอก → โชว์ "—" (เดิมโชว์ "+-12 / ฿-90" เลขหลอกจาก null→0 ลบค่ารอบก่อน) */}
-            <div style={{ background: "#F1F2FE", border: "1px solid #DEE0FA", borderRadius: 12, padding: "13px 15px" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", marginBottom: 9 }}>ระบบคำนวณให้อัตโนมัติ</div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>ตุ๊กตาออกรอบนี้ (จากที่นับ)</span><span className="num" style={{ fontWeight: 700 }}>{isFilled(f.left) ? `${dispensed} ตัว` : "—"}</span></div>
-              {overCount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#B42318" }}>ตุ๊กตาเกินจากที่คาด</span><span className="num" style={{ fontWeight: 700, color: "#B42318" }}>+{overCount} ตัว</span></div>}
-              {/* CEO 2026-07-19 · เครื่องหมายเดียว (บวก=+ ลบ=− ไม่ใช่ "+-") · ลบ = มิเตอร์น้อยกว่ารอบก่อน (กรอกผิด/ผิดตู้) */}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}><span style={{ color: "#5A6270" }}>มิเตอร์ตุ๊กตาเพิ่ม</span><span className="num" style={{ fontWeight: 700, color: recon.dollDelta < 0 ? "#B42318" : undefined }}>{isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta} (น้อยกว่ารอบก่อน?)` : `+${recon.dollDelta}`) : "—"}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}><span style={{ color: "#5A6270" }}>มิเตอร์เหรียญ (฿{recon.pricePerPlayBaht}/เกม) → คาดว่าได้เงิน</span><span className="num" style={{ fontWeight: 700, color: recon.expectedCash < 0 ? "#B42318" : undefined }}>{isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `฿${recon.expectedCash}`) : "—"}</span></div>
+            {/* ตั้งค่าตู้ · หมวด + ราคาขาย/ตัว (เสนอ → เจ้าของอนุมัติ · ไม่เขียน sellPrice ตรง · money-safe) */}
+            <div style={{ borderTop: "1px solid #EEF0F2", margin: "14px 0 0", paddingTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#454B54", flex: "0 0 auto" }}>ตั้งค่าตู้</label>
+                <select value={CATEGORY_OPTIONS.includes(f.category) ? f.category : CATEGORY_OPTIONS[0]} onChange={(e) => props.onCategory(e.target.value)}
+                  style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, padding: "8px 10px", border: "1.5px solid #E3E6EA", borderRadius: 9, background: "#fff", cursor: "pointer" }}>
+                  {CATEGORY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#9AA1AB", flex: "0 0 auto" }}>฿</span>
+                <input value={f.price != null ? String(f.price) : machine?.sellPriceCents != null ? String(Math.round(machine.sellPriceCents / 100)) : ""} onChange={(e) => props.setNum("price")(e.target.value)} inputMode="numeric" className="num"
+                  style={{ width: 74, flex: "0 0 74px", fontSize: 14, fontWeight: 700, padding: "8px 9px", border: "1.5px solid #E3E6EA", borderRadius: 9, background: "#fff" }} />
+              </div>
+              <div style={{ fontSize: 10, color: "#9AA1AB", marginTop: 5 }}>ราคาขาย/ตัว · ใช้ตัดสต็อก &amp; ดูต้นทุนคีบ</div>
             </div>
           </div>
         )}
@@ -5375,7 +5387,7 @@ function FlowScreen(props: {
         {/* "บันทึกค้างไว้ · ไปตู้ต่อ" — ขั้นมิเตอร์ (รีบ) + ขั้นกระทบยอดที่ยังกรอกไม่ครบ (งานไม่ทิ้ง)
             (reuse saveDraft · resume กลับมากรอกต่อ · money-safe: รอบยังไม่ปิดจนเลขครบ)
             ซ่อนตอน demo (ไม่มี backend) · uploadPending → รอ upload รูปเสร็จก่อน (กันรูปหาย). */}
-        {!props.usingDemo && (props.step === 3 || (props.step === 5 && notReady)) && (
+        {!props.usingDemo && props.step === 5 && notReady && (
           <button type="button" onClick={props.onSaveDraft} disabled={props.saveDraftBlocked}
             className={props.saveDraftBlocked ? "" : "co-tap"}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", minHeight: 48, marginTop: 9, fontSize: 14, fontWeight: 700, color: "#B45309", border: "1.5px solid #F0D8AE", padding: "12px 16px", borderRadius: 13, cursor: props.saveDraftBlocked ? "not-allowed" : "pointer", background: "#FFFBF3", opacity: props.saveDraftBlocked ? 0.6 : 1 }}>
@@ -5460,45 +5472,7 @@ function FlowScreen(props: {
 }
 
 /* ─────────────────────────── small UI helpers ─────────────────────────── */
-// [STEP] แถบความคืบหน้า 3 ขั้น (อ่านปราดเดียว) — เสร็จ=ติ๊ก · กำลังทำ=เด่น · เหลือ=จาง.
-// VISUAL ONLY: อ่านค่า step จาก reducer ตรง ๆ (ขั้นจริง {1,3,5}) ไม่แตะ step logic.
-// show = เลขที่พนักงานเห็น (1-2-3) · n = ขั้นจริงใน reducer (1,3,5) — เดิมโชว์ n ตรง ๆ เลยขึ้น "1 · 3 · 5" หลอกตา
-const STEP_STRIP = [
-  { n: 1, show: 1, t: "นับ + เติม" },
-  { n: 3, show: 2, t: "มิเตอร์ + เงิน" },
-  { n: 5, show: 3, t: "กระทบยอด" },
-];
-function StepStrip({ step, onGo }: { step: number; onGo?: (n: number) => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", marginTop: 10 }}>
-      {STEP_STRIP.map((s, i) => {
-        const done = step > s.n;
-        const active = step === s.n;
-        return (
-          <div key={s.n} onClick={() => onGo?.(s.n)} className={onGo ? "co-tap" : undefined}
-            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, minWidth: 0, cursor: onGo ? "pointer" : "default" }}>
-            <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
-              <span style={{ height: 3, flex: 1, borderRadius: 3, background: i === 0 ? "transparent" : step >= s.n ? "#4F46E5" : "#E3E6EA" }} />
-              <span style={{
-                flex: "0 0 26px", width: 26, height: 26, borderRadius: "50%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12.5, fontWeight: 700,
-                background: active ? "#4F46E5" : done ? "#E7F4EC" : "#fff",
-                color: active ? "#fff" : done ? "#15803D" : "#B0B6BF",
-                border: `2px solid ${active ? "#4F46E5" : done ? "#BFE6CB" : "#E3E6EA"}`,
-                transition: "all .15s",
-              }}>
-                {done ? <Check size={13} strokeWidth={3} /> : <span className="num">{s.show}</span>}
-              </span>
-              <span style={{ height: 3, flex: 1, borderRadius: 3, background: i === STEP_STRIP.length - 1 ? "transparent" : step > s.n ? "#4F46E5" : "#E3E6EA" }} />
-            </div>
-            <span style={{ fontSize: 10.5, fontWeight: 600, color: active ? "#4F46E5" : "#9AA1AB", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{s.t}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// [STEP] (CEO 2026-07-21) StepStrip 3 ขั้นถูกถอด — ยุบเป็น 2 หน้าตาม mockup · header โชว์ "ขั้นที่ N/2" แทน
 
 // สปินเนอร์เล็ก — ใช้บนตู้ที่กำลังเปิดรอบ. ใช้ Tailwind `animate-spin` (มี @keyframes spin ในตัว).
 function Spinner({ color = "#4F46E5", size = 15 }: { color?: string; size?: number }) {
