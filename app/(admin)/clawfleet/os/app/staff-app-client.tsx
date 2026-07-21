@@ -4906,7 +4906,7 @@ function FlowScreen(props: {
         <div style={{ fontSize: 9.5, color: "#9AA1AB", marginBottom: 2 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
-            placeholder={prev != null ? `รอบก่อน ${prev}` : "เลข"}
+            placeholder={prev != null ? String(prev) : "เลข"}
             style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, padding: "4px 7px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
           {!props.usingDemo && machine?.code ? (
             <PhotoCaptureButton compact label="" value={photos[key]} onChange={(url) => props.onPhoto(key, url)} onCaptured={() => props.onCapture(key)}
@@ -5290,7 +5290,7 @@ function FlowScreen(props: {
                       <div key={c.key}>
                         <div style={{ fontSize: 10, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>{c.label}</div>
                         <input value={f[c.key] == null ? "" : String(f[c.key])} onChange={(e) => props.setNum(c.key)(e.target.value)} inputMode="numeric" className="num"
-                          placeholder={(c.pair === "coin" ? f.coinPrev : f.dollPrev) != null ? `รอบก่อน ${c.pair === "coin" ? f.coinPrev : f.dollPrev}` : ""}
+                          placeholder={(c.pair === "coin" ? f.coinPrev : f.dollPrev) != null ? String(c.pair === "coin" ? f.coinPrev : f.dollPrev) : ""}
                           style={{ width: "100%", minWidth: 0, fontSize: 14, fontWeight: 700, padding: "7px 9px", border: "1px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
                       </div>
                     ))}
