@@ -734,7 +734,9 @@ function SideCells({
   // #2 — แถวคุม "มิเตอร์เต็ม/เปลี่ยน" ทำให้ทุกแถวสูงเกิน → ซ่อนเป็นค่าเริ่มต้น
   //   เผยเฉพาะเมื่อ (ก) เปิดใช้อยู่แล้ว (ข) เลขน่าสงสัย (ค) ผู้ใช้กดปุ่ม ↺ เอง
   const [showResetControls, setShowResetControls] = useState(false);
-  const showResetRow = side.isReset || showRolloverWarn || showResetControls;
+  // แถวสูงเท่ากันเสมอ (คาดเดาได้) — กางเฉพาะเมื่อ isReset อยู่แล้ว หรือผู้ใช้กดปุ่ม ↺ เอง
+  // ไม่กางอัตโนมัติเมื่อ "สงสัยรีเซ็ต" (showRolloverWarn) — แค่ทำปุ่ม ↺ เป็นสีเหลืองเตือนแทน (กันแถวสูงไม่เท่ากัน)
+  const showResetRow = side.isReset || showResetControls;
   return (
     <>
       <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
@@ -857,19 +859,28 @@ function SideCells({
             </button>
           )}
 
-          {/* #2 — ปุ่มเผยแถว "มิเตอร์เต็ม/เปลี่ยน" (โชว์เฉพาะตอนซ่อนอยู่ · กันแถวสูงเปล่า) */}
+          {/* #2 — ปุ่มเผยแถว "มิเตอร์เต็ม/เปลี่ยน" (โชว์เฉพาะตอนซ่อนอยู่ · กันแถวสูงเปล่า)
+              สงสัยรีเซ็ต (showRolloverWarn) → ปุ่มสีเหลืองเตือน (inline · ไม่ดันความสูงแถว) */}
           {!showResetRow && !locked && (
             <button
               type="button"
               onClick={() => setShowResetControls(true)}
               className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
               style={{
-                background: "transparent",
-                color: "var(--rs-text-3)",
-                border: "1px solid var(--rs-border)",
+                background: showRolloverWarn ? "var(--rs-pending-soft)" : "transparent",
+                color: showRolloverWarn ? "#8A6400" : "var(--rs-text-3)",
+                border: `1px solid ${showRolloverWarn ? "#F6E0AE" : "var(--rs-border)"}`,
               }}
-              title="มิเตอร์เต็ม / เปลี่ยนมิเตอร์"
-              aria-label={`เปิดตัวเลือกมิเตอร์เต็ม/เปลี่ยน ห้อง ${roomLabel} (${label})`}
+              title={
+                showRolloverWarn
+                  ? "เลขน้อยกว่าเดือนก่อน — กดหากมิเตอร์ครบรอบ/ถูกเปลี่ยน"
+                  : "มิเตอร์เต็ม / เปลี่ยนมิเตอร์"
+              }
+              aria-label={
+                showRolloverWarn
+                  ? `เลขน้อยกว่าเดือนก่อน เปิดตัวเลือกมิเตอร์เต็ม/เปลี่ยน ห้อง ${roomLabel} (${label})`
+                  : `เปิดตัวเลือกมิเตอร์เต็ม/เปลี่ยน ห้อง ${roomLabel} (${label})`
+              }
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
