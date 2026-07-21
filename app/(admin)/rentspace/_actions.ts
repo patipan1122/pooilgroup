@@ -803,6 +803,7 @@ export async function actSaveContract(input: {
             signToken: token,
             editStatus: "none",
             editRequestReason: null,
+            editProposedBodyHtml: null,
             editRequestedBy: null,
             editRequestedAt: null,
             editDecidedBy: null,
@@ -888,6 +889,9 @@ export async function actUpdateContractBilling(input: {
       promoMonths: input.promoMonths,
       promoStartPeriod: promoStart,
       billIssueDay: input.billIssueDay ?? null,
+      // consume คำอนุมัติแก้สัญญา (กัน "อนุมัติครั้งเดียว = แก้ได้ไม่จำกัด") — ถ้าไม่มีคำขอ ก็เป็น none อยู่แล้ว (no-op)
+      editStatus: "none",
+      editProposedBodyHtml: null,
     },
   });
   await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", input.contractId, { billingTerms: true });

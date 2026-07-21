@@ -40,11 +40,11 @@ export async function actSignContract(input: {
     throw new Error("สัญญานี้สิ้นสุดแล้ว ไม่สามารถเซ็นได้");
   }
 
-  // "ล็อกฉบับเซ็น" — snapshot ข้อความสัญญา ณ วันเซ็น ลง customTermsHtml (เฉพาะที่ยังไม่มี)
-  // เพื่อให้เอกสารบนจอ = สิ่งที่ผู้เช่าเซ็นเป๊ะ แม้แม่แบบมาตรฐาน/ค่าตั้งจะเปลี่ยนภายหลัง.
-  const frozenBody = contract.customTermsHtml?.trim()
-    ? null
-    : resolveContractBody(contract) || null;
+  // "ล็อกฉบับเซ็น" — snapshot ข้อความสัญญา "ที่เติมค่าแล้ว" ณ วันเซ็น ลง customTermsHtml เสมอ
+  // (แม้ customTermsHtml เดิมจะเป็นแม่แบบดิบที่ยังมี {{ตัวแปร}} — ถ้าไม่เติมแล้วเก็บ จะ re-fill ค่าใหม่ทุกครั้งที่ render
+  //  ทำให้เอกสารที่เซ็นแล้วโชว์เงื่อนไขที่เปลี่ยนภายหลัง = ไม่ตรงที่ลูกค้าเซ็น). resolveContractBody เติมค่าจาก
+  //  customTermsHtml > template > v3 ให้อยู่แล้ว · ถ้าเติมแล้ว (redline/ว่าง) = no-op ปลอดภัย
+  const frozenBody = resolveContractBody(contract) || null;
 
   await prisma.rentalContract.update({
     where: { id: contract.id },
