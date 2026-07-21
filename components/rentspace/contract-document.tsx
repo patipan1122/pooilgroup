@@ -81,6 +81,7 @@ export function RentalContractDocument({
           <div className="rsdoc-party-h">ผู้ให้เช่า (เจ้าของพื้นที่)</div>
           <div className="rsdoc-party-name">{d.lessorName}</div>
           <div className="rsdoc-party-line">{d.projectName}</div>
+          {d.lessorTaxId && <div className="rsdoc-party-line">เลขผู้เสียภาษี: {d.lessorTaxId}</div>}
           {d.lessorAddress && <div className="rsdoc-party-line">{d.lessorAddress}</div>}
         </div>
         <div className="rsdoc-party">
@@ -89,8 +90,12 @@ export function RentalContractDocument({
             {tenantName}
           </div>
           <div className="rsdoc-party-line">ห้อง {unitLabel}</div>
-          {d.tenantIdMasked && <div className="rsdoc-party-line">เลขประจำตัว: {d.tenantIdMasked}</div>}
+          {(d.tenantTaxId || d.tenantIdMasked) && (
+            <div className="rsdoc-party-line">เลขผู้เสียภาษี/บัตร: {d.tenantTaxId || d.tenantIdMasked}</div>
+          )}
+          {d.tenantAddress && <div className="rsdoc-party-line">{d.tenantAddress}</div>}
           {d.tenantPhone && <div className="rsdoc-party-line">โทร: {d.tenantPhone}</div>}
+          {d.tenantSignerName && <div className="rsdoc-party-line">ผู้มีอำนาจลงนาม: {d.tenantSignerName}</div>}
         </div>
       </div>
 
@@ -202,7 +207,7 @@ export function RentalContractDocument({
         {attachLines.join(" · ")}
       </div>
 
-      {/* ลายเซ็น */}
+      {/* ลายเซ็น (ผู้ให้เช่า · ผู้เช่า · พยาน 2 คน) */}
       <div className="rsdoc-signs">
         <div className="rsdoc-sign">
           <div className="rsdoc-sign-space" />
@@ -223,13 +228,25 @@ export function RentalContractDocument({
           <div className="rsdoc-sign-line" />
           <div className="rsdoc-sign-role">ผู้เช่า</div>
           <div className="rsdoc-sign-name">
-            ( {d.signature?.signed ? d.signature.signerName ?? tenantName : tenantName} )
+            ( {d.signature?.signed ? d.signature.signerName ?? d.tenantSignerName ?? tenantName : d.tenantSignerName || tenantName} )
           </div>
           {d.signature?.signed && (
             <div className="rsdoc-sign-stamp">
               ลงนามออนไลน์แล้ว{d.signature.signedAt ? ` · ${thaiDateLong(d.signature.signedAt)}` : ""}
             </div>
           )}
+        </div>
+        <div className="rsdoc-sign">
+          <div className="rsdoc-sign-space" />
+          <div className="rsdoc-sign-line" />
+          <div className="rsdoc-sign-role">พยาน</div>
+          <div className="rsdoc-sign-name">( .......................... )</div>
+        </div>
+        <div className="rsdoc-sign">
+          <div className="rsdoc-sign-space" />
+          <div className="rsdoc-sign-line" />
+          <div className="rsdoc-sign-role">พยาน</div>
+          <div className="rsdoc-sign-name">( {d.witness2Name?.trim() ? d.witness2Name : ".........................."} )</div>
         </div>
       </div>
 

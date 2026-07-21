@@ -143,6 +143,21 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     billIssueDay: contract.billIssueDay ?? null,
     customTermsHtml: contract.customTermsHtml ?? null,
     note: contract.note ?? null,
+    businessType: contract.businessType ?? null,
+    tradeName: contract.tradeName ?? null,
+    renewalNoticeDays: contract.renewalNoticeDays ?? null,
+    terminationNoticeDays: contract.terminationNoticeDays ?? null,
+    fitOutFreeDays: contract.fitOutFreeDays ?? null,
+    buildingModifications: contract.buildingModifications ?? null,
+    witness2Name: contract.witness2Name ?? null,
+    tenantSignerName: contract.tenant.authorizedSignerName ?? null,
+    tenantSignerPhone: contract.tenant.authorizedSignerPhone ?? null,
+    charges: (contract.recurringCharges ?? []).map((c) => ({
+      kind: c.kind,
+      label: c.label,
+      amountThb: Number(c.amountThb),
+      vatable: c.vatable,
+    })),
     tenantSigned: contract.tenantSigned,
   };
 

@@ -7312,6 +7312,9 @@ model RentalTenant {
   idCardUrl   String?   @map("id_card_url")
   docUrls     String[]  @default([]) @map("doc_urls")
   note        String?
+  // ผู้มีอำนาจลงนามแทน (กรณีผู้เช่าเป็นนิติบุคคล) — ใช้เติมช่อง "ลงชื่อ ผู้เช่า" ในสัญญา
+  authorizedSignerName  String? @map("authorized_signer_name")
+  authorizedSignerPhone String? @map("authorized_signer_phone")
   isActive    Boolean   @default(true) @map("is_active")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -7342,27 +7345,31 @@ model RentalContractTemplate {
 }
 
 // ค่าใช้จ่ายประจำที่บวกเข้าทุกบิลอัตโนมัติ (เช่น ภาษีที่ดิน · ค่าส่วนกลาง · ค่าขยะ)
-// unitId = null → คิดทั้งโครงการ · unitId ระบุ → คิดเฉพาะห้องนั้น
+// ขอบเขต: contractId ระบุ → เฉพาะสัญญาใบนั้น (ค่ารายเดือนกรอกแยกทุกสัญญา) ·
+//         contractId=null + unitId ระบุ → เฉพาะห้องนั้น · ทั้งคู่ null → ทั้งโครงการ
 // vatable = false สำหรับภาษีส่งต่อ (land_tax) — ไม่บวก VAT ซ้ำ
 model RentalRecurringCharge {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  projectId String   @map("project_id") @db.Uuid
-  unitId    String?  @map("unit_id") @db.Uuid
-  kind      String   @default("other") // land_tax | common_fee | waste | other
-  label     String
-  amountThb Decimal  @default(0) @map("amount_thb") @db.Decimal(15, 2)
-  vatable   Boolean  @default(false)
-  isActive  Boolean  @default(true) @map("is_active")
-  sort      Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  projectId  String   @map("project_id") @db.Uuid
+  unitId     String?  @map("unit_id") @db.Uuid
+  contractId String?  @map("contract_id") @db.Uuid
+  kind       String   @default("other") // land_tax | common_fee | waste | other
+  label      String
+  amountThb  Decimal  @default(0) @map("amount_thb") @db.Decimal(15, 2)
+  vatable    Boolean  @default(false)
+  isActive   Boolean  @default(true) @map("is_active")
+  sort       Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project RentalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  unit    RentalUnit?   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  project  RentalProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit     RentalUnit?     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  contract RentalContract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@index([orgId, projectId, isActive])
   @@index([unitId])
+  @@index([contractId])
   @@map("rental_recurring_charge")
   @@schema("public")
 }
@@ -7445,6 +7452,14 @@ model RentalContract {
   editDecidedBy     String?                @map("edit_decided_by") @db.Uuid
   editDecidedAt     DateTime?              @map("edit_decided_at") @db.Timestamptz(6)
   editDecisionNote  String?                @map("edit_decision_note")
+  // ── ช่องกรอกสำหรับแม่แบบสัญญาเช่ามาตรฐาน (nullable ทั้งหมด — สัญญาเก่าไม่กระทบ) ──
+  businessType          String?  @map("business_type")           // ประเภทกิจการ (ข้อ 2) — free text, คนละตัวกับ enum BusinessType
+  tradeName             String?  @map("trade_name")              // ชื่อทางการค้า (ข้อ 2)
+  renewalNoticeDays     Int?     @map("renewal_notice_days")     // แจ้งต่อสัญญาก่อนหมดอายุ ≥ N วัน (ข้อ 2)
+  terminationNoticeDays Int?     @map("termination_notice_days") // แจ้งเลิกล่วงหน้า ≥ N วัน (ข้อ 9)
+  fitOutFreeDays        Int?     @map("fit_out_free_days")       // ปลอดค่าเช่าช่วงตกแต่ง ≤ N วัน (ข้อ 5)
+  buildingModifications String?  @map("building_modifications") @db.Text // รายการปรับแต่งอาคาร (ข้อ 6)
+  witness2Name          String?  @map("witness2_name")           // พยานฝั่งผู้เช่า
   note             String?
   createdBy        String?                 @map("created_by") @db.Uuid
   createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -7457,6 +7472,7 @@ model RentalContract {
   deposits RentalDeposit[]
   bills    RentalBill[]
   addenda  RentalContractAddendum[]
+  recurringCharges RentalRecurringCharge[]
 
   @@unique([orgId, contractNo])
   @@unique([signToken])

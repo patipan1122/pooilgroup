@@ -162,14 +162,27 @@ export async function listContracts(orgId: string, projectId?: string) {
 export async function getContract(orgId: string, id: string) {
   return prisma.rentalContract.findFirst({
     where: { id, orgId },
-    include: { unit: true, tenant: true, project: true, template: true, deposits: true },
+    include: {
+      unit: true,
+      tenant: true,
+      project: true,
+      template: true,
+      deposits: true,
+      recurringCharges: { where: { isActive: true }, orderBy: { sort: "asc" } },
+    },
   });
 }
 
 export async function getContractBySignToken(token: string) {
   return prisma.rentalContract.findUnique({
     where: { signToken: token },
-    include: { unit: true, tenant: true, project: true, template: true },
+    include: {
+      unit: true,
+      tenant: true,
+      project: true,
+      template: true,
+      recurringCharges: { where: { isActive: true }, orderBy: { sort: "asc" } },
+    },
   });
 }
 

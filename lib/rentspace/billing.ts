@@ -298,12 +298,18 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   //    item ตั้งต้น" ครั้งเดียวต่อบิล รันซ้ำไม่ได้ → recurring item ไม่มีทาง
   //    ซ้ำซ้อน. (การแก้บิลภายหลังใช้ actEditBillItems → recomputeBillTotals
   //    ซึ่งจัดการ item แยกต่างหาก ไม่เรียก buildBill ซ้ำ.)
+  //    ขอบเขต: contractId=สัญญานี้ (per-contract · กรอกแยกทุกสัญญา) · หรือ contractId=null
+  //    ที่เป็น project-wide (unitId=null) / per-unit ห้องนี้ (legacy · ยังใช้ได้)
   const recurring = await prisma.rentalRecurringCharge.findMany({
     where: {
       orgId: contract.orgId, // F8 defense-in-depth: กันข้อมูลข้าม org แม้ projectId จะผูกกับ org อยู่แล้ว
       projectId: contract.projectId,
       isActive: true,
-      OR: [{ unitId: null }, { unitId: contract.unitId }],
+      OR: [
+        { contractId: contract.id },
+        { contractId: null, unitId: null },
+        { contractId: null, unitId: contract.unitId },
+      ],
     },
     orderBy: { sort: "asc" },
   });

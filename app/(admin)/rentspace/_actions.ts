@@ -598,6 +598,19 @@ export async function actSaveContract(input: {
   rentSchedule?: { fromPeriod: string; amount: number }[];
   customTermsHtml?: string;
   note?: string;
+  // ── ช่องกรอกแม่แบบสัญญามาตรฐาน (2026-07-21) ──
+  businessType?: string;
+  tradeName?: string;
+  renewalNoticeDays?: number | null;
+  terminationNoticeDays?: number | null;
+  fitOutFreeDays?: number | null;
+  buildingModifications?: string;
+  witness2Name?: string;
+  /** ผู้มีอำนาจลงนามแทน (บันทึกที่ผู้เช่า — company-level) */
+  tenantSignerName?: string;
+  tenantSignerPhone?: string;
+  /** ค่ารายเดือน per-contract (กรอกแยกทุกสัญญา) — ล้างของเดิมของสัญญานี้แล้วเขียนใหม่ทั้งชุด */
+  charges?: { kind?: string; label: string; amountThb: number; vatable?: boolean }[];
   activate?: boolean;
 }) {
   const session = await gateAdmin();
@@ -609,6 +622,13 @@ export async function actSaveContract(input: {
     contractDate: input.contractDate ? new Date(input.contractDate) : null,
     startDate: new Date(input.startDate),
     endDate: input.endDate ? new Date(input.endDate) : null,
+    businessType: input.businessType?.trim() || null,
+    tradeName: input.tradeName?.trim() || null,
+    renewalNoticeDays: input.renewalNoticeDays ?? null,
+    terminationNoticeDays: input.terminationNoticeDays ?? null,
+    fitOutFreeDays: input.fitOutFreeDays ?? null,
+    buildingModifications: input.buildingModifications?.trim() || null,
+    witness2Name: input.witness2Name?.trim() || null,
     rentAmountThb: input.rentAmountThb,
     rentDueDay: input.rentDueDay ?? 5,
     depositAmountThb: input.depositAmountThb ?? 0,
@@ -631,6 +651,48 @@ export async function actSaveContract(input: {
     note: input.note ?? null,
     status: (input.activate ? "active" : "draft") as "active" | "draft",
   };
+
+  // บันทึกส่วนขยาย (ผู้ลงนามฝั่งผู้เช่า = company-level → เก็บที่ tenant · ค่ารายเดือน per-contract)
+  // เรียกหลังรู้ contractId แล้วทั้งสร้าง/แก้ (รวม path สัญญาเซ็นแล้ว)
+  const saveExtras = async (contractId: string) => {
+    if (input.tenantSignerName !== undefined || input.tenantSignerPhone !== undefined) {
+      await prisma.rentalTenant.updateMany({
+        where: { id: input.tenantId, orgId: session.user.org_id },
+        data: {
+          ...(input.tenantSignerName !== undefined
+            ? { authorizedSignerName: input.tenantSignerName.trim() || null }
+            : {}),
+          ...(input.tenantSignerPhone !== undefined
+            ? { authorizedSignerPhone: input.tenantSignerPhone.trim() || null }
+            : {}),
+        },
+      });
+    }
+    if (input.charges !== undefined) {
+      const rows = (input.charges ?? [])
+        .filter((c) => c.label?.trim())
+        .map((c, i) => ({
+          id: randomUUID(),
+          orgId: session.user.org_id,
+          projectId: input.projectId,
+          unitId: null,
+          contractId,
+          kind: c.kind?.trim() || "other",
+          label: c.label.trim(),
+          amountThb: Number.isFinite(c.amountThb) ? c.amountThb : 0,
+          vatable: !!c.vatable,
+          sort: i,
+        }));
+      // ล้างของเดิมของสัญญานี้แล้วเขียนใหม่ทั้งชุด (atomic) — ค่ารายเดือน = snapshot ตอนออกบิลอยู่แล้ว
+      await prisma.$transaction([
+        prisma.rentalRecurringCharge.deleteMany({
+          where: { contractId, orgId: session.user.org_id },
+        }),
+        ...(rows.length ? [prisma.rentalRecurringCharge.createMany({ data: rows })] : []),
+      ]);
+    }
+  };
+
   let id = input.id;
   if (id) {
     const existing = await prisma.rentalContract.findFirst({
@@ -687,6 +749,7 @@ export async function actSaveContract(input: {
           },
         }),
       ]);
+      if (id) await saveExtras(id);
       await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", id, { amendment: true, reSign: true });
       revalidatePath("/rentspace/contracts");
       revalidatePath(`/rentspace/contracts/${id}`);
@@ -706,6 +769,7 @@ export async function actSaveContract(input: {
     });
     id = created.id;
   }
+  if (id) await saveExtras(id);
   // occupy the unit when activated
   if (input.activate) {
     await prisma.rentalUnit.update({ where: { id: input.unitId }, data: { status: "occupied" } });

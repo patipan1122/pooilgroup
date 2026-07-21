@@ -12,6 +12,7 @@ import {
   fillPlaceholders,
   bankInfoLine,
   TEMPLATE_VARS,
+  STANDARD_LEASE_BODY,
   type ContractDocData,
 } from "@/lib/rentspace/contract-doc";
 import { periodLabel } from "@/lib/rentspace/format";
@@ -22,6 +23,7 @@ type Unit = {
   name?: string | null;
   baseRentThb?: unknown;
   building?: string | null;
+  areaSqm?: unknown;
   /** present เมื่อ caller ส่ง units ทั้งหมด — ใช้กรองห้องว่าง/จองในสเต็ป 1 */
   status?: string | null;
 };
@@ -64,6 +66,17 @@ type EditInitial = {
   billIssueDay?: number | null;
   customTermsHtml?: string | null;
   note?: string | null;
+  /** ── ช่องกรอกแม่แบบสัญญามาตรฐาน ── */
+  businessType?: string | null;
+  tradeName?: string | null;
+  renewalNoticeDays?: number | null;
+  terminationNoticeDays?: number | null;
+  fitOutFreeDays?: number | null;
+  buildingModifications?: string | null;
+  witness2Name?: string | null;
+  tenantSignerName?: string | null;
+  tenantSignerPhone?: string | null;
+  charges?: { kind: string; label: string; amountThb: number; vatable: boolean }[];
   /** เซ็นแล้วหรือยัง — ใช้โชว์แบนเนอร์เตือนตอนแก้ */
   tenantSigned?: boolean;
 };
@@ -79,6 +92,14 @@ const LATE_FEE_LABELS: Record<string, string> = {
   fixed: "คงที่ (บาท)",
   percent_total: "% ของยอดบิล",
   per_day: "ต่อวัน (บาท/วัน)",
+};
+
+// ประเภทค่าใช้จ่ายรายเดือนเพิ่มเติม (ต่อสัญญา) — ตรงกับ kind ใน RecurringChargeLike
+const CHARGE_KINDS: Record<string, string> = {
+  other: "อื่นๆ",
+  common_fee: "ค่าส่วนกลาง",
+  waste: "ค่าขยะ",
+  land_tax: "ภาษีที่ดิน",
 };
 
 function num(v: string): number {
@@ -205,6 +226,27 @@ export function ContractForm({
   // เนื้อหาสัญญาแบบแก้ได้อิสระ — โหลดจากแม่แบบ/สัญญาเดิม แล้วปรับสดได้
   const [customTermsHtml, setCustomTermsHtml] = useState(editInitial?.customTermsHtml ?? "");
 
+  // ── ช่องกรอกสำหรับแม่แบบสัญญามาตรฐาน (ต่อสัญญา) ──
+  const [businessType, setBusinessType] = useState(editInitial?.businessType ?? "");
+  const [tradeName, setTradeName] = useState(editInitial?.tradeName ?? "");
+  const [buildingModifications, setBuildingModifications] = useState(editInitial?.buildingModifications ?? "");
+  const [witness2Name, setWitness2Name] = useState(editInitial?.witness2Name ?? "");
+  const [tenantSignerName, setTenantSignerName] = useState(editInitial?.tenantSignerName ?? "");
+  const [tenantSignerPhone, setTenantSignerPhone] = useState(editInitial?.tenantSignerPhone ?? "");
+  const [renewalNoticeDays, setRenewalNoticeDays] = useState(
+    editInitial?.renewalNoticeDays != null ? String(editInitial.renewalNoticeDays) : "",
+  );
+  const [terminationNoticeDays, setTerminationNoticeDays] = useState(
+    editInitial?.terminationNoticeDays != null ? String(editInitial.terminationNoticeDays) : "",
+  );
+  const [fitOutFreeDays, setFitOutFreeDays] = useState(
+    editInitial?.fitOutFreeDays != null ? String(editInitial.fitOutFreeDays) : "",
+  );
+  // ค่าใช้จ่ายรายเดือนเพิ่มเติมเฉพาะสัญญานี้ (ส่วนกลาง/ขยะ/ภาษีที่ดิน ฯลฯ)
+  const [charges, setCharges] = useState<{ kind: string; label: string; amountThb: string; vatable: boolean }[]>(
+    editInitial?.charges?.map((c) => ({ kind: c.kind, label: c.label, amountThb: String(c.amountThb), vatable: c.vatable })) ?? [],
+  );
+
   // step-1 unit search
   const [unitSearch, setUnitSearch] = useState("");
 
@@ -278,6 +320,18 @@ export function ContractForm({
     setBillIssueDay(editInitial?.billIssueDay ? String(editInitial.billIssueDay) : "");
     setNote(editInitial?.note ?? "");
     setCustomTermsHtml(editInitial?.customTermsHtml ?? "");
+    setBusinessType(editInitial?.businessType ?? "");
+    setTradeName(editInitial?.tradeName ?? "");
+    setBuildingModifications(editInitial?.buildingModifications ?? "");
+    setWitness2Name(editInitial?.witness2Name ?? "");
+    setTenantSignerName(editInitial?.tenantSignerName ?? "");
+    setTenantSignerPhone(editInitial?.tenantSignerPhone ?? "");
+    setRenewalNoticeDays(editInitial?.renewalNoticeDays != null ? String(editInitial.renewalNoticeDays) : "");
+    setTerminationNoticeDays(editInitial?.terminationNoticeDays != null ? String(editInitial.terminationNoticeDays) : "");
+    setFitOutFreeDays(editInitial?.fitOutFreeDays != null ? String(editInitial.fitOutFreeDays) : "");
+    setCharges(
+      editInitial?.charges?.map((c) => ({ kind: c.kind, label: c.label, amountThb: String(c.amountThb), vatable: c.vatable })) ?? [],
+    );
     setUnitSearch("");
     setTenantSearch("");
     setNewTenantMode(false);
@@ -321,7 +375,7 @@ export function ContractForm({
     selectedTenant ? tenantLabel(selectedTenant) : newTenantValid ? ntName : "";
   const previewBody = customTermsHtml.trim()
     ? customTermsHtml
-    : templates.find((t) => t.id === templateId)?.bodyHtml ?? "";
+    : templates.find((t) => t.id === templateId)?.bodyHtml ?? STANDARD_LEASE_BODY;
   const depositMonthsPreview =
     num(rentAmount) > 0 ? Math.round((num(depositAmount) / num(rentAmount)) * 10) / 10 : 0;
   const promoMonthsCount = monthsInclusive(promoStart, promoEnd);
@@ -344,8 +398,19 @@ export function ContractForm({
           lateFeeType,
           lateFeeValue: num(lateFeeValue),
           promoDiscountThb: promoPerMonth,
-          unit: { code: selectedUnit?.code ?? "—", name: selectedUnit?.name ?? null },
-          tenant: { bizName: previewTenantName || "ผู้เช่า" } as never,
+          businessType: businessType || null,
+          tradeName: tradeName || null,
+          renewalNoticeDays: renewalNoticeDays ? Number(renewalNoticeDays) : null,
+          terminationNoticeDays: terminationNoticeDays ? Number(terminationNoticeDays) : null,
+          fitOutFreeDays: fitOutFreeDays ? Number(fitOutFreeDays) : null,
+          buildingModifications: buildingModifications || null,
+          witness2Name: witness2Name || null,
+          note: note || null,
+          recurringCharges: charges
+            .filter((c) => c.label.trim())
+            .map((c) => ({ kind: c.kind || "other", label: c.label, amountThb: num(c.amountThb), vatable: c.vatable })),
+          unit: { code: selectedUnit?.code ?? "—", name: selectedUnit?.name ?? null, areaSqm: selectedUnit?.areaSqm },
+          tenant: { bizName: previewTenantName || "ผู้เช่า", authorizedSignerName: tenantSignerName || null } as never,
           project,
         }),
       )
@@ -355,8 +420,11 @@ export function ContractForm({
     madeOn: contractDate || today,
     projectName: project.name,
     lessorName: project.billCompanyName?.trim() || project.name,
+    lessorTaxId: (project as { billTaxId?: string | null }).billTaxId ?? null,
     lessorAddress: project.address ?? null,
     tenantName: previewTenantName,
+    tenantSignerName: tenantSignerName || null,
+    witness2Name: witness2Name || null,
     tenantPhone: selectedTenant?.phones?.[0] ?? null,
     unitCode: selectedUnit?.code ?? "—",
     unitName: selectedUnit?.name ?? null,
@@ -472,6 +540,18 @@ export function ContractForm({
           billIssueDay: billIssueDay ? Number(billIssueDay) : undefined,
           customTermsHtml: customTermsHtml.trim() || undefined,
           note: note || undefined,
+          businessType,
+          tradeName,
+          renewalNoticeDays: renewalNoticeDays ? Number(renewalNoticeDays) : null,
+          terminationNoticeDays: terminationNoticeDays ? Number(terminationNoticeDays) : null,
+          fitOutFreeDays: fitOutFreeDays ? Number(fitOutFreeDays) : null,
+          buildingModifications,
+          witness2Name,
+          tenantSignerName,
+          tenantSignerPhone,
+          charges: charges
+            .filter((c) => c.label.trim())
+            .map((c) => ({ kind: c.kind || "other", label: c.label.trim(), amountThb: num(c.amountThb), vatable: c.vatable })),
           activate,
         });
         if (res && "reSignRequired" in res && res.reSignRequired) {
@@ -996,6 +1076,107 @@ export function ContractForm({
                     <Field label="ค่าน้ำ/หน่วย (ไม่บังคับ)">
                       <input inputMode="decimal" className="rs-input" value={waterRate} onChange={(e) => setWaterRate(e.target.value)} placeholder="ตามโครงการ" />
                     </Field>
+                  </div>
+
+                  {/* รายละเอียดสำหรับแม่แบบสัญญามาตรฐาน — เติมช่องว่างในเอกสาร (ข้อ 1–9) */}
+                  <div className="text-[12.5px] font-semibold mt-2" style={{ color: "var(--rs-text-2)" }}>
+                    รายละเอียดสำหรับสัญญา (แม่แบบมาตรฐาน)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="ประเภทกิจการ">
+                      <input className="rs-input" value={businessType} onChange={(e) => setBusinessType(e.target.value)} placeholder="เช่น ร้านกาแฟ" />
+                    </Field>
+                    <Field label="ชื่อทางการค้า">
+                      <input className="rs-input" value={tradeName} onChange={(e) => setTradeName(e.target.value)} placeholder="เช่น Café ..." />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="แจ้งต่อสัญญา (วัน)">
+                      <input type="number" min={0} className="rs-input" value={renewalNoticeDays} onChange={(e) => setRenewalNoticeDays(e.target.value)} placeholder="30" />
+                    </Field>
+                    <Field label="แจ้งเลิกล่วงหน้า (วัน)">
+                      <input type="number" min={0} className="rs-input" value={terminationNoticeDays} onChange={(e) => setTerminationNoticeDays(e.target.value)} placeholder="60" />
+                    </Field>
+                    <Field label="ปลอดค่าเช่าตกแต่ง (วัน)">
+                      <input type="number" min={0} className="rs-input" value={fitOutFreeDays} onChange={(e) => setFitOutFreeDays(e.target.value)} placeholder="30" />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="ผู้มีอำนาจลงนาม (ผู้เช่า)">
+                      <input className="rs-input" value={tenantSignerName} onChange={(e) => setTenantSignerName(e.target.value)} placeholder="ชื่อ-สกุลผู้ลงนาม" />
+                    </Field>
+                    <Field label="เบอร์ผู้ลงนาม">
+                      <input className="rs-input" inputMode="tel" value={tenantSignerPhone} onChange={(e) => setTenantSignerPhone(e.target.value)} placeholder="08x-xxx-xxxx" />
+                    </Field>
+                  </div>
+                  <Field label="พยาน (ผู้เช่า)">
+                    <input className="rs-input" value={witness2Name} onChange={(e) => setWitness2Name(e.target.value)} placeholder="ชื่อพยานฝั่งผู้เช่า" />
+                  </Field>
+                  <Field label="รายการปรับแต่งอาคาร">
+                    <textarea className="rs-input min-h-[64px]" value={buildingModifications} onChange={(e) => setBuildingModifications(e.target.value)} placeholder="เช่น ต่อเติมเคาน์เตอร์ / งานระบบไฟ" />
+                  </Field>
+
+                  {/* ค่าใช้จ่ายรายเดือนเพิ่มเติมเฉพาะสัญญานี้ (ส่วนกลาง/ขยะ/ภาษีที่ดิน ฯลฯ) */}
+                  <div className="rounded-xl p-3" style={{ border: "1px dashed var(--rs-border)", background: "var(--rs-bg-2)" }}>
+                    <div className="text-[12.5px] font-semibold mb-2" style={{ color: "var(--rs-text-2)" }}>
+                      ค่าใช้จ่ายรายเดือนเพิ่มเติม (ต่อสัญญา)
+                    </div>
+                    {charges.length > 0 && (
+                      <div className="space-y-2">
+                        {charges.map((c, i) => (
+                          <div key={i} className="flex items-start gap-2">
+                            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <input
+                                className="rs-input"
+                                value={c.label}
+                                onChange={(e) => setCharges((cs) => cs.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                                placeholder="เช่น ค่าส่วนกลาง"
+                              />
+                              <input
+                                inputMode="decimal"
+                                className="rs-input"
+                                value={c.amountThb}
+                                onChange={(e) => setCharges((cs) => cs.map((x, j) => (j === i ? { ...x, amountThb: e.target.value } : x)))}
+                                placeholder="บาท/เดือน"
+                              />
+                              <select
+                                className="rs-input"
+                                value={c.kind}
+                                onChange={(e) => setCharges((cs) => cs.map((x, j) => (j === i ? { ...x, kind: e.target.value } : x)))}
+                              >
+                                {Object.entries(CHARGE_KINDS).map(([v, l]) => (
+                                  <option key={v} value={v}>{l}</option>
+                                ))}
+                              </select>
+                              <label className="inline-flex items-center gap-2 text-[13px]" style={{ color: "var(--rs-text-2)" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={c.vatable}
+                                  onChange={(e) => setCharges((cs) => cs.map((x, j) => (j === i ? { ...x, vatable: e.target.checked } : x)))}
+                                />
+                                คิด VAT
+                              </label>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCharges((cs) => cs.filter((_, j) => j !== i))}
+                              className="flex-shrink-0 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5"
+                              aria-label="ลบรายการ"
+                            >
+                              <X className="h-4 w-4" style={{ color: "var(--rs-text-2)" }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCharges((cs) => [...cs, { kind: "other", label: "", amountThb: "", vatable: false }])}
+                      className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold"
+                      style={{ color: "var(--rs-brand)" }}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> เพิ่มรายการ
+                    </button>
                   </div>
 
                   {/* เนื้อสัญญา/แม่แบบ — ย้ายมาท้ายสุด (คนส่วนใหญ่ใช้เนื้อมาตรฐาน · ช่องเงินสำคัญกว่าจึงขึ้นก่อน) */}

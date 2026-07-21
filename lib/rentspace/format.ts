@@ -83,3 +83,46 @@ export function tenantDisplayName(t: {
   if (t.bizName && person) return `${t.bizName} (${person})`;
   return t.bizName || person || t.nickname || "ไม่ระบุชื่อ";
 }
+
+// ===== จำนวนเงิน → ตัวอักษรไทย (สำหรับสัญญา: "หกหมื่นบาทถ้วน") =====
+// self-contained + client-safe · รองรับ 0..999,999,999,999.99 พร้อมสตางค์
+const _THAI_DIGITS = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+const _THAI_PLACES = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+
+function readThaiIntegerGroup(numStr: string): string {
+  let out = "";
+  const len = numStr.length;
+  for (let i = 0; i < len; i++) {
+    const digit = Number(numStr[i]);
+    const place = len - i - 1;
+    if (digit === 0) continue;
+    if (place === 0 && digit === 1 && len > 1) out += "เอ็ด";
+    else if (place === 1 && digit === 2) out += "ยี่" + _THAI_PLACES[place];
+    else if (place === 1 && digit === 1) out += _THAI_PLACES[place];
+    else out += _THAI_DIGITS[digit] + _THAI_PLACES[place];
+  }
+  return out;
+}
+
+function readThaiInteger(intStr: string): string {
+  const clean = intStr.replace(/^0+(?=\d)/, "");
+  if (clean === "0") return _THAI_DIGITS[0];
+  if (clean.length > 6) {
+    const low = clean.slice(clean.length - 6);
+    const high = clean.slice(0, clean.length - 6);
+    const highText = readThaiInteger(high) + "ล้าน";
+    const lowText = low.replace(/^0+(?=\d)/, "") === "0" ? "" : readThaiIntegerGroup(low.replace(/^0+/, "") || "0");
+    return highText + (lowText && lowText !== _THAI_DIGITS[0] ? lowText : "");
+  }
+  return readThaiIntegerGroup(clean);
+}
+
+/** จำนวนเงิน → "หกหมื่นบาทถ้วน" / "...บาท...สตางค์" (สำหรับพิมพ์ในสัญญา) */
+export function bahtText(amount: number): string {
+  if (!Number.isFinite(amount)) return "";
+  const negative = amount < 0;
+  const [intPart, satPart] = Math.abs(amount).toFixed(2).split(".");
+  const baht = readThaiInteger(intPart);
+  const text = Number(satPart) === 0 ? `${baht}บาทถ้วน` : `${baht}บาท${readThaiInteger(satPart)}สตางค์`;
+  return (negative ? "ลบ" : "") + text;
+}
