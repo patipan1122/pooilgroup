@@ -250,7 +250,15 @@ export async function listBills(orgId: string, opts: { projectId?: string; statu
       ...(opts.period ? { period: opts.period } : {}),
     },
     orderBy: [{ period: "desc" }, { billNo: "desc" }],
-    include: { unit: true, tenant: true, payments: true, discounts: true },
+    // items preloaded so the list can expand a row's itemized breakdown in place
+    // (no per-row fetch). ~5-30 bills × a few items each → cheap.
+    include: {
+      unit: true,
+      tenant: true,
+      payments: true,
+      discounts: true,
+      items: { orderBy: { sort: "asc" } },
+    },
     take: 500,
   });
 }

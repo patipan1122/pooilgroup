@@ -45,6 +45,9 @@ export default async function ContractsPage() {
     tenantName: tenantDisplayName(c.tenant),
     rentText: formatBaht(toNum(c.rentAmountThb)),
     rangeText: `${thaiDateLong(c.startDate)}${c.endDate ? ` – ${thaiDateLong(c.endDate)}` : " – ไม่มีกำหนด"}`,
+    // วันเริ่ม/สิ้นสุดแบบดิบ (YYYY-MM-DD) — ให้ list กรองตามเดือนที่สัญญามีผลได้ฝั่ง client
+    startISO: c.startDate.toISOString().slice(0, 10),
+    endISO: c.endDate ? c.endDate.toISOString().slice(0, 10) : null,
     status: c.status,
     showStatus:
       (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate) ? "expiring" : c.status,

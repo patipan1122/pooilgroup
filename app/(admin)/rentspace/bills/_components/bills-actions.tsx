@@ -1,13 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, FileDown, X, AlertTriangle } from "lucide-react";
+import { Plus, FileDown, X, AlertTriangle, Search } from "lucide-react";
 import { actGenerateMonthlyBills, actCreateBill, actBillingPreview } from "../../_actions";
 import { currentPeriod, periodLabel, formatBaht } from "@/lib/rentspace/format";
 
-type ContractOpt = { id: string; contractNo: string; unitCode: string; tenantName: string };
+type ContractOpt = {
+  id: string;
+  contractNo: string;
+  unitCode: string;
+  tenantName: string;
+  alreadyBilled?: boolean; // มีบิลของงวดนี้อยู่แล้ว → ทำป้ายเตือนในตัวเลือก
+};
 
 type PreviewRow = {
   code: string;
@@ -41,6 +47,16 @@ export function BillsActions({
 
   const [contractId, setContractId] = useState(contracts[0]?.id ?? "");
   const [singlePeriod, setSinglePeriod] = useState(period);
+  const [contractQuery, setContractQuery] = useState("");
+
+  // ค้นหาสัญญา/ห้อง/ผู้เช่า ในกล่องออกบิลรายห้อง — กรองตัวเลือกฝั่ง client
+  const filteredContracts = useMemo(() => {
+    const needle = contractQuery.trim().toLowerCase();
+    if (!needle) return contracts;
+    return contracts.filter((c) =>
+      [c.unitCode, c.tenantName, c.contractNo].filter(Boolean).join(" ").toLowerCase().includes(needle),
+    );
+  }, [contracts, contractQuery]);
 
   const billPeriod = currentPeriod();
 
@@ -273,13 +289,44 @@ export function BillsActions({
                 <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
                   สัญญา / ห้อง
                 </label>
+                {/* ค้นหาสัญญา — พิมพ์ห้อง/ผู้เช่า/เลขที่สัญญาเพื่อกรองรายการด้านล่าง */}
+                <div className="relative mb-1.5">
+                  <Search
+                    className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{ color: "var(--rs-text-3)" }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="search"
+                    value={contractQuery}
+                    onChange={(e) => setContractQuery(e.target.value)}
+                    placeholder="ค้นหาห้อง / ผู้เช่า / เลขที่สัญญา"
+                    aria-label="ค้นหาสัญญา ห้อง หรือผู้เช่า"
+                    className="rs-d-input"
+                    style={{ paddingLeft: 34 }}
+                  />
+                </div>
                 <select className="rs-d-input" value={contractId} onChange={(e) => setContractId(e.target.value)}>
-                  {contracts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.unitCode} · {c.tenantName} ({c.contractNo})
+                  {filteredContracts.length === 0 ? (
+                    <option value="" disabled>
+                      ไม่พบสัญญาที่ตรงกับ “{contractQuery.trim()}”
                     </option>
-                  ))}
+                  ) : (
+                    filteredContracts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.unitCode} · {c.tenantName} ({c.contractNo}){c.alreadyBilled ? " — ออกบิลแล้ว" : ""}
+                      </option>
+                    ))
+                  )}
                 </select>
+                {(() => {
+                  const sel = contracts.find((c) => c.id === contractId);
+                  return sel?.alreadyBilled ? (
+                    <div className="text-[12px] mt-1" style={{ color: "var(--rs-pending)" }}>
+                      ⚠️ ห้องนี้ออกบิลของงวดนี้แล้ว — ออกซ้ำจะขึ้นว่ามีอยู่แล้ว
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <div>
                 <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>

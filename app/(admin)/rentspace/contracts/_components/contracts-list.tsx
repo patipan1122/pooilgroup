@@ -3,7 +3,7 @@
 // รายการสัญญา + ค้นหา + กรองสถานะ (client-side · instant) — CEO ขอ
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Search } from "lucide-react";
+import { FileText, Search, CalendarDays } from "lucide-react";
 import { RsCard, RsBadge, RsMobileCard, RsField } from "@/components/rentspace/ui";
 
 export type ContractRow = {
@@ -14,6 +14,8 @@ export type ContractRow = {
   tenantName: string;
   rentText: string;
   rangeText: string;
+  startISO: string; // YYYY-MM-DD — วันเริ่มสัญญา (กรองตามเดือน)
+  endISO: string | null; // YYYY-MM-DD — วันสิ้นสุด (null = ไม่มีกำหนด)
   status: string; // raw
   showStatus: string; // display (expiring คำนวณแล้ว)
   tenantSigned: boolean;
@@ -33,6 +35,7 @@ const FILTERS: { key: string; label: string }[] = [
 export function ContractsList({ rows }: { rows: ContractRow[] }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
+  const [month, setMonth] = useState(""); // YYYY-MM — กรองสัญญาที่ยังมีผลในเดือนนั้น
 
   // นับต่อสถานะ (โชว์บนชิป)
   const counts = useMemo(() => {
@@ -43,8 +46,14 @@ export function ContractsList({ rows }: { rows: ContractRow[] }) {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
+    // เดือนที่เลือก → ช่วงวัน [ต้นเดือน, สิ้นเดือน] เทียบสตริง YYYY-MM-DD ได้ตรง
+    // ("-31" เป็นขอบบนที่ปลอดภัยเชิงสตริง ไม่มีวันไหนในเดือนเกินค่านี้)
+    const monthStart = month ? `${month}-01` : "";
+    const monthEnd = month ? `${month}-31` : "";
     return rows.filter((r) => {
       if (status !== "all" && r.showStatus !== status) return false;
+      // สัญญามีผลในเดือน = เริ่มก่อน/ในเดือนนั้น และยังไม่จบก่อนเดือนนั้น
+      if (month && !(r.startISO <= monthEnd && (r.endISO == null || r.endISO >= monthStart))) return false;
       if (!query) return true;
       return [r.contractNo, r.unitCode, r.unitName, r.tenantName]
         .filter(Boolean)
@@ -52,7 +61,7 @@ export function ContractsList({ rows }: { rows: ContractRow[] }) {
         .toLowerCase()
         .includes(query);
     });
-  }, [rows, q, status]);
+  }, [rows, q, status, month]);
 
   return (
     <div className="space-y-3">
@@ -68,6 +77,22 @@ export function ContractsList({ rows }: { rows: ContractRow[] }) {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
+        {/* กรองตามเดือน — โชว์เฉพาะสัญญาที่ยังมีผลในเดือนที่เลือก (กากบาทของ input = ล้าง) */}
+        <label
+          className="shrink-0 inline-flex items-center gap-1.5 h-10 rounded-lg px-3 text-[13px] cursor-pointer"
+          style={{ border: "1px solid var(--rs-border)", background: "var(--rs-bg-2)", color: "var(--rs-text-2)" }}
+          title="เลือกเดือนเพื่อดูเฉพาะสัญญาที่ยังมีผล"
+        >
+          <CalendarDays className="h-4 w-4 shrink-0" style={{ color: "var(--rs-text-3)" }} aria-hidden="true" />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            aria-label="กรองสัญญาตามเดือนที่ยังมีผล"
+            className="bg-transparent outline-none cursor-pointer"
+            style={{ color: "var(--rs-text)" }}
+          />
+        </label>
         <div className="flex flex-wrap items-center gap-1.5">
           {FILTERS.map((f) => {
             const active = status === f.key;

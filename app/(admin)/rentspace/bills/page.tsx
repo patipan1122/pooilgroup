@@ -114,10 +114,20 @@ export default async function BillsPage({
       total: toNum(b.totalAmount),
       paid: toNum(b.paidAmount),
       remaining,
+      subtotal: toNum(b.subtotal),
+      vat: toNum(b.vatAmount),
+      discount: toNum(b.discountAmount),
+      // itemized breakdown for the expand-in-place panel
+      items: b.items.map((it) => ({ kind: it.kind, label: it.label, amount: toNum(it.amount) })),
       dueDateISO: b.dueDate ? new Date(b.dueDate).toISOString() : null,
       displayStatus: overdue && b.status !== "void" ? "overdue" : b.status,
     };
   });
+
+  // สัญญาที่ "ออกบิลแล้ว" ในงวดนี้ — ไว้ทำป้ายในช่องเลือกสัญญาของกล่องออกบิล
+  const billedThisPeriodContractIds = new Set(
+    allBills.filter((b) => b.period === thisPeriod && b.status !== "void").map((b) => b.contractId),
+  );
 
   function chipHref(next: { status?: string; period?: string }) {
     const params = new URLSearchParams();
@@ -154,6 +164,7 @@ export default async function BillsPage({
               contractNo: c.contractNo,
               unitCode: c.unit.code,
               tenantName: tenantDisplayName(c.tenant),
+              alreadyBilled: billedThisPeriodContractIds.has(c.id),
             }))}
           />
         ) : null}

@@ -177,8 +177,20 @@ export default async function MetersPage({
       s + (u.electric.currReading != null ? 1 : 0) + (u.water.currReading != null ? 1 : 0),
     0,
   );
-  const totalElectric = units.reduce((s, u) => s + (u.electric.amount ?? 0), 0);
-  const totalWater = units.reduce((s, u) => s + (u.water.amount ?? 0), 0);
+  // #4 — ยอดรวมค่าไฟ/น้ำต้องนับเฉพาะ "ห้องที่ออกบิลได้จริง" (มีสัญญาใช้งาน) เท่านั้น
+  //   เดิมรวมทุกห้องรวมห้องว่าง → KPI โชว์เกินยอดที่ออกบิลจริงมาก · ใช้ชุดเดียวกับ billRooms
+  //   (contracts ถูกกรอง active/expiring/expired ใน meterBoard แล้ว) เพื่อให้ตรงกับแผงออกบิล.
+  const billableUnitIds = new Set(
+    rawUnits.filter((u) => (u.contracts?.length ?? 0) > 0).map((u) => u.id),
+  );
+  const totalElectric = units.reduce(
+    (s, u) => s + (billableUnitIds.has(u.id) ? (u.electric.amount ?? 0) : 0),
+    0,
+  );
+  const totalWater = units.reduce(
+    (s, u) => s + (billableUnitIds.has(u.id) ? (u.water.amount ?? 0) : 0),
+    0,
+  );
 
   // #9d — ห้องที่ออกบิลได้ (มีสัญญาใช้งาน) + สถานะมิเตอร์ + ออกบิลงวดนี้แล้วหรือยัง
   // (billedUnitIds คำนวณไว้ด้านบนแล้ว — ใช้ทั้งล็อกมิเตอร์และแผงออกบิล)
@@ -210,10 +222,10 @@ export default async function MetersPage({
           tone={totalSides > 0 && recordedSides === totalSides ? "ok" : undefined}
         />
         <div className="hidden lg:block">
-          <RsKpi label="ยอดค่าไฟรวมเดือนนี้" value={formatBaht(totalElectric)} tone="pending" />
+          <RsKpi label="ยอดค่าไฟรวมเดือนนี้" value={formatBaht(totalElectric)} hint="เฉพาะห้องที่มีสัญญา" tone="pending" />
         </div>
         <div className="hidden lg:block">
-          <RsKpi label="ยอดค่าน้ำรวมเดือนนี้" value={formatBaht(totalWater)} tone="ok" />
+          <RsKpi label="ยอดค่าน้ำรวมเดือนนี้" value={formatBaht(totalWater)} hint="เฉพาะห้องที่มีสัญญา" tone="ok" />
         </div>
       </div>
 

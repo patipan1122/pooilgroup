@@ -562,7 +562,7 @@ export default function MeterBoard({
                 >
                   {/* sticky room column */}
                   <td
-                    className="py-2.5 px-3 sticky left-0 z-10"
+                    className="py-1.5 px-3 sticky left-0 z-10"
                     style={{ background: "var(--rs-bg)" }}
                   >
                     <div className="flex items-center gap-1.5">
@@ -615,7 +615,7 @@ export default function MeterBoard({
                   />
 
                   {/* per-row save */}
-                  <td className="py-2.5 px-3 text-center">
+                  <td className="py-1.5 px-3 text-center">
                     <button
                       type="button"
                       onClick={async () => {
@@ -623,7 +623,7 @@ export default function MeterBoard({
                         await saveSide(u.id, "water");
                       }}
                       disabled={locked || r.electric.saving || r.water.saving || !rowDirty}
-                      className="inline-flex items-center justify-center h-10 w-10 rounded-lg disabled:opacity-40"
+                      className="inline-flex items-center justify-center h-9 w-9 rounded-lg disabled:opacity-40"
                       style={{
                         background: rowDirty ? "var(--rs-brand)" : "var(--rs-bg-3)",
                         color: rowDirty ? "#fff" : "var(--rs-text-3)",
@@ -731,9 +731,13 @@ function SideCells({
   // rollover suspicion: a lower reading than last month with reset OFF
   const showRolloverWarn = !side.isReset && side.prev != null && currNum != null && currNum < side.prev;
   const showBaseline = side.needsBaseline && !side.saved && !locked; // ห้องใหม่ → กรอกเลขตั้งต้น
+  // #2 — แถวคุม "มิเตอร์เต็ม/เปลี่ยน" ทำให้ทุกแถวสูงเกิน → ซ่อนเป็นค่าเริ่มต้น
+  //   เผยเฉพาะเมื่อ (ก) เปิดใช้อยู่แล้ว (ข) เลขน่าสงสัย (ค) ผู้ใช้กดปุ่ม ↺ เอง
+  const [showResetControls, setShowResetControls] = useState(false);
+  const showResetRow = side.isReset || showRolloverWarn || showResetControls;
   return (
     <>
-      <td className="py-2.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
+      <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--rs-text-3)" }}>
         {showBaseline ? (
           <div className="flex flex-col items-end gap-0.5">
             <input
@@ -781,7 +785,7 @@ function SideCells({
               disabled={locked}
               placeholder={locked ? "🔒" : "—"}
               aria-label={`เลขมิเตอร์ล่าสุด ห้อง ${roomLabel} (${label})`}
-              className="w-24 h-10 rounded-lg px-2 text-right tabular-nums text-sm outline-none focus:ring-2 disabled:opacity-60"
+              className="w-24 h-8 rounded-lg pl-2 pr-8 text-right tabular-nums text-sm outline-none focus:ring-2 disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               style={{
                 background: "var(--rs-bg-2)",
                 border: `1px solid ${side.saved && !side.dirty ? "var(--rs-ok)" : "var(--rs-border)"}`,
@@ -792,12 +796,12 @@ function SideCells({
             />
             {side.saving ? (
               <Loader2
-                className="absolute -right-5 h-3.5 w-3.5 animate-spin"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin"
                 style={{ color: "var(--rs-text-3)" }}
                 aria-hidden="true"
               />
             ) : side.saved && !side.dirty ? (
-              <Check className="absolute -right-5 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} aria-hidden="true" />
+              <Check className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} aria-hidden="true" />
             ) : null}
           </div>
 
@@ -818,7 +822,7 @@ function SideCells({
             <span
               role="status"
               aria-label={`กำลังแนบรูปมิเตอร์${label} ห้อง ${roomLabel}`}
-              className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
               style={{ background: "var(--rs-bg-3)" }}
               title="กำลังแนบรูป"
             >
@@ -828,7 +832,7 @@ function SideCells({
             <button
               type="button"
               onClick={() => window.open(side.photoUrl!, "_blank", "noopener")}
-              className="inline-flex items-center justify-center h-10 w-10 overflow-hidden rounded-lg"
+              className="inline-flex items-center justify-center h-8 w-8 overflow-hidden rounded-lg"
               style={{ border: "1px solid var(--rs-ok)" }}
               title={`ดูรูปมิเตอร์${label} · คลิกเพื่อเปิด`}
               aria-label={`ดูรูปมิเตอร์${label} ห้อง ${roomLabel} (คลิกเพื่อเปิด)`}
@@ -840,7 +844,7 @@ function SideCells({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center justify-center h-10 w-10 rounded-lg"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
               style={{
                 background: "var(--rs-bg-3)",
                 color: "var(--rs-text-3)",
@@ -852,9 +856,28 @@ function SideCells({
               <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
+
+          {/* #2 — ปุ่มเผยแถว "มิเตอร์เต็ม/เปลี่ยน" (โชว์เฉพาะตอนซ่อนอยู่ · กันแถวสูงเปล่า) */}
+          {!showResetRow && !locked && (
+            <button
+              type="button"
+              onClick={() => setShowResetControls(true)}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg"
+              style={{
+                background: "transparent",
+                color: "var(--rs-text-3)",
+                border: "1px solid var(--rs-border)",
+              }}
+              title="มิเตอร์เต็ม / เปลี่ยนมิเตอร์"
+              aria-label={`เปิดตัวเลือกมิเตอร์เต็ม/เปลี่ยน ห้อง ${roomLabel} (${label})`}
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
-        {/* rollover / replacement controls */}
+        {/* rollover / replacement controls — #2 เผยเมื่อจำเป็นเท่านั้น (ค่าเริ่มต้นซ่อน) */}
+        {showResetRow && (
         <div className="flex flex-col items-end gap-1">
           <button
             type="button"
@@ -911,9 +934,10 @@ function SideCells({
             </div>
           )}
         </div>
+        )}
         </div>
       </td>
-      <td className="py-2.5 px-3 text-right tabular-nums font-medium">
+      <td className="py-1.5 px-3 text-right tabular-nums font-medium">
         <div style={{ color: side.usage != null ? "var(--rs-text)" : "var(--rs-text-3)" }}>
           {side.usage != null ? side.usage.toLocaleString("th-TH") : "—"}
         </div>

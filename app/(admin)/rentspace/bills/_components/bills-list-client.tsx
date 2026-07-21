@@ -7,14 +7,16 @@
 //   • "คำอธิบายสถานะบิล" legend popover
 // Display-only: amounts come straight from the server rows (no recompute).
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays, Trash2 } from "lucide-react";
+import { Receipt, Printer, BellRing, Info, Copy, ExternalLink, X, Search, CalendarDays, Trash2, ChevronDown } from "lucide-react";
 import { actRemindOverdue, actDeleteBillsBulk } from "../../_actions";
 import { formatBaht, thaiDateLong, periodLabel, BILL_STATUS } from "@/lib/rentspace/format";
 import { RsMobileCard, RsField, RsBadge } from "@/components/rentspace/ui";
+
+export type BillLine = { kind: string; label: string; amount: number };
 
 export type BillRow = {
   id: string;
@@ -27,8 +29,26 @@ export type BillRow = {
   total: number;
   paid: number;
   remaining: number;
+  subtotal: number;
+  vat: number;
+  discount: number;
+  items: BillLine[]; // itemized breakdown for the expand-in-place panel
   dueDateISO: string | null;
   displayStatus: string; // already overdue-adjusted by the server
+};
+
+// ป้ายภาษาไทยของชนิดรายการ (เผื่อ label ว่าง) — ตรงกับหน้ารายละเอียดบิล
+const ITEM_KIND_LABELS: Record<string, string> = {
+  rent: "ค่าเช่า",
+  electric: "ค่าไฟ",
+  water: "ค่าน้ำ",
+  late_fee: "ค่าปรับล่าช้า",
+  discount: "ส่วนลด",
+  land_tax: "ภาษีที่ดิน",
+  common_fee: "ค่าส่วนกลาง",
+  waste: "ค่าขยะ",
+  custom: "ค่าใช้จ่ายเพิ่มเติม",
+  other: "อื่น ๆ",
 };
 
 type RemindItem = { billId: string; code: string; tenantName: string; outstanding: number; url: string };
@@ -330,6 +350,9 @@ export function BillsTable({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  // เปิดดูรายละเอียดบิลในบรรทัด (accordion — เปิดทีละใบ) แทนการเด้งออกไปหน้าอื่น
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpand = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
 
   // ค้นหาห้อง (จุด 4) — filter by room code/name, tenant, or bill number.
   const filtered = useMemo(() => {
@@ -468,6 +491,8 @@ export function BillsTable({
                     floorAllOn={floorAllOn}
                     onToggleFloor={() => toggleFloor(floorKey, ids)}
                     onToggleRow={toggle}
+                    expandedId={expandedId}
+                    onToggleExpand={toggleExpand}
                   />
                 );
               })}
@@ -518,6 +543,8 @@ export function BillsTable({
                       bill={b}
                       checked={selected.has(b.id)}
                       onToggle={() => toggle(b.id)}
+                      expanded={expandedId === b.id}
+                      onToggleExpand={() => toggleExpand(b.id)}
                     />
                   ))}
                 </div>
@@ -555,6 +582,8 @@ function FloorGroup({
   floorAllOn,
   onToggleFloor,
   onToggleRow,
+  expandedId,
+  onToggleExpand,
 }: {
   floorKey: string;
   rows: BillRow[];
@@ -562,6 +591,8 @@ function FloorGroup({
   floorAllOn: boolean;
   onToggleFloor: () => void;
   onToggleRow: (id: string) => void;
+  expandedId: string | null;
+  onToggleExpand: (id: string) => void;
 }) {
   return (
     <>
@@ -591,60 +622,84 @@ function FloorGroup({
           </button>
         </td>
       </tr>
-      {rows.map((b) => (
-        <tr
-          key={b.id}
-          className="border-t hover:bg-[var(--rs-bg-2)] transition"
-          style={{ borderColor: "var(--rs-border)" }}
-        >
-          <td className="px-3 py-3 print:hidden">
-            <input
-              type="checkbox"
-              aria-label={`เลือกบิล ${b.billNo}`}
-              checked={selected.has(b.id)}
-              onChange={() => onToggleRow(b.id)}
-              className="rs-chk"
-            />
-          </td>
-          <td className="px-4 py-3">
-            <Link
-              href={`/rentspace/bills/${b.id}`}
-              className="font-semibold inline-flex items-center gap-1.5"
-              style={{ color: "var(--rs-brand)" }}
+      {rows.map((b) => {
+        const isSel = selected.has(b.id);
+        const isExpanded = expandedId === b.id;
+        return (
+          <Fragment key={b.id}>
+            <tr
+              className="border-t hover:bg-[var(--rs-bg-2)] transition"
+              style={{ borderColor: "var(--rs-border)", ...rowTint(isSel, b.displayStatus) }}
             >
-              <Receipt className="h-3.5 w-3.5" /> {b.billNo}
-            </Link>
-          </td>
-          <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
-            {b.unitCode}
-            <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span>
-          </td>
-          <td className="px-4 py-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-            {periodLabel(b.period)}
-          </td>
-          <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text)" }}>
-            {formatBaht(b.total)}
-          </td>
-          <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text-2)" }}>
-            {formatBaht(b.paid)}
-          </td>
-          <td
-            className="px-4 py-3 text-right tabular-nums font-semibold"
-            style={{ color: b.remaining > 0 ? "var(--rs-danger)" : "var(--rs-text-3)" }}
-          >
-            {formatBaht(b.remaining)}
-          </td>
-          <td
-            className="px-4 py-3 text-[12.5px]"
-            style={{ color: b.displayStatus === "overdue" ? "var(--rs-danger)" : "var(--rs-text-2)" }}
-          >
-            {b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
-          </td>
-          <td className="px-4 py-3">
-            <StatusChip status={b.displayStatus} />
-          </td>
-        </tr>
-      ))}
+              <td className="px-3 py-3 print:hidden">
+                <input
+                  type="checkbox"
+                  aria-label={`เลือกบิล ${b.billNo}`}
+                  checked={isSel}
+                  onChange={() => onToggleRow(b.id)}
+                  className="rs-chk"
+                />
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onToggleExpand(b.id)}
+                    aria-label={isExpanded ? `ยุบรายละเอียดบิล ${b.billNo}` : `ดูรายละเอียดบิล ${b.billNo}`}
+                    aria-expanded={isExpanded}
+                    className="shrink-0 inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-[var(--rs-bg-3)] transition"
+                    style={{ color: "var(--rs-text-3)" }}
+                  >
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+                  </button>
+                  <Link
+                    href={`/rentspace/bills/${b.id}`}
+                    className="font-semibold inline-flex items-center gap-1.5"
+                    style={{ color: "var(--rs-brand)" }}
+                  >
+                    <Receipt className="h-3.5 w-3.5" /> {b.billNo}
+                  </Link>
+                </div>
+              </td>
+              <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
+                {b.unitCode}
+                <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span>
+              </td>
+              <td className="px-4 py-3 text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                {periodLabel(b.period)}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text)" }}>
+                {formatBaht(b.total)}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums" style={{ color: "var(--rs-text-2)" }}>
+                {formatBaht(b.paid)}
+              </td>
+              <td
+                className="px-4 py-3 text-right tabular-nums font-semibold"
+                style={{ color: b.remaining > 0 ? "var(--rs-danger)" : "var(--rs-text-3)" }}
+              >
+                {formatBaht(b.remaining)}
+              </td>
+              <td
+                className="px-4 py-3 text-[12.5px]"
+                style={{ color: b.displayStatus === "overdue" ? "var(--rs-danger)" : "var(--rs-text-2)" }}
+              >
+                {b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
+              </td>
+              <td className="px-4 py-3">
+                <StatusChip status={b.displayStatus} />
+              </td>
+            </tr>
+            {isExpanded && (
+              <tr className="print:hidden" style={{ background: "var(--rs-bg-2)" }}>
+                <td colSpan={9} className="px-4 pb-3.5 pt-0">
+                  <BillDetailPanel bill={b} />
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -658,65 +713,197 @@ function MobileBillCard({
   bill: b,
   checked,
   onToggle,
+  expanded,
+  onToggleExpand,
 }: {
   bill: BillRow;
   checked: boolean;
   onToggle: () => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
 }) {
   return (
-    <div className="rs-card flex items-stretch gap-1 p-0 overflow-hidden">
-      {/* select checkbox — separate tap target, stops navigation */}
-      <label
-        className="flex shrink-0 items-start justify-center pl-3 pt-3.5 cursor-pointer"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <input
-          type="checkbox"
-          aria-label={`เลือกบิล ${b.billNo}`}
-          checked={checked}
-          onChange={onToggle}
-          className="rs-chk"
+    <div className="rs-card p-0 overflow-hidden" style={rowTint(checked, b.displayStatus)}>
+      <div className="flex items-stretch gap-1">
+        {/* select checkbox — separate tap target, stops navigation */}
+        <label
+          className="flex shrink-0 items-start justify-center pl-3 pt-3.5 cursor-pointer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            aria-label={`เลือกบิล ${b.billNo}`}
+            checked={checked}
+            onChange={onToggle}
+            className="rs-chk"
+          />
+        </label>
+
+        {/* body taps through to the bill */}
+        <Link href={`/rentspace/bills/${b.id}`} className="block flex-1 min-w-0 p-3.5 pl-1.5 active:bg-[var(--rs-bg-2)]">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[15px] font-semibold" style={{ color: "var(--rs-brand)" }}>
+                <Receipt className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{b.billNo}</span>
+              </div>
+              <div className="mt-0.5 truncate text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
+                {b.unitCode}
+                {b.tenantName ? <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span> : null}
+              </div>
+            </div>
+            <div className="shrink-0 text-right space-y-1">
+              <RsBadge kind="bill" status={b.displayStatus} />
+              <div className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-text)" }}>
+                {formatBaht(b.total)}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+            <RsField label="งวด" value={periodLabel(b.period)} />
+            <RsField
+              label="กำหนดชำระ"
+              value={b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
+              align="right"
+              tone={b.displayStatus === "overdue" ? "danger" : undefined}
+            />
+            <RsField label="ชำระแล้ว" value={formatBaht(b.paid)} tone="muted" />
+            <RsField
+              label="ค้างชำระ"
+              value={formatBaht(b.remaining)}
+              align="right"
+              tone={b.remaining > 0 ? "danger" : "muted"}
+            />
+          </div>
+        </Link>
+
+        {/* expand toggle — separate tap target (does NOT navigate) */}
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-label={expanded ? `ยุบรายละเอียดบิล ${b.billNo}` : `ดูรายละเอียดบิล ${b.billNo}`}
+          aria-expanded={expanded}
+          className="shrink-0 flex items-center justify-center px-3 active:bg-[var(--rs-bg-2)]"
+          style={{ color: "var(--rs-text-3)" }}
+        >
+          <ChevronDown className={`h-5 w-5 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-3.5 pb-3.5">
+          <BillDetailPanel bill={b} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * สีพื้น/ขอบของแถวบิล — บิลที่ "เลือก" ให้เด่นชัด (จุด 6a).
+ *  • เลือก + ออกบิลแล้ว → โทนฟ้าอ่อน (info) ให้ "ออกบิลแล้ว" เด่นออกมาตอนถูกเลือก
+ *  • เลือก (สถานะอื่น)   → โทนแบรนด์อ่อน + แถบซ้ายสีแบรนด์
+ *  • ไม่ได้เลือก          → ไม่ทับสี (ปล่อย hover เดิม)
+ */
+function rowTint(selected: boolean, status: string): React.CSSProperties {
+  if (!selected) return {};
+  const issued = status === "issued";
+  return {
+    background: issued ? "var(--rs-info-soft)" : "var(--rs-brand-50)",
+    boxShadow: `inset 3px 0 0 ${issued ? "var(--rs-info)" : "var(--rs-brand)"}`,
+  };
+}
+
+/** แผงรายละเอียดบิลแบบกางในบรรทัด — รายการย่อย + สรุปยอด + ลิงก์เปิดเต็มหน้า. */
+function BillDetailPanel({ bill: b }: { bill: BillRow }) {
+  return (
+    <div className="rounded-xl p-3.5" style={{ background: "#fff", border: "1px solid var(--rs-border)" }}>
+      {/* รายการย่อย (ค่าเช่า/ค่าไฟ/ค่าน้ำ/ค่าปรับ/อื่นๆ) */}
+      <div className="space-y-1">
+        {b.items.length === 0 ? (
+          <div className="text-[12.5px]" style={{ color: "var(--rs-text-3)" }}>
+            ไม่มีรายการย่อย
+          </div>
+        ) : (
+          b.items.map((it, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
+              <span style={{ color: "var(--rs-text-2)" }}>
+                {it.label || ITEM_KIND_LABELS[it.kind] || it.kind}
+              </span>
+              <span
+                className="tabular-nums"
+                style={{ color: it.amount < 0 ? "var(--rs-ok)" : "var(--rs-text)" }}
+              >
+                {formatBaht(it.amount)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* สรุปยอด */}
+      <div className="mt-2.5 pt-2.5 border-t space-y-1" style={{ borderColor: "var(--rs-border)" }}>
+        <PanelRow label="ยอดก่อนภาษี" value={formatBaht(b.subtotal)} />
+        {b.discount > 0 && <PanelRow label="ส่วนลด" value={`− ${formatBaht(b.discount)}`} tone="ok" />}
+        {b.vat > 0 && <PanelRow label="ภาษีมูลค่าเพิ่ม (VAT)" value={formatBaht(b.vat)} />}
+        <PanelRow label="ยอดรวมทั้งสิ้น" value={formatBaht(b.total)} strong />
+        <PanelRow label="ชำระแล้ว" value={formatBaht(b.paid)} />
+        <PanelRow
+          label="คงเหลือ"
+          value={formatBaht(b.remaining)}
+          strong
+          tone={b.remaining > 0 ? "danger" : "ok"}
         />
-      </label>
+      </div>
 
-      {/* body taps through to the bill */}
-      <Link href={`/rentspace/bills/${b.id}`} className="block flex-1 min-w-0 p-3.5 pl-1.5 active:bg-[var(--rs-bg-2)]">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[15px] font-semibold" style={{ color: "var(--rs-brand)" }}>
-              <Receipt className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{b.billNo}</span>
-            </div>
-            <div className="mt-0.5 truncate text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-              {b.unitCode}
-              {b.tenantName ? <span style={{ color: "var(--rs-text-3)" }}>{" · "}{b.tenantName}</span> : null}
-            </div>
-          </div>
-          <div className="shrink-0 text-right space-y-1">
-            <RsBadge kind="bill" status={b.displayStatus} />
-            <div className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-text)" }}>
-              {formatBaht(b.total)}
-            </div>
-          </div>
+      {/* ครบกำหนด + สถานะ + ลิงก์เปิดเต็มหน้า */}
+      <div
+        className="mt-2.5 pt-2.5 border-t flex items-center justify-between gap-3 flex-wrap"
+        style={{ borderColor: "var(--rs-border)" }}
+      >
+        <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--rs-text-2)" }}>
+          <span>ครบกำหนด {b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}</span>
+          <StatusChip status={b.displayStatus} />
         </div>
+        <Link
+          href={`/rentspace/bills/${b.id}`}
+          className="inline-flex items-center gap-1 text-[12.5px] font-semibold"
+          style={{ color: "var(--rs-brand)" }}
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> เปิดเต็มหน้า
+        </Link>
+      </div>
+    </div>
+  );
+}
 
-        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
-          <RsField label="งวด" value={periodLabel(b.period)} />
-          <RsField
-            label="กำหนดชำระ"
-            value={b.dueDateISO ? thaiDateLong(new Date(b.dueDateISO)) : "—"}
-            align="right"
-            tone={b.displayStatus === "overdue" ? "danger" : undefined}
-          />
-          <RsField label="ชำระแล้ว" value={formatBaht(b.paid)} tone="muted" />
-          <RsField
-            label="ค้างชำระ"
-            value={formatBaht(b.remaining)}
-            align="right"
-            tone={b.remaining > 0 ? "danger" : "muted"}
-          />
-        </div>
-      </Link>
+function PanelRow({
+  label,
+  value,
+  strong,
+  tone,
+}: {
+  label: string;
+  value: React.ReactNode;
+  strong?: boolean;
+  tone?: "danger" | "ok";
+}) {
+  const color = tone === "danger" ? "var(--rs-danger)" : tone === "ok" ? "var(--rs-ok)" : "var(--rs-text)";
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span
+        className={strong ? "text-[13px] font-semibold" : "text-[12.5px]"}
+        style={{ color: strong ? "var(--rs-text)" : "var(--rs-text-2)" }}
+      >
+        {label}
+      </span>
+      <span
+        className={`tabular-nums text-right ${strong ? "text-[14px] font-bold" : "text-[13px] font-medium"}`}
+        style={{ color: strong ? color : "var(--rs-text)" }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
