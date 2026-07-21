@@ -129,6 +129,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
     rentDueDay: contract.rentDueDay,
     depositAmountThb: toNum(contract.depositAmountThb),
     depositMonths: toNum(contract.depositMonths),
+    areaSqm: contract.areaSqm != null ? toNum(contract.areaSqm) : null,
     vatPercent: toNum(contract.vatPercent),
     vatOnRent: contract.vatOnRent,
     vatOnElectric: contract.vatOnElectric,
@@ -387,6 +388,8 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 editStatus={editStatus}
                 editRequestReason={contract.editRequestReason}
                 editDecisionNote={contract.editDecisionNote}
+                currentBodyHtml={docData.customBodyHtml ?? ""}
+                proposedBodyHtml={contract.editProposedBodyHtml ?? null}
               />
             </RsCard>
           )}

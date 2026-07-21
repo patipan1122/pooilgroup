@@ -63,6 +63,7 @@ type ContractLike = {
   fitOutFreeDays?: number | null;
   buildingModifications?: string | null;
   witness2Name?: string | null;
+  areaSqm?: unknown; // ขนาดพื้นที่กรอกในสัญญา (override ของห้อง)
   /** ค่ารายเดือนของสัญญานี้ (per-contract) — ใช้สร้าง {{monthlyChargesTable}} */
   recurringCharges?: RecurringChargeLike[];
   unit: { code: string; name?: string | null; areaSqm?: unknown; zone?: string | null };
@@ -252,7 +253,9 @@ export function contractPlaceholders(c: ContractLike): Record<string, string> {
     tenantSignerPhone: esc(c.tenant.authorizedSignerPhone ?? c.tenant.phones?.[0] ?? "—"),
     // ── พื้นที่/ยูนิต ──
     unitCode: esc(c.unit.name ? `${c.unit.code} (${c.unit.name})` : c.unit.code),
-    unitAreaSqm: esc(toNum(c.unit.areaSqm) > 0 ? `${toNum(c.unit.areaSqm)}` : "____"),
+    unitAreaSqm: esc(
+      toNum(c.areaSqm) > 0 ? `${toNum(c.areaSqm)}` : toNum(c.unit.areaSqm) > 0 ? `${toNum(c.unit.areaSqm)}` : "____",
+    ),
     unitLocation: esc(c.project.address ?? c.project.billAddress ?? "____"),
     // ── ข้อ 2: วัตถุประสงค์/ระยะเวลา ──
     businessType: esc(c.businessType ?? "____"),

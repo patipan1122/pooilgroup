@@ -666,6 +666,7 @@ export async function actSaveContract(input: {
   fitOutFreeDays?: number | null;
   buildingModifications?: string;
   witness2Name?: string;
+  areaSqm?: number | null;
   /** ผู้มีอำนาจลงนามแทน (บันทึกที่ผู้เช่า — company-level) */
   tenantSignerName?: string;
   tenantSignerPhone?: string;
@@ -689,6 +690,7 @@ export async function actSaveContract(input: {
     fitOutFreeDays: input.fitOutFreeDays ?? null,
     buildingModifications: input.buildingModifications?.trim() || null,
     witness2Name: input.witness2Name?.trim() || null,
+    areaSqm: input.areaSqm ?? null,
     rentAmountThb: input.rentAmountThb,
     rentDueDay: input.rentDueDay ?? 5,
     depositAmountThb: input.depositAmountThb ?? 0,
@@ -1986,7 +1988,8 @@ export async function actDeleteRecurringCharge(id: string) {
 }
 
 // ───────── ขออนุมัติแก้ไขสัญญาที่เซ็นแล้ว (maker≠checker · mirror void บิล) ─────────
-export async function actRequestContractEdit(contractId: string, reason: string) {
+// พนักงานเสนอ "ข้อความที่ขอแก้" (proposedBodyHtml = เนื้อสัญญาเต็มที่แก้แล้ว) → superadmin รีวิว redline → อนุมัติ = นำไปใช้
+export async function actRequestContractEdit(contractId: string, reason: string, proposedBodyHtml?: string) {
   const session = await gateAdmin();
   const c = await prisma.rentalContract.findFirst({
     where: { id: contractId, orgId: session.user.org_id },
@@ -1997,11 +2000,13 @@ export async function actRequestContractEdit(contractId: string, reason: string)
   if (c.editStatus === "pending") throw new Error("มีคำขอแก้ไขที่รออนุมัติอยู่แล้ว");
   const r = (reason || "").trim();
   if (r.length < 3) throw new Error("กรุณาระบุเหตุผลที่ต้องแก้ไขสัญญา");
+  const proposed = (proposedBodyHtml || "").trim() || null;
   await prisma.rentalContract.update({
     where: { id: contractId },
     data: {
       editStatus: "pending",
       editRequestReason: r,
+      editProposedBodyHtml: proposed,
       editRequestedBy: session.user.id,
       editRequestedAt: new Date(),
       editDecidedBy: null,
@@ -2009,18 +2014,26 @@ export async function actRequestContractEdit(contractId: string, reason: string)
       editDecisionNote: null,
     },
   });
-  await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", contractId, { action: "request_edit", reason: r });
+  await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", contractId, { action: "request_edit", reason: r, withProposal: !!proposed });
   revalidatePath("/rentspace/contracts");
   revalidatePath(`/rentspace/contracts/${contractId}`);
   return { ok: true };
 }
 
-/** อนุมัติ/ปฏิเสธคำขอแก้สัญญา — checker ต้องไม่ใช่ผู้ขอ (super_admin อนุมัติเองได้) */
+/** อนุมัติ/ปฏิเสธคำขอแก้สัญญา — checker ต้องไม่ใช่ผู้ขอ (super_admin อนุมัติเองได้)
+ *  อนุมัติ + มี "ข้อความที่ขอแก้" (editProposedBodyHtml) → นำไปแทน customTermsHtml + ออกฉบับแก้ไข + เซ็นใหม่ */
 export async function actDecideContractEdit(contractId: string, decision: "approve" | "reject", note?: string) {
   const session = await gateAdmin();
   const c = await prisma.rentalContract.findFirst({
     where: { id: contractId, orgId: session.user.org_id },
-    select: { id: true, editStatus: true, editRequestedBy: true },
+    select: {
+      id: true,
+      editStatus: true,
+      editRequestedBy: true,
+      editProposedBodyHtml: true,
+      customTermsHtml: true,
+      _count: { select: { addenda: true } },
+    },
   });
   if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
   if (c.editStatus !== "pending") throw new Error("ไม่มีคำขอแก้ไขที่รออนุมัติ");
@@ -2028,10 +2041,53 @@ export async function actDecideContractEdit(contractId: string, decision: "appro
     throw new Error("ต้องให้แอดมินอีกคนเป็นผู้อนุมัติคำขอแก้สัญญา (กันการอนุมัติเอง)");
   }
   const n = (note || "").trim() || null;
+
+  // อนุมัติ + มีข้อความที่ขอแก้ → applied: แทนเนื้อสัญญา + ออก addendum (เก็บของเดิม) + ล้างลายเซ็นเพื่อเซ็นใหม่
+  if (decision === "approve" && c.editProposedBodyHtml?.trim()) {
+    const token = randomBytes(24).toString("base64url");
+    await prisma.$transaction([
+      prisma.rentalContractAddendum.create({
+        data: {
+          id: randomUUID(),
+          orgId: session.user.org_id,
+          contractId,
+          seq: c._count.addenda + 1,
+          summary: `แก้ไขเนื้อสัญญาตามคำขอ (ฉบับแก้ไขที่ ${c._count.addenda + 1})${n ? ` — ${n}` : ""}`,
+          bodyHtml: c.customTermsHtml ?? null, // สแนปช็อตเนื้อเดิมก่อนแก้
+          createdBy: session.user.id,
+        },
+      }),
+      prisma.rentalContract.update({
+        where: { id: contractId },
+        data: {
+          customTermsHtml: c.editProposedBodyHtml,
+          editProposedBodyHtml: null,
+          editStatus: "none",
+          editRequestReason: null,
+          editDecidedBy: session.user.id,
+          editDecidedAt: new Date(),
+          editDecisionNote: n,
+          // เซ็นใหม่ (ไม่ลบลายเซ็นเดิมเงียบ ๆ — เก็บใน addendum แล้ว)
+          tenantSigned: false,
+          signedAt: null,
+          signatureDataUrl: null,
+          signerName: null,
+          signToken: token,
+        },
+      }),
+    ]);
+    await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", contractId, { action: "approve_edit_applied", note: n });
+    revalidatePath("/rentspace/contracts");
+    revalidatePath(`/rentspace/contracts/${contractId}`);
+    return { ok: true, applied: true, reSignRequired: true };
+  }
+
+  // ปฏิเสธ หรือ อนุมัติแบบไม่มีข้อความเสนอ (legacy: ให้แอดมินไปแก้เองในฟอร์ม)
   await prisma.rentalContract.update({
     where: { id: contractId },
     data: {
       editStatus: decision === "approve" ? "approved" : "rejected",
+      editProposedBodyHtml: decision === "reject" ? null : c.editProposedBodyHtml,
       editDecidedBy: session.user.id,
       editDecidedAt: new Date(),
       editDecisionNote: n,

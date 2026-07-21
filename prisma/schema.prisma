@@ -7466,6 +7466,9 @@ model RentalContract {
   fitOutFreeDays        Int?     @map("fit_out_free_days")       // ปลอดค่าเช่าช่วงตกแต่ง ≤ N วัน (ข้อ 5)
   buildingModifications String?  @map("building_modifications") @db.Text // รายการปรับแต่งอาคาร (ข้อ 6)
   witness2Name          String?  @map("witness2_name")           // พยานฝั่งผู้เช่า
+  areaSqm               Decimal? @map("area_sqm") @db.Decimal(10, 2) // ขนาดพื้นที่เช่า (กรอกในสัญญา · null = ใช้ของห้อง)
+  // ข้อความสัญญาที่ "ขอแก้" รออนุมัติ (พนักงานเสนอ → superadmin รีวิว redline → อนุมัติ = นำไปแทน customTermsHtml)
+  editProposedBodyHtml  String?  @map("edit_proposed_body_html") @db.Text
   note             String?
   createdBy        String?                 @map("created_by") @db.Uuid
   createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)

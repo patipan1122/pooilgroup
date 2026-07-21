@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Copy, Check, PenLine, Download, X, Pencil, Trash2, Paperclip, FileText, Upload } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   actDeleteContractDocument,
 } from "../../../_actions";
 import { periodLabel } from "@/lib/rentspace/format";
+import { redlineHtml, redlineCounts } from "@/lib/rentspace/redline";
 
 /** จำนวนเดือนนับรวมปลายทาง · ผิดลำดับ = 0 */
 function monthsInclusive(startPeriod: string, endPeriod: string): number {
@@ -482,32 +483,62 @@ export function ContractEditRequest({
   editStatus,
   editRequestReason,
   editDecisionNote,
+  currentBodyHtml,
+  proposedBodyHtml,
 }: {
   contractId: string;
   tenantSigned: boolean;
   editStatus: "none" | "pending" | "approved" | "rejected";
   editRequestReason?: string | null;
   editDecisionNote?: string | null;
+  /** เนื้อสัญญาปัจจุบัน (resolved) — ตั้งต้นในกล่องแก้ + ฐานเทียบ redline */
+  currentBodyHtml: string;
+  /** ข้อความที่พนักงานขอแก้ (รออนุมัติ) — null = ยังไม่มี proposal */
+  proposedBodyHtml: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false); // โมดัลขอแก้ไข
+  const [body, setBody] = useState(currentBodyHtml); // เนื้อสัญญาเต็มที่กำลังแก้
+  const [reason, setReason] = useState(""); // เหตุผลที่ขอแก้
+  const [decideNote, setDecideNote] = useState(""); // หมายเหตุอนุมัติ/ปฏิเสธ (ไม่บังคับ)
+
+  // redline — คำนวณเฉพาะตอน pending + มี proposal (LCS อาจหนักถ้าเอกสารยาว → memo กันคิดซ้ำตอนพิมพ์หมายเหตุ)
+  const diffHtml = useMemo(
+    () => (editStatus === "pending" && proposedBodyHtml ? redlineHtml(currentBodyHtml, proposedBodyHtml) : ""),
+    [editStatus, currentBodyHtml, proposedBodyHtml],
+  );
+  const counts = useMemo(
+    () =>
+      editStatus === "pending" && proposedBodyHtml
+        ? redlineCounts(currentBodyHtml, proposedBodyHtml)
+        : { added: 0, removed: 0 },
+    [editStatus, currentBodyHtml, proposedBodyHtml],
+  );
 
   // ยังไม่เซ็น → แก้ได้เลย ไม่ต้องขออนุมัติ (ปุ่มแก้ไขอยู่ที่ ContractEditButton บนหน้า)
   if (!tenantSigned) return null;
 
-  function requestEdit() {
-    const reason = prompt(
-      "เหตุผลที่ขอแก้ไขสัญญาที่เซ็นแล้ว?\n(ต้องให้แอดมินอีกคนอนุมัติก่อนจึงจะแก้ได้ · การแก้จะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่)",
-    );
-    if (reason == null) return;
+  function openRequest() {
+    setBody(currentBodyHtml); // รีเซ็ตเป็นเนื้อปัจจุบันทุกครั้งที่เปิด
+    setReason("");
+    setOpen(true);
+  }
+
+  function submitRequest() {
     if (reason.trim().length < 3) {
       toast.error("กรุณาระบุเหตุผลที่ต้องแก้ไขสัญญา");
       return;
     }
+    if (!body.trim()) {
+      toast.error("เนื้อสัญญาว่างไม่ได้");
+      return;
+    }
     start(async () => {
       try {
-        await actRequestContractEdit(contractId, reason.trim());
-        toast.success("ส่งคำขอแก้ไขแล้ว — รอแอดมินอีกคนอนุมัติ");
+        await actRequestContractEdit(contractId, reason.trim(), body);
+        toast.success("ส่งคำขอแก้ไขแล้ว — รอแอดมินอีกคนรีวิวส่วนที่แก้และอนุมัติ");
+        setOpen(false);
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ส่งคำขอไม่สำเร็จ");
@@ -516,12 +547,20 @@ export function ContractEditRequest({
   }
 
   function decide(decision: "approve" | "reject") {
-    if (decision === "approve" && !confirm("ยืนยันอนุมัติให้แก้ไขสัญญานี้?")) return;
-    const note = decision === "reject" ? prompt("เหตุผลที่ไม่อนุมัติ (ถ้ามี)") ?? "" : "";
+    if (
+      decision === "approve" &&
+      !confirm("ยืนยันอนุมัติ? ระบบจะนำข้อความที่ขอแก้ไปใช้ ออกฉบับแก้ไข และผู้เช่าต้องเซ็นใหม่")
+    )
+      return;
     start(async () => {
       try {
-        await actDecideContractEdit(contractId, decision, note || undefined);
-        toast.success(decision === "approve" ? "อนุมัติแก้ไขสัญญาแล้ว" : "ปฏิเสธคำขอแก้ไขแล้ว");
+        await actDecideContractEdit(contractId, decision, decideNote.trim() || undefined);
+        if (decision === "approve") {
+          toast.success("อนุมัติแล้ว — นำข้อความใหม่ไปใช้ · ผู้เช่าต้องเซ็นสัญญาใหม่");
+        } else {
+          toast.success("ปฏิเสธคำขอแก้ไขแล้ว");
+        }
+        setDecideNote("");
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
@@ -529,73 +568,210 @@ export function ContractEditRequest({
     });
   }
 
-  // none → ปุ่มขอแก้ไข
-  if (editStatus === "none") {
-    return (
-      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={requestEdit} disabled={pending}>
-        <Pencil className="h-4 w-4" /> ขอแก้ไขสัญญา
-      </button>
-    );
-  }
+  return (
+    <>
+      {/* pending → ฝั่งแอดมินรีวิว redline + อนุมัติ/ปฏิเสธ (checker ≠ requester บังคับฝั่ง server) */}
+      {editStatus === "pending" ? (
+        <div className="space-y-2.5">
+          <div
+            className="rounded-xl px-3 py-2.5 text-[12.5px]"
+            style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+          >
+            <div className="font-semibold">รออนุมัติแก้ไขสัญญา</div>
+            {editRequestReason && <div className="mt-0.5">เหตุผล: {editRequestReason}</div>}
+          </div>
 
-  // pending → รออนุมัติ + ปุ่มอนุมัติ/ปฏิเสธ (checker ≠ requester บังคับฝั่ง server)
-  if (editStatus === "pending") {
-    return (
-      <div className="space-y-2.5">
+          {proposedBodyHtml && (
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="text-[12.5px] font-semibold" style={{ color: "var(--rs-text)" }}>
+                  สิ่งที่ลูกค้าขอแก้ (แดง=ลบ · เขียว=เพิ่ม)
+                </div>
+                <div className="text-[11.5px] flex-shrink-0" style={{ color: "var(--rs-text-3)" }}>
+                  เพิ่ม {counts.added} คำ · ลบ {counts.removed} คำ
+                </div>
+              </div>
+              <div
+                className="rounded-xl px-3 py-2.5 overflow-y-auto"
+                style={{ maxHeight: 320, border: "1px solid var(--rs-border)", background: "#fff" }}
+                dangerouslySetInnerHTML={{ __html: diffHtml }}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[12px] font-semibold mb-1" style={{ color: "var(--rs-text-2)" }}>
+              หมายเหตุ (ไม่บังคับ)
+            </label>
+            <textarea
+              className="rs-edit-input"
+              style={{ minHeight: 52 }}
+              value={decideNote}
+              onChange={(e) => setDecideNote(e.target.value)}
+              placeholder="เช่น เหตุผลที่ไม่อนุมัติ"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" onClick={() => decide("approve")} disabled={pending}>
+              <Check className="h-4 w-4" /> อนุมัติ
+            </button>
+            <button
+              className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0"
+              style={{ color: "var(--rs-danger)" }}
+              onClick={() => decide("reject")}
+              disabled={pending}
+            >
+              <X className="h-4 w-4" /> ปฏิเสธ
+            </button>
+          </div>
+          <p className="text-[11px]" style={{ color: "var(--rs-text-3)" }}>
+            ผู้อนุมัติต้องเป็นแอดมินคนละคนกับผู้ขอ (กันการอนุมัติเอง) · อนุมัติแล้วจะนำข้อความใหม่ไปใช้และผู้เช่าต้องเซ็นใหม่
+          </p>
+        </div>
+      ) : editStatus === "approved" ? (
+        // approved → แบนเนอร์ชวนกดแก้ไข
         <div
           className="rounded-xl px-3 py-2.5 text-[12.5px]"
-          style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+          style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}
         >
-          <div className="font-semibold">รออนุมัติแก้ไขสัญญา</div>
-          {editRequestReason && <div className="mt-0.5">เหตุผล: {editRequestReason}</div>}
+          <div className="font-semibold">อนุมัติแล้ว — กดปุ่ม “แก้ไขสัญญา” เพื่อออกฉบับแก้ไข</div>
+          <div className="mt-0.5">เมื่อบันทึก ระบบจะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่</div>
         </div>
-        <div className="flex gap-2">
-          <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" onClick={() => decide("approve")} disabled={pending}>
-            <Check className="h-4 w-4" /> อนุมัติ
-          </button>
+      ) : editStatus === "rejected" ? (
+        // rejected → แบนเนอร์ + ขอใหม่ได้
+        <div className="space-y-2">
+          <div
+            className="rounded-xl px-3 py-2.5 text-[12.5px]"
+            style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+          >
+            <div className="font-semibold">คำขอแก้ไขถูกปฏิเสธ</div>
+            {editDecisionNote && <div className="mt-0.5">หมายเหตุ: {editDecisionNote}</div>}
+          </div>
           <button
-            className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0"
-            style={{ color: "var(--rs-danger)" }}
-            onClick={() => decide("reject")}
+            className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0"
+            onClick={openRequest}
             disabled={pending}
           >
-            <X className="h-4 w-4" /> ปฏิเสธ
+            <Pencil className="h-4 w-4" /> ขอแก้ไขใหม่อีกครั้ง
           </button>
         </div>
-        <p className="text-[11px]" style={{ color: "var(--rs-text-3)" }}>
-          ผู้อนุมัติต้องเป็นแอดมินคนละคนกับผู้ขอ (กันการอนุมัติเอง)
-        </p>
-      </div>
-    );
-  }
+      ) : (
+        // none → ปุ่มขอแก้ไข
+        <button
+          className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0"
+          onClick={openRequest}
+          disabled={pending}
+        >
+          <Pencil className="h-4 w-4" /> ขอแก้ไขสัญญา
+        </button>
+      )}
 
-  // approved → แบนเนอร์ชวนกดแก้ไข
-  if (editStatus === "approved") {
-    return (
-      <div
-        className="rounded-xl px-3 py-2.5 text-[12.5px]"
-        style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}
-      >
-        <div className="font-semibold">อนุมัติแล้ว — กดปุ่ม “แก้ไขสัญญา” เพื่อออกฉบับแก้ไข</div>
-        <div className="mt-0.5">เมื่อบันทึก ระบบจะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่</div>
-      </div>
-    );
-  }
+      {/* โมดัลขอแก้ไข — แก้ข้อความสัญญาได้ทุกบรรทัด + เหตุผล */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4 print:hidden"
+          onClick={() => !pending && setOpen(false)}
+        >
+          <div
+            className="rs-card w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[88vh] flex flex-col rounded-b-none sm:rounded-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{ borderColor: "var(--rs-border)" }}
+            >
+              <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
+                ขอแก้ไขสัญญา
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                disabled={pending}
+                className="p-1 rounded-lg hover:bg-black/5"
+                aria-label="ปิด"
+              >
+                <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
+              <div
+                className="rounded-xl px-3 py-2.5 text-[12px]"
+                style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}
+              >
+                แก้ข้อความได้ทุกบรรทัด · เมื่อส่ง แอดมินอีกคนจะเห็นเฉพาะส่วนที่แก้ (redline) ก่อนอนุมัติ · อนุมัติแล้วจะออกฉบับแก้ไขและผู้เช่าต้องเซ็นใหม่
+              </div>
+              <div>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
+                  แก้ข้อความสัญญา (แก้ได้ทุกบรรทัด)
+                </label>
+                <textarea
+                  className="rs-edit-input font-mono"
+                  style={{ minHeight: 300 }}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  aria-label="ข้อความสัญญาที่ขอแก้"
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
+                  เหตุผลที่ขอแก้
+                </label>
+                <textarea
+                  className="rs-edit-input"
+                  style={{ minHeight: 56 }}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="เช่น แก้ค่าเช่าตามที่ตกลงใหม่กับผู้เช่า"
+                  aria-label="เหตุผลที่ขอแก้"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 px-5 py-3 border-t" style={{ borderColor: "var(--rs-border)" }}>
+              <button className="rs-btn rs-btn-ghost flex-1 justify-center" disabled={pending} onClick={() => setOpen(false)}>
+                ยกเลิก
+              </button>
+              <button className="rs-btn flex-1 justify-center" disabled={pending} onClick={submitRequest}>
+                {pending ? "กำลังส่ง…" : "ส่งคำขอแก้ไข"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-  // rejected → แบนเนอร์ + ขอใหม่ได้
-  return (
-    <div className="space-y-2">
-      <div
-        className="rounded-xl px-3 py-2.5 text-[12.5px]"
-        style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
-      >
-        <div className="font-semibold">คำขอแก้ไขถูกปฏิเสธ</div>
-        {editDecisionNote && <div className="mt-0.5">หมายเหตุ: {editDecisionNote}</div>}
-      </div>
-      <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={requestEdit} disabled={pending}>
-        <Pencil className="h-4 w-4" /> ขอแก้ไขใหม่อีกครั้ง
-      </button>
-    </div>
+      <style jsx>{`
+        :global(.rl-ins) {
+          background: #dcfce7;
+          color: #166534;
+          text-decoration: none;
+          border-radius: 2px;
+        }
+        :global(.rl-del) {
+          background: #fee2e2;
+          color: #991b1b;
+          text-decoration: line-through;
+          border-radius: 2px;
+        }
+        :global(.rl-diff) {
+          line-height: 1.9;
+          font-size: 13.5px;
+        }
+        :global(.rs-edit-input) {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--rs-border);
+          background: var(--rs-bg-2);
+          color: var(--rs-text);
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        :global(.rs-edit-input:focus) {
+          outline: none;
+          border-color: var(--rs-brand);
+          background: #fff;
+        }
+      `}</style>
+    </>
   );
 }
 

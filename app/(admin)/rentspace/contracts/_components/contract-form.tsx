@@ -51,6 +51,7 @@ type EditInitial = {
   rentDueDay?: number | null;
   depositAmountThb: number;
   depositMonths?: number | null;
+  areaSqm?: number | null;
   vatPercent?: number | null;
   vatOnRent?: boolean | null;
   vatOnElectric?: boolean | null;
@@ -203,6 +204,7 @@ export function ContractForm({
   const [rentAmount, setRentAmount] = useState(editInitial ? String(editInitial.rentAmountThb) : "");
   const [rentDueDay, setRentDueDay] = useState(String(editInitial?.rentDueDay ?? 5));
   const [depositAmount, setDepositAmount] = useState(editInitial ? String(editInitial.depositAmountThb) : "");
+  const [areaSqm, setAreaSqm] = useState(editInitial?.areaSqm != null ? String(editInitial.areaSqm) : "");
   const [vatPercent, setVatPercent] = useState(String(editInitial?.vatPercent ?? 0));
   const [electricRate, setElectricRate] = useState(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
   const [waterRate, setWaterRate] = useState(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
@@ -259,6 +261,8 @@ export function ContractForm({
   const [ntBiz, setNtBiz] = useState("");
   const [ntPhone, setNtPhone] = useState("");
   const [ntIdCard, setNtIdCard] = useState("");
+  const [ntAddress, setNtAddress] = useState("");
+  const [ntTaxId, setNtTaxId] = useState("");
 
   // ── selectors / derived ─────────────────────────────────────
   const selectedUnit = useMemo(() => units.find((u) => u.id === unitId) ?? null, [units, unitId]);
@@ -301,6 +305,7 @@ export function ContractForm({
     setRentAmount(editInitial ? String(editInitial.rentAmountThb) : "");
     setRentDueDay(String(editInitial?.rentDueDay ?? 5));
     setDepositAmount(editInitial ? String(editInitial.depositAmountThb) : "");
+    setAreaSqm(editInitial?.areaSqm != null ? String(editInitial.areaSqm) : "");
     setVatPercent(String(editInitial?.vatPercent ?? 0));
     setElectricRate(editInitial?.electricRate != null ? String(editInitial.electricRate) : "");
     setWaterRate(editInitial?.waterRate != null ? String(editInitial.waterRate) : "");
@@ -341,6 +346,8 @@ export function ContractForm({
     setNtBiz("");
     setNtPhone("");
     setNtIdCard("");
+    setNtAddress("");
+    setNtTaxId("");
   }
 
   function close() {
@@ -389,6 +396,7 @@ export function ContractForm({
           depositAmountThb: num(depositAmount),
           depositMonths: depositMonthsPreview,
           rentDueDay: Number(rentDueDay) || 5,
+          areaSqm: areaSqm ? num(areaSqm) : undefined,
           startDate: startDate || today,
           endDate: endDate || null,
           madeOn: contractDate || today,
@@ -509,6 +517,8 @@ export function ContractForm({
             bizName: ntBiz || undefined,
             phones: ntPhone ? [ntPhone] : undefined,
             idCardNo: ntIdCard || undefined,
+            address: ntAddress || undefined,
+            taxId: ntTaxId || undefined,
           });
           finalTenantId = created.id;
         }
@@ -525,6 +535,7 @@ export function ContractForm({
           rentAmountThb: num(rentAmount),
           rentDueDay: Number(rentDueDay) || 5,
           depositAmountThb: num(depositAmount),
+          areaSqm: areaSqm ? num(areaSqm) : null,
           vatPercent: num(vatPercent),
           vatOnRent: vatTriVal(vatOnRent),
           vatOnElectric: vatTriVal(vatOnElectric),
@@ -806,6 +817,12 @@ export function ContractForm({
                           <input className="rs-input" inputMode="numeric" value={ntIdCard} onChange={(e) => setNtIdCard(e.target.value)} />
                         </Field>
                       </div>
+                      <Field label="ที่อยู่ (ตามบัตร/สนง.ใหญ่)">
+                        <textarea className="rs-input min-h-[56px]" value={ntAddress} onChange={(e) => setNtAddress(e.target.value)} placeholder="บ้านเลขที่ / ถนน / ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์" />
+                      </Field>
+                      <Field label="เลขผู้เสียภาษี">
+                        <input className="rs-input" inputMode="numeric" value={ntTaxId} onChange={(e) => setNtTaxId(e.target.value)} placeholder="เลข 13 หลัก" />
+                      </Field>
                       <p className="text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
                         ต้องกรอกอย่างน้อย “ชื่อ” หรือ “ชื่อร้าน” — ระบบจะสร้างผู้เช่าใหม่ตอนกดบันทึกสัญญา
                       </p>
@@ -909,6 +926,10 @@ export function ContractForm({
                       ))}
                     </div>
                   </div>
+
+                  <Field label="ขนาดพื้นที่ (ตร.ม.)">
+                    <input inputMode="numeric" className="rs-input" value={areaSqm} onChange={(e) => setAreaSqm(e.target.value)} placeholder="เช่น 24" />
+                  </Field>
 
                   <Field label="วันที่ทำสัญญา (ทำ ณ วันที่)">
                     <input
