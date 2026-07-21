@@ -336,10 +336,10 @@ function PayRow({
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--dc-ink, #1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {row.supplierName ?? "— ไม่ระบุผู้ขาย —"}
+          {row.title ?? row.supplierName ?? "— ไม่ระบุผู้ขาย —"}
         </div>
         <div style={{ fontSize: 11.5, color: "var(--dc-muted, #5b6676)", fontVariantNumeric: "tabular-nums" }}>
-          {row.poCode}
+          {row.title ? `${row.poCode} · ${row.supplierName ?? "ไม่ระบุผู้ขาย"}` : row.poCode}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }} onClick={(e) => e.preventDefault()}>

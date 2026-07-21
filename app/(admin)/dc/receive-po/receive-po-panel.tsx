@@ -29,6 +29,7 @@ export type ReceivablePoLine = {
 export type ReceivablePo = {
   id: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบที่ผู้ใช้ตั้ง (โชว์แทนเลข) · null = ยังไม่ตั้ง
   status: string;
   statusLabel: string;
   statusTone: string;
@@ -333,10 +334,10 @@ function PoCard({
               whiteSpace: "nowrap",
             }}
           >
-            {po.supplierName}
+            {po.title ?? po.supplierName}
           </div>
           <div style={{ fontSize: 13, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-            {po.poCode} · {po.lineCount} รายการ
+            {po.title ? `${po.poCode} · ${po.supplierName}` : po.poCode} · {po.lineCount} รายการ
           </div>
         </div>
         <span className={`dc-st dc-st--${po.statusTone}`} style={{ flexShrink: 0 }}>

@@ -35,6 +35,7 @@ export type ShipmentOption = {
 export type GrnPoOption = {
   id: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบ (โชว์ในตัวเลือก dropdown แทนเลขล้วน) · null = ยังไม่ตั้ง
   lines: SourceLine[];
 };
 
@@ -42,6 +43,7 @@ export type GrnPoOption = {
 export type PoReceivePrefill = {
   poId: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบ (โชว์บนหัวใบแทนเลข) · null = ยังไม่ตั้ง
   supplierName: string | null;
   /** ใบจีน → receivePo มีด่าน "ต้องจ่ายค่าขนส่งในไทย" ก่อน */
   isChina: boolean;
@@ -404,7 +406,7 @@ function NoPoGrnForm({
             <select id="g-po" value={poId} onChange={(e) => onPickPo(e.target.value)} style={selectStyle} disabled={locked}>
               <option value="">— ไม่อิงใบสั่งซื้อ —</option>
               {poOptions.map((p) => (
-                <option key={p.id} value={p.id}>{p.poCode}</option>
+                <option key={p.id} value={p.id}>{p.title ? `${p.title} (${p.poCode})` : p.poCode}</option>
               ))}
             </select>
           </Field>
@@ -696,8 +698,8 @@ function PoReceiveForm({
         style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}
       >
         <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: "#71717a", marginBottom: 2 }}>รับสินค้าตามใบสั่งซื้อ</div>
-          <div style={{ fontSize: 19, fontWeight: 800, color: "#18181b" }}>{po.poCode}</div>
+          <div style={{ fontSize: 13, color: "#71717a", marginBottom: 2 }}>รับสินค้าตามใบสั่งซื้อ{po.title ? ` · ${po.poCode}` : ""}</div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: "#18181b" }}>{po.title ?? po.poCode}</div>
           {po.supplierName && (
             <div style={{ fontSize: 14, color: "#52525b", marginTop: 2 }}>ผู้ขาย: {po.supplierName}</div>
           )}

@@ -47,6 +47,7 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
       select: {
         id: true,
         poCode: true,
+        title: true,
         status: true,
         lines: { orderBy: { id: "asc" }, select: { productId: true, qty: true } },
       },
@@ -76,6 +77,7 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
   const poOptions: GrnPoOption[] = pos.map((po) => ({
     id: po.id,
     poCode: po.poCode,
+    title: po.title ?? null,
     lines: po.lines.map((l) => ({
       productId: l.productId,
       sku: prodById.get(l.productId)?.sku ?? "—",
@@ -96,13 +98,14 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
       getPoReceivingSummary(po),
       prisma.dcPurchaseOrder.findFirst({
         where: { id: po, orgId },
-        select: { id: true, poCode: true, origin: true, supplier: { select: { name: true } } },
+        select: { id: true, poCode: true, title: true, origin: true, supplier: { select: { name: true } } },
       }),
     ]);
     if (summary && poMeta) {
       poReceive = {
         poId: poMeta.id,
         poCode: poMeta.poCode,
+        title: poMeta.title ?? null,
         supplierName: poMeta.supplier?.name ?? null,
         isChina: poMeta.origin === "CHINA",
         fullyReceived: summary.fullyReceived,
@@ -131,7 +134,7 @@ export default async function DcNewGrnPage({ searchParams }: { searchParams: Sea
             <ArrowLeft size={15} /> กลับรายการใบรับสินค้า
           </Link>
           <div className="dc-h1">
-            {poReceive ? `รับสินค้าตามใบสั่งซื้อ ${poReceive.poCode}` : "รับสินค้าเข้าคลัง"}
+            {poReceive ? `รับสินค้าตามใบสั่งซื้อ ${poReceive.title ?? poReceive.poCode}` : "รับสินค้าเข้าคลัง"}
           </div>
           <div className="dc-sub">
             {poReceive

@@ -37,6 +37,7 @@ export default async function DcReceivePoPage() {
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       origin: true,
       createdAt: true,
@@ -57,6 +58,7 @@ export default async function DcReceivePoPage() {
   const rows: ReceivablePo[] = pos.map((po) => ({
     id: po.id,
     poCode: po.poCode,
+    title: po.title ?? null,
     status: po.status,
     statusLabel: PO_STATUS_LABEL[po.status] ?? po.status,
     statusTone: PO_STATUS_TONE[po.status] ?? "draft",

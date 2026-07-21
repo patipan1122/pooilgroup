@@ -1585,6 +1585,7 @@ export async function deletePoPayment(paymentId: string): Promise<PoActionResult
 export type PayableRow = {
   poId: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบที่ผู้ใช้ตั้ง (โชว์แทนเลข) · null = ยังไม่ตั้ง
   supplierName: string | null;
   status: string;
   /** ยอดที่ "ระบบแนะนำ" (จากราคาสินค้า/ค่าขนส่งที่บันทึกไว้) — แก้ได้ตอนจ่ายจริง */
@@ -1617,6 +1618,7 @@ export async function getPayableOutstanding(
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       fxRate: true,
       supplier: { select: { name: true } },
@@ -1667,7 +1669,7 @@ export async function getPayableOutstanding(
     } else {
       suggestedSatang = freightByPo.get(p.id) ?? 0;
     }
-    return { poId: p.id, poCode: p.poCode, supplierName: p.supplier?.name ?? null, status: p.status, suggestedSatang };
+    return { poId: p.id, poCode: p.poCode, title: p.title ?? null, supplierName: p.supplier?.name ?? null, status: p.status, suggestedSatang };
   });
 }
 

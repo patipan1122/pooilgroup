@@ -23,6 +23,7 @@ type ProductOpt = { id: string; sku: string; name: string };
 export type PoOption = {
   id: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบ (โชว์ในตัวเลือก dropdown แทนเลขล้วน) · null = ยังไม่ตั้ง
   status: string;
   fxRate: number | null;
   lines: { productId: string; sku: string; name: string; qty: number; cbm: number | null }[];
@@ -168,7 +169,7 @@ export function ShipmentForm({
               <option value="">— ไม่อิงใบสั่งซื้อ (ใส่เอง) —</option>
               {poOptions.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.poCode} · {PO_STATUS_LABEL[p.status] ?? p.status}
+                  {p.title ? `${p.title} (${p.poCode})` : p.poCode} · {PO_STATUS_LABEL[p.status] ?? p.status}
                 </option>
               ))}
             </select>

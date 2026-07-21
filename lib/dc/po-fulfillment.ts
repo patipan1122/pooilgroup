@@ -34,6 +34,7 @@ export type PoFulfillmentLine = {
 export type PoFulfillment = {
   poId: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบที่ผู้ใช้ตั้ง (โชว์แทนเลขให้จำง่าย) · null = ยังไม่ตั้ง
   status: string;
   supplierName: string | null;
   createdAt: Date;
@@ -58,6 +59,7 @@ export async function getPoFulfillment(
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       createdAt: true,
       supplier: { select: { name: true } },
@@ -186,6 +188,7 @@ export async function getPoFulfillment(
   return {
     poId: po.id,
     poCode: po.poCode,
+    title: po.title ?? null,
     status: po.status,
     supplierName: po.supplier?.name ?? null,
     createdAt: po.createdAt,
@@ -198,6 +201,7 @@ export async function getPoFulfillment(
 export type ReceivablePoForMove = {
   poId: string;
   poCode: string;
+  title: string | null; // ชื่อเรียกใบที่ผู้ใช้ตั้ง (โชว์แทนเลขให้จำง่าย) · null = ยังไม่ตั้ง
   supplierName: string | null;
   status: string;
   lineCount: number;
@@ -240,6 +244,7 @@ export async function listReceivablePosForMove(
     select: {
       id: true,
       poCode: true,
+      title: true,
       status: true,
       supplier: { select: { name: true } },
       lines: { select: { productId: true } },
@@ -253,6 +258,7 @@ export async function listReceivablePosForMove(
       return {
         poId: p.id,
         poCode: p.poCode,
+        title: p.title ?? null,
         supplierName: p.supplier?.name ?? null,
         status: p.status,
         lineCount: productIds.length,

@@ -26,6 +26,7 @@ export default async function DcNewShipmentPage() {
       select: {
         id: true,
         poCode: true,
+        title: true,
         status: true,
         fxRate: true,
         lines: {
@@ -49,6 +50,7 @@ export default async function DcNewShipmentPage() {
   const poOptions: PoOption[] = pos.map((po) => ({
     id: po.id,
     poCode: po.poCode,
+    title: po.title ?? null,
     status: po.status,
     fxRate: po.fxRate != null ? Number(po.fxRate) : null,
     lines: po.lines.map((l) => ({

@@ -34,6 +34,7 @@ export type PoMoveConfirmLine = {
 export type PoMoveSelection = {
   poId: string;
   poCode: string;
+  poTitle: string | null; // ชื่อเรียกใบ (โชว์บนชิปหน้าเบิก/โอนแทนเลข) · null = ยังไม่ตั้ง
   lines: PoMoveConfirmLine[];
   poLineCount: number; // จำนวนรายการสินค้า "ทั้งใบ" PO (ไว้โชว์ "ใบนี้มี X รายการ")
 };
@@ -195,6 +196,7 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
     onConfirm({
       poId: detail.poId,
       poCode: detail.poCode,
+      poTitle: detail.title ?? null,
       lines: selected.lines,
       poLineCount: detail.lines.length,
     });
@@ -269,11 +271,11 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
             )}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink, #1f2733)" }}>
-                {detail ? detail.poCode : `เลือกใบ PO เพื่อ${verb}`}
+                {detail ? (detail.title ?? detail.poCode) : `เลือกใบ PO เพื่อ${verb}`}
               </div>
               <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)" }}>
                 {detail
-                  ? `${detail.supplierName ?? "ไม่ระบุผู้ขาย"} · ${verb}เท่าที่ "เหลือในใบ" และ "คงเหลือจริง"`
+                  ? `${detail.title ? detail.poCode + " · " : ""}${detail.supplierName ?? "ไม่ระบุผู้ขาย"} · ${verb}เท่าที่ "เหลือในใบ" และ "คงเหลือจริง"`
                   : `ใบที่รับเข้าคลังนี้แล้ว · กดเลือกแล้ว${verb}ต่อ`}
               </div>
             </div>
@@ -338,10 +340,10 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
                   >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
-                        {p.poCode}
+                        {p.title ?? p.poCode}
                       </div>
                       <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                        {p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                        {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
                       </div>
                     </div>
                     <div

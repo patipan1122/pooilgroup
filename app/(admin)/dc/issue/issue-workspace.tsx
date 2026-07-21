@@ -38,7 +38,7 @@ type Line = {
 };
 
 // ใบ PO ที่กำลังอ้างอิง (สะสมได้หลายใบ — Pinpoint #2)
-type SelectedPo = { poId: string; poCode: string; poLineCount: number };
+type SelectedPo = { poId: string; poCode: string; poTitle: string | null; poLineCount: number };
 
 // ★ บัฟเฟอร์รายการที่พิมพ์/ยิงไว้ใน localStorage แยกตามคลัง — กันลิสต์หายตอนรีเฟรช/เน็ตหลุด
 const STORAGE_PREFIX = "dc.issue.";
@@ -205,9 +205,9 @@ export function IssueWorkspace({
     setSelectedPos((prev) => {
       const lineCount = sel.poLineCount ?? sel.lines.length;
       if (prev.some((p) => p.poId === sel.poId)) {
-        return prev.map((p) => (p.poId === sel.poId ? { ...p, poCode: sel.poCode, poLineCount: lineCount } : p));
+        return prev.map((p) => (p.poId === sel.poId ? { ...p, poCode: sel.poCode, poTitle: sel.poTitle ?? null, poLineCount: lineCount } : p));
       }
-      return [...prev, { poId: sel.poId, poCode: sel.poCode, poLineCount: lineCount }];
+      return [...prev, { poId: sel.poId, poCode: sel.poCode, poTitle: sel.poTitle ?? null, poLineCount: lineCount }];
     });
     setLines((prev) => {
       const next = [...prev];
@@ -445,7 +445,7 @@ export function IssueWorkspace({
                   key={po.poId}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1.5px solid var(--color-brand-600, #2563eb)", borderRadius: 999, padding: "5px 6px 5px 12px" }}
                 >
-                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>{po.poCode}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--color-brand-700, #1d4ed8)" }}>{po.poTitle ?? po.poCode}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted, #6b7785)" }}>
                     หยิบ {poLines.length}/{po.poLineCount} ({qty} ชิ้น)
                   </span>

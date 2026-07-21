@@ -1128,9 +1128,9 @@ function PoCountPickerSheet({
               </button>
             )}
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink)" }}>{detail ? detail.poCode : "นับตามใบ PO"}</div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink)" }}>{detail ? (detail.title ?? detail.poCode) : "นับตามใบ PO"}</div>
               <div style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>
-                {detail ? `${detail.supplierName ?? "ไม่ระบุผู้ขาย"} · กด "นับ" สินค้าที่จะนับ` : `คลัง ${warehouseName} · เลือกใบ PO`}
+                {detail ? `${detail.title ? detail.poCode + " · " : ""}${detail.supplierName ?? "ไม่ระบุผู้ขาย"} · กด "นับ" สินค้าที่จะนับ` : `คลัง ${warehouseName} · เลือกใบ PO`}
               </div>
             </div>
           </div>
@@ -1169,8 +1169,8 @@ function PoCountPickerSheet({
                       style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", border: `1.5px solid ${done ? "#bfe3cb" : "var(--dc-line)"}`, background: done ? "#f2fbf5" : "var(--dc-paper)", borderRadius: 12, padding: "13px 14px", cursor: "pointer" }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.poCode}</div>
-                        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
                       </div>
                       <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>

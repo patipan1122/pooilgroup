@@ -100,6 +100,12 @@ function KanbanCard({ item, action }: { item: PoListItem; action: string }) {
           {PO_ORIGIN_LABEL[item.origin] ?? item.origin}
         </span>
       </div>
+      {/* ชื่อเรียกใบ (ถ้าตั้งไว้) — หาใบง่ายกว่าเลข PO */}
+      {item.title && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--dc-ink,#1c2533)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {item.title}
+        </div>
+      )}
       <div className="dc-pur-kb__card-meta">
         {item.poCode} · {item.lineCount} รายการ
         {item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""} · {fmtDate(item.date)}

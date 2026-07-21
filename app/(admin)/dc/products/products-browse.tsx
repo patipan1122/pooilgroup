@@ -328,6 +328,7 @@ function PoBrowseView({
       const payload = {
         poId: detail.poId,
         poCode: detail.poCode,
+        poTitle: detail.title ?? null, // ชื่อเรียกใบ → หน้าปลายทางโชว์ชื่อบนชิปแทนเลข
         poLineCount: detail.lines.length, // ให้หน้าปลายทางโชว์ "ใบนี้มี X รายการ"
         lines: checkedLines.map((l) => ({
           productId: l.productId,
@@ -375,9 +376,9 @@ function PoBrowseView({
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", padding: "13px 14px", cursor: "pointer" }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.poCode}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
                   <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>
-                    {p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                    {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
                   </div>
                 </div>
                 <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
@@ -405,8 +406,8 @@ function PoBrowseView({
           <ChevronLeft size={20} />
         </button>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink)" }}>{detail.poCode}</div>
-          <div style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>{detail.supplierName ?? "ไม่ระบุผู้ขาย"} · ติ๊กสินค้าที่จะ โอน / ตัดจ่าย</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dc-ink)" }}>{detail.title ?? detail.poCode}</div>
+          <div style={{ fontSize: 12.5, color: "var(--dc-muted)" }}>{detail.title ? detail.poCode + " · " : ""}{detail.supplierName ?? "ไม่ระบุผู้ขาย"} · ติ๊กสินค้าที่จะ โอน / ตัดจ่าย</div>
         </div>
       </div>
 

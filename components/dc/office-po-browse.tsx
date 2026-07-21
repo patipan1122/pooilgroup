@@ -90,7 +90,7 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
   const filteredPos = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return pos;
-    return pos.filter((p) => `${p.poCode} ${p.supplierName ?? ""}`.toLowerCase().includes(term));
+    return pos.filter((p) => `${p.poCode} ${p.title ?? ""} ${p.supplierName ?? ""}`.toLowerCase().includes(term));
   }, [pos, q]);
 
   // ── รายละเอียดใบที่เลือก ──
@@ -120,9 +120,9 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
         ) : detail ? (
           <div>
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "var(--ink)", letterSpacing: "-.01em" }}>{detail.poCode}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "var(--ink)", letterSpacing: "-.01em" }}>{detail.title ?? detail.poCode}</div>
               <div style={{ fontSize: 13.5, color: "var(--ink2)", marginTop: 3 }}>
-                {detail.supplierName ?? "ไม่ระบุผู้ขาย"} · {detail.lines.length} รายการในใบ
+                {detail.title ? detail.poCode + " · " : ""}{detail.supplierName ?? "ไม่ระบุผู้ขาย"} · {detail.lines.length} รายการในใบ
               </div>
             </div>
 
@@ -187,10 +187,10 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
             >
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 16, fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
-                  <FileText size={16} color="var(--primary)" /> {p.poCode}
+                  <FileText size={16} color="var(--primary)" /> {p.title ?? p.poCode}
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--ink2)", marginTop: 3 }}>
-                  {p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                  {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
                 </div>
               </div>
               <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--muted)", whiteSpace: "nowrap" }}>
