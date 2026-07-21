@@ -162,8 +162,11 @@ function PaymentBlock({ bank }: { bank: BillPaymentInfo }) {
         )}
       </div>
       {bank.paymentNote && (
-        <div className="text-[12px] mt-2 pt-2 border-t" style={{ color: "var(--rs-text-2)", borderColor: "var(--rs-border)" }}>
-          {bank.paymentNote}
+        <div
+          className="text-[12px] mt-2 pt-2 border-t font-semibold leading-snug"
+          style={{ color: "var(--rs-danger)", borderColor: "var(--rs-border)" }}
+        >
+          ⚠️ {bank.paymentNote}
         </div>
       )}
     </div>

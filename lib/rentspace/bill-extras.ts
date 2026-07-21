@@ -34,7 +34,18 @@ export async function loadBillMeterReadings(
   return out.electric || out.water ? out : undefined;
 }
 
-/** ดึงช่องทางชำระเงินจากโครงการ (อ่านคอลัมน์ที่ join มากับบิลแล้ว). */
+/** บัญชีรับเงินบริษัท (ค่าเริ่มต้น) — CEO 2026-07-21 สั่งให้ทุกใบบิลโชว์บัญชี + ย้ำโอนบัญชีนี้ทุกครั้ง.
+ *  ใช้เมื่อโครงการยังไม่ได้ตั้งค่าบัญชีในหน้า "ตั้งค่า" (ตั้งใน Settings แล้วจะทับค่านี้). */
+const COMPANY_DEFAULT_BANK = {
+  bankName: "ไทยพาณิชย์ (SCB)",
+  bankAccountNo: "813-409410-7",
+  bankAccountHolder: "บริษัท เจพีซิ้งค์ กรุ๊ป จำกัด",
+};
+/** คำเตือนย้ำให้โอนเข้าบัญชีที่กำหนดเท่านั้น — โชว์ทุกใบบิลเสมอ (เว้นแต่โครงการตั้ง note เอง). */
+const PAYMENT_WARNING =
+  "กรุณาโอนเข้าบัญชีที่ระบุด้านบนนี้เท่านั้นทุกครั้ง — บริษัทขอสงวนสิทธิ์รับผิดชอบเฉพาะการชำระเงินผ่านบัญชีที่กำหนดข้างต้น";
+
+/** ดึงช่องทางชำระเงินจากโครงการ (อ่านคอลัมน์ที่ join มากับบิลแล้ว) — คืนค่าเสมอ (บัญชีบริษัทเป็นค่าเริ่มต้น). */
 export function projectBankInfo(project: {
   bankName?: string | null;
   bankAccountNo?: string | null;
@@ -42,13 +53,29 @@ export function projectBankInfo(project: {
   promptpayId?: string | null;
   paymentNote?: string | null;
 }): BillPaymentInfo | undefined {
-  const bank: BillPaymentInfo = {
-    bankName: project.bankName ?? null,
-    bankAccountNo: project.bankAccountNo ?? null,
-    bankAccountHolder: project.bankAccountHolder ?? null,
-    promptpayId: project.promptpayId ?? null,
-    paymentNote: project.paymentNote ?? null,
-  };
-  const any = bank.bankName || bank.bankAccountNo || bank.bankAccountHolder || bank.promptpayId || bank.paymentNote;
-  return any ? bank : undefined;
+  // มีข้อมูลบัญชีของโครงการเอง (bank หรือ พร้อมเพย์) → ใช้ของโครงการ · ไม่มี → ใช้บัญชีบริษัทเป็นค่าเริ่มต้น
+  const hasProjectBank = !!(
+    project.bankName ||
+    project.bankAccountNo ||
+    project.bankAccountHolder ||
+    project.promptpayId
+  );
+  const bank: BillPaymentInfo = hasProjectBank
+    ? {
+        bankName: project.bankName ?? null,
+        bankAccountNo: project.bankAccountNo ?? null,
+        bankAccountHolder: project.bankAccountHolder ?? null,
+        promptpayId: project.promptpayId ?? null,
+        paymentNote: null,
+      }
+    : {
+        bankName: COMPANY_DEFAULT_BANK.bankName,
+        bankAccountNo: COMPANY_DEFAULT_BANK.bankAccountNo,
+        bankAccountHolder: COMPANY_DEFAULT_BANK.bankAccountHolder,
+        promptpayId: null,
+        paymentNote: null,
+      };
+  // ย้ำเตือนให้โอนบัญชีนี้ทุกครั้ง — ใช้ note ของโครงการถ้าตั้งไว้ ไม่งั้นใช้ข้อความมาตรฐาน
+  bank.paymentNote = project.paymentNote?.trim() || PAYMENT_WARNING;
+  return bank; // โชว์ช่องทางชำระเงินทุกใบบิลเสมอ
 }
