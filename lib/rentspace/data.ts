@@ -216,7 +216,8 @@ export async function listDeposits(orgId: string) {
 export async function listTemplates(orgId: string) {
   return prisma.rentalContractTemplate.findMany({
     where: { orgId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+    // จัดกลุ่มตามสาย (familyKey) + เวอร์ชันใหม่สุดก่อน · default ขึ้นบน
+    orderBy: [{ isDefault: "desc" }, { familyKey: "asc" }, { version: "desc" }, { createdAt: "desc" }],
   });
 }
 

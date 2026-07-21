@@ -524,7 +524,13 @@ export async function actDeleteTenant(id: string) {
 }
 
 // ───────── contract template ─────────
-export async function actSaveTemplate(input: { id?: string; name: string; bodyHtml: string; isDefault?: boolean }) {
+export async function actSaveTemplate(input: {
+  id?: string;
+  name: string;
+  bodyHtml: string;
+  isDefault?: boolean;
+  changelog?: string;
+}) {
   const session = await gateAdmin();
   let id = input.id;
   if (input.isDefault) {
@@ -533,7 +539,12 @@ export async function actSaveTemplate(input: { id?: string; name: string; bodyHt
       data: { isDefault: false },
     });
   }
-  const data = { name: input.name.trim(), bodyHtml: input.bodyHtml, isDefault: !!input.isDefault };
+  const data = {
+    name: input.name.trim(),
+    bodyHtml: input.bodyHtml,
+    isDefault: !!input.isDefault,
+    changelog: input.changelog?.trim() || null,
+  };
   if (id) {
     await ownGuard(prisma.rentalContractTemplate.findFirst({ where: { id, orgId: session.user.org_id }, select: { id: true } }), "แม่แบบ");
     await prisma.rentalContractTemplate.update({ where: { id }, data });
@@ -545,6 +556,55 @@ export async function actSaveTemplate(input: { id?: string; name: string; bodyHt
   }
   revalidatePath("/rentspace/contracts/templates");
   return { id };
+}
+
+/**
+ * สร้าง "เวอร์ชันใหม่" ของแม่แบบสาย (family) เดียวกัน — เก็บเวอร์ชันเดิมไว้ครบ (ไม่ทับ).
+ * สัญญาเดิมที่ผูกเวอร์ชันเก่าไว้ยังใช้เวอร์ชันเก่าเหมือนเดิม (templateId ชี้ row เดิม).
+ */
+export async function actCreateTemplateVersion(input: {
+  fromId: string;
+  bodyHtml: string;
+  name?: string;
+  changelog?: string;
+  setDefault?: boolean;
+}) {
+  const session = await gateAdmin();
+  const src = await prisma.rentalContractTemplate.findFirst({
+    where: { id: input.fromId, orgId: session.user.org_id },
+    select: { id: true, name: true, familyKey: true },
+  });
+  if (!src) throw new Error("ไม่พบแม่แบบต้นทาง");
+  // สายของเวอร์ชัน: ใช้ familyKey เดิม หรือเริ่มสายใหม่โดยใช้ id ของต้นทางเป็นคีย์
+  const familyKey = src.familyKey ?? src.id;
+  if (!src.familyKey) {
+    await prisma.rentalContractTemplate.update({ where: { id: src.id }, data: { familyKey } });
+  }
+  const latest = await prisma.rentalContractTemplate.aggregate({
+    where: { orgId: session.user.org_id, familyKey },
+    _max: { version: true },
+  });
+  const nextVersion = (latest._max.version ?? 1) + 1;
+  if (input.setDefault) {
+    await prisma.rentalContractTemplate.updateMany({
+      where: { orgId: session.user.org_id, isDefault: true },
+      data: { isDefault: false },
+    });
+  }
+  const created = await prisma.rentalContractTemplate.create({
+    data: {
+      id: randomUUID(),
+      orgId: session.user.org_id,
+      familyKey,
+      version: nextVersion,
+      name: input.name?.trim() || src.name,
+      bodyHtml: input.bodyHtml,
+      changelog: input.changelog?.trim() || null,
+      isDefault: !!input.setDefault,
+    },
+  });
+  revalidatePath("/rentspace/contracts/templates");
+  return { id: created.id, version: nextVersion };
 }
 
 export async function actDeleteTemplate(id: string) {

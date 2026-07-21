@@ -1,13 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, X, Trash2, FileText, Eye } from "lucide-react";
-import { actSaveTemplate, actDeleteTemplate } from "../../../_actions";
+import { Plus, X, Trash2, FileText, Eye, GitBranch } from "lucide-react";
+import { actSaveTemplate, actDeleteTemplate, actCreateTemplateVersion } from "../../../_actions";
 import { TEMPLATE_VARS, contractPlaceholders, fillPlaceholders } from "@/lib/rentspace/contract-doc";
 
-type Template = { id: string; name: string; bodyHtml: string; isDefault: boolean };
+type Template = {
+  id: string;
+  name: string;
+  bodyHtml: string;
+  isDefault: boolean;
+  version: number;
+  changelog?: string | null;
+  familyKey?: string | null;
+};
 
 // ค่าตัวอย่างสำหรับพรีวิวแม่แบบ (เติมตัวแปรจริงให้เห็นหน้าตาก่อนบันทึก)
 const SAMPLE_VALUES = contractPlaceholders({
@@ -66,23 +74,63 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState<Template | "new" | null>(null);
+  // โหมด "สร้างเวอร์ชันใหม่" — ต้นทางที่จะก๊อปเนื้อหามาแก้ (null = ไม่ได้อยู่โหมดนี้)
+  const [versioning, setVersioning] = useState<Template | null>(null);
 
   const [name, setName] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
+  const [changelog, setChangelog] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
+  // จัดกลุ่มแม่แบบตามสาย (familyKey) — เวอร์ชันใหม่สุดขึ้นก่อน · เดี่ยว (familyKey=null) = กลุ่มละใบ
+  const groups = useMemo(() => {
+    const map = new Map<string, Template[]>();
+    for (const t of templates) {
+      const key = t.familyKey ?? `solo:${t.id}`;
+      const arr = map.get(key);
+      if (arr) arr.push(t);
+      else map.set(key, [t]);
+    }
+    const list = Array.from(map.values()).map((items) => [...items].sort((a, b) => b.version - a.version));
+    // กลุ่มที่มีค่าเริ่มต้นขึ้นก่อน แล้วเรียงตามชื่อ
+    list.sort((a, b) => {
+      const ad = a.some((t) => t.isDefault) ? 0 : 1;
+      const bd = b.some((t) => t.isDefault) ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return a[0].name.localeCompare(b[0].name, "th");
+    });
+    return list;
+  }, [templates]);
+
   function openNew() {
+    setVersioning(null);
     setEditing("new");
     setName("");
     setBodyHtml("");
+    setChangelog("");
     setIsDefault(templates.length === 0);
   }
   function openEdit(t: Template) {
+    setVersioning(null);
     setEditing(t);
     setName(t.name);
     setBodyHtml(t.bodyHtml);
+    setChangelog(t.changelog ?? "");
     setIsDefault(t.isDefault);
+  }
+  // เปิดตัวแก้ไขแบบ "เวอร์ชันใหม่": ก๊อปเนื้อหาเดิมมาแก้ · เวอร์ชันเก่ายังอยู่ครบ
+  function openVersion(t: Template) {
+    setEditing(null);
+    setVersioning(t);
+    setName(t.name);
+    setBodyHtml(t.bodyHtml);
+    setChangelog("");
+    setIsDefault(t.isDefault);
+  }
+  function closeEditor() {
+    setEditing(null);
+    setVersioning(null);
   }
 
   function save() {
@@ -90,14 +138,26 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
     const body = bodyHtml.trim() || DEFAULT_TEMPLATE_HTML;
     start(async () => {
       try {
-        await actSaveTemplate({
-          id: editing && editing !== "new" ? editing.id : undefined,
-          name: name.trim(),
-          bodyHtml: body,
-          isDefault,
-        });
-        toast.success("บันทึกแม่แบบแล้ว");
-        setEditing(null);
+        if (versioning) {
+          const r = await actCreateTemplateVersion({
+            fromId: versioning.id,
+            bodyHtml: body,
+            name: name.trim(),
+            changelog: changelog.trim() || undefined,
+            setDefault: isDefault,
+          });
+          toast.success(`สร้างเวอร์ชัน v${r.version} แล้ว`);
+        } else {
+          await actSaveTemplate({
+            id: editing && editing !== "new" ? editing.id : undefined,
+            name: name.trim(),
+            bodyHtml: body,
+            isDefault,
+            changelog: changelog.trim() || undefined,
+          });
+          toast.success("บันทึกแม่แบบแล้ว");
+        }
+        closeEditor();
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -137,38 +197,103 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {templates.map((t) => (
-            <div key={t.id} className="rs-card p-4 flex items-center justify-between">
-              <div>
-                <div className="font-semibold flex items-center gap-2" style={{ color: "var(--rs-text)" }}>
-                  {t.name}
-                  {t.isDefault && (
-                    <span
-                      className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                      style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}
-                    >
-                      ค่าเริ่มต้น
-                    </span>
-                  )}
+          {groups.map((items) => {
+            const head = items[0]; // เวอร์ชันใหม่สุด = ตัวหลักของสาย
+            const older = items.slice(1);
+            return (
+              <div key={head.familyKey ?? head.id} className="rs-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold flex items-center gap-2 flex-wrap" style={{ color: "var(--rs-text)" }}>
+                      {head.name}
+                      {head.version > 1 && (
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums"
+                          style={{ background: "var(--rs-bg-2)", color: "var(--rs-text-2)" }}
+                        >
+                          v{head.version}
+                        </span>
+                      )}
+                      {head.isDefault && (
+                        <span
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}
+                        >
+                          ค่าเริ่มต้น
+                        </span>
+                      )}
+                    </div>
+                    {head.changelog && (
+                      <div className="text-[12px] mt-1" style={{ color: "var(--rs-text-3)" }}>
+                        {head.changelog}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" onClick={() => openEdit(head)}>
+                      แก้ไข
+                    </button>
+                    <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" onClick={() => openVersion(head)}>
+                      <GitBranch className="h-4 w-4" /> สร้างเวอร์ชันใหม่
+                    </button>
+                    <button className="inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" onClick={() => del(head)} disabled={pending} aria-label="ลบแม่แบบ">
+                      <Trash2 className="h-4 w-4" style={{ color: "var(--rs-danger)" }} />
+                    </button>
+                  </div>
                 </div>
+
+                {older.length > 0 && (
+                  <div className="mt-3 pt-3 border-t space-y-2" style={{ borderColor: "var(--rs-border)" }}>
+                    <div className="text-[11px] font-semibold" style={{ color: "var(--rs-text-3)" }}>
+                      เวอร์ชันก่อนหน้า
+                    </div>
+                    {older.map((o) => (
+                      <div key={o.id} className="flex items-start justify-between gap-3 pl-3" style={{ opacity: 0.7 }}>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap text-[13px] font-medium" style={{ color: "var(--rs-text-2)" }}>
+                            <span
+                              className="text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums"
+                              style={{ background: "var(--rs-bg-2)", color: "var(--rs-text-2)" }}
+                            >
+                              v{o.version}
+                            </span>
+                            {o.isDefault && (
+                              <span
+                                className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}
+                              >
+                                ค่าเริ่มต้น
+                              </span>
+                            )}
+                          </div>
+                          {o.changelog && (
+                            <div className="text-[12px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
+                              {o.changelog}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" onClick={() => openEdit(o)}>
+                            แก้ไข
+                          </button>
+                          <button className="inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" onClick={() => del(o)} disabled={pending} aria-label="ลบแม่แบบ">
+                            <Trash2 className="h-4 w-4" style={{ color: "var(--rs-danger)" }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <button className="rs-btn rs-btn-ghost min-h-[44px] sm:min-h-0" onClick={() => openEdit(t)}>
-                  แก้ไข
-                </button>
-                <button className="inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" onClick={() => del(t)} disabled={pending} aria-label="ลบแม่แบบ">
-                  <Trash2 className="h-4 w-4" style={{ color: "var(--rs-danger)" }} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {editing && (
+      {(editing || versioning) && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
-          onClick={() => !pending && setEditing(null)}
+          onClick={() => !pending && closeEditor()}
         >
           <div
             className="rs-card w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto rounded-b-none sm:rounded-2xl"
@@ -179,13 +304,21 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
               style={{ background: "#fff", borderColor: "var(--rs-border)" }}
             >
               <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
-                {editing === "new" ? "แม่แบบใหม่" : "แก้ไขแม่แบบ"}
+                {versioning ? "สร้างเวอร์ชันใหม่" : editing === "new" ? "แม่แบบใหม่" : "แก้ไขแม่แบบ"}
               </div>
-              <button onClick={() => setEditing(null)} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
+              <button onClick={closeEditor} disabled={pending} className="-mr-2 inline-flex size-11 sm:size-9 items-center justify-center rounded-lg hover:bg-black/5" aria-label="ปิด">
                 <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
               </button>
             </div>
             <div className="px-5 py-4 space-y-3">
+              {versioning && (
+                <div
+                  className="rounded-lg p-3 text-[12px]"
+                  style={{ background: "var(--rs-brand-50)", color: "var(--rs-brand)" }}
+                >
+                  ก๊อปเนื้อหาจาก <b>{versioning.name} v{versioning.version}</b> มาแก้เป็นเวอร์ชันใหม่ — เวอร์ชันเดิมยังอยู่ครบ สัญญาเก่าที่ใช้เวอร์ชันนั้นไม่กระทบ
+                </div>
+              )}
               <div>
                 <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
                   ชื่อแม่แบบ
@@ -261,17 +394,29 @@ export function TemplateEditor({ templates }: { templates: Template[] }) {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
+                  สรุปการเปลี่ยนแปลง (changelog)
+                </label>
+                <textarea
+                  className="rs-t-input min-h-[60px]"
+                  value={changelog}
+                  onChange={(e) => setChangelog(e.target.value)}
+                  placeholder="เช่น ปรับข้อ 5 ค่าน้ำ-ค่าไฟ · เพิ่มเงื่อนไขต่อสัญญา (ไม่บังคับ)"
+                />
+              </div>
+
               <label className="flex items-center gap-2 text-[13.5px]" style={{ color: "var(--rs-text)" }}>
                 <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
-                ตั้งเป็นแม่แบบค่าเริ่มต้น
+                {versioning ? "ตั้งเป็นค่าเริ่มต้น (ใช้กับสัญญาใหม่)" : "ตั้งเป็นแม่แบบค่าเริ่มต้น"}
               </label>
             </div>
             <div className="sticky bottom-0 flex gap-2 px-5 py-3 border-t" style={{ background: "#fff", borderColor: "var(--rs-border)" }}>
-              <button className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0" disabled={pending} onClick={() => setEditing(null)}>
+              <button className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0" disabled={pending} onClick={closeEditor}>
                 ยกเลิก
               </button>
               <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" disabled={pending} onClick={save}>
-                {pending ? "กำลังบันทึก…" : "บันทึก"}
+                {pending ? "กำลังบันทึก…" : versioning ? "สร้างเวอร์ชันใหม่" : "บันทึก"}
               </button>
             </div>
           </div>

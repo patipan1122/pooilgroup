@@ -36,7 +36,7 @@ type Tenant = {
   nickname?: string | null;
   phones?: string[] | null;
 };
-type Template = { id: string; name: string; isDefault: boolean; bodyHtml?: string | null };
+type Template = { id: string; name: string; isDefault: boolean; bodyHtml?: string | null; version?: number };
 
 /** ค่าตั้งต้นเมื่อ "แก้ไขสัญญาเดิม" — ถ้าไม่ส่ง = สร้างใหม่ */
 type EditInitial = {
@@ -1189,6 +1189,7 @@ export function ContractForm({
                       {templates.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name}
+                          {t.version && t.version > 0 ? ` · v${t.version}` : ""}
                           {t.isDefault ? " (ค่าเริ่มต้น)" : ""}
                         </option>
                       ))}

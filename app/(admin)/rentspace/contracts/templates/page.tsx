@@ -27,6 +27,9 @@ export default async function TemplatesPage() {
           name: t.name,
           bodyHtml: t.bodyHtml,
           isDefault: t.isDefault,
+          version: t.version,
+          changelog: t.changelog,
+          familyKey: t.familyKey,
         }))}
       />
     </RsPage>

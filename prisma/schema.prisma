@@ -7332,6 +7332,11 @@ model RentalContractTemplate {
   orgId     String   @map("org_id") @db.Uuid
   name      String
   bodyHtml  String   @map("body_html") @db.Text
+  // ── เวอร์ชัน: familyKey จัดกลุ่มเวอร์ชันของสายเดียวกัน (null = แม่แบบเดี่ยว) ──
+  // แต่ละ row = 1 เวอร์ชัน · เวอร์ชันที่ isDefault=true = ค่าเริ่มต้นของสายนั้น
+  familyKey String?  @map("family_key")
+  version   Int      @default(1)
+  changelog String?  @map("changelog") @db.Text // สรุปสิ่งที่เปลี่ยนในเวอร์ชันนี้
   isDefault Boolean  @default(false) @map("is_default")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -7340,6 +7345,7 @@ model RentalContractTemplate {
   contracts RentalContract[]
 
   @@index([orgId, isActive])
+  @@index([orgId, familyKey, version])
   @@map("rental_contract_template")
   @@schema("public")
 }
