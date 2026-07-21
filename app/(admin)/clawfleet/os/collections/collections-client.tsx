@@ -464,7 +464,7 @@ export function CollectionsClient({
       {/* summary strip
           "รอบเก็บทั้งหมด" = total จริงทั้งช่วง (จาก server · ทุกหน้ารวมกัน).
           ตรงกัน/ไม่ตรง/ตู้เสีย = นับจาก "หน้านี้" เท่านั้น (client มีแค่หน้าที่โหลด) → ติดป้ายให้ชัด. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-2.5">
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 14, marginBottom: 16 }}>
         {/* การ์ดหลัก (hero · indigo gradient) — รอบทั้งหมด + แถบสัดส่วน "ตรงกัน" ให้เห็นภาพรวมกระทบยอดเด่น ๆ */}
         <HeroCard
           total={totalShown}
@@ -665,7 +665,7 @@ function SummaryCard({
 }) {
   return (
     <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 14, padding: "15px 17px" }}>
-      <div style={{ fontSize: 12.5, color: labelColor, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 12, color: labelColor, marginBottom: 8 }}>{label}</div>
       <div className="num" style={{ fontSize: 24, fontWeight: 700, color: valueColor }}>{value}</div>
       {foot && <div style={{ fontSize: 11, color: footColor, marginTop: 2 }}>{foot}</div>}
     </div>
@@ -818,7 +818,7 @@ function CollectionCard({
           </div>
           <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>{row.staff} · {row.date}</div>
         </div>
-        <div style={{ display: "flex", gap: 24, flex: 1, minWidth: 220, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 26, flex: 1, minWidth: 220, flexWrap: "wrap" }}>
           <Stat label="เก็บเงินได้" value={bahtN(row.actualCash)} />
           {baseline ? (
             // baseline: ไม่โชว์ "ควรได้/ส่วนต่าง" (ไม่มีมิเตอร์เก่าเทียบ) — โชว์ว่าเป็นยอดตั้งต้น

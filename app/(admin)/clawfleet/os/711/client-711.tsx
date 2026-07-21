@@ -329,7 +329,7 @@ export function Client711({ machines, isoDays, rangeLabel }: Props) {
           {/* ตาราง fleet */}
           <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
             {/* toolbar */}
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid #F0F1F4", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #F0F1F4", display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 9, background: "#F5F6F8", border: "1px solid #E8EAED", borderRadius: 9, padding: "8px 12px", maxWidth: 320 }}>
                 <Search size={15} strokeWidth={2} color="#9AA1AB" />
                 <input

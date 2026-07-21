@@ -1843,7 +1843,7 @@ function HomeScreen(props: {
               <div style={{ fontSize: 12, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>รอบเก็บเงินวันนี้ · {branchLabel}</div>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 6 }}>
                 <span className="num" style={{ fontSize: 32, fontWeight: 700, letterSpacing: -1, lineHeight: 1 }}>{routeDone}/{routeTotal}</span>
-                <span style={{ fontSize: 13, opacity: 0.85, paddingBottom: 4 }}>ตู้เก็บแล้ว</span>
+                <span style={{ fontSize: 13, opacity: 0.85, paddingBottom: 6 }}>ตู้เก็บแล้ว</span>
               </div>
               <div style={{ height: 6, background: "rgba(255,255,255,0.25)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${routePct}%`, background: "#fff", borderRadius: 6 }} />
@@ -1899,12 +1899,12 @@ function HomeScreen(props: {
                   <button key={d.machineId} type="button" className="co-tap co-lift"
                     onClick={() => { const m = machines.find((x) => x.id === d.machineId); if (m) onOpen(m); }}
                     style={{ display: "flex", alignItems: "center", gap: 11, minHeight: 64, background: "#fff", border: "1px solid #F0E2BE", borderRadius: 12, padding: "11px 13px", textAlign: "left", cursor: "pointer" }}>
-                    <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 12, background: "#FCF1E2", color: "#B45309", fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{d.code}</span>
+                    <span className="num" style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 11, background: "#FCF1E2", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{d.code}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{d.branch}</div>
                       <div style={{ fontSize: 11, color: "#9AA1AB" }}>เก็บ <span className="num">฿{d.cash.toLocaleString("en-US")}</span> · ตุ๊กตาออก <span className="num">{d.dispensed}</span> · {d.time}</div>
                     </div>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: "#B45309", whiteSpace: "nowrap" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#B45309", whiteSpace: "nowrap" }}>
                       กรอกมิเตอร์<ChevronRight size={16} strokeWidth={2.4} />
                     </span>
                   </button>
@@ -1970,15 +1970,15 @@ function HomeScreen(props: {
                     return (
                       <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 6, opacity: dimmed ? 0.5 : 1 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#fff", border: `1px solid ${isOpening ? "#C7C3F0" : st.border}`, borderRadius: 13, padding: "9px 10px" }}>
-                          <span style={{ position: "relative", flex: "0 0 38px" }}>
-                            <span className="num" style={{ width: 38, height: 38, borderRadius: 10, background: st.badgeBg, color: st.badgeC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
+                          <span style={{ position: "relative", flex: "0 0 40px" }}>
+                            <span className="num" style={{ width: 40, height: 40, borderRadius: 11, background: st.badgeBg, color: st.badgeC, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.code}</span>
                             <span style={{ position: "absolute", top: -2, right: -2, width: 11, height: 11, borderRadius: "50%", background: st.dot, border: "2px solid #fff" }} />
                           </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
-                            <div style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isOpening ? "กำลังเปิดรอบ…" : `${m.branch} · ${m.zone}`}</div>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
+                            <div style={{ fontSize: 11, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isOpening ? "กำลังเปิดรอบ…" : `${m.branch} · ${m.zone}`}</div>
                           </div>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: st.tagBg, color: st.tagC, whiteSpace: "nowrap" }}>{st.tag}</span>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20, background: st.tagBg, color: st.tagC, whiteSpace: "nowrap" }}>{st.tag}</span>
                           {isOpening ? (
                             <span style={{ width: 52, flex: "0 0 52px", display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner color="#4F46E5" /></span>
                           ) : isSkipped ? null : isAwaiting ? (
@@ -2286,7 +2286,7 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
             sub="เมื่อคุณเก็บเงิน / เปลี่ยนตุ๊กตาจบตู้ รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* mockup · ประวัติ = วันซ้อนกันเป็น section (หัววัน + เส้นคั่น + ยอดวัน · ชิปสรุป · แถวกดได้)
               45 วันโหลดมาแล้ว → เลื่อนดูทุกวันได้เลย (ไม่ต้องมีแท็บ/ปฏิทิน) */}
           {groups.map((g) => {
