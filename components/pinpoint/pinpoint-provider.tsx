@@ -299,12 +299,15 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       const d = draft;
       setBusy(true);
       const url = currentUrl();
-      const isViewportShot = !isLikelyMobile(); // เดสก์ท็อป = ภาพเป็นกรอบจอ (viewport)
-      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ (ก็เป็นกรอบจอเช่นกัน) ใช้ทันที.
+      // ถ่ายจอ "อัตโนมัติตอนกดบันทึก" เฉพาะเดสก์ท็อป — snapdom บนมือถือช้า/ไม่นิ่ง →
+      // มือถือถ่ายเฉพาะตอนผู้ใช้กด "วาด" เอง (on-demand). ไม่ว่าทางไหน ภาพที่ได้เป็น
+      // "กรอบจอ (viewport)" เสมอ.
+      const autoCapture = !isLikelyMobile();
+      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ (เป็นกรอบจอเช่นกัน) ใช้ทันที.
       let finalKey: string | null = screenshotKeyOverride ?? null;
       // ยังไม่มีภาพ + เป็นคอม → "รอ" ถ่ายจอ ณ จุดที่ปัก + อัปโหลดให้เสร็จก่อนบันทึก
       // (มี timeout กันค้าง). ถ่ายตอนนี้ = เนื้อหาโหลดเสร็จ ไม่ติด skeleton.
-      if (finalKey == null && isViewportShot) {
+      if (finalKey == null && autoCapture) {
         const loadingId = toast.loading("กำลังเก็บภาพหน้าจอ…");
         try {
           finalKey = await Promise.race([
@@ -331,7 +334,9 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
               ...d.meta,
               docX: d.docX,
               docY: d.docY,
-              ...(isViewportShot ? { capture: "viewport" } : {}),
+              // มีภาพ = เป็นกรอบจอเสมอ (ถ่ายอัตโนมัติ/ภาพวาด · คอม/มือถือ) → ฝั่งรีวิว
+              // วางจุดหมุดด้วย coordXPct/YPct ตรง ๆ. ไม่มีภาพ → ไม่ใส่ flag.
+              ...(finalKey != null ? { capture: "viewport" } : {}),
             },
             coordXPct: d.xPct,
             coordYPct: d.yPct,
@@ -492,6 +497,26 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
           document.body,
         )}
 
+      {/* กันคลิกทะลุ — พอกล่องติชมเปิด แผ่นใสนี้คลุมทั้งจอ (อยู่ใต้กล่อง) กันการแตะ
+          หลุดไปโดนปุ่ม/เมนูของหน้าเว็บข้างหลัง. เดิมพอกล่องเปิด "แผ่นปักหมุด" ถูกถอด
+          ออก → การแตะครั้งเดียวกันนั้นทะลุไปโดนของข้างหลัง (หน้าเด้ง/เมนูเด้งมาทับ)
+          กล่องเลยเหมือนกดไม่ได้/เด้งออก. แผ่นนี้ดูดคลิกไว้เอง กล่องด้านบนใช้งานได้ปกติ. */}
+      {draft && (
+        <div
+          aria-hidden
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          className="fixed inset-0 z-[9994]"
+          style={{ touchAction: "none" }}
+        />
+      )}
+
       {/* draft popover */}
       {draft && (
         <PinPopover
@@ -633,7 +658,9 @@ function PinPopover({
     ref.current?.focus();
   }, []);
 
-  const canDraw = !isLikelyMobile();
+  // เปิดให้วาด+พิมพ์ข้อความได้ทุกเครื่อง รวมมือถือ (CEO ใช้ทั้งมือถือและคอม). บนมือถือ
+  // ถ่ายภาพเฉพาะตอนกด "วาด" เอง — ไม่ถ่ายอัตโนมัติทุกครั้งที่บันทึก (กันช้า/ไม่นิ่ง).
+  const canDraw = true;
 
   // กด "วาด" → ถ่ายเฉพาะกรอบจอที่เห็น ณ จุดที่ปัก (UI ของเราถูกตัดออกอยู่แล้ว) → เปิดโมดัลวาด.
   async function openDraw() {
@@ -713,7 +740,7 @@ function PinPopover({
 
   return (
     <div
-      className="fixed z-[9994] w-64 -translate-x-1/2 rounded-2xl border-2 border-zinc-200 bg-white p-3 shadow-pop"
+      className="fixed z-[9995] w-64 -translate-x-1/2 rounded-2xl border-2 border-zinc-200 bg-white p-3 shadow-pop"
       style={{ left, top }}
     >
       <div className="mb-2 flex items-center justify-between">

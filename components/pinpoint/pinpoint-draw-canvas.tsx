@@ -10,22 +10,60 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pen, ArrowUpRight, Circle, Undo2, Eraser, X, Check, Loader2 } from "lucide-react";
+import { Pen, ArrowUpRight, Circle, Type, Undo2, Eraser, X, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
-type Tool = "pen" | "arrow" | "circle";
+type Tool = "pen" | "arrow" | "circle" | "text";
 type Pt = { x: number; y: number };
 
 type Stroke =
   | { tool: "pen"; color: string; width: number; points: Pt[] }
   | { tool: "arrow"; color: string; width: number; from: Pt; to: Pt }
-  | { tool: "circle"; color: string; width: number; from: Pt; to: Pt };
+  | { tool: "circle"; color: string; width: number; from: Pt; to: Pt }
+  | { tool: "text"; color: string; x: number; y: number; text: string; size: number };
 
 const COLORS = ["#ef4444", "#f59e0b", "#2563eb", "#16a34a"]; // แดง(ค่าเริ่มต้น)/ส้ม/น้ำเงิน/เขียว
 const PEN_WIDTH = 4; // display px (export จะคูณ scale ให้คมตามภาพจริง)
+const TEXT_SIZE = 18; // display px · ตัวหนังสือบนภาพ (export คูณ scale ให้คมตามภาพจริง)
+
+/** สี่เหลี่ยมมุมมน — สร้าง path ไว้ให้ fill/stroke ต่อ (ไม่พึ่ง ctx.roundRect เพื่อความเข้ากันได้). */
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rad = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
 
 /** วาดรอยหนึ่งเส้นลงบน context · k = ตัวคูณพิกัด/ความหนา (display=1, export=natural/display). */
 function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, k: number) {
+  // ── ข้อความ: กล่องพื้นขาว + ขอบสี + ตัวหนังสือสี (อบลงในภาพจริง) ──
+  if (s.tool === "text") {
+    const fs = Math.max(10, s.size * k);
+    ctx.font = `700 ${fs}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif`;
+    ctx.textBaseline = "top";
+    const lines = s.text.split("\n");
+    const pad = Math.round(fs * 0.35);
+    const lineH = fs * 1.28;
+    let maxW = 0;
+    for (const ln of lines) maxW = Math.max(maxW, ctx.measureText(ln).width);
+    const boxW = maxW + pad * 2;
+    const boxH = lineH * lines.length + pad * 2;
+    const bx = s.x * k;
+    const by = s.y * k;
+    roundRectPath(ctx, bx, by, boxW, boxH, Math.max(4, fs * 0.28));
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fill();
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = Math.max(1.5, 1.5 * k);
+    ctx.stroke();
+    ctx.fillStyle = s.color;
+    lines.forEach((ln, i) => ctx.fillText(ln, bx + pad, by + pad + i * lineH));
+    return;
+  }
   ctx.strokeStyle = s.color;
   ctx.lineWidth = Math.max(1, s.width * k);
   ctx.lineCap = "round";
@@ -88,6 +126,9 @@ export function PinpointDrawCanvas({
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState<string>(COLORS[0]);
   const [exporting, setExporting] = useState(false);
+  // ── กล่องพิมพ์ข้อความที่กำลังแก้ (HTML overlay ทับ canvas · วางเสร็จค่อยอบลงภาพ) ──
+  const [editing, setEditing] = useState<Pt | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   // โหลดภาพ + คำนวณขนาดที่จะแสดง (fit ในจอ เหลือที่ให้แถบเครื่องมือ).
   useEffect(() => {
@@ -135,6 +176,15 @@ export function PinpointDrawCanvas({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (exporting) return;
+    // เครื่องมือข้อความ: แตะ = วางกล่องพิมพ์ตรงจุดนั้น (ไม่ใช่ลากวาด).
+    if (tool === "text") {
+      if (editing) return; // มีกล่องเปิดอยู่ → แตะที่อื่นจะ blur/วางให้ก่อน
+      e.preventDefault();
+      const p = relPoint(e);
+      setEditing(p);
+      setEditValue("");
+      return;
+    }
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     drawingRef.current = true;
@@ -152,7 +202,7 @@ export function PinpointDrawCanvas({
     const p = relPoint(e);
     const cur = curRef.current;
     if (cur.tool === "pen") cur.points.push(p);
-    else cur.to = p;
+    else if (cur.tool === "arrow" || cur.tool === "circle") cur.to = p;
     paint();
   };
 
@@ -163,7 +213,7 @@ export function PinpointDrawCanvas({
     curRef.current = null;
     if (!cur) return;
     // ทิ้งรอยจิ๋ว (แตะค้างไม่ลาก) ของ arrow/circle
-    if (cur.tool !== "pen") {
+    if (cur.tool === "arrow" || cur.tool === "circle") {
       const dx = cur.to.x - cur.from.x;
       const dy = cur.to.y - cur.from.y;
       if (Math.hypot(dx, dy) < 6) {
@@ -175,12 +225,37 @@ export function PinpointDrawCanvas({
   };
 
   const undo = () => setStrokes((prev) => prev.slice(0, -1));
-  const clearAll = () => setStrokes([]);
+  const clearAll = () => {
+    setStrokes([]);
+    setEditing(null);
+    setEditValue("");
+  };
+
+  // วางกล่องข้อความที่พิมพ์ลงเป็นรอยถาวร (ว่าง = ทิ้ง).
+  const commitText = () => {
+    const pos = editing;
+    const val = editValue.trim();
+    setEditing(null);
+    setEditValue("");
+    if (!pos || !val) return;
+    setStrokes((prev) => [
+      ...prev,
+      { tool: "text", color, x: pos.x, y: pos.y, text: val, size: TEXT_SIZE },
+    ]);
+  };
 
   // รวมรอยวาดลงบนภาพจริง (natural size) → webp blob.
   const handleDone = async () => {
     const img = imgRef.current;
     if (!img || !dims || exporting) return;
+    // เผื่อยังพิมพ์ข้อความค้างอยู่ (ยังไม่กด Enter) → รวมลงภาพด้วย ไม่ให้ตกหล่น.
+    const pending: Stroke | null =
+      editing && editValue.trim()
+        ? { tool: "text", color, x: editing.x, y: editing.y, text: editValue.trim(), size: TEXT_SIZE }
+        : null;
+    const allStrokes = pending ? [...strokes, pending] : strokes;
+    setEditing(null);
+    setEditValue("");
     setExporting(true);
     try {
       const off = document.createElement("canvas");
@@ -193,7 +268,7 @@ export function PinpointDrawCanvas({
       }
       ctx.drawImage(img, 0, 0, dims.natW, dims.natH);
       const k = dims.natW / dims.dispW;
-      for (const s of strokes) drawStroke(ctx, s, k);
+      for (const s of allStrokes) drawStroke(ctx, s, k);
       const blob = await new Promise<Blob | null>((res) =>
         off.toBlob((b) => res(b), "image/webp", 0.85),
       );
@@ -208,6 +283,7 @@ export function PinpointDrawCanvas({
     { id: "pen", icon: Pen, label: "ปากกา" },
     { id: "arrow", icon: ArrowUpRight, label: "ลูกศร" },
     { id: "circle", icon: Circle, label: "วงกลม" },
+    { id: "text", icon: Type, label: "ข้อความ" },
   ];
 
   return (
@@ -298,18 +374,56 @@ export function PinpointDrawCanvas({
       {/* พื้นที่วาด */}
       <div className="flex flex-1 items-center justify-center overflow-auto p-3">
         {dims ? (
-          <canvas
-            ref={canvasRef}
-            width={dims.dispW}
-            height={dims.dispH}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={commit}
-            onPointerLeave={commit}
-            onPointerCancel={commit}
-            className="touch-none rounded-md shadow-2xl ring-1 ring-white/20"
-            style={{ width: dims.dispW, height: dims.dispH, cursor: "crosshair" }}
-          />
+          <div className="relative" style={{ width: dims.dispW, height: dims.dispH }}>
+            <canvas
+              ref={canvasRef}
+              width={dims.dispW}
+              height={dims.dispH}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={commit}
+              onPointerLeave={commit}
+              onPointerCancel={commit}
+              className="block touch-none rounded-md shadow-2xl ring-1 ring-white/20"
+              style={{
+                width: dims.dispW,
+                height: dims.dispH,
+                cursor: tool === "text" ? "text" : "crosshair",
+              }}
+            />
+            {/* กล่องพิมพ์ข้อความ — โผล่ตรงจุดที่แตะ (เห็นกล่องจริง ๆ ก่อนวางลงภาพ) */}
+            {editing && (
+              <textarea
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={commitText}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    commitText();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setEditing(null);
+                    setEditValue("");
+                  }
+                }}
+                placeholder="พิมพ์… Enter=วาง"
+                rows={1}
+                className="absolute z-10 resize-none rounded-md border-2 bg-white/95 px-1.5 py-0.5 font-bold shadow-lg outline-none"
+                style={{
+                  left: editing.x,
+                  top: editing.y,
+                  color,
+                  borderColor: color,
+                  fontSize: TEXT_SIZE,
+                  lineHeight: 1.28,
+                  minWidth: 90,
+                  maxWidth: Math.max(120, dims.dispW - editing.x - 6),
+                }}
+              />
+            )}
+          </div>
         ) : (
           <div className="flex items-center gap-2 text-white/80">
             <Loader2 className="size-5 animate-spin" /> กำลังเตรียมภาพ…
@@ -318,7 +432,7 @@ export function PinpointDrawCanvas({
       </div>
 
       <p className="pointer-events-none pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-xs text-white/60">
-        เลือกเครื่องมือ แล้วลากบนภาพเพื่อวง/ชี้จุดที่อยากให้แก้ · กด “เสร็จ” เพื่อแนบ
+        ลากเพื่อวง/ชี้จุด · เลือก “ข้อความ” แล้วแตะบนภาพเพื่อพิมพ์ · กด “เสร็จ” เพื่อแนบ
       </p>
     </div>
   );

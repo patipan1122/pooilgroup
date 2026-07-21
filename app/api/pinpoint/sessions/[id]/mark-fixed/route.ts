@@ -82,12 +82,12 @@ export async function POST(
 
   let upd = admin
     .from("pinpoint_pins")
-    .update(updates)
+    .update(updates, { count: "exact" })
     .eq("session_id", id)
     .eq("org_id", sessionOrgId);
   if (pinIds && pinIds.length > 0) upd = upd.in("id", pinIds);
 
-  const { error, count } = await upd.select("id", { count: "exact" });
+  const { error, count } = await upd.select("id");
   if (error) {
     console.error("[pinpoint mark-fixed]", error);
     return NextResponse.json({ error: "อัปเดตไม่สำเร็จ" }, { status: 500 });
