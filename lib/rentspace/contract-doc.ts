@@ -4,6 +4,7 @@
 //   + {{depositMonths}} {{rentDueDay}} {{landlordName}} {{bankInfo}}
 // PURE + client-importable (only uses lib/rentspace/format helpers).
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName, bahtText } from "@/lib/rentspace/format";
+import { TALAYTOWN_LEASE_BODY_V3 } from "@/lib/rentspace/lease-body-talaytown";
 
 /** Optional bank/landlord info on the project — all fields optional so existing
  *  callers (which don't pass these) keep working unchanged. */
@@ -462,9 +463,10 @@ export const OLD_LEASE_BODY_V1 = `<style>
 /** familyKey กลางของแม่แบบสัญญามาตรฐาน (v1=เดิม · v2=ปรับปรุงกฎหมาย/ภาษี) — ใช้ตอน seed/จัดกลุ่มเวอร์ชัน */
 export const STANDARD_LEASE_FAMILY = "standard-lease";
 
-/** Resolve the document body for a contract: custom terms > template DB > แม่แบบมาตรฐาน. */
+/** Resolve the document body for a contract: custom terms > template DB > แม่แบบมาตรฐาน (v3 ตรง PDF). */
 export function resolveContractBody(c: ContractLike): string {
-  const raw = c.customTermsHtml?.trim() || c.template?.bodyHtml?.trim() || STANDARD_LEASE_BODY;
+  // ค่าเริ่มต้นของโค้ด = v3 "ตรง PDF ทะเลทาวน์ 100%" (CEO 2026-07-21) · custom/template DB ทับได้
+  const raw = c.customTermsHtml?.trim() || c.template?.bodyHtml?.trim() || TALAYTOWN_LEASE_BODY_V3;
   return fillPlaceholders(raw, contractPlaceholders(c));
 }
 
@@ -511,6 +513,8 @@ export type ContractDocData = {
   paymentNote?: string | null;
   /** เนื้อสัญญาที่ผู้ดูแลกำหนดเอง (เติมตัวแปรแล้ว) — ถ้ามีจะแทนข้อสัญญามาตรฐาน */
   customBodyHtml?: string | null;
+  /** true = customBodyHtml เป็น "เอกสารเต็มใบ" (มีหัว/คู่สัญญา/ลายเซ็นในตัว) → component ไม่ต้องครอบซ้ำ */
+  fullDocument?: boolean;
   /** ป้ายชื่อเอกสารแนบ (นอกเหนือจากสำเนาบัตร) */
   attachments?: string[];
   signature?: {
@@ -582,6 +586,11 @@ export function docDataFromContract(
   const water = c.waterRate != null ? toNum(c.waterRate) : toNum(c.project.waterRate);
   const promoMonths = c.promoMonths ?? 0;
   const promoPer = toNum(c.promoDiscountThb);
+  // เนื้อสัญญาที่ resolve แล้ว — "ล็อกฉบับเซ็น": เซ็นแล้ว+ไม่มี custom/template → null (ใช้ fallback เดิมในคอมโพเนนต์)
+  const docBody =
+    c.tenantSigned && !c.customTermsHtml?.trim() && !c.template?.bodyHtml?.trim()
+      ? null
+      : resolveContractBody({ ...c, madeOn }) || null;
   return {
     contractNo: c.contractNo ?? null,
     madeOn,
@@ -624,10 +633,9 @@ export function docDataFromContract(
     // "ล็อกฉบับเซ็น": สัญญาที่เซ็นแล้วและไม่มีข้อความกำหนดเอง/แม่แบบ → ใช้ข้อสัญญาเดิม
     // (fallback ในคอมโพเนนต์ = สิ่งที่ผู้เช่าเห็นตอนเซ็น) ไม่สลับเป็นแม่แบบมาตรฐานใหม่ย้อนหลัง.
     // สัญญาใหม่ที่เซ็นหลังจากนี้จะถูก snapshot ข้อความลง customTermsHtml ตอนเซ็น (actSignContract) → ไม่เข้าเงื่อนไขนี้.
-    customBodyHtml:
-      c.tenantSigned && !c.customTermsHtml?.trim() && !c.template?.bodyHtml?.trim()
-        ? null
-        : resolveContractBody({ ...c, madeOn }) || null,
+    customBodyHtml: docBody,
+    // เอกสารเต็มใบ (แม่แบบ v3 "ตรง PDF") มี class rsl3 → component render ล้วนไม่ครอบหัว/คู่สัญญา/ลายเซ็นซ้ำ
+    fullDocument: !!docBody && docBody.includes('class="rsl3"'),
     attachments: opts?.attachments ?? [],
     signature: {
       signed: !!c.tenantSigned,

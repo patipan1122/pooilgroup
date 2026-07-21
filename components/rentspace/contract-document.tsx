@@ -65,6 +65,21 @@ export function RentalContractDocument({
 
   return (
     <div id={printId} className={`rsdoc ${className ?? ""}`}>
+      {d.fullDocument && d.customBodyHtml ? (
+        <>
+          <div className="rsdoc-custom" dangerouslySetInnerHTML={{ __html: d.customBodyHtml }} />
+          {d.signature?.signed && d.signature.dataUrl ? (
+            <div style={{ marginTop: 14, textAlign: "center" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={d.signature.dataUrl} alt="ลายเซ็นผู้เช่า" style={{ maxHeight: 70, maxWidth: 200 }} />
+              <div style={{ fontSize: "11.5px", color: "#16a34a", marginTop: 2 }}>
+                ลงนามออนไลน์แล้ว{d.signature.signedAt ? ` · ${thaiDateLong(d.signature.signedAt)}` : ""}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
       {/* หัวเอกสาร */}
       <div className="rsdoc-title">
         <div className="rsdoc-h1">สัญญาเช่าพื้นที่</div>
@@ -249,6 +264,8 @@ export function RentalContractDocument({
           <div className="rsdoc-sign-name">( {d.witness2Name?.trim() ? d.witness2Name : ".........................."} )</div>
         </div>
       </div>
+        </>
+      )}
 
       <style jsx>{`
         .rsdoc {
