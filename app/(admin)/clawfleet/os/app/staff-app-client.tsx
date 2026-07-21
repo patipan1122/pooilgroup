@@ -4885,10 +4885,19 @@ function FlowScreen(props: {
   // ── มิเตอร์ 2 หมวด (ตุ๊กตา/เหรียญ) · หน้า 1/2 · hint บรรทัดใต้หมวด = "ตัวเลขแจ้งเตือนในหน้า" (CEO 2026-07-21) ──
   const dollPairFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
   const coinPairFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
-  const dollEqLabel = !dollPairFilled ? "บน=ล่าง" : props.meterGroupVals.dollMeterEqual ? "บน=ล่าง ✓" : "บน≠ล่าง";
-  const coinEqLabel = !coinPairFilled ? "บน=ล่าง" : props.meterGroupVals.coinMeterEqual ? "บน=ล่าง ✓" : "บน≠ล่าง";
-  const dollEqColor = !dollPairFilled ? "#9AA1AB" : props.meterGroupVals.dollMeterEqual ? "#15803D" : "#B45309";
-  const coinEqColor = !coinPairFilled ? "#9AA1AB" : props.meterGroupVals.coinMeterEqual ? "#15803D" : "#B45309";
+  // hint บรรทัดใต้มิเตอร์ (CEO 2026-07-21 · ให้ชัด ไม่โชว์เลขติดลบมั่ว "-102?")
+  //   บน≠ล่าง → "ไม่ตรงกัน" · ตุ๊กตาออก = ล่าง − รอบก่อน (recon.dollDelta) · ควรได้ = จากมิเตอร์เหรียญ (recon.expectedCash)
+  //   กรอกน้อยกว่ารอบก่อน (delta<0) → เตือน "กรอกผิด?" (ไม่โชว์เลขลบ) · money-safe: อ่านค่าจาก recon ตัวเดิม ไม่แตะสูตร
+  let dollHint: string, dollHintColor: string;
+  if (!dollPairFilled) { dollHint = "กรอกมิเตอร์ บน + ล่าง"; dollHintColor = "#9AA1AB"; }
+  else if (!props.meterGroupVals.dollMeterEqual) { dollHint = "⚠️ มิเตอร์บน/ล่าง ไม่ตรงกัน — เช็ค"; dollHintColor = "#B42318"; }
+  else if (recon.dollDelta < 0) { dollHint = `⚠️ กรอก ${n0(f.dollDigi)} น้อยกว่ารอบก่อน ${f.dollPrev} — กรอกผิด?`; dollHintColor = "#B45309"; }
+  else { dollHint = `✓ ตุ๊กตาออก ${recon.dollDelta} ตัว`; dollHintColor = "#15803D"; }
+  let coinHint: string, coinHintColor: string;
+  if (!coinPairFilled) { coinHint = "กรอกมิเตอร์ บน + ล่าง"; coinHintColor = "#9AA1AB"; }
+  else if (!props.meterGroupVals.coinMeterEqual) { coinHint = "⚠️ มิเตอร์บน/ล่าง ไม่ตรงกัน — เช็ค"; coinHintColor = "#B42318"; }
+  else if (recon.expectedCash < 0) { coinHint = `⚠️ กรอก ${n0(f.coinDigi)} น้อยกว่ารอบก่อน ${f.coinPrev} — กรอกผิด?`; coinHintColor = "#B45309"; }
+  else { coinHint = `✓ มิเตอร์ควรได้ ฿${recon.expectedCash}`; coinHintColor = "#15803D"; }
   // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
   const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
     const prev = key === "coinGear" || key === "coinDigi" ? f.coinPrev : f.dollPrev;
@@ -5068,7 +5077,7 @@ function FlowScreen(props: {
               {meterCell("dollGear", "prize_meter", "บน (เฟือง)")}
               {meterCell("dollDigi", "prize_meter", "ล่าง (ดิจิตอล)")}
             </div>
-            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollEqColor, margin: "0 2px 8px" }}>{dollEqLabel} · รอบก่อน {f.dollPrev ?? "—"} · ตุ๊กตาออก {isFilled(f.dollDigi) ? (recon.dollDelta < 0 ? `${recon.dollDelta}?` : recon.dollDelta) : "—"}</div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollHintColor, margin: "0 2px 8px" }}>{dollHint}</div>
 
             {/* ── 4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง) ── */}
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง)</div>
@@ -5076,7 +5085,7 @@ function FlowScreen(props: {
               {meterCell("coinGear", "meter_after", "บน (เฟือง)")}
               {meterCell("coinDigi", "meter_after", "ล่าง (ดิจิตอล)")}
             </div>
-            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinEqColor, margin: "0 2px 7px" }}>{coinEqLabel} · รอบก่อน {f.coinPrev ?? "—"} · มิเตอร์ควรได้ {isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "?" : `฿${recon.expectedCash}`) : "—"}</div>
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinHintColor, margin: "0 2px 7px" }}>{coinHint}</div>
 
             {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) · CEO 2026-07-21 ตัดบรรทัด "อ่านไม่ได้?" ออก (กินที่) */}
             <button type="button" disabled={props.skipPending}
