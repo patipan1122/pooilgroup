@@ -4893,12 +4893,12 @@ function FlowScreen(props: {
   const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
     const prev = key === "coinGear" || key === "coinDigi" ? f.coinPrev : f.dollPrev;
     return (
-      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 10, padding: "6px 9px" }}>
-        <div style={{ fontSize: 10, color: "#9AA1AB", marginBottom: 3 }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 9, padding: "5px 8px" }}>
+        <div style={{ fontSize: 9.5, color: "#9AA1AB", marginBottom: 2 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
             placeholder={prev != null ? `รอบก่อน ${prev}` : "เลข"}
-            style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, padding: "5px 8px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
+            style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, padding: "4px 7px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
           {!props.usingDemo && machine?.code ? (
             <PhotoCaptureButton compact label="" value={photos[key]} onChange={(url) => props.onPhoto(key, url)} onCaptured={() => props.onCapture(key)}
               orgId={props.orgId} machineCode={machine.code} eventScopeId={props.eventScopeId} phase={phase} />
@@ -4911,7 +4911,7 @@ function FlowScreen(props: {
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* header — กระชับ (back + ชื่อตู้ + ขั้น) ให้เนื้อหาขึ้นถึง ⅓ บน */}
-      <div style={{ padding: "4px 18px 10px", borderBottom: "1px solid #EAECEF" }}>
+      <div style={{ padding: "3px 18px 6px", borderBottom: "1px solid #EAECEF" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           {/* back = ย้อนทีละขั้น (พฤติกรรมเดิม) */}
           <button type="button" onClick={props.onBack} className="co-tap" style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -4929,7 +4929,7 @@ function FlowScreen(props: {
                 </button>
               )}
             </div>
-            <div style={{ fontSize: 11, color: "#9AA1AB" }}>{props.stepLabel}</div>
+            <div style={{ fontSize: 10, color: "#9AA1AB", lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{props.stepLabel}</div>
           </div>
           {/* mockup: "บันทึกร่าง" (บันทึกค้าง → ไปเก็บตู้อื่น) + ป้าย "ขั้นที่ N/2" — ตรง header ตัวอย่างเป๊ะ */}
           {step === 1 && !props.usingDemo && (
@@ -5078,8 +5078,7 @@ function FlowScreen(props: {
             </div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinEqColor, margin: "0 2px 7px" }}>{coinEqLabel} · รอบก่อน {f.coinPrev ?? "—"} · มิเตอร์ควรได้ {isFilled(f.coinDigi) ? (recon.expectedCash < 0 ? "?" : `฿${recon.expectedCash}`) : "—"}</div>
 
-            <div style={{ fontSize: 11, color: "#9AA1AB", margin: "0 2px 7px" }}>อ่านไม่ได้? แตะกล้องในช่องเพื่อถ่ายรูปมิเตอร์แทน (ใช้เป็นหลักฐาน) · กรอกทีหลังได้</div>
-            {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) */}
+            {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) · CEO 2026-07-21 ตัดบรรทัด "อ่านไม่ได้?" ออก (กินที่) */}
             <button type="button" disabled={props.skipPending}
               onClick={() => {
                 if (props.skipPending) return;
@@ -5109,10 +5108,10 @@ function FlowScreen(props: {
             {/* ── 6 · เงินสดที่เก็บได้ (บาท) + ตั้งค่าตู้ ── */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
             <label style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", display: "block", margin: "0 2px 8px" }}>6 · เงินสดที่เก็บได้ (บาท)</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "9px 13px" }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "6px 12px" }}>
+              <span style={{ fontSize: 17, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
               <input value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} inputMode="numeric" className="num" placeholder="นับเงินแล้วกรอก"
-                style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, padding: "5px 4px", border: "none", background: "transparent", outline: "none" }} />
+                style={{ flex: 1, minWidth: 0, fontSize: 18, fontWeight: 700, padding: "4px 4px", border: "none", background: "transparent", outline: "none" }} />
               <span style={{ fontSize: 12, color: "#9AA1AB" }}>บาท</span>
             </div>
             {/* ตั้งค่าตู้ · หมวด + ราคาขาย/ตัว (เสนอ → เจ้าของอนุมัติ · ไม่เขียน sellPrice ตรง · money-safe) */}
