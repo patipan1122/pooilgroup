@@ -46,15 +46,16 @@ import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import type { InputVatBlockReason } from "@/lib/ledger/types";
 import { buildTrcloudCsv } from "@/lib/ledger/trcloud-export";
-import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { createDraftExpense } from "@/lib/ledger/actions";
 import {
   pushExpenseToTrcloud,
-  convertExpensePoToAp,
   deleteTrcloudAp,
   trcloudPushConfigured,
-  type PushableExpense,
 } from "@/lib/ledger/trcloud-push";
+// convertExpensePoToAp + PushableExpense + isTrcloudSent + loadPushable: ตรรกะแปลง AP
+// ย้ายไป lib/ledger/ap-auto-convert.ts + lib/ledger/pushable.ts แล้ว (แชร์กับ auto-trigger).
+import { loadPushable } from "@/lib/ledger/pushable";
+import { runApConversion } from "@/lib/ledger/ap-auto-convert";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
@@ -1508,101 +1509,9 @@ export async function exportConfirmedCsv(raw: unknown): Promise<ExportResult> {
 // tier, org+company scope, NEVER a draft (golden rule), idempotent (a row with a
 // trcloudDocId can't be pushed twice), audit trail, and per-row error capture.
 
-/** Load the full expense (items + category GL) → the shape the pusher needs.
- *  companyId is REQUIRED — never omit it, as one org can own multiple legal
- *  entities (e.g. Pooil + JP Sync with separate VAT books). A query without
- *  companyId would let an accountant push an expense belonging to a different
- *  company in the same org (cross-company VAT leak). */
-async function loadPushable(
-  orgId: string,
-  id: string,
-  companyId: string,
-): Promise<
-  | {
-      pushable: PushableExpense;
-      status: string;
-      docType: string;
-      companyId: string;
-      alreadyPushed: boolean;
-      stalePending: boolean;
-    }
-  | null
-> {
-  const row = await prisma.ledgerExpense.findFirst({
-    where: { id, orgId, companyId },
-    include: {
-      items: { orderBy: { createdAt: "asc" } },
-      category: {
-        select: {
-          name: true,
-          trcloudAccCode: true,
-          trcloudProductCode: true,
-          vatClaimable: true,
-        },
-      },
-      branch: { select: { settings: true } },
-    },
-  });
-  if (!row) return null;
-
-  // Branch.settings stores TRCloud branch config: { trcloudProject, trcloudDepartment }
-  const branchSettings =
-    row.branch?.settings && typeof row.branch.settings === "object"
-      ? (row.branch.settings as Record<string, unknown>)
-      : {};
-
-  return {
-    status: row.status,
-    docType: row.docType,
-    companyId: row.companyId,
-    // Only a REAL doc id = already pushed. A failed push ("error") is RE-SENDABLE
-    // (it created no TRCloud doc; the push dedups by reference). "pending" is handled
-    // separately via stalePending below. See trcloud-state.ts.
-    alreadyPushed: isTrcloudSent(row.trcloudDocId),
-    // self-heal: a 'pending' row stuck >5 min = a prior push died mid-flight → reclaimable
-    // (TRCloud push dedups by docCode, so retrying an actually-succeeded push won't dup the AP).
-    stalePending:
-      row.trcloudDocId === "pending" && row.updatedAt < new Date(Date.now() - 5 * 60 * 1000),
-    pushable: {
-      id: row.id,
-      orgId: row.orgId,
-      companyId: row.companyId,
-      docCode: row.docCode,
-      vendor: row.vendor,
-      vendorTaxId: row.vendorTaxId,
-      vendorAddress: row.vendorAddress,
-      docDate: row.docDate,
-      subtotal: Number(row.subtotal),
-      vat: Number(row.vat),
-      wht: Number(row.wht),
-      discount: Number(row.discount),
-      total: Number(row.total),
-      paymentStatus: row.paymentStatus,
-      note: row.note,
-      categoryName: row.category?.name ?? null,
-      categoryAccCode: row.category?.trcloudAccCode ?? null,
-      trcloudProductCode:
-        (row.category?.trcloudProductCode as string | null) ?? null,
-      purchaseType: row.trcloudPurchaseType ?? null,
-      inputVatClaimable: row.category?.vatClaimable ?? false,
-      branchTrcloudProject:
-        typeof branchSettings.trcloudProject === "string"
-          ? branchSettings.trcloudProject
-          : null,
-      branchTrcloudDepartment:
-        typeof branchSettings.trcloudDepartment === "string"
-          ? branchSettings.trcloudDepartment
-          : null,
-      items: row.items.map((it) => ({
-        description: it.description,
-        qty: Number(it.qty),
-        unitPrice: Number(it.unitPrice),
-        amount: Number(it.amount),
-        vatRate: it.vatRate == null ? null : Number(it.vatRate),
-      })),
-    },
-  };
-}
+// loadPushable ถูกย้ายไปไฟล์ lib/ledger/pushable.ts (plain module) เพื่อให้ทั้ง action
+// และ core แปลง AP แบบไม่มี session (lib/ledger/ap-auto-convert.ts) แชร์ตัวโหลดตัวเดียวกัน
+// — "use server" file import จาก lib ไม่ได้ จึงต้องย้ายออกมา. ดู import ด้านบน.
 
 type PushMeta = { vendor?: string | null; total?: number; vendorTaxId?: string | null; docCode?: string | null };
 
@@ -1848,81 +1757,14 @@ export async function convertExpenseToAp(
     return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud" };
   }
   const orgId = session.user.org_id;
-  const row = await prisma.ledgerExpense.findFirst({
+  // หา companyId ก่อน (org เดียวมีได้หลายนิติบุคคล) → ส่งให้ core ที่ scope orgId+companyId.
+  const light = await prisma.ledgerExpense.findFirst({
     where: { id, orgId },
-    select: {
-      companyId: true,
-      trcloudDocId: true,
-      trcloudDocNo: true,
-      trcloudApDocId: true,
-      trcloudApDocNo: true,
-    },
+    select: { companyId: true },
   });
-  if (!row) return { ok: false, error: "ไม่พบรายการ" };
-  if (row.trcloudApDocId) return { ok: true, alreadyAp: true, apDocNo: row.trcloudApDocNo }; // แปลงแล้ว
-  // ต้องส่งเข้า TRCloud เป็น PO ตั้งต้นก่อน จึงจะแปลงเป็น AP ได้
-  if (!isTrcloudSent(row.trcloudDocId)) {
-    return { ok: false, error: "ต้องส่งเข้า TRCloud (PO) ก่อน แล้วจึงแปลงเป็น AP" };
-  }
-  const loaded = await loadPushable(orgId, id, row.companyId);
-  if (!loaded) return { ok: false, error: "ไม่พบรายการ" };
-  if (loaded.status !== "confirmed" && loaded.status !== "locked") {
-    return { ok: false, error: "แปลงเป็น AP ได้เฉพาะรายการที่ยืนยันแล้ว" };
-  }
-  // สลิปโอน (ถ้ามี · จับคู่กับใบนี้แล้ว) → แนบลิงก์เข้าใบ AP
-  const slip = await prisma.ledgerPayment.findFirst({
-    where: { matchedExpenseId: id, orgId, slipUrl: { not: null } },
-    orderBy: { paidAt: "desc" },
-    select: { slipUrl: true },
-  });
-  // po_id ตัวเลข (ไม่ใช่ sentinel "sent"/"pending"/"error") → ใช้ลบ PO seed หลังแปลง
-  const poDocId = row.trcloudDocId && /^\d+$/.test(row.trcloudDocId) ? row.trcloudDocId : null;
-
-  await audit({
-    orgId,
-    userId: session.user.id,
-    action: "LEDGER_EXPENSE_AP_CONVERT_STARTED",
-    resourceType: "ledger_expense",
-    resourceId: id,
-    diff: { new: { docCode: loaded.pushable.docCode, total: loaded.pushable.total } },
-  });
-
-  const res = await convertExpensePoToAp(loaded.pushable, { poDocId, slipUrl: slip?.slipUrl ?? null });
-  if (!res.ok) {
-    await prisma.ledgerExpense.updateMany({
-      where: { id, orgId, companyId: row.companyId },
-      data: { trcloudApError: res.error.slice(0, 500) },
-    });
-    await audit({
-      orgId,
-      userId: session.user.id,
-      action: "LEDGER_EXPENSE_AP_CONVERT_FAILED",
-      resourceType: "ledger_expense",
-      resourceId: id,
-      diff: { new: { error: res.error.slice(0, 500) } },
-    });
-    return { ok: false, error: res.error };
-  }
-  await prisma.ledgerExpense.updateMany({
-    where: { id, orgId, companyId: row.companyId },
-    data: {
-      trcloudApDocId: res.apDocId ?? "sent",
-      trcloudApDocNo: res.apDocNo,
-      trcloudApAt: new Date(),
-      trcloudApError: null,
-    },
-  });
-  await audit({
-    orgId,
-    userId: session.user.id,
-    action: "LEDGER_EXPENSE_AP_CONVERTED",
-    resourceType: "ledger_expense",
-    resourceId: id,
-    diff: { new: { trcloudApDocNo: res.apDocNo, trcloudApDocId: res.apDocId } },
-  });
-  revalidatePath("/ledger/expenses");
-  revalidatePath("/ledger");
-  return { ok: true, apDocNo: res.apDocNo };
+  if (!light) return { ok: false, error: "ไม่พบรายการ" };
+  // core เดียวกับ auto-trigger — guard/ตรรกะบัญชีทั้งหมดอยู่ใน runApConversion แล้ว.
+  return runApConversion(orgId, light.companyId, id, session.user.id);
 }
 
 /** Push MANY confirmed expenses (multi-select). Company-scoped like bulkConfirm:

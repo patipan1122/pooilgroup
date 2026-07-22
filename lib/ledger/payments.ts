@@ -12,6 +12,7 @@
 // the matched bill flips to paymentStatus="paid" in the SAME transaction as the
 // payment row, so a slip can never mark a bill paid without leaving its evidence.
 import { prisma } from "@/lib/prisma";
+import { autoConvertAfterSlip } from "@/lib/ledger/ap-auto-convert";
 
 /** Duck-typed Prisma error-code check (repo idiom — no value import of Prisma). */
 function errCode(e: unknown): string | null {
@@ -118,6 +119,15 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
       }
       return { paymentId: payment.id, marked };
     });
+
+    // AUTO แปลง PO→AP หลังบิลถูกจับคู่+พลิกเป็น "จ่ายแล้ว" — เรียก "นอก" transaction (หลัง commit)
+    // เท่านั้น (ห้ามอยู่ในบล็อก $transaction ด้านบน) และเฉพาะตอนที่บิลถูกพลิกจริง (result.marked).
+    // ครอบทั้ง web cash path (markBillPaidCash) และ LINE-webhook slip path เพราะทั้งคู่ผ่านที่นี่.
+    // autoConvertAfterSlip เป็น best-effort กลืน error เองทั้งหมด → แปลง AP พลาดก็ไม่ทำให้การ
+    // บันทึกการจ่าย (เงินโอนจริง) พัง/rollback. เป็นงานตามหลังที่ retry ได้ผ่านปุ่ม "แปลงเป็น AP".
+    if (result.marked && matchedExpenseId) {
+      await autoConvertAfterSlip(orgId, companyId, matchedExpenseId, markedBy ?? null);
+    }
     return { ok: true, paymentId: result.paymentId, marked: result.marked };
   } catch (e) {
     // P2002 = the unique trans_ref / sha256 index fired → already paid once.
