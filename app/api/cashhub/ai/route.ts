@@ -15,6 +15,7 @@ import {
   pageGuideToText,
   allPagesIndex,
 } from "@/lib/usage-guide";
+import { findManualEntry, manualEntryToText } from "@/lib/ai/usage-manual";
 
 const Schema = z.object({
   question: z.string().min(2).max(500),
@@ -39,7 +40,7 @@ B) **แนะนำวิธีใช้งาน** — บอกว่าฟ�
 กฎสำคัญ:
 1. ตอบเป็น **ภาษาไทย** กระชับ ตรงประเด็น (ส่วนใหญ่ 4-8 บรรทัด)
 2. **คำถามวิเคราะห์ข้อมูล**: ใช้ตัวเลขจาก "Live Data" เท่านั้น ห้ามเดา. ถ้า Live Data ไม่มี ตอบตรงๆ ว่า "ข้อมูลในระบบยังไม่มีรายละเอียดนี้"
-3. **คำถามวิธีใช้**: ใช้ "Page Guide" + "Pages Index" เป็นหลัก. บอกชื่อหน้า/เมนูที่ต้องไป + ขั้นตอน 1-2-3 สั้นๆ
+3. **คำถามวิธีใช้**: ใช้ "คู่มือการใช้งาน" (ถ้ามี) เป็นหลักก่อน รองลงมาคือ "Page Guide" + "Pages Index". บอกชื่อหน้า/เมนูที่ต้องไป + ขั้นตอน 1-2-3 สั้นๆ ตามคู่มือ ห้ามเดาขั้นตอนเอง
 4. ถ้าผู้ใช้กำลังเปิดหน้าเฉพาะอยู่ (มี "Current Page Context") ให้ตอบคำถามใน scope ของหน้านั้นก่อน — ก่อนค่อยขยายไปทั่วระบบ
 5. ใช้ภาษาธุรกิจ ไม่ใช้ศัพท์เทคนิค (ห้ามพูดถึงชื่อ table/SQL/API)
 6. ถ้าเห็นปัญหาเร่งด่วน (สาขาขาด 5+ วัน, ยอดลดเกิน 30%) flag ที่ท้าย
@@ -127,6 +128,12 @@ export async function POST(req: NextRequest) {
   if (pageGuide) {
     sections.push(
       `[Current Page Context]\nผู้ใช้กำลังอยู่ที่ ${currentPath}\n${pageGuideToText(pageGuide)}`,
+    );
+  }
+  const manualEntry = currentPath ? await findManualEntry(currentPath) : null;
+  if (manualEntry) {
+    sections.push(
+      `[คู่มือการใช้งาน — จากคลังคู่มือ Google Sheet]\n${manualEntryToText(manualEntry)}`,
     );
   }
   sections.push(`[Pages Index — ทุกหน้าในระบบ]\n${allPagesIndex()}`);
