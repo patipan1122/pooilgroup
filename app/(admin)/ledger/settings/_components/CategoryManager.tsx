@@ -244,6 +244,26 @@ export function CategoryManager({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      {/* สรุปผังบัญชี — ทำงานยังไง (กางได้ · CEO 2026-07-22) */}
+      <details className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs">
+        <summary className="cursor-pointer font-semibold text-zinc-700">📋 ผังบัญชีทำงานยังไง? (คลิกดูสรุป)</summary>
+        <div className="mt-2 space-y-2 text-zinc-600">
+          <div>
+            พนักงานเลือก <b>&ldquo;หมวด&rdquo;</b> ตอนคีย์บิล → ระบบเติมรหัสบัญชีให้เอง → ทุกใบลงบัญชีแบบเดียวกัน:
+            <div className="mt-1 rounded-md bg-white px-2 py-1 font-mono text-[11px] text-zinc-700">
+              Dr ค่าใช้จ่าย (ตามหมวด) &nbsp;+&nbsp; Dr ภาษีซื้อ 1432000 (ถ้า VAT ขอคืนได้) &nbsp;/&nbsp; Cr เจ้าหนี้การค้า 2101000
+            </div>
+          </div>
+          <div>
+            หมวดจัดเป็น <b>6 กลุ่ม</b> เลือกจอเดียวจบ:
+            <span className="ml-1">🛒 ของ/สต๊อก · 👷 คน/จ้าง · 🏠 ที่/ยานพาหนะ · 💡 สาธารณูปโภค · 📣 ขาย/บริหาร · 🏦 การเงิน/ภาษี</span>
+          </div>
+          <div className="text-[11px] text-zinc-500">
+            ⚠️ <span className="text-amber-700">VAT ✕ ไม่ได้</span> = ขอคืนภาษีซื้อไม่ได้ (เช่น ค่ารับรอง · ค่าเช่า) ·
+            หมวดที่ <b>ยังไม่ผูกรหัสบัญชี</b> จะส่งเข้า TRCloud ไม่ถูกต้อง → ควรตั้งรหัสให้ครบทุกหมวด
+          </div>
+        </div>
+      </details>
       {/* Add form */}
       <div className="mb-4 flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row">
