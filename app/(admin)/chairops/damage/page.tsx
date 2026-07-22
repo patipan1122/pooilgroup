@@ -14,6 +14,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
 import { getSuspectsWithChecks } from "@/lib/chairops/alerts/_chair-check";
 import { SuspectsView } from "./_suspects-view";
+import { recheckSuspects } from "./check-actions";
 
 const STATUS_LABEL: Record<ChairopsTicketStatus, string> = {
   OPEN: "ใหม่",
@@ -167,12 +168,14 @@ export default async function DamageListPage({
           </p>
         </div>
         {tab === "suspects" && (
-          <Link
-            href="/chairops/damage?tab=suspects"
-            className="h-9 rounded-md border border-border bg-background px-4 text-sm font-medium leading-9 hover:bg-muted"
-          >
-            🔄 เช็คตู้เสียด่วน
-          </Link>
+          <form action={recheckSuspects}>
+            <button
+              type="submit"
+              className="h-9 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
+            >
+              🔄 เช็คตู้เสียด่วน
+            </button>
+          </form>
         )}
       </div>
 

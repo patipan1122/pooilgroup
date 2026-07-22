@@ -17,6 +17,20 @@ function revalidate(chairCode: string) {
   if (chairCode) revalidatePath(`/chairops/damage/check/${encodeURIComponent(chairCode)}`);
 }
 
+/** "🔄 เช็คตู้เสียด่วน" button. The suspect detector runs live on every page load,
+ *  so re-checking = re-rendering the page. The old button was a <Link> to the URL
+ *  the user was already on → the SPA router treated it as a no-op ("กดแล้วเงียบ").
+ *  A server action that revalidates + redirects forces a fresh server render, so the
+ *  button actually re-runs the detector and refreshes the list. */
+export async function recheckSuspects() {
+  const session = await requireAuth();
+  if (session.user.role === "MAID" || session.user.role === "TECHNICIAN") {
+    redirect("/chairops/dashboard");
+  }
+  revalidatePath("/chairops/damage");
+  redirect("/chairops/damage?tab=suspects");
+}
+
 /** Set the triage status of one (chair, device) + append a log entry. Idempotent:
  *  re-setting the same status with no note is a no-op (no duplicate log spam). */
 export async function setCheckStatus(formData: FormData) {
