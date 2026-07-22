@@ -6,16 +6,9 @@
 // + คอลัมน์ "ไฟล์" กดเปิดเรซูเม่/รูป · ชื่อผู้สมัครติดขอบซ้าย · ติ๊กเลือกคน → AI batch
 // + คอลัมน์ "สรุป AI" (คะแนน + คำตัดสิน + สรุปอ่านง่าย) · ปุ่มข้อมูลตำแหน่งสำหรับ AI
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
-  APPLICATION_STATUSES,
-  STATUS_LABELS,
-  STATUS_TONE,
-  SCREENING_VERDICTS,
-  SCREENING_VERDICT_LABELS,
-  SCREENING_VERDICT_ACTIVE_CLASS,
   TAG_COLOR_CHIP,
   GENDER_LABELS,
   parseTag,
@@ -29,24 +22,23 @@ import {
   type PostingAiBrief,
 } from "@/lib/recruit/answers";
 import {
-  changeApplicationStatus,
-  setScreeningVerdict,
-} from "@/lib/recruit/actions";
+  StatusSelect,
+  VerdictButtons,
+  InterviewNoteCell,
+  type LatestNote,
+} from "./application-row-controls";
 import { FileQuickOpen } from "./file-quick-open";
 import { BatchAiButton } from "./batch-ai-button";
 import { PositionBriefModal } from "./position-brief-modal";
+import { ApplicationCard } from "./applications-cards";
 import {
   Star,
   ArrowDown,
   ArrowUp,
   ExternalLink,
-  ThumbsUp,
-  ThumbsDown,
-  Meh,
   Columns3,
   Check,
   Briefcase,
-  type LucideIcon,
 } from "lucide-react";
 
 export interface AnswerColumnMeta {
@@ -73,6 +65,8 @@ export interface TableRow {
   submittedAt: string | null;
   files: AppFileMeta[];
   answers: Record<string, string>; // fieldId → ข้อความที่จัดรูปแล้ว (เฉพาะ answerColumns)
+  latestNote: LatestNote | null; // โน้ตสัมภาษณ์ล่าสุด (null = ยังไม่มี)
+  noteCount: number; // จำนวนโน้ตทั้งหมดของคนนี้
 }
 
 interface Props {
@@ -85,24 +79,6 @@ interface Props {
   posting: { id: string; title: string; aiBrief: PostingAiBrief | null } | null;
   batchTargets: Array<{ id: string; scored: boolean }>;
 }
-
-// Lucide icon per verdict (แทนอิโมจิ · โปร + คงความหมาย · ตาม tokens Lucide-only)
-const VERDICT_ICON: Record<ScreeningVerdict, LucideIcon> = {
-  INTERESTING: ThumbsUp,
-  MAYBE: Meh,
-  NOT_INTERESTED: ThumbsDown,
-};
-
-// สีจุดสถานะ (มองปราดเดียวรู้ · เรียงตาม tone เดิม)
-const TONE_DOT: Record<string, string> = {
-  brand: "bg-[var(--color-brand-500)]",
-  warning: "bg-amber-500",
-  orange: "bg-orange-500",
-  purple: "bg-purple-500",
-  success: "bg-green-500",
-  danger: "bg-red-500",
-  neutral: "bg-zinc-400",
-};
 
 const VERDICT_TEXT: Record<"green" | "amber" | "red", string> = {
   green: "text-green-700",
@@ -121,6 +97,7 @@ const HIDEABLE_BASE: { key: string; label: string }[] = [
   { key: "star", label: "ดาว" },
   { key: "verdict", label: "คัดกรอง" },
   { key: "status", label: "สถานะ" },
+  { key: "interview", label: "บันทึกสัมภาษณ์" },
   { key: "tags", label: "ป้าย" },
   { key: "submittedAt", label: "วันสมัคร" },
 ];
@@ -220,8 +197,9 @@ export function ApplicationsTable({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-zinc-400">
           {answerColumns.length > 0
-            ? `กางคำตอบ ${answerColumns.length} ข้อเป็นคอลัมน์แล้ว · ปัดตารางแนวนอนเพื่อดูครบ`
+            ? `กางคำตอบ ${answerColumns.length} ข้อเป็นคอลัมน์แล้ว`
             : "เลือกตำแหน่งด้านบนเพื่อกางคำตอบทุกข้อเป็นคอลัมน์"}
+          <span className="lg:hidden"> · จอเล็กแสดงเป็นการ์ด กรอกได้เลย</span>
         </p>
         <div className="flex items-center gap-2">
           {/* ข้อมูลตำแหน่งสำหรับ AI */}
@@ -244,8 +222,8 @@ export function ApplicationsTable({
             </button>
           )}
 
-          {/* คอลัมน์ */}
-          <div className="relative">
+          {/* คอลัมน์ — เกี่ยวกับตาราง (จอใหญ่) เท่านั้น */}
+          <div className="relative hidden lg:block">
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
@@ -329,7 +307,8 @@ export function ApplicationsTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+      {/* จอใหญ่ (lg+) — ตาราง Excel เลื่อนแนวนอน */}
+      <div className="hidden lg:block overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full min-w-[1080px] text-sm border-collapse">
           <thead className="sticky top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
             <tr className="text-left text-[11px] text-zinc-500">
@@ -395,6 +374,11 @@ export function ApplicationsTable({
               {vis("status") && (
                 <th className="px-3 py-2.5 font-bold whitespace-nowrap">สถานะ</th>
               )}
+              {vis("interview") && (
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">
+                  บันทึกสัมภาษณ์
+                </th>
+              )}
               {vis("tags") && (
                 <th className="px-3 py-2.5 font-bold whitespace-nowrap">ป้าย</th>
               )}
@@ -435,6 +419,20 @@ export function ApplicationsTable({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* จอเล็ก (มือถือ/แท็บเล็ต) — การ์ดต่อคน ดูง่าย กรอกสัมภาษณ์ได้เลย */}
+      <div className="lg:hidden space-y-2">
+        {rows.map((row) => (
+          <ApplicationCard
+            key={row.id}
+            row={row}
+            canWrite={canWrite}
+            answerColumns={answerColumns}
+            selected={selected.has(row.id)}
+            onToggleSelect={toggleSelect}
+          />
+        ))}
       </div>
 
       {briefOpen && posting && (
@@ -530,41 +528,8 @@ function Row({
   selected: boolean;
   onToggleSelect: (id: string) => void;
 }) {
-  const [status, setStatus] = useState<ApplicationStatus>(row.status);
-  const [verdict, setVerdict] = useState<ScreeningVerdict | null>(row.verdict);
-  const [isPending, startTransition] = useTransition();
-
-  function changeStatus(next: ApplicationStatus) {
-    if (next === status) return;
-    const prev = status;
-    setStatus(next);
-    startTransition(async () => {
-      try {
-        await changeApplicationStatus(row.id, next);
-        toast.success(`${row.fullName} → ${STATUS_LABELS[next]}`);
-      } catch (e) {
-        setStatus(prev);
-        toast.error((e as Error).message);
-      }
-    });
-  }
-
-  function changeVerdict(next: ScreeningVerdict) {
-    const prev = verdict;
-    const value = verdict === next ? null : next;
-    setVerdict(value);
-    startTransition(async () => {
-      try {
-        await setScreeningVerdict(row.id, value);
-      } catch (e) {
-        setVerdict(prev);
-        toast.error((e as Error).message);
-      }
-    });
-  }
-
-  const ReadonlyVerdictIcon = verdict ? VERDICT_ICON[verdict] : null;
   const verdictAi = aiVerdict(row.aiScore);
+  const appHref = `/recruit/applications/${row.id}`;
 
   return (
     <tr
@@ -720,69 +685,37 @@ function Row({
       {/* คัดกรอง */}
       {vis("verdict") && (
         <td className="px-3 py-2.5 whitespace-nowrap">
-          {canWrite ? (
-            <div className="flex items-center gap-1">
-              {SCREENING_VERDICTS.map((v) => {
-                const Icon = VERDICT_ICON[v];
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => changeVerdict(v)}
-                    disabled={isPending}
-                    title={SCREENING_VERDICT_LABELS[v]}
-                    aria-label={SCREENING_VERDICT_LABELS[v]}
-                    aria-pressed={verdict === v}
-                    className={`size-7 grid place-items-center rounded-lg border transition-colors ${
-                      verdict === v
-                        ? SCREENING_VERDICT_ACTIVE_CLASS[v]
-                        : "border-zinc-200 bg-white text-zinc-400 hover:text-zinc-700 hover:border-zinc-300"
-                    }`}
-                  >
-                    <Icon className="size-3.5" />
-                  </button>
-                );
-              })}
-            </div>
-          ) : ReadonlyVerdictIcon ? (
-            <ReadonlyVerdictIcon className="size-4 text-zinc-500" />
-          ) : (
-            <span className="text-zinc-300">—</span>
-          )}
+          <VerdictButtons
+            applicationId={row.id}
+            initial={row.verdict}
+            canWrite={canWrite}
+          />
         </td>
       )}
 
       {/* สถานะ */}
       {vis("status") && (
         <td className="px-3 py-2.5 whitespace-nowrap">
-          {canWrite ? (
-            <div className="inline-flex items-center gap-1.5">
-              <span
-                className={`size-2 rounded-full shrink-0 ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
-              />
-              <select
-                value={status}
-                onChange={(e) =>
-                  changeStatus(e.target.value as ApplicationStatus)
-                }
-                disabled={isPending}
-                className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)] disabled:opacity-50"
-              >
-                {APPLICATION_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700">
-              <span
-                className={`size-2 rounded-full ${TONE_DOT[STATUS_TONE[status]] ?? "bg-zinc-400"}`}
-              />
-              {STATUS_LABELS[status]}
-            </span>
-          )}
+          <StatusSelect
+            applicationId={row.id}
+            fullName={row.fullName}
+            initial={row.status}
+            canWrite={canWrite}
+          />
+        </td>
+      )}
+
+      {/* บันทึกสัมภาษณ์ — จดว่าสัมภาษณ์แล้วเป็นยังไง (กรอกในช่องได้เลย) */}
+      {vis("interview") && (
+        <td className="px-3 py-2.5 align-top">
+          <InterviewNoteCell
+            applicationId={row.id}
+            initialLatest={row.latestNote}
+            initialCount={row.noteCount}
+            canWrite={canWrite}
+            applicationHref={appHref}
+            variant="cell"
+          />
         </td>
       )}
 

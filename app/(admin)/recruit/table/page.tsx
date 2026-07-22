@@ -140,6 +140,17 @@ export default async function RecruitTablePage({
               settings: true,
             },
           },
+          // โน้ตสัมภาษณ์ล่าสุด (โชว์ในคอลัมน์/การ์ด) + จำนวนทั้งหมด
+          notes: {
+            orderBy: { createdAt: "desc" as const },
+            take: 1,
+            select: {
+              body: true,
+              createdAt: true,
+              user: { select: { name: true } },
+            },
+          },
+          _count: { select: { notes: true } },
         },
       }),
       prisma.recruitApplication.groupBy({
@@ -222,6 +233,7 @@ export default async function RecruitTablePage({
     const files = Array.isArray(a.files)
       ? (a.files as unknown as AppFileMeta[])
       : [];
+    const latest = a.notes[0] ?? null;
     return {
       id: a.id,
       refId: a.refId,
@@ -240,6 +252,14 @@ export default async function RecruitTablePage({
       submittedAt: a.submittedAt ? thaiDateLong(a.submittedAt) : null,
       files,
       answers,
+      latestNote: latest
+        ? {
+            body: latest.body,
+            atLabel: thaiDateLong(latest.createdAt),
+            author: latest.user?.name ?? "—",
+          }
+        : null,
+      noteCount: a._count.notes,
     };
   });
 
@@ -409,9 +429,6 @@ export default async function RecruitTablePage({
           </div>
         ) : (
           <>
-            <p className="lg:hidden mb-2 text-center text-[11px] text-zinc-400">
-              ← ปัดตารางแนวนอนเพื่อดูทุกคอลัมน์ →
-            </p>
             <ApplicationsTable
               rows={rows}
               canWrite={canWrite}

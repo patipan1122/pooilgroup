@@ -17,6 +17,7 @@ import {
 import { makePostingSlug } from "./slug";
 import { canRecruitWrite, canRecruitAdmin } from "./role-guard";
 import { sendStatusEmail, type EmailCtx } from "./email";
+import { thaiDateLong } from "@/lib/utils/format";
 
 // =============================================================
 // Job Postings CRUD
@@ -480,7 +481,7 @@ export async function addApplicationNote(
   });
   if (!app) throw new Error("ไม่พบใบสมัคร");
 
-  await prisma.recruitApplicationNote.create({
+  const note = await prisma.recruitApplicationNote.create({
     data: {
       orgId: session.user.org_id,
       applicationId,
@@ -488,6 +489,7 @@ export async function addApplicationNote(
       body: trimmed,
       rating: rating ?? null,
     },
+    select: { id: true, body: true, createdAt: true },
   });
 
   await audit({
@@ -499,6 +501,14 @@ export async function addApplicationNote(
   });
 
   revalidatePath(`/recruit/applications/${applicationId}`);
+
+  // คืนค่าโน้ตที่เพิ่ง insert เพื่อให้ตาราง/การ์ดอัปเดตช่องสัมภาษณ์ทันที (ไม่ต้อง refresh)
+  return {
+    id: note.id,
+    body: note.body,
+    authorName: session.user.name,
+    atLabel: thaiDateLong(note.createdAt),
+  };
 }
 
 // =============================================================
