@@ -46,7 +46,18 @@ interface SearchParams {
   q?: string;
   sort?: string;
   page?: string;
+  gender?: string; // male | female | other
+  ageMin?: string;
+  ageMax?: string;
+  highlight?: string; // "1" = เฉพาะที่เล็งไว้ (👍 น่าสนใจ)
 }
+
+const GENDERS = ["male", "female", "other"] as const;
+const GENDER_FILTER_LABELS: Record<string, string> = {
+  male: "ชาย",
+  female: "หญิง",
+  other: "อื่นๆ",
+};
 
 export default async function RecruitTablePage({
   searchParams,
@@ -71,6 +82,59 @@ export default async function RecruitTablePage({
   const pageRaw = parseInt(params.page ?? "1", 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
 
+  // Filter ใหม่ — เพศ (โครง DB) · อายุ (จากคำตอบในฟอร์ม) · ไฮไลต์ (เฉพาะที่เล็งไว้)
+  const genderFilter =
+    params.gender && (GENDERS as readonly string[]).includes(params.gender)
+      ? params.gender
+      : null;
+  const highlightOnly = params.highlight === "1";
+  const parseAge = (v?: string) => {
+    const n = parseInt(v ?? "", 10);
+    return Number.isFinite(n) && n >= 0 && n <= 120 ? n : null;
+  };
+  const ageMin = parseAge(params.ageMin);
+  const ageMax = parseAge(params.ageMax);
+
+  // อายุอยู่ในคำตอบ (ต่อตำแหน่ง) — หา field "อายุ" ของตำแหน่งที่เลือก
+  let ageFieldId: string | null = null;
+  if (postingFilter) {
+    const p = await prisma.recruitJobPosting.findFirst({
+      where: { id: postingFilter, orgId },
+      select: { fieldSchema: true },
+    });
+    const parsed = p ? FormSchemaSchema.safeParse(p.fieldSchema) : null;
+    if (parsed?.success) {
+      outer: for (const sec of parsed.data.sections) {
+        for (const f of sec.fields) {
+          if (f.label.toLowerCase().includes("อายุ") && f.type !== "file") {
+            ageFieldId = f.id;
+            break outer;
+          }
+        }
+      }
+    }
+  }
+  const hasAgeField = ageFieldId != null;
+
+  // กรองอายุ — ดึง id ที่ตรงช่วงด้วย SQL (แกะเฉพาะตัวเลขจากคำตอบ · รองรับ "27 ปี")
+  let ageIdFilter: { id?: { in: string[] } } = {};
+  if (ageFieldId && (ageMin != null || ageMax != null)) {
+    const lo = ageMin ?? 0;
+    const hi = ageMax ?? 120;
+    // ใช้ CASE บังคับลำดับ: CAST เป็น INTEGER จะรัน "เฉพาะ" แถวที่ผ่าน regex 1-3 หลักก่อน
+    // (Postgres ไม่การันตีลำดับของ AND — ถ้า planner CAST ก่อนอาจเจอค่าว่าง/เลขยาว → query ล้ม → หน้า 500)
+    const matched = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM recruit_applications
+      WHERE org_id = ${orgId}::uuid AND posting_id = ${postingFilter}::uuid AND draft = false
+      AND CASE
+        WHEN regexp_replace(COALESCE(answers->>${ageFieldId}, ''), '[^0-9]', '', 'g') ~ '^[0-9]{1,3}$'
+        THEN CAST(regexp_replace(answers->>${ageFieldId}, '[^0-9]', '', 'g') AS INTEGER) BETWEEN ${lo} AND ${hi}
+        ELSE false
+      END
+    `;
+    ageIdFilter = { id: { in: matched.map((r) => r.id) } };
+  }
+
   // where (with status) vs whereBase (without status, for status chips)
   const searchWhere = query
     ? {
@@ -85,6 +149,9 @@ export default async function RecruitTablePage({
     orgId,
     draft: false,
     ...(postingFilter ? { postingId: postingFilter } : {}),
+    ...(genderFilter ? { applicant: { gender: genderFilter } } : {}),
+    ...(highlightOnly ? { screeningVerdict: "INTERESTING" } : {}),
+    ...ageIdFilter,
     ...searchWhere,
   };
   const where = {
@@ -267,6 +334,8 @@ export default async function RecruitTablePage({
     id: b.id,
     scored: b.aiScore != null,
   }));
+  // id ในตัวกรองปัจจุบัน (สำหรับ AI ค้นหาประวัติ · client cap ต่อครั้งอีกที)
+  const searchTargets = batchList.map((b) => b.id);
 
   // ตำแหน่งที่เลือก (สำหรับปุ่มข้อมูลตำแหน่ง AI + gate batch) — ดึง aiBrief จาก settings
   const postingProp =
@@ -286,11 +355,19 @@ export default async function RecruitTablePage({
     const q = next.q !== undefined ? next.q : query;
     const so = next.sort !== undefined ? next.sort : sort;
     const pg = next.page !== undefined ? next.page : String(page);
+    const g = next.gender !== undefined ? next.gender : genderFilter;
+    const amin = next.ageMin !== undefined ? next.ageMin : ageMin != null ? String(ageMin) : "";
+    const amax = next.ageMax !== undefined ? next.ageMax : ageMax != null ? String(ageMax) : "";
+    const hl = next.highlight !== undefined ? next.highlight : highlightOnly ? "1" : "";
     if (s) sp.set("status", s);
     if (p) sp.set("posting", p);
     if (q) sp.set("q", q);
     if (so && so !== "recent") sp.set("sort", so);
     if (pg && pg !== "1") sp.set("page", pg);
+    if (g) sp.set("gender", g);
+    if (amin) sp.set("ageMin", amin);
+    if (amax) sp.set("ageMax", amax);
+    if (hl === "1") sp.set("highlight", "1");
     const qs = sp.toString();
     return `/recruit/table${qs ? `?${qs}` : ""}`;
   };
@@ -386,6 +463,96 @@ export default async function RecruitTablePage({
             />
           </div>
 
+          {/* Filter: เพศ · ไฮไลต์ · อายุ */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-400">เพศ:</span>
+              <FilterChip
+                href={buildUrl({ gender: "", page: "1" })}
+                label="ทั้งหมด"
+                active={!genderFilter}
+              />
+              {GENDERS.map((g) => (
+                <FilterChip
+                  key={g}
+                  href={buildUrl({ gender: g, page: "1" })}
+                  label={GENDER_FILTER_LABELS[g]}
+                  active={genderFilter === g}
+                />
+              ))}
+            </div>
+
+            <Link
+              href={buildUrl({ highlight: highlightOnly ? "" : "1", page: "1" })}
+              className={`inline-flex items-center gap-1 h-8 px-3 rounded-lg text-xs font-bold border transition-colors ${
+                highlightOnly
+                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                  : "bg-white text-zinc-600 border-zinc-200 hover:border-amber-300"
+              }`}
+            >
+              ⭐ เฉพาะที่เล็งไว้
+            </Link>
+
+            {hasAgeField && (
+              <form
+                action="/recruit/table"
+                method="GET"
+                className="inline-flex items-center gap-1.5"
+              >
+                {postingFilter && (
+                  <input type="hidden" name="posting" value={postingFilter} />
+                )}
+                {statusFilter && (
+                  <input type="hidden" name="status" value={statusFilter} />
+                )}
+                {query && <input type="hidden" name="q" value={query} />}
+                {sort !== "recent" && (
+                  <input type="hidden" name="sort" value={sort} />
+                )}
+                {genderFilter && (
+                  <input type="hidden" name="gender" value={genderFilter} />
+                )}
+                {highlightOnly && (
+                  <input type="hidden" name="highlight" value="1" />
+                )}
+                <span className="text-[11px] text-zinc-400">อายุ:</span>
+                <input
+                  type="number"
+                  name="ageMin"
+                  defaultValue={ageMin ?? ""}
+                  min={0}
+                  max={120}
+                  placeholder="จาก"
+                  className="w-14 h-8 rounded-lg border border-zinc-200 px-2 text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+                />
+                <span className="text-zinc-300 text-xs">–</span>
+                <input
+                  type="number"
+                  name="ageMax"
+                  defaultValue={ageMax ?? ""}
+                  min={0}
+                  max={120}
+                  placeholder="ถึง"
+                  className="w-14 h-8 rounded-lg border border-zinc-200 px-2 text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+                />
+                <button
+                  type="submit"
+                  className="h-8 px-2.5 rounded-lg bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-700"
+                >
+                  กรอง
+                </button>
+                {(ageMin != null || ageMax != null) && (
+                  <Link
+                    href={buildUrl({ ageMin: "", ageMax: "", page: "1" })}
+                    className="text-[11px] text-zinc-400 hover:text-zinc-700"
+                  >
+                    ล้าง
+                  </Link>
+                )}
+              </form>
+            )}
+          </div>
+
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             <StatusChip
               href={buildUrl({ status: "", page: "1" })}
@@ -438,6 +605,7 @@ export default async function RecruitTablePage({
               storageKey={postingFilter ?? "all"}
               posting={postingProp}
               batchTargets={batchTargets}
+              searchTargets={searchTargets}
             />
 
             {/* Pagination */}
@@ -522,6 +690,30 @@ function StatusChip({
         active
           ? "bg-zinc-900 text-white border-zinc-900"
           : "bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}
+
+// ชิปกรองเล็ก (เพศ) — เตี้ยกว่า StatusChip
+function FilterChip({
+  href,
+  label,
+  active,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`h-8 px-2.5 inline-flex items-center rounded-lg text-xs font-bold whitespace-nowrap border transition-colors ${
+        active
+          ? "bg-[var(--color-brand-600)] text-white border-[var(--color-brand-600)]"
+          : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400"
       }`}
     >
       {label}

@@ -4,12 +4,14 @@
 // ใช้ชิ้นส่วนควบคุมชุดเดียวกับตาราง (StatusSelect / VerdictButtons / InterviewNoteCell)
 // เพื่อให้พฤติกรรม + ข้อมูลตรงกันเป๊ะทั้งสองมุมมอง
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Star } from "lucide-react";
 import {
   GENDER_LABELS,
   TAG_COLOR_CHIP,
   parseTag,
+  type ScreeningVerdict,
 } from "@/lib/recruit/types";
 import { aiVerdict } from "@/lib/recruit/answers";
 import { FileQuickOpen } from "./file-quick-open";
@@ -41,6 +43,11 @@ export function ApplicationCard({
 }) {
   const verdictAi = aiVerdict(row.aiScore);
   const appHref = `/recruit/applications/${row.id}`;
+  // ไฮไลต์ = คนที่เล็งไว้ (👍 น่าสนใจ) · อัปเดตสดเมื่อกดปุ่มคัดกรอง
+  const [verdict, setVerdict] = useState<ScreeningVerdict | null>(row.verdict);
+  // sync เมื่อข้อมูลใหม่มา (เช่น กด "เล็ง" จากผลค้นหา AI แล้ว refresh) → ไฮไลต์ขึ้นทันที
+  useEffect(() => setVerdict(row.verdict), [row.verdict]);
+  const highlighted = verdict === "INTERESTING";
 
   const iqTone = row.iq
     ? row.iq.correct >= row.iq.total * 0.7
@@ -63,7 +70,9 @@ export function ApplicationCard({
       className={`rounded-2xl border p-3 transition-colors ${
         selected
           ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)]/50"
-          : "border-zinc-200 bg-white"
+          : highlighted
+            ? "border-amber-300 bg-amber-50/50 border-l-4 border-l-amber-400"
+            : "border-zinc-200 bg-white"
       }`}
     >
       {/* หัวการ์ด — ติ๊กเลือก + ชื่อ + เปิดเต็มหน้า */}
@@ -140,6 +149,7 @@ export function ApplicationCard({
           applicationId={row.id}
           initial={row.verdict}
           canWrite={canWrite}
+          onChange={setVerdict}
         />
         <StatusSelect
           applicationId={row.id}

@@ -128,10 +128,12 @@ export function VerdictButtons({
   applicationId,
   initial,
   canWrite,
+  onChange,
 }: {
   applicationId: string;
   initial: ScreeningVerdict | null;
   canWrite: boolean;
+  onChange?: (value: ScreeningVerdict | null) => void; // แจ้ง parent (ไฮไลต์แถวสด)
 }) {
   const [verdict, setVerdict] = useState<ScreeningVerdict | null>(initial);
   const [isPending, startTransition] = useTransition();
@@ -141,11 +143,13 @@ export function VerdictButtons({
     const prev = verdict;
     const value = verdict === next ? null : next;
     setVerdict(value);
+    onChange?.(value);
     startTransition(async () => {
       try {
         await setScreeningVerdict(applicationId, value);
       } catch (e) {
         setVerdict(prev);
+        onChange?.(prev);
         toast.error((e as Error).message);
       }
     });

@@ -9,6 +9,8 @@ import {
   scoreCandidate,
   scoreResumeFile,
   isResumeReadableMime,
+  matchApplicantResume,
+  matchApplicantText,
   draftMessage,
   suggestFields,
   AiUnavailableError,
@@ -433,6 +435,135 @@ export async function smartScoreApplicationAction(
     // AI ล่มทั้ง Gemini + Claude → หยุดทั้งชุด (ไม่วนต่อจนครบแล้วเด้ง success ปลอม)
     const stop = e instanceof AiUnavailableError;
     return { ok: false, error: (e as Error).message, stop };
+  }
+}
+
+/**
+ * AI ค้นหาประวัติ 1 คน — HR พิมพ์ภาษาคน ("เคยทำร้านกาแฟ") → AI อ่านเรซูเม่จริง (ครั้งแรก
+ * แกะเนื้อหาเก็บ cache) หรือใช้ cache/คำตอบ → บอกว่าตรงแค่ไหน (0-100) + เหตุผล.
+ * ใช้กับ client loop (ค้นหลายคนรวด) — คืน object แทน throw เพื่อไม่ให้ loop หยุดเพราะคนเดียวพลาด.
+ * budget เกิน/ไม่มีสิทธิ์/AI ล่มทั้งคู่ = stop:true → ให้ loop หยุดทั้งชุด.
+ */
+export async function aiSearchApplicantAction(
+  applicationId: string,
+  query: string,
+): Promise<
+  | {
+      ok: true;
+      id: string;
+      name: string;
+      relevance: number;
+      reason: string;
+      mode: "resume" | "cache" | "answers";
+    }
+  | { ok: false; id: string; error: string; stop?: boolean }
+> {
+  const q = query.trim();
+  if (!q) return { ok: false, id: applicationId, error: "ไม่มีคำค้น", stop: true };
+
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    return { ok: false, id: applicationId, error: "ไม่มีสิทธิ์", stop: true };
+  }
+  const budget = await checkAiBudget({
+    userId: session.user.id,
+    orgId: session.user.org_id,
+    endpoint: "recruit.ai-search",
+  });
+  if (!budget.allowed) {
+    return {
+      ok: false,
+      id: applicationId,
+      error: budget.reason ?? "เกิน budget AI ชั่วคราว",
+      stop: true,
+    };
+  }
+
+  const app = await prisma.recruitApplication.findFirst({
+    where: { id: applicationId, orgId: session.user.org_id },
+    select: {
+      id: true,
+      answers: true,
+      files: true,
+      resumeText: true,
+      applicant: { select: { fullName: true } },
+      posting: { select: { fieldSchema: true } },
+    },
+  });
+  if (!app) return { ok: false, id: applicationId, error: "ไม่พบใบสมัคร" };
+  const name = app.applicant.fullName;
+
+  // รวมคำตอบเป็นข้อความอ่านง่าย (ทุกช่อง ยกเว้นไฟล์) — ค้นหาต้องเห็นเนื้อหาประสบการณ์
+  let answersText = "";
+  const schemaParsed = FormSchemaSchema.safeParse(app.posting.fieldSchema);
+  if (schemaParsed.success) {
+    const answers = (app.answers ?? {}) as Record<string, unknown>;
+    const lines: string[] = [];
+    for (const section of schemaParsed.data.sections) {
+      for (const field of section.fields) {
+        if (field.type === "file") continue;
+        const val = answers[field.id];
+        if (val == null || val === "") continue;
+        lines.push(
+          `${field.label}: ${Array.isArray(val) ? val.join(", ") : String(val)}`,
+        );
+      }
+    }
+    answersText = lines.join("\n");
+  }
+
+  try {
+    // 1) มี cache เนื้อหาเรซูเม่แล้ว → ค้นจากข้อความ (เร็ว/ถูก · ไม่อ่าน PDF ซ้ำ)
+    if (app.resumeText && app.resumeText.trim()) {
+      const profileText = `${app.resumeText}\n\n[คำตอบในใบสมัคร]\n${answersText}`;
+      const r = await matchApplicantText({
+        query: q,
+        profileText,
+        track: { orgId: session.user.org_id, userId: session.user.id },
+      });
+      return { ok: true, id: app.id, name, relevance: r.relevance, reason: r.reason, mode: "cache" };
+    }
+
+    // 2) ยังไม่มี cache + มีไฟล์ที่อ่านได้ → อ่านเรซูเม่จริง + แกะเนื้อหาเก็บ cache
+    const files = (app.files ?? []) as Array<{
+      key: string;
+      name: string;
+      size: number;
+      mime: string;
+    }>;
+    const resume =
+      files.find((f) => f.mime === "application/pdf") ??
+      files.find((f) => isResumeReadableMime(f.mime));
+    const readableResume = resume && resume.size <= 5 * 1024 * 1024 ? resume : null;
+
+    if (readableResume) {
+      const bytes = await getObject(readableResume.key);
+      const r = await matchApplicantResume({
+        query: q,
+        file: { bytes, mime: readableResume.mime, name: readableResume.name },
+        answersText: answersText || undefined,
+        track: { orgId: session.user.org_id, userId: session.user.id },
+      });
+      // เก็บ cache เนื้อหาเรซูเม่ (ครั้งเดียว) — ค้นครั้งถัดไปไม่ต้องอ่าน PDF ใหม่
+      if (r.extractedProfile) {
+        await prisma.recruitApplication.updateMany({
+          where: { id: app.id, orgId: session.user.org_id },
+          data: { resumeText: r.extractedProfile, resumeTextAt: new Date() },
+        });
+      }
+      return { ok: true, id: app.id, name, relevance: r.relevance, reason: r.reason, mode: "resume" };
+    }
+
+    // 3) ไม่มีไฟล์ → ค้นจากคำตอบล้วน
+    const r = await matchApplicantText({
+      query: q,
+      profileText: answersText,
+      track: { orgId: session.user.org_id, userId: session.user.id },
+    });
+    return { ok: true, id: app.id, name, relevance: r.relevance, reason: r.reason, mode: "answers" };
+  } catch (e) {
+    const stop = e instanceof AiUnavailableError;
+    return { ok: false, id: app.id, error: (e as Error).message, stop };
   }
 }
 

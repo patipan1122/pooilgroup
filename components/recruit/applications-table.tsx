@@ -29,6 +29,7 @@ import {
 } from "./application-row-controls";
 import { FileQuickOpen } from "./file-quick-open";
 import { BatchAiButton } from "./batch-ai-button";
+import { AiSearchButton } from "./ai-search";
 import { PositionBriefModal } from "./position-brief-modal";
 import { ApplicationCard } from "./applications-cards";
 import {
@@ -78,6 +79,7 @@ interface Props {
   storageKey: string; // namespace เก็บ pref ซ่อนคอลัมน์ (ต่อตำแหน่ง)
   posting: { id: string; title: string; aiBrief: PostingAiBrief | null } | null;
   batchTargets: Array<{ id: string; scored: boolean }>;
+  searchTargets: string[]; // application ids ในตัวกรอง (สำหรับ AI ค้นหาประวัติ)
 }
 
 const VERDICT_TEXT: Record<"green" | "amber" | "red", string> = {
@@ -111,6 +113,7 @@ export function ApplicationsTable({
   storageKey,
   posting,
   batchTargets,
+  searchTargets,
 }: Props) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
@@ -293,6 +296,9 @@ export function ApplicationsTable({
               </>
             )}
           </div>
+
+          {/* AI ค้นหาประวัติ (อ่านเรซูเม่ตามคำค้น) */}
+          <AiSearchButton targets={searchTargets} canWrite={canWrite} />
 
           {/* ประเมินด้วย AI (batch) */}
           {canWrite && (
@@ -530,21 +536,32 @@ function Row({
 }) {
   const verdictAi = aiVerdict(row.aiScore);
   const appHref = `/recruit/applications/${row.id}`;
+  // ไฮไลต์ = คนที่เล็งไว้ (👍 น่าสนใจ) · อัปเดตสดเมื่อกดปุ่มคัดกรอง
+  const [verdict, setVerdict] = useState<ScreeningVerdict | null>(row.verdict);
+  // sync เมื่อข้อมูลใหม่มา (เช่น กด "เล็ง" จากผลค้นหา AI แล้ว refresh) → ไฮไลต์ขึ้นทันที
+  useEffect(() => setVerdict(row.verdict), [row.verdict]);
+  const highlighted = verdict === "INTERESTING";
 
   return (
     <tr
       className={`group border-b border-zinc-100 align-top transition-colors ${
         selected
           ? "bg-[var(--color-brand-50)]/60"
-          : "even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40"
+          : highlighted
+            ? "bg-amber-50/60 hover:bg-amber-50"
+            : "even:bg-zinc-50/40 hover:bg-[var(--color-brand-50)]/40"
       }`}
     >
       {/* ชื่อ + checkbox + เบอร์ + refId — ติดขอบซ้าย */}
       <td
-        className={`pl-4 pr-3 py-2.5 sticky left-0 z-10 border-r border-zinc-100 ${
+        className={`pl-4 pr-3 py-2.5 sticky left-0 z-10 border-r border-zinc-100 border-l-4 ${
+          highlighted && !selected ? "border-l-amber-400" : "border-l-transparent"
+        } ${
           selected
             ? "bg-[var(--color-brand-50)]"
-            : "bg-white group-hover:bg-[var(--color-brand-50)]/60"
+            : highlighted
+              ? "bg-amber-50 group-hover:bg-amber-50"
+              : "bg-white group-hover:bg-[var(--color-brand-50)]/60"
         }`}
       >
         <div className="flex items-start gap-2">
@@ -689,6 +706,7 @@ function Row({
             applicationId={row.id}
             initial={row.verdict}
             canWrite={canWrite}
+            onChange={setVerdict}
           />
         </td>
       )}

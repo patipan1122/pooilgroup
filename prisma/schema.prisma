@@ -1388,6 +1388,8 @@ model RecruitApplication {
   aiStrengths      Json?                    @map("ai_strengths") // ["...", "...", "..."]
   aiRisks          Json?                    @map("ai_risks")
   aiEvaluatedAt    DateTime?                @map("ai_evaluated_at") @db.Timestamptz(6)
+  resumeText       String?                  @map("resume_text") @db.Text // แคชเนื้อหา resume ที่ AI แกะแล้ว (ใช้ซ้ำตอน AI ค้นหา — ไม่ต้องอ่าน PDF ใหม่ทุกครั้ง)
+  resumeTextAt     DateTime?                @map("resume_text_at") @db.Timestamptz(6)
   flaggedBlacklist Boolean                  @default(false) @map("flagged_blacklist")
   blacklistReason  String?                  @map("blacklist_reason")
   starRating       Int?                     @map("star_rating") // 1-5 from HR

@@ -452,6 +452,108 @@ ${input.formAnswersText ? `\nคำตอบเพิ่มเติมจาก
 }
 
 // =============================================================
+// 2c. AI ค้นหาประวัติ — HR พิมพ์ภาษาคน ("เคยทำร้านกาแฟ") → AI อ่านเรซูเม่+คำตอบ
+//     แล้วบอกว่า "ตรง" แค่ไหน (0-100) + เหตุผลสั้น ๆ · แกะเนื้อหาเรซูเม่เก็บไว้ใช้ซ้ำ
+// =============================================================
+
+export interface AiMatchResult {
+  relevance: number; // 0-100 · ตรงกับคำค้นแค่ไหน
+  reason: string; // เหตุผลสั้น ๆ (ไทย)
+  extractedProfile?: string; // เนื้อหาเรซูเม่ที่แกะได้ (เก็บ cache · เฉพาะตอนอ่านไฟล์)
+}
+
+function clampMatch(parsed: Partial<AiMatchResult>): AiMatchResult {
+  return {
+    relevance: Math.max(0, Math.min(100, Math.round(Number(parsed.relevance) || 0))),
+    reason: typeof parsed.reason === "string" ? parsed.reason.slice(0, 300) : "",
+    extractedProfile:
+      typeof parsed.extractedProfile === "string"
+        ? parsed.extractedProfile.slice(0, 4000)
+        : undefined,
+  };
+}
+
+/** อ่านไฟล์เรซูเม่จริง (PDF/รูป) + จับคู่กับคำค้น + แกะเนื้อหาเก็บไว้ cache (เรียกครั้งแรก/คน) */
+export async function matchApplicantResume(input: {
+  query: string;
+  file: { bytes: Buffer; mime: string; name: string };
+  answersText?: string;
+  track?: { orgId: string; userId?: string | null };
+}): Promise<AiMatchResult> {
+  const prompt = `คุณคือผู้ช่วย HR กำลังค้นหาผู้สมัครที่ตรงกับสิ่งที่ผู้ใช้ต้องการ
+
+สิ่งที่ HR กำลังมองหา: "${input.query}"
+
+อ่าน "เรซูเม่/เอกสารแนบ" (ไฟล์: ${input.file.name})${input.answersText ? ` และคำตอบในใบสมัคร:\n${input.answersText}` : ""}
+
+ประเมินว่าผู้สมัครคนนี้ "ตรง" กับสิ่งที่ HR มองหาแค่ไหน แล้วคืน JSON:
+{
+  "relevance": <0-100 · ตรงมาก=สูง · ไม่ตรงเลย=ต่ำ>,
+  "reason": "<1 ประโยคสั้น บอกว่าทำไมตรง/ไม่ตรง อ้างจากเรซูเม่ เช่น 'เคยเป็นบาริสต้าร้านกาแฟ 2 ปี'>",
+  "extractedProfile": "<สรุปเนื้อหาสำคัญในเรซูเม่: ประสบการณ์ทำงาน ตำแหน่ง ทักษะ การศึกษา ผลงาน — เขียนกระชับเป็นข้อความยาวได้ ใช้ค้นหาซ้ำภายหลัง>"
+}
+
+ข้อกำหนด:
+- ประเมินจาก "เนื้อหางาน/ประสบการณ์/ทักษะ" เท่านั้น
+- ถ้าไฟล์อ่านไม่ออก → relevance ต่ำ + reason ว่า "อ่านเอกสารไม่ได้"
+- ใช้ภาษาไทย · คืนเฉพาะ JSON`;
+
+  const text = await runAI({
+    prompt,
+    file: input.file,
+    claudeModel: SONNET_MODEL,
+    maxTokens: 1500,
+    timeoutMs: 30_000,
+    endpoint: "recruit.ai-search-resume",
+    track: input.track,
+  });
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("AI อ่านเรซูเม่ไม่สำเร็จ · ลองใหม่อีกครั้ง");
+  try {
+    return clampMatch(JSON.parse(m[0]) as Partial<AiMatchResult>);
+  } catch {
+    throw new Error("AI อ่านเรซูเม่ไม่สำเร็จ · ลองใหม่อีกครั้ง");
+  }
+}
+
+/** จับคู่คำค้นจากข้อความล้วน (เนื้อหาเรซูเม่ที่ cache ไว้ + คำตอบ) — ไม่อ่านไฟล์ = เร็ว/ถูก */
+export async function matchApplicantText(input: {
+  query: string;
+  profileText: string;
+  track?: { orgId: string; userId?: string | null };
+}): Promise<AiMatchResult> {
+  const prompt = `คุณคือผู้ช่วย HR กำลังค้นหาผู้สมัครที่ตรงกับสิ่งที่ผู้ใช้ต้องการ
+
+สิ่งที่ HR กำลังมองหา: "${input.query}"
+
+ข้อมูลผู้สมัคร (จากเรซูเม่ + คำตอบในใบสมัคร):
+${input.profileText || "(ไม่มีข้อมูล)"}
+
+ประเมินว่าตรงแค่ไหน คืน JSON:
+{
+  "relevance": <0-100>,
+  "reason": "<1 ประโยคสั้น บอกว่าทำไมตรง/ไม่ตรง อ้างจากข้อมูล>"
+}
+ใช้ภาษาไทย · คืนเฉพาะ JSON`;
+
+  const text = await runAI({
+    prompt,
+    claudeModel: HAIKU_MODEL,
+    maxTokens: 400,
+    timeoutMs: 20_000,
+    endpoint: "recruit.ai-search-text",
+    track: input.track,
+  });
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("AI ค้นหาไม่สำเร็จ · ลองใหม่อีกครั้ง");
+  try {
+    return clampMatch(JSON.parse(m[0]) as Partial<AiMatchResult>);
+  } catch {
+    throw new Error("AI ค้นหาไม่สำเร็จ · ลองใหม่อีกครั้ง");
+  }
+}
+
+// =============================================================
 // 3. AI Chat — Support assistant (กดเปิดเอง · FAB)
 // =============================================================
 export async function chatSupport(input: {
