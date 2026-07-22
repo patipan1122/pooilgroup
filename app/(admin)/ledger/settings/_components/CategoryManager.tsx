@@ -28,6 +28,13 @@ const SKUS = [
   { value: "JPS-103", label: "JPS-103 · วัสดุก่อสร้าง" },
 ];
 
+// ป้ายสั้น ๆ ของ SKU สำหรับคอลัมน์ "ประเภท" ในตาราง (ให้อ่านง่ายกว่ารหัสดิบ)
+const SKU_SHORT: Record<string, string> = {
+  "JPS-100": "สินค้า",
+  "JPS-101": "บริการ",
+  "JPS-103": "วัสดุก่อสร้าง",
+};
+
 // ตัวเลือกรหัสบัญชี GL (คงที่ · มาจากผังบัญชีที่นักบัญชีรับรอง) — "รหัส · ชื่อบัญชี".
 const GL_OPTIONS = EXPENSE_ACCOUNTS.map((a) => ({
   id: a.code,
@@ -342,185 +349,220 @@ export function CategoryManager({
       ) : visibleCategories.length === 0 ? (
         <p className="py-4 text-center text-xs text-zinc-400">ไม่พบหมวดที่ค้นหา</p>
       ) : (
-        <ul className="divide-y divide-zinc-100">
-          {visibleCategories.map((c) => (
-            <li key={c.id} className="py-2.5">
-              {editingId === c.id ? (
-                /* Expanded edit panel — bordered card below the row */
-                <div className="rounded-xl border border-[var(--color-brand-200,theme(colors.violet.200))] bg-zinc-50 p-3">
-                  {/* Panel header */}
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-zinc-800">{c.name}</span>
-                    <button
-                      type="button"
-                      aria-label="ปิดแก้ไข"
-                      onClick={() => { setEditingId(null); setAccCodeError(null); }}
-                      disabled={pending}
-                      className="rounded-md p-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
+        <div className="overflow-x-auto">
+          {/* คำอธิบายสั้น ๆ ว่าทุกใบลงบัญชีแบบเดียวกัน — กัน CEO งงว่า "ลงบัญชียังไง" */}
+          <div className="mb-2 rounded-lg bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-600">💡 ทุกใบลงบัญชีแบบเดียวกัน — <b>Dr</b> บัญชีค่าใช้จ่าย (ตามหมวดที่เลือก) <b>+ Dr</b> ภาษีซื้อ 1432000 (ถ้า VAT ขอคืนได้) <b>/ Cr</b> เจ้าหนี้การค้า 2101000</div>
+          <table className="w-full min-w-[760px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 text-[11px] font-medium text-zinc-500">
+                <th className="py-2 pr-3 text-left font-medium">หมวดค่าใช้จ่าย</th>
+                <th className="py-2 pr-3 text-left font-medium">รหัสบัญชี</th>
+                <th className="py-2 pr-3 text-left font-medium">ชื่อบัญชี</th>
+                <th className="py-2 pr-3 text-left font-medium">ประเภท</th>
+                <th className="py-2 pr-3 text-center font-medium">VAT ขอคืน</th>
+                <th className="py-2 pr-3 text-center font-medium">หัก ณ ที่จ่าย</th>
+                <th className="py-2 pl-3 text-right font-medium">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {visibleCategories.map((c) => {
+                if (editingId === c.id) {
+                  // แถวแก้ไข — กินเต็มความกว้าง (colSpan 7) แล้ววาง edit panel เดิมไว้ข้างในไม่แตะไส้ใน
+                  return (
+                    <tr key={c.id}>
+                      <td colSpan={7} className="py-2">
+                        {/* Expanded edit panel — bordered card below the row */}
+                        <div className="rounded-xl border border-[var(--color-brand-200,theme(colors.violet.200))] bg-zinc-50 p-3">
+                          {/* Panel header */}
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className="text-sm font-semibold text-zinc-800">{c.name}</span>
+                            <button
+                              type="button"
+                              aria-label="ปิดแก้ไข"
+                              onClick={() => { setEditingId(null); setAccCodeError(null); }}
+                              disabled={pending}
+                              className="rounded-md p-1 text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          </div>
 
-                  {/* Fields grid — 2-col on sm+ */}
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {/* GL code */}
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-zinc-600">
-                        รหัสบัญชี GL
-                      </label>
-                      <SearchableSelect
-                        label="รหัสบัญชี GL"
-                        placeholder="— เลือกรหัสบัญชี —"
-                        searchPlaceholder="ค้นหารหัส/ชื่อบัญชี…"
-                        options={GL_OPTIONS}
-                        value={editState.trcloudAccCode}
-                        onChange={(code) => {
-                          setAccCodeError(null);
-                          setEditState({ ...editState, trcloudAccCode: code });
-                        }}
-                        selectClassName={accCodeError ? "border-rose-400 focus:ring-rose-300" : ""}
-                      />
-                      {accCodeError ? (
-                        <p className="mt-0.5 text-[11px] text-rose-600">{accCodeError}</p>
-                      ) : (
-                        <p className="mt-0.5 text-[11px] text-zinc-500">เลือกจากผังบัญชี TRCloud (รหัส · ชื่อบัญชี)</p>
+                          {/* Fields grid — 2-col on sm+ */}
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {/* GL code */}
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600">
+                                รหัสบัญชี GL
+                              </label>
+                              <SearchableSelect
+                                label="รหัสบัญชี GL"
+                                placeholder="— เลือกรหัสบัญชี —"
+                                searchPlaceholder="ค้นหารหัส/ชื่อบัญชี…"
+                                options={GL_OPTIONS}
+                                value={editState.trcloudAccCode}
+                                onChange={(code) => {
+                                  setAccCodeError(null);
+                                  setEditState({ ...editState, trcloudAccCode: code });
+                                }}
+                                selectClassName={accCodeError ? "border-rose-400 focus:ring-rose-300" : ""}
+                              />
+                              {accCodeError ? (
+                                <p className="mt-0.5 text-[11px] text-rose-600">{accCodeError}</p>
+                              ) : (
+                                <p className="mt-0.5 text-[11px] text-zinc-500">เลือกจากผังบัญชี TRCloud (รหัส · ชื่อบัญชี)</p>
+                              )}
+                            </div>
+
+                            {/* SKU select — option labels include description; hint echoes selection */}
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600">
+                                SKU สินค้า TRCloud
+                              </label>
+                              <select
+                                aria-label="SKU สินค้า TRCloud"
+                                className={`${input} w-full`}
+                                value={editState.trcloudProductCode}
+                                onChange={(e) =>
+                                  setEditState({ ...editState, trcloudProductCode: e.target.value })
+                                }
+                              >
+                                {SKUS.map((s) => (
+                                  <option key={s.value} value={s.value}>
+                                    {s.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="mt-0.5 text-[11px] text-zinc-500">
+                                {editState.trcloudProductCode
+                                  ? (SKUS.find((s) => s.value === editState.trcloudProductCode)?.label ?? "")
+                                  : "เลือก SKU ที่ตรงกับประเภทค่าใช้จ่าย"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* VAT checkbox */}
+                          <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
+                            <input
+                              type="checkbox"
+                              className="rounded"
+                              checked={editState.vatClaimable}
+                              onChange={(e) =>
+                                setEditState({ ...editState, vatClaimable: e.target.checked })
+                              }
+                            />
+                            <span>
+                              VAT ขอคืนได้{" "}
+                              <span className="text-zinc-400">(ปิดถ้าซื้อจากผู้ขายไม่จด VAT)</span>
+                            </span>
+                          </label>
+
+                          {/* ตัวอย่างการลงบัญชี — อัปเดตสดตามรหัส/VAT ที่กำลังเลือก */}
+                          <DrCrPreview
+                            code={editState.trcloudAccCode}
+                            vatClaimable={editState.vatClaimable}
+                            name={c.name}
+                          />
+
+                          {/* Action bar */}
+                          <div className="mt-3 flex justify-end gap-2 border-t border-zinc-200 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => { setEditingId(null); setAccCodeError(null); }}
+                              disabled={pending}
+                              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
+                            >
+                              ยกเลิก
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => saveEdit(c.id)}
+                              disabled={pending}
+                              className="flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-brand-700)] disabled:opacity-50"
+                            >
+                              {pending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Check className="size-3" />
+                              )}
+                              บันทึก
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                // แถวแสดงผลปกติ — 7 คอลัมน์ ให้กวาดตาอ่านได้ทีเดียว
+                const std = standardEntryFor(c.trcloudAccCode ?? "", c.name);
+                return (
+                  <tr key={c.id} className={c.active ? "align-top" : "align-top text-zinc-400"}>
+                    {/* 1. หมวดค่าใช้จ่าย */}
+                    <td className="py-2.5 pr-3">
+                      <span className="font-medium text-zinc-800">{c.name}</span>
+                      {!c.active && (
+                        <Badge tone="neutral" className="ml-2 text-[10px]">
+                          ปิดใช้งาน
+                        </Badge>
                       )}
-                    </div>
-
-                    {/* SKU select — option labels include description; hint echoes selection */}
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-zinc-600">
-                        SKU สินค้า TRCloud
-                      </label>
-                      <select
-                        aria-label="SKU สินค้า TRCloud"
-                        className={`${input} w-full`}
-                        value={editState.trcloudProductCode}
-                        onChange={(e) =>
-                          setEditState({ ...editState, trcloudProductCode: e.target.value })
-                        }
-                      >
-                        {SKUS.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-0.5 text-[11px] text-zinc-500">
-                        {editState.trcloudProductCode
-                          ? (SKUS.find((s) => s.value === editState.trcloudProductCode)?.label ?? "")
-                          : "เลือก SKU ที่ตรงกับประเภทค่าใช้จ่าย"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* VAT checkbox */}
-                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-zinc-600">
-                    <input
-                      type="checkbox"
-                      className="rounded"
-                      checked={editState.vatClaimable}
-                      onChange={(e) =>
-                        setEditState({ ...editState, vatClaimable: e.target.checked })
-                      }
-                    />
-                    <span>
-                      VAT ขอคืนได้{" "}
-                      <span className="text-zinc-400">(ปิดถ้าซื้อจากผู้ขายไม่จด VAT)</span>
-                    </span>
-                  </label>
-
-                  {/* ตัวอย่างการลงบัญชี — อัปเดตสดตามรหัส/VAT ที่กำลังเลือก */}
-                  <DrCrPreview
-                    code={editState.trcloudAccCode}
-                    vatClaimable={editState.vatClaimable}
-                    name={c.name}
-                  />
-
-                  {/* Action bar */}
-                  <div className="mt-3 flex justify-end gap-2 border-t border-zinc-200 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => { setEditingId(null); setAccCodeError(null); }}
-                      disabled={pending}
-                      className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
-                    >
-                      ยกเลิก
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => saveEdit(c.id)}
-                      disabled={pending}
-                      className="flex items-center gap-1.5 rounded-lg bg-[var(--color-brand-600)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--color-brand-700)] disabled:opacity-50"
-                    >
-                      {pending ? (
-                        <Loader2 className="size-3 animate-spin" />
+                    </td>
+                    {/* 2. รหัสบัญชี */}
+                    <td className="py-2.5 pr-3 font-mono text-xs text-zinc-600">
+                      {c.trcloudAccCode ? (
+                        c.trcloudAccCode
                       ) : (
-                        <Check className="size-3" />
+                        <span className="text-amber-600">— ยังไม่ผูก —</span>
                       )}
-                      บันทึก
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* Display row */
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="font-medium text-zinc-800">{c.name}</span>
-                    {c.trcloudAccCode && (
-                      <span className="ml-2 text-[11px] text-zinc-500">
-                        <span className="font-mono">{c.trcloudAccCode}</span>
-                        {accountName(c.trcloudAccCode) && (
-                          <span> · {accountName(c.trcloudAccCode)}</span>
-                        )}
-                      </span>
-                    )}
-                    {c.trcloudProductCode && (
-                      <span className="ml-1.5 font-mono text-[11px] text-zinc-500">
-                        {c.trcloudProductCode}
-                      </span>
-                    )}
-                    {!c.vatClaimable && (
-                      <Badge tone="warning" className="ml-1 text-[10px]">
-                        VAT ขอคืนไม่ได้
-                      </Badge>
-                    )}
-                    {c.active && !c.trcloudAccCode && !c.trcloudProductCode && (
-                      <Badge tone="warning" className="ml-1 text-[10px]">
-                        ยังไม่ผูก TRCloud
-                      </Badge>
-                    )}
-                    {!c.active && (
-                      <Badge tone="neutral" className="ml-2 text-[10px]">
-                        ปิดใช้งาน
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <button
-                      type="button"
-                      aria-label="แก้ไข GL/SKU"
-                      onClick={() => startEdit(c)}
-                      disabled={pending}
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-50"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggle(c.id, !c.active)}
-                      disabled={pending}
-                      className="text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
-                    >
-                      {c.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                    </td>
+                    {/* 3. ชื่อบัญชี */}
+                    <td className="py-2.5 pr-3 text-zinc-600">
+                      {accountName(c.trcloudAccCode) ?? "—"}
+                    </td>
+                    {/* 4. ประเภท (SKU ป้ายสั้น) */}
+                    <td className="py-2.5 pr-3 text-xs text-zinc-600">
+                      {c.trcloudProductCode
+                        ? (SKU_SHORT[c.trcloudProductCode] ?? c.trcloudProductCode)
+                        : "—"}
+                    </td>
+                    {/* 5. VAT ขอคืน */}
+                    <td className="py-2.5 pr-3 text-center">
+                      {c.vatClaimable ? (
+                        <span className="text-emerald-600">✓ ได้</span>
+                      ) : (
+                        <span className="text-zinc-400">✕ ไม่ได้</span>
+                      )}
+                    </td>
+                    {/* 6. หัก ณ ที่จ่าย */}
+                    <td className="py-2.5 pr-3 text-center text-xs text-zinc-600">
+                      {std?.wht ? `${std.wht}%` : "—"}
+                    </td>
+                    {/* 7. จัดการ */}
+                    <td className="py-2.5 pl-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          aria-label="แก้ไข GL/SKU"
+                          onClick={() => startEdit(c)}
+                          disabled={pending}
+                          className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-50"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggle(c.id, !c.active)}
+                          disabled={pending}
+                          className="text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
+                        >
+                          {c.active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
