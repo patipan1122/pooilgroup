@@ -21,7 +21,6 @@ import type {
   FieldConfidence,
   PaymentStatus,
 } from "./types";
-import { trcloudState } from "./trcloud-state";
 
 /** Coerce the jsonb attachments column → typed array (tolerant of bad rows). */
 function attachmentsOf(v: unknown): ExpenseAttachment[] {
@@ -164,6 +163,9 @@ export interface ExpenseListFilter {
   needsReview?: boolean;
   /** true = ส่ง TRCloud แล้ว · false = ยังไม่ส่ง · undefined = ทั้งหมด */
   trcloudPushed?: boolean;
+  /** true = แปลงเป็น AP แล้ว (มี trcloudApDocId) · false = ยังไม่แปลง (แท็บ "ส่ง PO แล้ว"
+   *  ตัดใบที่เป็น AP ออกไม่ให้โชว์ซ้ำ) · undefined = ไม่กรองมิตินี้. */
+  apConverted?: boolean;
   /** filter ตามสถานะสีภาษีซื้อ: green=ขอคืนได้ · yellow=ขอใบใหม่ · red=ขอคืนไม่ได้. */
   completeness?: "green" | "yellow" | "red";
   search?: string | null;
@@ -231,6 +233,15 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
         { OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] },
       ];
     }
+  }
+  // แปลง PO → AP แล้วหรือยัง — แยกแท็บ "ส่ง PO แล้ว" (ยังไม่แปลง) ออกจาก "AP แล้ว"
+  // (CEO 2026-07-22: ใบที่เป็น AP แล้วต้องหายจาก "ส่ง PO แล้ว" ไม่งั้นโชว์ซ้ำ). AND-wrapped
+  // so it composes with the trcloudPushed AND above.
+  if (f.apConverted !== undefined) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
+      f.apConverted ? { trcloudApDocId: { not: null } } : { trcloudApDocId: null },
+    ];
   }
   if (f.completeness) {
     where.completenessStatus = COMPLETENESS_STATUS_BY_FILTER[f.completeness];
@@ -453,30 +464,6 @@ function serializeExpenseSummary(row: ExpenseSummaryRow): Expense {
 }
 
 /**
- * เรียง "อัจฉริยะ" (ค่าตั้งต้น) — ลำดับความสำคัญของเอกสาร เลขน้อย = อยู่บนสุด:
- *   1 = งานค้างต้องเติมข้อมูล (ร่างที่ขาดสาขา/หมวด/วันที่ หรือ AI ต้องตรวจ) —
- *       เอกสารที่พึ่งอัพมักตกชั้นนี้ → โผล่บนสุดให้ทำงานต่อทันที (CEO 2026-06-11)
- *   2 = รอจัดการต่อ (ร่างครบ / ยืนยันแล้วยังไม่ส่ง TRCloud / ขอโอนแล้วรอโอน)
- *   3 = จบแล้ว (ส่ง TRCloud แล้ว / โอนแล้ว / ปิดบิล) → ดันลงล่าง
- *   4 = ยกเลิก (ล่างสุด)
- * ภายในแต่ละชั้นคงลำดับ createdAt desc (ของพึ่งอัพอยู่บน) เพราะ sort แบบ stable.
- */
-function smartRank(e: Expense): number {
-  if (e.status === "void") return 4;
-  // Only a REAL TRCloud doc counts as "done" — a failed push ("error") must NOT
-  // sink to the bottom; it needs attention (falls through to rank 2). See trcloud-state.ts.
-  const sentToTrcloud = trcloudState(e.trcloudDocId) === "sent";
-  if (sentToTrcloud || e.payState === "paid" || e.status === "locked") return 3;
-  if (
-    e.status === "draft" &&
-    (e.needsReview || !e.branchId || !e.categoryId || !e.docDate)
-  ) {
-    return 1;
-  }
-  return 2;
-}
-
-/**
  * List expenses for the summary list UI (newest first). Same scoping/filtering
  * as listExpenses() but WITHOUT the line-item join — use for the list pane /
  * home drafts where `items` is never rendered. Use listExpenses() (full include)
@@ -488,11 +475,12 @@ function smartRank(e: Expense): number {
  */
 export async function listExpensesSummary(f: ExpenseListFilter): Promise<ExpenseListResult> {
   const limit = f.take ?? 100;
-  // Sort order. ค่าตั้งต้น (sort=undefined) = "อัจฉริยะ": ดึงหน้าต่างตาม createdAt desc
-  // (ของพึ่งอัพล่าสุด) แล้วจัดอันดับชั้นความสำคัญใน JS (smartRank) เพื่อให้งานค้างลอยบน +
-  // ของพึ่งอัพโผล่. เลือก sort ชัดเจน = เรียงใน DB ตามนั้น (ไม่จัดอันดับซ้ำ).
-  const isSmart = f.sort === undefined;
-  const orderBy: Prisma.LedgerExpenseOrderByWithRelationInput[] = isSmart
+  // Sort order. ค่าตั้งต้น (sort=undefined) = "ใบที่อัพเข้าระบบล่าสุดขึ้นก่อน" — เรียงตาม createdAt
+  // desc (วันที่บันทึกเข้าระบบ = วันอัพ · CEO 2026-07-24 Pinpoint: "เรียงตามที่ใบอัพไปล่าสุด").
+  // ใช้ createdAt ไม่ใช่ updatedAt เพื่อให้ใบไม่ขยับที่เมื่อไปแก้ทีหลัง (upload order คงที่).
+  // เลือก sort ชัดเจน = เรียงใน DB ตามนั้น. date-* = วันที่บนเอกสาร.
+  const orderBy: Prisma.LedgerExpenseOrderByWithRelationInput[] =
+    f.sort === undefined
     ? [{ createdAt: "desc" }]
     : f.sort === "date-asc"
       ? [{ docDate: "asc" }, { createdAt: "asc" }]
@@ -552,15 +540,7 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
     }));
   }
 
-  // เรียงอัจฉริยะ (ค่าตั้งต้น) — จัดอันดับชั้นความสำคัญใน JS หลัง derive payState แล้ว.
-  // ใช้ decorate-sort เพื่อให้ stable แน่นอน (ภายในชั้นคง createdAt desc จาก orderBy).
-  if (isSmart) {
-    expenses = expenses
-      .map((e, i) => ({ e, i }))
-      .sort((a, b) => smartRank(a.e) - smartRank(b.e) || a.i - b.i)
-      .map((x) => x.e);
-  }
-
+  // ค่าตั้งต้น = updatedAt desc (บันทึกล่าสุดขึ้นก่อน) เรียงใน DB แล้ว — ไม่ต้อง re-rank ใน JS.
   return { expenses, hasMore };
 }
 

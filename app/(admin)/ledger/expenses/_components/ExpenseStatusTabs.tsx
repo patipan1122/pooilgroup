@@ -11,12 +11,15 @@ import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 // (ยังไม่ส่ง = trcloudDocId ว่าง · ส่งแล้ว = ส่งขึ้น TRCloud แล้ว). คง "รอตรวจ" (AI ยังไม่ชัวร์)
 // ไว้เป็น triage. draft/confirmed ไม่เป็นแท็บแล้ว (ขับด้วย ?tr= แทน ?status=).
 type PrimaryTabId =
-  | "review" | "unsent" | "sent" | "eligible" | "requested" | "paid" | "all";
+  | "review" | "unsent" | "sent" | "ap" | "eligible" | "requested" | "paid" | "all";
 
+// วงจร PO → AP (CEO 2026-07-22): "ยังไม่ส่ง PO" → "ส่ง PO แล้ว" (ยังไม่ลงบัญชี) → "AP แล้ว"
+// (ลงบัญชีจริง). ใบที่แปลง AP แล้วหลุดจาก "ส่ง PO แล้ว" ไปอยู่ "AP แล้ว" (กันโชว์ซ้ำ).
 const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = [
   { id: "review", label: "รอตรวจ" },
-  { id: "unsent", label: "ยังไม่ส่ง" },
-  { id: "sent", label: "ส่งแล้ว" },
+  { id: "unsent", label: "ยังไม่ส่ง PO" },
+  { id: "sent", label: "ส่ง PO แล้ว" },
+  { id: "ap", label: "AP แล้ว" },
   { id: "eligible", label: "ขอโอน", pay: true },
   { id: "requested", label: "รอโอน", pay: true },
   { id: "paid", label: "โอนแล้ว", pay: true },
@@ -24,7 +27,7 @@ const PRIMARY_TABS: Array<{ id: PrimaryTabId; label: string; pay?: boolean }> = 
 ];
 
 export interface ExpenseStatusCounts {
-  all: number; review: number; unsent: number; sent: number;
+  all: number; review: number; unsent: number; sent: number; ap: number;
   eligible: number; requested: number; paid: number;
   // legacy counts kept for callers that still pass them (unused by the tabs now).
   draft?: number; confirmed?: number;
@@ -34,6 +37,7 @@ export function ExpenseStatusTabs({
   baseParams,
   status,
   tr,
+  ap,
   nr,
   pay,
   payreqEnabled,
@@ -44,6 +48,8 @@ export function ExpenseStatusTabs({
   baseParams: string;
   status?: LedgerStatusValue;
   tr?: "sent" | "unsent";
+  /** แท็บ "AP แล้ว" active (?ap=1) — ใบที่แปลง PO → AP แล้ว. */
+  ap?: boolean;
   nr?: boolean;
   pay?: "eligible" | "requested" | "paid";
   payreqEnabled?: boolean;
@@ -55,7 +61,9 @@ export function ExpenseStatusTabs({
   const pathname = usePathname();
 
   const activePrimary: PrimaryTabId | null =
-    pay === "eligible"
+    ap
+      ? "ap"
+      : pay === "eligible"
       ? "eligible"
       : pay === "requested"
         ? "requested"
@@ -75,6 +83,7 @@ export function ExpenseStatusTabs({
     const sp = new URLSearchParams(baseParams);
     sp.delete("status");
     sp.delete("tr");
+    sp.delete("ap");
     sp.delete("nr");
     sp.delete("pay");
     if (id === "review") {
@@ -84,6 +93,8 @@ export function ExpenseStatusTabs({
       sp.set("tr", "unsent");
     } else if (id === "sent") {
       sp.set("tr", "sent");
+    } else if (id === "ap") {
+      sp.set("ap", "1");
     } else if (id === "eligible" || id === "requested" || id === "paid") {
       sp.set("pay", id);
     }

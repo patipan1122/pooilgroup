@@ -1767,6 +1767,55 @@ export async function convertExpenseToAp(
   return runApConversion(orgId, light.companyId, id, session.user.id);
 }
 
+/** แปลง PO → AP หลายใบ (multi-select · ปุ่ม "แปลง AP (N)" ด้านบน). Company-scoped:
+ *  id array มาจาก client → กรอง companyId กันแปลงข้ามบริษัท. ใช้ core เดียวกับปุ่มเดี่ยว/auto
+ *  (runApConversion · idempotent + guard หมวด/GL อยู่ในนั้นแล้ว) → ตรรกะบัญชีชุดเดียว. */
+export async function convertExpensesToAp(
+  ids: string[],
+  companyId: string,
+): Promise<ActionResult & { converted?: number; skipped?: number; failed?: number; firstError?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลแปลงเป็น AP ได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud" };
+  }
+  const orgId = session.user.org_id;
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  let converted = 0,
+    skipped = 0,
+    failed = 0;
+  let firstError: string | undefined;
+  // Sequential on purpose: each conversion creates an AP + deletes the PO seed in TRCloud;
+  // serial avoids racing shared-master lookups into duplicates within one batch.
+  for (const id of ids) {
+    const res = await runApConversion(orgId, companyId, id, session.user.id);
+    if (res.ok) {
+      if (res.alreadyAp) skipped++;
+      else converted++;
+    } else {
+      failed++;
+      firstError ??= res.error;
+    }
+  }
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  if (converted === 0 && failed > 0) {
+    return { ok: false, error: firstError ?? "แปลงเป็น AP ไม่สำเร็จ", converted, skipped, failed, firstError };
+  }
+  return { ok: true, converted, skipped, failed, firstError };
+}
+
 /** Push MANY confirmed expenses (multi-select). Company-scoped like bulkConfirm:
  *  the id array is client-supplied, so a companyId filter stops a cross-company push. */
 export async function sendExpensesToTrcloud(

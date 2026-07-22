@@ -7,7 +7,7 @@
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, FolderOpen, ExternalLink } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Send, CloudCheck, Trash2, Banknote, Tags, Upload, QrCode, FolderOpen, ExternalLink, FileCheck2 } from "lucide-react";
 import { StatusBadge } from "@/components/ledger/_kit/StatusBadge";
 import { CompletenessDot } from "@/components/ledger/_kit/CompletenessDot";
 import { DocTag, PaymentTag } from "@/components/ledger/_kit/StatusTags";
@@ -20,6 +20,8 @@ import {
   bulkConfirm,
   bulkVoid,
   sendExpensesToTrcloud,
+  convertExpenseToAp,
+  convertExpensesToAp,
   createPaymentRequestAction,
   bulkClassify,
   lastPayeeForVendor,
@@ -75,11 +77,13 @@ export function ExpenseList({
   q,
   draftIds,
   sendableIds,
+  convertibleIds,
   companyId,
   tab,
   sort,
   nr,
   pay,
+  ap,
   statusCounts,
   listActions,
   scopePicker,
@@ -105,6 +109,8 @@ export function ExpenseList({
   draftIds: string[];
   /** Confirmed/locked rows not yet pushed to TRCloud — eligible for bulk send. */
   sendableIds: string[];
+  /** ส่ง PO แล้ว + ยังไม่เป็น AP + มีสาขา/หมวด — เลือกได้เพื่อ "แปลง AP" (bulk). */
+  convertibleIds: string[];
   /** Active company scope — passed to bulk actions so they can't cross companies. */
   companyId: string;
   /** D4 source tab (?tab=) — all | line | web | mine (now lives inside ตัวกรอง). */
@@ -115,9 +121,11 @@ export function ExpenseList({
   nr?: boolean;
   /** payment-flow tab (?pay=) — eligible=ขอโอนได้ · requested=รอโอน · paid=โอนแล้ว. */
   pay?: "eligible" | "requested" | "paid";
+  /** แท็บ "AP แล้ว" active (?ap=1). */
+  ap?: boolean;
   /** Counts for the PRIMARY tabs. status counts = DB; pay counts = list-window. */
   statusCounts: {
-    all: number; review: number; draft: number; confirmed: number; sent: number; unsent: number;
+    all: number; review: number; draft: number; confirmed: number; sent: number; unsent: number; ap: number;
     eligible: number; requested: number; paid: number;
   };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
@@ -155,9 +163,12 @@ export function ExpenseList({
 
   const draftSet = new Set(draftIds);
   const sendableSet = new Set(sendableIds);
+  const convertibleSet = new Set(convertibleIds);
   const selDrafts = [...checked].filter((id) => draftSet.has(id));
   const selSendable = [...checked].filter((id) => sendableSet.has(id));
-  const actionableIds = [...draftIds, ...sendableIds];
+  const selConvertible = [...checked].filter((id) => convertibleSet.has(id));
+  // draft / sendable(ยังไม่ส่ง) / convertible(ส่ง PO แล้ว ยังไม่ AP) แยกกัน ไม่ทับกัน (สถานะคนละช่วง).
+  const actionableIds = [...draftIds, ...sendableIds, ...convertibleIds];
 
   // Request-transfer selection guards: bills must share ONE vendor (the payee is
   // a single account). The list is already company-scoped, so cross-company can't
@@ -199,6 +210,7 @@ export function ExpenseList({
     const sp = new URLSearchParams(baseParams);
     sp.delete("status");
     sp.delete("tr");
+    sp.delete("ap");
     sp.delete("cc");
     sp.delete("category");
     sp.delete("project");
@@ -253,6 +265,44 @@ export function ExpenseList({
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "ส่งเข้า TRCloud ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  // แปลง PO → AP หลายใบ (ปุ่มรวมด้านบน) — ใช้ action ที่วน runApConversion (idempotent + guard หมวด).
+  function runBulkConvert() {
+    if (selConvertible.length === 0) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await convertExpensesToAp(selConvertible, companyId);
+      if (res.ok) {
+        const parts = [`แปลงเป็น AP ${res.converted ?? 0} ใบ`];
+        if (res.skipped) parts.push(`ข้าม ${res.skipped}`);
+        if (res.failed) parts.push(`พลาด ${res.failed}`);
+        setMsg({ kind: res.failed ? "err" : "ok", text: parts.join(" · ") });
+        setChecked(new Set());
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "แปลงเป็น AP ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  // แปลง PO → AP ใบเดียว (ปุ่มลัดในแถว ข้างปุ่มขอโอน).
+  function runRowConvert(id: string) {
+    setMsg(null);
+    startTransition(async () => {
+      const res = await convertExpenseToAp(id);
+      if (res.ok) {
+        setMsg({
+          kind: "ok",
+          text: res.alreadyAp
+            ? "ใบนี้เป็น AP อยู่แล้ว"
+            : `แปลงเป็น AP แล้ว${res.apDocNo ? ` · ${res.apDocNo}` : ""}`,
+        });
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "แปลงเป็น AP ไม่สำเร็จ" });
       }
     });
   }
@@ -402,6 +452,7 @@ export function ExpenseList({
             baseParams={baseParams}
             status={status}
             tr={tr}
+            ap={ap}
             nr={nr}
             pay={pay}
             payreqEnabled={payreqEnabled}
@@ -459,6 +510,17 @@ export function ExpenseList({
                 >
                   {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Send className="size-3.5" aria-hidden />}
                   ส่งเข้า TRCloud ({selSendable.length})
+                </button>
+              )}
+              {selConvertible.length > 0 && (
+                <button
+                  onClick={runBulkConvert}
+                  disabled={pending}
+                  title="แปลงใบสั่งซื้อ (PO) ที่เลือกเป็นใบกำกับภาษีซื้อ (AP) — ลงบัญชีอัตโนมัติ ให้บัญชี approve"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                >
+                  {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FileCheck2 className="size-3.5" aria-hidden />}
+                  แปลง AP ({selConvertible.length})
                 </button>
               )}
               {checked.size > 0 && (
@@ -783,7 +845,8 @@ export function ExpenseList({
             const active = selectedId === r.id;
             const isDraft = r.status === "draft";
             const isSendable = sendableSet.has(r.id);
-            const selectable = isDraft || isSendable;
+            const isConvertible = convertibleSet.has(r.id);
+            const selectable = isDraft || isSendable || isConvertible;
             // TRCloud state from the shared classifier — "error" is a FAILED push,
             // NOT sent (the old `!!trcloudDocId` lit the blue "ส่งแล้ว" chip on failures).
             const trState = trcloudState(r.trcloudDocId);
@@ -1039,27 +1102,50 @@ export function ExpenseList({
                       </span>
                     )}
 
-                    {/* สถานะการโอนต่อใบ (CEO 2026-06-08): โอนแล้ว(เขียวเข้ม) · รอโอน(ฟ้า) ·
-                        ขอโอน(เขียว=ขอได้ กดเพื่อขอ) · ขอไม่ได้(แดง=ขาดสาขา/หมวด → ป้าย classify). */}
-                    {payreqEnabled &&
-                      (r.payState === "paid" ? (
-                        <span className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700">
-                          <CheckCircle2 className="size-3" /> โอนแล้ว
-                        </span>
-                      ) : r.payState === "requested" ? (
-                        <span className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-blue-100 px-1.5 text-[10px] font-bold text-blue-700">
-                          <Banknote className="size-3" /> รอโอน
-                        </span>
-                      ) : gate.ok ? (
-                        <button
-                          type="button"
-                          onClick={() => openPayeeForRow(r)}
-                          title="ขอโอนเงินใบนี้"
-                          className="press ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
-                        >
-                          <Banknote className="size-3" aria-hidden /> ขอโอน
-                        </button>
-                      ) : null)}
+                    {/* actions ฝั่งขวา (ชิดขวา · กลุ่มเดียว): แปลง AP (ลงบัญชี) + ขอโอน (จ่ายเงิน) —
+                        CEO 2026-07-22 ปุ่มลัดแปลง AP ข้างปุ่มขอโอน. โอนแล้ว(เขียวเข้ม)/รอโอน(ฟ้า)/
+                        ขอโอน(เขียว=ขอได้). ขอไม่ได้(แดง=ขาดสาขา/หมวด)=ป้าย classify ด้านบนแยกไว้แล้ว. */}
+                    {(() => {
+                      const showConvert = isConvertible;
+                      const showPay =
+                        payreqEnabled &&
+                        (r.payState === "paid" || r.payState === "requested" || gate.ok);
+                      if (!showConvert && !showPay) return null;
+                      return (
+                        <div className="ml-auto flex shrink-0 items-center gap-1">
+                          {showConvert && (
+                            <button
+                              type="button"
+                              onClick={() => runRowConvert(r.id)}
+                              disabled={pending}
+                              title="แปลงใบสั่งซื้อ (PO) นี้เป็นใบกำกับภาษีซื้อ (AP) — ลงบัญชีอัตโนมัติ ให้บัญชี approve"
+                              className="press inline-flex h-6 items-center gap-1 rounded-md bg-emerald-600 px-1.5 text-[10px] font-bold text-white hover:bg-emerald-700 disabled:bg-zinc-300"
+                            >
+                              {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <FileCheck2 className="size-3" aria-hidden />} แปลง AP
+                            </button>
+                          )}
+                          {payreqEnabled &&
+                            (r.payState === "paid" ? (
+                              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700">
+                                <CheckCircle2 className="size-3" /> โอนแล้ว
+                              </span>
+                            ) : r.payState === "requested" ? (
+                              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-blue-100 px-1.5 text-[10px] font-bold text-blue-700">
+                                <Banknote className="size-3" /> รอโอน
+                              </span>
+                            ) : gate.ok ? (
+                              <button
+                                type="button"
+                                onClick={() => openPayeeForRow(r)}
+                                title="ขอโอนเงินใบนี้"
+                                className="press inline-flex h-6 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                              >
+                                <Banknote className="size-3" aria-hidden /> ขอโอน
+                              </button>
+                            ) : null)}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </li>

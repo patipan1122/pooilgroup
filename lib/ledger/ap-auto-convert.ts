@@ -59,6 +59,17 @@ export async function runApConversion(
   if (loaded.status !== "confirmed" && loaded.status !== "locked") {
     return { ok: false, error: "แปลงเป็น AP ได้เฉพาะรายการที่ยืนยันแล้ว" };
   }
+  // 🔴 กันลงบัญชีผิด (CEO 2026-07-22): ถ้าหมวดค่าใช้จ่ายยังไม่ผูกรหัสผังบัญชี (categoryAccCode
+  // ว่าง เพราะยังไม่เลือกหมวด หรือหมวดที่เลือกไม่มีรหัส GL) → ห้ามแปลง. เดิมมันตกไปบัญชีถังรวม
+  // 5919999 "รายจ่ายยังไม่ได้แยกประเภท" ที่ TRCloud ไม่มีสูตรลงบัญชี → error "formula cannot be
+  // empty" + ยอดรวม 0. บังคับเลือกหมวดที่มีผังบัญชีก่อน (auto-trigger จะ no-op เงียบ ๆ · ปุ่ม/bulk
+  // เด้ง error ให้ผู้ใช้ไปเลือกหมวด). ครอบทุก path เพราะเป็น core เดียว.
+  if (!loaded.pushable.categoryAccCode) {
+    return {
+      ok: false,
+      error: "ยังไม่ได้เลือกหมวดค่าใช้จ่าย (ผังบัญชี) — เลือกหมวดก่อนจึงแปลงเป็น AP ได้ (กันลงบัญชีตกถังรวม)",
+    };
+  }
   // สลิปโอน (ถ้ามี · จับคู่กับใบนี้แล้ว) → แนบลิงก์เข้าใบ AP
   const slip = await prisma.ledgerPayment.findFirst({
     where: { matchedExpenseId: expenseId, orgId, slipUrl: { not: null } },

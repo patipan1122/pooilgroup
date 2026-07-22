@@ -26,7 +26,7 @@ import { ExportButton } from "./_components/ExportButton";
 import { HeaderToolsMenu } from "./_components/HeaderToolsMenu";
 import { ledgerQuotationV1, ledgerSlipV1, ledgerPayreqV1, ledgerStockinV1 } from "@/lib/ledger/flags";
 import { TrcloudButton } from "@/components/ledger/TrcloudButton";
-import { isTrcloudSendable } from "@/lib/ledger/trcloud-state";
+import { isTrcloudSendable, isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
@@ -50,6 +50,7 @@ export default async function ExpensesPage({
     q?: string;
     selected?: string;
     tr?: string; // TRCloud send filter: "sent" | "unsent"
+    ap?: string; // AP filter: "1" = แปลง PO → AP แล้ว (แท็บ "AP แล้ว")
     cc?: string; // ภาษีซื้อ color filter: "green" | "yellow" | "red"
     dt?: string; // docType filter: "quotation" (แท็บ "รอใบกำกับ" · D1)
     tab?: string; // source tab: "all" | "line" | "web" | "mine"
@@ -98,6 +99,10 @@ export default async function ExpensesPage({
   const selected = sp.selected?.trim() || undefined;
   const tr = sp.tr === "sent" || sp.tr === "unsent" ? sp.tr : undefined;
   const trcloudPushed = tr === "sent" ? true : tr === "unsent" ? false : undefined;
+  // แท็บ "AP แล้ว" (?ap=1) — ใบที่แปลง PO → AP แล้ว (CEO 2026-07-22). และแท็บ "ส่ง PO แล้ว"
+  // (tr=sent) ต้องตัดใบที่เป็น AP ออก (apConverted=false) ไม่งั้นโชว์ซ้ำสองที่.
+  const apTab = sp.ap === "1";
+  const apConverted = apTab ? true : tr === "sent" ? false : undefined;
   const cc =
     sp.cc === "green" || sp.cc === "yellow" || sp.cc === "red" ? sp.cc : undefined;
   // แท็บ "รอใบกำกับ" (D1) — เห็นเฉพาะตอนเปิด flag · กรองเป็นใบเสนอราคา.
@@ -132,6 +137,7 @@ export default async function ExpensesPage({
     categoryId,
     projectId,
     trcloudPushed,
+    apConverted,
     search: q,
   };
 
@@ -224,21 +230,23 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent] = await Promise.all([
+  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent, scAp] = await Promise.all([
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
-    // ส่งแล้ว = REAL doc id only (exclude null + "pending"/"error" sentinels — else a
-    // failed push inflates this count, the 2026-06-15 false-sent-display bug). See trcloud-state.ts.
+    // ส่ง PO แล้ว = REAL doc id only (exclude null + "pending"/"error" sentinels — else a
+    // failed push inflates this count, the 2026-06-15 false-sent-display bug). AND ยังไม่แปลง AP
+    // (trcloudApDocId ว่าง) — ใบที่เป็น AP แล้วย้ายไปแท็บ "AP แล้ว" (CEO 2026-07-22 กันโชว์ซ้ำ).
     prisma.ledgerExpense.count({
       where: {
         ...statusCountWhere,
         status: { in: VISIBLE_STATUSES },
         trcloudDocId: { not: null, notIn: ["pending", "error"] },
+        trcloudApDocId: null,
       },
     }),
-    // ยังไม่ส่ง TRCloud (CEO 2026-06-10 tab) — never pushed (null) OR last push FAILED
+    // ยังไม่ส่ง PO (CEO 2026-06-10 tab) — never pushed (null) OR last push FAILED
     // ("error") so failed bills surface here for retry instead of hiding as "sent".
     // AND-wrapped so it composes with the search OR that statusCountWhere may carry.
     prisma.ledgerExpense.count({
@@ -246,6 +254,14 @@ export default async function ExpensesPage({
         ...statusCountWhere,
         status: { in: VISIBLE_STATUSES },
         AND: [{ OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] }],
+      },
+    }),
+    // AP แล้ว — แปลง PO → AP เรียบร้อย (ลงบัญชีจริงแล้ว · CEO 2026-07-22).
+    prisma.ledgerExpense.count({
+      where: {
+        ...statusCountWhere,
+        status: { in: VISIBLE_STATUSES },
+        trcloudApDocId: { not: null },
       },
     }),
   ]);
@@ -256,6 +272,7 @@ export default async function ExpensesPage({
     confirmed: scConfirmed,
     sent: scSent,
     unsent: scUnsent,
+    ap: scAp,
     // pay-tab counts from the 300-window (payState lives on the fetched rows, not a
     // cheap DB count — acceptable like the source tabs; capped at the list window).
     eligible: payCounts.eligible,
@@ -333,6 +350,7 @@ export default async function ExpensesPage({
   if (categoryId) baseParams.set("category", categoryId);
   if (projectId) baseParams.set("project", projectId);
   if (tr) baseParams.set("tr", tr);
+  if (apTab) baseParams.set("ap", "1");
   if (cc) baseParams.set("cc", cc);
   if (docType) baseParams.set("dt", docType);
   if (q) baseParams.set("q", q);
@@ -354,6 +372,17 @@ export default async function ExpensesPage({
   // not just never-pushed rows (the old `!r.trcloudDocId` treated "error" as sent).
   const sendableIds = rows
     .filter((r) => (r.status === "confirmed" || r.status === "locked") && isTrcloudSendable(r.trcloudDocId))
+    .map((r) => r.id);
+  // แปลง AP ได้ = ยืนยันแล้ว + ส่ง PO เข้า TRCloud แล้ว + ยังไม่เป็น AP + มีสาขา/หมวดครบ
+  // (gate.ok — หมวดต้องมีก่อน ไม่งั้น runApConversion เด้ง guard กันตกบัญชีถังรวม 5919999).
+  const convertibleIds = rows
+    .filter(
+      (r) =>
+        (r.status === "confirmed" || r.status === "locked") &&
+        isTrcloudSent(r.trcloudDocId) &&
+        !r.trcloudApDocId &&
+        expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok,
+    )
     .map((r) => r.id);
 
   return (
@@ -444,6 +473,7 @@ export default async function ExpensesPage({
           baseParams={baseParams.toString()}
           status={status}
           tr={tr}
+          ap={apTab}
           nr={nr}
           pay={pay}
           payreqEnabled={ledgerPayreqV1()}
@@ -475,6 +505,7 @@ export default async function ExpensesPage({
           q={q}
           draftIds={draftIds}
           sendableIds={sendableIds}
+          convertibleIds={convertibleIds}
           companyId={scope.companyId}
           payreqEnabled={ledgerPayreqV1()}
           branches={scope.branches}
@@ -482,6 +513,7 @@ export default async function ExpensesPage({
           sort={sort}
           nr={nr}
           pay={pay}
+          ap={apTab}
           statusCounts={statusCounts}
           scopePicker={
             <CompanyBranchPicker
