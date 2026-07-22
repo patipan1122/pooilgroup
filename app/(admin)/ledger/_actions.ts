@@ -58,6 +58,7 @@ import {
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
+import { STANDARD_CATEGORIES } from "@/lib/ledger/coa-chart";
 import { encryptToken, decryptToken } from "@/lib/recruit/channel-crypto";
 import {
   expenseConfirmability,
@@ -1095,6 +1096,79 @@ export async function createCategory(raw: unknown): Promise<ActionResult> {
   revalidatePath("/ledger/settings");
   revalidatePath("/liff/ledger/admin");
   return { ok: true };
+}
+
+// สร้าง "หมวดมาตรฐาน" 20+ หมวดในครั้งเดียว จากผังบัญชีที่นักบัญชีรับรองแล้ว
+// (lib/ledger/coa-chart.ts) — ช่วยให้ CEO ไม่ต้องพิมพ์รหัสบัญชีเองทีละหมวด.
+// Idempotent: หมวดที่ "ชื่อซ้ำ" (ไม่สนตัวพิมพ์เล็ก/ใหญ่) จะข้าม → กดซ้ำได้ปลอดภัย.
+export async function seedStandardCategories(
+  companyId: string,
+): Promise<ActionResult & { created?: number; skipped?: number }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  // ผังบัญชี = chart of accounts + TRCloud mapping → เฉพาะแอดมิน (เหมือน createCategory).
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
+    return { ok: false, error: "เฉพาะผู้ดูแลตั้งค่าหมวดได้" };
+  }
+  const parsedCompanyId = companyId?.trim();
+  if (!parsedCompanyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  // ยืนยันว่า company เป็นของ org นี้จริง (org scoping เดียวกับ createCategory).
+  const company = await prisma.company.findFirst({
+    where: { id: parsedCompanyId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // โหลดหมวดที่มีอยู่แล้วของบริษัทนี้ เพื่อเช็คชื่อซ้ำแบบ case-insensitive.
+  const existing = await prisma.ledgerCategory.findMany({
+    where: { orgId: session.user.org_id, companyId: parsedCompanyId },
+    select: { name: true, sort: true },
+  });
+  const existingNames = new Set(existing.map((c) => c.name.trim().toLowerCase()));
+  let sort = existing.reduce((m, c) => Math.max(m, c.sort), 0);
+
+  let created = 0;
+  let skipped = 0;
+  for (const std of STANDARD_CATEGORIES) {
+    if (existingNames.has(std.name.trim().toLowerCase())) {
+      skipped++;
+      continue;
+    }
+    sort++;
+    try {
+      await prisma.ledgerCategory.create({
+        data: {
+          orgId: session.user.org_id,
+          companyId: parsedCompanyId,
+          name: std.name,
+          trcloudAccCode: std.glCode,
+          trcloudProductCode: std.sku,
+          vatClaimable: std.vatClaimable,
+          sort,
+        },
+      });
+      created++;
+      // กันชื่อซ้ำภายในรอบเดียวกัน (เผื่อ STANDARD_CATEGORIES มีชื่อซ้ำ).
+      existingNames.add(std.name.trim().toLowerCase());
+    } catch {
+      // unique constraint ชน (เช่นสร้างพร้อมกันอีก tab) → ถือว่าข้าม ไม่ให้ทั้งชุดล้ม.
+      skipped++;
+      sort--;
+    }
+  }
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "LEDGER_CATEGORY_UPDATED",
+    resourceType: "ledger_category",
+    resourceId: parsedCompanyId,
+    diff: { new: { seededStandardCategories: created, skipped } },
+  });
+  revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
+  return { ok: true, created, skipped };
 }
 
 export async function toggleCategory(

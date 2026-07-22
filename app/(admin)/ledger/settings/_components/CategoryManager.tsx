@@ -3,11 +3,23 @@
 // จัดการหมวดค่าใช้จ่าย — เพิ่มใหม่ + เปิด/ปิดใช้งาน + ผูก GL + SKU + VAT claimable
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, Check, X, Search } from "lucide-react";
+import { Loader2, Plus, Pencil, Check, X, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { createCategory, toggleCategory, updateCategoryTrcloud } from "../../_actions";
+import {
+  createCategory,
+  toggleCategory,
+  updateCategoryTrcloud,
+  seedStandardCategories,
+} from "../../_actions";
 import { LedgerEmptyState } from "@/components/ledger/Brand";
+import { SearchableSelect } from "@/components/ledger/SearchableSelect";
+import {
+  EXPENSE_ACCOUNTS,
+  SYSTEM_ACCOUNTS,
+  STANDARD_CATEGORIES,
+  accountName,
+} from "@/lib/ledger/coa-chart";
 
 const SKUS = [
   { value: "", label: "— เลือก SKU —" },
@@ -15,6 +27,65 @@ const SKUS = [
   { value: "JPS-101", label: "JPS-101 · ซื้อบริการ" },
   { value: "JPS-103", label: "JPS-103 · วัสดุก่อสร้าง" },
 ];
+
+// ตัวเลือกรหัสบัญชี GL (คงที่ · มาจากผังบัญชีที่นักบัญชีรับรอง) — "รหัส · ชื่อบัญชี".
+const GL_OPTIONS = EXPENSE_ACCOUNTS.map((a) => ({
+  id: a.code,
+  name: `${a.code} · ${a.name}`,
+}));
+
+// หาหมวดมาตรฐานที่ตรงกับหมวดนี้ (จับคู่ด้วยรหัส GL ก่อน แล้วค่อยชื่อ) เพื่อดึง wht/note.
+function standardEntryFor(code: string, name: string) {
+  const c = code.trim();
+  const n = name.trim().toLowerCase();
+  return (
+    STANDARD_CATEGORIES.find((s) => s.glCode === c) ??
+    STANDARD_CATEGORIES.find((s) => s.name.trim().toLowerCase() === n) ??
+    null
+  );
+}
+
+// ตัวอย่างการลงบัญชี (Dr/Cr) — read-only · ให้ CEO เห็นว่าเลือกหมวดนี้แล้ว "ลงบัญชียังไง".
+function DrCrPreview({
+  code,
+  vatClaimable,
+  name,
+}: {
+  code: string;
+  vatClaimable: boolean;
+  name: string;
+}) {
+  const std = standardEntryFor(code, name);
+  const glName = accountName(code);
+  return (
+    <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-2.5">
+      <p className="mb-1.5 text-[11px] font-medium text-zinc-500">ตัวอย่างการลงบัญชี</p>
+      <div className="space-y-1 font-mono text-[11px]">
+        {code ? (
+          <div className="text-emerald-700">
+            Dr {code} {glName ?? ""}
+          </div>
+        ) : (
+          <div className="text-zinc-400">Dr — ยังไม่ได้เลือกรหัสบัญชี</div>
+        )}
+        {vatClaimable ? (
+          <div className="text-emerald-700">
+            Dr {SYSTEM_ACCOUNTS.inputVat.code} {SYSTEM_ACCOUNTS.inputVat.name}
+          </div>
+        ) : (
+          <div className="font-sans text-zinc-400">ภาษีซื้อขอคืนไม่ได้ (รวมเป็นต้นทุน)</div>
+        )}
+        <div className="text-zinc-700">
+          Cr {SYSTEM_ACCOUNTS.payable.code} {SYSTEM_ACCOUNTS.payable.name}
+        </div>
+      </div>
+      {std?.wht !== undefined && (
+        <p className="mt-1.5 text-[11px] text-amber-700">หัก ณ ที่จ่าย {std.wht}%</p>
+      )}
+      {std?.note && <p className="mt-1 text-[11px] text-zinc-500">{std.note}</p>}
+    </div>
+  );
+}
 
 type Cat = {
   id: string;
@@ -53,6 +124,13 @@ export function CategoryManager({
   const [accCodeError, setAccCodeError] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [unboundOnly, setUnboundOnly] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+
+  // จำนวนหมวดที่ยังไม่ผูก "รหัสบัญชี GL" — ตัวชี้วัดว่ายังตั้งค่าไม่ครบกี่หมวด.
+  const unboundCount = useMemo(
+    () => categories.filter((c) => !c.trcloudAccCode).length,
+    [categories],
+  );
 
   const input =
     "h-9 rounded-lg border border-zinc-200 bg-white px-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-brand-200)]";
@@ -143,6 +221,20 @@ export function CategoryManager({
     });
   }
 
+  // สร้างหมวดมาตรฐานทั้งชุดในครั้งเดียว (ข้ามหมวดที่ชื่อซ้ำ) → refresh + สรุปผล.
+  function seed() {
+    setSeedMsg(null);
+    startTransition(async () => {
+      const res = await seedStandardCategories(companyId);
+      if (res.ok) {
+        setSeedMsg(`สร้าง ${res.created ?? 0} หมวด · มีอยู่แล้ว ${res.skipped ?? 0}`);
+        router.refresh();
+      } else {
+        setSeedMsg(res.error ?? "สร้างหมวดมาตรฐานไม่สำเร็จ");
+      }
+    });
+  }
+
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
       {/* Add form */}
@@ -154,11 +246,14 @@ export function CategoryManager({
             value={form.name}
             onChange={(e) => { setMsg(null); setForm({ ...form, name: e.target.value }); }}
           />
-          <input
-            className={`${input} sm:w-36`}
-            placeholder="รหัสบัญชี GL (7 หลัก)"
+          <SearchableSelect
+            className="sm:w-56"
+            label="รหัสบัญชี GL"
+            placeholder="— เลือกรหัสบัญชี —"
+            searchPlaceholder="ค้นหารหัส/ชื่อบัญชี…"
+            options={GL_OPTIONS}
             value={form.trcloudAccCode}
-            onChange={(e) => { setMsg(null); setForm({ ...form, trcloudAccCode: e.target.value }); }}
+            onChange={(code) => { setMsg(null); setForm({ ...form, trcloudAccCode: code }); }}
           />
           <select
             aria-label="SKU TRCloud"
@@ -188,6 +283,23 @@ export function CategoryManager({
         </div>
       </div>
       {msg && <p className="mb-2 text-xs text-rose-600">{msg}</p>}
+
+      {/* Summary + สร้างหมวดมาตรฐาน — โชว์เสมอ (รวมตอนยังไม่มีหมวดเลย จะได้ seed ได้) */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+        <div className="text-xs text-zinc-600">
+          หมวดที่ยังไม่ผูกรหัสบัญชี:{" "}
+          <span className={unboundCount > 0 ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>
+            {unboundCount}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {seedMsg && <span className="text-[11px] text-zinc-500">{seedMsg}</span>}
+          <Button variant="secondary" disabled={pending} onClick={seed}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            สร้างหมวดมาตรฐาน ({STANDARD_CATEGORIES.length} หมวด)
+          </Button>
+        </div>
+      </div>
 
       {/* Search + filter — ทำงานบนรายการที่โหลดมาแล้ว */}
       {categories.length > 0 && (
@@ -257,19 +369,22 @@ export function CategoryManager({
                       <label className="mb-1 block text-xs font-medium text-zinc-600">
                         รหัสบัญชี GL
                       </label>
-                      <input
-                        className={`${input} w-full ${accCodeError ? "border-rose-400 focus:ring-rose-300" : ""}`}
-                        placeholder="7 หลัก เช่น 5101001"
+                      <SearchableSelect
+                        label="รหัสบัญชี GL"
+                        placeholder="— เลือกรหัสบัญชี —"
+                        searchPlaceholder="ค้นหารหัส/ชื่อบัญชี…"
+                        options={GL_OPTIONS}
                         value={editState.trcloudAccCode}
-                        onChange={(e) => {
+                        onChange={(code) => {
                           setAccCodeError(null);
-                          setEditState({ ...editState, trcloudAccCode: e.target.value });
+                          setEditState({ ...editState, trcloudAccCode: code });
                         }}
+                        selectClassName={accCodeError ? "border-rose-400 focus:ring-rose-300" : ""}
                       />
                       {accCodeError ? (
                         <p className="mt-0.5 text-[11px] text-rose-600">{accCodeError}</p>
                       ) : (
-                        <p className="mt-0.5 text-[11px] text-zinc-500">ตัวเลข 7 หลักจาก TRCloud ผังบัญชี</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">เลือกจากผังบัญชี TRCloud (รหัส · ชื่อบัญชี)</p>
                       )}
                     </div>
 
@@ -316,6 +431,13 @@ export function CategoryManager({
                     </span>
                   </label>
 
+                  {/* ตัวอย่างการลงบัญชี — อัปเดตสดตามรหัส/VAT ที่กำลังเลือก */}
+                  <DrCrPreview
+                    code={editState.trcloudAccCode}
+                    vatClaimable={editState.vatClaimable}
+                    name={c.name}
+                  />
+
                   {/* Action bar */}
                   <div className="mt-3 flex justify-end gap-2 border-t border-zinc-200 pt-3">
                     <button
@@ -347,8 +469,11 @@ export function CategoryManager({
                   <div className="min-w-0">
                     <span className="font-medium text-zinc-800">{c.name}</span>
                     {c.trcloudAccCode && (
-                      <span className="ml-2 font-mono text-[11px] text-zinc-500">
-                        {c.trcloudAccCode}
+                      <span className="ml-2 text-[11px] text-zinc-500">
+                        <span className="font-mono">{c.trcloudAccCode}</span>
+                        {accountName(c.trcloudAccCode) && (
+                          <span> · {accountName(c.trcloudAccCode)}</span>
+                        )}
                       </span>
                     )}
                     {c.trcloudProductCode && (
