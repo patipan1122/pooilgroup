@@ -1,19 +1,27 @@
-// Pinpoint — ปากกาวาดภาพบนภาพหน้าจอ (draw-on-screenshot overlay).
+// Pinpoint — วาดสด "บนหน้าเว็บจริง" (live in-page annotate overlay).
 //
-// เปิดจาก PinPopover เมื่อผู้ใช้กด "วาด": รับ Blob ภาพหน้าจอ (จาก captureBody),
-// ให้วาดทับ (ปากกา/ลูกศร/วงกลม + เลือกสี + ย้อน/ล้าง) แล้วรวมรอยวาดลงบนภาพ →
-// คืน Blob ใหม่ (webp) ให้ผู้เรียกอัปโหลดเป็น screenshot ของหมุดนั้น.
+// เปิดจาก PinPopover เมื่อผู้ใช้กด "วาด": วางแผ่นใสทับหน้าเว็บจริงตรงนั้นเลย (ไม่ถ่าย
+// เป็นรูปนิ่งก่อน) → เห็นเนื้อหาจริงคมชัดข้างล่าง → ขีด/วง/ลูกศร/พิมพ์ทับได้เหมือน
+// ขีดบนกระจก. มี 2 โหมดสลับกัน:
+//   • วาด    — แผ่นใสดูดการแตะ วาดได้ (ล็อกไม่ให้เลื่อนหน้า กันรอยเพี้ยน)
+//   • แตะหน้าเว็บ — แผ่นใสปล่อยคลิกทะลุไปหน้าจริง กดปุ่มในแอปได้ (โชว์ทั้งหมด/ซ่อน ฯลฯ)
+// กด "เสร็จ" → ถ่ายภาพหน้าจอจริง ณ ตอนนั้น (chrome ของ pinpoint ถูกซ่อน+ตัดออกแล้ว) →
+// อบรอยวาดลงบนภาพจริง (natural size) → คืน webp คม ๆ ให้ผู้เรียกอัปโหลด.
 //
-// หลักการเดียวกับ capture.ts: best-effort + ฝั่ง client ล้วน + ไม่ลง dependency ใหม่
-// (HTML5 canvas มาตรฐาน). ภาพต้นทางเป็น blob: URL = same-origin → ไม่ taint canvas.
+// หลักการเดียวกับเดิม: best-effort + ฝั่ง client ล้วน + ไม่ลง dependency ใหม่
+// (HTML5 canvas + snapdom ที่มีอยู่). แคปด้วย captureBody() ตัวเดิม → ได้ภาพกรอบจอ.
 
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pen, ArrowUpRight, Circle, Type, Undo2, Eraser, X, Check, Loader2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
+import { Pen, ArrowUpRight, Circle, Type, Undo2, Eraser, X, Check, Loader2, Hand } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { captureBody, type ViewportCrop } from "@/lib/pinpoint/capture";
 
 type Tool = "pen" | "arrow" | "circle" | "text";
+type Mode = "draw" | "interact";
 type Pt = { x: number; y: number };
 
 type Stroke =
@@ -23,7 +31,7 @@ type Stroke =
   | { tool: "text"; color: string; x: number; y: number; text: string; size: number };
 
 const COLORS = ["#ef4444", "#f59e0b", "#2563eb", "#16a34a"]; // แดง(ค่าเริ่มต้น)/ส้ม/น้ำเงิน/เขียว
-const PEN_WIDTH = 4; // display px (export จะคูณ scale ให้คมตามภาพจริง)
+const PEN_WIDTH = 4; // display px (export คูณ scale ให้คมตามภาพจริง)
 const TEXT_SIZE = 18; // display px · ตัวหนังสือบนภาพ (export คูณ scale ให้คมตามภาพจริง)
 
 /** สี่เหลี่ยมมุมมน — สร้าง path ไว้ให้ fill/stroke ต่อ (ไม่พึ่ง ctx.roundRect เพื่อความเข้ากันได้). */
@@ -38,7 +46,7 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.closePath();
 }
 
-/** วาดรอยหนึ่งเส้นลงบน context · k = ตัวคูณพิกัด/ความหนา (display=1, export=natural/display). */
+/** วาดรอยหนึ่งเส้นลงบน context · k = ตัวคูณพิกัด/ความหนา (display=1, export=natural/CSS). */
 function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, k: number) {
   // ── ข้อความ: กล่องพื้นขาว + ขอบสี + ตัวหนังสือสี (อบลงในภาพจริง) ──
   if (s.tool === "text") {
@@ -102,80 +110,103 @@ function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, k: number) {
   }
 }
 
-export function PinpointDrawCanvas({
-  imageBlob,
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = src;
+  });
+}
+
+/** วาดสดบนหน้าเว็บจริง แล้วแคปเป็นภาพตอนกด "เสร็จ".
+ *  `crop` = กรอบจอ ณ จุดที่ปักหมุด (เลื่อนหน้าถูกล็อกไว้ตรงนี้ตลอด กันรอยเพี้ยน). */
+export function PinpointLiveAnnotate({
+  crop,
   onCancel,
   onDone,
 }: {
-  imageBlob: Blob;
+  crop: ViewportCrop;
   onCancel: () => void;
   onDone: (annotated: Blob) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
   const curRef = useRef<Stroke | null>(null);
   const drawingRef = useRef(false);
 
-  const [dims, setDims] = useState<{
-    dispW: number;
-    dispH: number;
-    natW: number;
-    natH: number;
-  } | null>(null);
+  // ขนาดจอ (CSS) + ความละเอียดจริง (DPR) — canvas ทำ backing store คูณ DPR ให้รอยคมบน Retina
+  const [view, setView] = useState<{ vw: number; vh: number; dpr: number } | null>(null);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [tool, setTool] = useState<Tool>("pen");
+  const [mode, setMode] = useState<Mode>("draw");
   const [color, setColor] = useState<string>(COLORS[0]);
-  const [exporting, setExporting] = useState(false);
-  // ── กล่องพิมพ์ข้อความที่กำลังแก้ (HTML overlay ทับ canvas · วางเสร็จค่อยอบลงภาพ) ──
+  const [capturing, setCapturing] = useState(false); // กำลังแคปหน้าจอตอนกดเสร็จ
+  // ── กล่องพิมพ์ข้อความที่กำลังแก้ (HTML overlay ทับ · วางเสร็จค่อยอบลงภาพ) ──
   const [editing, setEditing] = useState<Pt | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  // โหลดภาพ + คำนวณขนาดที่จะแสดง (fit ในจอ เหลือที่ให้แถบเครื่องมือ).
+  // ขนาดจอ + DPR (อัปเดตตอน resize เผื่อหมุนจอ/ย่อหน้าต่าง)
   useEffect(() => {
-    const url = URL.createObjectURL(imageBlob);
-    const image = new Image();
-    image.onload = () => {
-      imgRef.current = image;
-      const natW = image.naturalWidth || image.width;
-      const natH = image.naturalHeight || image.height;
-      const availW = Math.max(240, window.innerWidth - 24);
-      const availH = Math.max(240, window.innerHeight - 132);
-      const k = Math.min(availW / natW, availH / natH, 1);
-      setDims({
-        dispW: Math.round(natW * k),
-        dispH: Math.round(natH * k),
-        natW,
-        natH,
+    const measure = () =>
+      setView({
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        dpr: Math.min(Math.max(window.devicePixelRatio || 1, 1), 3),
       });
-    };
-    image.src = url;
-    return () => URL.revokeObjectURL(url);
-  }, [imageBlob]);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
-  // วาดภาพพื้น + รอยทั้งหมด + รอยที่กำลังวาด ลงบน display canvas.
+  // ล็อกเลื่อนหน้าไว้ที่กรอบจอตอนปักหมุด — กันรอยวาดเพี้ยนจากของที่ชี้ (โหมดแตะก็ล็อก
+  // เพราะปุ่มโชว์/ซ่อนไม่ต้องเลื่อน). snap กลับทุกครั้งที่มีอะไรพยายามเลื่อน.
+  useEffect(() => {
+    window.scrollTo(crop.scrollX, crop.scrollY);
+    const onScroll = () => {
+      if (window.scrollX !== crop.scrollX || window.scrollY !== crop.scrollY) {
+        window.scrollTo(crop.scrollX, crop.scrollY);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [crop.scrollX, crop.scrollY]);
+
+  // ซ่อน chrome ของ pinpoint (หมุด/กล่อง/แถบล่าง) ระหว่างวาดสด — ให้เห็นหน้าเว็บสะอาด
+  // และกันคลิกโดนของพวกนี้ตอนโหมดแตะ. แผ่นวาดของเราติด data-pinpoint-annotate จึงไม่โดนซ่อน.
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.setAttribute("data-pinpoint-annotate-style", "");
+    style.textContent =
+      "[data-pinpoint-ui]:not([data-pinpoint-annotate]){visibility:hidden !important;}";
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
+
+  // วาดรอยทั้งหมดลงบนแผ่นใส (โปร่งใส — เห็นหน้าเว็บจริงข้างล่าง). คูณ DPR ให้รอยคม.
   const paint = useCallback(() => {
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img || !dims) return;
+    if (!canvas || !view) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, dims.dispW, dims.dispH);
-    ctx.drawImage(img, 0, 0, dims.dispW, dims.dispH);
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ctx.clearRect(0, 0, view.vw, view.vh);
     for (const s of strokes) drawStroke(ctx, s, 1);
     if (curRef.current) drawStroke(ctx, curRef.current, 1);
-  }, [dims, strokes]);
+  }, [view, strokes]);
 
   useEffect(() => {
     paint();
   }, [paint]);
 
   const relPoint = (e: React.PointerEvent): Pt => {
-    const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (exporting) return;
+    if (capturing || mode !== "draw") return;
     // เครื่องมือข้อความ: แตะ = วางกล่องพิมพ์ตรงจุดนั้น (ไม่ใช่ลากวาด).
     if (tool === "text") {
       if (editing) return; // มีกล่องเปิดอยู่ → แตะที่อื่นจะ blur/วางให้ก่อน
@@ -186,7 +217,7 @@ export function PinpointDrawCanvas({
       return;
     }
     e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     drawingRef.current = true;
     const p = relPoint(e);
     curRef.current =
@@ -244,11 +275,20 @@ export function PinpointDrawCanvas({
     ]);
   };
 
-  // รวมรอยวาดลงบนภาพจริง (natural size) → webp blob.
+  // เลือกเครื่องมือ/สี = ตั้งใจจะวาด → สลับกลับโหมดวาดอัตโนมัติ
+  const pickTool = (t: Tool) => {
+    setTool(t);
+    setMode("draw");
+  };
+  const pickColor = (c: string) => {
+    setColor(c);
+    setMode("draw");
+  };
+
+  // กด "เสร็จ" → แคปหน้าเว็บจริง ณ กรอบจอที่ปัก + อบรอยวาดลงบนภาพจริง (natural size) → webp.
   const handleDone = async () => {
-    const img = imgRef.current;
-    if (!img || !dims || exporting) return;
-    // เผื่อยังพิมพ์ข้อความค้างอยู่ (ยังไม่กด Enter) → รวมลงภาพด้วย ไม่ให้ตกหล่น.
+    if (capturing || !view) return;
+    // เผื่อยังพิมพ์ข้อความค้าง (ยังไม่ Enter) → รวมลงภาพด้วย ไม่ให้ตกหล่น.
     const pending: Stroke | null =
       editing && editValue.trim()
         ? { tool: "text", color, x: editing.x, y: editing.y, text: editValue.trim(), size: TEXT_SIZE }
@@ -256,26 +296,46 @@ export function PinpointDrawCanvas({
     const allStrokes = pending ? [...strokes, pending] : strokes;
     setEditing(null);
     setEditValue("");
-    setExporting(true);
+    setCapturing(true);
     try {
-      const off = document.createElement("canvas");
-      off.width = dims.natW;
-      off.height = dims.natH;
-      const ctx = off.getContext("2d");
-      if (!ctx) {
+      const base = await captureBody({
+        scrollX: crop.scrollX,
+        scrollY: crop.scrollY,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      if (!base) {
+        toast.error("บันทึกภาพหน้าจอไม่สำเร็จ ลองใหม่อีกครั้ง");
         onCancel();
         return;
       }
-      ctx.drawImage(img, 0, 0, dims.natW, dims.natH);
-      const k = dims.natW / dims.dispW;
-      for (const s of allStrokes) drawStroke(ctx, s, k);
-      const blob = await new Promise<Blob | null>((res) =>
-        off.toBlob((b) => res(b), "image/webp", 0.85),
-      );
-      if (blob) onDone(blob);
-      else onCancel();
+      const url = URL.createObjectURL(base);
+      try {
+        const img = await loadImage(url);
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        const off = document.createElement("canvas");
+        off.width = natW;
+        off.height = natH;
+        const ctx = off.getContext("2d");
+        if (!ctx) {
+          onCancel();
+          return;
+        }
+        ctx.drawImage(img, 0, 0, natW, natH);
+        // รอยวาดเก็บเป็นพิกัด CSS ของกรอบจอ → คูณให้เท่าความละเอียดภาพจริง
+        const k = natW / window.innerWidth;
+        for (const s of allStrokes) drawStroke(ctx, s, k);
+        const blob = await new Promise<Blob | null>((res) =>
+          off.toBlob((b) => res(b), "image/webp", 0.92),
+        );
+        if (blob) onDone(blob);
+        else onCancel();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     } finally {
-      setExporting(false);
+      setCapturing(false);
     }
   };
 
@@ -286,25 +346,113 @@ export function PinpointDrawCanvas({
     { id: "text", icon: Type, label: "ข้อความ" },
   ];
 
-  return (
+  const overlay = (
     <div
       data-pinpoint-ui
-      className="fixed inset-0 z-[9996] flex flex-col bg-black/80 backdrop-blur-sm"
+      data-pinpoint-annotate
+      className="fixed inset-0 z-[9996]"
+      style={{ pointerEvents: "none" }}
     >
-      {/* แถบเครื่องมือบน */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-zinc-900/95 px-3 py-2 text-white">
+      {/* แผ่นใสวาด — โปร่งใส เห็นหน้าเว็บจริงข้างล่าง. โหมดแตะ = ปล่อยคลิกทะลุไปหน้าจริง */}
+      {view && (
+        <canvas
+          ref={canvasRef}
+          width={Math.round(view.vw * view.dpr)}
+          height={Math.round(view.vh * view.dpr)}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={commit}
+          onPointerLeave={commit}
+          onPointerCancel={commit}
+          className="absolute inset-0"
+          style={{
+            width: view.vw,
+            height: view.vh,
+            pointerEvents: mode === "draw" && !capturing ? "auto" : "none",
+            touchAction: mode === "draw" ? "none" : "auto",
+            cursor: tool === "text" ? "text" : "crosshair",
+          }}
+        />
+      )}
+
+      {/* กล่องพิมพ์ข้อความ — โผล่ตรงจุดที่แตะ (พิกัดกรอบจอ) */}
+      {editing && view && (
+        <textarea
+          autoFocus
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitText}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              commitText();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(null);
+              setEditValue("");
+            }
+          }}
+          placeholder="พิมพ์… Enter=วาง"
+          rows={1}
+          className="absolute z-10 resize-none rounded-md border-2 bg-white/95 px-1.5 py-0.5 font-bold shadow-lg outline-none"
+          style={{
+            left: editing.x,
+            top: editing.y,
+            color,
+            borderColor: color,
+            fontSize: TEXT_SIZE,
+            lineHeight: 1.28,
+            minWidth: 90,
+            maxWidth: Math.max(120, view.vw - editing.x - 6),
+            pointerEvents: "auto",
+          }}
+        />
+      )}
+
+      {/* แถบเครื่องมือบน — คลิกได้เสมอ */}
+      <div
+        className="absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 border-b border-white/10 bg-zinc-900/95 px-3 py-2 text-white shadow-lg"
+        style={{ pointerEvents: "auto" }}
+      >
+        {/* สลับโหมด วาด ⇄ แตะหน้าเว็บ */}
         <div className="flex items-center rounded-lg bg-white/10 p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode("draw")}
+            aria-pressed={mode === "draw"}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+              mode === "draw" ? "bg-white text-zinc-900" : "text-white/80 hover:bg-white/10",
+            )}
+          >
+            <Pen className="size-3.5" /> วาด
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("interact")}
+            aria-pressed={mode === "interact"}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+              mode === "interact" ? "bg-white text-zinc-900" : "text-white/80 hover:bg-white/10",
+            )}
+          >
+            <Hand className="size-3.5" /> แตะหน้าเว็บ
+          </button>
+        </div>
+
+        {/* เครื่องมือวาด — จางลงตอนโหมดแตะ */}
+        <div className={cn("flex items-center rounded-lg bg-white/10 p-0.5 transition-opacity", mode === "interact" && "opacity-50")}>
           {tools.map((t) => (
             <button
               key={t.id}
               type="button"
-              onClick={() => setTool(t.id)}
-              aria-pressed={tool === t.id}
+              onClick={() => pickTool(t.id)}
+              aria-pressed={tool === t.id && mode === "draw"}
               aria-label={t.label}
               title={t.label}
               className={cn(
                 "flex size-9 items-center justify-center rounded-md transition-colors",
-                tool === t.id ? "bg-white text-zinc-900" : "text-white/80 hover:bg-white/10",
+                tool === t.id && mode === "draw" ? "bg-white text-zinc-900" : "text-white/80 hover:bg-white/10",
               )}
             >
               <t.icon className="size-4" />
@@ -312,12 +460,12 @@ export function PinpointDrawCanvas({
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className={cn("flex items-center gap-1.5 transition-opacity", mode === "interact" && "opacity-50")}>
           {COLORS.map((c) => (
             <button
               key={c}
               type="button"
-              onClick={() => setColor(c)}
+              onClick={() => pickColor(c)}
               aria-label={`สี ${c}`}
               className={cn(
                 "size-7 rounded-full border-2 transition-transform",
@@ -355,85 +503,37 @@ export function PinpointDrawCanvas({
           <button
             type="button"
             onClick={onCancel}
-            className="flex items-center gap-1 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20"
+            disabled={capturing}
+            className="flex items-center gap-1 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
           >
             <X className="size-4" /> ยกเลิก
           </button>
           <button
             type="button"
             onClick={handleDone}
-            disabled={exporting}
+            disabled={capturing}
             className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
           >
-            {exporting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {capturing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
             เสร็จ
           </button>
         </div>
       </div>
 
-      {/* พื้นที่วาด */}
-      <div className="flex flex-1 items-center justify-center overflow-auto p-3">
-        {dims ? (
-          <div className="relative" style={{ width: dims.dispW, height: dims.dispH }}>
-            <canvas
-              ref={canvasRef}
-              width={dims.dispW}
-              height={dims.dispH}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={commit}
-              onPointerLeave={commit}
-              onPointerCancel={commit}
-              className="block touch-none rounded-md shadow-2xl ring-1 ring-white/20"
-              style={{
-                width: dims.dispW,
-                height: dims.dispH,
-                cursor: tool === "text" ? "text" : "crosshair",
-              }}
-            />
-            {/* กล่องพิมพ์ข้อความ — โผล่ตรงจุดที่แตะ (เห็นกล่องจริง ๆ ก่อนวางลงภาพ) */}
-            {editing && (
-              <textarea
-                autoFocus
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={commitText}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    commitText();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setEditing(null);
-                    setEditValue("");
-                  }
-                }}
-                placeholder="พิมพ์… Enter=วาง"
-                rows={1}
-                className="absolute z-10 resize-none rounded-md border-2 bg-white/95 px-1.5 py-0.5 font-bold shadow-lg outline-none"
-                style={{
-                  left: editing.x,
-                  top: editing.y,
-                  color,
-                  borderColor: color,
-                  fontSize: TEXT_SIZE,
-                  lineHeight: 1.28,
-                  minWidth: 90,
-                  maxWidth: Math.max(120, dims.dispW - editing.x - 6),
-                }}
-              />
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-white/80">
-            <Loader2 className="size-5 animate-spin" /> กำลังเตรียมภาพ…
-          </div>
-        )}
-      </div>
-
-      <p className="pointer-events-none pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-xs text-white/60">
-        ลากเพื่อวง/ชี้จุด · เลือก “ข้อความ” แล้วแตะบนภาพเพื่อพิมพ์ · กด “เสร็จ” เพื่อแนบ
+      {/* คำใบ้ล่าง — เปลี่ยนตามโหมด */}
+      <p
+        className="absolute inset-x-0 bottom-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 text-center text-xs font-medium text-white"
+        style={{ pointerEvents: "none", textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
+      >
+        {capturing
+          ? "กำลังบันทึกภาพหน้าจอ…"
+          : mode === "draw"
+            ? "ลากเพื่อวง/ชี้ · เลือก “ข้อความ” แล้วแตะเพื่อพิมพ์ · กด “เสร็จ” เพื่อแคปหน้าจอ"
+            : "โหมดแตะ: กดปุ่มในเว็บได้เลย (โชว์/ซ่อน ฯลฯ) · กด “วาด” เพื่อกลับมาวาด"}
       </p>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(overlay, document.body);
 }

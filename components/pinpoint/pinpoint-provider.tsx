@@ -32,7 +32,7 @@ import {
 import { cn } from "@/lib/utils/cn";
 import { buildSelector, buildElementMeta, elementText } from "@/lib/pinpoint/selector";
 import { captureBody, uploadCapture, isLikelyMobile, lastCaptureError } from "@/lib/pinpoint/capture";
-import { PinpointDrawCanvas } from "@/components/pinpoint/pinpoint-draw-canvas";
+import { PinpointLiveAnnotate } from "@/components/pinpoint/pinpoint-draw-canvas";
 import type { ElementMeta, PinpointPriority } from "@/lib/pinpoint/types";
 
 const LS_KEY = "pinpoint:v1";
@@ -646,10 +646,8 @@ function PinPopover({
   const [comment, setComment] = useState("");
   const [urgent, setUrgent] = useState(false);
   const [listening, setListening] = useState(false);
-  // ── ปากกาวาดภาพ ──
-  const [drawBlob, setDrawBlob] = useState<Blob | null>(null); // ภาพหน้าจอรอวาด
+  // ── ปากกาวาดสดบนหน้าจริง ──
   const [drawOpen, setDrawOpen] = useState(false);
-  const [capturing, setCapturing] = useState(false); // กำลังถ่ายภาพหน้าจอ
   const [savingDraw, setSavingDraw] = useState(false); // กำลังอัปโหลดภาพวาด
   const [annotatedKey, setAnnotatedKey] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -662,26 +660,11 @@ function PinPopover({
   // ถ่ายภาพเฉพาะตอนกด "วาด" เอง — ไม่ถ่ายอัตโนมัติทุกครั้งที่บันทึก (กันช้า/ไม่นิ่ง).
   const canDraw = true;
 
-  // กด "วาด" → ถ่ายเฉพาะกรอบจอที่เห็น ณ จุดที่ปัก (UI ของเราถูกตัดออกอยู่แล้ว) → เปิดโมดัลวาด.
-  async function openDraw() {
-    if (capturing || savingDraw) return;
-    setCapturing(true);
-    try {
-      const blob = await captureBody({
-        scrollX: draft.scrollX,
-        scrollY: draft.scrollY,
-        width: draft.viewportW,
-        height: draft.viewportH,
-      });
-      if (!blob) {
-        toast.error("วาดภาพบนหน้านี้ไม่ได้");
-        return;
-      }
-      setDrawBlob(blob);
-      setDrawOpen(true);
-    } finally {
-      setCapturing(false);
-    }
+  // กด "วาด" → เปิดแผ่นใสวาดสดทับหน้าเว็บจริงเลย (ไม่ถ่ายรูปนิ่งก่อน) — ภาพถ่ายจริงเกิด
+  // ตอนกด "เสร็จ" ในแผ่นวาด (chrome ของ pinpoint ถูกซ่อน+ตัดออกตอนแคปอยู่แล้ว).
+  function openDraw() {
+    if (savingDraw) return;
+    setDrawOpen(true);
   }
 
   // วาดเสร็จ → อัปโหลดภาพที่มีรอยวาด เก็บเป็น screenshot เฉพาะของหมุดนี้.
@@ -791,9 +774,9 @@ function PinPopover({
             <button
               type="button"
               onClick={openDraw}
-              disabled={capturing || savingDraw}
-              aria-label="วาดภาพบนภาพหน้าจอ"
-              title={annotatedKey ? "วาดใหม่" : "วาดภาพบนภาพหน้าจอ"}
+              disabled={savingDraw}
+              aria-label="วาดสดบนหน้าจริง"
+              title={annotatedKey ? "วาดใหม่" : "วาดสดบนหน้าจริง"}
               className={cn(
                 "flex size-7 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                 annotatedKey
@@ -801,7 +784,7 @@ function PinPopover({
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200",
               )}
             >
-              {capturing || savingDraw ? (
+              {savingDraw ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : annotatedKey ? (
                 <Check className="size-3.5" />
@@ -834,18 +817,20 @@ function PinPopover({
         </button>
       </div>
 
-      {/* โมดัลปากกาวาดภาพ — portal ขึ้น body เพื่อคลุมเต็มจอเหนือทุกชั้น */}
-      {drawOpen &&
-        drawBlob &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <PinpointDrawCanvas
-            imageBlob={drawBlob}
-            onCancel={() => setDrawOpen(false)}
-            onDone={handleDrawDone}
-          />,
-          document.body,
-        )}
+      {/* แผ่นวาดสดบนหน้าจริง — คอมโพเนนต์ portal ขึ้น body เอง ล็อกเลื่อนหน้า + ซ่อน chrome
+          ระหว่างวาด แล้วแคปหน้าจอจริงตอนกด "เสร็จ" */}
+      {drawOpen && (
+        <PinpointLiveAnnotate
+          crop={{
+            scrollX: draft.scrollX,
+            scrollY: draft.scrollY,
+            width: draft.viewportW,
+            height: draft.viewportH,
+          }}
+          onCancel={() => setDrawOpen(false)}
+          onDone={handleDrawDone}
+        />
+      )}
     </div>
   );
 }

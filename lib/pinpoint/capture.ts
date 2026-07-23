@@ -11,7 +11,7 @@
 //    visible viewport (จอที่ผู้ใช้เห็นจริง ณ ตำแหน่งเลื่อนนั้น) — ไม่เก็บทั้งหน้ายาว
 //    เหมือนปริ้น. ถ่ายตอนผู้ใช้กดปักจริง → เนื้อหาโหลดเสร็จแล้ว ไม่ติด skeleton.
 
-const MAX_DIM = 1600; // cap longest side → keeps webp small
+const MAX_DIM = 2600; // cap longest side (raster) — สูงพอให้ Claude Code/คนรีวิว อ่านตัวหนังสือออก
 
 /** กรอบ "จอที่เห็น" ที่จะตัดเก็บ — พิกัดเลื่อนหน้า + ขนาดจอ (CSS px).
  *  ถ้าไม่ส่งมา = ใช้ค่าปัจจุบันของหน้าต่าง. ผู้เรียกควรส่งค่า ณ "ตอนกดปัก" เพื่อ
@@ -65,10 +65,11 @@ export async function captureBody(crop?: ViewportCrop): Promise<Blob | null> {
       return null;
     }
 
-    const scale = Math.min(
-      1,
-      MAX_DIM / Math.max(window.innerWidth, window.innerHeight || 1),
-    );
+    // ถ่ายตามความละเอียดจริงของจอ (Retina = DPR 2) → ตัวหนังสือคม ไม่เบลอ. เดิม scale≤1
+    // = ถ่ายแค่ครึ่งความละเอียดบนจอ Retina → เบลอตั้งแต่ต้นทาง. คุมไม่ให้เกิน MAX_DIM (กันไฟล์บวม).
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+    const longestCss = Math.max(window.innerWidth, window.innerHeight || 1);
+    const scale = Math.min(dpr, MAX_DIM / longestCss);
     const opts = {
       backgroundColor: "#ffffff",
       scale: scale > 0 ? scale : 1,
@@ -95,7 +96,7 @@ export async function captureBody(crop?: ViewportCrop): Promise<Blob | null> {
       const full = await result.toCanvas();
       const view = cropToViewport(full, region);
       const blob = await new Promise<Blob | null>((res) =>
-        view.toBlob((b) => res(b), "image/webp", 0.7),
+        view.toBlob((b) => res(b), "image/webp", 0.9),
       );
       if (blob && blob.size > 0) return blob;
       const png = await new Promise<Blob | null>((res) =>
