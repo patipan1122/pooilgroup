@@ -334,6 +334,7 @@ export async function POST(
               total: parsed.total,
               // หลายรายการในบิลเดียว — "จด น้ำดื่ม 10, ข้าวไข่ดาว 50" → 2 บรรทัด (total=ผลรวม)
               items: parsed.items,
+              suggestedCategoryName: parsed.suggestedCategory, // AI เดาหมวด → ตั้ง categoryId ให้อัตโนมัติ
               paymentMethod: parsed.paymentMethod ?? ch.defaultPaymentMethod ?? null,
               purchaseType: parsed.purchaseType,
               branchId: effectiveBranchId, // per-group branch (B3) → fallback channel branch
@@ -558,6 +559,7 @@ export async function POST(
           vat: parsed?.vat ?? 0,
           wht: parsed?.wht ?? 0,
           total: parsed?.total ?? 0,
+          suggestedCategoryName: parsed?.suggestedCategory ?? null, // AI เดาหมวด → ตั้ง categoryId ให้อัตโนมัติ
           paymentMethod: parsed?.paymentMethod ?? null,
           purchaseType: parsed?.purchaseType ?? null,
           originalUrl: att.url,

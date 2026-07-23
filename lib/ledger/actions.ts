@@ -207,6 +207,12 @@ export interface CreateDraftInput {
   wht?: number;
   total?: number;
   categoryId?: string | null;
+  /**
+   * ชื่อหมวดที่ AI เดาจากบิล (parsed.suggestedCategory) — ถ้า categoryId ไม่ได้ส่งมา
+   * ระบบจะจับคู่ชื่อนี้กับหมวด "ที่เปิดใช้" แล้วตั้ง categoryId ให้อัตโนมัติ (พนักงานยังแก้ได้)
+   * = ตัวช่วยกันพนักงานเลือกหมวดผิด. จับคู่เฉพาะที่มั่นใจ ไม่เจอ → ปล่อยว่างให้คนเลือกเอง.
+   */
+  suggestedCategoryName?: string | null;
   /** ประเภทการซื้อที่ AI อ่านได้ (goods/service/construction) → push เลือก SKU อัตโนมัติ. */
   purchaseType?: string | null;
   paymentMethod?: string | null;
@@ -281,6 +287,59 @@ export async function createDraftExpenseSystem(
 ): Promise<Result<{ id: string; docCode: string; duplicate: boolean; backfilled?: boolean }>> {
   if (!orgId) return { ok: false, error: "missing-org" };
   return createDraftExpenseCore(orgId, input.createdById ?? null, input);
+}
+
+// ── AI category matcher — ตัวช่วยกันพนักงานเลือกหมวดผิด (CEO 2026-07-23) ─────────
+//   AI อ่านบิล → เดาชื่อหมวด (parsed.suggestedCategory) → จับคู่กับหมวด "ที่เปิดใช้"
+//   ของบริษัทนั้น แล้วตั้ง categoryId ให้เลย (พนักงานยังแก้ได้). จับเฉพาะที่มั่นใจ:
+//   ตรงชื่อเป๊ะ → alias (ชื่อเก่า/ย่อ) → contains ที่ match ตัวเดียว. ไม่เจอ = ปล่อยว่าง.
+function normCat(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "") // ตัดวงเล็บ เช่น (เหมารวม) (ไม่สต๊อก)
+    .replace(/[\s/·,.\-]+/g, ""); // ตัดช่องว่าง/สแลช/จุด/ขีด
+}
+// ชื่อที่ AI มักเดา (เก่า/ย่อ/แยกย่อย) → ชื่อหมวดจริงหลังรวมหมวด
+const CATEGORY_ALIASES: Record<string, string> = {
+  ค่าโทรศัพท์: "ค่าโทรศัพท์/อินเทอร์เน็ต",
+  ค่าอินเทอร์เน็ต: "ค่าโทรศัพท์/อินเทอร์เน็ต",
+  ค่าซ่อมบำรุง: "ค่าซ่อมบำรุงรักษา",
+  ค่าซ่อมแซม: "ค่าซ่อมบำรุงรักษา",
+  วัสดุก่อสร้าง: "งานก่อสร้าง/รีโนเวท (เหมารวม)",
+  ค่าแรงก่อสร้าง: "งานก่อสร้าง/รีโนเวท (เหมารวม)",
+  วัสดุสิ้นเปลือง: "วัสดุ/อุปกรณ์สำนักงาน",
+  "เครื่องเขียน/อุปกรณ์สำนักงาน": "วัสดุ/อุปกรณ์สำนักงาน",
+  ค่าคอมมิชชั่น: "ค่าคอมมิชชั่น/นายหน้า",
+  ค่านายหน้า: "ค่าคอมมิชชั่น/นายหน้า",
+  ค่าที่ปรึกษา: "ค่าวิชาชีพ/บัญชี/ที่ปรึกษา",
+  ค่าสอบบัญชี: "ค่าวิชาชีพ/บัญชี/ที่ปรึกษา",
+  ค่าทำบัญชี: "ค่าวิชาชีพ/บัญชี/ที่ปรึกษา",
+};
+async function resolveSuggestedCategoryId(
+  orgId: string,
+  companyId: string,
+  rawName: string,
+): Promise<string | null> {
+  const name = rawName.trim();
+  if (!name) return null;
+  const cats = await prisma.ledgerCategory.findMany({
+    where: { orgId, companyId, active: true },
+    select: { id: true, name: true },
+  });
+  if (cats.length === 0) return null;
+  const target = normCat(CATEGORY_ALIASES[name] ?? name);
+  if (!target) return null;
+  // 1) ตรงชื่อเป๊ะ (หลัง normalize)
+  let hit = cats.find((c) => normCat(c.name) === target);
+  // 2) contains ทางเดียว ที่ match ได้ "ตัวเดียว" เท่านั้น (กันจับผิด)
+  if (!hit && target.length >= 4) {
+    const contains = cats.filter((c) => {
+      const n = normCat(c.name);
+      return n.includes(target) || target.includes(n);
+    });
+    if (contains.length === 1) hit = contains[0];
+  }
+  return hit?.id ?? null;
 }
 
 /**
@@ -363,6 +422,14 @@ async function createDraftExpenseCore(
   // ต้องการ migration. วิธีนี้ดีกว่าเดิม: ถ้า INSERT ล้มเหลว docCode ที่ได้ไป "เสีย" แต่ไม่ซ้ำ
   const docCode = await nextDocCode(orgId, input.companyId);
 
+  // ตัวช่วยเลือกหมวดจาก AI (กันเลือกผิด): ถ้าไม่ได้ส่ง categoryId มาแต่ AI เดาหมวดไว้
+  // → จับคู่กับหมวดที่เปิดใช้แล้วตั้งให้ (พนักงานยืนยัน/แก้ได้ในหน้าทบทวน).
+  const resolvedCategoryId =
+    input.categoryId ??
+    (input.suggestedCategoryName
+      ? await resolveSuggestedCategoryId(orgId, input.companyId, input.suggestedCategoryName)
+      : null);
+
   try {
     // P1#2 + P1#11 — wrap CREATE + audit in a single Prisma transaction.
     // pg_advisory_xact_lock ใน RPC ของ Supabase จะ hold lock จนถึงตอนที่ RPC commit;
@@ -383,7 +450,7 @@ async function createDraftExpenseCore(
           vat: input.vat ?? 0,
           wht: input.wht ?? 0,
           total: input.total ?? 0,
-          categoryId: input.categoryId ?? null,
+          categoryId: resolvedCategoryId,
           trcloudPurchaseType: input.purchaseType ?? null,
           paymentMethod: input.paymentMethod ?? null,
           docType: input.docType ?? "tax_invoice",

@@ -87,7 +87,7 @@ export function ExpenseList({
   branches,
 }: {
   rows: ExpenseRow[];
-  categories: Array<{ id: string; name: string; color: string | null; sort: number }>;
+  categories: Array<{ id: string; name: string; color: string | null; sort: number; active?: boolean }>;
   /** สาขา (for the quick-classify dialog — audit P0). */
   branches?: Array<{ id: string; name: string; code?: string | null }>;
   selectedId?: string;
@@ -731,7 +731,7 @@ export function ExpenseList({
                 selectClassName="focus:ring-amber-200"
               />
               <SearchableSelect
-                options={categories}
+                options={categories.filter((c) => c.active !== false)}
                 value={classify.categoryId}
                 onChange={(id) => setClassify((c) => ({ ...c, categoryId: id }))}
                 placeholder="— เลือกหมวด —"

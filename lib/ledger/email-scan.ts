@@ -236,6 +236,7 @@ export async function scanMailbox(
           vat: parsed?.vat ?? 0,
           wht: parsed?.wht ?? 0,
           total: parsed?.total ?? 0,
+          suggestedCategoryName: parsed?.suggestedCategory ?? null, // AI เดาหมวด → ตั้ง categoryId ให้อัตโนมัติ
           paymentMethod: parsed?.paymentMethod ?? null,
           purchaseType: parsed?.purchaseType ?? null,
           originalUrl: stored.originalUrl,

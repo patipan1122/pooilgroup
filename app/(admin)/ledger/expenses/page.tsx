@@ -462,6 +462,7 @@ export default async function ExpensesPage({
             name: c.name,
             color: c.color,
             sort: c.sort,
+            active: c.active,
           }))}
           selectedId={selected}
           baseParams={baseParams.toString()}
@@ -534,6 +535,7 @@ export default async function ExpensesPage({
                 name: c.name,
                 color: c.color,
                 sort: c.sort,
+                active: c.active,
               }))}
               branches={scope.branches}
               projects={projectOptions}

@@ -19,6 +19,7 @@ export type CategoryOption = {
   color: string | null;
   trcloudAccCode?: string | null;
   sort: number;
+  active?: boolean; // false = หมวดที่ปิดใช้แล้ว → ไม่โชว์ในช่องเลือก (กันพนักงานเลือกหมวดตาย)
 };
 
 /** Branch / company option — matches `listBranches()` / `listCompanies()`. */

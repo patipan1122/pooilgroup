@@ -131,11 +131,17 @@ export function CategoryManager({
   const [accCodeError, setAccCodeError] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [unboundOnly, setUnboundOnly] = useState(false);
+  const [showInactive, setShowInactive] = useState(false); // default: ซ่อนหมวดที่ปิดใช้แล้ว (ของเก่า/ซ้ำ) — โชว์แค่ที่ใช้จริง
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   // จำนวนหมวดที่ยังไม่ผูก "รหัสบัญชี GL" — ตัวชี้วัดว่ายังตั้งค่าไม่ครบกี่หมวด.
+  // นับเฉพาะหมวดที่เปิดใช้ (หมวดปิดที่ยังไม่ผูกไม่นับ เพราะเลิกใช้แล้ว).
   const unboundCount = useMemo(
-    () => categories.filter((c) => !c.trcloudAccCode).length,
+    () => categories.filter((c) => c.active && !c.trcloudAccCode).length,
+    [categories],
+  );
+  const inactiveCount = useMemo(
+    () => categories.filter((c) => !c.active).length,
     [categories],
   );
 
@@ -149,6 +155,7 @@ export function CategoryManager({
   const visibleCategories = useMemo(() => {
     const q = filterText.trim().toLowerCase();
     const filtered = categories.filter((c) => {
+      if (!showInactive && !c.active) return false; // ซ่อนหมวดที่ปิดใช้แล้ว จนกว่าจะกดโชว์
       if (unboundOnly && (c.trcloudAccCode || c.trcloudProductCode)) return false;
       if (!q) return true;
       return (
@@ -160,7 +167,7 @@ export function CategoryManager({
       if (a.active !== b.active) return a.active ? -1 : 1;
       return a.sort - b.sort;
     });
-  }, [categories, filterText, unboundOnly]);
+  }, [categories, filterText, unboundOnly, showInactive]);
 
   function startEdit(c: Cat) {
     setEditingId(c.id);
@@ -355,6 +362,21 @@ export function CategoryManager({
           >
             เฉพาะที่ยังไม่ผูก TRCloud
           </button>
+          {inactiveCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowInactive((v) => !v)}
+              aria-pressed={showInactive ? "true" : "false"}
+              className={
+                "inline-flex h-9 shrink-0 items-center justify-center rounded-lg border px-3 text-xs font-medium " +
+                (showInactive
+                  ? "border-zinc-300 bg-zinc-100 text-zinc-700"
+                  : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50")
+              }
+            >
+              {showInactive ? "ซ่อนที่ปิดใช้" : `แสดงที่ปิดใช้ (${inactiveCount})`}
+            </button>
+          )}
         </div>
       )}
 

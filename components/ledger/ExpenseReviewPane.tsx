@@ -830,7 +830,9 @@ export function ExpenseReviewPane({
                   ประเภทค่าใช้จ่าย
                 </FieldLabel>
                 <SearchableSelect
-                  options={categories}
+                  options={categories.filter(
+                    (c) => c.active !== false || c.id === draft.categoryId,
+                  )}
                   value={draft.categoryId}
                   onChange={(id) => set("categoryId", id)}
                   placeholder="— เลือกหมวด —"
