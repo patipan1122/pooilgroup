@@ -16,6 +16,7 @@ import {
   allPagesIndex,
 } from "@/lib/usage-guide";
 import { findManualEntry, manualEntryToText } from "@/lib/ai/usage-manual";
+import { logUnansweredQuestion } from "@/lib/ai/usage-manual-log";
 
 const Schema = z.object({
   question: z.string().min(2).max(500),
@@ -44,7 +45,15 @@ B) **แนะนำวิธีใช้งาน** — บอกว่าฟ�
 4. ถ้าผู้ใช้กำลังเปิดหน้าเฉพาะอยู่ (มี "Current Page Context") ให้ตอบคำถามใน scope ของหน้านั้นก่อน — ก่อนค่อยขยายไปทั่วระบบ
 5. ใช้ภาษาธุรกิจ ไม่ใช้ศัพท์เทคนิค (ห้ามพูดถึงชื่อ table/SQL/API)
 6. ถ้าเห็นปัญหาเร่งด่วน (สาขาขาด 5+ วัน, ยอดลดเกิน 30%) flag ที่ท้าย
-7. ถ้าไม่แน่ใจว่าเป็นคำถามแบบไหน (ข้อมูลหรือวิธีใช้) ให้ถามกลับ 1 ประโยคสั้นๆ เพื่อ clarify`;
+7. ถ้าไม่แน่ใจว่าเป็นคำถามแบบไหน (ข้อมูลหรือวิธีใช้) ให้ถามกลับ 1 ประโยคสั้นๆ เพื่อ clarify
+8. ถ้าเป็นคำถาม **วิธีใช้งาน** และไม่มีข้อมูลเกี่ยวข้องเลยใน "คู่มือการใช้งาน" + "Current Page Context" + "Pages Index" ให้ขึ้นบรรทัดแรกของคำตอบด้วย "UNANSWERED::" ตามด้วยคำตอบตามปกติ (เดาให้ดีที่สุดเท่าที่ทำได้ แต่ใส่ prefix นี้ไว้เสมอเพื่อบันทึกไว้ปรับปรุงคู่มือ)`;
+
+function stripUnansweredMarker(answer: string): { text: string; wasUnanswered: boolean } {
+  if (answer.startsWith("UNANSWERED::")) {
+    return { text: answer.slice("UNANSWERED::".length).trimStart(), wasUnanswered: true };
+  }
+  return { text: answer, wasUnanswered: false };
+}
 
 export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard();
@@ -139,9 +148,23 @@ export async function POST(req: NextRequest) {
   sections.push(`[Pages Index — ทุกหน้าในระบบ]\n${allPagesIndex()}`);
   const fullContext = sections.join("\n\n---\n\n");
 
+  const logIfUnanswered = (wasUnanswered: boolean) => {
+    if (!wasUnanswered) return;
+    const program = manualEntry?.program ?? pageGuide?.title ?? "ไม่ทราบ";
+    const page = manualEntry?.page ?? currentPath ?? "ไม่ทราบ";
+    void logUnansweredQuestion({
+      program,
+      page,
+      question,
+      role: session.user.role,
+    });
+  };
+
   try {
     if (hasGemini) {
-      const answer = await askGemini(fullContext, question, history);
+      const rawAnswer = await askGemini(fullContext, question, history);
+      const { text: answer, wasUnanswered } = stripUnansweredMarker(rawAnswer);
+      logIfUnanswered(wasUnanswered);
       // Track usage (Gemini ฟรี — cost = 0 แต่ track count สำหรับ rate cap)
       await recordAiUsage({
         userId: session.user.id,
@@ -153,7 +176,9 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ answer, provider: "gemini" });
     }
-    const answer = await askClaude(fullContext, question, history);
+    const rawAnswer = await askClaude(fullContext, question, history);
+    const { text: answer, wasUnanswered } = stripUnansweredMarker(rawAnswer);
+    logIfUnanswered(wasUnanswered);
     await recordAiUsage({
       userId: session.user.id,
       orgId: session.user.org_id,
