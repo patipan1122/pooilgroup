@@ -40,7 +40,13 @@ import {
   Columns3,
   Check,
   Briefcase,
+  ChevronsLeftRight,
+  ChevronsRightLeft,
+  X,
 } from "lucide-react";
+
+// เป้าหมายของกล่องอ่านเต็ม (กดที่ข้อความยาว → เปิดกล่องอ่านสบายตา)
+type ReadTarget = { name: string; label: string; text: string };
 
 export interface AnswerColumnMeta {
   id: string;
@@ -122,7 +128,12 @@ export function ApplicationsTable({
     posting?.aiBrief ?? null,
   );
   const [briefOpen, setBriefOpen] = useState(false);
+  // คอลัมน์ข้อความยาวที่ผู้ใช้ "กดขยาย" ให้กว้างขึ้น (จำในเครื่อง เหมือนการซ่อนคอลัมน์)
+  const [wideCols, setWideCols] = useState<Set<string>>(new Set());
+  // ข้อความที่กำลังเปิดอ่านเต็มในกล่องซ้อน (null = ไม่เปิด)
+  const [reading, setReading] = useState<ReadTarget | null>(null);
   const prefKey = `recruit-table-cols:${storageKey}`;
+  const widePrefKey = `recruit-table-wide:${storageKey}`;
 
   // โหลด/บันทึกค่าที่ซ่อนไว้ในเครื่อง (ไม่แตะ DB · ต่อผู้ใช้ต่อเบราว์เซอร์)
   useEffect(() => {
@@ -134,6 +145,17 @@ export function ApplicationsTable({
       setHidden(new Set());
     }
   }, [prefKey]);
+
+  // โหลดค่าคอลัมน์ที่ขยายไว้ (ต่อตำแหน่ง · ต่อเบราว์เซอร์)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(widePrefKey);
+      if (raw) setWideCols(new Set(JSON.parse(raw) as string[]));
+      else setWideCols(new Set());
+    } catch {
+      setWideCols(new Set());
+    }
+  }, [widePrefKey]);
 
   // เปลี่ยนตำแหน่ง/หน้า → ล้างการติ๊ก + sync brief
   useEffect(() => {
@@ -164,6 +186,21 @@ export function ApplicationsTable({
     }
   }
 
+  // ขยาย/หดความกว้างคอลัมน์ข้อความยาว (ผู้ใช้กดเองที่หัวคอลัมน์)
+  function toggleWide(key: string) {
+    setWideCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(widePrefKey, JSON.stringify([...next]));
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  }
+
   function toggleSelect(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -183,6 +220,7 @@ export function ApplicationsTable({
   }
 
   const vis = (key: string) => !hidden.has(key);
+  const isWide = (key: string) => wideCols.has(key);
 
   const allToggles = useMemo(
     () => [
@@ -364,7 +402,15 @@ export function ApplicationsTable({
                 />
               )}
               {vis("aisummary") && (
-                <th className="px-3 py-2.5 font-bold whitespace-nowrap">สรุป AI</th>
+                <th className="px-3 py-2.5 font-bold whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1 align-middle">
+                    สรุป AI
+                    <ColWidthToggle
+                      wide={isWide("aisummary")}
+                      onToggle={() => toggleWide("aisummary")}
+                    />
+                  </span>
+                </th>
               )}
               {vis("star") && (
                 <SortableTh
@@ -388,18 +434,27 @@ export function ApplicationsTable({
               {vis("tags") && (
                 <th className="px-3 py-2.5 font-bold whitespace-nowrap">ป้าย</th>
               )}
-              {answerColumns.map(
-                (c) =>
-                  vis(`ans:${c.id}`) && (
-                    <th
-                      key={c.id}
-                      className="px-3 py-2.5 font-bold whitespace-nowrap max-w-[220px] truncate"
-                      title={c.label}
-                    >
-                      {c.label}
-                    </th>
-                  ),
-              )}
+              {answerColumns.map((c) => {
+                if (!vis(`ans:${c.id}`)) return null;
+                const w = isWide(`ans:${c.id}`);
+                return (
+                  <th
+                    key={c.id}
+                    className="px-3 py-2.5 font-bold whitespace-nowrap"
+                    title={c.label}
+                  >
+                    <span className="inline-flex items-center gap-1 align-middle">
+                      <span className={w ? "" : "inline-block max-w-[180px] truncate align-middle"}>
+                        {c.label}
+                      </span>
+                      <ColWidthToggle
+                        wide={w}
+                        onToggle={() => toggleWide(`ans:${c.id}`)}
+                      />
+                    </span>
+                  </th>
+                );
+              })}
               {vis("submittedAt") && (
                 <SortableTh
                   label="วันสมัคร"
@@ -418,9 +473,11 @@ export function ApplicationsTable({
                 row={row}
                 canWrite={canWrite}
                 vis={vis}
+                isWide={isWide}
                 answerColumns={answerColumns}
                 selected={selected.has(row.id)}
                 onToggleSelect={toggleSelect}
+                onRead={setReading}
               />
             ))}
           </tbody>
@@ -452,6 +509,16 @@ export function ApplicationsTable({
             setBrief(b);
             setBriefOpen(false);
           }}
+        />
+      )}
+
+      {/* กล่องอ่านเต็ม — กดที่ข้อความยาวในตาราง แล้วอ่านสบายตากลางจอ */}
+      {reading && (
+        <ReadPopup
+          name={reading.name}
+          label={reading.label}
+          text={reading.text}
+          onClose={() => setReading(null)}
         />
       )}
     </div>
@@ -523,16 +590,20 @@ function Row({
   row,
   canWrite,
   vis,
+  isWide,
   answerColumns,
   selected,
   onToggleSelect,
+  onRead,
 }: {
   row: TableRow;
   canWrite: boolean;
   vis: (key: string) => boolean;
+  isWide: (key: string) => boolean;
   answerColumns: AnswerColumnMeta[];
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  onRead: (target: ReadTarget) => void;
 }) {
   const verdictAi = aiVerdict(row.aiScore);
   const appHref = `/recruit/applications/${row.id}`;
@@ -676,10 +747,19 @@ function Row({
         </td>
       )}
 
-      {/* สรุป AI (อ่านง่าย · กดขยาย) */}
+      {/* สรุป AI (อ่านง่าย · กดที่ข้อความ = อ่านเต็ม · ปุ่มหัวคอลัมน์ = ขยายทั้งคอลัมน์) */}
       {vis("aisummary") && (
-        <td className="px-3 py-2.5 max-w-[280px] align-top">
-          <AiSummaryCell summary={row.aiSummary} />
+        <td
+          className={`px-3 py-2.5 align-top ${
+            isWide("aisummary") ? "min-w-[380px] max-w-[560px]" : "max-w-[280px]"
+          }`}
+        >
+          <AiSummaryCell
+            summary={row.aiSummary}
+            wide={isWide("aisummary")}
+            personName={row.fullName}
+            onRead={onRead}
+          />
         </td>
       )}
 
@@ -763,14 +843,27 @@ function Row({
       )}
 
       {/* คอลัมน์คำตอบ */}
-      {answerColumns.map(
-        (c) =>
-          vis(`ans:${c.id}`) && (
-            <td key={c.id} className="px-3 py-2.5 max-w-[240px] align-top">
-              <AnswerCell value={row.answers[c.id] ?? ""} long={c.long} />
-            </td>
-          ),
-      )}
+      {answerColumns.map((c) => {
+        if (!vis(`ans:${c.id}`)) return null;
+        const w = isWide(`ans:${c.id}`);
+        return (
+          <td
+            key={c.id}
+            className={`px-3 py-2.5 align-top ${
+              w ? "min-w-[360px] max-w-[560px]" : "max-w-[240px]"
+            }`}
+          >
+            <AnswerCell
+              value={row.answers[c.id] ?? ""}
+              long={c.long}
+              wide={w}
+              personName={row.fullName}
+              label={c.label}
+              onRead={onRead}
+            />
+          </td>
+        );
+      })}
 
       {/* วันสมัคร */}
       {vis("submittedAt") && (
@@ -793,9 +886,51 @@ function Row({
   );
 }
 
-/** เซลล์คำตอบ — ตัดสั้น 2 บรรทัด กดขยายดูเต็มได้ (ค่าว่าง = —) */
-function AnswerCell({ value, long }: { value: string; long: boolean }) {
-  const [expanded, setExpanded] = useState(false);
+/** ปุ่มขยาย/หดความกว้างคอลัมน์ (อยู่ที่หัวคอลัมน์ข้อความยาว) */
+function ColWidthToggle({
+  wide,
+  onToggle,
+}: {
+  wide: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={wide ? "หดคอลัมน์ให้แคบลง" : "ขยายคอลัมน์ให้กว้าง อ่านง่ายขึ้น"}
+      aria-label={wide ? "หดคอลัมน์" : "ขยายคอลัมน์"}
+      className={`inline-flex shrink-0 items-center justify-center size-5 rounded transition-colors ${
+        wide
+          ? "bg-[var(--color-brand-100)] text-[var(--color-brand-700)]"
+          : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+      }`}
+    >
+      {wide ? (
+        <ChevronsRightLeft className="size-3.5" />
+      ) : (
+        <ChevronsLeftRight className="size-3.5" />
+      )}
+    </button>
+  );
+}
+
+/** เซลล์คำตอบ — แคบ: ตัด 2 บรรทัด · กว้าง: โชว์เต็ม · กดที่ข้อความ = เปิดกล่องอ่านเต็ม */
+function AnswerCell({
+  value,
+  long,
+  wide,
+  personName,
+  label,
+  onRead,
+}: {
+  value: string;
+  long: boolean;
+  wide: boolean;
+  personName: string;
+  label: string;
+  onRead: (target: ReadTarget) => void;
+}) {
   if (!value) return <span className="text-zinc-300">—</span>;
 
   const isTruncatable = long || value.length > 40;
@@ -805,10 +940,10 @@ function AnswerCell({ value, long }: { value: string; long: boolean }) {
   return (
     <button
       type="button"
-      onClick={() => setExpanded((e) => !e)}
-      title={expanded ? "กดเพื่อย่อ" : value}
+      onClick={() => onRead({ name: personName, label, text: value })}
+      title="กดเพื่ออ่านเต็ม"
       className={`text-left text-zinc-700 text-[13px] hover:text-zinc-900 ${
-        expanded ? "" : "line-clamp-2"
+        wide ? "whitespace-pre-wrap" : "line-clamp-2"
       }`}
     >
       {value}
@@ -816,9 +951,18 @@ function AnswerCell({ value, long }: { value: string; long: boolean }) {
   );
 }
 
-/** เซลล์สรุป AI — แยกป้ายที่มา (เรซูเม่/คำตอบ) + ข้อความสรุป กดขยายได้ */
-function AiSummaryCell({ summary }: { summary: string | null }) {
-  const [expanded, setExpanded] = useState(false);
+/** เซลล์สรุป AI — ป้ายที่มา (เรซูเม่/คำตอบ) + ข้อความสรุป · กดที่ข้อความ = อ่านเต็ม */
+function AiSummaryCell({
+  summary,
+  wide,
+  personName,
+  onRead,
+}: {
+  summary: string | null;
+  wide: boolean;
+  personName: string;
+  onRead: (target: ReadTarget) => void;
+}) {
   if (!summary) return <span className="text-zinc-300">—</span>;
 
   // aiSummary เก็บเป็น "[จากเรซูเม่] ..." / "[จากคำตอบ] ..."
@@ -835,14 +979,71 @@ function AiSummaryCell({ summary }: { summary: string | null }) {
       )}
       <button
         type="button"
-        onClick={() => setExpanded((e) => !e)}
-        title={expanded ? "กดเพื่อย่อ" : text}
+        onClick={() => onRead({ name: personName, label: "สรุป AI", text })}
+        title="กดเพื่ออ่านเต็ม"
         className={`block text-left text-zinc-700 text-[13px] leading-snug hover:text-zinc-900 ${
-          expanded ? "" : "line-clamp-3"
+          wide ? "whitespace-pre-wrap" : "line-clamp-3"
         }`}
       >
         {text}
       </button>
+    </div>
+  );
+}
+
+/** กล่องอ่านเต็ม — กดข้อความยาวในตาราง แล้วเปิดอ่านสบายตากลางจอ (Esc/คลิกนอก/กากบาท = ปิด) */
+function ReadPopup({
+  name,
+  label,
+  text,
+  onClose,
+}: {
+  name: string;
+  label: string;
+  text: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-lg max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-zinc-100 px-4 py-3 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-zinc-500 font-bold">
+              {label}
+            </p>
+            <h2 className="font-extrabold text-zinc-900 leading-tight truncate">
+              {name}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="px-4 py-4">
+          <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-800">
+            {text}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
