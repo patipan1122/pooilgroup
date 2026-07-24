@@ -61,6 +61,7 @@ export function recheckReceipt(p: {
   wht?: number | null;
   total?: number | null;
   items?: ExpenseItem[];
+  docType?: ExpenseDocType | null;
 }): RecheckResult {
   const warnings: string[] = [];
   let blockingMathError = false;
@@ -140,15 +141,15 @@ export function recheckReceipt(p: {
     );
   }
 
-  // 7. ผู้ขายจด VAT (เลขภาษี 13 หลัก) + มีฐานภาษี แต่ VAT อ่านได้ = 0.
-  //    บั๊ก 2026-07-24: ใบจากผู้ขายที่จด VAT แต่ AI อ่าน VAT ตกหล่น (หรือราคารวม VAT
-  //    แล้วยัดทั้งก้อนเป็น subtotal) เดิม "เงียบ" เพราะเช็ค VAT≈7% (ข้อ 3) ถูก gate
-  //    ไว้หลัง vat>0 → vat=0 ไม่เคยโดนเตือน. เตือนให้คนตรวจ — ไม่คิด VAT ให้เอง
-  //    เพราะบางใบเป็น non-VAT จริง (คิดเองอาจ post เข้า TRCloud ผิด).
+  // 7. ใบกำกับภาษี "เต็มรูป" จากผู้ขายที่จด VAT แต่ VAT อ่านได้ = 0 → น่าจะอ่านตกหล่น.
+  //    ใบกำกับเต็มรูปตามกฎหมาย (ม.86/4) ต้องแยก VAT เป็นบรรทัด → vat=0 = ผิด.
+  //    จำกัดเฉพาะ docType=tax_invoice: บิลเงินสด/ใบเสร็จ/ราคารวม VAT มี vat=0 เป็นปกติ
+  //    (บิลไทยส่วนใหญ่ราคารวม VAT) → ไม่เตือน กันธง needsReview ท่วมจอ.
+  //    เตือนอย่างเดียว ไม่คิด VAT ให้เอง (บาง non-VAT จริง · คิดเองอาจ post TRCloud ผิด).
   const vendorTaxDigits = (p.vendorTaxId ?? "").replace(/\D/g, "");
-  if (taxBase > 0 && vat === 0 && vendorTaxDigits.length === 13) {
+  if (taxBase > 0 && vat === 0 && vendorTaxDigits.length === 13 && p.docType === "tax_invoice") {
     warnings.push(
-      `ผู้ขายจด VAT (เลขภาษี 13 หลัก) แต่ VAT อ่านได้ = 0 — ตรวจว่าใบนี้มี VAT หรือเป็นราคารวม VAT อยู่แล้ว`,
+      `ใบกำกับภาษีเต็มรูปจากผู้ขายที่จด VAT แต่ VAT อ่านได้ = 0 — ตรวจว่าอ่าน VAT ตกหล่นไหม`,
     );
   }
 
@@ -165,6 +166,7 @@ export function recheckParsed(parsed: ParsedReceipt): RecheckResult {
     wht: parsed.wht,
     total: parsed.total,
     items: parsed.items,
+    docType: parsed.docType,
   });
 }
 
