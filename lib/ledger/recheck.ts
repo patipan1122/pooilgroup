@@ -140,6 +140,18 @@ export function recheckReceipt(p: {
     );
   }
 
+  // 7. ผู้ขายจด VAT (เลขภาษี 13 หลัก) + มีฐานภาษี แต่ VAT อ่านได้ = 0.
+  //    บั๊ก 2026-07-24: ใบจากผู้ขายที่จด VAT แต่ AI อ่าน VAT ตกหล่น (หรือราคารวม VAT
+  //    แล้วยัดทั้งก้อนเป็น subtotal) เดิม "เงียบ" เพราะเช็ค VAT≈7% (ข้อ 3) ถูก gate
+  //    ไว้หลัง vat>0 → vat=0 ไม่เคยโดนเตือน. เตือนให้คนตรวจ — ไม่คิด VAT ให้เอง
+  //    เพราะบางใบเป็น non-VAT จริง (คิดเองอาจ post เข้า TRCloud ผิด).
+  const vendorTaxDigits = (p.vendorTaxId ?? "").replace(/\D/g, "");
+  if (taxBase > 0 && vat === 0 && vendorTaxDigits.length === 13) {
+    warnings.push(
+      `ผู้ขายจด VAT (เลขภาษี 13 หลัก) แต่ VAT อ่านได้ = 0 — ตรวจว่าใบนี้มี VAT หรือเป็นราคารวม VAT อยู่แล้ว`,
+    );
+  }
+
   return { ok: warnings.length === 0, warnings, blockingMathError };
 }
 

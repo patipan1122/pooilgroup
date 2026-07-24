@@ -27,6 +27,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { ParsedReceipt } from "@/lib/ledger/types";
 
 // PDF ใหญ่กว่ารูป → เผื่อถึง 15MB (รูปทั่วไปไม่กี่ MB)
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -152,19 +153,10 @@ export function UploadReceiptButton({
       if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
 
       // 3) OCR — non-fatal (PDF/รูปที่อ่านไม่ออก → ร่างเปล่าให้กรอกเอง)
-      let parsed: {
-        vendor?: string | null;
-        vendorTaxId?: string | null;
-        docDate?: string | null;
-        subtotal?: number | null;
-        vat?: number | null;
-        wht?: number | null;
-        total?: number | null;
-        paymentMethod?: string | null;
-        purchaseType?: string | null;
-        confidence?: Record<string, number>;
-        ocrModel?: string;
-      } = {};
+      // ใช้ ParsedReceipt (SSoT) ตรง ๆ — ห้ามเขียน type มือ ไม่งั้น field ใหม่จะหลุด
+      // ตอน "บันทึก" เหมือนบั๊กเดิม (สินค้า/หมวด/VAT หายทั้งที่ AI อ่านได้). Partial
+      // เพราะ OCR ล้มเหลว → คงเป็น {} แล้วกรอกเอง.
+      let parsed: Partial<ParsedReceipt> = {};
       try {
         const ocrRes = await fetch("/api/ledger/ocr", {
           method: "POST",
@@ -196,6 +188,16 @@ export function UploadReceiptButton({
           total: parsed.total ?? 0,
           paymentMethod: parsed.paymentMethod ?? null,
           purchaseType: parsed.purchaseType ?? null,
+          // ── ส่งให้ครบเท่าฝั่ง LINE/อีเมล ── เดิมเว็บทิ้ง 8 field นี้ → ตอนบันทึก
+          // สินค้า (items)/หมวดที่ AI แนะนำ/เลขใบ/ประเภทเอกสาร หายหมด (บั๊ก 2026-07-24).
+          items: parsed.items ?? [],
+          docType: parsed.docType ?? undefined,
+          vendorDocNumber: parsed.vendorDocNumber ?? null,
+          vendorAddress: parsed.vendorAddress ?? null,
+          buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null,
+          discount: parsed.discount ?? 0,
+          suggestedCategoryName: parsed.suggestedCategory ?? null,
+          rawText: parsed.raw ?? null,
           originalUrl: publicUrl,
           thumbUrl: publicUrl,
           sha256: sha,
