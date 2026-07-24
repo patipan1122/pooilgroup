@@ -163,6 +163,18 @@ export function LedgerCaptureApp({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [sha256, setSha256] = useState<string | null>(null);
   const [fields, setFields] = useState<ParsedFields>(EMPTY);
+  // ฟิลด์ AI ที่ ParsedFields ไม่ได้เก็บ แต่ต้อง forward ให้ครบเท่า LINE/email
+  // (buyerTaxIdOnDoc/docType/items → เกรดภาษีซื้อ + line items) — bug-class path ที่ 3 ลืม field.
+  const [aiExtra, setAiExtra] = useState<{
+    buyerTaxIdOnDoc?: string | null;
+    docType?: string | null;
+    vendorDocNumber?: string | null;
+    vendorAddress?: string | null;
+    wht?: number | null;
+    discount?: number | null;
+    items?: Array<Record<string, unknown>>;
+    raw?: string | null;
+  }>({});
   const [savedCode, setSavedCode] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
@@ -223,6 +235,7 @@ export function LedgerCaptureApp({
     setImageUrl(null);
     setSha256(null);
     setFields(EMPTY);
+    setAiExtra({});
     setSavedCode(null);
     setDuplicate(false);
     setErrMsg("");
@@ -274,13 +287,21 @@ export function LedgerCaptureApp({
       let parsed: {
         vendor?: string | null;
         vendorTaxId?: string | null;
+        buyerTaxIdOnDoc?: string | null;
         docDate?: string | null;
+        docType?: string | null;
+        vendorDocNumber?: string | null;
+        vendorAddress?: string | null;
         subtotal?: number | null;
+        discount?: number | null;
         vat?: number | null;
+        wht?: number | null;
         total?: number | null;
         paymentMethod?: string | null;
         suggestedCategory?: string | null;
         purchaseType?: string | null;
+        items?: Array<Record<string, unknown>>;
+        raw?: string | null;
         confidence?: Record<string, number> | null;
       } = {};
       try {
@@ -309,11 +330,20 @@ export function LedgerCaptureApp({
           source: "line",
           vendor: parsed.vendor ?? null,
           vendorTaxId: parsed.vendorTaxId ?? null,
+          buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null, // → เกรดภาษีซื้อ
           docDate: parsed.docDate ?? null,
+          docType: parsed.docType ?? undefined,
+          vendorDocNumber: parsed.vendorDocNumber ?? null,
+          vendorAddress: parsed.vendorAddress ?? null,
           subtotal: parsed.subtotal ?? 0,
+          discount: parsed.discount ?? 0,
           vat: parsed.vat ?? 0,
+          wht: parsed.wht ?? 0,
           total: parsed.total ?? 0,
+          items: parsed.items ?? undefined,
           categoryId: matchCategory(parsed.suggestedCategory) || null,
+          suggestedCategoryName: parsed.suggestedCategory ?? null, // ghost เมื่อไม่ match
+          rawText: parsed.raw ?? null,
           purchaseType: parsed.purchaseType ?? null,
           paymentMethod: parsed.paymentMethod ?? null,
           originalUrl: uploadedUrl,
@@ -466,6 +496,7 @@ export function LedgerCaptureApp({
       if (!ocrRes.ok) {
         // OCR unavailable → let the staffer key it in manually (no dead end).
         setFields({ ...EMPTY, docDate: todayISO() });
+        setAiExtra({});
         setPhase("review");
         return;
       }
@@ -475,12 +506,20 @@ export function LedgerCaptureApp({
         parsed?: {
           vendor?: string | null;
           vendorTaxId?: string | null;
+          buyerTaxIdOnDoc?: string | null;
           docDate?: string | null;
+          docType?: string | null;
+          vendorDocNumber?: string | null;
+          vendorAddress?: string | null;
           subtotal?: number | null;
+          discount?: number | null;
           vat?: number | null;
+          wht?: number | null;
           total?: number | null;
           paymentMethod?: string | null;
           suggestedCategory?: string | null;
+          items?: Array<Record<string, unknown>>;
+          raw?: string | null;
           confidence?: Record<string, number> | null;
         } | null;
         recheck?: { ok?: boolean; warnings?: string[] } | null;
@@ -500,6 +539,17 @@ export function LedgerCaptureApp({
         suggestedCategory: parsed.suggestedCategory ?? "",
         categoryId: matchCategory(parsed.suggestedCategory),
         confidence: parsed.confidence ?? {},
+      });
+      // เก็บฟิลด์ AI ที่ฟอร์มไม่ได้โชว์ ไว้ forward ตอนบันทึก (เกรดภาษีซื้อ + items)
+      setAiExtra({
+        buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null,
+        docType: parsed.docType ?? null,
+        vendorDocNumber: parsed.vendorDocNumber ?? null,
+        vendorAddress: parsed.vendorAddress ?? null,
+        wht: parsed.wht ?? null,
+        discount: parsed.discount ?? null,
+        items: parsed.items,
+        raw: parsed.raw ?? null,
       });
       setPhase("review");
     } catch (err) {
@@ -535,11 +585,20 @@ export function LedgerCaptureApp({
           // "confirmed" from the field.
           vendor: fields.vendor || null,
           vendorTaxId: fields.vendorTaxId || null,
+          buyerTaxIdOnDoc: aiExtra.buyerTaxIdOnDoc ?? null, // → เกรดภาษีซื้อ (ขอคืนได้?)
           docDate: fields.docDate || null,
+          docType: aiExtra.docType ?? undefined,
+          vendorDocNumber: aiExtra.vendorDocNumber ?? null,
+          vendorAddress: aiExtra.vendorAddress ?? null,
           subtotal: num(fields.subtotal),
+          discount: aiExtra.discount ?? 0,
           vat: num(fields.vat),
+          wht: aiExtra.wht ?? 0,
           total: num(fields.total),
+          items: aiExtra.items ?? undefined,
           categoryId: fields.categoryId || null,
+          suggestedCategoryName: fields.categoryId ? null : fields.suggestedCategory || null, // ghost เมื่อยังไม่เลือก
+          rawText: aiExtra.raw ?? null,
           paymentMethod: fields.paymentMethod || null,
           originalUrl: imageUrl,
           thumbUrl: imageUrl,
