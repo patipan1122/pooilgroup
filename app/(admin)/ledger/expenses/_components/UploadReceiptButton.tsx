@@ -1,69 +1,18 @@
 "use client";
 
-// อัปโหลดใบเสร็จจากเว็บ (back-office) → สร้าง "ร่าง" ให้บัญชีตรวจ.
+// UploadReceiptButton — แค่ "ปุ่มเรียก" อัปโหลดใบเสร็จ (ตัวคุมงานจริงอยู่ที่
+// LedgerUploadProvider ระดับ layout เพื่อให้งาน "ทำงานเบื้องหลัง" รอดข้ามการเปลี่ยน
+// filter / เลือกใบ / ไปหน้าอื่นในเมนู LedgerLine — ดู _components/LedgerUploadProvider).
 //
-// กดปุ่ม (หรือกด FAB "ถ่าย" บนมือถือ) → เด้งเมนูเลือก:
-//   • ถ่ายรูป          → เปิดกล้อง ทีละใบ
-//   • เลือกรูป / ไฟล์   → เลือกได้ "หลายไฟล์พร้อมกัน" + รองรับ PDF (ใบกำกับ e-tax)
-//
-// แต่ละไฟล์เดินสายเดิม (ไม่มีปุ่มตาย):
-//   1. presign        → POST /api/ledger/r2/presign   (รูป/PDF)
-//   2. PUT             → อัปโหลดตรงเข้า R2
-//   3. OCR             → POST /api/ledger/ocr {imageUrl}  (AI อ่านค่า · ล้มเหลว = ข้าม ไม่ค้าง)
-//   4. create draft    → POST /api/ledger/expenses        (status=draft เสมอ · dedup ด้วย sha256)
-//   5. ไฟล์เดียว → เปิดใบนั้นให้ตรวจ · หลายไฟล์ → สรุปผล + รีเฟรชรายการ
-//
-// *** ห้าม auto-post *** — ทุกใบเป็น "ร่าง" จนกว่าบัญชีจะกดยืนยันเอง.
-import { useEffect, useRef, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import {
-  Upload,
-  Loader2,
-  Camera,
-  FileText,
-  CheckCircle2,
-  AlertTriangle,
-  X,
-  ChevronDown,
-} from "lucide-react";
+// ปุ่มนี้:
+//   • กด → เปิดเมนูเลือก (openSheet) พร้อม scope ปัจจุบัน (บริษัท/สาขา/filter)
+//   • ฟัง event `ledger:open-upload` จาก FAB "ถ่าย" ในแถบล่างมือถือ → เปิดเมนูเดียวกัน
+//   • โชว์สถานะ "กำลังทำ x/y" ตอนงานวิ่งอยู่ (อ่านจาก context)
+
+import { useEffect, useState } from "react";
+import { Upload, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { ParsedReceipt } from "@/lib/ledger/types";
-
-// PDF ใหญ่กว่ารูป → เผื่อถึง 15MB (รูปทั่วไปไม่กี่ MB)
-const MAX_BYTES = 15 * 1024 * 1024;
-const ACCEPT_FILES = "image/*,application/pdf";
-
-type FileStatus = "ok" | "dup" | "fail";
-interface FileResult {
-  name: string;
-  status: FileStatus;
-  id?: string;
-  docCode?: string | null;
-  error?: string;
-}
-interface Job {
-  total: number;
-  done: number;
-  current: string; // ชื่อไฟล์ที่กำลังทำ
-  results: FileResult[];
-  finished: boolean;
-}
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string | null> {
-  try {
-    if (!globalThis.crypto?.subtle) return null;
-    const digest = await crypto.subtle.digest("SHA-256", buf);
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  } catch {
-    return null;
-  }
-}
-
-function isAcceptable(file: File): boolean {
-  return file.type.startsWith("image/") || file.type === "application/pdf";
-}
+import { useLedgerUpload } from "../../_components/LedgerUploadProvider";
 
 export function UploadReceiptButton({
   companyId,
@@ -73,256 +22,39 @@ export function UploadReceiptButton({
 }: {
   companyId: string;
   branchId?: string | null;
-  /** company/branch/filter params to preserve when we navigate to the new draft */
+  /** company/branch/filter params — snapshot ตอนเริ่มงาน (ใช้ตอนเปิดใบใหม่หลังอัป) */
   baseParams: string;
-  /** Hide the visible trigger button on phones (the bottom-nav camera FAB fires
-   *  the same `ledger:open-upload` event) — the modal + listener stay mounted. */
+  /** ซ่อนปุ่มบนมือถือ (FAB "ถ่าย" ในแถบล่างยิง event เดียวกัน) */
   hideTriggerOnMobile?: boolean;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const filesRef = useRef<HTMLInputElement>(null);
-
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [job, setJob] = useState<Job | null>(null);
+  const { openSheet, busy, done, total } = useLedgerUpload();
   const [topErr, setTopErr] = useState<string | null>(null);
-  // ป้ายความคืบหน้าลอยมุมล่างขวา — ย่อได้ (ทำงานเบื้องหลัง ยังกดใช้งานหน้ารายจ่ายต่อได้)
-  const [minimized, setMinimized] = useState(false);
 
-  const busy = !!job && !job.finished;
-
-  // เปิดเมนูเลือก (เช็คบริษัทก่อน · กันกดตอนกำลังทำงาน)
-  function openSheet() {
-    if (busy) return;
+  function trigger() {
     if (!companyId) {
       setTopErr("เลือกบริษัทก่อนอัปโหลด");
       return;
     }
     setTopErr(null);
-    setSheetOpen(true);
+    openSheet({ companyId, branchId, baseParams });
   }
 
-  // FAB "ถ่าย" บนมือถือ (LedgerBottomNav) ยิง event นี้เมื่ออยู่หน้า /ledger/expenses แล้ว
+  // FAB "ถ่าย" บนมือถือ (LedgerBottomNav) ยิง event นี้เมื่ออยู่หน้า /ledger/expenses
   // → เปิดเมนูเลือกในจังหวะเดียวกัน (กดอีกทีในเมนู = user-gesture ใหม่ → iOS/LINE ไม่บล็อก picker)
   useEffect(() => {
-    const open = () => openSheet();
+    const open = () => {
+      if (companyId) openSheet({ companyId, branchId, baseParams });
+    };
     window.addEventListener("ledger:open-upload", open);
     return () => window.removeEventListener("ledger:open-upload", open);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, companyId]);
-
-  function pickCamera() {
-    setSheetOpen(false);
-    setTopErr(null);
-    cameraRef.current?.click();
-  }
-  function pickFiles() {
-    setSheetOpen(false);
-    setTopErr(null);
-    filesRef.current?.click();
-  }
-
-  // ── ประมวลผลทีละไฟล์ ────────────────────────────────────────────────────
-  async function processOne(file: File): Promise<FileResult> {
-    const name = file.name || "ไฟล์";
-    try {
-      const bytes = await file.arrayBuffer();
-      const sha = await sha256Hex(bytes);
-      const contentType =
-        file.type || (name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg");
-
-      // 1) presign
-      const presignRes = await fetch("/api/ledger/r2/presign", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ companyId, contentType }),
-      });
-      if (!presignRes.ok) throw new Error("ขอที่อัปโหลดไม่สำเร็จ");
-      const { url, publicUrl } = (await presignRes.json()) as {
-        url: string;
-        publicUrl: string;
-      };
-
-      // 2) PUT → R2
-      const put = await fetch(url, {
-        method: "PUT",
-        headers: { "content-type": contentType },
-        body: file,
-      });
-      if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
-
-      // 3) OCR — non-fatal (PDF/รูปที่อ่านไม่ออก → ร่างเปล่าให้กรอกเอง)
-      // ใช้ ParsedReceipt (SSoT) ตรง ๆ — ห้ามเขียน type มือ ไม่งั้น field ใหม่จะหลุด
-      // ตอน "บันทึก" เหมือนบั๊กเดิม (สินค้า/หมวด/VAT หายทั้งที่ AI อ่านได้). Partial
-      // เพราะ OCR ล้มเหลว → คงเป็น {} แล้วกรอกเอง.
-      let parsed: Partial<ParsedReceipt> = {};
-      try {
-        const ocrRes = await fetch("/api/ledger/ocr", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ imageUrl: publicUrl }),
-        });
-        if (ocrRes.ok) {
-          const json = (await ocrRes.json()) as { parsed?: typeof parsed };
-          if (json.parsed) parsed = json.parsed;
-        }
-      } catch {
-        /* ignore — fall through to a blank draft */
-      }
-
-      // 4) create draft (status=draft — never auto-post)
-      const createRes = await fetch("/api/ledger/expenses", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          companyId,
-          branchId: branchId || null,
-          source: "web",
-          vendor: parsed.vendor ?? null,
-          vendorTaxId: parsed.vendorTaxId ?? null,
-          docDate: parsed.docDate ?? null,
-          subtotal: parsed.subtotal ?? 0,
-          vat: parsed.vat ?? 0,
-          wht: parsed.wht ?? 0,
-          total: parsed.total ?? 0,
-          paymentMethod: parsed.paymentMethod ?? null,
-          purchaseType: parsed.purchaseType ?? null,
-          // ── ส่งให้ครบเท่าฝั่ง LINE/อีเมล ── เดิมเว็บทิ้ง 8 field นี้ → ตอนบันทึก
-          // สินค้า (items)/หมวดที่ AI แนะนำ/เลขใบ/ประเภทเอกสาร หายหมด (บั๊ก 2026-07-24).
-          items: parsed.items ?? [],
-          docType: parsed.docType ?? undefined,
-          vendorDocNumber: parsed.vendorDocNumber ?? null,
-          vendorAddress: parsed.vendorAddress ?? null,
-          buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null,
-          discount: parsed.discount ?? 0,
-          suggestedCategoryName: parsed.suggestedCategory ?? null,
-          rawText: parsed.raw ?? null,
-          originalUrl: publicUrl,
-          thumbUrl: publicUrl,
-          sha256: sha,
-          ocrModel: parsed.ocrModel ?? null,
-          ocrConfidence: parsed.confidence ?? null,
-        }),
-      });
-      if (!createRes.ok) {
-        const j = (await createRes.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? "บันทึกร่างไม่สำเร็จ");
-      }
-      const created = (await createRes.json()) as {
-        id: string;
-        duplicate?: boolean;
-        docCode?: string | null;
-      };
-      return {
-        name,
-        status: created.duplicate ? "dup" : "ok",
-        id: created.id,
-        docCode: created.docCode ?? null,
-      };
-    } catch (e) {
-      return { name, status: "fail", error: e instanceof Error ? e.message : "ล้มเหลว" };
-    }
-  }
-
-  async function runJob(files: File[]) {
-    if (files.length === 0) return;
-    const all = files;
-    const valid = all.filter((f) => isAcceptable(f) && f.size <= MAX_BYTES);
-    const rejected = all.length - valid.length;
-
-    if (valid.length === 0) {
-      setTopErr(
-        rejected > 0
-          ? "ไฟล์ไม่รองรับ หรือใหญ่เกิน 15MB (รับเฉพาะรูปภาพและ PDF)"
-          : "ไม่พบไฟล์",
-      );
-      return;
-    }
-    setTopErr(null);
-
-    const results: FileResult[] = [];
-    setMinimized(false);
-    setJob({ total: valid.length, done: 0, current: valid[0].name, results: [], finished: false });
-
-    for (let i = 0; i < valid.length; i++) {
-      const file = valid[i];
-      setJob((j) =>
-        j ? { ...j, current: file.name || "ไฟล์", done: i } : j,
-      );
-      const r = await processOne(file);
-      results.push(r);
-      setJob((j) => (j ? { ...j, done: i + 1, results: [...results] } : j));
-    }
-
-    const okOnes = results.filter((r) => r.status === "ok");
-
-    // ไฟล์เดียว + สำเร็จ (ไม่ซ้ำ) → เปิดใบนั้นให้ตรวจทันที (พฤติกรรมเดิม)
-    if (valid.length === 1 && okOnes.length === 1 && okOnes[0].id) {
-      setJob(null);
-      const sp = new URLSearchParams(baseParams);
-      sp.set("selected", okOnes[0].id);
-      router.push(`${pathname}?${sp.toString()}`);
-      router.refresh();
-      return;
-    }
-
-    // หลายไฟล์ (หรือมีล้มเหลว/ซ้ำ) → โชว์สรุป + รีเฟรชรายการให้เห็นร่างใหม่
-    // กางป้ายสรุปให้เห็นเสมอ ต่อให้ผู้ใช้ย่อไว้ตอนกำลังทำงาน
-    setMinimized(false);
-    setJob((j) => (j ? { ...j, finished: true } : j));
-    if (okOnes.length > 0 || results.some((r) => r.status === "dup")) router.refresh();
-  }
-
-  function closeSummary() {
-    setJob(null);
-  }
-
-  const okCount = job?.results.filter((r) => r.status === "ok").length ?? 0;
-  const dupCount = job?.results.filter((r) => r.status === "dup").length ?? 0;
-  const failCount = job?.results.filter((r) => r.status === "fail").length ?? 0;
-  const pct = job && job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+  }, [companyId, branchId, baseParams, openSheet]);
 
   return (
     <div className="flex flex-col items-end gap-1">
-      {/* hidden inputs */}
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="sr-only"
-        onChange={(e) => {
-          // อ่านไฟล์ออกมาก่อน "แล้วค่อย" ล้าง input — ถ้าล้างก่อน FileList (fl) จะว่างทันที
-          // (browser reset) → runJob ได้ของว่าง → เงียบ ไม่ขึ้นใบ (บั๊กเดิม)
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          void runJob(files);
-        }}
-        aria-label="ถ่ายรูปใบเสร็จ"
-        tabIndex={-1}
-      />
-      <input
-        ref={filesRef}
-        type="file"
-        accept={ACCEPT_FILES}
-        multiple
-        className="sr-only"
-        onChange={(e) => {
-          // อ่านไฟล์ออกมาก่อน "แล้วค่อย" ล้าง input — ถ้าล้างก่อน FileList (fl) จะว่างทันที
-          // (browser reset) → runJob ได้ของว่าง → เงียบ ไม่ขึ้นใบ (บั๊กเดิม)
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          void runJob(files);
-        }}
-        aria-label="เลือกรูปหรือไฟล์ PDF ใบเสร็จ"
-        tabIndex={-1}
-      />
-
       <div className={hideTriggerOnMobile ? "hidden sm:block" : undefined}>
         <Button
           variant="primary"
-          onClick={openSheet}
+          onClick={trigger}
           disabled={busy || !companyId}
           aria-label="อัปโหลดใบเสร็จ"
         >
@@ -331,7 +63,7 @@ export function UploadReceiptButton({
           ) : (
             <Upload className="size-4" aria-hidden />
           )}
-          {busy ? `กำลังทำ ${job?.done}/${job?.total}…` : "อัปโหลดใบเสร็จ"}
+          {busy ? `กำลังทำ ${done}/${total}…` : "อัปโหลดใบเสร็จ"}
         </Button>
       </div>
       {topErr && (
@@ -339,200 +71,6 @@ export function UploadReceiptButton({
           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
           {topErr}
         </p>
-      )}
-
-      {/* ── เมนูเลือก (ถ่ายรูป / เลือกไฟล์) — bottom sheet ─────────────────── */}
-      {sheetOpen && (
-        <div
-          className="fixed inset-0 z-[70]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="เพิ่มใบเสร็จ"
-        >
-          <button
-            type="button"
-            aria-label="ปิด"
-            onClick={() => setSheetOpen(false)}
-            className="absolute inset-0 bg-black/40 animate-fade-in"
-          />
-          <div
-            className="absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-3xl border-t border-zinc-200 bg-white p-4 shadow-xl animate-slide-up-soft sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:animate-scale-in"
-            style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-zinc-900">เพิ่มใบเสร็จ</h2>
-                <p className="text-xs text-zinc-500">เลือกวิธีเพิ่มใบเสร็จ</p>
-              </div>
-              <button
-                type="button"
-                aria-label="ปิด"
-                onClick={() => setSheetOpen(false)}
-                className="press grid size-10 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 active:bg-zinc-100"
-              >
-                <X className="size-5" aria-hidden />
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={pickCamera}
-                className="press flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition hover:border-[var(--color-brand-200)] hover:bg-[var(--color-brand-50)] active:bg-zinc-50"
-              >
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--color-brand-50)] text-[var(--color-brand-600)]">
-                  <Camera className="size-5" aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-zinc-900">ถ่ายรูป</span>
-                  <span className="block text-xs text-zinc-500">เปิดกล้อง ถ่ายใบเสร็จทีละใบ</span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={pickFiles}
-                className="press flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition hover:border-zinc-300 hover:bg-zinc-50 active:bg-zinc-50"
-              >
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <FileText className="size-5" aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-zinc-900">เลือกรูป / ไฟล์</span>
-                  <span className="block text-xs text-zinc-500">
-                    เลือกหลายไฟล์พร้อมกัน · รองรับรูปภาพและ PDF
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── ป้ายความคืบหน้า / สรุปผล — ลอยมุมล่างขวา ทำงานเบื้องหลัง ────────────
-          ไม่มีแผ่นดำทับจอ (ไม่ใช่ modal) → คลิกทะลุไปกดใช้งานหน้ารายจ่ายต่อได้
-          z-[80] อยู่เหนือแถบเมนูล่างมือถือ (z-40) · มือถือดันขึ้นเหนือแถบ 64px */}
-      {job && (
-        <div
-          className="fixed right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-[80] flex justify-end lg:right-6 lg:bottom-6"
-          role="status"
-          aria-live="polite"
-          aria-label={job.finished ? "สรุปการอัปโหลด" : "กำลังอัปโหลดเบื้องหลัง"}
-        >
-          {!job.finished && minimized ? (
-            /* ── ย่อ: ป้ายกลมเล็ก กดเพื่อกาง ─────────────────────────────── */
-            <button
-              type="button"
-              onClick={() => setMinimized(false)}
-              className="press flex items-center gap-2 rounded-full border border-zinc-200 bg-white py-2 pl-3 pr-3.5 shadow-lg"
-              aria-label={`กำลังอ่านใบเสร็จ ${job.done} จาก ${job.total} ใบ · กดเพื่อขยาย`}
-            >
-              <Loader2 className="size-4 animate-spin text-[var(--color-brand-600)]" aria-hidden />
-              <span className="text-sm font-bold tabular-nums text-zinc-900">
-                {job.done}/{job.total}
-              </span>
-              <span className="text-xs font-medium tabular-nums text-zinc-400">{pct}%</span>
-            </button>
-          ) : !job.finished ? (
-            /* ── กำลังทำงาน: การ์ดเล็กมุมล่างขวา + ปุ่มย่อ ────────────────── */
-            <div className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-xl animate-scale-in">
-              <div className="mb-2 flex items-start gap-2">
-                <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-[var(--color-brand-600)]" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-sm font-bold text-zinc-900">กำลังอ่านใบเสร็จ</h2>
-                  <p className="text-xs text-zinc-500">ทำงานเบื้องหลัง · กดใช้งานหน้านี้ต่อได้</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMinimized(true)}
-                  aria-label="ย่อ"
-                  className="press -mr-1 -mt-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 active:bg-zinc-100"
-                >
-                  <ChevronDown className="size-4" aria-hidden />
-                </button>
-              </div>
-              <div className="mb-1.5 flex items-baseline justify-between">
-                <span className="text-xl font-bold tabular-nums text-zinc-900">
-                  {job.done}
-                  <span className="text-sm font-medium text-zinc-500"> / {job.total}</span>
-                </span>
-                <span className="text-xs font-semibold tabular-nums text-zinc-500">{pct}%</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
-                <div
-                  className="h-full rounded-full bg-[var(--color-brand-600)] transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <p className="mt-2 truncate text-xs text-zinc-400">{job.current}</p>
-            </div>
-          ) : (
-            /* ── เสร็จ: สรุปผล มุมล่างขวา ปิดได้ ไม่บังจอ ─────────────────── */
-            <div className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-xl animate-scale-in">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-600">
-                  <CheckCircle2 className="size-5" aria-hidden />
-                </span>
-                <h2 className="min-w-0 flex-1 text-sm font-bold text-zinc-900">
-                  {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
-                </h2>
-                <button
-                  type="button"
-                  onClick={closeSummary}
-                  aria-label="ปิด"
-                  className="press -mr-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 active:bg-zinc-100"
-                >
-                  <X className="size-4" aria-hidden />
-                </button>
-              </div>
-
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {okCount > 0 && (
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                    สำเร็จ {okCount}
-                  </span>
-                )}
-                {dupCount > 0 && (
-                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                    ซ้ำ (ข้าม) {dupCount}
-                  </span>
-                )}
-                {failCount > 0 && (
-                  <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                    ล้มเหลว {failCount}
-                  </span>
-                )}
-              </div>
-
-              {failCount > 0 && (
-                <ul className="mb-3 max-h-32 space-y-1 overflow-y-auto rounded-xl bg-zinc-50 p-2.5 text-xs text-zinc-600">
-                  {job.results
-                    .filter((r) => r.status === "fail")
-                    .map((r, i) => (
-                      <li key={i} className="flex items-start gap-1.5">
-                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-500" aria-hidden />
-                        <span className="min-w-0">
-                          <span className="font-medium text-zinc-700">{r.name}</span> ({r.error})
-                        </span>
-                      </li>
-                    ))}
-                </ul>
-              )}
-
-              <p className="mb-3 text-xs text-zinc-500">
-                ทุกใบบันทึกเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
-              </p>
-
-              <button
-                type="button"
-                onClick={closeSummary}
-                className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
-              >
-                เสร็จ
-              </button>
-            </div>
-          )}
-        </div>
       )}
     </div>
   );

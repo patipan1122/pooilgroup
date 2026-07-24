@@ -390,7 +390,9 @@ async function createDraftExpenseCore(
   // touch a confirmed/locked/void row or one a human already filled in.
   if (input.sha256) {
     const existing = await prisma.ledgerExpense.findFirst({
-      where: { orgId, companyId: input.companyId, sha256: input.sha256 },
+      // กรองใบที่ถูก "ยกเลิก" (void = การลบแบบ soft) ออก — ไม่งั้นอัปไฟล์เดิมซ้ำ
+      // หลังลบใบเก่าไปแล้ว จะไปแมตช์แถว void แล้วเด้ง duplicate ทั้งที่ผู้ใช้ลบทิ้งแล้ว
+      where: { orgId, companyId: input.companyId, sha256: input.sha256, status: { not: "void" } },
       select: DEDUP_SELECT,
     });
     if (existing) {
@@ -436,6 +438,18 @@ async function createDraftExpenseCore(
     // pg_advisory_xact_lock ใน RPC ของ Supabase จะ hold lock จนถึงตอนที่ RPC commit;
     // การ wrap INSERT + audit ใน tx เดียวกันทำให้ทั้งคู่ commit/rollback พร้อมกันเสมอ.
     const created = await prisma.$transaction(async (tx) => {
+      // ปลดล็อก unique slot ที่ใบ "ยกเลิก" (void = ลบแบบ soft) จองไว้ด้วย sha256 เดียวกัน
+      // ก่อน INSERT ใบใหม่ — ไม่งั้นชน partial unique index
+      //   (org_id, company_id, sha256) WHERE sha256 IS NOT NULL
+      // → P2002 → re-upload ไฟล์เดิมหลังลบ = "ล้มเหลว". เคลียร์ sha256 ของใบที่ลบแล้ว
+      // ปลอดภัย: dedup ข้าม void อยู่แล้ว · audit ใช้ event+originalUrl ไม่ใช่ sha256.
+      // อยู่ใน tx เดียวกับ create → concurrent same-file ยังกันซ้ำได้ (คนที่ 2 ชน index → P2002 → คืน duplicate).
+      if (input.sha256) {
+        await tx.ledgerExpense.updateMany({
+          where: { orgId, companyId: input.companyId, sha256: input.sha256, status: "void" },
+          data: { sha256: null },
+        });
+      }
       const row = await tx.ledgerExpense.create({
         data: {
           orgId,
@@ -533,7 +547,8 @@ async function createDraftExpenseCore(
         : undefined;
     if (code === "P2002" && input.sha256) {
       const existing = await prisma.ledgerExpense.findFirst({
-        where: { orgId, companyId: input.companyId, sha256: input.sha256 },
+        // กรอง void ออกให้ตรงกับ query หลักด้านบน (re-upload หลังลบต้องได้ใบใหม่)
+        where: { orgId, companyId: input.companyId, sha256: input.sha256, status: { not: "void" } },
         select: { id: true, docCode: true },
       });
       if (existing) {

@@ -14,6 +14,7 @@ import { Suspense } from "react";
 import { assertModuleEnabled } from "@/lib/auth/module-access";
 import { getSession } from "@/lib/auth/session";
 import { LedgerBottomNav } from "@/components/ledger/LedgerBottomNav";
+import { LedgerUploadProvider } from "./_components/LedgerUploadProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,9 @@ export default async function LedgerLayout({
     // pb spacer keeps content clear of the fixed mobile bar; desktop (lg) uses
     // the Pool sidebar so no bottom bar + no spacer.
     <div className="ledger-scope pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0">
-      {children}
+      {/* งานอัปโหลดใบเสร็จ "ทำงานเบื้องหลัง" อยู่ที่ provider ระดับ layout (ไม่ถูก
+          unmount เวลาเปลี่ยน filter/เลือกใบ/ไปหน้าอื่นในเมนู) → ป้ายไม่หาย งานไม่ตาย */}
+      <LedgerUploadProvider>{children}</LedgerUploadProvider>
       {/* Suspense: LedgerBottomNav reads useSearchParams (?selected collision guard). */}
       {session ? (
         <Suspense fallback={null}>
