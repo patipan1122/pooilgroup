@@ -30,6 +30,7 @@ import {
   BookOpen,
   HandCoins,
   Landmark,
+  ReceiptText,
   Settings,
   X,
 } from "lucide-react";
@@ -85,6 +86,7 @@ const RIGHT: ReadonlyArray<NavItem> = [
 const OVERFLOW: ReadonlyArray<NavItem> = [
   { href: "/ledger/ledger-book", label: "สมุดค่าใช้จ่าย", icon: BookOpen, match: "/ledger/ledger-book", roles: FINANCIAL, group: "ภาพรวม & รายงาน" },
   { href: "/ledger/dashboard", label: "Dashboard", icon: BarChart3, match: "/ledger/dashboard", roles: FINANCIAL, group: "ภาพรวม & รายงาน" },
+  { href: "/ledger/tax", label: "รายงานภาษีซื้อ", icon: ReceiptText, match: "/ledger/tax", roles: FINANCIAL, group: "ภาพรวม & รายงาน" },
   { href: "/ledger/budgets", label: "งบประมาณ", icon: Wallet2, match: "/ledger/budgets", roles: BUDGET, group: "ภาพรวม & รายงาน" },
   { href: "/ledger/reconcile", label: "กระทบยอดจ่าย", icon: HandCoins, match: "/ledger/reconcile", roles: FINANCIAL, group: "การเงิน – กระทบยอด" },
   { href: "/ledger/bank-recon", label: "กระทบยอดธนาคาร", icon: Landmark, match: "/ledger/bank-recon", roles: FINANCIAL, group: "การเงิน – กระทบยอด" },

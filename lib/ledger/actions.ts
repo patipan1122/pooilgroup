@@ -315,11 +315,12 @@ const CATEGORY_ALIASES: Record<string, string> = {
   ค่าสอบบัญชี: "ค่าวิชาชีพ/บัญชี/ที่ปรึกษา",
   ค่าทำบัญชี: "ค่าวิชาชีพ/บัญชี/ที่ปรึกษา",
 };
-async function resolveSuggestedCategoryId(
+// คืน "หมวดที่เปิดใช้" ที่ match ชื่อ AI เดา (ไม่ set ให้ · แค่หา canonical ไว้โชว์ ghost)
+async function resolveSuggestedCategory(
   orgId: string,
   companyId: string,
   rawName: string,
-): Promise<string | null> {
+): Promise<{ id: string; name: string } | null> {
   const name = rawName.trim();
   if (!name) return null;
   const cats = await prisma.ledgerCategory.findMany({
@@ -339,7 +340,7 @@ async function resolveSuggestedCategoryId(
     });
     if (contains.length === 1) hit = contains[0];
   }
-  return hit?.id ?? null;
+  return hit ?? null;
 }
 
 /**
@@ -422,13 +423,13 @@ async function createDraftExpenseCore(
   // ต้องการ migration. วิธีนี้ดีกว่าเดิม: ถ้า INSERT ล้มเหลว docCode ที่ได้ไป "เสีย" แต่ไม่ซ้ำ
   const docCode = await nextDocCode(orgId, input.companyId);
 
-  // ตัวช่วยเลือกหมวดจาก AI (กันเลือกผิด): ถ้าไม่ได้ส่ง categoryId มาแต่ AI เดาหมวดไว้
-  // → จับคู่กับหมวดที่เปิดใช้แล้วตั้งให้ (พนักงานยืนยัน/แก้ได้ในหน้าทบทวน).
-  const resolvedCategoryId =
-    input.categoryId ??
-    (input.suggestedCategoryName
-      ? await resolveSuggestedCategoryId(orgId, input.companyId, input.suggestedCategoryName)
-      : null);
+  // AI แนะนำหมวด (ghost · CEO 2026-07-24): ไม่ set categoryId ให้เอง — แค่หา "หมวดที่เปิดใช้"
+  // ที่ตรงกับที่ AI เดา แล้วเก็บชื่อไว้ → หน้าทบทวนโชว์ตัวจางให้คน "กดยืนยัน" เอง.
+  // categoryId คงว่างจนกว่าคนจะเลือก → ด่าน confirmability บังคับต้องมีหมวดก่อนยืนยันอยู่แล้ว.
+  const ghostSuggested =
+    !input.categoryId && input.suggestedCategoryName
+      ? await resolveSuggestedCategory(orgId, input.companyId, input.suggestedCategoryName)
+      : null;
 
   try {
     // P1#2 + P1#11 — wrap CREATE + audit in a single Prisma transaction.
@@ -450,7 +451,8 @@ async function createDraftExpenseCore(
           vat: input.vat ?? 0,
           wht: input.wht ?? 0,
           total: input.total ?? 0,
-          categoryId: resolvedCategoryId,
+          categoryId: input.categoryId ?? null, // ไม่ auto-set จาก AI — คนต้องกดยืนยันหมวดเอง
+          suggestedCategoryName: ghostSuggested?.name ?? null, // หมวดที่ AI แนะนำ (โชว์ตัวจาง)
           trcloudPurchaseType: input.purchaseType ?? null,
           paymentMethod: input.paymentMethod ?? null,
           docType: input.docType ?? "tax_invoice",

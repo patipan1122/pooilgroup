@@ -48,6 +48,7 @@ import {
   Bell,
   BarChart3,
   BookOpen,
+  ReceiptText,
   HandCoins,
   CalendarRange,
   Workflow,
@@ -946,6 +947,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/ledger/dashboard",
         label: "Dashboard",
         icon: BarChart3,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        // รายงานภาษีซื้อ (Input VAT / ภ.พ.30) — ใบไหนมี VAT · ขอคืนได้ · หรือติด
+        href: "/ledger/tax",
+        label: "รายงานภาษีซื้อ",
+        icon: ReceiptText,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {

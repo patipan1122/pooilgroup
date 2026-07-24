@@ -6521,6 +6521,9 @@ model LedgerExpense {
   wht                   Decimal             @default(0) @db.Decimal(15, 2) // หัก ณ ที่จ่าย
   total                 Decimal             @default(0) @db.Decimal(15, 2)
   categoryId            String?             @map("category_id") @db.Uuid
+  // หมวดที่ AI เดาจากบิล (ghost suggestion · CEO 2026-07-24) — โชว์ตัวจางให้คน "กดยืนยัน"
+  // ไม่ hard-set categoryId เอง · คนต้องเลือก/ยืนยันเสมอ (ด่าน confirmability บังคับหมวดอยู่แล้ว).
+  suggestedCategoryName String?             @map("suggested_category_name")
   projectId             String?             @map("project_id") @db.Uuid // โครงการชั่วคราว (job-costing · F2) — orthogonal tag, null=ไม่ผูกโครงการ. FK ON DELETE SET NULL (migration).
   paymentMethod         String?             @map("payment_method")
   originalUrl           String?             @map("original_url") // Drive (P1.5) / R2

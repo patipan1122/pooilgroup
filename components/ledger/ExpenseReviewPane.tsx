@@ -840,12 +840,37 @@ export function ExpenseReviewPane({
                   searchPlaceholder="ค้นหาประเภท..."
                   selectClassName={cn(gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
                 />
-                {gateMissingCategory && (
-                  <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                    <ListTree className="size-3" aria-hidden />
-                    ต้องระบุหมวดหมู่ค่าใช้จ่าย
-                  </p>
-                )}
+                {gateMissingCategory &&
+                  (() => {
+                    // AI แนะนำหมวด (ghost · CEO 2026-07-24): โชว์ตัวจาง กดยืนยันได้ — คนยังต้องเลือกเอง
+                    const ghost = expense.suggestedCategoryName
+                      ? categories.find(
+                          (c) => c.name === expense.suggestedCategoryName && c.active !== false,
+                        )
+                      : null;
+                    return ghost ? (
+                      <button
+                        type="button"
+                        disabled={locked}
+                        onClick={() => set("categoryId", ghost.id)}
+                        title="AI แนะนำหมวดนี้จากบิล — กดเพื่อใช้ หรือเลือกเองด้านบน"
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/70 px-2.5 py-1.5 text-[12px] text-zinc-400 transition-colors hover:border-[var(--color-brand-300)] hover:text-zinc-700 disabled:opacity-50"
+                      >
+                        <span aria-hidden>💡</span>
+                        <span>
+                          AI แนะนำ: <span className="font-medium">{ghost.name}</span>
+                        </span>
+                        <span className="ml-0.5 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-brand-600)] shadow-sm">
+                          ใช้หมวดนี้
+                        </span>
+                      </button>
+                    ) : (
+                      <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                        <ListTree className="size-3" aria-hidden />
+                        ต้องระบุหมวดหมู่ค่าใช้จ่าย
+                      </p>
+                    );
+                  })()}
               </div>
               <div>
                 <FieldLabel>สาขา (ของเรา)</FieldLabel>
