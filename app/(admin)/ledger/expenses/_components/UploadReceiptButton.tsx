@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -85,6 +86,8 @@ export function UploadReceiptButton({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [topErr, setTopErr] = useState<string | null>(null);
+  // ป้ายความคืบหน้าลอยมุมล่างขวา — ย่อได้ (ทำงานเบื้องหลัง ยังกดใช้งานหน้ารายจ่ายต่อได้)
+  const [minimized, setMinimized] = useState(false);
 
   const busy = !!job && !job.finished;
 
@@ -237,6 +240,7 @@ export function UploadReceiptButton({
     setTopErr(null);
 
     const results: FileResult[] = [];
+    setMinimized(false);
     setJob({ total: valid.length, done: 0, current: valid[0].name, results: [], finished: false });
 
     for (let i = 0; i < valid.length; i++) {
@@ -262,6 +266,8 @@ export function UploadReceiptButton({
     }
 
     // หลายไฟล์ (หรือมีล้มเหลว/ซ้ำ) → โชว์สรุป + รีเฟรชรายการให้เห็นร่างใหม่
+    // กางป้ายสรุปให้เห็นเสมอ ต่อให้ผู้ใช้ย่อไว้ตอนกำลังทำงาน
+    setMinimized(false);
     setJob((j) => (j ? { ...j, finished: true } : j));
     if (okOnes.length > 0 || results.some((r) => r.status === "dup")) router.refresh();
   }
@@ -401,98 +407,129 @@ export function UploadReceiptButton({
         </div>
       )}
 
-      {/* ── โมดัลความคืบหน้า / สรุปผล (หลายไฟล์) ───────────────────────────── */}
+      {/* ── ป้ายความคืบหน้า / สรุปผล — ลอยมุมล่างขวา ทำงานเบื้องหลัง ────────────
+          ไม่มีแผ่นดำทับจอ (ไม่ใช่ modal) → คลิกทะลุไปกดใช้งานหน้ารายจ่ายต่อได้
+          z-[80] อยู่เหนือแถบเมนูล่างมือถือ (z-40) · มือถือดันขึ้นเหนือแถบ 64px */}
       {job && (
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={job.finished ? "สรุปการอัปโหลด" : "กำลังอัปโหลด"}
+          className="fixed right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-[80] flex justify-end lg:right-6 lg:bottom-6"
+          role="status"
+          aria-live="polite"
+          aria-label={job.finished ? "สรุปการอัปโหลด" : "กำลังอัปโหลดเบื้องหลัง"}
         >
-          <div className="absolute inset-0 bg-black/50 animate-fade-in" />
-          <div className="relative w-full max-w-sm rounded-3xl bg-white p-5 text-left shadow-xl animate-scale-in">
-            {!job.finished ? (
-              <>
-                <div className="mb-1 flex items-center gap-2">
-                  <Loader2 className="size-5 animate-spin text-[var(--color-brand-600)]" aria-hidden />
-                  <h2 className="text-base font-bold text-zinc-900">กำลังอัปโหลด</h2>
+          {!job.finished && minimized ? (
+            /* ── ย่อ: ป้ายกลมเล็ก กดเพื่อกาง ─────────────────────────────── */
+            <button
+              type="button"
+              onClick={() => setMinimized(false)}
+              className="press flex items-center gap-2 rounded-full border border-zinc-200 bg-white py-2 pl-3 pr-3.5 shadow-lg"
+              aria-label={`กำลังอ่านใบเสร็จ ${job.done} จาก ${job.total} ใบ · กดเพื่อขยาย`}
+            >
+              <Loader2 className="size-4 animate-spin text-[var(--color-brand-600)]" aria-hidden />
+              <span className="text-sm font-bold tabular-nums text-zinc-900">
+                {job.done}/{job.total}
+              </span>
+              <span className="text-xs font-medium tabular-nums text-zinc-400">{pct}%</span>
+            </button>
+          ) : !job.finished ? (
+            /* ── กำลังทำงาน: การ์ดเล็กมุมล่างขวา + ปุ่มย่อ ────────────────── */
+            <div className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-xl animate-scale-in">
+              <div className="mb-2 flex items-start gap-2">
+                <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-[var(--color-brand-600)]" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-bold text-zinc-900">กำลังอ่านใบเสร็จ</h2>
+                  <p className="text-xs text-zinc-500">ทำงานเบื้องหลัง · กดใช้งานหน้านี้ต่อได้</p>
                 </div>
-                <p className="mb-3 text-sm text-zinc-500">
-                  AI กำลังอ่านใบเสร็จทีละใบ · อย่าเพิ่งปิดหน้านี้
-                </p>
-                <div className="mb-2 flex items-baseline justify-between">
-                  <span className="text-2xl font-bold tabular-nums text-zinc-900">
-                    {job.done}
-                    <span className="text-base font-medium text-zinc-500"> / {job.total}</span>
-                  </span>
-                  <span className="text-xs font-semibold tabular-nums text-zinc-500">{pct}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-brand-600)] transition-all"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="mt-2 truncate text-xs text-zinc-500">{job.current}</p>
-              </>
-            ) : (
-              <>
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="grid size-9 place-items-center rounded-full bg-emerald-100 text-emerald-600">
-                    <CheckCircle2 className="size-5" aria-hidden />
-                  </span>
-                  <h2 className="text-base font-bold text-zinc-900">
-                    {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
-                  </h2>
-                </div>
-
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  {okCount > 0 && (
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                      สำเร็จ {okCount}
-                    </span>
-                  )}
-                  {dupCount > 0 && (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                      ซ้ำ (ข้าม) {dupCount}
-                    </span>
-                  )}
-                  {failCount > 0 && (
-                    <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                      ล้มเหลว {failCount}
-                    </span>
-                  )}
-                </div>
-
-                {failCount > 0 && (
-                  <ul className="mb-3 max-h-32 space-y-1 overflow-y-auto rounded-xl bg-zinc-50 p-2.5 text-xs text-zinc-600">
-                    {job.results
-                      .filter((r) => r.status === "fail")
-                      .map((r, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-500" aria-hidden />
-                          <span className="min-w-0">
-                            <span className="font-medium text-zinc-700">{r.name}</span> ({r.error})
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                )}
-
-                <p className="mb-3 text-xs text-zinc-500">
-                  ทุกใบบันทึกเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
-                </p>
-
+                <button
+                  type="button"
+                  onClick={() => setMinimized(true)}
+                  aria-label="ย่อ"
+                  className="press -mr-1 -mt-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 active:bg-zinc-100"
+                >
+                  <ChevronDown className="size-4" aria-hidden />
+                </button>
+              </div>
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <span className="text-xl font-bold tabular-nums text-zinc-900">
+                  {job.done}
+                  <span className="text-sm font-medium text-zinc-500"> / {job.total}</span>
+                </span>
+                <span className="text-xs font-semibold tabular-nums text-zinc-500">{pct}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className="h-full rounded-full bg-[var(--color-brand-600)] transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="mt-2 truncate text-xs text-zinc-400">{job.current}</p>
+            </div>
+          ) : (
+            /* ── เสร็จ: สรุปผล มุมล่างขวา ปิดได้ ไม่บังจอ ─────────────────── */
+            <div className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-xl animate-scale-in">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-600">
+                  <CheckCircle2 className="size-5" aria-hidden />
+                </span>
+                <h2 className="min-w-0 flex-1 text-sm font-bold text-zinc-900">
+                  {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
+                </h2>
                 <button
                   type="button"
                   onClick={closeSummary}
-                  className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
+                  aria-label="ปิด"
+                  className="press -mr-1 grid size-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 active:bg-zinc-100"
                 >
-                  เสร็จ
+                  <X className="size-4" aria-hidden />
                 </button>
-              </>
-            )}
-          </div>
+              </div>
+
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {okCount > 0 && (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                    สำเร็จ {okCount}
+                  </span>
+                )}
+                {dupCount > 0 && (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                    ซ้ำ (ข้าม) {dupCount}
+                  </span>
+                )}
+                {failCount > 0 && (
+                  <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                    ล้มเหลว {failCount}
+                  </span>
+                )}
+              </div>
+
+              {failCount > 0 && (
+                <ul className="mb-3 max-h-32 space-y-1 overflow-y-auto rounded-xl bg-zinc-50 p-2.5 text-xs text-zinc-600">
+                  {job.results
+                    .filter((r) => r.status === "fail")
+                    .map((r, i) => (
+                      <li key={i} className="flex items-start gap-1.5">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-500" aria-hidden />
+                        <span className="min-w-0">
+                          <span className="font-medium text-zinc-700">{r.name}</span> ({r.error})
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              )}
+
+              <p className="mb-3 text-xs text-zinc-500">
+                ทุกใบบันทึกเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
+              </p>
+
+              <button
+                type="button"
+                onClick={closeSummary}
+                className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
+              >
+                เสร็จ
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
