@@ -11,6 +11,8 @@ import type { AuditAction } from "@/lib/audit/log";
 import { toNum, currentPeriod } from "@/lib/rentspace/format";
 import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2 } from "@/lib/rentspace/billing";
 import { getBaseUrl } from "@/lib/utils/base-url";
+import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
+import { notifyBillIssued } from "@/lib/rentspace/notify";
 import type { RentalBillStatus } from "@/lib/generated/prisma/enums";
 
 async function gateAdmin() {
@@ -1700,6 +1702,7 @@ export async function actRecordPayment(input: {
       method: input.method ?? "transfer",
       paidOn: new Date(input.paidOn),
       createdAt: { gte: dupSince },
+      status: "confirmed", // นับเฉพาะการชำระที่ยืนยันแล้ว — สลิป pending ของผู้เช่าห้ามบล็อกการบันทึกจริง
     },
     select: { id: true },
   });
@@ -1757,6 +1760,7 @@ export async function actRecordCombinedPayment(input: {
     where: {
       paidOn: new Date(input.paidOn),
       createdAt: { gte: dupSince },
+      status: "confirmed", // นับเฉพาะที่ยืนยันแล้ว — สลิป pending ของผู้เช่าห้ามทำให้ dedup พลาด
       bill: { orgId: session.user.org_id, tenantId: input.tenantId },
     },
     select: { amountThb: true },
@@ -1879,17 +1883,128 @@ export async function actSendBill(billId: string): Promise<{ ok: true; token: st
   const token = bill.publicToken ?? randomUUID();
   await prisma.rentalBill.update({
     where: { id: bill.id },
-    data: {
-      publicToken: token,
-      sentAt: new Date(),
-      sentChannel: "link",
-    },
+    data: { publicToken: token, sentAt: new Date(), sentChannel: "link" },
   });
 
-  await logAudit(session, "RENTSPACE_BILL_CREATED", "rental_bill", bill.id, { sent: true, channel: "link" });
+  // แจ้งเตือนผู้เช่า (LINE push + อีเมล) — best-effort · dormant ถ้ายังไม่ใส่กุญแจ LINE/Resend
+  const notif = await notifyBillIssued(bill.id);
+  const channel = notif.channels.length ? notif.channels.join("+") : "link";
+  if (channel !== "link") {
+    await prisma.rentalBill.update({ where: { id: bill.id }, data: { sentChannel: channel } });
+  }
+
+  await logAudit(session, "RENTSPACE_BILL_CREATED", "rental_bill", bill.id, {
+    sent: true,
+    channel,
+    notify: { line: notif.line, email: notif.email },
+  });
   revalidatePath("/rentspace/bills");
   revalidatePath(`/rentspace/bills/${bill.id}`);
   return { ok: true, token, url: publicBillUrl(token) };
+}
+
+// ═════════ ลิงก์เชิญพอร์ทัลผู้เช่า + ตรวจสลิปที่ผู้เช่าแจ้งเอง (RentSpace tenant portal · 2026-07-24) ═════════
+
+/** สร้าง/เปิดใช้ลิงก์เชิญของผู้เช่า (ถ้ามีอยู่แล้ว = คืนอันเดิม) → URL เต็ม */
+export async function actGenerateTenantPortalLink(tenantId: string): Promise<{ ok: true; url: string }> {
+  const session = await gateAdmin();
+  const tenant = await prisma.rentalTenant.findFirst({
+    where: { id: tenantId, orgId: session.user.org_id },
+    select: { id: true, portalToken: true },
+  });
+  if (!tenant) throw new Error("ไม่พบผู้เช่า หรือไม่มีสิทธิ์");
+  const token = tenant.portalToken ?? newPortalToken();
+  await prisma.rentalTenant.update({
+    where: { id: tenant.id },
+    data: { portalToken: token, portalRevoked: false, ...(tenant.portalToken ? {} : { portalTokenAt: new Date() }) },
+  });
+  await logAudit(session, "RENTSPACE_TENANT_SAVED", "rental_tenant", tenant.id, { portalLink: "generate" });
+  revalidatePath(`/rentspace/tenants/${tenant.id}`);
+  return { ok: true, url: portalUrl(token) };
+}
+
+/** ออกลิงก์ใหม่ (สุ่มใหม่ทับของเดิม → ลิงก์เก่าเปิดไม่ได้) — เผื่อลิงก์รั่ว */
+export async function actResetTenantPortalLink(tenantId: string): Promise<{ ok: true; url: string }> {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalTenant.findFirst({ where: { id: tenantId, orgId: session.user.org_id }, select: { id: true } }),
+    "ผู้เช่า",
+  );
+  const token = newPortalToken();
+  await prisma.rentalTenant.update({
+    where: { id: tenantId },
+    data: { portalToken: token, portalRevoked: false, portalTokenAt: new Date() },
+  });
+  await logAudit(session, "RENTSPACE_TENANT_SAVED", "rental_tenant", tenantId, { portalLink: "reset" });
+  revalidatePath(`/rentspace/tenants/${tenantId}`);
+  return { ok: true, url: portalUrl(token) };
+}
+
+/** เพิกถอนลิงก์เชิญ (ลิงก์เดิมเปิดไม่ได้ · ไม่ลบ token) */
+export async function actRevokeTenantPortalLink(tenantId: string): Promise<{ ok: true }> {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalTenant.findFirst({ where: { id: tenantId, orgId: session.user.org_id }, select: { id: true } }),
+    "ผู้เช่า",
+  );
+  await prisma.rentalTenant.update({ where: { id: tenantId }, data: { portalRevoked: true } });
+  await logAudit(session, "RENTSPACE_TENANT_SAVED", "rental_tenant", tenantId, { portalLink: "revoke" });
+  revalidatePath(`/rentspace/tenants/${tenantId}`);
+  return { ok: true };
+}
+
+/**
+ * ยืนยันสลิปที่ผู้เช่าแจ้งชำระเอง (pending → confirmed).
+ * atomic: flip pending→confirmed ด้วย updateMany (กันกดยืนยันซ้ำ = เพิ่มยอด 2 เท่า)
+ * แล้วค่อย increment paidAmount + คิดสถานะบิลใหม่ (สูตรเดียวกับ actRecordPayment).
+ */
+export async function actConfirmTenantPayment(paymentId: string): Promise<{ ok: true }> {
+  const session = await gateAdmin();
+  const pay = await prisma.rentalPayment.findFirst({
+    where: { id: paymentId, orgId: session.user.org_id },
+    select: { id: true, billId: true, amountThb: true, status: true },
+  });
+  if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
+  if (pay.status !== "pending") throw new Error("รายการนี้ตรวจไปแล้ว");
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: pay.billId, orgId: session.user.org_id },
+    select: { id: true, status: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล");
+  if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว");
+
+  const flipped = await prisma.rentalPayment.updateMany({
+    where: { id: pay.id, orgId: session.user.org_id, status: "pending" },
+    data: { status: "confirmed", receivedBy: session.user.id, reviewedBy: session.user.id, reviewedAt: new Date() },
+  });
+  if (flipped.count === 0) throw new Error("รายการนี้ตรวจไปแล้ว"); // มีคนยืนยันไปก่อนแล้ว (กัน race)
+
+  await prisma.rentalBill.update({ where: { id: bill.id }, data: { paidAmount: { increment: pay.amountThb } } });
+  await recomputeBillTotals(bill.id);
+  await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", bill.id, { confirmTenantSlip: true, amount: toNum(pay.amountThb) });
+  revalidatePath("/rentspace/payments");
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${bill.id}`);
+  revalidatePath("/rentspace");
+  return { ok: true };
+}
+
+/** ปฏิเสธสลิปที่ผู้เช่าแจ้งเอง (pending → rejected) · ไม่แตะยอด · เก็บเหตุผล */
+export async function actRejectTenantPayment(paymentId: string, note?: string): Promise<{ ok: true }> {
+  const session = await gateAdmin();
+  const pay = await prisma.rentalPayment.findFirst({
+    where: { id: paymentId, orgId: session.user.org_id },
+    select: { id: true, billId: true, status: true },
+  });
+  if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
+  const flipped = await prisma.rentalPayment.updateMany({
+    where: { id: pay.id, orgId: session.user.org_id, status: "pending" },
+    data: { status: "rejected", reviewedBy: session.user.id, reviewedAt: new Date(), reviewNote: (note || "").trim() || null },
+  });
+  if (flipped.count === 0) throw new Error("รายการนี้ตรวจไปแล้ว");
+  await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", pay.billId, { rejectTenantSlip: true });
+  revalidatePath("/rentspace/payments");
+  return { ok: true };
 }
 
 /**

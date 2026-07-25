@@ -307,6 +307,15 @@ export async function listPayments(orgId: string, limit = 300) {
   });
 }
 
+/** สลิปที่ผู้เช่าแจ้งชำระเอง รอเจ้าหน้าที่ตรวจ (pending · source=tenant) */
+export async function pendingTenantSlips(orgId: string) {
+  return prisma.rentalPayment.findMany({
+    where: { orgId, status: "pending", source: "tenant" },
+    orderBy: { createdAt: "desc" },
+    include: { bill: { include: { unit: true, tenant: true } } },
+  });
+}
+
 export async function pendingDiscounts(orgId: string) {
   return prisma.rentalDiscount.findMany({
     where: { orgId, status: "pending" },

@@ -14,6 +14,8 @@ import {
 import { RsPage, RsHeader, RsBadge, RsBackLink, RsCard, RsKpi } from "@/components/rentspace/ui";
 import TenantForm from "../_components/tenant-form";
 import CombinedPaymentButton from "../_components/combined-payment-button";
+import { PortalLinkCard } from "../_components/portal-link-card";
+import { portalUrl } from "@/lib/rentspace/portal";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
     (b) => toNum(b.totalAmount) - toNum(b.paidAmount) > 0 && b.status !== "paid",
   ).length;
   const depositHeld = tenant.contracts.reduce((s, c) => s + depositBalance(c.deposits), 0);
+  const portalLinkUrl = tenant.portalToken && !tenant.portalRevoked ? portalUrl(tenant.portalToken) : null;
 
   return (
     <RsPage>
@@ -101,6 +104,15 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         <RsKpi label="บิลทั้งหมด" value={`${liveBills.length} ใบ`} />
         <RsKpi label="เงินประกันคงเหลือ" value={formatBaht(depositHeld)} />
       </div>
+
+      {/* ลิงก์เชิญพอร์ทัลผู้เช่า */}
+      <PortalLinkCard
+        tenantId={tenant.id}
+        initialUrl={portalLinkUrl}
+        revoked={!!tenant.portalRevoked}
+        lineLinked={!!tenant.lineUserId}
+        emailOptIn={!!tenant.emailBillOptIn}
+      />
 
       {/* profile */}
       <RsCard className="p-5">

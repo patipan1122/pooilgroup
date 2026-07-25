@@ -7326,6 +7326,14 @@ model RentalTenant {
   // ผู้มีอำนาจลงนามแทน (กรณีผู้เช่าเป็นนิติบุคคล) — ใช้เติมช่อง "ลงชื่อ ผู้เช่า" ในสัญญา
   authorizedSignerName  String? @map("authorized_signer_name")
   authorizedSignerPhone String? @map("authorized_signer_phone")
+  // ── พอร์ทัลผู้เช่า (ลิงก์เชิญ) · ผูก LINE/อีเมล รับบิล+แจ้งเตือน (RentSpace tenant portal · 2026-07-24) ──
+  portalToken     String?   @unique @map("portal_token") // ลิงก์เชิญ = กุญแจเปิดพอร์ทัล (null = ยังไม่ออกลิงก์)
+  portalTokenAt   DateTime? @map("portal_token_at") @db.Timestamptz(6)
+  portalRevoked   Boolean   @default(false) @map("portal_revoked") // เพิกถอนลิงก์โดยไม่ลบ token
+  lineUserId      String?   @unique @map("line_user_id") // LINE userId จริง (จาก OA RentSpace) — ต่างจาก lineId (ข้อความเปล่า)
+  lineDisplayName String?   @map("line_display_name")
+  lineLinkedAt    DateTime? @map("line_linked_at") @db.Timestamptz(6)
+  emailBillOptIn  Boolean   @default(false) @map("email_bill_opt_in") // ผู้เช่าเลือกรับบิลทางอีเมล
   isActive    Boolean   @default(true) @map("is_active")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -7658,12 +7666,20 @@ model RentalPayment {
   slipUrl    String?  @map("slip_url")
   note       String?
   receivedBy String?  @map("received_by") @db.Uuid
+  // ── ผู้เช่าจ่ายเอง+แนบสลิป → รอเจ้าหน้าที่ตรวจ (money-safe · 2026-07-24) ──
+  // paidAmount ของบิลนับเฉพาะ status=confirmed เท่านั้น · pending ไม่นับจนกว่าจะยืนยัน
+  status     String    @default("confirmed") @map("status") // pending | confirmed | rejected · แถวเก่า/แอดมินบันทึก = confirmed
+  source     String    @default("staff") @map("source") // staff | tenant
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote String?   @map("review_note")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   @@index([orgId, billId])
   @@index([orgId, contractId])
+  @@index([orgId, status])
   @@map("rental_payment")
   @@schema("public")
 }
@@ -7705,6 +7721,26 @@ model RentalDocument {
 
   @@index([orgId, ownerType, ownerId])
   @@map("rental_document")
+  @@schema("public")
+}
+
+// ข่าวสาร/หนังสือแจ้งผู้เช่า — โชว์ในพอร์ทัลผู้เช่า (RentSpace tenant portal · 2026-07-24)
+model RentalAnnouncement {
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  projectId      String?   @map("project_id") @db.Uuid // null = แสดงผู้เช่าทุกโครงการ
+  title          String
+  body           String    @db.Text
+  attachmentUrls String[]  @default([]) @map("attachment_urls")
+  pinned         Boolean   @default(false) // ปักหมุดขึ้นบนสุด
+  isPublished    Boolean   @default(false) @map("is_published") // ร่าง vs เผยแพร่
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz(6)
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId, projectId, isPublished])
+  @@map("rental_announcement")
   @@schema("public")
 }
 

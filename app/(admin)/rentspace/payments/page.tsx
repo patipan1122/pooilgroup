@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Receipt, Banknote } from "lucide-react";
+import { Receipt, Banknote, Clock } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
@@ -12,8 +12,9 @@ import {
   currentPeriod,
   PAYMENT_METHODS,
 } from "@/lib/rentspace/format";
-import { listPayments, pendingDiscounts } from "@/lib/rentspace/data";
+import { listPayments, pendingDiscounts, pendingTenantSlips } from "@/lib/rentspace/data";
 import { DiscountDecisionButtons } from "../bills/[id]/_components/bill-detail-actions";
+import { SlipReviewButtons } from "./_components/slip-review-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,15 @@ export default async function PaymentsPage() {
   const orgId = session.user.org_id;
   const isAdmin = isAdminTier(session.user.role);
 
-  const [payments, pending] = await Promise.all([listPayments(orgId), pendingDiscounts(orgId)]);
+  const [payments, pending, tenantSlips] = await Promise.all([
+    listPayments(orgId),
+    pendingDiscounts(orgId),
+    pendingTenantSlips(orgId),
+  ]);
 
-  const collectedThisMonth = payments
+  // ยอด/ประวัติ นับเฉพาะการชำระที่ "ยืนยันแล้ว" — สลิปที่ผู้เช่าแจ้ง (pending) ยังไม่ถือว่าจ่าย
+  const confirmedPayments = payments.filter((p) => p.status === "confirmed");
+  const collectedThisMonth = confirmedPayments
     .filter((p) => isThisPeriod(p.paidOn))
     .reduce((s, p) => s + toNum(p.amountThb), 0);
 
@@ -40,15 +47,68 @@ export default async function PaymentsPage() {
       <RsBackLink href="/rentspace" label="กลับหน้าหลัก" />
       <RsHeader title="การชำระเงิน" subtitle="รับชำระ & อนุมัติส่วนลด" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <RsKpi
           label={`รับชำระเดือนนี้ (${periodLabel(currentPeriod())})`}
           value={formatBaht(collectedThisMonth)}
           tone="ok"
         />
+        <RsKpi label="สลิปรอตรวจ" value={tenantSlips.length} tone={tenantSlips.length ? "pending" : undefined} hint="ผู้เช่าแจ้ง" />
         <RsKpi label="รออนุมัติส่วนลด" value={pending.length} tone={pending.length ? "pending" : undefined} hint="คำขอ" />
-        <RsKpi label="รายการชำระทั้งหมด" value={payments.length} hint="รายการ" />
+        <RsKpi label="รายการชำระทั้งหมด" value={confirmedPayments.length} hint="รายการ" />
       </div>
+
+      {/* ───── สลิปรอตรวจ (ผู้เช่าแจ้งชำระเอง) ───── */}
+      {tenantSlips.length > 0 && (
+        <RsCard className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock className="h-4 w-4" style={{ color: "var(--rs-pending)" }} />
+            <h2 className="font-bold" style={{ color: "var(--rs-text)" }}>
+              สลิปรอตรวจ (ผู้เช่าแจ้งชำระเอง)
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {tenantSlips.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-start justify-between gap-3 py-2.5 border-b last:border-0"
+                style={{ borderColor: "var(--rs-border)" }}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Link
+                      href={`/rentspace/bills/${p.billId}`}
+                      className="text-[13.5px] font-semibold inline-flex items-center gap-1.5"
+                      style={{ color: "var(--rs-brand)" }}
+                    >
+                      <Receipt className="h-3.5 w-3.5" /> {p.bill.billNo}
+                    </Link>
+                    <span className="text-[13px]" style={{ color: "var(--rs-text)" }}>
+                      {p.bill.unit.code} · {tenantDisplayName(p.bill.tenant)}
+                    </span>
+                  </div>
+                  <div className="text-[13px] mt-0.5" style={{ color: "var(--rs-text-2)" }}>
+                    แจ้งโอน {formatBaht(toNum(p.amountThb))} · {thaiDateLong(p.paidOn)}
+                    {p.note ? ` · ${p.note}` : ""}
+                    {p.slipUrl ? (
+                      <a href={p.slipUrl} target="_blank" rel="noreferrer" className="ml-1.5" style={{ color: "var(--rs-brand)" }}>
+                        ดูสลิป
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+                {isAdmin ? (
+                  <SlipReviewButtons paymentId={p.id} />
+                ) : (
+                  <span className="text-[12px] shrink-0" style={{ color: "var(--rs-text-3)" }}>
+                    เฉพาะผู้ดูแลตรวจได้
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </RsCard>
+      )}
 
       {/* ───── pending discounts ───── */}
       <RsCard className="p-5">
@@ -110,7 +170,7 @@ export default async function PaymentsPage() {
             ประวัติการชำระเงิน
           </h2>
         </div>
-        {payments.length === 0 ? (
+        {confirmedPayments.length === 0 ? (
           <RsEmpty icon="💸" title="ยังไม่มีการชำระเงิน" hint="เมื่อบันทึกรับชำระจากหน้าบิล รายการจะมาแสดงที่นี่" />
         ) : (
           <>
@@ -128,7 +188,7 @@ export default async function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p) => (
+                {confirmedPayments.map((p) => (
                   <tr
                     key={p.id}
                     className="border-t hover:bg-[var(--rs-bg-2)] transition"
@@ -174,7 +234,7 @@ export default async function PaymentsPage() {
 
           {/* mobile card stack */}
           <div className="lg:hidden p-3 space-y-2">
-            {payments.map((p) => (
+            {confirmedPayments.map((p) => (
               <RsMobileCard
                 key={p.id}
                 href={`/rentspace/bills/${p.billId}`}
