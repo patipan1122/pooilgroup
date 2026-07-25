@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePurchaseType, type PurchaseType } from "@/lib/ledger/types";
 import { llCSlotForGl, LL_SLOT_VAT_CLAIMABLE, LL_SLOT_VAT_NONCLAIM } from "@/lib/ledger/coa-chart";
+import { isAutoPvEnabled } from "@/lib/ledger/trcloud-pv";
 
 // LedgerLine → TRCloud PO push (JP Sync company 45)
 //
@@ -38,13 +39,14 @@ function authFields(): Json {
   const securekey = createHash("md5").update(`${ENCRYPT_HEAD}t${timestamp}`).digest("hex");
   return { company_id: COMPANY_ID, passkey: PASSKEY, timestamp, securekey };
 }
-function asObj(v: unknown): Json | null {
+// exported for lib/ledger/trcloud-pv.ts reuse (same TRCloud auth/parse contract)
+export function asObj(v: unknown): Json | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
 }
 function asArr(v: unknown): unknown[] | null {
   return Array.isArray(v) ? v : null;
 }
-function pick(o: Json | null, ...keys: string[]): string | null {
+export function pick(o: Json | null, ...keys: string[]): string | null {
   if (!o) return null;
   for (const k of keys) {
     const v = o[k];
@@ -56,7 +58,8 @@ function pick(o: Json | null, ...keys: string[]): string | null {
   return null;
 }
 
-async function post(
+// exported for lib/ledger/trcloud-pv.ts — the ONE signed POST helper (same auth/signing)
+export async function post(
   path: string,
   payload: Json,
 ): Promise<{ ok: boolean; status: number; data: Json | null; raw: string }> {
@@ -82,7 +85,7 @@ async function post(
   return { ok: res.ok, status: res.status, data, raw };
 }
 
-function isSuccess(d: Json | null): boolean {
+export function isSuccess(d: Json | null): boolean {
   if (!d) return false;
   // The `success` flag is TRCloud's REAL operation result. Trust it absolutely.
   if (d.success === 1 || d.success === "1" || d.success === true) return true;
@@ -98,16 +101,16 @@ function isSuccess(d: Json | null): boolean {
   if (http && http.startsWith("2")) return true;
   return false;
 }
-function errMsg(r: { data: Json | null; raw: string }): string {
+export function errMsg(r: { data: Json | null; raw: string }): string {
   return pick(r.data, "message", "error") ?? (r.raw.slice(0, 200) || "TRCloud error");
 }
-function digitsOnly(s: string | null | undefined): string {
+export function digitsOnly(s: string | null | undefined): string {
   return (s ?? "").replace(/\D/g, "");
 }
 function normalizeKey(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
 }
-function round2(n: number): number {
+export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
@@ -393,7 +396,7 @@ async function buildLines(
   return { ok: true, lines };
 }
 
-function toIsoDate(d: Date | string | null): string {
+export function toIsoDate(d: Date | string | null): string {
   if (!d) return new Date().toISOString().slice(0, 10);
   if (typeof d === "string") return d.slice(0, 10);
   return d.toISOString().slice(0, 10);
@@ -527,6 +530,9 @@ const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
 // ใบ AP เครดิตส่ง type:"LL" + ค่าเข้า c-slot ของหมวด → journal ลงบัญชีถูกในตัวใบ (ไม่ตก 5919999).
 // ต้องมีสูตร "LL" ใน TRCloud ก่อน (นักบัญชีสร้าง). ไม่มี/หมวดไม่รู้จัก → fallback Credit[AP] (เดิม).
 const AP_FORMULA_LL = process.env.LEDGER_TRCLOUD_AP_FORMULA ?? "LL";
+// company_format ของใบ AP — ต้องตรงกับที่ PV (trcloud-pv.ts) อ้างถึงในช่อง ITEM.company_format
+// (live PV จริงใช้ค่านี้ ไม่ใช่ "AP" ตามตัวอย่างในเอกสาร). One source of truth. ค่า default = ค่าเดิม "JPS_AP".
+export const AP_COMPANY_FORMAT = process.env.TRCLOUD_AP_COMPANY_FORMAT ?? "JPS_AP";
 
 export async function convertExpensePoToAp(
   e: PushableExpense,
@@ -574,7 +580,16 @@ export async function convertExpensePoToAp(
   // 4) create AP (บัญชีจริง). ใบเสนอราคา / VAT ขอคืนไม่ได้ → tax_report=0 (ไม่เข้า ภ.พ.30).
   const issue = toIsoDate(e.docDate);
   const taxReport = e.docType === "quotation" || !eff.inputVatClaimable ? "0" : "1";
-  const apType = (e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
+  // FEATURE FLAG (LEDGER_AUTO_PV_ENABLED):
+  //  • ON  → AP เป็น "Credit[AP]" (ตั้งเจ้าหนี้) เสมอ + approve_status="yes" → ฝั่งจ่ายไปโพสต์ที่ใบ PV
+  //          (Dr เจ้าหนี้ / Cr ธนาคาร). ถ้าใช้ Cash[AP] จะ Cr ธนาคารซ้ำกับ PV = ลงจ่ายซ้ำ.
+  //  • OFF → พฤติกรรมเดิม 100%: Cash[AP] ถ้าจ่ายแล้ว / Credit[AP] ถ้ายังไม่จ่าย · approve_status="wait" · company_format เดิม.
+  const autoPv = isAutoPvEnabled();
+  const apType = autoPv
+    ? AP_TYPE_CREDIT
+    : ((e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT);
+  const apApproveStatus = autoPv ? "yes" : "wait";
+  const apCompanyFormat = autoPv ? AP_COMPANY_FORMAT : "JPS_AP";
   const slipNote = opts.slipUrl ? ` · สลิปโอน: ${opts.slipUrl}` : "";
   // สูตร "LL" — ลงบัญชีต่อหมวดผ่าน "ช่อง c" ในตัวใบ AP (เฉพาะเคสเครดิต + หมวดมาตรฐานที่มี c-slot).
   // ส่ง c<หมวด>=ยอดสุทธิ (net) + c22/c23=VAT (ถ้ามี) → grand_total(เจ้าหนี้) auto จาก product.
@@ -595,7 +610,7 @@ export async function convertExpensePoToAp(
     issue_date: issue,
     due_date: issue,
     tax_date: issue,
-    company_format: "JPS_AP",
+    company_format: apCompanyFormat,
     document_number: "",
     payment_term: "0",
     reference: e.docCode,
@@ -603,8 +618,8 @@ export async function convertExpensePoToAp(
     wht: String(round2(e.wht)),
     tax_option: "in",           // ราคา VAT-inclusive (ค่าใช้จ่ายเก็บยอดรวม VAT)
     tax_report: taxReport,
-    type: useLL ? AP_FORMULA_LL : apType, // LL (ลงบัญชีต่อหมวด) ถ้าหมวดมี c-slot · ไม่งั้น Cash/Credit[AP] เดิม
-    approve_status: "wait",     // ร่าง — บัญชี approve ก่อน post
+    type: useLL ? AP_FORMULA_LL : apType, // LL ลงบัญชีต่อหมวด · ไม่งั้น Cash/Credit[AP] (apType: flag ON=Credit)
+    approve_status: apApproveStatus, // flag ON: "yes" (auto-approve) · OFF: "wait" (ร่าง — บัญชี approve)
     department: eff.branchTrcloudDepartment,
     project: eff.branchTrcloudProject ?? "",
     invoice_note: (e.note ? `${e.note} · ` : "") + `LedgerLine · อ้างอิง ${e.docCode}${slipNote}`,

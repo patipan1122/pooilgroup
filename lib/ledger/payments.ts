@@ -13,6 +13,7 @@
 // payment row, so a slip can never mark a bill paid without leaving its evidence.
 import { prisma } from "@/lib/prisma";
 import { autoConvertAfterSlip } from "@/lib/ledger/ap-auto-convert";
+import { createPvForPaidAp, isAutoPvEnabled } from "@/lib/ledger/trcloud-pv";
 
 /** Duck-typed Prisma error-code check (repo idiom — no value import of Prisma). */
 function errCode(e: unknown): string | null {
@@ -127,6 +128,19 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
     // บันทึกการจ่าย (เงินโอนจริง) พัง/rollback. เป็นงานตามหลังที่ retry ได้ผ่านปุ่ม "แปลงเป็น AP".
     if (result.marked && matchedExpenseId) {
       await autoConvertAfterSlip(orgId, companyId, matchedExpenseId, markedBy ?? null);
+      // AP มีแล้ว → ออกใบสำคัญจ่าย (PV) ให้ฝั่งจ่ายเงินอัตโนมัติ (Dr เจ้าหนี้ / Cr ธนาคาร).
+      // 🚩 FEATURE FLAG: ทำงานต่อเมื่อ LEDGER_AUTO_PV_ENABLED=on เท่านั้น → deploy แบบปิด = พฤติกรรมเดิม 100%.
+      // best-effort เช่นกัน (createPvForPaidAp กลืน error เอง · idempotent) → ไม่บล็อก flow.
+      // v1: ธนาคารต้นทาง default = SCB (813-409-4107). TODO v1.1: source-bank picker ใน dialog ขอโอน.
+      if (isAutoPvEnabled()) {
+        await createPvForPaidAp({
+          orgId,
+          companyId,
+          expenseId: matchedExpenseId,
+          sourceBankCode: "SCB",
+          actorUserId: markedBy ?? null,
+        });
+      }
     }
     return { ok: true, paymentId: result.paymentId, marked: result.marked };
   } catch (e) {

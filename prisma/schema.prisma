@@ -6569,6 +6569,12 @@ model LedgerExpense {
   trcloudApDocNo        String?             @map("trcloud_ap_doc_no") // เลขที่เอกสาร AP
   trcloudApAt           DateTime?           @map("trcloud_ap_at") @db.Timestamptz(6)
   trcloudApError        String?             @map("trcloud_ap_error")
+  // — จ่ายเงิน AP → ใบสำคัญจ่าย PV (payment voucher, CEO 2026-07-25) — พอบิลถูกจ่าย (สลิป/เงินสด)
+  //   และแปลงเป็น AP แล้ว → ออก PV อัตโนมัติ: Dr เจ้าหนี้ 2101000 / Cr บัญชีธนาคารที่จ่าย (เลือกจาก type label).
+  trcloudPvDocId        String?             @map("trcloud_pv_doc_id") // id ของ PV ในระบบ TRCloud
+  trcloudPvDocNo        String?             @map("trcloud_pv_doc_no") // เลขที่เอกสาร PV
+  trcloudPvAt           DateTime?           @map("trcloud_pv_at") @db.Timestamptz(6)
+  trcloudPvError        String?             @map("trcloud_pv_error")
   // — Inventory STOCK-IN (รับเข้าสต๊อก, LEDGER_STOCKIN_V1) — แยกจาก AP-expense push.
   trcloudStockinDocId   String?             @map("trcloud_stockin_doc_id")
   trcloudStockinNo      String?             @map("trcloud_stockin_no")

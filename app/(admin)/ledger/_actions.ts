@@ -56,6 +56,7 @@ import {
 // ย้ายไป lib/ledger/ap-auto-convert.ts + lib/ledger/pushable.ts แล้ว (แชร์กับ auto-trigger).
 import { loadPushable } from "@/lib/ledger/pushable";
 import { runApConversion } from "@/lib/ledger/ap-auto-convert";
+import { createPvForPaidAp } from "@/lib/ledger/trcloud-pv";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
@@ -1805,6 +1806,51 @@ export async function convertExpenseToAp(
   if (!light) return { ok: false, error: "ไม่พบรายการ" };
   // core เดียวกับ auto-trigger — guard/ตรรกะบัญชีทั้งหมดอยู่ใน runApConversion แล้ว.
   return runApConversion(orgId, light.companyId, id, session.user.id);
+}
+
+/**
+ * MANUAL TEST — ออกใบสำคัญจ่าย (PV) ให้ AP ที่จ่ายแล้ว "ทีละใบ" (admin/บัญชีเท่านั้น).
+ * ใช้ทดสอบ path ออก PV แบบคุมได้ก่อนเปิด auto-hook (สลิป → AP → PV) จริง.
+ * createPvForPaidAp เป็น best-effort + idempotent — เรียกซ้ำได้ (มี PV แล้ว-ข้าม).
+ * คืนผลลัพธ์ที่ stamp ลง DB (trcloudPvDocNo / trcloudPvError) ให้ผู้ทดสอบเห็นทันที.
+ *
+ * วิธีเรียก: import { testCreatePvForAp } from ".../_actions"; แล้ว testCreatePvForAp("<expenseId>")
+ * (หรือผูกปุ่ม admin ชั่วคราว). ต้องเป็นบิลที่ paid + แปลงเป็น AP แล้ว (มี trcloudApDocNo).
+ */
+export async function testCreatePvForAp(
+  expenseId: string,
+): Promise<ActionResult & { pvDocNo?: string | null; pvError?: string | null }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลออกใบสำคัญจ่ายได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud" };
+  }
+  const orgId = session.user.org_id;
+  const light = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: { companyId: true },
+  });
+  if (!light) return { ok: false, error: "ไม่พบรายการ" };
+  await createPvForPaidAp({
+    orgId,
+    companyId: light.companyId,
+    expenseId,
+    sourceBankCode: "SCB", // v1: default SCB (813-409-4107)
+    actorUserId: session.user.id,
+  });
+  // อ่านผลที่ stamp กลับ (best-effort — createPvForPaidAp ไม่ throw)
+  const after = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: { trcloudPvDocNo: true, trcloudPvError: true },
+  });
+  if (after?.trcloudPvError) {
+    return { ok: false, error: after.trcloudPvError, pvError: after.trcloudPvError };
+  }
+  return { ok: true, pvDocNo: after?.trcloudPvDocNo ?? null, pvError: null };
 }
 
 /** แปลง PO → AP หลายใบ (multi-select · ปุ่ม "แปลง AP (N)" ด้านบน). Company-scoped:
