@@ -6,20 +6,21 @@ import type { TrcloudDocKind } from "@/lib/ledger/trcloud-docs-data";
 type Props = {
   kind: TrcloudDocKind;
   counts: { po: number; ap: number };
-  facets: { companyFormat: string[]; department: string[]; project: string[]; status: string[] };
+  facets: { companyFormat: string[]; department: string[]; project: string[]; status: string[]; category: string[] };
   current: {
     companyFormat?: string;
     department?: string;
     project?: string;
     status?: string;
     source?: string;
+    category?: string;
     from?: string;
     to?: string;
     q?: string;
   };
 };
 
-const FACET_KEYS = ["companyFormat", "department", "project", "status", "source", "from", "to", "q"] as const;
+const FACET_KEYS = ["companyFormat", "department", "project", "status", "source", "category", "from", "to", "q"] as const;
 
 export function TrcloudDocsFilters({ kind, counts, facets, current }: Props) {
   const router = useRouter();
@@ -42,7 +43,7 @@ export function TrcloudDocsFilters({ kind, counts, facets, current }: Props) {
     // ชุดเลข/นิติบุคคล/สาขา/สถานะ เป็นค่าเฉพาะแต่ละชนิด → เคลียร์ตอนสลับ (คง q + วันที่)
     const p = new URLSearchParams(sp.toString());
     p.set("kind", next);
-    for (const k of ["companyFormat", "department", "project", "status"]) p.delete(k);
+    for (const k of ["companyFormat", "department", "project", "status", "category"]) p.delete(k);
     push(p);
   }
 
@@ -149,6 +150,21 @@ export function TrcloudDocsFilters({ kind, counts, facets, current }: Props) {
             <option key={v} value={v}>{v}</option>
           ))}
         </select>
+
+        {/* หมวดค่าใช้จ่าย — เฉพาะแท็บ AP (กรองจาก "หมวดที่เราตั้ง" ของใบที่ส่งจากเรา) */}
+        {kind === "AP" && facets.category.length > 0 && (
+          <select
+            aria-label="หมวดค่าใช้จ่าย"
+            className={selectCls}
+            value={current.category ?? ""}
+            onChange={(e) => setParam("category", e.target.value)}
+          >
+            <option value="">ทุกหมวด</option>
+            {facets.category.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        )}
 
         <div className="flex items-center gap-1 text-sm text-zinc-500">
           <input

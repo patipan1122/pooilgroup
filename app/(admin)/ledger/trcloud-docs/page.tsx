@@ -29,6 +29,7 @@ export default async function TrcloudDocsPage({
     project?: string;
     status?: string;
     source?: string;
+    category?: string;
     from?: string;
     to?: string;
     q?: string;
@@ -48,6 +49,7 @@ export default async function TrcloudDocsPage({
     project: sp.project?.trim() || undefined,
     status: sp.status?.trim() || undefined,
     source,
+    category: sp.category?.trim() || undefined,
     from: sp.from?.trim() || undefined,
     to: sp.to?.trim() || undefined,
     q: sp.q?.trim() || undefined,
