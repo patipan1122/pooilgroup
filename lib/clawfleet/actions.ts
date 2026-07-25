@@ -39,7 +39,9 @@ type ResultOf<T> = { ok: true; data: T } | { ok: false; error: string };
 // ให้จอมือถือเด้ง dropdown เหตุผล แล้วส่งซ้ำพร้อม shortReason.
 type SubmitBranchEventResult =
   | { ok: true; data: { id: string } }
-  | { ok: false; error: string; needsReason?: boolean };
+  // gateKind บอกจอว่าเป็นด่านแบบไหน: SHORT (เงินขาด) · INTEGRITY (มิเตอร์เสีย/ตัวเลขผิดธรรมชาติ)
+  // → จอเลือกข้อความ + รายการเหตุผลให้ตรง (CEO 2026-07-25).
+  | { ok: false; error: string; needsReason?: boolean; gateKind?: "SHORT" | "INTEGRITY" };
 
 // R4 sentinel — โยนจากใน $transaction เมื่อเติมเกินสต๊อกคลังสาขา · catch แปลงเป็น
 // error ข้อความชัด (แยกจาก DB error ทั่วไป) แล้ว rollback ทั้งก้อน (ไม่ตัดสต๊อกครึ่ง ๆ).
@@ -390,18 +392,29 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     medianRevenueCents,
     isBaselineRound,
   });
-  // blockReason = data-integrity (C2/M5/P4) → บล็อกแม้ round-1 (ตัวเลขอ่านผิด)
-  if (derived.blockReason) return { ok: false, error: derived.blockReason };
+  const shortReason = data.shortReason?.trim() || null;
+  const eventFlags: string[] = [...derived.flags];
+  let eventNotes = data.notes ?? null;
+
+  // CEO 2026-07-25 · data-integrity block (C2 มิเตอร์ถอยหลัง · M5 มิเตอร์นิ่งแต่มีเงิน · P4 ตุ๊กตาออกเหรียญไม่เข้า)
+  //   เดิม = บล็อกตาย กดส่งไม่ได้เลย → ตู้ที่มิเตอร์เสียจริง บันทึกเงินที่นับได้ไม่ได้ (รอบค้าง).
+  //   ใหม่ = "ด่านนุ่ม" เหมือนเงินขาด: ยังไม่ให้เหตุผล → คืน needsReason (จอเด้งให้เลือก "มิเตอร์เสีย/…").
+  //   ให้เหตุผลแล้ว → บันทึกเงินที่นับจริง + ติดธง (M5/C2/P4) + audit note ไว้ให้ผู้จัดการตรวจ.
+  //   เงินยังบันทึกตรงตัว (cashCountedCents) · deriveEvent กันธง "เงินเกิน" หลอกให้แล้วเมื่อมิเตอร์เสีย.
+  if (derived.blockReason && !shortReason) {
+    return { ok: false, error: derived.blockReason, needsReason: true, gateKind: "INTEGRITY" };
+  }
+  if (derived.blockReason && shortReason) {
+    const bNote = `[OVERRIDE] ฝืนบันทึก (มิเตอร์เสีย): ${derived.blockReason}`;
+    eventNotes = eventNotes ? `${eventNotes}\n${bNote}` : bNote;
+  }
 
   // N5 (blueprint §2 N5): server เป็นคนตัดสิน SHORT/OVER (ไม่เชื่อ client).
   // verdict=SHORT + ยังไม่ให้เหตุผล → soft gate: คืน needsReason ให้จอเด้ง dropdown.
   // verdict=OVER → รับได้ + บันทึก override marker (ธง M4/M6 มีอยู่แล้ว · เติม note).
   // round-1 (verdict=null) → ไม่มี gate.
-  const shortReason = data.shortReason?.trim() || null;
-  const eventFlags: string[] = [...derived.flags];
-  let eventNotes = data.notes ?? null;
   if (derived.verdict === "SHORT" && !shortReason) {
-    return { ok: false, error: "เงินขาด · เลือกเหตุผลก่อนบันทึก", needsReason: true };
+    return { ok: false, error: "เงินขาด · เลือกเหตุผลก่อนบันทึก", needsReason: true, gateKind: "SHORT" };
   }
   if (derived.verdict === "OVER") {
     // override marker — เงินเกินผ่านได้เงียบ ๆ แต่บันทึกไว้ว่ารับทั้งที่เกิน
@@ -435,6 +448,12 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
           cashCountedCents: data.cashCountedCents,
           dollMeterBefore: machine.lastDollMeter,
           dollMeterAfter: data.dollMeterAfter,
+          // มิเตอร์ 2 ตัว (CEO 2026-07-25): เก็บทั้ง "บน/เฟือง" (Top) และ "ล่าง/ดิจิตอล" (Bottom = ค่าที่ใช้คิดเงิน)
+          //   ไว้ให้ผู้จัดการเทียบย้อนหลังว่าตัวไหนเพี้ยน. เดิมมีแต่ baseline ที่เขียน 4 คอลัมน์นี้.
+          meterMoneyTop: data.coinMeterTop ?? null,
+          meterMoneyBottom: data.coinMeterAfter,
+          meterDollTop: data.dollMeterTop ?? null,
+          meterDollBottom: data.dollMeterAfter,
           stockBefore: stockBaseline, // A2/A3: server-truth baseline (see above)
           stockAfter: data.stockAfter,
           refillQty: effectiveRefillQty, // ยอดเติมรวมทุก SKU

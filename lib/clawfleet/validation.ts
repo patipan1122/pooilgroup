@@ -60,6 +60,14 @@ export function deriveEvent(input: EventInput): EventDerived {
   const flags: AnomalyFlag[] = [];
   let blockReason: string | null = null;
 
+  // COIN meter ที่ "เชื่อไม่ได้" (untrusted): ถอยหลัง หรือ ไม่ขยับแต่มีเงินสด (CEO 2026-07-25).
+  // กรณีนี้ expectedRevenue คิดจากมิเตอร์ที่เสีย → cashVariance เป็น "ตัวเลขหลอก" (artifact) ไม่ใช่
+  // เงินขาด/เงินเกินจริง → จึง "ไม่" ติดธง M2/M3/M4/M6 (กันขึ้น "เงินเกิน" ทั้งที่มิเตอร์เสีย).
+  // blockReason (ด่านนุ่ม) ยังเซ็ตตามปกติ — พนักงานเลือกเหตุผล "มิเตอร์เสีย" แล้วบันทึกเงินจริงได้.
+  const coinMeterUntrusted =
+    input.coinMeterAfter < input.coinMeterBefore ||
+    (coinsDelta === 0 && input.cashCountedCents > 0);
+
   // ===== C2 — meter regress (BLOCK) =====
   if (input.coinMeterAfter < input.coinMeterBefore) {
     flags.push(ANOMALY_FLAGS.C2_METER_REGRESS);
@@ -75,22 +83,24 @@ export function deriveEvent(input: EventInput): EventDerived {
     blockReason = "มิเตอร์ตุ๊กตาถอยหลัง · ตรวจตัวเลข";
   }
 
-  // ===== M — Money =====
-  const absCash = Math.abs(cashVarianceCents);
-  if (cashVarianceCents < 0) {
-    if (absCash > DEFAULTS.CASH_VARIANCE_WARN_CENTS || Math.abs(cashVariancePct) > 0.05) {
-      flags.push(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR);
-    } else if (absCash > DEFAULTS.CASH_VARIANCE_ACCEPTABLE_CENTS) {
-      flags.push(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR);
-    }
-  } else if (cashVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
-    // R4b (ultrareview 2026-07-01): เกณฑ์เงินเกินเดิม hardcode ฿50 ทำให้ทอนพลาดนิดหน่อย
-    // ก็ติดธง → ใช้เพดานเดียวกับตอนปิดรอบ (CASH_VARIANCE_WARN_CENTS = ฿100).
-    // เกินก้อนใหญ่ (> CASH_OVER_MAJOR_CENTS) ยกระดับเป็น M6 (P1 บังคับตรวจ).
-    if (cashVarianceCents > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
-      flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
-    } else {
-      flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+  // ===== M — Money (ข้ามเมื่อ coin meter เชื่อไม่ได้ · CEO 2026-07-25 "มิเตอร์เสีย ≠ เงินเกิน") =====
+  if (!coinMeterUntrusted) {
+    const absCash = Math.abs(cashVarianceCents);
+    if (cashVarianceCents < 0) {
+      if (absCash > DEFAULTS.CASH_VARIANCE_WARN_CENTS || Math.abs(cashVariancePct) > 0.05) {
+        flags.push(ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR);
+      } else if (absCash > DEFAULTS.CASH_VARIANCE_ACCEPTABLE_CENTS) {
+        flags.push(ANOMALY_FLAGS.M2_CASH_SHORT_MINOR);
+      }
+    } else if (cashVarianceCents > DEFAULTS.CASH_VARIANCE_WARN_CENTS) {
+      // R4b (ultrareview 2026-07-01): เกณฑ์เงินเกินเดิม hardcode ฿50 ทำให้ทอนพลาดนิดหน่อย
+      // ก็ติดธง → ใช้เพดานเดียวกับตอนปิดรอบ (CASH_VARIANCE_WARN_CENTS = ฿100).
+      // เกินก้อนใหญ่ (> CASH_OVER_MAJOR_CENTS) ยกระดับเป็น M6 (P1 บังคับตรวจ).
+      if (cashVarianceCents > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
+        flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
+      } else {
+        flags.push(ANOMALY_FLAGS.M4_CASH_OVER);
+      }
     }
   }
 
@@ -238,13 +248,31 @@ export function deriveBranchCrossCheck(
   let perMachinePrizeBreach = false;
   // ultrareview 2026-07-01: เงินเกินก้อนใหญ่ต่อตู้ ต้องไม่ถูกกลบด้วยการหักลบกับตู้อื่น
   let perMachineCashOverMajor = false;
+  // CEO 2026-07-25 · ตู้ที่ "มิเตอร์เสีย" (ถูกฝืนบันทึกด้วยเหตุผล) → ดันรอบเข้า review (ธง M5)
+  // แต่ไม่ให้เป็น "เงินเกิน/ขาด" หลอก (มิเตอร์เทียบไม่ได้ → เงินที่นับ = ความจริง = expected).
+  let hasMeterUntrusted = false;
   for (const e of events) {
-    const coinsDelta = Math.max(0, e.coinMeterAfter - e.coinMeterBefore);
-    const evExpected = coinsDelta * e.cashPerCoinCents;
+    const rawCoinDelta = e.coinMeterAfter - e.coinMeterBefore;
+    // มิเตอร์ที่เชื่อไม่ได้ (สอดคล้อง deriveEvent): ถอยหลัง หรือ นิ่งแต่มีเงิน. event แบบนี้อยู่ใน DB
+    // ได้เพราะพนักงานเลือกเหตุผลฝืนส่ง (มิเตอร์เสีย) เท่านั้น → เงินที่นับได้ = ความจริง.
+    const coinUntrusted =
+      rawCoinDelta < 0 || (rawCoinDelta === 0 && e.cashCountedCents > 0);
+    const dollUntrusted = e.dollMeterAfter < e.dollMeterBefore;
+    if (coinUntrusted || dollUntrusted) hasMeterUntrusted = true;
+
+    const coinsDelta = Math.max(0, rawCoinDelta);
+    // มิเตอร์เหรียญเสีย → expected = เงินที่นับจริง (variance 0 · ไม่ขึ้นขาด/เกินหลอก).
+    const evExpected = coinUntrusted ? e.cashCountedCents : coinsDelta * e.cashPerCoinCents;
     expectedCashCents += evExpected;
     actualCashCents += e.cashCountedCents;
-    prizeMeterOut += Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
-    prizeCountedOut += e.stockBefore + e.refillQty - e.stockAfter;
+
+    const evPrizePhysical = e.stockBefore + e.refillQty - e.stockAfter;
+    // มิเตอร์ตุ๊กตาเสีย → ยึด "นับจริง" (physical) เป็นตัวเทียบ → ไม่ขึ้นตุ๊กตาหาย/เกินหลอก.
+    const evPrizeMeter = dollUntrusted
+      ? evPrizePhysical
+      : Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
+    prizeMeterOut += evPrizeMeter;
+    prizeCountedOut += evPrizePhysical;
 
     const evVar = e.cashCountedCents - evExpected;
     const evPct = evExpected > 0 ? Math.abs(evVar / evExpected) : 0;
@@ -254,8 +282,6 @@ export function deriveBranchCrossCheck(
     if (evVar > DEFAULTS.CASH_OVER_MAJOR_CENTS) {
       perMachineCashOverMajor = true;
     }
-    const evPrizeMeter = Math.max(0, e.dollMeterAfter - e.dollMeterBefore);
-    const evPrizePhysical = e.stockBefore + e.refillQty - e.stockAfter;
     if (Math.abs(evPrizeMeter - evPrizePhysical) > DEFAULTS.DOLL_VARIANCE_ACCEPTABLE) {
       perMachinePrizeBreach = true;
     }
@@ -312,6 +338,11 @@ export function deriveBranchCrossCheck(
   // เงินเกินก้อนใหญ่ต่อตู้ ถูกกลบด้วย netting → ดันทั้งรอบเข้า review (mirror F5)
   if (perMachineCashOverMajor && !flags.includes(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR)) {
     flags.push(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR);
+  }
+  // CEO 2026-07-25 · มีตู้มิเตอร์เสีย (ฝืนบันทึก) → ติดธง M5 ให้ทั้งรอบเข้า review เสมอ
+  // (ให้ผู้จัดการเห็นเป็น "มิเตอร์เสีย" ไม่ปล่อยผ่านเงียบ · ไม่ปนกับ "เงินเกิน").
+  if (hasMeterUntrusted && !flags.includes(ANOMALY_FLAGS.M5_METER_NO_MOVE_BUT_CASH)) {
+    flags.push(ANOMALY_FLAGS.M5_METER_NO_MOVE_BUT_CASH);
   }
   const status: "CLOSED" | "ANOMALY_REVIEW" = flags.length > 0 ? "ANOMALY_REVIEW" : "CLOSED";
 

@@ -119,6 +119,9 @@ type SubmitBranchEventArgs = {
   machineId: string;
   coinMeterAfter: number;
   dollMeterAfter: number;
+  // มิเตอร์ "บน/เฟือง" (Top) — เก็บเป็นหลักฐานเทียบ 2 ตัว (คิดเงินยังใช้ coinMeterAfter=ล่าง/ดิจิตอล)
+  coinMeterTop?: number;
+  dollMeterTop?: number;
   cashCountedCents: number;
   stockBefore: number;
   refillQty: number;
@@ -886,6 +889,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // N5 · ด่านเงินไม่ตรง — เมื่อ submitBranchEvent คืน needsReason (verdict=SHORT) → เก็บ payload
   // เดิมไว้ resubmit พร้อม shortReason (ไม่ทำใหม่หมด · แค่เติมเหตุผล). null = ไม่มีด่าน.
   const [pendingShort, setPendingShort] = useState<SubmitBranchEventArgs | null>(null);
+  // CEO 2026-07-25 · ชนิดด่าน + ข้อความจาก server (SHORT=เงินขาด · INTEGRITY=มิเตอร์เสีย/ตัวเลขผิดธรรมชาติ)
+  // → ให้ MismatchGate โชว์ข้อความ+รายการเหตุผลให้ตรงกับปัญหา. null = ไม่มีด่าน.
+  const [pendingGate, setPendingGate] = useState<{ kind: "SHORT" | "INTEGRITY"; message: string } | null>(null);
   // 🆕 คืนตุ๊กตาเข้าคลัง — ตู้ที่กำลังเปิด bottom-sheet คืน (null = ปิด). local เฉพาะหน้าจอ.
   const [returnMachineId, setReturnMachineId] = useState<string | null>(null);
   // item 7 · เปิด sheet คืนในโหมด "เปลี่ยน" (header hint "คืนตัวเก่าก่อน แล้วเติมใหม่" + ปุ่มเติมต่อหลังคืน).
@@ -1307,6 +1313,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       machineId: machine.id,
       coinMeterAfter: n0(f.coinDigi),
       dollMeterAfter: n0(f.dollDigi),
+      // มิเตอร์ "บน/เฟือง" — ส่งขึ้นเก็บด้วย (เดิมถูกทิ้ง) เพื่อเทียบว่าตัวไหนเพี้ยน (CEO 2026-07-25)
+      coinMeterTop: n0(f.coinGear),
+      dollMeterTop: n0(f.dollGear),
       cashCountedCents: Math.round(n0(f.cash) * 100),
       // ⚠️ anti-cheat: stockBefore = สต๊อกรอบก่อน (lastDollStock = f.last) ไม่ใช่ที่นับตอนนี้.
       // server: prizeCountedOut = stockBefore + refillQty − stockAfter = f.last − f.left = dispensed
@@ -1351,6 +1360,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           // (ไม่ใช่ error แข็ง · เก็บ payload เดิมไว้ resubmit พร้อม shortReason).
           if (ev.needsReason) {
             setPendingShort(args);
+            // จำชนิดด่าน + ข้อความ (เงินขาด / มิเตอร์เสีย) → จอโชว์เหตุผลให้ตรง
+            setPendingGate({ kind: ev.gateKind ?? "SHORT", message: ev.error || "" });
             return;
           }
           // แสดง "เหตุผลจริง" จาก server (เช่น ต้องตั้ง baseline · สต๊อกไม่พอ · มิเตอร์น้อยกว่าครั้งก่อน)
@@ -1361,6 +1372,7 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         }
         // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
         setPendingShort(null);
+        setPendingGate(null);
         const close = await closeBranchSession({ sessionId: args.sessionId });
         if (!close.ok) {
           console.error("[clawos] closeBranchSession failed:", close.error);
@@ -1638,10 +1650,19 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
           onAddRefillLine={(pid, name) => dispatch({ type: "addRefillLine", productId: pid, name })}
           onSetRefillLineQty={(pid, qty) => dispatch({ type: "setRefillLineQty", productId: pid, qty })}
           onRemoveRefillLine={(pid) => dispatch({ type: "removeRefillLine", productId: pid })}
-          // N5 · ด่านเงินไม่ตรง — เปิดเมื่อ server คืน needsReason (verdict=SHORT). ยกเลิก = ล้าง payload ค้าง.
+          // ด่านเงินไม่ตรง/มิเตอร์เสีย — เปิดเมื่อ server คืน needsReason. ยกเลิก = ล้าง payload ค้าง.
           mismatchGate={
             pendingShort
-              ? { active: true, onConfirmShort: confirmShort, onCancel: () => setPendingShort(null) }
+              ? {
+                  active: true,
+                  gateKind: pendingGate?.kind ?? "SHORT",
+                  message: pendingGate?.message ?? "",
+                  onConfirmShort: confirmShort,
+                  onCancel: () => {
+                    setPendingShort(null);
+                    setPendingGate(null);
+                  },
+                }
               : null
           }
           // ขั้นเสร็จ (6): back = กลับหน้าหลัก+รีเซ็ต (กันย้อนเข้าไปแก้ยอดที่ส่งไปแล้ว)
@@ -4775,8 +4796,14 @@ function FlowScreen(props: {
   onAddRefillLine: (productId: string, name: string) => void;
   onSetRefillLineQty: (productId: string, qty: number) => void;
   onRemoveRefillLine: (productId: string) => void;
-  // N5 · ด่านเงินไม่ตรง (verdict=SHORT) · null = ไม่มีด่าน.
-  mismatchGate: { active: boolean; onConfirmShort: (reason: string, note: string) => void; onCancel: () => void } | null;
+  // ด่านเงินไม่ตรง/มิเตอร์เสีย · null = ไม่มีด่าน. gateKind บอกชนิด (SHORT=เงินขาด · INTEGRITY=มิเตอร์เสีย).
+  mismatchGate: {
+    active: boolean;
+    gateKind: "SHORT" | "INTEGRITY";
+    message: string;
+    onConfirmShort: (reason: string, note: string) => void;
+    onCancel: () => void;
+  } | null;
   onBack: () => void;
   onExitToList: () => void; // FIX-3 · กลับหน้ารายการตู้กลางคัน (เลือกตู้อื่น)
   primary: { label: string; color: string; action: () => void };
@@ -5338,11 +5365,12 @@ function FlowScreen(props: {
               </div>
             )}
 
-            {/* N5 · ด่านเงินขาด — server คืน needsReason (verdict=SHORT) → ต้องเลือกเหตุผลก่อนส่งซ้ำ */}
+            {/* ด่านเงินขาด/มิเตอร์เสีย — server คืน needsReason → ต้องเลือกเหตุผลก่อนส่งซ้ำ */}
             {props.mismatchGate?.active && (
               <div style={{ marginTop: 14 }}>
                 <MismatchGate
-                  verdict="SHORT"
+                  gateKind={props.mismatchGate.gateKind}
+                  message={props.mismatchGate.message}
                   onConfirmShort={props.mismatchGate.onConfirmShort}
                   onProceed={props.mismatchGate.onCancel}
                 />

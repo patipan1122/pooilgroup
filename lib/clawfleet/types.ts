@@ -191,8 +191,12 @@ export const SubmitBranchEventSchema = z
     sessionId: zUUID(),
     machineId: zUUID(),
     qrToken: z.string().min(1).optional(), // optional ใน branch flow (พนง.อยู่สาขาตัวเองแล้ว)
-    coinMeterAfter: z.number().int().min(0), // มิเตอร์เหรียญวันนี้
-    dollMeterAfter: z.number().int().min(0), // มิเตอร์ตุ๊กตาวันนี้ (sensor)
+    coinMeterAfter: z.number().int().min(0), // มิเตอร์เหรียญวันนี้ (ล่าง/ดิจิตอล — ใช้คิดเงิน)
+    dollMeterAfter: z.number().int().min(0), // มิเตอร์ตุ๊กตาวันนี้ (ล่าง/ดิจิตอล · sensor)
+    // มิเตอร์ "บน/เฟือง" (Top) — CEO 2026-07-25 · ตู้มีมิเตอร์ 2 ตัว. เก็บคู่กับตัวล่างเป็นหลักฐาน
+    // เทียบว่าตัวไหนเพี้ยน. optional · ไม่กระทบสูตรคิดเงิน (ยังใช้ coinMeterAfter=ตัวล่างเหมือนเดิม).
+    coinMeterTop: z.number().int().min(0).optional(),
+    dollMeterTop: z.number().int().min(0).optional(),
     cashCountedCents: z.number().int().min(0), // เงินในถาด (นับจริง)
     stockBefore: z.number().int().min(0), // ตุ๊กตาในตู้ ก่อนเติม (นับจริง)
     refillQty: z.number().int().min(0).default(0), // เติมจากคลังสาขา

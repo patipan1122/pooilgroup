@@ -1,85 +1,56 @@
 "use client";
 
-// ClawFleet · ตู้คีบ OS — bigfeature WAVE 2D · N5 ด่านเงินไม่ตรง (mobile)
+// ClawFleet · ตู้คีบ OS — ด่านนุ่ม "ตัวเลขไม่ตรง" (mobile)
 // -----------------------------------------------------------------------------
-// โผล่ "หลัง" submit แล้ว server คืน needsReason (verdict=SHORT · คำนวณที่ server ไม่ใช่ client):
-//   - SHORT (เงินขาด) → บังคับเลือก "เหตุผล" (ตุ๊กตาค้าง / เครื่องเสีย / อื่น) + โน้ต (ไม่บังคับ)
-//       · ปุ่มบันทึก DISABLED จนกว่าจะเลือกเหตุผล → onConfirmShort(reason, note)
-//       · โทน neutral/amber "เป็นกลาง" — ไม่ใช่แดงกล่าวหา (memory: ห้ามทำแม่บ้านซื่อรู้สึกผิด)
-//       · "ไม่บล็อกแข็ง" — แค่ต้องระบุเหตุผลก่อนบันทึกผ่าน (signal ไม่ใช่ข้อหา)
-//   - OVER (เงินเกิน) → ผ่านเงียบ ๆ โชว์โน้ตเล็ก "เกิน — บันทึกไว้" → onProceed()
-//   - null (รอบแรก/ไม่มีอะไรเทียบ) หรือ OK → ไม่แสดงอะไร (คืน null)
+// โผล่ "หลัง" submit แล้ว server คืน needsReason (คำนวณที่ server ไม่ใช่ client):
+//   - SHORT (เงินขาด) → เลือกเหตุผล (ตุ๊กตาค้าง / เครื่องเสีย / อื่น) + โน้ต (ไม่บังคับ)
+//   - INTEGRITY (มิเตอร์เสีย / ตัวเลขผิดธรรมชาติ · CEO 2026-07-25) → เลือกว่ามิเตอร์ตัวไหนเสีย
+//       (บน/เฟือง · ล่าง/ดิจิตอล · ตุ๊กตาค้าง · อื่น) → บันทึกเงินที่นับจริง + ติดธงไว้ให้ผู้จัดการตรวจ
+//   ทั้งคู่ "ไม่บล็อกแข็ง" — แค่ต้องระบุเหตุผลก่อนบันทึกผ่าน (signal ไม่ใช่ข้อหา).
+//   ปุ่มบันทึก DISABLED จนกว่าจะเลือกเหตุผล → onConfirmShort(reason, note).
+//   โทน neutral/amber "เป็นกลาง" — ไม่ใช่แดงกล่าวหา (memory: ห้ามทำแม่บ้านซื่อรู้สึกผิด).
 // ⚪/amber tokens เท่านั้น · ไม่มีภาษาดีไซน์ใหม่.
 
 import { useState } from "react";
 
-// เหตุผลเงินขาด — value ที่ส่งเข้า onConfirmShort(reason)
-const SHORT_REASONS: { value: string; label: string }[] = [
+type Reason = { value: string; label: string };
+
+// เหตุผลเงินขาด (SHORT)
+const SHORT_REASONS: Reason[] = [
   { value: "ตุ๊กตาค้าง", label: "ตุ๊กตาค้างในราง (ยังไม่ตก)" },
   { value: "เครื่องเสีย", label: "เครื่อง/มิเตอร์เสีย อ่านเพี้ยน" },
   { value: "อื่น", label: "อื่น ๆ (ระบุในโน้ต)" },
 ];
 
+// เหตุผลมิเตอร์เสีย/ตัวเลขผิดธรรมชาติ (INTEGRITY) — CEO 2026-07-25 "ตัวไหนตรงเงิน = ตัวนั้นดี · อีกตัวเสีย"
+const METER_REASONS: Reason[] = [
+  { value: "มิเตอร์ล่างเสีย", label: "มิเตอร์ล่าง (ดิจิตอล) เสีย · อ่านเพี้ยน" },
+  { value: "มิเตอร์บนเสีย", label: "มิเตอร์บน (เฟือง) เสีย · อ่านเพี้ยน" },
+  { value: "ตุ๊กตาค้าง", label: "ตุ๊กตาค้างในราง (ยังไม่ตก)" },
+  { value: "อื่น", label: "อื่น ๆ (ระบุในโน้ต)" },
+];
+
 export interface MismatchGateProps {
-  verdict: "OK" | "SHORT" | "OVER" | null;
+  /** ชนิดด่าน: SHORT = เงินขาด · INTEGRITY = มิเตอร์เสีย/ตัวเลขผิดธรรมชาติ */
+  gateKind: "SHORT" | "INTEGRITY";
+  /** ข้อความจาก server (เช่น "มิเตอร์เหรียญไม่ขยับแต่มีเงินสด") — โชว์ให้พนักงานรู้ว่าติดตรงไหน */
+  message?: string;
   onConfirmShort: (reason: string, note: string) => void;
+  /** ยกเลิก/ปิดด่าน (กลับไปแก้ตัวเลข) */
   onProceed: () => void;
 }
 
-export function MismatchGate({ verdict, onConfirmShort, onProceed }: MismatchGateProps) {
+export function MismatchGate({ gateKind, message, onConfirmShort, onProceed }: MismatchGateProps) {
   const [reason, setReason] = useState<string>("");
   const [note, setNote] = useState<string>("");
 
-  // รอบแรก (null) หรือ ตรง (OK) → ไม่มีด่าน
-  if (verdict == null || verdict === "OK") return null;
+  const isMeter = gateKind === "INTEGRITY";
+  const reasons = isMeter ? METER_REASONS : SHORT_REASONS;
+  const title = isMeter ? "ตัวเลขมิเตอร์ดูไม่สมเหตุผล" : "เงินที่นับได้ น้อยกว่าที่ระบบคาดไว้";
+  const sub = isMeter
+    ? `${message ? message + " — " : ""}เงินที่นับได้จะถูกบันทึกตามจริง ช่วยเลือกว่ามิเตอร์ตัวไหนเพี้ยน แล้วบันทึกต่อได้เลย`
+    : "ไม่เป็นไร — เกิดได้หลายสาเหตุ ช่วยเลือกว่าน่าจะเพราะอะไร แล้วบันทึกต่อได้เลย";
 
-  // เงินเกิน → ผ่านเงียบ ๆ (แค่บันทึกไว้ · ไม่ทำให้ตกใจ)
-  if (verdict === "OVER") {
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 9,
-          background: "#F2FAF5",
-          border: "1px solid #CDE9D7",
-          borderRadius: 12,
-          padding: "12px 14px",
-          marginTop: 4,
-        }}
-      >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2" style={{ flex: "0 0 17px", marginTop: 1 }}>
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12.5, color: "#15803D", fontWeight: 600, lineHeight: 1.4 }}>
-            เงินเกินเล็กน้อย — บันทึกไว้แล้ว ไม่ต้องกังวล
-          </div>
-          <button
-            type="button"
-            onClick={onProceed}
-            className="co-tap"
-            style={{
-              marginTop: 10,
-              width: "100%",
-              padding: 12,
-              borderRadius: 11,
-              border: "none",
-              background: "#15803D",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            บันทึกและไปต่อ
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // SHORT — เงินขาด · ต้องเลือกเหตุผลก่อนบันทึก (โทนเป็นกลาง amber ไม่กล่าวหา)
   const canSubmit = reason !== "";
   return (
     <div
@@ -100,17 +71,15 @@ export function MismatchGate({ verdict, onConfirmShort, onProceed }: MismatchGat
           <path d="M12 9v4M12 17h.01" />
         </svg>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#7A5510" }}>เงินที่นับได้ น้อยกว่าที่ระบบคาดไว้</div>
-          <div style={{ fontSize: 12, color: "#8A7A4E", marginTop: 2, lineHeight: 1.45 }}>
-            ไม่เป็นไร — เกิดได้หลายสาเหตุ ช่วยเลือกว่าน่าจะเพราะอะไร แล้วบันทึกต่อได้เลย
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#7A5510" }}>{title}</div>
+          <div style={{ fontSize: 12, color: "#8A7A4E", marginTop: 2, lineHeight: 1.45 }}>{sub}</div>
         </div>
       </div>
 
       <div>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#7A5510", marginBottom: 6 }}>สาเหตุ (ต้องเลือก)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {SHORT_REASONS.map((r) => {
+          {reasons.map((r) => {
             const on = reason === r.value;
             return (
               <button
@@ -155,7 +124,7 @@ export function MismatchGate({ verdict, onConfirmShort, onProceed }: MismatchGat
           onChange={(e) => setNote(e.target.value)}
           rows={2}
           maxLength={500}
-          placeholder="อธิบายเพิ่ม เช่น ตู้ค้าง 2 ตัวมุมซ้าย…"
+          placeholder={isMeter ? "อธิบายเพิ่ม เช่น มิเตอร์ล่างค้างที่ 7273 มา 3 วัน…" : "อธิบายเพิ่ม เช่น ตู้ค้าง 2 ตัวมุมซ้าย…"}
           style={{
             width: "100%",
             fontSize: 13.5,
@@ -188,6 +157,25 @@ export function MismatchGate({ verdict, onConfirmShort, onProceed }: MismatchGat
         }}
       >
         {canSubmit ? "บันทึกพร้อมเหตุผล" : "เลือกสาเหตุก่อนบันทึก"}
+      </button>
+
+      <button
+        type="button"
+        onClick={onProceed}
+        className="co-tap"
+        style={{
+          width: "100%",
+          padding: 10,
+          borderRadius: 11,
+          border: "none",
+          background: "transparent",
+          color: "#8A7A4E",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        กลับไปแก้ตัวเลขก่อน
       </button>
     </div>
   );
