@@ -12,15 +12,21 @@ import { useRouter } from "next/navigation";
 import {
   Ban,
   Banknote,
+  Check,
   ChevronDown,
   ChevronRight,
   ImageOff,
   Link2,
   Loader2,
   ReceiptText,
+  Send,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { assignSlipToRequestAction, cancelPaymentRequestAction } from "../../_actions";
+import {
+  assignSlipToRequestAction,
+  cancelPaymentRequestAction,
+  resendPaymentRequestAction,
+} from "../../_actions";
 import type {
   ReconcileRequestRow,
   ReconcileFloatingSlip,
@@ -74,6 +80,9 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
   const [confirm, setConfirm] = useState(false);
   // Cancel only makes sense before the request is paid/cancelled.
   const cancellable = ["open", "partial", "abnormal"].includes(req.state);
+  // Resend the LINE card — only while still unmatched (open/partial). CEO 2026-07-25.
+  const resendable = ["open", "partial"].includes(req.state);
+  const [resent, setResent] = useState(false);
 
   function doCancel() {
     setErr(null);
@@ -84,6 +93,17 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
         setErr(res.error ?? "ยกเลิกไม่สำเร็จ");
         setConfirm(false);
       }
+    });
+  }
+
+  function doResend() {
+    setErr(null);
+    start(async () => {
+      const res = await resendPaymentRequestAction(req.id);
+      if (res.ok) {
+        setResent(true);
+        router.refresh();
+      } else setErr(res.error ?? "ส่งขอโอนซ้ำไม่สำเร็จ");
     });
   }
 
@@ -242,15 +262,32 @@ function RequestRow({ req, canCancel }: { req: ReconcileRequestRow; canCancel: b
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirm(true)}
-              disabled={pending}
-              className="inline-flex h-7 items-center gap-1 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50"
-            >
-              <Ban className="size-3.5" aria-hidden />
-              ยกเลิกคำขอ
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {resendable && (
+                <button
+                  type="button"
+                  onClick={doResend}
+                  disabled={pending || resent}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg text-xs font-medium text-[var(--color-brand-600)] hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {resent ? (
+                    <Check className="size-3.5" aria-hidden />
+                  ) : (
+                    <Send className="size-3.5" aria-hidden />
+                  )}
+                  {resent ? "ส่งซ้ำแล้ว" : "ส่งขอโอนซ้ำ"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setConfirm(true)}
+                disabled={pending}
+                className="inline-flex h-7 items-center gap-1 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50"
+              >
+                <Ban className="size-3.5" aria-hidden />
+                ยกเลิกคำขอ
+              </button>
+            </div>
           )}
           {err && <p className="mt-1 text-xs text-rose-600">{err}</p>}
         </div>

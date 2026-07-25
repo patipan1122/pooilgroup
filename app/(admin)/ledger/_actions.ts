@@ -3786,6 +3786,79 @@ export async function createPaymentRequestAction(
   return { ok: true, requestId: res.requestId };
 }
 
+/** ส่งการ์ด "ขอโอน" เข้า LINE ซ้ำ (CEO 2026-07-25: เผื่อส่งไม่ติด/หาการ์ดไม่เจอ). ส่งซ้ำได้
+ *  "เฉพาะยอดที่ยังไม่แมทช์" — คำขอ open/partial เท่านั้น (จ่ายครบ/ยกเลิกแล้ว ส่งซ้ำไม่ได้).
+ *  reuse การ์ด+push เดิม · ไม่สร้าง request ใหม่ (ไม่ซ้ำ). ผู้มีสิทธิ์ payment.request. */
+export async function resendPaymentRequestAction(requestId: string): Promise<ActionResult> {
+  if (!requestId) return { ok: false, error: "ไม่ได้ระบุคำขอ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "payment.request"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์ส่งขอโอนซ้ำ" };
+  }
+  const req = await prisma.ledgerPaymentRequest.findFirst({
+    where: { id: requestId, orgId },
+    select: {
+      id: true, companyId: true, vendor: true, state: true,
+      billsGross: true, expectedTransfer: true,
+      payeeAcctName: true, payeeBankCode: true, payeeAcctNo: true,
+      payeePromptpay: true, payeeQrPayload: true, payeeQrImageUrl: true,
+      bills: { select: { expenseId: true } },
+    },
+  });
+  if (!req) return { ok: false, error: "ไม่พบคำขอโอน" };
+  if (req.state !== "open" && req.state !== "partial") {
+    return { ok: false, error: "คำขอนี้จ่าย/ปิดไปแล้ว — ส่งซ้ำได้เฉพาะยอดที่ยังไม่แมทช์การโอน" };
+  }
+  const billIds = req.bills.map((b) => b.expenseId);
+  const billRows = await prisma.ledgerExpense.findMany({
+    where: { id: { in: billIds }, orgId, companyId: req.companyId },
+    select: { docCode: true, total: true, originalUrl: true, thumbUrl: true },
+  });
+  const receiptUrl =
+    billRows.map((b) => b.originalUrl ?? b.thumbUrl).find((u): u is string => !!u) ?? null;
+  const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
+  const detailPath = `/liff/ledger/payreq/${encodeURIComponent(req.id)}`;
+  const detailUrl = liffId ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}` : null;
+  const card = buildPaymentRequestCard({
+    vendor: req.vendor ?? null,
+    billsGross: Number(req.billsGross),
+    whtTotal: Number(req.billsGross) - Number(req.expectedTransfer),
+    expectedTransfer: Number(req.expectedTransfer),
+    payee: {
+      acctName: req.payeeAcctName ?? undefined,
+      bankCode: req.payeeBankCode ?? undefined,
+      acctNo: req.payeeAcctNo ?? undefined,
+      promptpay: req.payeePromptpay ?? undefined,
+      qrImageUrl: req.payeeQrImageUrl ?? undefined,
+    },
+    bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
+    detailUrl,
+    receiptUrl,
+  });
+  const push = await pushFlexToSlipGroup(orgId, req.companyId, card);
+  if (!push.ok) return { ok: false, error: "ส่งการ์ดเข้า LINE ไม่สำเร็จ — ลองใหม่อีกครั้ง" };
+  await prisma.ledgerPaymentRequest
+    .update({
+      where: { id: req.id },
+      data: { pushedGroupId: push.groupId ?? null, pushedMessageId: push.messageId ?? null },
+    })
+    .catch(() => {});
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_PAYMENT_REQUESTED",
+    resourceType: "ledger_payment_request",
+    resourceId: req.id,
+    diff: { new: { resend: true, vendor: req.vendor } },
+  });
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger/reconcile");
+  return { ok: true };
+}
+
 /** Cancel a request before pay (releases the per-bill guard). Requester or accountant. */
 export async function cancelPaymentRequestAction(requestId: string): Promise<ActionResult> {
   if (!requestId) return { ok: false, error: "ไม่ได้ระบุคำขอ" };
