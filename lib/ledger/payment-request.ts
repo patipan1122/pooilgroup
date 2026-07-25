@@ -24,6 +24,11 @@ import { expenseConfirmability, confirmabilityMessage } from "./confirmability";
  *  TODO(CEO): confirm the real cross-bank fee to tune this band. */
 const MATCH_TOLERANCE_BAHT = 20;
 
+/** Auto-match satang slack — สลิปมักกรอกเป็นบาทเต็ม (ขอโอน 1943.12 → โอน/สลิป 1943).
+ *  ยอมต่าง ≤ 1 บาท ให้ auto-match เลย (CEO 2026-07-25: "เศษหลักสตางค์แมทช์ยอดได้เลย").
+ *  ต่างเกินนี้ → ไม่ auto-match → ผู้ใช้เลือกแนบสลิปเอง (manual assign). */
+const AUTO_MATCH_SATANG_BAHT = 1;
+
 /** Max bills in one request (a sane batch ceiling). */
 const MAX_BILLS_PER_REQUEST = 50;
 
@@ -100,7 +105,7 @@ export async function createPaymentRequest(
     where: { id: { in: ids }, orgId },
     select: {
       id: true, companyId: true, branchId: true, categoryId: true, status: true,
-      vendor: true, total: true, wht: true,
+      vendor: true, total: true, wht: true, trcloudDocId: true,
     },
   });
   if (bills.length !== ids.length) return { ok: false, error: "ไม่พบบิลบางใบ (อาจถูกลบ)" };
@@ -142,6 +147,12 @@ export async function createPaymentRequest(
     const c = expenseConfirmability({ branchId: b.branchId, categoryId: b.categoryId });
     if (!c.ok) return { ok: false, error: `บิลบางใบ${confirmabilityMessage(c.missing)}` };
   }
+
+  // 3.5) ต้องส่ง PO เข้า TRCloud ก่อนถึงขอโอนได้ (CEO 2026-07-25: กันสถานะค้าง "ขอโอนแล้วแต่ไม่มี PO"
+  //      เช่น EXP-202607-0015). "ส่ง PO แล้ว" = trcloudDocId มีค่าจริง (ไม่ null/pending/error).
+  const poNotSent = (t: string | null) => !t || t === "pending" || t === "error";
+  if (bills.some((b) => poNotSent(b.trcloudDocId)))
+    return { ok: false, error: "มีบิลที่ยังไม่ได้ส่ง PO เข้า TRCloud — กด \"ส่ง PO\" ให้เรียบร้อยก่อน แล้วค่อยขอโอน" };
 
   // 4) Single vendor (the payee account is one — bills must share a vendor).
   const vendors = Array.from(new Set(bills.map((b) => norm(b.vendor)).filter((v) => v.length > 0)));
@@ -315,7 +326,7 @@ export async function matchSlipToRequest(
   // 1. IDENTIFY the target — strongest signal first; never guess between two.
   const byName = recipientName ? open.filter((r) => nameSimilar(r.payeeAcctName, recipientName)) : [];
   const byAcct = recipientAcct ? open.filter((r) => acctSeen(recipientAcct, r.payeeAcctNo, r.payeePromptpay)) : [];
-  const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= 0.01);
+  const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= AUTO_MATCH_SATANG_BAHT);
   let target: OpenReq | undefined;
   if (byName.length === 1) target = byName[0];
   else if (byAcct.length === 1) target = byAcct[0];
@@ -336,8 +347,8 @@ export async function matchSlipToRequest(
     slipRecipientAcct: recipientAcct ?? null,
   };
 
-  // 2a. VERIFY amount — exact to the baht (only satang slack). Off → don't close.
-  if (Math.abs(diff) > 0.01) return { matched: false, reason: "amount_mismatch", detail };
+  // 2a. VERIFY amount — ยอมต่าง ≤ 1 บาท (เศษสตางค์ · สลิปกรอกบาทเต็ม). เกินนั้น → ไม่ปิดบิล (เลือกมือ).
+  if (Math.abs(diff) > AUTO_MATCH_SATANG_BAHT) return { matched: false, reason: "amount_mismatch", detail };
 
   // 2b. VERIFY payee — only when the slip actually gave readable recipient info AND it
   //     matches NEITHER the payee name NOR the payee account (lenient: masked + fuzzy).

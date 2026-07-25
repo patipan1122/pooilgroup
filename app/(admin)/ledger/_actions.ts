@@ -66,7 +66,7 @@ import {
   confirmabilityMessage,
 } from "@/lib/ledger/confirmability";
 
-export type ActionResult = { ok: boolean; error?: string };
+export type ActionResult = { ok: boolean; error?: string; warning?: string };
 
 // ── Auth helpers (shared gate stack for every action) ───────────────────────
 
@@ -550,8 +550,31 @@ export async function voidExpense(id: string): Promise<ActionResult> {
     resourceId: id,
     diff: { old: { status: row.status }, new: { status: "void" } },
   });
+
+  // CEO 2026-07-25: ลบในระบบเรา → ลบ PO/AP ใน TRCloud ให้ด้วย (best-effort). void ในเราแล้ว
+  // สำคัญกว่า — ถ้า TRCloud ลบไม่ได้ (เช่นแปลง AP+ล็อกแล้ว) ไม่ rollback · บันทึก audit + เตือน.
+  let trcloudWarn: string | undefined;
+  const poRef = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId: session.user.org_id },
+    select: { trcloudDocId: true },
+  });
+  if (poRef?.trcloudDocId && !["pending", "error"].includes(poRef.trcloudDocId)) {
+    const del = await deleteTrcloudAp(poRef.trcloudDocId);
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: del.ok ? "LEDGER_EXPENSE_TRCLOUD_AP_DELETED" : "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED",
+      resourceType: "ledger_expense",
+      resourceId: id,
+      diff: { new: { trcloudDocId: poRef.trcloudDocId, ok: del.ok, error: del.error ?? null, reason: "void" } },
+    });
+    if (!del.ok) trcloudWarn = del.error || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
+  }
+
   revalidatePath("/ledger/expenses");
-  return { ok: true };
+  return trcloudWarn
+    ? { ok: true, warning: `ยกเลิกในระบบแล้ว แต่ลบใน TRCloud ไม่สำเร็จ: ${trcloudWarn} (ลบใน TRCloud เองได้)` }
+    : { ok: true };
 }
 
 /** Bulk-confirm draft rows that already pass recheck (used by the list toolbar).
