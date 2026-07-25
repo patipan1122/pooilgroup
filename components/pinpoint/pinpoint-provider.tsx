@@ -173,6 +173,9 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   // ── screen recording state (desktop only) ──
   const [recording, setRecording] = useState(false);
   const [recBusy, setRecBusy] = useState(false); // finalizing/uploading the clip
+  // แผ่นวาด/พิมพ์บนจอระหว่างอัดวิดีโอ (freeform) — วิดีโอ (getDisplayMedia) เก็บรอยวาดให้เอง.
+  // ปิดอัตโนมัติตอนหยุดอัด (ทำใน rec.onstop) กัน SessionBar ถูกซ่อนค้าง.
+  const [annotateOpen, setAnnotateOpen] = useState(false);
 
   // ถ่ายภาพ "ต่อหมุด" ตอนกดปักจริง (ไม่ pre-capture ทั้งหน้าอีกต่อไป) → ภาพเป็นจอที่
   // ผู้ใช้เห็นจริง ณ จุด+เวลานั้น (เนื้อหาโหลดเสร็จ ไม่ติด skeleton, ไม่ยาวเหมือนปริ้น).
@@ -629,6 +632,7 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       recStreamRef.current = null;
       recRef.current = null;
       setRecording(false);
+      setAnnotateOpen(false); // จบวิดีโอ → ปิดแผ่นวาด (กัน SessionBar ถูกซ่อนค้าง)
       const chunks = recChunksRef.current;
       recChunksRef.current = [];
       const blob = new Blob(chunks, { type: "video/webm" });
@@ -777,6 +781,16 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         />
       )}
 
+      {/* แผ่นวาด/พิมพ์บนจอ ระหว่างอัดวิดีโอ (freeform) — portal ขึ้น body เอง · เลื่อนหน้าได้
+          · ปิดแล้วไม่แคปภาพ (วิดีโอเก็บรอยให้แล้ว). เปิดจากปุ่ม "วาดบนจอ" ใน SessionBar. */}
+      {annotateOpen && (
+        <PinpointLiveAnnotate
+          freeform
+          onCancel={() => setAnnotateOpen(false)}
+          onDone={() => setAnnotateOpen(false)}
+        />
+      )}
+
       {/* session bar */}
       <SessionBar
         count={pins.length}
@@ -785,7 +799,9 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         recording={recording}
         recBusy={recBusy}
         canRecord={canRecord}
+        annotating={annotateOpen}
         onToggleRecording={toggleRecording}
+        onToggleAnnotate={() => setAnnotateOpen((v) => !v)}
         onTogglePlacing={() => setPlacing((v) => !v)}
         onViewAll={() => router.push(`/pinpoint/${sessionId}`)}
         onFinish={finish}
@@ -1096,7 +1112,9 @@ function SessionBar({
   recording,
   recBusy,
   canRecord,
+  annotating,
   onToggleRecording,
+  onToggleAnnotate,
   onTogglePlacing,
   onViewAll,
   onFinish,
@@ -1108,7 +1126,9 @@ function SessionBar({
   recording: boolean;
   recBusy: boolean;
   canRecord: boolean;
+  annotating: boolean;
   onToggleRecording: () => void;
+  onToggleAnnotate: () => void;
   onTogglePlacing: () => void;
   onViewAll: () => void;
   onFinish: () => void;
@@ -1184,6 +1204,25 @@ function SessionBar({
               <Video className="size-3.5" />
             )}
             {recording ? "หยุด" : "อัด"}
+          </button>
+        )}
+        {/* วาด/พิมพ์บนจอระหว่างอัด — โผล่เฉพาะตอนกำลังอัด. เปิดแล้ววาดได้ทั่วจอ (เลื่อนหน้าได้)
+            แล้ววิดีโอเก็บรอยวาดให้เอง. ปิดกลับมาจากปุ่ม "ปิด" บนแถบเครื่องมือวาด. */}
+        {recording && (
+          <button
+            type="button"
+            onClick={onToggleAnnotate}
+            aria-pressed={annotating}
+            aria-label="วาด/พิมพ์บนจอ"
+            title="วาด/พิมพ์บนจอ (ติดในวิดีโอ)"
+            className={cn(
+              "flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
+              annotating
+                ? "bg-[var(--color-brand-600)] text-white"
+                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
+            )}
+          >
+            <Pen className="size-3.5" /> วาด
           </button>
         )}
         <button

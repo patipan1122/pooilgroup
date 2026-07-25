@@ -125,10 +125,15 @@ export function PinpointLiveAnnotate({
   crop,
   onCancel,
   onDone,
+  freeform = false,
 }: {
-  crop: ViewportCrop;
+  /** กรอบจอ ณ จุดปักหมุด — ต้องมีในโหมดปกติ (แคปภาพ). โหมด freeform (อัดวิดีโอ) ไม่ต้องมี. */
+  crop?: ViewportCrop;
   onCancel: () => void;
   onDone: (annotated: Blob) => void;
+  /** โหมดวาดสดระหว่างอัดวิดีโอ — เลื่อนหน้าได้อิสระ (ไม่ล็อก scroll) + ไม่แคปภาพตอนปิด
+   *  (วิดีโอเก็บรอยวาดให้เองจาก getDisplayMedia). ปุ่มหลักกลายเป็น "ปิด". */
+  freeform?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const curRef = useRef<Stroke | null>(null);
@@ -161,6 +166,7 @@ export function PinpointLiveAnnotate({
   // ล็อกเลื่อนหน้าไว้ที่กรอบจอตอนปักหมุด — กันรอยวาดเพี้ยนจากของที่ชี้ (โหมดแตะก็ล็อก
   // เพราะปุ่มโชว์/ซ่อนไม่ต้องเลื่อน). snap กลับทุกครั้งที่มีอะไรพยายามเลื่อน.
   useEffect(() => {
+    if (freeform || !crop) return; // โหมดอัดวิดีโอ = เลื่อนหน้าได้อิสระ (ไม่ snap กลับ)
     window.scrollTo(crop.scrollX, crop.scrollY);
     const onScroll = () => {
       if (window.scrollX !== crop.scrollX || window.scrollY !== crop.scrollY) {
@@ -169,7 +175,7 @@ export function PinpointLiveAnnotate({
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, [crop.scrollX, crop.scrollY]);
+  }, [crop, freeform]);
 
   // ซ่อน chrome ของ pinpoint (หมุด/กล่อง/แถบล่าง) ระหว่างวาดสด — ให้เห็นหน้าเว็บสะอาด
   // และกันคลิกโดนของพวกนี้ตอนโหมดแตะ. แผ่นวาดของเราติด data-pinpoint-annotate จึงไม่โดนซ่อน.
@@ -288,6 +294,7 @@ export function PinpointLiveAnnotate({
   // กด "เสร็จ" → แคปหน้าเว็บจริง ณ กรอบจอที่ปัก + อบรอยวาดลงบนภาพจริง (natural size) → webp.
   const handleDone = async () => {
     if (capturing || !view) return;
+    if (freeform || !crop) { onCancel(); return; } // โหมดอัด = ไม่แคปภาพ แค่ปิดแผ่นวาด
     // เผื่อยังพิมพ์ข้อความค้าง (ยังไม่ Enter) → รวมลงภาพด้วย ไม่ให้ตกหล่น.
     const pending: Stroke | null =
       editing && editValue.trim()
@@ -504,19 +511,27 @@ export function PinpointLiveAnnotate({
             type="button"
             onClick={onCancel}
             disabled={capturing}
-            className="flex items-center gap-1 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+            className={cn(
+              "flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50",
+              freeform
+                ? "bg-emerald-500 font-bold hover:bg-emerald-600"
+                : "bg-white/10 hover:bg-white/20",
+            )}
           >
-            <X className="size-4" /> ยกเลิก
+            {freeform ? <Check className="size-4" /> : <X className="size-4" />}
+            {freeform ? "ปิด" : "ยกเลิก"}
           </button>
-          <button
-            type="button"
-            onClick={handleDone}
-            disabled={capturing}
-            className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
-          >
-            {capturing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-            เสร็จ
-          </button>
+          {!freeform && (
+            <button
+              type="button"
+              onClick={handleDone}
+              disabled={capturing}
+              className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {capturing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              เสร็จ
+            </button>
+          )}
         </div>
       </div>
 
@@ -527,9 +542,13 @@ export function PinpointLiveAnnotate({
       >
         {capturing
           ? "กำลังบันทึกภาพหน้าจอ…"
-          : mode === "draw"
-            ? "ลากเพื่อวง/ชี้ · เลือก “ข้อความ” แล้วแตะเพื่อพิมพ์ · กด “เสร็จ” เพื่อแคปหน้าจอ"
-            : "โหมดแตะ: กดปุ่มในเว็บได้เลย (โชว์/ซ่อน ฯลฯ) · กด “วาด” เพื่อกลับมาวาด"}
+          : freeform
+            ? mode === "draw"
+              ? "🔴 กำลังอัดวิดีโอ — ลากเพื่อวง/ชี้ · เลือก “ข้อความ” แล้วแตะเพื่อพิมพ์ · “ล้าง” เพื่อลบรอย · “ปิด” เพื่อเลิกวาด"
+              : "🔴 กำลังอัดวิดีโอ — โหมดแตะ: เลื่อน/กดปุ่มในเว็บได้ · กด “วาด” เพื่อกลับมาวาด"
+            : mode === "draw"
+              ? "ลากเพื่อวง/ชี้ · เลือก “ข้อความ” แล้วแตะเพื่อพิมพ์ · กด “เสร็จ” เพื่อแคปหน้าจอ"
+              : "โหมดแตะ: กดปุ่มในเว็บได้เลย (โชว์/ซ่อน ฯลฯ) · กด “วาด” เพื่อกลับมาวาด"}
       </p>
     </div>
   );
