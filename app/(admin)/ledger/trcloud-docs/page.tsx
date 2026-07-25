@@ -2,6 +2,8 @@
 //   TRCloud = ต้นฉบับ · เราเก็บสำเนาในตาราง ledger_trcloud_doc แล้วเปิด browse/filter จาก DB
 //   (TRCloud rate-limit + ตัวกรองวันที่พัง → ไม่ยิงสดทุกครั้ง · กด "รีเฟรช" เพื่อ sync รอบใหม่).
 // URL state: ?kind=AP|PO&companyFormat=&department=&project=&status=&from=&to=&q=
+import Link from "next/link";
+import { Scale } from "lucide-react";
 import { requireRole } from "@/lib/auth/session";
 import { getTrcloudDocs, type TrcloudDocKind, type TrcloudDocSource } from "@/lib/ledger/trcloud-docs-data";
 import { SyncButton } from "./_components/SyncButton";
@@ -63,7 +65,15 @@ export default async function TrcloudDocsPage({
             ดึงใบ PO/AP จาก TRCloud มาดูในเว็บเรา (อ่านอย่างเดียว) · อัปเดตล่าสุด {fmtSynced(data.lastSyncedAt)}
           </p>
         </div>
-        <SyncButton />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/ledger/trcloud-docs/reconcile"
+            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-50"
+          >
+            <Scale className="h-4 w-4" /> เทียบยอด
+          </Link>
+          <SyncButton />
+        </div>
       </div>
 
       {/* Tabs + filters */}
