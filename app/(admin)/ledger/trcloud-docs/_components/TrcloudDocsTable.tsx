@@ -33,6 +33,7 @@ export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: 
       <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium text-zinc-500">
+            <th className="px-3 py-2 font-medium">ที่มา</th>
             <th className="px-3 py-2 font-medium">วันที่</th>
             <th className="px-3 py-2 font-medium">เลขที่</th>
             <th className="px-3 py-2 font-medium">ผู้ขาย</th>
@@ -49,6 +50,20 @@ export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: 
             const pill = statusPill(kind, r.status, r.statusAp);
             return (
               <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60">
+                <td className="whitespace-nowrap px-3 py-2">
+                  {r.fromLedger ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200"
+                      title={r.ledgerDocCode ? `LedgerLine: ${r.ledgerDocCode}` : "ส่งขึ้นจาก LedgerLine"}
+                    >
+                      ● จากเรา
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200" title="สร้างตรงใน TRCloud (ไม่ได้ผ่าน LedgerLine)">
+                      ○ TRCloud
+                    </span>
+                  )}
+                </td>
                 <td className="whitespace-nowrap px-3 py-2 text-zinc-600">{r.issueDate ?? "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-medium text-zinc-800">{r.refNo || r.docNumber || "—"}</td>
                 <td className="max-w-[240px] px-3 py-2">

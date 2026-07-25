@@ -3,7 +3,7 @@
 //   (TRCloud rate-limit + ตัวกรองวันที่พัง → ไม่ยิงสดทุกครั้ง · กด "รีเฟรช" เพื่อ sync รอบใหม่).
 // URL state: ?kind=AP|PO&companyFormat=&department=&project=&status=&from=&to=&q=
 import { requireRole } from "@/lib/auth/session";
-import { getTrcloudDocs, type TrcloudDocKind } from "@/lib/ledger/trcloud-docs-data";
+import { getTrcloudDocs, type TrcloudDocKind, type TrcloudDocSource } from "@/lib/ledger/trcloud-docs-data";
 import { SyncButton } from "./_components/SyncButton";
 import { TrcloudDocsFilters } from "./_components/TrcloudDocsFilters";
 import { TrcloudDocsTable } from "./_components/TrcloudDocsTable";
@@ -26,6 +26,7 @@ export default async function TrcloudDocsPage({
     department?: string;
     project?: string;
     status?: string;
+    source?: string;
     from?: string;
     to?: string;
     q?: string;
@@ -36,12 +37,15 @@ export default async function TrcloudDocsPage({
   const sp = await searchParams;
 
   const kind: TrcloudDocKind = sp.kind === "PO" ? "PO" : "AP";
+  const source: TrcloudDocSource | undefined =
+    sp.source === "ours" || sp.source === "trcloud" ? sp.source : undefined;
   const filters = {
     kind,
     companyFormat: sp.companyFormat?.trim() || undefined,
     department: sp.department?.trim() || undefined,
     project: sp.project?.trim() || undefined,
     status: sp.status?.trim() || undefined,
+    source,
     from: sp.from?.trim() || undefined,
     to: sp.to?.trim() || undefined,
     q: sp.q?.trim() || undefined,
@@ -74,7 +78,8 @@ export default async function TrcloudDocsPage({
       <div className="flex items-center justify-between text-xs text-zinc-500">
         <span>
           แสดง {data.rows.length.toLocaleString("th-TH")} รายการ
-          {data.truncated && " (จำกัด 300 รายการแรก — กรองให้แคบลงเพื่อดูรายการอื่น)"}
+          {data.fromLedgerInView > 0 && ` · ในนี้ส่งจากเรา (LedgerLine) ${data.fromLedgerInView.toLocaleString("th-TH")} ใบ`}
+          {data.truncated && " · จำกัด 300 รายการแรก — กรองให้แคบลงเพื่อดูรายการอื่น"}
         </span>
       </div>
 

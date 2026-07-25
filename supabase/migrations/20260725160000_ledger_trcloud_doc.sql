@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.ledger_trcloud_doc (
   company_format     text,                             -- ชุดเลข: JPS_AP·JPS_EXP·PO·PATI_AP·YM_AP·JANE_AP
   doc_number         text,                             -- invoice_number / document_number
   ref_no             text,                             -- ref_no เต็ม เช่น JPS_EXP2607250003
+  trcloud_reference  text,                             -- field reference ของ TRCloud = docCode ตอน LedgerLine push (จับคู่แหล่งที่มา)
   issue_date         timestamptz,
   vendor_name        text,
   organization       text,

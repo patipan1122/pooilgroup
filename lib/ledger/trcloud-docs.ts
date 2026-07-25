@@ -115,6 +115,7 @@ function mapRow(kind: DocKind, o: Json) {
     companyFormat: str(o, "company_format"),
     docNumber: kind === "PO" ? str(o, "document_number", "no") : str(o, "invoice_number", "document_number", "no"),
     refNo: str(o, "ref_no", "reference_doc"),
+    trcloudReference: str(o, "reference"), // = docCode ถ้า LedgerLine push (จับคู่แหล่งที่มา)
     issueDate: dt(o, "issue_date", "doc_date", "date"),
     vendorName: str(o, "name", "organization"),
     organization: str(o, "organization"),

@@ -12,13 +12,14 @@ type Props = {
     department?: string;
     project?: string;
     status?: string;
+    source?: string;
     from?: string;
     to?: string;
     q?: string;
   };
 };
 
-const FACET_KEYS = ["companyFormat", "department", "project", "status", "from", "to", "q"] as const;
+const FACET_KEYS = ["companyFormat", "department", "project", "status", "source", "from", "to", "q"] as const;
 
 export function TrcloudDocsFilters({ kind, counts, facets, current }: Props) {
   const router = useRouter();
@@ -90,6 +91,17 @@ export function TrcloudDocsFilters({ kind, counts, facets, current }: Props) {
 
       {/* Filter row */}
       <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="แหล่งที่มา"
+          className={`${selectCls} font-medium`}
+          value={current.source ?? ""}
+          onChange={(e) => setParam("source", e.target.value)}
+        >
+          <option value="">ทุกแหล่งที่มา</option>
+          <option value="ours">● ส่งจากเรา (LedgerLine)</option>
+          <option value="trcloud">○ สร้างใน TRCloud</option>
+        </select>
+
         <select
           aria-label="ชุดเลขที่เอกสาร"
           className={selectCls}
