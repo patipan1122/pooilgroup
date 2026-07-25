@@ -25,8 +25,11 @@ export function DcLightbox({
 }) {
   // คลิกที่รูป → ซูมเข้า/ออก (ไม่ปิด lightbox) · reset ทุกครั้งที่เปิดรูปใหม่
   const [zoomed, setZoomed] = useState(false);
+  // ความกว้างจริงของไฟล์รูป (px) → ใช้เพดานกันขยายเกินตัวจนเบลอ (null = ยังไม่โหลด)
+  const [natW, setNatW] = useState<number | null>(null);
   useEffect(() => {
     setZoomed(false);
+    setNatW(null);
   }, [url]);
 
   // ปิดด้วย Escape + ล็อกสกอลล์พื้นหลังตอนเปิด
@@ -95,6 +98,7 @@ export function DcLightbox({
       <img
         src={url}
         alt={alt ?? ""}
+        onLoad={(e) => setNatW(e.currentTarget.naturalWidth || null)}
         onClick={(e) => {
           // คลิกรูป = สลับซูม (ไม่ปิด lightbox) → กัน bubble ไปโดน backdrop
           e.stopPropagation();
@@ -106,7 +110,7 @@ export function DcLightbox({
           boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
           ...(zoomed
             ? {
-                // ซูมเข้า → ขยายใหญ่ + ปล่อยให้ overflow scroll ของ backdrop พาแพนดู
+                // ซูมเข้า → ขยายใหญ่ได้เสมอ (ยอมเบลอนิดเพื่อให้ "เห็น" · ต้นฉบับเล็กมากต้องซูมถึงดูออก) + แพนดูได้
                 width: "min(170vw, 1400px)",
                 height: "auto",
                 maxHeight: "none",
@@ -114,8 +118,8 @@ export function DcLightbox({
                 cursor: "zoom-out",
               }
             : {
-                // ปกติ → พอดีจอ (รูปครอป 1688 ตัวเล็ก → ขยายเต็ม ไม่โชว์จิ๋วกลางจอ)
-                width: "min(92vw, 720px)",
+                // ปกติ → พอดีจอ แต่ไม่ขยายเกินพิกเซลจริง (คมชัดแทนโป่งเบลอ · เล็กไปให้กดซูมเอา)
+                width: natW ? `min(92vw, 720px, ${natW}px)` : "min(92vw, 720px)",
                 height: "auto",
                 maxHeight: "86vh",
                 objectFit: "contain",

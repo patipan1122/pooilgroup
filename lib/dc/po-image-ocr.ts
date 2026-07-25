@@ -302,17 +302,16 @@ export async function ingestPoImages(input: {
         const region = boxToRegion(ri.box_2d, imgW, imgH);
         if (region) {
           try {
-            const cropBuf = await sharp(buf)
-              .extract(region)
-              .jpeg({ quality: 82 })
-              .toBuffer();
-            // เก็บ 2 ที่: R2 (สำเนาย่อ · แสดงผล) + Drive (ต้นฉบับครอป · best-effort).
+            // ครอปเป็น PNG ไร้การบีบอัด → ให้ storeDcProductImage เข้ารหัส JPEG "รอบเดียว"
+            // (เดิมบีบ q82 ที่นี่ แล้ว store บีบ q80 อีก = เบลอจากบีบซ้ำ 2 รอบ)
+            const cropBuf = await sharp(buf).extract(region).png().toBuffer();
+            // เก็บ 2 ที่: R2 (สำเนาแสดงผล) + Drive (ต้นฉบับครอป · best-effort).
             // croppedUrl = R2 display URL เสมอ → เก็บเป็นรูปสินค้าได้เหมือนเดิม.
             const stored = await storeDcProductImage({
               orgId,
               bytes: cropBuf,
-              mimeType: "image/jpeg",
-              name: `${safeImageName(nameTh)}-${randomUUID().slice(0, 8)}.jpg`,
+              mimeType: "image/png",
+              name: `${safeImageName(nameTh)}-${randomUUID().slice(0, 8)}.png`,
             });
             croppedUrl = stored.url;
             croppedKey = stored.key;
