@@ -10,7 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "chairops", "playland", "fuel", "dc"]
+  schemas  = ["public", "chairops", "playland", "fuel", "dc", "cafeorder"]
 }
 
 // =============================================================
@@ -8704,4 +8704,293 @@ model DcDeletionLog {
   @@index([orgId, docType])
   @@map("deletion_logs")
   @@schema("dc")
+}
+
+// =============================================================
+// CafeOrder — สั่งกาแฟเดลิเวอรี + สมาชิกสะสมแต้ม (web-app · Google/phone login)
+//   spec: docs/WORKSHOP_CafeOrder.md + CafeOrder_menu_management_design.md + CafeOrder_gap_screens_design.md
+//   convention: orgId/branchId/companyId/userId = plain @db.Uuid (ไม่มี cross-schema FK ไป public)
+//   ⚠️ ห้ามใช้ชื่อ model `Order` (FuelOS จองใน public แล้ว · model/enum เป็น global namespace) → prefix Cafe*
+// =============================================================
+
+enum CafeBrand {
+  amazon
+  punthai
+
+  @@schema("cafeorder")
+}
+
+enum CafeTemp {
+  hot
+  iced
+  blended
+
+  @@schema("cafeorder")
+}
+
+enum CafeSize {
+  regular
+  large
+
+  @@schema("cafeorder")
+}
+
+enum CafeItemKind {
+  drink
+  food
+
+  @@schema("cafeorder")
+}
+
+enum CafeOptionSelect {
+  single
+  multi
+
+  @@schema("cafeorder")
+}
+
+// ledger kind — append-only เท่านั้น (ห้าม UPDATE ยอดแถวเก่า · balance = SUM(points))
+enum CafePointKind {
+  earn
+  redeem
+  adjust
+  expire
+  reverse
+
+  @@schema("cafeorder")
+}
+
+// ── ร้าน/สาขา (storefront) — "ลิงก์ร้านค้าแยก + ตั้งค่าแยก" ต่อสาขา ──
+model CafeShop {
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  companyId       String    @map("company_id") @db.Uuid // JPSYNC (ถือหนี้สินแต้ม)
+  branchId        String    @map("branch_id") @db.Uuid
+  brand           CafeBrand
+  shopSlug        String    @unique @map("shop_slug") // storefront /order/<shopSlug>
+  displayName     String    @map("display_name")
+  isOpen          Boolean   @default(true) @map("is_open") // เปิด/ปิดถาวร
+  acceptingOrders Boolean   @default(true) @map("accepting_orders") // ปิดรับชั่วคราว
+  etaMinutes      Int?      @map("eta_minutes") // ช่วงเวลาส่งคงที่ (v1 ไม่คำนวณจากคิว)
+  queueCap        Int?      @map("queue_cap") // เพดานออเดอร์ค้าง
+  promptpayId     String?   @map("promptpay_id") // เบอร์/เลขพร้อมเพย์ JPSYNC
+  minOrderCents   Int?      @map("min_order_cents")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  branchItems  CafeBranchItem[]
+  choiceStocks CafeBranchChoiceStock[]
+
+  @@index([orgId])
+  @@index([branchId])
+  @@map("cafe_shops")
+  @@schema("cafeorder")
+}
+
+// ── เมนูกลาง (master · ตั้งครั้งเดียวต่อแบรนด์ · ทุกสาขา inherit) ──
+model CafeCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  orgId     String    @map("org_id") @db.Uuid
+  brand     CafeBrand
+  name      String
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+
+  items CafeMenuItem[]
+
+  @@unique([orgId, brand, name])
+  @@index([orgId, brand])
+  @@map("cafe_categories")
+  @@schema("cafeorder")
+}
+
+model CafeMenuItem {
+  id          String       @id @default(uuid()) @db.Uuid
+  orgId       String       @map("org_id") @db.Uuid
+  brand       CafeBrand
+  categoryId  String       @map("category_id") @db.Uuid
+  name        String
+  description String?
+  imageKey    String?      @map("image_key") // R2 key หรือ URL ภายนอก
+  kind        CafeItemKind @default(drink)
+  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category     CafeCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variants     CafeItemVariant[]
+  optionGroups CafeItemOptionGroup[]
+  branchItems  CafeBranchItem[]
+
+  @@unique([orgId, brand, name]) // upsert key ตอน import
+  @@index([orgId, brand, categoryId])
+  @@map("cafe_menu_items")
+  @@schema("cafeorder")
+}
+
+// ราคาต่อ อุณหภูมิ × ขนาด (รองรับ "ขนาด" ที่ CEO เคาะ = ปกติ/ใหญ่)
+model CafeItemVariant {
+  id         String    @id @default(uuid()) @db.Uuid
+  itemId     String    @map("item_id") @db.Uuid
+  temp       CafeTemp? // null = ของกิน (ไม่มีอุณหภูมิ)
+  size       CafeSize  @default(regular)
+  priceCents Int       @map("price_cents")
+  isActive   Boolean   @default(true) @map("is_active")
+
+  item CafeMenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, temp, size])
+  @@map("cafe_item_variants")
+  @@schema("cafeorder")
+}
+
+// ── กลุ่มตัวเลือก (preset: หวาน4/น้ำแข็ง4/ท็อปปิ้ง/ช็อต/นม + สร้างเอง) ──
+model CafeOptionGroup {
+  id              String           @id @default(uuid()) @db.Uuid
+  orgId           String           @map("org_id") @db.Uuid
+  brand           CafeBrand? // null = ใช้ได้ทุกแบรนด์
+  name            String
+  selectType      CafeOptionSelect @default(single) @map("select_type")
+  required        Boolean          @default(false)
+  minSelect       Int              @default(0) @map("min_select")
+  maxSelect       Int?             @map("max_select")
+  visibleWhenTemp CafeTemp?        @map("visible_when_temp") // null=ทุกแบบ · iced=เฉพาะเย็น (ซ่อนตอนร้อน/ปั่น)
+  sortOrder       Int              @default(0) @map("sort_order")
+  isActive        Boolean          @default(true) @map("is_active")
+
+  choices CafeOptionChoice[]
+  items   CafeItemOptionGroup[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("cafe_option_groups")
+  @@schema("cafeorder")
+}
+
+model CafeOptionChoice {
+  id             String  @id @default(uuid()) @db.Uuid
+  groupId        String  @map("group_id") @db.Uuid
+  label          String
+  priceDeltaCents Int    @default(0) @map("price_delta_cents")
+  sortOrder      Int     @default(0) @map("sort_order")
+  isActive       Boolean @default(true) @map("is_active")
+
+  group        CafeOptionGroup         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  branchStocks CafeBranchChoiceStock[]
+
+  @@index([groupId])
+  @@map("cafe_option_choices")
+  @@schema("cafeorder")
+}
+
+model CafeItemOptionGroup {
+  id            String @id @default(uuid()) @db.Uuid
+  itemId        String @map("item_id") @db.Uuid
+  optionGroupId String @map("option_group_id") @db.Uuid
+  sortOrder     Int    @default(0) @map("sort_order")
+
+  item  CafeMenuItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  group CafeOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, optionGroupId])
+  @@map("cafe_item_option_groups")
+  @@schema("cafeorder")
+}
+
+// ── ชั้นสาขา (override เท่าที่ต่างจากกลาง) ──
+model CafeBranchItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  shopId             String    @map("shop_id") @db.Uuid
+  itemId             String    @map("item_id") @db.Uuid
+  isAvailable        Boolean   @default(true) @map("is_available")
+  priceOverrideCents Int?      @map("price_override_cents") // null = ใช้ราคากลาง
+  soldOutUntil       DateTime? @map("sold_out_until") @db.Timestamptz(6) // ปุ่ม "วันนี้หมด"
+
+  shop CafeShop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  item CafeMenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, itemId])
+  @@index([shopId])
+  @@map("cafe_branch_items")
+  @@schema("cafeorder")
+}
+
+model CafeBranchChoiceStock {
+  id             String    @id @default(uuid()) @db.Uuid
+  shopId         String    @map("shop_id") @db.Uuid
+  optionChoiceId String    @map("option_choice_id") @db.Uuid
+  soldOutUntil   DateTime? @map("sold_out_until") @db.Timestamptz(6)
+
+  shop   CafeShop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  choice CafeOptionChoice @relation(fields: [optionChoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, optionChoiceId])
+  @@map("cafe_branch_choice_stock")
+  @@schema("cafeorder")
+}
+
+// ── กติกาแต้ม (M29 · CEO: 1 แก้ว=1 แต้ม · 10 แต้ม=แก้วฟรี) ──
+model CafePointPolicy {
+  id                       String   @id @default(uuid()) @db.Uuid
+  orgId                    String   @map("org_id") @db.Uuid
+  companyId                String   @map("company_id") @db.Uuid // JPSYNC
+  earnPerCup               Int      @default(1) @map("earn_per_cup") // 1 แก้ว = 1 แต้ม
+  redeemPointsPerCup       Int      @default(10) @map("redeem_points_per_cup") // 10 แต้ม = 1 แก้วฟรี
+  expiryMonths             Int?     @map("expiry_months") // null = ไม่หมดอายุ
+  crossBrand               Boolean  @default(true) @map("cross_brand") // แต้มข้าม Amazon↔พันธุ์ไทย
+  freeCupCapPerBranchMonth Int?     @map("free_cup_cap_per_branch_month")
+  effectiveFrom            DateTime @default(now()) @map("effective_from") @db.Timestamptz(6)
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orgId, effectiveFrom(sort: Desc)])
+  @@map("cafe_point_policies")
+  @@schema("cafeorder")
+}
+
+// ── สมาชิก (Google/phone · ไม่มี cache balance → คำนวณจาก ledger กัน trap ClawHub) ──
+model CafeMember {
+  id                String    @id @default(uuid()) @db.Uuid
+  orgId             String    @map("org_id") @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  googleSub         String?   @unique @map("google_sub") // Google OAuth subject
+  email             String?
+  phone             String?
+  phoneVerifiedAt   DateTime? @map("phone_verified_at") @db.Timestamptz(6)
+  displayName       String?   @map("display_name")
+  memberCode        String    @unique @map("member_code") // บัตรสมาชิก (Playland-style alphabet)
+  consentAt         DateTime? @map("consent_at") @db.Timestamptz(6) // ฐานสัญญา (สมัคร/แต้ม)
+  marketingConsentAt DateTime? @map("marketing_consent_at") @db.Timestamptz(6) // แยกตาม PDPA ม.19
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pointEntries CafePointEntry[]
+
+  @@unique([orgId, phone])
+  @@index([orgId])
+  @@map("cafe_members")
+  @@schema("cafeorder")
+}
+
+// ── สมุดแต้ม append-only (balance = SUM · ห้าม UPDATE ยอดแถวเก่า · idempotency จริง) ──
+model CafePointEntry {
+  id             String        @id @default(uuid()) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  companyId      String        @map("company_id") @db.Uuid // แยกหนี้สินลงบริษัทได้
+  memberId       String        @map("member_id") @db.Uuid
+  kind           CafePointKind
+  points         Int // signed: earn +, redeem/expire −
+  cups           Int           @default(0) // จำนวนแก้วที่ได้แต้ม (earn) / ที่แลก (redeem)
+  orderId        String?       @map("order_id") @db.Uuid // ผูกออเดอร์ (nullable · order มา wave หลัง)
+  actorUserId    String?       @map("actor_user_id") @db.Uuid // ใครยิง (กันทุจริต · null=ระบบ)
+  idempotencyKey String        @unique @map("idempotency_key") // กันซ้ำจริงที่ DB
+  note           String?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member CafeMember @relation(fields: [memberId], references: [id], onDelete: Restrict) // ไม่ cascade — anonymize ไม่ลบประวัติ
+
+  @@index([memberId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("cafe_point_entries")
+  @@schema("cafeorder")
 }

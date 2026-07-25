@@ -82,10 +82,11 @@ import {
   Ship,
   Search,
   ShoppingCart,
+  Coffee,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
-export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace" | "clawhub" | "dc";
+export type ModuleSlug = "cashhub" | "fuelos" | "docuflow" | "recruit" | "repairs" | "clawfleet" | "chairops" | "playland" | "inbox" | "costctrl" | "hotelbook" | "ledger" | "rentspace" | "clawhub" | "dc" | "cafeorder";
 export type ModuleStatus = "active" | "coming_soon" | "beta";
 
 export interface NavItem {
@@ -128,6 +129,48 @@ export interface ModuleConfig {
 }
 
 export const MODULES: Record<ModuleSlug, ModuleConfig> = {
+  cafeorder: {
+    slug: "cafeorder",
+    name: "CafeOrder",
+    tagline: "สั่งกาแฟ ส่งถึงที่ + สมาชิกสะสมแต้ม",
+    description:
+      "ร้านกาแฟ Café Amazon + พันธุ์ไทย รับออเดอร์เดลิเวอรีเอง (web-app) · ลูกค้าสั่ง → ร้านชง → ไรเดอร์ส่ง · สะสมแต้มแลกแก้วฟรี · ร้านจัดการเมนู/รูป/ราคา/ตัวเลือกเอง + นำเข้าทีเดียวหลายรายการ · ลิงก์ร้านค้าแยกต่อสาขา",
+    emoji: "☕",
+    Icon: Coffee,
+    status: "beta",
+    basePath: "/cafeorder",
+    nav: [
+      // ★ section ใส่ครบทุก item (เมนูถูกกรอง role ก่อน render — ดู DC)
+      {
+        href: "/cafeorder",
+        label: "ภาพรวมวันนี้",
+        icon: LayoutDashboard,
+        section: "ร้าน",
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/cafeorder/office/menu",
+        label: "จัดการเมนู",
+        icon: Store,
+        section: "ร้าน",
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"],
+      },
+      {
+        href: "/cafeorder/office/shops",
+        label: "ร้าน/สาขา + ลิงก์",
+        icon: Building2,
+        section: "ร้าน",
+        roles: ["super_admin", "org_admin", "admin", "program_admin", "area_manager"],
+      },
+      {
+        href: "/cafeorder/office/settings/points",
+        label: "กติกาแต้ม",
+        icon: Coins,
+        section: "ตั้งค่า",
+        adminOnly: true,
+      },
+    ],
+  },
   cashhub: {
     slug: "cashhub",
     name: "CashHub",

@@ -1,0 +1,30 @@
+/* CafeOrder scoped design tokens.
+   Base = Pooil Blue brand (DESIGN_SYSTEM.md) shared with every module.
+   Per-brand ACCENT (Amazon green / Punthai brown-orange) applied ONLY as a thin
+   accent on customer storefront so a customer knows which shop — never repaints
+   the 90% blue/white/zinc shell (per design memory). */
+
+.cafe-scope {
+  /* brand-neutral defaults — inherit global Pooil Blue */
+  --cafe-accent: var(--color-brand-600, #2563eb);
+  --cafe-accent-weak: var(--color-brand-50, #eff6ff);
+  /* touch target for field surfaces (barista wet hands / rider gloves) —
+     override of DESIGN_SYSTEM.md:36 default, recorded in spec §7.8 */
+  --cafe-touch-field: 64px;
+}
+
+/* per-brand accent — set on storefront root via data-brand */
+.cafe-scope[data-brand="amazon"] {
+  --cafe-accent: #1f6f3f; /* Café Amazon green */
+  --cafe-accent-weak: #eaf5ee;
+}
+.cafe-scope[data-brand="punthai"] {
+  --cafe-accent: #a4552b; /* ร้านกาแฟพันธุ์ไทย brown-orange */
+  --cafe-accent-weak: #f7ede6;
+}
+
+/* field surface (KDS / rider) — big tap targets, generous gap */
+.cafe-field button,
+.cafe-field a[role="button"] {
+  min-height: var(--cafe-touch-field);
+}
