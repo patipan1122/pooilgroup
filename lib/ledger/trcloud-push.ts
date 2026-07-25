@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizePurchaseType, type PurchaseType } from "@/lib/ledger/types";
 import { llCSlotForGl, LL_SLOT_VAT_CLAIMABLE, LL_SLOT_VAT_NONCLAIM } from "@/lib/ledger/coa-chart";
 import { isAutoPvEnabled } from "@/lib/ledger/trcloud-pv";
+import { toAbbr } from "@/lib/ledger/bank-logos";
 
 // LedgerLine → TRCloud PO push (JP Sync company 45)
 //
@@ -536,7 +537,7 @@ export const AP_COMPANY_FORMAT = process.env.TRCLOUD_AP_COMPANY_FORMAT ?? "JPS_A
 
 export async function convertExpensePoToAp(
   e: PushableExpense,
-  opts: { poDocId?: string | null; slipUrl?: string | null } = {},
+  opts: { poDocId?: string | null; slipUrl?: string | null; creditForm?: boolean } = {},
 ): Promise<{ ok: true; apDocId: string | null; apDocNo: string | null } | { ok: false; error: string }> {
   if (!trcloudPushConfigured()) {
     return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
@@ -580,12 +581,13 @@ export async function convertExpensePoToAp(
   // 4) create AP (บัญชีจริง). ใบเสนอราคา / VAT ขอคืนไม่ได้ → tax_report=0 (ไม่เข้า ภ.พ.30).
   const issue = toIsoDate(e.docDate);
   const taxReport = e.docType === "quotation" || !eff.inputVatClaimable ? "0" : "1";
-  // FEATURE FLAG (LEDGER_AUTO_PV_ENABLED):
-  //  • ON  → AP เป็น "Credit[AP]" (ตั้งเจ้าหนี้) เสมอ + approve_status="yes" → ฝั่งจ่ายไปโพสต์ที่ใบ PV
-  //          (Dr เจ้าหนี้ / Cr ธนาคาร). ถ้าใช้ Cash[AP] จะ Cr ธนาคารซ้ำกับ PV = ลงจ่ายซ้ำ.
-  //  • OFF → พฤติกรรมเดิม 100%: Cash[AP] ถ้าจ่ายแล้ว / Credit[AP] ถ้ายังไม่จ่าย · approve_status="wait" · company_format เดิม.
+  // AP ต้องเป็น "เครดิต/ตั้งเจ้าหนี้" (ไม่ใช่ Cash[AP]) เมื่อจะมีใบ PV มาจ่ายทีหลัง — ไม่งั้น Cash[AP]
+  // เครดิตเงินสดในตัว AP เลย = จ่ายซ้ำกับ PV + ไม่มีเจ้าหนี้ให้ PV อ้าง. สองทางที่ทำให้เป็นเครดิต:
+  //  • creditForm (เส้น PV per-request ของเรา · active) — บังคับเครดิตแม้บิลถูก mark paid แล้ว.
+  //  • autoPv (flag LEDGER_AUTO_PV_ENABLED · dormant/OFF default · เส้น per-expense ของ session อื่น).
+  // ทั้งคู่ OFF → พฤติกรรมเดิม 100% (Cash ถ้าจ่าย/Credit ถ้ายัง · approve_status="wait" · company_format เดิม).
   const autoPv = isAutoPvEnabled();
-  const apType = autoPv
+  const apType = (opts.creditForm || autoPv)
     ? AP_TYPE_CREDIT
     : ((e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT);
   const apApproveStatus = autoPv ? "yes" : "wait";
@@ -594,7 +596,10 @@ export async function convertExpensePoToAp(
   // สูตร "LL" — ลงบัญชีต่อหมวดผ่าน "ช่อง c" ในตัวใบ AP (เฉพาะเคสเครดิต + หมวดมาตรฐานที่มี c-slot).
   // ส่ง c<หมวด>=ยอดสุทธิ (net) + c22/c23=VAT (ถ้ามี) → grand_total(เจ้าหนี้) auto จาก product.
   // journal อยู่ในตัวใบ → ไม่ตก 5919999 · ไม่มีชุดแยก · ไม่ต้องลบ. หมวดไม่รู้จัก/จ่ายสด → fallback Credit[AP].
-  const llSlot = (e.paymentStatus ?? "unpaid") !== "paid" ? llCSlotForGl(eff.categoryAccCode) : null;
+  // creditForm → ใช้ LL แม้ paid (ผังบัญชีถูก + มีเจ้าหนี้ให้ PV เคลียร์). เส้นปกติ: LL เฉพาะบิลยังไม่จ่าย.
+  const llSlot = (opts.creditForm || (e.paymentStatus ?? "unpaid") !== "paid")
+    ? llCSlotForGl(eff.categoryAccCode)
+    : null;
   const useLL = !!llSlot;
   const llNet = round2(eff.subtotal - (eff.discount || 0));
   const llVat = round2(eff.vat);
@@ -615,7 +620,9 @@ export async function convertExpensePoToAp(
     payment_term: "0",
     reference: e.docCode,
     discount: "0",
-    wht: String(round2(e.wht)),
+    // WHT: เส้น LL (เครดิต) เจ้าหนี้ = ยอดเต็ม (gross) · หัก ณ ที่จ่ายไปลงตอน "จ่ายจริง" (PV)
+    // ไม่ใช่ตอนตั้งหนี้ (AP) — กันจอง 2325300 ซ้ำ 2 เด้ง (AP+PV). เส้น Cash/Credit[AP] เดิมคงพฤติกรรมเดิม.
+    wht: useLL ? "0" : String(round2(e.wht)),
     tax_option: "in",           // ราคา VAT-inclusive (ค่าใช้จ่ายเก็บยอดรวม VAT)
     tax_report: taxReport,
     type: useLL ? AP_FORMULA_LL : apType, // LL ลงบัญชีต่อหมวด · ไม่งั้น Cash/Credit[AP] (apType: flag ON=Credit)
@@ -669,4 +676,148 @@ export async function deleteTrcloudAp(docId: string): Promise<{ ok: boolean; err
   const apR = await post("ap/delete.php", { id: docId });
   if (isSuccess(apR.data)) return { ok: true };
   return { ok: false, error: errMsg(poR) };
+}
+
+// ── PV (ใบสำคัญจ่าย) — "จ่ายจริง" หลังสลิปโอนปิดคำขอ ─────────────────────────────
+// 1 คำขอโอน (1 การโอนเงิน) = 1 PV อ้างได้หลาย AP (item[]). สูตร PV เลือกตาม "ธนาคารต้นทาง"
+// (จากสลิป) → journal: Dr เจ้าหนี้ 2101000 (grand_total=Σ ยอด AP) / Cr หัก ณ ที่จ่าย 2325300 (wht)
+// / Cr เงินสด-ธนาคาร (grand_total − wht). WHT ลงที่นี่ (ตอนจ่าย) ไม่ใช่ตอนตั้งหนี้ AP.
+//
+// ⚠️ ambiguity ที่ยังไม่ครอบ (v1): ธนาคารที่มี >1 บัญชี (SCB บ/ช หลัก vs SCB-4107 · TTB 2 บ/ช)
+// map ด้วย "รหัสธนาคาร" → บัญชีหลักของธนาคารนั้นเท่านั้น (สลิปไม่ได้อ่านเลขบัญชีต้นทาง). ตั้ง env
+// override รายธนาคารได้ ถ้าต้องเปลี่ยนบัญชีหลัก.
+const PV_FORMULA_BY_BANK: Record<string, string> = {
+  SCB:   process.env.LEDGER_TRCLOUD_PV_FORMULA_SCB   ?? "SCB[PV]",
+  BBL:   process.env.LEDGER_TRCLOUD_PV_FORMULA_BBL   ?? "BBL[PV]",
+  KBANK: process.env.LEDGER_TRCLOUD_PV_FORMULA_KBANK ?? "KBANK[PV]",
+  TTB:   process.env.LEDGER_TRCLOUD_PV_FORMULA_TTB   ?? "TTB[PV]",
+};
+// ธนาคารต้นทางอ่านไม่ออก (สลิปไม่มี QR) → ใช้บัญชีหลักของกิจการ (ตั้งได้ทาง env).
+const PV_FORMULA_DEFAULT = process.env.LEDGER_TRCLOUD_PV_FORMULA_DEFAULT ?? "SCB[PV]";
+
+/** รหัสธนาคารต้นทาง (จากสลิป · 3 หลัก/ตัวย่อ) → สูตร PV บัญชีเงินสด-ธนาคาร.
+ *  matched=false = เดาไม่ได้ → ใช้ default (caller ควร log/เตือนบัญชีให้ตรวจ). */
+export function pvFormulaForBank(bankCode: string | null | undefined): {
+  formula: string;
+  bankAbbr: string | null;
+  matched: boolean;
+} {
+  const ab = toAbbr(bankCode);
+  const f = ab ? PV_FORMULA_BY_BANK[ab] : null;
+  return { formula: f ?? PV_FORMULA_DEFAULT, bankAbbr: ab, matched: !!f };
+}
+
+// AP เราใช้ company_format = "JPS_AP" (เลขเอกสารเต็มคือ "JPS_AP"+running). pv/create item
+// ต้องแยก company_format กับ document_number ออกจากกัน (TRCloud นำมาต่อกันเองเป็น doc id).
+const PV_AP_FORMAT = "JPS_AP";
+function splitApDocNo(apDocNo: string): { company_format: string; document_number: string } {
+  const t = (apDocNo || "").trim();
+  return t.startsWith(PV_AP_FORMAT)
+    ? { company_format: PV_AP_FORMAT, document_number: t.slice(PV_AP_FORMAT.length) }
+    : { company_format: PV_AP_FORMAT, document_number: t };
+}
+
+export type PvItem = { apDocNo: string; amount: number; detail?: string | null };
+
+/**
+ * สร้าง PV (ใบสำคัญจ่าย) ใน TRCloud จ่ายชำระ AP หนึ่งใบขึ้นไป (1 การโอน = 1 PV).
+ * - `formula` = สูตร PV บัญชีต้นทาง (เช่น "SCB[PV]") จาก pvFormulaForBank(ธนาคารสลิป)
+ * - `whtTotal` = ยอดหัก ณ ที่จ่ายรวม (ลง 2325300 ที่ PV · AP ตั้งหนี้เต็ม gross ไว้แล้ว)
+ * - `items[].amount` = ยอดเต็มของ AP (gross · เจ้าหนี้) · Σ = grand_total ของ PV
+ * idempotent: pv/search ด้วย reference ก่อน — เจอ = คืนเลย ไม่สร้างซ้ำ.
+ */
+export async function createPvForRequestAps(input: {
+  orgId: string;
+  companyId: string;
+  reference: string;
+  formula: string;
+  department: string;
+  project?: string | null;
+  vendor: { name: string; taxId?: string | null; address?: string | null };
+  whtTotal: number;
+  issueDate: Date | string;
+  note?: string | null;
+  items: PvItem[];
+}): Promise<{ ok: true; pvDocId: string | null; pvDocNo: string | null } | { ok: false; error: string }> {
+  if (!trcloudPushConfigured()) return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
+  const items = input.items.filter((it) => it.apDocNo && it.apDocNo.trim());
+  if (items.length === 0) return { ok: false, error: "ไม่มีใบ AP ให้จ่าย (PV)" };
+  if (!input.department) return { ok: false, error: "ไม่มีรหัสแผนก TRCloud สำหรับ PV" };
+
+  const scope: Scope = { orgId: input.orgId, companyId: input.companyId };
+
+  // vendor → contact_id (คู่ค้าเดียวกับ AP · หาเจอเพราะเพิ่งตั้ง AP)
+  const contact = await resolveContactId(scope, {
+    vendor: input.vendor.name,
+    vendorTaxId: input.vendor.taxId ?? null,
+    vendorAddress: input.vendor.address ?? null,
+  });
+  if (!contact.ok) return { ok: false, error: `คู่ค้า (PV): ${contact.error}` };
+
+  // idempotency — PV อาจมีอยู่แล้ว (retry). reference ผูก 1:1 กับคำขอ.
+  {
+    const sr = await post("pv/search.php", { keyword: input.reference, limit: "5" });
+    const list = asArr(sr.data?.data) ?? asArr(sr.data?.result) ?? asArr(sr.data?.body) ?? [];
+    for (const row of list) {
+      const o = asObj(row);
+      const ref = pick(o, "reference", "ref");
+      if (ref && ref.trim() === input.reference.trim()) {
+        const pvDocId = pick(o, "payment_id", "id", "document_id");
+        const pvDocNo = pick(o, "document_number", "no");
+        if (pvDocId || pvDocNo) return { ok: true, pvDocId, pvDocNo };
+      }
+    }
+  }
+
+  const issue = toIsoDate(input.issueDate);
+  const payload: Json = {
+    issue_date: issue,
+    due_date: issue,
+    tax_date: issue,
+    company_format: "PV",
+    document_number: "",
+    reference: input.reference,
+    wht: String(round2(input.whtTotal)),
+    tax_report: "0",
+    type: input.formula, // สูตร PV บัญชีต้นทาง (Dr เจ้าหนี้ / Cr wht / Cr ธนาคาร)
+    approve_status: "wait",
+    department: input.department,
+    project: input.project ?? "",
+    invoice_note:
+      (input.note ? `${input.note} · ` : "") + `LedgerLine · จ่ายชำระ ${input.reference}`,
+    customer: {
+      group_code: "S",
+      code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
+      name: input.vendor.name || "ไม่ระบุชื่อผู้ขาย",
+      organization: input.vendor.name || "",
+      branch: "00000",
+      address: input.vendor.address || "-",
+      email: "",
+      telephone: "",
+      tax_id: digitsOnly(input.vendor.taxId),
+      contact_type: "normal",
+      contact_id: contact.ref.contactId,
+      add_contact: "0",
+    },
+    item: items.map((it) => {
+      const s = splitApDocNo(it.apDocNo);
+      return {
+        company_format: s.company_format,
+        document_number: s.document_number,
+        doc_type: "AP",
+        amount: round2(it.amount).toFixed(2),
+        detail: it.detail || `จ่ายชำระ ${it.apDocNo}`,
+      };
+    }),
+  };
+
+  const r = await post("pv/create.php", payload);
+  if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
+  const inner = asObj(r.data?.data) ?? asObj(r.data?.head) ?? r.data;
+  const pvDocId = pick(inner, "payment_id", "id", "document_id", "doc") ?? pick(r.data, "payment_id", "id");
+  const pvDocNo = pick(inner, "document_number", "no") ?? pick(r.data, "document_number", "no");
+  if (!pvDocId && !pvDocNo) {
+    return { ok: false, error: `TRCloud ไม่คืนเลขเอกสาร PV — จ่ายไม่สำเร็จ (${errMsg(r)})` };
+  }
+  return { ok: true, pvDocId, pvDocNo };
 }

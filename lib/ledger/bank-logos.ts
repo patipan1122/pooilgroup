@@ -71,7 +71,7 @@ export function bankBrandColor(code: string | null | undefined): string {
 }
 
 /** normalize input (ตัวย่อ/เลขรหัส) → ตัวย่อมาตรฐาน หรือ null. */
-function toAbbr(code: string | null | undefined): string | null {
+export function toAbbr(code: string | null | undefined): string | null {
   if (!code) return null;
   const c = code.trim().toUpperCase();
   if (LOGO_BY_ABBR[c] || BRAND_COLOR[c] || NAME_BY_ABBR[c]) return c;

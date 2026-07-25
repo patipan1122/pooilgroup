@@ -180,6 +180,10 @@ export type AuditAction =
   | "LEDGER_EXPENSE_AP_CONVERT_STARTED"
   | "LEDGER_EXPENSE_AP_CONVERT_FAILED"
   | "LEDGER_EXPENSE_AP_CONVERTED"
+  // PV (ใบสำคัญจ่าย) — จ่ายจริงหลังสลิปปิดคำขอโอน (1 โอน = 1 PV) — CEO 2026-07-25.
+  | "LEDGER_PV_CREATE_STARTED"
+  | "LEDGER_PV_CREATE_FAILED"
+  | "LEDGER_PV_CREATED"
   // TRCloud mapping settings (GL code, SKU, department/project) updated by admin.
   | "LEDGER_CATEGORY_UPDATED"
   // LINE Official Account connect for receipt capture. Stores encrypted Channel

@@ -6698,6 +6698,13 @@ model LedgerPaymentRequest {
   paidAt          DateTime? @map("paid_at") @db.Timestamptz(6)
   cancelledBy     String?   @map("cancelled_by") @db.Uuid
   cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  // PV (ใบสำคัญจ่าย) — ลงบัญชี "จ่ายจริง" ใน TRCloud หลังสลิปปิดคำขอ (1 โอน = 1 PV อ้างหลาย AP).
+  // pvSourceBank = รหัสธนาคารต้นทางจากสลิป → เลือกสูตร PV บัญชีเงินสด/ธนาคาร (CEO 2026-07-25).
+  trcloudPvDocId  String?   @map("trcloud_pv_doc_id")
+  trcloudPvDocNo  String?   @map("trcloud_pv_doc_no")
+  trcloudPvAt     DateTime? @map("trcloud_pv_at") @db.Timestamptz(6)
+  trcloudPvError  String?   @map("trcloud_pv_error")
+  pvSourceBank    String?   @map("pv_source_bank")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 

@@ -30,6 +30,7 @@ import { decodeSlipQr } from "@/lib/ledger/slip-qr";
 import { checkSlipDuplicate } from "@/lib/ledger/slip-match";
 import { recordSlipPayment, findAutoMatchBill } from "@/lib/ledger/payments";
 import { matchSlipToRequest } from "@/lib/ledger/payment-request";
+import { autoCreatePvAfterMatch } from "@/lib/ledger/ap-auto-convert";
 import { buildPaymentPaidCard, buildSlipMismatchCard } from "@/lib/ledger/payment-request-card";
 import {
   buildLineConfirmCard,
@@ -853,6 +854,9 @@ async function handleSlipImage(opts: {
           detailUrl: paidDetailUrl,
         }),
       );
+      // สลิปปิดคำขอแล้ว → แปลงทุกบิล PO→AP แล้วออก PV "จ่ายจริง" อัตโนมัติ (best-effort · ไม่ throw ·
+      // เงินโอน+บิล paid บันทึกไปแล้ว · PV retry ได้). ธนาคารต้นทางอ่านจากสลิป (qr.sendingBank).
+      await autoCreatePvAfterMatch(ch.orgId, ch.companyId, reqMatch.requestId, null);
       return;
     }
     if (reqMatch.reason === "duplicate") {

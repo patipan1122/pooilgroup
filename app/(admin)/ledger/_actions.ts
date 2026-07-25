@@ -55,7 +55,7 @@ import {
 // convertExpensePoToAp + PushableExpense + isTrcloudSent + loadPushable: ตรรกะแปลง AP
 // ย้ายไป lib/ledger/ap-auto-convert.ts + lib/ledger/pushable.ts แล้ว (แชร์กับ auto-trigger).
 import { loadPushable } from "@/lib/ledger/pushable";
-import { runApConversion } from "@/lib/ledger/ap-auto-convert";
+import { runApConversion, autoCreatePvAfterMatch } from "@/lib/ledger/ap-auto-convert";
 import { createPvForPaidAp } from "@/lib/ledger/trcloud-pv";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
@@ -3967,6 +3967,9 @@ export async function assignSlipToRequestAction(
     resourceType: "ledger_payment", resourceId: paymentId,
     diff: { new: { paymentRequestId: requestId } },
   });
+  // จับคู่สลิปด้วยมือแล้วปิดคำขอครบ → แปลง PO→AP + ออก PV จ่ายจริงอัตโนมัติ (best-effort ·
+  // no-op ถ้ายังจ่ายไม่ครบ). core เดียวกับเส้น LINE webhook.
+  await autoCreatePvAfterMatch(orgId, payment.companyId, requestId, session.user.id);
   revalidatePath("/ledger/reconcile");
   return { ok: true };
 }

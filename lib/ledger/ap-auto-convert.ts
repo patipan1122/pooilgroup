@@ -15,7 +15,13 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { loadPushable } from "@/lib/ledger/pushable";
-import { convertExpensePoToAp, trcloudPushConfigured } from "@/lib/ledger/trcloud-push";
+import {
+  convertExpensePoToAp,
+  trcloudPushConfigured,
+  createPvForRequestAps,
+  pvFormulaForBank,
+  type PvItem,
+} from "@/lib/ledger/trcloud-push";
 import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { audit } from "@/lib/audit/log";
 
@@ -36,6 +42,7 @@ export async function runApConversion(
   companyId: string,
   expenseId: string,
   actorUserId: string | null,
+  opts: { creditForm?: boolean } = {},
 ): Promise<RunApConversionResult> {
   const row = await prisma.ledgerExpense.findFirst({
     where: { id: expenseId, orgId, companyId },
@@ -89,7 +96,11 @@ export async function runApConversion(
     diff: { new: { docCode: loaded.pushable.docCode, total: loaded.pushable.total } },
   });
 
-  const res = await convertExpensePoToAp(loaded.pushable, { poDocId, slipUrl: slip?.slipUrl ?? null });
+  const res = await convertExpensePoToAp(loaded.pushable, {
+    poDocId,
+    slipUrl: slip?.slipUrl ?? null,
+    creditForm: opts.creditForm === true,
+  });
   if (!res.ok) {
     await prisma.ledgerExpense.updateMany({
       where: { id: expenseId, orgId, companyId },
@@ -149,5 +160,167 @@ export async function autoConvertAfterSlip(
   } catch (e) {
     // best-effort: กลืน error ทุกกรณี ห้ามให้กระทบ payment flow
     console.error("[ledger:auto-ap]", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PV (ใบสำคัญจ่าย) หลังสลิปโอนปิด "คำขอโอน" — 1 การโอน = 1 PV อ้างทุก AP ในคำขอ.
+// เส้นทาง: สลิปแมทช์ปิดคำขอ (state=paid) → แปลงทุกบิล PO→AP (idempotent) → สร้าง PV จ่าย
+// จากธนาคารต้นทาง (อ่านจากสลิป). ลงบัญชี "จ่ายจริง": Dr เจ้าหนี้ / Cr หัก ณ ที่จ่าย / Cr ธนาคาร.
+// CEO 2026-07-25: "แมทช์ยอด → เปลี่ยน PO เป็น AP → ออก PV อัตโนมัติ ดูบัญชีต้นทางจากสลิป".
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RunPvResult =
+  | { ok: true; pvDocNo?: string | null; alreadyPv?: boolean; skipped?: string }
+  | { ok: false; error: string };
+
+async function stampPvError(orgId: string, companyId: string, requestId: string, err: string): Promise<void> {
+  await prisma.ledgerPaymentRequest.updateMany({
+    where: { id: requestId, orgId, companyId },
+    data: { trcloudPvError: err.slice(0, 500) },
+  });
+}
+
+/**
+ * CORE สร้าง PV สำหรับ 1 คำขอโอน. idempotent (มี PV แล้ว-ข้าม) · all-or-nothing (บิลใด
+ * ยังไม่มี AP → ไม่ออก PV กันจ่ายขาด/เกิน · เงินโอนจริงถูกบันทึกไปแล้ว · PV retry ได้).
+ * ห้ามเรียกก่อนคำขอ state=paid — ฟังก์ชันเช็คเองแล้ว no-op ถ้ายังจ่ายไม่ครบ.
+ */
+export async function runPvForRequest(
+  orgId: string,
+  companyId: string,
+  requestId: string,
+  actorUserId: string | null,
+): Promise<RunPvResult> {
+  const req = await prisma.ledgerPaymentRequest.findFirst({
+    where: { id: requestId, orgId, companyId },
+    select: {
+      state: true,
+      trcloudPvDocId: true,
+      vendor: true,
+      whtTotal: true,
+      paidAt: true,
+      bills: { where: { active: true }, select: { expenseId: true, billAmount: true } },
+      payments: { orderBy: { paidAt: "desc" }, take: 1, select: { sendingBank: true } },
+    },
+  });
+  if (!req) return { ok: false, error: "ไม่พบคำขอโอน" };
+  // ยังจ่ายไม่ครบ (partial/open) → ยังไม่ออก PV (รอปิดคำขอ)
+  if (req.state !== "paid") return { ok: true, skipped: "not-fully-paid" };
+  // ออก PV แล้ว → idempotent skip (ไม่จ่ายซ้ำ)
+  if (req.trcloudPvDocId) return { ok: true, alreadyPv: true };
+  if (req.bills.length === 0) return { ok: false, error: "คำขอไม่มีบิล" };
+
+  // 1) ทุกบิล → ต้องมี AP (แปลง PO→AP ถ้ายัง · idempotent). all-or-nothing.
+  const items: PvItem[] = [];
+  let vendor: { name: string; taxId: string | null; address: string | null } | null = null;
+  let department: string | null = null;
+  let project: string | null = null;
+  for (const b of req.bills) {
+    // creditForm: บิลถูก mark paid ไปแล้วตอนสลิปแมทช์ → บังคับ AP เป็น LL/เครดิต (ตั้งเจ้าหนี้)
+    // เพื่อให้ PV เคลียร์เจ้าหนี้ได้ + ผังบัญชีถูก (ไม่ตก 5919999 · ไม่จ่ายซ้ำ).
+    const conv = await runApConversion(orgId, companyId, b.expenseId, actorUserId, { creditForm: true });
+    if (!conv.ok || !conv.apDocNo) {
+      const why = conv.ok ? "AP ไม่มีเลขเอกสาร" : conv.error;
+      await stampPvError(orgId, companyId, requestId, `บิลยังแปลงเป็น AP ไม่ครบ (${why})`);
+      return { ok: false, error: `ยังออก PV ไม่ได้ — มีบิลที่ยังไม่มี AP (${why})` };
+    }
+    items.push({ apDocNo: conv.apDocNo, amount: Number(b.billAmount), detail: null });
+    // คู่ค้า/สาขา จากบิลแรก (ทุกบิลในคำขอเดียว = payee เดียวกัน)
+    if (!vendor) {
+      const pe = await loadPushable(orgId, b.expenseId, companyId);
+      if (pe) {
+        vendor = {
+          name: pe.pushable.vendor ?? "",
+          taxId: pe.pushable.vendorTaxId,
+          address: pe.pushable.vendorAddress,
+        };
+        department = pe.pushable.branchTrcloudDepartment ?? null;
+        project = pe.pushable.branchTrcloudProject ?? null;
+      }
+    }
+  }
+  if (!vendor || !department) {
+    await stampPvError(orgId, companyId, requestId, "ไม่มีข้อมูลคู่ค้า/รหัสแผนก TRCloud");
+    return { ok: false, error: "ไม่มีข้อมูลคู่ค้า/รหัสแผนก TRCloud สำหรับ PV" };
+  }
+
+  // 2) สูตร PV ตาม "ธนาคารต้นทาง" ที่อ่านจากสลิป (ไม่มี QR → บัญชีหลัก default)
+  const srcBank = req.payments[0]?.sendingBank ?? null;
+  const pf = pvFormulaForBank(srcBank);
+
+  await audit({
+    orgId,
+    userId: actorUserId,
+    action: "LEDGER_PV_CREATE_STARTED",
+    resourceType: "ledger_payment_request",
+    resourceId: requestId,
+    diff: { new: { formula: pf.formula, sourceBank: srcBank, bankMatched: pf.matched, apCount: items.length } },
+  });
+
+  const res = await createPvForRequestAps({
+    orgId,
+    companyId,
+    reference: `PVREQ-${requestId}`,
+    formula: pf.formula,
+    department,
+    project,
+    vendor,
+    whtTotal: Number(req.whtTotal),
+    issueDate: req.paidAt ?? new Date(),
+    note: `จ่าย ${vendor.name ?? ""}`.trim(),
+    items,
+  });
+  if (!res.ok) {
+    await stampPvError(orgId, companyId, requestId, res.error);
+    await audit({
+      orgId,
+      userId: actorUserId,
+      action: "LEDGER_PV_CREATE_FAILED",
+      resourceType: "ledger_payment_request",
+      resourceId: requestId,
+      diff: { new: { error: res.error.slice(0, 500) } },
+    });
+    return { ok: false, error: res.error };
+  }
+
+  await prisma.ledgerPaymentRequest.updateMany({
+    where: { id: requestId, orgId, companyId },
+    data: {
+      trcloudPvDocId: res.pvDocId ?? "sent",
+      trcloudPvDocNo: res.pvDocNo,
+      trcloudPvAt: new Date(),
+      trcloudPvError: null,
+      pvSourceBank: pf.bankAbbr ?? srcBank,
+    },
+  });
+  await audit({
+    orgId,
+    userId: actorUserId,
+    action: "LEDGER_PV_CREATED",
+    resourceType: "ledger_payment_request",
+    resourceId: requestId,
+    diff: { new: { trcloudPvDocNo: res.pvDocNo, trcloudPvDocId: res.pvDocId, formula: pf.formula } },
+  });
+  revalidatePath("/ledger/reconcile");
+  return { ok: true, pvDocNo: res.pvDocNo };
+}
+
+/**
+ * BEST-EFFORT: สร้าง PV หลังสลิปปิดคำขอ (เรียกจาก LINE webhook + ปุ่มจับคู่สลิปในเว็บ).
+ * ⚠️ ห้าม throw — เงินโอนจริง+บิล paid ถูกบันทึกไปแล้ว. PV เป็นงานตามหลัง (retry ได้).
+ * runPvForRequest idempotent + no-op ถ้ายังจ่ายไม่ครบ → เรียกซ้ำ/เรียกก่อนเวลาปลอดภัย.
+ */
+export async function autoCreatePvAfterMatch(
+  orgId: string,
+  companyId: string,
+  requestId: string,
+  actorUserId: string | null,
+): Promise<void> {
+  try {
+    if (!trcloudPushConfigured()) return;
+    await runPvForRequest(orgId, companyId, requestId, actorUserId);
+  } catch (e) {
+    console.error("[ledger:auto-pv]", e);
   }
 }
