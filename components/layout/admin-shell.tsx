@@ -256,7 +256,12 @@ export function AdminShell({
       data-module={activeModuleSlug ?? "home"}
     >
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 h-14 sm:h-16 bg-white border-b-2 border-zinc-200 flex items-center justify-between px-4 sm:px-6">
+      {/* data-pinpoint-passthrough: clicks here navigate even in Pinpoint placing
+          mode (audit: user couldn't switch menus without toggling "เลื่อนดู"). */}
+      <header
+        data-pinpoint-passthrough
+        className="sticky top-0 z-40 h-14 sm:h-16 bg-white border-b-2 border-zinc-200 flex items-center justify-between px-4 sm:px-6"
+      >
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -486,7 +491,10 @@ export function AdminShell({
             other modules are collapsed to a single header row that links to
             the module landing. HARD RULE feedback_module_isolation.md.
             Collapsible state of each zone persists in localStorage. */}
-        <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r-2 border-zinc-200 bg-white sticky top-14 sm:top-16 self-start max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto">
+        <aside
+          data-pinpoint-passthrough
+          className="hidden lg:flex w-64 shrink-0 flex-col border-r-2 border-zinc-200 bg-white sticky top-14 sm:top-16 self-start max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto"
+        >
           <SidebarBody
             user={user}
             pathname={pathname}
@@ -500,12 +508,15 @@ export function AdminShell({
 
         {/* Mobile drawer — same content as desktop sidebar */}
         {mobileOpen && (
-          <div className="lg:hidden fixed inset-0 z-50">
+          <div data-pinpoint-passthrough className="lg:hidden fixed inset-0 z-50">
             <div
               className="absolute inset-0 bg-zinc-950/40"
               onClick={() => setMobileOpen(false)}
             />
-            <aside className="absolute left-0 top-0 h-full w-80 bg-white shadow-xl flex flex-col">
+            <aside
+              data-pinpoint-passthrough
+              className="absolute left-0 top-0 h-full w-80 bg-white shadow-xl flex flex-col"
+            >
               <div className="h-14 px-4 flex items-center justify-between border-b-2 border-zinc-200">
                 <span className="font-bold font-display">Pooilgroup</span>
                 <button
@@ -574,10 +585,15 @@ export function AdminShell({
           Hidden ≥lg (desktop uses the sidebar) AND hidden inside any module
           (the module supplies its own nav). */}
       {showHubNav && (
-        <HubBottomNav
-          isAdmin={isAdmin}
-          pendingCount={navCounts.pendingRegisterRequests ?? 0}
-        />
+        // display:contents keeps the fixed bottom-nav layout intact while still
+        // marking it a Pinpoint passthrough region (closest() walks the DOM tree
+        // regardless of display) so its tabs navigate in placing mode.
+        <div data-pinpoint-passthrough style={{ display: "contents" }}>
+          <HubBottomNav
+            isAdmin={isAdmin}
+            pendingCount={navCounts.pendingRegisterRequests ?? 0}
+          />
+        </div>
       )}
     </div>
   );

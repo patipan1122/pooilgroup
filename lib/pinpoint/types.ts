@@ -57,6 +57,8 @@ export interface PinpointSession {
   exported_at: string | null;
   consolidated_report_id: string | null;
   pin_count: number;
+  /** R2 key of the per-session screen recording (webm), if one was captured. */
+  recording_key: string | null;
   created_at: string;
   finished_at: string | null;
   updated_at: string;

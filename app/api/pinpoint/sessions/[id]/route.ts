@@ -17,8 +17,10 @@ import { sessionSummary } from "@/lib/pinpoint/markdown";
 import type { PinpointPin } from "@/lib/pinpoint/types";
 
 const PatchSchema = z.object({
-  action: z.enum(["finish", "review", "close", "rename"]),
+  action: z.enum(["finish", "review", "close", "rename", "recording"]),
   title: z.string().max(200).optional(),
+  // R2 key of the per-session screen recording; null clears it.
+  recordingKey: z.string().max(300).nullable().optional(),
 });
 
 async function loadSession(orgId: string, id: string) {
@@ -96,6 +98,30 @@ export async function PATCH(
     await admin
       .from("pinpoint_sessions")
       .update({ title: title ?? null, updated_at: now })
+      .eq("id", id)
+      .eq("org_id", orgId);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "recording") {
+    // Owner attaches the screen recording to their own session (super_admin any).
+    if (!isOwner && !isSuperAdmin(session.user.role)) {
+      return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
+    }
+    const key = parsed.data.recordingKey ?? null;
+    // Defense: only accept a key inside this user's own R2 namespace so a client
+    // can't point the session at an arbitrary object (same guard as pins).
+    if (key && !key.startsWith(`users/${session.user.id}/`)) {
+      return NextResponse.json({ error: "key ไม่ถูกต้อง" }, { status: 400 });
+    }
+    // Replacing an existing recording → best-effort delete the old object first.
+    const prev = sess as unknown as { recording_key?: string | null };
+    if (prev.recording_key && prev.recording_key !== key) {
+      await deleteObject(prev.recording_key);
+    }
+    await admin
+      .from("pinpoint_sessions")
+      .update({ recording_key: key, updated_at: now })
       .eq("id", id)
       .eq("org_id", orgId);
     return NextResponse.json({ ok: true });
@@ -229,6 +255,15 @@ export async function DELETE(
   for (const p of (pins ?? []) as { screenshot_key: string | null }[]) {
     if (p.screenshot_key) await deleteObject(p.screenshot_key);
   }
+  // ...and the per-session screen recording, if any.
+  const { data: sessRow } = await admin
+    .from("pinpoint_sessions")
+    .select("recording_key")
+    .eq("org_id", orgId)
+    .eq("id", id)
+    .maybeSingle();
+  const recKey = (sessRow as { recording_key: string | null } | null)?.recording_key;
+  if (recKey) await deleteObject(recKey);
 
   const { error } = await admin
     .from("pinpoint_sessions")

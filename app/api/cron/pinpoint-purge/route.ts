@@ -38,6 +38,7 @@ async function handle(req: NextRequest) {
   const draftCutoff = new Date(now - DRAFT_TTL_DAYS * 86400_000).toISOString();
 
   let screenshotsPurged = 0;
+  let recordingsPurged = 0;
   let draftsDeleted = 0;
 
   // 1. Expire screenshots.
@@ -56,14 +57,34 @@ async function handle(req: NextRequest) {
     screenshotsPurged++;
   }
 
-  // 2. Delete abandoned drafts (also frees their screenshots first).
+  // 1b. Expire per-session screen recordings (a full video carries more PII
+  //     than a single snapshot → same 30-day TTL).
+  const { data: oldRecs } = await admin
+    .from("pinpoint_sessions")
+    .select("id, recording_key")
+    .not("recording_key", "is", null)
+    .lt("created_at", shotCutoff)
+    .limit(BATCH);
+  for (const s of (oldRecs ?? []) as { id: string; recording_key: string }[]) {
+    await deleteObject(s.recording_key);
+    await admin
+      .from("pinpoint_sessions")
+      .update({ recording_key: null, updated_at: new Date().toISOString() })
+      .eq("id", s.id);
+    recordingsPurged++;
+  }
+
+  // 2. Delete abandoned drafts (also frees their screenshots + recording first).
   const { data: oldDrafts } = await admin
     .from("pinpoint_sessions")
-    .select("id")
+    .select("id, recording_key")
     .eq("status", "draft")
     .lt("created_at", draftCutoff)
     .limit(BATCH);
-  for (const s of (oldDrafts ?? []) as { id: string }[]) {
+  for (const s of (oldDrafts ?? []) as {
+    id: string;
+    recording_key: string | null;
+  }[]) {
     const { data: pins } = await admin
       .from("pinpoint_pins")
       .select("screenshot_key")
@@ -71,9 +92,15 @@ async function handle(req: NextRequest) {
     for (const pin of (pins ?? []) as { screenshot_key: string | null }[]) {
       if (pin.screenshot_key) await deleteObject(pin.screenshot_key);
     }
+    if (s.recording_key) await deleteObject(s.recording_key);
     await admin.from("pinpoint_sessions").delete().eq("id", s.id);
     draftsDeleted++;
   }
 
-  return NextResponse.json({ ok: true, screenshotsPurged, draftsDeleted });
+  return NextResponse.json({
+    ok: true,
+    screenshotsPurged,
+    recordingsPurged,
+    draftsDeleted,
+  });
 }

@@ -13,6 +13,7 @@ import {
   Loader2,
   ExternalLink,
   ZoomIn,
+  Video,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -152,6 +153,22 @@ export function SessionReview({
           </button>
         )}
       </header>
+
+      {/* Per-session screen recording (โหมดติชม: อัดวิดีโอ) — served straight
+          from the public R2 URL, same as screenshots. */}
+      {session.recording_key && r2PublicUrl && (
+        <div className="mb-4">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
+            <Video className="size-3.5" /> วิดีโออัดหน้าจอ
+          </div>
+          <video
+            src={`${r2PublicUrl}/${session.recording_key}`}
+            controls
+            playsInline
+            className="max-h-[70vh] w-full rounded-2xl border-2 border-zinc-100 bg-black"
+          />
+        </div>
+      )}
 
       {canReview && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

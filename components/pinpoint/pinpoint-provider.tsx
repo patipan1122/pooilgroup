@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Crosshair,
@@ -28,6 +28,8 @@ import {
   Play,
   Mic,
   Pen,
+  Video,
+  Square,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { buildSelector, buildElementMeta, elementText } from "@/lib/pinpoint/selector";
@@ -100,8 +102,65 @@ function currentUrl(): string {
   return window.location.pathname + window.location.search;
 }
 
+// ── screen recording helpers ────────────────────────────────────────────────
+// Upload a recorded webm to R2 via a presigned PUT. Returns the R2 key, or null
+// on any failure — notably R2 CORS blocking browser→R2 PUT on the custom domain
+// (pooilgroup.com), in which case the caller falls back to a local download so
+// the video is never lost. Sends contentType "video/webm" (no codecs suffix) to
+// match the sign route's MIME allowlist.
+async function uploadRecording(blob: Blob): Promise<string | null> {
+  try {
+    const filename = `pinpoint-recording-${Date.now()}.webm`;
+    const signRes = await fetch("/api/r2/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename,
+        contentType: "video/webm",
+        size: blob.size,
+      }),
+    });
+    if (!signRes.ok) return null;
+    const { uploadUrl, key } = (await signRes.json()) as {
+      uploadUrl?: string;
+      key?: string;
+    };
+    if (!uploadUrl || !key) return null;
+    const put = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "video/webm" },
+      body: blob,
+    });
+    if (!put.ok) return null;
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+// Save the recording to the user's device — the fallback when upload is blocked,
+// so the walkthrough video is never lost (they can hand it straight to Claude).
+function downloadRecording(blob: Blob) {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pinpoint-recording-${Date.now()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function PinpointProvider({ canReview = false }: { canReview?: boolean } = {}) {
   const pathname = usePathname();
+  // Subscribe to the query string too — pages that swap tabs via ?tab= keep the
+  // same pathname, so usePathname() alone never re-renders on a tab change and
+  // pins stayed stuck on the previous tab. Reading searchParams re-renders here.
+  const searchParams = useSearchParams();
   const router = useRouter();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -111,11 +170,20 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
   const [pins, setPins] = useState<LocalPin[]>([]);
   const [draft, setDraft] = useState<DraftPin | null>(null);
   const [busy, setBusy] = useState(false);
+  // ── screen recording state (desktop only) ──
+  const [recording, setRecording] = useState(false);
+  const [recBusy, setRecBusy] = useState(false); // finalizing/uploading the clip
 
   // ถ่ายภาพ "ต่อหมุด" ตอนกดปักจริง (ไม่ pre-capture ทั้งหน้าอีกต่อไป) → ภาพเป็นจอที่
   // ผู้ใช้เห็นจริง ณ จุด+เวลานั้น (เนื้อหาโหลดเสร็จ ไม่ติด skeleton, ไม่ยาวเหมือนปริ้น).
   const trapRef = useRef<HTMLDivElement | null>(null);
   const captureWarned = useRef(false); // เตือนปัญหาจับภาพครั้งเดียวพอ (ไม่สแปม)
+  // Screen-recording refs (survive re-renders; onstop closure reads them).
+  const recRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recStreamRef = useRef<MediaStream | null>(null);
+  const recSessionRef = useRef<string | null>(null); // session captured at start
+  const recTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── start / resume / pause ──────────────────────────────────────────────
   const loadPins = useCallback(async (sid: string) => {
@@ -265,6 +333,27 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         target = document.elementFromPoint(x, y);
         trap.style.pointerEvents = prev || "auto";
       }
+
+      // Nav chrome (topbar, sidebar, drawer, bottom-nav) is tagged
+      // data-pinpoint-passthrough. A click there should NAVIGATE — even in
+      // placing mode — instead of dropping a pin, so the user can switch
+      // menus/tabs freely without first toggling to "เลื่อนดู". Pins stay
+      // reserved for the content area. (audit: "กดเมนูไม่ได้/เด้งเป็นหมุด")
+      const passthrough = (target as HTMLElement | null)?.closest?.(
+        "[data-pinpoint-passthrough]",
+      );
+      if (passthrough) {
+        const actionable = (target as HTMLElement | null)?.closest?.(
+          'a,button,[role="button"],[role="tab"],[role="menuitem"],[role="link"],input,select,label',
+        ) as HTMLElement | null;
+        // Re-fire the click on the real nav control (Next <Link>/buttons react
+        // to a synthetic click). Fall back to the raw target so click-to-close
+        // backdrops (a bare <div onClick>) still work; worst case a harmless
+        // no-op — never a stray pin on the menu.
+        (actionable ?? (target as HTMLElement | null))?.click?.();
+        return;
+      }
+
       const vw = window.innerWidth || 1;
       const vh = window.innerHeight || 1;
       const el = target ?? document.body;
@@ -442,6 +531,143 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
     setPlacing(true);
   }, [sessionId]);
 
+  // ── screen recording (desktop only) ───────────────────────────────────────
+  // On stop: upload the clip to R2 and attach it to the session; if the upload
+  // is blocked (R2 CORS on the custom domain) fall back to a local download so
+  // the recording is never lost.
+  const finalizeRecording = useCallback(async (blob: Blob) => {
+    setRecBusy(true);
+    const loadingId = toast.loading("กำลังบันทึกวิดีโอ…");
+    try {
+      const sid = recSessionRef.current;
+      const key = await uploadRecording(blob);
+      if (key && sid) {
+        const res = await fetch(`/api/pinpoint/sessions/${sid}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "recording", recordingKey: key }),
+        });
+        if (res.ok) {
+          toast.success("แนบวิดีโอกับรอบติชมนี้แล้ว");
+          return;
+        }
+      }
+      downloadRecording(blob);
+      toast.message("อัปขึ้นระบบไม่ได้ — ดาวน์โหลดวิดีโอให้แทน (ส่งให้ Claude ได้)");
+    } catch {
+      downloadRecording(blob);
+      toast.message("อัปขึ้นระบบไม่ได้ — ดาวน์โหลดวิดีโอให้แทน (ส่งให้ Claude ได้)");
+    } finally {
+      toast.dismiss(loadingId);
+      setRecBusy(false);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (recTimerRef.current) {
+      clearTimeout(recTimerRef.current);
+      recTimerRef.current = null;
+    }
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") {
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (recording || recBusy) return;
+    const md =
+      typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    if (!md?.getDisplayMedia || typeof MediaRecorder === "undefined") {
+      toast.error("อัดหน้าจอได้เฉพาะบนคอม (เบราว์เซอร์เดสก์ท็อป)");
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await md.getDisplayMedia({
+        video: { frameRate: 15 },
+        audio: false,
+      });
+    } catch {
+      return; // user dismissed the share picker / denied — not an error
+    }
+    recStreamRef.current = stream;
+    recSessionRef.current = sessionId;
+    recChunksRef.current = [];
+    const mime =
+      ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
+        (m) => MediaRecorder.isTypeSupported?.(m),
+      ) ?? "video/webm";
+    const rec = new MediaRecorder(stream, {
+      mimeType: mime,
+      videoBitsPerSecond: 2_500_000, // ~2 min ≈ 37MB · well under the 500MB cap
+    });
+    recRef.current = rec;
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recChunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      if (recTimerRef.current) {
+        clearTimeout(recTimerRef.current);
+        recTimerRef.current = null;
+      }
+      stream.getTracks().forEach((t) => t.stop());
+      recStreamRef.current = null;
+      recRef.current = null;
+      setRecording(false);
+      const chunks = recChunksRef.current;
+      recChunksRef.current = [];
+      const blob = new Blob(chunks, { type: "video/webm" });
+      if (blob.size > 0) void finalizeRecording(blob);
+    };
+    // Stop when the user ends sharing via the browser's own control.
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      try {
+        if (rec.state !== "inactive") rec.stop();
+      } catch {
+        /* ignore */
+      }
+    });
+    rec.start();
+    setRecording(true);
+    toast.success("เริ่มอัดหน้าจอ — สลับเมนู/แท็บได้เลย · กด ⏹ เพื่อหยุด");
+    // Safety cap so a forgotten recording can't balloon (money = R2 storage).
+    recTimerRef.current = setTimeout(
+      () => {
+        try {
+          if (rec.state !== "inactive") rec.stop();
+        } catch {
+          /* ignore */
+        }
+        toast.message("หยุดอัดอัตโนมัติที่ 5 นาที");
+      },
+      5 * 60 * 1000,
+    );
+  }, [recording, recBusy, sessionId, finalizeRecording]);
+
+  const toggleRecording = useCallback(() => {
+    if (recording) stopRecording();
+    else void startRecording();
+  }, [recording, startRecording, stopRecording]);
+
+  // Stop any active recording + release the screen share on unmount.
+  useEffect(() => {
+    return () => {
+      if (recTimerRef.current) clearTimeout(recTimerRef.current);
+      try {
+        if (recRef.current && recRef.current.state !== "inactive")
+          recRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+      recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
   // ── render ──────────────────────────────────────────────────────────────
   if (!sessionId) return null;
 
@@ -462,7 +688,20 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
 
   if (!active) return null;
 
-  const pinsHere = pins.filter((p) => p.url === currentUrl());
+  // Build the active URL from the reactive hooks (not window.location) so this
+  // recomputes whenever the path OR the query (?tab=) changes. Matches the
+  // pathname+search format that savePin stores via currentUrl().
+  const qs = searchParams.toString();
+  const activeUrl = qs ? `${pathname}?${qs}` : pathname;
+  const pinsHere = pins.filter((p) => p.url === activeUrl);
+
+  // Screen recording needs the desktop Screen Capture API — hide the button on
+  // browsers without it (mobile Safari/Chrome don't support getDisplayMedia).
+  const canRecord =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === "function" &&
+    typeof MediaRecorder !== "undefined";
 
   return (
     <div data-pinpoint-ui>
@@ -533,6 +772,10 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
         count={pins.length}
         placing={placing}
         busy={busy}
+        recording={recording}
+        recBusy={recBusy}
+        canRecord={canRecord}
+        onToggleRecording={toggleRecording}
         onTogglePlacing={() => setPlacing((v) => !v)}
         onViewAll={() => router.push(`/pinpoint/${sessionId}`)}
         onFinish={finish}
@@ -840,6 +1083,10 @@ function SessionBar({
   count,
   placing,
   busy,
+  recording,
+  recBusy,
+  canRecord,
+  onToggleRecording,
   onTogglePlacing,
   onViewAll,
   onFinish,
@@ -848,6 +1095,10 @@ function SessionBar({
   count: number;
   placing: boolean;
   busy: boolean;
+  recording: boolean;
+  recBusy: boolean;
+  canRecord: boolean;
+  onToggleRecording: () => void;
   onTogglePlacing: () => void;
   onViewAll: () => void;
   onFinish: () => void;
@@ -897,6 +1148,34 @@ function SessionBar({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {/* Record the screen for this session (desktop only) — a continuous clip
+            keeps working across menu/tab switches, so it never breaks like a
+            per-page overlay. Upload attaches it to the session; if blocked it
+            downloads locally instead. */}
+        {canRecord && (
+          <button
+            type="button"
+            onClick={onToggleRecording}
+            disabled={recBusy}
+            aria-label={recording ? "หยุดอัดหน้าจอ" : "อัดหน้าจอ"}
+            title={recording ? "หยุดอัดหน้าจอ" : "อัดหน้าจอ (สลับเมนูได้)"}
+            className={cn(
+              "flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+              recording
+                ? "bg-red-600 text-white"
+                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
+            )}
+          >
+            {recBusy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : recording ? (
+              <Square className="size-3.5 fill-current" />
+            ) : (
+              <Video className="size-3.5" />
+            )}
+            {recording ? "หยุด" : "อัด"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onViewAll}
@@ -907,13 +1186,14 @@ function SessionBar({
         <button
           type="button"
           onClick={onPause}
-          className="flex items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-700"
+          disabled={recording || recBusy}
+          className="flex items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-700 disabled:opacity-50"
         >
           <Pause className="size-3.5" /> พัก
         </button>
         <button
           type="button"
-          disabled={busy || count === 0}
+          disabled={busy || count === 0 || recording || recBusy}
           onClick={onFinish}
           className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
         >

@@ -28,7 +28,7 @@ export async function listSessions(
   let q = admin
     .from("pinpoint_sessions")
     .select(
-      "id, org_id, author_id, title, status, reviewed_by_id, reviewed_at, exported_at, consolidated_report_id, pin_count, created_at, finished_at, updated_at, author:author_id(id, name)",
+      "id, org_id, author_id, title, status, reviewed_by_id, reviewed_at, exported_at, consolidated_report_id, pin_count, recording_key, created_at, finished_at, updated_at, author:author_id(id, name)",
     )
     .eq("org_id", orgId);
   if (opts.authorId) q = q.eq("author_id", opts.authorId);
@@ -73,7 +73,7 @@ export async function getSessionWithPins(
   const { data: session, error: sErr } = await admin
     .from("pinpoint_sessions")
     .select(
-      "id, org_id, author_id, title, status, reviewed_by_id, reviewed_at, exported_at, consolidated_report_id, pin_count, created_at, finished_at, updated_at, author:author_id(id, name)",
+      "id, org_id, author_id, title, status, reviewed_by_id, reviewed_at, exported_at, consolidated_report_id, pin_count, recording_key, created_at, finished_at, updated_at, author:author_id(id, name)",
     )
     .eq("org_id", orgId)
     .eq("id", sessionId)
