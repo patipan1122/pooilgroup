@@ -363,10 +363,11 @@ const isFilled = (v: Counted): boolean => v != null;
 /** ดีไซน์ใหม่ · มิเตอร์ 4 ช่องเรียง 2×2 (เงินบน/เงินล่าง/ตุ๊กตาบน/ตุ๊กตาล่าง) — ตามตัวอย่าง.
  *  key/photoKey ชี้ field เดิมใน Form/Photos ตรง ๆ → ค่าที่ส่ง server ไม่เปลี่ยน. */
 const METER_CELLS = [
-  { key: "coinGear", photoKey: "coinGear", label: "เงิน · บน (เฟือง)", pair: "coin", phase: "meter_after" },
-  { key: "coinDigi", photoKey: "coinDigi", label: "เงิน · ล่าง (ดิจิตอล)", pair: "coin", phase: "meter_after" },
-  { key: "dollGear", photoKey: "dollGear", label: "ตุ๊กตา · บน (เฟือง)", pair: "doll", phase: "prize_meter" },
-  { key: "dollDigi", photoKey: "dollDigi", label: "ตุ๊กตา · ล่าง (ดิจิตอล)", pair: "doll", phase: "prize_meter" },
+  // CEO 2026-07-25 · ดิจิตอลอยู่บน (= ช่องคิดเงิน · coinDigi) · เฟืองอยู่ล่าง
+  { key: "coinDigi", photoKey: "coinDigi", label: "เงิน · บน (ดิจิตอล)", pair: "coin", phase: "meter_after" },
+  { key: "coinGear", photoKey: "coinGear", label: "เงิน · ล่าง (เฟือง)", pair: "coin", phase: "meter_after" },
+  { key: "dollDigi", photoKey: "dollDigi", label: "ตุ๊กตา · บน (ดิจิตอล)", pair: "doll", phase: "prize_meter" },
+  { key: "dollGear", photoKey: "dollGear", label: "ตุ๊กตา · ล่าง (เฟือง)", pair: "doll", phase: "prize_meter" },
 ] as const satisfies ReadonlyArray<{
   key: CountedKey; photoKey: keyof Photos; label: string; pair: "coin" | "doll"; phase: Phase;
 }>;
@@ -1009,8 +1010,11 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // ความ "ตรง" จะตัดสินก็ต่อเมื่อกรอกครบ (กัน false ตรง/ไม่ตรง ตอนช่องยังว่าง)
   const dollMeterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
   const coinMeterFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
-  const dollMeterEqual = dollMeterFilled && n0(f.dollGear) === n0(f.dollDigi);
-  const coinMeterEqual = coinMeterFilled && n0(f.coinGear) === n0(f.coinDigi);
+  // CEO 2026-07-25 · มิเตอร์ 2 ตัว (ดิจิตอล/เฟือง) คนละฐาน — "ค่าไม่มีวันเท่ากัน" (เช่น 10 กับ 1101)
+  //   แต่ขยับ delta เท่ากัน. เดิมเทียบค่าสัมบูรณ์ (gear===digi) = เตือนผิดตลอด → เอาออก · ผ่านเมื่อกรอกครบ.
+  //   (การเทียบ "ขยับเท่ากันไหม" ต้องมีค่ามิเตอร์เฟืองรอบก่อน — เพิ่งเริ่มเก็บ → ทำ cross-check รอบถัดไป)
+  const dollMeterEqual = dollMeterFilled;
+  const coinMeterEqual = coinMeterFilled;
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
   // ตรงกับ server: ตุ๊กตาตรง = ต่างจากมิเตอร์ไม่เกิน ±2 ตัว (ไม่ใช่เป๊ะ) · มีเกิน = ถือว่าไม่ตรงเสมอ
   const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && Math.abs(dollDelta - dispensed) <= DOLL_MATCH_TOL;
@@ -5103,18 +5107,18 @@ function FlowScreen(props: {
 
             {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง) ── */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (ดิจิตอล + เฟือง · แนบรูปในช่อง)</div>
             <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("dollGear", "prize_meter", "บน (เฟือง)")}
-              {meterCell("dollDigi", "prize_meter", "ล่าง (ดิจิตอล)")}
+              {meterCell("dollDigi", "prize_meter", "บน (ดิจิตอล)")}
+              {meterCell("dollGear", "prize_meter", "ล่าง (เฟือง)")}
             </div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollHintColor, margin: "0 2px 8px" }}>{dollHint}</div>
 
             {/* ── 4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง) ── */}
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (ดิจิตอล + เฟือง · แนบรูปในช่อง)</div>
             <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("coinGear", "meter_after", "บน (เฟือง)")}
-              {meterCell("coinDigi", "meter_after", "ล่าง (ดิจิตอล)")}
+              {meterCell("coinDigi", "meter_after", "บน (ดิจิตอล)")}
+              {meterCell("coinGear", "meter_after", "ล่าง (เฟือง)")}
             </div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinHintColor, margin: "0 2px 7px" }}>{coinHint}</div>
 
@@ -5303,7 +5307,7 @@ function FlowScreen(props: {
               ) : undefined} />
 
             <ReconCard ok={meterOk}
-              title={meterMissing ? "ยังไม่ได้กรอกเลขมิเตอร์ 4 ช่อง" : meterUnequal ? "มิเตอร์ บน/ล่าง ไม่เท่ากัน" : "มิเตอร์ บน=ล่าง · ครบ 4 ตัว"}
+              title={meterMissing ? "ยังไม่ได้กรอกเลขมิเตอร์ 4 ช่อง" : "มิเตอร์ครบ 4 ตัว (ดิจิตอล + เฟือง)"}
               detail={`เงิน ${isFilled(f.coinGear) ? n0(f.coinGear) : "—"}/${isFilled(f.coinDigi) ? n0(f.coinDigi) : "—"} · ตุ๊กตา ${isFilled(f.dollGear) ? n0(f.dollGear) : "—"}/${isFilled(f.dollDigi) ? n0(f.dollDigi) : "—"}`}
               actions={
                 <span style={{ display: "flex", gap: 6 }}>
