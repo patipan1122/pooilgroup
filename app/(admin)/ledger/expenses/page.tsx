@@ -51,6 +51,7 @@ export default async function ExpensesPage({
     selected?: string;
     tr?: string; // TRCloud send filter: "sent" | "unsent"
     ap?: string; // AP filter: "1" = แปลง PO → AP แล้ว (แท็บ "AP แล้ว")
+    pv?: string; // PV filter: "1" = ออกใบสำคัญจ่าย (PV) เข้า TRCloud แล้ว (แท็บ "PV แล้ว")
     cc?: string; // ภาษีซื้อ color filter: "green" | "yellow" | "red"
     dt?: string; // docType filter: "quotation" (แท็บ "รอใบกำกับ" · D1)
     tab?: string; // source tab: "all" | "line" | "web" | "mine"
@@ -103,6 +104,20 @@ export default async function ExpensesPage({
   // (tr=sent) ต้องตัดใบที่เป็น AP ออก (apConverted=false) ไม่งั้นโชว์ซ้ำสองที่.
   const apTab = sp.ap === "1";
   const apConverted = apTab ? true : tr === "sent" ? false : undefined;
+  // แท็บ "PV แล้ว" (?pv=1) — ใบที่ออกใบสำคัญจ่าย (PV) เข้า TRCloud แล้ว (CEO 2026-07-25).
+  // PV ออกต่อ "คำขอโอน" (LedgerPaymentRequest.trcloudPvDocId · 1 โอน = 1 PV หลายบิล) ไม่ใช่ต่อบิล
+  // และ LedgerExpense ไม่มี relation กลับไปคำขอ → ดึง expenseId ของบิลที่ผูกคำขอที่มี PV มาก่อน
+  // ใช้ทั้งตัวนับแท็บ + กรองรายการ (แม่นยำระดับ DB · ไม่ cap 300 เหมือน pay tab).
+  const pvTab = sp.pv === "1";
+  const pvBillLinks = await prisma.ledgerPaymentRequestBill.findMany({
+    where: {
+      orgId: scope.orgId,
+      companyId: scope.companyId,
+      request: { trcloudPvDocId: { not: null } },
+    },
+    select: { expenseId: true },
+  });
+  const pvExpenseIds = [...new Set(pvBillLinks.map((b) => b.expenseId))];
   const cc =
     sp.cc === "green" || sp.cc === "yellow" || sp.cc === "red" ? sp.cc : undefined;
   // แท็บ "รอใบกำกับ" (D1) — เห็นเฉพาะตอนเปิด flag · กรองเป็นใบเสนอราคา.
@@ -138,6 +153,7 @@ export default async function ExpensesPage({
     projectId,
     trcloudPushed,
     apConverted,
+    pvExpenseIds: pvTab ? pvExpenseIds : undefined,
     search: q,
   };
 
@@ -230,7 +246,7 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent, scAp] = await Promise.all([
+  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent, scAp, scPv] = await Promise.all([
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
     prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
@@ -264,6 +280,15 @@ export default async function ExpensesPage({
         trcloudApDocId: { not: null },
       },
     }),
+    // PV แล้ว — ออกใบสำคัญจ่าย (PV) เข้า TRCloud แล้ว (CEO 2026-07-25). ขั้นถัดจาก "โอนแล้ว".
+    // PV ต่อ "คำขอโอน" → นับบิลที่ id อยู่ในชุด pvExpenseIds (บิลที่ผูกคำขอที่มี PV).
+    prisma.ledgerExpense.count({
+      where: {
+        ...statusCountWhere,
+        status: { in: VISIBLE_STATUSES },
+        id: { in: pvExpenseIds },
+      },
+    }),
   ]);
   const statusCounts = {
     all: scAll,
@@ -273,6 +298,7 @@ export default async function ExpensesPage({
     sent: scSent,
     unsent: scUnsent,
     ap: scAp,
+    pv: scPv,
     // pay-tab counts from the 300-window (payState lives on the fetched rows, not a
     // cheap DB count — acceptable like the source tabs; capped at the list window).
     eligible: payCounts.eligible,
@@ -351,6 +377,7 @@ export default async function ExpensesPage({
   if (projectId) baseParams.set("project", projectId);
   if (tr) baseParams.set("tr", tr);
   if (apTab) baseParams.set("ap", "1");
+  if (pvTab) baseParams.set("pv", "1");
   if (cc) baseParams.set("cc", cc);
   if (docType) baseParams.set("dt", docType);
   if (q) baseParams.set("q", q);
@@ -474,6 +501,7 @@ export default async function ExpensesPage({
           status={status}
           tr={tr}
           ap={apTab}
+          pv={pvTab}
           nr={nr}
           pay={pay}
           payreqEnabled={ledgerPayreqV1()}
@@ -514,6 +542,7 @@ export default async function ExpensesPage({
           nr={nr}
           pay={pay}
           ap={apTab}
+          pv={pvTab}
           statusCounts={statusCounts}
           scopePicker={
             <CompanyBranchPicker

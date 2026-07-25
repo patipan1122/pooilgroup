@@ -84,6 +84,7 @@ export function ExpenseList({
   nr,
   pay,
   ap,
+  pv,
   statusCounts,
   listActions,
   scopePicker,
@@ -123,10 +124,12 @@ export function ExpenseList({
   pay?: "eligible" | "requested" | "paid";
   /** แท็บ "AP แล้ว" active (?ap=1). */
   ap?: boolean;
+  /** แท็บ "PV แล้ว" active (?pv=1). */
+  pv?: boolean;
   /** Counts for the PRIMARY tabs. status counts = DB; pay counts = list-window. */
   statusCounts: {
     all: number; review: number; draft: number; confirmed: number; sent: number; unsent: number; ap: number;
-    eligible: number; requested: number; paid: number;
+    eligible: number; requested: number; paid: number; pv: number;
   };
   /** Shortcut actions (ไม่มีใบเสร็จ · สลิปรอจับคู่) — rendered inside the mobile
    *  ตัวกรอง sheet so they're off the page header. */
@@ -211,6 +214,7 @@ export function ExpenseList({
     sp.delete("status");
     sp.delete("tr");
     sp.delete("ap");
+    sp.delete("pv");
     sp.delete("cc");
     sp.delete("category");
     sp.delete("project");
@@ -453,6 +457,7 @@ export function ExpenseList({
             status={status}
             tr={tr}
             ap={ap}
+            pv={pv}
             nr={nr}
             pay={pay}
             payreqEnabled={payreqEnabled}

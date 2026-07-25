@@ -166,6 +166,11 @@ export interface ExpenseListFilter {
   /** true = แปลงเป็น AP แล้ว (มี trcloudApDocId) · false = ยังไม่แปลง (แท็บ "ส่ง PO แล้ว"
    *  ตัดใบที่เป็น AP ออกไม่ให้โชว์ซ้ำ) · undefined = ไม่กรองมิตินี้. */
   apConverted?: boolean;
+  /** จำกัดเฉพาะบิลที่ออกใบสำคัญจ่าย (PV) แล้ว — แท็บ "PV แล้ว" (CEO 2026-07-25). PV ออกต่อ
+   *  "คำขอโอน" (LedgerPaymentRequest.trcloudPvDocId · 1 โอน = 1 PV หลายบิล) ไม่ใช่ต่อบิล และ
+   *  LedgerExpense ไม่มี relation กลับไปคำขอ → page.tsx ดึง expenseId ของบิลที่ผูกคำขอที่มี PV
+   *  มาก่อน แล้วส่งชุด id ผ่านฟิลด์นี้. undefined = ไม่กรอง · [] = ไม่มีบิล PV → ผลลัพธ์ว่าง. */
+  pvExpenseIds?: string[] | null;
   /** filter ตามสถานะสีภาษีซื้อ: green=ขอคืนได้ · yellow=ขอใบใหม่ · red=ขอคืนไม่ได้. */
   completeness?: "green" | "yellow" | "red";
   search?: string | null;
@@ -241,6 +246,15 @@ function buildWhere(f: ExpenseListFilter): Prisma.LedgerExpenseWhereInput {
     where.AND = [
       ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
       f.apConverted ? { trcloudApDocId: { not: null } } : { trcloudApDocId: null },
+    ];
+  }
+  // แท็บ "PV แล้ว" (CEO 2026-07-25) — PV ออกต่อ "คำขอโอน" (LedgerPaymentRequest) ไม่ใช่ต่อบิล
+  // ⇒ page.tsx ดึง expenseId ของบิลที่ผูกคำขอที่มี PV มาให้ที่นี่. [] = ไม่มีบิล PV → id in []
+  // = ว่าง (ถูกต้อง). AND-wrapped so it composes with the trcloudPushed/apConverted AND above.
+  if (f.pvExpenseIds) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? (where.AND as Prisma.LedgerExpenseWhereInput[]) : []),
+      { id: { in: f.pvExpenseIds } },
     ];
   }
   if (f.completeness) {
