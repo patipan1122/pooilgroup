@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/r2/upload";
 import { getBaseUrl } from "@/lib/utils/base-url";
+import { toNum, tenantDisplayName } from "@/lib/rentspace/format";
 
 /** ออก token ลิงก์เชิญ (24 ไบต์สุ่ม ≈ 192 บิต · เดายาก) */
 export function newPortalToken(): string {
@@ -81,6 +82,73 @@ export async function loadPortalData(tenantId: string, orgId: string) {
   });
 
   return { bills, documents, announcements };
+}
+
+// ── View model ที่ใช้ร่วมกันทั้งพอร์ทัลลิงก์ (page.tsx) และ LIFF (เว็บแอปในไลน์) ──
+export type PortalBillVM = {
+  id: string; billNo: string; period: string; status: string; dueDate: string;
+  total: number; paid: number; unitCode: string; projectName: string;
+  publicToken: string | null; pendingSlip: boolean;
+};
+export type PortalAnnVM = { id: string; title: string; body: string; pinned: boolean; publishedAt: string; attachmentUrls: string[] };
+export type PortalDocVM = { id: string; label: string; url: string; createdAt: string };
+export type PortalPayVM = { id: string; billNo: string; amount: number; paidOn: string; method: string };
+export type PortalView = {
+  tenantName: string; token: string; lineLinked: boolean; email: string; emailOptIn: boolean;
+  bills: PortalBillVM[]; announcements: PortalAnnVM[]; documents: PortalDocVM[]; payments: PortalPayVM[];
+};
+
+type TenantRow = {
+  id: string; orgId: string; email: string | null; emailBillOptIn: boolean; lineUserId: string | null;
+} & Record<string, unknown>;
+
+/** โหลด + serialize ข้อมูลพอร์ทัลทั้งหมด (บิล/ข่าว/เอกสาร/ประวัติชำระ) เป็น plain object ส่งเข้า client */
+export async function buildPortalView(tenant: TenantRow): Promise<PortalView> {
+  const { bills, documents, announcements } = await loadPortalData(tenant.id, tenant.orgId);
+  const payments = await prisma.rentalPayment.findMany({
+    where: { orgId: tenant.orgId, status: "confirmed", bill: { tenantId: tenant.id } },
+    orderBy: { paidOn: "desc" },
+    take: 50,
+    include: { bill: { select: { billNo: true } } },
+  });
+  const token = (await ensurePortalToken(tenant.id)) ?? "";
+
+  return {
+    tenantName: tenantDisplayName(tenant as never),
+    token,
+    lineLinked: !!tenant.lineUserId,
+    email: tenant.email ?? "",
+    emailOptIn: tenant.emailBillOptIn,
+    bills: bills.map((b) => ({
+      id: b.id,
+      billNo: b.billNo,
+      period: b.period,
+      status: b.status as string,
+      dueDate: b.dueDate.toISOString().slice(0, 10),
+      total: toNum(b.totalAmount),
+      paid: toNum(b.paidAmount),
+      unitCode: b.unit?.code ?? "",
+      projectName: b.project?.name ?? "",
+      publicToken: b.publicToken ?? null,
+      pendingSlip: b.payments.some((p) => p.status === "pending" && p.source === "tenant"),
+    })),
+    announcements: announcements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      body: a.body,
+      pinned: a.pinned,
+      publishedAt: (a.publishedAt ?? a.createdAt).toISOString(),
+      attachmentUrls: a.attachmentUrls ?? [],
+    })),
+    documents: documents.map((d) => ({ id: d.id, label: d.label ?? "เอกสาร", url: d.url, createdAt: d.createdAt.toISOString() })),
+    payments: payments.map((p) => ({
+      id: p.id,
+      billNo: p.bill?.billNo ?? "",
+      amount: toNum(p.amountThb),
+      paidOn: p.paidOn.toISOString().slice(0, 10),
+      method: p.method,
+    })),
+  };
 }
 
 /**

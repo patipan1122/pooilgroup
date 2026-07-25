@@ -12,9 +12,17 @@ import {
   MessageCircle,
   Mail,
   ExternalLink,
+  History,
 } from "lucide-react";
 import { BILL_STATUS, periodLabel } from "@/lib/rentspace/format";
 import { actPortalSubmitSlip, actPortalSaveEmail } from "../_actions";
+
+const PAY_METHOD_TH: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", qr: "QR", card: "บัตร" };
+type Tab = "bills" | "history" | "news" | "docs";
+function screenToTab(s?: string): Tab {
+  if (s === "history" || s === "news" || s === "docs") return s;
+  return "bills"; // bills / pay / อื่น ๆ → แท็บบิล
+}
 
 type Bill = {
   id: string;
@@ -31,6 +39,7 @@ type Bill = {
 };
 type Ann = { id: string; title: string; body: string; pinned: boolean; publishedAt: string; attachmentUrls: string[] };
 type Doc = { id: string; label: string; url: string; createdAt: string };
+type Pay = { id: string; billNo: string; amount: number; paidOn: string; method: string };
 
 const baht = (n: number) => "฿" + n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -47,6 +56,9 @@ export function PortalClient({
   email: email0,
   emailOptIn: optIn0,
   lineNotice,
+  payments = [],
+  inLiff = false,
+  initialScreen,
 }: {
   token: string;
   tenantName: string;
@@ -57,8 +69,11 @@ export function PortalClient({
   email: string;
   emailOptIn: boolean;
   lineNotice: { kind: "ok" | "err" | "info"; text: string } | null;
+  payments?: Pay[];
+  inLiff?: boolean;
+  initialScreen?: string;
 }) {
-  const [tab, setTab] = useState<"bills" | "news" | "docs">("bills");
+  const [tab, setTab] = useState<Tab>(screenToTab(initialScreen));
   const [notice, setNotice] = useState(lineNotice);
   const outstanding = bills.reduce((s, b) => s + Math.max(0, b.total - b.paid), 0);
 
@@ -103,13 +118,14 @@ export function PortalClient({
         )}
 
         {/* รับแจ้งเตือน: LINE + อีเมล */}
-        <NotifyCard token={token} lineLinked={lineLinked} email0={email0} optIn0={optIn0} />
+        <NotifyCard token={token} lineLinked={lineLinked} email0={email0} optIn0={optIn0} hideLine={inLiff} />
 
         {/* tabs */}
-        <div className="flex gap-1.5">
-          <TabBtn active={tab === "bills"} onClick={() => setTab("bills")} icon={<FileText className="h-4 w-4" />} label={`บิล (${bills.length})`} />
-          <TabBtn active={tab === "news"} onClick={() => setTab("news")} icon={<Megaphone className="h-4 w-4" />} label={`ข่าว (${announcements.length})`} />
-          <TabBtn active={tab === "docs"} onClick={() => setTab("docs")} icon={<FolderOpen className="h-4 w-4" />} label={`เอกสาร (${documents.length})`} />
+        <div className="flex gap-1">
+          <TabBtn active={tab === "bills"} onClick={() => setTab("bills")} icon={<FileText className="h-3.5 w-3.5" />} label="บิล" />
+          <TabBtn active={tab === "history"} onClick={() => setTab("history")} icon={<History className="h-3.5 w-3.5" />} label="ประวัติ" />
+          <TabBtn active={tab === "news"} onClick={() => setTab("news")} icon={<Megaphone className="h-3.5 w-3.5" />} label="ข่าว" />
+          <TabBtn active={tab === "docs"} onClick={() => setTab("docs")} icon={<FolderOpen className="h-3.5 w-3.5" />} label="เอกสาร" />
         </div>
 
         {tab === "bills" &&
@@ -119,6 +135,27 @@ export function PortalClient({
             <div className="space-y-2.5">
               {bills.map((b) => (
                 <BillCard key={b.id} token={token} bill={b} />
+              ))}
+            </div>
+          ))}
+
+        {tab === "history" &&
+          (payments.length === 0 ? (
+            <Empty text="ยังไม่มีประวัติการชำระที่ยืนยันแล้ว" />
+          ) : (
+            <div className="space-y-2">
+              {payments.map((p) => (
+                <div key={p.id} className="rs-card p-3.5 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-medium">บิล {p.billNo}</div>
+                    <div className="text-[11.5px] rs-text-2">
+                      {dateTH(p.paidOn)} · {PAY_METHOD_TH[p.method] ?? p.method}
+                    </div>
+                  </div>
+                  <div className="text-[15px] font-bold tabular-nums" style={{ color: "var(--rs-ok)" }}>
+                    {baht(p.amount)}
+                  </div>
+                </div>
               ))}
             </div>
           ))}
@@ -366,7 +403,7 @@ function PayPanel({ token, bill, outstanding, onDone }: { token: string; bill: B
   );
 }
 
-function NotifyCard({ token, lineLinked, email0, optIn0 }: { token: string; lineLinked: boolean; email0: string; optIn0: boolean }) {
+function NotifyCard({ token, lineLinked, email0, optIn0, hideLine = false }: { token: string; lineLinked: boolean; email0: string; optIn0: boolean; hideLine?: boolean }) {
   const [email, setEmail] = useState(email0);
   const [optIn, setOptIn] = useState(optIn0);
   const [busy, setBusy] = useState(false);
@@ -392,24 +429,26 @@ function NotifyCard({ token, lineLinked, email0, optIn0 }: { token: string; line
       <div className="text-[13px] font-semibold">รับแจ้งเตือนเมื่อมีบิลใหม่</div>
 
       {/* LINE */}
-      <div className="flex items-center gap-2.5">
-        <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#06C755" }}>
-          <MessageCircle className="h-5 w-5 text-white" />
+      {!hideLine && (
+        <div className="flex items-center gap-2.5">
+          <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#06C755" }}>
+            <MessageCircle className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13.5px] font-medium">LINE</div>
+            <div className="text-[11px] rs-text-2">เด้งเตือนทันทีที่วางบิล</div>
+          </div>
+          {lineLinked ? (
+            <span className="rs-chip inline-flex items-center gap-1" style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> เชื่อมแล้ว
+            </span>
+          ) : (
+            <a href={`/rentspace/line/start?token=${token}`} className="rs-btn text-[12.5px]" style={{ background: "#06C755", color: "#fff" }}>
+              เชื่อม LINE
+            </a>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13.5px] font-medium">LINE</div>
-          <div className="text-[11px] rs-text-2">เด้งเตือนทันทีที่วางบิล</div>
-        </div>
-        {lineLinked ? (
-          <span className="rs-chip inline-flex items-center gap-1" style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}>
-            <CheckCircle2 className="h-3.5 w-3.5" /> เชื่อมแล้ว
-          </span>
-        ) : (
-          <a href={`/rentspace/line/start?token=${token}`} className="rs-btn text-[12.5px]" style={{ background: "#06C755", color: "#fff" }}>
-            เชื่อม LINE
-          </a>
-        )}
-      </div>
+      )}
 
       {/* Email */}
       <div className="flex items-start gap-2.5">

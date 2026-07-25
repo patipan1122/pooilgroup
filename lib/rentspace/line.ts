@@ -121,6 +121,25 @@ export async function rentspaceLineProfile(accessToken: string): Promise<{ userI
   return j.userId ? { userId: j.userId, displayName: j.displayName ?? "" } : null;
 }
 
+const VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
+
+/**
+ * ตรวจ id_token จาก LIFF กับ LINE โดยตรง → คืน userId (sub) ที่เชื่อถือได้.
+ * ⚠️ เชื่อ sub จาก LINE เท่านั้น ห้ามเชื่อ userId ที่ client ส่งมาเอง (กันปลอมตัว).
+ */
+export async function rentspaceVerifyIdToken(idToken: string): Promise<{ userId: string; name?: string } | null> {
+  const clientId = process.env.RENTSPACE_LINE_LOGIN_CHANNEL_ID;
+  if (!clientId || !idToken) return null;
+  const res = await fetch(VERIFY_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id_token: idToken, client_id: clientId }),
+  });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { sub?: string; name?: string };
+  return j.sub ? { userId: j.sub, name: j.name } : null;
+}
+
 // ───────── state (CSRF + พก portalToken · ไม่ใช้ cookie เพราะ LINE webview ทิ้ง cookie) ─────────
 function stateSecret(): string {
   return process.env.RENTSPACE_LINE_LOGIN_CHANNEL_SECRET || process.env.JWT_SECRET || "rentspace-portal-fallback";
