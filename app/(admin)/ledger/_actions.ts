@@ -1675,6 +1675,23 @@ export async function sendExpenseToTrcloud(
   if (loaded.status !== "confirmed" && loaded.status !== "locked") {
     return { ok: false, error: "ส่งได้เฉพาะรายการที่ยืนยันแล้ว" };
   }
+  // 🔒 ล็อกส่ง TRCloud (CEO 2026-07-25): ยังไม่ "ยืนยันหมวด (ผังบัญชี)" หรือ "สาขา" → ส่งไม่ได้.
+  // เดิมส่ง PO ได้ทั้งที่หมวดว่าง → acc_code ตกถังรวม 5919999 (ยังไม่แยกประเภท) → TRCloud
+  // คำนวณ journal ไม่ได้ "formula cannot be empty". guard นี้ = server-side hard lock
+  // ทำงานไม่ว่า UI จะเป็นยังไง (กันเคส "กด ghost หมวดแล้วยังไม่เซฟ ก่อนกดส่ง" → DB ยัง null).
+  // ตรงกับด่านตอนแปลง AP (runApConversion) — ตอนนี้ครอบตอน "ส่ง PO" ด้วย.
+  if (!loaded.pushable.categoryAccCode) {
+    return {
+      ok: false,
+      error: "ยังไม่ได้เลือก/ยืนยันหมวดค่าใช้จ่าย (ผังบัญชี) — เลือกหมวดแล้วบันทึกก่อน จึงส่งเข้า TRCloud ได้ (กันลงบัญชีตกถังรวม 5919999)",
+    };
+  }
+  if (!loaded.pushable.branchTrcloudDepartment) {
+    return {
+      ok: false,
+      error: "ยังไม่ได้เลือกสาขา (แผนก TRCloud) — เลือกสาขาแล้วบันทึกก่อน จึงส่งเข้า TRCloud ได้",
+    };
+  }
   // CEO decision 2026-06-09: ใบเสนอราคา (quotation) "ส่งเข้า TRCloud ได้ แต่เตือน".
   // เดิมบล็อกเด็ดขาด (กัน double-doc + ใบเสนอราคาไม่ใช่เอกสารภาษี) — เปลี่ยนเป็น
   // เตือนแทน: ปุ่มฝั่ง client เด้ง confirm ก่อนส่ง + แนบหมายเหตุนี้กลับให้ผู้ใช้รู้ว่า
