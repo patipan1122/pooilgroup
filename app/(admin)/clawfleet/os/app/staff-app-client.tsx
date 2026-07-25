@@ -152,6 +152,9 @@ type AppMachine = {
   lastStock: number;
   lastDollMeter: number;
   lastCoinMeter: number;
+  // CEO 2026-07-25 · เลขมิเตอร์ "เฟือง" รอบก่อน (เทียบว่า 2 มิเตอร์ขยับเท่ากันไหม) · null = ยังไม่มีของเทียบ
+  lastCoinGear?: number | null;
+  lastDollGear?: number | null;
   product: string;
   // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP ⚪) → route ไปฟอร์มตั้งค่าครั้งแรกแทน wizard 6 ขั้น
   awaitingSetup: boolean;
@@ -200,6 +203,8 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           pricePerPlayCoins: m.pricePerPlayCoins,
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
+          lastCoinGear: m.lastCoinGear,
+          lastDollGear: m.lastDollGear,
           lastCollectedAt: m.lastCollectedAt,
           lastRefillAt: m.lastRefillAt,
           product: "",
@@ -336,10 +341,12 @@ type Form = {
   category: string;
   price: Counted; // ราคาขาย (กรอกเอง)
   // meters
-  dollPrev: number; // รอบก่อน (ระบบ · reference)
+  dollPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
+  dollGearPrev: number | null; // รอบก่อน เฟือง (ระบบ · เทียบขยับเท่ากัน) · null = ยังไม่มีของเทียบ
   dollGear: Counted; // อ่านมิเตอร์เอง
   dollDigi: Counted;
-  coinPrev: number; // รอบก่อน (ระบบ · reference)
+  coinPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
+  coinGearPrev: number | null; // รอบก่อน เฟือง (ระบบ · เทียบขยับเท่ากัน)
   coinGear: Counted;
   coinDigi: Counted;
   cash: Counted; // นับเงินจริง
@@ -448,9 +455,11 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     category: "ลิขสิทธิ์",
     price: demo ? 250 : null,
     dollPrev: m.lastDollMeter,
+    dollGearPrev: demo ? null : (m.lastDollGear ?? null),
     dollGear: demo ? m.lastDollMeter + 5 : null,
     dollDigi: demo ? m.lastDollMeter + 5 : null,
     coinPrev: m.lastCoinMeter,
+    coinGearPrev: demo ? null : (m.lastCoinGear ?? null),
     coinGear: demo ? m.lastCoinMeter + 30 : null,
     coinDigi: demo ? m.lastCoinMeter + 30 : null,
     cash: demo ? 300 : null,
@@ -1010,11 +1019,14 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   // ความ "ตรง" จะตัดสินก็ต่อเมื่อกรอกครบ (กัน false ตรง/ไม่ตรง ตอนช่องยังว่าง)
   const dollMeterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
   const coinMeterFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
-  // CEO 2026-07-25 · มิเตอร์ 2 ตัว (ดิจิตอล/เฟือง) คนละฐาน — "ค่าไม่มีวันเท่ากัน" (เช่น 10 กับ 1101)
-  //   แต่ขยับ delta เท่ากัน. เดิมเทียบค่าสัมบูรณ์ (gear===digi) = เตือนผิดตลอด → เอาออก · ผ่านเมื่อกรอกครบ.
-  //   (การเทียบ "ขยับเท่ากันไหม" ต้องมีค่ามิเตอร์เฟืองรอบก่อน — เพิ่งเริ่มเก็บ → ทำ cross-check รอบถัดไป)
-  const dollMeterEqual = dollMeterFilled;
-  const coinMeterEqual = coinMeterFilled;
+  // CEO 2026-07-25 · มิเตอร์ 2 ตัว (ดิจิตอล/เฟือง) คนละฐาน — "ค่าไม่มีวันเท่ากัน" แต่ควร "ขยับเท่ากัน".
+  //   เทียบ delta: (เฟืองรอบนี้ − เฟืองรอบก่อน) ควรเท่ากับ (ดิจิตอลรอบนี้ − ดิจิตอลรอบก่อน = coinDelta).
+  //   ต่างกัน = มิเตอร์ตัวใดตัวหนึ่งเพี้ยน/โดนแก้ → เตือน (advisory · ไม่บล็อก). มีเลขเฟืองรอบก่อน
+  //   (coinGearPrev != null) → เทียบจริง · ไม่มี (event ก่อนไม่ได้เก็บเฟือง) → ข้าม (ผ่าน · ยังเทียบไม่ได้).
+  const dollGearDelta = f.dollGearPrev != null ? n0(f.dollGear) - f.dollGearPrev : null;
+  const coinGearDelta = f.coinGearPrev != null ? n0(f.coinGear) - f.coinGearPrev : null;
+  const dollMeterEqual = dollMeterFilled && (dollGearDelta == null || dollGearDelta === dollDelta);
+  const coinMeterEqual = coinMeterFilled && (coinGearDelta == null || coinGearDelta === coinDelta);
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
   // ตรงกับ server: ตุ๊กตาตรง = ต่างจากมิเตอร์ไม่เกิน ±2 ตัว (ไม่ใช่เป๊ะ) · มีเกิน = ถือว่าไม่ตรงเสมอ
   const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && Math.abs(dollDelta - dispensed) <= DOLL_MATCH_TOL;
@@ -4925,12 +4937,12 @@ function FlowScreen(props: {
   //   กรอกน้อยกว่ารอบก่อน (delta<0) → เตือน "กรอกผิด?" (ไม่โชว์เลขลบ) · money-safe: อ่านค่าจาก recon ตัวเดิม ไม่แตะสูตร
   let dollHint: string, dollHintColor: string;
   if (!dollPairFilled) { dollHint = "กรอกมิเตอร์ บน + ล่าง"; dollHintColor = "#9AA1AB"; }
-  else if (!props.meterGroupVals.dollMeterEqual) { dollHint = "⚠️ มิเตอร์บน/ล่าง ไม่ตรงกัน — เช็ค"; dollHintColor = "#B42318"; }
+  else if (!props.meterGroupVals.dollMeterEqual) { dollHint = "⚠️ มิเตอร์ดิจิตอล/เฟือง ขยับไม่เท่ากัน — เช็ค"; dollHintColor = "#B42318"; }
   else if (recon.dollDelta < 0) { dollHint = `⚠️ กรอก ${n0(f.dollDigi)} น้อยกว่ารอบก่อน ${f.dollPrev} — กรอกผิด?`; dollHintColor = "#B45309"; }
   else { dollHint = `✓ ตุ๊กตาออก ${recon.dollDelta} ตัว`; dollHintColor = "#15803D"; }
   let coinHint: string, coinHintColor: string;
   if (!coinPairFilled) { coinHint = "กรอกมิเตอร์ บน + ล่าง"; coinHintColor = "#9AA1AB"; }
-  else if (!props.meterGroupVals.coinMeterEqual) { coinHint = "⚠️ มิเตอร์บน/ล่าง ไม่ตรงกัน — เช็ค"; coinHintColor = "#B42318"; }
+  else if (!props.meterGroupVals.coinMeterEqual) { coinHint = "⚠️ มิเตอร์ดิจิตอล/เฟือง ขยับไม่เท่ากัน — เช็ค"; coinHintColor = "#B42318"; }
   else if (recon.expectedCash < 0) { coinHint = `⚠️ กรอก ${n0(f.coinDigi)} น้อยกว่ารอบก่อน ${f.coinPrev} — กรอกผิด?`; coinHintColor = "#B45309"; }
   else { coinHint = `✓ มิเตอร์ควรได้ ฿${recon.expectedCash}`; coinHintColor = "#15803D"; }
   // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
@@ -5307,7 +5319,7 @@ function FlowScreen(props: {
               ) : undefined} />
 
             <ReconCard ok={meterOk}
-              title={meterMissing ? "ยังไม่ได้กรอกเลขมิเตอร์ 4 ช่อง" : "มิเตอร์ครบ 4 ตัว (ดิจิตอล + เฟือง)"}
+              title={meterMissing ? "ยังไม่ได้กรอกเลขมิเตอร์ 4 ช่อง" : meterUnequal ? "⚠️ มิเตอร์ 2 ตัวขยับไม่เท่ากัน" : "มิเตอร์ครบ · 2 ตัวขยับเท่ากัน"}
               detail={`เงิน ${isFilled(f.coinGear) ? n0(f.coinGear) : "—"}/${isFilled(f.coinDigi) ? n0(f.coinDigi) : "—"} · ตุ๊กตา ${isFilled(f.dollGear) ? n0(f.dollGear) : "—"}/${isFilled(f.dollDigi) ? n0(f.dollDigi) : "—"}`}
               actions={
                 <span style={{ display: "flex", gap: 6 }}>

@@ -20,6 +20,10 @@ export type GroupMachine = {
   lastCoinMeter: number;
   lastDollMeter: number;
   lastDollStock: number;
+  // CEO 2026-07-25 · เลขมิเตอร์ "เฟือง" รอบก่อน (จาก event ล่าสุด meterMoneyTop/meterDollTop) —
+  //   ใช้เทียบว่า 2 มิเตอร์ "ขยับเท่ากันไหม" (anti-fraud). null = ยังไม่มีของเทียบ (event ก่อนหน้าไม่ได้เก็บเฟือง).
+  lastCoinGear: number | null;
+  lastDollGear: number | null;
   qrToken: string;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์ · ตั้งในหน้าตั้งค่าตู้) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup)
   sellPriceCents: number | null;
@@ -72,7 +76,7 @@ function toMachine(m: {
   sellPriceCents: number | null;
   loadouts: { pricePerPlayCoins: number }[];
   lastEventAt: Date | null;
-}, lastRefillAt: Date | null): GroupMachine {
+}, lastRefillAt: Date | null, lastGear: { coin: number | null; doll: number | null } | null): GroupMachine {
   return {
     id: m.id,
     code: m.code,
@@ -81,6 +85,8 @@ function toMachine(m: {
     lastCoinMeter: m.lastCoinMeter,
     lastDollMeter: m.lastDollMeter,
     lastDollStock: m.lastDollStock,
+    lastCoinGear: lastGear?.coin ?? null,
+    lastDollGear: lastGear?.doll ?? null,
     qrToken: m.qrToken,
     sellPriceCents: m.sellPriceCents,
     // active loadout = effectiveTo:null (เหมือน actions.ts) · ไม่มี → default 1 เหรียญ (฿10)
@@ -166,6 +172,27 @@ export async function getGroupCollectData(): Promise<{
     // graceful: query ล้ม → ไม่มี "เติมล่าสุด" (โชว์ "ยังไม่เคยเติม")
   }
 
+  // CEO 2026-07-25 · เลขมิเตอร์ "เฟือง" รอบก่อน ต่อตู้ (จาก event COLLECTION ล่าสุด) —
+  //   ใช้เทียบ "2 มิเตอร์ขยับเท่ากันไหม" (anti-fraud). distinct by machine → เอา event ล่าสุดตัวเดียว.
+  //   event ก่อน 2026-07-25 ไม่ได้เก็บเฟือง → meterMoneyTop = null → client ข้าม cross-check (ไม่เตือนหลอก).
+  const lastGearByMachine = new Map<string, { coin: number | null; doll: number | null }>();
+  try {
+    const machineIds = machines.map((m) => m.id);
+    if (machineIds.length > 0) {
+      const gearRows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds }, eventType: "COLLECTION" },
+        orderBy: { collectedAt: "desc" },
+        distinct: ["machineId"],
+        select: { machineId: true, meterMoneyTop: true, meterDollTop: true },
+      });
+      for (const r of gearRows) {
+        lastGearByMachine.set(r.machineId, { coin: r.meterMoneyTop, doll: r.meterDollTop });
+      }
+    }
+  } catch {
+    // graceful: query ล้ม → ไม่มี cross-check เฟือง (ไม่เตือน · ไม่พัง)
+  }
+
   // index machines by group + the exchanger lookup
   const machinesByGroup = new Map<string, GroupMachine[]>();
   // ตู้คีบที่ยังไม่ถูกจัดเข้ากลุ่ม (เช่น import เข้ามาใหม่ · groupId ว่าง) → รวมเป็นกลุ่ม
@@ -177,11 +204,11 @@ export async function getGroupCollectData(): Promise<{
     machineById.set(m.id, m);
     if (m.groupId) {
       const list = machinesByGroup.get(m.groupId) ?? [];
-      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, lastGearByMachine.get(m.id) ?? null));
       machinesByGroup.set(m.groupId, list);
     } else if (m.kind === "CLAW") {
       const list = ungroupedClawByBranch.get(m.branchId) ?? [];
-      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, lastGearByMachine.get(m.id) ?? null));
       ungroupedClawByBranch.set(m.branchId, list);
     }
   }
