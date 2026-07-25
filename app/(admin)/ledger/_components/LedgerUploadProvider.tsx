@@ -51,6 +51,9 @@ interface Job {
   current: string; // ชื่อไฟล์ที่กำลังทำ
   results: FileResult[];
   finished: boolean;
+  // company/branch/filter ที่ snapshot ตอนเริ่มงาน — ใช้สร้างลิงก์ "ไปดูใบที่เพิ่ม" ตอนจบ
+  // (ผู้ใช้อาจเปลี่ยน filter ระหว่างอ่านไปแล้ว จึงต้องยึดค่าตอนเริ่ม)
+  baseParams: string;
 }
 
 /** company/branch/filter ที่ "หยุดภาพไว้ตอนเริ่มงาน" — งานที่วิ่งอยู่ไม่สนใจว่าผู้ใช้
@@ -261,7 +264,14 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
 
     const results: FileResult[] = [];
     setMinimized(false);
-    setJob({ total: valid.length, done: 0, current: valid[0].name, results: [], finished: false });
+    setJob({
+      total: valid.length,
+      done: 0,
+      current: valid[0].name,
+      results: [],
+      finished: false,
+      baseParams: scope.baseParams,
+    });
 
     for (let i = 0; i < valid.length; i++) {
       const file = valid[i];
@@ -273,21 +283,15 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
 
     const okOnes = results.filter((r) => r.status === "ok");
 
-    // ไฟล์เดียว + สำเร็จ (ไม่ซ้ำ) → เปิดใบนั้นให้ตรวจทันที (พฤติกรรมเดิม)
-    // ใช้ baseParams ที่ snapshot ไว้ + path คงที่ /ledger/expenses (provider อยู่ layout ไม่ผูก pathname)
-    if (valid.length === 1 && okOnes.length === 1 && okOnes[0].id) {
-      setJob(null);
-      const sp = new URLSearchParams(scope.baseParams);
-      sp.set("selected", okOnes[0].id);
-      router.push(`/ledger/expenses?${sp.toString()}`);
-      router.refresh();
-      return;
-    }
-
-    // หลายไฟล์ (หรือมีล้มเหลว/ซ้ำ) → โชว์สรุป + รีเฟรชรายการให้เห็นร่างใหม่
+    // จบงาน → โชว์ป้ายสรุปพร้อมปุ่มลัด "ไปดูใบที่เพิ่ม" เสมอ (ทั้งใบเดียว/หลายใบ)
+    // เดิม: ใบเดียวสำเร็จจะ router.push เด้งเปิดใบให้อัตโนมัติ → ปัญหาคือถ้าผู้ใช้กดไปดู
+    // ใบ PO อื่นระหว่างที่ AI กำลังอ่าน พออ่านเสร็จระบบจะ "ดึงกลับ" ไปใบใหม่ →
+    // ใบที่กำลังดูอยู่หายไป (CEO report 2026-07-25). จึงเลิกเด้งอัตโนมัติ ให้ผู้ใช้กด
+    // ปุ่มลัดในป้ายสรุปเอง = ไม่ดึงออกจากที่กำลังทำ + มีลิงก์ไปดูชัดเจน.
     // กางป้ายสรุปให้เห็นเสมอ ต่อให้ผู้ใช้ย่อไว้ตอนกำลังทำงาน
     setMinimized(false);
     setJob((j) => (j ? { ...j, finished: true } : j));
+    // refresh รายการเบื้องหลังให้ร่างใหม่โผล่ (ถ้ายังอยู่แท็บที่เห็น) โดยไม่เปลี่ยนหน้า
     if (okOnes.length > 0 || results.some((r) => r.status === "dup")) router.refresh();
   }
 
@@ -295,10 +299,35 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
     setJob(null);
   }
 
+  // ปุ่มลัด "ไปดูใบที่เพิ่ม" — พาไปจุดที่ "เห็นใบร่างใหม่ชัวร์": แท็บ "ยังไม่ส่ง PO" (unsent)
+  // เรียงล่าสุดขึ้นบนสุด (created-desc) + เปิดใบแรกให้เลย. เคลียร์ filter ที่ค้างอยู่ (แท็บ/หมวด/
+  // โครงการ/ค้นหา ฯลฯ) ที่อาจซ่อนใบร่างใหม่ — CEO 2026-07-25 "หาไม่เจอเพราะค้างฟิลเตอร์อยู่".
+  // เก็บ company/branch ไว้ (scope). ใบร่างที่เพิ่งอัปมี trcloudDocId ว่าง → อยู่ในแท็บ unsent เสมอ.
+  function viewAddedBills(baseParams: string, results: FileResult[]) {
+    const oks = results.filter((r) => r.status === "ok" && r.id);
+    const target =
+      oks[0]?.id ?? results.find((r) => r.status === "dup" && r.id)?.id ?? null;
+    const sp = new URLSearchParams(baseParams);
+    for (const k of ["status", "tr", "ap", "nr", "pay", "cc", "category", "project", "dt", "q", "tab"]) {
+      sp.delete(k);
+    }
+    sp.set("tr", "unsent");
+    sp.set("sort", "created-desc");
+    if (target) sp.set("selected", target);
+    setJob(null);
+    router.push(`/ledger/expenses?${sp.toString()}`);
+    router.refresh();
+  }
+
   const okCount = job?.results.filter((r) => r.status === "ok").length ?? 0;
   const dupCount = job?.results.filter((r) => r.status === "dup").length ?? 0;
   const failCount = job?.results.filter((r) => r.status === "fail").length ?? 0;
   const pct = job && job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+  // ใบที่กดปุ่มลัด "ไปดู" ได้ (สำเร็จก่อน ไม่มีก็ใช้ใบซ้ำที่มี id) — ไม่มีเลย (พังหมด) = ไม่โชว์ปุ่ม
+  const firstTargetId =
+    job?.results.find((r) => r.status === "ok" && r.id)?.id ??
+    job?.results.find((r) => r.status === "dup" && r.id)?.id ??
+    null;
 
   return (
     <LedgerUploadContext.Provider
@@ -532,13 +561,38 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
                 ทุกใบบันทึกเป็น “ร่าง” · เปิดในรายการเพื่อตรวจและยืนยัน
               </p>
 
-              <button
-                type="button"
-                onClick={closeSummary}
-                className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
-              >
-                เสร็จ
-              </button>
+              {firstTargetId ? (
+                /* มีใบให้ดู → ปุ่มลัด "ไปดูใบ" (พาไปจุดที่เห็นใบใหม่ ไม่โดน filter ค้างซ่อน) + ปิด */
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => viewAddedBills(job.baseParams, job.results)}
+                    className="press h-11 flex-1 rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
+                  >
+                    {okCount > 1
+                      ? `ไปดูใบที่เพิ่ม (${okCount})`
+                      : okCount === 1
+                        ? "เปิดดูใบนี้"
+                        : "เปิดดูใบที่ซ้ำ"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeSummary}
+                    className="press h-11 shrink-0 rounded-xl border border-zinc-200 px-4 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-50 active:bg-zinc-50"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              ) : (
+                /* ไม่มีใบให้ดู (ล้มเหลวหมด) → ปุ่มปิดอย่างเดียว */
+                <button
+                  type="button"
+                  onClick={closeSummary}
+                  className="press h-11 w-full rounded-xl bg-[var(--color-brand-600)] text-sm font-semibold text-white transition hover:bg-[var(--color-brand-700)] active:bg-[var(--color-brand-700)]"
+                >
+                  เสร็จ
+                </button>
+              )}
             </div>
           )}
         </div>
