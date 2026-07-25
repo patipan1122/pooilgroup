@@ -552,29 +552,53 @@ export async function voidExpense(id: string): Promise<ActionResult> {
     diff: { old: { status: row.status }, new: { status: "void" } },
   });
 
-  // CEO 2026-07-25: ลบในระบบเรา → ลบ PO/AP ใน TRCloud ให้ด้วย (best-effort). void ในเราแล้ว
-  // สำคัญกว่า — ถ้า TRCloud ลบไม่ได้ (เช่นแปลง AP+ล็อกแล้ว) ไม่ rollback · บันทึก audit + เตือน.
+  // CEO 2026-07-25: ลบในระบบเรา → ลบเอกสารใน TRCloud ให้ด้วย (best-effort). void ในเราแล้ว
+  // สำคัญกว่า — ถ้า TRCloud ลบไม่ได้ (เช่นแปลง AP+ล็อก/ยื่น VAT แล้ว) ไม่ rollback · audit + เตือน.
+  // 🔑 ต้องลบ "ตัวจริง" ใน TRCloud: แปลงเป็น AP แล้ว → PO ถูกลบตอนแปลงไปแล้ว เหลือ AP (trcloudApDocId)
+  //   → ลบด้วย AP id · ยังไม่แปลง → ลบ PO (trcloudDocId). deleteTrcloudAp ลอง po/delete แล้ว ap/delete.
   let trcloudWarn: string | undefined;
-  const poRef = await prisma.ledgerExpense.findFirst({
+  const ref = await prisma.ledgerExpense.findFirst({
     where: { id, orgId: session.user.org_id },
-    select: { trcloudDocId: true },
+    select: { trcloudDocId: true, trcloudApDocId: true },
   });
-  if (poRef?.trcloudDocId && !["pending", "error"].includes(poRef.trcloudDocId)) {
-    const del = await deleteTrcloudAp(poRef.trcloudDocId);
+  const numId = (s: string | null | undefined) => (s && /^\d+$/.test(s) ? s : null);
+  const trcloudId = numId(ref?.trcloudApDocId) ?? numId(ref?.trcloudDocId);
+  if (trcloudId) {
+    const del = await deleteTrcloudAp(trcloudId);
     await audit({
       orgId: session.user.org_id,
       userId: session.user.id,
       action: del.ok ? "LEDGER_EXPENSE_TRCLOUD_AP_DELETED" : "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED",
       resourceType: "ledger_expense",
       resourceId: id,
-      diff: { new: { trcloudDocId: poRef.trcloudDocId, ok: del.ok, error: del.error ?? null, reason: "void" } },
+      diff: {
+        new: {
+          trcloudId,
+          isAp: !!numId(ref?.trcloudApDocId),
+          ok: del.ok,
+          error: del.error ?? null,
+          reason: "void",
+        },
+      },
     });
     if (!del.ok) trcloudWarn = del.error || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
   }
 
+  // ถ้าบิลนี้อยู่ในคำขอที่ออกใบสำคัญจ่าย (PV) ไปแล้ว → เตือนบัญชีจัดการ PV เอง. ไม่ลบ PV อัตโนมัติ
+  // เพราะ 1 PV รวมหลายบิล (ลบทั้งใบจะกระทบบิลอื่นที่จ่ายพร้อมกัน).
+  const pvBill = await prisma.ledgerPaymentRequestBill.findFirst({
+    where: { expenseId: id, orgId: session.user.org_id },
+    orderBy: { createdAt: "desc" },
+    select: { request: { select: { trcloudPvDocId: true, trcloudPvDocNo: true } } },
+  });
+  if (pvBill?.request?.trcloudPvDocId) {
+    const pvWarn = `บิลนี้มีใบสำคัญจ่าย (PV ${pvBill.request.trcloudPvDocNo ?? ""}) ใน TRCloud แล้ว — ตรวจ/ยกเลิก PV เองใน TRCloud (1 PV รวมหลายบิล ระบบไม่ลบให้อัตโนมัติ)`;
+    trcloudWarn = trcloudWarn ? `${trcloudWarn} · ${pvWarn}` : pvWarn;
+  }
+
   revalidatePath("/ledger/expenses");
   return trcloudWarn
-    ? { ok: true, warning: `ยกเลิกในระบบแล้ว แต่ลบใน TRCloud ไม่สำเร็จ: ${trcloudWarn} (ลบใน TRCloud เองได้)` }
+    ? { ok: true, warning: `ยกเลิกในระบบแล้ว แต่: ${trcloudWarn} (จัดการใน TRCloud เองได้)` }
     : { ok: true };
 }
 
