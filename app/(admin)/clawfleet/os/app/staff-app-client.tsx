@@ -1373,8 +1373,12 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
         // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
         setPendingShort(null);
         setPendingGate(null);
+        // ปิดรอบ = ปิดได้จริงเมื่อเก็บครบทุกตู้. ถ้ายังไม่ครบ (incomplete) = ใบตู้นี้บันทึกสำเร็จแล้ว
+        // แค่ยังเหลือตู้อื่น → ไม่ใช่ error · ไปหน้า "บันทึกสำเร็จ" ตามปกติ (CEO 2026-07-25: เดิมเด้ง
+        // error "เก็บไม่ครบ" แบบมองไม่เห็น → ดูเหมือนกดแล้วเงียบ ไม่บันทึก ทั้งที่บันทึกแล้ว).
         const close = await closeBranchSession({ sessionId: args.sessionId });
-        if (!close.ok) {
+        if (!close.ok && !close.incomplete) {
+          // error จริง ๆ เท่านั้น (เน็ต/สิทธิ์/DB) — "เก็บไม่ครบ" ไม่นับ
           console.error("[clawos] closeBranchSession failed:", close.error);
           setError(close.error || "ปิดรอบไม่สำเร็จ · ลองใหม่อีกครั้ง");
           return;
@@ -5385,9 +5389,9 @@ function FlowScreen(props: {
             <div style={{ width: 82, height: 82, borderRadius: "50%", background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
               <Check size={46} strokeWidth={2.4} color="#fff" />
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 8 }}>กระทบยอดสำเร็จ</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 8 }}>บันทึกสำเร็จ</div>
             <div style={{ fontSize: 13.5, color: "#fff", opacity: 0.9, lineHeight: 1.6, maxWidth: 280, marginBottom: 14 }}>
-              บันทึกรอบเก็บเงินของตู้ <span className="num">{machine?.code ?? "—"}</span> แล้ว<br />ข้อมูลถูกส่งเข้าระบบกันโกงอัตโนมัติ
+              บันทึกรอบเก็บเงินของตู้ <span className="num">{machine?.code ?? "—"}</span> แล้ว<br />กดกลับไปเก็บตู้ถัดไปได้เลย
             </div>
             <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 300, marginBottom: 22 }}>
               <div style={{ flex: 1, background: "rgba(255,255,255,0.14)", borderRadius: 13, padding: "12px 10px" }}>

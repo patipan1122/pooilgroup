@@ -43,6 +43,13 @@ type SubmitBranchEventResult =
   // → จอเลือกข้อความ + รายการเหตุผลให้ตรง (CEO 2026-07-25).
   | { ok: false; error: string; needsReason?: boolean; gateKind?: "SHORT" | "INTEGRITY" };
 
+// closeBranchSession: ปิดรอบสาขาได้ก็ต่อเมื่อเก็บครบทุกตู้. ถ้ายังไม่ครบ = ยังไม่ error จริง —
+// ใบตู้นี้บันทึกสำเร็จแล้ว แค่รอเก็บตู้ที่เหลือ → คืน incomplete ให้จอแสดง "บันทึกสำเร็จ · เก็บตู้ต่อ"
+// (CEO 2026-07-25: เดิมเด้ง error "เก็บไม่ครบ" แบบมองไม่เห็น → ดูเหมือนกดแล้วเงียบ).
+type CloseBranchResult =
+  | { ok: true; data: { status: string; flags: string[] } }
+  | { ok: false; error: string; incomplete?: boolean; collected?: number; total?: number };
+
 // R4 sentinel — โยนจากใน $transaction เมื่อเติมเกินสต๊อกคลังสาขา · catch แปลงเป็น
 // error ข้อความชัด (แยกจาก DB error ทั่วไป) แล้ว rollback ทั้งก้อน (ไม่ตัดสต๊อกครึ่ง ๆ).
 class CfOverIssueError extends Error {}
@@ -735,7 +742,7 @@ export async function attachEventPhotos(
 }
 
 /** ปิดรอบสาขา · 2-way cross-check (เงิน + ตุ๊กตา) */
-export async function closeBranchSession(input: unknown): Promise<ResultOf<{ status: string; flags: string[] }>> {
+export async function closeBranchSession(input: unknown): Promise<CloseBranchResult> {
   const parsed = CloseBranchSessionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const data = parsed.data;
@@ -772,7 +779,14 @@ export async function closeBranchSession(input: unknown): Promise<ResultOf<{ sta
   });
   if (cf.events.length === 0) return { ok: false, error: "ยังไม่มีตู้ที่กรอก · กรอกอย่างน้อย 1 ตู้" };
   if (cf.events.length < machineCount) {
-    return { ok: false, error: `เก็บไม่ครบ · กรอก ${cf.events.length}/${machineCount} ตู้` };
+    // ตู้นี้บันทึกแล้ว แต่ยังเก็บไม่ครบทั้งสาขา → ไม่ใช่ error · จอเด้ง "บันทึกสำเร็จ · เก็บตู้ต่อ"
+    return {
+      ok: false,
+      error: `เก็บไม่ครบ · กรอก ${cf.events.length}/${machineCount} ตู้`,
+      incomplete: true,
+      collected: cf.events.length,
+      total: machineCount,
+    };
   }
 
   // ราคา/ครั้งจริงต่อตู้ (ตาม loadout ปัจจุบัน) — ตอนกรอกต่อตู้ใช้ราคาจริงอยู่แล้ว
