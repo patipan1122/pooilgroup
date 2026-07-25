@@ -19,6 +19,7 @@ import {
 import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame } from "lucide-react";
 import { CopyLinkButton } from "@/components/recruit/copy-link-button";
 import { ShareKitButton } from "@/components/recruit/share-kit-button";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,19 @@ const SOURCE_LABELS: Record<string, { label: string; color: string; bgClass: str
 
 type PostingWithStats = Awaited<ReturnType<typeof loadPostings>>[number];
 
-async function loadPostings(orgId: string, filter?: PostingStatus) {
+async function loadPostings(
+  orgId: string,
+  filter?: PostingStatus,
+  companyId?: string,
+) {
   const postings = await prisma.recruitJobPosting.findMany({
-    where: { orgId, ...(filter ? { status: filter } : {}) },
+    where: {
+      orgId,
+      ...(filter ? { status: filter } : {}),
+      // กรองตามบริษัทที่เลือกบน "ตัวสลับด้านบน" แบบเป๊ะ ๆ (companyId ตรงเท่านั้น).
+      // เลือก "ทุกบริษัท" → companyId=undefined → ไม่กรอง (โชว์รวมทุกบริษัท).
+      ...(companyId ? { companyId } : {}),
+    },
     orderBy: { createdAt: "desc" },
     include: {
       _count: { select: { applications: { where: { draft: false } } } },
@@ -101,14 +112,15 @@ async function loadPostings(orgId: string, filter?: PostingStatus) {
 export default async function PostingsListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; company?: string }>;
 }) {
   const session = await requireSession();
   requireRecruitAccess(session.user.role);
   const params = await searchParams;
   const filter = params.status as PostingStatus | undefined;
+  const companyFilter = await resolveCompanyFilter(params.company);
 
-  const postings = await loadPostings(session.user.org_id, filter);
+  const postings = await loadPostings(session.user.org_id, filter, companyFilter);
 
   const canWrite = canRecruitWrite(session.user.role);
 

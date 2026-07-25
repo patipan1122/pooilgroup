@@ -9,6 +9,7 @@ import { requireRecruitAccess, canRecruitWrite } from "@/lib/recruit/role-guard"
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
 import { ApplicationsInbox } from "@/components/recruit/applications-inbox";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   APPLICATION_STATUSES,
   type ApplicationStatus,
@@ -27,6 +28,7 @@ interface SearchParams {
   posting?: string;
   q?: string;
   selected?: string;
+  company?: string;
 }
 
 export default async function RecruitInboxPage({
@@ -44,19 +46,37 @@ export default async function RecruitInboxPage({
       : null
   ) as ApplicationStatus | null;
 
+  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > ทุกบริษัท) — กรองทั้งหน้าให้ตรงกัน
+  const companyFilter = await resolveCompanyFilter(params.company);
+
   // Counts by status for filter sidebar
-  const [counts, postings, postingsCount] = await Promise.all([
+  const [counts, postings, postingsCount, orgPostingsCount] = await Promise.all([
     prisma.recruitApplication.groupBy({
       by: ["status"],
-      where: { orgId: session.user.org_id, draft: false },
+      where: {
+        orgId: session.user.org_id,
+        draft: false,
+        ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
+      },
       _count: { _all: true },
     }),
     prisma.recruitJobPosting.findMany({
-      where: { orgId: session.user.org_id, status: { in: ["OPEN", "CLOSED"] } },
+      where: {
+        orgId: session.user.org_id,
+        status: { in: ["OPEN", "CLOSED"] },
+        ...(companyFilter ? { companyId: companyFilter } : {}),
+      },
       select: { id: true, title: true },
       orderBy: { createdAt: "desc" },
       take: 30,
     }),
+    prisma.recruitJobPosting.count({
+      where: {
+        orgId: session.user.org_id,
+        ...(companyFilter ? { companyId: companyFilter } : {}),
+      },
+    }),
+    // ยอดทั้ง org (ไม่กรองบริษัท) — ใช้ตัดสินหน้า "ยินดีต้อนรับ" (โผล่เฉพาะตอน org ว่างจริง)
     prisma.recruitJobPosting.count({ where: { orgId: session.user.org_id } }),
   ]);
 
@@ -71,8 +91,8 @@ export default async function RecruitInboxPage({
   };
   for (const c of counts) countMap[c.status as ApplicationStatus] = c._count._all;
 
-  // Empty system → onboarding state
-  if (postingsCount === 0) {
+  // Empty system → onboarding state (เฉพาะตอน "ทั้ง org" ยังไม่มีประกาศเลย)
+  if (orgPostingsCount === 0) {
     return (
       <div className="p-6 sm:p-10 max-w-4xl mx-auto">
         <Section number="01" label="รับสมัครพนักงาน" title="ยินดีต้อนรับสู่โปรแกรมรับสมัครพนักงาน">
@@ -126,6 +146,7 @@ export default async function RecruitInboxPage({
       countMap={countMap}
       postings={postings}
       postingsCount={postingsCount}
+      companyFilter={companyFilter}
       canWrite={canRecruitWrite(session.user.role)}
     />
   );

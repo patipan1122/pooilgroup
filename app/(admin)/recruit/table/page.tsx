@@ -27,6 +27,7 @@ import { computeIqStats } from "@/lib/recruit/iq";
 import { thaiDateLong } from "@/lib/utils/format";
 import { ViewToggle } from "@/components/recruit/view-toggle";
 import { PostingSelect } from "@/components/recruit/posting-select";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   ApplicationsTable,
   type TableRow,
@@ -50,6 +51,7 @@ interface SearchParams {
   ageMin?: string;
   ageMax?: string;
   highlight?: string; // "1" = เฉพาะที่เล็งไว้ (👍 น่าสนใจ)
+  company?: string; // จาก "ตัวสลับบริษัทด้านบน"
 }
 
 const GENDERS = ["male", "female", "other"] as const;
@@ -75,6 +77,7 @@ export default async function RecruitTablePage({
       ? (params.status as ApplicationStatus)
       : null;
   const postingFilter = params.posting ?? null;
+  const companyFilter = await resolveCompanyFilter(params.company);
   const query = (params.q ?? "").trim();
   const sort: Sort = (SORTS as readonly string[]).includes(params.sort ?? "")
     ? (params.sort as Sort)
@@ -149,6 +152,8 @@ export default async function RecruitTablePage({
     orgId,
     draft: false,
     ...(postingFilter ? { postingId: postingFilter } : {}),
+    // กรองตามบริษัทที่เลือกด้านบน (เป๊ะ) — ผู้สมัครของประกาศที่อยู่บริษัทนั้นเท่านั้น.
+    ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
     ...(genderFilter ? { applicant: { gender: genderFilter } } : {}),
     ...(highlightOnly ? { screeningVerdict: "INTERESTING" } : {}),
     ...ageIdFilter,
@@ -236,7 +241,11 @@ export default async function RecruitTablePage({
         _count: { starRating: true },
       }),
       prisma.recruitJobPosting.findMany({
-        where: { orgId, status: { in: ["OPEN", "CLOSED"] } },
+        where: {
+          orgId,
+          status: { in: ["OPEN", "CLOSED"] },
+          ...(companyFilter ? { companyId: companyFilter } : {}),
+        },
         select: { id: true, title: true },
         orderBy: { createdAt: "desc" },
         take: 50,

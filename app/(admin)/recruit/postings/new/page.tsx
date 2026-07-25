@@ -7,6 +7,7 @@ import { requireRecruitWrite } from "@/lib/recruit/role-guard";
 import { prisma } from "@/lib/prisma";
 import { PostingEditor } from "@/components/recruit/posting-editor";
 import { EMPTY_FORM_SCHEMA } from "@/lib/recruit/types";
+import { readCompanyCookie } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,14 @@ export default async function NewPostingPage() {
     select: { id: true, name: true, code: true },
     orderBy: { code: "asc" },
   });
+
+  // บริษัทของประกาศใหม่ = บริษัทที่เลือกอยู่บน "ตัวสลับบริษัทด้านบน" (คุกกี้) — ไม่มีตัวเลือก
+  // ในฟอร์มแล้ว. ถ้าเลือก "ทุกบริษัท" อยู่ (คุกกี้ว่าง) → ประกาศเป็นแบบใช้รวม (companyId=null).
+  const activeCompanyId = await readCompanyCookie();
+  const defaultCompanyId =
+    activeCompanyId && companies.some((c) => c.id === activeCompanyId)
+      ? activeCompanyId
+      : null;
 
   return (
     <>
@@ -36,7 +45,7 @@ export default async function NewPostingPage() {
         initialData={{
           title: "",
           description: "",
-          companyId: companies[0]?.id ?? null,
+          companyId: defaultCompanyId,
           opensAt: null,
           closesAt: null,
           fieldSchema: EMPTY_FORM_SCHEMA,

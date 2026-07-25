@@ -9,6 +9,7 @@ import { type ApplicationStatus } from "@/lib/recruit/types";
 import { PipelineBoard } from "@/components/recruit/pipeline-board";
 import { ApplicationDetail } from "@/components/recruit/application-detail";
 import { ViewToggle } from "@/components/recruit/view-toggle";
+import { resolveCompanyFilter } from "@/lib/auth/company-context";
 import {
   ClipboardList,
   Inbox as InboxIcon,
@@ -33,10 +34,11 @@ export default async function PipelinePage({
   requireRecruitAccess(session.user.role);
   const params = await searchParams;
   const postingFilter = params.posting ?? null;
-  const companyFilter = params.company ?? null;
+  // บริษัท = "ตัวสลับด้านบน" (URL ?company= > คุกกี้ > ทุกบริษัท) — ไม่มีตัวเลือกในหน้านี้แล้ว
+  const companyFilter = (await resolveCompanyFilter(params.company)) ?? null;
   const selectedId = params.selected ?? null;
 
-  const [postings, companies, apps, countsByStatus] = await Promise.all([
+  const [postings, apps, countsByStatus] = await Promise.all([
     prisma.recruitJobPosting.findMany({
       where: {
         orgId: session.user.org_id,
@@ -46,11 +48,6 @@ export default async function PipelinePage({
       select: { id: true, title: true, companyId: true },
       orderBy: { createdAt: "desc" },
       take: 50,
-    }),
-    prisma.company.findMany({
-      where: { orgId: session.user.org_id, isActive: true },
-      select: { id: true, name: true, code: true },
-      orderBy: { code: "asc" },
     }),
     prisma.recruitApplication.findMany({
       where: {
@@ -71,7 +68,12 @@ export default async function PipelinePage({
     }),
     prisma.recruitApplication.groupBy({
       by: ["status"],
-      where: { orgId: session.user.org_id, draft: false },
+      where: {
+        orgId: session.user.org_id,
+        draft: false,
+        // KPI ด้านบนนับตามบริษัทที่เลือกด้วย → เลขบนสุดตรงกับบอร์ดที่เห็น
+        ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
+      },
       _count: { _all: true },
     }),
   ]);
@@ -170,30 +172,7 @@ export default async function PipelinePage({
           <KpiTile label="รับแล้ว" value={countMap.HIRED} tone="success" />
         </div>
 
-        {/* Company filter */}
-        {companies.length > 1 && (
-          <div className="p-3 border-b border-zinc-100">
-            <p className="text-[11px] text-zinc-500 font-bold px-2 mb-1.5">
-              บริษัท
-            </p>
-            <FilterRow
-              href={buildUrl({ posting: postingFilter ?? undefined })}
-              label="ทุกบริษัท"
-              active={!companyFilter}
-            />
-            {companies.map((c) => (
-              <FilterRow
-                key={c.id}
-                href={buildUrl({
-                  company: c.id,
-                  posting: postingFilter ?? undefined,
-                })}
-                label={c.name}
-                active={companyFilter === c.id}
-              />
-            ))}
-          </div>
-        )}
+        {/* บริษัท: เลือกจาก "ตัวสลับบริษัทด้านบน" แล้ว — ไม่มีตัวเลือกในหน้านี้ */}
 
         {/* Posting filter */}
         {postings.length > 0 && (
@@ -280,39 +259,7 @@ export default async function PipelinePage({
           </div>
         </div>
 
-        {/* Mobile filter pills (replaces hidden desktop sidebar on <lg) */}
-        {(companies.length > 1 || postings.length > 0) && (
-          <div className="lg:hidden border-b border-zinc-200 bg-white px-3 py-2 overflow-x-auto">
-            <div className="flex items-center gap-1.5 min-w-fit">
-              <Link
-                href={buildUrl({ posting: postingFilter ?? undefined })}
-                className={`h-9 px-3 inline-flex items-center rounded-lg text-xs font-bold whitespace-nowrap border ${
-                  !companyFilter
-                    ? "bg-zinc-900 text-white border-zinc-900"
-                    : "bg-white text-zinc-700 border-zinc-200"
-                }`}
-              >
-                ทุกบริษัท
-              </Link>
-              {companies.slice(0, 4).map((c) => (
-                <Link
-                  key={c.id}
-                  href={buildUrl({
-                    company: c.id,
-                    posting: postingFilter ?? undefined,
-                  })}
-                  className={`h-9 px-3 inline-flex items-center rounded-lg text-xs font-bold whitespace-nowrap border ${
-                    companyFilter === c.id
-                      ? "bg-zinc-900 text-white border-zinc-900"
-                      : "bg-white text-zinc-700 border-zinc-200"
-                  }`}
-                >
-                  {c.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* บริษัท (มือถือ): เลือกจาก "ตัวสลับบริษัทด้านบน" แล้ว — ไม่มีแถบเลือกในหน้านี้ */}
 
         {/* Kanban board — mobile pb leaves room for the bulk-action bar (sits above the bottom nav) */}
         <div className="flex-1 overflow-auto p-3 sm:p-5 pb-40 lg:pb-5">

@@ -54,9 +54,9 @@ export function PostingEditor({
   const router = useRouter();
   const [title, setTitle] = useState(initialData.title);
   const [description, setDescription] = useState(initialData.description);
-  const [companyId, setCompanyId] = useState<string | null>(
-    initialData.companyId,
-  );
+  // บริษัทมาจาก "ตัวสลับบริษัทด้านบน" แล้ว (ตอนสร้างประกาศ) — ในฟอร์มไม่มีตัวให้เลือก
+  // อีกต่อไป แค่โชว์ว่าประกาศนี้อยู่บริษัทไหน. companyId ยังถูกส่งไปบันทึกตามเดิม.
+  const [companyId] = useState<string | null>(initialData.companyId);
   const [opensAt, setOpensAt] = useState(initialData.opensAt ?? "");
   const [closesAt, setClosesAt] = useState(initialData.closesAt ?? "");
   const [schema, setSchema] = useState<FormSchema>(initialData.fieldSchema);
@@ -273,19 +273,9 @@ export function PostingEditor({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="บริษัท">
-            <select
-              value={companyId ?? ""}
-              onChange={(e) => setCompanyId(e.target.value || null)}
-              disabled={readonly}
-              className="w-full h-11 px-3 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] disabled:bg-zinc-50"
-            >
-              <option value="">— ไม่ระบุ / ใช้รวม —</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-full h-11 px-3 rounded-xl border border-zinc-200 bg-zinc-50 flex items-center text-sm font-medium text-zinc-700">
+              {companyNameForCaption || "ทุกบริษัท (ใช้รวม)"}
+            </div>
           </Field>
           <Field label="เปิดรับวันที่">
             <input

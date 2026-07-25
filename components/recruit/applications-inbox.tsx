@@ -31,6 +31,7 @@ interface Props {
   postings: Array<{ id: string; title: string }>;
   postingsCount?: number;
   canWrite: boolean;
+  companyFilter?: string; // จาก "ตัวสลับบริษัทด้านบน"
 }
 
 export async function ApplicationsInbox({
@@ -42,6 +43,7 @@ export async function ApplicationsInbox({
   countMap,
   postings,
   canWrite,
+  companyFilter,
 }: Props) {
   // Fetch applications based on filters
   const apps = await prisma.recruitApplication.findMany({
@@ -50,6 +52,8 @@ export async function ApplicationsInbox({
       draft: false,
       ...(currentStatus ? { status: currentStatus } : {}),
       ...(currentPosting ? { postingId: currentPosting } : {}),
+      // กรองตามบริษัทที่เลือกด้านบน (เป๊ะ)
+      ...(companyFilter ? { posting: { companyId: companyFilter } } : {}),
       ...(currentQuery
         ? {
             OR: [

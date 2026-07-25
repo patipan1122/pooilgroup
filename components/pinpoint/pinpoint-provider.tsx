@@ -388,25 +388,15 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
       const d = draft;
       setBusy(true);
       const url = currentUrl();
-      // ถ่ายจอ "อัตโนมัติตอนกดบันทึก" เฉพาะเดสก์ท็อป — snapdom บนมือถือช้า/ไม่นิ่ง →
-      // มือถือถ่ายเฉพาะตอนผู้ใช้กด "วาด" เอง (on-demand). ไม่ว่าทางไหน ภาพที่ได้เป็น
-      // "กรอบจอ (viewport)" เสมอ.
-      const autoCapture = !isLikelyMobile();
-      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ (เป็นกรอบจอเช่นกัน) ใช้ทันที.
-      let finalKey: string | null = screenshotKeyOverride ?? null;
-      // ยังไม่มีภาพ + เป็นคอม → "รอ" ถ่ายจอ ณ จุดที่ปัก + อัปโหลดให้เสร็จก่อนบันทึก
-      // (มี timeout กันค้าง). ถ่ายตอนนี้ = เนื้อหาโหลดเสร็จ ไม่ติด skeleton.
-      if (finalKey == null && autoCapture) {
-        const loadingId = toast.loading("กำลังเก็บภาพหน้าจอ…");
-        try {
-          finalKey = await Promise.race([
-            captureForDraft(d),
-            new Promise<null>((r) => setTimeout(() => r(null), CAPTURE_WAIT_MS)),
-          ]);
-        } finally {
-          toast.dismiss(loadingId);
-        }
-      }
+      // ภาพวาด (override) = ภาพเฉพาะหมุดนี้ (กรอบจอ) แนบไปกับ POST ได้เลย.
+      const overrideKey = screenshotKeyOverride ?? null;
+      // ไม่มีภาพวาด + เดสก์ท็อป → ถ่ายจอ "ทีหลัง" (async) แล้วแนบเข้าหมุดผ่าน PATCH.
+      // เลิกรอถ่ายก่อนบันทึกแล้ว → กด "บันทึก" เสร็จทันที (snapdom 2-4 วิ ไปทำเบื้องหลัง).
+      // มือถือ = ถ่ายเฉพาะตอนผู้ใช้กด "วาด" เอง (override) → ไม่ auto.
+      const willAutoCapture = overrideKey == null && !isLikelyMobile();
+      // ภาพทุกทาง (วาด/ถ่ายอัตโนมัติ) เป็น "กรอบจอ" เสมอ → ฝั่งรีวิววางจุดด้วย
+      // coordXPct/YPct ตรง ๆ (robust · ไม่ต้องรอรูป · หมุดเก่าไม่มี flag ใช้ docX/docY).
+      const isViewportCapture = overrideKey != null || willAutoCapture;
       try {
         const res = await fetch(`/api/pinpoint/sessions/${sessionId}/pins`, {
           method: "POST",
@@ -417,21 +407,17 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             priority,
             elementSelector: d.selector,
             elementText: d.text,
-            // capture: "viewport" → ฝั่งแสดงผลรู้ว่าภาพนี้คือกรอบจอ → วางจุดด้วย
-            // coordXPct/YPct ตรง ๆ (หมุดเก่าที่ไม่มี flag ใช้สูตร docX/docY เดิม).
             elementMeta: {
               ...d.meta,
               docX: d.docX,
               docY: d.docY,
-              // มีภาพ = เป็นกรอบจอเสมอ (ถ่ายอัตโนมัติ/ภาพวาด · คอม/มือถือ) → ฝั่งรีวิว
-              // วางจุดหมุดด้วย coordXPct/YPct ตรง ๆ. ไม่มีภาพ → ไม่ใส่ flag.
-              ...(finalKey != null ? { capture: "viewport" } : {}),
+              ...(isViewportCapture ? { capture: "viewport" } : {}),
             },
             coordXPct: d.xPct,
             coordYPct: d.yPct,
             viewportW: d.viewportW,
             viewportH: d.viewportH,
-            screenshotKey: finalKey,
+            screenshotKey: overrideKey,
           }),
         });
         if (!res.ok) {
@@ -451,13 +437,37 @@ export function PinpointProvider({ canReview = false }: { canReview?: boolean } 
             coordYPct: d.yPct,
             docX: d.docX,
             docY: d.docY,
-            screenshotKey: finalKey,
+            screenshotKey: overrideKey,
           },
         ]);
         setDraft(null);
+        setBusy(false); // ← ปุ่มเสร็จทันที ไม่ต้องรอรูป
+
+        // ── ถ่ายจอ + แนบเข้าหมุดทีหลัง (เบื้องหลัง · เดสก์ท็อปที่ยังไม่มีภาพ) ──
+        // ถ่าย/อัปโหลดล้ม → หมุดยังอยู่ครบ แค่ไม่มีรูป (captureForDraft เตือนให้เอง).
+        if (willAutoCapture) {
+          void (async () => {
+            const key = await Promise.race([
+              captureForDraft(d),
+              new Promise<null>((r) => setTimeout(() => r(null), CAPTURE_WAIT_MS)),
+            ]);
+            if (!key) return;
+            try {
+              await fetch(`/api/pinpoint/pins/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ screenshotKey: key }),
+              });
+              setPins((prev) =>
+                prev.map((p) => (p.id === id ? { ...p, screenshotKey: key } : p)),
+              );
+            } catch {
+              /* แนบรูปไม่สำเร็จ → หมุดยังอยู่ ไม่มีรูป */
+            }
+          })();
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
-      } finally {
         setBusy(false);
       }
     },

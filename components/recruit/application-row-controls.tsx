@@ -147,6 +147,9 @@ export function VerdictButtons({
     startTransition(async () => {
       try {
         await setScreeningVerdict(applicationId, value);
+        toast.success(
+          value ? `คัดกรอง: ${SCREENING_VERDICT_LABELS[value]}` : "ล้างผลคัดกรอง",
+        );
       } catch (e) {
         setVerdict(prev);
         onChange?.(prev);

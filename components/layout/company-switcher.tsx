@@ -9,6 +9,8 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Check, ChevronDown, Layers } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { COMPANY_COOKIE_NAME, COMPANY_COOKIE_MAX_AGE } from "@/lib/auth/company-context-shared";
+import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface Company {
   id: string;
@@ -31,6 +33,10 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [pendingPick, setPendingPick] = useState<{
+    id: string | null;
+    name: string;
+  } | null>(null);
   const [, startTransition] = useTransition();
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -50,9 +56,17 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
     ? companies.find((c) => c.id === currentCompanyId)
     : null;
 
-  function pick(companyId: string | null) {
-    setCompanyCookie(companyId ?? "all");
+  // ขอสลับ → เปิดหน้าต่างยืนยันก่อน (กันสลับพลาด/ข้อมูลปนกัน · CEO 2026-07-25).
+  // เลือกอันเดิม = ไม่ต้องยืนยัน แค่ปิดเมนู.
+  function requestPick(companyId: string | null, name: string) {
     setOpen(false);
+    if (companyId === (current?.id ?? null)) return;
+    setPendingPick({ id: companyId, name });
+  }
+
+  // สลับจริง (หลังยืนยัน) — เขียนคุกกี้ + อัปเดต ?company= แล้ว refresh ทั้งหน้า.
+  function doPick(companyId: string | null) {
+    setCompanyCookie(companyId ?? "all");
     // Update URL param so the current page re-renders with the new filter
     const params = new URLSearchParams(searchParams.toString());
     if (companyId) params.set("company", companyId);
@@ -65,6 +79,7 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
   }
 
   return (
+    <>
     <div className="relative" ref={wrapperRef}>
       <button
         type="button"
@@ -101,7 +116,7 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
           </p>
           <button
             type="button"
-            onClick={() => pick(null)}
+            onClick={() => requestPick(null, "ทั้งหมด (ทุกบริษัท)")}
             className={cn(
               "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors text-left",
               !current
@@ -127,7 +142,7 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
               <button
                 key={c.id}
                 type="button"
-                onClick={() => pick(c.id)}
+                onClick={() => requestPick(c.id, c.name)}
                 className={cn(
                   "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors text-left",
                   isCurrent
@@ -153,5 +168,35 @@ export function CompanySwitcher({ companies, currentCompanyId }: Props) {
         </div>
       )}
     </div>
+
+    <Dialog
+      open={!!pendingPick}
+      onClose={() => setPendingPick(null)}
+      title="ยืนยันเปลี่ยนบริษัท"
+    >
+      <div className="space-y-5">
+        <div className="text-sm text-zinc-700 leading-relaxed">
+          สลับไปดูข้อมูลของ{" "}
+          <span className="font-bold text-zinc-900">{pendingPick?.name}</span>?
+          <br />
+          ข้อมูลทุกหน้าจะเปลี่ยนไปตามบริษัทนี้ (ประกาศ · ผู้สมัคร · เอกสาร ฯลฯ)
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+          <Button variant="ghost" onClick={() => setPendingPick(null)}>
+            ยกเลิก
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (pendingPick) doPick(pendingPick.id);
+              setPendingPick(null);
+            }}
+          >
+            เปลี่ยนบริษัท
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+    </>
   );
 }

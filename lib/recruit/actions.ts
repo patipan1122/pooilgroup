@@ -418,7 +418,9 @@ export async function setScreeningVerdict(
 
   revalidatePath(`/recruit/applications/${applicationId}`);
   revalidatePath("/recruit");
-  revalidatePath("/recruit/table");
+  // ตั้งใจไม่ revalidate "/recruit/table" — ตารางเป็น force-dynamic + query หนัก 6 ตัว
+  // การ revalidate = โหลดทั้งหน้าใหม่ทุกคลิก → ปุ่มถูกล็อก "กดไม่ได้" ชั่วขณะ.
+  // จอเปลี่ยนสีปุ่มแบบ optimistic ให้อยู่แล้ว และ force-dynamic โหลดใหม่ครั้งหน้าเองอยู่แล้ว.
 }
 
 export async function setApplicationTags(
