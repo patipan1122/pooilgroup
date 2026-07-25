@@ -70,3 +70,31 @@ export function accountName(code: string | null | undefined): string | null {
   if (!code) return null;
   return NAME_BY_CODE.get(code.trim()) ?? null;
 }
+
+// ── สูตร "LL" (LedgerLine) — 1 สูตรลงบัญชีต่อหมวดด้วย "ช่อง c" ────────────────────
+// ใบ AP ส่ง type:"LL" + ค่าเข้าช่อง cN → TRCloud ลง Dr [บัญชีของช่องนั้น] อัตโนมัติ.
+// ⚠️ ตารางนี้ต้องตรงกับสูตร "LL" ที่สร้างใน TRCloud เป๊ะ (แถว [glCode → cN]).
+//   c1..c21 = 21 หมวดค่าใช้จ่าย (ตามลำดับ STANDARD_CATEGORIES ด้านบน · index 0 = c1)
+//   c22 = ภาษีซื้อขอคืนได้ (1432000) · c23 = ภาษีซื้อขอคืนไม่ได้ (5911100)
+//   แถวที่เหลือใช้ตัวแปรมาตรฐาน: grand_total→เจ้าหนี้ 2101000 · wht→2325300 · discount→5101500
+export const LL_SLOT_VAT_CLAIMABLE = "c22";
+export const LL_SLOT_VAT_NONCLAIM = "c23";
+
+/** glCode ของหมวด → ช่อง cN. คืน null ถ้าไม่ใช่หมวดมาตรฐาน (→ fallback สูตรเดิม). */
+export const LL_CSLOT_BY_GL: Record<string, string> = Object.fromEntries(
+  STANDARD_CATEGORIES.map((c, i) => [c.glCode, `c${i + 1}`]),
+);
+export function llCSlotForGl(glCode: string | null | undefined): string | null {
+  if (!glCode) return null;
+  return LL_CSLOT_BY_GL[glCode.trim()] ?? null;
+}
+
+/** สเปคแถวสูตร "LL" สำหรับให้นักบัญชีสร้างใน TRCloud (debug/print). */
+export const LL_FORMULA_ROWS: { acc: string; variable: string; side: "Dr" | "Cr"; name: string }[] = [
+  ...STANDARD_CATEGORIES.map((c, i) => ({ acc: c.glCode, variable: `c${i + 1}`, side: "Dr" as const, name: c.name })),
+  { acc: SYSTEM_ACCOUNTS.inputVat.code, variable: LL_SLOT_VAT_CLAIMABLE, side: "Dr", name: "ภาษีซื้อ (ขอคืนได้)" },
+  { acc: SYSTEM_ACCOUNTS.inputVatNonClaimable.code, variable: LL_SLOT_VAT_NONCLAIM, side: "Dr", name: "ภาษีซื้อ (ขอคืนไม่ได้)" },
+  { acc: SYSTEM_ACCOUNTS.payable.code, variable: "grand_total", side: "Cr", name: "เจ้าหนี้การค้า" },
+  { acc: "2325300", variable: "wht", side: "Cr", name: "ภาษีหัก ณ ที่จ่าย ภงด.53" },
+  { acc: "5101500", variable: "discount", side: "Cr", name: "ส่วนลดรับ" },
+];

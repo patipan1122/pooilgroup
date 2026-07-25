@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizePurchaseType, type PurchaseType } from "@/lib/ledger/types";
+import { llCSlotForGl, LL_SLOT_VAT_CLAIMABLE, LL_SLOT_VAT_NONCLAIM } from "@/lib/ledger/coa-chart";
 
 // LedgerLine → TRCloud PO push (JP Sync company 45)
 //
@@ -249,13 +250,6 @@ const SKU_BY_TYPE: Record<PurchaseType, string> = {
 /** GL สำรองเมื่อประเภทค่าใช้จ่ายยังไม่ได้ตั้งรหัสบัญชี — "รายจ่ายยังไม่ได้แยกประเภท"
  *  (นักบัญชีไปจัดประเภทใน TRCloud ภายหลัง). push จะไม่บล็อกเพราะขาด GL อีกต่อไป. */
 const GL_FALLBACK = "5919999";
-// ── บัญชีระบบสำหรับ "การลงบัญชีสำเร็จรูป (manual journal)" — ต้องตรงกับ coa-chart.ts ──
-// CEO 2026-07-25: JPS_AP auto-formula เมิน acc_code รายบรรทัด → ตกถังรวม 5919999 · เราจึงส่ง
-// journal Dr/Cr เอง (formula:manual) ให้ TRCloud ไม่ต้องคำนวณ. หัก ณ ที่จ่ายลงตอนจ่ายเงิน (PV) ไม่ลงที่ AP.
-const ACC_INPUT_VAT = "1432000";           // ภาษีซื้อ (ขอคืนได้)
-const ACC_INPUT_VAT_NONCLAIM = "5911100";  // ภาษีซื้อไม่ขอคืน (ลงเป็นค่าใช้จ่าย)
-const ACC_PAYABLE = "2101000";             // เจ้าหนี้การค้าในประเทศ
-const AP_BOOK_ID = "5";                     // สมุดรายวันซื้อ (purchase/expense journal ของ TRCloud)
 
 /** เดาประเภทการซื้อจากชื่อประเภทค่าใช้จ่าย — ใช้เมื่อ AI ไม่ได้ระบุ (บิลเก่า).
  *  ลำดับสำคัญ: construction → goods (จับ "น้ำมัน"/วัสดุ/สินค้า) → service.
@@ -529,38 +523,10 @@ export async function pushExpenseToTrcloud(
 // reference=docCode ผูก PO↔AP เชิงตรรกะอยู่แล้ว.
 const AP_TYPE_CASH   = process.env.TRCLOUD_AP_TYPE_CASH   ?? "Cash[AP]";
 const AP_TYPE_CREDIT = process.env.TRCLOUD_AP_TYPE_CREDIT ?? "Credit[AP]";
-
-// สร้าง "การลงบัญชีสำเร็จรูป (manual journal)" สำหรับใบ AP → ส่งให้ TRCloud ตรง ๆ (formula:manual)
-// เพื่อกัน auto-formula ของ JPS_AP ที่เมิน acc_code รายบรรทัด → ลงตกถังรวม 5919999.
-//   Dr [ผังบัญชีของหมวด] = ยอดสุทธิ (subtotal − discount)
-//   Dr [ภาษีซื้อ 1432000 ขอคืนได้ / 5911100 ขอคืนไม่ได้] = VAT (ถ้ามี)
-//   Cr [เจ้าหนี้ 2101000] = ยอดรวม (total)
-// หัก ณ ที่จ่าย "ไม่" ลงที่ AP (ลงตอนจ่ายเงิน/PV ตามหลักบัญชีไทย · ตรงกับ 3 บรรทัดที่ TRCloud ใช้).
-// คืน null เมื่อไม่มีหมวดจริง / ยอดไม่บาลานซ์ → ปล่อยให้ push ทำงานปกติ (ไม่ยัด journal เสีย).
-type GlLine = { acc_code: string; dr: string; cr: string; acc_note: string };
-function buildApJournal(e: PushableExpense): GlLine[] | null {
-  const acc = e.categoryAccCode;
-  if (!acc || acc === GL_FALLBACK) return null; // ไม่มีหมวดจริง — guard ที่อื่นบล็อกส่งอยู่แล้ว
-  const net = round2(e.subtotal - (e.discount || 0));
-  const vat = round2(e.vat);
-  const total = round2(e.total);
-  if (net <= 0 || total <= 0) return null;
-  const lines: GlLine[] = [
-    { acc_code: acc, dr: net.toFixed(2), cr: "0.00", acc_note: (e.categoryName || "ค่าใช้จ่าย").slice(0, 120) },
-  ];
-  if (vat > 0) {
-    lines.push({
-      acc_code: e.inputVatClaimable ? ACC_INPUT_VAT : ACC_INPUT_VAT_NONCLAIM,
-      dr: vat.toFixed(2),
-      cr: "0.00",
-      acc_note: e.inputVatClaimable ? "ภาษีซื้อ" : "ภาษีซื้อ (ขอคืนไม่ได้)",
-    });
-  }
-  lines.push({ acc_code: ACC_PAYABLE, dr: "0.00", cr: total.toFixed(2), acc_note: "เจ้าหนี้การค้า" });
-  // บาลานซ์: ΣDr = ΣCr (net + vat = total). คลาดเกิน 0.02 = ไม่ยัด (กัน journal เพี้ยน)
-  if (Math.abs(round2(net + (vat > 0 ? vat : 0)) - total) > 0.02) return null;
-  return lines;
-}
+// สูตร "LL" (LedgerLine) — 1 สูตร ลงบัญชีต่อหมวดผ่าน "ช่อง c" (c1..c21 หมวด · c22/c23 ภาษีซื้อ).
+// ใบ AP เครดิตส่ง type:"LL" + ค่าเข้า c-slot ของหมวด → journal ลงบัญชีถูกในตัวใบ (ไม่ตก 5919999).
+// ต้องมีสูตร "LL" ใน TRCloud ก่อน (นักบัญชีสร้าง). ไม่มี/หมวดไม่รู้จัก → fallback Credit[AP] (เดิม).
+const AP_FORMULA_LL = process.env.LEDGER_TRCLOUD_AP_FORMULA ?? "LL";
 
 export async function convertExpensePoToAp(
   e: PushableExpense,
@@ -610,8 +576,21 @@ export async function convertExpensePoToAp(
   const taxReport = e.docType === "quotation" || !eff.inputVatClaimable ? "0" : "1";
   const apType = (e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT;
   const slipNote = opts.slipUrl ? ` · สลิปโอน: ${opts.slipUrl}` : "";
-  // การลงบัญชีสำเร็จรูป — ส่งเอง (formula:manual) กัน TRCloud auto ตก 5919999. null = ไม่พร้อม → auto ตามเดิม.
-  const apJournal = buildApJournal(eff);
+  // สูตร "LL" — ลงบัญชีต่อหมวดผ่าน "ช่อง c" ในตัวใบ AP (เฉพาะเคสเครดิต + หมวดมาตรฐานที่มี c-slot).
+  // ส่ง c<หมวด>=ยอดสุทธิ (net) + c22/c23=VAT (ถ้ามี) → grand_total(เจ้าหนี้) auto จาก product.
+  // journal อยู่ในตัวใบ → ไม่ตก 5919999 · ไม่มีชุดแยก · ไม่ต้องลบ. หมวดไม่รู้จัก/จ่ายสด → fallback Credit[AP].
+  const llSlot = (e.paymentStatus ?? "unpaid") !== "paid" ? llCSlotForGl(eff.categoryAccCode) : null;
+  const useLL = !!llSlot;
+  const llNet = round2(eff.subtotal - (eff.discount || 0));
+  const llVat = round2(eff.vat);
+  const llSlots: Json = useLL
+    ? {
+        [llSlot!]: llNet.toFixed(2),
+        ...(llVat > 0
+          ? { [eff.inputVatClaimable ? LL_SLOT_VAT_CLAIMABLE : LL_SLOT_VAT_NONCLAIM]: llVat.toFixed(2) }
+          : {}),
+      }
+    : {};
   const payload: Json = {
     issue_date: issue,
     due_date: issue,
@@ -624,14 +603,14 @@ export async function convertExpensePoToAp(
     wht: String(round2(e.wht)),
     tax_option: "in",           // ราคา VAT-inclusive (ค่าใช้จ่ายเก็บยอดรวม VAT)
     tax_report: taxReport,
-    type: apType,               // Cash[AP] จ่ายแล้ว / Credit[AP] ค้างจ่าย (Cr เจ้าหนี้)
+    type: useLL ? AP_FORMULA_LL : apType, // LL (ลงบัญชีต่อหมวด) ถ้าหมวดมี c-slot · ไม่งั้น Cash/Credit[AP] เดิม
     approve_status: "wait",     // ร่าง — บัญชี approve ก่อน post
     department: eff.branchTrcloudDepartment,
     project: eff.branchTrcloudProject ?? "",
     invoice_note: (e.note ? `${e.note} · ` : "") + `LedgerLine · อ้างอิง ${e.docCode}${slipNote}`,
     ...(opts.slipUrl ? { url: opts.slipUrl } : {}), // แนบลิงก์สลิปโอน (ถ้า TRCloud รับ)
-    // ส่งการลงบัญชีสำเร็จรูป (Dr/Cr) เอง → TRCloud ไม่ auto → เลิกตก 5919999 (CEO 2026-07-25)
-    ...(apJournal ? { formula: "manual", book_id: AP_BOOK_ID, gl_entry: apJournal } : {}),
+    // ช่อง c ของสูตร LL → journal ลงบัญชีถูกในตัวใบ (CEO 2026-07-25 · แทน Path A formula:manual ที่ TRCloud เมิน)
+    ...llSlots,
     customer: {
       group_code: "S",
       code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
