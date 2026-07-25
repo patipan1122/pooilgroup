@@ -10,7 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { isAdminTier } from "@/lib/auth/role-guards";
-import { parseReceipt, AiBudgetError } from "@/lib/ledger/ai-parse";
+import { parseReceipt, AiBudgetError, MAX_RECEIPT_PAGES } from "@/lib/ledger/ai-parse";
 import { recheckParsed } from "@/lib/ledger/recheck";
 
 export const runtime = "nodejs";
@@ -35,17 +35,32 @@ export async function POST(req: NextRequest) {
   const userId = session.user.id;
   const contentType = req.headers.get("content-type") ?? "";
 
-  let imageInput: string;
+  // string เดี่ยว (บิลหน้าเดียว) หรือ string[] (บิลหลายหน้า = หน้าต่อเนื่องของใบเดียว)
+  let imageInput: string | string[];
   try {
     if (contentType.includes("application/json")) {
-      const body = (await req.json()) as { imageUrl?: string; imageBase64?: string };
-      if (body.imageUrl) {
-        // SSRF guard: a caller-supplied URL is fetched server-side, so only allow
-        // our own R2 public bucket (where the presign route uploads). Anything
-        // else (internal IPs, metadata endpoints, arbitrary hosts) is rejected.
-        const r2Base = process.env.R2_PUBLIC_URL;
-        const isHttp = /^https?:\/\//i.test(body.imageUrl);
-        if (isHttp && (!r2Base || !body.imageUrl.startsWith(r2Base))) {
+      const body = (await req.json()) as {
+        imageUrl?: string;
+        imageUrls?: string[];
+        imageBase64?: string;
+      };
+      // SSRF guard: caller-supplied URLs are fetched server-side, so only allow our
+      // own R2 public bucket (where the presign route uploads). Anything else
+      // (internal IPs, metadata endpoints, arbitrary hosts) is rejected.
+      const r2Base = process.env.R2_PUBLIC_URL;
+      const urlAllowed = (u: string) => {
+        const isHttp = /^https?:\/\//i.test(u);
+        return !isHttp || (!!r2Base && u.startsWith(r2Base));
+      };
+      if (Array.isArray(body.imageUrls) && body.imageUrls.length > 0) {
+        // บิลหลายหน้า — ตรวจทุก url + จำกัดจำนวนหน้าตามเพดานเดียวกับตัวอ่าน
+        const urls = body.imageUrls.filter((u) => typeof u === "string" && u.length > 0);
+        if (urls.length === 0 || !urls.every(urlAllowed)) {
+          return NextResponse.json({ error: "URL ไม่ได้รับอนุญาต" }, { status: 400 });
+        }
+        imageInput = urls.slice(0, MAX_RECEIPT_PAGES);
+      } else if (body.imageUrl) {
+        if (!urlAllowed(body.imageUrl)) {
           return NextResponse.json({ error: "URL ไม่ได้รับอนุญาต" }, { status: 400 });
         }
         imageInput = body.imageUrl;

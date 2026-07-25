@@ -26,16 +26,19 @@ import {
   Loader2,
   Camera,
   FileText,
+  Files,
   CheckCircle2,
   AlertTriangle,
   X,
   ChevronDown,
 } from "lucide-react";
-import type { ParsedReceipt } from "@/lib/ledger/types";
+import type { ParsedReceipt, ExpenseAttachment } from "@/lib/ledger/types";
 
 // PDF ใหญ่กว่ารูป → เผื่อถึง 15MB (รูปทั่วไปไม่กี่ MB)
 const MAX_BYTES = 15 * 1024 * 1024;
 const ACCEPT_FILES = "image/*,application/pdf";
+// เพดานหน้า/ใบ สำหรับโหมด "บิลเดียว หลายหน้า" (ตรงกับ MAX_RECEIPT_PAGES ฝั่ง AI)
+const MAX_PAGES_PER_BILL = 10;
 
 type FileStatus = "ok" | "dup" | "fail";
 interface FileResult {
@@ -48,12 +51,16 @@ interface FileResult {
 interface Job {
   total: number;
   done: number;
-  current: string; // ชื่อไฟล์ที่กำลังทำ
+  current: string; // ชื่อไฟล์ที่กำลังทำ (single) หรือ ข้อความสถานะช่วงนั้น (group)
   results: FileResult[];
   finished: boolean;
   // company/branch/filter ที่ snapshot ตอนเริ่มงาน — ใช้สร้างลิงก์ "ไปดูใบที่เพิ่ม" ตอนจบ
   // (ผู้ใช้อาจเปลี่ยน filter ระหว่างอ่านไปแล้ว จึงต้องยึดค่าตอนเริ่ม)
   baseParams: string;
+  // "single" = หลายไฟล์ → หลายใบ (รูปละใบ) · "group" = หลายรูป → 1 ใบ (บิลหลายหน้า)
+  mode: "single" | "group";
+  // group เท่านั้น — จำนวนหน้าของบิลเดียว (โชว์ใน progress/summary)
+  pagesTotal?: number;
 }
 
 /** company/branch/filter ที่ "หยุดภาพไว้ตอนเริ่มงาน" — งานที่วิ่งอยู่ไม่สนใจว่าผู้ใช้
@@ -71,6 +78,8 @@ interface LedgerUploadContextValue {
   busy: boolean;
   done: number;
   total: number;
+  /** โหมดงานที่กำลังวิ่ง (single=หลายใบ · group=บิลเดียวหลายหน้า) — ปุ่มใช้เลือกข้อความ */
+  mode: "single" | "group" | null;
 }
 
 const LedgerUploadContext = createContext<LedgerUploadContextValue | null>(null);
@@ -97,10 +106,79 @@ function isAcceptable(file: File): boolean {
   return file.type.startsWith("image/") || file.type === "application/pdf";
 }
 
+/** รูป/ไฟล์ที่แนบกับใบ — หน้าแรกเป็นรูปหลัก, หน้า 2..N (บิลหลายหน้า) เป็น attachments */
+interface CreateMedia {
+  originalUrl: string;
+  thumbUrl: string;
+  sha256: string | null;
+  attachments?: ExpenseAttachment[];
+}
+
+/** อัปโหลด 1 ไฟล์ขึ้น R2 (presign → PUT) → คืน { url สาธารณะ, sha256 }.
+ *  ใช้ร่วม processOne (รูปละใบ) และ processGroup (แต่ละหน้าของบิลหลายหน้า). */
+async function uploadToR2(file: File, companyId: string): Promise<{ url: string; sha: string | null }> {
+  const bytes = await file.arrayBuffer();
+  const sha = await sha256Hex(bytes);
+  const name = file.name || "";
+  const contentType =
+    file.type || (name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+  const presignRes = await fetch("/api/ledger/r2/presign", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ companyId, contentType }),
+  });
+  if (!presignRes.ok) throw new Error("ขอที่อัปโหลดไม่สำเร็จ");
+  const { url, publicUrl } = (await presignRes.json()) as { url: string; publicUrl: string };
+  const put = await fetch(url, { method: "PUT", headers: { "content-type": contentType }, body: file });
+  if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
+  return { url: publicUrl, sha };
+}
+
+/** สร้าง body สำหรับ POST /api/ledger/expenses จากผล AI + media.
+ *  ⚠️ ใช้ร่วมทั้ง processOne (รูปละใบ) และ processGroup (หลายหน้า/ใบ) — จุดเดียวจบ
+ *  เพื่อไม่ให้ field หลุดหายในบางเส้นทางเหมือนบั๊กเดิม 2026-07-24 (สินค้า/หมวด/VAT หาย). */
+function buildCreatePayload(
+  parsed: Partial<ParsedReceipt>,
+  scope: LedgerUploadScope,
+  media: CreateMedia,
+) {
+  return {
+    companyId: scope.companyId,
+    branchId: scope.branchId || null,
+    source: "web" as const,
+    vendor: parsed.vendor ?? null,
+    vendorTaxId: parsed.vendorTaxId ?? null,
+    docDate: parsed.docDate ?? null,
+    subtotal: parsed.subtotal ?? 0,
+    vat: parsed.vat ?? 0,
+    wht: parsed.wht ?? 0,
+    total: parsed.total ?? 0,
+    paymentMethod: parsed.paymentMethod ?? null,
+    purchaseType: parsed.purchaseType ?? null,
+    // ── ส่งให้ครบเท่าฝั่ง LINE/อีเมล ── เดิมเว็บทิ้ง field เหล่านี้ → ตอนบันทึก
+    // สินค้า (items)/หมวดที่ AI แนะนำ/เลขใบ/ประเภทเอกสาร หายหมด (บั๊ก 2026-07-24).
+    items: parsed.items ?? [],
+    docType: parsed.docType ?? undefined,
+    vendorDocNumber: parsed.vendorDocNumber ?? null,
+    vendorAddress: parsed.vendorAddress ?? null,
+    buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null,
+    discount: parsed.discount ?? 0,
+    suggestedCategoryName: parsed.suggestedCategory ?? null,
+    rawText: parsed.raw ?? null,
+    originalUrl: media.originalUrl,
+    thumbUrl: media.thumbUrl,
+    sha256: media.sha256,
+    attachments: media.attachments ?? undefined,
+    ocrModel: parsed.ocrModel ?? null,
+    ocrConfidence: parsed.confidence ?? null,
+  };
+}
+
 export function LedgerUploadProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const cameraRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
+  const pagesRef = useRef<HTMLInputElement>(null); // "บิลเดียว หลายหน้า"
   // scope ปัจจุบัน (จากปุ่ม/FAB) → runJob จะ snapshot ตอนเริ่มงาน
   const scopeRef = useRef<LedgerUploadScope | null>(null);
 
@@ -142,35 +220,18 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
     setFlash(null);
     filesRef.current?.click();
   }
+  function pickPages() {
+    setSheetOpen(false);
+    setFlash(null);
+    pagesRef.current?.click();
+  }
 
   // ── ประมวลผลทีละไฟล์ (ใช้ scope ที่ snapshot ไว้ ไม่ใช่ค่าปัจจุบันบนจอ) ──────
   async function processOne(file: File, scope: LedgerUploadScope): Promise<FileResult> {
     const name = file.name || "ไฟล์";
     try {
-      const bytes = await file.arrayBuffer();
-      const sha = await sha256Hex(bytes);
-      const contentType =
-        file.type || (name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg");
-
-      // 1) presign
-      const presignRes = await fetch("/api/ledger/r2/presign", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ companyId: scope.companyId, contentType }),
-      });
-      if (!presignRes.ok) throw new Error("ขอที่อัปโหลดไม่สำเร็จ");
-      const { url, publicUrl } = (await presignRes.json()) as {
-        url: string;
-        publicUrl: string;
-      };
-
-      // 2) PUT → R2
-      const put = await fetch(url, {
-        method: "PUT",
-        headers: { "content-type": contentType },
-        body: file,
-      });
-      if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
+      // 1-2) อัปโหลดขึ้น R2 (presign → PUT)
+      const { url: publicUrl, sha } = await uploadToR2(file, scope.companyId);
 
       // 3) OCR — non-fatal (PDF/รูปที่อ่านไม่ออก → ร่างเปล่าให้กรอกเอง)
       // ใช้ ParsedReceipt (SSoT) ตรง ๆ — ห้ามเขียน type มือ ไม่งั้น field ใหม่จะหลุด
@@ -195,35 +256,13 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
       const createRes = await fetch("/api/ledger/expenses", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          companyId: scope.companyId,
-          branchId: scope.branchId || null,
-          source: "web",
-          vendor: parsed.vendor ?? null,
-          vendorTaxId: parsed.vendorTaxId ?? null,
-          docDate: parsed.docDate ?? null,
-          subtotal: parsed.subtotal ?? 0,
-          vat: parsed.vat ?? 0,
-          wht: parsed.wht ?? 0,
-          total: parsed.total ?? 0,
-          paymentMethod: parsed.paymentMethod ?? null,
-          purchaseType: parsed.purchaseType ?? null,
-          // ── ส่งให้ครบเท่าฝั่ง LINE/อีเมล ── เดิมเว็บทิ้ง 8 field นี้ → ตอนบันทึก
-          // สินค้า (items)/หมวดที่ AI แนะนำ/เลขใบ/ประเภทเอกสาร หายหมด (บั๊ก 2026-07-24).
-          items: parsed.items ?? [],
-          docType: parsed.docType ?? undefined,
-          vendorDocNumber: parsed.vendorDocNumber ?? null,
-          vendorAddress: parsed.vendorAddress ?? null,
-          buyerTaxIdOnDoc: parsed.buyerTaxIdOnDoc ?? null,
-          discount: parsed.discount ?? 0,
-          suggestedCategoryName: parsed.suggestedCategory ?? null,
-          rawText: parsed.raw ?? null,
-          originalUrl: publicUrl,
-          thumbUrl: publicUrl,
-          sha256: sha,
-          ocrModel: parsed.ocrModel ?? null,
-          ocrConfidence: parsed.confidence ?? null,
-        }),
+        body: JSON.stringify(
+          buildCreatePayload(parsed, scope, {
+            originalUrl: publicUrl,
+            thumbUrl: publicUrl,
+            sha256: sha,
+          }),
+        ),
       });
       if (!createRes.ok) {
         const j = (await createRes.json().catch(() => ({}))) as { error?: string };
@@ -271,6 +310,7 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
       results: [],
       finished: false,
       baseParams: scope.baseParams,
+      mode: "single",
     });
 
     for (let i = 0; i < valid.length; i++) {
@@ -293,6 +333,125 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
     setJob((j) => (j ? { ...j, finished: true } : j));
     // refresh รายการเบื้องหลังให้ร่างใหม่โผล่ (ถ้ายังอยู่แท็บที่เห็น) โดยไม่เปลี่ยนหน้า
     if (okOnes.length > 0 || results.some((r) => r.status === "dup")) router.refresh();
+  }
+
+  // ── โหมด "บิลเดียว หลายหน้า" — หลายรูป → 1 ใบ (บิลยาว รายการเยอะ ถ่ายไม่จบใบเดียว) ──
+  // ต่างจาก processOne: อัปทุกหน้าก่อน → อ่าน AI ครั้งเดียวเห็นทั้งเอกสาร (รวมรายการ ไม่นับ
+  // ยอดซ้ำข้ามหน้า) → สร้าง 1 ใบ (หน้าแรก=รูปหลัก+dedup, หน้า 2..N=attachments kind:'page').
+  async function processGroup(
+    files: File[],
+    scope: LedgerUploadScope,
+    onProgress: (done: number, current: string) => void,
+  ): Promise<FileResult> {
+    const name = `บิล ${files.length} หน้า`;
+    try {
+      // 1) อัปโหลดทุกหน้าขึ้น R2 ตามลำดับที่เลือก (= ลำดับหน้า 1..N)
+      const pages: { url: string; sha: string | null }[] = [];
+      for (let i = 0; i < files.length; i++) {
+        onProgress(i, `อัปโหลดหน้า ${i + 1}/${files.length}…`);
+        pages.push(await uploadToR2(files[i], scope.companyId));
+      }
+
+      // 2) อ่านทั้งใบด้วย AI ครั้งเดียว (ส่งทุกหน้า) — ล้มเหลว = ร่างเปล่าให้กรอกเอง
+      onProgress(files.length, `อ่านทั้งใบด้วย AI (${files.length} หน้า)…`);
+      let parsed: Partial<ParsedReceipt> = {};
+      try {
+        const ocrRes = await fetch("/api/ledger/ocr", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ imageUrls: pages.map((p) => p.url) }),
+        });
+        if (ocrRes.ok) {
+          const json = (await ocrRes.json()) as { parsed?: typeof parsed };
+          if (json.parsed) parsed = json.parsed;
+        }
+      } catch {
+        /* ignore — fall through to a blank draft */
+      }
+
+      // 3) สร้าง 1 ใบ: หน้าแรก = รูปหลัก (dedup ด้วย sha256) · หน้า 2..N = attachments kind:'page'
+      const [first, ...rest] = pages;
+      const attachments: ExpenseAttachment[] = rest.map((p, idx) => ({
+        url: p.url,
+        kind: "page",
+        name: `หน้า ${idx + 2}`,
+        sha256: p.sha,
+      }));
+      const createRes = await fetch("/api/ledger/expenses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          buildCreatePayload(parsed, scope, {
+            originalUrl: first.url,
+            thumbUrl: first.url,
+            sha256: first.sha,
+            attachments: attachments.length > 0 ? attachments : undefined,
+          }),
+        ),
+      });
+      if (!createRes.ok) {
+        const j = (await createRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "บันทึกร่างไม่สำเร็จ");
+      }
+      const created = (await createRes.json()) as {
+        id: string;
+        duplicate?: boolean;
+        docCode?: string | null;
+      };
+      return {
+        name,
+        status: created.duplicate ? "dup" : "ok",
+        id: created.id,
+        docCode: created.docCode ?? null,
+      };
+    } catch (e) {
+      return { name, status: "fail", error: e instanceof Error ? e.message : "ล้มเหลว" };
+    }
+  }
+
+  async function runGroupJob(files: File[]) {
+    const scope = scopeRef.current;
+    if (!scope || files.length === 0) return;
+
+    const valid = files.filter((f) => isAcceptable(f) && f.size <= MAX_BYTES);
+    const rejected = files.length - valid.length;
+    if (valid.length === 0) {
+      setFlash(
+        rejected > 0
+          ? "ไฟล์ไม่รองรับ หรือใหญ่เกิน 15MB (รับเฉพาะรูปภาพและ PDF)"
+          : "ไม่พบไฟล์",
+      );
+      return;
+    }
+    // เพดานหน้า/ใบ — ไม่ตัดเงียบ (RULE): บอกให้เลือกใหม่หรือแยกใบ
+    if (valid.length > MAX_PAGES_PER_BILL) {
+      setFlash(
+        `บิลเดียวรับสูงสุด ${MAX_PAGES_PER_BILL} หน้า (เลือกมา ${valid.length}) — เลือกใหม่ หรือแยกเป็น 2 ใบ`,
+      );
+      return;
+    }
+    setFlash(null);
+
+    setMinimized(false);
+    // total = อัปโหลดทุกหน้า (valid.length) + อ่าน/บันทึก 1 ก้าว → progress เดินต่อเนื่อง
+    setJob({
+      total: valid.length + 1,
+      done: 0,
+      current: `เตรียมอัปโหลด ${valid.length} หน้า…`,
+      results: [],
+      finished: false,
+      baseParams: scope.baseParams,
+      mode: "group",
+      pagesTotal: valid.length,
+    });
+
+    const r = await processGroup(valid, scope, (done, current) =>
+      setJob((j) => (j ? { ...j, done, current } : j)),
+    );
+
+    setMinimized(false);
+    setJob((j) => (j ? { ...j, done: j.total, results: [r], finished: true } : j));
+    if (r.status === "ok" || r.status === "dup") router.refresh();
   }
 
   function closeSummary() {
@@ -323,6 +482,9 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
   const dupCount = job?.results.filter((r) => r.status === "dup").length ?? 0;
   const failCount = job?.results.filter((r) => r.status === "fail").length ?? 0;
   const pct = job && job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+  // group = "บิลเดียว หลายหน้า" (1 ใบ N หน้า) — โชว์ progress/summary แบบ "หน้า" ไม่ใช่ "ใบ"
+  const isGroup = job?.mode === "group";
+  const pagesTotal = job?.pagesTotal ?? 0;
   // ใบที่กดปุ่มลัด "ไปดู" ได้ (สำเร็จก่อน ไม่มีก็ใช้ใบซ้ำที่มี id) — ไม่มีเลย (พังหมด) = ไม่โชว์ปุ่ม
   const firstTargetId =
     job?.results.find((r) => r.status === "ok" && r.id)?.id ??
@@ -331,7 +493,13 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
 
   return (
     <LedgerUploadContext.Provider
-      value={{ openSheet, busy, done: job?.done ?? 0, total: job?.total ?? 0 }}
+      value={{
+        openSheet,
+        busy,
+        done: job?.done ?? 0,
+        total: job?.total ?? 0,
+        mode: busy ? (job?.mode ?? null) : null,
+      }}
     >
       {children}
 
@@ -363,6 +531,21 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
           void runJob(files);
         }}
         aria-label="เลือกรูปหรือไฟล์ PDF ใบเสร็จ"
+        tabIndex={-1}
+      />
+      {/* "บิลเดียว หลายหน้า" — รูปหลายรูปที่เลือก = หน้าต่อเนื่องของบิลใบเดียว → 1 ใบ */}
+      <input
+        ref={pagesRef}
+        type="file"
+        accept={ACCEPT_FILES}
+        multiple
+        className="sr-only"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          void runGroupJob(files);
+        }}
+        aria-label="เลือกหลายรูปเป็นบิลเดียว (บิลหลายหน้า)"
         tabIndex={-1}
       />
 
@@ -423,9 +606,26 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
                   <FileText className="size-5" aria-hidden />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-zinc-900">เลือกรูป / ไฟล์</span>
+                  <span className="block text-sm font-semibold text-zinc-900">เลือกหลายบิล (รูปละใบ)</span>
                   <span className="block text-xs text-zinc-500">
-                    เลือกหลายไฟล์พร้อมกัน · รองรับรูปภาพและ PDF
+                    แต่ละรูป/ไฟล์ = คนละใบ · รองรับรูปภาพและ PDF
+                  </span>
+                </span>
+              </button>
+
+              {/* บิลเดียว หลายหน้า — บิลยาว/รายการเยอะ ถ่ายหลายรูป รวมเป็นใบเดียว */}
+              <button
+                type="button"
+                onClick={pickPages}
+                className="press flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3.5 text-left transition hover:border-indigo-200 hover:bg-indigo-50 active:bg-zinc-50"
+              >
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <Files className="size-5" aria-hidden />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-zinc-900">บิลเดียว หลายหน้า</span>
+                  <span className="block text-xs text-zinc-500">
+                    บิลยาว/รายการเยอะ · เลือกหลายรูป = 1 ใบ (รวมทุกหน้า)
                   </span>
                 </span>
               </button>
@@ -463,11 +663,15 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
               type="button"
               onClick={() => setMinimized(false)}
               className="press flex items-center gap-2 rounded-full border border-zinc-200 bg-white py-2 pl-3 pr-3.5 shadow-lg"
-              aria-label={`กำลังอ่านใบเสร็จ ${job.done} จาก ${job.total} ใบ · กดเพื่อขยาย`}
+              aria-label={
+                isGroup
+                  ? `กำลังอ่านบิลหลายหน้า (${pagesTotal} หน้า) · กดเพื่อขยาย`
+                  : `กำลังอ่านใบเสร็จ ${job.done} จาก ${job.total} ใบ · กดเพื่อขยาย`
+              }
             >
               <Loader2 className="size-4 animate-spin text-[var(--color-brand-600)]" aria-hidden />
               <span className="text-sm font-bold tabular-nums text-zinc-900">
-                {job.done}/{job.total}
+                {isGroup ? `${pagesTotal} หน้า` : `${job.done}/${job.total}`}
               </span>
               <span className="text-xs font-medium tabular-nums text-zinc-400">{pct}%</span>
             </button>
@@ -477,7 +681,9 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
               <div className="mb-2 flex items-start gap-2">
                 <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-[var(--color-brand-600)]" aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-sm font-bold text-zinc-900">กำลังอ่านใบเสร็จ</h2>
+                  <h2 className="text-sm font-bold text-zinc-900">
+                    {isGroup ? "กำลังอ่านบิลหลายหน้า" : "กำลังอ่านใบเสร็จ"}
+                  </h2>
                   <p className="text-xs text-zinc-500">ทำงานเบื้องหลัง · กดใช้งานต่อได้</p>
                 </div>
                 <button
@@ -490,10 +696,17 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
                 </button>
               </div>
               <div className="mb-1.5 flex items-baseline justify-between">
-                <span className="text-xl font-bold tabular-nums text-zinc-900">
-                  {job.done}
-                  <span className="text-sm font-medium text-zinc-500"> / {job.total}</span>
-                </span>
+                {isGroup ? (
+                  <span className="text-xl font-bold tabular-nums text-zinc-900">
+                    หน้า {Math.min(job.done, pagesTotal)}
+                    <span className="text-sm font-medium text-zinc-500"> / {pagesTotal}</span>
+                  </span>
+                ) : (
+                  <span className="text-xl font-bold tabular-nums text-zinc-900">
+                    {job.done}
+                    <span className="text-sm font-medium text-zinc-500"> / {job.total}</span>
+                  </span>
+                )}
                 <span className="text-xs font-semibold tabular-nums text-zinc-500">{pct}%</span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
@@ -512,7 +725,15 @@ export function LedgerUploadProvider({ children }: { children: React.ReactNode }
                   <CheckCircle2 className="size-5" aria-hidden />
                 </span>
                 <h2 className="min-w-0 flex-1 text-sm font-bold text-zinc-900">
-                  {okCount > 0 ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว` : "เสร็จสิ้น"}
+                  {isGroup
+                    ? okCount > 0
+                      ? `เพิ่มบิล 1 ใบ (${pagesTotal} หน้า) แล้ว`
+                      : dupCount > 0
+                        ? "บิลนี้เคยเพิ่มแล้ว"
+                        : "เสร็จสิ้น"
+                    : okCount > 0
+                      ? `เพิ่ม ${okCount} ใบ (ร่าง) แล้ว`
+                      : "เสร็จสิ้น"}
                 </h2>
                 <button
                   type="button"

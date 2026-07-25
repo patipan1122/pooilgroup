@@ -1380,20 +1380,43 @@ export function ExpenseReviewPane({
             <div className="space-y-2">
               <span className="text-xs font-semibold text-zinc-600">หลักฐานและไฟล์แนบ</span>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {/* 1 · ใบเสร็จต้นฉบับ + ลิงก์ Google Drive */}
+                {/* 1 · ใบเสร็จต้นฉบับ + ลิงก์ Google Drive · บิลหลายหน้า = หน้า 2..N (kind:'page') */}
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-medium text-zinc-500">ใบเสร็จต้นฉบับ</p>
-                  {expense.thumbUrl || expense.originalUrl ? (
-                    <ReceiptThumb
-                      thumbUrl={expense.thumbUrl}
-                      originalUrl={expense.originalUrl}
-                      alt={`ใบเสร็จ ${expense.docCode}`}
-                    />
-                  ) : (
-                    <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-500">
-                      ไม่มีรูปต้นฉบับ
-                    </div>
-                  )}
+                  {(() => {
+                    const pageAtts = (expense.attachments ?? []).filter((a) => a.kind === "page");
+                    return (
+                      <>
+                        <p className="text-[11px] font-medium text-zinc-500">
+                          ใบเสร็จต้นฉบับ
+                          {pageAtts.length > 0 ? ` · ${pageAtts.length + 1} หน้า` : ""}
+                        </p>
+                        {expense.thumbUrl || expense.originalUrl ? (
+                          <ReceiptThumb
+                            thumbUrl={expense.thumbUrl}
+                            originalUrl={expense.originalUrl}
+                            alt={`ใบเสร็จ ${expense.docCode}${pageAtts.length > 0 ? " หน้า 1" : ""}`}
+                          />
+                        ) : (
+                          <div className="grid h-28 place-items-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-500">
+                            ไม่มีรูปต้นฉบับ
+                          </div>
+                        )}
+                        {/* หน้า 2..N — รูปย่อ แตะขยายทีละหน้า (reuse ReceiptThumb) */}
+                        {pageAtts.length > 0 && (
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {pageAtts.map((a, i) => (
+                              <ReceiptThumb
+                                key={i}
+                                thumbUrl={a.url}
+                                originalUrl={a.url}
+                                alt={`${expense.docCode} หน้า ${i + 2}`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   {driveUrl ? (
                     <a
                       href={driveUrl}
@@ -1454,13 +1477,16 @@ export function ExpenseReviewPane({
                 </div>
               </div>
               {driveErr && <p className="text-[11px] text-amber-600">{driveErr}</p>}
-              {(expense.attachments ?? []).map((a, i) => (
-                <a key={i} href={a.url} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
-                  <FileText className="size-3.5 text-zinc-500" aria-hidden />
-                  {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
-                </a>
-              ))}
+              {/* ลิงก์ไฟล์ PO/หลักฐาน — ข้าม kind:'page' (หน้าบิลหลายหน้าโชว์เป็นรูปย่อด้านบนแล้ว) */}
+              {(expense.attachments ?? [])
+                .filter((a) => a.kind !== "page")
+                .map((a, i) => (
+                  <a key={i} href={a.url} target="_blank" rel="noreferrer"
+                     className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50">
+                    <FileText className="size-3.5 text-zinc-500" aria-hidden />
+                    {a.kind === "po" ? "ไฟล์ PO / ใบสั่งซื้อ" : "หลักฐานเพิ่มเติม"}{a.name ? ` · ${a.name}` : ""}
+                  </a>
+                ))}
             </div>
           </section>
         </div>

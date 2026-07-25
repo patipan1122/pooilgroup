@@ -37,6 +37,21 @@ const FALLBACK_MODEL = "gemini-2.5-flash-lite";
 // accounting isn't returned by the inline-image API.
 const EST_INPUT_TOKENS = 1500;
 const EST_OUTPUT_TOKENS = 400;
+// บิลหลายหน้า (multi-page): +1290 tokens/รูปเพิ่ม (หน้า 2..N ในการเรียกครั้งเดียว).
+const EST_TOKENS_PER_EXTRA_IMAGE = 1290;
+// เพดานจำนวนหน้า/ใบ — กันเผลอเลือกรูปเป็นสิบ + คุมขนาด request ที่ส่งเข้า Gemini inline.
+export const MAX_RECEIPT_PAGES = 10;
+
+// คำสั่งเสริมเมื่อส่งรูปมากกว่า 1 = "หน้าต่อเนื่องของเอกสารใบเดียว" (ไม่ใช่หลายบิล).
+// นักบัญชี lens: ต้องรวมรายการทุกหน้า แต่ยอดสุทธิเอาจากหน้าสรุปเท่านั้น ห้ามบวกยอดทุกหน้า.
+const MULTIPAGE_NOTE = `⚠️ สำคัญมาก — รูปทั้งหมดนี้คือ "หน้าต่อเนื่องของเอกสารใบเดียวกัน" เรียงตามลำดับ หน้า 1 → หน้าสุดท้าย (ไม่ใช่คนละบิล):
+- รวม items จากทุกหน้าเข้าเป็นชุดเดียว ตามลำดับที่เห็น (หน้า 1 ก่อน แล้วต่อหน้า 2, 3, …) ห้ามข้าม ห้ามใส่ซ้ำ
+- vendor / เลขที่เอกสาร / เลขผู้เสียภาษี / วันที่ = ใช้ค่าเดียวทั้งใบ (อ่านจากหน้าที่มี มักหน้าแรก)
+- subtotal / discount / vat / total = เอาจาก "หน้าที่มียอดสรุปสุทธิรวมทั้งใบ" เท่านั้น (มักหน้าสุดท้าย) — ห้ามบวกยอดรวมของแต่ละหน้าเข้าด้วยกัน (จะกลายเป็นยอดเกินจริง = คิดเงินซ้ำ)
+- ถ้าหน้าใดมี "ยอดยกไป / ยอดยกมา (carried forward)" = ตัวเชื่อมระหว่างหน้า ไม่ใช่ยอดจริง อย่านับเป็น item และอย่าเอามาเป็น total
+- subtotal ต้อง = Σ items.amount ของทุกหน้ารวมกัน · total = ยอดสุทธิหน้าสุดท้าย
+
+`;
 
 export class AiBudgetError extends Error {
   constructor(reason: string) {
@@ -201,27 +216,36 @@ function safeParseJson(raw: string): RawParsed {
   }
 }
 
-/** One generateContent call against a given model id. Returns the raw text. */
+interface ImagePart {
+  base64: string;
+  mimeType: string;
+}
+
+/** One generateContent call against a given model id. Returns the raw text.
+ *  images = 1 รูป (บิลปกติ) หรือ 2..N รูป (บิลหลายหน้า → เพิ่ม MULTIPAGE_NOTE +
+ *  ส่งทุกรูปในการเรียกครั้งเดียว เพื่อให้ AI เห็นทั้งเอกสารแล้วรวมรายการ/ไม่นับยอดซ้ำ). */
 async function callGeminiModel(
   ai: import("@google/genai").GoogleGenAI,
   model: string,
-  base64: string,
-  mimeType: string,
+  images: ImagePart[],
 ): Promise<{ raw: string; finishReason: string | undefined; ok: boolean }> {
+  const multi = images.length > 1;
+  // JSON ยาวขึ้นตามจำนวนหน้า (รายการเยอะ) → เพิ่มเพดาน output ตามจำนวนรูป
+  const maxOutputTokens = Math.min(1800 + (images.length - 1) * 600, 8192);
   const result = await ai.models.generateContent({
     model,
     contents: [
       {
         role: "user",
         parts: [
-          { text: RECEIPT_PROMPT },
-          { inlineData: { mimeType, data: base64 } },
+          { text: (multi ? MULTIPAGE_NOTE : "") + RECEIPT_PROMPT },
+          ...images.map((im) => ({ inlineData: { mimeType: im.mimeType, data: im.base64 } })),
         ],
       },
     ],
     config: {
       temperature: 0,
-      maxOutputTokens: 1800, // เผื่อบิลรายการยาว JSON ไม่ถูกตัดกลาง (เดิม 1200)
+      maxOutputTokens, // เผื่อบิลรายการยาว/หลายหน้า JSON ไม่ถูกตัดกลาง (เดิม 1200)
       responseMimeType: "application/json",
     },
   });
@@ -237,26 +261,27 @@ async function callGeminiModel(
 }
 
 async function callGemini(
-  base64: string,
-  mimeType: string,
+  images: ImagePart[],
 ): Promise<{ parsed: RawParsed; raw: string; modelUsed: string }> {
   const { GoogleGenAI } = await import("@google/genai");
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-  const imgSizeKb = Math.round((base64.length * 3) / 4 / 1024);
-  console.log(`[ledger:ocr] calling Gemini model=${PRIMARY_MODEL} mimeType=${mimeType} imgSize≈${imgSizeKb}KB`);
+  const totalKb = Math.round(
+    images.reduce((s, im) => s + (im.base64.length * 3) / 4, 0) / 1024,
+  );
+  console.log(`[ledger:ocr] calling Gemini model=${PRIMARY_MODEL} pages=${images.length} totalImgSize≈${totalKb}KB`);
 
   // Try the primary model; on a thrown error OR a blank response, fall back to
   // FALLBACK_MODEL once (covers a retired/overloaded primary or a one-off block).
   let raw = "";
   let modelUsed = PRIMARY_MODEL;
   try {
-    const r = await callGeminiModel(ai, PRIMARY_MODEL, base64, mimeType);
+    const r = await callGeminiModel(ai, PRIMARY_MODEL, images);
     raw = r.raw;
     if (!r.ok) throw new Error(`primary ${PRIMARY_MODEL} blank (finishReason=${r.finishReason})`);
   } catch (e) {
     console.warn(`[ledger:ocr] primary failed (${e instanceof Error ? e.message : e}) → trying ${FALLBACK_MODEL}`);
-    const r = await callGeminiModel(ai, FALLBACK_MODEL, base64, mimeType);
+    const r = await callGeminiModel(ai, FALLBACK_MODEL, images);
     raw = r.raw;
     modelUsed = FALLBACK_MODEL;
   }
@@ -277,19 +302,34 @@ function decodeImageInput(imageUrlOrBase64: string): {
   return { mimeType: "image/jpeg", base64: imageUrlOrBase64 };
 }
 
+/** Resolve one image reference (http(s) URL | data URL | raw base64) → bytes. */
+async function resolveImage(ref: string): Promise<ImagePart> {
+  if (/^https?:\/\//.test(ref)) {
+    const resp = await fetch(ref, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error(`fetch image failed: ${resp.status}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return { base64: buf.toString("base64"), mimeType: resp.headers.get("content-type") ?? "image/jpeg" };
+  }
+  return decodeImageInput(ref);
+}
+
 /**
- * Parse a receipt image into structured fields + per-field confidence.
+ * Parse a receipt into structured fields + per-field confidence.
  *
- * @param imageUrlOrBase64 a base64 data URL, raw base64, OR an http(s) URL
- *                         (e.g. an R2 public URL — we fetch it server-side).
- * @param userId           the caller's user id, OR null for system ingest
- *                         (e.g. the LINE webhook with no session). null →
- *                         org-only budget cap, user_id stored as null.
+ * @param imageInput a single image reference, OR an array of references that are
+ *                   consecutive PAGES of ONE multi-page bill (บิลยาว/รายการเยอะ).
+ *                   Each ref may be a base64 data URL, raw base64, or an http(s)
+ *                   URL (e.g. an R2 public URL — fetched server-side). Multiple
+ *                   pages go to Gemini in ONE call so items merge and the total
+ *                   isn't double-counted across pages.
+ * @param userId     the caller's user id, OR null for system ingest
+ *                   (e.g. the LINE webhook with no session). null →
+ *                   org-only budget cap, user_id stored as null.
  * @throws AiBudgetError when the org/user is over their AI budget.
  * @throws Error on a hard Gemini/network failure (caller may escalate).
  */
 export async function parseReceipt(
-  imageUrlOrBase64: string,
+  imageInput: string | string[],
   userId: string | null,
   orgId: string,
 ): Promise<ParsedReceipt> {
@@ -307,23 +347,15 @@ export async function parseReceipt(
     throw new Error("GEMINI_API_KEY not configured");
   }
 
-  // 2. Resolve image bytes → base64.
-  let base64: string;
-  let mimeType: string;
-  if (/^https?:\/\//.test(imageUrlOrBase64)) {
-    const resp = await fetch(imageUrlOrBase64, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!resp.ok) throw new Error(`fetch image failed: ${resp.status}`);
-    const buf = Buffer.from(await resp.arrayBuffer());
-    base64 = buf.toString("base64");
-    mimeType = resp.headers.get("content-type") ?? "image/jpeg";
-  } else {
-    ({ base64, mimeType } = decodeImageInput(imageUrlOrBase64));
-  }
+  // 2. Resolve every page → base64 (cap หน้าเพื่อคุมขนาด request).
+  const refs = (Array.isArray(imageInput) ? imageInput : [imageInput])
+    .filter((r) => typeof r === "string" && r.length > 0)
+    .slice(0, MAX_RECEIPT_PAGES);
+  if (refs.length === 0) throw new Error("no image input");
+  const images = await Promise.all(refs.map(resolveImage));
 
-  // 3. Call Gemini (primary → fallback on blank/error).
-  const { parsed, raw, modelUsed } = await callGemini(base64, mimeType);
+  // 3. Call Gemini (primary → fallback on blank/error) — 1 call, ทุกหน้า.
+  const { parsed, raw, modelUsed } = await callGemini(images);
 
   // 4. Record usage (reuse cost-cap; model id drives accurate pricing).
   await recordAiUsage({
@@ -333,7 +365,7 @@ export async function parseReceipt(
     provider: "gemini-flash",
     model: modelUsed,
     moduleName: "ledger",
-    inputTokens: EST_INPUT_TOKENS,
+    inputTokens: EST_INPUT_TOKENS + (images.length - 1) * EST_TOKENS_PER_EXTRA_IMAGE,
     outputTokens: EST_OUTPUT_TOKENS,
   });
 

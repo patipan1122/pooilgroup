@@ -60,11 +60,16 @@ export interface ExpenseItem {
   vatRate?: number | null;
 }
 
-/** A PO / supporting-evidence file attached to an expense (Bainy section 4). */
+/** A PO / supporting-evidence file attached to an expense (Bainy section 4).
+ *  kind:"page" = หน้าเพิ่มของบิลหลายหน้า (บิลยาวรายการเยอะถ่าย/สแกนหลายรูป → 1 ใบ).
+ *  หน้าแรกยังเก็บที่ originalUrl/thumbUrl/sha256 ของแถวเหมือนเดิม (ใช้ dedup); หน้า 2..N
+ *  เก็บที่นี่ตามลำดับ. sha256 ต่อหน้าเก็บไว้เผื่อ dedup รอง/ตรวจสอบ. */
 export interface ExpenseAttachment {
   url: string;
-  kind: "po" | "evidence";
+  kind: "po" | "evidence" | "page";
   name?: string;
+  /** เฉพาะ kind:"page" — sha256 ของหน้านั้น (dedup รอง) */
+  sha256?: string | null;
 }
 
 /** A single expense row, serialized for the UI. */

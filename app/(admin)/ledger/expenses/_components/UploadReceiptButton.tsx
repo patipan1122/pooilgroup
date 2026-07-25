@@ -27,7 +27,7 @@ export function UploadReceiptButton({
   /** ซ่อนปุ่มบนมือถือ (FAB "ถ่าย" ในแถบล่างยิง event เดียวกัน) */
   hideTriggerOnMobile?: boolean;
 }) {
-  const { openSheet, busy, done, total } = useLedgerUpload();
+  const { openSheet, busy, done, total, mode } = useLedgerUpload();
   const [topErr, setTopErr] = useState<string | null>(null);
 
   function trigger() {
@@ -63,7 +63,11 @@ export function UploadReceiptButton({
           ) : (
             <Upload className="size-4" aria-hidden />
           )}
-          {busy ? `กำลังทำ ${done}/${total}…` : "อัปโหลดใบเสร็จ"}
+          {busy
+            ? mode === "group"
+              ? "กำลังอ่านบิล…"
+              : `กำลังทำ ${done}/${total}…`
+            : "อัปโหลดใบเสร็จ"}
         </Button>
       </div>
       {topErr && (
