@@ -23,6 +23,7 @@
 
 import { checkAiBudget, recordAiUsage } from "@/lib/ai/cost-cap";
 import type { ParsedReceipt, FieldConfidence, ExpenseItem, ExpenseDocType } from "./types";
+import { reconcileReceipt } from "./reconcile";
 import { normalizePurchaseType } from "./types";
 
 const PRIMARY_MODEL = "gemini-3.1-flash-lite";
@@ -337,7 +338,7 @@ export async function parseReceipt(
   });
 
   // 5. Normalize → ParsedReceipt.
-  return {
+  const result: ParsedReceipt = {
     vendor: parsed.vendor?.trim() || null,
     docType: normalizeDocType(parsed.doc_type),
     vendorTaxId: parsed.vendor_tax_id?.replace(/\D/g, "") || null,
@@ -358,6 +359,22 @@ export async function parseReceipt(
     ocrModel: modelUsed,
     raw,
   };
+
+  // 6. เครื่องคิดเลขตรวจยอด — คำนวณบันได + ลองทุกการตีความให้ "ยอดสุทธิลงตัวพอดี"
+  //    (ไม่พึ่งการอ่าน VAT/ส่วนลดของ AI · จุดที่พลาดบ่อยสุด). ลงตัว=ปรับตัวเลขให้ถูก;
+  //    ไม่ลงตัว=คงค่าที่อ่านไว้ ให้ recheck ทัก (needsReview). ดู lib/ledger/reconcile.ts
+  const rec = reconcileReceipt(result);
+  if (rec.status === "ok" || rec.status === "adjusted") {
+    // ยอดลงตัวชัดเจน → ใช้ค่าที่คำนวณ (ถูกต้อง 100%)
+    result.subtotal = rec.subtotal;
+    result.discount = rec.discount;
+    result.vat = rec.vat;
+    result.total = rec.total;
+  }
+  // ambiguous/no_fit → คงค่าที่ AI อ่าน แล้วปล่อย recheck ทัก (needsReview) ให้คนตรวจ
+  result.reconcileStatus = rec.status;
+  result.reconcileNote = rec.note;
+  return result;
 }
 
 // P1#13 — slip-focused prompt (payment slip / โอนเงิน). Only extracts the 4

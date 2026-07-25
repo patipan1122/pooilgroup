@@ -198,6 +198,9 @@ export interface ParsedReceipt {
   confidence: FieldConfidence;
   ocrModel: string;
   raw: string;
+  /** ผลเครื่องคิดเลขตรวจยอด (reconcile.ts) — ปรับ subtotal/discount/vat/total ให้ยอดลงตัวแล้ว */
+  reconcileStatus?: "ok" | "adjusted" | "ambiguous" | "no_fit" | null;
+  reconcileNote?: string | null;
 }
 
 /**
