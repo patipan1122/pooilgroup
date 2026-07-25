@@ -511,6 +511,7 @@ export async function getV2Anomaly(sessionCode: string): Promise<Anomaly | null>
 
 /** map CfCollectionEvent (COLLECTION · CLAW) → Machine (shape เดียวกับ anomaly) */
 function eventToMachine(e: {
+  id: string;
   machine: { code: string; nickname: string | null };
   coinMeterBefore: number;
   coinMeterAfter: number;
@@ -541,6 +542,7 @@ function eventToMachine(e: {
   ];
   const photos = photoShots.filter((p) => p.url).length;
   return {
+    eventId: e.id,
     code: e.machine.code,
     name: e.machine.nickname ?? e.machine.code,
     meterBefore: e.coinMeterBefore,

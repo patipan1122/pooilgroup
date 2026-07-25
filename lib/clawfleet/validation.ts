@@ -246,6 +246,8 @@ export function deriveBranchCrossCheck(
   // threshold must flag the round even if it nets clean against other machines.
   let perMachineCashShort = false;
   let perMachinePrizeBreach = false;
+  // CEO 2026-07-25 · ตุ๊กตาต่างแม้แต่ 1 ตัวต่อตู้ ต้องส่งเข้าตรวจหลังบ้าน แม้ตู้อื่นหักลบ (net) จนรวมเป็น 0
+  let perMachinePrizeAny = false;
   // ultrareview 2026-07-01: เงินเกินก้อนใหญ่ต่อตู้ ต้องไม่ถูกกลบด้วยการหักลบกับตู้อื่น
   let perMachineCashOverMajor = false;
   // CEO 2026-07-25 · ตู้ที่ "มิเตอร์เสีย" (ถูกฝืนบันทึกด้วยเหตุผล) → ดันรอบเข้า review (ธง M5)
@@ -284,6 +286,10 @@ export function deriveBranchCrossCheck(
     }
     if (Math.abs(evPrizeMeter - evPrizePhysical) > DEFAULTS.DOLL_VARIANCE_ACCEPTABLE) {
       perMachinePrizeBreach = true;
+    }
+    // ต่างแม้แต่ 1 ตัว (มิเตอร์เสียยึด physical → variance 0 → ไม่ติด) → เข้า review
+    if (Math.abs(evPrizeMeter - evPrizePhysical) > 0) {
+      perMachinePrizeAny = true;
     }
   }
   const cashVarianceCents = actualCashCents - expectedCashCents;
@@ -334,6 +340,14 @@ export function deriveBranchCrossCheck(
     !flags.includes(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR)
   ) {
     flags.push(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR);
+  }
+  // CEO 2026-07-25 · ตุ๊กตาต่าง 1-2 ตัวต่อตู้ ที่ net รวมเป็น 0 (ตู้อื่นหักลบ) → ยังต้องเข้า review (P2)
+  if (
+    perMachinePrizeAny &&
+    !flags.includes(ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR) &&
+    !flags.includes(ANOMALY_FLAGS.P3_DOLL_VARIANCE_MAJOR)
+  ) {
+    flags.push(ANOMALY_FLAGS.P2_DOLL_VARIANCE_MINOR);
   }
   // เงินเกินก้อนใหญ่ต่อตู้ ถูกกลบด้วย netting → ดันทั้งรอบเข้า review (mirror F5)
   if (perMachineCashOverMajor && !flags.includes(ANOMALY_FLAGS.M6_CASH_OVER_MAJOR)) {

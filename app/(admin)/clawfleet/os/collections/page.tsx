@@ -11,6 +11,8 @@
  */
 import { getV2AllRounds, getV2Branches, orgHasAnyRounds } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
+import { requireSession } from "@/lib/auth/session";
+import { isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +87,15 @@ export default async function CollectionsPage({
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ sample fallback
   }
 
+  // แอดมิน/ผู้จัดการสาขา = แก้เลขหลังบ้านได้ (ปุ่ม "แก้เลข") · server บังคับสิทธิ์ซ้ำใน action
+  let canEdit = false;
+  try {
+    const s = await requireSession();
+    canEdit = isCfAdmin(s.user.role) || isCfBranchManager(s.user.role);
+  } catch {
+    // ไม่มี session/สิทธิ์ → ดูอย่างเดียว
+  }
+
   const branchOptions: BranchOption[] = branches.map((b) => ({
     value: b.id,
     label: `${b.name} (${b.code})`,
@@ -118,9 +129,14 @@ export default async function CollectionsPage({
     coinMeterAfter: r.coinMeterAfter,
     // รูปจริงที่พนักงานถ่ายต่อตู้ (anti-cheat) — ผ่าน eventToMachine → photoShots
     machines: r.machines.map((m) => ({
+      eventId: m.eventId,
       code: m.code,
       name: m.name,
       photoShots: m.photoShots ?? [],
+      // เลขปัจจุบันต่อตู้ (หลังบ้านแก้เลข) — meterAfter=มิเตอร์เหรียญ · prizeMeterNow=มิเตอร์ตุ๊กตา · cashIn=บาท
+      coinMeterAfter: m.meterAfter,
+      dollMeterAfter: m.prizeMeterNow,
+      cashBaht: m.cashIn,
     })),
     sample: false,
   }));
@@ -135,6 +151,7 @@ export default async function CollectionsPage({
       pageSize={pageSize}
       fromISO={fromISO}
       toISO={toISO}
+      canEdit={canEdit}
     />
   );
 }

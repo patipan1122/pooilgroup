@@ -16,13 +16,14 @@
 
 import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
-  X, ZoomIn, SearchX, ShieldCheck, Download, Calendar, ChevronLeft,
+  X, ZoomIn, SearchX, ShieldCheck, Download, Calendar, ChevronLeft, Pencil,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
-import { reviewV2Session, type V2Decision } from "@/lib/clawfleet/actions";
+import { reviewV2Session, adminEditCollectionEvent, type V2Decision } from "@/lib/clawfleet/actions";
 import { buildCsv } from "@/lib/clawfleet/csv";
 
 /* ───────── types ───────── */
@@ -33,6 +34,11 @@ export type CollectionMachine = {
   code: string;
   name: string;
   photoShots: { label: string; url: string | null }[];
+  /** id ของ event (COLLECTION) — หลังบ้านใช้แก้เลข (adminEditCollectionEvent) · undefined = mock/legacy */
+  eventId?: string;
+  coinMeterAfter?: number; // มิเตอร์เหรียญ (ค่าปัจจุบัน · prefill ฟอร์มแก้)
+  dollMeterAfter?: number; // มิเตอร์ตุ๊กตา
+  cashBaht?: number; // เงินสดที่เก็บได้ (บาท)
 };
 
 export type CollectionRow = {
@@ -141,9 +147,12 @@ export function CollectionsClient({
   pageSize = 50,
   fromISO = "",
   toISO = "",
+  canEdit = false,
 }: {
   rows: CollectionRow[];
   branchOptions: BranchOption[];
+  // แอดมิน/ผู้จัดการสาขา = แก้เลขที่พนักงานกรอกผิดได้ (ปุ่ม "แก้เลข" ต่อตู้) · อื่น ๆ = ดูอย่างเดียว
+  canEdit?: boolean;
   // org นี้เคยเก็บเงินจริงไหม (มี CfCollectionSession ใด ๆ) — จาก server.
   // true = เคยเก็บ → 0 anomaly = "ตรวจแล้วไม่พบผิดปกติ" (ไม่ใช่ตัวอย่าง)
   hasAnyRounds?: boolean;
@@ -549,6 +558,7 @@ export function CollectionsClient({
             reviewState={reviews[r.id] ?? "pending"}
             onReview={(d) => review(r, d)}
             busy={busyId === r.id && pending}
+            canEdit={canEdit}
           />
         ))}
         {filtered.length === 0 && (
@@ -674,7 +684,7 @@ function SummaryCard({
 
 /* ───────── one collection round (row + drill-down) ───────── */
 function CollectionCard({
-  row, open, onToggle, reviewState, onReview, busy,
+  row, open, onToggle, reviewState, onReview, busy, canEdit,
 }: {
   row: CollectionRow;
   open: boolean;
@@ -682,9 +692,37 @@ function CollectionCard({
   reviewState: ReviewState;
   onReview: (d: V2Decision) => void;
   busy: boolean;
+  canEdit: boolean;
 }) {
+  const router = useRouter();
   // รูปที่กดขยาย (lightbox) — null = ปิด
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
+  // หลังบ้านแก้เลข (admin/ผจก.) — target = ตู้ที่กำลังแก้ · null = ปิด
+  const [editTarget, setEditTarget] = useState<
+    { eventId: string; label: string; cash: string; coin: string; doll: string } | null
+  >(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  async function saveEdit() {
+    if (!editTarget) return;
+    setEditBusy(true);
+    setEditErr(null);
+    try {
+      const res = await adminEditCollectionEvent({
+        eventId: editTarget.eventId,
+        cashCents: Math.round((Number(editTarget.cash) || 0) * 100),
+        coinMeterAfter: Math.round(Number(editTarget.coin) || 0),
+        dollMeterAfter: editTarget.doll === "" ? null : Math.round(Number(editTarget.doll) || 0),
+      });
+      if (!res.ok) { setEditErr(res.error || "แก้ไม่สำเร็จ"); setEditBusy(false); return; }
+      setEditTarget(null);
+      setEditBusy(false);
+      router.refresh(); // โหลดยอดที่คำนวณใหม่จาก server (force-dynamic)
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : "แก้ไม่สำเร็จ");
+      setEditBusy(false);
+    }
+  }
   const st = statusOf(row);
   const meta = STATUS_META[st];
   const diffColor = row.gap > CASH_TOLERANCE ? "#B42318" : row.gap > 0 ? "#B45309" : row.gap < 0 ? "#B45309" : "#15803D";
@@ -761,7 +799,10 @@ function CollectionCard({
   // รูปจริงต่อตู้ (anti-cheat) — real tier ส่ง machines[].photoShots มา
   // ถ้าไม่มีตู้ (sample/legacy) → โชว์ช่องว่าง 5 ป้ายเป็น placeholder "ไม่มีรูป"
   const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม", "เงินสด"];
-  const photoMachines: { code: string; name: string; shots: { label: string; url: string | null }[] }[] =
+  const photoMachines: {
+    code: string; name: string; shots: { label: string; url: string | null }[];
+    eventId?: string; coin?: number; doll?: number; cash?: number;
+  }[] =
     row.machines.length > 0
       ? row.machines.map((m) => ({
           code: m.code,
@@ -769,6 +810,10 @@ function CollectionCard({
           shots: m.photoShots.length > 0
             ? m.photoShots
             : FALLBACK_LABELS.map((label) => ({ label, url: null })),
+          eventId: m.eventId,
+          coin: m.coinMeterAfter,
+          doll: m.dollMeterAfter,
+          cash: m.cashBaht,
         }))
       : [{ code: "", name: "", shots: FALLBACK_LABELS.map((label) => ({ label, url: null })) }];
 
@@ -985,12 +1030,30 @@ function CollectionCard({
                 const hasAnyPhoto = m.shots.some((s) => s.url);
                 return (
                   <div key={m.code || `m-${mi}`}>
-                    {m.name && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#5A6270", marginBottom: 7 }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C2C7CF", flex: "0 0 5px" }} />
-                        {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
-                      </div>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+                      {m.name && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#5A6270" }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#C2C7CF", flex: "0 0 5px" }} />
+                          {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
+                        </div>
+                      )}
+                      {/* CEO 2026-07-25 · หลังบ้านแก้เลขที่พนักงานกรอกผิด (ดูรูป → แก้ → คำนวณใหม่) */}
+                      {canEdit && m.eventId && (
+                        <button
+                          type="button"
+                          onClick={() => setEditTarget({
+                            eventId: m.eventId as string,
+                            label: `${m.name || "ตู้"}${m.code ? ` · ${m.code}` : ""}`,
+                            cash: m.cash != null ? String(m.cash) : "",
+                            coin: m.coin != null ? String(m.coin) : "",
+                            doll: m.doll != null ? String(m.doll) : "",
+                          })}
+                          style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}
+                        >
+                          <Pencil size={12} /> แก้เลข
+                        </button>
+                      )}
+                    </div>
                     {hasAnyPhoto ? (
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
                         {m.shots.map((s, si) => (
@@ -1112,6 +1175,45 @@ function CollectionCard({
             />
             <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 11 }}>
               กดพื้นหลังหรือปุ่มปิดเพื่อออก
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CEO 2026-07-25 · หลังบ้านแก้เลข (admin/ผจก.) — คำนวณกระทบยอดใหม่อัตโนมัติ + ต่อลูกโซ่รอบถัดไป */}
+      {editTarget && (
+        <div role="dialog" aria-modal="true" onClick={() => !editBusy && setEditTarget(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 95, background: "rgba(13,15,20,0.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 340, background: "#fff", borderRadius: 16, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 16px", borderBottom: "1px solid #EEF0F3" }}>
+              <Pencil size={15} color="#4F46E5" />
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>แก้เลข · {editTarget.label}</span>
+              <button type="button" onClick={() => !editBusy && setEditTarget(null)} aria-label="ปิด"
+                style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={15} color="#454B54" />
+              </button>
+            </div>
+            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 11 }}>
+              <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.5 }}>ดูรูปหลักฐานแล้วแก้เลขที่พนักงานกรอกผิด · ระบบจะคำนวณยอด/ส่วนต่างใหม่ + ต่อรอบถัดไปให้เอง</div>
+              {[
+                { k: "cash" as const, label: "เงินสดที่เก็บได้ (บาท)" },
+                { k: "coin" as const, label: "มิเตอร์เหรียญ (เลขหลัง)" },
+                { k: "doll" as const, label: "มิเตอร์ตุ๊กตา (เลขหลัง)" },
+              ].map((f) => (
+                <label key={f.k} style={{ display: "block" }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: "#5A6270" }}>{f.label}</span>
+                  <input inputMode="numeric" value={editTarget[f.k]}
+                    onChange={(e) => setEditTarget({ ...editTarget, [f.k]: e.target.value })}
+                    style={{ width: "100%", marginTop: 4, fontSize: 15, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
+                </label>
+              ))}
+              {editErr && <div style={{ fontSize: 11.5, color: "#B42318", background: "#FCEDEC", borderRadius: 8, padding: "8px 11px", lineHeight: 1.45 }}>{editErr}</div>}
+              <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+                <button type="button" onClick={() => setEditTarget(null)} disabled={editBusy}
+                  style={{ flex: "0 0 auto", fontSize: 12.5, fontWeight: 700, color: "#5A6270", background: "#F1F2F5", border: "none", borderRadius: 9, padding: "10px 18px", cursor: editBusy ? "default" : "pointer" }}>ยกเลิก</button>
+                <button type="button" onClick={saveEdit} disabled={editBusy}
+                  style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: "#fff", background: editBusy ? "#9AA1AB" : "#15803D", border: "none", borderRadius: 9, padding: 10, cursor: editBusy ? "default" : "pointer" }}>{editBusy ? "กำลังบันทึก…" : "บันทึก + คำนวณใหม่"}</button>
+              </div>
             </div>
           </div>
         </div>

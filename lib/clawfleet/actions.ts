@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
 import { zUUID } from "@/lib/zod-helpers";
@@ -1022,6 +1023,232 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
       });
 
       return { status: finalStatus, flags: cc.flags };
+    })
+    .then((r) => ({ ok: true as const, data: r }))
+    .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return result;
+  revalidatePath("/clawfleet/os/app");
+  revalidatePath("/clawfleet/os/collections");
+  revalidatePath("/clawfleet/os/dashboard");
+  return result;
+}
+
+// =============================================================
+// (CEO 2026-07-25) · แก้เลขในใบเก็บ "หลังบ้าน" — เจ้าของ/ผู้จัดการ · แก้ได้ทุกใบ (รวมย้อนหลัง)
+//   ต่างจาก editCollectionRound (พนักงานเอง · รอบล่าสุด · วันนี้) — อันนี้ admin/ผจก. แก้ใบไหนก็ได้
+//   ที่ยัง "ไม่ฝาก+ยังไม่ LOCKED" เพื่อแก้เลขที่พนักงานกรอกผิดจากรูปหลักฐาน.
+//   money-safe: (1) re-reconcile session ของใบที่แก้ (2) ต่อลูกโซ่มิเตอร์ — รอบ COLLECTION ถัดไปของ
+//   ตู้เดียวกัน before = after ที่แก้ใหม่ + re-reconcile รอบถัดไปด้วย (3) guard มิเตอร์เดินหน้าเสมอ
+//   (N.after ≥ N.before และ ≤ N+1.after) กันแก้แล้วรอบถัดไป delta ติดลบ. ยึด after_{N+1} คงที่ →
+//   cascade แค่ 2 รอบ (N + N+1). ถ้าถัดไปเป็น INITIAL (ตั้งค่าใหม่/re-baseline) = ลูกโซ่ถูกตัด → ไม่ต่อ.
+// =============================================================
+const AdminEditEventSchema = z.object({
+  eventId: zUUID("ไม่ระบุใบเก็บ"),
+  cashCents: z.number().int("เงินต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "เงินติดลบไม่ได้").max(1_000_000_000),
+  coinMeterAfter: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000),
+  dollMeterAfter: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+});
+
+// re-reconcile 1 session ด้วยค่าล่าสุดใน DB (สูตรเดียวกับ closeBranchSession/editCollectionRound เป๊ะ).
+// เรียก "หลัง" อัปเดต event fields แล้วเท่านั้น. คืน finalStatus/flags (หรือ null ถ้าไม่พบ session).
+async function reReconcileSessionTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  sessionId: string,
+): Promise<{ finalStatus: "CLOSED" | "ANOMALY_REVIEW"; flags: string[] } | null> {
+  const sess = await tx.cfCollectionSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: {
+      id: true, branchId: true, isBaseline: true,
+      events: { where: { eventType: "COLLECTION" }, select: {
+        machineId: true, coinMeterBefore: true, coinMeterAfter: true, cashCountedCents: true,
+        dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true,
+      } },
+    },
+  });
+  if (!sess) return null;
+  const cashMachines = await tx.cfMachine.findMany({
+    where: { orgId, branchId: sess.branchId ?? undefined, kind: "CLAW" },
+    select: { id: true, loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } } },
+  });
+  const priceByMachine = new Map<string, number>();
+  for (const m of cashMachines) priceByMachine.set(m.id, m.loadouts[0] ? m.loadouts[0].pricePerPlayCoins * 1000 : CASH_PER_PLAY_CENTS);
+  const ccRaw = deriveBranchCrossCheck(sess.events.map((e) => ({
+    coinMeterBefore: e.coinMeterBefore, coinMeterAfter: e.coinMeterAfter, cashCountedCents: e.cashCountedCents,
+    dollMeterBefore: e.dollMeterBefore ?? 0, dollMeterAfter: e.dollMeterAfter ?? 0,
+    stockBefore: e.stockBefore ?? 0, stockAfter: e.stockAfter ?? 0, refillQty: e.refillQty ?? 0,
+    cashPerCoinCents: priceByMachine.get(e.machineId) ?? CASH_PER_PLAY_CENTS,
+  })));
+  const cc = sess.isBaseline
+    ? (() => {
+        const MONEY_VERDICT_FLAGS: ReadonlySet<string> = new Set<string>([ANOMALY_FLAGS.M2_CASH_SHORT_MINOR, ANOMALY_FLAGS.M3_CASH_SHORT_MAJOR, ANOMALY_FLAGS.M4_CASH_OVER, ANOMALY_FLAGS.M6_CASH_OVER_MAJOR]);
+        const keptFlags = ccRaw.flags.filter((f) => !MONEY_VERDICT_FLAGS.has(f));
+        return { ...ccRaw, flags: keptFlags, status: keptFlags.length > 0 ? ("ANOMALY_REVIEW" as const) : ("CLOSED" as const) };
+      })()
+    : ccRaw;
+  const policy = await getClawfleetPolicy();
+  const finalStatus = escalateForMeterMatch(policy.meterMatch, cc.status, cc.flags);
+  // 🔴 money-safe (adversarial review 2026-07-25 · finding #1) · เขียนแบบมีเงื่อนไข:
+  //   อัปเดตเฉพาะเมื่อ session ยัง "ปิดรอตรวจ" + ยังไม่ฝาก → ถ้ามีคนอนุมัติ (LOCKED) / ฝากธนาคาร
+  //   แทรกระหว่าง tx (TOCTOU) → match 0 แถว → throw → rollback (กันปลดล็อก+แก้เงินทับยอดที่ล็อกแล้ว).
+  const upd = await tx.cfCollectionSession.updateMany({
+    where: { id: sess.id, orgId, depositId: null, status: { in: ["CLOSED", "ANOMALY_REVIEW"] } },
+    data: {
+      status: finalStatus,
+      expectedCashCents: cc.expectedCashCents, actualCashCents: cc.actualCashCents, cashVarianceBps: cc.cashVarianceBps,
+      prizeMeterOut: cc.prizeMeterOut, prizeCountedOut: cc.prizeCountedOut, prizeVariance: cc.prizeVariance,
+      totalCashCents: cc.actualCashCents, anomalyFlags: cc.flags,
+    },
+  });
+  if (upd.count === 0) throw new Error("รอบถูกอนุมัติ/ฝากธนาคารระหว่างแก้ · รีเฟรชแล้วลองใหม่");
+  return { finalStatus, flags: cc.flags };
+}
+
+export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf<{ status: string; flags: string[]; relinkedNext: boolean }>> {
+  const parsed = AdminEditEventSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const data = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const userId = session.user.id;
+
+  // สิทธิ์: แอดมิน + ผู้จัดการสาขาเท่านั้น (กันพนักงาน/viewer แก้เลขเงินกันเอง · mirror reviewV2Session)
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่แก้เลขได้" };
+  }
+
+  const ev = await prisma.cfCollectionEvent.findFirst({
+    where: { id: data.eventId, orgId, eventType: "COLLECTION" },
+    select: {
+      id: true, machineId: true, sessionId: true, collectedAt: true,
+      coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, cashCountedCents: true,
+      session: { select: { id: true, branchId: true, isBaseline: true, depositId: true, status: true } },
+    },
+  });
+  if (!ev) return { ok: false, error: "ไม่พบใบเก็บนี้" };
+  if (!ev.sessionId || !ev.session?.branchId) return { ok: false, error: "รอบนี้ไม่ใช่ระดับสาขา · แก้ไม่ได้" };
+  // เงินฝากธนาคารแล้ว หรือ รอบถูกอนุมัติ (LOCKED) → immutable (ต้องกดตรวจซ้ำให้เปิดก่อน)
+  if (ev.session.depositId) return { ok: false, error: "รอบนี้ฝากเงินเข้าธนาคารแล้ว · แก้ไม่ได้" };
+  if (ev.session.status === "LOCKED") return { ok: false, error: "รอบนี้อนุมัติแล้ว · กด 'ตรวจซ้ำ' ให้เปิดก่อนถึงจะแก้ได้" };
+  // finding #2 · guard เชิงบวก: แก้ได้เฉพาะรอบที่ "ปิดรอตรวจแล้ว" (CLOSED/ANOMALY_REVIEW)
+  //   กันรอบที่ยังเก็บอยู่ (OPEN) / ยกเลิก (CANCELLED) ถูก force-finalize ผ่าน re-reconcile
+  if (ev.session.status !== "CLOSED" && ev.session.status !== "ANOMALY_REVIEW") {
+    return { ok: false, error: "แก้ได้เฉพาะรอบที่ปิดรอตรวจแล้ว (รอบที่ยังเก็บอยู่/ยกเลิกแล้ว แก้ไม่ได้)" };
+  }
+  // มิเตอร์เดินหน้าอย่างเดียว — after ต้อง ≥ before ของใบนี้
+  if (data.coinMeterAfter < ev.coinMeterBefore) {
+    return { ok: false, error: `มิเตอร์เหรียญต้องไม่น้อยกว่ารอบก่อน (${ev.coinMeterBefore.toLocaleString("en-US")})` };
+  }
+  const newDollAfter = data.dollMeterAfter ?? ev.dollMeterAfter; // ค่า doll after ที่จะใช้จริง
+  if (newDollAfter != null && ev.dollMeterBefore != null && newDollAfter < ev.dollMeterBefore) {
+    return { ok: false, error: `มิเตอร์ตุ๊กตาต้องไม่น้อยกว่ารอบก่อน (${ev.dollMeterBefore.toLocaleString("en-US")})` };
+  }
+
+  // สิทธิ์สาขา
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(ev.session.branchId)) return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // หา event ถัดไปของตู้ (COLLECTION/INITIAL) — เพื่อรู้ว่าใบนี้เป็นล่าสุดไหม + ต้องต่อลูกโซ่ไหม
+      const nextEv = await tx.cfCollectionEvent.findFirst({
+        where: { orgId, machineId: ev.machineId, eventType: { in: ["COLLECTION", "INITIAL"] }, collectedAt: { gt: ev.collectedAt } },
+        orderBy: { collectedAt: "asc" },
+        select: {
+          id: true, eventType: true, sessionId: true, coinMeterAfter: true, dollMeterAfter: true,
+          session: { select: { depositId: true, status: true } },
+        },
+      });
+
+      // รอบถัดไปเป็น COLLECTION → ต้องต่อลูกโซ่ (before_{N+1} = after_N ใหม่) + re-reconcile
+      const relinkNext = !!nextEv && nextEv.eventType === "COLLECTION";
+      if (relinkNext && nextEv) {
+        // รอบถัดไปถูกฝาก/อนุมัติแล้ว → แก้รอบนี้จะไปกระทบยอดที่ล็อกแล้ว → ห้าม
+        if (nextEv.session?.depositId || nextEv.session?.status === "LOCKED") {
+          throw new Error("รอบถัดไปของตู้นี้ถูกอนุมัติ/ฝากแล้ว · แก้รอบนี้ไม่ได้ (จะกระทบยอดที่ล็อกแล้ว)");
+        }
+        // มิเตอร์เดินหน้า: after ที่แก้ต้องไม่เกิน after ของรอบถัดไป (ไม่งั้น delta รอบถัดไปติดลบ)
+        if (data.coinMeterAfter > nextEv.coinMeterAfter) {
+          throw new Error(`มิเตอร์เหรียญที่แก้ (${data.coinMeterAfter.toLocaleString("en-US")}) มากกว่ารอบถัดไป (${nextEv.coinMeterAfter.toLocaleString("en-US")}) · แก้ไม่ได้`);
+        }
+        if (newDollAfter != null && nextEv.dollMeterAfter != null && newDollAfter > nextEv.dollMeterAfter) {
+          throw new Error(`มิเตอร์ตุ๊กตาที่แก้ (${newDollAfter.toLocaleString("en-US")}) มากกว่ารอบถัดไป (${nextEv.dollMeterAfter.toLocaleString("en-US")}) · แก้ไม่ได้`);
+        }
+      }
+
+      // 1) อัปเดตเลขในใบที่แก้
+      await tx.cfCollectionEvent.update({
+        where: { id: ev.id },
+        data: { cashCountedCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: data.dollMeterAfter ?? undefined },
+      });
+
+      // 2) ต่อลูกโซ่: อัปเดต before ของรอบถัดไป = after ที่แก้ใหม่
+      //   finding #4 · ต่อ doll เฉพาะเมื่อรอบถัดไป "มีเลขมิเตอร์ตุ๊กตา" (dollMeterAfter != null) ด้วย —
+      //   ไม่งั้นเขียน dollMeterBefore ลงรอบที่ after=null → reconcile เห็น after(0)<before → M5 หลอก
+      const relinkDoll = newDollAfter != null && !!nextEv && nextEv.dollMeterAfter != null;
+      if (relinkNext && nextEv) {
+        await tx.cfCollectionEvent.update({
+          where: { id: nextEv.id },
+          data: { coinMeterBefore: data.coinMeterAfter, ...(relinkDoll ? { dollMeterBefore: newDollAfter } : {}) },
+        });
+      }
+
+      // 3) re-reconcile session ของใบที่แก้ + (ถ้าต่อลูกโซ่) รอบถัดไป — dedupe ถ้า session เดียวกัน
+      //   finding #2/#3 · re-reconcile รอบถัดไป "เฉพาะเมื่อมันปิดรอตรวจแล้ว" (CLOSED/ANOMALY_REVIEW) —
+      //   ถ้ายัง OPEN = ต่อ before ให้แล้วปล่อยให้ reconcile ตอนปิดรอบเอง (ไม่ force-finalize รอบที่ยังเก็บอยู่)
+      const sessionsToRecon = new Set<string>([ev.sessionId as string]);
+      if (relinkNext && nextEv?.sessionId && (nextEv.session?.status === "CLOSED" || nextEv.session?.status === "ANOMALY_REVIEW")) {
+        sessionsToRecon.add(nextEv.sessionId);
+      }
+      let editedStatus: "CLOSED" | "ANOMALY_REVIEW" = "CLOSED";
+      let editedFlags: string[] = [];
+      for (const sid of sessionsToRecon) {
+        const r = await reReconcileSessionTx(tx, orgId, sid);
+        if (!r) throw new Error("ไม่พบรอบเก็บ");
+        if (sid === ev.sessionId) { editedStatus = r.finalStatus; editedFlags = r.flags; }
+      }
+
+      // 4) เคลียร์ shortReason ถ้าแก้แล้ว "เงินไม่ขาด" (คิด expected ของตู้นี้ · cash ≥ expected − ฿20)
+      const evPriceMachine = await tx.cfMachine.findFirst({
+        where: { id: ev.machineId, orgId },
+        select: { loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } } },
+      });
+      const evPrice = evPriceMachine?.loadouts[0] ? evPriceMachine.loadouts[0].pricePerPlayCoins * 1000 : CASH_PER_PLAY_CENTS;
+      const evExpected = Math.max(0, data.coinMeterAfter - ev.coinMeterBefore) * evPrice;
+      if (data.cashCents >= evExpected - 2000) {
+        await tx.cfCollectionEvent.update({ where: { id: ev.id }, data: { shortReason: null } });
+      }
+
+      // 5) sync machine mirror เฉพาะเมื่อใบนี้เป็น "ล่าสุดจริง" (ไม่มี event ใหม่กว่า) — trigger = AFTER INSERT
+      //   ถ้ามีรอบถัดไป (COLLECTION/INITIAL) แล้ว mirror สะท้อนรอบนั้น → ไม่แตะ (conditional · race-safe)
+      if (!nextEv) {
+        // finding #3 · TOCTOU: กันมีคนส่งรอบใหม่ของตู้นี้แทรกระหว่าง tx (เราคิดว่าใบนี้ล่าสุด แต่ไม่แล้ว)
+        //   → ลูกโซ่จะขาด (รอบใหม่ before ค้างค่าเก่า) → abort ให้ลองใหม่ (mirror ของ editCollectionRound แนวเดียวกัน)
+        const newerNow = await tx.cfCollectionEvent.findFirst({
+          where: { orgId, machineId: ev.machineId, eventType: { in: ["COLLECTION", "INITIAL"] }, collectedAt: { gt: ev.collectedAt } },
+          select: { id: true },
+        });
+        if (newerNow) throw new Error("มีการเก็บรอบใหม่ของตู้นี้ระหว่างแก้ · รีเฟรชแล้วลองใหม่");
+        await tx.cfMachine.updateMany({
+          where: { id: ev.machineId, OR: [{ lastEventAt: null }, { lastEventAt: { lte: ev.collectedAt } }] },
+          data: { lastCoinMeter: data.coinMeterAfter, ...(newDollAfter != null ? { lastDollMeter: newDollAfter } : {}) },
+        });
+      }
+
+      // 6) audit log (AUD: หลังบ้านแก้เลข ต้องมี trail ชัด old→new + ใครแก้)
+      await tx.auditLog.create({
+        data: {
+          orgId, userId, action: "CF_COLLECTION_ADMIN_EDIT", resourceType: "CF_COLLECTION_EVENT", resourceId: ev.id,
+          diff: {
+            old: { cashCents: ev.cashCountedCents, coinMeterAfter: ev.coinMeterAfter, dollMeterAfter: ev.dollMeterAfter },
+            new: { cashCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: newDollAfter },
+            machineId: ev.machineId, sessionId: ev.sessionId, relinkedNext: relinkNext, byRole: session.user.role,
+          },
+        },
+      });
+
+      return { status: editedStatus, flags: editedFlags, relinkedNext: relinkNext };
     })
     .then((r) => ({ ok: true as const, data: r }))
     .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));

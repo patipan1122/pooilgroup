@@ -218,9 +218,8 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
 
 const isDemo = (id: string) => id.startsWith("demo-");
 const CASH_PER_PLAY = 10; // ฿/ครั้ง — fallback เมื่อตู้ยังไม่มี loadout (ปกติใช้ราคาจริง machine.pricePerPlayCoins×10)
-// จอ "ตรง/ไม่ตรง" ยอมคลาดได้ ±2 ตัว = DEFAULTS.DOLL_VARIANCE_ACCEPTABLE ที่ server (lib/clawfleet/types.ts)
-// เดิมจอใช้ === (ต่างแค่ 1 ตัวก็แดง) ทั้งที่ server ถือว่ารับได้ → CEO 2026-07-20 "จอแดงง่ายเกิน"
-const DOLL_MATCH_TOL = 2;
+// หมายเหตุ: จอเคยยอมคลาดตุ๊กตา ±2 ตัว (DOLL_MATCH_TOL · CEO 2026-07-20 "จอแดงง่ายเกิน") แต่
+// CEO 2026-07-25 กลับมา strict "ต่างแม้แต่ 1 ตัว = เงินหาย ต้องแจ้ง" → ใช้ === (เทียบเป๊ะ) แทน tolerance
 
 /* ─────────────────────────── draft offline persistence ───────────────────────────
  * ร่างที่นับ+ถ่ายรูปแล้ว รอกรอกมิเตอร์ ต้องรอด refresh / LINE ปิด webview / สลับแอป
@@ -1028,8 +1027,8 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
   const dollMeterEqual = dollMeterFilled && (dollGearDelta == null || dollGearDelta === dollDelta);
   const coinMeterEqual = coinMeterFilled && (coinGearDelta == null || coinGearDelta === coinDelta);
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
-  // ตรงกับ server: ตุ๊กตาตรง = ต่างจากมิเตอร์ไม่เกิน ±2 ตัว (ไม่ใช่เป๊ะ) · มีเกิน = ถือว่าไม่ตรงเสมอ
-  const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && Math.abs(dollDelta - dispensed) <= DOLL_MATCH_TOL;
+  // CEO 2026-07-25 · ตุ๊กตาตรง = เป๊ะเท่านั้น (ตัด tolerance ±2 เดิม) — ต่างแม้แต่ 1 = ไม่ตรง (ปุ่มยืนยันขึ้นแดง "มีจุดไม่ตรง")
+  const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && dollDelta === dispensed;
   // ⚠️ cashMatch = ADVISORY เท่านั้น: client เดา ฿10/เกม (CASH_PER_PLAY) เพราะราคาจริงต่อตู้
   // ยังไม่ถูกส่งมา client → สาขา ฿20/เกม จะดู "ไม่ตรง" ทั้งที่ถูก. ตัวจริง = server reconcile.
   // จึง "ไม่" รวม cashMatch เข้า allMatch (กัน banner/ปุ่มแดงหลอก) — โชว์เป็นคำแนะนำ "ประมาณ".
@@ -4844,6 +4843,8 @@ function FlowScreen(props: {
   const [nicknameOpen, setNicknameOpen] = useState(false);
   // ── ดีไซน์ใหม่ · หน้ากระทบยอด: overlay ดูรูป + การ์ดที่กางแก้ (VISUAL — money math มาจาก recon/props ตามเดิม) ──
   const [photoView, setPhotoView] = useState<null | "meter" | "after">(null);
+  // CEO 2026-07-25 · แตะรูปมิเตอร์เพื่อขยายเต็มจอ (อ่านเลขบนใบเสร็จให้ออก) — ซ้อนบน overlay ดูรูป
+  const [zoomShot, setZoomShot] = useState<null | { url: string; label: string }>(null);
   const [reconFix, setReconFix] = useState<null | "cash" | "dolls" | "meter" | "photo">(null);
   // ── ดีไซน์ใหม่ · สเต็ป 1 นับตุ๊กตาเหลือ "รายตัว/SKU" → รวมเป็น f.left (สัญญาเดินเงินเดิมไม่เปลี่ยน · left = Σ) ──
   // เก็บใน f.remainBySku (ไม่ใช่ state ในจอ) → บันทึกค้าง/กลับมาทำต่อ แล้วเลขรายตัวยังตรงกับ left เสมอ.
@@ -4900,20 +4901,23 @@ function FlowScreen(props: {
   const meterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi) && isFilled(f.coinGear) && isFilled(f.coinDigi);
   const photoOk = !!props.photosCaptured.before && !!props.photosCaptured.after; // ถ่ายแล้วนับเลย (upload วิ่งเบื้องหลัง)
   const dollsMissing = !isFilled(f.left);
-  // นับเกิน = ไม่ตรงเสมอ · ไม่งั้นยอมคลาด ±2 ตัว (ตรงกับ server · เดิม !== ทำให้ต่าง 1 ตัวก็แดง)
-  const dollsMismatch = !dollsMissing && meterFilled && (overCount > 0 || Math.abs(recon.dollDelta - dispensed) > DOLL_MATCH_TOL);
+  // CEO 2026-07-25 · ตุ๊กตา "นับได้" ต่างจาก "มิเตอร์" แม้แต่ 1 ตัว = ไม่ตรง (แจ้งตามจริง · เงินหาย)
+  //   เดิมยอมคลาด ±2 (DOLL_MATCH_TOL) → กลบตุ๊กตาหาย 1 ตัวให้ขึ้นเขียว "ตรงกับมิเตอร์" ทั้งที่หายจริง
+  const dollsMismatch = !dollsMissing && meterFilled && (overCount > 0 || recon.dollDelta !== dispensed);
   const cashMissing = !isFilled(f.cash);
-  const cashMismatch = !cashMissing && meterFilled && moneyDiff !== 0; // ADVISORY (≈฿10/เกม · server ใช้ราคาจริง)
+  // CEO 2026-07-25 · จอพนักงานแจ้ง "เฉพาะเงินขาด" (cash < ควรได้) · เงินเกิน = เงียบ (กันพนักงานดึงเงินออกให้พอดี)
+  //   เจ้าของยังเห็นเงินเกินหลังบ้าน (server flag M4/M6 คงไว้). ADVISORY (≈฿10/เกม · server ใช้ราคาจริง)
+  const cashShort = !cashMissing && meterFilled && moneyDiff < 0;
   const meterMissing = !meterFilled;
   const meterUnequal = meterFilled && !recon.meterEqualOk;
   const photoMissing = props.photoRequired && !photoOk;
   const dollsOk = !dollsMissing && !dollsMismatch && meterFilled;
   const meterOk = meterFilled && recon.meterEqualOk;
-  const cashOk = !cashMissing && !cashMismatch && meterFilled;
+  const cashOk = !cashMissing && !cashShort && meterFilled; // เงินเกิน/ตรง = ok (เขียว) · ขาด = แดง
   // จำนวน "จุดแดง" บนจอ (โชว์ใน hero · ตรง mockup "พบ N จุดผิดปกติ") — รวมทั้งขาดและไม่ตรง
   const reconIssues =
     (dollsMissing || dollsMismatch ? 1 : 0) +
-    (cashMissing || cashMismatch ? 1 : 0) +
+    (cashMissing || cashShort ? 1 : 0) +
     (meterMissing || meterUnequal ? 1 : 0) +
     (photoMissing ? 1 : 0);
   const allGood = reconIssues === 0;
@@ -4927,7 +4931,9 @@ function FlowScreen(props: {
   else if (dispensed === 0) { retuneLabel = "ไม่มีตุ๊กตาออก"; retuneColor = "#C0392B"; retuneBg = "#FBECEC"; needRetune = true; retuneHint = "ไม่มีตุ๊กตาออกเลย อาจตั้งยากไปหรือตู้เสีย"; }
   else if (costPerDoll < 150) { retuneLabel = "ออกง่ายไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวต่ำ กำไรน้อย ควรตั้งให้ยากขึ้น"; }
   else if (costPerDoll > 350) { retuneLabel = "ออกยากไป"; retuneColor = "#B45309"; retuneBg = "#FCF6EC"; needRetune = true; retuneHint = "ต้นทุน/ตัวสูง ลูกค้าคีบยาก เสี่ยงเสียลูกค้า"; }
-  const wrongMachine = coinDelta < 0 || recon.dollDelta < 0 || Math.abs(recon.dollDelta - dispensed) > 20 || Math.abs(moneyDiff) > 300;
+  // CEO 2026-07-25 · เงินเกิน = เงียบบนจอพนักงาน → เทอมเงินของ "ผิดปกติมาก" เหลือเฉพาะ "ขาดก้อนใหญ่"
+  //   (เดิม Math.abs(moneyDiff) > 300 เด้งเมื่อเกินก้อนใหญ่ด้วย → ขัดเจตนา). ขาด/มิเตอร์/ตุ๊กตายังเตือน
+  const wrongMachine = coinDelta < 0 || recon.dollDelta < 0 || Math.abs(recon.dollDelta - dispensed) > 20 || moneyDiff < -300;
 
   // ── มิเตอร์ 2 หมวด (ตุ๊กตา/เหรียญ) · หน้า 1/2 · hint บรรทัดใต้หมวด = "ตัวเลขแจ้งเตือนในหน้า" (CEO 2026-07-21) ──
   const dollPairFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
@@ -4936,10 +4942,15 @@ function FlowScreen(props: {
   //   บน≠ล่าง → "ไม่ตรงกัน" · ตุ๊กตาออก = ล่าง − รอบก่อน (recon.dollDelta) · ควรได้ = จากมิเตอร์เหรียญ (recon.expectedCash)
   //   กรอกน้อยกว่ารอบก่อน (delta<0) → เตือน "กรอกผิด?" (ไม่โชว์เลขลบ) · money-safe: อ่านค่าจาก recon ตัวเดิม ไม่แตะสูตร
   let dollHint: string, dollHintColor: string;
+  // CEO 2026-07-25 · เทียบ "มิเตอร์ออก" กับ "นับได้ออก" ตั้งแต่หน้ากรอก — ต่างแม้แต่ 1 ตัว = แจ้ง (เงินหาย)
+  const dollGap = dispensed - recon.dollDelta; // นับได้ − มิเตอร์ · >0 = มิเตอร์นับขาด (ตุ๊กตาหาย) · <0 = มิเตอร์เกิน
   if (!dollPairFilled) { dollHint = "กรอกมิเตอร์ บน + ล่าง"; dollHintColor = "#9AA1AB"; }
   else if (!props.meterGroupVals.dollMeterEqual) { dollHint = "⚠️ มิเตอร์ดิจิตอล/เฟือง ขยับไม่เท่ากัน — เช็ค"; dollHintColor = "#B42318"; }
   else if (recon.dollDelta < 0) { dollHint = `⚠️ กรอก ${n0(f.dollDigi)} น้อยกว่ารอบก่อน ${f.dollPrev} — กรอกผิด?`; dollHintColor = "#B45309"; }
-  else { dollHint = `✓ ตุ๊กตาออก ${recon.dollDelta} ตัว`; dollHintColor = "#15803D"; }
+  else if (!isFilled(f.left)) { dollHint = `มิเตอร์ตุ๊กตาออก +${recon.dollDelta} · นับที่เหลือด้วยเพื่อเทียบ`; dollHintColor = "#6B7280"; }
+  else if (overCount > 0) { dollHint = `⚠️ นับได้เกินรอบก่อน ${overCount} ตัว — เช็คนับซ้ำ/เติมไม่ลงระบบ`; dollHintColor = "#B42318"; }
+  else if (dollGap === 0) { dollHint = `✓ ตุ๊กตาออก ${recon.dollDelta} ตัว · ตรงกับที่นับ`; dollHintColor = "#15803D"; }
+  else { dollHint = `⚠️ มิเตอร์ +${recon.dollDelta} · นับได้ออก ${dispensed} → ไม่ตรง ${dollGap > 0 ? `หาย ${dollGap}` : `เกิน ${-dollGap}`} ตัว`; dollHintColor = "#B42318"; }
   let coinHint: string, coinHintColor: string;
   if (!coinPairFilled) { coinHint = "กรอกมิเตอร์ บน + ล่าง"; coinHintColor = "#9AA1AB"; }
   else if (!props.meterGroupVals.coinMeterEqual) { coinHint = "⚠️ มิเตอร์ดิจิตอล/เฟือง ขยับไม่เท่ากัน — เช็ค"; coinHintColor = "#B42318"; }
@@ -5261,7 +5272,7 @@ function FlowScreen(props: {
               title={dollsMissing ? "ยังไม่ได้นับตุ๊กตาที่เหลือ" : overCount > 0 ? `ตุ๊กตาเกินจากที่คาด +${overCount} ตัว` : dollsMismatch ? "ตุ๊กตาออก ไม่ตรงมิเตอร์" : meterFilled ? "ตุ๊กตาออก ตรงกับมิเตอร์" : "นับแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={dollsMissing ? "นับที่เหลือในตู้แล้วกรอกตรงนี้ได้เลย — ระบบคำนวณตุ๊กตาที่ออกให้"
                 : overCount > 0 ? `นับได้ ${n0(f.left)}${(f.returnedTotal ?? 0) > 0 ? ` + คืนชั้น ${f.returnedTotal}` : ""} มากกว่ารอบก่อน ${f.last} อยู่ ${overCount} ตัว — เช็คนับซ้ำ/มีคนเติมไม่ลงระบบ`
-                : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา ${recon.dollDelta < 0 ? recon.dollDelta : `+${recon.dollDelta}`}` : ""}`}
+                : `นับได้ออก ${dispensed} ตัว (รอบก่อน ${f.last} − เหลือ ${n0(f.left)})${meterFilled ? ` · มิเตอร์ตุ๊กตา ${recon.dollDelta < 0 ? recon.dollDelta : `+${recon.dollDelta}`}${dollsMismatch ? ` → ต่าง ${Math.abs(dispensed - recon.dollDelta)} ตัว${dispensed - recon.dollDelta > 0 ? " (ตุ๊กตาหาย)" : ""}` : " ✓ ตรง"}` : ""}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "dolls" ? null : "dolls")} label={reconFix === "dolls" ? "ปิด" : dollsMissing ? "กรอกเลย" : "แก้เลข"} color={dollsOk ? "#4F46E5" : "#fff"} bg={dollsOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "dolls" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
@@ -5302,10 +5313,11 @@ function FlowScreen(props: {
                 </div>
               ) : undefined} />
 
-            <ReconCard ok={cashOk} wait={!cashMissing && !cashMismatch && !meterFilled}
-              title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashMismatch ? `เงินสด ต่างประมาณ ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ตรงกับมิเตอร์" : "กรอกแล้ว — รอเลขมิเตอร์เทียบ"}
+            <ReconCard ok={cashOk} wait={!cashMissing && !cashShort && !meterFilled}
+              title={cashMissing ? "ยังไม่ได้กรอกเงินสดที่เก็บได้" : cashShort ? `เงินขาด ฿${Math.abs(moneyDiff)}` : meterFilled ? "เงินสด ครบ" : "กรอกแล้ว — รอเลขมิเตอร์เทียบ"}
               detail={cashMissing ? "นับเงินในตู้แล้วกรอกตรงนี้ได้เลย"
-                : `เก็บได้ ฿${cashN}${meterFilled ? ` · มิเตอร์เหรียญ ${coinDelta < 0 ? coinDelta : `+${coinDelta}`} → ${recon.expectedCash < 0 ? "มิเตอร์น้อยกว่ารอบก่อน?" : `คาดว่าได้ ฿${recon.expectedCash} (฿${recon.pricePerPlayBaht}/เกม)`}` : ""}`}
+                : cashShort ? `เก็บได้ ฿${cashN} · ควรได้ ฿${recon.expectedCash} → ขาด ฿${Math.abs(moneyDiff)}`
+                : `เก็บได้ ฿${cashN}`}
               actions={<ReconPill onClick={() => setReconFix(reconFix === "cash" ? null : "cash")} label={reconFix === "cash" ? "ปิด" : cashMissing ? "กรอกเลย" : "แก้เลข"} color={cashOk ? "#4F46E5" : "#fff"} bg={cashOk ? "#EEF0FE" : "#C0392B"} />}
               expanded={reconFix === "cash" ? (
                 <div style={{ margin: "10px 0 2px 31px", background: "#FAFBFC", border: "1px solid #EDEFF2", borderRadius: 10, padding: "11px 12px" }}>
@@ -5497,8 +5509,12 @@ function FlowScreen(props: {
                         {meterShots.map((m) => (
                           <div key={m.label} style={{ border: "1px solid #E7EAF0", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
                             {m.url
-                              ? <img src={m.url} alt={m.label} style={{ width: "100%", height: 110, objectFit: "cover", display: "block", background: "#0F1116" }} />
-                              : <div style={{ height: 110, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, color: "#B6BBC4" }}>ยังไม่มีรูป</div>}
+                              // CEO 2026-07-25 · contain = เห็นทั้งใบเสร็จ (เลขไม่โดนตัด) · แตะ = ขยายเต็มจออ่านเลข
+                              ? <button type="button" onClick={() => setZoomShot({ url: m.url, label: m.label })} style={{ display: "block", width: "100%", height: 150, padding: 0, border: "none", background: "#0F1116", cursor: "zoom-in", position: "relative" }}>
+                                  <img src={m.url} alt={m.label} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+                                  <span style={{ position: "absolute", right: 5, bottom: 5, background: "rgba(15,17,22,0.72)", color: "#fff", fontSize: 9.5, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>🔍 แตะขยาย</span>
+                                </button>
+                              : <div style={{ height: 150, background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, color: "#B6BBC4" }}>ยังไม่มีรูป</div>}
                             <div style={{ fontSize: 10, color: "#6B7280", padding: "5px 6px", textAlign: "center", borderTop: "1px solid #EEF0F3" }}>{m.label}</div>
                           </div>
                         ))}
@@ -5516,6 +5532,15 @@ function FlowScreen(props: {
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* CEO 2026-07-25 · รูปมิเตอร์ขยายเต็มจอ — อ่านเลขบนใบเสร็จให้ออก (แตะที่ว่าง/ปุ่มเพื่อปิด) */}
+      {zoomShot && (
+        <div onClick={() => setZoomShot(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 40, background: "rgba(8,9,12,0.93)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 12, gap: 10 }}>
+          <img src={zoomShot.url} alt={zoomShot.label} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "80%", objectFit: "contain", borderRadius: 8 }} />
+          <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{zoomShot.label}</div>
+          <button type="button" onClick={() => setZoomShot(null)} style={{ marginTop: 2, fontSize: 12.5, fontWeight: 700, color: "#0F1116", background: "#fff", border: "none", padding: "9px 24px", borderRadius: 9, cursor: "pointer" }}>ปิด</button>
         </div>
       )}
 

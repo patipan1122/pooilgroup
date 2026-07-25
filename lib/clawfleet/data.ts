@@ -34,6 +34,9 @@ export type Sku = {
 };
 
 export type Machine = {
+  /** id ของ cfCollectionEvent (COLLECTION) — ใช้เป็นเป้าหมายตอนหลังบ้านแก้เลข (adminEditCollectionEvent).
+   *  optional เพื่อ backward-compat กับ mock/legacy tier ที่ไม่มี event จริง. */
+  eventId?: string;
   code: string;
   name: string;
   meterBefore: number;
