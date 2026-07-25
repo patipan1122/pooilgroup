@@ -83,6 +83,7 @@ import {
   Search,
   ShoppingCart,
   Coffee,
+  CloudDownload,
 } from "lucide-react";
 import type { DbUser } from "./auth/session";
 
@@ -997,6 +998,13 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         href: "/ledger/tax",
         label: "รายงานภาษีซื้อ",
         icon: ReceiptText,
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+      },
+      {
+        // เอกสาร TRCloud — ดึง PO/AP จาก TRCloud มาดู/กรอง (อ่านอย่างเดียว · snapshot).
+        href: "/ledger/trcloud-docs",
+        label: "เอกสาร TRCloud",
+        icon: CloudDownload,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {

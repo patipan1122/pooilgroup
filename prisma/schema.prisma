@@ -7116,6 +7116,54 @@ model LedgerSkuAlias {
   @@schema("public")
 }
 
+// สำเนา PO/AP ที่ดึงมาจาก TRCloud (อ่านอย่างเดียว · TRCloud = ต้นฉบับ · เราเก็บ snapshot).
+// เปิดหน้า browse/filter ได้เร็วโดยไม่ต้องยิง TRCloud ทุกครั้ง (TRCloud rate-limit ~8-10 call
+// + ตัวกรองวันที่ฝั่งมันพัง → เลื่อนหน้าด้วย start= + กรองวันที่ฝั่งเรา). กด "รีเฟรช" เพื่อ sync รอบใหม่.
+// org-level: TRCloud company 45 (JPS GROUP) ครอบทุกนิติบุคคล — แยกด้วย department/project ในตัวข้อมูล.
+model LedgerTrcloudDoc {
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  kind             String // "PO" | "AP" (มาจาก po/search vs ap/search)
+  trcloudId        String    @map("trcloud_id") // po_id หรือ expense_id
+  trcloudCompanyId String?   @map("trcloud_company_id") // TRCloud company (เช่น "45")
+  companyFormat    String?   @map("company_format") // ชุดเลข/ซีรีส์: JPS_AP·JPS_EXP·PO·PATI_AP·YM_AP·JANE_AP
+  docNumber        String?   @map("doc_number") // invoice_number / document_number
+  refNo            String?   @map("ref_no") // ref_no เต็ม เช่น JPS_EXP2607250003
+  issueDate        DateTime? @map("issue_date") @db.Timestamptz(6)
+  vendorName       String?   @map("vendor_name")
+  organization     String?
+  taxId            String?   @map("tax_id")
+  department       String? // นิติบุคคล (JPS_00003·YMP_00002·PATIPAN·JANELILTA)
+  project          String? // สาขา (Hotel_001·62 STATION-001·ปตท.โนนแดง)
+  status           String? // Debtor·New·Paid...
+  statusAp         String?   @map("status_ap") // PO: แปลงเป็น AP แล้วยัง (0=ยัง)
+  total            Decimal?  @db.Decimal(15, 2)
+  grandTotal       Decimal?  @map("grand_total") @db.Decimal(15, 2)
+  tax              Decimal?  @db.Decimal(15, 2)
+  wht              Decimal?  @db.Decimal(15, 2)
+  discount         Decimal?  @db.Decimal(15, 2)
+  payment          Decimal?  @db.Decimal(15, 2)
+  staff            String?
+  invoiceNote      String?   @map("invoice_note")
+  taxOption        String?   @map("tax_option")
+  pdfUrl           String?   @map("pdf_url")
+  prNo             String?   @map("pr_no") // PO: PR ต้นทาง
+  trcloudCreatedAt DateTime? @map("trcloud_created_at") @db.Timestamptz(6)
+  trcloudUpdatedAt DateTime? @map("trcloud_updated_at") @db.Timestamptz(6)
+  raw              Json? // แถวดิบทั้งก้อน เผื่ออนาคต
+  syncedAt         DateTime? @map("synced_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, kind, trcloudId])
+  @@index([orgId, kind, issueDate])
+  @@index([orgId, kind, companyFormat])
+  @@index([orgId, department])
+  @@index([orgId, project])
+  @@map("ledger_trcloud_doc")
+  @@schema("public")
+}
+
 // =============================================================
 // RentSpace — ระบบบริหารโครงการร้านค้าเช่า (commercial plaza rental)
 // module slug `rentspace` · pilot โครงการทะเลทาวน์
