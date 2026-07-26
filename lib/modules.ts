@@ -960,6 +960,15 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
       },
       // ── การเงิน – จ่ายเงิน ──
       {
+        href: "/ledger/to-pay",
+        label: "บิลที่ต้องจ่าย",
+        icon: Banknote,
+        // CEO's daily pay-list — open+partial payment requests รวมจอเดียว (เลขบัญชี/QR
+        // ผู้รับ + ค้างกี่วัน + เตือนซ้ำ). อ่านอย่างเดียว; CEO โอนเองผ่านแอปธนาคาร.
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
+        section: "การเงิน – จ่ายเงิน",
+      },
+      {
         href: "/ledger/reconcile",
         label: "กระทบยอดจ่าย",
         icon: HandCoins,
@@ -967,7 +976,6 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         // financial-view tier (matches the page-level gate). When the flag is off the
         // page shows a friendly "ยังไม่เปิดใช้" message (not a dead route).
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
-        section: "การเงิน – จ่ายเงิน",
       },
       {
         href: "/ledger/bank-recon",
