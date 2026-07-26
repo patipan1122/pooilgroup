@@ -14,7 +14,7 @@ function round2(n: number): number {
 const PAID_DUP_WINDOW_DAYS = 30;
 const DAY_MS = 24 * 3600 * 1000;
 
-export type ToPayBill = { docCode: string; amount: number };
+export type ToPayBill = { expenseId: string; docCode: string; amount: number };
 
 export type ToPayDup = {
   otherOpenCount: number; // ผู้ขาย+ยอดเดียวกัน ที่ยังรอโอนอยู่อีกกี่ใบ (ไม่นับใบนี้)
@@ -139,7 +139,7 @@ export async function listToPay(
       whtTotal: round2(Number(r.whtTotal)),
       requestedAt: r.requestedAt.toISOString(),
       daysWaiting: Math.max(0, Math.floor((now - r.requestedAt.getTime()) / DAY_MS)),
-      bills: r.bills.map((b) => ({ docCode: docCodeByExpense.get(b.expenseId) ?? "—", amount: round2(Number(b.billAmount)) })),
+      bills: r.bills.map((b) => ({ expenseId: b.expenseId, docCode: docCodeByExpense.get(b.expenseId) ?? "—", amount: round2(Number(b.billAmount)) })),
       payeeAcctName: r.payeeAcctName,
       payeeBankName: bankName(r.payeeBankCode),
       payeeAcctNo: r.payeeAcctNo,

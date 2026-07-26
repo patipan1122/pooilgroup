@@ -49,7 +49,7 @@ export default async function ToPayPage({
         subtitle="รวมทุกใบที่รอโอน · เรียงจากค้างนานสุด · เปิดดูเลขบัญชี/QR แล้วโอนได้เลย"
         scope={scope}
       />
-      <ToPayList data={data} />
+      <ToPayList data={data} companyId={scope.companyId} />
     </div>
   );
 }

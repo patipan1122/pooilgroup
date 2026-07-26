@@ -155,6 +155,7 @@ export default async function ReconcilePage({
             floatingSlips={board.floatingSlips}
             summary={board.summary}
             canMatch={canMatch}
+            companyId={scope.companyId}
           />
         </>
       )}
