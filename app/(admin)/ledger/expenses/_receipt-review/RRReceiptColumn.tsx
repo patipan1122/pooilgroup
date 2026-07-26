@@ -77,7 +77,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   const companyId = data.companyId;
 
   const [activePage, setActivePage] = useState(0);
-  // ซูมแบบต่อเนื่อง (เปอร์เซ็นต์) — 100% = เต็มความกว้างคอลัมน์ · >100% = ขยายแล้วเลื่อนดูได้.
+  // ซูมต่อเนื่อง (%) — 100% = รูปพอดีเวที (fit) · >100% = สเกลโตจริง F×(zoomPct/100) แล้วเลื่อน/แพนดู.
   const [zoomPct, setZoomPct] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
@@ -132,16 +132,21 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   const pct = exp ? overallConfidence(exp.ocrConfidence) : null;
   const picLabel = `รูป ${total > 0 ? safePage + 1 : 0}/${total}`;
 
-  const frameStyle: CSSProperties = {
-    // 100% = เต็มความกว้างเวที · เกิน 100% ทำให้กรอบกว้างกว่าเวที → overflow:auto เลื่อนดูได้.
-    width: `${zoomPct}%`,
-    maxWidth: "none",
-    aspectRatio: "1 / 1.4",
-    position: "relative",
+  // กระดาษ (paper) สำหรับกล่อง PDF — พื้นขาว+เงา+มุมโค้ง หุ้มเนื้อหาแบบพอดี (ไม่ใช่กล่องตายตัว).
+  const pdfPaper: CSSProperties = {
+    maxWidth: "100%",
+    maxHeight: "100%",
+    width: 260,
     boxShadow: "0 12px 30px rgba(0,0,0,.45)",
     borderRadius: 4,
-    overflow: "hidden",
     background: "#f8fafc",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    padding: 24,
+    textAlign: "center",
   };
 
   // ── เนื้อในเวทีรูป ────────────────────────────────────────────────────────
@@ -152,18 +157,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
     stage = <div style={{ fontSize: 12, color: "#6b7280" }}>ไม่มีรูปใบเสร็จ</div>;
   } else if (isPdfUrl(curUrl)) {
     stage = (
-      <div
-        style={{
-          ...frameStyle,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          padding: 16,
-          textAlign: "center",
-        }}
-      >
+      <div style={pdfPaper}>
         <span
           style={{
             display: "grid",
@@ -203,25 +197,36 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
     stage = <div style={{ fontSize: 12, color: "#6b7280" }}>โหลดรูปไม่ได้</div>;
   } else {
     stage = (
-      <div style={frameStyle}>
-        {/* R2 host varies; plain <img> avoids next/image domain config (เหมือน ReceiptThumb) */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={curUrl}
-          alt="ใบเสร็จ"
-          loading="lazy"
-          decoding="async"
-          onError={() => setBroken((b) => ({ ...b, [curUrl]: true }))}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
-            transform: `rotate(${rotation}deg)`,
-          }}
-        />
-      </div>
+      // R2 host varies; plain <img> avoids next/image domain config (เหมือน ReceiptThumb).
+      // ฟิต-แล้ว-สเกล (2 ชั้น) เพื่อให้ซูมโตจริงเกิน 100% ได้ (max-width/height โตเกินขนาดจริงของรูป
+      // ไม่ได้ → เคยตันที่ ~100%):
+      //  • ชั้นฟิต: กล่อง <img> = max ทั้งกว้าง/สูง 100% ของเวที + คงสัดส่วนจริง (auto/auto) →
+      //    "ขนาดพอดีเวที" (F) ไม่ว่าไฟล์ต้นฉบับกี่พิกเซล → ≤100% จัดกลาง 2 แกน (ที่เหลือน้อย+สมมาตร
+      //    ไม่ใช่ช่องดำก้อนใหญ่ล่าง).
+      //  • ชั้นซูม: transform:scale(zoomPct/100) → ขนาดจริงบนจอ = F × zoomPct/100 (200%=2F · 400%=4F)
+      //    ล้นเวที → เวที overflow:auto เลื่อน/แพนดูได้ · origin=มุมซ้ายบนตอนซูม (มุมเริ่มเลื่อนถึงเสมอ).
+      // เงา+มุมโค้ง+พื้นขาวอยู่บนตัว <img> เอง → "กระดาษ" หุ้มรูปพอดี ไม่มี letterbox.
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img
+        src={curUrl}
+        alt="ใบเสร็จ"
+        loading="lazy"
+        decoding="async"
+        onError={() => setBroken((b) => ({ ...b, [curUrl]: true }))}
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          width: "auto",
+          height: "auto",
+          objectFit: "contain",
+          display: "block",
+          background: "#fff",
+          boxShadow: "0 12px 30px rgba(0,0,0,.45)",
+          borderRadius: 4,
+          transform: `rotate(${rotation}deg) scale(${zoomPct / 100})`,
+          transformOrigin: zoomPct > 100 ? "top left" : "center",
+        }}
+      />
     );
   }
 
@@ -272,7 +277,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, height: "100%" }}>
       <style>{SCOPED_CSS}</style>
 
       {/* ── ตัวดูรูปใบเสร็จ (พื้นดำ) ─────────────────────────────────────── */}
@@ -365,7 +370,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
             <input
               type="range"
               min={40}
-              max={250}
+              max={400}
               step={5}
               value={zoomPct}
               onChange={(e) => setZoomPct(Number(e.target.value))}
@@ -381,7 +386,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
             <div
               className="rrv-btn"
               style={{ ...VBTN, minWidth: 22, textAlign: "center", lineHeight: 1 }}
-              onClick={() => setZoomPct((z) => Math.min(250, z + 10))}
+              onClick={() => setZoomPct((z) => Math.min(400, z + 10))}
             >
               +
             </div>
@@ -399,15 +404,15 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
           </div>
         )}
 
-        {/* image stage */}
+        {/* image stage — จัดกลางทั้ง 2 แกนเมื่อพอดี (≤100%) → รูปนั่งกลางพื้นดำ ไม่ทิ้งช่องว่างก้อนล่าง.
+            เกิน 100% รูปล้นเวที → ชิดซ้าย/บน ให้เลื่อนถึงขอบเริ่มได้ (center จะตัดขอบซ้าย/บนทิ้ง). */}
         <div
           style={{
             flex: 1,
             minHeight: 0,
             padding: 9,
             display: "flex",
-            alignItems: exp && curUrl ? "flex-start" : "center",
-            // เกิน 100% กรอบล้นเวที → ชิดซ้าย/บนให้เลื่อนถึงขอบเริ่มได้ (center จะตัดขอบซ้ายทิ้ง).
+            alignItems: zoomPct > 100 ? "flex-start" : "center",
             justifyContent: zoomPct > 100 ? "flex-start" : "center",
             overflow: "auto",
           }}

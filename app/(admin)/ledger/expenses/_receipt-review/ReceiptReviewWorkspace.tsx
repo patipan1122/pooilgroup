@@ -269,7 +269,10 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
             flex: 1,
             minHeight: 0,
             display: "grid",
-            gridTemplateColumns: "minmax(360px, 400px) 1fr 360px",
+            // ซ้าย (รายการ) / กลาง (ฟอร์ม · ยืดหดได้) / ขวา (รูป+ประวัติ · กว้างขึ้นให้รูปใหญ่).
+            gridTemplateColumns: "minmax(340px, 380px) minmax(0, 1fr) minmax(400px, 460px)",
+            // แถวเดียวเต็มความสูงเสมอ → ทุกคอลัมน์ (ลิสต์/ฟอร์ม/ตัวดูรูป) ยืดเต็มแนวตั้ง ไม่เหลือช่องว่าง.
+            gridTemplateRows: "minmax(0, 1fr)",
             gap: 10,
             padding: 10,
           }}
