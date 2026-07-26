@@ -826,7 +826,10 @@ export function ExpenseReviewPane({
             </SectionTitle>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <FieldLabel confidence={conf.suggested_category ?? conf.category}>
+                {/* ป้าย % ความมั่นใจโชว์เฉพาะ "หลังเลือกหมวดแล้ว" — ตอนยังไม่เลือก
+                    เคยโชว์ป้ายเขียว 90% ค้างไว้ ทำให้ดูเหมือนเลือกแล้วทั้งที่ยังเป็นแค่
+                    คำแนะนำ (ขัดกับแท็บที่บอก "ยังไม่ตั้งหมวด") — CEO 2026-07-26. */}
+                <FieldLabel confidence={draft.categoryId ? (conf.suggested_category ?? conf.category) : null}>
                   ประเภทค่าใช้จ่าย
                 </FieldLabel>
                 <SearchableSelect
@@ -858,10 +861,11 @@ export function ExpenseReviewPane({
                       >
                         <span aria-hidden>💡</span>
                         <span>
-                          AI แนะนำ: <span className="font-medium">{ghost.name}</span>
+                          AI แนะนำ (ยังไม่เลือก):{" "}
+                          <span className="font-medium">{ghost.name}</span>
                         </span>
-                        <span className="ml-0.5 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-brand-600)] shadow-sm">
-                          ใช้หมวดนี้
+                        <span className="ml-0.5 rounded border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-brand-700)]">
+                          แตะเพื่อใช้
                         </span>
                       </button>
                     ) : (

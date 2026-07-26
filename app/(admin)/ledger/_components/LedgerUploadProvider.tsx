@@ -144,7 +144,9 @@ function buildCreatePayload(
 ) {
   return {
     companyId: scope.companyId,
-    branchId: scope.branchId || null,
+    // CEO 2026-07-26: เลิกใส่สาขาอัตโนมัติจากตัวสลับด้านบน (เว็บ) — ให้คนเลือกสาขาเอง
+    // ทุกใบก่อนยืนยัน (ด่าน confirmability บังคับสาขาอยู่แล้ว). กันความรู้สึก "มันเลือกให้เอง".
+    branchId: null,
     source: "web" as const,
     vendor: parsed.vendor ?? null,
     vendorTaxId: parsed.vendorTaxId ?? null,
