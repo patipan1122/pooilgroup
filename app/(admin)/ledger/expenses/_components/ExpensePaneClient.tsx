@@ -21,6 +21,7 @@ import {
   ensureCentralBranch,
   createPaymentRequestAction,
   setExpenseProjectAction,
+  updateExpenseInTrcloud,
 } from "../../_actions";
 
 export function ExpensePaneClient({
@@ -80,6 +81,12 @@ export function ExpensePaneClient({
         payreqEnabled
           ? (payee): Promise<LedgerActionResult> =>
               createPaymentRequestAction([expense.id], payee)
+          : undefined
+      }
+      // แก้บิลหลังส่ง TRCloud + sync (CEO 2026-07-26) — accountant-tier เท่านั้น (server ตรวจซ้ำ).
+      onUpdateTrcloud={
+        canEditClaimability
+          ? (id: string) => updateExpenseInTrcloud(id)
           : undefined
       }
       currentUserId={currentUserId}

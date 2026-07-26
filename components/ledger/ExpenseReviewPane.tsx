@@ -312,6 +312,7 @@ export function ExpenseReviewPane({
   onRequestDelete,
   onEnsureCentralBranch,
   onRequestPayout,
+  onUpdateTrcloud,
   projects,
   onSetProject,
   currentUserId,
@@ -343,6 +344,9 @@ export function ExpenseReviewPane({
   /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — ต้องส่ง "ปลายทางผู้รับ" (payee) ที่กรอกในส่วนที่ 4.
    *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
   onRequestPayout?: (payee: PayeeInput) => Promise<LedgerActionResult>;
+  /** อัพเดตใบที่ส่ง TRCloud แล้ว (updateExpenseInTrcloud) — CEO 2026-07-26 "แก้บิลหลังส่ง
+   *  → อัพเดต TRCloud ด้วย". ไม่ส่งมา = ไม่ให้แก้หลังส่ง (ล็อกเหมือนเดิม). */
+  onUpdateTrcloud?: (id: string) => Promise<LedgerActionResult & { docNo?: string | null }>;
   /** โครงการ (F2) ที่เลือกได้สำหรับบริษัทนี้ (active เท่านั้น) — ไม่ส่งมา = ซ่อนช่องโครงการ. */
   projects?: ProjectOption[];
   /** แท็กบิลนี้เข้าโครงการ (setExpenseProjectAction) — เรียกทันทีที่เปลี่ยน · null=ล้าง.
@@ -482,12 +486,17 @@ export function ExpenseReviewPane({
   // the cause and re-send — the old `trcloudDocId != null` locked failed bills too,
   // hiding the retry button. See trcloud-state.ts.
   const trState = trcloudState(expense.trcloudDocId);
+  // แก้บิลหลังส่ง TRCloud (CEO 2026-07-26): บิลที่ส่งแล้ว (sent) ปกติล็อก — กด "แก้ไข" ก่อน
+  //   (editingSent) จึงปลดล็อกฟิลด์ให้แก้ แล้วกด "อัพเดต TRCloud" ให้ไปแก้ใบใน TRCloud ด้วย.
+  //   (ถ้าใบมี PV แล้ว server จะบล็อกตอนอัพเดต — แก้ในเราได้ แต่ sync ไม่ได้จนกว่าจะจัดการ PV.)
+  const [editingSent, setEditingSent] = useState(false);
+  const sentEditable = trState === "sent" && !readOnly && expense.status !== "void" && !!onUpdateTrcloud;
   const locked =
     readOnly ||
     expense.status === "locked" ||
     expense.status === "void" ||
-    trState === "sent" ||
-    trState === "pending";
+    trState === "pending" ||
+    (trState === "sent" && !editingSent);
 
   // ── ภาษีซื้อ (input-VAT) — สถานะสี + override "ขอคืนได้?" ──
   const completeness = (expense.completenessStatus ?? "undecided") as CompletenessStatus;
@@ -770,6 +779,27 @@ export function ExpenseReviewPane({
           ? { kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" }
           : { kind: "err", text: res.error ?? "ขอโอนไม่สำเร็จ" },
       );
+    });
+  }
+
+  // อัพเดตใบที่ส่ง TRCloud แล้ว (CEO 2026-07-26) — เซฟ draft ล่าสุดก่อน แล้ว sync ไปแก้ใบใน TRCloud.
+  function handleUpdateTrcloud() {
+    if (!onUpdateTrcloud) return;
+    setMsg(null);
+    startTransition(async () => {
+      const saved = await onSave(expense.id, draft);
+      if (!saved.ok) {
+        setMsg({ kind: "err", text: saved.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      const res = await onUpdateTrcloud(expense.id);
+      if (res.ok) {
+        setEditingSent(false);
+        setMsg({ kind: "ok", text: "อัพเดตใบใน TRCloud แล้ว ✅" });
+        onAfterFinish?.();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "อัพเดต TRCloud ไม่สำเร็จ" });
+      }
     });
   }
 
@@ -1750,18 +1780,63 @@ export function ExpenseReviewPane({
       {/* Locked notice — บอกชัดว่าทำไมแก้ไม่ได้ (CEO 2026-06-10: เดิมแถบปุ่มหายเฉย ๆ
           เลยรู้สึกว่า "ตาย"). */}
       {locked && (
-        <div className="-mx-4 border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm font-medium text-zinc-600 sm:-mx-6 sm:px-6">
-          {trState === "sent"
-            ? "✓ ส่งเข้า TRCloud แล้ว · แก้ไขไม่ได้ (ถ้าต้องแก้ ให้ลบใบใน TRCloud ก่อน)"
-            : trState === "pending"
-              ? "⏳ กำลังส่งเข้า TRCloud… · แก้ไขไม่ได้ระหว่างส่ง"
-              : "รายการนี้ถูกล็อก/ยกเลิก · แก้ไขไม่ได้"}
+        <div className="-mx-4 border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm sm:-mx-6 sm:px-6">
+          {trState === "sent" ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium text-zinc-600">✓ ส่งเข้า TRCloud แล้ว</span>
+              {sentEditable ? (
+                <button
+                  type="button"
+                  onClick={() => { setMsg(null); setEditingSent(true); }}
+                  className="press inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 py-1.5 text-xs font-semibold text-[var(--color-brand-700)] transition-colors hover:bg-[var(--color-brand-100)]"
+                >
+                  ✏️ แก้ไขใบนี้ + อัพเดต TRCloud
+                </button>
+              ) : (
+                <span className="text-xs text-zinc-400">แก้ไขไม่ได้</span>
+              )}
+            </div>
+          ) : trState === "pending" ? (
+            <span className="font-medium text-zinc-600">⏳ กำลังส่งเข้า TRCloud… · แก้ไขไม่ได้ระหว่างส่ง</span>
+          ) : (
+            <span className="font-medium text-zinc-600">รายการนี้ถูกล็อก/ยกเลิก · แก้ไขไม่ได้</span>
+          )}
         </div>
       )}
 
       {/* Actions — ปุ่ม "บันทึก" เดียว (ห้าม auto-post: คอมมิตเมื่อกดเอง).
           Sticky bottom bar so the save button is always reachable on phones. */}
-      {!locked && (
+      {/* แถบแก้ไขใบที่ส่ง TRCloud แล้ว (editingSent) — CEO 2026-07-26: แก้ฟิลด์ด้านบนได้ แล้วกด
+          "อัพเดต TRCloud" ให้ไปแก้ใบใน TRCloud ด้วย (เซฟในเรา+ยิง ap/update). */}
+      {editingSent && (
+        <div className="sticky bottom-0 z-10 -mx-4 border-t border-[var(--color-brand-200)] bg-[var(--color-brand-50)]/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-brand-700)]">
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+            กำลังแก้ใบที่ส่ง TRCloud แล้ว — แก้เสร็จกด "อัพเดต TRCloud" เพื่อให้ใบใน TRCloud ตรงกัน
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              disabled={pending || hasError}
+              onClick={handleUpdateTrcloud}
+              className="press flex-1 whitespace-nowrap sm:flex-none"
+            >
+              {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Save className="size-4" aria-hidden />}
+              อัพเดต TRCloud
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={() => { setEditingSent(false); setMsg(null); }}
+              className="press"
+            >
+              ยกเลิกการแก้ไข
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!locked && !editingSent && (
         <div className="sticky bottom-0 z-10 -mx-4 border-t border-zinc-100 bg-white/95 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur sm:-mx-6 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             {/* CEO 2026-06-10: ตัดด่าน "ยืนยัน" ออก — เหลือปุ่มเดียว "บันทึก". ถ้าใบครบ

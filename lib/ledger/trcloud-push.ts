@@ -670,6 +670,166 @@ export async function convertExpensePoToAp(
   return { ok: true, apDocId, apDocNo };
 }
 
+/** อัพเดตใบ AP ที่ส่งเข้า TRCloud แล้ว (ap/update.php) — CEO 2026-07-26 "แก้บิลหลังส่งแล้ว
+ *  ให้ไปอัพเดตใบใน TRCloud ด้วย". payload = ชุดเดียวกับ convertExpensePoToAp (create) เป๊ะ
+ *  + `id`/`document_number` ของใบเดิม → TRCloud แทนที่เนื้อใบทั้งใบ (full replace).
+ *  ⚠️ MUST keep payload in sync กับ convertExpensePoToAp (ถ้าแก้ payload create ต้องแก้ที่นี่ด้วย).
+ *  ⚠️ ห้ามเรียกถ้าใบมี PV แล้ว (แก้ยอด AP = journal ของ PV เพี้ยน) — caller เป็นคน guard. */
+export async function updateExpenseAp(
+  e: PushableExpense,
+  apDocId: string,
+  apDocNo: string | null,
+  opts: { creditForm?: boolean } = {},
+): Promise<{ ok: true; apDocId: string; apDocNo: string | null } | { ok: false; error: string }> {
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
+  }
+  const eff: PushableExpense = {
+    ...e,
+    trcloudProductCode: resolveEffectiveSku(e),
+    categoryAccCode: e.categoryAccCode || GL_FALLBACK,
+  };
+  if (!eff.branchTrcloudDepartment) {
+    return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
+  }
+  const scope: Scope = { orgId: eff.orgId, companyId: eff.companyId };
+  const contact = await resolveContactId(scope, {
+    vendor: e.vendor, vendorTaxId: e.vendorTaxId, vendorAddress: e.vendorAddress,
+  });
+  if (!contact.ok) return { ok: false, error: `คู่ค้า: ${contact.error}` };
+  const built = await buildLines(scope, eff);
+  if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
+
+  const issue = toIsoDate(e.docDate);
+  const taxReport = e.docType === "quotation" || !eff.inputVatClaimable ? "0" : "1";
+  const autoPv = isAutoPvEnabled();
+  const apType = (opts.creditForm || autoPv)
+    ? AP_TYPE_CREDIT
+    : ((e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT);
+  const apCompanyFormat = autoPv ? AP_COMPANY_FORMAT : "JPS_AP";
+  const llSlot = (opts.creditForm || (e.paymentStatus ?? "unpaid") !== "paid")
+    ? llCSlotForGl(eff.categoryAccCode)
+    : null;
+  const useLL = !!llSlot;
+  const llNet = round2(eff.subtotal - (eff.discount || 0));
+  const llVat = round2(eff.vat);
+  const llSlots: Json = useLL
+    ? {
+        [llSlot!]: llNet.toFixed(2),
+        ...(llVat > 0
+          ? { [eff.inputVatClaimable ? LL_SLOT_VAT_CLAIMABLE : LL_SLOT_VAT_NONCLAIM]: llVat.toFixed(2) }
+          : {}),
+      }
+    : {};
+  const payload: Json = {
+    id: apDocId, // ← ต่างจาก create: อ้าง id ใบเดิมเพื่อแทนที่ (update)
+    issue_date: issue,
+    due_date: issue,
+    tax_date: issue,
+    company_format: apCompanyFormat,
+    document_number: apDocNo ?? "", // คงเลขใบเดิม (ไม่ให้ TRCloud ออกเลขใหม่)
+    payment_term: "0",
+    reference: e.docCode,
+    discount: "0",
+    wht: useLL ? "0" : String(round2(e.wht)),
+    tax_option: "in",
+    tax_report: taxReport,
+    type: useLL ? AP_FORMULA_LL : apType,
+    approve_status: "",
+    department: eff.branchTrcloudDepartment,
+    project: eff.branchTrcloudProject ?? "",
+    invoice_note: (e.note ? `${e.note} · ` : "") + `LedgerLine · อ้างอิง ${e.docCode} · แก้ไขจากในระบบ`,
+    ...llSlots,
+    customer: {
+      group_code: "S",
+      code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
+      name: e.vendor || "ไม่ระบุชื่อผู้ขาย",
+      organization: e.vendor || "",
+      branch: "00000",
+      address: e.vendorAddress || "-",
+      email: "",
+      telephone: "",
+      tax_id: digitsOnly(e.vendorTaxId),
+      contact_type: "normal",
+      contact_id: contact.ref.contactId,
+      add_contact: "0",
+    },
+    product: built.lines,
+  };
+
+  const r = await post("ap/update.php", payload);
+  if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
+  return { ok: true, apDocId, apDocNo };
+}
+
+/** อัพเดตใบ PO ที่ยังไม่แปลงเป็น AP (po/update.php) — payload = ชุดเดียวกับ pushExpenseToTrcloud
+ *  (create PO) เป๊ะ + id/document_number ใบเดิม. ใช้เมื่อบิลส่ง PO แล้วแต่ยังไม่แปลง AP.
+ *  ⚠️ MUST keep payload in sync กับ pushExpenseToTrcloud. */
+export async function updateExpensePo(
+  e: PushableExpense,
+  poDocId: string,
+  poDocNo: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า TRCloud (env TRCLOUD_JPS_*)" };
+  }
+  const eff: PushableExpense = {
+    ...e,
+    trcloudProductCode: resolveEffectiveSku(e),
+    categoryAccCode: e.categoryAccCode || GL_FALLBACK,
+  };
+  if (!eff.branchTrcloudDepartment) {
+    return { ok: false, error: "สาขานี้ยังไม่มีรหัสแผนก TRCloud — ตั้งค่าใน Settings → สาขา → TRCloud" };
+  }
+  const scope: Scope = { orgId: eff.orgId, companyId: eff.companyId };
+  const contact = await resolveContactId(scope, {
+    vendor: e.vendor, vendorTaxId: e.vendorTaxId, vendorAddress: e.vendorAddress,
+  });
+  if (!contact.ok) return { ok: false, error: `คู่ค้า: ${contact.error}` };
+  const built = await buildLines(scope, eff);
+  if (!built.ok) return { ok: false, error: `สินค้า: ${built.error}` };
+
+  const issue = toIsoDate(e.docDate);
+  const payload: Json = {
+    id: poDocId, // ← ต่างจาก create: อ้าง id ใบเดิมเพื่อแทนที่
+    issue_date: issue,
+    delivery_due: issue,
+    company_format: "PO",
+    type: "po",
+    status: "New",
+    document_number: poDocNo ?? "",
+    payment_term: "0",
+    reference: e.docCode,
+    discount: "0",
+    wht: String(round2(e.wht)),
+    tax_option: "in",
+    approve_status: "",
+    department: eff.branchTrcloudDepartment,
+    project: eff.branchTrcloudProject ?? "",
+    invoice_note: e.note
+      ? `${e.note} · อ้างอิง ${e.docCode} · แก้ไขจากในระบบ`
+      : `LedgerLine · อ้างอิง ${e.docCode} · แก้ไขจากในระบบ`,
+    customer: {
+      group_code: "S",
+      code_number: (contact.ref.codeNumber ?? "").replace(/^\D+/, ""),
+      name: e.vendor || "ไม่ระบุชื่อผู้ขาย",
+      organization: e.vendor || "",
+      branch: "00000",
+      address: e.vendorAddress || "-",
+      email: "",
+      telephone: "",
+      tax_id: digitsOnly(e.vendorTaxId),
+      contact_type: "normal",
+      contact_id: contact.ref.contactId,
+      add_contact: "0",
+    },
+    product: built.lines,
+  };
+  const r = await post("po/update.php", payload);
+  if (!isSuccess(r.data)) return { ok: false, error: errMsg(r) };
+  return { ok: true };
+}
+
 /** Delete a pushed doc ("ยกเลิกการส่ง" / test cleanup). Tries PO first (current model),
  *  then falls back to AP so docs pushed before the AP→PO switch can still be cancelled. */
 export async function deleteTrcloudAp(docId: string): Promise<{ ok: boolean; error?: string }> {

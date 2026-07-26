@@ -51,6 +51,8 @@ import {
   pushExpenseToTrcloud,
   deleteTrcloudAp,
   trcloudPushConfigured,
+  updateExpenseAp,
+  updateExpensePo,
 } from "@/lib/ledger/trcloud-push";
 // convertExpensePoToAp + PushableExpense + isTrcloudSent + loadPushable: ตรรกะแปลง AP
 // ย้ายไป lib/ledger/ap-auto-convert.ts + lib/ledger/pushable.ts แล้ว (แชร์กับ auto-trigger).
@@ -1830,6 +1832,99 @@ export async function convertExpenseToAp(
   if (!light) return { ok: false, error: "ไม่พบรายการ" };
   // core เดียวกับ auto-trigger — guard/ตรรกะบัญชีทั้งหมดอยู่ใน runApConversion แล้ว.
   return runApConversion(orgId, light.companyId, id, session.user.id);
+}
+
+/** อัพเดตใบที่ "ส่งเข้า TRCloud แล้ว" ให้ตรงกับที่แก้ในระบบ (CEO 2026-07-26 "แก้บิลหลังส่งแล้ว
+ *  → ไปอัพเดตใบใน TRCloud ด้วย · กดยืนยันว่าแก้ที่ TRCloud ด้วย"). ผู้ใช้แก้ในฟอร์ม + กดบันทึก
+ *  ก่อน แล้วกดปุ่มนี้ → ยิง ap/update (ถ้าแปลง AP แล้ว) หรือ po/update (ถ้ายังเป็น PO).
+ *  🔒 guard money-critical: ยืนยันแล้ว + มีหมวด+สาขา + **ห้ามถ้ามี PV แล้ว** (แก้ยอด AP =
+ *  journal ของ PV เพี้ยน · 1 PV รวมหลายบิล) — ต้องยกเลิก PV ก่อน. accountant-tier เท่านั้น. */
+export async function updateExpenseInTrcloud(
+  id: string,
+): Promise<ActionResult & { docNo?: string | null }> {
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!(await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export"))) {
+    return { ok: false, error: "เฉพาะบัญชี/ผู้ดูแลอัพเดตใบใน TRCloud ได้" };
+  }
+  if (!trcloudPushConfigured()) {
+    return { ok: false, error: "ยังไม่ได้ตั้งค่าการเชื่อม TRCloud" };
+  }
+  const orgId = session.user.org_id;
+  const lightRow = await prisma.ledgerExpense.findFirst({
+    where: { id, orgId },
+    select: {
+      companyId: true,
+      trcloudDocId: true,
+      trcloudDocNo: true,
+      trcloudApDocId: true,
+      trcloudApDocNo: true,
+    },
+  });
+  if (!lightRow) return { ok: false, error: "ไม่พบรายการ" };
+
+  const numId = (s: string | null | undefined) => (s && /^\d+$/.test(s) ? s : null);
+  const apId = numId(lightRow.trcloudApDocId);
+  const poId = numId(lightRow.trcloudDocId);
+  if (!apId && !poId) {
+    return { ok: false, error: "ใบนี้ยังไม่ได้ส่งเข้า TRCloud — ส่งก่อนจึงจะอัพเดตได้" };
+  }
+
+  // 🔒 มี PV แล้ว → ห้ามแก้ (แก้ยอด AP ทำให้ journal ของ PV เพี้ยน). ต้องยกเลิก PV ก่อน.
+  //   (bill ที่อยู่ในคำขอโอน = ถูกสร้าง AP แบบเครดิต/LL → update ก็ต้องใช้ LL เหมือนกัน.)
+  const pvBill = await prisma.ledgerPaymentRequestBill.findFirst({
+    where: { expenseId: id, orgId },
+    orderBy: { createdAt: "desc" },
+    select: { request: { select: { trcloudPvDocId: true, trcloudPvDocNo: true } } },
+  });
+  if (pvBill?.request?.trcloudPvDocId) {
+    return {
+      ok: false,
+      error: `บิลนี้มีใบสำคัญจ่าย (PV ${pvBill.request.trcloudPvDocNo ?? ""}) แล้ว — แก้ไม่ได้ (แก้ยอดจะทำให้บัญชี PV เพี้ยน) · ต้องยกเลิก PV ใน TRCloud ก่อน`,
+    };
+  }
+
+  const loaded = await loadPushable(orgId, id, lightRow.companyId);
+  if (!loaded) return { ok: false, error: "ไม่พบรายการ" };
+  if (loaded.status !== "confirmed" && loaded.status !== "locked") {
+    return { ok: false, error: "อัพเดตได้เฉพาะรายการที่ยืนยันแล้ว" };
+  }
+  if (!loaded.pushable.categoryAccCode) {
+    return { ok: false, error: "ยังไม่ได้เลือก/ยืนยันหมวดค่าใช้จ่าย (ผังบัญชี) — เลือกหมวดแล้วบันทึกก่อน" };
+  }
+  if (!loaded.pushable.branchTrcloudDepartment) {
+    return { ok: false, error: "ยังไม่ได้เลือกสาขา (แผนก TRCloud) — เลือกสาขาแล้วบันทึกก่อน" };
+  }
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: "LEDGER_EXPENSE_TRCLOUD_UPDATE_STARTED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { apId, poId, vendor: loaded.pushable.vendor, total: loaded.pushable.total } },
+  });
+
+  // AP มาก่อน (ถ้าแปลงแล้ว) — ap/update; ยังเป็น PO — po/update. creditForm mirror การสร้าง:
+  //   อยู่ในคำขอโอน (มี LedgerPaymentRequestBill) = AP สร้างแบบ credit/LL → update ก็ LL.
+  const res = apId
+    ? await updateExpenseAp(loaded.pushable, apId, lightRow.trcloudApDocNo, { creditForm: !!pvBill })
+    : await updateExpensePo(loaded.pushable, poId!, lightRow.trcloudDocNo);
+
+  await audit({
+    orgId,
+    userId: session.user.id,
+    action: res.ok ? "LEDGER_EXPENSE_TRCLOUD_UPDATED" : "LEDGER_EXPENSE_TRCLOUD_UPDATE_FAILED",
+    resourceType: "ledger_expense",
+    resourceId: id,
+    diff: { new: { apId, poId, ok: res.ok, error: res.ok ? null : (res as { error: string }).error } },
+  });
+
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger");
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, docNo: apId ? lightRow.trcloudApDocNo : lightRow.trcloudDocNo };
 }
 
 /**
