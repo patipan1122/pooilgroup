@@ -25,7 +25,7 @@ const META: Record<
 
 /** Thai labels for the deterministic `missing[]` element tokens (recheck.ts). */
 export const MISSING_LABELS: Record<string, string> = {
-  vendor_taxid: "เลขภาษีผู้ขายไม่ครบ 13 หลัก",
+  vendor_taxid: "ยังไม่มีเลขภาษีผู้ขาย 13 หลัก — เติมในช่อง “เลขผู้เสียภาษี” (ส่วนที่ 2) แล้วจะขอคืน VAT ได้ (AI อาจอ่านไม่ครบจากรูปที่เอียง/ไม่ชัด)",
   buyer_taxid: "เลขภาษีผู้ซื้อ (เจพีซิ้งค์) ไม่ตรง/ไม่เจอบนใบ",
   vat_line: "ไม่มีบรรทัด VAT แยก",
   vendor_address: "ไม่มีที่อยู่ผู้ขาย",
