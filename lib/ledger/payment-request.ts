@@ -232,6 +232,10 @@ export interface MatchSlipToRequestInput {
   recipientName?: string | null;
   /** Recipient account/promptpay as seen on the slip (may be masked). */
   recipientAcct?: string | null;
+  /** ล็อกเป้าเป็น "คำขอนี้" (เว็บ "แนบสลิป" · CEO 2026-07-26) — ผู้บริหารเลือกใบเองแล้ว
+   *  ไม่ต้องเดาว่าเป็นคำขอไหน. ข้ามเฉพาะขั้น IDENTIFY เท่านั้น — ขั้น VERIFY (ยอด ±1 บาท +
+   *  ผู้รับ) + ปิดบิลแบบ atomic ยังทำครบเหมือนเดิม (สลิปผิดยอด/ผิดคน → mismatch เหมือนกัน). */
+  forcedRequestId?: string | null;
 }
 
 /** Detail for a slip that hit a request but did NOT match exactly — the webhook
@@ -324,15 +328,22 @@ export async function matchSlipToRequest(
   const remainingOf = (r: OpenReq) => round2(Number(r.expectedTransfer) - Number(r.paidTotal));
 
   // 1. IDENTIFY the target — strongest signal first; never guess between two.
-  const byName = recipientName ? open.filter((r) => nameSimilar(r.payeeAcctName, recipientName)) : [];
-  const byAcct = recipientAcct ? open.filter((r) => acctSeen(recipientAcct, r.payeeAcctNo, r.payeePromptpay)) : [];
-  const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= AUTO_MATCH_SATANG_BAHT);
+  //    forcedRequestId (เว็บ "แนบสลิป") = ผู้บริหารเลือกใบเองแล้ว → ล็อกเป้าตรง ๆ ข้ามการเดา
+  //    (ยัง verify ยอด/ผู้รับ + ปิดบิลแบบ atomic เหมือนเดิมด้านล่าง — สลิปผิดยังถูกกันครบ).
   let target: OpenReq | undefined;
-  if (byName.length === 1) target = byName[0];
-  else if (byAcct.length === 1) target = byAcct[0];
-  else if (byAmount.length === 1) target = byAmount[0];
-  else if (open.length === 1) target = open[0];
-  if (!target) return { matched: false, reason: open.length > 1 ? "ambiguous" : "no_request" };
+  if (input.forcedRequestId) {
+    target = openAll.find((r) => r.id === input.forcedRequestId);
+    if (!target) return { matched: false, reason: "no_request" };
+  } else {
+    const byName = recipientName ? open.filter((r) => nameSimilar(r.payeeAcctName, recipientName)) : [];
+    const byAcct = recipientAcct ? open.filter((r) => acctSeen(recipientAcct, r.payeeAcctNo, r.payeePromptpay)) : [];
+    const byAmount = open.filter((r) => Math.abs(slipAmount - remainingOf(r)) <= AUTO_MATCH_SATANG_BAHT);
+    if (byName.length === 1) target = byName[0];
+    else if (byAcct.length === 1) target = byAcct[0];
+    else if (byAmount.length === 1) target = byAmount[0];
+    else if (open.length === 1) target = open[0];
+    if (!target) return { matched: false, reason: open.length > 1 ? "ambiguous" : "no_request" };
+  }
 
   const remaining = remainingOf(target);
   const diff = round2(slipAmount - remaining);

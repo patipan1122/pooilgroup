@@ -62,6 +62,7 @@ export default async function ExpensesPage({
     nr?: string; // needsReview split: "1"=รอตรวจ · "0"=รอยืนยัน (ใช้กับ status=draft)
     pay?: string; // payment tab: "eligible"=ขอโอนได้ · "requested"=รอโอน · "paid"=โอนแล้ว
     view?: string; // "receipt-review" = โหมดตรวจใบเสร็จ (เวิร์กสเปซเต็มจอ) · ไม่ใส่ = โหมดรายการเดิม
+    focus?: string; // "1" = โหมด "ใบเดียวโฟกัส" (เปิดจากปุ่ม LINE) · เหลือใบนี้ใบเดียว เมนูโปรแกรมยังครบ
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -147,6 +148,10 @@ export default async function ExpensesPage({
     sp.pay === "eligible" || sp.pay === "requested" || sp.pay === "paid" ? sp.pay : undefined;
   // โหมดมุมมอง — "receipt-review" = เวิร์กสเปซตรวจใบเสร็จเต็มจอ (โหมดใหม่) · อื่น ๆ = รายการเดิม.
   const view = sp.view === "receipt-review" ? "receipt-review" : "list";
+  // โหมด "ใบเดียวโฟกัส" (?focus=1) — เปิดจากปุ่ม LINE "ใส่หมวด/สาขา" (CEO 2026-07-26):
+  // เนื้อหาเหลือใบนี้ใบเดียว ไม่มีคลังบิล/แถบกรองมาบัง แต่ยังอยู่ใน AdminShell → เมนู
+  // โปรแกรมครบ (hamburger/sidebar) กดไปหน้าอื่น/กลับรายการได้ (ไม่ให้เป็นหน้าตัน).
+  const focus = sp.focus === "1";
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -487,6 +492,65 @@ export default async function ExpensesPage({
         : null,
     };
     return <ReceiptReviewWorkspace data={reviewData} />;
+  }
+
+  // ── โหมด "ใบเดียวโฟกัส" (?focus=1 · เปิดจากปุ่ม LINE "ใส่หมวด/สาขา") ──
+  // reuse ข้อมูล/props ของ pane ที่โหลดไว้แล้ว 100% (เหมือนโหมด receipt-review ด้านบน)
+  // ต่างกันที่ layout: เหลือ "ใบนี้ใบเดียว" กลางจอ (ไม่มีคลังบิล/แถบกรอง) + ปุ่มกลับ
+  // ชัด ๆ · AdminShell (เมนูโปรแกรม hamburger/sidebar) ยังครอบอยู่ → ไม่ใช่หน้าตัน
+  // flow ในหน้า: หมวด+สาขา → บันทึก → ส่ง TRCloud (PO) → ขอโอน (gate PO ก่อนขอโอนอยู่ที่ server).
+  if (focus && selectedExpense) {
+    const backHref = `/ledger/expenses?${baseParams.toString()}`;
+    return (
+      <div className="p-4 sm:px-6 sm:pt-4 sm:pb-6">
+        <div className="mx-auto max-w-3xl">
+          <Link
+            href={backHref}
+            className="press mb-3 inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-[var(--color-brand-600)] transition-colors hover:text-[var(--color-brand-700)]"
+          >
+            ← กลับไปรายการบิล
+          </Link>
+          <div className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 sm:p-6">
+            <ExpensePaneClient
+              expense={selectedExpense}
+              replacement={replacementExpense}
+              categories={categories.map((c) => ({
+                id: c.id,
+                name: c.name,
+                color: c.color,
+                sort: c.sort,
+                active: c.active,
+              }))}
+              branches={scope.branches}
+              projects={projectOptions}
+              canEditClaimability={canEditClaimability}
+              currentUserId={session.user.id}
+              payreqEnabled={ledgerPayreqV1()}
+              showSendToTrcloud={false}
+            />
+            {/* ปุ่มเดียว "ส่งเข้า TRCloud" (PO) — ต้องส่งก่อนจึงขอโอนได้ (gate ที่ server) */}
+            <TrcloudButton
+              expenseId={selectedExpense.id}
+              companyId={scope.companyId}
+              status={selectedExpense.status}
+              docType={selectedExpense.docType}
+              trcloudDocId={selectedExpense.trcloudDocId}
+              trcloudDocNo={selectedExpense.trcloudDocNo}
+              trcloudError={selectedExpense.trcloudError}
+              trcloudApDocId={selectedExpense.trcloudApDocId}
+              trcloudApDocNo={selectedExpense.trcloudApDocNo}
+              trcloudApError={selectedExpense.trcloudApError}
+              stockinNo={stockinNo}
+              stockSkus={stockSkus}
+              stockInEnabled={canStockIn}
+              isStockCategory={categories.some(
+                (c) => c.id === selectedExpense.categoryId && c.name === "สินค้าเพื่อขายแบบมีสต๊อก",
+              )}
+            />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

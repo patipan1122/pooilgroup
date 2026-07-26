@@ -82,6 +82,12 @@ export interface PaymentRequestCardInput {
   /** LIFF deep-link to the request detail page (ดูรายละเอียด/จ่าย). */
   detailUrl?: string | null;
   /**
+   * เว็บลิงก์ตรงไปหน้า "แนบสลิป · จ่าย" ของคำขอนี้ (CEO 2026-07-26) — อยู่ในโปรแกรม
+   * (AdminShell · เมนูครบ · กดไปหน้าอื่นได้) พร้อมปุ่มอัปสลิปในหน้าเดียว. เป็นปุ่มหลัก
+   * ของการ์ดตอนไม่ได้ตั้ง LIFF (detailUrl = null). พลิก URL ธรรมดา ไม่ใช่ deep-link LIFF.
+   */
+  attachUrl?: string | null;
+  /**
    * Direct URL to the attached receipt/quotation image of the (first) bill — the
    * "ดูรูปที่แนบ" button. A plain R2 https URL (NOT a LIFF link) so it just opens in
    * the in-app browser — no deep-link concatenation. The exec eyeballs what they're
@@ -94,7 +100,7 @@ const MAX_BILLS_ON_CARD = 4;
 
 /** Build the request card. Pushed to the executive group on "ขอโอนเงิน". */
 export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFlexMessage {
-  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills, detailUrl, receiptUrl } = input;
+  const { vendor, billsGross, whtTotal, expectedTransfer, payee, bills, detailUrl, attachUrl, receiptUrl } = input;
   const shown = bills.slice(0, MAX_BILLS_ON_CARD);
   const overflow = bills.length - shown.length;
 
@@ -117,6 +123,17 @@ export function buildPaymentRequestCard(input: PaymentRequestCardInput): LineFle
       height: "sm",
       color: COLOR.brand,
       action: { type: "uri", label: "📄 ดูรายละเอียด · จ่าย", uri: detailUrl },
+    });
+  }
+  // ปุ่มหลัก (CEO 2026-07-26): เข้าโปรแกรมหน้า "แนบสลิป · จ่าย" ของคำขอนี้ — โอนแล้วอัปสลิป
+  // ในหน้าเดียว ระบบปิดบิล+ออก PV ให้ · เมนูโปรแกรมครบ กดไปหน้าอื่นได้ (ไม่ใช่หน้าตัน).
+  if (attachUrl) {
+    footerButtons.push({
+      type: "button",
+      style: "primary",
+      height: "sm",
+      color: COLOR.brand,
+      action: { type: "uri", label: "📎 แนบสลิป · จ่าย", uri: attachUrl },
     });
   }
 

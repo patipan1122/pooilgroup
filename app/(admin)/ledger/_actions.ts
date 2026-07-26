@@ -38,10 +38,14 @@ import {
   createPaymentRequest,
   cancelPaymentRequest,
   assignSlipToRequest,
+  matchSlipToRequest,
 } from "@/lib/ledger/payment-request";
-import { buildPaymentRequestCard } from "@/lib/ledger/payment-request-card";
+import { buildPaymentRequestCard, buildPaymentPaidCard } from "@/lib/ledger/payment-request-card";
 import { pushFlexToSlipGroup, pushTextToSlipGroup } from "@/lib/ledger/line-push";
-import { parseReceipt } from "@/lib/ledger/ai-parse";
+import { parseReceipt, parseSlipImage } from "@/lib/ledger/ai-parse";
+import { putObject } from "@/lib/r2/upload";
+import { getBaseUrl } from "@/lib/fuelos/utils/base-url";
+import { createHash } from "node:crypto";
 import { storeReceiptImage } from "@/lib/ledger/storage";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import type { InputVatBlockReason } from "@/lib/ledger/types";
@@ -3792,6 +3796,7 @@ export async function requestInstallmentTransferAction(
     const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
     const detailPath = `/liff/ledger/payreq/${encodeURIComponent(requestId)}`;
     const detailUrl = liffId ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}` : null;
+    const attachUrl = `${getBaseUrl()}/ledger/pay/${requestId}`;
     const card = buildPaymentRequestCard({
       vendor: inst.vendorLabel ?? null,
       billsGross: amount,
@@ -3800,6 +3805,7 @@ export async function requestInstallmentTransferAction(
       payee: payee.data,
       bills: [{ docCode: inst.label || `งวด ${inst.seq}`, amount }],
       detailUrl,
+      attachUrl,
       receiptUrl: null,
     });
     const push = await pushFlexToSlipGroup(orgId, inst.companyId, card);
@@ -3916,6 +3922,7 @@ export async function createPaymentRequestAction(
     const detailUrl = liffId
       ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}`
       : null;
+    const attachUrl = `${getBaseUrl()}/ledger/pay/${res.requestId}`;
     const card = buildPaymentRequestCard({
       vendor: res.vendor ?? null,
       billsGross: res.billsGross ?? 0,
@@ -3924,6 +3931,7 @@ export async function createPaymentRequestAction(
       payee: payee.data,
       bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
       detailUrl,
+      attachUrl,
       receiptUrl,
     });
     const push = await pushFlexToSlipGroup(orgId, res.companyId, card);
@@ -3988,6 +3996,7 @@ export async function resendPaymentRequestAction(requestId: string): Promise<Act
   const liffId = process.env.NEXT_PUBLIC_LEDGER_LIFF_ID;
   const detailPath = `/liff/ledger/payreq/${encodeURIComponent(req.id)}`;
   const detailUrl = liffId ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(detailPath)}` : null;
+  const attachUrl = `${getBaseUrl()}/ledger/pay/${req.id}`;
   const card = buildPaymentRequestCard({
     vendor: req.vendor ?? null,
     billsGross: Number(req.billsGross),
@@ -4002,6 +4011,7 @@ export async function resendPaymentRequestAction(requestId: string): Promise<Act
     },
     bills: billRows.map((b) => ({ docCode: b.docCode, amount: Number(b.total) })),
     detailUrl,
+    attachUrl,
     receiptUrl,
   });
   const push = await pushFlexToSlipGroup(orgId, req.companyId, card);
@@ -4091,6 +4101,144 @@ export async function assignSlipToRequestAction(
   await autoCreatePvAfterMatch(orgId, payment.companyId, requestId, session.user.id);
   revalidatePath("/ledger/reconcile");
   return { ok: true };
+}
+
+/**
+ * เว็บ "แนบสลิป" (CEO 2026-07-26) — ผู้บริหารกดปุ่มในการ์ด LINE → เข้าหน้าเว็บของคำขอนี้
+ * (อยู่ใน AdminShell · เมนูโปรแกรมครบ · ไม่ใช่หน้าตัน) → อัปโหลดสลิปตรงนี้ แทนการส่งรูป
+ * เข้ากลุ่มแล้วให้ระบบเดา. ปลอดภัยด้วย money-core เดิม 100%:
+ *   อัปสลิป → OCR → matchSlipToRequest(forcedRequestId) [verify ยอด ±1 บาท + ผู้รับ +
+ *   ปิดบิลแบบ atomic เดียวกับเส้น LINE] → ปิดครบ → autoCreatePvAfterMatch (PO→AP→PV).
+ * สลิปผิดยอด/ผิดคน/อ่านยอดไม่ได้ → เก็บสลิปลอยไว้ให้บัญชีตรวจ (บิลยังไม่ปิด · เงินไม่หาย).
+ */
+export async function attachSlipToRequestAction(
+  requestId: string,
+  formData: FormData,
+): Promise<ActionResult & { state?: "paid" | "floating" | "mismatch" }> {
+  if (!requestId) return { ok: false, error: "ไม่ได้ระบุคำขอโอน" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+
+  // 1) คำขอต้องอยู่ใน org เดียวกัน + ยังเปิดอยู่ (กันแนบสลิปให้ใบที่ปิด/ยกเลิกไปแล้ว).
+  const req = await prisma.ledgerPaymentRequest.findFirst({
+    where: { id: requestId, orgId },
+    select: { id: true, companyId: true, state: true },
+  });
+  if (!req) return { ok: false, error: "ไม่พบคำขอโอน" };
+  if (req.state === "paid") return { ok: false, error: "คำขอนี้จ่ายครบแล้ว" };
+  if (req.state === "cancelled" || req.state === "reversed")
+    return { ok: false, error: "คำขอนี้ถูกยกเลิก/ทำรายการคืนแล้ว" };
+  const companyId = req.companyId;
+
+  // 2) รับไฟล์สลิปจากฟอร์ม (รูปเท่านั้น · ≤10MB).
+  const file = formData.get("slip");
+  if (!(file instanceof File) || file.size === 0)
+    return { ok: false, error: "ยังไม่ได้แนบไฟล์สลิป" };
+  if (!file.type.startsWith("image/"))
+    return { ok: false, error: "แนบได้เฉพาะรูปสลิป (jpg/png)" };
+  if (file.size > 10 * 1024 * 1024)
+    return { ok: false, error: "ไฟล์ใหญ่เกิน 10MB — ถ่ายใหม่หรือย่อรูปก่อน" };
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const sha256 = createHash("sha256").update(buffer).digest("hex");
+  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const key = `ledger/slips/${companyId}/${sha256}.${ext}`;
+  let slipUrl: string;
+  try {
+    slipUrl = await putObject(key, buffer, file.type);
+  } catch (e) {
+    console.error("[ledger:attachSlip] R2 upload failed", e);
+    return { ok: false, error: "อัปโหลดสลิปไม่สำเร็จ ลองใหม่อีกครั้ง" };
+  }
+
+  // 3) OCR ยอด+ผู้รับจากสลิป (best-effort · budget-guarded).
+  let amount: number | null = null;
+  let recipientName: string | null = null;
+  let recipientAcct: string | null = null;
+  let sendingBank: string | null = null;
+  let transRef: string | null = null;
+  try {
+    const parsed = await parseSlipImage(slipUrl, session.user.id, orgId);
+    amount = parsed.amount;
+    recipientName = parsed.recipientName;
+    recipientAcct = parsed.recipientAcct;
+    sendingBank = parsed.bank;
+    transRef = parsed.transactionRef;
+  } catch (e) {
+    console.error("[ledger:attachSlip] slip OCR failed", e);
+  }
+
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_SLIP_ASSIGNED_REQUEST",
+    resourceType: "ledger_payment_request", resourceId: requestId,
+    diff: { new: { slipUrl, amount, via: "web-attach" } },
+  }).catch(() => {});
+
+  // 3.5) อ่านยอดไม่ได้ → เก็บสลิปลอยไว้ (paymentRequestId=null) ให้บัญชีจับคู่มือ · ไม่เดาปิดบิล.
+  if (amount == null || !(amount > 0)) {
+    await recordSlipPayment({
+      orgId, companyId, matchedExpenseId: null, amount: null, method: "transfer",
+      sendingBank, transRef, slipSha256: sha256, slipUrl, slipThumbUrl: slipUrl,
+      qrRaw: null, qrDecoded: false, markedBy: session.user.id,
+    }).catch((e) => console.error("[ledger:attachSlip] float(no-amount) failed", e));
+    revalidatePath("/ledger/reconcile");
+    revalidatePath(`/ledger/pay/${requestId}`);
+    return {
+      ok: true, state: "floating",
+      warning: "แนบสลิปแล้ว แต่ระบบอ่านยอดไม่ได้ — บัญชีจะช่วยจับคู่และปิดบิลให้",
+    };
+  }
+
+  // 4) จับคู่กับ "คำขอนี้" ตรง ๆ (forcedRequestId) — verify ยอด/ผู้รับ + ปิดบิล atomic เหมือนเส้น LINE.
+  const reqMatch = await matchSlipToRequest({
+    orgId, companyId, slipAmount: amount,
+    sendingBank, transRef, slipSha256: sha256, slipUrl,
+    qrRaw: null, qrDecoded: false,
+    paidByLineUserId: null, groupId: null,
+    recipientName, recipientAcct,
+    forcedRequestId: requestId,
+  });
+
+  if (reqMatch.matched) {
+    // ปิดครบ → แปลง PO→AP + ออก PV จ่ายจริงอัตโนมัติ (best-effort · idempotent · core เดียวกับ webhook).
+    await autoCreatePvAfterMatch(orgId, companyId, requestId, session.user.id);
+    // แจ้งกลุ่มผู้บริหารว่าปิดบิลแล้ว (best-effort — เหมือนเส้น LINE ตอบการ์ดเขียว).
+    await pushFlexToSlipGroup(
+      orgId, companyId,
+      buildPaymentPaidCard({
+        vendor: reqMatch.vendor, billCount: reqMatch.billCount,
+        amount: reqMatch.paidTotal, slipUrl, detailUrl: null,
+      }),
+    ).catch(() => {});
+    revalidatePath("/ledger/expenses");
+    revalidatePath("/ledger/reconcile");
+    revalidatePath(`/ledger/pay/${requestId}`);
+    return { ok: true, state: "paid" };
+  }
+
+  if (reqMatch.reason === "duplicate")
+    return { ok: false, error: "สลิปนี้ถูกบันทึกไปแล้ว (กันจ่ายซ้ำ)" };
+
+  // ยอด/ผู้รับไม่ตรง → เก็บสลิปลอย + เตือน (บิลยังไม่ปิด · เงินไม่หาย).
+  if (reqMatch.reason === "amount_mismatch" || reqMatch.reason === "payee_mismatch") {
+    await recordSlipPayment({
+      orgId, companyId, matchedExpenseId: null, amount, method: "transfer",
+      sendingBank, transRef, slipSha256: sha256, slipUrl, slipThumbUrl: slipUrl,
+      qrRaw: null, qrDecoded: false, markedBy: session.user.id,
+    }).catch((e) => console.error("[ledger:attachSlip] float-on-mismatch failed", e));
+    revalidatePath("/ledger/reconcile");
+    revalidatePath(`/ledger/pay/${requestId}`);
+    const d = reqMatch.detail;
+    const msg =
+      reqMatch.reason === "payee_mismatch"
+        ? "ชื่อ/บัญชีผู้รับในสลิปไม่ตรงกับที่ขอโอน — เก็บสลิปไว้ให้บัญชีตรวจ (บิลยังไม่ปิด)"
+        : `ยอดในสลิป (฿${d.slipAmount.toLocaleString()}) ไม่ตรงกับที่ต้องโอน (฿${d.expected.toLocaleString()}) — เก็บสลิปไว้ให้บัญชีตรวจ (บิลยังไม่ปิด)`;
+    return { ok: true, state: "mismatch", warning: msg };
+  }
+
+  return { ok: false, error: "จับคู่สลิปกับคำขอไม่สำเร็จ ลองใหม่หรือแจ้งบัญชี" };
 }
 
 /** Autofill (audit P1) — the payee last used for this vendor (so ops/exec don't

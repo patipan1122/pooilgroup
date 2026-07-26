@@ -153,6 +153,19 @@ export default async function LedgerLiffExpensePage({
         </div>
       </header>
 
+      {/* ทางเชื่อมเข้าเว็บเต็ม (โหมดโฟกัส) — เฉพาะบัญชี/เจ้าของ (admin tier · มีสิทธิ์เว็บ).
+          พนักงานหน้างานไม่เห็น (อยู่หน้า LIFF ใส่หมวดได้เหมือนเดิม). ให้บัญชีกดต่อไปทำ
+          "ส่ง TRCloud + ขอโอน" ในโปรแกรม (AdminShell เมนูครบ) จบในหน้าเดียว (CEO 2026-07-26). */}
+      {isAdminTier(session.user.role) && (
+        <Link
+          href={`/ledger/expenses?${sp.company ? `company=${encodeURIComponent(sp.company)}&` : ""}selected=${encodeURIComponent(id)}&focus=1`}
+          className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 py-2.5 text-sm font-medium text-[var(--color-brand-700)] active:bg-[var(--color-brand-100)]"
+        >
+          <span>เปิดเต็มในโปรแกรม (เว็บ) — ส่ง TRCloud · ขอโอน</span>
+          <ChevronLeft className="size-4 rotate-180" aria-hidden />
+        </Link>
+      )}
+
       <LiffExpensePane
         expense={expense}
         replacement={

@@ -403,22 +403,23 @@ export function buildConfirmBubble(input: LedgerConfirmCardInput): FlexBubble {
   const docTypeLabel = fmtDocType(docType);
   const lowConf = lowestConfidence(confidence);
   // Web (no-LIFF) fallback → the desktop review pane (pin the company so a multi-
-  // company org opens the right one, then select the expense).
+  // company org opens the right one, then select the expense). focus=1 = โหมด
+  // "ใบเดียวโฟกัส" (ซ่อนคลังบิล+แถบกรองที่รก เหลือใบนี้ใบเดียว) — แต่ยังอยู่ใน
+  // AdminShell เมนูโปรแกรมครบ กดไปหน้าอื่น/กลับรายการได้ (CEO 2026-07-26: ไม่ให้หน้าตัน).
   const webPath = `/ledger/expenses?${
     companyId ? `company=${encodeURIComponent(companyId)}&` : ""
-  }selected=${encodeURIComponent(expenseId)}`;
-  // In-LIFF target → a FULL Bainy-style mobile edit form (reuses ExpenseReviewPane),
-  // opened INSIDE LINE so the capturer edits without bouncing to the desktop pane
-  // (which is admin-gated + cramped on phones). This is what Bainy does.
+  }selected=${encodeURIComponent(expenseId)}&focus=1`;
+  // มือถือ/LIFF → ฟอร์มแก้ไขใบบน LINE (/liff/ledger/expense/[id]) ที่ "พนักงานหน้างาน"
+  // ใช้ใส่หมวด/สาขาได้ (member-aware · ไม่ติด Pool-admin gate). CEO 2026-07-26 ยืนยันพนักงาน
+  // ก็ใส่หมวดเอง → ห้ามบังคับไปหน้าเว็บ (gate การเงิน) เพราะจะบล็อกพนักงาน. หน้า LIFF นั้น
+  // มี "ทางเชื่อมเข้าเว็บเต็ม (โหมดโฟกัส)" ให้บัญชี/เจ้าของกดต่อได้ (ส่ง TRCloud + ขอโอน).
   const liffEditPath = `/liff/ledger/expense/${encodeURIComponent(expenseId)}${
     companyId ? `?company=${encodeURIComponent(companyId)}` : ""
   }`;
   // Open THROUGH LedgerLine's own LIFF (login inside LINE, no iOS cookie-drop):
-  // liff.line.me/<id>?next=<liffEditPath>. The ledger LIFF endpoint is the SUB-PATH
-  // /liff/ledger, so we must NOT concatenate /ledger after the id — that resolves to
-  // /liff/ledger/ledger → 404 (see [[line-liff-deeplink-concatenate-rule]]; same fix
-  // as the payreq card). LiffBootstrap reads ?next (top-level OR buried in liff.state)
-  // and navigates there after auth. Falls back to the web pane when no LIFF id set.
+  // liff.line.me/<id>?next=<liffEditPath> (?next= form only — sub-path LIFF endpoint;
+  // see [[line-liff-deeplink-concatenate-rule]]). Falls back to the web focus pane when
+  // no LIFF id is set.
   const deepLink = liffId
     ? `https://liff.line.me/${liffId}?next=${encodeURIComponent(liffEditPath)}`
     : `${base}${webPath}`;
