@@ -29,6 +29,9 @@ import { TrcloudButton } from "@/components/ledger/TrcloudButton";
 import { isTrcloudSendable, isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { expenseConfirmability } from "@/lib/ledger/confirmability";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
+import { LedgerViewToggle } from "./_receipt-review/LedgerViewToggle";
+import { ReceiptReviewWorkspace } from "./_receipt-review/ReceiptReviewWorkspace";
+import type { ReceiptReviewData } from "./_receipt-review/types";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +61,7 @@ export default async function ExpensesPage({
     sort?: string; // เรียงลำดับ: date-desc(ค่าเริ่มต้น) | date-asc | amount-desc | amount-asc
     nr?: string; // needsReview split: "1"=รอตรวจ · "0"=รอยืนยัน (ใช้กับ status=draft)
     pay?: string; // payment tab: "eligible"=ขอโอนได้ · "requested"=รอโอน · "paid"=โอนแล้ว
+    view?: string; // "receipt-review" = โหมดตรวจใบเสร็จ (เวิร์กสเปซเต็มจอ) · ไม่ใส่ = โหมดรายการเดิม
   }>;
 }) {
   // Page-level role gate. This review workspace exposes the FULL company-wide
@@ -141,6 +145,8 @@ export default async function ExpensesPage({
   // สถานะการโอน (?pay=) — eligible=ขอโอนได้ · requested=รอโอน(มีคำขอเปิด) · paid=โอนแล้ว.
   const pay =
     sp.pay === "eligible" || sp.pay === "requested" || sp.pay === "paid" ? sp.pay : undefined;
+  // โหมดมุมมอง — "receipt-review" = เวิร์กสเปซตรวจใบเสร็จเต็มจอ (โหมดใหม่) · อื่น ๆ = รายการเดิม.
+  const view = sp.view === "receipt-review" ? "receipt-review" : "list";
 
   // ภาษีซื้อ summary uses the SAME scope (+ status/category/tr/search) so the strip
   // counts match the list — but NOT the cc filter itself (the strip shows the full mix).
@@ -412,6 +418,77 @@ export default async function ExpensesPage({
     )
     .map((r) => r.id);
 
+  // ── ปุ่มสลับมุมมอง (list ↔ receipt-review) — คงฟิลเตอร์เดิม + คงใบที่เลือก ──
+  const listToggleHref = (() => {
+    const p = new URLSearchParams(baseParams);
+    if (selected) p.set("selected", selected);
+    const s = p.toString();
+    return s ? `/ledger/expenses?${s}` : "/ledger/expenses";
+  })();
+  const reviewToggleHref = (() => {
+    const p = new URLSearchParams(baseParams);
+    if (selected) p.set("selected", selected);
+    p.set("view", "receipt-review");
+    return `/ledger/expenses?${p.toString()}`;
+  })();
+
+  // ── โหมดตรวจใบเสร็จ (เวิร์กสเปซเต็มจอ) — ทางแยกเพิ่มเติม · โหมดเดิมด้านล่างไม่ถูกแตะ ──
+  if (view === "receipt-review") {
+    const reviewData: ReceiptReviewData = {
+      orgId: scope.orgId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      companies: scope.companies.map((c) => ({ id: c.id, name: c.name })),
+      branches: scope.branches.map((b) => ({ id: b.id, name: b.name })),
+      rows,
+      categories: categories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        sort: c.sort,
+        active: c.active,
+      })),
+      projects: projectOptions,
+      statusCounts,
+      completenessSummary,
+      selectedExpense,
+      replacementExpense,
+      canEditClaimability,
+      currentUserId: session.user.id,
+      payreqEnabled: ledgerPayreqV1(),
+      baseParams: baseParams.toString(),
+      filter: {
+        status,
+        categoryId,
+        projectId,
+        q,
+        selected,
+        tr,
+        ap: apTab,
+        pv: pvTab,
+        cc,
+        tab,
+        sort,
+        nr,
+        pay,
+      },
+      draftIds,
+      sendableIds,
+      convertibleIds,
+      selectedStock: selectedExpense
+        ? {
+            stockinNo,
+            canStockIn,
+            isStockCategory: categories.some(
+              (c) => c.id === selectedExpense.categoryId && c.name === "สินค้าเพื่อขายแบบมีสต๊อก",
+            ),
+            stockSkus,
+          }
+        : null,
+    };
+    return <ReceiptReviewWorkspace data={reviewData} />;
+  }
+
   return (
     <div className="p-4 sm:px-6 sm:pt-4 sm:pb-6">
       <LedgerHeader
@@ -423,6 +500,8 @@ export default async function ExpensesPage({
           <>
             {/* ค้นหา — อยู่ข้างหัว "รายจ่าย" (LeanUX · มือถือ = แถวบนสุด) */}
             <ExpenseSearch baseParams={baseParams.toString()} q={q} selectedId={selected} />
+            {/* ปุ่มสลับมุมมอง — โหมดตรวจใบเสร็จ (เวิร์กสเปซเต็มจอ) */}
+            <LedgerViewToggle current="list" listHref={listToggleHref} reviewHref={reviewToggleHref} />
             {/* สลิปรอจับคู่ + CSV + ไม่มีใบเสร็จ — secondary tools folded into a
                 "⋯ เครื่องมือ" dropdown (desktop only; LeanUX wave B2 ①#1). Below lg
                 they already move INTO the ตัวกรอง sheet (listActions), and the menu

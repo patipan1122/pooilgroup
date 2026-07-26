@@ -1,0 +1,51 @@
+/* โหมดตรวจใบเสร็จ (Receipt-Review Workspace) — pixel-locked design.
+   ที่มา (source of truth): claude.ai/design · "หน้าตรวจใบเสร็จ.dc.html" (1440×900).
+   ทุก class อยู่ใต้ .rr-root → ไม่รั่วไปกระทบส่วนอื่นของแอป (โหมดเดิมไม่แตะ).
+   Full-bleed = overlay เต็มจอ (fixed inset-0) ทับ AdminShell — ไม่แก้ shell เลย.
+   ฟอนต์: ใช้ IBM Plex Sans Thai ที่แอปโหลดไว้แล้ว (var(--font-thai) จาก app/layout.tsx)
+   → ไม่ต้องโหลดฟอนต์นอก (เร็วกว่า · ไม่ติด CSP · ตรงกับ mockup). */
+
+.rr-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9000; /* ต่ำกว่า Pinpoint (9994) เพื่อให้ CEO ติชมได้ · สูงกว่า chrome ของแอป */
+  background: #eef0f4;
+  font-family: var(--font-thai), 'IBM Plex Sans Thai', 'IBM Plex Sans', sans-serif;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rr-root * { box-sizing: border-box; }
+.rr-root a { color: #2563eb; text-decoration: none; }
+.rr-root a:hover { color: #1d4ed8; text-decoration: underline; }
+.rr-root ::-webkit-scrollbar { width: 8px; height: 8px; }
+.rr-root ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.rr-root input,
+.rr-root select,
+.rr-root button,
+.rr-root textarea { font-family: inherit; }
+.rr-root input:focus,
+.rr-root select:focus,
+.rr-root textarea:focus { outline: 2px solid #93c5fd; outline-offset: -1px; }
+.rr-root button { cursor: pointer; }
+
+/* ตัวเลข/รหัส — ใช้ตัวเลขความกว้างเท่ากัน + ฟอนต์ละติน (ตามหมายเหตุ mockup) */
+.rr-num { font-variant-numeric: tabular-nums; }
+/* รหัส/เลขที่/วันที่ latin — IBM Plex Sans (Latin glyphs ของ IBM Plex Sans Thai ตรงกัน) */
+.rr-mono { font-family: var(--font-thai), 'IBM Plex Sans', sans-serif; }
+
+/* hover helpers (mockup ใช้ style-hover → แปลงเป็น class) */
+.rr-hb:hover { border-color: #94a3b8 !important; }
+.rr-bright:hover { filter: brightness(1.07); }
+.rr-bright6:hover { filter: brightness(1.06); }
+.rr-dim:hover { filter: brightness(0.97); }
+.rr-ul:hover { text-decoration: underline; }
+
+/* จอเล็กกว่าเดสก์ท็อป — เลื่อนแนวนอนแทนบีบคอลัมน์ (โหมดนี้ตั้งใจทำเพื่อเดสก์ท็อป) */
+.rr-grid { min-width: 0; }
+@media (max-width: 1120px) {
+  .rr-gridwrap { overflow-x: auto; }
+  .rr-grid { min-width: 1080px; }
+}
