@@ -111,16 +111,44 @@ const DOC_TYPES: { value: ExpenseDocType; label: string }[] = [
   { value: "other", label: "อื่น ๆ" },
 ];
 
-/** Section title chip — mirrors Bainy's numbered sections (1·2·3·4). */
-function SectionTitle({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
+/** Collapsible numbered section card — mirrors Bainy's numbered sections (1·2·3·4).
+ *  CEO 2026-07-26 (Pinpoint): กดหัวการ์ดเพื่อย่อ/ขยาย + ลูกศรมุมขวา. ค่าฟอร์มทั้งหมด
+ *  อยู่ใน state `draft` → ย่อการ์ด (unmount body) แล้วค่าที่กรอกไม่หาย. */
+function Section({
+  n,
+  icon,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  n: number;
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600,#2563EB)] text-xs font-bold tabular-nums text-white">
-        {n}
-      </span>
-      <span className="text-zinc-500" aria-hidden>{icon}</span>
-      <h3 className="text-sm font-bold tracking-tight text-zinc-800">{children}</h3>
-    </div>
+    <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <span className="flex size-6 items-center justify-center rounded-full bg-[var(--color-brand-600,#2563EB)] text-xs font-bold tabular-nums text-white">
+          {n}
+        </span>
+        <span className="text-zinc-500" aria-hidden>{icon}</span>
+        <h3 className="text-sm font-bold tracking-tight text-zinc-800">{title}</h3>
+        <ChevronDown
+          className={cn("ml-auto size-4 shrink-0 text-zinc-400 transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      {open && <div className="space-y-3">{children}</div>}
+    </section>
   );
 }
 
@@ -578,6 +606,22 @@ export function ExpenseReviewPane({
   //    เป็นหลัก ไม่ใช่รายการย่อย). มีรายการอยู่แล้ว → เปิดให้เห็นเลยกันงง. ───────────────
   const [itemsOpen, setItemsOpen] = useState(draft.items.length > 0);
 
+  // ── ย่อ/ขยายการ์ด (CEO 2026-07-26 · Pinpoint) — ทั้ง 5 การ์ดกางไว้เป็นค่าเริ่มต้น
+  //    (พฤติกรรมเดิม) กดหัวการ์ดย่อทีละใบ หรือปุ่มด้านบนย่อ/ขยายทั้งหมด. ──────────────────
+  const [openSec, setOpenSec] = useState<Record<number, boolean>>({
+    1: true,
+    2: true,
+    3: true,
+    4: true,
+    5: true,
+  });
+  const toggleSec = (n: number) => setOpenSec((s) => ({ ...s, [n]: !s[n] }));
+  const allSecOpen = [1, 2, 3, 4, 5].every((n) => openSec[n]);
+  const toggleAllSec = () => {
+    const next = !allSecOpen;
+    setOpenSec({ 1: next, 2: next, 3: next, 4: next, 5: next });
+  };
+
   // ── confirm-gate (D1) — ปุ่ม "ยืนยัน" จะกดได้ต่อเมื่อมี "สาขา + หมวด" ครบ.
   //    คิดจากค่าใน draft ปัจจุบัน (UX layer; server ตรวจซ้ำใน action เสมอ). ──────────────
   const gate = useMemo(
@@ -916,12 +960,29 @@ export function ExpenseReviewPane({
       <div>
         {/* ฟอร์มแก้ — 4 ส่วนแบบ Bainy */}
         <div className="space-y-5">
+          {/* ย่อ/ขยายทุกการ์ดทีเดียว (CEO 2026-07-26 · Pinpoint) — แถวเล็กชิดขวา ประหยัดที่ */}
+          <div className="-mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={toggleAllSec}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+            >
+              <ChevronDown
+                className={cn("size-3.5 transition-transform", allSecOpen && "rotate-180")}
+                aria-hidden
+              />
+              {allSecOpen ? "ย่อทั้งหมด" : "ขยายทั้งหมด"}
+            </button>
+          </div>
           {/* 1 · ลงบัญชี (จำเป็น) — หมวด + สาขา ต้องครบก่อนยืนยัน (ยกขึ้นบนสุดตามดีไซน์
               ใหม่ 2026-06-07: ฟิลด์บังคับเห็นก่อน ลดการเลื่อนหา). */}
-          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <SectionTitle n={1} icon={<Building2 className="size-4" aria-hidden />}>
-              ลงบัญชี
-            </SectionTitle>
+          <Section
+            n={1}
+            icon={<Building2 className="size-4" aria-hidden />}
+            title="ลงบัญชี"
+            open={openSec[1]}
+            onToggle={() => toggleSec(1)}
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 {/* ป้าย % ความมั่นใจโชว์เฉพาะ "หลังเลือกหมวดแล้ว" — ตอนยังไม่เลือก
@@ -1040,13 +1101,16 @@ export function ExpenseReviewPane({
                 )}
               </div>
             )}
-          </section>
+          </Section>
 
           {/* 2 · ข้อมูลร้านค้า & เอกสาร */}
-          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <SectionTitle n={2} icon={<FileText className="size-4" aria-hidden />}>
-              ข้อมูลร้านค้าและเอกสาร
-            </SectionTitle>
+          <Section
+            n={2}
+            icon={<FileText className="size-4" aria-hidden />}
+            title="ข้อมูลร้านค้าและเอกสาร"
+            open={openSec[2]}
+            onToggle={() => toggleSec(2)}
+          >
             {draft.vendor.trim() && (
               <button
                 type="button"
@@ -1145,13 +1209,16 @@ export function ExpenseReviewPane({
                 />
               </div>
             </div>
-          </section>
+          </Section>
 
           {/* 3 · รายการ & ยอดเงิน */}
-          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <SectionTitle n={3} icon={<Wallet className="size-4" aria-hidden />}>
-              รายการและยอดเงิน
-            </SectionTitle>
+          <Section
+            n={3}
+            icon={<Wallet className="size-4" aria-hidden />}
+            title="รายการและยอดเงิน"
+            open={openSec[3]}
+            onToggle={() => toggleSec(3)}
+          >
 
             {/* แยกรายการ — line items (M2: มือถือ default ยุบไว้ใต้ accordion · ≥768px
                 stack เป็นการ์ดต่อรายการ เพื่อไม่ให้ grid ล้นจอ 375px เวลายอด 5+ หลัก). */}
@@ -1386,13 +1453,16 @@ export function ExpenseReviewPane({
                 )}
               </div>
             )}
-          </section>
+          </Section>
 
           {/* 4 · การชำระเงิน & ผู้เบิก */}
-          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <SectionTitle n={4} icon={<Wallet className="size-4" aria-hidden />}>
-              การชำระเงินและผู้เบิก
-            </SectionTitle>
+          <Section
+            n={4}
+            icon={<Wallet className="size-4" aria-hidden />}
+            title="การชำระเงินและผู้เบิก"
+            open={openSec[4]}
+            onToggle={() => toggleSec(4)}
+          >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel>ชื่อผู้เบิก</FieldLabel>
@@ -1564,13 +1634,16 @@ export function ExpenseReviewPane({
                 className="size-5 accent-[var(--color-brand-600,#2563EB)]"
               />
             </label>
-          </section>
+          </Section>
 
           {/* 5 · หมายเหตุ & หลักฐาน */}
-          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <SectionTitle n={5} icon={<StickyNote className="size-4" aria-hidden />}>
-              หมายเหตุและหลักฐาน
-            </SectionTitle>
+          <Section
+            n={5}
+            icon={<StickyNote className="size-4" aria-hidden />}
+            title="หมายเหตุและหลักฐาน"
+            open={openSec[5]}
+            onToggle={() => toggleSec(5)}
+          >
             <div>
               <FieldLabel>หมายเหตุ</FieldLabel>
               <textarea
@@ -1695,7 +1768,7 @@ export function ExpenseReviewPane({
                   </a>
                 ))}
             </div>
-          </section>
+          </Section>
         </div>
       </div>
 
