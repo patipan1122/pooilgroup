@@ -137,7 +137,7 @@ export async function createPvForPaidAp(args: CreatePvArgs): Promise<void> {
       staff: STAFF,
       department: e.branchTrcloudDepartment,     // เดียวกับ AP (นิติบุคคล)
       project: e.branchTrcloudProject ?? "",     // เดียวกับ AP (สาขา · ส่วนกลางว่างได้)
-      approve_status: "yes",
+      approve_status: "", // ว่าง = ไม่ติดรอแก้ไข + ยังลบได้ ("yes" ล็อกถาวร ลบไม่ได้ · dormant path)
       approve_id: APPROVE_ID,
       customer: {
         group_code: "S",

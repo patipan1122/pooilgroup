@@ -478,7 +478,7 @@ export async function pushExpenseToTrcloud(
     wht: String(round2(e.wht)),
     tax_option: "in",           // VAT-inclusive (VAT ยังโชว์บน PO ให้บัญชีเห็นยอด)
     // หมายเหตุ: PO ไม่มีช่อง tax_report และไม่ post GL — VAT/บัญชีจริงเกิดตอนแปลงเป็น AP.
-    approve_status: "wait",     // ฉบับร่าง; รออนุมัติ/แปลงใน TRCloud
+    approve_status: "",         // ว่าง = ไม่ติดรอแก้ไข + ลบได้ (เหมือน PO จริงทุกใบใน TRCloud)
     department: e.branchTrcloudDepartment,  // นิติบุคคล/VAT branch
     project: e.branchTrcloudProject ?? "",  // สาขา (optional — ส่วนกลางเว้นว่างได้)
     invoice_note: e.note
@@ -590,7 +590,10 @@ export async function convertExpensePoToAp(
   const apType = (opts.creditForm || autoPv)
     ? AP_TYPE_CREDIT
     : ((e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT);
-  const apApproveStatus = autoPv ? "yes" : "wait";
+  // approve_status = "" (ว่าง) เหมือนเอกสารจริงทุกใบใน TRCloud (survey: AP 95/100 · PO/PV 100/100 = "")
+  // → โพสต์เป็น Debtor ปกติ "ไม่ติดรอแก้ไข" (ที่ "wait" ทำ) และ "ลบ/แก้ได้" (ที่ "yes" ล็อกถาวร ทำไม่ได้).
+  // CEO 2026-07-26: "เอกสารใบอื่นไม่ติดอนุมัติ ปล่อยโล่งได้ ดูใบอื่นสิ" → ตรงกับค่าว่างนี้.
+  const apApproveStatus = "";
   const apCompanyFormat = autoPv ? AP_COMPANY_FORMAT : "JPS_AP";
   const slipNote = opts.slipUrl ? ` · สลิปโอน: ${opts.slipUrl}` : "";
   // สูตร "LL" — ลงบัญชีต่อหมวดผ่าน "ช่อง c" ในตัวใบ AP (เฉพาะเคสเครดิต + หมวดมาตรฐานที่มี c-slot).
@@ -780,7 +783,7 @@ export async function createPvForRequestAps(input: {
     wht: String(round2(input.whtTotal)),
     tax_report: "0",
     type: input.formula, // สูตร PV บัญชีต้นทาง (Dr เจ้าหนี้ / Cr wht / Cr ธนาคาร)
-    approve_status: "wait",
+    approve_status: "", // ว่าง = โพสต์ปกติ ไม่ติดรอแก้ไข + ยังลบได้ (เหมือนเอกสารจริงทุกใบ)
     department: input.department,
     project: input.project ?? "",
     invoice_note:
