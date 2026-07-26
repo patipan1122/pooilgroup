@@ -32,6 +32,7 @@ import {
   Building2,
   ListTree,
   Banknote,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -110,12 +111,6 @@ const DOC_TYPES: { value: ExpenseDocType; label: string }[] = [
   { value: "other", label: "อื่น ๆ" },
 ];
 
-const PAYMENT_STATUSES: { value: PaymentStatus; label: string }[] = [
-  { value: "paid", label: "จ่ายครบแล้ว" },
-  { value: "unpaid", label: "ยังไม่จ่าย" },
-  { value: "partial", label: "จ่ายบางส่วน" },
-];
-
 /** Section title chip — mirrors Bainy's numbered sections (1·2·3·4). */
 function SectionTitle({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -137,6 +132,16 @@ export type RecheckFinding = {
 
 /** Action result contract — keep loose so partition B can satisfy it. */
 export type LedgerActionResult = { ok: boolean; error?: string };
+
+// ปลายทางผู้รับเงิน (สำหรับ "ขอโอน") — mirror zPayee ฝั่ง server (_actions.ts). ต้องมี
+// อย่างน้อย 1 อย่าง: acctNo / promptpay / qrImageUrl.
+export type PayeeInput = {
+  acctName?: string;
+  bankCode?: string;
+  acctNo?: string;
+  promptpay?: string;
+  qrImageUrl?: string;
+};
 
 export type SaveExpenseAction = (
   id: string,
@@ -335,9 +340,9 @@ export function ExpenseReviewPane({
   onRequestDelete?: RequestDeleteAction;
   /** D1 · สร้าง/หา "สำนักงาน (ส่วนกลาง)" เมื่อผู้ใช้เลือกตั้งใจ (ensureCentralBranch). */
   onEnsureCentralBranch?: EnsureCentralBranchAction;
-  /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — server หาเลขบัญชีจากบิล/ผู้ขายเดิมให้เอง.
+  /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — ต้องส่ง "ปลายทางผู้รับ" (payee) ที่กรอกในส่วนที่ 4.
    *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
-  onRequestPayout?: () => Promise<LedgerActionResult>;
+  onRequestPayout?: (payee: PayeeInput) => Promise<LedgerActionResult>;
   /** โครงการ (F2) ที่เลือกได้สำหรับบริษัทนี้ (active เท่านั้น) — ไม่ส่งมา = ซ่อนช่องโครงการ. */
   projects?: ProjectOption[];
   /** แท็กบิลนี้เข้าโครงการ (setExpenseProjectAction) — เรียกทันทีที่เปลี่ยน · null=ล้าง.
@@ -404,6 +409,42 @@ export function ExpenseReviewPane({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
+  // ── ปลายทางผู้รับเงิน (สำหรับ "ขอโอน") — เก็บแยกจาก draft เพราะไม่ save ลงใบ (ใช้ตอนสร้าง
+  //    คำขอโอนเท่านั้น). เลข "ธนาคาร/รายละเอียด" เดิมที่เป็น "ตัวเลขล้วน" → เดาเป็นเลขบัญชี
+  //    ผู้รับให้ (แก้ได้) · CEO 2026-07-26 เคยกรอกเลขบัญชีช่องนั้นแล้วขอโอนไม่ผ่าน. ──
+  const [payee, setPayee] = useState<PayeeInput>(() => {
+    const bd = (expense.bankDetail ?? "").trim();
+    const acctFromBank = /^[0-9][0-9\s-]{5,}$/.test(bd) ? bd.replace(/[\s-]/g, "") : "";
+    return { acctName: "", bankCode: "", acctNo: acctFromBank, promptpay: "", qrImageUrl: "" };
+  });
+  const [qrUploading, setQrUploading] = useState(false);
+  const payeeHasAccount =
+    (payee.acctNo ?? "").trim().length > 0 ||
+    (payee.promptpay ?? "").trim().length > 0 ||
+    Boolean(payee.qrImageUrl);
+  async function uploadPayeeQr(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setMsg({ kind: "err", text: "แนบได้เฉพาะรูปภาพ QR" });
+      return;
+    }
+    setQrUploading(true);
+    try {
+      const pres = await fetch("/api/ledger/r2/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId: expense.companyId, contentType: file.type }),
+      });
+      const pj = (await pres.json()) as { url?: string; publicUrl?: string; error?: string };
+      if (!pres.ok || !pj.url || !pj.publicUrl) throw new Error(pj.error ?? "presign");
+      const put = await fetch(pj.url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!put.ok) throw new Error("upload");
+      setPayee((p) => ({ ...p, qrImageUrl: pj.publicUrl as string }));
+    } catch {
+      setMsg({ kind: "err", text: "อัปโหลด QR ไม่สำเร็จ ลองใหม่อีกครั้ง" });
+    } finally {
+      setQrUploading(false);
+    }
+  }
   // ดูราคา/ประวัติการซื้อ popup (รายสินค้า หรือ ผู้ขาย) — null = ปิด.
   const [priceTerm, setPriceTerm] = useState<string | null>(null);
   const [priceTab, setPriceTab] = useState<"history" | "vendors">("history");
@@ -536,6 +577,23 @@ export function ExpenseReviewPane({
   );
   const gateMissingBranch = gate.missing.includes("branch");
   const gateMissingCategory = gate.missing.includes("category");
+
+  // ── ขอโอนเงิน (payout) — ช่องผู้รับ + ปุ่มอยู่ในส่วนที่ 4 (co-located · CEO 2026-07-26).
+  //    ผู้รับกรอกได้ตลอด (แม้บิลล็อกหลังส่ง TRCloud) ยกเว้นยกเลิก/ล็อก/กำลังส่ง.
+  //    ปุ่มขอโอนกดได้เมื่อ: มีสาขา+หมวด (gate) · ส่ง PO เข้า TRCloud แล้ว (trState=sent ·
+  //    mirror server payment-request.ts ด่าน 3.5) · มีปลายทางเงิน ≥1. ──
+  const payeeDisabled =
+    readOnly ||
+    expense.status === "void" ||
+    expense.status === "locked" ||
+    trcloudState(expense.trcloudDocId) === "pending";
+  const payoutBlockReason: string | null = !gate.ok
+    ? "เลือกสาขา + หมวดค่าใช้จ่ายให้ครบก่อน"
+    : trcloudState(expense.trcloudDocId) !== "sent"
+      ? 'กด "ส่ง TRCloud" (ส่ง PO) ให้เรียบร้อยก่อน แล้วปุ่มขอโอนจะเปิด'
+      : !payeeHasAccount
+        ? "กรอกเลขบัญชี / พร้อมเพย์ หรือแนบ QR ผู้รับ ก่อนขอโอน"
+        : null;
 
   // ── "สำนักงาน (ส่วนกลาง)" — เมื่อ staff ไม่รู้สาขา เลือกอันนี้อย่างตั้งใจ →
   //    เรียก ensureCentralBranch ฝั่ง server แล้วเอา branchId มาใส่ช่องสาขา. ────────────
@@ -695,12 +753,18 @@ export function ExpenseReviewPane({
   }
 
   // ขอโอนเงินใบนี้ (redesign 2026-06-07) — บอทเด้งการ์ดเข้ากลุ่มผู้บริหารให้กดโอน.
-  // server หาเลขบัญชีจากบิล/ผู้ขายเดิม + กันขอซ้ำ (1-open-req/bill) + ตรวจ companyId เอง.
+  // ปุ่มปิดไว้จนกว่า payoutBlockReason จะเป็น null (สาขา+หมวด · ส่ง PO แล้ว · มีปลายทางเงิน).
   function handleRequestPayout() {
-    if (!onRequestPayout) return;
+    if (!onRequestPayout || payoutBlockReason) return;
     setMsg(null);
     startTransition(async () => {
-      const res = await onRequestPayout();
+      const res = await onRequestPayout({
+        acctName: payee.acctName?.trim() || undefined,
+        bankCode: payee.bankCode?.trim() || undefined,
+        acctNo: payee.acctNo?.trim() || undefined,
+        promptpay: payee.promptpay?.trim() || undefined,
+        qrImageUrl: payee.qrImageUrl || undefined,
+      });
       setMsg(
         res.ok
           ? { kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" }
@@ -1307,22 +1371,6 @@ export function ExpenseReviewPane({
                 />
               </div>
               <div>
-                <FieldLabel>สถานะการชำระเงิน</FieldLabel>
-                <select
-                  className={inputCls}
-                  aria-label="สถานะการชำระเงิน"
-                  value={draft.paymentStatus}
-                  disabled={locked}
-                  onChange={(e) => set("paymentStatus", e.target.value as PaymentStatus)}
-                >
-                  {PAYMENT_STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
                 <FieldLabel confidence={conf.payment_method ?? conf.paymentMethod}>วิธีชำระเงิน</FieldLabel>
                 <select
                   className={inputCls}
@@ -1337,17 +1385,138 @@ export function ExpenseReviewPane({
                   ))}
                 </select>
               </div>
-              <div>
-                <FieldLabel>ธนาคาร / รายละเอียด</FieldLabel>
-                <input
-                  className={inputCls}
-                  value={draft.bankDetail}
-                  disabled={locked}
-                  onChange={(e) => set("bankDetail", e.target.value)}
-                  placeholder="เช่น KBank โอน"
-                />
-              </div>
             </div>
+
+            {/* ปลายทางผู้รับเงิน + ปุ่มขอโอน (co-located · CEO 2026-07-26) — ช่องที่ระบบขอโอน
+                ต้องการจริง แยกจาก "วิธีชำระเงิน" (โน้ตว่าจ่ายยังไง). เดิมหน้านี้ไม่มีช่องนี้ →
+                กดขอโอนแล้วเตือน "ต้องระบุเลขบัญชี" แต่หาช่องกรอกไม่เจอ. ผู้รับกรอกได้ตลอดแม้บิลล็อก
+                หลังส่ง TRCloud · ปุ่มขอโอนปิดจนกว่า: มีสาขา+หมวด · ส่ง PO แล้ว · มีปลายทางเงิน ≥1. */}
+            {onRequestPayout && (
+              <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3">
+                <div className="flex items-center gap-2">
+                  <Banknote className="size-4 text-[var(--color-brand-600)]" aria-hidden />
+                  <span className="text-sm font-semibold text-zinc-800">
+                    ปลายทางผู้รับเงิน <span className="font-normal text-zinc-500">(สำหรับกดขอโอน)</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel>ชื่อบัญชีผู้รับ</FieldLabel>
+                    <input
+                      className={inputCls}
+                      value={payee.acctName ?? ""}
+                      disabled={payeeDisabled}
+                      onChange={(e) => setPayee((p) => ({ ...p, acctName: e.target.value }))}
+                      placeholder="เช่น หจก. ขวัญชัย อิเล็คทริค"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>ธนาคาร</FieldLabel>
+                    <input
+                      className={inputCls}
+                      value={payee.bankCode ?? ""}
+                      disabled={payeeDisabled}
+                      onChange={(e) => setPayee((p) => ({ ...p, bankCode: e.target.value }))}
+                      placeholder="เช่น กสิกรไทย / SCB"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>เลขบัญชี</FieldLabel>
+                    <input
+                      className={inputCls}
+                      value={payee.acctNo ?? ""}
+                      disabled={payeeDisabled}
+                      inputMode="numeric"
+                      onChange={(e) => setPayee((p) => ({ ...p, acctNo: e.target.value }))}
+                      placeholder="เลขบัญชีธนาคารผู้รับ"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>พร้อมเพย์</FieldLabel>
+                    <input
+                      className={inputCls}
+                      value={payee.promptpay ?? ""}
+                      disabled={payeeDisabled}
+                      inputMode="numeric"
+                      onChange={(e) => setPayee((p) => ({ ...p, promptpay: e.target.value }))}
+                      placeholder="เบอร์ / เลขบัตรประชาชน"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {payee.qrImageUrl ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={payee.qrImageUrl}
+                        alt="QR ผู้รับ"
+                        className="size-14 rounded-lg border border-zinc-200 object-cover"
+                      />
+                      <button
+                        type="button"
+                        disabled={payeeDisabled}
+                        onClick={() => setPayee((p) => ({ ...p, qrImageUrl: "" }))}
+                        className="text-xs font-medium text-rose-600"
+                      >
+                        ลบรูป QR
+                      </button>
+                    </>
+                  ) : (
+                    <label
+                      className={cn(
+                        "press inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50",
+                        payeeDisabled && "pointer-events-none opacity-50",
+                      )}
+                    >
+                      {qrUploading ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Upload className="size-4" aria-hidden />
+                      )}
+                      {qrUploading ? "กำลังอัปโหลด…" : "แนบรูป QR ผู้รับ"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={qrUploading || payeeDisabled}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadPayeeQr(f);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+                  <span className="text-[11px] text-zinc-500">
+                    ใส่อย่างน้อย 1 อย่าง: เลขบัญชี · พร้อมเพย์ หรือแนบ QR
+                  </span>
+                </div>
+
+                {/* ปุ่มขอโอน — ติดช่องผู้รับ · ปิดพร้อมบอกเหตุผล (มือถือไม่มี hover · RULE L) */}
+                <div className="border-t border-zinc-200 pt-3">
+                  <Button
+                    variant="primary"
+                    disabled={pending || payeeDisabled || payoutBlockReason !== null}
+                    onClick={handleRequestPayout}
+                    title={payoutBlockReason ?? "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
+                    className="press w-full sm:w-auto"
+                  >
+                    {pending ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Banknote className="size-4" aria-hidden />
+                    )}
+                    ขอโอนเงิน
+                  </Button>
+                  {payoutBlockReason && (
+                    <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-zinc-500">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden />
+                      {payoutBlockReason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <label className={cn("flex cursor-pointer items-center justify-between rounded-xl border border-zinc-200 px-3.5 py-2.5 transition-colors hover:bg-zinc-50", locked && "cursor-default opacity-60 hover:bg-transparent")}>
               <span className="text-sm">
                 <span className="font-medium text-zinc-800">ตั้งเป็นรายจ่ายประจำ</span>
@@ -1657,20 +1826,7 @@ export function ExpenseReviewPane({
               />
             )}
 
-            {/* ขอโอน — ส่งคำขอเข้ากลุ่มผู้บริหาร (ปุ่มหลักของมือถือ; เดสก์ท็อปมีบนแถวด้วย).
-                ต้องระบุสาขา+หมวดก่อน (server กันซ้ำ/ตรวจ companyId เอง). */}
-            {onRequestPayout && (
-              <Button
-                variant="outline"
-                disabled={pending || !gate.ok}
-                onClick={handleRequestPayout}
-                title={!gate.ok ? "ระบุสาขาและหมวดก่อนขอโอน" : "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
-                className="press border-[var(--color-brand-200)] bg-[var(--color-brand-50)] text-[var(--color-brand-700)] hover:bg-[var(--color-brand-100)]"
-              >
-                <Banknote className="size-4" aria-hidden />
-                ขอโอนเงิน
-              </Button>
-            )}
+            {/* (ปุ่ม "ขอโอนเงิน" ย้ายไปอยู่ในส่วนที่ 4 ติดช่องผู้รับแล้ว · CEO 2026-07-26) */}
 
             {/* ลบรายการ (D2) — ลบเองได้ภายใน 5 นาที (ของฉัน+ร่าง+ยังไม่ส่ง) ·
                 นอกนั้นเป็น "ขอลบ" ส่งให้บัญชี. server ตรวจซ้ำทุกกรณี. */}

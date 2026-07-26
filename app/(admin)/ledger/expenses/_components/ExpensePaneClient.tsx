@@ -78,7 +78,8 @@ export function ExpensePaneClient({
       }
       onRequestPayout={
         payreqEnabled
-          ? (): Promise<LedgerActionResult> => createPaymentRequestAction([expense.id], {})
+          ? (payee): Promise<LedgerActionResult> =>
+              createPaymentRequestAction([expense.id], payee)
           : undefined
       }
       currentUserId={currentUserId}
