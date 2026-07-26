@@ -33,6 +33,8 @@ export type PoListItem = {
   lineCount: number;
   boxCount: number;
   hasTracking: boolean; // มีกล่องที่มีเลขพัสดุแล้วหรือยัง (ไว้ derive "รอใส่ข้อมูล")
+  orderedQty: number; // จำนวนสั่งรวมทั้งใบ (Σ line.qty) — ฐาน 100% ของแถบ "รับเข้าแล้ว"
+  receivedQty: number; // จำนวนรับเข้าจริงรวมทั้งใบ (Σ GRN line.qtyReceived) — แถบ "รับแล้ว/สั่ง"
   date: string; // ISO
   orderedAt: string | null; // ISO — วันสั่ง
   shipMode: string | null; // "SEA" | "TRUCK" | … (วิธีขนส่งของกล่องที่มีเลขพัสดุ)

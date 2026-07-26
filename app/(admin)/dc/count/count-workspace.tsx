@@ -31,6 +31,7 @@ import {
 } from "@/lib/dc/count-actions";
 import { listPosForMoveAction, getPoFulfillmentAction } from "@/lib/dc/po-move-actions";
 import type { ReceivablePoForMove, PoFulfillment } from "@/lib/dc/po-fulfillment";
+import { PoProgressBar } from "@/components/dc/po-progress-bar";
 
 type CountLine = {
   lineKey: string;
@@ -1013,11 +1014,21 @@ function PoCountPickerSheet({
   const [pos, setPos] = useState<ReceivablePoForMove[]>([]);
   const [posLoading, setPosLoading] = useState(false);
   const [posError, setPosError] = useState<string | null>(null);
+  const [query, setQuery] = useState(""); // ค้นหาเลขใบ / ชื่อผู้ขาย
 
   const [detail, setDetail] = useState<PoFulfillment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set());
+
+  // กรองลิสต์ใบตามคำค้น (เลขใบ / ชื่อผู้ขาย) — client-side บนลิสต์ที่โหลดมาแล้ว
+  const filteredPos = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return pos;
+    return pos.filter(
+      (p) => p.poCode.toLowerCase().includes(q) || (p.supplierName ?? "").toLowerCase().includes(q),
+    );
+  }, [pos, query]);
 
   // โหลดลิสต์ใบ PO ตอนเปิด (เฉพาะใบที่รับเข้าคลังนี้ — filter ใน action แล้ว)
   useEffect(() => {
@@ -1152,45 +1163,71 @@ function PoCountPickerSheet({
             ) : posLoading ? (
               <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>กำลังโหลด…</div>
             ) : pos.length === 0 ? (
-              <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>ยังไม่มีใบ PO ที่รับเข้าคลังนี้</div>
+              <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted)", fontSize: 15 }}>ยังไม่มีใบ PO ที่มีของเหลือในคลังนี้</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pos.map((p) => {
-                  // Fix 5a — ความคืบหน้าการนับต่อใบ "ตั้งแต่หน้าเลือก": เทียบ productIds ในใบ vs ที่อยู่ในใบนับแล้ว
-                  const counted = p.productIds.filter((id) => inSheetIds.has(id)).length;
-                  const total = p.productIds.length;
-                  const done = total > 0 && counted >= total;
-                  const some = counted > 0 && !done;
-                  return (
-                    <button
-                      key={p.poId}
-                      type="button"
-                      onClick={() => void openPo(p.poId)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", border: `1.5px solid ${done ? "#bfe3cb" : "var(--dc-line)"}`, background: done ? "#f2fbf5" : "var(--dc-paper)", borderRadius: 12, padding: "13px 14px", cursor: "pointer" }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
-                        <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
-                      </div>
-                      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
-                          <Package size={15} /> {p.lineCount} รายการ
-                        </span>
-                        {done ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 800, color: "#1f8a55", whiteSpace: "nowrap" }}>
-                            <Check size={13} /> นับครบแล้ว
-                          </span>
-                        ) : some ? (
-                          <span style={{ fontSize: 12, fontWeight: 800, color: "#b07b15", whiteSpace: "nowrap" }}>
-                            นับแล้ว {counted}/{total}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>ยังไม่ได้นับ</span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+                {/* ค้นหาใบ PO (เลขใบ / ชื่อผู้ขาย) */}
+                <div style={{ position: "relative", marginBottom: 2 }}>
+                  <Search
+                    size={16}
+                    style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--dc-muted)", pointerEvents: "none" }}
+                  />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหาเลขใบ PO หรือชื่อผู้ขาย…"
+                    aria-label="ค้นหาใบ PO"
+                    style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1.5px solid var(--dc-line)", background: "var(--dc-paper)", fontSize: 14.5, color: "var(--dc-ink)", outline: "none" }}
+                  />
+                </div>
+
+                {filteredPos.length === 0 ? (
+                  <div style={{ padding: 22, textAlign: "center", color: "var(--dc-muted)", fontSize: 14 }}>
+                    ไม่พบใบ PO ที่ตรงกับ “{query.trim()}”
+                  </div>
+                ) : (
+                  filteredPos.map((p) => {
+                    // Fix 5a — ความคืบหน้าการนับต่อใบ "ตั้งแต่หน้าเลือก": เทียบ productIds ในใบ vs ที่อยู่ในใบนับแล้ว
+                    const counted = p.productIds.filter((id) => inSheetIds.has(id)).length;
+                    const total = p.productIds.length;
+                    const done = total > 0 && counted >= total;
+                    const some = counted > 0 && !done;
+                    return (
+                      <button
+                        key={p.poId}
+                        type="button"
+                        onClick={() => void openPo(p.poId)}
+                        style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "left", width: "100%", border: `1.5px solid ${done ? "#bfe3cb" : "var(--dc-line)"}`, background: done ? "#f2fbf5" : "var(--dc-paper)", borderRadius: 12, padding: "12px 14px", cursor: "pointer" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, width: "100%" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
+                            <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>{p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
+                              <Package size={15} /> {p.lineCount} รายการ
+                            </span>
+                            {done ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 800, color: "#1f8a55", whiteSpace: "nowrap" }}>
+                                <Check size={13} /> นับครบแล้ว
+                              </span>
+                            ) : some ? (
+                              <span style={{ fontSize: 12, fontWeight: 800, color: "#b07b15", whiteSpace: "nowrap" }}>
+                                นับแล้ว {counted}/{total}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>ยังไม่ได้นับ</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* แถบ "เหลือในคลัง / รับเข้า" — เห็นของเหลือน้อย/มากก่อนเลือกนับ */}
+                        <PoProgressBar value={p.totalRemaining} total={p.totalReceived} label="เหลือ" unit="ชิ้น" compact />
+                      </button>
+                    );
+                  })
+                )}
               </div>
             )
           ) : detailLoading ? (

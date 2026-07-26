@@ -89,6 +89,10 @@ export function KanbanBoard({ items }: { items: PoListItem[] }) {
 
 function KanbanCard({ item, action }: { item: PoListItem; action: string }) {
   const s = moneySym(item);
+  // แถบ "รับเข้าแล้ว / สั่ง" — น้ำเงินระหว่างรับ · เขียวเมื่อครบ
+  const recvPct =
+    item.orderedQty > 0 ? Math.min(100, Math.round((item.receivedQty / item.orderedQty) * 100)) : 0;
+  const recvColor = recvPct >= 100 ? "#1e8e4e" : "#1d4ed8";
   return (
     <Link href={`/dc/office/purchasing/${item.id}`} className="dc-pur-kb__card">
       <div className="dc-pur-kb__card-top">
@@ -110,6 +114,16 @@ function KanbanCard({ item, action }: { item: PoListItem; action: string }) {
         {item.poCode} · {item.lineCount} รายการ
         {item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""} · {fmtDate(item.date)}
       </div>
+      {item.orderedQty > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "5px 0 2px" }}>
+          <div style={{ flex: 1, height: 5, borderRadius: 999, background: "var(--dc-line,#e7ebf2)", overflow: "hidden" }}>
+            <div style={{ width: `${recvPct}%`, height: "100%", borderRadius: 999, background: recvColor }} />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: recvColor }}>
+            รับ {item.receivedQty}/{item.orderedQty}
+          </span>
+        </div>
+      )}
       <div className="dc-pur-kb__card-foot">
         <span className="dc-pur-kb__card-total">
           {s}

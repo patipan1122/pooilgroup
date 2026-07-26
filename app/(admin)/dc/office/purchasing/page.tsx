@@ -46,6 +46,28 @@ export default async function DcPurchasingPage() {
     },
   });
 
+  // จำนวน "รับเข้าจริง" ต่อใบ (Σ GRN line.qtyReceived) — batch ทีเดียว ไว้ทำแถบ "รับแล้ว/สั่ง" (CEO 2026-07-26)
+  const poIds = pos.map((p) => p.id);
+  const grns = await prisma.dcGoodsReceipt.findMany({
+    where: { orgId, poId: { in: poIds } },
+    select: { id: true, poId: true },
+  });
+  const grnToPo = new Map<string, string>();
+  for (const g of grns) if (g.poId) grnToPo.set(g.id, g.poId);
+  const receivedByPo = new Map<string, number>();
+  if (grnToPo.size > 0) {
+    const grouped = await prisma.dcGoodsReceiptLine.groupBy({
+      by: ["grnId"],
+      where: { orgId, grnId: { in: [...grnToPo.keys()] } },
+      _sum: { qtyReceived: true },
+    });
+    for (const g of grouped) {
+      const po = grnToPo.get(g.grnId);
+      if (!po) continue;
+      receivedByPo.set(po, (receivedByPo.get(po) ?? 0) + (g._sum.qtyReceived ?? 0));
+    }
+  }
+
   const r2Base = process.env.R2_PUBLIC_URL ?? "";
   const imgUrl = (p: string | null) =>
     p ? (p.startsWith("http") ? p : `${r2Base}/${p}`) : null;
@@ -85,6 +107,8 @@ export default async function DcPurchasingPage() {
       total,
       totalThb,
       lineCount: po.lines.length,
+      orderedQty: po.lines.reduce((s, l) => s + l.qty, 0),
+      receivedQty: receivedByPo.get(po.id) ?? 0,
       boxCount,
       hasTracking,
       date: (po.orderedAt ?? po.createdAt).toISOString(),

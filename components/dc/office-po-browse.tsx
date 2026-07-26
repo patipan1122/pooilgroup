@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Package, FileText, Search } from "lucide-react";
 import { listOfficePosForBrowse, getOfficePoFulfillment } from "@/lib/dc/po-move-actions";
 import { DcThumb } from "@/components/dc/product-image";
+import { PoProgressBar } from "@/components/dc/po-progress-bar";
 import type { ReceivablePoForMove, PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
 
 function imageSrc(path: string | null, base?: string): string | null {
@@ -170,7 +171,7 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
         <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 15 }}>กำลังโหลด…</div>
       ) : filteredPos.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 15, background: "#fff", border: "1px solid var(--border)", borderRadius: 14 }}>
-          {pos.length === 0 ? "ยังไม่มีใบ PO ที่รับเข้าคลัง" : "ไม่พบใบ PO ที่ค้นหา"}
+          {pos.length === 0 ? "ยังไม่มีใบ PO ที่มีของเหลือในคลัง" : "ไม่พบใบ PO ที่ค้นหา"}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
@@ -180,22 +181,26 @@ export function OfficePoBrowse({ warehouseId, r2PublicUrl }: { warehouseId?: str
               type="button"
               onClick={() => void openPo(p.poId)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                display: "flex", flexDirection: "column", gap: 10,
                 textAlign: "left", width: "100%", border: "1px solid var(--border)", background: "#fff",
                 borderRadius: 14, padding: "14px 16px", cursor: "pointer", fontFamily: "inherit",
               }}
             >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 16, fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
-                  <FileText size={16} color="var(--primary)" /> {p.title ?? p.poCode}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, width: "100%" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 16, fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
+                    <FileText size={16} color="var(--primary)" /> {p.title ?? p.poCode}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "var(--ink2)", marginTop: 3 }}>
+                    {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink2)", marginTop: 3 }}>
-                  {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                  <Package size={15} /> {p.lineCount} รายการ
                 </div>
               </div>
-              <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                <Package size={15} /> {p.lineCount} รายการ
-              </div>
+              {/* แถบ "เหลือในคลัง / รับเข้า" — เห็นของเหลือน้อย/มากก่อนคลิกเข้าใบ */}
+              <PoProgressBar value={p.totalRemaining} total={p.totalReceived} label="เหลือ" unit="ชิ้น" compact />
             </button>
           ))}
         </div>

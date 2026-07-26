@@ -199,6 +199,10 @@ function PoCardMini({
   const isThai = item.origin === "THAI";
   const est = arrivalEstimate(item);
   const ModeIcon = item.shipMode === "TRUCK" ? Truck : Ship;
+  // แถบ "รับเข้าแล้ว / สั่ง" — ความคืบหน้าการรับของจากผู้ขาย (สีน้ำเงิน→เขียวเมื่อครบ · ไม่ใช่แดง=เตือน)
+  const recvPct =
+    item.orderedQty > 0 ? Math.min(100, Math.round((item.receivedQty / item.orderedQty) * 100)) : 0;
+  const recvColor = recvPct >= 100 ? "#1e8e4e" : "#1d4ed8";
   return (
     <div style={{ display: "grid", gap: expanded ? 4 : 0 }}>
       <button
@@ -265,6 +269,17 @@ function PoCardMini({
             </>
           ) : null}
         </div>
+        {/* แถบบางพิเศษ: รับเข้าแล้ว/สั่ง — เห็นความคืบหน้าการรับของก่อนเปิดใบ */}
+        {item.orderedQty > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 1 }}>
+            <div style={{ flex: 1, height: 5, borderRadius: 999, background: "var(--dc-line,#e7ebf2)", overflow: "hidden" }}>
+              <div style={{ width: `${recvPct}%`, height: "100%", borderRadius: 999, background: recvColor }} />
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: recvColor }}>
+              รับ {item.receivedQty}/{item.orderedQty}
+            </span>
+          </div>
+        )}
       </button>
 
       {/* accordion: รายการสินค้าในใบ (กางดูในการ์ด — มือถือไม่ต้องเลื่อนไปแผงล่าง) */}

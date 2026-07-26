@@ -208,12 +208,21 @@ export type ReceivablePoForMove = {
   /** productId (unique) ของสินค้าในใบ — ใช้โชว์ความคืบหน้าการนับต่อใบตั้งแต่หน้าเลือก (count picker). */
   productIds: string[];
   receivedAt: Date | null;
+  /** ยอดรับเข้ารวมทั้งใบ (Σ received ต่อ product) — เป็น "ฐาน 100%" ของแถบคงเหลือ. */
+  totalReceived: number;
+  /** ยอดคงเหลือในใบรวมทั้งใบ (Σ remaining · สูตรเดียวกับ getPoFulfillment) — ในลิสต์นี้ > 0 เสมอ (ใบที่หมดถูกซ่อน). */
+  totalRemaining: number;
 };
 
 /**
  * รายการใบ PO ที่ "เคยรับเข้าคลังแล้ว" (มี GRN) → เอาไว้ให้ผู้ใช้เลือกตอนโอน/เบิก "เป็นใบ PO".
  * ระบุ warehouseId → เฉพาะใบที่รับเข้าคลังนั้น · warehouseIds → หลายคลัง (office รวมทุกคลังที่มีสิทธิ์).
  * scope orgId เสมอ · เรียงใบที่รับล่าสุดก่อน · จำกัด 100 ใบ.
+ *
+ * ★ 2026-07-26 (CEO): แนบยอด "รับเข้ารวม/คงเหลือรวม" ต่อใบ (คิด batch ทีเดียว ไม่ยิงต่อใบ = ไม่ช้าแม้ PO เยอะขึ้น)
+ *   และ "ซ่อนใบที่ของหมด" (totalRemaining ≤ 0) ออกจากทุก picker — เพราะเลือกไปก็ไม่มีของให้หยิบ.
+ *   สูตร remaining ต่อ product = max(0, min(received − movedOut, onHand)) เหมือน getPoFulfillment เป๊ะ
+ *   → เลขในลิสต์กับตอนคลิกเข้าไปตรงกัน (ไม่มีเคส "ลิสต์บอกมี พอเปิดใบหมด").
  */
 export async function listReceivablePosForMove(
   orgId: string,
@@ -226,18 +235,21 @@ export async function listReceivablePosForMove(
       : {};
   const grns = await prisma.dcGoodsReceipt.findMany({
     where: { orgId, ...whFilter },
-    select: { poId: true, receivedAt: true },
+    select: { id: true, poId: true, receivedAt: true },
     orderBy: { receivedAt: "desc" },
   });
 
-  // poId ล่าสุดที่รับเข้า (unique · เก็บวันรับล่าสุด)
+  // poId ล่าสุดที่รับเข้า (unique · เก็บวันรับล่าสุด) + map grn→po สำหรับรวมยอดรับเข้า
   const latestReceivedByPo = new Map<string, Date>();
+  const grnToPo = new Map<string, string>();
   for (const g of grns) {
     if (!g.poId) continue;
+    grnToPo.set(g.id, g.poId);
     if (!latestReceivedByPo.has(g.poId)) latestReceivedByPo.set(g.poId, g.receivedAt);
   }
   const poIds = [...latestReceivedByPo.keys()];
   if (poIds.length === 0) return [];
+  const grnIds = [...grnToPo.keys()];
 
   const pos = await prisma.dcPurchaseOrder.findMany({
     where: { orgId, id: { in: poIds } },
@@ -251,10 +263,70 @@ export async function listReceivablePosForMove(
     },
   });
 
+  // ── ledger ต่อใบ (batch · สูตรเดียวกับ getPoFulfillment แต่ยิงรวมทุกใบทีเดียว) ──
+  //   received[po][product] = Σ DcGoodsReceiptLine.qtyReceived (จับ grn กลับใบด้วย grnToPo)
+  const receivedByPoProduct = new Map<string, Map<string, number>>();
+  if (grnIds.length > 0) {
+    const grouped = await prisma.dcGoodsReceiptLine.groupBy({
+      by: ["grnId", "productId"],
+      where: { orgId, grnId: { in: grnIds } },
+      _sum: { qtyReceived: true },
+    });
+    for (const g of grouped) {
+      const poId = grnToPo.get(g.grnId);
+      if (!poId) continue;
+      const inner = receivedByPoProduct.get(poId) ?? new Map<string, number>();
+      inner.set(g.productId, (inner.get(g.productId) ?? 0) + (g._sum.qtyReceived ?? 0));
+      receivedByPoProduct.set(poId, inner);
+    }
+  }
+
+  //   movedOut[po][product] = max(0, -Σ movement.qty) เฉพาะ ISSUE/TRANSFER_OUT/RETURN_IN (NET · ดู getPoFulfillment)
+  const movedByPoProduct = new Map<string, Map<string, number>>();
+  const movedGrouped = await prisma.dcStockMovement.groupBy({
+    by: ["poId", "productId"],
+    where: {
+      orgId,
+      poId: { in: poIds },
+      kind: { in: [DcMoveKind.ISSUE, DcMoveKind.TRANSFER_OUT, DcMoveKind.RETURN_IN] },
+    },
+    _sum: { qty: true },
+  });
+  for (const g of movedGrouped) {
+    if (!g.poId) continue;
+    const inner = movedByPoProduct.get(g.poId) ?? new Map<string, number>();
+    inner.set(g.productId, Math.max(0, -(g._sum.qty ?? 0)));
+    movedByPoProduct.set(g.poId, inner);
+  }
+
+  //   onHand[product] = Σ DcStockBalance.qtyOnHand (ตาม warehouse scope เดียวกับ picker) — cap กันเลขผี
+  const allProductIds = [...new Set(pos.flatMap((p) => p.lines.map((l) => l.productId)))];
+  const onHandByProduct = new Map<string, number>();
+  if (allProductIds.length > 0) {
+    const balances = await prisma.dcStockBalance.findMany({
+      where: { orgId, productId: { in: allProductIds }, ...whFilter },
+      select: { productId: true, qtyOnHand: true },
+    });
+    for (const b of balances) {
+      onHandByProduct.set(b.productId, (onHandByProduct.get(b.productId) ?? 0) + b.qtyOnHand);
+    }
+  }
+
   return pos
     .map((p) => {
       // unique products ต่อใบ (fulfillment detail ก็ group ต่อ product) → lineCount + productIds ตรงกัน
       const productIds = [...new Set(p.lines.map((l) => l.productId))];
+      const rcv = receivedByPoProduct.get(p.id);
+      const mvd = movedByPoProduct.get(p.id);
+      let totalReceived = 0;
+      let totalRemaining = 0;
+      for (const pid of productIds) {
+        const received = rcv?.get(pid) ?? 0;
+        const movedOut = mvd?.get(pid) ?? 0;
+        const onHand = onHandByProduct.get(pid) ?? 0;
+        totalReceived += received;
+        totalRemaining += Math.max(0, Math.min(received - movedOut, onHand));
+      }
       return {
         poId: p.id,
         poCode: p.poCode,
@@ -264,8 +336,12 @@ export async function listReceivablePosForMove(
         lineCount: productIds.length,
         productIds,
         receivedAt: latestReceivedByPo.get(p.id) ?? null,
+        totalReceived,
+        totalRemaining,
       };
     })
+    // ★ ซ่อนใบที่ของหมด (เหลือ 0) ออกจากทุก picker — เลือกไปก็ไม่มีของ (CEO 2026-07-26)
+    .filter((p) => p.totalRemaining > 0)
     .sort((a, b) => (b.receivedAt?.getTime() ?? 0) - (a.receivedAt?.getTime() ?? 0))
     .slice(0, 100);
 }

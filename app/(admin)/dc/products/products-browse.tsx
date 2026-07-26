@@ -20,6 +20,7 @@ import {
 import { listPosForMoveAction, getPoFulfillmentAction } from "@/lib/dc/po-move-actions";
 import type { ReceivablePoForMove, PoFulfillment, PoFulfillmentLine } from "@/lib/dc/po-fulfillment";
 import { DcThumb } from "@/components/dc/product-image";
+import { PoProgressBar } from "@/components/dc/po-progress-bar";
 
 // ★ handoff ที่โยนไปหน้า "เบิก · โอน · ย้ายที่" (convenience default เท่านั้น —
 //   หน้าปลายทาง re-resolve onHand/remaining จริงฝั่ง server เสมอ) → carry แค่ id + display qty + label.
@@ -240,11 +241,21 @@ function PoBrowseView({
   const [pos, setPos] = useState<ReceivablePoForMove[]>([]);
   const [posLoading, setPosLoading] = useState(false);
   const [posError, setPosError] = useState<string | null>(null);
+  const [poQuery, setPoQuery] = useState(""); // ค้นหาเลขใบ / ชื่อผู้ขาย
 
   const [detail, setDetail] = useState<PoFulfillment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  // กรองลิสต์ใบตามคำค้น (เลขใบ / ชื่อผู้ขาย) — client-side บนลิสต์ที่โหลดมาแล้ว
+  const filteredPos = useMemo(() => {
+    const q = poQuery.trim().toLowerCase();
+    if (!q) return pos;
+    return pos.filter(
+      (p) => p.poCode.toLowerCase().includes(q) || (p.supplierName ?? "").toLowerCase().includes(q),
+    );
+  }, [pos, poQuery]);
 
   // โหลดลิสต์ใบ PO ตอน mount
   useEffect(() => {
@@ -363,29 +374,55 @@ function PoBrowseView({
         ) : pos.length === 0 ? (
           <div className="dc-card" style={{ textAlign: "center", padding: 32, color: "var(--dc-muted)" }}>
             <FileText size={28} style={{ opacity: 0.5, marginBottom: 8 }} />
-            <div style={{ fontSize: 14.5 }}>ยังไม่มีใบ PO ที่รับเข้าคลังนี้</div>
+            <div style={{ fontSize: 14.5 }}>ยังไม่มีใบ PO ที่มีของเหลือในคลังนี้</div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {pos.map((p) => (
-              <button
-                key={p.poId}
-                type="button"
-                onClick={() => void openPo(p.poId)}
-                className="dc-card"
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textAlign: "left", width: "100%", padding: "13px 14px", cursor: "pointer" }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
-                  <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>
-                    {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+            {/* ค้นหาใบ PO (เลขใบ / ชื่อผู้ขาย) */}
+            <div style={{ position: "relative" }}>
+              <Search
+                size={16}
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--dc-muted)", pointerEvents: "none" }}
+              />
+              <input
+                type="text"
+                value={poQuery}
+                onChange={(e) => setPoQuery(e.target.value)}
+                placeholder="ค้นหาเลขใบ PO หรือชื่อผู้ขาย…"
+                aria-label="ค้นหาใบ PO"
+                style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px 10px 36px", borderRadius: 10, border: "1.5px solid var(--dc-line, #e6eaf0)", background: "var(--dc-paper, #fff)", fontSize: 14.5, color: "var(--dc-ink)", outline: "none" }}
+              />
+            </div>
+
+            {filteredPos.length === 0 ? (
+              <div className="dc-card" style={{ textAlign: "center", padding: 22, color: "var(--dc-muted)", fontSize: 14 }}>
+                ไม่พบใบ PO ที่ตรงกับ “{poQuery.trim()}”
+              </div>
+            ) : (
+              filteredPos.map((p) => (
+                <button
+                  key={p.poId}
+                  type="button"
+                  onClick={() => void openPo(p.poId)}
+                  className="dc-card"
+                  style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "left", width: "100%", padding: "12px 14px", cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, width: "100%" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink)", lineHeight: 1.25 }}>{p.title ?? p.poCode}</div>
+                      <div style={{ fontSize: 12.5, color: "var(--dc-muted)", marginTop: 2 }}>
+                        {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
+                      <Package size={15} /> {p.lineCount} รายการ
+                    </div>
                   </div>
-                </div>
-                <div style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: "var(--dc-muted)", whiteSpace: "nowrap" }}>
-                  <Package size={15} /> {p.lineCount} รายการ
-                </div>
-              </button>
-            ))}
+                  {/* แถบ "เหลือในคลัง / รับเข้า" — เห็นของเหลือน้อย/มากก่อนคลิกเข้าใบ */}
+                  <PoProgressBar value={p.totalRemaining} total={p.totalReceived} label="เหลือ" unit="ชิ้น" compact />
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>

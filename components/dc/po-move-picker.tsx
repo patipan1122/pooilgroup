@@ -10,12 +10,13 @@
 // ★ style ตาม pattern bottom-sheet เดิมในหน้าโอน/เบิก (.dcx tokens + inline)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { X, ChevronLeft, Package } from "lucide-react";
+import { X, ChevronLeft, Package, Search } from "lucide-react";
 import {
   listPosForMoveAction,
   getPoFulfillmentAction,
 } from "@/lib/dc/po-move-actions";
 import { DcThumb } from "@/components/dc/product-image";
+import { PoProgressBar } from "@/components/dc/po-progress-bar";
 import type {
   ReceivablePoForMove,
   PoFulfillment,
@@ -77,6 +78,7 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
   const [pos, setPos] = useState<ReceivablePoForMove[]>([]);
   const [posLoading, setPosLoading] = useState(false);
   const [posError, setPosError] = useState<string | null>(null);
+  const [query, setQuery] = useState(""); // ค้นหาเลขใบ / ชื่อผู้ขาย
 
   // ---- ชั้น 2: รายละเอียดใบที่เลือก ----
   const [detail, setDetail] = useState<PoFulfillment | null>(null);
@@ -96,6 +98,7 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
     if (!open) return;
     let cancelled = false;
     resetToList();
+    setQuery("");
     setPosLoading(true);
     setPosError(null);
     void (async () => {
@@ -190,6 +193,17 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
     }
     return { count, rows: lines.length, lines };
   }, [detail, qtyByProduct, r2PublicUrl]);
+
+  // กรองลิสต์ใบตามคำค้น (เลขใบ / ชื่อผู้ขาย) — client-side บนลิสต์ที่โหลดมาแล้ว
+  const filteredPos = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return pos;
+    return pos.filter(
+      (p) =>
+        p.poCode.toLowerCase().includes(q) ||
+        (p.supplierName ?? "").toLowerCase().includes(q),
+    );
+  }, [pos, query]);
 
   const confirm = useCallback(() => {
     if (!detail || selected.lines.length === 0) return;
@@ -315,53 +329,103 @@ export function PoMovePicker({ open, onClose, warehouseId, r2PublicUrl, mode, on
               </div>
             ) : pos.length === 0 ? (
               <div style={{ padding: 28, textAlign: "center", color: "var(--dc-muted, #6b7785)", fontSize: 15 }}>
-                ยังไม่มีใบ PO ที่รับเข้าคลังนี้
+                ยังไม่มีใบ PO ที่มีของเหลือในคลังนี้
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pos.map((p) => (
-                  <button
-                    key={p.poId}
-                    type="button"
-                    onClick={() => void openPo(p.poId)}
+                {/* ค้นหาใบ PO (เลขใบ / ชื่อผู้ขาย) */}
+                <div style={{ position: "relative", marginBottom: 2 }}>
+                  <Search
+                    size={16}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      textAlign: "left",
+                      position: "absolute",
+                      left: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--dc-muted, #6b7785)",
+                      pointerEvents: "none",
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหาเลขใบ PO หรือชื่อผู้ขาย…"
+                    aria-label="ค้นหาใบ PO"
+                    style={{
                       width: "100%",
+                      boxSizing: "border-box",
+                      padding: "10px 12px 10px 36px",
+                      borderRadius: 10,
                       border: "1.5px solid var(--dc-line, #e6eaf0)",
                       background: "#fff",
-                      borderRadius: 12,
-                      padding: "13px 14px",
-                      cursor: "pointer",
+                      fontSize: 14.5,
+                      color: "var(--dc-ink, #1f2733)",
+                      outline: "none",
                     }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
-                        {p.title ?? p.poCode}
-                      </div>
-                      <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
-                        {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
-                      </div>
-                    </div>
-                    <div
+                  />
+                </div>
+
+                {filteredPos.length === 0 ? (
+                  <div style={{ padding: 22, textAlign: "center", color: "var(--dc-muted, #6b7785)", fontSize: 14 }}>
+                    ไม่พบใบ PO ที่ตรงกับ “{query.trim()}”
+                  </div>
+                ) : (
+                  filteredPos.map((p) => (
+                    <button
+                      key={p.poId}
+                      type="button"
+                      onClick={() => void openPo(p.poId)}
                       style={{
-                        flexShrink: 0,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "var(--dc-muted, #6b7785)",
-                        whiteSpace: "nowrap",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        textAlign: "left",
+                        width: "100%",
+                        border: "1.5px solid var(--dc-line, #e6eaf0)",
+                        background: "#fff",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                        cursor: "pointer",
                       }}
                     >
-                      <Package size={15} /> {p.lineCount} รายการ
-                    </div>
-                  </button>
-                ))}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          width: "100%",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dc-ink, #1f2733)", lineHeight: 1.25 }}>
+                            {p.title ?? p.poCode}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: "var(--dc-muted, #6b7785)", marginTop: 2 }}>
+                            {p.title ? p.poCode + " · " : ""}{p.supplierName ?? "ไม่ระบุผู้ขาย"} · รับเข้า {fmtDate(p.receivedAt)}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--dc-muted, #6b7785)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <Package size={15} /> {p.lineCount} รายการ
+                        </div>
+                      </div>
+                      {/* แถบ "เหลือในคลัง / รับเข้า" — เห็นว่าเหลือน้อย/มากก่อนคลิกเข้าใบ */}
+                      <PoProgressBar value={p.totalRemaining} total={p.totalReceived} label="เหลือ" unit="ชิ้น" compact />
+                    </button>
+                  ))
+                )}
               </div>
             )
           ) : detailLoading ? (
