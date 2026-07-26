@@ -321,6 +321,7 @@ export function ExpenseReviewPane({
   canEditClaimability = false,
   showTrcloud = true,
   showSendToTrcloud = true,
+  showVoucherMenu = true,
   onAfterFinish,
 }: {
   expense: ExpenseRow;
@@ -365,6 +366,9 @@ export function ExpenseReviewPane({
   /** false = ซ่อนปุ่ม "ส่งเข้า TRCloud" ในแผงนี้ (เพราะย้ายไปปุ่มรวม TrcloudButton นอกแผง)
    *  แต่ยังโชว์ VoucherMenu ได้ — ต่างจาก showTrcloud ที่ซ่อนทั้งคู่. */
   showSendToTrcloud?: boolean;
+  /** false = ซ่อนเมนู "ออกเอกสาร" (VoucherMenu: PV/JV/PCV/ใบแทน) — งานบัญชีหนักฝั่งเว็บ.
+   *  ใช้เปิด "ส่ง TRCloud" บนมือถือ (LIFF บัญชี) โดยไม่ปล่อยเมนูออกเอกสารรก/รั่วให้พนักงาน. */
+  showVoucherMenu?: boolean;
   /** เรียกหลังทำรายการ "เสร็จ" (ยืนยัน/ยกเลิก/ลบสำเร็จ) — LIFF เด้งกลับหน้ารายการ,
    *  เว็บ refresh. ไม่ส่งมา = อยู่หน้าเดิม (พฤติกรรมเดิม). */
   onAfterFinish?: (action?: "confirm" | "delete" | "void") => void;
@@ -861,7 +865,7 @@ export function ExpenseReviewPane({
           )}
           {/* "ออกเอกสาร" = งานบัญชีฝั่งเว็บ — ปิดใน LIFF member edit (showTrcloud=false)
               ไม่ให้รั่วเข้าหน้า task ของพนักงานในไลน์. */}
-          {showTrcloud && (
+          {showTrcloud && showVoucherMenu && (
             <VoucherMenu
               expenseId={expense.id}
               companyId={expense.companyId}
@@ -1881,8 +1885,9 @@ export function ExpenseReviewPane({
               {savedFlash ? "บันทึกแล้ว" : "บันทึกรายการ"}
             </Button>
 
-            {/* ส่ง TRCloud (compact icon-only) — sticky footer สำหรับกดโดยไม่ต้องเลื่อนขึ้น */}
-            {showTrcloud && (
+            {/* ส่ง TRCloud (compact icon-only) — sticky footer. โชว์เฉพาะตอนไม่ได้โชว์ปุ่ม
+                มีป้ายชื่อที่ header (showSendToTrcloud) — กันปุ่มส่งซ้ำ 2 จุดบนมือถือ (LIFF). */}
+            {showTrcloud && !showSendToTrcloud && (
               <SendToTrcloudButton
                 expenseId={expense.id}
                 status={expense.status}

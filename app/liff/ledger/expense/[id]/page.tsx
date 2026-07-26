@@ -17,7 +17,7 @@ import { getSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
-import { resolveLedgerActor, ledgerWebCan } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, ledgerWebCan, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
 import { listLedgerProjects } from "@/lib/ledger/projects";
 import { prisma } from "@/lib/prisma";
 import { LiffExpensePane } from "./LiffExpensePane";
@@ -123,6 +123,12 @@ export default async function LedgerLiffExpensePage({
   const canRequestTransfer = companyId
     ? await ledgerWebCan(actor, "payment.request")
     : false;
+  // ส่ง TRCloud บนมือถือ (โมบายฟังก์ชัน · CEO 2026-07-26) — gate ต้องตรงกับ sendExpenseToTrcloud
+  // ที่เช็ก ledgerWebCanForRole (Pool role · ไม่ใช่ actor) → ปุ่มที่โชว์ = กดผ่านจริง (กัน
+  // mismatch แบบปุ่มขอโอน 2026-07-10). บัญชี/ผู้ดูแล/viewer(→accountant matrix)=เห็น · staff=ไม่เห็น.
+  const canSendTrcloud = companyId
+    ? await ledgerWebCanForRole(session.user.org_id, session.user.role, "expense.export")
+    : false;
   // ตั้งสาขา+หมวดครบ = ขอโอนได้ (ไม่งั้น server reject) · categoryId ว่าง/branchId null = ยังไม่ครบ
   const classified = Boolean(expense.branchId && expense.categoryId);
   // มีคำขอโอน active ของบิลนี้อยู่แล้วไหม (partial-unique กัน 1 บิล 2 คำขอ) → ไม่ให้ขอซ้ำ
@@ -153,16 +159,16 @@ export default async function LedgerLiffExpensePage({
         </div>
       </header>
 
-      {/* ทางเชื่อมเข้าเว็บเต็ม (โหมดโฟกัส) — เฉพาะบัญชี/เจ้าของ (admin tier · มีสิทธิ์เว็บ).
-          พนักงานหน้างานไม่เห็น (อยู่หน้า LIFF ใส่หมวดได้เหมือนเดิม). ให้บัญชีกดต่อไปทำ
-          "ส่ง TRCloud + ขอโอน" ในโปรแกรม (AdminShell เมนูครบ) จบในหน้าเดียว (CEO 2026-07-26). */}
+      {/* ทางเชื่อมเข้าเว็บเต็ม — เฉพาะบัญชี/ผู้ดูแล (admin tier). หมวด/สาขา · ส่ง TRCloud · ขอโอน
+          ทำบนมือถือนี้ได้เลย (ด้านล่าง). ลิงก์นี้ไว้ต่อไปเครื่องมือบัญชีหนัก (ออกเอกสาร PV/JV ·
+          รายงาน) ที่อยู่บนเว็บ. พนักงานหน้างานไม่เห็น. (CEO 2026-07-26) */}
       {isAdminTier(session.user.role) && (
         <Link
           href={`/ledger/expenses?${sp.company ? `company=${encodeURIComponent(sp.company)}&` : ""}selected=${encodeURIComponent(id)}&focus=1`}
-          className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 py-2.5 text-sm font-medium text-[var(--color-brand-700)] active:bg-[var(--color-brand-100)]"
+          className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-500 active:bg-zinc-50"
         >
-          <span>เปิดเต็มในโปรแกรม (เว็บ) — ส่ง TRCloud · ขอโอน</span>
-          <ChevronLeft className="size-4 rotate-180" aria-hidden />
+          <span>เปิดในเว็บเต็ม — เครื่องมือบัญชีทั้งหมด (ออกเอกสาร · รายงาน)</span>
+          <ChevronLeft className="size-3.5 rotate-180" aria-hidden />
         </Link>
       )}
 
@@ -185,6 +191,7 @@ export default async function LedgerLiffExpensePage({
         }))}
         branches={scope.branches}
         canConfirm={actor.canConfirm}
+        canSendTrcloud={canSendTrcloud}
         currentUserId={actor.userId}
         backHref={backHref}
         projects={projectOptions}
