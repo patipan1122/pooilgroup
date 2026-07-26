@@ -77,7 +77,8 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   const companyId = data.companyId;
 
   const [activePage, setActivePage] = useState(0);
-  const [zoom, setZoom] = useState(false);
+  // ซูมแบบต่อเนื่อง (เปอร์เซ็นต์) — 100% = เต็มความกว้างคอลัมน์ · >100% = ขยายแล้วเลื่อนดูได้.
+  const [zoomPct, setZoomPct] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   const [history, setHistory] = useState<{ loading: boolean; hits: HistoryHit[] }>({
@@ -88,7 +89,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   // รีเซ็ตสถานะ viewer เมื่อสลับใบ — page index/หมุน/ซูม ต้องไม่รั่วข้ามบิล.
   useEffect(() => {
     setActivePage(0);
-    setZoom(false);
+    setZoomPct(100);
     setRotation(0);
     setBroken({});
   }, [exp?.id]);
@@ -132,8 +133,9 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   const picLabel = `รูป ${total > 0 ? safePage + 1 : 0}/${total}`;
 
   const frameStyle: CSSProperties = {
-    width: zoom ? "100%" : "74%",
-    maxWidth: "100%",
+    // 100% = เต็มความกว้างเวที · เกิน 100% ทำให้กรอบกว้างกว่าเวที → overflow:auto เลื่อนดูได้.
+    width: `${zoomPct}%`,
+    maxWidth: "none",
     aspectRatio: "1 / 1.4",
     position: "relative",
     boxShadow: "0 12px 30px rgba(0,0,0,.45)",
@@ -318,9 +320,6 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
               >
                 ›
               </div>
-              <div className="rrv-btn" style={VBTN} onClick={() => setZoom((z) => !z)}>
-                {zoom ? "ย่อ" : "ขยาย"}
-              </div>
               <div
                 className="rrv-btn"
                 style={VBTN}
@@ -341,6 +340,65 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
           )}
         </div>
 
+        {/* zoom bar — สไลเดอร์ซูมต่อเนื่อง + ปุ่ม −/+ + ตัวเลข % สด (แถบบางบนพื้นดำ) */}
+        {exp && total > 0 && (
+          <div
+            style={{
+              flex: "none",
+              height: 30,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 9px",
+              background: "#1f2937",
+              borderTop: "1px solid #374151",
+              color: "#e5e7eb",
+            }}
+          >
+            <div
+              className="rrv-btn"
+              style={{ ...VBTN, minWidth: 22, textAlign: "center", lineHeight: 1 }}
+              onClick={() => setZoomPct((z) => Math.max(40, z - 10))}
+            >
+              −
+            </div>
+            <input
+              type="range"
+              min={40}
+              max={250}
+              step={5}
+              value={zoomPct}
+              onChange={(e) => setZoomPct(Number(e.target.value))}
+              aria-label="ระดับการซูมรูปใบเสร็จ"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 16,
+                accentColor: "#60a5fa",
+                cursor: "pointer",
+              }}
+            />
+            <div
+              className="rrv-btn"
+              style={{ ...VBTN, minWidth: 22, textAlign: "center", lineHeight: 1 }}
+              onClick={() => setZoomPct((z) => Math.min(250, z + 10))}
+            >
+              +
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#e5e7eb",
+                minWidth: 36,
+                textAlign: "right",
+              }}
+            >
+              {zoomPct}%
+            </div>
+          </div>
+        )}
+
         {/* image stage */}
         <div
           style={{
@@ -349,7 +407,8 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
             padding: 9,
             display: "flex",
             alignItems: exp && curUrl ? "flex-start" : "center",
-            justifyContent: "center",
+            // เกิน 100% กรอบล้นเวที → ชิดซ้าย/บนให้เลื่อนถึงขอบเริ่มได้ (center จะตัดขอบซ้ายทิ้ง).
+            justifyContent: zoomPct > 100 ? "flex-start" : "center",
             overflow: "auto",
           }}
         >

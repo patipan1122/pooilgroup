@@ -2,18 +2,23 @@
 
 // โหมดตรวจใบเสร็จ — เวิร์กสเปซเต็มจอ 3 คอลัมน์ (รายการ · ฟอร์มลงบัญชี · รูปใบเสร็จ+ประวัติ).
 // เป็น overlay (fixed inset-0) ทับ AdminShell → โหมดเดิมไม่ถูกแตะ. ข้อมูลทั้งหมดมาจาก
-// page.tsx (server) ทาง prop `data` — การนำทาง/ฟิลเตอร์ทำผ่าน URL (?view=receipt-review คงไว้).
+// page.tsx (server) ทาง prop `data`. คอลัมน์ซ้าย + แท็บสถานะ + ตัวกรอง ใช้คอมโพเนนต์
+// "ตัวจริง" ของโหมดรายการ (ExpenseList / ExpenseStatusTabs) เพื่อให้หน้าตา+การทำงานเหมือนกัน
+// เป๊ะ. เคล็ดสำคัญ: ส่ง baseParams ที่ฝัง ?view=receipt-review ไว้แล้ว → ทุกลิงก์ที่คอมโพเนนต์
+// สร้างเอง (เลือกใบ/สลับแท็บ/กรอง) จะคง view ไว้ = อยู่ในโหมดตรวจต่อทุกคลิก.
 import "./receipt-review.css";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LedgerViewToggle } from "./LedgerViewToggle";
-import { RRListRail } from "./RRListRail";
 import { RRDetailForm } from "./RRDetailForm";
 import { RRReceiptColumn } from "./RRReceiptColumn";
-import { RRFilterOverlay } from "./RRFilterOverlay";
-import { rrHref, rrStatusHref, rrActivePrimary, RR_PRIMARY_TABS } from "./nav";
+import { rrHref } from "./nav";
+import { ExpenseList } from "../_components/ExpenseList";
+import { ExpenseStatusTabs } from "../_components/ExpenseStatusTabs";
 import { useLedgerUpload } from "../../_components/LedgerUploadProvider";
 import type { ReceiptReviewData } from "./types";
+import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
+import type { ExpenseTab } from "../page";
 
 function baht(n: number) {
   return `${Math.round(n).toLocaleString("en-US")} ฿`;
@@ -26,7 +31,14 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
   const selected = filter.selected;
 
   const [searchText, setSearchText] = useState(filter.q ?? "");
-  const [filterOpen, setFilterOpen] = useState(false);
+
+  // ★ กุญแจ "อยู่ในโหมดตรวจทุกคลิก": ExpenseList / ExpenseStatusTabs สร้างลิงก์ภายในจาก
+  //   baseParams (new URLSearchParams(baseParams) + set/delete). ถ้า baseParams ฝัง
+  //   view=receipt-review ไว้แล้ว ทุกลิงก์ (เลือกใบ/สลับแท็บ/กรอง) จะพา view ติดไปด้วย
+  //   → ผู้ใช้ไม่หลุดออกจากโหมดตรวจ. (คอมโพเนนต์เหล่านั้นลบเฉพาะคีย์ของตัวเอง ไม่แตะ view.)
+  const reviewBase = new URLSearchParams(baseParams);
+  reviewBase.set("view", "receipt-review");
+  const reviewBaseParams = reviewBase.toString();
 
   // ปุ่มสลับกลับ list mode = ตัด view ออก (คงฟิลเตอร์เดิม + คงใบที่เลือก)
   const backToListHref = (() => {
@@ -43,11 +55,6 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
   function submitSearch() {
     go(rrHref(baseParams, { q: searchText.trim() || null }, selected));
   }
-
-  const activePrimary = rrActivePrimary(filter);
-  const secondaryFilterCount = [filter.categoryId, filter.projectId, filter.cc].filter(
-    Boolean,
-  ).length;
 
   const blockedVat = completenessSummary.blockedVat;
   const undecided = completenessSummary.counts.undecided;
@@ -200,10 +207,10 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
         </button>
       </div>
 
-      {/* ── STAT / FILTER BAR 46px ──────────────────────────────── */}
+      {/* ── STATUS BAR — แท็บสถานะเต็มกว้าง (ExpenseStatusTabs ตัวจริง · เหมือน list mode) ── */}
       <div
         style={{
-          height: 46,
+          minHeight: 46,
           flex: "none",
           display: "flex",
           alignItems: "center",
@@ -214,100 +221,47 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
         }}
       >
         {blockedVat > 0 && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11.5,
-              fontWeight: 600,
-              color: "#b45309",
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              padding: "4px 9px",
-              borderRadius: 999,
-            }}
-          >
-            <span className="rr-num">⚠ {baht(blockedVat)} VAT ติด</span>
-            {undecided > 0 && (
-              <span style={{ color: "#a16207", fontWeight: 400 }}>· อีก {undecided} ใบยังไม่ตรวจ</span>
-            )}
-          </div>
-        )}
-        {blockedVat > 0 && <div style={{ width: 1, height: 20, background: "#e8ecf2" }} />}
-        {/* แท็บสถานะ (ลิงก์ — คงผลเหมือน list mode) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, overflowX: "auto" }}>
-          {RR_PRIMARY_TABS.filter((t) => data.payreqEnabled || !t.pay).map((t) => {
-            const active = activePrimary === t.id;
-            const count = statusCounts[t.id];
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => go(rrStatusHref(baseParams, t.id, selected))}
-                className="rr-dim"
-                style={{
-                  whiteSpace: "nowrap",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  padding: "5px 10px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: active ? "#1e3a8a" : "#f1f5f9",
-                  color: active ? "#fff" : "#475569",
-                }}
-              >
-                <span>{t.label}</span>
-                {count > 0 && (
-                  <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.85 }} className="rr-num">
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          onClick={() => setFilterOpen(true)}
-          className="rr-hb"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12,
-            fontWeight: 600,
-            color: "#334155",
-            padding: "6px 11px",
-            border: `1px solid ${secondaryFilterCount > 0 ? "#93c5fd" : "#e2e8f0"}`,
-            background: secondaryFilterCount > 0 ? "#eff6ff" : "#fff",
-            borderRadius: 8,
-          }}
-        >
-          <span>ตัวกรอง</span>
-          {secondaryFilterCount > 0 && (
-            <span
+          <>
+            <div
               style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                color: "#fff",
-                background: "#2563eb",
-                padding: "1px 6px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: "#b45309",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                padding: "4px 9px",
                 borderRadius: 999,
+                flex: "none",
               }}
-              className="rr-num"
             >
-              {secondaryFilterCount}
-            </span>
-          )}
-        </button>
+              <span className="rr-num">⚠ {baht(blockedVat)} VAT ติด</span>
+              {undecided > 0 && (
+                <span style={{ color: "#a16207", fontWeight: 400 }}>· อีก {undecided} ใบยังไม่ตรวจ</span>
+              )}
+            </div>
+            <div style={{ width: 1, height: 20, background: "#e8ecf2", flex: "none" }} />
+          </>
+        )}
+        {/* แท็บสถานะตัวจริง — สร้างลิงก์จาก reviewBaseParams → คง view=receipt-review ทุกครั้ง. */}
+        <ExpenseStatusTabs
+          baseParams={reviewBaseParams}
+          status={filter.status as LedgerStatusValue | undefined}
+          tr={filter.tr}
+          ap={filter.ap}
+          pv={filter.pv}
+          nr={filter.nr}
+          pay={filter.pay}
+          payreqEnabled={data.payreqEnabled}
+          statusCounts={statusCounts}
+          selectedId={selected}
+          className="flex-1 py-1.5"
+        />
       </div>
 
-      {/* ── MAIN GRID 272 · 1fr · 330 ───────────────────────────── */}
+      {/* ── MAIN GRID — ExpenseList (ตัวจริง) · ฟอร์มลงบัญชี · รูปใบเสร็จ+ประวัติ ───────── */}
       <div className="rr-gridwrap" style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <div
           className="rr-grid"
@@ -315,20 +269,52 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
             flex: 1,
             minHeight: 0,
             display: "grid",
-            gridTemplateColumns: "272px 1fr 330px",
+            gridTemplateColumns: "minmax(360px, 400px) 1fr 360px",
             gap: 10,
             padding: 10,
           }}
         >
-          <RRListRail data={data} onNavigate={go} />
+          {/* คอลัมน์ซ้าย = ExpenseList ตัวจริง (การ์ด/ตัวกรอง/bulk เหมือน list mode) */}
+          <div style={{ minHeight: 0, overflowY: "auto" }}>
+            <ExpenseList
+              rows={data.rows}
+              categories={data.categories}
+              selectedId={selected}
+              baseParams={reviewBaseParams}
+              status={filter.status as LedgerStatusValue | undefined}
+              categoryId={filter.categoryId}
+              projectId={filter.projectId}
+              projects={data.projects}
+              tr={filter.tr}
+              cc={filter.cc}
+              q={filter.q}
+              draftIds={data.draftIds}
+              sendableIds={data.sendableIds}
+              convertibleIds={data.convertibleIds}
+              companyId={data.companyId}
+              payreqEnabled={data.payreqEnabled}
+              branches={branches}
+              tab={filter.tab as ExpenseTab}
+              sort={
+                filter.sort as
+                  | "date-desc"
+                  | "date-asc"
+                  | "amount-desc"
+                  | "amount-asc"
+                  | "created-desc"
+                  | undefined
+              }
+              nr={filter.nr}
+              pay={filter.pay}
+              ap={filter.ap}
+              pv={filter.pv}
+              statusCounts={statusCounts}
+            />
+          </div>
           <RRDetailForm data={data} />
           <RRReceiptColumn data={data} />
         </div>
       </div>
-
-      {filterOpen && (
-        <RRFilterOverlay data={data} onClose={() => setFilterOpen(false)} onNavigate={go} />
-      )}
     </div>
   );
 }

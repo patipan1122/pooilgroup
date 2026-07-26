@@ -50,14 +50,7 @@ const DOC_TYPES: { value: ExpenseDocType; label: string }[] = [
 ];
 // values ตรงกับ pane (ให้ข้อมูลที่บันทึกสอดคล้องกันทั้งระบบ) — label ในมุมมองนี้เหมือน mockup.
 const PAYMENT_METHODS = ["เงินสด", "โอน", "บัตรเครดิต", "เช็ค", "อื่นๆ"];
-// visual-only (ไม่มีฟิลด์ใน draft/schema → ไม่ persist): GL รายบรรทัด/บัญชีจ่าย/รับ/กำหนดชำระ.
-const GL_HINTS = [
-  "5310 ค่าน้ำประปา",
-  "5320 ค่าไฟฟ้า",
-  "5410 ค่าซ่อมบำรุง",
-  "1150 วัตถุดิบคงเหลือ",
-  "5390 ค่าบริการอื่น",
-];
+// visual-only (ไม่มีฟิลด์ใน draft/schema → ไม่ persist): บัญชีจ่าย/รับ/กำหนดชำระ.
 const PAY_FROM_HINTS = ["บัญชีจ่ายออก (ของเรา)"];
 const PAY_TO_HINTS = ["บัญชีรับโอน (ผู้ขาย)"];
 const DUE_HINTS = ["ทันที", "7 วัน", "15 วัน", "30 วัน"];
@@ -203,7 +196,7 @@ const stdSelect = (border = "#e2e8f0"): CSSProperties => ({
 });
 const fieldCol: CSSProperties = { display: "flex", flexDirection: "column", gap: 3 };
 const totLabel: CSSProperties = { fontSize: 10, color: "#94a3b8", fontWeight: 600 };
-const ITEM_GRID = "20px 92px 1fr 148px 46px 74px 80px 44px";
+const ITEM_GRID = "20px 92px 1fr 46px 74px 80px";
 
 // ── component ──────────────────────────────────────────────────────────────
 export function RRDetailForm({ data }: { data: ReceiptReviewData }) {
@@ -831,11 +824,9 @@ function DetailBody({ data, exp }: { data: ReceiptReviewData; exp: RRSelectedExp
             <div>#</div>
             <div>รหัส/SKU</div>
             <div>ชื่อรายการ</div>
-            <div>ผังบัญชี (GL)</div>
             <div style={{ textAlign: "right" }}>จน.</div>
             <div style={{ textAlign: "right" }}>ราคา</div>
             <div style={{ textAlign: "right" }}>รวม</div>
-            <div style={{ textAlign: "center" }}>AI</div>
           </div>
 
           {/* rows */}
@@ -873,12 +864,6 @@ function DetailBody({ data, exp }: { data: ReceiptReviewData; exp: RRSelectedExp
                   placeholder="ชื่อสินค้า/บริการ"
                   style={itemInput(12)}
                 />
-                {/* ผังบัญชี GL รายบรรทัด — visual only (โพสต์จริงมาจากหมวด/categoryId server-side) */}
-                <select aria-label={`ผังบัญชีรายการ ${i + 1}`} disabled={locked} defaultValue={GL_HINTS[0]} style={itemSelect()}>
-                  {GL_HINTS.map((g) => (
-                    <option key={g}>{g}</option>
-                  ))}
-                </select>
                 <input
                   aria-label={`จำนวน รายการ ${i + 1}`}
                   className="rr-num"
@@ -899,20 +884,6 @@ function DetailBody({ data, exp }: { data: ReceiptReviewData; exp: RRSelectedExp
                 />
                 <div className="rr-num" style={{ fontSize: 12, textAlign: "right", fontWeight: 700 }}>
                   {fmt2(it.amount)}
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontWeight: 700,
-                      padding: "2px 5px",
-                      borderRadius: 5,
-                      background: "#f1f5f9",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    —
-                  </span>
                 </div>
               </div>
             ))
@@ -1155,18 +1126,6 @@ function itemInput(fontSize: number): CSSProperties {
     fontSize,
     fontWeight: 600,
     padding: "5px 7px",
-    border: "1px solid #e8ecf2",
-    borderRadius: 6,
-    background: "#fff",
-    color: "#0f172a",
-  };
-}
-function itemSelect(): CSSProperties {
-  return {
-    width: "100%",
-    fontSize: 11.5,
-    fontWeight: 600,
-    padding: "5px 6px",
     border: "1px solid #e8ecf2",
     borderRadius: 6,
     background: "#fff",
