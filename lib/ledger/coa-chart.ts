@@ -3,6 +3,8 @@
 // ใช้ป้อน: dropdown เลือกรหัสบัญชี · lookup รหัส→ชื่อ · seed 20 หมวดมาตรฐาน · preview Dr/Cr.
 // ⚠️ ห้ามแก้รหัส GL โดยไม่ปรึกษาสำนักงานบัญชี.
 
+import { COA_NAMES } from "@/lib/ledger/coa-names.generated";
+
 export type SkuCode = "JPS-100" | "JPS-101" | "JPS-103";
 
 /** ชื่อ SKU (ของประเภทไหน — มีแค่ 3 ตัว) */
@@ -65,10 +67,13 @@ export const EXPENSE_ACCOUNTS: { code: string; name: string }[] = [
 
 const NAME_BY_CODE = new Map(EXPENSE_ACCOUNTS.map((a) => [a.code, a.name]));
 
-/** รหัสบัญชี → ชื่อบัญชี (คืน null ถ้าไม่รู้จัก). */
+/** รหัสบัญชี → ชื่อบัญชี (คืน null ถ้าไม่รู้จักเลย).
+ *  ลำดับ: ชื่อหมวดของเรา (business-friendly) ก่อน → ผังบัญชีเต็มจาก TRCloud (456 บัญชี) เป็น fallback.
+ *  → journal จริง (Dr/Cr) ทุกรหัสจึงมีชื่อกำกับ ไม่ใช่แค่ 21 หมวดที่เราตั้งเอง. */
 export function accountName(code: string | null | undefined): string | null {
   if (!code) return null;
-  return NAME_BY_CODE.get(code.trim()) ?? null;
+  const c = code.trim();
+  return NAME_BY_CODE.get(c) ?? COA_NAMES[c] ?? null;
 }
 
 // ── สูตร "LL" (LedgerLine) — 1 สูตรลงบัญชีต่อหมวดด้วย "ช่อง c" ────────────────────

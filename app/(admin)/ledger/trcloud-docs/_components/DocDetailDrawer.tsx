@@ -1,13 +1,20 @@
 "use client";
 import { useEffect, useState } from "react";
-import { X, FileText, AlertTriangle, Loader2 } from "lucide-react";
+import { X, FileText, AlertTriangle, Loader2, ChevronRight } from "lucide-react";
 import { actReadTrcloudDocDetail } from "../actions";
+import { SKU_LABELS } from "@/lib/ledger/coa-chart";
 import type { TrcloudDocDetail } from "@/lib/ledger/trcloud-doc-detail";
 import type { TrcloudDocRow } from "@/lib/ledger/trcloud-docs-data";
 
 function money(n: number | null | undefined): string {
   if (n == null) return "—";
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// SKU (product_id) → ชื่อประเภท ถ้าเป็น SKU มาตรฐานของเรา (JPS-100/101/103). ตัวอื่นคืน null.
+function skuLabel(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return (SKU_LABELS as Record<string, string>)[code] ?? null;
 }
 
 // แผง "ไส้ใน" ของใบเดียว — เปิดจากการคลิกแถวในตาราง (อ่านสดจาก TRCloud ตอนเปิด).
@@ -143,31 +150,46 @@ export function DocDetailDrawer({ doc, onClose }: { doc: TrcloudDocRow | null; o
             ) : null}
           </section>
 
-          {/* รายการสินค้า */}
+          {/* รายการสินค้า — แถวกระชับ · กดกางดู SKU + จำนวน×ราคา + ก่อน VAT/VAT */}
           {detail && detail.lines.length > 0 && (
             <section>
-              <div className="mb-1.5 text-sm font-medium text-zinc-700">รายการในใบ</div>
-              <div className="overflow-hidden rounded-xl border border-zinc-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
-                      <th className="px-2.5 py-1.5 font-medium">รายการ</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium">จำนวน</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium">รวม</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.lines.map((ln, i) => (
-                      <tr key={i} className="border-b border-zinc-100 last:border-0">
-                        <td className="px-2.5 py-1.5 text-zinc-800">
-                          {ln.description || ln.productCode || "—"}
-                        </td>
-                        <td className="px-2.5 py-1.5 text-right text-zinc-500">{ln.quantity ?? "—"}</td>
-                        <td className="px-2.5 py-1.5 text-right text-zinc-800">{money(ln.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-zinc-700">รายการในใบ</span>
+                <span className="text-xs text-zinc-400">แตะเพื่อกางดู SKU</span>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-zinc-200 text-sm">
+                {detail.lines.map((ln, i) => (
+                  <details key={i} className="group border-b border-zinc-100 last:border-0">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90" />
+                      <span className="min-w-0 flex-1 truncate text-zinc-800">
+                        {ln.description || ln.productCode || "—"}
+                      </span>
+                      <span className="shrink-0 text-zinc-800">{money(ln.total)}</span>
+                    </summary>
+                    <div className="space-y-1 border-t border-zinc-100 bg-zinc-50/70 py-2 pl-8 pr-3 text-xs text-zinc-600">
+                      {ln.productCode ? (
+                        <div>
+                          <span className="text-zinc-400">SKU:</span>{" "}
+                          <span className="font-mono text-zinc-700">{ln.productCode}</span>
+                          {skuLabel(ln.productCode) && <span className="text-zinc-500"> · {skuLabel(ln.productCode)}</span>}
+                        </div>
+                      ) : (
+                        <div className="text-zinc-400">ไม่มีรหัส SKU ในใบนี้</div>
+                      )}
+                      <div>
+                        <span className="text-zinc-400">จำนวน:</span> {ln.quantity ?? "—"}
+                        {ln.price != null && <span> × {money(ln.price)}</span>}
+                      </div>
+                      {(ln.beforeVat != null || ln.vat != null) && (
+                        <div>
+                          <span className="text-zinc-400">ก่อน VAT:</span> {money(ln.beforeVat)}
+                          {ln.vat != null && <span> · VAT {money(ln.vat)}</span>}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
               </div>
             </section>
           )}
