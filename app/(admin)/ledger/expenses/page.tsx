@@ -7,6 +7,7 @@
 // in ExpenseReviewPane. Bulk-confirm only flips rows that already pass recheck.
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
+import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
@@ -680,6 +681,7 @@ export default async function ExpensesPage({
           companyId={scope.companyId}
           payreqEnabled={ledgerPayreqV1()}
           branches={scope.branches}
+          isSuperAdmin={isSuperAdmin(session.user.role)}
           tab={tab}
           sort={sort}
           nr={nr}

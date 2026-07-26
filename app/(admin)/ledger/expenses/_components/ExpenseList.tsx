@@ -19,6 +19,7 @@ import { trcloudDocUrl } from "@/lib/ledger/trcloud-url";
 import {
   bulkConfirm,
   bulkVoid,
+  cancelTransfersForExpensesAction,
   sendExpensesToTrcloud,
   convertExpenseToAp,
   convertExpensesToAp,
@@ -90,6 +91,7 @@ export function ExpenseList({
   scopePicker,
   payreqEnabled,
   branches,
+  isSuperAdmin,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number; active?: boolean }>;
@@ -138,6 +140,8 @@ export function ExpenseList({
   scopePicker?: React.ReactNode;
   /** LEDGER_PAYREQ_V1 — show the "ขอโอนเงิน" bulk action (request a transfer). */
   payreqEnabled?: boolean;
+  /** Pool super_admin — may delete/cancel money-touched bills (ขอโอนอยู่/โอนแล้ว). */
+  isSuperAdmin?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -177,6 +181,10 @@ export function ExpenseList({
   // a single account). The list is already company-scoped, so cross-company can't
   // happen here; the server re-validates company + vendor anyway.
   const checkedRows = rows.filter((r) => checked.has(r.id));
+  // CEO 2026-07-26 — ใบที่ "มีเรื่องเงิน" (ขอโอนอยู่ / โอนแล้ว) ลบได้เฉพาะ superadmin.
+  // requested = มีคำขอโอนค้าง (ต้องยกเลิกก่อนลบ) · paid = โอนแล้ว (ลบทีละใบ).
+  const checkedRequested = checkedRows.filter((r) => r.payState === "requested");
+  const checkedPaid = checkedRows.filter((r) => r.payState === "paid");
   const checkedVendors = Array.from(
     new Set(checkedRows.map((r) => (r.vendor ?? "").trim()).filter((v) => v.length > 0)),
   );
@@ -443,6 +451,22 @@ export function ExpenseList({
     });
   }
 
+  // CEO 2026-07-26 — superadmin ปลดล็อกใบที่ "ขอโอนอยู่" (ยกเลิกคำขอโอน) เพื่อให้ลบต่อได้.
+  function runCancelTransfers() {
+    const ids = checkedRequested.map((r) => r.id);
+    if (ids.length === 0) return;
+    setMsg(null);
+    startTransition(async () => {
+      const res = await cancelTransfersForExpensesAction(ids, companyId);
+      if (res.ok) {
+        setMsg({ kind: "ok", text: `ยกเลิกคำขอโอน ${res.cancelled ?? 0} คำขอแล้ว — กด "ลบ" ต่อได้เลย` });
+        router.refresh();
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "ยกเลิกไม่สำเร็จ" });
+      }
+    });
+  }
+
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white">
       {/* Sticky filter header */}
@@ -528,6 +552,18 @@ export function ExpenseList({
                   แปลง AP ({selConvertible.length})
                 </button>
               )}
+              {isSuperAdmin && checkedRequested.length > 0 && (
+                <button
+                  type="button"
+                  onClick={runCancelTransfers}
+                  disabled={pending}
+                  title="ยกเลิกคำขอโอนของใบที่เลือก เพื่อปลดล็อกให้ลบได้"
+                  className="press inline-flex h-7 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Banknote className="size-3.5" aria-hidden />}
+                  ยกเลิกคำขอโอน ({checkedRequested.length})
+                </button>
+              )}
               {checked.size > 0 && (
                 <button
                   type="button"
@@ -580,6 +616,13 @@ export function ExpenseList({
             <p className="mt-0.5 text-[11px] text-rose-600">
               จะเปลี่ยนสถานะเป็น &ldquo;ยกเลิก&rdquo; (ถอดออกจากยอดรวม) · รายการที่ถูกล็อกจะถูกข้าม
             </p>
+            {(checkedRequested.length > 0 || checkedPaid.length > 0) && (
+              <p className="mt-1 text-[11px] font-medium text-amber-700">
+                {checkedRequested.length > 0 &&
+                  `· ${checkedRequested.length} ใบมีคำขอโอนค้าง — ${isSuperAdmin ? "กด “ยกเลิกคำขอโอน” ก่อน" : "ต้องให้ superadmin ลบ"} (จะถูกข้าม)`}
+                {checkedPaid.length > 0 && ` · ${checkedPaid.length} ใบโอนแล้ว — ลบทีละใบ (เฉพาะ superadmin)`}
+              </p>
+            )}
             <p className="mt-2 text-[11px] font-medium text-zinc-600">
               พิมพ์ <span className="font-bold text-rose-700">ลบ</span> เพื่อยืนยัน
             </p>

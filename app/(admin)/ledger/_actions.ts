@@ -319,6 +319,32 @@ async function billInActiveRequest(
   return r != null;
 }
 const IN_ACTIVE_REQUEST_MSG = "บิลนี้มีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อนจึงจะลบ/ยกเลิกได้";
+const DELETE_NEEDS_SUPERADMIN_MSG =
+  "ใบนี้มีการโอน/ขอโอนเงินแล้ว — เฉพาะผู้ดูแลสูงสุด (superadmin) ลบได้";
+
+/** CEO 2026-07-26 — money-touch gate for delete. A bill is "financially involved" when
+ *  it has an ACTIVE transfer request (ขอโอนอยู่) OR an actual payment (โอนแล้ว = a
+ *  closed/paid request or a direct slip match). Deleting such a bill is restricted to
+ *  super_admin; a plain bill (just sent to TRCloud) stays freely deletable by
+ *  บัญชี/ผู้ดูแล as before. Mirrors the payState logic in queries.ts (paid|requested). */
+async function billFinancialState(
+  orgId: string,
+  companyId: string,
+  expenseId: string,
+): Promise<{ pending: boolean; paid: boolean }> {
+  const [active, paidReq, directPay] = await Promise.all([
+    prisma.ledgerPaymentRequestBill
+      .findFirst({ where: { expenseId, orgId, companyId, active: true }, select: { id: true } })
+      .catch(() => null),
+    prisma.ledgerPaymentRequestBill
+      .findFirst({ where: { expenseId, orgId, companyId, request: { state: "paid" } }, select: { id: true } })
+      .catch(() => null),
+    prisma.ledgerPayment
+      .findFirst({ where: { matchedExpenseId: expenseId, orgId, companyId }, select: { id: true } })
+      .catch(() => null),
+  ]);
+  return { pending: active != null, paid: paidReq != null || directPay != null };
+}
 
 /** Save edits to a draft (stays draft). Any ledger member may edit a draft. */
 export async function saveExpense(
@@ -542,7 +568,12 @@ export async function voidExpense(id: string): Promise<ActionResult> {
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked")
     return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
-  if (await billInActiveRequest(session.user.org_id, row.companyId, id))
+  // CEO 2026-07-26 — "ใบที่โอนเงินไปแล้ว หรือขอโอนอยู่" ลบได้เฉพาะ superadmin.
+  // ใบปกติ (แค่ส่ง TRCloud) ยังลบได้ตามเดิม (บัญชี/ผู้ดูแล).
+  const fin = await billFinancialState(session.user.org_id, row.companyId, id);
+  if ((fin.pending || fin.paid) && !isSuperAdmin(session.user.role))
+    return { ok: false, error: DELETE_NEEDS_SUPERADMIN_MSG };
+  if (fin.pending)
     return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
 
   await prisma.ledgerExpense.updateMany({
@@ -797,20 +828,43 @@ export async function bulkVoid(
   });
   if (rows.length === 0) return { ok: false, error: "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)" };
 
-  // P0 (bug-hunt C) — exclude bills sitting in an ACTIVE "ขอโอนเงิน" request; voiding
-  // them would leave the request's per-bill lock dangling + let the slip pay a void bill.
+  // Bulk delete only ever removes PLAIN bills. Two kinds are excluded and handled
+  // one-by-one instead (CEO 2026-07-26):
+  //   • pending (ACTIVE ขอโอน request) — cancel the request first (per-bill lock + an
+  //     incoming slip would still pay a void bill). Use the "ยกเลิกคำขอโอน" button.
+  //   • paid    (โอนแล้ว = closed request OR direct slip match) — deleting money-moved
+  //     bills is super_admin-only AND needs the TRCloud/PV cleanup that single voidExpense
+  //     does, so route them to single delete.
   const voidableIds = rows.map((r) => r.id);
-  const inReq = await prisma.ledgerPaymentRequestBill.findMany({
-    where: { expenseId: { in: voidableIds }, orgId: session.user.org_id, companyId, active: true },
-    select: { expenseId: true },
-  });
-  const blocked = new Set(inReq.map((r) => r.expenseId));
-  const voidIds = voidableIds.filter((id) => !blocked.has(id));
-  if (voidIds.length === 0)
-    return {
-      ok: false,
-      error: blocked.size > 0 ? "บิลที่เลือกมีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อน" : "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)",
-    };
+  const [inReq, paidReq, directPay] = await Promise.all([
+    prisma.ledgerPaymentRequestBill.findMany({
+      where: { expenseId: { in: voidableIds }, orgId: session.user.org_id, companyId, active: true },
+      select: { expenseId: true },
+    }),
+    prisma.ledgerPaymentRequestBill.findMany({
+      where: { expenseId: { in: voidableIds }, orgId: session.user.org_id, companyId, request: { state: "paid" } },
+      select: { expenseId: true },
+    }),
+    prisma.ledgerPayment.findMany({
+      where: { matchedExpenseId: { in: voidableIds }, orgId: session.user.org_id, companyId },
+      select: { matchedExpenseId: true },
+    }),
+  ]);
+  const pendingSet = new Set(inReq.map((r) => r.expenseId));
+  const paidSet = new Set<string>([
+    ...paidReq.map((r) => r.expenseId),
+    ...directPay.map((p) => p.matchedExpenseId).filter((x): x is string => !!x),
+  ]);
+  const voidIds = voidableIds.filter((id) => !pendingSet.has(id) && !paidSet.has(id));
+  if (voidIds.length === 0) {
+    if (pendingSet.size > 0 && paidSet.size > 0)
+      return { ok: false, error: "บิลที่เลือกมีการขอโอน/โอนแล้ว — ยกเลิกคำขอโอนก่อน หรือลบทีละใบ (superadmin)" };
+    if (pendingSet.size > 0)
+      return { ok: false, error: "บิลที่เลือกมีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อน" };
+    if (paidSet.size > 0)
+      return { ok: false, error: "บิลที่เลือกโอนเงินแล้ว — ลบทีละใบ (เฉพาะ superadmin)" };
+    return { ok: false, error: "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)" };
+  }
   await prisma.ledgerExpense.updateMany({
     where: { id: { in: voidIds }, orgId: session.user.org_id, companyId },
     data: { status: "void", needsReview: false },
@@ -2258,6 +2312,10 @@ export async function liffVoidExpense(id: string): Promise<ActionResult> {
   if (row.status === "locked") return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
   if (await billInActiveRequest(actor.orgId, row.companyId, id))
     return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
+  // CEO 2026-07-26 — a bill that was actually paid (โอนแล้ว) is super_admin-only to delete.
+  // The LIFF actor is not a Pool super_admin, so block paid bills here and route to web.
+  if ((await billFinancialState(actor.orgId, row.companyId, id)).paid)
+    return { ok: false, error: "ใบที่โอนเงินแล้วต้องลบในเว็บ (เฉพาะผู้ดูแลสูงสุด)" };
 
   await prisma.ledgerExpense.updateMany({
     where: { id, orgId: actor.orgId, companyId: row.companyId },
@@ -4066,6 +4124,62 @@ export async function cancelPaymentRequestAction(requestId: string): Promise<Act
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger/reconcile");
   return { ok: true };
+}
+
+/**
+ * CEO 2026-07-26 — bulk "ยกเลิกคำขอโอน" from the รายจ่าย list, so a super_admin can
+ * release bills stuck behind an active transfer request and then delete them. super_admin
+ * only (altering money-touched bills is reserved to the owner). Cancels each UNIQUE request
+ * the selected bills belong to (one request may hold several bills). Reuses
+ * cancelPaymentRequest → releases the per-bill lock + resets bills to unpaid. Does NOT
+ * touch TRCloud/PV. Refuses to cancel any request that has already been paid (guarded
+ * inside cancelPaymentRequest).
+ */
+export async function cancelTransfersForExpensesAction(
+  expenseIds: string[],
+  companyId: string,
+): Promise<ActionResult & { cancelled?: number }> {
+  if (!Array.isArray(expenseIds) || expenseIds.length === 0)
+    return { ok: false, error: "ไม่ได้เลือกรายการ" };
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isSuperAdmin(session.user.role))
+    return { ok: false, error: "เฉพาะผู้ดูแลสูงสุด (superadmin) ยกเลิกคำขอโอนได้" };
+  const orgId = session.user.org_id;
+  // Only ACTIVE requests block deletion — scope by org+company so a client-supplied id
+  // from another company can't be cancelled.
+  const bills = await prisma.ledgerPaymentRequestBill.findMany({
+    where: { expenseId: { in: expenseIds }, orgId, companyId, active: true },
+    select: { requestId: true },
+  });
+  const reqIds = [...new Set(bills.map((b) => b.requestId))];
+  if (reqIds.length === 0) return { ok: false, error: "ไม่มีคำขอโอนค้างในบิลที่เลือก" };
+  const reqs = await prisma.ledgerPaymentRequest.findMany({
+    where: { id: { in: reqIds }, orgId, companyId },
+    select: { id: true, vendor: true },
+  });
+  let cancelled = 0;
+  for (const r of reqs) {
+    const res = await cancelPaymentRequest({ orgId, companyId, requestId: r.id, cancelledBy: session.user.id });
+    if (!res.ok) continue;
+    cancelled++;
+    await pushTextToSlipGroup(
+      orgId, companyId,
+      `🚫 ยกเลิกคำขอโอน${r.vendor ? ` ${r.vendor}` : ""} แล้ว — ยังไม่ต้องโอนนะครับ`,
+    ).catch(() => {});
+    await audit({
+      orgId, userId: session.user.id,
+      action: "LEDGER_PAYMENT_REQ_CANCELLED",
+      resourceType: "ledger_payment_request", resourceId: r.id,
+      diff: { new: { via: "bulk_expense_cleanup" } },
+    });
+  }
+  if (cancelled === 0) return { ok: false, error: "ยกเลิกคำขอไม่สำเร็จ (อาจจ่าย/ปิดไปแล้ว)" };
+  revalidatePath("/ledger/expenses");
+  revalidatePath("/ledger/reconcile");
+  return { ok: true, cancelled };
 }
 
 /** Accountant manually pairs a floating slip to an open request (reconcile safety net). */
