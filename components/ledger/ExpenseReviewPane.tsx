@@ -33,6 +33,7 @@ import {
   ListTree,
   Banknote,
   Upload,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -340,6 +341,7 @@ export function ExpenseReviewPane({
   onRequestDelete,
   onEnsureCentralBranch,
   onRequestPayout,
+  onSendToTrcloud,
   onUpdateTrcloud,
   projects,
   onSetProject,
@@ -373,6 +375,11 @@ export function ExpenseReviewPane({
   /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — ต้องส่ง "ปลายทางผู้รับ" (payee) ที่กรอกในส่วนที่ 4.
    *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
   onRequestPayout?: (payee: PayeeInput) => Promise<LedgerActionResult>;
+  /** ส่ง PO เข้า TRCloud (sendExpenseToTrcloud) — ใช้ในปุ่ม "ส่ง+ขอโอนด่วน" (เว็บ · CEO 2026-07-26).
+   *  ไม่ส่งมา = ไม่โชว์ปุ่มด่วน (LIFF ใช้เส้นแยก). */
+  onSendToTrcloud?: (
+    id: string,
+  ) => Promise<LedgerActionResult & { docNo?: string | null; alreadySent?: boolean }>;
   /** อัพเดตใบที่ส่ง TRCloud แล้ว (updateExpenseInTrcloud) — CEO 2026-07-26 "แก้บิลหลังส่ง
    *  → อัพเดต TRCloud ด้วย". ไม่ส่งมา = ไม่ให้แก้หลังส่ง (ล็อกเหมือนเดิม). */
   onUpdateTrcloud?: (id: string) => Promise<LedgerActionResult & { docNo?: string | null }>;
@@ -454,10 +461,29 @@ export function ExpenseReviewPane({
     return { acctName: "", bankCode: "", acctNo: acctFromBank, promptpay: "", qrImageUrl: "" };
   });
   const [qrUploading, setQrUploading] = useState(false);
+  // ── ขอโอนด่วน (CEO 2026-07-26) — ปุ่มเดียว บันทึก→ส่ง PO→(ยืนยัน)→ขอโอน · popup พาไปเลือกหมวด/
+  //    กรอกผู้รับ ถ้ายังไม่ครบ · refs = จุดเลื่อนไปหาช่องที่ขาด. ──
+  const [expressBusy, setExpressBusy] = useState(false);
+  const [expressPhase, setExpressPhase] = useState<string | null>(null);
+  const [expressGuide, setExpressGuide] = useState<
+    null | "category" | "payee" | "error"
+  >(null);
+  const [expressConfirm, setExpressConfirm] = useState(false);
+  const accountAnchorRef = useRef<HTMLDivElement | null>(null);
+  const payeeAnchorRef = useRef<HTMLDivElement | null>(null);
   const payeeHasAccount =
     (payee.acctNo ?? "").trim().length > 0 ||
     (payee.promptpay ?? "").trim().length > 0 ||
     Boolean(payee.qrImageUrl);
+  // สรุปผู้รับสำหรับ popup ยืนยันขอโอนด่วน.
+  const payeeSummary =
+    [
+      payee.acctName?.trim(),
+      payee.bankCode?.trim(),
+      payee.acctNo?.trim() || payee.promptpay?.trim(),
+    ]
+      .filter(Boolean)
+      .join(" · ") || (payee.qrImageUrl ? "ตาม QR ที่แนบ" : "");
   async function uploadPayeeQr(file: File) {
     if (!file.type.startsWith("image/")) {
       setMsg({ kind: "err", text: "แนบได้เฉพาะรูปภาพ QR" });
@@ -830,6 +856,87 @@ export function ExpenseReviewPane({
     });
   }
 
+  // ── ขอโอนด่วน (CEO 2026-07-26) — ปุ่มเดียว: บันทึก → ส่ง PO เข้า TRCloud → ยืนยันสั้นๆ → ขอโอน.
+  //    ยังไม่เลือกหมวด/สาขา หรือยังไม่กรอกปลายทางผู้รับ → เด้ง popup พาไปเลือก/กรอก (ไม่ทำต่อ).
+  //    money-safe: ทำต่อกันแบบรอทีละสเต็ป (await) · ส่ง TRCloud ล้ม (ด่านกัน 5919999) = หยุดก่อนถึงขอโอน.
+  function startExpressPayout() {
+    if (pending || expressBusy || !onRequestPayout || !onSendToTrcloud) return;
+    setMsg(null);
+    if (!gate.ok) {
+      setOpenSec((s) => ({ ...s, 1: true }));
+      setExpressGuide("category");
+      return;
+    }
+    if (expense.status === "draft" && hasError) {
+      setExpressGuide("error");
+      return;
+    }
+    if (!payeeHasAccount) {
+      setExpressGuide("payee");
+      return;
+    }
+    setExpressConfirm(true);
+  }
+  function goToAccount() {
+    setExpressGuide(null);
+    setOpenSec((s) => ({ ...s, 1: true }));
+    requestAnimationFrame(() =>
+      accountAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
+  function goToPayee() {
+    setExpressGuide(null);
+    requestAnimationFrame(() =>
+      payeeAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
+  async function runExpressPayout() {
+    if (!onRequestPayout || !onSendToTrcloud) return;
+    setExpressConfirm(false);
+    setMsg(null);
+    setExpressBusy(true);
+    try {
+      // 1) บันทึก/ยืนยันใบก่อน — persist หมวด/สาขา ให้ TRCloud ส่งได้ (กัน 5919999).
+      const commit = canConfirm && gate.ok && !hasError && expense.status === "draft";
+      setExpressPhase("กำลังบันทึก…");
+      const saveRes = await (commit ? onConfirm : onSave)(expense.id, draft);
+      if (!saveRes.ok) {
+        setMsg({ kind: "err", text: saveRes.error ?? "บันทึกไม่สำเร็จ" });
+        return;
+      }
+      // 2) ส่ง PO เข้า TRCloud (ข้ามถ้าส่งแล้ว) — server กันหมวด/สาขาว่างซ้ำอีกชั้น.
+      if (trState !== "sent") {
+        setExpressPhase("กำลังส่ง TRCloud…");
+        const sendRes = await onSendToTrcloud(expense.id);
+        if (!sendRes.ok) {
+          setMsg({ kind: "err", text: sendRes.error ?? "ส่ง TRCloud ไม่สำเร็จ" });
+          return;
+        }
+      }
+      // 3) สร้างคำขอโอน (payee จากส่วนที่ 4) — server ตรวจ PO-sent + payee ซ้ำอีกชั้น.
+      setExpressPhase("กำลังสร้างคำขอโอน…");
+      const payRes = await onRequestPayout({
+        acctName: payee.acctName?.trim() || undefined,
+        bankCode: payee.bankCode?.trim() || undefined,
+        acctNo: payee.acctNo?.trim() || undefined,
+        promptpay: payee.promptpay?.trim() || undefined,
+        qrImageUrl: payee.qrImageUrl || undefined,
+      });
+      if (!payRes.ok) {
+        setMsg({ kind: "err", text: payRes.error ?? "ขอโอนไม่สำเร็จ" });
+        return;
+      }
+      setMsg({
+        kind: "ok",
+        text: "ส่ง TRCloud + ขอโอนเรียบร้อย ✅ — แนบสลิปได้ที่การ์ดในกลุ่มผู้บริหาร",
+      });
+      onAfterFinish?.();
+    } finally {
+      setExpressBusy(false);
+      setExpressPhase(null);
+    }
+  }
+
   // อัพเดตใบที่ส่ง TRCloud แล้ว (CEO 2026-07-26) — เซฟ draft ล่าสุดก่อน แล้ว sync ไปแก้ใบใน TRCloud.
   function handleUpdateTrcloud() {
     if (!onUpdateTrcloud) return;
@@ -976,6 +1083,8 @@ export function ExpenseReviewPane({
           </div>
           {/* 1 · ลงบัญชี (จำเป็น) — หมวด + สาขา ต้องครบก่อนยืนยัน (ยกขึ้นบนสุดตามดีไซน์
               ใหม่ 2026-06-07: ฟิลด์บังคับเห็นก่อน ลดการเลื่อนหา). */}
+          {/* จุดเลื่อนเมื่อ popup "ขอโอนด่วน" บอกให้มาเลือกหมวด/สาขา. */}
+          <div ref={accountAnchorRef} className="scroll-mt-24" aria-hidden />
           <Section
             n={1}
             icon={<Building2 className="size-4" aria-hidden />}
@@ -1496,7 +1605,10 @@ export function ExpenseReviewPane({
                 กดขอโอนแล้วเตือน "ต้องระบุเลขบัญชี" แต่หาช่องกรอกไม่เจอ. ผู้รับกรอกได้ตลอดแม้บิลล็อก
                 หลังส่ง TRCloud · ปุ่มขอโอนปิดจนกว่า: มีสาขา+หมวด · ส่ง PO แล้ว · มีปลายทางเงิน ≥1. */}
             {onRequestPayout && (
-              <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3">
+              <div
+                ref={payeeAnchorRef}
+                className="scroll-mt-24 space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3"
+              >
                 <div className="flex items-center gap-2">
                   <Banknote className="size-4 text-[var(--color-brand-600)]" aria-hidden />
                   <span className="text-sm font-semibold text-zinc-800">
@@ -1600,7 +1712,7 @@ export function ExpenseReviewPane({
                 <div className="border-t border-zinc-200 pt-3">
                   <Button
                     variant="primary"
-                    disabled={pending || payeeDisabled || payoutBlockReason !== null}
+                    disabled={pending || payeeDisabled || payoutBlockReason !== null || expressBusy}
                     onClick={handleRequestPayout}
                     title={payoutBlockReason ?? "ส่งคำขอโอนเข้ากลุ่มผู้บริหาร"}
                     className="press w-full sm:w-auto"
@@ -1922,7 +2034,7 @@ export function ExpenseReviewPane({
                 ยังไม่ครบ) = บันทึกร่าง. แก้ได้เรื่อย ๆ จนกว่าจะส่ง TRCloud (locked). */}
             <Button
               variant="primary"
-              disabled={pending}
+              disabled={pending || expressBusy}
               onClick={() => {
                 const commit =
                   canConfirm && gate.ok && !hasError && expense.status === "draft";
@@ -1958,6 +2070,26 @@ export function ExpenseReviewPane({
               {savedFlash ? "บันทึกแล้ว" : "บันทึกรายการ"}
             </Button>
 
+            {/* ⚡ ส่ง+ขอโอนด่วน (CEO 2026-07-26) — ปุ่มเดียวทำต่อกัน: บันทึก → ส่ง PO เข้า TRCloud →
+                ยืนยันสั้นๆ → สร้างคำขอโอน. โชว์เฉพาะเว็บ (มี onSendToTrcloud + onRequestPayout) ·
+                หน้า LIFF ไม่โชว์ (ใช้เส้นแยก). ยังไม่ครบหมวด/ผู้รับ = popup พาไปกรอก. */}
+            {onRequestPayout && onSendToTrcloud && (
+              <Button
+                variant="primary"
+                disabled={pending || expressBusy}
+                onClick={startExpressPayout}
+                title="บันทึก + ส่ง TRCloud + ขอโอน ในปุ่มเดียว (เคสโอนด่วน)"
+                className="press flex-1 whitespace-nowrap !bg-violet-600 hover:!bg-violet-700 sm:flex-none"
+              >
+                {expressBusy ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Zap className="size-4" aria-hidden />
+                )}
+                {expressBusy ? (expressPhase ?? "กำลังทำ…") : "ส่ง+ขอโอนด่วน"}
+              </Button>
+            )}
+
             {/* ส่ง TRCloud (compact icon-only) — sticky footer. โชว์เฉพาะตอนไม่ได้โชว์ปุ่ม
                 มีป้ายชื่อที่ header (showSendToTrcloud) — กันปุ่มส่งซ้ำ 2 จุดบนมือถือ (LIFF). */}
             {showTrcloud && !showSendToTrcloud && (
@@ -1986,7 +2118,7 @@ export function ExpenseReviewPane({
             {onSelfDelete && canSelfDelete ? (
               <Button
                 variant="ghost"
-                disabled={pending || delPending}
+                disabled={pending || delPending || expressBusy}
                 onClick={handleSelfDelete}
                 className={cn(
                   "press ml-auto tabular-nums hover:bg-rose-50",
@@ -2008,7 +2140,7 @@ export function ExpenseReviewPane({
             ) : onRequestDelete ? (
               <Button
                 variant="ghost"
-                disabled={pending || delPending}
+                disabled={pending || delPending || expressBusy}
                 onClick={() => setReqDelOpen((v) => !v)}
                 className={cn(
                   "press ml-auto hover:bg-rose-50",
@@ -2116,6 +2248,115 @@ export function ExpenseReviewPane({
         defaultTab={priceTab}
         onClose={() => setPriceTerm(null)}
       />
+
+      {/* ── popup ขอโอนด่วน (CEO 2026-07-26): เตือนไปเลือกหมวด/กรอกผู้รับ หรือยืนยันก่อนขอโอน ── */}
+      {(expressConfirm || expressGuide) && (
+        <div
+          className="fixed inset-0 z-[9000] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setExpressConfirm(false);
+            setExpressGuide(null);
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {expressGuide === "category" ? (
+              <>
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertTriangle className="size-5" aria-hidden />
+                  <span className="text-base font-semibold">ยังไม่ได้เลือกหมวด/สาขา</span>
+                </div>
+                <p className="mt-2 text-sm text-zinc-600">
+                  ต้องเลือก “สาขา + หมวดค่าใช้จ่าย” ให้ครบก่อน ระบบจึงส่ง TRCloud + ขอโอนได้
+                  (กันลงบัญชีตกถังรวม 5919999)
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <Button variant="ghost" className="flex-1" onClick={() => setExpressGuide(null)}>
+                    ปิด
+                  </Button>
+                  <Button variant="primary" className="flex-1" onClick={goToAccount}>
+                    ไปเลือกหมวด/สาขา
+                  </Button>
+                </div>
+              </>
+            ) : expressGuide === "error" ? (
+              <>
+                <div className="flex items-center gap-2 text-rose-600">
+                  <AlertTriangle className="size-5" aria-hidden />
+                  <span className="text-base font-semibold">ใบยังมีข้อผิดพลาด</span>
+                </div>
+                <p className="mt-2 text-sm text-zinc-600">
+                  ยอดเงิน/ข้อมูลยังไม่ถูกต้อง (ดูป้ายแดงบนใบ) แก้ให้เรียบร้อยก่อนกดขอโอนด่วน
+                </p>
+                <div className="mt-4 flex justify-end">
+                  <Button variant="primary" onClick={() => setExpressGuide(null)}>
+                    เข้าใจแล้ว
+                  </Button>
+                </div>
+              </>
+            ) : expressGuide === "payee" ? (
+              <>
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertTriangle className="size-5" aria-hidden />
+                  <span className="text-base font-semibold">ยังไม่ได้กรอกปลายทางผู้รับ</span>
+                </div>
+                <p className="mt-2 text-sm text-zinc-600">
+                  กรอกเลขบัญชี / พร้อมเพย์ หรือแนบ QR ผู้รับ อย่างน้อย 1 อย่าง ก่อนขอโอน
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <Button variant="ghost" className="flex-1" onClick={() => setExpressGuide(null)}>
+                    ปิด
+                  </Button>
+                  <Button variant="primary" className="flex-1" onClick={goToPayee}>
+                    ไปกรอกเลขบัญชี
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-[var(--color-brand-600)]">
+                  <Banknote className="size-5" aria-hidden />
+                  <span className="text-base font-semibold">ยืนยันขอโอนด่วน</span>
+                </div>
+                <p className="mt-2 text-sm text-zinc-600">
+                  ระบบจะ <span className="font-medium">ส่ง PO เข้า TRCloud</span> แล้ว{" "}
+                  <span className="font-medium">สร้างคำขอโอน</span> ให้ทันที
+                </p>
+                <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-zinc-500">ยอดโอน</span>
+                    <span className="text-lg font-bold tabular-nums text-zinc-900">
+                      ฿
+                      {draft.total.toLocaleString("th-TH", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  {payeeSummary && (
+                    <div className="mt-1 flex items-baseline justify-between gap-2">
+                      <span className="shrink-0 text-zinc-500">ผู้รับ</span>
+                      <span className="text-right font-medium text-zinc-800">{payeeSummary}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Button variant="ghost" className="flex-1" onClick={() => setExpressConfirm(false)}>
+                    ยกเลิก
+                  </Button>
+                  <Button variant="primary" className="flex-1" onClick={runExpressPayout}>
+                    ยืนยันขอโอน
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

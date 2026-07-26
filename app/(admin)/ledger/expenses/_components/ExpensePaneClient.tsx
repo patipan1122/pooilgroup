@@ -22,6 +22,7 @@ import {
   createPaymentRequestAction,
   setExpenseProjectAction,
   updateExpenseInTrcloud,
+  sendExpenseToTrcloud,
 } from "../../_actions";
 
 export function ExpensePaneClient({
@@ -82,6 +83,10 @@ export function ExpensePaneClient({
           ? (payee): Promise<LedgerActionResult> =>
               createPaymentRequestAction([expense.id], payee)
           : undefined
+      }
+      // ⚡ ปุ่ม "ส่ง+ขอโอนด่วน" (เว็บ) — ทำ ส่ง PO → ขอโอน ในปุ่มเดียว. โชว์เฉพาะเมื่อเปิด payreq.
+      onSendToTrcloud={
+        payreqEnabled ? (id: string) => sendExpenseToTrcloud(id) : undefined
       }
       // แก้บิลหลังส่ง TRCloud + sync (CEO 2026-07-26) — accountant-tier เท่านั้น (server ตรวจซ้ำ).
       onUpdateTrcloud={

@@ -60,14 +60,14 @@ export function AttachSlipForm({ requestId }: { requestId: string }) {
     <div className="rounded-2xl border border-zinc-200 bg-white p-5">
       <p className="text-base font-semibold text-zinc-800">แนบสลิปโอนเงิน</p>
       <p className="mt-1 text-sm text-zinc-500">
-        โอนแล้วถ่ายรูปสลิปแนบตรงนี้ ระบบจะจับคู่ยอด + ปิดบิลให้อัตโนมัติ
+        โอนแล้วเลือกรูปสลิปจากคลังภาพ หรือถ่ายใหม่ก็ได้ ระบบจะจับคู่ยอด + ปิดบิลให้อัตโนมัติ
       </p>
 
+      {/* ไม่ใส่ capture → มือถือเด้งเมนูให้เลือก "ถ่ายรูป / เลือกจากคลังภาพ" (เคสโอนด่วน สลิปอยู่ในเครื่องแล้ว) */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={(e) => pick(e.target.files?.[0] ?? null)}
       />
