@@ -8,9 +8,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, LayoutGrid, Columns, Wallet } from "lucide-react";
+import { Plus, LayoutGrid, Columns, Wallet, Table2 } from "lucide-react";
 import { MasterDetailView } from "./master-detail-view";
 import { KanbanBoard } from "./kanban-board";
+import { TableView } from "./table-view";
 import { PurchasingSubnav } from "@/components/dc/purchasing-subnav";
 import { PoCreateDrawer } from "@/components/dc/po-create-drawer";
 import { BulkPayDrawer } from "@/components/dc/bulk-pay-drawer";
@@ -28,6 +29,7 @@ export type PoListItem = {
   currency: string;
   supplierName: string | null;
   total: number;
+  totalThb: number | null; // ยอดเป็นบาท (ไทย=ยอดตรง · จีน=แปลงด้วยเรตใบนั้น · null=ใบจีนเก่าไม่มีเรต)
   lineCount: number;
   boxCount: number;
   hasTracking: boolean; // มีกล่องที่มีเลขพัสดุแล้วหรือยัง (ไว้ derive "รอใส่ข้อมูล")
@@ -45,7 +47,7 @@ export type PurchasingStats = {
   inTransit: number; // ของระหว่างทาง
 };
 
-export type ViewMode = "detail" | "kanban";
+export type ViewMode = "detail" | "kanban" | "table";
 
 type WarehouseOpt = { id: string; name: string };
 
@@ -143,6 +145,8 @@ export function PurchasingWorkspace({
         </div>
       ) : view === "detail" ? (
         <MasterDetailView items={items} canManage={canManage} canDelete={canDelete} r2PublicUrl={r2PublicUrl} />
+      ) : view === "table" ? (
+        <TableView items={items} />
       ) : (
         <KanbanBoard items={items} />
       )}
@@ -218,6 +222,15 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
         onClick={() => onChange("detail")}
       >
         <Columns size={15} /> รายการ
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === "table"}
+        className={`dc-mode-pill${view === "table" ? " is-active" : ""}`}
+        onClick={() => onChange("table")}
+      >
+        <Table2 size={15} /> ตาราง
       </button>
     </div>
   );

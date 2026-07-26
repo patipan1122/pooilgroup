@@ -31,6 +31,7 @@ export default async function DcPurchasingPage() {
       status: true,
       origin: true,
       currency: true,
+      fxRate: true, // เรตหยวน→บาทของใบนั้น (ไว้แปลง ¥→฿ สำหรับยอดรวมในมุมมองตาราง)
       createdAt: true,
       orderedAt: true,
       supplier: { select: { name: true } },
@@ -56,6 +57,11 @@ export default async function DcPurchasingPage() {
 
   const items: PoListItem[] = pos.map((po) => {
     const total = po.lines.reduce((sum, l) => sum + l.qty * Number(l.unitPriceCny), 0);
+    // ยอดเป็นบาท (ไว้รวมข้ามใบจีน+ไทยในตาราง): ไทย=บาทอยู่แล้ว · จีน=แปลงด้วยเรตของใบนั้น
+    // ใบจีนเก่าที่ยังไม่มีเรต → null (ตารางโชว์ "—" · ไม่นับเข้ายอดรวมบาท)
+    const isThaiPo = po.origin === "THAI" || po.currency === "THB";
+    const fxRate = po.fxRate != null ? Number(po.fxRate) : null;
+    const totalThb = isThaiPo ? total : fxRate ? total * fxRate : null;
     const boxCount = po.shipments.length;
     const hasTracking = po.shipments.some((s) => (s.trackingNo ?? "").trim() !== "");
     inTransit += po.shipments.filter((s) => s.status === "IN_TRANSIT").length;
@@ -77,6 +83,7 @@ export default async function DcPurchasingPage() {
       currency: po.currency,
       supplierName: po.supplier?.name ?? null,
       total,
+      totalThb,
       lineCount: po.lines.length,
       boxCount,
       hasTracking,
