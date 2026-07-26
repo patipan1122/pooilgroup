@@ -439,8 +439,9 @@ export function ExpenseList({
     startTransition(async () => {
       const res = await bulkVoid(ids, companyId);
       if (res.ok) {
-        const extra = res.skipped ? ` · ข้าม ${res.skipped} (ถูกล็อก)` : "";
-        setMsg({ kind: "ok", text: `ลบ ${res.voided ?? 0} ใบแล้ว${extra}` });
+        const extra = res.skipped ? ` · ข้าม ${res.skipped} (ถูกล็อก/มีการเงิน)` : "";
+        const warn = res.warning ? ` — ${res.warning}` : "";
+        setMsg({ kind: warn ? "err" : "ok", text: `ลบ ${res.voided ?? 0} ใบแล้ว${extra}${warn}` });
         setChecked(new Set());
         setConfirmDelete(false);
         setDeleteText("");

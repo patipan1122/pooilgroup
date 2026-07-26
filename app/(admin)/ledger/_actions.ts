@@ -555,6 +555,47 @@ export async function confirmExpense(
   return { ok: true };
 }
 
+/** CEO 2026-07-25/26 — ลบบิลในระบบเรา → ลบเอกสารที่เกี่ยวข้องใน TRCloud ด้วย (best-effort).
+ *  🔑 แปลงเป็น AP แล้ว → ลบด้วย AP id (PO ถูกลบตอนแปลงไปแล้ว) · ยังไม่แปลง → ลบ PO id.
+ *  deleteTrcloudAp ลอง po/delete แล้ว ap/delete ครอบทั้งคู่. void ในเราสำคัญกว่า — ถ้า TRCloud
+ *  ลบไม่ได้ (เช่นแปลง AP+ยื่น VAT แล้ว) ไม่ rollback · audit + คืน warning. ถ้าบิลอยู่ในคำขอที่ออก
+ *  PV แล้ว (1 PV รวมหลายบิล) → เตือนให้บัญชีจัดการ PV เอง ไม่ auto-ลบ. ใช้ร่วมทั้งลบทีละใบ+หลายใบ. */
+async function deleteExpenseTrcloudDoc(
+  orgId: string,
+  userId: string,
+  expenseId: string,
+): Promise<string | undefined> {
+  let warn: string | undefined;
+  const ref = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: { trcloudDocId: true, trcloudApDocId: true },
+  });
+  const numId = (s: string | null | undefined) => (s && /^\d+$/.test(s) ? s : null);
+  const trcloudId = numId(ref?.trcloudApDocId) ?? numId(ref?.trcloudDocId);
+  if (trcloudId) {
+    const del = await deleteTrcloudAp(trcloudId);
+    await audit({
+      orgId,
+      userId,
+      action: del.ok ? "LEDGER_EXPENSE_TRCLOUD_AP_DELETED" : "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED",
+      resourceType: "ledger_expense",
+      resourceId: expenseId,
+      diff: { new: { trcloudId, isAp: !!numId(ref?.trcloudApDocId), ok: del.ok, error: del.error ?? null, reason: "void" } },
+    });
+    if (!del.ok) warn = del.error || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
+  }
+  const pvBill = await prisma.ledgerPaymentRequestBill.findFirst({
+    where: { expenseId, orgId },
+    orderBy: { createdAt: "desc" },
+    select: { request: { select: { trcloudPvDocId: true, trcloudPvDocNo: true } } },
+  });
+  if (pvBill?.request?.trcloudPvDocId) {
+    const pvWarn = `มีใบสำคัญจ่าย (PV ${pvBill.request.trcloudPvDocNo ?? ""}) — ตรวจ/ยกเลิก PV เองใน TRCloud (1 PV รวมหลายบิล ระบบไม่ลบให้อัตโนมัติ)`;
+    warn = warn ? `${warn} · ${pvWarn}` : pvWarn;
+  }
+  return warn;
+}
+
 /** Void an expense (soft delete → status=void). Accountant-tier only. */
 export async function voidExpense(id: string): Promise<ActionResult> {
   const access = await requireLedgerAccess();
@@ -589,49 +630,8 @@ export async function voidExpense(id: string): Promise<ActionResult> {
     diff: { old: { status: row.status }, new: { status: "void" } },
   });
 
-  // CEO 2026-07-25: ลบในระบบเรา → ลบเอกสารใน TRCloud ให้ด้วย (best-effort). void ในเราแล้ว
-  // สำคัญกว่า — ถ้า TRCloud ลบไม่ได้ (เช่นแปลง AP+ล็อก/ยื่น VAT แล้ว) ไม่ rollback · audit + เตือน.
-  // 🔑 ต้องลบ "ตัวจริง" ใน TRCloud: แปลงเป็น AP แล้ว → PO ถูกลบตอนแปลงไปแล้ว เหลือ AP (trcloudApDocId)
-  //   → ลบด้วย AP id · ยังไม่แปลง → ลบ PO (trcloudDocId). deleteTrcloudAp ลอง po/delete แล้ว ap/delete.
-  let trcloudWarn: string | undefined;
-  const ref = await prisma.ledgerExpense.findFirst({
-    where: { id, orgId: session.user.org_id },
-    select: { trcloudDocId: true, trcloudApDocId: true },
-  });
-  const numId = (s: string | null | undefined) => (s && /^\d+$/.test(s) ? s : null);
-  const trcloudId = numId(ref?.trcloudApDocId) ?? numId(ref?.trcloudDocId);
-  if (trcloudId) {
-    const del = await deleteTrcloudAp(trcloudId);
-    await audit({
-      orgId: session.user.org_id,
-      userId: session.user.id,
-      action: del.ok ? "LEDGER_EXPENSE_TRCLOUD_AP_DELETED" : "LEDGER_EXPENSE_TRCLOUD_AP_DELETE_FAILED",
-      resourceType: "ledger_expense",
-      resourceId: id,
-      diff: {
-        new: {
-          trcloudId,
-          isAp: !!numId(ref?.trcloudApDocId),
-          ok: del.ok,
-          error: del.error ?? null,
-          reason: "void",
-        },
-      },
-    });
-    if (!del.ok) trcloudWarn = del.error || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
-  }
-
-  // ถ้าบิลนี้อยู่ในคำขอที่ออกใบสำคัญจ่าย (PV) ไปแล้ว → เตือนบัญชีจัดการ PV เอง. ไม่ลบ PV อัตโนมัติ
-  // เพราะ 1 PV รวมหลายบิล (ลบทั้งใบจะกระทบบิลอื่นที่จ่ายพร้อมกัน).
-  const pvBill = await prisma.ledgerPaymentRequestBill.findFirst({
-    where: { expenseId: id, orgId: session.user.org_id },
-    orderBy: { createdAt: "desc" },
-    select: { request: { select: { trcloudPvDocId: true, trcloudPvDocNo: true } } },
-  });
-  if (pvBill?.request?.trcloudPvDocId) {
-    const pvWarn = `บิลนี้มีใบสำคัญจ่าย (PV ${pvBill.request.trcloudPvDocNo ?? ""}) ใน TRCloud แล้ว — ตรวจ/ยกเลิก PV เองใน TRCloud (1 PV รวมหลายบิล ระบบไม่ลบให้อัตโนมัติ)`;
-    trcloudWarn = trcloudWarn ? `${trcloudWarn} · ${pvWarn}` : pvWarn;
-  }
+  // ลบในระบบเรา → ลบเอกสารที่เกี่ยวข้องใน TRCloud ให้ด้วย (best-effort · +เตือน PV).
+  const trcloudWarn = await deleteExpenseTrcloudDoc(session.user.org_id, session.user.id, id);
 
   revalidatePath("/ledger/expenses");
   return trcloudWarn
@@ -876,9 +876,35 @@ export async function bulkVoid(
     resourceType: "ledger_expense",
     diff: { new: { bulk: true, count: voidIds.length, ids: voidIds } },
   });
+
+  // CEO 2026-07-26: ลบหลายใบ → ลบเอกสารที่เกี่ยวข้องใน TRCloud ให้ด้วย (เหมือนลบทีละใบ).
+  // เฉพาะบิลที่เคยส่ง TRCloud (มี doc id) เพื่อไม่ยิง API เปล่ากับดราฟต์. sequential best-effort
+  // (TRCloud rate-limit) · cap กัน timeout เมื่อเลือกเยอะ → ที่เกินให้ลบทีละใบ (แจ้ง ไม่เงียบ).
+  const TRCLOUD_BULK_CAP = 25;
+  const sentToTrcloud = await prisma.ledgerExpense.findMany({
+    where: {
+      id: { in: voidIds },
+      orgId: session.user.org_id,
+      companyId,
+      OR: [{ trcloudDocId: { not: null } }, { trcloudApDocId: { not: null } }],
+    },
+    select: { id: true },
+  });
+  const trcloudWarns: string[] = [];
+  for (const b of sentToTrcloud.slice(0, TRCLOUD_BULK_CAP)) {
+    const w = await deleteExpenseTrcloudDoc(session.user.org_id, session.user.id, b.id);
+    if (w) trcloudWarns.push(w);
+  }
+  if (sentToTrcloud.length > TRCLOUD_BULK_CAP)
+    trcloudWarns.push(`อีก ${sentToTrcloud.length - TRCLOUD_BULK_CAP} ใบที่ส่ง TRCloud แล้ว — ลบทีละใบเพื่อให้ลบใน TRCloud ด้วย`);
+
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger");
-  return { ok: true, voided: voidIds.length, skipped: ids.length - voidIds.length };
+  const warning =
+    trcloudWarns.length > 0
+      ? `ลบในระบบแล้ว แต่บางใบใน TRCloud: ${trcloudWarns.join(" · ")} (จัดการใน TRCloud เองได้)`
+      : undefined;
+  return { ok: true, voided: voidIds.length, skipped: ids.length - voidIds.length, ...(warning ? { warning } : {}) };
 }
 
 // ===================== Input-VAT claimability (ภาษีซื้อ) =====================
