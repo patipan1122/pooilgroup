@@ -558,6 +558,19 @@ export async function confirmExpense(
   return { ok: true };
 }
 
+/** TRCloud คืน error เป็น HTML ("...<br>----------<br>...<a href><i></i></a>") ซึ่งถ้าเอาไป
+ *  โชว์ตรง ๆ ผู้ใช้จะเห็น tag ดิบเต็มจอ อ่านไม่รู้เรื่อง. ฟังก์ชันนี้ถอด tag + ยุบเส้นคั่น/ช่องว่าง
+ *  ให้เหลือข้อความล้วนอ่านง่าย. ใช้เฉพาะตอน "แสดงให้คนดู" — audit log ยังเก็บ error ดิบไว้ debug. */
+function cleanTrcloudError(raw: string): string {
+  return raw
+    .replace(/<br\s*\/?>/gi, " ") // <br> → เว้นวรรค
+    .replace(/<[^>]+>/g, "") // ถอด tag ที่เหลือ (<a>, <i>, ...)
+    .replace(/&nbsp;/gi, " ")
+    .replace(/-{3,}/g, " ") // เส้นคั่น "----------" → เว้นวรรค
+    .replace(/\s+/g, " ") // ยุบช่องว่างซ้ำ/ขึ้นบรรทัด
+    .trim();
+}
+
 /** CEO 2026-07-25/26 — ลบบิลในระบบเรา → ลบเอกสารที่เกี่ยวข้องใน TRCloud ด้วย (best-effort).
  *  🔑 แปลงเป็น AP แล้ว → ลบด้วย AP id (PO ถูกลบตอนแปลงไปแล้ว) · ยังไม่แปลง → ลบ PO id.
  *  deleteTrcloudAp ลอง po/delete แล้ว ap/delete ครอบทั้งคู่. void ในเราสำคัญกว่า — ถ้า TRCloud
@@ -585,7 +598,7 @@ async function deleteExpenseTrcloudDoc(
       resourceId: expenseId,
       diff: { new: { trcloudId, isAp: !!numId(ref?.trcloudApDocId), ok: del.ok, error: del.error ?? null, reason: "void" } },
     });
-    if (!del.ok) warn = del.error || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
+    if (!del.ok) warn = cleanTrcloudError(del.error || "") || "ลบเอกสารใน TRCloud ไม่สำเร็จ";
   }
   const pvBill = await prisma.ledgerPaymentRequestBill.findFirst({
     where: { expenseId, orgId },
@@ -893,12 +906,16 @@ export async function bulkVoid(
       companyId,
       OR: [{ trcloudDocId: { not: null } }, { trcloudApDocId: { not: null } }],
     },
-    select: { id: true },
+    select: { id: true, trcloudApDocNo: true, trcloudDocNo: true },
   });
   const trcloudWarns: string[] = [];
   for (const b of sentToTrcloud.slice(0, TRCLOUD_BULK_CAP)) {
     const w = await deleteExpenseTrcloudDoc(session.user.org_id, session.user.id, b.id);
-    if (w) trcloudWarns.push(w);
+    // นำหน้าด้วยเลขเอกสาร TRCloud ให้ CEO รู้ว่าต้องไปจัดการใบไหน (ถ้าลบไม่ได้หลายใบจะไม่ซ้ำจนงง).
+    if (w) {
+      const docNo = b.trcloudApDocNo ?? b.trcloudDocNo;
+      trcloudWarns.push(docNo ? `${docNo}: ${w}` : w);
+    }
   }
   if (sentToTrcloud.length > TRCLOUD_BULK_CAP)
     trcloudWarns.push(`อีก ${sentToTrcloud.length - TRCLOUD_BULK_CAP} ใบที่ส่ง TRCloud แล้ว — ลบทีละใบเพื่อให้ลบใน TRCloud ด้วย`);
