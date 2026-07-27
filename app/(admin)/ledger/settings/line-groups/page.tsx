@@ -7,6 +7,7 @@ import { getLineChannel, listLedgerGroups } from "../../_data";
 import { GroupBranchManager } from "../_components/GroupBranchManager";
 import { LineChannelCard } from "../_components/LineChannelCard";
 import { RichMenuButton } from "../_components/RichMenuButton";
+import { LineQuotaButton } from "../_components/LineQuotaButton";
 import { SettingsBack } from "../_components/SettingsBack";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +63,10 @@ export default async function LineGroupsSettingsPage({
           companyId={scope.companyId}
           connected={!!lineChannel?.hasAccessToken}
           alreadySet={!!lineChannel?.richMenuId}
+        />
+        <LineQuotaButton
+          companyId={scope.companyId}
+          connected={!!lineChannel?.hasAccessToken}
         />
       </div>
     </div>

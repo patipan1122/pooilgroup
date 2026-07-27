@@ -2648,6 +2648,73 @@ export async function disconnectLineChannel(
   return { ok: true };
 }
 
+/** ผลการเช็คโควตาข้อความ LINE (read-only) — ไม่มี field เงิน/DB write. */
+export type LineQuotaResult =
+  | { ok: true; used: number; limit: number | null; unlimited: boolean }
+  | { ok: false; error: string };
+
+/**
+ * เช็คโควตาข้อความ LINE OA ของบริษัทนี้ (super admin, อ่านอย่างเดียว):
+ *  - `used`  = ส่ง push/broadcast ไปกี่ครั้งเดือนนี้ (LINE นับ reply ฟรี ไม่รวมในนี้)
+ *  - `limit` = เพดานข้อความที่ตั้งไว้ (null ถ้าบัญชีไม่ตั้งเพดาน = ไม่จำกัด/จ่ายตามใช้)
+ * token เข้ารหัสอยู่ใน DB รายบริษัท → ถอดตอนเรียก LINE เท่านั้น (เหมือน line-push).
+ * ⚠️ การเรียก quota/consumption ของ LINE เป็น "อ่าน" → ไม่กินโควตาข้อความเอง.
+ */
+export async function checkLineQuota(companyId: string): Promise<LineQuotaResult> {
+  if (!companyId) return { ok: false, error: "ไม่ได้ระบุบริษัท" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  if (!isSuperAdmin(session.user.role)) {
+    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) เช็คโควตา LINE ได้" };
+  }
+  const orgId = session.user.org_id;
+
+  // company ต้องอยู่ใน org (กันส่ง companyId ของบริษัทอื่นมา) — ด่านเดียวกับ connect/disconnect
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, orgId },
+    select: { id: true },
+  });
+  if (!company) return { ok: false, error: "ไม่พบบริษัท" };
+
+  // resolve token — replicate line-push channelAccessToken (module-private ที่นั่น)
+  const ch = await prisma.ledgerLineChannel.findFirst({
+    where: { orgId, companyId, active: true, accessTokenEnc: { not: null } },
+    select: { accessTokenEnc: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const accessToken = ch?.accessTokenEnc ? decryptToken(ch.accessTokenEnc) : null;
+  if (!accessToken) return { ok: false, error: "ยังไม่ได้เชื่อม LINE OA (ไม่มี Access Token)" };
+
+  try {
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const [quotaRes, consRes] = await Promise.all([
+      fetch("https://api.line.me/v2/bot/message/quota", {
+        headers,
+        signal: AbortSignal.timeout(4000),
+      }),
+      fetch("https://api.line.me/v2/bot/message/quota/consumption", {
+        headers,
+        signal: AbortSignal.timeout(4000),
+      }),
+    ]);
+    if (!quotaRes.ok || !consRes.ok) {
+      return { ok: false, error: "เชื่อม LINE ไม่ได้ (Access Token อาจหมดอายุ) ลองใหม่" };
+    }
+    const quota = (await quotaRes.json()) as { type?: string; value?: number };
+    const cons = (await consRes.json()) as { totalUsage?: number };
+    const unlimited = quota.type !== "limited";
+    return {
+      ok: true,
+      used: cons.totalUsage ?? 0,
+      limit: unlimited ? null : quota.value ?? 0,
+      unlimited,
+    };
+  } catch {
+    return { ok: false, error: "เชื่อม LINE ไม่ได้ ลองใหม่อีกครั้ง" };
+  }
+}
+
 /** Pause/resume the channel without deleting its secrets (webhook 404s when
  *  inactive — see the route's `!channel.active` guard). */
 export async function toggleLineChannel(
