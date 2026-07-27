@@ -621,7 +621,7 @@ export function ExpenseList({
               <p className="mt-1 text-[11px] font-medium text-amber-700">
                 {checkedRequested.length > 0 &&
                   `· ${checkedRequested.length} ใบมีคำขอโอนค้าง — ${isSuperAdmin ? "กด “ยกเลิกคำขอโอน” ก่อน" : "ต้องให้ superadmin ลบ"} (จะถูกข้าม)`}
-                {checkedPaid.length > 0 && ` · ${checkedPaid.length} ใบโอนแล้ว — ลบทีละใบ (เฉพาะ superadmin)`}
+                {checkedPaid.length > 0 && ` · ${checkedPaid.length} ใบโอนแล้ว — ลบไม่ได้ (จะถูกข้าม)`}
               </p>
             )}
             <p className="mt-2 text-[11px] font-medium text-zinc-600">

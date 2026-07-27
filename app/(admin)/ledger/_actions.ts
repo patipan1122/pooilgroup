@@ -320,7 +320,9 @@ async function billInActiveRequest(
 }
 const IN_ACTIVE_REQUEST_MSG = "บิลนี้มีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อนจึงจะลบ/ยกเลิกได้";
 const DELETE_NEEDS_SUPERADMIN_MSG =
-  "ใบนี้มีการโอน/ขอโอนเงินแล้ว — เฉพาะผู้ดูแลสูงสุด (superadmin) ลบได้";
+  "ใบนี้มีคำขอโอนอยู่ — เฉพาะผู้ดูแลสูงสุด (superadmin) ยกเลิกคำขอโอน/ลบได้";
+const PAID_CANNOT_DELETE_MSG =
+  "ใบนี้โอนเงินแล้ว — ลบไม่ได้ (ถ้าต้องแก้ ให้ทำรายการคืน/ยกเลิก PV ใน TRCloud)";
 
 /** CEO 2026-07-26 — money-touch gate for delete. A bill is "financially involved" when
  *  it has an ACTIVE transfer request (ขอโอนอยู่) OR an actual payment (โอนแล้ว = a
@@ -609,10 +611,13 @@ export async function voidExpense(id: string): Promise<ActionResult> {
   if (!row) return { ok: false, error: "ไม่พบรายการ" };
   if (row.status === "locked")
     return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
-  // CEO 2026-07-26 — "ใบที่โอนเงินไปแล้ว หรือขอโอนอยู่" ลบได้เฉพาะ superadmin.
-  // ใบปกติ (แค่ส่ง TRCloud) ยังลบได้ตามเดิม (บัญชี/ผู้ดูแล).
   const fin = await billFinancialState(session.user.org_id, row.companyId, id);
-  if ((fin.pending || fin.paid) && !isSuperAdmin(session.user.role))
+  // CEO 2026-07-27 — "ใบที่โอนเงินแล้ว (paid) ห้ามลบเด็ดขาด" ทุกคน (แม้ superadmin): เงินเคลื่อน
+  // จริง + มักออก PV ลงบัญชีใน TRCloud แล้ว → ลบ = บัญชีเพี้ยน · ต้องทำรายการคืน/ยกเลิก PV แทน.
+  if (fin.paid)
+    return { ok: false, error: PAID_CANNOT_DELETE_MSG };
+  // "ขอโอนอยู่" = เฉพาะ superadmin (ยกเลิกคำขอโอนก่อน แล้วจึงลบ) · ใบปกติ (แค่ส่ง TRCloud) ลบได้ตามเดิม.
+  if (fin.pending && !isSuperAdmin(session.user.role))
     return { ok: false, error: DELETE_NEEDS_SUPERADMIN_MSG };
   if (fin.pending)
     return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
@@ -832,9 +837,8 @@ export async function bulkVoid(
   // one-by-one instead (CEO 2026-07-26):
   //   • pending (ACTIVE ขอโอน request) — cancel the request first (per-bill lock + an
   //     incoming slip would still pay a void bill). Use the "ยกเลิกคำขอโอน" button.
-  //   • paid    (โอนแล้ว = closed request OR direct slip match) — deleting money-moved
-  //     bills is super_admin-only AND needs the TRCloud/PV cleanup that single voidExpense
-  //     does, so route them to single delete.
+  //   • paid    (โอนแล้ว = closed request OR direct slip match) — ห้ามลบเด็ดขาด (CEO 2026-07-27):
+  //     เงินเคลื่อนจริง + ลง PV ในบัญชีแล้ว · voidExpense ก็บล็อก paid ทุกคน (แม้ superadmin).
   const voidableIds = rows.map((r) => r.id);
   const [inReq, paidReq, directPay] = await Promise.all([
     prisma.ledgerPaymentRequestBill.findMany({
@@ -858,11 +862,11 @@ export async function bulkVoid(
   const voidIds = voidableIds.filter((id) => !pendingSet.has(id) && !paidSet.has(id));
   if (voidIds.length === 0) {
     if (pendingSet.size > 0 && paidSet.size > 0)
-      return { ok: false, error: "บิลที่เลือกมีการขอโอน/โอนแล้ว — ยกเลิกคำขอโอนก่อน หรือลบทีละใบ (superadmin)" };
+      return { ok: false, error: "บิลที่เลือกมีทั้งขอโอน (ยกเลิกคำขอโอนก่อน) และโอนแล้ว (ลบไม่ได้)" };
     if (pendingSet.size > 0)
       return { ok: false, error: "บิลที่เลือกมีคำขอโอนค้างอยู่ — ยกเลิกคำขอโอนก่อน" };
     if (paidSet.size > 0)
-      return { ok: false, error: "บิลที่เลือกโอนเงินแล้ว — ลบทีละใบ (เฉพาะ superadmin)" };
+      return { ok: false, error: "บิลที่เลือกโอนเงินแล้ว — ลบไม่ได้" };
     return { ok: false, error: "ไม่มีรายการที่ลบได้ (อาจถูกล็อกแล้ว)" };
   }
   await prisma.ledgerExpense.updateMany({
@@ -2338,10 +2342,10 @@ export async function liffVoidExpense(id: string): Promise<ActionResult> {
   if (row.status === "locked") return { ok: false, error: "รายการถูกล็อก ยกเลิกไม่ได้" };
   if (await billInActiveRequest(actor.orgId, row.companyId, id))
     return { ok: false, error: IN_ACTIVE_REQUEST_MSG };
-  // CEO 2026-07-26 — a bill that was actually paid (โอนแล้ว) is super_admin-only to delete.
-  // The LIFF actor is not a Pool super_admin, so block paid bills here and route to web.
+  // CEO 2026-07-27 — a bill that was actually paid (โอนแล้ว) must NEVER be deleted (money
+  // moved + PV posted). Mirror the web hard-block here.
   if ((await billFinancialState(actor.orgId, row.companyId, id)).paid)
-    return { ok: false, error: "ใบที่โอนเงินแล้วต้องลบในเว็บ (เฉพาะผู้ดูแลสูงสุด)" };
+    return { ok: false, error: "ใบนี้โอนเงินแล้ว — ลบไม่ได้ (ต้องทำรายการคืน/ยกเลิก PV ใน TRCloud)" };
 
   await prisma.ledgerExpense.updateMany({
     where: { id, orgId: actor.orgId, companyId: row.companyId },
