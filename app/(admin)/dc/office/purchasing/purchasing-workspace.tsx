@@ -6,9 +6,9 @@
 // บนสุด: แท็บย่อย (#16) + สถิติงานค้าง + สลับมุมมอง + ปุ่ม "＋ สั่งซื้อ" (เปิดราง #6) + "รวมจ่าย" (#13).
 // #6: สั่งซื้อเปิดเป็น "รางสไลด์ขวา" เหนือลิสต์ (ไม่เด้งออกจากหน้า) · #13: รวมจ่ายหลายใบในราง.
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, LayoutGrid, Columns, Wallet, Table2 } from "lucide-react";
+import { Plus, LayoutGrid, Columns, Wallet, Table2, Search, X, CalendarDays } from "lucide-react";
 import { MasterDetailView } from "./master-detail-view";
 import { KanbanBoard } from "./kanban-board";
 import { TableView } from "./table-view";
@@ -18,7 +18,7 @@ import { BulkPayDrawer } from "@/components/dc/bulk-pay-drawer";
 import type { PoSupplierOption } from "@/lib/dc/po-actions";
 
 // ── shared types (ส่งมาจาก server) ───────────────────────────
-export type PoLineMini = { name: string; qty: number; unitPrice: number; imageUrl: string | null };
+export type PoLineMini = { name: string; sku: string | null; qty: number; unitPrice: number; imageUrl: string | null };
 
 export type PoListItem = {
   id: string;
@@ -35,18 +35,13 @@ export type PoListItem = {
   hasTracking: boolean; // มีกล่องที่มีเลขพัสดุแล้วหรือยัง (ไว้ derive "รอใส่ข้อมูล")
   orderedQty: number; // จำนวนสั่งรวมทั้งใบ (Σ line.qty) — ฐาน 100% ของแถบ "รับเข้าแล้ว"
   receivedQty: number; // จำนวนรับเข้าจริงรวมทั้งใบ (Σ GRN line.qtyReceived) — แถบ "รับแล้ว/สั่ง"
+  docCount: number; // จำนวนเอกสารแนบในใบ (Part B) — โชว์ป้ายคลิปหนีบบนการ์ด
   date: string; // ISO
   orderedAt: string | null; // ISO — วันสั่ง
   shipMode: string | null; // "SEA" | "TRUCK" | … (วิธีขนส่งของกล่องที่มีเลขพัสดุ)
   trackingDate: string | null; // ISO — วันได้เลขพัสดุ (ฐานคำนวณวันถึง)
   etaExplicit: string | null; // ISO — ETA ที่ตั้งไว้เอง (ถ้ามี = ใช้เลย)
   lines: PoLineMini[]; // รายการสินค้าในใบ (ไว้กางดูในการ์ด)
-};
-
-export type PurchasingStats = {
-  pendingTracking: number; // สั่งแล้วรอใส่ Tracking
-  pendingGrn: number; // ค้างรับเข้า (GRN)
-  inTransit: number; // ของระหว่างทาง
 };
 
 export type ViewMode = "detail" | "kanban" | "table";
@@ -91,9 +86,60 @@ export function shipModeLabel(mode: string | null): string {
   return mode === "SEA" ? "เรือ" : mode === "TRUCK" ? "รถ" : mode === "AIR" ? "เครื่องบิน" : "";
 }
 
+// ── ตัวกรอง "งานค้าง/สถานะ" แบบกลุ่มงาน (bucket) — ตรงกับ "งานค้างวันนี้" ที่ CEO ปัก ──
+//   รอใส่ Tracking · ระหว่างทาง · รับเข้า GRN · เสร็จแล้ว · ยกเลิก · แบบร่าง
+export type PoBucket = "tracking" | "transit" | "grn" | "done" | "cancelled" | "draft";
+
+/** จัดใบเข้ากลุ่มงานเดียว (จาก status + มีเลขพัสดุหรือยัง). */
+export function poBucket(item: PoListItem): PoBucket {
+  const s = item.status;
+  if (s === "CANCELLED") return "cancelled";
+  if (s === "RECEIVED") return "done";
+  if (s === "DRAFT" || s === "PENDING_APPROVAL" || s === "APPROVED") return "draft";
+  if ((s === "ORDERED" || s === "SHIPPED") && !item.hasTracking) return "tracking";
+  if (s === "ARRIVED_TH" || s === "AT_WAREHOUSE" || s === "READY_TO_RECEIVE" || s === "PARTIAL") return "grn";
+  // มีเลขพัสดุแล้วแต่ยังไม่ถึงโกดัง (SHIPPED/ORDERED+tracking) = กำลังขนส่ง
+  return "transit";
+}
+
+export const BUCKET_LABEL: Record<PoBucket, string> = {
+  tracking: "รอใส่ Tracking",
+  transit: "ระหว่างทาง",
+  grn: "รับเข้า (GRN)",
+  done: "เสร็จแล้ว",
+  cancelled: "ยกเลิก",
+  draft: "แบบร่าง",
+};
+
+// ลำดับแสดงชิป — งานค้าง/กำลังวิ่งก่อน · เสร็จ/ยกเลิกไว้ท้าย
+export const BUCKET_ORDER: PoBucket[] = ["tracking", "transit", "grn", "draft", "done", "cancelled"];
+
+/** อันดับเรียง: ใบที่ยังไม่จบอยู่บน · เสร็จแล้วรองลงมา · ยกเลิกล่างสุด (CEO: "ของเก่า/จบแล้วลงล่าง"). */
+function bucketRank(item: PoListItem): number {
+  const b = poBucket(item);
+  if (b === "cancelled") return 2;
+  if (b === "done") return 1;
+  return 0;
+}
+
+/** ค้นหาแบบ token: ตรงทุกคำใน เลขใบ/ชื่อใบ/ผู้ขาย/ชื่อสินค้า/SKU (ไม่สนตัวพิมพ์). */
+function matchSearch(item: PoListItem, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  const hay = [
+    item.poCode,
+    item.title ?? "",
+    item.supplierName ?? "",
+    ...item.lines.flatMap((l) => [l.name, l.sku ?? ""]),
+  ]
+    .join("   ")
+    .toLowerCase();
+  // ทุกคำที่พิมพ์ต้องเจอ (AND) → ค้นหลายคำได้
+  return needle.split(/\s+/).every((tok) => hay.includes(tok));
+}
+
 export function PurchasingWorkspace({
   items,
-  stats,
   canManage,
   canDelete = false,
   r2PublicUrl,
@@ -103,7 +149,6 @@ export function PurchasingWorkspace({
   chinaFxDate,
 }: {
   items: PoListItem[];
-  stats: PurchasingStats;
   canManage: boolean;
   // super_admin เท่านั้น — โชว์ปุ่มลบใบสั่งซื้อในแผงรายละเอียด
   canDelete?: boolean;
@@ -118,14 +163,50 @@ export function PurchasingWorkspace({
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkPayOpen, setBulkPayOpen] = useState(false);
 
+  // ── ตัวกรอง/ค้นหา (ฝั่งจอ — ใบทั้งหมดโหลดมาครบแล้ว) ──
+  const [bucket, setBucket] = useState<PoBucket | "ALL">("ALL"); // กลุ่มงาน (รอใส่ Tracking/ระหว่างทาง/…)
+  const [q, setQ] = useState(""); // ค้นหา เลขใบ/ชื่อใบ/ผู้ขาย/สินค้า/SKU
+  const [from, setFrom] = useState(""); // วันสั่ง จาก (YYYY-MM-DD)
+  const [to, setTo] = useState(""); // วันสั่ง ถึง (YYYY-MM-DD)
+
+  // นับจำนวนใบในแต่ละกลุ่มงาน (โชว์บนชิป)
+  const bucketCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const it of items) {
+      const b = poBucket(it);
+      c[b] = (c[b] ?? 0) + 1;
+    }
+    return c;
+  }, [items]);
+
+  // กรอง (กลุ่มงาน → ค้นหา → ช่วงวันสั่ง) แล้วเรียง: ยังไม่จบบน · เสร็จ/ยกเลิกลงล่าง · ในกลุ่มใหม่สุดก่อน
+  const visible = useMemo(() => {
+    const fromT = from ? new Date(from + "T00:00:00").getTime() : null;
+    const toT = to ? new Date(to + "T23:59:59").getTime() : null;
+    return items
+      .filter((it) => (bucket === "ALL" ? true : poBucket(it) === bucket))
+      .filter((it) => matchSearch(it, q))
+      .filter((it) => {
+        if (fromT == null && toT == null) return true;
+        const t = new Date(it.orderedAt ?? it.date).getTime();
+        if (fromT != null && t < fromT) return false;
+        if (toT != null && t > toT) return false;
+        return true;
+      })
+      .sort((a, b) => bucketRank(a) - bucketRank(b) || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }, [items, bucket, q, from, to]);
+
+  const hasFilter = bucket !== "ALL" || q.trim() !== "" || from !== "" || to !== "";
+  const clearFilters = () => { setBucket("ALL"); setQ(""); setFrom(""); setTo(""); };
+
   return (
     <div className="dc-pur">
       {/* #16 แท็บย่อย: ใบสั่งซื้อ / ผู้ขาย / ขนส่ง */}
       <PurchasingSubnav active="po" />
 
-      {/* แถวบน: สถิติงานค้าง + สลับมุมมอง + ปุ่มจ่าย/สั่งซื้อ */}
+      {/* แถวบน: ค้นหา + สลับมุมมอง + ปุ่มจ่าย/สั่งซื้อ */}
       <div className="dc-pur-bar">
-        <StatStrip stats={stats} />
+        <SearchBox value={q} onChange={setQ} />
         <div className="dc-pur-bar__right">
           <ViewToggle view={view} onChange={setView} />
           {canManage && (
@@ -141,16 +222,38 @@ export function PurchasingWorkspace({
         </div>
       </div>
 
+      {/* แถวกรอง: ชิปกลุ่มงาน (กดกรองได้) + ช่วงวันสั่ง (#Pinpoint 1+2) */}
+      <FilterBar
+        bucket={bucket}
+        onBucket={setBucket}
+        counts={bucketCounts}
+        total={items.length}
+        from={from}
+        to={to}
+        onFrom={setFrom}
+        onTo={setTo}
+        hasFilter={hasFilter}
+        onClear={clearFilters}
+        showing={visible.length}
+      />
+
       {items.length === 0 ? (
         <div className="dc-card dc-pur-empty">
           ยังไม่มีใบสั่งซื้อ — กด “＋ สั่งซื้อ” เพื่อสร้างใบแรก
         </div>
+      ) : visible.length === 0 ? (
+        <div className="dc-card dc-pur-empty">
+          ไม่พบใบที่ตรงกับตัวกรอง —{" "}
+          <button type="button" onClick={clearFilters} style={{ background: "none", border: 0, color: "#1d4ed8", fontWeight: 700, cursor: "pointer", padding: 0 }}>
+            ล้างตัวกรอง
+          </button>
+        </div>
       ) : view === "detail" ? (
-        <MasterDetailView items={items} canManage={canManage} canDelete={canDelete} r2PublicUrl={r2PublicUrl} />
+        <MasterDetailView items={visible} canManage={canManage} canDelete={canDelete} r2PublicUrl={r2PublicUrl} />
       ) : view === "table" ? (
-        <TableView items={items} />
+        <TableView items={visible} />
       ) : (
-        <KanbanBoard items={items} />
+        <KanbanBoard items={visible} />
       )}
 
       {/* #6 รางสร้างใบสั่งซื้อ (สไลด์ขวา · ไม่เด้งออกจากหน้า) */}
@@ -183,22 +286,96 @@ export function PurchasingWorkspace({
   );
 }
 
-// ── สถิติ "งานค้างวันนี้" ───────────────────────────────────
-function StatStrip({ stats }: { stats: PurchasingStats }) {
+// ── ช่องค้นหา (เลขใบ / ชื่อใบ / ผู้ขาย / ชื่อสินค้า / SKU) ──────
+function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="dc-pur-stats" aria-label="งานค้างวันนี้">
-      <span className="dc-pur-stats__label">งานค้างวันนี้</span>
-      <span className="dc-pur-stat">
-        <b>{stats.pendingTracking}</b> รอใส่ Tracking
-      </span>
-      <span className="dc-pur-stats__dot" aria-hidden>·</span>
-      <span className="dc-pur-stat">
-        <b>{stats.pendingGrn}</b> รับเข้า (GRN)
-      </span>
-      <span className="dc-pur-stats__dot" aria-hidden>·</span>
-      <span className="dc-pur-stat">
-        <b>{stats.inTransit}</b> ระหว่างทาง
-      </span>
+    <div style={searchWrap}>
+      <Search size={16} aria-hidden style={{ color: "var(--dc-muted,#5b6676)", flex: "0 0 auto" }} />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="ค้นหา เลขใบ · ชื่อใบ · ผู้ขาย · ชื่อสินค้า · SKU"
+        aria-label="ค้นหาใบสั่งซื้อ"
+        style={searchInput}
+      />
+      {value && (
+        <button type="button" onClick={() => onChange("")} aria-label="ล้างคำค้น" style={searchClear}>
+          <X size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── แถวกรอง: ชิปกลุ่มงาน (กดกรอง) + ช่วงวันสั่ง + ล้างตัวกรอง ──
+function FilterBar({
+  bucket,
+  onBucket,
+  counts,
+  total,
+  from,
+  to,
+  onFrom,
+  onTo,
+  hasFilter,
+  onClear,
+  showing,
+}: {
+  bucket: PoBucket | "ALL";
+  onBucket: (b: PoBucket | "ALL") => void;
+  counts: Record<string, number>;
+  total: number;
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+  hasFilter: boolean;
+  onClear: () => void;
+  showing: number;
+}) {
+  return (
+    <div style={filterBar}>
+      {/* ชิปกลุ่มงาน — กดเพื่อกรอง (Pinpoint #1: "เพิ่ม filter พวกรอนำส่ง") */}
+      <div className="dc-chips" role="tablist" aria-label="กรองตามกลุ่มงาน" style={{ flex: 1, minWidth: 0 }}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={bucket === "ALL"}
+          className={`dc-chip${bucket === "ALL" ? " is-active" : ""}`}
+          onClick={() => onBucket("ALL")}
+        >
+          ทั้งหมด <span style={{ opacity: 0.7 }}>· {total}</span>
+        </button>
+        {BUCKET_ORDER.map((b) =>
+          counts[b] ? (
+            <button
+              key={b}
+              type="button"
+              role="tab"
+              aria-selected={bucket === b}
+              className={`dc-chip${bucket === b ? " is-active" : ""}`}
+              onClick={() => onBucket(b)}
+            >
+              {BUCKET_LABEL[b]} <span style={{ opacity: 0.7 }}>· {counts[b]}</span>
+            </button>
+          ) : null,
+        )}
+      </div>
+
+      {/* ช่วงวันสั่ง (Pinpoint #2: "อยากเลือกวันที่ได้") */}
+      <div style={dateWrap}>
+        <CalendarDays size={15} aria-hidden style={{ color: "var(--dc-muted,#5b6676)", flex: "0 0 auto" }} />
+        <input type="date" value={from} onChange={(e) => onFrom(e.target.value)} aria-label="วันสั่ง จาก" style={dateInput} />
+        <span style={{ color: "var(--dc-muted,#5b6676)", fontSize: 13 }}>–</span>
+        <input type="date" value={to} onChange={(e) => onTo(e.target.value)} aria-label="วันสั่ง ถึง" style={dateInput} />
+      </div>
+
+      {hasFilter && (
+        <button type="button" onClick={onClear} style={clearBtn} title="ล้างตัวกรองทั้งหมด">
+          <X size={14} /> ล้าง ({showing})
+        </button>
+      )}
     </div>
   );
 }
@@ -246,4 +423,80 @@ const bulkPayBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 7,
+};
+
+// ── styles: ค้นหา + แถวกรอง (แน่น · reuse dc-chip · RULE L งบพื้นที่) ──
+const searchWrap: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  maxWidth: 460,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  minHeight: 40,
+  padding: "0 12px",
+  background: "var(--dc-surface,#fff)",
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  borderRadius: 10,
+};
+const searchInput: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  border: 0,
+  outline: "none",
+  background: "transparent",
+  fontSize: 14,
+  color: "var(--dc-ink,#1c2533)",
+};
+const searchClear: React.CSSProperties = {
+  flex: "0 0 auto",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: 0,
+  background: "none",
+  color: "var(--dc-muted,#5b6676)",
+  cursor: "pointer",
+  padding: 2,
+};
+const filterBar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  flexWrap: "wrap",
+  margin: "10px 0 12px",
+};
+const dateWrap: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  minHeight: 38,
+  padding: "0 10px",
+  background: "var(--dc-surface,#fff)",
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  borderRadius: 10,
+  flex: "0 0 auto",
+};
+const dateInput: React.CSSProperties = {
+  border: 0,
+  outline: "none",
+  background: "transparent",
+  fontSize: 13,
+  color: "var(--dc-ink,#1c2533)",
+  fontVariantNumeric: "tabular-nums",
+};
+const clearBtn: React.CSSProperties = {
+  flex: "0 0 auto",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  minHeight: 38,
+  padding: "0 12px",
+  background: "none",
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  borderRadius: 10,
+  color: "var(--dc-muted,#5b6676)",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
 };

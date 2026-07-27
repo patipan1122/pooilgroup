@@ -9,7 +9,7 @@ import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
 import { listSuppliersForPo } from "@/lib/dc/po-actions";
 import { getTodayFxRate } from "@/lib/dc/fx";
-import { PurchasingWorkspace, type PoListItem, type PurchasingStats } from "./purchasing-workspace";
+import { PurchasingWorkspace, type PoListItem } from "./purchasing-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,7 @@ export default async function DcPurchasingPage() {
         orderBy: { id: "asc" },
         select: {
           id: true, qty: true, unitPriceCny: true,
-          product: { select: { name: true, imageR2Path: true } },
+          product: { select: { name: true, sku: true, imageR2Path: true } },
         },
       },
       shipments: { select: { trackingNo: true, status: true, mode: true, createdAt: true, eta: true } },
@@ -68,15 +68,25 @@ export default async function DcPurchasingPage() {
     }
   }
 
+  // จำนวนเอกสารแนบต่อใบ (Part B) — แยก query + กันพัง ถ้าตาราง po_documents ยังไม่ถูกสร้าง
+  //   (เผื่อ deploy โค้ดก่อน apply migration → หน้าไม่ล่ม · ป้ายคลิปแค่ไม่ขึ้นจนกว่าตารางจะพร้อม)
+  const docCountByPo = new Map<string, number>();
+  try {
+    const docGroups = await prisma.dcPoDocument.groupBy({
+      by: ["poId"],
+      where: { orgId, poId: { in: poIds } },
+      _count: { _all: true },
+    });
+    for (const g of docGroups) docCountByPo.set(g.poId, g._count._all);
+  } catch {
+    // ตาราง po_documents ยังไม่มี → ถือว่า 0 (ฟีเจอร์แนบเอกสาร dormant จนกว่าจะสร้างตาราง)
+  }
+
   const r2Base = process.env.R2_PUBLIC_URL ?? "";
   const imgUrl = (p: string | null) =>
     p ? (p.startsWith("http") ? p : `${r2Base}/${p}`) : null;
 
-  // สถิติ "งานค้างวันนี้" — นับระหว่าง map ครั้งเดียว
-  let pendingTracking = 0; // สั่งแล้ว (ORDERED) แต่ยังไม่มีกล่องที่มีเลขพัสดุ
-  let pendingGrn = 0; // ถึงโกดัง/ถึงไทย/รับบางส่วน — ค้างรับเข้า (GRN)
-  let inTransit = 0; // กล่องที่กำลังขนส่ง (IN_TRANSIT)
-
+  // หมายเหตุ: "งานค้างวันนี้"/กลุ่มงาน คิดฝั่งจอจาก status+hasTracking แล้ว (ดู poBucket ใน workspace)
   const items: PoListItem[] = pos.map((po) => {
     const total = po.lines.reduce((sum, l) => sum + l.qty * Number(l.unitPriceCny), 0);
     // ยอดเป็นบาท (ไว้รวมข้ามใบจีน+ไทยในตาราง): ไทย=บาทอยู่แล้ว · จีน=แปลงด้วยเรตของใบนั้น
@@ -86,10 +96,6 @@ export default async function DcPurchasingPage() {
     const totalThb = isThaiPo ? total : fxRate ? total * fxRate : null;
     const boxCount = po.shipments.length;
     const hasTracking = po.shipments.some((s) => (s.trackingNo ?? "").trim() !== "");
-    inTransit += po.shipments.filter((s) => s.status === "IN_TRANSIT").length;
-
-    if (po.status === "ORDERED" && !hasTracking) pendingTracking += 1;
-    if (po.status === "AT_WAREHOUSE" || po.status === "READY_TO_RECEIVE" || po.status === "ARRIVED_TH" || po.status === "PARTIAL") pendingGrn += 1;
 
     // กล่องที่ใช้ประเมินวันถึง: เอากล่องที่มีเลขพัสดุก่อน (ไม่มี→กล่องแรก)
     const trackedShip =
@@ -111,6 +117,7 @@ export default async function DcPurchasingPage() {
       receivedQty: receivedByPo.get(po.id) ?? 0,
       boxCount,
       hasTracking,
+      docCount: docCountByPo.get(po.id) ?? 0,
       date: (po.orderedAt ?? po.createdAt).toISOString(),
       orderedAt: po.orderedAt ? po.orderedAt.toISOString() : null,
       shipMode: trackedShip?.mode ?? null,
@@ -119,6 +126,7 @@ export default async function DcPurchasingPage() {
       etaExplicit: trackedShip?.eta ? trackedShip.eta.toISOString() : null,
       lines: po.lines.map((l) => ({
         name: l.product?.name ?? "—",
+        sku: l.product?.sku ?? null,
         qty: l.qty,
         unitPrice: Number(l.unitPriceCny),
         imageUrl: imgUrl(l.product?.imageR2Path ?? null),
@@ -126,7 +134,6 @@ export default async function DcPurchasingPage() {
     };
   });
 
-  const stats: PurchasingStats = { pendingTracking, pendingGrn, inTransit };
   const r2PublicUrl = process.env.R2_PUBLIC_URL ?? "";
 
   // ข้อมูลให้ราง "สร้างใบสั่งซื้อ" (#6) ใช้ — โหลดพร้อมกัน
@@ -148,7 +155,6 @@ export default async function DcPurchasingPage() {
         </div>
         <PurchasingWorkspace
           items={items}
-          stats={stats}
           canManage={canManage}
           canDelete={canDelete}
           r2PublicUrl={r2PublicUrl}

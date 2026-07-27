@@ -16,6 +16,7 @@ import { loadFreightRates } from "@/lib/dc/freight-rates";
 import { getPoFulfillment } from "@/lib/dc/po-fulfillment";
 import { DcPoPaymentKind } from "@/lib/generated/prisma/enums";
 import { PoDetail, type PoDetailData } from "./po-detail";
+import { type PoDocumentView } from "@/lib/dc/po-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -229,6 +230,28 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
   //   ไม่ส่ง warehouseId → onHand = ยอดรวมทุกคลัง ("ของจริงเหลือทั้งหมด")
   const fulfillment = await getPoFulfillment(orgId, id);
 
+  // เอกสารแนบในใบ (ใหม่สุดก่อน) — href โหลดผ่าน route ที่ตรวจสิทธิ์
+  //   กันพัง: ถ้าตาราง po_documents ยังไม่ถูกสร้าง (deploy ก่อน migration) → คืน [] แทน throw
+  let docRows: { id: string; fileName: string; mimeType: string; sizeBytes: number; label: string | null; createdAt: Date }[] = [];
+  try {
+    docRows = await prisma.dcPoDocument.findMany({
+      where: { poId: id, orgId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, fileName: true, mimeType: true, sizeBytes: true, label: true, createdAt: true },
+    });
+  } catch {
+    /* ตาราง po_documents ยังไม่มี → ไม่มีเอกสารแนบ (dormant จนกว่าจะ apply migration) */
+  }
+  const documents: PoDocumentView[] = docRows.map((d) => ({
+    id: d.id,
+    fileName: d.fileName,
+    mimeType: d.mimeType,
+    sizeBytes: d.sizeBytes,
+    label: d.label,
+    createdAt: d.createdAt.toISOString(),
+    href: `/dc/office/purchasing/${id}/doc/${d.id}`,
+  }));
+
   const chrome = await getDcOfficeChrome(ctx.session.user.org_id);
 
   return (
@@ -255,6 +278,7 @@ export default async function DcPoDetailPage({ params }: { params: Params }) {
           canDelete={isSuperAdmin(ctx.session.user.role)}
           r2PublicUrl={r2Public}
           fulfillment={fulfillment}
+          documents={documents}
         />
       </div>
     </DcOfficeShell>
