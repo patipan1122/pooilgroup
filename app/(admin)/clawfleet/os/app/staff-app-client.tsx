@@ -2482,9 +2482,10 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                       </div>
 
                       {/* นับตุ๊กตา — ก่อนเติม / เติมเพิ่ม / หลังเติม (โชว์เสมอ · ไม่มีข้อมูล = "—") */}
+                      {/* ก่อนเติม (เหลือในตู้) = ที่พนักงานนับจริง = stockAfter − refillQty · ห้ามใช้ detail.stockBefore (นั่นคือสต๊อกรอบก่อน baseline กันโกง = ยังไม่หักตุ๊กตาที่คีบออก) */}
                       <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 600, margin: "2px 2px 7px" }}>นับตุ๊กตา</div>
                       <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "6px 14px", marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>ก่อนเติม (เหลือในตู้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockBefore)} ตัว</span></div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>ก่อนเติม (เหลือในตู้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockAfter != null ? detail.stockAfter - (detail.refillQty ?? 0) : undefined)} ตัว</span></div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F2F3F5" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>เติมเพิ่ม</span><span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>+{nd(detail.refillQty)} ตัว</span></div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}><span style={{ fontSize: 12.5, color: "#5A6270" }}>หลังเติม (ในตู้ตอนนี้)</span><span className="num" style={{ fontSize: 13, fontWeight: 700 }}>{nd(detail.stockAfter)} ตัว</span></div>
                       </div>
