@@ -6,10 +6,10 @@
 //   ปุ่ม "ส่งออก Excel" → ไฟล์ CSV (BOM · เปิด Excel/Sheets ภาษาไทยไม่เพี้ยน) — export ตามที่กรองอยู่บนจอ
 //   อ่านล้วน · ไม่เขียน DB/ไม่แตะเงิน/ไม่แตะ TRCloud.
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { Download, Ship, Truck } from "lucide-react";
-import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_FLOW_STATUSES, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
+import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
 import {
   type PoListItem,
   fmtMoney,
@@ -20,10 +20,6 @@ import {
   shipModeLabel,
 } from "./purchasing-workspace";
 
-const ALL = "__ALL__";
-
-// ยุบ READY_TO_RECEIVE → AT_WAREHOUSE ให้ตรงกับมุมมองอื่น (ไม่งั้นใบเก่านับตกหล่นในชิปกรอง)
-const foldStatus = (s: string) => (s === "READY_TO_RECEIVE" ? "AT_WAREHOUSE" : s);
 const tone = (status: string): string => PO_STATUS_TONE[status] ?? "draft";
 
 /** ชื่อออเดอร์: ใช้ title ที่ตั้งไว้ก่อน ไม่มี→ชื่อผู้ขาย ไม่มี→ขีด. */
@@ -44,21 +40,8 @@ function csvEscape(v: string | number): string {
 }
 
 export function TableView({ items }: { items: PoListItem[] }) {
-  const [filter, setFilter] = useState<string>(ALL);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const it of items) {
-      const st = foldStatus(it.status);
-      c[st] = (c[st] ?? 0) + 1;
-    }
-    return c;
-  }, [items]);
-
-  const rows = useMemo(
-    () => (filter === ALL ? items : items.filter((it) => foldStatus(it.status) === filter)),
-    [items, filter],
-  );
+  // ตัวกรอง/ค้นหา/เรียง มาจาก workspace แล้ว (items = ใบที่ผ่านตัวกรองมาแล้ว) — ตารางนี้แค่แสดง + ส่งออก
+  const rows = items;
 
   // ยอดรวมบาท (เฉพาะใบที่แปลงบาทได้) + นับใบที่ยังไม่มีเรต (โชว์หมายเหตุ)
   const { sumThb, missingFx } = useMemo(() => {
@@ -113,33 +96,9 @@ export function TableView({ items }: { items: PoListItem[] }) {
 
   return (
     <div className="dc-pur-table">
-      {/* แถวบน: ชิปกรองสถานะ + ปุ่มส่งออก */}
+      {/* แถวบน: จำนวนใบ (ตามตัวกรอง) + ปุ่มส่งออก */}
       <div style={topBar}>
-        <div className="dc-chips" role="tablist" aria-label="กรองสถานะใบสั่งซื้อ" style={{ marginBottom: 0 }}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === ALL}
-            className={`dc-chip${filter === ALL ? " is-active" : ""}`}
-            onClick={() => setFilter(ALL)}
-          >
-            ทั้งหมด <span style={{ opacity: 0.7 }}>· {items.length}</span>
-          </button>
-          {PO_FLOW_STATUSES.map((s) =>
-            counts[s] ? (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={filter === s}
-                className={`dc-chip${filter === s ? " is-active" : ""}`}
-                onClick={() => setFilter(s)}
-              >
-                {PO_STATUS_LABEL[s] ?? s} <span style={{ opacity: 0.7 }}>· {counts[s]}</span>
-              </button>
-            ) : null,
-          )}
-        </div>
+        <span style={{ fontSize: 13, color: "var(--dc-muted,#5b6676)", fontWeight: 600 }}>{rows.length} ใบ</span>
         <button
           type="button"
           className="dc-btn-xl dc-btn-xl--ghost"

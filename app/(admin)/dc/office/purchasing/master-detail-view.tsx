@@ -6,12 +6,12 @@
 // คลิกการ์ด → setSelected(id) → โหลด bundle (useTransition + skeleton) → แสดงในแผงขวา.
 // onChanged ของ <PoDetail> = refetch bundle ของใบนั้น + router.refresh() ลิสต์ (สถานะ/ป้ายอัปเดต).
 
-import { useEffect, useState, useTransition, useMemo, useCallback } from "react";
+import { useEffect, useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ship, Truck, ChevronDown, ImageIcon, CalendarDays, ArrowUpRight } from "lucide-react";
+import { Ship, Truck, ChevronDown, ImageIcon, CalendarDays, ArrowUpRight, Paperclip } from "lucide-react";
 import { getPoDetailForPanel, type PoPanelBundle } from "@/lib/dc/po-actions";
-import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_FLOW_STATUSES, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
+import { PO_STATUS_LABEL, PO_STATUS_TONE, PO_ORIGIN_LABEL } from "@/lib/dc/nav";
 import { PoDetail } from "./[id]/po-detail";
 import { DcDocDownload } from "@/components/dc/print-controls";
 import {
@@ -24,8 +24,6 @@ import {
   shipModeLabel,
 } from "./purchasing-workspace";
 
-const ALL = "__ALL__";
-
 function tone(status: string): string {
   return PO_STATUS_TONE[status] ?? "draft";
 }
@@ -36,6 +34,7 @@ export function MasterDetailView({
   canDelete = false,
   r2PublicUrl,
 }: {
+  // items = ใบที่ผ่านตัวกรอง/ค้นหา/เรียงจาก workspace มาแล้ว (ลิสต์นี้แค่แสดง + คุมการเลือก)
   items: PoListItem[];
   canManage: boolean;
   // super_admin เท่านั้น — ส่งต่อให้ <PoDetail> โชว์ปุ่มลบใบสั่งซื้อ
@@ -43,27 +42,8 @@ export function MasterDetailView({
   r2PublicUrl: string;
 }) {
   const router = useRouter();
-  const [filter, setFilter] = useState<string>(ALL);
 
-  // ยุบ READY_TO_RECEIVE → AT_WAREHOUSE ให้ตรงกับบอร์ด/รายการอื่น (ยุบสถานะ "ถึงโกดังแล้ว")
-  //   ไม่งั้นใบเก่าที่ค้างสถานะ READY_TO_RECEIVE จะไม่โผล่ในชิป "ถึงโกดังแล้ว" (นับตกหล่น)
-  const foldStatus = (s: string) => (s === "READY_TO_RECEIVE" ? "AT_WAREHOUSE" : s);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const it of items) {
-      const st = foldStatus(it.status);
-      c[st] = (c[st] ?? 0) + 1;
-    }
-    return c;
-  }, [items]);
-
-  const filtered = useMemo(
-    () => (filter === ALL ? items : items.filter((it) => foldStatus(it.status) === filter)),
-    [items, filter],
-  );
-
-  // ใบที่เลือก (ตั้งต้น = ใบแรกในลิสต์ที่กรองแล้ว)
+  // ใบที่เลือก (ตั้งต้น = ใบแรกในลิสต์)
   const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id ?? null);
   // ใบที่ "กางดูสินค้า" อยู่ (accordion ในการ์ด) — มือถือดูได้เลยไม่ต้องเลื่อนไปแผงล่าง
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -82,8 +62,8 @@ export function MasterDetailView({
   //   ตอนนี้: เด้งไปใบใหม่เฉพาะเมื่อใบที่เลือกหายจากระบบจริง (ถูกลบ) หรือยังไม่เคยเลือก
   useEffect(() => {
     if (selectedId && items.some((it) => it.id === selectedId)) return; // ใบยังอยู่ → คงไว้
-    setSelectedId(filtered.length > 0 ? filtered[0].id : null);
-  }, [items, filtered, selectedId]);
+    setSelectedId(items.length > 0 ? items[0].id : null);
+  }, [items, selectedId]);
 
   // โหลด bundle ทุกครั้งที่ใบที่เลือกเปลี่ยน
   useEffect(() => {
@@ -102,39 +82,13 @@ export function MasterDetailView({
 
   return (
     <div className="dc-pur-md">
-      {/* ── ซ้าย: ลิสต์ใบ ── */}
+      {/* ── ซ้าย: ลิสต์ใบ (กรอง/ค้นหา/เรียงมาจาก workspace แล้ว) ── */}
       <div className="dc-pur-md__list">
-        <div className="dc-chips dc-pur-md__chips" role="tablist" aria-label="กรองสถานะใบสั่งซื้อ">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === ALL}
-            className={`dc-chip${filter === ALL ? " is-active" : ""}`}
-            onClick={() => setFilter(ALL)}
-          >
-            ทั้งหมด <span style={{ opacity: 0.7 }}>· {items.length}</span>
-          </button>
-          {PO_FLOW_STATUSES.map((s) =>
-            counts[s] ? (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={filter === s}
-                className={`dc-chip${filter === s ? " is-active" : ""}`}
-                onClick={() => setFilter(s)}
-              >
-                {PO_STATUS_LABEL[s] ?? s} <span style={{ opacity: 0.7 }}>· {counts[s]}</span>
-              </button>
-            ) : null,
-          )}
-        </div>
-
         <div className="dc-pur-md__cards">
-          {filtered.length === 0 ? (
-            <div className="dc-pur-md__empty">ไม่มีใบสั่งซื้อในสถานะนี้</div>
+          {items.length === 0 ? (
+            <div className="dc-pur-md__empty">ไม่มีใบสั่งซื้อ</div>
           ) : (
-            filtered.map((it) => (
+            items.map((it) => (
               <PoCardMini
                 key={it.id}
                 item={it}
@@ -163,6 +117,7 @@ export function MasterDetailView({
             <PoDetail
               data={bundle.data}
               payments={bundle.payments}
+              documents={bundle.documents}
               goodsPaid={bundle.goodsPaid}
               thaiFreightPaid={bundle.thaiFreightPaid}
               goodsOwedSatang={bundle.goodsOwedSatang}
@@ -243,6 +198,11 @@ function PoCardMini({
             {item.poCode} · {item.lineCount} รก.{item.boxCount > 0 ? ` · ${item.boxCount} กล่อง` : ""}
           </span>
           <span style={{ display: "inline-flex", gap: 5, alignItems: "center", flex: "0 0 auto" }}>
+            {item.docCount > 0 && (
+              <span title={`แนบเอกสารแล้ว ${item.docCount} ไฟล์`} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10.5, color: "var(--dc-muted,#5b6676)", fontVariantNumeric: "tabular-nums" }}>
+                <Paperclip size={11} aria-hidden /> {item.docCount}
+              </span>
+            )}
             {needsInput(item) && <span className="dc-pur-badge-input" style={{ fontSize: 10, padding: "1px 7px" }}>รอใส่</span>}
             <span className={`dc-st dc-st--${tone(item.status)}`} style={{ fontSize: 11, padding: "2px 8px" }}>
               {PO_STATUS_LABEL[item.status] ?? item.status}

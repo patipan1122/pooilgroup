@@ -1789,9 +1789,21 @@ export type PanelData = {
   boxes: PanelBox[];
 };
 
+// เอกสารแนบในใบ (สำหรับแผงรายละเอียด) — href = route โหลดแบบมีสิทธิ์
+export type PoDocumentView = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  label: string | null;
+  createdAt: string; // ISO
+  href: string; // /dc/office/purchasing/{poId}/doc/{docId}
+};
+
 export type PoPanelBundle = {
   data: PanelData;
   payments: PoPaymentData[];
+  documents: PoDocumentView[];
   goodsPaid: boolean;
   thaiFreightPaid: boolean;
   /** ยอด "ค่าของ" ที่ระบบแนะนำ (รวมราคาสินค้าทั้งใบ เป็นบาท·สตางค์) — prefill ตอนจ่าย แก้ได้ */
@@ -1905,6 +1917,22 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
   // คลังที่ผู้ใช้เข้าถึง (สำหรับ dropdown รับเข้า) — best-effort ผ่าน DcWarehouseUser/admin
   const whRows = await prisma.dcWarehouse.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
 
+  // เอกสารแนบในใบ (ใหม่สุดก่อน) — href โหลดผ่าน route ที่ตรวจสิทธิ์
+  const docRows = await prisma.dcPoDocument.findMany({
+    where: { poId, orgId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, fileName: true, mimeType: true, sizeBytes: true, label: true, createdAt: true },
+  });
+  const documents: PoDocumentView[] = docRows.map((d) => ({
+    id: d.id,
+    fileName: d.fileName,
+    mimeType: d.mimeType,
+    sizeBytes: d.sizeBytes,
+    label: d.label,
+    createdAt: d.createdAt.toISOString(),
+    href: `${LIST_PATH}/${po.id}/doc/${d.id}`,
+  }));
+
   const data: PanelData = {
     id: po.id,
     poCode: po.poCode,
@@ -1953,7 +1981,7 @@ export async function getPoDetailForPanel(poIdRaw: string): Promise<PoPanelBundl
     })),
   };
 
-  return { data, payments, goodsPaid, thaiFreightPaid, goodsOwedSatang, freightOwedSatang, freightRatesConfigured, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
+  return { data, payments, documents, goodsPaid, thaiFreightPaid, goodsOwedSatang, freightOwedSatang, freightRatesConfigured, warehouses: whRows, r2PublicUrl: process.env.R2_PUBLIC_URL ?? "" };
 }
 
 // ── #3 ประวัติการแก้ใบสั่งซื้อ (audit log · ใคร/เก่า→ใหม่/เมื่อไหร่) ─────────

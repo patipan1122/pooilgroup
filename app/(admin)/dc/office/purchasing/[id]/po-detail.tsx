@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, ImageDown, FileDown, History, ChevronDown, RotateCcw, Zap } from "lucide-react";
+import { ImageIcon, Package, Plus, Pencil, Trash2, Truck, Ship, X, Check, CircleDollarSign, Download, ImageDown, FileDown, History, ChevronDown, RotateCcw, Zap, FileText, Paperclip, Upload } from "lucide-react";
 import {
   markOrdered,
   markArrivedTh,
@@ -41,7 +41,9 @@ import {
   type PoAuditEntry,
   type PoReceiveSummary,
   type PoSourceImage,
+  type PoDocumentView,
 } from "@/lib/dc/po-actions";
+import { deletePoDocument } from "@/lib/dc/po-doc-actions";
 import { DcThumb } from "@/components/dc/product-image";
 import { addBox, updateBox, removeBox, setBoxContents, type BoxActionResult } from "@/lib/dc/box-actions";
 import { retryTrcloud } from "@/lib/dc/grn-actions";
@@ -180,9 +182,12 @@ export function PoDetail({
   freightOwedSatang,
   freightRatesConfigured,
   fulfillment,
+  documents = [],
 }: {
   data: PoDetailData;
   payments: PoPaymentData[];
+  // เอกสารแนบในใบ (ใบกำกับ/Packing/ใบเสร็จ) — optional (call site เดิมอาจยังไม่ส่ง → [])
+  documents?: PoDocumentView[];
   goodsPaid: boolean;
   thaiFreightPaid: boolean;
   warehouses: WarehouseOption[];
@@ -660,6 +665,15 @@ export function PoDetail({
           </div>
         </CollapseCard>
       )}
+
+      {/* เอกสารแนบในใบ (ใบกำกับ/Packing/ใบเสร็จ) — อัปได้ทุกเมื่อ แม้ใบจบแล้ว */}
+      <CollapseCard
+        title="เอกสารแนบในใบ"
+        sub={documents.length > 0 ? `${documents.length} ไฟล์ · อัปเพิ่ม/ย้อนหลังได้` : "ใบกำกับ · Packing · ใบเสร็จ — อัปได้แม้ใบจบแล้ว"}
+        defaultOpen={documents.length > 0 || canManage}
+      >
+        <DocumentsSection poId={data.id} documents={documents} canManage={canManage} onChanged={refresh} />
+      </CollapseCard>
 
       {/* 3) กล่อง/พัสดุ — collapsible */}
       <CollapseCard
@@ -1314,6 +1328,181 @@ function CostRow({ label, value, strong, muted }: { label: string; value: string
     </div>
   );
 }
+
+// ── เอกสารแนบในใบ (อัปโหลด/ดู/ลบ) — รูป/PDF · อัปได้แม้ใบจบแล้ว ──────────────
+function DocumentsSection({
+  poId,
+  documents,
+  canManage,
+  onChanged,
+}: {
+  poId: string;
+  documents: PoDocumentView[];
+  canManage: boolean;
+  onChanged: () => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    setErr(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("poId", poId);
+      const res = await fetch("/api/dc/po-doc", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({ ok: false, error: "อ่านผลลัพธ์ไม่ได้" }));
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "อัปโหลดไม่สำเร็จ");
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message || "อัปโหลดไม่สำเร็จ ลองอีกครั้ง");
+    }
+    setUploading(false);
+  }
+
+  async function remove(docId: string, name: string) {
+    if (!window.confirm(`ลบเอกสาร "${name}"?`)) return;
+    setErr(null);
+    setDeleting(docId);
+    try {
+      const res = await deletePoDocument(docId);
+      if (!res.ok) throw new Error(res.error);
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message || "ลบไม่สำเร็จ");
+    }
+    setDeleting(null);
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      {err && <div style={{ color: "#b8362a", fontSize: 13, fontWeight: 600 }}>{err}</div>}
+
+      {documents.length === 0 ? (
+        <div style={{ fontSize: 13, color: "var(--dc-muted,#5b6676)" }}>
+          ยังไม่มีเอกสารแนบ{canManage ? " — อัปโหลดใบกำกับ / Packing / ใบเสร็จ ได้เลย (แม้ใบจบแล้ว)" : ""}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 7 }}>
+          {documents.map((d) => (
+            <div key={d.id} style={docRow}>
+              <span style={{ flex: "0 0 auto", color: d.mimeType === "application/pdf" ? "#c0392b" : "#3b5bdb", display: "inline-flex" }}>
+                {d.mimeType.startsWith("image/") ? <ImageIcon size={18} /> : <FileText size={18} />}
+              </span>
+              <a href={d.href} target="_blank" rel="noopener noreferrer" style={docLink} title="เปิดดูเอกสาร">
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.fileName}</span>
+              </a>
+              {d.label && <span style={docLabel}>{d.label}</span>}
+              <span style={{ flex: "0 0 auto", fontSize: 11.5, color: "var(--dc-muted,#5b6676)", fontVariantNumeric: "tabular-nums" }}>
+                {formatBytes(d.sizeBytes)}
+              </span>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => void remove(d.id, d.fileName)}
+                  disabled={deleting === d.id}
+                  aria-label="ลบเอกสาร"
+                  style={docDelBtn}
+                  title="ลบเอกสาร"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canManage && (
+        <label style={{ ...docUploadBtn, opacity: uploading ? 0.6 : 1, pointerEvents: uploading ? "none" : "auto" }}>
+          {uploading ? (
+            <>
+              <Upload size={16} /> กำลังอัป…
+            </>
+          ) : (
+            <>
+              <Paperclip size={16} /> แนบเอกสาร (รูป/PDF)
+            </>
+          )}
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            hidden
+            onChange={(e) => {
+              void upload(e.target.files?.[0]);
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const docRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  padding: "8px 11px",
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  borderRadius: 10,
+  background: "var(--dc-surface,#fff)",
+};
+const docLink: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  fontSize: 13.5,
+  fontWeight: 600,
+  color: "#1d4ed8",
+  textDecoration: "none",
+};
+const docLabel: React.CSSProperties = {
+  flex: "0 0 auto",
+  fontSize: 11,
+  padding: "1px 8px",
+  borderRadius: 999,
+  background: "var(--color-brand-50,#f0f4ff)",
+  color: "#3b5bdb",
+  fontWeight: 600,
+};
+const docDelBtn: React.CSSProperties = {
+  flex: "0 0 auto",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 30,
+  height: 30,
+  border: "1px solid var(--dc-line,#e7ebf2)",
+  borderRadius: 8,
+  background: "none",
+  color: "#b8362a",
+  cursor: "pointer",
+};
+const docUploadBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  alignSelf: "start",
+  minHeight: 40,
+  padding: "0 15px",
+  border: "1px dashed var(--dc-line,#c9d3e3)",
+  borderRadius: 10,
+  background: "var(--color-brand-50,#f7faff)",
+  color: "#1d4ed8",
+  fontSize: 13.5,
+  fontWeight: 700,
+  cursor: "pointer",
+};
 
 // ── #7 การ์ดยุบได้ (collapsible) — ใช้ <details> เพื่อยุบเนื้อหายาว ๆ ให้พอดีจอ ───────────
 function CollapseCard({
