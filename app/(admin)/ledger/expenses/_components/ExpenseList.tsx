@@ -175,7 +175,9 @@ export function ExpenseList({
   const selSendable = [...checked].filter((id) => sendableSet.has(id));
   const selConvertible = [...checked].filter((id) => convertibleSet.has(id));
   // draft / sendable(ยังไม่ส่ง) / convertible(ส่ง PO แล้ว ยังไม่ AP) แยกกัน ไม่ทับกัน (สถานะคนละช่วง).
-  const actionableIds = [...draftIds, ...sendableIds, ...convertibleIds];
+  // CEO 2026-07-27 — ทุกใบ (ที่ยังไม่ถูกยกเลิก) เลือกได้ เพื่อให้กดลบ/ยกเลิกคำขอโอนได้ แม้ส่ง
+  // TRCloud/AP/ขอโอน/รอโอนแล้ว (เดิมเลือกได้เฉพาะ draft/ยังไม่ส่ง → ใบที่ส่งแล้วไม่มีช่องติ๊กเลย).
+  const actionableIds = rows.filter((r) => r.status !== "void").map((r) => r.id);
 
   // Request-transfer selection guards: bills must share ONE vendor (the payee is
   // a single account). The list is already company-scoped, so cross-company can't
@@ -893,9 +895,10 @@ export function ExpenseList({
           rows.map((r) => {
             const active = selectedId === r.id;
             const isDraft = r.status === "draft";
-            const isSendable = sendableSet.has(r.id);
             const isConvertible = convertibleSet.has(r.id);
-            const selectable = isDraft || isSendable || isConvertible;
+            // ทุกใบที่ยังไม่ยกเลิกมีช่องติ๊ก → เลือกลบ/ยกเลิกคำขอโอนได้ (server คุมกฎ: paid=ห้ามลบ ·
+            // pending=superadmin ยกเลิกก่อน · locked=ข้าม). แก้อาการ "ใบที่ส่ง TRCloud แล้วไม่มีติ๊ก".
+            const selectable = r.status !== "void";
             // TRCloud state from the shared classifier — "error" is a FAILED push,
             // NOT sent (the old `!!trcloudDocId` lit the blue "ส่งแล้ว" chip on failures).
             const trState = trcloudState(r.trcloudDocId);
