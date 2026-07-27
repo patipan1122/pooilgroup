@@ -529,12 +529,13 @@ function DetailBody({ data, exp }: { data: ReceiptReviewData; exp: RRSelectedExp
         </div>
       </div>
 
-      {/* ── Scroll body ── */}
+      {/* ── Scroll body ── (overscroll:contain → เลื่อนสุดแล้วไม่ลามไปเลื่อนคอลัมน์อื่น/ทั้งจอ) */}
       <div
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
+          overscrollBehavior: "contain",
           padding: "11px 13px",
           display: "flex",
           flexDirection: "column",

@@ -92,6 +92,7 @@ export function ExpenseList({
   payreqEnabled,
   branches,
   isSuperAdmin,
+  compact,
 }: {
   rows: ExpenseRow[];
   categories: Array<{ id: string; name: string; color: string | null; sort: number; active?: boolean }>;
@@ -142,6 +143,10 @@ export function ExpenseList({
   payreqEnabled?: boolean;
   /** Pool super_admin — may delete/cancel money-touched bills (ขอโอนอยู่/โอนแล้ว). */
   isSuperAdmin?: boolean;
+  /** โหมดตรวจใบเสร็จ (embedded ในคอลัมน์ซ้ายของ workspace 3 คอลัมน์): หัวกรอง sticky ที่ขอบ
+   *  คอลัมน์ (top-0 ไม่ใช่ top-14 ของ nav บาร์เก่า) + ลิสต์ยืดเต็มคอลัมน์ (ให้ parent scroll
+   *  ตัวเดียว ไม่ cap ด้วย 100dvh) → ลิสต์เห็นครบ + เลื่อนแยกอิสระ. list mode ปกติ = undefined. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -209,12 +214,21 @@ export function ExpenseList({
     return `${pathname}?${sp.toString()}`;
   }
 
+  // เลือกบิล = navigation ใน transition → เปลี่ยนบิลในแผงขวาแบบไม่วูบทั้งจอ (โหมดตรวจใบเสร็จ
+  // กดสลับบิลบ่อย). คง <a href> ไว้ → คลิกขวา/กลาง/มีปุ่มร่วม = เปิดแท็บใหม่ตามปกติ.
+  function onRowClick(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    startTransition(() => router.push(rowHref(id)));
+  }
+
   function setParam(key: string, next: string) {
     const sp = new URLSearchParams(baseParams);
     sp.delete(key);
     if (next) sp.set(key, next);
     if (selectedId) sp.set("selected", selectedId);
-    router.push(`${pathname}?${sp.toString()}`);
+    // กรอง = navigation ใน transition → ไม่โดน loading.tsx คั่น (จอไม่วูบ · ค้างลิสต์เดิมไว้).
+    startTransition(() => router.push(`${pathname}?${sp.toString()}`));
   }
 
   // Clear all secondary filters in ONE push (sequential setParam calls each re-push
@@ -231,7 +245,7 @@ export function ExpenseList({
     sp.delete("tab");
     sp.delete("nr");
     if (selectedId) sp.set("selected", selectedId);
-    router.push(`${pathname}?${sp.toString()}`);
+    startTransition(() => router.push(`${pathname}?${sp.toString()}`));
   }
 
   function toggle(id: string) {
@@ -472,8 +486,13 @@ export function ExpenseList({
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white">
-      {/* Sticky filter header */}
-      <div className="sticky top-14 z-20 space-y-2 rounded-t-2xl border-b border-zinc-200 bg-white p-3 sm:top-16">
+      {/* Sticky filter header — list mode: เผื่อ nav บาร์ (top-14/16) · compact: ติดขอบคอลัมน์ (top-0) */}
+      <div
+        className={
+          "sticky z-20 space-y-2 rounded-t-2xl border-b border-zinc-200 bg-white p-3 " +
+          (compact ? "top-0" : "top-14 sm:top-16")
+        }
+      >
         {/* LeanUX (CEO 2026-06-08 "filter ควร ~10% ของจอ"): แท็บสถานะ (เลื่อนแนวนอน) +
             ปุ่ม "ตัวกรอง" อยู่แถวเดียว. ค้นหา=ข้างหัว(header) · เรียงลำดับ+source/VAT/หมวด=ในตัวกรอง. */}
         <div className="flex items-center gap-2">
@@ -875,8 +894,16 @@ export function ExpenseList({
         </div>
       )}
 
-      {/* List — card-per-row (friendly, scannable on mobile · matches design MCard) */}
-      <ul className="max-h-[calc(100dvh-23rem)] space-y-2 overflow-y-auto p-2">
+      {/* List — card-per-row (friendly, scannable on mobile · matches design MCard).
+          compact: ไม่ cap ความสูง (ให้คอลัมน์ของ workspace scroll ตัวเดียว → ลิสต์เห็นครบ
+          + เลื่อนแยกอิสระ) · list mode: cap ด้วย 100dvh แล้ว scroll ในตัว (เหมือนเดิม). */}
+      <ul
+        className={
+          compact
+            ? "space-y-2 p-2"
+            : "max-h-[calc(100dvh-23rem)] space-y-2 overflow-y-auto p-2"
+        }
+      >
         {rows.length === 0 ? (
           <li>
             {q || status || categoryId || tr || cc || tab !== "all" ? (
@@ -941,8 +968,9 @@ export function ExpenseList({
                     The category chip is its own <Link>, so it CANNOT live inside the
                     row <Link> (nested <a> is invalid) — hence the rail is a sibling. */}
                 <div className="min-w-0 flex-1">
-                  <Link
+                  <a
                     href={rowHref(r.id)}
+                    onClick={(e) => onRowClick(e, r.id)}
                     aria-current={active ? "true" : undefined}
                     className={
                       "flex min-w-0 items-center justify-between gap-2 px-3 pb-1 pt-2.5 transition-colors hover:bg-zinc-50 " +
@@ -995,7 +1023,7 @@ export function ExpenseList({
                       </div>
                       <StatusBadge status={r.status} className="text-[10px]" />
                     </div>
-                  </Link>
+                  </a>
 
                   {/* D3 chip-rail / "green zone" — one compact line of status signals.
                       Every coloured chip also carries a text label (a11y). */}

@@ -4,6 +4,7 @@
 // ขึ้นไปบนแถบเต็มกว้างด้านบน — ใช้พื้นที่ว่างแทนที่จะยัดในคอลัมน์รายการ 420px · ตรงดีไซน์
 // desktopA.jsx). One component, two placements: full-width bar in page.tsx (hidden lg:block,
 // desktop) + inside ExpenseList (lg:hidden, mobile). Drives ?status=/?nr=/?pay= like before.
+import { useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import type { LedgerStatusValue } from "@/components/ledger/_kit/types";
 
@@ -64,6 +65,9 @@ export function ExpenseStatusTabs({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  // สลับแท็บ = navigation ภายใน transition → Next ไม่โชว์ loading.tsx คั่น (จอไม่วูบ)
+  // และค้างจอเดิมไว้จน data ใหม่พร้อม (pending ใช้หรี่แถบให้รู้ว่ากำลังโหลด).
+  const [pending, startTransition] = useTransition();
 
   const activePrimary: PrimaryTabId | null =
     pv
@@ -109,7 +113,7 @@ export function ExpenseStatusTabs({
       sp.set("pay", id);
     }
     if (selectedId) sp.set("selected", selectedId);
-    router.push(`${pathname}?${sp.toString()}`);
+    startTransition(() => router.push(`${pathname}?${sp.toString()}`));
   }
 
   return (
@@ -120,6 +124,8 @@ export function ExpenseStatusTabs({
       }
       role="tablist"
       aria-label="กรองตามสถานะ"
+      aria-busy={pending}
+      style={{ opacity: pending ? 0.65 : 1, transition: "opacity .12s ease" }}
     >
       {PRIMARY_TABS.filter((t) => payreqEnabled || !t.pay).map((t) => {
         const active = activePrimary === t.id;

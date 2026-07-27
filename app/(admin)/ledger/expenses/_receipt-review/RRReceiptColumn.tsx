@@ -5,7 +5,14 @@
 // - รูปหน้า 1 = originalUrl (fallback thumbUrl) · หน้า 2..N = attachments ที่ kind==='page'.
 // - PDF → การ์ด "เปิด PDF" (reuse แนว ReceiptThumb) · รูปพัง → สถานะจาง.
 // - ประวัติผู้ขาย: อ่านล้วนผ่าน lookupPurchaseHistoryAction (ไม่มี write path).
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { FileText, ExternalLink } from "lucide-react";
 import { lookupPurchaseHistoryAction } from "../../_actions";
 import type { ReceiptReviewData } from "./types";
@@ -80,6 +87,12 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   // ซูมต่อเนื่อง (%) — 100% = รูปพอดีเวที (fit) · >100% = สเกลโตจริง F×(zoomPct/100) แล้วเลื่อน/แพนดู.
   const [zoomPct, setZoomPct] = useState(100);
   const [rotation, setRotation] = useState(0);
+  // แพน (เลื่อนดูรูป) เมื่อซูมเกิน 100% — offset เป็น "พิกเซลบนจอ" (หลังสเกลแล้ว).
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  // ระหว่างจับลาก: จุดเริ่มของเมาส์ + pan ตอนเริ่มลาก (null = ไม่ได้ลากอยู่).
+  const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   const [history, setHistory] = useState<{ loading: boolean; hits: HistoryHit[] }>({
     loading: false,
@@ -91,8 +104,24 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
     setActivePage(0);
     setZoomPct(100);
     setRotation(0);
+    setPan({ x: 0, y: 0 });
     setBroken({});
   }, [exp?.id]);
+
+  // เปลี่ยนหน้า/หมุน/ปรับซูม → รีเซ็ตตำแหน่งแพน (กันรูปค้างเลื่อนไปมุมเดิม) — ทำใน handler
+  // (ไม่ใช้ effect) ตามกฎ react-hooks/set-state-in-effect.
+  function setPage(next: number) {
+    setActivePage(next);
+    setPan({ x: 0, y: 0 });
+  }
+  function setZoom(next: number) {
+    setZoomPct(next);
+    setPan({ x: 0, y: 0 });
+  }
+  function rotate90() {
+    setRotation((r) => (r + 90) % 360);
+    setPan({ x: 0, y: 0 });
+  }
 
   // ประวัติผู้ขาย — ยิง action เมื่อชื่อผู้ขาย/บริษัทเปลี่ยน (อ่านล้วน · กัน race ด้วย cancelled).
   const vendor = exp?.vendor ?? null;
@@ -131,6 +160,9 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
   const driveUrl = exp?.driveWebUrl || exp?.originalUrl || null;
   const pct = exp ? overallConfidence(exp.ocrConfidence) : null;
   const picLabel = `รูป ${total > 0 ? safePage + 1 : 0}/${total}`;
+  // ลากได้เฉพาะเมื่อโชว์ "รูปจริง" (ไม่ใช่ PDF/รูปพัง) และซูมเกิน 100% — กันไปบล็อกปุ่มในการ์ด PDF.
+  const isImageStage = !!curUrl && !isPdfUrl(curUrl) && !broken[curUrl];
+  const canPan = zoomPct > 100 && isImageStage;
 
   // กระดาษ (paper) สำหรับกล่อง PDF — พื้นขาว+เงา+มุมโค้ง หุ้มเนื้อหาแบบพอดี (ไม่ใช่กล่องตายตัว).
   const pdfPaper: CSSProperties = {
@@ -208,10 +240,12 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
       // เงา+มุมโค้ง+พื้นขาวอยู่บนตัว <img> เอง → "กระดาษ" หุ้มรูปพอดี ไม่มี letterbox.
       /* eslint-disable-next-line @next/next/no-img-element */
       <img
+        ref={imgRef}
         src={curUrl}
         alt="ใบเสร็จ"
         loading="lazy"
         decoding="async"
+        draggable={false}
         onError={() => setBroken((b) => ({ ...b, [curUrl]: true }))}
         style={{
           maxWidth: "100%",
@@ -223,8 +257,11 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
           background: "#fff",
           boxShadow: "0 12px 30px rgba(0,0,0,.45)",
           borderRadius: 4,
-          transform: `rotate(${rotation}deg) scale(${zoomPct / 100})`,
-          transformOrigin: zoomPct > 100 ? "top left" : "center",
+          transform: `translate(${pan.x}px, ${pan.y}px) rotate(${rotation}deg) scale(${zoomPct / 100})`,
+          transformOrigin: canPan ? "top left" : "center",
+          // ลากด้วย pointer เอง → ปิด native image drag/ghost.
+          userSelect: "none",
+          pointerEvents: "none",
         }}
       />
     );
@@ -276,6 +313,43 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
     );
   }
 
+  // ── ลากเลื่อนดูรูป (แพน) เมื่อซูมเกิน 100% ─────────────────────────────────
+  // transform ใช้ translate(px) scale(z) · origin=top-left → offset = พิกเซลบนจอตรง ๆ.
+  // clamp: ลากได้แค่พอเห็นทุกขอบ (รูปไม่หลุดจนเหลือแต่พื้นดำ).
+  function clampPan(x: number, y: number): { x: number; y: number } {
+    const stage = stageRef.current;
+    const img = imgRef.current;
+    if (!stage || !img) return { x, y };
+    // offsetWidth = ขนาด "พอดีเวที" (F) เพราะ transform ไม่กระทบ layout box.
+    const scaledW = img.offsetWidth * (zoomPct / 100);
+    const scaledH = img.offsetHeight * (zoomPct / 100);
+    const vw = stage.clientWidth - 18; // padding 9px สองด้าน
+    const vh = stage.clientHeight - 18;
+    const minX = Math.min(0, vw - scaledW);
+    const minY = Math.min(0, vh - scaledH);
+    return { x: Math.max(minX, Math.min(0, x)), y: Math.max(minY, Math.min(0, y)) };
+  }
+  function onPanDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!canPan) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { px: e.clientX, py: e.clientY, ox: pan.x, oy: pan.y };
+  }
+  function onPanMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const d = dragRef.current;
+    if (!d) return;
+    setPan(clampPan(d.ox + (e.clientX - d.px), d.oy + (e.clientY - d.py)));
+  }
+  function onPanUp(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer อาจถูกปล่อยไปแล้ว — ไม่เป็นไร */
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, height: "100%" }}>
       <style>{SCOPED_CSS}</style>
@@ -314,22 +388,18 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
               <div
                 className="rrv-btn"
                 style={VBTN}
-                onClick={() => setActivePage((p) => Math.max(0, p - 1))}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
               >
                 ‹
               </div>
               <div
                 className="rrv-btn"
                 style={VBTN}
-                onClick={() => setActivePage((p) => Math.min(total - 1, p + 1))}
+                onClick={() => setPage(Math.min(total - 1, safePage + 1))}
               >
                 ›
               </div>
-              <div
-                className="rrv-btn"
-                style={VBTN}
-                onClick={() => setRotation((r) => (r + 90) % 360)}
-              >
+              <div className="rrv-btn" style={VBTN} onClick={rotate90}>
                 หมุน
               </div>
               <div
@@ -363,7 +433,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
             <div
               className="rrv-btn"
               style={{ ...VBTN, minWidth: 22, textAlign: "center", lineHeight: 1 }}
-              onClick={() => setZoomPct((z) => Math.max(40, z - 10))}
+              onClick={() => setZoom(Math.max(40, zoomPct - 10))}
             >
               −
             </div>
@@ -373,7 +443,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
               max={400}
               step={5}
               value={zoomPct}
-              onChange={(e) => setZoomPct(Number(e.target.value))}
+              onChange={(e) => setZoom(Number(e.target.value))}
               aria-label="ระดับการซูมรูปใบเสร็จ"
               style={{
                 flex: 1,
@@ -386,7 +456,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
             <div
               className="rrv-btn"
               style={{ ...VBTN, minWidth: 22, textAlign: "center", lineHeight: 1 }}
-              onClick={() => setZoomPct((z) => Math.min(400, z + 10))}
+              onClick={() => setZoom(Math.min(400, zoomPct + 10))}
             >
               +
             </div>
@@ -407,14 +477,23 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
         {/* image stage — จัดกลางทั้ง 2 แกนเมื่อพอดี (≤100%) → รูปนั่งกลางพื้นดำ ไม่ทิ้งช่องว่างก้อนล่าง.
             เกิน 100% รูปล้นเวที → ชิดซ้าย/บน ให้เลื่อนถึงขอบเริ่มได้ (center จะตัดขอบซ้าย/บนทิ้ง). */}
         <div
+          ref={stageRef}
+          onPointerDown={onPanDown}
+          onPointerMove={onPanMove}
+          onPointerUp={onPanUp}
+          onPointerCancel={onPanUp}
+          onPointerLeave={onPanUp}
           style={{
             flex: 1,
             minHeight: 0,
             padding: 9,
             display: "flex",
-            alignItems: zoomPct > 100 ? "flex-start" : "center",
-            justifyContent: zoomPct > 100 ? "flex-start" : "center",
-            overflow: "auto",
+            alignItems: canPan ? "flex-start" : "center",
+            justifyContent: canPan ? "flex-start" : "center",
+            // ซูมแล้วลากดู (แพน) แทน scroll — transform ไม่สร้าง scroll ให้ overflow เลย hidden.
+            overflow: "hidden",
+            cursor: canPan ? "grab" : "default",
+            touchAction: canPan ? "none" : "auto",
           }}
         >
           {stage}
@@ -449,7 +528,7 @@ export function RRReceiptColumn({ data }: { data: ReceiptReviewData }) {
                   flex: "none",
                   cursor: "pointer",
                 }}
-                onClick={() => setActivePage(i)}
+                onClick={() => setPage(i)}
               >
                 {i + 1}
               </div>

@@ -7,7 +7,7 @@
 // เป๊ะ. เคล็ดสำคัญ: ส่ง baseParams ที่ฝัง ?view=receipt-review ไว้แล้ว → ทุกลิงก์ที่คอมโพเนนต์
 // สร้างเอง (เลือกใบ/สลับแท็บ/กรอง) จะคง view ไว้ = อยู่ในโหมดตรวจต่อทุกคลิก.
 import "./receipt-review.css";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { LedgerViewToggle } from "./LedgerViewToggle";
 import { RRDetailForm } from "./RRDetailForm";
@@ -26,6 +26,8 @@ function baht(n: number) {
 
 export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
   const router = useRouter();
+  // เปลี่ยนบริษัท/สาขา/ค้นหา = navigation ใน transition → ไม่โดน loading.tsx คั่น (จอไม่วูบ).
+  const [, startTransition] = useTransition();
   const { openSheet, busy, done, total, mode } = useLedgerUpload();
   const { baseParams, filter, statusCounts, completenessSummary, companies, branches } = data;
   const selected = filter.selected;
@@ -49,7 +51,7 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
   })();
 
   function go(href: string) {
-    router.push(href);
+    startTransition(() => router.push(href));
   }
 
   function submitSearch() {
@@ -277,9 +279,19 @@ export function ReceiptReviewWorkspace({ data }: { data: ReceiptReviewData }) {
             padding: 10,
           }}
         >
-          {/* คอลัมน์ซ้าย = ExpenseList ตัวจริง (การ์ด/ตัวกรอง/bulk เหมือน list mode) */}
-          <div style={{ minHeight: 0, overflowY: "auto" }}>
+          {/* คอลัมน์ซ้าย = ExpenseList ตัวจริง (การ์ด/ตัวกรอง/bulk เหมือน list mode).
+              height:100% + overflowY:auto + overscroll:contain → เลื่อนแยกอิสระ (ลิสต์นิ่งเมื่อ
+              เลื่อนกลาง/ขวา · ไม่ scroll ทั้งจอตาม) · compact → ExpenseList ยืดเต็ม + sticky top-0. */}
+          <div
+            style={{
+              minHeight: 0,
+              height: "100%",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
+            }}
+          >
             <ExpenseList
+              compact
               rows={data.rows}
               categories={data.categories}
               selectedId={selected}
