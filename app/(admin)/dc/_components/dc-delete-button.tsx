@@ -17,8 +17,10 @@ import {
   deleteTransfer,
   deleteIssue,
   deleteMove,
+  getDcTransferDeleteImpact,
   type DeleteDocResult,
 } from "@/lib/dc/delete-actions";
+import type { DcBranchImpactItem } from "@/lib/clawfleet/dc-transfer-reverse";
 
 export type DcDeleteDocType = "po" | "grn" | "transfer" | "issue" | "move";
 
@@ -47,6 +49,18 @@ function confirmMessage(docType: DcDeleteDocType, docCode: string): string {
   }
 }
 
+// ข้อความเตือน "ผลกระทบทั้งหมด" สำหรับใบโอนที่สาขารับของแล้ว (CEO 2026-07-28) — โชว์ต่อสินค้า
+function transferImpactMessage(docCode: string, impact: DcBranchImpactItem[]): string {
+  const lines = impact.map(
+    (i) => `• ${i.name}: รับ ${i.received} · ถอนคืน ${i.reversible}${i.consumed > 0 ? ` · ใช้ไปแล้ว ${i.consumed} (ถอนไม่ได้)` : ""}`,
+  );
+  const consumedTotal = impact.reduce((s, i) => s + i.consumed, 0);
+  const warn = consumedTotal > 0
+    ? `\n\n⚠️ มีของ ${consumedTotal} ชิ้นที่เติมเข้าตู้/ขายไปแล้ว — ถอนคืนไม่ได้ (ต้องไปปรับสต๊อกสาขาเอง). ส่วนที่ยังอยู่ในคลังจะถอนคืนให้.`
+    : "";
+  return `⚠️ ลบใบโอน ${docCode} — สาขารับของแล้ว\n\nผลกระทบต่อสต๊อกสาขา:\n${lines.join("\n")}${warn}\n\nDC จะได้ของคืนตามจำนวนที่ส่ง · ลบแล้วกู้ผ่านประวัติการลบเท่านั้น.\nยืนยันลบ?`;
+}
+
 export function DcDeleteButton({
   docType,
   docId,
@@ -68,26 +82,50 @@ export function DcDeleteButton({
 
   const iconSize = size === "sm" ? 13 : 15;
 
-  function handleClick(e: React.MouseEvent) {
+  function applyResult(res: DeleteDocResult) {
+    if (res.ok) {
+      onDeleted?.();
+      router.refresh();
+      return;
+    }
+    if ("blockedProductId" in res && res.blockedProductId) {
+      // ลบไม่ได้เพราะของถูกเบิก/โอนออกไปแล้ว → เสนอพาไปหน้า "ประวัติสินค้า" (timeline)
+      const go = window.confirm(
+        `${res.error}\n\nกด “ตกลง” เพื่อไปดูประวัติสินค้าตัวนี้ (ของถูกเบิก/โอนไปใบไหน) แล้วย้อน/ปรับก่อนค่อยลบ`,
+      );
+      if (go) router.push(`/dc/office/products/${res.blockedProductId}/timeline`);
+      return;
+    }
+    if ("error" in res) window.alert(res.error);
+  }
+
+  async function handleClick(e: React.MouseEvent) {
     // กันคลิกทะลุไปโดน row-link (DataTable ทำให้ทั้งแถวเป็นลิงก์)
     e.preventDefault();
     e.stopPropagation();
+    if (pending) return;
+
+    // ── ใบโอน: preview ผลกระทบก่อน · ใบที่สาขา "รับของแล้ว" โชว์รายละเอียดต่อสินค้า (CEO 2026-07-28) ──
+    if (docType === "transfer") {
+      let msg = confirmMessage("transfer", docCode);
+      try {
+        const preview = await getDcTransferDeleteImpact(docId);
+        if (!preview.ok) { window.alert(preview.error); return; }
+        if (preview.isBranchReceived) msg = transferImpactMessage(preview.docCode, preview.impact);
+      } catch {
+        // preview ล้ม → ใช้ข้อความมาตรฐาน (server ยัง gate ผลกระทบซ้ำอยู่แล้ว = ปลอดภัย)
+      }
+      if (!window.confirm(msg)) return;
+      startTransition(async () => {
+        applyResult(await deleteTransfer(docId, { confirmImpact: true }));
+      });
+      return;
+    }
+
+    // ── เอกสารอื่น ๆ: flow เดิม ──
     if (!window.confirm(confirmMessage(docType, docCode))) return;
     startTransition(async () => {
-      const res = await ACTION[docType](docId);
-      if (res.ok) {
-        onDeleted?.();
-        router.refresh();
-      } else if (res.blockedProductId) {
-        // ลบไม่ได้เพราะของถูกเบิก/โอนออกไปแล้ว → ไม่ตันเหมือน alert เดิม:
-        //   เสนอพาไปหน้า "ประวัติสินค้า" (timeline) ดูว่าของไปใบไหน แล้วย้อน/ปรับก่อน ค่อยกลับมาลบ
-        const go = window.confirm(
-          `${res.error}\n\nกด “ตกลง” เพื่อไปดูประวัติสินค้าตัวนี้ (ของถูกเบิก/โอนไปใบไหน) แล้วย้อน/ปรับก่อนค่อยลบ`,
-        );
-        if (go) router.push(`/dc/office/products/${res.blockedProductId}/timeline`);
-      } else {
-        window.alert(res.error);
-      }
+      applyResult(await ACTION[docType](docId));
     });
   }
 

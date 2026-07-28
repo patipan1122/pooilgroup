@@ -26,11 +26,48 @@ import { sourceKey } from "@/lib/dc/codes";
 import { recordMovement, getOnHand } from "@/lib/dc/stock";
 import { DcMoveKind, DcPostStatus, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { deleteStockIn } from "@/lib/ledger/trcloud-inventory";
+import {
+  getDcTransferBranchImpact,
+  reverseDcTransferFromBranchTx,
+  type DcBranchImpactItem,
+} from "@/lib/clawfleet/dc-transfer-reverse";
 
 export type DeleteDocResult =
   | { ok: true; summary: string }
   // blockedProductId → ลบไม่ได้เพราะของถูกเบิก/โอนออก · client เด้งไปหน้า timeline สินค้าตัวนี้เพื่อจัดการก่อนลบ
-  | { ok: false; error: string; blockedProductId?: string };
+  // needsImpactConfirm → ใบโอนไปสาขา "รับแล้ว" (CEO 2026-07-28): ต้องโชว์ผลกระทบต่อสต๊อกสาขาก่อน (impact+impactDocCode)
+  //   super_admin ยืนยัน → เรียก deleteTransfer(id,{confirmImpact:true}) อีกครั้ง · error คงมีเสมอ (caller อื่นอ่านได้)
+  | {
+      ok: false;
+      error: string;
+      blockedProductId?: string;
+      needsImpactConfirm?: true;
+      impact?: DcBranchImpactItem[];
+      impactDocCode?: string;
+    };
+
+/** READ-ONLY · ผลกระทบถ้าลบใบโอน (สำหรับปุ่มลบ preview) — super_admin เท่านั้น. */
+export async function getDcTransferDeleteImpact(
+  transferId: string,
+): Promise<
+  | { ok: true; isBranchReceived: boolean; docCode: string; impact: DcBranchImpactItem[] }
+  | { ok: false; error: string }
+> {
+  const g = await requireDeleter();
+  if (!g.ok) return g;
+  const { orgId } = g.deleter;
+  const id = (transferId ?? "").trim();
+  if (!id) return { ok: false, error: "ไม่พบใบโอน" };
+  const transfer = await prisma.dcTransfer.findFirst({
+    where: { id, orgId },
+    select: { transferCode: true, destType: true, toBranchId: true, status: true },
+  });
+  if (!transfer) return { ok: false, error: "ไม่พบใบโอนนี้ในองค์กรของคุณ" };
+  const isBranchReceived =
+    transfer.destType === "MODULE" && !!transfer.toBranchId && transfer.status === DcTransferStatus.CONFIRMED;
+  const impact = isBranchReceived ? await getDcTransferBranchImpact(orgId, id) : [];
+  return { ok: true, isBranchReceived: isBranchReceived && impact.length > 0, docCode: transfer.transferCode, impact };
+}
 
 type Deleter = { orgId: string; userId: string; userName: string };
 
@@ -382,7 +419,10 @@ export async function deletePurchaseOrder(poId: string): Promise<DeleteDocResult
 // ════════════════════════════════════════════════════════════════════
 
 /** ลบใบโอน + คืนสต๊อกให้กลับสภาพก่อนโอน. */
-export async function deleteTransfer(transferId: string): Promise<DeleteDocResult> {
+export async function deleteTransfer(
+  transferId: string,
+  opts?: { confirmImpact?: boolean },
+): Promise<DeleteDocResult> {
   const g = await requireDeleter();
   if (!g.ok) return g;
   const { orgId } = g.deleter;
@@ -399,6 +439,24 @@ export async function deleteTransfer(transferId: string): Promise<DeleteDocResul
     transfer.status === DcTransferStatus.DISPATCHED ||
     transfer.status === DcTransferStatus.IN_TRANSIT;
   const alreadyCancelled = transfer.status === DcTransferStatus.CANCELLED;
+
+  // CEO 2026-07-28 · ใบโอนไปสาขาตู้คีบ "รับแล้ว" (CONFIRMED) → มีสต๊อกฝั่งสาขา (CfStockMovement · คนละ
+  //   schema ที่ตัวลบเดิมมองข้าม). ต้องโชว์ผลกระทบก่อน (needsImpactConfirm) → super_admin ยืนยัน → ถอนจริง.
+  const isBranchReceived =
+    transfer.destType === "MODULE" && !!transfer.toBranchId && transfer.status === DcTransferStatus.CONFIRMED;
+  if (isBranchReceived && !opts?.confirmImpact) {
+    const impact = await getDcTransferBranchImpact(orgId, id);
+    if (impact.length > 0) {
+      return {
+        ok: false,
+        error: "ใบโอนนี้สาขารับของแล้ว — ต้องยืนยันผลกระทบต่อสต๊อกก่อนลบ",
+        needsImpactConfirm: true,
+        impact,
+        impactDocCode: transfer.transferCode,
+      };
+    }
+    // ไม่มี movement ฝั่งสาขา (data เพี้ยน/ยังไม่รับจริง) → ลบปกติได้เลย
+  }
 
   // รายการ movement จริงของใบนี้ (dc_transfer / dc_transfer_auto). ยกเลิกแล้ว = คืนไปแล้ว ไม่ย้อนซ้ำ.
   const movements = alreadyCancelled
@@ -437,24 +495,39 @@ export async function deleteTransfer(transferId: string): Promise<DeleteDocResul
     if (!back.duplicate) reversed += 1;
   }
 
+  // ── ถอนสต๊อกฝั่งสาขา (ถ้ารับแล้ว) + snapshot + ลบ header ในธุรกรรมเดียว (atomic · re-click ปลอดภัย) ──
+  let branchReversedRows = 0;
+  let branchItems: DcBranchImpactItem[] = [];
   const snapshot = { transfer, movements };
-  await prisma.$transaction([
-    prisma.dcDeletionLog.create({
+  await prisma.$transaction(async (tx) => {
+    if (isBranchReceived) {
+      const r = await reverseDcTransferFromBranchTx(tx, orgId, transfer.id, transfer.transferCode, g.deleter.userId);
+      branchReversedRows = r.reversedRows;
+      branchItems = r.items;
+    }
+    await tx.dcDeletionLog.create({
       data: deletionLogData({
         orgId, docType: "transfer", docId: transfer.id, docCode: transfer.transferCode,
-        snapshot, reversal: { movementsReversed: reversed, wasStatus: transfer.status },
+        snapshot: { ...snapshot, branchReversal: branchItems },
+        reversal: { movementsReversed: reversed, branchReversedRows, wasStatus: transfer.status },
         deletedByUserId: g.deleter.userId, deletedByName: g.deleter.userName,
       }),
-    }),
-    prisma.dcTransfer.delete({ where: { id: transfer.id } }),
-  ]);
+    });
+    await tx.dcTransfer.delete({ where: { id: transfer.id } });
+  });
 
   revalidateDc();
+  const reversibleTotal = branchItems.reduce((s, i) => s + i.reversible, 0);
+  const consumedTotal = branchItems.reduce((s, i) => s + i.consumed, 0);
+  const branchNote = isBranchReceived && branchItems.length
+    ? ` · ถอนคลังสาขา ${reversibleTotal}${consumedTotal > 0 ? ` (ใช้ไปแล้ว ${consumedTotal} ถอนไม่ได้)` : ""}`
+    : "";
   return {
     ok: true,
-    summary: reversed
-      ? `ลบใบโอน ${transfer.transferCode} · คืนสต๊อก ${reversed} รายการ`
-      : `ลบใบโอน ${transfer.transferCode}`,
+    summary:
+      (reversed
+        ? `ลบใบโอน ${transfer.transferCode} · คืนสต๊อก DC ${reversed} รายการ`
+        : `ลบใบโอน ${transfer.transferCode}`) + branchNote,
   };
 }
 
