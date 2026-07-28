@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Zap, Droplet, Landmark } from "lucide-react";
+import { Zap, Droplet, Landmark, Scissors } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
@@ -449,6 +449,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               />
             )}
             <PrintBillButton />
+            {/* แตกบิล — พิมพ์ "ใบวางบิลแยก" (ค่าเช่า / ค่าน้ำ-ไฟ) โดยบิลหลักไม่เปลี่ยน */}
+            {bill.status !== "void" && (
+              <a
+                href={`/rentspace/bills/${bill.id}/split`}
+                className="rs-btn rs-btn-ghost w-full justify-center"
+              >
+                <Scissors className="h-4 w-4" /> แตกบิล (พิมพ์ใบวางบิลแยก)
+              </a>
+            )}
             {/* #5 ยกเลิกบิลแบบขออนุมัติ (maker→checker) */}
             {bill.status !== "void" && bill.voidStatus !== "pending" && (
               <RequestVoidButton billId={bill.id} />

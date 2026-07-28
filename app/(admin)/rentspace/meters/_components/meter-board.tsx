@@ -745,6 +745,7 @@ function SideCells({
             <input
               type="number"
               inputMode="decimal"
+              step="0.01"
               min={0}
               value={side.baseline}
               onChange={(e) => onBaselineChange(unitId, kind, e.target.value)}
@@ -779,6 +780,7 @@ function SideCells({
               }}
               type="number"
               inputMode="decimal"
+              step="0.01"
               min={0}
               value={side.curr}
               onChange={(e) => onChange(unitId, kind, e.target.value)}
@@ -915,6 +917,7 @@ function SideCells({
               <input
                 type="number"
                 inputMode="decimal"
+                step="0.01"
                 min={0}
                 value={side.oldFinal}
                 onChange={(e) => onOldFinalChange(unitId, kind, e.target.value)}
@@ -1173,6 +1176,7 @@ function MobileSide({
             <input
               type="number"
               inputMode="decimal"
+              step="0.01"
               min={0}
               value={side.baseline}
               onChange={(e) => onBaselineChange(unitId, kind, e.target.value)}
@@ -1204,6 +1208,7 @@ function MobileSide({
           }}
           type="number"
           inputMode="decimal"
+          step="0.01"
           min={0}
           value={side.curr}
           onChange={(e) => onChange(unitId, kind, e.target.value)}
@@ -1274,6 +1279,7 @@ function MobileSide({
           <input
             type="number"
             inputMode="decimal"
+            step="0.01"
             min={0}
             value={side.oldFinal}
             onChange={(e) => onOldFinalChange(unitId, kind, e.target.value)}

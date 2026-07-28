@@ -1,7 +1,23 @@
 // RentSpace — formatting + label helpers (shared web + server)
-import { formatBaht, thaiDateLong } from "@/lib/utils/format";
+import { thaiDateLong } from "@/lib/utils/format";
 
-export { formatBaht, thaiDateLong };
+export { thaiDateLong };
+
+// เงินในบิลค่าเช่า/ใบวางบิลต้องแสดง "สตางค์" ครบ 2 ตำแหน่งเสมอ (12,000.00) —
+// override formatBaht เฉพาะโมดูล RentSpace เท่านั้น. ไม่แตะ formatBaht กลางใน
+// @/lib/utils/format → โปรแกรมอื่น (DC · ตู้คีบ · บัญชี) ยังโชว์บาทเต็มเหมือนเดิม.
+const _rsBaht = new Intl.NumberFormat("th-TH", {
+  style: "currency",
+  currency: "THB",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+export function formatBaht(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "฿0.00";
+  const n = typeof value === "number" ? value : parseFloat(value);
+  if (Number.isNaN(n)) return "฿0.00";
+  return _rsBaht.format(n);
+}
 
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
 export const POOILGROUP_ORG_ID = ORG_ID;

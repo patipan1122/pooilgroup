@@ -205,7 +205,25 @@ function TotalRow({
  * `domId` lets the public single-bill page target `#rs-bill` for print scoping;
  * the batch page renders many without a single id (uses .rs-bill-doc class).
  */
-export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: string }) {
+export function BillDocument({
+  bill,
+  domId,
+  docTitle,
+  docNote,
+  hidePayment,
+  hideStamp,
+}: {
+  bill: BillDocumentData;
+  domId?: string;
+  /** แทนหัวข้อ "ใบแจ้งหนี้/ใบเสร็จรับเงิน" (ใช้กับใบวางบิลแยก เช่น "ใบวางบิล"). */
+  docTitle?: string;
+  /** บรรทัดหมายเหตุใต้หัวข้อ (เช่น "แยกส่วน: ค่าน้ำ-ไฟ · อ้างอิงบิล INV..."). */
+  docNote?: string;
+  /** ซ่อนแถว "ชำระแล้ว/คงเหลือ" — ใช้กับใบวางบิลแยกที่การรับเงินอยู่บิลหลักใบเดียว. */
+  hidePayment?: boolean;
+  /** ซ่อนตราประทับชำระ/ค้างชำระ — ใช้กับใบวางบิลแยก. */
+  hideStamp?: boolean;
+}) {
   const total = toNum(bill.totalAmount);
   const paid = toNum(bill.paidAmount);
   const remaining = Math.max(0, total - paid);
@@ -218,9 +236,11 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
   return (
     <div id={domId} className="rs-bill-doc" style={{ position: "relative" }}>
       {/* paid / unpaid stamp */}
-      <div className="rs-bill-stamp" data-state={stampState}>
-        {bill.status === "void" ? "ยกเลิก" : remaining <= 0 ? "ชำระแล้ว" : "ค้างชำระ"}
-      </div>
+      {!hideStamp && (
+        <div className="rs-bill-stamp" data-state={stampState}>
+          {bill.status === "void" ? "ยกเลิก" : remaining <= 0 ? "ชำระแล้ว" : "ค้างชำระ"}
+        </div>
+      )}
 
       {/* invoice header */}
       <div className="flex items-start justify-between gap-4 pb-4 mb-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
@@ -242,7 +262,7 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
         </div>
         <div className="text-right">
           <div className="text-[14px] font-bold" style={{ color: "var(--rs-text)" }}>
-            {remaining <= 0 && bill.status !== "void" ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้"}
+            {docTitle ?? (remaining <= 0 && bill.status !== "void" ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้")}
           </div>
           <div className="text-[13px]" style={{ color: "var(--rs-text-2)" }}>
             เลขที่ {bill.billNo}
@@ -250,6 +270,11 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
           <div className="text-[12.5px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
             งวด {periodLabel(bill.period)}
           </div>
+          {docNote && (
+            <div className="text-[12px] mt-1 font-semibold" style={{ color: "var(--rs-brand)" }}>
+              {docNote}
+            </div>
+          )}
         </div>
       </div>
 
@@ -347,8 +372,10 @@ export function BillDocument({ bill, domId }: { bill: BillDocumentData; domId?: 
           {vat > 0 && <TotalRow label="ภาษีมูลค่าเพิ่ม (VAT)" value={formatBaht(vat)} />}
           <div className="border-t my-1.5" style={{ borderColor: "var(--rs-border)" }} />
           <TotalRow label="ยอดรวมทั้งสิ้น" value={formatBaht(total)} strong />
-          <TotalRow label="ชำระแล้ว" value={formatBaht(paid)} />
-          <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
+          {!hidePayment && <TotalRow label="ชำระแล้ว" value={formatBaht(paid)} />}
+          {!hidePayment && (
+            <TotalRow label="คงเหลือ" value={formatBaht(remaining)} strong tone={remaining > 0 ? "danger" : "ok"} />
+          )}
         </div>
       </div>
 

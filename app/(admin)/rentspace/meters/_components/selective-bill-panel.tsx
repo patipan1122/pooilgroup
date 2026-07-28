@@ -19,6 +19,10 @@ export type BillRoom = {
   alreadyBilled: boolean; // ออกบิลงวดนี้แล้ว
 };
 
+/** ตัวเลขเงินในบรรทัดแยกย่อย — โชว์สตางค์ 2 ตำแหน่งให้ตรงกับยอดบิลจริง */
+const dec2 = (n: number) =>
+  n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /**
  * #9d — ออกบิลแบบ "เลือกห้อง" (ไม่ต้องทั้งโครงการ).
  * #2a — ช่องค้นหาห้อง · #2b — พรีวิวยอดบิลฝั่งขวาก่อนกดยืนยัน.
@@ -280,12 +284,12 @@ export default function SelectiveBillPanel({
                         </div>
                       </div>
                       <div className="text-[11px] mt-0.5" style={{ color: "var(--rs-text-3)" }}>
-                        ค่าเช่า {row.rent.toLocaleString("th-TH")}
-                        {row.electric > 0 ? ` · ไฟ ${row.electric.toLocaleString("th-TH")}` : ""}
-                        {row.water > 0 ? ` · น้ำ ${row.water.toLocaleString("th-TH")}` : ""}
-                        {row.lateFee > 0 ? ` · ค่าปรับ ${row.lateFee.toLocaleString("th-TH")}` : ""}
-                        {row.discount > 0 ? ` · ส่วนลด -${row.discount.toLocaleString("th-TH")}` : ""}
-                        {row.vat > 0 ? ` · VAT ${row.vat.toLocaleString("th-TH")}` : ""}
+                        ค่าเช่า {dec2(row.rent)}
+                        {row.electric > 0 ? ` · ไฟ ${dec2(row.electric)}` : ""}
+                        {row.water > 0 ? ` · น้ำ ${dec2(row.water)}` : ""}
+                        {row.lateFee > 0 ? ` · ค่าปรับ ${dec2(row.lateFee)}` : ""}
+                        {row.discount > 0 ? ` · ส่วนลด -${dec2(row.discount)}` : ""}
+                        {row.vat > 0 ? ` · VAT ${dec2(row.vat)}` : ""}
                       </div>
                       {row.missingMeter && (
                         <div

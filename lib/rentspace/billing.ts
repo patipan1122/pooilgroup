@@ -3,16 +3,16 @@
 // bill numbering via unique-constraint retry (per [[ledgerline-arch-review-86fixes]]).
 import { prisma } from "@/lib/prisma";
 import { prevPeriod, toNum } from "@/lib/rentspace/format";
+import { round2, computeBillTotals } from "@/lib/rentspace/bill-math";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type Contract = Prisma.RentalContractGetPayload<{ include: { project: true; unit: true } }>;
 
 export type RentScheduleEntry = { fromPeriod: string; amount: number };
 
-/** round to 2 decimals (money). Single source of truth for all bill math. */
-export function round2(x: number): number {
-  return Math.round(x * 100) / 100;
-}
+// round2 + computeBillTotals ย้ายไป lib/rentspace/bill-math.ts (prisma-free · client
+// เรียกร่วมได้) — re-export ตรงนี้เพื่อให้โค้ดเดิมที่ import จาก billing.ts ใช้ได้เหมือนเดิม.
+export { round2, computeBillTotals };
 
 /**
  * Meter usage that survives a rollover (…9998→9999→0001) or a physical meter
@@ -336,34 +336,6 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   );
 
   return { rentAmount, electricAmount, waterAmount, lateFeeAmount, otherAmount, items, notes };
-}
-
-/**
- * Compute discount + subtotal + VAT + total from line items, the approved
- * discount total and the contract VAT %. VAT is charged ONLY on the VATable
- * base (commercial rent), not on pass-through utilities — and the discount is
- * allocated proportionally across the bill so the VATable share shrinks fairly.
- *
- * Pure (no DB) so a freshly-created bill and a recomputed bill agree exactly.
- */
-export function computeBillTotals(args: {
-  items: { amount: number; vatable: boolean }[];
-  approvedDiscount: number;
-  vatPercent: number;
-}): { gross: number; discountAmount: number; subtotal: number; vatAmount: number; totalAmount: number } {
-  const gross = round2(args.items.reduce((s, it) => s + toNum(it.amount), 0));
-  // discount can never exceed the gross (no negative bills)
-  const discountAmount = round2(Math.min(Math.max(0, args.approvedDiscount), gross));
-  const vatableGross = round2(
-    args.items.filter((it) => it.vatable).reduce((s, it) => s + toNum(it.amount), 0),
-  );
-  // allocate the discount proportionally → only the VATable portion lowers VAT
-  const discountOnVatable = gross > 0 ? round2(discountAmount * (vatableGross / gross)) : 0;
-  const vatableNet = Math.max(0, round2(vatableGross - discountOnVatable));
-  const vatAmount = round2(vatableNet * (args.vatPercent / 100));
-  const subtotal = Math.max(0, round2(gross - discountAmount));
-  const totalAmount = round2(subtotal + vatAmount);
-  return { gross, discountAmount, subtotal, vatAmount, totalAmount };
 }
 
 /** Recompute subtotal/vat/total/status from items + approved discounts + payments. */
