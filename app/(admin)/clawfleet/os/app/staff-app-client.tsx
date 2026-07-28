@@ -167,6 +167,10 @@ type AppMachine = {
   lastRefillAt?: string | null;
 };
 
+// สาขาแบบย่อสำหรับ "ปุ่มสลับสาขา" ในแอปพนักงาน (1 คนดูแลหลายสาขา) —
+// มาจาก branches ทั้งหมดที่ผู้ใช้มีสิทธิ์ (รวมสาขาที่ยังไม่มีตู้แต่มีของรอรับ เช่นเพิ่งเปิด).
+type BranchLite = { id: string; name: string; code: string };
+
 const DEMO_BRANCH_ID = "demo-branch-rs";
 const DEMO_SKUS: CollectSku[] = [
   { id: "demo-sku-1", sku: "KT-01", name: "ซานริโอ้ คิตตี้" },
@@ -741,6 +745,12 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
   const realMachines = useMemo(() => flattenReal(branches, awaitingSet), [branches, awaitingSet]);
+  // สาขาทั้งหมดที่ผู้ใช้มีสิทธิ์ (super admin = ทุกสาขาตู้คีบ) → ป้อน "ปุ่มสลับสาขา".
+  // มาจาก branches (ไม่ใช่ machines) → สาขาที่ยังไม่มีตู้แต่มีของรอรับ (เช่นเพิ่งเปิด) ก็ขึ้นให้สลับได้.
+  const branchList: BranchLite[] = useMemo(
+    () => branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
+    [branches],
+  );
   const usingDemo = realMachines.length === 0;
   const machines = usingDemo ? DEMO_MACHINES : realMachines;
   const skuList = usingDemo || skus.length === 0 ? DEMO_SKUS : skus;
@@ -751,10 +761,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
   );
 
   return (
@@ -820,6 +830,8 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
 type StaffAppProps = {
   orgId: string;
   machines: AppMachine[];
+  // สาขาที่ผู้ใช้มีสิทธิ์ทั้งหมด → ปุ่มสลับสาขา (พนักงาน 1 คนดูแลหลายสาขา)
+  branchList: BranchLite[];
   skus: CollectSku[];
   usingDemo: boolean;
   // true = บังคับถ่ายรูปก่อนกดถัดไป/ส่ง (org policy photoRequired)
@@ -852,9 +864,29 @@ type StaffAppProps = {
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
+  // ── ปุ่มสลับสาขา (พนักงาน 1 คนดูแลหลายสาขา · CEO 2026-07-28) ──
+  // เก็บ "สาขาที่ผู้ใช้เลือกเอง" · "" = ยังไม่เลือก → ใช้ default. ยกไว้ที่ StaffApp เพื่อไม่รีเซ็ต
+  // ตอนเข้า-ออกจอเก็บเงิน (HomeScreen unmount).
+  const [pickedBranchId, setPickedBranchId] = useState<string>("");
+  // default = สาขาที่มี "ของรอรับ" มากสุดก่อน → ไม่มีเลย = สาขาของตู้แรก → สาขาแรกในลิสต์.
+  // คิดสด (useMemo) ไม่ setState ใน effect → ไม่มี cascading render + ไม่ชน lint set-state-in-effect.
+  const defaultBranchId = useMemo(() => {
+    if (usingDemo) return "";
+    let best = "";
+    let bestInbound = 0;
+    for (const b of branchList) {
+      const n = inboundByBranch[b.id]?.length ?? 0;
+      if (n > bestInbound) { bestInbound = n; best = b.id; }
+    }
+    if (!best) best = machines.find((m) => !isDemo(m.id))?.branchId ?? branchList[0]?.id ?? "";
+    return best;
+  }, [usingDemo, branchList, inboundByBranch, machines]);
+  // สาขาที่ใช้จริง = ที่ผู้ใช้เลือก (ถ้ายังมีสิทธิ์อยู่) ไม่งั้น default
+  const selectedBranchId =
+    pickedBranchId && branchList.some((b) => b.id === pickedBranchId) ? pickedBranchId : defaultBranchId;
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   // ── offline persistence: ร่างต้องรอด refresh / LINE ปิด webview ──
   // demo ไม่บันทึกจริง → ไม่ persist (กันร่าง demo ค้างข้ามรอบ)
@@ -1575,6 +1607,9 @@ function StaffApp({ orgId, machines, skus, usingDemo, photoRequired, userName, c
       ) : onHome ? (
         <HomeScreen
           userName={userName}
+          branchList={branchList}
+          selectedBranchId={selectedBranchId}
+          onSelectBranch={setPickedBranchId}
           todayYmd={todayYmd}
           panel={panel}
           setPanel={setPanel}
@@ -1792,6 +1827,10 @@ function HomeScreen(props: {
   skippedIds: Set<string>;
   // true = route ถูกกรองเหลือ "ตู้ของฉัน" (มีการมอบหมาย) → หัวข้อ "ตู้ของฉันวันนี้ (N)" + ไม่จัดกลุ่มสาขา
   assignedOnly: boolean;
+  // ปุ่มสลับสาขา (พนักงานหลายสาขา) — รายชื่อสาขา + สาขาที่เลือก + ตัวสลับ
+  branchList: BranchLite[];
+  selectedBranchId: string;
+  onSelectBranch: (id: string) => void;
   // N3/R4 · สินค้าคลังสาขา (นับสต๊อก) · N6 · ใบกระจายขาเข้า (รับสินค้า) — แยกตาม branchId
   branchProducts: Record<string, BranchStockProduct[]>;
   inboundByBranch: Record<string, InboundDelivery[]>;
@@ -1803,28 +1842,39 @@ function HomeScreen(props: {
   countsByBranch: Record<string, CfCountRow[]>;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onChange, onSetup, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
-  // N3/N6 · สาขาของพนักงาน (ตู้ตัวแรกในรายการ) → ใช้เลือกสินค้าคลัง/ใบรับของสาขานั้น.
-  // route ถูกกรองเป็นสาขาเดียวของพนักงานอยู่แล้ว (assignedOnly/single-branch) → ใช้ branchId ตู้แรก.
-  const primaryBranchId = machines.find((m) => !isDemo(m.id))?.branchId ?? "";
-  const stockProducts = props.branchProducts[primaryBranchId] ?? [];
-  const stockWarehouses = props.warehousesByBranch[primaryBranchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
-  const inboundDeliveries = props.inboundByBranch[primaryBranchId] ?? [];
+  // ── สาขาที่กำลังดู (ปุ่มสลับสาขา · CEO 2026-07-28) ──
+  // หลายสาขา → ใช้ "สาขาที่เลือก" · สาขาเดียว/เดโม → สาขาของตู้แรก (พฤติกรรมเดิม ไม่ให้ regress).
+  // เดิม hardcode = สาขาของตู้แรก → พนักงานหลายสาขาเห็นใบรับ/สต๊อกแค่สาขาเดียว ของสาขาอื่นหาย (bug 07-28).
+  const multiBranch = !props.usingDemo && props.branchList.length > 1;
+  const branchId = multiBranch
+    ? props.selectedBranchId
+    : (machines.find((m) => !isDemo(m.id))?.branchId ?? "");
+  // ตู้ที่โชว์ในหน้าหลัก = เฉพาะสาขาที่เลือก (แยกชัด · "อย่าจับรวมกัน") · สาขาเดียว/เดโม = ทั้งหมด.
+  const visibleMachines = useMemo(
+    () => (multiBranch ? machines.filter((m) => m.branchId === branchId) : machines),
+    [multiBranch, machines, branchId],
+  );
+  const selectedBranchName = props.branchList.find((b) => b.id === branchId)?.name ?? "";
+  // N3/N6 · สินค้าคลัง / ใบรับ / ประวัติ ของ "สาขาที่เลือก" (server ส่งครบทุกสาขามาแล้ว · keyed by branchId)
+  const stockProducts = props.branchProducts[branchId] ?? [];
+  const stockWarehouses = props.warehousesByBranch[branchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
+  const inboundDeliveries = props.inboundByBranch[branchId] ?? [];
   // F1 · คลังตอนนี้ต่อสินค้าของสาขานี้ · F2 · ประวัติรับแล้วของสาขานี้ (ส่งเข้าหน้ารับสินค้า)
-  const onHandByProduct = props.onHandByBranch[primaryBranchId] ?? {};
-  const receivedDocs = props.receivedByBranch[primaryBranchId] ?? [];
+  const onHandByProduct = props.onHandByBranch[branchId] ?? {};
+  const receivedDocs = props.receivedByBranch[branchId] ?? [];
   // F3 · ประวัติใบนับของสาขานี้ (ส่งเข้าหน้านับสต๊อก → แท็บ "ประวัติใบนับ")
-  const countDocs = props.countsByBranch[primaryBranchId] ?? [];
+  const countDocs = props.countsByBranch[branchId] ?? [];
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
     const map = new Map<string, AppMachine[]>();
-    for (const m of machines) {
+    for (const m of visibleMachines) {
       const list = map.get(m.branch);
       if (list) list.push(m);
       else map.set(m.branch, [m]);
     }
     return Array.from(map.entries()); // [branchName, machines[]][]
-  }, [machines]);
+  }, [visibleMachines]);
   // assignedOnly = "ตู้ของฉัน" (curated แล้ว) → ไม่ต้องคั่นสาขา แสดงเป็นรายการเดียว.
   // ไม่งั้น: มีมากกว่า 1 สาขา → โชว์หัวข้อสาขาคั่น (สาขาเดียวไม่ต้องคั่น กันรก).
   const showBranchHeaders = !assignedOnly && branchGroups.length > 1;
@@ -1837,7 +1887,9 @@ function HomeScreen(props: {
   const hr = new Date().getHours();
   const greet = hr < 12 ? "สวัสดีตอนเช้า" : hr < 16 ? "สวัสดีตอนบ่าย" : hr < 19 ? "สวัสดีตอนเย็น" : "สวัสดีตอนค่ำ";
   // ชื่อสาขา (ถ้าหลายสาขา = "N สาขา") — subtitle การ์ดคืบหน้ารอบ
-  const branchLabel = branchGroups.length === 1 ? branchGroups[0][0] : `${branchGroups.length} สาขา`;
+  const branchLabel = multiBranch
+    ? (selectedBranchName || "—")
+    : (branchGroups.length === 1 ? branchGroups[0][0] : `${branchGroups.length} สาขา`);
   // "วันนี้" เวลาไทย (จาก server กัน tz drift · fallback client clock ถ้าไม่ส่ง)
   const todayYmd = props.todayYmd ?? clientTodayBangkokYmd();
   // 🔴 FIX (CEO 2026-07-19) · ตู้ "เก็บแล้ววันนี้" = รอบ COLLECTION ที่ date === วันนี้เท่านั้น
@@ -1850,6 +1902,12 @@ function HomeScreen(props: {
     }
     return set;
   }, [props.history, todayYmd]);
+  // ความคืบหน้ารอบเก็บ — รายสาขาเมื่อสลับสาขา (ไม่งั้น X/N ข้ามสาขาจะเพี้ยน) · สาขาเดียว/เดโม = เลข server เดิม
+  const routeTotalShown = multiBranch ? visibleMachines.length : routeTotal;
+  const routeDoneShown = multiBranch
+    ? visibleMachines.filter((m) => !drafts[m.id] && !skippedIds.has(m.id) && !m.awaitingSetup && doneCodesToday.has(m.code)).length
+    : routeDone;
+  const routePctShown = routeTotalShown > 0 ? Math.min(100, Math.round((routeDoneShown / routeTotalShown) * 100)) : 0;
   // CEO 2026-07-19 · "ดูใบ" ต้องเปิดใบรอบนั้นเลย (ไม่เด้งเข้า list) → เก็บ row ที่จะเปิด detail ค้างไว้
   //   ส่งต่อให้ HistoryPanel เปิด detail อัตโนมัติเมื่อสลับเข้าแท็บประวัติ.
   const [historyFocus, setHistoryFocus] = useState<StaffHistoryRow | null>(null);
@@ -1880,15 +1938,62 @@ function HomeScreen(props: {
               </span>
             </div>
 
+            {/* ── ปุ่มสลับสาขา (พนักงาน 1 คนดูแลหลายสาขา · CEO 2026-07-28) — แยกดูทีละสาขา ── */}
+            {multiBranch && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#454B54" }}>สาขาที่ดูแล</span>
+                  <span className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#9AA1AB", background: "#F1F2F5", padding: "1px 8px", borderRadius: 20 }}>{props.branchList.length}</span>
+                </div>
+                {/* แถบเลื่อนแนวนอน · แดง "รอรับ N" = มีของค้างรับที่สาขานั้น (คลิกสลับไปดู) */}
+                <div style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -18px", padding: "0 18px 4px", scrollbarWidth: "none" }}>
+                  {props.branchList.map((b) => {
+                    const active = b.id === branchId;
+                    const pend = props.inboundByBranch[b.id]?.length ?? 0;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => props.onSelectBranch(b.id)}
+                        className="co-tap"
+                        style={{
+                          flex: "0 0 auto",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "8px 13px",
+                          borderRadius: 11,
+                          cursor: "pointer",
+                          border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA",
+                          background: active ? "#EEF0FE" : "#fff",
+                          color: active ? "#4F46E5" : "#5A6270",
+                          fontWeight: 700,
+                          fontSize: 12.5,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span>{b.name}</span>
+                        {pend > 0 && (
+                          <span className="num" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#E0533D", borderRadius: 20, padding: "1px 7px" }}>
+                            รอรับ {pend}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* การ์ดคืบหน้ารอบ (gradient ม่วง · เลขใหญ่) — mockup HIST-02 */}
             <div style={{ background: "linear-gradient(135deg,#4F46E5,#6D5CE8)", borderRadius: 16, padding: "18px 20px", color: "#fff", marginBottom: 18 }}>
               <div style={{ fontSize: 12, opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>รอบเก็บเงินวันนี้ · {branchLabel}</div>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 6 }}>
-                <span className="num" style={{ fontSize: 32, fontWeight: 700, letterSpacing: -1, lineHeight: 1 }}>{routeDone}/{routeTotal}</span>
+                <span className="num" style={{ fontSize: 32, fontWeight: 700, letterSpacing: -1, lineHeight: 1 }}>{routeDoneShown}/{routeTotalShown}</span>
                 <span style={{ fontSize: 13, opacity: 0.85, paddingBottom: 6 }}>ตู้เก็บแล้ว</span>
               </div>
               <div style={{ height: 6, background: "rgba(255,255,255,0.25)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${routePct}%`, background: "#fff", borderRadius: 6 }} />
+                <div style={{ height: "100%", width: `${routePctShown}%`, background: "#fff", borderRadius: 6 }} />
               </div>
             </div>
 
@@ -1975,10 +2080,20 @@ function HomeScreen(props: {
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "2px 9px", borderRadius: 20 }}>มอบหมายให้ฉัน</span>
             )}
           </div>
-          {machines.length === 0 ? (
-            // empty state — พนักงานยังไม่ได้รับมอบหมายตู้ (กันหน้าว่างเปล่าดูเหมือนพัง)
+          {visibleMachines.length === 0 ? (
+            // empty state — สาขานี้ยังไม่มีตู้ (สลับสาขา: สาขาที่เลือกไม่มีตู้ · แต่อาจมีของรอรับ เช่น 62 station)
             <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
-              <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีตู้ที่ได้รับมอบหมาย" sub="ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ" />
+              <EmptyState
+                icon={<Inbox size={30} strokeWidth={1.6} />}
+                title={multiBranch ? "สาขานี้ยังไม่มีตู้ในระบบ" : "ยังไม่มีตู้ที่ได้รับมอบหมาย"}
+                sub={
+                  inboundDeliveries.length > 0
+                    ? `มีของรอรับ ${inboundDeliveries.length} ใบ — ไปที่เมนู "รับสินค้า" ด้านบนเพื่อรับเข้าคลัง`
+                    : multiBranch
+                      ? "ยังไม่มีตู้ในสาขานี้ · เพิ่มตู้ที่หน้าจัดการ แล้วจะขึ้นให้เก็บเงิน"
+                      : "ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ"
+                }
+              />
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: showBranchHeaders ? 16 : 9 }}>
@@ -2058,7 +2173,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={primaryBranchId} branchCode={machines.find((m) => m.branchId === primaryBranchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
