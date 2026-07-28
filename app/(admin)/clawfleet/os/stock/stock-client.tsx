@@ -138,6 +138,45 @@ const TH_ITEM: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9
 /* ───────────────────────── main ───────────────────────── */
 type StockTab = "overview" | "receipts" | "counts" | "losses" | "dist" | "machines";
 
+/* หน้า "เลือกสาขาที่จะดู" (CEO 2026-07-28) — เปิดคลังมาต้องเลือกสาขาก่อน 1 สาขา
+   แล้วสต๊อก/รับของ/นับ/การกระจาย(ใบรับ) ทั้งหมดเป็นของสาขานั้น (สลับได้ทุกเมื่อ). */
+function BranchChooser({ realBranches }: { realBranches: BranchOption[] }) {
+  const router = useRouter();
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "4px 0" }}>
+      <h2 style={{ fontSize: 18, fontWeight: 800, margin: "6px 0 4px", color: "#1A1D21" }}>เลือกสาขาที่จะดู</h2>
+      <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 18px", lineHeight: 1.5 }}>
+        เลือก 1 สาขา แล้ว <b>สต๊อก · รับของ · นับสต๊อก · ใบรับสินค้า</b> ทั้งหมดจะเป็นของสาขานั้น — สลับสาขาได้ทุกเมื่อจากปุ่มด้านบน
+      </p>
+      {realBranches.length === 0 ? (
+        <div style={{ background: "#F8F9FB", border: "1px dashed #D6DAE0", borderRadius: 12, padding: 24, textAlign: "center", fontSize: 13, color: "#7A8089" }}>
+          ยังไม่มีสาขาในสิทธิ์ของคุณ · ติดต่อผู้ดูแลเพื่อขอสิทธิ์ดูสาขา
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
+          {realBranches.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(b.id)}`)}
+              style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "14px 16px", cursor: "pointer" }}
+            >
+              <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, background: "#EEF0FE", display: "flex", alignItems: "center", justifyContent: "center", color: "#4F46E5" }}>
+                <Warehouse size={18} />
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+                <span style={{ display: "block", fontSize: 11.5, color: "#9AA1AB" }}>ดูสต๊อก · รับของ · ใบรับ</span>
+              </span>
+              <ChevronRight size={16} style={{ color: "#C2C7CF", flex: "0 0 16px" }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StockClient({
   branches,
   realBranches,
@@ -215,8 +254,35 @@ export function StockClient({
     { k: "machines", label: "ไส้ในตู้" },
   ];
 
+  // CEO 2026-07-28: ยังไม่เลือกสาขา (หลายสาขา · docBranchId=null) → โชว์หน้าเลือกสาขาก่อน
+  if (!docBranchId) return <BranchChooser realBranches={realBranches} />;
+
   return (
     <div>
+      {/* ── ตัวสลับสาขาใหญ่ตัวเดียว คุมทั้งหน้า (สต๊อก/รับของ/นับ/ใบรับ) · CEO 2026-07-28 ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "10px 14px", marginBottom: 16 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#5A6270" }}>กำลังดูสาขา</span>
+        <select
+          aria-label="เลือกสาขาที่จะดู"
+          title="สลับสาขา — สต๊อก/รับของ/นับ/ใบรับ จะเปลี่ยนตามสาขานี้ทั้งหมด"
+          value={docBranchId}
+          onChange={(e) => router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(e.target.value)}`)}
+          style={{ ...FIELD_INPUT, width: "auto", minWidth: 200, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+        >
+          {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <span style={{ flex: 1 }} />
+        {realBranches.length > 1 && (
+          <button
+            type="button"
+            onClick={() => router.push("/clawfleet/os/stock")}
+            style={{ border: "1px solid #E3E6EA", background: "#fff", borderRadius: 9, padding: "7px 13px", fontSize: 12, fontWeight: 700, color: "#4F46E5", cursor: "pointer" }}
+          >
+            ดูสาขาอื่น
+          </button>
+        )}
+      </div>
+
       {empty && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "9px 14px", marginBottom: 16, fontSize: 12, color: "#7A8089" }}>
           <Info size={15} style={{ flex: "0 0 15px", color: "#9AA1AB" }} /> ยังไม่มีข้อมูลสต็อกจริงในระบบ — เริ่มด้วยการ<b> รับสินค้าเข้าคลัง</b> ที่แท็บ “รับของ” แล้วตัวเลขจริงจะขึ้นที่นี่
@@ -247,30 +313,8 @@ export function StockClient({
         <BranchMgmtLink />
       </div>
 
-      {/* ตัวเลือกสาขาเอกสาร (item #9) — เอกสาร รับของ/นับ/ตัดของเสีย โหลดตามสาขาที่เลือก
-          (เปลี่ยน → นำทางไป ?branch=<id> → server โหลดเอกสารสาขานั้น). โชว์เฉพาะแท็บเอกสาร
-          และเมื่อมีสาขาจริงมากกว่า 1 (สาขาเดียวไม่ต้องเลือก) */}
-      {realBranches.length > 1 && (tab === "receipts" || tab === "counts" || tab === "losses") && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270" }}>ดูเอกสารของสาขา</span>
-          <select
-            aria-label="เลือกสาขาที่จะดูเอกสาร"
-            title="เลือกสาขาที่จะดูเอกสาร"
-            value={docBranchId ?? realBranches[0]?.id ?? ""}
-            onChange={(e) => {
-              const next = e.target.value;
-              router.push(`/clawfleet/os/stock?branch=${encodeURIComponent(next)}`);
-            }}
-            style={{ ...FIELD_INPUT, width: "auto", minWidth: 180, padding: "8px 12px" }}
-          >
-            {realBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <span style={{ fontSize: 11, color: "#9AA1AB" }}>· เอกสารด้านล่างเป็นของสาขานี้</span>
-        </div>
-      )}
-
       {tab === "overview" && (
-        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} asOfISO={asOfISO} empty={empty} />
+        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} asOfISO={asOfISO} empty={empty} selectedBranchId={docBranchId} />
       )}
       {tab === "receipts" && (
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
@@ -325,6 +369,7 @@ function OverviewTab({
   warehouseRows,
   asOfISO,
   empty,
+  selectedBranchId,
 }: {
   branchRows: BranchRow[];
   realBranches: BranchOption[];
@@ -334,15 +379,17 @@ function OverviewTab({
   asOfISO: string | null;
   // ยังไม่มีข้อมูลจริง → ปิด date picker (as-of คิดจาก ledger จริงเท่านั้น) + โชว์ empty state
   empty: boolean;
+  // CEO 2026-07-28: สาขาที่เลือกจากตัวสลับใหญ่ (คุมทั้งหน้า) → แท็บนี้เจาะดูสาขานั้นเลย (ไม่มีตัวเลือกซ้ำ)
+  selectedBranchId: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
   const [asOfPending, startAsOfTransition] = useTransition();
 
-  // ── ตัวเลือก "ดูคลังของสาขาไหน" บนแท็บภาพรวม (CEO pinpoint #2) ──
-  // "" = ทุกคลัง/รวม (ยอดรวมทุกสาขา) · id = เจาะดูเฉพาะสต็อกสาขานั้น (client-side filter จาก dist)
-  const [viewBranchId, setViewBranchId] = useState<string>("");
+  // ── เจาะดูสต็อกตาม "สาขาที่เลือก" จากตัวสลับใหญ่ (CEO 2026-07-28 · ยุบตัวเลือกซ้ำในแท็บทิ้ง) ──
+  // viewBranchId = สาขาที่เลือกทั้งหน้า → แท็บภาพรวมโชว์คลังของสาขานั้นเลย (ไม่ต้องมี dropdown ในแท็บ)
+  const viewBranchId = selectedBranchId ?? "";
   const viewBranchName = realBranches.find((b) => b.id === viewBranchId)?.name ?? null;
   const scoped = viewBranchName != null; // กำลังเจาะดูสาขาเดียว
 
@@ -421,31 +468,7 @@ function OverviewTab({
         หลังบ้านดูแลคลังกลาง · พนักงานสาขาดูแลสต็อกสาขา — ทุกชิ้นมีวันรับเข้า เพื่อหมุนเวียนของเก่าออกก่อน (FIFO) และเช็คอายุสินค้า
       </div>
 
-      {/* ── ตัวเลือก "ดูคลังของสาขาไหน" (CEO pinpoint #2) ──
-          "ทุกคลัง/รวม" = ยอดรวมทุกสาขา · เลือกสาขา = เจาะดูสต็อกเฉพาะสาขานั้น (รายสินค้า/ราย SKU)
-          กรอง client-side จาก dist ที่โหลดมาแล้ว (ไม่ยิง query เพิ่ม) · ตัวเลขจริงจาก ledger */}
-      {realBranches.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270" }}>ดูคลังของ</span>
-          <select
-            aria-label="เลือกคลังสาขาที่จะดู"
-            title="เลือกคลังสาขาที่จะดู (ทุกคลัง = ยอดรวมทุกสาขา)"
-            value={viewBranchId}
-            onChange={(e) => { setViewBranchId(e.target.value); setOpen(null); }}
-            style={{ ...FIELD_INPUT, width: "auto", minWidth: 200, padding: "8px 12px", cursor: "pointer" }}
-          >
-            <option value="">ทุกคลัง / รวมทุกสาขา</option>
-            {realBranches.map((b) => <option key={b.id} value={b.id}>คลังสาขา{b.name}</option>)}
-          </select>
-          {scoped ? (
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: "#EEF0FE", color: "#4F46E5", whiteSpace: "nowrap" }}>
-              กำลังดูเฉพาะ {viewBranchName}
-            </span>
-          ) : (
-            <span style={{ fontSize: 11, color: "#9AA1AB", whiteSpace: "nowrap" }}>· ตารางด้านล่างรวมทุกสาขา</span>
-          )}
-        </div>
-      )}
+      {/* (ตัวเลือกสาขาในแท็บถูกยุบไปที่ "ตัวสลับสาขาใหญ่" บนหัวหน้าแล้ว · CEO 2026-07-28) */}
 
       {/* มูลค่าสต๊อก ณ วันที่ — date picker (as-of) · คิดมูลค่าจาก ledger ย้อนหลัง
           ปิดในโหมดว่าง (empty) เพราะ as-of ต้องมี movement จริงถึงจะคิดได้ */}

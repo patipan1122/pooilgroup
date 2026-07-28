@@ -120,11 +120,13 @@ export default async function StockPage({
       // graceful: ยังไม่มีตู้/ยังไม่ migrate → แท็บจะขึ้น empty state
     }
 
-    if (branches.length > 0) {
-      // สาขาเอกสาร = สาขาที่เลือกจาก ?branch (ถ้าอยู่ในลิสต์สาขาที่ user เห็น) ไม่งั้นสาขาแรก
-      // (item #9 · validate กับ branches ที่ getV2Branches คืน = สาขาที่ user มีสิทธิ์เห็นอยู่แล้ว)
-      const first =
-        (requestedBranchId && branches.find((b) => b.id === requestedBranchId)) || branches[0];
+    // CEO 2026-07-28: เปิดหน้าคลังต้อง "เลือกสาขา" ก่อน — ไม่ default รวมทุกสาขา (กันงงสต๊อก/ใบรับ).
+    //   มีสาขาเดียว → auto เลือกให้ · หลายสาขา + ยังไม่เลือก → first=null → docBranchId คงเป็น null
+    //   → client โชว์หน้า "เลือกสาขาที่จะดู" (ตัวสลับสาขาใหญ่ตัวเดียวคุมทั้งหน้า).
+    const first =
+      (requestedBranchId ? branches.find((b) => b.id === requestedBranchId) : null) ??
+      (branches.length === 1 ? branches[0] : null);
+    if (first) {
       docBranchId = first.id;
       let overview: Awaited<ReturnType<typeof getCfStockOverview>> | null = null;
       let branchStock: Awaited<ReturnType<typeof getV2BranchStock>> | null = null;
@@ -201,10 +203,9 @@ export default async function StockPage({
         // graceful
       }
 
-      // ── ใบกระจายจริง (รวมทุกสาขาที่ user เห็น) ──
+      // ── ใบกระจายจริงของ "สาขาที่เลือก" เท่านั้น (ไม่รวมทุกสาขา · กันงงใบรับ · CEO 2026-07-28) ──
       try {
-        const allowed = await userBranchIds(session);
-        shipments = await loadShipments(orgId, allowed);
+        shipments = await loadShipments(orgId, [first.id]);
       } catch {
         // graceful
       }
