@@ -66,6 +66,8 @@ export type WarehouseRowSeed = {
 export type ShipmentSeed = {
   id: string; to: string; status: string; unitsCount: number; createdAt: string;
   lines: { lineId: string; name: string; sent: number; received: number | null }[];
+  // แหล่งใบ: cfDelivery (กระจายภายใน · ตรวจรับที่นี่ได้) | dcTransfer (DC ส่งตรง · read-only บนหน้าแอดมิน)
+  source?: "cf_delivery" | "dc_transfer";
 };
 /** ledger การเคลื่อนไหวสต๊อก (สำหรับดาวน์โหลด CSV · item #8) */
 export type MovementSeed = {
@@ -1782,6 +1784,7 @@ type ShipVM = {
   lines: { lineId: string; name: string; sent: number; received: number | null }[];
   isReceived: boolean;
   hasDiff: boolean;
+  source: "cf_delivery" | "dc_transfer";
 };
 
 function shipTone(s: ShipVM): { bg: string; color: string; label: string } {
@@ -1800,7 +1803,7 @@ function toShipVM(s: ShipmentSeed): ShipVM {
   const hasDiff = isReceived && s.lines.some((l) => l.received != null && l.received !== l.sent);
   return {
     id: s.id, to: s.to, dbStatus: s.status, unitsCount: s.unitsCount, createdAt: s.createdAt,
-    lines: s.lines, isReceived, hasDiff,
+    lines: s.lines, isReceived, hasDiff, source: s.source ?? "cf_delivery",
   };
 }
 
@@ -1945,8 +1948,13 @@ function DistributionTab({ realBranches, products, shipments: shipmentSeeds, mov
               const summary = sp.lines.map((l) => `${l.name} ×${l.sent}`).join(" · ");
               return (
                 <div key={sp.id} className="co-rowlink" onClick={() => setDetailId(sp.id)} style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr 1.8fr 0.6fr 0.9fr 1.1fr 0.4fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13 }}>
-                  <span className="num" style={{ fontWeight: 700, color: "#4F46E5", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hasReal ? `DLV-${sp.id.slice(0, 6).toUpperCase()}` : sp.id}</span>
-                  <span style={{ fontWeight: 600 }}>{sp.to}</span>
+                  <span className="num" style={{ fontWeight: 700, color: "#4F46E5", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hasReal ? `${sp.source === "dc_transfer" ? "DC" : "DLV"}-${sp.id.slice(0, 6).toUpperCase()}` : sp.id}</span>
+                  <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sp.to}</span>
+                    {sp.source === "dc_transfer" && (
+                      <span style={{ flex: "0 0 auto", fontSize: 9.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>จาก DC</span>
+                    )}
+                  </span>
                   <span style={{ color: "#6B7280", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
                   <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(sp.unitsCount)}</span>
                   <span className="num" style={{ textAlign: "right", fontSize: 12, color: "#6B7280" }}>{fmtDate(sp.createdAt)}</span>
@@ -2190,8 +2198,10 @@ function ShipmentDetailModal({ ship, isSample, onClose, onDone }: {
   // จำนวนที่รับจริงต่อบรรทัด (เริ่มจากจำนวนส่ง)
   const [recvQty, setRecvQty] = useState<string[]>(() => ship.lines.map((l) => String(l.sent)));
   const tn = shipTone(ship);
-  // ยืนยันได้เฉพาะ: ใบจริง (ไม่ใช่ sample) · ยังไม่รับ · ไม่ยกเลิก  → idempotency guard
-  const canConfirm = !isSample && !ship.isReceived && ship.dbStatus !== "CANCELLED";
+  // ยืนยันได้เฉพาะ: ใบจริง (ไม่ใช่ sample) · ยังไม่รับ · ไม่ยกเลิก · ไม่ใช่ใบ DC ส่งตรง
+  //   (ใบ DC = dcTransfer → รับด้วย confirmTransfer สิทธิ์ DC floor · ทำในแอปพนักงาน/หน้า DC · หน้านี้ดูอย่างเดียว)
+  const isDc = ship.source === "dc_transfer";
+  const canConfirm = !isSample && !ship.isReceived && ship.dbStatus !== "CANCELLED" && !isDc;
 
   function setQtyAt(i: number, v: string) {
     setRecvQty((prev) => prev.map((x, j) => (j === i ? v : x)));
@@ -2215,8 +2225,8 @@ function ShipmentDetailModal({ ship, isSample, onClose, onDone }: {
       open
       onClose={() => { if (!pending) onClose(); }}
       width={600}
-      title={<span className="num" style={{ color: "#4F46E5" }}>{isSample ? ship.id : `DLV-${ship.id.slice(0, 6).toUpperCase()}`}</span>}
-      sub={`คลังกลาง → สาขา${ship.to} · สร้าง ${fmtDate(ship.createdAt)}`}
+      title={<span className="num" style={{ color: "#4F46E5" }}>{isSample ? ship.id : `${isDc ? "DC" : "DLV"}-${ship.id.slice(0, 6).toUpperCase()}`}</span>}
+      sub={`${isDc ? "DC (คลังกลาง)" : "คลังกลาง"} → สาขา${ship.to} · สร้าง ${fmtDate(ship.createdAt)}`}
       badge={<span style={{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: tn.bg, color: tn.color, whiteSpace: "nowrap" }}>{tn.label}</span>}
       footer={canConfirm ? (
         <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
@@ -2270,6 +2280,12 @@ function ShipmentDetailModal({ ship, isSample, onClose, onDone }: {
           <div style={{ margin: "12px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px" }}>
             <AlertTriangle size={14} style={{ flex: "0 0 14px" }} />
             นี่คือใบตัวอย่าง — ตรวจรับจริงได้เมื่อสร้างใบกระจายจริง
+          </div>
+        )}
+        {isDc && !ship.isReceived && (
+          <div style={{ margin: "12px 20px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#4F46E5", background: "#EEF0FE", border: "1px solid #DADBF8", borderRadius: 10, padding: "10px 14px" }}>
+            <AlertTriangle size={14} style={{ flex: "0 0 14px" }} />
+            ใบนี้มาจาก DC (คลังกลาง) — รับเข้าสต็อกทำในแอปพนักงานสาขา หรือหน้า DC (สิทธิ์รับโอน) · หน้านี้ดูอย่างเดียว
           </div>
         )}
         {error && <div style={{ margin: "8px 20px 12px" }}><ErrorRow msg={error} /></div>}

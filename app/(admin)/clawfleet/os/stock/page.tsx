@@ -20,6 +20,7 @@ import {
   getCfMovements,
   getCfMachinesForBranchAdmin,
   getMachineLoadout,
+  getInboundDcTransfers,
 } from "@/lib/clawfleet/stock-queries";
 import {
   StockClient,
@@ -204,8 +205,15 @@ export default async function StockPage({
       }
 
       // ── ใบกระจายจริงของ "สาขาที่เลือก" เท่านั้น (ไม่รวมทุกสาขา · กันงงใบรับ · CEO 2026-07-28) ──
+      //   2 แหล่ง = ใบกระจายภายใน (cfDelivery) + ใบ DC ส่งตรงเข้าสาขา (dcTransfer IN_TRANSIT · แบบที่
+      //   พนักงานเห็นในแอปมือถือ) → แอดมิน "เห็น" ใบ DC รายสาขาด้วย. ใบ DC เป็น read-only บนหน้านี้
+      //   (รับจริงทำในแอปพนักงาน/หน้า DC ที่สิทธิ์ถูกต้อง) — ดู stock-client canConfirm.
       try {
-        shipments = await loadShipments(orgId, [first.id]);
+        const [cfShip, dcShip] = await Promise.all([
+          loadShipments(orgId, [first.id]),
+          loadDcTransfers(first.id, first.name).catch(() => [] as ShipmentSeed[]),
+        ]);
+        shipments = [...dcShip, ...cfShip].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       } catch {
         // graceful
       }
@@ -411,5 +419,24 @@ async function loadShipments(orgId: string, allowed: string[] | "ALL"): Promise<
       sent: l.qty,
       received: d.status === "DELIVERED" ? l.receivedQty : null,
     })),
+    source: "cf_delivery" as const,
+  }));
+}
+
+/**
+ * ใบ DC ส่งตรงเข้าสาขา (dcTransfer IN_TRANSIT · dest=MODULE clawfleet) ของสาขาที่เลือก —
+ * แบบเดียวกับที่พนักงานเห็นในแอปมือถือ (getInboundDcTransfers). โชว์บนหน้าแอดมินเป็น
+ * "รอสาขารับ" READ-ONLY (source=dc_transfer) — รับจริงทำในแอปพนักงาน/หน้า DC (สิทธิ์ DC floor).
+ */
+async function loadDcTransfers(branchId: string, branchName: string): Promise<ShipmentSeed[]> {
+  const rows = await getInboundDcTransfers(branchId);
+  return rows.map((d) => ({
+    id: d.id,
+    to: branchName,
+    status: "SCHEDULED", // IN_TRANSIT ของ DC = "รอสาขารับ" (map ให้ shipTone โชว์ตรง)
+    unitsCount: d.unitsCount,
+    createdAt: d.createdAt.toISOString(),
+    lines: d.lines.map((l) => ({ lineId: l.lineId, name: l.productName, sent: l.qty, received: null })),
+    source: "dc_transfer" as const,
   }));
 }
