@@ -81,42 +81,16 @@ function hasBank(b?: BillPaymentInfo): boolean {
   return !!(b && (b.bankName || b.bankAccountNo || b.bankAccountHolder || b.promptpayId || b.paymentNote));
 }
 
-/** โลโก้ JPSYNC (เมฆ+ฝน) — ชั่วคราวเป็น SVG จนกว่าจะฝังไฟล์โลโก้จริง. */
+/** โลโก้ JPSYNC จริง (ไฟล์ใน public/logos · git-tracked). ใช้ <img> ธรรมดา
+ *  เพื่อให้พิมพ์เอกสาร + หน้า public token render ได้ทุกที่ไม่ต้องพึ่ง next/image. */
 function JpsyncLogo() {
   return (
-    <div className="flex items-center gap-3">
-      <svg
-        width="46"
-        height="46"
-        viewBox="0 0 64 64"
-        fill="none"
-        style={{ color: "var(--rs-brand)", flex: "none" }}
-        aria-hidden="true"
-      >
-        <path
-          d="M20 34c-5 0-9-3.6-9-8.4 0-4.5 3.6-8 8.2-8 .5-3.9 3.9-7 8.1-7 3.6 0 6.7 2.2 7.9 5.3.9-.4 1.9-.6 3-.6 4 0 7.3 3.1 7.3 7 0 .3 0 .6-.1.9 3 .7 5.4 3.3 5.4 6.5 0 3.7-3.1 6.8-7 6.8H20z"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinejoin="round"
-        />
-        <g stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-          <path d="M24 46l-2.5 5" />
-          <path d="M33 46l-2.5 5" />
-          <path d="M42 46l-2.5 5" />
-          <path d="M28.5 54l-1.6 3.4" />
-          <path d="M37.5 54l-1.6 3.4" />
-        </g>
-      </svg>
-      <div style={{ lineHeight: 1.05 }}>
-        <div>
-          <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: ".5px", color: "var(--rs-brand)" }}>JPSYNC</span>{" "}
-          <span style={{ fontWeight: 300, fontSize: 18, letterSpacing: "2px", color: "var(--rs-text-2)" }}>GROUP</span>
-        </div>
-        <div style={{ fontSize: 9, letterSpacing: "4px", color: "var(--rs-text-3)", fontWeight: 600, marginTop: 2 }}>
-          BE THE FUTURE
-        </div>
-      </div>
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logos/jpsync-logo-full.png"
+      alt="JPSYNC GROUP · BE THE FUTURE"
+      style={{ height: 60, width: "auto", display: "block" }}
+    />
   );
 }
 
