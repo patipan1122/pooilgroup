@@ -53,6 +53,8 @@ const AddSetupProductSchema = z.object({
   sku: z.string().trim().min(1, "กรุณากรอกรหัส SKU").max(80),
   imageUrl: z.string().trim().url("ลิงก์รูปไม่ถูกต้อง").max(1000).optional(),
   qty: z.number().int("จำนวนต้องเป็นจำนวนเต็ม").positive("จำนวนตุ๊กตาต้องมากกว่า 0").max(100_000),
+  // ปลายทาง: "machine" = เข้าตู้ (เดิม · default) · "warehouse" = เก็บเข้าคลังสาขา (CEO 2026-07-28)
+  target: z.enum(["machine", "warehouse"]).optional().default("machine"),
   // client-generated UUID ต่อการกด 1 ครั้ง (refId เป็น @db.Uuid) → กันกดซ้ำ (double-tap)
   clientKey: z.string().uuid("clientKey ไม่ถูกต้อง"),
 });
@@ -78,7 +80,7 @@ const SETUP_REF_TABLE = "cf_setup_product";
  */
 export async function addSetupProductWithDolls(
   input: AddSetupProductInput,
-): Promise<Result<{ productId: string; inMachineAfter: number }>> {
+): Promise<Result<{ productId: string; inMachineAfter: number; inWarehouseAfter: number }>> {
   const parsed = AddSetupProductSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
   const data = parsed.data;
@@ -144,22 +146,31 @@ export async function addSetupProductWithDolls(
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId}), hashtext(${sku}))`;
 
       // 2) idempotency: มี opening movement ที่ clientKey นี้แล้ว → คืนผลเดิม (double-tap / retry)
+      //    ★ กันซ้ำจาก refId ตรง ๆ (ไม่ผูก machineId) — target "warehouse" ไม่มีแถว machineId=ตู้
+      //    ถ้ากรองด้วย machineId=ตู้ จะ dedup ไม่เจอ → เขียนซ้ำ (ของเบิ้ล). refId=clientKey unique/กดอยู่แล้ว.
       const dup = await tx.cfStockMovement.findFirst({
         where: {
           orgId,
           branchId: machine.branchId,
-          machineId: machine.id,
           refTable: SETUP_REF_TABLE,
           refId: data.clientKey,
         },
         select: { productId: true },
       });
       if (dup) {
-        const cur = await tx.cfStockMovement.aggregate({
+        const inMach = await tx.cfStockMovement.aggregate({
           where: { orgId, branchId: machine.branchId, machineId: machine.id, productId: dup.productId },
           _sum: { qty: true },
         });
-        return { productId: dup.productId, inMachineAfter: Math.abs(cur._sum.qty ?? 0) };
+        const inWh = await tx.cfStockMovement.aggregate({
+          where: { orgId, branchId: machine.branchId, machineId: null, productId: dup.productId },
+          _sum: { qty: true },
+        });
+        return {
+          productId: dup.productId,
+          inMachineAfter: Math.abs(inMach._sum.qty ?? 0),
+          inWarehouseAfter: inWh._sum.qty ?? 0,
+        };
       }
 
       // 3) สร้างสินค้าใหม่ — ไม่มีต้นทุน (unitCostCents:0) · ราคาขาย/กล่อง default.
@@ -176,66 +187,94 @@ export async function addSetupProductWithDolls(
         select: { id: true },
       });
 
-      // 4) opening dolls-in-machine = 2 แถว "สมดุล" ให้ net-shelf = 0 (เหมือน refill ที่มี receipt +N นำ):
-      //    (A) +N เข้าคลัง (ADJUST · ยอดตุ๊กตาเก่าเข้าระบบ · ไม่มีต้นทุน)  (B) −N โหลดเข้าตู้ (LOAD_TO_MACHINE)
-      //    → net-shelf (Σ ทุกแถว) = 0 (ชั้นว่างจริง · ของอยู่ในตู้) · "ในตู้" = |Σ machineId=ตู้| = N
-      //    ★ ถ้าเขียนแถวเดียว −N → net-shelf = −N "ผี" → บล็อกเติม/รับของครั้งหน้าเพี้ยน (M−N) — adversarial review เจอ
-      //    idempotency: dedup (step 2) หาแถว machineId=ตู้ · 2 แถวเขียนใน tx เดียว → replay คืนผลเดิมทั้งคู่
-      await tx.cfStockMovement.create({
-        data: {
-          orgId,
-          branchId: machine.branchId,
-          type: "ADJUST",
-          productId: product.id,
-          machineId: null,
-          warehouseId: mainWarehouseId,
-          qty: data.qty, // +N เข้าคลัง (ยอดตั้งต้น · ไม่มีต้นทุน)
-          unitCostCents: 0,
-          refTable: SETUP_REF_TABLE,
-          refId: data.clientKey,
-          occurredAt: now,
-          createdById: session.user.id,
-          reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าเข้าระบบ)",
-        },
-      });
-      await tx.cfStockMovement.create({
-        data: {
-          orgId,
-          branchId: machine.branchId,
-          type: "LOAD_TO_MACHINE",
-          productId: product.id,
-          machineId: machine.id,
-          warehouseId: null,
-          qty: -data.qty, // −N → |Σ machineId=ตู้| = N (semantics เดียวกับ refill)
-          unitCostCents: 0,
-          refTable: SETUP_REF_TABLE,
-          refId: data.clientKey,
-          occurredAt: now,
-          createdById: session.user.id,
-          reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (โหลดเข้าตู้)",
-        },
-      });
-
-      // 5) เปิดแถว loadout ให้เฉพาะเมื่อตู้ยังไม่มี active เลย — DB จริงมี unique
-      //    `cf_loadouts_one_active_per_machine` (1 ตู้ = 1 แถว active) · ราย SKU จริงอยู่ที่ ledger
-      //    (เดิมเช็คแค่สินค้าตัวเอง → SKU ที่ 2 ของตู้ = P2002 ล้มทั้งก้อน)
-      const existingLoadout = await tx.cfMachineLoadout.findFirst({
-        where: { orgId, machineId: machine.id, effectiveTo: null },
-        select: { id: true },
-      });
-      if (!existingLoadout) {
-        await tx.cfMachineLoadout.create({
+      // 4) บันทึกยอดตั้งต้น — แยกตามปลายทาง (target):
+      if (data.target === "warehouse") {
+        // ── เก็บเข้า "คลังสาขา" ล้วน — 1 แถว ADJUST +N (ไม่เข้าตู้) ───────────────────────────────
+        //    ยอดยกมาเข้าคลัง (ตุ๊กตาที่สาขามีในคลังจริงแต่ยังไม่เคยลงระบบ) · ไม่มีต้นทุน (มาทีหลังจากรับ DC)
+        //    net-shelf (Σ ทุกแถว) = +N → โผล่ในตัวเลือก "เลือกจากคลัง" ให้หยิบลงตู้ทีหลัง (semantics = RECEIPT_IN)
+        //    idempotency: dedup (step 2) หาแถว refId=clientKey → replay คืนผลเดิม
+        await tx.cfStockMovement.create({
           data: {
             orgId,
-            machineId: machine.id,
+            branchId: machine.branchId,
+            type: "ADJUST",
             productId: product.id,
-            pricePerPlayCoins: 1, // default · baseline สนใจ "มีสินค้าอะไรในตู้" · ราคาปรับทีหลัง
-            effectiveFrom: now,
-            effectiveTo: null,
-            setById: session.user.id,
-            notes: `เพิ่มสินค้าใหม่ตอนตั้งค่าตู้ครั้งแรก · จำนวน ${data.qty}`,
+            machineId: null,
+            warehouseId: mainWarehouseId,
+            qty: data.qty, // +N เข้าคลังสาขา (ยอดตั้งต้น · ไม่มีต้นทุน)
+            unitCostCents: 0,
+            refTable: SETUP_REF_TABLE,
+            refId: data.clientKey,
+            occurredAt: now,
+            createdById: session.user.id,
+            reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (เข้าคลังสาขา)",
           },
         });
+      } else {
+        // ── เข้า "ในตู้" — 2 แถว "สมดุล" ให้ net-shelf = 0 (เหมือน refill ที่มี receipt +N นำ) ─────────
+        //    (A) +N เข้าคลัง (ADJUST · ยอดตุ๊กตาเก่าเข้าระบบ · ไม่มีต้นทุน)  (B) −N โหลดเข้าตู้ (LOAD_TO_MACHINE)
+        //    → net-shelf (Σ ทุกแถว) = 0 (ชั้นว่างจริง · ของอยู่ในตู้) · "ในตู้" = |Σ machineId=ตู้| = N
+        //    ★ ถ้าเขียนแถวเดียว −N → net-shelf = −N "ผี" → บล็อกเติม/รับของครั้งหน้าเพี้ยน (M−N) — adversarial review เจอ
+        //    idempotency: dedup (step 2) หาแถว refId=clientKey · 2 แถวเขียนใน tx เดียว → replay คืนผลเดิมทั้งคู่
+        await tx.cfStockMovement.create({
+          data: {
+            orgId,
+            branchId: machine.branchId,
+            type: "ADJUST",
+            productId: product.id,
+            machineId: null,
+            warehouseId: mainWarehouseId,
+            qty: data.qty, // +N เข้าคลัง (ยอดตั้งต้น · ไม่มีต้นทุน)
+            unitCostCents: 0,
+            refTable: SETUP_REF_TABLE,
+            refId: data.clientKey,
+            occurredAt: now,
+            createdById: session.user.id,
+            reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าเข้าระบบ)",
+          },
+        });
+        await tx.cfStockMovement.create({
+          data: {
+            orgId,
+            branchId: machine.branchId,
+            type: "LOAD_TO_MACHINE",
+            productId: product.id,
+            machineId: machine.id,
+            warehouseId: null,
+            qty: -data.qty, // −N → |Σ machineId=ตู้| = N (semantics เดียวกับ refill)
+            unitCostCents: 0,
+            refTable: SETUP_REF_TABLE,
+            refId: data.clientKey,
+            occurredAt: now,
+            createdById: session.user.id,
+            reason: "ตั้งต้นตอนตั้งค่าตู้ครั้งแรก (โหลดเข้าตู้)",
+          },
+        });
+      }
+
+      // 5) เปิดแถว loadout — เฉพาะ target "machine" (มีของเข้าตู้จริง) · "warehouse" ไม่แตะ loadout
+      //    เปิดให้เฉพาะเมื่อตู้ยังไม่มี active เลย — DB จริงมี unique
+      //    `cf_loadouts_one_active_per_machine` (1 ตู้ = 1 แถว active) · ราย SKU จริงอยู่ที่ ledger
+      //    (เดิมเช็คแค่สินค้าตัวเอง → SKU ที่ 2 ของตู้ = P2002 ล้มทั้งก้อน)
+      if (data.target === "machine") {
+        const existingLoadout = await tx.cfMachineLoadout.findFirst({
+          where: { orgId, machineId: machine.id, effectiveTo: null },
+          select: { id: true },
+        });
+        if (!existingLoadout) {
+          await tx.cfMachineLoadout.create({
+            data: {
+              orgId,
+              machineId: machine.id,
+              productId: product.id,
+              pricePerPlayCoins: 1, // default · baseline สนใจ "มีสินค้าอะไรในตู้" · ราคาปรับทีหลัง
+              effectiveFrom: now,
+              effectiveTo: null,
+              setById: session.user.id,
+              notes: `เพิ่มสินค้าใหม่ตอนตั้งค่าตู้ครั้งแรก · จำนวน ${data.qty}`,
+            },
+          });
+        }
       }
 
       // 6) audit trail (anti-fraud · ใครเพิ่มสินค้า/ยอดตั้งต้นเท่าไร)
@@ -253,12 +292,15 @@ export async function addSetupProductWithDolls(
             sku,
             name,
             qty: data.qty,
+            target: data.target, // "machine" = เข้าตู้ · "warehouse" = เข้าคลังสาขา
             firstSetup: !machine.isFirstBaselineLocked,
           },
         },
       });
 
-      return { productId: product.id, inMachineAfter: data.qty };
+      return data.target === "warehouse"
+        ? { productId: product.id, inMachineAfter: 0, inWarehouseAfter: data.qty }
+        : { productId: product.id, inMachineAfter: data.qty, inWarehouseAfter: 0 };
     });
 
     for (const p of APP_PATHS) revalidatePath(p);

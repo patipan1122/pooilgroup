@@ -608,13 +608,20 @@ function AddProductSheet({
   onSaved: (p: AddedProduct) => void;
   onClose: () => void;
 }) {
+  // สินค้าที่เพิ่งสร้างเข้าคลังรอบนี้ — โชว์ในตัวเลือก "เลือกจากคลัง" ทันที (optimistic · parent re-fetch ทีหลัง)
+  const [localWh, setLocalWh] = useState<{ id: string; name: string; sku: string; imageUrl: string | null; warehouse: number }[]>([]);
+  // ของในคลังสาขา = ที่เพิ่งสร้างรอบนี้ (localWh) + ที่ server ส่งมา (dedup ด้วย id · localWh ชนะ)
+  const mergedWarehouse = [
+    ...localWh,
+    ...warehouseProducts.filter((w) => !localWh.some((l) => l.id === w.id)),
+  ];
   // รายการให้เลือก = ของในคลังสาขา + เคยอยู่ตู้นี้ (dedup ด้วย id)
   // ★ ตัวคลังชนะเสมอ: SKU ที่มีทั้งบนชั้นและเคยอยู่ตู้ → เดินเส้น refill (เติมซ้ำได้ · ตัดชั้นจริง)
   //   ถ้าให้ตัว setup ชนะ จะชน guard "สินค้านี้มีในตู้อยู่แล้ว" = ทางตันตอนกลับเข้ามาตั้งค่าต่อ
   const pickList: { id: string; name: string; imageUrl: string | null; warehouse: number | null }[] = [
-    ...warehouseProducts.map((w) => ({ id: w.id, name: w.name, imageUrl: w.imageUrl, warehouse: w.warehouse as number | null })),
+    ...mergedWarehouse.map((w) => ({ id: w.id, name: w.name, imageUrl: w.imageUrl, warehouse: w.warehouse as number | null })),
     ...existingProducts
-      .filter((e) => !warehouseProducts.some((w) => w.id === e.id))
+      .filter((e) => !mergedWarehouse.some((w) => w.id === e.id))
       .map((p) => ({ ...p, warehouse: null as number | null })),
   ];
   // แท็บเริ่มต้น: มีของในคลังให้เลือก → "จากคลัง" · ไม่มี → "เพิ่มใหม่"
@@ -628,6 +635,8 @@ function AddProductSheet({
   const [sku, setSku] = useState("");
   const [photo, setPhoto] = useState("");
   const [newQty, setNewQty] = useState<number | null>(null);
+  // ปลายทางของสินค้าใหม่: "machine" = เข้าตู้ (default · เดิม) · "warehouse" = เก็บเข้าคลังสาขา (CEO 2026-07-28)
+  const [newTarget, setNewTarget] = useState<"machine" | "warehouse">("machine");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -675,7 +684,10 @@ function AddProductSheet({
     setError(null);
     if (name.trim() === "") { setError("กรอกชื่อสินค้าก่อน"); return; }
     if (sku.trim() === "") { setError("กรอกรหัส SKU ก่อน"); return; }
-    if (newQty == null || newQty <= 0) { setError("ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)"); return; }
+    if (newQty == null || newQty <= 0) {
+      setError(newTarget === "warehouse" ? "ใส่จำนวนที่เก็บเข้าคลัง (มากกว่า 0)" : "ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)");
+      return;
+    }
     setBusy(true);
     try {
       const res = await addSetupProductWithDolls({
@@ -685,11 +697,22 @@ function AddProductSheet({
         sku: sku.trim(),
         imageUrl: photo || undefined,
         qty: newQty,
+        target: newTarget,
         clientKey: crypto.randomUUID(),
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
-      onSaved({ id: res.data.productId, name: name.trim(), sku: sku.trim(), qty: newQty, imageUrl: photo || null });
-      setFlash(`เพิ่ม “${name.trim()}” แล้ว`);
+      if (newTarget === "warehouse") {
+        // ★ เข้าคลังสาขา — ไม่เพิ่มเข้ารายการ "ในตู้" · โชว์ในตัวเลือก "เลือกจากคลัง" ทันที (ยึดเลขจาก server)
+        setLocalWh((cur) => [
+          { id: res.data.productId, name: name.trim(), sku: sku.trim(), imageUrl: photo || null, warehouse: res.data.inWarehouseAfter },
+          ...cur.filter((x) => x.id !== res.data.productId),
+        ]);
+        setFlash(`เก็บ “${name.trim()}” เข้าคลังแล้ว`);
+      } else {
+        // เข้าตู้ — เพิ่มเข้ารายการ "ในตู้" (ยึดเลข inMachineAfter จาก server · จอ = server)
+        onSaved({ id: res.data.productId, name: name.trim(), sku: sku.trim(), qty: res.data.inMachineAfter, imageUrl: photo || null });
+        setFlash(`เพิ่ม “${name.trim()}” แล้ว`);
+      }
       resetNew();
     } catch {
       setError("เพิ่มสินค้าไม่สำเร็จ · ลองอีกครั้ง");
@@ -704,6 +727,27 @@ function AddProductSheet({
       <button
         type="button"
         onClick={() => { setTab(key); setError(null); }}
+        className="co-tap"
+        style={{
+          flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
+          background: on ? "#fff" : "transparent",
+          color: on ? "#4F46E5" : "#6B7280",
+          fontSize: 13, fontWeight: 700,
+          boxShadow: on ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+        }}
+      >
+        {text}
+      </button>
+    );
+  };
+
+  // ปุ่มสลับปลายทาง "เพิ่มใหม่" (ในตู้นี้ / คลังสาขา) — สไตล์เดียวกับแท็บด้านบน
+  const targetBtn = (key: "machine" | "warehouse", text: string) => {
+    const on = newTarget === key;
+    return (
+      <button
+        type="button"
+        onClick={() => { setNewTarget(key); setError(null); }}
         className="co-tap"
         style={{
           flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
@@ -833,7 +877,15 @@ function AddProductSheet({
               />
             </div>
             <div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>มีในตู้กี่ตัว</div>
+              {/* ปลายทาง: เข้าตู้นี้ หรือ เก็บเข้าคลังสาขา (CEO 2026-07-28) */}
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>เก็บไว้ที่ไหน</div>
+              <div style={{ display: "flex", gap: 4, padding: 4, borderRadius: 11, background: "#F1F2F7", marginBottom: 12 }}>
+                {targetBtn("machine", "ในตู้นี้")}
+                {targetBtn("warehouse", "คลังสาขา")}
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#454B54", marginBottom: 7 }}>
+                {newTarget === "warehouse" ? "เก็บเข้าคลังกี่ตัว" : "มีในตู้กี่ตัว"}
+              </div>
               <Stepper value={newQty} unit="ตัว" placeholder="นับแล้วแตะ +"
                 onDec={() => setNewQty((c) => Math.max(0, (c ?? 0) - 1))}
                 onInc={() => setNewQty((c) => Math.min(MAX_COUNT, (c ?? 0) + 1))} />
@@ -841,7 +893,7 @@ function AddProductSheet({
             {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
             <button type="button" disabled={busy} onClick={addNew} className="co-tap"
               style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: busy ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
-              {busy ? "กำลังเพิ่ม…" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
+              {busy ? "กำลังเพิ่ม…" : newTarget === "warehouse" ? "＋ เพิ่มสินค้า + เก็บเข้าคลัง" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
             </button>
           </div>
         )}

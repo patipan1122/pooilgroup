@@ -2145,10 +2145,12 @@ function HomeScreen(props: {
                             <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#FCF1E2" color="#B45309" label="กรอกต่อ"
                               icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>} />
                           ) : isDone ? (
-                            // CEO 2026-07-19 · เก็บแล้ววันนี้ → "ดูใบ" (เปิดใบรอบนั้นเลย) + "เก็บซ้ำ" (เก็บได้หลายรอบ/วัน)
+                            // CEO 2026-07-19 · เก็บแล้ววันนี้ → "ดูใบ" + "เปลี่ยน/เติม" (เติมตุ๊กตาได้แม้เก็บเงินแล้ว · CEO 2026-07-28) + "เก็บซ้ำ" (เก็บได้หลายรอบ/วัน)
                             <>
                               <RowActionBtn onClick={() => openDocFor(m.code)} bg="#E7F4EC" color="#15803D" label="ดูใบ"
                                 icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.5" /></svg>} />
+                              <RowActionBtn onClick={() => onChange(m)} disabled={pending} bg="#EEF0FE" color="#4F46E5" label="เปลี่ยน/เติม"
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2.4" /><path d="M12 8v8M8 12h8" /></svg>} />
                               <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#EEF0FE" color="#4F46E5" label="เก็บซ้ำ"
                                 icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>} />
                             </>
@@ -2157,7 +2159,7 @@ function HomeScreen(props: {
                               <RowActionBtn onClick={() => onOpen(m)} disabled={pending} bg="#4F46E5" color="#fff" label="เก็บเงิน"
                                 icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="2" y="7" width="20" height="12" rx="2" /><path d="M2 11h20M7 15h4" /></svg>} />
                               <RowActionBtn onClick={() => onChange(m)} disabled={pending} bg="#EEF0FE" color="#4F46E5" label="เปลี่ยน/เติม"
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>} />
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2.4" /><path d="M12 8v8M8 12h8" /></svg>} />
                             </>
                           )}
                         </div>
