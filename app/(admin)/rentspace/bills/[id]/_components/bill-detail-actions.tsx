@@ -74,17 +74,21 @@ function Modal({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4 print:hidden"
       onClick={() => !pending && onClose()}
     >
-      <div className="rs-card w-full sm:max-w-md rounded-b-none sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--rs-border)" }}>
+      {/* flex-col + max-h → หัว/ปุ่มบันทึกติดขอบเห็นตลอด · เนื้อหายาว (หลายรายการ) เลื่อนตรงกลางได้ ไม่ล้นจอ */}
+      <div
+        className="rs-card w-full sm:max-w-lg rounded-b-none sm:rounded-2xl flex flex-col max-h-[92dvh] sm:max-h-[88dvh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: "var(--rs-border)" }}>
           <div className="font-bold text-lg" style={{ color: "var(--rs-text)" }}>
             {title}
           </div>
-          <button onClick={onClose} disabled={pending} className="p-1 rounded-lg hover:bg-black/5">
+          <button onClick={onClose} disabled={pending} className="p-1.5 rounded-lg hover:bg-black/5 min-h-[40px] min-w-[40px] flex items-center justify-center">
             <X className="h-5 w-5" style={{ color: "var(--rs-text-2)" }} />
           </button>
         </div>
-        <div className="px-5 py-4 space-y-3">{children}</div>
-        <div className="flex gap-2 px-5 py-3 border-t" style={{ borderColor: "var(--rs-border)" }}>
+        <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1 overscroll-contain">{children}</div>
+        <div className="flex gap-2 px-5 py-3 border-t shrink-0" style={{ borderColor: "var(--rs-border)" }}>
           <button className="rs-btn rs-btn-ghost flex-1" disabled={pending} onClick={onClose}>
             ยกเลิก
           </button>
