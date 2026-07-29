@@ -1855,6 +1855,11 @@ function HomeScreen(props: {
     [multiBranch, machines, branchId],
   );
   const selectedBranchName = props.branchList.find((b) => b.id === branchId)?.name ?? "";
+  // งาน 3 (CEO 2026-07-29) · สลับสาขาต้องยืนยัน (กันกดพลาด) + แถบ "สาขาที่ดูแล" ย่อได้ (default ย่อ · ไลน์ไม่ยาว)
+  const [branchSheetOpen, setBranchSheetOpen] = useState(false);
+  const [sheetInitialId, setSheetInitialId] = useState<string>("");
+  const [stripOpen, setStripOpen] = useState(false);
+  const openBranchSheet = (initial: string) => { setSheetInitialId(initial); setBranchSheetOpen(true); };
   // N3/N6 · สินค้าคลัง / ใบรับ / ประวัติ ของ "สาขาที่เลือก" (server ส่งครบทุกสาขามาแล้ว · keyed by branchId)
   const stockProducts = props.branchProducts[branchId] ?? [];
   const stockWarehouses = props.warehousesByBranch[branchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
@@ -1933,56 +1938,84 @@ function HomeScreen(props: {
                 <div style={{ fontSize: 12, color: "#9AA1AB" }}>{greet}</div>
                 <div style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
               </div>
+              {/* งาน 3 · ชิปสาขาปัจจุบัน ติดข้างกระดิ่งตลอด (โชว์ว่าอยู่สาขาไหน · แตะ = popup เลือก+ยืนยัน) */}
+              {multiBranch && (
+                <button type="button" onClick={() => openBranchSheet(branchId)} className="co-tap"
+                  aria-label="เปลี่ยนสาขาที่กำลังดู"
+                  style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 150, display: "flex", alignItems: "center", gap: 5, padding: "7px 10px", borderRadius: 20, border: "1px solid #DADBF8", background: "#EEF0FE", cursor: "pointer" }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.4" style={{ flex: "0 0 auto" }}><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#4F46E5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedBranchName || "เลือกสาขา"}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.6" style={{ flex: "0 0 auto" }}><path d="M6 9l6 6 6-6" /></svg>
+                </button>
+              )}
               <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#fff", border: "1px solid #E8EAED", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6270" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
               </span>
             </div>
 
-            {/* ── ปุ่มสลับสาขา (พนักงาน 1 คนดูแลหลายสาขา · CEO 2026-07-28) — แยกดูทีละสาขา ── */}
+            {/* ── สลับสาขา (CEO 2026-07-29) · แถบ "สาขาที่ดูแล" ย่อได้ (default ย่อ · ไลน์ไม่ยาว) · เปลี่ยนสาขาผ่าน popup ยืนยัน กันกดพลาด ── */}
             {multiBranch && (
               <div style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                <button type="button" onClick={() => setStripOpen((v) => !v)} className="co-tap"
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, marginBottom: stripOpen ? 9 : 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#454B54" }}>สาขาที่ดูแล</span>
                   <span className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#9AA1AB", background: "#F1F2F5", padding: "1px 8px", borderRadius: 20 }}>{props.branchList.length}</span>
-                </div>
-                {/* แถบเลื่อนแนวนอน · แดง "รอรับ N" = มีของค้างรับที่สาขานั้น (คลิกสลับไปดู) */}
-                <div style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -18px", padding: "0 18px 4px", scrollbarWidth: "none" }}>
-                  {props.branchList.map((b) => {
-                    const active = b.id === branchId;
-                    const pend = props.inboundByBranch[b.id]?.length ?? 0;
-                    return (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => props.onSelectBranch(b.id)}
-                        className="co-tap"
-                        style={{
-                          flex: "0 0 auto",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "8px 13px",
-                          borderRadius: 11,
-                          cursor: "pointer",
-                          border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA",
-                          background: active ? "#EEF0FE" : "#fff",
-                          color: active ? "#4F46E5" : "#5A6270",
-                          fontWeight: 700,
-                          fontSize: 12.5,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        <span>{b.name}</span>
-                        {pend > 0 && (
-                          <span className="num" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#E0533D", borderRadius: 20, padding: "1px 7px" }}>
-                            รอรับ {pend}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5" }}>{stripOpen ? "ย่อ" : "ดูทั้งหมด"}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="2.6" style={{ transform: stripOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}><path d="M6 9l6 6 6-6" /></svg>
+                </button>
+                {/* แถบเลื่อนแนวนอน (กางแล้ว) · แดง "รอรับ N" = มีของค้างรับ · แตะชิป = เปิด popup ยืนยัน (ไม่สลับทันที) */}
+                {stripOpen && (
+                  <div style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -18px", padding: "0 18px 4px", scrollbarWidth: "none" }}>
+                    {props.branchList.map((b) => {
+                      const active = b.id === branchId;
+                      const pend = props.inboundByBranch[b.id]?.length ?? 0;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => openBranchSheet(b.id)}
+                          className="co-tap"
+                          style={{
+                            flex: "0 0 auto",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "8px 13px",
+                            borderRadius: 11,
+                            cursor: "pointer",
+                            border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA",
+                            background: active ? "#EEF0FE" : "#fff",
+                            color: active ? "#4F46E5" : "#5A6270",
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span>{b.name}</span>
+                          {active && <span style={{ fontSize: 10, fontWeight: 700, color: "#4F46E5" }}>• กำลังดู</span>}
+                          {pend > 0 && (
+                            <span className="num" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#E0533D", borderRadius: 20, padding: "1px 7px" }}>
+                              รอรับ {pend}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+            )}
+            {/* popup เลือก+ยืนยันสาขา (กันกดพลาด · สลับสาขาเป็น state บนจอ ไม่แตะ DB) */}
+            {branchSheetOpen && (
+              <BranchSwitchSheet
+                branchList={props.branchList}
+                inboundByBranch={props.inboundByBranch}
+                currentBranchId={branchId}
+                initialId={sheetInitialId || branchId}
+                onConfirm={(id) => { props.onSelectBranch(id); setBranchSheetOpen(false); }}
+                onClose={() => setBranchSheetOpen(false)}
+              />
             )}
 
             {/* การ์ดคืบหน้ารอบ (gradient ม่วง · เลขใหญ่) — mockup HIST-02 */}
@@ -4477,6 +4510,73 @@ function NicknameSheet({ machine, onClose }: { machine: AppMachine; onClose: () 
             className={pending ? "" : "co-tap"}
             style={{ flex: 1, minHeight: 50, fontSize: 14.5, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 14, borderRadius: 13, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
             {pending ? "กำลังบันทึก…" : "บันทึกชื่อ"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// งาน 3 (CEO 2026-07-29) · popup เลือกสาขา + ยืนยัน — กันแตะพลาดแล้วสลับสาขาทันที
+// สลับสาขาเป็นสถานะบนจอล้วน (ไม่แตะ DB/เงิน) · ปุ่มยืนยันกดได้เฉพาะเมื่อเลือกสาขาที่ต่างจากที่กำลังดู
+function BranchSwitchSheet({ branchList, inboundByBranch, currentBranchId, initialId, onConfirm, onClose }: {
+  branchList: BranchLite[];
+  inboundByBranch: Record<string, unknown[]>;
+  currentBranchId: string;
+  initialId: string;
+  onConfirm: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<string>(initialId || currentBranchId);
+  const changed = picked !== currentBranchId;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="เลือกสาขาที่จะดู"
+      style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+    >
+      <button type="button" aria-label="ปิด" onClick={onClose}
+        style={{ position: "absolute", inset: 0, background: "rgba(15,18,26,0.42)", border: "none", cursor: "pointer" }} />
+      <div style={{ position: "relative", background: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: "16px 18px 22px", boxShadow: "0 -8px 30px rgba(0,0,0,0.18)", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#E3E6EA", margin: "0 auto 14px", flex: "0 0 auto" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12, flex: "0 0 auto" }}>
+          <span style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>เลือกสาขาที่จะดู</div>
+            <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>เลือกแล้วกด &ldquo;ยืนยัน&rdquo; · กันสลับพลาด</div>
+          </div>
+          <button type="button" aria-label="ปิด" onClick={onClose} className="co-tap"
+            style={{ width: 34, height: 34, flex: "0 0 34px", borderRadius: 10, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={17} color="#5A6270" strokeWidth={2.2} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 7, margin: "0 -2px", padding: "0 2px 2px" }}>
+          {branchList.map((b) => {
+            const on = b.id === picked;
+            const isCurrent = b.id === currentBranchId;
+            const pend = inboundByBranch[b.id]?.length ?? 0;
+            return (
+              <button key={b.id} type="button" onClick={() => setPicked(b.id)} className="co-tap"
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 12, cursor: "pointer", textAlign: "left", border: on ? "1.5px solid #4F46E5" : "1.5px solid #ECEDF6", background: on ? "#EEF0FF" : "#fff" }}>
+                <span style={{ width: 20, height: 20, flex: "0 0 20px", borderRadius: "50%", border: on ? "6px solid #4F46E5" : "2px solid #C2C7CF", background: "#fff" }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</span>
+                {isCurrent && <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 700, color: "#15803D", background: "#E7F4EC", borderRadius: 7, padding: "2px 8px" }}>กำลังดู</span>}
+                {pend > 0 && <span className="num" style={{ flex: "0 0 auto", fontSize: 10, fontWeight: 700, color: "#fff", background: "#E0533D", borderRadius: 20, padding: "2px 8px" }}>รอรับ {pend}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 14, flex: "0 0 auto" }}>
+          <button type="button" onClick={onClose}
+            style={{ flex: "0 0 auto", minHeight: 50, fontSize: 14, fontWeight: 700, color: "#5A6270", background: "#F1F2F5", border: "none", padding: "0 20px", borderRadius: 13, cursor: "pointer" }}>
+            ยกเลิก
+          </button>
+          <button type="button" onClick={() => onConfirm(picked)} disabled={!changed} className={changed ? "co-tap" : ""}
+            style={{ flex: 1, minHeight: 50, fontSize: 14.5, fontWeight: 700, color: "#fff", background: changed ? "#4F46E5" : "#B9BCF0", border: "none", padding: 14, borderRadius: 13, cursor: changed ? "pointer" : "default" }}>
+            {changed ? "ยืนยันเปลี่ยนสาขา" : "กำลังดูสาขานี้อยู่"}
           </button>
         </div>
       </div>
