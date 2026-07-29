@@ -100,12 +100,148 @@ function safeJson(raw: string): RawText {
   }
 }
 
+// ─── Deterministic "template" parser (0-cost · no AI · never throws) ──────────
+// อ่านยอดเงินจาก "จด <รายละเอียด> <จำนวน>" ด้วยกฎล้วน ๆ เพื่อให้ "จด" ใช้ได้จริง
+// เสมอ แม้ AI (Gemini) ล่ม/คีย์หมดอายุ (CEO 2026-07-28). AI เป็นแค่ตัวเสริมด้านบน.
+const AMOUNT_SRC = String.raw`\d[\d,]*(?:\.\d+)?`;
+// จำนวนนับ (ไม่ใช่เงิน) — "6 ตู้" ต้องไม่ถูกอ่านเป็น ฿6
+const QTY_UNIT_RE =
+  /^(ตู้|ชิ้น|กล่อง|คน|อัน|ใบ|ลิตร|กก\.?|กิโล|โล|ครั้ง|แผ่น|ขวด|ถุง|แพ็?ก|เครื่อง|ห้อง|คัน|ต้น|ชุด|ม้วน|หลอด|ก้อน|ลัง|แก้ว|จาน|ที่|ตัว|คู่|ชม\.?|วัน|เดือน|ปี|%)/;
+
+function toAmount(s: string): number {
+  const n = parseFloat(s.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+}
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /**
- * Parse "กาแฟ 45" / "ค่าอาหารกลางวัน 120" / "เมื่อวาน เดินทาง 30" → fields.
+ * อ่าน "ยอดเงิน" จาก "จด <ของ> <ยอด>" แบบไม่พึ่ง AI — เป็นพื้นประกัน: ถ้าโน้ตมี
+ * ตัวเลขที่อ่านออก "จด" จะบันทึกได้เสมอ ไม่ว่า Gemini จะล่มหรือไม่.
+ * กฎยอด (ตามลำดับ):
+ *  1) เลขที่ตามด้วย บาท/฿/บ. = เงินแน่นอน → ใช้ (หลายตัว = รวม)
+ *  2) ไม่มีสัญลักษณ์เงิน → ใช้เลขที่ "ไม่ใช่จำนวนนับ" (ข้าม 6 ตู้):
+ *     ตัวเดียว→ใช้ · หลายตัวคั่น ,/บรรทัด→รวม · นอกนั้น→ตัวท้าย (ราคามักอยู่ท้าย)
+ */
+export function parseExpenseTemplate(text: string): ParsedTextExpense | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+
+  const moneySuffix = new RegExp(`(${AMOUNT_SRC})\\s*(?:บาท|บ\\.|฿|thb)`, "gi");
+  const moneyPrefix = new RegExp(`฿\\s*(${AMOUNT_SRC})`, "gi");
+
+  const money: number[] = [];
+  for (const m of t.matchAll(moneySuffix)) {
+    const n = toAmount(m[1]);
+    if (n > 0) money.push(n);
+  }
+  for (const m of t.matchAll(moneyPrefix)) {
+    const n = toAmount(m[1]);
+    if (n > 0) money.push(n);
+  }
+
+  let total: number | null = null;
+  let priceTokens: string[] = [];
+  if (money.length) {
+    total = round2(money.reduce((a, b) => a + b, 0));
+  } else {
+    const cands: number[] = [];
+    const numRe = new RegExp(AMOUNT_SRC, "g");
+    let m: RegExpExecArray | null;
+    while ((m = numRe.exec(t))) {
+      const after = t.slice(m.index + m[0].length).trimStart();
+      if (QTY_UNIT_RE.test(after)) continue; // จำนวนนับ (6 ตู้) → ข้าม
+      const n = toAmount(m[0]);
+      if (n > 0) {
+        cands.push(n);
+        priceTokens.push(m[0]);
+      }
+    }
+    if (cands.length === 1) {
+      total = round2(cands[0]);
+    } else if (cands.length > 1) {
+      const multiItem = /[,\n]/.test(t); // "น้ำดื่ม 10, ข้าวไข่ดาว 50" → รวม
+      if (multiItem) {
+        total = round2(cands.reduce((a, b) => a + b, 0));
+      } else {
+        total = round2(cands[cands.length - 1]);
+        priceTokens = priceTokens.slice(-1); // ตัดเฉพาะ "ราคา" ที่ใช้ออกจากรายละเอียด
+      }
+    }
+  }
+
+  if (total == null || !(total > 0)) return null;
+
+  // รายละเอียด = ข้อความเดิม ตัดเฉพาะ "ยอดเงิน" ที่ใช้ (เก็บ 6 ตู้/สาขา ไว้เป็นโน้ต)
+  let desc = t.replace(moneySuffix, " ").replace(moneyPrefix, " ");
+  for (const tok of priceTokens) desc = desc.replace(tok, " ");
+  desc = desc
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s,.\-–—]+|[\s,.\-–—]+$/g, "")
+    .trim();
+  const description = (desc || "รายการ").slice(0, 120);
+
+  const items: ExpenseItem[] = [
+    { description, qty: 1, unitPrice: total, amount: total, vatRate: null },
+  ];
+  return {
+    total,
+    vendor: null,
+    paymentMethod: null,
+    suggestedCategory: null,
+    purchaseType: null,
+    docDate: null,
+    note: null,
+    items,
+    confidence: { total: 1 },
+  };
+}
+
+function emptyParsed(): ParsedTextExpense {
+  return {
+    total: null,
+    vendor: null,
+    paymentMethod: null,
+    suggestedCategory: null,
+    purchaseType: null,
+    docDate: null,
+    note: null,
+    items: [],
+    confidence: {},
+  };
+}
+
+/**
+ * Orchestrator — พื้นประกัน (template) + ตัวเสริม (AI). "จด" ต้องใช้ได้จริงแม้ AI
+ * ล่ม → AI ถูกหุ้ม try/catch: ถ้าพัง/ว่าง ก็คืนผลจาก template แทน (ไม่โยน error ออก).
+ */
+export async function parseExpenseText(
+  text: string,
+  userId: string | null,
+  orgId: string,
+): Promise<ParsedTextExpense> {
+  const template = parseExpenseTemplate(text);
+
+  let ai: ParsedTextExpense | null = null;
+  try {
+    ai = await parseExpenseTextAI(text, userId, orgId);
+  } catch (e) {
+    if (!(e instanceof AiBudgetError))
+      console.error("[ledger:parse-text] AI enrich failed — ใช้ template แทน", e);
+  }
+
+  if (ai && ai.total != null) return ai; // AI อ่านยอดได้ → ข้อมูลรวยกว่า (หลายรายการ/หมวด/ร้าน)
+  if (template) return template; // AI ล่ม/ว่าง → template ช่วยไว้ ให้ "จด" ไม่มีวันตาย
+  return ai ?? emptyParsed(); // ไม่มีตัวเลขเลย → webhook เตือนให้พิมพ์ยอด
+}
+
+/**
+ * Parse "กาแฟ 45" / "ค่าอาหารกลางวัน 120" / "เมื่อวาน เดินทาง 30" → fields ด้วย AI.
  * @param text  the note WITHOUT the leading "จด" trigger.
  * @throws AiBudgetError when over the org AI budget.
  */
-export async function parseExpenseText(
+async function parseExpenseTextAI(
   text: string,
   userId: string | null,
   orgId: string,
