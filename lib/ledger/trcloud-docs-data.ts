@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { accountName } from "@/lib/ledger/coa-chart";
+import { suggestExpenseCategory } from "@/lib/ledger/suggest-category";
 
 // อ่าน snapshot PO/AP จาก DB เรา (ไม่ยิง TRCloud) → เปิดหน้าเร็ว. sync แยกด้วยปุ่ม "รีเฟรช".
 // + แยก "แหล่งที่มา": ใบไหนเราส่งขึ้นไปจาก LedgerLine vs ใบที่สร้างตรงใน TRCloud
@@ -55,6 +56,11 @@ export type TrcloudDocRow = {
   ourCategoryName: string | null; // หมวดที่เราตั้ง (● เท่านั้น)
   ourAccCode: string | null;      // รหัสบัญชีเดบิตที่เราตั้ง (● เท่านั้น)
   ourAccName: string | null;      // ชื่อบัญชีของ ourAccCode
+  // "หมวดที่แนะนำ ถ้าลง AP" — เดาจากชื่อร้าน/รายละเอียด เมื่อยังไม่มีหมวดของเรา (ทุกใบ)
+  suggestedCategoryName: string | null;
+  suggestedAccCode: string | null;
+  suggestedAccName: string | null;
+  suggestedConfidence: "high" | "low" | null; // low = เดาไม่ชัด (ตกหมวดเบ็ดเตล็ด)
 };
 
 export type TrcloudDocsData = {
@@ -247,6 +253,8 @@ export async function getTrcloudDocs(orgId: string, f: TrcloudDocFilters): Promi
     if (m.fromLedger) fromLedgerInView += 1;
     const taxNum = num(r.tax);
     const accCode = m.cat?.accCode ?? null;
+    // ใบไหนยังไม่มีหมวดของเรา → วิเคราะห์แนะนำหมวด+ผังบัญชีให้ (0 ค่าใช้จ่าย · ไม่ยิง TRCloud)
+    const suggestion = accCode ? null : suggestExpenseCategory(r.vendorName, r.invoiceNote);
     return {
       id: r.id,
       kind: r.kind as TrcloudDocKind,
@@ -277,6 +285,10 @@ export async function getTrcloudDocs(orgId: string, f: TrcloudDocFilters): Promi
       ourCategoryName: m.cat?.name ?? null,
       ourAccCode: accCode,
       ourAccName: accountName(accCode),
+      suggestedCategoryName: suggestion?.categoryName ?? null,
+      suggestedAccCode: suggestion?.glCode ?? null,
+      suggestedAccName: suggestion ? accountName(suggestion.glCode) : null,
+      suggestedConfidence: suggestion?.confidence ?? null,
     };
   });
 

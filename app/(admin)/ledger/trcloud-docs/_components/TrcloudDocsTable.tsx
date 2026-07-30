@@ -25,7 +25,6 @@ function statusPill(kind: TrcloudDocKind, status: string | null, statusAp: strin
 
 export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: TrcloudDocKind }) {
   const [selected, setSelected] = useState<TrcloudDocRow | null>(null);
-  const showAccount = kind === "AP"; // คอลัมน์ "บัญชีเดบิต (หมวดที่เราตั้ง)" เฉพาะ AP
 
   if (rows.length === 0) {
     return (
@@ -37,7 +36,7 @@ export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: 
   return (
     <>
       <div className="overflow-x-auto rounded-xl border border-zinc-200">
-        <table className="w-full min-w-[920px] border-collapse text-sm">
+        <table className="w-full min-w-[1040px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium text-zinc-500">
               <th className="px-3 py-2 font-medium">ที่มา</th>
@@ -46,7 +45,7 @@ export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: 
               <th className="px-3 py-2 font-medium">ผู้ขาย</th>
               <th className="px-3 py-2 font-medium">นิติบุคคล</th>
               <th className="px-3 py-2 font-medium">สาขา</th>
-              {showAccount && <th className="px-3 py-2 font-medium">บัญชีเดบิต</th>}
+              <th className="px-3 py-2 font-medium">หมวดบัญชี<span className="ml-1 font-normal text-zinc-400">(ถ้าลง AP)</span></th>
               <th className="px-3 py-2 text-right font-medium">ยอดรวม</th>
               <th className="px-3 py-2 font-medium">สถานะ</th>
               <th className="px-3 py-2 font-medium"></th>
@@ -86,21 +85,32 @@ export function TrcloudDocsTable({ rows, kind }: { rows: TrcloudDocRow[]; kind: 
                   </td>
                   <td className="max-w-[120px] truncate px-3 py-2 text-zinc-600" title={r.department ?? undefined}>{r.department || "—"}</td>
                   <td className="max-w-[150px] truncate px-3 py-2 text-zinc-600" title={r.project ?? undefined}>{r.project || "—"}</td>
-                  {showAccount && (
-                    <td className="max-w-[170px] px-3 py-2">
-                      {r.fromLedger && r.ourAccCode ? (
-                        <span
-                          className={`inline-flex max-w-full items-center gap-1 truncate text-xs ${unclassified ? "font-medium text-red-600" : "text-zinc-600"}`}
-                          title={`${r.ourAccCode}${r.ourAccName ? ` ${r.ourAccName}` : ""}${unclassified ? " — ยังไม่ได้แยกประเภท" : ""} (หมวดที่เราตั้ง)`}
-                        >
-                          <span className="font-medium">{r.ourAccCode}</span>
-                          <span className="truncate text-zinc-400">{r.ourCategoryName || r.ourAccName || ""}</span>
+                  <td className="max-w-[210px] px-3 py-2">
+                    {r.ourAccCode ? (
+                      // ● ของจริงที่ LedgerLine ตั้งไว้แล้ว (แม่น) — เข้ม/ทึบ
+                      <span
+                        className="inline-flex max-w-full items-center gap-1 truncate text-xs"
+                        title={`${r.ourAccCode}${r.ourAccName ? ` ${r.ourAccName}` : ""}${unclassified ? " — ยังไม่ได้แยกประเภท" : ""} (หมวดที่เราตั้งไว้แล้ว)`}
+                      >
+                        <span className={`font-medium ${unclassified ? "text-red-600" : "text-zinc-700"}`}>{r.ourAccCode}</span>
+                        <span className="truncate text-zinc-400">{r.ourCategoryName || r.ourAccName || ""}</span>
+                      </span>
+                    ) : r.suggestedAccCode ? (
+                      // ○ ยังไม่มีหมวด → ระบบวิเคราะห์แนะนำให้ (ต้องตรวจก่อนลงจริง)
+                      <span
+                        className="inline-flex max-w-full items-center gap-1 text-xs"
+                        title={`แนะนำ: ${r.suggestedAccCode} ${r.suggestedAccName ?? ""} — วิเคราะห์จากชื่อร้าน/รายละเอียด · เปิดใบเพื่อตรวจก่อนบันทึกเป็น AP`}
+                      >
+                        <span className="shrink-0 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                          แนะนำ
                         </span>
-                      ) : (
-                        <span className="text-xs text-zinc-300">คลิกดู</span>
-                      )}
-                    </td>
-                  )}
+                        <span className={`font-medium ${r.suggestedConfidence === "low" ? "text-zinc-400" : "text-zinc-600"}`}>{r.suggestedAccCode}</span>
+                        <span className="truncate text-zinc-400">{r.suggestedCategoryName}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-zinc-300">—</span>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     <div className="font-medium text-zinc-800">{money(r.grandTotal ?? r.total)}</div>
                     <div className={`text-xs ${r.hasVat ? "text-zinc-400" : "text-zinc-300"}`}>
