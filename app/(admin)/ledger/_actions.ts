@@ -4258,14 +4258,15 @@ export async function cancelTransfersForExpensesAction(
     select: { id: true, vendor: true },
   });
   let cancelled = 0;
+  // เก็บชื่อผู้รับของทุกคำขอที่ยกเลิกสำเร็จ แล้วแจ้งกลุ่ม "ครั้งเดียว" หลังลูปจบ
+  // (เดิมยิงทีละคำขอ = N ข้อความ × จำนวนคนในกลุ่ม · CEO 2026-07-31 ขอรวบเป็นข้อความเดียว
+  // เพื่อประหยัดโควตา LINE + อ่านง่ายกว่า). การยกเลิกจริง + audit ต่อใบ คงเดิมทุกอย่าง.
+  const cancelledVendors: string[] = [];
   for (const r of reqs) {
     const res = await cancelPaymentRequest({ orgId, companyId, requestId: r.id, cancelledBy: session.user.id });
     if (!res.ok) continue;
     cancelled++;
-    await pushTextToSlipGroup(
-      orgId, companyId,
-      `🚫 ยกเลิกคำขอโอน${r.vendor ? ` ${r.vendor}` : ""} แล้ว — ยังไม่ต้องโอนนะครับ`,
-    ).catch(() => {});
+    cancelledVendors.push(r.vendor?.trim() || "ไม่ระบุผู้รับ");
     await audit({
       orgId, userId: session.user.id,
       action: "LEDGER_PAYMENT_REQ_CANCELLED",
@@ -4274,6 +4275,14 @@ export async function cancelTransfersForExpensesAction(
     });
   }
   if (cancelled === 0) return { ok: false, error: "ยกเลิกคำขอไม่สำเร็จ (อาจจ่าย/ปิดไปแล้ว)" };
+  // แจ้งกลุ่มผู้บริหารครั้งเดียว: 1 ใบ = ข้อความเดิม · หลายใบ = หัวข้อ + รายการ bullet.
+  // pushTextToSlipGroup ตัดที่ 4,900 ตัวอักษรอยู่แล้ว → ลิสต์ยาวไม่ล้น.
+  const cancelNotice =
+    cancelled === 1
+      ? `🚫 ยกเลิกคำขอโอน${cancelledVendors[0] && cancelledVendors[0] !== "ไม่ระบุผู้รับ" ? ` ${cancelledVendors[0]}` : ""} แล้ว — ยังไม่ต้องโอนนะครับ`
+      : `🚫 ยกเลิกคำขอโอน ${cancelled} รายการ แล้ว — ยังไม่ต้องโอนนะครับ\n` +
+        cancelledVendors.map((v) => `• ${v}`).join("\n");
+  await pushTextToSlipGroup(orgId, companyId, cancelNotice).catch(() => {});
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger/reconcile");
   return { ok: true, cancelled };
