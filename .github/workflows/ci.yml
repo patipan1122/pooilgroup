@@ -28,6 +28,9 @@ jobs:
       - name: Prisma generate
         run: npx prisma generate
 
+      - name: Unit tests (money math — must pass)
+        run: npx tsx lib/rentspace/__tests__/bill-math.run.ts
+
       - name: Typecheck (allow Sentry resolution failures)
         run: npx tsc --noEmit || echo "::warning::Typecheck issues detected"
 

@@ -714,7 +714,7 @@ function CellDetail({
         { label: "อื่นๆ", value: cell.other },
         { label: "ค่าปรับล่าช้า", value: cell.lateFee },
         { label: "ส่วนลด", value: -cell.discount },
-        { label: "ฐานก่อน VAT", value: cell.rent + cell.water + cell.electric + cell.other + cell.lateFee - cell.discount, strong: true },
+        { label: "รวมหลังส่วนลด", value: cell.rent + cell.water + cell.electric + cell.other + cell.lateFee - cell.discount, strong: true },
         { label: "VAT", value: cell.vat },
         { label: "รวมทั้งสิ้น", value: cell.total, strong: true },
         { label: "จ่ายแล้ว", value: cell.paid },

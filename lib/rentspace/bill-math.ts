@@ -13,10 +13,15 @@ export function round2(x: number): number {
 /**
  * Compute discount + subtotal + VAT + total from line items, the approved
  * discount total and the contract VAT %. VAT is charged ONLY on the VATable
- * base (commercial rent / utilities per config), not on pass-through items —
- * and the discount is allocated proportionally across the bill so the VATable
- * share shrinks fairly. Pure (no DB) so a freshly-created bill and a recomputed
- * bill agree exactly.
+ * base (commercial rent / utilities per config), not on pass-through items.
+ *
+ * ส่วนลดหักจาก "ยอดที่ยกเว้น VAT ก่อน" (ค่าเช่าอสังหาฯ / ภาษีส่งผ่าน / อื่น ๆ)
+ * แล้วจึงจะไปลดฐาน VAT เฉพาะ "ส่วนที่เกิน" ยอดยกเว้นเท่านั้น. เดิมเคยเฉลี่ยส่วนลด
+ * แบบสัดส่วน (proportional) ทำให้ "ส่วนลดค่าเช่า" (ที่ไม่มี VAT อยู่แล้ว) ไปกิน
+ * ฐานภาษีของค่าไฟ → output VAT ที่ต้องนำส่งสรรพากรต่ำกว่าจริง = เก็บภาษีขาด.
+ * วิธี exempt-first นี้ปลอดภัยเชิงภาษี: จะไม่ทำให้ฐาน VAT ต่ำกว่าความจริง เว้นแต่
+ * ส่วนลดมากจนล้นยอดยกเว้นทั้งหมด (ซึ่งตอนนั้นการลดฐาน VAT เป็นเรื่องถูกต้อง).
+ * Pure (no DB) so a freshly-created bill and a recomputed bill agree exactly.
  */
 export function computeBillTotals(args: {
   items: { amount: number; vatable: boolean }[];
@@ -29,8 +34,10 @@ export function computeBillTotals(args: {
   const vatableGross = round2(
     args.items.filter((it) => it.vatable).reduce((s, it) => s + toNum(it.amount), 0),
   );
-  // allocate the discount proportionally → only the VATable portion lowers VAT
-  const discountOnVatable = gross > 0 ? round2(discountAmount * (vatableGross / gross)) : 0;
+  // หักส่วนลดจากยอด "ยกเว้น VAT" ก่อน (gross − vatableGross) → ส่วนลดจะไปลดฐาน VAT
+  // เฉพาะ "ส่วนที่เกิน" ยอดยกเว้นเท่านั้น. กันเคสส่วนลดค่าเช่าไปกินฐานภาษีค่าไฟ.
+  const exemptGross = Math.max(0, round2(gross - vatableGross));
+  const discountOnVatable = Math.max(0, round2(discountAmount - exemptGross));
   const vatableNet = Math.max(0, round2(vatableGross - discountOnVatable));
   const vatAmount = round2(vatableNet * (args.vatPercent / 100));
   const subtotal = Math.max(0, round2(gross - discountAmount));
