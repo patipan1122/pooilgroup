@@ -7,6 +7,7 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
+import { userBranchIds } from "@/lib/clawfleet/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
@@ -114,11 +115,14 @@ export default async function StaffAppPage({
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าไม่ login → ปล่อยว่าง (client ใช้ default)
   let userName = "";
   let userId = "";
+  // CEO 2026-08-01 · ขอบเขตสาขาสำหรับ "ประวัติทั้งสาขา" — สาขาที่ user เข้าถึงได้ (Super Admin = ALL)
+  let historyBranchScope: string[] | "ALL" = [];
   try {
     const session = await getSession();
     userName = session?.user.name ?? "";
     userId = session?.user.id ?? "";
     orgId = orgId || (session?.user.org_id ?? "");
+    if (session) historyBranchScope = await userBranchIds(session);
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
@@ -172,13 +176,17 @@ export default async function StaffAppPage({
       const events = await prisma.cfCollectionEvent.findMany({
         where: {
           orgId,
-          collectedById: userId,
+          // CEO 2026-08-01 · ประวัติ "ทั้งสาขา" (ไม่ใช่แค่ของฉัน) — เห็นที่พนักงานคนอื่นในสาขาเดียวกันเก็บ.
+          //   scope = สาขาที่ user เข้าถึงได้ (Super Admin = ALL → ไม่กรอง) · ปุ่มแก้เลขยังจำกัดเฉพาะใบตัวเอง.
+          ...(historyBranchScope === "ALL" ? {} : { machine: { branchId: { in: historyBranchScope } } }),
           eventType: { in: ["COLLECTION", "INITIAL"] },
           collectedAt: { gte: HISTORY_SINCE },
         },
         orderBy: { collectedAt: "desc" },
         select: {
           id: true, machineId: true, eventType: true, collectedAt: true, cashCountedCents: true, anomalyFlags: true,
+          // คนเก็บ (โชว์ในประวัติทั้งสาขา ว่าใครเก็บ) + ใช้เช็ค own สำหรับปุ่มแก้เลข
+          collectedById: true, collectedBy: { select: { name: true } },
           coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true, shortReason: true, notes: true,
           // มิเตอร์กายภาพ บน/ล่าง (เงิน+ตุ๊กตา) — CEO อยากเห็นบน/ล่างในใบ (schema เก็บอยู่แล้ว · select ต้นทุน ~0)
           meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true,
@@ -190,21 +198,22 @@ export default async function StaffAppPage({
           //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
           session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
         },
-        take: 150,
+        take: 300,
       });
-      // #3 CEO 2026-07-19 · "แก้เลขในใบ" ได้เฉพาะ COLLECTION ล่าสุดของตู้ + วันนี้ (own = ทุกแถวอยู่แล้ว)
+      // #3 CEO 2026-07-19 · "แก้เลขในใบ" ได้เฉพาะ COLLECTION ล่าสุดของตู้ + วันนี้ + own (คนเก็บเอง)
       //   events เรียง desc → แถวแรกต่อ machineId ที่เป็น COLLECTION วันนี้ = ล่าสุด (editable) · server เช็คซ้ำอีกชั้น
+      //   CEO 2026-08-01 · ประวัติทั้งสาขาแล้ว → บังคับ own (e.collectedById===userId) กันปุ่มแก้ขึ้นบนใบคนอื่น
       const todayYmdBkk = ymdBangkok(new Date(Date.now()));
       const editableEventIds = new Set<string>();
       {
         const seenMachine = new Set<string>();
         for (const e of events) {
           const mid = (e as { machineId?: string }).machineId;
-          // แถวแรกสุด (ใหม่สุด) ของแต่ละตู้ — ถ้าเป็น COLLECTION วันนี้ → editable
+          // แถวแรกสุด (ใหม่สุด) ของแต่ละตู้ — ถ้าเป็น COLLECTION วันนี้ + ของตัวเอง → editable
           const key = mid ?? e.id;
           if (seenMachine.has(key)) continue;
           seenMachine.add(key);
-          if (e.eventType === "COLLECTION" && ymdBangkok(e.collectedAt) === todayYmdBkk) editableEventIds.add(e.id);
+          if (e.eventType === "COLLECTION" && ymdBangkok(e.collectedAt) === todayYmdBkk && e.collectedById === userId) editableEventIds.add(e.id);
         }
       }
       // CEO 2026-07-19 · ราย SKU ที่ "เติม" ในแต่ละรอบเก็บ — movement LOAD_TO_MACHINE ที่ผูก event (refTable/refId)
@@ -270,6 +279,9 @@ export default async function StaffAppPage({
           shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
           // #1 · ok = เงินตรงมิเตอร์จริง (ไม่ใช่แค่ไม่มีธง) เมื่อมี reconcile · ไม่มี → fallback ธง anomaly เดิม
           ok: cashOk, isBaseline, eventId: e.id, eventType: e.eventType,
+          // CEO 2026-08-01 · ใครเก็บ (โชว์ในประวัติทั้งสาขา) + mine = ใบของฉันไหม
+          collectedBy: e.collectedBy?.name ?? undefined,
+          mine: e.collectedById === userId,
           // #3 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own)
           canEditNumbers: editableEventIds.has(e.id),
           // CEO 2026-07-19 · ราคาขาย/ตัว + ราย SKU ที่เติมรอบนี้ (ใบสรุป fix-form)
@@ -284,20 +296,26 @@ export default async function StaffAppPage({
       let swapRows: StaffHistoryRow[] = [];
       try {
         const moves = await prisma.cfStockMovement.findMany({
-          where: { orgId, createdById: userId, refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] }, occurredAt: { gte: HISTORY_SINCE } },
+          where: {
+            orgId,
+            // CEO 2026-08-01 · เปลี่ยนตุ๊กตา "ทั้งสาขา" (ไม่ใช่แค่ของฉัน) — scope ตามสาขาที่เข้าถึงได้
+            ...(historyBranchScope === "ALL" ? {} : { machine: { branchId: { in: historyBranchScope } } }),
+            refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] },
+            occurredAt: { gte: HISTORY_SINCE },
+          },
           orderBy: { occurredAt: "desc" },
-          // CEO 2026-07-19 · เพิ่มราย SKU (คืน/เติม) + ราคาขาย → ใบเปลี่ยนตุ๊กตาเห็นไส้ใน
-          select: { qty: true, refTable: true, occurredAt: true, product: { select: { name: true, imageUrl: true } }, machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { id: true, name: true } } } } },
+          // CEO 2026-07-19 · เพิ่มราย SKU (คืน/เติม) + ราคาขาย → ใบเปลี่ยนตุ๊กตาเห็นไส้ใน · +คนทำ (2026-08-01)
+          select: { qty: true, refTable: true, occurredAt: true, createdById: true, createdBy: { select: { name: true } }, product: { select: { name: true, imageUrl: true } }, machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { id: true, name: true } } } } },
           take: 400,
         });
         type SwapSku = { name: string; qty: number; imageUrl: string | null };
-        type SwapGroup = { code: string; nickname: string | null; branch: string; branchId: string; at: Date; returned: number; refilled: number; sellPriceCents: number | null; returnedSkus: SwapSku[]; refilledSkus: SwapSku[] };
+        type SwapGroup = { code: string; nickname: string | null; branch: string; branchId: string; at: Date; returned: number; refilled: number; sellPriceCents: number | null; returnedSkus: SwapSku[]; refilledSkus: SwapSku[]; by: string | null; mine: boolean };
         const groups = new Map<string, SwapGroup>();
         for (const m of moves) {
           if (!m.machine) continue;
           const minute = new Date(m.occurredAt); minute.setSeconds(0, 0);
           const key = `${m.machine.code}|${minute.toISOString()}`;
-          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, branchId: m.machine.branch.id, at: m.occurredAt, returned: 0, refilled: 0, sellPriceCents: m.machine.sellPriceCents ?? null, returnedSkus: [], refilledSkus: [] };
+          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, branchId: m.machine.branch.id, at: m.occurredAt, returned: 0, refilled: 0, sellPriceCents: m.machine.sellPriceCents ?? null, returnedSkus: [], refilledSkus: [], by: m.createdBy?.name ?? null, mine: m.createdById === userId };
           const name = m.product?.name ?? "— สินค้า —";
           const qtyAbs = Math.abs(m.qty);
           // รวม SKU ชื่อเดียวกันเป็นแถวเดียว (ปรปักษ์ #2)
@@ -316,6 +334,7 @@ export default async function StaffAppPage({
           swapReturned: g.returned, swapRefilled: g.refilled,
           sellPriceCents: g.sellPriceCents ?? undefined,
           swapReturnedSkus: g.returnedSkus, swapRefilledSkus: g.refilledSkus,
+          collectedBy: g.by ?? undefined, mine: g.mine,
         }));
       } catch {
         // graceful: movement query ล้ม → ไม่มี swap ในประวัติ (collect ยังโชว์ได้)

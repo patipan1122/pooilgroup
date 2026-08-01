@@ -701,6 +701,9 @@ export type StaffHistoryRow = {
   eventType?: string;
   // #3 CEO 2026-07-19 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own) — server เช็คซ้ำอีกชั้น
   canEditNumbers?: boolean;
+  // CEO 2026-08-01 · ประวัติทั้งสาขา — ชื่อคนเก็บใบนี้ + เป็นใบของฉันไหม (โชว์ "เก็บโดย X" เมื่อไม่ใช่ของฉัน)
+  collectedBy?: string;
+  mine?: boolean;
 };
 
 type Props = {
@@ -2522,7 +2525,7 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
       {!usingDemo && rows.length === 0 ? (
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติการเก็บ"
-            sub="เมื่อคุณเก็บเงิน / เปลี่ยนตุ๊กตาจบตู้ รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
+            sub="เมื่อมีการเก็บเงิน / เปลี่ยนตุ๊กตาในสาขาที่คุณดูแล รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
         </div>
       ) : filteredRows.length === 0 ? (
         // สาขาที่เลือกยังไม่มีประวัติ (แต่สาขาอื่นมี) — บอกชัด + ชี้ไป "ทุกสาขา" กันจอว่างให้งง
@@ -2578,7 +2581,7 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                             <span style={{ fontSize: 10.5, color: "#8A909A" }}>· {tag.label}</span>
                             {stillMissing && <span style={{ fontSize: 9.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: "#FCF1E2", color: "#B45309" }}>รูปยังไม่ครบ</span>}
                           </div>
-                          <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rowNote(h)}{h.branch ? ` · ${h.branch}` : ""}</div>
+                          <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rowNote(h)}{h.branch ? ` · ${h.branch}` : ""}{!h.mine && h.collectedBy ? ` · เก็บโดย ${h.collectedBy}` : ""}</div>
                         </div>
                         <div style={{ textAlign: "right", flex: "0 0 auto" }}>
                           <div className="num" style={{ fontSize: 13.5, fontWeight: 800, color: cashColor }}>{cashPositive ? `฿${h.cashBaht.toLocaleString("en-US")}` : "—"}</div>
@@ -2637,7 +2640,7 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                       <span className="num" style={{ flex: "0 0 auto", padding: "6px 11px", borderRadius: 10, background: "#F1F2F5", fontSize: 14, fontWeight: 800, color: "#3A3F47" }}>{detail.nickname || detail.code}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700 }}>{tag.label}{detail.branch ? ` · ${detail.branch}` : ""}</div>
-                        <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>{dayLabel} · {detail.time}</div>
+                        <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>{dayLabel} · {detail.time}{detail.collectedBy ? ` · เก็บโดย ${detail.collectedBy}${detail.mine ? " (คุณ)" : ""}` : ""}</div>
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, background: accentBg, borderRadius: 10, padding: "9px 12px" }}>
