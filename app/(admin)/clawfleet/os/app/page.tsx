@@ -240,6 +240,21 @@ export default async function StaffAppPage({
       } catch {
         // graceful: query ล้ม → ไม่มีราย SKU เติม (โชว์ยอดรวมได้)
       }
+      // ราคาต่อเกม/ตู้ (active loadout) → คิด "เงินตามมิเตอร์" ต่อตู้ให้ตรง server (validation.ts) · CEO 2026-08-01
+      const CASH_PER_PLAY_CENTS_HIST = 1000; // ฿10/ครั้ง (flat fallback · ตรงกับ actions.ts)
+      const priceByMachine = new Map<string, number>();
+      try {
+        const histMachineIds = [...new Set(events.map((ev) => ev.machineId))];
+        if (histMachineIds.length > 0) {
+          const los = await prisma.cfMachineLoadout.findMany({
+            where: { machineId: { in: histMachineIds }, effectiveTo: null },
+            orderBy: { effectiveFrom: "desc" },
+            select: { machineId: true, pricePerPlayCoins: true },
+          });
+          for (const lo of los) if (!priceByMachine.has(lo.machineId)) priceByMachine.set(lo.machineId, lo.pricePerPlayCoins * 1000);
+        }
+      } catch { /* graceful: ใช้ flat ฿10 ทุกตู้ */ }
+
       const collectRows: StaffHistoryRow[] = events.map((e) => {
         const isBaseline = e.eventType === "INITIAL";
         // รูปหลักฐาน (เฉพาะที่มี url) พร้อม label สำหรับตัวดูรูปในหน้าประวัติ
@@ -253,6 +268,15 @@ export default async function StaffAppPage({
         // ตุ๊กตาออก = ก่อน + เติม − หลัง (prizeCountedOut) — สูตรเดียวกับหน้าเก็บเงิน + หน้าผู้จัดการเป๊ะ
         //   (stockAfter รวมเติมแล้ว → +refillQty หักล้างพอดี) · ไม่ใช้ meter delta เพราะรอบ "ไม่ตรง" จะเลขไม่ตรงกัน 3 ที่.
         const dollsOut = e.stockBefore != null && e.stockAfter != null ? Math.max(0, e.stockBefore + (e.refillQty ?? 0) - e.stockAfter) : undefined;
+        // เงิน/ตุ๊กตา "ตามมิเตอร์" ต่อตู้ — สูตรเดียวกับ validation.ts (มิเตอร์เสีย→ยึดค่าที่นับจริง) · รวมเป็นการ์ดรายวัน
+        const rawCoinDelta = e.coinMeterAfter - e.coinMeterBefore;
+        const coinUntrusted = rawCoinDelta < 0 || (rawCoinDelta === 0 && e.cashCountedCents > 0);
+        const priceCents = priceByMachine.get(e.machineId) ?? CASH_PER_PLAY_CENTS_HIST;
+        const meterExpectedCents = coinUntrusted ? e.cashCountedCents : Math.max(0, rawCoinDelta) * priceCents;
+        const dollUntrusted = e.dollMeterAfter != null && e.dollMeterBefore != null && e.dollMeterAfter < e.dollMeterBefore;
+        const dollMeterOut = e.dollMeterAfter != null && e.dollMeterBefore != null
+          ? (dollUntrusted ? dollsOut : Math.max(0, e.dollMeterAfter - e.dollMeterBefore))
+          : undefined;
         // #1 CEO 2026-07-19 · "ตรง/ไม่ตรง" = เทียบ "เงินที่ควรได้ (จากมิเตอร์)" กับ "เงินที่นับได้" จริง
         //   ใช้เลข reconcile ที่ server คิดตอนปิดรอบ (session.expected/actualCashCents) — ไม่ re-derive
         //   ตรง = |นับได้ − ควรได้| ≤ ฿20 (CASH_VARIANCE_ACCEPTABLE_CENTS) · ขาด/เกิน = นับได้ − ควรได้
@@ -275,6 +299,9 @@ export default async function StaffAppPage({
           meterDollTop: e.meterDollTop ?? undefined, meterDollBottom: e.meterDollBottom ?? undefined,
           refillQty: e.refillQty ?? undefined,
           stockBefore: e.stockBefore ?? undefined, stockAfter: e.stockAfter ?? undefined, dollsOut,
+          // CEO 2026-08-01 · เงิน/ตุ๊กตา "ตามมิเตอร์" ต่อตู้ (baseline ไม่คิด) — ใช้รวมเป็นการ์ดรายวัน
+          meterExpectedBaht: isBaseline ? undefined : Math.round(meterExpectedCents / 100),
+          dollMeterOut: isBaseline ? undefined : dollMeterOut,
           // เหตุผลเงินขาด (shortReason) + หมายเหตุพนักงาน (notes ที่ล้าง marker แล้ว) — ดู cleanNote()
           shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
           // #1 · ok = เงินตรงมิเตอร์จริง (ไม่ใช่แค่ไม่มีธง) เมื่อมี reconcile · ไม่มี → fallback ธง anomaly เดิม
@@ -347,6 +374,19 @@ export default async function StaffAppPage({
     }
   }
 
+  // จำนวนตู้คีบ active ต่อสาขา (สำหรับ "เก็บ X/Y ตู้" ในการ์ดรายวันของประวัติ) · CEO 2026-08-01
+  const branchMachineCounts: Record<string, number> = {};
+  if (orgId) {
+    try {
+      const cnts = await prisma.cfMachine.groupBy({
+        by: ["branchId"],
+        where: { orgId, kind: "CLAW", isActive: true, ...(historyBranchScope === "ALL" ? {} : { branchId: { in: historyBranchScope } }) },
+        _count: { _all: true },
+      });
+      for (const c of cnts) if (c.branchId) branchMachineCounts[c.branchId] = c._count._all;
+    } catch { /* graceful: ไม่มี X/Y ก็ยังโชว์ประวัติได้ */ }
+  }
+
   // นโยบายถ่ายรูป (photoRequired) — อ่าน server-side ส่งให้แอปพนักงานบังคับถ่ายรูป.
   // graceful: ถ้าอ่านไม่ได้ (ยังไม่ login / DB ว่าง) → ใช้ default false (ถ่ายได้-ข้ามได้).
   let photoRequired = false;
@@ -392,6 +432,7 @@ export default async function StaffAppPage({
       closedTodayCount={closedTodayCount}
       todayYmd={todayYmd}
       history={history}
+      branchMachineCounts={branchMachineCounts}
       selectedDate={selectedDate}
       myRecentTickets={myRecentTickets}
       assignedOnly={hasAssignment}

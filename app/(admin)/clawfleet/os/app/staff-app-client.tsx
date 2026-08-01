@@ -704,6 +704,9 @@ export type StaffHistoryRow = {
   // CEO 2026-08-01 · ประวัติทั้งสาขา — ชื่อคนเก็บใบนี้ + เป็นใบของฉันไหม (โชว์ "เก็บโดย X" เมื่อไม่ใช่ของฉัน)
   collectedBy?: string;
   mine?: boolean;
+  // CEO 2026-08-01 · การ์ดรายวัน reconciliation — เงิน/ตุ๊กตา "ตามมิเตอร์" ต่อตู้ (baseline = undefined)
+  meterExpectedBaht?: number;
+  dollMeterOut?: number;
 };
 
 type Props = {
@@ -720,6 +723,8 @@ type Props = {
   todayYmd?: string;
   // ประวัติรอบที่ปิดจริง "ของวันที่เลือก" (ของฉัน) → panel "ประวัติของฉัน"
   history: StaffHistoryRow[];
+  // CEO 2026-08-01 · จำนวนตู้คีบ active ต่อสาขา (Y ใน "เก็บ X/Y ตู้" การ์ดรายวัน)
+  branchMachineCounts?: Record<string, number>;
   // B3 · วันที่ที่กำลังดูประวัติ (YYYY-MM-DD ตามเวลาไทย · default = วันนี้). ขับ date picker ในประวัติ.
   // optional default (วันนี้ client-side) กัน caller เดิมที่ยังไม่ส่ง.
   selectedDate?: string;
@@ -2226,7 +2231,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -2267,6 +2272,7 @@ function PanelScreen(props: {
   todayYmd: string;
   onExitTour: () => void;
   skus: CollectSku[]; history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string;
+  branchMachineCounts?: Record<string, number>;
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
   branchId: string; branchCode: string; branchName?: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
@@ -2293,7 +2299,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
+        {panel === "history" && <HistoryPanel history={props.history} branchMachineCounts={props.branchMachineCounts} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2422,7 +2428,7 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
+function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
@@ -2455,6 +2461,9 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
   const [zoom, setZoom] = useState<{ url: string; label: string } | null>(null);
   // #3 CEO 2026-07-19 · แก้เลขในใบเดิม (เฉพาะรอบล่าสุด+own+วันนี้)
   const [editRow, setEditRow] = useState<StaffHistoryRow | null>(null);
+  // CEO 2026-08-01 · การ์ดรายวันพับ/กางได้ — วันนี้กางไว้ก่อน · วันอื่นพับ (กดหัวการ์ดเพื่อกาง)
+  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set([todayYmd]));
+  const toggleDay = (d: string) => setOpenDays((prev) => { const n = new Set(prev); if (n.has(d)) n.delete(d); else n.add(d); return n; });
   const router = useRouter();
   // CEO 2026-07-19 · "ดูใบ" จากหน้าหลัก → เปิด detail ใบนั้นทันทีเมื่อ mount/เปลี่ยน focus (แล้ว clear ที่ parent)
   useEffect(() => {
@@ -2539,31 +2548,68 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
           {/* mockup · ประวัติ = วันซ้อนกันเป็น section (หัววัน + เส้นคั่น + ยอดวัน · ชิปสรุป · แถวกดได้)
               45 วันโหลดมาแล้ว → เลื่อนดูทุกวันได้เลย (ไม่ต้องมีแท็บ/ปฏิทิน) */}
           {groups.map((g) => {
-            // ยอดต่อวัน — สูตรเดียวกับ authoritative (collect เท่านั้นเข้าเงิน · swap นับแยก) · ไม่ derive เงินใหม่
-            const dayCash = g.items.reduce((a, h) => a + (kindOf(h) === "collect" ? (h.cashBaht || 0) : 0), 0);
-            const nCollect = g.items.filter((h) => kindOf(h) === "collect").length;
+            // ── สรุปวัน (reconciliation) — collect เท่านั้นเข้าเงิน/ตุ๊กตา · เลขจาก server (ไม่ derive เงินใหม่) ──
+            const collectItems = g.items.filter((h) => kindOf(h) === "collect");
+            const nCollect = collectItems.length;
             const nSwap = g.items.filter((h) => kindOf(h) === "swap").length;
+            const dayCash = collectItems.reduce((a, h) => a + (h.cashBaht || 0), 0);            // ตามระบบ (นับได้)
+            const dayMeter = collectItems.reduce((a, h) => a + (h.meterExpectedBaht ?? 0), 0);   // ตามมิเตอร์ (ควรได้)
+            const hasMeter = collectItems.some((h) => h.meterExpectedBaht != null);
+            const cashDiff = dayCash - dayMeter;                                                 // + เกิน · − ขาด
+            const dayDollSystem = collectItems.reduce((a, h) => a + (h.dollsOut ?? 0), 0);        // นับจริง
+            const dayDollMeter = collectItems.reduce((a, h) => a + (h.dollMeterOut ?? 0), 0);     // ตามมิเตอร์
+            const dollDiff = dayDollSystem - dayDollMeter;
+            // เก็บ X ตู้ / Y ตู้ทั้งสาขา — X = ตู้ที่เก็บวันนั้น (distinct) · Y = ตู้ active ของสาขาที่เกี่ยวข้อง
+            const machinesCollected = new Set(collectItems.map((h) => h.code)).size;
+            const dayBranchIds = [...new Set(g.items.map((h) => h.branchId).filter(Boolean))] as string[];
+            const dayTotalMachines = effectiveFilter
+              ? (branchMachineCounts?.[effectiveFilter] ?? 0)
+              : dayBranchIds.reduce((s, bid) => s + (branchMachineCounts?.[bid] ?? 0), 0);
+            const collectors = [...new Set(g.items.map((h) => (h.mine ? "ฉัน" : h.collectedBy)).filter(Boolean))] as string[];
+            const collectorLabel = collectors.length === 0 ? "" : collectors.slice(0, 3).join(", ") + (collectors.length > 3 ? ` +${collectors.length - 3}` : "");
+            const diffOk = !hasMeter || (Math.abs(cashDiff) <= 20 && dollDiff === 0);
+            const expanded = openDays.has(g.date);
             return (
-              <div key={g.date}>
-                {/* หัววัน — ป้ายวัน + เส้นคั่นบาง + ยอดเงินรวมของวัน (เขียว · ชิดขวา) = ค่าเดียวกับ mockup */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{g.label}</span>
-                  <span style={{ flex: 1, height: 1, background: "#EEF0F2" }} />
-                  <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#15803D" }}>฿{dayCash.toLocaleString("en-US")}</span>
-                </div>
-                {/* สรุปวัน — 2 ชิปนับ (เก็บเงิน / เปลี่ยน-เติม) · ชิป "ยังไม่เก็บ" ของ mockup ตัดออก (ไม่มีแหล่งข้อมูลในแถวจริง) */}
-                <div style={{ display: "flex", gap: 7, marginBottom: 10 }}>
-                  <div style={{ flex: 1, background: "#F2FBF5", borderRadius: 10, padding: 8, textAlign: "center" }}>
-                    <div className="num" style={{ fontSize: 16, fontWeight: 800, color: "#15803D" }}>{nCollect}</div>
-                    <div style={{ fontSize: 9.5, color: "#6B7280" }}>เก็บเงิน</div>
+              <div key={g.date} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+                {/* หัวการ์ดวัน — กดพับ/กาง · X/Y ตู้ + เงินวัน + ใครเก็บ + ป้ายตรง/ไม่ตรง */}
+                <button type="button" onClick={() => toggleDay(g.date)} className="co-tap"
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "12px 14px", cursor: "pointer" }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA1AB" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 15px", transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}><path d="m9 18 6-6-6-6" /></svg>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 800 }}>{g.label}</span>
+                      {nCollect > 0 && <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#3A3F47", background: "#F1F2F5", borderRadius: 20, padding: "2px 9px" }}>เก็บ {machinesCollected}{dayTotalMachines > 0 ? `/${dayTotalMachines}` : ""} ตู้</span>}
+                      {nSwap > 0 && <span className="num" style={{ fontSize: 11, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 20, padding: "2px 9px" }}>เปลี่ยน/เติม {nSwap}</span>}
+                    </div>
+                    {collectorLabel && <div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>เก็บโดย {collectorLabel}</div>}
                   </div>
-                  <div style={{ flex: 1, background: "#EEF0FE", borderRadius: 10, padding: 8, textAlign: "center" }}>
-                    <div className="num" style={{ fontSize: 16, fontWeight: 800, color: "#4F46E5" }}>{nSwap}</div>
-                    <div style={{ fontSize: 9.5, color: "#6B7280" }}>เปลี่ยน/เติม</div>
+                  <div style={{ textAlign: "right", flex: "0 0 auto" }}>
+                    <div className="num" style={{ fontSize: 14, fontWeight: 800, color: "#15803D" }}>฿{dayCash.toLocaleString("en-US")}</div>
+                    {hasMeter && <div style={{ fontSize: 9.5, fontWeight: 700, color: diffOk ? "#15803D" : "#C0392B", marginTop: 2 }}>{diffOk ? "ตรงมิเตอร์" : "ไม่ตรง"}</div>}
                   </div>
-                </div>
-                {/* แถวรอบของวันนี้ — กดได้ → detail → แก้เลข (chevron คงไว้) */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                </button>
+
+                {expanded && (
+                  <div style={{ padding: "0 14px 14px" }}>
+                    {/* สรุป reconciliation ของวัน — เงิน + ตุ๊กตา (ตามระบบ / ตามมิเตอร์ / ส่วนต่าง) */}
+                    {nCollect > 0 && (
+                      <div style={{ display: "flex", gap: 8, marginBottom: 11, flexWrap: "wrap" }}>
+                        <div style={{ flex: "1 1 46%", minWidth: 150, background: "#F7F8FA", borderRadius: 11, padding: "9px 12px" }}>
+                          <div style={{ fontSize: 10, color: "#6B7280", marginBottom: 5, fontWeight: 700 }}>💰 เงิน</div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}><span style={{ color: "#8A909A" }}>ตามระบบ (นับได้)</span><b className="num" style={{ color: "#1A1D21" }}>฿{dayCash.toLocaleString("en-US")}</b></div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 3 }}><span style={{ color: "#8A909A" }}>ตามมิเตอร์ (ควรได้)</span><b className="num" style={{ color: "#1A1D21" }}>{hasMeter ? `฿${dayMeter.toLocaleString("en-US")}` : "—"}</b></div>
+                          {hasMeter && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, paddingTop: 4, borderTop: "1px solid #ECEEF1" }}><span style={{ color: "#8A909A" }}>ส่วนต่าง</span><b className="num" style={{ color: Math.abs(cashDiff) <= 20 ? "#15803D" : "#C0392B" }}>{cashDiff === 0 ? "ตรง" : cashDiff > 0 ? `เกิน ฿${cashDiff.toLocaleString("en-US")}` : `ขาด ฿${Math.abs(cashDiff).toLocaleString("en-US")}`}</b></div>}
+                        </div>
+                        <div style={{ flex: "1 1 46%", minWidth: 150, background: "#F7F8FA", borderRadius: 11, padding: "9px 12px" }}>
+                          <div style={{ fontSize: 10, color: "#6B7280", marginBottom: 5, fontWeight: 700 }}>🧸 ตุ๊กตาออก</div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}><span style={{ color: "#8A909A" }}>ตามระบบ (นับจริง)</span><b className="num" style={{ color: "#1A1D21" }}>{dayDollSystem} ตัว</b></div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 3 }}><span style={{ color: "#8A909A" }}>ตามมิเตอร์</span><b className="num" style={{ color: "#1A1D21" }}>{dayDollMeter} ตัว</b></div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4, paddingTop: 4, borderTop: "1px solid #ECEEF1" }}><span style={{ color: "#8A909A" }}>ส่วนต่าง</span><b className="num" style={{ color: dollDiff === 0 ? "#15803D" : "#C0392B" }}>{dollDiff === 0 ? "ตรง" : dollDiff > 0 ? `+${dollDiff}` : String(dollDiff)}</b></div>
+                        </div>
+                      </div>
+                    )}
+                    {/* แถวรอบ — กดได้ → detail → แก้เลข (chevron คงไว้) */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {g.items.map((h, i) => {
                     const sq = statusSquare(h);
                     const tag = historyKindTag(h);
@@ -2591,7 +2637,9 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
                       </button>
                     );
                   })}
-                </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
