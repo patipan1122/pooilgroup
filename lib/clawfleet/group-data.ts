@@ -25,6 +25,10 @@ export type GroupMachine = {
   //   ล่าสุดที่กรอกเฟือง+ดิจิตอลครบ (รวม INITIAL/baseline = เลขจริงที่พนักงานกรอกตอนตั้งตู้). null = ยังเทียบไม่ได้.
   coinMeterOffset: number | null;
   dollMeterOffset: number | null;
+  // CEO 2026-08-01 · เลขจริงต่อหน้าปัดจาก "รอบเก็บล่าสุด" (COLLECTION) — โชว์เป็น placeholder อ้างอิงในช่องกรอก
+  //   (เลขที่พนักงานกรอกจริงรอบก่อน · ครบ 4 ตัว). ตู้ที่ยังไม่เคยเก็บ (มีแต่ baseline) = null → ช่องว่าง (CEO เคาะ).
+  prevCoinGear: number | null; prevCoinDigi: number | null;
+  prevDollGear: number | null; prevDollDigi: number | null;
   qrToken: string;
   // ราคาขายตุ๊กตาต่อตู้ (สตางค์ · ตั้งในหน้าตั้งค่าตู้) — โชว์ "ขาย ฿" ในหน้าเปลี่ยนตุ๊กตา (mockup)
   sellPriceCents: number | null;
@@ -77,7 +81,8 @@ function toMachine(m: {
   sellPriceCents: number | null;
   loadouts: { pricePerPlayCoins: number }[];
   lastEventAt: Date | null;
-}, lastRefillAt: Date | null, offset: { coin: number | null; doll: number | null } | null): GroupMachine {
+}, lastRefillAt: Date | null, offset: { coin: number | null; doll: number | null } | null,
+   prevRead: { cGear: number | null; cDigi: number | null; dGear: number | null; dDigi: number | null } | null): GroupMachine {
   return {
     id: m.id,
     code: m.code,
@@ -88,6 +93,8 @@ function toMachine(m: {
     lastDollStock: m.lastDollStock,
     coinMeterOffset: offset?.coin ?? null,
     dollMeterOffset: offset?.doll ?? null,
+    prevCoinGear: prevRead?.cGear ?? null, prevCoinDigi: prevRead?.cDigi ?? null,
+    prevDollGear: prevRead?.dGear ?? null, prevDollDigi: prevRead?.dDigi ?? null,
     qrToken: m.qrToken,
     sellPriceCents: m.sellPriceCents,
     // active loadout = effectiveTo:null (เหมือน actions.ts) · ไม่มี → default 1 เหรียญ (฿10)
@@ -209,6 +216,27 @@ export async function getGroupCollectData(): Promise<{
     // graceful: query ล้ม → ไม่มี offset (ข้าม cross-check · ไม่เตือนหลอก · ไม่พัง)
   }
 
+  // CEO 2026-08-01 · เลขจริง 4 ตัว (เฟือง/ดิจิตอล × เหรียญ/ตุ๊กตา) จาก "รอบเก็บล่าสุด" (COLLECTION เท่านั้น) —
+  //   โชว์เป็น placeholder อ้างอิงในช่องกรอก · แต่ละหน้าปัดเลขจริงของตัวเอง (เดิม mirror จำเลขเดียวโชว์ซ้ำ 2 ช่อง).
+  //   ไม่รวม baseline (INITIAL) → ตู้ที่ยังไม่เคยเก็บ = ไม่มี → ช่องว่าง (CEO เคาะ 2026-08-01).
+  const prevReadByMachine = new Map<string, { cGear: number | null; cDigi: number | null; dGear: number | null; dDigi: number | null }>();
+  try {
+    const machineIds = machines.map((m) => m.id);
+    if (machineIds.length > 0) {
+      const rows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds }, eventType: "COLLECTION" },
+        orderBy: { collectedAt: "desc" },
+        distinct: ["machineId"],
+        select: { machineId: true, meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true },
+      });
+      for (const r of rows) {
+        prevReadByMachine.set(r.machineId, { cGear: r.meterMoneyTop, cDigi: r.meterMoneyBottom, dGear: r.meterDollTop, dDigi: r.meterDollBottom });
+      }
+    }
+  } catch {
+    // graceful: query ล้ม → ไม่มีเลขอ้างอิง (ช่องว่าง · ไม่พัง)
+  }
+
   // index machines by group + the exchanger lookup
   const machinesByGroup = new Map<string, GroupMachine[]>();
   // ตู้คีบที่ยังไม่ถูกจัดเข้ากลุ่ม (เช่น import เข้ามาใหม่ · groupId ว่าง) → รวมเป็นกลุ่ม
@@ -220,11 +248,11 @@ export async function getGroupCollectData(): Promise<{
     machineById.set(m.id, m);
     if (m.groupId) {
       const list = machinesByGroup.get(m.groupId) ?? [];
-      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, offsetByMachine.get(m.id) ?? null));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, offsetByMachine.get(m.id) ?? null, prevReadByMachine.get(m.id) ?? null));
       machinesByGroup.set(m.groupId, list);
     } else if (m.kind === "CLAW") {
       const list = ungroupedClawByBranch.get(m.branchId) ?? [];
-      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, offsetByMachine.get(m.id) ?? null));
+      list.push(toMachine(m, lastRefillByMachine.get(m.id) ?? null, offsetByMachine.get(m.id) ?? null, prevReadByMachine.get(m.id) ?? null));
       ungroupedClawByBranch.set(m.branchId, list);
     }
   }

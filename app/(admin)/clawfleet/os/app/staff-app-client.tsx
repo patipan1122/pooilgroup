@@ -155,6 +155,9 @@ type AppMachine = {
   // CEO 2026-08-01 · "ส่วนต่างคงที่" (เฟือง−ดิจิตอล) จาก baseline/รอบก่อน · เช็ค 2 มิเตอร์ขยับเท่ากัน · null = ยังเทียบไม่ได้
   coinMeterOffset?: number | null;
   dollMeterOffset?: number | null;
+  // CEO 2026-08-01 · เลขจริงต่อหน้าปัดจากรอบเก็บล่าสุด (COLLECTION) · โชว์ placeholder อ้างอิงในช่อง · null = ยังไม่เคยเก็บ → ว่าง
+  prevCoinGear?: number | null; prevCoinDigi?: number | null;
+  prevDollGear?: number | null; prevDollDigi?: number | null;
   product: string;
   // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP ⚪) → route ไปฟอร์มตั้งค่าครั้งแรกแทน wizard 6 ขั้น
   awaitingSetup: boolean;
@@ -209,6 +212,8 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           lastCoinMeter: m.lastCoinMeter,
           coinMeterOffset: m.coinMeterOffset,
           dollMeterOffset: m.dollMeterOffset,
+          prevCoinGear: m.prevCoinGear, prevCoinDigi: m.prevCoinDigi,
+          prevDollGear: m.prevDollGear, prevDollDigi: m.prevDollDigi,
           lastCollectedAt: m.lastCollectedAt,
           lastRefillAt: m.lastRefillAt,
           product: "",
@@ -346,10 +351,14 @@ type Form = {
   // meters
   dollPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
   dollMeterOffset: number | null; // ส่วนต่างคงที่ (เฟือง−ดิจิตอล) baseline · เช็คขยับเท่ากัน · null = ยังเทียบไม่ได้
+  prevDollGear: number | null; // เลขเฟืองตุ๊กตาจริงรอบเก็บล่าสุด (placeholder อ้างอิง · null = ยังไม่เคยเก็บ)
+  prevDollDigi: number | null; // เลขดิจิตอลตุ๊กตาจริงรอบเก็บล่าสุด
   dollGear: Counted; // อ่านมิเตอร์เอง
   dollDigi: Counted;
   coinPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
   coinMeterOffset: number | null; // ส่วนต่างคงที่ (เฟือง−ดิจิตอล) baseline · เช็คขยับเท่ากัน
+  prevCoinGear: number | null; // เลขเฟืองเหรียญจริงรอบเก็บล่าสุด (placeholder อ้างอิง)
+  prevCoinDigi: number | null; // เลขดิจิตอลเหรียญจริงรอบเก็บล่าสุด
   coinGear: Counted;
   coinDigi: Counted;
   cash: Counted; // นับเงินจริง
@@ -460,10 +469,14 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     dollPrev: m.lastDollMeter,
     // demo: เฟืองอยู่คนละฐาน (ห่างดิจิตอล = offset คงที่) → โชว์เลข "ไม่เท่ากัน" เหมือนของจริง แต่ "ขยับเท่ากัน" (เขียว)
     dollMeterOffset: demo ? 1349 : (m.dollMeterOffset ?? null),
+    prevDollGear: demo ? null : (m.prevDollGear ?? null),
+    prevDollDigi: demo ? null : (m.prevDollDigi ?? null),
     dollDigi: demo ? m.lastDollMeter + 5 : null,
     dollGear: demo ? m.lastDollMeter + 5 + 1349 : null,
     coinPrev: m.lastCoinMeter,
     coinMeterOffset: demo ? 873 : (m.coinMeterOffset ?? null),
+    prevCoinGear: demo ? null : (m.prevCoinGear ?? null),
+    prevCoinDigi: demo ? null : (m.prevCoinDigi ?? null),
     coinDigi: demo ? m.lastCoinMeter + 30 : null,
     coinGear: demo ? m.lastCoinMeter + 30 + 873 : null,
     cash: demo ? 300 : null,
@@ -5177,7 +5190,14 @@ function FlowScreen(props: {
   else { coinHint = `✓ มิเตอร์ควรได้ ฿${recon.expectedCash}`; coinHintColor = "#15803D"; }
   // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
   const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
-    const prev = key === "coinGear" || key === "coinDigi" ? f.coinPrev : f.dollPrev;
+    // CEO 2026-08-01 · placeholder "รอบก่อน" = เลขจริง "ของหน้าปัดตัวเอง" จากรอบเก็บล่าสุด (พนักงานกรอกจริงครบ 4 ตัว).
+    //   เดิม mirror จำเลขเดียวโชว์ซ้ำทั้ง 2 ช่อง (บน=ล่าง หลอก). ตอนนี้แต่ละช่องอ่านเลขจริงของตัวเอง.
+    //   null = ตู้ยังไม่เคยเก็บ → ช่องว่าง (CEO เคาะ). ยัง placeholder เท่านั้น (ไม่ prefill ค่า · กันโกง พนักงานอ่านสด).
+    const prev =
+      key === "coinGear" ? f.prevCoinGear
+        : key === "coinDigi" ? f.prevCoinDigi
+          : key === "dollGear" ? f.prevDollGear
+            : f.prevDollDigi;
     return (
       <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 9, padding: "5px 8px" }}>
         <div style={{ fontSize: 9.5, color: "#9AA1AB", marginBottom: 2 }}>{label}</div>
