@@ -157,7 +157,8 @@ export async function getMatrixData(
     WHERE e.org_id = ${orgId}::uuid
       AND e.machine_id IN (${prismaInUuid(machineIds)})
       AND e.event_type IN ('COLLECTION', 'INITIAL')
-      AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW')
+      -- + OPEN (กำลังเก็บ) — เงินที่เก็บแล้วเข้ารายงานเจาะสาขาทันที · per-event ไม่ขยับของเก่า (CEO 2026-08-01)
+      AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW', 'OPEN')
       AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
     GROUP BY e.machine_id, iso_day
   `;

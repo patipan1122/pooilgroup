@@ -67,6 +67,11 @@ export type CollectionRow = {
   /** รอบตั้งต้น (baseline) — ตั้งมิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
    *  แยกป้าย "รอบตั้งต้น" ไม่ปนกับ "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ดูเหมือนเงินเกินทั้งที่ปกติ) */
   isBaseline?: boolean;
+  /** รอบ "กำลังเก็บ" (OPEN · ยังเก็บไม่ครบทุกตู้) — โชว์สดแต่ยังไม่กระทบยอด */
+  isOpen?: boolean;
+  /** เก็บแล้วกี่ตู้ / ทั้งสาขากี่ตู้ — โชว์ "X/Y" บนรอบ OPEN */
+  collectedCount?: number;
+  machineTotal?: number;
   /** มิเตอร์เหรียญรวมทั้งรอบจาก event จริง — มี = โชว์ delta×10 จริง · undefined/null = ประมาณจากยอด */
   coinMeterBefore?: number | null;
   coinMeterAfter?: number | null;
@@ -75,12 +80,28 @@ export type CollectionRow = {
   sample: boolean;
 };
 
+/** สรุปรายวันต่อสาขา (จาก server · null = ช่วงหลายวัน ไม่โชว์การ์ด) */
+export type DaySummaryRow = {
+  branchId: string;
+  totalMachines: number;
+  collected: number;
+  notCollected: number;
+  baseline: number;
+  refill: number;
+  cashBaht: number;
+};
+
 type ReviewState = "pending" | "reviewed" | "rechecked" | "escalated";
-type StatusKind = "match" | "diff" | "broken" | "baseline";
+type StatusKind = "match" | "diff" | "broken" | "baseline" | "open";
 
 /** รอบตั้งต้นไหม — เชื่อ flag จาก server ก่อน · เผื่อไว้เช็ครหัส BASE- (belt-and-suspenders) */
 function isBaselineRow(r: CollectionRow): boolean {
   return r.isBaseline === true || r.code.startsWith("BASE-");
+}
+
+/** รอบ "กำลังเก็บ" — OPEN · ยังเก็บไม่ครบทุกตู้ · ยังไม่กระทบยอด (ไม่นับเป็นตรง/ไม่ตรง) */
+function isInProgress(r: CollectionRow): boolean {
+  return r.isOpen === true;
 }
 
 /* ───────── sample fallback (จาก design) ───────── */
@@ -100,6 +121,8 @@ const SAMPLE_BRANCHES: BranchOption[] = [
 const CASH_TOLERANCE = 50;
 
 function statusOf(r: CollectionRow): StatusKind {
+  // รอบกำลังเก็บ (OPEN) มาก่อน — ยังเก็บไม่จบ ยังไม่กระทบยอด ห้ามตัดสินว่าตรง/ไม่ตรง
+  if (isInProgress(r)) return "open";
   // รอบตั้งต้นมาก่อนทุกเงื่อนไข — ไม่มีมิเตอร์เก่าให้เทียบ ห้ามตัดสินว่า "เกิน/ไม่ตรง"
   if (isBaselineRow(r)) return "baseline";
   if (r.expectedCash === 0 && r.actualCash === 0 && r.gap === 0) return "broken";
@@ -133,10 +156,13 @@ const STATUS_META: Record<StatusKind, { label: string; bg: string; color: string
   broken: { label: "ตู้เสีย/ไม่ขยับ", bg: "#EFF1F4", color: "#5A6270" },
   // รอบตั้งต้น = indigo จาง (ข้อมูล ไม่ใช่ error) — อ่านออกทันทีว่า "ปกติ ไม่ต้องตกใจ"
   baseline: { label: "รอบตั้งต้น", bg: "#EEF0FE", color: "#4F46E5" },
+  // กำลังเก็บ = ฟ้า (สด · ยังไม่ปิด) — เงินขึ้นแล้วแต่ยังไม่กระทบยอด
+  open: { label: "กำลังเก็บ", bg: "#E5F2FD", color: "#0B69C7" },
 };
 
 const TABS: { id: "all" | StatusKind; label: string }[] = [
   { id: "all", label: "ทั้งหมด" },
+  { id: "open", label: "กำลังเก็บ" },
   { id: "match", label: "ตรงกัน" },
   { id: "diff", label: "ไม่ตรง" },
   { id: "broken", label: "ตู้เสีย" },
@@ -154,6 +180,7 @@ export function CollectionsClient({
   fromISO = "",
   toISO = "",
   canEdit = false,
+  daySummaries = null,
 }: {
   rows: CollectionRow[];
   branchOptions: BranchOption[];
@@ -169,6 +196,8 @@ export function CollectionsClient({
   // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — เติมค่า <input type=date> + คง state ใน link
   fromISO?: string;
   toISO?: string;
+  // สรุปรายวันต่อสาขา (single-day เท่านั้น · null = ไม่โชว์การ์ด)
+  daySummaries?: DaySummaryRow[] | null;
 }) {
   // rows = เฉพาะรอบที่ระบบ flag ผิดปกติ (ANOMALY_REVIEW).
   //   - rows ว่าง + ไม่เคยเก็บเลย  → "ว่างจริง" → โชว์ตัวอย่างเพื่อให้เห็นภาพการตรวจ
@@ -258,12 +287,33 @@ export function CollectionsClient({
     });
   }, [data, branch, tab]);
 
+  // สรุปรายวัน (single-day) สำหรับสาขาที่เลือก — "all" = รวมทุกสาขา
+  const daySummary = useMemo(() => {
+    if (!daySummaries || daySummaries.length === 0) return null;
+    const list = branch === "all" ? daySummaries : daySummaries.filter((d) => d.branchId === branch);
+    return list.reduce(
+      (acc, d) => ({
+        totalMachines: acc.totalMachines + d.totalMachines,
+        collected: acc.collected + d.collected,
+        notCollected: acc.notCollected + d.notCollected,
+        baseline: acc.baseline + d.baseline,
+        refill: acc.refill + d.refill,
+        cashBaht: acc.cashBaht + d.cashBaht,
+      }),
+      { totalMachines: 0, collected: 0, notCollected: 0, baseline: 0, refill: 0, cashBaht: 0 },
+    );
+  }, [daySummaries, branch]);
+
   /* summary strip — นับจาก data (หน้าปัจจุบัน หรือ sample) · total ทั้งช่วงใช้ prop `total`
      แยก "เงิน" กับ "ตุ๊กตา" คนละการ์ด (CEO: อยากเห็นเช็คตุ๊กตาชัด ๆ) · baseline ไม่นับเป็นปัญหา */
   const pageTotal = data.length;
   const matchN = data.filter((r) => statusOf(r) === "match").length;
   const baselineN = data.filter((r) => statusOf(r) === "baseline").length;
   const brokenN = data.filter((r) => statusOf(r) === "broken").length;
+  // รอบกำลังเก็บ (OPEN) ในหน้านี้ + เงินที่เก็บแล้วรวม — โชว์เป็นชิปฟ้า "เงินขึ้นแล้ว ยังไม่ปิด"
+  const openRows = data.filter((r) => statusOf(r) === "open");
+  const openN = openRows.length;
+  const openCashSum = openRows.reduce((s, r) => s + r.actualCash, 0);
   // สัดส่วน "ตรงกัน" ในหน้านี้ — ใช้เป็นแถบ progress บนการ์ดหลัก (mockup hero) · display จากตัวนับจริงเท่านั้น
   const reconciledPct = pageTotal > 0 ? Math.round((matchN / pageTotal) * 100) : 0;
   const totalShown = isReal ? total : pageTotal;
@@ -322,7 +372,7 @@ export function CollectionsClient({
         { key: "severity", label: "ระดับ" },
       ];
       const STATUS_TH: Record<StatusKind, string> = {
-        match: "ตรงกัน", diff: "ไม่ตรง", broken: "ตู้เสีย/ไม่ขยับ", baseline: "รอบตั้งต้น",
+        match: "ตรงกัน", diff: "ไม่ตรง", broken: "ตู้เสีย/ไม่ขยับ", baseline: "รอบตั้งต้น", open: "กำลังเก็บ",
       };
       const csvRows = filtered.map((r) => ({
         code: r.code,
@@ -356,7 +406,7 @@ export function CollectionsClient({
     <div>
       {/* บอกให้ชัดว่านี่คือ "รอบเก็บทั้งหมด" ในช่วงที่เลือก ไม่ใช่แค่รอบผิดปกติ */}
       <p style={{ fontSize: 12.5, color: "#6B7280", marginBottom: 14, lineHeight: 1.5 }}>
-        รอบเก็บเงิน<b style={{ color: "#1A1D21" }}>ทั้งหมด</b>ที่ปิดแล้ว
+        รอบเก็บเงิน<b style={{ color: "#1A1D21" }}>ทั้งหมด</b> (ปิดแล้ว + กำลังเก็บ)
         {isReal && fromISO && toISO ? <> ในช่วง <b style={{ color: "#1A1D21" }}>{thaiDate(fromISO)}–{thaiDate(toISO)}</b></> : " ในช่วง 30 วันล่าสุด"}
         {" "}— กระทบยอดมิเตอร์ ↔ เงินสด ↔ ตุ๊กตา
         ทุกรอบ (ไม่ใช่แค่รอบที่ระบบเตือน). ใช้แท็บ<b> ไม่ตรง</b> เพื่อดูเฉพาะรอบที่ต้องสอบ
@@ -476,6 +526,11 @@ export function CollectionsClient({
         </button>
       </div>
 
+      {/* สรุปรายวัน (CEO 2026-08-01) — เฉพาะช่วงวันเดียว · เก็บ/ยังไม่เก็บ/ตั้งค่าใหม่/เติมตุ๊กตา/เงินวันนี้ */}
+      {daySummary && (
+        <DaySummaryCard dateLabel={thaiDate(fromISO)} branchAll={branch === "all"} s={daySummary} />
+      )}
+
       {/* summary strip
           "รอบเก็บทั้งหมด" = total จริงทั้งช่วง (จาก server · ทุกหน้ารวมกัน).
           ตรงกัน/ไม่ตรง/ตู้เสีย = นับจาก "หน้านี้" เท่านั้น (client มีแค่หน้าที่โหลด) → ติดป้ายให้ชัด. */}
@@ -512,8 +567,13 @@ export function CollectionsClient({
       </div>
 
       {/* บรรทัดรอง — รอบตั้งต้น + ตู้เสีย (บริบท ไม่ใช่ปัญหา) โชว์เป็นชิปจาง ไม่ให้แย่งสายตาการ์ดหลัก */}
-      {(baselineN > 0 || brokenN > 0) && (
+      {(openN > 0 || baselineN > 0 || brokenN > 0) && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {openN > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#0B69C7", background: "#E5F2FD", border: "1px solid #C9E4FA", borderRadius: 20, padding: "5px 13px" }}>
+              <Coins size={13} /> กำลังเก็บ {openN} รอบ · เก็บแล้ว {bahtN(openCashSum)} · ยังไม่ปิด
+            </span>
+          )}
           {baselineN > 0 && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "1px solid #DEE0FB", borderRadius: 20, padding: "5px 13px" }}>
               <ShieldCheck size={13} /> รอบตั้งต้น {baselineN} รอบ · ปกติ ไม่ต้องสอบ
@@ -672,6 +732,42 @@ function HeroCard({
   );
 }
 
+/* ───────── day summary (CEO 2026-08-01 · "วันนี้สาขานี้ทำอะไรบ้าง") ───────── */
+function DaySummaryCard({
+  dateLabel, branchAll, s,
+}: {
+  dateLabel: string;
+  branchAll: boolean;
+  s: { totalMachines: number; collected: number; notCollected: number; baseline: number; refill: number; cashBaht: number };
+}) {
+  const pill = (label: string, value: string | number, color: string, bg: string) => (
+    <div style={{ background: bg, borderRadius: 10, padding: "8px 13px", minWidth: 78 }}>
+      <div style={{ fontSize: 10.5, color: "#6B7280" }}>{label}</div>
+      <div className="num" style={{ fontSize: 17, fontWeight: 700, color }}>{value}</div>
+    </div>
+  );
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "13px 16px", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <Calendar size={14} color="#4F46E5" />
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1A1D21" }}>สรุปวันที่ {dateLabel}</span>
+        <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>· {branchAll ? "ทุกสาขา" : "สาขาที่เลือก"} · นับตามตู้</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 700, color: "#0B69C7", background: "#E5F2FD", borderRadius: 20, padding: "5px 13px" }}>
+          <Coins size={13} /> เงินวันนี้ {bahtN(s.cashBaht)}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+        {pill("ตู้ทั้งหมด", s.totalMachines, "#1A1D21", "#F5F6F8")}
+        {pill("เก็บเงินแล้ว", s.collected, "#15803D", "#EAF6EF")}
+        {pill("ยังไม่เก็บ", s.notCollected, s.notCollected > 0 ? "#B45309" : "#5A6270", s.notCollected > 0 ? "#FCF6EC" : "#F5F6F8")}
+        {pill("ตั้งค่าใหม่", s.baseline, "#4F46E5", "#EEF0FE")}
+        {pill("เติมตุ๊กตา", s.refill, "#0B69C7", "#E5F2FD")}
+      </div>
+    </div>
+  );
+}
+
 /* ───────── summary card ───────── */
 function SummaryCard({
   label, value, valueColor, bg = "#fff", border = "#E8EAED", labelColor = "#6B7280", foot, footColor,
@@ -738,6 +834,8 @@ function CollectionCard({
 
   // baseline = รอบตั้งต้น (ตั้งมิเตอร์ครั้งแรก) — ห้ามโชว์ "ควรได้/ส่วนต่าง" ให้ตกใจ
   const baseline = st === "baseline";
+  // inProgress = รอบกำลังเก็บ (OPEN) — โชว์ "X/Y ตู้" แทน "ควรได้/ส่วนต่าง" · ยังไม่กระทบยอด
+  const inProgress = st === "open";
   // ตุ๊กตา at-a-glance สำหรับหัวแถว (CEO ขอเห็นเช็คตุ๊กตาชัด) — ตรง/หาย X/— (ไม่มีข้อมูล)
   const dollHasData = row.prizeExpected !== 0 || row.prizeActual !== 0;
   const dollStr = !dollHasData ? "—" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : row.prizeGap < 0 ? `เกิน ${-row.prizeGap}` : "ตรง";
@@ -760,7 +858,9 @@ function CollectionCard({
   // item 5 (office side) · "รูปยังไม่ครบ" — ตู้ในรอบนี้ยังขาดรูปหลักฐาน (มิเตอร์/สต็อก) ที่ url=null.
   //  ไม่นับรูปเงินสด (label "เงินสด" · optional · CEO 2026-07-11) — สอดคล้องกับฝั่งมือถือ (deriveHistoryPhotosMissing).
   //  เฉพาะ real tier ที่มี machines[].photoShots จริง (sample = [] → ไม่โชว์ชิป).
-  const photosMissing = row.machines.some((m) =>
+  //  baseline (รอบตั้งต้น) รูปเป็น optional ฝั่งกรอก → ไม่เตือน "รูปยังไม่ครบ" (เดิมเตือนหลอนทุกใบ
+  //  เพราะฝั่งอ่านบังคับ 7 รูป แต่ฝั่งกรอกไม่บังคับ). รอบเก็บจริง (COLLECTION) ยังเตือนตามเดิม (กันโกง).
+  const photosMissing = !isBaselineRow(row) && row.machines.some((m) =>
     m.photoShots.some((s) => s.label !== "เงินสด" && !s.url),
   );
 
@@ -783,13 +883,14 @@ function CollectionCard({
 
   // แนะนำ action
   const action =
-    baseline ? "รอบตั้งต้น — ตั้งค่ามิเตอร์ครั้งแรกของตู้ ถือว่าปกติ · อนุมัติเพื่อเริ่มนับรอบถัดไป"
+    inProgress ? `รอบนี้ยังเก็บไม่จบ (${row.collectedCount ?? 0}/${row.machineTotal ?? 0} ตู้) — เก็บครบแล้วระบบจะปิดรอบ + กระทบยอดให้เอง`
+      : baseline ? "รอบตั้งต้น — ตั้งค่ามิเตอร์ครั้งแรกของตู้ ถือว่าปกติ · อนุมัติเพื่อเริ่มนับรอบถัดไป"
       : st === "broken" ? "ตู้ไม่ขยับ — ส่งช่างเช็คเซ็นเซอร์/มอเตอร์ ก่อนเปิดรอบถัดไป"
         : row.gap > 50 ? "เงินขาดเกินเกณฑ์ — เรียกพนักงานยืนยันยอด + เทียบรูปเงินสดกับมิเตอร์"
           : row.prizeGap > 0 ? "ตุ๊กตาหาย — ตรวจสต๊อกในตู้ + รูปก่อน/หลังเติม"
             : row.prizeGap < 0 ? "ตุ๊กตาเกิน — นับได้มากกว่าที่มิเตอร์บอก เช็คนับซ้ำ หรือมีคนเติมไม่ลงระบบ"
               : "ทุกตัวเลขตรงกัน — อนุมัติเข้ารายงานได้เลย";
-  const actionColor = baseline ? "#4F46E5" : st === "diff" ? "#B42318" : st === "broken" ? "#B45309" : "#15803D";
+  const actionColor = inProgress ? "#0B69C7" : baseline ? "#4F46E5" : st === "diff" ? "#B42318" : st === "broken" ? "#B45309" : "#15803D";
 
   const reviewed = reviewState !== "pending";
   const reviewedLabel =
@@ -878,6 +979,9 @@ function CollectionCard({
           {baseline ? (
             // baseline: ไม่โชว์ "ควรได้/ส่วนต่าง" (ไม่มีมิเตอร์เก่าเทียบ) — โชว์ว่าเป็นยอดตั้งต้น
             <Stat label="ประเภท" value="ยอดตั้งต้น" color="#4F46E5" />
+          ) : inProgress ? (
+            // กำลังเก็บ: โชว์ความคืบหน้า X/Y ตู้ แทน "ควรได้/ส่วนต่าง" (ยังไม่กระทบยอด)
+            <Stat label="กำลังเก็บ" value={`${row.collectedCount ?? 0}/${row.machineTotal ?? 0} ตู้`} color="#0B69C7" />
           ) : (
             <>
               <Stat label="มิเตอร์ควรได้" value={bahtN(row.expectedCash)} />
@@ -885,7 +989,7 @@ function CollectionCard({
             </>
           )}
           {/* เช็คตุ๊กตา at-a-glance — ออกตรงมิเตอร์ไหม (CEO ขอ) */}
-          <Stat label="ตุ๊กตา" value={baseline ? "ตั้งต้น" : dollStr} color={baseline ? "#4F46E5" : dollStatColor} />
+          <Stat label="ตุ๊กตา" value={baseline ? "ตั้งต้น" : inProgress ? "—" : dollStr} color={baseline ? "#4F46E5" : inProgress ? "#9AA1AB" : dollStatColor} />
         </div>
         {/* item 5 · ชิปเล็ก "รูปยังไม่ครบ" (amber · จาง) — ตู้ในรอบยังขาดรูปหลักฐาน (ไม่นับรูปเงินสด).
             ใช้ได้ทั้งรอบปกติและรอบตั้งต้น (isBaseline) · แค่ context ไม่ใช่ error → วางก่อนป้ายสถานะ ไม่แย่งสายตา. */}
@@ -941,6 +1045,19 @@ function CollectionCard({
                   เงินที่เก็บได้ <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.actualCash)}</b>
                   {dollHasData && <> · ตุ๊กตาตั้งต้น <b className="num" style={{ color: "#1A1D21" }}>{row.prizeActual} ตัว</b></>}
                   {" "}บันทึกเป็น<b>ยอดเริ่มต้น</b>ของตู้ — ถือว่าปกติ ไม่ต้องสอบ · รอบถัดไปจะเริ่มกระทบยอดกับมิเตอร์จริง
+                </div>
+              </div>
+            </div>
+          ) : inProgress ? (
+            // รอบกำลังเก็บ (OPEN) — เงินขึ้นแล้วแต่ยังเก็บไม่ครบทุกตู้ · กระทบยอดคำนวณตอนปิดรอบ
+            <div style={{ borderTop: "1px dashed #E2E5EA", paddingTop: 16 }}>
+              <div style={{ background: "#E5F2FD", border: "1px solid #C9E4FA", borderRadius: 12, padding: "15px 17px", display: "flex", gap: 11, alignItems: "flex-start" }}>
+                <Coins size={20} color="#0B69C7" style={{ flex: "0 0 20px", marginTop: 1 }} />
+                <div style={{ fontSize: 12.5, color: "#0C4A7A", lineHeight: 1.65 }}>
+                  <b style={{ color: "#0B69C7" }}>รอบกำลังเก็บ</b> — พนักงานเก็บไปแล้ว{" "}
+                  <b className="num" style={{ color: "#1A1D21" }}>{row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้</b>{" "}
+                  เงินที่เก็บได้ตอนนี้ <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.actualCash)}</b> (บันทึกครบ · ดูรูปด้านล่างได้)<br />
+                  ระบบจะ<b>กระทบยอด (เทียบมิเตอร์ ↔ เงินสด)</b> ให้อัตโนมัติเมื่อเก็บครบทุกตู้แล้วปิดรอบ — ตอนนี้ยังไม่ต้องสอบ
                 </div>
               </div>
             </div>
@@ -1146,6 +1263,11 @@ function CollectionCard({
               <Info size={17} color={actionColor} style={{ flex: "0 0 17px", marginTop: 1 }} />
               <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: actionColor }}>แนะนำ: {action}</span>
             </div>
+            {inProgress ? (
+              <div style={{ fontSize: 11.5, color: "#0B69C7", background: "#E5F2FD", borderRadius: 8, padding: "8px 12px", lineHeight: 1.5 }}>
+                รอบนี้ยังเก็บไม่จบ · ตรวจกระทบยอดได้เมื่อเก็บครบทุกตู้แล้วระบบปิดรอบ
+              </div>
+            ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
               <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตรวจเสร็จแล้ว เลือกผล →</span>
               <ReviewBtn label="อนุมัติ" tone="green" active={reviewState === "reviewed"} disabled={busy} onClick={() => onReview("approve")} />
@@ -1162,6 +1284,7 @@ function CollectionCard({
                 </span>
               )}
             </div>
+            )}
           </div>
         </div>
       )}

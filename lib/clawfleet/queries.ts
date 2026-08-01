@@ -259,8 +259,11 @@ export async function listV2Anomalies(filter?: string): Promise<Anomaly[]> {
 // เพื่อให้การ์ดสรุป + แท็บ (ทั้งหมด/ตรงกัน/ไม่ตรง/ตู้เสีย) คำนวณจากชุดเต็มจริง.
 // =============================================================
 
-/** สถานะรอบที่ "ปิดแล้ว" (นับเข้าหน้ากระทบยอด) — OPEN ไม่รวม เพราะยังเก็บไม่จบ */
+/** สถานะรอบที่ "ปิดแล้ว" (กระทบยอดเสร็จ) */
 const CLOSED_STATUSES = ["CLOSED", "ANOMALY_REVIEW", "LOCKED", "CANCELLED"] as const;
+/** สถานะที่ "แสดงในหน้ากระทบยอด" — ปิดแล้ว + กำลังเก็บ (OPEN · ยังเก็บไม่จบ).
+ *  CEO 2026-08-01: เก็บตู้ไหนต้องเห็นตู้นั้นทันที ไม่ต้องรอปิดรอบครบทุกตู้. */
+const VISIBLE_STATUSES = [...CLOSED_STATUSES, "OPEN"] as const;
 
 // เกณฑ์เงินขาด/เกินที่ "ถือว่าตรง" (บาท) — ต้องตรงกับ CASH_TOLERANCE ฝั่ง collections-client
 // (statusOf: |gap| <= นี้ = ตรงกัน) เพื่อ severity/type ไม่ขัดกับที่หน้าจอแสดง.
@@ -291,6 +294,12 @@ export type V2Round = {
   /** รอบตั้งต้น (baseline) — ตั้งค่ามิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
    *  ห้ามจัดเป็น "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ทำให้ดูเหมือนเงินเกินทั้งที่ปกติ) */
   isBaseline: boolean;
+  /** รอบ "กำลังเก็บ" (OPEN · ยังเก็บไม่ครบทุกตู้) — โชว์สดแต่ยังไม่กระทบยอด (CEO 2026-08-01) */
+  isOpen: boolean;
+  /** เก็บแล้วกี่ตู้ในรอบ (COLLECTION) — โชว์ "X/Y" บนรอบ OPEN */
+  collectedCount: number;
+  /** ตู้คีบใช้งานได้ทั้งสาขา (Y ใน "X/Y") — เฉพาะรอบ OPEN (อื่น = 0) */
+  machineTotal: number;
   /** มิเตอร์เหรียญรวมทั้งรอบ (จาก event จริง) — null = ไม่มี event ให้ derive */
   coinMeterBefore: number | null;
   coinMeterAfter: number | null;
@@ -333,13 +342,18 @@ export async function getV2AllRounds(opts?: {
   })();
   const to = opts?.to;
 
-  const closedAtWhere: { gte: Date; lte?: Date } = { gte: from };
-  if (to) closedAtWhere.lte = to;
+  // ช่วงวันที่: รอบปิดแล้วยึด closedAt · รอบ "กำลังเก็บ" (OPEN · closedAt=null) ยึด openedAt
+  //   เดิม closedAt:{gte} ทิ้งรอบ OPEN ทั้งหมด (null ไม่ผ่าน range) → เงินที่กำลังเก็บล่องหน
+  const range: { gte: Date; lte?: Date } = { gte: from };
+  if (to) range.lte = to;
 
   const where = {
     orgId,
-    status: { in: [...CLOSED_STATUSES] },
-    closedAt: closedAtWhere,
+    status: { in: [...VISIBLE_STATUSES] },
+    OR: [
+      { closedAt: range },
+      { status: "OPEN" as const, openedAt: range },
+    ],
     ...(branchWhere ? { branchId: branchWhere } : {}),
   };
 
@@ -358,18 +372,41 @@ export async function getV2AllRounds(opts?: {
           orderBy: { collectedAt: "asc" },
         },
       },
-      orderBy: { closedAt: "desc" },
+      // OPEN ไม่มี closedAt → เรียงด้วย openedAt (สากลทุกสถานะ · รอบที่เพิ่งขยับอยู่บน)
+      orderBy: { openedAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
   ]);
 
+  // จำนวนตู้คีบใช้งานได้ต่อสาขา — โชว์ "เก็บแล้ว X/Y ตู้" บนรอบที่กำลังเก็บ (OPEN)
+  const openBranchIds = [
+    ...new Set(rows.filter((s) => s.status === "OPEN" && s.branchId).map((s) => s.branchId as string)),
+  ];
+  const machineCountByBranch = new Map<string, number>();
+  if (openBranchIds.length > 0) {
+    const counts = await prisma.cfMachine.groupBy({
+      by: ["branchId"],
+      where: { orgId, branchId: { in: openBranchIds }, kind: "CLAW", isActive: true },
+      _count: { _all: true },
+    });
+    for (const c of counts) if (c.branchId) machineCountByBranch.set(c.branchId, c._count._all);
+  }
+
   const rounds: V2Round[] = rows.map((s): V2Round => {
-    const expectedCash = Math.round((s.expectedCashCents ?? 0) / 100);
-    const actualCash = Math.round((s.actualCashCents ?? s.totalCashCents ?? 0) / 100);
-    const gap = expectedCash - actualCash; // + = ขาด · − = เกิน
+    const isOpen = s.status === "OPEN";
+    // รอบ OPEN: snapshot (expected/actual/total) ยังไม่คำนวณ (คิดตอนปิดรอบ) → บวกเงินรายตู้จริงเอง.
+    //   actualCashCents = Σ cashCountedCents เป๊ะ (validation.ts:269) → รอบปิดใช้ snapshot ได้เลขเท่ากัน ไม่ขยับของเก่า.
+    const actualFromEvents = Math.round(
+      s.events.reduce((sum, e) => sum + (e.cashCountedCents ?? 0), 0) / 100,
+    );
+    const expectedCash = isOpen ? 0 : Math.round((s.expectedCashCents ?? 0) / 100);
+    const actualCash = isOpen
+      ? actualFromEvents
+      : Math.round((s.actualCashCents ?? s.totalCashCents ?? 0) / 100);
+    const gap = isOpen ? 0 : expectedCash - actualCash; // + = ขาด · − = เกิน
     const gapPct = expectedCash > 0 ? (Math.abs(gap) / expectedCash) * 100 : 0;
-    const prizeGap = s.prizeVariance ?? 0;
+    const prizeGap = isOpen ? 0 : s.prizeVariance ?? 0;
     const closed = s.closedAt ?? s.openedAt;
 
     // รอบ "สะอาด" = เงินต่างไม่เกินเกณฑ์ + ตุ๊กตาไม่หาย → severity P2 · type ตามเงิน
@@ -405,13 +442,16 @@ export async function getV2AllRounds(opts?: {
       expectedCash,
       actualCash,
       gap,
-      prizeExpected: s.prizeMeterOut ?? 0,
-      prizeActual: s.prizeCountedOut ?? 0,
+      prizeExpected: isOpen ? 0 : s.prizeMeterOut ?? 0,
+      prizeActual: isOpen ? 0 : s.prizeCountedOut ?? 0,
       prizeGap,
       severity,
       type,
       reason: s.anomalyFlags[0] ?? "",
       isBaseline: s.isBaseline,
+      isOpen,
+      collectedCount: s.events.filter((e) => e.eventType === "COLLECTION").length,
+      machineTotal: machineCountByBranch.get(s.branchId ?? "") ?? 0,
       coinMeterBefore,
       coinMeterAfter,
       machines,
@@ -419,6 +459,90 @@ export async function getV2AllRounds(opts?: {
   });
 
   return { rounds, total, page, pageSize };
+}
+
+/** สรุปกิจกรรมรายวันต่อสาขา (CEO 2026-08-01) — วันนี้แต่ละสาขาเก็บกี่ตู้/ยังไม่เก็บ/ตั้งค่าใหม่/เติมตุ๊กตา + เงินเก็บ */
+export type DaySummary = {
+  branchId: string;
+  totalMachines: number; // ตู้คีบใช้งานได้ทั้งสาขา
+  collected: number;     // เก็บเงินแล้ววันนี้ (ตู้ · distinct · เฉพาะที่ยัง active)
+  notCollected: number;  // ยังไม่ได้เก็บวันนี้ (total − collected)
+  baseline: number;      // ตั้งค่าตู้ครั้งแรกวันนี้ (ตู้ · distinct)
+  refill: number;        // เติม/เปลี่ยนตุ๊กตาวันนี้ (ตู้ · distinct · refillQty>0)
+  cashBaht: number;      // เงินที่เก็บได้วันนี้รวม (COLLECTION)
+};
+
+/**
+ * สรุปรายวันต่อสาขาสำหรับหน้ากระทบยอด — ใช้เฉพาะเมื่อเลือก "ช่วงวันเดียว".
+ * ช่วงหลายวัน → คืน null (การ์ดรายวันไม่ขึ้น · กันตัวเลข "รายวัน" ปนกับช่วง 30 วัน).
+ * scope: org + สาขาของ user เท่านั้น (RLS-safe เหมือน query อื่น).
+ */
+export async function getDaySummaries(from: Date, to: Date): Promise<DaySummary[] | null> {
+  // ช่วงเกิน ~1.5 วัน = มองเป็นหลายวัน → ไม่สรุปรายวัน
+  if (to.getTime() - from.getTime() > 36 * 3600 * 1000) return null;
+
+  const session = await requireSession();
+  const { orgId, branchIds } = await scope(session);
+  const branchFilter = branchIds === "ALL" ? {} : { branchId: { in: branchIds } };
+
+  const [machines, events] = await Promise.all([
+    prisma.cfMachine.findMany({
+      where: { orgId, kind: "CLAW", isActive: true, ...branchFilter },
+      select: { id: true, branchId: true },
+    }),
+    prisma.cfCollectionEvent.findMany({
+      where: {
+        orgId,
+        collectedAt: { gte: from, lte: to },
+        eventType: { in: ["COLLECTION", "INITIAL"] },
+        machine: { kind: "CLAW", ...branchFilter },
+      },
+      select: {
+        machineId: true, eventType: true, cashCountedCents: true, refillQty: true,
+        machine: { select: { branchId: true } },
+      },
+    }),
+  ]);
+
+  type Agg = { active: Set<string>; collected: Set<string>; baseline: Set<string>; refill: Set<string>; cashCents: number };
+  const per = new Map<string, Agg>();
+  const get = (bid: string): Agg => {
+    let a = per.get(bid);
+    if (!a) { a = { active: new Set(), collected: new Set(), baseline: new Set(), refill: new Set(), cashCents: 0 }; per.set(bid, a); }
+    return a;
+  };
+
+  for (const m of machines) if (m.branchId) get(m.branchId).active.add(m.id);
+  for (const e of events) {
+    const bid = e.machine.branchId;
+    if (!bid) continue;
+    const a = get(bid);
+    if (e.eventType === "COLLECTION") {
+      a.collected.add(e.machineId);
+      a.cashCents += e.cashCountedCents;
+      if ((e.refillQty ?? 0) > 0) a.refill.add(e.machineId);
+    } else {
+      a.baseline.add(e.machineId);
+    }
+  }
+
+  const out: DaySummary[] = [];
+  for (const [branchId, a] of per) {
+    const total = a.active.size;
+    // นับ "เก็บแล้ว" เฉพาะตู้ที่ยัง active (ตู้ที่ปลดไปแล้วไม่เข้า total → กัน notCollected ติดลบ)
+    let collectedActive = 0;
+    for (const id of a.collected) if (a.active.has(id)) collectedActive++;
+    out.push({
+      branchId,
+      totalMachines: total,
+      collected: collectedActive,
+      notCollected: Math.max(0, total - collectedActive),
+      baseline: a.baseline.size,
+      refill: a.refill.size,
+      cashBaht: Math.round(a.cashCents / 100),
+    });
+  }
+  return out;
 }
 
 /**

@@ -9,7 +9,7 @@
  *
  * ช่วงวันที่ + หน้า มาจาก searchParams (?from=&to=&page=) → soft-nav ผ่าน next/link ในฝั่ง client.
  */
-import { getV2AllRounds, getV2Branches, orgHasAnyRounds } from "@/lib/clawfleet/queries";
+import { getV2AllRounds, getV2Branches, orgHasAnyRounds, getDaySummaries, type DaySummary } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 import { requireSession } from "@/lib/auth/session";
 import { isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
@@ -71,11 +71,14 @@ export default async function CollectionsPage({
   let pageSize = 50;
   // hasAnyRounds = org เคยมีรอบใด ๆ (ทุกสถานะ/ทุกเวลา) — ตัดสิน sample-vs-empty.
   let hasAnyRounds = false;
+  // สรุปรายวัน (เฉพาะช่วงวันเดียว · หลายวัน → null → การ์ดไม่ขึ้น)
+  let daySummaries: DaySummary[] | null = null;
   try {
-    const [res, br, everHad] = await Promise.all([
+    const [res, br, everHad, days] = await Promise.all([
       getV2AllRounds({ from, to, page: pageNum }),
       getV2Branches(),
       orgHasAnyRounds(),
+      from && to ? getDaySummaries(from, to) : Promise.resolve(null),
     ]);
     rounds = res.rounds;
     total = res.total;
@@ -83,6 +86,7 @@ export default async function CollectionsPage({
     pageSize = res.pageSize;
     branches = br;
     hasAnyRounds = everHad;
+    daySummaries = days;
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ sample fallback
   }
@@ -124,6 +128,10 @@ export default async function CollectionsPage({
     reason: r.reason || (r.type === "cash_short" ? "ยอดเงินไม่ตรงกับมิเตอร์" : "ตุ๊กตาหายไม่ตรงกับมิเตอร์"),
     // รอบตั้งต้น — client แยกป้าย/ไม่นับเป็น "ไม่ตรง" (กัน expectedCash=0 ดูเหมือนเงินเกิน)
     isBaseline: r.isBaseline,
+    // รอบ "กำลังเก็บ" (OPEN · ยังเก็บไม่ครบ) — โชว์สด "X/Y ตู้ · ฿ · ยังไม่ปิด"
+    isOpen: r.isOpen,
+    collectedCount: r.collectedCount,
+    machineTotal: r.machineTotal,
     // มิเตอร์เหรียญจริงจาก event (รวมทั้งรอบ) — client โชว์ delta×10 จริง (ไม่ประมาณ)
     coinMeterBefore: r.coinMeterBefore,
     coinMeterAfter: r.coinMeterAfter,
@@ -156,6 +164,7 @@ export default async function CollectionsPage({
       fromISO={fromISO}
       toISO={toISO}
       canEdit={canEdit}
+      daySummaries={daySummaries}
     />
   );
 }

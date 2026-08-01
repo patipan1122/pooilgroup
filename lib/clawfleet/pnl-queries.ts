@@ -179,6 +179,9 @@ const CLOSED_STATUSES: CfSessionStatus[] = [
   CfSessionStatus.LOCKED,
   CfSessionStatus.ANOMALY_REVIEW,
 ];
+/** สถานะที่ "แสดง/นับในรายงาน" — ปิดแล้ว + กำลังเก็บ (OPEN · เงินที่เก็บแล้วต้องเข้าทันที · CEO 2026-08-01).
+ *  เงินคิดจาก per-event cashCountedCents → รอบ OPEN ได้ค่าเท่ากับตอนปิด (ไม่ขยับของเก่า). */
+const VISIBLE_STATUSES: CfSessionStatus[] = [...CLOSED_STATUSES, CfSessionStatus.OPEN];
 
 /**
  * map: machineId → ต้นทุนตุ๊กตา/ตัว (เซ็นต์) จาก active loadout (effectiveTo = null).
@@ -256,8 +259,12 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
   const sessions = await prisma.cfCollectionSession.findMany({
     where: {
       orgId,
-      status: { in: CLOSED_STATUSES },
-      closedAt: { gte: range.from, lte: range.to },
+      status: { in: VISIBLE_STATUSES },
+      // ปิดแล้วยึด closedAt · กำลังเก็บ (OPEN · closedAt=null) ยึด openedAt — เงินที่เก็บแล้วเข้ารายงานทันที
+      OR: [
+        { closedAt: { gte: range.from, lte: range.to } },
+        { status: CfSessionStatus.OPEN, openedAt: { gte: range.from, lte: range.to } },
+      ],
     },
     select: {
       id: true,
@@ -415,8 +422,8 @@ export async function getMachinePnl(branchId: string, filter?: PnlRange): Promis
         machineId: { in: machineIds },
         eventType: "COLLECTION",
         collectedAt: { gte: range.from, lte: range.to },
-        // เฉพาะ event ที่อยู่ในรอบที่ปิดแล้ว
-        session: { status: { in: CLOSED_STATUSES } },
+        // รอบที่ปิดแล้ว + กำลังเก็บ (OPEN) — เงินที่เก็บแล้วเข้ารายงานตู้ทันที (CEO 2026-08-01)
+        session: { status: { in: VISIBLE_STATUSES } },
       },
       select: {
         machineId: true,

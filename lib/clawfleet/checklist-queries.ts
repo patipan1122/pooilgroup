@@ -147,7 +147,8 @@ export async function getCfChecklistGrid(input: {
     WHERE e.org_id = ${orgId}::uuid
       AND s.branch_id IN (${prismaInUuid(branchIds)})
       AND e.event_type = 'COLLECTION'
-      AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW')
+      -- + OPEN (กำลังเก็บ) — ตู้ที่เก็บวันนี้แม้รอบยังไม่ปิด ให้ขึ้นสถานะเก็บแล้ว (CEO 2026-08-01)
+      AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW', 'OPEN')
       AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
     GROUP BY s.branch_id, iso_day
   `;
