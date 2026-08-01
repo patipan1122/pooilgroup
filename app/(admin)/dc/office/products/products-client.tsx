@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { DcThumb, DcLightbox } from "@/components/dc/product-image";
 import { OfficePoBrowse } from "@/components/dc/office-po-browse";
+import { OfficeTransferBrowse } from "@/components/dc/office-transfer-browse";
 // ★ handoff → หน้า "เบิก · โอน · ย้ายที่" (convenience default — ปลายทาง re-resolve จริง server)
 //   carry แค่ id + label (ไม่มี qty; general handoff = qty default 1 ที่ปลายทาง)
 import { writeDcHandoff, PRODUCT_HANDOFF_KEY } from "@/lib/dc/handoff";
@@ -52,7 +53,7 @@ export function ProductsClient({
   warehouseId,
 }: { products: ProductRow[]; chips: CatChip[]; total: number; lowCount: number; headerExtra?: React.ReactNode; r2PublicUrl?: string; warehouseId?: string }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"products" | "po">("products"); // Pinpoint #8 — ดูตามใบ PO
+  const [mode, setMode] = useState<"products" | "po" | "transfer">("products"); // Pinpoint #8 — ดูตามใบ PO · +ดูตามใบโอน (CEO 2026-08-01)
   const [view, setView] = useState<"grid" | "table">("grid");
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -134,7 +135,7 @@ export function ProductsClient({
 
       {/* มุมมอง: รายการสินค้า / ดูตามใบ PO (Pinpoint #8) */}
       <div role="tablist" aria-label="มุมมองสินค้า" style={{ display: "flex", gap: 2, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
-        {([["products", "รายการสินค้า"], ["po", "ดูตามใบ PO"]] as const).map(([m, label]) => (
+        {([["products", "รายการสินค้า"], ["po", "ดูตามใบ PO"], ["transfer", "ดูตามใบโอน"]] as const).map(([m, label]) => (
           <button
             key={m}
             type="button"
@@ -156,6 +157,8 @@ export function ProductsClient({
 
       {mode === "po" ? (
         <OfficePoBrowse warehouseId={warehouseId} r2PublicUrl={r2PublicUrl} />
+      ) : mode === "transfer" ? (
+        <OfficeTransferBrowse warehouseId={warehouseId} r2PublicUrl={r2PublicUrl} />
       ) : (
       <>
       {notice ? (
