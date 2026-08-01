@@ -21,6 +21,8 @@ import {
   getCfMachinesForBranchAdmin,
   getMachineLoadout,
   getInboundDcTransfers,
+  getAllReceiptDocs,
+  type CfReceiptDoc,
 } from "@/lib/clawfleet/stock-queries";
 import {
   StockClient,
@@ -79,6 +81,8 @@ export default async function StockPage({
   // surface-existing — รายชื่อตู้ (ในสโคป user) + โหลดเอาต์ปัจจุบันต่อตู้ (สำหรับแท็บ "ไส้ในตู้")
   let machines: MachineSeed[] = [];
   let loadoutByMachine: Record<string, LoadoutItemSeed[]> = {};
+  // แท็บ "ใบรับสินค้า" (CEO 2026-08-01) — ใบรับ "ทุกสาขาที่ user เห็น" (received + รอรับ) ในลิสต์เดียว
+  let receiptAllDocs: CfReceiptDoc[] = [];
 
   try {
     const session = await requireCfSession();
@@ -196,10 +200,14 @@ export default async function StockPage({
         reviewedByName: l.reviewedByName,
       }));
 
-      // ── ยอดคลังกลางจริง (warehouse = movement machineId null) รวมทุกสาขาที่ user เห็น ──
+      // ── ยอดคลังกลางจริง + ใบรับทุกสาขา (scope เดียวกัน = สาขาที่ user เห็น) ──
       try {
         const allowed = await userBranchIds(session);
-        warehouseRows = await loadWarehouseRows(orgId, allowed, branches);
+        const branchList = branches.map((b) => ({ id: b.id, name: b.name }));
+        [warehouseRows, receiptAllDocs] = await Promise.all([
+          loadWarehouseRows(orgId, allowed, branches),
+          getAllReceiptDocs(orgId, allowed, branchList).catch(() => [] as CfReceiptDoc[]),
+        ]);
       } catch {
         // graceful
       }
@@ -262,6 +270,7 @@ export default async function StockPage({
       warehouseRows={warehouseRows}
       shipments={shipments}
       movements={movements}
+      receiptAllDocs={receiptAllDocs}
       docBranchId={docBranchId}
       onHandMap={onHandMap}
       viewerId={viewerId}

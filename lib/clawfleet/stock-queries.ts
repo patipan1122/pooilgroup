@@ -915,3 +915,294 @@ export async function getCfMachinesForBranchAdmin(): Promise<CfMachineListRow[]>
     return [];
   }
 }
+
+// =============================================================
+// "ใบรับสินค้า (ทุกสาขา)" — CEO 2026-08-01
+//   รวมใบรับข้ามทุกสาขาที่ user เห็น ในที่เดียว + บอก "ส่งมาจากไหน" + กดดูแยกรายสาขาได้ (ฝั่ง client filter).
+//   2 สถานะในลิสต์เดียว:
+//     • received = CfGoodsReceipt (ใบรับจริง GR-…) — ต้นทาง resolve จาก refTable/refId
+//         (dc_transfers → ชื่อคลัง DC · cf_deliveries → fromLocation · null=manual → supplierName)
+//     • pending  = ของกำลังส่งมา "ยังไม่รับ": DcTransfer IN_TRANSIT (DC ส่งตรงเข้าสาขาตู้คีบ)
+//         + CfDelivery IN_TRANSIT/SCHEDULED (ใบกระจายภายใน)
+//   scope: orgId + สาขาที่ user เห็น (แอดมิน/viewer=ทุกสาขา · พนักงาน=เฉพาะสาขาตน) — ไม่รั่วข้ามสาขา/องค์กร.
+//   READ-ONLY: ไม่แตะ ledger/สต๊อก/ต้นทุน. limit ต่อแหล่ง (กัน payload บาน) แล้ว merge เรียงวันที่ใหม่→เก่า.
+// =============================================================
+export type CfReceiptDocKind = "manual" | "dc_transfer" | "cf_delivery";
+export type CfReceiptDocStatus = "received" | "pending";
+export type CfReceiptDocLine = {
+  productId: string;
+  productName: string;
+  qty: number;
+  // productId ชี้ CfProduct จริงไหม (received/cf_delivery = ใช่ · dc_transfer ที่ยังไม่รับ = DcProduct
+  //   → ยังไม่มี movement ในคลัง → คลิกดูประวัติจะขึ้น "ยังไม่รับเข้าคลัง")
+  isCfProduct: boolean;
+};
+export type CfReceiptDoc = {
+  id: string;
+  status: CfReceiptDocStatus;
+  kind: CfReceiptDocKind;
+  branchId: string;
+  branchName: string; // สาขาที่รับ
+  fromName: string | null; // ส่งมาจาก (คลัง DC · คลังกลาง · ผู้ขาย) · null = ไม่ทราบ
+  docCode: string; // GR-… (received) · TF-… (dc) · "ใบกระจาย" (cf_delivery ไม่มีเลขใบ)
+  senderName: string | null; // ผู้สร้าง/ผู้ส่ง
+  note: string | null;
+  itemsCount: number; // จำนวนรายการ (ชนิดสินค้า)
+  unitsCount: number; // จำนวนชิ้นรวม
+  totalCostCents: number | null; // มูลค่า (received เท่านั้น · pending = null)
+  photoCount: number;
+  dateISO: string; // received=createdAt ของใบรับ · pending=วันที่ส่งออก/สร้าง
+  lines: CfReceiptDocLine[];
+};
+
+/**
+ * ใบรับสินค้าทุกสาขาที่ user เห็น (received + pending) — READ-ONLY.
+ *   scoped = สาขาที่ user เห็น (แปลง 'ALL' → รายการ id ของสาขาใน org · กันรั่วข้ามองค์กรแม้เป็นแอดมิน).
+ */
+export async function getAllReceiptDocs(
+  orgId: string,
+  allowed: string[] | "ALL",
+  branches: { id: string; name: string }[],
+  limit = 120,
+): Promise<CfReceiptDoc[]> {
+  const scoped = allowed === "ALL" ? branches.map((b) => b.id) : allowed;
+  if (scoped.length === 0) return [];
+  const branchName = new Map(branches.map((b) => [b.id, b.name]));
+
+  const [receipts, dcPending, cfPending] = await Promise.all([
+    // received — ใบรับจริง (index [orgId, branchId, createdAt desc])
+    prisma.cfGoodsReceipt.findMany({
+      where: { orgId, branchId: { in: scoped } },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true, branchId: true, receiptCode: true, supplierName: true, note: true,
+        totalCostCents: true, photoUrls: true, createdAt: true, refTable: true, refId: true,
+        createdBy: { select: { name: true } },
+        lines: { select: { productId: true, productName: true, quantity: true } },
+      },
+    }),
+    // pending — DC ส่งตรงเข้าสาขาตู้คีบ ยังไม่รับ (destType MODULE · IN_TRANSIT)
+    prisma.dcTransfer.findMany({
+      where: {
+        orgId,
+        destType: DcTransferDestType.MODULE,
+        status: DcTransferStatus.IN_TRANSIT,
+        toBranchId: { in: scoped },
+      },
+      orderBy: { dispatchedAt: "desc" },
+      take: limit,
+      select: {
+        id: true, toBranchId: true, transferCode: true, fromWarehouseId: true,
+        dispatchedByUserId: true, note: true, dispatchedAt: true,
+        lines: { select: { qty: true, product: { select: { id: true, name: true } } } },
+      },
+    }),
+    // pending — ใบกระจายภายใน ยังไม่รับ (IN_TRANSIT/SCHEDULED)
+    prisma.cfDelivery.findMany({
+      where: { orgId, branchId: { in: scoped }, status: { in: ["IN_TRANSIT", "SCHEDULED"] } },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true, branchId: true, fromLocation: true, note: true, createdAt: true,
+        createdBy: { select: { name: true } },
+        lines: { select: { productId: true, productName: true, qty: true } },
+      },
+    }),
+  ]);
+
+  // resolve "ส่งมาจาก" ของ received ที่มาจาก DC/ใบกระจาย (batch · N ใบ = ไม่กี่ query)
+  const rcDcRefIds = receipts.filter((r) => r.refTable === "dc_transfers" && r.refId).map((r) => r.refId as string);
+  const rcCfRefIds = receipts.filter((r) => r.refTable === "cf_deliveries" && r.refId).map((r) => r.refId as string);
+  const [rcDcTransfers, rcCfDeliveries] = await Promise.all([
+    rcDcRefIds.length
+      ? prisma.dcTransfer.findMany({ where: { id: { in: rcDcRefIds } }, select: { id: true, fromWarehouseId: true } })
+      : Promise.resolve([]),
+    rcCfRefIds.length
+      ? prisma.cfDelivery.findMany({ where: { id: { in: rcCfRefIds } }, select: { id: true, fromLocation: true } })
+      : Promise.resolve([]),
+  ]);
+  const rcDcWhMap = new Map(rcDcTransfers.map((t) => [t.id, t.fromWarehouseId]));
+  const rcCfFromMap = new Map(rcCfDeliveries.map((d) => [d.id, d.fromLocation]));
+
+  // ชื่อคลังต้นทาง DC (received-DC + pending-DC) — query ครั้งเดียว
+  const whIds = Array.from(new Set([
+    ...rcDcTransfers.map((t) => t.fromWarehouseId),
+    ...dcPending.map((t) => t.fromWarehouseId),
+  ]));
+  const whs = whIds.length
+    ? await prisma.dcWarehouse.findMany({ where: { id: { in: whIds } }, select: { id: true, name: true } })
+    : [];
+  const whMap = new Map(whs.map((w) => [w.id, w.name]));
+
+  // ชื่อผู้ส่งของ pending DC (dispatchedByUserId)
+  const senderIds = Array.from(new Set(dcPending.map((t) => t.dispatchedByUserId)));
+  const senders = senderIds.length
+    ? await prisma.user.findMany({ where: { id: { in: senderIds } }, select: { id: true, name: true } })
+    : [];
+  const senderMap = new Map(senders.map((u) => [u.id, u.name]));
+
+  const receivedDocs: CfReceiptDoc[] = receipts.map((r) => {
+    const fromName =
+      r.refTable === "dc_transfers"
+        ? (r.refId ? whMap.get(rcDcWhMap.get(r.refId) ?? "") ?? null : null)
+        : r.refTable === "cf_deliveries"
+          ? (r.refId ? rcCfFromMap.get(r.refId) ?? null : null)
+          : r.supplierName ?? null;
+    const lines: CfReceiptDocLine[] = r.lines.map((l) => ({
+      productId: l.productId, productName: l.productName, qty: l.quantity, isCfProduct: true,
+    }));
+    lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
+    return {
+      id: r.id,
+      status: "received",
+      kind: r.refTable === "dc_transfers" ? "dc_transfer" : r.refTable === "cf_deliveries" ? "cf_delivery" : "manual",
+      branchId: r.branchId,
+      branchName: branchName.get(r.branchId) ?? "สาขา",
+      fromName,
+      docCode: r.receiptCode,
+      senderName: r.createdBy?.name ?? null,
+      note: r.note,
+      itemsCount: lines.length,
+      unitsCount: lines.reduce((s, l) => s + l.qty, 0),
+      totalCostCents: r.totalCostCents,
+      photoCount: r.photoUrls.length,
+      dateISO: r.createdAt.toISOString(),
+      lines,
+    };
+  });
+
+  const dcDocs: CfReceiptDoc[] = dcPending.map((t) => {
+    const lines: CfReceiptDocLine[] = t.lines.map((l) => ({
+      productId: l.product.id, productName: l.product.name, qty: l.qty, isCfProduct: false,
+    }));
+    lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
+    return {
+      id: t.id,
+      status: "pending",
+      kind: "dc_transfer",
+      branchId: t.toBranchId ?? "",
+      branchName: branchName.get(t.toBranchId ?? "") ?? "สาขา",
+      fromName: whMap.get(t.fromWarehouseId) ?? null,
+      docCode: t.transferCode,
+      senderName: senderMap.get(t.dispatchedByUserId) ?? null,
+      note: t.note,
+      itemsCount: lines.length,
+      unitsCount: lines.reduce((s, l) => s + l.qty, 0),
+      totalCostCents: null,
+      photoCount: 0,
+      dateISO: t.dispatchedAt.toISOString(),
+      lines,
+    };
+  });
+
+  const cfDocs: CfReceiptDoc[] = cfPending.map((d) => {
+    const lines: CfReceiptDocLine[] = d.lines.map((l) => ({
+      productId: l.productId, productName: l.productName, qty: l.qty, isCfProduct: true,
+    }));
+    lines.sort((a, b) => a.productName.localeCompare(b.productName, "th"));
+    return {
+      id: d.id,
+      status: "pending",
+      kind: "cf_delivery",
+      branchId: d.branchId,
+      branchName: branchName.get(d.branchId) ?? "สาขา",
+      fromName: d.fromLocation || null,
+      docCode: "ใบกระจาย",
+      senderName: d.createdBy?.name ?? null,
+      note: d.note,
+      itemsCount: lines.length,
+      unitsCount: lines.reduce((s, l) => s + l.qty, 0),
+      totalCostCents: null,
+      photoCount: 0,
+      dateISO: d.createdAt.toISOString(),
+      lines,
+    };
+  });
+
+  return [...receivedDocs, ...dcDocs, ...cfDocs]
+    .sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1))
+    .slice(0, limit);
+}
+
+// =============================================================
+// ประวัติความเคลื่อนไหวรายสินค้า (ทุกสาขาที่ user เห็น) — CEO 2026-08-01
+//   คลิกสินค้าในใบรับ → เห็น movement เต็ม (รับเข้า/เติมตู้/ตัดเสีย/โอน/ปรับ) ข้ามสาขาในสิทธิ์.
+//   ⚠️ SECURITY: verify product เป็นของ org ก่อน แล้ว scope branch ตามสิทธิ์ (กัน cross-tenant/cross-branch
+//      แม้จะเรียกผ่าน server action ด้วย productId จาก client). READ-ONLY.
+// =============================================================
+const CF_MOVE_LABEL: Record<string, string> = {
+  RECEIVE: "รับเข้าคลัง",
+  RECEIPT_IN: "รับเข้า (ใบรับสินค้า)",
+  TRANSFER_IN: "รับโอนเข้า",
+  TRANSFER_OUT: "โอนออก",
+  LOAD_TO_MACHINE: "เติมเข้าตู้",
+  WITHDRAW: "เบิก/ตัดจ่าย",
+  ADJUST: "ปรับยอด (มือ)",
+  COUNT_ADJUST: "ปรับจากการนับ",
+  COUNT_SNAPSHOT: "นับสต๊อก",
+  LOSS_ADJUST: "ตัดของเสีย/สูญหาย",
+};
+export type CfProductHistoryRow = {
+  id: string;
+  type: string;
+  typeLabel: string;
+  qty: number; // signed (+ เข้า / − ออก)
+  branchName: string;
+  machineCode: string | null; // ถ้าเกี่ยวกับตู้ (เติมตู้/เบิก)
+  occurredAt: string; // ISO
+};
+export type CfProductHistory = {
+  productId: string;
+  productName: string;
+  rows: CfProductHistoryRow[];
+};
+
+/** ประวัติเคลื่อนไหวของสินค้า 1 ตัว scope org + สาขาที่ user เห็น (allowed) — null = ไม่พบสินค้าใน org */
+export async function getCfProductHistoryScoped(
+  orgId: string,
+  productId: string,
+  allowed: string[] | "ALL",
+  limit = 200,
+): Promise<CfProductHistory | null> {
+  const product = await prisma.cfProduct.findFirst({
+    where: { id: productId, orgId },
+    select: { id: true, name: true },
+  });
+  if (!product) return null;
+
+  const branchWhere = allowed === "ALL" ? {} : { branchId: { in: allowed } };
+  const rows = await prisma.cfStockMovement.findMany({
+    where: { orgId, productId, ...branchWhere },
+    orderBy: { occurredAt: "desc" },
+    take: limit,
+    select: { id: true, type: true, qty: true, occurredAt: true, branchId: true, machineId: true },
+  });
+
+  const branchIds = Array.from(new Set(rows.map((r) => r.branchId)));
+  const machineIds = Array.from(new Set(rows.map((r) => r.machineId).filter((x): x is string => !!x)));
+  const [brs, machines] = await Promise.all([
+    branchIds.length
+      ? prisma.branch.findMany({ where: { id: { in: branchIds }, orgId }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    machineIds.length
+      ? prisma.cfMachine.findMany({ where: { id: { in: machineIds }, orgId }, select: { id: true, code: true } })
+      : Promise.resolve([]),
+  ]);
+  const brMap = new Map(brs.map((b) => [b.id, b.name]));
+  const mMap = new Map(machines.map((m) => [m.id, m.code]));
+
+  return {
+    productId: product.id,
+    productName: product.name,
+    rows: rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      typeLabel: CF_MOVE_LABEL[r.type] ?? r.type,
+      qty: r.qty,
+      branchName: brMap.get(r.branchId) ?? "สาขา",
+      machineCode: r.machineId ? mMap.get(r.machineId) ?? null : null,
+      occurredAt: r.occurredAt.toISOString(),
+    })),
+  };
+}

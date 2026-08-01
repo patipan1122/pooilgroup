@@ -11,7 +11,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
-import { getBranchMainWarehouseId } from "./stock-queries";
+import { getBranchMainWarehouseId, getCfProductHistoryScoped, type CfProductHistory } from "./stock-queries";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
@@ -2449,4 +2449,18 @@ export async function loadCfProductMovements(
       refLabel: m.refTable,
     })),
   };
+}
+
+/**
+ * โหลดประวัติความเคลื่อนไหวของสินค้า 1 ตัว (คลิกสินค้าในใบรับ → ดูประวัติเต็ม) — READ-ONLY.
+ *   scope: org ของผู้ใช้ + สาขาที่ผู้ใช้เห็น (แอดมิน=ทุกสาขา · พนักงาน=สาขาตน).
+ *   ป้องกัน cross-tenant: getCfProductHistoryScoped verify ว่า productId เป็นของ org นี้ก่อนเสมอ
+ *   (คืน null ถ้าไม่ใช่ · เช่น กด DcProduct ที่ยังไม่รับเข้าคลัง → ไม่ใช่ CfProduct → null).
+ */
+export async function loadCfProductHistory(productId: string): Promise<CfProductHistory | null> {
+  if (!productId || typeof productId !== "string") return null;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const allowed = await userBranchIds(session);
+  return getCfProductHistoryScoped(orgId, productId, allowed);
 }

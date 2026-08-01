@@ -8,7 +8,7 @@
  * ข้อมูลจริงจาก server (สาขาแรก) ถ้าว่าง → SAMPLE fallback เต็ม + แบนเนอร์ "กำลังแสดงตัวอย่าง".
  */
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
@@ -18,8 +18,9 @@ import { Card, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit"
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
 import {
   transferStock, receiveStock, submitStockCount, reviewCfStockCount, recordLoss, reviewCfLoss,
-  createShipment, confirmShipmentReceived, lookupCfProductByBarcode,
+  createShipment, confirmShipmentReceived, lookupCfProductByBarcode, loadCfProductHistory,
 } from "@/lib/clawfleet/stock-actions";
+import type { CfReceiptDoc, CfProductHistory } from "@/lib/clawfleet/stock-queries";
 import { MachinesLoadoutTab, BranchMgmtLink, type MachineSeed, type LoadoutItemSeed } from "./machine-detail";
 
 /* ───────────────────────── seed types (จาก server) ───────────────────────── */
@@ -138,7 +139,7 @@ function ageTag(days: number): WarehouseItem["tag"] {
 const TH_ITEM: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#9AA1AB" };
 
 /* ───────────────────────── main ───────────────────────── */
-type StockTab = "overview" | "receipts" | "counts" | "losses" | "dist" | "machines";
+type StockTab = "overview" | "receipts" | "allreceipts" | "counts" | "losses" | "dist" | "machines";
 
 /* หน้า "เลือกสาขาที่จะดู" (CEO 2026-07-28) — เปิดคลังมาต้องเลือกสาขาก่อน 1 สาขา
    แล้วสต๊อก/รับของ/นับ/การกระจาย(ใบรับ) ทั้งหมดเป็นของสาขานั้น (สลับได้ทุกเมื่อ). */
@@ -189,6 +190,7 @@ export function StockClient({
   warehouseRows,
   shipments,
   movements,
+  receiptAllDocs,
   docBranchId,
   onHandMap,
   viewerId,
@@ -206,6 +208,8 @@ export function StockClient({
   warehouseRows: WarehouseRowSeed[];
   shipments: ShipmentSeed[];
   movements: MovementSeed[];
+  // แท็บ "ใบรับทุกสาขา" — ใบรับข้ามสาขา (received + รอรับ) พร้อมต้นทาง (CEO 2026-08-01)
+  receiptAllDocs: CfReceiptDoc[];
   docBranchId: string | null;
   onHandMap: Record<string, number>;
   viewerId: string;
@@ -250,6 +254,7 @@ export function StockClient({
   const tabs: { k: StockTab; label: string }[] = [
     { k: "overview", label: "ภาพรวม" },
     { k: "receipts", label: "รับของ" },
+    { k: "allreceipts", label: "ใบรับทุกสาขา" },
     { k: "counts", label: "นับสต็อก" },
     { k: "losses", label: "ตัดของเสีย" },
     { k: "dist", label: "การกระจาย" },
@@ -320,6 +325,9 @@ export function StockClient({
       )}
       {tab === "receipts" && (
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
+      )}
+      {tab === "allreceipts" && (
+        <AllReceiptsTab docs={receiptAllDocs} />
       )}
       {tab === "counts" && (
         <CountsTab docs={countDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} onHandMap={onHandMap} viewerId={viewerId} canReview={canReviewLoss} />
@@ -1813,6 +1821,236 @@ const MOVE_TYPE_TH: Record<string, string> = {
   TRANSFER_OUT: "โอนออก", TRANSFER_IN: "โอนเข้า", WITHDRAW: "เบิก/ตัดจ่าย",
   LOAD_TO_MACHINE: "เติมเข้าตู้",
 };
+
+/* ───────────────────────── ใบรับทุกสาขา (CEO 2026-08-01) ─────────────────────────
+   ดูใบรับสินค้า "ทุกสาขาที่ user เห็น" รวมกัน (received + รอรับ) + บอกส่งมาจากไหน
+   + กดดูแยกรายสาขา + คลิกสินค้าในใบ → ดูประวัติการเคลื่อนไหวเต็ม (โหลดสด · scoped).
+   READ-ONLY — ไม่มีปุ่มเขียน DB บนแท็บนี้. */
+const RCPT_TONE: Record<"received" | "pending", { bg: string; color: string; label: string }> = {
+  received: { bg: "#E7F4EC", color: "#15803D", label: "รับแล้ว" },
+  pending: { bg: "#FCF1E2", color: "#B45309", label: "รอรับ" },
+};
+const RCPT_GRID = "0.85fr 1fr 1.3fr 1.1fr 0.55fr 0.55fr 0.85fr 0.32fr";
+const ELLIPSIS: React.CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+
+function AllReceiptsTab({ docs }: { docs: CfReceiptDoc[] }) {
+  const [branchFilter, setBranchFilter] = useState<string>("all"); // "all" | branchId
+  const [statusFilter, setStatusFilter] = useState<"all" | "received" | "pending">("all");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [histProduct, setHistProduct] = useState<{ id: string; name: string } | null>(null);
+
+  // รายชื่อสาขาที่ปรากฏในข้อมูล (สำหรับ dropdown "กดดูแยกรายสาขา")
+  const branchesInData = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of docs) m.set(d.branchId, d.branchName);
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }, [docs]);
+
+  const stats = useMemo(() => ({
+    total: docs.length,
+    received: docs.filter((d) => d.status === "received").length,
+    pending: docs.filter((d) => d.status === "pending").length,
+  }), [docs]);
+
+  const filtered = docs.filter((d) => {
+    if (branchFilter !== "all" && d.branchId !== branchFilter) return false;
+    if (statusFilter !== "all" && d.status !== statusFilter) return false;
+    return true;
+  });
+
+  const statusChips: { k: "all" | "received" | "pending"; label: string; n: number }[] = [
+    { k: "all", label: "ทั้งหมด", n: stats.total },
+    { k: "received", label: "รับแล้ว", n: stats.received },
+    { k: "pending", label: "รอรับ", n: stats.pending },
+  ];
+
+  return (
+    <div>
+      {/* info banner */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+        <Info size={15} style={{ flex: "0 0 15px", color: "#9AA1AB" }} />
+        ใบรับสินค้าทุกสาขาที่คุณดูแล · <b>รับแล้ว</b> = ของเข้าคลังเรียบร้อย · <b>รอรับ</b> = กำลังส่งมา ยังไม่กดรับ · กดที่ใบเพื่อดูรายการ แล้วกดสินค้าเพื่อดูประวัติการเคลื่อนไหว
+      </div>
+
+      {/* stat tiles */}
+      <div className="grid grid-cols-3 gap-3.5 mb-[18px]">
+        {[
+          { label: "ทั้งหมด", n: stats.total, c: "#4F46E5" },
+          { label: "รับแล้ว", n: stats.received, c: "#15803D" },
+          { label: "รอรับ (กำลังส่งมา)", n: stats.pending, c: "#B45309" },
+        ].map((s) => (
+          <div key={s.label} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "15px 17px" }}>
+            <div style={{ fontSize: 12, color: "#6B7280", fontWeight: 600, marginBottom: 8 }}>{s.label}</div>
+            <div className="num" style={{ fontSize: 26, fontWeight: 700, color: s.c }}>{s.n}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* filters: สาขา + สถานะ */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <select
+          aria-label="กรองสาขาที่รับ"
+          value={branchFilter}
+          onChange={(e) => setBranchFilter(e.target.value)}
+          style={{ ...FIELD_INPUT, width: "auto", minWidth: 180, padding: "8px 12px", fontWeight: 600, cursor: "pointer" }}
+        >
+          <option value="all">ทุกสาขา</option>
+          {branchesInData.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        {statusChips.map((c) => {
+          const active = statusFilter === c.k;
+          return (
+            <button
+              key={c.k}
+              type="button"
+              onClick={() => setStatusFilter(c.k)}
+              style={{
+                border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA", cursor: "pointer", fontSize: 12.5, fontWeight: 600,
+                padding: "7px 14px", borderRadius: 20, background: active ? "#4F46E5" : "#fff", color: active ? "#fff" : "#6B7280", transition: "all .15s",
+              }}
+            >
+              {c.label} <span className="num" style={{ opacity: 0.75 }}>{c.n}</span>
+            </button>
+          );
+        })}
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: "#9AA1AB" }}>{filtered.length} ใบ</span>
+      </div>
+
+      {/* table */}
+      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 760 }}>
+            <div style={{ display: "grid", gridTemplateColumns: RCPT_GRID, padding: "11px 20px", ...TH_ITEM, borderBottom: "1px solid #F4F5F7" }}>
+              <span>วันที่</span><span>เลขใบ</span><span>ส่งมาจาก</span><span>สาขาที่รับ</span>
+              <span style={{ textAlign: "right" }}>รายการ</span><span style={{ textAlign: "right" }}>ชิ้น</span>
+              <span style={{ textAlign: "center" }}>สถานะ</span><span />
+            </div>
+            {filtered.length === 0 ? (
+              <EmptyState icon={<Inbox size={26} />} title="ยังไม่มีใบรับในเงื่อนไขนี้" sub="ลองเปลี่ยนตัวกรองสาขา/สถานะด้านบน" />
+            ) : filtered.map((d) => {
+              const key = `${d.status}-${d.kind}-${d.id}`;
+              const open = expandedKey === key;
+              const tone = RCPT_TONE[d.status];
+              return (
+                <div key={key}>
+                  <div
+                    className="co-rowlink"
+                    onClick={() => setExpandedKey(open ? null : key)}
+                    style={{ display: "grid", gridTemplateColumns: RCPT_GRID, padding: "14px 20px", alignItems: "center", cursor: "pointer", borderBottom: "1px solid #F4F5F7", fontSize: 13, background: open ? "#FAFAFE" : undefined }}
+                  >
+                    <span className="num" style={{ fontSize: 12, color: "#6B7280" }}>{fmtDate(d.dateISO)}</span>
+                    <span className="num" style={{ fontWeight: 700, color: "#4F46E5", fontSize: 11.5, ...ELLIPSIS }}>{d.docCode}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span style={{ ...ELLIPSIS }}>{d.fromName ?? "—"}</span>
+                      {d.kind === "dc_transfer" && (
+                        <span style={{ flex: "0 0 auto", fontSize: 9.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>DC</span>
+                      )}
+                    </span>
+                    <span style={{ fontWeight: 600, ...ELLIPSIS }}>{d.branchName}</span>
+                    <span className="num" style={{ textAlign: "right", color: "#6B7280" }}>{num(d.itemsCount)}</span>
+                    <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(d.unitsCount)}</span>
+                    <span style={{ textAlign: "center" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 20, background: tone.bg, color: tone.color, whiteSpace: "nowrap" }}>{tone.label}</span>
+                    </span>
+                    <span style={{ textAlign: "right", color: "#C2C7CF", display: "flex", justifyContent: "flex-end" }}>
+                      <ChevronRight size={16} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                    </span>
+                  </div>
+                  {open && (
+                    <div style={{ padding: "8px 20px 16px", borderBottom: "1px solid #F4F5F7", background: "#FAFAFE" }}>
+                      {(d.senderName || d.totalCostCents != null || d.photoCount > 0 || d.note) && (
+                        <div style={{ fontSize: 11.5, color: "#7A8089", marginBottom: 9, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                          {d.senderName && <span>โดย {d.senderName}</span>}
+                          {d.totalCostCents != null && <span>มูลค่า {bahtN(Math.round(d.totalCostCents / 100))}</span>}
+                          {d.photoCount > 0 && <span>{d.photoCount} รูป</span>}
+                          {d.note && <span>“{d.note}”</span>}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#9AA1AB", marginBottom: 7 }}>
+                        รายการในใบ · กดสินค้าเพื่อดูประวัติการเคลื่อนไหว
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {d.lines.map((l, i) => (
+                          <button
+                            key={`${l.productId}-${i}`}
+                            type="button"
+                            disabled={!l.isCfProduct}
+                            onClick={() => l.isCfProduct && setHistProduct({ id: l.productId, name: l.productName })}
+                            style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
+                          >
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, ...ELLIPSIS }}>{l.productName}</span>
+                            <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
+                            {l.isCfProduct ? (
+                              <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                <Clock size={12} /> ประวัติ
+                              </span>
+                            ) : (
+                              <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {histProduct && <ProductHistoryModal key={histProduct.id} product={histProduct} onClose={() => setHistProduct(null)} />}
+    </div>
+  );
+}
+
+/* ประวัติการเคลื่อนไหวของสินค้า 1 ตัว — โหลดสดผ่าน server action (scoped org+สาขาที่ user เห็น) */
+function ProductHistoryModal({ product, onClose }: { product: { id: string; name: string }; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<CfProductHistory | null>(null);
+  const [err, setErr] = useState(false);
+
+  // โหลดครั้งเดียวตอน mount — modal ถูก key ด้วย product.id ให้ remount ใหม่ทุกครั้งที่เปลี่ยนสินค้า
+  //   (initial state loading=true/err=false มาจาก useState → ไม่ต้อง setState ตรง ๆ ใน effect body)
+  useEffect(() => {
+    let alive = true;
+    loadCfProductHistory(product.id)
+      .then((d) => { if (alive) { setData(d); setLoading(false); } })
+      .catch(() => { if (alive) { setErr(true); setLoading(false); } });
+    return () => { alive = false; };
+  }, [product.id]);
+
+  return (
+    <Modal open onClose={onClose} width={560} title={product.name} sub="ประวัติการเคลื่อนไหวในคลัง (ทุกสาขาที่คุณดูแล)">
+      <div style={{ padding: "16px 20px" }}>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#9AA1AB", padding: "24px 0", textAlign: "center" }}>กำลังโหลด…</div>
+        ) : err ? (
+          <div style={{ fontSize: 13, color: "#B42318", padding: "24px 0", textAlign: "center" }}>โหลดประวัติไม่สำเร็จ · ลองปิดแล้วเปิดใหม่</div>
+        ) : !data || data.rows.length === 0 ? (
+          <EmptyState icon={<Inbox size={24} />} title="ยังไม่มีการเคลื่อนไหว" sub="สินค้านี้ยังไม่มีบันทึกเข้า-ออกในคลังของสาขาที่คุณดูแล" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.rows.map((r) => {
+              const isIn = r.qty >= 0;
+              return (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#F8F9FB", borderRadius: 9 }}>
+                  <span style={{ flex: "0 0 auto", fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 6, background: isIn ? "#E7F4EC" : "#FCEDEC", color: isIn ? "#15803D" : "#B42318" }}>{r.typeLabel}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "#6B7280", ...ELLIPSIS }}>
+                    {r.branchName}{r.machineCode ? ` · ${r.machineCode}` : ""}
+                  </span>
+                  <span className="num" style={{ flex: "0 0 auto", fontSize: 12, color: "#9AA1AB" }}>{fmtDate(r.occurredAt)}</span>
+                  <span className="num" style={{ flex: "0 0 56px", textAlign: "right", fontWeight: 700, fontSize: 13, color: isIn ? "#15803D" : "#B42318" }}>{isIn ? `+${num(r.qty)}` : num(r.qty)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
 
 function DistributionTab({ realBranches, products, shipments: shipmentSeeds, movements, defaultBranchId }: {
   realBranches: BranchOption[];
