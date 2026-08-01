@@ -5190,9 +5190,9 @@ function FlowScreen(props: {
   else { coinHint = `✓ มิเตอร์ควรได้ ฿${recon.expectedCash}`; coinHintColor = "#15803D"; }
   // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
   const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
-    // CEO 2026-08-01 · placeholder "รอบก่อน" = เลขจริง "ของหน้าปัดตัวเอง" จากรอบเก็บล่าสุด (พนักงานกรอกจริงครบ 4 ตัว).
-    //   เดิม mirror จำเลขเดียวโชว์ซ้ำทั้ง 2 ช่อง (บน=ล่าง หลอก). ตอนนี้แต่ละช่องอ่านเลขจริงของตัวเอง.
-    //   null = ตู้ยังไม่เคยเก็บ → ช่องว่าง (CEO เคาะ). ยัง placeholder เท่านั้น (ไม่ prefill ค่า · กันโกง พนักงานอ่านสด).
+    // CEO 2026-08-01 · placeholder "รอบก่อน" = เลขจริง "ของหน้าปัดตัวเอง" จาก event ล่าสุดที่กรอกครบ (รวม baseline/ตั้งค่าตู้).
+    //   เดิม mirror จำเลขเดียวโชว์ซ้ำทั้ง 2 ช่อง (บน=ล่าง หลอก). ตอนนี้แต่ละช่องอ่านเลขจริงของตัวเอง (พนักงานกรอกจริง 4 ตัว).
+    //   null = ไม่เคยมีเลขครบเลย → ช่องว่าง. ยัง placeholder เท่านั้น (ไม่ prefill ค่า · กันโกง พนักงานอ่านสด).
     const prev =
       key === "coinGear" ? f.prevCoinGear
         : key === "coinDigi" ? f.prevCoinDigi

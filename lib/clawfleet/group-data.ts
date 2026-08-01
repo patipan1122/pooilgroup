@@ -25,8 +25,8 @@ export type GroupMachine = {
   //   ล่าสุดที่กรอกเฟือง+ดิจิตอลครบ (รวม INITIAL/baseline = เลขจริงที่พนักงานกรอกตอนตั้งตู้). null = ยังเทียบไม่ได้.
   coinMeterOffset: number | null;
   dollMeterOffset: number | null;
-  // CEO 2026-08-01 · เลขจริงต่อหน้าปัดจาก "รอบเก็บล่าสุด" (COLLECTION) — โชว์เป็น placeholder อ้างอิงในช่องกรอก
-  //   (เลขที่พนักงานกรอกจริงรอบก่อน · ครบ 4 ตัว). ตู้ที่ยังไม่เคยเก็บ (มีแต่ baseline) = null → ช่องว่าง (CEO เคาะ).
+  // CEO 2026-08-01 · เลขจริงต่อหน้าปัดจาก event ล่าสุดที่กรอกครบ (รวม baseline/ตั้งค่าตู้) — placeholder อ้างอิงในช่องกรอก
+  //   (เลขที่พนักงานกรอกจริง · ครบ 4 ตัว แต่ละหน้าปัด). null = ไม่เคยมีเลขครบเลย → ช่องว่าง.
   prevCoinGear: number | null; prevCoinDigi: number | null;
   prevDollGear: number | null; prevDollDigi: number | null;
   qrToken: string;
@@ -180,12 +180,15 @@ export async function getGroupCollectData(): Promise<{
     // graceful: query ล้ม → ไม่มี "เติมล่าสุด" (โชว์ "ยังไม่เคยเติม")
   }
 
-  // CEO 2026-08-01 · "ส่วนต่างคงที่" (offset = เฟือง−ดิจิตอล) ต่อตู้ — anti-fraud "ขยับเท่ากัน".
-  //   2 หน้าปัดคนละฐาน (ค่าไม่เท่ากัน) แต่ห่างกันเท่าเดิมทุกรอบ → เช็ค: เฟืองรอบนี้−ดิจิตอลรอบนี้ ต้อง = offset นี้.
-  //   ดึงจาก "event ล่าสุดที่กรอกเฟือง(top)+ดิจิตอล(bottom) ครบทั้งคู่" — รวม INITIAL (baseline) = เลขจริงที่
-  //   พนักงานกรอกตอนตั้งตู้. (เดิมดูแค่ COLLECTION ล่าสุด → ตู้ที่เก็บก่อน 25 ก.ค. เฟือง=null → เช็คหลับ.
-  //   ตอนนี้ถอยไปหยิบ baseline ได้). เหรียญ/ตุ๊กตา query แยก (อาจกรอกครบคนละ event กัน).
+  // CEO 2026-08-01 · จาก "event ล่าสุดที่กรอกเฟือง(top)+ดิจิตอล(bottom) ครบทั้งคู่" — รวม INITIAL (baseline)
+  //   = เลขจริงที่พนักงานกรอกตอนตั้งตู้/รอบเก็บล่าสุด. ใช้ 2 อย่างจาก event เดียวกัน:
+  //   (1) offset = เฟือง−ดิจิตอล → anti-fraud "ขยับเท่ากัน" (2 หน้าปัดคนละฐาน ห่างกันเท่าเดิมทุกรอบ)
+  //   (2) เลขจริง 4 หน้าปัด → placeholder อ้างอิงในช่อง · แต่ละหน้าปัดเลขของตัวเอง
+  //       (เดิม mirror จำเลขเดียวโชว์ซ้ำ 2 ช่อง = บน/ล่างเท่ากันหลอก · ตู้ baseline-only ทิ้งเลขที่ตั้งไว้).
+  //   เหรียญ/ตุ๊กตา query แยก (อาจกรอกครบคนละ event กัน).
   const offsetByMachine = new Map<string, { coin: number | null; doll: number | null }>();
+  const prevReadByMachine = new Map<string, { cGear: number | null; cDigi: number | null; dGear: number | null; dDigi: number | null }>();
+  const blankPrev = () => ({ cGear: null as number | null, cDigi: null as number | null, dGear: null as number | null, dDigi: null as number | null });
   try {
     const machineIds = machines.map((m) => m.id);
     if (machineIds.length > 0) {
@@ -202,39 +205,24 @@ export async function getGroupCollectData(): Promise<{
         select: { machineId: true, meterDollTop: true, meterDollBottom: true },
       });
       for (const r of coinRows) {
-        const cur = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
-        cur.coin = (r.meterMoneyTop as number) - (r.meterMoneyBottom as number);
-        offsetByMachine.set(r.machineId, cur);
+        const off = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
+        off.coin = (r.meterMoneyTop as number) - (r.meterMoneyBottom as number);
+        offsetByMachine.set(r.machineId, off);
+        const pr = prevReadByMachine.get(r.machineId) ?? blankPrev();
+        pr.cGear = r.meterMoneyTop; pr.cDigi = r.meterMoneyBottom;
+        prevReadByMachine.set(r.machineId, pr);
       }
       for (const r of dollRows) {
-        const cur = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
-        cur.doll = (r.meterDollTop as number) - (r.meterDollBottom as number);
-        offsetByMachine.set(r.machineId, cur);
+        const off = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
+        off.doll = (r.meterDollTop as number) - (r.meterDollBottom as number);
+        offsetByMachine.set(r.machineId, off);
+        const pr = prevReadByMachine.get(r.machineId) ?? blankPrev();
+        pr.dGear = r.meterDollTop; pr.dDigi = r.meterDollBottom;
+        prevReadByMachine.set(r.machineId, pr);
       }
     }
   } catch {
-    // graceful: query ล้ม → ไม่มี offset (ข้าม cross-check · ไม่เตือนหลอก · ไม่พัง)
-  }
-
-  // CEO 2026-08-01 · เลขจริง 4 ตัว (เฟือง/ดิจิตอล × เหรียญ/ตุ๊กตา) จาก "รอบเก็บล่าสุด" (COLLECTION เท่านั้น) —
-  //   โชว์เป็น placeholder อ้างอิงในช่องกรอก · แต่ละหน้าปัดเลขจริงของตัวเอง (เดิม mirror จำเลขเดียวโชว์ซ้ำ 2 ช่อง).
-  //   ไม่รวม baseline (INITIAL) → ตู้ที่ยังไม่เคยเก็บ = ไม่มี → ช่องว่าง (CEO เคาะ 2026-08-01).
-  const prevReadByMachine = new Map<string, { cGear: number | null; cDigi: number | null; dGear: number | null; dDigi: number | null }>();
-  try {
-    const machineIds = machines.map((m) => m.id);
-    if (machineIds.length > 0) {
-      const rows = await prisma.cfCollectionEvent.findMany({
-        where: { orgId, machineId: { in: machineIds }, eventType: "COLLECTION" },
-        orderBy: { collectedAt: "desc" },
-        distinct: ["machineId"],
-        select: { machineId: true, meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true },
-      });
-      for (const r of rows) {
-        prevReadByMachine.set(r.machineId, { cGear: r.meterMoneyTop, cDigi: r.meterMoneyBottom, dGear: r.meterDollTop, dDigi: r.meterDollBottom });
-      }
-    }
-  } catch {
-    // graceful: query ล้ม → ไม่มีเลขอ้างอิง (ช่องว่าง · ไม่พัง)
+    // graceful: query ล้ม → ไม่มี offset/เลขอ้างอิง (ข้าม cross-check + ช่องว่าง · ไม่พัง)
   }
 
   // index machines by group + the exchanger lookup
