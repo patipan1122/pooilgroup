@@ -127,12 +127,16 @@ export default async function CollectionsPage({
     // มิเตอร์เหรียญจริงจาก event (รวมทั้งรอบ) — client โชว์ delta×10 จริง (ไม่ประมาณ)
     coinMeterBefore: r.coinMeterBefore,
     coinMeterAfter: r.coinMeterAfter,
-    // รูปจริงที่พนักงานถ่ายต่อตู้ (anti-cheat) — ผ่าน eventToMachine → photoShots
+    // รูปจริง + "ข้อมูลที่พนักงานกรอกครบทุกช่อง" ต่อตู้ (anti-cheat) — ผ่าน eventToMachine
     machines: r.machines.map((m) => ({
       eventId: m.eventId,
       code: m.code,
       name: m.name,
+      kind: m.kind,
+      isInitial: m.isInitial,
       photoShots: m.photoShots ?? [],
+      // ข้อมูลที่กรอกจริง (label→value · จัดรูปฝั่ง server · kind-aware) — โชว์ครบทุกช่องให้เทียบรูป
+      entered: m.entered ?? [],
       // เลขปัจจุบันต่อตู้ (หลังบ้านแก้เลข) — meterAfter=มิเตอร์เหรียญ · prizeMeterNow=มิเตอร์ตุ๊กตา · cashIn=บาท
       coinMeterAfter: m.meterAfter,
       dollMeterAfter: m.prizeMeterNow,

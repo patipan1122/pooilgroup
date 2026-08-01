@@ -59,6 +59,13 @@ export type Machine = {
   photoShots?: { label: string; url: string | null }[];
   flag: boolean;
   note?: string;
+  /** ประเภทตู้ (CLAW/EXCHANGER) — ใช้ป้ายกำกับหัวการ์ดตู้ · optional (legacy/mock ไม่ส่ง) */
+  kind?: string;
+  /** true = รอบตั้งต้น (INITIAL event) — ตั้งค่ามิเตอร์ครั้งแรกของตู้ */
+  isInitial?: boolean;
+  /** ข้อมูลที่พนักงานกรอกจริงในรอบนี้ (label→value · จัดรูปแล้วฝั่ง server · kind-aware).
+   *  โชว์ครบทุกช่องให้ผู้ตรวจเทียบกับรูปหลักฐาน · optional (legacy/mock ไม่ส่ง array นี้) */
+  entered?: { k: string; v: string }[];
 };
 
 export type AnomalySeverity = "P0" | "P1" | "P2";

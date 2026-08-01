@@ -34,6 +34,12 @@ export type CollectionMachine = {
   code: string;
   name: string;
   photoShots: { label: string; url: string | null }[];
+  /** ข้อมูลที่พนักงานกรอกจริงทุกช่อง (label→value · จัดรูปฝั่ง server · kind-aware) — โชว์ให้เทียบกับรูป */
+  entered?: { k: string; v: string }[];
+  /** ประเภทตู้ (CLAW/EXCHANGER) — ป้ายกำกับหัวการ์ดตู้ */
+  kind?: string;
+  /** true = event รอบตั้งต้น (INITIAL) */
+  isInitial?: boolean;
   /** id ของ event (COLLECTION) — หลังบ้านใช้แก้เลข (adminEditCollectionEvent) · undefined = mock/legacy */
   eventId?: string;
   coinMeterAfter?: number; // มิเตอร์เหรียญ (ค่าปัจจุบัน · prefill ฟอร์มแก้)
@@ -801,6 +807,7 @@ function CollectionCard({
   const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม", "เงินสด"];
   const photoMachines: {
     code: string; name: string; shots: { label: string; url: string | null }[];
+    entered?: { k: string; v: string }[]; kind?: string; isInitial?: boolean;
     eventId?: string; coin?: number; doll?: number; cash?: number;
   }[] =
     row.machines.length > 0
@@ -810,6 +817,9 @@ function CollectionCard({
           shots: m.photoShots.length > 0
             ? m.photoShots
             : FALLBACK_LABELS.map((label) => ({ label, url: null })),
+          entered: m.entered,
+          kind: m.kind,
+          isInitial: m.isInitial,
           eventId: m.eventId,
           coin: m.coinMeterAfter,
           doll: m.dollMeterAfter,
@@ -1021,7 +1031,7 @@ function CollectionCard({
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
               <ZoomIn size={13} color="#9AA1AB" style={{ flex: "0 0 13px" }} />
               <span className="co-eyebrow">
-                รูปที่พนักงานถ่ายตอนเก็บเงิน · กดรูปเพื่อขยายตรวจว่าเลขในรูปตรงกับที่กรอกไหม
+                ข้อมูลที่พนักงานกรอก + รูปหลักฐานจริง · กดรูปเพื่อขยายเทียบว่าเลขในรูปตรงกับที่กรอก
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1037,8 +1047,10 @@ function CollectionCard({
                           {m.name} {m.code && <span style={{ color: "#9AA1AB", fontWeight: 500 }}>· {m.code}</span>}
                         </div>
                       )}
-                      {/* CEO 2026-07-25 · หลังบ้านแก้เลขที่พนักงานกรอกผิด (ดูรูป → แก้ → คำนวณใหม่) */}
-                      {canEdit && m.eventId && (
+                      {/* CEO 2026-07-25 · หลังบ้านแก้เลขที่พนักงานกรอกผิด (ดูรูป → แก้ → คำนวณใหม่)
+                          เฉพาะตู้คีบรอบปกติ — adminEditCollectionEvent กรอง eventType=COLLECTION + แก้ช่องตุ๊กตา
+                          → รอบตั้งต้น (INITIAL) และตู้แลก (EXCHANGER) ปิดปุ่มไว้ กันกดแล้ว error/เพี้ยน */}
+                      {canEdit && m.eventId && !m.isInitial && m.kind !== "EXCHANGER" && (
                         <button
                           type="button"
                           onClick={() => setEditTarget({
@@ -1054,6 +1066,21 @@ function CollectionCard({
                         </button>
                       )}
                     </div>
+                    {/* ข้อมูลที่พนักงานกรอกจริงทุกช่อง (kind-aware · จัดรูปฝั่ง server) — กริด 2 คอลัมน์ให้แน่น
+                        วางไว้เหนือรูป → ผู้ตรวจเทียบ "เลขที่กรอก" กับ "เลขในรูป" ได้ในสายตาเดียว */}
+                    {m.entered && m.entered.length > 0 && (
+                      <div
+                        className="grid grid-cols-1 sm:grid-cols-2 gap-x-5"
+                        style={{ marginBottom: 10, background: "#FAFBFC", border: "1px solid #EEF0F3", borderRadius: 10, padding: "4px 13px" }}
+                      >
+                        {m.entered.map((rw, ri) => (
+                          <div key={`${rw.k}-${ri}`} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderBottom: "1px solid #F1F2F5" }}>
+                            <span style={{ flex: 1, fontSize: 11, color: "#6B7280", lineHeight: 1.35 }}>{rw.k}</span>
+                            <span className="num" style={{ fontSize: 11.5, fontWeight: 600, color: "#1A1D21", textAlign: "right", wordBreak: "break-word" }}>{rw.v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {hasAnyPhoto ? (
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
                         {m.shots.map((s, si) => (

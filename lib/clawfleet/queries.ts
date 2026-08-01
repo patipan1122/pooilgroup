@@ -351,7 +351,9 @@ export async function getV2AllRounds(opts?: {
         branch: { select: { name: true, code: true } },
         openedBy: { select: { name: true } },
         events: {
-          where: { eventType: "COLLECTION" },
+          // รวม INITIAL (รอบตั้งต้น) ด้วย — ไม่งั้นรอบตั้งต้นไม่มีตู้/รูปให้ดู (โชว์ "ยังไม่มีข้อมูล").
+          // รอบปกติมีแต่ COLLECTION อยู่แล้ว (INITIAL เกิดเฉพาะ flow ตั้งต้น) → ไม่กระทบ.
+          where: { eventType: { in: ["COLLECTION", "INITIAL"] } },
           include: { machine: { select: { code: true, nickname: true, kind: true } } },
           orderBy: { collectedAt: "asc" },
         },
@@ -377,8 +379,9 @@ export async function getV2AllRounds(opts?: {
     // type = ตุ๊กตาหาย เฉพาะเมื่อตุ๊กตาหายจริง (prizeGap>0) · ไม่งั้นถือเป็นสายเงิน
     const type: "cash_short" | "prize_short" = prizeGap > 0 ? "prize_short" : "cash_short";
 
-    const clawEvents = s.events.filter((e) => e.machine.kind === "CLAW");
-    const machines: Machine[] = clawEvents.map((e) => eventToMachine(e));
+    // แสดง "ทุกตู้ในรอบ" — คีบ + ตู้แลกเหรียญ + รอบตั้งต้น (CEO: เห็นข้อมูล+รูปครบทุกอย่าง).
+    // เดิมกรองเฉพาะ CLAW → ตู้แลกและรอบตั้งต้นถูกซ่อน. eventToMachine จัดรูป/ข้อมูลตาม kind ให้เอง.
+    const machines: Machine[] = s.events.map((e) => eventToMachine(e));
 
     // มิเตอร์เหรียญรวมทั้งรอบจาก event จริง (ทุก kind — เหรียญเข้าตู้คีบ+เครื่องแลก)
     // before = ผลรวม coinMeterBefore · after = ผลรวม coinMeterAfter → delta×10 = ควรได้จริง
@@ -509,10 +512,21 @@ export async function getV2Anomaly(sessionCode: string): Promise<Anomaly | null>
 // รับ sessionCode → คืน SessionDetail (ทุก status · ไม่ใช่แค่ ANOMALY_REVIEW)
 // =============================================================
 
-/** map CfCollectionEvent (COLLECTION · CLAW) → Machine (shape เดียวกับ anomaly) */
+/** format เลขมี comma (ฝั่ง server · display string) */
+const nfmt = (n: number) => n.toLocaleString("en-US");
+
+/**
+ * map CfCollectionEvent → Machine (shape เดียวกับ anomaly).
+ * รู้จัก 3 แบบตาม (eventType, machine.kind) — รูปหลักฐาน + "ข้อมูลที่กรอก" ต่างกันคนละช่อง:
+ *   • INITIAL (รอบตั้งต้น)      — 7 ช่องรูป (ตู้/มิเตอร์เงินบน-ล่าง/มิเตอร์ตุ๊กตาบน-ล่าง/ตุ๊กตาก่อน-หลัง) + มิเตอร์ N1
+ *   • COLLECTION · EXCHANGER    — 3 ช่องรูป (มิเตอร์เหรียญ/เงินสด/ถาดเหรียญ) + เหรียญโปร
+ *   • COLLECTION · CLAW         — 5 ช่องรูป (เดิม) + สต็อก/เหตุผลเงินขาด
+ * ⚠️ COLUMN→CONTENT MAPPING: ชื่อ column ไม่ตรง content — อ่านตามตารางใน actions.ts / baseline-actions.ts
+ */
 function eventToMachine(e: {
   id: string;
-  machine: { code: string; nickname: string | null };
+  eventType: string;
+  machine: { code: string; nickname: string | null; kind: string };
   coinMeterBefore: number;
   coinMeterAfter: number;
   cashCountedCents: number;
@@ -521,30 +535,92 @@ function eventToMachine(e: {
   refillQty: number | null;
   dollMeterBefore: number | null;
   dollMeterAfter: number | null;
+  meterMoneyTop: number | null;
+  meterMoneyBottom: number | null;
+  meterDollTop: number | null;
+  meterDollBottom: number | null;
+  promoCoinsDispensed: number | null;
+  shortReason: string | null;
   photoMeterBeforeUrl: string | null;
   photoPrizeMeterUrl: string | null;
   photoCashUrl: string | null;
   photoMeterAfterUrl: string | null;
   photoStockUrl: string | null;
+  photoMachineUrl: string | null;
+  photoMoneyMeterTopUrl: string | null;
+  photoMoneyMeterBottomUrl: string | null;
+  photoDollMeterTopUrl: string | null;
+  photoDollMeterBottomUrl: string | null;
   anomalyFlags: string[];
   notes: string | null;
 }): Machine {
-  // ⚠️ COLUMN→CONTENT MAPPING (ดู actions.ts ~244 · ชื่อ column ไม่ตรง content):
-  //   photoMeterAfterUrl  = มิเตอร์เหรียญ      photoPrizeMeterUrl = มิเตอร์ตุ๊กตา
-  //   photoStockUrl       = สต็อกก่อนเติม       photoMeterBeforeUrl = สต็อกหลังเติม
-  //   photoCashUrl        = เงินสด
-  const photoShots: { label: string; url: string | null }[] = [
-    { label: "มิเตอร์เหรียญ", url: e.photoMeterAfterUrl },
-    { label: "มิเตอร์ตุ๊กตา", url: e.photoPrizeMeterUrl },
-    { label: "สต็อกก่อนเติม", url: e.photoStockUrl },
-    { label: "สต็อกหลังเติม", url: e.photoMeterBeforeUrl },
-    { label: "เงินสด", url: e.photoCashUrl },
-  ];
+  const isInitial = e.eventType === "INITIAL";
+  const kind = e.machine.kind;
+  const cashBaht = Math.round(e.cashCountedCents / 100);
+
+  let photoShots: { label: string; url: string | null }[];
+  const entered: { k: string; v: string }[] = [];
+
+  if (isInitial) {
+    // รอบตั้งต้น (baseline · INITIAL) — คอลัมน์ N1 เฉพาะ (ดู baseline-actions.ts ~244)
+    photoShots = [
+      { label: "รูปตู้ทั้งตัว", url: e.photoMachineUrl },
+      { label: "มิเตอร์เงิน · บน", url: e.photoMoneyMeterTopUrl },
+      { label: "มิเตอร์เงิน · ล่าง", url: e.photoMoneyMeterBottomUrl },
+      { label: "มิเตอร์ตุ๊กตา · บน", url: e.photoDollMeterTopUrl },
+      { label: "มิเตอร์ตุ๊กตา · ล่าง", url: e.photoDollMeterBottomUrl },
+      { label: "ตุ๊กตาก่อนใส่", url: e.photoStockUrl },
+      { label: "ตุ๊กตาหลังใส่", url: e.photoMeterBeforeUrl },
+    ];
+    if (e.meterMoneyTop != null) entered.push({ k: "มิเตอร์เงิน · บน (เฟือง)", v: nfmt(e.meterMoneyTop) });
+    if (e.meterMoneyBottom != null) entered.push({ k: "มิเตอร์เงิน · ล่าง (ดิจิตอล)", v: nfmt(e.meterMoneyBottom) });
+    if (e.meterDollTop != null) entered.push({ k: "มิเตอร์ตุ๊กตา · บน (เฟือง)", v: nfmt(e.meterDollTop) });
+    if (e.meterDollBottom != null) entered.push({ k: "มิเตอร์ตุ๊กตา · ล่าง (ดิจิตอล)", v: nfmt(e.meterDollBottom) });
+    entered.push({ k: "เงินสดตั้งต้น", v: `฿${nfmt(cashBaht)}` });
+    if (e.stockAfter != null) entered.push({ k: "ตุ๊กตาในตู้ (ตั้งต้น)", v: `${nfmt(e.stockAfter)} ตัว` });
+    if (e.refillQty != null && e.refillQty > 0) entered.push({ k: "เติมตุ๊กตา", v: `${nfmt(e.refillQty)} ตัว` });
+  } else if (kind === "EXCHANGER") {
+    // ตู้แลกเหรียญ (ดู actions.ts ~1388)
+    photoShots = [
+      { label: "มิเตอร์เหรียญ", url: e.photoMeterAfterUrl },
+      { label: "เงินสด", url: e.photoCashUrl },
+      { label: "ถาดเหรียญ", url: e.photoMeterBeforeUrl },
+    ];
+    entered.push({ k: "มิเตอร์เหรียญ (ก่อน → หลัง)", v: `${nfmt(e.coinMeterBefore)} → ${nfmt(e.coinMeterAfter)}` });
+    entered.push({ k: "เงินสดนับได้", v: `฿${nfmt(cashBaht)}` });
+    if (e.promoCoinsDispensed != null) entered.push({ k: "เหรียญโปรที่จ่าย", v: nfmt(e.promoCoinsDispensed) });
+  } else {
+    // ตู้คีบ (CLAW · COLLECTION) — 5 รูปเดิม (ดู actions.ts ~468)
+    photoShots = [
+      { label: "มิเตอร์เหรียญ", url: e.photoMeterAfterUrl },
+      { label: "มิเตอร์ตุ๊กตา", url: e.photoPrizeMeterUrl },
+      { label: "สต็อกก่อนเติม", url: e.photoStockUrl },
+      { label: "สต็อกหลังเติม", url: e.photoMeterBeforeUrl },
+      { label: "เงินสด", url: e.photoCashUrl },
+    ];
+    entered.push({ k: "มิเตอร์เหรียญ · ดิจิตอล (ก่อน → หลัง)", v: `${nfmt(e.coinMeterBefore)} → ${nfmt(e.coinMeterAfter)}` });
+    if (e.meterMoneyTop != null) entered.push({ k: "มิเตอร์เหรียญ · เฟือง (หลัง)", v: nfmt(e.meterMoneyTop) });
+    entered.push({ k: "เงินสดนับได้", v: `฿${nfmt(cashBaht)}` });
+    if (e.dollMeterBefore != null || e.dollMeterAfter != null) {
+      entered.push({ k: "มิเตอร์ตุ๊กตา · ดิจิตอล (ก่อน → หลัง)", v: `${nfmt(e.dollMeterBefore ?? 0)} → ${nfmt(e.dollMeterAfter ?? 0)}` });
+    }
+    if (e.meterDollTop != null) entered.push({ k: "มิเตอร์ตุ๊กตา · เฟือง (หลัง)", v: nfmt(e.meterDollTop) });
+    if (e.stockBefore != null || e.stockAfter != null) {
+      entered.push({ k: "ตุ๊กตาในตู้ (ก่อน → หลังเติม)", v: `${nfmt(e.stockBefore ?? 0)} → ${nfmt(e.stockAfter ?? 0)} ตัว` });
+    }
+    if (e.refillQty != null && e.refillQty > 0) entered.push({ k: "เติมตุ๊กตา", v: `${nfmt(e.refillQty)} ตัว` });
+    if (e.shortReason) entered.push({ k: "เหตุผลเงินขาด", v: e.shortReason });
+  }
+  // หมายเหตุพนักงาน — ต่อท้ายเสมอถ้ามี (ทุกแบบตู้)
+  if (e.notes) entered.push({ k: "หมายเหตุ", v: e.notes });
+
   const photos = photoShots.filter((p) => p.url).length;
   return {
     eventId: e.id,
     code: e.machine.code,
     name: e.machine.nickname ?? e.machine.code,
+    kind,
+    isInitial,
     meterBefore: e.coinMeterBefore,
     meterAfter: e.coinMeterAfter,
     coinRate: 10,
@@ -552,11 +628,12 @@ function eventToMachine(e: {
     prizeAfter: e.stockAfter ?? 0,
     refilled: e.refillQty ?? 0,
     skuMix: "",
-    cashIn: Math.round(e.cashCountedCents / 100),
+    cashIn: cashBaht,
     prizeMeterPrev: e.dollMeterBefore ?? 0,
     prizeMeterNow: e.dollMeterAfter ?? 0,
     photos,
     photoShots,
+    entered,
     flag: e.anomalyFlags.length > 0,
     note: e.notes ?? undefined,
   };
