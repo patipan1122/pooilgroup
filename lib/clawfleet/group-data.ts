@@ -220,6 +220,46 @@ export async function getGroupCollectData(): Promise<{
         pr.dGear = r.meterDollTop; pr.dDigi = r.meterDollBottom;
         prevReadByMachine.set(r.machineId, pr);
       }
+      // ── CEO 2026-08-01 (fix) · placeholder เลขจางๆ ต้องโชว์แม้ "รอบก่อนกรอกดิจิตอลอย่างเดียว ไม่กรอกเฟือง" ──
+      //   ปัญหาเดิม: 2 query ข้างบนบังคับ เฟือง(top)+ดิจิตอล(bottom) ครบ "คู่เดียวกัน" ถึงคืนเลข.
+      //   ตู้ที่รอบก่อนกรอกแต่ดิจิตอล (เฟืองว่าง/ตู้เก่าไม่มีคอลัมน์) → query ตกทั้งยวง → ทั้ง 4 ช่องขึ้น "เลข"
+      //   ทั้งที่เลขดิจิตอลมีอยู่ใน DB. แก้: เติมทีละหน้าปัดจาก "เลขล่าสุดของหน้าปัดตัวเอง" อิสระ —
+      //   fill เฉพาะช่องที่ยัง null (ไม่ทับค่าที่ query คู่ครบหาเจอแล้ว = ไม่ regress ตู้ที่โชว์ครบอยู่แล้ว).
+      //   offset (anti-fraud "ขยับเท่ากัน") ยังใช้ query คู่ครบข้างบนเหมือนเดิม ไม่แตะ.
+      const fillPrev = (machineId: string, patch: Partial<{ cGear: number; cDigi: number; dGear: number; dDigi: number }>) => {
+        const pr = prevReadByMachine.get(machineId) ?? blankPrev();
+        if (patch.cGear != null && pr.cGear == null) pr.cGear = patch.cGear;
+        if (patch.cDigi != null && pr.cDigi == null) pr.cDigi = patch.cDigi;
+        if (patch.dGear != null && pr.dGear == null) pr.dGear = patch.dGear;
+        if (patch.dDigi != null && pr.dDigi == null) pr.dDigi = patch.dDigi;
+        prevReadByMachine.set(machineId, pr);
+      };
+      // ดิจิตอล (ช่องคิดเงิน) — coin_meter_after มีทุกรอบเก็บ (= เลขดิจิตอลรอบก่อน) · doll_meter_after nullable (ตุ๊กตา optional)
+      const coinDigiRows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds } },
+        orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
+        select: { machineId: true, coinMeterAfter: true },
+      });
+      const dollDigiRows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds }, dollMeterAfter: { not: null } },
+        orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
+        select: { machineId: true, dollMeterAfter: true },
+      });
+      // เฟือง — meter_money_top / meter_doll_top (มีเฉพาะรอบที่กรอกเฟือง · เผื่อ path ที่เขียนเฟืองเดี่ยว)
+      const coinGearRows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds }, meterMoneyTop: { not: null } },
+        orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
+        select: { machineId: true, meterMoneyTop: true },
+      });
+      const dollGearRows = await prisma.cfCollectionEvent.findMany({
+        where: { orgId, machineId: { in: machineIds }, meterDollTop: { not: null } },
+        orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
+        select: { machineId: true, meterDollTop: true },
+      });
+      for (const r of coinDigiRows) fillPrev(r.machineId, { cDigi: r.coinMeterAfter });
+      for (const r of dollDigiRows) fillPrev(r.machineId, { dDigi: r.dollMeterAfter ?? undefined });
+      for (const r of coinGearRows) fillPrev(r.machineId, { cGear: r.meterMoneyTop ?? undefined });
+      for (const r of dollGearRows) fillPrev(r.machineId, { dGear: r.meterDollTop ?? undefined });
     }
   } catch {
     // graceful: query ล้ม → ไม่มี offset/เลขอ้างอิง (ข้าม cross-check + ช่องว่าง · ไม่พัง)
