@@ -25,6 +25,8 @@ export type TransferFulfillmentLine = {
   sent: number;
   received: number;
   onHand: number;
+  /** ปลายทางรับไม่ครบกี่ชิ้น = max(0, sent − received) (0 = รับครบ) */
+  shortage: number;
 };
 
 export type TransferFulfillment = {
@@ -34,8 +36,14 @@ export type TransferFulfillment = {
   fromName: string | null;
   toName: string | null;
   receivedAt: Date | null; // confirmedAt ?? dispatchedAt
+  // เส้นทาง/log ใบโอน — จากไหน→ถึงไหน · ใครส่ง/รับ · เมื่อไร (กดดูใน UI)
+  dispatchedByName: string | null;
+  dispatchedAt: Date | null;
+  confirmedByName: string | null;
+  confirmedAt: Date | null;
+  note: string | null;
   lines: TransferFulfillmentLine[];
-  totals: { sent: number; received: number };
+  totals: { sent: number; received: number; shortage: number };
 };
 
 export type ReceivedTransferForBrowse = {
@@ -46,6 +54,8 @@ export type ReceivedTransferForBrowse = {
   status: string;
   lineCount: number;
   receivedAt: Date | null;
+  /** Σ sent ต่อสินค้าในใบ — โอนออกมาทั้งหมดกี่ชิ้น (ตัวหารของ %) */
+  totalSent: number;
   /** Σ received ต่อสินค้าในใบ — จำนวนของที่รับเข้าจากใบโอนนี้ */
   totalReceived: number;
 };
@@ -101,9 +111,11 @@ export async function listReceivedTransfersForBrowse(
   return transfers
     .map((t) => {
       const products = new Set<string>();
+      let totalSent = 0;
       let totalReceived = 0;
       for (const l of t.lines) {
         products.add(l.productId);
+        totalSent += l.qty;
         totalReceived += l.qtyReceived ?? l.qty;
       }
       return {
@@ -114,6 +126,7 @@ export async function listReceivedTransfersForBrowse(
         status: t.status,
         lineCount: products.size,
         receivedAt: t.confirmedAt ?? t.dispatchedAt,
+        totalSent,
         totalReceived,
       };
     })
@@ -138,6 +151,9 @@ export async function getTransferFulfillment(
       toWarehouseId: true,
       confirmedAt: true,
       dispatchedAt: true,
+      dispatchedByUserId: true,
+      confirmedByUserId: true,
+      note: true,
       lines: {
         select: {
           productId: true,
@@ -180,14 +196,23 @@ export async function getTransferFulfillment(
     }
   }
 
-  // ชื่อคลัง
+  // ชื่อคลัง + ชื่อผู้ส่ง/ผู้รับ (สำหรับ log เส้นทางใบโอน) — batch resolve, ไม่มี N+1
   const whIds = [t.fromWarehouseId, t.toWarehouseId].filter((x): x is string => !!x);
-  const whs = whIds.length
-    ? await prisma.dcWarehouse.findMany({ where: { id: { in: whIds }, orgId }, select: { id: true, name: true } })
-    : [];
+  const userIds = [t.dispatchedByUserId, t.confirmedByUserId].filter((x): x is string => !!x);
+  const [whs, users] = await Promise.all([
+    whIds.length
+      ? prisma.dcWarehouse.findMany({ where: { id: { in: whIds }, orgId }, select: { id: true, name: true } })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    userIds.length
+      ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
   const whName = new Map(whs.map((w) => [w.id, w.name]));
+  const userName = new Map(users.map((u) => [u.id, u.name]));
 
   const lines: TransferFulfillmentLine[] = productIds.map((pid) => {
+    const sent = sentByProduct.get(pid) ?? 0;
+    const received = recvByProduct.get(pid) ?? 0;
     const m = meta.get(pid)!;
     return {
       productId: pid,
@@ -195,17 +220,18 @@ export async function getTransferFulfillment(
       name: m.name,
       unit: m.unit,
       imageR2Path: m.imageR2Path,
-      sent: sentByProduct.get(pid) ?? 0,
-      received: recvByProduct.get(pid) ?? 0,
+      sent,
+      received,
       onHand: onHandByProduct.get(pid) ?? 0,
+      shortage: Math.max(0, sent - received),
     };
   });
   // เรียง: มีของในคลังก่อน แล้วตามชื่อ
   lines.sort((a, b) => (b.onHand - a.onHand) || a.name.localeCompare(b.name, "th"));
 
   const totals = lines.reduce(
-    (acc, l) => ({ sent: acc.sent + l.sent, received: acc.received + l.received }),
-    { sent: 0, received: 0 },
+    (acc, l) => ({ sent: acc.sent + l.sent, received: acc.received + l.received, shortage: acc.shortage + l.shortage }),
+    { sent: 0, received: 0, shortage: 0 },
   );
 
   return {
@@ -215,6 +241,11 @@ export async function getTransferFulfillment(
     fromName: t.fromWarehouseId ? (whName.get(t.fromWarehouseId) ?? null) : null,
     toName: t.toWarehouseId ? (whName.get(t.toWarehouseId) ?? null) : null,
     receivedAt: t.confirmedAt ?? t.dispatchedAt,
+    dispatchedByName: t.dispatchedByUserId ? (userName.get(t.dispatchedByUserId) ?? null) : null,
+    dispatchedAt: t.dispatchedAt,
+    confirmedByName: t.confirmedByUserId ? (userName.get(t.confirmedByUserId) ?? null) : null,
+    confirmedAt: t.confirmedAt,
+    note: t.note,
     lines,
     totals,
   };
