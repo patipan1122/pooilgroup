@@ -22,7 +22,7 @@
  * we send the captured url (or "" when skipped). Backend column is String? (nullable).
  */
 
-import { useEffect, useMemo, useReducer, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useTransition, type ReactNode, type CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2, ChevronRight, ChevronLeft, Inbox, Check, X, Camera, PackageOpen, PackagePlus, ImageDown, History, RefreshCw } from "lucide-react";
 import { PhoneFrame, EmptyState } from "@/components/clawfleet/os/kit";
@@ -34,6 +34,7 @@ import {
   renameMachineNickname,
   attachEventPhotos,
   editCollectionRound,
+  saveMachineOrder,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
@@ -707,6 +708,8 @@ export type StaffHistoryRow = {
   // CEO 2026-08-01 · การ์ดรายวัน reconciliation — เงิน/ตุ๊กตา "ตามมิเตอร์" ต่อตู้ (baseline = undefined)
   meterExpectedBaht?: number;
   dollMeterOut?: number;
+  // CEO 2026-08-01 · วันตั้งค่าแรก (baseline) ของตู้ (ymd) → ใบเก็บโชว์ "ตั้งค่าแรกวันไหน" คู่กับวันเก็บ
+  setupAt?: string;
 };
 
 type Props = {
@@ -752,6 +755,8 @@ type Props = {
   inMachineByMachine?: Record<string, InMachineDoll[]>;
   // 🆕 "ของว่างในคลัง" ต่อสินค้า แยกตาม branchId (คลัง − ในตู้) — โชว์ยอดคลังหลังคืน. optional default {}.
   netAvailableByBranch?: Record<string, Record<string, number>>;
+  // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (machineId → sortOrder · จำติดบัญชี). optional default {}.
+  machineOrder?: Record<string, number>;
 };
 
 // B3 · วันนี้ตามเวลาไทย (client-side fallback เมื่อ server ไม่ส่ง selectedDate) — YYYY-MM-DD
@@ -763,7 +768,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {} }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -784,10 +789,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} />
   );
 
   return (
@@ -882,14 +887,27 @@ type StaffAppProps = {
   // 🆕 ตุ๊กตาในตู้ตอนนี้ (แยกตาม machineId) + ของว่างในคลังต่อสินค้า (แยกตาม branchId) — sheet คืนตุ๊กตา
   inMachineByMachine: Record<string, InMachineDoll[]>;
   netAvailableByBranch: Record<string, Record<string, number>>;
+  // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (machineId → sortOrder · จำติดบัญชี)
+  machineOrder: Record<string, number>;
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
-function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch }: StaffAppProps) {
+function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [panel, setPanel] = useState<Panel>(null);
+  // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (จำติดบัญชี) — state เริ่มจาก server · reorder = optimistic + save
+  //   ใช้ทั้งหน้าแรก (ในกลุ่มสาขา) และวิ่งตู้ 7-11 (แบน) · save เขียนทับทั้งชุด (กันลำดับสาขาอื่นหาย/กัน orphan)
+  const [order, setOrder] = useState<Record<string, number>>(machineOrder);
+  const orderedMachines = sortMachinesByOrder(machines, order);
+  const persistOrder = (orderedIds: string[]) => {
+    const prev = order;
+    const next: Record<string, number> = {};
+    orderedIds.forEach((id, i) => { next[id] = i; });
+    setOrder(next); // optimistic — จอเรียงใหม่ทันที
+    void saveMachineOrder(orderedIds).then((res) => { if (!res?.ok) setOrder(prev); }).catch(() => setOrder(prev));
+  };
   // ── ปุ่มสลับสาขา (พนักงาน 1 คนดูแลหลายสาขา · CEO 2026-07-28) ──
   // เก็บ "สาขาที่ผู้ใช้เลือกเอง" · "" = ยังไม่เลือก → ใช้ default. ยกไว้ที่ StaffApp เพื่อไม่รีเซ็ต
   // ตอนเข้า-ออกจอเก็บเงิน (HomeScreen unmount).
@@ -1639,7 +1657,8 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
           routeTotal={routeTotal}
           routeDone={routeDone}
           routePct={routePct}
-          machines={machines}
+          machines={orderedMachines}
+          onReorder={usingDemo ? undefined : persistOrder}
           drafts={drafts}
           draftList={draftList}
           onOpen={openMachine}
@@ -1808,6 +1827,69 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
   );
 }
 
+/* CEO 2026-08-01 · เรียงตู้ตามลำดับที่พนักงานจัดเอง (sortOrder) → ตามด้วยรหัส (ตู้ที่ยังไม่จัด/ตู้ใหม่ไปท้าย). */
+function sortMachinesByOrder(machines: AppMachine[], order: Record<string, number>): AppMachine[] {
+  const arr = machines.slice();
+  arr.sort((a, b) => {
+    const oa = a.id in order ? order[a.id] : Number.MAX_SAFE_INTEGER;
+    const ob = b.id in order ? order[b.id] : Number.MAX_SAFE_INTEGER;
+    if (oa !== ob) return oa - ob;
+    return a.code.localeCompare(b.code, undefined, { numeric: true });
+  });
+  return arr;
+}
+
+/* แทรกลำดับใหม่ของ "ชุดย่อย" (เช่นตู้สาขาเดียว) กลับเข้า full list โดยไม่ขยับตู้ชุดอื่น
+ * → คืน array ของ machineId ทั้งหมด (ตามลำดับใหม่) เพื่อบันทึกลำดับเต็ม (กันลำดับสาขาอื่นหาย). */
+function spliceSubsetOrder(full: AppMachine[], subsetIds: Set<string>, newSubsetOrder: string[]): string[] {
+  let i = 0;
+  return full.map((m) => (subsetIds.has(m.id) && i < newSubsetOrder.length ? newSubsetOrder[i++] : m.id));
+}
+
+/* ปุ่มเลื่อนขึ้น/ลง (โหมดจัดเรียง) — ไม่ใช้ library เพิ่ม · กดชัวร์บนมือถือ. */
+function ReorderArrows({ onUp, onDown, upDisabled, downDisabled }: { onUp: () => void; onDown: () => void; upDisabled: boolean; downDisabled: boolean }) {
+  const btn = (disabled: boolean): CSSProperties => ({
+    width: 34, height: 30, flex: "0 0 34px", borderRadius: 8, border: "1px solid #E1E3E9",
+    background: disabled ? "#F7F8FA" : "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, padding: 0,
+  });
+  return (
+    <div style={{ display: "flex", gap: 5, flex: "0 0 auto" }}>
+      <button type="button" onClick={onUp} disabled={upDisabled} aria-label="เลื่อนขึ้น" style={btn(upDisabled)}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+      </button>
+      <button type="button" onClick={onDown} disabled={downDisabled} aria-label="เลื่อนลง" style={btn(downDisabled)}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+    </div>
+  );
+}
+
+/* ค้นหาตู้ (CEO 2026-08-01) — ช่องค้นหาแบบ compact ใช้ร่วมกันหน้าแรก + วิ่งตู้ 7-11 · กรองฝั่งจอ (ไม่ยิง server). */
+function MachineSearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div style={{ position: "relative", marginBottom: 10 }}>
+      <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", display: "flex", pointerEvents: "none" }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9AA1AB" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "ค้นหาเลขตู้"}
+        inputMode="search"
+        enterKeyHint="search"
+        style={{ width: "100%", height: 38, boxSizing: "border-box", padding: "0 34px", borderRadius: 11, border: "1px solid #E1E3E9", background: "#fff", fontSize: 13, outline: "none" }}
+      />
+      {value && (
+        <button type="button" onClick={() => onChange("")} aria-label="ล้างคำค้น"
+          style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: 8, border: "none", background: "#F1F2F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6B7280" }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────────────────── HOME ─────────────────────────── */
 function HomeScreen(props: {
   userName: string;
@@ -1818,6 +1900,8 @@ function HomeScreen(props: {
   routeDone: number;
   routePct: number;
   machines: AppMachine[];
+  // CEO 2026-08-01 · บันทึกลำดับตู้ที่จัดเอง (ส่ง machineId ทั้งหมดตามลำดับใหม่) — optimistic ที่ StaffApp
+  onReorder?: (orderedMachineIds: string[]) => void;
   drafts: Record<string, Draft>;
   draftList: Draft[];
   onOpen: (m: AppMachine) => void;
@@ -1883,6 +1967,10 @@ function HomeScreen(props: {
   const [sheetInitialId, setSheetInitialId] = useState<string>("");
   const [stripOpen, setStripOpen] = useState(false);
   const openBranchSheet = (initial: string) => { setSheetInitialId(initial); setBranchSheetOpen(true); };
+  // ── ค้นหาเลขตู้ (CEO 2026-08-01) · กรองด้วยรหัส/ชื่อเล่น/โซน/สาขา ฝั่งจอล้วน (ไม่ยิง server) ──
+  const [search, setSearch] = useState("");
+  // ── โหมดจัดเรียงตู้ (CEO 2026-08-01) · ↑/↓ จัดลำดับในสาขาที่กำลังดู · บันทึกลำดับเต็ม (จำติดบัญชี) ──
+  const [reorderMode, setReorderMode] = useState(false);
   // N3/N6 · สินค้าคลัง / ใบรับ / ประวัติ ของ "สาขาที่เลือก" (server ส่งครบทุกสาขามาแล้ว · keyed by branchId)
   const stockProducts = props.branchProducts[branchId] ?? [];
   const stockWarehouses = props.warehousesByBranch[branchId] ?? []; // WAVE-3b · N3 picker "นับคลัง"
@@ -1895,14 +1983,34 @@ function HomeScreen(props: {
   // จัดกลุ่มตู้ตามสาขา → หาง่ายเมื่อมีหลายสาขา (Wave 2).
   // รักษาลำดับสาขาตามที่เข้ามาครั้งแรก (insertion order ของ Map).
   const branchGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const src = q
+      ? visibleMachines.filter(
+          (m) =>
+            m.code.toLowerCase().includes(q) ||
+            (m.nickname ?? "").toLowerCase().includes(q) ||
+            (m.zone ?? "").toLowerCase().includes(q) ||
+            m.branch.toLowerCase().includes(q),
+        )
+      : visibleMachines;
     const map = new Map<string, AppMachine[]>();
-    for (const m of visibleMachines) {
+    for (const m of src) {
       const list = map.get(m.branch);
       if (list) list.push(m);
       else map.set(m.branch, [m]);
     }
     return Array.from(map.entries()); // [branchName, machines[]][]
-  }, [visibleMachines]);
+  }, [visibleMachines, search]);
+  // จัดเรียงได้เมื่อ: ไม่ใช่เดโม + มี handler + สาขานี้มี ≥2 ตู้ (จัดในสาขาที่กำลังดู)
+  const canReorder = !props.usingDemo && !!props.onReorder && visibleMachines.length >= 2;
+  // เลื่อนตู้ขึ้น/ลง 1 ตำแหน่งในสาขาที่ดู → แทรกลำดับใหม่กลับ full list → บันทึกลำดับเต็ม (optimistic ที่ StaffApp)
+  const moveMachine = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= visibleMachines.length) return;
+    const ids = visibleMachines.map((m) => m.id);
+    [ids[idx], ids[j]] = [ids[j], ids[idx]];
+    props.onReorder?.(spliceSubsetOrder(props.machines, new Set(ids), ids));
+  };
   // assignedOnly = "ตู้ของฉัน" (curated แล้ว) → ไม่ต้องคั่นสาขา แสดงเป็นรายการเดียว.
   // ไม่งั้น: มีมากกว่า 1 สาขา → โชว์หัวข้อสาขาคั่น (สาขาเดียวไม่ต้องคั่น กันรก).
   const showBranchHeaders = !assignedOnly && branchGroups.length > 1;
@@ -2135,7 +2243,19 @@ function HomeScreen(props: {
             {assignedOnly && (
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "2px 9px", borderRadius: 20 }}>มอบหมายให้ฉัน</span>
             )}
+            {/* CEO 2026-08-01 · ปุ่มโหมดจัดเรียงตู้ (↑/↓) — จำติดบัญชี · โชว์ "เสร็จ" เสมอตอนอยู่ในโหมด (กันหลุดออกไม่ได้) */}
+            {(canReorder || reorderMode) && (
+              <button type="button" onClick={() => { setReorderMode((v) => !v); setSearch(""); }} className="co-tap"
+                style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 20, border: "none", cursor: "pointer",
+                  background: reorderMode ? "#4F46E5" : "#F1F2F5", color: reorderMode ? "#fff" : "#454B54" }}>
+                {reorderMode ? "เสร็จ" : (<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4" /></svg>จัดเรียง</>)}
+              </button>
+            )}
           </div>
+          {/* ค้นหาเลขตู้ (CEO 2026-08-01) · โผล่เมื่อสาขานี้มีตู้ ≥6 (น้อยกว่านั้นเห็นครบไม่ต้องค้น) · ซ่อนตอนจัดเรียง */}
+          {visibleMachines.length >= 6 && !reorderMode && (
+            <MachineSearchBox value={search} onChange={setSearch} placeholder="ค้นหาเลขตู้ / ชื่อเล่น" />
+          )}
           {visibleMachines.length === 0 ? (
             // empty state — สาขานี้ยังไม่มีตู้ (สลับสาขา: สาขาที่เลือกไม่มีตู้ · แต่อาจมีของรอรับ เช่น 62 station)
             <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
@@ -2150,6 +2270,29 @@ function HomeScreen(props: {
                       : "ติดต่อผู้ดูแลเพื่อขอมอบหมายตู้ในเส้นทางของคุณ"
                 }
               />
+            </div>
+          ) : reorderMode ? (
+            // CEO 2026-08-01 · โหมดจัดเรียง — ลิสต์แบน + ↑/↓ (ในสาขาที่กำลังดู) · optimistic + จำติดบัญชี
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11.5, color: "#4F46E5", background: "#EEF0FE", borderRadius: 10, padding: "8px 12px", lineHeight: 1.5 }}>
+                กดลูกศร ↑/↓ จัดว่าตู้ไหนอยากเก็บก่อน–หลัง · ลำดับนี้จำติดตัวคุณ ใช้ทั้งหน้านี้และวิ่งตู้ 7-11
+              </div>
+              {visibleMachines.map((m, i) => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "9px 11px" }}>
+                  <span className="num" style={{ width: 20, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#9AA1AB", flex: "0 0 20px" }}>{i + 1}</span>
+                  <span className="num" style={{ flex: "0 0 auto", padding: "5px 9px", borderRadius: 9, background: "#F1F2F5", fontSize: 11, fontWeight: 700, color: "#3A3F47" }}>{m.code}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.nickname?.trim() || m.branch}</div>
+                  </div>
+                  <ReorderArrows onUp={() => moveMachine(i, -1)} onDown={() => moveMachine(i, 1)} upDisabled={i === 0} downDisabled={i === visibleMachines.length - 1} />
+                </div>
+              ))}
+            </div>
+          ) : branchGroups.length === 0 ? (
+            // ค้นหาแล้วไม่เจอ (สาขานี้มีตู้ แต่ไม่ตรงคำค้น) — CEO 2026-08-01
+            <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14, padding: "20px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#5A6270" }}>ไม่พบตู้ที่ตรงกับ “{search.trim()}”</div>
+              <button type="button" onClick={() => setSearch("")} style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 9, padding: "7px 14px", cursor: "pointer" }}>ล้างคำค้น</button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: showBranchHeaders ? 16 : 9 }}>
@@ -2166,7 +2309,6 @@ function HomeScreen(props: {
                     const isOpening = openingId === m.id;
                     const isSkipped = skippedIds.has(m.id);
                     const isAwaiting = m.awaitingSetup;
-                    const dolls = inMachineByMachine[m.id] ?? [];
                     // เก็บแล้ววันนี้ (จาก history) → ป้าย "เก็บแล้ว" + ปุ่ม "ดูใบ" (ดีไซน์ใหม่)
                     const isDone = !isDraft && !isSkipped && !isAwaiting && doneCodesToday.has(m.code);
                     const st = isSkipped
@@ -2219,8 +2361,6 @@ function HomeScreen(props: {
                             </>
                           )}
                         </div>
-                        {/* item 8 · "ตอนนี้ในตู้" — chips ราย SKU จาก server ledger · display-only */}
-                        <InMachineStrip dolls={dolls} isSkipped={isSkipped} isAwaiting={isAwaiting} />
                       </div>
                     );
                   })}
@@ -2231,7 +2371,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onReorderMachines={props.onReorder} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -2268,6 +2408,8 @@ function PanelScreen(props: {
   tourDeposited: boolean;
   setTourDeposited: (v: boolean) => void;
   tourMachines: AppMachine[];
+  // CEO 2026-08-01 · บันทึกลำดับตู้ที่จัดเอง (ส่งต่อจาก StaffApp) → ใช้ในโหมดจัดเรียงของทัวร์ 7-11
+  onReorderMachines?: (orderedMachineIds: string[]) => void;
   onOpenTourMachine: (m: AppMachine) => void;
   todayYmd: string;
   onExitTour: () => void;
@@ -2313,6 +2455,7 @@ function PanelScreen(props: {
             tourDeposited={props.tourDeposited}
             setTourDeposited={props.setTourDeposited}
             machines={props.tourMachines}
+            onReorder={props.onReorderMachines}
             onOpenMachine={props.onOpenTourMachine}
             stockProducts={props.stockProducts}
             onHandByProduct={props.onHandByProduct}
@@ -2450,8 +2593,20 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
   const showBranchChips = !usingDemo && branchChips.length > 1;
   // null = ทุกสาขา · default = สาขาที่เลือกอยู่ (ถ้ามี)
   const [branchFilter, setBranchFilter] = useState<string | null>(selectedBranchId ?? null);
+  // CEO 2026-08-01 · กรองตาม "ผู้เก็บ" — null=ทุกคน · "__mine__"=ฉัน · else=ชื่อคน (จาก server collectedBy)
+  const [personFilter, setPersonFilter] = useState<string | null>(null);
   const effectiveFilter = showBranchChips ? branchFilter : null; // สาขาเดียว/เดโม → ไม่กรอง
-  const filteredRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
+  const branchScopedRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
+  // รายชื่อผู้เก็บในสาขาที่กำลังดู (ไม่รวมของฉัน — "ฉัน" มีชิปแยก) → แถบชิป "ผู้เก็บ"
+  const peopleMap = new Map<string, string>();
+  for (const r of branchScopedRows) { if (r.collectedBy && !r.mine) peopleMap.set(r.collectedBy, r.collectedBy); }
+  const otherPeople = [...peopleMap.values()].sort((a, b) => a.localeCompare(b, "th"));
+  const hasMineRows = branchScopedRows.some((r) => r.mine);
+  const showPeopleChips = !usingDemo && otherPeople.length + (hasMineRows ? 1 : 0) > 1;
+  const effectivePerson = showPeopleChips ? personFilter : null;
+  const filteredRows = effectivePerson
+    ? branchScopedRows.filter((r) => (effectivePerson === "__mine__" ? r.mine === true : r.collectedBy === effectivePerson))
+    : branchScopedRows;
 
   // item 5 · แถวที่กำลังเปิด sheet "แนบรูปเพิ่ม" + set ของ eventId ที่แนบครบแล้ว (เคลียร์ป้ายทันที)
   const [attachRow, setAttachRow] = useState<StaffHistoryRow | null>(null);
@@ -2520,9 +2675,27 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
           {([{ id: null as string | null, name: "ทุกสาขา" }, ...branchChips]).map((c) => {
             const active = branchFilter === c.id;
             return (
-              <button key={c.id ?? "__all__"} type="button" onClick={() => setBranchFilter(c.id)} className="co-tap"
+              <button key={c.id ?? "__all__"} type="button" onClick={() => { setBranchFilter(c.id); setPersonFilter(null); }} className="co-tap"
                 style={{ flex: "0 0 auto", padding: "7px 13px", borderRadius: 20, border: "none", cursor: "pointer",
                   fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                  background: active ? "#4F46E5" : "#F1F2F5", color: active ? "#fff" : "#454B54" }}>
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* CEO 2026-08-01 · แถบกรองผู้เก็บ — ทุกคน / ฉัน / รายคน · โผล่เมื่อมีผู้เก็บ ≥2 คนในสาขาที่ดู */}
+      {showPeopleChips && (
+        <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2, margin: "-6px -2px 0", alignItems: "center" }}>
+          <span style={{ flex: "0 0 auto", fontSize: 11, fontWeight: 700, color: "#9AA1AB", paddingRight: 1 }}>ผู้เก็บ</span>
+          {([{ id: null as string | null, name: "ทุกคน" }, ...(hasMineRows ? [{ id: "__mine__", name: "ฉัน" }] : []), ...otherPeople.map((n) => ({ id: n, name: n }))]).map((c) => {
+            const active = personFilter === c.id;
+            return (
+              <button key={c.id ?? "__all_people__"} type="button" onClick={() => setPersonFilter(c.id)} className="co-tap"
+                style={{ flex: "0 0 auto", padding: "6px 12px", borderRadius: 20, border: "none", cursor: "pointer",
+                  fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap",
                   background: active ? "#4F46E5" : "#F1F2F5", color: active ? "#fff" : "#454B54" }}>
                 {c.name}
               </button>
@@ -2537,11 +2710,11 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
             sub="เมื่อมีการเก็บเงิน / เปลี่ยนตุ๊กตาในสาขาที่คุณดูแล รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
         </div>
       ) : filteredRows.length === 0 ? (
-        // สาขาที่เลือกยังไม่มีประวัติ (แต่สาขาอื่นมี) — บอกชัด + ชี้ไป "ทุกสาขา" กันจอว่างให้งง
+        // กรองแล้วว่าง (สาขา/ผู้เก็บ) — บอกชัด + ชี้ทางกลับ "ทุกสาขา/ทุกคน" กันจอว่างให้งง
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />}
-            title={`${selectedBranchName || "สาขานี้"} ยังไม่มีประวัติการเก็บ`}
-            sub="แตะ ‘ทุกสาขา’ ด้านบนเพื่อดูประวัติของทุกสาขาที่คุณดูแล (ย้อนหลัง 45 วัน)" />
+            title={effectivePerson ? "ไม่พบประวัติตามที่กรอง" : `${selectedBranchName || "สาขานี้"} ยังไม่มีประวัติการเก็บ`}
+            sub={effectivePerson ? "แตะ ‘ทุกคน’ หรือ ‘ทุกสาขา’ ด้านบนเพื่อดูประวัติทั้งหมด (ย้อนหลัง 45 วัน)" : "แตะ ‘ทุกสาขา’ ด้านบนเพื่อดูประวัติของทุกสาขาที่คุณดูแล (ย้อนหลัง 45 วัน)"} />
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2688,7 +2861,10 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
                       <span className="num" style={{ flex: "0 0 auto", padding: "6px 11px", borderRadius: 10, background: "#F1F2F5", fontSize: 14, fontWeight: 800, color: "#3A3F47" }}>{detail.nickname || detail.code}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700 }}>{tag.label}{detail.branch ? ` · ${detail.branch}` : ""}</div>
-                        <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>{dayLabel} · {detail.time}{detail.collectedBy ? ` · เก็บโดย ${detail.collectedBy}${detail.mine ? " (คุณ)" : ""}` : ""}</div>
+                        <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>{detail.isBaseline ? "" : "เมื่อ "}{dayLabel} · {detail.time}{detail.collectedBy ? ` · เก็บโดย ${detail.collectedBy}${detail.mine ? " (คุณ)" : ""}` : ""}</div>
+                        {detail.setupAt && !detail.isBaseline && (
+                          <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 1 }}>ตั้งค่าแรก {ymdLabelThai(detail.setupAt, todayYmd)}</div>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, background: accentBg, borderRadius: 10, padding: "9px 12px" }}>
@@ -4506,29 +4682,6 @@ function DollThumb({ imageUrl, name, size = 44 }: { imageUrl: string | null; nam
   );
 }
 
-/* item 8 · "ตอนนี้ในตู้" — แถบ chips ราย SKU (คิตตี้ ×5 · หมีบราวน์ ×3) จาก server ledger.
- * display-only (ไม่มี query/write). ว่าง → "ตู้ว่าง / ยังไม่ใส่ตุ๊กตา". compact (mobile).
- * ตู้เสีย/ยังไม่ตั้งค่า → ไม่โชว์ (ยังไม่มีสถานะของในตู้ที่มีความหมาย). */
-function InMachineStrip({ dolls, isSkipped, isAwaiting }: { dolls: InMachineDoll[]; isSkipped: boolean; isAwaiting: boolean }) {
-  if (isSkipped || isAwaiting) return null;
-  if (dolls.length === 0) {
-    return (
-      <div style={{ fontSize: 10.5, color: "#B0B6BF", fontWeight: 600, padding: "0 2px 1px 4px" }}>ตู้ว่าง / ยังไม่ใส่ตุ๊กตา</div>
-    );
-  }
-  return (
-    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 5, padding: "0 2px 1px 4px" }}>
-      <span style={{ fontSize: 10, color: "#9AA1AB", fontWeight: 700 }}>ตอนนี้ในตู้</span>
-      {dolls.map((d) => (
-        <span key={d.productId} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#F5F3FF", border: "1px solid #E5E1F7", borderRadius: 20, padding: "2px 8px", maxWidth: 160 }}>
-          <span style={{ fontSize: 10.5, fontWeight: 600, color: "#4B4763", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
-          <span className="num" style={{ fontSize: 10.5, fontWeight: 700, color: "#4F46E5" }}>×{d.qty}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /* TASK C · หัวข้อชื่อตู้ — ชื่อเล่นเด่น (ใหญ่) + รหัสเป็นรอง (เล็ก) เมื่อมีชื่อเล่น · ไม่มี → โชว์รหัสเหมือนเดิม. */
 function MachineHeaderTitle({ prefix, machine }: { prefix: string; machine: AppMachine | null }) {
   if (!machine) {
@@ -4729,13 +4882,15 @@ function ConfigPanel() {
 
 function TourPanel({
   tourStep, setTourStep, tourDraw, setTourDraw, tourDeposited, setTourDeposited,
-  machines, onOpenMachine, stockProducts, onHandByProduct, history, todayYmd, onExit,
+  machines, onReorder, onOpenMachine, stockProducts, onHandByProduct, history, todayYmd, onExit,
 }: {
   tourStep: number; setTourStep: (n: number) => void;
   tourDraw: Record<string, number>;
   setTourDraw: (u: Record<string, number> | ((p: Record<string, number>) => Record<string, number>)) => void;
   tourDeposited: boolean; setTourDeposited: (v: boolean) => void;
   machines: AppMachine[];
+  // CEO 2026-08-01 · บันทึกลำดับตู้ที่จัดเอง (full list) — ใช้ในโหมดจัดเรียงของทัวร์
+  onReorder?: (orderedMachineIds: string[]) => void;
   onOpenMachine: (m: AppMachine) => void;
   stockProducts: BranchStockProduct[];
   onHandByProduct: Record<string, number>;
@@ -4744,6 +4899,8 @@ function TourPanel({
   onExit: () => void;
 }) {
   const baht = (n: number) => "฿" + Math.round(n).toLocaleString("en-US");
+  // ค้นหาเลขตู้ในทัวร์ (CEO 2026-08-01) — กรองเฉพาะลิสต์ที่โชว์ (ยอดรวม/กระทบยอดยังนับทุกตู้)
+  const [tourSearch, setTourSearch] = useState("");
 
   // ตู้ในเส้นทาง = ตู้ที่ตั้ง baseline แล้ว (ตู้รอตั้งค่ายังเก็บเงินไม่ได้ · ไม่นับในทัวร์)
   const routeMachines = machines.filter((m) => !m.awaitingSetup);
@@ -4775,6 +4932,18 @@ function TourPanel({
   const cashTotal = stat.reduce((a, s) => a + s.cash, 0);
   const bagLeft = Math.max(0, totalDrawn - usedDolls);
   const fillPct = routeMachines.length ? Math.round((filledCount / routeMachines.length) * 100) : 0;
+  const tq = tourSearch.trim().toLowerCase();
+  const shownStat = tq ? stat.filter((s) => s.m.code.toLowerCase().includes(tq) || (s.m.nickname ?? "").toLowerCase().includes(tq)) : stat;
+  // โหมดจัดเรียงตู้ในทัวร์ (CEO 2026-08-01) — ↑/↓ · บันทึกลำดับเต็ม (จำติดบัญชี · ใช้ร่วมหน้าแรก)
+  const [tourReorder, setTourReorder] = useState(false);
+  const canReorderTour = !!onReorder && routeMachines.length >= 2;
+  const moveTour = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= routeMachines.length) return;
+    const ids = routeMachines.map((m) => m.id);
+    [ids[idx], ids[j]] = [ids[j], ids[idx]];
+    onReorder?.(spliceSubsetOrder(machines, new Set(ids), ids));
+  };
 
   // เติมจริงราย SKU (จับคู่ตามชื่อ SKU ที่ server บันทึกในรอบ) → กระทบยอด เบิก = เติม + คืน
   const usedByName: Record<string, number> = {};
@@ -4851,11 +5020,43 @@ function TourPanel({
             <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "#9AA1AB" }}>เก็บแล้ว</div><div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{filledCount}/{routeMachines.length} ตู้</div></div>
           </div>
           <div style={{ height: 7, background: "#EDEFF2", borderRadius: 6, overflow: "hidden", marginBottom: 16 }}><span style={{ display: "block", height: "100%", width: `${fillPct}%`, background: "#4F46E5", borderRadius: 6, transition: "width .2s" }} /></div>
+          {/* CEO 2026-08-01 · ปุ่มโหมดจัดเรียงตู้ในทัวร์ (จำติดบัญชี · ลำดับเดียวกับหน้าแรก) */}
+          {(canReorderTour || tourReorder) && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <button type="button" onClick={() => { setTourReorder((v) => !v); setTourSearch(""); }} className="co-tap"
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 20, border: "none", cursor: "pointer",
+                  background: tourReorder ? "#4F46E5" : "#F1F2F5", color: tourReorder ? "#fff" : "#454B54" }}>
+                {tourReorder ? "เสร็จ" : (<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 4v16M7 4 3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4" /></svg>จัดลำดับตู้</>)}
+              </button>
+            </div>
+          )}
           {routeMachines.length === 0 ? (
             <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 12, padding: "22px 14px", textAlign: "center", fontSize: 12.5, color: "#9AA1AB" }}>ยังไม่มีตู้ในเส้นทางวันนี้</div>
+          ) : tourReorder ? (
+            // โหมดจัดเรียงทัวร์ — ลิสต์แบน + ↑/↓ (ตู้ในเส้นทางทั้งหมด) · optimistic + จำติดบัญชี
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11.5, color: "#4F46E5", background: "#EEF0FE", borderRadius: 10, padding: "8px 12px", lineHeight: 1.5 }}>
+                กดลูกศร ↑/↓ จัดว่าตู้ไหนวิ่งก่อน–หลัง · ลำดับนี้จำติดตัวคุณ ใช้ทั้งหน้าแรกและทัวร์ 7-11
+              </div>
+              {routeMachines.map((m, i) => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "9px 11px" }}>
+                  <span className="num" style={{ width: 20, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#9AA1AB", flex: "0 0 20px" }}>{i + 1}</span>
+                  <span className="num" style={{ flex: "0 0 auto", padding: "5px 9px", borderRadius: 9, background: "#F1F2F5", fontSize: 11, fontWeight: 700, color: "#3A3F47" }}>{m.code}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.nickname?.trim() || `7-11 ${m.branch}`}</div>
+                  </div>
+                  <ReorderArrows onUp={() => moveTour(i, -1)} onDown={() => moveTour(i, 1)} upDisabled={i === 0} downDisabled={i === routeMachines.length - 1} />
+                </div>
+              ))}
+            </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {stat.map((s) => (
+              {routeMachines.length >= 6 && (
+                <MachineSearchBox value={tourSearch} onChange={setTourSearch} placeholder="ค้นหาเลขตู้ / ชื่อเล่น" />
+              )}
+              {shownStat.length === 0 ? (
+                <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 12, padding: "18px 14px", textAlign: "center", fontSize: 12.5, color: "#9AA1AB" }}>ไม่พบตู้ที่ตรงกับ “{tourSearch.trim()}”</div>
+              ) : shownStat.map((s) => (
                 <button key={s.m.id} type="button" onClick={() => onOpenMachine(s.m)}
                   style={{ display: "flex", alignItems: "center", gap: 11, background: s.filled ? "#F2FBF5" : "#fff", border: `1px solid ${s.filled ? "#BFE6CB" : "#E8EAED"}`, borderRadius: 12, padding: "11px 13px", cursor: "pointer", textAlign: "left" }}>
                   <span className="num" style={{ width: 42, height: 42, flex: "0 0 42px", borderRadius: 11, background: "#F1F2F7", color: "#B45309", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.m.code}</span>

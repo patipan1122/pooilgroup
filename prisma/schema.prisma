@@ -2125,6 +2125,23 @@ model CfMachine {
   @@schema("public")
 }
 
+// CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (ต่อคน · จำติดบัญชี เข้าเครื่องไหนก็ลำดับเดิม)
+//   display/preference ล้วน — ไม่แตะเงิน · standalone (ไม่มี FK · เก็บ orphan ไม่ได้เพราะ save เขียนทับทั้งชุด)
+//   ใช้ทั้งหน้าแรก (ในกลุ่มสาขา) และวิ่งตู้ 7-11 (แบน) · ตู้ที่ไม่มีแถว = ไปท้ายเรียงตามรหัส
+model CfStaffMachineOrder {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  machineId String   @map("machine_id") @db.Uuid
+  sortOrder Int      @map("sort_order")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([orgId, userId, machineId])
+  @@index([orgId, userId])
+  @@map("cf_staff_machine_orders")
+  @@schema("public")
+}
+
 // =============================================================
 // CF.2 — cf_machine_groups (1 EX + N CLAW)
 // =============================================================

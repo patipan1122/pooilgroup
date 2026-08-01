@@ -193,7 +193,8 @@ export default async function StaffAppPage({
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           // sellPriceCents = ราคาขายตุ๊กตา/ตัว (display · CEO 2026-07-19 ในใบสรุป) — ไม่กระทบยอดเงิน
-          machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { id: true, name: true } } } },
+          // firstBaselineAppliedAt = วัน "ตั้งค่าครั้งแรก" ของตู้ → โชว์ในใบเก็บว่า "ตั้งค่าแรกวันไหน" (CEO 2026-08-01)
+          machine: { select: { code: true, nickname: true, sellPriceCents: true, firstBaselineAppliedAt: true, branch: { select: { id: true, name: true } } } },
           // reconcile จริงที่ server คิดตอนปิดรอบ (บน session) — CEO 2026-07-19 "ตรง/ไม่ตรง" ต้องเทียบเงินจริง
           //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
           session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
@@ -255,8 +256,17 @@ export default async function StaffAppPage({
         }
       } catch { /* graceful: ใช้ flat ฿10 ทุกตู้ */ }
 
+      // CEO 2026-08-01 · "ตั้งค่าแรกวันไหน" — วัน baseline ต่อตู้ · หลัก = machine.firstBaselineAppliedAt
+      //   fallback = รอบ INITIAL ที่เก่าสุดในลิสต์ (เผื่อ machine ยังไม่ stamp) → กันช่องว่างในใบเก็บ
+      const setupAtByMachine = new Map<string, Date>();
+      for (const e of events) {
+        if (e.eventType !== "INITIAL" || !e.machineId) continue;
+        const cur = setupAtByMachine.get(e.machineId);
+        if (!cur || e.collectedAt < cur) setupAtByMachine.set(e.machineId, e.collectedAt);
+      }
       const collectRows: StaffHistoryRow[] = events.map((e) => {
         const isBaseline = e.eventType === "INITIAL";
+        const setupDate = e.machine.firstBaselineAppliedAt ?? (e.machineId ? setupAtByMachine.get(e.machineId) : undefined) ?? null;
         // รูปหลักฐาน (เฉพาะที่มี url) พร้อม label สำหรับตัวดูรูปในหน้าประวัติ
         const photoDefs: Array<[string | null, string]> = isBaseline
           ? [[e.photoMoneyMeterTopUrl, "มิเตอร์เงิน (บน)"], [e.photoMoneyMeterBottomUrl, "มิเตอร์เงิน (ล่าง)"], [e.photoDollMeterTopUrl, "มิเตอร์ตุ๊กตา (บน)"], [e.photoDollMeterBottomUrl, "มิเตอร์ตุ๊กตา (ล่าง)"], [e.photoMachineUrl, "รูปตู้"], [e.photoStockUrl, "สต็อกตั้งต้น"]]
@@ -309,6 +319,8 @@ export default async function StaffAppPage({
           // CEO 2026-08-01 · ใครเก็บ (โชว์ในประวัติทั้งสาขา) + mine = ใบของฉันไหม
           collectedBy: e.collectedBy?.name ?? undefined,
           mine: e.collectedById === userId,
+          // CEO 2026-08-01 · วันตั้งค่าแรกของตู้ (baseline) → ใบเก็บโชว์ "ตั้งค่าแรกวันไหน · เก็บวันไหน"
+          setupAt: setupDate ? ymdBangkok(setupDate) : undefined,
           // #3 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own)
           canEditNumbers: editableEventIds.has(e.id),
           // CEO 2026-07-19 · ราคาขาย/ตัว + ราย SKU ที่เติมรอบนี้ (ใบสรุป fix-form)
@@ -418,6 +430,19 @@ export default async function StaffAppPage({
   //   คิดจาก ledger จริง (source of truth) — เลขที่โชว์ = เลขที่ server จะ enforce.
   const { inMachineByMachine, netAvailableByBranch } = await loadReturnDollsData(orgId, routeBranches);
 
+  // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (per-user · จำติดบัญชี) → map machineId→sortOrder ให้ client เรียง
+  //   graceful: ยังไม่รัน migration / query ล้ม → {} (เรียงตามรหัสเดิม · ไม่พัง)
+  const machineOrder: Record<string, number> = {};
+  try {
+    const orderRows = await prisma.cfStaffMachineOrder.findMany({
+      where: { orgId, userId },
+      select: { machineId: true, sortOrder: true },
+    });
+    for (const r of orderRows) machineOrder[r.machineId] = r.sortOrder;
+  } catch {
+    // graceful: ตาราง cf_staff_machine_orders ยังไม่มี → ไม่มีลำดับกำหนดเอง (เรียงตามรหัส)
+  }
+
   // "วันนี้" ตามเวลาไทย (คิดที่ server กัน tz drift ฝั่ง client — QA จับ 23:59/00:01) → ใช้กรอง "เก็บแล้ววันนี้"
   // eslint-disable-next-line react-hooks/purity
   const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -445,6 +470,7 @@ export default async function StaffAppPage({
       countsByBranch={countsByBranch}
       inMachineByMachine={inMachineByMachine}
       netAvailableByBranch={netAvailableByBranch}
+      machineOrder={machineOrder}
     />
   );
 }

@@ -2521,3 +2521,43 @@ export async function clearClawFleetDemo(): Promise<ResultOf<{ deleted: boolean 
     return { ok: false, error: `ลบข้อมูลตัวอย่างไม่สำเร็จ: ${(e as Error).message}` };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CEO 2026-08-01 · จัดเรียงลำดับตู้ต่อพนักงาน (per-user machine order · จำติดบัญชี)
+//   display/preference ล้วน — ไม่แตะเงิน. เขียนทับทั้งชุดต่อ (org,user) ในทรานแซกชัน
+//   → idempotent (กดซ้ำ/สองเครื่อง = last-write-wins) · กัน orphan (ตู้ที่หายไปถูกลบทิ้ง)
+//   ตู้ที่ไม่ได้ส่งมา = ไม่มีแถว = ไปท้ายเรียงตามรหัส (ตู้ใหม่ต่อท้ายอัตโนมัติ).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function saveMachineOrder(orderedMachineIds: string[]): Promise<Result> {
+  try {
+    const session = await requireSession();
+    const orgId = session.user.org_id;
+    const userId = session.user.id;
+    if (!orgId || !userId) return { ok: false, error: "no-session" };
+    if (!Array.isArray(orderedMachineIds)) return { ok: false, error: "bad-input" };
+
+    // sanitize · dedupe · cap (กัน input แปลก ๆ จาก client)
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const raw of orderedMachineIds) {
+      if (typeof raw !== "string") continue;
+      const id = raw.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= 3000) break;
+    }
+
+    await prisma.$transaction([
+      prisma.cfStaffMachineOrder.deleteMany({ where: { orgId, userId } }),
+      ...(ids.length > 0
+        ? [prisma.cfStaffMachineOrder.createMany({
+            data: ids.map((machineId, i) => ({ orgId, userId, machineId, sortOrder: i })),
+          })]
+        : []),
+    ]);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `บันทึกลำดับไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
