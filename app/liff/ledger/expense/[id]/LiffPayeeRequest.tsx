@@ -12,12 +12,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Banknote, Loader2, Upload, X } from "lucide-react";
-import { createPaymentRequestAction } from "@/app/(admin)/ledger/_actions";
+import { createPaymentRequestAction, sendExpenseToTrcloud } from "@/app/(admin)/ledger/_actions";
+import { flushDraftCommit } from "@/lib/ledger/draft-save-registry";
 
 export function LiffPayeeRequest({
   expenseId,
   companyId,
   classified,
+  canSendTrcloud,
+  poSent,
   open,
   onOpenChange,
 }: {
@@ -25,6 +28,11 @@ export function LiffPayeeRequest({
   companyId: string;
   /** ตั้งสาขา+หมวดครบหรือยัง — ยังไม่ครบ = ขอโอนไม่ได้ (server จะ reject). */
   classified: boolean;
+  /** ผู้ใช้มีสิทธิ์ส่ง PO เข้า TRCloud ไหม (บัญชี/ผู้ดูแล) — มี = กดขอโอนทีเดียว
+   *  ระบบจะยืนยันใบ+ส่ง PO ให้เองก่อนขอโอน (CEO 2026-08-01). */
+  canSendTrcloud: boolean;
+  /** ใบนี้ส่ง PO เข้า TRCloud แล้วหรือยัง — ส่งแล้ว = ข้ามขั้นส่ง PO. */
+  poSent: boolean;
   /** เปิด modal อยู่ไหม (พ่อคุม — ปุ่มเปิดอยู่ในแถบล่างข้างปุ่มบันทึก). */
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,12 +41,17 @@ export function LiffPayeeRequest({
   const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "", qrImageUrl: "" });
   const [qrUploading, setQrUploading] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   if (!open) return null;
 
   const payeeHasAccount =
     payee.acctNo.trim().length > 0 || payee.promptpay.trim().length > 0 || Boolean(payee.qrImageUrl);
+  // ยังไม่ส่ง PO + มีสิทธิ์ส่ง → ทำ "ทีเดียว": ยืนยันใบ → ส่ง PO → ขอโอน (CEO 2026-08-01).
+  const needsPoSend = canSendTrcloud && !poSent;
+  // ยังไม่ส่ง PO + ไม่มีสิทธิ์ส่ง (พนักงานหน้างาน) → ขอโอนไม่ได้ ต้องให้บัญชีส่งก่อน.
+  const blockedNoPoRights = !poSent && !canSendTrcloud;
 
   async function uploadQr(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -68,6 +81,25 @@ export function LiffPayeeRequest({
   function submit() {
     setMsg(null);
     startTransition(async () => {
+      // one-shot (CEO 2026-08-01): ใบยังไม่ส่ง PO + มีสิทธิ์ → ยืนยันใบ → ส่ง PO เข้า TRCloud →
+      // ขอโอน ต่อกันในกดเดียว (เหมือน "ส่ง+ขอโอนด่วน" บนเว็บ · money-safe รอทีละสเต็ป · หยุดถ้าล้ม).
+      if (needsPoSend) {
+        setPhase("กำลังยืนยันใบ…");
+        const committed = await flushDraftCommit(expenseId);
+        if (!committed) {
+          setPhase(null);
+          setMsg({ kind: "err", text: "ยืนยันใบไม่สำเร็จ — กด “บันทึกรายการ” ให้ครบก่อน" });
+          return;
+        }
+        setPhase("กำลังส่ง PO เข้า TRCloud…");
+        const sent = await sendExpenseToTrcloud(expenseId);
+        if (!sent.ok) {
+          setPhase(null);
+          setMsg({ kind: "err", text: sent.error ?? "ส่ง PO เข้า TRCloud ไม่สำเร็จ" });
+          return;
+        }
+      }
+      setPhase("กำลังสร้างคำขอโอน…");
       const res = await createPaymentRequestAction([expenseId], {
         acctName: payee.acctName.trim() || undefined,
         bankCode: payee.bankCode.trim() || undefined,
@@ -75,6 +107,7 @@ export function LiffPayeeRequest({
         promptpay: payee.promptpay.trim() || undefined,
         qrImageUrl: payee.qrImageUrl || undefined,
       });
+      setPhase(null);
       if (res.ok) {
         onOpenChange(false);
         setPayee({ acctName: "", bankCode: "", acctNo: "", promptpay: "", qrImageUrl: "" });
@@ -112,11 +145,19 @@ export function LiffPayeeRequest({
           </button>
         </div>
 
-        {!classified && (
+        {!classified ? (
           <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            ตั้ง “สาขา + หมวด” ด้านบนให้ครบ แล้วกดยืนยันก่อน จึงจะขอโอนได้
+            ตั้ง “สาขา + หมวด” ด้านบนให้ครบก่อน จึงจะส่ง PO + ขอโอนได้
           </p>
-        )}
+        ) : blockedNoPoRights ? (
+          <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            ใบนี้ยังไม่ได้ส่ง PO เข้า TRCloud — แจ้งบัญชี/ผู้ดูแลให้ส่ง PO ก่อน แล้วค่อยขอโอน
+          </p>
+        ) : needsPoSend ? (
+          <p className="mb-3 rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-700">
+            กดปุ่มเดียว = ยืนยันใบ + ส่ง PO เข้า TRCloud + ขอโอน ให้อัตโนมัติในทีเดียว
+          </p>
+        ) : null}
 
         <div className="space-y-2.5">
           <input value={payee.acctName} onChange={(e) => setPayee((p) => ({ ...p, acctName: e.target.value }))} placeholder="ชื่อบัญชีผู้รับ (ไม่บังคับ)" className={inputCls} />
@@ -154,18 +195,20 @@ export function LiffPayeeRequest({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || !classified || !payeeHasAccount}
+          disabled={pending || !classified || !payeeHasAccount || blockedNoPoRights}
           title={
             !classified
               ? "ตั้งสาขา+หมวดก่อน"
-              : !payeeHasAccount
-                ? "ใส่เลขบัญชี / พร้อมเพย์ หรือแนบ QR ก่อน"
-                : undefined
+              : blockedNoPoRights
+                ? "ใบนี้ยังไม่ได้ส่ง PO — แจ้งบัญชีส่งก่อน"
+                : !payeeHasAccount
+                  ? "ใส่เลขบัญชี / พร้อมเพย์ หรือแนบ QR ก่อน"
+                  : undefined
           }
           className="press mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white active:bg-violet-700 disabled:bg-zinc-300"
         >
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Banknote className="size-4" aria-hidden />}
-          ส่งคำขอโอน
+          {pending ? (phase ?? "กำลังทำ…") : needsPoSend ? "ส่ง PO + ขอโอน" : "ส่งคำขอโอน"}
         </button>
       </div>
     </div>

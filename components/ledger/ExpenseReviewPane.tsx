@@ -13,7 +13,7 @@
 // fallback — ดู NOTE[ledger-partition-B] ใน _kit/types.ts).
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { registerDraftSaver } from "@/lib/ledger/draft-save-registry";
+import { registerDraftSaver, registerDraftCommitter } from "@/lib/ledger/draft-save-registry";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -664,6 +664,19 @@ export function ExpenseReviewPane({
   );
   const gateMissingBranch = gate.missing.includes("branch");
   const gateMissingCategory = gate.missing.includes("category");
+
+  // Committer bridge (CEO 2026-08-01) — ป๊อปอัป "ขอโอนทีเดียว" (LIFF) เรียกก่อนส่ง PO เข้า
+  // TRCloud: ยืนยันใบด้วย draft ล่าสุด (ใบครบ+มีสิทธิ์ยืนยัน → onConfirm · ไม่งั้น onSave)
+  // = ตรรกะเดียวกับปุ่ม "บันทึกรายการ" · send ต้องใบยืนยันแล้ว จึงต้องยืนยันก่อน ไม่ใช่แค่เซฟร่าง.
+  useEffect(
+    () =>
+      registerDraftCommitter(expense.id, async () => {
+        const doCommit = canConfirm && gate.ok && !hasError && expense.status === "draft";
+        const res = await (doCommit ? onConfirm : onSave)(expense.id, draftRef.current);
+        return res.ok;
+      }),
+    [expense.id, canConfirm, gate.ok, hasError, expense.status, onConfirm, onSave],
+  );
 
   // ── ขอโอนเงิน (payout) — ช่องผู้รับ + ปุ่มอยู่ในส่วนที่ 4 (co-located · CEO 2026-07-26).
   //    ผู้รับกรอกได้ตลอด (แม้บิลล็อกหลังส่ง TRCloud) ยกเว้นยกเลิก/ล็อก/กำลังส่ง.

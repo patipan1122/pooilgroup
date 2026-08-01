@@ -20,6 +20,7 @@ import {
   setExpenseProjectAction,
 } from "@/app/(admin)/ledger/_actions";
 import { LiffPayeeRequest } from "./LiffPayeeRequest";
+import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 
 /** ขอโอนเงินบนมือถือ (payment.request) — คำนวณสิทธิ์/สถานะฝั่ง server ใน page.tsx.
  *  ไม่ส่งมา = ไม่มีปุ่มขอโอน (พนักงานหน้างานไม่มีสิทธิ์). */
@@ -131,6 +132,8 @@ export function LiffExpensePane({
           expenseId={payout.expenseId}
           companyId={payout.companyId}
           classified={payout.classified}
+          canSendTrcloud={canSendTrcloud}
+          poSent={isTrcloudSent(expense.trcloudDocId)}
           open={payoutOpen}
           onOpenChange={setPayoutOpen}
         />

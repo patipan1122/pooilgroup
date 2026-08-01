@@ -30,3 +30,31 @@ export async function flushDraftSave(expenseId: string): Promise<boolean> {
     return false;
   }
 }
+
+// ── Committer bridge (CEO 2026-08-01) — "ขอโอนทีเดียว" บนมือถือ ─────────────────
+// ป๊อปอัปขอโอน (LIFF) อยู่คนละ island กับฟอร์ม → ต้องให้ "ยืนยันใบด้วย draft ล่าสุด"
+// ก่อนส่ง PO เข้า TRCloud (send ต้องใบยืนยันแล้ว). ต่างจาก flushDraftSave (แค่เซฟร่าง):
+// committer = smart-commit เหมือนปุ่มบันทึก (ใบครบ+มีสิทธิ์ → ยืนยัน · ไม่งั้นเซฟร่าง).
+const committerRegistry = new Map<string, () => Promise<boolean>>();
+
+/** ฟอร์ม register ตอน mount → คืน cleanup ไว้ unregister ตอน unmount. */
+export function registerDraftCommitter(
+  expenseId: string,
+  committer: () => Promise<boolean>,
+): () => void {
+  committerRegistry.set(expenseId, committer);
+  return () => {
+    if (committerRegistry.get(expenseId) === committer) committerRegistry.delete(expenseId);
+  };
+}
+
+/** ยืนยัน/เซฟใบด้วย draft ล่าสุดที่จอโชว์. ไม่มีฟอร์มเปิด = ใช้ค่าใน DB → true. */
+export async function flushDraftCommit(expenseId: string): Promise<boolean> {
+  const committer = committerRegistry.get(expenseId);
+  if (!committer) return true;
+  try {
+    return await committer();
+  } catch {
+    return false;
+  }
+}
