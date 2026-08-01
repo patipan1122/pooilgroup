@@ -185,7 +185,7 @@ export default async function StaffAppPage({
           photoMeterAfterUrl: true, photoPrizeMeterUrl: true, photoStockUrl: true, photoMeterBeforeUrl: true, photoCashUrl: true,
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true, photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           // sellPriceCents = ราคาขายตุ๊กตา/ตัว (display · CEO 2026-07-19 ในใบสรุป) — ไม่กระทบยอดเงิน
-          machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { name: true } } } },
+          machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { id: true, name: true } } } },
           // reconcile จริงที่ server คิดตอนปิดรอบ (บน session) — CEO 2026-07-19 "ตรง/ไม่ตรง" ต้องเทียบเงินจริง
           //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
           session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
@@ -253,7 +253,7 @@ export default async function StaffAppPage({
         const cashOk = cashDiffCents != null ? Math.abs(cashDiffCents) <= 2000 : e.anomalyFlags.length === 0;
         return {
           kind: isBaseline ? "baseline" : "collect",
-          code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name,
+          code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name, branchId: e.machine.branch.id,
           date: ymdBangkok(e.collectedAt), time: timeBangkok(e.collectedAt),
           cashBaht: Math.round(e.cashCountedCents / 100),
           // #1 · ควรได้ (จากมิเตอร์) + ส่วนต่าง (ขาด/เกิน) — โชว์ในใบให้บัญชี reconcile ได้
@@ -287,17 +287,17 @@ export default async function StaffAppPage({
           where: { orgId, createdById: userId, refTable: { in: ["cf_return_dolls", "cf_refill_dolls"] }, occurredAt: { gte: HISTORY_SINCE } },
           orderBy: { occurredAt: "desc" },
           // CEO 2026-07-19 · เพิ่มราย SKU (คืน/เติม) + ราคาขาย → ใบเปลี่ยนตุ๊กตาเห็นไส้ใน
-          select: { qty: true, refTable: true, occurredAt: true, product: { select: { name: true, imageUrl: true } }, machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { name: true } } } } },
+          select: { qty: true, refTable: true, occurredAt: true, product: { select: { name: true, imageUrl: true } }, machine: { select: { code: true, nickname: true, sellPriceCents: true, branch: { select: { id: true, name: true } } } } },
           take: 400,
         });
         type SwapSku = { name: string; qty: number; imageUrl: string | null };
-        type SwapGroup = { code: string; nickname: string | null; branch: string; at: Date; returned: number; refilled: number; sellPriceCents: number | null; returnedSkus: SwapSku[]; refilledSkus: SwapSku[] };
+        type SwapGroup = { code: string; nickname: string | null; branch: string; branchId: string; at: Date; returned: number; refilled: number; sellPriceCents: number | null; returnedSkus: SwapSku[]; refilledSkus: SwapSku[] };
         const groups = new Map<string, SwapGroup>();
         for (const m of moves) {
           if (!m.machine) continue;
           const minute = new Date(m.occurredAt); minute.setSeconds(0, 0);
           const key = `${m.machine.code}|${minute.toISOString()}`;
-          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, at: m.occurredAt, returned: 0, refilled: 0, sellPriceCents: m.machine.sellPriceCents ?? null, returnedSkus: [], refilledSkus: [] };
+          const g = groups.get(key) ?? { code: m.machine.code, nickname: m.machine.nickname, branch: m.machine.branch.name, branchId: m.machine.branch.id, at: m.occurredAt, returned: 0, refilled: 0, sellPriceCents: m.machine.sellPriceCents ?? null, returnedSkus: [], refilledSkus: [] };
           const name = m.product?.name ?? "— สินค้า —";
           const qtyAbs = Math.abs(m.qty);
           // รวม SKU ชื่อเดียวกันเป็นแถวเดียว (ปรปักษ์ #2)
@@ -311,7 +311,7 @@ export default async function StaffAppPage({
           groups.set(key, g);
         }
         swapRows = [...groups.values()].map((g) => ({
-          kind: "swap" as const, code: g.code, nickname: g.nickname, branch: g.branch,
+          kind: "swap" as const, code: g.code, nickname: g.nickname, branch: g.branch, branchId: g.branchId,
           date: ymdBangkok(g.at), time: timeBangkok(g.at), cashBaht: 0, ok: true,
           swapReturned: g.returned, swapRefilled: g.refilled,
           sellPriceCents: g.sellPriceCents ?? undefined,

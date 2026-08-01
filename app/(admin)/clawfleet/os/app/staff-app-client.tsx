@@ -666,6 +666,7 @@ export type StaffHistoryRow = {
   cashDiffBaht?: number;
   ok: boolean; // = เงินตรงมิเตอร์ (|ขาด/เกิน| ≤ ฿20) เมื่อมี reconcile · ไม่งั้น fallback ไม่มีธง anomaly
   branch?: string; // สาขาของตู้ (ช่วยจำว่าเก็บที่ไหน)
+  branchId?: string; // รหัสสาขาของตู้ — ใช้กรองประวัติตามสาขาที่เลือกอยู่ (แม่นกว่าเทียบชื่อ)
   date?: string; // YYYY-MM-DD ของรอบ (ตามเวลาไทย) — ใช้จัดกลุ่มตามวัน
   coinMeter?: number; // เลขมิเตอร์เหรียญที่บันทึกไว้ (หลักฐานตัวเลขที่กรอก · = after)
   dollMeter?: number; // เลขมิเตอร์ตุ๊กตา (= after)
@@ -2222,7 +2223,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -2265,7 +2266,7 @@ function PanelScreen(props: {
   skus: CollectSku[]; history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string;
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
-  branchId: string; branchCode: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
+  branchId: string; branchCode: string; branchName?: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
   // WAVE-3b · N3 · คลัง active ของสาขานี้ (picker "นับคลัง" · โผล่เมื่อ >1 ห้อง)
   stockWarehouses: BranchWarehouse[];
   // F1 · คลังตอนนี้ต่อสินค้า (การ์ดรับ "N → N+รับ") · F2 · ประวัติรับแล้ว (แท็บ "รับแล้ว")
@@ -2289,7 +2290,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} />}
+        {panel === "history" && <HistoryPanel history={props.history} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2418,7 +2419,7 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusConsumed }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void }) {
+function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
@@ -2427,6 +2428,21 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
     { kind: "collect", code: "DL03-01", branch: "โนนแดง", date: shiftYmd(todayYmd, -2), time: "14:12", cashBaht: 300, expectedCashBaht: 340, cashDiffBaht: -40, coinMeter: 148, coinMeterBefore: 100, dollMeter: 86, dollMeterBefore: 84, refillQty: 7, sellPriceCents: 25000, dollsOut: 2, stockBefore: 7, stockAfter: 12, ok: false, shortReason: "เก็บเงินได้ ฿300 แต่มิเตอร์เหรียญขึ้น ฿480 (ต่าง −฿40 หลังหักทอน)", refillSkus: [{ name: "หมีน้ำตาล S", qty: 7 }], photos: [] },
   ];
   const rows = usingDemo ? demoRows : history;
+
+  // CEO 2026-08-01 · กรองประวัติตาม "สาขาที่เลือกอยู่" — เปิดมา default = สาขาปัจจุบัน (ที่เลือกบนหน้าหลัก)
+  //   + สลับดูสาขาอื่น / "ทุกสาขา" ได้ · เทียบด้วย branchId (id ติดมากับแถวจาก server) ไม่ใช่ชื่อ กันสาขาชื่อซ้ำ
+  const branchChipMap = new Map<string, string>();
+  for (const r of rows) { if (r.branchId) branchChipMap.set(r.branchId, r.branch ?? r.branchId); }
+  // สาขาที่เลือกอยู่ต้องมีชิปเสมอ แม้ยังไม่มีประวัติในสาขานั้น (จะได้เห็นว่า "สาขานี้ยังไม่มีข้อมูล")
+  if (selectedBranchId && !branchChipMap.has(selectedBranchId)) branchChipMap.set(selectedBranchId, selectedBranchName || "สาขานี้");
+  const branchChips = [...branchChipMap.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => (a.id === selectedBranchId ? -1 : b.id === selectedBranchId ? 1 : 0)); // สาขาที่เลือกมาก่อน
+  const showBranchChips = !usingDemo && branchChips.length > 1;
+  // null = ทุกสาขา · default = สาขาที่เลือกอยู่ (ถ้ามี)
+  const [branchFilter, setBranchFilter] = useState<string | null>(selectedBranchId ?? null);
+  const effectiveFilter = showBranchChips ? branchFilter : null; // สาขาเดียว/เดโม → ไม่กรอง
+  const filteredRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
 
   // item 5 · แถวที่กำลังเปิด sheet "แนบรูปเพิ่ม" + set ของ eventId ที่แนบครบแล้ว (เคลียร์ป้ายทันที)
   const [attachRow, setAttachRow] = useState<StaffHistoryRow | null>(null);
@@ -2445,7 +2461,7 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
 
   // จัดกลุ่มตามวัน (รายการเรียงใหม่→เก่าอยู่แล้ว) → แท็บวัน + การ์ดสรุปต่อวัน (mockup)
   const groups: { date: string; label: string; items: StaffHistoryRow[] }[] = [];
-  for (const h of rows) {
+  for (const h of filteredRows) {
     const d = h.date ?? todayYmd;
     let g = groups.find((x) => x.date === d);
     if (!g) { g = { date: d, label: ymdLabelThai(d, todayYmd), items: [] }; groups.push(g); }
@@ -2486,10 +2502,34 @@ function HistoryPanel({ history, usingDemo, orgId, initialFocus = null, onFocusC
         <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
       )}
 
+      {/* CEO 2026-08-01 · แถบกรองสาขา — "ทุกสาขา" + ชิปต่อสาขา (สาขาที่เลือกอยู่มาก่อน) · โผล่เมื่อมี ≥2 สาขา */}
+      {showBranchChips && (
+        <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2, margin: "-2px -2px 0" }}>
+          {([{ id: null as string | null, name: "ทุกสาขา" }, ...branchChips]).map((c) => {
+            const active = branchFilter === c.id;
+            return (
+              <button key={c.id ?? "__all__"} type="button" onClick={() => setBranchFilter(c.id)} className="co-tap"
+                style={{ flex: "0 0 auto", padding: "7px 13px", borderRadius: 20, border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                  background: active ? "#4F46E5" : "#F1F2F5", color: active ? "#fff" : "#454B54" }}>
+                {c.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {!usingDemo && rows.length === 0 ? (
         <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
           <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />} title="ยังไม่มีประวัติการเก็บ"
             sub="เมื่อคุณเก็บเงิน / เปลี่ยนตุ๊กตาจบตู้ รายการจะขึ้นที่นี่ (ย้อนหลัง 45 วัน)" />
+        </div>
+      ) : filteredRows.length === 0 ? (
+        // สาขาที่เลือกยังไม่มีประวัติ (แต่สาขาอื่นมี) — บอกชัด + ชี้ไป "ทุกสาขา" กันจอว่างให้งง
+        <div style={{ background: "#fff", border: "1px dashed #D6DAE0", borderRadius: 14 }}>
+          <EmptyState icon={<Inbox size={30} strokeWidth={1.6} />}
+            title={`${selectedBranchName || "สาขานี้"} ยังไม่มีประวัติการเก็บ`}
+            sub="แตะ ‘ทุกสาขา’ ด้านบนเพื่อดูประวัติของทุกสาขาที่คุณดูแล (ย้อนหลัง 45 วัน)" />
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
