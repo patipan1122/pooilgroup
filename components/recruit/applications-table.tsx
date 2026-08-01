@@ -32,6 +32,7 @@ import { BatchAiButton } from "./batch-ai-button";
 import { AiSearchButton } from "./ai-search";
 import { PositionBriefModal } from "./position-brief-modal";
 import { ApplicationCard } from "./applications-cards";
+import { PinchZoom, ZOOM_STEP, clampZoom } from "./pinch-zoom";
 import {
   Star,
   ArrowDown,
@@ -43,7 +44,18 @@ import {
   ChevronsLeftRight,
   ChevronsRightLeft,
   X,
+  ZoomIn,
+  ZoomOut,
+  Table2,
+  LayoutGrid,
 } from "lucide-react";
+
+// ชิปกรองเพศสำหรับแถบมือถือ (ส่งมาจากหน้าแม่ · เป็นลิงก์ preserve filter)
+export interface GenderChip {
+  label: string;
+  href: string;
+  active: boolean;
+}
 
 // เป้าหมายของกล่องอ่านเต็ม (กดที่ข้อความยาว → เปิดกล่องอ่านสบายตา)
 type ReadTarget = { name: string; label: string; text: string };
@@ -86,6 +98,8 @@ interface Props {
   posting: { id: string; title: string; aiBrief: PostingAiBrief | null } | null;
   batchTargets: Array<{ id: string; scored: boolean }>;
   searchTargets: string[]; // application ids ในตัวกรอง (สำหรับ AI ค้นหาประวัติ)
+  genderChips?: GenderChip[]; // แถบกรองเพศบนสุด (มือถือ)
+  ageAnswerId?: string | null; // id ช่อง "อายุ" (ถ้าตำแหน่งนี้ถามอายุ) → โชว์บนการ์ด
 }
 
 const VERDICT_TEXT: Record<"green" | "amber" | "red", string> = {
@@ -120,7 +134,13 @@ export function ApplicationsTable({
   posting,
   batchTargets,
   searchTargets,
+  genderChips = [],
+  ageAnswerId = null,
 }: Props) {
+  // มุมมองบนมือถือ: ตาราง (ค่าเริ่มต้นเสมอ · ตามที่ CEO ขอ) หรือ การ์ด (สลับได้ต่อครั้ง)
+  const [view, setView] = useState<"table" | "cards">("table");
+  // ระดับซูมของตาราง (มือถือ) — 1 = 100% · pinch/ปุ่มปรับได้
+  const [zoom, setZoom] = useState(1);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -156,6 +176,9 @@ export function ApplicationsTable({
       setWideCols(new Set());
     }
   }, [widePrefKey]);
+
+  // ปรับซูมทีละขั้น (ปุ่ม −/+) · pinch ปรับต่อเนื่องผ่าน PinchZoom
+  const nudgeZoom = (d: number) => setZoom((z) => clampZoom(z + d));
 
   // เปลี่ยนตำแหน่ง/หน้า → ล้างการติ๊ก + sync brief
   useEffect(() => {
@@ -234,13 +257,93 @@ export function ApplicationsTable({
 
   return (
     <div className="space-y-2">
+      {/* แถบควบคุมบนสุด (มือถือ) — ปักหมุดใต้หัวแอป · สลับตาราง/การ์ด + ซูม + กรองเพศ
+          จอคอมไม่โชว์ (ใช้ตัวกรองเพศ + ตารางเต็มด้านบนอยู่แล้ว) */}
+      <div className="lg:hidden sticky top-14 sm:top-16 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-white/95 backdrop-blur border-b border-zinc-200 flex items-center gap-2">
+        {/* สลับ ตาราง / การ์ด */}
+        <div className="inline-flex shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5">
+          <button
+            type="button"
+            onClick={() => setView("table")}
+            className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${
+              view === "table"
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500"
+            }`}
+          >
+            <Table2 className="size-3.5" />
+            ตาราง
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("cards")}
+            className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${
+              view === "cards"
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-500"
+            }`}
+          >
+            <LayoutGrid className="size-3.5" />
+            การ์ด
+          </button>
+        </div>
+
+        {/* ซูม (เฉพาะมุมมองตาราง) — ถ่างนิ้วก็ได้ · กด −/+ ก็ได้ · แตะ % = กลับ 100% */}
+        {view === "table" && (
+          <div className="inline-flex shrink-0 items-center rounded-lg border border-zinc-200 bg-white">
+            <button
+              type="button"
+              onClick={() => nudgeZoom(-ZOOM_STEP)}
+              aria-label="ย่อตาราง"
+              className="grid place-items-center size-7 text-zinc-500 hover:text-zinc-900"
+            >
+              <ZoomOut className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              title="กลับขนาดพอดี (100%)"
+              className="w-10 text-center text-[11px] font-bold tabular-nums text-zinc-600 hover:text-zinc-900"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => nudgeZoom(ZOOM_STEP)}
+              aria-label="ขยายตาราง"
+              className="grid place-items-center size-7 text-zinc-500 hover:text-zinc-900"
+            >
+              <ZoomIn className="size-4" />
+            </button>
+          </div>
+        )}
+
+        {/* กรองเพศ — แตะเดียวเห็นเฉพาะ ชาย/หญิง */}
+        {genderChips.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {genderChips.map((c) => (
+              <Link
+                key={c.label}
+                href={c.href}
+                className={`h-7 px-2.5 inline-flex items-center rounded-full text-[11px] font-bold whitespace-nowrap border transition-colors ${
+                  c.active
+                    ? "bg-[var(--color-brand-600)] text-white border-[var(--color-brand-600)]"
+                    : "bg-white text-zinc-600 border-zinc-200"
+                }`}
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* แถบเครื่องมือ */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-[11px] text-zinc-400">
           {answerColumns.length > 0
             ? `กางคำตอบ ${answerColumns.length} ข้อเป็นคอลัมน์แล้ว`
             : "เลือกตำแหน่งด้านบนเพื่อกางคำตอบทุกข้อเป็นคอลัมน์"}
-          <span className="lg:hidden"> · จอเล็กแสดงเป็นการ์ด กรอกได้เลย</span>
         </p>
         <div className="flex items-center gap-2">
           {/* ข้อมูลตำแหน่งสำหรับ AI */}
@@ -351,10 +454,15 @@ export function ApplicationsTable({
         </div>
       </div>
 
-      {/* จอใหญ่ (lg+) — ตาราง Excel เลื่อนแนวนอน */}
-      <div className="hidden lg:block overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+      {/* ตาราง — จอคอมโชว์เสมอ · มือถือโชว์เมื่อเลือกมุมมอง "ตาราง" (ถ่างนิ้วซูมได้) */}
+      <div className={view === "cards" ? "hidden lg:block" : "block"}>
+        <PinchZoom
+          zoom={zoom}
+          onZoomChange={setZoom}
+          className="rounded-2xl border border-zinc-200 bg-white"
+        >
         <table className="w-full min-w-[1080px] text-sm border-collapse">
-          <thead className="sticky top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
+          <thead className="lg:sticky lg:top-0 z-20 bg-white border-b border-zinc-200 shadow-sm">
             <tr className="text-left text-[11px] text-zinc-500">
               {/* ชื่อ + checkbox เลือก (ติดขอบซ้าย) */}
               <th className="pl-4 pr-3 py-2.5 font-bold whitespace-nowrap sticky left-0 z-30 bg-white border-r border-zinc-100">
@@ -482,16 +590,18 @@ export function ApplicationsTable({
             ))}
           </tbody>
         </table>
+        </PinchZoom>
       </div>
 
-      {/* จอเล็ก (มือถือ/แท็บเล็ต) — การ์ดต่อคน ดูง่าย กรอกสัมภาษณ์ได้เลย */}
-      <div className="lg:hidden space-y-2">
+      {/* การ์ด — มือถือเมื่อเลือกมุมมอง "การ์ด" (จอคอมไม่โชว์) */}
+      <div className={`${view === "cards" ? "block" : "hidden"} lg:hidden space-y-2`}>
         {rows.map((row) => (
           <ApplicationCard
             key={row.id}
             row={row}
             canWrite={canWrite}
             answerColumns={answerColumns}
+            ageAnswerId={ageAnswerId}
             selected={selected.has(row.id)}
             onToggleSelect={toggleSelect}
           />

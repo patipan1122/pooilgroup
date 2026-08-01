@@ -394,6 +394,20 @@ export default async function RecruitTablePage({
     "/recruit",
   );
 
+  // ชิปกรองเพศสำหรับแถบบนสุด (มือถือ) — ส่งให้ ApplicationsTable
+  const genderChips = [
+    {
+      label: "ทั้งหมด",
+      href: buildUrl({ gender: "", page: "1" }),
+      active: !genderFilter,
+    },
+    ...GENDERS.map((g) => ({
+      label: GENDER_FILTER_LABELS[g],
+      href: buildUrl({ gender: g, page: "1" }),
+      active: genderFilter === g,
+    })),
+  ];
+
   return (
     <div className="min-h-[calc(100vh-60px)] bg-zinc-50/40">
       {/* Toolbar */}
@@ -428,8 +442,8 @@ export default async function RecruitTablePage({
       </div>
 
       <div className="p-4 sm:p-6 space-y-4">
-        {/* สรุปคะแนน — แถบบน */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        {/* สรุปคะแนน — แถบบน (มือถือ: เลื่อนแนวนอนแถวเดียว กันกินที่แนวตั้ง) */}
+        <div className="flex gap-2.5 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 lg:grid-cols-6 sm:overflow-visible sm:pb-0">
           <SummaryTile label="ทั้งหมด (กรอง)" value={filteredTotal.toLocaleString("th-TH")} accent="brand" />
           <SummaryTile label="คะแนน AI เฉลี่ย" value={avgAi != null ? String(avgAi) : "—"} accent="brand" />
           <SummaryTile label="ดาวเฉลี่ย" value={avgStar != null ? `${avgStar}★` : "—"} accent="amber" />
@@ -474,7 +488,8 @@ export default async function RecruitTablePage({
 
           {/* Filter: เพศ · ไฮไลต์ · อายุ */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div className="inline-flex items-center gap-1.5">
+            {/* กรองเพศ (จอคอม) — มือถือใช้แถบบนสุดใน ApplicationsTable แทน (กันซ้ำ) */}
+            <div className="hidden lg:inline-flex items-center gap-1.5">
               <span className="text-[11px] text-zinc-400">เพศ:</span>
               <FilterChip
                 href={buildUrl({ gender: "", page: "1" })}
@@ -615,6 +630,8 @@ export default async function RecruitTablePage({
               posting={postingProp}
               batchTargets={batchTargets}
               searchTargets={searchTargets}
+              genderChips={genderChips}
+              ageAnswerId={ageFieldId}
             />
 
             {/* Pagination */}
@@ -672,7 +689,7 @@ function SummaryTile({
           ? "text-red-600"
           : "text-[var(--color-brand-700)]";
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-2.5">
+    <div className="rounded-xl border border-zinc-200 bg-white p-2.5 min-w-[128px] shrink-0 sm:min-w-0 sm:shrink">
       <p className="text-[10px] text-zinc-500 font-bold leading-tight truncate">
         {label}
       </p>
