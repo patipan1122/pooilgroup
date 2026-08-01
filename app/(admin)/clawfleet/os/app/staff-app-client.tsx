@@ -152,9 +152,9 @@ type AppMachine = {
   lastStock: number;
   lastDollMeter: number;
   lastCoinMeter: number;
-  // CEO 2026-07-25 · เลขมิเตอร์ "เฟือง" รอบก่อน (เทียบว่า 2 มิเตอร์ขยับเท่ากันไหม) · null = ยังไม่มีของเทียบ
-  lastCoinGear?: number | null;
-  lastDollGear?: number | null;
+  // CEO 2026-08-01 · "ส่วนต่างคงที่" (เฟือง−ดิจิตอล) จาก baseline/รอบก่อน · เช็ค 2 มิเตอร์ขยับเท่ากัน · null = ยังเทียบไม่ได้
+  coinMeterOffset?: number | null;
+  dollMeterOffset?: number | null;
   product: string;
   // N1 · ตู้ยังไม่ตั้ง baseline (AWAITING_SETUP ⚪) → route ไปฟอร์มตั้งค่าครั้งแรกแทน wizard 6 ขั้น
   awaitingSetup: boolean;
@@ -207,8 +207,8 @@ function flattenReal(branches: GroupCollectBranch[], awaitingSetupIds: Set<strin
           pricePerPlayCoins: m.pricePerPlayCoins,
           lastDollMeter: m.lastDollMeter,
           lastCoinMeter: m.lastCoinMeter,
-          lastCoinGear: m.lastCoinGear,
-          lastDollGear: m.lastDollGear,
+          coinMeterOffset: m.coinMeterOffset,
+          dollMeterOffset: m.dollMeterOffset,
           lastCollectedAt: m.lastCollectedAt,
           lastRefillAt: m.lastRefillAt,
           product: "",
@@ -345,11 +345,11 @@ type Form = {
   price: Counted; // ราคาขาย (กรอกเอง)
   // meters
   dollPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
-  dollGearPrev: number | null; // รอบก่อน เฟือง (ระบบ · เทียบขยับเท่ากัน) · null = ยังไม่มีของเทียบ
+  dollMeterOffset: number | null; // ส่วนต่างคงที่ (เฟือง−ดิจิตอล) baseline · เช็คขยับเท่ากัน · null = ยังเทียบไม่ได้
   dollGear: Counted; // อ่านมิเตอร์เอง
   dollDigi: Counted;
   coinPrev: number; // รอบก่อน ดิจิตอล (ระบบ · reference)
-  coinGearPrev: number | null; // รอบก่อน เฟือง (ระบบ · เทียบขยับเท่ากัน)
+  coinMeterOffset: number | null; // ส่วนต่างคงที่ (เฟือง−ดิจิตอล) baseline · เช็คขยับเท่ากัน
   coinGear: Counted;
   coinDigi: Counted;
   cash: Counted; // นับเงินจริง
@@ -458,13 +458,14 @@ function formFor(m: AppMachine, skus: CollectSku[]): Form {
     category: "ลิขสิทธิ์",
     price: demo ? 250 : null,
     dollPrev: m.lastDollMeter,
-    dollGearPrev: demo ? null : (m.lastDollGear ?? null),
-    dollGear: demo ? m.lastDollMeter + 5 : null,
+    // demo: เฟืองอยู่คนละฐาน (ห่างดิจิตอล = offset คงที่) → โชว์เลข "ไม่เท่ากัน" เหมือนของจริง แต่ "ขยับเท่ากัน" (เขียว)
+    dollMeterOffset: demo ? 1349 : (m.dollMeterOffset ?? null),
     dollDigi: demo ? m.lastDollMeter + 5 : null,
+    dollGear: demo ? m.lastDollMeter + 5 + 1349 : null,
     coinPrev: m.lastCoinMeter,
-    coinGearPrev: demo ? null : (m.lastCoinGear ?? null),
-    coinGear: demo ? m.lastCoinMeter + 30 : null,
+    coinMeterOffset: demo ? 873 : (m.coinMeterOffset ?? null),
     coinDigi: demo ? m.lastCoinMeter + 30 : null,
+    coinGear: demo ? m.lastCoinMeter + 30 + 873 : null,
     cash: demo ? 300 : null,
     returnedTotal: 0, // ยังไม่คืนอะไรตอนเปิดรอบ
     remainBySku: {}, // FlowScreen seed จากตุ๊กตาในตู้ตอนเปิด (ยังไม่รู้ SKU ตรงนี้)
@@ -797,7 +798,7 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
             {[
               "นับตุ๊กตาก่อนเติม + ถ่ายรูปก่อนเติม",
               "เติม: ระบุสินค้า + จำนวน + ถ่ายรูปหลังเติม",
-              "มิเตอร์ 4 ตัว (เฟือง+ดิจิตอล) ต้องขึ้นเท่ากัน — กันพลาด",
+              "มิเตอร์ 2 คู่ (เฟือง+ดิจิตอล) — เลขคนละฐาน แต่ต้องขยับเท่ากัน กันพลาด",
               "กรอกเงินสด → ระบบกระทบยอด — ตรง/ไม่ตรง",
             ].map((t, i) => (
               <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -1050,14 +1051,14 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
   // ความ "ตรง" จะตัดสินก็ต่อเมื่อกรอกครบ (กัน false ตรง/ไม่ตรง ตอนช่องยังว่าง)
   const dollMeterFilled = isFilled(f.dollGear) && isFilled(f.dollDigi);
   const coinMeterFilled = isFilled(f.coinGear) && isFilled(f.coinDigi);
-  // CEO 2026-07-25 · มิเตอร์ 2 ตัว (ดิจิตอล/เฟือง) คนละฐาน — "ค่าไม่มีวันเท่ากัน" แต่ควร "ขยับเท่ากัน".
-  //   เทียบ delta: (เฟืองรอบนี้ − เฟืองรอบก่อน) ควรเท่ากับ (ดิจิตอลรอบนี้ − ดิจิตอลรอบก่อน = coinDelta).
-  //   ต่างกัน = มิเตอร์ตัวใดตัวหนึ่งเพี้ยน/โดนแก้ → เตือน (advisory · ไม่บล็อก). มีเลขเฟืองรอบก่อน
-  //   (coinGearPrev != null) → เทียบจริง · ไม่มี (event ก่อนไม่ได้เก็บเฟือง) → ข้าม (ผ่าน · ยังเทียบไม่ได้).
-  const dollGearDelta = f.dollGearPrev != null ? n0(f.dollGear) - f.dollGearPrev : null;
-  const coinGearDelta = f.coinGearPrev != null ? n0(f.coinGear) - f.coinGearPrev : null;
-  const dollMeterEqual = dollMeterFilled && (dollGearDelta == null || dollGearDelta === dollDelta);
-  const coinMeterEqual = coinMeterFilled && (coinGearDelta == null || coinGearDelta === coinDelta);
+  // CEO 2026-08-01 · มิเตอร์ 2 ตัว (เฟือง/ดิจิตอล) คนละฐาน — "ค่าไม่มีวันเท่ากัน" แต่ห่างกันเท่าเดิมทุกรอบ.
+  //   เทียบ "ส่วนต่างคงที่": (เฟืองรอบนี้ − ดิจิตอลรอบนี้) ต้อง = offset จาก baseline (เลขจริงที่พนักงานกรอกตอนตั้งตู้).
+  //   ต่างจาก offset = มิเตอร์ตัวใดตัวหนึ่งเพี้ยน/โดนแก้ → เตือน (advisory · ไม่บล็อก). มี offset (!= null) → เทียบจริง ·
+  //   ไม่มี (ไม่เคยกรอกเฟือง+ดิจิตอลครบสักรอบ) → ข้าม (ผ่าน · ยังเทียบไม่ได้).
+  const dollGearGap = dollMeterFilled ? n0(f.dollGear) - n0(f.dollDigi) : null;
+  const coinGearGap = coinMeterFilled ? n0(f.coinGear) - n0(f.coinDigi) : null;
+  const dollMeterEqual = dollMeterFilled && (f.dollMeterOffset == null || dollGearGap === f.dollMeterOffset);
+  const coinMeterEqual = coinMeterFilled && (f.coinMeterOffset == null || coinGearGap === f.coinMeterOffset);
   const meterEqualOk = dollMeterEqual && coinMeterEqual;
   // CEO 2026-07-25 · ตุ๊กตาตรง = เป๊ะเท่านั้น (ตัด tolerance ±2 เดิม) — ต่างแม้แต่ 1 = ไม่ตรง (ปุ่มยืนยันขึ้นแดง "มีจุดไม่ตรง")
   const dollMatch = isFilled(f.left) && dollMeterFilled && overCount === 0 && dollDelta === dispensed;
