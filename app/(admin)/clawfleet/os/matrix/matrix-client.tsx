@@ -16,6 +16,8 @@ import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
 import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
 import { ChecklistClient, type ChecklistBranch } from "./checklist-client";
+import { RawReadingsClient } from "./raw-readings-client";
+import type { RawReadingRow } from "@/lib/clawfleet/raw-readings-queries";
 
 export type AssignableStaff = { id: string; name: string };
 
@@ -133,7 +135,7 @@ type GridDay = MatrixSerialDay & { hasData: boolean };
 // machineId = null เฉพาะ SAMPLE path (DB ว่าง) → มอบหมายไม่ได้
 type GridMachine = { machineId: string | null; code: string; nickname: string | null; days: GridDay[] };
 
-type MatrixView = "machine" | "branch";
+type MatrixView = "machine" | "raw" | "branch";
 
 export function MatrixClient({
   branches,
@@ -146,6 +148,10 @@ export function MatrixClient({
   canManage = false,
   checklistIsoDays = [],
   checklistBranches = [],
+  rawRows = [],
+  rawTotal = 0,
+  rawTruncated = false,
+  canEditRaw = false,
 }: {
   branches: MatrixBranch[];
   initialBranch: string | null;
@@ -159,6 +165,11 @@ export function MatrixClient({
   // Wave 2E1 — เช็คลิสต์ สาขา×วัน (READ-ONLY) จาก getCfChecklistGrid
   checklistIsoDays?: string[];
   checklistBranches?: ChecklistBranch[];
+  // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) — เลขที่พนักงานกรอกจริง ของสาขาที่เลือก
+  rawRows?: RawReadingRow[];
+  rawTotal?: number;
+  rawTruncated?: boolean;
+  canEditRaw?: boolean;
 }) {
   const empty = branches.length === 0;
   const rows = empty ? SAMPLE_BRANCHES : branches;
@@ -472,6 +483,7 @@ export function MatrixClient({
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 11, padding: 4, width: "fit-content" }}>
         {([
           { key: "machine", label: "ตู้ × วัน", sub: "เจาะลึกรายสาขา" },
+          { key: "raw", label: "ข้อมูลดิบ", sub: "เลขที่พนักงานกรอก" },
           { key: "branch", label: "สาขา × วัน", sub: "เช็คลิสต์เก็บเงิน" },
         ] as const).map((t) => {
           const on = t.key === view;
@@ -521,7 +533,9 @@ export function MatrixClient({
       )}
 
       <div style={{ fontSize: 12, color: "#8A909A", marginBottom: 9 }}>
-        เลือกสาขาเพื่อดูตารางเจาะลึก — ทุกตู้ × รายวันย้อนหลังในหน้าเดียว
+        {view === "raw"
+          ? "เลือกสาขาเพื่อดูข้อมูลดิบที่พนักงานกรอก — ทุกตู้ ทุกรายการ ในหน้าเดียว"
+          : "เลือกสาขาเพื่อดูตารางเจาะลึก — ทุกตู้ × รายวันย้อนหลังในหน้าเดียว"}
       </div>
 
       {/* branch chips */}
@@ -553,6 +567,16 @@ export function MatrixClient({
         })}
       </div>
 
+      {view === "raw" ? (
+        <RawReadingsClient
+          rows={rawRows}
+          canEdit={canEditRaw}
+          branchName={branch?.name ?? branchCode}
+          total={rawTotal}
+          truncated={rawTruncated}
+        />
+      ) : (
+      <>
       {/* title + metric toggle + range toggle */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 700 }}>
@@ -1112,6 +1136,8 @@ export function MatrixClient({
           </>
         )}
       </Modal>
+      </>
+      )}
       </>
       )}
     </div>

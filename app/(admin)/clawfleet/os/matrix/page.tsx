@@ -16,6 +16,7 @@ import {
   type AssignableStaff,
 } from "@/lib/clawfleet/assignment-queries";
 import { requireCfSession, userBranchIds, cfHasAdminPower, isCfBranchManager } from "@/lib/clawfleet/role-guard";
+import { getBranchRawReadings, type RawReadingRow } from "@/lib/clawfleet/raw-readings-queries";
 import { MatrixClient, type MatrixBranch, type MatrixSerialMachine } from "./matrix-client";
 import type { ChecklistBranch } from "./checklist-client";
 
@@ -40,6 +41,11 @@ export default async function MatrixPage({
   // เช็คลิสต์ สาขา×วัน ย้อนหลัง 31 วัน (READ-ONLY · scope ผ่าน userBranchIds ในตัว query)
   let checklistIsoDays: string[] = [];
   let checklistBranches: ChecklistBranch[] = [];
+  // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) ของสาขาที่เลือก — เลขที่พนักงานกรอกจริง (ตั้งต้น + รอบเก็บ)
+  let rawRows: RawReadingRow[] = [];
+  let rawTotal = 0;
+  let rawTruncated = false;
+  let canEditRaw = false;
 
   try {
     const checklist = await getCfChecklistGrid({ days: 31 });
@@ -96,6 +102,13 @@ export default async function MatrixPage({
       }
       assignments = await getMachineAssignments(branchId);
       if (canManage) staff = await getAssignableStaff(branchId);
+
+      // ข้อมูลดิบมิเตอร์ของสาขานี้ (โชว์ทั้งยอดตั้งต้น + รอบเก็บ) + สิทธิ์แก้เลข
+      canEditRaw = adminPower || isCfBranchManager(session.user.role);
+      const raw = await getBranchRawReadings({ branchCode: picked });
+      rawRows = raw.rows;
+      rawTotal = raw.total;
+      rawTruncated = raw.truncated;
     }
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้สาขาตัวอย่าง + เมทริกซ์ตัวอย่าง
@@ -113,6 +126,10 @@ export default async function MatrixPage({
       canManage={canManage}
       checklistIsoDays={checklistIsoDays}
       checklistBranches={checklistBranches}
+      rawRows={rawRows}
+      rawTotal={rawTotal}
+      rawTruncated={rawTruncated}
+      canEditRaw={canEditRaw}
     />
   );
 }

@@ -1031,6 +1031,7 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
   revalidatePath("/clawfleet/os/app");
   revalidatePath("/clawfleet/os/collections");
   revalidatePath("/clawfleet/os/dashboard");
+  revalidatePath("/clawfleet/os/matrix");
   return result;
 }
 
@@ -1048,6 +1049,10 @@ const AdminEditEventSchema = z.object({
   cashCents: z.number().int("เงินต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "เงินติดลบไม่ได้").max(1_000_000_000),
   coinMeterAfter: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000),
   dollMeterAfter: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  // เลขเฟือง (gear · anti-cheat display) — แก้แยกจากดิจิตอล · ไม่กระทบการคิดเงิน (เงินใช้ดิจิตอล)
+  //   optional: ไม่ส่ง = ไม่แตะเฟือง (backward compatible กับ collections/staff-app เดิม)
+  coinMeterTop: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000).nullable().optional(),
+  dollMeterTop: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
 });
 
 // re-reconcile 1 session ด้วยค่าล่าสุดใน DB (สูตรเดียวกับ closeBranchSession/editCollectionRound เป๊ะ).
@@ -1123,6 +1128,7 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
     select: {
       id: true, machineId: true, sessionId: true, collectedAt: true,
       coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, cashCountedCents: true,
+      meterMoneyTop: true, meterDollTop: true,
       session: { select: { id: true, branchId: true, isBaseline: true, depositId: true, status: true } },
     },
   });
@@ -1180,7 +1186,17 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
       // 1) อัปเดตเลขในใบที่แก้
       await tx.cfCollectionEvent.update({
         where: { id: ev.id },
-        data: { cashCountedCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: data.dollMeterAfter ?? undefined },
+        data: {
+          cashCountedCents: data.cashCents,
+          coinMeterAfter: data.coinMeterAfter,
+          dollMeterAfter: data.dollMeterAfter ?? undefined,
+          // ดิจิตอล mirror (bottom) ให้ตรงกับเลขที่ใช้คิดเงิน — กัน offset เฟือง−ดิจิตอล เพี้ยนหลังแก้
+          meterMoneyBottom: data.coinMeterAfter,
+          ...(data.dollMeterAfter != null ? { meterDollBottom: data.dollMeterAfter } : {}),
+          // เฟือง (top · anti-cheat) — แก้เมื่อส่งค่ามาเท่านั้น (undefined = ไม่แตะ)
+          ...(data.coinMeterTop !== undefined ? { meterMoneyTop: data.coinMeterTop } : {}),
+          ...(data.dollMeterTop !== undefined ? { meterDollTop: data.dollMeterTop } : {}),
+        },
       });
 
       // 2) ต่อลูกโซ่: อัปเดต before ของรอบถัดไป = after ที่แก้ใหม่
@@ -1241,8 +1257,12 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
         data: {
           orgId, userId, action: "CF_COLLECTION_ADMIN_EDIT", resourceType: "CF_COLLECTION_EVENT", resourceId: ev.id,
           diff: {
-            old: { cashCents: ev.cashCountedCents, coinMeterAfter: ev.coinMeterAfter, dollMeterAfter: ev.dollMeterAfter },
-            new: { cashCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: newDollAfter },
+            old: { cashCents: ev.cashCountedCents, coinMeterAfter: ev.coinMeterAfter, dollMeterAfter: ev.dollMeterAfter, coinMeterTop: ev.meterMoneyTop, dollMeterTop: ev.meterDollTop },
+            new: {
+              cashCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: newDollAfter,
+              coinMeterTop: data.coinMeterTop !== undefined ? data.coinMeterTop : ev.meterMoneyTop,
+              dollMeterTop: data.dollMeterTop !== undefined ? data.dollMeterTop : ev.meterDollTop,
+            },
             machineId: ev.machineId, sessionId: ev.sessionId, relinkedNext: relinkNext, byRole: session.user.role,
           },
         },
@@ -1257,6 +1277,7 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
   revalidatePath("/clawfleet/os/app");
   revalidatePath("/clawfleet/os/collections");
   revalidatePath("/clawfleet/os/dashboard");
+  revalidatePath("/clawfleet/os/matrix");
   return result;
 }
 
