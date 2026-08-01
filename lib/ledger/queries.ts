@@ -10,6 +10,7 @@
 
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { suggestExpenseCategory } from "@/lib/ledger/suggest-category";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import type {
   Expense,
@@ -614,6 +615,17 @@ export async function getExpense(opts: {
   });
   if (!row) return null;
   const expense = serializeExpense(row);
+  // ตัวช่วยฟรี (deterministic · 0 AI/0 network) — เมื่อ AI ไม่ได้เดาหมวด (suggestedCategoryName
+  // ว่าง เพราะ Gemini พลาด/บิลไม่มีชื่อร้าน) เดาหมวดจาก "ชื่อร้าน + รายละเอียดในบิล" เป็นตาข่าย
+  // กันพลาด → ป้าย "AI แนะนำ" ยังโผล่บนมือถือ (CEO 2026-08-01 "ในมือถือ AI ควร suggest หมวด").
+  // display-only (ไม่เขียน DB) · เฉพาะที่เดาได้ชัด (high) — ไม่ยัดหมวด "เบ็ดเตล็ด" ให้รก.
+  if (!expense.suggestedCategoryName) {
+    const detail = [expense.note, ...expense.items.map((i) => i.description)]
+      .filter(Boolean)
+      .join(" · ");
+    const guess = suggestExpenseCategory(expense.vendor, detail);
+    if (guess.confidence === "high") expense.suggestedCategoryName = guess.categoryName;
+  }
   if (opts.withSlip) {
     expense.slip = await getExpenseSlip({
       orgId: opts.orgId,

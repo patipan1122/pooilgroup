@@ -21,7 +21,6 @@ import { resolveLedgerActor, ledgerWebCan, ledgerWebCanForRole } from "@/lib/led
 import { listLedgerProjects } from "@/lib/ledger/projects";
 import { prisma } from "@/lib/prisma";
 import { LiffExpensePane } from "./LiffExpensePane";
-import { LiffPayeeRequest } from "./LiffPayeeRequest";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
@@ -195,17 +194,20 @@ export default async function LedgerLiffExpensePage({
         currentUserId={actor.userId}
         backHref={backHref}
         projects={projectOptions}
+        // ขอโอนเงินบนมือถือ — ปุ่มโผล่ข้าง "บันทึกรายการ" (CEO 2026-08-01). เดิมเป็นการ์ด
+        // แยกล่างสุดใต้ฟอร์ม (LiffPayeeRequest) CEO เลื่อนไม่เจอ → ย้ายมาไว้ในแถบล่าง.
+        payout={
+          companyId
+            ? {
+                expenseId: id,
+                companyId,
+                canRequest: canRequestTransfer,
+                classified,
+                alreadyRequested,
+              }
+            : null
+        }
       />
-
-      {companyId && (
-        <LiffPayeeRequest
-          expenseId={id}
-          companyId={companyId}
-          canRequest={canRequestTransfer}
-          classified={classified}
-          alreadyRequested={alreadyRequested}
-        />
-      )}
     </div>
   );
 }

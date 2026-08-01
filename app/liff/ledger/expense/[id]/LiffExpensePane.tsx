@@ -4,7 +4,9 @@
 // LINE member (field staff) can edit a draft and (if their role allows) confirm,
 // instead of hitting the Pool-admin "ไม่มีสิทธิ์" wall. canConfirm comes from the
 // server (the ledger_permission matrix). TRCloud push stays a web/accountant job.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Banknote, Check } from "lucide-react";
 import { ExpenseReviewPane } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseDraft, LedgerActionResult } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseRow, CategoryOption, BranchOption } from "@/components/ledger/_kit/types";
@@ -17,6 +19,20 @@ import {
   liffRequestDeleteExpense,
   setExpenseProjectAction,
 } from "@/app/(admin)/ledger/_actions";
+import { LiffPayeeRequest } from "./LiffPayeeRequest";
+
+/** ขอโอนเงินบนมือถือ (payment.request) — คำนวณสิทธิ์/สถานะฝั่ง server ใน page.tsx.
+ *  ไม่ส่งมา = ไม่มีปุ่มขอโอน (พนักงานหน้างานไม่มีสิทธิ์). */
+type PayoutProps = {
+  expenseId: string;
+  companyId: string;
+  /** มีสิทธิ์ payment.request ไหม — ไม่มี = ไม่โชว์ปุ่ม. */
+  canRequest: boolean;
+  /** ตั้งสาขา+หมวดครบไหม — ยังไม่ครบ modal จะเตือน + ปิดปุ่มส่ง. */
+  classified: boolean;
+  /** มีคำขอโอน active ของบิลนี้อยู่แล้วไหม — มีแล้ว = ปุ่มเป็น "✅ ขอโอนแล้ว". */
+  alreadyRequested: boolean;
+};
 
 export function LiffExpensePane({
   expense,
@@ -28,12 +44,15 @@ export function LiffExpensePane({
   currentUserId,
   backHref,
   projects,
+  payout,
 }: {
   expense: ExpenseRow;
   replacement?: ExpenseRow | null;
   categories: CategoryOption[];
   branches: BranchOption[];
   canConfirm: boolean;
+  /** ขอโอนเงินบนมือถือ — ปุ่มโผล่ข้าง "บันทึกรายการ" (CEO 2026-08-01). */
+  payout?: PayoutProps | null;
   /** true = actor เป็นบัญชี/ผู้ดูแล (สิทธิ์ expense.export) → โชว์ปุ่ม "ส่ง TRCloud" บนมือถือ.
    *  พนักงานหน้างาน = false → ไม่เห็นปุ่มบัญชี (ใส่หมวด/สาขาได้เหมือนเดิม). */
   canSendTrcloud?: boolean;
@@ -45,7 +64,9 @@ export function LiffExpensePane({
   backHref: string;
 }) {
   const router = useRouter();
+  const [payoutOpen, setPayoutOpen] = useState(false);
   return (
+    <>
     <ExpenseReviewPane
       expense={expense}
       replacement={replacement}
@@ -85,6 +106,35 @@ export function LiffExpensePane({
         }
         router.refresh();
       }}
+      // ปุ่ม "ขอโอน" ข้างปุ่มบันทึกรายการ (CEO 2026-08-01) — เดิมอยู่ล่างสุดใต้ฟอร์ม เลื่อนไม่เจอ.
+      // มีสิทธิ์ payment.request เท่านั้นถึงเห็น · ขอแล้ว = ปุ่มเป็น "✅ ขอโอนแล้ว" กดซ้ำไม่ได้.
+      footerExtra={
+        payout?.canRequest ? (
+          payout.alreadyRequested ? (
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
+              <Check className="size-4" aria-hidden /> ขอโอนแล้ว
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPayoutOpen(true)}
+              className="press inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white active:bg-violet-700 sm:flex-none"
+            >
+              <Banknote className="size-4" aria-hidden /> ขอโอน
+            </button>
+          )
+        ) : undefined
+      }
     />
+      {payout && (
+        <LiffPayeeRequest
+          expenseId={payout.expenseId}
+          companyId={payout.companyId}
+          classified={payout.classified}
+          open={payoutOpen}
+          onOpenChange={setPayoutOpen}
+        />
+      )}
+    </>
   );
 }

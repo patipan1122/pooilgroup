@@ -12,7 +12,7 @@
 // Server actions มาจาก props (parent ฉีดจาก lib/ledger/actions หรือ local
 // fallback — ดู NOTE[ledger-partition-B] ใน _kit/types.ts).
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { registerDraftSaver } from "@/lib/ledger/draft-save-registry";
 import {
   AlertTriangle,
@@ -353,6 +353,7 @@ export function ExpenseReviewPane({
   showSendToTrcloud = true,
   showVoucherMenu = true,
   onAfterFinish,
+  footerExtra,
 }: {
   expense: ExpenseRow;
   /** ใบทดแทน (ถ้ามี) — โชว์ 2 รูปคู่กัน. */
@@ -407,6 +408,9 @@ export function ExpenseReviewPane({
   /** เรียกหลังทำรายการ "เสร็จ" (ยืนยัน/ยกเลิก/ลบสำเร็จ) — LIFF เด้งกลับหน้ารายการ,
    *  เว็บ refresh. ไม่ส่งมา = อยู่หน้าเดิม (พฤติกรรมเดิม). */
   onAfterFinish?: (action?: "confirm" | "delete" | "void") => void;
+  /** ปุ่มเสริมในแถบล่าง — วางถัดจากปุ่ม "บันทึกรายการ" (เช่น "ขอโอน" บนมือถือ LIFF).
+   *  ไม่ส่งมา = ไม่มีปุ่มเสริม (พฤติกรรมเดิม · เว็บใช้เส้น onRequestPayout แยก). */
+  footerExtra?: ReactNode;
 }) {
   const [draft, setDraft] = useState<ExpenseDraft>({
     vendor: expense.vendor ?? "",
@@ -1111,14 +1115,16 @@ export function ExpenseReviewPane({
                   searchPlaceholder="ค้นหาประเภท..."
                   selectClassName={cn(gateMissingCategory && "border-amber-300 ring-1 ring-amber-200")}
                 />
-                {gateMissingCategory &&
-                  (() => {
-                    // AI แนะนำหมวด (ghost · CEO 2026-07-24): โชว์ตัวจาง กดยืนยันได้ — คนยังต้องเลือกเอง
-                    const ghost = expense.suggestedCategoryName
-                      ? categories.find(
-                          (c) => c.name === expense.suggestedCategoryName && c.active !== false,
-                        )
-                      : null;
+                {(() => {
+                  // AI แนะนำหมวด (ghost · CEO 2026-07-24): จับคู่ชื่อที่ AI/ตัวช่วยเดา กับหมวด "ที่เปิดใช้"
+                  const ghost = expense.suggestedCategoryName
+                    ? categories.find(
+                        (c) => c.name === expense.suggestedCategoryName && c.active !== false,
+                      )
+                    : null;
+
+                  // ยังไม่เลือกหมวด → ป้ายแนะนำเด่น (กดใช้ได้) หรือเตือน "ต้องระบุหมวด"
+                  if (gateMissingCategory) {
                     return ghost ? (
                       <button
                         type="button"
@@ -1142,7 +1148,31 @@ export function ExpenseReviewPane({
                         ต้องระบุหมวดหมู่ค่าใช้จ่าย
                       </p>
                     );
-                  })()}
+                  }
+
+                  // เลือกหมวดแล้ว แต่ AI ว่าน่าจะเป็นหมวดอื่น → บรรทัดจาง แตะเปลี่ยนได้ (CEO 2026-08-01
+                  // "ในมือถือ AI ควร suggest หมวด" — เดิมพอมีหมวด generic เสียบอยู่ ป้ายแนะนำหาย)
+                  if (ghost && ghost.id !== draft.categoryId && !locked) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => set("categoryId", ghost.id)}
+                        title="AI แนะนำหมวดนี้จากบิล — แตะเพื่อเปลี่ยน"
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-700"
+                      >
+                        <span aria-hidden>🔮</span>
+                        <span>
+                          AI ว่าน่าจะเป็น{" "}
+                          <span className="font-medium underline decoration-dashed underline-offset-2">
+                            {ghost.name}
+                          </span>{" "}
+                          — แตะเปลี่ยน
+                        </span>
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <FieldLabel>สาขา (ของเรา)</FieldLabel>
@@ -2069,6 +2099,10 @@ export function ExpenseReviewPane({
               )}
               {savedFlash ? "บันทึกแล้ว" : "บันทึกรายการ"}
             </Button>
+
+            {/* ปุ่มเสริมข้าง "บันทึกรายการ" (CEO 2026-08-01) — มือถือ LIFF ยิงปุ่ม "ขอโอน" มาที่นี่
+                (เดิมปุ่มขอโอนไปโผล่ล่างสุดใต้ฟอร์ม CEO เลื่อนไม่เจอ). เว็บไม่ส่ง = ไม่มีปุ่มเสริม. */}
+            {footerExtra}
 
             {/* ⚡ ส่ง+ขอโอนด่วน (CEO 2026-07-26) — ปุ่มเดียวทำต่อกัน: บันทึก → ส่ง PO เข้า TRCloud →
                 ยืนยันสั้นๆ → สร้างคำขอโอน. โชว์เฉพาะเว็บ (มี onSendToTrcloud + onRequestPayout) ·
