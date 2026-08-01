@@ -35,6 +35,7 @@ import {
   attachEventPhotos,
   editCollectionRound,
   saveMachineOrder,
+  adminEditCollectionEvent,
 } from "@/lib/clawfleet/actions";
 import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
@@ -728,6 +729,8 @@ type Props = {
   history: StaffHistoryRow[];
   // CEO 2026-08-01 · จำนวนตู้คีบ active ต่อสาขา (Y ใน "เก็บ X/Y ตู้" การ์ดรายวัน)
   branchMachineCounts?: Record<string, number>;
+  // CEO 2026-08-01 · แอดมิน/ผจก.สาขา = แก้ประวัติได้ทุกใบทุกวัน (พนักงาน = เฉพาะวันนั้น · gate ที่ปุ่ม)
+  isHistoryAdmin?: boolean;
   // B3 · วันที่ที่กำลังดูประวัติ (YYYY-MM-DD ตามเวลาไทย · default = วันนี้). ขับ date picker ในประวัติ.
   // optional default (วันนี้ client-side) กัน caller เดิมที่ยังไม่ส่ง.
   selectedDate?: string;
@@ -2371,7 +2374,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onReorderMachines={props.onReorder} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={machines} onReorderMachines={props.onReorder} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
       )}
     </div>
   );
@@ -2414,7 +2417,7 @@ function PanelScreen(props: {
   todayYmd: string;
   onExitTour: () => void;
   skus: CollectSku[]; history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string;
-  branchMachineCounts?: Record<string, number>;
+  branchMachineCounts?: Record<string, number>; isHistoryAdmin?: boolean;
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
   branchId: string; branchCode: string; branchName?: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
@@ -2441,7 +2444,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} branchMachineCounts={props.branchMachineCounts} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
+        {panel === "history" && <HistoryPanel history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2571,7 +2574,7 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
+function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; isHistoryAdmin?: boolean; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
@@ -2988,11 +2991,12 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
                           {stillMissing ? "แนบรูปที่ยังขาด" : "แนบรูปเพิ่ม / ถ่ายใหม่"}
                         </button>
                       )}
-                      {!usingDemo && detail.canEditNumbers && detail.eventId && (
+                      {/* CEO 2026-08-01 · ปุ่มแก้ไข — แอดมิน/ผจก. แก้ได้ทุกใบทุกวัน · พนักงานเฉพาะรอบล่าสุดวันนี้ (canEditNumbers) · เฉพาะรอบเก็บเงิน (ไม่ใช่ swap/baseline) */}
+                      {!usingDemo && detail.eventId && !isSwap && !detail.isBaseline && (detail.canEditNumbers || isHistoryAdmin) && (
                         <button type="button" onClick={() => { setEditRow(detail); setDetail(null); }} className="co-tap"
-                          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", border: "1.5px solid #E3E6EA", background: "#F1F2F5", color: "#454B54" }}>
+                          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", border: "1.5px solid #C7C3F0", background: "#EEF0FE", color: "#4338CA" }}>
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                          แก้เลข (เงิน / มิเตอร์)
+                          แก้ไข (เงิน / มิเตอร์){isHistoryAdmin && !detail.canEditNumbers ? " · แอดมิน" : ""}
                         </button>
                       )}
                     </>
@@ -3032,6 +3036,7 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
       {editRow && editRow.eventId && (
         <EditRoundSheet
           row={editRow}
+          admin={!!isHistoryAdmin}
           onClose={() => setEditRow(null)}
           onSaved={() => { setEditRow(null); router.refresh(); }}
         />
@@ -3043,7 +3048,7 @@ function HistoryPanel({ history, branchMachineCounts, usingDemo, orgId, initialF
 /* ─────────────── #3 CEO 2026-07-19 · แก้เลขในใบเก็บเดิม (เงิน/มิเตอร์) ───────────────
  * พนักงานกรอกเงิน/มิเตอร์ผิดแล้วกดส่งไป → แก้ตัวเลขในใบเดิมได้ (เฉพาะรอบล่าสุดของตู้ · วันนี้ · own).
  * server (editCollectionRound) re-reconcile ทั้งรอบ + อัปเดต mirror + audit log · เช็คสิทธิ์/เงื่อนไขซ้ำอีกชั้น. */
-function EditRoundSheet({ row, onClose, onSaved }: { row: StaffHistoryRow; onClose: () => void; onSaved: () => void }) {
+function EditRoundSheet({ row, admin = false, onClose, onSaved }: { row: StaffHistoryRow; admin?: boolean; onClose: () => void; onSaved: () => void }) {
   const [cash, setCash] = useState<string>(String(row.cashBaht ?? ""));
   const [coin, setCoin] = useState<string>(row.coinMeter != null ? String(row.coinMeter) : "");
   const [doll, setDoll] = useState<string>(row.dollMeter != null ? String(row.dollMeter) : "");
@@ -3059,12 +3064,14 @@ function EditRoundSheet({ row, onClose, onSaved }: { row: StaffHistoryRow; onClo
     if (!Number.isFinite(cashN) || !Number.isFinite(coinN) || coin.trim() === "") { setError("กรอกเงิน + มิเตอร์เหรียญให้ครบ"); return; }
     setBusy(true);
     try {
-      const r = await editCollectionRound({
+      const input = {
         eventId: row.eventId,
         cashCents: Math.round(cashN * 100),
         coinMeterAfter: coinN,
         dollMeterAfter: doll.trim() === "" ? null : Number(digits(doll)),
-      });
+      };
+      // แอดมิน/ผจก. → adminEditCollectionEvent (แก้ได้ทุกใบ + ต่อลูกโซ่รอบถัดไป) · พนักงาน → editCollectionRound (own+วันนี้)
+      const r = admin ? await adminEditCollectionEvent(input) : await editCollectionRound(input);
       if (!r.ok) { setError(r.error || "แก้ไม่สำเร็จ · ลองใหม่"); setBusy(false); return; }
       onSaved();
     } catch {
@@ -3090,8 +3097,8 @@ function EditRoundSheet({ row, onClose, onSaved }: { row: StaffHistoryRow; onClo
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#F4F5F7", borderRadius: "20px 20px 0 0", padding: "16px 18px 24px", display: "flex", flexDirection: "column", gap: 13 }}>
         <div style={{ width: 40, height: 4, borderRadius: 4, background: "#D8DCE2", margin: "0 auto 2px" }} />
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>แก้เลขในใบ · {row.nickname || row.code}</div>
-          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>แก้ได้เฉพาะรอบล่าสุดของตู้วันนี้ · ระบบจะคิดเงินควรได้/ส่วนต่างใหม่ให้</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>แก้ไขในใบ · {row.nickname || row.code}</div>
+          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{admin ? "แอดมิน · แก้ได้ทุกใบ — ระบบคิดเงินควรได้/ส่วนต่างใหม่ + ต่อรอบถัดไปให้" : "แก้ได้เฉพาะรอบล่าสุดของตู้วันนี้ · ระบบจะคิดเงินควรได้/ส่วนต่างใหม่ให้"}</div>
         </div>
         {field("เงินที่นับได้ (บาท)", cash, setCash, "บาท")}
         {field("มิเตอร์เหรียญ (หลังเก็บ)", coin, setCoin, "")}

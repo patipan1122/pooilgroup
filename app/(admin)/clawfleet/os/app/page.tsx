@@ -7,7 +7,7 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
-import { userBranchIds } from "@/lib/clawfleet/role-guard";
+import { userBranchIds, isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
@@ -117,12 +117,17 @@ export default async function StaffAppPage({
   let userId = "";
   // CEO 2026-08-01 · ขอบเขตสาขาสำหรับ "ประวัติทั้งสาขา" — สาขาที่ user เข้าถึงได้ (Super Admin = ALL)
   let historyBranchScope: string[] | "ALL" = [];
+  // CEO 2026-08-01 · แอดมิน/ผจก.สาขา = แก้ประวัติได้ทุกใบทุกวัน (พนักงาน = เฉพาะวันนั้น · gate ที่ปุ่ม)
+  let isHistoryAdmin = false;
   try {
     const session = await getSession();
     userName = session?.user.name ?? "";
     userId = session?.user.id ?? "";
     orgId = orgId || (session?.user.org_id ?? "");
-    if (session) historyBranchScope = await userBranchIds(session);
+    if (session) {
+      historyBranchScope = await userBranchIds(session);
+      isHistoryAdmin = isCfAdmin(session.user.role) || isCfBranchManager(session.user.role);
+    }
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
@@ -458,6 +463,7 @@ export default async function StaffAppPage({
       todayYmd={todayYmd}
       history={history}
       branchMachineCounts={branchMachineCounts}
+      isHistoryAdmin={isHistoryAdmin}
       selectedDate={selectedDate}
       myRecentTickets={myRecentTickets}
       assignedOnly={hasAssignment}
