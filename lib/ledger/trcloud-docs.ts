@@ -100,7 +100,7 @@ function dt(o: Json, ...keys: string[]): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-type DocKind = "PO" | "AP";
+export type DocKind = "PO" | "AP";
 
 function mapRow(kind: DocKind, o: Json) {
   const trcloudId =
@@ -153,6 +153,48 @@ export type TrcloudDocSyncResult = {
   error?: string;
 };
 
+const PATH_BY_KIND: Record<DocKind, string> = { AP: "ap/search.php", PO: "po/search.php" };
+
+// ดึง 1 หน้า (offset = start) แล้ว upsert · คืน hasMore = ยังมีของเก่ากว่านี้ให้ดึงต่อ
+//   (หน้าเต็ม 100 + ยังมีของใหม่/ต้องอัปเดต). ใช้ร่วมทั้ง batch sync และ per-page sync (แถบ %).
+async function syncOnePage(
+  orgId: string,
+  kind: DocKind,
+  path: string,
+  start: number,
+): Promise<{ added: number; hasMore: boolean; rateLimited: boolean }> {
+  const r = await post(path, { keyword: "", limit: String(PAGE_SIZE), start: String(start) });
+  if (isRateLimited(r)) return { added: 0, hasMore: false, rateLimited: true };
+  const rows = rowsOf(r.data);
+  if (rows.length === 0) return { added: 0, hasMore: false, rateLimited: false };
+
+  // มีของในหน้านี้ใหม่/ต้องอัปเดตไหม → นับ known เพื่อตัดจบเมื่อหน้าเต็มไปด้วยของเดิม
+  const mapped = rows.map((o) => mapRow(kind, o)).filter((m): m is NonNullable<typeof m> => m != null);
+  const ids = mapped.map((m) => m.trcloudId);
+  const existing = await prisma.ledgerTrcloudDoc.findMany({
+    where: { orgId, kind, trcloudId: { in: ids } },
+    select: { trcloudId: true },
+  });
+  const known = new Set(existing.map((e) => e.trcloudId));
+
+  const now = new Date();
+  let added = 0;
+  for (const m of mapped) {
+    await prisma.ledgerTrcloudDoc.upsert({
+      where: { orgId_kind_trcloudId: { orgId, kind, trcloudId: m.trcloudId } },
+      create: { orgId, ...m, syncedAt: now },
+      update: { ...m, syncedAt: now },
+    });
+    added += 1;
+  }
+
+  // หน้านี้รู้จักครบ + เต็ม (100) → ของเก่ากว่านี้เคย sync แล้ว, จบแบบ incremental
+  const allKnownFullPage = known.size === mapped.length && rows.length === PAGE_SIZE;
+  // หน้าไม่เต็ม = ถึงท้ายประวัติแล้ว
+  const shortPage = rows.length < PAGE_SIZE;
+  return { added, hasMore: !allKnownFullPage && !shortPage, rateLimited: false };
+}
+
 // sync ชนิดเดียว: เลื่อน start= จากใหม่→เก่า, upsert, หยุดเมื่อเจอหน้าที่รู้จักครบ (incremental)
 // หรือชนเพดานหน้า/ได้ <100 แถว/โดน 429.
 async function syncKind(
@@ -165,40 +207,39 @@ async function syncKind(
   let pages = 0;
   for (let start = 0; pages < maxPages; start += PAGE_SIZE) {
     if (pages > 0) await sleep(THROTTLE_MS);
-    const r = await post(path, { keyword: "", limit: String(PAGE_SIZE), start: String(start) });
-    if (isRateLimited(r)) return { count, pages, capped: true, rateLimited: true };
-    const rows = rowsOf(r.data);
+    const r = await syncOnePage(orgId, kind, path, start);
     pages += 1;
-    if (rows.length === 0) return { count, pages, capped: false, rateLimited: false };
-
-    // มีของในหน้านี้ใหม่/ต้องอัปเดตไหม → นับ known เพื่อตัดจบเมื่อหน้าเต็มไปด้วยของเดิม
-    const mapped = rows.map((o) => mapRow(kind, o)).filter((m): m is NonNullable<typeof m> => m != null);
-    const ids = mapped.map((m) => m.trcloudId);
-    const existing = await prisma.ledgerTrcloudDoc.findMany({
-      where: { orgId, kind, trcloudId: { in: ids } },
-      select: { trcloudId: true },
-    });
-    const known = new Set(existing.map((e) => e.trcloudId));
-
-    const now = new Date();
-    for (const m of mapped) {
-      await prisma.ledgerTrcloudDoc.upsert({
-        where: { orgId_kind_trcloudId: { orgId, kind, trcloudId: m.trcloudId } },
-        create: { orgId, ...m, syncedAt: now },
-        update: { ...m, syncedAt: now },
-      });
-      count += 1;
-    }
-
-    // หน้านี้รู้จักครบ + เป็นหน้าเต็ม (100) → ของเก่ากว่านี้เคย sync แล้ว, จบแบบ incremental
-    if (known.size === mapped.length && rows.length === PAGE_SIZE) {
-      return { count, pages, capped: false, rateLimited: false };
-    }
-    // หน้าไม่เต็ม = ถึงท้ายประวัติแล้ว
-    if (rows.length < PAGE_SIZE) return { count, pages, capped: false, rateLimited: false };
+    if (r.rateLimited) return { count, pages, capped: true, rateLimited: true };
+    count += r.added;
+    if (!r.hasMore) return { count, pages, capped: false, rateLimited: false };
   }
   // ออกจาก loop เพราะชนเพดานหน้า → ยังมีของเก่ากว่านี้
   return { count, pages, capped: true, rateLimited: false };
+}
+
+export type TrcloudSyncPageResult = {
+  ok: boolean;
+  added: number;
+  hasMore: boolean;      // ยังมีของเก่ากว่านี้ (ให้ client เรียกหน้าถัดไป)
+  rateLimited: boolean;
+  error?: string;
+};
+
+// ดึงทีละหน้า (ให้ client ขับ progress %). client เว้นจังหวะ THROTTLE เองระหว่างเรียก.
+export async function syncTrcloudDocsPage(
+  orgId: string,
+  kind: DocKind,
+  start: number,
+): Promise<TrcloudSyncPageResult> {
+  if (!trcloudDocsConfigured()) {
+    return { ok: false, added: 0, hasMore: false, rateLimited: false, error: "ยังไม่ได้ตั้งค่ากุญแจ TRCloud (TRCLOUD_JPS_*)" };
+  }
+  try {
+    const r = await syncOnePage(orgId, kind, PATH_BY_KIND[kind], start);
+    return { ok: true, ...r };
+  } catch (e) {
+    return { ok: false, added: 0, hasMore: false, rateLimited: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function syncTrcloudDocs(
