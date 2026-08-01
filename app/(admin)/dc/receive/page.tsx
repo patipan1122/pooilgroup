@@ -57,6 +57,33 @@ export default async function DcReceivePage() {
         <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>›</span>
       </Link>
 
+      {/* ทางลัด: ของที่สาขาส่งคืนคลังกลาง — รอ DC กดรับเข้าสต๊อก (ปิดช่องว่างเดิมที่ "รับของที่โอนมา" ไม่มีบ้าน) */}
+      <Link
+        href="/dc/office/transfers#branch-returns"
+        className="dc-card"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: 14,
+          marginBottom: 14,
+          textDecoration: "none",
+          background: "#fff",
+          border: "1px solid var(--dc-line, #e7ebf2)",
+          borderRadius: 14,
+          color: "inherit",
+        }}
+      >
+        <span style={{ fontSize: 24, flexShrink: 0, lineHeight: 1 }}>↩️</span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.3 }}>รับคืนจากสาขา</div>
+          <div style={{ fontSize: 13, color: "var(--ink2, #6b7280)", marginTop: 2 }}>
+            ของที่สาขาส่งคืนคลังกลาง — กดยืนยันรับเข้าสต๊อก
+          </div>
+        </div>
+        <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1, color: "#9ca3af" }}>›</span>
+      </Link>
+
       {!ctx.activeWarehouseId || !ctx.activeWarehouse ? (
         <div className="dc-card" style={{ textAlign: "center", padding: 32 }}>
           <p style={{ fontSize: 16, marginBottom: 12 }}>ยังไม่มีคลัง — สร้างที่หลังบ้าน</p>

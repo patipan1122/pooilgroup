@@ -12,6 +12,8 @@ import { DcOfficeShell } from "@/components/dc/office-shell";
 import { DcDocsSubnav } from "@/components/dc/docs-subnav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TransfersOfficeRows, type OfficeTransferRow } from "./transfers-office-rows";
+import { listPendingBranchReturnsForDc } from "@/lib/clawfleet/branch-return-actions";
+import { DcBranchReturnsPanel, type BranchReturnRowVM } from "./dc-branch-returns-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +86,19 @@ export default async function DcTransfersPage() {
   const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบโอน = super_admin เท่านั้น
   const chrome = await getDcOfficeChrome(orgId);
 
+  // ── รับคืนจากสาขา (รอ DC รับคืน) — ใบที่สาขากด "ส่งคืน DC" แล้ว รอคน DC กดรับเข้าคลัง ──
+  const pendingReturns = await listPendingBranchReturnsForDc();
+  const returnRows: BranchReturnRowVM[] = pendingReturns.map((r) => ({
+    id: r.id,
+    returnCode: r.returnCode,
+    branchName: r.branchName,
+    itemsCount: r.itemsCount,
+    unitsCount: r.unitsCount,
+    dispatchedAtLabel: fmtDate(r.dispatchedAt),
+    note: r.note,
+    lines: r.lines,
+  }));
+
   // แถวหัวใบ (serializable) ส่งให้ client component เรนเดอร์แถวกางได้ (inline-expand + ปุ่มพิมพ์)
   const rows: OfficeTransferRow[] = transfers.map((t) => ({
     id: t.id,
@@ -122,6 +137,16 @@ export default async function DcTransfersPage() {
         >
           มี {inTransitCount} ใบกำลังส่ง — รอปลายทางกดยืนยันรับ
         </div>
+      )}
+
+      {returnRows.length > 0 && (
+        <section id="branch-returns" style={{ marginBottom: 22, scrollMarginTop: 80 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>รับคืนจากสาขา (รอรับ)</h2>
+            <span style={{ fontSize: 13, color: "var(--ink2)" }}>{returnRows.length} ใบ · สาขาส่งของคืน — กดรับเข้าสต๊อกคลังกลาง</span>
+          </div>
+          <DcBranchReturnsPanel rows={returnRows} />
+        </section>
       )}
 
       {transfers.length === 0 ? (

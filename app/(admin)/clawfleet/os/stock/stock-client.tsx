@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
   Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock, ScanLine, Download,
+  Undo2, Loader2,
 } from "lucide-react";
 import { Card, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
@@ -20,6 +21,11 @@ import {
   transferStock, receiveStock, submitStockCount, reviewCfStockCount, recordLoss, reviewCfLoss,
   createShipment, confirmShipmentReceived, lookupCfProductByBarcode, loadCfProductHistory,
 } from "@/lib/clawfleet/stock-actions";
+import { createBranchReturn } from "@/lib/clawfleet/branch-return-actions";
+import {
+  fetchReceivedTransfersForReturn, fetchReturnableFromTransfer,
+} from "@/lib/clawfleet/branch-return-picker-actions";
+import type { ReceivedTransferRow, ReturnableLine } from "@/lib/clawfleet/branch-return-queries";
 import type { CfReceiptDoc, CfProductHistory } from "@/lib/clawfleet/stock-queries";
 import { MachinesLoadoutTab, BranchMgmtLink, type MachineSeed, type LoadoutItemSeed } from "./machine-detail";
 
@@ -677,7 +683,10 @@ function OverviewTab({
           </div>
         </Card>
 
-        <TransfersCard realBranches={realBranches} products={products} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <TransfersCard realBranches={realBranches} products={products} />
+          <ReturnToDcCard branchId={viewBranchId} branchName={viewBranchName} products={products} />
+        </div>
       </div>
 
       {/* warehouse item detail modal */}
@@ -942,6 +951,287 @@ function TransfersCard({ realBranches, products }: { realBranches: BranchOption[
         </div>
       </Modal>
     </Card>
+  );
+}
+
+/* ───────────────────────── ส่งคืนคลังกลาง (DC) — สาขาส่งคืน 2 สเต็ป ─────────────────────────
+ * สเต็ป 1 (ที่นี่): สาขากด "ส่งคืน" → ตัดสต๊อกสาขาทันที + สร้างใบ PENDING → คน DC มากด "รับคืน" ทีหลัง.
+ * เพิ่มรายการได้ 2 ทาง: (ก) เลือกจากสินค้าในคลังสาขา (ข) "เลือกจากใบโอน" → prefill จากใบที่รับเข้ามา.
+ * idempotency: clientKey เดียวต่อการเปิด modal (retry ใช้ตัวเดิม = ไม่สร้างใบซ้ำ).
+ */
+type ReturnLine = { productId: string; qty: string; max?: number };
+
+function ReturnToDcCard({ branchId, branchName, products }: {
+  branchId: string; branchName: string | null; products: ProductOption[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [clientKey, setClientKey] = useState("");
+  const [lines, setLines] = useState<ReturnLine[]>([{ productId: "", qty: "" }]);
+  const [note, setNote] = useState("");
+  const [sourceCode, setSourceCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ returnCode: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const canReturn = branchId !== "" && products.length >= 1;
+
+  function reset() {
+    setLines([{ productId: "", qty: "" }]); setNote(""); setSourceCode(null); setError(null); setResult(null);
+  }
+  function openModal() {
+    reset();
+    // clientKey เดียวต่อการเปิด (retry หลัง error ใช้ตัวเดิม → createBranchReturn คืนใบเดิม ไม่ตัดสต๊อกซ้ำ)
+    setClientKey(crypto.randomUUID());
+    setOpen(true);
+  }
+  function closeModal() {
+    if (pending) return;
+    setOpen(false); reset();
+  }
+
+  // prefill จากใบโอน: แทนที่รายการทั้งหมดด้วยรายการของใบนั้น (cap = prefillQty ต่อบรรทัด)
+  function applyFromTransfer(rows: ReturnableLine[], transferCode: string) {
+    const next: ReturnLine[] = rows.map((r) => ({ productId: r.cfProductId, qty: String(r.prefillQty), max: r.prefillQty }));
+    setLines(next.length > 0 ? next : [{ productId: "", qty: "" }]);
+    setSourceCode(transferCode);
+    setPickerOpen(false);
+  }
+
+  function submit() {
+    setError(null);
+    const parsed = parseLines(lines.map((l) => ({ productId: l.productId, qty: l.qty })));
+    if (!parsed.ok) { setError(parsed.error); return; }
+    startTransition(async () => {
+      const res = await createBranchReturn({
+        branchId,
+        clientKey,
+        lines: parsed.data.map((d) => ({ cfProductId: d.productId, qty: d.qty })),
+        note: note.trim() || undefined,
+        sourceTransferCode: sourceCode ?? undefined,
+      });
+      if (!res.ok) { setError(res.error); return; }
+      setResult({ returnCode: res.returnCode });
+      router.refresh(); // สต๊อกสาขาถูกตัดแล้ว → ดึงยอดใหม่
+    });
+  }
+
+  return (
+    <Card
+      title="ส่งคืนคลังกลาง (DC)"
+      pad={false}
+      right={
+        <button
+          type="button"
+          onClick={openModal}
+          disabled={!canReturn}
+          style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: canReturn ? "#4F46E5" : "#A5A0EC", border: "none", padding: "7px 12px", borderRadius: 8, cursor: canReturn ? "pointer" : "not-allowed", display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <Undo2 size={13} /> ส่งคืน DC
+        </button>
+      }
+    >
+      <div style={{ padding: "10px 4px" }}>
+        <EmptyState
+          icon={<Undo2 size={26} />}
+          title="ส่งของคืนคลังกลาง"
+          sub="สาขากด “ส่งคืน DC” → ตัดของออกจากสาขาทันที แล้วรอคลังกลางกดรับคืนเข้าสต๊อก"
+        />
+      </div>
+
+      <Modal
+        open={open}
+        onClose={closeModal}
+        title="ส่งคืนคลังกลาง (DC)"
+        sub={branchName ? `จากสาขา ${branchName} · ระบบตัดสต๊อกสาขาทันที แล้วรอ DC รับคืน` : "ตัดสต๊อกสาขาทันที แล้วรอ DC รับคืน"}
+        width={520}
+        footer={
+          result ? (
+            <div style={{ display: "flex", padding: "16px 20px" }}>
+              <button type="button" onClick={closeModal} style={PRIMARY_BTN(false)}>เสร็จสิ้น</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 10, padding: "16px 20px" }}>
+              <button type="button" onClick={submit} disabled={!canReturn || pending} style={PRIMARY_BTN(!canReturn || pending)}>
+                {pending ? "กำลังส่งคืน…" : "ยืนยันส่งคืน"}
+              </button>
+              <button type="button" onClick={closeModal} disabled={pending} style={CANCEL_BTN(pending)}>ยกเลิก</button>
+            </div>
+          )
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {result ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center", textAlign: "center", padding: "8px 0" }}>
+              <span style={{ width: 46, height: 46, borderRadius: 12, background: "#E7F4EC", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={24} /></span>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>สร้างใบส่งคืนแล้ว</div>
+              <div className="num" style={{ fontSize: 13, color: "#4F46E5", fontWeight: 700 }}>{result.returnCode}</div>
+              <div style={{ fontSize: 12, color: "#7A8089" }}>รอคลังกลางรับคืน — ดูสถานะได้ที่คลังกลาง (หลังบ้าน DC)</div>
+            </div>
+          ) : !canReturn ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A5510", background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "10px 14px" }}>
+              <AlertTriangle size={15} style={{ flex: "0 0 15px" }} /> ยังส่งคืนไม่ได้ — ต้องเลือกสาขาและมีสินค้าในคลังก่อน
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <label style={{ ...FIELD_LABEL, marginBottom: 0, flex: 1 }}>รายการที่ส่งคืน</label>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    style={{ fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "6px 11px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  >
+                    <FileText size={13} /> เลือกจากใบโอน
+                  </button>
+                </div>
+                {sourceCode && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#4F46E5", background: "#EEF0FE", borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>
+                    <FileText size={12} /> อ้างอิงใบโอน <b className="num">{sourceCode}</b> · จำนวนสูงสุด = ที่รับมา/ที่มีบนชั้น
+                  </div>
+                )}
+                <ReturnLineEditor products={products} lines={lines} setLines={setLines} />
+              </div>
+              <div>
+                <label style={FIELD_LABEL}>หมายเหตุ (ไม่บังคับ)</label>
+                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ของเกิน / เลิกวางสาขานี้" style={FIELD_INPUT} />
+              </div>
+              {error && <ErrorRow msg={error} />}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#7A8089", background: "#F8F9FB", border: "1px solid #EDEFF2", borderRadius: 10, padding: "9px 12px" }}>
+                <Boxes size={14} style={{ flex: "0 0 14px", color: "#9AA1AB" }} />
+                ระบบจะตัดสต๊อกสาขาทันที (ของบนชั้นไม่พอจะไม่ส่งคืน) — ยอดจะเข้าคลังกลางเมื่อ DC กด “รับคืน”
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <FromTransferPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        branchId={branchId}
+        onApply={applyFromTransfer}
+      />
+    </Card>
+  );
+}
+
+/** line editor สำหรับส่งคืน (สินค้า + จำนวน · cap ต่อบรรทัดถ้ามาจากใบโอน) — mirror ReceiptLineEditor แต่ไม่มีต้นทุน */
+function ReturnLineEditor({ products, lines, setLines }: {
+  products: ProductOption[];
+  lines: ReturnLine[];
+  setLines: React.Dispatch<React.SetStateAction<ReturnLine[]>>;
+}) {
+  const setAt = (i: number, patch: Partial<ReturnLine>) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const removeAt = (i: number) => setLines((prev) => (prev.length <= 1 ? [{ productId: "", qty: "" }] : prev.filter((_, j) => j !== i)));
+  const add = () => setLines((prev) => [...prev, { productId: "", qty: "" }]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {lines.map((l, i) => (
+        <div key={i} className="grid grid-cols-[1fr_84px_34px] gap-2 items-end">
+          <div>
+            {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>สินค้า</label>}
+            <select value={l.productId} onChange={(e) => setAt(i, { productId: e.target.value })} style={FIELD_INPUT}>
+              <option value="">— เลือก —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            {i === 0 && <label style={{ ...FIELD_LABEL, marginBottom: 4 }}>จำนวน</label>}
+            <input
+              type="number" min={0} step={1} max={l.max} inputMode="numeric" value={l.qty}
+              onChange={(e) => {
+                // cap ที่ prefill ถ้ามาจากใบโอน (l.max) — กันคืนเกินที่รับมา/ที่มีบนชั้น
+                let v = e.target.value;
+                if (l.max != null && v !== "" && Number(v) > l.max) v = String(l.max);
+                setAt(i, { qty: v });
+              }}
+              placeholder="0"
+              style={FIELD_INPUT}
+            />
+          </div>
+          <button type="button" onClick={() => removeAt(i)} disabled={lines.length <= 1} title="ลบ" style={{ height: 38, border: "1px solid #E3E6EA", borderRadius: 10, background: "#fff", color: lines.length <= 1 ? "#D4D7DC" : "#B42318", cursor: lines.length <= 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={add} style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 600, color: "#4F46E5", background: "#EEF0FE", border: "none", padding: "7px 12px", borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <Plus size={13} /> เพิ่มรายการ
+      </button>
+    </div>
+  );
+}
+
+/** "เลือกจากใบโอน" — list ใบโอน DC ที่รับเข้าสาขาแล้ว → เลือก 1 ใบ → prefill รายการส่งคืน */
+function FromTransferPicker({ open, onClose, branchId, onApply }: {
+  open: boolean; onClose: () => void; branchId: string;
+  onApply: (rows: ReturnableLine[], transferCode: string) => void;
+}) {
+  const [list, setList] = useState<ReceivedTransferRow[] | null>(null);
+  const [loadingList, startListTransition] = useTransition();
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [applying, startApplyTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // โหลด list เมื่อเปิด (ครั้งเดียวต่อการเปิด) · branchId เปลี่ยน = โหลดใหม่
+  useEffect(() => {
+    if (!open || !branchId) { setList(null); return; }
+    setError(null);
+    startListTransition(async () => {
+      const rows = await fetchReceivedTransfersForReturn(branchId);
+      setList(rows);
+    });
+  }, [open, branchId]);
+
+  function pick(t: ReceivedTransferRow) {
+    setApplyingId(t.transferId);
+    setError(null);
+    startApplyTransition(async () => {
+      const rows = await fetchReturnableFromTransfer(branchId, t.transferId);
+      if (rows.length === 0) { setError("ใบนี้ไม่มีสินค้าที่ส่งคืนได้ (อาจยังไม่ผูกกับสินค้าสาขา หรือของหมดแล้ว)"); setApplyingId(null); return; }
+      onApply(rows, t.transferCode);
+      setApplyingId(null);
+    });
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="เลือกจากใบโอน" sub="ใบโอนที่คลังกลางส่งเข้าสาขานี้แล้ว — เลือก 1 ใบเพื่อดึงรายการมาส่งคืน" width={520}>
+      <div style={{ padding: "16px 20px" }}>
+        {loadingList && list == null ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#7A8089", padding: "10px 0" }}>
+            <Loader2 size={16} className="animate-spin" /> กำลังโหลดใบโอน…
+          </div>
+        ) : list && list.length === 0 ? (
+          <EmptyState icon={<Inbox size={26} />} title="ยังไม่มีใบโอนที่รับเข้าสาขานี้" sub="เมื่อคลังกลางส่งของมาและสาขากดรับแล้ว ใบโอนจะมาโผล่ที่นี่" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {error && <ErrorRow msg={error} />}
+            {(list ?? []).map((t) => {
+              const busy = applying && applyingId === t.transferId;
+              return (
+                <button
+                  key={t.transferId}
+                  type="button"
+                  onClick={() => pick(t)}
+                  disabled={applying}
+                  style={{ textAlign: "left", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "12px 14px", cursor: applying ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 12 }}
+                >
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="num" style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: "#4F46E5" }}>{t.transferCode}</span>
+                    <span style={{ display: "block", fontSize: 11.5, color: "#7A8089" }}>
+                      {t.fromName ? `จาก ${t.fromName} · ` : ""}{num(t.itemsCount)} รายการ · {num(t.unitsCount)} ชิ้น · {fmtDate((t.confirmedAt ?? t.dispatchedAt).toISOString())}
+                    </span>
+                  </span>
+                  {busy ? <Loader2 size={16} className="animate-spin" style={{ color: "#4F46E5" }} /> : <ChevronRight size={16} style={{ color: "#C2C7CF", flex: "0 0 16px" }} />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

@@ -2527,6 +2527,63 @@ model CfGoodsReceiptLine {
   @@schema("public")
 }
 
+// ── ClawFleet สาขา "ส่งคืนคลังกลาง (DC)" · 2 ขั้น (สาขาส่ง → DC รับคืน) — 2026-08-01 ───────────
+//   ต่างจาก DcTransfer (DC→ที่อื่น): ต้นทาง = "สโตร์สาขา" (CfStockMovement) · ปลายทาง = คลัง DC (DcStockBalance).
+//   ต้องมีเอกสารค้างสถานะ: สาขากดส่ง → ตัดสต๊อกสาขาทันที (PENDING) → คน DC กด "รับคืน" → ลงสต๊อก DC (CONFIRMED).
+//   ★ ไม่มี @relation ไป Organization/Branch/User (scalar uuid) — org-scope บังคับที่ชั้น app (money action) เหมือนหลายตารางในโมดูล.
+enum CfBranchReturnStatus {
+  PENDING // สาขาส่งคืน · ตัดสต๊อกสาขาแล้ว · รอ DC กดรับคืน
+  RECEIVING // DC เริ่มรับคืน (claim PENDING→RECEIVING ก่อนลงสต๊อก) — ปิด race กับ CANCELLED (ยกเลิกได้เฉพาะ PENDING)
+  CONFIRMED // DC รับคืน · ลงสต๊อก DC แล้ว
+  CANCELLED // ยกเลิก · คืนสต๊อกสาขา (compensating)
+
+  @@schema("public")
+}
+
+model CfBranchReturn {
+  id                 String               @id @default(uuid()) @db.Uuid
+  orgId              String               @map("org_id") @db.Uuid
+  branchId           String               @map("branch_id") @db.Uuid
+  returnCode         String               @map("return_code") // RET-YYMMDD-XXXX · unique per org
+  clientKey          String               @map("client_key") // idempotency ต่อการกดส่ง 1 ครั้ง (กดซ้ำ/retry = ใบเดิม)
+  toWarehouseId      String               @map("to_warehouse_id") @db.Uuid // คลัง DC ปลายทาง (default)
+  status             CfBranchReturnStatus @default(PENDING)
+  note               String?
+  sourceTransferCode String?              @map("source_transfer_code") // ถ้าเลือกจากใบโอน (display)
+  dispatchedByUserId String               @map("dispatched_by_user_id") @db.Uuid
+  dispatchedAt       DateTime             @default(now()) @map("dispatched_at") @db.Timestamptz(6)
+  confirmedByUserId  String?              @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt        DateTime?            @map("confirmed_at") @db.Timestamptz(6)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lines CfBranchReturnLine[]
+
+  @@unique([orgId, returnCode])
+  @@unique([orgId, clientKey])
+  @@index([orgId, status])
+  @@index([orgId, branchId])
+  @@index([orgId, toWarehouseId, status])
+  @@map("cf_branch_returns")
+  @@schema("public")
+}
+
+model CfBranchReturnLine {
+  id            String  @id @default(uuid()) @db.Uuid
+  orgId         String  @map("org_id") @db.Uuid
+  returnId      String  @map("return_id") @db.Uuid
+  cfProductId   String  @map("cf_product_id") @db.Uuid
+  dcProductId   String? @map("dc_product_id") @db.Uuid // จับคู่ DC ตอนสร้าง (reverse map) · null=รอ resolve ตอนรับคืน
+  productName   String  @map("product_name") // snapshot
+  qty           Int
+  unitCostCents Int     @default(0) @map("unit_cost_cents") // snapshot ต้นทุนสาขา (1:1 → satang ฝั่ง DC)
+
+  branchReturn CfBranchReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, returnId])
+  @@map("cf_branch_return_lines")
+  @@schema("public")
+}
+
 // =============================================================
 // CF.10b — cf_config_requests (คำขอตั้งค่าตู้ · machine config approval queue)
 // พนักงานเสนอปรับความแรงคีบ/ราคา → PENDING → เจ้าของอนุมัติ/ตีกลับ.

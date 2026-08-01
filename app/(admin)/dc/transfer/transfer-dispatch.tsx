@@ -13,11 +13,12 @@
 //     • ปุ่มส่งออก busy-lock กันกดซ้ำ · สำเร็จ → toast เขียว · buffer ใน localStorage กันลิสต์หาย
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, List, Search, Trash2, Truck, X } from "lucide-react";
+import { ArrowLeftRight, FileText, List, Search, Trash2, Truck, X } from "lucide-react";
 import { DcScanBox } from "@/components/dc/scan-box";
 import { MoveWorkspace } from "../move/move-workspace";
 import { IssueWorkspace } from "../issue/issue-workspace";
 import { PoMovePicker, type PoMoveSelection } from "@/components/dc/po-move-picker";
+import { TransferSourcePicker, type TransferSourceSelection } from "@/components/dc/transfer-source-picker";
 import { DcThumb } from "@/components/dc/product-image";
 import { DcTransferDestType } from "@/lib/generated/prisma/enums";
 import {
@@ -239,6 +240,9 @@ export function TransferDispatch({
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   const [selectedPos, setSelectedPos] = useState<SelectedPo[]>([]); // ใบ PO ที่อ้างอิง (สะสมหลายใบ · Pinpoint #2)
 
+  // ---- "เลือกจากใบโอน" (โอนต่อของที่รับเข้าคลังนี้ทางการโอน) ----
+  const [transferPickerOpen, setTransferPickerOpen] = useState(false);
+
   // ---- ค่าขนส่งไทย-ไทย (บาท → ส่งเป็นสตางค์ตอน dispatch) ----
   const [freightBaht, setFreightBaht] = useState("");
   const [freightNote, setFreightNote] = useState("");
@@ -335,6 +339,42 @@ export function TransferDispatch({
             imageUrl: pl.imageUrl ?? null,
             poId: sel.poId,
             poCode: sel.poCode,
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  // รับผลจากตัวเลือกใบโอน → เพิ่มบรรทัด "ของบนชั้นคลัง" (poId:null — ไม่ผูกใบ PO ในคลังนี้)
+  //   ★ ของจากใบโอน = on-hand ธรรมดา (ไม่ได้ซื้อเข้าจากใบ PO ในคลังนี้) → poId ต้องเป็น null เสมอ
+  //     ถ้า carry poId ไป = attribute บรรทัดผิดใบ + server cap ต่อใบ PO จะเด้ง (ใบนั้นไม่มี ledger ในคลังนี้)
+  //   match ตาม productId เฉพาะบรรทัดที่ poId==null (ไม่แตะบรรทัดที่มาจากใบ PO) → ตั้ง qty = ที่เลือกมา
+  //   ไม่แตะ selectedPos (ไม่ใช่ใบ PO) — ใบโอนไม่ต้องโชว์เป็นชิปอ้างอิงใบ PO
+  const handleTransferConfirm = useCallback((sel: TransferSourceSelection) => {
+    setLines((prev) => {
+      const next = [...prev];
+      for (const pl of sel.lines) {
+        const idx = next.findIndex((l) => l.productId === pl.productId && l.poId == null);
+        if (idx >= 0) {
+          next[idx] = {
+            ...next[idx],
+            qty: pl.qty,
+            onHand: Math.max(next[idx].onHand, pl.qty),
+            imageUrl: pl.imageUrl ?? next[idx].imageUrl, // เติมรูปจากใบโอนถ้ามี
+          };
+        } else {
+          next.push({
+            lineKey: newLineKey(),
+            productId: pl.productId,
+            sku: pl.sku,
+            name: pl.name,
+            unit: pl.unit,
+            onHand: pl.qty,
+            qty: pl.qty,
+            imageUrl: pl.imageUrl ?? null,
+            poId: null, // ★ ของจากใบโอน = on-hand ล้วน ไม่ผูกใบ PO
+            poCode: null,
           });
         }
       }
@@ -730,6 +770,28 @@ export function TransferDispatch({
           }}
         >
           <FileText size={18} /> เลือกจากใบ PO
+        </button>
+        <button
+          type="button"
+          onClick={() => setTransferPickerOpen(true)}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            border: "1.5px solid var(--dc-line-strong, #c9d3e0)",
+            background: "var(--dc-paper, #fff)",
+            color: "var(--dc-ink, #1f2733)",
+            borderRadius: 12,
+            padding: "12px 14px",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          <ArrowLeftRight size={18} /> เลือกจากใบโอน
         </button>
       </div>
 
@@ -1136,6 +1198,15 @@ export function TransferDispatch({
         r2PublicUrl={r2PublicUrl || undefined}
         mode="transfer"
         onConfirm={handlePoConfirm}
+      />
+
+      {/* ตัวเลือก "โอนต่อจากใบโอน" (ของที่รับเข้าคลังนี้ทางการโอน) */}
+      <TransferSourcePicker
+        open={transferPickerOpen}
+        onClose={() => setTransferPickerOpen(false)}
+        warehouseId={fromWarehouseId}
+        r2PublicUrl={r2PublicUrl || undefined}
+        onConfirm={handleTransferConfirm}
       />
 
       {/* toast */}
