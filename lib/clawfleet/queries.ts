@@ -9,7 +9,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireSession, type Session } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
-import { deriveEvent } from "./validation";
+import { deriveEvent, cleanNote } from "./validation";
 import type {
   Branch,
   BranchTone,
@@ -292,6 +292,8 @@ export type V2Round = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** วันของรอบ (Bangkok "YYYY-MM-DD") — client รวมรอบตั้งต้นต่อสาขา/วัน */
+  dayKey: string;
   /** true = server ตั้งธง anomaly จริง (anomalyFlags.length>0) — ใช้ filter "มีปัญหา" ให้ซื่อสัตย์
    *  (จับรอบ ANOMALY_REVIEW ที่ gap จอเล็กจนดูเหมือนตรง) */
   hasAnomaly: boolean;
@@ -429,6 +431,10 @@ export async function getV2AllRounds(opts?: {
     const gapPct = expectedCash > 0 ? (Math.abs(gap) / expectedCash) * 100 : 0;
     const prizeGap = isOpen ? 0 : s.prizeVariance ?? 0;
     const closed = s.closedAt ?? s.openedAt;
+    // วันของรอบ (Bangkok) — client ใช้รวมรอบตั้งต้นต่อสาขา/วัน (CEO 2026-08-02: การ์ดรวม กดกาง)
+    const dayKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(closed);
 
     // รอบ "สะอาด" = เงินต่างไม่เกินเกณฑ์ + ตุ๊กตาไม่หาย → severity P2 · type ตามเงิน
     // (กัน severityOf คืน P1 จาก gapPct>8 ทั้งที่ |gap| เล็ก · หน้าจอโชว์ "ตรงกัน" ระดับ P1 = ขัดกัน)
@@ -469,6 +475,7 @@ export async function getV2AllRounds(opts?: {
       severity,
       type,
       reason: s.anomalyFlags[0] ?? "",
+      dayKey,
       // ธงจริงจาก server (ไม่ใช่คำนวณจาก gap ฝั่งจอ) — ให้ filter "มีปัญหา" จับรอบที่ ANOMALY_REVIEW
       // ที่ |gap| เล็กจนจอเห็นเป็น "ตรงกัน" (เช่น M5 มิเตอร์เสีย · per-machine netting) ได้ครบ
       hasAnomaly: s.anomalyFlags.length > 0,
@@ -764,7 +771,7 @@ function eventToMachine(e: {
     if (e.shortReason) entered.push({ k: "เหตุผลเงินขาด", v: e.shortReason });
   }
   // หมายเหตุพนักงาน — ต่อท้ายเสมอถ้ามี (ทุกแบบตู้)
-  if (e.notes) entered.push({ k: "หมายเหตุ", v: e.notes });
+  { const cn = cleanNote(e.notes); if (cn) entered.push({ k: "หมายเหตุ", v: cn }); }
 
   // ── กระทบยอดต่อตู้ (CEO 2026-08-02 · จุด 2+3) — เฉพาะ COLLECTION (รอบตั้งต้นไม่มีของก่อนเทียบ)
   //   ใช้ deriveEvent (validator ตัวเดียวกับ server) + ราคาต่อครั้งจริง (priceCents) → ผลลัพธ์ตรง server 100%
@@ -812,12 +819,15 @@ function eventToMachine(e: {
     cashIn: cashBaht,
     prizeMeterPrev: e.dollMeterBefore ?? 0,
     prizeMeterNow: e.dollMeterAfter ?? 0,
+    // เฟือง (COLLECTION: meterMoneyTop/meterDollTop) — ให้ฟอร์มแก้เลขโชว์/แก้ 4 มิเตอร์ครบ
+    coinGear: e.meterMoneyTop,
+    dollGear: e.meterDollTop,
     photos,
     photoShots,
     entered,
     reconcile,
     flag: e.anomalyFlags.length > 0,
-    note: e.notes ?? undefined,
+    note: cleanNote(e.notes) ?? undefined,
   };
 }
 

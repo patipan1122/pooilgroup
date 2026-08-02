@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, ImageIcon, AlertTriangle, Download, X } from "lucide-react";
+import { Pencil, ImageIcon, AlertTriangle, Download, X, Search } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { adminEditCollectionEvent } from "@/lib/clawfleet/actions";
@@ -95,6 +95,8 @@ export function RawReadingsClient({
   const [err, setErr] = useState<string | null>(null);
   // จุด 10 (CEO 2026-08-02): กดเลือกดูตู้เดียว → เห็นย้อนหลังเฉพาะตู้นั้น (filter client-side · 0 query)
   const [machineFilter, setMachineFilter] = useState<string>(preselectMachine);
+  // จุด D · ช่องค้นเลขตู้ (พิมพ์ค้น · substring) — ใช้ตอน dropdown = ทุกตู้
+  const [machineSearch, setMachineSearch] = useState("");
 
   // ตัวเลือกตู้ (unique จาก rows · code + ชื่อเล่น) เรียงตาม code
   const machineOptions = useMemo(() => {
@@ -107,11 +109,13 @@ export function RawReadingsClient({
     return [...seen.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.value.localeCompare(b.value));
   }, [rows]);
 
-  // แถวที่แสดง = กรองตามตู้ที่เลือก (ทุกตู้ = rows เต็ม)
-  const shownRows = useMemo(
-    () => (machineFilter === "all" ? rows : rows.filter((r) => r.machineCode === machineFilter)),
-    [rows, machineFilter],
-  );
+  // แถวที่แสดง = dropdown เลือกตู้เดียว (ชนะ) · ไม่งั้นกรองด้วยช่องค้น (เลขตู้/ชื่อเล่น substring)
+  const shownRows = useMemo(() => {
+    if (machineFilter !== "all") return rows.filter((r) => r.machineCode === machineFilter);
+    const q = machineSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => r.machineCode.toLowerCase().includes(q) || (r.machineNickname ?? "").toLowerCase().includes(q));
+  }, [rows, machineFilter, machineSearch]);
 
   const counts = useMemo(() => {
     let init = 0;
@@ -215,6 +219,16 @@ export function RawReadingsClient({
           <span style={{ color: "#B45309", fontWeight: 600, marginLeft: 8 }}>ตั้งต้น {counts.init}</span>
           <span style={{ color: "#4F46E5", fontWeight: 600, marginLeft: 8 }}>รอบเก็บ {counts.coll}</span>
         </div>
+        {/* จุด D · ช่องค้นเลขตู้ (พิมพ์ค้น) — ใช้ตอน dropdown = ทุกตู้ */}
+        {machineOptions.length > 1 && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F6F8", border: "1px solid #E8EAED", borderRadius: 8, padding: "6px 11px", minWidth: 150 }}>
+            <Search size={14} strokeWidth={2} color="#9AA1AB" />
+            <input value={machineSearch} onChange={(e) => setMachineSearch(e.target.value)}
+              placeholder="ค้นเลขตู้…"
+              disabled={machineFilter !== "all"}
+              style={{ border: "none", outline: "none", background: "transparent", fontSize: 12.5, color: "#31363E", width: "100%" }} />
+          </label>
+        )}
         {/* จุด 10 · เลือกดูตู้เดียว → เห็นย้อนหลังเฉพาะตู้นั้น */}
         {machineOptions.length > 1 && (
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 8, padding: "6px 11px" }}>

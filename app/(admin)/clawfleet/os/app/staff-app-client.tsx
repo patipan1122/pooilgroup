@@ -1324,7 +1324,10 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
   function submitRound(photoReasonArg?: string) {
     if (!machine) return;
     setError(null);
-    const effPhotoReason = photoReasonArg ?? photoSkipReason;
+    // 🐛 กัน "[object Object]": ถ้าถูกเรียกเป็น onClick โดยตรง (primaryAction) จะได้ MouseEvent เป็น arg
+    //    → รับเฉพาะ string จริงเท่านั้น ไม่งั้น fallback ไป photoSkipReason (state · string|null)
+    const reasonArg = typeof photoReasonArg === "string" ? photoReasonArg : undefined;
+    const effPhotoReason = reasonArg ?? photoSkipReason;
 
     // demo → optimistic, jump to done (ไม่มี server)
     if (isDemo(machine.id)) {
@@ -1560,7 +1563,8 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       // autoSubmitPending = กดแล้ว รอรูปอัปเสร็จ → โชว์ "กำลังส่งรูป…" ระบบยิงให้เอง (CEO 2026-07-18)
       primaryLabel = pending ? "กำลังส่ง..." : autoSubmitPending ? "⏳ กำลังส่งรูป… เดี๋ยวบันทึกให้เลย" : allMatch ? "ยืนยันกระทบยอด" : "ยืนยันส่งข้อมูล (มีจุดไม่ตรง)";
       primaryColor = allMatch ? "#15803D" : "#B42318";
-      primaryAction = submitRound;
+      // wrap กัน MouseEvent หลุดเข้า arg (คู่กับ guard ใน submitRound) → ไม่มี "[object Object]" ในโน้ต
+      primaryAction = () => submitRound();
     }
   } else if (state.step === 6) {
     primaryLabel = "เสร็จสิ้น · กลับหน้าหลัก";

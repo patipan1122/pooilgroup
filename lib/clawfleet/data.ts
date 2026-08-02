@@ -49,6 +49,9 @@ export type Machine = {
   cashIn: number;
   prizeMeterPrev: number;
   prizeMeterNow: number;
+  /** เลขเฟือง (gear · COLLECTION = meterMoneyTop/meterDollTop) — สำหรับฟอร์มแก้เลข 4 มิเตอร์ครบ */
+  coinGear?: number | null;
+  dollGear?: number | null;
   photos: number;
   /**
    * รูปจริงที่พนักงานถ่ายตอนเก็บเงิน (anti-cheat) — label = ความหมายจริงของรูป

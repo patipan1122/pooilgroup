@@ -128,6 +128,8 @@ export default async function CollectionsPage({
     reason: r.reason || (r.type === "cash_short" ? "ยอดเงินไม่ตรงกับมิเตอร์" : "ตุ๊กตาหายไม่ตรงกับมิเตอร์"),
     // ธง anomaly จริงจาก server — filter "มีปัญหา" ใช้ (จับรอบที่ gap จอเล็กแต่ server ตั้งธง)
     hasAnomaly: r.hasAnomaly,
+    // วันของรอบ — client รวมรอบตั้งต้นต่อสาขา/วัน
+    dayKey: r.dayKey,
     // รอบตั้งต้น — client แยกป้าย/ไม่นับเป็น "ไม่ตรง" (กัน expectedCash=0 ดูเหมือนเงินเกิน)
     isBaseline: r.isBaseline,
     // รอบ "กำลังเก็บ" (OPEN · ยังเก็บไม่ครบ) — โชว์สด "X/Y ตู้ · ฿ · ยังไม่ปิด"
@@ -153,6 +155,12 @@ export default async function CollectionsPage({
       coinMeterAfter: m.meterAfter,
       dollMeterAfter: m.prizeMeterNow,
       cashBaht: m.cashIn,
+      // เฟือง + สต๊อก/เติม — ฟอร์มแก้เลข "โชว์ครบ" (เฟืองแก้ได้ · สต๊อก/เติมโชว์อย่างเดียว)
+      coinGear: m.coinGear ?? null,
+      dollGear: m.dollGear ?? null,
+      stockBefore: m.prizeBefore,
+      stockAfter: m.prizeAfter,
+      refillQty: m.refilled,
     })),
     sample: false,
   }));

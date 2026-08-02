@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
+import { cleanNote } from "./validation";
 
 /** ป้ายรูปหลักฐาน (สำหรับ lightbox) */
 export type RawReadingPhoto = { label: string; url: string };
@@ -215,9 +216,9 @@ export async function getBranchRawReadings(opts: {
       stockBefore: e.stockBefore ?? null,
       stockAfter: e.stockAfter ?? null,
       refillQty: e.refillQty ?? null,
-      shortReason: e.shortReason,
+      shortReason: cleanNote(e.shortReason),
       anomalyFlags: e.anomalyFlags ?? [],
-      notes: e.notes,
+      notes: cleanNote(e.notes),
       sessionStatus: status,
       deposited,
       editable,

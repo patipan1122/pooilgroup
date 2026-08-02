@@ -19,11 +19,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Building2, AlertTriangle, Check, ChevronRight, Coins, Info, Maximize2, ImageOff,
-  X, ZoomIn, SearchX, ShieldCheck, Download, Calendar, ChevronLeft, Pencil,
+  X, ZoomIn, SearchX, ShieldCheck, Download, Calendar, ChevronLeft, ChevronDown, Pencil,
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
-import { reviewV2Session, adminEditCollectionEvent, type V2Decision } from "@/lib/clawfleet/actions";
+import { reviewV2Session, adminEditCollectionEvent, adminForceCloseSession, type V2Decision } from "@/lib/clawfleet/actions";
 import { buildCsv } from "@/lib/clawfleet/csv";
 
 /* ───────── types ───────── */
@@ -45,9 +45,15 @@ export type CollectionMachine = {
   isInitial?: boolean;
   /** id ของ event (COLLECTION) — หลังบ้านใช้แก้เลข (adminEditCollectionEvent) · undefined = mock/legacy */
   eventId?: string;
-  coinMeterAfter?: number; // มิเตอร์เหรียญ (ค่าปัจจุบัน · prefill ฟอร์มแก้)
-  dollMeterAfter?: number; // มิเตอร์ตุ๊กตา
+  coinMeterAfter?: number; // มิเตอร์เหรียญ ดิจิตอล (ค่าปัจจุบัน · prefill ฟอร์มแก้)
+  dollMeterAfter?: number; // มิเตอร์ตุ๊กตา ดิจิตอล
   cashBaht?: number; // เงินสดที่เก็บได้ (บาท)
+  // ฟอร์มแก้เลข "โชว์ครบ" — เฟืองแก้ได้ · สต๊อก/เติมโชว์อย่างเดียว
+  coinGear?: number | null; // มิเตอร์เหรียญ เฟือง
+  dollGear?: number | null; // มิเตอร์ตุ๊กตา เฟือง
+  stockBefore?: number; // ตุ๊กตาในตู้ ก่อนเติม
+  stockAfter?: number; // ตุ๊กตาในตู้ หลังเติม
+  refillQty?: number; // เติมตุ๊กตา
 };
 
 export type CollectionRow = {
@@ -69,6 +75,8 @@ export type CollectionRow = {
   reason: string;
   /** true = server ตั้งธง anomaly จริง — filter "มีปัญหา" จับรอบที่ gap จอเล็กแต่ server ตั้งธง */
   hasAnomaly?: boolean;
+  /** วันของรอบ (Bangkok "YYYY-MM-DD") — รวมรอบตั้งต้นต่อสาขา/วัน */
+  dayKey?: string;
   /** รอบตั้งต้น (baseline) — ตั้งมิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
    *  แยกป้าย "รอบตั้งต้น" ไม่ปนกับ "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ดูเหมือนเงินเกินทั้งที่ปกติ) */
   isBaseline?: boolean;
@@ -239,6 +247,10 @@ export function CollectionsClient({
 
   const [branch, setBranch] = useState("all");
   const [tab, setTab] = useState<"all" | StatusKind | "problem">("all");
+  // จุด C · รอบตั้งต้นรวมเป็นการ์ดเดียวต่อสาขา/วัน (กดกาง) — เก็บ key กลุ่มที่กางอยู่
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (k: string) =>
+    setOpenGroups((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const [openId, setOpenId] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [pending, startTransition] = useTransition();
@@ -312,6 +324,34 @@ export function CollectionsClient({
       return matchBranch && matchTab;
     });
   }, [data, branch, tab]);
+
+  // จุด C · รวมรอบตั้งต้นที่ติดกัน + สาขา+วันเดียวกัน เป็นการ์ดเดียว (กดกาง) — ลดความรก
+  //   รอบตั้งต้นชุดเดียวกันถูกสร้างไล่กัน เรียง openedAt desc → ติดกันในลิสต์ → รวมได้ถูกต้อง
+  const items = useMemo(() => {
+    const out: ({ kind: "single"; row: CollectionRow } | { kind: "group"; key: string; branch: string; day: string; rows: CollectionRow[] })[] = [];
+    let i = 0;
+    while (i < filtered.length) {
+      const r = filtered[i];
+      if (isBaselineRow(r)) {
+        const gkey = `${r.branchId ?? ""}|${r.dayKey ?? ""}`;
+        const rows: CollectionRow[] = [r];
+        let j = i + 1;
+        while (j < filtered.length && isBaselineRow(filtered[j]) && `${filtered[j].branchId ?? ""}|${filtered[j].dayKey ?? ""}` === gkey) {
+          rows.push(filtered[j]); j++;
+        }
+        if (rows.length >= 2) {
+          out.push({ kind: "group", key: `bg-${gkey}-${i}`, branch: r.branch, day: r.dayKey ? thaiDate(r.dayKey) : r.date, rows });
+        } else {
+          out.push({ kind: "single", row: r });
+        }
+        i = j;
+      } else {
+        out.push({ kind: "single", row: r });
+        i++;
+      }
+    }
+    return out;
+  }, [filtered]);
 
   // สรุปรายวัน (single-day) สำหรับสาขาที่เลือก — "all" = รวมทุกสาขา
   const daySummary = useMemo(() => {
@@ -639,20 +679,60 @@ export function CollectionsClient({
         <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>แตะแถวไม่ตรงเพื่อดูสาเหตุ · ข้อมูลดิบ · รูปย้อนหลัง</span>
       </div>
 
-      {/* list */}
+      {/* list — รอบปกติ = การ์ดเดี่ยว · รอบตั้งต้นหลายรอบ (สาขา+วันเดียว) = การ์ดรวมกดกาง */}
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-        {filtered.map((r) => (
-          <CollectionCard
-            key={r.id}
-            row={r}
-            open={openId === r.id}
-            onToggle={() => setOpenId(openId === r.id ? null : r.id)}
-            reviewState={reviews[r.id] ?? "pending"}
-            onReview={(d) => review(r, d)}
-            busy={busyId === r.id && pending}
-            canEdit={canEdit}
-          />
-        ))}
+        {items.map((it) => {
+          if (it.kind === "single") {
+            const r = it.row;
+            return (
+              <CollectionCard
+                key={r.id}
+                row={r}
+                open={openId === r.id}
+                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                reviewState={reviews[r.id] ?? "pending"}
+                onReview={(d) => review(r, d)}
+                busy={busyId === r.id && pending}
+                canEdit={canEdit}
+              />
+            );
+          }
+          const expanded = openGroups.has(it.key);
+          return (
+            <div key={it.key} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden", ["--co-accent" as string]: "#4F46E5" }} className="co-accent-l" >
+              <button onClick={() => toggleGroup(it.key)}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", width: "100%", background: expanded ? "#FCFCFD" : "#fff", border: "none", cursor: "pointer", textAlign: "left" }}>
+                <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "#EEF0FE", color: "#4F46E5" }}>
+                  <ShieldCheck size={17} />
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    รอบตั้งต้น {it.rows.length} ตู้ <span style={{ fontWeight: 500, color: "#6B7280", fontSize: 12.5 }}>· {it.branch}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>{it.day} · ตั้งค่ามิเตอร์ครั้งแรก · ปกติ ไม่ต้องสอบ</div>
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", borderRadius: 20, padding: "4px 11px" }}>{expanded ? "ย่อ" : "กางดู"}</span>
+                <ChevronDown size={16} color="#9AA1AB" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+              </button>
+              {expanded && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 11, padding: "0 12px 14px" }}>
+                  {it.rows.map((r) => (
+                    <CollectionCard
+                      key={r.id}
+                      row={r}
+                      open={openId === r.id}
+                      onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                      reviewState={reviews[r.id] ?? "pending"}
+                      onReview={(d) => review(r, d)}
+                      busy={busyId === r.id && pending}
+                      canEdit={canEdit}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {filtered.length === 0 && (
           <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14 }}>
             {neverCollected ? (
@@ -826,11 +906,28 @@ function CollectionCard({
   // รูปที่กดขยาย (lightbox) — null = ปิด
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
   // หลังบ้านแก้เลข (admin/ผจก.) — target = ตู้ที่กำลังแก้ · null = ปิด
+  // โชว์ครบ 4 มิเตอร์ + เงิน (แก้ได้) + ก่อน/หลังเติม (โชว์อย่างเดียว · read-only)
   const [editTarget, setEditTarget] = useState<
-    { eventId: string; label: string; cash: string; coin: string; doll: string } | null
+    { eventId: string; label: string; cash: string; coinDigital: string; coinGear: string; dollDigital: string; dollGear: string;
+      stockBefore: string; stockAfter: string; refill: string } | null
   >(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
+  // จุด E · ปิดรอบตอนนี้ด้วยมือ (แอดมิน/ผจก.) — CEO "อันไหนจบก็ให้ปิดไปเลย"
+  const [closing, setClosing] = useState(false);
+  async function doForceClose() {
+    if (closing) return;
+    if (!window.confirm(`ปิดรอบนี้เลยไหม?\nระบบจะกระทบยอด (เทียบมิเตอร์ ↔ เงินสด) จากตู้ที่เก็บมาแล้ว แล้วปิดรอบ · ตู้ที่ยังไม่เก็บจะได้ delta ในรอบหน้าตามปกติ`)) return;
+    setClosing(true);
+    try {
+      const res = await adminForceCloseSession({ sessionCode: row.id });
+      if (!res.ok) { alert(res.error || "ปิดรอบไม่สำเร็จ"); setClosing(false); return; }
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "ปิดรอบไม่สำเร็จ");
+      setClosing(false);
+    }
+  }
   async function saveEdit() {
     if (!editTarget) return;
     setEditBusy(true);
@@ -839,8 +936,10 @@ function CollectionCard({
       const res = await adminEditCollectionEvent({
         eventId: editTarget.eventId,
         cashCents: Math.round((Number(editTarget.cash) || 0) * 100),
-        coinMeterAfter: Math.round(Number(editTarget.coin) || 0),
-        dollMeterAfter: editTarget.doll === "" ? null : Math.round(Number(editTarget.doll) || 0),
+        coinMeterAfter: Math.round(Number(editTarget.coinDigital) || 0),
+        dollMeterAfter: editTarget.dollDigital === "" ? null : Math.round(Number(editTarget.dollDigital) || 0),
+        coinMeterTop: editTarget.coinGear === "" ? null : Math.round(Number(editTarget.coinGear) || 0),
+        dollMeterTop: editTarget.dollGear === "" ? null : Math.round(Number(editTarget.dollGear) || 0),
       });
       if (!res.ok) { setEditErr(res.error || "แก้ไม่สำเร็จ"); setEditBusy(false); return; }
       setEditTarget(null);
@@ -938,6 +1037,7 @@ function CollectionCard({
     code: string; name: string; shots: { label: string; url: string | null }[];
     entered?: { k: string; v: string; tone?: "ok" | "bad" }[]; kind?: string; isInitial?: boolean;
     eventId?: string; coin?: number; doll?: number; cash?: number;
+    coinGear?: number | null; dollGear?: number | null; stockBefore?: number; stockAfter?: number; refill?: number;
   }[] =
     row.machines.length > 0
       ? row.machines.map((m) => ({
@@ -953,6 +1053,11 @@ function CollectionCard({
           coin: m.coinMeterAfter,
           doll: m.dollMeterAfter,
           cash: m.cashBaht,
+          coinGear: m.coinGear,
+          dollGear: m.dollGear,
+          stockBefore: m.stockBefore,
+          stockAfter: m.stockAfter,
+          refill: m.refillQty,
         }))
       : [{ code: "", name: "", shots: FALLBACK_LABELS.map((label) => ({ label, url: null })) }];
 
@@ -1091,11 +1196,20 @@ function CollectionCard({
             <div style={{ borderTop: "1px dashed #E2E5EA", paddingTop: 16 }}>
               <div style={{ background: "#E5F2FD", border: "1px solid #C9E4FA", borderRadius: 12, padding: "15px 17px", display: "flex", gap: 11, alignItems: "flex-start" }}>
                 <Coins size={20} color="#0B69C7" style={{ flex: "0 0 20px", marginTop: 1 }} />
-                <div style={{ fontSize: 12.5, color: "#0C4A7A", lineHeight: 1.65 }}>
+                <div style={{ fontSize: 12.5, color: "#0C4A7A", lineHeight: 1.65, flex: 1 }}>
                   <b style={{ color: "#0B69C7" }}>รอบกำลังเก็บ</b> — พนักงานเก็บไปแล้ว{" "}
                   <b className="num" style={{ color: "#1A1D21" }}>{row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้</b>{" "}
                   เงินที่เก็บได้ตอนนี้ <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.actualCash)}</b> (บันทึกครบ · ดูรูปด้านล่างได้)<br />
-                  ระบบจะ<b>กระทบยอด (เทียบมิเตอร์ ↔ เงินสด)</b> ให้อัตโนมัติเมื่อเก็บครบทุกตู้แล้วปิดรอบ — ตอนนี้ยังไม่ต้องสอบ
+                  ระบบจะ<b>ปิดรอบ + กระทบยอดให้อัตโนมัติตอนจบวัน</b> (เที่ยงคืน) — หรือกด “ปิดรอบตอนนี้” ถ้าเก็บเสร็จแล้ว
+                  {/* จุด E · ปิดรอบตอนนี้ด้วยมือ (แอดมิน/ผจก.) — เก็บไม่ครบก็ปิดได้ */}
+                  {canEdit && (
+                    <div style={{ marginTop: 10 }}>
+                      <button type="button" onClick={doForceClose} disabled={closing}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}>
+                        <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1212,8 +1326,13 @@ function CollectionCard({
                             eventId: m.eventId as string,
                             label: `${m.name || "ตู้"}${m.code ? ` · ${m.code}` : ""}`,
                             cash: m.cash != null ? String(m.cash) : "",
-                            coin: m.coin != null ? String(m.coin) : "",
-                            doll: m.doll != null ? String(m.doll) : "",
+                            coinDigital: m.coin != null ? String(m.coin) : "",
+                            coinGear: m.coinGear != null ? String(m.coinGear) : "",
+                            dollDigital: m.doll != null ? String(m.doll) : "",
+                            dollGear: m.dollGear != null ? String(m.dollGear) : "",
+                            stockBefore: m.stockBefore != null ? String(m.stockBefore) : "—",
+                            stockAfter: m.stockAfter != null ? String(m.stockAfter) : "—",
+                            refill: m.refill != null ? String(m.refill) : "—",
                           })}
                           style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}
                         >
@@ -1390,11 +1509,13 @@ function CollectionCard({
             </div>
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 11 }}>
               <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.5 }}>ดูรูปหลักฐานแล้วแก้เลขที่พนักงานกรอกผิด · ระบบจะคำนวณยอด/ส่วนต่างใหม่ + ต่อรอบถัดไปให้เอง</div>
-              {[
-                { k: "cash" as const, label: "เงินสดที่เก็บได้ (บาท)" },
-                { k: "coin" as const, label: "มิเตอร์เหรียญ (เลขหลัง)" },
-                { k: "doll" as const, label: "มิเตอร์ตุ๊กตา (เลขหลัง)" },
-              ].map((f) => (
+              {([
+                { k: "cash", label: "เงินสดที่เก็บได้ (บาท)" },
+                { k: "coinDigital", label: "มิเตอร์เหรียญ · ดิจิตอล (บน)" },
+                { k: "coinGear", label: "มิเตอร์เหรียญ · เฟือง (ล่าง)" },
+                { k: "dollDigital", label: "มิเตอร์ตุ๊กตา · ดิจิตอล (บน)" },
+                { k: "dollGear", label: "มิเตอร์ตุ๊กตา · เฟือง (ล่าง)" },
+              ] as const).map((f) => (
                 <label key={f.k} style={{ display: "block" }}>
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: "#5A6270" }}>{f.label}</span>
                   <input inputMode="numeric" value={editTarget[f.k]}
@@ -1402,6 +1523,17 @@ function CollectionCard({
                     style={{ width: "100%", marginTop: 4, fontSize: 15, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
                 </label>
               ))}
+              {/* ก่อน/หลังเติม + เติม — โชว์อย่างเดียว (แก้จำนวนตุ๊กตากระทบการนับ · แก้ผ่านแอปพนักงาน) */}
+              <div style={{ display: "flex", gap: 8, background: "#F7F8FA", border: "1px solid #EEF0F3", borderRadius: 9, padding: "9px 11px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาในตู้ (ก่อน → หลัง)</div>
+                  <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{editTarget.stockBefore} → {editTarget.stockAfter}</div>
+                </div>
+                <div style={{ flex: "0 0 auto", textAlign: "right" }}>
+                  <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติม</div>
+                  <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{editTarget.refill} ตัว</div>
+                </div>
+              </div>
               {editErr && <div style={{ fontSize: 11.5, color: "#B42318", background: "#FCEDEC", borderRadius: 8, padding: "8px 11px", lineHeight: 1.45 }}>{editErr}</div>}
               <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
                 <button type="button" onClick={() => setEditTarget(null)} disabled={editBusy}

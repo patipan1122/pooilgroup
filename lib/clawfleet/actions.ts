@@ -17,6 +17,7 @@ import { requireSession } from "@/lib/auth/session";
 import { zUUID } from "@/lib/zod-helpers";
 import { userBranchIds, assertCfAdmin, isCfAdmin, isCfBranchManager, cfHasAdminPower } from "./role-guard";
 import { getClawfleetPolicy } from "./policy";
+import { computeBranchCloseCrossCheck } from "./branch-close";
 import {
   StartBranchSessionSchema,
   SubmitBranchEventSchema,
@@ -868,6 +869,54 @@ export async function closeBranchSession(input: unknown): Promise<CloseBranchRes
     revalidatePath("/clawfleet/os/collections");
     revalidatePath("/clawfleet/os/dashboard");
     return { ok: true, data: { status: finalStatus, flags: cc.flags } };
+  } catch (e) {
+    return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * ปิดรอบสาขา "ตอนนี้" ด้วยมือ (แอดมิน/ผจก.) — CEO 2026-08-02: "อันไหนจบก็ให้ปิดไปเลย · จบวันแล้วให้รอบจบ".
+ * ต่างจาก closeBranchSession: ไม่บังคับเก็บครบทุกตู้ (ปิดรอบที่เก็บไม่ครบได้ · เหมือน cron ปิดสิ้นวัน).
+ * money-safe: ใช้ computeBranchCloseCrossCheck (กระทบยอดตัวเดียวกับ cron/กดปิดเอง) · status จากธงจริง
+ * (เงิน/ตุ๊กตาตรง → CLOSED · ไม่ตรง → ANOMALY_REVIEW) · guard WHERE status=OPEN กัน race.
+ */
+export async function adminForceCloseSession(input: unknown): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+  const parsed = z.object({ sessionCode: z.string().min(1, "ไม่ระบุรอบ") }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ปิดรอบได้" };
+  }
+  const cf = await prisma.cfCollectionSession.findFirst({
+    where: { orgId, sessionCode: parsed.data.sessionCode, status: "OPEN" },
+    select: { id: true, branchId: true, _count: { select: { events: true } } },
+  });
+  if (!cf) return { ok: false, error: "ไม่พบรอบที่เปิดอยู่ (อาจปิดไปแล้ว)" };
+  if (!cf.branchId) return { ok: false, error: "รอบนี้ไม่ใช่ระดับสาขา" };
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(cf.branchId)) return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  if (cf._count.events === 0) return { ok: false, error: "รอบนี้ยังไม่มีตู้ที่เก็บ · ยกเลิกรอบแทน" };
+
+  const cc = await computeBranchCloseCrossCheck(orgId, cf.id);
+  const status = cc && cc.anomalyFlags.length === 0 ? "CLOSED" : "ANOMALY_REVIEW";
+  try {
+    const upd = await prisma.cfCollectionSession.updateMany({
+      where: { id: cf.id, orgId, status: "OPEN" },
+      data: cc
+        ? {
+            status, closedById: session.user.id, closedAt: new Date(),
+            expectedCashCents: cc.expectedCashCents, actualCashCents: cc.actualCashCents, cashVarianceBps: cc.cashVarianceBps,
+            prizeMeterOut: cc.prizeMeterOut, prizeCountedOut: cc.prizeCountedOut, prizeVariance: cc.prizeVariance,
+            totalCashCents: cc.totalCashCents, anomalyFlags: cc.anomalyFlags,
+            reviewNote: `ปิดรอบด้วยมือ (แอดมิน · ${status === "CLOSED" ? "เงิน/ตุ๊กตาตรง" : "พบส่วนต่าง ต้องตรวจ"})`,
+          }
+        : { status: "ANOMALY_REVIEW", closedById: session.user.id, closedAt: new Date(), reviewNote: "ปิดรอบด้วยมือ · คำนวณกระทบยอดไม่ได้ ต้องตรวจ" },
+    });
+    if (upd.count === 0) return { ok: false, error: "รอบนี้ถูกปิดไปแล้ว (มีคนปิดพร้อมกัน)" };
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
+    return { ok: true, status };
   } catch (e) {
     return { ok: false, error: `ปิดรอบไม่สำเร็จ: ${(e as Error).message}` };
   }

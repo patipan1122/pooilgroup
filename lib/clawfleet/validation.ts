@@ -383,6 +383,20 @@ export function severityLight(cashVarianceCents: number): "ok" | "warn" | "dange
   return "danger";
 }
 
+/**
+ * ล้างโน้ตตอนแสดงผล — บั๊กเก่า: `notes: "ไม่แนบรูป: ${effPhotoReason}"` เผลอ interpolate MouseEvent
+ * → "ไม่แนบรูป: [object Object]" ค้างใน DB. แก้ที่ write แล้ว (guard) · อันนี้ล้างของเก่าตอนอ่าน.
+ */
+export function cleanNote(note: string | null | undefined): string | null {
+  if (!note) return null;
+  const cleaned = note
+    .replace(/ไม่แนบรูป:\s*\[object Object\]/g, "ข้ามรูป (ไม่ระบุเหตุผล)")
+    .replace(/\[object Object\]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned === "" ? null : cleaned;
+}
+
 export function formatTHB(cents: number): string {
   return `฿${(cents / 100).toLocaleString("th-TH", {
     minimumFractionDigits: 0,
