@@ -180,52 +180,53 @@ export async function getGroupCollectData(): Promise<{
     // graceful: query ล้ม → ไม่มี "เติมล่าสุด" (โชว์ "ยังไม่เคยเติม")
   }
 
-  // CEO 2026-08-01 · จาก "event ล่าสุดที่กรอกเฟือง(top)+ดิจิตอล(bottom) ครบทั้งคู่" — รวม INITIAL (baseline)
-  //   = เลขจริงที่พนักงานกรอกตอนตั้งตู้/รอบเก็บล่าสุด. ใช้ 2 อย่างจาก event เดียวกัน:
-  //   (1) offset = เฟือง−ดิจิตอล → anti-fraud "ขยับเท่ากัน" (2 หน้าปัดคนละฐาน ห่างกันเท่าเดิมทุกรอบ)
-  //   (2) เลขจริง 4 หน้าปัด → placeholder อ้างอิงในช่อง · แต่ละหน้าปัดเลขของตัวเอง
-  //       (เดิม mirror จำเลขเดียวโชว์ซ้ำ 2 ช่อง = บน/ล่างเท่ากันหลอก · ตู้ baseline-only ทิ้งเลขที่ตั้งไว้).
-  //   เหรียญ/ตุ๊กตา query แยก (อาจกรอกครบคนละ event กัน).
+  // CEO 2026-08-02 · กฎถาวร: มิเตอร์ บน(Top)=ดิจิตอล · ล่าง(Bottom)=เฟือง เสมอ. แต่ write path เก็บ "สลับ":
+  //   INITIAL/baseline เก็บถูก (meterMoneyTop=ดิจิตอล · meterMoneyBottom=เฟือง)
+  //   COLLECTION เก็บกลับหัว (submit `coinMeterTop: coinGear` → meterMoneyTop=เฟือง · meterMoneyBottom=ดิจิตอล)
+  //   → อ่านต้อง normalize ตาม eventType ก่อนใช้ ไม่งั้น offset เครื่องหมายกลับ + placeholder สลับช่อง (ตู้ baseline).
+  //   ดิจิตอลเชื่อ coin/doll_meter_after ได้เสมอ (ทุก event = ดิจิตอล). เฟืองต้องดู eventType.
+  //   ใช้ทำ (1) offset=เฟือง−ดิจิตอล (anti-fraud "ขยับเท่ากัน") (2) placeholder เลขจริง 4 หน้าปัด.
   const offsetByMachine = new Map<string, { coin: number | null; doll: number | null }>();
   const prevReadByMachine = new Map<string, { cGear: number | null; cDigi: number | null; dGear: number | null; dDigi: number | null }>();
   const blankPrev = () => ({ cGear: null as number | null, cDigi: null as number | null, dGear: null as number | null, dDigi: null as number | null });
+  // แยก เฟือง/ดิจิตอล จาก top/bottom ตามกฎถาวร (COLLECTION เก็บกลับหัว · INITIAL/อื่น ๆ = ตรงกฎ บน=ดิจิตอล)
+  const dialsOf = (evType: string, top: number, bottom: number) =>
+    evType === "COLLECTION" ? { gear: top, digital: bottom } : { gear: bottom, digital: top };
   try {
     const machineIds = machines.map((m) => m.id);
     if (machineIds.length > 0) {
+      // (A) event ล่าสุดที่กรอกครบทั้งคู่ → offset (เฟือง−ดิจิตอล) + prevRead หลัก (normalize ตาม eventType)
       const coinRows = await prisma.cfCollectionEvent.findMany({
         where: { orgId, machineId: { in: machineIds }, meterMoneyTop: { not: null }, meterMoneyBottom: { not: null } },
         orderBy: { collectedAt: "desc" },
         distinct: ["machineId"],
-        select: { machineId: true, meterMoneyTop: true, meterMoneyBottom: true },
+        select: { machineId: true, eventType: true, meterMoneyTop: true, meterMoneyBottom: true },
       });
       const dollRows = await prisma.cfCollectionEvent.findMany({
         where: { orgId, machineId: { in: machineIds }, meterDollTop: { not: null }, meterDollBottom: { not: null } },
         orderBy: { collectedAt: "desc" },
         distinct: ["machineId"],
-        select: { machineId: true, meterDollTop: true, meterDollBottom: true },
+        select: { machineId: true, eventType: true, meterDollTop: true, meterDollBottom: true },
       });
       for (const r of coinRows) {
+        const { gear, digital } = dialsOf(r.eventType, r.meterMoneyTop as number, r.meterMoneyBottom as number);
         const off = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
-        off.coin = (r.meterMoneyTop as number) - (r.meterMoneyBottom as number);
+        off.coin = gear - digital;
         offsetByMachine.set(r.machineId, off);
         const pr = prevReadByMachine.get(r.machineId) ?? blankPrev();
-        pr.cGear = r.meterMoneyTop; pr.cDigi = r.meterMoneyBottom;
+        pr.cGear = gear; pr.cDigi = digital;
         prevReadByMachine.set(r.machineId, pr);
       }
       for (const r of dollRows) {
+        const { gear, digital } = dialsOf(r.eventType, r.meterDollTop as number, r.meterDollBottom as number);
         const off = offsetByMachine.get(r.machineId) ?? { coin: null, doll: null };
-        off.doll = (r.meterDollTop as number) - (r.meterDollBottom as number);
+        off.doll = gear - digital;
         offsetByMachine.set(r.machineId, off);
         const pr = prevReadByMachine.get(r.machineId) ?? blankPrev();
-        pr.dGear = r.meterDollTop; pr.dDigi = r.meterDollBottom;
+        pr.dGear = gear; pr.dDigi = digital;
         prevReadByMachine.set(r.machineId, pr);
       }
-      // ── CEO 2026-08-01 (fix) · placeholder เลขจางๆ ต้องโชว์แม้ "รอบก่อนกรอกดิจิตอลอย่างเดียว ไม่กรอกเฟือง" ──
-      //   ปัญหาเดิม: 2 query ข้างบนบังคับ เฟือง(top)+ดิจิตอล(bottom) ครบ "คู่เดียวกัน" ถึงคืนเลข.
-      //   ตู้ที่รอบก่อนกรอกแต่ดิจิตอล (เฟืองว่าง/ตู้เก่าไม่มีคอลัมน์) → query ตกทั้งยวง → ทั้ง 4 ช่องขึ้น "เลข"
-      //   ทั้งที่เลขดิจิตอลมีอยู่ใน DB. แก้: เติมทีละหน้าปัดจาก "เลขล่าสุดของหน้าปัดตัวเอง" อิสระ —
-      //   fill เฉพาะช่องที่ยัง null (ไม่ทับค่าที่ query คู่ครบหาเจอแล้ว = ไม่ regress ตู้ที่โชว์ครบอยู่แล้ว).
-      //   offset (anti-fraud "ขยับเท่ากัน") ยังใช้ query คู่ครบข้างบนเหมือนเดิม ไม่แตะ.
+      // (B) เติมทีละหน้าปัด (รอบก่อนกรอกไม่ครบคู่) — fill เฉพาะช่องที่ยัง null (ไม่ทับ (A) = ไม่ regress)
       const fillPrev = (machineId: string, patch: Partial<{ cGear: number; cDigi: number; dGear: number; dDigi: number }>) => {
         const pr = prevReadByMachine.get(machineId) ?? blankPrev();
         if (patch.cGear != null && pr.cGear == null) pr.cGear = patch.cGear;
@@ -234,7 +235,7 @@ export async function getGroupCollectData(): Promise<{
         if (patch.dDigi != null && pr.dDigi == null) pr.dDigi = patch.dDigi;
         prevReadByMachine.set(machineId, pr);
       };
-      // ดิจิตอล (ช่องคิดเงิน) — coin_meter_after มีทุกรอบเก็บ (= เลขดิจิตอลรอบก่อน) · doll_meter_after nullable (ตุ๊กตา optional)
+      // ดิจิตอล = coin/doll_meter_after (ดิจิตอลเสมอ ทุก event type · coin มีทุกรอบเก็บ · doll nullable)
       const coinDigiRows = await prisma.cfCollectionEvent.findMany({
         where: { orgId, machineId: { in: machineIds } },
         orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
@@ -245,21 +246,33 @@ export async function getGroupCollectData(): Promise<{
         orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
         select: { machineId: true, dollMeterAfter: true },
       });
-      // เฟือง — meter_money_top / meter_doll_top (มีเฉพาะรอบที่กรอกเฟือง · เผื่อ path ที่เขียนเฟืองเดี่ยว)
+      // เฟือง = event ล่าสุดที่ "มีเฟือง" · เฟืองอยู่ top เมื่อ COLLECTION · อยู่ bottom เมื่อ INITIAL (กฎถาวร)
       const coinGearRows = await prisma.cfCollectionEvent.findMany({
-        where: { orgId, machineId: { in: machineIds }, meterMoneyTop: { not: null } },
+        where: { orgId, machineId: { in: machineIds }, OR: [
+          { eventType: "COLLECTION", meterMoneyTop: { not: null } },
+          { eventType: { not: "COLLECTION" }, meterMoneyBottom: { not: null } },
+        ] },
         orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
-        select: { machineId: true, meterMoneyTop: true },
+        select: { machineId: true, eventType: true, meterMoneyTop: true, meterMoneyBottom: true },
       });
       const dollGearRows = await prisma.cfCollectionEvent.findMany({
-        where: { orgId, machineId: { in: machineIds }, meterDollTop: { not: null } },
+        where: { orgId, machineId: { in: machineIds }, OR: [
+          { eventType: "COLLECTION", meterDollTop: { not: null } },
+          { eventType: { not: "COLLECTION" }, meterDollBottom: { not: null } },
+        ] },
         orderBy: { collectedAt: "desc" }, distinct: ["machineId"],
-        select: { machineId: true, meterDollTop: true },
+        select: { machineId: true, eventType: true, meterDollTop: true, meterDollBottom: true },
       });
       for (const r of coinDigiRows) fillPrev(r.machineId, { cDigi: r.coinMeterAfter });
       for (const r of dollDigiRows) fillPrev(r.machineId, { dDigi: r.dollMeterAfter ?? undefined });
-      for (const r of coinGearRows) fillPrev(r.machineId, { cGear: r.meterMoneyTop ?? undefined });
-      for (const r of dollGearRows) fillPrev(r.machineId, { dGear: r.meterDollTop ?? undefined });
+      for (const r of coinGearRows) {
+        const g = r.eventType === "COLLECTION" ? r.meterMoneyTop : r.meterMoneyBottom;
+        fillPrev(r.machineId, { cGear: g ?? undefined });
+      }
+      for (const r of dollGearRows) {
+        const g = r.eventType === "COLLECTION" ? r.meterDollTop : r.meterDollBottom;
+        fillPrev(r.machineId, { dGear: g ?? undefined });
+      }
     }
   } catch {
     // graceful: query ล้ม → ไม่มี offset/เลขอ้างอิง (ข้าม cross-check + ช่องว่าง · ไม่พัง)
