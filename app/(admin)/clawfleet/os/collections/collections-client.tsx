@@ -47,6 +47,8 @@ export type CollectionMachine = {
   eventId?: string;
   coinMeterAfter?: number; // มิเตอร์เหรียญ ดิจิตอล (ค่าปัจจุบัน · prefill ฟอร์มแก้)
   dollMeterAfter?: number; // มิเตอร์ตุ๊กตา ดิจิตอล
+  coinBefore?: number; // มิเตอร์เหรียญ ดิจิตอล (ก่อน) — สำหรับสรุป/จับถอยหลัง
+  dollBefore?: number; // มิเตอร์ตุ๊กตา ดิจิตอล (ก่อน)
   cashBaht?: number; // เงินสดที่เก็บได้ (บาท)
   // ฟอร์มแก้เลข "โชว์ครบ" — เฟืองแก้ได้ · สต๊อก/เติมโชว์อย่างเดียว
   coinGear?: number | null; // มิเตอร์เหรียญ เฟือง
@@ -906,10 +908,13 @@ function CollectionCard({
   // รูปที่กดขยาย (lightbox) — null = ปิด
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
   // หลังบ้านแก้เลข (admin/ผจก.) — target = ตู้ที่กำลังแก้ · null = ปิด
-  // โชว์ครบ 4 มิเตอร์ + เงิน (แก้ได้) + ก่อน/หลังเติม (โชว์อย่างเดียว · read-only)
+  // โชว์ครบ 4 มิเตอร์ + เงิน (แก้ได้) + ก่อน/หลังเติม (โชว์) + รูป + สรุปวิเคราะห์ + ลงสีแดงช่องที่น่าจะผิด
   const [editTarget, setEditTarget] = useState<
     { eventId: string; label: string; cash: string; coinDigital: string; coinGear: string; dollDigital: string; dollGear: string;
-      stockBefore: string; stockAfter: string; refill: string } | null
+      stockBefore: string; stockAfter: string; refill: string;
+      coinBefore: number | null; dollBefore: number | null; stockBeforeN: number | null; stockAfterN: number | null; refillN: number;
+      cashOff: boolean; prizeOff: boolean;
+      shots: { label: string; url: string | null }[] } | null
   >(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
@@ -1038,6 +1043,7 @@ function CollectionCard({
     entered?: { k: string; v: string; tone?: "ok" | "bad" }[]; kind?: string; isInitial?: boolean;
     eventId?: string; coin?: number; doll?: number; cash?: number;
     coinGear?: number | null; dollGear?: number | null; stockBefore?: number; stockAfter?: number; refill?: number;
+    coinBefore?: number; dollBefore?: number; reconcile?: { cashOff: boolean; prizeOff: boolean } | null;
   }[] =
     row.machines.length > 0
       ? row.machines.map((m) => ({
@@ -1058,6 +1064,9 @@ function CollectionCard({
           stockBefore: m.stockBefore,
           stockAfter: m.stockAfter,
           refill: m.refillQty,
+          coinBefore: m.coinBefore,
+          dollBefore: m.dollBefore,
+          reconcile: m.reconcile,
         }))
       : [{ code: "", name: "", shots: FALLBACK_LABELS.map((label) => ({ label, url: null })) }];
 
@@ -1333,6 +1342,14 @@ function CollectionCard({
                             stockBefore: m.stockBefore != null ? String(m.stockBefore) : "—",
                             stockAfter: m.stockAfter != null ? String(m.stockAfter) : "—",
                             refill: m.refill != null ? String(m.refill) : "—",
+                            coinBefore: m.coinBefore ?? null,
+                            dollBefore: m.dollBefore ?? null,
+                            stockBeforeN: m.stockBefore ?? null,
+                            stockAfterN: m.stockAfter ?? null,
+                            refillN: m.refill ?? 0,
+                            cashOff: m.reconcile?.cashOff ?? false,
+                            prizeOff: m.reconcile?.prizeOff ?? false,
+                            shots: m.shots ?? [],
                           })}
                           style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}
                         >
@@ -1460,7 +1477,7 @@ function CollectionCard({
           aria-modal="true"
           onClick={() => setLightbox(null)}
           style={{
-            position: "fixed", inset: 0, zIndex: 90, background: "rgba(13,15,20,0.9)",
+            position: "fixed", inset: 0, zIndex: 100, background: "rgba(13,15,20,0.9)",
             backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
             display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
           }}
@@ -1495,61 +1512,134 @@ function CollectionCard({
       )}
 
       {/* CEO 2026-07-25 · หลังบ้านแก้เลข (admin/ผจก.) — คำนวณกระทบยอดใหม่อัตโนมัติ + ต่อลูกโซ่รอบถัดไป */}
-      {editTarget && (
+      {editTarget && (() => {
+        const et = editTarget;
+        // สรุป/วิเคราะห์ (live · คำนวณจากค่าที่กำลังแก้) — ไม่ต้องมีราคา: จับ "มิเตอร์ถอยหลัง" + "ตุ๊กตาไม่ตรงนับจริง"
+        const nCoin = Number(et.coinDigital) || 0;
+        const nDoll = Number(et.dollDigital) || 0;
+        const coinDelta = et.coinBefore != null ? nCoin - et.coinBefore : null;
+        const coinRegress = coinDelta != null && coinDelta < 0;
+        const dollDelta = et.dollBefore != null ? nDoll - et.dollBefore : null;
+        const physical = et.stockBeforeN != null && et.stockAfterN != null ? et.stockBeforeN + et.refillN - et.stockAfterN : null;
+        const dollDiff = dollDelta != null && physical != null ? dollDelta - physical : null;
+        const dollMismatch = dollDiff != null && dollDiff !== 0;
+        // ช่องไหนน่าจะผิด → ลงสีแดง (regress live + ธง server)
+        const red = {
+          cash: et.cashOff,
+          coinDigital: coinRegress || et.cashOff,
+          coinGear: et.cashOff,
+          dollDigital: dollMismatch || et.prizeOff,
+          dollGear: et.prizeOff,
+        } as const;
+        const photoShots = et.shots.filter((s) => s.url);
+        const fields = [
+          { k: "cash" as const, label: "เงินสดที่เก็บได้ (บาท)" },
+          { k: "coinDigital" as const, label: "มิเตอร์เหรียญ · ดิจิตอล (บน)" },
+          { k: "coinGear" as const, label: "มิเตอร์เหรียญ · เฟือง (ล่าง)" },
+          { k: "dollDigital" as const, label: "มิเตอร์ตุ๊กตา · ดิจิตอล (บน)" },
+          { k: "dollGear" as const, label: "มิเตอร์ตุ๊กตา · เฟือง (ล่าง)" },
+        ];
+        return (
         <div role="dialog" aria-modal="true" onClick={() => !editBusy && setEditTarget(null)}
           style={{ position: "fixed", inset: 0, zIndex: 95, background: "rgba(13,15,20,0.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 340, background: "#fff", borderRadius: 16, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 16px", borderBottom: "1px solid #EEF0F3" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 660, maxHeight: "92vh", background: "#fff", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 16px", borderBottom: "1px solid #EEF0F3", flex: "0 0 auto" }}>
               <Pencil size={15} color="#4F46E5" />
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>แก้เลข · {editTarget.label}</span>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>แก้เลข · {et.label}</span>
               <button type="button" onClick={() => !editBusy && setEditTarget(null)} aria-label="ปิด"
                 style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                 <X size={15} color="#454B54" />
               </button>
             </div>
-            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 11 }}>
-              <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.5 }}>ดูรูปหลักฐานแล้วแก้เลขที่พนักงานกรอกผิด · ระบบจะคำนวณยอด/ส่วนต่างใหม่ + ต่อรอบถัดไปให้เอง</div>
-              {([
-                { k: "cash", label: "เงินสดที่เก็บได้ (บาท)" },
-                { k: "coinDigital", label: "มิเตอร์เหรียญ · ดิจิตอล (บน)" },
-                { k: "coinGear", label: "มิเตอร์เหรียญ · เฟือง (ล่าง)" },
-                { k: "dollDigital", label: "มิเตอร์ตุ๊กตา · ดิจิตอล (บน)" },
-                { k: "dollGear", label: "มิเตอร์ตุ๊กตา · เฟือง (ล่าง)" },
-              ] as const).map((f) => (
-                <label key={f.k} style={{ display: "block" }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: "#5A6270" }}>{f.label}</span>
-                  <input inputMode="numeric" value={editTarget[f.k]}
-                    onChange={(e) => setEditTarget({ ...editTarget, [f.k]: e.target.value })}
-                    style={{ width: "100%", marginTop: 4, fontSize: 15, fontWeight: 700, textAlign: "right", padding: "9px 11px", border: "1.5px solid #C7CBD2", borderRadius: 9 }} />
-                </label>
-              ))}
-              {/* ก่อน/หลังเติม + เติม — โชว์อย่างเดียว (แก้จำนวนตุ๊กตากระทบการนับ · แก้ผ่านแอปพนักงาน) */}
-              <div style={{ display: "flex", gap: 8, background: "#F7F8FA", border: "1px solid #EEF0F3", borderRadius: 9, padding: "9px 11px" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาในตู้ (ก่อน → หลัง)</div>
-                  <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{editTarget.stockBefore} → {editTarget.stockAfter}</div>
-                </div>
-                <div style={{ flex: "0 0 auto", textAlign: "right" }}>
-                  <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติม</div>
-                  <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{editTarget.refill} ตัว</div>
+            {/* 2 คอลัมน์ (ซ้าย=รูป+สรุปวิเคราะห์ · ขวา=ช่องแก้เลข) — แคบลงเป็นคอลัมน์เดียวบนจอเล็ก */}
+            <div className="flex flex-col sm:flex-row" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {/* ── ซ้าย: รูป + สรุป ── */}
+              <div style={{ flex: "1 1 0", minWidth: 0, padding: 16, background: "#FAFBFC", borderRight: "1px solid #EEF0F3" }}>
+                <div style={{ fontSize: 11, color: "#8A909A", lineHeight: 1.5, marginBottom: 10 }}>เทียบเลขในรูปกับที่กรอก · ช่อง<b style={{ color: "#B42318" }}>สีแดง</b>=น่าจะผิด · แก้แล้วกดบันทึก ระบบคำนวณใหม่ให้เอง</div>
+                {photoShots.length > 0 && (
+                  <div className="grid grid-cols-3 gap-[7px]" style={{ marginBottom: 12 }}>
+                    {photoShots.map((s, si) => (
+                      <button key={`${s.label}-${si}`} type="button" onClick={() => setLightbox({ url: s.url as string, label: s.label })}
+                        style={{ padding: 0, border: "1px solid #E7EAF0", borderRadius: 9, overflow: "hidden", background: "#0F1116", cursor: "zoom-in", position: "relative", aspectRatio: "1", display: "block" }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.url as string} alt={s.label} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(15,17,22,0.72)", color: "#fff", fontSize: 8.5, fontWeight: 600, padding: "2px 4px", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* สรุป/วิเคราะห์ (live) */}
+                <div style={{ background: "#fff", border: "1px solid #EEF0F3", borderRadius: 11, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div className="co-eyebrow">สรุป · วิเคราะห์</div>
+                  <ChkRow label="เงินนับได้" value={bahtN(Number(et.cash) || 0)} />
+                  <ChkRow label="เหรียญ ดิจิตอล (ก่อน→หลัง)" bad={coinRegress}
+                    value={`${et.coinBefore ?? "—"} → ${et.coinDigital || "—"}${coinDelta != null ? ` (${coinDelta >= 0 ? "+" : ""}${coinDelta})` : ""}`}
+                    note={coinRegress ? "มิเตอร์ถอยหลัง!" : undefined} />
+                  <ChkRow label="ตุ๊กตา ดิจิตอล (ก่อน→หลัง)" bad={dollMismatch}
+                    value={`${et.dollBefore ?? "—"} → ${et.dollDigital || "—"}${dollDelta != null ? ` · มิเตอร์ออก ${dollDelta}` : ""}`}
+                    note={physical != null ? (dollMismatch ? `นับจริงออก ${physical} · ต่าง ${dollDiff}` : `นับจริงออก ${physical} · ตรง`) : undefined} />
+                  {(et.cashOff || et.prizeOff) && (
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#B42318", background: "#FCEDEC", borderRadius: 7, padding: "6px 9px" }}>
+                      ⚠️ ระบบตั้งธง: {[et.cashOff && "เงิน/มิเตอร์ไม่ตรง", et.prizeOff && "ตุ๊กตาไม่ตรง"].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
                 </div>
               </div>
-              {editErr && <div style={{ fontSize: 11.5, color: "#B42318", background: "#FCEDEC", borderRadius: 8, padding: "8px 11px", lineHeight: 1.45 }}>{editErr}</div>}
-              <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-                <button type="button" onClick={() => setEditTarget(null)} disabled={editBusy}
-                  style={{ flex: "0 0 auto", fontSize: 12.5, fontWeight: 700, color: "#5A6270", background: "#F1F2F5", border: "none", borderRadius: 9, padding: "10px 18px", cursor: editBusy ? "default" : "pointer" }}>ยกเลิก</button>
-                <button type="button" onClick={saveEdit} disabled={editBusy}
-                  style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: "#fff", background: editBusy ? "#9AA1AB" : "#15803D", border: "none", borderRadius: 9, padding: 10, cursor: editBusy ? "default" : "pointer" }}>{editBusy ? "กำลังบันทึก…" : "บันทึก + คำนวณใหม่"}</button>
+              {/* ── ขวา: ช่องแก้เลข ── */}
+              <div style={{ flex: "1 1 0", minWidth: 0, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                {fields.map((f) => {
+                  const isRed = red[f.k];
+                  return (
+                    <label key={f.k} style={{ display: "block" }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 600, color: isRed ? "#B42318" : "#5A6270" }}>{f.label}{isRed && " ⚠️"}</span>
+                      <input inputMode="numeric" value={et[f.k]}
+                        onChange={(e) => setEditTarget({ ...et, [f.k]: e.target.value })}
+                        style={{ width: "100%", marginTop: 4, fontSize: 15, fontWeight: 700, textAlign: "right", padding: "9px 11px", borderRadius: 9,
+                          border: `1.5px solid ${isRed ? "#E5A3A0" : "#C7CBD2"}`, background: isRed ? "#FFF7F6" : "#fff", color: isRed ? "#B42318" : "#1A1D21" }} />
+                    </label>
+                  );
+                })}
+                {/* ก่อน/หลังเติม + เติม — โชว์อย่างเดียว (แก้จำนวนตุ๊กตากระทบการนับ · แก้ผ่านแอปพนักงาน) */}
+                <div style={{ display: "flex", gap: 8, background: "#F7F8FA", border: "1px solid #EEF0F3", borderRadius: 9, padding: "9px 11px" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตุ๊กตาในตู้ (ก่อน → หลัง)</div>
+                    <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{et.stockBefore} → {et.stockAfter}</div>
+                  </div>
+                  <div style={{ flex: "0 0 auto", textAlign: "right" }}>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>เติม</div>
+                    <div className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>{et.refill} ตัว</div>
+                  </div>
+                </div>
+                {editErr && <div style={{ fontSize: 11.5, color: "#B42318", background: "#FCEDEC", borderRadius: 8, padding: "8px 11px", lineHeight: 1.45 }}>{editErr}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+                  <button type="button" onClick={() => setEditTarget(null)} disabled={editBusy}
+                    style={{ flex: "0 0 auto", fontSize: 12.5, fontWeight: 700, color: "#5A6270", background: "#F1F2F5", border: "none", borderRadius: 9, padding: "10px 18px", cursor: editBusy ? "default" : "pointer" }}>ยกเลิก</button>
+                  <button type="button" onClick={saveEdit} disabled={editBusy}
+                    style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: "#fff", background: editBusy ? "#9AA1AB" : "#15803D", border: "none", borderRadius: 9, padding: 10, cursor: editBusy ? "default" : "pointer" }}>{editBusy ? "กำลังบันทึก…" : "บันทึก + คำนวณใหม่"}</button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
 
 /* ───────── small parts ───────── */
+/** แถวสรุป/วิเคราะห์ในป๊อปอัปแก้เลข — bad=แดง (น่าจะผิด) */
+function ChkRow({ label, value, note, bad }: { label: string; value: string; note?: string; bad?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <span style={{ flex: 1, fontSize: 11, color: "#6B7280", lineHeight: 1.35 }}>{label}</span>
+      <span className="num" style={{ fontSize: 11.5, fontWeight: 700, color: bad ? "#B42318" : "#1A1D21", textAlign: "right" }}>
+        {value}{note && <span style={{ display: "block", fontSize: 10, fontWeight: 600, color: bad ? "#B42318" : "#15803D" }}>{bad ? "⚠️ " : "✓ "}{note}</span>}
+      </span>
+    </div>
+  );
+}
+
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>

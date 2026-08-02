@@ -154,6 +154,8 @@ export default async function CollectionsPage({
       // เลขปัจจุบันต่อตู้ (หลังบ้านแก้เลข) — meterAfter=มิเตอร์เหรียญ · prizeMeterNow=มิเตอร์ตุ๊กตา · cashIn=บาท
       coinMeterAfter: m.meterAfter,
       dollMeterAfter: m.prizeMeterNow,
+      coinBefore: m.meterBefore,
+      dollBefore: m.prizeMeterPrev,
       cashBaht: m.cashIn,
       // เฟือง + สต๊อก/เติม — ฟอร์มแก้เลข "โชว์ครบ" (เฟืองแก้ได้ · สต๊อก/เติมโชว์อย่างเดียว)
       coinGear: m.coinGear ?? null,
