@@ -275,6 +275,8 @@ export function CollectionsClient({
 
   const [branch, setBranch] = useState("all");
   const [tab, setTab] = useState<"all" | StatusKind | "problem">("all");
+  // มุมมอง: รายรอบ (เดิม) หรือ checklist รายสาขา (CEO 2026-08-02)
+  const [viewMode, setViewMode] = useState<"rounds" | "checklist">("rounds");
   // จุด C · รอบตั้งต้นรวมเป็นการ์ดเดียวต่อสาขา/วัน (กดกาง) — เก็บ key กลุ่มที่กางอยู่
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const toggleGroup = (k: string) =>
@@ -397,6 +399,16 @@ export function CollectionsClient({
       { totalMachines: 0, collected: 0, notCollected: 0, baseline: 0, refill: 0, cashBaht: 0 },
     );
   }, [daySummaries, branch]);
+
+  // checklist รายสาขา (CEO 2026-08-02) — reuse daySummaries (มีครบ 4 นับ/สาขา) + ชื่อจาก branchOptions
+  const branchNameById = useMemo(() => new Map(branchOptions.map((o) => [o.value, o.label])), [branchOptions]);
+  const checklist = useMemo(() => {
+    if (!daySummaries) return null;
+    return daySummaries
+      .filter((d) => branch === "all" || d.branchId === branch)
+      .map((d) => ({ ...d, name: branchNameById.get(d.branchId) ?? d.branchId }))
+      .sort((a, b) => b.notCollected - a.notCollected || b.totalMachines - a.totalMachines);
+  }, [daySummaries, branch, branchNameById]);
 
   /* summary strip — นับจาก data (หน้าปัจจุบัน หรือ sample) · total ทั้งช่วงใช้ prop `total`
      แยก "เงิน" กับ "ตุ๊กตา" คนละการ์ด (CEO: อยากเห็นเช็คตุ๊กตาชัด ๆ) · baseline ไม่นับเป็นปัญหา */
@@ -625,6 +637,36 @@ export function CollectionsClient({
         <DaySummaryCard dateLabel={thaiDate(fromISO)} branchAll={branch === "all"} s={daySummary} />
       )}
 
+      {/* สลับมุมมอง: รายรอบ ↔ เช็คลิสต์รายสาขา (CEO 2026-08-02) */}
+      <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: 4, marginBottom: 16 }}>
+        {([["rounds", "รายรอบ"], ["checklist", "เช็คลิสต์รายสาขา"]] as const).map(([id, label]) => {
+          const on = viewMode === id;
+          return (
+            <button key={id} type="button" onClick={() => setViewMode(id)}
+              style={{ fontSize: 13, fontWeight: 700, padding: "7px 16px", borderRadius: 8, cursor: "pointer", border: "none", background: on ? "#4F46E5" : "transparent", color: on ? "#fff" : "#6B7280" }}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {viewMode === "checklist" ? (
+        <BranchChecklist
+          rows={checklist}
+          openGroups={openGroups}
+          toggleGroup={toggleGroup}
+          data={data}
+          openId={openId}
+          setOpenId={setOpenId}
+          reviews={reviews}
+          onReview={review}
+          busyId={busyId}
+          pending={pending}
+          canEdit={canEdit}
+          todayHref={quickHref(quickRanges[0].from, quickRanges[0].to)}
+        />
+      ) : (<>
+
       {/* summary strip
           "รอบเก็บทั้งหมด" = total จริงทั้งช่วง (จาก server · ทุกหน้ารวมกัน).
           ตรงกัน/ไม่ตรง/ตู้เสีย = นับจาก "หน้านี้" เท่านั้น (client มีแค่หน้าที่โหลด) → ติดป้ายให้ชัด. */}
@@ -814,6 +856,7 @@ export function CollectionsClient({
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -862,6 +905,96 @@ function HeroCard({
       <div className="num" style={{ fontSize: 11, color: "#D7D5FA", marginTop: 6 }}>
         ตรงกัน {matchN}/{pageTotal} รอบ{multiPage ? ` · หน้า ${curPage}/${pageCount}` : ""} · {pct}%
       </div>
+    </div>
+  );
+}
+
+/* ───────── checklist รายสาขา (CEO 2026-08-02) — ซ้าย=สาขา · นับตู้/ตั้งค่า/เก็บ/เติม · กดกางดูรอบ ───────── */
+type ChecklistRow = DaySummaryRow & { name: string };
+function BranchChecklist({
+  rows, openGroups, toggleGroup, data, openId, setOpenId, reviews, onReview, busyId, pending, canEdit, todayHref,
+}: {
+  rows: ChecklistRow[] | null;
+  openGroups: Set<string>;
+  toggleGroup: (k: string) => void;
+  data: CollectionRow[];
+  openId: string | null;
+  setOpenId: (id: string | null) => void;
+  reviews: Record<string, ReviewState>;
+  onReview: (row: CollectionRow, d: V2Decision) => void;
+  busyId: string | null;
+  pending: boolean;
+  canEdit: boolean;
+  todayHref: string;
+}) {
+  // ต้องเลือกวันเดียว (daySummaries คิดต่อวัน) — ช่วงหลายวัน → null → บอกให้เลือกวันนี้
+  if (rows === null) {
+    return (
+      <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "22px 20px", textAlign: "center" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: "#454B54", marginBottom: 4 }}>เลือกวันเดียวเพื่อดูเช็คลิสต์รายสาขา</div>
+        <div style={{ fontSize: 12, color: "#9AA1AB", marginBottom: 12 }}>เช็คลิสต์สรุปต่อวัน — ช่วงหลายวันดูไม่ได้</div>
+        <Link href={todayHref} className="co-tap" style={{ display: "inline-block", fontSize: 12.5, fontWeight: 700, color: "#fff", background: "#4F46E5", borderRadius: 9, padding: "8px 18px" }}>ดูวันนี้</Link>
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return <EmptyState icon={<Building2 size={28} />} title="ยังไม่มีข้อมูลสาขา" sub="เมื่อมีสาขา+ตู้คีบ เช็คลิสต์รายสาขาจะขึ้นที่นี่" />;
+  }
+  const pill = (label: string, value: number, color: string, bg: string) => (
+    <div style={{ background: bg, borderRadius: 9, padding: "5px 11px", textAlign: "center", minWidth: 58 }}>
+      <div style={{ fontSize: 9.5, color: "#8A909A" }}>{label}</div>
+      <div className="num" style={{ fontSize: 16, fontWeight: 800, color }}>{value}</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {rows.map((b) => {
+        const key = `chk-${b.branchId}`;
+        const expanded = openGroups.has(key);
+        const branchRounds = data.filter((r) => r.branchId === b.branchId);
+        return (
+          <div key={key} style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, overflow: "hidden" }}>
+            <button type="button" onClick={() => toggleGroup(key)}
+              style={{ display: "flex", alignItems: "center", gap: 13, padding: "13px 18px", width: "100%", background: expanded ? "#FCFCFD" : "#fff", border: "none", cursor: "pointer", textAlign: "left", flexWrap: "wrap" }}>
+              <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "#EEF0FE", color: "#4F46E5" }}>
+                <Building2 size={18} />
+              </span>
+              <div style={{ flex: "1 1 160px", minWidth: 130 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{b.name}</div>
+                <div className="num" style={{ fontSize: 11.5, color: b.notCollected > 0 ? "#B45309" : "#15803D", marginTop: 2 }}>
+                  เก็บแล้ว {b.collected}/{b.totalMachines} ตู้{b.notCollected > 0 ? ` · ขาด ${b.notCollected}` : " · ครบ ✓"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {pill("ตู้ทั้งหมด", b.totalMachines, "#1A1D21", "#F4F5F7")}
+                {pill("ตั้งค่าใหม่", b.baseline, "#4F46E5", "#EEF0FE")}
+                {pill("เก็บแล้ว", b.collected, "#15803D", "#E7F4EC")}
+                {pill("เติม", b.refill, "#0B69C7", "#E5F2FD")}
+              </div>
+              <ChevronDown size={16} color="#9AA1AB" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {expanded && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 11, padding: "0 12px 14px" }}>
+                <div style={{ fontSize: 11.5, color: "#9AA1AB", padding: "0 2px" }}>รอบของสาขานี้ (หน้านี้)</div>
+                {branchRounds.length > 0 ? branchRounds.map((r) => (
+                  <CollectionCard
+                    key={r.id}
+                    row={r}
+                    open={openId === r.id}
+                    onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                    reviewState={reviews[r.id] ?? "pending"}
+                    onReview={(d) => onReview(r, d)}
+                    busy={busyId === r.id && pending}
+                    canEdit={canEdit}
+                  />
+                )) : (
+                  <div style={{ fontSize: 12, color: "#9AA1AB", background: "#F7F8FA", border: "1px dashed #E2E5EA", borderRadius: 9, padding: "10px 13px" }}>ยังไม่มีรอบของสาขานี้ในหน้านี้</div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
