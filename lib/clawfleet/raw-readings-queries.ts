@@ -9,6 +9,7 @@
 // เลขที่ใช้คิดเงินจริง = ดิจิตอล (coinMeterAfter). เฟือง = ตัวเทียบกันโกง (ขยับเท่ากันทุกรอบ).
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
 
@@ -92,10 +93,21 @@ function pushPhoto(out: RawReadingPhoto[], label: string, url: string | null | u
  */
 export async function getBranchRawReadings(opts: {
   branchCode?: string | null;
+  /** กรองเฉพาะตู้เดียว (ใช้ตอนกดช่องในเมทริกซ์ → popup) */
+  machineId?: string;
+  /** กรองเฉพาะวันเดียว "YYYY-MM-DD" (เวลาไทย) — คู่กับ machineId สำหรับ popup รายช่อง */
+  isoDay?: string;
 }): Promise<RawReadings> {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const branchIds = await userBranchIds(session);
+
+  // filter รายช่อง (ตู้ × วัน) — ดึงครบ ไม่ cap เพราะช่องเดียวมีไม่กี่รายการ
+  const cellFilter = !!opts.machineId && !!opts.isoDay;
+  const dayStart = opts.isoDay ? new Date(`${opts.isoDay}T00:00:00+07:00`) : null;
+  const dayEnd = dayStart ? new Date(dayStart.getTime() + 86_400_000) : null;
+  const dayWhere = dayStart && dayEnd ? { collectedAt: { gte: dayStart, lt: dayEnd } } : {};
+  const machineWhere = opts.machineId ? { id: opts.machineId } : {};
 
   // หา branch เป้าหมาย (ในขอบเขต user) — ไม่บังคับ isActive (chip ที่เลือกมากรองแล้ว)
   const branch = await prisma.branch.findFirst({
@@ -110,22 +122,19 @@ export async function getBranchRawReadings(opts: {
   });
   if (!branch) return { branch: null, rows: [], total: 0, truncated: false };
 
-  const total = await prisma.cfCollectionEvent.count({
-    where: {
-      orgId,
-      eventType: { in: ["INITIAL", "COLLECTION"] },
-      machine: { branchId: branch.id, kind: "CLAW" },
-    },
-  });
+  const where: Prisma.CfCollectionEventWhereInput = {
+    orgId,
+    eventType: { in: ["INITIAL", "COLLECTION"] },
+    machine: { branchId: branch.id, kind: "CLAW", ...machineWhere },
+    ...dayWhere,
+  };
+
+  const total = await prisma.cfCollectionEvent.count({ where });
 
   const events = await prisma.cfCollectionEvent.findMany({
-    where: {
-      orgId,
-      eventType: { in: ["INITIAL", "COLLECTION"] },
-      machine: { branchId: branch.id, kind: "CLAW" },
-    },
+    where,
     orderBy: [{ collectedAt: "desc" }],
-    take: CAP,
+    take: cellFilter ? 100 : CAP,
     select: {
       id: true,
       eventType: true,

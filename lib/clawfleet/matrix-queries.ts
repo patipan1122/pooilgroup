@@ -37,6 +37,8 @@ export type MatrixDayCell = {
   baseline: boolean;
   /** มีรอบที่ยัง "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม → client ติดธงเตือน */
   anomaly: boolean;
+  /** วันนี้มี "รอบเก็บเงิน" (COLLECTION) ไหม → ใช้ "นับตู้ที่เก็บ" ในคอลัมน์รวม/วัน (ตั้งต้นไม่นับ) */
+  collected: boolean;
   /** มี event จริงในวันนั้นไหม (แยก "ไม่มีข้อมูล" ออกจาก "0 บาท") */
   hasData: boolean;
 };
@@ -65,6 +67,7 @@ type RawRow = {
   dolls: bigint | number | null;
   swaps: bigint | number | null;
   has_baseline: boolean | null;
+  has_collection: boolean | null;
   anomaly: boolean | null;
   events: bigint | number | null;
 };
@@ -150,6 +153,7 @@ export async function getMatrixData(
         FILTER (WHERE e.event_type = 'COLLECTION')::bigint AS dolls,
       COUNT(*) FILTER (WHERE COALESCE(e.refill_qty, 0) > 0)::bigint AS swaps,
       bool_or(e.event_type = 'INITIAL') AS has_baseline,
+      bool_or(e.event_type = 'COLLECTION') AS has_collection,
       bool_or(s.status = 'ANOMALY_REVIEW') AS anomaly,
       COUNT(*)::bigint AS events
     FROM cf_collection_events e
@@ -181,6 +185,7 @@ export async function getMatrixData(
       cost: dolls > 0 ? Math.round(collCash / dolls) : null,
       swapped: toNum(r.swaps) > 0,
       baseline: r.has_baseline === true,
+      collected: r.has_collection === true,
       anomaly: r.anomaly === true,
       hasData: true,
     };

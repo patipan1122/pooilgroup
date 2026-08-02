@@ -32,6 +32,7 @@ import {
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
+import { getBranchRawReadings, type RawReadingRow } from "./raw-readings-queries";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -1269,6 +1270,195 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
       });
 
       return { status: editedStatus, flags: editedFlags, relinkedNext: relinkNext };
+    })
+    .then((r) => ({ ok: true as const, data: r }))
+    .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
+
+  if ("error" in result) return result;
+  revalidatePath("/clawfleet/os/app");
+  revalidatePath("/clawfleet/os/collections");
+  revalidatePath("/clawfleet/os/dashboard");
+  revalidatePath("/clawfleet/os/matrix");
+  return result;
+}
+
+// =============================================================
+// (CEO 2026-08-02) · โหลดข้อมูลดิบของ "ช่องเดียว" (ตู้ × วัน) — สำหรับ popup ในเมทริกซ์
+//   กดช่องในรายงานเจาะสาขา → เห็นทุกอย่างที่พนักงานกรอกวันนั้น (ตั้งต้น + รอบเก็บ) + รูป + ปุ่มแก้.
+//   reuse getBranchRawReadings (scope org+branch ในตัว) กรอง machineId+วัน → คืนครบ ไม่ cap.
+// =============================================================
+const CellReadingsSchema = z.object({
+  branchCode: z.string().min(1, "ไม่ระบุสาขา"),
+  machineId: zUUID("ไม่ระบุตู้"),
+  isoDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันไม่ถูกต้อง"),
+});
+
+export async function getMatrixCellReadings(
+  input: unknown,
+): Promise<ResultOf<{ rows: RawReadingRow[] }>> {
+  const parsed = CellReadingsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  try {
+    const res = await getBranchRawReadings({
+      branchCode: parsed.data.branchCode,
+      machineId: parsed.data.machineId,
+      isoDay: parsed.data.isoDay,
+    });
+    // เรียงเก่า→ใหม่ ในช่องเดียว (ตั้งต้นอยู่บนสุด · รอบเก็บไล่ลงมา) — อ่านง่ายกว่า
+    const rows = [...res.rows].reverse();
+    return { ok: true, data: { rows } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ" };
+  }
+}
+
+// =============================================================
+// (CEO 2026-08-02) · แก้ "ยอดตั้งต้น" (baseline/INITIAL) หลังบ้าน — แอดมิน/ผจก. + cascade
+//   ⚠️ money-critical. ต่างจาก adminEditCollectionEvent 2 จุด:
+//   1. baseline session เก็บเงินตั้งต้นใน totalCashCents โดยตรง (ไม่มี COLLECTION event ในรอบ) →
+//      **ห้าม re-reconcile ตัว baseline** (reReconcileSessionTx รวมเฉพาะ COLLECTION → จะล้างเงินเป็น 0)
+//      → อัปเดต event.cashCountedCents + session.totalCashCents ตรง ๆ (มีเงื่อนไข TOCTOU กันฝาก/ล็อก)
+//   2. cascade: แก้เลข "ดิจิตอลตั้งต้น" → รอบเก็บครั้งแรก (COLLECTION ถัดไป) before = ค่าใหม่ +
+//      re-reconcile รอบนั้น. ส่วนต่างรอบแรก = เก็บครั้งแรก − ตั้งต้น. รอบ 2,3,… ไม่ขยับ (chain ต่อจาก
+//      after ของรอบก่อนหน้า ไม่ใช่ตั้งต้น) — ถูกต้องตามคณิตศาสตร์ลูกโซ่มิเตอร์.
+//   guard เดียวกับ adminEditCollectionEvent: มิเตอร์เดินหน้า · ไม่ฝาก/ไม่ล็อก · รอบถัดไปไม่ล็อก ·
+//   after ≤ after รอบถัดไป · TOCTOU race · audit old→new.
+// =============================================================
+export async function adminEditBaselineEvent(
+  input: unknown,
+): Promise<ResultOf<{ status: string; relinkedNext: boolean }>> {
+  const parsed = AdminEditEventSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const data = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const userId = session.user.id;
+
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่แก้เลขได้" };
+  }
+
+  const ev = await prisma.cfCollectionEvent.findFirst({
+    where: { id: data.eventId, orgId, eventType: "INITIAL" },
+    select: {
+      id: true, machineId: true, sessionId: true, collectedAt: true,
+      coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, cashCountedCents: true,
+      meterMoneyTop: true, meterDollTop: true,
+      session: { select: { id: true, branchId: true, isBaseline: true, depositId: true, status: true } },
+    },
+  });
+  if (!ev) return { ok: false, error: "ไม่พบยอดตั้งต้นนี้ (อาจไม่ใช่รายการตั้งค่าตู้)" };
+  if (!ev.sessionId || !ev.session?.branchId) return { ok: false, error: "รอบนี้ไม่ใช่ระดับสาขา · แก้ไม่ได้" };
+  if (ev.session.depositId) return { ok: false, error: "เงินตั้งต้นรอบนี้ฝากเข้าธนาคารแล้ว · แก้ไม่ได้" };
+  if (ev.session.status === "LOCKED") return { ok: false, error: "รอบนี้ถูกล็อกแล้ว · แก้ไม่ได้" };
+  if (ev.session.status !== "CLOSED" && ev.session.status !== "ANOMALY_REVIEW") {
+    return { ok: false, error: "แก้ได้เฉพาะรอบที่ปิดแล้ว" };
+  }
+  // มิเตอร์เดินหน้า: ค่าตั้งต้น (after) ต้อง ≥ ค่าก่อนตั้งค่า (before)
+  if (data.coinMeterAfter < ev.coinMeterBefore) {
+    return { ok: false, error: `มิเตอร์เหรียญตั้งต้นต้องไม่น้อยกว่าค่าก่อนตั้งค่า (${ev.coinMeterBefore.toLocaleString("en-US")})` };
+  }
+  const newDollAfter = data.dollMeterAfter ?? ev.dollMeterAfter;
+  if (newDollAfter != null && ev.dollMeterBefore != null && newDollAfter < ev.dollMeterBefore) {
+    return { ok: false, error: `มิเตอร์ตุ๊กตาตั้งต้นต้องไม่น้อยกว่าค่าก่อนตั้งค่า (${ev.dollMeterBefore.toLocaleString("en-US")})` };
+  }
+
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(ev.session.branchId)) return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+
+  const result = await prisma
+    .$transaction(async (tx) => {
+      // event ถัดไปของตู้ (COLLECTION/INITIAL) — รู้ว่าตั้งต้นนี้เป็นล่าสุดไหม + ต้องต่อลูกโซ่ไหม
+      const nextEv = await tx.cfCollectionEvent.findFirst({
+        where: { orgId, machineId: ev.machineId, eventType: { in: ["COLLECTION", "INITIAL"] }, collectedAt: { gt: ev.collectedAt } },
+        orderBy: { collectedAt: "asc" },
+        select: {
+          id: true, eventType: true, sessionId: true, coinMeterAfter: true, dollMeterAfter: true,
+          session: { select: { depositId: true, status: true } },
+        },
+      });
+
+      // รอบถัดไปเป็น "รอบเก็บครั้งแรก" (COLLECTION) → ต่อลูกโซ่ before + re-reconcile
+      const relinkNext = !!nextEv && nextEv.eventType === "COLLECTION";
+      if (relinkNext && nextEv) {
+        if (nextEv.session?.depositId || nextEv.session?.status === "LOCKED") {
+          throw new Error("รอบเก็บครั้งแรกของตู้นี้ถูกอนุมัติ/ฝากแล้ว · แก้ยอดตั้งต้นไม่ได้ (จะกระทบยอดที่ล็อกแล้ว)");
+        }
+        if (data.coinMeterAfter > nextEv.coinMeterAfter) {
+          throw new Error(`เลขเหรียญตั้งต้น (${data.coinMeterAfter.toLocaleString("en-US")}) มากกว่ารอบเก็บครั้งแรก (${nextEv.coinMeterAfter.toLocaleString("en-US")}) · แก้ไม่ได้`);
+        }
+        if (newDollAfter != null && nextEv.dollMeterAfter != null && newDollAfter > nextEv.dollMeterAfter) {
+          throw new Error(`เลขตุ๊กตาตั้งต้น (${newDollAfter.toLocaleString("en-US")}) มากกว่ารอบเก็บครั้งแรก (${nextEv.dollMeterAfter.toLocaleString("en-US")}) · แก้ไม่ได้`);
+        }
+      }
+
+      // 1) อัปเดตเลขในใบตั้งต้น (ดิจิตอล + เฟือง + เงิน) — ดิจิตอล mirror (bottom) ให้ตรงกับที่ใช้คิดเงิน
+      await tx.cfCollectionEvent.update({
+        where: { id: ev.id },
+        data: {
+          cashCountedCents: data.cashCents,
+          coinMeterAfter: data.coinMeterAfter,
+          dollMeterAfter: data.dollMeterAfter ?? undefined,
+          meterMoneyBottom: data.coinMeterAfter,
+          ...(data.dollMeterAfter != null ? { meterDollBottom: data.dollMeterAfter } : {}),
+          ...(data.coinMeterTop !== undefined ? { meterMoneyTop: data.coinMeterTop } : {}),
+          ...(data.dollMeterTop !== undefined ? { meterDollTop: data.dollMeterTop } : {}),
+        },
+      });
+
+      // 2) เงินตั้งต้น = session.totalCashCents (ไม่มี COLLECTION → ห้าม re-reconcile · อัปเดตตรง)
+      //    TOCTOU: อัปเดตเฉพาะ session ที่ยังไม่ฝาก + status CLOSED/ANOMALY_REVIEW → กันแก้ทับยอดที่ล็อก
+      const updSess = await tx.cfCollectionSession.updateMany({
+        where: { id: ev.sessionId as string, orgId, depositId: null, status: { in: ["CLOSED", "ANOMALY_REVIEW"] } },
+        data: { totalCashCents: data.cashCents },
+      });
+      if (updSess.count === 0) throw new Error("รอบตั้งต้นถูกอนุมัติ/ฝากธนาคารระหว่างแก้ · รีเฟรชแล้วลองใหม่");
+
+      // 3) ต่อลูกโซ่: รอบเก็บครั้งแรก before = เลขตั้งต้นใหม่ + re-reconcile (เฉพาะเมื่อปิดรอตรวจแล้ว)
+      const relinkDoll = newDollAfter != null && !!nextEv && nextEv.dollMeterAfter != null;
+      let nextStatus: string | null = null;
+      if (relinkNext && nextEv) {
+        await tx.cfCollectionEvent.update({
+          where: { id: nextEv.id },
+          data: { coinMeterBefore: data.coinMeterAfter, ...(relinkDoll ? { dollMeterBefore: newDollAfter } : {}) },
+        });
+        if (nextEv.sessionId && (nextEv.session?.status === "CLOSED" || nextEv.session?.status === "ANOMALY_REVIEW")) {
+          const r = await reReconcileSessionTx(tx, orgId, nextEv.sessionId);
+          if (!r) throw new Error("ไม่พบรอบเก็บครั้งแรก");
+          nextStatus = r.finalStatus;
+        }
+      }
+
+      // 4) sync mirror เฉพาะเมื่อยังไม่มีรอบถัดไป (ตู้ตั้งค่าแล้วแต่ยังไม่เคยเก็บ) — race-safe
+      if (!nextEv) {
+        const newerNow = await tx.cfCollectionEvent.findFirst({
+          where: { orgId, machineId: ev.machineId, eventType: { in: ["COLLECTION", "INITIAL"] }, collectedAt: { gt: ev.collectedAt } },
+          select: { id: true },
+        });
+        if (newerNow) throw new Error("มีการเก็บรอบใหม่ของตู้นี้ระหว่างแก้ · รีเฟรชแล้วลองใหม่");
+        await tx.cfMachine.updateMany({
+          where: { id: ev.machineId, OR: [{ lastEventAt: null }, { lastEventAt: { lte: ev.collectedAt } }] },
+          data: { lastCoinMeter: data.coinMeterAfter, ...(newDollAfter != null ? { lastDollMeter: newDollAfter } : {}) },
+        });
+      }
+
+      // 5) audit trail old→new (AUD · แก้ยอดตั้งต้น = แตะจุดเริ่มลูกโซ่ + เงิน → ต้องมี trail ชัด)
+      await tx.auditLog.create({
+        data: {
+          orgId, userId, action: "CF_BASELINE_ADMIN_EDIT", resourceType: "CF_COLLECTION_EVENT", resourceId: ev.id,
+          diff: {
+            old: { cashCents: ev.cashCountedCents, coinMeterAfter: ev.coinMeterAfter, dollMeterAfter: ev.dollMeterAfter, coinMeterTop: ev.meterMoneyTop, dollMeterTop: ev.meterDollTop },
+            new: {
+              cashCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: newDollAfter,
+              coinMeterTop: data.coinMeterTop !== undefined ? data.coinMeterTop : ev.meterMoneyTop,
+              dollMeterTop: data.dollMeterTop !== undefined ? data.dollMeterTop : ev.meterDollTop,
+            },
+            machineId: ev.machineId, sessionId: ev.sessionId, relinkedNext: relinkNext, byRole: session.user.role, baseline: true,
+          },
+        },
+      });
+
+      return { status: nextStatus ?? ev.session?.status ?? "CLOSED", relinkedNext: relinkNext };
     })
     .then((r) => ({ ok: true as const, data: r }))
     .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));

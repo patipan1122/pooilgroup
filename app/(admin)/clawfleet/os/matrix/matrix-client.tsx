@@ -17,6 +17,8 @@ import { thDate, thWeekday, bahtN } from "@/components/clawfleet/os/format";
 import { assignMachineToStaff } from "@/lib/clawfleet/assignment-actions";
 import { ChecklistClient, type ChecklistBranch } from "./checklist-client";
 import { RawReadingsClient } from "./raw-readings-client";
+import { CellDetailModal } from "./cell-detail-modal";
+import { getMatrixCellReadings } from "@/lib/clawfleet/actions";
 import type { RawReadingRow } from "@/lib/clawfleet/raw-readings-queries";
 
 export type AssignableStaff = { id: string; name: string };
@@ -31,6 +33,8 @@ export type MatrixSerialDay = {
   swapped: boolean;
   /** เงินวันนี้มี "ยอดตั้งต้น" (ตั้งค่าตู้ครั้งแรก) รวมอยู่ไหม → ติดป้ายแยก */
   baseline: boolean;
+  /** วันนี้มี "รอบเก็บเงิน" (COLLECTION) ไหม → นับ "เก็บกี่ตู้" ในคอลัมน์รวม/วัน */
+  collected: boolean;
   /** มีรอบ "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม */
   anomaly: boolean;
 };
@@ -93,6 +97,7 @@ function sampleVals(seed0: number, m: SampleSeed, mi: number, d: number): Matrix
     dolls: 4 + Math.round(mrng(seed0 + mi * 13 + d * 11 + 3) * 22),
     swapped: phase === 0,
     baseline: false,
+    collected: true,
     anomaly: false,
   };
 }
@@ -199,6 +204,16 @@ export function MatrixClient({
   const [metric, setMetric] = useState<Metric>("cost");
   const [drillIdx, setDrillIdx] = useState<number | null>(null);
 
+  // popup รายช่อง (ตู้ × วัน) — โหลดข้อมูลดิบตอนกด
+  const [cell, setCell] = useState<{
+    open: boolean;
+    loading: boolean;
+    rows: RawReadingRow[];
+    title: string;
+    sub: string;
+    key: { machineId: string; iso: string } | null;
+  }>({ open: false, loading: false, rows: [], title: "", sub: "", key: null });
+
   const branch = rows.find((b) => b.code === branchCode) ?? rows[0];
   const machineCount = branch?.machines ?? 8;
 
@@ -273,7 +288,7 @@ export function MatrixClient({
       nickname: m.nickname,
       days: isoDays.map((iso) => {
         const d = m.days[iso];
-        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, baseline: false, anomaly: false, hasData: false };
+        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, baseline: false, collected: false, anomaly: false, hasData: false };
         return { ...d, hasData: true };
       }),
     }));
@@ -289,13 +304,18 @@ export function MatrixClient({
     const colDoll = new Array<number>(cols).fill(0);
     const colCnt = new Array<number>(cols).fill(0);
 
-    type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; baseline: boolean; anomaly: boolean; style: React.CSSProperties };
-    const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string }[] = [];
+    type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; baseline: boolean; anomaly: boolean; hasData: boolean; style: React.CSSProperties };
+    // dayRows: cashTotal = ยอดรวมเงินวันนั้น (รวมตั้งต้น · ตรงกับช่องในตาราง) · collected = จำนวนตู้ที่ "เก็บเงิน" วันนั้น
+    const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string; cashTotal: number; collected: number }[] = [];
+    let grandCash = 0; // ยอดรวมทั้งช่วง (มุมขวาล่าง)
+    let grandColl = 0; // จำนวนครั้งที่เก็บทั้งช่วง
 
     grid.iso.forEach((iso, di) => {
       const dt = isoToDate(iso);
       let daySum = 0;
       let dayCnt = 0;
+      let dayCash = 0; // เงินรวมวันนั้น (ทุกตู้ · รวมตั้งต้น)
+      let dayColl = 0; // จำนวนตู้ที่มีรอบเก็บ (COLLECTION) วันนั้น
       const cells: Cell[] = grid.machines.map((gm, mi) => {
         const rv = gm.days[di];
         if (!rv || !rv.hasData) {
@@ -304,9 +324,12 @@ export function MatrixClient({
             swapped: false,
             baseline: false,
             anomaly: false,
+            hasData: false,
             style: { ...CELL_PAD, background: "#F4F5F7", color: "#B6BBC4" },
           };
         }
+        dayCash += rv.cash;
+        if (rv.collected) dayColl += 1;
         // cost = null (ไม่มีตุ๊กตาออก · เช่น วันตั้งต้น) → โชว์ "—" + พื้น neutral (ไม่ใช่ส้ม "ปล่อยง่าย")
         // และไม่นับเข้าค่าเฉลี่ยต้นทุน/ตัว กันวันตั้งต้นดึงคอลัมน์ให้ดูแดง
         const hasCostVal = rv.cost != null;
@@ -347,6 +370,7 @@ export function MatrixClient({
           swapped: rv.swapped,
           baseline: rv.baseline,
           anomaly: rv.anomaly,
+          hasData: true,
           style: {
             ...CELL_PAD,
             background: bg,
@@ -360,11 +384,15 @@ export function MatrixClient({
         };
       });
       const avgv = dayCnt ? Math.round(daySum / dayCnt) : 0;
+      grandCash += dayCash;
+      grandColl += dayColl;
       dayRows.push({
         dateLabel: thDate(dt),
         wd: thWeekday(dt),
         cells,
         avg: metric === "dolls" ? String(avgv) : bahtN(avgv),
+        cashTotal: dayCash,
+        collected: dayColl,
       });
     });
 
@@ -394,7 +422,7 @@ export function MatrixClient({
       return { rows: frows, style: { ...CELL_PAD, background: bg, borderTop: "2px solid #DDE0E6" } };
     });
 
-    return { dayRows, footer };
+    return { dayRows, footer, grandCash, grandColl };
   }, [grid, metric]);
 
   /* drill รายตู้ */
@@ -467,6 +495,38 @@ export function MatrixClient({
       rows: drows,
     };
   }, [drillIdx, grid, branch]);
+
+  /** โหลดข้อมูลดิบของช่อง (ตู้ × วัน) จาก server — ใช้ทั้งตอนกดครั้งแรกและหลังแก้ (refresh) */
+  const loadCell = (machineId: string, iso: string) => {
+    setCell((c) => ({ ...c, loading: true }));
+    void getMatrixCellReadings({ branchCode, machineId, isoDay: iso })
+      .then((res) => {
+        setCell((c) =>
+          c.key && c.key.machineId === machineId && c.key.iso === iso
+            ? { ...c, loading: false, rows: res.ok ? res.data.rows : [] }
+            : c,
+        );
+      })
+      .catch(() => setCell((c) => ({ ...c, loading: false, rows: [] })));
+  };
+
+  /** กดช่องในเมทริกซ์ → เปิด popup + โหลดข้อมูล (เฉพาะช่องที่มีข้อมูล + ข้อมูลจริง ไม่ใช่ตัวอย่าง) */
+  const openCell = (ci: number, ri: number) => {
+    if (empty) return; // sample path — ไม่มี event จริง
+    const gm = grid.machines[ci];
+    if (!gm?.machineId) return;
+    const iso = grid.iso[ri];
+    const dayLabel = matrix.dayRows[ri]?.dateLabel ?? iso;
+    setCell({
+      open: true,
+      loading: true,
+      rows: [],
+      title: `ตู้ ${gm.code}${gm.nickname ? ` · ${gm.nickname}` : ""}`,
+      sub: `${dayLabel} · ${branch?.name ?? ""}`,
+      key: { machineId: gm.machineId, iso },
+    });
+    loadCell(gm.machineId, iso);
+  };
 
   const noData = !empty && grid.machines.length === 0;
   // สาขา "ตั้งตู้แล้ว (มีตู้จริง) แต่ทุกช่องไม่มีข้อมูลในช่วงนี้" = ยังไม่มีทั้งยอดตั้งต้นและรอบเก็บ
@@ -839,10 +899,12 @@ export function MatrixClient({
                     fontWeight: 700,
                     color: "#5A6270",
                     borderBottom: "1px solid #E3E6EA",
-                    minWidth: 74,
+                    borderLeft: "1px solid #E3E6EA",
+                    minWidth: 86,
                   }}
                 >
-                  เฉลี่ย/วัน
+                  รวมวันนั้น
+                  <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#9AA1AB", marginTop: 1 }}>ยอด · เก็บกี่ตู้</span>
                 </th>
               </tr>
             </thead>
@@ -869,8 +931,15 @@ export function MatrixClient({
                     {r.dateLabel} <span style={{ color: "#AEB4BD", fontWeight: 400 }}>{r.wd}</span>
                     {ri === 0 && <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", padding: "1px 6px", borderRadius: 20 }}>วันนี้</span>}
                   </th>
-                  {r.cells.map((c, ci) => (
-                    <td key={ci} style={c.style}>
+                  {r.cells.map((c, ci) => {
+                    const clickable = !empty && c.hasData && !!grid.machines[ci]?.machineId;
+                    return (
+                    <td
+                      key={ci}
+                      style={clickable ? { ...c.style, cursor: "pointer" } : c.style}
+                      onClick={clickable ? () => openCell(ci, ri) : undefined}
+                      title={clickable ? "กดดูข้อมูลที่กรอก + รูป + แก้ไข" : undefined}
+                    >
                       {c.rows.map((cl, li) => (
                         <div key={li} style={cl.style}>
                           {cl.v}
@@ -904,18 +973,23 @@ export function MatrixClient({
                         />
                       )}
                     </td>
-                  ))}
+                    );
+                  })}
                   <td
                     style={{
-                      padding: "7px 8px",
+                      padding: "6px 8px",
                       textAlign: "center",
-                      fontWeight: 700,
-                      color: "#454B54",
                       background: "#FAFBFC",
                       borderBottom: "1px solid #F0F1F4",
+                      borderLeft: "1px solid #E3E6EA",
                     }}
                   >
-                    {r.avg}
+                    <div style={{ fontWeight: 700, color: r.cashTotal > 0 ? "#15803D" : "#9AA1AB", fontSize: 12.5, lineHeight: 1.2 }}>
+                      {bahtN(r.cashTotal)}
+                    </div>
+                    <div style={{ fontSize: 9.5, color: "#8A90A0", fontWeight: 600, marginTop: 1 }}>
+                      {r.collected > 0 ? `เก็บ ${r.collected} ตู้` : "—"}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -947,13 +1021,31 @@ export function MatrixClient({
                     ))}
                   </td>
                 ))}
-                <td style={{ background: "#EEF0F4", borderTop: "2px solid #DDE0E6" }} />
+                <td style={{ background: "#EEF0F4", borderTop: "2px solid #DDE0E6", borderLeft: "1px solid #E3E6EA", textAlign: "center", padding: "6px 8px" }}>
+                  <div style={{ fontWeight: 800, color: "#15803D", fontSize: 12, lineHeight: 1.2 }}>{bahtN(matrix.grandCash)}</div>
+                  <div style={{ fontSize: 8.5, color: "#5A6270", fontWeight: 600, marginTop: 1 }}>เก็บรวม {matrix.grandColl} ครั้ง</div>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
       )}
+
+      {/* popup รายช่อง (ตู้ × วัน) — ข้อมูลที่พนักงานกรอก + รูป + แก้ไข */}
+      <CellDetailModal
+        open={cell.open}
+        onClose={() => setCell((c) => ({ ...c, open: false }))}
+        title={cell.title}
+        sub={cell.sub}
+        loading={cell.loading}
+        rows={cell.rows}
+        canEdit={canEditRaw}
+        onSaved={() => {
+          if (cell.key) loadCell(cell.key.machineId, cell.key.iso);
+          router.refresh();
+        }}
+      />
 
       {/* drill modal รายตู้ */}
       <Modal
