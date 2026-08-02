@@ -1158,6 +1158,25 @@ function CollectionCard({
         </span>
       </button>
 
+      {/* CEO 2026-08-02 · ปุ่ม "ปิดรอบตอนนี้" บนแถวเลย (ไม่ต้องกดกางก่อน) — รอบ "กำลังเก็บ" ค้าง ·
+          แอดมิน/ผจก. กดปิดจากตรงนี้ได้ทันที · ปิดแล้ว รอบกลายเป็น "ต้องตรวจ" → ปุ่มแก้เลขต่อตู้จะโผล่ */}
+      {!open && inProgress && canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 20px 14px 74px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={doForceClose}
+            disabled={closing}
+            className="co-tap"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}
+          >
+            <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
+          </button>
+          <span style={{ fontSize: 11, color: "#8A909A" }}>
+            เก็บ {row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้ · ปิดรอบแล้วถึงจะกด “แก้เลข” รายตู้ได้
+          </span>
+        </div>
+      )}
+
       {/* บล็อกรูปหลักฐาน (เห็นตั้งแต่ยังไม่กดกาง) — CEO: "ต้องมีบล็อกรูปให้ดู" · กดรูปเพื่อขยายเทียบเลข */}
       {!open && previewShots.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 20px 14px 74px", flexWrap: "wrap" }}>
