@@ -3244,6 +3244,10 @@ model ChairopsChair {
   id            String    @id @default(uuid())
   orgId         String
   chairCode     String
+  // Optional human "ชื่อเล่น" (CEO 2026-08-02 Pinpoint) — e.g. "ตัวหน้าร้าน".
+  // Purely a display label; chairCode stays the stable key POS/collection
+  // history is joined on, so renaming never breaks money attribution.
+  name          String?
   branchId      String
   generation    String?
   pricePerCycle Int?

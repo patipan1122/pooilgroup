@@ -37,6 +37,7 @@ import {
   type WorkspaceView,
   type WorkspaceSort,
 } from "@/lib/chairops/queries/branches-workspace";
+import { AddBranchButton, AddChairForm, ChairNameEditor } from "./_manage";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -331,6 +332,10 @@ export default async function BranchesWorkspacePage({
         </div>
 
         <div className="co-br-list-body">
+          {/* CEO 2026-08-02 Pinpoint · เพิ่มสาขาเองได้จากหน้านี้ (OFFICE+) */}
+          <div style={{ padding: "8px 8px 4px" }}>
+            <AddBranchButton />
+          </div>
           {groups.length === 0 && (
             <div className="co-br-empty">ไม่พบสาขาที่ตรงเงื่อนไข</div>
           )}
@@ -728,7 +733,7 @@ function OverviewTab({
               : `${b.openDamageCount} แจ้งซ่อม`}
           </span>
         </div>
-        <ChairGrid chairs={b.chairList} />
+        <ChairGrid branchId={b.branchId} chairs={b.chairList} />
       </div>
     </>
   );
@@ -778,30 +783,57 @@ function CostCard({
   );
 }
 
-function ChairGrid({ chairs }: { chairs: BranchDetailVM["chairList"] }) {
-  if (chairs.length === 0) {
-    return (
-      <div className="card co-br-empty">ยังไม่มีข้อมูลเก้าอี้ในสาขานี้</div>
-    );
-  }
+function ChairGrid({
+  branchId,
+  chairs,
+  manage = false,
+}: {
+  branchId: string;
+  chairs: BranchDetailVM["chairList"];
+  // manage = the dedicated "เก้าอี้" tab → show add-form + per-chair rename.
+  // Overview keeps a compact read-only grid (RULE L density budget).
+  manage?: boolean;
+}) {
   return (
-    <div className="card co-chair-grid">
-      {chairs.map((c) => (
-        <div key={c.code} className="co-chair-card" data-damaged={c.isDamaged || undefined}>
-          <Armchair size={22} />
-          <div className="mono" style={{ fontSize: 11, marginTop: 4 }}>
-            {c.code}
-          </div>
-          <div className="text-3" style={{ fontSize: 10.5 }}>
-            {c.isDamaged ? (
-              <span style={{ color: "var(--crit)" }}>● แจ้งซ่อม</span>
-            ) : (
-              <span style={{ color: "var(--ok)" }}>● ใช้งานได้</span>
-            )}
-          </div>
+    <>
+      {/* CEO 2026-08-02 Pinpoint · เพิ่มเก้าอี้เอง (OFFICE+) — พอมีเก้าอี้ในระบบ
+          แม่บ้านก็บันทึกยอด/เก็บเงินได้ทันที */}
+      {manage && <AddChairForm branchId={branchId} />}
+      {chairs.length === 0 ? (
+        <div className="card co-br-empty">
+          {manage
+            ? "ยังไม่มีเก้าอี้ในสาขานี้ · เพิ่มด้านบนเพื่อให้เก็บเงินได้"
+            : "ยังไม่มีข้อมูลเก้าอี้ในสาขานี้"}
         </div>
-      ))}
-    </div>
+      ) : (
+        <div className="card co-chair-grid">
+          {chairs.map((c) => (
+            <div key={c.code} className="co-chair-card" data-damaged={c.isDamaged || undefined}>
+              <Armchair size={22} />
+              <div className="mono" style={{ fontSize: 11, marginTop: 4 }}>
+                {c.code}
+              </div>
+              {manage ? (
+                <ChairNameEditor chairId={c.id} name={c.name} />
+              ) : (
+                c.name && (
+                  <div className="text-3" style={{ fontSize: 10.5, marginTop: 2 }}>
+                    {c.name}
+                  </div>
+                )
+              )}
+              <div className="text-3" style={{ fontSize: 10.5, marginTop: 2 }}>
+                {c.isDamaged ? (
+                  <span style={{ color: "var(--crit)" }}>● แจ้งซ่อม</span>
+                ) : (
+                  <span style={{ color: "var(--ok)" }}>● ใช้งานได้</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -970,7 +1002,7 @@ async function TimelineTab({ branchId, orgId }: { branchId: string; orgId: strin
 }
 
 function ChairsTab({ b }: { b: BranchDetailVM }) {
-  return <ChairGrid chairs={b.chairList} />;
+  return <ChairGrid branchId={b.branchId} chairs={b.chairList} manage />;
 }
 
 // ---------- Damage tab ----------

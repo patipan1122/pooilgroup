@@ -27,10 +27,14 @@ export function SuspectsView({
   data,
   streamFilter,
   statusFilter,
+  posBlockedBranches = 0,
 }: {
   data: SuspectWithCheck[];
   streamFilter: string;
   statusFilter: string;
+  // Branches the detector could NOT check because their POS isn't ingested.
+  // Drives an honest empty state instead of a misleading "ทุกช่องปกติ".
+  posBlockedBranches?: number;
 }) {
   // summary from the FULL list (stable overview)
   const branchCount = new Set(data.map((s) => s.branchId)).size;
@@ -136,10 +140,33 @@ export function SuspectsView({
 
       {shown.length === 0 ? (
         <Card>
-          <CardBody className="p-10 text-center text-muted-foreground">
-            {data.length === 0
-              ? "✅ ไม่มีตู้ที่น่าจะเสียตอนนี้ · ทุกช่องรับเงินยังมีเงินเข้าปกติ"
-              : "ไม่มีตู้ที่ตรงตัวกรอง"}
+          <CardBody className="p-8 text-center">
+            {data.length > 0 ? (
+              <span className="text-muted-foreground">ไม่มีตู้ที่ตรงตัวกรอง</span>
+            ) : posBlockedBranches > 0 ? (
+              // HONEST empty state — "0 ตู้" here does NOT mean "all healthy":
+              // N branches were skipped because their POS isn't ingested, so the
+              // detector literally couldn't look at them. Say so + link to fix.
+              <div className="space-y-3">
+                <div className="text-sm font-medium text-amber-700">
+                  ⚠️ ตรวจได้ไม่ครบ · มี {posBlockedBranches} สาขาที่ยังไม่ได้อัปโหลด POS
+                </div>
+                <p className="mx-auto max-w-md text-xs text-muted-foreground">
+                  ตัวเช็กด่วนใช้ข้อมูล POS ล่าสุดในการหา “ตู้ที่ช่องรับเงินเงียบ”
+                  สาขาที่ยังไม่นำเข้า POS จะถูกข้าม (ไม่ได้ตรวจ) — ยังไม่ใช่ว่าไม่มีตู้เสีย
+                </p>
+                <Link
+                  href="/chairops/pos-ingest"
+                  className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  อัปโหลด POS →
+                </Link>
+              </div>
+            ) : (
+              <span className="text-muted-foreground">
+                ✅ ไม่มีตู้ที่น่าจะเสียตอนนี้ · ทุกช่องรับเงินยังมีเงินเข้าปกติ
+              </span>
+            )}
           </CardBody>
         </Card>
       ) : (

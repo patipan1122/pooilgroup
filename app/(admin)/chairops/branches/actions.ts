@@ -8,6 +8,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { writeAudit } from "@/lib/chairops/audit/log";
@@ -15,6 +16,11 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 export type ActionResult<T = unknown> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+// Postgres unique-violation → idempotent/friendly handling (race-safe · RULE I).
+function isUniqueViolation(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+}
 
 const addChairsInput = z.object({
   branchId: z.string().uuid(),
@@ -570,4 +576,212 @@ export async function importStarThingEquipment(
       perStore,
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CEO 2026-08-02 Pinpoint · self-service on /chairops/branches:
+// add a branch, add a chair (code + optional ชื่อเล่น), rename a chair.
+// Some branches/chairs "ไม่ได้ใช้ระบบ" (no StarThing/POS) — the CEO must be able
+// to put them in the system manually so maids can record sales + collect money.
+// All OFFICE+ (matches addChairsToBranch). All idempotent + race-safe + audited.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const createBranchInput = z.object({
+  name: z.string().trim().min(1, "กรอกชื่อสาขา").max(64, "ชื่อยาวเกินไป"),
+  mallGroup: z.string().trim().max(40).optional(),
+  floor: z.string().trim().max(40).optional(),
+});
+
+export async function createBranch(
+  raw: z.infer<typeof createBranchInput>,
+): Promise<ActionResult<{ branchId: string; name: string }>> {
+  const session = await requireRole("OFFICE");
+  const parsed = createBranchInput.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  }
+  const orgId = session.user.orgId;
+  const name = parsed.data.name;
+  const mallGroup = parsed.data.mallGroup || null;
+  const floor = parsed.data.floor || null;
+
+  // tabName is UNIQUE per org (@@unique([orgId, tabName])) and doubles as the
+  // human dedupe key — reject a same-named branch up-front so the CEO gets a
+  // clear message instead of a raw P2002.
+  const tabName = name.slice(0, 64);
+  const dup = await prisma.chairopsBranch.findFirst({
+    where: { orgId, tabName },
+    select: { id: true },
+  });
+  if (dup) {
+    return { ok: false, error: `มีสาขาชื่อ "${name}" อยู่แล้ว` };
+  }
+
+  // Slug: alnum-lowercase, unique per org with -N suffix (mirrors the StarThing
+  // import's pickSlug so both create paths behave the same).
+  const usedSlugs = new Set(
+    (
+      await prisma.chairopsBranch.findMany({ where: { orgId }, select: { slug: true } })
+    ).map((b) => b.slug),
+  );
+  const base =
+    name
+      .toLowerCase()
+      .replace(/\(.*?\)/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "branch";
+  let slug = base;
+  if (usedSlugs.has(slug)) {
+    let i = 2;
+    while (usedSlugs.has(`${base}-${i}`) && i < 1000) i++;
+    slug = `${base}-${i}`;
+  }
+
+  let branchId: string;
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const b = await tx.chairopsBranch.create({
+        data: { orgId, slug, name, tabName, mallGroup, floor, isActive: true },
+        select: { id: true },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "branch.create",
+          entity: "Branch",
+          entityId: b.id,
+          newValue: { name, slug, tabName, mallGroup, floor },
+          metadata: { route: "/chairops/branches" },
+        },
+        tx,
+      );
+      return b;
+    });
+    branchId = created.id;
+  } catch (e) {
+    // Lost a race on slug/tabName → treat as "already exists" (idempotent-ish).
+    if (isUniqueViolation(e)) {
+      return { ok: false, error: `มีสาขาชื่อ/slug นี้อยู่แล้ว · ลองรีเฟรช` };
+    }
+    throw e;
+  }
+
+  revalidatePath("/chairops/branches");
+  revalidatePath("/chairops/branch-collect");
+  return { ok: true, data: { branchId, name } };
+}
+
+const addSingleChairInput = z.object({
+  branchId: z.string().uuid(),
+  chairCode: z.string().trim().min(1, "กรอกรหัสเก้าอี้").max(40, "รหัสยาวเกินไป"),
+  name: z.string().trim().max(60).optional(),
+});
+
+export async function addSingleChair(
+  raw: z.infer<typeof addSingleChairInput>,
+): Promise<ActionResult<{ chairId: string; chairCode: string; created: boolean }>> {
+  const session = await requireRole("OFFICE");
+  const parsed = addSingleChairInput.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  }
+  const orgId = session.user.orgId;
+  const { branchId } = parsed.data;
+  const chairCode = parsed.data.chairCode.toUpperCase();
+  const name = parsed.data.name || null;
+
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId },
+    select: { id: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขา" };
+
+  // chairCode is unique per org. If it already exists we don't silently move it
+  // to another branch (that must be deliberate) — same rule as bulk add.
+  const existing = await prisma.chairopsChair.findFirst({
+    where: { orgId, chairCode },
+    select: { id: true, branchId: true },
+  });
+  if (existing) {
+    if (existing.branchId !== branchId) {
+      return { ok: false, error: `รหัส ${chairCode} อยู่สาขาอื่นแล้ว` };
+    }
+    // same branch → idempotent; fill in the nickname if one was provided.
+    if (name) {
+      await prisma.chairopsChair.update({ where: { id: existing.id }, data: { name } });
+    }
+    return { ok: true, data: { chairId: existing.id, chairCode, created: false } };
+  }
+
+  let chairId: string;
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const c = await tx.chairopsChair.create({
+        data: { orgId, branchId, chairCode, name, isActive: true },
+        select: { id: true },
+      });
+      await writeAudit(
+        {
+          userId: session.user.id,
+          action: "chair.add",
+          entity: "Chair",
+          entityId: c.id,
+          newValue: { branchId, chairCode, name },
+          metadata: { route: "/chairops/branches" },
+        },
+        tx,
+      );
+      return c;
+    });
+    chairId = created.id;
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { ok: false, error: `รหัส ${chairCode} มีอยู่แล้ว · ลองรีเฟรช` };
+    }
+    throw e;
+  }
+
+  revalidatePath(`/chairops/branches`);
+  revalidatePath("/chairops/branch-collect");
+  return { ok: true, data: { chairId, chairCode, created: true } };
+}
+
+const renameChairInput = z.object({
+  chairId: z.string().uuid(),
+  // empty string clears the nickname (falls back to showing the code).
+  name: z.string().trim().max(60, "ชื่อยาวเกินไป"),
+});
+
+export async function renameChair(
+  raw: z.infer<typeof renameChairInput>,
+): Promise<ActionResult<{ chairId: string; name: string | null }>> {
+  const session = await requireRole("OFFICE");
+  const parsed = renameChairInput.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  }
+  const orgId = session.user.orgId;
+  const { chairId } = parsed.data;
+  const name = parsed.data.name || null;
+
+  // Only ever touches `name`. chairCode (the money/POS join key) is never
+  // changed here, so a rename can never break history attribution.
+  const res = await prisma.chairopsChair.updateMany({
+    where: { id: chairId, orgId },
+    data: { name },
+  });
+  if (res.count === 0) return { ok: false, error: "ไม่พบเก้าอี้" };
+
+  await writeAudit({
+    userId: session.user.id,
+    action: "chair.rename",
+    entity: "Chair",
+    entityId: chairId,
+    newValue: { name },
+    metadata: { route: "/chairops/branches" },
+  });
+
+  revalidatePath("/chairops/branches");
+  return { ok: true, data: { chairId, name } };
 }

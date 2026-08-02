@@ -11,10 +11,11 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { thaiDateTime, thaiRelative } from "@/lib/chairops/utils/format";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { ChairopsTicketStatus } from "@/lib/generated/prisma/enums";
+import { ChairopsTicketStatus, ChairopsAlertKind } from "@/lib/generated/prisma/enums";
 import { getSuspectsWithChecks } from "@/lib/chairops/alerts/_chair-check";
 import { SuspectsView } from "./_suspects-view";
 import { recheckSuspects } from "./check-actions";
+import { RecheckButton } from "./_recheck-button";
 
 const STATUS_LABEL: Record<ChairopsTicketStatus, string> = {
   OPEN: "ใหม่",
@@ -53,6 +54,8 @@ type Search = {
   // suspects-tab filters
   sstream?: string;
   sstatus?: string;
+  // set by recheckSuspects() redirect → shows "✅ เช็คแล้ว" confirmation
+  checked?: string;
 };
 
 export default async function DamageListPage({
@@ -71,6 +74,26 @@ export default async function DamageListPage({
 
   // Suspects (office+ only) — needed for the tab count + the suspects view.
   const suspects = canSeeSuspects ? await getSuspectsWithChecks(orgId) : [];
+
+  // How many branches the live detector SKIPPED because their POS isn't
+  // ingested (W-042 · _stream-activity.ts:124). Without this, "0 ตู้ต้องเช็ก"
+  // reads as "✅ ทุกช่องปกติ" even when N branches were never actually checked —
+  // exactly the CEO's "เหมือนใช้ไม่ได้" confusion (Pinpoint 2026-08-02). We
+  // surface it so the empty state is honest and points at the real blocker.
+  let posBlockedBranches = 0;
+  if (canSeeSuspects && tab === "suspects") {
+    const blocked = await prisma.chairopsAlert.findMany({
+      where: {
+        orgId,
+        kind: ChairopsAlertKind.POS_NOT_INGESTED,
+        status: { in: ["OPEN", "ACK"] },
+      },
+      select: { branchId: true },
+    });
+    posBlockedBranches = new Set(
+      blocked.map((b) => b.branchId).filter((id): id is string => !!id),
+    ).size;
+  }
 
   // Open-ticket count for the tab label (cheap COUNT, always).
   const ticketScope: Prisma.ChairopsDamageTicketWhereInput = { orgId };
@@ -168,14 +191,16 @@ export default async function DamageListPage({
           </p>
         </div>
         {tab === "suspects" && (
-          <form action={recheckSuspects}>
-            <button
-              type="submit"
-              className="h-9 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-muted"
-            >
-              🔄 เช็คตู้เสียด่วน
-            </button>
-          </form>
+          <div className="flex items-center gap-2">
+            {sp.checked && (
+              <span className="text-xs font-medium text-emerald-600">
+                ✅ เช็คแล้ว · {thaiDateTime(new Date())}
+              </span>
+            )}
+            <form action={recheckSuspects}>
+              <RecheckButton />
+            </form>
+          </div>
         )}
       </div>
 
@@ -189,6 +214,7 @@ export default async function DamageListPage({
           data={suspects}
           streamFilter={sp.sstream ?? ""}
           statusFilter={sp.sstatus ?? ""}
+          posBlockedBranches={posBlockedBranches}
         />
       ) : (
         <>
@@ -295,6 +321,7 @@ export default async function DamageListPage({
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground [&>th]:bg-muted">
                     <th className="px-3 py-2 font-medium">รหัส</th>
+                    <th className="px-3 py-2 font-medium">รูป</th>
                     <th className="px-3 py-2 font-medium">สาขา</th>
                     <th className="px-3 py-2 font-medium">เครื่อง</th>
                     <th className="px-3 py-2 font-medium">อาการ</th>
@@ -306,7 +333,7 @@ export default async function DamageListPage({
                 <tbody>
                   {tickets.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-12 text-center text-muted-foreground">
+                      <td colSpan={8} className="px-3 py-12 text-center text-muted-foreground">
                         ไม่มีตั๋วที่ตรงเงื่อนไข
                       </td>
                     </tr>
@@ -324,6 +351,33 @@ export default async function DamageListPage({
                             <Badge tone="danger" className="ml-2">
                               ด่วน
                             </Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {/* CEO Pinpoint 2026-08-02 · "ใบแจ้งซ่อมอยากให้มีรูป" —
+                              photos were stored (photoUrls) + shown on the detail
+                              page but never in this list. Thumbnail links to detail. */}
+                          {t.photoUrls.length > 0 ? (
+                            <Link
+                              href={`/chairops/damage/${t.ticketCode}`}
+                              className="relative inline-block"
+                              title={`${t.photoUrls.length} รูป`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={t.photoUrls[0]}
+                                alt="รูปแจ้งซ่อม"
+                                loading="lazy"
+                                className="h-10 w-10 rounded object-cover border border-border"
+                              />
+                              {t.photoUrls.length > 1 && (
+                                <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-[10px] font-medium leading-4 text-primary-foreground">
+                                  +{t.photoUrls.length - 1}
+                                </span>
+                              )}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2">{t.branch.name}</td>

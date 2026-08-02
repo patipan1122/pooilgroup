@@ -28,7 +28,10 @@ export async function recheckSuspects() {
     redirect("/chairops/dashboard");
   }
   revalidatePath("/chairops/damage");
-  redirect("/chairops/damage?tab=suspects");
+  // ?checked=1 → the page shows a "✅ เช็คแล้ว" confirmation so the click has
+  // visible feedback even when the (deterministic, live) suspect list is
+  // unchanged. Without it the recheck felt like a no-op ("กดแล้วเงียบ").
+  redirect("/chairops/damage?tab=suspects&checked=1");
 }
 
 /** Set the triage status of one (chair, device) + append a log entry. Idempotent:

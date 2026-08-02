@@ -285,7 +285,7 @@ export interface BranchDetailVM {
     age: string;
   }[];
   series: { pos: number[]; deposit: number[] };
-  chairList: { code: string; isDamaged: boolean }[];
+  chairList: { id: string; code: string; name: string | null; isDamaged: boolean }[];
   openDamageCount: number;
 }
 
@@ -465,7 +465,9 @@ export async function getBranchDetail(args: {
     })),
     series: { pos: posSeries, deposit: depSeries },
     chairList: chairs.map((c) => ({
+      id: c.id,
       code: c.chairCode,
+      name: c.name,
       isDamaged: damagedChairIds.has(c.id),
     })),
     openDamageCount: openDamage.length,
