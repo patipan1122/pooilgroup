@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { EmptyState } from "@/components/clawfleet/os/kit";
-import { reviewV2Session, adminEditCollectionEvent, adminForceCloseSession, type V2Decision } from "@/lib/clawfleet/actions";
+import { reviewV2Session, adminEditCollectionEvent, adminForceCloseSession, cancelEmptySession, type V2Decision } from "@/lib/clawfleet/actions";
 import { buildCsv } from "@/lib/clawfleet/csv";
 
 /* ───────── types ───────── */
@@ -1094,6 +1094,21 @@ function CollectionCard({
       setClosing(false);
     }
   }
+  // CEO 2026-08-02 · ยกเลิก "รอบว่าง" (0 ตู้ที่เก็บ) — ปิดปกติไม่ได้ · ตั้ง CANCELLED เหมือน cron สิ้นวัน
+  const [canceling, setCanceling] = useState(false);
+  async function doCancelEmpty() {
+    if (canceling) return;
+    if (!window.confirm("ยกเลิกรอบว่างนี้เลยไหม?\nรอบนี้ยังไม่มีตู้ที่เก็บ (0 บาท) — ยกเลิกแล้วรอบจะหายจากรายการค้าง · การเติมตุ๊กตานอกรอบยังอยู่ครบ")) return;
+    setCanceling(true);
+    try {
+      const res = await cancelEmptySession({ sessionCode: row.id });
+      if (!res.ok) { alert(res.error || "ยกเลิกรอบไม่สำเร็จ"); setCanceling(false); return; }
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "ยกเลิกรอบไม่สำเร็จ");
+      setCanceling(false);
+    }
+  }
   async function saveEdit() {
     if (!editTarget) return;
     setEditBusy(true);
@@ -1324,18 +1339,38 @@ function CollectionCard({
           แอดมิน/ผจก. กดปิดจากตรงนี้ได้ทันที · ปิดแล้ว รอบกลายเป็น "ต้องตรวจ" → ปุ่มแก้เลขต่อตู้จะโผล่ */}
       {!open && inProgress && canEdit && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 20px 14px 74px", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={doForceClose}
-            disabled={closing}
-            className="co-tap"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}
-          >
-            <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
-          </button>
-          <span style={{ fontSize: 11, color: "#8A909A" }}>
-            เก็บ {row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้ · ปิดรอบแล้วถึงจะกด “แก้เลข” รายตู้ได้
-          </span>
+          {(row.collectedCount ?? 0) === 0 ? (
+            // รอบว่าง — ยังไม่มีตู้ที่เก็บ → ปิดปกติไม่ได้ · ให้ "ยกเลิกรอบว่าง" (CEO 2026-08-02)
+            <>
+              <button
+                type="button"
+                onClick={doCancelEmpty}
+                disabled={canceling}
+                className="co-tap"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: canceling ? "#9AA1AB" : "#C0392B", border: "none", borderRadius: 9, padding: "8px 15px", cursor: canceling ? "default" : "pointer" }}
+              >
+                <X size={14} /> {canceling ? "กำลังยกเลิก…" : "ยกเลิกรอบว่าง"}
+              </button>
+              <span style={{ fontSize: 11, color: "#8A909A" }}>
+                รอบนี้ยังไม่มีตู้ที่เก็บ (0 บาท) — ยกเลิกได้เลย · การเติมตุ๊กตานอกรอบยังอยู่ครบ
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={doForceClose}
+                disabled={closing}
+                className="co-tap"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}
+              >
+                <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
+              </button>
+              <span style={{ fontSize: 11, color: "#8A909A" }}>
+                เก็บ {row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้ · ปิดรอบแล้วถึงจะกด “แก้เลข” รายตู้ได้
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -1391,13 +1426,20 @@ function CollectionCard({
                   <b className="num" style={{ color: "#1A1D21" }}>{row.collectedCount ?? 0}/{row.machineTotal ?? 0} ตู้</b>{" "}
                   เงินที่เก็บได้ตอนนี้ <b className="num" style={{ color: "#1A1D21" }}>{bahtN(row.actualCash)}</b> (บันทึกครบ · ดูรูปด้านล่างได้)<br />
                   ระบบจะ<b>ปิดรอบ + กระทบยอดให้อัตโนมัติตอนจบวัน</b> (เที่ยงคืน) — หรือกด “ปิดรอบตอนนี้” ถ้าเก็บเสร็จแล้ว
-                  {/* จุด E · ปิดรอบตอนนี้ด้วยมือ (แอดมิน/ผจก.) — เก็บไม่ครบก็ปิดได้ */}
+                  {/* จุด E · ปิดรอบตอนนี้ด้วยมือ (แอดมิน/ผจก.) — เก็บไม่ครบก็ปิดได้ · รอบว่าง = ยกเลิก */}
                   {canEdit && (
                     <div style={{ marginTop: 10 }}>
-                      <button type="button" onClick={doForceClose} disabled={closing}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}>
-                        <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
-                      </button>
+                      {(row.collectedCount ?? 0) === 0 ? (
+                        <button type="button" onClick={doCancelEmpty} disabled={canceling}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: canceling ? "#9AA1AB" : "#C0392B", border: "none", borderRadius: 9, padding: "8px 15px", cursor: canceling ? "default" : "pointer" }}>
+                          <X size={14} /> {canceling ? "กำลังยกเลิก…" : "ยกเลิกรอบว่าง"}
+                        </button>
+                      ) : (
+                        <button type="button" onClick={doForceClose} disabled={closing}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#fff", background: closing ? "#9AA1AB" : "#0B69C7", border: "none", borderRadius: 9, padding: "8px 15px", cursor: closing ? "default" : "pointer" }}>
+                          <Check size={14} /> {closing ? "กำลังปิดรอบ…" : "ปิดรอบตอนนี้"}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

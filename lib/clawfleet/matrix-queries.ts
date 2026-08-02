@@ -43,6 +43,10 @@ export type MatrixDayCell = {
   moneyReviewed: boolean;
   /** วันนี้มี "รอบเก็บเงิน" (COLLECTION) ไหม → ใช้ "นับตู้ที่เก็บ" ในคอลัมน์รวม/วัน (ตั้งต้นไม่นับ) */
   collected: boolean;
+  /** CEO 2026-08-02 · วันนี้มีแต่ "เติมตุ๊กตานอกรอบเก็บ" ล้วน (ไม่มีเก็บเงิน/ตั้งต้น) → โผล่เป็นช่องพิเศษ 🧸 */
+  refillOnly: boolean;
+  /** จำนวนตุ๊กตาที่เติม "นอกรอบเก็บ" วันนั้น (รวม) — โชว์ในช่อง refill-only + ป๊อปอัป */
+  refillDolls: number;
   /** มี event จริงในวันนั้นไหม (แยก "ไม่มีข้อมูล" ออกจาก "0 บาท") */
   hasData: boolean;
 };
@@ -198,11 +202,52 @@ export async function getMatrixData(
       anomaly: r.anomaly === true,
       moneyOff: r.money_off === true,
       moneyReviewed: r.money_off === true && r.money_off_unreviewed !== true,
+      refillOnly: false,
+      refillDolls: 0,
       hasData: true,
     };
     let m = byMachine.get(r.machine_id);
     if (!m) { m = new Map(); byMachine.set(r.machine_id, m); }
     m.set(r.iso_day, cell);
+  }
+
+  // 4b. เติมตุ๊กตา "นอกรอบเก็บ" (standalone refill · cf_stock_movements ref_table='cf_refill_dolls')
+  //     — ไม่มี event ในตารางเดิม → รายงานเจาะสาขา "มองไม่เห็น". ดึงมา merge (READ-ONLY · ไม่แตะเงิน):
+  //       • วันที่มี cell อยู่แล้ว (เก็บเงิน/ตั้งต้น) → ติดธง swapped + สะสมจำนวนเติม
+  //       • วันที่ไม่มี event → สร้างช่องใหม่ refillOnly (โผล่ในตาราง · กดดูได้ว่าเติมอะไรเท่าไร)
+  type RefillRow = { machine_id: string; iso_day: string; refill_dolls: bigint | number | null };
+  const refillRows = await prisma.$queryRaw<RefillRow[]>`
+    SELECT
+      sm.machine_id::text AS machine_id,
+      to_char((sm.occurred_at AT TIME ZONE 'Asia/Bangkok')::date, 'YYYY-MM-DD') AS iso_day,
+      SUM(ABS(sm.qty))::bigint AS refill_dolls
+    FROM cf_stock_movements sm
+    WHERE sm.org_id = ${orgId}::uuid
+      AND sm.machine_id IN (${prismaInUuid(machineIds)})
+      AND sm.ref_table = 'cf_refill_dolls'
+      AND (sm.occurred_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
+    GROUP BY sm.machine_id, iso_day
+  `;
+  for (const r of refillRows) {
+    const qty = toNum(r.refill_dolls);
+    if (qty <= 0) continue;
+    let m = byMachine.get(r.machine_id);
+    if (!m) { m = new Map(); byMachine.set(r.machine_id, m); }
+    const existing = m.get(r.iso_day);
+    if (existing) {
+      existing.swapped = true;           // วันนั้นมีเปลี่ยน/เติมตุ๊กตา
+      existing.refillDolls += qty;
+    } else {
+      m.set(r.iso_day, {
+        isoDay: r.iso_day,
+        cash: 0, dolls: 0, cost: null,
+        swapped: true,
+        baseline: false, collected: false, anomaly: false,
+        moneyOff: false, moneyReviewed: false,
+        refillOnly: true, refillDolls: qty,
+        hasData: true,
+      });
+    }
   }
 
   const out: MatrixMachine[] = machines.map((m) => ({

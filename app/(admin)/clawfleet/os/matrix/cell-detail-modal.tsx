@@ -13,7 +13,7 @@ import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { MeterEditModal } from "./meter-edit";
 import { reviewCellEvent } from "@/lib/clawfleet/actions";
-import type { RawReadingRow, RawReadingPhoto } from "@/lib/clawfleet/raw-readings-queries";
+import type { RawReadingRow, RawReadingPhoto, CellRefill } from "@/lib/clawfleet/raw-readings-queries";
 
 /** ธงเงินขาด/เกินรายตู้ (matrix ช่องแดง→ฟ้า) — ตรงกับ SQL money_off */
 const CASH_OFF_FLAGS = ["M2_CASH_SHORT_MINOR", "M3_CASH_SHORT_MAJOR", "M4_CASH_OVER", "M6_CASH_OVER_MAJOR"];
@@ -186,6 +186,7 @@ export function CellDetailModal({
   sub,
   loading,
   rows,
+  refills = [],
   canEdit,
   onSaved,
 }: {
@@ -195,6 +196,8 @@ export function CellDetailModal({
   sub?: string;
   loading: boolean;
   rows: RawReadingRow[];
+  /** เติมตุ๊กตานอกรอบเก็บวันนั้น (ถ้ามี) — โชว์ในช่อง 🧸 refill-only */
+  refills?: CellRefill[];
   canEdit: boolean;
   /** เรียกหลังแก้สำเร็จ — parent โหลดช่องใหม่ + router.refresh */
   onSaved: () => void;
@@ -211,12 +214,41 @@ export function CellDetailModal({
               <Loader2 size={18} style={{ animation: "cf-spin 0.8s linear infinite" }} /> กำลังโหลด…
               <style>{"@keyframes cf-spin{to{transform:rotate(360deg)}}"}</style>
             </div>
-          ) : rows.length === 0 ? (
+          ) : rows.length === 0 && refills.length === 0 ? (
             <EmptyState icon={<ImageIcon size={26} />} title="ไม่มีข้อมูลในวันนี้" sub="ช่องนี้อาจเป็นข้อมูลตัวอย่าง หรือรายการถูกย้าย/ลบไปแล้ว" />
           ) : (
-            rows.map((r) => (
-              <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} onConfirmed={onSaved} />
-            ))
+            <>
+              {rows.map((r) => (
+                <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} onConfirmed={onSaved} />
+              ))}
+              {/* เติมตุ๊กตานอกรอบเก็บ (standalone refill) — ไม่มีเงิน · โชว์ว่าเติมอะไร กี่ตัว ใครเติม + รูป */}
+              {refills.length > 0 && (
+                <div style={{ border: "1px solid #DDE0FB", borderRadius: 12, background: "#F7F8FF", padding: "12px 14px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#4F46E5", marginBottom: 9, display: "flex", alignItems: "center", gap: 6 }}>
+                    🧸 เติมตุ๊กตา (นอกรอบเก็บ) · รวม {refills.reduce((s, r) => s + r.qty, 0)} ตัว
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                    {refills.map((rf) => (
+                      <div key={rf.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
+                        <span className="num" style={{ fontWeight: 800, color: "#B45309", minWidth: 40 }}>+{rf.qty}</span>
+                        <span style={{ color: "#3A414B", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rf.productName ?? "ตุ๊กตา"}</span>
+                        <span style={{ color: "#8A90A0", whiteSpace: "nowrap" }}>{rf.timeLabel} น. · {rf.byName}</span>
+                        {rf.photoUrl && rf.photoUrl.startsWith("http") && (
+                          <button
+                            onClick={() => setLightbox({ label: `เติมตุ๊กตา ${rf.timeLabel} น.`, url: rf.photoUrl! })}
+                            title="ดูรูป"
+                            style={{ width: 40, height: 40, flex: "0 0 40px", cursor: "pointer", border: "1px solid #E3E6EA", borderRadius: 8, overflow: "hidden", padding: 0, background: "#F4F5F7" }}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={rf.photoUrl} alt="เติมตุ๊กตา" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Modal>

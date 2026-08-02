@@ -7,7 +7,7 @@
  *         (getMatrixData) ของสาขา/ช่วงที่เลือก (ผ่าน searchParams ?branch & ?days).
  * ทุกตัวเลขในช่อง = ข้อมูลจริงจาก cf_collection_events. DB ว่าง → client โชว์ตัวอย่าง.
  */
-import { getV2Branches } from "@/lib/clawfleet/queries";
+import { getV2Branches, getPendingRoundCountsByBranch } from "@/lib/clawfleet/queries";
 import { getMatrixData } from "@/lib/clawfleet/matrix-queries";
 import { getCfChecklistGrid } from "@/lib/clawfleet/checklist-queries";
 import {
@@ -56,12 +56,17 @@ export default async function MatrixPage({
   }
 
   try {
-    const rows = await getV2Branches();
+    const [rows, pendingByBranch] = await Promise.all([
+      getV2Branches(),
+      getPendingRoundCountsByBranch().catch(() => ({} as Record<string, number>)),
+    ]);
     branches = rows.map((b) => ({
       id: b.id,
       code: b.code,
       name: b.name,
       machines: b.machines,
+      // เลขแดงบนแถบสาขา = จำนวนรอบค้าง (OPEN + รอตรวจ) ของสาขานั้น
+      pending: pendingByBranch[b.id] ?? 0,
     }));
 
     // เลือกสาขา: ตาม ?branch ถ้าอยู่ในรายการ ไม่งั้นสาขาแรก
@@ -81,7 +86,7 @@ export default async function MatrixPage({
         days: Object.fromEntries(
           [...m.byDay.entries()].map(([iso, c]) => [
             iso,
-            { cash: c.cash, dolls: c.dolls, cost: c.cost, swapped: c.swapped, baseline: c.baseline, collected: c.collected, anomaly: c.anomaly, moneyOff: c.moneyOff, moneyReviewed: c.moneyReviewed },
+            { cash: c.cash, dolls: c.dolls, cost: c.cost, swapped: c.swapped, baseline: c.baseline, collected: c.collected, anomaly: c.anomaly, moneyOff: c.moneyOff, moneyReviewed: c.moneyReviewed, refillOnly: c.refillOnly, refillDolls: c.refillDolls },
           ]),
         ),
       }));

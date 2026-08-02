@@ -117,6 +117,32 @@ export const getV2Branches = cache(async (): Promise<Branch[]> => {
   }));
 });
 
+/**
+ * นับ "รอบที่ยังค้าง" ต่อสาขา (CEO 2026-08-02) — สำหรับเลขแดงบนแถบเลือกสาขา ในรายงานเจาะสาขา.
+ * ค้าง = รอบที่ยัง "ไม่ปิด" (OPEN · กำลังเก็บ / รอบว่างที่ยังไม่เคลียร์) + ปิดแล้วแต่ "รอตรวจ" (ANOMALY_REVIEW).
+ * คืน map branchId → จำนวนรอบค้าง (เฉพาะรอบระดับสาขา · scope ตามสิทธิ์ user). อ่านอย่างเดียว ไม่แตะเงิน.
+ */
+export const getPendingRoundCountsByBranch = cache(
+  async (): Promise<Record<string, number>> => {
+    const session = await requireSession();
+    const { orgId, branchIds } = await scope(session);
+    const grouped = await prisma.cfCollectionSession.groupBy({
+      by: ["branchId"],
+      where: {
+        orgId,
+        status: { in: ["OPEN", "ANOMALY_REVIEW"] },
+        branchId: branchIds === "ALL" ? { not: null } : { in: branchIds },
+      },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = {};
+    for (const g of grouped) {
+      if (g.branchId) out[g.branchId] = g._count._all;
+    }
+    return out;
+  },
+);
+
 // =============================================================
 // Manage page — branches WITH their machine list (for CRUD UI)
 // =============================================================

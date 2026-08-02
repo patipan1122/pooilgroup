@@ -261,3 +261,55 @@ export async function getBranchRawReadings(opts: {
     truncated: total > rows.length,
   };
 }
+
+/** เติมตุ๊กตา "นอกรอบเก็บ" 1 รายการ (สำหรับป๊อปอัปช่อง refill-only ในรายงานเจาะสาขา) */
+export type CellRefill = {
+  id: string;
+  qty: number;
+  timeLabel: string;
+  byName: string;
+  productName: string | null;
+  photoUrl: string | null;
+};
+
+/**
+ * เติมตุ๊กตา "นอกรอบเก็บ" (standalone refill · cf_stock_movements ref_table='cf_refill_dolls')
+ * ของตู้เดียว ในวันเดียว (เวลาไทย) — ใช้ในป๊อปอัปช่องเมื่อกดช่อง 🧸 refill-only. READ-ONLY.
+ * scope: orgId + branch-scope ของ user. วันไทยตัดด้วย +07:00 (ไม่ใช่ UTC server).
+ */
+export async function getMachineDayRefills(opts: {
+  machineId: string;
+  isoDay: string;
+}): Promise<CellRefill[]> {
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  const branchIds = await userBranchIds(session);
+  const dayStart = new Date(`${opts.isoDay}T00:00:00+07:00`);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  const moves = await prisma.cfStockMovement.findMany({
+    where: {
+      orgId,
+      machineId: opts.machineId,
+      refTable: "cf_refill_dolls",
+      occurredAt: { gte: dayStart, lt: dayEnd },
+      ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
+    },
+    select: {
+      id: true,
+      qty: true,
+      occurredAt: true,
+      receiptR2Key: true,
+      createdBy: { select: { name: true } },
+      product: { select: { name: true } },
+    },
+    orderBy: { occurredAt: "asc" },
+  });
+  return moves.map((m) => ({
+    id: m.id,
+    qty: Math.abs(m.qty),
+    timeLabel: T_FMT.format(m.occurredAt),
+    byName: m.createdBy?.name ?? "—",
+    productName: m.product?.name ?? null,
+    photoUrl: m.receiptR2Key || null,
+  }));
+}

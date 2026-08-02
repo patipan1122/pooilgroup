@@ -19,11 +19,11 @@ import { ChecklistClient, type ChecklistBranch } from "./checklist-client";
 import { RawReadingsClient } from "./raw-readings-client";
 import { CellDetailModal } from "./cell-detail-modal";
 import { getMatrixCellReadings } from "@/lib/clawfleet/actions";
-import type { RawReadingRow } from "@/lib/clawfleet/raw-readings-queries";
+import type { RawReadingRow, CellRefill } from "@/lib/clawfleet/raw-readings-queries";
 
 export type AssignableStaff = { id: string; name: string };
 
-export type MatrixBranch = { id: string; code: string; name: string; machines: number };
+export type MatrixBranch = { id: string; code: string; name: string; machines: number; pending?: number };
 
 /** ค่ารายวันต่อตู้ (serialized จาก server · cost = null เมื่อไม่มีตุ๊กตาออก) */
 export type MatrixSerialDay = {
@@ -40,6 +40,10 @@ export type MatrixSerialDay = {
   /** CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ช่องแดง (ถ้ายังไม่ตรวจ) · ตรวจ/ยืนยันแล้ว → ฟ้าอ่อน */
   moneyOff?: boolean;
   moneyReviewed?: boolean;
+  /** CEO 2026-08-02 · วันนี้มีแต่ "เติมตุ๊กตานอกรอบเก็บ" ล้วน (ไม่มีเก็บเงิน/ตั้งต้น) → ช่องพิเศษ 🧸 */
+  refillOnly?: boolean;
+  /** จำนวนตุ๊กตาที่เติมนอกรอบวันนั้น (รวม) */
+  refillDolls?: number;
 };
 /** ตู้ + map isoDay → ค่ารายวัน (เฉพาะวันที่มี event) */
 export type MatrixSerialMachine = {
@@ -214,10 +218,11 @@ export function MatrixClient({
     open: boolean;
     loading: boolean;
     rows: RawReadingRow[];
+    refills: CellRefill[];
     title: string;
     sub: string;
     key: { machineId: string; iso: string } | null;
-  }>({ open: false, loading: false, rows: [], title: "", sub: "", key: null });
+  }>({ open: false, loading: false, rows: [], refills: [], title: "", sub: "", key: null });
 
   const branch = rows.find((b) => b.code === branchCode) ?? rows[0];
   const machineCount = branch?.machines ?? 8;
@@ -293,7 +298,7 @@ export function MatrixClient({
       nickname: m.nickname,
       days: isoDays.map((iso) => {
         const d = m.days[iso];
-        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, baseline: false, collected: false, anomaly: false, hasData: false };
+        if (!d) return { cash: 0, dolls: 0, cost: null, swapped: false, baseline: false, collected: false, anomaly: false, refillOnly: false, refillDolls: 0, hasData: false };
         return { ...d, hasData: true };
       }),
     }));
@@ -331,6 +336,18 @@ export function MatrixClient({
             anomaly: false,
             hasData: false,
             style: { ...CELL_PAD, background: "#F4F5F7", color: "#B6BBC4" },
+          };
+        }
+        // CEO 2026-08-02 · เติมตุ๊กตา "นอกรอบเก็บ" ล้วน (ไม่มีเก็บเงิน/ตั้งต้น) → ช่อง 🧸 พิเศษ
+        //   ไม่มีเงิน = ไม่แตะคณิตเงิน/เฉลี่ยของวัน/คอลัมน์ (return ก่อนบวกทุกตัว) · กดดูได้ว่าเติมกี่ตัว
+        if (rv.refillOnly) {
+          return {
+            rows: [{ v: `🧸 ${rv.refillDolls ?? 0}`, style: { fontWeight: 700, color: "#4F46E5", fontSize: 11.5 } }],
+            swapped: false,
+            baseline: false,
+            anomaly: false,
+            hasData: true,
+            style: { ...CELL_PAD, background: "#EEF0FE", boxShadow: "inset 0 0 0 2px #4F46E5", color: "#4F46E5" },
           };
         }
         dayCash += rv.cash;
@@ -515,11 +532,11 @@ export function MatrixClient({
       .then((res) => {
         setCell((c) =>
           c.key && c.key.machineId === machineId && c.key.iso === iso
-            ? { ...c, loading: false, rows: res.ok ? res.data.rows : [] }
+            ? { ...c, loading: false, rows: res.ok ? res.data.rows : [], refills: res.ok ? res.data.refills : [] }
             : c,
         );
       })
-      .catch(() => setCell((c) => ({ ...c, loading: false, rows: [] })));
+      .catch(() => setCell((c) => ({ ...c, loading: false, rows: [], refills: [] })));
   };
 
   /** กดช่องในเมทริกซ์ → เปิด popup + โหลดข้อมูล (เฉพาะช่องที่มีข้อมูล + ข้อมูลจริง ไม่ใช่ตัวอย่าง) */
@@ -533,6 +550,7 @@ export function MatrixClient({
       open: true,
       loading: true,
       rows: [],
+      refills: [],
       title: `ตู้ ${gm.code}${gm.nickname ? ` · ${gm.nickname}` : ""}`,
       sub: `${dayLabel} · ${branch?.name ?? ""}`,
       key: { machineId: gm.machineId, iso },
@@ -615,6 +633,7 @@ export function MatrixClient({
       <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 18 }}>
         {rows.map((b) => {
           const on = b.code === branchCode;
+          const pend = b.pending ?? 0;
           return (
             <button
               key={b.id}
@@ -622,7 +641,11 @@ export function MatrixClient({
                 setDrillIdx(null);
                 if (!empty) navigate(b.code, days);
               }}
+              title={pend > 0 ? `${pend} รอบค้าง (ยังไม่ปิด/รอตรวจ)` : undefined}
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
                 whiteSpace: "nowrap",
                 cursor: "pointer",
                 fontSize: 12,
@@ -635,6 +658,27 @@ export function MatrixClient({
               }}
             >
               {b.code} · {b.name}
+              {pend > 0 && (
+                // เลขแดง = รอบค้างของสาขานี้ (CEO 2026-08-02) — เห็นทันทีสาขาไหนมีงานค้าง
+                <span
+                  className="num"
+                  style={{
+                    minWidth: 17,
+                    height: 17,
+                    padding: "0 5px",
+                    borderRadius: 9,
+                    background: "#E5484D",
+                    color: "#fff",
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    lineHeight: "17px",
+                    textAlign: "center",
+                    boxShadow: on ? "0 0 0 1.5px rgba(255,255,255,0.55)" : "none",
+                  }}
+                >
+                  {pend}
+                </span>
+              )}
             </button>
           );
         })}
@@ -773,6 +817,10 @@ export function MatrixClient({
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F97316", display: "inline-block" }} />
           รอตรวจ
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 15, height: 13, borderRadius: 4, background: "#EEF0FE", border: "1.5px solid #4F46E5", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>🧸</span>
+          เติมตุ๊กตา (นอกรอบเก็บ)
         </span>
         <span style={{ flex: 1 }} />
         <span>หน่วย: {METRIC_UNIT[metric]}</span>
@@ -1055,6 +1103,7 @@ export function MatrixClient({
         sub={cell.sub}
         loading={cell.loading}
         rows={cell.rows}
+        refills={cell.refills}
         canEdit={canEditRaw}
         onSaved={() => {
           if (cell.key) loadCell(cell.key.machineId, cell.key.iso);

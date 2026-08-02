@@ -33,7 +33,7 @@ import {
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
-import { getBranchRawReadings, type RawReadingRow } from "./raw-readings-queries";
+import { getBranchRawReadings, getMachineDayRefills, type RawReadingRow, type CellRefill } from "./raw-readings-queries";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -992,6 +992,64 @@ export async function adminForceCloseSession(input: unknown): Promise<{ ok: true
   }
 }
 
+/**
+ * ยกเลิก "รอบว่าง" (CEO 2026-08-02) — รอบที่เปิดไว้แต่ยัง "ไม่มีตู้ที่เก็บเลย" (0 รายการ) → กดปิดปกติไม่ได้
+ *   (adminForceCloseSession บังคับให้ "ยกเลิกรอบแทน" แต่เดิมยังไม่มีปุ่มยกเลิกจริง → รอบค้างตัน).
+ *   ตั้งสถานะ CANCELLED เหมือน cron เก็บกวาดสิ้นวัน (enum CfSessionStatus.CANCELLED ออกแบบไว้เพื่อการนี้).
+ * money-safe: รอบว่าง = 0 บาทเสมอ (ไม่มี event) → ไม่มีกระทบยอด/ฝาก · guard events===0 กันยกเลิกรอบที่มีเงิน.
+ */
+export async function cancelEmptySession(input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.object({ sessionCode: z.string().min(1, "ไม่ระบุรอบ") }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยกเลิกรอบได้" };
+  }
+  const cf = await prisma.cfCollectionSession.findFirst({
+    where: { orgId, sessionCode: parsed.data.sessionCode, status: "OPEN" },
+    select: { id: true, branchId: true, _count: { select: { events: true } } },
+  });
+  if (!cf) return { ok: false, error: "ไม่พบรอบที่เปิดอยู่ (อาจปิด/ยกเลิกไปแล้ว)" };
+  if (!cf.branchId) return { ok: false, error: "รอบนี้ไม่ใช่ระดับสาขา" };
+  const allowed = await userBranchIds(session);
+  if (allowed !== "ALL" && !allowed.includes(cf.branchId)) return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  // กันยกเลิกรอบที่ "มีการเก็บแล้ว" — รอบที่มีเงินให้ปิดตามปกติ ไม่ใช่ยกเลิก (กันเงินหาย)
+  if (cf._count.events > 0) return { ok: false, error: 'รอบนี้มีตู้ที่เก็บแล้ว · ให้กด "ปิดรอบตอนนี้" แทน' };
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const upd = await tx.cfCollectionSession.updateMany({
+        where: { id: cf.id, orgId, status: "OPEN" }, // guard status=OPEN กัน race (มีคนปิด/ยกเลิกพร้อมกัน)
+        data: {
+          status: "CANCELLED",
+          closedById: session.user.id,
+          closedAt: new Date(),
+          reviewNote: "ยกเลิกรอบว่าง (ไม่มีตู้ที่เก็บ · แอดมิน/ผจก.)",
+        },
+      });
+      if (upd.count === 0) return { cancelled: false };
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: "CF_SESSION_CANCEL_EMPTY",
+          resourceType: "CF_COLLECTION_SESSION",
+          resourceId: cf.id,
+          diff: { old: { status: "OPEN" }, new: { status: "CANCELLED" } },
+        },
+      });
+      return { cancelled: true };
+    });
+    if (!result.cancelled) return { ok: false, error: "รอบนี้ถูกปิด/ยกเลิกไปแล้ว (มีคนทำพร้อมกัน)" };
+    revalidatePath("/clawfleet/os/collections");
+    revalidatePath("/clawfleet/os/dashboard");
+    revalidatePath("/clawfleet/os/matrix");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `ยกเลิกรอบไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
 // =============================================================
 // #3 (CEO 2026-07-19) · แก้เลขในใบเก็บเดิม (in-place edit) — พนักงานเอง · เฉพาะรอบล่าสุดของตู้ · วันนี้
 //   กรอกเงิน/มิเตอร์ผิด แล้วกดส่งไปแล้ว → แก้ตัวเลขในใบเดิมได้ (ไม่ต้องยกเลิก+เก็บใหม่).
@@ -1456,18 +1514,24 @@ const CellReadingsSchema = z.object({
 
 export async function getMatrixCellReadings(
   input: unknown,
-): Promise<ResultOf<{ rows: RawReadingRow[] }>> {
+): Promise<ResultOf<{ rows: RawReadingRow[]; refills: CellRefill[] }>> {
   const parsed = CellReadingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   try {
-    const res = await getBranchRawReadings({
-      branchCode: parsed.data.branchCode,
-      machineId: parsed.data.machineId,
-      isoDay: parsed.data.isoDay,
-    });
+    const [res, refills] = await Promise.all([
+      getBranchRawReadings({
+        branchCode: parsed.data.branchCode,
+        machineId: parsed.data.machineId,
+        isoDay: parsed.data.isoDay,
+      }),
+      // เติมตุ๊กตานอกรอบเก็บ (ถ้ามี) — โชว์ในช่อง 🧸 refill-only ด้วย
+      parsed.data.machineId && parsed.data.isoDay
+        ? getMachineDayRefills({ machineId: parsed.data.machineId, isoDay: parsed.data.isoDay })
+        : Promise.resolve([] as CellRefill[]),
+    ]);
     // เรียงเก่า→ใหม่ ในช่องเดียว (ตั้งต้นอยู่บนสุด · รอบเก็บไล่ลงมา) — อ่านง่ายกว่า
     const rows = [...res.rows].reverse();
-    return { ok: true, data: { rows } };
+    return { ok: true, data: { rows, refills } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ" };
   }
