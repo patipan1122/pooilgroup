@@ -20,7 +20,7 @@ export type CfStockProductRow = {
   reorderLevel: number; // เกณฑ์เตือนใกล้หมด (cf ไม่มี field → ค่าคงที่)
 };
 
-const CF_REORDER_LEVEL = 8; // ClawFleet ไม่มี reorderLevel ต่อ product → ใช้เกณฑ์รวม
+export const CF_REORDER_LEVEL = 8; // ClawFleet ไม่มี reorderLevel ต่อ product → ใช้เกณฑ์รวม
 
 // =============================================================
 // Warehouse (คลังหลายห้องต่อสาขา) — bigfeature 2026-07-09

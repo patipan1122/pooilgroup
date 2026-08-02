@@ -22,6 +22,7 @@ import {
   getMachineLoadout,
   getInboundDcTransfers,
   getAllReceiptDocs,
+  CF_REORDER_LEVEL,
   type CfReceiptDoc,
 } from "@/lib/clawfleet/stock-queries";
 import {
@@ -48,6 +49,9 @@ const REASON_TH: Record<string, string> = {
   OTHER: "อื่น ๆ",
 };
 
+// ยอดสต๊อกสรุปต่อสาขา (branchId → ยอด) — ตุ๊กตา/มูลค่า/ใกล้หมด สำหรับตาราง "ภาพรวมทุกสาขา"
+type PerBranchStock = Record<string, { dolls: number; valueCents: number; lowCount: number }>;
+
 export default async function StockPage({
   searchParams,
 }: {
@@ -71,6 +75,8 @@ export default async function StockPage({
   let countDocs: DocCountSeed[] = [];
   let lossDocs: DocLossSeed[] = [];
   let warehouseRows: WarehouseRowSeed[] = [];
+  // ยอดสต๊อกจริง "ต่อสาขา" (ทุกสาขา) สำหรับตารางภาพรวม — คำนวณจาก groupBy ชุดเดียวกับคลังกลาง (ไม่ยิง query รายสาขา)
+  let perBranchStock: PerBranchStock = {};
   let shipments: ShipmentSeed[] = [];
   let docBranchId: string | null = null; // สาขาที่โหลดเอกสารจริงมา (= สาขาที่เลือก หรือสาขาแรก)
   let onHandMap: Record<string, number> = {}; // ยอด "ระบบมี" ต่อสินค้า ของสาขาเอกสาร (กันนับตาบอด)
@@ -204,10 +210,13 @@ export default async function StockPage({
       try {
         const allowed = await userBranchIds(session);
         const branchList = branches.map((b) => ({ id: b.id, name: b.name }));
-        [warehouseRows, receiptAllDocs] = await Promise.all([
+        const [wh, allRc] = await Promise.all([
           loadWarehouseRows(orgId, allowed, branches),
           getAllReceiptDocs(orgId, allowed, branchList).catch(() => [] as CfReceiptDoc[]),
         ]);
+        warehouseRows = wh.rows;
+        perBranchStock = wh.perBranchStock; // ยอดจริงทุกสาขา (คำนวณจาก groupBy เดียวกับคลังกลาง)
+        receiptAllDocs = allRc;
       } catch {
         // graceful
       }
@@ -228,19 +237,31 @@ export default async function StockPage({
 
       branchSeeds = branches.map((b) => {
         // "isFirst" = สาขาเอกสารที่โหลดข้อมูลจริงมา (อาจไม่ใช่ index 0 ถ้าเลือกสาขาอื่นผ่าน ?branch)
+        //   สาขานี้ = ใช้ค่าที่คิดละเอียด (getCfStockOverview/getV2BranchStock) → เลขตรงเป๊ะเหมือนที่เคยเห็น
+        //   สาขาอื่น = ใช้ยอดสรุปจาก perBranchStock (คำนวณครั้งเดียวครอบทุกสาขา · ไม่ยิง query รายสาขา)
         const isFirst = b.id === first.id;
+        const agg = perBranchStock[b.id];
         const dolls = isFirst && branchStock
           ? branchStock.stock.reduce((s, e) => s + e.warehouse + e.inMachines, 0)
-          : 0;
-        const valueCents = isFirst && overview ? overview.inventoryValueCents : 0;
-        const lowCount = isFirst && overview ? overview.lowCount : 0;
+          : (agg?.dolls ?? 0);
+        const valueCents = isFirst && overview ? overview.inventoryValueCents : (agg?.valueCents ?? 0);
+        const lowCount = isFirst && overview ? overview.lowCount : (agg?.lowCount ?? 0);
+        // ใบรับสินค้า (3 ล่าสุด) — สาขานี้ใช้รายการที่โหลดมาแล้ว · สาขาอื่นดึงจาก receiptAllDocs (โหลดครบทุกสาขาอยู่แล้ว)
         const rcs: ReceiptSeed[] = isFirst
           ? receipts.slice(0, 3).map((r) => ({
               items: `${r.itemsCount} รายการ · ${r.receiptCode}`,
               date: r.createdAt.toISOString(),
-              status: "received",
+              status: "received" as const,
             }))
-          : [];
+          : receiptAllDocs
+              .filter((d) => d.branchId === b.id)
+              .sort((a, c) => (a.dateISO < c.dateISO ? 1 : -1))
+              .slice(0, 3)
+              .map((d) => ({
+                items: `${d.itemsCount} รายการ · ${d.docCode}`,
+                date: d.dateISO,
+                status: d.status,
+              }));
         return {
           branchId: b.id,
           branch: b.name,
@@ -248,11 +269,11 @@ export default async function StockPage({
           valueCents,
           lowCount,
           receipts: rcs,
-          hasReal: isFirst && dolls > 0,
+          hasReal: dolls > 0 || valueCents > 0,
         };
       });
 
-      // ถ้าสาขาแรกก็ไม่มีของจริงเลย → ถือว่าทั้งหน้าไม่มี data จริง → client sample เต็ม
+      // ไม่มีสาขาไหนมีของจริงเลย → ถือว่าทั้งหน้ายังไม่มี data → client sample/empty เต็ม
       if (!branchSeeds.some((s) => s.hasReal)) branchSeeds = [];
     }
   } catch {
@@ -319,21 +340,21 @@ async function loadWarehouseRows(
   orgId: string,
   allowed: string[] | "ALL",
   branches: { id: string; name: string }[],
-): Promise<WarehouseRowSeed[]> {
+): Promise<{ rows: WarehouseRowSeed[]; perBranchStock: PerBranchStock }> {
   const branchFilter = allowed === "ALL" ? {} : { branchId: { in: allowed } };
   const branchName = new Map(branches.map((b) => [b.id, b.name]));
 
   const products = await prisma.cfProduct.findMany({
     where: { orgId, isActive: true },
-    select: { id: true, name: true, category: true },
+    select: { id: true, name: true, category: true, unitCostCents: true },
     orderBy: { name: "asc" },
   });
-  if (products.length === 0) return [];
+  if (products.length === 0) return { rows: [], perBranchStock: {} };
 
   // ยอดคลังต่อ product (รวมทุกสาขา) + ยอดต่อ product×สาขา (สำหรับ distribution bar)
   // machineId null = GROSS (รับเข้าคลัง · ยังไม่หักที่ยกไปตู้) · machineId NOT null = ที่โหลดเข้าตู้แล้ว
   // net "บนชั้น" = gross − inMachines (ของที่หยิบมาโหลดได้จริง) — display-only ไม่แตะ ledger writes
-  const [totals, machineTotals, perBranch, perBranchMachines] = await Promise.all([
+  const [totals, machineTotals, perBranch, perBranchMachines, branchMachineDolls] = await Promise.all([
     prisma.cfStockMovement.groupBy({
       by: ["productId"],
       where: { orgId, machineId: null, ...branchFilter },
@@ -354,6 +375,12 @@ async function loadWarehouseRows(
       by: ["productId", "branchId"],
       where: { orgId, machineId: { not: null }, ...branchFilter },
       _sum: { qty: true },
+    }),
+    // ตุ๊กตา "ในตู้" ต่อสาขา = ผลรวมมิเตอร์ตู้ (lastDollStock) — ให้เลข "ตุ๊กตาในสต็อก" รายสาขาตรงกับที่หน้าเจาะสาขาใช้
+    prisma.cfMachine.groupBy({
+      by: ["branchId"],
+      where: { orgId, kind: "CLAW", isActive: true, ...branchFilter },
+      _sum: { lastDollStock: true },
     }),
   ]);
   const totalMap = new Map(totals.map((t) => [t.productId, { qty: t._sum.qty ?? 0, last: t._max.occurredAt }]));
@@ -380,7 +407,44 @@ async function loadWarehouseRows(
   }
   const pcat = new Map(products.map((p) => [p.id, p]));
 
-  return Array.from(totalMap.entries())
+  // ── ยอดสต๊อกสรุปต่อสาขา (ทุกสาขา) — reuse groupBy ชุดเดียวกับด้านบน · ไม่ยิง query รายสาขา ──
+  //   dolls = ตุ๊กตาในคลัง (movement machineId null · clamp ลบ=0) + ตุ๊กตาในตู้ (มิเตอร์ lastDollStock)
+  //   valueCents = (ยอดคลัง + ที่โหลดเข้าตู้) × ต้นทุนต่อชิ้น  → ตรงสูตร getCfStockOverview
+  //   lowCount = สินค้าที่ "มีของในสาขา" และยอดคลัง ≤ เกณฑ์รวม (CF_REORDER_LEVEL)
+  const costMap = new Map(products.map((p) => [p.id, p.unitCostCents]));
+  const machineDollMap = new Map(branchMachineDolls.map((m) => [m.branchId, m._sum.lastDollStock ?? 0]));
+  const imByKey = new Map<string, number>(); // `${branchId}|${productId}` → ในตู้ (abs)
+  for (const r of perBranchMachines) imByKey.set(`${r.branchId}|${r.productId}`, Math.abs(r._sum.qty ?? 0));
+  const agg = new Map<string, { whDolls: number; valueCents: number; low: number }>();
+  const bucket = (bid: string) => {
+    let a = agg.get(bid);
+    if (!a) { a = { whDolls: 0, valueCents: 0, low: 0 }; agg.set(bid, a); }
+    return a;
+  };
+  for (const r of perBranch) {
+    const wh = r._sum.qty ?? 0;
+    const im = imByKey.get(`${r.branchId}|${r.productId}`) ?? 0;
+    const cost = costMap.get(r.productId) ?? 0;
+    const a = bucket(r.branchId);
+    a.whDolls += Math.max(0, wh);         // ตุ๊กตาในคลัง (clamp ลบ=0 · ตรงกับ getV2BranchStock)
+    a.valueCents += wh * cost;            // มูลค่าส่วนคลัง
+    if ((wh !== 0 || im !== 0) && wh <= CF_REORDER_LEVEL) a.low += 1; // ใกล้หมด = มีของ + ยอดคลัง ≤ เกณฑ์
+  }
+  for (const r of perBranchMachines) {
+    const im = Math.abs(r._sum.qty ?? 0);
+    bucket(r.branchId).valueCents += im * (costMap.get(r.productId) ?? 0); // + มูลค่าส่วนที่โหลดเข้าตู้
+  }
+  const perBranchStock: PerBranchStock = {};
+  for (const b of branches) {
+    const a = agg.get(b.id);
+    perBranchStock[b.id] = {
+      dolls: (a?.whDolls ?? 0) + (machineDollMap.get(b.id) ?? 0),
+      valueCents: Math.round(a?.valueCents ?? 0),
+      lowCount: a?.low ?? 0,
+    };
+  }
+
+  const rows = Array.from(totalMap.entries())
     .map(([productId, v]) => {
       const p = pcat.get(productId);
       const inMachines = machineMap.get(productId) ?? 0;
@@ -397,6 +461,8 @@ async function loadWarehouseRows(
     })
     .filter((r) => r.qty > 0)
     .sort((a, b) => b.qty - a.qty);
+
+  return { rows, perBranchStock };
 }
 
 /** ใบกระจายจริง (cf_deliveries + lines) รวมทุกสาขาที่ user เห็น */

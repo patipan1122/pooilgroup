@@ -403,11 +403,14 @@ function OverviewTab({
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
   const [asOfPending, startAsOfTransition] = useTransition();
 
-  // ── เจาะดูสต็อกตาม "สาขาที่เลือก" จากตัวสลับใหญ่ (CEO 2026-07-28 · ยุบตัวเลือกซ้ำในแท็บทิ้ง) ──
-  // viewBranchId = สาขาที่เลือกทั้งหน้า → แท็บภาพรวมโชว์คลังของสาขานั้นเลย (ไม่ต้องมี dropdown ในแท็บ)
-  const viewBranchId = selectedBranchId ?? "";
-  const viewBranchName = realBranches.find((b) => b.id === viewBranchId)?.name ?? null;
-  const scoped = viewBranchName != null; // กำลังเจาะดูสาขาเดียว
+  // ── โหมดดู: "ทุกสาขา" (ค่าเริ่มต้น · ภาพรวมสาขาละบรรทัด) หรือ "สาขานี้" (เจาะสาขาที่เลือกจากตัวสลับใหญ่) ──
+  //   CEO 2026-08-02: เปิดหน้ามาเห็นทุกสาขาก่อน · กด "สาขานี้" เพื่อโฟกัสสาขาที่เลือก (เหมือน flow เดิม)
+  const [allBranches, setAllBranches] = useState(true);
+  const selName = realBranches.find((b) => b.id === (selectedBranchId ?? ""))?.name ?? null;
+  const canScope = selName != null; // มีสาขาที่เลือกไว้ให้เจาะได้ไหม (ถ้าไม่มี → มีแต่โหมดทุกสาขา)
+  const scoped = !allBranches && canScope; // เจาะดูสาขาเดียว = เฉพาะตอนสลับไปโหมด "สาขานี้"
+  const viewBranchId = scoped ? (selectedBranchId as string) : "";
+  const viewBranchName = scoped ? selName : null;
 
   // วันนี้ (YYYY-MM-DD ในโซน browser) = ค่า default + เพดานบนของ date picker (ย้อนหลังเท่านั้น)
   const todayYmd = useMemo(() => {
@@ -451,10 +454,24 @@ function OverviewTab({
     return rows;
   }, [scoped, warehouseAll, viewBranchId]);
 
-  // แถวสต็อกรายสาขา — เจาะสาขา → เหลือแถวสาขานั้นแถวเดียว
-  const visibleBranchRows = useMemo(
-    () => (scoped ? branchRows.filter((b) => b.branchId === viewBranchId) : branchRows),
-    [scoped, branchRows, viewBranchId],
+  // แถวสต็อกรายสาขา — โหมดสาขานี้: เหลือแถวเดียว · โหมดทุกสาขา: ทุกสาขา เรียงมูลค่ามาก→น้อย · สาขาไม่มีของไปล่างสุด
+  const visibleBranchRows = useMemo(() => {
+    if (scoped) return branchRows.filter((b) => b.branchId === viewBranchId);
+    const isEmpty = (b: BranchRow) => b.dolls <= 0 && b.valueBaht <= 0;
+    return [...branchRows].sort((a, b) => {
+      const ea = isEmpty(a), eb = isEmpty(b);
+      if (ea !== eb) return ea ? 1 : -1; // สาขายังไม่มีของ → ดันไปล่างสุด
+      return b.valueBaht - a.valueBaht;  // มูลค่ามากอยู่บน
+    });
+  }, [scoped, branchRows, viewBranchId]);
+
+  // ยอดรวมทุกสาขา (แถวสรุปท้ายตาราง เฉพาะโหมดทุกสาขา)
+  const grand = useMemo(
+    () => branchRows.reduce(
+      (t, b) => { t.dolls += b.dolls; t.valueBaht += b.valueBaht; t.low += b.low; return t; },
+      { dolls: 0, valueBaht: 0, low: 0 },
+    ),
+    [branchRows],
   );
 
   const flow = [
@@ -514,10 +531,34 @@ function OverviewTab({
 
       {/* per-branch stock table */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>ภาพรวมสต็อกรายสาขา</span>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>ภาพรวมสต็อก{allBranches ? "ทุกสาขา" : "รายสาขา"}</span>
         <span style={{ fontSize: 12, color: "#9AA1AB" }}>ตุ๊กตา/มูลค่าสต็อก = ข้อมูลจริง · กดแถวเพื่อเจาะดูสาขานั้น + ใบรับสินค้า</span>
         {isBackdated && (
           <span style={{ fontSize: 11, fontWeight: 600, color: "#4F46E5" }}>· มูลค่าคิด ณ {fmtDate(asOfISO!)}</span>
+        )}
+        {canScope && (
+          <>
+            <span style={{ flex: 1 }} />
+            <div style={{ display: "inline-flex", gap: 3, background: "#F1F2F5", borderRadius: 9, padding: 3 }}>
+              {([[true, "ทุกสาขา"], [false, selName ?? "สาขานี้"]] as [boolean, string][]).map(([v, label]) => {
+                const active = allBranches === v;
+                return (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    onClick={() => setAllBranches(v)}
+                    style={{
+                      border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 7,
+                      background: active ? "#fff" : "transparent", color: active ? "#1A1D21" : "#8A909A",
+                      boxShadow: active ? "0 1px 2px rgba(0,0,0,.06)" : "none", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#9AA1AB", marginBottom: 12 }}>
@@ -541,12 +582,13 @@ function OverviewTab({
             ) : visibleBranchRows.map((b) => {
               const isOpen = open === b.branchId;
               const hasDolls = b.dolls > 0; // มีของจริง → โชว์ค่าประมาณ · ไม่มี → "—" (ไม่เดา)
+              const isEmpty = b.dolls <= 0 && b.valueBaht <= 0; // สาขายังไม่มีสต๊อก → แสดงตัวจาง
               return (
                 <div key={b.branchId} style={{ background: isOpen ? "#FAFBFE" : "#fff", borderBottom: "1px solid #F4F5F7" }}>
                   <div
                     className="co-rowlink"
                     onClick={() => setOpen(isOpen ? null : b.branchId)}
-                    style={{ display: "grid", gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", fontSize: 13 }}
+                    style={{ display: "grid", gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", fontSize: 13, opacity: isEmpty && !isOpen ? 0.5 : 1 }}
                   >
                     <span style={{ fontWeight: 700 }}>{b.branch}</span>
                     <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(b.dolls)} ตัว</span>
@@ -609,6 +651,26 @@ function OverviewTab({
                 </div>
               );
             })}
+            {!scoped && visibleBranchRows.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr",
+                  padding: "13px 20px", alignItems: "center", fontSize: 13,
+                  background: "#FAFBFC", borderTop: "2px solid #ECEEF1",
+                }}
+              >
+                <span style={{ fontWeight: 800 }}>รวมทุกสาขา</span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 800 }}>{num(grand.dolls)} ตัว</span>
+                <span className="num" style={{ textAlign: "right", fontWeight: 800 }}>{bahtN(grand.valueBaht)}</span>
+                <span style={{ textAlign: "right", color: "#C2C7CF" }}>—</span>
+                <span style={{ textAlign: "right", color: "#C2C7CF" }}>—</span>
+                <span style={{ textAlign: "right", color: "#C2C7CF" }}>—</span>
+                <span className="num" style={{ textAlign: "center", fontWeight: 800, color: grand.low > 0 ? "#B42318" : "#C2C7CF" }}>{grand.low > 0 ? grand.low : "—"}</span>
+                <span style={{ textAlign: "center", color: "#C2C7CF" }}>—</span>
+                <span />
+              </div>
+            )}
           </div>
         </div>
       </div>
