@@ -215,6 +215,70 @@ export async function reviewV2Session(
   return { ok: true };
 }
 
+/**
+ * CEO 2026-08-02 · ตรวจ/ยืนยัน "รายตู้" (1 event) จากรายงานเจาะสาขา (matrix).
+ *   confirmed=true  → reviewed_at=now + reviewed_by_id=me → ช่องเงินขาด/เกิน แดง→ฟ้า (ตรวจแล้ว)
+ *   confirmed=false → ล้าง (ฟ้า→แดงกลับ · เผื่อกดผิด)
+ *   ⚠️ ไม่แตะเงิน/มิเตอร์ — แค่สถานะ "ตรวจแล้ว" รายตู้ · gate=admin/ผจก. + SoD (ห้ามตรวจใบที่ตัวเองเก็บ) + audit.
+ */
+export async function reviewCellEvent(input: unknown): Promise<Result> {
+  const parsed = z.object({ eventId: z.string().uuid(), confirmed: z.boolean() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };
+  const { eventId, confirmed } = parsed.data;
+  const session = await requireSession();
+  const orgId = session.user.org_id;
+
+  // A1 · เฉพาะแอดมิน/ผจก.สาขา (mirror reviewV2Session)
+  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตรวจ/ยืนยันได้" };
+  }
+
+  const ev = await prisma.cfCollectionEvent.findFirst({
+    where: { id: eventId, orgId },
+    select: { id: true, collectedById: true, reviewedAt: true, machine: { select: { branchId: true } } },
+  });
+  if (!ev) return { ok: false, error: "ไม่พบใบเก็บนี้" };
+
+  // branch-access guard
+  const allowed = await userBranchIds(session);
+  const branchId = ev.machine?.branchId ?? null;
+  if (allowed !== "ALL" && (!branchId || !allowed.includes(branchId))) {
+    return { ok: false, error: "ไม่มีสิทธิ์เข้าถึงสาขานี้" };
+  }
+
+  // F2 · SoD: ห้ามยืนยันใบที่ตัวเองเป็นคนเก็บ (กันตรวจปิดคดีตัวเอง) — undo (confirmed=false) ทำได้
+  if (confirmed && ev.collectedById === session.user.id) {
+    return { ok: false, error: "ยืนยันใบที่ตัวเองเก็บไม่ได้ · ให้คนอื่นตรวจ" };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.cfCollectionEvent.update({
+        where: { id: ev.id },
+        data: confirmed
+          ? { reviewedAt: new Date(), reviewedById: session.user.id }
+          : { reviewedAt: null, reviewedById: null },
+      });
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: session.user.id,
+          action: confirmed ? "CF_CELL_REVIEW_CONFIRM" : "CF_CELL_REVIEW_UNDO",
+          resourceType: "CF_COLLECTION_EVENT",
+          resourceId: ev.id,
+          diff: { old: { reviewedAt: ev.reviewedAt?.toISOString() ?? null }, new: { reviewedAt: confirmed ? "now" : null } },
+        },
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || "บันทึกไม่สำเร็จ" };
+  }
+
+  revalidatePath("/clawfleet/os/matrix");
+  revalidatePath("/clawfleet/os/collections");
+  return { ok: true };
+}
+
 // =============================================================
 // Branch-based collection flow (staff mobile · 5-step design)
 // Requires migration 20260528000001 applied (branch_id + prize cols + 5th photo).

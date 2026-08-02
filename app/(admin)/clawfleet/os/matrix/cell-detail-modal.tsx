@@ -8,11 +8,15 @@
  */
 
 import { useState } from "react";
-import { ImageIcon, Pencil, AlertTriangle, X, Loader2 } from "lucide-react";
+import { ImageIcon, Pencil, AlertTriangle, X, Loader2, Check, ShieldCheck } from "lucide-react";
 import { Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN } from "@/components/clawfleet/os/format";
 import { MeterEditModal } from "./meter-edit";
+import { reviewCellEvent } from "@/lib/clawfleet/actions";
 import type { RawReadingRow, RawReadingPhoto } from "@/lib/clawfleet/raw-readings-queries";
+
+/** ธงเงินขาด/เกินรายตู้ (matrix ช่องแดง→ฟ้า) — ตรงกับ SQL money_off */
+const CASH_OFF_FLAGS = ["M2_CASH_SHORT_MINOR", "M3_CASH_SHORT_MAJOR", "M4_CASH_OVER", "M6_CASH_OVER_MAJOR"];
 
 const nfmt = (n: number | null | undefined): string => (n == null ? "—" : n.toLocaleString("en-US"));
 
@@ -49,14 +53,29 @@ function EventCard({
   canEdit,
   onView,
   onEdit,
+  onConfirmed,
 }: {
   row: RawReadingRow;
   canEdit: boolean;
   onView: (p: RawReadingPhoto) => void;
   onEdit: (r: RawReadingRow) => void;
+  onConfirmed: () => void;
 }) {
   const isInit = row.kind === "INITIAL";
   const hasFlag = row.anomalyFlags.length > 0 || !!row.shortReason;
+  // CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ปุ่มตรวจ/ยืนยัน (แดง→ฟ้า) ตรงกับสีช่องใน matrix
+  const moneyOff = row.anomalyFlags.some((f) => CASH_OFF_FLAGS.includes(f));
+  const reviewed = !!row.reviewedAt;
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewErr, setReviewErr] = useState<string | null>(null);
+  async function toggleReview() {
+    setReviewErr(null);
+    setReviewBusy(true);
+    const r = await reviewCellEvent({ eventId: row.eventId, confirmed: !reviewed });
+    setReviewBusy(false);
+    if (r.ok) onConfirmed();
+    else setReviewErr(r.error);
+  }
   // แก้ได้ = มีสิทธิ์ + ยังไม่ฝาก + รอบปิดรอตรวจแล้ว (ทั้งรอบเก็บและตั้งต้น · server re-check อีกชั้น)
   const editable =
     canEdit && !row.deposited && (row.sessionStatus === "CLOSED" || row.sessionStatus === "ANOMALY_REVIEW");
@@ -83,6 +102,19 @@ function EventCard({
             style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 8, background: "#EEF0FE", color: "#4F46E5", border: "1px solid #DDE0FB" }}
           >
             <Pencil size={12} /> แก้
+          </button>
+        )}
+        {/* CEO 2026-08-02 · ตรวจ/ยืนยันรายตู้ (เฉพาะช่องเงินขาด/เกิน) — แดง→ฟ้า · กดซ้ำ = ยกเลิก */}
+        {canEdit && moneyOff && (
+          <button
+            onClick={toggleReview}
+            disabled={reviewBusy}
+            title={reviewErr ?? (reviewed ? "ตรวจแล้ว · กดเพื่อยกเลิก" : "ยืนยันว่าตรวจแล้ว (ช่องจะเปลี่ยนเป็นฟ้า)")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: reviewBusy ? "default" : "pointer", fontSize: 11.5, fontWeight: 700, padding: "5px 11px", borderRadius: 8,
+              ...(reviewed ? { background: "#E5F2FD", color: "#0B69C7", border: "1px solid #C9E4FA" } : { background: "#FDECEC", color: "#C0392B", border: "1px solid #F4CFCF" }) }}
+          >
+            {reviewBusy ? <Loader2 size={12} style={{ animation: "cf-spin 0.8s linear infinite" }} /> : reviewed ? <Check size={12} /> : <ShieldCheck size={12} />}
+            {reviewed ? "ตรวจแล้ว" : "ยืนยันตรวจ"}
           </button>
         )}
       </div>
@@ -161,7 +193,7 @@ export function CellDetailModal({
             <EmptyState icon={<ImageIcon size={26} />} title="ไม่มีข้อมูลในวันนี้" sub="ช่องนี้อาจเป็นข้อมูลตัวอย่าง หรือรายการถูกย้าย/ลบไปแล้ว" />
           ) : (
             rows.map((r) => (
-              <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} />
+              <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} onConfirmed={onSaved} />
             ))
           )}
         </div>

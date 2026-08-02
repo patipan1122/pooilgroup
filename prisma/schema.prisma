@@ -2347,6 +2347,10 @@ model CfCollectionEvent {
   // anomaly flags ราย event (เก็บแยกจาก session-level)
   anomalyFlags        String[]    @default([]) @map("anomaly_flags")
   notes               String?
+  // CEO 2026-08-02 · ตรวจ/ยืนยัน "รายตู้" จากรายงานเจาะสาขา (matrix) — ช่องเงินขาด/เกิน แดง→ฟ้าเมื่อตรวจแล้ว
+  //   null = ยังไม่ตรวจ · มีค่า = ตรวจ/ยืนยันแล้ว (ไม่แตะเงิน · แค่สถานะตรวจรายตู้)
+  reviewedAt          DateTime?   @map("reviewed_at") @db.Timestamptz(6)
+  reviewedById        String?     @map("reviewed_by_id") @db.Uuid
   // idempotency key (offline retry / double-tap) — เดิมฝังใน notes marker [BASELINE_KEY] (fake-safety · AUD 2026-07-19)
   //   ย้ายมาเป็นคอลัมน์จริง + partial unique index (org_id, client_key) → กันซ้ำที่ DB ไม่ใช่ substring บน free-text
   clientKey           String?     @map("client_key")

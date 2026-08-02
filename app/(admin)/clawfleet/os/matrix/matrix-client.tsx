@@ -37,6 +37,9 @@ export type MatrixSerialDay = {
   collected: boolean;
   /** มีรอบ "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม */
   anomaly: boolean;
+  /** CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ช่องแดง (ถ้ายังไม่ตรวจ) · ตรวจ/ยืนยันแล้ว → ฟ้าอ่อน */
+  moneyOff?: boolean;
+  moneyReviewed?: boolean;
 };
 /** ตู้ + map isoDay → ค่ารายวัน (เฉพาะวันที่มี event) */
 export type MatrixSerialMachine = {
@@ -365,6 +368,9 @@ export function MatrixClient({
           primary = costVal;
           cellRows = [{ v: rv.cost == null ? "—" : bahtN(rv.cost), style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
         }
+        // CEO 2026-08-02 · เงินขาด/เกิน = ช่องแดง · พอ admin ตรวจ/ยืนยัน = ฟ้าอ่อน (ไม่ปล่อยแดงค้าง) — เด่นกว่า heatmap
+        if (rv.moneyReviewed) bg = "#E5F2FD";        // ฟ้าอ่อน = ตรวจแล้ว
+        else if (rv.moneyOff) bg = "#FCE4E4";        // แดงอ่อน = เงินไม่ตรง ยังไม่ตรวจ
         daySum += primary;
         dayCnt += 1;
         return {
@@ -376,12 +382,16 @@ export function MatrixClient({
           style: {
             ...CELL_PAD,
             background: bg,
-            // รอตรวจ (anomaly) เด่นสุด → กรอบส้ม · ไม่งั้น refill → กรอบคราม
-            ...(rv.anomaly
-              ? { boxShadow: "inset 0 0 0 2px #F97316" }
-              : rv.swapped
-                ? { boxShadow: "inset 0 0 0 2px #4F46E5" }
-                : {}),
+            // เงินขาด/เกินเด่นสุด → แดง(ยังไม่ตรวจ)/ฟ้า(ตรวจแล้ว) · ไม่งั้น รอตรวจ→ส้ม · refill→คราม
+            ...(rv.moneyOff && !rv.moneyReviewed
+              ? { boxShadow: "inset 0 0 0 2px #E5484D" }
+              : rv.moneyReviewed
+                ? { boxShadow: "inset 0 0 0 2px #3B9EED" }
+                : rv.anomaly
+                  ? { boxShadow: "inset 0 0 0 2px #F97316" }
+                  : rv.swapped
+                    ? { boxShadow: "inset 0 0 0 2px #4F46E5" }
+                    : {}),
           },
         };
       });

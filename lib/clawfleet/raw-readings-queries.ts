@@ -48,6 +48,8 @@ export type RawReadingRow = {
   notes: string | null;
   sessionStatus: string | null; // OPEN/CLOSED/ANOMALY_REVIEW/LOCKED/CANCELLED/null
   deposited: boolean; // ฝากธนาคารแล้ว → immutable
+  /** CEO 2026-08-02 · ตรวจ/ยืนยันรายตู้แล้วหรือยัง (ISO · null = ยังไม่ตรวจ) — matrix ช่องแดง→ฟ้า */
+  reviewedAt: string | null;
   /** แก้เลขได้ไหม (เฉพาะ COLLECTION · รอบปิดรอตรวจ · ยังไม่ฝาก/ไม่ล็อก) */
   editable: boolean;
   photos: RawReadingPhoto[];
@@ -154,6 +156,7 @@ export async function getBranchRawReadings(opts: {
       refillQty: true,
       shortReason: true,
       anomalyFlags: true,
+      reviewedAt: true,
       notes: true,
       photoMeterBeforeUrl: true,
       photoPrizeMeterUrl: true,
@@ -218,6 +221,7 @@ export async function getBranchRawReadings(opts: {
       refillQty: e.refillQty ?? null,
       shortReason: cleanNote(e.shortReason),
       anomalyFlags: e.anomalyFlags ?? [],
+      reviewedAt: e.reviewedAt ? e.reviewedAt.toISOString() : null,
       notes: cleanNote(e.notes),
       sessionStatus: status,
       deposited,
