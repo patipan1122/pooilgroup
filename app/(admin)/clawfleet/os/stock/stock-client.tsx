@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle, Info, Warehouse, Store, Monitor, ChevronRight, FileText,
   Boxes, ArrowRight, Plus, Trash2, Inbox, Check, X, Clock, ScanLine, Download,
-  Undo2, Loader2,
+  Undo2, Loader2, ImageOff,
 } from "lucide-react";
 import { Card, IconBox, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, thDate } from "@/components/clawfleet/os/format";
@@ -67,7 +67,7 @@ export type DocLossSeed = {
 };
 export type WarehouseRowSeed = {
   // qty = gross (รวมของในตู้) · inMachines = ที่โหลดเข้าตู้ · net = บนชั้น (หยิบมาโหลดได้จริง)
-  id: string; name: string; cat: string; qty: number; inMachines: number; net: number; recvISO: string | null;
+  id: string; name: string; cat: string; imageUrl: string | null; qty: number; inMachines: number; net: number; recvISO: string | null;
   dist: { branchId: string; branch: string; qty: number; inMachines: number }[];
 };
 export type ShipmentSeed = {
@@ -97,7 +97,7 @@ type BranchRow = {
 };
 type WarehouseItem = {
   // qty = gross (รวมทั้งหมด) · inMachines = ในตู้ · net = บนชั้น (พร้อมโหลด)
-  id: string; name: string; cat: string; qty: number; inMachines: number; net: number; recvISO: string;
+  id: string; name: string; cat: string; imageUrl: string | null; qty: number; inMachines: number; net: number; recvISO: string;
   tag: "ใหม่" | "ปกติ" | "เก่า"; ageDays: number;
   dist: { branchId: string; branch: string; qty: number; inMachines: number }[];
   hist: { id: string; to: string; qty: number; dateISO: string; status: ShipStatus }[];
@@ -111,11 +111,6 @@ const SHIP_TONE: Record<ShipStatus, { bg: string; color: string; label: string }
   received_diff: { bg: "#FCEDEC", color: "#B42318", label: "รับแล้ว · ไม่ตรง" },
   in_transit: { bg: "#EEF0FE", color: "#4F46E5", label: "กำลังส่ง" },
   pending: { bg: "#FCF1E2", color: "#B45309", label: "รอสาขารับ" },
-};
-const RECEIPT_TONE: Record<ReceiptSeed["status"], { bg: string; color: string; label: string }> = {
-  received: { bg: "#E7F4EC", color: "#15803D", label: "รับครบแล้ว" },
-  pending: { bg: "#FCF1E2", color: "#B45309", label: "รอตรวจรับ" },
-  diff: { bg: "#FCEDEC", color: "#B42318", label: "ไม่ตรง" },
 };
 const AGE_TONE: Record<WarehouseItem["tag"], { bg: string; color: string }> = {
   ใหม่: { bg: "#E7F4EC", color: "#15803D" },
@@ -327,7 +322,7 @@ export function StockClient({
       </div>
 
       {tab === "overview" && (
-        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} asOfISO={asOfISO} empty={empty} selectedBranchId={docBranchId} />
+        <OverviewTab branchRows={branchRows} realBranches={realBranches} products={products} warehouseRows={warehouseRows} receiptAllDocs={receiptAllDocs} asOfISO={asOfISO} empty={empty} selectedBranchId={docBranchId} />
       )}
       {tab === "receipts" && (
         <ReceiptsTab docs={receiptDocs} realBranches={realBranches} products={products} defaultBranchId={defaultBranchId} />
@@ -345,7 +340,12 @@ export function StockClient({
         <DistributionTab realBranches={realBranches} products={products} shipments={shipments} movements={movements} defaultBranchId={defaultBranchId} />
       )}
       {tab === "machines" && (
-        <MachinesLoadoutTab machines={machines} loadoutByMachine={loadoutByMachine} />
+        <MachinesLoadoutTab
+          machines={machines}
+          loadoutByMachine={loadoutByMachine}
+          selectedBranchId={docBranchId}
+          selectedBranchName={realBranches.find((b) => b.id === docBranchId)?.name ?? null}
+        />
       )}
     </div>
   );
@@ -366,6 +366,7 @@ function toWarehouseItem(r: WarehouseRowSeed): WarehouseItem {
     id: r.id,
     name: r.name,
     cat: CAT_TH[r.cat] ?? r.cat,
+    imageUrl: r.imageUrl,
     qty: r.qty,
     inMachines: r.inMachines,
     net: r.net,
@@ -383,6 +384,7 @@ function OverviewTab({
   realBranches,
   products,
   warehouseRows,
+  receiptAllDocs,
   asOfISO,
   empty,
   selectedBranchId,
@@ -391,6 +393,8 @@ function OverviewTab({
   realBranches: BranchOption[];
   products: ProductOption[];
   warehouseRows: WarehouseRowSeed[];
+  // ใบรับทุกสาขา (received + รอรับ) — ใช้แสดง "รับแล้ว/ค้างรับ" + ป๊อปอัปรายละเอียดใบ (CEO pinpoint #2/#4)
+  receiptAllDocs: CfReceiptDoc[];
   // มูลค่าสต๊อก ณ วันที่ (YYYY-MM-DD) · null = ปัจจุบัน
   asOfISO: string | null;
   // ยังไม่มีข้อมูลจริง → ปิด date picker (as-of คิดจาก ledger จริงเท่านั้น) + โชว์ empty state
@@ -402,6 +406,24 @@ function OverviewTab({
   const [open, setOpen] = useState<string | null>(null);
   const [whItem, setWhItem] = useState<WarehouseItem | null>(null);
   const [asOfPending, startAsOfTransition] = useTransition();
+  // ป๊อปอัป/ไลท์บ็อกซ์ที่ใช้ในแท็บนี้ (ใบรับ · ประวัติสินค้า · รูปสินค้าขยาย) — CEO pinpoint #4/#5
+  const [receiptDoc, setReceiptDoc] = useState<CfReceiptDoc | null>(null);
+  const [histProduct, setHistProduct] = useState<{ id: string; name: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ url: string; name: string } | null>(null);
+
+  // ── ใบรับต่อสาขา (received + รอรับ) จาก receiptAllDocs · match ด้วย branchId ──
+  //   ใช้ทั้งชิป "ค้างรับ" หน้าแถว + รายละเอียดในแผงกาง (CEO pinpoint #2/#4/#6)
+  const receiptsByBranch = useMemo(() => {
+    const m = new Map<string, { docs: CfReceiptDoc[]; receivedUnits: number; pendingUnits: number; pendingDocs: number }>();
+    for (const d of receiptAllDocs) {
+      let e = m.get(d.branchId);
+      if (!e) { e = { docs: [], receivedUnits: 0, pendingUnits: 0, pendingDocs: 0 }; m.set(d.branchId, e); }
+      e.docs.push(d);
+      if (d.status === "pending") { e.pendingUnits += d.unitsCount; e.pendingDocs += 1; }
+      else e.receivedUnits += d.unitsCount;
+    }
+    return m;
+  }, [receiptAllDocs]);
 
   // ── โหมดดู: "ทุกสาขา" (ค่าเริ่มต้น · ภาพรวมสาขาละบรรทัด) หรือ "สาขานี้" (เจาะสาขาที่เลือกจากตัวสลับใหญ่) ──
   //   CEO 2026-08-02: เปิดหน้ามาเห็นทุกสาขาก่อน · กด "สาขานี้" เพื่อโฟกัสสาขาที่เลือก (เหมือน flow เดิม)
@@ -583,6 +605,7 @@ function OverviewTab({
               const isOpen = open === b.branchId;
               const hasDolls = b.dolls > 0; // มีของจริง → โชว์ค่าประมาณ · ไม่มี → "—" (ไม่เดา)
               const isEmpty = b.dolls <= 0 && b.valueBaht <= 0; // สาขายังไม่มีสต๊อก → แสดงตัวจาง
+              const rcpt = receiptsByBranch.get(b.branchId); // ใบรับ + ยอดค้างรับของสาขานี้ (CEO pinpoint #2)
               return (
                 <div key={b.branchId} style={{ background: isOpen ? "#FAFBFE" : "#fff", borderBottom: "1px solid #F4F5F7" }}>
                   <div
@@ -590,7 +613,34 @@ function OverviewTab({
                     onClick={() => setOpen(isOpen ? null : b.branchId)}
                     style={{ display: "grid", gridTemplateColumns: "1.1fr 0.95fr 0.95fr 0.85fr 0.95fr 0.8fr 0.65fr 0.65fr 0.3fr", padding: "14px 20px", alignItems: "center", cursor: "pointer", fontSize: 13, opacity: isEmpty && !isOpen ? 0.5 : 1 }}
                   >
-                    <span style={{ fontWeight: 700 }}>{b.branch}</span>
+                    <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                      {/* กดชื่อสาขา → เข้าไปดูสาขานั้นเต็ม ๆ (สต๊อก/ใบรับ/ไส้ในตู้) · CEO pinpoint #1 */}
+                      <button
+                        type="button"
+                        className="co-tap"
+                        title={`เข้าไปดูสาขา${b.branch} (สต๊อก · ใบรับ · ไส้ในตู้)`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAllBranches(false); // เข้าไปโฟกัสสาขานี้จริง (ไม่ค้างโหมดทุกสาขา) · CEO pinpoint #1
+                          const p = new URLSearchParams();
+                          p.set("branch", b.branchId);
+                          if (asOfISO) p.set("asof", asOfISO); // คงวันที่ as-of เดิมไว้
+                          router.push(`/clawfleet/os/stock?${p.toString()}`);
+                        }}
+                        style={{ border: "none", background: "none", padding: 0, font: "inherit", fontWeight: 700, color: "#1A1D21", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0, textAlign: "left" }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.branch}</span>
+                        <ArrowRight size={13} style={{ flex: "0 0 auto", color: "#B6BBC4" }} />
+                      </button>
+                      {rcpt && rcpt.pendingDocs > 0 && (
+                        <span
+                          title={`มีของกำลังส่งมา/ค้างรับ ${rcpt.pendingDocs} ใบ · ${num(rcpt.pendingUnits)} ตัว — กดแถวเพื่อดู`}
+                          style={{ flex: "0 0 auto", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FCF1E2", color: "#B45309", whiteSpace: "nowrap" }}
+                        >
+                          ค้างรับ {num(rcpt.pendingUnits)}
+                        </span>
+                      )}
+                    </span>
                     <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{num(b.dolls)} ตัว</span>
                     <span className="num" style={{ textAlign: "right", fontWeight: 600 }}>{bahtN(b.valueBaht)}</span>
                     <span className="num" style={{ textAlign: "right", color: "#9AA1AB" }}>{hasDolls ? `≈ ${num(b.outDay)} ตัว` : "—"}</span>
@@ -623,27 +673,43 @@ function OverviewTab({
                           </div>
                         </div>
                         <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700 }}>ใบรับสินค้า (โอนจากคลังกลาง)</span>
-                            <span style={{ fontSize: 10, color: "#9AA1AB" }}>· อัปเดตอัตโนมัติ</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 12, fontWeight: 700 }}>ใบรับสินค้า</span>
+                            {rcpt && (rcpt.receivedUnits > 0 || rcpt.pendingUnits > 0) && (
+                              <span style={{ fontSize: 11, color: "#6B7280" }}>
+                                รับแล้ว <b className="num" style={{ color: "#15803D" }}>{num(rcpt.receivedUnits)}</b> · ค้างรับ <b className="num" style={{ color: "#B45309" }}>{num(rcpt.pendingUnits)}</b> ตัว
+                              </span>
+                            )}
                           </div>
-                          {b.receipts.length === 0 && (
+                          {(!rcpt || rcpt.docs.length === 0) && (
                             <div style={{ fontSize: 11.5, color: "#9AA1AB", background: "#F8F9FB", borderRadius: 9, padding: "10px 12px", marginBottom: 7 }}>ยังไม่มีใบรับสินค้าของสาขานี้</div>
                           )}
-                          {b.receipts.map((rc, i) => {
-                            const rt = RECEIPT_TONE[rc.status];
+                          {rcpt?.docs.slice(0, 6).map((d) => {
+                            const rt = RCPT_TONE[d.status];
                             return (
-                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8F9FB", borderRadius: 9, padding: "9px 12px", marginBottom: 7 }}>
+                              <button
+                                key={`${d.status}-${d.kind}-${d.id}`}
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setReceiptDoc(d); }}
+                                title="กดดูรายละเอียดใบรับ — ส่งมาจากใคร · กี่ตัว · มูลค่า · รายการในใบ"
+                                style={{ display: "flex", alignItems: "center", gap: 10, background: "#F8F9FB", border: "1px solid #EEF0F3", borderRadius: 9, padding: "9px 12px", marginBottom: 7, width: "100%", textAlign: "left", cursor: "pointer" }}
+                              >
                                 <IconBox bg="#fff" color="#6B7280" size={30}><FileText size={15} /></IconBox>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rc.items}</div>
-                                  <div className="num" style={{ fontSize: 10.5, color: "#9AA1AB" }}>{fmtDate(rc.date)}</div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {d.fromName ?? "—"}{d.kind === "dc_transfer" ? " · DC" : ""} · {num(d.unitsCount)} ตัว
+                                  </div>
+                                  <div className="num" style={{ fontSize: 10.5, color: "#9AA1AB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.docCode} · {fmtDate(d.dateISO)}</div>
                                 </div>
                                 <span className="num" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: rt.bg, color: rt.color, whiteSpace: "nowrap" }}>{rt.label}</span>
-                              </div>
+                                <ChevronRight size={14} style={{ color: "#C2C7CF", flex: "0 0 auto" }} />
+                              </button>
                             );
                           })}
-                          <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 4 }}>พนักงานสาขากด “ตรวจรับ” เพื่อยืนยันของครบตรงกับใบโอน (แนบรูปได้)</div>
+                          {rcpt && rcpt.docs.length > 6 && (
+                            <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 2 }}>+ อีก {rcpt.docs.length - 6} ใบ — ดูครบที่แท็บ “ใบรับทุกสาขา”</div>
+                          )}
+                          <div style={{ fontSize: 11, color: "#9AA1AB", marginTop: 4 }}>กดที่ใบเพื่อดู: ส่งมาจากใคร · กี่ตัว · มูลค่า · ครบ/ค้างรับ · รายการในใบ</div>
                         </div>
                       </div>
                     </div>
@@ -704,9 +770,11 @@ function OverviewTab({
               const neg = w.net < 0; // ข้อมูล drift → net ติดลบ (โชว์ตามจริง เตือนด้วยสี ไม่ clamp)
               return (
                 <div key={w.id} className="co-rowlink" onClick={() => setWhItem(w)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 0.7fr 1fr 0.7fr 1.1fr", padding: "13px 20px", alignItems: "center", borderBottom: "1px solid #F4F5F7", fontSize: 13, cursor: "pointer" }}>
-                  <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
-                    {w.name}
-                    {low && !neg && <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
+                  <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                    {/* รูปสินค้าย่อ · กดขยายดูได้ (ไม่เปิด modal SKU) · CEO pinpoint #5 */}
+                    <ProductThumbZoom url={w.imageUrl} name={w.name} onZoom={(url) => setLightbox({ url, name: w.name })} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                    {low && !neg && <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#FCEDEC", color: "#B42318" }}>ใกล้หมด</span>}
                   </span>
                   <span style={{ color: "#6B7280", fontSize: 12 }}>{w.cat}</span>
                   {/* บนชั้น (net = รับเข้า − ที่โหลดเข้าตู้) = headline · ในตู้ = secondary (โชว์เฉพาะเมื่อ >0) */}
@@ -752,8 +820,135 @@ function OverviewTab({
       </div>
 
       {/* warehouse item detail modal */}
-      <WarehouseItemModal item={whItem} onClose={() => setWhItem(null)} />
+      <WarehouseItemModal item={whItem} onClose={() => setWhItem(null)} onZoom={(url, name) => setLightbox({ url, name })} />
+
+      {/* ป๊อปอัปรายละเอียดใบรับ (CEO pinpoint #4) → กดสินค้าในใบ = เปิดประวัติสินค้า */}
+      {receiptDoc && (
+        <ReceiptDetailModal
+          doc={receiptDoc}
+          onClose={() => setReceiptDoc(null)}
+          onProduct={(p) => { setReceiptDoc(null); setHistProduct(p); }}
+        />
+      )}
+      {/* ประวัติการเคลื่อนไหวรายสินค้า (ใช้ตัวเดียวกับแท็บใบรับทุกสาขา) */}
+      {histProduct && <ProductHistoryModal key={histProduct.id} product={histProduct} onClose={() => setHistProduct(null)} />}
+      {/* รูปสินค้าขยาย (CEO pinpoint #5) */}
+      {lightbox && <ImageLightbox url={lightbox.url} name={lightbox.name} onClose={() => setLightbox(null)} />}
     </div>
+  );
+}
+
+/* ───────────────────────── รูปสินค้าย่อ + กดขยาย (lightbox) · CEO pinpoint #5 ─────────────────────────
+   ย่อ 34px ในตาราง (แน่น · RULE L) · null = placeholder · กด = เปิดรูปเต็มจอ (stopPropagation กัน modal SKU) */
+function ProductThumbZoom({ url, name, onZoom }: { url: string | null; name: string; onZoom: (u: string) => void }) {
+  const box: React.CSSProperties = { width: 34, height: 34, borderRadius: 8, flex: "0 0 34px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#EEF0F3" };
+  if (!url) return <span style={{ ...box, color: "#C2C7CF" }}><ImageOff size={15} /></span>;
+  return (
+    <button
+      type="button"
+      aria-label={`ดูรูป ${name} ขยาย`}
+      title="กดเพื่อดูรูปสินค้าขยาย"
+      onClick={(e) => { e.stopPropagation(); onZoom(url); }}
+      style={{ ...box, padding: 0, border: "1px solid #E8EAED", cursor: "zoom-in" }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    </button>
+  );
+}
+
+/* lightbox รูปสินค้าเต็มจอ — กดพื้นหลัง/✕/Esc ปิด (z สูงกว่า popover ทั่วไป) */
+function ImageLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 9995, background: "rgba(15,18,22,.82)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}
+    >
+      <button
+        type="button"
+        aria-label="ปิด"
+        onClick={onClose}
+        style={{ position: "absolute", top: 18, right: 20, width: 40, height: 40, borderRadius: 999, border: "none", background: "rgba(255,255,255,.16)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <X size={20} />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt={name} onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92vw", maxHeight: "84vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,.4)" }} />
+      <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, marginTop: 14, textAlign: "center", maxWidth: "90vw", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+    </div>
+  );
+}
+
+/* ───────────────────────── ป๊อปอัปรายละเอียดใบรับ (ใช้ร่วม ภาพรวม + ใบรับทุกสาขา) · CEO pinpoint #4/#6 ─────────────────────────
+   โชว์: ส่งมาจากไหน · ใครส่ง · กี่รายการ/ชิ้น · มูลค่า · รูปแนบ · สถานะ (รับแล้ว/ค้างรับ) + รายการในใบ (กดดูประวัติสินค้า)
+   "เปิดเอกสาร" = ป๊อปอัปนี้เอง (ไม่มี route แยก · Ladder reuse Modal) · READ-ONLY */
+function ReceiptDetailModal({ doc, onClose, onProduct }: {
+  doc: CfReceiptDoc;
+  onClose: () => void;
+  onProduct: (p: { id: string; name: string }) => void;
+}) {
+  const tone = RCPT_TONE[doc.status];
+  const kindLabel = doc.kind === "dc_transfer" ? "คลัง DC" : doc.kind === "cf_delivery" ? "คลังกลาง/สาขา" : "ผู้ขาย";
+  const fields: [string, string][] = [
+    ["ส่งมาจาก", `${doc.fromName ?? "—"}${doc.kind === "dc_transfer" ? " (DC)" : ""}`],
+    ["ประเภทต้นทาง", kindLabel],
+    ["ผู้ส่ง/ผู้สร้าง", doc.senderName ?? "—"],
+    ["จำนวนรายการ", `${num(doc.itemsCount)} รายการ`],
+    ["จำนวนชิ้นรวม", `${num(doc.unitsCount)} ตัว`],
+    ["มูลค่า", doc.totalCostCents != null ? bahtN(Math.round(doc.totalCostCents / 100)) : "—"],
+  ];
+  return (
+    <Modal open onClose={onClose} width={560} title={`ใบรับสินค้า · ${doc.docCode}`} sub={`${doc.branchName} · ${fmtDate(doc.dateISO)}`}>
+      <div style={{ padding: "16px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 13px", borderRadius: 20, background: tone.bg, color: tone.color }}>{tone.label}</span>
+          {doc.status === "pending" && <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "#B45309" }}>ค้างรับ {num(doc.unitsCount)} ตัว</span>}
+          {doc.photoCount > 0 && <span style={{ fontSize: 11.5, color: "#6B7280" }}>{doc.photoCount} รูปแนบ</span>}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          {fields.map(([l, v]) => (
+            <div key={l} style={{ background: "#F8F9FB", borderRadius: 9, padding: "9px 12px" }}>
+              <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>{l}</div>
+              <div className="num" style={{ fontSize: 13, fontWeight: 600, color: "#1A1D21", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {doc.note && <div style={{ fontSize: 12, color: "#6B7280", fontStyle: "italic", marginBottom: 12 }}>“{doc.note}”</div>}
+        <div style={{ fontSize: 11.5, color: doc.status === "received" ? "#15803D" : "#B45309", background: doc.status === "received" ? "#F1F8F3" : "#FEF7EC", borderRadius: 9, padding: "9px 12px", marginBottom: 12 }}>
+          {doc.status === "received"
+            ? "รับเข้าคลังครบแล้ว ตามใบนี้"
+            : "ยังไม่กดรับ — ของกำลังส่งมา/ค้างรับ พนักงานสาขายังไม่ยืนยันรับ"}
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#9AA1AB", marginBottom: 7 }}>รายการในใบ · กดสินค้าเพื่อดูประวัติการเคลื่อนไหว</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {doc.lines.length === 0 && <div style={{ fontSize: 12, color: "#9AA1AB" }}>ไม่มีรายการในใบนี้</div>}
+          {doc.lines.map((l, i) => (
+            <button
+              key={`${l.productId}-${i}`}
+              type="button"
+              disabled={!l.isCfProduct}
+              onClick={() => l.isCfProduct && onProduct({ id: l.productId, name: l.productName })}
+              style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "#fff", border: "1px solid #ECEEF1", borderRadius: 8, padding: "8px 12px", cursor: l.isCfProduct ? "pointer" : "default", opacity: l.isCfProduct ? 1 : 0.6 }}
+            >
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.productName}</span>
+              <span className="num" style={{ fontSize: 12.5, fontWeight: 700, flex: "0 0 auto" }}>×{num(l.qty)}</span>
+              {l.isCfProduct ? (
+                <span style={{ flex: "0 0 auto", fontSize: 10.5, color: "#4F46E5", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <Clock size={12} /> ประวัติ
+                </span>
+              ) : (
+                <span style={{ flex: "0 0 auto", fontSize: 10, color: "#9AA1AB" }}>ยังไม่รับเข้าคลัง</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1298,7 +1493,7 @@ function FromTransferPicker({ open, onClose, branchId, onApply }: {
 }
 
 /* ───────────────────────── warehouse item detail modal ───────────────────────── */
-function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onClose: () => void }) {
+function WarehouseItemModal({ item, onClose, onZoom }: { item: WarehouseItem | null; onClose: () => void; onZoom: (url: string, name: string) => void }) {
   const maxQty = item ? Math.max(1, ...item.dist.map((d) => d.qty)) : 1;
   const t = item ? AGE_TONE[item.tag] : AGE_TONE["ปกติ"];
   return (
@@ -1312,6 +1507,19 @@ function WarehouseItemModal({ item, onClose }: { item: WarehouseItem | null; onC
     >
       {item && (
         <div style={{ padding: "16px 20px" }}>
+          {/* รูปสินค้า (กดขยาย) — โชว์เฉพาะเมื่อมีรูป · CEO pinpoint #5 */}
+          {item.imageUrl && (
+            <button
+              type="button"
+              aria-label={`ดูรูป ${item.name} ขยาย`}
+              title="กดเพื่อดูรูปสินค้าขยาย"
+              onClick={() => onZoom(item.imageUrl!, item.name)}
+              style={{ display: "block", width: 96, height: 96, borderRadius: 12, overflow: "hidden", border: "1px solid #E8EAED", padding: 0, cursor: "zoom-in", marginBottom: 14, background: "#EEF0F3" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.imageUrl} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </button>
+          )}
           {/* บนชั้น (net) = headline · ในตู้ + รวมทั้งหมด (gross) = ยอดย่อยให้เห็นว่าของไม่หาย */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: "#9AA1AB" }}>บนชั้น (พร้อมโหลด)</span>

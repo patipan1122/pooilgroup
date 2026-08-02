@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar } from "lucide-react";
 import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import { reassignCfMachineBranch } from "@/lib/clawfleet/actions";
@@ -50,22 +50,98 @@ function realDots(dots: ServerDotStatus[]): DotKind[] {
   return dots.map((d) => (d === "warn" ? "warn" : d === "broken" ? "broken" : "good"));
 }
 
+/** "YYYY-MM-DD" → "1 ก.ค. 68" (พ.ศ. ย่อ) · ค่าเสีย → คืน string เดิม (graceful) */
+function thaiDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const mo = Number(m[2]);
+  if (mo < 1 || mo > 12) return iso;
+  return `${Number(m[3])} ${months[mo - 1]} ${(Number(m[1]) + 543) % 100}`;
+}
+
+/** สไตล์ชิปปุ่มลัดช่วงเวลา — active = indigo ทึบ · ปกติ = ขาวกดได้ (reuse โทน/ขนาดเดิมในหน้า) */
+function quickChipStyle(active: boolean): React.CSSProperties {
+  return {
+    fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 8,
+    textDecoration: "none", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center",
+    border: active ? "1px solid #4F46E5" : "1px solid #E3E6EA",
+    background: active ? "#4F46E5" : "#fff",
+    color: active ? "#fff" : "#5A6270",
+    cursor: "pointer",
+  };
+}
+
+/** ช่อง <input type=date> ในแถบช่วงวันที่ — โปร่ง ไร้กรอบ (กรอบอยู่ที่กล่องหุ้ม) */
+const DATE_INPUT_STYLE: React.CSSProperties = {
+  border: "none", background: "transparent", fontSize: 12.5, fontWeight: 600,
+  color: "#1A1D21", outline: "none", cursor: "pointer",
+};
+
 export function BranchesClient({
   branches,
   isAdmin = false,
   machineOptions = [],
   branchOptions = [],
+  fromISO = "",
+  toISO = "",
 }: {
   branches: BranchRow[];
   // surface-existing (reassign) — โชว์การ์ด "ย้ายตู้ข้ามสาขา" เฉพาะแอดมิน (server assert อยู่แล้ว)
   isAdmin?: boolean;
   machineOptions?: MachineOption[];
   branchOptions?: BranchOption[];
+  // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — สถิติ P&L ต่อสาขาอิงช่วงนี้ · เติมค่า <input type=date> + คง state ใน link
+  fromISO?: string;
+  toISO?: string;
 }) {
   const empty = branches.length === 0;
   // ห้าม fallback SAMPLE — ใช้ข้อมูลจริงเสมอ · ว่าง = โชว์ empty-state
   const rows = branches;
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // ── ช่วงวันที่ (local input state) · กด "ดูช่วงนี้" → soft-nav ผ่าน <Link> ──
+  const [fromInput, setFromInput] = useState(fromISO);
+  const [toInput, setToInput] = useState(toISO);
+
+  // ── ปุ่มลัดช่วงเวลา (วันนี้/เมื่อวาน/7 วัน/เดือนนี้) — "วันตามปฏิทินเครื่อง" (local) ให้ตรงกับที่ server parse ──
+  const quickRanges = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const isoLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const now = new Date();
+    const todayI = isoLocal(now);
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    const wk = new Date(now); wk.setDate(now.getDate() - 6);
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return [
+      { key: "today", label: "วันนี้", from: todayI, to: todayI },
+      { key: "yesterday", label: "เมื่อวาน", from: isoLocal(yest), to: isoLocal(yest) },
+      { key: "7d", label: "7 วัน", from: isoLocal(wk), to: todayI },
+      { key: "month", label: "เดือนนี้", from: isoLocal(firstOfMonth), to: todayI },
+    ];
+  }, []);
+  /** href ปุ่มลัด — set ช่วง (soft-nav) */
+  const quickHref = (from: string, to: string) => {
+    const q = new URLSearchParams({ from, to });
+    return `?${q.toString()}`;
+  };
+  /** href เปลี่ยนช่วงวันที่ (จากค่า input) */
+  const rangeHref = (() => {
+    const q = new URLSearchParams();
+    if (fromInput) q.set("from", fromInput);
+    if (toInput) q.set("to", toInput);
+    return `?${q.toString()}`;
+  })();
+  // ช่วง input ต่างจากที่ query อยู่ตอนนี้ไหม (เปิดปุ่ม "ดูช่วงนี้" เฉพาะเมื่อเปลี่ยน)
+  const rangeDirty = fromInput !== fromISO || toInput !== toISO;
+
+  // ป้ายช่วงที่เลือก (แทนคำว่า "7 วัน" ที่ hardcode) — ตรงกับปุ่มลัดถ้าเข้าคู่ · ไม่งั้นโชว์วันที่จริง
+  const rangeLabel = useMemo(() => {
+    const q = quickRanges.find((r) => r.from === fromISO && r.to === toISO);
+    if (q) return q.label;
+    if (fromISO && toISO) return fromISO === toISO ? thaiDate(fromISO) : `${thaiDate(fromISO)}–${thaiDate(toISO)}`;
+    return "วันนี้";
+  }, [quickRanges, fromISO, toISO]);
 
   const totMachines = rows.reduce((s, b) => s + b.machines, 0);
   const totRevenue = rows.reduce((s, b) => s + b.revenue, 0);
@@ -86,11 +162,60 @@ export function BranchesClient({
 
   return (
     <div>
+      {/* ── แถบเลือกช่วงวันที่ (ปุ่มลัด + จาก/ถึง) — สถิติ P&L ทุกการ์ดด้านล่างขยับตามช่วงนี้ ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        {/* ปุ่มลัด — กดปุ๊บกรองเลย ไม่ต้องเปิดปฏิทินทีละช่อง (CEO ขอ วันนี้/เมื่อวาน/7 วัน/เดือนนี้) */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {quickRanges.map((q) => {
+            const active = fromISO === q.from && toISO === q.to;
+            return (
+              <Link key={q.key} href={quickHref(q.from, q.to)} className="co-tap" style={quickChipStyle(active)}>
+                {q.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* ช่วงวันที่ (จาก/ถึง) · กด "ดูช่วงนี้" → soft-nav */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 10, padding: "6px 10px", flexWrap: "wrap" }}>
+          <Calendar size={15} color="#6B7280" style={{ flex: "0 0 15px" }} />
+          <input
+            type="date"
+            value={fromInput}
+            max={toInput || undefined}
+            onChange={(e) => setFromInput(e.target.value)}
+            aria-label="วันที่เริ่มต้น"
+            title="วันที่เริ่มต้น"
+            style={DATE_INPUT_STYLE}
+          />
+          <span style={{ fontSize: 12, color: "#9AA1AB" }}>ถึง</span>
+          <input
+            type="date"
+            value={toInput}
+            min={fromInput || undefined}
+            onChange={(e) => setToInput(e.target.value)}
+            aria-label="วันที่สิ้นสุด"
+            title="วันที่สิ้นสุด"
+            style={DATE_INPUT_STYLE}
+          />
+          {rangeDirty ? (
+            <Link
+              href={rangeHref}
+              style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#4F46E5", padding: "5px 12px", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              ดูช่วงนี้
+            </Link>
+          ) : (
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: "#C2C7CF" }}>ดูช่วงนี้</span>
+          )}
+        </div>
+      </div>
+
       {/* ── 4 KPI summary cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
         <Kpi icon={<Store size={16} />} label="สาขาทั้งหมด" value={`${num(rows.length)} สาขา`} delta="ทั่วกรุงเทพฯ–ปริมณฑล" deltaColor="#9AA1AB" />
         <Kpi icon={<Boxes size={16} />} iconTone="neutral" label="ตู้คีบรวม" value={`${num(totMachines)} ตู้`} delta={`${rows.length} สาขา`} deltaColor="#9AA1AB" />
-        <Kpi icon={<Wallet size={16} />} iconTone="green" label="รายได้รวม 7 วัน" value={bahtN(totRevenue)} valueColor="#15803D" delta="ก่อนหักต้นทุนตุ๊กตา" deltaColor="#9AA1AB" />
+        <Kpi icon={<Wallet size={16} />} iconTone="green" label={`รายได้รวม · ${rangeLabel}`} value={bahtN(totRevenue)} valueColor="#15803D" delta="ก่อนหักต้นทุนตุ๊กตา" deltaColor="#9AA1AB" />
         <Kpi icon={<AlertTriangle size={16} />} iconTone="red" label="สาขาที่ต้องดู" value={`${num(problem)} สาขา`} valueColor="#B42318" delta="ตั้งค่าตู้เพี้ยน/ขาดทุน" deltaColor="#C2756C" />
       </div>
 
@@ -112,7 +237,7 @@ export function BranchesClient({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>{b.name}</div>
                   <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>
-                    <span className="num">{b.machines}</span> ตู้ · <span className="num">{b.dolls}</span> ตัวออก (7 วัน)
+                    <span className="num">{b.machines}</span> ตู้ · <span className="num">{b.dolls}</span> ตัวออก ({rangeLabel})
                   </div>
                 </div>
                 <Pill tone={t.tone as Tone}>{t.label}</Pill>
@@ -121,7 +246,7 @@ export function BranchesClient({
               {/* stats row: รายได้ / กำไร / ต้นทุน(เฉลี่ย บาท/ตัว) */}
               <div style={{ display: "flex", gap: 26, marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 3 }}>รายได้ 7 วัน</div>
+                  <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 3 }}>รายได้ {rangeLabel}</div>
                   <div className="num" style={{ fontSize: 16, fontWeight: 700 }}>{bahtN(b.revenue)}</div>
                 </div>
                 <div>

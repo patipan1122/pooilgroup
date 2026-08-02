@@ -20,6 +20,7 @@ export type MachineSeed = {
   id: string;
   code: string;
   nickname: string | null;
+  branchId: string; // สาขาที่ตู้นี้สังกัด — ใช้กรองให้เหลือเฉพาะสาขาที่กำลังดู (CEO pinpoint #7)
   branchName: string;
   kind: string; // CLAW | EXCHANGER
   isActive: boolean;
@@ -80,21 +81,33 @@ export function BranchMgmtLink() {
 export function MachinesLoadoutTab({
   machines,
   loadoutByMachine,
+  selectedBranchId,
+  selectedBranchName,
 }: {
   machines: MachineSeed[];
   // โหลดเอาต์ปัจจุบันของแต่ละตู้ (key = machineId) — โหลดมาแล้วจาก server (เล็ก)
   loadoutByMachine: Record<string, LoadoutItemSeed[]>;
+  // สาขาที่กำลังดู (จากตัวสลับสาขาใหญ่) — กรองตู้ให้เหลือเฉพาะสาขานี้ กันสาขาอื่นโผล่ปน (CEO pinpoint #7)
+  selectedBranchId: string | null;
+  selectedBranchName: string | null;
 }) {
   const [openMachine, setOpenMachine] = useState<MachineSeed | null>(null);
   const [movProduct, setMovProduct] = useState<{ id: string; name: string } | null>(null);
 
-  if (machines.length === 0) {
+  // กรองเฉพาะตู้ของสาขาที่เลือก (เทียบด้วย branchId ไม่ใช่ชื่อ — กันสาขาชื่อซ้ำ)
+  //   ก่อนหน้านี้โชว์ตู้ทุกสาขาที่ user มีสิทธิ์ → "แคนดง" โผล่ตอนดู "ดินแดง" (CEO 2026-08-02)
+  const scopedMachines = useMemo(
+    () => (selectedBranchId ? machines.filter((m) => m.branchId === selectedBranchId) : machines),
+    [machines, selectedBranchId],
+  );
+
+  if (scopedMachines.length === 0) {
     return (
       <Card title="ไส้ในตู้ (โหลดเอาต์)" sub="ดูว่าตู้แต่ละเครื่องมีสินค้าอะไร · ราคา/ครั้งเท่าไหร่">
         <EmptyState
           icon={<Cpu size={30} />}
-          title="ยังไม่มีตู้ในระบบ"
-          sub="เมื่อแอดมินลงทะเบียนตู้จริง จะเห็นรายชื่อตู้และไส้ในตู้ที่นี่"
+          title={selectedBranchName ? `ยังไม่มีตู้ที่สาขา${selectedBranchName}` : "ยังไม่มีตู้ในระบบ"}
+          sub={selectedBranchName ? "ลองสลับไปสาขาอื่นจากตัวเลือกด้านบน หรือลงทะเบียนตู้ให้สาขานี้ก่อน" : "เมื่อแอดมินลงทะเบียนตู้จริง จะเห็นรายชื่อตู้และไส้ในตู้ที่นี่"}
         />
       </Card>
     );
@@ -105,8 +118,8 @@ export function MachinesLoadoutTab({
   return (
     <div>
       <Card
-        title="ไส้ในตู้ (โหลดเอาต์ปัจจุบัน)"
-        sub="กดตู้เพื่อดูสินค้าที่อยู่ในตู้ตอนนี้ · ราคา/ครั้ง · และประวัติการเคลื่อนไหวรายสินค้า"
+        title={selectedBranchName ? `ไส้ในตู้ · สาขา${selectedBranchName}` : "ไส้ในตู้ (โหลดเอาต์ปัจจุบัน)"}
+        sub={`กดตู้เพื่อดูสินค้าที่อยู่ในตู้ตอนนี้ · ราคา/ครั้ง · และประวัติการเคลื่อนไหวรายสินค้า${selectedBranchName ? ` · แสดงเฉพาะตู้ของสาขา${selectedBranchName}` : ""}`}
         pad={false}
       >
         <div style={{ overflowX: "auto" }}>
@@ -114,7 +127,7 @@ export function MachinesLoadoutTab({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr 0.8fr 0.9fr 0.3fr", padding: "10px 20px", fontSize: 11, fontWeight: 600, color: "#9AA1AB", borderBottom: "1px solid #F4F5F7" }}>
               <span>รหัสตู้</span><span>สาขา</span><span>ชนิด</span><span style={{ textAlign: "right" }}>สินค้าในตู้</span><span />
             </div>
-            {machines.map((m) => {
+            {scopedMachines.map((m) => {
               const loadout = loadoutByMachine[m.id] ?? [];
               return (
                 <div

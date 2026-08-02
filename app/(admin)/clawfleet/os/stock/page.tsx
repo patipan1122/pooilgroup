@@ -112,6 +112,7 @@ export default async function StockPage({
         id: m.id,
         code: m.code,
         nickname: m.nickname,
+        branchId: m.branchId, // ใช้กรองแท็บ "ไส้ในตู้" ให้เหลือเฉพาะสาขาที่ดู (CEO pinpoint #7)
         branchName: m.branchName,
         kind: m.kind,
         isActive: m.isActive,
@@ -346,7 +347,7 @@ async function loadWarehouseRows(
 
   const products = await prisma.cfProduct.findMany({
     where: { orgId, isActive: true },
-    select: { id: true, name: true, category: true, unitCostCents: true },
+    select: { id: true, name: true, category: true, unitCostCents: true, imageUrl: true },
     orderBy: { name: "asc" },
   });
   if (products.length === 0) return { rows: [], perBranchStock: {} };
@@ -452,6 +453,7 @@ async function loadWarehouseRows(
         id: productId,
         name: p?.name ?? "สินค้า",
         cat: p?.category ?? "OTHER",
+        imageUrl: p?.imageUrl ?? null, // รูปสินค้า (CEO pinpoint #5 · กดขยายดูได้)
         qty: v.qty, // gross (รวมของในตู้) — เก็บไว้เป็นยอดรวมทั้งหมด/compat
         inMachines, // ที่โหลดเข้าตู้แล้ว
         net: v.qty - inMachines, // "บนชั้น" = หยิบมาโหลดได้จริง (อาจติดลบถ้าข้อมูล drift → โชว์ตามจริง)
