@@ -5645,34 +5645,48 @@ function FlowScreen(props: {
               <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 10, padding: 7, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div><div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{isFilled(f.left) ? afterFill : "—"}</div></div>
             </div>
 
-            {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ดิจิตอล · ล่าง=เฟือง) ── */}
+            {/* ── 3 · มิเตอร์ — จัดตามหน้าจอบนตู้ (CEO 2026-08-02) — จอดิจิตอล(บน) + แผงเฟือง(ล่าง)
+                 แต่ละจอมี เหรียญ+ตุ๊กตา อยู่คู่กัน + รูปของจอนั้นข้าง ๆ → ตาเห็นจอไหน กรอก 2 เลข + ถ่าย 1 รูป จบทีละจอ
+                 (เดิมแยกการ์ดตุ๊กตา/เหรียญ ต้องกวาดตาระหว่างจอ-เฟือง 2 รอบ)
+                 · ช่องเดิม (coinDigi/dollDigi/coinGear/dollGear) + รูปเดิม (coinDigi=จอ · coinGear=เฟือง) ไม่ย้าย DB · money-safe */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (บน=ดิจิตอล · ล่าง=เฟือง)</div>
-            <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("dollDigi", "บน (ดิจิตอล)")}
-              {meterCell("dollGear", "ล่าง (เฟือง)")}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ (กรอกตามหน้าจอบนตู้)</div>
+
+            {/* จอดิจิตอล (บน) — เหรียญ + ตุ๊กตา + รูปจอ */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: "1 1 210px", minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "8px 9px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>ดิจิตอล (บน)</div>
+                <div style={{ display: "flex", gap: 7 }}>
+                  {meterCell("coinDigi", "เหรียญ")}
+                  {meterCell("dollDigi", "ตุ๊กตา")}
+                </div>
+              </div>
+              <div style={{ flex: "0 0 84px", display: "flex" }}>
+                <PhotoTile label="จอ" value={photos.coinDigi} captured={!!props.photosCaptured.coinDigi}
+                  onChange={(url) => props.onPhoto("coinDigi", url)} onCaptured={() => props.onCapture("coinDigi")}
+                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="meter_after" disabled={props.usingDemo} />
+              </div>
             </div>
+
+            {/* แผงเฟือง (ล่าง) — เหรียญ + ตุ๊กตา + รูปเฟือง */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+              <div style={{ flex: "1 1 210px", minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: "8px 9px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>เฟือง (ล่าง)</div>
+                <div style={{ display: "flex", gap: 7 }}>
+                  {meterCell("coinGear", "เหรียญ")}
+                  {meterCell("dollGear", "ตุ๊กตา")}
+                </div>
+              </div>
+              <div style={{ flex: "0 0 84px", display: "flex" }}>
+                <PhotoTile label="เฟือง" value={photos.coinGear} captured={!!props.photosCaptured.coinGear}
+                  onChange={(url) => props.onPhoto("coinGear", url)} onCaptured={() => props.onCapture("coinGear")}
+                  orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="prize_meter" disabled={props.usingDemo} />
+              </div>
+            </div>
+
+            {/* ป้ายกระทบยอด: เหรียญ→เงินควรได้ · ตุ๊กตา→ออกกี่ตัว (อ่านค่าเดิมทั้งคู่ · money-safe) */}
+            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinHintColor, margin: "0 2px 3px" }}>{coinHint}</div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollHintColor, margin: "0 2px 8px" }}>{dollHint}</div>
-
-            {/* ── 4 · มิเตอร์เหรียญ (บน=ดิจิตอล · ล่าง=เฟือง) ── */}
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ดิจิตอล · ล่าง=เฟือง)</div>
-            <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("coinDigi", "บน (ดิจิตอล)")}
-              {meterCell("coinGear", "ล่าง (เฟือง)")}
-            </div>
-            <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinHintColor, margin: "0 2px 7px" }}>{coinHint}</div>
-
-            {/* ── รูปมิเตอร์ 2 รูป (CEO 2026-08-02) — จอดิจิตอลถ่าย 1 (เห็นเลขเหรียญ+ตุ๊กตา) · แผงเฟืองถ่าย 1
-                 (เดิม 4 รูป/หน้าปัด · CEO: ของจริงมี 2) · เก็บช่องเดิม coinDigi=จอดิจิตอล · coinGear=แผงเฟือง (ไม่ย้าย DB) */}
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "2px 2px 7px" }}>รูปมิเตอร์ (2 รูป · ถ่าย/แนบก็ได้)</div>
-            <div style={{ display: "flex", gap: 9, marginBottom: 8 }}>
-              <PhotoTile label="จอดิจิตอล (เหรียญ+ตุ๊กตา)" value={photos.coinDigi} captured={!!props.photosCaptured.coinDigi}
-                onChange={(url) => props.onPhoto("coinDigi", url)} onCaptured={() => props.onCapture("coinDigi")}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="meter_after" disabled={props.usingDemo} />
-              <PhotoTile label="แผงเฟือง (เหรียญ+ตุ๊กตา)" value={photos.coinGear} captured={!!props.photosCaptured.coinGear}
-                onChange={(url) => props.onPhoto("coinGear", url)} onCaptured={() => props.onCapture("coinGear")}
-                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="prize_meter" disabled={props.usingDemo} />
-            </div>
 
             {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) · CEO 2026-07-21 ตัดบรรทัด "อ่านไม่ได้?" ออก (กินที่) */}
             <button type="button" disabled={props.skipPending}
@@ -5686,10 +5700,10 @@ function FlowScreen(props: {
               {props.skipPending ? "กำลังแจ้งซ่อม…" : "ตู้นี้เสีย/อ่านมิเตอร์ไม่ได้ — แจ้งซ่อม & ข้าม"}
             </button>
 
-            {/* ── 5 · แนบรูปก่อนเติม / หลังเติม ── */}
+            {/* ── 4 · แนบรูปก่อนเติม / หลังเติม ── */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "0 0 9px" }} />
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 8px" }}>
-              5 · แนบรูปก่อนเติม / หลังเติม
+              4 · แนบรูปก่อนเติม / หลังเติม
               {photoGateWarn && <span style={{ fontWeight: 600, color: "#B45309" }}> · ต้องมีก่อนปิดรอบ (ถ่ายทีหลังได้)</span>}
             </div>
             <div style={{ display: "flex", gap: 9 }}>
@@ -5701,9 +5715,9 @@ function FlowScreen(props: {
                 orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="stock_after" disabled={props.usingDemo} />
             </div>
 
-            {/* ── 6 · เงินสดที่เก็บได้ (บาท) + ตั้งค่าตู้ ── */}
+            {/* ── 5 · เงินสดที่เก็บได้ (บาท) + ตั้งค่าตู้ ── */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
-            <label style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", display: "block", margin: "0 2px 8px" }}>6 · เงินสดที่เก็บได้ (บาท)</label>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", display: "block", margin: "0 2px 8px" }}>5 · เงินสดที่เก็บได้ (บาท)</label>
             <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #E8EAED", borderRadius: 11, padding: "6px 12px" }}>
               <span style={{ fontSize: 17, fontWeight: 700, color: "#9AA1AB" }}>฿</span>
               <input value={f.cash == null ? "" : String(f.cash)} onChange={(e) => props.setNum("cash")(e.target.value)} inputMode="numeric" className="num" placeholder="นับเงินแล้วกรอก"

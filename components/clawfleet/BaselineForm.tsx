@@ -294,42 +294,63 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
         />
       </Section>
 
-      {/* ── อ่านมิเตอร์ 4 ตัว — 2x2 grid (เลขล้วน · บน=ดิจิตอล ล่าง=เฟือง) ── */}
+      {/* ── มิเตอร์ตั้งต้น — จัดตามหน้าจอบนตู้ (CEO 2026-08-02) — จอดิจิตอล(บน) + แผงเฟือง(ล่าง)
+           แต่ละจอมี เหรียญ+ตุ๊กตา อยู่คู่กัน + รูปของจอนั้นข้าง ๆ (บังคับถ่าย) → กรอก 2 เลข + ถ่าย 1 รูป จบทีละจอ
+           · ช่องเดิม 4 ตัว (moneyTop/dollTop/moneyBottom/dollBottom) + phase รูปเดิม (money_meter_top/bottom) ไม่ย้าย DB ── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>อ่านมิเตอร์ 4 ตัว</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>มิเตอร์ตั้งต้น (กรอกตามหน้าจอบนตู้)</span>
           <span className="num" style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#F1F2F5", color: "#6B7280" }}>
             {METERS.filter((m) => meterVals[m.key].trim() !== "").length}/4
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2, lineHeight: 1.4 }}>กรอกเลขที่เห็นจริงทั้ง 4 ช่อง · รูปมิเตอร์ถ่ายด้านล่าง (2 รูป)</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
-          {METERS.map((m) => {
-            const done = meterVals[m.key].trim() !== "";
-            return (
-              <div key={m.key} style={{ background: done ? "#F4FBF6" : "#fff", border: `1.5px solid ${done ? "#BFE6CB" : "#E3E6EA"}`, borderRadius: 11, padding: "9px 10px" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>{m.label}</div>
-                <input value={meterVals[m.key]} onChange={(e) => setMeter(m.key, e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+        <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2, lineHeight: 1.4 }}>
+          กรอกเลขที่เห็นจริง + ถ่ายรูปของแต่ละจอ (บังคับ 2 รูป)
+          {(!photoDigital || !photoGear) && <span style={{ fontWeight: 600, color: "#B42318" }}> · รูปยังไม่ครบ</span>}
+        </div>
+
+        {/* จอดิจิตอล (บน) — เหรียญ + ตุ๊กตา + รูปจอ */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0, background: (meterVals["moneyTop"].trim() && meterVals["dollTop"].trim()) ? "#F4FBF6" : "#fff", border: `1.5px solid ${(meterVals["moneyTop"].trim() && meterVals["dollTop"].trim()) ? "#BFE6CB" : "#E3E6EA"}`, borderRadius: 11, padding: "8px 10px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>ดิจิตอล (บน)</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>เหรียญ</div>
+                <input value={meterVals["moneyTop"]} onChange={(e) => setMeter("moneyTop", e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
                   style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── รูปมิเตอร์ตั้งต้น 2 รูป (บังคับ · CEO 2026-08-02) — จอดิจิตอล + แผงเฟือง (แต่ละรูปเห็นเหรียญ+ตุ๊กตา) ── */}
-      <div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>
-          รูปมิเตอร์ (2 รูป · บังคับถ่าย)
-          {(!photoDigital || !photoGear) && <span style={{ fontWeight: 600, color: "#B42318" }}> · ยังไม่ครบ</span>}
-        </div>
-        <div style={{ display: "flex", gap: 9 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <PhotoCaptureButton label={photoDigital ? "จอดิจิตอล ✓" : "ถ่ายจอดิจิตอล"} value={photoDigital} onChange={setPhotoDigital}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>ตุ๊กตา</div>
+                <input value={meterVals["dollTop"]} onChange={(e) => setMeter("dollTop", e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+                  style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: "0 0 84px", display: "flex" }}>
+            <PhotoCaptureButton slim label={photoDigital ? "จอ ✓" : "ถ่ายจอ"} value={photoDigital} onChange={setPhotoDigital}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_top" />
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <PhotoCaptureButton label={photoGear ? "แผงเฟือง ✓" : "ถ่ายแผงเฟือง"} value={photoGear} onChange={setPhotoGear}
+        </div>
+
+        {/* แผงเฟือง (ล่าง) — เหรียญ + ตุ๊กตา + รูปเฟือง */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0, background: (meterVals["moneyBottom"].trim() && meterVals["dollBottom"].trim()) ? "#F4FBF6" : "#fff", border: `1.5px solid ${(meterVals["moneyBottom"].trim() && meterVals["dollBottom"].trim()) ? "#BFE6CB" : "#E3E6EA"}`, borderRadius: 11, padding: "8px 10px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#454B54", marginBottom: 6 }}>เฟือง (ล่าง)</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>เหรียญ</div>
+                <input value={meterVals["moneyBottom"]} onChange={(e) => setMeter("moneyBottom", e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+                  style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>ตุ๊กตา</div>
+                <input value={meterVals["dollBottom"]} onChange={(e) => setMeter("dollBottom", e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+                  style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: "0 0 84px", display: "flex" }}>
+            <PhotoCaptureButton slim label={photoGear ? "เฟือง ✓" : "ถ่ายเฟือง"} value={photoGear} onChange={setPhotoGear}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_bottom" />
           </div>
         </div>
