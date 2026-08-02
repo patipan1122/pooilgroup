@@ -3057,6 +3057,8 @@ model ChairopsUser {
   idCardImageUrl      String?            @map("id_card_image_url")
   idCardFileName      String?            @map("id_card_file_name")
   homeAddress         String?            @map("home_address")
+  // F4b (CEO 2026-08-02): ชื่อเล่น — for the office contract form + maid roster.
+  nickname            String?            @map("nickname")
   // F7: deactivation reason + audit trail
   deactivatedAt       DateTime?          @map("deactivated_at") @db.Timestamptz(6)
   deactivatedById     String?            @map("deactivated_by_id")
@@ -3218,6 +3220,9 @@ model ChairopsMaidContract {
   signedName        String? // typed full name at signing
   signedAt          DateTime?
   signedIp          String?
+  // Legal hardening (F4b · CEO 2026-08-02) — พ.ร.บ. ธุรกรรมทางอิเล็กทรอนิกส์ ม.9.
+  signedUserAgent String? // browser UA captured at signing
+  contentHash     String? // SHA-256 (hex) of the canonical signed terms → tamper-evidence
 
   // ── สำเนาสัญญาที่เซ็นแล้ว (ไฟล์ที่ดาวน์โหลด/ส่ง Drive ได้) ──────────────
   documentUrl  String?

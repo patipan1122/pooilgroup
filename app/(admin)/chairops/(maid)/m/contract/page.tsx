@@ -88,6 +88,8 @@ export default async function MaidContractPage() {
             signatureImageUrl: contract.signatureImageUrl,
             signedName: contract.signedName ?? contract.maidName,
             signedAt: contract.signedAt.toISOString(),
+            signedIp: contract.signedIp,
+            contentHash: contract.contentHash,
           }}
         />
       </div>

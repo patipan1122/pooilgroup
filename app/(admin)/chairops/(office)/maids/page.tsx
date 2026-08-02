@@ -7,7 +7,7 @@
 // Clicking any maid navigates to /chairops/maids/[userId].
 
 import Link from "next/link";
-import { ChevronRight, UserPlus, AlertTriangle, Coffee, CheckCircle2, Building2, Users } from "lucide-react";
+import { ChevronRight, UserPlus, AlertTriangle, Coffee, CheckCircle2, Building2, Users, Minus } from "lucide-react";
 
 import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
@@ -168,11 +168,14 @@ async function MaidView({
 
       {/* มือถือ: เลื่อนซ้าย-ขวาดูคอลัมน์ค่าจ้าง/ปุ่มได้ */}
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
             <tr>
               <th className="px-4 py-2.5">ชื่อ</th>
               <th className="px-4 py-2.5">สาขา</th>
+              <th className="px-3 py-2.5 text-center" title="มีเลขบัญชีรับเงินเดือนแล้วหรือยัง">บัญชี</th>
+              <th className="px-3 py-2.5 text-center" title="มีสัญญาจ้าง (ออนไลน์หรือแนบไฟล์) แล้วหรือยัง">สัญญา</th>
+              <th className="px-3 py-2.5 text-center" title="แม่บ้านเซ็นสัญญาออนไลน์แล้วหรือยัง">เซ็น</th>
               <th className="px-4 py-2.5">สถานะวันนี้</th>
               <th className="px-4 py-2.5 text-right">วันลาเดือนนี้</th>
               {canViewCost && <th className="px-4 py-2.5 text-right">ค่าจ้างเดือนนี้</th>}
@@ -182,7 +185,7 @@ async function MaidView({
           <tbody className="divide-y divide-zinc-100">
             {visible.length === 0 && (
               <tr>
-                <td colSpan={canViewCost ? 6 : 5} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={canViewCost ? 9 : 8} className="px-4 py-8 text-center text-zinc-500">
                   ไม่มีรายการในตัวกรองนี้
                 </td>
               </tr>
@@ -203,6 +206,9 @@ async function MaidView({
                     </span>
                   )}
                 </td>
+                <td className="px-3 py-2.5 text-center"><ReadyMark ok={m.hasBankAccount} /></td>
+                <td className="px-3 py-2.5 text-center"><ReadyMark ok={m.hasContract} /></td>
+                <td className="px-3 py-2.5 text-center"><ReadyMark ok={m.contractSigned} /></td>
                 <td className="px-4 py-2.5">
                   <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${STATUS_TONE[m.status]}`}>
                     {STATUS_LABEL[m.status]}
@@ -224,6 +230,16 @@ async function MaidView({
         </table>
       </div>
     </div>
+  );
+}
+
+// Compact yes/no marker for the contract-readiness columns (บัญชี/สัญญา/เซ็น).
+// Green check = พร้อม · เทาขีด = ยังไม่มี. Kept tiny for the density budget.
+function ReadyMark({ ok }: { ok: boolean }) {
+  return ok ? (
+    <CheckCircle2 className="mx-auto size-4 text-emerald-600" aria-label="มีแล้ว" />
+  ) : (
+    <Minus className="mx-auto size-4 text-zinc-300" aria-label="ยังไม่มี" />
   );
 }
 

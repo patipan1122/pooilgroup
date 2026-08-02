@@ -132,8 +132,35 @@ export function ContractDocument({
           />
         </Section>
       )}
+
+      {signature?.contentHash && (
+        <div className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-[11px] leading-relaxed text-zinc-500">
+          <p className="font-semibold text-zinc-600">หลักฐานการลงนามอิเล็กทรอนิกส์</p>
+          <p className="mt-1">
+            ลงนามโดย {fill(signature.signedName, "-")}
+            {signature.signedAt ? ` · ${thaiDateTime(signature.signedAt)}` : ""}
+            {signature.signedIp ? ` · IP ${signature.signedIp}` : ""}
+          </p>
+          <p className="mt-0.5 break-all">
+            รหัสตรวจสอบเอกสาร (SHA-256): <span className="font-mono">{signature.contentHash}</span>
+          </p>
+          <p className="mt-0.5">
+            เอกสารนี้ลงลายมือชื่อทางอิเล็กทรอนิกส์ตาม พ.ร.บ. ว่าด้วยธุรกรรมทางอิเล็กทรอนิกส์
+            พ.ศ. 2544 — รหัสตรวจสอบด้านบนผูกกับเนื้อหาสัญญา หากถูกแก้ไขภายหลังรหัสจะไม่ตรง.
+          </p>
+        </div>
+      )}
     </div>
   );
+}
+
+function thaiDateTime(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(d);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

@@ -30,6 +30,10 @@ export interface MaidRosterRow {
   thisMonthPaid: number; // sum of MaidDailyPay for current month
   daysOffThisMonth: number;
   branchCount: number; // active branches this maid manages (multi-branch · 2026-07-08)
+  // Contract readiness (F4b · CEO 2026-08-02) — surfaced as columns in ?view=maid.
+  hasBankAccount: boolean; // salary bank account number is on file
+  hasContract: boolean; // an online contract exists (DRAFT/SIGNED) or a legacy file is attached
+  contractSigned: boolean; // an online contract has been e-signed by the maid
 }
 
 // ── Branch-first roster (CEO 2026-07-12) — "ดูตามสาขา" ────────────────────

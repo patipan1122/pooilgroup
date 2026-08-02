@@ -13,7 +13,17 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { requireExactRole } from "@/lib/chairops/auth/session";
+import { writeAudit } from "@/lib/chairops/audit/log";
+import {
+  contractContentHash,
+  CONTRACT_CONSENT_TEXT,
+  CONTRACT_TERMS_VERSION,
+} from "@/lib/chairops/contract/hash";
 import type { ActionResult } from "@/app/(admin)/chairops/(office)/maids/types";
+
+function ymdOf(d: Date | null): string | null {
+  return d ? d.toISOString().slice(0, 10) : null;
+}
 
 function str(v: FormDataEntryValue | null, max = 500): string | null {
   const t = (typeof v === "string" ? v : "").trim();
@@ -114,6 +124,8 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
   const fields = readContractFields(fd);
   const signatureImageUrl = str(fd.get("signatureImageUrl"), 1000);
   const signedName = str(fd.get("signedName"), 120);
+  // Legal hardening (ม.9): explicit recorded consent — not a decorative label.
+  const consent = str(fd.get("consent"), 10) === "true";
 
   // A real, signable contract needs identity + the maid's salary account +
   // an attached ID card + the drawn signature.
@@ -124,11 +136,35 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
   if (!fields.salaryAccountNo || !fields.salaryBankName)
     return { ok: false, error: "กรุณากรอกบัญชีรับเงินเดือน" };
   if (!signatureImageUrl) return { ok: false, error: "กรุณาเซ็นชื่อก่อนยืนยัน" };
-  if (!signedName) return { ok: false, error: "กรุณาพิมพ์ชื่อผู้เซ็น" };
+  if (!signedName) return { ok: false, error: "กรุณาพิมพ์ชื่อผู้เซ็นยืนยัน" };
+  if (!consent) return { ok: false, error: "กรุณาติ๊กยอมรับสัญญาก่อนเซ็น" };
 
   const company = await companyAccount(orgId);
-  const ip =
-    (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const hdrs = await headers();
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const userAgent = hdrs.get("user-agent")?.slice(0, 500) ?? null;
+
+  // Bind the signature to the exact terms signed (tamper-evidence · ม.9).
+  const contentHash = contractContentHash({
+    maidName: fields.maidName,
+    idCardNumber: fields.idCardNumber,
+    address: fields.address,
+    phone: fields.phone,
+    monthlyWage: fields.monthlyWage,
+    payDayOfMonth: fields.payDayOfMonth,
+    salaryBankName: fields.salaryBankName,
+    salaryAccountNo: fields.salaryAccountNo,
+    salaryAccountName: fields.salaryAccountName,
+    companyBankName: company.companyBankName,
+    companyAccountNo: company.companyAccountNo,
+    companyAccountName: company.companyAccountName,
+    companyAccountType: null,
+    startDate: ymdOf(fields.startDate),
+    endDate: ymdOf(fields.endDate),
+    idCardImageUrl: fields.idCardImageUrl,
+    signatureImageUrl,
+    signedName,
+  });
 
   const result = await prisma.$transaction(async (tx) => {
     const data = {
@@ -139,6 +175,8 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
       signedName,
       signedAt: new Date(),
       signedIp: ip,
+      signedUserAgent: userAgent,
+      contentHash,
     };
     const contract = existing
       ? await tx.chairopsMaidContract.update({
@@ -163,6 +201,27 @@ export async function signContract(fd: FormData): Promise<ActionResult<{ id: str
         bankAccountName: fields.salaryAccountName ?? undefined,
       },
     });
+
+    // Append-only audit event — who/when/IP/UA/consent/hash. Same tx as the
+    // sign so an audit row never exists for a rolled-back signature.
+    await writeAudit(
+      {
+        userId: maidId,
+        orgId,
+        action: "sign",
+        entity: "ChairopsMaidContract",
+        entityId: contract.id,
+        newValue: { status: "SIGNED", signedName, contentHash },
+        metadata: {
+          ip,
+          userAgent,
+          consent: true,
+          consentText: CONTRACT_CONSENT_TEXT,
+          termsVersion: CONTRACT_TERMS_VERSION,
+        },
+      },
+      tx,
+    );
 
     return contract;
   });

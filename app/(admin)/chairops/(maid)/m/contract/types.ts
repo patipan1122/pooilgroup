@@ -27,4 +27,7 @@ export interface ContractSignature {
   signatureImageUrl: string;
   signedName: string;
   signedAt: string; // ISO
+  // Legal-evidence (F4b · CEO 2026-08-02) — shown in the verification footer.
+  signedIp?: string | null;
+  contentHash?: string | null;
 }

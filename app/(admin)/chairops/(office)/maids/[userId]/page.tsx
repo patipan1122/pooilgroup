@@ -21,8 +21,13 @@ import { LeaveRequestForm } from "../_components/leave-request-form";
 import { DeleteLeaveButton } from "../_components/delete-leave-button";
 import { MultiBranchManager } from "../_components/multi-branch-manager";
 import { MaidProfileForm } from "../_components/maid-profile-form";
+import { OfficeContractEditor } from "./_components/office-contract-editor";
 
 export const dynamic = "force-dynamic";
+
+function ymdOf(d: Date | null): string {
+  return d ? d.toISOString().slice(0, 10) : "";
+}
 
 export default async function MaidDetailPage({
   params,
@@ -47,20 +52,42 @@ export default async function MaidDetailPage({
 
   const { maid, leaves, pay, assignments } = detail;
 
-  // ID card + online contract (CEO 2026-07-12) — ADMIN+ visibility only.
-  const [idInfo, contract] = canMutate
+  // Online contract (CEO 2026-07-12 · office-edit F4b 2026-08-02) — ADMIN+ only.
+  const [contract, company] = canMutate
     ? await Promise.all([
-        prisma.chairopsUser.findUnique({
-          where: { id: userId },
-          select: { idCardNumber: true, idCardImageUrl: true, homeAddress: true },
-        }),
         prisma.chairopsMaidContract.findFirst({
           where: { orgId: session.user.orgId, maidId: userId, status: { not: "VOID" } },
           orderBy: { createdAt: "desc" },
-          select: { status: true, signedAt: true },
+        }),
+        prisma.chairopsBankAccount.findFirst({
+          where: { orgId: session.user.orgId, isActive: true, branchId: null },
+          orderBy: { createdAt: "desc" },
+          select: { bankName: true, accountNo: true, accountName: true },
         }),
       ])
     : [null, null];
+
+  const contractStatus: "none" | "draft" | "signed" =
+    contract?.status === "SIGNED" ? "signed" : contract ? "draft" : "none";
+  const officePrefill = {
+    maidName: contract?.maidName ?? maid.displayName,
+    nickname: maid.nickname ?? "",
+    idCardNumber: contract?.idCardNumber ?? maid.idCardNumber ?? "",
+    address: contract?.address ?? maid.homeAddress ?? "",
+    phone: contract?.phone ?? maid.mobilePhone ?? maid.phone ?? "",
+    monthlyWage: contract?.monthlyWage?.toString() ?? "",
+    payDayOfMonth: contract?.payDayOfMonth?.toString() ?? "",
+    salaryBankName: contract?.salaryBankName ?? maid.bankName ?? "",
+    salaryAccountNo: contract?.salaryAccountNo ?? maid.bankAccountNo ?? "",
+    salaryAccountName: contract?.salaryAccountName ?? maid.bankAccountName ?? maid.displayName,
+    startDate: ymdOf(contract?.startDate ?? null),
+    endDate: ymdOf(contract?.endDate ?? null),
+    idCardImageUrl: contract?.idCardImageUrl ?? maid.idCardImageUrl ?? "",
+    idCardFileName: maid.idCardFileName ?? "",
+  };
+  const companyLine = company?.accountNo
+    ? `${company.accountName ?? "บริษัท เจพีซิงค์กรุ๊ป จำกัด"} · ${company.bankName ?? ""} · ${company.accountNo}`
+    : null;
 
   // multi-branch (CEO 2026-07-08): a maid may manage several branches.
   const assignedBranches = await getMaidActiveBranches(userId);
@@ -80,7 +107,10 @@ export default async function MaidDetailPage({
             </Link>{" "}
             / {maid.displayName}
           </div>
-          <h1 className="text-xl font-bold text-zinc-900">{maid.displayName}</h1>
+          <h1 className="text-xl font-bold text-zinc-900">
+            {maid.displayName}
+            {maid.nickname ? <span className="ml-2 text-base font-normal text-zinc-400">({maid.nickname})</span> : null}
+          </h1>
           <p className="text-sm text-zinc-500">
             สาขา: <span className="font-medium text-zinc-700">{homeBranchName}</span>
             {assignedBranches.length > 1 ? ` · ดูแล ${assignedBranches.length} สาขา` : ""}
@@ -192,48 +222,22 @@ export default async function MaidDetailPage({
         </section>
       )}
 
-      {/* เอกสาร — บัตร ปชช. + สัญญาออนไลน์ (ADMIN+ · CEO 2026-07-12) */}
+      {/* สัญญาจ้างออนไลน์ — ออฟฟิศกรอก → แม่บ้านเซ็น (ADMIN+ · F4b CEO 2026-08-02) */}
       {canMutate && (
         <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-800">
-            <Pencil className="size-4 text-zinc-500" /> เอกสาร · บัตรประชาชน + สัญญา
+          <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+            <Pencil className="size-4 text-zinc-500" /> สัญญาจ้าง (เซ็นออนไลน์)
           </div>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-zinc-500">บัตรประชาชน</dt>
-              <dd className="font-medium text-zinc-900">
-                {idInfo?.idCardNumber
-                  ? `•••• •••• ${idInfo.idCardNumber.replace(/\D/g, "").slice(-4)}`
-                  : idInfo?.idCardImageUrl
-                    ? "แนบรูปแล้ว"
-                    : "ยังไม่มีข้อมูล"}
-                {idInfo?.idCardImageUrl && (
-                  <a
-                    href={idInfo.idCardImageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-2 text-xs font-normal text-blue-600 hover:underline"
-                  >
-                    ดูรูป
-                  </a>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-zinc-500">สัญญาจ้าง (เซ็นออนไลน์)</dt>
-              <dd className="font-medium">
-                {contract?.status === "SIGNED" ? (
-                  <span className="text-emerald-700">
-                    เซ็นแล้ว{contract.signedAt ? ` · ${thaiDate(contract.signedAt)}` : ""}
-                  </span>
-                ) : contract ? (
-                  <span className="text-amber-700">ร่างไว้ · ยังไม่เซ็น</span>
-                ) : (
-                  <span className="text-zinc-400">ยังไม่มีสัญญา</span>
-                )}
-              </dd>
-            </div>
-          </dl>
+          <p className="mb-3 text-xs text-zinc-500">
+            กรอกข้อมูล + แนบบัตรประชาชน แล้วบันทึกร่าง — แม่บ้านเปิดแอปตรวจและเซ็นเองได้เลย
+          </p>
+          <OfficeContractEditor
+            maidId={maid.id}
+            status={contractStatus}
+            signedAtLabel={contract?.signedAt ? thaiDate(contract.signedAt) : null}
+            prefill={officePrefill}
+            companyLine={companyLine}
+          />
         </section>
       )}
 

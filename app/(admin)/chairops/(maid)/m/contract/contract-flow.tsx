@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Eraser, Loader2 } from "lucide-react";
 
 import { IdCardUpload } from "@/components/chairops/id-card-upload";
+import { CONTRACT_CONSENT_TEXT } from "@/lib/chairops/contract/constants";
 import { ContractDocument } from "./contract-document";
 import { saveContractDraft, signContract } from "./actions";
 import type { ContractDocData } from "./types";
@@ -79,6 +80,8 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [savingDraft, setSavingDraft] = useState(false);
+  const [typedName, setTypedName] = useState(prefill.maidName);
+  const [consent, setConsent] = useState(false);
   const padRef = useRef<SignaturePad | null>(null);
 
   const set = (k: keyof ContractPrefill) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -142,6 +145,7 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
     if (!f.idCardImageUrl) return setError("กรุณาแนบรูปบัตรประชาชน");
     if (!f.salaryBankName.trim() || !f.salaryAccountNo.trim())
       return setError("กรุณากรอกบัญชีรับเงินเดือน");
+    setTypedName(f.maidName);
     void onSaveDraft();
     setStep(2);
     window.scrollTo({ top: 0 });
@@ -151,15 +155,16 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
     setError(null);
     const pad = padRef.current;
     if (!pad || pad.isEmpty()) return setError("กรุณาเซ็นชื่อในกรอบก่อน");
-    if (!f.salaryAccountName.trim() && !f.maidName.trim())
-      return setError("กรุณากรอกชื่อผู้เซ็น");
+    if (!typedName.trim()) return setError("กรุณาพิมพ์ชื่อ-นามสกุลเพื่อยืนยัน");
+    if (!consent) return setError("กรุณาติ๊กยอมรับสัญญาก่อนเซ็น");
     const dataUrl = pad.toDataURL("image/png");
     startTransition(async () => {
       try {
         const signatureImageUrl = await uploadDataUrl(dataUrl);
         const fd = buildFd();
         fd.set("signatureImageUrl", signatureImageUrl);
-        fd.set("signedName", f.maidName);
+        fd.set("signedName", typedName.trim());
+        fd.set("consent", "true");
         const res = await signContract(fd);
         if (!res.ok) {
           setError(res.error);
@@ -198,10 +203,27 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
             <Eraser className="size-3.5" /> ลบลายเซ็น เริ่มใหม่
           </button>
 
-          <label className="mt-3 flex items-start gap-2 text-xs text-zinc-600">
-            <span>
-              ข้าพเจ้าได้อ่านและเข้าใจสัญญาฉบับนี้ และยินยอมลงลายมือชื่อทางอิเล็กทรอนิกส์
+          <label className="mt-3 block space-y-1.5">
+            <span className="block text-sm font-medium text-zinc-800">
+              พิมพ์ชื่อ-นามสกุลเพื่อยืนยัน <span className="text-red-500">*</span>
             </span>
+            <input
+              type="text"
+              value={typedName}
+              onChange={(e) => setTypedName(e.target.value)}
+              placeholder="ชื่อ-นามสกุลของผู้เซ็น"
+              className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </label>
+
+          <label className="mt-3 flex items-start gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <span>{CONTRACT_CONSENT_TEXT}</span>
           </label>
         </div>
 
@@ -224,11 +246,17 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
           <button
             type="button"
             onClick={onSign}
-            disabled={pending}
+            disabled={pending || !consent || !typedName.trim()}
             className="inline-flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-3 text-base font-semibold text-white active:opacity-80 disabled:opacity-50"
           >
             {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {pending ? "กำลังบันทึก…" : "ยืนยันและเซ็นสัญญา"}
+            {pending
+              ? "กำลังบันทึก…"
+              : !typedName.trim()
+                ? "พิมพ์ชื่อก่อน"
+                : !consent
+                  ? "ติ๊กยอมรับก่อน"
+                  : "ยืนยันและเซ็นสัญญา"}
           </button>
         </div>
       </div>

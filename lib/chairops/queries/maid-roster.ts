@@ -65,7 +65,7 @@ export const listMaidRoster = cache(async function listMaidRoster(
   const monthStart = firstOfMonthBkk();
 
   // 1. Pull every MAID + every branch in one shot (small data).
-  const [maids, branches, leavesToday, payAgg, leaveMonthAgg, branchCounts] =
+  const [maids, branches, leavesToday, payAgg, leaveMonthAgg, branchCounts, contracts] =
     await Promise.all([
     prisma.chairopsUser.findMany({
       where: { orgId, role: "MAID" },
@@ -75,6 +75,9 @@ export const listMaidRoster = cache(async function listMaidRoster(
         phone: true,
         primaryBranchId: true,
         isActive: true,
+        // F4b (CEO 2026-08-02) — contract-readiness columns in ?view=maid.
+        bankAccountNo: true,
+        contractFileUrl: true, // legacy uploaded-PDF attachment
       },
       orderBy: { displayName: "asc" },
     }),
@@ -102,6 +105,12 @@ export const listMaidRoster = cache(async function listMaidRoster(
       where: { orgId, isActive: true, endedAt: null },
       _count: { _all: true },
     }),
+    // F4b (CEO 2026-08-02): online employment contracts — for the "สัญญา / เซ็น"
+    // columns. VOID contracts don't count as "having a contract".
+    prisma.chairopsMaidContract.findMany({
+      where: { orgId, status: { not: "VOID" } },
+      select: { maidId: true, status: true },
+    }),
   ]);
 
   const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
@@ -117,6 +126,14 @@ export const listMaidRoster = cache(async function listMaidRoster(
   const leaveCountByMaid = new Map(
     leaveMonthAgg.map((l) => [l.maidId, l._count._all]),
   );
+  // Per-maid contract state: has any (DRAFT/SIGNED) + has a SIGNED one.
+  const contractByMaid = new Map<string, { hasAny: boolean; signed: boolean }>();
+  for (const c of contracts) {
+    const cur = contractByMaid.get(c.maidId) ?? { hasAny: false, signed: false };
+    cur.hasAny = true;
+    if (c.status === "SIGNED") cur.signed = true;
+    contractByMaid.set(c.maidId, cur);
+  }
 
   const rows: MaidRosterRow[] = maids.map((m) => {
     const branchName = m.primaryBranchId
@@ -141,6 +158,10 @@ export const listMaidRoster = cache(async function listMaidRoster(
       thisMonthPaid: payByMaid.get(m.id) ?? 0,
       daysOffThisMonth: leaveCountByMaid.get(m.id) ?? 0,
       branchCount: branchCountByMaid.get(m.id) ?? (m.primaryBranchId ? 1 : 0),
+      hasBankAccount: !!m.bankAccountNo?.trim(),
+      hasContract:
+        (contractByMaid.get(m.id)?.hasAny ?? false) || !!m.contractFileUrl,
+      contractSigned: contractByMaid.get(m.id)?.signed ?? false,
     };
   });
 
@@ -295,6 +316,13 @@ export const getMaidDetail = cache(async function getMaidDetail(
         bankAccountName: true,
         contractFileUrl: true,
         contractFileName: true,
+        // F4b (CEO 2026-08-02) — office contract editor prefill + nickname.
+        nickname: true,
+        mobilePhone: true,
+        idCardNumber: true,
+        idCardImageUrl: true,
+        idCardFileName: true,
+        homeAddress: true,
       },
     }),
     prisma.chairopsMaidDayOff.findMany({
