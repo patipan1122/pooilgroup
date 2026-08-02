@@ -126,6 +126,8 @@ export default async function CollectionsPage({
     severity: r.severity,
     type: r.type,
     reason: r.reason || (r.type === "cash_short" ? "ยอดเงินไม่ตรงกับมิเตอร์" : "ตุ๊กตาหายไม่ตรงกับมิเตอร์"),
+    // ธง anomaly จริงจาก server — filter "มีปัญหา" ใช้ (จับรอบที่ gap จอเล็กแต่ server ตั้งธง)
+    hasAnomaly: r.hasAnomaly,
     // รอบตั้งต้น — client แยกป้าย/ไม่นับเป็น "ไม่ตรง" (กัน expectedCash=0 ดูเหมือนเงินเกิน)
     isBaseline: r.isBaseline,
     // รอบ "กำลังเก็บ" (OPEN · ยังเก็บไม่ครบ) — โชว์สด "X/Y ตู้ · ฿ · ยังไม่ปิด"
@@ -145,6 +147,8 @@ export default async function CollectionsPage({
       photoShots: m.photoShots ?? [],
       // ข้อมูลที่กรอกจริง (label→value · จัดรูปฝั่ง server · kind-aware) — โชว์ครบทุกช่องให้เทียบรูป
       entered: m.entered ?? [],
+      // ผลกระทบยอดต่อตู้ (server คิดให้) — ลงสี + นับ ตรง/ต้องตรวจ
+      reconcile: m.reconcile ?? null,
       // เลขปัจจุบันต่อตู้ (หลังบ้านแก้เลข) — meterAfter=มิเตอร์เหรียญ · prizeMeterNow=มิเตอร์ตุ๊กตา · cashIn=บาท
       coinMeterAfter: m.meterAfter,
       dollMeterAfter: m.prizeMeterNow,

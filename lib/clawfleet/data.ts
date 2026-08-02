@@ -64,8 +64,13 @@ export type Machine = {
   /** true = รอบตั้งต้น (INITIAL event) — ตั้งค่ามิเตอร์ครั้งแรกของตู้ */
   isInitial?: boolean;
   /** ข้อมูลที่พนักงานกรอกจริงในรอบนี้ (label→value · จัดรูปแล้วฝั่ง server · kind-aware).
-   *  โชว์ครบทุกช่องให้ผู้ตรวจเทียบกับรูปหลักฐาน · optional (legacy/mock ไม่ส่ง array นี้) */
-  entered?: { k: string; v: string }[];
+   *  โชว์ครบทุกช่องให้ผู้ตรวจเทียบกับรูปหลักฐาน · optional (legacy/mock ไม่ส่ง array นี้).
+   *  tone = ลงสีแถว (ok=เขียว · bad=แดง) ตามผลกระทบยอดต่อตู้ (server คิดให้ · CEO ขอสีสแกนง่าย) */
+  entered?: { k: string; v: string; tone?: "ok" | "bad" }[];
+  /** ผลกระทบยอดต่อตู้ (COLLECTION เท่านั้น · server คิดด้วย deriveEvent + ราคาต่อครั้งจริง).
+   *  cashOff=เงิน/มิเตอร์ไม่ตรง · prizeOff=ตุ๊กตาไม่ตรง · null = ไม่ตรวจ (รอบตั้งต้น/legacy).
+   *  ใช้ทั้งลงสี + นับ "ตรง/ต้องตรวจ" (เลขมาจาก server 100% ไม่ derive ซ้ำฝั่ง client) */
+  reconcile?: { cashOff: boolean; prizeOff: boolean } | null;
 };
 
 export type AnomalySeverity = "P0" | "P1" | "P2";

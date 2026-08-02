@@ -37,9 +37,12 @@ export default async function Fleet711Page() {
   let machines: Fleet711Machine[] = [];
   let isoDays: string[] = [];
   let rangeLabel = "";
+  // จุด 9 (CEO 2026-08-02): ตัวเลือกสาขาสำหรับ dropdown "ทุกสาขา" (mirror หน้า collections)
+  let branchOptions: { value: string; label: string }[] = [];
 
   try {
     const branches = await getV2Branches();
+    branchOptions = branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
 
     // ตู้ที่กำลังเสีย (มีใบแจ้งซ่อมค้าง) → set ของ machineId
     const [openTix, wipTix] = await Promise.all([
@@ -100,6 +103,8 @@ export default async function Fleet711Page() {
         machines.push({
           machineId: mp.machineId,
           code: mp.code,
+          // จุด 9 · branchId ติดรายตู้ → กรอง dropdown แบบตรงตัว (ไม่ใช่ substring ชื่อ · กันสาขาชื่อคล้ายปน)
+          branchId: branch.id,
           // "ทำเล" = ชื่อสาขา + ชื่อเล่นตู้ (แทนคอนเซปต์ร้าน 7-11 ที่ยังไม่มีใน data model)
           loc: mp.nickname ? `${branch.name} · ${mp.nickname}` : branch.name,
           status,
@@ -125,7 +130,7 @@ export default async function Fleet711Page() {
     isoDays = [];
   }
 
-  return <Client711 machines={machines} isoDays={isoDays} rangeLabel={rangeLabel} />;
+  return <Client711 machines={machines} isoDays={isoDays} rangeLabel={rangeLabel} branchOptions={branchOptions} />;
 }
 
 /** Date → ISO "YYYY-MM-DD" เวลาไทย */

@@ -63,13 +63,15 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
   // ดีไซน์ใหม่ · ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียว · บาท) — ตั้งตอนตั้งค่าครั้งแรก (display/reference)
   const [machinePrice, setMachinePrice] = useState<string>("");
 
-  // 4 มิเตอร์ + รูปของแต่ละตัว — ว่างหมด (ห้าม pre-fill)
+  // 4 มิเตอร์ (เลข 4 ตัว · ว่างหมด ห้าม pre-fill) — เลขคือ anchor ตั้งต้น (ขับ reconcile)
   const [meterVals, setMeterVals] = useState<Record<MeterKey, string>>({
     moneyTop: "", moneyBottom: "", dollTop: "", dollBottom: "",
   });
-  const [meterPhotos, setMeterPhotos] = useState<Record<MeterKey, string>>({
-    moneyTop: "", moneyBottom: "", dollTop: "", dollBottom: "",
-  });
+  // CEO 2026-08-02 · รูปมิเตอร์ตั้งต้น = 2 รูป "บังคับถ่าย" (จอดิจิตอล + แผงเฟือง · แต่ละรูปเห็นเหรียญ+ตุ๊กตา)
+  //   เดิม 4 รูป/หน้าปัด (optional → staff ข้าม → หน้าตรวจไม่มีรูป). เก็บช่อง DB เดิม:
+  //   จอดิจิตอล → photoMoneyMeterTopUrl · แผงเฟือง → photoMoneyMeterBottomUrl (ไม่ย้าย schema)
+  const [photoDigital, setPhotoDigital] = useState<string>("");
+  const [photoGear, setPhotoGear] = useState<string>("");
   const [machinePhoto, setMachinePhoto] = useState<string>("");
   // ดีไซน์ใหม่ · รูปตุ๊กตา "ก่อน/หลังใส่" — เก็บช่องเดียวกับรอบเก็บเงิน (photoStockUrl / photoMeterBeforeUrl)
   const [photoBefore, setPhotoBefore] = useState<string>("");
@@ -121,9 +123,6 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
     const cleaned = raw.replace(/[^\d]/g, "");
     setMeterVals((m) => ({ ...m, [key]: cleaned }));
   };
-  const setMeterPhoto = (key: MeterKey, url: string) => {
-    setMeterPhotos((m) => ({ ...m, [key]: url }));
-  };
   const parseMeter = (key: MeterKey): number | null => {
     const v = meterVals[key].trim();
     return v === "" ? null : Number(v);
@@ -148,6 +147,15 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
       setError("จำนวนเงินไม่ถูกต้อง");
       return;
     }
+    // CEO 2026-08-02 · บังคับถ่ายรูปมิเตอร์ตั้งต้น 2 รูป (จอดิจิตอล + แผงเฟือง) → หน้าตรวจมีรูปเสมอ
+    if (!photoDigital) {
+      setError("ยังไม่ได้ถ่ายรูป “จอดิจิตอล” — ตั้งค่าตู้ต้องมีรูปมิเตอร์ 2 รูป");
+      return;
+    }
+    if (!photoGear) {
+      setError("ยังไม่ได้ถ่ายรูป “แผงเฟือง” — ตั้งค่าตู้ต้องมีรูปมิเตอร์ 2 รูป");
+      return;
+    }
 
     setBusy(true);
     try {
@@ -164,10 +172,9 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
         photoMachineUrl: machinePhoto || undefined,
         photoStockBeforeUrl: photoBefore || undefined,
         photoStockAfterUrl: photoAfter || undefined,
-        photoMoneyMeterTopUrl: meterPhotos.moneyTop || undefined,
-        photoMoneyMeterBottomUrl: meterPhotos.moneyBottom || undefined,
-        photoDollMeterTopUrl: meterPhotos.dollTop || undefined,
-        photoDollMeterBottomUrl: meterPhotos.dollBottom || undefined,
+        // CEO 2026-08-02 · 2 รูปมิเตอร์: จอดิจิตอล → ช่อง Top · แผงเฟือง → ช่อง Bottom (ช่อง Doll ไม่ใช้แล้ว)
+        photoMoneyMeterTopUrl: photoDigital || undefined,
+        photoMoneyMeterBottomUrl: photoGear || undefined,
         // per-SKU ถูก persist แล้วผ่าน addSetup/addExisting (sheet) → ไม่ส่งซ้ำ
         loadout: [],
         clientKey: crypto.randomUUID(),
@@ -287,32 +294,44 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
         />
       </Section>
 
-      {/* ── อ่านมิเตอร์ 4 ตัว — 2x2 grid (ดีไซน์ใหม่) ── */}
+      {/* ── อ่านมิเตอร์ 4 ตัว — 2x2 grid (เลขล้วน · บน=ดิจิตอล ล่าง=เฟือง) ── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", flex: 1 }}>อ่านมิเตอร์ 4 ตัว</span>
           <span className="num" style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#F1F2F5", color: "#6B7280" }}>
-            {METERS.filter((m) => meterVals[m.key].trim() !== "" || !!meterPhotos[m.key]).length}/4
+            {METERS.filter((m) => meterVals[m.key].trim() !== "").length}/4
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2, lineHeight: 1.4 }}>กรอกเลขที่เห็นจริง · อ่านไม่ได้? แตะกล้องถ่ายรูปแทน</div>
+        <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2, lineHeight: 1.4 }}>กรอกเลขที่เห็นจริงทั้ง 4 ช่อง · รูปมิเตอร์ถ่ายด้านล่าง (2 รูป)</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
           {METERS.map((m) => {
-            const filled = meterVals[m.key].trim() !== "";
-            const hasPhoto = !!meterPhotos[m.key];
-            const done = filled || hasPhoto;
+            const done = meterVals[m.key].trim() !== "";
             return (
               <div key={m.key} style={{ background: done ? "#F4FBF6" : "#fff", border: `1.5px solid ${done ? "#BFE6CB" : "#E3E6EA"}`, borderRadius: 11, padding: "9px 10px" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>{m.label}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input value={meterVals[m.key]} onChange={(e) => setMeter(m.key, e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
-                    style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
-                  <PhotoCaptureButton compact label={`ถ่ายรูป ${m.label}`} value={meterPhotos[m.key]} onChange={(url) => setMeterPhoto(m.key, url)} orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase={m.phase} />
-                </div>
-                {hasPhoto && !filled && <div style={{ fontSize: 10, color: "#15803D", fontWeight: 700, marginTop: 5 }}>✓ ถ่ายรูปแล้ว</div>}
+                <input value={meterVals[m.key]} onChange={(e) => setMeter(m.key, e.target.value)} inputMode="numeric" placeholder="เลข" className="num"
+                  style={{ width: "100%", minWidth: 0, fontSize: 15, fontWeight: 700, padding: "6px 8px", border: "1px solid #E3E6EA", borderRadius: 8 }} />
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── รูปมิเตอร์ตั้งต้น 2 รูป (บังคับ · CEO 2026-08-02) — จอดิจิตอล + แผงเฟือง (แต่ละรูปเห็นเหรียญ+ตุ๊กตา) ── */}
+      <div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54", marginBottom: 8 }}>
+          รูปมิเตอร์ (2 รูป · บังคับถ่าย)
+          {(!photoDigital || !photoGear) && <span style={{ fontWeight: 600, color: "#B42318" }}> · ยังไม่ครบ</span>}
+        </div>
+        <div style={{ display: "flex", gap: 9 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PhotoCaptureButton label={photoDigital ? "จอดิจิตอล ✓" : "ถ่ายจอดิจิตอล"} value={photoDigital} onChange={setPhotoDigital}
+              orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_top" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <PhotoCaptureButton label={photoGear ? "แผงเฟือง ✓" : "ถ่ายแผงเฟือง"} value={photoGear} onChange={setPhotoGear}
+              orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_bottom" />
+          </div>
         </div>
       </div>
 

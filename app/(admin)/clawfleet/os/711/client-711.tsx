@@ -10,7 +10,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Search, Calendar, ChevronDown, PackageOpen } from "lucide-react";
+import { Search, Calendar, ChevronDown, PackageOpen, Building2 } from "lucide-react";
 import { EmptyState } from "@/components/clawfleet/os/kit";
 import { num, thDate, thWeekday } from "@/components/clawfleet/os/format";
 
@@ -18,6 +18,8 @@ import { num, thDate, thWeekday } from "@/components/clawfleet/os/format";
 export type Fleet711Machine = {
   machineId: string;
   code: string;
+  /** id สาขา — กรอง dropdown แบบตรงตัว (จุด 9) */
+  branchId: string;
   loc: string;
   status: "ok" | "refill" | "broken";
   /** รายได้ 7 วัน (บาท · COLLECTION-only) */
@@ -41,6 +43,8 @@ type Props = {
   isoDays: string[];
   /** "18–24 มิ.ย. 69" */
   rangeLabel: string;
+  /** ตัวเลือกสาขา (จุด 9) — dropdown "ทุกสาขา" คุมทั้ง 2 แท็บ */
+  branchOptions: { value: string; label: string }[];
 };
 
 // ── display helpers (ตรงกับ mockup) ────────────────────────────────────────
@@ -91,9 +95,10 @@ function pillBtn(active: boolean, activeBg: string, radius: number, fontSize: nu
   };
 }
 
-export function Client711({ machines, isoDays, rangeLabel }: Props) {
+export function Client711({ machines, isoDays, rangeLabel, branchOptions }: Props) {
   const [tab, setTab] = useState<"fleet" | "report">("fleet");
   const [search, setSearch] = useState("");
+  const [branch, setBranch] = useState("all"); // จุด 9 · "all" = ทุกสาขา
   const [period, setPeriod] = useState<"day" | "month">("day");
   const [day, setDay] = useState<string | null>(null);
   const [mxScale, setMxScale] = useState<"day" | "month">("day");
@@ -101,24 +106,30 @@ export function Client711({ machines, isoDays, rangeLabel }: Props) {
 
   const hasData = machines.length > 0 && isoDays.length > 0;
 
-  // ── fleet KPIs ──────────────────────────────────────────────────────────
-  const kpi = useMemo(() => {
-    const total = machines.length;
-    const rev7 = machines.reduce((a, m) => a + m.revenue, 0);
-    const refill = machines.filter((m) => m.status === "refill").length;
-    const broken = machines.filter((m) => m.status === "broken").length;
-    return { total, rev7, refill, broken };
-  }, [machines]);
+  // จุด 9 · base ที่กรองตามสาขาที่เลือก (ตรงตัวด้วย branchId) → ทั้ง KPI/รายตู้/รายงาน/matrix เคารพสาขา
+  const scoped = useMemo(
+    () => (branch === "all" ? machines : machines.filter((m) => m.branchId === branch)),
+    [machines, branch],
+  );
 
-  // ── fleet filter (search) ───────────────────────────────────────────────
+  // ── fleet KPIs (ตามสาขาที่เลือก) ─────────────────────────────────────────
+  const kpi = useMemo(() => {
+    const total = scoped.length;
+    const rev7 = scoped.reduce((a, m) => a + m.revenue, 0);
+    const refill = scoped.filter((m) => m.status === "refill").length;
+    const broken = scoped.filter((m) => m.status === "broken").length;
+    return { total, rev7, refill, broken };
+  }, [scoped]);
+
+  // ── fleet filter (search · ต่อยอดบน scoped) ─────────────────────────────
   const fleet = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return machines;
-    return machines.filter((m) => m.code.toLowerCase().includes(q) || m.loc.toLowerCase().includes(q));
-  }, [machines, search]);
+    if (!q) return scoped;
+    return scoped.filter((m) => m.code.toLowerCase().includes(q) || m.loc.toLowerCase().includes(q));
+  }, [scoped, search]);
 
-  // ── report: ตู้ที่รายงาน = ไม่รวมตู้เสีย ─────────────────────────────────
-  const rptMachines = useMemo(() => machines.filter((m) => m.status !== "broken"), [machines]);
+  // ── report: ตู้ที่รายงาน = ไม่รวมตู้เสีย (ตามสาขาที่เลือก) ────────────────
+  const rptMachines = useMemo(() => scoped.filter((m) => m.status !== "broken"), [scoped]);
 
   // last 7 ISO days (ใหม่→เก่า) สำหรับ periodRows รายวัน + drill
   const last7 = useMemo(() => isoDays.slice(0, 7), [isoDays]);
@@ -307,13 +318,25 @@ export function Client711({ machines, isoDays, rangeLabel }: Props) {
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div>
-      {/* tabs รายตู้ / รายงานสรุป */}
-      <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4, marginBottom: 18 }}>
-        {([["fleet", "รายตู้"], ["report", "รายงานสรุป"]] as const).map(([id, label]) => (
-          <button key={id} className="co-pbtn" onClick={() => setTab(id)} style={pillBtn(tab === id, "#1A1D21", 9, 13, "8px 18px")}>
-            {label}
-          </button>
-        ))}
+      {/* แถวบน: tabs รายตู้/รายงานสรุป + dropdown เลือกสาขา (จุด 9 · คุมทั้ง 2 แท็บ) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", background: "#fff", border: "1px solid #E8EAED", borderRadius: 12, padding: 4 }}>
+          {([["fleet", "รายตู้"], ["report", "รายงานสรุป"]] as const).map(([id, label]) => (
+            <button key={id} className="co-pbtn" onClick={() => setTab(id)} style={pillBtn(tab === id, "#1A1D21", 9, 13, "8px 18px")}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {branchOptions.length > 0 && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 9, padding: "7px 11px" }}>
+            <Building2 size={15} strokeWidth={2} color="#6B7280" />
+            <select value={branch} onChange={(e) => setBranch(e.target.value)}
+              style={{ border: "none", outline: "none", background: "transparent", fontSize: 13, fontWeight: 600, color: "#31363E", cursor: "pointer" }}>
+              <option value="all">ทุกสาขา</option>
+              {branchOptions.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
 
       {tab === "fleet" && (
@@ -344,7 +367,7 @@ export function Client711({ machines, isoDays, rangeLabel }: Props) {
                 <span style={{ fontSize: 12, fontWeight: 600, color: "#454B54" }}>{rangeLabel || "7 วันล่าสุด"}</span>
                 <ChevronDown size={13} strokeWidth={2} color="#9AA1AB" />
               </div>
-              <span style={{ fontSize: 12, color: "#9AA1AB" }}>แสดง {num(fleet.length)} จาก {num(machines.length)} ตู้</span>
+              <span style={{ fontSize: 12, color: "#9AA1AB" }}>แสดง {num(fleet.length)} จาก {num(scoped.length)} ตู้</span>
             </div>
 
             {/* header */}

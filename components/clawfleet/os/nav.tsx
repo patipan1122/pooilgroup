@@ -9,6 +9,7 @@ import {
   ScrollText,
   SlidersHorizontal,
   Grid3x3,
+  LayoutGrid,
   BarChart3,
   Users,
   Settings,
@@ -42,6 +43,7 @@ const MGR = ["area_manager", "branch_manager"] as const;
 export const BACK_NAV: ClawNavItem[] = [
   { key: "dashboard", label: "ภาพรวม", href: `${OS_BASE}/dashboard`, icon: LayoutDashboard, roles: [...MGR, "viewer"] },
   { key: "branches", label: "สาขา", href: `${OS_BASE}/branches`, icon: Store, roles: [...MGR] },
+  { key: "overview", label: "ภาพรวมทุกสาขา", href: `${OS_BASE}/overview`, icon: LayoutGrid, roles: [...MGR, "viewer"] },
   // management hub — CRUD สาขา+ตู้ · ประวัติตู้ · คลังประจำสาขา (admin-tier เท่านั้น · ไม่ใส่ roles)
   { key: "manage", label: "จัดการ", href: `${OS_BASE}/manage`, icon: Layers },
   // นำเข้าเก็บเงิน/เติมตุ๊กตาจาก Excel ทีเดียวหลายตู้หลายวัน (admin-tier เท่านั้น)
@@ -73,6 +75,7 @@ export type NavCounts = Partial<Record<NavBadgeKey, number>>;
 export const SCREEN_META: Record<string, { title: string; sub: string }> = {
   dashboard: { title: "ภาพรวมร้าน", sub: "สรุปกำไร–ขาดทุน · ตู้เสี่ยง · สุขภาพการตั้งค่าตู้ทุกสาขา" },
   branches: { title: "สาขา", sub: "ดูทุกสาขา · ตู้ในแต่ละสาขา · กดเจาะดูรายตู้" },
+  overview: { title: "ภาพรวมทุกสาขา", sub: "แต่ละสาขา เก็บกี่ตู้ · ขาดกี่ตู้ · เงิน · ปัญหา — เลือกวันหรือดูล่าสุด" },
   manage: { title: "จัดการ", sub: "สร้าง/แก้/ลบ สาขา+ตู้ · ย้าย/ปลดตู้ · ดูประวัติตู้ · คลังประจำสาขา" },
   import: { title: "นำเข้าข้อมูล (Excel)", sub: "กรอกเก็บเงิน/เติมตุ๊กตาลง Excel ทีเดียวหลายตู้หลายวัน · พรีวิวก่อนบันทึก · ยกเลิกทั้งชุดได้" },
   stock: { title: "คลังสินค้า", sub: "คลังกลาง + สต็อกสาขา · การโอน · หมุนเวียน FIFO" },

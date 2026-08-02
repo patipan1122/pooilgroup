@@ -9,6 +9,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireSession, type Session } from "@/lib/auth/session";
 import { userBranchIds } from "./role-guard";
+import { deriveEvent } from "./validation";
 import type {
   Branch,
   BranchTone,
@@ -291,6 +292,9 @@ export type V2Round = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** true = server ตั้งธง anomaly จริง (anomalyFlags.length>0) — ใช้ filter "มีปัญหา" ให้ซื่อสัตย์
+   *  (จับรอบ ANOMALY_REVIEW ที่ gap จอเล็กจนดูเหมือนตรง) */
+  hasAnomaly: boolean;
   /** รอบตั้งต้น (baseline) — ตั้งค่ามิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
    *  ห้ามจัดเป็น "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ทำให้ดูเหมือนเงินเกินทั้งที่ปกติ) */
   isBaseline: boolean;
@@ -393,6 +397,23 @@ export async function getV2AllRounds(opts?: {
     for (const c of counts) if (c.branchId) machineCountByBranch.set(c.branchId, c._count._all);
   }
 
+  // ราคาต่อครั้งจริงต่อตู้ (loadout ปัจจุบัน) — ต้องใช้ราคาเดียวกับตอนปิดรอบ ไม่งั้นตู้ราคาอื่น
+  // (฿20/฿30) จะขึ้น "ต้องตรวจ" หลอกในการนับ ตรง/ต้องตรวจ (จุด 2). ตู้ไม่มี loadout → flat ฿10.
+  const allMachineIds = [
+    ...new Set(rows.flatMap((s) => s.events.map((e) => e.machineId))),
+  ];
+  const priceByMachine = new Map<string, number>();
+  if (allMachineIds.length > 0) {
+    const priced = await prisma.cfMachine.findMany({
+      where: { orgId, id: { in: allMachineIds } },
+      select: {
+        id: true,
+        loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" }, select: { pricePerPlayCoins: true } },
+      },
+    });
+    for (const m of priced) priceByMachine.set(m.id, m.loadouts[0] ? m.loadouts[0].pricePerPlayCoins * 1000 : 1000);
+  }
+
   const rounds: V2Round[] = rows.map((s): V2Round => {
     const isOpen = s.status === "OPEN";
     // รอบ OPEN: snapshot (expected/actual/total) ยังไม่คำนวณ (คิดตอนปิดรอบ) → บวกเงินรายตู้จริงเอง.
@@ -418,7 +439,7 @@ export async function getV2AllRounds(opts?: {
 
     // แสดง "ทุกตู้ในรอบ" — คีบ + ตู้แลกเหรียญ + รอบตั้งต้น (CEO: เห็นข้อมูล+รูปครบทุกอย่าง).
     // เดิมกรองเฉพาะ CLAW → ตู้แลกและรอบตั้งต้นถูกซ่อน. eventToMachine จัดรูป/ข้อมูลตาม kind ให้เอง.
-    const machines: Machine[] = s.events.map((e) => eventToMachine(e));
+    const machines: Machine[] = s.events.map((e) => eventToMachine(e, priceByMachine.get(e.machineId) ?? 1000));
 
     // มิเตอร์เหรียญรวมทั้งรอบจาก event จริง (ทุก kind — เหรียญเข้าตู้คีบ+เครื่องแลก)
     // before = ผลรวม coinMeterBefore · after = ผลรวม coinMeterAfter → delta×10 = ควรได้จริง
@@ -448,6 +469,9 @@ export async function getV2AllRounds(opts?: {
       severity,
       type,
       reason: s.anomalyFlags[0] ?? "",
+      // ธงจริงจาก server (ไม่ใช่คำนวณจาก gap ฝั่งจอ) — ให้ filter "มีปัญหา" จับรอบที่ ANOMALY_REVIEW
+      // ที่ |gap| เล็กจนจอเห็นเป็น "ตรงกัน" (เช่น M5 มิเตอร์เสีย · per-machine netting) ได้ครบ
+      hasAnomaly: s.anomalyFlags.length > 0,
       isBaseline: s.isBaseline,
       isOpen,
       collectedCount: s.events.filter((e) => e.eventType === "COLLECTION").length,
@@ -677,29 +701,32 @@ function eventToMachine(e: {
   photoDollMeterBottomUrl: string | null;
   anomalyFlags: string[];
   notes: string | null;
-}): Machine {
+}, priceCents: number = 1000): Machine {
   const isInitial = e.eventType === "INITIAL";
   const kind = e.machine.kind;
   const cashBaht = Math.round(e.cashCountedCents / 100);
 
   let photoShots: { label: string; url: string | null }[];
-  const entered: { k: string; v: string }[] = [];
+  const entered: { k: string; v: string; tone?: "ok" | "bad" }[] = [];
 
   if (isInitial) {
-    // รอบตั้งต้น (baseline · INITIAL) — คอลัมน์ N1 เฉพาะ (ดู baseline-actions.ts ~244)
+    // รอบตั้งต้น (baseline · INITIAL) — CEO 2026-08-02: รูปมิเตอร์ตั้งต้น = 2 รูป (จอดิจิตอล + แผงเฟือง)
+    //   จอดิจิตอล → photoMoneyMeterTopUrl · แผงเฟือง → photoMoneyMeterBottomUrl (ช่อง DB เดิม)
+    //   คอลัมน์ Doll เก่าเก็บไว้แสดง baseline รุ่นก่อน (ถ้ามี · รุ่นใหม่ null → ซ่อนเอง)
     photoShots = [
       { label: "รูปตู้ทั้งตัว", url: e.photoMachineUrl },
-      { label: "มิเตอร์เงิน · บน", url: e.photoMoneyMeterTopUrl },
-      { label: "มิเตอร์เงิน · ล่าง", url: e.photoMoneyMeterBottomUrl },
-      { label: "มิเตอร์ตุ๊กตา · บน", url: e.photoDollMeterTopUrl },
-      { label: "มิเตอร์ตุ๊กตา · ล่าง", url: e.photoDollMeterBottomUrl },
+      { label: "จอดิจิตอล (เหรียญ+ตุ๊กตา)", url: e.photoMoneyMeterTopUrl },
+      { label: "แผงเฟือง (เหรียญ+ตุ๊กตา)", url: e.photoMoneyMeterBottomUrl },
+      { label: "มิเตอร์ตุ๊กตา · ดิจิตอล (เดิม)", url: e.photoDollMeterTopUrl },
+      { label: "มิเตอร์ตุ๊กตา · เฟือง (เดิม)", url: e.photoDollMeterBottomUrl },
       { label: "ตุ๊กตาก่อนใส่", url: e.photoStockUrl },
       { label: "ตุ๊กตาหลังใส่", url: e.photoMeterBeforeUrl },
     ];
-    if (e.meterMoneyTop != null) entered.push({ k: "มิเตอร์เงิน · บน (เฟือง)", v: nfmt(e.meterMoneyTop) });
-    if (e.meterMoneyBottom != null) entered.push({ k: "มิเตอร์เงิน · ล่าง (ดิจิตอล)", v: nfmt(e.meterMoneyBottom) });
-    if (e.meterDollTop != null) entered.push({ k: "มิเตอร์ตุ๊กตา · บน (เฟือง)", v: nfmt(e.meterDollTop) });
-    if (e.meterDollBottom != null) entered.push({ k: "มิเตอร์ตุ๊กตา · ล่าง (ดิจิตอล)", v: nfmt(e.meterDollBottom) });
+    // กฎถาวร (b54b497f): บน=ดิจิตอล · ล่าง=เฟือง (เดิมป้ายสลับ · แก้ให้ตรงกฎ · ไม่แตะค่า)
+    if (e.meterMoneyTop != null) entered.push({ k: "มิเตอร์เงิน · บน (ดิจิตอล)", v: nfmt(e.meterMoneyTop) });
+    if (e.meterMoneyBottom != null) entered.push({ k: "มิเตอร์เงิน · ล่าง (เฟือง)", v: nfmt(e.meterMoneyBottom) });
+    if (e.meterDollTop != null) entered.push({ k: "มิเตอร์ตุ๊กตา · บน (ดิจิตอล)", v: nfmt(e.meterDollTop) });
+    if (e.meterDollBottom != null) entered.push({ k: "มิเตอร์ตุ๊กตา · ล่าง (เฟือง)", v: nfmt(e.meterDollBottom) });
     entered.push({ k: "เงินสดตั้งต้น", v: `฿${nfmt(cashBaht)}` });
     if (e.stockAfter != null) entered.push({ k: "ตุ๊กตาในตู้ (ตั้งต้น)", v: `${nfmt(e.stockAfter)} ตัว` });
     if (e.refillQty != null && e.refillQty > 0) entered.push({ k: "เติมตุ๊กตา", v: `${nfmt(e.refillQty)} ตัว` });
@@ -714,10 +741,11 @@ function eventToMachine(e: {
     entered.push({ k: "เงินสดนับได้", v: `฿${nfmt(cashBaht)}` });
     if (e.promoCoinsDispensed != null) entered.push({ k: "เหรียญโปรที่จ่าย", v: nfmt(e.promoCoinsDispensed) });
   } else {
-    // ตู้คีบ (CLAW · COLLECTION) — 5 รูปเดิม (ดู actions.ts ~468)
+    // ตู้คีบ (CLAW · COLLECTION) — CEO 2026-08-02: รูปมิเตอร์เหลือ 2 (จอดิจิตอล + แผงเฟือง · แต่ละรูปเห็นเหรียญ+ตุ๊กตา)
+    //   photoMeterAfterUrl = จอดิจิตอล · photoPrizeMeterUrl = แผงเฟือง (ช่อง DB เดิม · relabel ตาม 2-photo model)
     photoShots = [
-      { label: "มิเตอร์เหรียญ", url: e.photoMeterAfterUrl },
-      { label: "มิเตอร์ตุ๊กตา", url: e.photoPrizeMeterUrl },
+      { label: "จอดิจิตอล (เหรียญ+ตุ๊กตา)", url: e.photoMeterAfterUrl },
+      { label: "แผงเฟือง (เหรียญ+ตุ๊กตา)", url: e.photoPrizeMeterUrl },
       { label: "สต็อกก่อนเติม", url: e.photoStockUrl },
       { label: "สต็อกหลังเติม", url: e.photoMeterBeforeUrl },
       { label: "เงินสด", url: e.photoCashUrl },
@@ -737,6 +765,35 @@ function eventToMachine(e: {
   }
   // หมายเหตุพนักงาน — ต่อท้ายเสมอถ้ามี (ทุกแบบตู้)
   if (e.notes) entered.push({ k: "หมายเหตุ", v: e.notes });
+
+  // ── กระทบยอดต่อตู้ (CEO 2026-08-02 · จุด 2+3) — เฉพาะ COLLECTION (รอบตั้งต้นไม่มีของก่อนเทียบ)
+  //   ใช้ deriveEvent (validator ตัวเดียวกับ server) + ราคาต่อครั้งจริง (priceCents) → ผลลัพธ์ตรง server 100%
+  //   cashOff = ธงกลุ่มเงิน/มิเตอร์ (M*/C*/A*/G*) · prizeOff = ธงกลุ่มตุ๊กตา (P*)
+  //   → ลงสีแถวข้อมูล (เขียว=ตรง แดง=ต้องตรวจ) + ให้ client นับ "ตรง/ต้องตรวจ" โดยไม่คำนวณเงินซ้ำ
+  let reconcile: { cashOff: boolean; prizeOff: boolean } | null = null;
+  if (!isInitial && (kind === "CLAW" || kind === "EXCHANGER")) {
+    const d = deriveEvent({
+      kind: kind === "EXCHANGER" ? "EXCHANGER" : "CLAW",
+      coinMeterBefore: e.coinMeterBefore,
+      coinMeterAfter: e.coinMeterAfter,
+      cashCountedCents: e.cashCountedCents,
+      dollMeterBefore: e.dollMeterBefore,
+      dollMeterAfter: e.dollMeterAfter,
+      stockBefore: e.stockBefore,
+      stockAfter: e.stockAfter,
+      refillQty: e.refillQty,
+      promoCoinsDispensed: e.promoCoinsDispensed,
+      cashPerCoinCents: priceCents,
+    });
+    const prizeOff = d.flags.some((f) => f.startsWith("P"));
+    const cashOff = d.flags.some((f) => !f.startsWith("P")); // ธงอื่นทั้งหมด = เงิน/มิเตอร์
+    reconcile = { cashOff, prizeOff };
+    // ลงสีแถว: แถวเงิน/มิเตอร์เหรียญ → tone ตาม cashOff · แถวตุ๊กตา → tone ตาม prizeOff
+    for (const rw of entered) {
+      if (rw.k.includes("ตุ๊กตา")) rw.tone = prizeOff ? "bad" : "ok";
+      else if (rw.k.includes("เงิน") || rw.k.includes("เหรียญ")) rw.tone = cashOff ? "bad" : "ok";
+    }
+  }
 
   const photos = photoShots.filter((p) => p.url).length;
   return {
@@ -758,6 +815,7 @@ function eventToMachine(e: {
     photos,
     photoShots,
     entered,
+    reconcile,
     flag: e.anomalyFlags.length > 0,
     note: e.notes ?? undefined,
   };

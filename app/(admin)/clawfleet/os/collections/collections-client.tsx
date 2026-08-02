@@ -34,8 +34,11 @@ export type CollectionMachine = {
   code: string;
   name: string;
   photoShots: { label: string; url: string | null }[];
-  /** ข้อมูลที่พนักงานกรอกจริงทุกช่อง (label→value · จัดรูปฝั่ง server · kind-aware) — โชว์ให้เทียบกับรูป */
-  entered?: { k: string; v: string }[];
+  /** ข้อมูลที่พนักงานกรอกจริงทุกช่อง (label→value · จัดรูปฝั่ง server · kind-aware) — โชว์ให้เทียบกับรูป
+   *  tone = สีแถว (ok=เขียว · bad=แดง · ไม่มี=ปกติ) ตามผลกระทบยอดต่อตู้ (server คิดให้) */
+  entered?: { k: string; v: string; tone?: "ok" | "bad" }[];
+  /** ผลกระทบยอดต่อตู้ (server) — cashOff=เงินไม่ตรง · prizeOff=ตุ๊กตาไม่ตรง · null=ไม่ตรวจ (ตั้งต้น) */
+  reconcile?: { cashOff: boolean; prizeOff: boolean } | null;
   /** ประเภทตู้ (CLAW/EXCHANGER) — ป้ายกำกับหัวการ์ดตู้ */
   kind?: string;
   /** true = event รอบตั้งต้น (INITIAL) */
@@ -64,6 +67,8 @@ export type CollectionRow = {
   severity: "P0" | "P1" | "P2";
   type: "cash_short" | "prize_short";
   reason: string;
+  /** true = server ตั้งธง anomaly จริง — filter "มีปัญหา" จับรอบที่ gap จอเล็กแต่ server ตั้งธง */
+  hasAnomaly?: boolean;
   /** รอบตั้งต้น (baseline) — ตั้งมิเตอร์ครั้งแรกของตู้ · ยังไม่มีรอบก่อนไว้เทียบ →
    *  แยกป้าย "รอบตั้งต้น" ไม่ปนกับ "ไม่ตรง/เกิน" (expectedCash=0 โดยธรรมชาติ ดูเหมือนเงินเกินทั้งที่ปกติ) */
   isBaseline?: boolean;
@@ -131,6 +136,25 @@ function statusOf(r: CollectionRow): StatusKind {
   return "match";
 }
 
+/** รอบ "มีปัญหา" (filter จุด 4 · CEO 2026-08-02) — จับให้ครบกว่าจอ "ไม่ตรง" เดิม:
+ *   (1) จอเห็นเงิน/ตุ๊กตาไม่ตรง (statusOf=diff) · (2) server ตั้งธง anomaly จริง (hasAnomaly —
+ *   จับ M5 มิเตอร์เสีย/netting ที่ gap เล็กจนดูเหมือนตรง) · (3) ตู้ในรอบมีเงิน/ตุ๊กตาไม่ตรงต่อตู้
+ *   (reconcile · จับรอบ OPEN ที่กำลังเก็บอยู่ด้วย). รอบตั้งต้นไม่นับเป็นปัญหา (ไม่มีของก่อนเทียบ). */
+function hasProblem(r: CollectionRow): boolean {
+  if (isBaselineRow(r)) return false;
+  if (statusOf(r) === "diff") return true;
+  if (r.hasAnomaly) return true;
+  return r.machines.some((m) => m.reconcile && (m.reconcile.cashOff || m.reconcile.prizeOff));
+}
+
+/** นับตู้ในรอบ (เฉพาะที่เก็บแล้ว · ไม่รวมตั้งต้น) แยก "ตรง" กับ "ต้องตรวจ" — จุด 2 */
+function reconcileTally(r: CollectionRow): { ok: number; check: number } | null {
+  const collected = r.machines.filter((m) => !m.isInitial && m.reconcile);
+  if (collected.length === 0) return null;
+  const check = collected.filter((m) => m.reconcile!.cashOff || m.reconcile!.prizeOff).length;
+  return { ok: collected.length - check, check };
+}
+
 /** "YYYY-MM-DD" → "1 ก.ค. 68" (พ.ศ. ย่อ) · ค่าเสีย → คืน string เดิม (graceful) */
 function thaiDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -160,11 +184,12 @@ const STATUS_META: Record<StatusKind, { label: string; bg: string; color: string
   open: { label: "กำลังเก็บ", bg: "#E5F2FD", color: "#0B69C7" },
 };
 
-const TABS: { id: "all" | StatusKind; label: string }[] = [
+const TABS: { id: "all" | StatusKind | "problem"; label: string }[] = [
   { id: "all", label: "ทั้งหมด" },
+  // "มีปัญหา" (จุด 4) = จอไม่ตรง + server ตั้งธง + ตู้ในรอบไม่ตรง (ครอบคลุมกว่า "ไม่ตรง" เดิม)
+  { id: "problem", label: "มีปัญหา" },
   { id: "open", label: "กำลังเก็บ" },
   { id: "match", label: "ตรงกัน" },
-  { id: "diff", label: "ไม่ตรง" },
   { id: "broken", label: "ตู้เสีย" },
   { id: "baseline", label: "รอบตั้งต้น" },
 ];
@@ -213,7 +238,7 @@ export function CollectionsClient({
     : SAMPLE_BRANCHES;
 
   const [branch, setBranch] = useState("all");
-  const [tab, setTab] = useState<"all" | StatusKind>("all");
+  const [tab, setTab] = useState<"all" | StatusKind | "problem">("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [pending, startTransition] = useTransition();
@@ -282,7 +307,8 @@ export function CollectionsClient({
     return data.filter((r) => {
       // กรองด้วย branchId ตรงตัว (ไม่ใช่ substring ชื่อ — เดิมสาขาชื่อคล้ายกันจะปนกัน)
       const matchBranch = branch === "all" || r.branchId === branch;
-      const matchTab = tab === "all" || statusOf(r) === tab;
+      const matchTab =
+        tab === "all" ? true : tab === "problem" ? hasProblem(r) : statusOf(r) === tab;
       return matchBranch && matchTab;
     });
   }, [data, branch, tab]);
@@ -836,6 +862,8 @@ function CollectionCard({
   const baseline = st === "baseline";
   // inProgress = รอบกำลังเก็บ (OPEN) — โชว์ "X/Y ตู้" แทน "ควรได้/ส่วนต่าง" · ยังไม่กระทบยอด
   const inProgress = st === "open";
+  // จุด 2 (CEO 2026-08-02): "เก็บไป N · ตรงกี่ · ต้องตรวจกี่" — นับตู้ที่เก็บแล้วในรอบ (server คิด reconcile)
+  const tally = baseline ? null : reconcileTally(row);
   // ตุ๊กตา at-a-glance สำหรับหัวแถว (CEO ขอเห็นเช็คตุ๊กตาชัด) — ตรง/หาย X/— (ไม่มีข้อมูล)
   const dollHasData = row.prizeExpected !== 0 || row.prizeActual !== 0;
   const dollStr = !dollHasData ? "—" : row.prizeGap > 0 ? `หาย ${row.prizeGap}` : row.prizeGap < 0 ? `เกิน ${-row.prizeGap}` : "ตรง";
@@ -908,7 +936,7 @@ function CollectionCard({
   const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม", "เงินสด"];
   const photoMachines: {
     code: string; name: string; shots: { label: string; url: string | null }[];
-    entered?: { k: string; v: string }[]; kind?: string; isInitial?: boolean;
+    entered?: { k: string; v: string; tone?: "ok" | "bad" }[]; kind?: string; isInitial?: boolean;
     eventId?: string; coin?: number; doll?: number; cash?: number;
   }[] =
     row.machines.length > 0
@@ -990,6 +1018,16 @@ function CollectionCard({
           )}
           {/* เช็คตุ๊กตา at-a-glance — ออกตรงมิเตอร์ไหม (CEO ขอ) */}
           <Stat label="ตุ๊กตา" value={baseline ? "ตั้งต้น" : inProgress ? "—" : dollStr} color={baseline ? "#4F46E5" : inProgress ? "#9AA1AB" : dollStatColor} />
+          {/* จุด 2 · เก็บไป N ตู้ · ตรงกี่ · ต้องตรวจกี่ (เขียว=ตรง แดง=ต้องตรวจ · สแกนที่เดียว) */}
+          {tally && (
+            <div>
+              <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>ตรวจตู้ที่เก็บ</div>
+              <div className="num" style={{ fontSize: 15, fontWeight: 700 }}>
+                <span style={{ color: "#15803D" }}>ตรง {tally.ok}</span>
+                {tally.check > 0 && <span style={{ color: "#B42318" }}> · ต้องตรวจ {tally.check}</span>}
+              </div>
+            </div>
+          )}
         </div>
         {/* item 5 · ชิปเล็ก "รูปยังไม่ครบ" (amber · จาง) — ตู้ในรอบยังขาดรูปหลักฐาน (ไม่นับรูปเงินสด).
             ใช้ได้ทั้งรอบปกติและรอบตั้งต้น (isBaseline) · แค่ context ไม่ใช่ error → วางก่อนป้ายสถานะ ไม่แย่งสายตา. */}
@@ -1190,12 +1228,19 @@ function CollectionCard({
                         className="grid grid-cols-1 sm:grid-cols-2 gap-x-5"
                         style={{ marginBottom: 10, background: "#FAFBFC", border: "1px solid #EEF0F3", borderRadius: 10, padding: "4px 13px" }}
                       >
-                        {m.entered.map((rw, ri) => (
-                          <div key={`${rw.k}-${ri}`} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderBottom: "1px solid #F1F2F5" }}>
-                            <span style={{ flex: 1, fontSize: 11, color: "#6B7280", lineHeight: 1.35 }}>{rw.k}</span>
-                            <span className="num" style={{ fontSize: 11.5, fontWeight: 600, color: "#1A1D21", textAlign: "right", wordBreak: "break-word" }}>{rw.v}</span>
-                          </div>
-                        ))}
+                        {m.entered.map((rw, ri) => {
+                          // จุด 3 · ลงสีเขียว/แดง แถวเงิน+ตุ๊กตา ตามผลกระทบยอด (server คิดให้ · tone)
+                          //   bad=แดง (ไม่ตรง) · ok=เขียว (ตรง) · ไม่มี tone=ปกติ (เทา/ดำ) → สแกนที่เดียวจบ
+                          const valColor = rw.tone === "bad" ? "#B42318" : rw.tone === "ok" ? "#15803D" : "#1A1D21";
+                          return (
+                            <div key={`${rw.k}-${ri}`} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderBottom: "1px solid #F1F2F5" }}>
+                              <span style={{ flex: 1, fontSize: 11, color: "#6B7280", lineHeight: 1.35 }}>{rw.k}</span>
+                              <span className="num" style={{ fontSize: 11.5, fontWeight: rw.tone ? 700 : 600, color: valColor, textAlign: "right", wordBreak: "break-word" }}>
+                                {rw.tone === "bad" && "⚠ "}{rw.v}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     {hasAnyPhoto ? (

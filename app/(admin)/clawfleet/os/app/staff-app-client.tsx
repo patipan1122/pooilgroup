@@ -1361,14 +1361,13 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
     if (photoRequired) {
       const cap = state.photosCaptured;
       // slot ที่ "ถ่ายแล้ว" (มี capture mark/url) แต่ url จริงยังว่าง = upload ยังไม่เสร็จ
-      const coinCaptured = !!cap.coinDigi || !!cap.coinGear;
-      const prizeCaptured = !!cap.dollDigi || !!cap.dollGear;
+      // CEO 2026-08-02 · 2 รูป: coinDigi=จอดิจิตอล · coinGear=แผงเฟือง (dollDigi/dollGear ไม่ใช้เป็นรูปแล้ว)
       const waitingUpload =
         (!!cap.before && !p.before) ||
         (!!cap.after && !p.after) ||
         (!!cap.cash && !p.cash) ||
-        (coinCaptured && !(p.coinDigi || p.coinGear)) ||
-        (prizeCaptured && !(p.dollDigi || p.dollGear));
+        (!!cap.coinDigi && !p.coinDigi) ||
+        (!!cap.coinGear && !p.coinGear);
       if (waitingUpload) {
         // CEO 2026-07-18 · เดิมบล็อกให้กดเองซ้ำ ("รอสักครู่แล้วกดอีกครั้ง") = พนักงานงงว่ากดไม่ได้.
         // ใหม่: จำเจตนา "ส่ง" ไว้ → พอ url รูปครบ (queue อัปเสร็จเอง) useEffect จะยิง submit ให้อัตโนมัติ
@@ -1422,10 +1421,10 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       warehouseId: refillQty > 0 && f.refillWarehouseId ? f.refillWarehouseId : undefined,
       // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
       // (server accepts url | "" | undefined → a skipped photo never blocks the round).
-      // The meter step captures per-row (เฟือง/ดิจิตอล); backend has 1 slot per meter, so
-      // coalesce to whichever row was photographed.
-      photoCoinMeterUrl: p.coinDigi || p.coinGear || "",
-      photoPrizeMeterUrl: p.dollDigi || p.dollGear || "",
+      // CEO 2026-08-02 · เหลือ 2 รูป: coinDigi = จอดิจิตอล (เก็บช่อง photoCoinMeterUrl → photoMeterAfterUrl)
+      //   · coinGear = แผงเฟือง (เก็บช่อง photoPrizeMeterUrl). ไม่ย้าย DB · read relabel เป็น จอดิจิตอล/แผงเฟือง.
+      photoCoinMeterUrl: p.coinDigi || "",
+      photoPrizeMeterUrl: p.coinGear || "",
       photoStockBeforeUrl: p.before || "",
       photoStockAfterUrl: p.after || "",
       photoCashUrl: p.cash || "",
@@ -3114,10 +3113,10 @@ type AttachSlot = {
   label: string;
   phase: AttachPhase;
 };
-// COLLECTION — 4 รูปหลักฐาน (มิเตอร์เหรียญ/ตุ๊กตา/สต็อกก่อน/สต็อกหลัง)
+// COLLECTION — CEO 2026-08-02: รูปมิเตอร์เหลือ 2 (จอดิจิตอล + แผงเฟือง) + สต็อกก่อน/หลัง
 const ATTACH_SLOTS_COLLECTION: AttachSlot[] = [
-  { col: "photoMeterAfterUrl", label: "มิเตอร์เหรียญ", phase: "meter_after" },
-  { col: "photoPrizeMeterUrl", label: "มิเตอร์ตุ๊กตา", phase: "prize_meter" },
+  { col: "photoMeterAfterUrl", label: "จอดิจิตอล (เหรียญ+ตุ๊กตา)", phase: "meter_after" },
+  { col: "photoPrizeMeterUrl", label: "แผงเฟือง (เหรียญ+ตุ๊กตา)", phase: "prize_meter" },
   { col: "photoStockUrl", label: "สต็อกก่อนเติม", phase: "stock" },
   { col: "photoMeterBeforeUrl", label: "สต็อกหลังเติม", phase: "stock_after" },
 ];
@@ -5159,7 +5158,8 @@ function PhotoHubScreen(props: {
   const { machine, photos } = props;
   // นับรูปที่ถ่ายแล้ว (มี url) — โชว์ความคืบหน้า "ถ่ายแล้ว N/6".
   // (CEO 2026-07-13) เอา "cash" ออก — เงินสดกรอกมือ ไม่ถ่ายรูปแล้ว.
-  const slotKeys: (keyof Photos)[] = ["before", "after", "coinGear", "coinDigi", "dollGear", "dollDigi"];
+  // CEO 2026-08-02 · รูปมิเตอร์เหลือ 2 (coinDigi=จอดิจิตอล · coinGear=แผงเฟือง) + ก่อน/หลังเติม
+  const slotKeys: (keyof Photos)[] = ["before", "after", "coinDigi", "coinGear"];
   const takenCount = slotKeys.filter((k) => !!photos[k]).length;
   // demo ไม่มี backend upload → บันทึกค้างจริงไม่ได้ (saveDraft ข้าม demo อยู่แล้ว) · ปุ่มยังกดดู flow ได้
   const slot = (key: keyof Photos, label: string, phase: Phase) => (
@@ -5202,16 +5202,11 @@ function PhotoHubScreen(props: {
             {slot("after", "หลังเติม (สินค้าในตู้)", "stock_after")}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {groupTitle("มิเตอร์เหรียญ (เฟือง + ดิจิตอล)")}
-            {slot("coinGear", "มิเตอร์เหรียญ · เฟือง (บน)", "meter_after")}
-            {slot("coinDigi", "มิเตอร์เหรียญ · ดิจิตอล (ล่าง)", "meter_after")}
+            {groupTitle("รูปมิเตอร์ (2 รูป)")}
+            {slot("coinDigi", "จอดิจิตอล (เห็นเลขเหรียญ + ตุ๊กตา)", "meter_after")}
+            {slot("coinGear", "แผงเฟือง (เห็นเลขเหรียญ + ตุ๊กตา)", "prize_meter")}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {groupTitle("มิเตอร์ตุ๊กตา (เฟือง + ดิจิตอล)")}
-            {slot("dollGear", "มิเตอร์ตุ๊กตา · เฟือง (บน)", "prize_meter")}
-            {slot("dollDigi", "มิเตอร์ตุ๊กตา · ดิจิตอล (ล่าง)", "prize_meter")}
-          </div>
-          {/* (CEO 2026-07-13) เอากลุ่ม "เงินสด" ออก — เงินสดกรอกมือ ไม่ถ่ายรูปแล้ว. */}
+          {/* CEO 2026-08-02 · รูปมิเตอร์เหลือ 2 (จอดิจิตอล/แผงเฟือง) · (2026-07-13) เอากลุ่มเงินสดออก. */}
         </div>
       </div>
 
@@ -5473,10 +5468,11 @@ function FlowScreen(props: {
   else if (recon.expectedCash < 0) { coinHint = `⚠️ กรอก ${n0(f.coinDigi)} น้อยกว่ารอบก่อน ${f.coinPrev} — กรอกผิด?`; coinHintColor = "#B45309"; }
   else { coinHint = `✓ มิเตอร์ควรได้ ฿${recon.expectedCash}`; coinHintColor = "#15803D"; }
   // ช่องมิเตอร์ 1 ช่อง (บน/ล่าง) + กล้องในช่อง — ตรง mockup section 3/4 · money-safe (setNum/onPhoto เดิม)
-  const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", phase: Phase, label: string) => {
+  // CEO 2026-08-02 · เหลือรูปมิเตอร์ 2 รูป (จอดิจิตอล + แผงเฟือง) → ช่องเลข "ไม่มีกล้องในช่อง" อีกต่อไป
+  //   (เดิม 4 กล้อง 1 กล้อง/เลข · CEO: รูปจริงมีแค่ 2 · จอดิจิตอลเห็นเลขเหรียญ+ตุ๊กตา · แผงเฟืองเห็นเลขเหรียญ+ตุ๊กตา)
+  //   เลข 4 ตัวยังกรอกครบเหมือนเดิม (ขับ reconcile offset) — เอาแค่กล้องออกจากช่อง.
+  const meterCell = (key: "coinGear" | "coinDigi" | "dollGear" | "dollDigi", label: string) => {
     // CEO 2026-08-01 · placeholder "รอบก่อน" = เลขจริง "ของหน้าปัดตัวเอง" จาก event ล่าสุดที่กรอกครบ (รวม baseline/ตั้งค่าตู้).
-    //   เดิม mirror จำเลขเดียวโชว์ซ้ำทั้ง 2 ช่อง (บน=ล่าง หลอก). ตอนนี้แต่ละช่องอ่านเลขจริงของตัวเอง (พนักงานกรอกจริง 4 ตัว).
-    //   null = ไม่เคยมีเลขครบเลย → ช่องว่าง. ยัง placeholder เท่านั้น (ไม่ prefill ค่า · กันโกง พนักงานอ่านสด).
     const prev =
       key === "coinGear" ? f.prevCoinGear
         : key === "coinDigi" ? f.prevCoinDigi
@@ -5485,15 +5481,9 @@ function FlowScreen(props: {
     return (
       <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E8EAED", borderRadius: 9, padding: "5px 8px" }}>
         <div style={{ fontSize: 9.5, color: "#9AA1AB", marginBottom: 2 }}>{label}</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
-            placeholder={prev != null ? String(prev) : "เลข"}
-            style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, padding: "4px 7px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
-          {!props.usingDemo && machine?.code ? (
-            <PhotoCaptureButton compact label="" value={photos[key]} onChange={(url) => props.onPhoto(key, url)} onCaptured={() => props.onCapture(key)}
-              orgId={props.orgId} machineCode={machine.code} eventScopeId={props.eventScopeId} phase={phase} />
-          ) : null}
-        </div>
+        <input value={f[key] == null ? "" : String(f[key])} onChange={(e) => props.setNum(key)(e.target.value)} inputMode="numeric" className="num"
+          placeholder={prev != null ? String(prev) : "เลข"}
+          style={{ width: "100%", minWidth: 0, fontSize: 14, fontWeight: 700, padding: "4px 7px", border: "1.5px solid #E3E6EA", borderRadius: 8, background: "#fff" }} />
       </div>
     );
   };
@@ -5651,22 +5641,34 @@ function FlowScreen(props: {
               <div style={{ flex: 1, background: "#F8F9FB", borderRadius: 10, padding: 7, textAlign: "center" }}><div style={{ fontSize: 10, color: "#6B7280" }}>หลังเติม</div><div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{isFilled(f.left) ? afterFill : "—"}</div></div>
             </div>
 
-            {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ล่าง · แนบรูปในช่อง) ── */}
+            {/* ── 3 · มิเตอร์ตุ๊กตา (บน=ดิจิตอล · ล่าง=เฟือง) ── */}
             <div style={{ borderTop: "1px solid #EEF0F2", margin: "10px 0 9px" }} />
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (ดิจิตอล + เฟือง · แนบรูปในช่อง)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>3 · มิเตอร์ตุ๊กตา (บน=ดิจิตอล · ล่าง=เฟือง)</div>
             <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("dollDigi", "prize_meter", "บน (ดิจิตอล)")}
-              {meterCell("dollGear", "prize_meter", "ล่าง (เฟือง)")}
+              {meterCell("dollDigi", "บน (ดิจิตอล)")}
+              {meterCell("dollGear", "ล่าง (เฟือง)")}
             </div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: dollHintColor, margin: "0 2px 8px" }}>{dollHint}</div>
 
-            {/* ── 4 · มิเตอร์เหรียญ (บน=ล่าง · แนบรูปในช่อง) ── */}
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (ดิจิตอล + เฟือง · แนบรูปในช่อง)</div>
+            {/* ── 4 · มิเตอร์เหรียญ (บน=ดิจิตอล · ล่าง=เฟือง) ── */}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "0 2px 7px" }}>4 · มิเตอร์เหรียญ (บน=ดิจิตอล · ล่าง=เฟือง)</div>
             <div style={{ display: "flex", gap: 7, marginBottom: 5 }}>
-              {meterCell("coinDigi", "meter_after", "บน (ดิจิตอล)")}
-              {meterCell("coinGear", "meter_after", "ล่าง (เฟือง)")}
+              {meterCell("coinDigi", "บน (ดิจิตอล)")}
+              {meterCell("coinGear", "ล่าง (เฟือง)")}
             </div>
             <div className="num" style={{ fontSize: 11, fontWeight: 700, color: coinHintColor, margin: "0 2px 7px" }}>{coinHint}</div>
+
+            {/* ── รูปมิเตอร์ 2 รูป (CEO 2026-08-02) — จอดิจิตอลถ่าย 1 (เห็นเลขเหรียญ+ตุ๊กตา) · แผงเฟืองถ่าย 1
+                 (เดิม 4 รูป/หน้าปัด · CEO: ของจริงมี 2) · เก็บช่องเดิม coinDigi=จอดิจิตอล · coinGear=แผงเฟือง (ไม่ย้าย DB) */}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "#454B54", margin: "2px 2px 7px" }}>รูปมิเตอร์ (2 รูป · ถ่าย/แนบก็ได้)</div>
+            <div style={{ display: "flex", gap: 9, marginBottom: 8 }}>
+              <PhotoTile label="จอดิจิตอล (เหรียญ+ตุ๊กตา)" value={photos.coinDigi} captured={!!props.photosCaptured.coinDigi}
+                onChange={(url) => props.onPhoto("coinDigi", url)} onCaptured={() => props.onCapture("coinDigi")}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="meter_after" disabled={props.usingDemo} />
+              <PhotoTile label="แผงเฟือง (เหรียญ+ตุ๊กตา)" value={photos.coinGear} captured={!!props.photosCaptured.coinGear}
+                onChange={(url) => props.onPhoto("coinGear", url)} onCaptured={() => props.onCapture("coinGear")}
+                orgId={props.orgId} machineCode={machine?.code ?? ""} eventScopeId={props.eventScopeId} phase="prize_meter" disabled={props.usingDemo} />
+            </div>
 
             {/* ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ย่อเป็นลิงก์บรรทัดเดียว) · CEO 2026-07-21 ตัดบรรทัด "อ่านไม่ได้?" ออก (กินที่) */}
             <button type="button" disabled={props.skipPending}
@@ -6004,18 +6006,16 @@ function FlowScreen(props: {
         <div onClick={() => setPhotoView(null)} className="co-tap" style={{ position: "absolute", inset: 0, zIndex: 30, background: "rgba(20,22,28,0.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 26 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, overflow: "hidden", width: "100%", maxWidth: 340, maxHeight: "86%", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "13px 16px", borderBottom: "1px solid #EEF0F3", flex: "0 0 auto" }}>
-              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{photoView === "meter" ? "รูปมิเตอร์ 4 รูป" : "รูปหลังเติม"}</span>
+              <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>{photoView === "meter" ? "รูปมิเตอร์ 2 รูป" : "รูปหลังเติม"}</span>
               <button type="button" onClick={() => setPhotoView(null)} style={{ width: 30, height: 30, borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#454B54" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
             {(() => {
-              // CEO 2026-07-19 · มิเตอร์โชว์ครบ 4 รูป (เงินบน/ล่าง · ตุ๊กตาบน/ล่าง) ไว้ตรวจตอนกรอกมิเตอร์ใหม่
+              // CEO 2026-08-02 · มิเตอร์เหลือ 2 รูป: จอดิจิตอล (coinDigi) + แผงเฟือง (coinGear) · แต่ละรูปเห็นทั้งเลขเหรียญ+ตุ๊กตา
               const meterShots: { label: string; url: string }[] = [
-                { label: "เงิน · บน (เฟือง)", url: photos.coinGear || "" },
-                { label: "เงิน · ล่าง (ดิจิตอล)", url: photos.coinDigi || "" },
-                { label: "ตุ๊กตา · บน (เฟือง)", url: photos.dollGear || "" },
-                { label: "ตุ๊กตา · ล่าง (ดิจิตอล)", url: photos.dollDigi || "" },
+                { label: "จอดิจิตอล (เหรียญ+ตุ๊กตา)", url: photos.coinDigi || "" },
+                { label: "แผงเฟือง (เหรียญ+ตุ๊กตา)", url: photos.coinGear || "" },
               ];
               const noneMeter = meterShots.every((m) => !m.url);
               const after = photos.after || "";

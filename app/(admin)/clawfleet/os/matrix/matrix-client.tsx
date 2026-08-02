@@ -203,6 +203,8 @@ export function MatrixClient({
 
   const [metric, setMetric] = useState<Metric>("cost");
   const [drillIdx, setDrillIdx] = useState<number | null>(null);
+  // จุด 10 · โค้ดตู้ที่ preselect ในแท็บ "ข้อมูลดิบ" (มาจากปุ่มในป๊อปอัปเจาะตู้) · "all" = ทุกตู้
+  const [rawPreselect, setRawPreselect] = useState<string>("all");
 
   // popup รายช่อง (ตู้ × วัน) — โหลดข้อมูลดิบตอนกด
   const [cell, setCell] = useState<{
@@ -550,7 +552,8 @@ export function MatrixClient({
           return (
             <button
               key={t.key}
-              onClick={() => setView(t.key)}
+              // กดแท็บ "ข้อมูลดิบ" ตรง ๆ = ดูทุกตู้ (รีเซ็ต preselect · การเจาะตู้เดียวมาจากปุ่มในป๊อปอัป)
+              onClick={() => { setView(t.key); if (t.key === "raw") setRawPreselect("all"); }}
               style={{
                 border: "none",
                 cursor: "pointer",
@@ -629,11 +632,13 @@ export function MatrixClient({
 
       {view === "raw" ? (
         <RawReadingsClient
+          key={rawPreselect}
           rows={rawRows}
           canEdit={canEditRaw}
           branchName={branch?.name ?? branchCode}
           total={rawTotal}
           truncated={rawTruncated}
+          preselectMachine={rawPreselect}
         />
       ) : (
       <>
@@ -1079,6 +1084,16 @@ export function MatrixClient({
       >
         {drill && (
           <>
+            {/* จุด 10 · กดดูข้อมูลดิบ (มิเตอร์ดิจิตอล/เฟือง ก่อน→หลัง) ย้อนหลังเฉพาะตู้นี้ */}
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid #EEF0F3" }}>
+              <button
+                type="button"
+                onClick={() => { setRawPreselect(drill.code); setView("raw"); setDrillIdx(null); }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#4F46E5", background: "#EEF0FE", border: "none", borderRadius: 9, padding: "8px 14px", cursor: "pointer" }}
+              >
+                ดูข้อมูลดิบย้อนหลังตู้นี้ (เลขมิเตอร์ทุกรอบ) →
+              </button>
+            </div>
             {/* 5 summary tiles */}
             <div
               style={{

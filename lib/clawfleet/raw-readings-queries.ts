@@ -178,19 +178,20 @@ export async function getBranchRawReadings(opts: {
       !deposited &&
       (status === "CLOSED" || status === "ANOMALY_REVIEW");
 
+    // CEO 2026-08-02 · รูปมิเตอร์เหลือ 2 (จอดิจิตอล + แผงเฟือง · แต่ละรูปเห็นเหรียญ+ตุ๊กตา) · relabel ตรงกับ 2-photo model
     const photos: RawReadingPhoto[] = [];
     if (e.eventType === "INITIAL") {
-      pushPhoto(photos, "มิเตอร์เหรียญ เฟือง", e.photoMoneyMeterTopUrl);
-      pushPhoto(photos, "มิเตอร์เหรียญ ดิจิตอล", e.photoMoneyMeterBottomUrl);
-      pushPhoto(photos, "มิเตอร์ตุ๊กตา เฟือง", e.photoDollMeterTopUrl);
-      pushPhoto(photos, "มิเตอร์ตุ๊กตา ดิจิตอล", e.photoDollMeterBottomUrl);
+      pushPhoto(photos, "จอดิจิตอล (เหรียญ+ตุ๊กตา)", e.photoMoneyMeterTopUrl);
+      pushPhoto(photos, "แผงเฟือง (เหรียญ+ตุ๊กตา)", e.photoMoneyMeterBottomUrl);
+      pushPhoto(photos, "มิเตอร์ตุ๊กตา ดิจิตอล (เดิม)", e.photoDollMeterTopUrl);
+      pushPhoto(photos, "มิเตอร์ตุ๊กตา เฟือง (เดิม)", e.photoDollMeterBottomUrl);
       pushPhoto(photos, "หน้าตู้", e.photoMachineUrl);
     } else {
-      pushPhoto(photos, "มิเตอร์ก่อน", e.photoMeterBeforeUrl);
-      pushPhoto(photos, "มิเตอร์ตุ๊กตา", e.photoPrizeMeterUrl);
+      pushPhoto(photos, "จอดิจิตอล (เหรียญ+ตุ๊กตา)", e.photoMeterAfterUrl);
+      pushPhoto(photos, "แผงเฟือง (เหรียญ+ตุ๊กตา)", e.photoPrizeMeterUrl);
+      pushPhoto(photos, "สต็อกก่อนเติม", e.photoStockUrl);
+      pushPhoto(photos, "สต็อกหลังเติม", e.photoMeterBeforeUrl);
       pushPhoto(photos, "เงินสด", e.photoCashUrl);
-      pushPhoto(photos, "มิเตอร์หลัง", e.photoMeterAfterUrl);
-      pushPhoto(photos, "ตุ๊กตาในตู้", e.photoStockUrl);
     }
 
     return {
@@ -204,11 +205,12 @@ export async function getBranchRawReadings(opts: {
       collectedByName: e.collectedBy?.name ?? "—",
       coinBefore: e.coinMeterBefore ?? null,
       coinDigital: e.coinMeterAfter,
-      // เฟือง: ใช้ meterMoneyTop ถ้ามี (รอบใหม่เก็บแล้ว) — รอบเก่าไม่มี = null
-      coinGear: e.meterMoneyTop ?? null,
+      // เฟือง normalize ตาม eventType (กฎถาวร บน=ดิจิตอล ล่าง=เฟือง · COLLECTION เก็บกลับหัว):
+      //   COLLECTION → เฟือง=Top · INITIAL → เฟือง=Bottom (เดิม hardcode Top ทำ baseline อ่านสลับ)
+      coinGear: (e.eventType === "COLLECTION" ? e.meterMoneyTop : e.meterMoneyBottom) ?? null,
       dollBefore: e.dollMeterBefore ?? null,
       dollDigital: e.dollMeterAfter ?? null,
-      dollGear: e.meterDollTop ?? null,
+      dollGear: (e.eventType === "COLLECTION" ? e.meterDollTop : e.meterDollBottom) ?? null,
       cashBaht: Math.round(e.cashCountedCents / 100),
       stockBefore: e.stockBefore ?? null,
       stockAfter: e.stockAfter ?? null,

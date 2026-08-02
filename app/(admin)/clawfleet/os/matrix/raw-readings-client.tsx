@@ -78,28 +78,50 @@ export function RawReadingsClient({
   branchName,
   total,
   truncated,
+  preselectMachine = "all",
 }: {
   rows: RawReadingRow[];
   canEdit: boolean;
   branchName: string;
   total: number;
   truncated: boolean;
+  /** จุด 10 · โค้ดตู้ที่ preselect (กดหัวคอลัมน์ตู้จากเมทริกซ์ → เด้งมาที่ตู้นี้) · "all" = ทุกตู้ */
+  preselectMachine?: string;
 }) {
   const router = useRouter();
   const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // จุด 10 (CEO 2026-08-02): กดเลือกดูตู้เดียว → เห็นย้อนหลังเฉพาะตู้นั้น (filter client-side · 0 query)
+  const [machineFilter, setMachineFilter] = useState<string>(preselectMachine);
+
+  // ตัวเลือกตู้ (unique จาก rows · code + ชื่อเล่น) เรียงตาม code
+  const machineOptions = useMemo(() => {
+    const seen = new Map<string, string>(); // code → label
+    for (const r of rows) {
+      if (!seen.has(r.machineCode)) {
+        seen.set(r.machineCode, r.machineNickname ? `${r.machineCode} · ${r.machineNickname}` : r.machineCode);
+      }
+    }
+    return [...seen.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.value.localeCompare(b.value));
+  }, [rows]);
+
+  // แถวที่แสดง = กรองตามตู้ที่เลือก (ทุกตู้ = rows เต็ม)
+  const shownRows = useMemo(
+    () => (machineFilter === "all" ? rows : rows.filter((r) => r.machineCode === machineFilter)),
+    [rows, machineFilter],
+  );
 
   const counts = useMemo(() => {
     let init = 0;
     let coll = 0;
-    for (const r of rows) {
+    for (const r of shownRows) {
       if (r.kind === "INITIAL") init++;
       else coll++;
     }
     return { init, coll };
-  }, [rows]);
+  }, [shownRows]);
 
   function openEdit(row: RawReadingRow) {
     setErr(null);
@@ -152,7 +174,7 @@ export function RawReadingsClient({
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = rows.map((r) =>
+    const lines = shownRows.map((r) =>
       [
         r.dateLabel, r.timeLabel, r.machineCode, r.machineNickname ?? "",
         r.kind === "INITIAL" ? "ตั้งต้น" : "รอบเก็บ",
@@ -189,10 +211,21 @@ export function RawReadingsClient({
       {/* summary + actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: "#5A6270" }}>
-          <b style={{ color: "#1A1D21" }}>{rows.length}</b> รายการที่พนักงานกรอก
+          <b style={{ color: "#1A1D21" }}>{shownRows.length}</b> รายการที่พนักงานกรอก
           <span style={{ color: "#B45309", fontWeight: 600, marginLeft: 8 }}>ตั้งต้น {counts.init}</span>
           <span style={{ color: "#4F46E5", fontWeight: 600, marginLeft: 8 }}>รอบเก็บ {counts.coll}</span>
         </div>
+        {/* จุด 10 · เลือกดูตู้เดียว → เห็นย้อนหลังเฉพาะตู้นั้น */}
+        {machineOptions.length > 1 && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #E3E6EA", borderRadius: 8, padding: "6px 11px" }}>
+            <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>ตู้:</span>
+            <select value={machineFilter} onChange={(e) => setMachineFilter(e.target.value)}
+              style={{ border: "none", outline: "none", background: "transparent", fontSize: 12.5, fontWeight: 600, color: "#31363E", cursor: "pointer" }}>
+              <option value="all">ทุกตู้ ({machineOptions.length})</option>
+              {machineOptions.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </label>
+        )}
         <span style={{ flex: 1 }} />
         {!canEdit && (
           <span style={{ fontSize: 11, color: "#9AA1AB" }}>ดูอย่างเดียว — แก้เลขได้เฉพาะแอดมิน/ผจก.สาขา</span>
@@ -238,7 +271,7 @@ export function RawReadingsClient({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {shownRows.map((r) => {
                 const isInit = r.kind === "INITIAL";
                 const hasFlag = r.anomalyFlags.length > 0 || !!r.shortReason;
                 return (
