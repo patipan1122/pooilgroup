@@ -897,8 +897,28 @@ type StaffAppProps = {
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
 type Panel = "history" | "repair" | "stock" | "receive" | "config" | "tour" | null;
 
+// save=submit · แปลง submit args → payload ของ editCollectionRound (กดบันทึกค้างซ้ำ = "แก้ใบเดิม").
+//   ส่ง เงิน+ดิจิตอล (ใช้คิดเงิน) + เฟือง + รูป ครบ เพื่อไม่ให้ค่าที่แก้รอบสอง "หายเงียบ" (BLOCKER #2).
+//   ⚠️ ไม่ส่ง stock/refill — แก้ใบเดิม "ไม่เติมซ้ำ" (กันตุ๊กตาเข้าคลัง/เข้าตู้ 2 เท่า). server ไม่แตะ stock/refill.
+function editPayloadFromArgs(eventId: string, a: SubmitBranchEventArgs) {
+  return {
+    eventId,
+    cashCents: a.cashCountedCents,
+    coinMeterAfter: a.coinMeterAfter,
+    dollMeterAfter: a.dollMeterAfter,
+    coinMeterTop: a.coinMeterTop,
+    dollMeterTop: a.dollMeterTop,
+    photoCoinMeterUrl: a.photoCoinMeterUrl,
+    photoPrizeMeterUrl: a.photoPrizeMeterUrl,
+    photoStockBeforeUrl: a.photoStockBeforeUrl,
+    photoStockAfterUrl: a.photoStockAfterUrl,
+    photoCashUrl: a.photoCashUrl,
+  };
+}
+
 function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const router = useRouter(); // quick-save (บันทึกค้าง=ส่ง) → refresh ให้ history/สถานะตู้ "เก็บแล้ว" อัปเดตจาก server
   const [panel, setPanel] = useState<Panel>(null);
   // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (จำติดบัญชี) — state เริ่มจาก server · reorder = optimistic + save
   //   ใช้ทั้งหน้าแรก (ในกลุ่มสาขา) และวิ่งตู้ 7-11 (แบน) · save เขียนทับทั้งชุด (กันลำดับสาขาอื่นหาย/กัน orphan)
@@ -977,6 +997,12 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
   // CEO 2026-07-25 · ชนิดด่าน + ข้อความจาก server (SHORT=เงินขาด · INTEGRITY=มิเตอร์เสีย/ตัวเลขผิดธรรมชาติ)
   // → ให้ MismatchGate โชว์ข้อความ+รายการเหตุผลให้ตรงกับปัญหา. null = ไม่มีด่าน.
   const [pendingGate, setPendingGate] = useState<{ kind: "SHORT" | "INTEGRITY"; message: string } | null>(null);
+  // save=submit (CEO 2026-08-02): "บันทึกค้าง" ที่ข้อมูลครบ → ส่งขึ้น server ทันที (รอบยังเปิด · admin เห็น realtime).
+  //   collectedThisRoundRef = ตู้ที่ "ส่งขึ้น server แล้ว" ใน app-session นี้ → machineId→eventId (เด้งแก้แทนส่งซ้ำ · money-safe).
+  //   inFlightRef = กันกดบันทึกรัว ๆ ต่อตู้ (double-tap). pendingKeepOpenRef = SHORT gate resubmit เป็น quick-save ไหม.
+  const collectedThisRoundRef = useRef<Map<string, string>>(new Map());
+  const inFlightRef = useRef<Set<string>>(new Set());
+  const pendingKeepOpenRef = useRef<boolean>(false);
   // 🆕 คืนตุ๊กตาเข้าคลัง — ตู้ที่กำลังเปิด bottom-sheet คืน (null = ปิด). local เฉพาะหน้าจอ.
   const [returnMachineId, setReturnMachineId] = useState<string | null>(null);
   // item 7 · เปิด sheet คืนในโหมด "เปลี่ยน" (header hint "คืนตัวเก่าก่อน แล้วเติมใหม่" + ปุ่มเติมต่อหลังคืน).
@@ -1246,11 +1272,29 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
     });
   }
 
+  /* ── "บันทึกค้าง" (CEO 2026-08-02): ข้อมูลครบ → ส่งขึ้น server ทันที (รอบยังเปิด · admin เห็น realtime) ──
+   *  ไม่ครบ/demo/ตู้ยังไม่ตั้งค่า/ไม่มีรอบ → เก็บ draft ในเครื่องเหมือนเดิม (money-safe fallback · ไม่แตะ server).
+   *  money-safe: ตู้ที่ส่งแล้วรอบนี้ (collectedThisRoundRef) → กดซ้ำ = "แก้ใบเดิม" (editCollectionRound OPEN-safe)
+   *  ไม่ใช่ส่งใบใหม่ → ไม่นับเงินซ้ำ. server ยังมี unique index กัน 2 COLLECTION/ตู้/รอบ เป็นด่านสุดท้าย. */
   function saveDraft() {
+    if (!machine || uploadPending) return;
+    const mid = machine.id;
+    // ไม่ครบ / demo / ตู้ยังไม่ตั้งค่า (baseline) / ยังไม่มีรอบจริง → draft ในเครื่อง (ไม่ส่ง server)
+    if (isDemo(mid) || !numbersReady || machine.awaitingSetup || !state.sessionId) {
+      saveLocalDraft();
+      return;
+    }
+    if (inFlightRef.current.has(mid)) return; // กันกดบันทึกรัว ๆ (double-submit) ต่อตู้
+    const args = buildSubmitArgs();
+    if (!args) { saveLocalDraft(); return; }
+    inFlightRef.current.add(mid);
+    runQuickSave(args, false);
+  }
+
+  /* เก็บ draft ในเครื่อง (localStorage) — เดิมคือ saveDraft. ใช้เป็น fallback เมื่อข้อมูลไม่ครบ/ส่ง server ไม่ได้
+   * (กันข้อมูลหาย: ถ้าส่ง server พลาด ยังมีร่างในเครื่องให้ resume). */
+  function saveLocalDraft() {
     if (!machine) return;
-    // FIX-1 · defensive: อย่าเพิ่งบันทึกถ้ายังมีรูปอัปโหลดค้าง (photosCaptured มี · photos ยังว่าง)
-    // — ถ้าบันทึกตอนนี้ ร่างจะเก็บรูปเป็น "" → resume แล้วรูปหาย. ปุ่มถูก gate ไว้แล้ว (uploadPending)
-    // นี่คือ safety net ชั้นสอง. เมื่อ escape timeout (8วิ) หมด → allowSaveDespitePending=true → ผ่าน.
     if (uploadPending) return;
     const d: Draft = {
       machineId: machine.id,
@@ -1264,10 +1308,72 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       sessionId: state.sessionId,
     };
     setDrafts((p) => ({ ...p, [machine.id]: d }));
-    // TASK A · deferred draft เก็บ form+รูปครบแล้ว (เป็น persistence หลักของตู้นี้) → เคลียร์ WIP ที่ซ้ำซ้อน.
-    // (deferred draft ชนะ WIP ตอน re-entry อยู่แล้ว · เคลียร์เพื่อไม่ให้เศษค้าง localStorage)
     clearWip(state.sessionId, machine.id);
     dispatch({ type: "home" });
+  }
+
+  /* ส่ง event จริงแบบ "รอบเปิด" (ไม่ปิดรอบ) — quick-save + SHORT-gate resubmit ใช้ร่วม.
+   *  isReasonResubmit=true → มาจาก MismatchGate (มี shortReason แล้ว) → สร้างใหม่เสมอ (ข้าม edit branch). */
+  function runQuickSave(args: SubmitBranchEventArgs, isReasonResubmit: boolean) {
+    const mid = args.machineId;
+    // 🔴 BLOCKER #1 fix · key = sessionId:machineId (ไม่ใช่แค่ machineId) → กันจำ eventId ของ "รอบก่อน"
+    //   ข้ามวัน/ข้ามรอบ (เช้าปิดรอบ → บ่ายเก็บซ้ำ) แล้วเผลอไปแก้ใบรอบเก่าที่ปิดไปแล้ว (เงินทับ+นับซ้ำ).
+    const key = `${args.sessionId}:${mid}`;
+    startTransition(async () => {
+      try {
+        const priorId = collectedThisRoundRef.current.get(key);
+        // ตู้นี้เก็บไปแล้ว "ในรอบนี้" (มี eventId) → แก้ใบเดิม ไม่ส่งใหม่ (money-safe · ไม่นับซ้ำ)
+        if (priorId && !isReasonResubmit) {
+          const res = await editCollectionRound(editPayloadFromArgs(priorId, args));
+          if (!res.ok) { setError(res.error || "แก้ไม่สำเร็จ"); saveLocalDraft(); return; }
+          finishQuickSave(args.sessionId, mid);
+          return;
+        }
+        // สร้างใบใหม่ (create · รอบเปิด)
+        const ev = await submitBranchEvent(args);
+        if (!ev.ok) {
+          // เงินขาด → เปิด MismatchGate เก็บ payload ไว้ resubmit พร้อมเหตุผล (จำว่าเป็น quick-save)
+          if (ev.needsReason) {
+            setPendingShort(args);
+            pendingKeepOpenRef.current = true;
+            setPendingGate({ kind: ev.gateKind ?? "SHORT", message: ev.error || "" });
+            return;
+          }
+          // มีใบในรอบนี้แล้ว (ack หาย/เก็บไปแล้ว) → เด้งแก้ใบเดิมแทนส่งซ้ำ (money-safe)
+          if (ev.existingEventId) {
+            collectedThisRoundRef.current.set(key, ev.existingEventId);
+            const res = await editCollectionRound(editPayloadFromArgs(ev.existingEventId, args));
+            if (!res.ok) { setError(res.error || "แก้ไม่สำเร็จ"); saveLocalDraft(); return; }
+            finishQuickSave(args.sessionId, mid);
+            return;
+          }
+          // error อื่น (เน็ต/สต๊อกไม่พอ/ตู้ยังไม่ตั้งค่า) → เก็บ draft ในเครื่อง กันข้อมูลหาย
+          setError(ev.error || "บันทึกไม่สำเร็จ · เก็บร่างไว้ในเครื่องแล้ว");
+          saveLocalDraft();
+          return;
+        }
+        collectedThisRoundRef.current.set(key, ev.data.id);
+        setPendingShort(null);
+        setPendingGate(null);
+        pendingKeepOpenRef.current = false;
+        finishQuickSave(args.sessionId, mid);
+      } catch (e) {
+        console.error("[clawos] quick-save threw:", e);
+        setError("ส่งไม่สำเร็จ · เช็คเน็ต แล้วลองใหม่ (เก็บร่างไว้ในเครื่องแล้ว)");
+        saveLocalDraft();
+      } finally {
+        inFlightRef.current.delete(mid);
+      }
+    });
+  }
+
+  /* quick-save สำเร็จ (สร้าง/แก้) → ล้าง draft+WIP · กลับหน้าหลัก (รอบยังเปิด) · refresh ให้ตู้ขึ้น "เก็บแล้ว"
+   *  (server มี COLLECTION event แล้ว → history reload → doneCodesToday จับได้เอง · ไม่ต้องมี state ซ้ำ). */
+  function finishQuickSave(sessionId: string, mid: string) {
+    setDrafts((p) => { const n = { ...p }; delete n[mid]; return n; });
+    clearWip(sessionId, mid);
+    dispatch({ type: "home" });
+    router.refresh();
   }
 
   /* ── ตู้เสีย/อ่านมิเตอร์ไม่ได้ → แจ้งซ่อม & ข้าม (ข้าม 1 ตู้ · ไม่ปิดรอบสาขา) ──
@@ -1354,7 +1460,6 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       return;
     }
 
-    const sessionId = state.sessionId;
     const p = state.photos;
 
     // ── หลักฐานกันโกง: ถ้านโยบายบังคับถ่าย + ถ่ายแล้วแต่ url ยังไม่มา (upload retry ค้าง) → รอ ──
@@ -1381,62 +1486,44 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       }
     }
 
-    // 🆕 เติมหลาย SKU (money-safe): refillTotal = ที่โชว์บนจอ = ที่ server จะคิด (Σ lines.qty เมื่อมีไลน์ · f.refill เมื่อไม่มี).
-    const refillQty = refillTotal;
-    // ห้องที่หยิบของมาเติม (สาขา >1 ห้อง เท่านั้น · ≤1 ห้อง = null → คลังหลัก INVARIANT).
-    const refillWarehouseId = f.refillWarehouseId ?? undefined;
-    // มีไลน์เติม (หลาย SKU) → ส่ง refillLines[] · แต่ละไลน์แนบ warehouseId (ห้องเดียวกันทุกไลน์รอบนี้).
-    // server: มี refillLines → total = Σ qty · หัก 1 แถว/ไลน์ (refillQty/refillProductId ถูก override).
-    const refillLines = hasRefillLines
-      ? refillLinesActive.map((l) => ({
-          productId: l.productId,
-          qty: l.qty,
-          warehouseId: refillWarehouseId,
-        }))
-      : undefined;
-    // R4 (legacy single-SKU) · productId ที่เติม: ใช้ที่เลือกจาก BranchStockPicker ก่อน · fallback หา SKU จากชื่อ.
-    // ใช้เฉพาะ fallback (ไม่มี refillLines) — server unused เมื่อ refillLines present.
-    const refillProductId =
-      !hasRefillLines && refillQty > 0
-        ? (f.refillProductId ?? skus.find((s) => s.name === f.product)?.id)
-        : undefined;
+    const args = buildSubmitArgs(effPhotoReason);
+    if (!args) { setError("เปิดรอบไม่สำเร็จ · ลองใหม่อีกครั้ง"); return; }
+    sendEvent(args);
+  }
 
-    const args: SubmitBranchEventArgs = {
-      sessionId,
+  /** สร้าง payload ส่งเข้า submitBranchEvent จากฟอร์มปัจจุบัน — ใช้ร่วมทั้ง submitRound และ quick-save
+   *  (บันทึกค้าง=ส่ง). null เมื่อไม่มีตู้/รอบ. เลข/รูป/สต๊อก = ตัวเดียวกันเป๊ะ → server คิดตรงกันทุกทาง. */
+  function buildSubmitArgs(effPhotoReason?: string | null): SubmitBranchEventArgs | null {
+    if (!machine || !state.sessionId) return null;
+    const p = state.photos;
+    const refillQty = refillTotal;
+    const refillWarehouseId = f.refillWarehouseId ?? undefined;
+    const refillLines = hasRefillLines
+      ? refillLinesActive.map((l) => ({ productId: l.productId, qty: l.qty, warehouseId: refillWarehouseId }))
+      : undefined;
+    const refillProductId =
+      !hasRefillLines && refillQty > 0 ? (f.refillProductId ?? skus.find((s) => s.name === f.product)?.id) : undefined;
+    return {
+      sessionId: state.sessionId,
       machineId: machine.id,
       coinMeterAfter: n0(f.coinDigi),
       dollMeterAfter: n0(f.dollDigi),
-      // มิเตอร์ "บน/เฟือง" — ส่งขึ้นเก็บด้วย (เดิมถูกทิ้ง) เพื่อเทียบว่าตัวไหนเพี้ยน (CEO 2026-07-25)
       coinMeterTop: n0(f.coinGear),
       dollMeterTop: n0(f.dollGear),
       cashCountedCents: Math.round(n0(f.cash) * 100),
-      // ⚠️ anti-cheat: stockBefore = สต๊อกรอบก่อน (lastDollStock = f.last) ไม่ใช่ที่นับตอนนี้.
-      // server: prizeCountedOut = stockBefore + refillQty − stockAfter = f.last − f.left = dispensed
-      // (ถ้าส่ง f.left จะได้ 0 เสมอ → ทุกตู้โดน flag ตุ๊กตาหายเท็จ + จับขโมยจริงไม่ได้)
       stockBefore: f.last,
       refillQty,
       stockAfter: afterFill,
-      // 🆕 หลาย SKU — ส่งเมื่อมีไลน์เติม >0 · server จะใช้แทน refillQty/refillProductId (หัก 1 แถว/ไลน์).
       refillLines,
       refillProductId,
-      // WAVE-3b · R4 · ห้องที่หยิบของมาเติม — ส่งเฉพาะเมื่อมีการเติม + เลือกห้อง (สาขา >1 ห้อง).
-      // null/ไม่ส่ง = server ตัดจากคลังหลัก (INVARIANT) → สาขา ≤1 ห้อง พฤติกรรมเดิมเป๊ะ.
       warehouseId: refillQty > 0 && f.refillWarehouseId ? f.refillWarehouseId : undefined,
-      // Photos OPTIONAL ("ถ่ายได้-ข้ามได้"): send the real R2 url that was captured, else ""
-      // (server accepts url | "" | undefined → a skipped photo never blocks the round).
-      // CEO 2026-08-02 · เหลือ 2 รูป: coinDigi = จอดิจิตอล (เก็บช่อง photoCoinMeterUrl → photoMeterAfterUrl)
-      //   · coinGear = แผงเฟือง (เก็บช่อง photoPrizeMeterUrl). ไม่ย้าย DB · read relabel เป็น จอดิจิตอล/แผงเฟือง.
       photoCoinMeterUrl: p.coinDigi || "",
       photoPrizeMeterUrl: p.coinGear || "",
       photoStockBeforeUrl: p.before || "",
       photoStockAfterUrl: p.after || "",
       photoCashUrl: p.cash || "",
-      // CEO 2026-07-18 · ปิดรอบโดยไม่มีรูป → เก็บเหตุผลใน `notes` (ไม่ใช่ shortReason!)
-      //   ⚠️ shortReason = ช่องเหตุผล "เงินขาด" ที่ server ใช้เป็นด่านกันโกง — ถ้าเอามาใส่เหตุผลรูป
-      //   จะทำให้รอบที่เงินขาดจริงข้ามด่าน (server เห็น shortReason มีค่า = ผ่าน). notes ปลอดภัย ไม่แตะด่าน.
       ...(effPhotoReason ? { notes: `ไม่แนบรูป: ${effPhotoReason}` } : {}),
     };
-    sendEvent(args);
   }
 
   /* ── N5 · ส่ง event จริง (แยกจาก submitRound เพื่อ resubmit ได้พร้อม shortReason) ──
@@ -1453,15 +1540,26 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
           // (ไม่ใช่ error แข็ง · เก็บ payload เดิมไว้ resubmit พร้อม shortReason).
           if (ev.needsReason) {
             setPendingShort(args);
+            // full submit เข้ามาคุมด่าน SHORT แล้ว → เคลียร์ธง quick-save ค้าง (กันรอบไม่ปิดเพราะ keepOpen ค้าง)
+            pendingKeepOpenRef.current = false;
             // จำชนิดด่าน + ข้อความ (เงินขาด / มิเตอร์เสีย) → จอโชว์เหตุผลให้ตรง
             setPendingGate({ kind: ev.gateKind ?? "SHORT", message: ev.error || "" });
             return;
           }
-          // แสดง "เหตุผลจริง" จาก server (เช่น ต้องตั้ง baseline · สต๊อกไม่พอ · มิเตอร์น้อยกว่าครั้งก่อน)
-          // แทนข้อความเน็ตลอย ๆ → พนักงานแก้ตรงจุดได้. console เก็บ raw ไว้ debug.
-          console.error("[clawos] submitBranchEvent failed:", ev.error);
-          setError(ev.error || "บันทึกไม่สำเร็จ · ลองใหม่อีกครั้ง");
-          return;
+          // ตู้นี้มี COLLECTION ในรอบนี้แล้ว (เพราะ "บันทึกค้าง" ส่งขึ้นก่อน · หรือ ack หาย) → แก้ใบเดิม
+          //   แล้วปิดรอบต่อ (money-safe · ไม่ส่งใบใหม่ = ไม่นับซ้ำ) · แทนที่จะเด้ง error ทางตัน.
+          if (ev.existingEventId) {
+            collectedThisRoundRef.current.set(`${args.sessionId}:${machineId}`, ev.existingEventId);
+            const edit = await editCollectionRound(editPayloadFromArgs(ev.existingEventId, args));
+            if (!edit.ok) { setError(edit.error || "แก้ไม่สำเร็จ"); return; }
+            // แก้สำเร็จ → ไหลต่อลง closeBranchSession ด้านล่าง (ปิดรอบตามปกติ)
+          } else {
+            // แสดง "เหตุผลจริง" จาก server (เช่น ต้องตั้ง baseline · สต๊อกไม่พอ · มิเตอร์น้อยกว่าครั้งก่อน)
+            // แทนข้อความเน็ตลอย ๆ → พนักงานแก้ตรงจุดได้. console เก็บ raw ไว้ debug.
+            console.error("[clawos] submitBranchEvent failed:", ev.error);
+            setError(ev.error || "บันทึกไม่สำเร็จ · ลองใหม่อีกครั้ง");
+            return;
+          }
         }
         // ผ่านแล้ว → เคลียร์ด่านเหตุผล (ถ้าเปิดค้าง) แล้วปิดรอบ
         setPendingShort(null);
@@ -1520,6 +1618,15 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
       // เหตุผล + โน้ต (ถ้ามี) → รวมเป็น shortReason เดียว (server เก็บใน cf_collection_events.short_reason)
       shortReason: note ? `${reason} · ${note}` : reason,
     };
+    // มาจาก "บันทึกค้าง" (quick-save · รอบเปิด) → resubmit แบบไม่ปิดรอบ · ไม่งั้น = submit ปกติ (ปิดรอบ)
+    if (pendingKeepOpenRef.current) {
+      pendingKeepOpenRef.current = false;
+      setPendingShort(null);
+      setPendingGate(null);
+      inFlightRef.current.add(withReason.machineId);
+      runQuickSave(withReason, true);
+      return;
+    }
     sendEvent(withReason);
   }
 

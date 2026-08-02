@@ -44,7 +44,8 @@ type SubmitBranchEventResult =
   | { ok: true; data: { id: string } }
   // gateKind บอกจอว่าเป็นด่านแบบไหน: SHORT (เงินขาด) · INTEGRITY (มิเตอร์เสีย/ตัวเลขผิดธรรมชาติ)
   // → จอเลือกข้อความ + รายการเหตุผลให้ตรง (CEO 2026-07-25).
-  | { ok: false; error: string; needsReason?: boolean; gateKind?: "SHORT" | "INTEGRITY" };
+  // existingEventId: มี COLLECTION ของตู้นี้ในรอบนี้อยู่แล้ว → client เอา id ไปเด้งแก้ (save=submit · กัน lost-ack ส่งซ้ำ)
+  | { ok: false; error: string; needsReason?: boolean; gateKind?: "SHORT" | "INTEGRITY"; existingEventId?: string };
 
 // closeBranchSession: ปิดรอบสาขาได้ก็ต่อเมื่อเก็บครบทุกตู้. ถ้ายังไม่ครบ = ยังไม่ error จริง —
 // ใบตู้นี้บันทึกสำเร็จแล้ว แค่รอเก็บตู้ที่เหลือ → คืน incomplete ให้จอแสดง "บันทึกสำเร็จ · เก็บตู้ต่อ"
@@ -500,7 +501,7 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     where: { sessionId: data.sessionId, machineId: data.machineId, eventType: "COLLECTION" },
     select: { id: true },
   });
-  if (dup) return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว" };
+  if (dup) return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว", existingEventId: dup.id };
 
   // E3 (bigfeature · warehouse) — คลังหลักของสาขา (id · null ถ้ายังไม่ตั้ง → แถว movement เก่านับเป็น
   //   main ผ่าน NULL). อ่านครั้งเดียว ใช้เป็น default ห้องที่หักเมื่อไลน์ไม่ระบุ warehouseId.
@@ -650,7 +651,12 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     // B1 (audit 2026-07-01): unique index กันกรอกตู้ซ้ำในรอบ (กด 2 ครั้ง/retry ชน) →
     // P2002 = DB บังคับ atomic แทน read-then-write (กันนับเงิน+ตัดสต๊อก 2 เท่า)
     if ((e as { code?: string }).code === "P2002") {
-      return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว" };
+      // ดึง id ใบเดิมมาให้ client เด้งแก้ (save=submit · กัน lost-ack ส่งซ้ำ)
+      const existing = await prisma.cfCollectionEvent.findFirst({
+        where: { sessionId: data.sessionId, machineId: data.machineId, eventType: "COLLECTION" },
+        select: { id: true },
+      });
+      return { ok: false, error: "ตู้นี้กรอกในรอบนี้ไปแล้ว", existingEventId: existing?.id };
     }
     return { ok: false, error: `บันทึกไม่สำเร็จ: ${(e as Error).message}` };
   }
@@ -999,6 +1005,17 @@ const EditRoundSchema = z.object({
   cashCents: z.number().int("เงินต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "เงินติดลบไม่ได้").max(1_000_000_000),
   coinMeterAfter: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000),
   dollMeterAfter: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  // 🆕 (CEO 2026-08-02 · save=submit) · "บันทึกค้าง=ส่ง" ที่กดซ้ำ/แก้ → เข้า editCollectionRound ด้วย.
+  //   เพื่อไม่ให้ค่าที่พนักงานแก้รอบสอง "หายเงียบ" ต้องรับ เฟือง(gear)+รูป มาอัปเดตด้วย (ทุกช่อง optional).
+  //   ⚠️ เฟือง/รูป = display/anti-cheat เท่านั้น · ไม่กระทบ reconcile (สูตรใช้ดิจิตอล=coinMeterAfter+cash+stock).
+  //   หน้าแก้เลขเดิม (edit modal) ไม่ส่งช่องพวกนี้ → undefined → ไม่แตะ (backward compatible เป๊ะ).
+  coinMeterTop: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  dollMeterTop: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  photoCoinMeterUrl: z.string().optional(),
+  photoPrizeMeterUrl: z.string().optional(),
+  photoStockBeforeUrl: z.string().optional(),
+  photoStockAfterUrl: z.string().optional(),
+  photoCashUrl: z.string().optional(),
 });
 
 export async function editCollectionRound(input: unknown): Promise<ResultOf<{ status: string; flags: string[] }>> {
@@ -1015,12 +1032,15 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
     select: {
       id: true, machineId: true, sessionId: true, collectedById: true, collectedAt: true,
       coinMeterBefore: true, coinMeterAfter: true, dollMeterAfter: true, cashCountedCents: true,
-      session: { select: { id: true, branchId: true, isBaseline: true, depositId: true } },
+      session: { select: { id: true, branchId: true, isBaseline: true, depositId: true, status: true } },
     },
   });
   if (!ev) return { ok: false, error: "ไม่พบใบเก็บนี้" };
   // สิทธิ์: พนักงานเจ้าของใบเท่านั้น (CEO: พนักงานเอง)
   if (ev.collectedById !== userId) return { ok: false, error: "แก้ได้เฉพาะรอบที่คุณเก็บเอง" };
+  // 🔒 รอบอนุมัติ/ล็อกแล้ว (LOCKED) ห้ามแก้ (parity กับ adminEditCollectionEvent · กันแก้ย้อนใบที่ปิดจบ)
+  if (ev.session?.status === "LOCKED") return { ok: false, error: "รอบนี้อนุมัติ/ล็อกแล้ว · แก้ไม่ได้" };
+  if (ev.session?.status === "CANCELLED") return { ok: false, error: "รอบนี้ถูกยกเลิกแล้ว · แก้ไม่ได้" };
   // 🟡 #2 (ปรปักษ์) · มิเตอร์ใหม่ห้ามต่ำกว่ารอบก่อน (มิเตอร์เดินหน้าอย่างเดียว) — เดิม submit บล็อก C2
   //   ถ้าปล่อย → expected=0 เงียบ + mirror ต่ำกว่าเดิม = รอบถัดไป baseline เพี้ยน
   if (data.coinMeterAfter < ev.coinMeterBefore) {
@@ -1053,17 +1073,33 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
       });
       if (newerInTx) throw new Error("มีการเก็บ/ตั้งค่ารอบใหม่กว่านี้แล้ว · แก้รอบนี้ไม่ได้");
 
-      // 1) อัปเดตเลขในใบ
+      // 1) อัปเดตเลขในใบ — เงิน+ดิจิตอล (ใช้คิดเงิน) เสมอ · เฟือง+รูป อัปเดตเฉพาะที่ส่งมา (erase-safe)
       await tx.cfCollectionEvent.update({
         where: { id: ev.id },
-        data: { cashCountedCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: data.dollMeterAfter ?? undefined },
+        data: {
+          cashCountedCents: data.cashCents,
+          coinMeterAfter: data.coinMeterAfter,
+          dollMeterAfter: data.dollMeterAfter ?? undefined,
+          // ดิจิตอล mirror (display) ให้ตรงกับค่าที่แก้ (create เขียน meterMoneyBottom=coinMeterAfter)
+          meterMoneyBottom: data.coinMeterAfter,
+          ...(data.dollMeterAfter != null ? { meterDollBottom: data.dollMeterAfter } : {}),
+          // เฟือง (anti-cheat display · ไม่กระทบ reconcile) — อัปเดตถ้าส่งมา · edit modal เดิมไม่ส่ง = ไม่แตะ
+          ...(data.coinMeterTop != null ? { meterMoneyTop: data.coinMeterTop } : {}),
+          ...(data.dollMeterTop != null ? { meterDollTop: data.dollMeterTop } : {}),
+          // รูป — อัปเดตเฉพาะช่องที่มีรูปจริง (ไม่ทับรูปเดิมด้วยค่าว่าง). column→content ตาม submitBranchEvent.
+          ...(data.photoCoinMeterUrl ? { photoMeterAfterUrl: data.photoCoinMeterUrl } : {}),
+          ...(data.photoPrizeMeterUrl ? { photoPrizeMeterUrl: data.photoPrizeMeterUrl } : {}),
+          ...(data.photoStockBeforeUrl ? { photoStockUrl: data.photoStockBeforeUrl } : {}),
+          ...(data.photoStockAfterUrl ? { photoMeterBeforeUrl: data.photoStockAfterUrl } : {}),
+          ...(data.photoCashUrl ? { photoCashUrl: data.photoCashUrl } : {}),
+        },
       });
 
       // 2) re-reconcile ทั้ง session ด้วยค่าใหม่ (สูตรเดียวกับ closeBranchSession เป๊ะ)
       const sess = await tx.cfCollectionSession.findFirst({
         where: { id: ev.sessionId as string, orgId },
         select: {
-          id: true, branchId: true, isBaseline: true,
+          id: true, branchId: true, isBaseline: true, status: true,
           events: { where: { eventType: "COLLECTION" }, select: {
             machineId: true, coinMeterBefore: true, coinMeterAfter: true, cashCountedCents: true,
             dollMeterBefore: true, dollMeterAfter: true, stockBefore: true, stockAfter: true, refillQty: true,
@@ -1097,15 +1133,26 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
       const policy = await getClawfleetPolicy();
       const finalStatus = escalateForMeterMatch(policy.meterMatch, cc.status, cc.flags);
 
-      await tx.cfCollectionSession.update({
-        where: { id: sess.id },
-        data: {
-          status: finalStatus,
-          expectedCashCents: cc.expectedCashCents, actualCashCents: cc.actualCashCents, cashVarianceBps: cc.cashVarianceBps,
-          prizeMeterOut: cc.prizeMeterOut, prizeCountedOut: cc.prizeCountedOut, prizeVariance: cc.prizeVariance,
-          totalCashCents: cc.actualCashCents, anomalyFlags: cc.flags,
-        },
-      });
+      // 🔴 money-safe (CEO 2026-08-02 · save=submit): แยกตามสถานะรอบ —
+      //   • OPEN (กำลังเก็บ · normal ตอนแก้เลขสด) → **ไม่แตะ session** แค่แก้เลขในใบ+sync mirror
+      //     (เดิม update status ตรง ๆ = เผลอปิดรอบด้วยยอดตู้ที่เก็บมาบางส่วน · บั๊กแฝง). reconcile จริงตอนปิดรอบ.
+      //   • CLOSED/ANOMALY_REVIEW → re-reconcile เขียนสถานะ แต่ guard ด้วย updateMany (WHERE status IN(...)+depositId null)
+      //     กัน concurrent close/deposit/approve เขียนทับ (mirror reReconcileSessionTx).
+      let resultStatus: string = sess.status;
+      if (sess.status === "CLOSED" || sess.status === "ANOMALY_REVIEW") {
+        const upd = await tx.cfCollectionSession.updateMany({
+          where: { id: sess.id, status: { in: ["CLOSED", "ANOMALY_REVIEW"] }, depositId: null },
+          data: {
+            status: finalStatus,
+            expectedCashCents: cc.expectedCashCents, actualCashCents: cc.actualCashCents, cashVarianceBps: cc.cashVarianceBps,
+            prizeMeterOut: cc.prizeMeterOut, prizeCountedOut: cc.prizeCountedOut, prizeVariance: cc.prizeVariance,
+            totalCashCents: cc.actualCashCents, anomalyFlags: cc.flags,
+          },
+        });
+        if (upd.count === 0) throw new Error("รอบนี้เปลี่ยนสถานะ/ฝากเงินแล้ว · แก้ไม่ได้");
+        resultStatus = finalStatus;
+      }
+      // OPEN → คงรอบเปิดไว้ (ไม่ปิด · ไม่เขียน reconcile) — ปล่อยปิด+กระทบยอดตอน closeBranchSession/cron
 
       // 🟡 #3 (ปรปักษ์) · เคลียร์ shortReason ถ้าแก้แล้ว "เงินไม่ขาด" แล้ว (กันข้อความ "เงินขาด" ค้างทั้งที่ตรง)
       //   คิด expected ของ "ตู้นี้" (สูตรเดียว deriveBranchCrossCheck) — cash ≥ expected − ฿20 = ไม่ขาด
@@ -1131,12 +1178,13 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
           diff: {
             old: { cashCents: ev.cashCountedCents, coinMeterAfter: ev.coinMeterAfter, dollMeterAfter: ev.dollMeterAfter },
             new: { cashCents: data.cashCents, coinMeterAfter: data.coinMeterAfter, dollMeterAfter: data.dollMeterAfter ?? ev.dollMeterAfter },
-            machineId: ev.machineId, sessionId: sess.id,
+            machineId: ev.machineId, sessionId: sess.id, openRound: sess.status === "OPEN",
           },
         },
       });
 
-      return { status: finalStatus, flags: cc.flags };
+      // OPEN → คงรอบเปิด (flags เป็น preview ยังไม่ final) · closed → final flags
+      return { status: resultStatus, flags: resultStatus === "OPEN" ? [] : cc.flags };
     })
     .then((r) => ({ ok: true as const, data: r }))
     .catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
