@@ -32,11 +32,13 @@ export type RawReadingRow = {
   // มิเตอร์เหรียญ (coin) — เฟือง(gear) / ดิจิตอล(digital) + ค่าก่อนหน้า(ดิจิตอล)
   coinBefore: number | null;
   coinDigital: number; // = coinMeterAfter (ใช้คิดเงิน)
-  coinGear: number | null; // = meterMoneyTop
+  coinGear: number | null; // = meterMoneyTop (หลัง)
+  coinGearBefore: number | null; // เฟืองเหรียญรอบก่อน (chain · เฉพาะ cell popup) — โชว์ ก่อน→หลัง
   // มิเตอร์ตุ๊กตา (doll)
   dollBefore: number | null;
   dollDigital: number | null; // = dollMeterAfter
-  dollGear: number | null; // = meterDollTop
+  dollGear: number | null; // = meterDollTop (หลัง)
+  dollGearBefore: number | null; // เฟืองตุ๊กตารอบก่อน (chain · เฉพาะ cell popup)
   // เงิน / สต๊อก / เติม
   cashBaht: number;
   stockBefore: number | null;
@@ -174,6 +176,26 @@ export async function getBranchRawReadings(opts: {
     },
   });
 
+  // CEO 2026-08-02 · เฟืองก่อน→หลัง (chain) — เฉพาะ cell popup (machine เดียว) · เฟืองเก็บค่าเดียว/รอบ
+  //   → "ก่อน" = เฟืองของรอบก่อนหน้า (chain ตามเวลา · normalize COLLECTION=Top / INITIAL=Bottom)
+  const gearBeforeByEvent = new Map<string, { coin: number | null; doll: number | null }>();
+  if (cellFilter && opts.machineId) {
+    const chain = await prisma.cfCollectionEvent.findMany({
+      where: { orgId, machineId: opts.machineId, eventType: { in: ["INITIAL", "COLLECTION"] } },
+      select: { id: true, eventType: true, meterMoneyTop: true, meterMoneyBottom: true, meterDollTop: true, meterDollBottom: true },
+      orderBy: { collectedAt: "desc" },
+      take: 200,
+    });
+    const gearOf = (ev: (typeof chain)[number]) => ({
+      coin: (ev.eventType === "COLLECTION" ? ev.meterMoneyTop : ev.meterMoneyBottom) ?? null,
+      doll: (ev.eventType === "COLLECTION" ? ev.meterDollTop : ev.meterDollBottom) ?? null,
+    });
+    const asc = chain.slice().reverse(); // เก่า→ใหม่ เพื่อ chain "ก่อน"
+    for (let i = 0; i < asc.length; i++) {
+      gearBeforeByEvent.set(asc[i].id, i > 0 ? gearOf(asc[i - 1]) : { coin: null, doll: null });
+    }
+  }
+
   const rows: RawReadingRow[] = events.map((e) => {
     const status = e.session?.status ?? null;
     const deposited = !!e.session?.depositId;
@@ -212,9 +234,11 @@ export async function getBranchRawReadings(opts: {
       // เฟือง normalize ตาม eventType (กฎถาวร บน=ดิจิตอล ล่าง=เฟือง · COLLECTION เก็บกลับหัว):
       //   COLLECTION → เฟือง=Top · INITIAL → เฟือง=Bottom (เดิม hardcode Top ทำ baseline อ่านสลับ)
       coinGear: (e.eventType === "COLLECTION" ? e.meterMoneyTop : e.meterMoneyBottom) ?? null,
+      coinGearBefore: gearBeforeByEvent.get(e.id)?.coin ?? null,
       dollBefore: e.dollMeterBefore ?? null,
       dollDigital: e.dollMeterAfter ?? null,
       dollGear: (e.eventType === "COLLECTION" ? e.meterDollTop : e.meterDollBottom) ?? null,
+      dollGearBefore: gearBeforeByEvent.get(e.id)?.doll ?? null,
       cashBaht: Math.round(e.cashCountedCents / 100),
       stockBefore: e.stockBefore ?? null,
       stockAfter: e.stockAfter ?? null,

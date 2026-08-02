@@ -130,7 +130,7 @@ function EventCard({
         <div style={{ paddingRight: 13, borderRight: "1px solid #F0F1F4", display: "flex", flexDirection: "column", gap: 9 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "#15803D", display: "flex", alignItems: "center", gap: 5 }}>🪙 เหรียญ / เงิน</div>
           <Field label="มิเตอร์ดิจิตอล (ก่อน→หลัง)"><Delta before={row.coinBefore} after={row.coinDigital} /></Field>
-          <Field label="มิเตอร์เฟือง (หลัง)">{row.coinGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.coinGear)}</span>}</Field>
+          <Field label="มิเตอร์เฟือง (ก่อน→หลัง)"><Delta before={row.coinGearBefore} after={row.coinGear} /></Field>
           <Field label="เงินเก็บได้"><b style={{ color: "#15803D", fontSize: 14 }}>{bahtN(row.cashBaht)}</b></Field>
           {coinExpected != null && (
             <Field label="มิเตอร์ควรได้ (ดิจิตอล×฿10) · ส่วนต่าง">
@@ -144,7 +144,7 @@ function EventCard({
         <div style={{ paddingLeft: 13, display: "flex", flexDirection: "column", gap: 9 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "#B45309", display: "flex", alignItems: "center", gap: 5 }}>🧸 ตุ๊กตา</div>
           <Field label="มิเตอร์ดิจิตอล (ก่อน→หลัง)"><Delta before={row.dollBefore} after={row.dollDigital} /></Field>
-          <Field label="มิเตอร์เฟือง (หลัง)">{row.dollGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.dollGear)}</span>}</Field>
+          <Field label="มิเตอร์เฟือง (ก่อน→หลัง)"><Delta before={row.dollGearBefore} after={row.dollGear} /></Field>
           {dollsOut != null && <Field label="ตุ๊กตาออก"><b style={{ color: "#B45309", fontSize: 14 }}>{dollsOut} ตัว</b></Field>}
           <Field label="สต๊อก (ก่อน→หลัง)">
             {row.stockBefore == null && row.stockAfter == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#3A414B" }}>{nfmt(row.stockBefore)} → {nfmt(row.stockAfter)}</span>}
