@@ -56,7 +56,8 @@ export async function rentMatrix(
         isActive: true,
         status: { not: "inactive" },
       },
-      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      // ลำดับที่ CEO จัดเองในหน้า Excel มาก่อน (null = ยังไม่จัด → ต่อท้าย, fallback เดิม)
+      orderBy: [{ matrixSortOrder: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }, { code: "asc" }],
       select: {
         id: true,
         code: true,

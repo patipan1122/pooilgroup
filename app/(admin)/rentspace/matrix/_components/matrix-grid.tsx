@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, Fragment, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight } from "lucide-react";
+import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered } from "lucide-react";
 import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
+import { actReorderMatrixUnits } from "../../_actions";
 
 /** YYYY-MM-DD → "5 มิ.ย. 69" (Thai short, BE 2-digit) */
 function fmtThaiDate(iso: string): string {
@@ -28,6 +29,8 @@ type Props = {
   units: MatrixUnit[];
   cells: Record<string, MatrixCell>;
   monthsTotals: number[];
+  projectId: string;
+  canReorder: boolean;
 };
 
 function pad2(m: number) {
@@ -40,11 +43,48 @@ function statusTone(status: string): { bg: string; color: string } {
   return { bg: t.soft, color: t.color };
 }
 
-export default function MatrixGrid({ year, view, month, units, cells, monthsTotals }: Props) {
+export default function MatrixGrid({ year, view, month, units, cells, monthsTotals, projectId, canReorder }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const beYear = year + 543;
   const [active, setActive] = useState<{ unit: MatrixUnit; cell: MatrixCell | null; month: number } | null>(null);
+
+  // ── โหมด "จัดเรียงห้องเอง" (ลากขึ้น-ลง → จำถาวรเฉพาะหน้า Excel นี้) ──
+  const [orderMode, setOrderMode] = useState(false);
+  const [draft, setDraft] = useState<MatrixUnit[]>([]);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [saving, startSave] = useTransition();
+
+  function enterOrder() {
+    setDraft([...units]);
+    setOrderMode(true);
+  }
+  function cancelOrder() {
+    setOrderMode(false);
+    setDragIdx(null);
+  }
+  function moveTo(from: number, to: number) {
+    if (from === to || to < 0 || to >= draft.length) return;
+    setDraft((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+  function saveOrder() {
+    const ids = draft.map((u) => u.id);
+    startSave(async () => {
+      try {
+        await actReorderMatrixUnits(projectId, ids);
+        setOrderMode(false);
+        setDragIdx(null);
+        router.refresh();
+      } catch {
+        alert("บันทึกลำดับไม่สำเร็จ ลองอีกครั้ง");
+      }
+    });
+  }
 
   function setView(next: "year" | "month") {
     const sp = new URLSearchParams(params.toString());
@@ -105,6 +145,141 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
     return sum;
   }
 
+  // ── โหมดจัดเรียง: แสดงรายการห้องให้ลาก/เลื่อนขึ้น-ลง แทนตาราง Excel ──
+  if (orderMode) {
+    return (
+      <div className="rs-matrix min-w-0">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="mr-auto">
+            <div className="text-sm font-bold" style={{ color: "var(--rs-text)" }}>จัดลำดับห้อง</div>
+            <div className="text-[12px]" style={{ color: "var(--rs-text-3)" }}>
+              ลากที่ ⠿ หรือกดลูกศร ▲▼ · ห้องบนสุด = แถวแรกของตาราง
+            </div>
+          </div>
+          <button type="button" onClick={cancelOrder} disabled={saving} className="rs-btn-ghost !h-9">
+            ยกเลิก
+          </button>
+          <button type="button" onClick={saveOrder} disabled={saving} className="rs-btn !h-9 inline-flex items-center gap-1">
+            <CheckCircle2 className="h-4 w-4" /> {saving ? "กำลังบันทึก…" : "บันทึกลำดับ"}
+          </button>
+        </div>
+
+        <div className="rs-reorder">
+          {draft.map((u, i) => (
+            <div
+              key={u.id}
+              draggable={!saving}
+              onDragStart={() => setDragIdx(i)}
+              onDragEnter={() => {
+                if (dragIdx !== null && dragIdx !== i) {
+                  moveTo(dragIdx, i);
+                  setDragIdx(i);
+                }
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDragEnd={() => setDragIdx(null)}
+              className={`rs-reorder-row ${dragIdx === i ? "rs-reorder-drag" : ""}`}
+            >
+              <GripVertical className="rs-grip h-4 w-4 shrink-0" />
+              <span className="rs-reorder-num tabular-nums">{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div style={{ fontWeight: 700, color: "var(--rs-text)", fontSize: 13 }}>{u.code}</div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--rs-text-3)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {u.tenantName ?? "— ว่าง —"}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="เลื่อนขึ้น"
+                  disabled={i === 0 || saving}
+                  onClick={() => moveTo(i, i - 1)}
+                  className="rs-move-btn"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="เลื่อนลง"
+                  disabled={i === draft.length - 1 || saving}
+                  onClick={() => moveTo(i, i + 1)}
+                  className="rs-move-btn"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <style jsx>{`
+          .rs-reorder {
+            max-height: calc(100dvh - 15rem);
+            overflow: auto;
+            border: 1px solid var(--rs-border);
+            border-radius: 12px;
+            overscroll-behavior: contain;
+          }
+          .rs-reorder-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--rs-border);
+            background: var(--rs-bg);
+            cursor: grab;
+            user-select: none;
+          }
+          .rs-reorder-row:last-child {
+            border-bottom: none;
+          }
+          .rs-reorder-drag {
+            background: var(--rs-brand-50);
+            outline: 2px solid var(--rs-brand);
+            outline-offset: -2px;
+          }
+          .rs-grip {
+            color: var(--rs-text-3);
+          }
+          .rs-reorder-num {
+            width: 26px;
+            text-align: right;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--rs-text-3);
+          }
+          .rs-move-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            color: var(--rs-text-2);
+            border: 1px solid var(--rs-border);
+            background: var(--rs-bg);
+          }
+          .rs-move-btn:disabled {
+            opacity: 0.35;
+          }
+          .rs-move-btn:not(:disabled):hover {
+            background: var(--rs-brand-50);
+            color: var(--rs-brand);
+            border-color: var(--rs-brand);
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="rs-matrix min-w-0">
       {/* view + month toggles — single non-wrapping row; the month chips
@@ -141,11 +316,18 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           </div>
         )}
 
-        {view === "year" && (
-          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
-            <span style={{ fontSize: 13 }}>💡</span> กดหัวเดือน (ม.ค./ก.พ. …) เพื่อแยกดู ค่าเช่า · น้ำ · ไฟ — ห้องค่าไฟแพงผิดปกติจะขึ้นแดง
-          </span>
-        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {view === "year" && (
+            <span className="hidden lg:inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+              <span style={{ fontSize: 13 }}>💡</span> กดหัวเดือนเพื่อแยกดู ค่าเช่า · น้ำ · ไฟ
+            </span>
+          )}
+          {canReorder && units.length > 0 && (
+            <button type="button" onClick={enterOrder} className="rs-chip shrink-0 !h-11 sm:!h-7">
+              <ListOrdered className="mr-1 inline h-3.5 w-3.5" /> จัดเรียง
+            </button>
+          )}
+        </div>
       </div>
 
       {/* mobile-only horizontal-scroll hint */}

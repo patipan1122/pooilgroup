@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
+import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { rentMatrix } from "@/lib/rentspace/matrix-data";
 import { RsPage, RsHeader, RsBackLink, RsEmpty } from "@/components/rentspace/ui";
@@ -40,6 +42,10 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
   const month = Math.min(12, Math.max(1, Number(sp.month) || new Date().getMonth() + 1));
 
   const matrix = await rentMatrix(orgId, project.id, year);
+
+  // แอดมิน/แอดมินโปรแกรม RentSpace จัดลำดับห้องเองได้ (ตรงกับด่านหลังบ้าน gateAdmin)
+  const canReorder =
+    isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
 
   const beYear = year + 543;
 
@@ -86,6 +92,8 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
         units={matrix.units}
         cells={matrix.cells}
         monthsTotals={matrix.monthsTotals}
+        projectId={project.id}
+        canReorder={canReorder}
       />
     </RsPage>
   );

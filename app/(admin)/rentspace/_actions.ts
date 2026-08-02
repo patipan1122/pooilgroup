@@ -422,6 +422,29 @@ export async function actReorderBuildings(projectId: string, orderedIds: string[
   return { ok: true };
 }
 
+/** ลำดับที่ CEO จัดเองในหน้า Excel matrix — เขียน matrix_sort_order รายห้อง (ไม่แตะ sortOrder ของหน้าห้อง/ยูนิต) */
+export async function actReorderMatrixUnits(projectId: string, orderedIds: string[]) {
+  const session = await gateAdmin();
+  await ownGuard(
+    prisma.rentalProject.findFirst({ where: { id: projectId, orgId: session.user.org_id }, select: { id: true } }),
+    "โครงการ",
+  );
+  // กันเขียนข้ามองค์กร/ข้ามโครงการ: รับเฉพาะห้องที่เป็นของ org+project นี้จริง
+  const rows = await prisma.rentalUnit.findMany({
+    where: { id: { in: orderedIds }, orgId: session.user.org_id, projectId },
+    select: { id: true },
+  });
+  const valid = new Set(rows.map((r) => r.id));
+  await prisma.$transaction(
+    orderedIds
+      .filter((id) => valid.has(id))
+      .map((id, i) => prisma.rentalUnit.update({ where: { id }, data: { matrixSortOrder: i + 1 } })),
+  );
+  await logAudit(session, "RENTSPACE_UNIT_SAVED", "rental_project", projectId, { reorderedMatrixUnits: orderedIds.length });
+  revalidatePath("/rentspace/matrix");
+  return { ok: true };
+}
+
 export async function actMoveUnitToBuilding(unitId: string, buildingId: string | null) {
   const session = await gateAdmin();
   const unit = await prisma.rentalUnit.findFirst({

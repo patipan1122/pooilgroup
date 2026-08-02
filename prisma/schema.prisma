@@ -7414,6 +7414,7 @@ model RentalUnit {
   mapH        Decimal?         @map("map_h") @db.Decimal(7, 3)
   mapColor    String?          @map("map_color")
   sortOrder   Int              @default(0) @map("sort_order")
+  matrixSortOrder Int?         @map("matrix_sort_order") // ลำดับที่ CEO จัดเองในหน้า Excel matrix (แยกจาก sortOrder — null = ยังไม่จัด)
   isActive    Boolean          @default(true) @map("is_active")
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
