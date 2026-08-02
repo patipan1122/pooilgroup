@@ -2584,22 +2584,12 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
   ];
   const rows = usingDemo ? demoRows : history;
 
-  // CEO 2026-08-01 · กรองประวัติตาม "สาขาที่เลือกอยู่" — เปิดมา default = สาขาปัจจุบัน (ที่เลือกบนหน้าหลัก)
-  //   + สลับดูสาขาอื่น / "ทุกสาขา" ได้ · เทียบด้วย branchId (id ติดมากับแถวจาก server) ไม่ใช่ชื่อ กันสาขาชื่อซ้ำ
-  const branchChipMap = new Map<string, string>();
-  for (const r of rows) { if (r.branchId) branchChipMap.set(r.branchId, r.branch ?? r.branchId); }
-  // สาขาที่เลือกอยู่ต้องมีชิปเสมอ แม้ยังไม่มีประวัติในสาขานั้น (จะได้เห็นว่า "สาขานี้ยังไม่มีข้อมูล")
-  if (selectedBranchId && !branchChipMap.has(selectedBranchId)) branchChipMap.set(selectedBranchId, selectedBranchName || "สาขานี้");
-  const branchChips = [...branchChipMap.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => (a.id === selectedBranchId ? -1 : b.id === selectedBranchId ? 1 : 0)); // สาขาที่เลือกมาก่อน
-  const showBranchChips = !usingDemo && branchChips.length > 1;
-  // null = ทุกสาขา · default = สาขาที่เลือกอยู่ (ถ้ามี)
-  const [branchFilter, setBranchFilter] = useState<string | null>(selectedBranchId ?? null);
+  // CEO 2026-08-02 · ประวัติล็อกตาม "สาขาที่เลือกบนหน้าหลัก" เท่านั้น — เปลี่ยนสาขาต้องไปที่หน้าหลัก
+  //   (เอาชิปสลับสาขาออก · กันสับสน/แก้ผิดสาขา) · เทียบด้วย branchId (ไม่ใช่ชื่อ กันสาขาชื่อซ้ำ)
+  const effectiveFilter = usingDemo ? null : (selectedBranchId ?? null);
+  const branchScopedRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
   // CEO 2026-08-01 · กรองตาม "ผู้เก็บ" — null=ทุกคน · "__mine__"=ฉัน · else=ชื่อคน (จาก server collectedBy)
   const [personFilter, setPersonFilter] = useState<string | null>(null);
-  const effectiveFilter = showBranchChips ? branchFilter : null; // สาขาเดียว/เดโม → ไม่กรอง
-  const branchScopedRows = effectiveFilter ? rows.filter((r) => r.branchId === effectiveFilter) : rows;
   // รายชื่อผู้เก็บในสาขาที่กำลังดู (ไม่รวมของฉัน — "ฉัน" มีชิปแยก) → แถบชิป "ผู้เก็บ"
   const peopleMap = new Map<string, string>();
   for (const r of branchScopedRows) { if (r.collectedBy && !r.mine) peopleMap.set(r.collectedBy, r.collectedBy); }
@@ -2672,22 +2662,7 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
         <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
       )}
 
-      {/* CEO 2026-08-01 · แถบกรองสาขา — "ทุกสาขา" + ชิปต่อสาขา (สาขาที่เลือกอยู่มาก่อน) · โผล่เมื่อมี ≥2 สาขา */}
-      {showBranchChips && (
-        <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2, margin: "-2px -2px 0" }}>
-          {([{ id: null as string | null, name: "ทุกสาขา" }, ...branchChips]).map((c) => {
-            const active = branchFilter === c.id;
-            return (
-              <button key={c.id ?? "__all__"} type="button" onClick={() => { setBranchFilter(c.id); setPersonFilter(null); }} className="co-tap"
-                style={{ flex: "0 0 auto", padding: "7px 13px", borderRadius: 20, border: "none", cursor: "pointer",
-                  fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
-                  background: active ? "#4F46E5" : "#F1F2F5", color: active ? "#fff" : "#454B54" }}>
-                {c.name}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* CEO 2026-08-02 · เอาชิปสลับสาขาออก — ประวัติล็อกตามสาขาที่เลือกบนหน้าหลัก (เปลี่ยนสาขาที่หน้าหลัก) */}
 
       {/* CEO 2026-08-01 · แถบกรองผู้เก็บ — ทุกคน / ฉัน / รายคน · โผล่เมื่อมีผู้เก็บ ≥2 คนในสาขาที่ดู */}
       {showPeopleChips && (
@@ -2793,9 +2768,12 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
                     const stillMissing = !!h.photosMissing && !(h.eventId && resolvedIds.has(h.eventId));
                     const cashPositive = k === "collect" && h.cashBaht > 0;
                     const cashColor = k === "collect" && !h.ok ? "#C0392B" : cashPositive ? "#15803D" : "#B0B5BD";
+                    // CEO 2026-08-02 · ปุ่มดินสอ "แก้ไข" บนแถวเลย (ไม่ต้องเข้า detail) — เฉพาะรอบเก็บเงิน + (แอดมิน/ผจก. ทุกใบ | พนง.วันนี้)
+                    const canEditThis = !usingDemo && !!h.eventId && k === "collect" && (h.canEditNumbers || isHistoryAdmin);
                     return (
-                      <button key={`${h.code}-${h.time}-${i}`} type="button" onClick={() => setDetail(h)} className="co-tap"
-                        style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: sq.bg, border: "1px solid #E8EAED", borderRadius: 11, padding: "9px 12px", cursor: "pointer" }}>
+                      <div key={`${h.code}-${h.time}-${i}`} style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+                      <button type="button" onClick={() => setDetail(h)} className="co-tap"
+                        style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, textAlign: "left", background: sq.bg, border: "1px solid #E8EAED", borderRadius: 11, padding: "9px 12px", cursor: "pointer" }}>
                         <span style={{ width: 30, height: 30, flex: "0 0 30px", borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>{sq.node}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2811,6 +2789,13 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
                         </div>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C7CBD1" strokeWidth="2" style={{ flex: "0 0 16px" }}><path d="m9 18 6-6-6-6" /></svg>
                       </button>
+                      {canEditThis && (
+                        <button type="button" onClick={() => setEditRow(h)} className="co-tap" aria-label="แก้ไข" title="แก้ไข (เงิน / มิเตอร์)"
+                          style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", width: 46, borderRadius: 11, border: "1.5px solid #C7C3F0", background: "#EEF0FE", color: "#4338CA", cursor: "pointer" }}>
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                        </button>
+                      )}
+                      </div>
                     );
                   })}
                     </div>
