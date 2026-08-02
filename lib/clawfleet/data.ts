@@ -52,6 +52,8 @@ export type Machine = {
   /** เลขเฟือง (gear · COLLECTION = meterMoneyTop/meterDollTop) — สำหรับฟอร์มแก้เลข 4 มิเตอร์ครบ */
   coinGear?: number | null;
   dollGear?: number | null;
+  /** ราคาต่อครั้ง (สตางค์) ต่อตู้ — ให้ฟอร์มแก้เลขคำนวณ "เงินควรได้/เงินหาย" สดตรง server */
+  priceCents?: number;
   photos: number;
   /**
    * รูปจริงที่พนักงานถ่ายตอนเก็บเงิน (anti-cheat) — label = ความหมายจริงของรูป

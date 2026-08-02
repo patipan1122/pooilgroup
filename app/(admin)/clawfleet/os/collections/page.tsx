@@ -156,6 +156,7 @@ export default async function CollectionsPage({
       dollMeterAfter: m.prizeMeterNow,
       coinBefore: m.meterBefore,
       dollBefore: m.prizeMeterPrev,
+      priceCents: m.priceCents,
       cashBaht: m.cashIn,
       // เฟือง + สต๊อก/เติม — ฟอร์มแก้เลข "โชว์ครบ" (เฟืองแก้ได้ · สต๊อก/เติมโชว์อย่างเดียว)
       coinGear: m.coinGear ?? null,

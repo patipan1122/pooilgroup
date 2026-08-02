@@ -822,6 +822,7 @@ function eventToMachine(e: {
     // เฟือง (COLLECTION: meterMoneyTop/meterDollTop) — ให้ฟอร์มแก้เลขโชว์/แก้ 4 มิเตอร์ครบ
     coinGear: e.meterMoneyTop,
     dollGear: e.meterDollTop,
+    priceCents, // ราคาต่อครั้ง (ฟอร์มแก้คำนวณเงินควรได้/หายสด)
     photos,
     photoShots,
     entered,
