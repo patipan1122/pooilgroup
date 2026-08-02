@@ -139,10 +139,12 @@ export async function getDailyPnl(days = 7): Promise<DailyPnlPoint[]> {
   const from = bangkokStartOfDay(days - 1);
 
   // ตู้คีบในขอบเขต → cost map (ต้นทุน/ตัว จาก active loadout)
+  //   isActive: true — ไม่นับตู้ปิด/เทสต์ (เช่น DL01-*) ให้ตรงกับ getBranchPnl + matrix (CEO 2026-08-02 "กันตู้ปิด")
   const machines = await prisma.cfMachine.findMany({
     where: {
       orgId,
       kind: "CLAW",
+      isActive: true,
       ...(branchIds === "ALL" ? {} : { branchId: { in: branchIds } }),
     },
     select: { id: true },

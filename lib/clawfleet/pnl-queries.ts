@@ -299,9 +299,11 @@ export async function getBranchPnl(filter?: PnlRange): Promise<BranchPnl[]> {
     const bAgg = ensure(branchAgg, bId);
     bAgg.sessions += 1;
     for (const e of s.events) {
-      // ผูก event → branch ของ machine (กัน machine ย้ายสาขา) · ถ้าไม่เจอใช้ bId
-      const evBranch = machineToBranch.get(e.machineId) ?? bId;
-      if (!branchIdSet.has(evBranch)) continue;
+      // ผูก event → branch ของ "ตู้ที่ยังเปิดใช้งาน" (machineToBranch = active CLAW เท่านั้น · ข้อ 2)
+      //   ตู้ปิด/เทสต์ (isActive=false · เช่น DL01-*) ไม่อยู่ใน map → ข้าม ไม่นับเข้ากำไร-ขาดทุน
+      //   (ให้ตรงกับหน้า matrix ที่กรอง isActive อยู่แล้ว · แก้ ?? bId เดิมที่ทำให้ตู้ปิดหลุดเข้ายอด · CEO 2026-08-02 "กันตู้ปิด")
+      const evBranch = machineToBranch.get(e.machineId);
+      if (evBranch == null || !branchIdSet.has(evBranch)) continue;
       // ตุ๊กตาออก + ต้นทุนต่อตัว = เฉพาะรอบเก็บจริง · INITIAL/ตั้งต้น นับเฉพาะเงิน (มิเตอร์สะสม ≠ ตุ๊กตาปล่อยจริง)
       const dolls = e.eventType === CfEventType.COLLECTION
         ? Math.max(0, (e.dollMeterAfter ?? 0) - (e.dollMeterBefore ?? 0))
