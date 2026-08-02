@@ -1065,7 +1065,7 @@ function CollectionCard({
 
   // รูปจริงต่อตู้ (anti-cheat) — real tier ส่ง machines[].photoShots มา
   // ถ้าไม่มีตู้ (sample/legacy) → โชว์ช่องว่าง 5 ป้ายเป็น placeholder "ไม่มีรูป"
-  const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม", "เงินสด"];
+  const FALLBACK_LABELS = ["มิเตอร์เหรียญ", "มิเตอร์ตุ๊กตา", "สต็อกก่อนเติม", "สต็อกหลังเติม"];
   const photoMachines: {
     code: string; name: string; shots: { label: string; url: string | null }[];
     entered?: { k: string; v: string; tone?: "ok" | "bad" }[]; kind?: string; isInitial?: boolean;

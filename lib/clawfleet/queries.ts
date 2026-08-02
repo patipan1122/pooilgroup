@@ -755,7 +755,7 @@ function eventToMachine(e: {
       { label: "แผงเฟือง (เหรียญ+ตุ๊กตา)", url: e.photoPrizeMeterUrl },
       { label: "สต็อกก่อนเติม", url: e.photoStockUrl },
       { label: "สต็อกหลังเติม", url: e.photoMeterBeforeUrl },
-      { label: "เงินสด", url: e.photoCashUrl },
+      // CEO 2026-08-02 · ตัดรูปเงินสดออกถาวร (ไม่มีการถ่ายรูปเงินสดแล้ว)
     ];
     entered.push({ k: "มิเตอร์เหรียญ · ดิจิตอล (ก่อน → หลัง)", v: `${nfmt(e.coinMeterBefore)} → ${nfmt(e.coinMeterAfter)}` });
     if (e.meterMoneyTop != null) entered.push({ k: "มิเตอร์เหรียญ · เฟือง (หลัง)", v: nfmt(e.meterMoneyTop) });

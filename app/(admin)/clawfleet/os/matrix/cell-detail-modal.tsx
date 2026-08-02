@@ -63,6 +63,11 @@ function EventCard({
 }) {
   const isInit = row.kind === "INITIAL";
   const hasFlag = row.anomalyFlags.length > 0 || !!row.shortReason;
+  // CEO 2026-08-02 · ตุ๊กตาออก + มิเตอร์ควรได้ (ดิจิตอลเหรียญ delta ×฿10 · โมเดลเดียวกับหน้าตรวจเงิน) + ส่วนต่าง
+  const dollsOut = !isInit && row.stockBefore != null && row.stockAfter != null ? Math.max(0, row.stockBefore + (row.refillQty ?? 0) - row.stockAfter) : null;
+  const coinDelta = row.coinBefore != null && row.coinDigital != null ? Math.max(0, row.coinDigital - row.coinBefore) : null;
+  const coinExpected = !isInit && coinDelta != null ? coinDelta * 10 : null;
+  const cashDiff = coinExpected != null ? row.cashBaht - coinExpected : 0; // + เกิน · − ขาด
   // CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ปุ่มตรวจ/ยืนยัน (แดง→ฟ้า) ตรงกับสีช่องใน matrix
   const moneyOff = row.anomalyFlags.some((f) => CASH_OFF_FLAGS.includes(f));
   const reviewed = !!row.reviewedAt;
@@ -119,18 +124,35 @@ function EventCard({
         )}
       </div>
 
-      {/* fields */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", padding: "12px 14px" }}>
-        <Field label="มิเตอร์เหรียญ · ดิจิตอล (ก่อน→หลัง)"><Delta before={row.coinBefore} after={row.coinDigital} /></Field>
-        <Field label="มิเตอร์เหรียญ · เฟือง">{row.coinGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.coinGear)}</span>}</Field>
-        <Field label="มิเตอร์ตุ๊กตา · ดิจิตอล (ก่อน→หลัง)"><Delta before={row.dollBefore} after={row.dollDigital} /></Field>
-        <Field label="มิเตอร์ตุ๊กตา · เฟือง">{row.dollGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.dollGear)}</span>}</Field>
-        <Field label="สต๊อกตุ๊กตา (ก่อน→หลัง)">
-          {row.stockBefore == null && row.stockAfter == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#3A414B" }}>{nfmt(row.stockBefore)} → {nfmt(row.stockAfter)}</span>}
-        </Field>
-        <Field label="เติมตุ๊กตา">{row.refillQty ? <span style={{ color: "#B45309", fontWeight: 700 }}>+{row.refillQty}</span> : <span style={{ color: "#C2C7CF" }}>—</span>}</Field>
+      {/* CEO 2026-08-02 · แยกซ้าย=เหรียญ/เงิน · ขวา=ตุ๊กตา (อ่านง่าย ไม่ปนกันให้งง) */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", padding: "12px 14px" }}>
+        {/* ── ซ้าย · เหรียญ / เงิน ── */}
+        <div style={{ paddingRight: 13, borderRight: "1px solid #F0F1F4", display: "flex", flexDirection: "column", gap: 9 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#15803D", display: "flex", alignItems: "center", gap: 5 }}>🪙 เหรียญ / เงิน</div>
+          <Field label="มิเตอร์ดิจิตอล (ก่อน→หลัง)"><Delta before={row.coinBefore} after={row.coinDigital} /></Field>
+          <Field label="มิเตอร์เฟือง (หลัง)">{row.coinGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.coinGear)}</span>}</Field>
+          <Field label="เงินเก็บได้"><b style={{ color: "#15803D", fontSize: 14 }}>{bahtN(row.cashBaht)}</b></Field>
+          {coinExpected != null && (
+            <Field label="มิเตอร์ควรได้ (ดิจิตอล×฿10) · ส่วนต่าง">
+              <span><b style={{ color: "#1A1D21" }}>{bahtN(coinExpected)}</b>{" · "}
+                <b style={{ color: cashDiff === 0 ? "#15803D" : "#C0392B" }}>{cashDiff === 0 ? "ตรง" : cashDiff > 0 ? `เกิน ${bahtN(cashDiff)}` : `ขาด ${bahtN(-cashDiff)}`}</b>
+              </span>
+            </Field>
+          )}
+        </div>
+        {/* ── ขวา · ตุ๊กตา ── */}
+        <div style={{ paddingLeft: 13, display: "flex", flexDirection: "column", gap: 9 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#B45309", display: "flex", alignItems: "center", gap: 5 }}>🧸 ตุ๊กตา</div>
+          <Field label="มิเตอร์ดิจิตอล (ก่อน→หลัง)"><Delta before={row.dollBefore} after={row.dollDigital} /></Field>
+          <Field label="มิเตอร์เฟือง (หลัง)">{row.dollGear == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#6B7280" }}>{nfmt(row.dollGear)}</span>}</Field>
+          {dollsOut != null && <Field label="ตุ๊กตาออก"><b style={{ color: "#B45309", fontSize: 14 }}>{dollsOut} ตัว</b></Field>}
+          <Field label="สต๊อก (ก่อน→หลัง)">
+            {row.stockBefore == null && row.stockAfter == null ? <span style={{ color: "#C2C7CF" }}>—</span> : <span style={{ color: "#3A414B" }}>{nfmt(row.stockBefore)} → {nfmt(row.stockAfter)}</span>}
+          </Field>
+          <Field label="เติมตุ๊กตา">{row.refillQty ? <span style={{ color: "#B45309", fontWeight: 700 }}>+{row.refillQty}</span> : <span style={{ color: "#C2C7CF" }}>—</span>}</Field>
+        </div>
         {row.notes && (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ gridColumn: "1 / -1", marginTop: 10, paddingTop: 9, borderTop: "1px solid #F0F1F4" }}>
             <Field label="หมายเหตุ"><span style={{ color: "#5A6270" }}>{row.notes}</span></Field>
           </div>
         )}

@@ -195,7 +195,7 @@ export async function getBranchRawReadings(opts: {
       pushPhoto(photos, "แผงเฟือง (เหรียญ+ตุ๊กตา)", e.photoPrizeMeterUrl);
       pushPhoto(photos, "สต็อกก่อนเติม", e.photoStockUrl);
       pushPhoto(photos, "สต็อกหลังเติม", e.photoMeterBeforeUrl);
-      pushPhoto(photos, "เงินสด", e.photoCashUrl);
+      // CEO 2026-08-02 · ตัดรูปเงินสดออกถาวร (ไม่มีการถ่ายรูปเงินสด)
     }
 
     return {
