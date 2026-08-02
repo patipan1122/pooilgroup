@@ -14,7 +14,7 @@
  *        · id ตัวอย่าง (sample) → optimistic ฝั่ง client (ไม่เรียก action)
  */
 
-import { useMemo, useState, useEffect, useTransition, type CSSProperties } from "react";
+import { useMemo, useState, useTransition, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -267,17 +267,8 @@ export function CollectionsClient({
   const allClean = noRows && hasAnyRounds;        // เคยเก็บ + ไม่มี anomaly → empty-state "สะอาด"
   const data = rows;                              // ใช้ข้อมูลจริงเสมอ
   const router = useRouter();
-  // Realtime (CEO 2026-08-02): มีรอบ "กำลังเก็บ" → refresh ข้อมูลเองทุก 25 วิ (ตู้ไหนเก็บเสร็จโผล่เอง)
-  //   ข้ามถ้ามี popup เปิดอยู่ (แก้เลข/ดูรูป) กันจอเด้งระหว่างทำงาน
-  const hasOpenRound = rows.some((r) => r.isOpen);
-  useEffect(() => {
-    if (!hasOpenRound) return;
-    const id = setInterval(() => {
-      if (typeof document !== "undefined" && document.querySelector('[role="dialog"]')) return;
-      router.refresh();
-    }, 25000);
-    return () => clearInterval(id);
-  }, [hasOpenRound, router]);
+  // CEO 2026-08-02 · ตัด auto-refresh (เดิม polling ทุก 25 วิ เมื่อมีรอบกำลังเก็บ) ออก —
+  //   จอเด้ง/รีเฟรชเองรบกวนการทำงาน · ต้องการดูข้อมูลล่าสุด = กดรีเฟรช/เปลี่ยนหน้าเอง
   const branchOpts = branchOptions.length > 0
     ? [{ value: "all", label: "ทุกสาขา" }, ...branchOptions]
     : SAMPLE_BRANCHES;
