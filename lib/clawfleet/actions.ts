@@ -1094,8 +1094,11 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
     },
   });
   if (!ev) return { ok: false, error: "ไม่พบใบเก็บนี้" };
-  // สิทธิ์: พนักงานเจ้าของใบเท่านั้น (CEO: พนักงานเอง)
-  if (ev.collectedById !== userId) return { ok: false, error: "แก้ได้เฉพาะรอบที่คุณเก็บเอง" };
+  // สิทธิ์: พนักงานเจ้าของใบ · หรือ แอดมิน/แอดมินโปรแกรม/ผจก.สาขา
+  //   CEO 2026-08-03 · "แก้รอบที่ยังเปิดอยู่ ภายในวันได้ ทั้งแอดมินและพนักงาน" — admin แก้รอบเปิดของคนอื่นได้
+  //   (รอบ OPEN เส้นนี้ไม่ปิดรอบ/ไม่ reconcile · ยังกันด้วย today+latest+monotonic+deposit เหมือนเดิม)
+  const canEditAnyRound = (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
+  if (ev.collectedById !== userId && !canEditAnyRound) return { ok: false, error: "แก้ได้เฉพาะรอบที่คุณเก็บเอง" };
   // 🔒 รอบอนุมัติ/ล็อกแล้ว (LOCKED) ห้ามแก้ (parity กับ adminEditCollectionEvent · กันแก้ย้อนใบที่ปิดจบ)
   if (ev.session?.status === "LOCKED") return { ok: false, error: "รอบนี้อนุมัติ/ล็อกแล้ว · แก้ไม่ได้" };
   if (ev.session?.status === "CANCELLED") return { ok: false, error: "รอบนี้ถูกยกเลิกแล้ว · แก้ไม่ได้" };

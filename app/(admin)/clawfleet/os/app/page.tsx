@@ -203,7 +203,7 @@ export default async function StaffAppPage({
           machine: { select: { code: true, nickname: true, sellPriceCents: true, firstBaselineAppliedAt: true, branch: { select: { id: true, name: true } } } },
           // reconcile จริงที่ server คิดตอนปิดรอบ (บน session) — CEO 2026-07-19 "ตรง/ไม่ตรง" ต้องเทียบเงินจริง
           //   ใช้เลขนี้ตรง ๆ ไม่ re-derive (money-feature-client-preview-must-match-server)
-          session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true } },
+          session: { select: { expectedCashCents: true, actualCashCents: true, prizeMeterOut: true, prizeCountedOut: true, status: true } },
         },
         take: 300,
       });
@@ -322,6 +322,8 @@ export default async function StaffAppPage({
           shortReason: [e.shortReason, cleanNote(e.notes)].filter(Boolean).join(" · ") || undefined,
           // #1 · ok = เงินตรงมิเตอร์จริง (ไม่ใช่แค่ไม่มีธง) เมื่อมี reconcile · ไม่มี → fallback ธง anomaly เดิม
           ok: cashOk, isBaseline, eventId: e.id, eventType: e.eventType,
+          // รอบยัง OPEN (กำลังเก็บ วันนี้) → admin แก้ผ่าน editCollectionRound (ไม่ปิดรอบ) · ปิดแล้ว → adminEditCollectionEvent (cascade)
+          sessionOpen: e.session?.status === "OPEN",
           // CEO 2026-08-01 · ใครเก็บ (โชว์ในประวัติทั้งสาขา) + mine = ใบของฉันไหม
           collectedBy: e.collectedBy?.name ?? undefined,
           mine: e.collectedById === userId,

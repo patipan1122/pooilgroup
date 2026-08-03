@@ -703,6 +703,8 @@ export type StaffHistoryRow = {
   eventType?: string;
   // #3 CEO 2026-07-19 · แก้เลขในใบได้ (COLLECTION ล่าสุดของตู้ + วันนี้ + own) — server เช็คซ้ำอีกชั้น
   canEditNumbers?: boolean;
+  // CEO 2026-08-03 · รอบยังเปิดอยู่ (OPEN) → admin แก้ผ่าน editCollectionRound (แก้เลขไม่ปิดรอบ) · ปิดแล้ว → adminEditCollectionEvent
+  sessionOpen?: boolean;
   // CEO 2026-08-01 · ประวัติทั้งสาขา — ชื่อคนเก็บใบนี้ + เป็นใบของฉันไหม (โชว์ "เก็บโดย X" เมื่อไม่ใช่ของฉัน)
   collectedBy?: string;
   mine?: boolean;
@@ -3165,8 +3167,10 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved }: { row: StaffHi
         coinMeterAfter: coinN,
         dollMeterAfter: doll.trim() === "" ? null : Number(digits(doll)),
       };
-      // แอดมิน/ผจก. → adminEditCollectionEvent (แก้ได้ทุกใบ + ต่อลูกโซ่รอบถัดไป) · พนักงาน → editCollectionRound (own+วันนี้)
-      const r = admin ? await adminEditCollectionEvent(input) : await editCollectionRound(input);
+      // CEO 2026-08-03 · เลือกเส้นทางตามสถานะรอบ:
+      //   • รอบยังเปิด (OPEN) → editCollectionRound (แก้เลขไม่ปิดรอบ · admin/พนักงานเจ้าของ แก้ได้ทั้งคู่ · ไม่ reconcile)
+      //   • รอบปิดแล้ว (CLOSED/ANOMALY) + admin → adminEditCollectionEvent (re-reconcile + ต่อลูกโซ่รอบถัดไป · แก้ได้ทุกวัน)
+      const r = admin && !row.sessionOpen ? await adminEditCollectionEvent(input) : await editCollectionRound(input);
       if (!r.ok) { setError(r.error || "แก้ไม่สำเร็จ · ลองใหม่"); setBusy(false); return; }
       onSaved();
     } catch {
