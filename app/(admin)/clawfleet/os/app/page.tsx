@@ -7,7 +7,7 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
-import { userBranchIds, isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
+import { userBranchIds, isCfBranchManager, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
@@ -126,7 +126,8 @@ export default async function StaffAppPage({
     orgId = orgId || (session?.user.org_id ?? "");
     if (session) {
       historyBranchScope = await userBranchIds(session);
-      isHistoryAdmin = isCfAdmin(session.user.role) || isCfBranchManager(session.user.role);
+      // แอดมินองค์กร + แอดมินโปรแกรม (grant-scoped ผ่าน cfHasAdminPower) + ผู้จัดการสาขา = แก้ประวัติได้ทุกใบทุกวัน
+      isHistoryAdmin = (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
     }
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง

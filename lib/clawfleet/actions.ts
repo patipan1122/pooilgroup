@@ -1338,8 +1338,8 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
   const orgId = session.user.org_id;
   const userId = session.user.id;
 
-  // สิทธิ์: แอดมิน + ผู้จัดการสาขาเท่านั้น (กันพนักงาน/viewer แก้เลขเงินกันเอง · mirror reviewV2Session)
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  // สิทธิ์: แอดมิน (รวมแอดมินโปรแกรม · cfHasAdminPower) + ผู้จัดการสาขาเท่านั้น (กันพนักงาน/viewer แก้เลขเงินกันเอง · mirror reviewV2Session)
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่แก้เลขได้" };
   }
 
@@ -1559,7 +1559,8 @@ export async function adminEditBaselineEvent(
   const orgId = session.user.org_id;
   const userId = session.user.id;
 
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  // สิทธิ์: แอดมิน (รวมแอดมินโปรแกรม · cfHasAdminPower) + ผู้จัดการสาขาเท่านั้น
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่แก้เลขได้" };
   }
 
