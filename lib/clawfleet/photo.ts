@@ -32,21 +32,36 @@ export function isSafeKeySegment(v: string): boolean {
   return SAFE_KEY_SEGMENT.test(v);
 }
 
+// ตรวจชนิดรูปจาก magic bytes → คืนนามสกุล + content-type ที่ถูกต้อง
+// (เดิม hardcode ".webp"/"image/webp" เสมอ · แต่ client บน iOS ส่ง JPEG มา — ถ้า label ผิด
+//  metadata บน R2 จะไม่ตรงกับไบต์จริง. validateImageBuffer กันฟอร์แมตแปลกไว้แล้ว จึง default = jpg.)
+function detectImageType(buf: Buffer): { ext: string; contentType: string } {
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff)
+    return { ext: "jpg", contentType: "image/jpeg" };
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47)
+    return { ext: "png", contentType: "image/png" };
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[8] === 0x57 && buf[9] === 0x45)
+    return { ext: "webp", contentType: "image/webp" };
+  return { ext: "jpg", contentType: "image/jpeg" };
+}
+
 export function photoKey(opts: {
   orgId: string;
   machineCode: string;
   eventId: string;
   phase: PhotoPhase;
+  ext?: string;
 }): string {
   // orgId/machineCode/eventId ถูกฝังเป็น path segment → ต้อง sanitize ก่อน (กัน traversal).
   if (!isSafeKeySegment(opts.orgId)) throw new Error("invalid orgId for photo key");
   if (!isSafeKeySegment(opts.machineCode)) throw new Error("invalid machineCode for photo key");
   if (!isSafeKeySegment(opts.eventId)) throw new Error("invalid eventId for photo key");
   const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const ext = opts.ext ?? "jpg";
   // 🛡️ anti-tamper: สุ่ม suffix ต่อการอัปทุกครั้ง → key ไม่ซ้ำ → อัปทับหลักฐานเดิมไม่ได้
   // (last-write-wins ของ R2 จะ overwrite ก็ต่อเมื่อ key เดียวกัน — เราทำให้ key ไม่มีวันซ้ำ)
   const rand = randomUUID().slice(0, 8);
-  return `clawfleet/${opts.orgId}/${ym}/${opts.machineCode}/${opts.eventId}/${opts.phase}-${rand}.webp`;
+  return `clawfleet/${opts.orgId}/${ym}/${opts.machineCode}/${opts.eventId}/${opts.phase}-${rand}.${ext}`;
 }
 
 export async function uploadEventPhoto(opts: {
@@ -56,8 +71,9 @@ export async function uploadEventPhoto(opts: {
   phase: PhotoPhase;
   body: Buffer;
 }): Promise<string> {
-  const key = photoKey(opts);
-  const url = await putObject(key, opts.body as unknown as Uint8Array, "image/webp");
+  const { ext, contentType } = detectImageType(opts.body);
+  const key = photoKey({ ...opts, ext });
+  const url = await putObject(key, opts.body as unknown as Uint8Array, contentType);
   return url;
 }
 

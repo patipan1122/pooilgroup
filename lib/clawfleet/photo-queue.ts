@@ -20,7 +20,7 @@ const VERSION = 1;
 export interface QueuedPhoto {
   /** primary key — สุ่มตอน enqueue */
   id: string;
-  /** blob รูป (WebP ที่ resize แล้ว) — เก็บทั้งก้อนใน IndexedDB */
+  /** blob รูป (JPEG ที่ resize แล้ว) — คอมโพเนนต์ใช้ตัวนี้ (ภายในเก็บเป็น ArrayBuffer ดู StoredPhoto) */
   blob: Blob;
   orgId: string;
   machineCode: string;
@@ -95,6 +95,52 @@ const NOOP_QUEUE: PhotoQueue = {
   },
 };
 
+// รูปแบบที่เก็บ "จริง" ใน IndexedDB — เก็บรูปเป็น ArrayBuffer (ไม่ใช่ Blob)
+// ⚠️ เหตุผล: Safari บน iOS มีบั๊กเก่า — Blob ที่ push ลง IndexedDB แล้วปิด/เปิดแอปใหม่ อ่านกลับมาได้ก้อนว่าง (0 byte)
+//    → รูปที่ค้างในคิวหายเงียบ ๆ บน iPhone. ArrayBuffer เก็บ/อ่านได้ชัวร์ทุกเบราว์เซอร์.
+interface StoredPhoto {
+  id: string;
+  bytes: ArrayBuffer;
+  type: string;
+  orgId: string;
+  machineCode: string;
+  eventScopeId: string;
+  phase: string;
+  label: string;
+  createdAt: number;
+  attempts: number;
+}
+
+// เรคคอร์ดในสโตร์อาจเป็นรูปแบบใหม่ (StoredPhoto มี bytes) หรือรูปแบบเก่า (QueuedPhoto มี blob — เข้าคิวไว้ก่อน deploy)
+type StoredRecord = StoredPhoto | QueuedPhoto;
+
+// อ่าน ArrayBuffer จาก Blob (ใช้ arrayBuffer() ถ้ามี · เบราว์เซอร์เก่า fallback FileReader)
+async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === "function") return blob.arrayBuffer();
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as ArrayBuffer);
+    r.onerror = () => reject(r.error);
+    r.readAsArrayBuffer(blob);
+  });
+}
+
+async function toStored(item: QueuedPhoto): Promise<StoredPhoto> {
+  const bytes = await blobToArrayBuffer(item.blob);
+  const { blob, ...rest } = item;
+  return { ...rest, bytes, type: blob.type || "image/jpeg" };
+}
+
+function fromStored(rec: StoredRecord): QueuedPhoto {
+  // เรคคอร์ดเก่า (ก่อน deploy) เก็บ blob ตรง ๆ → ใช้ต่อได้เลย ไม่ต้องแปลง
+  if ("blob" in rec && rec.blob instanceof Blob) return rec as QueuedPhoto;
+  const { bytes, type, ...rest } = rec as StoredPhoto;
+  return {
+    ...rest,
+    blob: new Blob([bytes ?? new ArrayBuffer(0)], { type: type || "image/jpeg" }),
+  };
+}
+
 // IndexedDB-backed implementation. ทุกเมธอด try-catch → ถ้าพังกลางคัน (โควตาเต็ม ฯลฯ)
 // จะ log แล้ว degrade แบบเงียบ (no-op behaviour) แทนที่จะโยน error ทำ UI พัง.
 function makeIdbQueue(): PhotoQueue {
@@ -121,7 +167,9 @@ function makeIdbQueue(): PhotoQueue {
 
     async enqueue(item: QueuedPhoto): Promise<void> {
       try {
-        await withStore("readwrite", (s) => s.put(item));
+        // แปลงเป็น ArrayBuffer ก่อนเปิด tx (IDB tx ปิดตัวเองถ้า await คั่นกลาง)
+        const stored = await toStored(item);
+        await withStore("readwrite", (s) => s.put(stored));
       } catch (e) {
         console.error("[photo-queue] enqueue failed:", e);
       }
@@ -137,8 +185,8 @@ function makeIdbQueue(): PhotoQueue {
 
     async all(): Promise<QueuedPhoto[]> {
       try {
-        const items = await withStore<QueuedPhoto[]>("readonly", (s) => s.getAll());
-        return Array.isArray(items) ? items : [];
+        const items = await withStore<StoredRecord[]>("readonly", (s) => s.getAll());
+        return Array.isArray(items) ? items.map(fromStored) : [];
       } catch (e) {
         console.error("[photo-queue] all failed:", e);
         return [];
@@ -147,8 +195,8 @@ function makeIdbQueue(): PhotoQueue {
 
     async dequeue(id: string): Promise<QueuedPhoto | null> {
       try {
-        const item = await withStore<QueuedPhoto | undefined>("readonly", (s) => s.get(id));
-        return item ?? null;
+        const item = await withStore<StoredRecord | undefined>("readonly", (s) => s.get(id));
+        return item ? fromStored(item) : null;
       } catch (e) {
         console.error("[photo-queue] dequeue failed:", e);
         return null;
@@ -160,7 +208,8 @@ function makeIdbQueue(): PhotoQueue {
         const current = await this.dequeue(id);
         if (!current) return; // หา id ไม่เจอ → no-op
         const next: QueuedPhoto = { ...current, ...patch, id: current.id };
-        await withStore("readwrite", (s) => s.put(next));
+        const stored = await toStored(next); // เขียนกลับเป็นรูปแบบ ArrayBuffer เสมอ
+        await withStore("readwrite", (s) => s.put(stored));
       } catch (e) {
         console.error("[photo-queue] update failed:", e);
       }

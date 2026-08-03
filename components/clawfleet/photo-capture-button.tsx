@@ -1,7 +1,7 @@
 "use client";
 // Photo capture button — 1-tap: มือถือเด้งเมนูให้เลือก "ถ่ายรูป / เลือกจากคลังภาพ" เอง
 // (เอา capture="environment" ออก · CEO 2026-07-20 อยากแนบรูปเก่าได้ ไม่ใช่ถ่ายอย่างเดียว)
-// client-side resize to ~150KB WebP, upload to R2.
+// client-side resize to JPEG (iOS Safari รองรับ 100% · WebP encode ทำไม่ได้บน iOS<17 → เด้งเป็น PNG ก้อนใหญ่), upload to R2.
 // No npm dep — uses canvas API.
 //
 // ทนเน็ตตก + ทนการปิดแอป (field-app · พนักงานอยู่หน้าตู้ 7-11 สัญญาณอ่อน):
@@ -24,7 +24,8 @@ import {
 } from "@/lib/clawfleet/photo-queue";
 
 const MAX_DIMENSION = 1080;
-const QUALITY = 0.75;
+const QUALITY = 0.8; // JPEG คุณภาพเริ่มต้น (1080px q0.8 ≈ 150–300KB · ต่ำกว่าเพดาน server 500KB)
+const TARGET_BYTES = 480 * 1024; // เป้าขนาดหลังย่อ (ต่ำกว่า server cap 500KB เผื่อ margin)
 const MAX_ATTEMPTS = 4; // ครั้งแรก + retry อีก 3 (รวม backoff 1s,2s,4s)
 const BASE_DELAY_MS = 1000;
 
@@ -111,15 +112,29 @@ export function PhotoCaptureButton({
         if (runRef.current !== myRun) return; // มีการถ่ายใหม่แล้ว → ทิ้งรอบนี้
         try {
           const fd = new FormData();
-          fd.append("photo", item.blob, "photo.webp");
+          const ext =
+            item.blob.type === "image/png"
+              ? "png"
+              : item.blob.type === "image/webp"
+                ? "webp"
+                : "jpg";
+          fd.append("photo", item.blob, `photo.${ext}`);
           fd.append("orgId", item.orgId);
           fd.append("machineCode", item.machineCode);
           fd.append("eventScopeId", item.eventScopeId);
           fd.append("phase", item.phase);
           const res = await fetch("/api/clawfleet/upload", { method: "POST", body: fd });
           if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || `อัพไม่สำเร็จ (${res.status})`);
+            const text = await res.text().catch(() => "");
+            // 4xx (ยกเว้น 408 timeout / 429 rate-limit) = ปัญหาถาวร (รูปใหญ่/ฟอร์แมตผิด/สิทธิ์) →
+            // retry ไม่ช่วย · ต้องหยุดแล้วบอกพนักงานให้ถ่ายใหม่ (ไม่หลอกว่า "รอเน็ต")
+            const permanent =
+              res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429;
+            const err = new Error(text || `อัพไม่สำเร็จ (${res.status})`) as Error & {
+              permanent?: boolean;
+            };
+            err.permanent = permanent;
+            throw err;
           }
           const { url } = (await res.json()) as { url: string };
           // อัปสำเร็จ → ลบงานออกจากคิว (รอดแล้ว ไม่ต้อง flush ซ้ำ)
@@ -136,6 +151,23 @@ export function PhotoCaptureButton({
           console.error(`[photo-capture] upload attempt ${attempt}/${MAX_ATTEMPTS} failed:`, e);
           // บันทึกจำนวนครั้งที่พยายามลงคิว (ไว้ debug · no-op ถ้า fallback)
           void queue.update(item.id, { attempts: item.attempts + attempt });
+          // ปัญหาถาวร (4xx) → หยุด retry ทันที · เอางานออกจากคิว (กัน flush วนไม่จบ) · แจ้งให้ถ่ายใหม่
+          if ((e as { permanent?: boolean })?.permanent) {
+            if (runRef.current === myRun) {
+              const raw = (e as Error).message || "";
+              const friendly = /ใหญ่|500KB|resize/i.test(raw)
+                ? "รูปใหญ่เกินไป · แตะถ่ายใหม่"
+                : /รองรับ|ฟอร์แมต|JPEG|PNG|WebP|format/i.test(raw)
+                  ? "ไฟล์รูปไม่รองรับ · แตะถ่ายใหม่"
+                  : "อัปรูปไม่สำเร็จ · แตะถ่ายใหม่";
+              void queue.remove(item.id);
+              pendingRef.current = null;
+              queueIdRef.current = null;
+              setStateSafe("idle");
+              setErrorSafe(friendly);
+            }
+            return;
+          }
           if (attempt < MAX_ATTEMPTS) {
             setStateSafe("retry");
             const delay = BASE_DELAY_MS * 2 ** (attempt - 1); // 1s,2s,4s
@@ -227,7 +259,7 @@ export function PhotoCaptureButton({
     setErrorSafe(null);
     const myRun = ++runRef.current;
     try {
-      const resized = await resizeToWebp(file);
+      const resized = await resizeToJpeg(file);
       if (runRef.current !== myRun) return; // ถ่ายซ้ำระหว่าง resize → ทิ้งรอบเก่า
       const queue = getQueue();
       const id = newQueueId();
@@ -445,7 +477,12 @@ export function PhotoCaptureButton({
   );
 }
 
-async function resizeToWebp(file: File): Promise<Blob> {
+// ย่อรูป → เข้ารหัสเป็น JPEG (ไม่ใช่ WebP)
+// ⚠️ เหตุผล: Safari บน iPhone (iOS < 17) เข้ารหัส WebP ผ่าน canvas ไม่ได้ — ตามสเปก HTML มันจะเงียบ ๆ
+//    คืนไฟล์เป็น PNG แทน (ก้อนใหญ่ 1–3 MB) → ทะลุเพดาน server 500KB → ถูกปฏิเสธทุกใบ → อัปไม่ขึ้นบน iOS.
+//    JPEG canvas.toBlob รองรับทุกเบราว์เซอร์ (iOS + Android) → แก้ปัญหา iOS อัปรูปไม่ได้.
+//    เข้ารหัสหลายรอบไล่ลดคุณภาพจน "ขนาดจริง" ต่ำกว่าเพดาน (verify ทุกครั้ง ไม่เดา).
+async function resizeToJpeg(file: File): Promise<Blob> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result as string);
@@ -459,6 +496,7 @@ async function resizeToWebp(file: File): Promise<Blob> {
     i.src = dataUrl;
   });
   let { width, height } = img;
+  if (!width || !height) throw new Error("อ่านขนาดรูปไม่ได้");
   if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
     if (width >= height) {
       height = Math.round((height * MAX_DIMENSION) / width);
@@ -473,18 +511,21 @@ async function resizeToWebp(file: File): Promise<Blob> {
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas ไม่รองรับ");
+  // พื้นขาวก่อนวาด: กันรูปต้นฉบับที่โปร่งใส (PNG alpha) กลายเป็นพื้นดำเมื่อแปลงเป็น JPEG
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
-  const blob = await new Promise<Blob | null>((res) =>
-    canvas.toBlob(res, "image/webp", QUALITY),
-  );
-  if (!blob) throw new Error("encode WebP ไม่สำเร็จ");
-  if (blob.size > 500 * 1024) {
-    // fallback: re-encode lower quality
-    const b2 = await new Promise<Blob | null>((res) =>
-      canvas.toBlob(res, "image/webp", 0.5),
+
+  // ไล่ลดคุณภาพจนขนาดจริงต่ำกว่าเป้า (server cap 500KB · เผื่อ margin เหลือ 480KB)
+  let last: Blob | null = null;
+  for (const q of [QUALITY, 0.6, 0.45, 0.3]) {
+    const blob = await new Promise<Blob | null>((res) =>
+      canvas.toBlob(res, "image/jpeg", q),
     );
-    if (!b2) throw new Error("compress ไม่สำเร็จ");
-    return b2;
+    if (!blob) continue;
+    last = blob;
+    if (blob.size <= TARGET_BYTES) return blob;
   }
-  return blob;
+  if (last) return last; // ยังเกินอยู่ (รูปใหญ่ผิดปกติ) — คืนก้อนเล็กสุดที่ได้ · server เป็นด่านสุดท้าย
+  throw new Error("encode JPEG ไม่สำเร็จ");
 }
