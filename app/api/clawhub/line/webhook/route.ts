@@ -21,8 +21,12 @@ import {
 import { getOrCreateMember } from "@/lib/clawhub/member";
 import { BRAND } from "@/lib/clawhub/constants";
 import { clawhubOrgId } from "@/lib/clawhub/org";
-import { ingestInboundMessage, logOutbound } from "@/lib/clawhub/ingest";
-import { clawhubBotReply } from "@/lib/clawhub/bot";
+import {
+  ingestInboundMessage,
+  logOutbound,
+  recentBotContext,
+} from "@/lib/clawhub/ingest";
+import { clawhubBotReply, callNudgeMessage } from "@/lib/clawhub/bot";
 import { putObject } from "@/lib/clawhub/r2";
 
 export const dynamic = "force-dynamic";
@@ -142,6 +146,33 @@ async function handleTextMessage(
     return;
   }
 
+  // กันตอบวนซ้ำ ๆ (CEO 2026-08-03/04).
+  if (reply.backup || reply.escalate) {
+    const ctx = await recentBotContext(ingested.conversationId);
+    if (reply.backup) {
+      // ลูกค้าบ่นว่าโทรเบอร์หลักไม่ติด → ส่ง "เบอร์สำรอง" ครั้งเดียว
+      // (ข้ามกฎเงียบปกติ) · ถ้าเคยส่งเบอร์สำรองไปแล้ว → เงียบ.
+      if (ctx.backupSent) {
+        console.log(
+          `[clawhub-line webhook] SILENT (backup already sent) conv=${ingested.conversationId}`,
+        );
+        return;
+      }
+      // ctx.backupSent === false → ส่งการ์ดเบอร์สำรองตามที่ bot คืนมา
+    } else {
+      // ส่งต่อเจ้าหน้าที่: ครั้งแรก=การ์ด · ครั้ง2=เตือนโทร · ≥3=เงียบรอคนจริง
+      if (ctx.escalations >= 2) {
+        console.log(
+          `[clawhub-line webhook] SILENT (escalated ${ctx.escalations}x) conv=${ingested.conversationId}`,
+        );
+        return;
+      }
+      if (ctx.escalations === 1) {
+        reply.messages = [callNudgeMessage()];
+      }
+    }
+  }
+
   // Prefer the cheap replyToken; fall back to push if it's already consumed.
   const sent = ev.replyToken
     ? await replyMessage(ev.replyToken, reply.messages)
@@ -200,22 +231,30 @@ async function handleImageMessage(
 
   // The bot does NOT read chat photos for refunds — guide them to the LIFF form.
   if (ingested.botEnabled) {
-    const refundUrl = liffLink("refund");
-    const guide =
-      `ขอบคุณสำหรับรูปครับ 🙏 ถ้าตู้มีปัญหาและต้องการขอคืนเงิน ` +
-      `กรุณากดปุ่ม "ขอคืนเงิน" ในเมนูด้านล่าง แล้วอัปโหลดรูปหน้าจอตู้ในแบบฟอร์ม ` +
-      `ระบบจะตรวจสอบและคืนเป็นแต้มให้อัตโนมัติครับ` +
-      (refundUrl ? `\n\nขอคืนเงิน: ${refundUrl}` : "");
-    const sent = ev.replyToken
-      ? await replyMessage(ev.replyToken, [{ type: "text", text: guide }])
-      : await pushText(userId, guide);
-    if (sent.ok || !ev.replyToken) {
-      await logOutbound({
-        orgId,
-        conversationId: ingested.conversationId,
-        text: guide,
-        byBot: true,
-      });
+    const { escalations, lastText } = await recentBotContext(
+      ingested.conversationId,
+    );
+    // เงียบถ้า: เรื่องอยู่กับเจ้าหน้าที่แล้ว (escalate ≥2) หรือเพิ่งตอบ
+    // "ขอบคุณสำหรับรูป" ไปแล้ว (กันตอบซ้ำเวลาลูกค้าส่งรูปรัว ๆ หลายใบ).
+    const justThanked = lastText.startsWith("ขอบคุณสำหรับรูป");
+    if (escalations < 2 && !justThanked) {
+      const refundUrl = liffLink("refund");
+      const guide =
+        `ขอบคุณสำหรับรูปค่ะ 🙏 ทีมงานเห็นรูปแล้ว · ถ้าตู้มีปัญหา/ครบยอดไม่ได้ตุ๊กตา ` +
+        `รบกวนแจ้ง "สาขา + เลขตู้" มาด้วยนะคะ เดี๋ยวทีมงานดูให้ ` +
+        `· ขอคืนเงินเป็นแต้มกดปุ่ม "ขอคืนเงิน" ในเมนูได้เลย` +
+        (refundUrl ? `\n\nขอคืนเงิน: ${refundUrl}` : "");
+      const sent = ev.replyToken
+        ? await replyMessage(ev.replyToken, [{ type: "text", text: guide }])
+        : await pushText(userId, guide);
+      if (sent.ok || !ev.replyToken) {
+        await logOutbound({
+          orgId,
+          conversationId: ingested.conversationId,
+          text: guide,
+          byBot: true,
+        });
+      }
     }
   }
 }

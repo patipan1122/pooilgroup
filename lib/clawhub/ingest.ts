@@ -238,3 +238,29 @@ export async function logOutbound(p: LogOutboundParams): Promise<string> {
   });
   return msg.id;
 }
+
+/**
+ * บริบทข้อความล่าสุดที่บอทส่ง — ใช้กัน "ตอบวนซ้ำ ๆ" (CEO 2026-08-03).
+ * - `escalations`: จำนวนการ์ด "ส่งต่อเจ้าหน้าที่/ครบยอด/เตือนโทร" ที่บอทส่งติด ๆ กัน
+ *   ล่าสุด (นับจากท้ายจนเจอการ์ดปกติคั่น) · เกณฑ์ = OUT + byBot + ข้อความมี "เจ้าหน้าที่".
+ *   route ใช้ตัดสิน: 0 → ส่งการ์ดเต็ม · 1 → เตือนโทรครั้งเดียว · ≥2 → เงียบ รอคนจริง.
+ * - `lastText`: ข้อความล่าสุดที่บอทส่ง (ใช้กันตอบ "ขอบคุณสำหรับรูป" ซ้ำตอนส่งรูปรัว ๆ).
+ */
+export async function recentBotContext(
+  conversationId: string,
+): Promise<{ escalations: number; lastText: string; backupSent: boolean }> {
+  const recent = await prisma.clawhubMessage.findMany({
+    where: { conversationId, direction: "OUT", byBot: true },
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    select: { text: true },
+  });
+  let escalations = 0;
+  for (const m of recent) {
+    if ((m.text ?? "").includes("เจ้าหน้าที่")) escalations++;
+    else break; // เจอการ์ดปกติคั่น = เริ่มนับใหม่ (ลูกค้าได้คำตอบจริงคั่นแล้ว)
+  }
+  // เคยส่ง "เบอร์สำรอง" ไปแล้วในบทสนทนานี้หรือยัง (กันส่งเบอร์สำรองซ้ำ ๆ).
+  const backupSent = recent.some((m) => (m.text ?? "").includes("เบอร์สำรอง"));
+  return { escalations, lastText: recent[0]?.text ?? "", backupSent };
+}
