@@ -304,7 +304,14 @@ export default async function StaffAppPage({
         const expectedCents = e.session?.expectedCashCents;
         const actualCents = e.session?.actualCashCents ?? e.cashCountedCents;
         const cashDiffCents = expectedCents != null ? actualCents - expectedCents : null; // + เกิน · − ขาด
-        const cashOk = cashDiffCents != null ? Math.abs(cashDiffCents) <= 2000 : e.anomalyFlags.length === 0;
+        // CEO 2026-08-04 · ok (สี/ป้ายตรง-ไม่ตรง) = **per-ตู้** ให้ตรงกับการ์ดสรุป (เงินตู้นี้ตรงมิเตอร์ + ตุ๊กตาตู้นี้ตรงมิเตอร์)
+        //   เดิมใช้ session-level (expectedCashCents ทั้งสาขา) → ตู้ที่ดีก็โดนแดงตามตู้อื่นในรอบ (CEO งง "ตู้ 1295 ไม่ตรงยังไง")
+        //   baseline คงเดิม (ไม่มีเก็บเงิน → ไม่คิดเงินตรง/ไม่ตรง)
+        const perTuMoneyOk = Math.abs(Math.round(e.cashCountedCents / 100) - Math.round(meterExpectedCents / 100)) <= 20;
+        const perTuDollOk = dollMeterOut != null && dollsOut != null ? dollMeterOut === dollsOut : true;
+        const cashOk = isBaseline
+          ? (cashDiffCents != null ? Math.abs(cashDiffCents) <= 2000 : e.anomalyFlags.length === 0)
+          : (perTuMoneyOk && perTuDollOk);
         return {
           kind: isBaseline ? "baseline" : "collect",
           code: e.machine.code, nickname: e.machine.nickname, branch: e.machine.branch.name, branchId: e.machine.branch.id,
