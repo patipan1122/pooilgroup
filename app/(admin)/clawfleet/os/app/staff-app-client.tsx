@@ -3265,9 +3265,11 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { ro
   }
 
   // ช่องกรอกเลข + ค่าเดิม (ก่อน→หลัง · ไฮไลต์เมื่อเปลี่ยน)
-  const cell = (label: string, val: string, set: (s: string) => void, orig: number | null, suffix?: string) => {
+  // before = มิเตอร์รอบก่อน (CEO 2026-08-04 · โชว์ "รอบก่อน → รอบนี้ (+delta)" ให้เห็นการขยับ)
+  const cell = (label: string, val: string, set: (s: string) => void, orig: number | null, suffix?: string, before?: number | null) => {
     const nv = numOrNull(val);
     const changed = nv !== orig && !(val.trim() === "" && orig == null);
+    const cur = nv ?? orig; // ค่ารอบนี้ (ที่กรอกอยู่ · หรือเดิมถ้ายังไม่แตะ)
     return (
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11.5, fontWeight: 600, color: "#454B54", marginBottom: 4 }}>{label}</div>
@@ -3277,7 +3279,11 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { ro
           {suffix && <span style={{ fontSize: 11, color: "#9AA1AB" }}>{suffix}</span>}
         </div>
         <div style={{ fontSize: 10.5, color: changed ? "#4338CA" : "#9AA1AB", marginTop: 3 }}>
-          เดิม {orig != null ? orig.toLocaleString("en-US") : "—"}{changed ? ` → ${nv != null ? nv.toLocaleString("en-US") : "—"}` : ""}
+          {before != null ? (
+            <>รอบก่อน <b className="num">{before.toLocaleString("en-US")}</b> → รอบนี้ <b className="num">{cur != null ? cur.toLocaleString("en-US") : "—"}</b>{cur != null ? <span style={{ color: "#15803D" }}> (+{Math.max(0, cur - before).toLocaleString("en-US")})</span> : null}</>
+          ) : (
+            <>เดิม {orig != null ? orig.toLocaleString("en-US") : "—"}{changed ? ` → ${nv != null ? nv.toLocaleString("en-US") : "—"}` : ""}</>
+          )}
         </div>
       </div>
     );
@@ -3367,7 +3373,7 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { ro
         {/* การ์ด ดิจิตอล */}
         <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>ดิจิตอล (จอบน)</div>
-          <div style={{ display: "flex", gap: 10 }}>{cell("มิเตอร์เหรียญ", coinDigi, setCoinDigi, o.coinDigi)}{cell("มิเตอร์ตุ๊กตา", dollDigi, setDollDigi, o.dollDigi)}</div>
+          <div style={{ display: "flex", gap: 10 }}>{cell("มิเตอร์เหรียญ", coinDigi, setCoinDigi, o.coinDigi, undefined, row.coinMeterBefore ?? null)}{cell("มิเตอร์ตุ๊กตา", dollDigi, setDollDigi, o.dollDigi, undefined, row.dollMeterBefore ?? null)}</div>
         </div>
         {/* การ์ด เฟือง */}
         <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
