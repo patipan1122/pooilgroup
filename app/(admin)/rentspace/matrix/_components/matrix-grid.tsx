@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment, useTransition } from "react";
+import { useState, Fragment, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered } from "lucide-react";
@@ -152,6 +152,34 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
     }
     return sum;
   }
+
+  // ── ยืดตารางให้เต็มถึงแถบเมนูล่างพอดี (กันช่องว่างขาวใต้ตาราง) ──
+  // วัดตำแหน่งจริงตอน render (ไม่เดาเลข reserve) → บนมือถือ box สูง = จากบนกล่องถึงหัวแถบเมนู
+  // fixed ล่าง (#rs-bottom-nav) · desktop (lg) ไม่มีแถบล่าง → คืนค่า CSS เดิม
+  useEffect(() => {
+    const fit = () => {
+      const box = document.querySelector<HTMLElement>(".rs-matrix .rs-scroll");
+      if (!box) return;
+      if (!window.matchMedia("(max-width: 1023px)").matches) {
+        box.style.maxHeight = "";
+        return;
+      }
+      const nav = document.getElementById("rs-bottom-nav");
+      const boxTop = box.getBoundingClientRect().top;
+      const navTop = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+      const avail = Math.round(navTop - boxTop - 8);
+      if (avail > 280) box.style.maxHeight = `${avail}px`;
+    };
+    fit();
+    const t = window.setTimeout(fit, 120); // เผื่อ layout/ฟอนต์ settle
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+    };
+  }, [view, month, year, orderMode]);
 
   // ── โหมดจัดเรียง: แสดงรายการห้องให้ลาก/เลื่อนขึ้น-ลง แทนตาราง Excel ──
   if (orderMode) {

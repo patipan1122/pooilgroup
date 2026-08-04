@@ -227,6 +227,7 @@ export function RentSpaceBottomNav({ role }: { role: Role }) {
 
       {/* Fixed bottom bar — mobile only */}
       <nav
+        id="rs-bottom-nav"
         aria-label="เมนูทางลัด บริหารพื้นที่เช่า"
         className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t bg-white"
         style={{ borderColor: "var(--rs-border)", paddingBottom: "env(safe-area-inset-bottom)" }}
