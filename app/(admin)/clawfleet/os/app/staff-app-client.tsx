@@ -3012,6 +3012,8 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
                     </>
                   ) : (
                     <>
+                      {/* CEO 2026-08-04 · สรุปบนสุด "ทำไมยอดตรง/ไม่ตรง" (เงิน + ตุ๊กตา) — ใช้ค่าที่ server คิดมาแล้ว */}
+                      {!detail.isBaseline && <MismatchSummary meterExpectedBaht={detail.meterExpectedBaht} cashBaht={detail.cashBaht} dollsCounted={detail.dollsOut} dollMeterOut={dollMeterDelta} />}
                       {/* 2 การ์ดสถิติ — เงินที่เก็บได้ + ตุ๊กตาออก */}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 12 }}>
                         <div style={{ background: "#fff", border: "1px solid #E8EAED", borderRadius: 13, padding: "13px 14px" }}><div className="num" style={{ fontSize: 20, fontWeight: 800, color: accent }}>฿{detail.cashBaht.toLocaleString("en-US")}</div><div style={{ fontSize: 10.5, color: "#9AA1AB", marginTop: 3 }}>เงินที่เก็บได้</div></div>
@@ -3149,6 +3151,44 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
   );
 }
 
+/* ─────────────── CEO 2026-08-04 · การ์ดสรุป "ทำไมยอดตรง/ไม่ตรง" (เงิน + ตุ๊กตา) ───────────────
+ * โชว์บนสุดหน้ารายละเอียดรอบ + หน้าแก้ (realtime) — ให้เข้าใจง่ายว่าแดงเพราะเงินหรือตุ๊กตา.
+ * display-only · ใช้ค่าที่ server คิดมาแล้ว (หน้าดู) หรือค่าที่กำลังแก้ (หน้าแก้ · ประเมิน). */
+function MismatchSummary({ meterExpectedBaht, cashBaht, dollsCounted, dollMeterOut, live = false }: {
+  meterExpectedBaht?: number | null; cashBaht?: number | null; dollsCounted?: number | null; dollMeterOut?: number | null; live?: boolean;
+}) {
+  const nd = (v?: number | null) => (v != null ? v.toLocaleString("en-US") : "—");
+  const cashDiff = meterExpectedBaht != null && cashBaht != null ? cashBaht - meterExpectedBaht : null;
+  const cashOff = cashDiff != null && Math.abs(cashDiff) > 20;
+  const cashVerdict = cashDiff == null ? "—" : Math.abs(cashDiff) <= 20 ? "ตรง" : cashDiff < 0 ? `ขาด ฿${Math.abs(cashDiff).toLocaleString("en-US")}` : `เกิน ฿${cashDiff.toLocaleString("en-US")}`;
+  const dollDiff = dollsCounted != null && dollMeterOut != null ? dollsCounted - dollMeterOut : null;
+  const dollOff = dollDiff != null && dollDiff !== 0;
+  const dollVerdict = dollDiff == null ? "—" : dollDiff === 0 ? "ตรง" : `ต่าง ${Math.abs(dollDiff)} ตัว`;
+  const anyOff = cashOff || dollOff;
+
+  const line = (icon: string, label: string, aLbl: string, aVal: string, bLbl: string, bVal: string, verdict: string, off: boolean, show: boolean) => (
+    <div style={{ padding: "9px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#454B54" }}>{icon} {label}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: !show ? "#9AA1AB" : off ? "#C0392B" : "#15803D" }}>{show ? (off ? "🔴 " : "🟢 ") : ""}{verdict}</span>
+      </div>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#5A6270", marginTop: 3 }}>
+        <span>{aLbl} <b className="num" style={{ color: "#1A1D21" }}>{aVal}</b></span>
+        <span>{bLbl} <b className="num" style={{ color: "#1A1D21" }}>{bVal}</b></span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#fff", border: `1.5px solid ${anyOff ? "#F3C9C9" : "#CDE8D6"}`, borderRadius: 14, padding: "4px 14px 8px", marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "#9AA1AB", fontWeight: 700, padding: "8px 0 0" }}>สรุปยอด{live ? " · ตอนนี้ (ประเมิน)" : ""}</div>
+      {line("💰", "เงิน", "มิเตอร์ควรได้", `฿${nd(meterExpectedBaht)}`, "เก็บได้", `฿${nd(cashBaht)}`, cashVerdict, cashOff, cashDiff != null)}
+      <div style={{ borderTop: "1px solid #F2F3F5" }} />
+      {line("🧸", "ตุ๊กตาออก", "ที่นับ", `${nd(dollsCounted)} ตัว`, "ตามมิเตอร์", `${nd(dollMeterOut)} ตัว`, dollVerdict, dollOff, dollDiff != null)}
+    </div>
+  );
+}
+
 /* ─────────────── #3 CEO 2026-07-19 · แก้เลขในใบเก็บเดิม (เงิน/มิเตอร์) ───────────────
  * พนักงานกรอกเงิน/มิเตอร์ผิดแล้วกดส่งไป → แก้ตัวเลขในใบเดิมได้ (เฉพาะรอบล่าสุดของตู้ · วันนี้ · own).
  * server (editCollectionRound) re-reconcile ทั้งรอบ + อัปเดต mirror + audit log · เช็คสิทธิ์/เงื่อนไขซ้ำอีกชั้น. */
@@ -3185,6 +3225,17 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { ro
   const sb = numOrNull(stockBefore), sa = numOrNull(stockAfter);
   const dollsOutNew = sb != null && sa != null ? sb + refillTotal - sa : null;
   const dollsOutOld = o.stockBefore != null && o.stockAfter != null ? o.stockBefore + refillOrig - o.stockAfter : (row.dollsOut ?? null);
+  // CEO 2026-08-04 · การ์ดสรุป realtime (ประเมิน) — เงินควรได้จากมิเตอร์เหรียญ + ตุ๊กตาตามมิเตอร์
+  //   ราคา/เหรียญ derive จากค่าเดิม (meterExpectedBaht ÷ origCoinDelta) · server คิดจริงตอนบันทึก
+  const cashNum = Number(digits(cash)) || 0;
+  const coinBefore = row.coinMeterBefore ?? null;
+  const coinDigiN = coinDigi.trim() === "" ? null : Number(digits(coinDigi));
+  const origCoinDelta = row.coinMeter != null && coinBefore != null ? row.coinMeter - coinBefore : null;
+  const pricePerBaht = origCoinDelta != null && origCoinDelta > 0 && row.meterExpectedBaht != null ? row.meterExpectedBaht / origCoinDelta : null;
+  const meterExpectedNow = coinDigiN != null && coinBefore != null && pricePerBaht != null ? Math.round(Math.max(0, coinDigiN - coinBefore) * pricePerBaht) : (row.meterExpectedBaht ?? null);
+  const dollBefore = row.dollMeterBefore ?? null;
+  const dollDigiN = dollDigi.trim() === "" ? null : Number(digits(dollDigi));
+  const dollMeterOutNow = dollDigiN != null && dollBefore != null ? Math.max(0, dollDigiN - dollBefore) : null;
 
   async function doSave() {
     setError(null);
@@ -3309,11 +3360,9 @@ function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { ro
     <div role="dialog" aria-modal="true" style={overlay}>
       {headerBar(`แก้ไขรอบเก็บ · ${row.nickname || row.code}`, admin ? "แอดมิน · แก้ได้ทุกใบ · โชว์ค่าเดิม + คิดใหม่ให้" : "แก้รอบล่าสุดของตู้วันนี้ · คิดใหม่ให้")}
       <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* ผลกระทบสด */}
-        <div style={{ background: "#EEF0FE", borderRadius: 12, padding: "10px 14px", fontSize: 12.5, color: "#3730A3", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-          <span>ตุ๊กตาออก (ก่อนเติม + เติม − หลัง)</span>
-          <b style={{ fontSize: 15 }}>{dollsOutOld ?? "—"} → {dollsOutNew ?? "—"} ตัว</b>
-        </div>
+        {/* CEO 2026-08-04 · การ์ดสรุปยอด realtime — เงิน (มิเตอร์ควรได้ vs เก็บได้) + ตุ๊กตา (นับ vs มิเตอร์) */}
+        <MismatchSummary meterExpectedBaht={meterExpectedNow} cashBaht={cashNum} dollsCounted={dollsOutNew} dollMeterOut={dollMeterOutNow} live />
+        <div style={{ fontSize: 11, color: "#9AA1AB", textAlign: "center", marginTop: -6 }}>ตุ๊กตาออก (ก่อนเติม + เติม − หลัง): {dollsOutOld ?? "—"} → <b>{dollsOutNew ?? "—"}</b> ตัว</div>
 
         {/* การ์ด ดิจิตอล */}
         <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
