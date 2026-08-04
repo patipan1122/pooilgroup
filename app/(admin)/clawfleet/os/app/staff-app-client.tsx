@@ -773,7 +773,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {} }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {}, isHistoryAdmin = false }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -794,10 +794,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} />
   );
 
   return (
@@ -894,6 +894,8 @@ type StaffAppProps = {
   netAvailableByBranch: Record<string, Record<string, number>>;
   // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (machineId → sortOrder · จำติดบัญชี)
   machineOrder: Record<string, number>;
+  // CEO 2026-08-04 · super_admin/แอดมิน/ผจก. = เห็นปุ่มแก้ประวัติได้ทุกใบ (thread → HomeScreen → ปุ่มแก้เลข)
+  isHistoryAdmin?: boolean;
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
@@ -918,7 +920,7 @@ function editPayloadFromArgs(eventId: string, a: SubmitBranchEventArgs) {
   };
 }
 
-function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder }: StaffAppProps) {
+function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder, isHistoryAdmin }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const router = useRouter(); // quick-save (บันทึกค้าง=ส่ง) → refresh ให้ history/สถานะตู้ "เก็บแล้ว" อัปเดตจาก server
   const [panel, setPanel] = useState<Panel>(null);
@@ -1762,6 +1764,7 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
         />
       ) : onHome ? (
         <HomeScreen
+          isHistoryAdmin={isHistoryAdmin}
           userName={userName}
           branchList={branchList}
           selectedBranchId={selectedBranchId}
@@ -2062,6 +2065,8 @@ function HomeScreen(props: {
   onHandByBranch: Record<string, Record<string, number>>;
   receivedByBranch: Record<string, CfReceivedDoc[]>;
   countsByBranch: Record<string, CfCountRow[]>;
+  // CEO 2026-08-04 · thread isHistoryAdmin → PanelScreen → ปุ่มแก้เลข (แอดมิน/super_admin แก้ได้ทุกใบ)
+  isHistoryAdmin?: boolean;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onChange, onSetup, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // ── สาขาที่กำลังดู (ปุ่มสลับสาขา · CEO 2026-07-28) ──
