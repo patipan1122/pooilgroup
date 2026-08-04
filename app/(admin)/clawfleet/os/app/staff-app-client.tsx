@@ -680,7 +680,8 @@ export type StaffHistoryRow = {
   refillQty?: number; // จำนวนที่เติมเข้าตู้รอบนี้
   // CEO 2026-07-19 · ใบสรุป fix-form: ราคาขาย/ตัว + ราย SKU ที่เติมรอบนี้ (name+qty+รูป)
   sellPriceCents?: number;
-  refillSkus?: { name: string; qty: number; imageUrl?: string | null }[];
+  // CEO 2026-08-04 · productId/warehouseId = ให้หน้าแก้ส่ง refillLines กลับปรับ ledger (optional · demo ไม่มี)
+  refillSkus?: { name: string; qty: number; imageUrl?: string | null; productId?: string; warehouseId?: string | null }[];
   // รายละเอียดรอบ (โชว์ในหน้า detail หน้าเดียว)
   stockBefore?: number;
   stockAfter?: number;
@@ -3134,13 +3135,14 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
         />
       )}
 
-      {/* #3 · sheet แก้เลขในใบเดิม (เงิน/มิเตอร์) → editCollectionRound → refresh */}
+      {/* #3 · หน้าแก้รอบเก็บเต็มจอ (เงิน/มิเตอร์4/สต๊อก/เติมราย SKU/รูป) → editCollectionRound|adminEdit → refresh */}
       {editRow && editRow.eventId && (
         <EditRoundSheet
           row={editRow}
           admin={!!isHistoryAdmin}
           onClose={() => setEditRow(null)}
           onSaved={() => { setEditRow(null); router.refresh(); }}
+          onAttach={() => { setAttachRow(editRow); setEditRow(null); }}
         />
       )}
     </div>
@@ -3150,69 +3152,232 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, us
 /* ─────────────── #3 CEO 2026-07-19 · แก้เลขในใบเก็บเดิม (เงิน/มิเตอร์) ───────────────
  * พนักงานกรอกเงิน/มิเตอร์ผิดแล้วกดส่งไป → แก้ตัวเลขในใบเดิมได้ (เฉพาะรอบล่าสุดของตู้ · วันนี้ · own).
  * server (editCollectionRound) re-reconcile ทั้งรอบ + อัปเดต mirror + audit log · เช็คสิทธิ์/เงื่อนไขซ้ำอีกชั้น. */
-function EditRoundSheet({ row, admin = false, onClose, onSaved }: { row: StaffHistoryRow; admin?: boolean; onClose: () => void; onSaved: () => void }) {
-  const [cash, setCash] = useState<string>(String(row.cashBaht ?? ""));
-  const [coin, setCoin] = useState<string>(row.coinMeter != null ? String(row.coinMeter) : "");
-  const [doll, setDoll] = useState<string>(row.dollMeter != null ? String(row.dollMeter) : "");
+function EditRoundSheet({ row, admin = false, onClose, onSaved, onAttach }: { row: StaffHistoryRow; admin?: boolean; onClose: () => void; onSaved: () => void; onAttach?: () => void }) {
+  const digits = (s: string) => s.replace(/[^\d]/g, "");
+  const numOrNull = (s: string): number | null => (s.trim() === "" ? null : Number(digits(s)));
+  // ── ค่าเดิม (ก่อนแก้) — ดิจิตอล=coinMeter/dollMeter · เฟือง=meterMoneyTop/meterDollTop ──
+  const o = {
+    cash: row.cashBaht ?? 0,
+    coinDigi: row.coinMeter ?? null, dollDigi: row.dollMeter ?? null,
+    coinGear: row.meterMoneyTop ?? null, dollGear: row.meterDollTop ?? null,
+    stockBefore: row.stockBefore ?? null, stockAfter: row.stockAfter ?? null,
+  };
+  const [cash, setCash] = useState<string>(String(o.cash ?? ""));
+  const [coinDigi, setCoinDigi] = useState<string>(o.coinDigi != null ? String(o.coinDigi) : "");
+  const [dollDigi, setDollDigi] = useState<string>(o.dollDigi != null ? String(o.dollDigi) : "");
+  const [coinGear, setCoinGear] = useState<string>(o.coinGear != null ? String(o.coinGear) : "");
+  const [dollGear, setDollGear] = useState<string>(o.dollGear != null ? String(o.dollGear) : "");
+  const [stockBefore, setStockBefore] = useState<string>(o.stockBefore != null ? String(o.stockBefore) : "");
+  const [stockAfter, setStockAfter] = useState<string>(o.stockAfter != null ? String(o.stockAfter) : "");
+  // เติมราย SKU (แก้จำนวนได้เฉพาะที่มี productId · ปรับ ledger คลังจริง)
+  const [refill, setRefill] = useState<{ productId: string; name: string; imageUrl?: string | null; warehouseId?: string | null; qty: string; orig: number }[]>(
+    (row.refillSkus ?? []).filter((s) => !!s.productId).map((s) => ({ productId: s.productId as string, name: s.name, imageUrl: s.imageUrl, warehouseId: s.warehouseId, qty: String(s.qty), orig: s.qty })),
+  );
+  const refillLocked = (row.refillSkus ?? []).some((s) => !s.productId); // มี SKU เก่าที่ไม่รู้ productId → ล็อกกันเพี้ยน
+  const [step, setStep] = useState<"edit" | "review">("edit");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const digits = (s: string) => s.replace(/[^\d]/g, "");
+  const [zoom, setZoom] = useState<string | null>(null);
 
-  async function save() {
+  const refillTotal = refill.reduce((s, r) => s + (Number(digits(r.qty)) || 0), 0);
+  const refillOrig = refill.reduce((s, r) => s + r.orig, 0);
+  const refillDirty = refill.some((r) => (Number(digits(r.qty)) || 0) !== r.orig);
+  const sb = numOrNull(stockBefore), sa = numOrNull(stockAfter);
+  const dollsOutNew = sb != null && sa != null ? sb + refillTotal - sa : null;
+  const dollsOutOld = o.stockBefore != null && o.stockAfter != null ? o.stockBefore + refillOrig - o.stockAfter : (row.dollsOut ?? null);
+
+  async function doSave() {
     setError(null);
-    const cashN = Number(digits(cash));
-    const coinN = Number(digits(coin));
     if (!row.eventId) { setError("ไม่พบใบ"); return; }
-    if (!Number.isFinite(cashN) || !Number.isFinite(coinN) || coin.trim() === "") { setError("กรอกเงิน + มิเตอร์เหรียญให้ครบ"); return; }
+    const cashN = Number(digits(cash));
+    if (!Number.isFinite(cashN) || coinDigi.trim() === "") { setError("กรอกเงิน + มิเตอร์เหรียญ (ดิจิตอล) ให้ครบ"); setStep("edit"); return; }
     setBusy(true);
     try {
-      const input = {
+      const input: Record<string, unknown> = {
         eventId: row.eventId,
         cashCents: Math.round(cashN * 100),
-        coinMeterAfter: coinN,
-        dollMeterAfter: doll.trim() === "" ? null : Number(digits(doll)),
+        coinMeterAfter: Number(digits(coinDigi)),
+        dollMeterAfter: dollDigi.trim() === "" ? null : Number(digits(dollDigi)),
+        coinMeterTop: coinGear.trim() === "" ? null : Number(digits(coinGear)),
+        dollMeterTop: dollGear.trim() === "" ? null : Number(digits(dollGear)),
       };
-      // CEO 2026-08-03 · เลือกเส้นทางตามสถานะรอบ:
-      //   • รอบยังเปิด (OPEN) → editCollectionRound (แก้เลขไม่ปิดรอบ · admin/พนักงานเจ้าของ แก้ได้ทั้งคู่ · ไม่ reconcile)
-      //   • รอบปิดแล้ว (CLOSED/ANOMALY) + admin → adminEditCollectionEvent (re-reconcile + ต่อลูกโซ่รอบถัดไป · แก้ได้ทุกวัน)
+      if (stockBefore.trim() !== "") input.stockBefore = Number(digits(stockBefore));
+      if (stockAfter.trim() !== "") input.stockAfter = Number(digits(stockAfter));
+      // ส่ง refillLines เฉพาะเมื่อแก้จำนวนเติมจริง (กันขยับ ledger โดยไม่ตั้งใจ) · ไม่ล็อก
+      if (refillDirty && !refillLocked) input.refillLines = refill.map((r) => ({ productId: r.productId, qty: Number(digits(r.qty)) || 0, warehouseId: r.warehouseId ?? null }));
       const r = admin && !row.sessionOpen ? await adminEditCollectionEvent(input) : await editCollectionRound(input);
-      if (!r.ok) { setError(r.error || "แก้ไม่สำเร็จ · ลองใหม่"); setBusy(false); return; }
+      if (!r.ok) { setError(r.error || "แก้ไม่สำเร็จ · ลองใหม่"); setBusy(false); setStep("edit"); return; }
       onSaved();
     } catch {
-      setError("แก้ไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่");
-      setBusy(false);
+      setError("แก้ไม่สำเร็จ · เช็คสัญญาณเน็ตแล้วลองใหม่"); setBusy(false); setStep("edit");
     }
   }
 
-  const field = (label: string, val: string, set: (s: string) => void, suffix: string) => (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#454B54", marginBottom: 6 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1.5px solid #E3E6EA", borderRadius: 11, padding: "0 12px", background: "#fff" }}>
-        <input inputMode="numeric" value={val} onChange={(e) => set(e.target.value)}
-          style={{ flex: 1, minWidth: 0, minHeight: 46, fontSize: 15, border: "none", outline: "none", background: "transparent", color: "#1A1D21" }} className="num" />
-        <span style={{ fontSize: 12, color: "#9AA1AB", flex: "0 0 auto" }}>{suffix}</span>
+  // ช่องกรอกเลข + ค่าเดิม (ก่อน→หลัง · ไฮไลต์เมื่อเปลี่ยน)
+  const cell = (label: string, val: string, set: (s: string) => void, orig: number | null, suffix?: string) => {
+    const nv = numOrNull(val);
+    const changed = nv !== orig && !(val.trim() === "" && orig == null);
+    return (
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: "#454B54", marginBottom: 4 }}>{label}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, border: `1.5px solid ${changed ? "#C7C3F0" : "#E3E6EA"}`, borderRadius: 10, padding: "0 10px", background: changed ? "#F5F5FE" : "#fff" }}>
+          <input inputMode="numeric" value={val} onChange={(e) => set(e.target.value)} placeholder="เลข"
+            style={{ flex: 1, minWidth: 0, minHeight: 44, fontSize: 15, border: "none", outline: "none", background: "transparent", color: "#1A1D21" }} className="num" />
+          {suffix && <span style={{ fontSize: 11, color: "#9AA1AB" }}>{suffix}</span>}
+        </div>
+        <div style={{ fontSize: 10.5, color: changed ? "#4338CA" : "#9AA1AB", marginTop: 3 }}>
+          เดิม {orig != null ? orig.toLocaleString("en-US") : "—"}{changed ? ` → ${nv != null ? nv.toLocaleString("en-US") : "—"}` : ""}
+        </div>
+      </div>
+    );
+  };
+
+  // สรุปรายการที่แก้ (สำหรับหน้ารีวิว)
+  const changes: { label: string; from: string; to: string }[] = [];
+  const pushC = (label: string, from: number | null, toS: string) => {
+    const to = numOrNull(toS);
+    if (to !== from && !(toS.trim() === "" && from == null)) changes.push({ label, from: from != null ? from.toLocaleString("en-US") : "—", to: to != null ? to.toLocaleString("en-US") : "—" });
+  };
+  pushC("เงินที่นับได้ (บาท)", o.cash, cash);
+  pushC("มิเตอร์เหรียญ (ดิจิตอล)", o.coinDigi, coinDigi);
+  pushC("มิเตอร์ตุ๊กตา (ดิจิตอล)", o.dollDigi, dollDigi);
+  pushC("มิเตอร์เหรียญ (เฟือง)", o.coinGear, coinGear);
+  pushC("มิเตอร์ตุ๊กตา (เฟือง)", o.dollGear, dollGear);
+  pushC("ตุ๊กตาก่อนเติม", o.stockBefore, stockBefore);
+  pushC("ตุ๊กตาหลังเติม", o.stockAfter, stockAfter);
+  const refillChanges = refill.filter((r) => (Number(digits(r.qty)) || 0) !== r.orig);
+
+  const overlay: React.CSSProperties = { position: "absolute", inset: 0, zIndex: 60, background: "#EEF0F4", display: "flex", flexDirection: "column" };
+  const headerBar = (title: string, sub: string) => (
+    <div style={{ flex: "0 0 auto", background: "#fff", borderBottom: "1px solid #E5E7EB", padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+      <button type="button" onClick={() => { if (busy) return; step === "review" ? setStep("edit") : onClose(); }} className="co-tap"
+        style={{ flex: "0 0 auto", width: 34, height: 34, borderRadius: 9, border: "1px solid #E5E7EB", background: "#fff", fontSize: 18, cursor: "pointer" }}>‹</button>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 15.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
+        <div style={{ fontSize: 11, color: "#9AA1AB" }}>{sub}</div>
       </div>
     </div>
   );
 
-  return (
-    <div role="dialog" aria-modal="true" onClick={() => { if (!busy) onClose(); }}
-      style={{ position: "absolute", inset: 0, zIndex: 50, background: "rgba(20,22,28,0.5)", display: "flex", alignItems: "flex-end" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#F4F5F7", borderRadius: "20px 20px 0 0", padding: "16px 18px 24px", display: "flex", flexDirection: "column", gap: 13 }}>
-        <div style={{ width: 40, height: 4, borderRadius: 4, background: "#D8DCE2", margin: "0 auto 2px" }} />
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>แก้ไขในใบ · {row.nickname || row.code}</div>
-          <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>{admin ? "แอดมิน · แก้ได้ทุกใบ — ระบบคิดเงินควรได้/ส่วนต่างใหม่ + ต่อรอบถัดไปให้" : "แก้ได้เฉพาะรอบล่าสุดของตู้วันนี้ · ระบบจะคิดเงินควรได้/ส่วนต่างใหม่ให้"}</div>
+  // ── หน้ารีวิว ──
+  if (step === "review") {
+    return (
+      <div role="dialog" aria-modal="true" style={overlay}>
+        {headerBar(`ตรวจทานก่อนบันทึก · ${row.nickname || row.code}`, "เช็กว่าจะแก้อะไร · เดิม → ใหม่")}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          {changes.length === 0 && refillChanges.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 12, padding: 16, fontSize: 13.5, color: "#6B7280", textAlign: "center" }}>ยังไม่มีการเปลี่ยนแปลง — กด ‹ กลับไปแก้</div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#4338CA" }}>สิ่งที่จะแก้</div>
+              {changes.map((c, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+                  <span style={{ color: "#454B54" }}>{c.label}</span>
+                  <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}><span style={{ color: "#9AA1AB", textDecoration: "line-through", fontWeight: 500 }}>{c.from}</span> → {c.to}</span>
+                </div>
+              ))}
+              {refillChanges.map((r, i) => (
+                <div key={`r${i}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+                  <span style={{ color: "#454B54" }}>เติม · {r.name}</span>
+                  <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}><span style={{ color: "#9AA1AB", textDecoration: "line-through", fontWeight: 500 }}>{r.orig}</span> → {Number(digits(r.qty)) || 0} ตัว</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ background: "#FFF8EC", border: "1px solid #F0D8AE", borderRadius: 12, padding: 12, fontSize: 12.5, color: "#8A5A12", lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>ผลหลังบันทึก</div>
+            ตุ๊กตาออก: <b>{dollsOutOld ?? "—"} → {dollsOutNew ?? "—"} ตัว</b><br />
+            {refillChanges.length > 0 && <>สต๊อกคลัง: ปรับตามจำนวนที่แก้จริง (เบิกเพิ่ม/คืนเข้าชั้น)<br /></>}
+            ระบบจะคิด <b>เงินควรได้ · ส่วนต่าง · ตุ๊กตาหาย</b> ใหม่ให้อัตโนมัติตอนบันทึก
+          </div>
+          {error && <div style={{ fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
         </div>
-        {field("เงินที่นับได้ (บาท)", cash, setCash, "บาท")}
-        {field("มิเตอร์เหรียญ (หลังเก็บ)", coin, setCoin, "")}
-        {field("มิเตอร์ตุ๊กตา (หลังเก็บ · ไม่บังคับ)", doll, setDoll, "")}
-        {error && <div style={{ fontSize: 12, color: "#B42318", fontWeight: 600 }}>{error}</div>}
-        <button type="button" disabled={busy} onClick={save} className="co-tap"
-          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", background: busy ? "#8FA0EC" : "#4F46E5", border: "none", borderRadius: 12, cursor: busy ? "wait" : "pointer" }}>
-          {busy ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
-        </button>
+        <div style={{ flex: "0 0 auto", background: "#fff", borderTop: "1px solid #E5E7EB", padding: 14, display: "flex", gap: 10 }}>
+          <button type="button" disabled={busy} onClick={() => setStep("edit")} className="co-tap"
+            style={{ flex: "0 0 auto", minWidth: 96, minHeight: 48, fontSize: 14.5, fontWeight: 700, color: "#4338CA", background: "#EEF0FE", border: "none", borderRadius: 12, cursor: "pointer" }}>‹ แก้ต่อ</button>
+          <button type="button" disabled={busy || (changes.length === 0 && refillChanges.length === 0)} onClick={doSave} className="co-tap"
+            style={{ flex: 1, minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", background: busy ? "#8FA0EC" : "#4F46E5", border: "none", borderRadius: 12, cursor: busy ? "wait" : "pointer", opacity: (changes.length === 0 && refillChanges.length === 0) ? 0.5 : 1 }}>
+            {busy ? "กำลังบันทึก…" : "ยืนยันบันทึก"}
+          </button>
+        </div>
       </div>
+    );
+  }
+
+  // ── หน้าแก้ (เต็มจอ · เหมือนหน้ากรอกจริง) ──
+  return (
+    <div role="dialog" aria-modal="true" style={overlay}>
+      {headerBar(`แก้ไขรอบเก็บ · ${row.nickname || row.code}`, admin ? "แอดมิน · แก้ได้ทุกใบ · โชว์ค่าเดิม + คิดใหม่ให้" : "แก้รอบล่าสุดของตู้วันนี้ · คิดใหม่ให้")}
+      <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* ผลกระทบสด */}
+        <div style={{ background: "#EEF0FE", borderRadius: 12, padding: "10px 14px", fontSize: 12.5, color: "#3730A3", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <span>ตุ๊กตาออก (ก่อนเติม + เติม − หลัง)</span>
+          <b style={{ fontSize: 15 }}>{dollsOutOld ?? "—"} → {dollsOutNew ?? "—"} ตัว</b>
+        </div>
+
+        {/* การ์ด ดิจิตอล */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>ดิจิตอล (จอบน)</div>
+          <div style={{ display: "flex", gap: 10 }}>{cell("มิเตอร์เหรียญ", coinDigi, setCoinDigi, o.coinDigi)}{cell("มิเตอร์ตุ๊กตา", dollDigi, setDollDigi, o.dollDigi)}</div>
+        </div>
+        {/* การ์ด เฟือง */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>เฟือง (แผงล่าง)</div>
+          <div style={{ display: "flex", gap: 10 }}>{cell("มิเตอร์เหรียญ", coinGear, setCoinGear, o.coinGear)}{cell("มิเตอร์ตุ๊กตา", dollGear, setDollGear, o.dollGear)}</div>
+        </div>
+        {/* เงิน */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 12 }}>{cell("เงินที่นับได้ (บาท)", cash, setCash, o.cash, "บาท")}</div>
+        {/* ตุ๊กตา / สต๊อก */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>ตุ๊กตา / สต๊อก</div>
+          <div style={{ display: "flex", gap: 10 }}>{cell("ก่อนเติม (เหลือในตู้)", stockBefore, setStockBefore, o.stockBefore, "ตัว")}{cell("หลังเติม (ในตู้ตอนนี้)", stockAfter, setStockAfter, o.stockAfter, "ตัว")}</div>
+          {/* เติม ราย SKU */}
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#454B54", marginTop: 2 }}>เติม (ราย SKU · แก้แล้วสต๊อกคลังปรับจริง)</div>
+          {refillLocked && <div style={{ fontSize: 11, color: "#B45309" }}>รอบนี้มีรายการเติมเก่าที่ระบุสินค้าไม่ได้ · แก้จำนวนเติมจากเมนู &quot;เติม/คืนตุ๊กตา&quot; แทน</div>}
+          {!refillLocked && refill.length === 0 && <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>— รอบนี้ไม่มีการเติม —</div>}
+          {!refillLocked && refill.map((r, i) => {
+            const cur = Number(digits(r.qty)) || 0;
+            const chg = cur !== r.orig;
+            const setQ = (v: string) => setRefill((prev) => prev.map((x, j) => (j === i ? { ...x, qty: v } : x)));
+            return (
+              <div key={`${r.productId}:${r.warehouseId ?? "main"}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {r.imageUrl ? <img src={r.imageUrl} alt="" style={{ width: 30, height: 30, borderRadius: 7, objectFit: "cover", flex: "0 0 auto" }} /> : <div style={{ width: 30, height: 30, borderRadius: 7, background: "#F0F0F5", flex: "0 0 auto" }} />}
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}{chg && <span style={{ color: "#9AA1AB" }}> (เดิม {r.orig})</span>}</span>
+                <button type="button" onClick={() => setQ(String(Math.max(0, cur - 1)))} className="co-tap" style={{ width: 34, height: 38, borderRadius: 8, border: "1px solid #E3E6EA", background: "#fff", fontSize: 18, cursor: "pointer" }}>−</button>
+                <input inputMode="numeric" value={r.qty} onChange={(e) => setQ(e.target.value)} className="num" style={{ width: 46, minHeight: 38, textAlign: "center", fontSize: 15, border: `1.5px solid ${chg ? "#C7C3F0" : "#E3E6EA"}`, borderRadius: 8, background: chg ? "#F5F5FE" : "#fff" }} />
+                <button type="button" onClick={() => setQ(String(cur + 1))} className="co-tap" style={{ width: 34, height: 38, borderRadius: 8, border: "1px solid #E3E6EA", background: "#fff", fontSize: 18, cursor: "pointer" }}>+</button>
+              </div>
+            );
+          })}
+          {!refillLocked && refill.length > 0 && <div style={{ fontSize: 11.5, color: refillDirty ? "#4338CA" : "#9AA1AB", textAlign: "right" }}>รวมเติม {refillOrig}{refillDirty ? ` → ${refillTotal}` : ""} ตัว</div>}
+        </div>
+        {/* รูป */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280" }}>รูปหลักฐาน (กดดู · เพิ่มได้ · ลบไม่ได้)</div>
+          {row.photos && row.photos.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {row.photos.map((p, i) => (
+                <button key={i} type="button" onClick={() => setZoom(p.url)} className="co-tap" style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                  <img src={p.url} alt={p.label} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 9, display: "block" }} />
+                  <div style={{ fontSize: 9.5, color: "#9AA1AB", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.label}</div>
+                </button>
+              ))}
+            </div>
+          ) : <div style={{ fontSize: 11.5, color: "#9AA1AB" }}>— ยังไม่มีรูป —</div>}
+          {onAttach && <button type="button" onClick={onAttach} className="co-tap" style={{ width: "100%", padding: 11, borderRadius: 11, fontSize: 13.5, fontWeight: 700, border: "1.5px solid #C7C3F0", background: "#F5F5FE", color: "#4338CA", cursor: "pointer" }}>📷 แนบรูปเพิ่ม / ถ่ายใหม่</button>}
+        </div>
+        {error && <div style={{ fontSize: 12.5, color: "#B42318", fontWeight: 600 }}>{error}</div>}
+      </div>
+      {/* footer: ยกเลิก / ตรวจทาน */}
+      <div style={{ flex: "0 0 auto", background: "#fff", borderTop: "1px solid #E5E7EB", padding: 14, display: "flex", gap: 10 }}>
+        <button type="button" onClick={onClose} className="co-tap" style={{ flex: "0 0 auto", minWidth: 92, minHeight: 48, fontSize: 14.5, fontWeight: 700, color: "#454B54", background: "#EFF1F4", border: "none", borderRadius: 12, cursor: "pointer" }}>ยกเลิก</button>
+        <button type="button" onClick={() => { setError(null); setStep("review"); }} className="co-tap" style={{ flex: 1, minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", borderRadius: 12, cursor: "pointer" }}>ตรวจทาน →</button>
+      </div>
+      {zoom && (
+        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <img src={zoom} alt="" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }} />
+        </div>
+      )}
     </div>
   );
 }
