@@ -22,6 +22,14 @@ const TH_MONTHS_SHORT = [
   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
 ];
 
+// ตัวเลขในตารางภาพรวม: บาทเต็มจำนวน ไม่มี ฿ ไม่มีสตางค์ (คั่นหลักพัน) เช่น "32,449"
+// → ช่องเดือนแคบลง เห็นเดือน+ชื่อผู้เช่าได้มากขึ้น · ยอดเป๊ะทุกสตางค์ยังดูได้ในใบสรุปตอนแตะช่อง (ใช้ formatBaht เต็ม)
+const gridBahtFmt = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
+function fmtGrid(n: number): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "0";
+  return gridBahtFmt.format(Math.round(n));
+}
+
 type Props = {
   year: number;
   view: "year" | "month";
@@ -389,10 +397,10 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                       return (
                         <Fragment key={m}>
                           <td className="rs-cell rs-cell-sub" onClick={() => openCell(u, m)}>
-                            <span className="rs-amount">{cell ? formatBaht(cell.rent) : formatBaht(u.baseRent)}</span>
+                            <span className="rs-amount">{cell ? fmtGrid(cell.rent) : fmtGrid(u.baseRent)}</span>
                           </td>
                           <td className="rs-cell rs-cell-sub" onClick={() => openCell(u, m)}>
-                            <span style={{ color: "var(--rs-text-2)" }}>{cell ? formatBaht(cell.water) : "—"}</span>
+                            <span style={{ color: "var(--rs-text-2)" }}>{cell ? fmtGrid(cell.water) : "—"}</span>
                           </td>
                           <td
                             className="rs-cell rs-cell-sub"
@@ -401,7 +409,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                             title={hot ? "ค่าไฟสูงผิดปกติ (>1.5× เฉลี่ยเดือนนี้)" : undefined}
                           >
                             <span style={{ color: hot ? "var(--rs-danger)" : "var(--rs-text-2)", fontWeight: hot ? 800 : 600 }}>
-                              {cell ? formatBaht(cell.electric) : "—"}
+                              {cell ? fmtGrid(cell.electric) : "—"}
                             </span>
                           </td>
                         </Fragment>
@@ -410,7 +418,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                     if (!cell) {
                       return (
                         <td key={m} className="rs-cell rs-cell-empty" onClick={() => openCell(u, m)}>
-                          <span className="rs-expected">{formatBaht(u.baseRent)}</span>
+                          <span className="rs-expected">{fmtGrid(u.baseRent)}</span>
                           <span className="rs-tag-expect">คาด</span>
                         </td>
                       );
@@ -424,13 +432,13 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                         onClick={() => openCell(u, m)}
                       >
                         <span className="rs-amount" style={{ color: tone.color }}>
-                          {formatBaht(cell.total)}
+                          {fmtGrid(cell.total)}
                         </span>
                       </td>
                     );
                   })}
                   <td className="rs-cell rs-cell-total">
-                    <span className="rs-amount">{formatBaht(roomYearTotal(u.id))}</span>
+                    <span className="rs-amount">{fmtGrid(roomYearTotal(u.id))}</span>
                   </td>
                 </tr>
               ))}
@@ -443,20 +451,20 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                   if (expanded.has(m)) {
                     return (
                       <Fragment key={i}>
-                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.rent))}</span></td>
-                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.water))}</span></td>
-                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{formatBaht(monthSub(m, (c) => c.electric))}</span></td>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{fmtGrid(monthSub(m, (c) => c.rent))}</span></td>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{fmtGrid(monthSub(m, (c) => c.water))}</span></td>
+                        <td className="rs-cell rs-foot rs-cell-sub"><span className="rs-amount">{fmtGrid(monthSub(m, (c) => c.electric))}</span></td>
                       </Fragment>
                     );
                   }
                   return (
                     <td key={i} className="rs-cell rs-foot">
-                      <span className="rs-amount">{formatBaht(t)}</span>
+                      <span className="rs-amount">{fmtGrid(t)}</span>
                     </td>
                   );
                 })}
                 <td className="rs-cell rs-foot rs-cell-total">
-                  <span className="rs-amount">{formatBaht(grandYearTotal)}</span>
+                  <span className="rs-amount">{fmtGrid(grandYearTotal)}</span>
                 </td>
               </tr>
             </tfoot>
@@ -574,17 +582,20 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           font-size: 11px;
           color: var(--rs-text-3);
           overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 180px;
+          max-width: 190px;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          line-height: 1.25;
         }
         .rs-zebra {
           background: var(--rs-bg-2);
         }
         .rs-cell {
-          padding: 6px 8px;
+          padding: 6px 6px;
           text-align: right;
           cursor: pointer;
-          min-width: 76px;
+          min-width: 56px;
         }
         .rs-cell:hover {
           outline: 2px solid var(--rs-brand);
@@ -710,7 +721,7 @@ function MonthView({
                             fontWeight: col.label === "รวม" || isRemain ? 700 : 500,
                           }}
                         >
-                          {formatBaht(v)}
+                          {fmtGrid(v)}
                         </span>
                       </td>
                     );
@@ -718,7 +729,7 @@ function MonthView({
                 ) : (
                   <>
                     <td className="rs-mcell">
-                      <span className="rs-expected">{formatBaht(u.baseRent)}</span>
+                      <span className="rs-expected">{fmtGrid(u.baseRent)}</span>
                     </td>
                     {cols.slice(1).map((_, i) => (
                       <td key={i} className="rs-mcell">
@@ -751,7 +762,7 @@ function MonthView({
             <th className="rs-msticky rs-mtd-room rs-mfoot">รวม</th>
             {totals.map((t, i) => (
               <td key={i} className="rs-mcell rs-mfoot">
-                <span style={{ fontWeight: 700 }}>{formatBaht(t)}</span>
+                <span style={{ fontWeight: 700 }}>{fmtGrid(t)}</span>
               </td>
             ))}
             <td className="rs-mcell rs-mfoot" />
@@ -825,9 +836,12 @@ function MonthView({
         .rs-room-tenant {
           font-size: 11px;
           color: var(--rs-text-3);
-          max-width: 170px;
+          max-width: 190px;
           overflow: hidden;
-          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          line-height: 1.25;
         }
         .rs-mcell {
           padding: 7px 10px;
