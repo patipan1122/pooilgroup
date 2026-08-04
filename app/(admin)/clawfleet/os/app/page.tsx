@@ -225,24 +225,29 @@ export default async function StaffAppPage({
       }
       // CEO 2026-07-19 · ราย SKU ที่ "เติม" ในแต่ละรอบเก็บ — movement LOAD_TO_MACHINE ที่ผูก event (refTable/refId)
       //   (ตุ๊กตา "ก่อนเติมราย SKU" ของรอบเก่าไม่มีในระบบ · event เก็บแค่ยอดรวม → โชว์ราย SKU ที่เติมแทน ซึ่งผูก event ได้จริง)
-      const refillSkusByEvent = new Map<string, Array<{ name: string; qty: number; imageUrl: string | null }>>();
+      // CEO 2026-08-04 · หน้าแก้เต็ม ต้องรู้ productId/warehouseId ต่อ SKU (ส่ง refillLines กลับตอนแก้)
+      //   ⚠️ ใช้ NET qty (−Σqty) ไม่ใช่ Math.abs — เพราะการแก้จะลง adjustment movement (คืนของ = qty บวก)
+      //   ผูก refId เดียวกัน → Math.abs จะบวกผิด · net = โหลดจริงคงเหลือหลังหักคืน (ถูกทั้งก่อน/หลังแก้)
+      const refillSkusByEvent = new Map<string, Array<{ name: string; qty: number; imageUrl: string | null; productId: string; warehouseId: string | null }>>();
       try {
         const eventIds = events.map((e) => e.id);
         if (eventIds.length > 0) {
           const refillMoves = await prisma.cfStockMovement.findMany({
             where: { orgId, refTable: "cf_collection_events", refId: { in: eventIds }, type: "LOAD_TO_MACHINE" },
-            select: { refId: true, qty: true, product: { select: { name: true, imageUrl: true } } },
+            select: { refId: true, qty: true, productId: true, warehouseId: true, product: { select: { name: true, imageUrl: true } } },
           });
           for (const rm of refillMoves) {
-            if (!rm.refId) continue;
+            if (!rm.refId || !rm.productId) continue;
             const arr = refillSkusByEvent.get(rm.refId) ?? [];
             const name = rm.product?.name ?? "— สินค้า —";
-            // รวม SKU ชื่อเดียวกัน (หลาย movement รอบเดียว) เป็นแถวเดียว (ปรปักษ์ #2)
-            const ex = arr.find((x) => x.name === name);
-            if (ex) ex.qty += Math.abs(rm.qty);
-            else arr.push({ name, qty: Math.abs(rm.qty), imageUrl: rm.product?.imageUrl ?? null });
+            // รวมราย (productId + warehouseId) — ถ้า SKU เดียวเติมจาก 2 คลัง เก็บแยกไว้ (กันแก้แล้วสต๊อกรายคลังเพี้ยน)
+            const ex = arr.find((x) => x.productId === rm.productId && (x.warehouseId ?? null) === (rm.warehouseId ?? null));
+            if (ex) ex.qty += -rm.qty; // qty ลบ=โหลด → +โหลด · qty บวก=คืน → −
+            else arr.push({ name, qty: -rm.qty, imageUrl: rm.product?.imageUrl ?? null, productId: rm.productId, warehouseId: rm.warehouseId ?? null });
             refillSkusByEvent.set(rm.refId, arr);
           }
+          // ทิ้งแถว net ≤ 0 (SKU ที่ถูกแก้ให้เติม 0 แล้ว) — ไม่โชว์/ไม่ส่งกลับ
+          for (const [k, arr] of refillSkusByEvent) refillSkusByEvent.set(k, arr.filter((x) => x.qty > 0));
         }
       } catch {
         // graceful: query ล้ม → ไม่มีราย SKU เติม (โชว์ยอดรวมได้)

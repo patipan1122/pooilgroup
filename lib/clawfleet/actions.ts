@@ -1058,11 +1058,23 @@ export async function cancelEmptySession(input: unknown): Promise<{ ok: true } |
 //   (⚠️ trigger cf_update_machine_mirror = AFTER INSERT อย่างเดียว · UPDATE ไม่ยิง → ต้อง sync เอง).
 //   guard: เฉพาะ "รอบล่าสุด" ของตู้ (ไม่มี event ใหม่กว่า) → mirror = ค่ารอบนี้ เสมอ (แก้ปลอดภัย).
 // =============================================================
+// 🆕 (CEO 2026-08-04 · หน้าแก้เต็ม) · ไลน์เติมราย SKU สำหรับ "แก้ยอดเติม" — ปรับ ledger คลังจริง
+const RefillLineEditSchema = z.object({
+  productId: zUUID("สินค้าไม่ถูกต้อง"),
+  qty: z.number().int("จำนวนต้องเป็นจำนวนเต็ม").min(0, "จำนวนติดลบไม่ได้").max(100_000),
+  warehouseId: z.string().uuid().nullable().optional(),
+});
+
 const EditRoundSchema = z.object({
   eventId: zUUID("ไม่ระบุใบเก็บ"),
   cashCents: z.number().int("เงินต้องเป็นจำนวนเต็ม (สตางค์)").min(0, "เงินติดลบไม่ได้").max(1_000_000_000),
   coinMeterAfter: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000),
   dollMeterAfter: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  // 🆕 (CEO 2026-08-04 · หน้าแก้เต็ม) · แก้สต๊อกตุ๊กตา (ก่อน/หลัง) + เติมราย SKU — ปรับ ledger คลังจริง
+  //   optional: ไม่ส่ง = ไม่แตะ (backward compatible กับ edit modal เดิม). refillLines ส่ง = ปรับ movement.
+  stockBefore: z.number().int().min(0).max(1_000_000).optional(),
+  stockAfter: z.number().int().min(0).max(1_000_000).optional(),
+  refillLines: z.array(RefillLineEditSchema).max(50).optional(),
   // 🆕 (CEO 2026-08-02 · save=submit) · "บันทึกค้าง=ส่ง" ที่กดซ้ำ/แก้ → เข้า editCollectionRound ด้วย.
   //   เพื่อไม่ให้ค่าที่พนักงานแก้รอบสอง "หายเงียบ" ต้องรับ เฟือง(gear)+รูป มาอัปเดตด้วย (ทุกช่อง optional).
   //   ⚠️ เฟือง/รูป = display/anti-cheat เท่านั้น · ไม่กระทบ reconcile (สูตรใช้ดิจิตอล=coinMeterAfter+cash+stock).
@@ -1075,6 +1087,79 @@ const EditRoundSchema = z.object({
   photoStockAfterUrl: z.string().optional(),
   photoCashUrl: z.string().optional(),
 });
+
+// ─────────────── แก้ยอดเติมราย SKU (money-safe · ปรับ ledger คลังจริง) · CEO 2026-08-04 ───────────────
+// ใช้ร่วม editCollectionRound (OPEN) + adminEditCollectionEvent (CLOSED). วิธี:
+//   เทียบ "ยอดเติมเดิม" (LOAD_TO_MACHINE movement ที่ refId=eventId) กับ "ยอดเติมใหม่" ราย (สินค้า,ห้อง)
+//   → ลงเฉพาะ "ส่วนต่าง (delta)" · ไม่แตะ/ลบรายการเดิม (append-only ledger เหมือนทั้งระบบ).
+//   delta>0 เติมเพิ่ม = advisory lock + over-issue guard (mirror submitBranchEvent) · delta<0 = คืนของเข้าชั้น.
+//   refId=eventId คงเดิม → interim-guard (baseline รอบถัดไป · actions.ts:437) ยังกัน cf_collection_events = ไม่นับซ้ำ.
+// คืน "ยอดเติมรวมใหม่" ให้ caller เขียน event.refillQty. (ต้องเรียก "ใน" $transaction ของ caller)
+async function applyRefillEditTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  userId: string,
+  ev: { id: string; machineId: string; branchId: string },
+  newLines: { productId: string; qty: number; warehouseId?: string | null }[],
+): Promise<number> {
+  const branchMainId = await getBranchMainWarehouseId(orgId, ev.branchId);
+  const normWh = (w: string | null | undefined) => (w == null ? (branchMainId ?? "MAIN") : w);
+  const keyOf = (p: string, w: string | null | undefined) => `${p}::${normWh(w)}`;
+
+  const oldMoves = await tx.cfStockMovement.findMany({
+    where: { orgId, refTable: "cf_collection_events", refId: ev.id, type: "LOAD_TO_MACHINE", machineId: ev.machineId },
+    select: { productId: true, warehouseId: true, qty: true },
+  });
+  const oldByKey = new Map<string, { productId: string; warehouseId: string | null; loaded: number }>();
+  for (const m of oldMoves) {
+    if (!m.productId) continue;
+    const k = keyOf(m.productId, m.warehouseId);
+    const cur = oldByKey.get(k) ?? { productId: m.productId, warehouseId: m.warehouseId ?? null, loaded: 0 };
+    cur.loaded += -m.qty; // qty ลบ (โหลดเข้าตู้) → loaded บวก
+    oldByKey.set(k, cur);
+  }
+  const newByKey = new Map<string, { productId: string; warehouseId: string | null; qty: number }>();
+  for (const l of newLines) {
+    const k = keyOf(l.productId, l.warehouseId);
+    const cur = newByKey.get(k) ?? { productId: l.productId, warehouseId: l.warehouseId ?? null, qty: 0 };
+    cur.qty += l.qty;
+    newByKey.set(k, cur);
+  }
+
+  for (const k of new Set<string>([...oldByKey.keys(), ...newByKey.keys()])) {
+    const oldE = oldByKey.get(k);
+    const newE = newByKey.get(k);
+    const productId = newE?.productId ?? oldE!.productId;
+    const warehouseId = (newE?.warehouseId ?? oldE?.warehouseId) ?? null;
+    const delta = (newE?.qty ?? 0) - (oldE?.loaded ?? 0);
+    if (delta === 0) continue;
+    const chosenWh = warehouseId ?? branchMainId;
+    if (delta > 0) {
+      // เบิกเพิ่ม delta ตัว — advisory lock + over-issue guard (คัดลอก submitBranchEvent เป๊ะ)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ev.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${productId}))`;
+      const whFilter: Record<string, unknown> =
+        chosenWh == null
+          ? {}
+          : branchMainId && chosenWh === branchMainId
+            ? { OR: [{ warehouseId: chosenWh }, { warehouseId: null }] }
+            : { warehouseId: chosenWh };
+      const agg = await tx.cfStockMovement.aggregate({ where: { orgId, branchId: ev.branchId, productId, ...whFilter }, _sum: { qty: true } });
+      const shelf = agg._sum.qty ?? 0;
+      if (delta > shelf) throw new CfOverIssueError(`ตุ๊กตาบนชั้นไม่พอ · บนชั้นมี ${shelf} ตัว · เติมเพิ่มอีก ${delta} ตัวไม่ได้`);
+    }
+    await tx.cfStockMovement.create({
+      data: {
+        orgId, branchId: ev.branchId, type: "LOAD_TO_MACHINE",
+        productId, machineId: ev.machineId, warehouseId: chosenWh ?? undefined,
+        qty: -delta, refTable: "cf_collection_events", refId: ev.id,
+        occurredAt: new Date(), createdById: userId, reason: "แก้ยอดเติม (หน้าแก้รอบ)",
+      },
+    });
+  }
+  let sum = 0;
+  for (const v of newByKey.values()) sum += v.qty;
+  return sum;
+}
 
 export async function editCollectionRound(input: unknown): Promise<ResultOf<{ status: string; flags: string[] }>> {
   const parsed = EditRoundSchema.safeParse(input);
@@ -1134,7 +1219,15 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
       });
       if (newerInTx) throw new Error("มีการเก็บ/ตั้งค่ารอบใหม่กว่านี้แล้ว · แก้รอบนี้ไม่ได้");
 
-      // 1) อัปเดตเลขในใบ — เงิน+ดิจิตอล (ใช้คิดเงิน) เสมอ · เฟือง+รูป อัปเดตเฉพาะที่ส่งมา (erase-safe)
+      // 🆕 (CEO 2026-08-04 · หน้าแก้เต็ม) · แก้ยอดเติมราย SKU → ปรับ ledger คลังจริง (ก่อน update event
+      //   เพื่อได้ "ยอดเติมรวมใหม่"). ไม่ส่ง refillLines = ไม่แตะ ledger (backward compat).
+      const editBranchId = ev.session!.branchId as string;
+      const newRefillQty =
+        data.refillLines !== undefined
+          ? await applyRefillEditTx(tx, orgId, userId, { id: ev.id, machineId: ev.machineId, branchId: editBranchId }, data.refillLines)
+          : undefined;
+
+      // 1) อัปเดตเลขในใบ — เงิน+ดิจิตอล (ใช้คิดเงิน) เสมอ · เฟือง+รูป+สต๊อก อัปเดตเฉพาะที่ส่งมา (erase-safe)
       await tx.cfCollectionEvent.update({
         where: { id: ev.id },
         data: {
@@ -1147,6 +1240,10 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
           // เฟือง (anti-cheat display · ไม่กระทบ reconcile) — อัปเดตถ้าส่งมา · edit modal เดิมไม่ส่ง = ไม่แตะ
           ...(data.coinMeterTop != null ? { meterMoneyTop: data.coinMeterTop } : {}),
           ...(data.dollMeterTop != null ? { meterDollTop: data.dollMeterTop } : {}),
+          // 🆕 สต๊อกตุ๊กตา ก่อน/หลัง + ยอดเติมรวมใหม่ — reconcile ใช้ stockBefore+refillQty−stockAfter (§ตุ๊กตาออก)
+          ...(data.stockBefore !== undefined ? { stockBefore: data.stockBefore } : {}),
+          ...(data.stockAfter !== undefined ? { stockAfter: data.stockAfter } : {}),
+          ...(newRefillQty !== undefined ? { refillQty: newRefillQty } : {}),
           // รูป — อัปเดตเฉพาะช่องที่มีรูปจริง (ไม่ทับรูปเดิมด้วยค่าว่าง). column→content ตาม submitBranchEvent.
           ...(data.photoCoinMeterUrl ? { photoMeterAfterUrl: data.photoCoinMeterUrl } : {}),
           ...(data.photoPrizeMeterUrl ? { photoPrizeMeterUrl: data.photoPrizeMeterUrl } : {}),
@@ -1229,7 +1326,8 @@ export async function editCollectionRound(input: unknown): Promise<ResultOf<{ st
       //   (updateMany atomic · race-safe แม้ submit แทรก: last_event_at > collectedAt → match 0 แถว → ไม่ regress)
       await tx.cfMachine.updateMany({
         where: { id: ev.machineId, OR: [{ lastEventAt: null }, { lastEventAt: { lte: ev.collectedAt } }] },
-        data: { lastCoinMeter: data.coinMeterAfter, ...(data.dollMeterAfter != null ? { lastDollMeter: data.dollMeterAfter } : {}) },
+        // 🆕 sync lastDollStock ด้วยเมื่อแก้สต๊อกหลังเติม (trigger ยิงเฉพาะ INSERT · UPDATE ไม่ยิง → ต้อง sync เอง)
+        data: { lastCoinMeter: data.coinMeterAfter, ...(data.dollMeterAfter != null ? { lastDollMeter: data.dollMeterAfter } : {}), ...(data.stockAfter !== undefined ? { lastDollStock: data.stockAfter } : {}) },
       });
 
       // 4) audit log (AUD: in-place edit ต้องมี trail ชัด old→new)
@@ -1276,6 +1374,10 @@ const AdminEditEventSchema = z.object({
   //   optional: ไม่ส่ง = ไม่แตะเฟือง (backward compatible กับ collections/staff-app เดิม)
   coinMeterTop: z.number().int("มิเตอร์ต้องเป็นจำนวนเต็ม").min(0, "มิเตอร์ติดลบไม่ได้").max(2_000_000_000).nullable().optional(),
   dollMeterTop: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
+  // 🆕 (CEO 2026-08-04 · หน้าแก้เต็ม) · แก้สต๊อก/เติม ราย SKU — ปรับ ledger คลังจริง (เหมือน editCollectionRound)
+  stockBefore: z.number().int().min(0).max(1_000_000).optional(),
+  stockAfter: z.number().int().min(0).max(1_000_000).optional(),
+  refillLines: z.array(RefillLineEditSchema).max(50).optional(),
 });
 
 // re-reconcile 1 session ด้วยค่าล่าสุดใน DB (สูตรเดียวกับ closeBranchSession/editCollectionRound เป๊ะ).
@@ -1351,7 +1453,7 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
     select: {
       id: true, machineId: true, sessionId: true, collectedAt: true,
       coinMeterBefore: true, coinMeterAfter: true, dollMeterBefore: true, dollMeterAfter: true, cashCountedCents: true,
-      meterMoneyTop: true, meterDollTop: true,
+      meterMoneyTop: true, meterDollTop: true, stockAfter: true,
       session: { select: { id: true, branchId: true, isBaseline: true, depositId: true, status: true } },
     },
   });
@@ -1386,6 +1488,7 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
         orderBy: { collectedAt: "asc" },
         select: {
           id: true, eventType: true, sessionId: true, coinMeterAfter: true, dollMeterAfter: true,
+          stockBefore: true, stockAfter: true,
           session: { select: { depositId: true, status: true } },
         },
       });
@@ -1406,6 +1509,13 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
         }
       }
 
+      // 🆕 (CEO 2026-08-04 · หน้าแก้เต็ม) · แก้ยอดเติมราย SKU → ปรับ ledger คลังจริง (ก่อน update event)
+      const adminEditBranchId = ev.session!.branchId as string;
+      const adminNewRefillQty =
+        data.refillLines !== undefined
+          ? await applyRefillEditTx(tx, orgId, userId, { id: ev.id, machineId: ev.machineId, branchId: adminEditBranchId }, data.refillLines)
+          : undefined;
+
       // 1) อัปเดตเลขในใบที่แก้
       await tx.cfCollectionEvent.update({
         where: { id: ev.id },
@@ -1419,6 +1529,10 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
           // เฟือง (top · anti-cheat) — แก้เมื่อส่งค่ามาเท่านั้น (undefined = ไม่แตะ)
           ...(data.coinMeterTop !== undefined ? { meterMoneyTop: data.coinMeterTop } : {}),
           ...(data.dollMeterTop !== undefined ? { meterDollTop: data.dollMeterTop } : {}),
+          // 🆕 สต๊อกตุ๊กตา ก่อน/หลัง + ยอดเติมรวมใหม่ (reconcile ใช้ stockBefore+refillQty−stockAfter)
+          ...(data.stockBefore !== undefined ? { stockBefore: data.stockBefore } : {}),
+          ...(data.stockAfter !== undefined ? { stockAfter: data.stockAfter } : {}),
+          ...(adminNewRefillQty !== undefined ? { refillQty: adminNewRefillQty } : {}),
         },
       });
 
@@ -1426,10 +1540,17 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
       //   finding #4 · ต่อ doll เฉพาะเมื่อรอบถัดไป "มีเลขมิเตอร์ตุ๊กตา" (dollMeterAfter != null) ด้วย —
       //   ไม่งั้นเขียน dollMeterBefore ลงรอบที่ after=null → reconcile เห็น after(0)<before → M5 หลอก
       const relinkDoll = newDollAfter != null && !!nextEv && nextEv.dollMeterAfter != null;
+      // 🆕 (CEO 2026-08-04) · แก้ stockAfter รอบนี้ → ต่อ stockBefore รอบถัดไป (ตุ๊กตาในตู้ carry over)
+      //   ⚠️ ปรับด้วย "ส่วนต่าง" (ไม่ overwrite) เพื่อคง interim movement ระหว่างรอบไว้ · guard nextEv.stockAfter != null
+      //   (mirror relinkDoll · กันเขียน before ลงรอบที่ไม่ได้นับสต๊อก → phantom "ตุ๊กตาหาย")
+      const nextStockBefore =
+        data.stockAfter !== undefined && !!nextEv && nextEv.stockAfter != null
+          ? Math.max(0, (nextEv.stockBefore ?? 0) + (data.stockAfter - (ev.stockAfter ?? 0)))
+          : null;
       if (relinkNext && nextEv) {
         await tx.cfCollectionEvent.update({
           where: { id: nextEv.id },
-          data: { coinMeterBefore: data.coinMeterAfter, ...(relinkDoll ? { dollMeterBefore: newDollAfter } : {}) },
+          data: { coinMeterBefore: data.coinMeterAfter, ...(relinkDoll ? { dollMeterBefore: newDollAfter } : {}), ...(nextStockBefore != null ? { stockBefore: nextStockBefore } : {}) },
         });
       }
 
@@ -1471,7 +1592,8 @@ export async function adminEditCollectionEvent(input: unknown): Promise<ResultOf
         if (newerNow) throw new Error("มีการเก็บรอบใหม่ของตู้นี้ระหว่างแก้ · รีเฟรชแล้วลองใหม่");
         await tx.cfMachine.updateMany({
           where: { id: ev.machineId, OR: [{ lastEventAt: null }, { lastEventAt: { lte: ev.collectedAt } }] },
-          data: { lastCoinMeter: data.coinMeterAfter, ...(newDollAfter != null ? { lastDollMeter: newDollAfter } : {}) },
+          // 🆕 sync lastDollStock ด้วยเมื่อแก้สต๊อกหลังเติม (trigger ยิงเฉพาะ INSERT · UPDATE ไม่ยิง)
+          data: { lastCoinMeter: data.coinMeterAfter, ...(newDollAfter != null ? { lastDollMeter: newDollAfter } : {}), ...(data.stockAfter !== undefined ? { lastDollStock: data.stockAfter } : {}) },
         });
       }
 
