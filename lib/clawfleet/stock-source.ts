@@ -1,0 +1,155 @@
+// ClawFleet · "คลังหลักข้ามสาขา" (cross-branch main warehouse) — helper กลาง money-safe.
+// สาขา A ตั้ง stockSourceBranchId = B → A "ใช้คลังของ B เป็นคลังหลัก":
+//   • เติมตู้ A  = โอน B→A (ห้องหลัก) แล้วโหลดเข้าตู้ A  → ชั้นของ A สุทธิ 0 · ของออกจาก B
+//   • คืนสโตร์ A = เอาออกจากตู้ A (ADJUST) แล้วโอน A→B (ห้องหลัก) → ชั้นของ A สุทธิ 0 · ของกลับ B
+// ทุกอย่างอยู่ใน $transaction ของ caller (atomic กับการโหลด/คืน) — ต้นทุนพกจาก product (org-wide) เอง.
+import type { Prisma } from "@/lib/generated/prisma/client";
+import { prisma } from "@/lib/prisma";
+import { getBranchMainWarehouseId } from "./stock-queries";
+
+type Tx = Prisma.TransactionClient;
+
+/** map ทุกสาขาตู้คีบ → คลังต้นทาง (null = ใช้คลังตัวเอง) — สำหรับหน้าจัดการสาขา (dropdown ตั้งค่า). */
+export async function getStockSourceMap(orgId: string): Promise<Record<string, string | null>> {
+  const rows = await prisma.branch.findMany({
+    where: { orgId, businessType: "claw_machine" },
+    select: { id: true, stockSourceBranchId: true },
+  });
+  const out: Record<string, string | null> = {};
+  for (const r of rows) out[r.id] = r.stockSourceBranchId;
+  return out;
+}
+
+/** คลังต้นทางของสาขา (คลังหลักข้ามสาขา) — คืน branchId ต้นทาง หรือ null (= ใช้คลังตัวเอง · เดิม). */
+export async function getStockSourceBranchId(orgId: string, branchId: string): Promise<string | null> {
+  const b = await prisma.branch.findFirst({
+    where: { id: branchId, orgId },
+    select: { stockSourceBranchId: true },
+  });
+  return b?.stockSourceBranchId ?? null;
+}
+
+/** ยอด NET ห้องหลัก (main · รวมแถว legacy warehouseId null) ของสาขา ต่อสินค้า — mirror currentNetShelf(main scope). */
+async function mainRoomNet(
+  tx: Tx,
+  orgId: string,
+  branchId: string,
+  productId: string,
+  mainWh: string | null,
+): Promise<number> {
+  const whFilter: Record<string, unknown> =
+    mainWh == null ? {} : { OR: [{ warehouseId: mainWh }, { warehouseId: null }] };
+  const agg = await tx.cfStockMovement.aggregate({
+    where: { orgId, branchId, productId, ...whFilter },
+    _sum: { qty: true },
+  });
+  return agg._sum.qty ?? 0;
+}
+
+/** ยอด NET ห้องหลักของ "คลังต้นทาง" ต่อสินค้า (สำหรับ read: picker โชว์ของ B ให้ A เลือก · ตรงกับ guard). */
+export async function getSourceMainRoomNet(
+  orgId: string,
+  sourceBranchId: string,
+  productIds?: string[],
+): Promise<Record<string, number>> {
+  const mainWh = await getBranchMainWarehouseId(orgId, sourceBranchId);
+  const whFilter: Record<string, unknown> =
+    mainWh == null ? {} : { OR: [{ warehouseId: mainWh }, { warehouseId: null }] };
+  const rows = await prisma.cfStockMovement.groupBy({
+    by: ["productId"],
+    where: {
+      orgId,
+      branchId: sourceBranchId,
+      ...(productIds && productIds.length > 0 ? { productId: { in: productIds } } : {}),
+      ...whFilter,
+    },
+    _sum: { qty: true },
+  });
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.productId] = r._sum.qty ?? 0;
+  return out;
+}
+
+export class CfSourceOverIssueError extends Error {}
+
+/**
+ * โอนสต๊อก 1 สินค้า "ห้องหลัก→ห้องหลัก" ระหว่างสาขา (คลังหลักข้ามสาขา) — ต้องเรียก "ภายใน" $transaction ของ caller.
+ * - เขียน 2 แถว: TRANSFER_OUT(from,-qty) · TRANSFER_IN(to,+qty) — ต้นทุน (unitCostCents) พกจาก product เดียวกัน.
+ * - guard: ห้องหลักของ "from" ต้องมี NET ≥ qty (กันโอนเกินของบนชั้น) → CfSourceOverIssueError.
+ * - lock: (branch:ห้องหลัก, product) ของ from + to เรียงตาม key (กัน deadlock ข้ามทิศ refill/return);
+ *   คีย์ล็อกตรงกับ path เติมปกติของสาขานั้น → serialize กับการโหลด/เติมของสาขา from ด้วย (กัน over-issue จริง).
+ */
+export async function transferMainRoomBetweenBranchesTx(
+  tx: Tx,
+  opts: {
+    orgId: string;
+    userId: string;
+    fromBranchId: string;
+    toBranchId: string;
+    productId: string;
+    qty: number;
+    unitCostCents: number | null;
+    refTable: string;
+    refId: string | null;
+    note: string;
+  },
+): Promise<void> {
+  const { orgId, userId, fromBranchId, toBranchId, productId, qty, unitCostCents, refTable, refId, note } =
+    opts;
+  if (qty <= 0) return;
+  // อ่านคลังหลักผ่าน tx เดียวกัน (connection เดียว · กัน pool starvation ระหว่าง interactive tx)
+  const mainOf = async (bid: string): Promise<string | null> =>
+    (await tx.cfWarehouse.findFirst({ where: { orgId, branchId: bid, isMain: true }, select: { id: true } }))?.id ??
+    null;
+  const fromMain = await mainOf(fromBranchId);
+  const toMain = await mainOf(toBranchId);
+
+  // lock ทั้งสองสาขา (ห้องหลัก,สินค้า) เรียง key → ทิศไหน (refill B→A / return A→B) ก็ล็อกลำดับเดียวกัน = ไม่มี deadlock cycle.
+  // key ตรงกับ path เติมปกติ: `${branchId}:${mainWh ?? "MAIN"}` (actions.ts/stock-actions.ts) → serialize กับการโหลดของ from.
+  const keyFor = (bid: string, main: string | null) => `${bid}:${main ?? "MAIN"}`;
+  const lockKeys = [keyFor(fromBranchId, fromMain), keyFor(toBranchId, toMain)].sort();
+  for (const k of lockKeys) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${k}), hashtext(${productId}))`;
+  }
+
+  const fromNet = await mainRoomNet(tx, orgId, fromBranchId, productId, fromMain);
+  if (qty > fromNet) {
+    throw new CfSourceOverIssueError(`คลังต้นทางมี ${fromNet} ตัว · ต้องใช้ ${qty} ตัวไม่พอ`);
+  }
+
+  const now = new Date();
+  await tx.cfStockMovement.create({
+    data: {
+      orgId,
+      branchId: fromBranchId,
+      type: "TRANSFER_OUT",
+      productId,
+      warehouseId: fromMain ?? undefined,
+      qty: -qty,
+      unitCostCents: unitCostCents ?? undefined,
+      refTable,
+      refId,
+      occurredAt: now,
+      createdById: userId,
+      documentType: "transfer",
+      reason: note,
+    },
+  });
+  await tx.cfStockMovement.create({
+    data: {
+      orgId,
+      branchId: toBranchId,
+      type: "TRANSFER_IN",
+      productId,
+      warehouseId: toMain ?? undefined,
+      qty,
+      unitCostCents: unitCostCents ?? undefined,
+      refTable,
+      refId,
+      occurredAt: now,
+      createdById: userId,
+      documentType: "transfer",
+      reason: note,
+    },
+  });
+}

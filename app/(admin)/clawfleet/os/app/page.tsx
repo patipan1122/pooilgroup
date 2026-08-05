@@ -11,6 +11,7 @@ import { userBranchIds, isCfBranchManager, cfHasAdminPower } from "@/lib/clawfle
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
+import { getSourceMainRoomNet } from "@/lib/clawfleet/stock-source";
 import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
@@ -517,6 +518,14 @@ async function loadReturnDollsData(
   const netAvailableByBranch: Record<string, Record<string, number>> = {};
   if (!orgId || branches.length === 0) return { inMachineByMachine, netAvailableByBranch };
 
+  // 🔀 คลังหลักข้ามสาขา — สาขาที่ตั้งคลังต้นทาง: "ของว่างในคลัง" (picker เติม/คืน) = ของคลังต้นทาง (B) ห้องหลัก.
+  //   ในตู้ (inMachineByMachine) ยังคีย์ตามตู้จริง (สาขา A) — ถูกต้อง. คีย์ตรงกับ guard ตอนเติม (main-room net).
+  const srcRows = await prisma.branch.findMany({
+    where: { orgId, id: { in: branches.map((b) => b.id) } },
+    select: { id: true, stockSourceBranchId: true },
+  }).catch(() => [] as { id: string; stockSourceBranchId: string | null }[]);
+  const stockSourceOf = new Map(srcRows.map((r) => [r.id, r.stockSourceBranchId]));
+
   await Promise.all(
     branches.map(async (b) => {
       try {
@@ -587,7 +596,9 @@ async function loadReturnDollsData(
           const inMachine = inMachineByProduct.get(pid) ?? 0;
           netMap[pid] = warehouse - inMachine;
         }
-        netAvailableByBranch[b.id] = netMap;
+        // 🔀 redirect: ถ้าตั้งคลังต้นทาง → "ของว่างในคลัง" = ของคลังต้นทาง (B) ห้องหลัก (ตรงกับ guard ตอนเติม)
+        const srcId = stockSourceOf.get(b.id);
+        netAvailableByBranch[b.id] = srcId ? await getSourceMainRoomNet(orgId, srcId) : netMap;
 
         // เรียงรายการในตู้แต่ละตู้ตามชื่อ (อ่านง่าย)
         for (const mid of machineIds) {
@@ -641,6 +652,13 @@ async function loadBigfeatureData(
   if (!orgId || branchIds.length === 0)
     return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch };
 
+  // 🔀 คลังหลักข้ามสาขา — สาขาที่ตั้งคลังต้นทาง: "คลังตอนนี้" (badge picker เติม) = ของคลังต้นทาง (B) ห้องหลัก.
+  const srcRows = await prisma.branch.findMany({
+    where: { orgId, id: { in: branchIds } },
+    select: { id: true, stockSourceBranchId: true },
+  }).catch(() => [] as { id: string; stockSourceBranchId: string | null }[]);
+  const stockSourceOf = new Map(srcRows.map((r) => [r.id, r.stockSourceBranchId]));
+
   try {
     const awaiting = await getAwaitingSetupMachines();
     awaitingSetupIds = awaiting.map((m) => m.id);
@@ -652,16 +670,20 @@ async function loadBigfeatureData(
     branchIds.map(async (bid) => {
       try {
         const products = await getCfBranchStockProducts(orgId, bid);
+        // 🔀 redirect: ถ้าตั้งคลังต้นทาง → "คลัง" ของแต่ละ SKU = ของคลังต้นทาง (B) ห้องหลัก (ตรงกับ guard ตอนเติม)
+        const srcId = stockSourceOf.get(bid);
+        const srcNet = srcId ? await getSourceMainRoomNet(orgId, srcId, products.map((p) => p.id)) : null;
+        const whOf = (p: { id: string; warehouse: number }) => (srcNet ? (srcNet[p.id] ?? 0) : p.warehouse);
         branchProducts[bid] = products.map((p) => ({
           id: p.id,
           name: p.name,
           sku: p.sku, // item 6 · โชว์ SKU บนรายการเติม/นับ
           imageUrl: p.imageUrl,
-          warehouse: p.warehouse,
+          warehouse: whOf(p),
           defaultPriceCoins: p.defaultPriceCoins, // item 9 · ราคาขาย (display) บนหน้าสินค้า
         }));
         // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
-        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));
+        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, whOf(p)]));
       } catch {
         branchProducts[bid] = [];
         onHandByBranch[bid] = {};

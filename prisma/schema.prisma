@@ -296,6 +296,10 @@ model Branch {
   orgId          String       @map("org_id") @db.Uuid
   companyId      String       @map("company_id") @db.Uuid // Pooil Oil or JP Sync
   parentBranchId String?      @map("parent_branch_id") @db.Uuid // host branch for sub-tenants (e.g. 7-11 inside a fuel station)
+  // ClawFleet · "คลังหลักข้ามสาขา" — ถ้าตั้งไว้ สาขานี้ใช้ "คลังของสาขานั้น" เป็นคลังหลัก:
+  //   เติมตู้ = โอนจากสาขาต้นทาง→สาขานี้ แล้วเข้าตู้ · คืนสโตร์ = โอนกลับสาขาต้นทาง (ชั้นของสาขานี้ = ทางผ่าน net 0).
+  //   null = ใช้คลังตัวเอง (พฤติกรรมเดิม 100%). จำกัด 1 ทอด: สาขาต้นทางต้องเป็นสาขาที่ใช้คลังตัวเอง (บังคับใน setBranchStockSource).
+  stockSourceBranchId String?  @map("stock_source_branch_id") @db.Uuid
   code           String
   name           String
   businessType   BusinessType @map("business_type")
@@ -317,6 +321,8 @@ model Branch {
   company          Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   parentBranch     Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
   subTenants       Branch[]               @relation("SubTenants")
+  stockSourceBranch Branch?               @relation("StockSource", fields: [stockSourceBranchId], references: [id], onDelete: SetNull)
+  stockSourceFor    Branch[]              @relation("StockSource")
   manager          User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
   userBranches     UserBranch[]
   dailyReports     DailyReport[]

@@ -33,6 +33,7 @@ import {
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
+import { transferMainRoomBetweenBranchesTx, CfSourceOverIssueError } from "./stock-source";
 import { getBranchRawReadings, getMachineDayRefills, type RawReadingRow, type CellRefill } from "./raw-readings-queries";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
@@ -369,7 +370,11 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
 
   const machine = await prisma.cfMachine.findFirst({
     where: { id: data.machineId, orgId, isActive: true, kind: "CLAW" },
-    include: { loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" } } },
+    include: {
+      loadouts: { where: { effectiveTo: null }, take: 1, orderBy: { effectiveFrom: "desc" } },
+      // คลังหลักข้ามสาขา — ถ้าตั้งไว้ เติมตู้จะดึงจากคลังของสาขาต้นทาง (โอน→เข้าตู้ · atomic)
+      branch: { select: { stockSourceBranchId: true } },
+    },
   });
   if (!machine) return { ok: false, error: "ไม่พบตู้คีบ" };
 
@@ -508,6 +513,18 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
   const branchMainId =
     refillLines.length > 0 ? await getBranchMainWarehouseId(orgId, machine.branchId) : null;
 
+  // คลังหลักข้ามสาขา — สาขานี้ตั้งให้ดึงจากคลังของสาขาต้นทางไหม (null = ใช้คลังตัวเอง · เดิม)
+  const stockSourceBranchId = machine.branch?.stockSourceBranchId ?? null;
+  // ต้นทุนสินค้า (org-wide) สำหรับแนบแถวโอน (คลังต้นทาง −มูลค่า / สาขานี้ +มูลค่า) — โหลดเฉพาะเมื่อ redirect
+  const refillCostMap = new Map<string, number | null>();
+  if (stockSourceBranchId && refillLines.length > 0) {
+    const prods = await prisma.cfProduct.findMany({
+      where: { orgId, id: { in: refillLines.map((l) => l.productId) } },
+      select: { id: true, unitCostCents: true },
+    });
+    for (const p of prods) refillCostMap.set(p.id, p.unitCostCents);
+  }
+
   try {
     const ev = await prisma.$transaction(async (tx) => {
       const created = await tx.cfCollectionEvent.create({
@@ -557,8 +574,25 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
       // เติมทีละ SKU (แต่ละไลน์ = 1 แถว LOAD_TO_MACHINE · หักคลังห้องที่เลือก · atomic ใน tx เดียว).
       // guard/lock ต่อไลน์เหมือนเดิม — 2 SKU ในไลน์เดียวกันหักคนละล็อก ไม่ชนกัน.
       for (const line of refillLines) {
-        // ห้องที่หยิบ: ระบุมา = ห้องนั้น · ไม่ระบุ = คลังหลัก (null = aggregate ยอดทุกห้อง = เดิม)
-        const chosenWh = line.warehouseId ?? branchMainId;
+        // 🔀 คลังหลักข้ามสาขา — ดึงจากคลังของสาขาต้นทาง: โอน (ห้องหลัก B → ห้องหลัก A) ก่อนโหลด.
+        //   guard NET ห้องหลัก B (กันเกินของบนชั้น B) + ล็อกคีย์ห้องหลัก B/A → serialize กับการเติมของ B.
+        //   หลังโอน ของมาอยู่ "ห้องหลัก A" → บังคับโหลดจากห้องหลัก A (ไม่สน line.warehouseId ซึ่งเป็นห้องของ B).
+        if (stockSourceBranchId) {
+          await transferMainRoomBetweenBranchesTx(tx, {
+            orgId,
+            userId: session.user.id,
+            fromBranchId: stockSourceBranchId,
+            toBranchId: machine.branchId,
+            productId: line.productId,
+            qty: line.qty,
+            unitCostCents: refillCostMap.get(line.productId) ?? null,
+            refTable: "cf_collection_events",
+            refId: created.id,
+            note: "คลังหลักข้ามสาขา · เติมตู้เข้ารอบ",
+          });
+        }
+        // ห้องที่หยิบ: redirect = ห้องหลัก A (ของที่โอนมา) · ปกติ = ระบุมา/คลังหลัก (null = aggregate ทุกห้อง = เดิม)
+        const chosenWh = stockSourceBranchId ? branchMainId : (line.warehouseId ?? branchMainId);
         const whFilter: Record<string, unknown> =
           chosenWh == null
             ? {}
@@ -645,7 +679,7 @@ export async function submitBranchEvent(input: unknown): Promise<SubmitBranchEve
     return { ok: true, data: { id: ev.id } };
   } catch (e) {
     // R4 over-issue → ข้อความชัด (สต๊อกสาขาไม่พอ) · transaction rollback แล้ว = ไม่มีของตัด
-    if (e instanceof CfOverIssueError) {
+    if (e instanceof CfOverIssueError || e instanceof CfSourceOverIssueError) {
       return { ok: false, error: e.message };
     }
     // B1 (audit 2026-07-01): unique index กันกรอกตู้ซ้ำในรอบ (กด 2 ครั้ง/retry ชน) →
@@ -1103,6 +1137,24 @@ async function applyRefillEditTx(
   newLines: { productId: string; qty: number; warehouseId?: string | null }[],
 ): Promise<number> {
   const branchMainId = await getBranchMainWarehouseId(orgId, ev.branchId);
+  // 🔀 คลังหลักข้ามสาขา — แก้รอบต้องดึง/คืนกับคลังต้นทาง "ตัวเดิมที่ตอนเก็บใช้จริง" (provenance) ไม่ใช่ config ปัจจุบัน.
+  //   ดูจากแถวโอนเดิมของรอบนี้ (TRANSFER_OUT refId=eventId): มี = รอบนี้เคยดึงข้ามสาขาจาก branchId นั้น · ไม่มี = เก็บจากคลังตัวเอง.
+  //   กัน bug: แอดมินสลับ/ล้างคลังต้นทางหลังเก็บ แล้วแก้รอบลด → ของวิ่งกลับผิดสาขา (ของผี). อ่านผ่าน tx (กัน query นอก tx).
+  const origTransfer = await tx.cfStockMovement.findFirst({
+    where: { orgId, refTable: "cf_collection_events", refId: ev.id, type: "TRANSFER_OUT" },
+    select: { branchId: true },
+  });
+  const srcBranchId = origTransfer?.branchId ?? null;
+  const effLines = srcBranchId ? newLines.map((l) => ({ ...l, warehouseId: null })) : newLines;
+  // ต้นทุนสินค้า (org-wide) สำหรับแนบแถวโอน — โหลดเฉพาะเมื่อ redirect
+  const editCostMap = new Map<string, number | null>();
+  if (srcBranchId) {
+    const pids = Array.from(new Set(effLines.map((l) => l.productId)));
+    if (pids.length > 0) {
+      const prods = await tx.cfProduct.findMany({ where: { orgId, id: { in: pids } }, select: { id: true, unitCostCents: true } });
+      for (const p of prods) editCostMap.set(p.id, p.unitCostCents);
+    }
+  }
   const normWh = (w: string | null | undefined) => (w == null ? (branchMainId ?? "MAIN") : w);
   const keyOf = (p: string, w: string | null | undefined) => `${p}::${normWh(w)}`;
 
@@ -1119,7 +1171,7 @@ async function applyRefillEditTx(
     oldByKey.set(k, cur);
   }
   const newByKey = new Map<string, { productId: string; warehouseId: string | null; qty: number }>();
-  for (const l of newLines) {
+  for (const l of effLines) {
     const k = keyOf(l.productId, l.warehouseId);
     const cur = newByKey.get(k) ?? { productId: l.productId, warehouseId: l.warehouseId ?? null, qty: 0 };
     cur.qty += l.qty;
@@ -1133,8 +1185,17 @@ async function applyRefillEditTx(
     const warehouseId = (newE?.warehouseId ?? oldE?.warehouseId) ?? null;
     const delta = (newE?.qty ?? 0) - (oldE?.loaded ?? 0);
     if (delta === 0) continue;
-    const chosenWh = warehouseId ?? branchMainId;
+    // redirect = บังคับห้องหลัก A (ของที่โอนมา/จะโอนกลับ) · ปกติ = ห้องที่เลือก/คลังหลัก
+    const chosenWh = srcBranchId ? branchMainId : (warehouseId ?? branchMainId);
     if (delta > 0) {
+      // 🔀 คลังหลักข้ามสาขา — เติมเพิ่ม: โอน (ห้องหลัก B → ห้องหลัก A) ก่อน (guard B ในตัว)
+      if (srcBranchId) {
+        await transferMainRoomBetweenBranchesTx(tx, {
+          orgId, userId, fromBranchId: srcBranchId, toBranchId: ev.branchId,
+          productId, qty: delta, unitCostCents: editCostMap.get(productId) ?? null,
+          refTable: "cf_collection_events", refId: ev.id, note: "คลังหลักข้ามสาขา · แก้รอบ (เติมเพิ่ม)",
+        });
+      }
       // เบิกเพิ่ม delta ตัว — advisory lock + over-issue guard (คัดลอก submitBranchEvent เป๊ะ)
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ev.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${productId}))`;
       const whFilter: Record<string, unknown> =
@@ -1155,6 +1216,14 @@ async function applyRefillEditTx(
         occurredAt: new Date(), createdById: userId, reason: "แก้ยอดเติม (หน้าแก้รอบ)",
       },
     });
+    // 🔀 คลังหลักข้ามสาขา — ลดยอดเติม (delta<0 = คืน |delta| เข้าชั้น A) → โอนกลับคลังต้นทาง (A→B · guard A ในตัว)
+    if (delta < 0 && srcBranchId) {
+      await transferMainRoomBetweenBranchesTx(tx, {
+        orgId, userId, fromBranchId: ev.branchId, toBranchId: srcBranchId,
+        productId, qty: -delta, unitCostCents: editCostMap.get(productId) ?? null,
+        refTable: "cf_collection_events", refId: ev.id, note: "คลังหลักข้ามสาขา · แก้รอบ (คืนของ)",
+      });
+    }
   }
   let sum = 0;
   for (const v of newByKey.values()) sum += v.qty;
@@ -2379,6 +2448,68 @@ export async function renameBranch(branchId: string, input: unknown): Promise<Re
   }
 }
 
+// ─────────────── คลังหลักข้ามสาขา — ตั้ง/ล้าง "คลังต้นทาง" ของสาขา (แอดมินโปรแกรม) ───────────────
+// สาขา A ตั้ง sourceBranchId=B → A "ใช้คลังของ B เป็นคลังหลัก" (เติม/คืน กับคลัง B · ดู stock-source.ts).
+// จำกัด 1 ทอด (กันวน/กันงง): ① B ต้องเป็นสาขาที่ใช้คลังตัวเอง (B.stockSourceBranchId=null)
+//   ② A ต้องไม่ได้เป็นคลังต้นทางของสาขาอื่นอยู่ (ไม่งั้น X→A→B = ทอดซ้อน). null = ล้าง (กลับใช้คลังตัวเอง).
+const SetStockSourceSchema = z.object({
+  branchId: zUUID(),
+  sourceBranchId: zUUID().nullable(),
+});
+export async function setBranchStockSource(input: unknown): Promise<Result> {
+  const parsed = SetStockSourceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+  const { branchId, sourceBranchId } = parsed.data;
+  const session = await assertCfAdmin();
+  const orgId = session.user.org_id;
+
+  const branch = await prisma.branch.findFirst({
+    where: { id: branchId, orgId, businessType: "claw_machine" },
+    select: { id: true, companyId: true },
+  });
+  if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบ" };
+
+  if (sourceBranchId) {
+    if (sourceBranchId === branchId) return { ok: false, error: "เลือกสาขาต้นทางเป็นตัวเองไม่ได้" };
+    const source = await prisma.branch.findFirst({
+      where: { id: sourceBranchId, orgId, businessType: "claw_machine", isActive: true },
+      select: { id: true, name: true, companyId: true, stockSourceBranchId: true },
+    });
+    if (!source) return { ok: false, error: "ไม่พบสาขาต้นทาง (ต้องเป็นสาขาตู้คีบที่ยังใช้งาน)" };
+    // ⚠️ ต้องบริษัทเดียวกัน — กันโอนมูลค่าสต๊อกข้ามนิติบุคคลโดยไม่มีเอกสารโอนระหว่างบริษัท (accounting)
+    if (source.companyId !== branch.companyId) {
+      return { ok: false, error: `สาขาต้นทาง "${source.name}" อยู่คนละบริษัท · ตั้งคลังข้ามบริษัทไม่ได้ (ต้องมีเอกสารโอนระหว่างบริษัท)` };
+    }
+    // ต้นทางต้องมี "คลังหลัก" จริง — ไม่งั้นการตัดสต๊อก scope เป็น "ทุกห้อง" ทำให้ guard กับ lock ไม่ตรงกับการเติมของ B เอง → เติมเกินได้
+    const srcMain = await getBranchMainWarehouseId(orgId, sourceBranchId);
+    if (!srcMain) {
+      return { ok: false, error: `สาขาต้นทาง "${source.name}" ยังไม่มีคลังหลัก · ตั้งคลังหลักให้ก่อนจึงใช้เป็นต้นทางได้` };
+    }
+    // ① สาขาต้นทางต้องใช้คลังตัวเอง — กันทอดซ้อน (A→B→C)
+    if (source.stockSourceBranchId) {
+      return { ok: false, error: `สาขา "${source.name}" ใช้คลังของสาขาอื่นอยู่ · เลือกเป็นคลังต้นทางไม่ได้ (กันทอดซ้อน)` };
+    }
+    // ② สาขานี้ต้องไม่ได้เป็นคลังต้นทางให้สาขาอื่น — ไม่งั้น X→(สาขานี้)→B = ทอดซ้อน
+    const dependents = await prisma.branch.count({ where: { orgId, stockSourceBranchId: branchId } });
+    if (dependents > 0) {
+      return { ok: false, error: "สาขานี้เป็นคลังต้นทางให้สาขาอื่นอยู่ · ตั้งให้ใช้คลังสาขาอื่นไม่ได้ (กันทอดซ้อน)" };
+    }
+  }
+
+  try {
+    await prisma.branch.update({
+      where: { id: branchId },
+      data: { stockSourceBranchId: sourceBranchId },
+    });
+    revalidateManage();
+    revalidatePath("/clawfleet/os/app");
+    revalidatePath("/clawfleet/os/branches");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `ตั้งคลังต้นทางไม่สำเร็จ: ${(e as Error).message}` };
+  }
+}
+
 /**
  * ลบสาขา — SOFT delete (isActive=false) ถ้ามีตู้หรือรอบเก็บอยู่แล้ว
  * (กันข้อมูลประวัติพัง) · ลบจริงเฉพาะสาขาที่ว่างเปล่า.
@@ -2400,8 +2531,14 @@ export async function deleteBranch(branchId: string): Promise<ResultOf<{ mode: "
 
   try {
     if (hasDependents) {
-      await prisma.branch.update({ where: { id: branchId }, data: { isActive: false } });
+      // soft delete — ต้องเคลียร์สาขาที่ใช้สาขานี้เป็น "คลังต้นทาง" ด้วย (FK SetNull ยิงเฉพาะ hard delete)
+      //   ไม่งั้นสาขาปลายทางยังดึงของจากสาขาที่ถูกปิดไปแล้ว → ให้กลับไปใช้คลังตัวเอง.
+      await prisma.$transaction([
+        prisma.branch.updateMany({ where: { orgId, stockSourceBranchId: branchId }, data: { stockSourceBranchId: null } }),
+        prisma.branch.update({ where: { id: branchId }, data: { isActive: false } }),
+      ]);
       revalidateManage();
+      revalidatePath("/clawfleet/os/app");
       return { ok: true, data: { mode: "soft" } };
     }
     await prisma.branch.delete({ where: { id: branchId } });

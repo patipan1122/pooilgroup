@@ -3,10 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse } from "lucide-react";
 import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
-import { reassignCfMachineBranch } from "@/lib/clawfleet/actions";
+import { reassignCfMachineBranch, setBranchStockSource } from "@/lib/clawfleet/actions";
 
 /** สถานะตู้จริงจาก server (cfMachine): ดี / ต้องเติม / เสีย */
 export type ServerDotStatus = "good" | "warn" | "broken";
@@ -83,6 +83,7 @@ export function BranchesClient({
   isAdmin = false,
   machineOptions = [],
   branchOptions = [],
+  stockSourceByBranch = {},
   fromISO = "",
   toISO = "",
 }: {
@@ -91,6 +92,8 @@ export function BranchesClient({
   isAdmin?: boolean;
   machineOptions?: MachineOption[];
   branchOptions?: BranchOption[];
+  // คลังหลักข้ามสาขา — map branchId → คลังต้นทาง (null = ใช้คลังตัวเอง)
+  stockSourceByBranch?: Record<string, string | null>;
   // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — สถิติ P&L ต่อสาขาอิงช่วงนี้ · เติมค่า <input type=date> + คง state ใน link
   fromISO?: string;
   toISO?: string;
@@ -369,6 +372,9 @@ export function BranchesClient({
       {/* ── surface-existing: ย้ายตู้ข้ามสาขา (แอดมินเท่านั้น) ── */}
       {isAdmin && <ReassignMachineCard machineOptions={machineOptions} branchOptions={branchOptions} />}
 
+      {/* ── คลังหลักข้ามสาขา: ตั้งให้สาขาใช้คลังของสาขาอื่น (แอดมินเท่านั้น) ── */}
+      {isAdmin && <WarehouseSourceCard branchOptions={branchOptions} stockSourceByBranch={stockSourceByBranch} />}
+
       {/* ── legend: ความหมายของช่องสถานะตู้ ── */}
       <div
         style={{
@@ -563,6 +569,167 @@ function ReassignMachineCard({
 
           <div style={{ fontSize: 11.5, color: "#B45309", background: "#FCF6EC", border: "1px solid #F0E2BE", borderRadius: 9, padding: "9px 12px" }}>
             หมายเหตุ: ตู้จะหลุดจากกลุ่ม (group) ของสาขาเดิมโดยอัตโนมัติ · ประวัติการเก็บเงินและการเคลื่อนไหวสต๊อกเดิมยังคงอยู่ที่สาขาเดิม (ย้ายมีผลนับจากนี้ไปเท่านั้น)
+          </div>
+
+          {error && (
+            <div style={{ background: "#FCEDEC", border: "1px solid #F5C6C2", borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: "#B42318" }}>{error}</div>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * คลังหลักข้ามสาขา (admin only · server = assertCfAdmin + กันทอดซ้อน)
+ *  เลือกสาขา → เลือกคลังต้นทาง (หรือ "ใช้คลังตัวเอง") → ยืนยัน → setBranchStockSource.
+ *  ผล: เวลาเติมตู้สาขานี้ ดึงของจากคลังสาขาต้นทาง (โอนเข้ามาก่อนแล้วเข้าตู้) · คืนสโตร์โอนกลับ.
+ * ───────────────────────────────────────────────────────────────────────── */
+function WarehouseSourceCard({
+  branchOptions,
+  stockSourceByBranch,
+}: {
+  branchOptions: BranchOption[];
+  stockSourceByBranch: Record<string, string | null>;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [branchId, setBranchId] = useState("");
+  const [sourceBranchId, setSourceBranchId] = useState(""); // "" = ใช้คลังตัวเอง
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const canUse = branchOptions.length >= 2;
+  const nameOf = (id: string | null | undefined) =>
+    id ? (branchOptions.find((b) => b.id === id)?.name ?? "—") : null;
+  const configuredCount = Object.values(stockSourceByBranch).filter(Boolean).length;
+
+  function openModal() {
+    setBranchId(""); setSourceBranchId(""); setError(null); setOkMsg(null);
+    setOpen(true);
+  }
+  // เมื่อเลือกสาขา → เติมค่าคลังต้นทางปัจจุบันให้ (แก้ง่าย)
+  function pickBranch(id: string) {
+    setBranchId(id);
+    setSourceBranchId(stockSourceByBranch[id] ?? "");
+    setError(null);
+  }
+  function submit() {
+    setError(null);
+    if (!branchId) { setError("เลือกสาขาที่จะตั้งค่า"); return; }
+    if (sourceBranchId && sourceBranchId === branchId) { setError("เลือกคลังต้นทางเป็นสาขาตัวเองไม่ได้"); return; }
+    startTransition(async () => {
+      const res = await setBranchStockSource({ branchId, sourceBranchId: sourceBranchId || null });
+      if (!res.ok) { setError(res.error); return; }
+      const bName = nameOf(branchId);
+      setOkMsg(sourceBranchId ? `${bName} ใช้คลังของ ${nameOf(sourceBranchId)} เป็นคลังหลักแล้ว` : `${bName} กลับไปใช้คลังตัวเองแล้ว`);
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <Card
+        title="คลังหลักข้ามสาขา"
+        sub="สำหรับแอดมิน — ตั้งให้สาขาหนึ่งใช้คลังของอีกสาขาเป็นคลังหลัก (เติมตู้ดึงจากคลังนั้น · คืนสโตร์ก็โอนกลับ)"
+        right={
+          <button
+            type="button"
+            onClick={openModal}
+            disabled={!canUse}
+            className="co-tap"
+            style={{
+              border: "none", cursor: canUse ? "pointer" : "not-allowed",
+              background: canUse ? "#4F46E5" : "#C7C4EE", color: "#fff",
+              fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 10,
+              display: "inline-flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+            }}
+          >
+            <Warehouse size={15} /> ตั้งคลังหลัก
+          </button>
+        }
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "#6B7280" }}>
+          <IconBox tone="neutral" size={38} radius={10} bg="#F1F2F7" color="#9AA1AB"><Warehouse size={17} /></IconBox>
+          <div style={{ flex: 1 }}>
+            {canUse
+              ? <>ตั้งไว้แล้ว <b className="num" style={{ color: "#454B54" }}>{num(configuredCount)}</b> สาขา · กด “ตั้งคลังหลัก” เพื่อเลือกสาขาและคลังต้นทาง</>
+              : "ต้องมีสาขาตู้คีบอย่างน้อย 2 สาขา ถึงจะตั้งคลังข้ามสาขาได้"}
+          </div>
+        </div>
+        {okMsg && (
+          <div style={{ marginTop: 12, background: "#E7F4EC", border: "1px solid #BBE3C9", borderRadius: 10, padding: "10px 13px", fontSize: 12.5, color: "#15803D" }}>
+            {okMsg}
+          </div>
+        )}
+      </Card>
+
+      <Modal
+        open={open}
+        onClose={() => { if (!pending) { setOpen(false); } }}
+        width={500}
+        title="ตั้งคลังหลักของสาขา"
+        sub="เลือกสาขา แล้วเลือกว่าจะใช้คลังของสาขาไหนเป็นคลังหลัก (หรือใช้คลังตัวเอง)"
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "14px 20px" }}>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={pending}
+              style={{ flex: 1, border: "none", cursor: pending ? "wait" : "pointer", background: pending ? "#A5A0EC" : "#4F46E5", color: "#fff", fontSize: 13.5, fontWeight: 700, padding: "11px 0", borderRadius: 10 }}
+            >
+              {pending ? "กำลังบันทึก…" : "บันทึก"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!pending) { setOpen(false); } }}
+              disabled={pending}
+              style={{ border: "1px solid #E3E6EA", background: "#fff", cursor: pending ? "not-allowed" : "pointer", color: "#6B7280", fontSize: 13.5, fontWeight: 600, padding: "11px 20px", borderRadius: 10 }}
+            >
+              ยกเลิก
+            </button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={R_LABEL}>สาขาที่จะตั้งค่า</label>
+            <select aria-label="เลือกสาขาที่จะตั้งค่า" value={branchId} onChange={(e) => pickBranch(e.target.value)} style={R_FIELD}>
+              <option value="">— เลือกสาขา —</option>
+              {branchOptions.map((b) => {
+                const cur = stockSourceByBranch[b.id];
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.code}){cur ? ` · ใช้คลัง ${nameOf(cur)}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#9AA1AB", fontSize: 12 }}>
+            <span style={{ fontWeight: 600 }}>คลังหลักปัจจุบัน:</span>
+            <span style={{ color: "#454B54", fontWeight: 600 }}>{branchId ? (nameOf(stockSourceByBranch[branchId]) ?? "คลังตัวเอง") : "—"}</span>
+            <ArrowRight size={15} />
+            <span style={{ fontWeight: 600 }}>ใหม่</span>
+          </div>
+
+          <div>
+            <label style={R_LABEL}>ใช้คลังของ</label>
+            <select aria-label="เลือกคลังต้นทาง" value={sourceBranchId} onChange={(e) => { setSourceBranchId(e.target.value); setError(null); }} style={R_FIELD}>
+              <option value="">ใช้คลังตัวเอง (ค่าเริ่มต้น)</option>
+              {branchOptions
+                .filter((b) => b.id !== branchId && !stockSourceByBranch[b.id]) // ต้นทางต้องใช้คลังตัวเอง (กันทอดซ้อน)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>คลังของ {b.name} ({b.code})</option>
+                ))}
+            </select>
+          </div>
+
+          <div style={{ fontSize: 11.5, color: "#B45309", background: "#FCF6EC", border: "1px solid #F0E2BE", borderRadius: 9, padding: "9px 12px" }}>
+            เวลาเติมตู้สาขานี้ ระบบจะดึงของจากคลังต้นทาง (โอนเข้ามาเป็นของสาขานี้ก่อนแล้วเข้าตู้) · คืนตุ๊กตากลับก็จะโอนคืนคลังต้นทางให้อัตโนมัติ · สต๊อก/ต้นทุนตรงตามจริง
           </div>
 
           {error && (

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
 import { getBranchMainWarehouseId, getCfProductHistoryScoped, type CfProductHistory } from "./stock-queries";
+import { transferMainRoomBetweenBranchesTx } from "./stock-source";
 
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string };
 const err = (m: string) => ({ ok: false as const, error: m });
@@ -1601,7 +1602,7 @@ export async function returnDollsToStock(
 
   const machine = await prisma.cfMachine.findFirst({
     where: { id: machineId, orgId },
-    select: { id: true, branchId: true },
+    select: { id: true, branchId: true, branch: { select: { stockSourceBranchId: true } } },
   });
   if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
 
@@ -1609,6 +1610,9 @@ export async function returnDollsToStock(
   const allowed =
     canWriteOff(session.user.role) || (await isRealBranchStaff(session, machine.branchId));
   if (!allowed) return err("ไม่มีสิทธิ์คืนตุ๊กตาของสาขานี้");
+
+  // 🔀 คลังหลักข้ามสาขา — ถ้าตั้งไว้ ของที่คืนออกจากตู้ต้อง "โอนกลับคลังต้นทาง" (ชั้นสาขานี้ = ทางผ่าน net 0)
+  const stockSourceBranchId = machine.branch?.stockSourceBranchId ?? null;
 
   const product = await prisma.cfProduct.findFirst({
     where: { id: productId, orgId },
@@ -1670,6 +1674,22 @@ export async function returnDollsToStock(
           receiptR2Key: photoUrl || null, // ดีไซน์ใหม่ · รูปยืนยัน (ก่อนใส่) ตอนเปลี่ยนตุ๊กตา
         },
       });
+      // 🔀 คลังหลักข้ามสาขา — ดันของที่คืน (อยู่ชั้น A แล้ว) กลับคลังต้นทาง B (โอน A→B · guard A ในตัว).
+      //   หลัง ADJUST ด้านบน A มีของบนชั้น = qty → โอนออกครบ → ชั้น A กลับเป็น net 0 (สมมาตรกับตอนเติม).
+      if (stockSourceBranchId) {
+        await transferMainRoomBetweenBranchesTx(tx, {
+          orgId,
+          userId: session.user.id,
+          fromBranchId: machine.branchId,
+          toBranchId: stockSourceBranchId,
+          productId,
+          qty,
+          unitCostCents: product.unitCostCents,
+          refTable: "cf_return_dolls",
+          refId: clientKey ?? null,
+          note: "คลังหลักข้ามสาขา · คืนตุ๊กตากลับคลังต้นทาง",
+        });
+      }
       return { inMachineAfter: inMachine - qty };
     })
     .catch((e) => ({ error: txErrMessage(e) }));
@@ -1712,7 +1732,7 @@ export async function refillDollsToMachine(
 
   const machine = await prisma.cfMachine.findFirst({
     where: { id: machineId, orgId },
-    select: { id: true, branchId: true },
+    select: { id: true, branchId: true, branch: { select: { stockSourceBranchId: true } } },
   });
   if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
 
@@ -1726,8 +1746,12 @@ export async function refillDollsToMachine(
   });
   if (!product) return err("ไม่พบสินค้า");
 
+  // 🔀 คลังหลักข้ามสาขา — ถ้าตั้งไว้ ดึงจากคลังของสาขาต้นทาง (โอน→เข้าตู้) · redirect = บังคับห้องหลัก A
+  const stockSourceBranchId = machine.branch?.stockSourceBranchId ?? null;
   const branchMainId = await getBranchMainWarehouseId(orgId, machine.branchId);
-  const chosenWh = warehouseId ?? branchMainId;
+  // คลังหลักของสาขาต้นทาง — ใช้ทำ lock key ให้เรียงลำดับเดียวกับ transfer helper (กัน deadlock ข้ามทิศ)
+  const sourceMainId = stockSourceBranchId ? await getBranchMainWarehouseId(orgId, stockSourceBranchId) : null;
+  const chosenWh = stockSourceBranchId ? branchMainId : (warehouseId ?? branchMainId);
   // scope ต่อห้อง (คลังหลักรวมแถว warehouseId:null เดิม · เหมือน actions.ts refill)
   const whFilter: Record<string, unknown> =
     chosenWh == null
@@ -1738,8 +1762,17 @@ export async function refillDollsToMachine(
 
   const result = await prisma
     .$transaction(async (tx) => {
-      // 🔒 lock ต่อ (branch:ห้อง, product) — serialize การเติมพร้อมกัน
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${productId}))`;
+      // 🔒 lock — redirect: ล็อกห้องหลัก A+B "เรียง key" (ตรงกับลำดับใน transfer helper) กัน deadlock
+      //   ข้ามทิศ (เติม/คืน/แก้รอบ สาขาเดียวกันพร้อมกัน). non-redirect: ล็อกห้อง A เดิม.
+      if (stockSourceBranchId) {
+        const keyA = `${machine.branchId}:${branchMainId ?? "MAIN"}`;
+        const keyB = `${stockSourceBranchId}:${sourceMainId ?? "MAIN"}`;
+        for (const k of [keyA, keyB].sort()) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${k}), hashtext(${productId}))`;
+        }
+      } else {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machine.branchId} || ':' || ${chosenWh ?? "MAIN"}), hashtext(${productId}))`;
+      }
 
       // กันกดซ้ำ: clientKey นี้เติมไปแล้ว → คืนยอดปัจจุบัน
       if (clientKey) {
@@ -1758,6 +1791,23 @@ export async function refillDollsToMachine(
           });
           return { inMachineAfter: Math.abs(inAgg._sum.qty ?? 0), shelfAfter: shelfAgg._sum.qty ?? 0 };
         }
+      }
+
+      // 🔀 คลังหลักข้ามสาขา — โอน (ห้องหลัก B → ห้องหลัก A) qty ตัวก่อนโหลด (guard B ในตัว · ล็อกห้องหลัก B/A).
+      //   หลังโอน ของอยู่ห้องหลัก A → guard/create ด้านล่าง(whFilter=ห้องหลัก A) ผ่านตามปกติ.
+      if (stockSourceBranchId) {
+        await transferMainRoomBetweenBranchesTx(tx, {
+          orgId,
+          userId: session.user.id,
+          fromBranchId: stockSourceBranchId,
+          toBranchId: machine.branchId,
+          productId,
+          qty,
+          unitCostCents: product.unitCostCents,
+          refTable: "cf_refill_dolls",
+          refId: clientKey ?? null,
+          note: "คลังหลักข้ามสาขา · เติมตุ๊กตา (เติมอย่างเดียว)",
+        });
       }
 
       // R4 over-issue guard — NET บนชั้น (Σ ทุกแถวในห้อง) ต้อง ≥ qty
