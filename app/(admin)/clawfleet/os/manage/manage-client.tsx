@@ -22,6 +22,7 @@ import { baht, num, type Tone } from "@/components/clawfleet/os/format";
 import {
   createBranch, renameBranch, deleteBranch,
   createCfMachine, renameCfMachine, retireCfMachine, reassignCfMachineBranch,
+  setBranchStockSource,
 } from "@/lib/clawfleet/actions";
 import {
   createWarehouse, renameWarehouse, setMainWarehouse, deactivateWarehouse, transferBetweenWarehouses,
@@ -120,6 +121,7 @@ export function ManageClient({
   branches,
   machineOptions,
   branchOptions,
+  stockSourceByBranch = {},
   warehousesByBranch,
   productsByBranch,
   orgId,
@@ -128,6 +130,8 @@ export function ManageClient({
   branches: ManageBranchVM[];
   machineOptions: MachineOption[];
   branchOptions: BranchOption[];
+  /** คลังหลักข้ามสาขา — map branchId → คลังต้นทาง (null = ใช้คลังตัวเอง) */
+  stockSourceByBranch?: Record<string, string | null>;
   warehousesByBranch: Record<string, WarehouseVM[]>;
   productsByBranch: Record<string, TransferProductVM[]>;
   /** org ของผู้ใช้ — ส่งต่อให้ PhotoCaptureButton (แนบรูปตู้ขึ้น R2) */
@@ -153,6 +157,21 @@ export function ManageClient({
       setSettingMainId(null);
       if (res.ok) router.refresh();
       // ถ้า error (เช่นคลังถูกปิดใช้) — เงียบ ๆ ไม่ให้ล้ม; แถวยังเดิม (การกดตั้งหลักบนห้อง active ปกติผ่านเสมอ)
+    });
+  }
+
+  // ── คลังหลักข้ามสาขา (inline · dropdown) — ตั้งให้สาขานี้ใช้คลังของสาขาอื่น ──
+  const [settingSourceBranchId, setSettingSourceBranchId] = useState<string | null>(null);
+  const [sourceErr, setSourceErr] = useState<string | null>(null);
+  const [, startSetSource] = useTransition();
+  function onSetSource(branchId: string, sourceBranchId: string | null) {
+    setSettingSourceBranchId(branchId);
+    setSourceErr(null);
+    startSetSource(async () => {
+      const res = await setBranchStockSource({ branchId, sourceBranchId });
+      setSettingSourceBranchId(null);
+      if (res.ok) router.refresh();
+      else setSourceErr(res.error);
     });
   }
 
@@ -304,6 +323,11 @@ export function ManageClient({
                 onBack={() => setMobileView("list")}
                 setModal={setModal}
                 onSetMain={onSetMain}
+                branchOptions={branchOptions}
+                stockSourceByBranch={stockSourceByBranch}
+                onSetSource={onSetSource}
+                settingSourceBranchId={settingSourceBranchId}
+                sourceErr={sourceErr}
               />
             ) : (
               <Card><EmptyState title="เลือกสาขาทางซ้าย" sub="แตะสาขาเพื่อดูตู้และคลังของสาขานั้น" /></Card>
@@ -361,6 +385,7 @@ type MachineWithBranch = ManageMachineVM & { branchId: string; branchName: strin
 /* ═══════════════════════ RIGHT PANE — รายละเอียดสาขาที่เลือก ═══════════════════════ */
 function BranchDetailPane({
   branch, machines, warehouses, isAdmin, settingMainId, onBack, setModal, onSetMain,
+  branchOptions, stockSourceByBranch, onSetSource, settingSourceBranchId, sourceErr,
 }: {
   branch: ManageBranchVM;
   machines: MachineWithBranch[];
@@ -370,6 +395,11 @@ function BranchDetailPane({
   onBack: () => void;
   setModal: (m: ModalState) => void;
   onSetMain: (id: string) => void;
+  branchOptions: BranchOption[];
+  stockSourceByBranch: Record<string, string | null>;
+  onSetSource: (branchId: string, sourceBranchId: string | null) => void;
+  settingSourceBranchId: string | null;
+  sourceErr: string | null;
 }) {
   const s = branch.stock;
   const hasStock = s != null && s.skuCount > 0;
@@ -480,6 +510,11 @@ function BranchDetailPane({
             onSetMain={(w) => onSetMain(w.id)}
             onTransfer={() => setModal({ t: "whTransfer", branchId: branch.id, branchName: branch.name })}
             settingMainId={settingMainId}
+            branchOptions={branchOptions}
+            stockSourceByBranch={stockSourceByBranch}
+            onSetSource={onSetSource}
+            settingSource={settingSourceBranchId === branch.id}
+            sourceErr={settingSourceBranchId === branch.id ? sourceErr : null}
           />
         ) : (
           <div style={{ padding: "14px 20px", fontSize: 12.5, color: "#9AA1AB" }}>
@@ -636,6 +671,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 /* ═══════════════════════ warehouse panel (per-branch · หลายห้อง) ═══════════════════════ */
 function BranchWarehousePanel({
   branch, warehouses, onCreate, onRename, onDeactivate, onSetMain, onTransfer, settingMainId,
+  branchOptions, stockSourceByBranch, onSetSource, settingSource, sourceErr,
 }: {
   branch: ManageBranchVM;
   warehouses: WarehouseVM[];
@@ -645,8 +681,18 @@ function BranchWarehousePanel({
   onSetMain: (w: WarehouseVM) => void;
   onTransfer: () => void;
   settingMainId: string | null;
+  branchOptions: BranchOption[];
+  stockSourceByBranch: Record<string, string | null>;
+  onSetSource: (branchId: string, sourceBranchId: string | null) => void;
+  settingSource: boolean;
+  sourceErr: string | null;
 }) {
   const activeWarehouses = warehouses.filter((w) => w.isActive);
+  // คลังหลักข้ามสาขา — สาขานี้ตั้งให้ใช้คลังของสาขาไหน (null = ใช้คลังตัวเอง)
+  const currentSourceId = stockSourceByBranch[branch.id] ?? "";
+  // สาขาที่เลือกเป็นต้นทางได้ = สาขาอื่น ที่ใช้คลังตัวเอง (กันทอดซ้อน · ตรงกับ guard ฝั่ง server)
+  const sourceChoices = branchOptions.filter((b) => b.id !== branch.id && !stockSourceByBranch[b.id]);
+  const currentSourceName = currentSourceId ? (branchOptions.find((b) => b.id === currentSourceId)?.name ?? "สาขาอื่น") : null;
   return (
     <div style={{ padding: "14px 20px", borderBottom: "1px solid #F4F5F7" }}>
       {/* หัวแถวสาขา + ปุ่มเพิ่มคลัง/โอนของ */}
@@ -662,6 +708,27 @@ function BranchWarehousePanel({
           <GhostBtn onClick={onTransfer}><Send size={13} /> โอนของ</GhostBtn>
           <PrimaryBtn onClick={onCreate}><Plus size={14} /> เพิ่มคลัง</PrimaryBtn>
         </div>
+      </div>
+
+      {/* คลังหลักข้ามสาขา — สาขานี้ใช้คลังของตัวเอง หรือของสาขาอื่น (เติมตู้ดึงจากคลังนั้น · คืนก็โอนกลับ) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", marginBottom: 11, background: currentSourceId ? "#EEF6FF" : "#F8F9FB", border: `1px solid ${currentSourceId ? "#BFDBFE" : "#EEF0F3"}`, borderRadius: 9, padding: "8px 11px" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270", display: "inline-flex", alignItems: "center", gap: 5 }}><Warehouse size={13} /> คลังหลักที่ใช้:</span>
+        <select
+          aria-label="เลือกคลังหลักที่สาขานี้ใช้"
+          value={currentSourceId}
+          disabled={settingSource}
+          onChange={(e) => onSetSource(branch.id, e.target.value || null)}
+          style={{ fontSize: 12.5, fontWeight: 600, padding: "6px 10px", borderRadius: 8, border: "1px solid #D7DBE0", background: "#fff", color: "#1A1D21", outline: "none", cursor: settingSource ? "wait" : "pointer", maxWidth: 260 }}
+        >
+          <option value="">คลังของสาขานี้เอง</option>
+          {sourceChoices.map((b) => <option key={b.id} value={b.id}>คลังของ {b.name} ({b.code})</option>)}
+        </select>
+        {settingSource
+          ? <span style={{ fontSize: 11.5, color: "#9AA1AB" }}>กำลังบันทึก…</span>
+          : currentSourceId
+            ? <span style={{ fontSize: 11, color: "#2563EB" }}>เติมตู้จะดึงจากคลัง {currentSourceName} · คืนตุ๊กตาก็โอนกลับให้อัตโนมัติ</span>
+            : <span style={{ fontSize: 11, color: "#9AA1AB" }}>เลือกสาขาอื่นได้ ถ้าสาขานี้ใช้คลังร่วมกับที่อื่น</span>}
+        {sourceErr && <span style={{ fontSize: 11, color: "#B42318", width: "100%" }}>{sourceErr}</span>}
       </div>
 
       {/* รายการห้องในสาขานี้ */}

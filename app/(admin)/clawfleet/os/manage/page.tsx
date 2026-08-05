@@ -15,6 +15,7 @@ import { requireCfSession, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 import { getV2ManageBranches, getV2Branches } from "@/lib/clawfleet/queries";
 import { getCfMachinesForBranchAdmin, getCfStockOverview, getCfWarehousesForBranch, getCfBranchStockProducts, type CfWarehouseRow } from "@/lib/clawfleet/stock-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
+import { getStockSourceMap } from "@/lib/clawfleet/stock-source";
 import { ManageClient, type ManageBranchVM, type BranchStockVM, type MachineOption, type BranchOption, type WarehouseVM, type TransferProductVM } from "./manage-client";
 
 export const dynamic = "force-dynamic";
@@ -113,6 +114,14 @@ export default async function ManagePage() {
     // อ่านรูปไม่ได้ → thumbnail แสดง placeholder (ไม่ทำให้หน้าล้ม)
   }
 
+  // คลังหลักข้ามสาขา — map สาขา → คลังต้นทาง (สำหรับ dropdown "ใช้คลังของสาขาอื่น" ในส่วนคลัง)
+  let stockSourceByBranch: Record<string, string | null> = {};
+  try {
+    stockSourceByBranch = await getStockSourceMap(orgId);
+  } catch {
+    // graceful: ยังไม่ migrate → ทุกสาขาใช้คลังตัวเอง
+  }
+
   const branches: ManageBranchVM[] = manageBranches.map((b) => {
     const stock = stockByBranch.get(b.id) ?? null;
     return {
@@ -151,6 +160,7 @@ export default async function ManagePage() {
       branches={branches}
       machineOptions={machineOptions}
       branchOptions={branchOptions}
+      stockSourceByBranch={stockSourceByBranch}
       warehousesByBranch={warehousesByBranch}
       productsByBranch={productsByBranch}
       orgId={orgId} // ส่งต่อให้ PhotoCaptureButton (แนบรูปตู้ขึ้น R2)
