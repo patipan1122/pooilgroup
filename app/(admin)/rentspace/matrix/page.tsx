@@ -85,6 +85,28 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
         ช่องว่าง = ยังไม่ออกบิล (แสดงค่าเช่าพื้นฐานที่คาดไว้) · แตะที่ช่องเพื่อดูรายละเอียดบิล
       </p>
 
+      {/* legend สีสถานะบิล — CEO เคยงงว่าสีไหนคืออะไร (ไม่มีคำอธิบาย) · เล็ก 1 บรรทัด wrap ได้ · สี token เดิม */}
+      <div
+        className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]"
+        style={{ color: "var(--rs-text-2)" }}
+      >
+        <span style={{ color: "var(--rs-text-3)" }}>สีช่อง:</span>
+        {[
+          { label: "จ่ายครบ", tone: "ok" },
+          { label: "ออกบิลแล้ว รอจ่าย", tone: "info" },
+          { label: "จ่ายบางส่วน", tone: "pending" },
+          { label: "เกินกำหนด", tone: "danger" },
+        ].map(({ label, tone }) => (
+          <span key={tone} className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-[3px]"
+              style={{ background: `var(--rs-${tone}-soft)`, border: `1px solid var(--rs-${tone})` }}
+            />
+            {label}
+          </span>
+        ))}
+      </div>
+
       <MatrixGrid
         year={year}
         view={view}
