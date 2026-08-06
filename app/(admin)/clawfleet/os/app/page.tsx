@@ -11,8 +11,8 @@ import { userBranchIds, isCfBranchManager, cfHasAdminPower } from "@/lib/clawfle
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getSourceMainRoomNet } from "@/lib/clawfleet/stock-source";
-import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
+import { getSourceMainRoomNet, getCfRefillAvailability } from "@/lib/clawfleet/stock-source";
+import { getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -652,13 +652,6 @@ async function loadBigfeatureData(
   if (!orgId || branchIds.length === 0)
     return { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch };
 
-  // 🔀 คลังหลักข้ามสาขา — สาขาที่ตั้งคลังต้นทาง: "คลังตอนนี้" (badge picker เติม) = ของคลังต้นทาง (B) ห้องหลัก.
-  const srcRows = await prisma.branch.findMany({
-    where: { orgId, id: { in: branchIds } },
-    select: { id: true, stockSourceBranchId: true },
-  }).catch(() => [] as { id: string; stockSourceBranchId: string | null }[]);
-  const stockSourceOf = new Map(srcRows.map((r) => [r.id, r.stockSourceBranchId]));
-
   try {
     const awaiting = await getAwaitingSetupMachines();
     awaitingSetupIds = awaiting.map((m) => m.id);
@@ -669,21 +662,20 @@ async function loadBigfeatureData(
   await Promise.all(
     branchIds.map(async (bid) => {
       try {
-        const products = await getCfBranchStockProducts(orgId, bid);
-        // 🔀 redirect: ถ้าตั้งคลังต้นทาง → "คลัง" ของแต่ละ SKU = ของคลังต้นทาง (B) ห้องหลัก (ตรงกับ guard ตอนเติม)
-        const srcId = stockSourceOf.get(bid);
-        const srcNet = srcId ? await getSourceMainRoomNet(orgId, srcId, products.map((p) => p.id)) : null;
-        const whOf = (p: { id: string; warehouse: number }) => (srcNet ? (srcNet[p.id] ?? 0) : p.warehouse);
+        // 🎯 คลังหลักข้ามสาขา — ผ่าน choke-point เดียว getCfRefillAvailability:
+        //   ตั้ง redirect → รายการ SKU + warehouse = ของคลังต้นทาง (B) ห้องหลัก NET (ตรง guard เติม) · ไม่ตั้ง = ของสาขาเอง.
+        //   ทัวร์ 7-11 / เติมรอบ / baseline / เปลี่ยนตุ๊กตา ใช้ branchProducts ตัวนี้ → ได้ผลทุก picker อัตโนมัติ.
+        const products = await getCfRefillAvailability(orgId, bid);
         branchProducts[bid] = products.map((p) => ({
           id: p.id,
           name: p.name,
           sku: p.sku, // item 6 · โชว์ SKU บนรายการเติม/นับ
           imageUrl: p.imageUrl,
-          warehouse: whOf(p),
+          warehouse: p.warehouse,
           defaultPriceCoins: p.defaultPriceCoins, // item 9 · ราคาขาย (display) บนหน้าสินค้า
         }));
-        // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
-        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, whOf(p)]));
+        // F1 · ยอดคลังตอนนี้ต่อสินค้า → การ์ดรับโชว์ "N → N+รับ" (redirect = ของ B)
+        onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));
       } catch {
         branchProducts[bid] = [];
         onHandByBranch[bid] = {};

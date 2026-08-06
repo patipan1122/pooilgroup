@@ -9,7 +9,8 @@ import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
-import { getCfBranchStockProducts, getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
+import { getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
+import { getCfRefillAvailability } from "@/lib/clawfleet/stock-source";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -285,7 +286,8 @@ async function loadBigfeatureData(
   await Promise.all(
     branchIds.map(async (bid) => {
       try {
-        const products = await getCfBranchStockProducts(orgId, bid);
+        // 🎯 คลังหลักข้ามสาขา (LIFF) — ผ่าน choke-point เดียวเหมือนแอดมิน: ตั้ง redirect → ของคลังต้นทาง (B)
+        const products = await getCfRefillAvailability(orgId, bid);
         branchProducts[bid] = products.map((p) => ({
           id: p.id,
           name: p.name,
@@ -294,7 +296,7 @@ async function loadBigfeatureData(
           warehouse: p.warehouse,
           defaultPriceCoins: p.defaultPriceCoins, // item 9 · ราคาขาย (display) บนหน้าสินค้า
         }));
-        // F1 · ยอดคลังตอนนี้ต่อสินค้า (จาก ledger ผ่าน getCfBranchStockProducts.warehouse) → การ์ดรับโชว์ "N → N+รับ"
+        // F1 · ยอดคลังตอนนี้ต่อสินค้า → การ์ดรับโชว์ "N → N+รับ" (redirect = ของ B)
         onHandByBranch[bid] = Object.fromEntries(products.map((p) => [p.id, p.warehouse]));
       } catch {
         branchProducts[bid] = [];

@@ -5,7 +5,7 @@
 // ทุกอย่างอยู่ใน $transaction ของ caller (atomic กับการโหลด/คืน) — ต้นทุนพกจาก product (org-wide) เอง.
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getBranchMainWarehouseId } from "./stock-queries";
+import { getBranchMainWarehouseId, getCfBranchStockProducts, type CfStockProductRow } from "./stock-queries";
 
 type Tx = Prisma.TransactionClient;
 
@@ -68,6 +68,34 @@ export async function getSourceMainRoomNet(
   const out: Record<string, number> = {};
   for (const r of rows) out[r.productId] = r._sum.qty ?? 0;
   return out;
+}
+
+/**
+ * 🎯 CHOKE-POINT เดียว — สินค้า + ยอด "คลังที่ใช้เติมตู้ได้" ของสาขา (honor คลังหลักข้ามสาขา).
+ *   • ปกติ (ไม่ตั้ง redirect): ของสาขานั้นเอง (getCfBranchStockProducts).
+ *   • ตั้ง stockSourceBranchId=B: **รายการ SKU มาจากคลัง B** · warehouse = NET ห้องหลัก B (ตรงกับ guard ตอนเติม).
+ *   never-throw: error/ยังไม่ migrate → fallback เป็นของสาขาตัวเอง (ไม่ทำหน้าเติมพัง).
+ * ทุก picker เติมตู้ (เติมรอบ / ทัวร์ 7-11 / baseline / เปลี่ยนตุ๊กตา · แอดมิน + LIFF) ต้องเรียกตัวนี้
+ *   → ตั้งคลังข้ามสาขาครั้งเดียว ได้ผลทุกฟังก์ชันอัตโนมัติ (กันตกหล่นแบบแก้ทีละหน้า).
+ * ⚠️ อย่าเอาไปใช้กับ valuation / นับสต๊อกจริง / คลังกลาง — พวกนั้นต้องเป็น "ของสาขาตัวเอง" (getCfBranchStockProducts ตรง ๆ)
+ *   ไม่งั้นมูลค่าซ้ำ / ยอดนับเพี้ยน.
+ */
+export async function getCfRefillAvailability(orgId: string, branchId: string): Promise<CfStockProductRow[]> {
+  let srcId: string | null = null;
+  try {
+    const b = await prisma.branch.findFirst({ where: { id: branchId, orgId }, select: { stockSourceBranchId: true } });
+    srcId = b?.stockSourceBranchId ?? null;
+  } catch {
+    srcId = null;
+  }
+  if (!srcId) return getCfBranchStockProducts(orgId, branchId);
+  try {
+    const products = await getCfBranchStockProducts(orgId, srcId); // รายการ SKU + ชื่อ/รูป ของคลังต้นทาง B
+    const net = await getSourceMainRoomNet(orgId, srcId, products.map((p) => p.id)); // NET ห้องหลัก B (ตรง guard เติม)
+    return products.map((p) => ({ ...p, warehouse: net[p.id] ?? 0 }));
+  } catch {
+    return getCfBranchStockProducts(orgId, branchId); // graceful → ของสาขาตัวเอง (ไม่พัง)
+  }
 }
 
 export class CfSourceOverIssueError extends Error {}
