@@ -712,9 +712,9 @@ function BranchWarehousePanel({
 
       {/* คลังหลักข้ามสาขา — สาขานี้ใช้คลังของตัวเอง หรือของสาขาอื่น (เติมตู้ดึงจากคลังนั้น · คืนก็โอนกลับ) */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", marginBottom: 11, background: currentSourceId ? "#EEF6FF" : "#F8F9FB", border: `1px solid ${currentSourceId ? "#BFDBFE" : "#EEF0F3"}`, borderRadius: 9, padding: "8px 11px" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270", display: "inline-flex", alignItems: "center", gap: 5 }}><Warehouse size={13} /> คลังหลักที่ใช้:</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#5A6270", display: "inline-flex", alignItems: "center", gap: 5 }}><Warehouse size={13} /> เติมตู้ดึงของจาก:</span>
         <select
-          aria-label="เลือกคลังหลักที่สาขานี้ใช้"
+          aria-label="เลือกว่าเติมตู้สาขานี้ดึงของจากคลังไหน"
           value={currentSourceId}
           disabled={settingSource}
           onChange={(e) => onSetSource(branch.id, e.target.value || null)}
@@ -730,6 +730,13 @@ function BranchWarehousePanel({
             : <span style={{ fontSize: 11, color: "#9AA1AB" }}>เลือกสาขาอื่นได้ ถ้าสาขานี้ใช้คลังร่วมกับที่อื่น</span>}
         {sourceErr && <span style={{ fontSize: 11, color: "#B42318", width: "100%" }}>{sourceErr}</span>}
       </div>
+
+      {/* หมายเหตุเมื่อสาขานี้ดึงของจากคลังสาขาอื่น — กันสับสนกับ "⭐ คลังหลัก" (ห้องรับของ) ของสาขานี้เอง */}
+      {currentSourceId && warehouses.length > 0 && (
+        <div style={{ fontSize: 11, color: "#7A828C", background: "#FBFBFC", border: "1px solid #EEF0F3", borderRadius: 8, padding: "7px 11px", marginBottom: 9 }}>
+          ⭐ ห้องด้านล่างเป็น <b>คลังของสาขานี้เอง</b> — ตอนนี้ <b>ไม่ได้ใช้เติมตู้</b> (เติมดึงจากคลัง {currentSourceName} แทน) · ยังเก็บ/รับ/โอนของได้ปกติ
+        </div>
+      )}
 
       {/* รายการห้องในสาขานี้ */}
       {warehouses.length === 0 ? (
