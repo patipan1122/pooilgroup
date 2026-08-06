@@ -89,13 +89,21 @@ export async function getCfRefillAvailability(orgId: string, branchId: string): 
     srcId = null;
   }
   if (!srcId) return getCfBranchStockProducts(orgId, branchId);
+  // รายการ SKU + ชื่อ/รูป มาจากคลังต้นทาง B (ถ้าดึงไม่ได้จริง ๆ ค่อย fallback สาขาตัวเอง)
+  let products: CfStockProductRow[];
   try {
-    const products = await getCfBranchStockProducts(orgId, srcId); // รายการ SKU + ชื่อ/รูป ของคลังต้นทาง B
-    const net = await getSourceMainRoomNet(orgId, srcId, products.map((p) => p.id)); // NET ห้องหลัก B (ตรง guard เติม)
-    return products.map((p) => ({ ...p, warehouse: net[p.id] ?? 0 }));
+    products = await getCfBranchStockProducts(orgId, srcId);
   } catch {
-    return getCfBranchStockProducts(orgId, branchId); // graceful → ของสาขาตัวเอง (ไม่พัง)
+    return getCfBranchStockProducts(orgId, branchId);
   }
+  // warehouse = NET ห้องหลัก B (ตรง guard เติม) — ถ้าคำนวณ net ไม่ได้ ใช้ gross ของ B แทน (ยังโชว์รายการ · ไม่ทำ list ว่าง)
+  let net: Record<string, number> | null = null;
+  try {
+    net = await getSourceMainRoomNet(orgId, srcId, products.map((p) => p.id));
+  } catch {
+    net = null;
+  }
+  return products.map((p) => ({ ...p, warehouse: net ? (net[p.id] ?? 0) : p.warehouse }));
 }
 
 export class CfSourceOverIssueError extends Error {}
