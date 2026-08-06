@@ -5701,9 +5701,10 @@ function FlowScreen(props: {
   // เก็บใน f.remainBySku (ไม่ใช่ state ในจอ) → บันทึกค้าง/กลับมาทำต่อ แล้วเลขรายตัวยังตรงกับ left เสมอ.
   const inDolls = props.inMachineDolls;
   const remainBySku = f.remainBySku ?? {}; // เข็มขัดนิรภัยชั้น 2 (ชั้นแรก = normalizeForm ตอนโหลดร่าง/WIP)
-  // per-SKU ใช้ได้เมื่อ: ตู้มี SKU + (ยังไม่นับ → seed ให้ | เคยนับรายตัวไว้ → ของเดิม).
-  // ร่างเก่าที่นับไว้แล้วแต่ไม่มีรายตัว (ก่อนอัปเดตนี้) → ใช้ช่องนับรวมแทน · กันเลขรายตัวเก่าเขียนทับ left ที่นับจริง
-  const perSkuMode = inDolls.length > 0 && (f.left == null || Object.keys(remainBySku).length > 0);
+  // CEO 2026-08-06 · ตู้ที่มีตุ๊กตาแยกชนิดในระบบ = นับ "รายตัว" ทุกรอบ (ทั้ง 7-11 และเก็บธรรมดา)
+  //   เดิม gate `f.left == null` → โชว์รายตัวเฉพาะรอบแรกหลังตั้งค่าตู้ · พอเคยเก็บ/มีรอบค้าง left มีค่า → เด้งกลับช่องนับรวม
+  //   (นี่คือเหตุที่ตู้ 4303 (ยังไม่เคยเก็บ) โชว์รายตัว แต่ 0373 (เก็บมาแล้ว) โชว์ก้อนเดียว) → ปลดล็อกให้รายตัวเสมอ
+  const perSkuMode = inDolls.length > 0;
   // CEO 2026-07-20 · ไม่ prefill เลขที่คาดไว้อีกต่อไป → ช่องว่าง + placeholder "รอบก่อน N" จาง ๆ
   //   บังคับพนักงานนับ+พิมพ์จริง (กันกดผ่านโดยไม่นับ) · f.left = null จนกว่าจะกรอก → submit บล็อกเอง (isFilled)
   //   resume/WIP ที่เคยกรอกไว้ยังอยู่ครบ (remainBySku/f.left มีค่าแล้ว · ไม่ถูกล้าง)
@@ -5720,6 +5721,16 @@ function FlowScreen(props: {
     commitRemain({ ...remainBySku, [pid]: String(Math.max(0, cur + delta)) });
   };
   const remainSkuTotal = Object.values(remainBySku).reduce((a, v) => a + (parseInt(v || "0", 10) || 0), 0);
+  // CEO 2026-08-06 · MONEY-SAFETY กันเลขเพี้ยนตอนปลดล็อกรายตัวเสมอ:
+  //   ถ้าเข้าโหมดรายตัวแต่ยังไม่ได้นับ (remainBySku ว่าง) ทั้งที่มี left ค้างจากรอบ/ร่างเก่า (นับรวม) →
+  //   left ค้างนั้นจะถูก Σ รายตัวเขียนทับบางส่วนตอนพนักงานแตะช่องแรก (commitRemain) = ตุ๊กตาออก/stockAfter เพี้ยน.
+  //   → เคลียร์ left ให้ว่าง บังคับนับรายตัวจริง (จอ==ยอดที่ส่ง · ปุ่มส่งบล็อกจนกว่าจะนับ · ไม่ทับเลขที่นับรายตัวไว้แล้ว)
+  useEffect(() => {
+    if (perSkuMode && f.left != null && Object.keys(remainBySku).length === 0) {
+      props.setNum("left")("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine?.id, perSkuMode, f.left, f.remainBySku]);
   // ── ดีไซน์ใหม่ · คืนตุ๊กตา "รายตัว" เข้าชั้น ระหว่างรอบเก็บเงิน (ใช้ returnDollsToStock เดิม · money-safe) ──
   const [returningSku, setReturningSku] = useState<string | null>(null);
   const [returnedBySku, setReturnedBySku] = useState<Record<string, number>>({});
