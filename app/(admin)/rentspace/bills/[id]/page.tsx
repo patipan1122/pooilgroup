@@ -26,6 +26,7 @@ import {
   VoidDecisionButtons,
   EditBillButton,
   DeleteBillButton,
+  VoidPaymentButton,
 } from "./_components/bill-detail-actions";
 
 export const dynamic = "force-dynamic";
@@ -123,8 +124,32 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                         </a>
                       ) : null}
                     </div>
-                    <div className="text-[13.5px] font-semibold tabular-nums" style={{ color: "var(--rs-ok)" }}>
-                      {formatBaht(toNum(p.amountThb))}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div
+                        className="text-[13.5px] font-semibold tabular-nums"
+                        style={{
+                          color:
+                            p.status === "voided"
+                              ? "var(--rs-text-3)"
+                              : p.status === "pending"
+                                ? "var(--rs-pending)"
+                                : "var(--rs-ok)",
+                          textDecoration: p.status === "voided" ? "line-through" : undefined,
+                        }}
+                      >
+                        {formatBaht(toNum(p.amountThb))}
+                      </div>
+                      {p.status === "voided" ? (
+                        <span className="text-[11.5px]" style={{ color: "var(--rs-text-3)" }}>
+                          ถอนแล้ว
+                        </span>
+                      ) : p.status === "pending" ? (
+                        <span className="text-[11.5px]" style={{ color: "var(--rs-pending)" }}>
+                          รอตรวจสลิป
+                        </span>
+                      ) : canEdit && p.status === "confirmed" ? (
+                        <VoidPaymentButton paymentId={p.id} amount={toNum(p.amountThb)} />
+                      ) : null}
                     </div>
                   </div>
                 ))}

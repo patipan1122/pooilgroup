@@ -14,6 +14,7 @@ import {
   actSendBill,
   actEditBillItems,
   actDeleteBill,
+  actVoidPayment,
 } from "../../../_actions";
 import { formatBaht, thaiDateLong } from "@/lib/rentspace/format";
 
@@ -319,6 +320,38 @@ export function DiscountDecisionButtons({ discountId }: { discountId: string }) 
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
+  );
+}
+
+// ───────── ถอน/ยกเลิกการชำระรายรายการ (D1) ─────────
+export function VoidPaymentButton({ paymentId, amount }: { paymentId: string; amount: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+
+  function voidIt() {
+    if (!confirm(`ถอนรายการชำระ ${formatBaht(amount)} นี้ออกจากบิล?\nยอดที่จ่ายจะถูกหักคืน (ใช้เมื่อคีย์ผิด) · ระบบบันทึกผู้ทำรายการไว้`)) return;
+    const reason = window.prompt("เหตุผลที่ถอน (ไม่บังคับ) เช่น คีย์ยอดผิด") ?? undefined;
+    start(async () => {
+      try {
+        await actVoidPayment(paymentId, reason || undefined);
+        toast.success("ถอนรายการชำระแล้ว");
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ถอนรายการไม่สำเร็จ");
+      }
+    });
+  }
+
+  return (
+    <button
+      className="inline-flex items-center gap-1 rounded-lg px-2.5 h-9 text-[12.5px] shrink-0"
+      style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+      title="ถอนรายการชำระนี้ (คีย์ผิด)"
+      disabled={pending}
+      onClick={voidIt}
+    >
+      <X className="h-3.5 w-3.5" aria-hidden="true" /> ถอน
+    </button>
   );
 }
 

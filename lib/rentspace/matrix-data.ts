@@ -104,6 +104,9 @@ export async function rentMatrix(
         totalAmount: true,
         paidAmount: true,
         payments: {
+          // เฉพาะการชำระที่ยืนยันแล้ว — กัน matrix โชว์สลิปรอตรวจ (pending) / รายการที่ถอนแล้ว (voided)
+          // เป็น "ชำระ ✓" เขียว ทั้งที่ paidAmount ยังไม่นับ → ตัวเลขในหน้าเดียวขัดกัน
+          where: { status: "confirmed" },
           orderBy: { paidOn: "desc" },
           select: { paidOn: true, amountThb: true, method: true },
         },
