@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { assertCfAdmin, userBranchIds, isCfAdmin, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
+import { assertCfAdmin, userBranchIds, isCfBranchManager, isCfStaff, cfHasAdminPower } from "./role-guard";
 import { getBranchMainWarehouseId, getCfProductHistoryScoped, type CfProductHistory } from "./stock-queries";
 import { transferMainRoomBetweenBranchesTx } from "./stock-source";
 
@@ -35,9 +35,9 @@ const LOSS_APPROVAL_THRESHOLD_CENTS = 50000; // ฿500 — เกินนี้
 // "ยังไม่เขียน movement ปรับสต๊อกจริง" จนกว่าจะ APPROVED — เหมือน recordLoss ทุกประการ.
 const STOCKCOUNT_APPROVAL_CENTS = 50000; // ฿500 — มูลค่าปรับเกินนี้ต้องมีคนที่ 2 อนุมัติ
 
-/** ผู้ที่มีสิทธิ์ "สร้าง/อนุมัติ" การตัดของเสีย/ปรับยอดใหญ่ = ผจก.สาขา + แอดมิน (ไม่ใช่พนักงานเก็บของ) */
-function canWriteOff(role: Parameters<typeof isCfAdmin>[0]): boolean {
-  return isCfAdmin(role) || isCfBranchManager(role);
+/** ผู้ที่มีสิทธิ์ "สร้าง/อนุมัติ" การตัดของเสีย/ปรับยอดใหญ่ = ผจก.สาขา + แอดมิน (รวมแอดมินโปรแกรม cfHasAdminPower · CEO 2026-08-07 audit D3) · ไม่ใช่พนักงานเก็บของ */
+async function canWriteOff(session: Parameters<typeof cfHasAdminPower>[0]): Promise<boolean> {
+  return (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
 }
 
 /**
@@ -435,7 +435,7 @@ export async function submitStockCount(input: unknown): Promise<Result<{ countCo
   //   (2) พนักงานเก็บที่เป็น "สมาชิกจริงของสาขา" (isRealBranchStaff) → นับได้ แต่ "บังคับ" เป็น DRAFT (PENDING)
   //       เท่านั้น · ไม่มีทางสร้าง APPLIED · ไม่เขียน movement ใด ๆ จนกว่า reviewCfStockCount จะอนุมัติ.
   // ⚠️ ตรวจสมาชิกภาพจาก user_branch จริง — ไม่ใช้ userBranchIds()==='ALL' (viewer ก็ 'ALL' → เขียนไม่ได้).
-  const manager = canWriteOff(session.user.role);
+  const manager = (await canWriteOff(session));
   const staffDraft = !manager && (await isRealBranchStaff(session, branchId));
   if (!manager && !staffDraft) {
     return err("ไม่มีสิทธิ์บันทึกใบนับสต๊อกของสาขานี้");
@@ -739,7 +739,7 @@ export async function reviewCfStockCount(input: unknown): Promise<Result<{ count
   if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบนับสต๊อกนี้");
 
   // role-rank guard — เฉพาะผู้จัดการสาขา/แอดมิน (mirror reviewCfLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่อนุมัติ/ตีกลับใบนับสต๊อกได้");
   }
 
@@ -879,7 +879,7 @@ export async function recordLoss(input: unknown): Promise<Result<{ lossCode: str
 
   // D1 · role-rank guard — เฉพาะผู้จัดการสาขา/แอดมินเท่านั้นที่สร้างใบตัดของเสียได้
   // (พนักงานเก็บของ/viewer ตัดของออกจากคลังเองไม่ได้ · กันตัด/ซ่อนของหายลำพัง)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตัดของเสีย/ของหายได้");
   }
 
@@ -1048,7 +1048,7 @@ export async function reviewCfLoss(input: unknown): Promise<Result<{ lossId: str
   if (head.orgId !== orgId) return err("ไม่มีสิทธิ์เข้าถึงใบตัดของเสียนี้");
 
   // role-rank guard — เฉพาะผู้จัดการสาขา/แอดมิน (mirror reviewV2Session A1)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่อนุมัติ/ตีกลับใบตัดของเสียได้");
   }
 
@@ -1158,7 +1158,7 @@ export async function transferStock(input: unknown): Promise<Result<{ transferCo
 
   // role-rank guard (audit 2026-07 ultrareview) — โอนสต๊อก = ตัด/ย้ายสต๊อกจริง
   // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามเขียนสต๊อก · mirror recordLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่โอนสต๊อกระหว่างสาขาได้");
   }
 
@@ -1422,7 +1422,7 @@ export async function transferBetweenWarehouses(input: unknown): Promise<Result<
   const orgId = session.user.org_id;
 
   // role gate — โอนสต๊อก = ย้ายสต๊อกจริง → เฉพาะผู้จัดการสาขา/แอดมิน (mirror transferStock/recordLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่โอนสต๊อกได้");
   }
 
@@ -1537,7 +1537,7 @@ export async function withdrawStock(input: unknown): Promise<Result<{ balanceAft
 
   // role-rank guard (audit 2026-07 ultrareview) — เบิก/ตัดจ่าย = ตัดสต๊อกออกจริง
   // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามเขียนสต๊อก · mirror recordLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่เบิก/ตัดจ่ายสต๊อกได้");
   }
 
@@ -1608,7 +1608,7 @@ export async function returnDollsToStock(
 
   // สิทธิ์: พนักงานที่เป็นสมาชิกจริงของสาขานี้ หรือ ผจก.สาขา/แอดมิน
   const allowed =
-    canWriteOff(session.user.role) || (await isRealBranchStaff(session, machine.branchId));
+    (await canWriteOff(session)) || (await isRealBranchStaff(session, machine.branchId));
   if (!allowed) return err("ไม่มีสิทธิ์คืนตุ๊กตาของสาขานี้");
 
   // 🔀 คลังหลักข้ามสาขา — ถ้าตั้งไว้ ของที่คืนออกจากตู้ต้อง "โอนกลับคลังต้นทาง" (ชั้นสาขานี้ = ทางผ่าน net 0)
@@ -1737,7 +1737,7 @@ export async function refillDollsToMachine(
   if (!machine) return err("ไม่พบตู้ในองค์กรนี้");
 
   const allowed =
-    canWriteOff(session.user.role) || (await isRealBranchStaff(session, machine.branchId));
+    (await canWriteOff(session)) || (await isRealBranchStaff(session, machine.branchId));
   if (!allowed) return err("ไม่มีสิทธิ์เติมตุ๊กตาของสาขานี้");
 
   const product = await prisma.cfProduct.findFirst({
@@ -1915,7 +1915,7 @@ export async function createShipment(input: unknown): Promise<Result<{ deliveryI
 
   // role-rank guard (audit 2026-07 ultrareview) — สร้างใบกระจาย = เอกสารเคลื่อนสต๊อกคลังกลาง
   // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามสร้าง · mirror recordLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่สร้างใบกระจายสินค้าได้");
   }
 
@@ -2031,7 +2031,7 @@ export async function confirmShipmentReceived(
 
   // role-rank guard (audit 2026-07 ultrareview) — ตรวจรับ = รับของเข้าสต๊อก + ตั้งต้นทุน/ราคาขาย
   // → เฉพาะผู้จัดการสาขา/แอดมิน (viewer/staff ห้ามยืนยัน · mirror recordLoss)
-  if (!canWriteOff(session.user.role)) {
+  if (!(await canWriteOff(session))) {
     return err("เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยืนยันตรวจรับใบกระจายได้");
   }
 

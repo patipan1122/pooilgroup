@@ -15,7 +15,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { adminClient } from "@/lib/db/server";
 import { requireSession } from "@/lib/auth/session";
 import { zUUID } from "@/lib/zod-helpers";
-import { userBranchIds, assertCfAdmin, isCfAdmin, isCfBranchManager, cfHasAdminPower } from "./role-guard";
+import { userBranchIds, assertCfAdmin, isCfBranchManager, cfHasAdminPower } from "./role-guard";
 import { getClawfleetPolicy } from "./policy";
 import { computeBranchCloseCrossCheck } from "./branch-close";
 import {
@@ -153,7 +153,7 @@ export async function reviewV2Session(
   // A1 (audit 2026-07-01 · CEO เคาะ "แอดมิน+ผจก.อนุมัติ"): ตรวจ/อนุมัติ/ปิดล็อกรอบผิดปกติ
   // = ผู้จัดการสาขา + แอดมิน เท่านั้น (กันพนักงานเก็บเงิน/viewer อนุมัติกันเองปิดคดีโกง).
   // เดิมเช็คแค่ requireSession + สิทธิ์สาขา → staff ในสาขาเดียวกันกด approve ได้.
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตรวจ/อนุมัติรอบได้" };
   }
 
@@ -231,7 +231,7 @@ export async function reviewCellEvent(input: unknown): Promise<Result> {
   const orgId = session.user.org_id;
 
   // A1 · เฉพาะแอดมิน/ผจก.สาขา (mirror reviewV2Session)
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ตรวจ/ยืนยันได้" };
   }
 
@@ -989,7 +989,7 @@ export async function adminForceCloseSession(input: unknown): Promise<{ ok: true
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
   const orgId = session.user.org_id;
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ปิดรอบได้" };
   }
   const cf = await prisma.cfCollectionSession.findFirst({
@@ -1037,7 +1037,7 @@ export async function cancelEmptySession(input: unknown): Promise<{ ok: true } |
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const session = await requireSession();
   const orgId = session.user.org_id;
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่ยกเลิกรอบได้" };
   }
   const cf = await prisma.cfCollectionSession.findFirst({
@@ -2282,7 +2282,7 @@ export async function createDelivery(input: {
 
   // R5 (ultrareview 2026-07-01): สั่งของเข้าสาขา = การจัดการสต๊อก → เฉพาะผู้จัดการสาขา
   // + แอดมินเท่านั้น (เดิมไม่มี role guard → พนักงานเก็บเงิน/viewer สั่งของได้).
-  if (!isCfAdmin(session.user.role) && !isCfBranchManager(session.user.role)) {
+  if (!(await cfHasAdminPower(session)) && !isCfBranchManager(session.user.role)) {
     return { ok: false, error: "เฉพาะผู้จัดการสาขาหรือแอดมินเท่านั้นที่สั่งของได้" };
   }
 

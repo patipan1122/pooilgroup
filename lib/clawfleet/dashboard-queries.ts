@@ -29,6 +29,9 @@ const CLOSED_STATUSES: CfSessionStatus[] = [
   CfSessionStatus.LOCKED,
   CfSessionStatus.ANOMALY_REVIEW,
 ];
+// C2 fix (CEO 2026-08-07 "นับทุกรอบเหมือนเดิม") — กราฟ P&L รายวันต้องนับรอบ OPEN ด้วย ให้ตรงกับตัวเลข hero KPI
+//   (getBranchPnl [pnl-queries] ใช้ VISIBLE_STATUSES = +OPEN · เดิม getDailyPnl ตัด OPEN → 2 จอบน dashboard เดียวกันไม่ตรงกัน)
+const VISIBLE_STATUSES: CfSessionStatus[] = [...CLOSED_STATUSES, CfSessionStatus.OPEN];
 
 // =============================================================
 // per-machine status — ใช้ render dots จริงในหน้า Branches
@@ -168,7 +171,7 @@ export async function getDailyPnl(days = 7): Promise<DailyPnlPoint[]> {
       machineId: { in: machineIds },
       eventType: "COLLECTION",
       collectedAt: { gte: from },
-      session: { status: { in: CLOSED_STATUSES } },
+      session: { status: { in: VISIBLE_STATUSES } },
     },
     select: { machineId: true, cashCountedCents: true, dollMeterBefore: true, dollMeterAfter: true, collectedAt: true },
   });

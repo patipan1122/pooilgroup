@@ -12,7 +12,7 @@
 import { getV2AllRounds, getV2Branches, orgHasAnyRounds, getDaySummaries, type DaySummary } from "@/lib/clawfleet/queries";
 import { CollectionsClient, type CollectionRow, type BranchOption } from "./collections-client";
 import { requireSession } from "@/lib/auth/session";
-import { isCfAdmin, isCfBranchManager } from "@/lib/clawfleet/role-guard";
+import { isCfBranchManager, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +95,9 @@ export default async function CollectionsPage({
   let canEdit = false;
   try {
     const s = await requireSession();
-    canEdit = isCfAdmin(s.user.role) || isCfBranchManager(s.user.role);
+    // CEO 2026-08-07 (audit D2): แอดมินโปรแกรม (program_admin ที่ได้สิทธิ์ ClawFleet) ต้องเห็นปุ่ม "แก้เลข" ด้วย
+    //   เดิม role-only → ซ่อนจากแอดมินโปรแกรม แต่แก้จากแอปพนักงานได้ (ไม่สม่ำเสมอ) · ใช้ cfHasAdminPower ให้ตรงหลังบ้าน
+    canEdit = (await cfHasAdminPower(s)) || isCfBranchManager(s.user.role);
   } catch {
     // ไม่มี session/สิทธิ์ → ดูอย่างเดียว
   }
