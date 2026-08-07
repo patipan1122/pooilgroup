@@ -2683,6 +2683,7 @@ export function PeriodsTab({
               <th className="num rc-tcol">ควรได้</th>
               <th className="num">เก็บได้</th>
               <th className="num rc-tcol">ฝาก</th>
+              <th>สลิป</th>
               <th className="num">ต่าง</th>
               <th className="num">สะสม</th>
               <th></th>
@@ -2813,19 +2814,21 @@ export function PeriodsTab({
                   </td>
                   <td className="num mono rc-tcol">
                     {p.deposit != null ? (
-                      <>
-                        {fmtN(p.deposit)}
-                        {p.slip && (
-                          <Paperclip
-                            size={10}
-                            aria-hidden="true"
-                            style={{ marginLeft: 4, opacity: 0.6 }}
-                          />
-                        )}
-                      </>
+                      fmtN(p.deposit)
                     ) : (
                       <span className="text-muted">—</span>
                     )}
+                  </td>
+                  {/* CEO 2026-08-07 · คอลัมน์ "สลิป" กดเปิดรูปสลิปฝากเงินรอบนั้นเต็มจอ
+                      reuse SlipBadge เดิม (แท็บ Ledger ใช้อยู่) — มีรูป→ปุ่มคลิก · placeholder/
+                      ไม่มีรูป→เทา "สลิป" · ไม่มีฝาก→"—". p.slip อาจเป็น literal "slip" (ไม่ใช่ URL);
+                      SlipBadge.isImageUrl กันไว้แล้ว. */}
+                  <td>
+                    <SlipBadge
+                      url={p.slip}
+                      missing={false}
+                      caption={`สลิปฝากเงิน · รอบ ${p.from.slice(5)} → ${p.to.slice(5)}`}
+                    />
                   </td>
                   <td
                     className={"num mono " + diffClass}

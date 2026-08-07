@@ -2351,7 +2351,11 @@ export async function getReconcilePeriods(args: {
     }
   }
 
-  return wins.reverse().slice(0, 12);
+  // CEO 2026-08-07 · เดิม cap 12 รอบล่าสุด (slice(0,12)) → CEO ต้องการเลื่อนดูย้อนหลัง
+  // "ทั้งหมด" ในหน้าต่างข้อมูล (days:365). loop ด้านบนคำนวณ posSum/cashSum/deposit/diff/
+  // cumDrift ครบทุกรอบอยู่แล้ว — เดิมแค่ตัดทิ้งตอน return. เอา cap ออก = โชว์ทุกรอบที่
+  // คำนวณไว้แล้ว · ตัวเลขทุกคอลัมน์ (รวม "สะสม") ไม่ขยับ · 0 cost หลังบ้านเพิ่ม.
+  return wins.reverse();
 }
 
 // ----------------------------------------------------------------
