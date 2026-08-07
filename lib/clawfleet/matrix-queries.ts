@@ -37,10 +37,10 @@ export type MatrixDayCell = {
   baseline: boolean;
   /** มีรอบที่ยัง "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม → client ติดธงเตือน */
   anomaly: boolean;
-  /** CEO 2026-08-02 · ช่องนี้มีเงินขาด/เกิน (ธง cash รายตู้) → พื้นแดง (ถ้ายังไม่ตรวจ) */
-  moneyOff: boolean;
-  /** เงินขาด/เกิน + ตรวจ/ยืนยันครบทุกใบแล้ว → พื้นฟ้าอ่อน (ไม่ปล่อยแดงค้าง) */
-  moneyReviewed: boolean;
+  /** CEO 2026-08-06 · ช่องนี้มีธงเตือน "ชนิดใด ๆ" (เงิน/ตุ๊กตา/มิเตอร์/outlier) → รอตรวจ พื้นแดง (ถ้ายังไม่ยืนยัน) · เดิมจำกัดเฉพาะธงเงิน */
+  flagged: boolean;
+  /** มีธงเตือน + หัวหน้ายืนยันตรวจครบทุกใบแล้ว → พื้นฟ้าอ่อน (ตรวจแล้ว) */
+  flagReviewed: boolean;
   /** วันนี้มี "รอบเก็บเงิน" (COLLECTION) ไหม → ใช้ "นับตู้ที่เก็บ" ในคอลัมน์รวม/วัน (ตั้งต้นไม่นับ) */
   collected: boolean;
   /** CEO 2026-08-02 · วันนี้มีแต่ "เติมตุ๊กตานอกรอบเก็บ" ล้วน (ไม่มีเก็บเงิน/ตั้งต้น) → โผล่เป็นช่องพิเศษ 🧸 */
@@ -77,8 +77,8 @@ type RawRow = {
   has_baseline: boolean | null;
   has_collection: boolean | null;
   anomaly: boolean | null;
-  money_off: boolean | null;
-  money_off_unreviewed: boolean | null;
+  flagged: boolean | null;
+  flag_unreviewed: boolean | null;
   events: bigint | number | null;
 };
 
@@ -165,9 +165,10 @@ export async function getMatrixData(
       bool_or(e.event_type = 'INITIAL') AS has_baseline,
       bool_or(e.event_type = 'COLLECTION') AS has_collection,
       bool_or(s.status = 'ANOMALY_REVIEW') AS anomaly,
-      -- CEO 2026-08-02 · เงินขาด/เกินรายตู้ (ธง cash M2/M3/M4/M6) → ช่องแดง · ตรวจแล้ว (reviewed_at) → ฟ้า
-      bool_or(e.anomaly_flags && ARRAY['M2_CASH_SHORT_MINOR','M3_CASH_SHORT_MAJOR','M4_CASH_OVER','M6_CASH_OVER_MAJOR']) AS money_off,
-      bool_or((e.anomaly_flags && ARRAY['M2_CASH_SHORT_MINOR','M3_CASH_SHORT_MAJOR','M4_CASH_OVER','M6_CASH_OVER_MAJOR']) AND e.reviewed_at IS NULL) AS money_off_unreviewed,
+      -- CEO 2026-08-06 · ทุกช่องที่ระบบเตือน (ธงผิดปกติชนิดใด ๆ: เงิน/ตุ๊กตา/มิเตอร์/outlier หรือมีเหตุผลเงินขาด)
+      --   → รอตรวจ (แดง) · หัวหน้ายืนยันตรวจครบทุกใบ (reviewed_at) → ตรวจแล้ว (ฟ้า) · เดิมจำกัดเฉพาะธงเงิน M2/M3/M4/M6
+      bool_or(cardinality(e.anomaly_flags) > 0 OR e.short_reason IS NOT NULL) AS flagged,
+      bool_or((cardinality(e.anomaly_flags) > 0 OR e.short_reason IS NOT NULL) AND e.reviewed_at IS NULL) AS flag_unreviewed,
       COUNT(*)::bigint AS events
     FROM cf_collection_events e
     JOIN cf_collection_sessions s ON s.id = e.session_id
@@ -200,8 +201,8 @@ export async function getMatrixData(
       baseline: r.has_baseline === true,
       collected: r.has_collection === true,
       anomaly: r.anomaly === true,
-      moneyOff: r.money_off === true,
-      moneyReviewed: r.money_off === true && r.money_off_unreviewed !== true,
+      flagged: r.flagged === true,
+      flagReviewed: r.flagged === true && r.flag_unreviewed !== true,
       refillOnly: false,
       refillDolls: 0,
       hasData: true,
@@ -243,7 +244,7 @@ export async function getMatrixData(
         cash: 0, dolls: 0, cost: null,
         swapped: true,
         baseline: false, collected: false, anomaly: false,
-        moneyOff: false, moneyReviewed: false,
+        flagged: false, flagReviewed: false,
         refillOnly: true, refillDolls: qty,
         hasData: true,
       });

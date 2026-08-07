@@ -15,9 +15,6 @@ import { MeterEditModal } from "./meter-edit";
 import { reviewCellEvent } from "@/lib/clawfleet/actions";
 import type { RawReadingRow, RawReadingPhoto, CellRefill } from "@/lib/clawfleet/raw-readings-queries";
 
-/** ธงเงินขาด/เกินรายตู้ (matrix ช่องแดง→ฟ้า) — ตรงกับ SQL money_off */
-const CASH_OFF_FLAGS = ["M2_CASH_SHORT_MINOR", "M3_CASH_SHORT_MAJOR", "M4_CASH_OVER", "M6_CASH_OVER_MAJOR"];
-
 const nfmt = (n: number | null | undefined): string => (n == null ? "—" : n.toLocaleString("en-US"));
 
 function Delta({ before, after }: { before: number | null; after: number | null }) {
@@ -53,13 +50,14 @@ function EventCard({
   canEdit,
   onView,
   onEdit,
-  onConfirmed,
+  onReviewed,
 }: {
   row: RawReadingRow;
   canEdit: boolean;
   onView: (p: RawReadingPhoto) => void;
   onEdit: (r: RawReadingRow) => void;
-  onConfirmed: () => void;
+  /** เรียกหลัง "ยืนยันตรวจ/ยกเลิก" สำเร็จ — parent อัปเดตสีช่องทันที (ไม่ refresh ทั้งหน้า) */
+  onReviewed: (reviewed: boolean) => void;
 }) {
   const isInit = row.kind === "INITIAL";
   const hasFlag = row.anomalyFlags.length > 0 || !!row.shortReason;
@@ -68,8 +66,6 @@ function EventCard({
   const coinDelta = row.coinBefore != null && row.coinDigital != null ? Math.max(0, row.coinDigital - row.coinBefore) : null;
   const coinExpected = !isInit && coinDelta != null ? coinDelta * 10 : null;
   const cashDiff = coinExpected != null ? row.cashBaht - coinExpected : 0; // + เกิน · − ขาด
-  // CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ปุ่มตรวจ/ยืนยัน (แดง→ฟ้า) ตรงกับสีช่องใน matrix
-  const moneyOff = row.anomalyFlags.some((f) => CASH_OFF_FLAGS.includes(f));
   const reviewed = !!row.reviewedAt;
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);
@@ -78,7 +74,7 @@ function EventCard({
     setReviewBusy(true);
     const r = await reviewCellEvent({ eventId: row.eventId, confirmed: !reviewed });
     setReviewBusy(false);
-    if (r.ok) onConfirmed();
+    if (r.ok) onReviewed(!reviewed);
     else setReviewErr(r.error);
   }
   // แก้ได้ = มีสิทธิ์ + ยังไม่ฝาก + รอบปิดรอตรวจแล้ว (ทั้งรอบเก็บและตั้งต้น · server re-check อีกชั้น)
@@ -95,9 +91,15 @@ function EventCard({
         <span style={{ fontSize: 12, color: "#5A6270" }}>{row.timeLabel} น.</span>
         <span style={{ fontSize: 12, color: "#8A90A0" }}>· {row.collectedByName}</span>
         {hasFlag && (
-          <span title={[row.shortReason, ...row.anomalyFlags].filter(Boolean).join(" · ")} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, color: "#B45309", cursor: "help" }}>
-            <AlertTriangle size={13} /> รอตรวจ
-          </span>
+          reviewed ? (
+            <span title={[row.shortReason, ...row.anomalyFlags].filter(Boolean).join(" · ")} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, color: "#0B69C7", cursor: "help" }}>
+              <Check size={13} /> ตรวจแล้ว
+            </span>
+          ) : (
+            <span title={[row.shortReason, ...row.anomalyFlags].filter(Boolean).join(" · ")} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, color: "#B45309", cursor: "help" }}>
+              <AlertTriangle size={13} /> รอตรวจ
+            </span>
+          )
         )}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 14, fontWeight: 800, color: "#15803D" }}>{bahtN(row.cashBaht)}</span>
@@ -109,8 +111,8 @@ function EventCard({
             <Pencil size={12} /> แก้
           </button>
         )}
-        {/* CEO 2026-08-02 · ตรวจ/ยืนยันรายตู้ (เฉพาะช่องเงินขาด/เกิน) — แดง→ฟ้า · กดซ้ำ = ยกเลิก */}
-        {canEdit && moneyOff && (
+        {/* CEO 2026-08-06 · ตรวจ/ยืนยันรายตู้ — ทุกช่องที่ระบบเตือน (เงิน/ตุ๊กตา/มิเตอร์/outlier) แดง→ฟ้า · กดซ้ำ = ยกเลิก */}
+        {canEdit && hasFlag && (
           <button
             onClick={toggleReview}
             disabled={reviewBusy}
@@ -189,6 +191,7 @@ export function CellDetailModal({
   refills = [],
   canEdit,
   onSaved,
+  onReviewed,
 }: {
   open: boolean;
   onClose: () => void;
@@ -199,8 +202,10 @@ export function CellDetailModal({
   /** เติมตุ๊กตานอกรอบเก็บวันนั้น (ถ้ามี) — โชว์ในช่อง 🧸 refill-only */
   refills?: CellRefill[];
   canEdit: boolean;
-  /** เรียกหลังแก้สำเร็จ — parent โหลดช่องใหม่ + router.refresh */
+  /** เรียกหลัง "แก้เลข" สำเร็จ — parent โหลดช่องใหม่ + router.refresh (ตัวเลขเงินเปลี่ยนจริง) */
   onSaved: () => void;
+  /** เรียกหลัง "ยืนยันตรวจ/ยกเลิก" สำเร็จ — parent อัปเดตสีช่องทันทีแบบ optimistic (ไม่ refresh ทั้งหน้า · CEO 2026-08-06) */
+  onReviewed: (reviewed: boolean) => void;
 }) {
   const [lightbox, setLightbox] = useState<RawReadingPhoto | null>(null);
   const [editRow, setEditRow] = useState<RawReadingRow | null>(null);
@@ -219,7 +224,7 @@ export function CellDetailModal({
           ) : (
             <>
               {rows.map((r) => (
-                <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} onConfirmed={onSaved} />
+                <EventCard key={r.eventId} row={r} canEdit={canEdit} onView={setLightbox} onEdit={setEditRow} onReviewed={onReviewed} />
               ))}
               {/* เติมตุ๊กตานอกรอบเก็บ (standalone refill) — ไม่มีเงิน · โชว์ว่าเติมอะไร กี่ตัว ใครเติม + รูป */}
               {refills.length > 0 && (

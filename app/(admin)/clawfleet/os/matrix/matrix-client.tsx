@@ -37,9 +37,9 @@ export type MatrixSerialDay = {
   collected: boolean;
   /** มีรอบ "รอตรวจ" (ANOMALY_REVIEW) ในวันนั้นไหม */
   anomaly: boolean;
-  /** CEO 2026-08-02 · เงินขาด/เกินรายตู้ → ช่องแดง (ถ้ายังไม่ตรวจ) · ตรวจ/ยืนยันแล้ว → ฟ้าอ่อน */
-  moneyOff?: boolean;
-  moneyReviewed?: boolean;
+  /** CEO 2026-08-06 · ช่องมีธงเตือนชนิดใด ๆ (เงิน/ตุ๊กตา/มิเตอร์/outlier) → รอตรวจ พื้นแดง (ถ้ายังไม่ยืนยัน) · ตรวจแล้ว → ฟ้าอ่อน */
+  flagged?: boolean;
+  flagReviewed?: boolean;
   /** CEO 2026-08-02 · วันนี้มีแต่ "เติมตุ๊กตานอกรอบเก็บ" ล้วน (ไม่มีเก็บเงิน/ตั้งต้น) → ช่องพิเศษ 🧸 */
   refillOnly?: boolean;
   /** จำนวนตุ๊กตาที่เติมนอกรอบวันนั้น (รวม) */
@@ -224,6 +224,11 @@ export function MatrixClient({
     key: { machineId: string; iso: string } | null;
   }>({ open: false, loading: false, rows: [], refills: [], title: "", sub: "", key: null });
 
+  // CEO 2026-08-06 · จำ "ช่องที่เพิ่งยืนยันตรวจ/ยกเลิก" ในจอ (optimistic) → เปลี่ยนสีทันที ไม่ต้อง refresh ทั้งหน้า
+  //   key = `${machineId}:${iso}` · true = เพิ่งตรวจ (ฟ้า) · false = เพิ่งยกเลิก (แดง) · ไม่มี key = ใช้ค่า server
+  const [reviewOverride, setReviewOverride] = useState<Record<string, boolean>>({});
+  const cellKey = (machineId: string, iso: string) => `${machineId}:${iso}`;
+
   const branch = rows.find((b) => b.code === branchCode) ?? rows[0];
   const machineCount = branch?.machines ?? 8;
 
@@ -385,9 +390,14 @@ export function MatrixClient({
           primary = costVal;
           cellRows = [{ v: rv.cost == null ? "—" : bahtN(rv.cost), style: { fontWeight: rv.swapped ? 700 : 600, color: cb.co } }];
         }
-        // CEO 2026-08-02 · เงินขาด/เกิน = ช่องแดง · พอ admin ตรวจ/ยืนยัน = ฟ้าอ่อน (ไม่ปล่อยแดงค้าง) — เด่นกว่า heatmap
-        if (rv.moneyReviewed) bg = "#E5F2FD";        // ฟ้าอ่อน = ตรวจแล้ว
-        else if (rv.moneyOff) bg = "#FCE4E4";        // แดงอ่อน = เงินไม่ตรง ยังไม่ตรวจ
+        // CEO 2026-08-06 · ช่องมีธงเตือน (เงิน/ตุ๊กตา/มิเตอร์/outlier) = รอตรวจ แดง · หัวหน้ายืนยันตรวจ = ฟ้าอ่อน
+        //   optimistic: เพิ่งกดยืนยัน/ยกเลิกในจอ → ใช้ค่านั้นก่อน (ไม่ต้อง refresh ทั้งหน้า · CEO บ่นจอเด้ง)
+        const ov = gm.machineId ? reviewOverride[`${gm.machineId}:${iso}`] : undefined;
+        const flagReviewedNow = ov ?? !!rv.flagReviewed;
+        const needsReview = !!rv.flagged && !flagReviewedNow; // มีเรื่องต้องตรวจ · ยังไม่ยืนยัน
+        const reviewedOk = !!rv.flagged && flagReviewedNow;   // ตรวจ/ยืนยันแล้ว
+        if (reviewedOk) bg = "#E5F2FD";        // ฟ้าอ่อน = ตรวจแล้ว
+        else if (needsReview) bg = "#FCE4E4";  // แดงอ่อน = มีเรื่องต้องตรวจ ยังไม่ยืนยัน
         daySum += primary;
         dayCnt += 1;
         return {
@@ -399,10 +409,10 @@ export function MatrixClient({
           style: {
             ...CELL_PAD,
             background: bg,
-            // เงินขาด/เกินเด่นสุด → แดง(ยังไม่ตรวจ)/ฟ้า(ตรวจแล้ว) · ไม่งั้น รอตรวจ→ส้ม · refill→คราม
-            ...(rv.moneyOff && !rv.moneyReviewed
+            // รอตรวจเด่นสุด → แดง(ยังไม่ยืนยัน)/ฟ้า(ตรวจแล้ว) · ไม่งั้น รอบผิดปกติ→ส้ม · refill→คราม
+            ...(needsReview
               ? { boxShadow: "inset 0 0 0 2px #E5484D" }
-              : rv.moneyReviewed
+              : reviewedOk
                 ? { boxShadow: "inset 0 0 0 2px #3B9EED" }
                 : rv.anomaly
                   ? { boxShadow: "inset 0 0 0 2px #F97316" }
@@ -452,7 +462,7 @@ export function MatrixClient({
     });
 
     return { dayRows, footer, grandCash, grandColl };
-  }, [grid, metric]);
+  }, [grid, metric, reviewOverride]);
 
   /* drill รายตู้ */
   const drill = useMemo(() => {
@@ -814,9 +824,18 @@ export function MatrixClient({
           <span style={{ fontSize: 9, fontWeight: 700, color: "#B45309" }}>ตต</span>
           = มียอดตั้งต้น
         </span>
+        {/* CEO 2026-08-06 · รอตรวจ (แดง) = มีเรื่องต้องเช็ค (เงิน/ของ/มิเตอร์) → กดยืนยันในช่อง → ตรวจแล้ว (ฟ้า) */}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#FCE4E4", border: "2px solid #E5484D", display: "inline-block" }} />
+          รอตรวจ (เงิน/ของ/มิเตอร์)
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 13, height: 13, borderRadius: 4, background: "#E5F2FD", border: "2px solid #3B9EED", display: "inline-block" }} />
+          ตรวจแล้ว
+        </span>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#F97316", display: "inline-block" }} />
-          รอตรวจ
+          รอบผิดปกติ (ยังไม่ปิด)
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 15, height: 13, borderRadius: 4, background: "#EEF0FE", border: "1.5px solid #4F46E5", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>🧸</span>
@@ -1106,8 +1125,18 @@ export function MatrixClient({
         refills={cell.refills}
         canEdit={canEditRaw}
         onSaved={() => {
+          // แก้เลขมิเตอร์ = ตัวเลขเงินเปลี่ยนจริง → ต้องให้ server คิดใหม่ทั้งหน้า
           if (cell.key) loadCell(cell.key.machineId, cell.key.iso);
           router.refresh();
+        }}
+        onReviewed={(reviewed) => {
+          // CEO 2026-08-06 · ยืนยันตรวจ/ยกเลิก = แค่เปลี่ยน "สถานะตรวจ" (สี) → อัปเดตในจอทันที ไม่ refresh ทั้งหน้า
+          //   (source of truth ยังเป็น server · revalidatePath ทำไว้แล้ว → โหลดใหม่ค่าจะ sync เอง)
+          if (cell.key) {
+            const k = cellKey(cell.key.machineId, cell.key.iso);
+            setReviewOverride((prev) => ({ ...prev, [k]: reviewed }));
+            loadCell(cell.key.machineId, cell.key.iso); // โหลดช่องเดียว (เบา) → ปุ่ม/ป้ายในป๊อปอัปอัปเดตตาม server
+          }
         }}
       />
 
