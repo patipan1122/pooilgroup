@@ -15,10 +15,26 @@ import {
   TH_MONTHS,
   type HotelShiftRow,
 } from "@/lib/cashhub/hotel";
+import {
+  maybeSyncHotelSheet,
+  type HotelSyncDisplay,
+} from "@/lib/cashhub/hotel-sheet-sync";
 import Link from "next/link";
 import { HotelMonthView } from "./hotel-month-view";
 
 export const dynamic = "force-dynamic";
+
+/** เวลาไทยแบบสั้น "6 ส.ค. 20:41" สำหรับป้าย "อัปเดตล่าสุด" */
+function fmtBkkTime(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 type SP = Promise<{ month?: string; branchId?: string }>;
 
@@ -76,8 +92,19 @@ export default async function HotelSalesPage({
     rooms_pos: number | null;
     revenue_pos: number | null;
   } | null = null;
+  let syncStatus: HotelSyncDisplay | null = null;
 
   if (branchId) {
+    // ── auto-sync จากชีต Google (ถ้าตั้งค่าไว้ + ผ่าน throttle) ก่อนอ่าน DB ──
+    // ล้มเหลว = ไม่พังหน้า (fallback ไปข้อมูลล่าสุดใน DB) · เงินไม่เกี่ยว
+    syncStatus = await maybeSyncHotelSheet({
+      admin,
+      branchId,
+      year: yy,
+      month: mm,
+      userId: session.user.id,
+    });
+
     const { data } = await admin
       .from("cashhub_hotel_daily")
       .select("*")
@@ -117,8 +144,28 @@ export default async function HotelSalesPage({
             ⬆ นำเข้าจากชีต
           </a>
         </div>
-        <p className="text-sm text-zinc-500 mt-1">
-          อ่านอย่างเดียว · ชีต Google เป็นเจ้าของข้อมูล · แก้ในชีตแล้วนำเข้าใหม่
+        <p className="text-sm mt-1">
+          {syncStatus ? (
+            syncStatus.status === "error" ? (
+              <span className="text-red-600">
+                🔴 ดึงชีตอัตโนมัติไม่ได้ — แสดงข้อมูลล่าสุดที่มี ({syncStatus.message})
+              </span>
+            ) : syncStatus.status === "warn" ? (
+              <span className="text-amber-600">
+                🟠 ซิงค์จากชีต Google อัตโนมัติ · มีข้อควรระวัง · อัปเดต{" "}
+                {fmtBkkTime(syncStatus.syncedAt)}
+              </span>
+            ) : (
+              <span className="text-emerald-600">
+                🟢 ซิงค์จากชีต Google อัตโนมัติ · อัปเดตล่าสุด{" "}
+                {fmtBkkTime(syncStatus.syncedAt)}
+              </span>
+            )
+          ) : (
+            <span className="text-zinc-500">
+              อ่านอย่างเดียว · ชีต Google เป็นเจ้าของข้อมูล · แก้ในชีตแล้วนำเข้าใหม่
+            </span>
+          )}
         </p>
       </header>
 
