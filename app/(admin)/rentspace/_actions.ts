@@ -700,15 +700,30 @@ export async function actSaveContract(input: {
   activate?: boolean;
 }) {
   const session = await gateAdmin();
+  // C1 anti-IDOR: project/unit/tenant ที่รับจาก client ต้องเป็นของ org เดียวกับ session
+  // (FK เช็คแค่ว่ามีอยู่ ไม่เช็คเจ้าของ → เดิมแอดมิน org A สร้างสัญญา + เขียนสถานะห้อง org B ได้)
+  await Promise.all([
+    ownGuard(prisma.rentalProject.findFirst({ where: { id: input.projectId, orgId: session.user.org_id }, select: { id: true } }), "โครงการ"),
+    ownGuard(prisma.rentalUnit.findFirst({ where: { id: input.unitId, orgId: session.user.org_id }, select: { id: true } }), "ห้อง"),
+    ownGuard(prisma.rentalTenant.findFirst({ where: { id: input.tenantId, orgId: session.user.org_id }, select: { id: true } }), "ผู้เช่า"),
+  ]);
+  // templateId ก็ต้องเป็นของ org เดียวกัน (กันชี้ไปแม่แบบ org อื่น → เนื้อสัญญา org อื่นโผล่บนใบ/ลิงก์เซ็น)
+  if (input.templateId) {
+    await ownGuard(
+      prisma.rentalContractTemplate.findFirst({ where: { id: input.templateId, orgId: session.user.org_id }, select: { id: true } }),
+      "แม่แบบสัญญา",
+    );
+  }
   // แก้สัญญา + เปลี่ยนห้อง → จำห้องเดิมไว้ เพื่อปล่อยให้ว่างท้ายฟังก์ชัน (กันห้องเก่าค้าง "เช่าอยู่")
-  const prevUnitId = input.id
-    ? (
-        await prisma.rentalContract.findFirst({
-          where: { id: input.id, orgId: session.user.org_id },
-          select: { unitId: true },
-        })
-      )?.unitId ?? null
+  const prev = input.id
+    ? await prisma.rentalContract.findFirst({
+        where: { id: input.id, orgId: session.user.org_id },
+        select: { unitId: true },
+      })
     : null;
+  // ตอนแก้ (input.id) สัญญาต้องเป็นของ org เดียวกัน — ไม่พบ = ไม่มีสิทธิ์
+  if (input.id && !prev) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  const prevUnitId = prev?.unitId ?? null;
   const data = {
     projectId: input.projectId,
     unitId: input.unitId,
@@ -995,34 +1010,68 @@ export async function actRecordDeposit(input: {
     "สัญญา",
   );
   if (!(input.amountThb > 0)) throw new Error("จำนวนเงินต้องมากกว่า 0");
-  // กันยอดติดลบ: คืน/หัก/ริบ เกินเงินประกันที่ถือครองจริงไม่ได้ (server = source of truth)
-  if (input.kind !== "collect") {
-    const rows = await prisma.rentalDeposit.findMany({
-      where: { contractId: input.contractId, orgId: session.user.org_id },
-      select: { kind: true, amountThb: true },
-    });
-    const balance = rows.reduce(
-      (s, r) => s + (r.kind === "collect" ? toNum(r.amountThb) : -toNum(r.amountThb)),
-      0,
-    );
-    if (input.amountThb > balance + 0.001) {
-      throw new Error(`คืน/หัก/ริบได้ไม่เกินเงินประกันคงเหลือ (${balance.toLocaleString("th-TH")} บาท)`);
-    }
-  }
-  const d = await prisma.rentalDeposit.create({
-    data: {
-      id: randomUUID(),
-      orgId: session.user.org_id,
+  // A4: dedup กดซ้ำ (double-click / retry / หลายแท็บ) — contract+kind+amount+วันเดียวกัน ภายใน 90 วิ
+  const dupSince = new Date(Date.now() - 90_000);
+  const dupDep = await prisma.rentalDeposit.findFirst({
+    where: {
       contractId: input.contractId,
+      orgId: session.user.org_id,
       kind: input.kind,
       amountThb: input.amountThb,
       occurredOn: new Date(input.occurredOn),
-      method: input.method ?? null,
-      slipUrl: input.slipUrl ?? null,
-      note: input.note ?? null,
-      createdBy: session.user.id,
+      createdAt: { gte: dupSince },
     },
+    select: { id: true },
   });
+  if (dupDep) return { id: dupDep.id, deduped: true };
+  // A3: balance-check (คืน/หัก/ริบ ห้ามเกินคงเหลือ) + create อยู่ใน transaction เดียว (Serializable)
+  // กัน over-refund จากการกดคู่ขนาน 2 แท็บ (เดิม read-balance แล้ว create แยก = TOCTOU race)
+  const runDepositTx = () =>
+    prisma.$transaction(
+      async (tx) => {
+      if (input.kind !== "collect") {
+        const rows = await tx.rentalDeposit.findMany({
+          where: { contractId: input.contractId, orgId: session.user.org_id },
+          select: { kind: true, amountThb: true },
+        });
+        const balance = rows.reduce(
+          (s, r) => s + (r.kind === "collect" ? toNum(r.amountThb) : -toNum(r.amountThb)),
+          0,
+        );
+        if (input.amountThb > balance + 0.001) {
+          throw new Error(`คืน/หัก/ริบได้ไม่เกินเงินประกันคงเหลือ (${balance.toLocaleString("th-TH")} บาท)`);
+        }
+      }
+      return tx.rentalDeposit.create({
+        data: {
+          id: randomUUID(),
+          orgId: session.user.org_id,
+          contractId: input.contractId,
+          kind: input.kind,
+          amountThb: input.amountThb,
+          occurredOn: new Date(input.occurredOn),
+          method: input.method ?? null,
+          slipUrl: input.slipUrl ?? null,
+          note: input.note ?? null,
+          createdBy: session.user.id,
+        },
+      });
+    },
+    { isolationLevel: "Serializable" },
+    );
+  // เรียก tx + retry ถ้าเจอ serialization failure (P2034 · 2 คำขอพร้อมกันของสัญญาเดียว) แล้วค่อยแจ้งไทย
+  let d: Awaited<ReturnType<typeof runDepositTx>>;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      d = await runDepositTx();
+      break;
+    } catch (e) {
+      const code = (e as { code?: string })?.code;
+      if (code === "P2034" && attempt < 3) continue;
+      if (code === "P2034") throw new Error("มีการทำรายการเงินประกันพร้อมกัน กรุณากดใหม่อีกครั้ง");
+      throw e;
+    }
+  }
   await logAudit(session, "RENTSPACE_DEPOSIT_RECORDED", "rental_deposit", d.id, { kind: input.kind });
   revalidatePath(`/rentspace/contracts/${input.contractId}`);
   return { id: d.id };
@@ -1220,12 +1269,66 @@ export async function actSaveMeterReading(input: {
       readAt: new Date(),
     },
   });
+  // B2: ถ้ามีบิลของงวดนี้ที่ยังไม่ยกเลิก (เข้าถึงได้เฉพาะ super_admin ที่ปลดล็อกด้านบน) →
+  //     sync รายการค่าน้ำ/ไฟในบิล + คอลัมน์ denormalized + recompute (กันบิลกับมิเตอร์ไม่ตรง)
+  const billForPeriod = await prisma.rentalBill.findFirst({
+    where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" } },
+    select: {
+      id: true,
+      contract: {
+        select: {
+          vatOnElectric: true,
+          vatOnWater: true,
+          project: { select: { vatOnElectric: true, vatOnWater: true } },
+        },
+      },
+      items: { where: { kind: input.kind }, select: { id: true } },
+    },
+  });
+  if (billForPeriod) {
+    const label = input.kind === "electric" ? "ค่าไฟฟ้า" : "ค่าน้ำประปา";
+    const cfg = billForPeriod.contract;
+    const vatable =
+      input.kind === "electric"
+        ? (cfg.vatOnElectric ?? cfg.project.vatOnElectric)
+        : (cfg.vatOnWater ?? cfg.project.vatOnWater);
+    const existingItem = billForPeriod.items[0];
+    await prisma.$transaction(async (tx) => {
+      if (existingItem) {
+        await tx.rentalBillItem.update({
+          where: { id: existingItem.id },
+          data: { qty: usage, unitPrice: toNum(rate), amount: amountThb, label, vatable },
+        });
+      } else if (amountThb > 0) {
+        await tx.rentalBillItem.create({
+          data: {
+            id: randomUUID(),
+            billId: billForPeriod.id,
+            kind: input.kind,
+            label,
+            qty: usage,
+            unitPrice: toNum(rate),
+            amount: amountThb,
+            vatable,
+            sort: input.kind === "electric" ? 2 : 3,
+          },
+        });
+      }
+      await tx.rentalBill.update({
+        where: { id: billForPeriod.id },
+        data: input.kind === "electric" ? { electricAmount: amountThb } : { waterAmount: amountThb },
+      });
+      await recomputeBillTotals(billForPeriod.id, tx);
+    });
+  }
   await logAudit(session, "RENTSPACE_METER_READ", "rental_meter_reading", reading.id, {
     unitId: input.unitId,
     kind: input.kind,
     usage,
+    billResynced: !!billForPeriod,
   });
   revalidatePath("/rentspace/meters");
+  revalidatePath("/rentspace/bills");
   return { id: reading.id, usage, amountThb };
 }
 
@@ -1442,6 +1545,15 @@ export async function actGenerateMonthlyBills(projectId: string, period: string)
 export async function actGenerateBillsForUnits(projectId: string, period: string, unitIds: string[]) {
   const session = await gateAdmin();
   if (!unitIds?.length) throw new Error("ยังไม่ได้เลือกห้องที่จะออกบิล");
+  // C2: เช็คสวิตช์ "อนุญาตออกบิล" แบบเดียวกับ actGenerateMonthlyBills (เดิมช่องนี้หลุด)
+  if (!isSuperAdmin(session.user.role)) {
+    const proj = await prisma.rentalProject.findFirst({
+      where: { id: projectId, orgId: session.user.org_id },
+      select: { billIssueUnlocked: true },
+    });
+    if (!proj?.billIssueUnlocked)
+      throw new Error("ยังไม่ได้เปิดสิทธิ์ออกบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
+  }
   const contracts = await prisma.rentalContract.findMany({
     where: {
       orgId: session.user.org_id,
@@ -1730,31 +1842,78 @@ export async function actRecordPayment(input: {
     select: { id: true },
   });
   if (dup) return { ok: true, deduped: true };
-  await prisma.rentalPayment.create({
-    data: {
-      id: randomUUID(),
-      orgId: session.user.org_id,
-      billId: bill.id,
-      contractId: bill.contractId,
-      amountThb: input.amountThb,
-      paidOn: new Date(input.paidOn),
-      method: input.method ?? "transfer",
-      reference: input.reference ?? null,
-      slipUrl: input.slipUrl ?? null,
-      note: input.note ?? null,
-      receivedBy: session.user.id,
-    },
+  // A1: create payment + increment paidAmount + recompute อยู่ใน transaction เดียว
+  // (เดิมแยก 3 round-trip → process ตายกลางทาง = มีแถวเงินแต่ paidAmount ไม่ขยับ = drift ถาวร)
+  await prisma.$transaction(async (tx) => {
+    await tx.rentalPayment.create({
+      data: {
+        id: randomUUID(),
+        orgId: session.user.org_id,
+        billId: bill.id,
+        contractId: bill.contractId,
+        amountThb: input.amountThb,
+        paidOn: new Date(input.paidOn),
+        method: input.method ?? "transfer",
+        reference: input.reference ?? null,
+        slipUrl: input.slipUrl ?? null,
+        note: input.note ?? null,
+        receivedBy: session.user.id,
+      },
+    });
+    // atomic increment avoids lost-update race on concurrent / double-click payments
+    await tx.rentalBill.update({
+      where: { id: bill.id },
+      data: { paidAmount: { increment: input.amountThb } },
+    });
+    await recomputeBillTotals(bill.id, tx);
   });
-  // atomic increment avoids lost-update race on concurrent / double-click payments
-  await prisma.rentalBill.update({
-    where: { id: bill.id },
-    data: { paidAmount: { increment: input.amountThb } },
-  });
-  await recomputeBillTotals(bill.id);
   await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", bill.id, { amount: input.amountThb });
   revalidatePath("/rentspace/payments");
   revalidatePath("/rentspace/bills");
   revalidatePath(`/rentspace/bills/${bill.id}`);
+  revalidatePath("/rentspace");
+  return { ok: true };
+}
+
+/**
+ * D1: ถอน/ยกเลิกการชำระรายรายการ (แก้เคสคีย์ยอดผิด — เดิม paidAmount เป็น increment-only
+ * แก้ไม่ได้เลยนอกจากลบบิลทั้งใบ). ถ้าเป็นรายการที่นับยอดแล้ว (confirmed) → decrement paidAmount
+ * แล้ว recompute · ทั้งหมดใน tx เดียว · เก็บ audit ว่าใครถอน (maker-checker ผ่าน audit log).
+ */
+export async function actVoidPayment(paymentId: string, reason?: string): Promise<{ ok: true }> {
+  const session = await gateAdmin();
+  const pay = await prisma.rentalPayment.findFirst({
+    where: { id: paymentId, orgId: session.user.org_id },
+    select: { id: true, billId: true, amountThb: true, status: true },
+  });
+  if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
+  if (pay.status === "voided") throw new Error("รายการนี้ถูกถอนไปแล้ว");
+  await prisma.$transaction(async (tx) => {
+    // ถอนเฉพาะที่ยังนับยอดอยู่ (confirmed) → mark voided + decrement paidAmount (atomic กัน race กับ recompute)
+    const flipped = await tx.rentalPayment.updateMany({
+      where: { id: pay.id, orgId: session.user.org_id, status: "confirmed" },
+      data: { status: "voided", reviewedBy: session.user.id, reviewedAt: new Date(), reviewNote: reason ?? null },
+    });
+    if (flipped.count > 0) {
+      await tx.rentalBill.update({ where: { id: pay.billId }, data: { paidAmount: { decrement: pay.amountThb } } });
+    } else {
+      // pending/rejected = ยังไม่บวก paidAmount → แค่ mark voided ไม่แตะยอด
+      await tx.rentalPayment.updateMany({
+        where: { id: pay.id, orgId: session.user.org_id, status: { in: ["pending", "rejected"] } },
+        data: { status: "voided", reviewedBy: session.user.id, reviewedAt: new Date(), reviewNote: reason ?? null },
+      });
+    }
+    await recomputeBillTotals(pay.billId, tx);
+  });
+  await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", pay.billId, {
+    voided: true,
+    paymentId: pay.id,
+    amount: toNum(pay.amountThb),
+    reason: reason ?? null,
+  });
+  revalidatePath("/rentspace/payments");
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${pay.billId}`);
   revalidatePath("/rentspace");
   return { ok: true };
 }
@@ -1807,23 +1966,26 @@ export async function actRecordCombinedPayment(input: {
     const pay = round2(Math.min(remaining, leftover));
     leftover = round2(leftover - pay);
     billsPaid++;
-    await prisma.rentalPayment.create({
-      data: {
-        id: randomUUID(),
-        orgId: session.user.org_id,
-        billId: b.id,
-        contractId: b.contractId,
-        amountThb: pay,
-        paidOn: new Date(input.paidOn),
-        method: input.method ?? "transfer",
-        reference: input.reference ?? null,
-        slipUrl: input.slipUrl ?? null,
-        note: input.note ? `${input.note} (ชำระรวมหลายห้อง)` : "ชำระรวมหลายห้อง",
-        receivedBy: session.user.id,
-      },
+    // A2: แต่ละบิล create+increment+recompute อยู่ใน tx เดียว (กัน paidAmount drift ต่อบิล)
+    await prisma.$transaction(async (tx) => {
+      await tx.rentalPayment.create({
+        data: {
+          id: randomUUID(),
+          orgId: session.user.org_id,
+          billId: b.id,
+          contractId: b.contractId,
+          amountThb: pay,
+          paidOn: new Date(input.paidOn),
+          method: input.method ?? "transfer",
+          reference: input.reference ?? null,
+          slipUrl: input.slipUrl ?? null,
+          note: input.note ? `${input.note} (ชำระรวมหลายห้อง)` : "ชำระรวมหลายห้อง",
+          receivedBy: session.user.id,
+        },
+      });
+      await tx.rentalBill.update({ where: { id: b.id }, data: { paidAmount: { increment: pay } } });
+      await recomputeBillTotals(b.id, tx);
     });
-    await prisma.rentalBill.update({ where: { id: b.id }, data: { paidAmount: { increment: pay } } });
-    await recomputeBillTotals(b.id);
   }
   if (billsPaid === 0) throw new Error("ผู้เช่ารายนี้ไม่มีบิลค้างชำระ");
   await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_tenant", input.tenantId, { amount, billsPaid, leftover });
@@ -1996,14 +2158,17 @@ export async function actConfirmTenantPayment(paymentId: string): Promise<{ ok: 
   if (!bill) throw new Error("ไม่พบบิล");
   if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว");
 
-  const flipped = await prisma.rentalPayment.updateMany({
-    where: { id: pay.id, orgId: session.user.org_id, status: "pending" },
-    data: { status: "confirmed", receivedBy: session.user.id, reviewedBy: session.user.id, reviewedAt: new Date() },
+  // flip + increment + recompute ใน tx เดียว: ถ้าพังหลัง flip → rollback คืน pending กดยืนยันใหม่ได้
+  // (เดิมแยก → crash หลัง flip = payment confirmed แต่ paidAmount ไม่ขยับ + กดซ้ำไม่ได้ = จ่ายแล้วค้างตลอดกาล)
+  await prisma.$transaction(async (tx) => {
+    const flipped = await tx.rentalPayment.updateMany({
+      where: { id: pay.id, orgId: session.user.org_id, status: "pending" },
+      data: { status: "confirmed", receivedBy: session.user.id, reviewedBy: session.user.id, reviewedAt: new Date() },
+    });
+    if (flipped.count === 0) throw new Error("รายการนี้ตรวจไปแล้ว"); // มีคนยืนยันไปก่อนแล้ว (กัน race)
+    await tx.rentalBill.update({ where: { id: bill.id }, data: { paidAmount: { increment: pay.amountThb } } });
+    await recomputeBillTotals(bill.id, tx);
   });
-  if (flipped.count === 0) throw new Error("รายการนี้ตรวจไปแล้ว"); // มีคนยืนยันไปก่อนแล้ว (กัน race)
-
-  await prisma.rentalBill.update({ where: { id: bill.id }, data: { paidAmount: { increment: pay.amountThb } } });
-  await recomputeBillTotals(bill.id);
   await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", bill.id, { confirmTenantSlip: true, amount: toNum(pay.amountThb) });
   revalidatePath("/rentspace/payments");
   revalidatePath("/rentspace/bills");
@@ -2308,16 +2473,19 @@ export async function actDeleteContract(contractId: string) {
       unitId: true,
       status: true,
       project: { select: { contractDeleteUnlocked: true } },
-      _count: { select: { bills: true } },
+      _count: { select: { bills: true, deposits: true } },
     },
   });
   if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
   if (!c.project.contractDeleteUnlocked && !isSuperAdmin(session.user.role)) {
     throw new Error('การลบสัญญาถูกปิดอยู่ — เปิดสิทธิ์ "ลบสัญญา" ในหน้าตั้งค่าก่อน');
   }
-  // กันลบประวัติเงิน: สัญญาที่มีบิลแล้วให้ "ยกเลิกสัญญา" แทน (บิลผูก onDelete cascade)
+  // กันลบประวัติเงิน: สัญญาที่มีบิล "หรือมัดจำ" ให้ "ยกเลิกสัญญา" แทน (G1 · onDelete cascade จะลบมัดจำหายเงียบ)
   if (c._count.bills > 0) {
     throw new Error("สัญญานี้มีบิลผูกอยู่แล้ว ลบไม่ได้ — ใช้ “ยกเลิกสัญญา” แทนเพื่อเก็บประวัติ");
+  }
+  if (c._count.deposits > 0) {
+    throw new Error("สัญญานี้มีประวัติเงินประกัน (มัดจำ) อยู่ ลบไม่ได้ — ใช้ “ยกเลิกสัญญา” แทนเพื่อเก็บประวัติ");
   }
   await prisma.rentalContract.delete({ where: { id: contractId } });
   if (c.status === "active") {

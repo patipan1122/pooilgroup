@@ -277,8 +277,22 @@ export async function POST(req: Request) {
         email: email || null,
         lineId: lineId || null,
       };
+      // H1: re-import — ตอน update เก็บค่าเดิมไว้ถ้าคอลัมน์ในไฟล์ว่าง (ไม่ทับข้อมูลผู้เช่าเดิมด้วย null)
+      const tenantUpdate = {
+        ...(person.prefix ? { prefix: person.prefix } : {}),
+        ...(person.firstName ? { firstName: person.firstName } : {}),
+        ...(person.lastName ? { lastName: person.lastName } : {}),
+        ...(bizName ? { bizName } : {}),
+        ...(phones.length ? { phones } : {}),
+        ...(idCardNo ? { idCardNo } : {}),
+        ...(birthDate ? { birthDate } : {}),
+        ...(nationality ? { nationality } : {}),
+        ...(address ? { address } : {}),
+        ...(email ? { email } : {}),
+        ...(lineId ? { lineId } : {}),
+      };
       const tenant = existingTenant
-        ? await prisma.rentalTenant.update({ where: { id: existingTenant.id }, data: tenantData })
+        ? await prisma.rentalTenant.update({ where: { id: existingTenant.id }, data: tenantUpdate })
         : await prisma.rentalTenant.create({
             data: { id: randomUUID(), orgId, ...tenantData },
           });
@@ -291,6 +305,9 @@ export async function POST(req: Request) {
       //    ใช้ advisory lock ต่อห้อง (pg_advisory_xact_lock) ครอบ "เช็ค active → สร้างสัญญา"
       //    ให้เป็น atomic — ถ้าอีก request กำลังสร้างห้องเดียวกันจะรอจน lock ปล่อย แล้วเห็น active=1 จึงข้าม
       //    (auto-release ตอน transaction จบ ไม่ต้องมี migration / unique constraint)
+      // H2 (revert): เดิมตั้งใจกันสัญญาค่าเช่า 0 แต่ import ไม่มีคอลัมน์ค่าเช่า → baseRentThb=0 เสมอ
+      //   การ gate rent>0 จะทำให้ห้องใหม่ไม่ถูกสร้างสัญญาเลย (regression) → คงพฤติกรรมเดิมไว้ก่อน
+      //   ⚠️ TODO: รอ CEO เคาะ (audit Q7) — import ควรสร้างสัญญา active อัตโนมัติไหม + เพิ่มคอลัมน์ค่าเช่า
       if (startDate) {
         const created = await prisma.$transaction(async (tx) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`rentspace:contract:${unit.id}`}))`;

@@ -235,6 +235,19 @@ export default function MeterBoard({
       toast.error("กรอก 'เลขมิเตอร์เดิมก่อนเปลี่ยน' ก่อนบันทึก");
       return false;
     }
+    // E1: กัน typo เลขมิเตอร์ (เช่น พิมพ์ 12,000 แทน 1,300) — หน่วยเดือนนี้เกิน 3 เท่าของเดือนก่อน = ให้ยืนยันก่อน
+    if (!side.isReset && side.prevUsage != null && side.prevUsage > 0) {
+      const liveUsage = previewUsage(side.prev, curr, side.isReset, oldFinal);
+      if (liveUsage != null && liveUsage > side.prevUsage * 3) {
+        const label = kind === "electric" ? "ค่าไฟ" : "ค่าน้ำ";
+        const ok = window.confirm(
+          `หน่วย${label}เดือนนี้ = ${liveUsage.toLocaleString("th-TH")} หน่วย ` +
+            `(เดือนก่อน ${side.prevUsage.toLocaleString("th-TH")} หน่วย · สูงผิดปกติ) — ` +
+            `พิมพ์เลขถูกไหม? กด "ตกลง" เพื่อบันทึกต่อ`,
+        );
+        if (!ok) return false;
+      }
+    }
 
     setSide(unitId, kind, { saving: true });
     try {
