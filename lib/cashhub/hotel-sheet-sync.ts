@@ -5,8 +5,9 @@
 // วิธี (ใช้ของเดิมทั้งหมด · Ladder):
 //   ดึงชีตทั้งเล่มเป็น xlsx (endpoint export ของ Google · ชีตเปิด public → ไม่ต้อง credential)
 //   → เลือกแท็บของเดือน (ชื่อมีตัวย่อเดือนไทย เช่น "เม.ย.69") → parseHotelSheet เดิม
-//   → upsert ลง cashhub_hotel_daily แบบ "เหมือนการนำเข้ามือเป๊ะ" (source='xlsx_import',
-//     onConflict branch/วันที่/กะ) เพื่อกันสร้างแถวซ้ำ/ทับแถว IV ไม่ว่า schema prod จะเป็นแบบไหน.
+//   → upsert ลง cashhub_hotel_daily ด้วย source='sheet_import' + onConflict 4 ช่อง
+//     (branch,date,shift,source) = unique key จริงบน prod → อัปเดตทับแถวชีตเดิม ไม่สร้างซ้ำ
+//     และไม่แตะแถว IV (source='trcloud_iv' คนละ key).
 //
 // เงินไม่เกี่ยว: แค่สะท้อน ชีต → DB → หน้าจอ. reconcile/บัญชี ยังทำมือแยกเหมือนเดิม.
 // ฟังก์ชันนี้ "ไม่ throw" — คืน status เสมอ เพื่อให้หน้าเว็บไม่พังถ้าชีตล่ม/คอลัมน์เพี้ยน.
@@ -180,15 +181,16 @@ export async function syncHotelSheet(opts: {
     staff_name: r.staff_name,
     note: r.note,
     over_short: r.over_short,
-    source: "xlsx_import",
+    source: "sheet_import",
     imported_by: userId ?? null,
     imported_at: now,
     updated_at: now,
   }));
 
+  // unique key จริงบน prod = (branch,date,shift,source) → อัปเดตทับแถว sheet_import เดิม
   const { error } = await admin
     .from("cashhub_hotel_daily")
-    .upsert(payloads, { onConflict: "branch_id,sales_date,shift" });
+    .upsert(payloads, { onConflict: "branch_id,sales_date,shift,source" });
   if (error) return fail(`บันทึกลงระบบไม่สำเร็จ: ${error.message}`);
 
   const hasWarn = warnings.length > 0;

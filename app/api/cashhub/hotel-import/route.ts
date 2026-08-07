@@ -159,15 +159,17 @@ export async function POST(req: NextRequest) {
     staff_name: r.staff_name,
     note: r.note,
     over_short: r.over_short,
-    source: "xlsx_import",
+    source: "sheet_import",
     imported_by: session.user.id,
     imported_at: now,
     updated_at: now,
   }));
 
+  // unique key จริงบน prod = (branch,date,shift,source) · source='sheet_import' ตรงกับ auto-sync
+  // (ของเดิม onConflict 3 ช่อง + source='xlsx_import' = ไม่ match constraint → เคย error/สร้างซ้ำ)
   const { error } = await admin
     .from("cashhub_hotel_daily")
-    .upsert(payloads, { onConflict: "branch_id,sales_date,shift" });
+    .upsert(payloads, { onConflict: "branch_id,sales_date,shift,source" });
   if (error)
     return NextResponse.json(
       { error: `บันทึกไม่สำเร็จ: ${error.message}` },
