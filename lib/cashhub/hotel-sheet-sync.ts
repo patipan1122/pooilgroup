@@ -372,3 +372,58 @@ export async function loadHotelCardSummary(
     syncStatus,
   };
 }
+
+/**
+ * Cron รายวัน (ตัวสำรอง): ดึงชีตของทุกสาขาที่ผูกไว้ (auto_sync) → เดือนปัจจุบัน → ลงฐาน
+ * บังคับดึง (ข้าม throttle) เพราะเป็นการันตีรายวันแม้ไม่มีใครเปิดหน้า. ไม่ throw รายตัว.
+ */
+export async function runHotelDailyCron(
+  admin: AdminDb,
+): Promise<{
+  synced: number;
+  results: Array<{ branchId: string; status: HotelSyncStatus; message: string }>;
+}> {
+  const { data: cfgs } = await admin
+    .from("cashhub_hotel_sheet_config")
+    .select("branch_id, org_id, company_id, sheet_id, auto_sync");
+  const configs = (cfgs ?? []) as Array<{
+    branch_id: string;
+    org_id: string;
+    company_id: string;
+    sheet_id: string;
+    auto_sync: boolean;
+  }>;
+
+  const { year, month } = currentBkkYearMonth();
+  const results: Array<{
+    branchId: string;
+    status: HotelSyncStatus;
+    message: string;
+  }> = [];
+
+  for (const c of configs) {
+    if (c.auto_sync === false) continue;
+    const res = await syncHotelSheet({
+      admin,
+      orgId: c.org_id,
+      companyId: c.company_id,
+      branchId: c.branch_id,
+      sheetId: c.sheet_id,
+      year,
+      month,
+    });
+    const nowIso = new Date().toISOString();
+    await admin
+      .from("cashhub_hotel_sheet_config")
+      .update({
+        last_synced_at: nowIso,
+        last_status: res.status,
+        last_message: res.message,
+        updated_at: nowIso,
+      })
+      .eq("branch_id", c.branch_id);
+    results.push({ branchId: c.branch_id, status: res.status, message: res.message });
+  }
+
+  return { synced: results.length, results };
+}
