@@ -37,6 +37,7 @@ import {
 import { cn } from "@/lib/utils/cn";
 import type { DashboardData } from "@/lib/cashhub/aggregator";
 import type { ExecutiveMatrix } from "@/lib/cashhub/executive-matrix";
+import type { HotelCardSummary } from "@/lib/cashhub/hotel-sheet-sync";
 
 interface Props {
   userName: string;
@@ -44,6 +45,7 @@ interface Props {
   monthLabel: string;
   data: DashboardData;
   executiveMatrix: ExecutiveMatrix;
+  hotelSummary?: HotelCardSummary | null;
 }
 
 export function DashboardV1View({
@@ -52,6 +54,7 @@ export function DashboardV1View({
   monthLabel,
   data,
   executiveMatrix,
+  hotelSummary,
 }: Props) {
   void isAdmin;
   const today = thaiDateLong(new Date());
@@ -263,6 +266,58 @@ export function DashboardV1View({
             </Link>
           </HeroKpiCard>
         </div>
+
+        {/* Hotel summary card — ยอดขายโรงแรม (ซิงค์จากชีต Google) รวมในภาพรวม */}
+        {hotelSummary && (
+          <Link
+            href={hotelSummary.monthHref}
+            className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-[var(--ch-border)] bg-white p-4 hover:bg-zinc-50 transition"
+          >
+            <span className="font-bold text-[var(--ch-navy)]">
+              🏨 โรงแรม {hotelSummary.branchName}
+            </span>
+            <span className="text-xs text-[var(--ch-text-3)]">
+              {hotelSummary.monthLabel}
+            </span>
+            <span className="hidden sm:block sm:flex-1" />
+            <span className="flex flex-col">
+              <span className="text-[11px] text-[var(--ch-text-3)]">
+                ยอดขายเดือน
+              </span>
+              <span className="ch-tnum font-bold text-[var(--ch-navy)]">
+                {formatBahtCompact(hotelSummary.totalSales)}
+              </span>
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[11px] text-[var(--ch-text-3)]">
+                เงินสดส่ง
+              </span>
+              <span className="ch-tnum font-bold text-[var(--ch-navy)]">
+                {formatBahtCompact(hotelSummary.cashDeposited)}
+              </span>
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[11px] text-[var(--ch-text-3)]">
+                QR เข้าบัญชี
+              </span>
+              <span className="ch-tnum font-bold text-[var(--ch-navy)]">
+                {formatBahtCompact(hotelSummary.qrBanked)}
+              </span>
+            </span>
+            {hotelSummary.qrFlagCount > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-sm font-semibold text-red-700">
+                🔴 QR ไม่เข้า {hotelSummary.qrFlagCount} วัน
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-sm font-semibold text-emerald-700">
+                🟢 QR ครบ
+              </span>
+            )}
+            <span className="text-sm font-semibold text-[var(--ch-brand)]">
+              เปิด →
+            </span>
+          </Link>
+        )}
 
         {/* Section 00 — Executive matrix — design dashboard.jsx:159-280 */}
         <div className="mt-8 mb-3">

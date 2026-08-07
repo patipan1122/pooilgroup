@@ -14,7 +14,12 @@
 import * as XLSX from "xlsx";
 import type { adminClient } from "@/lib/db/server";
 import { parseHotelSheet, type HotelParsedRow } from "@/lib/cashhub/hotel-parse";
-import { TH_MONTHS } from "@/lib/cashhub/hotel";
+import {
+  TH_MONTHS,
+  groupByDay,
+  summarize,
+  type HotelShiftRow,
+} from "@/lib/cashhub/hotel";
 
 /** กันดึงชีตถี่เกิน — อย่างน้อย 90 วินาที/รอบ (throttle ทำที่หน้า page ด้วย last_synced_at) */
 export const HOTEL_SYNC_TTL_MS = 90_000;
@@ -107,10 +112,17 @@ export async function syncHotelSheet(opts: {
     if (wb.SheetNames.length === 0) return fail("ชีตว่าง (ไม่มีแท็บ)");
     const picked = pickSheetName(wb.SheetNames, month);
     sheetName = picked.name;
+    // ⚠️ ไม่มีแท็บของเดือนนี้ → ห้าม fallback ไปแท็บแรก (จะเขียนข้อมูลผิดเดือน)
+    //    คืน warn เฉย ๆ ไม่ upsert — ปลอดภัยกว่า
     if (!picked.matched)
-      warnings.push(
-        `ไม่พบแท็บเดือน "${TH_MONTHS[month - 1]}" ในชีต — ใช้แท็บ "${sheetName}" แทน (ตรวจชื่อแท็บ)`,
-      );
+      return {
+        ok: false,
+        status: "warn",
+        message: `ยังไม่มีแท็บเดือน "${TH_MONTHS[month - 1]}" ในชีต — ยังไม่ซิงค์ (กันเขียนผิดเดือน)`,
+        rows: 0,
+        warnings: [`ไม่พบแท็บเดือน "${TH_MONTHS[month - 1]}" ในชีต`],
+        sheetName,
+      };
     const ws = wb.Sheets[sheetName];
     matrix = XLSX.utils.sheet_to_json(ws, {
       header: 1,
@@ -264,4 +276,99 @@ export async function maybeSyncHotelSheet(opts: {
     .eq("branch_id", branchId);
 
   return { status: res.status, message: res.message, syncedAt: nowIso };
+}
+
+/** ปี/เดือนปัจจุบันตามเวลาไทย (ลิบ · ไม่อยู่ใน render → ใช้ new Date ได้) */
+function currentBkkYearMonth(): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  return { year, month };
+}
+
+export type HotelCardSummary = {
+  branchId: string;
+  branchName: string;
+  monthLabel: string; // "เม.ย. 2569"
+  monthHref: string; // ลิงก์ไปหน้าโรงแรมของเดือนนั้น
+  totalSales: number;
+  cashDeposited: number;
+  qrBanked: number;
+  qrFlagCount: number;
+  syncStatus: HotelSyncStatus | null;
+};
+
+/**
+ * สรุปโรงแรมสำหรับ "การ์ดในหน้าภาพรวม" — ซิงค์เดือนปัจจุบัน (throttle·ปลอดภัย) แล้วโชว์
+ * เดือนล่าสุดที่มีข้อมูลจริง (กันการ์ดว่างถ้าเดือนนี้ยังไม่มียอด). คืน null ถ้าไม่มีสาขา/ข้อมูล.
+ */
+export async function loadHotelCardSummary(
+  admin: AdminDb,
+  orgId: string,
+): Promise<HotelCardSummary | null> {
+  const { data: br } = await admin
+    .from("branches")
+    .select("id, name")
+    .eq("org_id", orgId)
+    .eq("business_type", "hotel")
+    .eq("is_active", true)
+    .order("name")
+    .limit(1)
+    .maybeSingle();
+  const branch = br as { id: string; name: string } | null;
+  if (!branch) return null;
+
+  // ซิงค์เดือนปัจจุบัน (ถ้ามีแท็บ) — throttle กันถี่ · ไม่พังถ้า error
+  const { year, month } = currentBkkYearMonth();
+  let syncStatus: HotelSyncStatus | null = null;
+  try {
+    const s = await maybeSyncHotelSheet({ admin, branchId: branch.id, year, month });
+    syncStatus = s?.status ?? null;
+  } catch {
+    syncStatus = null;
+  }
+
+  // เดือนล่าสุดที่มีข้อมูล (ไม่รวม IV)
+  const { data: latest } = await admin
+    .from("cashhub_hotel_daily")
+    .select("sales_date")
+    .eq("branch_id", branch.id)
+    .neq("source", "trcloud_iv")
+    .order("sales_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const latestDate = (latest as { sales_date: string } | null)?.sales_date;
+  if (!latestDate) return null;
+  const [ly, lm] = latestDate.split("-").map((x) => Number.parseInt(x, 10));
+
+  const from = `${ly}-${String(lm).padStart(2, "0")}-01`;
+  const to = `${ly}-${String(lm).padStart(2, "0")}-${String(
+    new Date(ly, lm, 0).getDate(),
+  ).padStart(2, "0")}`;
+  const { data } = await admin
+    .from("cashhub_hotel_daily")
+    .select("*")
+    .eq("branch_id", branch.id)
+    .neq("source", "trcloud_iv")
+    .gte("sales_date", from)
+    .lte("sales_date", to)
+    .order("sales_date");
+  const s = summarize(groupByDay((data ?? []) as HotelShiftRow[]));
+
+  const monthStr = `${ly}-${String(lm).padStart(2, "0")}`;
+  return {
+    branchId: branch.id,
+    branchName: branch.name,
+    monthLabel: `${TH_MONTHS[lm - 1]} ${ly + 543}`,
+    monthHref: `/cashhub/hotel?branchId=${branch.id}&month=${monthStr}`,
+    totalSales: s.totalSales,
+    cashDeposited: s.cashDeposited,
+    qrBanked: s.qrBanked,
+    qrFlagCount: s.qrFlagCount,
+    syncStatus,
+  };
 }

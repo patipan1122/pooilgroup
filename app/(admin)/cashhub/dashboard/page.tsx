@@ -6,6 +6,8 @@ import {
   type Period,
 } from "@/lib/cashhub/executive-matrix";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
+import { adminClient } from "@/lib/db/server";
+import { loadHotelCardSummary } from "@/lib/cashhub/hotel-sheet-sync";
 import { DashboardV1View } from "./dashboard-v1-view";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +35,9 @@ export default async function DashboardPage({
   // Load all dashboard data + executive matrix in parallel
   // monthly = 12 trailing months · daily = 30 days · annual = full Jan-Dec of `year`
   // companyId sync ลงตารางด้วย (เลือก Pooil Oil → ตารางโชว์เฉพาะ Pooil Oil)
-  const [data, executiveMatrix] = await Promise.all([
+  // + สรุปโรงแรม (ซิงค์ชีต throttle) สำหรับการ์ดในภาพรวม — ไม่พังหน้าถ้า error
+  const admin = adminClient();
+  const [data, executiveMatrix, hotelSummary] = await Promise.all([
     loadDashboard(session.user.org_id, companyId),
     loadExecutiveMatrix(session.user.org_id, {
       period,
@@ -41,6 +45,7 @@ export default async function DashboardPage({
       year: validYear,
       companyId,
     }),
+    loadHotelCardSummary(admin, session.user.org_id).catch(() => null),
   ]);
 
   const isAdmin =
@@ -53,6 +58,7 @@ export default async function DashboardPage({
       monthLabel={bkkMonthLabel()}
       data={data}
       executiveMatrix={executiveMatrix}
+      hotelSummary={hotelSummary}
     />
   );
 }
