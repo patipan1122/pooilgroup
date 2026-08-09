@@ -12,6 +12,10 @@
 export const CHANNEL_CVAR: Record<string, string> = {
   "ยอดชำระด้วยเงินสด": "c1",
   QRPayment: "c2",
+  // POS แยกยอด QR ที่ชำระผ่าน payment gateway ออกเป็นคอลัมน์นี้ตั้งแต่ ~07/2569
+  // (เดิมรวมอยู่ใน "QRPayment" คอลัมน์เดียว — ใบกำกับเก่าที่เคยคีย์ไว้ก็รวมสองยอดนี้เป็น c2 ก้อนเดียว
+  // เช่น store 4097 07-01: QRPayment(API) 7,838 + QRPayment 375 = c2 8,213 ตรงกับใบเดิม 100%)
+  "QRPayment(API)": "c2",
   QRManual: "c13",
   "blueplus+ wallet": "c14",
   "blueplus+ Credit": "c15",
@@ -142,7 +146,17 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
       }
     }
     // เผื่อมีหัวคอลัมน์ช่องทางที่ระบบยังไม่รู้จัก (POS เพิ่มช่องใหม่) แต่มีเงิน
-    // → ตรวจจาก check vs sumChannels (ถ้า check==gross แต่ Σ ไม่ถึง = มีช่องตกหล่น)
+    // → สแกนเฉพาะคอลัมน์ที่อยู่ระหว่าง "ยอดขาย"(gross) กับ "รวมยอดชำระ"(check) เพราะ
+    //   ช่วงนี้คือโซนช่องทางจ่ายเงินของรายงานเสมอ (ก่อนหน้า=เมทาดาต้ากะ, หลังจาก=เงินสดในลิ้นชัก/ขาดเกิน)
+    const gCol = col[GROSS_COL];
+    const cCol = col[CHECK_COL];
+    if (gCol != null && cCol != null) {
+      for (const [label, idx] of Object.entries(col)) {
+        if (idx <= gCol || idx >= cCol) continue;
+        if (CHANNEL_CVAR[label]) continue;
+        if (num(r[idx]) !== 0) unmapped.push(label);
+      }
+    }
 
     const total = round2(gross / 1.07);
     const vat = round2(gross - total);
@@ -154,7 +168,7 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
     else if (!checkOk)
       blockReason = `รวมยอดชำระ (${check.toLocaleString()}) ≠ ยอดขาย (${gross.toLocaleString()}) — ไฟล์อาจเพี้ยน`;
     else if (!sumOk)
-      blockReason = `รวมช่องทางที่อ่านได้ (${sumChannels.toLocaleString()}) ≠ ยอดขาย (${gross.toLocaleString()}) — ปิดกะยังไม่เสร็จ หรือมีช่องทางใหม่ที่ระบบยังไม่รู้จัก`;
+      blockReason = `รวมช่องทางที่อ่านได้ (${sumChannels.toLocaleString()}) ≠ ยอดขาย (${gross.toLocaleString()}) — ปิดกะยังไม่เสร็จ หรือมีช่องทางใหม่ที่ระบบยังไม่รู้จัก${unmapped.length ? ` (คอลัมน์: ${unmapped.join(", ")})` : ""}`;
 
     rows.push({
       date,
