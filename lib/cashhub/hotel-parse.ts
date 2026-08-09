@@ -134,12 +134,12 @@ export function parseHotelSheet(
 
   const daysInMonth = new Date(year, month, 0).getDate();
   const rows: HotelParsedRow[] = [];
-  let curDay: number | null = null;
-  // คอลัมน์วันที่ (col0) มี 2 รูปแบบตามแท็บ:
-  //   (ก) "เลขวัน" 1-31 ตรง ๆ   (ข) "วันที่จริง" ที่ Excel เก็บเป็น serial (เช่น 24016, +1/วัน)
-  // parser เดิมอ่านแบบ (ข) เป็นเลข >31 แล้วข้ามทั้งเดือน → ข้อมูลจริงหายหมด (bug ชีตรูปแบบใหม่)
-  // FIX: ยึด "แถวข้อมูลแรก = วันที่ 1" แล้วนับ offset — สูตรเดียวรองรับทั้งสองแบบ
-  let baseSerial: number | null = null;
+  // คอลัมน์วันที่ (col0) ในชีตจริง "ปนกันได้ในแท็บเดียว":
+  //   (ก) "เลขวัน" 1-31 ตรง ๆ   (ข) "วันที่จริง" ที่ Excel เก็บเป็น serial (เลขใหญ่ เช่น 24016)
+  //   เช่น เม.ย.: วัน 1-25 เป็น serial · วัน 26-30 เป็นเลข 26-30
+  // → นับ "วันตามลำดับแถวกะเช้า" เป็นหลัก (1 วัน = เช้า+ค่ำ) · ถ้า col0 เป็นเลขวัน 1-31 ชัดเจน
+  //   ก็ snap ไปค่านั้น (authoritative) — รองรับทั้ง serial / เลขวัน / ปนกัน โดยไม่ทำวันหาย
+  let curDay = 0;
 
   const g = (r: Cell[], k: string): number | null =>
     H[k] != null ? toNum(r[H[k]]) : null;
@@ -149,12 +149,11 @@ export function parseHotelSheet(
     const isMorning = shiftCell.includes("เช้า");
     const isEvening = shiftCell.includes("ค่ำ") || shiftCell.includes("ดึก");
     if (!isMorning && !isEvening) continue; // header / total / blank
-    const dn = toNum(r[0]);
-    if (dn != null) {
-      if (baseSerial == null) baseSerial = dn; // แถวแรก = วันที่ 1 (anchor)
-      curDay = Math.round(dn - baseSerial) + 1;
+    if (isMorning) {
+      const dn = toNum(r[0]);
+      curDay = dn != null && dn >= 1 && dn <= 31 ? Math.trunc(dn) : curDay + 1;
     }
-    if (curDay == null || curDay < 1 || curDay > daysInMonth) continue;
+    if (curDay < 1 || curDay > daysInMonth) continue;
 
     const total = g(r, "total");
     const roomRev = toNum(r[4]);
