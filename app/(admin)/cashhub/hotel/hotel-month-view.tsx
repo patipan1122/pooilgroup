@@ -141,9 +141,9 @@ export function HotelMonthView({
     return (
       <div className="rounded-2xl border border-dashed border-zinc-300 p-10 text-center">
         <div className="text-3xl mb-2">🏨</div>
-        <div className="font-semibold text-zinc-700">ยังไม่มีข้อมูลเดือนนี้</div>
+        <div className="font-semibold text-zinc-700">ยังไม่มียอดขายของเดือนนี้ในชีต</div>
         <div className="text-sm text-zinc-500 mt-1">
-          กด “นำเข้าจากชีต” เพื่อเพิ่มยอดขายรายวันของเดือนนี้
+          ลองเลือกเดือนอื่น หรือกด “🔄 ดึงจากชีตเดี๋ยวนี้” ถ้าเพิ่งกรอกในชีต
         </div>
       </div>
     );

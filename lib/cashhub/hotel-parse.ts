@@ -135,18 +135,25 @@ export function parseHotelSheet(
   const daysInMonth = new Date(year, month, 0).getDate();
   const rows: HotelParsedRow[] = [];
   let curDay: number | null = null;
+  // คอลัมน์วันที่ (col0) มี 2 รูปแบบตามแท็บ:
+  //   (ก) "เลขวัน" 1-31 ตรง ๆ   (ข) "วันที่จริง" ที่ Excel เก็บเป็น serial (เช่น 24016, +1/วัน)
+  // parser เดิมอ่านแบบ (ข) เป็นเลข >31 แล้วข้ามทั้งเดือน → ข้อมูลจริงหายหมด (bug ชีตรูปแบบใหม่)
+  // FIX: ยึด "แถวข้อมูลแรก = วันที่ 1" แล้วนับ offset — สูตรเดียวรองรับทั้งสองแบบ
+  let baseSerial: number | null = null;
 
   const g = (r: Cell[], k: string): number | null =>
     H[k] != null ? toNum(r[H[k]]) : null;
 
   for (const r of matrix) {
-    const dCell = txt(r[0]);
     const shiftCell = txt(r[1]);
     const isMorning = shiftCell.includes("เช้า");
     const isEvening = shiftCell.includes("ค่ำ") || shiftCell.includes("ดึก");
     if (!isMorning && !isEvening) continue; // header / total / blank
-    const dn = toNum(dCell);
-    if (dn != null) curDay = Math.trunc(dn);
+    const dn = toNum(r[0]);
+    if (dn != null) {
+      if (baseSerial == null) baseSerial = dn; // แถวแรก = วันที่ 1 (anchor)
+      curDay = Math.round(dn - baseSerial) + 1;
+    }
     if (curDay == null || curDay < 1 || curDay > daysInMonth) continue;
 
     const total = g(r, "total");
