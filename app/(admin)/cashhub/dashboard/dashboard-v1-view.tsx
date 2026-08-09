@@ -274,7 +274,7 @@ export function DashboardV1View({
             className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-[var(--ch-border)] bg-white p-4 hover:bg-zinc-50 transition"
           >
             <span className="font-bold text-[var(--ch-navy)]">
-              🏨 โรงแรม {hotelSummary.branchName}
+              🏨 {hotelSummary.branchName}
             </span>
             <span className="text-xs text-[var(--ch-text-3)]">
               {hotelSummary.monthLabel}

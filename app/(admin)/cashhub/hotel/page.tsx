@@ -19,6 +19,7 @@ import {
   maybeSyncHotelSheet,
   type HotelSyncDisplay,
 } from "@/lib/cashhub/hotel-sheet-sync";
+import { syncHotelNowAction } from "./actions";
 import Link from "next/link";
 import { HotelMonthView } from "./hotel-month-view";
 
@@ -137,12 +138,35 @@ export default async function HotelSalesPage({
         <SectionPill num="🏨" label="Hotel · ตรวจยอดขายโรงแรม" />
         <div className="flex flex-wrap items-end justify-between gap-3 mt-1">
           <TwoToneTitle first={branchName} accent={monthLabel} size={30} />
-          <a
-            href={`/cashhub/import/hotel`}
-            className="h-10 inline-flex items-center gap-2 rounded-xl bg-[var(--color-brand-600,#1e3aff)] text-white font-semibold px-4 text-sm shadow-sm hover:opacity-90"
-          >
-            ⬆ นำเข้าจากชีต
-          </a>
+          {syncStatus?.sheetUrl ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={syncStatus.sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 font-semibold px-3.5 text-sm hover:bg-zinc-50"
+              >
+                📄 เปิดชีต Google
+              </a>
+              <form action={syncHotelNowAction}>
+                <input type="hidden" name="branchId" value={branchId ?? ""} />
+                <input type="hidden" name="month" value={monthStr} />
+                <button
+                  type="submit"
+                  className="h-10 inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#1e3aff)] text-white font-semibold px-4 text-sm shadow-sm hover:opacity-90"
+                >
+                  🔄 ดึงจากชีตเดี๋ยวนี้
+                </button>
+              </form>
+            </div>
+          ) : (
+            <a
+              href={`/cashhub/import/hotel`}
+              className="h-10 inline-flex items-center gap-2 rounded-xl bg-[var(--color-brand-600,#1e3aff)] text-white font-semibold px-4 text-sm shadow-sm hover:opacity-90"
+            >
+              ⬆ นำเข้าจากชีต
+            </a>
+          )}
         </div>
         <p className="text-sm mt-1">
           {syncStatus ? (

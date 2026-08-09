@@ -210,7 +210,13 @@ export type HotelSyncDisplay = {
   status: HotelSyncStatus;
   message: string;
   syncedAt: string | null;
+  sheetUrl: string; // ลิงก์เปิดชีต Google (ให้ CEO กดดูเอง)
 };
+
+/** ลิงก์เปิดชีต Google (หน้าแก้ไข) จาก sheet id */
+export function hotelSheetEditUrl(sheetId: string): string {
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit`;
+}
 
 /**
  * ตัวช่วยเรียกจาก Server Component: อ่าน config → เช็ก throttle → ซิงค์ถ้าเก่าเกิน TTL →
@@ -223,8 +229,9 @@ export async function maybeSyncHotelSheet(opts: {
   year: number;
   month: number;
   userId?: string | null;
+  force?: boolean; // true = กดปุ่ม "ดึงเดี๋ยวนี้" → ข้าม throttle
 }): Promise<HotelSyncDisplay | null> {
-  const { admin, branchId, year, month, userId } = opts;
+  const { admin, branchId, year, month, userId, force } = opts;
 
   const { data: cfgRaw } = await admin
     .from("cashhub_hotel_sheet_config")
@@ -244,15 +251,17 @@ export async function maybeSyncHotelSheet(opts: {
   } | null;
 
   if (!cfg?.sheet_id || cfg.auto_sync === false) return null;
+  const sheetUrl = hotelSheetEditUrl(cfg.sheet_id);
 
   const stale =
     !cfg.last_synced_at ||
     Date.now() - Date.parse(cfg.last_synced_at) > HOTEL_SYNC_TTL_MS;
-  if (!stale) {
+  if (!force && !stale) {
     return {
       status: cfg.last_status ?? "ok",
       message: cfg.last_message ?? "ซิงค์อัตโนมัติ",
       syncedAt: cfg.last_synced_at,
+      sheetUrl,
     };
   }
 
@@ -277,7 +286,7 @@ export async function maybeSyncHotelSheet(opts: {
     })
     .eq("branch_id", branchId);
 
-  return { status: res.status, message: res.message, syncedAt: nowIso };
+  return { status: res.status, message: res.message, syncedAt: nowIso, sheetUrl };
 }
 
 /** ปี/เดือนปัจจุบันตามเวลาไทย (ลิบ · ไม่อยู่ใน render → ใช้ new Date ได้) */
