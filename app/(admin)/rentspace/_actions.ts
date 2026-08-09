@@ -1672,7 +1672,13 @@ export async function actEditBillItems(input: {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: input.billId, orgId: session.user.org_id },
-    select: { id: true, status: true, project: { select: { billEditUnlocked: true } } },
+    select: {
+      id: true,
+      status: true,
+      totalAmount: true, // เก็บ "ก่อนแก้" ไว้ลง audit trail
+      items: { select: { kind: true, label: true, amount: true } },
+      project: { select: { billEditUnlocked: true } },
+    },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
   // super_admin แก้ไขได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตแก้ไขบิล" ในหน้าตั้งค่าก่อน
@@ -1727,9 +1733,22 @@ export async function actEditBillItems(input: {
   });
   // คิด subtotal/VAT/total/สถานะ ใหม่จากรายการที่เพิ่งแทนที่ (อ่าน items สดจาก DB)
   await recomputeBillTotals(bill.id);
+  const after = await prisma.rentalBill.findUnique({
+    where: { id: bill.id },
+    select: { totalAmount: true },
+  });
+  // audit trail: เก็บ "ก่อน/หลัง" (ยอดรวม + รายการ) ให้ผู้สอบบัญชีตรวจได้ว่าใครแก้ยอดอะไรเป็นอะไร
   await logAudit(session, "RENTSPACE_BILL_UPDATED", "rental_bill", bill.id, {
     action: "edit_items",
     lines: clean.length,
+    before: {
+      total: toNum(bill.totalAmount),
+      items: bill.items.map((it) => ({ kind: it.kind, label: it.label, amount: toNum(it.amount) })),
+    },
+    after: {
+      total: toNum(after?.totalAmount),
+      items: clean.map((it) => ({ kind: it.kind, label: it.label, amount: it.amount })),
+    },
   });
   revalidatePath("/rentspace/bills");
   revalidatePath(`/rentspace/bills/${bill.id}`);
