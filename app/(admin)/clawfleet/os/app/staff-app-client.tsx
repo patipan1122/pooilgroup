@@ -2015,6 +2015,11 @@ function MachineSearchBox({ value, onChange, placeholder }: { value: string; onC
 function HomeScreen(props: {
   userName: string;
   todayYmd?: string; // "วันนี้" (เวลาไทย · server) → กรอง "เก็บแล้ววันนี้"
+  // pre-existing gap (2026-08-09): declared here to match the JSX read at
+  // PanelScreen's call site — never actually threaded from StaffApp, so this
+  // is always undefined at runtime today. Type-only fix (matches existing
+  // behavior, doesn't change it) — see clawfleet-ishistoryadmin-required-prop-and-liff-gap-2026-08-09.
+  branchMachineCounts?: Record<string, number>;
   panel: Panel;
   setPanel: (p: Panel) => void;
   routeTotal: number;
