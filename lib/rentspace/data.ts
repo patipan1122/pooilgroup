@@ -327,7 +327,11 @@ export async function pendingDiscounts(orgId: string) {
 /** Overview KPIs for the dashboard. */
 export async function projectKpis(orgId: string, projectId: string) {
   const period = currentPeriod();
-  const [units, occupied, vacant, overdueBills, thisMonthBills] = await Promise.all([
+  // ช่วงเดือนปัจจุบันสำหรับ "เก็บได้เดือนนี้" แบบ cash-basis (ตามวันเงินเข้าจริง · paidOn)
+  const [py, pm] = period.split("-").map(Number);
+  const monthStart = new Date(Date.UTC(py, pm - 1, 1));
+  const monthEnd = new Date(Date.UTC(py, pm, 1));
+  const [units, occupied, vacant, overdueBills, thisMonthBills, collectedPayments] = await Promise.all([
     prisma.rentalUnit.count({ where: { orgId, projectId, isActive: true } }),
     prisma.rentalUnit.count({ where: { orgId, projectId, isActive: true, status: "occupied" } }),
     prisma.rentalUnit.count({ where: { orgId, projectId, isActive: true, status: "vacant" } }),
@@ -340,6 +344,12 @@ export async function projectKpis(orgId: string, projectId: string) {
       where: { orgId, projectId, period, status: { notIn: ["void", "draft"] } },
       select: { totalAmount: true, paidAmount: true },
     }),
+    // CEO 2026-08-09: "เก็บได้เดือนนี้" = cash-basis (Σ ชำระที่ยืนยันแล้ว ตามวันจ่ายในเดือนนี้)
+    // ให้ตรงกับหน้ารับชำระ — ไม่ผูกกับงวดบิล (เงินบิลค้างเก่าที่เพิ่งจ่าย ก็นับเข้าเดือนนี้)
+    prisma.rentalPayment.findMany({
+      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd } },
+      select: { amountThb: true },
+    }),
   ]);
   const outstanding = overdueBills.reduce(
     (s, b) => s + (toNum(b.totalAmount) - toNum(b.paidAmount)),
@@ -347,7 +357,8 @@ export async function projectKpis(orgId: string, projectId: string) {
   );
   const overdueCount = overdueBills.filter((b) => b.status === "overdue").length;
   const billedThisMonth = thisMonthBills.reduce((s, b) => s + toNum(b.totalAmount), 0);
-  const collectedThisMonth = thisMonthBills.reduce((s, b) => s + toNum(b.paidAmount), 0);
+  // cash-basis: เงินที่รับจริงในเดือนนี้ (ตาม paidOn) ไม่ใช่ paidAmount ของบิลงวดนี้
+  const collectedThisMonth = collectedPayments.reduce((s, p) => s + toNum(p.amountThb), 0);
   return { units, occupied, vacant, outstanding, overdueCount, billedThisMonth, collectedThisMonth, period };
 }
 

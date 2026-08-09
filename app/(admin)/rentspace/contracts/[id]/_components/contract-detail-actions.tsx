@@ -320,7 +320,14 @@ export function BillingTermsEditor({
 }
 
 // ───────── record deposit ─────────
-export function RecordDepositButton({ contractId }: { contractId: string }) {
+export function RecordDepositButton({
+  contractId,
+  unpaidBills = [],
+}: {
+  contractId: string;
+  /** บิลค้างของสัญญานี้ (ให้ "หัก/ริบ" เลือกตัดยอดบิลได้) */
+  unpaidBills?: { id: string; billNo: string; period: string; remaining: number }[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -331,6 +338,8 @@ export function RecordDepositButton({ contractId }: { contractId: string }) {
   const [occurredOn, setOccurredOn] = useState(new Date().toISOString().slice(0, 10));
   const [method, setMethod] = useState("transfer");
   const [note, setNote] = useState("");
+  const [targetBillId, setTargetBillId] = useState("");
+  const showBillPicker = kind === "deduct" || kind === "forfeit";
 
   function submit() {
     if (num(amount) <= 0) return toast.error("กรุณากรอกจำนวนเงิน");
@@ -351,6 +360,7 @@ export function RecordDepositButton({ contractId }: { contractId: string }) {
           method,
           slipUrl,
           note: note || undefined,
+          targetBillId: showBillPicker && targetBillId ? targetBillId : undefined,
         });
         toast.success("บันทึกเงินประกันแล้ว");
         setOpen(false);
@@ -401,6 +411,24 @@ export function RecordDepositButton({ contractId }: { contractId: string }) {
                   ))}
                 </select>
               </div>
+              {showBillPicker && (
+                <div>
+                  <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>
+                    ตัดยอดบิลค้าง (ไม่บังคับ)
+                  </label>
+                  <select className="rs-d-input" value={targetBillId} onChange={(e) => setTargetBillId(e.target.value)}>
+                    <option value="">— ไม่ผูกบิล (หักลอย) —</option>
+                    {unpaidBills.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.billNo} · งวด {b.period} · ค้าง {b.remaining.toLocaleString("th-TH")} ฿
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11.5px] mt-1" style={{ color: "var(--rs-text-3)" }}>
+                    เลือกบิล = ระบบตัดยอดบิลนั้นให้ด้วย (บันทึกการชำระจากเงินประกัน)
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--rs-text)" }}>

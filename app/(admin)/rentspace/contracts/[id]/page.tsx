@@ -55,6 +55,19 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const contract = await getContract(session.user.org_id, id);
   if (!contract) notFound();
 
+  // บิลค้างของสัญญานี้ — ให้ "หัก/ริบเงินประกัน" เลือกตัดยอดบิลได้ (CEO 2026-08-09)
+  const unpaidBillRows = await prisma.rentalBill.findMany({
+    where: { contractId: contract.id, orgId: session.user.org_id, status: { in: ["issued", "partial", "overdue"] } },
+    select: { id: true, billNo: true, period: true, totalAmount: true, paidAmount: true },
+    orderBy: { period: "asc" },
+  });
+  const unpaidBills = unpaidBillRows.map((b) => ({
+    id: b.id,
+    billNo: b.billNo,
+    period: b.period,
+    remaining: toNum(b.totalAmount) - toNum(b.paidAmount),
+  }));
+
   // ประวัติฉบับแก้ไข (addendum) — เรียงตามลำดับที่ออก + เอกสารแนบสัญญา
   const [addenda, contractDocs] = await Promise.all([
     prisma.rentalContractAddendum.findMany({
@@ -305,7 +318,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               </div>
             )}
             <div className="mt-3">
-              <RecordDepositButton contractId={contract.id} />
+              <RecordDepositButton contractId={contract.id} unpaidBills={unpaidBills} />
             </div>
           </RsCard>
 

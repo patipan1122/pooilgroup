@@ -26,6 +26,21 @@ async function gateAdmin() {
   return session;
 }
 
+/**
+ * งานประจำหน้างานที่ "พนักงาน (member)" ทำได้: จดมิเตอร์ + รับเงิน
+ * (CEO 2026-08-09: พนักงานบันทึกได้ · ลบ/void/อนุมัติ/มัดจำ/settings ยังต้อง gateAdmin)
+ * อนุญาตทุกคนที่มีสิทธิ์เข้าโมดูล rentspace (member ขึ้นไป) — ไม่ใช่แค่ admin
+ */
+async function gateModuleWrite() {
+  const session = await requireSession();
+  if (!isAdminTier(session.user.role)) {
+    const { userHasModuleAccess } = await import("@/lib/auth/module-access");
+    const ok = await userHasModuleAccess(session.user, "rentspace");
+    if (!ok) throw new Error("ไม่มีสิทธิ์ดำเนินการนี้");
+  }
+  return session;
+}
+
 /** Anti-IDOR: throw unless the record exists within the caller's org. */
 async function ownGuard(exists: Promise<{ id: string } | null>, label: string): Promise<void> {
   if (!(await exists)) throw new Error(`ไม่พบ${label} หรือไม่มีสิทธิ์`);
@@ -1003,6 +1018,8 @@ export async function actRecordDeposit(input: {
   method?: string;
   slipUrl?: string;
   note?: string;
+  /** หัก/ริบ มาตัดยอดบิลค้างใบนี้ (CEO 2026-08-09) — สร้าง payment + ตัดยอดบิลในทรานแซกชันเดียว */
+  targetBillId?: string;
 }) {
   const session = await gateAdmin();
   await ownGuard(
@@ -1042,7 +1059,7 @@ export async function actRecordDeposit(input: {
           throw new Error(`คืน/หัก/ริบได้ไม่เกินเงินประกันคงเหลือ (${balance.toLocaleString("th-TH")} บาท)`);
         }
       }
-      return tx.rentalDeposit.create({
+      const dep = await tx.rentalDeposit.create({
         data: {
           id: randomUUID(),
           orgId: session.user.org_id,
@@ -1056,6 +1073,36 @@ export async function actRecordDeposit(input: {
           createdBy: session.user.id,
         },
       });
+      // Q3: หัก/ริบ มาตัดยอดบิลค้าง — สร้าง payment (method=deposit) + increment paidAmount + recompute
+      // ในทรานแซกชันเดียวกับ ledger มัดจำ → เงิน 2 ก้อนคุยกัน บิลไม่ค้างค้างทั้งที่หักแล้ว
+      if ((input.kind === "deduct" || input.kind === "forfeit") && input.targetBillId) {
+        const tb = await tx.rentalBill.findFirst({
+          where: {
+            id: input.targetBillId,
+            orgId: session.user.org_id,
+            contractId: input.contractId, // ต้องเป็นบิลของสัญญาเดียวกัน
+            status: { notIn: ["void", "draft"] },
+          },
+          select: { id: true },
+        });
+        if (!tb) throw new Error("ไม่พบบิลปลายทาง (ต้องเป็นบิลของสัญญานี้ที่ยังไม่ยกเลิก)");
+        await tx.rentalPayment.create({
+          data: {
+            id: randomUUID(),
+            orgId: session.user.org_id,
+            billId: tb.id,
+            contractId: input.contractId,
+            amountThb: input.amountThb,
+            paidOn: new Date(input.occurredOn),
+            method: "deposit",
+            note: `หักจากเงินประกัน (${input.kind === "forfeit" ? "ริบ" : "หัก"})`,
+            receivedBy: session.user.id,
+          },
+        });
+        await tx.rentalBill.update({ where: { id: tb.id }, data: { paidAmount: { increment: input.amountThb } } });
+        await recomputeBillTotals(tb.id, tx);
+      }
+      return dep;
     },
     { isolationLevel: "Serializable" },
     );
@@ -1143,7 +1190,7 @@ export async function actSaveMeterReading(input: {
    *  ใช้เป็นฐานคำนวณหน่วยเดือนแรก แล้วเก็บเป็น meter.initialReading. */
   openingReading?: number;
 }) {
-  const session = await gateAdmin();
+  const session = await gateModuleWrite();
   await ownGuard(
     prisma.rentalUnit.findFirst({ where: { id: input.unitId, orgId: session.user.org_id }, select: { id: true } }),
     "ห้อง",
@@ -1844,7 +1891,7 @@ export async function actRecordPayment(input: {
   slipUrl?: string;
   note?: string;
 }) {
-  const session = await gateAdmin();
+  const session = await gateModuleWrite();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: input.billId, orgId: session.user.org_id },
   });
@@ -1953,7 +2000,7 @@ export async function actRecordCombinedPayment(input: {
   slipUrl?: string;
   note?: string;
 }) {
-  const session = await gateAdmin();
+  const session = await gateModuleWrite();
   await ownGuard(
     prisma.rentalTenant.findFirst({ where: { id: input.tenantId, orgId: session.user.org_id }, select: { id: true } }),
     "ผู้เช่า",

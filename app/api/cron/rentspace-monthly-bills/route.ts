@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
 
   const period = currentPeriod();
 
-  // sweep: lapsed contracts (endDate ผ่านไปแล้ว) → expired เพื่อหยุดออกบิลอัตโนมัติ
+  // sweep: lapsed contracts (endDate ผ่านไปแล้ว) → expired (แค่ป้ายบอก "เลยวันหมดอายุ")
+  // CEO 2026-08-09: expired = holdover (เช่าต่อรายเดือน) → ยังออกบิลอัตโนมัติต่อ (ดู filter ล่าง)
   await prisma.rentalContract.updateMany({
     where: { status: { in: ["active", "expiring"] }, endDate: { lt: new Date() } },
     data: { status: "expired" },
@@ -44,7 +45,8 @@ export async function GET(req: NextRequest) {
 
   for (const project of projects) {
     const contracts = await prisma.rentalContract.findMany({
-      where: { projectId: project.id, status: { in: ["active", "expiring"] } },
+      // รวม expired (holdover) ให้ตรงกับ actGenerateMonthlyBills · ตัดเฉพาะ terminated/draft
+      where: { projectId: project.id, status: { in: ["active", "expiring", "expired"] } },
       include: { project: true, unit: true },
     });
     let created = 0;

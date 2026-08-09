@@ -35,8 +35,12 @@ export async function revenueAnalytics(orgId: string, projectId: string): Promis
     periods.unshift(prevPeriod(periods[0]));
   }
 
-  const [thisPeriodBills, unpaidBills, windowBills] = await Promise.all([
-    // งวดปัจจุบัน — non-void → billed + collected + net
+  // ช่วงเดือนปัจจุบันสำหรับ "เก็บได้" แบบ cash-basis (CEO 2026-08-09 · ตาม paidOn ให้ตรงหน้ารับชำระ)
+  const [cy, cm] = period.split("-").map(Number);
+  const monthStart = new Date(Date.UTC(cy, cm - 1, 1));
+  const monthEnd = new Date(Date.UTC(cy, cm, 1));
+  const [thisPeriodBills, unpaidBills, windowBills, collectedPayments] = await Promise.all([
+    // งวดปัจจุบัน — non-void → billed + net
     prisma.rentalBill.findMany({
       where: { orgId, projectId, period, status: { not: "void" } },
       select: { totalAmount: true, paidAmount: true },
@@ -51,10 +55,15 @@ export async function revenueAnalytics(orgId: string, projectId: string): Promis
       where: { orgId, projectId, period: { in: periods }, status: { not: "void" } },
       select: { period: true, totalAmount: true, paidAmount: true },
     }),
+    // เก็บได้เดือนนี้ (cash-basis) = Σ ชำระยืนยันแล้ว ตามวันจ่ายในเดือนนี้
+    prisma.rentalPayment.findMany({
+      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd } },
+      select: { amountThb: true },
+    }),
   ]);
 
   const billed = thisPeriodBills.reduce((s, b) => s + toNum(b.totalAmount), 0);
-  const collected = thisPeriodBills.reduce((s, b) => s + toNum(b.paidAmount), 0);
+  const collected = collectedPayments.reduce((s, p) => s + toNum(p.amountThb), 0);
   const outstanding = unpaidBills.reduce(
     (s, b) => s + (toNum(b.totalAmount) - toNum(b.paidAmount)),
     0,
