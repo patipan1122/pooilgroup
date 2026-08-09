@@ -16,10 +16,17 @@ export const CHANNEL_CVAR: Record<string, string> = {
   // (เดิมรวมอยู่ใน "QRPayment" คอลัมน์เดียว — ใบกำกับเก่าที่เคยคีย์ไว้ก็รวมสองยอดนี้เป็น c2 ก้อนเดียว
   // เช่น store 4097 07-01: QRPayment(API) 7,838 + QRPayment 375 = c2 8,213 ตรงกับใบเดิม 100%)
   "QRPayment(API)": "c2",
+  "QRCredit(API)": "c2", // ยอดเล็ก (~440/เดือน) — QR ผ่านเครดิตแบ็กเอนด์ ยังนับเป็นรายได้ QR เดียวกัน
   QRManual: "c13",
+  "QR Manual(API)": "c13", // เดือน 07/2569 ไฟล์นี้ไม่มีคอลัมน์ "QRManual" เปล่าเลย มีแต่ตัว (API) — map ตรง c13
   "blueplus+ wallet": "c14",
+  "blueplus+ wallet (API)": "c14", // เช็คแล้ว: มักมีเงินพร้อมกับคอลัมน์เดิมในวันเดียวกัน (คนละรอบตัดยอด ไม่ใช่ซ้ำ)
   "blueplus+ Credit": "c15",
+  "blueplus+ credit(API)": "c15", // เดือนนี้ไม่มีคอลัมน์ "blueplus+ Credit" เปล่าเลย มีแต่ตัว (API)
   "คูปอง blueplus+": "c9",
+  "คูปอง blueplus+200 คะแนน ส่วนลด 40 บาท": "c9", // POS แตกคูปองเป็นราย tier แต่เป็นบัญชีเดียวกับคูปอง blueplus+ ทั่วไป
+  "คูปอง blueplus+250 คะแนน ส่วนลด 50 บาท": "c9",
+  "คูปอง blueplus+ 500 คะแนน ส่วนลด 100 บาท": "c9",
   Redeem: "c11",
   "ส่วนลด 10 บาท AIS": "c7",
   "ส่วนลด 10 บาท TRUE - DTAC": "c8",
