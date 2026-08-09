@@ -733,7 +733,8 @@ type Props = {
   // CEO 2026-08-01 · จำนวนตู้คีบ active ต่อสาขา (Y ใน "เก็บ X/Y ตู้" การ์ดรายวัน)
   branchMachineCounts?: Record<string, number>;
   // CEO 2026-08-01 · แอดมิน/ผจก.สาขา = แก้ประวัติได้ทุกใบทุกวัน (พนักงาน = เฉพาะวันนั้น · gate ที่ปุ่ม)
-  isHistoryAdmin?: boolean;
+  // required (ไม่ใช่ optional) โดยตั้งใจ (2026-08-09) — prop นี้เคยหล่นหายระหว่าง thread แล้วปุ่มไม่ขึ้นเงียบๆ (ดู memory clawfleet-edit-round-button-program-admin-gate) ให้ tsc ฟ้องทันทีถ้าจุดไหนลืมส่ง
+  isHistoryAdmin: boolean;
   // B3 · วันที่ที่กำลังดูประวัติ (YYYY-MM-DD ตามเวลาไทย · default = วันนี้). ขับ date picker ในประวัติ.
   // optional default (วันนี้ client-side) กัน caller เดิมที่ยังไม่ส่ง.
   selectedDate?: string;
@@ -774,7 +775,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {}, isHistoryAdmin = false }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {}, isHistoryAdmin }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -896,7 +897,8 @@ type StaffAppProps = {
   // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (machineId → sortOrder · จำติดบัญชี)
   machineOrder: Record<string, number>;
   // CEO 2026-08-04 · super_admin/แอดมิน/ผจก. = เห็นปุ่มแก้ประวัติได้ทุกใบ (thread → HomeScreen → ปุ่มแก้เลข)
-  isHistoryAdmin?: boolean;
+  // required (2026-08-09) — เดิม optional ทำให้ prop หล่นเงียบระหว่าง thread ไม่มี error ฟ้อง
+  isHistoryAdmin: boolean;
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
@@ -2067,7 +2069,8 @@ function HomeScreen(props: {
   receivedByBranch: Record<string, CfReceivedDoc[]>;
   countsByBranch: Record<string, CfCountRow[]>;
   // CEO 2026-08-04 · thread isHistoryAdmin → PanelScreen → ปุ่มแก้เลข (แอดมิน/super_admin แก้ได้ทุกใบ)
-  isHistoryAdmin?: boolean;
+  // required (2026-08-09) — เดิม optional ทำให้ prop หล่นเงียบระหว่าง thread ไม่มี error ฟ้อง
+  isHistoryAdmin: boolean;
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onChange, onSetup, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // ── สาขาที่กำลังดู (ปุ่มสลับสาขา · CEO 2026-07-28) ──
@@ -2535,7 +2538,7 @@ function PanelScreen(props: {
   todayYmd: string;
   onExitTour: () => void;
   skus: CollectSku[]; history: StaffHistoryRow[]; viewDate: string; usingDemo: boolean; orgId: string;
-  branchMachineCounts?: Record<string, number>; isHistoryAdmin?: boolean;
+  branchMachineCounts?: Record<string, number>; isHistoryAdmin: boolean;
   repairMachines: AppMachine[]; myRecentTickets: RepairTicketRow[];
   // N3/N6 · บริบทสาขาสำหรับหน้านับสต๊อก + รับสินค้า
   branchId: string; branchCode: string; branchName?: string; stockProducts: BranchStockProduct[]; inboundDeliveries: InboundDelivery[];
@@ -2692,7 +2695,7 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin = false, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; isHistoryAdmin?: boolean; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
+function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; isHistoryAdmin: boolean; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [

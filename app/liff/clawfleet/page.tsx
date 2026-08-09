@@ -6,6 +6,7 @@
 import { getGroupCollectData } from "@/lib/clawfleet/group-data";
 import { getClawfleetPolicy } from "@/lib/clawfleet/policy";
 import { getSession } from "@/lib/auth/session";
+import { isCfBranchManager, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
 import { prisma } from "@/lib/prisma";
 import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
@@ -135,11 +136,17 @@ export default async function ClawfleetLiffPage({
   // ชื่อพนักงานที่ล็อกอิน (โชว์ทักทาย) — graceful: ถ้าอ่านไม่ได้ → ปล่อยว่าง
   let userName = "";
   let userId = "";
+  // CEO 2026-08-01 (parity fix 2026-08-09) · แอดมิน/ผจก.สาขา = แก้ประวัติได้ทุกใบทุกวัน เหมือน /clawfleet/os/app desktop
+  // — เดิม LIFF (มือถือ LINE) ไม่เคยคำนวณ/ส่งค่านี้เลย ทำให้ปุ่ม "แก้ไข (เงิน/มิเตอร์)" ไม่ขึ้นแม้เป็น super_admin บนมือถือ
+  let isHistoryAdmin = false;
   try {
     const session = await getSession();
     userName = session?.user.name ?? "";
     userId = session?.user.id ?? "";
     orgId = orgId || (session?.user.org_id ?? "");
+    if (session) {
+      isHistoryAdmin = (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
+    }
   } catch {
     // graceful: อ่าน session ไม่ได้ → ไม่โชว์ชื่อจริง
   }
@@ -236,6 +243,7 @@ export default async function ClawfleetLiffPage({
         onHandByBranch={onHandByBranch}
         receivedByBranch={receivedByBranch}
         countsByBranch={countsByBranch}
+        isHistoryAdmin={isHistoryAdmin}
       />
     </div>
   );
