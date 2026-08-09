@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import type { SavedTeaDay, TeaImportHistoryRow } from "@/lib/cashhub/tea-data";
-import type { TeaChannelConfig } from "@/lib/cashhub/tea-channels";
+import { computeTeaSettlement, type TeaChannelConfig } from "@/lib/cashhub/tea-channels";
 import type { TeaReconcileCell } from "@/lib/cashhub/tea-settlement-data";
 import { parseTeaPos, csvToMatrix, type TeaPosBranch } from "@/lib/cashhub/tea-parse";
 import { TeaExcelGrid } from "./tea-excel-grid";
@@ -618,7 +618,13 @@ export function TeaView({
           {branches.length} สาขา
         </div>
       ) : view === "matrix" ? (
-        <MatrixTable branches={branches} days={days} dayMap={dayMap} />
+        <MatrixTable
+          branches={branches}
+          days={days}
+          dayMap={dayMap}
+          channelConfigs={channelConfigs}
+          reconStatus={canConfig ? reconStatus : {}}
+        />
       ) : (
         <TeaExcelGrid
           branchLabel={branchLabel}
@@ -634,15 +640,44 @@ export function TeaView({
 }
 
 // ── ตารางรวม วันที่ × สาขา ──────────────────────────────────────────────
+// สถานะกระทบยอดธนาคาร "รวมวัน" ของสาขาหนึ่ง — worst-case: ยังไม่ส่งแม้ 1 ช่องทาง > รอกระทบ > กระทบครบแล้ว
+// (ไม่โชว์เขียว/สีรุ้งจนกว่าทุกช่องทางที่ต้องเข้าธนาคารวันนั้นกระทบยอดแล้วจริง — กันโชว์เกินจริง)
+function teaDayReconState(
+  d: SavedTeaDay | undefined,
+  branchCode: string,
+  date: string,
+  configByCode: Map<string, TeaChannelConfig>,
+  reconStatus: Record<string, TeaReconcileCell>,
+): "reconciled" | "pending" | "unsent" | null {
+  if (!d) return null;
+  const { perChannel } = computeTeaSettlement(d.pos_channels ?? null, configByCode);
+  let sawAny = false;
+  let worst: "reconciled" | "pending" | "unsent" = "reconciled";
+  for (const ch of perChannel) {
+    if (!ch.settled || !(ch.net > 0)) continue;
+    sawAny = true;
+    const st = reconStatus[`tea:${branchCode}:${date}:${ch.code}`];
+    const state = st ? (st.reconciled ? "reconciled" : "pending") : "unsent";
+    if (state === "unsent") worst = "unsent";
+    else if (state === "pending" && worst !== "unsent") worst = "pending";
+  }
+  return sawAny ? worst : null;
+}
+
 function MatrixTable({
   branches,
   days,
   dayMap,
+  channelConfigs,
+  reconStatus,
 }: {
   branches: BranchMeta[];
   days: string[];
   dayMap: Map<string, SavedTeaDay>;
+  channelConfigs: TeaChannelConfig[];
+  reconStatus: Record<string, TeaReconcileCell>;
 }) {
+  const configByCode = useMemo(() => new Map(channelConfigs.map((c) => [c.code, c])), [channelConfigs]);
   const colTot = branches.map((b) =>
     days.reduce((s, date) => s + (dayMap.get(`${b.code}|${date}`)?.iv_gross ?? 0), 0),
   );
@@ -681,7 +716,11 @@ function MatrixTable({
               const d = dayMap.get(`${b.code}|${date}`);
               const v = d?.iv_gross ?? null;
               if (v != null) rowTot += v;
-              return { v, state: d?.match_state ?? null };
+              return {
+                v,
+                state: d?.match_state ?? null,
+                recon: teaDayReconState(d, b.code, date, configByCode, reconStatus),
+              };
             });
             return (
               <tr key={date} className="hover:bg-zinc-50/60">
@@ -691,12 +730,25 @@ function MatrixTable({
                 {cells.map((c, i) => (
                   <td
                     key={i}
+                    title={
+                      c.recon === "reconciled"
+                        ? "กระทบยอดธนาคารครบแล้ว"
+                        : c.recon === "pending"
+                          ? "ส่งเข้าระบบแล้ว · รอธนาคารมากระทบ"
+                          : c.recon === "unsent"
+                            ? "ยังไม่ส่งเข้ากระทบยอดธนาคาร"
+                            : undefined
+                    }
                     className={`px-3 py-1.5 text-right tabular-nums border-b border-zinc-100 ${
                       c.state === "mismatch"
                         ? "bg-red-50 text-red-700 font-semibold"
                         : c.state === "no_iv"
                           ? "bg-amber-50 text-amber-700"
-                          : "text-zinc-700"
+                          : c.recon === "reconciled"
+                            ? "cell-matched-iridescent"
+                            : c.recon === "pending"
+                              ? "bg-amber-50/40 text-amber-700"
+                              : "text-zinc-700"
                     }`}
                   >
                     {c.v != null ? c.v.toLocaleString() : <span className="text-zinc-300">—</span>}
