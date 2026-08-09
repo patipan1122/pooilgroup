@@ -147,7 +147,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                         <span className="text-[11.5px]" style={{ color: "var(--rs-pending)" }}>
                           รอตรวจสลิป
                         </span>
-                      ) : canEdit && p.status === "confirmed" ? (
+                      ) : bill.status !== "void" && p.status === "confirmed" ? (
+                        // ถอนได้แม้บิลจ่ายครบแล้ว (paid) — เคสคีย์ยอดผิดจนบิลกลายเป็น paid ต้องถอนได้
+                        // (void จะ decrement paidAmount + recompute → สถานะบิลปรับกลับเอง) · กันเฉพาะบิล void
                         <VoidPaymentButton paymentId={p.id} amount={toNum(p.amountThb)} />
                       ) : null}
                     </div>

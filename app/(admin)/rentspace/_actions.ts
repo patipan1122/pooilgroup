@@ -9,7 +9,7 @@ import { putObject } from "@/lib/r2/upload";
 import { audit } from "@/lib/audit/log";
 import type { AuditAction } from "@/lib/audit/log";
 import { toNum, currentPeriod } from "@/lib/rentspace/format";
-import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2 } from "@/lib/rentspace/billing";
+import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2, computeBillTotals, promoDiscountFor } from "@/lib/rentspace/billing";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
 import { notifyBillIssued } from "@/lib/rentspace/notify";
@@ -1405,7 +1405,13 @@ export async function actBillingPreview(projectId: string, period: string) {
     const built = await buildBill(c, period);
     const rent = toNum(built.rentAmount);
     const utility = toNum(built.electricAmount) + toNum(built.waterAmount);
-    const total = rent + utility + toNum(built.lateFeeAmount);
+    // พรีวิวต้องตรงกับบิลจริง: รวมรายการประจำ (ภาษีที่ดิน/ส่วนกลาง = otherAmount) + VAT − ส่วนลดโปรฯ
+    // (เดิมคิดแค่ rent+utility+lateFee → พรีวิวต่ำกว่ายอดจริง)
+    const total = computeBillTotals({
+      items: built.items.map((it) => ({ amount: it.amount, vatable: it.vatable })),
+      approvedDiscount: promoDiscountFor(c, period),
+      vatPercent: toNum(c.vatPercent),
+    }).totalAmount;
     // a room "has meter" only if BOTH electric + water were read this period.
     // buildBill pushes a "ยังไม่ได้จดมิเตอร์..." note for each missing side.
     const hasMeter = !built.notes.some((n) => n.includes("ยังไม่ได้จดมิเตอร์"));
