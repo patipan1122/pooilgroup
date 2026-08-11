@@ -640,28 +640,27 @@ export function TeaView({
 }
 
 // ── ตารางรวม วันที่ × สาขา ──────────────────────────────────────────────
-// สถานะกระทบยอดธนาคาร "รวมวัน" ของสาขาหนึ่ง — worst-case: ยังไม่ส่งแม้ 1 ช่องทาง > รอกระทบ > กระทบครบแล้ว
-// (ไม่โชว์เขียว/สีรุ้งจนกว่าทุกช่องทางที่ต้องเข้าธนาคารวันนั้นกระทบยอดแล้วจริง — กันโชว์เกินจริง)
-function teaDayReconState(
+// สถานะกระทบยอดธนาคาร "รวมวัน" ของสาขาหนึ่ง — คืนจุดสีแยกต่อช่องทาง (ไม่รวมเป็นสีเดียว)
+// เพราะช่องทางนึงกระทบแล้วแต่อีกช่องทางยังไม่กระทบเป็นเรื่องปกติ (เช่น QR ยังไม่แมชแต่เงินสดแมชแล้ว)
+// รวมเป็นสีเดียวแบบ worst-case จะทำให้ช่องที่กระทบจริงแล้วไม่โผล่เลยถ้ามีอีกช่องทางค้าง — เข้าใจผิดว่าไม่มีอะไรคืบหน้า
+// ไม่โชว์จุดถ้ายังไม่ส่งเข้าระบบเลย (unsent) — กันตารางรก โชว์เฉพาะที่มีความคืบหน้าจริง
+function teaDayReconDots(
   d: SavedTeaDay | undefined,
   branchCode: string,
   date: string,
   configByCode: Map<string, TeaChannelConfig>,
   reconStatus: Record<string, TeaReconcileCell>,
-): "reconciled" | "pending" | "unsent" | null {
-  if (!d) return null;
+): { code: string; label: string; reconciled: boolean }[] {
+  if (!d) return [];
   const { perChannel } = computeTeaSettlement(d.pos_channels ?? null, configByCode);
-  let sawAny = false;
-  let worst: "reconciled" | "pending" | "unsent" = "reconciled";
+  const dots: { code: string; label: string; reconciled: boolean }[] = [];
   for (const ch of perChannel) {
     if (!ch.settled || !(ch.net > 0)) continue;
-    sawAny = true;
     const st = reconStatus[`tea:${branchCode}:${date}:${ch.code}`];
-    const state = st ? (st.reconciled ? "reconciled" : "pending") : "unsent";
-    if (state === "unsent") worst = "unsent";
-    else if (state === "pending" && worst !== "unsent") worst = "pending";
+    if (!st) continue; // ยังไม่ส่ง → ไม่โชว์จุด
+    dots.push({ code: ch.code, label: ch.label, reconciled: st.reconciled });
   }
-  return sawAny ? worst : null;
+  return dots;
 }
 
 function MatrixTable({
@@ -719,7 +718,7 @@ function MatrixTable({
               return {
                 v,
                 state: d?.match_state ?? null,
-                recon: teaDayReconState(d, b.code, date, configByCode, reconStatus),
+                dots: teaDayReconDots(d, b.code, date, configByCode, reconStatus),
               };
             });
             return (
@@ -730,28 +729,30 @@ function MatrixTable({
                 {cells.map((c, i) => (
                   <td
                     key={i}
-                    title={
-                      c.recon === "reconciled"
-                        ? "กระทบยอดธนาคารครบแล้ว"
-                        : c.recon === "pending"
-                          ? "ส่งเข้าระบบแล้ว · รอธนาคารมากระทบ"
-                          : c.recon === "unsent"
-                            ? "ยังไม่ส่งเข้ากระทบยอดธนาคาร"
-                            : undefined
-                    }
                     className={`px-3 py-1.5 text-right tabular-nums border-b border-zinc-100 ${
                       c.state === "mismatch"
                         ? "bg-red-50 text-red-700 font-semibold"
                         : c.state === "no_iv"
                           ? "bg-amber-50 text-amber-700"
-                          : c.recon === "reconciled"
-                            ? "cell-matched-iridescent"
-                            : c.recon === "pending"
-                              ? "bg-amber-50/40 text-amber-700"
-                              : "text-zinc-700"
+                          : "text-zinc-700"
                     }`}
                   >
-                    {c.v != null ? c.v.toLocaleString() : <span className="text-zinc-300">—</span>}
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {c.dots.length > 0 && (
+                        <span className="inline-flex gap-0.5">
+                          {c.dots.map((dot) => (
+                            <span
+                              key={dot.code}
+                              title={`${dot.label}: ${dot.reconciled ? "กระทบยอดธนาคารครบแล้ว" : "ส่งเข้าระบบแล้ว · รอธนาคารมากระทบ"}`}
+                              className={`inline-block h-1.5 w-1.5 rounded-full ${
+                                dot.reconciled ? "cell-matched-iridescent" : "bg-amber-400"
+                              }`}
+                            />
+                          ))}
+                        </span>
+                      )}
+                      {c.v != null ? c.v.toLocaleString() : <span className="text-zinc-300">—</span>}
+                    </span>
                   </td>
                 ))}
                 <td className="px-3 py-1.5 text-right tabular-nums font-bold text-zinc-900 border-b border-zinc-100 bg-zinc-50">
