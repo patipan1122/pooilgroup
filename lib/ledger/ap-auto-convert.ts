@@ -24,6 +24,8 @@ import {
 } from "@/lib/ledger/trcloud-push";
 import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { audit } from "@/lib/audit/log";
+import { llCSlotForGl } from "@/lib/ledger/coa-chart";
+import { isAutoPvEnabled } from "@/lib/ledger/trcloud-pv";
 
 export type RunApConversionResult =
   | { ok: true; apDocId: string | null; apDocNo: string | null; alreadyAp?: boolean }
@@ -75,6 +77,35 @@ export async function runApConversion(
     return {
       ok: false,
       error: "ยังไม่ได้เลือกหมวดค่าใช้จ่าย (ผังบัญชี) — เลือกหมวดก่อนจึงแปลงเป็น AP ได้ (กันลงบัญชีตกถังรวม)",
+    };
+  }
+  // 🔴 กันลงบัญชีผิด รอบ 2 (CEO 2026-08-11 · AP 551563 เบียร์ Hotel MIX ตก 5919999): "มี categoryAccCode"
+  // ไม่พอ — ต้องเป็นหมวดที่ "สูตร LL" รู้จักด้วย (llCSlotForGl ไม่ null) ไม่งั้น convertExpensePoToAp
+  // จะ fallback ไป Credit[AP]/Cash[AP] เดิม ซึ่ง Product2GL:AUTO ของ TRCloud ตก 5919999 เสมอ (SKU
+  // JPS-100/101/103 มี acc_buy ว่างถาวร — พิสูจน์แล้วหลายรอบ ไม่มีทางเลี่ยงอื่น). เดิม guard ด้านบน
+  // (2026-07-22) เช็คแค่ "มี GL" — หมวด COGS/สินค้าซื้อมาขาย (เช่น เบียร์ GL 5101000) มี GL จริงแต่ไม่
+  // อยู่ใน 21 หมวด LL จึงหลุดผ่าน guard เดิมตรงเข้าบั๊กที่ guard ถูกสร้างมาเพื่อกันพอดี.
+  //
+  // เคสที่สอง: บิล "จ่ายแล้ว" (paymentStatus=paid) โดยไม่ใช่ creditForm/autoPv — โค้ด trcloud-push.ts
+  // จะไม่พยายาม LL เลย (fallback Cash[AP] ตรง ๆ) แม้หมวดจะอยู่ใน LL ก็ตาม → เสี่ยง 5919999 เหมือนกัน
+  // จนกว่า LEDGER_AUTO_PV_ENABLED จะเปิด (หรือมาทาง creditForm). เช็ค 2 เงื่อนไขนี้ mirror
+  // trcloud-push.ts:convertExpensePoToAp ตรง ๆ — แก้ที่นั่นต้องแก้ที่นี่คู่กันเสมอ.
+  const creditForm = opts.creditForm === true;
+  const willAttemptLL = creditForm || isAutoPvEnabled() || (loaded.pushable.paymentStatus ?? "unpaid") !== "paid";
+  if (!willAttemptLL) {
+    return {
+      ok: false,
+      error:
+        "บิลนี้ถูกจ่ายไปแล้วก่อนแปลงเป็น AP — ระบบยังลงบัญชีผ่านสูตรเดิมที่ตกถังรวม 5919999 เสมอในเคสนี้ " +
+        "กรุณาแปลงเป็น AP ก่อนจ่ายเงิน หรือแจ้งทีมเทคนิคเปิดฟีเจอร์ PV อัตโนมัติก่อน",
+    };
+  }
+  if (!llCSlotForGl(loaded.pushable.categoryAccCode)) {
+    return {
+      ok: false,
+      error:
+        `หมวด "${loaded.pushable.categoryName ?? "-"}" ยังไม่รองรับการลงบัญชีอัตโนมัติ (ไม่มีในสูตร LL ของ TRCloud) ` +
+        "— แจ้งบัญชีเพิ่มหมวดนี้ในสูตร LL ก่อน หรือเปลี่ยนเป็นหมวดที่รองรับแล้ว (กันลงบัญชีตกถังรวม 5919999)",
     };
   }
   // สลิปโอน (ถ้ามี · จับคู่กับใบนี้แล้ว) → แนบลิงก์เข้าใบ AP

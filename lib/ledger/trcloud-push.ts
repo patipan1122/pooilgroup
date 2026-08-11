@@ -599,8 +599,13 @@ export async function convertExpensePoToAp(
   // สูตร "LL" — ลงบัญชีต่อหมวดผ่าน "ช่อง c" ในตัวใบ AP (เฉพาะเคสเครดิต + หมวดมาตรฐานที่มี c-slot).
   // ส่ง c<หมวด>=ยอดสุทธิ (net) + c22/c23=VAT (ถ้ามี) → grand_total(เจ้าหนี้) auto จาก product.
   // journal อยู่ในตัวใบ → ไม่ตก 5919999 · ไม่มีชุดแยก · ไม่ต้องลบ. หมวดไม่รู้จัก/จ่ายสด → fallback Credit[AP].
-  // creditForm → ใช้ LL แม้ paid (ผังบัญชีถูก + มีเจ้าหนี้ให้ PV เคลียร์). เส้นปกติ: LL เฉพาะบิลยังไม่จ่าย.
-  const llSlot = (opts.creditForm || (e.paymentStatus ?? "unpaid") !== "paid")
+  // creditForm/autoPv → ใช้ LL แม้ paid (ผังบัญชีถูก + มีเจ้าหนี้ให้ PV เคลียร์). เส้นปกติ: LL เฉพาะบิลยังไม่จ่าย.
+  // 🔴 FIX 2026-08-11: เดิมเช็คแค่ opts.creditForm — ไม่เช็ค autoPv เหมือน apType ด้านบน (บรรทัด 590)
+  // → เปิด LEDGER_AUTO_PV_ENABLED แล้ว apType ไปเป็น Credit[AP] ถูก แต่ llSlot ยังโดนบังคับ null เพราะ
+  // paymentStatus==="paid" && !creditForm → Credit[AP] "เปล่า" (ไม่มี c-slot) = ตก 5919999 เหมือนเดิม
+  // (พิสูจน์จาก AP 551563 · ดู memory ledger-trcloud-auto-pv-flag-never-enabled-2026-08-11). เพิ่ม autoPv
+  // เข้าเงื่อนไขให้ตรงกับ apType — autoPv เปิด = ทุกบิลจ่ายแล้วก็ยังพยายาม LL ก่อนเสมอ.
+  const llSlot = (opts.creditForm || autoPv || (e.paymentStatus ?? "unpaid") !== "paid")
     ? llCSlotForGl(eff.categoryAccCode)
     : null;
   const useLL = !!llSlot;
@@ -707,7 +712,8 @@ export async function updateExpenseAp(
     ? AP_TYPE_CREDIT
     : ((e.paymentStatus ?? "unpaid") === "paid" ? AP_TYPE_CASH : AP_TYPE_CREDIT);
   const apCompanyFormat = autoPv ? AP_COMPANY_FORMAT : "JPS_AP";
-  const llSlot = (opts.creditForm || (e.paymentStatus ?? "unpaid") !== "paid")
+  // 🔴 FIX 2026-08-11: sync กับ convertExpensePoToAp — เติม autoPv เข้าเงื่อนไข llSlot (ดู comment ที่นั่น).
+  const llSlot = (opts.creditForm || autoPv || (e.paymentStatus ?? "unpaid") !== "paid")
     ? llCSlotForGl(eff.categoryAccCode)
     : null;
   const useLL = !!llSlot;
