@@ -3,9 +3,9 @@
 // AccountLedgerTabs — PEAK "ภาพรวมเงินเข้า-เงินออก": รายการบันทึก / รายการเคลื่อนไหว.
 // Book rows link to the document detail (expense review pane / revenue manager).
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle, Clock } from "lucide-react";
+import { CheckCircle, Clock, Search, X } from "lucide-react";
 
 interface BankRow {
   id: string; date: string; description: string; txnType: string; channel: string | null; ref1: string | null;
@@ -41,14 +41,29 @@ function StateBadge({ ok }: { ok: boolean }) {
 
 export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) {
   const [tab, setTab] = useState<"book" | "bank">("bank");
+  const [query, setQuery] = useState("");
 
   const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1";
   const tabCls = (active: boolean) =>
     `rounded-lg px-4 py-1.5 text-sm font-medium ${FOCUS} ${active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`;
 
+  const q = query.trim().toLowerCase();
+  const filteredBank = useMemo(() => {
+    if (!q) return bankLedger;
+    return bankLedger.filter((r) =>
+      [r.date, r.description, r.txnType, r.channel, r.ref1].filter(Boolean).join(" ").toLowerCase().includes(q)
+    );
+  }, [bankLedger, q]);
+  const filteredBook = useMemo(() => {
+    if (!q) return bookLedger;
+    return bookLedger.filter((r) =>
+      [r.date, r.docNo, r.contact, r.detail, r.kind, BOOK_TAG[r.bookType]].filter(Boolean).join(" ").toLowerCase().includes(q)
+    );
+  }, [bookLedger, q]);
+
   return (
     <div className="rounded-2xl border border-zinc-100 bg-white">
-      <div className="flex gap-2 border-b border-zinc-100 p-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 p-3">
         <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
           <button type="button" onClick={() => setTab("book")} className={tabCls(tab === "book")}>
             รายการบันทึกบัญชี <span className="text-xs text-zinc-400">({bookLedger.length})</span>
@@ -56,6 +71,26 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
           <button type="button" onClick={() => setTab("bank")} className={tabCls(tab === "bank")}>
             รายการเคลื่อนไหว (ธนาคาร) <span className="text-xs text-zinc-400">({bankLedger.length})</span>
           </button>
+        </div>
+        <div className="relative ml-auto w-full max-w-[220px] sm:max-w-[260px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={tab === "bank" ? "ค้นหารายการเคลื่อนไหว..." : "ค้นหารายการบันทึกบัญชี..."}
+            className={`h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-7 text-sm text-zinc-700 placeholder:text-zinc-400 ${FOCUS} focus-visible:border-brand-300`}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100"
+              aria-label="ล้างคำค้นหา"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -72,7 +107,7 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
-              {bankLedger.map((r) => {
+              {filteredBank.map((r) => {
                 const credit = r.amountSatang > 0;
                 return (
                   <tr key={r.id} className="hover:bg-zinc-50">
@@ -94,6 +129,9 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
               {bankLedger.length === 0 && (
                 <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-zinc-400">ยังไม่มีรายการเคลื่อนไหวในงวดนี้ — นำเข้า statement ก่อน</td></tr>
               )}
+              {bankLedger.length > 0 && filteredBank.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-zinc-400">ไม่พบรายการที่ตรงกับ &ldquo;{query}&rdquo;</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -110,7 +148,7 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
-              {bookLedger.map((r) => {
+              {filteredBook.map((r) => {
                 const credit = r.amountSatang > 0;
                 const href = r.bookType === "expense"
                   ? `/ledger/expenses?selected=${r.bookId}`
@@ -140,6 +178,9 @@ export function AccountLedgerTabs({ bankLedger, bookLedger, companyId }: Props) 
               })}
               {bookLedger.length === 0 && (
                 <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-zinc-400">ยังไม่มีรายการบันทึกบัญชีในงวดนี้</td></tr>
+              )}
+              {bookLedger.length > 0 && filteredBook.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-zinc-400">ไม่พบรายการที่ตรงกับ &ldquo;{query}&rdquo;</td></tr>
               )}
             </tbody>
           </table>
