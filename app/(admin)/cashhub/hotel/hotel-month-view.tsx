@@ -7,7 +7,7 @@ import type {
   HotelMonthSummary,
   HotelShiftRow,
 } from "@/lib/cashhub/hotel";
-import { HotelExcelGrid } from "./hotel-excel-grid";
+import { HotelExcelGrid, type IvCompareShift } from "./hotel-excel-grid";
 
 const baht = (v: number) => formatBaht(v);
 
@@ -102,11 +102,20 @@ function Field({
   );
 }
 
+type IvPullShift = IvCompareShift & { ivId: string };
+type IvPullDay = { day: number; morning: IvPullShift | null; evening: IvPullShift | null };
+type IvPullResp = {
+  summary: { ivCount: number; expectedShifts: number; missingShifts: number; ivTotal: number };
+  days: IvPullDay[];
+};
+
 export function HotelMonthView({
   days,
   summary,
   monthCheck,
   hasBranch,
+  branchId,
+  monthStr,
 }: {
   days: HotelDay[];
   summary: HotelMonthSummary;
@@ -117,10 +126,15 @@ export function HotelMonthView({
     revenue_pos: number | null;
   } | null;
   hasBranch: boolean;
+  branchId: string | null;
+  monthStr: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [view, setView] = useState<"grid" | "summary">("grid");
+  const [ivBusy, setIvBusy] = useState(false);
+  const [ivErr, setIvErr] = useState<string | null>(null);
+  const [ivResp, setIvResp] = useState<IvPullResp | null>(null);
   const dataDays = useMemo(() => days.filter((d) => d.hasData), [days]);
   const flaggedCount = useMemo(
     () => dataDays.filter((d) => d.flagged).length,
@@ -129,6 +143,50 @@ export function HotelMonthView({
   const shownDays = onlyFlagged
     ? dataDays.filter((d) => d.flagged)
     : dataDays;
+
+  async function checkIv() {
+    if (!branchId) return;
+    setIvBusy(true);
+    setIvErr(null);
+    try {
+      const [y, m] = monthStr.split("-").map(Number);
+      const res = await fetch("/api/cashhub/hotel/trcloud-pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year: y, month: m, branchId }),
+      });
+      const json = await res.json();
+      if (!res.ok) return setIvErr(json.error ?? "เช็คกับ TRCloud ไม่สำเร็จ");
+      setIvResp(json as IvPullResp);
+    } catch {
+      setIvErr("เชื่อมต่อ TRCloud ไม่ได้");
+    } finally {
+      setIvBusy(false);
+    }
+  }
+
+  // คีย์วันที่ ← เลขวัน (ใช้แปลผลเทียบ IV ที่คืนมาเป็นเลขวัน ให้ตรงกับ HotelDay.date)
+  const dateByDayNum = useMemo(
+    () => new Map(days.map((d) => [d.day, d.date])),
+    [days],
+  );
+  const ivByKey = useMemo(() => {
+    if (!ivResp) return undefined;
+    const map = new Map<string, IvCompareShift>();
+    for (const d of ivResp.days) {
+      const date = dateByDayNum.get(d.day);
+      if (!date) continue;
+      if (d.morning) map.set(`${date}|morning`, d.morning);
+      if (d.evening) map.set(`${date}|evening`, d.evening);
+    }
+    return map;
+  }, [ivResp, dateByDayNum]);
+  const ivMismatchCount = useMemo(() => {
+    if (!ivByKey) return 0;
+    let n = 0;
+    for (const v of ivByKey.values()) if (v.match === false) n += 1;
+    return n;
+  }, [ivByKey]);
 
   if (!hasBranch) {
     return (
@@ -266,6 +324,26 @@ export function HotelMonthView({
           </Tab>
         </div>
         <div className="flex-1" />
+        {view === "grid" && branchId && (
+          <div className="flex items-center gap-2 text-xs">
+            {ivResp && (
+              <span className={ivMismatchCount > 0 ? "text-red-600 font-semibold" : "text-emerald-600 font-semibold"}>
+                {ivMismatchCount > 0
+                  ? `🔴 IV ไม่ตรง ${ivMismatchCount} กะ`
+                  : "✅ IV ตรงกันทุกกะที่คีย์แล้ว"}
+              </span>
+            )}
+            {ivErr && <span className="text-red-600">{ivErr}</span>}
+            <button
+              type="button"
+              onClick={checkIv}
+              disabled={ivBusy}
+              className="h-8 px-3 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold disabled:opacity-50 hover:bg-indigo-100"
+            >
+              {ivBusy ? "กำลังเช็ค…" : ivResp ? "🔎 เช็คกับ IV อีกครั้ง" : "🔎 เช็คกับ IV TRCloud"}
+            </button>
+          </div>
+        )}
         {flaggedCount > 0 && (
           <div className="flex gap-2 text-sm">
             <Chip active={!onlyFlagged} onClick={() => setOnlyFlagged(false)}>
@@ -279,7 +357,7 @@ export function HotelMonthView({
       </div>
 
       {view === "grid" ? (
-        <HotelExcelGrid days={shownDays} />
+        <HotelExcelGrid days={shownDays} ivByKey={ivByKey} />
       ) : (
         <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden -mx-3 lg:mx-0">
           <p className="lg:hidden px-3 pt-2 text-xs" style={{ color: "var(--ch-text-3)" }}>

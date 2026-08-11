@@ -232,6 +232,8 @@ export default async function HotelSalesPage({
         summary={summary}
         monthCheck={monthCheck}
         hasBranch={!!branchId}
+        branchId={branchId}
+        monthStr={monthStr}
       />
 
       {branchId && (
@@ -240,9 +242,9 @@ export default async function HotelSalesPage({
           className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-[var(--ch-navy,#0b1850)]/20 bg-[var(--ch-navy,#0b1850)]/[0.03] p-4 hover:bg-[var(--ch-navy,#0b1850)]/[0.06] transition"
         >
           <div>
-            <div className="font-bold text-zinc-800">🔗 ดึง IV จาก TRCloud</div>
+            <div className="font-bold text-zinc-800">🏦 อัปสลิปธนาคาร + ส่งกระทบยอด</div>
             <div className="text-xs text-zinc-500">
-              เช็คว่าหน้างานคีย์ IV ครบทุกวัน/กะไหม + ยอด IV (= ยอดขายในชีต)
+              ขั้นถัดไปหลังเช็ค IV ตรงแล้ว — อัปไฟล์ TTB + ส่งกระทบยอดเข้าบัญชี (ไม่ใช่หน้าดูยอดซ้ำ)
             </div>
           </div>
           <span className="text-[var(--ch-navy,#0b1850)] font-semibold text-sm shrink-0">
