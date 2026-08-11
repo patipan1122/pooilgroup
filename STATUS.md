@@ -1,6 +1,25 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-06-16 (FuelOS กล่องแชท ปรับใหญ่ BUILT · ⏳ รอ CEO apply migration → push)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-11 (LedgerLine TRCloud 5919999 guard fix BUILT · commit `a41d53aa` รอ CEO อนุมัติ push)
+
+## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ (2026-08-11 · BUILT commit `a41d53aa` off `origin/setup 0c0ce438`, ⏳ NOT pushed — รอ CEO อนุมัติ)
+
+CEO ส่งภาพ AP `551563` (EXP-202608-0002, เบียร์ Hotel MIX ฿5,220) ลงบัญชีผิด **5919999** + error "formula cannot be empty" + จ่ายแล้วแนบสลิปแต่ไม่ขึ้น PV. Deep-debug ด้วย read-only TRCloud API (ap/read+gl/read+pv/search) + `vercel env ls production` — **ไม่แตะ TRCloud/DB เขียนอะไรเลย**.
+
+**2 root cause แยกกัน (พิสูจน์จากข้อมูลจริง):**
+1. **หมวด COGS (เบียร์ GL `5101000`) ไม่อยู่ใน 21 หมวดของสูตร "LL"** (`lib/ledger/coa-chart.ts`) — guard เดิม (2026-07-22) เช็คแค่ "มี GL" ไม่เช็คว่า LL รู้จักไหม → หลุดไป Credit[AP]/Cash[AP] fallback ที่ตก 5919999 เสมอ (SKU acc_buy ว่างถาวรฝั่ง TRCloud — พิสูจน์แล้วหลายรอบ)
+2. **`LEDGER_AUTO_PV_ENABLED` ไม่เคยเปิดใน Vercel Production เลย** (ยืนยันจาก `vercel env ls production`, 79 vars ไม่มีตัวนี้) — ฟีเจอร์ auto-PV (build 2026-07-25) dormant 100% ตั้งแต่ deploy → ทุกบิล "จ่ายแล้ว+สลิป" ไม่เคยออก PV เลยสักใบ (ยืนยันด้วย `pv/search` ว่าง)
+
+**FIX BUILT (worktree `pg-wt-ll-guard`, tsc/eslint/`next build` EXIT0):**
+- `lib/ledger/ap-auto-convert.ts` — เพิ่ม guard บล็อกการแปลง PO→AP เมื่อหมวดไม่มี LL c-slot หรือบิลจ่ายแล้วไม่มีทาง LL ใด ๆ → error ไทยชัดเจนแทนโพสต์ผิดเงียบ
+- `lib/ledger/trcloud-push.ts` — `llSlot` ternary (2 จุด: `convertExpensePoToAp`+`updateExpenseAp`) เพิ่มเช็ค `autoPv` ให้ตรงกับ `apType` ternary (เดิมเปิด autoPv แล้ว apType ไปถูกแต่ llSlot ยังโดนบังคับ null ถ้าบิลจ่ายแล้ว+ไม่ creditForm)
+- เจอ AP พี่น้อง `551474` (สร้างก่อนหน้า 1 วัน type=LL invoice_note ตรงกัน total ต่างกัน) — **เสี่ยงลงบัญชีซ้ำ** ยังไม่แตะ รอบัญชีเช็ค
+
+**⏳ CEO gates ก่อน live:** (1) push commit `a41d53aa` → `setup` (2) เปิด `LEDGER_AUTO_PV_ENABLED=true` ใน Vercel Production + redeploy (3) บัญชีเช็ค AP คู่ 551474/551563 ว่าซ้ำไหม (4) วางแผนขยาย LL ครอบหมวด COGS อื่น ๆ ต่อ (ตอนนี้ครอบแค่ 21 หมวด SG&A)
+
+**⚠️ พบเพิ่ม (นอกสโคป งานนี้):** STATUS.md บน `origin/setup` แช่แข็งที่เนื้อหา 2026-06-16 มา ~2 เดือน (`git log -- STATUS.md` ล่าสุด `00166405` มิ.ย.) — commit "docs(status)" ที่เห็นใน local branch `claude/dc-5fixes-2026-07-12` (isHistoryAdmin, ClawFleet audit ฯลฯ) **ไม่เคยถูก push เข้า setup เลย** — แปลว่า STATUS.md มี 2 สาย ไม่ตรงกัน ควรให้ CEO ตัดสินว่าจะ reconcile ยังไง (แยกจากงานนี้ — แค่ flag ไว้)
+
+---
 
 ## 💬 FUELOS กล่องแชท — อ่านง่าย + รูปกลุ่ม + ค้นหา + จัดหมวด + emoji จริง (2026-06-16 · BUILT commit `e2c3985`, ⏳ NOT deployed)
 
