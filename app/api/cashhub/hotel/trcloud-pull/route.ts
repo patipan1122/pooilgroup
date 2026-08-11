@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       .select("sales_date, shift, total_sales")
       .eq("org_id", session.user.org_id) // scope ชัด — กัน IDOR อ่านข้ามองค์กร (admin bypass RLS)
       .eq("branch_id", body.branchId)
+      .neq("source", "trcloud_iv") // เทียบกับชีตจริงเท่านั้น — กัน IV เก่าที่เคยบันทึกไว้ปนมาเป็น "excel"
       .gte("sales_date", start)
       .lte("sales_date", end);
     for (const r of (data ?? []) as Array<{

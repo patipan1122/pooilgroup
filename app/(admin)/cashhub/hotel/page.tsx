@@ -19,7 +19,7 @@ import {
   maybeSyncHotelSheet,
   type HotelSyncDisplay,
 } from "@/lib/cashhub/hotel-sheet-sync";
-import { syncHotelNowAction } from "./actions";
+import { HotelSyncButton } from "./hotel-sync-button";
 import Link from "next/link";
 import { HotelMonthView } from "./hotel-month-view";
 
@@ -148,16 +148,7 @@ export default async function HotelSalesPage({
               >
                 📄 เปิดชีต Google
               </a>
-              <form action={syncHotelNowAction}>
-                <input type="hidden" name="branchId" value={branchId ?? ""} />
-                <input type="hidden" name="month" value={monthStr} />
-                <button
-                  type="submit"
-                  className="h-10 inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-brand-600,#1e3aff)] text-white font-semibold px-4 text-sm shadow-sm hover:opacity-90"
-                >
-                  🔄 ดึงจากชีตเดี๋ยวนี้
-                </button>
-              </form>
+              <HotelSyncButton branchId={branchId ?? ""} monthStr={monthStr} />
             </div>
           ) : (
             <a

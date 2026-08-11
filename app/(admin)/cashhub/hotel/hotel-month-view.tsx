@@ -187,6 +187,37 @@ export function HotelMonthView({
     for (const v of ivByKey.values()) if (v.match === false) n += 1;
     return n;
   }, [ivByKey]);
+  // วันที่ IV ไม่ตรง (เอาไว้บอกตรงๆ ว่าวันไหน — นับซ้ำได้ถ้าทั้งเช้า+ค่ำผิด)
+  const ivMismatchDays = useMemo(() => {
+    if (!ivByKey) return [] as number[];
+    const set = new Set<number>();
+    for (const [key, v] of ivByKey) if (v.match === false) set.add(Number(key.slice(8, 10)));
+    return [...set].sort((a, b) => a - b);
+  }, [ivByKey]);
+
+  // วันที่มี IV แต่ชีตไม่มีข้อมูลเลย (hasData=false) → ต้อง "แทรก" เข้าตารางเอง
+  // ไม่งั้นแถวที่ IV ไม่ตรงจะไม่ขึ้นในตารางเลย (ถูกกรองทิ้งไปก่อนตั้งแต่ dataDays)
+  const gridDays = useMemo(() => {
+    if (!ivByKey) return shownDays;
+    const known = new Set(shownDays.map((d) => d.date));
+    const phantom: HotelDay[] = [];
+    for (const key of ivByKey.keys()) {
+      const date = key.slice(0, 10);
+      if (known.has(date)) continue;
+      known.add(date);
+      phantom.push({
+        date, day: Number(date.slice(8, 10)), morning: null, evening: null,
+        rooms: 0, totalSales: 0, roomRevenue: 0, tip: 0, goods: 0, fine: 0,
+        qrTotal: 0, qrBanked: 0, qrDiff: 0, qrChecked: false,
+        cashDeposited: 0, cashDiff: 0, otaPaid: 0, otaBanked: 0, overShort: 0,
+        qrFlag: false, qrUnchecked: false, salesIntegrity: true,
+        cashMismatch: false, flagged: false, hasData: true,
+      });
+    }
+    return phantom.length
+      ? [...shownDays, ...phantom].sort((a, b) => a.day - b.day)
+      : shownDays;
+  }, [shownDays, ivByKey]);
 
   if (!hasBranch) {
     return (
@@ -329,8 +360,8 @@ export function HotelMonthView({
             {ivResp && (
               <span className={ivMismatchCount > 0 ? "text-red-600 font-semibold" : "text-emerald-600 font-semibold"}>
                 {ivMismatchCount > 0
-                  ? `🔴 IV ไม่ตรง ${ivMismatchCount} กะ`
-                  : "✅ IV ตรงกันทุกกะที่คีย์แล้ว"}
+                  ? `🔴 ยอดชีตกับ IV ไม่ตรงกัน ${ivMismatchCount} กะ · ดูวันที่ ${ivMismatchDays.join(", ")} ในตาราง`
+                  : "✅ ยอดชีตตรงกับ IV TRCloud ทุกกะที่คีย์แล้ว"}
               </span>
             )}
             {ivErr && <span className="text-red-600">{ivErr}</span>}
@@ -357,7 +388,7 @@ export function HotelMonthView({
       </div>
 
       {view === "grid" ? (
-        <HotelExcelGrid days={shownDays} ivByKey={ivByKey} />
+        <HotelExcelGrid days={gridDays} ivByKey={ivByKey} />
       ) : (
         <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden -mx-3 lg:mx-0">
           <p className="lg:hidden px-3 pt-2 text-xs" style={{ color: "var(--ch-text-3)" }}>
