@@ -48,6 +48,8 @@ export type BillDocumentData = {
   status: string;
   issueDate: Date | null;
   dueDate: Date | null;
+  taxInvoiceNo?: string | null;
+  taxInvoiceIssuedAt?: Date | null;
   subtotal: unknown;
   discountAmount: unknown;
   vatAmount: unknown;
@@ -189,8 +191,8 @@ export function BillDocument({
 
   const isVoid = bill.status === "void";
   const isPaid = remaining <= 0 && !isVoid;
-  const headline = docTitle ?? (isPaid ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้");
-  const headlineEn = docTitle ? "BILLING NOTE" : isPaid ? "RECEIPT" : "INVOICE";
+  const headline = docTitle ?? (bill.taxInvoiceNo ? "ใบกำกับภาษี / ใบเสร็จรับเงิน" : isPaid ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้");
+  const headlineEn = docTitle ? "BILLING NOTE" : bill.taxInvoiceNo ? "TAX INVOICE" : isPaid ? "RECEIPT" : "INVOICE";
   const statusLabel = isVoid ? "ยกเลิก" : isPaid ? "ชำระแล้ว" : "ค้างชำระ";
   const statusTone = isVoid ? "var(--rs-text-3)" : isPaid ? "var(--rs-ok)" : "var(--rs-danger)";
   const statusBg = isVoid ? "var(--rs-bg-3)" : isPaid ? "var(--rs-ok-soft)" : "var(--rs-danger-soft)";
@@ -276,7 +278,7 @@ export function BillDocument({
 
       {/* แถบข้อมูลบิล */}
       <div
-        className="grid grid-cols-3 mt-5 rounded-xl overflow-hidden"
+        className={`grid ${bill.taxInvoiceNo ? "grid-cols-4" : "grid-cols-3"} mt-5 rounded-xl overflow-hidden`}
         style={{ border: `1px solid ${line}` }}
       >
         {[
@@ -287,6 +289,15 @@ export function BillDocument({
             v: `${bill.issueDate ? thaiDateLong(bill.issueDate) : "—"} → ${bill.dueDate ? thaiDateLong(bill.dueDate) : "—"}`,
             num: true,
           },
+          ...(bill.taxInvoiceNo
+            ? [
+                {
+                  k: "เลขที่ใบกำกับภาษี",
+                  v: `${bill.taxInvoiceNo}${bill.taxInvoiceIssuedAt ? ` (${thaiDateLong(bill.taxInvoiceIssuedAt)})` : ""}`,
+                  num: true,
+                },
+              ]
+            : []),
         ].map((c, i) => (
           <div key={c.k} className="px-3.5 py-2.5" style={{ background: "var(--rs-bg-2)", borderLeft: i ? `1px solid ${line}` : undefined }}>
             <div className="text-[10px] font-semibold" style={{ color: "var(--rs-text-3)" }}>

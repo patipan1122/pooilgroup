@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Banknote, Percent, Download, Check, X, Send, Copy, ExternalLink, Pencil, Trash2, Plus } from "lucide-react";
+import { Banknote, Percent, Download, Check, X, Send, Copy, ExternalLink, Pencil, Trash2, Plus, Receipt } from "lucide-react";
 import {
   actRecordPayment,
   actRequestDiscount,
@@ -15,6 +15,7 @@ import {
   actEditBillItems,
   actDeleteBill,
   actVoidPayment,
+  actIssueTaxInvoice,
 } from "../../../_actions";
 import { formatBaht, thaiDateLong } from "@/lib/rentspace/format";
 
@@ -453,6 +454,57 @@ export function PrintBillButton() {
   return (
     <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={() => window.print()}>
       <Download className="h-4 w-4" /> ดาวน์โหลด / พิมพ์ PDF
+    </button>
+  );
+}
+
+// ───────── ออกใบกำกับภาษี (เฉพาะบิลที่จ่ายครบแล้ว) ─────────
+export function TaxInvoiceButton({
+  billId,
+  status,
+  taxInvoiceNo: initialTaxInvoiceNo,
+}: {
+  billId: string;
+  status: string;
+  taxInvoiceNo: string | null;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [taxInvoiceNo, setTaxInvoiceNo] = useState(initialTaxInvoiceNo);
+
+  if (status !== "paid") {
+    return (
+      <button
+        className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0 opacity-50 cursor-not-allowed"
+        disabled
+        title="ต้องจ่ายครบก่อนถึงจะออกใบกำกับภาษีได้"
+      >
+        <Receipt className="h-4 w-4" /> ออกใบกำกับภาษี — ต้องจ่ายครบก่อน
+      </button>
+    );
+  }
+
+  function go() {
+    if (taxInvoiceNo) {
+      window.print();
+      return;
+    }
+    start(async () => {
+      try {
+        const r = await actIssueTaxInvoice(billId);
+        setTaxInvoiceNo(r.taxInvoiceNo);
+        toast.success(`ออกใบกำกับภาษีเลขที่ ${r.taxInvoiceNo} แล้ว — กดอีกครั้งเพื่อพิมพ์`);
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ออกใบกำกับภาษีไม่สำเร็จ");
+      }
+    });
+  }
+
+  return (
+    <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" onClick={go} disabled={pending}>
+      <Receipt className="h-4 w-4" />
+      {pending ? "กำลังออกเลขที่…" : taxInvoiceNo ? `พิมพ์ใบกำกับภาษี ${taxInvoiceNo}` : "ออกใบกำกับภาษี"}
     </button>
   );
 }

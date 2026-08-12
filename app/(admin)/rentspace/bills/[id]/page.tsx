@@ -21,6 +21,7 @@ import {
   RequestDiscountButton,
   DiscountDecisionButtons,
   PrintBillButton,
+  TaxInvoiceButton,
   SendBillButton,
   RequestVoidButton,
   VoidDecisionButtons,
@@ -220,6 +221,9 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
               />
             )}
             <PrintBillButton />
+            {bill.status !== "void" && (
+              <TaxInvoiceButton billId={bill.id} status={bill.status} taxInvoiceNo={bill.taxInvoiceNo} />
+            )}
             {/* แตกบิล — พิมพ์ "ใบวางบิลแยก" (ค่าเช่า / ค่าน้ำ-ไฟ) โดยบิลหลักไม่เปลี่ยน */}
             {bill.status !== "void" && (
               <a

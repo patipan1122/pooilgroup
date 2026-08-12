@@ -9,7 +9,7 @@ import { putObject } from "@/lib/r2/upload";
 import { audit } from "@/lib/audit/log";
 import type { AuditAction } from "@/lib/audit/log";
 import { toNum, currentPeriod } from "@/lib/rentspace/format";
-import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2, computeBillTotals, promoDiscountFor } from "@/lib/rentspace/billing";
+import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2, computeBillTotals, promoDiscountFor, issueTaxInvoice } from "@/lib/rentspace/billing";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
 import { notifyBillIssued } from "@/lib/rentspace/notify";
@@ -1701,6 +1701,26 @@ export async function actDecideVoidBill(billId: string, decision: "approve" | "r
   return { ok: true };
 }
 
+// ───────── ออกใบกำกับภาษี (เฉพาะบิลที่จ่ายครบแล้ว) ─────────
+export async function actIssueTaxInvoice(
+  billId: string,
+): Promise<{ taxInvoiceNo: string; alreadyIssued: boolean }> {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  const { taxInvoiceNo, alreadyIssued } = await issueTaxInvoice(bill.id, session.user.id);
+  if (!alreadyIssued) {
+    await logAudit(session, "RENTSPACE_TAX_INVOICE_ISSUED", "rental_bill", bill.id, { taxInvoiceNo });
+    revalidatePath("/rentspace/bills");
+    revalidatePath(`/rentspace/bills/${bill.id}`);
+    revalidatePath("/rentspace/matrix");
+  }
+  return { taxInvoiceNo, alreadyIssued };
+}
+
 // ───────── โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (ต้องเปิดสิทธิ์ project.billEditUnlocked) ─────────
 
 const EDITABLE_BILL_KINDS = new Set(["rent", "electric", "water", "late_fee", "land_tax", "custom", "other"]);
@@ -1729,6 +1749,7 @@ export async function actEditBillItems(input: {
       id: true,
       status: true,
       totalAmount: true, // เก็บ "ก่อนแก้" ไว้ลง audit trail
+      taxInvoiceNo: true,
       items: { select: { kind: true, label: true, amount: true } },
       project: { select: { billEditUnlocked: true } },
     },
@@ -1738,6 +1759,9 @@ export async function actEditBillItems(input: {
   if (!isSuperAdmin(session.user.role) && !bill.project.billEditUnlocked)
     throw new Error("ยังไม่ได้เปิดสิทธิ์แก้ไขบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
   if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว แก้ไขไม่ได้");
+  // เลขที่ใบกำกับภาษีต้องเรียงต่อเนื่องไม่ข้าม/ไม่ซ้ำตามกฎสรรพากร — แก้ยอดเงินบิลที่ออกไปแล้วไม่ได้
+  if (bill.taxInvoiceNo)
+    throw new Error(`บิลนี้ออกใบกำกับภาษีเลขที่ ${bill.taxInvoiceNo} ไปแล้ว แก้ไขยอดเงินไม่ได้`);
 
   // sanitize + validate
   const clean = (input.items ?? [])
@@ -1816,12 +1840,15 @@ export async function actDeleteBill(billId: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: billId, orgId: session.user.org_id },
-    select: { id: true, billNo: true, status: true, project: { select: { billDeleteUnlocked: true } } },
+    select: { id: true, billNo: true, status: true, taxInvoiceNo: true, project: { select: { billDeleteUnlocked: true } } },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
   // super_admin ลบได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตลบบิล" ในหน้าตั้งค่าก่อน
   if (!isSuperAdmin(session.user.role) && !bill.project.billDeleteUnlocked)
     throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
+  // เลขที่ใบกำกับภาษีที่ออกไปแล้วต้องเรียงต่อเนื่อง ลบบิลทิ้งจะทำให้เลขหายจากลำดับ — ห้ามลบ
+  if (bill.taxInvoiceNo)
+    throw new Error(`บิลนี้ออกใบกำกับภาษีเลขที่ ${bill.taxInvoiceNo} ไปแล้ว ลบไม่ได้ (เลขต้องเรียงต่อเนื่องตามกฎสรรพากร)`);
 
   await prisma.$transaction([
     prisma.rentalDiscount.deleteMany({ where: { billId: bill.id } }),

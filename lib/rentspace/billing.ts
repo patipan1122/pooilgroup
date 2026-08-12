@@ -143,6 +143,67 @@ async function nextBillNo(orgId: string, period: string): Promise<string> {
   return `${prefix}${String(lastSeq + 1).padStart(6, "0")}`;
 }
 
+/** TX{YYYY}{seq6} — unique per org, resets each calendar year (issuance date, not billing period). */
+async function nextTaxInvoiceNo(orgId: string, year: number): Promise<string> {
+  const prefix = `TX${year}`;
+  const last = await prisma.rentalBill.findFirst({
+    where: { orgId, taxInvoiceNo: { startsWith: prefix } },
+    orderBy: { taxInvoiceNo: "desc" },
+    select: { taxInvoiceNo: true },
+  });
+  const lastSeq = last?.taxInvoiceNo ? Number(last.taxInvoiceNo.slice(prefix.length)) || 0 : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(6, "0")}`;
+}
+
+/**
+ * ออกเลขที่ใบกำกับภาษีให้บิลที่ "จ่ายครบ" แล้ว — idempotent (กดซ้ำคืนเลขเดิม ไม่ออกใหม่)
+ * และ race-safe เหมือน nextBillNo: ถ้าสองคำขอชนกัน (บิลเดียวกัน หรือ เลขชนกันคนละบิล)
+ * ผู้แพ้จะไม่ได้เลขซ้ำ/เลขหาย — อ่านเลขที่ชนะกลับไปแทน. เลขที่ที่ออกแล้วห้ามเปลี่ยน/ลบ
+ * (ดู guard ใน actEditBillItems/actDeleteBill).
+ */
+export async function issueTaxInvoice(
+  billId: string,
+  actorId: string | null,
+): Promise<{ taxInvoiceNo: string; issuedAt: Date; alreadyIssued: boolean }> {
+  const existing = await prisma.rentalBill.findUnique({
+    where: { id: billId },
+    select: { orgId: true, status: true, taxInvoiceNo: true, taxInvoiceIssuedAt: true },
+  });
+  if (!existing) throw new Error("ไม่พบบิล");
+  if (existing.taxInvoiceNo) {
+    return { taxInvoiceNo: existing.taxInvoiceNo, issuedAt: existing.taxInvoiceIssuedAt!, alreadyIssued: true };
+  }
+  if (existing.status !== "paid") throw new Error("ออกใบกำกับภาษีได้เฉพาะบิลที่จ่ายครบแล้วเท่านั้น");
+
+  const year = new Date().getFullYear();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const taxInvoiceNo = await nextTaxInvoiceNo(existing.orgId, year);
+    const issuedAt = new Date();
+    try {
+      // updateMany + where taxInvoiceNo:null = compare-and-swap กันสองคำขอออกเลขให้บิลเดียวกันพร้อมกัน
+      const result = await prisma.rentalBill.updateMany({
+        where: { id: billId, taxInvoiceNo: null },
+        data: { taxInvoiceNo, taxInvoiceIssuedAt: issuedAt, taxInvoiceIssuedBy: actorId },
+      });
+      if (result.count === 0) {
+        // แพ้ race ให้อีกคำขอ (บิลนี้มีเลขแล้ว) → คืนเลขจริงกลับไป ไม่ throw
+        const row = await prisma.rentalBill.findUnique({
+          where: { id: billId },
+          select: { taxInvoiceNo: true, taxInvoiceIssuedAt: true },
+        });
+        if (row?.taxInvoiceNo) return { taxInvoiceNo: row.taxInvoiceNo, issuedAt: row.taxInvoiceIssuedAt!, alreadyIssued: true };
+        throw new Error("ออกใบกำกับภาษีไม่สำเร็จ กรุณาลองใหม่");
+      }
+      return { taxInvoiceNo, issuedAt, alreadyIssued: false };
+    } catch (e: unknown) {
+      const code = (e as { code?: string })?.code;
+      if (code === "P2002") continue; // เลขชนกับบิลอื่น (คนละแถว) → สุ่มเลขใหม่รอบถัดไป
+      throw e;
+    }
+  }
+  throw new Error("ออกเลขที่ใบกำกับภาษีไม่สำเร็จ — เลขชนกันหลายครั้ง");
+}
+
 function dueDateFor(period: string, dueDay: number): Date {
   const [y, m] = period.split("-").map(Number);
   const day = Math.min(Math.max(dueDay || 5, 1), 28);
