@@ -18,7 +18,9 @@
 //         ข้าม schema dc↔public ได้ · ไม่มี stock-loss/double-decrement).
 //       - ปลายทาง MODULE อื่น (label อิสระ) → ยังปิดใบเฉย ๆ (ไม่เขียนเข้าโมดูลอื่น) เหมือนเดิม.
 //   • autoPromoteStaleTransfers — ใบ IN_TRANSIT ที่ค้างเกิน N ชม. → WAREHOUSE: รับเข้าอัตโนมัติ + mark
-//     AUTO_UNVERIFIED (ติดธง ไม่หายเงียบ ๆ) · MODULE: mark AUTO_UNVERIFIED + ปิด in-transit. (reconcile job เรียก)
+//     AUTO_UNVERIFIED (ติดธง ไม่หายเงียบ ๆ). MODULE (เช่น ClawFleet) → **ไม่แตะเลย** (CEO 2026-08-12: ห้าม
+//     "รับอัตโนมัติ" ปลายทางโมดูลอื่น ต้องกดรับเองเสมอ) — ค้าง IN_TRANSIT ต่อไปจนกว่าคนจะกด confirmTransfer.
+//     (reconcile job เรียก)
 //
 // ★ IDEMPOTENCY: client uuid ต่อใบ + ต่อบรรทัด → sourceKey("tfo",transferId,lineKey) ตอนส่งออก /
 //   sourceKey("tfi",transferId,lineId) ตอนรับเข้า → @@unique([orgId,sourceKey]) ทำให้กดซ้ำ/รีทราย = no-op.
@@ -922,7 +924,10 @@ export type AutoPromoteResult = {
 /**
  * ใบ IN_TRANSIT ที่ค้างเกิน N ชม. → ปิดอัตโนมัติแบบ "ติดธง" (ไม่หายเงียบ ๆ):
  *   • WAREHOUSE dest → รับเข้าปลายทางอัตโนมัติ (TRANSFER_IN ครบตาม qty) + ลด in-transit + status=AUTO_UNVERIFIED
- *   • MODULE dest    → ปิด in-transit + status=AUTO_UNVERIFIED (ไม่เขียนเข้าโมดูลอื่น)
+ *   • MODULE dest    → **ไม่แตะเลย** (CEO 2026-08-12: ห้ามมีการ "รับอัตโนมัติ" ใดๆ ฝั่งโมดูลอื่น เช่น
+ *     ตู้คีบ ClawFleet — ใบพวกนี้ต้องรอคนกดรับเองเท่านั้น ไม่ว่าจะค้างนานแค่ไหน). ก่อนหน้านี้ cron จะ flip
+ *     เป็น AUTO_UNVERIFIED ซึ่งดันไปบล็อกปุ่ม "รับ" ในแอปพนักงาน (ใบหายจากจอ กดรับไม่ได้อีกเลย) — จึงตัด
+ *     MODULE dest ออกจาก query นี้ทั้งหมด ปล่อยให้เป็น IN_TRANSIT ค้างรอมนุษย์กดรับได้เสมอ.
  * EXPORT — reconcile job เรียกตัวนี้. ไม่ต้องมี session (system job) → scope ด้วย orgId ที่ส่งมา.
  */
 export async function autoPromoteStaleTransfers(
@@ -936,23 +941,24 @@ export async function autoPromoteStaleTransfers(
       orgId,
       status: DcTransferStatus.IN_TRANSIT,
       dispatchedAt: { lt: cutoff },
+      destType: DcTransferDestType.WAREHOUSE,
+      toWarehouseId: { not: null },
     },
     select: {
       id: true,
       transferCode: true,
       fromWarehouseId: true,
-      destType: true,
       toWarehouseId: true,
       lines: { select: { id: true, productId: true, qty: true, unitCostSatang: true, costLayerId: true } },
     },
   });
 
   let promotedWarehouse = 0;
-  let promotedModule = 0;
+  const promotedModule = 0; // MODULE dest ไม่ผ่าน query นี้อีกแล้ว — เหลือไว้ให้ shape เดิมของ caller ใช้ได้
 
   for (const transfer of stale) {
-    const isWarehouseDest = transfer.destType === DcTransferDestType.WAREHOUSE && !!transfer.toWarehouseId;
     const destWh = transfer.toWarehouseId;
+    if (!destWh) continue;
 
     // ★ ATOMIC RESERVE ต่อใบ (จังหวะแรก · ก่อนรับเข้า/ลด in-transit): จองสถานะ
     // IN_TRANSIT → AUTO_UNVERIFIED ทันที. ถ้า count===0 = ใบนี้ถูกจัดการไปแล้ว
@@ -968,39 +974,29 @@ export async function autoPromoteStaleTransfers(
     if (reserved.count === 0) continue;
 
     try {
-      if (isWarehouseDest && destWh) {
-        for (const line of transfer.lines) {
-          const inRes = await recordMovement({
-            orgId,
-            warehouseId: destWh,
-            productId: line.productId,
-            kind: DcMoveKind.TRANSFER_IN,
-            qty: Math.abs(line.qty),
-            unitCostSatang: line.unitCostSatang,
-            costLayerId: line.costLayerId,
-            sourceKey: sourceKey("tfi", transfer.id, line.id),
-            refType: "dc_transfer_auto",
-            refId: transfer.id,
-            note: `รับโอนอัตโนมัติ ${transfer.transferCode} (ค้างเกิน ${olderThanHours} ชม.)`,
-            actorUserId: null,
-          });
-          if (!inRes.ok) throw new Error(inRes.error);
-          await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
-          await prisma.dcTransferLine.update({
-            where: { id: line.id },
-            data: { qtyReceived: line.qty },
-          });
-        }
-        promotedWarehouse += 1;
-      } else {
-        // MODULE dest (รวมสาขาตู้คีบ ClawFleet) → ปิด in-transit + ติดธง AUTO_UNVERIFIED เท่านั้น.
-        // ★ Wave 6: ปลายทาง ClawFleet "ห้าม" auto-เขียนสต๊อก/ต้นทุนเข้าสโตร์สาขาที่นี่ — งานเงินต้องมีคน
-        //   ยืนยันรับด้วยมือ (confirmTransfer) เท่านั้น. cron แค่กันใบค้างหาย (ติดธง) ไม่แตะเงินอัตโนมัติ.
-        for (const line of transfer.lines) {
-          await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
-        }
-        promotedModule += 1;
+      for (const line of transfer.lines) {
+        const inRes = await recordMovement({
+          orgId,
+          warehouseId: destWh,
+          productId: line.productId,
+          kind: DcMoveKind.TRANSFER_IN,
+          qty: Math.abs(line.qty),
+          unitCostSatang: line.unitCostSatang,
+          costLayerId: line.costLayerId,
+          sourceKey: sourceKey("tfi", transfer.id, line.id),
+          refType: "dc_transfer_auto",
+          refId: transfer.id,
+          note: `รับโอนอัตโนมัติ ${transfer.transferCode} (ค้างเกิน ${olderThanHours} ชม.)`,
+          actorUserId: null,
+        });
+        if (!inRes.ok) throw new Error(inRes.error);
+        await decrementSourceInTransit(transfer.fromWarehouseId, line.productId, line.qty);
+        await prisma.dcTransferLine.update({
+          where: { id: line.id },
+          data: { qtyReceived: line.qty },
+        });
       }
+      promotedWarehouse += 1;
       // หมายเหตุ: status=AUTO_UNVERIFIED + confirmedAt ถูกตั้งไปแล้วตอน ATOMIC RESERVE
       // ด้านบน (ใบที่ชนะ reserve เท่านั้นที่มาถึงตรงนี้) — ไม่ต้องเขียน status ซ้ำ.
     } catch {
