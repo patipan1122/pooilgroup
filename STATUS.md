@@ -1,6 +1,19 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-12 (LedgerLine TRCloud 5919999 guard + category-picker filter BUILT · commit `4f6840cf` รอ CEO อนุมัติ push)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-12 (ClawFleet เพิ่มสินค้าในตู้ รูปหาย DEPLOYED `14e1a09c`)
+
+## 🎮📷 ClawFleet เพิ่มสินค้าในตู้ — รูปตุ๊กตาหายเงียบเวลากดบันทึกไว (2026-08-12 · 🚀DEPLOYED `origin/setup 14e1a09c`)
+
+CEO ส่งสกรีนช็อตหน้า "เพิ่มสินค้าในตู้" (แอปพนักงาน) — ถ่ายรูปตุ๊กตาแล้วเหมือนไม่บันทึก ใช้งานจริงไม่ได้.
+
+**Root cause:** `AddProductSheet.addNew()` (`components/clawfleet/BaselineForm.tsx`) อ่าน `photo` state (ได้ค่าจาก R2 หลังอัปโหลดสำเร็จเท่านั้น) แล้วส่งเข้า `addSetupProductWithDolls` ทันทีที่กดปุ่ม — ไม่เคยเช็คว่ารูปกำลังอัปอยู่ (ปกติ 1-2 วิ) ถ้าพนักงานกดบันทึกไวกว่านั้น `imageUrl` จะว่างเปล่าถาวร (ไม่มี job ไหนมาผูกรูปย้อนหลังให้). ซ้ำร้าย ปุ่มถ่ายรูปโหมด `compact` ไม่โชว์ error เป็นข้อความ (แค่ไอคอนแดงจาง ๆ) — อัปพังก็ไม่มีอะไรบอกพนักงาน. ไม่ใช่บั๊กเดียวกับ [[clawfleet-ios-canvas-webp-encode-fails-upload-silent-2026-08-03]] (ตัวนั้นแก้แล้ว ยังอยู่ครบ) — เป็น race condition คนละจุด ที่ component เดียวกัน.
+
+**FIX** (`components/clawfleet/photo-capture-button.tsx` + `BaselineForm.tsx`, ไม่แตะ schema/DB):
+1. เพิ่ม `onUploadStatus` callback (optional) ให้ `PhotoCaptureButton` รายงานสถานะ uploading/error จริงกลับไปให้ฟอร์ม
+2. `AddProductSheet` ล็อกปุ่มบันทึกระหว่างรูป attempt แรกกำลังอัป (ไม่บล็อกตอน retry/offline — คงดีไซน์เดิมที่ตั้งใจให้ทนเน็ตตกได้) + label ข้างไอคอนกล้องโชว์สถานะจริง ("กำลังอัปรูป…" / ข้อความ error) แทนคำว่า "(ไม่บังคับ)" ที่ค้างไม่ขยับ
+3. กัน gen-drift: เพิ่มสินค้าตัวถัดไปเร็วก่อนรูปตัวก่อนอัปเสร็จ → รูปที่มาช้าจะไม่แปะผิดตัว (`photoGenRef` guard)
+- verify: tsc 0 error (ไฟล์ที่แก้) · eslint 0 error · `next build` exit0 (ก่อน+หลัง rebase onto `origin/setup`)
+- ⚠️ **CEO ยังต้องเทสจริงบนมือถือ** — ผมยืนยันแค่โค้ด+build ผ่าน ยังไม่ได้คลิกทดสอบจริงบนหน้าเว็บ (ไม่มี Playwright session ที่ login staff-app ตอนนี้)
 
 ## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ + ซ่อนหมวดไม่พร้อมจาก picker (2026-08-11/12 · BUILT off `origin/setup cb5c8c70`, ⏳ NOT pushed — รอ CEO อนุมัติ)
 
