@@ -1,23 +1,30 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-11 (LedgerLine TRCloud 5919999 guard fix BUILT · commit `a41d53aa` รอ CEO อนุมัติ push)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-12 (LedgerLine TRCloud 5919999 guard + category-picker filter BUILT · commit `4f6840cf` รอ CEO อนุมัติ push)
 
-## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ (2026-08-11 · BUILT commit `a41d53aa` off `origin/setup 0c0ce438`, ⏳ NOT pushed — รอ CEO อนุมัติ)
+## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ + ซ่อนหมวดไม่พร้อมจาก picker (2026-08-11/12 · BUILT off `origin/setup cb5c8c70`, ⏳ NOT pushed — รอ CEO อนุมัติ)
 
-CEO ส่งภาพ AP `551563` (EXP-202608-0002, เบียร์ Hotel MIX ฿5,220) ลงบัญชีผิด **5919999** + error "formula cannot be empty" + จ่ายแล้วแนบสลิปแต่ไม่ขึ้น PV. Deep-debug ด้วย read-only TRCloud API (ap/read+gl/read+pv/search) + `vercel env ls production` — **ไม่แตะ TRCloud/DB เขียนอะไรเลย**.
+CEO ส่งภาพ AP `551563` (EXP-202608-0002, เบียร์ Hotel MIX ฿5,220) ลงบัญชีผิด **5919999** + error "formula cannot be empty" + จ่ายแล้วแนบสลิปแต่ไม่ขึ้น PV. Deep-debug ด้วย read-only TRCloud API (ap/read+gl/read+pv/search) + `vercel env ls production` + Prisma read-only (ผ่าน tsx ไม่ใช้ psql) — **ไม่แตะ TRCloud/DB เขียนอะไรเลย**.
 
 **2 root cause แยกกัน (พิสูจน์จากข้อมูลจริง):**
 1. **หมวด COGS (เบียร์ GL `5101000`) ไม่อยู่ใน 21 หมวดของสูตร "LL"** (`lib/ledger/coa-chart.ts`) — guard เดิม (2026-07-22) เช็คแค่ "มี GL" ไม่เช็คว่า LL รู้จักไหม → หลุดไป Credit[AP]/Cash[AP] fallback ที่ตก 5919999 เสมอ (SKU acc_buy ว่างถาวรฝั่ง TRCloud — พิสูจน์แล้วหลายรอบ)
 2. **`LEDGER_AUTO_PV_ENABLED` ไม่เคยเปิดใน Vercel Production เลย** (ยืนยันจาก `vercel env ls production`, 79 vars ไม่มีตัวนี้) — ฟีเจอร์ auto-PV (build 2026-07-25) dormant 100% ตั้งแต่ deploy → ทุกบิล "จ่ายแล้ว+สลิป" ไม่เคยออก PV เลยสักใบ (ยืนยันด้วย `pv/search` ว่าง)
 
-**FIX BUILT (worktree `pg-wt-ll-guard`, tsc/eslint/`next build` EXIT0):**
-- `lib/ledger/ap-auto-convert.ts` — เพิ่ม guard บล็อกการแปลง PO→AP เมื่อหมวดไม่มี LL c-slot หรือบิลจ่ายแล้วไม่มีทาง LL ใด ๆ → error ไทยชัดเจนแทนโพสต์ผิดเงียบ
-- `lib/ledger/trcloud-push.ts` — `llSlot` ternary (2 จุด: `convertExpensePoToAp`+`updateExpenseAp`) เพิ่มเช็ค `autoPv` ให้ตรงกับ `apType` ternary (เดิมเปิด autoPv แล้ว apType ไปถูกแต่ llSlot ยังโดนบังคับ null ถ้าบิลจ่ายแล้ว+ไม่ creditForm)
+**สำรวจเพิ่ม (Prisma read-only):** GL code ที่ตั้งไว้จริง+ใช้งานอยู่ (บริษัท JP Sync) ไม่อยู่ใน LL เลย มี **4 ตัว** ไม่ใช่แค่เบียร์: `5101000` COGS/ของซื้อมาขาย · `5210020` เงินเดือน/ค่าแรง · `5210300` ค่าประกันภัย · `5200200` ค่าคอมมิชชั่น/นายหน้า
+
+**FIX BUILT (worktree `pg-wt-ll-guard`, 4 commits, tsc/eslint/`next build` EXIT0 — rebase สะอาดทับ `cb5c8c70` "ปุ่มโอนแล้ว" ของ session อื่นแล้ว):**
+1. `lib/ledger/ap-auto-convert.ts` — guard บล็อกการแปลง PO→AP เมื่อหมวดไม่มี LL c-slot หรือบิลจ่ายแล้วไม่มีทาง LL ใด ๆ → error ไทยชัดเจนแทนโพสต์ผิดเงียบ (🟢 push ได้เลย ปลอดภัย 100%)
+2. `lib/ledger/trcloud-push.ts` — `llSlot` ternary (2 จุด) เพิ่มเช็ค `autoPv` ให้ตรงกับ `apType` ternary (เดิมเปิด autoPv แล้ว apType ไปถูกแต่ llSlot ยังโดนบังคับ null ถ้าบิลจ่ายแล้ว+ไม่ creditForm) (🟢 push ได้เลย)
+3. `lib/ledger/coa-chart.ts` — เพิ่ม `LL_EXTRA_CATEGORIES` ครอบ c24-c27 (4 GL ด้านบน) — **🟡 ห้าม push ก่อนนักบัญชีเพิ่ม 4 แถวจริงใน TRCloud** (deploy ก่อน = journal ไม่ balance แย่กว่าเดิม)
+4. **CEO 2026-08-12 feedback:** "หมวดที่ไม่มีช่องรับไม่ควรโผล่ให้เลือกตั้งแต่แรก" → ซ่อนหมวดที่ `trcloudAccCode` ตั้งแล้วแต่ `llCSlotForGl` ยังว่างออกจาก **ทุกจุดที่เลือกหมวดได้** (ExpenseReviewPane เว็บ+LIFF รวม ghost-suggestion, RRDetailForm เวิร์กสเปซตรวจใบเสร็จ, NoReceiptButton สร้างบิลไม่มีใบเสร็จ) — คงหมวดเดิมไว้เสมอถ้าบิลเลือกอยู่แล้ว (ไม่ทำบิลเก่าโชว์ "ไม่ตั้งหมวด") ไม่แตะ ExpenseList filter (browse บิลเก่าต้องเห็นทุกหมวด) (🟢 push ได้เลย เข้าคู่กับ #3 — ตอนนี้ 4 หมวดจะซ่อนจาก picker แต่ #3 ยังไม่ push ก็ไม่พังอะไร แค่ผู้ใช้เลือกไม่ได้ก่อน)
 - เจอ AP พี่น้อง `551474` (สร้างก่อนหน้า 1 วัน type=LL invoice_note ตรงกัน total ต่างกัน) — **เสี่ยงลงบัญชีซ้ำ** ยังไม่แตะ รอบัญชีเช็ค
 
-**⏳ CEO gates ก่อน live:** (1) push commit `a41d53aa` → `setup` (2) เปิด `LEDGER_AUTO_PV_ENABLED=true` ใน Vercel Production + redeploy (3) บัญชีเช็ค AP คู่ 551474/551563 ว่าซ้ำไหม (4) วางแผนขยาย LL ครอบหมวด COGS อื่น ๆ ต่อ (ตอนนี้ครอบแค่ 21 หมวด SG&A)
+**⏳ CEO gates ก่อน live:** (1) push commit 1-2-4 ได้เลย (ปลอดภัย) (2) เปิด `LEDGER_AUTO_PV_ENABLED=true` ใน Vercel Production + redeploy (3) บัญชีเช็ค AP คู่ 551474/551563 ว่าซ้ำไหม (4) ส่งสเปค 4 แถว c24-c27 ให้นักบัญชีเพิ่มใน TRCloud → ยืนยัน → ค่อย push commit 3
 
-**⚠️ พบเพิ่ม (นอกสโคป งานนี้):** STATUS.md บน `origin/setup` แช่แข็งที่เนื้อหา 2026-06-16 มา ~2 เดือน (`git log -- STATUS.md` ล่าสุด `00166405` มิ.ย.) — commit "docs(status)" ที่เห็นใน local branch `claude/dc-5fixes-2026-07-12` (isHistoryAdmin, ClawFleet audit ฯลฯ) **ไม่เคยถูก push เข้า setup เลย** — แปลว่า STATUS.md มี 2 สาย ไม่ตรงกัน ควรให้ CEO ตัดสินว่าจะ reconcile ยังไง (แยกจากงานนี้ — แค่ flag ไว้)
+**⚠️ พบเพิ่ม (นอกสโคป งานนี้ — flag ไว้เฉย ๆ):**
+- STATUS.md บน `origin/setup` เพิ่งอัพเดตจริงรอบนี้เป็นครั้งแรกในรอบ ~2 เดือน (`git log -- STATUS.md` ก่อนหน้า `00166405` มิ.ย.) — commit "docs(status)" ที่เห็นใน local branch `claude/dc-5fixes-2026-07-12` (isHistoryAdmin, ClawFleet audit ฯลฯ) ไม่เคยถูก push เข้า setup มาก่อน ควรให้ CEO ตัดสินว่าจะ reconcile สายที่ค้างยังไง
+- LIFF category picker (`app/liff/ledger/expense/[id]/page.tsx`) ไม่กรอง `active` เลย (หมวดปิดใช้ก็ยังโชว์บนมือถือ) — pre-existing gap ไม่เกี่ยวกับงานนี้ ไม่ได้แก้
+- `components/ledger/ExpenseReviewPane.tsx` มี eslint error pre-existing 4 จุด (มาจาก commit `cb5c8c70` "ปุ่มโอนแล้ว" ของ session อื่น ไม่ใช่จากงานนี้ — verify แล้วว่า origin/setup เองก็ error เหมือนกัน) `next build` ไม่ fail เพราะจุดนี้ (lint แยกจาก build step)
 
 ---
 
