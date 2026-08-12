@@ -20,6 +20,7 @@ export interface RRCategory {
   color: string | null;
   sort: number;
   active: boolean;
+  trcloudAccCode?: string | null;
 }
 
 export interface RROption {

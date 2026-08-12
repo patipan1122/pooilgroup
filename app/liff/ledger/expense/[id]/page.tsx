@@ -187,6 +187,7 @@ export default async function LedgerLiffExpensePage({
           name: c.name,
           color: c.color,
           sort: c.sort,
+          trcloudAccCode: c.trcloudAccCode,
         }))}
         branches={scope.branches}
         canConfirm={actor.canConfirm}

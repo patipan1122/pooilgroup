@@ -10,8 +10,9 @@ import { useRouter } from "next/navigation";
 import { FilePlus2, X, Loader2 } from "lucide-react";
 import { createNoReceiptExpense } from "../../_actions";
 import { BranchPicker } from "../../_components/BranchPicker";
+import { llCSlotForGl } from "@/lib/ledger/coa-chart";
 
-type Opt = { id: string; name: string };
+type Opt = { id: string; name: string; trcloudAccCode?: string | null };
 
 export function NoReceiptButton({
   companyId,
@@ -143,9 +144,13 @@ export function NoReceiptButton({
                     className="h-11 w-full rounded-lg border border-zinc-200 px-2 text-sm focus:border-[var(--color-brand-400)] focus:outline-none"
                   >
                     <option value="">— เลือก —</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                    {categories
+                      // หมวดที่มีรหัสบัญชีแล้วแต่สูตร LL ยังไม่มีช่องรับ → ตก 5919999 แน่ ๆ ตอนแปลงเป็น AP
+                      // ไม่ให้เลือกตั้งแต่ตอนสร้างบิลใหม่ (เดียวกับ ExpenseReviewPane)
+                      .filter((c) => !c.trcloudAccCode || llCSlotForGl(c.trcloudAccCode) !== null)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
                   </select>
                 </div>
                 <div>

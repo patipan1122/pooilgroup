@@ -29,6 +29,7 @@ import {
   confirmabilityMessage,
 } from "@/lib/ledger/confirmability";
 import { trcloudState } from "@/lib/ledger/trcloud-state";
+import { llCSlotForGl } from "@/lib/ledger/coa-chart";
 import { SearchableSelect } from "@/components/ledger/SearchableSelect";
 import type { ExpenseDocType, PaymentStatus, ExpenseItem } from "@/lib/ledger/types";
 import {
@@ -473,8 +474,14 @@ function DetailBody({ data, exp }: { data: ReceiptReviewData; exp: RRSelectedExp
       ? [draft.paymentMethod, ...PAYMENT_METHODS]
       : PAYMENT_METHODS;
 
+  // หมวดที่มีรหัสบัญชีแล้วแต่สูตร LL ยังไม่มีช่องรับ → ตก 5919999 แน่ตอนแปลงเป็น AP
+  // ไม่ให้เลือกใหม่เลย (คงไว้ถ้าเป็นหมวดที่เลือกอยู่แล้ว) — เดียวกับ ExpenseReviewPane
   const activeCats = data.categories
-    .filter((c) => c.active || c.id === draft.categoryId)
+    .filter(
+      (c) =>
+        (c.active && (!c.trcloudAccCode || llCSlotForGl(c.trcloudAccCode) !== null)) ||
+        c.id === draft.categoryId,
+    )
     .map((c) => ({ id: c.id, name: c.name }));
 
   return (

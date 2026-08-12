@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { registerDraftSaver, registerDraftCommitter } from "@/lib/ledger/draft-save-registry";
+import { llCSlotForGl } from "@/lib/ledger/coa-chart";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -1150,8 +1151,14 @@ export function ExpenseReviewPane({
                   ประเภทค่าใช้จ่าย
                 </FieldLabel>
                 <SearchableSelect
+                  // CEO 2026-08-12: หมวดที่มีรหัสบัญชีแล้วแต่สูตร "LL" ยังไม่มีช่องรับ (จะตก 5919999
+                  // ตอนแปลงเป็น AP แน่ๆ) ไม่ควรให้เลือกใหม่เลย — ซ่อนออกจากตัวเลือก (คงไว้ถ้าเป็น
+                  // หมวดที่เลือกอยู่แล้ว กันบิลเก่าโชว์ "ไม่ตั้งหมวด"). หมวดที่ยังไม่มีรหัสบัญชีเลย
+                  // (trcloudAccCode ว่าง) ไม่เกี่ยว — เคสนั้น guard คนละจุด (`ap-auto-convert.ts`).
                   options={categories.filter(
-                    (c) => c.active !== false || c.id === draft.categoryId,
+                    (c) =>
+                      (c.active !== false && (!c.trcloudAccCode || llCSlotForGl(c.trcloudAccCode) !== null)) ||
+                      c.id === draft.categoryId,
                   )}
                   value={draft.categoryId}
                   onChange={(id) => set("categoryId", id)}
@@ -1162,9 +1169,14 @@ export function ExpenseReviewPane({
                 />
                 {(() => {
                   // AI แนะนำหมวด (ghost · CEO 2026-07-24): จับคู่ชื่อที่ AI/ตัวช่วยเดา กับหมวด "ที่เปิดใช้"
+                  // เดียวกับ filter dropdown ด้านบน — ต้องกันหมวดที่ไม่มีช่อง LL ด้วย ไม่งั้น
+                  // ป้ายแนะนำจะเสนอหมวดที่ซ่อนจาก dropdown ไปแล้วให้กดเลือกได้ผ่านทางลัดนี้แทน
                   const ghost = expense.suggestedCategoryName
                     ? categories.find(
-                        (c) => c.name === expense.suggestedCategoryName && c.active !== false,
+                        (c) =>
+                          c.name === expense.suggestedCategoryName &&
+                          c.active !== false &&
+                          (!c.trcloudAccCode || llCSlotForGl(c.trcloudAccCode) !== null),
                       )
                     : null;
 

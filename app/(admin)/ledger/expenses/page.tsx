@@ -454,6 +454,7 @@ export default async function ExpensesPage({
         color: c.color,
         sort: c.sort,
         active: c.active,
+        trcloudAccCode: c.trcloudAccCode,
       })),
       projects: projectOptions,
       statusCounts,
@@ -522,6 +523,7 @@ export default async function ExpensesPage({
                 color: c.color,
                 sort: c.sort,
                 active: c.active,
+                trcloudAccCode: c.trcloudAccCode,
               }))}
               branches={scope.branches}
               projects={projectOptions}
@@ -585,7 +587,7 @@ export default async function ExpensesPage({
               <NoReceiptButton
                 companyId={scope.companyId}
                 branchId={scope.branchId}
-                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                categories={categories.map((c) => ({ id: c.id, name: c.name, trcloudAccCode: c.trcloudAccCode }))}
                 branches={scope.branches}
               />
             </HeaderToolsMenu>
@@ -711,7 +713,7 @@ export default async function ExpensesPage({
               <NoReceiptButton
                 companyId={scope.companyId}
                 branchId={scope.branchId}
-                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                categories={categories.map((c) => ({ id: c.id, name: c.name, trcloudAccCode: c.trcloudAccCode }))}
                 branches={scope.branches}
               />
             </>
@@ -743,6 +745,7 @@ export default async function ExpensesPage({
                 color: c.color,
                 sort: c.sort,
                 active: c.active,
+                trcloudAccCode: c.trcloudAccCode,
               }))}
               branches={scope.branches}
               projects={projectOptions}
