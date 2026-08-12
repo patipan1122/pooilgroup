@@ -54,6 +54,7 @@ export default async function SplitBillPage({ params }: { params: Promise<{ id: 
           lastName: bill.tenant.lastName,
           nickname: bill.tenant.nickname,
           taxId: bill.tenant.taxId,
+          address: bill.tenant.address,
         }}
         items={bill.items.map((it) => ({
           id: it.id,

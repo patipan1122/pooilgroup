@@ -2,7 +2,8 @@
 // Pure presentational (no hooks) → ใช้ใน Server Component ได้. Display-only: อ่าน
 // ยอดที่เก็บไว้ ไม่คิดใหม่. ใช้ร่วม: หน้าบิลสาธารณะ (/rentspace/bill/[token]) ·
 // หน้าแอดมิน bills/[id] · batch print · ใบวางบิลแยก (แตกบิล).
-// เนื้อหาเดิมครบ + เพิ่มความเป็นทางการ: หัวเอกสาร · ยอดเงินเป็นตัวอักษร · ช่องเซ็นรับรอง.
+// เนื้อหาเดิมครบ + เพิ่มความเป็นทางการ: หัวเอกสาร · ยอดเงินเป็นตัวอักษร.
+// CEO 2026-08-12: ตัดช่องเซ็นรับรอง (ลายเซ็นประ) ออกจากเอกสารทุกใบ — ไม่ใช้.
 
 import { Zap, Droplet, Landmark } from "lucide-react";
 import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel, bahtText } from "@/lib/rentspace/format";
@@ -71,6 +72,7 @@ export type BillDocumentData = {
     lastName?: string | null;
     nickname?: string | null;
     taxId?: string | null;
+    address?: string | null;
   };
   items: BillItem[];
   /** เลขมิเตอร์ก่อน→หลังของงวดนี้ (ไฟ/น้ำ) — เสริม แสดงถ้ามี. */
@@ -264,8 +266,13 @@ export function BillDocument({
           <div className="text-[14.5px] font-bold" style={{ color: "var(--rs-text)" }}>
             {tenantDisplayName(bill.tenant)}
           </div>
-          {bill.tenant.taxId && (
+          {bill.tenant.address && (
             <div className="text-[12px] mt-0.5" style={{ color: "var(--rs-text-2)" }}>
+              {bill.tenant.address}
+            </div>
+          )}
+          {bill.tenant.taxId && (
+            <div className="text-[12px]" style={{ color: "var(--rs-text-2)" }}>
               เลขผู้เสียภาษี {bill.tenant.taxId}
             </div>
           )}
@@ -455,18 +462,6 @@ export function BillDocument({
           )}
         </div>
       )}
-
-      {/* ช่องเซ็นรับรอง */}
-      <div className="grid grid-cols-2 gap-8 mt-8 pt-5" style={{ borderTop: `1px solid ${line}` }}>
-        {["ผู้ออกเอกสาร", "ผู้รับเอกสาร / ผู้เช่า"].map((cap) => (
-          <div key={cap} className="text-center">
-            <div style={{ height: 34, borderBottom: `1px dotted var(--rs-text-3)` }} />
-            <div className="text-[11.5px] mt-1.5" style={{ color: "var(--rs-text-3)" }}>
-              {cap}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
