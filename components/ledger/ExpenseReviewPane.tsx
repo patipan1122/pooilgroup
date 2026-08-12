@@ -47,6 +47,7 @@ import { PriceLookupDialog } from "./PriceLookupDialog";
 import { VoucherMenu } from "./VoucherMenu";
 import { Clock, Tag } from "lucide-react";
 import { SendToTrcloudButton } from "./SendToTrcloudButton";
+import { AttachSlipDialog } from "./AttachSlipDialog";
 import { trcloudState } from "@/lib/ledger/trcloud-state";
 import { AttachReplacementButton } from "./AttachReplacementButton";
 import type { AttachReplacementAction } from "./AttachReplacementButton";
@@ -341,6 +342,7 @@ export function ExpenseReviewPane({
   onRequestDelete,
   onEnsureCentralBranch,
   onRequestPayout,
+  onQuickTransfer,
   onSendToTrcloud,
   onUpdateTrcloud,
   projects,
@@ -376,6 +378,10 @@ export function ExpenseReviewPane({
   /** ขอโอนเงินใบนี้ (createPaymentRequestAction) — ต้องส่ง "ปลายทางผู้รับ" (payee) ที่กรอกในส่วนที่ 4.
    *  ไม่ส่งมา = ไม่โชว์ปุ่มขอโอน (LIFF/ปิด flag LEDGER_PAYREQ_V1). */
   onRequestPayout?: (payee: PayeeInput) => Promise<LedgerActionResult>;
+  /** ปุ่ม "โอนแล้ว" (quickMarkTransferredAction · CEO 2026-08-11) — ข้าม "ขอโอน": เงินออกไป
+   *  จ่ายแล้วนอกระบบ ไม่ต้องกรอกปลายทางผู้รับ กดแล้วเปิด popup แนบสลิปทันที (ยอดตรง = ปิดบิล +
+   *  ออก PV อัตโนมัติ). กดได้เฉพาะแปลงเป็น AP แล้ว. ไม่ส่งมา = ไม่โชว์ปุ่มนี้ (LIFF/ปิดฟีเจอร์). */
+  onQuickTransfer?: (id: string) => Promise<LedgerActionResult & { requestId?: string }>;
   /** ส่ง PO เข้า TRCloud (sendExpenseToTrcloud) — ใช้ในปุ่ม "ส่ง+ขอโอนด่วน" (เว็บ · CEO 2026-07-26).
    *  ไม่ส่งมา = ไม่โชว์ปุ่มด่วน (LIFF ใช้เส้นแยก). */
   onSendToTrcloud?: (
@@ -695,6 +701,13 @@ export function ExpenseReviewPane({
         ? "กรอกเลขบัญชี / พร้อมเพย์ หรือแนบ QR ผู้รับ ก่อนขอโอน"
         : null;
 
+  // ── "โอนแล้ว" ด่วน (CEO 2026-08-11) — ข้าม "ขอโอน" ไม่ต้องกรอกปลายทางผู้รับ. กดได้เมื่อ
+  //    แปลงเป็น AP แล้วเท่านั้น (ป้องกันลงบัญชีผิดหมวด/VAT/WHT ก่อนเงินถูกบันทึกว่าจ่าย). ──
+  const [slipRequestId, setSlipRequestId] = useState<string | null>(null);
+  const quickTransferBlockReason: string | null = !expense.trcloudApDocId
+    ? 'ต้องกด "แปลงเป็น AP" ให้เรียบร้อยก่อน แล้วปุ่มนี้จะเปิด'
+    : null;
+
   // ── "สำนักงาน (ส่วนกลาง)" — เมื่อ staff ไม่รู้สาขา เลือกอันนี้อย่างตั้งใจ →
   //    เรียก ensureCentralBranch ฝั่ง server แล้วเอา branchId มาใส่ช่องสาขา. ────────────
   const CENTRAL_OPTION = "__central__";
@@ -870,6 +883,25 @@ export function ExpenseReviewPane({
           ? { kind: "ok", text: "ส่งคำขอโอนเข้ากลุ่มผู้บริหารแล้ว ✅" }
           : { kind: "err", text: res.error ?? "ขอโอนไม่สำเร็จ" },
       );
+    });
+  }
+
+  // "โอนแล้ว" ด่วน — ถ้ามีคำขอ active อยู่แล้ว (payState==="requested") เปิด popup ตรงเลย
+  // ไม่ต้องรอ server; ไม่งั้นให้ server สร้างคำขอแบบไม่มีปลายทางเงินให้ก่อน แล้วค่อยเปิด.
+  function handleQuickTransfer() {
+    if (!onQuickTransfer || quickTransferBlockReason) return;
+    if (expense.activeRequestId) {
+      setSlipRequestId(expense.activeRequestId);
+      return;
+    }
+    setMsg(null);
+    startTransition(async () => {
+      const res = await onQuickTransfer(expense.id);
+      if (res.ok && res.requestId) {
+        setSlipRequestId(res.requestId);
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "บันทึกโอนแล้วไม่สำเร็จ" });
+      }
     });
   }
 
@@ -1774,8 +1806,41 @@ export function ExpenseReviewPane({
                     </p>
                   )}
                 </div>
+                {/* "โอนแล้ว" ด่วน (CEO 2026-08-11) — ข้าม "ขอโอน": จ่ายไปแล้วนอกระบบ ไม่ต้อง
+                    กรอกปลายทางผู้รับ. กดได้เฉพาะแปลง AP แล้ว. */}
+                {onQuickTransfer && expense.payState !== "paid" && (
+                  <div className="border-t border-zinc-200 pt-3">
+                    <Button
+                      variant="secondary"
+                      disabled={pending || quickTransferBlockReason !== null}
+                      onClick={handleQuickTransfer}
+                      title={quickTransferBlockReason ?? "จ่ายไปแล้วนอกระบบ — แนบสลิปตรงนี้ได้เลย"}
+                      className="press w-full sm:w-auto"
+                    >
+                      {pending ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Banknote className="size-4" aria-hidden />
+                      )}
+                      โอนแล้ว · แนบสลิป
+                    </Button>
+                    {quickTransferBlockReason && (
+                      <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-zinc-500">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden />
+                        {quickTransferBlockReason}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
+            <AttachSlipDialog
+              requestId={slipRequestId}
+              onClose={() => {
+                setSlipRequestId(null);
+                onAfterFinish?.();
+              }}
+            />
             <label className={cn("flex cursor-pointer items-center justify-between rounded-xl border border-zinc-200 px-3.5 py-2.5 transition-colors hover:bg-zinc-50", locked && "cursor-default opacity-60 hover:bg-transparent")}>
               <span className="text-sm">
                 <span className="font-medium text-zinc-800">ตั้งเป็นรายจ่ายประจำ</span>

@@ -324,6 +324,7 @@ export default async function ExpensesPage({
         companyId: scope.companyId,
         id: selected,
         withSlip: true, // โชว์สลิปโอนเงินในใบ (โอนแล้ว → ดู/ดาวน์โหลด/ส่งต่อ)
+        withPayState: true, // ปุ่ม "โอนแล้ว" ต้องรู้ payState/activeRequestId
       })
     : null;
 

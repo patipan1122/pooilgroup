@@ -24,9 +24,11 @@ import {
   convertExpenseToAp,
   convertExpensesToAp,
   createPaymentRequestAction,
+  quickMarkTransferredAction,
   bulkClassify,
   lastPayeeForVendor,
 } from "../../_actions";
+import { AttachSlipDialog } from "@/components/ledger/AttachSlipDialog";
 
 /** Common Thai banks for the ขอโอนเงิน payee form (code → short name). */
 const BANKS: { code: string; name: string }[] = [
@@ -156,6 +158,8 @@ export function ExpenseList({
   // Bulk-delete two-step guard: open a confirm sheet, require typing "ลบ".
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteText, setDeleteText] = useState("");
+  // โอนแล้ว + แนบสลิป — popup (LEDGER_PAYREQ_V1, CEO 2026-08-11).
+  const [slipRequestId, setSlipRequestId] = useState<string | null>(null);
   // ขอโอนเงิน — payee dialog (LEDGER_PAYREQ_V1).
   const [payeeOpen, setPayeeOpen] = useState(false);
   const [payee, setPayee] = useState({ acctName: "", bankCode: "", acctNo: "", promptpay: "", qrImageUrl: "" });
@@ -331,6 +335,25 @@ export function ExpenseList({
         router.refresh();
       } else {
         setMsg({ kind: "err", text: res.error ?? "แปลงเป็น AP ไม่สำเร็จ" });
+      }
+    });
+  }
+
+  // ปุ่ม "โอนแล้ว" (CEO 2026-08-11) — ข้าม "ขอโอน": ถ้ามีคำขอ active อยู่แล้ว (activeRequestId)
+  // เปิด popup แนบสลิปตรงไปเลย ไม่ต้องรอ server; ถ้ายังไม่มี ให้ server สร้างให้แบบไม่มีปลายทาง
+  // เงิน (ไม่บังคับกรอกเลขบัญชี) แล้วเปิด popup ด้วย requestId ที่ได้กลับมา.
+  function openQuickTransfer(r: ExpenseRow) {
+    if (r.activeRequestId) {
+      setSlipRequestId(r.activeRequestId);
+      return;
+    }
+    setMsg(null);
+    startTransition(async () => {
+      const res = await quickMarkTransferredAction(r.id);
+      if (res.ok && res.requestId) {
+        setSlipRequestId(res.requestId);
+      } else {
+        setMsg({ kind: "err", text: res.error ?? "บันทึกโอนแล้วไม่สำเร็จ" });
       }
     });
   }
@@ -831,6 +854,15 @@ export function ExpenseList({
         </div>
       )}
 
+      {/* โอนแล้ว + แนบสลิป — popup (CEO 2026-08-11). ปิดแล้ว refresh ให้เห็นสถานะล่าสุด. */}
+      <AttachSlipDialog
+        requestId={slipRequestId}
+        onClose={() => {
+          setSlipRequestId(null);
+          router.refresh();
+        }}
+      />
+
       {/* #1 quick-classify dialog — set สาขา/หมวด for the ticked bills in one place */}
       {classifyOpen && branches && (
         <div
@@ -1191,6 +1223,9 @@ export function ExpenseList({
                         payreqEnabled &&
                         (r.payState === "paid" || r.payState === "requested" || gate.ok);
                       if (!showConvert && !showPay) return null;
+                      // AP แปลงแล้วหรือยัง — ปุ่ม "โอนแล้ว" (CEO 2026-08-11: ข้าม "ขอโอน" ได้ ถ้าจ่าย
+                      // ไปแล้วนอกระบบ) กดได้เฉพาะตอนแปลง AP แล้วเท่านั้น กันลงบัญชีผิดหมวด/VAT/WHT.
+                      const apDone = !!r.trcloudApDocId;
                       return (
                         <div className="ml-auto flex shrink-0 items-center gap-1">
                           {showConvert && (
@@ -1210,18 +1245,46 @@ export function ExpenseList({
                                 <CheckCircle2 className="size-3" /> โอนแล้ว
                               </span>
                             ) : r.payState === "requested" ? (
-                              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-blue-100 px-1.5 text-[10px] font-bold text-blue-700">
-                                <Banknote className="size-3" /> รอโอน
-                              </span>
+                              apDone ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openQuickTransfer(r)}
+                                  disabled={pending}
+                                  title="แนบสลิปโอนเงิน — ยอดตรงจะปิดบิลและออก PV ให้อัตโนมัติ"
+                                  className="press inline-flex h-6 items-center gap-1 rounded-md bg-blue-600 px-1.5 text-[10px] font-bold text-white hover:bg-blue-700 disabled:bg-zinc-300"
+                                >
+                                  <Banknote className="size-3" aria-hidden /> โอนแล้ว
+                                </button>
+                              ) : (
+                                <span
+                                  title='ต้องแปลงใบนี้เป็น AP ก่อน ถึงจะแนบสลิปได้ (กดปุ่ม "แปลง AP")'
+                                  className="inline-flex h-6 items-center gap-1 rounded-md bg-amber-50 px-1.5 text-[10px] font-bold text-amber-700"
+                                >
+                                  <AlertTriangle className="size-3" /> ต้องแปลง AP ก่อน
+                                </span>
+                              )
                             ) : gate.ok ? (
-                              <button
-                                type="button"
-                                onClick={() => openPayeeForRow(r)}
-                                title="ขอโอนเงินใบนี้"
-                                className="press inline-flex h-6 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
-                              >
-                                <Banknote className="size-3" aria-hidden /> ขอโอน
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openPayeeForRow(r)}
+                                  title="ขอโอนเงินใบนี้"
+                                  className="press inline-flex h-6 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  <Banknote className="size-3" aria-hidden /> ขอโอน
+                                </button>
+                                {apDone && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openQuickTransfer(r)}
+                                    disabled={pending}
+                                    title="จ่ายไปแล้วนอกระบบ — แนบสลิปตรงนี้ได้เลย ไม่ต้องขอโอน"
+                                    className="press inline-flex h-6 items-center gap-1 rounded-md bg-blue-600 px-1.5 text-[10px] font-bold text-white hover:bg-blue-700 disabled:bg-zinc-300"
+                                  >
+                                    <Banknote className="size-3" aria-hidden /> โอนแล้ว
+                                  </button>
+                                )}
+                              </>
                             ) : null)}
                         </div>
                       );

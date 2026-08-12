@@ -61,6 +61,7 @@ import {
 // convertExpensePoToAp + PushableExpense + isTrcloudSent + loadPushable: ตรรกะแปลง AP
 // ย้ายไป lib/ledger/ap-auto-convert.ts + lib/ledger/pushable.ts แล้ว (แชร์กับ auto-trigger).
 import { loadPushable } from "@/lib/ledger/pushable";
+import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { runApConversion, autoCreatePvAfterMatch } from "@/lib/ledger/ap-auto-convert";
 import { createPvForPaidAp } from "@/lib/ledger/trcloud-pv";
 import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
@@ -4187,6 +4188,78 @@ export async function resendPaymentRequestAction(requestId: string): Promise<Act
   revalidatePath("/ledger/expenses");
   revalidatePath("/ledger/reconcile");
   return { ok: true };
+}
+
+/** ปุ่ม "โอนแล้ว" บนหน้ารายจ่าย (CEO 2026-08-11) — ข้ามขั้นตอน "ขอโอน": เงินออกจากบริษัทไป
+ *  จ่ายแล้วนอกระบบ ไม่ต้องกรอกเลขบัญชี/พร้อมเพย์ผู้รับให้เสียเวลา (ไม่มีปลายทางต้อง "ขอ" ใคร
+ *  จ่ายอีกแล้ว) — กดแล้วเปิด popup แนบสลิปได้ทันที. บังคับ ส่ง PO + แปลง AP ให้เรียบร้อยก่อน
+ *  (กันลงบัญชีผิดหมวด/VAT/WHT — accountant ต้องทำ AP ให้ถูกต้องก่อนเงินจะถูกบันทึกว่าจ่ายแล้ว).
+ *  ถ้าบิลนี้มีคำขอโอน active อยู่แล้ว (กด "ขอโอน" ค้างไว้ก่อนหน้า) → ใช้คำขอเดิม ไม่สร้างซ้ำ. */
+export async function quickMarkTransferredAction(
+  expenseId: string,
+): Promise<ActionResult & { requestId?: string }> {
+  if (!ledgerPayreqV1()) return { ok: false, error: "ระบบขอโอนเงินยังไม่เปิดใช้" };
+  if (!expenseId) return { ok: false, error: "ไม่ได้ระบุรายการ" };
+  const access = await requireLedgerAccess();
+  if (!access.ok) return access;
+  const { session } = access;
+  const orgId = session.user.org_id;
+  // สิทธิ์เดียวกับ "ขอโอน" (payment.request) — เป็นการบันทึกการโอนเหมือนกัน แค่คนละจังหวะ.
+  const actor = await resolveLedgerActor();
+  if (!actor || !(await ledgerWebCan(actor, "payment.request"))) {
+    return { ok: false, error: "ไม่มีสิทธิ์บันทึกการโอน" };
+  }
+
+  const row = await prisma.ledgerExpense.findFirst({
+    where: { id: expenseId, orgId },
+    select: {
+      id: true, companyId: true, branchId: true, status: true,
+      trcloudDocId: true, trcloudApDocId: true,
+    },
+  });
+  if (!row) return { ok: false, error: "ไม่พบรายการ" };
+  if (actor.companyId && row.companyId !== actor.companyId) {
+    return { ok: false, error: "รายการนี้อยู่คนละบริษัทกับสิทธิ์ของคุณ" };
+  }
+  if (!actor.allBranches && !actorCanReachBranch(actor, row.branchId)) {
+    return { ok: false, error: "รายการนี้นอกสาขาที่คุณดูแล" };
+  }
+  if (row.status === "void") return { ok: false, error: "ใบนี้ถูกยกเลิกแล้ว" };
+  if (!isTrcloudSent(row.trcloudDocId)) {
+    return { ok: false, error: "ต้องส่ง PO เข้า TRCloud ก่อน แล้วจึงบันทึกโอนแล้วได้" };
+  }
+  if (!row.trcloudApDocId) {
+    return { ok: false, error: "ต้องแปลงเป็น AP ก่อน แล้วจึงบันทึกโอนแล้วได้" };
+  }
+
+  // มีคำขอโอน active อยู่แล้ว (กด "ขอโอน" ไว้ก่อนหน้านี้) → ใช้ตัวเดิม ไม่สร้างซ้ำ (partial-unique
+  // index กันสร้างซ้ำอยู่แล้ว แต่เช็คตรงนี้ก่อนให้ error ชัด แทนที่จะพึ่ง P2002).
+  const existing = await prisma.ledgerPaymentRequestBill.findFirst({
+    where: { orgId, companyId: row.companyId, expenseId, active: true },
+    select: { requestId: true },
+  });
+  if (existing) return { ok: true, requestId: existing.requestId };
+
+  // ไม่มีคำขอ → สร้างให้อัตโนมัติแบบไม่มีปลายทางเงิน (payee ว่าง) — เพียงยืมกลไกเดิม (คำขอ+
+  // แนบสลิป+ตรวจยอด+ออก PV) มาใช้ "log" การจ่ายที่เกิดไปแล้ว ไม่ใช่ "ขอ" ให้ใครโอน จึงไม่ต้อง
+  // ผ่าน zPayee (ที่บังคับต้องมีเลขบัญชี — การ์ดยืนยันไว้สำหรับกรณี "ขอโอน" จริงเท่านั้น) และ
+  // ไม่ push การ์ดเข้ากลุ่มผู้บริหาร (ไม่มีใครต้องกดจ่าย — จ่ายไปแล้ว).
+  const res = await createPaymentRequest({
+    orgId, billIds: [expenseId], payee: {}, requestedBy: session.user.id,
+  });
+  if (!res.ok || !res.requestId) {
+    return { ok: false, error: res.error ?? "บันทึกโอนแล้วไม่สำเร็จ" };
+  }
+
+  await audit({
+    orgId, userId: session.user.id,
+    action: "LEDGER_QUICK_TRANSFER_OPENED",
+    resourceType: "ledger_payment_request",
+    resourceId: res.requestId,
+    diff: { new: { expenseId } },
+  });
+  revalidatePath("/ledger/expenses");
+  return { ok: true, requestId: res.requestId };
 }
 
 /** Cancel a request before pay (releases the per-bill guard). Requester or accountant. */

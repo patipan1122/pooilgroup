@@ -363,7 +363,14 @@ export async function matchSlipToRequest(
 
   // 2b. VERIFY payee — only when the slip actually gave readable recipient info AND it
   //     matches NEITHER the payee name NOR the payee account (lenient: masked + fuzzy).
-  const haveRecipientInfo = !!(recipientName || longestDigitRun(recipientAcct).length >= 3);
+  //     Skip entirely when the TARGET has no payee info on file at all (the "โอนแล้ว"
+  //     quick-log flow — money already left the company outside this app, no destination
+  //     was ever chosen here, so there is nothing legitimate to compare the slip against;
+  //     without this, a slip that happens to show a readable recipient name would always
+  //     bounce as payee_mismatch against a null target). Amount-match above still applies.
+  const targetHasPayeeInfo = !!(target.payeeAcctName || target.payeeAcctNo || target.payeePromptpay);
+  const haveRecipientInfo =
+    targetHasPayeeInfo && !!(recipientName || longestDigitRun(recipientAcct).length >= 3);
   if (haveRecipientInfo) {
     const nameOk = recipientName ? nameSimilar(target.payeeAcctName, recipientName) : false;
     const acctOk = recipientAcct ? acctSeen(recipientAcct, target.payeeAcctNo, target.payeePromptpay) : false;

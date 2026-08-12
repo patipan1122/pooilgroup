@@ -528,7 +528,7 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
     const [activeBills, paidBills, directPaid] = await Promise.all([
       prisma.ledgerPaymentRequestBill.findMany({
         where: { orgId: f.orgId, companyId: f.companyId, expenseId: { in: ids }, active: true },
-        select: { expenseId: true },
+        select: { expenseId: true, requestId: true },
       }),
       prisma.ledgerPaymentRequestBill.findMany({
         where: {
@@ -548,10 +548,11 @@ export async function listExpensesSummary(f: ExpenseListFilter): Promise<Expense
       ...paidBills.map((b) => b.expenseId),
       ...directPaid.map((p) => p.matchedExpenseId).filter((x): x is string => !!x),
     ]);
-    const requestedSet = new Set(activeBills.map((b) => b.expenseId));
+    const activeRequestByExpense = new Map(activeBills.map((b) => [b.expenseId, b.requestId]));
     expenses = expenses.map((r) => ({
       ...r,
-      payState: paidSet.has(r.id) ? "paid" : requestedSet.has(r.id) ? "requested" : null,
+      payState: paidSet.has(r.id) ? "paid" : activeRequestByExpense.has(r.id) ? "requested" : null,
+      activeRequestId: activeRequestByExpense.get(r.id) ?? null,
     }));
   }
 
@@ -608,6 +609,9 @@ export async function getExpense(opts: {
   companyId: string;
   id: string;
   withSlip?: boolean;
+  /** เหมือน withPayState ของ listExpenses แต่ต่อใบเดียว — ให้หน้ารายละเอียดรู้ payState/
+   *  activeRequestId เพื่อโชว์ปุ่ม "โอนแล้ว". */
+  withPayState?: boolean;
 }): Promise<Expense | null> {
   const row = await prisma.ledgerExpense.findFirst({
     where: { id: opts.id, orgId: opts.orgId, companyId: opts.companyId },
@@ -615,6 +619,27 @@ export async function getExpense(opts: {
   });
   if (!row) return null;
   const expense = serializeExpense(row);
+  if (opts.withPayState) {
+    const [activeBill, paidBill, directPaid] = await Promise.all([
+      prisma.ledgerPaymentRequestBill.findFirst({
+        where: { orgId: opts.orgId, companyId: opts.companyId, expenseId: opts.id, active: true },
+        select: { requestId: true },
+      }),
+      prisma.ledgerPaymentRequestBill.findFirst({
+        where: {
+          orgId: opts.orgId, companyId: opts.companyId, expenseId: opts.id,
+          request: { state: "paid" },
+        },
+        select: { expenseId: true },
+      }),
+      prisma.ledgerPayment.findFirst({
+        where: { orgId: opts.orgId, companyId: opts.companyId, matchedExpenseId: opts.id },
+        select: { matchedExpenseId: true },
+      }),
+    ]);
+    expense.payState = paidBill || directPaid ? "paid" : activeBill ? "requested" : null;
+    expense.activeRequestId = activeBill?.requestId ?? null;
+  }
   // ตัวช่วยฟรี (deterministic · 0 AI/0 network) — เมื่อ AI ไม่ได้เดาหมวด (suggestedCategoryName
   // ว่าง เพราะ Gemini พลาด/บิลไม่มีชื่อร้าน) เดาหมวดจาก "ชื่อร้าน + รายละเอียดในบิล" เป็นตาข่าย
   // กันพลาด → ป้าย "AI แนะนำ" ยังโผล่บนมือถือ (CEO 2026-08-01 "ในมือถือ AI ควร suggest หมวด").

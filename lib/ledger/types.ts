@@ -110,6 +110,9 @@ export interface Expense {
    *  listExpensesSummary): "requested"=มีคำขอโอนเปิดอยู่(รอโอน) · "paid"=โอนแล้ว ·
    *  null/undefined=ยังไม่ขอโอน (chip = ขอโอน ได้/ไม่ได้ ตาม gate). */
   payState?: "requested" | "paid" | null;
+  /** id ของ LedgerPaymentRequest ที่ active อยู่ตอนนี้ (payState==="requested" เท่านั้น) —
+   *  ให้ปุ่ม "โอนแล้ว" เปิด popup แนบสลิปตรงไปที่คำขอนี้ได้เลย ไม่ต้องสร้างคำขอซ้ำ. */
+  activeRequestId?: string | null;
   /** สลิปโอนเงินที่จับคู่กับใบนี้แล้ว (โอนแล้ว) — join เฉพาะตอนเปิดใบรายละเอียด
    *  (getExpense({ withSlip:true })) เพื่อโชว์รูป + ดาวน์โหลด/ส่งต่อให้คนขอโอน.
    *  undefined = ไม่ได้ join (list/summary) · null = ยังไม่มีสลิป. */

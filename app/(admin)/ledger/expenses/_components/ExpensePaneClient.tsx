@@ -20,6 +20,7 @@ import {
   requestDeleteExpense,
   ensureCentralBranch,
   createPaymentRequestAction,
+  quickMarkTransferredAction,
   setExpenseProjectAction,
   updateExpenseInTrcloud,
   sendExpenseToTrcloud,
@@ -82,6 +83,12 @@ export function ExpensePaneClient({
         payreqEnabled
           ? (payee): Promise<LedgerActionResult> =>
               createPaymentRequestAction([expense.id], payee)
+          : undefined
+      }
+      // ปุ่ม "โอนแล้ว" (CEO 2026-08-11) — ข้าม "ขอโอน" สำหรับบิลที่จ่ายไปแล้วนอกระบบ.
+      onQuickTransfer={
+        payreqEnabled
+          ? (id: string) => quickMarkTransferredAction(id)
           : undefined
       }
       // ⚡ ปุ่ม "ส่ง+ขอโอนด่วน" (เว็บ) — ทำ ส่ง PO → ขอโอน ในปุ่มเดียว. โชว์เฉพาะเมื่อเปิด payreq.
