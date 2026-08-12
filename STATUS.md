@@ -15,7 +15,7 @@ CEO ส่งสกรีนช็อตหน้า "เพิ่มสิน�
 - verify: tsc 0 error (ไฟล์ที่แก้) · eslint 0 error · `next build` exit0 (ก่อน+หลัง rebase onto `origin/setup`)
 - ⚠️ **CEO ยังต้องเทสจริงบนมือถือ** — ผมยืนยันแค่โค้ด+build ผ่าน ยังไม่ได้คลิกทดสอบจริงบนหน้าเว็บ (ไม่มี Playwright session ที่ login staff-app ตอนนี้)
 
-## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ + ซ่อนหมวดไม่พร้อมจาก picker (2026-08-11/12 · BUILT off `origin/setup cb5c8c70`, ⏳ NOT pushed — รอ CEO อนุมัติ)
+## 🧾 LedgerLine → TRCloud: กัน AP ตกบัญชี 5919999 เงียบ ๆ + ซ่อนหมวดไม่พร้อมจาก picker (2026-08-11/12 · 🚀DEPLOYED `origin/setup 94f0df6a` · ⏳ ส่วน c24-c27 ยังรอบัญชี)
 
 CEO ส่งภาพ AP `551563` (EXP-202608-0002, เบียร์ Hotel MIX ฿5,220) ลงบัญชีผิด **5919999** + error "formula cannot be empty" + จ่ายแล้วแนบสลิปแต่ไม่ขึ้น PV. Deep-debug ด้วย read-only TRCloud API (ap/read+gl/read+pv/search) + `vercel env ls production` + Prisma read-only (ผ่าน tsx ไม่ใช้ psql) — **ไม่แตะ TRCloud/DB เขียนอะไรเลย**.
 
@@ -29,14 +29,19 @@ CEO ส่งภาพ AP `551563` (EXP-202608-0002, เบียร์ Hotel MI
 1. `lib/ledger/ap-auto-convert.ts` — guard บล็อกการแปลง PO→AP เมื่อหมวดไม่มี LL c-slot หรือบิลจ่ายแล้วไม่มีทาง LL ใด ๆ → error ไทยชัดเจนแทนโพสต์ผิดเงียบ (🟢 push ได้เลย ปลอดภัย 100%)
 2. `lib/ledger/trcloud-push.ts` — `llSlot` ternary (2 จุด) เพิ่มเช็ค `autoPv` ให้ตรงกับ `apType` ternary (เดิมเปิด autoPv แล้ว apType ไปถูกแต่ llSlot ยังโดนบังคับ null ถ้าบิลจ่ายแล้ว+ไม่ creditForm) (🟢 push ได้เลย)
 3. `lib/ledger/coa-chart.ts` — เพิ่ม `LL_EXTRA_CATEGORIES` ครอบ c24-c27 (4 GL ด้านบน) — **🟡 ห้าม push ก่อนนักบัญชีเพิ่ม 4 แถวจริงใน TRCloud** (deploy ก่อน = journal ไม่ balance แย่กว่าเดิม)
-4. **CEO 2026-08-12 feedback:** "หมวดที่ไม่มีช่องรับไม่ควรโผล่ให้เลือกตั้งแต่แรก" → ซ่อนหมวดที่ `trcloudAccCode` ตั้งแล้วแต่ `llCSlotForGl` ยังว่างออกจาก **ทุกจุดที่เลือกหมวดได้** (ExpenseReviewPane เว็บ+LIFF รวม ghost-suggestion, RRDetailForm เวิร์กสเปซตรวจใบเสร็จ, NoReceiptButton สร้างบิลไม่มีใบเสร็จ) — คงหมวดเดิมไว้เสมอถ้าบิลเลือกอยู่แล้ว (ไม่ทำบิลเก่าโชว์ "ไม่ตั้งหมวด") ไม่แตะ ExpenseList filter (browse บิลเก่าต้องเห็นทุกหมวด) (🟢 push ได้เลย เข้าคู่กับ #3 — ตอนนี้ 4 หมวดจะซ่อนจาก picker แต่ #3 ยังไม่ push ก็ไม่พังอะไร แค่ผู้ใช้เลือกไม่ได้ก่อน)
-- เจอ AP พี่น้อง `551474` (สร้างก่อนหน้า 1 วัน type=LL invoice_note ตรงกัน total ต่างกัน) — **เสี่ยงลงบัญชีซ้ำ** ยังไม่แตะ รอบัญชีเช็ค
+4. ซ่อนหมวดที่ `trcloudAccCode` ตั้งแล้วแต่ `llCSlotForGl` ยังว่างออกจาก **ทุกจุดที่เลือกหมวดได้** (ExpenseReviewPane เว็บ+LIFF รวม ghost-suggestion, RRDetailForm เวิร์กสเปซตรวจใบเสร็จ, NoReceiptButton สร้างบิลไม่มีใบเสร็จ) — คงหมวดเดิมไว้เสมอถ้าบิลเลือกอยู่แล้ว ไม่แตะ ExpenseList filter (browse บิลเก่าต้องเห็นทุกหมวด)
+5. `lib/ledger/payments.ts` — auto-PV อ่านธนาคารต้นทางจากสลิปจริง (`sendingBank`) แทน hardcode "SCB" เสมอ (เดิม comment ทิ้งไว้ "TODO v1.1" — ทำให้เสร็จตอนนี้) fallback SCB เหมือนเดิมถ้าไม่มีสลิป/อ่านไม่ออก
 
-**⏳ CEO gates ก่อน live:** (1) push commit 1-2-4 ได้เลย (ปลอดภัย) (2) เปิด `LEDGER_AUTO_PV_ENABLED=true` ใน Vercel Production + redeploy (3) บัญชีเช็ค AP คู่ 551474/551563 ว่าซ้ำไหม (4) ส่งสเปค 4 แถว c24-c27 ให้นักบัญชีเพิ่มใน TRCloud → ยืนยัน → ค่อย push commit 3
+**🔍 AP คู่ 551474/551563 — สรุปแล้ว น่าจะซ้ำจริง (พิสูจน์ด้วย ap/read เทียบบรรทัดต่อบรรทัด):**
+ยอดรวมตรงกันเป๊ะ (5220.00 ทั้งคู่) · เบียร์ 3 ชนิดเดียวกัน (ช้าง/สิงห์/ลีโอ) ยอดต่อชนิดตรงกัน (1260/1384/2576) · ผู้ขายชื่อเดียวกัน — ต่างกันแค่ `contact_id` (36171 vs 68133 — สงสัยว่า dedup ผู้ขายพลาด สร้าง contact ซ้ำ) และหน่วยนับ (บัญชีใส่ 24 ขวด @52.5 · เราใส่ 2 ลัง @630 — คูณแล้วเท่ากัน). **แนะนำ: ให้บัญชียกเลิก `551563` (ใบที่ระบบเราส่ง) เก็บ `551474` (ใบที่บัญชีกรอกมือ ใช้ SKU สต็อกจริง+ผูกบัญชีถูกอยู่แล้ว)** — ไม่ได้ลบเอง รอบัญชีสั่ง.
+⚠️ **พบบั๊กใหม่ระหว่างเทียบ:** `551563.issue_date = "2025-08-08"` แต่ `551474.issue_date = "2026-08-10"` (ใกล้เคียงวันจริงกว่า) — ระบบเราอาจอ่านปี พ.ศ.→ค.ศ. ผิดไป 1 ปีตอน OCR ใบเสร็จ (ยังไม่ไล่หา root cause — flag ไว้ก่อน แยกงานจากนี้)
+
+**⏳ CEO gates ที่เหลือ:** (1) ส่งสเปค 4 แถว c24-c27 ให้นักบัญชีเพิ่มใน TRCloud → ยืนยัน → push commit เดิมที่ค้างไว้ (2) สั่งบัญชียกเลิก AP `551563` (ซ้ำ) (3) ตัดสินใจเรื่องเปิด `LEDGER_AUTO_PV_ENABLED=true`
 
 **⚠️ พบเพิ่ม (นอกสโคป งานนี้ — flag ไว้เฉย ๆ):**
 - STATUS.md บน `origin/setup` เพิ่งอัพเดตจริงรอบนี้เป็นครั้งแรกในรอบ ~2 เดือน (`git log -- STATUS.md` ก่อนหน้า `00166405` มิ.ย.) — commit "docs(status)" ที่เห็นใน local branch `claude/dc-5fixes-2026-07-12` (isHistoryAdmin, ClawFleet audit ฯลฯ) ไม่เคยถูก push เข้า setup มาก่อน ควรให้ CEO ตัดสินว่าจะ reconcile สายที่ค้างยังไง
 - LIFF category picker (`app/liff/ledger/expense/[id]/page.tsx`) ไม่กรอง `active` เลย (หมวดปิดใช้ก็ยังโชว์บนมือถือ) — pre-existing gap ไม่เกี่ยวกับงานนี้ ไม่ได้แก้
+- 🆕 เดต OCR ใบเสร็จอาจเพี้ยนปี (ดูด้านบน 551563 vs 551474) — ต้องไล่หา root cause ที่ OCR/parse-date แยกงาน
 - `components/ledger/ExpenseReviewPane.tsx` มี eslint error pre-existing 4 จุด (มาจาก commit `cb5c8c70` "ปุ่มโอนแล้ว" ของ session อื่น ไม่ใช่จากงานนี้ — verify แล้วว่า origin/setup เองก็ error เหมือนกัน) `next build` ไม่ fail เพราะจุดนี้ (lint แยกจาก build step)
 
 ---

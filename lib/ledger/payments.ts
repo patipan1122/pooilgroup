@@ -131,13 +131,14 @@ export async function recordSlipPayment(input: RecordSlipInput): Promise<RecordS
       // AP มีแล้ว → ออกใบสำคัญจ่าย (PV) ให้ฝั่งจ่ายเงินอัตโนมัติ (Dr เจ้าหนี้ / Cr ธนาคาร).
       // 🚩 FEATURE FLAG: ทำงานต่อเมื่อ LEDGER_AUTO_PV_ENABLED=on เท่านั้น → deploy แบบปิด = พฤติกรรมเดิม 100%.
       // best-effort เช่นกัน (createPvForPaidAp กลืน error เอง · idempotent) → ไม่บล็อก flow.
-      // v1: ธนาคารต้นทาง default = SCB (813-409-4107). TODO v1.1: source-bank picker ใน dialog ขอโอน.
+      // ธนาคารต้นทาง = อ่านจากสลิปจริง (sendingBank ที่ QR/OCR ถอดมา) — ไม่รู้จัก/จ่ายเงินสด
+      // (ไม่มีสลิป) → createPvForPaidAp เอง default เป็น SCB (813-409-4107 บัญชีหลัก).
       if (isAutoPvEnabled()) {
         await createPvForPaidAp({
           orgId,
           companyId,
           expenseId: matchedExpenseId,
-          sourceBankCode: "SCB",
+          sourceBankCode: sendingBank ?? undefined,
           actorUserId: markedBy ?? null,
         });
       }
