@@ -36,6 +36,7 @@ export function PhotoCaptureButton({
   value,
   onChange,
   onCaptured,
+  onUploadStatus,
   orgId,
   machineCode,
   eventScopeId,
@@ -48,6 +49,8 @@ export function PhotoCaptureButton({
   onChange: (url: string) => void;
   // แจ้งฟอร์มว่า "ถ่ายรูปแล้ว" ทันที (นับเป็นมีรูป · ปลดล็อก gate ก่อน upload เสร็จ). optional กัน call site เก่าพัง.
   onCaptured?: () => void;
+  // แจ้งสถานะอัปโหลดจริง (กำลังอัป / error) ให้ฟอร์มพ่อแม่โชว์ต่อได้ (เช่น ล็อกปุ่มบันทึกระหว่างอัป · โชว์ error แทนไอคอนเงียบ ๆ). optional กัน call site เก่าพัง.
+  onUploadStatus?: (status: { uploading: boolean; error: string | null }) => void;
   orgId: string;
   machineCode: string;
   eventScopeId: string;
@@ -239,6 +242,13 @@ export function PhotoCaptureButton({
     setStateSafe("uploading");
     void uploadWithRetry(latest, myRun);
   }
+
+  // แจ้งสถานะจริงให้ฟอร์มพ่อแม่ทุกครั้งที่เปลี่ยน — "uploading" นับเฉพาะ attempt แรกที่กำลังส่งจริง
+  // (ไม่รวม "retry" ที่รอเน็ตกลับมา เพราะอาจค้างไม่มีกำหนด · ไม่ควรบล็อกฟอร์มทั้งก้อนตอนนั้น)
+  useEffect(() => {
+    onUploadStatus?.({ uploading: state === "uploading", error });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, error]);
 
   // mount: เปิดคิว + flush งานค้าง · + retry เมื่อกลับมา online · cleanup listener
   useEffect(() => {

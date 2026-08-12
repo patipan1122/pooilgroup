@@ -17,7 +17,7 @@
 //   2) เพิ่มสินค้าในตู้ = ปุ่มเล็กปุ่มเดียว → bottom-sheet รวม 2 แท็บ (เลือกจากคลัง / เพิ่มใหม่) — ไม่มีฟอร์มยาวค้างในหน้า
 //   3) "ตุ๊กตาในตู้ตอนนี้" = การ์ดสรุปเลขรวม + กดขยายดูรายการ SKU (หุบไว้เป็น default)
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { submitFirstBaseline } from "@/lib/clawfleet/baseline-actions";
 import {
   addSetupProductWithDolls,
@@ -674,6 +674,10 @@ function AddProductSheet({
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [photo, setPhoto] = useState("");
+  const [photoStatus, setPhotoStatus] = useState<{ uploading: boolean; error: string | null }>({ uploading: false, error: null });
+  // นับรุ่นของสินค้าที่กำลังกรอก — resetNew() บวกทุกครั้ง กัน upload รูปของสินค้าก่อนหน้าที่ยังค้างส่งอยู่
+  // มาแปะผิดตัวถ้าพนักงานเพิ่มสินค้าตัวถัดไปเร็วกว่ารูปจะอัปเสร็จ (bug-class เดียวกับ session-scoped cache)
+  const photoGenRef = useRef(0);
   const [newQty, setNewQty] = useState<number | null>(null);
   // ปลายทางของสินค้าใหม่: "machine" = เข้าตู้ (default · เดิม) · "warehouse" = เก็บเข้าคลังสาขา (CEO 2026-07-28)
   const [newTarget, setNewTarget] = useState<"machine" | "warehouse">("machine");
@@ -683,9 +687,15 @@ function AddProductSheet({
   const [flash, setFlash] = useState<string | null>(null);
 
   const sel = pickList.find((p) => p.id === selId) ?? null;
+  // รุ่นของสินค้าที่กำลังกรอกอยู่ ณ การ render นี้ — ใช้เทียบกับ photoGenRef.current ตอน callback ยิงจริง
+  const myPhotoGen = photoGenRef.current;
 
   function resetExisting() { setSelId(""); setExQty(null); }
-  function resetNew() { setName(""); setSku(""); setPhoto(""); setNewQty(null); }
+  function resetNew() {
+    setName(""); setSku(""); setPhoto(""); setNewQty(null);
+    setPhotoStatus({ uploading: false, error: null });
+    photoGenRef.current += 1; // สินค้าตัวถัดไปเริ่มรุ่นใหม่ — รูปตัวก่อนที่ยังอัปค้างจะไม่มาแปะผิดตัว
+  }
 
   async function saveExisting() {
     setError(null);
@@ -726,6 +736,11 @@ function AddProductSheet({
     if (sku.trim() === "") { setError("กรอกรหัส SKU ก่อน"); return; }
     if (newQty == null || newQty <= 0) {
       setError(newTarget === "warehouse" ? "ใส่จำนวนที่เก็บเข้าคลัง (มากกว่า 0)" : "ใส่จำนวนตุ๊กตาในตู้ (มากกว่า 0)");
+      return;
+    }
+    // รูปกำลังอัปโหลดรอบแรกอยู่ (ปกติไม่กี่วิ) — รอให้เสร็จก่อน กัน imageUrl หลุดว่างเพราะกดไวไป
+    if (photoStatus.uploading) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
       return;
     }
     setBusy(true);
@@ -902,14 +917,22 @@ function AddProductSheet({
               maxLength={80}
             />
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: "#454B54" }}>
-                {photo ? "ถ่ายรูปตุ๊กตาแล้ว · แตะเพื่อถ่ายใหม่" : "ถ่ายรูปตุ๊กตา (ไม่บังคับ)"}
+              <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: photoStatus.error ? "#DC2626" : "#454B54" }}>
+                {photoStatus.error
+                  ? photoStatus.error
+                  : photoStatus.uploading
+                    ? "กำลังอัปรูป…"
+                    : photo
+                      ? "ถ่ายรูปตุ๊กตาแล้ว · แตะเพื่อถ่ายใหม่"
+                      : "ถ่ายรูปตุ๊กตา (ไม่บังคับ)"}
               </span>
               <PhotoCaptureButton
                 compact
                 label="ถ่ายรูปตุ๊กตา"
                 value={photo}
-                onChange={setPhoto}
+                // gen-guard: ถ้าเพิ่มสินค้าตัวถัดไปไปแล้วก่อนรูปตัวนี้อัปเสร็จ (resetNew บวก gen) callback ค้างนี้ต้องไม่แปะผิดตัว
+                onChange={(url) => { if (photoGenRef.current === myPhotoGen) setPhoto(url); }}
+                onUploadStatus={(s) => { if (photoGenRef.current === myPhotoGen) setPhotoStatus(s); }}
                 orgId={orgId}
                 machineCode={machine.code}
                 eventScopeId={`${scopeId}-newprod`}
@@ -931,9 +954,13 @@ function AddProductSheet({
                 onInc={() => setNewQty((c) => Math.min(MAX_COUNT, (c ?? 0) + 1))} />
             </div>
             {error && <div style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>{error}</div>}
-            <button type="button" disabled={busy} onClick={addNew} className="co-tap"
-              style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: busy ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
-              {busy ? "กำลังเพิ่ม…" : newTarget === "warehouse" ? "＋ เพิ่มสินค้า + เก็บเข้าคลัง" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
+            <button type="button" disabled={busy || photoStatus.uploading} onClick={addNew} className="co-tap"
+              style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: busy || photoStatus.uploading ? "#B9BCF0" : "#4F46E5", color: "#fff", fontSize: 14.5, fontWeight: 700, cursor: busy || photoStatus.uploading ? "wait" : "pointer" }}>
+              {busy
+                ? "กำลังเพิ่ม…"
+                : photoStatus.uploading
+                  ? "กำลังอัปรูป…"
+                  : newTarget === "warehouse" ? "＋ เพิ่มสินค้า + เก็บเข้าคลัง" : "＋ เพิ่มสินค้า + บันทึกในตู้"}
             </button>
           </div>
         )}
