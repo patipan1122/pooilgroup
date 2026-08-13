@@ -35,6 +35,7 @@ import {
   amountToleranceSatang,
 } from "@/lib/ledger/reconcile-match-keywords";
 import { loadAccountKeywordMap, learnFromConfirm } from "@/lib/ledger/reconcile-keyword-dict";
+import { findBankCombo, type ComboBankCandidate } from "@/lib/ledger/reconcile-combo-match";
 import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
@@ -1172,6 +1173,7 @@ export async function autoMatchAccountAction(
   //   → ยืนยันด้วยวัน + ยอด (เผื่อค่าธรรมเนียมแกว่ง) · เงินสด = ไม่เช็คชื่อ ยอดตรง วันยืดหยุ่น
   //   ห้ามจับซ้ำ: book ที่ใช้แล้วตัดทิ้ง · createMatchGroupAction กัน bank ซ้ำที่ DB อีกชั้น
   const usedBook = new Set<string>();
+  const usedBankIds = new Set<string>(); // bank txn ที่ pass-1 (1:1) จับไปแล้ว — pass-2 (N:1) ห้ามเอามาใช้ซ้ำ
   let created = 0;
   for (const bk of banks) {
     const amt = Number(bk.amt);
@@ -1194,9 +1196,43 @@ export async function autoMatchAccountAction(
     }
     if (!best) continue;
     usedBook.add(`${best.e.bookType}:${best.e.bookId}`);
+    usedBankIds.add(bk.id);
     const res = await createMatchGroupAction({
       bankAccountId, bankTxnIds: [bk.id],
       bookRefs: [{ bookType: best.e.bookType, bookId: best.e.bookId }], matchKind: "auto",
+    });
+    if (res.ok) created++;
+  }
+
+  // ── Pass 2: N:1 — รวม 2-3 รายการธนาคาร → 1 รายการบัญชี ─────────────────────
+  //   เฉพาะ book entry ที่ pass-1 (1:1) จับไม่ได้ (เช่น QR settlement วันนั้นแยกเป็น 2 ก้อนจริงบนสเตทเมนต์)
+  //   ใช้ concept/date-window/tolerance ชุดเดียวกับ 1:1 เป๊ะ (ดู reconcile-combo-match.ts) ·
+  //   เจอมากกว่า 1 ชุดที่ตรง (กำกวม) → ไม่จับ ปล่อยให้จับคู่มือ (พลาดดีกว่าเดาผิดเรื่องเงิน)
+  for (const e of book) {
+    const bookKey = `${e.bookType}:${e.bookId}`;
+    if (usedBook.has(bookKey)) continue;
+    const concept = conceptForChannel(e.channel);
+    const candidates: ComboBankCandidate[] = banks
+      .filter((bk) => !usedBankIds.has(bk.id))
+      .map((bk) => ({
+        id: bk.id,
+        amountSatang: Number(bk.amt),
+        dateMs: new Date(bk.d).getTime(),
+        text: bk.text,
+      }));
+    const combo = findBankCombo(
+      e.amountSatang,
+      new Date(e.date).getTime(),
+      concept,
+      candidates,
+      kwMap[concept.key] ?? [],
+    );
+    if (!combo) continue;
+    usedBook.add(bookKey);
+    for (const id of combo.ids) usedBankIds.add(id);
+    const res = await createMatchGroupAction({
+      bankAccountId, bankTxnIds: combo.ids,
+      bookRefs: [{ bookType: e.bookType, bookId: e.bookId }], matchKind: "auto",
     });
     if (res.ok) created++;
   }

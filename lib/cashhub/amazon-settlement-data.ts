@@ -169,8 +169,14 @@ export async function sendDaysToReconcile(
   //      ส่วนต่างเล็ก ๆ เป็นเรื่อง POS↔ยอดขายรวม (คนละชั้นกับการจับคู่ธนาคาร) ไม่บล็อกเงินทั้งวัน
   const sentUnbalanced: string[] = [];
   for (const day of days) {
+    // แหล่งยอดต่อช่องทาง: ใช้ iv_channels (ไส้ในใบ TRCloud ที่ยืนยันแล้ว) ก่อนเสมอถ้ามี —
+    //   TRCloud บางวัน reclassify เงินข้ามช่องทาง (เช่น ย้าย QR บางส่วนไป Grab) เทียบกับไฟล์ POS ดิบ
+    //   ยืนยันกับยอดธนาคารจริงแล้วว่า iv_channels ตรงเป๊ะถึงสตางค์ ส่วน channels (POS ดิบ) อาจเพี้ยนวันที่มีการจัดหมวดใหม่
+    //   fallback ไป channels เฉพาะวันที่ยังไม่มีใบ IV ยืนยัน (เช่นวันล่าสุดที่ TRCloud ยังไม่ประมวลผล)
+    const channels =
+      day.iv_channels && Object.keys(day.iv_channels).length > 0 ? day.iv_channels : day.channels;
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — สูตรเดียวกับพรีวิว
-    const { rows: sendRows } = computeSendRows(day.channels, configByCvar);
+    const { rows: sendRows } = computeSendRows(channels, configByCvar);
     for (const g of SETTLEMENT_GROUPS)
       for (const cv of g.cvars)
         legacyRefs.push(`amz-${storeCode}-${day.sales_date}-${cv}`);
