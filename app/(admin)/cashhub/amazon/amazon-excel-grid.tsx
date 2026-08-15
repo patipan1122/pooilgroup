@@ -3,7 +3,7 @@
 // ตารางเต็มแบบ Excel — มิเรอร์สไตล์ hotel-excel-grid (ตรึงหัว+คอลัมน์ซ้าย, ช่องทางแยกทุกช่อง,
 // ช่องสูตร ƒ สีฟ้า, ส่วนต่าง POS↔TRC แดงถ้า≠0, แถวรวมท้าย). 1 วัน = 1 แถว.
 import { useState } from "react";
-import { formatBaht } from "@/lib/utils/format";
+import { formatBaht, formatNumber } from "@/lib/utils/format";
 import type { SavedAmazonDay, ReconcileStatus } from "@/lib/cashhub/amazon-data";
 import { CHANNEL_CVAR } from "@/lib/cashhub/amazon-parse";
 import {
@@ -154,12 +154,14 @@ export function AmazonExcelGrid({
     const ivv = c.ivGet ? c.ivGet(d) : null; // null = ยังไม่ตรวจไส้ใน
     const ivBad = showInner && ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
     const ivDiff = ivBad ? (ivv ?? 0) - (v ?? 0) : 0;
-    // ไส้ในก่อนรวม cvar (เช่น QRPayment(API)/QRPayment ที่ถูกรวมเป็นคอลัมน์ "QR" เดียว) — โชว์แค่ hover
-    // ไม่เพิ่มความสูง/ความกว้างถาวรให้ตาราง (งบพื้นที่ UI) · ไม่มี breakdown ให้ดู = title ว่าง ไม่มีอะไรเปลี่ยน
+    // ไส้ในก่อนรวม cvar (เช่น QRPayment(API)/QRPayment ที่ถูกรวมเป็นคอลัมน์ "QR" เดียว)
+    // แสดงเป็นบรรทัดเล็ก 9px ใต้ยอดหลักเสมอ (มือถือแตะไม่ได้ hover — ต้องเห็นได้โดยไม่ต้องโต้ตอบ)
+    // เลขล้วนคั่นด้วย + ไม่พิมพ์ชื่อ column ซ้ำ (หัวตารางบอกช่องทางอยู่แล้ว) · title ยังอยู่เป็นโบนัส desktop
     const posDetail = c.cvar ? posBreakdownFor(d, c.cvar) : null;
     const posTip = posDetail
       ? `แยกตาม POS: ${posDetail.map(([label, amt]) => `${label} ${formatBaht(amt)}`).join(" · ")}`
       : undefined;
+    const posLine = posDetail ? posDetail.map(([, amt]) => formatNumber(amt)).join("+") : null;
     return (
       <td
         key={c.label}
@@ -179,13 +181,20 @@ export function AmazonExcelGrid({
                     : "text-zinc-700"
         }`}
       >
-        {ivBad ? (
+        {ivBad || posLine ? (
           <div className="flex flex-col items-end leading-tight">
             <span>{num(v)}</span>
-            <span className="text-[9px] font-semibold text-yellow-600 whitespace-nowrap">
-              IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
-              {num(Math.abs(ivDiff))})
-            </span>
+            {ivBad && (
+              <span className="text-[9px] font-semibold text-yellow-600 whitespace-nowrap">
+                IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
+                {num(Math.abs(ivDiff))})
+              </span>
+            )}
+            {posLine && (
+              <span className="text-[9px] font-medium text-zinc-400 whitespace-nowrap">
+                {posLine}
+              </span>
+            )}
           </div>
         ) : (
           num(v)
