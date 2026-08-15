@@ -633,6 +633,9 @@ function MachinePhotoLightbox({
               label={m.photoUrl ? "เปลี่ยนรูปตู้" : "แนบรูปตู้"}
               value="" // จัดการ persist เอง (onChange) — ไม่ให้ปุ่มถือ url ค้าง
               onChange={onUploaded}
+              // จอนี้ persist ทันทีที่ onChange ยิง (ไม่มีปุ่ม "บันทึก" แยกที่อ่าน state ค้าง) — ไม่มี race
+              // เดิม onUploadStatus ไม่เคยต่อ เลยไม่รู้เหตุผลตอนอัปล้ม (compact/full ยังโชว์ error อยู่แล้ว) — ต่อไว้เผื่อ log
+              onUploadStatus={(s) => { if (s.error) setErr(s.error); }}
               orgId={orgId}
               machineCode={m.code}
               // ไม่ผูกกับรอบเก็บเงินจริง (ไม่ใช่ uuid session) → route ไม่ล็อกสิทธิ์รอบ · คีย์รูปแยกเส้นทาง

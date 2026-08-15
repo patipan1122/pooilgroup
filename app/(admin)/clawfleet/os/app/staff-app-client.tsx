@@ -3489,8 +3489,24 @@ function AttachPhotosSheet({ orgId, eventId, machineCode, isBaseline, onClose, o
   const [error, setError] = useState<string | null>(null);
   const eventScopeId = `attach-${eventId}`;
   const capturedCount = Object.values(urls).filter(Boolean).length;
+  // คอลัมน์ที่กำลังอัปโหลดค้างอยู่ — กันกด "บันทึกรูปที่แนบ" ก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [uploadingCols, setUploadingCols] = useState<Set<string>>(new Set());
+  function trackUpload(col: string) {
+    return (status: { uploading: boolean; error: string | null }) => {
+      setUploadingCols((cur) => {
+        if (status.uploading === cur.has(col)) return cur;
+        const next = new Set(cur);
+        if (status.uploading) next.add(col); else next.delete(col);
+        return next;
+      });
+    };
+  }
 
   function save() {
+    if (uploadingCols.size > 0) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     // เก็บเฉพาะ url จริง (ถ่ายแล้ว upload เสร็จ) — ยังไม่มีเลย → เตือนให้ถ่ายก่อน
     const photos: Record<string, string> = {};
     for (const s of slots) if (urls[s.col]) photos[s.col] = urls[s.col];
@@ -3546,6 +3562,7 @@ function AttachPhotosSheet({ orgId, eventId, machineCode, isBaseline, onClose, o
               label={s.label}
               value={urls[s.col] ?? ""}
               onChange={(url) => setUrls((p) => ({ ...p, [s.col]: url }))}
+              onUploadStatus={trackUpload(s.col)}
               orgId={orgId}
               machineCode={machineCode}
               eventScopeId={eventScopeId}
@@ -3555,9 +3572,9 @@ function AttachPhotosSheet({ orgId, eventId, machineCode, isBaseline, onClose, o
         </div>
         <div style={{ fontSize: 10.5, color: "#9AA1AB", margin: "8px 0 14px" }}>ถ่ายช่องไหนก่อนก็ได้ · ช่องที่มีรูปอยู่แล้วในระบบจะไม่ถูกทับ</div>
 
-        <button type="button" onClick={save} disabled={pending || capturedCount === 0} className={pending || capturedCount === 0 ? "" : "co-tap"}
-          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", borderRadius: 12, cursor: pending || capturedCount === 0 ? "not-allowed" : "pointer", background: "#B45309", opacity: pending || capturedCount === 0 ? 0.55 : 1 }}>
-          {pending ? "กำลังบันทึก…" : capturedCount === 0 ? "ถ่ายรูปก่อน" : `บันทึกรูปที่แนบ (${capturedCount})`}
+        <button type="button" onClick={save} disabled={pending || capturedCount === 0 || uploadingCols.size > 0} className={pending || capturedCount === 0 || uploadingCols.size > 0 ? "" : "co-tap"}
+          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", borderRadius: 12, cursor: pending || capturedCount === 0 || uploadingCols.size > 0 ? "not-allowed" : "pointer", background: "#B45309", opacity: pending || capturedCount === 0 || uploadingCols.size > 0 ? 0.55 : 1 }}>
+          {pending ? "กำลังบันทึก…" : uploadingCols.size > 0 ? "กำลังอัปรูป…" : capturedCount === 0 ? "ถ่ายรูปก่อน" : `บันทึกรูปที่แนบ (${capturedCount})`}
         </button>
       </div>
     </div>
@@ -3596,6 +3613,8 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  // รูปอาการเสียกำลังอัปโหลดอยู่ไหม — กันกด "ส่งแจ้งซ่อม" ก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const selected = realMachines.find((m) => m.id === machineId) ?? null;
   // อาการจริง = ที่เลือก · ถ้า "อื่นๆ" ใช้ที่พิมพ์ (fallback เป็น "อื่นๆ" กัน symptom ว่าง)
@@ -3609,6 +3628,10 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
     if (!canSubmit || !selected) return;
     setError(null);
     setOkMsg(null);
+    if (photoUploading) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     // ถ้าขอรีเซ็ตมิเตอร์ → ต้องกรอกเลขเหรียญใหม่ + สต๊อกตุ๊กตาใหม่ให้ครบ (ผจก.เอาไปอนุมัติ)
     const coinNum = propCoin === "" ? undefined : Number(propCoin);
     const stockNum = propStock === "" ? undefined : Number(propStock);
@@ -3710,6 +3733,7 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
             <PhotoCaptureButton slim
               label={photoUrl ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปอาการเสีย"}
               value={photoUrl} onChange={setPhotoUrl}
+              onUploadStatus={(s) => setPhotoUploading(s.uploading)}
               orgId={orgId} machineCode={selected?.code ?? ""}
               eventScopeId={`repair-${selected?.id ?? "none"}`} phase="stock" />
           </div>
@@ -3750,10 +3774,10 @@ function RepairPanel({ orgId, machines, usingDemo, myRecentTickets }: {
             </div>
           )}
 
-          <button type="button" onClick={submit} disabled={pending}
-            className={pending ? "" : "co-tap"}
-            style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
-            {pending ? "กำลังส่ง…" : "ส่งแจ้งซ่อม"}
+          <button type="button" onClick={submit} disabled={pending || photoUploading}
+            className={pending || photoUploading ? "" : "co-tap"}
+            style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: pending || photoUploading ? "wait" : "pointer", opacity: pending || photoUploading ? 0.6 : 1 }}>
+            {pending ? "กำลังส่ง…" : photoUploading ? "กำลังอัปรูป…" : "ส่งแจ้งซ่อม"}
           </button>
         </>
       )}
@@ -3802,6 +3826,18 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
   // นับต่อสินค้า (null = ยังไม่นับ) · รูปหลักฐานต่อสินค้า (optional)
   const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [photos, setPhotos] = useState<Record<string, string>>({});
+  // สินค้าที่รูปกำลังอัปโหลดค้างอยู่ — กันกด "ส่งผลนับ" ก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [uploadingPhotos, setUploadingPhotos] = useState<Set<string>>(new Set());
+  function trackPhotoUpload(productId: string) {
+    return (status: { uploading: boolean; error: string | null }) => {
+      setUploadingPhotos((cur) => {
+        if (status.uploading === cur.has(productId)) return cur;
+        const next = new Set(cur);
+        if (status.uploading) next.add(productId); else next.delete(productId);
+        return next;
+      });
+    };
+  }
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -3817,12 +3853,16 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
     .map((p) => ({ productId: p.id, countedQty: counts[p.id] }))
     .filter((l): l is { productId: string; countedQty: number } => l.countedQty != null);
 
-  const canSubmit = !usingDemo && !!branchId && countedLines.length > 0;
+  const canSubmit = !usingDemo && !!branchId && countedLines.length > 0 && uploadingPhotos.size === 0;
 
   function submit() {
     if (!canSubmit) return;
     setError(null);
     setOkMsg(null);
+    if (uploadingPhotos.size > 0) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     const photoUrls = Object.values(photos).filter(Boolean);
     startTransition(async () => {
       try {
@@ -3937,13 +3977,20 @@ function StockCountPanel({ orgId, usingDemo, branchId, branchCode, products, war
           eventScopeId={`stockcount-${branchId}`}
           photoUrl={photos[p.id] ?? ""}
           onPhoto={(url) => setPhotos((ph) => ({ ...ph, [p.id]: url }))}
+          onPhotoUploadStatus={trackPhotoUpload(p.id)}
           onImageTap={(url, name) => setZoomImg({ url, name })}
         />
       ))}
       <button type="button" onClick={submit} disabled={!canSubmit || pending}
         className={!canSubmit || pending ? "" : "co-tap"}
         style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: !canSubmit ? "#A8AEB8" : "#4F46E5", border: "none", padding: 13, borderRadius: 12, cursor: !canSubmit || pending ? "not-allowed" : "pointer", opacity: pending ? 0.6 : 1 }}>
-        {pending ? "กำลังส่ง…" : countedLines.length > 0 ? `ส่งผลนับ ${countedLines.length} รายการให้ผู้จัดการ` : "นับอย่างน้อย 1 รายการก่อน"}
+        {pending
+          ? "กำลังส่ง…"
+          : uploadingPhotos.size > 0
+            ? "กำลังอัปรูป…"
+            : countedLines.length > 0
+              ? `ส่งผลนับ ${countedLines.length} รายการให้ผู้จัดการ`
+              : "นับอย่างน้อย 1 รายการก่อน"}
       </button>
       </>
       )}
@@ -4227,6 +4274,8 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // รูปตอนรับกำลังอัปโหลดอยู่ไหม — กันกด "กดรับสินค้า" ก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [photoUploading, setPhotoUploading] = useState(false);
   // doc-first (CEO 2026-07-16): ขึ้นเป็น "ใบ" ก่อน — กดหัวใบค่อยกางรายละเอียด/ฟอร์มรับ
   const [open, setOpen] = useState(false);
 
@@ -4277,6 +4326,10 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
 
   function submit() {
     setError(null);
+    if (photoUploading) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     startTransition(async () => {
       try {
         // route ตาม source — ห้ามสลับ write path (คนละ idempotency guard · สลับ = รับซ้ำ/ไม่ตรง refTable):
@@ -4418,16 +4471,18 @@ function DeliveryReceiveCard({ orgId, branchCode, delivery, onHandByProduct }: {
           placeholder="หมายเหตุตอนรับ (ไม่บังคับ)"
           style={{ flex: 1, minWidth: 0, minHeight: 46, fontSize: 13, padding: "0 12px", border: "1.5px solid #E3E6EA", borderRadius: 11, background: "#fff", color: "#1A1D21", outline: "none" }} />
         <PhotoCaptureButton label={photo ? "แนบรูปแล้ว · แตะถ่ายใหม่" : "ถ่ายรูปตอนรับ (ถ่ายได้-ข้ามได้)"}
-          value={photo} onChange={setPhoto} orgId={orgId} machineCode={branchCode}
+          value={photo} onChange={setPhoto}
+          onUploadStatus={(s) => setPhotoUploading(s.uploading)}
+          orgId={orgId} machineCode={branchCode}
           eventScopeId={`receive-${delivery.id}`} phase="goods_receipt" compact />
       </div>
       {error && (
         <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 11, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4 }}>{error}</div>
       )}
-      <button type="button" onClick={submit} disabled={pending}
-        className={pending ? "" : "co-tap"}
-        style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 13, borderRadius: 12, cursor: pending ? "wait" : "pointer", opacity: pending ? 0.6 : 1 }}>
-        {pending ? "กำลังรับ…" : "กดรับสินค้า"}
+      <button type="button" onClick={submit} disabled={pending || photoUploading}
+        className={pending || photoUploading ? "" : "co-tap"}
+        style={{ width: "100%", minHeight: 48, fontSize: 14, fontWeight: 700, color: "#fff", background: "#15803D", border: "none", padding: 13, borderRadius: 12, cursor: pending || photoUploading ? "wait" : "pointer", opacity: pending || photoUploading ? 0.6 : 1 }}>
+        {pending ? "กำลังรับ…" : photoUploading ? "กำลังอัปรูป…" : "กดรับสินค้า"}
       </button>
       </>)}
     </div>
@@ -4461,9 +4516,13 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   const [addPending, startAddSku] = useTransition();
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addKey, setAddKey] = useState(() => crypto.randomUUID());
+  // รูป SKU ใหม่กำลังอัปโหลดอยู่ไหม — กันกด "เพิ่มสินค้า" ก่อนรูปขึ้น R2 จริง (2026-08-15 · จุดนี้เป็นฟอร์มซ้ำ
+  // อีกชุดของที่เคยแก้ใน BaselineForm AddProductSheet เมื่อ 08-12 แต่ไม่เคยแก้ตัวนี้ด้วย)
+  const [newImgUploading, setNewImgUploading] = useState(false);
   function saveNewSku() {
     const name = newName.trim();
     if (!name || addPending) return;
+    if (newImgUploading) { setAddErr("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง"); return; }
     setAddErr(null);
     startAddSku(async () => {
       try {
@@ -4492,6 +4551,18 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   // ดีไซน์ใหม่ · รูปยืนยัน ก่อน/หลังเติม — เก็บลง movement.receiptR2Key (คืน→ก่อน · เติม→หลัง)
   const [swapPhotoBefore, setSwapPhotoBefore] = useState<string>("");
   const [swapPhotoAfter, setSwapPhotoAfter] = useState<string>("");
+  // จุดที่ยังอัปโหลดค้างอยู่ (before/after) — กันกดยืนยันก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [swapPhotoUploading, setSwapPhotoUploading] = useState<Set<string>>(new Set());
+  function trackSwapUpload(key: string) {
+    return (status: { uploading: boolean; error: string | null }) => {
+      setSwapPhotoUploading((cur) => {
+        if (status.uploading === cur.has(key)) return cur;
+        const next = new Set(cur);
+        if (status.uploading) next.add(key); else next.delete(key);
+        return next;
+      });
+    };
+  }
   // clientKey ต่อ (เปิด sheet 1 ครั้ง × SKU × ชนิดงาน) — กดซ้ำ/retry ไม่คืน-เติมซ้ำ (server เช็ค refId)
   const keyMapRef = useRef<Record<string, string>>({});
   const keyFor = (kind: "ret" | "ref", pid: string) => {
@@ -4532,11 +4603,15 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
   const refillEntries = Object.entries(refills).filter(([, q]) => q > 0);
   const swapRefillTotal = refillEntries.reduce((a, [, q]) => a + q, 0);
   const swapNow = swapRemainTotal + swapRefillTotal;
-  const canSubmit = (swapReturnedTotal > 0 || swapRefillTotal > 0) && !pending;
+  const canSubmit = (swapReturnedTotal > 0 || swapRefillTotal > 0) && !pending && swapPhotoUploading.size === 0;
 
   function submit() {
     if (!canSubmit) return;
     setError(null); setOkMsg(null);
+    if (swapPhotoUploading.size > 0) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     startTransition(async () => {
       try {
         // คืนเข้าสโตร์ทีละ SKU → เติมทีละ SKU ผ่าน action เดิม (returnDollsToStock/refillDollsToMachine).
@@ -4707,15 +4782,17 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                 {!usingDemo && (
                   <div style={{ marginBottom: 10 }}>
                     <PhotoCaptureButton label={newImg ? "เปลี่ยนรูปตุ๊กตา" : "ถ่าย/แนบรูปตุ๊กตา (ไม่บังคับ)"} value={newImg}
-                      onChange={(url) => setNewImg(url)} orgId={orgId} machineCode={machine.code} eventScopeId={`newsku-${machine.id}`} phase="machine" />
+                      onChange={(url) => setNewImg(url)}
+                      onUploadStatus={(s) => setNewImgUploading(s.uploading)}
+                      orgId={orgId} machineCode={machine.code} eventScopeId={`newsku-${machine.id}`} phase="machine" />
                   </div>
                 )}
                 {addErr && <div style={{ fontSize: 12, color: "#B42318", fontWeight: 600, marginBottom: 8 }}>{addErr}</div>}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" onClick={() => { setShowAddSku(false); setAddErr(null); }} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1px solid #E3E6EA", background: "#fff", color: "#6B7280", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>ยกเลิก</button>
-                  <button type="button" disabled={!newName.trim() || addPending} onClick={saveNewSku}
-                    style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: (!newName.trim() || addPending) ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 700, cursor: (!newName.trim() || addPending) ? "default" : "pointer" }}>
-                    {addPending ? "กำลังเพิ่ม…" : "เพิ่มเข้าคลัง"}
+                  <button type="button" disabled={!newName.trim() || addPending || newImgUploading} onClick={saveNewSku}
+                    style={{ flex: 2, padding: 11, borderRadius: 10, border: "none", background: (!newName.trim() || addPending || newImgUploading) ? "#C7CBF5" : "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 700, cursor: (!newName.trim() || addPending || newImgUploading) ? "default" : "pointer" }}>
+                    {addPending ? "กำลังเพิ่ม…" : newImgUploading ? "กำลังอัปรูป…" : "เพิ่มเข้าคลัง"}
                   </button>
                 </div>
               </div>
@@ -4747,10 +4824,12 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
                 <>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <PhotoCaptureButton slim label={swapPhotoBefore ? "ก่อนเติม ✓" : "ถ่ายก่อนเติม"} value={swapPhotoBefore} onChange={setSwapPhotoBefore}
+                      onUploadStatus={trackSwapUpload("before")}
                       orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <PhotoCaptureButton slim label={swapPhotoAfter ? "หลังเติม ✓" : "ถ่ายหลังเติม"} value={swapPhotoAfter} onChange={setSwapPhotoAfter}
+                      onUploadStatus={trackSwapUpload("after")}
                       orgId={orgId} machineCode={machine.code} eventScopeId={`swap-${machine.id}`} phase="stock_after" />
                   </div>
                 </>
@@ -4762,9 +4841,13 @@ function RefillDollsSheet({ machine, products, netById, dolls, orgId, usingDemo,
             {/* บันทึก (mockup HIST-25) — disabled จนกว่าจะคืน/เติมอย่างน้อย 1 (money-safe) */}
             <button type="button" disabled={!canSubmit} onClick={submit} className={pending ? "" : "co-tap"}
               style={{ marginTop: 16, width: "100%", padding: 15, borderRadius: 13, border: "none", background: !canSubmit ? "#F1F2F5" : "#15803D", color: !canSubmit ? "#9AA1AB" : "#fff", fontSize: 14.5, fontWeight: 700, cursor: !canSubmit ? "default" : "pointer" }}>
-              {pending ? "กำลังบันทึก…" : canSubmit
-                ? "บันทึกการเปลี่ยน/เติม · กลับหน้าหลัก"
-                : "กด “คืนเข้าสโตร์” หรือเลือก SKU มาเติม อย่างน้อย 1 อย่าง"}
+              {pending
+                ? "กำลังบันทึก…"
+                : swapPhotoUploading.size > 0
+                  ? "กำลังอัปรูป…"
+                  : canSubmit
+                    ? "บันทึกการเปลี่ยน/เติม · กลับหน้าหลัก"
+                    : "กด “คืนเข้าสโตร์” หรือเลือก SKU มาเติม อย่างน้อย 1 อย่าง"}
             </button>
           </>
         )}
@@ -6613,13 +6696,17 @@ function RefillLinesEditor({ products, netById, lines, onAdd, onSetQty, onRemove
 
 type Phase = "meter_before" | "cash" | "meter_after" | "stock" | "prize_meter" | "stock_after";
 
+// no-op onUploadStatus — ใช้ที่จอที่กันรูปหายเงียบด้วยกลไกอื่นอยู่แล้ว (ดู PhotoSlot/PhotoTile)
+const NOOP_UPLOAD_STATUS = () => {};
+
 /**
  * Optional photo slot — wraps the REAL <PhotoCaptureButton> (1-tap camera → R2 url).
  * Skipping is fine (value stays ""); shows a soft "ถ่ายได้-ข้ามได้" hint, never blocks.
  * In demo preview (no real session/upload backend) we render a disabled informational box.
  */
-function PhotoSlot({ label, value, onChange, onCaptured, orgId, machineCode, eventScopeId, phase, disabled, required }: {
+function PhotoSlot({ label, value, onChange, onCaptured, onUploadStatus, orgId, machineCode, eventScopeId, phase, disabled, required }: {
   label: string; value: string; onChange: (url: string) => void; onCaptured?: () => void;
+  onUploadStatus?: (status: { uploading: boolean; error: string | null }) => void;
   orgId: string; machineCode: string; eventScopeId: string; phase: Phase; disabled?: boolean; required?: boolean;
 }) {
   if (disabled || !orgId || !machineCode) {
@@ -6632,7 +6719,10 @@ function PhotoSlot({ label, value, onChange, onCaptured, orgId, machineCode, eve
   }
   return (
     <div>
+      {/* onUploadStatus optional ที่นี่ — จอนี้กันรูปหายเงียบด้วยกลไกอื่นอยู่แล้ว (เทียบ photosCaptured vs photos
+          ที่ระดับ container + safety-timeout 8 วิ) จึงส่ง no-op ให้พอผ่าน required prop ไม่ต้องเปลี่ยนกลไกเดิม */}
       <PhotoCaptureButton label={label} value={value} onChange={onChange} onCaptured={onCaptured}
+        onUploadStatus={onUploadStatus ?? NOOP_UPLOAD_STATUS}
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
       {!value && (
         required
@@ -6667,6 +6757,7 @@ function PhotoTile({ label, value, captured, onChange, onCaptured, orgId, machin
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       <PhotoCaptureButton slim label={on ? `${label} ✓` : `ถ่าย${label}`} value={value} onChange={onChange} onCaptured={onCaptured}
+        onUploadStatus={NOOP_UPLOAD_STATUS}
         orgId={orgId} machineCode={machineCode} eventScopeId={eventScopeId} phase={phase} />
     </div>
   );

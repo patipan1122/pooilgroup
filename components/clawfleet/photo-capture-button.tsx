@@ -49,8 +49,9 @@ export function PhotoCaptureButton({
   onChange: (url: string) => void;
   // แจ้งฟอร์มว่า "ถ่ายรูปแล้ว" ทันที (นับเป็นมีรูป · ปลดล็อก gate ก่อน upload เสร็จ). optional กัน call site เก่าพัง.
   onCaptured?: () => void;
-  // แจ้งสถานะอัปโหลดจริง (กำลังอัป / error) ให้ฟอร์มพ่อแม่โชว์ต่อได้ (เช่น ล็อกปุ่มบันทึกระหว่างอัป · โชว์ error แทนไอคอนเงียบ ๆ). optional กัน call site เก่าพัง.
-  onUploadStatus?: (status: { uploading: boolean; error: string | null }) => void;
+  // แจ้งสถานะอัปโหลดจริง (กำลังอัป / error) ให้ฟอร์มพ่อแม่ล็อกปุ่มบันทึกระหว่างอัป — บังคับทุก call site ต้องรับ
+  // (เดิม optional → มีแค่ 1/12 จุดต่อสายจริง ที่เหลือกดบันทึกก่อนอัปเสร็จได้ = รูปหายเงียบ 2026-08-15)
+  onUploadStatus: (status: { uploading: boolean; error: string | null }) => void;
   orgId: string;
   machineCode: string;
   eventScopeId: string;
@@ -337,7 +338,7 @@ export function PhotoCaptureButton({
         <button
           type="button"
           aria-label={label}
-          title={hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : label}
+          title={hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : error ? error : label}
           onClick={() => ref.current?.click()}
           className="co-tap"
           style={{
@@ -393,7 +394,7 @@ export function PhotoCaptureButton({
         />
         <button
           type="button"
-          title={hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : label}
+          title={error ? error : hasPhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : label}
           onClick={() => ref.current?.click()}
           className="co-tap"
           style={{
@@ -410,7 +411,10 @@ export function PhotoCaptureButton({
           ) : (
             <Camera className="h-4 w-4" strokeWidth={1.9} style={{ flex: "0 0 16px" }} />
           )}
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+          {/* error = สาเหตุจริงแทนป้ายชื่อคงที่ (2026-08-15 · เดิม slim ไม่เคยโชว์เหตุผลที่ล้มเหลว พนักงานเห็นแค่กรอบแดงเงียบ ๆ) */}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {error ? error : isBusy ? "กำลังอัปโหลด…" : label}
+          </span>
         </button>
       </>
     );

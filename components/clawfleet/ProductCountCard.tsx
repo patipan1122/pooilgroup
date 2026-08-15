@@ -13,6 +13,7 @@ import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button"
 import { num } from "@/components/clawfleet/os/format";
 
 const MAX_COUNT = 100_000;
+const NOOP_UPLOAD_STATUS = () => {};
 
 export interface ProductCountCardProps {
   // sku/defaultPriceCoins optional (บาง call site เก่ายังไม่ส่ง) — DISPLAY เท่านั้น (item 9)
@@ -30,6 +31,8 @@ export interface ProductCountCardProps {
   /** url รูปที่ถ่ายแล้ว (ถ้ามี) + callback เมื่อได้ url จริง */
   photoUrl?: string;
   onPhoto?: (url: string) => void;
+  /** สถานะอัปโหลดจริง (กำลังอัป/error) — ให้ parent กัน "ส่งผลนับ" ก่อนรูปขึ้น R2 จริง (2026-08-15) */
+  onPhotoUploadStatus?: (status: { uploading: boolean; error: string | null }) => void;
   /** CEO 2026-07-18 · แตะรูปสินค้า → ดูขยาย (parent เปิด lightbox) */
   onImageTap?: (url: string, name: string) => void;
 }
@@ -44,6 +47,7 @@ export function ProductCountCard({
   eventScopeId = "",
   photoUrl = "",
   onPhoto,
+  onPhotoUploadStatus,
   onImageTap,
 }: ProductCountCardProps) {
   const counted = value != null;
@@ -174,6 +178,7 @@ export function ProductCountCard({
         label={photoUrl ? "รูปตอนนับ ✓" : "ถ่ายรูปตอนนับ (ข้ามได้)"}
         value={photoUrl}
         onChange={(url) => onPhoto?.(url)}
+        onUploadStatus={onPhotoUploadStatus ?? NOOP_UPLOAD_STATUS}
         orgId={orgId}
         machineCode={machineCode}
         eventScopeId={eventScopeId}

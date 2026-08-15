@@ -76,6 +76,21 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
   // ดีไซน์ใหม่ · รูปตุ๊กตา "ก่อน/หลังใส่" — เก็บช่องเดียวกับรอบเก็บเงิน (photoStockUrl / photoMeterBeforeUrl)
   const [photoBefore, setPhotoBefore] = useState<string>("");
   const [photoAfter, setPhotoAfter] = useState<string>("");
+  // จุดที่ยังอัปโหลดค้างอยู่ (digital/gear/before/after/machine) — กันกด "บันทึกยอดตั้งต้น" ก่อนรูปอัปเสร็จ
+  // (2026-08-15 · เดิมไม่เช็คเลย → กดบันทึกไวกว่ารูปอัปจริง = รูปหายเงียบ เหมือนบั๊กที่เคยแก้ใน AddProductSheet)
+  const [uploadingPhotos, setUploadingPhotos] = useState<Set<string>>(new Set());
+  // รูปตู้ = compact icon เล็ก ไม่มีที่โชว์ error ในตัวปุ่มเอง (ต่างจาก slim) → โชว์ในบรรทัดคำอธิบายข้าง ๆ แทน
+  const [machinePhotoError, setMachinePhotoError] = useState<string | null>(null);
+  function trackUpload(key: string) {
+    return (status: { uploading: boolean; error: string | null }) => {
+      setUploadingPhotos((cur) => {
+        if (status.uploading === cur.has(key)) return cur;
+        const next = new Set(cur);
+        if (status.uploading) next.add(key); else next.delete(key);
+        return next;
+      });
+    };
+  }
 
   // ชื่อเล่นตู้ (แก้ได้ตั้งแต่หน้านี้)
   const [nickname, setNickname] = useState<string | null>(machine.nickname);
@@ -145,6 +160,12 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
     const cashBaht = cash.trim() === "" ? 0 : Number(cash);
     if (Number.isNaN(cashBaht) || cashBaht < 0) {
       setError("จำนวนเงินไม่ถูกต้อง");
+      return;
+    }
+    // รูปกำลังอัปโหลดรอบแรกอยู่ (ปกติไม่กี่วิ) — รอให้เสร็จก่อน กัน imageUrl หลุดว่างเพราะกดไวไป
+    // (ไม่บล็อกตอน retry/offline — รูปจะไปรอในคิวแทน เหมือน AddProductSheet เดิม)
+    if (uploadingPhotos.size > 0) {
+      setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
       return;
     }
     // CEO 2026-08-02 · บังคับถ่ายรูปมิเตอร์ตั้งต้น 2 รูป (จอดิจิตอล + แผงเฟือง) → หน้าตรวจมีรูปเสมอ
@@ -328,6 +349,7 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
           </div>
           <div style={{ flex: "0 0 84px", display: "flex" }}>
             <PhotoCaptureButton slim label={photoDigital ? "จอ ✓" : "ถ่ายจอ"} value={photoDigital} onChange={setPhotoDigital}
+              onUploadStatus={trackUpload("digital")}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_top" />
           </div>
         </div>
@@ -351,6 +373,7 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
           </div>
           <div style={{ flex: "0 0 84px", display: "flex" }}>
             <PhotoCaptureButton slim label={photoGear ? "เฟือง ✓" : "ถ่ายเฟือง"} value={photoGear} onChange={setPhotoGear}
+              onUploadStatus={trackUpload("gear")}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="money_meter_bottom" />
           </div>
         </div>
@@ -362,10 +385,12 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
         <div style={{ display: "flex", gap: 9 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <PhotoCaptureButton label={photoBefore ? "ก่อนใส่ ✓" : "ถ่ายก่อนใส่"} value={photoBefore} onChange={setPhotoBefore}
+              onUploadStatus={trackUpload("before")}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="stock" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <PhotoCaptureButton label={photoAfter ? "หลังใส่ ✓" : "ถ่ายหลังใส่"} value={photoAfter} onChange={setPhotoAfter}
+              onUploadStatus={trackUpload("after")}
               orgId={orgId} machineCode={machine.code} eventScopeId={scopeId} phase="stock_after" />
           </div>
         </div>
@@ -375,8 +400,8 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
       <div className="co-card" style={{ padding: 15, display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#1A1D21" }}>รูปตู้ (ไม่บังคับ)</div>
-          <div style={{ fontSize: 11.5, color: "#9AA1AB", marginTop: 2 }}>
-            {machinePhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : "ถ่ายหน้าตู้ไว้เป็นหลักฐานตั้งต้น"}
+          <div style={{ fontSize: 11.5, color: machinePhotoError ? "#DC2626" : "#9AA1AB", marginTop: 2, fontWeight: machinePhotoError ? 600 : 400 }}>
+            {machinePhotoError ?? (machinePhoto ? "ถ่ายแล้ว · แตะเพื่อถ่ายใหม่" : "ถ่ายหน้าตู้ไว้เป็นหลักฐานตั้งต้น")}
           </div>
         </div>
         <PhotoCaptureButton
@@ -384,6 +409,7 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
           label="ถ่ายรูปตู้"
           value={machinePhoto}
           onChange={setMachinePhoto}
+          onUploadStatus={(s) => { trackUpload("machine")(s); setMachinePhotoError(s.error); }}
           orgId={orgId}
           machineCode={machine.code}
           eventScopeId={scopeId}
@@ -414,7 +440,7 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
 
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || uploadingPhotos.size > 0}
         onClick={handleSubmit}
         className="co-tap"
         style={{
@@ -422,14 +448,14 @@ export function BaselineForm({ machine, branchId, orgId, products, branchStock =
           padding: 15,
           borderRadius: 13,
           border: "none",
-          background: busy ? "#8FC7A6" : "#15803D",
+          background: busy || uploadingPhotos.size > 0 ? "#8FC7A6" : "#15803D",
           color: "#fff",
           fontSize: 15.5,
           fontWeight: 700,
-          cursor: busy ? "wait" : "pointer",
+          cursor: busy || uploadingPhotos.size > 0 ? "wait" : "pointer",
         }}
       >
-        {busy ? "กำลังบันทึก…" : "บันทึกยอดตั้งต้น · เริ่มนับรอบ"}
+        {busy ? "กำลังบันทึก…" : uploadingPhotos.size > 0 ? "กำลังอัปรูป…" : "บันทึกยอดตั้งต้น · เริ่มนับรอบ"}
       </button>
 
       {/* sheet เพิ่มสินค้าในตู้ (จากคลัง / เพิ่มใหม่) — persist ต่อ SKU ทันที */}

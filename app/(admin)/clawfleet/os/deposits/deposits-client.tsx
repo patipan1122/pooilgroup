@@ -99,6 +99,8 @@ export function DepositsClient({
   // ฟอร์มบันทึกฝาก
   const [amountText, setAmountText] = useState("");
   const [slipUrl, setSlipUrl] = useState("");
+  // สลิปกำลังอัปโหลดอยู่ไหม — กันกด "ยืนยันบันทึกฝาก" ก่อนรูปขึ้น R2 จริง (2026-08-15)
+  const [slipUploading, setSlipUploading] = useState(false);
   const [depositDate, setDepositDate] = useState(todayLocalISO());
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -201,6 +203,10 @@ export function DepositsClient({
 
   function submitDeposit() {
     setFormError(null);
+    if (slipUploading) {
+      setFormError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง");
+      return;
+    }
     if (selectedRows.length === 0) {
       setFormError("เลือกรอบที่ต้องการบันทึกฝากอย่างน้อย 1 รอบ");
       return;
@@ -356,6 +362,7 @@ export function DepositsClient({
           varianceCents={varianceCents}
           slipUrl={slipUrl}
           onSlipChange={setSlipUrl}
+          onSlipUploadStatus={(s) => setSlipUploading(s.uploading)}
           depositDate={depositDate}
           onDateChange={setDepositDate}
           note={note}
@@ -363,7 +370,7 @@ export function DepositsClient({
           formError={formError}
           onSubmit={submitDeposit}
           onClearSelection={resetForm}
-          submitting={isPending}
+          submitting={isPending || slipUploading}
           orgId={orgId}
         />
       ) : (
@@ -417,6 +424,7 @@ function PendingTab({
   varianceCents,
   slipUrl,
   onSlipChange,
+  onSlipUploadStatus,
   depositDate,
   onDateChange,
   note,
@@ -443,6 +451,7 @@ function PendingTab({
   varianceCents: number;
   slipUrl: string;
   onSlipChange: (url: string) => void;
+  onSlipUploadStatus: (status: { uploading: boolean; error: string | null }) => void;
   depositDate: string;
   onDateChange: (v: string) => void;
   note: string;
@@ -700,6 +709,7 @@ function PendingTab({
                 label="ถ่ายสลิปฝากเงิน"
                 value={slipUrl}
                 onChange={onSlipChange}
+                onUploadStatus={onSlipUploadStatus}
                 orgId={orgId}
                 machineCode={`deposit-${depositBranchId || "none"}`}
                 eventScopeId={`deposit-${depositBranchId || "none"}`}
