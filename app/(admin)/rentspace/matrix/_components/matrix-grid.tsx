@@ -229,7 +229,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {u.tenantName ?? "— ว่าง —"}
+                  {u.name ?? u.tenantName ?? "— ว่าง —"}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -414,7 +414,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                 <tr key={u.id} className={ri % 2 ? "rs-zebra" : ""}>
                   <th className={`rs-sticky-col rs-td-room ${ri % 2 ? "rs-zebra" : ""}`}>
                     <div className="rs-room-code">{u.code}</div>
-                    <div className="rs-room-tenant">{u.tenantName ?? "— ว่าง —"}</div>
+                    <div className="rs-room-tenant">{u.name ?? u.tenantName ?? "— ว่าง —"}</div>
                   </th>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
                     const cell = cells[`${u.id}|${year}-${pad2(m)}`];
@@ -735,7 +735,7 @@ function MonthView({
               >
                 <th className={`rs-msticky rs-mtd-room ${ri % 2 ? "rs-mzebra" : ""}`}>
                   <div className="rs-room-code">{u.code}</div>
-                  <div className="rs-room-tenant">{u.tenantName ?? "— ว่าง —"}</div>
+                  <div className="rs-room-tenant">{u.name ?? u.tenantName ?? "— ว่าง —"}</div>
                 </th>
                 {c ? (
                   cols.map((col, i) => {
@@ -962,7 +962,7 @@ function CellDetail({
               ห้อง {unit.code}
             </div>
             <div className="text-[12.5px]" style={{ color: "var(--rs-text-2)" }}>
-              {unit.tenantName ?? "— ว่าง —"} · {TH_MONTHS_SHORT[month - 1]} {beYear}
+              {unit.name ?? unit.tenantName ?? "— ว่าง —"} · {TH_MONTHS_SHORT[month - 1]} {beYear}
             </div>
           </div>
           <button
