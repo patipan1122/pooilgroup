@@ -3,12 +3,17 @@
 // ลงแถวกะเช้า (ค่าระดับวัน) ของ source=trcloud_iv. แก้ปัญหา QR ตัดเที่ยงคืน.
 import { NextResponse, type NextRequest } from "next/server";
 import * as XLSX from "xlsx";
+import officeCrypto from "officecrypto-tool";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { parseTtbQr, csvToMatrix } from "@/lib/cashhub/ttb-qr";
 
 export const runtime = "nodejs";
+
+// 🔐 TTB Smart Shop ส่งออกไฟล์ Excel แบบใส่รหัสผ่านล็อกไฟล์เสมอ (encrypted OLE2) — รหัสคือรหัสบัญชี
+// TTB Smart Shop เดียวกับที่โชว์อยู่ในหน้านี้อยู่แล้ว ไม่ใช่ความลับใหม่ (verified 2026-08-15 กับไฟล์จริง)
+const TTB_FILE_PASSWORD = "3468";
 
 export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
@@ -49,7 +54,23 @@ export async function POST(req: NextRequest) {
   // (อ่านได้แค่ ~285/492 แถว) → ต้องใช้ตัวอ่าน CSV เอง (csvToMatrix) จึงจะครบทุกแถว
   let matrix: (string | number | null)[][];
   try {
-    const buf = Buffer.from(await file.arrayBuffer());
+    let buf = Buffer.from(await file.arrayBuffer());
+    // 🔐 เจอ TTB Smart Shop ส่งไฟล์ Excel มีรหัสผ่านล็อกไฟล์มา (ไม่ใช่ zip xlsx ปกติ ไม่ใช่ CSV
+    // ปกติ) → ต้องปลดล็อกก่อน ไม่งั้น isZip เช็คไม่เจอ "PK" แล้วหลุดไปทาง CSV กลายเป็นอ่านโค้ด
+    // เข้ารหัสเป็นข้อความ หาหัวตารางไม่เจอ (2026-08-15)
+    if (officeCrypto.isEncrypted(buf)) {
+      try {
+        buf = Buffer.from(await officeCrypto.decrypt(buf, { password: TTB_FILE_PASSWORD }));
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "ไฟล์ TTB มีรหัสผ่านล็อกอยู่ ปลดล็อกไม่สำเร็จ (รหัสไฟล์อาจเปลี่ยนไปจากเดิม) — ลองดาวน์โหลดไฟล์ใหม่จาก TTB Smart Shop อีกครั้ง",
+          },
+          { status: 422 },
+        );
+      }
+    }
     const isZip = buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b; // "PK" = xlsx
     if (isZip) {
       const wb = XLSX.read(buf, { type: "buffer" });
