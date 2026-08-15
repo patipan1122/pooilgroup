@@ -66,6 +66,9 @@ export type AmazonDayRow = {
   balanced: boolean; // Σchannels==gross && total+vat==gross → พร้อมคีย์ IV
   blockReason: string | null; // เหตุผลที่ยังคีย์ไม่ได้ (ปิดกะไม่เสร็จ/ช่องไม่รู้จัก)
   unmapped: string[]; // หัวคอลัมน์ที่มีเงินแต่ map c-var ไม่ได้
+  // ไส้ในก่อนรวม cvar — หัวคอลัมน์ POS จริง (เช่น "QRPayment(API)") → ยอดวันนั้น (เฉพาะที่มีเงิน)
+  // ใช้แค่ "แสดงผล" (ดูรายละเอียดว่า cvar ไหนรวมมาจากคอลัมน์อะไรบ้าง) — ห้ามใช้แทน cvars ใน logic คำนวณ/ส่งเงิน
+  posBreakdown?: Record<string, number>;
 };
 
 export type AmazonParseResult = {
@@ -141,6 +144,7 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
     const check = num(r[col[CHECK_COL]]);
 
     const cvars: Record<string, number> = {};
+    const posBreakdown: Record<string, number> = {};
     let sumChannels = 0;
     const unmapped: string[] = [];
     for (const [label, cvar] of Object.entries(CHANNEL_CVAR)) {
@@ -150,6 +154,9 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
       if (amt !== 0) {
         cvars[cvar] = round2((cvars[cvar] ?? 0) + amt);
         sumChannels = round2(sumChannels + amt);
+        // เก็บยอดดิบต่อหัวคอลัมน์ไว้ด้วย (ก่อนรวม) — แสดง breakdown ให้ดูได้ เช่น
+        // QRPayment(API) 4,505 / QRPayment 65 → รวมเป็น c2 4,570 (cvars ไม่เปลี่ยนพฤติกรรม)
+        posBreakdown[label] = round2(amt);
       }
     }
     // เผื่อมีหัวคอลัมน์ช่องทางที่ระบบยังไม่รู้จัก (POS เพิ่มช่องใหม่) แต่มีเงิน
@@ -187,6 +194,7 @@ export function parseAmazonPos(matrix: unknown[][]): AmazonParseResult {
       balanced: blockReason === null,
       blockReason,
       unmapped,
+      posBreakdown,
     });
   }
 

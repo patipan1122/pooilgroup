@@ -31,6 +31,9 @@ export type SavedAmazonDay = {
   iv_pre_vat: number | null; // ยอดก่อน VAT ในใบ → vat_iv = iv_gross − iv_pre_vat
   match_state: string | null; // match | mismatch | no_iv
   iv_checked_at: string | null;
+  // ไส้ในก่อนรวม cvar (จาก raw_json) — หัวคอลัมน์ POS จริง → ยอด · แสดงผลอย่างเดียว
+  // (แถวเก่าก่อนมีฟีเจอร์นี้ = undefined/null · ไม่ error)
+  posBreakdown?: Record<string, number> | null;
 };
 
 function n(v: unknown): number | null {
@@ -115,7 +118,7 @@ export async function loadAmazonDays(
   to: string,
 ): Promise<SavedAmazonDay[]> {
   const BASE_SEL =
-    "sales_date, gross, total, vat, channels, balanced, block_reason, iv_doc_no, iv_doc_id, iv_status, iv_gross, match_state, iv_checked_at";
+    "sales_date, gross, total, vat, channels, balanced, block_reason, iv_doc_no, iv_doc_id, iv_status, iv_gross, match_state, iv_checked_at, raw_json";
   const q = (sel: string) =>
     admin
       .from("cashhub_amazon_daily")
@@ -145,6 +148,10 @@ export async function loadAmazonDays(
     iv_pre_vat: n(d.iv_pre_vat),
     match_state: (d.match_state as string | null) ?? null,
     iv_checked_at: (d.iv_checked_at as string | null) ?? null,
+    // raw_json = แถว AmazonDayRow เต็ม ๆ ตอนอิมพอร์ต (ดู amazon-data.ts upsertAmazonDays) →
+    // ดึงเฉพาะ posBreakdown ออกมาแสดง · แถวเก่าก่อนมีฟีเจอร์นี้ไม่มี key นี้ → undefined ปลอดภัย
+    posBreakdown:
+      (d.raw_json as { posBreakdown?: Record<string, number> } | null)?.posBreakdown ?? null,
   }));
 }
 

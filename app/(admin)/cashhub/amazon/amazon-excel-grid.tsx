@@ -5,11 +5,31 @@
 import { useState } from "react";
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedAmazonDay, ReconcileStatus } from "@/lib/cashhub/amazon-data";
+import { CHANNEL_CVAR } from "@/lib/cashhub/amazon-parse";
 import {
   computeDaySettlement,
   type ChannelConfig,
 } from "@/lib/cashhub/amazon-settlement";
 import { reconDiffKind, reconDiffPillClass } from "@/lib/cashhub/recon-diff";
+
+// หัวคอลัมน์ POS ดิบที่รวมกันเป็น cvar นี้ (ย้อนจาก CHANNEL_CVAR) — cache ครั้งเดียวนอก render
+const LABELS_BY_CVAR = new Map<string, string[]>();
+for (const [label, cvar] of Object.entries(CHANNEL_CVAR)) {
+  const arr = LABELS_BY_CVAR.get(cvar) ?? [];
+  arr.push(label);
+  LABELS_BY_CVAR.set(cvar, arr);
+}
+
+// ไส้ในก่อนรวมของ cvar วันนั้น — คืนค่าเฉพาะตอนมี ≥2 หัวคอลัมน์ดิบสมทบจริง (ไม่งั้นไม่มีอะไรเพิ่มให้ดู)
+function posBreakdownFor(d: SavedAmazonDay, cvar: string): Array<[string, number]> | null {
+  if (!d.posBreakdown) return null;
+  const labels = LABELS_BY_CVAR.get(cvar);
+  if (!labels) return null;
+  const entries = labels
+    .map((label): [string, number] => [label, d.posBreakdown![label] ?? 0])
+    .filter(([, amt]) => amt !== 0);
+  return entries.length > 1 ? entries : null;
+}
 
 const num = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -134,10 +154,17 @@ export function AmazonExcelGrid({
     const ivv = c.ivGet ? c.ivGet(d) : null; // null = ยังไม่ตรวจไส้ใน
     const ivBad = showInner && ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
     const ivDiff = ivBad ? (ivv ?? 0) - (v ?? 0) : 0;
+    // ไส้ในก่อนรวม cvar (เช่น QRPayment(API)/QRPayment ที่ถูกรวมเป็นคอลัมน์ "QR" เดียว) — โชว์แค่ hover
+    // ไม่เพิ่มความสูง/ความกว้างถาวรให้ตาราง (งบพื้นที่ UI) · ไม่มี breakdown ให้ดู = title ว่าง ไม่มีอะไรเปลี่ยน
+    const posDetail = c.cvar ? posBreakdownFor(d, c.cvar) : null;
+    const posTip = posDetail
+      ? `แยกตาม POS: ${posDetail.map(([label, amt]) => `${label} ${formatBaht(amt)}`).join(" · ")}`
+      : undefined;
     return (
       <td
         key={c.label}
-        className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
+        title={posTip}
+        className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${posTip ? "cursor-help" : ""} ${
           bad
             ? "bg-red-100 font-bold text-red-800"
             : ivBad
@@ -416,7 +443,8 @@ export function AmazonExcelGrid({
         +ยืนยันแล้ว (ช่องที่ยังไม่สีรุ้ง = ยังไม่แมตช์) · คอลัมน์ <b>กระทบยอด</b>:{" "}
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
         <span className="text-red-700 font-bold">🔴 ขาด</span> = เงินเข้าน้อยกว่าที่ควร ·{" "}
-        <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง
+        <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง ·
+        ชี้เมาส์ค้างที่ช่อง <b>QR / blueplus wallet</b> ฯลฯ ดูได้ว่ายอดวันนั้นมาจากคอลัมน์ POS ไหนบ้างก่อนรวม
       </p>
     </div>
   );
