@@ -53,7 +53,7 @@ export default async function AmazonSettingsPage({
 
   const buildDays = (raw: Awaited<ReturnType<typeof loadAmazonDays>>): SendPreviewDay[] =>
     raw.filter((d) => d.channels && Object.keys(d.channels).length > 0).map((d) => {
-      const { rows, totalNet } = computeSendRows(d.channels, configByCvar);
+      const { rows, totalNet } = computeSendRows(d.channels, configByCvar, d.posBreakdown);
       return {
         date: d.sales_date,
         totalNet,

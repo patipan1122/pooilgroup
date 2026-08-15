@@ -9,10 +9,15 @@ import { prisma } from "@/lib/prisma";
 type Admin = ReturnType<typeof adminClient>;
 
 // source_ref suffix (key) → ช่องทาง (cvar) ที่อยู่ในก้อนนั้น — ใช้ทาสี "แมตช์แล้ว" กลับเป็นราย-คอลัมน์
-// key "qr" = c2+c13+c14 (โอนรวมก้อนเดียว) · key อื่น = cvar เดี่ยว
+// key "qr" = c2+c13+c14 (โอนรวมก้อนเดียว) · key "qr-c2-qrpayment-api" (granular, 2026-08-15) =
+//   เฉพาะ c2 (ดู amazon-settlement.ts computeSendRows — key granular เสมอมีรูป "<group>-<cvar>-<label>")
+//   · key อื่น = cvar เดี่ยว
 function cvarsForSendKey(key: string): string[] {
   const g = SETTLEMENT_GROUPS.find((x) => x.key === key);
-  return g ? g.cvars : [key];
+  if (g) return g.cvars;
+  const granular = key.match(/^[a-z0-9]+-(c\d+)-/);
+  if (granular) return [granular[1]];
+  return [key];
 }
 
 export type SavedAmazonDay = {
@@ -317,8 +322,12 @@ export async function loadReconcileStatus(
       cur.matchedSatang += amt;
       cur.nMatched += 1;
       totalMatched += amt;
-      // source_ref = amz-<store>-<date>-<key> → key = ส่วนท้าย (ไม่มี '-') → ช่องทางที่แมตช์
-      const key = String(r.source_ref ?? "").split("-").pop() ?? "";
+      // source_ref = amz-<store>-<date>-<key> → ตัด prefix ที่รู้แน่ชัดออก เหลือ key ล้วน ๆ
+      //   ⚠️ ห้ามใช้ split("-").pop() — key granular (เช่น "qr-c2-qrpayment-api") มี '-' ในตัวเอง
+      //   ตัด prefix ตรง ๆ ด้วย storeCode+d (ที่รู้อยู่แล้วจาก row นี้) ปลอดภัยกับ key กี่ '-' ก็ได้
+      const ref = String(r.source_ref ?? "");
+      const prefix = `amz-${storeCode}-${d}-`;
+      const key = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref.split("-").pop() ?? "";
       for (const cv of cvarsForSendKey(key))
         if (!cur.matchedCvars.includes(cv)) cur.matchedCvars.push(cv);
     }

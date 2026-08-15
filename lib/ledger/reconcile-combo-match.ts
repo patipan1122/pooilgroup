@@ -17,8 +17,22 @@
 //   - never combine more than 3 lines (avoid combinatorial blow-up on a busy account)
 //   - candidate list capped at MAX_COMBO_CANDIDATES — past that, skip N:1 for this
 //     book entry entirely rather than doing an expensive/speculative search
+//
+// 2026-08-15: added findBookCombo — the MIRROR direction (1 bank txn : 2-3 book entries),
+// for CashHub Amazon granular POS-column sending (each raw POS label now sends its OWN
+// book line, so a bank statement that still posts one lump-sum settlement needs to sum
+// SEVERAL book lines to match it). It's a thin orchestration layer that REUSES this same
+// findBankCombo as its combinatorial/tolerance/ambiguity core (zero duplication of that
+// logic) — the only genuinely new concern is that book entries (unlike a single bank txn)
+// can carry DIFFERENT concepts/channels, so candidates are grouped by concept first, and
+// a combo is only trusted if exactly one concept group produces a valid answer.
 
-import { bankNameMatches, amountToleranceSatang, type MatchConcept } from "./reconcile-match-keywords";
+import {
+  bankNameMatches,
+  amountToleranceSatang,
+  conceptForChannel,
+  type MatchConcept,
+} from "./reconcile-match-keywords";
 
 export interface ComboBankCandidate {
   id: string;
@@ -76,4 +90,70 @@ export function findBankCombo(
   }
   if (triples.length === 1) return { ids: triples[0] };
   return null; // 0 หรือมากกว่า 1 ชุด = ไม่จับ
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reverse direction: 1 bank txn : 2-3 book entries (Pass 3 in autoMatchAccountAction)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ComboBookType = "revenue" | "expense" | "payment";
+
+export interface ComboBookCandidate {
+  bookType: ComboBookType;
+  bookId: string;
+  amountSatang: number;
+  dateMs: number;
+  channel: string; // book-side payment_channel/method — used to derive concept, same as Pass 1/2
+}
+
+/**
+ * หา "ชุดรวม" รายการบัญชี 2 หรือ 3 รายการที่ผลรวมตรงกับ 1 รายการธนาคาร — ทิศตรงข้ามของ
+ * findBankCombo เป๊ะ (ธนาคาร 1 รายการยังไม่จับคู่ → ลองรวมบัญชีที่ยังไม่ใช้หลายบรรทัด)
+ *
+ * ทำไมต้องเป็นฟังก์ชันแยก (ไม่ใช่แค่สลับ argument เข้า findBankCombo ตรง ๆ): findBankCombo
+ * รับ concept เดียวคงที่ตลอดการค้นหา (ถูกต้องสำหรับทิศเดิม เพราะ concept มาจาก book entry
+ * เดี่ยว ๆ 1 รายการที่เป็นเป้าหมาย) แต่ทิศนี้ตัว "ผู้สมัคร" (candidates) คือบัญชีหลายรายการ
+ * ที่อาจมีช่องทาง/concept ไม่เหมือนกัน — ต้องจัดกลุ่มตาม concept ก่อน แล้วค่อยยืมแกนการหาชุด
+ * รวม + เพดาน tolerance + กันกำกวมจาก findBankCombo มาใช้ซ้ำต่อกลุ่ม (ไม่ก็อปปี้ลอจิกนั้นใหม่)
+ *
+ * กำกวมข้าม concept: ถ้ามากกว่า 1 กลุ่ม concept ต่างหาชุดรวมที่ตรงได้พร้อมกัน (เช่น ทั้งกลุ่ม
+ * "qr" และกลุ่ม "cash" ต่างรวมกันได้ 500 บาทพอดี) → ถือว่ากำกวมเหมือนกำกวมภายใน concept
+ * เดียวกัน → ไม่จับ (money-safe: พลาดดีกว่าเดาผิด)
+ */
+export function findBookCombo(
+  bankAmountSatang: number,
+  bankDateMs: number,
+  bankTextLower: string,
+  bookCandidates: ComboBookCandidate[],
+  keywordMap: Record<string, string[]> = {},
+): { bookType: ComboBookType; bookId: string }[] | null {
+  const byConcept = new Map<string, ComboBookCandidate[]>();
+  for (const c of bookCandidates) {
+    const key = conceptForChannel(c.channel).key;
+    const group = byConcept.get(key);
+    if (group) group.push(c);
+    else byConcept.set(key, [c]);
+  }
+
+  let found: { bookType: ComboBookType; bookId: string }[] | null = null;
+  for (const [, group] of byConcept) {
+    const concept = conceptForChannel(group[0].channel); // ทุกตัวในกลุ่มนี้ map concept เดียวกัน
+    const extraKeywords = keywordMap[concept.key] ?? [];
+    // เช็คชื่อฝั่งธนาคารครั้งเดียวต่อกลุ่ม (ทุก candidate ในกลุ่มใช้ text เดียวกัน — เป้าหมายเดียวกัน)
+    if (!bankNameMatches(concept, bankTextLower, extraKeywords)) continue;
+    const candidates: ComboBankCandidate[] = group.map((c) => ({
+      id: `${c.bookType}:${c.bookId}`,
+      amountSatang: c.amountSatang,
+      dateMs: c.dateMs,
+      text: bankTextLower, // เช็คผ่านแล้วข้างบน — ใส่ให้ครบ shape เฉย ๆ (จะผ่านซ้ำเสมอ)
+    }));
+    const combo = findBankCombo(bankAmountSatang, bankDateMs, concept, candidates, extraKeywords);
+    if (!combo) continue;
+    if (found) return null; // มากกว่า 1 concept group หาชุดรวมเจอ → กำกวมข้าม concept → ไม่จับ
+    found = combo.ids.map((id) => {
+      const idx = id.indexOf(":");
+      return { bookType: id.slice(0, idx) as ComboBookType, bookId: id.slice(idx + 1) };
+    });
+  }
+  return found;
 }

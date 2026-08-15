@@ -35,7 +35,12 @@ import {
   amountToleranceSatang,
 } from "@/lib/ledger/reconcile-match-keywords";
 import { loadAccountKeywordMap, learnFromConfirm } from "@/lib/ledger/reconcile-keyword-dict";
-import { findBankCombo, type ComboBankCandidate } from "@/lib/ledger/reconcile-combo-match";
+import {
+  findBankCombo,
+  findBookCombo,
+  type ComboBankCandidate,
+  type ComboBookCandidate,
+} from "@/lib/ledger/reconcile-combo-match";
 import { ledgerRevenueGlV1 } from "@/lib/ledger/flags";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
@@ -1233,6 +1238,35 @@ export async function autoMatchAccountAction(
     const res = await createMatchGroupAction({
       bankAccountId, bankTxnIds: combo.ids,
       bookRefs: [{ bookType: e.bookType, bookId: e.bookId }], matchKind: "auto",
+    });
+    if (res.ok) created++;
+  }
+
+  // ── Pass 3: 1:M — รวม 2-3 รายการบัญชีที่ยังไม่ใช้ → 1 รายการธนาคาร (ทิศตรงข้าม pass 2) ──
+  //   เกิดขึ้นเมื่อฝั่งบัญชีถูกส่งละเอียด (เช่น CashHub Amazon ส่งราย POS-column แยกบรรทัด)
+  //   แต่ธนาคารยังโอนยอดรวมเป็นก้อนเดียว → ต้องรวมหลายบรรทัดบัญชีมาจับ 1 รายการธนาคาร
+  //   ใช้ concept/date-window/tolerance ชุดเดียวกับ pass 1/2 เป๊ะ (ดู findBookCombo — ยืม
+  //   แกนการหาชุดรวม/tolerance/กันกำกวมจาก findBankCombo ตัวเดียวกัน ไม่มีลอจิกซ้ำ) ·
+  //   เจอมากกว่า 1 ชุดที่ตรง (กำกวม ไม่ว่าในหรือข้าม concept) → ไม่จับ ปล่อยจับคู่มือ
+  //   ไม่ทำ N:M (ทั้งสองฝั่งรวมพร้อมกัน) — out of scope ตามที่ตกลงกับ CEO
+  for (const bk of banks) {
+    if (usedBankIds.has(bk.id)) continue;
+    const bookCandidates: ComboBookCandidate[] = book
+      .filter((e) => !usedBook.has(`${e.bookType}:${e.bookId}`))
+      .map((e) => ({
+        bookType: e.bookType,
+        bookId: e.bookId,
+        amountSatang: e.amountSatang,
+        dateMs: new Date(e.date).getTime(),
+        channel: e.channel,
+      }));
+    const combo = findBookCombo(Number(bk.amt), new Date(bk.d).getTime(), bk.text, bookCandidates, kwMap);
+    if (!combo) continue;
+    for (const c of combo) usedBook.add(`${c.bookType}:${c.bookId}`);
+    usedBankIds.add(bk.id);
+    const res = await createMatchGroupAction({
+      bankAccountId, bankTxnIds: [bk.id],
+      bookRefs: combo, matchKind: "auto",
     });
     if (res.ok) created++;
   }
