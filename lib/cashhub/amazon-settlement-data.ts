@@ -159,7 +159,7 @@ export async function sendDaysToReconcile(
   const configByCvar = new Map(configs.map((c) => [c.cvar, c]));
   const rows: ReconcileRow[] = [];
   // source_ref รูปแบบเก่าที่อาจค้าง unmatched อยู่ (ก่อนรวมก้อนเดียว 2026-06 · หรือก้อนรวมกลุ่ม
-  // ที่วันนี้เปลี่ยนไปส่งแบบ granular แทน 2026-08) → เก็บไว้ลบกันนับซ้ำ (ดู legacyRefsForDay)
+  // ที่วันนี้เปลี่ยนไปส่งแบบแยก qrapi/qrstd แทน 2026-08) → เก็บไว้ลบกันนับซ้ำ (ดู legacyRefsForDay)
   const legacyRefs: string[] = [];
   let skippedNoConfig = 0;
   // วันที่ "ยอด POS ไม่ลงตัว" (ปิดกะไม่ครบ/มีช่องตกหล่น) แต่ยังส่งยอดช่องทางจริงเข้า reconcile
@@ -176,17 +176,17 @@ export async function sendDaysToReconcile(
     //   fallback ไป channels เฉพาะวันที่ยังไม่มีใบ IV ยืนยัน (เช่นวันล่าสุดที่ TRCloud ยังไม่ประมวลผล)
     const channels =
       day.iv_channels && Object.keys(day.iv_channels).length > 0 ? day.iv_channels : day.channels;
-    // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยกราย
-    // POS-column ดิบ (granular) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง
+    // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยก 2 บรรทัด
+    // ตามกฎ CEO (qrapi/qrstd) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง
     // — สูตรเดียวกับพรีวิว (amazon/settings/page.tsx)
-    const { rows: sendRows, granularGroupKeys } = computeSendRows(
+    const { rows: sendRows, splitGroupKeys } = computeSendRows(
       channels,
       configByCvar,
       day.posBreakdown,
     );
     // ref เก่าที่ต้องพิจารณาลบ: ก้อนแยก-cvar-ก่อนรวมกลุ่ม (เดิม) + ก้อนรวมกลุ่มของวันนี้
-    //   ถ้าวันนี้เปลี่ยนไปส่งแบบ granular แทน (กันซ้อนเงินสองรูปแบบ — ดู legacyRefsForDay)
-    legacyRefs.push(...legacyRefsForDay(storeCode, day.sales_date, granularGroupKeys));
+    //   ถ้าวันนี้เปลี่ยนไปส่งแบบแยก qrapi/qrstd แทน (กันซ้อนเงินสองรูปแบบ — ดู legacyRefsForDay)
+    legacyRefs.push(...legacyRefsForDay(storeCode, day.sales_date, splitGroupKeys));
     let dayContributed = false;
     for (const s of sendRows) {
       if (!s.companyId) {

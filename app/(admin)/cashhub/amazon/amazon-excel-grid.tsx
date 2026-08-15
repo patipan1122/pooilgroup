@@ -5,31 +5,12 @@
 import { useState } from "react";
 import { formatBaht } from "@/lib/utils/format";
 import type { SavedAmazonDay, ReconcileStatus } from "@/lib/cashhub/amazon-data";
-import { CHANNEL_CVAR } from "@/lib/cashhub/amazon-parse";
 import {
   computeDaySettlement,
+  computeSendRows,
   type ChannelConfig,
 } from "@/lib/cashhub/amazon-settlement";
 import { reconDiffKind, reconDiffPillClass } from "@/lib/cashhub/recon-diff";
-
-// หัวคอลัมน์ POS ดิบที่รวมกันเป็น cvar นี้ (ย้อนจาก CHANNEL_CVAR) — cache ครั้งเดียวนอก render
-const LABELS_BY_CVAR = new Map<string, string[]>();
-for (const [label, cvar] of Object.entries(CHANNEL_CVAR)) {
-  const arr = LABELS_BY_CVAR.get(cvar) ?? [];
-  arr.push(label);
-  LABELS_BY_CVAR.set(cvar, arr);
-}
-
-// ป้ายย่อสำหรับคอลัมน์ไส้ใน (หัวคอลัมน์แม่บอกช่องทางอยู่แล้ว — โชว์แค่ส่วนต่างพอ ไม่พิมพ์ซ้ำ)
-// raw label เต็มยังอยู่เป็น title (hover) บนหัวคอลัมน์ให้ desktop เช็คได้ว่าแม็ปจาก POS column ไหน
-const SUB_LABEL: Record<string, string> = {
-  QRPayment: "ปกติ",
-  "QRPayment(API)": "API",
-  "QRCredit(API)": "เครดิต API",
-  "blueplus+ wallet": "ปกติ",
-  "blueplus+ wallet (API)": "API",
-};
-const subLabel = (raw: string) => SUB_LABEL[raw] ?? raw;
 
 const num = (v: number | null | undefined) =>
   v == null ? "" : Math.abs(v) < 0.005 ? "0" : formatBaht(v);
@@ -40,13 +21,10 @@ type Col = {
   f?: boolean; // ช่องคำนวณ (สูตร VAT)
   diff?: boolean; // ไฮไลต์แดงถ้า ≠ 0 (ส่วนต่าง POS↔TRC)
   cvar?: string; // เป็นคอลัมน์ช่องทาง (อ่านจาก channels[cvar])
+  groupKey?: string; // เป็นคอลัมน์กลุ่มย่อยการันตีธนาคาร (เช่น "qrapi"/"qrstd") — ทาสีรุ้งจาก matchedGroupKeys แทน cvar
   settle?: boolean; // เงินเข้าจริง (ไฮไลต์เขียว)
   // ยอดฝั่ง "ใบกำกับ TRCloud" ของคอลัมน์นี้ (ไส้ใน) — ถ้า ≠ POS → ทาเหลือง · null = ยังไม่ตรวจไส้ใน
   ivGet?: (d: SavedAmazonDay) => number | null;
-  // คอลัมน์ไส้ในก่อนรวม cvar (เช่น "QRPayment(API)" ใต้ร่ม cvar "QR") — display-only ไม่ใช่ cvar จริง
-  // ไม่มี cvar เจตนา: กันสับสนว่าค่านี้ถูกกระทบยอด/แมตช์แยกต่างหาก (ที่จริงยอดที่กระทบยอด/ส่ง TRCloud คือ cvar รวม)
-  sub?: boolean;
-  headerTitle?: string; // title เต็มโชว์ตอน hover (raw POS label) — bonus desktop เท่านั้น
 };
 
 const IV_TOL = 1; // ทน ±1 บาท (special_note เก็บเป็นจำนวนเต็ม)
@@ -132,9 +110,38 @@ export function AmazonExcelGrid({
     const s = computeDaySettlement(d.channels, configByCvar);
     settleByDate.set(d.sales_date, { fee: s.totalFee, net: s.totalNet });
   }
-  // คอลัมน์ช่องทาง + คอลัมน์ไส้ในก่อนรวม (real column ติดขวาคอลัมน์แม่ทันที ตามที่ CEO ขอ — เลิกใช้ sub-text ใต้ค่า)
-  // โชว์เฉพาะ raw label ที่มีข้อมูลจริงอย่างน้อย 1 วันใน savedDays ชุดนี้ — กันคอลัมน์ผีว่างเปล่าตอนไม่มี posBreakdown เลย
-  // (เดือนเก่าก่อน dd8e2000 ไม่มี posBreakdown บันทึกไว้เลย → ไม่มีคอลัมน์ไส้ในโผล่มา ตารางหน้าตาเดิม 100%)
+  // กลุ่มย่อยธนาคารจริง (CEO 2026-08-15): "QR + Wallet (API)" / "QR + Wallet" — ยอดที่ธนาคาร
+  // โอนเข้าจริงเป็น 2 ก้อนนี้ (แทนที่ QR/QR Manual/blueplus wallet ที่กระจายกันอยู่คนละคอลัมน์)
+  // คำนวณด้วยสูตรเดียวกับตัวส่งจริง (computeSendRows) → เลขตรงกับที่จะส่งเข้า reconcile เป๊ะ
+  // โชว์เฉพาะวันที่ posBreakdown ตรงยอด (tie-out ผ่าน) — ไม่ตรง/ไม่มี = ว่าง (ดู QR/QR Manual/
+  // blueplus wallet คอลัมน์เดิมแทนสำหรับวันนั้น) · เดือนเก่าไม่มี posBreakdown เลย = ไม่มีคอลัมน์นี้โผล่มา
+  const qrSplitByDate = new Map<string, { qrapi: number | null; qrstd: number | null }>();
+  let anyQrSplit = false;
+  for (const d of data) {
+    const { rows } = computeSendRows(d.channels, configByCvar, d.posBreakdown);
+    const qrapi = rows.find((r) => r.key === "qrapi")?.gross ?? null;
+    const qrstd = rows.find((r) => r.key === "qrstd")?.gross ?? null;
+    if (qrapi != null || qrstd != null) anyQrSplit = true;
+    qrSplitByDate.set(d.sales_date, { qrapi, qrstd });
+  }
+  const qrGroupCols: Col[] = anyQrSplit
+    ? [
+        {
+          label: "QR + Wallet (API)",
+          groupKey: "qrapi",
+          get: (d) => qrSplitByDate.get(d.sales_date)?.qrapi ?? null,
+        },
+        {
+          label: "QR + Wallet",
+          groupKey: "qrstd",
+          get: (d) => qrSplitByDate.get(d.sales_date)?.qrstd ?? null,
+        },
+      ]
+    : [];
+
+  // คอลัมน์ช่องทาง (ยอดดิบ POS ต่อ cvar) — แทรก 2 คอลัมน์กลุ่มย่อยธนาคารจริงต่อจาก "blueplus wallet"
+  // (c14 = สมาชิกตัวสุดท้ายของกลุ่ม qr ในลำดับตาราง) ให้อ่านต่อเนื่อง: เห็นแยกช่องทางก่อน แล้วเห็นว่า
+  // ธนาคารรวมเข้าจริงยังไง
   const channelCols: Col[] = [];
   for (const c of CHANNELS) {
     channelCols.push({
@@ -144,18 +151,7 @@ export function AmazonExcelGrid({
       // ฝั่งใบ: ถ้าตรวจไส้ในแล้ว (iv_channels) → ยอดช่องนี้ในใบ (ไม่มี=0) · ยังไม่ตรวจ → null
       ivGet: (d: SavedAmazonDay) => (d.iv_channels ? (d.iv_channels[c.cvar] ?? 0) : null),
     });
-    const rawLabels = LABELS_BY_CVAR.get(c.cvar);
-    if (!rawLabels || rawLabels.length < 2) continue; // cvar นี้มาจากหัวคอลัมน์ POS เดียว ไม่มีไส้ในให้แยก
-    for (const raw of rawLabels) {
-      const used = data.some((d) => (d.posBreakdown?.[raw] ?? 0) !== 0);
-      if (!used) continue;
-      channelCols.push({
-        label: subLabel(raw),
-        headerTitle: raw,
-        sub: true,
-        get: (d) => (d.posBreakdown ? (d.posBreakdown[raw] ?? 0) : null),
-      });
-    }
+    if (c.cvar === "c14") channelCols.push(...qrGroupCols);
   }
   const COLS: Col[] = [
     ...HEAD_COLS,
@@ -174,8 +170,10 @@ export function AmazonExcelGrid({
     const rc = reconcile.byDate[d.sales_date];
     const hasVal = v != null && Math.abs(v) >= 0.005;
     // ช่องทางที่บัญชีแมตช์ยอด+ยืนยันแล้ว → สีรุ้งเหลือบมุก (ช่องที่ยังไม่แมตช์จะเด่นออกมาเอง)
-    // c.sub ไม่มี cvar อยู่แล้ว (เจตนา) → ไม่มีทางติดสีรุ้งนี้ กันสับสนว่าไส้ในถูกกระทบยอดแยกต่างหาก
     const matched = !!c.cvar && hasVal && (rc?.matchedCvars?.includes(c.cvar) ?? false);
+    // คอลัมน์กลุ่มย่อยธนาคารจริง (qrapi/qrstd) → ทาสีรุ้งเมื่อ "กลุ่มย่อยนั้นเอง" แมตช์แล้ว (แม่นกว่า
+    // matchedCvars เพราะไม่ปนกับอีกกลุ่มย่อยที่ยังไม่แมตช์)
+    const groupMatched = !!c.groupKey && hasVal && (rc?.matchedGroupKeys?.includes(c.groupKey) ?? false);
     // คอลัมน์ "เงินเข้าจริง" → รุ้งเมื่อวันนั้นแมตช์ครบทุกช่อง
     const settleMatched = !!c.settle && !!rc && rc.n > 0 && rc.nMatched >= rc.n;
     // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → ตัวหนังสือเหลือง (ไม่ถมพื้น ไม่ลายตา) · ปิดได้ด้วยสวิตช์ ──
@@ -185,23 +183,19 @@ export function AmazonExcelGrid({
     return (
       <td
         key={c.label}
-        title={c.sub ? c.headerTitle : undefined}
-        className={`${c.sub ? "px-1" : "px-1.5"} py-1 text-right tabular-nums whitespace-nowrap ${
+        className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
           bad
             ? "bg-red-100 font-bold text-red-800"
             : ivBad
               ? // ไส้ในไม่ตรง = ตัวหนังสือเหลืองเข้ม (ไม่ถมพื้น) → อ่านได้บนพื้นขาว/สีรุ้ง · iridescent ถูกข้าม
                 "text-yellow-700 font-bold"
-              : matched || settleMatched
+              : matched || groupMatched || settleMatched
                 ? "cell-matched-iridescent"
                 : c.settle
                   ? "bg-emerald-50 font-semibold text-emerald-700"
                   : c.f
                     ? "bg-blue-50/40 text-zinc-700"
-                    : c.sub
-                      ? // คอลัมน์ไส้ใน (real column) — สีจาง+พื้นเทาอ่อน แยกจากคอลัมน์แม่แต่ไม่แย่งสายตา
-                        "text-zinc-400 bg-zinc-50/40"
-                      : "text-zinc-700"
+                    : "text-zinc-700"
         }`}
       >
         {ivBad ? (
@@ -339,12 +333,7 @@ export function AmazonExcelGrid({
                 {COLS.map((c) => (
                   <th
                     key={c.label}
-                    title={c.sub ? c.headerTitle : undefined}
-                    className={`py-1.5 text-right whitespace-nowrap border-b border-zinc-200 ${
-                      c.sub
-                        ? "px-1 text-[10px] font-medium text-zinc-400 bg-zinc-50/60"
-                        : "px-1.5 font-semibold"
-                    }`}
+                    className="px-1.5 py-1.5 text-right font-semibold whitespace-nowrap border-b border-zinc-200"
                   >
                     {c.f && <span className="text-blue-500">ƒ </span>}
                     {c.label}
@@ -474,10 +463,11 @@ export function AmazonExcelGrid({
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
         <span className="text-red-700 font-bold">🔴 ขาด</span> = เงินเข้าน้อยกว่าที่ควร ·{" "}
         <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง ·{" "}
-        <span className="text-zinc-400 bg-zinc-50 rounded px-1">คอลัมน์เทาเล็ก</span> ถัดจาก{" "}
-        <b>QR / blueplus wallet</b> (เช่น &ldquo;ปกติ&rdquo; &ldquo;API&rdquo;) = ไส้ในก่อนรวมจาก POS
-        แต่ละคอลัมน์ดิบ (ชี้เมาส์ค้างดูชื่อเต็มได้) — ยอดที่ส่ง TRCloud/กระทบยอดจริงยังเป็นคอลัมน์ QR/blueplus
-        wallet รวมเหมือนเดิม · โชว์เฉพาะเดือนที่มีข้อมูลจริง (เดือนเก่าก่อน 08/2569 จะไม่มีคอลัมน์นี้)
+        <b>QR + Wallet (API)</b> / <b>QR + Wallet</b> ถัดจาก <b>blueplus wallet</b> = ก้อนเงินที่ธนาคาร
+        โอนเข้าจริง 2 ก้อนตามที่ตรวจสอบแล้ว (รวม QR+QR Manual+blueplus wallet แยกตามส่วน API/ไม่ API) —
+        เลขเดียวกับที่จะส่งเข้ากระทบยอด · โชว์เฉพาะวันที่ไส้ใน POS ตรงกับยอดที่ส่งจริง (ไม่ตรง = ว่าง ดูคอลัมน์
+        QR/QR Manual/blueplus wallet แยกช่องแทนสำหรับวันนั้น) · โชว์เฉพาะเดือนที่มีข้อมูลจริง (เดือนเก่าก่อน
+        08/2569 จะไม่มีคอลัมน์นี้)
       </p>
     </div>
   );

@@ -3,11 +3,18 @@
 // เงินเข้าจริง = ยอดช่องทาง − ค่าธรรมเนียม(%). ถ้ายอด/วัน < ขั้นต่ำ = ยังไม่โอน (รอสะสม).
 // ช่องที่ไม่ใช่เงินจริง (Redeem/ส่วนลด) → is_settle=false → ไม่เข้าธนาคาร.
 //
-// 2026-08-15 — granular send (CEO decision): ธนาคารบางวันโอนยอด "QR + Wallet" (กลุ่มเดียว)
-// เป็น 2 ก้อนที่ไม่ตรงกับการแบ่งกลุ่มไหนที่เดาได้แน่นอนจากข้อมูล POS อย่างเดียว → แทนที่จะเดา
-// กติกาแบ่งกลุ่ม (เสี่ยงผิด) เราส่งยอดราย "คอลัมน์ POS ดิบ" แยกบรรทัดแทน (เมื่อมี posBreakdown
-// ของวันนั้นจริง) แล้วให้ pass 2/3 ของ auto-matcher (reconcile-combo-match.ts) รวมกันเองให้ตรง
-// กับที่ธนาคารโอนมาจริงวันนั้น — ไม่ผูกกติกาการรวมกลุ่มที่ยังไม่พิสูจน์ลงไปในข้อมูลเงิน
+// 2026-08-15 — CEO gave the EXACT real business rule for how the bank posts "QR + Wallet"
+// (verified against real 2026-08-01 data: QRPayment=฿65, QRPayment(API)=฿4,505,
+// blueplus+wallet=฿70, blueplus+wallet(API)=฿0):
+//   Group "qrapi" = QRPayment(API) + blueplus+ wallet (API) → 4,505+0 = ฿4,505 (= the real
+//     large bank deposit line, exactly)
+//   Group "qrstd" = QRPayment + blueplus+ wallet → 65+70 = ฿135 (= the real small bank
+//     deposit line, exactly)
+// This replaces an earlier same-day attempt (send 1 ledger row per raw POS label + let a
+// generic N:M combo-matcher figure out the grouping) — CEO knows the real grouping, so we
+// encode it directly: cheaper (plain 1:1 bank match works for most days), more accurate
+// (no guessing), same tie-out safety net (fall back to the old single combined row when
+// posBreakdown is missing or doesn't tie out, e.g. TRCloud reclassified money).
 
 import { CHANNEL_CVAR } from "./amazon-parse";
 
@@ -130,13 +137,55 @@ export const CVAR_CHANNEL_CODE: Record<string, string> = {
 // ช่องทางที่แพลตฟอร์มโอนรวมเข้าบัญชีเป็น "ก้อนเดียวต่อวัน" → ต้องส่ง reconcile เป็น 1 บรรทัด
 // (ไม่งั้น statement มี 1 บรรทัด/วัน แต่ระบบส่งหลายบรรทัด → จับคู่ไม่ตรง)
 // CEO 2026-06-15: QR Payment + QR Manual + blueplus wallet โอนรวมเข้าด้วยกัน · blueplus credit แยกเดี่ยว
+
+export type QrPosGroup = {
+  key: "qrapi" | "qrstd";
+  label: string;
+  // raw POS column labels (ดู CHANNEL_CVAR ใน amazon-parse.ts) ที่รวมเข้ากลุ่มนี้
+  rawLabels: string[];
+};
+
+// CEO 2026-08-15 (verified 2026-08-01 data — ดู comment บนสุดไฟล์): ธนาคารแยกยอด "QR + Wallet"
+// เป็น 2 ก้อนตาม API/ไม่ API ไม่ใช่ตาม cvar — qrapi ครอบ QRPayment(API) + blueplus wallet(API)
+// (CEO ระบุตรงตัว) · qrstd ครอบ QRPayment + blueplus wallet (CEO ระบุตรงตัว)
+//
+// ⚠️ INFERENCE (ไม่ใช่คำสั่ง CEO ตรงๆ) — CEO ไม่ได้พูดถึง QRCredit(API)/QRManual/QR Manual(API)
+// เลย ใส่ตามรูปแบบ "(API) → qrapi · ไม่มี (API) → qrstd" โดย symmetry:
+//   - QRCredit(API) → qrapi: ยอดเล็ก/หายาก (~฿440/เดือน ตาม comment เดิมใน amazon-parse.ts)
+//   - QR Manual(API) → qrapi, QRManual → qrstd: สาขานี้ข้อมูลจริงเป็น ฿0 เสมอสองคอลัมน์นี้ แต่ใส่ไว้
+//     ให้ถูกหลักการสำหรับสาขา/ข้อมูลอนาคตที่อาจมีตัวเลข — รอ human confirm/แก้ทีหลัง
+export const QR_POS_GROUPS: QrPosGroup[] = [
+  {
+    key: "qrapi",
+    label: "QR + Wallet (API)",
+    rawLabels: [
+      "QRPayment(API)",
+      "blueplus+ wallet (API)",
+      "QRCredit(API)", // inference — ดู comment ด้านบน
+      "QR Manual(API)", // inference — ดู comment ด้านบน
+    ],
+  },
+  {
+    key: "qrstd",
+    label: "QR + Wallet",
+    rawLabels: [
+      "QRPayment",
+      "blueplus+ wallet",
+      "QRManual", // inference — ดู comment ด้านบน
+    ],
+  },
+];
+
 export const SETTLEMENT_GROUPS: {
   key: string;
   label: string;
   channelCode: string;
   cvars: string[];
+  // ถ้ามี: กติกาแยกก้อนย่อยตาม raw POS label (แทนที่จะรวมเป็น 1 ก้อน) เมื่อ posBreakdown
+  // ของวันนั้นมี+ตรงยอด (ดู computeSendRows) — ไม่มี = กลุ่มนี้ไม่มีการแยกย่อย ส่งรวมเสมอ
+  posGroups?: QrPosGroup[];
 }[] = [
-  { key: "qr", label: "QR + Wallet", channelCode: "qr", cvars: ["c2", "c13", "c14"] },
+  { key: "qr", label: "QR + Wallet", channelCode: "qr", cvars: ["c2", "c13", "c14"], posGroups: QR_POS_GROUPS },
 ];
 
 // cvar → group key (ช่องที่ไม่อยู่ในกลุ่ม = ส่งเดี่ยว 1 บรรทัด/วัน)
@@ -145,7 +194,7 @@ export const CVAR_GROUP: Record<string, string> = Object.fromEntries(
 );
 
 export type SettlementSendRow = {
-  key: string; // source_ref suffix (group key · cvar เดี่ยว · หรือ "<groupKey>-<cvar>-<sanitizedLabel>" สำหรับ granular)
+  key: string; // source_ref suffix — group key (เช่น "qr") · cvar เดี่ยว · หรือ posGroup key ("qrapi"/"qrstd")
   label: string;
   channelCode: string;
   gross: number;
@@ -155,85 +204,94 @@ export type SettlementSendRow = {
   companyId: string | null;
   bankAccountId: string | null;
   memberCvars: string[];
-  granular?: boolean; // true = แถวนี้คือ sub-line ต่อคอลัมน์ POS ดิบ (ไม่ใช่ก้อนรวมกลุ่ม)
+  split?: boolean; // true = แถวนี้คือกลุ่มย่อย (qrapi/qrstd) ของก้อนรวม ไม่ใช่ก้อนรวมทั้งกลุ่ม
 };
 
-/** ทำ raw POS label (เช่น "QRPayment(API)") ให้ปลอดภัยเป็นส่วนหนึ่งของ source_ref —
- *  ตัวพิมพ์เล็ก, ตัด char พิเศษ/เว้นวรรคเป็น "-", deterministic ข้ามการส่งซ้ำ (idempotent) */
-export function sanitizeRefLabel(label: string): string {
-  const cleaned = label
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
-  return cleaned || "x"; // กัน label ว่างเปล่าหลัง sanitize (เช่นมีแต่สัญลักษณ์)
-}
-
 // ยอมให้ยอด "กลุ่ม" (จาก channels/iv_channels ที่ใช้ครั้งนี้) ต่างจากผลรวม posBreakdown
-// ของกลุ่มเดียวกันได้ไม่เกินนี้ก่อนไว้ใจแยก granular — ใช้ค่าเดียวกับ sumOk/checkOk ใน
+// ของกลุ่มเดียวกันได้ไม่เกินนี้ก่อนไว้ใจแยกกลุ่มย่อย — ใช้ค่าเดียวกับ sumOk/checkOk ใน
 // amazon-parse.ts (0.5 บาท) ให้เป็นมาตรฐานเดียวกันทั้งระบบ
 const BREAKDOWN_TIE_OUT_TOLERANCE = 0.5;
 
 /**
  * แปลงยอดขายต่อวัน → "บรรทัดที่จะส่งเข้า reconcile"
- * - ถ้ามี posBreakdown (ไส้ในราย POS-column ดิบ) ของวันนั้น "ครบ" สำหรับกลุ่มไหน (ผลรวม
- *   ตรงกับยอดกลุ่มที่ใช้จริงในคอลนี้ — กันกรณี channels เป็น iv_channels ที่ TRCloud
- *   จัดหมวดใหม่ไปแล้วจนไม่ตรงกับ POS ดิบอีกต่อไป) → ส่งแยกราย label (granular)
- * - ไม่มี/ไม่ครบ → กลับไปพฤติกรรมเดิมเป๊ะ: รวมเป็น 1 บรรทัด/กลุ่ม
+ * - กลุ่มที่มี posGroups (ตอนนี้มีแค่ "qr") + posBreakdown ของวันนั้น "ครบ" (ผลรวม raw label
+ *   ทั้งหมดของกลุ่มตรงกับยอดกลุ่มที่ใช้จริงในคอลนี้ — กันกรณี channels เป็น iv_channels ที่
+ *   TRCloud จัดหมวดใหม่ไปแล้วจนไม่ตรงกับ POS ดิบอีกต่อไป) → ส่งแยก 2 บรรทัดตาม posGroups
+ *   (qrapi/qrstd — ดู QR_POS_GROUPS ด้านบน)
+ * - ไม่มี/ไม่ครบ → กลับไปพฤติกรรมเดิมเป๊ะ (ก่อน 2026-08-15 ทั้งหมด): รวมเป็น 1 บรรทัด/กลุ่ม
  * ใช้ร่วมกันทั้งตัวส่งจริง (sendDaysToReconcile) และพรีวิวในหน้าตั้งค่า → เลขตรงกันเสมอ
  */
 export function computeSendRows(
   channels: Record<string, number> | null,
   configByCvar: Map<string, ChannelConfig>,
   posBreakdown?: Record<string, number> | null,
-): { rows: SettlementSendRow[]; totalNet: number; granularGroupKeys: string[] } {
+): { rows: SettlementSendRow[]; totalNet: number; splitGroupKeys: string[] } {
   const { perChannel } = computeDaySettlement(channels, configByCvar);
   const settled = perChannel.filter((s) => s.settled);
   const rows: SettlementSendRow[] = [];
-  const granularGroupKeys: string[] = [];
+  const splitGroupKeys: string[] = [];
 
-  // 1) ช่องที่โอนรวมเข้าบัญชีก้อนเดียว (ปกติ) — หรือแยกราย POS-column ดิบ (granular)
+  // 1) ช่องที่โอนรวมเข้าบัญชีก้อนเดียว (ปกติ) — หรือแยก 2 กลุ่มย่อยตามกฎ CEO (posGroups)
   for (const g of SETTLEMENT_GROUPS) {
     const members = settled.filter((s) => g.cvars.includes(s.cvar));
     if (members.length === 0) continue;
     const gross = round2(members.reduce((a, m) => a + m.gross, 0));
 
-    // labels ดิบที่มีเงิน (≠0) วันนี้ ซึ่ง map เข้ากลุ่มนี้ผ่าน CHANNEL_CVAR
-    const groupLabels = posBreakdown
-      ? Object.entries(posBreakdown).filter(
-          ([label, amt]) => amt !== 0 && g.cvars.includes(CHANNEL_CVAR[label]),
-        )
-      : [];
-    const breakdownSum = round2(groupLabels.reduce((a, [, amt]) => a + amt, 0));
-    const tiesOut = groupLabels.length > 0 && Math.abs(breakdownSum - gross) < BREAKDOWN_TIE_OUT_TOLERANCE;
+    let tiesOut = false;
+    const splitRows: SettlementSendRow[] = [];
+    if (g.posGroups && posBreakdown) {
+      // raw label ทั้งหมดที่ประกาศไว้ใน posGroups ของกลุ่มนี้ (ครอบ cvar เดียวกับ g.cvars พอดี)
+      const allRawLabels = g.posGroups.flatMap((pg) => pg.rawLabels);
+      const present = allRawLabels
+        .map((label) => [label, posBreakdown[label] ?? 0] as const)
+        .filter(([, amt]) => amt !== 0);
+      const breakdownSum = round2(present.reduce((a, [, amt]) => a + amt, 0));
+      tiesOut = present.length > 0 && Math.abs(breakdownSum - gross) < BREAKDOWN_TIE_OUT_TOLERANCE;
 
-    if (tiesOut) {
-      // granular: 1 บรรทัดต่อ raw POS label
-      for (const [label, amt] of groupLabels) {
-        const cvar = CHANNEL_CVAR[label];
-        const member = members.find((m) => m.cvar === cvar);
-        if (!member) continue; // cvar นี้ settle=false ตาม config → ข้ามเหมือนพฤติกรรมเดิม
-        const feePercent = configByCvar.get(cvar)?.feePercent ?? 0;
-        const lineGross = round2(amt);
-        const fee = round2((lineGross * feePercent) / 100);
-        const net = round2(lineGross - fee);
-        rows.push({
-          key: `${g.key}-${cvar}-${sanitizeRefLabel(label)}`,
-          label: `${g.label} · ${label}`,
-          channelCode: g.channelCode,
-          gross: lineGross,
-          fee,
-          net,
-          feePercent,
-          companyId: member.companyId,
-          bankAccountId: member.bankAccountId,
-          memberCvars: [cvar],
-          granular: true,
-        });
+      if (tiesOut) {
+        for (const pg of g.posGroups) {
+          let pgGross = 0;
+          let pgFee = 0;
+          const pgCvars = new Set<string>();
+          for (const label of pg.rawLabels) {
+            const amt = posBreakdown[label];
+            if (!amt) continue;
+            const cvar = CHANNEL_CVAR[label];
+            const member = members.find((m) => m.cvar === cvar);
+            if (!member) continue; // cvar นี้ settle=false ตาม config → ข้ามเหมือนพฤติกรรมเดิม
+            const feePercent = configByCvar.get(cvar)?.feePercent ?? 0;
+            pgGross = round2(pgGross + amt);
+            pgFee = round2(pgFee + round2((amt * feePercent) / 100));
+            pgCvars.add(cvar);
+          }
+          if (pgGross === 0) continue; // ไม่มีเงินกลุ่มย่อยนี้วันนี้ (เช่น wallet(API)=0) → ไม่ส่งบรรทัด 0 บาท
+          const repCvars = [...pgCvars];
+          const rep = members.find((m) => repCvars.includes(m.cvar) && m.companyId)
+            ?? members.find((m) => repCvars.includes(m.cvar));
+          if (!rep) continue;
+          const pgNet = round2(pgGross - pgFee);
+          splitRows.push({
+            key: pg.key,
+            label: pg.label,
+            channelCode: g.channelCode,
+            gross: pgGross,
+            fee: pgFee,
+            net: pgNet,
+            feePercent: pgGross > 0 ? round2((pgFee / pgGross) * 100) : 0,
+            companyId: rep.companyId,
+            bankAccountId: rep.bankAccountId,
+            memberCvars: repCvars,
+            split: true,
+          });
+        }
       }
-      granularGroupKeys.push(g.key);
+    }
+
+    if (tiesOut && splitRows.length > 0) {
+      rows.push(...splitRows);
+      splitGroupKeys.push(g.key);
     } else {
-      // เดิม: รวมเป็น 1 บรรทัด/กลุ่ม (ไม่มี posBreakdown ครบ หรือยอดไม่ตรงกับ channels ที่ใช้จริง)
+      // เดิมเป๊ะ (ก่อน 2026-08-15 ทั้งหมด): รวมเป็น 1 บรรทัด/กลุ่ม
       const fee = round2(members.reduce((a, m) => a + m.fee, 0));
       const net = round2(members.reduce((a, m) => a + m.net, 0));
       // โอนรวม = บัญชีเดียวกัน → ใช้ config ของสมาชิกตัวแรกที่ตั้งบริษัทไว้
@@ -271,25 +329,29 @@ export function computeSendRows(
   }
 
   const totalNet = round2(rows.reduce((a, r) => a + r.net, 0));
-  return { rows, totalNet, granularGroupKeys };
+  return { rows, totalNet, splitGroupKeys };
 }
 
 /** สร้างรายการ source_ref เก่าที่ต้องพิจารณาลบ (legacy-shape cleanup) สำหรับ 1 วัน:
  *  - ref แบบ "แยก cvar ก่อนมีการรวมกลุ่ม" (ก่อน 2026-06) — เดิมอยู่แล้ว ลบทุกครั้งที่ส่งวันนั้น
- *  - ref แบบ "รวมกลุ่มก้อนเดียว" (เช่น "...-qr") — ลบเฉพาะกลุ่มที่วันนี้เปลี่ยนไปส่งแบบ
- *    granular แทน (granularGroupKeys) กันไม่ให้ก้อนรวมเก่าค้าง unmatched ซ้อนกับบรรทัดใหม่
+ *  - ref แบบ "รวมกลุ่มก้อนเดียว" (เช่น "...-qr") — ลบเฉพาะกลุ่มที่วันนี้เปลี่ยนไปส่งแบบแยก
+ *    กลุ่มย่อยแทน (splitGroupKeys) กันไม่ให้ก้อนรวมเก่าค้าง unmatched ซ้อนกับบรรทัดใหม่
  *  ตัวลบจริง (SQL) อยู่ที่ sendDaysToReconcile — ฟังก์ชันนี้คืนแค่ "รายชื่อ ref ที่ควรพิจารณา"
  *  การป้องกันแถว matched/confirmed อยู่ที่ WHERE match_state='unmatched' ในฝั่ง SQL (ไม่แตะที่นี่)
+ *
+ *  หมายเหตุ: commit 6a46089b (2026-08-15 ก่อนหน้า commit นี้) เคยส่งแบบ per-raw-label ("qr-c2-
+ *  qrpayment-api" ฯลฯ) ช่วงสั้นๆ — แต่ commit นั้นไม่เคย push/deploy จริง (verified) จึงไม่มี
+ *  ledger_revenue_entry รูปแบบนั้นค้างอยู่ใน DB ไหนเลย → ไม่ต้องเพิ่ม cleanup รูปแบบนั้นที่นี่
  */
 export function legacyRefsForDay(
   storeCode: string,
   salesDate: string,
-  granularGroupKeys: string[],
+  splitGroupKeys: string[],
 ): string[] {
   const refs: string[] = [];
   for (const g of SETTLEMENT_GROUPS) {
     for (const cv of g.cvars) refs.push(`amz-${storeCode}-${salesDate}-${cv}`);
   }
-  for (const gKey of granularGroupKeys) refs.push(`amz-${storeCode}-${salesDate}-${gKey}`);
+  for (const gKey of splitGroupKeys) refs.push(`amz-${storeCode}-${salesDate}-${gKey}`);
   return refs;
 }

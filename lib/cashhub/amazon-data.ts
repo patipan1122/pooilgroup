@@ -9,14 +9,17 @@ import { prisma } from "@/lib/prisma";
 type Admin = ReturnType<typeof adminClient>;
 
 // source_ref suffix (key) → ช่องทาง (cvar) ที่อยู่ในก้อนนั้น — ใช้ทาสี "แมตช์แล้ว" กลับเป็นราย-คอลัมน์
-// key "qr" = c2+c13+c14 (โอนรวมก้อนเดียว) · key "qr-c2-qrpayment-api" (granular, 2026-08-15) =
-//   เฉพาะ c2 (ดู amazon-settlement.ts computeSendRows — key granular เสมอมีรูป "<group>-<cvar>-<label>")
+// key "qr" = c2+c13+c14 (โอนรวมก้อนเดียว, fallback) · key "qrapi"/"qrstd" (2026-08-15, กฎ CEO
+//   แยก 2 กลุ่มย่อยตาม API/ไม่ API) = กลุ่มย่อยของ "qr" เดียวกัน ครอบ cvar ชุดเดียวกันทั้งคู่
+//   (c2+c13+c14 — แยกย่อยตาม raw label ไม่ใช่แยกตาม cvar) → ทาสี "แมตช์แล้ว" ทั้ง 3 คอลัมน์เมื่อ
+//   กลุ่มย่อยนั้นแมตช์ (ประมาณการเดิม: ถ้าอีกกลุ่มย่อยยังไม่แมตช์ คอลัมน์จะโชว์ "แมตช์แล้ว" ทั้งที่มี
+//   เงินอีกก้อนยังรอ — known approximation เดียวกับตอนใช้ key "qr" รวมก้อนเดียว ไม่ใช่บั๊กใหม่)
 //   · key อื่น = cvar เดี่ยว
 function cvarsForSendKey(key: string): string[] {
-  const g = SETTLEMENT_GROUPS.find((x) => x.key === key);
-  if (g) return g.cvars;
-  const granular = key.match(/^[a-z0-9]+-(c\d+)-/);
-  if (granular) return [granular[1]];
+  for (const g of SETTLEMENT_GROUPS) {
+    if (g.key === key) return g.cvars;
+    if (g.posGroups?.some((pg) => pg.key === key)) return g.cvars;
+  }
   return [key];
 }
 
@@ -282,6 +285,7 @@ export type ReconcileDayStatus = {
   n: number; // จำนวนรายการ (ช่องทาง) ที่ส่ง
   nMatched: number; // จำนวนที่แมตช์แล้ว
   matchedCvars: string[]; // cvar ของช่องทางที่แมตช์ยอดแล้ว (ทาสีรุ้งราย-คอลัมน์)
+  matchedGroupKeys: string[]; // source_ref key ดิบที่แมตช์แล้ว (เช่น "qrapi"/"qrstd"/"qr") — ทาสีรุ้งเฉพาะกลุ่มย่อยที่แมตช์จริง
   diffBaht: number | null; // ส่วนต่าง = เงินเข้าจริง(ธนาคาร) − ที่ควรได้(สุทธิ) · null = ยังไม่มีคู่แมตช์ · <0 = เงินขาด
 };
 export type ReconcileStatus = {
@@ -314,7 +318,7 @@ export async function loadReconcileStatus(
     const d = String(r.entry_date).slice(0, 10);
     const amt = (n(r.amount_satang) ?? 0) / 100;
     const matched = String(r.match_state) === "matched";
-    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], diffBaht: null });
+    const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], matchedGroupKeys: [], diffBaht: null });
     cur.sentSatang += amt;
     cur.n += 1;
     totalSent += amt;
@@ -323,11 +327,13 @@ export async function loadReconcileStatus(
       cur.nMatched += 1;
       totalMatched += amt;
       // source_ref = amz-<store>-<date>-<key> → ตัด prefix ที่รู้แน่ชัดออก เหลือ key ล้วน ๆ
-      //   ⚠️ ห้ามใช้ split("-").pop() — key granular (เช่น "qr-c2-qrpayment-api") มี '-' ในตัวเอง
-      //   ตัด prefix ตรง ๆ ด้วย storeCode+d (ที่รู้อยู่แล้วจาก row นี้) ปลอดภัยกับ key กี่ '-' ก็ได้
+      //   ⚠️ ห้ามใช้ split("-").pop() ตรงๆ เป็นค่าตั้งต้น — คงไว้เป็น fallback เฉยๆ (ปัจจุบัน key
+      //   ทุกแบบ "qr"/"qrapi"/"qrstd"/cvar เดี่ยว ไม่มี '-' ในตัวเองแล้ว แต่ตัด prefix ตรงๆ ด้วย
+      //   storeCode+d ที่รู้อยู่แล้วปลอดภัยกว่าเสมอ ไม่ผูกกับสมมติฐานว่า key ไม่มี '-')
       const ref = String(r.source_ref ?? "");
       const prefix = `amz-${storeCode}-${d}-`;
       const key = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref.split("-").pop() ?? "";
+      if (!cur.matchedGroupKeys.includes(key)) cur.matchedGroupKeys.push(key);
       for (const cv of cvarsForSendKey(key))
         if (!cur.matchedCvars.includes(cv)) cur.matchedCvars.push(cv);
     }
@@ -355,7 +361,7 @@ export async function loadReconcileStatus(
     for (const r of diffRows) {
       const d = String(r.d).slice(0, 10);
       const diff = Number(r.delta ?? 0) / 100;
-      const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], diffBaht: null });
+      const cur = (byDate[d] ??= { sentSatang: 0, matchedSatang: 0, n: 0, nMatched: 0, matchedCvars: [], matchedGroupKeys: [], diffBaht: null });
       cur.diffBaht = diff;
       totalDiff += diff;
     }

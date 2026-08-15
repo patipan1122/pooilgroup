@@ -1,5 +1,5 @@
-// Standalone runner for CashHub Amazon granular POS-column sending tests — runs TODAY
-// under tsx, no test framework needed:
+// Standalone runner for CashHub Amazon "qr" settlement-group split (qrapi/qrstd) tests —
+// runs TODAY under tsx, no test framework needed:
 //   npx tsx lib/cashhub/__tests__/amazon-settlement-granular.run.ts
 // Exercises the exact same `cases` as amazon-settlement-granular.test.ts (vitest).
 // Exits 1 on any failure. Mirrors lib/ledger/__tests__/reconcile-combo-match.run.ts pattern.
@@ -22,7 +22,7 @@ function main(): void {
 
   const total = cases.length;
   // eslint-disable-next-line no-console
-  console.log(`\nCashHub Amazon granular POS-column send — ${pass}/${total} cases passed`);
+  console.log(`\nCashHub Amazon "qr" settlement-group split (qrapi/qrstd) — ${pass}/${total} cases passed`);
   if (failures.length) {
     // eslint-disable-next-line no-console
     console.log("\n" + failures.join("\n") + "\n");
@@ -30,10 +30,10 @@ function main(): void {
   }
   // eslint-disable-next-line no-console
   console.log(
-    "  gate: posBreakdown ties out → granular per-label rows w/ correct fee ✓ · no posBreakdown → " +
-      "unchanged combined row ✓ · breakdown mismatch → safe fallback to combined ✓ · sanitizeRefLabel " +
-      "deterministic/non-empty/distinct ✓ · legacy-ref cleanup targets only the old shape actually " +
-      "replaced this send ✓\n",
+    "  gate: posBreakdown ties out → exactly 2 rows (qrapi/qrstd) w/ correct fee math ✓ · " +
+      "no posBreakdown → unchanged pre-2026-08-15 combined row ✓ · breakdown mismatch (full or " +
+      "partial) → safe fallback to combined ✓ · legacy-ref cleanup targets only the old combined " +
+      "shape actually replaced this send ✓\n",
   );
 }
 

@@ -1,17 +1,23 @@
-// Shared, runner-agnostic assertion cases for CashHub Amazon granular POS-column
-// sending (computeSendRows + sanitizeRefLabel + legacyRefsForDay). Pure, no DB.
+// Shared, runner-agnostic assertion cases for CashHub Amazon "qr" settlement-group split
+// (computeSendRows + legacyRefsForDay). Pure, no DB.
 // Used by BOTH amazon-settlement-granular.test.ts (vitest) and
 // amazon-settlement-granular.run.ts (tsx today) — mirrors
 // lib/ledger/__tests__/reconcile-combo-match.cases.ts pattern.
 //
-// Context (2026-08-15): CEO decision — send the MAXIMALLY GRANULAR real POS sub-column
-// numbers (one ledger_revenue_entry row per raw POS label) instead of guessing a
-// bank-settlement grouping rule, whenever a day's real posBreakdown is available and its
-// sum ties out with the cvar totals actually being sent (channels/iv_channels) — otherwise
-// fall back to EXACTLY the old single combined-row behavior, unchanged.
+// Context (2026-08-15): CEO gave the EXACT real business rule for how the bank posts the
+// "QR + Wallet" settlement group (verified against real 2026-08-01 data: QRPayment=฿65,
+// QRPayment(API)=฿4,505, blueplus+wallet=฿70, blueplus+wallet(API)=฿0):
+//   Group "qrapi" = QRPayment(API) + blueplus+ wallet (API) → ฿4,505 (matches the real large
+//     bank deposit line exactly)
+//   Group "qrstd" = QRPayment + blueplus+ wallet → ฿135 (matches the real small bank deposit
+//     line exactly)
+// This REPLACES an earlier same-day attempt (send 1 row per raw POS label, let a generic
+// N:M combo-matcher figure out the grouping) — this file was rewritten to test the 2-group
+// rule instead of full per-label granularity. When posBreakdown is missing or doesn't tie
+// out, computeSendRows falls back to EXACTLY the old (pre-2026-08-15) single combined row.
 
 import type { ChannelConfig } from "../amazon-settlement";
-import { computeSendRows, sanitizeRefLabel, legacyRefsForDay } from "../amazon-settlement";
+import { computeSendRows, legacyRefsForDay } from "../amazon-settlement";
 
 export interface Case {
   name: string;
@@ -27,7 +33,7 @@ function eq(label: string, actual: unknown, expected: unknown): string | null {
 }
 
 // ── shared test config: qr group members (c2, c13, c14) — c14 given a nonzero fee
-//    (5%) specifically so granular-line fee math is actually exercised, not just 0*x=0 ──
+//    (5%) specifically so split-line fee math is actually exercised, not just 0*x=0 ──
 function cfg(overrides: Partial<Record<string, Partial<ChannelConfig>>> = {}): Map<string, ChannelConfig> {
   const base: Record<string, ChannelConfig> = {
     c2: { cvar: "c2", label: "QR", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
@@ -39,63 +45,93 @@ function cfg(overrides: Partial<Record<string, Partial<ChannelConfig>>> = {}): M
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (a) day WITH posBreakdown → N granular rows, correct per-line amount + fee
+// (a) day WITH posBreakdown that ties out → exactly 2 rows: "qrapi" + "qrstd"
+//     (real 2026-08-01-shaped data, per CEO's own worked example)
 // ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(a) day with posBreakdown that ties out → sends 3 granular rows, not 1 combined",
+  name: '(a) 2026-08-01-shaped data → exactly groups "qrapi"=4505 and "qrstd"=135, correct fee math',
   check: () => {
-    const channels = { c2: 4570, c14: 70 }; // QRPayment(API) 4505 + QRPayment 65 = c2 4570 · wallet 70
-    const posBreakdown = { "QRPayment(API)": 4505, QRPayment: 65, "blueplus+ wallet": 70 };
-    const { rows, granularGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
-    if (rows.length !== 3) return `expected 3 granular rows, got ${rows.length}: ${JSON.stringify(rows)}`;
+    const channels = { c2: 4570, c13: 0, c14: 70 }; // QRPayment(API) 4505 + QRPayment 65 = c2 4570 · wallet 70
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "blueplus+ wallet": 70,
+      // "blueplus+ wallet (API)" absent (₿0 that day — real parser omits 0-amount labels)
+    };
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    if (rows.length !== 2) return `expected 2 split rows, got ${rows.length}: ${JSON.stringify(rows)}`;
     const byKey = new Map(rows.map((r) => [r.key, r]));
-    const e1 = byKey.get("qr-c2-qrpayment-api");
-    const e2 = byKey.get("qr-c2-qrpayment");
-    const e3 = byKey.get("qr-c14-blueplus-wallet");
-    if (!e1 || !e2 || !e3) return `missing expected granular keys, got ${JSON.stringify([...byKey.keys()])}`;
+    const api = byKey.get("qrapi");
+    const std = byKey.get("qrstd");
+    if (!api || !std) return `missing expected keys, got ${JSON.stringify([...byKey.keys()])}`;
     let err: string | null = null;
-    err ??= eq("QRPayment(API) gross", e1.gross, 4505);
-    err ??= eq("QRPayment(API) fee (c2 feePercent=0)", e1.fee, 0);
-    err ??= eq("QRPayment(API) net", e1.net, 4505);
-    err ??= eq("QRPayment gross", e2.gross, 65);
-    err ??= eq("QRPayment net", e2.net, 65);
-    err ??= eq("wallet gross", e3.gross, 70);
-    err ??= eq("wallet fee (c14 feePercent=5% of 70 = 3.5)", e3.fee, 3.5);
-    err ??= eq("wallet net (70-3.5)", e3.net, 66.5);
-    err ??= eq("all 3 rows flagged granular", rows.every((r) => r.granular === true), true);
-    err ??= eq("granularGroupKeys", granularGroupKeys, ["qr"]);
+    err ??= eq("qrapi gross", api.gross, 4505);
+    err ??= eq("qrapi label", api.label, "QR + Wallet (API)");
+    err ??= eq("qrapi fee (c2 feePercent=0)", api.fee, 0);
+    err ??= eq("qrapi net", api.net, 4505);
+    err ??= eq("qrapi flagged split", api.split, true);
+    err ??= eq("qrstd gross (65 QRPayment + 70 wallet)", std.gross, 135);
+    err ??= eq("qrstd label", std.label, "QR + Wallet");
+    // fee: QRPayment(c2, 0%) contributes 0 · blueplus wallet(c14, 5%) contributes 70*5%=3.5
+    err ??= eq("qrstd fee (only c14 portion has fee: 70*5%=3.5)", std.fee, 3.5);
+    err ??= eq("qrstd net (135-3.5)", std.net, 131.5);
+    err ??= eq("qrstd flagged split", std.split, true);
+    err ??= eq("splitGroupKeys", splitGroupKeys, ["qr"]);
     return err;
   },
 });
 
 cases.push({
-  name: "(a) granular row gross sums back to the exact group total (no money lost/created in the split)",
+  name: "(a) split row gross sums back to the exact group total (no money lost/created in the split)",
   check: () => {
     const channels = { c2: 4570, c14: 70 };
     const posBreakdown = { "QRPayment(API)": 4505, QRPayment: 65, "blueplus+ wallet": 70 };
     const { rows } = computeSendRows(channels, cfg(), posBreakdown);
     const sumGross = rows.reduce((a, r) => a + r.gross, 0);
-    return eq("sum of granular gross == 4640 (4570+70)", Math.round(sumGross * 100) / 100, 4640);
+    return eq("sum of split gross == 4640 (4570+70)", Math.round(sumGross * 100) / 100, 4640);
+  },
+});
+
+cases.push({
+  name: "(a) QRCredit(API)/QR Manual(API)/QRManual fold into the correct bucket by (API) symmetry",
+  check: () => {
+    // QR Manual(API)=20 (→ qrapi), QRManual=10 (→ qrstd), QRCredit(API)=5 (→ qrapi)
+    const channels = { c2: 4570 + 5, c13: 30, c14: 70 };
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "QRCredit(API)": 5,
+      "QR Manual(API)": 20,
+      QRManual: 10,
+      "blueplus+ wallet": 70,
+    };
+    const { rows } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrapi includes QRCredit(API)+QR Manual(API)", byKey.get("qrapi")?.gross, 4505 + 5 + 20);
+    err ??= eq("qrstd includes QRManual", byKey.get("qrstd")?.gross, 65 + 70 + 10);
+    return err;
   },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (b) day WITHOUT posBreakdown → exactly the old single combined row, unchanged
+// (b) day WITHOUT posBreakdown → exactly the old (pre-2026-08-15) single combined row
 // ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(b) day without posBreakdown (undefined) → 1 combined row, same as pre-granular behavior",
+  name: "(b) day without posBreakdown (undefined) → 1 combined row, exactly pre-2026-08-15 fallback behavior",
   check: () => {
     const channels = { c2: 4570, c14: 70 };
-    const { rows, granularGroupKeys } = computeSendRows(channels, cfg(), undefined);
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), undefined);
     if (rows.length !== 1) return `expected 1 combined row, got ${rows.length}: ${JSON.stringify(rows)}`;
     const r = rows[0];
     let err: string | null = null;
     err ??= eq("combined key", r.key, "qr");
+    err ??= eq("combined label", r.label, "QR + Wallet");
     err ??= eq("combined gross", r.gross, 4640);
     err ??= eq("combined fee (only c14 has fee: 70*5%=3.5)", r.fee, 3.5);
     err ??= eq("combined net", r.net, 4636.5);
-    err ??= eq("not flagged granular", r.granular, undefined);
-    err ??= eq("granularGroupKeys empty", granularGroupKeys, []);
+    err ??= eq("not flagged split", r.split, undefined);
+    err ??= eq("splitGroupKeys empty", splitGroupKeys, []);
     return err;
   },
 });
@@ -114,75 +150,57 @@ cases.push({
   name: "(b) day with posBreakdown={} (empty object) → falls back to combined (nothing to split)",
   check: () => {
     const channels = { c2: 4570, c14: 70 };
-    const { rows, granularGroupKeys } = computeSendRows(channels, cfg(), {});
-    return eq("empty breakdown → 1 combined row, no granular groups", [rows.length, granularGroupKeys], [1, []]);
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), {});
+    return eq("empty breakdown → 1 combined row, no split groups", [rows.length, splitGroupKeys], [1, []]);
   },
 });
 
-// ── safety net beyond the literal spec: posBreakdown present but does NOT tie out with
-//    the channels actually being sent (e.g. iv_channels reclassified money after TRCloud
-//    posted — see amazon-settlement-data.ts comment on iv_channels vs raw POS channels) ──
+// ─────────────────────────────────────────────────────────────────────────────
+// (c) posBreakdown present but does NOT tie out with the channels actually being sent
+//     (e.g. iv_channels reclassified money after TRCloud posted — simulates a
+//     TRCloud-reclassification day) → safe fallback to combined, same as (b)
+// ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(safety net) posBreakdown present but sum mismatches channels gross → falls back to combined (does not silently split wrong numbers)",
+  name: "(c) posBreakdown present but sum mismatches channels gross → falls back to combined (does not silently split wrong numbers)",
   check: () => {
     // channels says c2=5000 (e.g. iv_channels reclassified some money INTO c2) but the raw
     // POS breakdown for that day only accounts for 4570 worth of c2-mapped labels — a 430
-    // baht gap that must NOT be silently absorbed into a granular split of stale numbers.
+    // baht gap that must NOT be silently absorbed into a split of stale numbers.
     const channels = { c2: 5000, c14: 70 };
     const posBreakdown = { "QRPayment(API)": 4505, QRPayment: 65, "blueplus+ wallet": 70 };
-    const { rows, granularGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
     if (rows.length !== 1) return `expected fallback to 1 combined row on mismatch, got ${rows.length} rows`;
     let err: string | null = null;
     err ??= eq("fallback combined gross uses the real (channels) total, not the stale breakdown sum", rows[0].gross, 5070);
-    err ??= eq("no granular groups reported", granularGroupKeys, []);
+    err ??= eq("no split groups reported", splitGroupKeys, []);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(c) posBreakdown ties out for one bucket but not the other (partial) → still safe: whole group falls back to combined",
+  check: () => {
+    // Only "qrapi"-shaped money present (4505) but channels c2 total is inflated to 4600 —
+    // group-level tie-out (breakdownSum vs gross) must fail and fall back, not partially split.
+    const channels = { c2: 4600, c14: 0 };
+    const posBreakdown = { "QRPayment(API)": 4505 };
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    let err: string | null = null;
+    err ??= eq("falls back to 1 combined row", rows.length, 1);
+    err ??= eq("combined key", rows[0]?.key, "qr");
+    err ??= eq("no split groups reported", splitGroupKeys, []);
     return err;
   },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// sanitizeRefLabel — deterministic, ref-safe, non-empty
-// ─────────────────────────────────────────────────────────────────────────────
-cases.push({
-  name: "sanitizeRefLabel: real POS labels sanitize to distinct, stable, lowercase-dash strings",
-  check: () => {
-    const pairs: [string, string][] = [
-      ["QRPayment(API)", "qrpayment-api"],
-      ["QRPayment", "qrpayment"],
-      ["QRCredit(API)", "qrcredit-api"],
-      ["QRManual", "qrmanual"],
-      ["QR Manual(API)", "qr-manual-api"],
-      ["blueplus+ wallet", "blueplus-wallet"],
-      ["blueplus+ wallet (API)", "blueplus-wallet-api"],
-    ];
-    for (const [input, expected] of pairs) {
-      const got = sanitizeRefLabel(input);
-      if (got !== expected) return `sanitizeRefLabel(${JSON.stringify(input)}) = ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`;
-    }
-    // all distinct (no accidental collisions among real labels)
-    const outputs = pairs.map(([input]) => sanitizeRefLabel(input));
-    if (new Set(outputs).size !== outputs.length) return `sanitizeRefLabel produced duplicate outputs: ${JSON.stringify(outputs)}`;
-    return null;
-  },
-});
-
-cases.push({
-  name: "sanitizeRefLabel: symbols-only label never produces an empty ref segment",
-  check: () => eq("fallback placeholder", sanitizeRefLabel("!!!"), "x"),
-});
-
-cases.push({
-  name: "sanitizeRefLabel: deterministic across repeated calls (idempotent for re-send)",
-  check: () => eq("same input → same output twice", sanitizeRefLabel("QRPayment(API)"), sanitizeRefLabel("QRPayment(API)")),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// (c) legacyRefsForDay — old-shape cleanup ref list (ref selection only; the SQL
+// (d) legacyRefsForDay — old-shape cleanup ref list (ref selection only; the SQL
 // WHERE match_state='unmatched' AND NOT EXISTS match_item guard in
 // amazon-settlement-data.ts::sendDaysToReconcile is unchanged and is what actually
 // protects matched/confirmed rows — that guard is not re-tested here, see report)
 // ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(c) granular day → legacy refs include the OLD combined-group ref for cleanup",
+  name: "(d) split day → legacy refs include the OLD combined-group ref for cleanup",
   check: () => {
     const refs = legacyRefsForDay("4097", "2026-08-01", ["qr"]);
     let err: string | null = null;
@@ -197,18 +215,29 @@ cases.push({
 });
 
 cases.push({
-  name: "(c) combined-mode day (no granular groups) → legacy refs do NOT include the combined ref (must not self-delete the row just sent)",
+  name: "(d) combined-mode day (no split groups) → legacy refs do NOT include the combined ref (must not self-delete the row just sent)",
   check: () => {
     const refs = legacyRefsForDay("4097", "2026-08-01", []);
-    return eq("combined ref absent when day is not granular", refs.includes("amz-4097-2026-08-01-qr"), false);
+    return eq("combined ref absent when day is not split", refs.includes("amz-4097-2026-08-01-qr"), false);
   },
 });
 
 cases.push({
-  name: "(c) legacy refs are scoped to the exact store+date (no cross-day/cross-store leakage)",
+  name: "(d) legacy refs are scoped to the exact store+date (no cross-day/cross-store leakage)",
   check: () => {
     const refs = legacyRefsForDay("4097", "2026-08-01", ["qr"]);
     const bad = refs.filter((r) => !r.startsWith("amz-4097-2026-08-01-"));
     return eq("no ref outside this store+date prefix", bad, []);
+  },
+});
+
+cases.push({
+  name: "(d) legacy refs never include the new qrapi/qrstd keys themselves (only the old combined + pre-2026-06 per-cvar shapes)",
+  check: () => {
+    const refs = legacyRefsForDay("4097", "2026-08-01", ["qr"]);
+    return eq("no qrapi/qrstd ref in legacy list", [
+      refs.includes("amz-4097-2026-08-01-qrapi"),
+      refs.includes("amz-4097-2026-08-01-qrstd"),
+    ], [false, false]);
   },
 });
