@@ -139,9 +139,33 @@ export function AmazonExcelGrid({
       ]
     : [];
 
+  // กลุ่มที่ 3 (CEO 2026-08-15, POS_EXTRACT_GROUPS "qrcredit"): QRCredit(API) (ปนอยู่ใน "QR"/c2)
+  // + blueplus+ credit(API) (ปนอยู่ใน "blueplus credit"/c15) โอนเข้าธนาคารเป็นก้อนที่ 3 แยกต่างหาก
+  // (คนละเส้นจาก qrapi/qrstd และคนละเส้นจาก blueplus credit ที่ไม่ใช่ (API)) — เลขในคอลัมน์นี้ตรง
+  // กับที่ส่งเข้า reconcile จริง (ค่าธรรมเนียม ~0.9% หักแล้วในฝั่งกระทบยอด แต่คอลัมน์นี้โชว์ยอดขายก่อน
+  // หักค่าธรรมเนียมให้อ่านง่ายเทียบกับ "QR"/"blueplus credit" ดิบ)
+  const qrCreditByDate = new Map<string, number | null>();
+  let anyQrCredit = false;
+  for (const d of data) {
+    const { rows } = computeSendRows(d.channels, configByCvar, d.posBreakdown);
+    const qrcredit = rows.find((r) => r.key === "qrcredit")?.gross ?? null;
+    if (qrcredit != null) anyQrCredit = true;
+    qrCreditByDate.set(d.sales_date, qrcredit);
+  }
+  const qrCreditCol: Col[] = anyQrCredit
+    ? [
+        {
+          label: "QRCredit + blueplus Credit (API)",
+          groupKey: "qrcredit",
+          get: (d) => qrCreditByDate.get(d.sales_date) ?? null,
+        },
+      ]
+    : [];
+
   // คอลัมน์ช่องทาง (ยอดดิบ POS ต่อ cvar) — แทรก 2 คอลัมน์กลุ่มย่อยธนาคารจริงต่อจาก "blueplus wallet"
   // (c14 = สมาชิกตัวสุดท้ายของกลุ่ม qr ในลำดับตาราง) ให้อ่านต่อเนื่อง: เห็นแยกช่องทางก่อน แล้วเห็นว่า
-  // ธนาคารรวมเข้าจริงยังไง
+  // ธนาคารรวมเข้าจริงยังไง · แทรกคอลัมน์กลุ่มที่ 3 ต่อจาก "blueplus credit" (c15 = ตัวสุดท้ายของ
+  // CHANNELS) ด้วยเหตุผลเดียวกัน
   const channelCols: Col[] = [];
   for (const c of CHANNELS) {
     channelCols.push({
@@ -152,6 +176,7 @@ export function AmazonExcelGrid({
       ivGet: (d: SavedAmazonDay) => (d.iv_channels ? (d.iv_channels[c.cvar] ?? 0) : null),
     });
     if (c.cvar === "c14") channelCols.push(...qrGroupCols);
+    if (c.cvar === "c15") channelCols.push(...qrCreditCol);
   }
   const COLS: Col[] = [
     ...HEAD_COLS,
@@ -467,7 +492,11 @@ export function AmazonExcelGrid({
         โอนเข้าจริง 2 ก้อนตามที่ตรวจสอบแล้ว (รวม QR+QR Manual+blueplus wallet แยกตามส่วน API/ไม่ API) —
         เลขเดียวกับที่จะส่งเข้ากระทบยอด · โชว์เฉพาะวันที่ไส้ใน POS ตรงกับยอดที่ส่งจริง (ไม่ตรง = ว่าง ดูคอลัมน์
         QR/QR Manual/blueplus wallet แยกช่องแทนสำหรับวันนั้น) · โชว์เฉพาะเดือนที่มีข้อมูลจริง (เดือนเก่าก่อน
-        08/2569 จะไม่มีคอลัมน์นี้)
+        08/2569 จะไม่มีคอลัมน์นี้) · <b>QRCredit + blueplus Credit (API)</b> ถัดจาก{" "}
+        <b>blueplus credit</b> = ก้อนเงินที่ธนาคารโอนเข้าจริงก้อนที่ 3 แยกต่างหาก (QRCredit(API)
+        ที่ปนอยู่ใน &ldquo;QR&rdquo; + blueplus+ credit(API) ที่ปนอยู่ใน &ldquo;blueplus
+        credit&rdquo;) หักค่าธรรมเนียม ~0.9% แบบเดียวกับเครดิต EDC — verified กับ statement ธนาคารจริง
+        3 วัน (08-03/08-05/08-09) · โชว์เฉพาะวันที่มีเงินก้อนนี้จริง
       </p>
     </div>
   );

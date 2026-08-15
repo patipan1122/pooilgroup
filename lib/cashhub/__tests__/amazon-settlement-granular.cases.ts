@@ -1,4 +1,4 @@
-// Shared, runner-agnostic assertion cases for CashHub Amazon "qr" settlement-group split
+// Shared, runner-agnostic assertion cases for CashHub Amazon settlement-group splits
 // (computeSendRows + legacyRefsForDay). Pure, no DB.
 // Used by BOTH amazon-settlement-granular.test.ts (vitest) and
 // amazon-settlement-granular.run.ts (tsx today) — mirrors
@@ -15,6 +15,17 @@
 // N:M combo-matcher figure out the grouping) — this file was rewritten to test the 2-group
 // rule instead of full per-label granularity. When posBreakdown is missing or doesn't tie
 // out, computeSendRows falls back to EXACTLY the old (pre-2026-08-15) single combined row.
+//
+// Context (2026-08-15, same day, later): CEO approved a 3RD group (POS_EXTRACT_GROUPS,
+// key "qrcredit") after DB-verifying 12 real KBank statement lines (description "...AMZ
+// A_SD4097...", July+Aug 2026): QRCredit(API) (raw label inside cvar c2) and
+// blueplus+ credit(API) (raw label inside cvar c15) settle THIRD, separately from qrapi/qrstd
+// AND separately from the plain "blueplus credit" (c15) line, net of a ~0.9-0.913% card-style
+// fee (matches the already-established "เครดิต EDC" c12 fee formula almost exactly). This is
+// WHY test (a2) below changed: QRCredit(API) money used to force qrapi/qrstd to fall back to
+// 1 combined row (it broke the tie-out sum) — now it gets extracted into "qrcredit" FIRST, so
+// the qr-group remainder ties out again and qrapi/qrstd split succeeds too (fixes the "blank
+// split columns" CEO saw live on days QRCredit(API)≠0, e.g. 2026-08-05/08-09).
 
 import type { ChannelConfig } from "../amazon-settlement";
 import { computeSendRows, legacyRefsForDay } from "../amazon-settlement";
@@ -32,13 +43,16 @@ function eq(label: string, actual: unknown, expected: unknown): string | null {
     : `${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`;
 }
 
-// ── shared test config: qr group members (c2, c13, c14) — c14 given a nonzero fee
-//    (5%) specifically so split-line fee math is actually exercised, not just 0*x=0 ──
+// ── shared test config: qr group members (c2, c13, c14) + standalone c15 — c14 given a
+//    nonzero fee (5%) specifically so split-line fee math is actually exercised, not just
+//    0*x=0 · c15 given feePercent=0 (matches real DEFAULT_CHANNELS) so qrcredit's OWN 0.9%
+//    fee (from POS_EXTRACT_GROUPS, not configByCvar) is what's actually being exercised ──
 function cfg(overrides: Partial<Record<string, Partial<ChannelConfig>>> = {}): Map<string, ChannelConfig> {
   const base: Record<string, ChannelConfig> = {
     c2: { cvar: "c2", label: "QR", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
     c13: { cvar: "c13", label: "QR Manual", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
     c14: { cvar: "c14", label: "blueplus wallet", isSettle: true, feePercent: 5, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
+    c15: { cvar: "c15", label: "blueplus credit", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
   };
   for (const [k, patch] of Object.entries(overrides)) base[k] = { ...base[k], ...patch };
   return new Map(Object.entries(base));
@@ -114,14 +128,17 @@ cases.push({
 });
 
 cases.push({
-  name: "(a2) QRCredit(API) nonzero → does NOT fold into qrapi, breaks tie-out → safe fallback to 1 combined row",
+  name: "(a2) QRCredit(API) nonzero → extracted into 'qrcredit' FIRST (own ~0.9% fee), then the qr-group REMAINDER ties out again → qrapi/qrstd split succeeds too (supersedes pre-qrcredit behavior)",
   check: () => {
-    // DB-verified 2026-08-15 against real bank data (08-05/08-09): QRCredit(API) settles via a
-    // THIRD separate bank line (account "AMZ A_SD4097"), not bundled with qrapi. Forcing it into
-    // qrapi overstated the send amount by exactly the QRCredit(API) value on both real days it
-    // occurred. Correct behavior: it's excluded from both rawLabels arrays, so the breakdown sum
-    // falls short of the cvar-level gross by that amount → tiesOut=false → fallback to 1 line,
-    // exactly like a day with no posBreakdown at all (safe: never silently mis-splits).
+    // DB-verified 2026-08-15 against real bank data (08-05/08-09, updated same-day after the
+    // qrapi/qrstd-only version of this file shipped): QRCredit(API) settles via a THIRD separate
+    // bank line (account "...AMZ A_SD4097..."), not bundled with qrapi, NOT part of the "qr"
+    // SETTLEMENT_GROUPS at all — POS_EXTRACT_GROUPS pulls its money OUT of c2's settled gross
+    // before the "qr" group's tie-out check runs. Once removed, the c2 remainder (4570) matches
+    // qrapi/qrstd's raw-label sum again exactly like the QRCredit(API)-free case (a) → the split
+    // now ALSO succeeds. This is the exact fix for the "blank qrapi/qrstd columns" CEO saw live
+    // on 08-05/08-09 (previously QRCredit(API) broke tie-out for the WHOLE qr group, not just
+    // its own slice).
     const channels = { c2: 4570 + 230, c14: 70 }; // QRCredit(API)=230, matching the real 08-05 gap
     const posBreakdown = {
       "QRPayment(API)": 4505,
@@ -130,13 +147,161 @@ cases.push({
       "blueplus+ wallet": 70,
     };
     const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
-    err ??= splitGroupKeys.length === 0 ? null : `expected no split, got splitGroupKeys=${JSON.stringify(splitGroupKeys)}`;
-    err ??= rows.length === 1 ? null : `expected 1 combined row, got ${rows.length}`;
-    err ??= eq("combined row gross == full total incl. QRCredit(API)", rows[0]?.gross, 4570 + 230 + 70);
+    err ??= eq("3 rows total (qrcredit + qrapi + qrstd)", rows.length, 3);
+    err ??= eq("qr group still reported as split", splitGroupKeys, ["qr"]);
+    err ??= eq("qrcredit gross == 230 (QRCredit(API) alone, blueplus+ credit(API) absent today)", byKey.get("qrcredit")?.gross, 230);
+    err ??= eq("qrcredit fee == 230*0.9% = 2.07", byKey.get("qrcredit")?.fee, 2.07);
+    err ??= eq("qrcredit net == 227.93", byKey.get("qrcredit")?.net, 227.93);
+    err ??= eq("qrcredit label", byKey.get("qrcredit")?.label, "QRCredit + blueplus Credit (API)");
+    err ??= eq("qrcredit channelCode == card", byKey.get("qrcredit")?.channelCode, "card");
+    err ??= eq("qrcredit flagged split", byKey.get("qrcredit")?.split, true);
+    err ??= eq("qrapi ties out again on the remainder (unchanged from case (a))", byKey.get("qrapi")?.gross, 4505);
+    err ??= eq("qrstd ties out again on the remainder (unchanged from case (a))", byKey.get("qrstd")?.gross, 135);
+    err ??= eq(
+      "no money lost/created: qrcredit+qrapi+qrstd gross == full original total incl. QRCredit(API)",
+      round2sum([byKey.get("qrcredit")?.gross, byKey.get("qrapi")?.gross, byKey.get("qrstd")?.gross]),
+      4570 + 230 + 70,
+    );
     return err;
   },
 });
+
+cases.push({
+  name: "(a3) blueplus+ credit(API) nonzero (c15) → extracted into 'qrcredit', plain 'blueplus credit' (c15) row disappears entirely when it was the ONLY c15 money that day (no double count)",
+  check: () => {
+    // Real 08-03 shape: blueplus+ credit(API)=190 is the ONLY money in c15 that day (this store's
+    // POS this month has no non-API "blueplus+ Credit" column at all — see amazon-parse.ts).
+    const channels = { c2: 4570, c14: 70, c15: 190 };
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "blueplus+ wallet": 70,
+      "blueplus+ credit(API)": 190,
+    };
+    const { rows, extractedStandaloneCvars } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrcredit gross == 190 (blueplus+ credit(API) alone)", byKey.get("qrcredit")?.gross, 190);
+    // fee: measured real ratio ~0.9105% on this exact day (08-03) — our flat 0.9% gives 1.71,
+    // net 188.29 (real bank line was 188.27 — 2 satang off, within any reasonable match tolerance)
+    err ??= eq("qrcredit fee == 190*0.9% = 1.71", byKey.get("qrcredit")?.fee, 1.71);
+    err ??= eq("qrcredit net == 188.29", byKey.get("qrcredit")?.net, 188.29);
+    err ??= eq("no standalone c15 row this day (fully extracted, not double-counted)", byKey.has("c15"), false);
+    err ??= eq("c15 flagged for legacy-ref cleanup (old full-amount ref may be stale)", extractedStandaloneCvars, ["c15"]);
+    // qr group (c2/c14) unaffected — c15 money never touched it in the first place
+    err ??= eq("qrapi unaffected", byKey.get("qrapi")?.gross, 4505);
+    err ??= eq("qrstd unaffected", byKey.get("qrstd")?.gross, 135);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a4) blueplus+ credit(API) is only PART of c15's money that day → remainder still sent as a (smaller) standalone 'c15' row, not lost",
+  check: () => {
+    // Simulates a future/other-store month where c15 also carries non-API "blueplus+ Credit"
+    // money alongside blueplus+ credit(API) — channels.c15 (200) > the extracted raw label (190)
+    // by 10, representing that other (non-extracted) money, which must still be sent.
+    const channels = { c15: 200 };
+    const posBreakdown = { "blueplus+ credit(API)": 190 };
+    const { rows, extractedStandaloneCvars } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrcredit gross == 190 (only the (API) raw label)", byKey.get("qrcredit")?.gross, 190);
+    err ??= eq("c15 standalone row == remainder (200-190=10), not the full 200 (no double count)", byKey.get("c15")?.gross, 10);
+    err ??= eq("c15 fee recomputed on the REMAINDER using c15's own configPercent (0%)", byKey.get("c15")?.fee, 0);
+    err ??= eq("c15 flagged for legacy-ref cleanup (amount changed from 200→10)", extractedStandaloneCvars, ["c15"]);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a5) BOTH QRCredit(API) and blueplus+ credit(API) nonzero same day (never observed in real data yet, but must be architecturally correct) → single 'qrcredit' row = their SUM, one shared fee",
+  check: () => {
+    const channels = { c2: 4570 + 100, c14: 70, c15: 50 };
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "blueplus+ wallet": 70,
+      "QRCredit(API)": 100,
+      "blueplus+ credit(API)": 50,
+    };
+    const { rows } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrcredit gross == 150 (100+50 combined)", byKey.get("qrcredit")?.gross, 150);
+    err ??= eq("qrcredit fee == 150*0.9% = 1.35 (one fee on the combined sum, not two separate fees)", byKey.get("qrcredit")?.fee, 1.35);
+    err ??= eq("qrcredit net == 148.65", byKey.get("qrcredit")?.net, 148.65);
+    err ??= eq("qrcredit spans both cvars", byKey.get("qrcredit")?.memberCvars.sort(), ["c15", "c2"]);
+    err ??= eq("no standalone c15 row (fully extracted)", byKey.has("c15"), false);
+    err ??= eq("qr group still ties out on the c2/c14 remainder", byKey.get("qrapi")?.gross, 4505);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a6) no posBreakdown at all → POS_EXTRACT_GROUPS never fires (can't isolate raw labels) → QRCredit(API)/blueplus+credit(API) money stays baked into c2/c15 exactly like before 2026-08-15's qrcredit group existed",
+  check: () => {
+    const channels = { c2: 4800, c15: 190 }; // c2 already includes whatever QRCredit(API) portion existed
+    const { rows, extractedStandaloneCvars, splitGroupKeys } = computeSendRows(channels, cfg(), undefined);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("no qrcredit row", byKey.has("qrcredit"), false);
+    err ??= eq("c15 sent in full (190), nothing extracted", byKey.get("c15")?.gross, 190);
+    err ??= eq("qr group falls back to combined (no breakdown to split on)", byKey.get("qr")?.gross, 4800);
+    err ??= eq("no extraction cleanup needed", extractedStandaloneCvars, []);
+    err ??= eq("no qr-group split reported", splitGroupKeys, []);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a7) qrcredit ties out independently of qrapi/qrstd — qrcredit extracts fine even on a day where the REST of c2 does NOT tie out (TRCloud reclassification-style gap unrelated to QRCredit(API))",
+  check: () => {
+    // channels.c2 has an extra unexplained 500 on top of QRCredit(API)+QRPayment(API)+QRPayment —
+    // simulates iv_channels reclassifying money into c2 from elsewhere. qrcredit only cares about
+    // its own 2 raw labels tying out against THEMSELVES (there's nothing to "tie out" against for
+    // an extract group beyond "the raw label has money" — unlike qrapi/qrstd's group-wide check),
+    // so it must still extract correctly while qr falls back to combined for the remainder.
+    const channels = { c2: 4570 + 230 + 500, c14: 70 };
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "QRCredit(API)": 230,
+      "blueplus+ wallet": 70,
+    };
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrcredit still extracts correctly", byKey.get("qrcredit")?.gross, 230);
+    err ??= eq("no qrapi row (qr group's remainder doesn't tie out — the extra 500 breaks it)", byKey.has("qrapi"), false);
+    err ??= eq("qr group falls back to combined for the remainder (4570+70+500=5140)", byKey.get("qr")?.gross, 5140);
+    err ??= eq("qr group not reported as split", splitGroupKeys, []);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a8) c15 isSettle=false → qrcredit skips the blueplus+ credit(API) slice entirely (config off = no money reported at all, same as any other disabled channel)",
+  check: () => {
+    const channels = { c15: 190 };
+    const posBreakdown = { "blueplus+ credit(API)": 190 };
+    const { rows, extractedStandaloneCvars } = computeSendRows(
+      channels,
+      cfg({ c15: { isSettle: false } }),
+      posBreakdown,
+    );
+    let err: string | null = null;
+    err ??= eq("no rows at all (c15 disabled)", rows.length, 0);
+    err ??= eq("no extraction cleanup (nothing was extracted)", extractedStandaloneCvars, []);
+    return err;
+  },
+});
+
+function round2sum(vals: (number | undefined)[]): number {
+  return Math.round(vals.reduce((a: number, v) => a + (v ?? 0), 0) * 100) / 100;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // (b) day WITHOUT posBreakdown → exactly the old (pre-2026-08-15) single combined row
@@ -263,5 +428,60 @@ cases.push({
       refs.includes("amz-4097-2026-08-01-qrapi"),
       refs.includes("amz-4097-2026-08-01-qrstd"),
     ], [false, false]);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (e) legacyRefsForDay's new 4th param (extractedStandaloneCvars) — cleanup for standalone
+// cvars (e.g. "c15") touched by POS_EXTRACT_GROUPS today, which the g.cvars loop above never
+// covers (c15 is not a member of any SETTLEMENT_GROUPS)
+// ─────────────────────────────────────────────────────────────────────────────
+cases.push({
+  name: "(e) extractedStandaloneCvars adds the standalone cvar's plain ref for cleanup (e.g. c15) — NOT covered by the SETTLEMENT_GROUPS g.cvars loop",
+  check: () => {
+    const withoutExtract = legacyRefsForDay("4097", "2026-08-03", []);
+    const withExtract = legacyRefsForDay("4097", "2026-08-03", [], ["c15"]);
+    let err: string | null = null;
+    err ??= eq("c15 ref absent without extraction info", withoutExtract.includes("amz-4097-2026-08-03-c15"), false);
+    err ??= eq("c15 ref present once extraction touched it", withExtract.includes("amz-4097-2026-08-03-c15"), true);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(e) extractedStandaloneCvars defaults to [] when omitted (backward-compatible call signature)",
+  check: () => eq("no 4th arg == same result as []", legacyRefsForDay("4097", "2026-08-03", ["qr"]), legacyRefsForDay("4097", "2026-08-03", ["qr"], [])),
+});
+
+cases.push({
+  name: "(e) legacy refs never include 'qrcredit' itself (same precedent as qrapi/qrstd — brand new key, no prior ref of that name ever existed to clean up)",
+  check: () => {
+    const refs = legacyRefsForDay("4097", "2026-08-03", ["qr"], ["c15"]);
+    return eq("no qrcredit ref in legacy list", refs.includes("amz-4097-2026-08-03-qrcredit"), false);
+  },
+});
+
+cases.push({
+  name: "(e) end-to-end: a real qrcredit-extraction day's computeSendRows output feeds legacyRefsForDay correctly (c15 flagged, qrcredit itself not, qr group flagged since it split)",
+  check: () => {
+    const channels = { c2: 4570 + 230, c14: 70, c15: 190 };
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "blueplus+ wallet": 70,
+      "QRCredit(API)": 230,
+      "blueplus+ credit(API)": 190,
+    };
+    const { splitGroupKeys, extractedStandaloneCvars } = computeSendRows(channels, cfg(), posBreakdown);
+    const refs = legacyRefsForDay("4097", "2026-08-05", splitGroupKeys, extractedStandaloneCvars);
+    let err: string | null = null;
+    err ??= eq("qr (old combined ref) flagged — it split this run", refs.includes("amz-4097-2026-08-05-qr"), true);
+    err ??= eq("c15 (old standalone ref) flagged — qrcredit extracted its money", refs.includes("amz-4097-2026-08-05-c15"), true);
+    err ??= eq("qrcredit itself not flagged (brand new key)", refs.includes("amz-4097-2026-08-05-qrcredit"), false);
+    err ??= eq("qrapi/qrstd not flagged (brand new sub-keys, same precedent)", [
+      refs.includes("amz-4097-2026-08-05-qrapi"),
+      refs.includes("amz-4097-2026-08-05-qrstd"),
+    ], [false, false]);
+    return err;
   },
 });

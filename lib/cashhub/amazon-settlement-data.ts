@@ -179,14 +179,17 @@ export async function sendDaysToReconcile(
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยก 2 บรรทัด
     // ตามกฎ CEO (qrapi/qrstd) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง
     // — สูตรเดียวกับพรีวิว (amazon/settings/page.tsx)
-    const { rows: sendRows, splitGroupKeys } = computeSendRows(
+    const { rows: sendRows, splitGroupKeys, extractedStandaloneCvars } = computeSendRows(
       channels,
       configByCvar,
       day.posBreakdown,
     );
     // ref เก่าที่ต้องพิจารณาลบ: ก้อนแยก-cvar-ก่อนรวมกลุ่ม (เดิม) + ก้อนรวมกลุ่มของวันนี้
-    //   ถ้าวันนี้เปลี่ยนไปส่งแบบแยก qrapi/qrstd แทน (กันซ้อนเงินสองรูปแบบ — ดู legacyRefsForDay)
-    legacyRefs.push(...legacyRefsForDay(storeCode, day.sales_date, splitGroupKeys));
+    //   ถ้าวันนี้เปลี่ยนไปส่งแบบแยก qrapi/qrstd แทน + ช่องเดี่ยวเดิม (เช่น c15) ที่ POS_EXTRACT_GROUPS
+    //   ดึงยอดออกไปวันนี้ (กันซ้อนเงินสองรูปแบบ / กันยอดเต็มเดิมค้าง unmatched — ดู legacyRefsForDay)
+    legacyRefs.push(
+      ...legacyRefsForDay(storeCode, day.sales_date, splitGroupKeys, extractedStandaloneCvars),
+    );
     let dayContributed = false;
     for (const s of sendRows) {
       if (!s.companyId) {

@@ -3,7 +3,7 @@
 import type { adminClient } from "@/lib/db/server";
 import type { AmazonDayRow } from "./amazon-parse";
 import type { AmazonIv } from "./amazon-trcloud";
-import { SETTLEMENT_GROUPS } from "./amazon-settlement";
+import { SETTLEMENT_GROUPS, POS_EXTRACT_GROUPS } from "./amazon-settlement";
 import { prisma } from "@/lib/prisma";
 
 type Admin = ReturnType<typeof adminClient>;
@@ -14,11 +14,15 @@ type Admin = ReturnType<typeof adminClient>;
 //   (c2+c13+c14 — แยกย่อยตาม raw label ไม่ใช่แยกตาม cvar) → ทาสี "แมตช์แล้ว" ทั้ง 3 คอลัมน์เมื่อ
 //   กลุ่มย่อยนั้นแมตช์ (ประมาณการเดิม: ถ้าอีกกลุ่มย่อยยังไม่แมตช์ คอลัมน์จะโชว์ "แมตช์แล้ว" ทั้งที่มี
 //   เงินอีกก้อนยังรอ — known approximation เดียวกับตอนใช้ key "qr" รวมก้อนเดียว ไม่ใช่บั๊กใหม่)
-//   · key อื่น = cvar เดี่ยว
+//   · key "qrcredit" (2026-08-15, POS_EXTRACT_GROUPS) = ครอบ c2+c15 (คนละกลุ่มเดิมกันเลย — ดึง
+//   raw label ออกมาจาก 2 cvar คนละที่ ไม่ใช่ subset ของกลุ่มเดียว) · key อื่น = cvar เดี่ยว
 function cvarsForSendKey(key: string): string[] {
   for (const g of SETTLEMENT_GROUPS) {
     if (g.key === key) return g.cvars;
     if (g.posGroups?.some((pg) => pg.key === key)) return g.cvars;
+  }
+  for (const eg of POS_EXTRACT_GROUPS) {
+    if (eg.key === key) return [...new Set(eg.members.map((m) => m.cvar))];
   }
   return [key];
 }

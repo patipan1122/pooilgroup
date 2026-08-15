@@ -1,4 +1,4 @@
-// Standalone runner for CashHub Amazon "qr" settlement-group split (qrapi/qrstd) tests —
+// Standalone runner for CashHub Amazon settlement-group split (qrapi/qrstd + qrcredit) tests —
 // runs TODAY under tsx, no test framework needed:
 //   npx tsx lib/cashhub/__tests__/amazon-settlement-granular.run.ts
 // Exercises the exact same `cases` as amazon-settlement-granular.test.ts (vitest).
@@ -22,7 +22,7 @@ function main(): void {
 
   const total = cases.length;
   // eslint-disable-next-line no-console
-  console.log(`\nCashHub Amazon "qr" settlement-group split (qrapi/qrstd) — ${pass}/${total} cases passed`);
+  console.log(`\nCashHub Amazon settlement-group split (qrapi/qrstd + qrcredit) — ${pass}/${total} cases passed`);
   if (failures.length) {
     // eslint-disable-next-line no-console
     console.log("\n" + failures.join("\n") + "\n");
@@ -33,7 +33,9 @@ function main(): void {
     "  gate: posBreakdown ties out → exactly 2 rows (qrapi/qrstd) w/ correct fee math ✓ · " +
       "no posBreakdown → unchanged pre-2026-08-15 combined row ✓ · breakdown mismatch (full or " +
       "partial) → safe fallback to combined ✓ · legacy-ref cleanup targets only the old combined " +
-      "shape actually replaced this send ✓\n",
+      "shape actually replaced this send ✓ · qrcredit (POS_EXTRACT_GROUPS) extracts QRCredit(API)/" +
+      "blueplus+credit(API) with its own ~0.9% fee, independent of qrapi/qrstd tie-out, and " +
+      "un-breaks qrapi/qrstd's own tie-out on days it used to contaminate ✓\n",
   );
 }
 

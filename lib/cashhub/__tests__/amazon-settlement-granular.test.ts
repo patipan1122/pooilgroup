@@ -1,4 +1,5 @@
-// CashHub Amazon — unit tests for the "qr" settlement-group split into qrapi/qrstd
+// CashHub Amazon — unit tests for the "qr" settlement-group split into qrapi/qrstd, plus the
+// 3rd "qrcredit" POS_EXTRACT_GROUPS split (QRCredit(API) + blueplus+ credit(API))
 // (computeSendRows split decision, legacyRefsForDay). Pure (no DB).
 //
 // RUNNER: this repo has no vitest/jest installed yet (only Playwright e2e) — see
@@ -14,7 +15,7 @@
 import { describe, it } from "vitest";
 import { cases } from "./amazon-settlement-granular.cases";
 
-describe("CashHub Amazon qr-group split into qrapi/qrstd (money-safe: no split when it doesn't tie out)", () => {
+describe("CashHub Amazon qr-group split into qrapi/qrstd + qrcredit extraction (money-safe: no split when it doesn't tie out)", () => {
   for (const c of cases) {
     it(c.name, () => {
       const err = c.check();

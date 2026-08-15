@@ -198,8 +198,66 @@ export const CVAR_GROUP: Record<string, string> = Object.fromEntries(
   SETTLEMENT_GROUPS.flatMap((g) => g.cvars.map((cv) => [cv, g.key] as const)),
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POS_EXTRACT_GROUPS — ดึงเงินเฉพาะ "raw label" (ไม่ใช่ทั้ง cvar) ออกมาเป็นบรรทัดแยกต่างหาก
+// ก่อนคำนวณกลุ่ม/ช่องเดี่ยวตามปกติ — ใช้เมื่อเงินก้อนหนึ่ง "ฝัง" อยู่ในเงินก้อนใหญ่ของ cvar เดิม
+// แต่จริง ๆ ธนาคารโอนเข้าเป็นอีกก้อนแยกต่างหาก (คนละ fee/คนละจังหวะ) — ต่างจาก QR_POS_GROUPS
+// (ซึ่งแค่ "จัดกลุ่มย่อยภายในกลุ่มเดิม") ตรงที่ POS_EXTRACT_GROUPS ดึงออกจาก cvar ต้นทางไปเลย
+//
+// 2026-08-15 — CEO อนุมัติกลุ่มที่ 3 หลังยืนยันกับ DB จริง (statement KBank 1657 · 12 บรรทัด
+// เดือน 07-08/2569 ที่คำอธิบาย "จาก ... AMZ A_SD4097 CHAKKARAT..."): QRCredit(API) (raw label
+// ใน cvar c2 ปนอยู่กับ QRPayment/QRPayment(API)) และ blueplus+ credit(API) (raw label ใน cvar
+// c15 ปนอยู่กับ "blueplus+ Credit" ที่ไม่ใช่ (API)) ไม่ได้โอนรวมกับ qrapi/qrstd หรือกับ
+// "blueplus credit" ช่องเดี่ยวเดิม — แต่โอนเป็นก้อนที่ 3 แยกต่างหาก หักค่าธรรมเนียม ~0.91%
+// (วัดจากข้อมูลจริง 3 วัน: 08-03=0.9105% · 08-05=0.9130% · 08-09=0.9130% — ใกล้เคียงสูตร
+// ค่าธรรมเนียมของ "เครดิต EDC" (c12, 0.9%) มาก แสดงว่าน่าจะเป็นเรทการ์ดเน็ตเวิร์กเดียวกัน)
+//
+// ทำไมต้องมีกลไกแยกจาก QR_POS_GROUPS:
+//   1. กลุ่มนี้คร่อม 2 cvar ที่อยู่คนละที่ในโครงสร้างเดิม — c2 อยู่ใน SETTLEMENT_GROUPS "qr"
+//      ส่วน c15 เป็นช่องเดี่ยวส่งแยกบรรทัดเสมอ (ไม่เคยอยู่ในกลุ่มไหน) — ถ้าเพิ่ม c15 เข้าไปใน
+//      cvars ของกลุ่ม "qr" ตรง ๆ จะทำให้ "fallback ก้อนรวม" (เวลา tie-out ไม่ผ่าน) ปนเงิน
+//      QRPayment(API) (หลักพัน-หมื่นบาท/วัน) กับเงิน blueplus credit (หลักร้อยบาท/วัน) เข้า
+//      ก้อนเดียว ซึ่งไม่ตรงกับยอดธนาคารจริงทั้ง 2 เส้นเลย
+//   2. กลุ่มนี้ต้องมีค่าธรรมเนียมเป็นของตัวเอง (~0.9%) ในขณะที่ config ปัจจุบันของ c2/c15 ตั้ง
+//      ไว้ที่ 0% — ChannelConfig.feePercent คิดค่าธรรมเนียมระดับ cvar ทั้งก้อน สั่งแยกค่า
+//      ธรรมเนียมเฉพาะ raw label เดียวใน cvar เดียวกันไม่ได้ จึงต้องมี feePercent ของตัวเองใน
+//      POS_EXTRACT_GROUPS แทน (ไม่ใช้ configByCvar)
+// ผลพลอยได้: วันที่ QRCredit(API)≠0 (เช่น 08-05/08-09 ที่ CEO เห็นคอลัมน์ split ว่างเปล่า) —
+// เดิม tie-out ของ qrapi/qrstd ล้มเหลวเพราะ QRCredit(API) ทำให้ยอดรวม c2 เกินผลรวม raw label
+// ที่ qrapi/qrstd รู้จัก → พอดึง QRCredit(API) ออกก่อนแล้ว ส่วนที่เหลือของ c2 จะ tie-out ได้ปกติ
+// อีกครั้ง → qrapi/qrstd จะแยกสำเร็จเองในวันเหล่านั้นด้วย (ไม่ใช่แค่ qrcredit อย่างเดียว)
+export type PosExtractMember = { rawLabel: string; cvar: string };
+export type PosExtractGroup = {
+  key: string; // source_ref suffix (เช่น "qrcredit") — ต้องไม่ชนกับ key อื่นที่มีอยู่
+  label: string;
+  channelCode: string; // ledger_revenue_entry.channel_code — ต้องอยู่ใน REVENUE_CHANNELS enum
+  feePercent: number; // ค่าธรรมเนียมเหมาของกลุ่มนี้ (ไม่ใช้ configByCvar — ดู comment ด้านบน)
+  members: PosExtractMember[];
+};
+
+export const POS_EXTRACT_GROUPS: PosExtractGroup[] = [
+  {
+    key: "qrcredit",
+    label: "QRCredit + blueplus Credit (API)",
+    // ~0.9% + จ่ายช้ากว่า real-time = พฤติกรรมแบบบัตร ไม่ใช่ QR/wallet real-time — ใช้ bucket
+    // เดียวกับ c12 "เครดิต EDC" (ดู CVAR_CHANNEL_CODE) สอดคล้องกับที่มาของค่าธรรมเนียม
+    channelCode: "card",
+    // วัดจากข้อมูลจริง 3 วัน (08-03/08-05/08-09) = 0.9105–0.9130% เฉลี่ย ~0.912% — ปัดใช้ 0.9
+    // ให้ตรงกับ convention ของ c12 (เอกสารเดิมก็ปัด 0.85%+VAT7%=0.9095% ลง 0.9 เหมือนกัน)
+    feePercent: 0.9,
+    members: [
+      { rawLabel: "QRCredit(API)", cvar: "c2" },
+      { rawLabel: "blueplus+ credit(API)", cvar: "c15" },
+      // ⚠️ "blueplus+ Credit" (ไม่มี "(API)") ตั้งใจไม่รวม — ไม่มีข้อมูลจริงยืนยันว่าโอนแบบเดียวกัน
+      // (ไฟล์ POS สาขานี้เดือนนี้ไม่มีคอลัมน์ non-API เลย — ดู comment ใน amazon-parse.ts) ยังคง
+      // ไหลเข้าบรรทัดเดี่ยว "blueplus credit" (c15) เหมือนเดิมทุกประการ ไม่แตะ
+    ],
+  },
+];
+
 export type SettlementSendRow = {
-  key: string; // source_ref suffix — group key (เช่น "qr") · cvar เดี่ยว · หรือ posGroup key ("qrapi"/"qrstd")
+  key: string; // source_ref suffix — group key (เช่น "qr") · cvar เดี่ยว · posGroup key ("qrapi"/"qrstd")
+  // · หรือ POS_EXTRACT_GROUPS key ("qrcredit")
   label: string;
   channelCode: string;
   gross: number;
@@ -209,7 +267,7 @@ export type SettlementSendRow = {
   companyId: string | null;
   bankAccountId: string | null;
   memberCvars: string[];
-  split?: boolean; // true = แถวนี้คือกลุ่มย่อย (qrapi/qrstd) ของก้อนรวม ไม่ใช่ก้อนรวมทั้งกลุ่ม
+  split?: boolean; // true = แถวนี้คือกลุ่มย่อย (qrapi/qrstd/qrcredit) ของก้อนรวม ไม่ใช่ก้อนรวมทั้งกลุ่ม
 };
 
 // ยอมให้ยอด "กลุ่ม" (จาก channels/iv_channels ที่ใช้ครั้งนี้) ต่างจากผลรวม posBreakdown
@@ -219,7 +277,10 @@ const BREAKDOWN_TIE_OUT_TOLERANCE = 0.5;
 
 /**
  * แปลงยอดขายต่อวัน → "บรรทัดที่จะส่งเข้า reconcile"
- * - กลุ่มที่มี posGroups (ตอนนี้มีแค่ "qr") + posBreakdown ของวันนั้น "ครบ" (ผลรวม raw label
+ * - 0) POS_EXTRACT_GROUPS (ตอนนี้มีแค่ "qrcredit") — ถ้ามี posBreakdown + raw label ของกลุ่มนี้
+ *   มีเงิน → ดึงออกมาเป็นบรรทัดของตัวเองก่อน (ค่าธรรมเนียมของกลุ่มเอง ไม่ใช่ของ cvar ต้นทาง)
+ *   แล้วหักยอดที่ดึงออกไปแล้วออกจาก cvar ต้นทาง ก่อนคำนวณขั้น 1-2 ด้านล่าง — กันคิดซ้ำ
+ * - 1) กลุ่มที่มี posGroups (ตอนนี้มีแค่ "qr") + posBreakdown ของวันนั้น "ครบ" (ผลรวม raw label
  *   ทั้งหมดของกลุ่มตรงกับยอดกลุ่มที่ใช้จริงในคอลนี้ — กันกรณี channels เป็น iv_channels ที่
  *   TRCloud จัดหมวดใหม่ไปแล้วจนไม่ตรงกับ POS ดิบอีกต่อไป) → ส่งแยก 2 บรรทัดตาม posGroups
  *   (qrapi/qrstd — ดู QR_POS_GROUPS ด้านบน)
@@ -230,11 +291,76 @@ export function computeSendRows(
   channels: Record<string, number> | null,
   configByCvar: Map<string, ChannelConfig>,
   posBreakdown?: Record<string, number> | null,
-): { rows: SettlementSendRow[]; totalNet: number; splitGroupKeys: string[] } {
+): {
+  rows: SettlementSendRow[];
+  totalNet: number;
+  splitGroupKeys: string[];
+  // cvar เดี่ยว (ไม่อยู่ใน SETTLEMENT_GROUPS ใด ๆ เช่น "c15") ที่ POS_EXTRACT_GROUPS แตะยอดวันนี้
+  // → ref เดี่ยวเดิมของ cvar นั้นอาจค้าง unmatched ถ้ายอดวันนี้หายไปทั้งหมด/เปลี่ยน (ดู legacyRefsForDay)
+  extractedStandaloneCvars: string[];
+} {
   const { perChannel } = computeDaySettlement(channels, configByCvar);
-  const settled = perChannel.filter((s) => s.settled);
+  let settled = perChannel.filter((s) => s.settled);
   const rows: SettlementSendRow[] = [];
   const splitGroupKeys: string[] = [];
+  const extractedStandaloneCvars: string[] = [];
+
+  // 0) POS_EXTRACT_GROUPS — ดึง raw label ที่รู้แล้วว่าโอนเป็นก้อนแยกออกจาก cvar ต้นทางก่อน
+  //    (ดู comment เหนือ POS_EXTRACT_GROUPS ด้านบนไฟล์) — ต้อง "มี posBreakdown" เท่านั้น (เดือน
+  //    เก่าไม่มี posBreakdown เลย → ปล่อยเงินอยู่ใน cvar เดิมเหมือนก่อน 2026-08-15 ทั้งหมด ปลอดภัย
+  //    เพราะแยกไม่ได้จริง ๆ ว่า raw label ไหนอยู่ไหน)
+  if (posBreakdown) {
+    for (const eg of POS_EXTRACT_GROUPS) {
+      const present: { cvar: string; amt: number }[] = [];
+      for (const m of eg.members) {
+        const amt = posBreakdown[m.rawLabel];
+        if (!amt) continue;
+        if (!settled.some((s) => s.cvar === m.cvar)) continue; // cvar นี้ settle=false ตาม config → ข้าม
+        present.push({ cvar: m.cvar, amt: round2(amt) });
+      }
+      if (present.length === 0) continue; // วันนี้ไม่มีเงินกลุ่มนี้เลย → ไม่ต้องดึงอะไร
+      const egGross = round2(present.reduce((a, p) => a + p.amt, 0));
+      const egFee = round2((egGross * eg.feePercent) / 100);
+      const egNet = round2(egGross - egFee);
+      const touchedCvars = [...new Set(present.map((p) => p.cvar))];
+      const rep =
+        settled.find((s) => touchedCvars.includes(s.cvar) && s.companyId) ??
+        settled.find((s) => touchedCvars.includes(s.cvar));
+      if (!rep) continue; // ไม่ควรเกิด (เช็ค settled.some ไปแล้วข้างบน) — กันพังเฉย ๆ
+      rows.push({
+        key: eg.key,
+        label: eg.label,
+        channelCode: eg.channelCode,
+        gross: egGross,
+        fee: egFee,
+        net: egNet,
+        feePercent: eg.feePercent,
+        companyId: rep.companyId,
+        bankAccountId: rep.bankAccountId,
+        memberCvars: touchedCvars,
+        split: true,
+      });
+      // หมายเหตุ: "qrcredit" (key ของกลุ่มนี้) ไม่ต้องใส่ splitGroupKeys — ไม่เคยมี ref รูปแบบนี้
+      // มาก่อนเลย (เป็นบรรทัดใหม่ล้วน ๆ) ต่างจาก "qr" ที่มี ref ก้อนรวมเดิมอยู่ก่อนแล้วต้องลบทิ้ง
+      // (เหมือนกับที่ qrapi/qrstd เองก็ไม่ถูกใส่ splitGroupKeys ด้วยเหตุผลเดียวกัน — ดู (d) ใน test)
+      settled = settled
+        .map((s) => {
+          const p = present.find((x) => x.cvar === s.cvar);
+          if (!p) return s;
+          const newGross = round2(s.gross - p.amt);
+          const cfg = configByCvar.get(s.cvar) ?? DEFAULT_CHANNELS.find((c) => c.cvar === s.cvar);
+          const feePercent = cfg?.feePercent ?? 0;
+          const newFee = round2((newGross * feePercent) / 100);
+          return { ...s, gross: newGross, fee: newFee, net: round2(newGross - newFee) };
+        })
+        .filter((s) => s.gross > 0.004); // ดึงออกหมดพอดี (เหลือ ~0) → ตัดทิ้ง ไม่ส่งบรรทัด 0 บาท
+      // cvar เดี่ยวที่ถูกแตะ (ไม่อยู่ใน SETTLEMENT_GROUPS ใด ๆ) → จำไว้เผื่อ ref เดี่ยวเดิมค้าง
+      // (cvar ที่อยู่ในกลุ่มอยู่แล้ว เช่น c2 ถูก legacyRefsForDay ลบทุกวันอยู่แล้วจาก g.cvars loop)
+      for (const cv of touchedCvars) {
+        if (!CVAR_GROUP[cv] && !extractedStandaloneCvars.includes(cv)) extractedStandaloneCvars.push(cv);
+      }
+    }
+  }
 
   // 1) ช่องที่โอนรวมเข้าบัญชีก้อนเดียว (ปกติ) — หรือแยก 2 กลุ่มย่อยตามกฎ CEO (posGroups)
   for (const g of SETTLEMENT_GROUPS) {
@@ -334,13 +460,16 @@ export function computeSendRows(
   }
 
   const totalNet = round2(rows.reduce((a, r) => a + r.net, 0));
-  return { rows, totalNet, splitGroupKeys };
+  return { rows, totalNet, splitGroupKeys, extractedStandaloneCvars };
 }
 
 /** สร้างรายการ source_ref เก่าที่ต้องพิจารณาลบ (legacy-shape cleanup) สำหรับ 1 วัน:
  *  - ref แบบ "แยก cvar ก่อนมีการรวมกลุ่ม" (ก่อน 2026-06) — เดิมอยู่แล้ว ลบทุกครั้งที่ส่งวันนั้น
  *  - ref แบบ "รวมกลุ่มก้อนเดียว" (เช่น "...-qr") — ลบเฉพาะกลุ่มที่วันนี้เปลี่ยนไปส่งแบบแยก
  *    กลุ่มย่อยแทน (splitGroupKeys) กันไม่ให้ก้อนรวมเก่าค้าง unmatched ซ้อนกับบรรทัดใหม่
+ *  - ref แบบ "ช่องเดี่ยวเดิม" ที่ POS_EXTRACT_GROUPS ดึงเงินออกไปวันนี้ (extractedStandaloneCvars
+ *    เช่น "c15") — ต่างจาก g.cvars loop ด้านล่างตรงที่ cvar เหล่านี้ไม่เคยอยู่ใน SETTLEMENT_GROUPS
+ *    เลย (ไม่ถูก loop ด้านล่างครอบคลุม) กันยอดเต็มเดิม (ก่อนดึง qrcredit ออก) ค้าง unmatched
  *  ตัวลบจริง (SQL) อยู่ที่ sendDaysToReconcile — ฟังก์ชันนี้คืนแค่ "รายชื่อ ref ที่ควรพิจารณา"
  *  การป้องกันแถว matched/confirmed อยู่ที่ WHERE match_state='unmatched' ในฝั่ง SQL (ไม่แตะที่นี่)
  *
@@ -352,11 +481,13 @@ export function legacyRefsForDay(
   storeCode: string,
   salesDate: string,
   splitGroupKeys: string[],
+  extractedStandaloneCvars: string[] = [],
 ): string[] {
   const refs: string[] = [];
   for (const g of SETTLEMENT_GROUPS) {
     for (const cv of g.cvars) refs.push(`amz-${storeCode}-${salesDate}-${cv}`);
   }
   for (const gKey of splitGroupKeys) refs.push(`amz-${storeCode}-${salesDate}-${gKey}`);
+  for (const cv of extractedStandaloneCvars) refs.push(`amz-${storeCode}-${salesDate}-${cv}`);
   return refs;
 }
