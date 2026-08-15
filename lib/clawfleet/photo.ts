@@ -32,6 +32,18 @@ export function isSafeKeySegment(v: string): boolean {
   return SAFE_KEY_SEGMENT.test(v);
 }
 
+// machine.code ตามจริงไม่ใช่รหัสระบบ ASCII เสมอไป (พบ 17/239 ตู้ตั้งชื่อเป็นภาษาไทย/มีวรรค
+// เช่น "711 ลำทะเมนชัย" · "บ้านเอื้ออาทร 1") — isSafeKeySegment ปฏิเสธหมด → อัปรูปพังถาวรทุกครั้ง
+// สำหรับตู้กลุ่มนี้ (2026-08-15). ต่างจาก orgId/eventId ที่ผูกกับ auth/lookup จริงต้อง reject
+// ตรงๆ ห้ามเดา — machineCode ในนี้ใช้แค่จัดโฟลเดอร์ R2 ให้อ่านง่าย (ความไม่ซ้ำของไฟล์มาจาก
+// eventId+รูปสุ่มท้ายชื่ออยู่แล้ว) จึง sanitize แทนการปฏิเสธได้อย่างปลอดภัย.
+export function sanitizeKeySegment(v: string, fallback = "x"): string {
+  const cleaned = v
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "");
+  return cleaned || fallback;
+}
+
 // ตรวจชนิดรูปจาก magic bytes → คืนนามสกุล + content-type ที่ถูกต้อง
 // (เดิม hardcode ".webp"/"image/webp" เสมอ · แต่ client บน iOS ส่ง JPEG มา — ถ้า label ผิด
 //  metadata บน R2 จะไม่ตรงกับไบต์จริง. validateImageBuffer กันฟอร์แมตแปลกไว้แล้ว จึง default = jpg.)
@@ -52,16 +64,17 @@ export function photoKey(opts: {
   phase: PhotoPhase;
   ext?: string;
 }): string {
-  // orgId/machineCode/eventId ถูกฝังเป็น path segment → ต้อง sanitize ก่อน (กัน traversal).
+  // orgId/eventId ผูกกับ auth/lookup จริง (ดูใน upload/route.ts) → reject ตรงๆ ถ้าไม่ปลอดภัย
   if (!isSafeKeySegment(opts.orgId)) throw new Error("invalid orgId for photo key");
-  if (!isSafeKeySegment(opts.machineCode)) throw new Error("invalid machineCode for photo key");
   if (!isSafeKeySegment(opts.eventId)) throw new Error("invalid eventId for photo key");
   const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
   const ext = opts.ext ?? "jpg";
+  // machineCode ใช้แค่จัดโฟลเดอร์ → sanitize แทน reject (ตู้ชื่อภาษาไทย/มีวรรคยังอัปรูปได้)
+  const safeMachineCode = sanitizeKeySegment(opts.machineCode, "machine");
   // 🛡️ anti-tamper: สุ่ม suffix ต่อการอัปทุกครั้ง → key ไม่ซ้ำ → อัปทับหลักฐานเดิมไม่ได้
   // (last-write-wins ของ R2 จะ overwrite ก็ต่อเมื่อ key เดียวกัน — เราทำให้ key ไม่มีวันซ้ำ)
   const rand = randomUUID().slice(0, 8);
-  return `clawfleet/${opts.orgId}/${ym}/${opts.machineCode}/${opts.eventId}/${opts.phase}-${rand}.${ext}`;
+  return `clawfleet/${opts.orgId}/${ym}/${safeMachineCode}/${opts.eventId}/${opts.phase}-${rand}.${ext}`;
 }
 
 export async function uploadEventPhoto(opts: {

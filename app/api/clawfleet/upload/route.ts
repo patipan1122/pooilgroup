@@ -55,9 +55,12 @@ export async function POST(req: NextRequest) {
   if (!machineCode || !eventScopeId || !PHASES.includes(phase)) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
-  // 🛡️ path-safety: machineCode/eventScopeId ถูกฝังลง object key (path segment) → ปฏิเสธค่าที่มี
-  // "/" หรือ ".." (path traversal) ก่อนสร้าง key. orgId ตรวจแล้วว่า == session.user.org_id (uuid ปลอดภัย).
-  if (!isSafeKeySegment(machineCode) || !isSafeKeySegment(eventScopeId)) {
+  // 🛡️ path-safety: eventScopeId ถูกฝังลง object key + ใช้ resolve session/สิทธิ์ด้านล่าง →
+  // ปฏิเสธค่าที่มี "/" หรือ ".." (path traversal) ตรงๆ. orgId ตรวจแล้วว่า == session.user.org_id.
+  // machineCode ไม่ reject ตรงนี้ (2026-08-15 · เจอ 17/239 ตู้ใช้ชื่อภาษาไทย/มีวรรคเป็น code
+  // เช่น "711 ลำทะเมนชัย" → เดิมโดนบล็อกอัปรูปถาวรทุกครั้ง) — ใช้แค่จัดโฟลเดอร์ R2 ให้อ่านง่าย
+  // ไม่ผูกกับ auth/lookup ใดๆ → sanitizeKeySegment ใน photoKey() จัดการให้ปลอดภัยแทน
+  if (!isSafeKeySegment(eventScopeId)) {
     return NextResponse.json({ error: "invalid field format" }, { status: 400 });
   }
 
