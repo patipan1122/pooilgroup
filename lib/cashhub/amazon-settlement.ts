@@ -149,11 +149,17 @@ export type QrPosGroup = {
 // เป็น 2 ก้อนตาม API/ไม่ API ไม่ใช่ตาม cvar — qrapi ครอบ QRPayment(API) + blueplus wallet(API)
 // (CEO ระบุตรงตัว) · qrstd ครอบ QRPayment + blueplus wallet (CEO ระบุตรงตัว)
 //
-// ⚠️ INFERENCE (ไม่ใช่คำสั่ง CEO ตรงๆ) — CEO ไม่ได้พูดถึง QRCredit(API)/QRManual/QR Manual(API)
-// เลย ใส่ตามรูปแบบ "(API) → qrapi · ไม่มี (API) → qrstd" โดย symmetry:
-//   - QRCredit(API) → qrapi: ยอดเล็ก/หายาก (~฿440/เดือน ตาม comment เดิมใน amazon-parse.ts)
+// ⚠️ INFERENCE (ไม่ใช่คำสั่ง CEO ตรงๆ) — CEO ไม่ได้พูดถึง QRManual/QR Manual(API) เลย
+// ใส่ตามรูปแบบ "(API) → qrapi · ไม่มี (API) → qrstd" โดย symmetry:
 //   - QR Manual(API) → qrapi, QRManual → qrstd: สาขานี้ข้อมูลจริงเป็น ฿0 เสมอสองคอลัมน์นี้ แต่ใส่ไว้
 //     ให้ถูกหลักการสำหรับสาขา/ข้อมูลอนาคตที่อาจมีตัวเลข — รอ human confirm/แก้ทีหลัง
+//
+// ✅ ยืนยันแล้วด้วย DB จริงเทียบ statement ธนาคาร 10 วัน (2026-08-15): QRCredit(API) **ไม่ได้**
+// รวมกับ qrapi — มันไปช่องทางที่ 3 แยกต่างหาก (บัญชี "AMZ A_SD4097" คนละเลขบัญชีเลย พร้อมกับ
+// blueplus+ credit(API)) → เดิมเคยเดาไว้ผิด (08-05/08-09 ที่ QRCredit(API)≠0 ยอด qrapi เกินยอด
+// ธนาคารจริงพอดีเท่ากับ QRCredit(API) เป๊ะทั้ง 2 วัน) → ตัดออกจาก rawLabels · วันที่ QRCredit(API)
+// ≠0 จะทำให้ tiesOut=false (breakdownSum ไม่ครบ gross) → fallback ไปส่งรวม 1 บรรทัดแบบเดิมอัตโนมัติ
+// (ปลอดภัย — ไม่บังคับแยก 2 กลุ่มทั้งที่จริงมี 3 กระแสเงินซ่อนอยู่)
 export const QR_POS_GROUPS: QrPosGroup[] = [
   {
     key: "qrapi",
@@ -161,7 +167,6 @@ export const QR_POS_GROUPS: QrPosGroup[] = [
     rawLabels: [
       "QRPayment(API)",
       "blueplus+ wallet (API)",
-      "QRCredit(API)", // inference — ดู comment ด้านบน
       "QR Manual(API)", // inference — ดู comment ด้านบน
     ],
   },

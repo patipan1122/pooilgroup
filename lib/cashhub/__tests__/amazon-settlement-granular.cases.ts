@@ -93,14 +93,13 @@ cases.push({
 });
 
 cases.push({
-  name: "(a) QRCredit(API)/QR Manual(API)/QRManual fold into the correct bucket by (API) symmetry",
+  name: "(a) QR Manual(API)/QRManual fold into the correct bucket by (API) symmetry (QRCredit(API) excluded — see next case)",
   check: () => {
-    // QR Manual(API)=20 (→ qrapi), QRManual=10 (→ qrstd), QRCredit(API)=5 (→ qrapi)
-    const channels = { c2: 4570 + 5, c13: 30, c14: 70 };
+    // QR Manual(API)=20 (→ qrapi), QRManual=10 (→ qrstd) — no QRCredit(API) here so the split still ties out
+    const channels = { c2: 4570, c13: 30, c14: 70 };
     const posBreakdown = {
       "QRPayment(API)": 4505,
       QRPayment: 65,
-      "QRCredit(API)": 5,
       "QR Manual(API)": 20,
       QRManual: 10,
       "blueplus+ wallet": 70,
@@ -108,8 +107,33 @@ cases.push({
     const { rows } = computeSendRows(channels, cfg(), posBreakdown);
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
-    err ??= eq("qrapi includes QRCredit(API)+QR Manual(API)", byKey.get("qrapi")?.gross, 4505 + 5 + 20);
+    err ??= eq("qrapi includes QR Manual(API)", byKey.get("qrapi")?.gross, 4505 + 20);
     err ??= eq("qrstd includes QRManual", byKey.get("qrstd")?.gross, 65 + 70 + 10);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a2) QRCredit(API) nonzero → does NOT fold into qrapi, breaks tie-out → safe fallback to 1 combined row",
+  check: () => {
+    // DB-verified 2026-08-15 against real bank data (08-05/08-09): QRCredit(API) settles via a
+    // THIRD separate bank line (account "AMZ A_SD4097"), not bundled with qrapi. Forcing it into
+    // qrapi overstated the send amount by exactly the QRCredit(API) value on both real days it
+    // occurred. Correct behavior: it's excluded from both rawLabels arrays, so the breakdown sum
+    // falls short of the cvar-level gross by that amount → tiesOut=false → fallback to 1 line,
+    // exactly like a day with no posBreakdown at all (safe: never silently mis-splits).
+    const channels = { c2: 4570 + 230, c14: 70 }; // QRCredit(API)=230, matching the real 08-05 gap
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "QRCredit(API)": 230,
+      "blueplus+ wallet": 70,
+    };
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg(), posBreakdown);
+    let err: string | null = null;
+    err ??= splitGroupKeys.length === 0 ? null : `expected no split, got splitGroupKeys=${JSON.stringify(splitGroupKeys)}`;
+    err ??= rows.length === 1 ? null : `expected 1 combined row, got ${rows.length}`;
+    err ??= eq("combined row gross == full total incl. QRCredit(API)", rows[0]?.gross, 4570 + 230 + 70);
     return err;
   },
 });
