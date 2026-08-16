@@ -15,6 +15,7 @@ import { writeAudit } from "@/lib/chairops/audit/log";
 import { canWriteOff, canSelfApproveWriteOff } from "@/lib/chairops/auth/role-guards";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
+import { pushBranchDepositsToLedger } from "@/lib/chairops/reconcile/ledger-push";
 import { ChairopsAlertKind, ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
 import { zUUID, zBaht } from "@/lib/chairops/schemas/zod-helpers";
 
@@ -306,4 +307,91 @@ export async function rejectWriteOff(formData: FormData) {
   revalidatePath("/chairops/write-offs");
   revalidatePath(`/chairops/reconcile/${wo.branchId}`);
   redirect(`/chairops/write-offs?rejected=${writeOffId}`);
+}
+
+// ----- Reconcile bridge (CEO 2026-08-15): ตั้งค่าบริษัท/บัญชีธนาคารของสาขา
+// + ปุ่มส่งยอดฝากเข้า ledger_revenue_entry (bank-recon) — ดู lib/chairops/
+// reconcile/ledger-push.ts สำหรับกลไกกันส่งซ้ำ -----
+
+const reconcileConfigSchema = z.object({
+  branchId: zUUID(),
+  companyId: zUUID(),
+  bankAccountId: zUUID(),
+});
+
+export async function saveReconcileAccountConfig(formData: FormData) {
+  const session = await requireRole("OFFICE");
+  const parsed = reconcileConfigSchema.safeParse({
+    branchId: formData.get("branchId"),
+    companyId: formData.get("companyId"),
+    bankAccountId: formData.get("bankAccountId"),
+  });
+  if (!parsed.success) {
+    const branchId = String(formData.get("branchId") ?? "");
+    redirect(
+      `/chairops/reconcile/${branchId}?error=${encodeURIComponent("กรุณาเลือกบริษัทและบัญชีธนาคารให้ครบ")}`
+    );
+  }
+  const { branchId, companyId, bankAccountId } = parsed.data;
+  const orgId = session.user.orgId;
+  const branch = await prisma.chairopsBranch.findFirst({
+    where: { id: branchId, orgId },
+    select: { reconcileCompanyId: true, reconcileBankAccountId: true },
+  });
+  if (!branch) redirect(`/chairops/reconcile?error=${encodeURIComponent("ไม่พบสาขา")}`);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsBranch.updateMany({
+      where: { id: branchId, orgId },
+      data: { reconcileCompanyId: companyId, reconcileBankAccountId: bankAccountId },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "branch.reconcile_account.save",
+        entity: "ChairopsBranch",
+        entityId: branchId,
+        oldValue: {
+          reconcileCompanyId: branch!.reconcileCompanyId,
+          reconcileBankAccountId: branch!.reconcileBankAccountId,
+        },
+        newValue: { companyId, bankAccountId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/chairops/reconcile/${branchId}`);
+  redirect(`/chairops/reconcile/${branchId}?reconcileConfigSaved=1`);
+}
+
+const sendDepositsSchema = z.object({ branchId: zUUID() });
+
+export async function sendDepositsToReconcile(formData: FormData) {
+  const session = await requireRole("OFFICE");
+  const parsed = sendDepositsSchema.safeParse({ branchId: formData.get("branchId") });
+  if (!parsed.success) {
+    redirect(`/chairops/reconcile?error=${encodeURIComponent("ข้อมูลไม่ถูกต้อง")}`);
+  }
+  const { branchId } = parsed.data;
+  const orgId = session.user.orgId;
+
+  const result = await pushBranchDepositsToLedger(orgId, branchId);
+
+  await writeAudit({
+    userId: session.user.id,
+    action: "chairops_deposit.send_to_ledger",
+    entity: "ChairopsBranch",
+    entityId: branchId,
+    newValue: result,
+  });
+
+  if (!result.ok) {
+    redirect(`/chairops/reconcile/${branchId}?error=${encodeURIComponent(result.error ?? "ส่งไม่สำเร็จ")}`);
+  }
+
+  revalidatePath(`/chairops/reconcile/${branchId}`);
+  redirect(
+    `/chairops/reconcile/${branchId}?reconcileSent=${result.inserted}&reconcileSkippedReview=${result.pendingReviewSkipped}`
+  );
 }

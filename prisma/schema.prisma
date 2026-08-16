@@ -3003,6 +3003,14 @@ model ChairopsBranch {
   // Drift refactor (SPEC §2.3) — anchors per-branch reconcile window
   lastReconcileClosedAt DateTime?
 
+  // CEO 2026-08-15: บริษัท/บัญชีธนาคารที่ยอดฝากสาขานี้ควรเข้าจริง — ใช้ตอนกด
+  // "ส่งเข้าบัญชี reconcile" (ledger_revenue_entry, source_type=CHAIROPS).
+  // uuid ตรงชนิดกับ companies.id / ledger_bank_account.id (ทั้งคู่ไม่มี Prisma
+  // relation ตรงนี้ — ตารางปลายทางไม่มี Prisma model, เหมือน pattern เดิมของ
+  // cashhub_amazon_channel_config).
+  reconcileCompanyId     String? @db.Uuid
+  reconcileBankAccountId String? @db.Uuid
+
   // Alert routing (Owner pre-commit #2 · SPEC §2.11)
   secondaryAlertUserId String?
   secondaryAlertUser   ChairopsUser? @relation("chairops_secondary_alert", fields: [secondaryAlertUserId], references: [id])

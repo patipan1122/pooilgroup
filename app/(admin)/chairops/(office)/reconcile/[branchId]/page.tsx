@@ -20,12 +20,16 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
+import { getBranchReconcileSummary } from "@/lib/chairops/reconcile/ledger-push";
+import { adminClient } from "@/lib/db/server";
+import { listCompanies, listBankAccounts } from "@/lib/cashhub/amazon-settlement-data";
 import { thaiDate } from "@/lib/chairops/utils/format";
 import {
   ReconcileShell,
   normalizeView,
 } from "../_components/reconcile-shell";
 import { WriteOffForm } from "./write-off-form";
+import { ReconcileAccountSection } from "./reconcile-account-section";
 
 export default async function ReconcileBranchPage({
   params,
@@ -46,6 +50,9 @@ export default async function ReconcileBranchPage({
     pcv?: string;
     chair?: string;
     month?: string;
+    reconcileConfigSaved?: string;
+    reconcileSent?: string;
+    reconcileSkippedReview?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -55,9 +62,22 @@ export default async function ReconcileBranchPage({
 
   const branch = await prisma.chairopsBranch.findFirst({
     where: { id: branchId, orgId },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      reconcileCompanyId: true,
+      reconcileBankAccountId: true,
+    },
   });
   if (!branch) notFound();
+
+  // CEO 2026-08-15: บริษัท/บัญชีธนาคาร + สรุปยอดฝากที่พร้อมส่งเข้า reconcile
+  const admin = adminClient();
+  const [companies, bankAccounts, reconcileSummary] = await Promise.all([
+    listCompanies(admin, orgId),
+    listBankAccounts(admin, orgId),
+    getBranchReconcileSummary(orgId, branchId),
+  ]);
 
   if (sp.recompute === "1") {
     await recomputeDriftForBranch(branchId);
@@ -144,6 +164,39 @@ export default async function ReconcileBranchPage({
             }}
           >
             บันทึก dispute เรียบร้อย · log ไปที่ผู้ที่เกี่ยวข้องแล้ว
+          </div>
+        )}
+        {sp.reconcileConfigSaved && (
+          <div
+            className="card"
+            style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              borderColor: "var(--ok-border)",
+              background: "var(--ok-soft)",
+              color: "var(--ok)",
+              fontSize: 13,
+            }}
+          >
+            บันทึกบริษัท/บัญชีธนาคารของสาขานี้แล้ว
+          </div>
+        )}
+        {sp.reconcileSent != null && (
+          <div
+            className="card"
+            style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              borderColor: "var(--ok-border)",
+              background: "var(--ok-soft)",
+              color: "var(--ok)",
+              fontSize: 13,
+            }}
+          >
+            ส่งเข้าบัญชี reconcile แล้ว {sp.reconcileSent} ใบ
+            {Number(sp.reconcileSkippedReview ?? 0) > 0
+              ? ` · ข้าม ${sp.reconcileSkippedReview} ใบ (รอตรวจสอบ requiresReview ก่อน)`
+              : ""}
           </div>
         )}
       </div>
@@ -293,6 +346,22 @@ export default async function ReconcileBranchPage({
           (&lt;500฿ ใช้ MANAGER · ≥500฿ ต้องให้ CEO) · อนุมัติแล้วยอดเริ่มนับใหม่จากวันนั้น
         </p>
         <WriteOffForm branchId={branchId} today={today} />
+      </section>
+
+      {/* CEO 2026-08-15: ส่งยอดฝากเข้าบัญชี reconcile (LedgerLine bank-recon) —
+          ตั้งค่าบริษัท/บัญชีธนาคาร แล้วกดส่งทั้งสาขา · กันส่งซ้ำอัตโนมัติ */}
+      <section
+        className="card"
+        style={{ margin: "0 22px 32px", padding: 18, maxWidth: 520 }}
+      >
+        <ReconcileAccountSection
+          branchId={branchId}
+          companies={companies}
+          bankAccounts={bankAccounts}
+          currentCompanyId={branch.reconcileCompanyId}
+          currentBankAccountId={branch.reconcileBankAccountId}
+          summary={reconcileSummary}
+        />
       </section>
     </>
   );

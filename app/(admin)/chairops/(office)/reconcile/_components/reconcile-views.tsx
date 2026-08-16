@@ -1005,6 +1005,7 @@ export function DayDetailPanel({
                   <th className="num">ยอดฝาก</th>
                   <th className="num">ค่าธรรมเนียม</th>
                   <th>สลิป</th>
+                  <th>reconcile</th>
                 </tr>
               </thead>
               <tbody>
@@ -1028,6 +1029,24 @@ export function DayDetailPanel({
                         </a>
                       ) : (
                         <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {d.ledgerStatus === "sent_matched" ? (
+                        <span
+                          className="text-matched-iridescent"
+                          style={{ fontSize: 11 }}
+                        >
+                          ● จับคู่แล้ว
+                        </span>
+                      ) : d.ledgerStatus === "sent_unmatched" ? (
+                        <span className="chip chip-accent" style={{ fontSize: 10 }}>
+                          ส่งแล้ว · รอจับคู่
+                        </span>
+                      ) : (
+                        <span className="chip" style={{ fontSize: 10, color: "var(--text-3)" }}>
+                          ยังไม่ส่ง
+                        </span>
                       )}
                     </td>
                   </tr>

@@ -779,6 +779,10 @@ export interface DayDetailDeposit {
   // CEO 2026-06-29: who pressed ฝาก (role snapshot) → split แม่บ้านฝาก vs ออฟฟิศฝาก.
   depositedByRole: string | null;
   depositorKind: "maid" | "office" | "unknown";
+  // CEO 2026-08-15: สถานะส่งเข้าบัญชี reconcile (ledger_revenue_entry) — ดู
+  // lib/chairops/reconcile/ledger-push.ts. "sent_matched" = จับคู่กับ statement
+  // ธนาคารจริงแล้ว (โชว์สีรุ้งเหมือนหน้า LedgerLine bank-recon).
+  ledgerStatus: "not_sent" | "sent_unmatched" | "sent_matched";
 }
 // CEO 2026-06-29: write-offs ("ตัดเงิน/ตั้งต้น") effective on this day, so the
 // ✂️ marker in the ledger row can drill straight into who cut how much and why.
@@ -875,6 +879,19 @@ export async function getReconcileDayDetail(args: {
     }),
   ]);
 
+  // CEO 2026-08-15: สถานะส่งเข้าบัญชี reconcile ต่อใบฝาก — query แยกเพราะต้องรู้
+  // deposit id ก่อน (source_ref derive จาก id เสมอ, ดู
+  // lib/chairops/reconcile/ledger-push.ts). ไม่มีคอลัมน์เก็บสถานะซ้ำฝั่ง ChairOps
+  // — ledger_revenue_entry.match_state คือ source of truth เดียว กันข้อมูล 2 ที่ไม่ตรงกัน.
+  const depositSourceRefs = deposits.map((d) => `chairops-deposit-${d.id}`);
+  const ledgerStatusRows = depositSourceRefs.length
+    ? await prisma.$queryRaw<{ source_ref: string; match_state: string }[]>`
+        SELECT source_ref, match_state FROM ledger_revenue_entry
+        WHERE org_id = ${orgId}::uuid AND source_type = 'CHAIROPS'
+          AND source_ref = ANY(${depositSourceRefs})`
+    : [];
+  const ledgerStatusByRef = new Map(ledgerStatusRows.map((r) => [r.source_ref, r.match_state]));
+
   const now = Date.now();
   const collOut: DayDetailCollection[] = collections.map((c) => ({
     id: c.id,
@@ -889,16 +906,22 @@ export async function getReconcileDayDetail(args: {
         : null,
     slipUrl: c.slipPhotoUrl ?? c.evidencePhotoUrl ?? null,
   }));
-  const depOut: DayDetailDeposit[] = deposits.map((d) => ({
-    id: d.id,
-    depositedAt: formatDateTime(d.depositedAt),
-    maidName: d.maid?.displayName ?? "—",
-    depositedAmount: d.depositedAmount,
-    bankFee: d.bankFee,
-    slipUrl: d.slipPhotoUrl ?? null,
-    depositedByRole: d.depositedByRole ?? null,
-    depositorKind: depositActorKind(d.depositedByRole),
-  }));
+  const depOut: DayDetailDeposit[] = deposits.map((d) => {
+    const state = ledgerStatusByRef.get(`chairops-deposit-${d.id}`);
+    const ledgerStatus: DayDetailDeposit["ledgerStatus"] =
+      state == null ? "not_sent" : state === "matched" ? "sent_matched" : "sent_unmatched";
+    return {
+      id: d.id,
+      depositedAt: formatDateTime(d.depositedAt),
+      maidName: d.maid?.displayName ?? "—",
+      depositedAmount: d.depositedAmount,
+      bankFee: d.bankFee,
+      slipUrl: d.slipPhotoUrl ?? null,
+      depositedByRole: d.depositedByRole ?? null,
+      depositorKind: depositActorKind(d.depositedByRole),
+      ledgerStatus,
+    };
+  });
 
   // CEO 2026-06-29: per-origin split (มือ / CSV / Office) for this day's
   // collections — surfaces "how much was backfilled by CSV vs handed in by the
