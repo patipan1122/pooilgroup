@@ -16,6 +16,7 @@ import {
   computeLineHash,
   computeBatchFingerprint,
   suggestMatches,
+  findDuplicateTxnIds,
 } from "@/lib/ledger/bank-statement-reconcile";
 import {
   syncTrcloudRevenue,
@@ -69,10 +70,17 @@ async function fileToContent(file: File): Promise<string> {
 // or wrong account) → caller blocks. Tolerance 1 satang (rounding only).
 type BalanceRow = { txnDate: string; amountSatang: number; balanceSatang: number };
 
-function checkBalanceContinuity(rows: BalanceRow[]): { ok: true } | { ok: false; message: string } {
-  if (rows.length <= 1) return { ok: true };
+// ok:true also returns `orderedRows` — the rows re-sorted OLDEST→NEWEST once we've
+// determined which direction the file is in. Downstream cross-batch checks need a
+// known chronological order to find "the first row" reliably.
+type ContinuityResult =
+  | { ok: true; orderedRows: BalanceRow[] }
+  | { ok: false; message: string };
+
+function checkBalanceContinuity(rows: BalanceRow[]): ContinuityResult {
+  if (rows.length <= 1) return { ok: true, orderedRows: rows };
   // No usable balance data (e.g. an adapter that doesn't populate it) → can't verify.
-  if (rows.every((r) => r.balanceSatang === 0)) return { ok: true };
+  if (rows.every((r) => r.balanceSatang === 0)) return { ok: true, orderedRows: rows };
 
   const TOL = 1; // satang
   const firstBreak = (rs: BalanceRow[]): number => {
@@ -84,10 +92,10 @@ function checkBalanceContinuity(rows: BalanceRow[]): { ok: true } | { ok: false;
   };
 
   const fwd = firstBreak(rows);
-  if (fwd === -1) return { ok: true };
+  if (fwd === -1) return { ok: true, orderedRows: rows };
   const reversed = [...rows].reverse();
   const rev = firstBreak(reversed);
-  if (rev === -1) return { ok: true };
+  if (rev === -1) return { ok: true, orderedRows: reversed };
 
   // Both directions break → genuinely inconsistent. Report the break from whichever
   // direction chained further (more informative = closer to the true chronological order).
@@ -110,6 +118,191 @@ function checkBalanceContinuity(rows: BalanceRow[]): { ok: true } | { ok: false;
       `แต่ไฟล์ระบุยอดคงเหลือ ฿${baht(curr.balanceSatang)} (ต่างกัน ฿${baht(Math.abs(curr.balanceSatang - expected))}). ` +
       `ไฟล์อาจมีรายการขาดหาย ยอดเพี้ยน หรือเลือกบัญชีผิด — กรุณาตรวจไฟล์/บัญชีแล้วลองใหม่.`,
   };
+}
+
+// ── Cross-batch continuity guard ────────────────────────────────────────────
+// checkBalanceContinuity() above only verifies a file chains internally. This
+// checks the file ties into what's ALREADY in the ledger for the target account:
+// the new file's opening balance should equal the account's last known closing
+// balance. A break here usually means the wrong account was picked, or a period
+// was skipped. WARN only (not a hard block) — legitimate backfills of an older,
+// not-yet-imported period will also look "discontinuous" against the latest data.
+const bahtFmt = (s: number) => (s / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export type ContinuityFlag = {
+  ok: boolean;
+  lastBalanceSatang: number;
+  lastTxnDate: string;
+  fileOpeningBalanceSatang?: number;
+  diffSatang?: number;
+};
+
+type LastKnown = { balanceSatang: number; txnDate: string };
+
+// balance_satang is bigint in Postgres → node-postgres hands it back as a JS BigInt,
+// which can't be mixed with the plain `number` amounts parsed from the file (throws
+// at runtime). Cast to ::text in SQL and parse with Number() here, same pattern the
+// existing duplicate-check query in commitImportAction already uses.
+async function getLastKnownBalance(bankAccountId: string): Promise<LastKnown | null> {
+  const rows = await prisma.$queryRaw<{ balanceSatang: string; txnDate: string }[]>`
+    SELECT balance_satang::text as "balanceSatang", txn_date::text as "txnDate"
+    FROM ledger_bank_txn
+    WHERE bank_account_id = ${bankAccountId}::uuid
+    ORDER BY txn_date DESC, row_index DESC, id DESC
+    LIMIT 1
+  `;
+  const r = rows[0];
+  return r ? { balanceSatang: Number(r.balanceSatang), txnDate: r.txnDate } : null;
+}
+
+// Batched version for the smart-import path, which previews several candidate
+// accounts at once — one query instead of N.
+async function getLastKnownBalances(bankAccountIds: string[]): Promise<Map<string, LastKnown>> {
+  const map = new Map<string, LastKnown>();
+  if (bankAccountIds.length === 0) return map;
+  const rows = await prisma.$queryRaw<{ bankAccountId: string; balanceSatang: string; txnDate: string }[]>`
+    SELECT DISTINCT ON (bank_account_id)
+      bank_account_id::text as "bankAccountId",
+      balance_satang::text as "balanceSatang",
+      txn_date::text as "txnDate"
+    FROM ledger_bank_txn
+    WHERE bank_account_id = ANY(${bankAccountIds}::uuid[])
+    ORDER BY bank_account_id, txn_date DESC, row_index DESC, id DESC
+  `;
+  for (const r of rows) map.set(r.bankAccountId, { balanceSatang: Number(r.balanceSatang), txnDate: r.txnDate });
+  return map;
+}
+
+// orderedRows must already be chronological (oldest→newest) — from checkBalanceContinuity's
+// ok:true branch. Returns null when there's nothing to compare (first-ever import,
+// template file with no balance column, or the new file starts before/inside the
+// account's existing data — an overlap/backfill case dedup already handles safely).
+function compareCrossBatchContinuity(lastKnown: LastKnown | null, orderedRows: BalanceRow[]): ContinuityFlag | null {
+  if (!lastKnown || orderedRows.length === 0) return null;
+  const first = orderedRows[0];
+  if (first.balanceSatang === 0) return null; // no usable balance data
+  if (first.txnDate <= lastKnown.txnDate) return null; // overlap/backfill — not this check's job
+  const TOL = 1; // satang
+  const fileOpeningBalanceSatang = first.balanceSatang - first.amountSatang;
+  const diffSatang = fileOpeningBalanceSatang - lastKnown.balanceSatang;
+  if (Math.abs(diffSatang) <= TOL) {
+    return { ok: true, lastBalanceSatang: lastKnown.balanceSatang, lastTxnDate: lastKnown.txnDate };
+  }
+  return {
+    ok: false,
+    lastBalanceSatang: lastKnown.balanceSatang,
+    lastTxnDate: lastKnown.txnDate,
+    fileOpeningBalanceSatang,
+    diffSatang,
+  };
+}
+
+function formatContinuityWarning(c: ContinuityFlag): string {
+  const dir = (c.diffSatang ?? 0) > 0 ? "มากกว่า" : "น้อยกว่า";
+  return (
+    `ยอดคงเหลือไม่ต่อเนื่องกับที่นำเข้าไว้ก่อนหน้า — ยอดล่าสุดของบัญชีนี้คือ ฿${bahtFmt(c.lastBalanceSatang)} (ณ ${c.lastTxnDate}) ` +
+    `แต่ไฟล์นี้เริ่มต้นที่ ฿${bahtFmt(c.fileOpeningBalanceSatang ?? 0)} ${dir}กัน ฿${bahtFmt(Math.abs(c.diffSatang ?? 0))} ` +
+    `— อาจเลือกบัญชีผิด หรือมีรายการที่ยังไม่ได้นำเข้าในช่วงก่อนหน้า`
+  );
+}
+
+// ── Unusual-amount guard ────────────────────────────────────────────────────
+// "โดดไม่สมเหตุผล" (CEO wording): flag a row in the new file whose amount is way
+// outside the account's normal pattern for that direction (เงินเข้า/เงินออก scale
+// separately — a big monthly rent debit is normal, a same-size CREDIT wouldn't be).
+// Baseline = median of the account's last 200 real txns per direction. WARN only —
+// a genuinely large one-off deposit/payment is common in business, just worth a look.
+const UNUSUAL_HISTORY_LIMIT = 200;
+const UNUSUAL_MIN_SAMPLE = 10;   // need at least this many same-direction txns to trust a median
+const UNUSUAL_MULTIPLE = 6;      // flag when > 6× the account's normal size
+const UNUSUAL_FLOOR_SATANG = 1_000_000; // ฿10,000 — below this, not worth flagging even if statistically "high"
+
+export type UnusualRow = {
+  txnDate: string;
+  amountSatang: number;
+  description: string | null;
+  medianSatang: number;
+  multiple: number;
+};
+
+type HistoryAmount = { amountSatang: number };
+
+function median(nums: number[]): number | null {
+  if (nums.length === 0) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+type AmountBaseline = { creditMedianSatang: number | null; debitMedianSatang: number | null };
+
+function baselineFromHistory(history: HistoryAmount[]): AmountBaseline {
+  const credits = history.filter((r) => r.amountSatang > 0).map((r) => r.amountSatang);
+  const debits = history.filter((r) => r.amountSatang < 0).map((r) => Math.abs(r.amountSatang));
+  return {
+    creditMedianSatang: credits.length >= UNUSUAL_MIN_SAMPLE ? median(credits) : null,
+    debitMedianSatang: debits.length >= UNUSUAL_MIN_SAMPLE ? median(debits) : null,
+  };
+}
+
+async function getAmountBaseline(bankAccountId: string): Promise<AmountBaseline> {
+  // amount_satang::text → Number() — see getLastKnownBalance comment (bigint → BigInt trap).
+  const history = await prisma.$queryRaw<{ amountSatang: string }[]>`
+    SELECT amount_satang::text as "amountSatang" FROM ledger_bank_txn
+    WHERE bank_account_id = ${bankAccountId}::uuid
+    ORDER BY txn_date DESC, row_index DESC, id DESC
+    LIMIT ${UNUSUAL_HISTORY_LIMIT}
+  `;
+  return baselineFromHistory(history.map((r) => ({ amountSatang: Number(r.amountSatang) })));
+}
+
+// Batched version — one query for all candidate accounts in a smart-import preview.
+async function getAmountBaselines(bankAccountIds: string[]): Promise<Map<string, AmountBaseline>> {
+  const map = new Map<string, AmountBaseline>();
+  if (bankAccountIds.length === 0) return map;
+  const rows = await prisma.$queryRaw<{ bankAccountId: string; amountSatang: string }[]>`
+    SELECT "bankAccountId", "amountSatang" FROM (
+      SELECT bank_account_id::text as "bankAccountId", amount_satang::text as "amountSatang",
+             ROW_NUMBER() OVER (PARTITION BY bank_account_id ORDER BY txn_date DESC, row_index DESC, id DESC) as rn
+      FROM ledger_bank_txn
+      WHERE bank_account_id = ANY(${bankAccountIds}::uuid[])
+    ) t
+    WHERE rn <= ${UNUSUAL_HISTORY_LIMIT}
+  `;
+  const byAccount = new Map<string, HistoryAmount[]>();
+  for (const r of rows) {
+    const arr = byAccount.get(r.bankAccountId) ?? [];
+    arr.push({ amountSatang: Number(r.amountSatang) });
+    byAccount.set(r.bankAccountId, arr);
+  }
+  for (const id of bankAccountIds) map.set(id, baselineFromHistory(byAccount.get(id) ?? []));
+  return map;
+}
+
+function findUnusualRows(
+  rows: { txnDate: string; amountSatang: number; description: string | null }[],
+  baseline: AmountBaseline,
+): UnusualRow[] {
+  const out: UnusualRow[] = [];
+  for (const r of rows) {
+    const medianSatang = r.amountSatang > 0 ? baseline.creditMedianSatang : baseline.debitMedianSatang;
+    if (medianSatang == null || medianSatang <= 0) continue;
+    const abs = Math.abs(r.amountSatang);
+    const threshold = Math.max(UNUSUAL_FLOOR_SATANG, medianSatang * UNUSUAL_MULTIPLE);
+    if (abs <= threshold) continue;
+    out.push({ txnDate: r.txnDate, amountSatang: r.amountSatang, description: r.description, medianSatang, multiple: abs / medianSatang });
+  }
+  return out;
+}
+
+function formatUnusualWarning(rows: UnusualRow[]): string {
+  const shown = rows.slice(0, 5);
+  const lines = shown.map((r) => {
+    const dir = r.amountSatang > 0 ? "เข้า" : "ออก";
+    return `${r.txnDate} ${dir} ฿${bahtFmt(Math.abs(r.amountSatang))} (${r.multiple.toFixed(1)}× ปกติ)${r.description ? " — " + r.description : ""}`;
+  });
+  const more = rows.length > 5 ? ` และอีก ${rows.length - 5} รายการ` : "";
+  return `พบ ${rows.length} รายการที่ยอดสูงผิดปกติเทียบกับรายการทั่วไปของบัญชีนี้ — ควรตรวจสอบ: ${lines.join(" · ")}${more}`;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -135,11 +328,22 @@ export type ImportCommitResult = {
   batchId: string;
   insertedCount: number;
   skippedCount: number;
+  // Auto re-check after every commit (not just the new rows — the whole account) using
+  // the SAME "duplicate" definition as the manual "ตรวจรายการซ้ำ" button. Mainly catches
+  // leftover pre-fix duplicates from before balance joined the hash (D-2026-07-08) — a
+  // brand-new import can't create new ones itself, the import-time guards already block that.
+  possibleDuplicateCount: number;
 } | { ok: false; error: string };
 
 // ── 1. Dry-run preview (parse file, don't write to DB) ───────────────────────
 
-export async function dryRunImportAction(formData: FormData): Promise<ImportDryRunResult> {
+export async function dryRunImportAction(
+  formData: FormData,
+  // Known target account (per-account import page already has one picked) — lets us
+  // check this file against THAT account's real history. Omitted on the account-agnostic
+  // path (Smart Import's own detect action does its own per-candidate version of this).
+  bankAccountId?: string,
+): Promise<ImportDryRunResult> {
   await requireRole("super_admin", "org_admin", "admin");
 
   const file = formData.get("file") as File | null;
@@ -165,9 +369,26 @@ export async function dryRunImportAction(formData: FormData): Promise<ImportDryR
   // in commitImportAction on the per-account rows (a combined multi-account file's
   // chain isn't continuous across accounts, so we can't safely block before grouping).
   // Skipped for the template format — it carries no running balance (all zeros).
+  let cont: ContinuityResult | null = null;
   if (result.rows.length > 1 && !isTemplate) {
-    const cont = checkBalanceContinuity(result.rows);
+    cont = checkBalanceContinuity(result.rows);
     if (!cont.ok) warnings.push(cont.message);
+  }
+
+  // Cross-batch continuity + unusual-amount checks — only possible once we know
+  // WHICH account this is going into (the account-agnostic Smart Import path checks
+  // these per-candidate in smartImportDetectAction instead).
+  if (bankAccountId && !isTemplate) {
+    const [lastKnown, baseline] = await Promise.all([
+      getLastKnownBalance(bankAccountId),
+      getAmountBaseline(bankAccountId),
+    ]);
+    if (cont?.ok) {
+      const flag = compareCrossBatchContinuity(lastKnown, cont.orderedRows);
+      if (flag && !flag.ok) warnings.push(formatContinuityWarning(flag));
+    }
+    const unusual = findUnusualRows(result.rows, baseline);
+    if (unusual.length > 0) warnings.push(formatUnusualWarning(unusual));
   }
 
   return {
@@ -198,6 +419,9 @@ export type SmartAccountCandidate = {
   accountNoMasked: string;
   accountName: string;
   exact: boolean; // last-4 of the file's account number matches this account
+  // null = no prior data for this account (or can't check, e.g. overlap/no-balance-file) → no signal either way.
+  continuity: ContinuityFlag | null;
+  unusualRows: UnusualRow[]; // rows whose amount looks unusually large for this account's history
 };
 
 // One detected account-group inside the file (a file may carry several, e.g. TTB ACCHIST).
@@ -290,6 +514,7 @@ export async function smartImportDetectAction(
       candidates = accounts.map((a) => ({
         accountId: a.id, bankCode: a.bankCode,
         accountNoMasked: mask(a.accountNo), accountName: a.accountName, exact: false,
+        continuity: null, unusualRows: [],
       }));
     } else {
       const sameBank = accounts.filter((a) => a.bankCode === result.bankCode);
@@ -302,6 +527,7 @@ export async function smartImportDetectAction(
         accountId: a.id, bankCode: a.bankCode,
         accountNoMasked: mask(a.accountNo), accountName: a.accountName,
         exact: exactIds.has(a.id),
+        continuity: null, unusualRows: [],
       }));
       if (exactIds.size === 1) autoSelectedId = [...exactIds][0];
       else if (exactIds.size === 0 && fileLast4 && sameBank.length > 0) unknownAccount = true;
@@ -327,6 +553,27 @@ export async function smartImportDetectAction(
 
   // Largest account first (most rows) — the main account leads the list.
   groups.sort((a, b) => b.rowCount - a.rowCount);
+
+  // Per-candidate continuity + unusual-amount check — one batched query pair for
+  // every candidate across every group (not one query per candidate).
+  const allCandidateIds = [...new Set(groups.flatMap((g) => g.candidates.map((c) => c.accountId)))];
+  if (allCandidateIds.length > 0) {
+    const [lastKnownMap, baselineMap] = await Promise.all([
+      getLastKnownBalances(allCandidateIds),
+      getAmountBaselines(allCandidateIds),
+    ]);
+    for (const g of groups) {
+      const groupRows = buckets[g.fileAccountNo] ?? [];
+      const cont = groupRows.length > 1 ? checkBalanceContinuity(groupRows) : null;
+      for (const c of g.candidates) {
+        if (cont?.ok) {
+          c.continuity = compareCrossBatchContinuity(lastKnownMap.get(c.accountId) ?? null, cont.orderedRows);
+        }
+        const baseline = baselineMap.get(c.accountId);
+        if (baseline) c.unusualRows = findUnusualRows(groupRows, baseline);
+      }
+    }
+  }
 
   return {
     ok: true,
@@ -540,11 +787,17 @@ export async function commitImportAction(
     suggestMatchesAction(batchId, txnIds, orgId, companyId).catch(console.error);
   }
 
+  // Auto duplicate re-check — every import, not just when someone remembers to click
+  // "ตรวจรายการซ้ำ". Awaited (not fire-and-forget) so the UI can show it right away.
+  // Same definition as that button now (findDuplicateTxnIds) — never diverges.
+  const possibleDuplicateCount = await findDuplicateTxnIds(orgId, bankAccountId).then((ids) => ids.length).catch(() => 0);
+
   return {
     ok: true,
     batchId,
     insertedCount: data?.inserted ?? 0,
     skippedCount: (data?.skipped ?? 0) + duplicateSkipped,
+    possibleDuplicateCount,
   };
 }
 

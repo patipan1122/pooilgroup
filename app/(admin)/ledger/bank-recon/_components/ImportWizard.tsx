@@ -35,7 +35,9 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingSuccess = useRef<(() => void) | null>(null);
   const router = useRouter();
 
   const handleFile = async (f: File) => {
@@ -45,7 +47,7 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const result = await dryRunImportAction(fd);
+      const result = await dryRunImportAction(fd, bankAccountId);
       setPreview(result);
       setStep(2);
     } catch (e) {
@@ -91,9 +93,17 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
         return;
       }
       setStep(3);
+      setDuplicateCount(result.possibleDuplicateCount);
       const pStart = preview?.ok ? preview.periodStart : undefined;
       const pEnd = preview?.ok ? preview.periodEnd : undefined;
-      setTimeout(() => onSuccess(result.batchId, pStart, pEnd), 1200);
+      // If a re-check after import found leftover duplicates, stay put so the CEO
+      // can actually read that + decide whether to go clean them up — don't blow
+      // the warning away with an auto-redirect 1.2s later.
+      if (result.possibleDuplicateCount === 0) {
+        setTimeout(() => onSuccess(result.batchId, pStart, pEnd), 1200);
+      } else {
+        pendingSuccess.current = () => onSuccess(result.batchId, pStart, pEnd);
+      }
     } catch (e) {
       setError("นำเข้าไม่สำเร็จ กรุณาลองใหม่");
     } finally {
@@ -102,6 +112,29 @@ export function ImportWizard({ bankAccountId, accountName, onSuccess }: Props) {
   };
 
   if (step === 3) {
+    if (duplicateCount > 0) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <CheckCircle className="text-emerald-500" size={40} />
+          <p className="text-lg font-semibold text-zinc-800">นำเข้าสำเร็จ</p>
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              ตรวจซ้ำอัตโนมัติพบ <strong>{duplicateCount} รายการ</strong> ในบัญชีนี้ที่หน้าตาเหมือนนำเข้าซ้ำ
+              (มักมาจากไฟล์เก่าก่อนหน้านี้) — ยังไม่ได้ลบอะไร แนะนำให้ไปตรวจสอบก่อน
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => pendingSuccess.current?.()}>
+              ไปหน้ากระทบยอด
+            </Button>
+            <Button onClick={() => router.push(`/ledger/bank-recon/${bankAccountId}`)}>
+              ไปตรวจรายการซ้ำ
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center gap-3 py-12 text-center">
         <CheckCircle className="text-emerald-500" size={48} />

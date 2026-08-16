@@ -12,6 +12,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
+import { findDuplicateTxnIds } from "@/lib/ledger/bank-statement-reconcile";
 
 // ── helper: load a bank txn (org-scoped, not locked, unmatched) ────────────────
 async function loadTxn(orgId: string, bankTxnId: string) {
@@ -205,25 +206,10 @@ export async function deleteMovementAction(bankTxnId: string): Promise<{ ok: boo
 }
 
 // ── ล้างรายการซ้ำ (double-import) — super_admin · CEO กดยืนยันก่อนลบ ─────────────
-// ซ้ำ = (วันที่ + ยอด + ref1 + ref2) เหมือนกัน. ลบเฉพาะ "ใบเกิน" ที่:
-//   match_state='unmatched' + ไม่อยู่ในคู่ที่จับแล้ว + งวดไม่ล็อก. เก็บ 1 ใบ (เลือกใบที่จับแล้ว/แรกสุด).
-// แตะเฉพาะบัญชี+org นี้.
-async function duplicateExtraIds(orgId: string, bankAccountId: string): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT z.id FROM (
-      SELECT t.id::text AS id, t.match_state AS state, t.batch_id,
-             ROW_NUMBER() OVER (
-               PARTITION BY t.txn_date, t.amount_satang, COALESCE(t.ref1,''), COALESCE(t.ref2,'')
-               ORDER BY (t.match_state <> 'unmatched') DESC, t.row_index, t.id
-             ) AS rn
-      FROM ledger_bank_txn t
-      WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
-    ) z
-    JOIN ledger_bank_import_batch b ON b.id = z.batch_id
-    WHERE z.rn > 1 AND z.state = 'unmatched' AND b.locked_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id = z.id::uuid)`;
-  return rows.map((r) => r.id);
-}
+// "ซ้ำ" ตอนนี้ = เกณฑ์เดียวกับตอนนำเข้า (findDuplicateTxnIds ใน bank-statement-reconcile.ts —
+// วันที่+ยอด+ยอดคงเหลือ+ref1) จะได้ไม่มี 2 นิยามที่ต่างกันระหว่างปุ่มนี้กับตอนนำเข้าไฟล์จริง.
+// ลบเฉพาะ "ใบเกิน" ที่: match_state='unmatched' + ไม่อยู่ในคู่ที่จับแล้ว + งวดไม่ล็อก.
+// เก็บ 1 ใบ (เลือกใบที่จับแล้ว/แรกสุด). แตะเฉพาะบัญชี+org นี้.
 
 /** ตรวจรายการซ้ำ (พรีวิวก่อนลบ) — คืนจำนวนใบเกิน + ตัวอย่างกลุ่มซ้ำ */
 export async function findBankDuplicatesAction(bankAccountId: string): Promise<{
@@ -234,14 +220,14 @@ export async function findBankDuplicatesAction(bankAccountId: string): Promise<{
   const session = await requireRole("super_admin");
   const orgId = session.user.org_id;
   try {
-    const ids = await duplicateExtraIds(orgId, bankAccountId);
+    const ids = await findDuplicateTxnIds(orgId, bankAccountId);
     const sample = await prisma.$queryRaw<{ date: string; amt: number; ref: string; copies: number }[]>`
       SELECT t.txn_date::text AS "date", t.amount_satang::int AS amt,
-             MAX(COALESCE(NULLIF(t.ref2,''), NULLIF(t.ref1,''), '')) AS ref, COUNT(*)::int AS copies
+             MAX(COALESCE(NULLIF(t.ref1,''), '')) AS ref, COUNT(*)::int AS copies
       FROM ledger_bank_txn t
       WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
         AND t.match_state = 'unmatched'
-      GROUP BY t.txn_date, t.amount_satang, COALESCE(t.ref1,''), COALESCE(t.ref2,'')
+      GROUP BY t.txn_date, t.amount_satang, t.balance_satang, COALESCE(t.ref1,'')
       HAVING COUNT(*) > 1
       ORDER BY COUNT(*) DESC, t.txn_date DESC
       LIMIT 20`;
@@ -262,7 +248,7 @@ export async function purgeBankDuplicatesAction(bankAccountId: string): Promise<
   const session = await requireRole("super_admin");
   const orgId = session.user.org_id;
   try {
-    const ids = await duplicateExtraIds(orgId, bankAccountId);
+    const ids = await findDuplicateTxnIds(orgId, bankAccountId);
     if (ids.length === 0) return { ok: true, deleted: 0 };
     await prisma.$executeRaw`
       DELETE FROM ledger_bank_txn

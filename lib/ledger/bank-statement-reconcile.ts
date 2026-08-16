@@ -109,6 +109,38 @@ export function computeBatchFingerprint(lineHashes: string[]): string {
     .digest("hex");
 }
 
+// ── Duplicate-row finder ────────────────────────────────────────────────────
+// "ซ้ำ" = same (txn_date, amount_satang, balance_satang, ref1) — the same fields
+// commitImportAction's content-key guard and computeLineHash() use (minus externalRef,
+// which isn't stored as its own column so it can't be recomputed from old rows).
+// The import-time guards make this impossible to hit for a brand-new import, but old
+// rows imported before D-2026-07-08 (when balance joined the hash formula) can still
+// carry pre-fix duplicates — this is how those get found, both by the manual
+// "ตรวจรายการซ้ำ" button AND automatically after every new import (commitImportAction).
+// Single source of truth on purpose — don't fork this logic, both callers must agree
+// on what "duplicate" means or the auto-check and the manual button will disagree.
+//
+// Kept as a plain lib function (NOT exported from a "use server" file) — it takes
+// orgId as a raw argument with no session check, which would be an auth-bypass if
+// Next.js turned it into a directly-callable server action. Callers (both "use server"
+// action files) must do their own requireRole() before calling this.
+export async function findDuplicateTxnIds(orgId: string, bankAccountId: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT z.id FROM (
+      SELECT t.id::text AS id, t.match_state AS state, t.batch_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY t.txn_date, t.amount_satang, t.balance_satang, COALESCE(t.ref1,'')
+               ORDER BY (t.match_state <> 'unmatched') DESC, t.row_index, t.id
+             ) AS rn
+      FROM ledger_bank_txn t
+      WHERE t.bank_account_id = ${bankAccountId}::uuid AND t.org_id = ${orgId}::uuid
+    ) z
+    JOIN ledger_bank_import_batch b ON b.id = z.batch_id
+    WHERE z.rn > 1 AND z.state = 'unmatched' AND b.locked_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.bank_txn_id = z.id::uuid)`;
+  return rows.map((r) => r.id);
+}
+
 // ── Auto-match engine ─────────────────────────────────────────────────────────
 
 const HIGH_EXACT_DELTA_SATANG = 100;  // ≤ ฿1.00 = high confidence

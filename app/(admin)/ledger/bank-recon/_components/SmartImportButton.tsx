@@ -37,12 +37,16 @@ export function SmartImportButton({ companyId, period }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [duplicateTotal, setDuplicateTotal] = useState(0);
+  const [duplicateCleanupHref, setDuplicateCleanupHref] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingRedirect = useRef<(() => void) | null>(null);
   const router = useRouter();
 
   function reset() {
     setFile(null); setDetect(null); setSelected({});
     setError(null); setLoading(false); setCommitting(false); setDone(false); setIsDragging(false);
+    setDuplicateTotal(0); setDuplicateCleanupHref("");
   }
   function close() { setOpen(false); setTimeout(reset, 200); }
 
@@ -74,6 +78,7 @@ export function SmartImportButton({ companyId, period }: Props) {
       let okCount = 0;
       let firstAccountId: string | null = null;
       let firstPeriodEnd = "";
+      let dupTotal = 0;
       const errs: string[] = [];
       // import each detected account-group into its chosen target account
       for (const g of detect.groups) {
@@ -82,6 +87,7 @@ export function SmartImportButton({ companyId, period }: Props) {
         const res = await commitImportAction(targetId, fd, g.fileAccountNo);
         if (res.ok) {
           okCount++;
+          dupTotal += res.possibleDuplicateCount;
           if (!firstAccountId) { firstAccountId = targetId; firstPeriodEnd = g.periodEnd; }
         } else {
           errs.push(`${g.fileLast4 ? `****${g.fileLast4}` : "ไฟล์"}: ${res.error}`);
@@ -92,15 +98,29 @@ export function SmartImportButton({ companyId, period }: Props) {
         return;
       }
       setDone(true);
+      setDuplicateTotal(dupTotal);
       const multi = detect.groups.filter((g) => selected[g.fileAccountNo]).length > 1;
-      setTimeout(() => {
+      setDuplicateCleanupHref(
+        !multi && firstAccountId
+          ? `/ledger/bank-recon/${firstAccountId}?company=${companyId}`
+          : `/ledger/bank-recon?company=${companyId}&period=${period}`,
+      );
+      const redirect = () => {
         if (!multi && firstAccountId) {
           router.push(`/ledger/bank-recon/${firstAccountId}/reconcile?company=${companyId}&period=${periodOf(firstPeriodEnd) || period}`);
         } else {
           // several accounts imported → back to the hub so the CEO sees them all
           router.push(`/ledger/bank-recon?company=${companyId}&period=${period}`);
         }
-      }, 1100);
+      };
+      // Auto re-check found leftover duplicates (usually from before the fix that added
+      // balance to the dedup key) → stay on the success screen so the CEO can actually
+      // read that instead of auto-navigating it away in 1.1s.
+      if (dupTotal === 0) {
+        setTimeout(redirect, 1100);
+      } else {
+        pendingRedirect.current = redirect;
+      }
     } catch {
       setError("นำเข้าไม่สำเร็จ กรุณาลองใหม่");
     } finally {
@@ -125,11 +145,33 @@ export function SmartImportButton({ companyId, period }: Props) {
       <Dialog open={open} onClose={close} title="นำเข้า statement" className="sm:max-w-lg">
         {/* Success */}
         {done ? (
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <CheckCircle className="text-emerald-500" size={44} />
-            <p className="text-lg font-semibold text-zinc-800">นำเข้าสำเร็จ!</p>
-            <p className="text-sm text-zinc-500">กำลังไปหน้ากระทบยอด...</p>
-          </div>
+          duplicateTotal > 0 ? (
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <CheckCircle className="text-emerald-500" size={40} />
+              <p className="text-lg font-semibold text-zinc-800">นำเข้าสำเร็จ</p>
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  ตรวจซ้ำอัตโนมัติพบ <strong>{duplicateTotal} รายการ</strong> ที่หน้าตาเหมือนนำเข้าซ้ำ
+                  (มักมาจากไฟล์เก่าก่อนหน้านี้) — ยังไม่ได้ลบอะไร แนะนำให้ไปตรวจสอบก่อน
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { close(); pendingRedirect.current?.(); }}>
+                  ไปหน้ากระทบยอด
+                </Button>
+                <Button onClick={() => { close(); router.push(duplicateCleanupHref); }}>
+                  ไปตรวจรายการซ้ำ
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <CheckCircle className="text-emerald-500" size={44} />
+              <p className="text-lg font-semibold text-zinc-800">นำเข้าสำเร็จ!</p>
+              <p className="text-sm text-zinc-500">กำลังไปหน้ากระทบยอด...</p>
+            </div>
+          )
         ) : !detect ? (
           /* Step 1 — drop file */
           <div className="space-y-3">
@@ -282,6 +324,7 @@ function GroupBlock({
           )}
           {group.candidates.map((c) => {
             const active = selectedId === c.accountId;
+            const flagged = (c.continuity && !c.continuity.ok) || c.unusualRows.length > 0;
             return (
               <button
                 key={c.accountId}
@@ -301,11 +344,55 @@ function GroupBlock({
                 {c.exact && (
                   <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">เลขตรง</span>
                 )}
+                {flagged && (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    <AlertTriangle size={10} /> ยอดไม่ต่อเนื่อง
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
       )}
+
+      {/* continuity / unusual-amount detail for the account currently selected — only
+          when something actually looks off (silent otherwise, no noise on the normal path) */}
+      {(() => {
+        const active = group.candidates.find((c) => c.accountId === selectedId);
+        if (!active) return null;
+        const cont = active.continuity;
+        const unusual = active.unusualRows;
+        if ((!cont || cont.ok) && unusual.length === 0) return null;
+        return (
+          <div className="mt-2 space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {cont && !cont.ok && (
+              <p className="flex items-start gap-1.5">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  ยอดคงเหลือไม่ต่อเนื่อง — บัญชีนี้ล่าสุดมียอด <strong>฿{baht(cont.lastBalanceSatang)}</strong> (ณ {cont.lastTxnDate})
+                  แต่ไฟล์นี้เริ่มต้นที่ <strong>฿{baht(cont.fileOpeningBalanceSatang ?? 0)}</strong> ต่างกัน{" "}
+                  <strong>฿{baht(Math.abs(cont.diffSatang ?? 0))}</strong> — อาจเลือกบัญชีผิด หรือมีรายการที่ยังไม่ได้นำเข้าในช่วงก่อนหน้า
+                </span>
+              </p>
+            )}
+            {unusual.length > 0 && (
+              <p className="flex items-start gap-1.5">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  พบ {unusual.length} รายการที่ยอดสูงผิดปกติเทียบกับรายการทั่วไปของบัญชีนี้ — ควรตรวจสอบ:{" "}
+                  {unusual.slice(0, 3).map((r, i) => (
+                    <span key={i}>
+                      {i > 0 && " · "}
+                      {r.txnDate} {r.amountSatang > 0 ? "เข้า" : "ออก"} ฿{baht(Math.abs(r.amountSatang))} ({r.multiple.toFixed(1)}× ปกติ)
+                    </span>
+                  ))}
+                  {unusual.length > 3 && ` และอีก ${unusual.length - 3} รายการ`}
+                </span>
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* mini preview for this group */}
       <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-zinc-100 bg-zinc-50 p-2.5 text-sm sm:grid-cols-4">
