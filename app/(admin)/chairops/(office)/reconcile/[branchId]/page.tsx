@@ -201,6 +201,24 @@ export default async function ReconcileBranchPage({
         )}
       </div>
 
+      {/* CEO 2026-08-15: ส่งยอดฝากเข้าบัญชี reconcile (LedgerLine bank-recon) —
+          ตั้งค่าบริษัท/บัญชีธนาคาร แล้วกดส่งทั้งสาขา · กันส่งซ้ำอัตโนมัติ.
+          CEO 2026-08-16: ย้ายขึ้นมาไว้บนสุด (เดิมอยู่ล่างสุดหลัง write-off —
+          CEO เปิดหน้าแล้วไม่เจอเพราะต้องเลื่อนผ่านตารางยาว+write-off ก่อน). */}
+      <section
+        className="card"
+        style={{ margin: "16px 22px 0", padding: 18, maxWidth: 520 }}
+      >
+        <ReconcileAccountSection
+          branchId={branchId}
+          companies={companies}
+          bankAccounts={bankAccounts}
+          currentCompanyId={branch.reconcileCompanyId}
+          currentBankAccountId={branch.reconcileBankAccountId}
+          summary={reconcileSummary}
+        />
+      </section>
+
       {/* Write-off LOG — explains why the drift jumped / hit 0 (CEO 2026-06-25).
           Shows this branch's approved + pending write-offs with date·amount·
           direction·reason·approver so a "ตั้งต้น" is never a mystery. */}
@@ -346,22 +364,6 @@ export default async function ReconcileBranchPage({
           (&lt;500฿ ใช้ MANAGER · ≥500฿ ต้องให้ CEO) · อนุมัติแล้วยอดเริ่มนับใหม่จากวันนั้น
         </p>
         <WriteOffForm branchId={branchId} today={today} />
-      </section>
-
-      {/* CEO 2026-08-15: ส่งยอดฝากเข้าบัญชี reconcile (LedgerLine bank-recon) —
-          ตั้งค่าบริษัท/บัญชีธนาคาร แล้วกดส่งทั้งสาขา · กันส่งซ้ำอัตโนมัติ */}
-      <section
-        className="card"
-        style={{ margin: "0 22px 32px", padding: 18, maxWidth: 520 }}
-      >
-        <ReconcileAccountSection
-          branchId={branchId}
-          companies={companies}
-          bankAccounts={bankAccounts}
-          currentCompanyId={branch.reconcileCompanyId}
-          currentBankAccountId={branch.reconcileBankAccountId}
-          summary={reconcileSummary}
-        />
       </section>
     </>
   );
