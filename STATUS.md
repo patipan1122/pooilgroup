@@ -15,6 +15,20 @@ CEO (2026-08-15/16): หน้า "นำเข้า statement" อยากใ
 - commit ค้าง local ตั้งแต่ 08-16 (`2d29568f`) — วันนี้ origin/setup ขยับไปแล้ว 306 commits ระหว่างที่ค้าง ใช้ cherry-pick ยกออกมาสะอาด (conflict เดียวที่ `_actions.ts` auto-merge ผ่านเอง เพราะเป็นคนละจุดกับ Amazon/KBANK matcher ที่คนอื่นแก้)
 - CEO ยังต้องทดสอบจริง — นำเข้าไฟล์ statement ที่รู้ว่ามีเลือกบัญชีผิด/มีรายการซ้ำ ดูว่าป้ายเตือนขึ้นจริง
 
+## 🍵🔧✅ CashHub Amazon — กู้การแยกยอด qrapi/qrstd/qrcredit คืนตอน TRCloud ย้ายเงินข้าม cvar ในโดเมนเดียวกัน (2026-08-17 · BUILT commit `2a2ce9ad` worktree `pg-wt-qrcredit-merge`, ⏳ NOT pushed/deployed)
+
+CEO เจอเองจากหน้า CashHub Amazon: วันที่ 06-02 ยอด QR ถูกส่งเข้า reconcile เป็นก้อนรวม ฿9,823 ทั้งที่หน้าเดียวกันโชว์ตัวเลขแยกชัดเจนว่าควรเป็น ฿9,468 + ฿285 (เหมือนวันอื่นๆ) — "ทำไมวันนี้ส่งยอดไปแบบนั้น".
+
+**Root cause:** fix เดิม 08-16 (`a22b88c3`, กัน double-subtract ตอน TRCloud ย้ายเงินข้าม cvar) แก้ปลอดภัยแต่หยาบไป — ตัด posBreakdown ทิ้งทุกครั้งที่ใช้ iv_channels เลย แม้วันที่ TRCloud แค่ "ย้ายเงินภายในโดเมนเดียวกัน" (เช่น 06-02 ย้าย c15 "บลูพลัสเครดิต" ฿70 ไปรวมกับ c14 "บลูพลัสวอลเล็ต" — c14 เลยโชว์ 140 แทน 70 แท้ๆ) ก็โดนตัดการแยกไปด้วยทั้งที่กู้คืนได้อย่างปลอดภัย.
+
+**FIX** (`lib/cashhub/amazon-settlement.ts`, `amazon-settlement-data.ts`):
+1. `resolveSendChannels()` เลิกตัด posBreakdown ทิ้ง — ส่งผ่านเสมอ ให้ `computeSendRows()` ตัดสินใจเอง
+2. เพิ่มขั้น "wide-domain tie-out" ใหม่ — เช็คผลรวมกว้างขึ้น (ครอบ cvar ของ settlement group + extract group ที่เกี่ยวข้อง) ถ้าตรงกัน (เงินยังอยู่ครบ แค่ TRCloud ย้าย cvar) → คำนวณทุกบรรทัดจาก posBreakdown ตรงๆ เลย
+3. เพิ่ม per-cvar safety guard ในขั้นเดิม — กัน bug เดิม 08-16 กลับมา (ถ้าเงินย้ายออกนอกโดเมนไปเลย เช่นเคส 06-14 ที่ย้ายไป Grab → ไม่หัก ปลอดภัยเหมือนเดิม)
+- verify: เพิ่ม regression test เคส 06-02 จริงจาก DB ครบ · 28/28 cases ผ่าน (`npx tsx lib/cashhub/__tests__/amazon-settlement-granular.run.ts`) · tsc/eslint clean 3 ไฟล์ที่แก้ · ยืนยันด้วยข้อมูลจริงจาก DB ตรงๆ ได้ qrapi=9468/qrstd=285/qrcredit=69.37 ตรงกับที่ CEO ชี้ทุกบาท · re-verify เคส 06-14 เดิมยังปลอดภัยเหมือนเดิม (net 7019 ไม่มี qrcredit ผี)
+- `next build` เต็มติด dependency เดิมที่ขาดใน worktree นี้ (`officecrypto-tool`, ฟีเจอร์ CashHub Hotel คนละเรื่อง — ไม่เกี่ยวกับ fix นี้ เป็น known gap เดิมตั้งแต่ a22b88c3)
+- ⏳ **รอ CEO ตัดสินใจ:** push `HEAD:setup` + deploy · หลัง deploy ต้องกด "ส่งเข้า reconcile" ซ้ำสำหรับวันที่กระทบ (idempotent upsert จะอัปเดตยอดเดิมให้ถูก ไม่สร้างซ้ำ — ยกเว้นรายการที่ยืนยัน/จับคู่ไปแล้วต้องย้อนก่อน)
+
 ## 🏦📅✅ LedgerLine หน้าคลังกระทบยอด (archive) — ดูย้อนหลังได้ไกลขึ้น + filter ช่วงวันที่ (2026-08-17 · 🚀DEPLOYED `origin/setup a8ab146c`)
 
 CEO: หน้า "คลัง (รายการที่กระทบยอดแล้ว)" ดูย้อนหลังได้แค่ช่วงสั้นๆ (ไม่มี pagination — ดึงมาสูงสุด 400 รายการเรียงล่าสุดก่อน บัญชีที่มีรายการถี่ เช่น Café Amazon กินโควตาแค่ ~1-2 เดือนก็หมด เก่ากว่านั้นมองไม่เห็นเลย ไม่มีปุ่มไหนกดดูต่อได้) + อยากได้ filter เลือกดูเป็นเดือน/วันที่เฉพาะเจาะจง.
