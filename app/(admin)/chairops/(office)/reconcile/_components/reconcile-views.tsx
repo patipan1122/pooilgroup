@@ -499,11 +499,29 @@ export function LedgerTab({
                 )}
               </td>
               <td>
-                <SlipBadge
-                  url={d.slip}
-                  missing={!!d.hasCsvWithoutSlip}
-                  caption={`สลิปฝากเงิน · ${d.date}`}
-                />
+                {/* CEO 2026-08-17 · ชิปยอดเงินต่อใบฝาก (เหมือนตาราง Periods) —
+                    ยอด AI อ่านจากสลิปจริง (fallback ยอดที่พิมพ์เองถ้ายังไม่มี) สี
+                    บอกสถานะ reconcile กดดูรูปสลิปใบนั้นได้ตรงในตาราง */}
+                {d.slips && d.slips.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {d.slips.map((s) => (
+                      <SlipChip
+                        key={s.id}
+                        amount={fmtN(s.amount)}
+                        slipUrl={s.slipUrl}
+                        status={s.ledgerStatus}
+                        flagged={s.flagged}
+                        caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <SlipBadge
+                    url={d.slip}
+                    missing={!!d.hasCsvWithoutSlip}
+                    caption={`สลิปฝากเงิน · ${d.date}`}
+                  />
+                )}
               </td>
               <td className={"num mono co-drift " + ledgerDiffClass(d)}>
                 {d.collected ? (

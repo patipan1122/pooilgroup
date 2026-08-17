@@ -100,6 +100,10 @@ export interface LedgerDay {
   writeOffNet: number;
   /** Pre-formatted hover tooltip describing the write-off(s) on this day · null if none. */
   writeOffNote: string | null;
+  // CEO 2026-08-17: ยอดต่อใบฝากของวันนี้ (เหมือนตาราง Periods) — undefined จาก
+  // buildLedger() เอง (ไม่ได้ตั้งใจแก้ shared function นี้ · ของเดิมทุกจุดยังทำงาน
+  // เหมือนเดิม) · getReconcileLedger() เติมให้หลังเรียก buildLedger() แล้วเท่านั้น.
+  slips?: PeriodSlip[];
 }
 
 export interface LedgerTotals {
@@ -759,6 +763,52 @@ export async function getReconcileLedger(args: {
       return true;
     });
   }
+  // CEO 2026-08-17: ยอดต่อใบฝาก ในหน้า Ledger — ชิปสีต่อใบเหมือนตาราง Periods
+  // (แทนลิงก์ "สลิป" รวมวันเดิม). Query แยกจาก buildLedger() ตามช่วงวันที่ที่แสดง
+  // จริง (scoped) เท่านั้น — ไม่แตะ buildLedger() (shared function หลายจุดใช้).
+  if (scoped.length > 0) {
+    const rangeFrom = scoped[0].date;
+    const rangeTo = scoped[scoped.length - 1].date;
+    const ledgerDeposits = await prisma.chairopsCashDeposit.findMany({
+      where: {
+        orgId,
+        ...(branchId ? { branchId } : {}),
+        depositedAt: {
+          gte: new Date(`${rangeFrom}T00:00:00+07:00`),
+          lt: new Date(new Date(`${rangeTo}T00:00:00+07:00`).getTime() + DAY_MS),
+        },
+      },
+      select: {
+        id: true,
+        depositedAt: true,
+        depositedAmount: true,
+        ocrAmount: true,
+        slipPhotoUrl: true,
+        requiresReview: true,
+      },
+      orderBy: { depositedAt: "asc" },
+    });
+    const ledgerStatusById = await getLedgerStatusMap(orgId, ledgerDeposits.map((d) => d.id));
+    const slipsByDate = new Map<string, PeriodSlip[]>();
+    for (const d of ledgerDeposits) {
+      const day = isoDay(d.depositedAt);
+      const list = slipsByDate.get(day) ?? [];
+      list.push({
+        id: d.id,
+        depositedAt: formatDateTime(d.depositedAt),
+        amount: d.ocrAmount ?? d.depositedAmount,
+        amountIsOcr: d.ocrAmount != null,
+        slipUrl: d.slipPhotoUrl ?? null,
+        ledgerStatus: ledgerStatusById.get(d.id) ?? "not_sent",
+        flagged: d.requiresReview,
+      });
+      slipsByDate.set(day, list);
+    }
+    for (const d of scoped) {
+      d.slips = slipsByDate.get(d.date) ?? [];
+    }
+  }
+
   const newestFirst = scoped.slice().reverse();
   // Only cap the DEFAULT "no selection" view. Custom ranges + allTime return
   // every row (the shell paginates for display · CEO 2026-06-25 "ดูทั้งหมด").
