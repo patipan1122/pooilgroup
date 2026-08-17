@@ -145,6 +145,21 @@ export interface TimelinePoint {
   collected: boolean;
 }
 
+// CEO 2026-08-17: ยอดต่อ "ใบฝาก" เดียว — เดิมคอลัมน์ "สลิป" ใน Periods เป็นแค่ลิงก์
+// รวม (สลิปแรกของช่วง, ยอดพิมพ์รวมทั้งช่วง). พนักงานบางคนแบ่งฝากหลายรอบ/หลายใบใน
+// ช่วงเดียวกัน → ต้องเห็นทีละใบพร้อมสถานะ reconcile ของใบนั้นๆ. amount = ยอดที่ AI
+// อ่านจากสลิปจริง (ocrAmount) ถ้ามี ไม่งั้น fallback ไปยอดที่พนักงานพิมพ์
+// (depositedAmount) — สลิปเก่าก่อน 2026-08-17 ยังไม่มี ocrAmount จะใช้ fallback นี้.
+export interface PeriodSlip {
+  id: string;
+  depositedAt: string;
+  amount: number;
+  amountIsOcr: boolean;
+  slipUrl: string | null;
+  ledgerStatus: LedgerStatus;
+  flagged: boolean; // requiresReview — สลิปซ้ำ/บัญชีผิด/ผลต่าง≥500 ยังไม่ผ่านตรวจ
+}
+
 export interface PeriodWindow {
   from: string;
   to: string;
@@ -153,6 +168,7 @@ export interface PeriodWindow {
   cashSum: number; // expected cash maid should hand in
   deposit: number | null;
   slip: string | null;
+  slips: PeriodSlip[];
   diff: number | null; // null when window still open
   cumBefore: number;
   cumAfter: number;
@@ -759,6 +775,33 @@ export async function getReconcileLedger(args: {
 // no longer an opaque lump. Aging (days held) is computed for collections
 // that are still un-deposited.
 // ----------------------------------------------------------------
+// CEO 2026-08-15/17: สถานะส่งเข้าบัญชี reconcile ต่อใบฝาก (ledger_revenue_entry) —
+// ดู lib/chairops/reconcile/ledger-push.ts. "sent_matched" = จับคู่กับ statement
+// ธนาคารจริงแล้ว (โชว์สีรุ้งเหมือนหน้า LedgerLine bank-recon). ใช้ร่วมกันทั้งหน้า
+// day-detail และตาราง Periods — ledger_revenue_entry.match_state คือ source of
+// truth เดียว กันข้อมูล 2 ที่ไม่ตรงกัน.
+export type LedgerStatus = "not_sent" | "sent_unmatched" | "sent_matched";
+
+/** สถานะ reconcile ของหลายใบฝากพร้อมกัน — query เดียว ไม่ N+1 */
+async function getLedgerStatusMap(
+  orgId: string,
+  depositIds: string[],
+): Promise<Map<string, LedgerStatus>> {
+  if (depositIds.length === 0) return new Map();
+  const sourceRefs = depositIds.map((id) => `chairops-deposit-${id}`);
+  const rows = await prisma.$queryRaw<{ source_ref: string; match_state: string }[]>`
+    SELECT source_ref, match_state FROM ledger_revenue_entry
+    WHERE org_id = ${orgId}::uuid AND source_type = 'CHAIROPS'
+      AND source_ref = ANY(${sourceRefs})`;
+  const byRef = new Map(rows.map((r) => [r.source_ref, r.match_state]));
+  const out = new Map<string, LedgerStatus>();
+  for (const id of depositIds) {
+    const state = byRef.get(`chairops-deposit-${id}`);
+    out.set(id, state == null ? "not_sent" : state === "matched" ? "sent_matched" : "sent_unmatched");
+  }
+  return out;
+}
+
 export interface DayDetailCollection {
   id: string;
   collectedAt: string;          // ISO datetime (Bangkok)
@@ -779,10 +822,7 @@ export interface DayDetailDeposit {
   // CEO 2026-06-29: who pressed ฝาก (role snapshot) → split แม่บ้านฝาก vs ออฟฟิศฝาก.
   depositedByRole: string | null;
   depositorKind: "maid" | "office" | "unknown";
-  // CEO 2026-08-15: สถานะส่งเข้าบัญชี reconcile (ledger_revenue_entry) — ดู
-  // lib/chairops/reconcile/ledger-push.ts. "sent_matched" = จับคู่กับ statement
-  // ธนาคารจริงแล้ว (โชว์สีรุ้งเหมือนหน้า LedgerLine bank-recon).
-  ledgerStatus: "not_sent" | "sent_unmatched" | "sent_matched";
+  ledgerStatus: LedgerStatus;
 }
 // CEO 2026-06-29: write-offs ("ตัดเงิน/ตั้งต้น") effective on this day, so the
 // ✂️ marker in the ledger row can drill straight into who cut how much and why.
@@ -879,18 +919,7 @@ export async function getReconcileDayDetail(args: {
     }),
   ]);
 
-  // CEO 2026-08-15: สถานะส่งเข้าบัญชี reconcile ต่อใบฝาก — query แยกเพราะต้องรู้
-  // deposit id ก่อน (source_ref derive จาก id เสมอ, ดู
-  // lib/chairops/reconcile/ledger-push.ts). ไม่มีคอลัมน์เก็บสถานะซ้ำฝั่ง ChairOps
-  // — ledger_revenue_entry.match_state คือ source of truth เดียว กันข้อมูล 2 ที่ไม่ตรงกัน.
-  const depositSourceRefs = deposits.map((d) => `chairops-deposit-${d.id}`);
-  const ledgerStatusRows = depositSourceRefs.length
-    ? await prisma.$queryRaw<{ source_ref: string; match_state: string }[]>`
-        SELECT source_ref, match_state FROM ledger_revenue_entry
-        WHERE org_id = ${orgId}::uuid AND source_type = 'CHAIROPS'
-          AND source_ref = ANY(${depositSourceRefs})`
-    : [];
-  const ledgerStatusByRef = new Map(ledgerStatusRows.map((r) => [r.source_ref, r.match_state]));
+  const ledgerStatusById = await getLedgerStatusMap(orgId, deposits.map((d) => d.id));
 
   const now = Date.now();
   const collOut: DayDetailCollection[] = collections.map((c) => ({
@@ -906,22 +935,17 @@ export async function getReconcileDayDetail(args: {
         : null,
     slipUrl: c.slipPhotoUrl ?? c.evidencePhotoUrl ?? null,
   }));
-  const depOut: DayDetailDeposit[] = deposits.map((d) => {
-    const state = ledgerStatusByRef.get(`chairops-deposit-${d.id}`);
-    const ledgerStatus: DayDetailDeposit["ledgerStatus"] =
-      state == null ? "not_sent" : state === "matched" ? "sent_matched" : "sent_unmatched";
-    return {
-      id: d.id,
-      depositedAt: formatDateTime(d.depositedAt),
-      maidName: d.maid?.displayName ?? "—",
-      depositedAmount: d.depositedAmount,
-      bankFee: d.bankFee,
-      slipUrl: d.slipPhotoUrl ?? null,
-      depositedByRole: d.depositedByRole ?? null,
-      depositorKind: depositActorKind(d.depositedByRole),
-      ledgerStatus,
-    };
-  });
+  const depOut: DayDetailDeposit[] = deposits.map((d) => ({
+    id: d.id,
+    depositedAt: formatDateTime(d.depositedAt),
+    maidName: d.maid?.displayName ?? "—",
+    depositedAmount: d.depositedAmount,
+    bankFee: d.bankFee,
+    slipUrl: d.slipPhotoUrl ?? null,
+    depositedByRole: d.depositedByRole ?? null,
+    depositorKind: depositActorKind(d.depositedByRole),
+    ledgerStatus: ledgerStatusById.get(d.id) ?? "not_sent",
+  }));
 
   // CEO 2026-06-29: per-origin split (มือ / CSV / Office) for this day's
   // collections — surfaces "how much was backfilled by CSV vs handed in by the
@@ -2143,6 +2167,7 @@ export async function getReconcilePeriods(args: {
         cashSum,
         deposit: d.deposit,
         slip: d.slip,
+        slips: [],
         diff,
         cumBefore: lastDriftBefore,
         cumAfter: d.cumDrift,
@@ -2183,6 +2208,7 @@ export async function getReconcilePeriods(args: {
       cashSum,
       deposit: null,
       slip: null,
+      slips: [],
       diff: null,
       cumBefore: lastDriftBefore,
       cumAfter: lastDriftBefore,
@@ -2372,6 +2398,45 @@ export async function getReconcilePeriods(args: {
       cum += variance;
       w.cumShortageMeter = Math.round(cum);
     }
+  }
+
+  // CEO 2026-08-17 · ยอดต่อใบฝากในตาราง Periods (แทนลิงก์ "สลิป" ตัวเดียวรวมทั้งช่วง
+  // — พนักงานบางคนแบ่งฝากหลายใบในช่วงเดียวกัน ต้องเห็นทีละใบพร้อมสถานะของใบนั้น).
+  // reuse periodSince เดียวกับ periodCollections ด้านบน (365 วันย้อนหลัง). ยอดที่
+  // แสดง = ocrAmount (AI อ่านจากสลิปจริง) ถ้ามี ไม่งั้น fallback depositedAmount
+  // (สลิปเก่าก่อน 2026-08-17 ยังไม่มี ocrAmount).
+  const periodDeposits = await prisma.chairopsCashDeposit.findMany({
+    where: {
+      orgId,
+      ...(branchId ? { branchId } : {}),
+      depositedAt: { gte: periodSince },
+    },
+    select: {
+      id: true,
+      depositedAt: true,
+      depositedAmount: true,
+      ocrAmount: true,
+      slipPhotoUrl: true,
+      requiresReview: true,
+    },
+    orderBy: { depositedAt: "asc" },
+  });
+  const periodLedgerStatusById = await getLedgerStatusMap(
+    orgId,
+    periodDeposits.map((d) => d.id),
+  );
+  for (const d of periodDeposits) {
+    const idx = findWin(isoDay(d.depositedAt));
+    if (idx < 0) continue;
+    wins[idx].slips.push({
+      id: d.id,
+      depositedAt: formatDateTime(d.depositedAt),
+      amount: d.ocrAmount ?? d.depositedAmount,
+      amountIsOcr: d.ocrAmount != null,
+      slipUrl: d.slipPhotoUrl ?? null,
+      ledgerStatus: periodLedgerStatusById.get(d.id) ?? "not_sent",
+      flagged: d.requiresReview,
+    });
   }
 
   // CEO 2026-08-07 · เดิม cap 12 รอบล่าสุด (slice(0,12)) → CEO ต้องการเลื่อนดูย้อนหลัง

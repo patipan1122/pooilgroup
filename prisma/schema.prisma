@@ -3464,8 +3464,21 @@ model ChairopsCashDeposit {
   // = that actor). MAID/TECHNICIAN ⇒ "แม่บ้านฝาก" · OFFICE+ ⇒ "แอดมิน/ออฟฟิศฝาก".
   // Stamped at create; old rows backfilled from the actor's role. Nullable = unknown.
   depositedByRole String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+
+  // CEO 2026-08-17: AI อ่านสลิปธนาคาร (best-effort, nullable — สลิปเก่าก่อนหน้านี้
+  // จะไม่มีค่า, fallback ไปใช้ depositedAmount ตอนแสดงผล). ยิงตอน batchDeposit
+  // สร้างสำเร็จแล้ว (post-tx, ดู lib/chairops/reconcile/slip-ocr.ts) — ใช้ตรวจ
+  // สลิปซ้ำ (วันที่+ยอด+ชื่อบัญชีตรงกับใบอื่น) + บัญชีปลายทางไม่ตรงที่ตั้งค่าไว้ →
+  // auto-flag requiresReview เหมือนเกณฑ์ |diff|>=500 เดิม (BF1 MAID-04) พร้อมเหตุผล
+  // ที่อ่านได้ใน ocrFlagReason (แยกจาก notes ที่เป็นข้อความของแม่บ้านเอง).
+  ocrAmount      Int?
+  ocrDate        DateTime?
+  ocrAccountName String?
+  ocrReadAt      DateTime?
+  ocrFlagReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   branch      ChairopsBranch           @relation(fields: [branchId], references: [id])
   maid        ChairopsUser             @relation(fields: [maidId], references: [id])
