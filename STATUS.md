@@ -1,6 +1,23 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-17 (LedgerLine นำเข้า statement: เตือนยอดไม่ต่อเนื่อง+รายการโดด DEPLOYED `a232eef1`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-17 (แอดมินโปรแกรม (program_admin) เข้าใช้งานได้ครบทุกโปรแกรม DEPLOYED `c94c8c17`)
+
+## 🔐✅ แอดมินโปรแกรม (program_admin) เห็นเมนูแต่กดเข้าไม่ได้ — CashHub/LedgerLine/RentSpace/ChairOps/ClawHub (2026-08-17 · 🚀DEPLOYED `origin/setup c94c8c17`)
+
+CEO แชร์สิทธิ์ "แอดมินโปรแกรม" ให้คนอื่นใช้ CashHub แล้วพบว่าหน้า "ศูนย์นำเข้าข้อมูล" เข้าไม่ได้ (เห็นเมนูแต่กดแล้วเด้งไปหน้า "ไม่มีสิทธิ์") — ขอให้เช็คว่าโปรแกรมอื่นเป็นปัญหาเดียวกันไหมด้วย.
+
+**Root cause:** role "program_admin" (เพิ่มเข้าระบบกลางเดือน มิ.ย. 2026 ให้แอดมินคุมเฉพาะโปรแกรมที่ได้รับสิทธิ์) ถูกลืมใส่ไว้ในจุดเช็คสิทธิ์หลายจุดตอนสร้าง role นี้ — ไม่ใช่แค่ CashHub
+
+**FIX — 95 จุด ใน 37 ไฟล์ (แก้เฉพาะเพิ่ม "program_admin" เข้าลิสต์สิทธิ์เดิม ไม่แตะสิทธิ์อื่น):**
+1. **จุดราก** `lib/auth/module-access.ts` (`userIsModuleAdmin()`) — เดิม comment บอกว่า "program_admin ควรรันโปรแกรมตัวเองได้โดยไม่ต้องเป็นแอดมินบริษัท" แต่โค้ดจริงยังต้องมีคนติ๊ก `user_modules.role='admin'` เพิ่มอีกขั้น → แก้ให้ตรงกับที่ตั้งใจ. จุดนี้แก้ทีเดียวกระทบ **ChairOps + ClawHub + RentSpace ให้ถูกต้องอัตโนมัติ** (ไม่ต้องแก้แยกไฟล์)
+2. CashHub — 15 จุด (หน้านำเข้าข้อมูล 8 หน้า + ตั้งค่า/แบบฟอร์ม 6 จุด + Telegram bot bulk-approve)
+3. LedgerLine — 60 จุด (บัญชี, กระทบยอดธนาคาร, ตั้งค่า, เมนูมือถือ)
+4. **ClawFleet (เก็บเงินสดตู้คีบ) — ตั้งใจไม่แก้แบบเดียวกับข้อ 1** ตามที่ CEO เคาะ (2026-08-17): เก็บกฎเข้มเดิมไว้ (program_admin ต้องมีคนติ๊ก role=admin เพิ่มอีกขั้น ไม่ใช่แค่ได้รับสิทธิ์เข้า) เพราะเป็นเงินสดจริง กันโปรแกรมอื่นรั่วเข้ามา
+5. **ไม่แตะ (CEO เคาะ 2026-08-17):** ปุ่ม "ลบสัญญาเช่า" RentSpace + 17 จุดใน LedgerLine ที่จำกัดเฉพาะ super_admin (ส่วนใหญ่คือจุดเชื่อมต่อ Google/LINE) — ของที่เป็นสิทธิ์ superadmin ให้คงเป็น superadmin เหมือนเดิม
+- verify: `next build` (Turbopack, ทั้งโปรเจกต์ทุกหน้า) ผ่าน 3 รอบ (ก่อน rebase, หลัง rebase ครั้งที่ 1, หลัง rebase ครั้งที่ 2) · eslint ไฟล์ที่แก้สะอาด (มี 1 ไฟล์เจอ lint error เดิมที่ไม่เกี่ยวกับจุดที่แก้ — ข้อความ Thai ที่มีเครื่องหมาย " ในหน้า EV Connext)
+- ทำในเวิร์กทรีแยก (`pg-wt-programadmin`) ไม่กระทบเว็บที่ใช้งานอยู่ระหว่างแก้ — rebase ทับ `origin/setup` ที่ขยับไป 2 รอบระหว่างทำงาน (คนอื่น push งาน RentSpace bill + CashHub Amazon fix + ChairOps OCR fraud flag + LedgerLine archive filter เข้ามาพร้อมกัน) conflict จริงจุดเดียวที่ `_actions.ts` (`dryRunImportAction` signature เปลี่ยนพร้อมกัน) แก้แล้ว
+- **ค้างเช็ค:** ยังไม่ได้ query database ว่า user ที่ CEO ให้สิทธิ์ program_admin ไปแล้วมี record "ได้รับสิทธิ์เข้า CashHub" (`user_modules`, module_name='cashhub', is_active=true) จริงหรือยัง — โค้ดถูกแล้วแต่ถ้าไม่มี record นี้จะยังเข้าไม่ได้อยู่ดี ต้องขออีเมล user คนนั้นจาก CEO ก่อนเช็ค
+- CEO ยังต้องให้ user คนนั้นทดสอบเข้าเว็บจริงยืนยัน
 
 ## 🏦🔍✅ LedgerLine นำเข้า statement — เตือนยอดคงเหลือไม่ต่อเนื่อง + รายการโดดผิดปกติ + auto ตรวจซ้ำ (2026-08-17 · 🚀DEPLOYED `origin/setup a232eef1`)
 
