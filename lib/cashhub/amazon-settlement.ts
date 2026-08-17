@@ -277,6 +277,17 @@ const BREAKDOWN_TIE_OUT_TOLERANCE = 0.5;
 
 /**
  * แปลงยอดขายต่อวัน → "บรรทัดที่จะส่งเข้า reconcile"
+ * - -1) wide-domain tie-out (2026-08-17) — ถ้า SETTLEMENT_GROUPS ที่มี posGroups (เช่น "qr")
+ *   คร่อม cvar เดียวกับ POS_EXTRACT_GROUPS ตัวไหน (เช่น "qrcredit" ใช้ c2 ร่วมกับ "qr") และ
+ *   วันนี้ iv_channels ย้ายเงินของ extract-group cvar ตัวหนึ่ง (เช่น c15) ไปรวมกับ cvar ใน
+ *   settlement group เดียวกัน (เช่น c14) จน cvar ต้นทางหายไปจาก settled เลย — ขั้น 0 ปกติด้านล่าง
+ *   จะหาไม่เจอว่าจะหักออกจากไหน (เสี่ยงนับซ้ำ ถ้าดึงออกมาเป็นบรรทัดใหม่โดยไม่หักที่เดิม) → เช็ค
+ *   ผลรวมกว้างขึ้นแทน: sum(settled ครอบ g.cvars ∪ extract cvars ทั้งหมด) เทียบ sum(raw label
+ *   ของทั้ง posGroups + extract group นั้น) ถ้าตรงกันเป๊ะ (แปลว่าเงินยังอยู่ครบ แค่ TRCloud ย้าย
+ *   cvar ภายในโดเมนเดียวกัน) → คำนวณทุกบรรทัด (extract + posGroups) จาก posBreakdown ล้วนๆ ตรงๆ
+ *   เลย ไม่พึ่ง settled ต่อ cvar อีก (เงินไม่หาย/ไม่ซ้ำ ไม่ว่า TRCloud จะนับเงินไว้ใต้ cvar ไหน)
+ *   ถ้าผลรวมกว้างนี้ไม่ตรง (เช่นเงินย้ายออกนอกโดเมนไปเลย อย่างเคส 06-14 ที่ย้ายไป Grab) → ปล่อยผ่าน
+ *   ให้ขั้น 0-1 ปกติจัดการ (ซึ่งจะ fallback รวมก้อนอย่างปลอดภัยเหมือนเดิม กันบั๊กเดิม 2026-08-16)
  * - 0) POS_EXTRACT_GROUPS (ตอนนี้มีแค่ "qrcredit") — ถ้ามี posBreakdown + raw label ของกลุ่มนี้
  *   มีเงิน → ดึงออกมาเป็นบรรทัดของตัวเองก่อน (ค่าธรรมเนียมของกลุ่มเอง ไม่ใช่ของ cvar ต้นทาง)
  *   แล้วหักยอดที่ดึงออกไปแล้วออกจาก cvar ต้นทาง ก่อนคำนวณขั้น 1-2 ด้านล่าง — กันคิดซ้ำ
@@ -304,18 +315,128 @@ export function computeSendRows(
   const rows: SettlementSendRow[] = [];
   const splitGroupKeys: string[] = [];
   const extractedStandaloneCvars: string[] = [];
+  const wideHandledExtractKeys = new Set<string>();
+  const cfgFor = (cv: string) => configByCvar.get(cv) ?? DEFAULT_CHANNELS.find((c) => c.cvar === cv) ?? null;
+
+  // -1) wide-domain tie-out — ดู comment ด้านบนฟังก์ชัน
+  if (posBreakdown) {
+    for (const g of SETTLEMENT_GROUPS) {
+      if (!g.posGroups) continue;
+      const relatedExtracts = POS_EXTRACT_GROUPS.filter((eg) =>
+        eg.members.some((m) => g.cvars.includes(m.cvar)),
+      );
+      if (relatedExtracts.length === 0) continue;
+      const wideCvars = new Set<string>(g.cvars);
+      for (const eg of relatedExtracts) for (const m of eg.members) wideCvars.add(m.cvar);
+      // คุ้มเช็คก็ต่อเมื่อมี cvar ของ extract group ที่ตั้งใจ settle ไว้ แต่หายไปจาก settled จริง
+      // (เงินถูก iv_channels ย้ายไปรวมที่อื่นในโดเมนเดียวกัน) — ไม่งั้นขั้น 0 ปกติจัดการได้อยู่แล้ว
+      const anyExtractCvarMissing = relatedExtracts.some((eg) =>
+        eg.members.some((m) => !settled.some((s) => s.cvar === m.cvar) && cfgFor(m.cvar)?.isSettle),
+      );
+      if (!anyExtractCvarMissing) continue;
+
+      const wideGross = round2(
+        [...wideCvars].reduce((a, cv) => a + (settled.find((s) => s.cvar === cv)?.gross ?? 0), 0),
+      );
+      const wideLabels = [
+        ...g.posGroups.flatMap((pg) => pg.rawLabels),
+        ...relatedExtracts.flatMap((eg) => eg.members.map((m) => m.rawLabel)),
+      ];
+      const wideBreakdownSum = round2(wideLabels.reduce((a, label) => a + (posBreakdown[label] ?? 0), 0));
+      if (Math.abs(wideBreakdownSum - wideGross) >= BREAKDOWN_TIE_OUT_TOLERANCE) continue; // ไม่ตรงแม้กว้างขึ้น → ปล่อยขั้น 0-1 ปกติ fallback รวมก้อนอย่างปลอดภัย
+
+      // ตรงกัน → คำนวณทุกบรรทัด (extract group(s) + g.posGroups) จาก posBreakdown ล้วนๆ ตรงๆ
+      for (const eg of relatedExtracts) {
+        const egGross = round2(eg.members.reduce((a, m) => a + (posBreakdown[m.rawLabel] ?? 0), 0));
+        if (egGross === 0) continue;
+        const egFee = round2((egGross * eg.feePercent) / 100);
+        const touchedCvars = [...new Set(eg.members.map((m) => m.cvar))];
+        const rep =
+          settled.find((s) => touchedCvars.includes(s.cvar) && s.companyId) ??
+          touchedCvars.map(cfgFor).find((c) => c?.companyId);
+        rows.push({
+          key: eg.key,
+          label: eg.label,
+          channelCode: eg.channelCode,
+          gross: egGross,
+          fee: egFee,
+          net: round2(egGross - egFee),
+          feePercent: eg.feePercent,
+          companyId: rep?.companyId ?? null,
+          bankAccountId: rep?.bankAccountId ?? null,
+          memberCvars: touchedCvars,
+          split: true,
+        });
+        for (const cv of touchedCvars) {
+          if (!CVAR_GROUP[cv] && !extractedStandaloneCvars.includes(cv)) extractedStandaloneCvars.push(cv);
+        }
+        wideHandledExtractKeys.add(eg.key);
+      }
+      for (const pg of g.posGroups) {
+        let pgGross = 0;
+        let pgFee = 0;
+        const pgCvars = new Set<string>();
+        for (const label of pg.rawLabels) {
+          const amt = posBreakdown[label];
+          if (!amt) continue;
+          const cvar = CHANNEL_CVAR[label];
+          const feePercent = cfgFor(cvar)?.feePercent ?? 0;
+          pgGross = round2(pgGross + amt);
+          pgFee = round2(pgFee + round2((amt * feePercent) / 100));
+          pgCvars.add(cvar);
+        }
+        if (pgGross === 0) continue;
+        const repCvars = [...pgCvars];
+        const rep =
+          settled.find((s) => repCvars.includes(s.cvar) && s.companyId) ??
+          repCvars.map(cfgFor).find((c) => c?.companyId);
+        rows.push({
+          key: pg.key,
+          label: pg.label,
+          channelCode: g.channelCode,
+          gross: pgGross,
+          fee: pgFee,
+          net: round2(pgGross - pgFee),
+          feePercent: pgGross > 0 ? round2((pgFee / pgGross) * 100) : 0,
+          companyId: rep?.companyId ?? null,
+          bankAccountId: rep?.bankAccountId ?? null,
+          memberCvars: repCvars,
+          split: true,
+        });
+      }
+      splitGroupKeys.push(g.key);
+      // เอา cvar ทั้งโดเมนออกจาก settled ทั้งหมด (ถูกจัดการครบแล้วด้านบน กันขั้น 0-1 ด้านล่างมาซ้ำ)
+      settled = settled.filter((s) => !wideCvars.has(s.cvar));
+    }
+  }
 
   // 0) POS_EXTRACT_GROUPS — ดึง raw label ที่รู้แล้วว่าโอนเป็นก้อนแยกออกจาก cvar ต้นทางก่อน
   //    (ดู comment เหนือ POS_EXTRACT_GROUPS ด้านบนไฟล์) — ต้อง "มี posBreakdown" เท่านั้น (เดือน
   //    เก่าไม่มี posBreakdown เลย → ปล่อยเงินอยู่ใน cvar เดิมเหมือนก่อน 2026-08-15 ทั้งหมด ปลอดภัย
   //    เพราะแยกไม่ได้จริง ๆ ว่า raw label ไหนอยู่ไหน)
   if (posBreakdown) {
+    // safety gate (2026-08-17): ก่อนหักเงินออกจาก cvar ต้นทาง เช็คก่อนว่า cvar นั้นมีเงินตาม
+    // settled "น้อยกว่า" ที่ posBreakdown บอกไว้รวมทุก raw label ที่แม็พมา cvar นี้ไหม — ถ้าน้อยกว่า
+    // แปลว่า TRCloud (iv_channels) ย้ายเงินบางส่วนออกจาก cvar นี้ไปที่อื่นแล้ว (เช่นเคส 06-14 ที่
+    // ย้าย QRCredit(API) ไป Grab c20) → posBreakdown ใช้เชื่อไม่ได้กับ cvar นี้อีกต่อไป ข้ามการหัก
+    // กันคิดซ้ำ (ถ้าเท่ากันหรือมากกว่า — เช่น cvar มีเงินอื่นเพิ่มที่ posBreakdown ไม่ครอบ — หักได้ปกติ)
+    const cvarShortOfBreakdown = (cv: string): boolean => {
+      const expected = round2(
+        Object.entries(CHANNEL_CVAR)
+          .filter(([, mappedCvar]) => mappedCvar === cv)
+          .reduce((a, [label]) => a + (posBreakdown[label] ?? 0), 0),
+      );
+      const actual = settled.find((s) => s.cvar === cv)?.gross ?? 0;
+      return actual < expected - BREAKDOWN_TIE_OUT_TOLERANCE;
+    };
     for (const eg of POS_EXTRACT_GROUPS) {
+      if (wideHandledExtractKeys.has(eg.key)) continue; // จัดการไปแล้วในขั้น -1) wide-domain ด้านบน
       const present: { cvar: string; amt: number }[] = [];
       for (const m of eg.members) {
         const amt = posBreakdown[m.rawLabel];
         if (!amt) continue;
         if (!settled.some((s) => s.cvar === m.cvar)) continue; // cvar นี้ settle=false ตาม config → ข้าม
+        if (cvarShortOfBreakdown(m.cvar)) continue; // เงินย้ายออกนอกโดเมนไปแล้ว → ไม่หัก กันคิดซ้ำ
         present.push({ cvar: m.cvar, amt: round2(amt) });
       }
       if (present.length === 0) continue; // วันนี้ไม่มีเงินกลุ่มนี้เลย → ไม่ต้องดึงอะไร
@@ -464,22 +585,21 @@ export function computeSendRows(
 }
 
 /**
- * เลือกว่า computeSendRows ควรใช้ channels + posBreakdown ชุดไหนสำหรับวันนั้น (sendDaysToReconcile
- * เรียกก่อนทุกครั้ง). channels มี 2 แหล่งที่เลือกได้อยู่แล้ว (iv_channels ถ้ามี ไม่งั้น channels ดิบ
- * จาก POS) — แต่ posBreakdown (raw label ต่อรายการ) มาจากไฟล์ POS ดิบเท่านั้นเสมอ ไม่เคยมีคู่ของ
- * iv_channels เอง.
+ * เลือกว่า computeSendRows ควรใช้ channels ชุดไหนสำหรับวันนั้น (sendDaysToReconcile เรียกก่อน
+ * ทุกครั้ง): iv_channels (ใบกำกับภาษียืนยันแล้ว) ถ้ามี ไม่งั้น channels ดิบจาก POS.
  *
  * bug 2026-08-16: sendDaysToReconcile เคยส่ง posBreakdown (ของ POS ดิบ) เข้าคู่กับ channels=
- * iv_channels (ใบกำกับภาษีเก่า) เสมอ ไม่สนว่า channels ที่ใช้จริงมาจากไหน — วันไหนใบกำกับภาษีเก่า
- * จัดหมวดต่างจาก POS ไปแล้ว (เช่น ใบเก่าเอาเงิน "QRCredit(API)" 80 บาทไปฝากไว้ใต้ช่อง Grab แทน)
- * POS_EXTRACT_GROUPS จะหักเงินก้อนเดียวกันออกจาก iv_channels **ซ้ำอีกรอบ** (เพราะไม่รู้ว่าใบกำกับ
- * ภาษีหักออกไปแล้ว) → ยอด QR หายไป 80 บาทซ้อน (verified จริง: store 4097 06-14 มิ.ย. หายไปพอดี
- * ฿6,939 แทนที่จะเป็น ฿7,019 ที่ธนาคารโอนจริง — ดู post-mortem 2026-08-16).
+ * iv_channels เสมอไม่สนว่ามาจากไหน — วันไหนใบกำกับภาษีจัดหมวดต่างจาก POS ไปแล้ว (เช่น ย้ายเงิน
+ * "QRCredit(API)" 80 บาทไปฝากไว้ใต้ช่อง Grab แทน) POS_EXTRACT_GROUPS จะหักเงินก้อนเดียวกันออกจาก
+ * iv_channels ซ้ำอีกรอบ → ยอด QR หายไป 80 บาทซ้อน (store 4097 06-14: ฿6,939 แทนที่จะเป็น ฿7,019
+ * จริง — ดู post-mortem 2026-08-16). ตอนนั้นแก้ด้วยการตัด posBreakdown ทิ้งทุกครั้งที่ใช้
+ * iv_channels (ปลอดภัยแต่หยาบ — ทำให้วันไหน TRCloud ย้าย cvar ภายในโดเมนเดียวกันเอง เช่น
+ * "blueplus+ credit(API)" (c15) ไปรวมกับ "blueplus wallet" (c14) ก็เลิกแยกไปด้วยทั้งที่ไม่จำเป็น).
  *
- * FIX: posBreakdown ใช้แยก/หักช่องทางได้เฉพาะตอนที่ channels ที่ใช้จริงมาจาก POS ดิบเท่านั้น
- * (channels===day.channels) — ถ้ากำลังใช้ iv_channels (ใบกำกับภาษียืนยันแล้ว) ให้ตัด posBreakdown
- * ทิ้ง (undefined) → computeSendRows กลับไปพฤติกรรมปลอดภัยเดิม (ก้อนรวม 1 บรรทัด ไม่แยก/ไม่หัก)
- * แทนที่จะพยายามแยกด้วยข้อมูลคนละแหล่งที่อาจไม่ตรงกัน.
+ * 2026-08-17: ย้าย safety check เข้าไปอยู่ใน computeSendRows เองแทน (wide-domain tie-out ขั้น -1)
+ * + per-cvar guard ในขั้น 0) — ปลอดภัยละเอียดกว่าเดิม แยกแยะได้ว่าเงินย้าย "ในโดเมนเดียวกัน"
+ * (กู้คืนการแยกได้ปลอดภัย) กับ "ย้ายออกนอกโดเมนไปเลย" (fallback รวมก้อนเหมือน 06-14) จึงไม่ต้อง
+ * ตัด posBreakdown ทิ้งแบบเหมาที่นี่อีกแล้ว — ส่งผ่านเสมอ ให้ computeSendRows ตัดสินใจเอง
  */
 export function resolveSendChannels(day: {
   channels: Record<string, number> | null;
@@ -493,7 +613,7 @@ export function resolveSendChannels(day: {
   const usingIvChannels = !!(day.iv_channels && Object.keys(day.iv_channels).length > 0);
   return {
     channels: usingIvChannels ? day.iv_channels! : day.channels,
-    posBreakdown: usingIvChannels ? undefined : day.posBreakdown,
+    posBreakdown: day.posBreakdown,
     usingIvChannels,
   };
 }

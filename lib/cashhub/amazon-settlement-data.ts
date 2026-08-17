@@ -175,10 +175,11 @@ export async function sendDaysToReconcile(
     //   TRCloud บางวัน reclassify เงินข้ามช่องทาง (เช่น ย้าย QR บางส่วนไป Grab) เทียบกับไฟล์ POS ดิบ
     //   ยืนยันกับยอดธนาคารจริงแล้วว่า iv_channels ตรงเป๊ะถึงสตางค์ ส่วน channels (POS ดิบ) อาจเพี้ยนวันที่มีการจัดหมวดใหม่
     //   fallback ไป channels เฉพาะวันที่ยังไม่มีใบ IV ยืนยัน (เช่นวันล่าสุดที่ TRCloud ยังไม่ประมวลผล)
-    // posBreakdown (raw label จาก POS ดิบ) ใช้แยก/หักช่องทางได้เฉพาะตอนที่ channels ที่ใช้จริง
-    //   มาจาก POS ดิบด้วยเท่านั้น — ถ้ากำลังใช้ iv_channels (คนละแหล่งกับ posBreakdown อาจจัดหมวด
-    //   ไม่ตรงกันแล้ว) resolveSendChannels ตัด posBreakdown ทิ้งให้อัตโนมัติ กันหักซ้ำ (bug 2026-08-16
-    //   — ดู comment เต็มที่ resolveSendChannels ใน amazon-settlement.ts)
+    // posBreakdown (raw label จาก POS ดิบ) ส่งเข้า computeSendRows เสมอ ไม่ว่า channels จะมาจาก
+    //   iv_channels หรือ POS ดิบ — safety check ว่าเชื่อได้แค่ไหน (กันหักซ้ำ/หักผิด cvar ตอนที่
+    //   TRCloud ย้ายเงินข้าม cvar ไปแล้ว, bug เดิม 2026-08-16) ย้ายเข้าไปอยู่ใน computeSendRows เอง
+    //   ตั้งแต่ 2026-08-17 (wide-domain tie-out + per-cvar guard) — ดู comment เต็มที่
+    //   resolveSendChannels + computeSendRows ใน amazon-settlement.ts
     const { channels, posBreakdown } = resolveSendChannels(day);
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยก 2 บรรทัด
     // ตามกฎ CEO (qrapi/qrstd) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง

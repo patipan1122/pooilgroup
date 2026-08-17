@@ -494,11 +494,20 @@ cases.push({
 // old invoice filed "QRCredit(API)" money under the "Grab" cvar instead of leaving it in
 // the QR cvar), POS_EXTRACT_GROUPS subtracted that same money a SECOND time from
 // iv_channels's QR total — real store 4097 case: booked ฿6,939 instead of the real
-// ฿7,019 bank deposit, plus a phantom "Grab ฿67.20" line. Fix: posBreakdown may only ride
-// along with channels that came from the live POS file — never with iv_channels.
+// ฿7,019 bank deposit, plus a phantom "Grab ฿67.20" line.
+//
+// 2026-08-17: the original fix (drop posBreakdown entirely whenever using iv_channels) was
+// safe but coarse — it also disabled qrapi/qrstd splitting on days where iv_channels just
+// merged a POS_EXTRACT_GROUPS cvar into a SETTLEMENT_GROUPS cvar in the SAME domain (e.g.
+// store 4097 2026-06-02: TRCloud folded c15's "blueplus+ credit(API)" ฿70 into c14's
+// "blueplus wallet", leaving the "qr" group as one lumped ฿9,823 row instead of the real
+// ฿9,468 + ฿285 the bank actually posted). resolveSendChannels now ALWAYS passes posBreakdown
+// through — the safety logic moved into computeSendRows itself (wide-domain tie-out step -1
+// recovers same-domain merges like 06-02; the per-cvar guard in step 0 still blocks
+// out-of-domain reclassification like 06-14/Grab). See computeSendRows's own doc comment.
 // ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(f) resolveSendChannels: iv_channels present+non-empty → uses iv_channels, drops posBreakdown",
+  name: "(f) resolveSendChannels: iv_channels present+non-empty → uses iv_channels, still passes posBreakdown through (safety now lives in computeSendRows)",
   check: () => {
     const day = {
       channels: { c1: 100, c2: 200 },
@@ -508,7 +517,7 @@ cases.push({
     const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
     let err: string | null = null;
     err ??= eq("channels == iv_channels", channels, day.iv_channels);
-    err ??= eq("posBreakdown dropped (undefined)", posBreakdown, undefined);
+    err ??= eq("posBreakdown passed through unchanged", posBreakdown, day.posBreakdown);
     err ??= eq("usingIvChannels flag true", usingIvChannels, true);
     return err;
   },
@@ -563,9 +572,58 @@ cases.push({
     const { rows } = computeSendRows(channels, cfg({ c14: { feePercent: 0 } }), posBreakdown);
     const qr = rows.find((r) => r.key === "qr" || r.key === "qrapi");
     let err: string | null = null;
-    err ??= eq("posBreakdown dropped because this day used iv_channels", posBreakdown, undefined);
-    err ??= eq("no qrcredit extraction row (posBreakdown was dropped)", rows.some((r) => r.key === "qrcredit"), false);
+    err ??= eq("posBreakdown passed through (safety now lives inside computeSendRows)", posBreakdown, day.posBreakdown);
+    err ??= eq(
+      "no qrcredit extraction row — c2's settled gross (6734) is SHORT of what posBreakdown claims for c2 (6734+80=6814), so the per-cvar guard blocks extracting from it (money moved OUT to Grab, not trustworthy)",
+      rows.some((r) => r.key === "qrcredit"),
+      false,
+    );
+    err ??= eq("no phantom/wrong Grab row either — c20 sent at its real iv_channels amount", rows.find((r) => r.key === "c20")?.net, 67.2);
     err ??= eq("qr group net == real bank deposit (฿7,019), not the old buggy ฿6,939", qr?.net, 7019);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(g) real-world regression — store 4097 2026-06-02: TRCloud merged c15's blueplus+ credit(API) INTO c14's blueplus wallet (same-domain merge, unlike 06-14's out-of-domain Grab move) → wide-domain tie-out (step -1) must recover the real split: qrcredit=70, qrapi=9468, qrstd=285 — NOT the lumped ฿9,823 the CEO caught live",
+  check: () => {
+    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-02) — c15 is
+    // completely ABSENT from iv_channels (its ฿70 got folded into c14, which reads 140 = 70+70
+    // instead of raw POS's 70) — this is the exact shape a22b88c3's blanket posBreakdown-drop
+    // could never recover, because c14 (not c15) still exists in settled and "looks fine" on
+    // its own — only the WIDE domain (c2+c13+c14+c15 together) reveals the merge and ties out.
+    const day = {
+      channels: { c1: 11079, c2: 9683, c11: 260, c12: 120, c14: 70, c15: 70 },
+      iv_channels: { c1: 11079, c2: 9683, c11: 260, c12: 120, c14: 140 },
+      posBreakdown: {
+        Redeem: 260,
+        QRPayment: 215,
+        "QRPayment(API)": 9468,
+        "blueplus+ wallet": 70,
+        "blueplus+ credit(API)": 70,
+        "เครดิต EDC": 120,
+        "ยอดชำระด้วยเงินสด": 11079,
+      },
+    };
+    const { channels, posBreakdown } = resolveSendChannels(day);
+    // c14 feePercent=0 to match real production config for this branch (same override as the
+    // 06-14 case above — cfg()'s 5% default is only there to exercise fee math elsewhere).
+    const { rows, splitGroupKeys } = computeSendRows(channels, cfg({ c14: { feePercent: 0 } }), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("posBreakdown passed through (not dropped)", posBreakdown, day.posBreakdown);
+    err ??= eq("qr group reported as split", splitGroupKeys, ["qr"]);
+    err ??= eq("qrcredit gross == 70 (blueplus+ credit(API) alone — QRCredit(API) absent today)", byKey.get("qrcredit")?.gross, 70);
+    err ??= eq("qrcredit fee == 70*0.9% = 0.63", byKey.get("qrcredit")?.fee, 0.63);
+    err ??= eq("qrcredit net == 69.37 — the CEO's expected 3rd (small) bank line", byKey.get("qrcredit")?.net, 69.37);
+    err ??= eq("qrapi gross == 9468 — matches the real bank deposit CEO pointed at exactly", byKey.get("qrapi")?.gross, 9468);
+    err ??= eq("qrstd gross == 285 (215 QRPayment + 70 blueplus wallet) — CEO's other expected bank line", byKey.get("qrstd")?.gross, 285);
+    err ??= eq("no leftover standalone c15/c14 row (fully absorbed into qrcredit/qrstd)", [byKey.has("c15"), byKey.has("c14")], [false, false]);
+    err ??= eq(
+      "money conserved: qrcredit+qrapi+qrstd+c1+c12 gross == full settled total (21022, excludes non-settling Redeem 260)",
+      round2sum([byKey.get("qrcredit")?.gross, byKey.get("qrapi")?.gross, byKey.get("qrstd")?.gross, byKey.get("c1")?.gross, byKey.get("c12")?.gross]),
+      21022,
+    );
     return err;
   },
 });
