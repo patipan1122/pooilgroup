@@ -7781,6 +7781,9 @@ model RentalBill {
   taxInvoiceNo       String?     @map("tax_invoice_no")
   taxInvoiceIssuedAt DateTime?   @map("tax_invoice_issued_at") @db.Timestamptz(6)
   taxInvoiceIssuedBy String?     @map("tax_invoice_issued_by") @db.Uuid
+  // วันที่ "พิมพ์บนใบกำกับ" — อิงวันที่ลูกค้าชำระเงินงวดล่าสุด (ไม่ใช่วันที่กดปุ่มออกเลข
+  // ซึ่งเก็บแยกไว้ที่ taxInvoiceIssuedAt แล้วเพื่อ audit) แช่แข็งตอนออกเลข ไม่เปลี่ยนภายหลัง.
+  taxInvoiceDate     DateTime?   @map("tax_invoice_date") @db.Date
   // การยกเลิกบิลแบบขออนุมัติ (maker≠checker) + log
   voidStatus       String         @default("none") @map("void_status") // none | pending | approved | rejected
   voidReason       String?        @map("void_reason")

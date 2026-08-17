@@ -51,6 +51,7 @@ export type BillDocumentData = {
   dueDate: Date | null;
   taxInvoiceNo?: string | null;
   taxInvoiceIssuedAt?: Date | null;
+  taxInvoiceDate?: Date | null;
   subtotal: unknown;
   discountAmount: unknown;
   vatAmount: unknown;
@@ -300,7 +301,11 @@ export function BillDocument({
             ? [
                 {
                   k: "เลขที่ใบกำกับภาษี",
-                  v: `${bill.taxInvoiceNo}${bill.taxInvoiceIssuedAt ? ` (${thaiDateLong(bill.taxInvoiceIssuedAt)})` : ""}`,
+                  v: `${bill.taxInvoiceNo}${
+                    bill.taxInvoiceDate || bill.taxInvoiceIssuedAt
+                      ? ` (${thaiDateLong((bill.taxInvoiceDate ?? bill.taxInvoiceIssuedAt)!)})`
+                      : ""
+                  }`,
                   num: true,
                 },
               ]

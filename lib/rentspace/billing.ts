@@ -175,6 +175,13 @@ export async function issueTaxInvoice(
   }
   if (existing.status !== "paid") throw new Error("ออกใบกำกับภาษีได้เฉพาะบิลที่จ่ายครบแล้วเท่านั้น");
 
+  // วันที่พิมพ์บนใบกำกับ = วันที่จ่ายงวดล่าสุด (ที่ยืนยันแล้ว) ของบิลนี้ — ไม่ใช่วันที่กดปุ่ม
+  const lastPayment = await prisma.rentalPayment.aggregate({
+    where: { billId, status: "confirmed" },
+    _max: { paidOn: true },
+  });
+  const taxInvoiceDate = lastPayment._max.paidOn ?? new Date(); // ไม่ควรเกิด (บิลจ่ายครบต้องมีรายการจ่าย) แต่กันพังไว้
+
   const year = new Date().getFullYear();
   for (let attempt = 0; attempt < 5; attempt++) {
     const taxInvoiceNo = await nextTaxInvoiceNo(existing.orgId, year);
@@ -183,7 +190,7 @@ export async function issueTaxInvoice(
       // updateMany + where taxInvoiceNo:null = compare-and-swap กันสองคำขอออกเลขให้บิลเดียวกันพร้อมกัน
       const result = await prisma.rentalBill.updateMany({
         where: { id: billId, taxInvoiceNo: null },
-        data: { taxInvoiceNo, taxInvoiceIssuedAt: issuedAt, taxInvoiceIssuedBy: actorId },
+        data: { taxInvoiceNo, taxInvoiceIssuedAt: issuedAt, taxInvoiceIssuedBy: actorId, taxInvoiceDate },
       });
       if (result.count === 0) {
         // แพ้ race ให้อีกคำขอ (บิลนี้มีเลขแล้ว) → คืนเลขจริงกลับไป ไม่ throw
