@@ -10,6 +10,7 @@ import { audit } from "@/lib/audit/log";
 import type { AuditAction } from "@/lib/audit/log";
 import { toNum, currentPeriod } from "@/lib/rentspace/format";
 import { createBillForContract, recomputeBillTotals, computeMeterUsage, round2, computeBillTotals, promoDiscountFor, issueTaxInvoice } from "@/lib/rentspace/billing";
+import { pushProjectBillsToLedger } from "@/lib/rentspace/ledger-push";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
 import { notifyBillIssued } from "@/lib/rentspace/notify";
@@ -1719,6 +1720,51 @@ export async function actIssueTaxInvoice(
     revalidatePath("/rentspace/matrix");
   }
   return { taxInvoiceNo, alreadyIssued };
+}
+
+// ───────── ส่งบิลที่จ่ายครบเข้า LedgerLine (bank-recon) ─────────
+export async function actSaveReconcileAccountConfig(input: {
+  projectId: string;
+  companyId: string;
+  bankAccountId: string;
+}) {
+  const session = await gateAdmin();
+  if (!input.companyId || !input.bankAccountId) throw new Error("กรุณาเลือกบริษัทและบัญชีธนาคารให้ครบ");
+  const project = await prisma.rentalProject.findFirst({
+    where: { id: input.projectId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!project) throw new Error("ไม่พบโครงการ หรือไม่มีสิทธิ์");
+  await prisma.rentalProject.update({
+    where: { id: project.id },
+    data: { companyId: input.companyId, reconcileBankAccountId: input.bankAccountId },
+  });
+  await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rental_project", project.id, {
+    action: "reconcile_account_config",
+    companyId: input.companyId,
+    bankAccountId: input.bankAccountId,
+  });
+  revalidatePath("/rentspace/settings");
+  return { ok: true };
+}
+
+export async function actSendBillsToReconcile(projectId: string) {
+  const session = await gateAdmin();
+  const project = await prisma.rentalProject.findFirst({
+    where: { id: projectId, orgId: session.user.org_id },
+    select: { id: true },
+  });
+  if (!project) throw new Error("ไม่พบโครงการ หรือไม่มีสิทธิ์");
+  const result = await pushProjectBillsToLedger(session.user.org_id, project.id);
+  await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rental_project", project.id, {
+    action: "send_to_ledger",
+    inserted: result.inserted,
+    alreadySent: result.alreadySent,
+  });
+  if (!result.ok) throw new Error(result.error ?? "ส่งไม่สำเร็จ");
+  revalidatePath("/rentspace/settings");
+  revalidatePath("/rentspace/matrix");
+  return result;
 }
 
 // ───────── โหมดทดลอง: แก้ไข / ลบบิลโดยตรง (ต้องเปิดสิทธิ์ project.billEditUnlocked) ─────────

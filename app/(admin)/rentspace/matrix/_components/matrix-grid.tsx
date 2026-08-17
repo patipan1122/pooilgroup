@@ -460,6 +460,13 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                         onClick={() => openCell(u, m)}
                       >
                         {cell.edited && <span className="rs-edited-dot" title="เคยแก้ไขรายการบิล" />}
+                        {cell.ledgerStatus !== "not_sent" && (
+                          <span
+                            className={`rs-ledger-dot ${cell.ledgerStatus === "sent_matched" ? "cell-matched-iridescent" : ""}`}
+                            style={cell.ledgerStatus === "sent_unmatched" ? { background: "var(--rs-info)" } : undefined}
+                            title={cell.ledgerStatus === "sent_matched" ? "จับคู่กับธนาคารแล้ว" : "ส่งเข้าบัญชี LedgerLine แล้ว · รอจับคู่"}
+                          />
+                        )}
                         <span className="rs-amount" style={{ color: tone.color }}>
                           {fmtGrid(cell.total)}
                         </span>
@@ -639,6 +646,14 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           height: 6px;
           border-radius: 50%;
           background: var(--rs-edited);
+        }
+        .rs-ledger-dot {
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
         }
         .rs-amount {
           font-weight: 600;
@@ -989,13 +1004,26 @@ function CellDetail({
         <div className="px-4 pb-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
           {cell ? (
             <>
-              <div className="mb-3">
+              <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span
                   className="inline-block rounded-full px-3 py-1 text-[12px] font-bold"
                   style={{ background: statusTone(cell.status).bg, color: statusTone(cell.status).color }}
                 >
                   {BILL_STATUS[cell.status]?.label ?? cell.status}
                 </span>
+                {cell.ledgerStatus === "sent_matched" && (
+                  <span className="cell-matched-iridescent inline-block rounded-full px-2.5 py-1 text-[11.5px]">
+                    จับคู่บัญชีแล้ว
+                  </span>
+                )}
+                {cell.ledgerStatus === "sent_unmatched" && (
+                  <span
+                    className="inline-block rounded-full px-2.5 py-1 text-[11.5px] font-semibold"
+                    style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
+                  >
+                    ส่งบัญชีแล้ว · รอจับคู่
+                  </span>
+                )}
               </div>
               <div
                 className="rounded-xl border"

@@ -26,6 +26,7 @@ export default async function ReviewQueuePage() {
       bankFee: true,
       depositedAt: true,
       notes: true,
+      ocrFlagReason: true,
       slipPhotoUrl: true,
       branch: { select: { name: true } },
       maid: { select: { displayName: true } },
@@ -50,7 +51,7 @@ export default async function ReviewQueuePage() {
           รายการรอตรวจสอบ
         </h1>
         <p className="text-sm text-zinc-600">
-          ฝากเงินที่ยอดต่างกับ POS ≥ 500 ฿ — ตรวจสลิปแล้วกด "ตรวจแล้ว"
+          ฝากเงินที่ยอดต่างกับ POS ≥ 500 ฿ หรือ AI อ่านสลิปแล้วสงสัยว่าซ้ำ/บัญชีผิด — ตรวจสลิปแล้วกด &quot;ตรวจแล้ว&quot;
         </p>
       </header>
 
@@ -140,6 +141,12 @@ export default async function ReviewQueuePage() {
                       </div>
                     </div>
 
+                    {d.ocrFlagReason && (
+                      <p className="flex items-start gap-1 text-xs font-medium text-red-700">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                        AI ตรวจพบ: {d.ocrFlagReason}
+                      </p>
+                    )}
                     {d.notes && (
                       <p className="text-xs text-zinc-500">หมายเหตุ: {d.notes}</p>
                     )}

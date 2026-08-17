@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { toNum, tenantDisplayName } from "@/lib/rentspace/format";
 import { getEditedBillIds } from "@/lib/rentspace/history";
+import { getLedgerStatusForBills, type LedgerBillStatus } from "@/lib/rentspace/ledger-push";
 
 export type MatrixUnit = {
   id: string;
@@ -33,6 +34,7 @@ export type MatrixCell = {
   dueDate: string; // YYYY-MM-DD — ครบกำหนด
   payments: MatrixPayment[]; // ประวัติการชำระ (timeline)
   edited: boolean; // เคยแก้ไขรายการบิล (RENTSPACE_BILL_UPDATED) — โชว์จุดสีส้มในตาราง
+  ledgerStatus: LedgerBillStatus; // ส่งเข้า LedgerLine แล้วหรือยัง / จับคู่ธนาคารแล้วหรือยัง
 };
 
 export type RentMatrix = {
@@ -116,8 +118,13 @@ export async function rentMatrix(
     }),
   ]);
 
-  // จุดสีส้ม "เคยแก้ไข" ในตาราง — query เดียวจบต่อทั้งตาราง ไม่ใช่ query ต่อเซลล์ (กัน N+1)
-  const editedBillIds = await getEditedBillIds(orgId, bills.map((b) => b.id));
+  // จุดสีส้ม "เคยแก้ไข" + จุดสถานะ "ส่งเข้าบัญชี LedgerLine" ในตาราง — query เดียวจบ
+  // ต่อทั้งตาราง ไม่ใช่ query ต่อเซลล์ (กัน N+1)
+  const billIds = bills.map((b) => b.id);
+  const [editedBillIds, ledgerStatusById] = await Promise.all([
+    getEditedBillIds(orgId, billIds),
+    getLedgerStatusForBills(orgId, billIds),
+  ]);
 
   const isoDate = (d: Date | null | undefined) =>
     d ? new Date(d).toISOString().slice(0, 10) : "";
@@ -160,6 +167,7 @@ export async function rentMatrix(
         method: p.method,
       })),
       edited: editedBillIds.has(b.id),
+      ledgerStatus: ledgerStatusById.get(b.id) ?? "not_sent",
     };
     cells[`${b.unitId}|${b.period}`] = cell;
 
