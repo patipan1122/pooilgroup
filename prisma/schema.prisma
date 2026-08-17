@@ -7394,6 +7394,12 @@ model RentalProject {
   bankAccountHolder String?          @map("bank_account_holder")
   promptpayId       String?          @map("promptpay_id")
   paymentNote       String?          @map("payment_note")
+  // CEO 2026-08-17: บัญชีธนาคารที่ยอดบิลที่จ่ายครบแล้วควรเข้าจริง — ใช้ตอนกด
+  // "ส่งเข้าบัญชี LedgerLine" (ledger_revenue_entry, source_type=RENTSPACE).
+  // companyId ด้านบน (มีอยู่แล้ว แต่ไม่เคยผูก UI ใช้งาน) ใช้เป็น company_id คู่กัน
+  // — pattern เดียวกับ ChairopsBranch.reconcileCompanyId/reconcileBankAccountId
+  // (ตารางปลายทางไม่มี Prisma model เหมือนกัน).
+  reconcileBankAccountId String?     @map("reconcile_bank_account_id") @db.Uuid
   isActive         Boolean           @default(true) @map("is_active")
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
