@@ -98,10 +98,13 @@ export interface ArchiveGroup {
   accountLabel: string | null;
   items: ArchiveItem[];
 }
+const ARCHIVE_ROW_LIMIT = 1000; // เพดานกันดึงข้อมูลไม่จำกัด — เกินนี้ต้องแคบช่วงวันที่ลง (ดู `truncated` return)
+
 export async function listMatchedArchive(params: {
   orgId: string; companyId: string; bankAccountId?: string; search?: string;
-}): Promise<ArchiveGroup[]> {
-  const { orgId, companyId, bankAccountId, search } = params;
+  dateFrom?: string; dateTo?: string; // YYYY-MM-DD — กรองจากวันที่ยืนยัน/ย้อนกลับ (field เดียวกับที่ ORDER BY ใช้อยู่)
+}): Promise<{ groups: ArchiveGroup[]; truncated: boolean }> {
+  const { orgId, companyId, bankAccountId, search, dateFrom, dateTo } = params;
   const groups = await prisma.$queryRaw<{
     id: string; status: string; matchType: string; matchKind: string;
     bankTotalSatang: bigint; bookTotalSatang: bigint; deltaSatang: bigint;
@@ -126,10 +129,18 @@ export async function listMatchedArchive(params: {
       AND (${bankAccountId ?? null}::uuid IS NULL
            OR g.bank_account_id = ${bankAccountId ?? null}::uuid
            OR g.match_type='transfer')
+      -- ช่วงวันที่ (จากวันที่–ถึงวันที่) — ไม่ระบุ = ไม่กรอง (พฤติกรรมเดิม)
+      -- ตัดวันแบบ "วันไทย" (AT TIME ZONE 'Asia/Bangkok') ไม่ใช่ UTC ดิบ — DB session เป็น UTC
+      -- ถ้าตัด ::date ตรงๆ รายการเที่ยงคืน-ตี6 เวลาไทยจะถูกนับเป็นวันก่อนหน้าผิด (ตามแพทเทิร์นเดียวกับ clawfleet/matrix-queries.ts)
+      AND (${dateFrom ?? null}::date IS NULL
+           OR (COALESCE(g.reversed_at, g.confirmed_at, g.created_at) AT TIME ZONE 'Asia/Bangkok')::date >= ${dateFrom ?? null}::date)
+      AND (${dateTo ?? null}::date IS NULL
+           OR (COALESCE(g.reversed_at, g.confirmed_at, g.created_at) AT TIME ZONE 'Asia/Bangkok')::date <= ${dateTo ?? null}::date)
     ORDER BY COALESCE(g.reversed_at, g.confirmed_at, g.created_at) DESC
-    LIMIT 400
+    LIMIT ${ARCHIVE_ROW_LIMIT}
   `;
-  if (!groups.length) return [];
+  const truncated = groups.length === ARCHIVE_ROW_LIMIT;
+  if (!groups.length) return { groups: [], truncated: false };
   // live items for confirmed groups (reversed groups read from snapshot)
   const confirmedIds = groups.filter((g) => g.status === "confirmed").map((g) => g.id);
   const liveItems = confirmedIds.length
@@ -192,11 +203,13 @@ export async function listMatchedArchive(params: {
   });
 
   const q = (search ?? "").trim().toLowerCase();
-  if (!q) return out;
-  return out.filter((g) => {
-    const hay = `${g.accountLabel ?? ""} ${g.reversalReason ?? ""} ${g.items.map((i) => i.label).join(" ")} ${(Math.abs(g.bankTotalSatang) / 100).toFixed(2)}`.toLowerCase();
-    return hay.includes(q);
-  });
+  const filtered = q
+    ? out.filter((g) => {
+        const hay = `${g.accountLabel ?? ""} ${g.reversalReason ?? ""} ${g.items.map((i) => i.label).join(" ")} ${(Math.abs(g.bankTotalSatang) / 100).toFixed(2)}`.toLowerCase();
+        return hay.includes(q);
+      })
+    : out;
+  return { groups: filtered, truncated };
 }
 
 // ── Special-items hub (#7): transfers + skipped(no-match) across ALL accounts ───

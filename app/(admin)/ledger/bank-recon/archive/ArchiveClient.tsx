@@ -32,6 +32,20 @@ interface Props {
   initialQuery: string;
   companyId: string;
   isSuper: boolean;
+  account?: string;
+  initialFrom: string;
+  initialTo: string;
+  truncated: boolean;
+}
+
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function ymd(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+// เดือนตามปฏิทิน (1 ถึงวันสุดท้ายของเดือน) — offset=0 เดือนนี้ · offset=-1 เดือนที่แล้ว
+function monthRange(offset: number) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return { from: ymd(first), to: ymd(last) };
 }
 
 // ── ความมั่นใจ (เหมือนแท็บรอยืนยัน) — คลังดูจาก "ยอดต่าง" เป็นหลัก (ที่ยืนยันแล้ว = ชื่อผ่านตาคนแล้ว) ──
@@ -106,10 +120,12 @@ function VerifyChips({ g }: { g: ArchiveGroup }) {
   );
 }
 
-export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Props) {
+export function ArchiveClient({ groups, initialQuery, companyId, isSuper, account, initialFrom, initialTo, truncated }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [query, setQuery] = useState(initialQuery);
+  const [dateFrom, setDateFrom] = useState(initialFrom);
+  const [dateTo, setDateTo] = useState(initialTo);
   const [pending, startTransition] = useTransition();
 
   // revert modal state
@@ -124,13 +140,43 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
   const toggleOne = (id: string) =>
     setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
-  // submit search → server re-query (keeps deep-linkable ?q=)
-  function submitSearch(e: React.FormEvent) {
-    e.preventDefault();
+  // navigate → server re-query (deep-linkable ?q=&from=&to=) — คง account เดิมเสมอ
+  // (ของเดิมเคยลืมส่ง account ตอนค้นหา ทำให้ผลลัพธ์หลุดไปทุกบัญชีทั้งที่หน้าบอก "เฉพาะบัญชีนี้")
+  function navigate(overrides: { q?: string; from?: string; to?: string }) {
     const sp = new URLSearchParams();
     sp.set("company", companyId);
-    if (query.trim()) sp.set("q", query.trim());
+    if (account) sp.set("account", account);
+    const q2 = overrides.q ?? query;
+    const from2 = overrides.from ?? dateFrom;
+    const to2 = overrides.to ?? dateTo;
+    if (q2.trim()) sp.set("q", q2.trim());
+    if (from2) sp.set("from", from2);
+    if (to2) sp.set("to", to2);
     router.push(`${pathname}?${sp.toString()}`);
+  }
+
+  function submitSearch(e: React.FormEvent) {
+    e.preventDefault();
+    navigate({});
+  }
+
+  // ปุ่มลัดช่วงเวลา — นำทางทันที ไม่ต้องกด "ค้นหา" ซ้ำ
+  const thisMonthRange = monthRange(0);
+  const lastMonthRange = monthRange(-1);
+  const isThisMonth = dateFrom === thisMonthRange.from && dateTo === thisMonthRange.to;
+  const isLastMonth = dateFrom === lastMonthRange.from && dateTo === lastMonthRange.to;
+  function applyPreset(preset: "thisMonth" | "lastMonth" | "all") {
+    if (preset === "all") {
+      setDateFrom(""); setDateTo(""); navigate({ from: "", to: "" });
+      return;
+    }
+    const r = preset === "thisMonth" ? thisMonthRange : lastMonthRange;
+    setDateFrom(r.from); setDateTo(r.to);
+    navigate({ from: r.from, to: r.to });
+  }
+  function onDateInput(which: "from" | "to", v: string) {
+    if (which === "from") setDateFrom(v); else setDateTo(v);
+    navigate(which === "from" ? { from: v } : { to: v });
   }
 
   // live client-side narrowing on top of the server result (instant feel)
@@ -220,6 +266,36 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
         </button>
       </form>
 
+      {/* ช่วงเวลา: ปุ่มลัด + วันที่เอง (ใส่วันเดียวกันทั้งสองช่อง = ดูเฉพาะวันนั้นวันเดียว) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-zinc-400">ช่วงเวลา:</span>
+        <RangeChip active={!dateFrom && !dateTo} onClick={() => applyPreset("all")} label="ทั้งหมด" />
+        <RangeChip active={isThisMonth} onClick={() => applyPreset("thisMonth")} label="เดือนนี้" />
+        <RangeChip active={isLastMonth} onClick={() => applyPreset("lastMonth")} label="เดือนที่แล้ว" />
+        <label className="ml-1 flex items-center gap-1 text-xs text-zinc-400">
+          จาก
+          <input
+            aria-label="จากวันที่"
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => onDateInput("from", e.target.value)}
+            className="min-h-9 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-zinc-400">
+          ถึง
+          <input
+            aria-label="ถึงวันที่"
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => onDateInput("to", e.target.value)}
+            className="min-h-9 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          />
+        </label>
+      </div>
+
       {/* note about CashHub สีรุ้ง */}
       <div className="flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
         <Info size={14} className="mt-0.5 shrink-0" />
@@ -254,6 +330,7 @@ export function ArchiveClient({ groups, initialQuery, companyId, isSuper }: Prop
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-xs text-zinc-400">
           {shown.length} รายการ{shown.length !== groups.length ? ` (จากทั้งหมด ${groups.length})` : ""}
+          {truncated && " · มีรายการเก่ากว่านี้อีก ลองแคบช่วงวันที่เพื่อดูต่อ"}
         </p>
         {isSuper && confirmedVisible.length > 0 && (
           <button
@@ -497,6 +574,20 @@ function RawBankPanel({ txnId }: { txnId: string }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+// ชิปช่วงเวลา (ปุ่มลัด) — เหมือน StatusChip แต่ไม่มี count
+function RangeChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active ? "true" : "false"}
+      className={`press inline-flex min-h-9 items-center rounded-full border px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-brand-300 sm:min-h-0 ${active ? "border-zinc-800 bg-zinc-900 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}
+    >
+      {label}
+    </button>
   );
 }
 

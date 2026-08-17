@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function BankReconArchivePage({
   searchParams,
 }: {
-  searchParams: Promise<{ company?: string; branch?: string; q?: string; account?: string }>;
+  searchParams: Promise<{ company?: string; branch?: string; q?: string; account?: string; from?: string; to?: string }>;
 }) {
   const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
   const sp = await searchParams;
@@ -28,8 +28,12 @@ export default async function BankReconArchivePage({
   const companyId = scope.companyId;
   const search = (sp.q ?? "").trim();
   const account = sp.account;
+  const dateFrom = (sp.from ?? "").trim() || undefined;
+  const dateTo = (sp.to ?? "").trim() || undefined;
 
-  const groups = await listMatchedArchive({ orgId, companyId, bankAccountId: account, search: search || undefined });
+  const { groups, truncated } = await listMatchedArchive({
+    orgId, companyId, bankAccountId: account, search: search || undefined, dateFrom, dateTo,
+  });
   const cp = `company=${companyId}`;
   // เข้าจากในบัญชี → ปุ่มย้อนกลับไปหน้าบัญชีนั้น (ไม่ใช่ hub รวม)
   const backHref = account ? `/ledger/bank-recon/${account}?${cp}` : `/ledger/bank-recon?${cp}`;
@@ -58,7 +62,16 @@ export default async function BankReconArchivePage({
 
       <BankReconControlsNav companyId={companyId} active="archive" account={account} />
 
-      <ArchiveClient groups={groups} initialQuery={search} companyId={companyId} isSuper={isSuper} />
+      <ArchiveClient
+        groups={groups}
+        initialQuery={search}
+        companyId={companyId}
+        isSuper={isSuper}
+        account={account}
+        initialFrom={dateFrom ?? ""}
+        initialTo={dateTo ?? ""}
+        truncated={truncated}
+      />
     </div>
   );
 }
