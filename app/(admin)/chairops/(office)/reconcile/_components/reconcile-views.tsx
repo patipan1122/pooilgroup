@@ -23,7 +23,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { baht } from "@/lib/chairops/utils/format";
-import { SlipBadge } from "@/components/chairops/redesign/slip-viewer";
+import { SlipBadge, SlipChip } from "@/components/chairops/redesign/slip-viewer";
 import {
   ledgerCumClass,
   ledgerDiffClass,
@@ -2838,16 +2838,31 @@ export function PeriodsTab({
                       <span className="text-muted">—</span>
                     )}
                   </td>
-                  {/* CEO 2026-08-07 · คอลัมน์ "สลิป" กดเปิดรูปสลิปฝากเงินรอบนั้นเต็มจอ
-                      reuse SlipBadge เดิม (แท็บ Ledger ใช้อยู่) — มีรูป→ปุ่มคลิก · placeholder/
-                      ไม่มีรูป→เทา "สลิป" · ไม่มีฝาก→"—". p.slip อาจเป็น literal "slip" (ไม่ใช่ URL);
-                      SlipBadge.isImageUrl กันไว้แล้ว. */}
+                  {/* CEO 2026-08-17 · ยอดต่อ "ใบฝาก" หนึ่งใบ (ไม่ใช่ลิงก์ "สลิป" รวมช่วง
+                      แบบเดิม) — พนักงานบางคนแบ่งฝากหลายใบในช่วงเดียวกัน ต้องเห็นทีละ
+                      ใบพร้อมสถานะ. ยอด = ที่ AI อ่านจากสลิปจริง (ocrAmount) ถ้ามี ไม่งั้น
+                      fallback ยอดที่พิมพ์เอง. กดยอดดูรูปสลิปใบนั้นได้ตรงในตาราง. */}
                   <td>
-                    <SlipBadge
-                      url={p.slip}
-                      missing={false}
-                      caption={`สลิปฝากเงิน · รอบ ${p.from.slice(5)} → ${p.to.slice(5)}`}
-                    />
+                    {p.slips.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {p.slips.map((s) => (
+                          <SlipChip
+                            key={s.id}
+                            amount={fmtN(s.amount)}
+                            slipUrl={s.slipUrl}
+                            status={s.ledgerStatus}
+                            flagged={s.flagged}
+                            caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <SlipBadge
+                        url={p.slip}
+                        missing={false}
+                        caption={`สลิปฝากเงิน · รอบ ${p.from.slice(5)} → ${p.to.slice(5)}`}
+                      />
+                    )}
                   </td>
                   <td
                     className={"num mono " + diffClass}

@@ -28,7 +28,7 @@
 // split columns" CEO saw live on days QRCredit(API)≠0, e.g. 2026-08-05/08-09).
 
 import type { ChannelConfig } from "../amazon-settlement";
-import { computeSendRows, legacyRefsForDay } from "../amazon-settlement";
+import { computeSendRows, legacyRefsForDay, resolveSendChannels } from "../amazon-settlement";
 
 export interface Case {
   name: string;
@@ -482,6 +482,90 @@ cases.push({
       refs.includes("amz-4097-2026-08-05-qrapi"),
       refs.includes("amz-4097-2026-08-05-qrstd"),
     ], [false, false]);
+    return err;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (f) resolveSendChannels — bug 2026-08-16: sendDaysToReconcile used to pass POS-raw
+// posBreakdown into computeSendRows even on days where the CHANNELS actually being sent
+// came from iv_channels (an already-issued TRCloud invoice) instead of the live POS file.
+// When the invoice's own categorization already differs from the raw POS split (e.g. an
+// old invoice filed "QRCredit(API)" money under the "Grab" cvar instead of leaving it in
+// the QR cvar), POS_EXTRACT_GROUPS subtracted that same money a SECOND time from
+// iv_channels's QR total — real store 4097 case: booked ฿6,939 instead of the real
+// ฿7,019 bank deposit, plus a phantom "Grab ฿67.20" line. Fix: posBreakdown may only ride
+// along with channels that came from the live POS file — never with iv_channels.
+// ─────────────────────────────────────────────────────────────────────────────
+cases.push({
+  name: "(f) resolveSendChannels: iv_channels present+non-empty → uses iv_channels, drops posBreakdown",
+  check: () => {
+    const day = {
+      channels: { c1: 100, c2: 200 },
+      iv_channels: { c1: 100, c2: 190, c20: 10 },
+      posBreakdown: { QRPayment: 200 },
+    };
+    const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
+    let err: string | null = null;
+    err ??= eq("channels == iv_channels", channels, day.iv_channels);
+    err ??= eq("posBreakdown dropped (undefined)", posBreakdown, undefined);
+    err ??= eq("usingIvChannels flag true", usingIvChannels, true);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(f) resolveSendChannels: iv_channels null/absent → uses raw POS channels, keeps posBreakdown",
+  check: () => {
+    const day = { channels: { c1: 100, c2: 200 }, iv_channels: null, posBreakdown: { QRPayment: 200 } };
+    const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
+    let err: string | null = null;
+    err ??= eq("channels == day.channels", channels, day.channels);
+    err ??= eq("posBreakdown passed through unchanged", posBreakdown, day.posBreakdown);
+    err ??= eq("usingIvChannels flag false", usingIvChannels, false);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(f) resolveSendChannels: iv_channels={} (empty object) → treated same as absent, uses raw POS + posBreakdown",
+  check: () => {
+    const day = { channels: { c1: 100 }, iv_channels: {}, posBreakdown: { QRPayment: 100 } };
+    const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
+    let err: string | null = null;
+    err ??= eq("channels == day.channels", channels, day.channels);
+    err ??= eq("posBreakdown passed through unchanged", posBreakdown, day.posBreakdown);
+    err ??= eq("usingIvChannels flag false", usingIvChannels, false);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(f) real-world regression — store 4097 2026-06-14: old invoice mis-filed QRCredit(API) money under Grab(c20) → resolveSendChannels+computeSendRows must NOT double-subtract; qr group must net exactly ฿7,019 (matches the real bank deposit), not the buggy ฿6,939",
+  check: () => {
+    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-14)
+    const day = {
+      channels: { c1: 7100, c2: 6814, c8: 10, c11: 700, c12: 120, c14: 285 },
+      iv_channels: { c1: 7100, c2: 6734, c7: 10, c11: 700, c12: 120, c14: 285, c20: 80 },
+      posBreakdown: {
+        Redeem: 700,
+        "QRCredit(API)": 80,
+        "QRPayment(API)": 6734,
+        "blueplus+ wallet (API)": 285,
+        "เครดิต EDC": 120,
+        "ส่วนลด 10 บาท TRUE - DTAC": 10,
+        "ยอดชำระด้วยเงินสด": 7100,
+      },
+    };
+    const { channels, posBreakdown } = resolveSendChannels(day);
+    // c14 feePercent=0 here to match the REAL production config for this branch (the shared
+    // cfg() fixture uses 5% for other tests' fee-math coverage — irrelevant to this case).
+    const { rows } = computeSendRows(channels, cfg({ c14: { feePercent: 0 } }), posBreakdown);
+    const qr = rows.find((r) => r.key === "qr" || r.key === "qrapi");
+    let err: string | null = null;
+    err ??= eq("posBreakdown dropped because this day used iv_channels", posBreakdown, undefined);
+    err ??= eq("no qrcredit extraction row (posBreakdown was dropped)", rows.some((r) => r.key === "qrcredit"), false);
+    err ??= eq("qr group net == real bank deposit (฿7,019), not the old buggy ฿6,939", qr?.net, 7019);
     return err;
   },
 });

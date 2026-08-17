@@ -158,3 +158,58 @@ export function DepositAmount({
   }
   return <>{amount}</>;
 }
+
+/** ยอดต่อ "ใบฝาก" หนึ่งใบ ในตาราง Periods (CEO 2026-08-17) — คลิกดูสลิปใบนั้นได้
+ *  ตรงในตาราง ไม่ต้องกางลึก. สีบอกสถานะ reconcile: ดำ=ยังไม่ส่ง · ฟ้า=ส่งแล้วรอ
+ *  จับคู่ · สีรุ้ง=จับคู่กับ statement ธนาคารแล้ว. กรอบแดง = ติดธงรอตรวจสอบ
+ *  (สลิปซ้ำ/บัญชีปลายทางไม่ตรง/ผลต่างเกิน — ดู lib/chairops/reconcile/slip-ocr.ts). */
+export function SlipChip({
+  amount,
+  slipUrl,
+  caption,
+  status,
+  flagged,
+}: {
+  amount: string;
+  slipUrl: string | null;
+  caption: string;
+  status: "not_sent" | "sent_unmatched" | "sent_matched";
+  flagged: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const statusClass =
+    status === "sent_matched"
+      ? "text-matched-iridescent"
+      : status === "sent_unmatched"
+        ? "rc-slipchip-sent"
+        : "rc-slipchip-unsent";
+
+  const chip = (
+    <span
+      className={`rc-slipchip ${statusClass}${flagged ? " rc-slipchip-flagged" : ""}`}
+      title={flagged ? "ติดธง รอตรวจสอบก่อนส่งเข้าบัญชี reconcile" : undefined}
+    >
+      {flagged ? "⚠ " : ""}
+      {amount}
+    </span>
+  );
+
+  if (!isImageUrl(slipUrl)) return chip;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rc-slipchip-btn"
+        aria-label="ดูสลิปฝากเงิน"
+      >
+        {chip}
+      </button>
+      {open && (
+        <Lightbox url={slipUrl} caption={caption} onClose={() => setOpen(false)} />
+      )}
+    </>
+  );
+}

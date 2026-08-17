@@ -22,6 +22,8 @@ import { requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
 import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
+import { extractSlipDetails, checkSlipFraud } from "@/lib/chairops/reconcile/slip-ocr";
+import { adminClient } from "@/lib/db/server";
 import { presignUpload, evidenceKey, slipKey } from "@/lib/chairops/storage/r2";
 import { putObject } from "@/lib/r2/upload";
 import { zBaht, zUUID } from "@/lib/chairops/schemas/zod-helpers";
@@ -621,6 +623,67 @@ export async function batchDeposit(
       } catch {
         // swallow — deposit already committed
       }
+    }
+
+    // AI อ่านสลิป (ยอด/วันที่/ชื่อบัญชีปลายทาง) + ตรวจสลิปซ้ำ/บัญชีผิด — CEO
+    // 2026-08-17. นอกธุรกรรม (ไม่บล็อกการฝาก) · อ่านไม่ทัน/พังก็ไม่เป็นไร ตาราง
+    // reconcile จะ fallback ไปใช้ depositedAmount ที่กรอกเองแทนจนกว่าจะมีค่า.
+    try {
+      const ocr = await extractSlipDetails(data.slipPhotoUrl, {
+        userId: session.user.id,
+        orgId: session.user.orgId,
+      });
+
+      let configuredAccountName: string | null = null;
+      const branchAcc = await prisma.chairopsBranch.findUnique({
+        where: { id: branchId },
+        select: { reconcileBankAccountId: true },
+      });
+      if (branchAcc?.reconcileBankAccountId) {
+        const admin = adminClient();
+        const { data: acc } = await admin
+          .from("ledger_bank_account")
+          .select("account_name")
+          .eq("id", branchAcc.reconcileBankAccountId)
+          .maybeSingle();
+        configuredAccountName = (acc?.account_name as string | undefined) ?? null;
+      }
+
+      const fraud = await checkSlipFraud({
+        orgId: session.user.orgId,
+        depositId: deposit.id,
+        ocr,
+        configuredAccountName,
+      });
+
+      await prisma.chairopsCashDeposit.update({
+        where: { id: deposit.id },
+        data: {
+          ocrAmount: ocr.amount,
+          ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
+          ocrAccountName: ocr.accountName,
+          ocrReadAt: new Date(),
+          ocrFlagReason: fraud.reason,
+          requiresReview: requiresReview || fraud.flagged,
+        },
+      });
+
+      if (fraud.flagged && !requiresReview) {
+        try {
+          const branch = await prisma.chairopsBranch.findUnique({
+            where: { id: branchId },
+            select: { name: true },
+          });
+          await notifyChannel(
+            "ops",
+            `🚨 สลิปน่าสงสัย · ${session.user.displayName} ที่ ${branch?.name ?? "สาขา"}\n${fraud.reason}\nกดดูที่ /chairops/reconcile/${branchId}`,
+          );
+        } catch {
+          // swallow — deposit already committed
+        }
+      }
+    } catch (e) {
+      console.error("[chairops] slip OCR/fraud-check failed (non-fatal)", e);
     }
 
     await recomputeDriftForBranch(branchId);

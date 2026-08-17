@@ -463,6 +463,41 @@ export function computeSendRows(
   return { rows, totalNet, splitGroupKeys, extractedStandaloneCvars };
 }
 
+/**
+ * เลือกว่า computeSendRows ควรใช้ channels + posBreakdown ชุดไหนสำหรับวันนั้น (sendDaysToReconcile
+ * เรียกก่อนทุกครั้ง). channels มี 2 แหล่งที่เลือกได้อยู่แล้ว (iv_channels ถ้ามี ไม่งั้น channels ดิบ
+ * จาก POS) — แต่ posBreakdown (raw label ต่อรายการ) มาจากไฟล์ POS ดิบเท่านั้นเสมอ ไม่เคยมีคู่ของ
+ * iv_channels เอง.
+ *
+ * bug 2026-08-16: sendDaysToReconcile เคยส่ง posBreakdown (ของ POS ดิบ) เข้าคู่กับ channels=
+ * iv_channels (ใบกำกับภาษีเก่า) เสมอ ไม่สนว่า channels ที่ใช้จริงมาจากไหน — วันไหนใบกำกับภาษีเก่า
+ * จัดหมวดต่างจาก POS ไปแล้ว (เช่น ใบเก่าเอาเงิน "QRCredit(API)" 80 บาทไปฝากไว้ใต้ช่อง Grab แทน)
+ * POS_EXTRACT_GROUPS จะหักเงินก้อนเดียวกันออกจาก iv_channels **ซ้ำอีกรอบ** (เพราะไม่รู้ว่าใบกำกับ
+ * ภาษีหักออกไปแล้ว) → ยอด QR หายไป 80 บาทซ้อน (verified จริง: store 4097 06-14 มิ.ย. หายไปพอดี
+ * ฿6,939 แทนที่จะเป็น ฿7,019 ที่ธนาคารโอนจริง — ดู post-mortem 2026-08-16).
+ *
+ * FIX: posBreakdown ใช้แยก/หักช่องทางได้เฉพาะตอนที่ channels ที่ใช้จริงมาจาก POS ดิบเท่านั้น
+ * (channels===day.channels) — ถ้ากำลังใช้ iv_channels (ใบกำกับภาษียืนยันแล้ว) ให้ตัด posBreakdown
+ * ทิ้ง (undefined) → computeSendRows กลับไปพฤติกรรมปลอดภัยเดิม (ก้อนรวม 1 บรรทัด ไม่แยก/ไม่หัก)
+ * แทนที่จะพยายามแยกด้วยข้อมูลคนละแหล่งที่อาจไม่ตรงกัน.
+ */
+export function resolveSendChannels(day: {
+  channels: Record<string, number> | null;
+  iv_channels?: Record<string, number> | null;
+  posBreakdown?: Record<string, number> | null;
+}): {
+  channels: Record<string, number> | null;
+  posBreakdown: Record<string, number> | null | undefined;
+  usingIvChannels: boolean;
+} {
+  const usingIvChannels = !!(day.iv_channels && Object.keys(day.iv_channels).length > 0);
+  return {
+    channels: usingIvChannels ? day.iv_channels! : day.channels,
+    posBreakdown: usingIvChannels ? undefined : day.posBreakdown,
+    usingIvChannels,
+  };
+}
+
 /** สร้างรายการ source_ref เก่าที่ต้องพิจารณาลบ (legacy-shape cleanup) สำหรับ 1 วัน:
  *  - ref แบบ "แยก cvar ก่อนมีการรวมกลุ่ม" (ก่อน 2026-06) — เดิมอยู่แล้ว ลบทุกครั้งที่ส่งวันนั้น
  *  - ref แบบ "รวมกลุ่มก้อนเดียว" (เช่น "...-qr") — ลบเฉพาะกลุ่มที่วันนี้เปลี่ยนไปส่งแบบแยก

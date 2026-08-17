@@ -5,8 +5,12 @@ import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { toNum } from "@/lib/rentspace/format";
 import { prisma } from "@/lib/prisma";
+import { adminClient } from "@/lib/db/server";
+import { listCompanies, listBankAccounts } from "@/lib/cashhub/amazon-settlement-data";
+import { getProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
 import { RsPage, RsHeader } from "@/components/rentspace/ui";
 import SettingsForm from "./_components/settings-form";
+import ReconcileAccountSection from "./_components/reconcile-account-section";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +22,14 @@ export default async function RentSpaceSettingsPage() {
   const canEditPerms = isSuperAdmin(session.user.role);
 
   const project = await getPrimaryProject(session.user.org_id);
+
+  const [companies, bankAccounts, reconcileSummary] = project
+    ? await Promise.all([
+        listCompanies(adminClient(), session.user.org_id),
+        listBankAccounts(adminClient(), session.user.org_id),
+        getProjectReconcileSummary(session.user.org_id, project.id),
+      ])
+    : [[], [], null];
 
   // ค่าใช้จ่ายประจำ (recurring charges) ของโครงการนี้ — โหลดเฉพาะเมื่อมีโครงการแล้ว
   const recurringCharges = project
@@ -94,6 +106,16 @@ export default async function RentSpaceSettingsPage() {
         }
       />
       <SettingsForm initial={initial} recurringCharges={recurringCharges} canEditPerms={canEditPerms} />
+      {project && reconcileSummary && (
+        <ReconcileAccountSection
+          projectId={project.id}
+          companies={companies}
+          bankAccounts={bankAccounts}
+          currentCompanyId={project.companyId}
+          currentBankAccountId={project.reconcileBankAccountId}
+          summary={reconcileSummary}
+        />
+      )}
     </RsPage>
   );
 }

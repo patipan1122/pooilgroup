@@ -5,6 +5,7 @@ import {
   DEFAULT_CHANNELS,
   computeSendRows,
   legacyRefsForDay,
+  resolveSendChannels,
   type ChannelConfig,
 } from "./amazon-settlement";
 import type { SavedAmazonDay } from "./amazon-data";
@@ -174,15 +175,18 @@ export async function sendDaysToReconcile(
     //   TRCloud บางวัน reclassify เงินข้ามช่องทาง (เช่น ย้าย QR บางส่วนไป Grab) เทียบกับไฟล์ POS ดิบ
     //   ยืนยันกับยอดธนาคารจริงแล้วว่า iv_channels ตรงเป๊ะถึงสตางค์ ส่วน channels (POS ดิบ) อาจเพี้ยนวันที่มีการจัดหมวดใหม่
     //   fallback ไป channels เฉพาะวันที่ยังไม่มีใบ IV ยืนยัน (เช่นวันล่าสุดที่ TRCloud ยังไม่ประมวลผล)
-    const channels =
-      day.iv_channels && Object.keys(day.iv_channels).length > 0 ? day.iv_channels : day.channels;
+    // posBreakdown (raw label จาก POS ดิบ) ใช้แยก/หักช่องทางได้เฉพาะตอนที่ channels ที่ใช้จริง
+    //   มาจาก POS ดิบด้วยเท่านั้น — ถ้ากำลังใช้ iv_channels (คนละแหล่งกับ posBreakdown อาจจัดหมวด
+    //   ไม่ตรงกันแล้ว) resolveSendChannels ตัด posBreakdown ทิ้งให้อัตโนมัติ กันหักซ้ำ (bug 2026-08-16
+    //   — ดู comment เต็มที่ resolveSendChannels ใน amazon-settlement.ts)
+    const { channels, posBreakdown } = resolveSendChannels(day);
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยก 2 บรรทัด
     // ตามกฎ CEO (qrapi/qrstd) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง
     // — สูตรเดียวกับพรีวิว (amazon/settings/page.tsx)
     const { rows: sendRows, splitGroupKeys, extractedStandaloneCvars } = computeSendRows(
       channels,
       configByCvar,
-      day.posBreakdown,
+      posBreakdown,
     );
     // ref เก่าที่ต้องพิจารณาลบ: ก้อนแยก-cvar-ก่อนรวมกลุ่ม (เดิม) + ก้อนรวมกลุ่มของวันนี้
     //   ถ้าวันนี้เปลี่ยนไปส่งแบบแยก qrapi/qrstd แทน + ช่องเดี่ยวเดิม (เช่น c15) ที่ POS_EXTRACT_GROUPS
