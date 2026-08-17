@@ -180,7 +180,18 @@ export async function userHasModuleAccess(
  *
  * True when:
  *   - user is global admin tier (super_admin / org_admin / admin), OR
- *   - user has a user_modules row for this module with role='admin' + active.
+ *   - user's global role is program_admin AND they have any active
+ *     user_modules grant for this module (being granted the program IS
+ *     the admin signal — no extra per-module flag needed), OR
+ *   - user has a user_modules row for this module with role='admin' + active
+ *     (lets a regular staff member be hand-picked as one module's admin
+ *     without changing their global role).
+ *
+ * Exception — "clawfleet" (cash collection from claw machines): CEO decided
+ * 2026-08-17 to keep this module at the stricter original rule, since a
+ * program_admin of some OTHER program must not walk into cash handling just
+ * because they were granted view access. For clawfleet, program_admin always
+ * falls through to the same role='admin' check as everyone else below.
  *
  * Use INSIDE a module to gate "invite teammate / manage members" actions,
  * so a program admin can run their own program without being a global admin.
@@ -192,6 +203,18 @@ export async function userIsModuleAdmin(
   if (isAdminTier(user.role)) return true;
 
   const admin = adminClient();
+  if (user.role === "program_admin" && module !== "clawfleet") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (admin.from as any)("user_modules")
+      .select("id")
+      .eq("org_id", user.org_id)
+      .eq("user_id", user.id)
+      .eq("module_name", module)
+      .eq("is_active", true)
+      .maybeSingle();
+    return !!data;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (admin.from as any)("user_modules")
     .select("id")

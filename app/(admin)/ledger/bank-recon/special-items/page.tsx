@@ -20,7 +20,7 @@ export default async function BankReconSpecialItemsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string; account?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
@@ -33,7 +33,7 @@ export default async function BankReconSpecialItemsPage({
   const cp = `company=${companyId}`;
   const backHref = account ? `/ledger/bank-recon/${account}?${cp}` : `/ledger/bank-recon?${cp}`;
   // unExcludeAction itself requires super_admin/org_admin/admin → match that gate in UI
-  const canUnExclude = ["super_admin", "org_admin", "admin"].includes(session.user.role);
+  const canUnExclude = ["super_admin", "org_admin", "admin", "program_admin"].includes(session.user.role);
 
   return (
     <div className="px-4 py-3 sm:px-6 sm:py-4">

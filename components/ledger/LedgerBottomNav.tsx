@@ -71,7 +71,7 @@ const FINANCIAL: ReadonlyArray<Role> = [
   "viewer",
 ];
 const BUDGET: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "area_manager"];
-const ADMIN: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin"];
+const ADMIN: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "program_admin"];
 
 // LEAN bottom bar (CEO 2026-06-08): primary = ภาพรวม · รายการ · [ถ่าย] · ตั้งค่า ·
 // เพิ่มเติม. สมุด/งบ/กระทบยอด/Dashboard ย้ายลง "เพิ่มเติม" (จัดเป็นหมวดให้สแกนง่าย).

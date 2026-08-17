@@ -389,7 +389,7 @@ async function handleCashhubBulkApprove(
       });
       return NextResponse.json({ ok: true });
     }
-    const allowed = ["super_admin", "admin", "org_admin"];
+    const allowed = ["super_admin", "admin", "org_admin", "program_admin"];
     if (!allowed.includes(tgUser.role)) {
       await answerCallbackQuery({
         callbackQueryId: cq.id,

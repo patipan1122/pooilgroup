@@ -90,7 +90,7 @@ export async function upsertRevenueChannelGlAction(params: {
 export async function listIncomeCategoriesAction(
   companyId: string,
 ): Promise<{ id: string; name: string; trcloudAccCode: string | null }[]> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (!companyId) return [];
 

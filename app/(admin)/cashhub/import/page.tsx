@@ -114,7 +114,7 @@ const SOURCES: ImportSource[] = [
 ];
 
 export default async function ImportHubPage() {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const admin = adminClient();
   const fuelOn = cashhubFuelV1();
 

@@ -28,7 +28,7 @@ export default async function TeamSettingsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string; tab?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   // หน้านี้ admin จัดการสมาชิก/สาขา/ดูสิทธิ์ได้ แต่ "ผูก LINE/เชิญผู้ดูแล" (การ์ดเชื่อมต่อ
   // + การตั้งคนเป็นผู้ดูแล) สงวนให้ super_admin เท่านั้น (CEO 2026-06-12).
   const isSuper = isSuperAdmin(session.user.role);

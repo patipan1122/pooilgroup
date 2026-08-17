@@ -7,7 +7,7 @@ import { CashHubConfigForm } from "./cashhub-config";
 export const dynamic = "force-dynamic";
 
 export default async function CashHubSettingsPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const admin = adminClient();
 
   const { data: org } = await admin

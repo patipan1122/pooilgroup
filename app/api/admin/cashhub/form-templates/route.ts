@@ -21,7 +21,7 @@ import {
 } from "@/lib/cashhub/form-templates";
 
 export async function GET(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const url = new URL(req.url);
   const type = url.searchParams.get("type") ?? "";
 
@@ -51,7 +51,7 @@ const CreateSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
 
   let body: unknown;
   try {

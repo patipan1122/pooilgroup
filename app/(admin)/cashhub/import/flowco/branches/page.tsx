@@ -7,7 +7,7 @@ import { FlowcoBranchMapView } from "./branch-map-view";
 export const dynamic = "force-dynamic";
 
 export default async function FlowcoBranchMapPage() {
-  await requireRole("super_admin", "org_admin", "admin");
+  await requireRole("super_admin", "org_admin", "admin", "program_admin");
 
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-3xl mx-auto ch-scope">

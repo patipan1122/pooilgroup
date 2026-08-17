@@ -11,7 +11,7 @@ const PAGE_ID = "m0ViF";
 const OPEN_URL = `https://lookerstudio.google.com/reporting/${REPORT_ID}/page/${PAGE_ID}`;
 
 export default async function EvImportPage() {
-  await requireRole("super_admin", "org_admin", "admin");
+  await requireRole("super_admin", "org_admin", "admin", "program_admin");
 
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-4xl mx-auto">

@@ -42,7 +42,7 @@ export async function createBankAccountAction(
   companyId: string,
   input: AccountInput,
 ): Promise<Result> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const err = validate(input);
@@ -93,7 +93,7 @@ export async function updateBankAccountAction(
   accountId: string,
   input: AccountInput,
 ): Promise<Result> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const err = validate(input);
@@ -133,7 +133,7 @@ export async function toggleBankAccountActiveAction(
   accountId: string,
   isActive: boolean,
 ): Promise<Result> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const affected = await prisma.$executeRaw`

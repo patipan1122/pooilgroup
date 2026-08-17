@@ -23,7 +23,7 @@ export default async function BankKeywordsPage({
   params: Promise<{ accountId: string }>;
   searchParams: Promise<{ company?: string; branch?: string; period?: string; periodTo?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const { accountId } = await params;
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

@@ -18,7 +18,7 @@ export default async function BankAccountsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
@@ -43,7 +43,7 @@ export default async function BankAccountsPage({
   }
 
   const companyId = scope.companyId;
-  const canEdit = ["super_admin", "org_admin", "admin"].includes(session.user.role);
+  const canEdit = ["super_admin", "org_admin", "admin", "program_admin"].includes(session.user.role);
 
   const accounts = await prisma.$queryRaw<{
     id: string;

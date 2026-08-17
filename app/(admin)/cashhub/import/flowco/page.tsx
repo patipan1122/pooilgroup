@@ -15,7 +15,7 @@ import { FlowcoImportView } from "./flowco-import-view";
 export const dynamic = "force-dynamic";
 
 export default async function FlowcoImportPage() {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const admin = adminClient();
 
   const [range, steMap] = await Promise.all([

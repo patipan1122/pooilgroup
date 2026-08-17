@@ -97,7 +97,7 @@ async function notifyApprovers(orgId: string, title: string, body: string) {
 export async function bulkUndoAction(params: {
   bankAccountId: string; periodStart: string; periodEnd: string; scope: "suggested" | "all";
 }): Promise<{ ok: boolean; revertedSuggested: number; revertedConfirmed: number; requestedForApproval: number; skippedLocked: number; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const isSuper = session.user.role === "super_admin";
   const { bankAccountId, periodStart, periodEnd, scope } = params;
@@ -141,7 +141,7 @@ export async function bulkUndoAction(params: {
 // 2. Approval-to-revert (request / approve / reject) + super direct revert
 // ════════════════════════════════════════════════════════════════════════════
 export async function requestRevertAction(params: { groupId: string; reason: string }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const reason = params.reason.trim();
   if (reason.length < 3) return { ok: false, error: "กรุณาระบุเหตุผลที่ขอแก้" };
@@ -203,7 +203,7 @@ export async function rejectRevertAction(params: { requestId: string; note: stri
 }
 
 export async function revertConfirmedGroupAction(params: { groupId: string; reason: string }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (session.user.role !== "super_admin") return { ok: false, error: "ต้องขออนุมัติก่อน — กดปุ่ม ‘ขออนุมัติแก้’" };
   const reason = params.reason.trim();
@@ -221,7 +221,7 @@ export async function revertConfirmedGroupAction(params: { groupId: string; reas
 // แต่ละกลุ่มย้อนแบบ atomic ของตัวเอง (revertGroup) → ถ้าบางตัวล็อก/ย้อนไม่ได้ ก็ข้ามไปนับ skipped
 // (ไม่ล้มทั้งชุด). เก็บ audit สรุปยอด.
 export async function bulkRevertGroupsAction(params: { groupIds: string[]; reason: string }): Promise<{ ok: boolean; reverted: number; skipped: number; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (session.user.role !== "super_admin") return { ok: false, reverted: 0, skipped: 0, error: "ย้อนหลายรายการพร้อมกันได้เฉพาะ super admin — รายการอื่นกด ‘ขออนุมัติแก้’ ทีละใบ" };
   const reason = params.reason.trim();
@@ -245,7 +245,7 @@ export async function bulkRevertGroupsAction(params: { groupIds: string[]; reaso
 export async function createBankTransferAction(params: {
   txnIdA: string; txnIdB: string; note?: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (params.txnIdA === params.txnIdB) return { ok: false, error: "เลือกคนละรายการ" };
   const a = await loadTxnLite(orgId, params.txnIdA);
@@ -284,7 +284,7 @@ export async function createBankTransferAction(params: {
 export async function listUnmatchedMovementsAction(params: {
   bankAccountId: string; companyId: string;
 }): Promise<{ ok: boolean; movements: BankMovement[]; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   // window: last 180 days (transfers can be any recent date)
   const end = new Date();
@@ -304,7 +304,7 @@ export async function listUnmatchedMovementsAction(params: {
 // 4. Un-exclude (เอารายการที่ "ข้าม/ไม่มีคู่" กลับมา)
 // ════════════════════════════════════════════════════════════════════════════
 export async function unExcludeAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const rows = await prisma.$queryRaw<{ bankTxnId: string; status: string; matchType: string; locked: boolean }[]>`
     SELECT m.bank_txn_id::text as "bankTxnId", m.status, m.match_type as "matchType", (b.locked_at IS NOT NULL) as locked
@@ -331,7 +331,7 @@ export async function unExcludeAction(matchId: string): Promise<{ ok: boolean; e
 // 5. Raw statement row (full CSV detail for the row expander)
 // ════════════════════════════════════════════════════════════════════════════
 export async function getBankTxnRawAction(txnId: string): Promise<{ ok: boolean; raw?: Record<string, unknown>; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const rows = await prisma.$queryRaw<{ raw: unknown }[]>`
     SELECT raw_row_json as raw FROM ledger_bank_txn WHERE id=${txnId}::uuid AND org_id=${orgId}::uuid LIMIT 1`;

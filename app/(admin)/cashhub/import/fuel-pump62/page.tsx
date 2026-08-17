@@ -10,7 +10,7 @@ import { FuelImportView } from "./fuel-import-view";
 export const dynamic = "force-dynamic";
 
 export default async function FuelImportPage() {
-  await requireRole("super_admin", "org_admin", "admin");
+  await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) notFound();
 
   return (

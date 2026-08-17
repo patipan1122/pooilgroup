@@ -54,7 +54,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const { id } = await params;
 
   const existing = await getTemplate(session.user.org_id, id);
@@ -111,7 +111,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const { id } = await params;
 
   const existing = await getTemplate(session.user.org_id, id);

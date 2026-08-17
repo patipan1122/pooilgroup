@@ -344,7 +344,7 @@ export async function dryRunImportAction(
   // path (Smart Import's own detect action does its own per-candidate version of this).
   bankAccountId?: string,
 ): Promise<ImportDryRunResult> {
-  await requireRole("super_admin", "org_admin", "admin");
+  await requireRole("super_admin", "org_admin", "admin", "program_admin");
 
   const file = formData.get("file") as File | null;
   if (!file) return { ok: false, error: "ไม่พบไฟล์" };
@@ -455,7 +455,7 @@ export async function smartImportDetectAction(
   companyId: string,
   formData: FormData,
 ): Promise<SmartDetectResult> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (!companyId) return { ok: false, error: "ไม่พบบริษัท" };
 
@@ -596,7 +596,7 @@ export async function commitImportAction(
   // belong to the chosen account, so a combined file can never bleed across accounts.
   fileAccountNo?: string,
 ): Promise<ImportCommitResult> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const { org_id: orgId } = session.user;
 
   // Re-parse (don't trust client-side preview data)
@@ -876,7 +876,7 @@ async function suggestMatchesAction(
 // ── 4. Confirm a match (human approval) ──────────────────────────────────────
 
 export async function confirmMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const rows = await prisma.$queryRaw<{
@@ -930,7 +930,7 @@ export async function createManualMatchAction(params: {
   bookId: string;
   note?: string;
 }): Promise<{ ok: boolean; matchId?: string; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const { bankTxnId, bookType, bookId, note } = params;
 
@@ -1025,7 +1025,7 @@ export async function createManualMatchAction(params: {
 // ── 6. Reject / revert a suggestion ──────────────────────────────────────────
 
 export async function rejectMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const rows = await prisma.$queryRaw<{ bankTxnId: string; locked: boolean }[]>`
@@ -1054,7 +1054,7 @@ export async function rejectMatchAction(matchId: string): Promise<{ ok: boolean;
 // ── 6b. Un-confirm a confirmed match (only before lock) ──────────────────────
 
 export async function unconfirmMatchAction(matchId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const rows = await prisma.$queryRaw<{
@@ -1095,7 +1095,7 @@ export async function excludeTxnAction(params: {
   bankTxnId: string;
   reason: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const { bankTxnId, reason } = params;
   if (!reason?.trim()) return { ok: false, error: "กรุณาระบุเหตุผลที่ข้ามรายการนี้" };
@@ -1133,7 +1133,7 @@ export async function excludeTxnAction(params: {
 // ── 7. Lock period ────────────────────────────────────────────────────────────
 
 export async function lockPeriodAction(batchId: string): Promise<{ ok: boolean; fingerprint?: string; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   // Batch must belong to caller's org (RLS does not apply to Prisma)
@@ -1179,7 +1179,7 @@ export async function syncRevenueAction(batchId: string): Promise<{
   skipped?: number;
   error?: string;
 }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
 
   const batch = await prisma.$queryRaw<{
     periodStart: string;
@@ -1210,7 +1210,7 @@ export async function syncRevenueAction(batchId: string): Promise<{
 
 export async function listRevenueForBatchAction(batchId: string) {
   const session = await requireRole(
-    "super_admin", "org_admin", "admin", "area_manager", "viewer",
+    "super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin",
   );
 
   const batch = await prisma.$queryRaw<{
@@ -1238,7 +1238,7 @@ export async function listRevenueForBatchAction(batchId: string) {
 // ── 10. List batches for an account ───────────────────────────────────────────
 
 export async function listBatchesAction(bankAccountId: string) {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
 
   return prisma.$queryRaw<{
     id: string;
@@ -1302,7 +1302,7 @@ export async function createMatchGroupAction(params: {
   matchKind?: "auto" | "manual";
   note?: string;
 }): Promise<{ ok: boolean; error?: string; groupId?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const { bankAccountId, bankTxnIds, bookRefs } = params;
 
@@ -1377,7 +1377,7 @@ export async function createMatchGroupAction(params: {
 export async function autoMatchAccountAction(
   bankAccountId: string, companyId: string, periodStart: string, periodEnd: string,
 ): Promise<{ ok: boolean; created: number; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   // กดซ้ำได้ผลใหม่เสมอ (idempotent): ล้าง "ข้อเสนออัตโนมัติเก่า" ที่ยังไม่ยืนยันในช่วงนี้ก่อน
@@ -1536,7 +1536,7 @@ export async function confirmGroupAction(groupId: string): Promise<{ ok: boolean
 }
 
 export async function confirmAllGroupsAction(bankAccountId: string): Promise<{ ok: boolean; confirmed: number; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const groups = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id::text FROM ledger_bank_match_group
@@ -1556,7 +1556,7 @@ export async function confirmGroupsAction(groupIds: string[]): Promise<{ ok: boo
 }
 
 async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   // guard: none locked
@@ -1620,7 +1620,7 @@ async function confirmGroupsInternal(groupIds: string[]): Promise<{ ok: boolean;
 //   • suggested (รอยืนยัน, not posted) → anyone with edit role can undo directly
 //   • confirmed (posted) → super_admin direct only; others must file "ขออนุมัติแก้"
 export async function removeGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const g = await prisma.$queryRaw<{ status: string }[]>`
     SELECT status FROM ledger_bank_match_group WHERE id=${groupId}::uuid AND org_id=${orgId}::uuid LIMIT 1`;
@@ -1659,7 +1659,7 @@ export async function addBankMovementAction(params: {
   bankAccountId: string; companyId: string; periodStart: string; periodEnd: string;
   date: string; amountSatang: number; description: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const { bankAccountId, companyId, periodStart, periodEnd, date, amountSatang, description } = params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
@@ -1699,7 +1699,7 @@ export async function addRevenueEntryAction(params: {
   channelCode?: string;  // cash/transfer/card/qr/... (tagged by the user)
   force?: boolean;       // bypass the near-duplicate guard after the user confirms
 }): Promise<{ ok: boolean; error?: string; duplicate?: boolean }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const { companyId, entryDate, amountSatang, description, customerName, force } = params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
@@ -1749,7 +1749,7 @@ export async function listRevenueForManageAction(params: {
   sourceRef: string | null; description: string | null; customerName: string | null;
   matchState: string; inGroup: boolean;
 }[]> {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "program_admin");
   const orgId = session.user.org_id;
   const rows = await prisma.$queryRaw<{
     id: string; entryDate: string; amountSatang: bigint; sourceType: string;
@@ -1769,7 +1769,7 @@ export async function listRevenueForManageAction(params: {
 }
 
 export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   // can't delete if already matched or sitting in an active group
   const guard = await prisma.$queryRaw<{ matched: boolean; inGroup: boolean }[]>`
@@ -1787,7 +1787,7 @@ export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok:
 export async function previewRevenueRangeAction(params: {
   companyId: string; periodStart: string; periodEnd: string;
 }): Promise<{ ok: boolean; rows?: TrcloudRevenuePreviewRow[]; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (!params.companyId) return { ok: false, error: "ไม่พบบริษัท" };
   const result = await previewTrcloudRevenue({
@@ -1803,7 +1803,7 @@ export async function syncRevenueRangeAction(params: {
   companyId: string; periodStart: string; periodEnd: string;
   selectedDocNos?: string[];
 }): Promise<{ ok: boolean; inserted?: number; skipped?: number; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (!params.companyId) return { ok: false, error: "ไม่พบบริษัท" };
   const result = await syncTrcloudRevenue({

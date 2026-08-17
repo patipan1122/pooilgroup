@@ -27,7 +27,7 @@ const STATUS: Record<string, { label: string; cls: string; Icon: typeof CheckCir
 };
 
 export default async function ScbHistoryPage() {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
 
   const rows = await prisma.ledgerEmailMessage.findMany({

@@ -15,7 +15,7 @@ import { FuelTabs } from "./fuel-tabs";
 export const dynamic = "force-dynamic";
 
 export default async function FuelManagePage() {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) notFound();
 
   const admin = adminClient();

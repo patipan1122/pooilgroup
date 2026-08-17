@@ -70,7 +70,7 @@ async function confirmedLink(params: {
 export async function listTransferTargetsAction(
   companyId: string, excludeAccountId: string,
 ): Promise<{ id: string; bankCode: string; accountNo: string; accountName: string }[]> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const rows = await prisma.$queryRaw<{ id: string; bankCode: string; accountNo: string; accountName: string }[]>`
     SELECT a.id::text, a.bank_code as "bankCode", a.account_no as "accountNo", a.account_name as "accountName"
@@ -86,7 +86,7 @@ export async function listTransferTargetsAction(
 export async function transferMovementAction(params: {
   bankTxnId: string; targetAccountId: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const txn = await loadTxn(orgId, params.bankTxnId);
   if (!txn) return { ok: false, error: "ไม่พบรายการ" };
@@ -111,7 +111,7 @@ export async function transferMovementAction(params: {
 export async function createRevenueFromMovementAction(params: {
   bankTxnId: string; description?: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const txn = await loadTxn(orgId, params.bankTxnId);
   if (!txn) return { ok: false, error: "ไม่พบรายการ" };
@@ -142,7 +142,7 @@ export async function createRevenueFromMovementAction(params: {
 export async function createExpenseFromMovementAction(params: {
   bankTxnId: string; vendor?: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const txn = await loadTxn(orgId, params.bankTxnId);
   if (!txn) return { ok: false, error: "ไม่พบรายการ" };
@@ -175,7 +175,7 @@ export async function createExpenseFromMovementAction(params: {
 export async function editMovementAction(params: {
   bankTxnId: string; date: string; amountSatang: number; description: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(params.date)) return { ok: false, error: "วันที่ไม่ถูกต้อง" };
   if (!Number.isInteger(params.amountSatang) || params.amountSatang === 0) return { ok: false, error: "จำนวนเงินไม่ถูกต้อง" };
@@ -193,7 +193,7 @@ export async function editMovementAction(params: {
 }
 
 export async function deleteMovementAction(bankTxnId: string): Promise<{ ok: boolean; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
   const txn = await loadTxn(orgId, bankTxnId);
   if (!txn) return { ok: false, error: "ไม่พบรายการ" };

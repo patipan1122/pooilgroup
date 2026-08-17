@@ -15,7 +15,7 @@ export default async function BranchSettingsPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

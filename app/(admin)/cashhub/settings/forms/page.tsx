@@ -27,7 +27,7 @@ const CADENCE_LABEL: Record<string, string> = {
 };
 
 export default async function FormsListPage() {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const admin = adminClient();
 
   const { data: org } = await admin

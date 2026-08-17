@@ -23,7 +23,7 @@ export default async function RevenueChannelsPage({
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
   // View = admin tier; write (mapping) = super_admin only (gated in the manager + action).
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

@@ -39,7 +39,7 @@ export interface FuelSheetMonthData {
 export async function getFuelSheetMonth(
   periodKey: string,
 ): Promise<FuelSheetMonthData | null> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) return null;
   if (!/^\d{4}-\d{2}$/.test(periodKey)) return null;
 
@@ -82,7 +82,7 @@ export interface PromoteResult {
 export async function promoteMonthsToReconcile(
   periodKeys: string[],
 ): Promise<PromoteResult> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) return { ok: false, error: "ปิดใช้งานอยู่" };
   const keys = periodKeys.filter((k) => /^\d{4}-\d{2}$/.test(k));
   if (keys.length === 0) return { ok: false, error: "ยังไม่ได้เลือกเดือน" };

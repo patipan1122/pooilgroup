@@ -36,7 +36,7 @@ export default async function FlowcoReportPage({
     view?: string;
   }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const admin = adminClient();
   const sp = await searchParams;
 

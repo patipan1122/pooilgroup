@@ -22,7 +22,7 @@ interface Props {
 }
 
 export default async function FormEditorPage({ params, searchParams }: Props) {
-  const session = await requireRole("super_admin", "org_admin");
+  const session = await requireRole("super_admin", "org_admin", "program_admin");
   const { type } = await params;
   const { v: requestedVersionId } = await searchParams;
 
