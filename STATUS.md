@@ -32,7 +32,7 @@ CEO (2026-08-15/16): หน้า "นำเข้า statement" อยากใ
 - commit ค้าง local ตั้งแต่ 08-16 (`2d29568f`) — วันนี้ origin/setup ขยับไปแล้ว 306 commits ระหว่างที่ค้าง ใช้ cherry-pick ยกออกมาสะอาด (conflict เดียวที่ `_actions.ts` auto-merge ผ่านเอง เพราะเป็นคนละจุดกับ Amazon/KBANK matcher ที่คนอื่นแก้)
 - CEO ยังต้องทดสอบจริง — นำเข้าไฟล์ statement ที่รู้ว่ามีเลือกบัญชีผิด/มีรายการซ้ำ ดูว่าป้ายเตือนขึ้นจริง
 
-## 🍵🔧✅ CashHub Amazon — กู้การแยกยอด qrapi/qrstd/qrcredit คืนตอน TRCloud ย้ายเงินข้าม cvar ในโดเมนเดียวกัน (2026-08-17 · BUILT commit `2a2ce9ad` worktree `pg-wt-qrcredit-merge`, ⏳ NOT pushed/deployed)
+## 🍵🔧✅ CashHub Amazon — กู้การแยกยอด qrapi/qrstd/qrcredit คืนตอน TRCloud ย้ายเงินข้าม cvar ในโดเมนเดียวกัน (2026-08-17 · 🚀 DEPLOYED LIVE `origin/setup d0b489dd`, worktree `pg-wt-qrcredit-merge`)
 
 CEO เจอเองจากหน้า CashHub Amazon: วันที่ 06-02 ยอด QR ถูกส่งเข้า reconcile เป็นก้อนรวม ฿9,823 ทั้งที่หน้าเดียวกันโชว์ตัวเลขแยกชัดเจนว่าควรเป็น ฿9,468 + ฿285 (เหมือนวันอื่นๆ) — "ทำไมวันนี้ส่งยอดไปแบบนั้น".
 
@@ -43,8 +43,10 @@ CEO เจอเองจากหน้า CashHub Amazon: วันที่ 0
 2. เพิ่มขั้น "wide-domain tie-out" ใหม่ — เช็คผลรวมกว้างขึ้น (ครอบ cvar ของ settlement group + extract group ที่เกี่ยวข้อง) ถ้าตรงกัน (เงินยังอยู่ครบ แค่ TRCloud ย้าย cvar) → คำนวณทุกบรรทัดจาก posBreakdown ตรงๆ เลย
 3. เพิ่ม per-cvar safety guard ในขั้นเดิม — กัน bug เดิม 08-16 กลับมา (ถ้าเงินย้ายออกนอกโดเมนไปเลย เช่นเคส 06-14 ที่ย้ายไป Grab → ไม่หัก ปลอดภัยเหมือนเดิม)
 - verify: เพิ่ม regression test เคส 06-02 จริงจาก DB ครบ · 28/28 cases ผ่าน (`npx tsx lib/cashhub/__tests__/amazon-settlement-granular.run.ts`) · tsc/eslint clean 3 ไฟล์ที่แก้ · ยืนยันด้วยข้อมูลจริงจาก DB ตรงๆ ได้ qrapi=9468/qrstd=285/qrcredit=69.37 ตรงกับที่ CEO ชี้ทุกบาท · re-verify เคส 06-14 เดิมยังปลอดภัยเหมือนเดิม (net 7019 ไม่มี qrcredit ผี)
-- `next build` เต็มติด dependency เดิมที่ขาดใน worktree นี้ (`officecrypto-tool`, ฟีเจอร์ CashHub Hotel คนละเรื่อง — ไม่เกี่ยวกับ fix นี้ เป็น known gap เดิมตั้งแต่ a22b88c3)
-- ⏳ **รอ CEO ตัดสินใจ:** push `HEAD:setup` + deploy · หลัง deploy ต้องกด "ส่งเข้า reconcile" ซ้ำสำหรับวันที่กระทบ (idempotent upsert จะอัปเดตยอดเดิมให้ถูก ไม่สร้างซ้ำ — ยกเว้นรายการที่ยืนยัน/จับคู่ไปแล้วต้องย้อนก่อน)
+- `pnpm install` ใน worktree นี้แล้วแก้ปัญหา dependency ที่ขาด (`officecrypto-tool`) ได้ครบ → `/verify` ผ่านครบ 4 ด่าน (tsc 0 error ทั้งโปรเจกต์ · eslint 0 error/warning เฉพาะไฟล์ที่แก้ · `next build` exit0 690 หน้า · git clean) → stamp แล้ว push ขึ้น `origin/setup` สำเร็จ `c94c8c17..d0b489dd`
+- **🚀 DEPLOYED LIVE** ยืนยันบน pooilgroup.com แล้ว (deployment `dpl_cNzRm5YJSxkYPKPn6uefkL1P3evp`, alias pooilgroup.com ตรง)
+- **CEO ขอเช็คเพิ่ม "อย่าให้เกิดซ้ำในธุรกิจอื่น"** — ไล่ตรวจ CashHub ทุกธุรกิจแล้ว: **สาขา Amazon อื่นๆ ปลอดภัย** (fix เป็น logic กลาง ไม่ผูกกับ store 4097 เลย ใช้ได้ทุกสาขาอัตโนมัติ) · **CashHub ชาไข่มุก (Tea) ไม่เจอความเสี่ยงนี้** (ไม่มีกลไกแยกยอดจาก 2 แหล่งข้อมูลแบบนี้เลย) · **CashHub โรงแรม (Hotel) ไม่เจอความเสี่ยงนี้** (มี 2 แหล่งข้อมูลจริงแต่แค่ "เลือกใช้ค่าใดค่าหนึ่ง" ไม่เคยเอามารวม/แยกกัน จึงไม่เข้าเงื่อนไขบั๊กคลาสนี้)
+- ⏳ **CEO ต้องทำต่อ:** กด "ส่งเข้า reconcile" ซ้ำสำหรับวันที่ 06-02 (และวันอื่นที่คล้ายกัน) ที่หน้า CashHub Amazon — idempotent upsert จะอัปเดตยอดเดิมให้ถูก ไม่สร้างซ้ำ (ยกเว้นรายการที่ยืนยัน/จับคู่ไปแล้วในหน้ากระทบยอดต้องย้อนก่อน)
 
 ## 🏦📅✅ LedgerLine หน้าคลังกระทบยอด (archive) — ดูย้อนหลังได้ไกลขึ้น + filter ช่วงวันที่ (2026-08-17 · 🚀DEPLOYED `origin/setup a8ab146c`)
 
