@@ -1840,7 +1840,17 @@ export async function actDeleteBill(billId: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
     where: { id: billId, orgId: session.user.org_id },
-    select: { id: true, billNo: true, status: true, taxInvoiceNo: true, project: { select: { billDeleteUnlocked: true } } },
+    select: {
+      id: true,
+      billNo: true,
+      period: true,
+      status: true,
+      taxInvoiceNo: true,
+      totalAmount: true,
+      unit: { select: { code: true } },
+      items: { select: { kind: true, label: true, amount: true } },
+      project: { select: { billDeleteUnlocked: true } },
+    },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
   // super_admin ลบได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตลบบิล" ในหน้าตั้งค่าก่อน
@@ -1856,9 +1866,14 @@ export async function actDeleteBill(billId: string) {
     prisma.rentalBillItem.deleteMany({ where: { billId: bill.id } }),
     prisma.rentalBill.delete({ where: { id: bill.id } }),
   ]);
+  // เก็บ snapshot รายการ+ยอดก่อนลบไว้ใน audit trail — ไม่งั้นดูประวัติย้อนหลังจะรู้แค่ "ลบบิลเลขที่ X" ไม่รู้ว่าลบอะไรไปบ้าง
   await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", bill.id, {
     action: "hard_delete",
     billNo: bill.billNo,
+    period: bill.period,
+    unitCode: bill.unit.code,
+    total: toNum(bill.totalAmount),
+    items: bill.items.map((it) => ({ kind: it.kind, label: it.label, amount: toNum(it.amount) })),
   });
   revalidatePath("/rentspace/bills");
   revalidatePath("/rentspace");
@@ -1876,7 +1891,16 @@ export async function actDeleteBillsBulk(billIds: string[]) {
   if (ids.length === 0) throw new Error("ยังไม่ได้เลือกบิล");
   const bills = await prisma.rentalBill.findMany({
     where: { id: { in: ids }, orgId: session.user.org_id },
-    select: { id: true, billNo: true, paidAmount: true, project: { select: { billDeleteUnlocked: true } } },
+    select: {
+      id: true,
+      billNo: true,
+      period: true,
+      paidAmount: true,
+      totalAmount: true,
+      unit: { select: { code: true } },
+      items: { select: { kind: true, label: true, amount: true } },
+      project: { select: { billDeleteUnlocked: true } },
+    },
   });
   if (bills.length === 0) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
   // super_admin ลบได้เสมอ · คนอื่นต้องเปิดสวิตช์ "อนุญาตลบบิล" (ทุกบิลอยู่โครงการเดียวกัน)
@@ -1897,11 +1921,21 @@ export async function actDeleteBillsBulk(billIds: string[]) {
       prisma.rentalBillItem.deleteMany({ where: { billId: { in: delIds } } }),
       prisma.rentalBill.deleteMany({ where: { id: { in: delIds }, orgId: session.user.org_id } }),
     ]);
-    await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", delIds[0], {
-      action: "bulk_hard_delete",
-      count: delIds.length,
-      billNos: deletable.map((b) => b.billNo),
-    });
+    // เดิม log แค่บิลแรกใบเดียว (delIds[0]) → บิลอื่นในชุดเดียวกันหาประวัติไม่เจอเลย
+    // log แยกทุกใบ ให้แต่ละใบมี snapshot รายการ+ยอดของตัวเองใน audit trail
+    await Promise.all(
+      deletable.map((b) =>
+        logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", b.id, {
+          action: "bulk_hard_delete",
+          billNo: b.billNo,
+          period: b.period,
+          unitCode: b.unit.code,
+          total: toNum(b.totalAmount),
+          items: b.items.map((it) => ({ kind: it.kind, label: it.label, amount: toNum(it.amount) })),
+          batchCount: delIds.length,
+        }),
+      ),
+    );
     revalidatePath("/rentspace/bills");
     revalidatePath("/rentspace");
   }

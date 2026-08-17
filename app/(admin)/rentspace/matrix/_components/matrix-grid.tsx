@@ -3,7 +3,7 @@
 import { useState, Fragment, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered } from "lucide-react";
+import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered, History } from "lucide-react";
 import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 import { actReorderMatrixUnits } from "../../_actions";
@@ -459,6 +459,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                         style={{ background: tone.bg }}
                         onClick={() => openCell(u, m)}
                       >
+                        {cell.edited && <span className="rs-edited-dot" title="เคยแก้ไขรายการบิล" />}
                         <span className="rs-amount" style={{ color: tone.color }}>
                           {fmtGrid(cell.total)}
                         </span>
@@ -620,6 +621,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
           background: var(--rs-bg-2);
         }
         .rs-cell {
+          position: relative;
           padding: 6px 6px;
           text-align: right;
           cursor: pointer;
@@ -628,6 +630,15 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         .rs-cell:hover {
           outline: 2px solid var(--rs-brand);
           outline-offset: -2px;
+        }
+        .rs-edited-dot {
+          position: absolute;
+          top: 3px;
+          right: 3px;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--rs-edited);
         }
         .rs-amount {
           font-weight: 600;
@@ -1056,12 +1067,22 @@ function CellDetail({
               </div>
 
               {cell.billId && (
-                <Link
-                  href={`/rentspace/bills/${cell.billId}`}
-                  className="rs-btn mt-4 flex w-full items-center justify-center gap-1"
-                >
-                  เปิดบิลฉบับเต็ม <ChevronRight className="h-4 w-4" />
-                </Link>
+                <div className="mt-4 flex gap-2">
+                  <Link
+                    href={`/rentspace/bills/${cell.billId}`}
+                    className="rs-btn flex flex-1 items-center justify-center gap-1"
+                  >
+                    เปิดบิลฉบับเต็ม <ChevronRight className="h-4 w-4" />
+                  </Link>
+                  <Link
+                    href={`/rentspace/bills/${cell.billId}/history`}
+                    aria-label="ดูประวัติการแก้ไข"
+                    title="ดูประวัติการแก้ไข"
+                    className="rs-btn-ghost inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center !p-0 rounded-xl"
+                  >
+                    <History className="h-4 w-4" />
+                  </Link>
+                </div>
               )}
             </>
           ) : (

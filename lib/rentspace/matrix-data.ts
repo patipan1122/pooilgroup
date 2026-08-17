@@ -2,6 +2,7 @@
 // One row per unit · one column per month · each cell = that unit's bill for that month.
 import { prisma } from "@/lib/prisma";
 import { toNum, tenantDisplayName } from "@/lib/rentspace/format";
+import { getEditedBillIds } from "@/lib/rentspace/history";
 
 export type MatrixUnit = {
   id: string;
@@ -31,6 +32,7 @@ export type MatrixCell = {
   issueDate: string; // YYYY-MM-DD — วางบิลวันไหน
   dueDate: string; // YYYY-MM-DD — ครบกำหนด
   payments: MatrixPayment[]; // ประวัติการชำระ (timeline)
+  edited: boolean; // เคยแก้ไขรายการบิล (RENTSPACE_BILL_UPDATED) — โชว์จุดสีส้มในตาราง
 };
 
 export type RentMatrix = {
@@ -114,6 +116,9 @@ export async function rentMatrix(
     }),
   ]);
 
+  // จุดสีส้ม "เคยแก้ไข" ในตาราง — query เดียวจบต่อทั้งตาราง ไม่ใช่ query ต่อเซลล์ (กัน N+1)
+  const editedBillIds = await getEditedBillIds(orgId, bills.map((b) => b.id));
+
   const isoDate = (d: Date | null | undefined) =>
     d ? new Date(d).toISOString().slice(0, 10) : "";
 
@@ -154,6 +159,7 @@ export async function rentMatrix(
         amount: toNum(p.amountThb),
         method: p.method,
       })),
+      edited: editedBillIds.has(b.id),
     };
     cells[`${b.unitId}|${b.period}`] = cell;
 

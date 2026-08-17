@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { Scissors } from "lucide-react";
+import Link from "next/link";
+import { Scissors, History } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
@@ -223,6 +224,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             <PrintBillButton />
             {bill.status !== "void" && (
               <TaxInvoiceButton billId={bill.id} status={bill.status} taxInvoiceNo={bill.taxInvoiceNo} />
+            )}
+            {isAdmin && (
+              <Link href={`/rentspace/bills/${bill.id}/history`} className="rs-btn rs-btn-ghost w-full justify-center">
+                <History className="h-4 w-4" /> ดูประวัติการแก้ไข
+              </Link>
             )}
             {/* แตกบิล — พิมพ์ "ใบวางบิลแยก" (ค่าเช่า / ค่าน้ำ-ไฟ) โดยบิลหลักไม่เปลี่ยน */}
             {bill.status !== "void" && (
