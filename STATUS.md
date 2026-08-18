@@ -1,6 +1,20 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-18 (ChairOps รอบเก็บ — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" 🚀 DEPLOYED `origin/setup c05bf3c0`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-18 (Recruit — เพิ่มแท็กประกาศ + กรองตามแท็ก 🚀 DEPLOYED `origin/setup 9b80c80f`)
+
+## 🏷️✅ Recruit — เพิ่มแท็กให้ประกาศรับสมัคร + ปุ่มกรองตามแท็กในหน้ารายการ (2026-08-18 · 🚀 DEPLOYED `origin/setup 9b80c80f`)
+
+CEO ขอให้ประกาศรับสมัคร (เช่น "พนักงานอเมซอน") ติดแท็กได้ (เช่น "อเมซอน") เพื่อกรองหาในหน้ารายการประกาศง่ายๆ — พิมพ์แท็กใหม่ได้เลยตอนกรอกประกาศ + เลือกจากแท็กที่เคยสร้างไว้ก่อนหน้าได้ด้วย (มีช่องแนะนำเด้งขึ้นตอนพิมพ์) + ติดได้มากกว่า 1 แท็ก/ประกาศ.
+
+**FIX:**
+1. เพิ่มคอลัมน์ `tags` (text[], default ว่าง) ในตาราง `recruit_job_postings` — ก็อป pattern เดียวกับ `RecruitApplication.tags` ที่มีอยู่แล้ว (ไม่สร้างระบบใหม่ซ้ำซ้อน)
+2. `posting-editor.tsx` — ช่องกรอกแท็ก: พิมพ์ใหม่ + Enter หรือเลือกจากช่องแนะนำ (แท็กเก่าในองค์กร ไม่ใช่ dropdown แยกกันหน้าโล่งเกิน) · กันแท็กซ้ำแบบไม่สนตัวพิมพ์เล็ก-ใหญ่ (Amazon=amazon) · จำกัด 10 แท็ก/ประกาศ (บังคับทั้ง client + server)
+3. หน้ารายการ (`postings/page.tsx`) — เพิ่มแถวปุ่มกรองตามแท็ก (คล้ายปุ่มกรองสถานะเดิม) กรองซ้อนกับสถานะได้ (`?status=&tag=`) + โชว์แท็กเป็น chip เล็กๆ บนการ์ดแต่ละใบ
+- **เจอระหว่างทาง (ไม่เกี่ยวกับ fix นี้):** `officecrypto-tool` ขาดใน worktree ใหม่ (known gap เดิม) → แก้ด้วย `pnpm install --frozen-lockfile` เหมือนเคย · `next build` ครั้งแรกพัง Turbopack "module not found" ทั้งโปรเจกต์เพราะ `.next` cache ค้าง (ไม่ใช่โค้ด) → `rm -rf .next` แล้วผ่านปกติ
+- verify: `/verify` skill ครบ 5 ด่าน — tsc 0 error ทั้งโปรเจกต์ · eslint 0 error ใหม่ (debt เก่า 4018 จุดเหมือนเดิม ไม่เพิ่ม) · `next build` ผ่านทั้งโปรเจกต์ (รวม `/recruit/postings*`) · git clean · smoke curl ก่อน/หลัง deploy ปกติทุกตัว (307/200 เหมือนเดิม ไม่มี 500) · stamp `.claude-verified` ผ่าน gate hook
+- migration `20260818090000_recruit_posting_tags` รันกับ DB จริงแล้ว (CEO อนุมัติสด) — worktree `/private/tmp/pg-wt-recruit-tags` ลบทิ้งแล้วหลัง push สำเร็จ (commit อยู่บน origin/setup ถาวรแล้ว)
+
+---
 
 ## 🪑💰✅ ChairOps ตรวจยอด (รอบเก็บ) — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" จับเงินหายระหว่างคนเก็บ→ธนาคาร (2026-08-17/18 · 🚀 DEPLOYED `origin/setup c05bf3c0`)
 
