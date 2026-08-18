@@ -17,13 +17,15 @@ import {
 import { FormBuilder } from "./form-builder";
 import { IPhonePreview } from "./iphone-preview";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ImageIcon, Sparkles } from "lucide-react";
+import { ImageIcon, Sparkles, X } from "lucide-react";
 
 interface Props {
   mode: "create" | "edit" | "view";
   postingId?: string;
   slug?: string;
   companies: Array<{ id: string; name: string; code: string }>;
+  // แท็กที่เคยมีในองค์กรนี้แล้ว (ไม่ซ้ำ) — ใช้ทำช่องแนะนำตอนพิมพ์แท็ก
+  orgTags?: string[];
   initialData: {
     title: string;
     description: string;
@@ -34,6 +36,7 @@ interface Props {
     status: PostingStatus;
     coverImageUrl: string | null;
     caption: string;
+    tags: string[];
   };
   canPublish?: boolean;
   canClose?: boolean;
@@ -47,6 +50,7 @@ export function PostingEditor({
   postingId,
   slug,
   companies,
+  orgTags = [],
   initialData,
   canPublish,
   canClose,
@@ -64,9 +68,43 @@ export function PostingEditor({
     initialData.coverImageUrl,
   );
   const [caption, setCaption] = useState(initialData.caption);
+  const [tags, setTags] = useState<string[]>(initialData.tags);
+  const [tagInput, setTagInput] = useState("");
+  const [tagSuggestOpen, setTagSuggestOpen] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [pending, startTransition] = useTransition();
   const readonly = mode === "view";
+
+  function addTag(label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    if (tags.length >= 10) {
+      toast.error("แท็กสูงสุด 10 อัน");
+      return;
+    }
+    // กันซ้ำแบบไม่สนตัวพิมพ์เล็ก-ใหญ่ (Amazon = amazon) — snap ไปใช้ชื่อที่มีอยู่แล้วถ้าเจอ
+    const existing =
+      [...tags, ...orgTags].find(
+        (t) => t.toLowerCase() === trimmed.toLowerCase(),
+      ) ?? trimmed;
+    if (tags.some((t) => t.toLowerCase() === existing.toLowerCase())) {
+      setTagInput("");
+      setTagSuggestOpen(false);
+      return;
+    }
+    setTags([...tags, existing]);
+    setTagInput("");
+    setTagSuggestOpen(false);
+  }
+
+  function removeTag(t: string) {
+    setTags(tags.filter((x) => x !== t));
+  }
+
+  const tagSuggestions = orgTags
+    .filter((t) => !tags.some((x) => x.toLowerCase() === t.toLowerCase()))
+    .filter((t) => t.toLowerCase().includes(tagInput.trim().toLowerCase()))
+    .slice(0, 8);
 
   const companyNameForCaption =
     companies.find((c) => c.id === companyId)?.name ?? "";
@@ -168,6 +206,7 @@ export function PostingEditor({
             opensAt: opensAt || undefined,
             closesAt: closesAt || undefined,
             fieldSchema: schema,
+            tags,
             caption: caption || undefined,
           });
           toast.success("สร้างประกาศแล้ว");
@@ -180,6 +219,7 @@ export function PostingEditor({
             opensAt: opensAt || null,
             closesAt: closesAt || null,
             fieldSchema: schema,
+            tags,
             coverImageUrl,
             caption,
           });
@@ -219,6 +259,7 @@ export function PostingEditor({
       opensAt: opensAt || null,
       closesAt: closesAt || null,
       fieldSchema: schema,
+      tags,
       coverImageUrl,
       caption,
     });
@@ -307,6 +348,65 @@ export function PostingEditor({
             className="w-full px-3 py-2 rounded-xl border border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-400)] disabled:bg-zinc-50"
             maxLength={5000}
           />
+        </Field>
+
+        <Field label="แท็ก">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 text-zinc-700 text-xs px-2.5 py-1 font-bold"
+              >
+                {t}
+                {!readonly && (
+                  <button
+                    type="button"
+                    onClick={() => removeTag(t)}
+                    className="opacity-60 hover:opacity-100"
+                    aria-label={`ลบแท็ก ${t}`}
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+            {!readonly && (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onFocus={() => setTagSuggestOpen(true)}
+                  onBlur={() => setTimeout(() => setTagSuggestOpen(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addTag(tagInput);
+                    }
+                  }}
+                  placeholder={tags.length ? "เพิ่มแท็ก..." : "เช่น Amazon"}
+                  disabled={tags.length >= 10}
+                  className="text-sm rounded-full border border-dashed border-zinc-300 px-3 h-9 w-32 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)] disabled:opacity-40"
+                  maxLength={30}
+                />
+                {tagSuggestOpen && tagSuggestions.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-44 rounded-xl border border-zinc-200 bg-white shadow-lg py-1 max-h-48 overflow-y-auto">
+                    {tagSuggestions.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => addTag(t)}
+                        className="w-full text-left text-sm px-3 py-1.5 hover:bg-zinc-50 text-zinc-700"
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </Field>
       </div>
 

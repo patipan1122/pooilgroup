@@ -16,7 +16,7 @@ import {
   POSTING_STATUS_LABELS,
   type PostingStatus,
 } from "@/lib/recruit/types";
-import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame } from "lucide-react";
+import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame, Tag } from "lucide-react";
 import { CopyLinkButton } from "@/components/recruit/copy-link-button";
 import { ShareKitButton } from "@/components/recruit/share-kit-button";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
@@ -46,6 +46,7 @@ async function loadPostings(
   orgId: string,
   filter?: PostingStatus,
   companyId?: string,
+  tag?: string,
 ) {
   const postings = await prisma.recruitJobPosting.findMany({
     where: {
@@ -54,6 +55,7 @@ async function loadPostings(
       // กรองตามบริษัทที่เลือกบน "ตัวสลับด้านบน" แบบเป๊ะ ๆ (companyId ตรงเท่านั้น).
       // เลือก "ทุกบริษัท" → companyId=undefined → ไม่กรอง (โชว์รวมทุกบริษัท).
       ...(companyId ? { companyId } : {}),
+      ...(tag ? { tags: { has: tag } } : {}),
     },
     orderBy: { createdAt: "desc" },
     include: {
@@ -112,15 +114,30 @@ async function loadPostings(
 export default async function PostingsListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; company?: string }>;
+  searchParams: Promise<{ status?: string; company?: string; tag?: string }>;
 }) {
   const session = await requireSession();
   requireRecruitAccess(session.user.role);
   const params = await searchParams;
   const filter = params.status as PostingStatus | undefined;
   const companyFilter = await resolveCompanyFilter(params.company);
+  const tagFilter = params.tag || undefined;
 
-  const postings = await loadPostings(session.user.org_id, filter, companyFilter);
+  const postings = await loadPostings(
+    session.user.org_id,
+    filter,
+    companyFilter,
+    tagFilter,
+  );
+
+  // แท็กทั้งหมดที่เคยมีในองค์กร (ไม่กรองตามสถานะ) — โชว์เป็นปุ่มกรองคงที่ ไม่หายไปมาตามฟิลเตอร์อื่น
+  const tagRows = await prisma.recruitJobPosting.findMany({
+    where: { orgId: session.user.org_id },
+    select: { tags: true },
+  });
+  const allTags = [...new Set(tagRows.flatMap((r) => r.tags))].sort((a, b) =>
+    a.localeCompare(b, "th"),
+  );
 
   const canWrite = canRecruitWrite(session.user.role);
 
@@ -144,12 +161,16 @@ export default async function PostingsListPage({
         }
       >
         {/* Filter chips */}
-        <div className="flex gap-1.5 mb-5 flex-wrap">
-          <FilterChip href="/recruit/postings" label="ทั้งหมด" active={!filter} />
+        <div className="flex gap-1.5 mb-2 flex-wrap">
+          <FilterChip
+            href={buildPostingsHref(undefined, tagFilter)}
+            label="ทั้งหมด"
+            active={!filter}
+          />
           {(["DRAFT", "OPEN", "CLOSED", "ARCHIVED"] as PostingStatus[]).map((s) => (
             <FilterChip
               key={s}
-              href={`/recruit/postings?status=${s}`}
+              href={buildPostingsHref(s, tagFilter)}
               label={POSTING_STATUS_LABELS[s]}
               active={filter === s}
             />
@@ -161,6 +182,21 @@ export default async function PostingsListPage({
             → ดูใบสมัคร
           </Link>
         </div>
+
+        {/* Tag filter chips */}
+        {allTags.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-5 flex-wrap">
+            <Tag className="size-3.5 text-zinc-400" />
+            {allTags.map((t) => (
+              <FilterChip
+                key={t}
+                href={buildPostingsHref(filter, tagFilter === t ? undefined : t)}
+                label={t}
+                active={tagFilter === t}
+              />
+            ))}
+          </div>
+        )}
 
         {postings.length === 0 ? (
           <EmptyState filter={filter} canWrite={canWrite} />
@@ -227,6 +263,19 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
           </p>
         )}
       </Link>
+
+      {posting.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {posting.tags.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Funnel mini bar */}
       {hasApps ? (
@@ -387,6 +436,15 @@ function EmptyState({
       )}
     </div>
   );
+}
+
+// รักษาทั้ง status + tag ไว้ด้วยกันตอนสลับตัวกรองใดตัวหนึ่ง (กรองซ้อนกันได้)
+function buildPostingsHref(status?: PostingStatus, tag?: string): string {
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", status);
+  if (tag) qs.set("tag", tag);
+  const s = qs.toString();
+  return s ? `/recruit/postings?${s}` : "/recruit/postings";
 }
 
 function FilterChip({

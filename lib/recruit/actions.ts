@@ -23,6 +23,23 @@ import { thaiDateLong } from "@/lib/utils/format";
 // Job Postings CRUD
 // =============================================================
 
+// trim + ตัดว่าง + รวมตัวที่พิมพ์ต่างเคส (Amazon/amazon) ให้เป็นก้อนเดียว + จำกัด 10 แท็ก
+function normalizePostingTags(tags: string[] | undefined): string[] {
+  if (!tags) return [];
+  const seen = new Map<string, string>(); // lowercase → original casing แรกที่เจอ
+  for (const raw of tags) {
+    const label = raw.trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (!seen.has(key)) seen.set(key, label);
+  }
+  const result = [...seen.values()];
+  if (result.length > 10) {
+    throw new Error("แท็กสูงสุด 10 อัน");
+  }
+  return result;
+}
+
 export async function createPosting(input: {
   title: string;
   description?: string;
@@ -30,6 +47,7 @@ export async function createPosting(input: {
   opensAt?: string;
   closesAt?: string;
   fieldSchema?: FormSchema;
+  tags?: string[];
   // เก็บใน settings JSON (ไม่ต้อง migration): รูปหน้าปก + คำโพสต์รับสมัคร
   coverImageUrl?: string;
   caption?: string;
@@ -38,6 +56,8 @@ export async function createPosting(input: {
   if (!canRecruitWrite(session.user.role)) {
     throw new Error("ไม่มีสิทธิ์");
   }
+
+  const tags = normalizePostingTags(input.tags);
 
   const slug = makePostingSlug(input.title);
   const schema = input.fieldSchema ?? EMPTY_FORM_SCHEMA;
@@ -56,6 +76,7 @@ export async function createPosting(input: {
       status: "DRAFT",
       fieldSchema: schema as object,
       settings: settings as object,
+      tags,
       opensAt: input.opensAt ? new Date(input.opensAt) : null,
       closesAt: input.closesAt ? new Date(input.closesAt) : null,
       createdById: session.user.id,
@@ -85,6 +106,7 @@ export async function updatePosting(
     opensAt: string | null;
     closesAt: string | null;
     fieldSchema: FormSchema;
+    tags: string[];
     // settings JSON: coverImageUrl = "" หรือ null → ลบรูป
     coverImageUrl: string | null;
     caption: string;
@@ -112,6 +134,7 @@ export async function updatePosting(
     FormSchemaSchema.parse(input.fieldSchema);
     data.fieldSchema = input.fieldSchema as object;
   }
+  if (input.tags !== undefined) data.tags = normalizePostingTags(input.tags);
   // Merge cover/caption into settings JSON (กัน field อื่นใน settings หาย)
   if (input.coverImageUrl !== undefined || input.caption !== undefined) {
     const cur: Record<string, unknown> =

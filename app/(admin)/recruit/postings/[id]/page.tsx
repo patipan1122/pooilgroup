@@ -76,6 +76,14 @@ export default async function PostingDetailPage({
     orderBy: { code: "asc" },
   });
 
+  const tagRows = await prisma.recruitJobPosting.findMany({
+    where: { orgId: session.user.org_id },
+    select: { tags: true },
+  });
+  const orgTags = [...new Set(tagRows.flatMap((r) => r.tags))].sort((a, b) =>
+    a.localeCompare(b, "th"),
+  );
+
   let schema: FormSchema = EMPTY_FORM_SCHEMA;
   try {
     schema = FormSchemaSchema.parse(posting.fieldSchema);
@@ -310,6 +318,7 @@ export default async function PostingDetailPage({
         postingId={posting.id}
         slug={posting.slug}
         companies={companies}
+        orgTags={orgTags}
         initialData={{
           title: posting.title,
           description: posting.description ?? "",
@@ -320,6 +329,7 @@ export default async function PostingDetailPage({
           status: posting.status as PostingStatus,
           coverImageUrl: postingSettings.coverImageUrl ?? null,
           caption: postingSettings.caption ?? "",
+          tags: posting.tags,
         }}
         canPublish={canEdit && posting.status === "DRAFT"}
         canClose={canEdit && posting.status === "OPEN"}

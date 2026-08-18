@@ -1336,6 +1336,7 @@ model RecruitJobPosting {
   fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
   // settings = { closingDateAutoClose, notifyTemplates, ... }
   settings    Json                 @default("{}")
+  tags        String[]             @default([]) // เช่น "Amazon" · กรองในหน้ารายการประกาศ
   opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
   closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
   createdById String               @map("created_by_id") @db.Uuid

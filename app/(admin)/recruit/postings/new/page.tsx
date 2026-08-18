@@ -21,6 +21,14 @@ export default async function NewPostingPage() {
     orderBy: { code: "asc" },
   });
 
+  const tagRows = await prisma.recruitJobPosting.findMany({
+    where: { orgId: session.user.org_id },
+    select: { tags: true },
+  });
+  const orgTags = [...new Set(tagRows.flatMap((r) => r.tags))].sort((a, b) =>
+    a.localeCompare(b, "th"),
+  );
+
   // บริษัทของประกาศใหม่ = บริษัทที่เลือกอยู่บน "ตัวสลับบริษัทด้านบน" (คุกกี้) — ไม่มีตัวเลือก
   // ในฟอร์มแล้ว. ถ้าเลือก "ทุกบริษัท" อยู่ (คุกกี้ว่าง) → ประกาศเป็นแบบใช้รวม (companyId=null).
   const activeCompanyId = await readCompanyCookie();
@@ -42,6 +50,7 @@ export default async function NewPostingPage() {
       <PostingEditor
         mode="create"
         companies={companies}
+        orgTags={orgTags}
         initialData={{
           title: "",
           description: "",
@@ -52,6 +61,7 @@ export default async function NewPostingPage() {
           status: "DRAFT",
           coverImageUrl: null,
           caption: "",
+          tags: [],
         }}
       />
     </>
