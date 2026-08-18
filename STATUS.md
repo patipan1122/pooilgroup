@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-17 (ChairOps รอบเก็บ — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" BUILT+VERIFIED ⏳ NOT pushed/deployed)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-18 (ChairOps รอบเก็บ — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" 🚀 DEPLOYED `origin/setup c05bf3c0`)
 
-## 🪑💰✅ ChairOps ตรวจยอด (รอบเก็บ) — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" จับเงินหายระหว่างคนเก็บ→ธนาคาร (2026-08-17 · BUILT+VERIFIED ⏳ NOT pushed/deployed)
+## 🪑💰✅ ChairOps ตรวจยอด (รอบเก็บ) — เพิ่ม "ต่างฝาก/ต่างฝากสะสม" จับเงินหายระหว่างคนเก็บ→ธนาคาร (2026-08-17/18 · 🚀 DEPLOYED `origin/setup c05bf3c0`)
 
 CEO เปิดหน้า ChairOps ตรวจยอด · robinsonburิรัมย์ เจอว่ายอด "เก็บได้" กับ "ฝาก" ไม่เท่ากัน แต่ตารางไม่มีช่องต่าง/สะสมให้ดูจุดนี้เลย.
 
@@ -13,8 +13,9 @@ CEO เปิดหน้า ChairOps ตรวจยอด · robinsonburิร
 2. จัดกลุ่มตารางใหม่ตาม CEO สั่ง: [ควรได้ เก็บได้ ต่าง ต่างสะสม] (กลุ่มมิเตอร์ — ย่อ/ขยายได้) → [ฝาก ต่างฝาก ต่างฝากสะสม] (กลุ่มธนาคาร — ใหม่) → สลิป
 3. ปุ่มย่อ/ขยายกลุ่มมิเตอร์ทำด้วย CSS ล้วนๆ (`:has()` + checkbox+label) ไม่มี client JS เพิ่ม — คงไว้ตามที่ไฟล์นี้ตั้งใจทำเป็น server component ล้วนมาตั้งแต่ต้น
 - verify: `tsc --noEmit` 0 error ทั้งโปรเจกต์ (รอบแรกเจอ error เดิมที่ไม่เกี่ยวกับ fix นี้ — `officecrypto-tool` ขาดใน worktree, known gap ตั้งแต่ a22b88c3 — แก้ด้วย `pnpm install --frozen-lockfile` ตาม lockfile จริง ไม่ใช่ npm ที่จะดึงมาทั้งต้นไม้ผิดเวอร์ชัน) · eslint 0 error 2 ไฟล์ที่แก้ (เจอ+แก้ 1 จุด: เครื่องหมาย " ตรงๆ ในข้อความไทย ต้องใช้ “ ” ตามธรรมเนียมไฟล์) · `next build` Turbopack exit0 690 หน้า รวม `/chairops/reconcile/[branchId]` — verify ในเวิร์กทรีแยกนอกเรโป (`/private/tmp/pg-wt-chairops-depositdiff`) กัน tsc OOM จาก worktree เก่าซ้อนในเรโปหลัก (เจอ worktree ค้างเก่าเกิน 50 จุดทั้งในและนอกเรโป — ยังไม่ได้เคลียร์ ควรแจ้ง CEO แยกต่างหาก)
-- ⏳ **รอ CEO ตัดสินใจ:** commit+push+deploy — โค้ดอยู่ใน working tree ยังไม่ commit (branch ปัจจุบันเป็นของฟีเจอร์อื่น `claude/ledger-import-continuity-deploy-2026-08-17` ที่ deploy ไปแล้ว — ควรแยกไปคอมมิทบน branch ใหม่แทนที่จะปนกับของเดิม)
-- CEO ยังต้องทดสอบจริงหลัง deploy — เปิดหน้า ChairOps ตรวจยอด ดูคอลัมน์ใหม่ + กดปุ่มย่อ/ขยายกลุ่มมิเตอร์
+- **Deploy:** แยก branch ใหม่ `claude/chairops-periods-deposit-diff-2026-08-17` จาก origin/setup ก่อนคอมมิท (ของเดิมอยู่คนละ branch ฟีเจอร์อื่นที่ deploy ไปแล้ว) → ระหว่างทำ origin/setup ขยับไป 1 commit (per-slip chips บน Ledger tab, แก้ไฟล์เดียวกัน) → rebase ทับ auto-merge สำเร็จไม่มี conflict → **re-verify ซ้ำหลัง rebase ครบ 3 ด่านผ่านหมดอีกรอบ** ก่อน push
+- push ครั้งนี้ใช้ `VERIFY_SKIP=1` (CEO อนุมัติสด) เพราะ verify-gate hook ไม่รู้จัก stamp ที่เขียนเองนอก `/verify` skill (เหมือน precedent 08-17 LedgerLine archive) — โค้ด verify ผ่านจริงตามข้างต้น ไม่ได้ข้ามการตรวจ แค่ข้ามการเขียน stamp · gate ยังเจอไฟล์ untracked เก่าค้าง 11 รายการในเรโป (worktree ค้าง/docs/scratchpad — ไม่เกี่ยวกับ fix นี้ ไม่ได้ commit เพิ่ม)
+- root domain ตอบ 200 หลัง push — CEO ยังต้อง login ทดสอบจริง: เปิดหน้า ChairOps ตรวจยอด ดูคอลัมน์ใหม่ + กดปุ่มย่อ/ขยายกลุ่มมิเตอร์
 
 ## 🔐✅ แอดมินโปรแกรม (program_admin) เห็นเมนูแต่กดเข้าไม่ได้ — CashHub/LedgerLine/RentSpace/ChairOps/ClawHub (2026-08-17 · 🚀DEPLOYED `origin/setup c94c8c17`)
 
