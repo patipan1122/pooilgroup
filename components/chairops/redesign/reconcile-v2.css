@@ -613,6 +613,47 @@
 .co-scope .co-drift.ok { color: var(--ok); }
 .co-scope .co-drift.muted { color: var(--text-muted); }
 
+/* ย่อ/ขยายกลุ่มมิเตอร์ (ควรได้/เก็บได้/ต่างสะสม) ในตาราง Periods — CEO 2026-08-17.
+   CSS-only (:has()), ไม่มี client JS: checkbox ซ่อน + label เป็นปุ่ม, ค่าเริ่มต้น
+   ไม่ติ๊ก = ขยายเต็ม. "ต่าง" (varianceMeter) ไม่ถูกซ่อนแม้ย่อ — ยังจับสัญญาณรอบเดียวได้. */
+.co-scope .rc-meter-collapse-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.co-scope .rc-meter-collapse-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  cursor: pointer;
+  color: var(--accent-text);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.co-scope .rc-meter-collapse-label:hover { color: var(--accent); border-color: var(--accent); }
+.co-scope .rc-meter-collapse-label .rc-collapse-icon-expand { display: none; }
+.co-scope
+  .rc-ledger:has(.rc-meter-collapse-input:checked)
+  .rc-meter-collapse-label
+  .rc-collapse-icon-collapse {
+  display: none;
+}
+.co-scope
+  .rc-ledger:has(.rc-meter-collapse-input:checked)
+  .rc-meter-collapse-label
+  .rc-collapse-icon-expand {
+  display: inline;
+}
+.co-scope .rc-ledger:has(.rc-meter-collapse-input:checked) .rc-meter-col { display: none; }
+
 /* ────── Timeline ────── */
 .co-scope .rc-timeline {
   background: var(--surface);

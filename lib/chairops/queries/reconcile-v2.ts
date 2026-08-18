@@ -217,6 +217,16 @@ export interface PeriodWindow {
   // meterLatest = formatted time the meter data currently reaches ("อัปเดตถึง …").
   meterPending: boolean;
   meterLatest: string | null;
+  // CEO 2026-08-17 · เก็บได้ vs ฝาก (ต่างฝาก) — neither of the two checks above
+  // catches skimming AFTER collection but BEFORE the bank (คนเก็บ→ธนาคาร): the
+  // meter check stops at เก็บได้, and `diff` above is deposit vs expectedCash
+  // (ตู้→ธนาคาร), never against collectedSum. depositDiff = deposit − collectedSum
+  // for THIS window only · null when no deposit landed in this window (timing lag,
+  // not a real 0 — a maid may collect Mon and the office deposits Wed as one lump).
+  // depositDiffCum = running Σ depositDiff skipping null windows — the trustworthy
+  // signal (sustained negative = money collected but never reaching the bank).
+  depositDiff: number | null;
+  depositDiffCum: number | null;
 }
 
 export interface ReconcileSidebarRow {
@@ -2231,6 +2241,8 @@ export async function getReconcilePeriods(args: {
         meterWindowEnd: null,
         meterPending: false,
         meterLatest: null,
+        depositDiff: null,
+        depositDiffCum: null,
         collectedSum: 0,
         firstCollectedAt: null,
         lastCollectedAt: null,
@@ -2272,6 +2284,8 @@ export async function getReconcilePeriods(args: {
       meterWindowEnd: null,
       meterPending: false,
       meterLatest: null,
+      depositDiff: null,
+      depositDiffCum: null,
       collectedSum: 0,
       firstCollectedAt: null,
       lastCollectedAt: null,
@@ -2447,6 +2461,26 @@ export async function getReconcilePeriods(args: {
       w.verdictMeter = perChairVerdict(variance, exp);
       cum += variance;
       w.cumShortageMeter = Math.round(cum);
+    }
+  }
+
+  // CEO 2026-08-17 · ต่างฝาก / ต่างฝากสะสม — เก็บได้ vs ฝาก ตรงๆ (ช่องว่างที่ทั้ง
+  // varianceMeter ด้านบน [ตู้→คนเก็บ] และ diff/cumAfter [ตู้→ธนาคาร] ไม่เคยเช็ค).
+  // ข้ามรอบที่ deposit เป็น null (ยังไม่ฝาก/ฝากไปลงรอบอื่นเพราะ bucket คนละวัน) ไม่ให้
+  // นับเป็น 0 เท็จ — สะสมคือตัวจับสัญญาณจริง (ต่างรอบเดียวเด้งขึ้นลงได้ปกติจากการหน่วงฝาก).
+  {
+    let depCum = 0;
+    let depCumStarted = false;
+    for (const w of wins) {
+      if (w.open || w.deposit == null) {
+        w.depositDiffCum = depCumStarted ? Math.round(depCum) : null;
+        continue;
+      }
+      const dDiff = Math.round(w.deposit - w.collectedSum);
+      w.depositDiff = dDiff;
+      depCum += dDiff;
+      depCumStarted = true;
+      w.depositDiffCum = Math.round(depCum);
     }
   }
 

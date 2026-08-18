@@ -2702,6 +2702,7 @@ export function PeriodsTab({
           display: "flex",
           gap: 14,
           flexWrap: "wrap",
+          alignItems: "center",
         }}
       >
         <span>
@@ -2709,6 +2710,18 @@ export function PeriodsTab({
         </span>
         <span>🟢 ตรง · 🔴 ขาดน่าสงสัย · 🟡 คลาดเคลื่อน · 🔵 เก็บเกิน · ⚪ ข้อมูลไม่ครบ</span>
         <span>คนเก็บ: 💵 แม่บ้าน · 📥 CSV · 🏢 แอดมิน</span>
+        <span>
+          <strong>ต่างฝาก</strong> = ฝาก − เก็บได้ → จับเงินที่เก็บมาแล้วแต่ไม่เข้าธนาคาร (ดูที่ “ต่างฝากสะสม” เป็นหลัก · รอบเดียวเด้งได้ปกติเพราะฝากหน่วงวัน)
+        </span>
+        <label className="rc-meter-collapse-label" htmlFor="rc-meter-collapse">
+          <input
+            type="checkbox"
+            id="rc-meter-collapse"
+            className="rc-meter-collapse-input"
+          />
+          <span className="rc-collapse-icon-collapse">▾ ย่อกลุ่มมิเตอร์</span>
+          <span className="rc-collapse-icon-expand">▸ ขยายกลุ่มมิเตอร์</span>
+        </label>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table className="tbl rc-ledger-tbl">
@@ -2717,12 +2730,14 @@ export function PeriodsTab({
               <th>ช่วงรอบ</th>
               <th>เก็บล่าสุด</th>
               <th>คนเก็บ</th>
-              <th className="num rc-tcol">ควรได้</th>
-              <th className="num">เก็บได้</th>
-              <th className="num rc-tcol">ฝาก</th>
-              <th>สลิป</th>
+              <th className="num rc-tcol rc-meter-col">ควรได้</th>
+              <th className="num rc-meter-col">เก็บได้</th>
               <th className="num">ต่าง</th>
-              <th className="num">สะสม</th>
+              <th className="num rc-meter-col">ต่างสะสม</th>
+              <th className="num rc-tcol">ฝาก</th>
+              <th className="num">ต่างฝาก</th>
+              <th className="num">ต่างฝากสะสม</th>
+              <th>สลิป</th>
               <th></th>
             </tr>
           </thead>
@@ -2820,7 +2835,7 @@ export function PeriodsTab({
                     )}
                   </td>
                   <td
-                    className="num mono rc-tcol"
+                    className="num mono rc-tcol rc-meter-col"
                     title={
                       p.meterPending
                         ? `มิเตอร์อัปเดตถึง ${p.meterLatest ?? "-"} เท่านั้น — ข้อมูลตู้ของรอบนี้ยังส่งมาไม่ครบ (ปกติมาช้า ~1 วัน) จึงยังคิด "ควรได้" ไม่ได้`
@@ -2846,41 +2861,8 @@ export function PeriodsTab({
                       fmtN(p.cashSum)
                     )}
                   </td>
-                  <td className="num mono">
+                  <td className="num mono rc-meter-col">
                     {p.collectedSum > 0 ? fmtN(p.collectedSum) : "—"}
-                  </td>
-                  <td className="num mono rc-tcol">
-                    {p.deposit != null ? (
-                      fmtN(p.deposit)
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                  {/* CEO 2026-08-17 · ยอดต่อ "ใบฝาก" หนึ่งใบ (ไม่ใช่ลิงก์ "สลิป" รวมช่วง
-                      แบบเดิม) — พนักงานบางคนแบ่งฝากหลายใบในช่วงเดียวกัน ต้องเห็นทีละ
-                      ใบพร้อมสถานะ. ยอด = ที่ AI อ่านจากสลิปจริง (ocrAmount) ถ้ามี ไม่งั้น
-                      fallback ยอดที่พิมพ์เอง. กดยอดดูรูปสลิปใบนั้นได้ตรงในตาราง. */}
-                  <td>
-                    {p.slips.length > 0 ? (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {p.slips.map((s) => (
-                          <SlipChip
-                            key={s.id}
-                            amount={fmtN(s.amount)}
-                            slipUrl={s.slipUrl}
-                            status={s.ledgerStatus}
-                            flagged={s.flagged}
-                            caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <SlipBadge
-                        url={p.slip}
-                        missing={false}
-                        caption={`สลิปฝากเงิน · รอบ ${p.from.slice(5)} → ${p.to.slice(5)}`}
-                      />
-                    )}
                   </td>
                   <td
                     className={"num mono " + diffClass}
@@ -2915,7 +2897,7 @@ export function PeriodsTab({
                     return (
                       <td
                         className={
-                          "num mono " +
+                          "num mono rc-meter-col " +
                           (cumVal < -500
                             ? "co-drift crit"
                             : cumVal < -100
@@ -2932,6 +2914,81 @@ export function PeriodsTab({
                       </td>
                     );
                   })()}
+                  <td className="num mono rc-tcol">
+                    {p.deposit != null ? (
+                      fmtN(p.deposit)
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                  {/* CEO 2026-08-17 · ต่างฝาก = ฝาก − เก็บได้ รอบนี้ · เด้งขึ้นลงได้ปกติ
+                      (ฝากหน่วงวันได้) — ต่างฝากสะสมด้านขวาคือตัวจับสัญญาณจริง */}
+                  <td
+                    className={
+                      "num mono " +
+                      (p.depositDiff == null
+                        ? ""
+                        : Math.abs(p.depositDiff) < 100
+                          ? "co-drift ok"
+                          : "co-drift crit")
+                    }
+                    title={
+                      p.depositDiff == null
+                        ? "รอบนี้ยังไม่มีข้อมูลฝาก (อาจฝากรวมไปลงรอบอื่น)"
+                        : "ฝาก − เก็บได้ · รอบเดียวเด้งได้ปกติจากการหน่วงฝาก"
+                    }
+                  >
+                    {p.depositDiff == null ? (
+                      <span className="text-3">—</span>
+                    ) : (
+                      fmtSigned(p.depositDiff)
+                    )}
+                  </td>
+                  <td
+                    className={
+                      "num mono " +
+                      (p.depositDiffCum == null
+                        ? ""
+                        : p.depositDiffCum < -500
+                          ? "co-drift crit"
+                          : p.depositDiffCum < -100
+                            ? "co-drift warn"
+                            : "")
+                    }
+                    title="ผลรวมสะสมของต่างฝาก — ติดลบเพิ่มขึ้นเรื่อยๆ = เก็บมาแล้วไม่เข้าธนาคารจริง"
+                  >
+                    {p.depositDiffCum == null ? (
+                      <span className="text-3">—</span>
+                    ) : (
+                      fmtSigned(p.depositDiffCum)
+                    )}
+                  </td>
+                  {/* CEO 2026-08-17 · ยอดต่อ "ใบฝาก" หนึ่งใบ (ไม่ใช่ลิงก์ "สลิป" รวมช่วง
+                      แบบเดิม) — พนักงานบางคนแบ่งฝากหลายใบในช่วงเดียวกัน ต้องเห็นทีละ
+                      ใบพร้อมสถานะ. ยอด = ที่ AI อ่านจากสลิปจริง (ocrAmount) ถ้ามี ไม่งั้น
+                      fallback ยอดที่พิมพ์เอง. กดยอดดูรูปสลิปใบนั้นได้ตรงในตาราง. */}
+                  <td>
+                    {p.slips.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {p.slips.map((s) => (
+                          <SlipChip
+                            key={s.id}
+                            amount={fmtN(s.amount)}
+                            slipUrl={s.slipUrl}
+                            status={s.ledgerStatus}
+                            flagged={s.flagged}
+                            caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <SlipBadge
+                        url={p.slip}
+                        missing={false}
+                        caption={`สลิปฝากเงิน · รอบ ${p.from.slice(5)} → ${p.to.slice(5)}`}
+                      />
+                    )}
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {branchId && (
                       <Link
