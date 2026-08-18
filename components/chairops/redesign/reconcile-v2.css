@@ -581,7 +581,10 @@
 
 /* ยอดต่อ "ใบฝาก" ในตาราง Periods (CEO 2026-08-17) — สีบอกสถานะ reconcile: ดำ=ยัง
    ไม่ส่ง · ฟ้า=ส่งแล้วรอจับคู่ · สีรุ้ง=จับคู่ธนาคารแล้ว (.text-matched-iridescent
-   ที่มีอยู่แล้ว). กรอบแดง = ติดธงรอตรวจสอบ (สลิปซ้ำ/บัญชีผิด/ผลต่างเกิน). */
+   ที่มีอยู่แล้ว). ติดธงรอตรวจสอบ (สลิปซ้ำ/บัญชีผิด/ผลต่างเกิน) = ตัวเลขสีแดงเข้ม
+   ชัดเจน (CEO 2026-08-18: "ตัวเลขนั้นอยากให้ขึ้นเป็นสีแดงไว้ด้วย") — .rc-slipchip-
+   flagged มาทีหลัง .rc-slipchip-{unsent,sent} ใน source order เสมอ (ทับสีเดิม
+   ได้โดยไม่ต้อง !important). */
 .co-scope .rc-slipchip-btn {
   border: none;
   background: none;
@@ -603,6 +606,8 @@
 .co-scope .rc-slipchip-unsent { color: #18181b; }
 .co-scope .rc-slipchip-sent { color: var(--accent); }
 .co-scope .rc-slipchip-flagged {
+  color: var(--crit);
+  font-weight: 800;
   box-shadow: inset 0 0 0 1px var(--crit);
   background: var(--crit-soft);
 }

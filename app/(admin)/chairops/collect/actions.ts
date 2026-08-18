@@ -651,6 +651,7 @@ export async function batchDeposit(
 
       const fraud = await checkSlipFraud({
         orgId: session.user.orgId,
+        branchId,
         depositId: deposit.id,
         ocr,
         configuredAccountName,
@@ -662,6 +663,7 @@ export async function batchDeposit(
           ocrAmount: ocr.amount,
           ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
           ocrAccountName: ocr.accountName,
+          ocrRefNo: ocr.refNo,
           ocrReadAt: new Date(),
           ocrFlagReason: fraud.reason,
           requiresReview: requiresReview || fraud.flagged,

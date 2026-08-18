@@ -1,9 +1,11 @@
-// AI อ่านสลิปธนาคาร (ยอด/วันที่/ชื่อบัญชีปลายทาง) — CEO 2026-08-17.
+// AI อ่านสลิปธนาคาร (ยอด/วันที่/ชื่อบัญชีปลายทาง/เลขที่รายการ) — CEO 2026-08-17,
+// เพิ่มเลขที่รายการ 2026-08-18.
 //
 // พี่น้องของ extractSlipAmount ใน app/(admin)/chairops/collect/actions.ts (ตัวนั้น
-// อ่านแค่ยอดสำหรับ auto-fill ฟอร์มแม่บ้านแบบ ephemeral ไม่เก็บผล). ตัวนี้อ่านครบ 3
-// อย่างเพื่อเก็บถาวรบน ChairopsCashDeposit — ใช้ตรวจสลิปซ้ำ (วันที่+ยอด ตรงกับใบอื่น)
-// และบัญชีปลายทางไม่ตรงกับที่สาขาตั้งค่าไว้ (checkSlipFraud ด้านล่าง).
+// อ่านแค่ยอดสำหรับ auto-fill ฟอร์มแม่บ้านแบบ ephemeral ไม่เก็บผล). ตัวนี้อ่านครบ 4
+// อย่างเพื่อเก็บถาวรบน ChairopsCashDeposit — ใช้ตรวจสลิปซ้ำ (เลขที่รายการตรงกัน หรือ
+// fallback วันที่+ยอดตรงกัน — ในสาขาเดียวกันเท่านั้น) และบัญชีปลายทางไม่ตรงกับที่
+// สาขาตั้งค่าไว้ (checkSlipFraud ด้านล่าง).
 //
 // Plain lib function (ไม่ใช่ "use server") — เรียกจาก server action (batchDeposit)
 // เท่านั้น ไม่ได้ตั้งใจให้ client เรียกตรง (ดู memory:
@@ -19,9 +21,13 @@ export type SlipOcrDetails = {
   amount: number | null;
   date: string | null; // "YYYY-MM-DD"
   accountName: string | null;
+  // CEO 2026-08-18: เลขที่รายการ/เลขอ้างอิงบนสลิป — ถ้าอ่านได้และตรงกันเป๊ะกับใบ
+  // อื่น = สัญญาณสลิปซ้ำที่มั่นใจสูงกว่าวันที่+ยอด (สลิป 2 ใบคนละรายการจริงแทบ
+  // เป็นไปไม่ได้ที่จะมีเลขรายการตรงกัน ต่างจากยอด+วันที่ที่บังเอิญตรงกันได้).
+  refNo: string | null;
 };
 
-const EMPTY: SlipOcrDetails = { amount: null, date: null, accountName: null };
+const EMPTY: SlipOcrDetails = { amount: null, date: null, accountName: null, refNo: null };
 
 async function fetchImageAsBase64(
   url: string,
@@ -69,12 +75,15 @@ export async function extractSlipDetails(
             {
               type: "text",
               text:
-                "นี่คือสลิปธนาคารไทย กรุณาอ่าน 3 อย่าง: " +
+                "นี่คือสลิปธนาคารไทย กรุณาอ่าน 4 อย่าง: " +
                 "(1) ยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ) " +
                 "(2) วันที่ทำรายการบนสลิป แปลงเป็น YYYY-MM-DD " +
                 "(3) ชื่อบัญชีปลายทาง/ผู้รับโอนที่พิมพ์อยู่บนสลิป " +
+                "(4) เลขที่รายการ/เลขอ้างอิงธุรกรรม (transaction ID / เลขที่รายการ / " +
+                "Ref no. — ถ้ามีพิมพ์อยู่บนสลิป) " +
                 'ตอบ JSON เท่านั้น ไม่มีข้อความอื่น: {"amount": <number|null>, ' +
-                '"date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null}',
+                '"date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null, ' +
+                '"refNo": "<string>"|null}',
             },
           ],
         },
@@ -102,7 +111,7 @@ export async function extractSlipDetails(
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return EMPTY;
 
-    let parsed: { amount?: unknown; date?: unknown; accountName?: unknown };
+    let parsed: { amount?: unknown; date?: unknown; accountName?: unknown; refNo?: unknown };
     try {
       parsed = JSON.parse(match[0]);
     } catch {
@@ -125,7 +134,12 @@ export async function extractSlipDetails(
         ? parsed.accountName.trim().slice(0, 200)
         : null;
 
-    return { amount, date, accountName };
+    const refNo =
+      typeof parsed.refNo === "string" && parsed.refNo.trim().length > 0
+        ? parsed.refNo.trim().slice(0, 100)
+        : null;
+
+    return { amount, date, accountName, refNo };
   } catch (e) {
     console.error("[chairops] extractSlipDetails failed (non-fatal)", e);
     return EMPTY;
@@ -136,33 +150,52 @@ export type SlipFraudCheck = { flagged: boolean; reason: string | null };
 
 const normalizeName = (s: string) => s.replace(/\s+/g, "").toLowerCase();
 
-/** ตรวจสลิปซ้ำ (วันที่+ยอดตรงกับใบฝากอื่นในองค์กร — คนละใบ) + บัญชีปลายทางไม่ตรง
- *  กับที่สาขาตั้งค่าไว้ (ถ้าตั้งค่าไว้แล้วและอ่านชื่อบัญชีได้ทั้งคู่) — ผลนี้ใช้ตั้ง
- *  requiresReview เหมือนเกณฑ์ |diff|>=500 เดิม (BF1 MAID-04), พร้อมเหตุผลให้ office
- *  เห็นทันทีในหน้าคิวตรวจสอบ ไม่ต้องเดา. Best-effort — ไม่มีวันที่/ยอดอ่านได้ก็ข้าม
- *  การตรวจซ้ำ (เกณฑ์เดิม |diff|>=500 ยังทำงานแยกต่างหากอยู่แล้ว). */
+/** ตรวจสลิปซ้ำ (ในสาขาเดียวกันเท่านั้น — CEO 2026-08-18: "ให้จับเลขในสาขาเดียวกันที่
+ *  พนักงานคนนั้นดูแล เพื่อที่จะได้ไม่ต้องเช็คเยอะ") + บัญชีปลายทางไม่ตรงกับที่สาขา
+ *  ตั้งค่าไว้ (ถ้าตั้งค่าไว้แล้วและอ่านชื่อบัญชีได้ทั้งคู่) — ผลนี้ใช้ตั้ง requiresReview
+ *  เหมือนเกณฑ์ |diff|>=500 เดิม (BF1 MAID-04), พร้อมเหตุผลให้ office เห็นทันทีในหน้า
+ *  คิวตรวจสอบ ไม่ต้องเดา.
+ *
+ *  ลำดับตรวจสลิปซ้ำ: (1) เลขที่รายการตรงกันเป๊ะ = มั่นใจสูงสุด (สลิปจริง 2 ใบคนละ
+ *  รายการแทบเป็นไปไม่ได้ที่เลขจะตรงกัน) → เช็คก่อนเสมอถ้าอ่านได้ (2) ไม่มีเลขที่
+ *  รายการอ่านได้ → fallback วันที่+ยอดตรงกัน (สัญญาณอ่อนกว่า อาจบังเอิญตรงกันได้ แต่
+ *  ยังคุ้มที่จะติดธงให้คนตรวจ). Best-effort — ไม่มีวันที่/ยอดอ่านได้ก็ข้ามการตรวจซ้ำ
+ *  (เกณฑ์เดิม |diff|>=500 ยังทำงานแยกต่างหากอยู่แล้ว). */
 export async function checkSlipFraud(args: {
   orgId: string;
+  branchId: string;
   depositId: string;
   ocr: SlipOcrDetails;
   configuredAccountName: string | null;
 }): Promise<SlipFraudCheck> {
-  const { orgId, depositId, ocr, configuredAccountName } = args;
+  const { orgId, branchId, depositId, ocr, configuredAccountName } = args;
 
-  if (ocr.amount != null && ocr.date != null) {
+  if (ocr.refNo) {
+    const dupRef = await prisma.chairopsCashDeposit.findFirst({
+      where: { orgId, branchId, id: { not: depositId }, ocrRefNo: ocr.refNo },
+      select: { id: true, maid: { select: { displayName: true } } },
+    });
+    if (dupRef) {
+      return {
+        flagged: true,
+        reason: `สลิปนี้มีเลขที่รายการตรงกับใบฝากอื่นในสาขาเดียวกัน (โดย ${dupRef.maid.displayName}) เป๊ะ — สงสัยเอาสลิปเดิมมาส่งซ้ำ กรุณาตรวจสอบ`,
+      };
+    }
+  } else if (ocr.amount != null && ocr.date != null) {
     const dup = await prisma.chairopsCashDeposit.findFirst({
       where: {
         orgId,
+        branchId,
         id: { not: depositId },
         ocrAmount: ocr.amount,
         ocrDate: new Date(`${ocr.date}T00:00:00.000Z`),
       },
-      select: { id: true, branch: { select: { name: true } } },
+      select: { id: true, maid: { select: { displayName: true } } },
     });
     if (dup) {
       return {
         flagged: true,
-        reason: `สลิปนี้ดูเหมือนซ้ำกับใบฝากอื่นที่สาขา "${dup.branch.name}" (วันที่+ยอดตรงกัน) — กรุณาตรวจสอบว่าไม่ใช่สลิปเดิมที่เอามาส่งซ้ำ`,
+        reason: `สลิปนี้วันที่+ยอดตรงกับใบฝากอื่นในสาขาเดียวกัน (โดย ${dup.maid.displayName}) — กรุณาตรวจสอบว่าไม่ใช่สลิปเดิมที่เอามาส่งซ้ำ`,
       };
     }
   }
