@@ -26,9 +26,12 @@
 //
 // มิเตอร์เก็บเป็น Int (ไม่ใช่ cents). เงินเก็บเป็น cents.
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { adminClient } from "@/lib/db/server";
+import { audit } from "@/lib/audit/log";
 import { requireCfSession, userBranchIds, cfHasAdminPower } from "./role-guard";
 
 const APP_PATHS = [
@@ -92,18 +95,22 @@ const SubmitBaselineSchema = z.object({
 /**
  * ตั้งค่าครั้งแรก (baseline) ให้ตู้ 1 ตัว — แม่บ้าน (branch-access) ทำได้ · ตู้ละ 1 ครั้ง.
  *
- * ทำใน $transaction เดียว (ไม่มี half-written baseline):
- *   1) สร้าง CfCollectionSession { isBaseline:true, status:CLOSED, branchId, openedById, closedAt }
- *   2) สร้าง CfCollectionEvent { eventType:INITIAL, coinMeterBefore = machine.lastCoinMeter,
- *        coinMeterAfter = ค่าอ่านเหรียญที่ดีที่สุด, 4 มิเตอร์กายภาพ, รูป photo_*,
- *        stockAfter = dollCountNow, refillQty = dollsAdded, cashCountedCents = cashCents }
+ * เขียนผ่าน Supabase adminClient เรียงทีละขั้น (ไม่ใช้ prisma.$transaction — 2026-08-19: interactive
+ * tx บน prod transaction pooler บางทีไม่ commit จริงทั้งที่ action ตอบสำเร็จ) + rollback มือถ้าขั้น
+ * หลังพัง กัน half-written baseline:
+ *   1) สร้าง cf_collection_sessions { is_baseline:true, status:CLOSED, branch_id, opened_by_id, closed_at }
+ *   2) สร้าง cf_collection_events { event_type:INITIAL, coin_meter_before = machine.lastCoinMeter,
+ *        coin_meter_after = ค่าอ่านเหรียญที่ดีที่สุด, 4 มิเตอร์กายภาพ, รูป photo_*,
+ *        stock_after = dollCountNow, refill_qty = dollsAdded, cash_counted_cents = cashCents }
  *      → trigger cf_update_machine_mirror จะ sync last_coin_meter / last_doll_stock ให้เอง.
- *   3) snapshot loadout → เปิดแถว CfMachineLoadout (effectiveTo=null) ตามที่ส่งมา
- *   4) lock ตู้: isFirstBaselineLocked=true, firstBaselineAppliedAt=now
- *   5) audit_log CF_FIRST_BASELINE_APPLIED (เวลาที่ล็อก)
+ *   3) snapshot loadout → เปิดแถว cf_machine_loadouts (effective_to=null) ตามที่ส่งมา
+ *   4) lock ตู้: is_first_baseline_locked=true, first_baseline_applied_at=now
+ *   5) audit_log CF_FIRST_BASELINE_APPLIED (เวลาที่ล็อก) — ผ่าน audit() helper (adminClient เสมออยู่แล้ว)
  *
- * once-only: INITIAL insert ชน partial-unique → P2002 → "ตู้นี้ตั้งค่าครั้งแรกไปแล้ว".
- * idempotency: clientKey ซ้ำ → คืน baseline เดิม (no-op).
+ * once-only: INITIAL insert ชน partial-unique → 23505 → "ตู้นี้ตั้งค่าครั้งแรกไปแล้ว" (+ rollback
+ *   orphan session ที่คำขอนี้เพิ่งสร้าง). ขั้น 3/4 พัง → rollback event+session+loadout ที่สร้างไปแล้วทั้งหมด.
+ * idempotency: clientKey ซ้ำ → คืน baseline เดิม (no-op) — เช็คแบบ read-first ด้านล่าง + ปิด race
+ *   window ด้วย sessionCode ที่ผูกกับ clientKey ตรงๆ (ชน unique ที่ขั้น 1 ก่อนใคร ถ้า race กันจริง).
  */
 export async function submitFirstBaseline(input: {
   machineId: string;
@@ -205,144 +212,175 @@ export async function submitFirstBaseline(input: {
   const byName = session.user.name || session.user.email || "ไม่ทราบชื่อ";
   const now = new Date();
 
+  // เขียนผ่าน Supabase adminClient (ไม่ใช้ prisma.$transaction) — 2026-08-19: บน prod
+  // transaction pooler interactive tx บางทีไม่ commit จริงทั้งที่ action ตอบสำเร็จ (จอบอก
+  // "ตั้งค่าสำเร็จ" แต่ตู้ยังค้าง "ตั้งค่าครั้งแรก" — ตระกูลเดียวกับ inviteCfStaff ลิงก์ล่องหน
+  // commit 7451e500 · แก้ด้วยแพทเทิร์นเดียวกัน: adminClient REST เรียงทีละขั้น + rollback มือ
+  // ถ้าขั้นหลังพัง → กันทั้ง (1) "สำเร็จ" ที่จริงไม่ลง (2) เขียนค้างครึ่งเดียว (half-write).
+  const admin = adminClient();
+  const sessionId = randomUUID();
+  const eventId = randomUUID();
+
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      // 1) baseline session (ปิดทันที · ไม่ค้าง OPEN)
-      const cfSession = await tx.cfCollectionSession.create({
-        data: {
-          orgId,
-          branchId: machine.branchId,
-          sessionCode: `BASE-${machine.id.slice(0, 8)}-${data.clientKey.slice(0, 24)}`,
-          isBaseline: true,
-          status: "CLOSED",
-          openedById: session.user.id,
-          closedById: session.user.id,
-          closedAt: now,
-          totalCashCents: data.cashCents,
-        },
-        select: { id: true },
-      });
-
-      // 2) INITIAL event (partial-unique lock ตู้ครั้งเดียว) — clientKey เป็นคอลัมน์จริง (ไม่ใช่ marker ใน notes)
-      await tx.cfCollectionEvent.create({
-        data: {
-          orgId,
-          sessionId: cfSession.id,
-          machineId: machine.id,
-          eventType: "INITIAL",
-          clientKey: data.clientKey,
-          collectedAt: now,
-          collectedById: session.user.id,
-          coinMeterBefore: machine.lastCoinMeter,
-          coinMeterAfter: bestCoinReading,
-          cashCountedCents: data.cashCents,
-          dollMeterBefore: null,
-          dollMeterAfter: bestDollReading,
-          stockBefore: null,
-          stockAfter: data.dollCountNow,
-          refillQty: data.dollsAdded,
-          // N1 · 4 มิเตอร์กายภาพ (คอลัมน์ dedicated · ไม่ยืมช่อง 5-photo เดิมที่ชื่อไม่ตรง content)
-          meterMoneyTop: data.meterMoneyTop,
-          meterMoneyBottom: data.meterMoneyBottom,
-          meterDollTop: data.meterDollTop,
-          meterDollBottom: data.meterDollBottom,
-          photoMoneyMeterTopUrl: data.photoMoneyMeterTopUrl ?? null,
-          photoMoneyMeterBottomUrl: data.photoMoneyMeterBottomUrl ?? null,
-          photoDollMeterTopUrl: data.photoDollMeterTopUrl ?? null,
-          photoDollMeterBottomUrl: data.photoDollMeterBottomUrl ?? null,
-          photoMachineUrl: data.photoMachineUrl ?? null,
-          // ดีไซน์ใหม่ · รูปตุ๊กตาก่อน/หลังใส่ — ยืมช่องเดียวกับ submitBranchEvent (ดู comment mapping ที่ actions.ts)
-          //   photoStockUrl       = ตุ๊กตาก่อนใส่ (stock before)
-          //   photoMeterBeforeUrl = ตุ๊กตาหลังใส่ (stock after · reused slot)
-          photoStockUrl: data.photoStockBeforeUrl ?? null,
-          photoMeterBeforeUrl: data.photoStockAfterUrl ?? null,
-          // notes = ว่างสำหรับ baseline (clientKey ย้ายไปคอลัมน์แล้ว · ไม่มี marker รั่วออกจอ)
-          notes: null,
-        },
-      });
-
-      // 3) snapshot loadout → เปิดแถว current (effectiveTo=null) ตามที่ส่งมา
-      //    ⚠️ ต้องกันชน unique `cf_loadouts_one_active_per_machine` (1 ตู้ = loadout active
-      //    ได้แค่ 1 แถว · บน machine_id ล้วน). ถ้าสินค้าถูกเพิ่มไปแล้วผ่าน AddProductPanel/
-      //    addSetupProductWithDolls มันมี loadout current อยู่แล้ว → create ซ้ำ = P2002 →
-      //    ทั้ง baseline ล้ม + catch เหมาเป็น "ตู้นี้ตั้งค่าครั้งแรกไปแล้ว" (หลอกตา · ตู้ไม่ถูกล็อกจริง).
-      //    → ข้ามสินค้าที่มี loadout current แล้ว + เคารพเพดาน 1 active/ตู้.
-      if (data.loadout && data.loadout.length > 0) {
-        const activeLoadouts = await tx.cfMachineLoadout.findMany({
-          where: { orgId, machineId: machine.id, effectiveTo: null },
-          select: { productId: true },
+    // 1) baseline session (ปิดทันที · ไม่ค้าง OPEN). sessionCode ผูกกับ clientKey ตรงๆ (deterministic)
+    //    → retry เดิม (double-tap/offline resend) ชน unique ที่นี่ก่อนใคร ไม่ใช่แค่ event ด้านล่าง.
+    const { error: sessionErr } = await admin.from("cf_collection_sessions").insert({
+      id: sessionId,
+      org_id: orgId,
+      branch_id: machine.branchId,
+      session_code: `BASE-${machine.id.slice(0, 8)}-${data.clientKey.slice(0, 24)}`,
+      is_baseline: true,
+      status: "CLOSED",
+      opened_by_id: session.user.id,
+      closed_by_id: session.user.id,
+      closed_at: now.toISOString(),
+      total_cash_cents: data.cashCents,
+    });
+    if (sessionErr) {
+      if (sessionErr.code === "23505") {
+        // sessionCode ชนกัน = clientKey นี้เคยยิงมาแล้ว → หา session เดิมคืนให้ (idempotent no-op จริง
+        // ไม่ใช่แค่ error เฉยๆ — เข้าเงื่อนไขเดียวกับเช็ค `existing` ด้านบนแต่ปิด race window ตรงนี้)
+        const retry = await prisma.cfCollectionEvent.findFirst({
+          where: { orgId, machineId: machine.id, eventType: "INITIAL", clientKey: data.clientKey },
+          select: { sessionId: true },
         });
-        const loadedIds = new Set(activeLoadouts.map((r) => r.productId));
-        let machineHasActive = loadedIds.size > 0; // เพดาน 1 active/ตู้
-        for (const line of data.loadout) {
-          if (loadedIds.has(line.productId)) continue; // มีในตู้แล้ว → ไม่ต้องเปิดซ้ำ
-          if (machineHasActive) continue; // ตู้เต็มช่อง active แล้ว → เปิดเพิ่มไม่ได้ (กันชน unique)
-          await tx.cfMachineLoadout.create({
-            data: {
-              orgId,
-              machineId: machine.id,
-              productId: line.productId,
-              // จำนวน (qty) ไม่ใช่ราคา — pricePerPlayCoins คงค่า default (1) เพราะ baseline
-              // สนใจ "มีสินค้าอะไรในตู้" เป็นหลัก · ราคา/ครั้ง ปรับทีหลังผ่าน config/refill.
-              pricePerPlayCoins: 1,
-              effectiveFrom: now,
-              effectiveTo: null,
-              setById: session.user.id,
-              notes: `baseline setup · จำนวน ${line.qty}`,
-            },
-          });
-          loadedIds.add(line.productId);
-          machineHasActive = true;
-        }
+        if (retry?.sessionId) return { ok: true, sessionId: retry.sessionId, machineId: machine.id };
+        return err("ตู้นี้ตั้งค่าครั้งแรกไปแล้ว");
       }
+      return err(`ตั้งค่าครั้งแรกไม่สำเร็จ: ${sessionErr.message}`);
+    }
 
-      // 4) lock ตู้ (once-only). mirror last_coin_meter/last_doll_stock → trigger เขียนจาก event ให้แล้ว.
-      await tx.cfMachine.update({
-        where: { id: machine.id },
-        data: {
-          isFirstBaselineLocked: true,
-          firstBaselineAppliedAt: now,
-          // รูปตู้ล่าสุด (N4) — ถ้าแนบมา เก็บลง CfMachine.photoUrl ด้วย
-          ...(data.photoMachineUrl ? { photoUrl: data.photoMachineUrl } : {}),
-          // ราคาขายตุ๊กตาต่อตู้ (ราคาเดียว) — ตั้งตอนตั้งค่าครั้งแรก · เก็บถ้าส่งมา
-          ...(data.sellPriceCents != null ? { sellPriceCents: data.sellPriceCents } : {}),
-        },
+    // 2) INITIAL event (partial-unique lock ตู้ครั้งเดียว) — clientKey เป็นคอลัมน์จริง (ไม่ใช่ marker ใน notes)
+    const { error: eventErr } = await admin.from("cf_collection_events").insert({
+      id: eventId,
+      org_id: orgId,
+      session_id: sessionId,
+      machine_id: machine.id,
+      event_type: "INITIAL",
+      client_key: data.clientKey,
+      collected_at: now.toISOString(),
+      collected_by_id: session.user.id,
+      coin_meter_before: machine.lastCoinMeter,
+      coin_meter_after: bestCoinReading,
+      cash_counted_cents: data.cashCents,
+      doll_meter_before: null,
+      doll_meter_after: bestDollReading,
+      stock_before: null,
+      stock_after: data.dollCountNow,
+      refill_qty: data.dollsAdded,
+      // N1 · 4 มิเตอร์กายภาพ (คอลัมน์ dedicated · ไม่ยืมช่อง 5-photo เดิมที่ชื่อไม่ตรง content)
+      meter_money_top: data.meterMoneyTop,
+      meter_money_bottom: data.meterMoneyBottom,
+      meter_doll_top: data.meterDollTop,
+      meter_doll_bottom: data.meterDollBottom,
+      photo_money_meter_top_url: data.photoMoneyMeterTopUrl ?? null,
+      photo_money_meter_bottom_url: data.photoMoneyMeterBottomUrl ?? null,
+      photo_doll_meter_top_url: data.photoDollMeterTopUrl ?? null,
+      photo_doll_meter_bottom_url: data.photoDollMeterBottomUrl ?? null,
+      photo_machine_url: data.photoMachineUrl ?? null,
+      // ดีไซน์ใหม่ · รูปตุ๊กตาก่อน/หลังใส่ — ยืมช่องเดียวกับ submitBranchEvent (ดู comment mapping ที่ actions.ts)
+      //   photo_stock_url       = ตุ๊กตาก่อนใส่ (stock before)
+      //   photo_meter_before_url = ตุ๊กตาหลังใส่ (stock after · reused slot)
+      photo_stock_url: data.photoStockBeforeUrl ?? null,
+      photo_meter_before_url: data.photoStockAfterUrl ?? null,
+      // notes = ว่างสำหรับ baseline (clientKey ย้ายไปคอลัมน์แล้ว · ไม่มี marker รั่วออกจอ)
+      notes: null,
+    });
+    if (eventErr) {
+      await admin.from("cf_collection_sessions").delete().eq("id", sessionId); // กัน orphan session
+      if (eventErr.code === "23505") return err("ตู้นี้ตั้งค่าครั้งแรกไปแล้ว");
+      return err(`ตั้งค่าครั้งแรกไม่สำเร็จ: ${eventErr.message}`);
+    }
+
+    // 3) snapshot loadout → เปิดแถว current (effectiveTo=null) ตามที่ส่งมา
+    //    ⚠️ ต้องกันชน unique `cf_loadouts_one_active_per_machine` (1 ตู้ = loadout active
+    //    ได้แค่ 1 แถว · บน machine_id ล้วน). ถ้าสินค้าถูกเพิ่มไปแล้วผ่าน AddProductPanel/
+    //    addSetupProductWithDolls มันมี loadout current อยู่แล้ว → insert ซ้ำ = 23505 →
+    //    rollback event+session ทั้งคู่ (กัน half-write · ตู้ไม่ถูกล็อกลอยๆ).
+    //    → ข้ามสินค้าที่มี loadout current แล้ว + เคารพเพดาน 1 active/ตู้.
+    const insertedLoadoutIds: string[] = [];
+    if (data.loadout && data.loadout.length > 0) {
+      const activeLoadouts = await prisma.cfMachineLoadout.findMany({
+        where: { orgId, machineId: machine.id, effectiveTo: null },
+        select: { productId: true },
       });
+      const loadedIds = new Set(activeLoadouts.map((r) => r.productId));
+      let machineHasActive = loadedIds.size > 0; // เพดาน 1 active/ตู้
+      for (const line of data.loadout) {
+        if (loadedIds.has(line.productId)) continue; // มีในตู้แล้ว → ไม่ต้องเปิดซ้ำ
+        if (machineHasActive) continue; // ตู้เต็มช่อง active แล้ว → เปิดเพิ่มไม่ได้ (กันชน unique)
+        const loadoutId = randomUUID();
+        const { error: loadoutErr } = await admin.from("cf_machine_loadouts").insert({
+          id: loadoutId,
+          org_id: orgId,
+          machine_id: machine.id,
+          product_id: line.productId,
+          // จำนวน (qty) ไม่ใช่ราคา — price_per_play_coins คงค่า default (1) เพราะ baseline
+          // สนใจ "มีสินค้าอะไรในตู้" เป็นหลัก · ราคา/ครั้ง ปรับทีหลังผ่าน config/refill.
+          price_per_play_coins: 1,
+          effective_from: now.toISOString(),
+          effective_to: null,
+          set_by_id: session.user.id,
+          notes: `baseline setup · จำนวน ${line.qty}`,
+        });
+        if (loadoutErr) {
+          for (const id of insertedLoadoutIds) await admin.from("cf_machine_loadouts").delete().eq("id", id);
+          await admin.from("cf_collection_events").delete().eq("id", eventId);
+          await admin.from("cf_collection_sessions").delete().eq("id", sessionId);
+          return err(`ตั้งค่าครั้งแรกไม่สำเร็จ: ${loadoutErr.message}`);
+        }
+        insertedLoadoutIds.push(loadoutId);
+        loadedIds.add(line.productId);
+        machineHasActive = true;
+      }
+    }
 
-      // 5) audit — บันทึกช่วงเวลาที่ baseline ถูกใช้ (anti-fraud trail)
-      await tx.auditLog.create({
-        data: {
-          orgId,
-          userId: session.user.id,
-          action: "CF_FIRST_BASELINE_APPLIED",
-          resourceType: "CF_MACHINE",
-          resourceId: machine.id,
-          diff: {
-            branchId: machine.branchId,
-            appliedBy: byName,
-            dollCountNow: data.dollCountNow,
-            dollsAdded: data.dollsAdded,
-            cashCents: data.cashCents,
-            meters: {
-              moneyTop: data.meterMoneyTop,
-              moneyBottom: data.meterMoneyBottom,
-              dollTop: data.meterDollTop,
-              dollBottom: data.meterDollBottom,
-            },
+    // 4) lock ตู้ (once-only). mirror last_coin_meter/last_doll_stock → trigger เขียนจาก event ให้แล้ว.
+    const { error: lockErr } = await admin
+      .from("cf_machines")
+      .update({
+        is_first_baseline_locked: true,
+        first_baseline_applied_at: now.toISOString(),
+        // รูปตู้ล่าสุด (N4) — ถ้าแนบมา เก็บลง cf_machines.photo_url ด้วย
+        ...(data.photoMachineUrl ? { photo_url: data.photoMachineUrl } : {}),
+        // ราคาขายตุ๊กตาต่อตู้ (ราคาเดียว) — ตั้งตอนตั้งค่าครั้งแรก · เก็บถ้าส่งมา
+        ...(data.sellPriceCents != null ? { sell_price_cents: data.sellPriceCents } : {}),
+      })
+      .eq("id", machine.id);
+    if (lockErr) {
+      for (const id of insertedLoadoutIds) await admin.from("cf_machine_loadouts").delete().eq("id", id);
+      await admin.from("cf_collection_events").delete().eq("id", eventId);
+      await admin.from("cf_collection_sessions").delete().eq("id", sessionId);
+      return err(`ตั้งค่าครั้งแรกไม่สำเร็จ: ${lockErr.message}`);
+    }
+
+    // 5) audit — บันทึกช่วงเวลาที่ baseline ถูกใช้ (anti-fraud trail) · audit() ใช้ adminClient เสมออยู่แล้ว
+    await audit({
+      orgId,
+      userId: session.user.id,
+      action: "CF_FIRST_BASELINE_APPLIED",
+      resourceType: "CF_MACHINE",
+      resourceId: machine.id,
+      diff: {
+        new: {
+          branchId: machine.branchId,
+          appliedBy: byName,
+          dollCountNow: data.dollCountNow,
+          dollsAdded: data.dollsAdded,
+          cashCents: data.cashCents,
+          meters: {
+            moneyTop: data.meterMoneyTop,
+            moneyBottom: data.meterMoneyBottom,
+            dollTop: data.meterDollTop,
+            dollBottom: data.meterDollBottom,
           },
         },
-      });
-
-      return { sessionId: cfSession.id };
+      },
     });
 
     for (const p of APP_PATHS) revalidatePath(p);
-    return { ok: true, sessionId: result.sessionId, machineId: machine.id };
+    return { ok: true, sessionId, machineId: machine.id };
   } catch (e) {
-    // P2002 = ชน partial-unique baseline index (ตู้นี้มี INITIAL แล้ว) = คนอื่นตั้ง baseline ไปก่อน
-    if ((e as { code?: string }).code === "P2002") {
-      return err("ตู้นี้ตั้งค่าครั้งแรกไปแล้ว");
-    }
     return err(`ตั้งค่าครั้งแรกไม่สำเร็จ: ${(e as Error).message}`);
   }
 }
