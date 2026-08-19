@@ -215,21 +215,24 @@ export function AmazonExcelGrid({
     const groupMatched = !!c.groupKey && hasVal && (rc?.matchedGroupKeys?.includes(c.groupKey) ?? false);
     // คอลัมน์ "เงินเข้าจริง" → รุ้งเมื่อวันนั้นแมตช์ครบทุกช่อง
     const settleMatched = !!c.settle && !!rc && rc.n > 0 && rc.nMatched >= rc.n;
-    // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → ตัวหนังสือเหลือง (ไม่ถมพื้น ไม่ลายตา) · ปิดได้ด้วยสวิตช์ ──
+    // ── ไส้ใน: ยอดช่องนี้ในใบกำกับ TRCloud ≠ POS → โชว์เลข TRCloud เป็นตัวเล็กด้านล่าง · ปิดได้ด้วยสวิตช์ ──
     const ivv = c.ivGet ? c.ivGet(d) : null; // null = ยังไม่ตรวจไส้ใน
     const ivBad = showInner && ivv != null && Math.abs(ivv - (v ?? 0)) >= IV_TOL;
     const ivDiff = ivBad ? (ivv ?? 0) - (v ?? 0) : 0;
+    const isMatched = matched || groupMatched || settleMatched;
+    // CEO 2026-08-19: แมตช์กับธนาคารแล้ว = รุ้งเสมอ ไม่ว่า TRCloud จะตรงหรือไม่ (เงินเข้าจริงคือของจริง
+    // ที่สุด) — ไส้ใน TRCloud ไม่ตรง แค่โชว์ตัวเลขเสริมด้านล่างไว้ดู ไม่ทับสีรุ้งอีกต่อไป (บั๊กเดิม: เช็ค
+    // ivBad ก่อน matched ในลำดับ ternary ทำให้เหลืองบังรุ้งอยู่)
     return (
       <td
         key={c.label}
         className={`px-1.5 py-1 text-right tabular-nums whitespace-nowrap ${
           bad
             ? "bg-red-100 font-bold text-red-800"
-            : ivBad
-              ? // ไส้ในไม่ตรง = ตัวหนังสือเหลืองเข้ม (ไม่ถมพื้น) → อ่านได้บนพื้นขาว/สีรุ้ง · iridescent ถูกข้าม
-                "text-yellow-700 font-bold"
-              : matched || groupMatched || settleMatched
-                ? "cell-matched-iridescent"
+            : isMatched
+              ? "cell-matched-iridescent"
+              : ivBad
+                ? "text-yellow-700 font-bold"
                 : c.settle
                   ? "bg-emerald-50 font-semibold text-emerald-700"
                   : c.f
@@ -240,7 +243,9 @@ export function AmazonExcelGrid({
         {ivBad ? (
           <div className="flex flex-col items-end leading-tight">
             <span>{num(v)}</span>
-            <span className="text-[9px] font-semibold text-yellow-600 whitespace-nowrap">
+            <span
+              className={`text-[9px] font-semibold whitespace-nowrap ${isMatched ? "text-yellow-800" : "text-yellow-600"}`}
+            >
               IV {num(ivv)} ({ivDiff > 0 ? "+" : "−"}
               {num(Math.abs(ivDiff))})
             </span>
