@@ -21,6 +21,7 @@ export const CHANNEL_CVAR: Record<string, string> = {
   "QR Manual(API)": "c13", // เดือน 07/2569 ไฟล์นี้ไม่มีคอลัมน์ "QRManual" เปล่าเลย มีแต่ตัว (API) — map ตรง c13
   "blueplus+ wallet": "c14",
   "blueplus+ wallet (API)": "c14", // เช็คแล้ว: มักมีเงินพร้อมกับคอลัมน์เดิมในวันเดียวกัน (คนละรอบตัดยอด ไม่ใช่ซ้ำ)
+  "blueplus+ wallet Manual": "c14", // CEO ยืนยัน 2026-08-19: คนละคอลัมน์กับ "blueplus+ wallet" เฉยๆ แต่เป็นเงินจริงกลุ่มเดียวกัน (c14)
   "blueplus+ Credit": "c15",
   "blueplus+ credit(API)": "c15", // เดือนนี้ไม่มีคอลัมน์ "blueplus+ Credit" เปล่าเลย มีแต่ตัว (API)
   "คูปอง blueplus+": "c9",

@@ -25,6 +25,10 @@ type Col = {
   settle?: boolean; // เงินเข้าจริง (ไฮไลต์เขียว)
   // ยอดฝั่ง "ใบกำกับ TRCloud" ของคอลัมน์นี้ (ไส้ใน) — ถ้า ≠ POS → ทาเหลือง · null = ยังไม่ตรวจไส้ใน
   ivGet?: (d: SavedAmazonDay) => number | null;
+  // ยอดรวมดิบ POS ที่ไม่ใช่บรรทัดที่ส่ง reconcile จริง (เช่น "QR"/c2 ที่ถูกแยกไป QR+Wallet(API)/
+  // QR+Wallet แล้ว) หรือไม่ใช่เงินจริงเลย (ส่วนลด/คูปอง/Redeem) — CEO 2026-08-19: ซ่อนโดย
+  // default กันตารางรก · กดปุ่ม "ดูช่องทางย่อย" ถึงโผล่
+  detail?: boolean;
 };
 
 const IV_TOL = 1; // ทน ±1 บาท (special_note เก็บเป็นจำนวนเต็ม)
@@ -44,19 +48,21 @@ const innerMismatchCount = (d: SavedAmazonDay): number => {
 };
 
 // ช่องทางชำระ (ตามลำดับสมุดบัญชี) → คอลัมน์
-const CHANNELS: Array<{ label: string; cvar: string }> = [
+// detail:true = ไม่ใช่บรรทัดที่ส่ง reconcile จริง (ยอดรวมดิบที่ถูกแยกไปคอลัมน์กลุ่มย่อยแล้ว
+// หรือไม่ใช่เงินจริงเลย) → ซ่อนโดย default (ดู Col.detail ด้านบน)
+const CHANNELS: Array<{ label: string; cvar: string; detail?: boolean }> = [
   { label: "เงินสด", cvar: "c1" },
-  { label: "QR", cvar: "c2" },
-  { label: "QR Manual", cvar: "c13" },
+  { label: "QR", cvar: "c2", detail: true }, // ยอดรวมดิบ — เงินจริงอยู่ใน QR+Wallet(API)/QR+Wallet แล้ว
+  { label: "QR Manual", cvar: "c13" }, // CEO 2026-08-19: แยกเดี่ยว ไม่รวมกับ QR+Wallet(API)
   { label: "Grab", cvar: "c20" },
   { label: "Lineman", cvar: "c21" },
   { label: "ShopeeFood", cvar: "c22" },
-  { label: "Redeem", cvar: "c11" },
+  { label: "Redeem", cvar: "c11", detail: true }, // ไม่ใช่เงินจริง (แลกแต้ม)
   { label: "เครดิต EDC", cvar: "c12" },
-  { label: "ส่วนลด AIS", cvar: "c7" },
-  { label: "ส่วนลด TRUE", cvar: "c8" },
-  { label: "คูปอง", cvar: "c9" },
-  { label: "blueplus wallet", cvar: "c14" },
+  { label: "ส่วนลด AIS", cvar: "c7", detail: true },
+  { label: "ส่วนลด TRUE", cvar: "c8", detail: true },
+  { label: "คูปอง", cvar: "c9", detail: true },
+  { label: "blueplus wallet", cvar: "c14", detail: true }, // ยอดรวมดิบ — เงินจริงอยู่ใน QR+Wallet(API)/QR+Wallet แล้ว
   { label: "blueplus credit", cvar: "c15" },
 ];
 
@@ -99,6 +105,9 @@ export function AmazonExcelGrid({
   reconcile,
 }: Props) {
   const data = savedDays;
+  // สวิตช์เปิด/ปิด "ดูช่องทางย่อย" (คอลัมน์ detail:true — ยอดรวมดิบ/ไม่ใช่เงินจริง) — ปิดอยู่
+  // โดย default กันตารางรก (CEO 2026-08-19) กดเปิดถึงเห็นไส้ในคอลัมน์กลุ่ม
+  const [showDetail, setShowDetail] = useState(false);
   // สวิตช์เปิด/ปิด "ดูไส้ใน" (เหลืองรายช่องทาง) — ปิดได้เวลาอยากดูแบบสะอาด ไม่ลายตา
   const [showInner, setShowInner] = useState(true);
   // มีไส้ในให้ดูไหม (ตรวจ TRCloud แล้วอย่างน้อย 1 วัน) → ค่อยโชว์สวิตช์
@@ -127,12 +136,13 @@ export function AmazonExcelGrid({
   const qrGroupCols: Col[] = anyQrSplit
     ? [
         {
-          label: "QR + Wallet (API)",
+          // ชื่อคอลัมน์ = ชื่อ POS ต่อกันตรงๆ (CEO 2026-08-19: ไม่เอาชื่อแปลไทย กันงงว่า "QR" ไหน)
+          label: "QRPayment(API) + blueplus+ wallet (API)",
           groupKey: "qrapi",
           get: (d) => qrSplitByDate.get(d.sales_date)?.qrapi ?? null,
         },
         {
-          label: "QR + Wallet",
+          label: "QRPayment + blueplus+ wallet + blueplus+ wallet Manual",
           groupKey: "qrstd",
           get: (d) => qrSplitByDate.get(d.sales_date)?.qrstd ?? null,
         },
@@ -172,19 +182,23 @@ export function AmazonExcelGrid({
       label: c.label,
       get: ch(c.cvar),
       cvar: c.cvar,
+      detail: c.detail,
       // ฝั่งใบ: ถ้าตรวจไส้ในแล้ว (iv_channels) → ยอดช่องนี้ในใบ (ไม่มี=0) · ยังไม่ตรวจ → null
       ivGet: (d: SavedAmazonDay) => (d.iv_channels ? (d.iv_channels[c.cvar] ?? 0) : null),
     });
     if (c.cvar === "c14") channelCols.push(...qrGroupCols);
     if (c.cvar === "c15") channelCols.push(...qrCreditCol);
   }
-  const COLS: Col[] = [
+  const ALL_COLS: Col[] = [
     ...HEAD_COLS,
     ...channelCols,
     ...TAIL_COLS,
     { label: "ค่าธรรมเนียม", get: (d) => settleByDate.get(d.sales_date)?.fee ?? null },
     { label: "เงินเข้าจริง", get: (d) => settleByDate.get(d.sales_date)?.net ?? null, settle: true },
   ];
+  // สวิตช์ "ดูช่องทางย่อย" ปิดอยู่ = ซ่อนคอลัมน์ detail (ยอดรวมดิบ/ไม่ใช่เงินจริง) กันตารางรก
+  // ค่าเริ่มต้นปิด (CEO 2026-08-19: อยากเห็นแค่ยอดที่ส่ง reconcile จริงตอนเปิดหน้ามาก่อน)
+  const COLS: Col[] = showDetail ? ALL_COLS : ALL_COLS.filter((c) => !c.detail);
   const totals = COLS.map((c) =>
     c.diff ? null : data.reduce((s, d) => s + (c.get(d) ?? 0), 0),
   );
@@ -325,6 +339,25 @@ export function AmazonExcelGrid({
 
   return (
     <div className="space-y-2">
+      {/* สวิตช์เปิด/ปิด "ดูช่องทางย่อย" (ยอดรวมดิบ+ไม่ใช่เงินจริง) — ปิดอยู่โดย default กันตารางรก */}
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-[11px] text-zinc-500">ช่องทางย่อย (ไม่ใช่ยอดที่ส่ง reconcile):</span>
+        <button
+          type="button"
+          onClick={() => setShowDetail((s) => !s)}
+          title="เปิด = โชว์ยอดรวมดิบ POS ทุกช่อง (QR/blueplus wallet ตัวเปล่า/ส่วนลด/คูปอง) · ปิด = โชว์เฉพาะยอดที่ส่งเข้า reconcile จริง"
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+            showDetail
+              ? "bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-400"
+              : "bg-zinc-100 text-zinc-400 ring-1 ring-inset ring-zinc-200"
+          }`}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${showDetail ? "bg-blue-500" : "bg-zinc-300"}`}
+          />
+          {showDetail ? "▾ กำลังขยาย" : "▸ กดขยาย"}
+        </button>
+      </div>
       {/* สวิตช์เปิด/ปิด "ดูไส้ใน" (เหลืองรายช่องทาง) — กดปิดได้เวลาอยากดูตารางแบบสะอาด */}
       {hasInnerData && (
         <div className="flex items-center justify-end gap-2">
@@ -488,15 +521,17 @@ export function AmazonExcelGrid({
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
         <span className="text-red-700 font-bold">🔴 ขาด</span> = เงินเข้าน้อยกว่าที่ควร ·{" "}
         <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง ·{" "}
-        <b>QR + Wallet (API)</b> / <b>QR + Wallet</b> ถัดจาก <b>blueplus wallet</b> = ก้อนเงินที่ธนาคาร
-        โอนเข้าจริง 2 ก้อนตามที่ตรวจสอบแล้ว (รวม QR+QR Manual+blueplus wallet แยกตามส่วน API/ไม่ API) —
-        เลขเดียวกับที่จะส่งเข้ากระทบยอด · โชว์เฉพาะวันที่ไส้ใน POS ตรงกับยอดที่ส่งจริง (ไม่ตรง = ว่าง ดูคอลัมน์
-        QR/QR Manual/blueplus wallet แยกช่องแทนสำหรับวันนั้น) · โชว์เฉพาะเดือนที่มีข้อมูลจริง (เดือนเก่าก่อน
-        08/2569 จะไม่มีคอลัมน์นี้) · <b>QRCredit + blueplus Credit (API)</b> ถัดจาก{" "}
-        <b>blueplus credit</b> = ก้อนเงินที่ธนาคารโอนเข้าจริงก้อนที่ 3 แยกต่างหาก (QRCredit(API)
-        ที่ปนอยู่ใน &ldquo;QR&rdquo; + blueplus+ credit(API) ที่ปนอยู่ใน &ldquo;blueplus
-        credit&rdquo;) หักค่าธรรมเนียม ~0.9% แบบเดียวกับเครดิต EDC — verified กับ statement ธนาคารจริง
-        3 วัน (08-03/08-05/08-09) · โชว์เฉพาะวันที่มีเงินก้อนนี้จริง
+        <b>ปุ่ม &ldquo;▸ กดขยาย&rdquo;</b> มุมขวาบน = โชว์คอลัมน์ยอดรวมดิบ POS (QR/blueplus
+        wallet ตัวเปล่า/ส่วนลด/คูปอง) ที่ปิดไว้โดย default กันตารางรก — ปิดอยู่ = เห็นเฉพาะยอดที่
+        ส่งเข้า reconcile จริงเท่านั้น ·{" "}
+        <b>QRPayment(API) + blueplus+ wallet (API)</b> / <b>QRPayment + blueplus+ wallet +
+        blueplus+ wallet Manual</b> = ก้อนเงินที่ธนาคารโอนเข้าจริง 2 ก้อน (แยกตามส่วน API/ไม่ API) —
+        เลขเดียวกับที่จะส่งเข้ากระทบยอด · โชว์เฉพาะวันที่ไส้ใน POS ตรงกับยอดที่ส่งจริง (ไม่ตรง = ว่าง กดปุ่ม
+        &ldquo;▸ กดขยาย&rdquo; ดูคอลัมน์ QR/blueplus wallet ดิบแทนสำหรับวันนั้น) · โชว์เฉพาะเดือนที่มีข้อมูลจริง
+        (เดือนเก่าก่อน 08/2569 จะไม่มีคอลัมน์นี้) · <b>QR Manual</b> เป็นบรรทัดเดี่ยวของตัวเอง ไม่รวมกับ
+        2 ก้อนบน (CEO 2026-08-19 ยืนยัน) · <b>QRCredit(API) + blueplus+ credit(API)</b> = ก้อนเงินที่
+        ธนาคารโอนเข้าจริงก้อนที่ 3 แยกต่างหาก หักค่าธรรมเนียม 0.91% แบบเดียวกับเครดิต EDC — verified
+        กับ statement ธนาคารจริง 3 วัน (08-03/08-05/08-09) · โชว์เฉพาะวันที่มีเงินก้อนนี้จริง
       </p>
     </div>
   );

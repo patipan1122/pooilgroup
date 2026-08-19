@@ -136,7 +136,7 @@ export const CVAR_CHANNEL_CODE: Record<string, string> = {
 
 // ช่องทางที่แพลตฟอร์มโอนรวมเข้าบัญชีเป็น "ก้อนเดียวต่อวัน" → ต้องส่ง reconcile เป็น 1 บรรทัด
 // (ไม่งั้น statement มี 1 บรรทัด/วัน แต่ระบบส่งหลายบรรทัด → จับคู่ไม่ตรง)
-// CEO 2026-06-15: QR Payment + QR Manual + blueplus wallet โอนรวมเข้าด้วยกัน · blueplus credit แยกเดี่ยว
+// CEO 2026-06-15: QR Payment + blueplus wallet โอนรวมเข้าด้วยกัน · blueplus credit แยกเดี่ยว
 
 export type QrPosGroup = {
   key: "qrapi" | "qrstd";
@@ -149,10 +149,15 @@ export type QrPosGroup = {
 // เป็น 2 ก้อนตาม API/ไม่ API ไม่ใช่ตาม cvar — qrapi ครอบ QRPayment(API) + blueplus wallet(API)
 // (CEO ระบุตรงตัว) · qrstd ครอบ QRPayment + blueplus wallet (CEO ระบุตรงตัว)
 //
-// ⚠️ INFERENCE (ไม่ใช่คำสั่ง CEO ตรงๆ) — CEO ไม่ได้พูดถึง QRManual/QR Manual(API) เลย
-// ใส่ตามรูปแบบ "(API) → qrapi · ไม่มี (API) → qrstd" โดย symmetry:
-//   - QR Manual(API) → qrapi, QRManual → qrstd: สาขานี้ข้อมูลจริงเป็น ฿0 เสมอสองคอลัมน์นี้ แต่ใส่ไว้
-//     ให้ถูกหลักการสำหรับสาขา/ข้อมูลอนาคตที่อาจมีตัวเลข — รอ human confirm/แก้ทีหลัง
+// ✅ ยืนยันแล้ว CEO 2026-08-19 (คุยเรื่องตารางใหม่ CashHub Amazon): "QR Manual(API)" **ไม่ได้**
+// รวมกับ qrapi — เป็นช่องทางแยกเดี่ยวของตัวเอง ไม่ผูกกับ QRPayment(API)/blueplus wallet(API) เลย
+// (เดิมเคยเดาแบบ symmetry ไว้ว่าเข้า qrapi — CEO ยืนยันว่าผิด) → ตัดออกจาก rawLabels · c13 (cvar
+// ของ QR Manual(API)) เอาออกจาก SETTLEMENT_GROUPS.cvars ด้วย ทำให้ส่งเป็นบรรทัดเดี่ยวของตัวเองแทน
+// (เหมือน c12/c20/c21/c22 — ช่องทางเดี่ยวที่ไม่อยู่ในกลุ่มไหนเลย)
+//
+// ✅ ยืนยันแล้ว CEO 2026-08-19 เช่นกัน: "blueplus+ wallet Manual" (คนละคอลัมน์กับ "blueplus+ wallet"
+// เฉยๆ — เดิมระบบไม่รู้จักชื่อนี้เลย) เป็นเงินจริง รวมอยู่ใน qrstd ด้วยกันกับ QRPayment + blueplus+
+// wallet (ดู CHANNEL_CVAR ใน amazon-parse.ts — map เข้า c14 เดียวกับ blueplus+ wallet)
 //
 // ✅ ยืนยันแล้วด้วย DB จริงเทียบ statement ธนาคาร 10 วัน (2026-08-15): QRCredit(API) **ไม่ได้**
 // รวมกับ qrapi — มันไปช่องทางที่ 3 แยกต่างหาก (บัญชี "AMZ A_SD4097" คนละเลขบัญชีเลย พร้อมกับ
@@ -164,20 +169,12 @@ export const QR_POS_GROUPS: QrPosGroup[] = [
   {
     key: "qrapi",
     label: "QR + Wallet (API)",
-    rawLabels: [
-      "QRPayment(API)",
-      "blueplus+ wallet (API)",
-      "QR Manual(API)", // inference — ดู comment ด้านบน
-    ],
+    rawLabels: ["QRPayment(API)", "blueplus+ wallet (API)"],
   },
   {
     key: "qrstd",
     label: "QR + Wallet",
-    rawLabels: [
-      "QRPayment",
-      "blueplus+ wallet",
-      "QRManual", // inference — ดู comment ด้านบน
-    ],
+    rawLabels: ["QRPayment", "blueplus+ wallet", "blueplus+ wallet Manual"],
   },
 ];
 
@@ -190,7 +187,9 @@ export const SETTLEMENT_GROUPS: {
   // ของวันนั้นมี+ตรงยอด (ดู computeSendRows) — ไม่มี = กลุ่มนี้ไม่มีการแยกย่อย ส่งรวมเสมอ
   posGroups?: QrPosGroup[];
 }[] = [
-  { key: "qr", label: "QR + Wallet", channelCode: "qr", cvars: ["c2", "c13", "c14"], posGroups: QR_POS_GROUPS },
+  // c13 (QR Manual) ตัดออกจากกลุ่มนี้ 2026-08-19 — CEO ยืนยันว่าส่งเป็นบรรทัดเดี่ยวของตัวเอง ดู
+  // comment เหนือ QR_POS_GROUPS
+  { key: "qr", label: "QR + Wallet", channelCode: "qr", cvars: ["c2", "c14"], posGroups: QR_POS_GROUPS },
 ];
 
 // cvar → group key (ช่องที่ไม่อยู่ในกลุ่ม = ส่งเดี่ยว 1 บรรทัด/วัน)

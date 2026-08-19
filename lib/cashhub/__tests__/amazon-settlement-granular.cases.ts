@@ -26,6 +26,17 @@
 // 1 combined row (it broke the tie-out sum) — now it gets extracted into "qrcredit" FIRST, so
 // the qr-group remainder ties out again and qrapi/qrstd split succeeds too (fixes the "blank
 // split columns" CEO saw live on days QRCredit(API)≠0, e.g. 2026-08-05/08-09).
+//
+// Context (2026-08-19): CEO confirmed 2 corrections while reviewing a redesigned CashHub
+// Amazon table (previously an unconfirmed symmetry guess — see old comment this replaces):
+//   1) "QR Manual(API)" (and by the same cvar, plain "QRManual") does NOT fold into qrapi —
+//      it settles as its OWN standalone bank line, same as c12/c20/c21/c22. Removed from
+//      QR_POS_GROUPS.rawLabels AND removed c13 from SETTLEMENT_GROUPS["qr"].cvars entirely —
+//      c13 now flows through the normal single-channel path automatically (no group at all).
+//   2) "blueplus+ wallet Manual" (a raw POS label the parser never recognized before today —
+//      distinct from plain "blueplus+ wallet") IS real money and belongs in qrstd alongside
+//      QRPayment + blueplus+ wallet. Added to CHANNEL_CVAR (maps to c14, same as the other
+//      wallet variants) and to qrstd's rawLabels.
 
 import type { ChannelConfig } from "../amazon-settlement";
 import { computeSendRows, legacyRefsForDay, resolveSendChannels } from "../amazon-settlement";
@@ -43,7 +54,7 @@ function eq(label: string, actual: unknown, expected: unknown): string | null {
     : `${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`;
 }
 
-// ── shared test config: qr group members (c2, c13, c14) + standalone c15 — c14 given a
+// ── shared test config: qr group members (c2, c14) + standalone c13, c15 — c14 given a
 //    nonzero fee (5%) specifically so split-line fee math is actually exercised, not just
 //    0*x=0 · c15 given feePercent=0 (matches real DEFAULT_CHANNELS) so qrcredit's OWN 0.9%
 //    fee (from POS_EXTRACT_GROUPS, not configByCvar) is what's actually being exercised ──
@@ -107,9 +118,10 @@ cases.push({
 });
 
 cases.push({
-  name: "(a) QR Manual(API)/QRManual fold into the correct bucket by (API) symmetry (QRCredit(API) excluded — see next case)",
+  name: "(a) QR Manual(API)/QRManual do NOT fold into qrapi/qrstd — c13 settles as its own standalone row (CEO 2026-08-19 correction)",
   check: () => {
-    // QR Manual(API)=20 (→ qrapi), QRManual=10 (→ qrstd) — no QRCredit(API) here so the split still ties out
+    // QR Manual(API)=20 + QRManual=10 → both land on c13, sent standalone, untouched by the
+    // qrapi/qrstd split (which still ties out fine on JUST c2/c14, unaffected by c13's money)
     const channels = { c2: 4570, c13: 30, c14: 70 };
     const posBreakdown = {
       "QRPayment(API)": 4505,
@@ -121,8 +133,30 @@ cases.push({
     const { rows } = computeSendRows(channels, cfg(), posBreakdown);
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
-    err ??= eq("qrapi includes QR Manual(API)", byKey.get("qrapi")?.gross, 4505 + 20);
-    err ??= eq("qrstd includes QRManual", byKey.get("qrstd")?.gross, 65 + 70 + 10);
+    err ??= eq("qrapi unaffected by c13's money", byKey.get("qrapi")?.gross, 4505);
+    err ??= eq("qrstd unaffected by c13's money", byKey.get("qrstd")?.gross, 135);
+    err ??= eq("c13 sent as its own standalone row (label 'QR Manual')", byKey.get("c13")?.gross, 30);
+    err ??= eq("c13 channelCode == qr (still QR-type money for bank matching)", byKey.get("c13")?.channelCode, "qr");
+    err ??= eq("c13 not flagged split (it's a plain standalone channel, not a group)", byKey.get("c13")?.split, undefined);
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a) blueplus+ wallet Manual joins qrstd alongside QRPayment + blueplus+ wallet (CEO 2026-08-19 correction — previously an unrecognized raw label)",
+  check: () => {
+    const channels = { c2: 4570, c14: 70 + 15 }; // blueplus+ wallet 70 + blueplus+ wallet Manual 15
+    const posBreakdown = {
+      "QRPayment(API)": 4505,
+      QRPayment: 65,
+      "blueplus+ wallet": 70,
+      "blueplus+ wallet Manual": 15,
+    };
+    const { rows } = computeSendRows(channels, cfg(), posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrapi unaffected", byKey.get("qrapi")?.gross, 4505);
+    err ??= eq("qrstd includes blueplus+ wallet Manual (65+70+15=150)", byKey.get("qrstd")?.gross, 150);
     return err;
   },
 });
@@ -394,11 +428,15 @@ cases.push({
     const refs = legacyRefsForDay("4097", "2026-08-01", ["qr"]);
     let err: string | null = null;
     err ??= eq("includes old combined ref", refs.includes("amz-4097-2026-08-01-qr"), true);
-    err ??= eq("includes old per-cvar legacy refs (pre-2026-06 shape)", [
+    // c13 removed from SETTLEMENT_GROUPS["qr"].cvars 2026-08-19 (QR Manual settles standalone
+    // now, not as a legacy pre-2026-06 shape to clean up) — its ref must NOT appear here, else
+    // the currently-valid standalone "c13" row sent today would get deleted right after being
+    // created (same self-delete bug class the "(d) combined-mode day" test below guards against)
+    err ??= eq("includes old per-cvar legacy refs (pre-2026-06 shape) — c2/c14 only, not c13", [
       refs.includes("amz-4097-2026-08-01-c2"),
       refs.includes("amz-4097-2026-08-01-c13"),
       refs.includes("amz-4097-2026-08-01-c14"),
-    ], [true, true, true]);
+    ], [true, false, true]);
     return err;
   },
 });
