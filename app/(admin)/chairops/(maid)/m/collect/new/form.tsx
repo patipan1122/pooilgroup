@@ -322,19 +322,16 @@ export function CollectNewForm({
           l.status === "collected"
             ? Number(l.amount.replace(/,/g, "")) || 0
             : 0;
-        // Auto-convert: collected + 0 บาท → ถือว่าแม่บ้านหยุด/ลา
-        const isZeroCollect = l.status === "collected" && amountNum === 0;
         // Wave-2 B3: reasonCode === "chair_missing" overrides the status to
         // "mismatch" and pipes the actual found code through.
         const isMismatch = l.status !== "collected" && l.reasonCode === "chair_missing";
-        const effectiveStatus: LineStatus = isMismatch
-          ? "mismatch"
-          : isZeroCollect
-            ? "broken"
-            : l.status;
-        const reasonText = isZeroCollect
-          ? "แม่บ้านหยุด/ลา"
-          : l.status === "collected"
+        // NOTE: a "collected" chair with amount 0 stays "collected" — a real
+        // zero-revenue day (no customers) is a valid count, not an absence.
+        // Silently relabeling it as "broken" used to also exclude it from
+        // reconcile's meter-vs-collected comparison, hiding real shortages.
+        const effectiveStatus: LineStatus = isMismatch ? "mismatch" : l.status;
+        const reasonText =
+          l.status === "collected"
             ? null
             : l.reasonCode === "other"
               ? l.reasonFree.trim() || null
