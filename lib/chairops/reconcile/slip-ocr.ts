@@ -7,12 +7,17 @@
 // fallback วันที่+ยอดตรงกัน — ในสาขาเดียวกันเท่านั้น) และบัญชีปลายทางไม่ตรงกับที่
 // สาขาตั้งค่าไว้ (checkSlipFraud ด้านล่าง).
 //
+// CEO 2026-08-19: สลับผู้ให้บริการ AI จาก Anthropic → Gemini Flash 2.5 — พบว่า
+// ANTHROPIC_API_KEY เรียกไม่ผ่านใน production (auth error) ทำให้เช็คสลิปซ้ำใช้งาน
+// ไม่ได้เลยสักใบตั้งแต่เปิดใช้ 08-18 (ocrReadAt ติ๊กแต่ทุกฟิลด์ null 15/15) — ใช้
+// pattern เดียวกับ app/api/cashhub/ocr-slip/route.ts ที่พิสูจน์แล้วว่าทำงานจริงใน
+// prod (GEMINI_API_KEY ตั้งมา 106 วัน ใช้อยู่แล้วหลายฟีเจอร์).
+//
 // Plain lib function (ไม่ใช่ "use server") — เรียกจาก server action (batchDeposit)
 // เท่านั้น ไม่ได้ตั้งใจให้ client เรียกตรง (ดู memory:
 // feedback-use-server-file-export-raw-tenant-id — helper ที่รับ orgId ดิบต้องอยู่
 // นอกไฟล์ "use server").
 
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 import { recordAiUsage } from "@/lib/ai/cost-cap";
@@ -48,6 +53,17 @@ async function fetchImageAsBase64(
   }
 }
 
+const SLIP_DETAILS_PROMPT = `นี่คือสลิปธนาคารไทย กรุณาอ่าน 4 อย่าง:
+(1) ยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ)
+(2) วันที่ทำรายการบนสลิป แปลงเป็น YYYY-MM-DD
+(3) ชื่อบัญชีปลายทาง/ผู้รับโอนที่พิมพ์อยู่บนสลิป
+(4) เลขที่รายการ/เลขอ้างอิงธุรกรรม (transaction ID / เลขที่รายการ / Ref no. — ถ้ามีพิมพ์อยู่บนสลิป)
+
+ตอบ JSON เท่านั้น ไม่มีข้อความอื่น ไม่มี markdown:
+{"amount": <number|null>, "date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null, "refNo": "<string>"|null}
+
+ถ้าฟิลด์ไหนอ่านไม่ออก ให้คืน null ห้ามเดา`;
+
 /** อ่านยอด/วันที่/ชื่อบัญชีปลายทางจากรูปสลิปธนาคารไทย — best-effort เสมอ (ไม่ throw)
  *  อ่านไม่ได้ก็คืนค่า null ทุกช่อง เหมือน extractSlipAmount เดิม */
 export async function extractSlipDetails(
@@ -55,59 +71,57 @@ export async function extractSlipDetails(
   actor: { userId: string; orgId: string },
 ): Promise<SlipOcrDetails> {
   if (!slipPublicUrl || !isAllowedPhotoUrl(slipPublicUrl)) return EMPTY;
+  if (!process.env.GEMINI_API_KEY) return EMPTY;
 
   try {
     const img = await fetchImageAsBase64(slipPublicUrl);
     if (!img) return EMPTY;
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 256,
-      messages: [
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
         {
           role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: img.mediaType, data: img.base64 },
-            },
-            {
-              type: "text",
-              text:
-                "นี่คือสลิปธนาคารไทย กรุณาอ่าน 4 อย่าง: " +
-                "(1) ยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ) " +
-                "(2) วันที่ทำรายการบนสลิป แปลงเป็น YYYY-MM-DD " +
-                "(3) ชื่อบัญชีปลายทาง/ผู้รับโอนที่พิมพ์อยู่บนสลิป " +
-                "(4) เลขที่รายการ/เลขอ้างอิงธุรกรรม (transaction ID / เลขที่รายการ / " +
-                "Ref no. — ถ้ามีพิมพ์อยู่บนสลิป) " +
-                'ตอบ JSON เท่านั้น ไม่มีข้อความอื่น: {"amount": <number|null>, ' +
-                '"date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null, ' +
-                '"refNo": "<string>"|null}',
-            },
+          parts: [
+            { text: SLIP_DETAILS_PROMPT },
+            { inlineData: { mimeType: img.mediaType, data: img.base64 } },
           ],
         },
       ],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 500,
+        responseMimeType: "application/json",
+        // gemini-2.5-flash เผื่อ token ให้ "คิด" ก่อนตอบโดย default — ถ้าไม่ปิดจะกิน
+        // maxOutputTokens จนตอบ JSON ไม่ครบ (finishReason: MAX_TOKENS, ตอบขึ้นต้นด้วย
+        // '{"amount": 1260.00, "' แล้วขาดหาย) → คืนค่า null ทุกช่องเงียบๆ ทุกครั้ง โดย
+        // ไม่มี error เลย — พบว่าเป็นสาเหตุที่ทำให้เช็คสลิปซ้ำใช้งานไม่ได้เลยตั้งแต่ deploy.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     });
 
     // บันทึกต้นทุน AI แยก endpoint จาก extractSlipAmount เดิม (ตัวนี้ยิงเพิ่มจริง
     // ไม่ใช่ตัวเดียวกัน — อยากให้ CostCtrl แยกเห็นชัดว่ามาจากจุดไหน). Non-fatal.
+    // ตัวเลข token ประมาณตาม cashhub ocr-slip route ที่ใช้ pattern เดียวกัน (Gemini
+    // ไม่คืน usage แบบละเอียดจาก .text เหมือน Anthropic).
     try {
       await recordAiUsage({
         userId: actor.userId,
         orgId: actor.orgId,
         endpoint: "chairops.slip-ocr-details",
-        model: "claude-haiku-4-5-20251001",
+        provider: "gemini-flash",
         moduleName: "chairops",
-        inputTokens: response.usage?.input_tokens ?? 0,
-        outputTokens: response.usage?.output_tokens ?? 0,
+        inputTokens: 1290,
+        outputTokens: 100,
       });
     } catch {
       /* metering ต้องไม่ทำให้การอ่านสลิปพัง */
     }
 
-    const text =
-      response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+    const text = (response.text ?? "").trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return EMPTY;
 

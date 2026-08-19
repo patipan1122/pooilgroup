@@ -16,7 +16,6 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
 import { canUnlockCollection } from "@/lib/chairops/auth/role-guards";
@@ -892,9 +891,12 @@ async function fetchImageAsBase64(
 }
 
 /**
- * Use Claude Haiku vision to extract the transfer/deposit amount from a Thai
+ * Use Gemini Flash vision to extract the transfer/deposit amount from a Thai
  * bank slip image. Returns the parsed amount (satang-free integer baht) or null
  * when the image is unreadable / not a slip.
+ *
+ * CEO 2026-08-19: สลับจาก Anthropic → Gemini Flash 2.5 (เหมือน extractSlipDetails
+ * ใน lib/chairops/reconcile/slip-ocr.ts) — ANTHROPIC_API_KEY เรียกไม่ผ่านใน prod.
  */
 export async function extractSlipAmount(
   slipPublicUrl: string,
@@ -909,30 +911,36 @@ export async function extractSlipAmount(
   if (!isAllowedPhotoUrl(slipPublicUrl)) {
     return { ok: false, error: "รูปสลิปไม่ถูกต้อง · อัปโหลดผ่านระบบ" };
   }
+  if (!process.env.GEMINI_API_KEY) return { ok: true, data: { amount: null } };
 
   try {
     const img = await fetchImageAsBase64(slipPublicUrl);
     if (!img) return { ok: true, data: { amount: null } };
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 128,
-      messages: [
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
         {
           role: "user",
-          content: [
+          parts: [
             {
-              type: "image",
-              source: { type: "base64", media_type: img.mediaType, data: img.base64 },
-            },
-            {
-              type: "text",
               text: 'นี่คือสลิปธนาคารไทย กรุณาอ่านยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ) ตอบ JSON เท่านั้น ไม่มีข้อความอื่น: {"amount": <number>} หรือ {"amount": null} ถ้าอ่านไม่ได้',
             },
+            { inlineData: { mimeType: img.mediaType, data: img.base64 } },
           ],
         },
       ],
+      config: {
+        temperature: 0,
+        maxOutputTokens: 200,
+        responseMimeType: "application/json",
+        // ดู lib/chairops/reconcile/slip-ocr.ts — ต้องปิด thinking ไม่งั้น Gemini
+        // 2.5 Flash กิน token คิดจน JSON ตอบไม่ครบ.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     });
 
     // บันทึกต้นทุน AI ให้ CostCtrl เห็นค่าอ่านสลิปของ ChairOps (เดิมไม่เคยถูกนับ →
@@ -943,17 +951,16 @@ export async function extractSlipAmount(
         userId: session.user.id,
         orgId: session.user.orgId,
         endpoint: "chairops.slip-ocr",
-        model: "claude-haiku-4-5-20251001",
+        provider: "gemini-flash",
         moduleName: "chairops",
-        inputTokens: response.usage?.input_tokens ?? 0,
-        outputTokens: response.usage?.output_tokens ?? 0,
+        inputTokens: 1290,
+        outputTokens: 100,
       });
     } catch {
       /* metering ต้องไม่ทำให้การอ่านสลิปพัง */
     }
 
-    const text =
-      response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+    const text = (response.text ?? "").trim();
     const match = text.match(/\{[^}]*"amount"\s*:\s*([0-9.]+|null)[^}]*\}/);
     if (!match) return { ok: true, data: { amount: null } };
     const raw = match[1];
