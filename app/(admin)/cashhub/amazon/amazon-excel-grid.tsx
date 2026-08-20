@@ -344,23 +344,22 @@ export function AmazonExcelGrid({
 
   return (
     <div className="space-y-2">
-      {/* สวิตช์เปิด/ปิด "ดูช่องทางย่อย" (ยอดรวมดิบ+ไม่ใช่เงินจริง) — ปิดอยู่โดย default กันตารางรก */}
+      {/* สวิตช์เปิด/ปิด "ดูช่องทางย่อย" (ยอดรวมดิบ+ไม่ใช่เงินจริง) — ปิดอยู่โดย default กันตารางรก
+          ทำสีเข้ม+ตัวหนาเสมอ (ไม่จางตอนปิด) กันมองไม่เห็นปุ่ม — CEO 2026-08-20 หาปุ่มไม่เจอตอนปิดอยู่ */}
       <div className="flex items-center justify-end gap-2">
-        <span className="text-[11px] text-zinc-500">ช่องทางย่อย (ไม่ใช่ยอดที่ส่ง reconcile):</span>
+        <span className="text-[11px] font-medium text-zinc-600">ช่องทางย่อย/ส่วนลด (ไม่ใช่ยอดที่ส่ง reconcile):</span>
         <button
           type="button"
           onClick={() => setShowDetail((s) => !s)}
           title="เปิด = โชว์ยอดรวมดิบ POS ทุกช่อง (QR/blueplus wallet ตัวเปล่า/ส่วนลด/คูปอง) · ปิด = โชว์เฉพาะยอดที่ส่งเข้า reconcile จริง"
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm ring-2 transition ${
             showDetail
-              ? "bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-400"
-              : "bg-zinc-100 text-zinc-400 ring-1 ring-inset ring-zinc-200"
+              ? "bg-blue-600 text-white ring-blue-700"
+              : "bg-blue-50 text-blue-700 ring-blue-400 hover:bg-blue-100"
           }`}
         >
-          <span
-            className={`h-2 w-2 rounded-full ${showDetail ? "bg-blue-500" : "bg-zinc-300"}`}
-          />
-          {showDetail ? "▾ กำลังขยาย" : "▸ กดขยาย"}
+          <span className={`h-2 w-2 rounded-full ${showDetail ? "bg-white" : "bg-blue-500"}`} />
+          {showDetail ? "▾ กำลังขยาย — กดซ่อน" : "▸ กดขยายดูช่องทางย่อย"}
         </button>
       </div>
       {/* สวิตช์เปิด/ปิด "ดูไส้ใน" (เหลืองรายช่องทาง) — กดปิดได้เวลาอยากดูตารางแบบสะอาด */}
@@ -393,15 +392,30 @@ export function AmazonExcelGrid({
                 <th className="sticky left-0 z-30 bg-zinc-100 px-2 py-1.5 text-left font-semibold border-b border-zinc-200">
                   วันที่
                 </th>
-                {COLS.map((c) => (
-                  <th
-                    key={c.label}
-                    className="px-1.5 py-1.5 text-right font-semibold whitespace-nowrap border-b border-zinc-200"
-                  >
-                    {c.f && <span className="text-blue-500">ƒ </span>}
-                    {c.label}
-                  </th>
-                ))}
+                {COLS.map((c) =>
+                  // คอลัมน์กลุ่ม (qrapi/qrstd/qrcredit) กดที่หัวคอลัมน์ตรงๆ ได้เลย — ขยายไส้ใน
+                  // โผล่ออกด้านข้าง (ตำแหน่งเดิมของ QR/blueplus wallet ดิบที่ซ่อนไว้) — เผื่อไว้
+                  // ให้กดใกล้คอลัมน์ที่อยากดู แทนที่จะต้องหาปุ่มสวิตช์ด้านบนอย่างเดียว
+                  c.groupKey ? (
+                    <th
+                      key={c.label}
+                      onClick={() => setShowDetail((s) => !s)}
+                      title="กดเพื่อดู/ซ่อนช่องทางย่อยที่รวมกันเป็นยอดนี้"
+                      className="px-1.5 py-1.5 text-right font-semibold whitespace-nowrap border-b border-zinc-200 cursor-pointer select-none bg-blue-50 hover:bg-blue-100 text-blue-800"
+                    >
+                      {showDetail ? "▾ " : "▸ "}
+                      {c.label}
+                    </th>
+                  ) : (
+                    <th
+                      key={c.label}
+                      className="px-1.5 py-1.5 text-right font-semibold whitespace-nowrap border-b border-zinc-200"
+                    >
+                      {c.f && <span className="text-blue-500">ƒ </span>}
+                      {c.label}
+                    </th>
+                  ),
+                )}
                 <th className="px-2 py-1.5 text-center font-semibold border-b border-zinc-200 whitespace-nowrap">
                   ตรง?
                 </th>
@@ -526,9 +540,9 @@ export function AmazonExcelGrid({
         <span className="text-matched-iridescent font-bold">✦ เป๊ะ</span> = เงินเข้าตรง (±฿1) ·{" "}
         <span className="text-red-700 font-bold">🔴 ขาด</span> = เงินเข้าน้อยกว่าที่ควร ·{" "}
         <span className="text-amber-700 font-bold">🟠 เกิน</span> = เงินเข้ามากกว่า · เลื่อนซ้าย-ขวาดูช่องทางครบทุกช่อง ·{" "}
-        <b>ปุ่ม &ldquo;▸ กดขยาย&rdquo;</b> มุมขวาบน = โชว์คอลัมน์ยอดรวมดิบ POS (QR/blueplus
-        wallet ตัวเปล่า/ส่วนลด/คูปอง) ที่ปิดไว้โดย default กันตารางรก — ปิดอยู่ = เห็นเฉพาะยอดที่
-        ส่งเข้า reconcile จริงเท่านั้น ·{" "}
+        <b>ปุ่ม &ldquo;▸ กดขยายดูช่องทางย่อย&rdquo;</b> มุมขวาบน (หรือกดที่หัวคอลัมน์สีฟ้าตรงๆ
+        ก็ได้) = โชว์คอลัมน์ยอดรวมดิบ POS (QR/blueplus wallet ตัวเปล่า/ส่วนลด/คูปอง) ที่ปิดไว้โดย
+        default กันตารางรก — ปิดอยู่ = เห็นเฉพาะยอดที่ส่งเข้า reconcile จริงเท่านั้น ·{" "}
         <b>QRPayment(API) + blueplus+ wallet (API)</b> / <b>QRPayment + blueplus+ wallet +
         blueplus+ wallet Manual</b> = ก้อนเงินที่ธนาคารโอนเข้าจริง 2 ก้อน (แยกตามส่วน API/ไม่ API) —
         เลขเดียวกับที่จะส่งเข้ากระทบยอด · โชว์เฉพาะวันที่ไส้ใน POS ตรงกับยอดที่ส่งจริง (ไม่ตรง = ว่าง กดปุ่ม
