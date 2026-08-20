@@ -567,27 +567,31 @@ cases.push({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (f) resolveSendChannels — bug 2026-08-16: sendDaysToReconcile used to pass POS-raw
-// posBreakdown into computeSendRows even on days where the CHANNELS actually being sent
-// came from iv_channels (an already-issued TRCloud invoice) instead of the live POS file.
-// When the invoice's own categorization already differs from the raw POS split (e.g. an
-// old invoice filed "QRCredit(API)" money under the "Grab" cvar instead of leaving it in
-// the QR cvar), POS_EXTRACT_GROUPS subtracted that same money a SECOND time from
-// iv_channels's QR total — real store 4097 case: booked ฿6,939 instead of the real
-// ฿7,019 bank deposit, plus a phantom "Grab ฿67.20" line.
+// (f) resolveSendChannels
 //
-// 2026-08-17: the original fix (drop posBreakdown entirely whenever using iv_channels) was
-// safe but coarse — it also disabled qrapi/qrstd splitting on days where iv_channels just
-// merged a POS_EXTRACT_GROUPS cvar into a SETTLEMENT_GROUPS cvar in the SAME domain (e.g.
-// store 4097 2026-06-02: TRCloud folded c15's "blueplus+ credit(API)" ฿70 into c14's
-// "blueplus wallet", leaving the "qr" group as one lumped ฿9,823 row instead of the real
-// ฿9,468 + ฿285 the bank actually posted). resolveSendChannels now ALWAYS passes posBreakdown
-// through — the safety logic moved into computeSendRows itself (wide-domain tie-out step -1
-// recovers same-domain merges like 06-02; the per-cvar guard in step 0 still blocks
-// out-of-domain reclassification like 06-14/Grab). See computeSendRows's own doc comment.
+// History (2026-08-16/17): sendDaysToReconcile used to prefer iv_channels (an already-issued
+// TRCloud invoice) over the raw POS file whenever an invoice existed, on the theory that a
+// confirmed invoice is more trustworthy than the raw file. Two bugs came from that: (1) a
+// double-subtract when the invoice reclassified money into a channel POS_EXTRACT_GROUPS didn't
+// expect (06-14: QRCredit(API) ฿80 filed under "Grab" in the invoice → booked ฿6,939 instead of
+// the real ฿7,019), and (2) losing a legitimate same-domain split when the invoice just merged
+// two POS cvars together (06-02: c15's blueplus+ credit(API) ฿70 folded into c14 in the
+// invoice → lumped ฿9,823 instead of the real ฿9,468+฿285 split). Both were eventually patched
+// with increasingly careful iv_channels-vs-posBreakdown tie-out guards inside computeSendRows.
+//
+// ✅ CEO decision 2026-08-20: stop preferring iv_channels for sending ENTIRELY. Always use the
+// raw POS file — "POS จะตรงกว่าแม่นกว่า" (POS is more accurate). Any mismatch between POS and a
+// later TRCloud invoice is now purely informational (the small yellow "IV X (±Y)" number in
+// amazon-excel-grid.tsx), never used to decide what actually gets sent. This makes the whole
+// iv_channels-preference bug class above moot from this call site — resolveSendChannels now
+// unconditionally returns day.channels, so channels and posBreakdown always come from the same
+// POS parse and can never disagree with each other. The safety guards inside computeSendRows
+// (wide-domain tie-out, per-cvar guard) are left in place — harmless, and still relevant if any
+// other call site ever passes iv_channels into computeSendRows directly (e.g. a future
+// "what would change vs the confirmed invoice" preview).
 // ─────────────────────────────────────────────────────────────────────────────
 cases.push({
-  name: "(f) resolveSendChannels: iv_channels present+non-empty → uses iv_channels, still passes posBreakdown through (safety now lives in computeSendRows)",
+  name: "(f) resolveSendChannels: iv_channels present+non-empty → STILL uses raw POS channels (2026-08-20: CEO says POS 100%, iv_channels no longer preferred for sending)",
   check: () => {
     const day = {
       channels: { c1: 100, c2: 200 },
@@ -596,15 +600,15 @@ cases.push({
     };
     const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
     let err: string | null = null;
-    err ??= eq("channels == iv_channels", channels, day.iv_channels);
+    err ??= eq("channels == day.channels (NOT iv_channels, even though iv_channels exists)", channels, day.channels);
     err ??= eq("posBreakdown passed through unchanged", posBreakdown, day.posBreakdown);
-    err ??= eq("usingIvChannels flag true", usingIvChannels, true);
+    err ??= eq("usingIvChannels flag always false now", usingIvChannels, false);
     return err;
   },
 });
 
 cases.push({
-  name: "(f) resolveSendChannels: iv_channels null/absent → uses raw POS channels, keeps posBreakdown",
+  name: "(f) resolveSendChannels: iv_channels null/absent → uses raw POS channels, keeps posBreakdown (same as above — no branching left at all)",
   check: () => {
     const day = { channels: { c1: 100, c2: 200 }, iv_channels: null, posBreakdown: { QRPayment: 200 } };
     const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
@@ -617,7 +621,7 @@ cases.push({
 });
 
 cases.push({
-  name: "(f) resolveSendChannels: iv_channels={} (empty object) → treated same as absent, uses raw POS + posBreakdown",
+  name: "(f) resolveSendChannels: iv_channels={} (empty object) → uses raw POS + posBreakdown",
   check: () => {
     const day = { channels: { c1: 100 }, iv_channels: {}, posBreakdown: { QRPayment: 100 } };
     const { channels, posBreakdown, usingIvChannels } = resolveSendChannels(day);
@@ -630,9 +634,10 @@ cases.push({
 });
 
 cases.push({
-  name: "(f) real-world regression — store 4097 2026-06-14: old invoice mis-filed QRCredit(API) money under Grab(c20) → resolveSendChannels+computeSendRows must NOT double-subtract; qr group must net exactly ฿7,019 (matches the real bank deposit), not the buggy ฿6,939",
+  name: "(f) real-world regression — store 4097 2026-06-14, REVISITED for the 2026-08-20 POS-only policy: the invoice once filed QRCredit(API) ฿80 under Grab(c20), but we now ignore iv_channels entirely — that ฿80 sends as 'qrcredit' (from raw POS) same as any other day, and NO Grab row is created at all (raw POS never had Grab money that day)",
   check: () => {
-    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-14)
+    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-14) — iv_channels
+    // kept in the fixture only to prove resolveSendChannels ignores it now (see (f) unit tests above)
     const day = {
       channels: { c1: 7100, c2: 6814, c8: 10, c11: 700, c12: 120, c14: 285 },
       iv_channels: { c1: 7100, c2: 6734, c7: 10, c11: 700, c12: 120, c14: 285, c20: 80 },
@@ -650,28 +655,33 @@ cases.push({
     // c14 feePercent=0 here to match the REAL production config for this branch (the shared
     // cfg() fixture uses 5% for other tests' fee-math coverage — irrelevant to this case).
     const { rows } = computeSendRows(channels, cfg({ c14: { feePercent: 0 } }), posBreakdown);
-    const qr = rows.find((r) => r.key === "qr" || r.key === "qrapi");
+    const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
-    err ??= eq("posBreakdown passed through (safety now lives inside computeSendRows)", posBreakdown, day.posBreakdown);
+    err ??= eq("channels came from raw POS, not iv_channels", channels, day.channels);
     err ??= eq(
-      "no qrcredit extraction row — c2's settled gross (6734) is SHORT of what posBreakdown claims for c2 (6734+80=6814), so the per-cvar guard blocks extracting from it (money moved OUT to Grab, not trustworthy)",
-      rows.some((r) => r.key === "qrcredit"),
-      false,
+      "qrcredit extracts the QRCredit(API) ฿80 straight from POS (no more per-cvar guard blocking it — channels/posBreakdown always agree now)",
+      byKey.get("qrcredit")?.gross,
+      80,
     );
-    err ??= eq("no phantom/wrong Grab row either — c20 sent at its real iv_channels amount", rows.find((r) => r.key === "c20")?.net, 67.2);
-    err ??= eq("qr group net == real bank deposit (฿7,019), not the old buggy ฿6,939", qr?.net, 7019);
+    err ??= eq("no Grab(c20) row at all — raw POS never had Grab money this day, iv_channels' phantom c20 is ignored", rows.some((r) => r.key === "c20"), false);
+    err ??= eq("qrapi absorbs the remainder (QRPayment(API) 6734 + blueplus wallet(API) 285 = 7019)", byKey.get("qrapi")?.gross, 7019);
+    err ??= eq(
+      "money conserved: c1+c12+qrcredit+qrapi == full settled total (14319, excludes non-settling Redeem/ส่วนลด TRUE)",
+      round2sum([byKey.get("c1")?.gross, byKey.get("c12")?.gross, byKey.get("qrcredit")?.gross, byKey.get("qrapi")?.gross]),
+      14319,
+    );
     return err;
   },
 });
 
 cases.push({
-  name: "(g) real-world regression — store 4097 2026-06-02: TRCloud merged c15's blueplus+ credit(API) INTO c14's blueplus wallet (same-domain merge, unlike 06-14's out-of-domain Grab move) → wide-domain tie-out (step -1) must recover the real split: qrcredit=70, qrapi=9468, qrstd=285 — NOT the lumped ฿9,823 the CEO caught live",
+  name: "(g) real-world regression — store 4097 2026-06-02, REVISITED for the 2026-08-20 POS-only policy: the invoice once merged c15's blueplus+ credit(API) INTO c14's blueplus wallet, but since we ignore iv_channels entirely now, raw POS's already-correct c15=70 is used directly — straightforward split, no 'recovery' step needed at all: qrcredit=70, qrapi=9468, qrstd=285",
   check: () => {
-    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-02) — c15 is
-    // completely ABSENT from iv_channels (its ฿70 got folded into c14, which reads 140 = 70+70
-    // instead of raw POS's 70) — this is the exact shape a22b88c3's blanket posBreakdown-drop
-    // could never recover, because c14 (not c15) still exists in settled and "looks fine" on
-    // its own — only the WIDE domain (c2+c13+c14+c15 together) reveals the merge and ties out.
+    // exact real data pulled from prod (cashhub_amazon_daily, store 4097, 2026-06-02) — iv_channels
+    // kept in the fixture only to prove resolveSendChannels ignores it (channels below == day.channels,
+    // NOT the merged iv_channels shape) — this used to require the wide-domain tie-out (step -1)
+    // recovery mechanism to un-merge; now channels/posBreakdown agree from the start (both raw POS),
+    // so the normal step-0 path handles it with no "recovery" involved.
     const day = {
       channels: { c1: 11079, c2: 9683, c11: 260, c12: 120, c14: 70, c15: 70 },
       iv_channels: { c1: 11079, c2: 9683, c11: 260, c12: 120, c14: 140 },
@@ -691,6 +701,7 @@ cases.push({
     const { rows, splitGroupKeys } = computeSendRows(channels, cfg({ c14: { feePercent: 0 } }), posBreakdown);
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
+    err ??= eq("channels came from raw POS (c15=70), not the merged iv_channels (c14=140)", channels, day.channels);
     err ??= eq("posBreakdown passed through (not dropped)", posBreakdown, day.posBreakdown);
     err ??= eq("qr group reported as split", splitGroupKeys, ["qr"]);
     err ??= eq("qrcredit gross == 70 (blueplus+ credit(API) alone — QRCredit(API) absent today)", byKey.get("qrcredit")?.gross, 70);

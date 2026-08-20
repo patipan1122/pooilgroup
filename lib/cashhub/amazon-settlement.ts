@@ -602,20 +602,27 @@ export function computeSendRows(
 
 /**
  * เลือกว่า computeSendRows ควรใช้ channels ชุดไหนสำหรับวันนั้น (sendDaysToReconcile เรียกก่อน
- * ทุกครั้ง): iv_channels (ใบกำกับภาษียืนยันแล้ว) ถ้ามี ไม่งั้น channels ดิบจาก POS.
+ * ทุกครั้ง).
  *
+ * ✅ CEO ตัดสินใจ 2026-08-20 (หลังเห็นเคสจริง 07-02 ที่ QRCredit(API) ในไฟล์ POS หายไปเงียบๆ
+ * เพราะใบกำกับ TRCloud จัดหมวดเป็น "Grab" แทน — งงว่าทำไมเงินไม่ส่งเข้าช่องที่ควรจะเป็น): **ส่งเงิน
+ * เข้า reconcile อ้างอิงไฟล์ POS ดิบ 100% เสมอ ไม่สนใจว่า TRCloud invoice จะจัดหมวดต่างไปแล้วหรือไม่**
+ * — เหตุผล CEO: "POS จะตรงกว่าแม่นกว่า" ส่วนความต่างระหว่าง POS กับ TRCloud invoice (ถ้ามี) ยังคง
+ * โชว์เป็นตัวเลขเล็กสีเหลืองในตาราง (คอลัมน์ ivGet ใน amazon-excel-grid.tsx) ไว้ดูเฉยๆ ไม่ผูกกับ
+ * เงินที่ส่งจริงอีกต่อไป — เคยเตือน CEO แล้วว่าเคส 06-14 (ด้านล่าง) อาจไม่แมตช์กับธนาคารถ้าใช้ POS
+ * ล้วนๆ (เงินอาจย้ายไปอีกช่องทางจริงตามใบกำกับ) CEO รับความเสี่ยงนี้แล้ว ("ค่อยดูตัวเลขเหลืองเช็คเอง")
+ *
+ * ── ประวัติเดิม (ก่อน 2026-08-20 — เก็บไว้อธิบาย tie-out safety guard ใน computeSendRows ด้านบน
+ * ที่ยังไม่ได้ลบ แม้จะไม่ถูกกระตุ้นจาก resolveSendChannels อีกต่อไปแล้วก็ตาม — ยังมีประโยชน์ถ้ามีจุด
+ * เรียก computeSendRows อื่นที่ยังส่ง iv_channels เข้ามาโดยตรง เช่น preview เทียบผลต่างในอนาคต) ──
  * bug 2026-08-16: sendDaysToReconcile เคยส่ง posBreakdown (ของ POS ดิบ) เข้าคู่กับ channels=
  * iv_channels เสมอไม่สนว่ามาจากไหน — วันไหนใบกำกับภาษีจัดหมวดต่างจาก POS ไปแล้ว (เช่น ย้ายเงิน
  * "QRCredit(API)" 80 บาทไปฝากไว้ใต้ช่อง Grab แทน) POS_EXTRACT_GROUPS จะหักเงินก้อนเดียวกันออกจาก
  * iv_channels ซ้ำอีกรอบ → ยอด QR หายไป 80 บาทซ้อน (store 4097 06-14: ฿6,939 แทนที่จะเป็น ฿7,019
- * จริง — ดู post-mortem 2026-08-16). ตอนนั้นแก้ด้วยการตัด posBreakdown ทิ้งทุกครั้งที่ใช้
- * iv_channels (ปลอดภัยแต่หยาบ — ทำให้วันไหน TRCloud ย้าย cvar ภายในโดเมนเดียวกันเอง เช่น
- * "blueplus+ credit(API)" (c15) ไปรวมกับ "blueplus wallet" (c14) ก็เลิกแยกไปด้วยทั้งที่ไม่จำเป็น).
- *
- * 2026-08-17: ย้าย safety check เข้าไปอยู่ใน computeSendRows เองแทน (wide-domain tie-out ขั้น -1)
- * + per-cvar guard ในขั้น 0) — ปลอดภัยละเอียดกว่าเดิม แยกแยะได้ว่าเงินย้าย "ในโดเมนเดียวกัน"
- * (กู้คืนการแยกได้ปลอดภัย) กับ "ย้ายออกนอกโดเมนไปเลย" (fallback รวมก้อนเหมือน 06-14) จึงไม่ต้อง
- * ตัด posBreakdown ทิ้งแบบเหมาที่นี่อีกแล้ว — ส่งผ่านเสมอ ให้ computeSendRows ตัดสินใจเอง
+ * จริง — ดู post-mortem 2026-08-16) · 2026-08-17 ย้าย safety check เข้า computeSendRows เอง
+ * (wide-domain tie-out + per-cvar guard) — ทั้งหมดนี้กลายเป็น dead path จากจุดเรียกนี้ตั้งแต่
+ * 2026-08-20 เพราะ channels ที่ส่งเข้าไปเป็น POS ดิบเสมอ (เท่ากับ posBreakdown ที่มาจากไฟล์เดียวกัน
+ * อยู่แล้ว) ไม่มีทาง "ไม่ตรงกัน" ให้ guard ต้องจับอีกต่อไป
  */
 export function resolveSendChannels(day: {
   channels: Record<string, number> | null;
@@ -626,11 +633,10 @@ export function resolveSendChannels(day: {
   posBreakdown: Record<string, number> | null | undefined;
   usingIvChannels: boolean;
 } {
-  const usingIvChannels = !!(day.iv_channels && Object.keys(day.iv_channels).length > 0);
   return {
-    channels: usingIvChannels ? day.iv_channels! : day.channels,
+    channels: day.channels,
     posBreakdown: day.posBreakdown,
-    usingIvChannels,
+    usingIvChannels: false,
   };
 }
 

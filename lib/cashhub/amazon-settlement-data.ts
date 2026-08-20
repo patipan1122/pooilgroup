@@ -171,15 +171,12 @@ export async function sendDaysToReconcile(
   //      ส่วนต่างเล็ก ๆ เป็นเรื่อง POS↔ยอดขายรวม (คนละชั้นกับการจับคู่ธนาคาร) ไม่บล็อกเงินทั้งวัน
   const sentUnbalanced: string[] = [];
   for (const day of days) {
-    // แหล่งยอดต่อช่องทาง: ใช้ iv_channels (ไส้ในใบ TRCloud ที่ยืนยันแล้ว) ก่อนเสมอถ้ามี —
-    //   TRCloud บางวัน reclassify เงินข้ามช่องทาง (เช่น ย้าย QR บางส่วนไป Grab) เทียบกับไฟล์ POS ดิบ
-    //   ยืนยันกับยอดธนาคารจริงแล้วว่า iv_channels ตรงเป๊ะถึงสตางค์ ส่วน channels (POS ดิบ) อาจเพี้ยนวันที่มีการจัดหมวดใหม่
-    //   fallback ไป channels เฉพาะวันที่ยังไม่มีใบ IV ยืนยัน (เช่นวันล่าสุดที่ TRCloud ยังไม่ประมวลผล)
-    // posBreakdown (raw label จาก POS ดิบ) ส่งเข้า computeSendRows เสมอ ไม่ว่า channels จะมาจาก
-    //   iv_channels หรือ POS ดิบ — safety check ว่าเชื่อได้แค่ไหน (กันหักซ้ำ/หักผิด cvar ตอนที่
-    //   TRCloud ย้ายเงินข้าม cvar ไปแล้ว, bug เดิม 2026-08-16) ย้ายเข้าไปอยู่ใน computeSendRows เอง
-    //   ตั้งแต่ 2026-08-17 (wide-domain tie-out + per-cvar guard) — ดู comment เต็มที่
-    //   resolveSendChannels + computeSendRows ใน amazon-settlement.ts
+    // แหล่งยอดต่อช่องทาง: ใช้ไฟล์ POS ดิบ (day.channels) 100% เสมอ — CEO ตัดสินใจ 2026-08-20
+    //   ("POS จะตรงกว่าแม่นกว่า") หลังเจอเคสจริงที่ใบกำกับ TRCloud จัดหมวดเงินต่างจาก POS แล้วทำให้
+    //   งงว่าเงินหายไปไหน (เช่น 07-02: QRCredit(API) ในไฟล์ POS ถูกใบกำกับจัดเป็น "Grab" แทน) — เดิม
+    //   เคยเชื่อ iv_channels (ใบกำกับที่ยืนยันแล้ว) ก่อนเสมอถ้ามี ดู comment เต็มในตัว
+    //   resolveSendChannels (amazon-settlement.ts) สำหรับประวัติเดิม+เหตุผลที่เปลี่ยน · ความต่างระหว่าง
+    //   POS กับใบกำกับ (ถ้ามี) ยังโชว์เป็นตัวเลขเหลืองเล็กในตาราง CashHub ไว้เช็คเฉยๆ ไม่ผูกกับเงินที่ส่งจริงแล้ว
     const { channels, posBreakdown } = resolveSendChannels(day);
     // รวมช่องที่โอนเข้าบัญชีก้อนเดียว (QR+QR Manual+wallet) เป็น 1 บรรทัด — หรือแยก 2 บรรทัด
     // ตามกฎ CEO (qrapi/qrstd) ถ้ามี posBreakdown ของวันนั้นครบ+ตรงกับ channels ที่ใช้จริง
