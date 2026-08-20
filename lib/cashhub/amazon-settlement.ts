@@ -43,6 +43,12 @@ export const DEFAULT_CHANNELS: ChannelConfig[] = [
   { cvar: "c22", label: "ShopeeFood", isSettle: true, feePercent: 16.05, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c14", label: "blueplus wallet", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c15", label: "blueplus credit", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
+  // ช่องทางที่ 3 (POS_EXTRACT_GROUPS "qrcredit") — CEO 2026-08-20: ต้องแก้ค่าธรรมเนียมได้จากหน้า
+  // ตั้งค่าเหมือนช่องอื่น (เดิม feePercent ของกลุ่มนี้ hardcode ใน POS_EXTRACT_GROUPS ด้านล่าง ไม่มี
+  // ที่แก้เลย) — "cvar" ตรงนี้ไม่ใช่ c-number จริง แต่ใช้ key ของ POS_EXTRACT_GROUPS ("qrcredit") เป็น
+  // ตัวระบุแทน (ChannelConfig.cvar เป็นแค่ string ไม่บังคับรูปแบบ) ดู computeSendRows ที่ค้นหา config
+  // ด้วย key นี้ · ไม่กระทบใบกำกับ TRCloud เลย (createAmazonIv ใช้ channels ดิบ c2/c15 ไม่เกี่ยวกับกลุ่มนี้)
+  { cvar: "qrcredit", label: "QRCredit + blueplus Credit (API)", isSettle: true, feePercent: 0.91, minSettleBaht: 0, companyId: null, bankAccountId: null },
   // ไม่ใช่เงินจริง (ไม่เข้าธนาคาร)
   { cvar: "c11", label: "Redeem", isSettle: false, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
   { cvar: "c7", label: "ส่วนลด AIS", isSettle: false, feePercent: 0, minSettleBaht: 0, companyId: null, bankAccountId: null },
@@ -230,7 +236,10 @@ export type PosExtractGroup = {
   key: string; // source_ref suffix (เช่น "qrcredit") — ต้องไม่ชนกับ key อื่นที่มีอยู่
   label: string;
   channelCode: string; // ledger_revenue_entry.channel_code — ต้องอยู่ใน REVENUE_CHANNELS enum
-  feePercent: number; // ค่าธรรมเนียมเหมาของกลุ่มนี้ (ไม่ใช้ configByCvar — ดู comment ด้านบน)
+  // ค่าธรรมเนียม default ของกลุ่มนี้ — ตั้งแต่ 2026-08-20 แค่ fallback เฉยๆ ถ้ายังไม่มี config ใน
+  // DEFAULT_CHANNELS/DB (ดู cvar:"qrcredit" ด้านบน) · computeSendRows จะเช็ค configByCvar.get(key)
+  // ก่อนเสมอ ให้ CEO แก้จากหน้าตั้งค่าได้เหมือนช่องอื่น ไม่ต้องแก้โค้ด
+  feePercent: number;
   members: PosExtractMember[];
 };
 
@@ -238,12 +247,12 @@ export const POS_EXTRACT_GROUPS: PosExtractGroup[] = [
   {
     key: "qrcredit",
     label: "QRCredit + blueplus Credit (API)",
-    // ~0.9% + จ่ายช้ากว่า real-time = พฤติกรรมแบบบัตร ไม่ใช่ QR/wallet real-time — ใช้ bucket
+    // ~0.91% + จ่ายช้ากว่า real-time = พฤติกรรมแบบบัตร ไม่ใช่ QR/wallet real-time — ใช้ bucket
     // เดียวกับ c12 "เครดิต EDC" (ดู CVAR_CHANNEL_CODE) สอดคล้องกับที่มาของค่าธรรมเนียม
     channelCode: "card",
-    // วัดจากข้อมูลจริง 3 วัน (08-03/08-05/08-09) = 0.9105–0.9130% เฉลี่ย ~0.912% — ปัดใช้ 0.9
-    // ให้ตรงกับ convention ของ c12 (เอกสารเดิมก็ปัด 0.85%+VAT7%=0.9095% ลง 0.9 เหมือนกัน)
-    feePercent: 0.9,
+    // วัดจากข้อมูลจริง 3 วัน (08-03/08-05/08-09) = 0.9105–0.9130% เฉลี่ย ~0.912% — ปัดใช้ 0.91
+    // ให้ตรงกับ convention ของ c12 ที่ตั้งไว้จริงในระบบ (0.91) · แก้ได้จากหน้าตั้งค่าแล้วตั้งแต่นี้ไป
+    feePercent: 0.91,
     members: [
       { rawLabel: "QRCredit(API)", cvar: "c2" },
       { rawLabel: "blueplus+ credit(API)", cvar: "c15" },
@@ -348,7 +357,11 @@ export function computeSendRows(
       for (const eg of relatedExtracts) {
         const egGross = round2(eg.members.reduce((a, m) => a + (posBreakdown[m.rawLabel] ?? 0), 0));
         if (egGross === 0) continue;
-        const egFee = round2((egGross * eg.feePercent) / 100);
+        // ค่าธรรมเนียม/บริษัท/บัญชี — เช็ค config ของกลุ่มนี้เอง (cvar:"qrcredit") ก่อนเสมอ ให้ CEO
+        // แก้จากหน้าตั้งค่าได้ (ดู DEFAULT_CHANNELS ด้านบนไฟล์) · ไม่มี config → fallback ค่า default
+        const egCfg = cfgFor(eg.key);
+        const egFeePercent = egCfg?.feePercent ?? eg.feePercent;
+        const egFee = round2((egGross * egFeePercent) / 100);
         const touchedCvars = [...new Set(eg.members.map((m) => m.cvar))];
         const rep =
           settled.find((s) => touchedCvars.includes(s.cvar) && s.companyId) ??
@@ -360,9 +373,9 @@ export function computeSendRows(
           gross: egGross,
           fee: egFee,
           net: round2(egGross - egFee),
-          feePercent: eg.feePercent,
-          companyId: rep?.companyId ?? null,
-          bankAccountId: rep?.bankAccountId ?? null,
+          feePercent: egFeePercent,
+          companyId: egCfg?.companyId ?? rep?.companyId ?? null,
+          bankAccountId: egCfg?.bankAccountId ?? rep?.bankAccountId ?? null,
           memberCvars: touchedCvars,
           split: true,
         });
@@ -440,7 +453,11 @@ export function computeSendRows(
       }
       if (present.length === 0) continue; // วันนี้ไม่มีเงินกลุ่มนี้เลย → ไม่ต้องดึงอะไร
       const egGross = round2(present.reduce((a, p) => a + p.amt, 0));
-      const egFee = round2((egGross * eg.feePercent) / 100);
+      // ค่าธรรมเนียม/บริษัท/บัญชี — เช็ค config ของกลุ่มนี้เอง (cvar:"qrcredit") ก่อนเสมอ (เหมือน
+      // block wide-domain ด้านบน) ให้ CEO แก้จากหน้าตั้งค่าได้ ไม่ต้องแก้โค้ด
+      const egCfg = cfgFor(eg.key);
+      const egFeePercent = egCfg?.feePercent ?? eg.feePercent;
+      const egFee = round2((egGross * egFeePercent) / 100);
       const egNet = round2(egGross - egFee);
       const touchedCvars = [...new Set(present.map((p) => p.cvar))];
       const rep =
@@ -454,9 +471,9 @@ export function computeSendRows(
         gross: egGross,
         fee: egFee,
         net: egNet,
-        feePercent: eg.feePercent,
-        companyId: rep.companyId,
-        bankAccountId: rep.bankAccountId,
+        feePercent: egFeePercent,
+        companyId: egCfg?.companyId ?? rep.companyId,
+        bankAccountId: egCfg?.bankAccountId ?? rep.bankAccountId,
         memberCvars: touchedCvars,
         split: true,
       });

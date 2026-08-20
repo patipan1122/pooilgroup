@@ -56,8 +56,10 @@ function eq(label: string, actual: unknown, expected: unknown): string | null {
 
 // ── shared test config: qr group members (c2, c14) + standalone c13, c15 — c14 given a
 //    nonzero fee (5%) specifically so split-line fee math is actually exercised, not just
-//    0*x=0 · c15 given feePercent=0 (matches real DEFAULT_CHANNELS) so qrcredit's OWN 0.9%
-//    fee (from POS_EXTRACT_GROUPS, not configByCvar) is what's actually being exercised ──
+//    0*x=0 · c15 given feePercent=0 (matches real DEFAULT_CHANNELS) · no "qrcredit" entry in
+//    `base` below → cfgFor("qrcredit") falls through to DEFAULT_CHANNELS' 0.91% (2026-08-20:
+//    now config-driven, no longer hardcoded-only in POS_EXTRACT_GROUPS — see case below testing
+//    an explicit per-org override) ──
 function cfg(overrides: Partial<Record<string, Partial<ChannelConfig>>> = {}): Map<string, ChannelConfig> {
   const base: Record<string, ChannelConfig> = {
     c2: { cvar: "c2", label: "QR", isSettle: true, feePercent: 0, minSettleBaht: 0, companyId: "co-1", bankAccountId: "bank-1" },
@@ -162,7 +164,7 @@ cases.push({
 });
 
 cases.push({
-  name: "(a2) QRCredit(API) nonzero → extracted into 'qrcredit' FIRST (own ~0.9% fee), then the qr-group REMAINDER ties out again → qrapi/qrstd split succeeds too (supersedes pre-qrcredit behavior)",
+  name: "(a2) QRCredit(API) nonzero → extracted into 'qrcredit' FIRST (own ~0.91% fee), then the qr-group REMAINDER ties out again → qrapi/qrstd split succeeds too (supersedes pre-qrcredit behavior)",
   check: () => {
     // DB-verified 2026-08-15 against real bank data (08-05/08-09, updated same-day after the
     // qrapi/qrstd-only version of this file shipped): QRCredit(API) settles via a THIRD separate
@@ -186,8 +188,8 @@ cases.push({
     err ??= eq("3 rows total (qrcredit + qrapi + qrstd)", rows.length, 3);
     err ??= eq("qr group still reported as split", splitGroupKeys, ["qr"]);
     err ??= eq("qrcredit gross == 230 (QRCredit(API) alone, blueplus+ credit(API) absent today)", byKey.get("qrcredit")?.gross, 230);
-    err ??= eq("qrcredit fee == 230*0.9% = 2.07", byKey.get("qrcredit")?.fee, 2.07);
-    err ??= eq("qrcredit net == 227.93", byKey.get("qrcredit")?.net, 227.93);
+    err ??= eq("qrcredit fee == 230*0.91% = 2.09", byKey.get("qrcredit")?.fee, 2.09);
+    err ??= eq("qrcredit net == 227.91", byKey.get("qrcredit")?.net, 227.91);
     err ??= eq("qrcredit label", byKey.get("qrcredit")?.label, "QRCredit + blueplus Credit (API)");
     err ??= eq("qrcredit channelCode == card", byKey.get("qrcredit")?.channelCode, "card");
     err ??= eq("qrcredit flagged split", byKey.get("qrcredit")?.split, true);
@@ -218,10 +220,10 @@ cases.push({
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
     err ??= eq("qrcredit gross == 190 (blueplus+ credit(API) alone)", byKey.get("qrcredit")?.gross, 190);
-    // fee: measured real ratio ~0.9105% on this exact day (08-03) — our flat 0.9% gives 1.71,
-    // net 188.29 (real bank line was 188.27 — 2 satang off, within any reasonable match tolerance)
-    err ??= eq("qrcredit fee == 190*0.9% = 1.71", byKey.get("qrcredit")?.fee, 1.71);
-    err ??= eq("qrcredit net == 188.29", byKey.get("qrcredit")?.net, 188.29);
+    // fee: measured real ratio ~0.9105% on this exact day (08-03) — our flat 0.91% gives 1.73,
+    // net 188.27 (matches the real bank line exactly)
+    err ??= eq("qrcredit fee == 190*0.91% = 1.73", byKey.get("qrcredit")?.fee, 1.73);
+    err ??= eq("qrcredit net == 188.27", byKey.get("qrcredit")?.net, 188.27);
     err ??= eq("no standalone c15 row this day (fully extracted, not double-counted)", byKey.has("c15"), false);
     err ??= eq("c15 flagged for legacy-ref cleanup (old full-amount ref may be stale)", extractedStandaloneCvars, ["c15"]);
     // qr group (c2/c14) unaffected — c15 money never touched it in the first place
@@ -265,12 +267,52 @@ cases.push({
     const byKey = new Map(rows.map((r) => [r.key, r]));
     let err: string | null = null;
     err ??= eq("qrcredit gross == 150 (100+50 combined)", byKey.get("qrcredit")?.gross, 150);
-    err ??= eq("qrcredit fee == 150*0.9% = 1.35 (one fee on the combined sum, not two separate fees)", byKey.get("qrcredit")?.fee, 1.35);
-    err ??= eq("qrcredit net == 148.65", byKey.get("qrcredit")?.net, 148.65);
+    err ??= eq("qrcredit fee == 150*0.91% = 1.37 (one fee on the combined sum, not two separate fees)", byKey.get("qrcredit")?.fee, 1.37);
+    err ??= eq("qrcredit net == 148.63", byKey.get("qrcredit")?.net, 148.63);
     err ??= eq("qrcredit spans both cvars", byKey.get("qrcredit")?.memberCvars.sort(), ["c15", "c2"]);
     err ??= eq("no standalone c15 row (fully extracted)", byKey.has("c15"), false);
     err ??= eq("qr group still ties out on the c2/c14 remainder", byKey.get("qrapi")?.gross, 4505);
     return err;
+  },
+});
+
+cases.push({
+  name: "(a5b) 2026-08-20: qrcredit's feePercent/companyId/bankAccountId come from configByCvar.get('qrcredit') when a CEO override exists — not just the DEFAULT_CHANNELS/POS_EXTRACT_GROUPS fallback",
+  check: () => {
+    const channels = { c15: 190 };
+    const posBreakdown = { "blueplus+ credit(API)": 190 };
+    const overriddenCfg = cfg({
+      // base has no "qrcredit" entry to spread onto → supply the full shape here (cfg()'s merge
+      // is `{...base[k], ...patch}`; base["qrcredit"] is undefined for a brand-new key)
+      qrcredit: {
+        cvar: "qrcredit",
+        label: "QRCredit + blueplus Credit (API)",
+        isSettle: true,
+        feePercent: 2,
+        minSettleBaht: 0,
+        companyId: "co-qrcredit-special",
+        bankAccountId: "bank-qrcredit-special",
+      },
+    });
+    const { rows } = computeSendRows(channels, overriddenCfg, posBreakdown);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    let err: string | null = null;
+    err ??= eq("qrcredit fee uses the 2% override, not the 0.91% default (190*2%=3.8)", byKey.get("qrcredit")?.fee, 3.8);
+    err ??= eq("qrcredit net == 186.2", byKey.get("qrcredit")?.net, 186.2);
+    err ??= eq("qrcredit companyId uses the override, not the member cvar's", byKey.get("qrcredit")?.companyId, "co-qrcredit-special");
+    err ??= eq("qrcredit bankAccountId uses the override, not the member cvar's", byKey.get("qrcredit")?.bankAccountId, "bank-qrcredit-special");
+    return err;
+  },
+});
+
+cases.push({
+  name: "(a5c) 2026-08-20: with NO configByCvar entry for 'qrcredit' at all (org that never touched settings), feePercent falls back to DEFAULT_CHANNELS' 0.91% — never silently 0%",
+  check: () => {
+    const channels = { c15: 190 };
+    const posBreakdown = { "blueplus+ credit(API)": 190 };
+    const { rows } = computeSendRows(channels, cfg(), posBreakdown); // cfg() base has no "qrcredit" key at all
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    return eq("qrcredit fee falls back to 0.91% default (190*0.91%=1.73)", byKey.get("qrcredit")?.fee, 1.73);
   },
 });
 
@@ -652,8 +694,8 @@ cases.push({
     err ??= eq("posBreakdown passed through (not dropped)", posBreakdown, day.posBreakdown);
     err ??= eq("qr group reported as split", splitGroupKeys, ["qr"]);
     err ??= eq("qrcredit gross == 70 (blueplus+ credit(API) alone — QRCredit(API) absent today)", byKey.get("qrcredit")?.gross, 70);
-    err ??= eq("qrcredit fee == 70*0.9% = 0.63", byKey.get("qrcredit")?.fee, 0.63);
-    err ??= eq("qrcredit net == 69.37 — the CEO's expected 3rd (small) bank line", byKey.get("qrcredit")?.net, 69.37);
+    err ??= eq("qrcredit fee == 70*0.91% = 0.64", byKey.get("qrcredit")?.fee, 0.64);
+    err ??= eq("qrcredit net == 69.36 — the CEO's expected 3rd (small) bank line", byKey.get("qrcredit")?.net, 69.36);
     err ??= eq("qrapi gross == 9468 — matches the real bank deposit CEO pointed at exactly", byKey.get("qrapi")?.gross, 9468);
     err ??= eq("qrstd gross == 285 (215 QRPayment + 70 blueplus wallet) — CEO's other expected bank line", byKey.get("qrstd")?.gross, 285);
     err ??= eq("no leftover standalone c15/c14 row (fully absorbed into qrcredit/qrstd)", [byKey.has("c15"), byKey.has("c14")], [false, false]);
