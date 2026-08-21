@@ -1,6 +1,20 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-21 (LedgerLine จับคู่อัตโนมัติพลาดช่อง "QRCredit..." เพราะ concept matcher จับ "qr" ผิด — FIXED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-21 (CashHub ร้านชาไข่มุก: หน้าไส้ใน QR รายรายการ + ตั้งค่ากฎแมตช์ต่อบัญชี — DEPLOYED)
+
+## 🧋🔍🚀 CashHub ร้านชาไข่มุก — หน้าไส้ใน QR รายรายการ + ตั้งค่ากฎแมตช์ต่อบัญชี (2026-08-21 · **DEPLOYED `origin/setup d56e25f5`**)
+
+CEO สังเกตว่ายอด QR ที่ส่งไปแมตช์กับธนาคารเป็น**ยอดรวมรายวัน** แต่เงินเข้าจริงเป็น**รายทรานเซกชัน** (19/24/34 บาท ฯลฯ) — อยากเห็นไส้ในก่อนส่งแมตช์ + อยากตั้งได้ว่า QR ต้องแมตช์วันเดียวกันเท่านั้น (กันมั่วยอดใกล้เคียงกันข้ามวัน) ส่วนเงินสดยังข้ามวันได้
+
+**สิ่งที่ทำ (2 ฟีเจอร์):**
+1. **หน้าไส้ใน** — ไฟล์ Foodstory "แยกตามบิล" ที่อัปโหลดอยู่แล้วมีรายบิลจริง แต่ [`lib/cashhub/tea-parse.ts`](lib/cashhub/tea-parse.ts) เดิมอ่านแล้วทิ้งทันที เหลือแค่ยอดรวม — แก้ให้เก็บรายบิลไว้ในตารางใหม่ `cashhub_tea_pos_transaction` (migration `20260821120000`) คลิกยอดช่องทางไหนในตาราง CashHub Tea ก็ได้ → เปิดหน้าต่างไส้ใน ([`tea-transaction-detail-modal.tsx`](app/(admin)/cashhub/tea/tea-transaction-detail-modal.tsx)) เตือนสีเหลืองถ้าไฟล์เป็นรายงาน "แยกตามรายละเอียดบิล" (item-level ไม่ตรงยอดโอนจริงทีละรายการ)
+2. **ตั้งค่ากฎแมตช์ต่อบัญชี** — เดิม `dateWindowDays`/tolerance เป็นค่า built-in ตายตัวใน [`lib/ledger/reconcile-match-keywords.ts`](lib/ledger/reconcile-match-keywords.ts) ใช้ร่วมกันทุกโมดูล CashHub — เพิ่มตาราง override ใหม่ `ledger_bank_match_rule` (migration `20260821120100`, key = บัญชี+concept) อ่านโดยทั้ง 3 pass ของ auto-match (1:1/N:1/1:M) ใน [`_actions.ts`](app/(admin)/ledger/bank-recon/_actions.ts) — ไม่ตั้ง = พฤติกรรมเดิมทุกอย่าง ไม่กระทบ Amazon/โรงแรม/ปั๊ม เพราะ scope ด้วยบัญชีธนาคารจริงที่ร้านชาไข่มุกใช้เท่านั้น ตั้งค่าได้ที่ `/cashhub/tea/settings` → "⚙️ กฎการแมตช์กับธนาคาร (ขั้นสูง)"
+
+**Verify:** tsc 0 error (`--max-old-space-size=8192` กัน OOM ของ tsc ในเรโปนี้) · eslint 0 error/warning (14 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ (route ใหม่ `/api/cashhub/tea/pos-transactions` + `/api/cashhub/tea/match-rule` ขึ้นในลิสต์) · smoke test หลัง push `/` `/cashhub/tea` `/cashhub/tea/settings` `/ledger/bank-recon` → 200 ทุกตัว, API ใหม่ 2 ตัว 404 เหมือน API เดิมที่ไม่ auth (พฤติกรรมเดียวกับ route เก่า ไม่ใช่บั๊ก) · commit `d56e25f5` บน branch `claude/cashhub-tea-qr-drilldown-match-rules-2026-08-21` → push ตรงเข้า `origin/setup`
+
+📝 **ยังไม่ทดสอบกับข้อมูลจริง** — ยังไม่มีสิทธิ์เข้า production DB โดยตรงรอบนี้ รอ CEO อัปโหลดไฟล์ Foodstory ทดสอบหน้าไส้ใน + ลองตั้งกฎ QR=วันเดียวกัน (0 วัน) แล้วดูว่า auto-match ยังทำงานถูก ⚠️ ตั้งวันต้องตรงกัน (0) เข้มกว่าเดิม (2 วัน) → บางวันที่ธนาคารโอนช้ากว่า 1 วันจริง (เช่น วันหยุด) จะไม่แมตช์อัตโนมัติอีกต่อไป ต้องจับคู่มือแทน — เป็น trade-off ที่ CEO เลือกเอง ไม่ใช่บั๊ก
+
+---
 
 ## 🏦🔧✅ LedgerLine — "จับคู่อัตโนมัติ" ไม่จับช่อง "QRCredit + blueplus Credit (API)" เลย ทั้งที่ยอด+วันตรงเป๊ะ (2026-08-21)
 
