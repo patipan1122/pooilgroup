@@ -1,6 +1,20 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-19 (ChairOps กรอกยอดเก็บ 0 บาทไม่ได้ — FIXED + DEPLOYED · เคลียร์ worktree ค้าง 6 เรื่อง — 2 deploy จริง + พบ PDPA gap ค้างจริงในระบบแม่บ้าน ⏳ รอ CEO ตัดสินใจ)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-21 (LedgerLine จับคู่อัตโนมัติพลาดช่อง "QRCredit..." เพราะ concept matcher จับ "qr" ผิด — FIXED)
+
+## 🏦🔧✅ LedgerLine — "จับคู่อัตโนมัติ" ไม่จับช่อง "QRCredit + blueplus Credit (API)" เลย ทั้งที่ยอด+วันตรงเป๊ะ (2026-08-21)
+
+CEO ทดสอบหลังแก้บัญชีของช่อง QRCredit (ดู entry ด้านล่าง) แล้วเจอต่อว่ากด "จับคู่อัตโนมัติ" ไม่จับยอด 07-02/07-03 ทั้งที่เห็นทั้ง 2 ฝั่ง (บัญชี+ธนาคาร) เท่ากันเป๊ะ ฿69.36=฿69.36
+
+**Root cause:** `conceptForChannel()` ([`lib/ledger/reconcile-match-keywords.ts`](lib/ledger/reconcile-match-keywords.ts)) เช็คคำว่า `"qr"` เป็น substring — ชื่อช่องทาง `"QRCredit + blueplus Credit (API)"` มีคำว่า "qr" ปนอยู่ใน "qrcredit" เลยโดนจับเป็น concept **"QR"** ผิด (ทั้งที่ควรเป็น "บัตร/EDC") → ระบบเลยไปหาคำว่า "qr"/"promptpay"/"พร้อมเพย์" ในข้อความธนาคาร ซึ่งไม่มีเลย (ข้อความจริงเป็นสไตล์บัตร "เต็มจำนวน/ผ่อนชำระ/คะแนนสะสม... AMZ A_SD4097") → ชื่อไม่ตรง → auto-match ข้ามทุกครั้ง แม้ยอด+วันตรงเป๊ะ
+
+**FIX:** เพิ่มเช็คคำว่า `"credit"` (อังกฤษ) เข้ากลุ่มเช็ค "บัตร/EDC" ก่อนเช็ค "qr" เสมอ — กัน "QRCredit"/"blueplus credit" โดนจับผิดเป็น QR concept
+
+verify: tsc 0 error · eslint 0 error/warning (ไฟล์ที่แตะ) · เพิ่ม unit test ใหม่ 6/6 ผ่าน (`lib/ledger/__tests__/reconcile-match-keywords.*`) + test เดิมที่เกี่ยวข้องไม่กระทบ (combo-match 18/18, CashHub Amazon settlement 31/31) · `next build` ผ่านทั้งโปรเจกต์
+
+📝 หลังดีพลอย CEO ต้องกด "จับคู่อัตโนมัติ" อีกครั้งที่หน้า LedgerLine เพื่อให้จับยอดเก่าที่ค้างอยู่ (โค้ดแก้แล้วไม่ได้ทำให้จับอัตโนมัติย้อนหลังเอง)
+
+---
 
 ## 🧾🔧🚀 CashHub Amazon — แก้สูตรกลุ่มช่องทาง QR + ตัดตารางให้เห็นแต่ยอดที่ส่ง reconcile จริง + แก้สีรุ้งโดนเหลืองบัง (2026-08-19 · **DEPLOYED `origin/setup a982790c`**)
 

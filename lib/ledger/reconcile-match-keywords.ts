@@ -42,7 +42,10 @@ export function conceptForChannel(channel: string | null | undefined): MatchConc
   if (c.includes("แกร็บ") || c.includes("grab")) return MATCH_CONCEPTS.grab;
   if (c.includes("ช้อปปี้") || c.includes("shopee")) return MATCH_CONCEPTS.shopee;
   if (c.includes("ไลน์แมน") || c.includes("lineman")) return MATCH_CONCEPTS.lineman;
-  if (c.includes("edc") || c.includes("บัตร") || c.includes("เครดิต") || c.includes("card")) return MATCH_CONCEPTS.card;
+  // เช็ค "credit" ก่อน "qr" เสมอ — ป้องกันช่องทางแบบ "QRCredit..." โดนจับเป็น concept "qr" ผิด
+  // (สตริง "qr" เป็น substring ของ "qrcredit" เอง) ทั้งที่ยอดนี้ขึ้นสเตทเมนต์แบบบัตร/EDC
+  // ("ผ่อนชำระ"/"คะแนนสะสม") ไม่ใช่ QR (พบจาก store 4097 — auto-match ไม่จับเลยแม้ยอด+วันตรงเป๊ะ)
+  if (c.includes("edc") || c.includes("บัตร") || c.includes("เครดิต") || c.includes("card") || c.includes("credit")) return MATCH_CONCEPTS.card;
   if (c.includes("qr")) return MATCH_CONCEPTS.qr;
   if (c.includes("เงินสด") || c.includes("cash")) return MATCH_CONCEPTS.cash;
   return MATCH_CONCEPTS.other;
