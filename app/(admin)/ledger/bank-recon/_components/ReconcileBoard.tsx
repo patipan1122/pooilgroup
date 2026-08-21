@@ -196,6 +196,7 @@ export function ReconcileBoard({
   const [selBook, setSelBook] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [autoMatching, setAutoMatching] = useState(false); // จับคู่อัตโนมัติวิ่งทีละรายการฝั่ง server — ใช้ flag แยกจาก pending รวม เพื่อโชว์สถานะเฉพาะปุ่มนี้
   const [modal, setModal] = useState<null | "bank" | "revenue" | { kind: "transfer" | "edit"; m: BankMovement }>(null);
   const [excludeIds, setExcludeIds] = useState<string[] | null>(null);   // exclude reason modal
   const [deleteId, setDeleteId] = useState<string | null>(null);         // delete confirm modal
@@ -361,7 +362,18 @@ export function ReconcileBoard({
     }),
     clearSel,
   );
-  const handleAuto = () => run(() => autoMatchAccountAction(bankAccountId, companyId, periodStart, periodEnd).then((r) => ({ ok: r.ok, error: r.error })));
+  const handleAuto = () => {
+    setErr(null); setSuccess(null);
+    setAutoMatching(true);
+    startTransition(async () => {
+      const r = await autoMatchAccountAction(bankAccountId, companyId, periodStart, periodEnd);
+      setAutoMatching(false);
+      if (r.ok) {
+        setSuccess(r.created > 0 ? `จับคู่อัตโนมัติสำเร็จ ${r.created} รายการ` : "ไม่พบรายการที่จับคู่ได้เพิ่มเติม");
+        router.refresh();
+      } else setErr(r.error ?? "จับคู่อัตโนมัติไม่สำเร็จ");
+    });
+  };
 
   // P0: กระทบยอดทั้งหมด — ลงสมุดบัญชีจริง ย้อนไม่ได้ → ต้องยืนยัน + สรุปก่อนเสมอ.
   // idempotent: action re-query เฉพาะ status="suggested" → กดซ้ำเร็ว ๆ ไม่ลงซ้ำ (และปุ่ม disabled ตอน pending).
@@ -454,9 +466,13 @@ export function ReconcileBoard({
             className={`inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 ${FOCUS}`}>
             <RefreshCw size={12} className={pending ? "animate-spin motion-reduce:animate-none" : ""} /> ดึงรายได้ TRCloud
           </button>
-          <button type="button" onClick={handleAuto} disabled={pending}
-            className={`press inline-flex min-h-10 items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
-            <Sparkles size={12} /> จับคู่อัตโนมัติ
+          <button type="button" onClick={handleAuto} disabled={pending} aria-busy={autoMatching}
+            className={`press relative inline-flex min-h-10 items-center gap-1 overflow-hidden rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:min-h-0 ${FOCUS}`}>
+            <Sparkles size={12} className={autoMatching ? "animate-spin motion-reduce:animate-none" : ""} />
+            {autoMatching ? "กำลังจับคู่…" : "จับคู่อัตโนมัติ"}
+            {autoMatching && (
+              <span aria-hidden className="absolute inset-x-2 bottom-1 h-0.5 animate-pulse rounded-full bg-white/70 motion-reduce:animate-none" />
+            )}
           </button>
           <button type="button" aria-label="คำแนะนำการใช้งาน" aria-expanded={showHelp ? "true" : "false"} onClick={() => setShowHelp((v) => !v)}
             className={`press grid size-9 shrink-0 place-items-center rounded-lg border border-zinc-200 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 sm:size-8 ${FOCUS} ${showHelp ? "bg-zinc-50 text-zinc-600" : ""}`}>
