@@ -206,7 +206,12 @@ export function TeaView({
     const payloadBranches = pending.branches
       .map((b, i) => ({
         branchCode: picks[i],
-        rows: b.rows.map((r) => ({ date: r.date, gross: r.gross, channels: r.channels })),
+        rows: b.rows.map((r) => ({
+          date: r.date,
+          gross: r.gross,
+          channels: r.channels,
+          transactions: r.transactions,
+        })),
       }))
       .filter((b) => b.branchCode && b.rows.length > 0);
     if (payloadBranches.length === 0) {
@@ -220,7 +225,11 @@ export function TeaView({
       const res = await fetch("/api/cashhub/tea/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: pending.fileName, branches: payloadBranches }),
+        body: JSON.stringify({
+          fileName: pending.fileName,
+          branches: payloadBranches,
+          reportType: pending.reportType,
+        }),
       });
       const data = (await res.json()) as {
         ok?: boolean;

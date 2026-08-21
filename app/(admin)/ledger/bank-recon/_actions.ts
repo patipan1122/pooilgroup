@@ -34,8 +34,10 @@ import {
   conceptForChannel,
   bankNameMatches,
   amountToleranceSatang,
+  applyMatchRuleOverride,
 } from "@/lib/ledger/reconcile-match-keywords";
 import { loadAccountKeywordMap, learnFromConfirm } from "@/lib/ledger/reconcile-keyword-dict";
+import { loadAccountMatchRules } from "@/lib/ledger/reconcile-match-rule";
 import {
   findBankCombo,
   findBookCombo,
@@ -1426,6 +1428,9 @@ export async function autoMatchAccountAction(
   const book = await listBookEntriesForAuto(orgId, companyId, bankAccountId, periodStart, periodEnd);
   // สมุดจำคีย์ของบัญชีนี้ (คีย์ที่เพิ่มเอง/เรียนรู้) → ต่อท้าย keyword ในระบบ
   const kwMap = await loadAccountKeywordMap(orgId, bankAccountId);
+  // override วันต้องตรงกัน/ยอดห่างกันได้กี่บาท ต่อบัญชี (CEO ตั้งเองในหน้าตั้งค่า — เช่น QR ร้านชาไข่มุก
+  // ต้องแมตช์วันเดียวกันเท่านั้น) — ไม่ตั้ง = ใช้ default เดิมของ concept ทุกอย่าง (ดู reconcile-match-rule.ts)
+  const ruleMap = await loadAccountMatchRules(orgId, bankAccountId);
 
   // หลักการ: ป้ายชื่อ 2 ฝั่งต้องตรง (concept จาก payment_channel ↔ keyword ในชื่อธนาคาร)
   //   → ยืนยันด้วยวัน + ยอด (เผื่อค่าธรรมเนียมแกว่ง) · เงินสด = ไม่เช็คชื่อ ยอดตรง วันยืดหยุ่น
@@ -1441,7 +1446,8 @@ export async function autoMatchAccountAction(
       if (usedBook.has(`${e.bookType}:${e.bookId}`)) continue;
       // ต้องเป็นด้านเดียวกัน (เงินเข้า↔รายได้ + · เงินออก↔รายจ่าย −)
       if (amt >= 0 !== e.amountSatang >= 0) continue;
-      const concept = conceptForChannel(e.channel);
+      const baseConcept = conceptForChannel(e.channel);
+      const concept = applyMatchRuleOverride(baseConcept, ruleMap[baseConcept.key]);
       if (!bankNameMatches(concept, bk.text, kwMap[concept.key] ?? [])) continue; // ชื่อไม่ตรง = ข้าม (กันจับข้ามเจ้า)
       const amtDiff = Math.abs(amt - e.amountSatang);
       if (amtDiff > amountToleranceSatang(concept, e.amountSatang)) continue;
@@ -1469,7 +1475,8 @@ export async function autoMatchAccountAction(
   for (const e of book) {
     const bookKey = `${e.bookType}:${e.bookId}`;
     if (usedBook.has(bookKey)) continue;
-    const concept = conceptForChannel(e.channel);
+    const baseConcept = conceptForChannel(e.channel);
+    const concept = applyMatchRuleOverride(baseConcept, ruleMap[baseConcept.key]);
     const candidates: ComboBankCandidate[] = banks
       .filter((bk) => !usedBankIds.has(bk.id))
       .map((bk) => ({
@@ -1513,7 +1520,7 @@ export async function autoMatchAccountAction(
         dateMs: new Date(e.date).getTime(),
         channel: e.channel,
       }));
-    const combo = findBookCombo(Number(bk.amt), new Date(bk.d).getTime(), bk.text, bookCandidates, kwMap);
+    const combo = findBookCombo(Number(bk.amt), new Date(bk.d).getTime(), bk.text, bookCandidates, kwMap, ruleMap);
     if (!combo) continue;
     for (const c of combo) usedBook.add(`${c.bookType}:${c.bookId}`);
     usedBankIds.add(bk.id);

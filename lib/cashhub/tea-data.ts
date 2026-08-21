@@ -206,6 +206,72 @@ export async function upsertTeaPos(
   return { saved: payload.length, matched, mismatch, noIv };
 }
 
+// ── ไส้ใน QR/ช่องทางอื่นๆ ต่อวัน (จากรายงาน "แยกตามบิล" — cashhub_tea_pos_transaction) ──────
+
+/** แทนที่รายบิลของ (org, สาขา, วัน) ที่มีอยู่ในไฟล์นี้ทั้งหมด — ไฟล์ Foodstory ต้นทางไม่มีเลขที่บิล
+ *  จึงไม่มี unique key ระดับรายการ กันซ้อนด้วยการลบของเก่าเฉพาะวันที่กำลังอัปใหม่ก่อนเขียน
+ *  (เฉพาะวันที่มีรายบิลจริงในไฟล์นี้ — ไม่แตะวันอื่นที่เคยนำเข้าไว้ก่อนหน้า) */
+export async function replaceTeaPosTransactions(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+  rows: { date: string; transactions: { channel: string; amount: number }[] }[],
+  fileName: string,
+  reportType: "summary" | "detail",
+): Promise<{ error?: string }> {
+  const withTx = rows.filter((r) => r.transactions.length > 0);
+  if (withTx.length === 0) return {};
+  const dates = withTx.map((r) => r.date);
+
+  const { error: delErr } = await admin
+    .from("cashhub_tea_pos_transaction")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode)
+    .in("sales_date", dates);
+  if (delErr) return { error: delErr.message };
+
+  const payload = withTx.flatMap((r) =>
+    r.transactions
+      .filter((t) => t.amount > 0)
+      .map((t) => ({
+        org_id: orgId,
+        branch_code: branchCode,
+        sales_date: r.date,
+        channel_code: t.channel,
+        amount_baht: t.amount,
+        report_type: reportType,
+        source_file: fileName.slice(0, 200),
+      })),
+  );
+  if (payload.length === 0) return {};
+  const { error: insErr } = await admin.from("cashhub_tea_pos_transaction").insert(payload);
+  return insErr ? { error: insErr.message } : {};
+}
+
+export type TeaPosTransactionRow = { channelCode: string; amountBaht: number; reportType: string };
+
+/** โหลดรายบิลของ (สาขา, วัน) เดียว — ใช้หน้าไส้ใน */
+export async function loadTeaPosTransactions(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+  salesDate: string,
+): Promise<TeaPosTransactionRow[]> {
+  const { data } = await admin
+    .from("cashhub_tea_pos_transaction")
+    .select("channel_code, amount_baht, report_type")
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode)
+    .eq("sales_date", salesDate)
+    .order("amount_baht", { ascending: false });
+  return (data ?? []).map((r) => ({
+    channelCode: String((r as Record<string, unknown>).channel_code),
+    amountBaht: Number((r as Record<string, unknown>).amount_baht),
+    reportType: String((r as Record<string, unknown>).report_type),
+  }));
+}
+
 // ── ประวัติการอัปไฟล์ Foodstory (อ่านจาก audit_logs IMPORT_TEA_POS) ──────────
 export type TeaImportHistoryRow = {
   at: string; // ISO timestamp

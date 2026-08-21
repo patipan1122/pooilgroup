@@ -8,18 +8,29 @@ import { useRouter } from "next/navigation";
 import type { TeaChannelConfig } from "@/lib/cashhub/tea-channels";
 import type { BankAccountOpt, CompanyOpt } from "@/lib/cashhub/amazon-settlement-data";
 
+// กฎการแมตช์ต่อช่องทาง (วันต้องตรงกัน + ยอดห่างกันได้กี่บาท) — ผูกกับบัญชีธนาคารที่ช่องทางนั้นชี้ไปจริง
+export type TeaMatchRuleRow = {
+  bankAccountId: string;
+  conceptKey: string;
+  label: string;
+  defaultDateWindowDays: number;
+  defaultTolBaht: number;
+  override: { dateWindowDays: number | null; tolBaht: number | null };
+};
+
 type Props = {
   configs: TeaChannelConfig[];
   accounts: BankAccountOpt[];
   companies: CompanyOpt[];
   canEdit: boolean;
   branchCode?: string; // "" = ค่าเริ่มต้นทุกสาขา · ระบุ = override รายสาขา
+  matchRules?: Record<string, TeaMatchRuleRow>; // key = channel code — เฉพาะช่องที่มีบัญชีผูกแล้ว
 };
 
 // ป้ายบัญชี: "ธนาคาร ****เลข4ตัวท้าย · ชื่อบัญชี" — ระบุบัญชีจากธนาคาร+เลขชัดเจน (ไม่ต้องเดาจากชื่อที่ตั้งเอง)
 const accLabel = (a: BankAccountOpt) => a.label;
 
-export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branchCode = "" }: Props) {
+export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branchCode = "", matchRules = {} }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<TeaChannelConfig[]>(configs);
   const [companyId, setCompanyId] = useState<string>(
@@ -27,6 +38,20 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [showRules, setShowRules] = useState(false);
+  const [ruleEdits, setRuleEdits] = useState<Record<string, { dateWindowDays: string; tolBaht: string }>>(() =>
+    Object.fromEntries(
+      Object.entries(matchRules).map(([code, r]) => [
+        code,
+        { dateWindowDays: r.override.dateWindowDays?.toString() ?? "", tolBaht: r.override.tolBaht?.toString() ?? "" },
+      ]),
+    ),
+  );
+  const patchRule = (code: string, p: Partial<{ dateWindowDays: string; tolBaht: string }>) =>
+    setRuleEdits((rs) => {
+      const cur = rs[code] ?? { dateWindowDays: "", tolBaht: "" };
+      return { ...rs, [code]: { ...cur, ...p } };
+    });
 
   const acctById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
@@ -45,14 +70,41 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
       companyId: r.isSettle ? companyId || null : null,
       bankAccountId: r.isSettle ? r.bankAccountId : null,
     }));
+    // กฎการแมตช์ — เฉพาะช่องที่ยังมีบัญชีผูกอยู่จริง (ใน rows ปัจจุบัน กันกรณีเพิ่งเปลี่ยน/ถอดบัญชีในตารางด้านบน)
+    const ruleRows = Object.entries(ruleEdits)
+      .map(([code, v]) => {
+        const mr = matchRules[code];
+        const bankAccountId = payload.find((r) => r.code === code)?.bankAccountId;
+        if (!mr || !bankAccountId) return null;
+        const dw = v.dateWindowDays.trim() === "" ? null : Number(v.dateWindowDays);
+        const tol = v.tolBaht.trim() === "" ? null : Number(v.tolBaht);
+        return {
+          bankAccountId,
+          conceptKey: mr.conceptKey,
+          dateWindowDays: dw != null && Number.isFinite(dw) ? dw : null,
+          tolBaht: tol != null && Number.isFinite(tol) ? tol : null,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r != null);
     try {
-      const res = await fetch("/api/cashhub/tea/channel-config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs: payload, branchCode }),
-      });
+      const [res, ruleRes] = await Promise.all([
+        fetch("/api/cashhub/tea/channel-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ configs: payload, branchCode }),
+        }),
+        ruleRows.length > 0
+          ? fetch("/api/cashhub/tea/match-rule", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ rules: ruleRows }),
+            })
+          : Promise.resolve(null),
+      ]);
       const data = (await res.json()) as { ok?: boolean; error?: string };
+      const ruleData = ruleRes ? ((await ruleRes.json()) as { ok?: boolean; error?: string }) : null;
       if (!res.ok || data.error) setMsg({ kind: "err", text: data.error ?? "บันทึกไม่สำเร็จ" });
+      else if (ruleRes && (!ruleRes.ok || ruleData?.error)) setMsg({ kind: "err", text: `บันทึกช่องทางสำเร็จ แต่กฎการแมตช์ไม่สำเร็จ: ${ruleData?.error ?? ""}` });
       else {
         setMsg({ kind: "ok", text: "บันทึกแล้ว" });
         router.refresh();
@@ -62,7 +114,7 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
     } finally {
       setBusy(false);
     }
-  }, [rows, companyId, branchCode, router]);
+  }, [rows, companyId, branchCode, router, ruleEdits, matchRules]);
 
   return (
     <div className="space-y-4">
@@ -211,6 +263,68 @@ export function TeaSettingsEditor({ configs, accounts, companies, canEdit, branc
           </tbody>
         </table>
       </div>
+
+      {Object.keys(matchRules).length > 0 && (
+        <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowRules((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-zinc-700"
+          >
+            <span>⚙️ กฎการแมตช์กับธนาคาร (ขั้นสูง)</span>
+            <span className="text-xs text-zinc-400">{showRules ? "ซ่อน ▲" : "ตั้งค่า ▼"}</span>
+          </button>
+          {showRules && (
+            <div className="px-4 pb-4 space-y-3">
+              <p className="text-xs text-zinc-400">
+                ว่างไว้ = ใช้ค่าเริ่มต้นของระบบ · &quot;วันต้องตรงกัน&quot; ใส่ 0 = ต้องเป็นวันเดียวกันเป๊ะ (กันมั่วยอดใกล้เคียงกันข้ามวัน) ·
+                มีผลเฉพาะบัญชีที่ช่องทางนี้ผูกอยู่
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {Object.entries(matchRules).map(([code, mr]) => {
+                  const row = rows.find((r) => r.code === code);
+                  if (!row) return null;
+                  const edit = ruleEdits[code] ?? { dateWindowDays: "", tolBaht: "" };
+                  return (
+                    <div key={code} className="rounded-xl border border-zinc-100 p-2.5">
+                      <div className="text-xs font-semibold text-zinc-600 mb-1.5">{row.label}</div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-zinc-400 w-24 shrink-0">วันต้องตรงกัน</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="60"
+                          step="1"
+                          placeholder={`ค่าเริ่มต้น ${mr.defaultDateWindowDays}`}
+                          value={edit.dateWindowDays}
+                          disabled={!canEdit}
+                          onChange={(e) => patchRule(code, { dateWindowDays: e.target.value })}
+                          aria-label={`${row.label} วันต้องตรงกัน`}
+                          className="h-8 w-full rounded-lg border border-zinc-200 px-2 text-right text-xs disabled:opacity-50"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <label className="text-[11px] text-zinc-400 w-24 shrink-0">ห่างกันได้ (฿)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={`ค่าเริ่มต้น ${mr.defaultTolBaht}`}
+                          value={edit.tolBaht}
+                          disabled={!canEdit}
+                          onChange={(e) => patchRule(code, { tolBaht: e.target.value })}
+                          aria-label={`${row.label} ยอดห่างกันได้`}
+                          className="h-8 w-full rounded-lg border border-zinc-200 px-2 text-right text-xs disabled:opacity-50"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {msg && (
         <div

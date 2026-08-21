@@ -31,7 +31,9 @@ import {
   bankNameMatches,
   amountToleranceSatang,
   conceptForChannel,
+  applyMatchRuleOverride,
   type MatchConcept,
+  type MatchRuleOverride,
 } from "./reconcile-match-keywords";
 
 export interface ComboBankCandidate {
@@ -126,6 +128,7 @@ export function findBookCombo(
   bankTextLower: string,
   bookCandidates: ComboBookCandidate[],
   keywordMap: Record<string, string[]> = {},
+  ruleMap: Record<string, MatchRuleOverride> = {},
 ): { bookType: ComboBookType; bookId: string }[] | null {
   const byConcept = new Map<string, ComboBookCandidate[]>();
   for (const c of bookCandidates) {
@@ -137,7 +140,8 @@ export function findBookCombo(
 
   let found: { bookType: ComboBookType; bookId: string }[] | null = null;
   for (const [, group] of byConcept) {
-    const concept = conceptForChannel(group[0].channel); // ทุกตัวในกลุ่มนี้ map concept เดียวกัน
+    const base = conceptForChannel(group[0].channel); // ทุกตัวในกลุ่มนี้ map concept เดียวกัน
+    const concept = applyMatchRuleOverride(base, ruleMap[base.key]);
     const extraKeywords = keywordMap[concept.key] ?? [];
     // เช็คชื่อฝั่งธนาคารครั้งเดียวต่อกลุ่ม (ทุก candidate ในกลุ่มใช้ text เดียวกัน — เป้าหมายเดียวกัน)
     if (!bankNameMatches(concept, bankTextLower, extraKeywords)) continue;

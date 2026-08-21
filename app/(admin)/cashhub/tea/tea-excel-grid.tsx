@@ -9,6 +9,7 @@ import type { SavedTeaDay } from "@/lib/cashhub/tea-data";
 import { TEA_CHANNELS, type TeaChannelCode } from "@/lib/cashhub/tea-channels";
 import type { TeaReconcileCell } from "@/lib/cashhub/tea-settlement-data";
 import { reconDiffKind } from "@/lib/cashhub/recon-diff";
+import { TeaTransactionDetailModal, type TeaTransactionDetailTarget } from "./tea-transaction-detail-modal";
 
 // สถานะแมชธนาคารของ "ช่องทาง 1 วัน" → คลาสสี + ป้ายกำกับ (tooltip)
 function channelMatchStyle(st: TeaReconcileCell | undefined): { cls: string; title?: string } {
@@ -40,6 +41,7 @@ export function TeaExcelGrid({ branchLabel, branchCode, days, byDate, canSend, r
   const [busy, setBusy] = useState<string | null>(null); // date กำลังทำงาน
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [showDiffs, setShowDiffs] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<TeaTransactionDetailTarget | null>(null);
 
   // วันที่/ช่องทางที่ "แมชธนาคารแล้วแต่ยอดไม่ตรง" (POS-net ≠ statement) — โชว์ในแถบเปิด/ปิด
   const diffs = useMemo(() => {
@@ -160,10 +162,29 @@ export function TeaExcelGrid({ branchLabel, branchCode, days, byDate, canSend, r
                     return (
                       <td
                         key={c.code}
-                        title={title}
+                        title={v ? `${title ?? ""} · คลิกดูไส้ใน`.trim() : title}
                         className={`px-2.5 py-1.5 text-right tabular-nums border-b border-zinc-100 ${v ? cls : "text-zinc-500"}`}
                       >
-                        {v ? cell(v) : <span className="text-zinc-300">·</span>}
+                        {v ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDetailTarget({
+                                branchCode,
+                                branchLabel,
+                                date,
+                                channelCode: c.code,
+                                channelLabel: c.label,
+                                posTotal: v,
+                              })
+                            }
+                            className="underline decoration-dotted decoration-zinc-300 hover:decoration-zinc-500"
+                          >
+                            {cell(v)}
+                          </button>
+                        ) : (
+                          <span className="text-zinc-300">·</span>
+                        )}
                       </td>
                     );
                   })}
@@ -265,6 +286,13 @@ export function TeaExcelGrid({ branchLabel, branchCode, days, byDate, canSend, r
           {canSend && " · วันที่ยังไม่มี IV กด “ส่ง IV” เพื่อสร้างเข้า TRCloud (กันใบซ้ำ) · สีในช่องทางจะอัปเดตหลังกด “ส่งเข้าระบบบัญชี” ที่แผงด้านบน"}
         </div>
       </div>
+      {detailTarget && (
+        <TeaTransactionDetailModal
+          key={`${detailTarget.branchCode}:${detailTarget.date}:${detailTarget.channelCode}`}
+          target={detailTarget}
+          onClose={() => setDetailTarget(null)}
+        />
+      )}
     </div>
   );
 }

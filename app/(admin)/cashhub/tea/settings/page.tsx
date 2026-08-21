@@ -13,7 +13,9 @@ import {
 } from "@/lib/cashhub/tea-data";
 import { computeTeaSettlement } from "@/lib/cashhub/tea-channels";
 import { listBankAccounts, listCompanies } from "@/lib/cashhub/amazon-settlement-data";
-import { TeaSettingsEditor } from "./tea-settings-editor";
+import { conceptForChannel } from "@/lib/ledger/reconcile-match-keywords";
+import { listMatchRulesForAccount } from "@/lib/ledger/reconcile-match-rule";
+import { TeaSettingsEditor, type TeaMatchRuleRow } from "./tea-settings-editor";
 import { SendPreview, type SendPreviewDay } from "@/components/cashhub/send-preview";
 import { SendPreviewControls } from "@/components/cashhub/send-preview-controls";
 import { SettingsBranchPicker } from "@/components/cashhub/settings-branch-picker";
@@ -40,6 +42,21 @@ export default async function TeaSettingsPage({
     listTeaBranches(admin, orgId),
     teaBranchHasOwnConfig(admin, orgId, branchCode),
   ]);
+
+  // กฎการแมตช์ (วันต้องตรงกัน + ยอดห่างกันได้กี่บาท) ต่อช่องทาง — โหลดต่อบัญชีที่ช่องทางนั้นผูกอยู่จริง
+  // (หลายช่องอาจแชร์บัญชีเดียวกัน → โหลดครั้งเดียวต่อบัญชี ไม่ query ซ้ำ)
+  const settlingAccountIds = [...new Set(configs.filter((c) => c.isSettle && c.bankAccountId).map((c) => c.bankAccountId as string))];
+  const rulesByAccount = new Map(
+    await Promise.all(settlingAccountIds.map(async (id) => [id, await listMatchRulesForAccount(orgId, id)] as const)),
+  );
+  const matchRules: Record<string, TeaMatchRuleRow> = {};
+  for (const c of configs) {
+    if (!c.isSettle || !c.bankAccountId) continue;
+    const rules = rulesByAccount.get(c.bankAccountId);
+    const concept = conceptForChannel(c.label);
+    const r = rules?.find((x) => x.conceptKey === concept.key);
+    if (r) matchRules[c.code] = { bankAccountId: c.bankAccountId, ...r };
+  }
 
   // พรีวิว: รันสูตรเดียวกับตัวส่งจริง (computeTeaSettlement) — ใช้สาขาที่กำลังตั้งค่า + ระบุวันที่
   const reqDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.previewDate ?? "") ? sp.previewDate! : "";
@@ -84,7 +101,7 @@ export default async function TeaSettingsPage({
         </p>
       </header>
       <SettingsBranchPicker branches={branches} activeBranch={branchCode} hasOwnConfig={hasOwn} />
-      <TeaSettingsEditor key={branchCode || "default"} configs={configs} accounts={accounts} companies={companies} canEdit branchCode={branchCode} />
+      <TeaSettingsEditor key={branchCode || "default"} configs={configs} accounts={accounts} companies={companies} canEdit branchCode={branchCode} matchRules={matchRules} />
       <div className="mt-8">
         <SendPreviewControls stores={[]} activeStore="" activeDate={reqDate} />
         <SendPreview days={previewDays} caption={previewCaption} showFee />

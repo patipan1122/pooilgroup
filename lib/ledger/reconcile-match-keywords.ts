@@ -67,3 +67,23 @@ export function bankNameMatches(
 export function amountToleranceSatang(concept: MatchConcept, bookAmountSatang: number): number {
   return Math.max(concept.tolAbsSatang, Math.round(Math.abs(bookAmountSatang) * concept.tolPct));
 }
+
+// override ต่อบัญชี (ledger_bank_match_rule) — CEO ตั้งเองทับ default ของ concept นี้ (2026-08-21)
+export interface MatchRuleOverride {
+  dateWindowDays: number | null; // null = ใช้ default เดิม
+  tolBaht: number | null;        // null = ใช้ default เดิม · ตั้งแล้ว = แทนที่ tolAbsSatang+tolPct ทั้งคู่ (ยอดตรงๆ กันสับสน)
+}
+
+/** ทับค่า default ของ concept ด้วย override ต่อบัญชี (ถ้ามี) — ไม่มี override = คืน concept เดิมเป๊ะ */
+export function applyMatchRuleOverride(
+  concept: MatchConcept,
+  override: MatchRuleOverride | undefined,
+): MatchConcept {
+  if (!override || (override.dateWindowDays == null && override.tolBaht == null)) return concept;
+  return {
+    ...concept,
+    dateWindowDays: override.dateWindowDays ?? concept.dateWindowDays,
+    tolAbsSatang: override.tolBaht != null ? Math.round(override.tolBaht * 100) : concept.tolAbsSatang,
+    tolPct: override.tolBaht != null ? 0 : concept.tolPct,
+  };
+}

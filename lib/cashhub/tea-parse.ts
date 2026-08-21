@@ -70,6 +70,8 @@ export type TeaPosRow = {
   gross: number; // ยอดขาย (รวม VAT)
   bills: number; // จำนวนบิล
   channels: Partial<Record<TeaChannelCode, number>>; // ยอดแยกช่องทาง (บาท)
+  // รายบิล (เฉพาะรายงาน "แยกตามบิล" — ไว้ทำหน้าไส้ใน) — undefined = ไม่มี (มาจากรายงาน EOD)
+  transactions?: { channel: TeaChannelCode; amount: number }[];
 };
 
 export type TeaPosBranch = {
@@ -281,12 +283,13 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
     }
     let d = b.byDate.get(date);
     if (!d) {
-      d = { date, gross: 0, bills: 0, channels: {} };
+      d = { date, gross: 0, bills: 0, channels: {}, transactions: [] };
       b.byDate.set(date, d);
     }
     d.gross = round2(d.gross + net);
     d.bills += 1;
     d.channels[code] = round2((d.channels[code] ?? 0) + net);
+    d.transactions!.push({ channel: code, amount: net });
   }
 
   const branches: TeaPosBranch[] = [...bag.values()].map((b) => ({

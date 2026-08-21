@@ -8,7 +8,7 @@ import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { teaBranchByCode, type TeaBranchCfg } from "@/lib/cashhub/tea-trcloud";
-import { upsertTeaPos } from "@/lib/cashhub/tea-data";
+import { upsertTeaPos, replaceTeaPosTransactions } from "@/lib/cashhub/tea-data";
 import { TEA_CHANNELS, type TeaChannelCode } from "@/lib/cashhub/tea-channels";
 
 export const runtime = "nodejs";
@@ -16,15 +16,22 @@ export const maxDuration = 30;
 
 const CHANNEL_CODES = new Set(TEA_CHANNELS.map((c) => c.code));
 
-type InRow = { date?: string; gross?: number; channels?: Record<string, unknown> };
+type InTxn = { channel?: string; amount?: number };
+type InRow = { date?: string; gross?: number; channels?: Record<string, unknown>; transactions?: InTxn[] };
 type Body = {
   fileName?: string;
   branches?: { branchCode?: string; rows?: InRow[] }[];
+  reportType?: string;
 };
 
-type CleanRow = { date: string; gross: number; channels: Partial<Record<TeaChannelCode, number>> };
+type CleanRow = {
+  date: string;
+  gross: number;
+  channels: Partial<Record<TeaChannelCode, number>>;
+  transactions: { channel: string; amount: number }[];
+};
 
-/** เก็บเฉพาะวันถูกต้อง + ยอด ≥0 + ช่องทางที่รู้จัก (coerce เลข ≥0) */
+/** เก็บเฉพาะวันถูกต้อง + ยอด ≥0 + ช่องทางที่รู้จัก (coerce เลข ≥0) — รวมรายบิล (ไส้ใน) ถ้ามี */
 function sanitizeRows(rows: InRow[] | undefined): CleanRow[] {
   return (rows ?? [])
     .map((r) => {
@@ -34,7 +41,10 @@ function sanitizeRows(rows: InRow[] | undefined): CleanRow[] {
         const n = Number(v);
         if (Number.isFinite(n) && n >= 0) channels[k as TeaChannelCode] = Math.round(n * 100) / 100;
       }
-      return { date: String(r?.date ?? ""), gross: Number(r?.gross), channels };
+      const transactions = (r?.transactions ?? [])
+        .filter((t) => CHANNEL_CODES.has(t?.channel as TeaChannelCode) && Number.isFinite(Number(t?.amount)) && Number(t?.amount) > 0)
+        .map((t) => ({ channel: String(t.channel), amount: Math.round(Number(t.amount) * 100) / 100 }));
+      return { date: String(r?.date ?? ""), gross: Number(r?.gross), channels, transactions };
     })
     .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && Number.isFinite(r.gross) && r.gross >= 0);
 }
@@ -45,11 +55,12 @@ function mergeByDate(a: CleanRow[], b: CleanRow[]): CleanRow[] {
   for (const r of [...a, ...b]) {
     const cur = m.get(r.date);
     if (!cur) {
-      m.set(r.date, { date: r.date, gross: r.gross, channels: { ...r.channels } });
+      m.set(r.date, { date: r.date, gross: r.gross, channels: { ...r.channels }, transactions: [...r.transactions] });
     } else {
       cur.gross = Math.round((cur.gross + r.gross) * 100) / 100;
       for (const [k, v] of Object.entries(r.channels) as [TeaChannelCode, number][])
         cur.channels[k] = Math.round(((cur.channels[k] ?? 0) + v) * 100) / 100;
+      cur.transactions.push(...r.transactions);
     }
   }
   return [...m.values()].sort((x, y) => x.date.localeCompare(y.date));
@@ -100,12 +111,21 @@ export async function POST(req: NextRequest) {
     if (rows.length > 200)
       return NextResponse.json({ error: `${cfg.label}: ข้อมูลเกิน 200 วัน` }, { status: 400 });
 
+  // ไส้ใน (รายบิล) เก็บเฉพาะรายงาน "แยกตามบิล" (summary/detail) — EOD ไม่มีรายบิลให้เก็บ
+  const reportType = body.reportType === "detail" ? "detail" : "summary";
+  const hasBillDetail = body.reportType === "summary" || body.reportType === "detail";
+
   // ── 2) เขียน DB ทีละสาขา (ผ่าน validate หมดแล้ว → ไม่ค้างกลางทาง) ──
   const results: { branchCode: string; label: string; saved: number; matched: number; mismatch: number; noIv: number }[] = [];
   for (const { cfg, rows } of byBranch.values()) {
     const res = await upsertTeaPos(admin, orgId, cfg, rows, fileName);
     if (res.error)
       return NextResponse.json({ error: `${cfg.label}: ${res.error}` }, { status: 500 });
+    if (hasBillDetail) {
+      // best-effort — ไส้ใน (มุมมองเสริม) พลาดไม่ block การนำเข้ายอดรวมหลัก
+      const txRes = await replaceTeaPosTransactions(admin, orgId, cfg.code, rows, fileName, reportType);
+      if (txRes.error) console.error(`[cashhub/tea/import] ไส้ใน ${cfg.code}: ${txRes.error}`);
+    }
     results.push({
       branchCode: cfg.code,
       label: cfg.label,
