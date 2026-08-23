@@ -11,7 +11,7 @@
 
 **Verify:** tsc 0 error (รอบนี้ค้างเกือบ 40 นาทีเพราะเครื่องมี session อื่นรัน tsc ชนกันเยอะ ไม่ใช่บั๊ก) · eslint 0 error · `next build` ผ่าน · smoke test `/` `/cashhub/tea` `/cashhub/tea/settings` `/ledger/bank-recon` `/clawfleet` → 200 ทุกตัว · commit `d56e25f5`→`5ce2085e` (migration fix, ไม่มี code commit เพิ่มเพราะเป็นแค่ apply DB) → `90ab56d0` (ช่วงวันที่)
 
-⚠️ **พบระหว่างทำ: main checkout ตัวนี้ใช้ร่วมกันหลาย session พร้อมกันจริง** — ตอน push รอบ `90ab56d0` เจอไฟล์ ClawFleet (`staff-app-client.tsx`/`branches-client.tsx`/`MismatchGate.tsx`/`lib/clawfleet/*`) ค้างแก้ไม่ commit อยู่จาก session อื่น + worktree `.claude/worktrees/chairops-checklist-popup-fix` ของ session อื่นด้วย — **ไม่ได้แตะ/commit ของเขาเลย** ใช้ `git stash push -u` เฉพาะไฟล์ที่ไม่ใช่ของตัวเอง (ระบุ path ชัดเจน) คั่นไว้ชั่วคราวระหว่าง rebase+push แล้ว pop คืนทันที — ดู [[feedback-shared-main-checkout-collision-2026-08-23]]
+⚠️ **พบระหว่างทำ: main checkout ตัวนี้ใช้ร่วมกันหลาย session พร้อมกันจริง** — ตอน push รอบ `90ab56d0` เจอไฟล์ ClawFleet (`staff-app-client.tsx`/`branches-client.tsx`/`MismatchGate.tsx`/`lib/clawfleet/*`) ค้างแก้ไม่ commit อยู่จาก session อื่น + worktree `.claude/worktrees/chairops-checklist-popup-fix` ของ session อื่นด้วย — **ไม่ได้แตะ/commit ของเขาเลย** ใช้ `git stash push -u` เฉพาะไฟล์ที่ไม่ใช่ของตัวเอง (ระบุ path ชัดเจน) คั่นไว้ชั่วคราวระหว่าง rebase+push แล้ว pop คืนทันที — ดู [[feedback-pooilgroup-concurrent-sessions-stash-before-push-2026-08-23]] (มี update #2 เรื่องนี้โดยเฉพาะ)
 
 ---
 
