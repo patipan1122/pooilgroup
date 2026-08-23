@@ -1,8 +1,34 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ClawFleet ผูกบัญชีธนาคาร + ยืนยันยอดทุกเครื่อง + ส่งเข้า reconcile — โค้ดพร้อม+migration apply แล้ว รอ CEO อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: แก้บั๊กหลายสาขา + ปุ่มปิดสาขา/ลาออก กดจากตารางได้เลย — โค้ดพร้อม รอ CEO อนุมัติ deploy)
 
-## 🦞🏦✅ ClawFleet — ผูกบัญชีธนาคารต่อสาขา + ยืนยันยอดทุกเครื่อง (ไม่ใช่แค่ธงแดง) + ส่งเข้า LedgerLine reconcile (2026-08-23 · โค้ดพร้อม · migration APPLIED · รอ CEO อนุมัติ deploy)
+## 🪑🔧✅ ChairOps แม่บ้าน — แก้บั๊กหลายสาขา + เพิ่มปุ่ม "ปิดสาขา"/"ลาออก" กดจากตารางได้เลย (2026-08-23 · โค้ดพร้อม รอ deploy)
+
+ต่อจาก [[chairops-maid-table-conversion-2026-08-23]] (ตารางแม่บ้าน deployed `ddae6163`) — CEO เปิดหน้าจริงแล้วเจอ 2 เรื่อง
+
+**1. บั๊กที่เจอเอง (แก้ไม่ต้องถาม):** แม่บ้านที่ดูแลหลายสาขา ("เสาวลักษณ์" ที่ centralโคราช) ตารางเดิมโชว์แค่สาขาหลัก ทำให้สาขาที่ดูแลจริงแบบสาขาเสริม ("centralโคราช(รอส)") ขึ้น "ไม่มีแม่บ้าน — ต้องหาคน" ผิดๆ ทั้งที่มีคนดูแลอยู่ — แก้ให้โชว์ครบทุกสาขาที่คุมจริง (assignments ∪ primary) เหมือน pattern การ์ดเดิมก่อนเปลี่ยนเป็นตาราง
+
+**2. Feature ใหม่ — "สาขาปิดแล้ว/แม่บ้านลาออก" สั่งจากตารางได้เลย:**
+- CEO อยากให้สาขาที่ปิดจริงไม่ขึ้น "ต้องหาคน" ปนกับสาขาที่ยังเปิด — คุยกันแล้วสรุป: กดปิดกระทบทั้งระบบ (หายจาก dashboard/ตรวจยอด/reconcile อื่นด้วย เพราะ CEO ยืนยันว่าต้องการแบบนั้น) แต่ในตารางแม่บ้านนี้ไม่หาย แค่ตกไปอยู่ล่างสุด สีเทาจาง
+- ใช้ field ที่มีอยู่แล้วในฐานข้อมูลแต่ไม่เคยมีใครใช้จริง (`ChairopsBranch.isActive`/`closedAt`) — ไม่ต้อง migration ใหม่
+- เพิ่ม server action `closeBranch`/`reopenBranch` ([`chairops/branches/actions.ts`](app/(admin)/chairops/branches/actions.ts)) — ADMIN+ เท่านั้น มี **settle-gate กันปิดสาขาที่ยังมีเงินเก็บค้างไม่ได้ฝาก** (ลอกจากจุดที่ระบบมีอยู่แล้วตอนปิดบัญชีแม่บ้าน F6) + audit log
+- ปุ่ม "ลาออก" — CEO ขอเพิ่มรอบสอง ("อยากให้มันกดจากหน้านี้ได้ด้วยจะได้ง่ายๆ") — เดิมมีปุ่มนี้อยู่แล้วที่หน้า `/chairops/users/[id]` (มี safety gate: เลือกเหตุผล + พิมพ์ชื่อยืนยัน) ไม่ได้สร้างใหม่ แค่ทำ popup เดียวกันเป๊ะให้เปิดจากตารางแม่บ้านได้เลย ([`maid-status-buttons.tsx`](app/(admin)/chairops/(office)/maids/_components/maid-status-buttons.tsx)) เรียก action เดิม (`deactivateUser`/`reactivateUser`) ไม่มี logic ใหม่
+- แม่บ้านที่ลาออกแล้วก็ไม่หายจากตาราง ตกไปอยู่ล่างสุดเหมือนสาขาปิด เขียนว่า "ลาออกแล้ว" กันงงว่าทำไมสาขานั้นจู่ๆ ไม่มีคนดูแล
+
+**Architecture Check:**
+- Domain expert: Database/permission lens (มี mutation จริงรอบนี้ ต่างจากรอบก่อนที่เป็น read-only ล้วน)
+- สิทธิ์: ปิดสาขา/ลาออก จำกัดแค่ ADMIN+ เหมือนปุ่มอื่นในหน้านี้
+- Race condition: ต่ำมาก — action กดไม่บ่อย ถ้าพลาดกดซ้อนพร้อมกันจริง แค่ audit log ซ้ำ 2 บรรทัด ไม่กระทบข้อมูลเงิน
+- Data consistency: ✅ settle-gate กันปิดสาขาที่มีเงินค้างฝาก
+- วิธีที่ใช้ดีที่สุดแล้วหรือยัง: ✅ ไม่เพิ่ม field ใหม่ (ใช้ isActive/closedAt เดิม) + ไม่สร้าง action ซ้ำ (reuse deactivateUser/reactivateUser เดิม 100%)
+
+**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (8 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ (รวม client/server boundary ของ dialog ใหม่)
+
+📝 ยังไม่ commit/push — รอ CEO ดูโค้ด + ตัดสินใจ deploy
+
+---
+
+## 🦞🏦✅ ClawFleet — ผูกบัญชีธนาคารต่อสาขา + ยืนยันยอดทุกเครื่อง (ไม่ใช่แค่ธงแดง) + ส่งเข้า LedgerLine reconcile (2026-08-23 · 🚀 DEPLOYED `origin/setup 9fa9045b`)
 
 CEO เห็นหน้า "รายงานเจาะสาขา" (matrix) แล้วถามว่าช่องสุดท้าย (ยอดพนักงานกรอกเอง) + สลิปฝากเงิน ตอนนี้ flow เป็นยังไง เข้าบัญชีไหน — และอยากให้เพิ่มขั้นยืนยันยอดหลังเก็บเงินเสร็จ เพื่อเตรียมส่งเข้าระบบบัญชี reconcile ต่อสาขาได้ (ดู [[clawfleet-reconcile-prep-decisions-2026-08-23]])
 
@@ -30,7 +56,8 @@ CEO เห็นหน้า "รายงานเจาะสาขา" (matri
 **Verify:** `prisma generate` ผ่าน · tsc 0 error ทั้งโปรเจกต์ (`--max-old-space-size=8192` กัน OOM) · eslint 0 error/warning (5 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ (route `/clawfleet/os/branches` คอมไพล์ปกติ) · `check-prisma-table-map` ผ่าน (288 models) · **migration APPLY แล้วจริงกับ prod DB** ผ่าน `prisma db execute` (คำสั่งเดียวกับที่เรโปนี้ใช้จริงมาตลอด — `prisma migrate deploy` ใช้ไม่ได้เพราะ DB นี้ไม่เคย baseline migration history ไว้ P3005) · ยืนยันด้วย read-only query ตรง (`SELECT count(*) FROM cf_branch_reconcile_configs` ไม่ error) ว่าตารางมีจริงในเครื่อง prod แล้ว
 📝 read-only diagnostic ยืนยันข้อมูลรอบ ๆ ด้วย: สาขาตู้คีบ 27 สาขา · บัญชีธนาคาร active 24 บัญชี (dropdown จะมีตัวเลือกจริง) · `ledger_revenue_entry` มีข้อมูล CASHHUB_* อยู่แล้ว 940 แถว (integration point ใช้งานจริง ไม่ใช่ของใหม่ที่ไม่เคยพิสูจน์)
 
-⚠️ **ยังไม่ deploy** — โค้ด + migration พร้อมแล้ว แต่ยังไม่ได้ commit/push (ตาม convention เดิมของเรโปนี้ที่ deploy ต้องรอ CEO อนุมัติแยกจากการอนุมัติ build) — รอ CEO ตอบ ถ้า OK จะ commit+push เข้า `origin/setup` แล้วยืนยัน deploy จริงด้วย `vercel inspect`
+**Deploy:** CEO สั่ง "deploy" → rebase ขึ้น `origin/setup` สด (มีอีก 2 commit จากงาน ChairOps คู่ขนานแทรกเข้ามาระหว่างทำ — merge conflict เฉพาะ STATUS.md ที่ตำแหน่งเดียวกัน แก้แล้วเก็บเนื้อหาทั้งสองฝั่งครบ ไม่มีโค้ดชนกัน) → tsc/eslint/build รันซ้ำสดก่อน push ผ่านหมด → stamp `.claude-verified` → push ตรงเข้า `origin/setup` (`9fa9045b`) → ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง (`dpl_9QJLosx2...`, build เสร็จ 2 นาที) → smoke test `/` `/login` `/clawfleet/os/branches` `/clawfleet/os/matrix` → 307/200/307/307 (307=redirect login ปกติ) เหมือนก่อน push ทุกตัว ไม่มี regression
+⚠️ งานอื่นที่ทำค้างอยู่คู่ขนานในเครื่องเดียวกัน (ChairOps แม่บ้าน ปิดสาขา/ลาออก) ถูก stash ไว้ชั่วคราวระหว่าง push แล้ว pop กลับให้ครบเหมือนเดิม 100% — ไม่ได้แตะ/ไม่ได้ commit ให้ (ไม่ใช่งานของ session นี้)
 
 ---
 
