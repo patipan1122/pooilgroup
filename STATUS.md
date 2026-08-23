@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: แก้บั๊กหลายสาขา + ปุ่มปิดสาขา/ลาออก กดจากตารางได้เลย — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: แก้บั๊กหลายสาขา + ปุ่มปิดสาขา/ลาออก กดจากตารางได้เลย — DEPLOYED)
 
-## 🪑🔧✅ ChairOps แม่บ้าน — แก้บั๊กหลายสาขา + เพิ่มปุ่ม "ปิดสาขา"/"ลาออก" กดจากตารางได้เลย (2026-08-23 · โค้ดพร้อม รอ deploy)
+## 🪑🔧✅ ChairOps แม่บ้าน — แก้บั๊กหลายสาขา + เพิ่มปุ่ม "ปิดสาขา"/"ลาออก" กดจากตารางได้เลย (2026-08-23 · **DEPLOYED `fec0bac8`**)
 
 ต่อจาก [[chairops-maid-table-conversion-2026-08-23]] (ตารางแม่บ้าน deployed `ddae6163`) — CEO เปิดหน้าจริงแล้วเจอ 2 เรื่อง
 
@@ -24,9 +24,7 @@
 
 **⚠️ หมายเหตุ session นี้:** ระหว่างเขียนพบว่ามี Claude session อื่นอีกหลายตัวทำงานใน repo เดียวกัน (checkout เดียวกัน) พร้อมกัน ทำให้โค้ดที่ยังไม่ commit ของรอบนี้หายไปรอบนึงตอนอีก session รัน git rebase — ย้ายมาเขียนใหม่ใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-close`) แทนตามคำแนะนำเดิมที่มีอยู่แล้วในเรโปนี้ (pattern `/private/tmp/pg-wt-<name>`) กันชนกันอีก
 
-**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (7 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ (รวม client/server boundary ของ dialog ใหม่) — รันในเครื่อง isolated worktree แยกจาก checkout หลัก
-
-📝 ยังไม่ commit/push — รอ CEO ดูโค้ด + ตัดสินใจ deploy
+**Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (7 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ (รวม client/server boundary ของ dialog ใหม่) — รันในเครื่อง isolated worktree แยกจาก checkout หลัก · `/verify` gate ผ่าน stamp `.claude-verified` (แยกคำสั่ง stamp+push ตาม [[feedback-verify-gate-stamp-flaky-first-attempt-2026-08-18]]) · commit `fec0bac8` push ตรงเข้า `origin/setup` (fast-forward จาก `ffb264b7`) · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/login` → 307/200/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
 
 ---
 
