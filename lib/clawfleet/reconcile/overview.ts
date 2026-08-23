@@ -1,14 +1,20 @@
 // ClawFleet reconcile — branch-led overview (CEO 2026-08-23: "เอาสาขานำหน้า").
-// 1 query set (not per-branch N+1) → ตาราง "สาขา × มีพนักงานไหม × ผูกบัญชีไหม ×
-// เก็บเงินล่าสุดกี่วันก่อน" ให้กดผูกบัญชีได้จากแถวเลย แทนที่จะเปิด dropdown เลือกสาขาก่อน.
+// 1 query set (not per-branch N+1) → ตาราง "สาขา × มีพนักงานไหม (ชื่อจริง) ×
+// ผูกบัญชีไหม × เก็บเงินล่าสุดกี่วันก่อน" ให้กดผูกบัญชี/ดูพนักงาน/เพิ่มพนักงาน
+// ได้จากแถวเลย แทนที่จะเปิด dropdown เลือกสาขาก่อน หรือสลับไปหน้าพนักงานแยก.
+// staff list ใช้ getTeamData() ตัวเดียวกับหน้า /clawfleet/os/staff (single source
+// of truth — ไม่ derive คำจำกัดความ "มีพนักงาน" ขึ้นมาเอง).
 
 import { prisma } from "@/lib/prisma";
+import { getTeamData } from "../admin-queries";
+
+export type BranchReconcileStaffRow = { id: string; name: string; role: string };
 
 export type BranchReconcileOverviewRow = {
   branchId: string;
   branchName: string;
   branchCode: string;
-  staffCount: number;
+  staff: BranchReconcileStaffRow[];
   companyId: string | null;
   bankAccountId: string | null;
   lastCollectedAt: Date | null;
@@ -27,20 +33,12 @@ function daysAgoLabel(d: Date | null): string {
 export async function getClawfleetReconcileOverview(
   orgId: string,
 ): Promise<BranchReconcileOverviewRow[]> {
-  const branches = await prisma.branch.findMany({
-    where: { orgId, businessType: "claw_machine", isActive: true },
-    select: { id: true, name: true, code: true },
-    orderBy: { code: "asc" },
-  });
+  const team = await getTeamData();
+  const branches = team.branches;
   const branchIds = branches.map((b) => b.id);
   if (branchIds.length === 0) return [];
 
-  const [staffCounts, configs, lastCollected] = await Promise.all([
-    prisma.userBranch.groupBy({
-      by: ["branchId"],
-      where: { branchId: { in: branchIds }, isActive: true },
-      _count: { _all: true },
-    }),
+  const [configs, lastCollected] = await Promise.all([
     prisma.cfBranchReconcileConfig.findMany({
       where: { orgId, branchId: { in: branchIds } },
       select: { branchId: true, companyId: true, bankAccountId: true },
@@ -52,7 +50,6 @@ export async function getClawfleetReconcileOverview(
     }),
   ]);
 
-  const staffByBranch = new Map(staffCounts.map((s) => [s.branchId, s._count._all]));
   const configByBranch = new Map(configs.map((c) => [c.branchId, c]));
   const lastByBranch = new Map(
     lastCollected
@@ -67,7 +64,9 @@ export async function getClawfleetReconcileOverview(
       branchId: b.id,
       branchName: b.name,
       branchCode: b.code,
-      staffCount: staffByBranch.get(b.id) ?? 0,
+      staff: b.staff
+        .filter((m) => m.status !== "disabled")
+        .map((m) => ({ id: m.id, name: m.name, role: m.role })),
       companyId: cfg?.companyId ?? null,
       bankAccountId: cfg?.bankAccountId ?? null,
       lastCollectedAt: lastAt,
