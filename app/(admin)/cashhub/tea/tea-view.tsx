@@ -41,6 +41,17 @@ const fmtDateTime = (iso: string) => {
     minute: "2-digit",
   });
 };
+const fmtDateOnly = (ymd: string) => {
+  const d = new Date(`${ymd}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  return d.toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "2-digit" });
+};
+/** ช่วงวันที่ + จำนวนวันที่ต่างกัน ของยอดขายทั้งไฟล์ (ทุกสาขารวมกัน) — ไว้บอก CEO ว่าไฟล์นี้ครอบคลุมช่วงไหน */
+const dateRangeOf = (branches: TeaPosBranch[]): { from: string; to: string; days: number } | null => {
+  const dates = branches.flatMap((b) => b.rows.map((r) => r.date)).filter(Boolean).sort();
+  if (dates.length === 0) return null;
+  return { from: dates[0], to: dates[dates.length - 1], days: new Set(dates).size };
+};
 
 export function TeaView({
   month,
@@ -242,9 +253,11 @@ export function TeaView({
       } else {
         const t = data.totals;
         const skipTxt = skippedCount > 0 ? ` · ข้าม ${skippedCount} สาขา (ยังไม่เลือก)` : "";
+        const range = dateRangeOf(pending.branches);
+        const rangeTxt = range ? `ยอดขายวันที่ ${fmtDateOnly(range.from)} – ${fmtDateOnly(range.to)} · ` : "";
         setMsg({
           kind: "ok",
-          text: `นำเข้า ${data.results?.length ?? 0} สาขา · รวม ${t?.saved ?? 0} วัน · ✅ ตรง ${t?.matched ?? 0} · ⚠️ ไม่ตรง ${t?.mismatch ?? 0} · ⚪ ไม่มี IV ${t?.noIv ?? 0}${skipTxt}`,
+          text: `${rangeTxt}นำเข้า ${data.results?.length ?? 0} สาขา · รวม ${t?.saved ?? 0} วัน · ✅ ตรง ${t?.matched ?? 0} · ⚠️ ไม่ตรง ${t?.mismatch ?? 0} · ⚪ ไม่มี IV ${t?.noIv ?? 0}${skipTxt}`,
         });
         setPending(null);
         setPicks([]);
@@ -292,7 +305,8 @@ export function TeaView({
     });
     // จับไฟล์ซ้ำจากชื่อไฟล์ในประวัติการอัป (เตือนเฉย ๆ — ระบบเขียนทับต่อวันอยู่แล้ว ไม่บวกซ้ำ)
     const dup = importHistory.find((h) => h.file && h.file === pending.fileName) ?? null;
-    return { totalNew, totalOverwrite, dup };
+    const range = dateRangeOf(pending.branches);
+    return { totalNew, totalOverwrite, dup, range };
   }, [pending, picks, dayMap, importHistory]);
 
   return (
@@ -394,6 +408,15 @@ export function TeaView({
             <div className="text-sm text-zinc-500">
               ไฟล์: <span className="font-medium text-zinc-700">{pending.fileName}</span>
             </div>
+            {importPreview?.range && (
+              <div className="text-sm text-zinc-500">
+                ข้อมูลยอดขาย:{" "}
+                <span className="font-semibold text-zinc-800">
+                  {fmtDateOnly(importPreview.range.from)} – {fmtDateOnly(importPreview.range.to)}
+                </span>{" "}
+                <span className="text-zinc-400">({importPreview.range.days} วัน)</span>
+              </div>
+            )}
 
             {/* เตือนไฟล์ซ้ำ — ชื่อไฟล์นี้เคยอัปแล้ว */}
             {importPreview?.dup && (
