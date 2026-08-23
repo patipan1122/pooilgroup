@@ -1,6 +1,18 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (แก้ `next dev` พังทั้งเรโป — route ชนกัน `/chairops/collect/[id]` vs `[branchId]` — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: คอลัมน์เก็บเงินล่าสุดโชว์ "กี่วันที่แล้ว" แทนวันที่เพียวๆ)
+
+## 🪑📅✅ ChairOps แม่บ้าน — คอลัมน์ "เก็บเงินล่าสุด" โชว์ "กี่วันที่แล้ว" (2026-08-23)
+
+ต่อจาก [[chairops-maid-table-conversion-2026-08-23]] — CEO ดูตารางจริงแล้ว ปุ่ม "ปิดสาขา"/"ลาออก" (round 2) ใช้งานได้แล้ว ขอเพิ่มอีกจุดเดียว: คอลัมน์ "เก็บเงินล่าสุด" เดิมโชว์วันที่+เวลาเพียวๆ (เช่น "21 ส.ค. 16:46") อ่านแล้วต้องนับเองว่าห่างกี่วัน — เปลี่ยนให้ขึ้น **"กี่วันที่แล้ว"** เป็นหลัก (วันนี้ / เมื่อวาน / N วันที่แล้ว) แล้วโชว์วันที่จริงตัวเล็กจางๆ ต่อท้ายไว้อ้างอิง ไม่ได้ตัดข้อมูลเดิมออก แค่เปลี่ยนลำดับความสำคัญของสิ่งที่เห็นก่อน
+
+**ไฟล์ที่แตะ:** [`branch-roster-view.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-roster-view.tsx) — เพิ่ม `daysAgoLabel()` เทียบวันปฏิทินไทย (Asia/Bangkok) ไม่ใช่ 24 ชม.ตรงๆ (กันเคสเก็บเงิน 23:50 เมื่อวาน โชว์ผิดเป็น "วันนี้")
+
+**Verify:** tsc 0 error · eslint 0 error · `next build` ผ่าน — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-daysago`)
+
+📝 ยังไม่ commit/push — รอ CEO อนุมัติ deploy
+
+---
 
 ## 🛠️✅ แก้ `next dev` พังตั้งแต่ boot — route ชนกัน `/chairops/collect/[id]` vs `/chairops/collect/[branchId]` (2026-08-23 · **DEPLOYED**)
 
