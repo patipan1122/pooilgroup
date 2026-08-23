@@ -3,10 +3,17 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse, Landmark } from "lucide-react";
 import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import { reassignCfMachineBranch, setBranchStockSource } from "@/lib/clawfleet/actions";
+import {
+  getClawfleetReconcileStatus,
+  setClawfleetReconcileAccount,
+  sendClawfleetDepositsToReconcile,
+  type ReconcileStatus,
+} from "@/lib/clawfleet/reconcile/actions";
+import type { CompanyOpt, BankAccountOpt } from "@/lib/cashhub/amazon-settlement-data";
 
 /** สถานะตู้จริงจาก server (cfMachine): ดี / ต้องเติม / เสีย */
 export type ServerDotStatus = "good" | "warn" | "broken";
@@ -84,6 +91,8 @@ export function BranchesClient({
   machineOptions = [],
   branchOptions = [],
   stockSourceByBranch = {},
+  companies = [],
+  bankAccounts = [],
   fromISO = "",
   toISO = "",
 }: {
@@ -94,6 +103,9 @@ export function BranchesClient({
   branchOptions?: BranchOption[];
   // คลังหลักข้ามสาขา — map branchId → คลังต้นทาง (null = ใช้คลังตัวเอง)
   stockSourceByBranch?: Record<string, string | null>;
+  // ผูกบัญชีธนาคาร + ส่งเข้า reconcile (CEO 2026-08-23) — ตัวเลือกบริษัท/บัญชีธนาคาร (แอดมินเท่านั้น)
+  companies?: CompanyOpt[];
+  bankAccounts?: BankAccountOpt[];
   // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — สถิติ P&L ต่อสาขาอิงช่วงนี้ · เติมค่า <input type=date> + คง state ใน link
   fromISO?: string;
   toISO?: string;
@@ -374,6 +386,9 @@ export function BranchesClient({
 
       {/* ── คลังหลักข้ามสาขา: ตั้งให้สาขาใช้คลังของสาขาอื่น (แอดมินเท่านั้น) ── */}
       {isAdmin && <WarehouseSourceCard branchOptions={branchOptions} stockSourceByBranch={stockSourceByBranch} />}
+
+      {/* ── ผูกบัญชีธนาคาร + ส่งเข้า reconcile (CEO 2026-08-23 · แอดมินเท่านั้น) ── */}
+      {isAdmin && <ReconcileAccountCard branchOptions={branchOptions} companies={companies} bankAccounts={bankAccounts} />}
 
       {/* ── legend: ความหมายของช่องสถานะตู้ ── */}
       <div
@@ -731,6 +746,217 @@ function WarehouseSourceCard({
           <div style={{ fontSize: 11.5, color: "#B45309", background: "#FCF6EC", border: "1px solid #F0E2BE", borderRadius: 9, padding: "9px 12px" }}>
             เวลาเติมตู้สาขานี้ ระบบจะดึงของจากคลังต้นทาง (โอนเข้ามาเป็นของสาขานี้ก่อนแล้วเข้าตู้) · คืนตุ๊กตากลับก็จะโอนคืนคลังต้นทางให้อัตโนมัติ · สต๊อก/ต้นทุนตรงตามจริง
           </div>
+
+          {error && (
+            <div style={{ background: "#FCEDEC", border: "1px solid #F5C6C2", borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: "#B42318" }}>{error}</div>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * ผูกบัญชีธนาคาร + ส่งเข้า reconcile (admin only · server = assertCfAdmin)
+ *  CEO 2026-08-23 — 1 บัญชีตายตัวต่อสาขา. เลือกสาขา → ตั้งบริษัท/บัญชีธนาคาร →
+ *  กดส่งยอดฝาก (CfCashDeposit ที่ผ่านตรวจแล้ว) เข้า ledger_revenue_entry (LedgerLine
+ *  bank-recon). กดส่งซ้ำได้ตลอด — ระบบข้ามรายการที่ส่งแล้วให้อัตโนมัติ (idempotent ·
+ *  ดู lib/clawfleet/reconcile/ledger-push.ts).
+ * ───────────────────────────────────────────────────────────────────────── */
+function ReconcileAccountCard({
+  branchOptions,
+  companies,
+  bankAccounts,
+}: {
+  branchOptions: BranchOption[];
+  companies: CompanyOpt[];
+  bankAccounts: BankAccountOpt[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [branchId, setBranchId] = useState("");
+  const [status, setStatus] = useState<ReconcileStatus["summary"] | null>(null);
+  const [companyId, setCompanyId] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const canUse = branchOptions.length > 0 && companies.length > 0 && bankAccounts.length > 0;
+
+  function openModal() {
+    setBranchId(""); setStatus(null); setCompanyId(""); setBankAccountId("");
+    setError(null); setOkMsg(null);
+    setOpen(true);
+  }
+
+  function pickBranch(id: string) {
+    setBranchId(id);
+    setStatus(null);
+    setError(null);
+    if (!id) return;
+    setLoadingStatus(true);
+    startTransition(async () => {
+      const res = await getClawfleetReconcileStatus(id);
+      setLoadingStatus(false);
+      if (!res.ok) { setError(res.error); return; }
+      setStatus(res.data.summary);
+      setCompanyId(res.data.companyId ?? "");
+      setBankAccountId(res.data.bankAccountId ?? "");
+    });
+  }
+
+  function saveConfig() {
+    setError(null);
+    if (!branchId) { setError("เลือกสาขาก่อน"); return; }
+    if (!companyId || !bankAccountId) { setError("เลือกบริษัทและบัญชีธนาคารให้ครบ"); return; }
+    startTransition(async () => {
+      const res = await setClawfleetReconcileAccount({ branchId, companyId, bankAccountId });
+      if (!res.ok) { setError(res.error); return; }
+      setOkMsg("บันทึกบัญชีธนาคารของสาขานี้แล้ว");
+      pickBranch(branchId); // โหลดสรุปใหม่ (configured=true แล้ว)
+      router.refresh();
+    });
+  }
+
+  function sendToReconcile() {
+    setError(null);
+    if (!branchId) return;
+    startTransition(async () => {
+      const res = await sendClawfleetDepositsToReconcile({ branchId });
+      if (!res.ok) { setError(res.error); return; }
+      setOkMsg(
+        `ส่งเข้าบัญชี reconcile แล้ว ${res.data.inserted} ใบ` +
+        (res.data.pendingReviewSkipped > 0 ? ` · ข้าม ${res.data.pendingReviewSkipped} ใบ (รอตรวจสอบก่อน)` : "")
+      );
+      pickBranch(branchId); // โหลดสรุปใหม่ (readyCount ควรลดลง/เท่าเดิมถ้ากดซ้ำ)
+      router.refresh();
+    });
+  }
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <Card
+        title="ผูกบัญชีธนาคาร + ส่งเข้า reconcile"
+        sub="สำหรับแอดมิน — ตั้งบัญชีธนาคารที่ยอดฝากของสาขาเข้าจริง แล้วส่งยอดฝากเข้าคิว LedgerLine bank-recon"
+        right={
+          <button
+            type="button"
+            onClick={openModal}
+            disabled={!canUse}
+            className="co-tap"
+            style={{
+              border: "none", cursor: canUse ? "pointer" : "not-allowed",
+              background: canUse ? "#4F46E5" : "#C7C4EE", color: "#fff",
+              fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 10,
+              display: "inline-flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+            }}
+          >
+            <Landmark size={15} /> ผูกบัญชี
+          </button>
+        }
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "#6B7280" }}>
+          <IconBox tone="neutral" size={38} radius={10} bg="#F1F2F7" color="#9AA1AB"><Landmark size={17} /></IconBox>
+          <div style={{ flex: 1 }}>
+            {canUse
+              ? <>กด “ผูกบัญชี” เพื่อเลือกสาขา ตั้งบัญชีธนาคาร แล้วส่งยอดฝากเข้า reconcile</>
+              : "ต้องมีสาขาตู้คีบ + บริษัท + บัญชีธนาคารในระบบก่อน ถึงจะตั้งค่าได้"}
+          </div>
+        </div>
+        {okMsg && (
+          <div style={{ marginTop: 12, background: "#E7F4EC", border: "1px solid #BBE3C9", borderRadius: 10, padding: "10px 13px", fontSize: 12.5, color: "#15803D" }}>
+            {okMsg}
+          </div>
+        )}
+      </Card>
+
+      <Modal
+        open={open}
+        onClose={() => { if (!pending) setOpen(false); }}
+        width={520}
+        title="ผูกบัญชีธนาคาร + ส่งเข้า reconcile"
+        sub="1 บัญชีตายตัวต่อสาขา — ยอดฝากที่ผ่านตรวจแล้วจะพร้อมส่งเข้า LedgerLine bank-recon"
+        footer={
+          <div style={{ display: "flex", gap: 10, padding: "14px 20px" }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={pending}
+              style={{ flex: 1, border: "1px solid #E3E6EA", background: "#fff", cursor: pending ? "not-allowed" : "pointer", color: "#6B7280", fontSize: 13.5, fontWeight: 600, padding: "11px 0", borderRadius: 10 }}
+            >
+              ปิด
+            </button>
+          </div>
+        }
+      >
+        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={R_LABEL}>สาขา</label>
+            <select aria-label="เลือกสาขา" value={branchId} onChange={(e) => pickBranch(e.target.value)} style={R_FIELD}>
+              <option value="">— เลือกสาขา —</option>
+              {branchOptions.map((b) => (
+                <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+              ))}
+            </select>
+          </div>
+
+          {loadingStatus && <div style={{ fontSize: 12.5, color: "#9AA1AB" }}>กำลังโหลดสถานะ…</div>}
+
+          {branchId && !loadingStatus && status && (
+            <>
+              <div>
+                <label style={R_LABEL}>บริษัทที่เงินเข้า</label>
+                <select aria-label="เลือกบริษัท" value={companyId} onChange={(e) => setCompanyId(e.target.value)} style={R_FIELD}>
+                  <option value="" disabled>เลือกบริษัท…</option>
+                  {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                </select>
+              </div>
+              <div>
+                <label style={R_LABEL}>บัญชีธนาคารที่เงินเข้า</label>
+                <select aria-label="เลือกบัญชีธนาคาร" value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} style={R_FIELD}>
+                  <option value="" disabled>เลือกบัญชี…</option>
+                  {bankAccounts.map((a) => (<option key={a.id} value={a.id}>{a.label}</option>))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={saveConfig}
+                disabled={pending}
+                style={{ border: "none", cursor: pending ? "wait" : "pointer", background: pending ? "#A5A0EC" : "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 700, padding: "10px 0", borderRadius: 10 }}
+              >
+                บันทึกการตั้งค่า
+              </button>
+
+              <div style={{ paddingTop: 12, borderTop: "1px dashed #E3E6EA" }}>
+                {status.configured ? (
+                  <>
+                    <p style={{ fontSize: 12.5, color: "#5A6270", marginBottom: 10 }}>
+                      พร้อมส่ง <b className="num">{num(status.readyCount)}</b> ใบ · ยอดรวม{" "}
+                      <b className="num">{bahtN(status.readyAmountBaht)}</b>
+                      {status.pendingReviewCount > 0 && (
+                        <> · <span style={{ color: "#B45309" }}>{status.pendingReviewCount} ใบรอตรวจสอบ (ยังไม่ส่ง)</span></>
+                      )}
+                      {status.rejectedCount > 0 && (
+                        <> · <span style={{ color: "#B42318" }}>{status.rejectedCount} ใบถูกปฏิเสธ (ไม่ส่ง)</span></>
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={sendToReconcile}
+                      disabled={pending || status.readyCount === 0}
+                      style={{ width: "100%", border: "none", cursor: pending || status.readyCount === 0 ? "not-allowed" : "pointer", background: status.readyCount === 0 ? "#C7C4EE" : "#15803D", color: "#fff", fontSize: 13, fontWeight: 700, padding: "10px 0", borderRadius: 10 }}
+                    >
+                      ส่งเข้าบัญชี reconcile
+                    </button>
+                  </>
+                ) : (
+                  <p style={{ fontSize: 12.5, color: "#B42318" }}>ยังไม่ได้ตั้งค่าบริษัท/บัญชีธนาคาร — ตั้งค่าด้านบนก่อนถึงจะส่งได้</p>
+                )}
+              </div>
+            </>
+          )}
 
           {error && (
             <div style={{ background: "#FCEDEC", border: "1px solid #F5C6C2", borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: "#B42318" }}>{error}</div>

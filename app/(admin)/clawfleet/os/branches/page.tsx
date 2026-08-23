@@ -9,6 +9,8 @@ import { getCfMachinesForBranchAdmin } from "@/lib/clawfleet/stock-queries";
 import { getV2Branches } from "@/lib/clawfleet/queries";
 import { getStockSourceMap } from "@/lib/clawfleet/stock-source";
 import { requireCfSession, cfHasAdminPower } from "@/lib/clawfleet/role-guard";
+import { adminClient } from "@/lib/db/server";
+import { listCompanies, listBankAccounts, type CompanyOpt, type BankAccountOpt } from "@/lib/cashhub/amazon-settlement-data";
 import { BranchesClient, type BranchRow, type MachineOption, type BranchOption } from "./branches-client";
 
 export const dynamic = "force-dynamic";
@@ -58,21 +60,28 @@ export default async function BranchesPage({
   let machineOptions: MachineOption[] = [];
   let branchOptions: BranchOption[] = [];
   let stockSourceByBranch: Record<string, string | null> = {};
+  let companies: CompanyOpt[] = [];
+  let bankAccounts: BankAccountOpt[] = [];
   try {
     const session = await requireCfSession();
     isAdmin = await cfHasAdminPower(session);
-    // โหลดตู้ + สาขา เฉพาะแอดมิน (คนอื่นไม่เห็นปุ่มย้าย → ไม่ต้องโหลด)
+    // โหลดตู้ + สาขา + บริษัท/บัญชีธนาคาร เฉพาะแอดมิน (คนอื่นไม่เห็นการ์ดตั้งค่า → ไม่ต้องโหลด)
     if (isAdmin) {
-      const [ms, bs, srcMap] = await Promise.all([
+      const admin = adminClient();
+      const [ms, bs, srcMap, cos, banks] = await Promise.all([
         getCfMachinesForBranchAdmin(),
         getV2Branches(),
         getStockSourceMap(session.user.org_id),
+        listCompanies(admin, session.user.org_id),
+        listBankAccounts(admin, session.user.org_id),
       ]);
       machineOptions = ms.map((m) => ({
         id: m.id, code: m.code, nickname: m.nickname, branchId: m.branchId, branchName: m.branchName, isActive: m.isActive,
       }));
       branchOptions = bs.map((b) => ({ id: b.id, name: b.name, code: b.code }));
       stockSourceByBranch = srcMap;
+      companies = cos;
+      bankAccounts = banks;
     }
   } catch {
     // graceful: ยังไม่ login / DB ว่าง → ซ่อนปุ่มย้าย (isAdmin=false)
@@ -109,6 +118,8 @@ export default async function BranchesPage({
       machineOptions={machineOptions}
       branchOptions={branchOptions}
       stockSourceByBranch={stockSourceByBranch}
+      companies={companies}
+      bankAccounts={bankAccounts}
       fromISO={fromISO}
       toISO={toISO}
     />

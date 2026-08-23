@@ -111,8 +111,9 @@ function EventCard({
             <Pencil size={12} /> แก้
           </button>
         )}
-        {/* CEO 2026-08-06 · ตรวจ/ยืนยันรายตู้ — ทุกช่องที่ระบบเตือน (เงิน/ตุ๊กตา/มิเตอร์/outlier) แดง→ฟ้า · กดซ้ำ = ยกเลิก */}
-        {canEdit && hasFlag && (
+        {/* CEO 2026-08-23 · ตรวจ/ยืนยันรายตู้ — ทุกช่อง ไม่จำกัดแค่ที่ระบบเตือน (เดิม hasFlag-only)
+            เพื่อให้แอดมินยืนยันยอด "ทุกเครื่อง" ก่อนส่งเข้า reconcile ได้ · กดซ้ำ = ยกเลิก */}
+        {canEdit && (
           <button
             onClick={toggleReview}
             disabled={reviewBusy}

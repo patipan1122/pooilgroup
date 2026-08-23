@@ -2859,6 +2859,29 @@ model CfCashDeposit {
 }
 
 // =============================================================
+// CF.9 — cf_branch_reconcile_configs (CEO 2026-08-23)
+// บัญชีธนาคาร/บริษัทที่ยอดฝากของสาขาเข้าจริง — 1 แถวตายตัวต่อสาขา · ใช้ตอนกด
+// "ส่งเข้าบัญชี reconcile" → เขียนลง ledger_revenue_entry (source_type='CLAWFLEET',
+// เปิดสิทธิ์ไว้แล้วตั้งแต่ migration แรกของ ledger — ดู lib/clawfleet/reconcile/ledger-push.ts).
+// แยกเป็นตารางของตัวเอง (ไม่เพิ่มคอลัมน์ใน Branch) เพราะ Branch ใช้ร่วมกับอีก 8 โปรแกรม
+// (cashhub/chairops/clawhub/docuflow/ledger/playland/repairs) — เหมือน CfCashDeposit
+// ไม่ประกาศ relation object ไปยัง Branch/Organization (plain org_id/branch_id column พอ).
+// =============================================================
+model CfBranchReconcileConfig {
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  branchId      String   @unique @map("branch_id") @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  bankAccountId String   @map("bank_account_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId])
+  @@map("cf_branch_reconcile_configs")
+  @@schema("public")
+}
+
+// =============================================================
 // ChairOps — massage-chair management for 30 branches
 // Lives in `chairops` schema (multi-schema · separate from public)
 // Source: /Users/patipantantikul/Code/chairops/prisma/schema.prisma

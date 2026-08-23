@@ -1,6 +1,38 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps เช็คลิสต์: เพิ่มโหมด "ตัวเลข" ควรได้/เก็บได้/ฝาก — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ClawFleet ผูกบัญชีธนาคาร + ยืนยันยอดทุกเครื่อง + ส่งเข้า reconcile — โค้ดพร้อม+migration apply แล้ว รอ CEO อนุมัติ deploy)
+
+## 🦞🏦✅ ClawFleet — ผูกบัญชีธนาคารต่อสาขา + ยืนยันยอดทุกเครื่อง (ไม่ใช่แค่ธงแดง) + ส่งเข้า LedgerLine reconcile (2026-08-23 · โค้ดพร้อม · migration APPLIED · รอ CEO อนุมัติ deploy)
+
+CEO เห็นหน้า "รายงานเจาะสาขา" (matrix) แล้วถามว่าช่องสุดท้าย (ยอดพนักงานกรอกเอง) + สลิปฝากเงิน ตอนนี้ flow เป็นยังไง เข้าบัญชีไหน — และอยากให้เพิ่มขั้นยืนยันยอดหลังเก็บเงินเสร็จ เพื่อเตรียมส่งเข้าระบบบัญชี reconcile ต่อสาขาได้ (ดู [[clawfleet-reconcile-prep-decisions-2026-08-23]])
+
+**สิ่งที่เจอตอนสำรวจ (สำคัญ — แก้ความเข้าใจผิด 1 จุด):**
+- ⚠️ สลิปฝากเงิน **ไม่มี AI อ่านจริง** เหมือนที่ CEO เข้าใจ — เป็นคนกรอกยอดเอง + แนบรูปให้คนอื่นดูตาเปล่า (AI อ่านสลิปที่มีอยู่จริงเป็นของ Ledger คนละส่วน ยังเป็น stub ไม่เปิดใช้ — ไม่เกี่ยว ClawFleet) → CEO ตัดสินใจเลื่อนเรื่อง AI OCR ไปก่อน ทำผูกบัญชี+reconcile ให้เสร็จก่อน
+- "แก้ไขยอดทุกเครื่อง" ที่ CEO อยากได้ **มีอยู่แล้ว** — `adminEditCollectionEvent()` แก้ยอดเครื่องไหนก็ได้ ไม่ใช่แค่ธงแดง (ผ่าน UI ดินสอแก้ไขในหน้า matrix อยู่แล้ว) → ไม่ต้องสร้างใหม่ เหลือแค่ "ปุ่มยืนยัน" ที่โชว์เฉพาะธงแดง
+
+**CEO ตัดสิน 3 เรื่อง:** (1) บัญชีธนาคาร 1 บัญชีตายตัวต่อสาขา (2) ขยายปุ่มยืนยันยอดให้ทุกเครื่อง (3) เลื่อน AI OCR สลิปไปก่อน
+
+**สิ่งที่ทำ:**
+1. **ปุ่มยืนยันยอด — ทุกเครื่อง** — [`cell-detail-modal.tsx`](app/(admin)/clawfleet/os/matrix/cell-detail-modal.tsx) เอาเงื่อนไข `hasFlag` ออกจากปุ่ม "ยืนยันตรวจ" (เดิมโชว์เฉพาะเครื่องที่ระบบตั้งธง) — server action `reviewCellEvent()` เดิมรองรับทุกเครื่องอยู่แล้ว (มี SoD กันยืนยันใบตัวเองเก็บ + audit log) ไม่ต้องแก้ฝั่ง server
+2. **ตารางใหม่ `cf_branch_reconcile_configs`** (migration `20260823120000`) — 1 แถวต่อสาขา (companyId + bankAccountId) แยกจาก `Branch` เพราะ `Branch` เป็นตารางที่ใช้ร่วมกับอีก 8 โปรแกรม (cashhub/chairops/clawhub/docuflow/ledger/playland/repairs) — เพิ่มคอลัมน์ตรงนั้นเสี่ยงกระทบโปรแกรมอื่น mirror `ChairopsBranch.reconcileCompanyId/reconcileBankAccountId` แต่แยกตาราง
+3. **หน้าผูกบัญชี + ส่งเข้า reconcile** — การ์ดใหม่ "ผูกบัญชีธนาคาร + ส่งเข้า reconcile" ใน [`branches-client.tsx`](app/(admin)/clawfleet/os/branches/branches-client.tsx) (เลือกสาขา → ตั้งบริษัท/บัญชีธนาคาร → ดูสรุปยอดพร้อมส่ง → กดส่ง) เหมือน pattern การ์ด "คลังหลักข้ามสาขา" ที่มีอยู่แล้วในหน้าเดียวกัน — ไม่สร้างหน้าใหม่ (คุมงบพื้นที่ตาม Rule L)
+4. **`lib/clawfleet/reconcile/ledger-push.ts` + `actions.ts`** — mirror 1:1 ของ `lib/chairops/reconcile/ledger-push.ts` ที่ deploy ใช้งานจริงแล้ว: ส่ง `CfCashDeposit.amountCents` (ยอดฝากจริงจากสลิป ไม่ใช่ยอดเก็บจริง — เพราะนี่คือเงินที่เข้าบัญชีธนาคารจริงตาม statement) เข้า `ledger_revenue_entry` (`source_type='CLAWFLEET'` เปิดสิทธิ์ไว้แล้วตั้งแต่ migration แรกของ ledger) ผ่าน `INSERT...ON CONFLICT WHERE match_state='unmatched'` — กดส่งซ้ำได้ไม่จำกัด ไม่มีวันซ้ำ/ทับรายการที่จับคู่แล้ว ข้ามใบที่ยัง `PENDING`/`REJECTED` (maker-checker เดิม) อัตโนมัติ
+
+**Architecture Check:**
+- Domain expert: Database architect (schema เดิม) + accountant lens (เลือกยอดฝากจริงไม่ใช่ยอดเก็บจริงเป็นยอดที่ส่งเข้า reconcile — ต้องตรงกับ statement ธนาคาร)
+- Race condition: กดส่งซ้ำ/พร้อมกัน 2 คน → ปลอดภัย (`INSERT...ON CONFLICT` กันซ้ำระดับ DB เดียวกับที่ ChairOps ใช้จริงมา 8 วันไม่มีปัญหา)
+- Idempotency: ✅ ปลอดภัย — `source_ref = clawfleet-deposit-<id>` เดียวกันทุกครั้ง กดกี่ครั้งก็ได้
+- Data consistency: ไม่ใช้ transaction ครอบทั้งลูป (mirror ChairOps) — แต่ละใบ insert อะตอมมิกแยกกัน ถ้าพังกลางทางใบที่ส่งแล้วยังอยู่ ใบที่เหลือกดส่งซ้ำได้ปลอดภัย
+- Scale: ไม่มีปัญหา — query ต่อสาขา ไม่ query ข้ามสาขา/ข้าม org
+- วิธีที่ใช้ดีที่สุดแล้วหรือยัง: ✅ ใช้ pattern เดียวกับ ChairOps ที่พิสูจน์แล้วว่าทำงานจริง แทนที่จะคิดกลไกใหม่
+- ผู้เชี่ยวชาญพบ: `cf_cash_deposits` **ยังไม่มีข้อมูลเลยทั้งระบบ (0 แถว)** ตอนนี้ — การ์ดใหม่จะโชว์ "พร้อมส่ง 0 ใบ" ทุกสาขาจนกว่าพนักงานจะเริ่มใช้ฟีเจอร์ "ฝากเงิน" (deposits) บันทึกจริง ไม่ใช่บั๊ก
+
+**Verify:** `prisma generate` ผ่าน · tsc 0 error ทั้งโปรเจกต์ (`--max-old-space-size=8192` กัน OOM) · eslint 0 error/warning (5 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ (route `/clawfleet/os/branches` คอมไพล์ปกติ) · `check-prisma-table-map` ผ่าน (288 models) · **migration APPLY แล้วจริงกับ prod DB** ผ่าน `prisma db execute` (คำสั่งเดียวกับที่เรโปนี้ใช้จริงมาตลอด — `prisma migrate deploy` ใช้ไม่ได้เพราะ DB นี้ไม่เคย baseline migration history ไว้ P3005) · ยืนยันด้วย read-only query ตรง (`SELECT count(*) FROM cf_branch_reconcile_configs` ไม่ error) ว่าตารางมีจริงในเครื่อง prod แล้ว
+📝 read-only diagnostic ยืนยันข้อมูลรอบ ๆ ด้วย: สาขาตู้คีบ 27 สาขา · บัญชีธนาคาร active 24 บัญชี (dropdown จะมีตัวเลือกจริง) · `ledger_revenue_entry` มีข้อมูล CASHHUB_* อยู่แล้ว 940 แถว (integration point ใช้งานจริง ไม่ใช่ของใหม่ที่ไม่เคยพิสูจน์)
+
+⚠️ **ยังไม่ deploy** — โค้ด + migration พร้อมแล้ว แต่ยังไม่ได้ commit/push (ตาม convention เดิมของเรโปนี้ที่ deploy ต้องรอ CEO อนุมัติแยกจากการอนุมัติ build) — รอ CEO ตอบ ถ้า OK จะ commit+push เข้า `origin/setup` แล้วยืนยัน deploy จริงด้วย `vercel inspect`
+
+---
 
 ## 🪑🔢✅ ChairOps ตรวจยอด — เช็คลิสต์เพิ่มโหมด "ตัวเลข" (ควรได้/เก็บได้/ฝาก) คู่โหมดจุดเดิม (2026-08-23 · 🚀 DEPLOYED `origin/setup 0b264c14`)
 
@@ -17,6 +49,9 @@ CEO อนุมัติหลัง research+plan round: เช็คลิส
 - **Deploy:** worktree ใหม่ `pooilgroup-web-numbers-view` แยกจาก `origin/setup` สด (ไม่มีคน push แซงระหว่างทำ) → push ตรงเข้า `setup` สำเร็จรอบที่ 3 (2 รอบแรกโดน auto-mode classifier บล็อกชั่วคราว "Stage 2 classifier error" — retry แล้วผ่าน ไม่ได้ข้ามด่านใดๆ)
 - **ยังไม่ได้ทำ / ข้อจำกัดที่ควรรู้:** ป้าย "ขาดสะสม" เป็นยอดสะสม **ทั้งหมดตั้งแต่เริ่มมี** (all-time ณ ตอนนี้) ไม่ใช่แค่เดือนที่กำลังดู — ตามที่ getReconcilePeriods() คำนวณไว้แต่เดิม (CEO สั่งให้ reuse ไม่ให้ reimplement) ถ้าอยากได้แบบ "เฉพาะเดือนนี้" ต้องบอกแยกเป็นงานถัดไป
 - CEO ยังต้องทดสอบจริง: เปิด `/chairops/reconcile?view=checklist` กดปุ่ม "🔢 ตัวเลข" → ลองสลับ "จำนวนเงิน/ผลต่าง" → กดตัวเลขช่องไหนก็ได้ดูรายละเอียดในที่เดิม
+
+---
+
 
 ## 🪑📊✅ ChairOps แม่บ้าน — เปลี่ยนหน้าการ์ดเป็นตาราง + คำนวณพฤติกรรมเก็บ/ฝากเงินจริง (2026-08-23 · **DEPLOYED `ddae6163`**)
 
