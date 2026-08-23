@@ -3,10 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse, Landmark } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse, Landmark, Users, Copy, Check } from "lucide-react";
 import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import { reassignCfMachineBranch, setBranchStockSource } from "@/lib/clawfleet/actions";
+import { inviteCfStaff } from "@/lib/clawfleet/team-actions";
 import {
   getClawfleetReconcileStatus,
   setClawfleetReconcileAccount,
@@ -788,9 +789,11 @@ function ReconcileAccountCard({
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [staffModalBranchId, setStaffModalBranchId] = useState<string | null>(null);
 
   const canUse = branchOptions.length > 0 && companies.length > 0 && bankAccounts.length > 0;
   const bankLabelById = useMemo(() => new Map(bankAccounts.map((a) => [a.id, a.label])), [bankAccounts]);
+  const staffModalBranch = overview.find((r) => r.branchId === staffModalBranchId) ?? null;
 
   function openModalFor(id: string) {
     setError(null); setOkMsg(null);
@@ -873,11 +876,19 @@ function ReconcileAccountCard({
                         {r.branchName} <span style={{ color: "#9AA1AB", fontWeight: 500 }}>({r.branchCode})</span>
                       </td>
                       <td style={{ padding: "9px 10px" }}>
-                        {r.staffCount > 0 ? (
-                          <span style={{ color: "#15803D" }}>{r.staffCount} คน</span>
-                        ) : (
-                          <span style={{ color: "#B42318" }}>ยังไม่มี</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setStaffModalBranchId(r.branchId)}
+                          className="co-tap"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            border: "none", background: "transparent", cursor: "pointer", padding: 0,
+                            fontSize: 12.5, fontWeight: 600,
+                            color: r.staff.length > 0 ? "#15803D" : "#B42318", textDecoration: "underline", textUnderlineOffset: 2,
+                          }}
+                        >
+                          <Users size={12} /> {r.staff.length > 0 ? `${r.staff.length} คน` : "ยังไม่มี"}
+                        </button>
                       </td>
                       <td style={{ padding: "9px 10px" }}>
                         {bankLabel ? (
@@ -1010,6 +1021,177 @@ function ReconcileAccountCard({
           )}
         </div>
       </Modal>
+
+      <BranchStaffModal
+        branch={staffModalBranch ? { branchId: staffModalBranch.branchId, branchName: staffModalBranch.branchName, staff: staffModalBranch.staff } : null}
+        onClose={() => setStaffModalBranchId(null)}
+      />
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * ดูพนักงาน + เพิ่มพนักงาน ของสาขานี้ — เปิดจากแถวในตารางผูกบัญชี (CEO 2026-08-23:
+ * "กดเลือกพนักงาน/เพิ่มพนักงานหน้านี้ได้เลย") · reuse inviteCfStaff เดียวกับ
+ * หน้า /clawfleet/os/staff — ไม่ทำ edit-role/remove ซ้ำที่นี่ (จัดการเต็มรูปแบบยังอยู่
+ * หน้าพนักงานเดิม) แค่ดูรายชื่อ + เพิ่มคนใหม่เข้าสาขานี้โดยตรง.
+ * ───────────────────────────────────────────────────────────────────────── */
+type BranchAssignableRole = "staff" | "branch_manager" | "area_manager";
+const BRANCH_ASSIGNABLE_ROLES: { value: BranchAssignableRole; label: string }[] = [
+  { value: "staff", label: "พนักงานเก็บเงิน" },
+  { value: "branch_manager", label: "ผจก.สาขา" },
+  { value: "area_manager", label: "ผจก.เขต" },
+];
+const BRANCH_ROLE_TH: Record<string, string> = {
+  org_admin: "ผู้ดูแลระบบ", super_admin: "ผู้ดูแลระบบ", admin: "ผู้ดูแลระบบ",
+  program_admin: "ผู้ดูแลโปรแกรม", area_manager: "ผจก.เขต", branch_manager: "ผจก.สาขา",
+  staff: "พนักงานเก็บเงิน", viewer: "ผู้ชม",
+};
+function branchRoleLabel(r: string): string {
+  return BRANCH_ROLE_TH[r] ?? "พนักงานเก็บเงิน";
+}
+
+function BranchStaffModal({
+  branch,
+  onClose,
+}: {
+  branch: { branchId: string; branchName: string; staff: { id: string; name: string; role: string }[] } | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<BranchAssignableRole>("staff");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<{ url: string; name: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function resetAdd() {
+    setShowAdd(false); setName(""); setRole("staff"); setEmail(""); setPhone("");
+    setError(null); setInviteResult(null); setCopied(false);
+  }
+
+  function submit() {
+    if (!branch) return;
+    setError(null);
+    if (!name.trim()) { setError("กรอกชื่อพนักงาน"); return; }
+    startTransition(async () => {
+      const em = email.trim();
+      const res = await inviteCfStaff({
+        name: name.trim(),
+        branchId: branch.branchId,
+        role,
+        email: em && /.+@.+\..+/.test(em) ? em : undefined,
+        phone: phone.trim() || undefined,
+      });
+      if (!res.ok) { setError(res.error); return; }
+      setInviteResult({ url: res.data.inviteUrl, name: res.data.name });
+      router.refresh();
+    });
+  }
+
+  async function copyLink() {
+    if (!inviteResult) return;
+    try {
+      await navigator.clipboard.writeText(inviteResult.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={!!branch}
+      onClose={() => { onClose(); resetAdd(); }}
+      width={480}
+      title={branch ? `พนักงาน · ${branch.branchName}` : "พนักงาน"}
+      sub="ดูรายชื่อพนักงานของสาขานี้ หรือเพิ่มคนใหม่เข้าสาขานี้"
+    >
+      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {branch && branch.staff.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {branch.staff.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#F8F9FB", borderRadius: 9 }}>
+                <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px" }}>
+                  {(m.name.trim()[0] ?? "?").toUpperCase()}
+                </span>
+                <span style={{ flex: 1, fontWeight: 600, fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                <span style={{ fontSize: 11.5, color: "#6B7280", whiteSpace: "nowrap" }}>{branchRoleLabel(m.role)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: "#9AA1AB" }}>ยังไม่มีพนักงานในสาขานี้</div>
+        )}
+
+        {!showAdd ? (
+          <button
+            type="button"
+            onClick={() => setShowAdd(true)}
+            className="co-tap"
+            style={{ border: "1px dashed #C7C4EE", background: "#F7F8FF", color: "#4F46E5", fontSize: 12.5, fontWeight: 600, padding: "9px 0", borderRadius: 9, cursor: "pointer" }}
+          >
+            + เพิ่มพนักงาน
+          </button>
+        ) : inviteResult ? (
+          <div style={{ background: "#F2FAF5", border: "1px solid #CDE9D7", borderRadius: 11, padding: "13px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: "#15803D", marginBottom: 8 }}>
+              <Check size={15} /> สร้างลิงก์เชิญ &quot;{inviteResult.name}&quot; สำเร็จ
+            </div>
+            <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 8 }}>
+              ส่งลิงก์นี้ให้พนักงานเปิดเพื่อตั้งรหัสและเข้าระบบ (ลิงก์มีอายุ 48 ชั่วโมง)
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <input readOnly value={inviteResult.url} onFocus={(e) => e.currentTarget.select()} style={{ ...R_FIELD, fontSize: 12, background: "#fff", flex: 1, minWidth: 0 }} />
+              <button type="button" onClick={copyLink} style={{ border: "none", cursor: "pointer", color: "#fff", background: copied ? "#15803D" : "#4F46E5", padding: "0 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
+              </button>
+            </div>
+            <button type="button" onClick={resetAdd} style={{ marginTop: 10, border: "1px solid #DFE2E8", background: "#fff", color: "#5A6270", fontSize: 12, fontWeight: 600, padding: "7px 12px", borderRadius: 8, cursor: "pointer" }}>
+              เพิ่มอีกคน
+            </button>
+          </div>
+        ) : (
+          <div style={{ borderTop: "1px dashed #E3E6EA", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <label style={R_LABEL}>ชื่อพนักงาน</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น สมชาย ใจดี" style={R_FIELD} autoFocus />
+            </div>
+            <div>
+              <label style={R_LABEL}>บทบาท</label>
+              <select value={role} onChange={(e) => setRole(e.target.value as BranchAssignableRole)} style={R_FIELD}>
+                {BRANCH_ASSIGNABLE_ROLES.map((r) => (<option key={r.value} value={r.value}>{r.label}</option>))}
+              </select>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={R_LABEL}>อีเมล (ถ้ามี)</label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ไม่บังคับ" style={R_FIELD} />
+              </div>
+              <div>
+                <label style={R_LABEL}>เบอร์โทร (ถ้ามี)</label>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="ไม่บังคับ" style={R_FIELD} />
+              </div>
+            </div>
+            {error && (
+              <div style={{ background: "#FCEDEC", border: "1px solid #F5C6C2", borderRadius: 9, padding: "9px 12px", fontSize: 12, color: "#B42318" }}>{error}</div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={resetAdd} disabled={pending} style={{ flex: 1, border: "1px solid #E3E6EA", background: "#fff", cursor: pending ? "not-allowed" : "pointer", color: "#6B7280", fontSize: 13, fontWeight: 600, padding: "10px 0", borderRadius: 10 }}>
+                ยกเลิก
+              </button>
+              <button type="button" onClick={submit} disabled={pending} style={{ flex: 1, border: "none", cursor: pending ? "wait" : "pointer", background: pending ? "#A5A0EC" : "#4F46E5", color: "#fff", fontSize: 13, fontWeight: 700, padding: "10px 0", borderRadius: 10 }}>
+                {pending ? "กำลังสร้างลิงก์…" : "สร้างลิงก์เชิญ"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
