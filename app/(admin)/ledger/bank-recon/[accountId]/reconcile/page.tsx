@@ -90,6 +90,12 @@ export default async function ReconcilePage({
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Link
+            href={`/ledger/bank-recon/${accountId}/match-rules?${cp}&period=${periodFrom}&periodTo=${periodTo}`}
+            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            เงื่อนไขการแมตช์
+          </Link>
+          <Link
             href={`/ledger/bank-recon/${accountId}/keywords?${cp}&period=${periodFrom}&periodTo=${periodTo}`}
             className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
           >
