@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: การ์ด→ตาราง + สถิติเก็บ/ฝากเงินจริง — โค้ดพร้อม รอ CEO ตรวจ+อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: การ์ด→ตาราง + สถิติเก็บ/ฝากเงินจริง — DEPLOYED)
 
-## 🪑📊✅ ChairOps แม่บ้าน — เปลี่ยนหน้าการ์ดเป็นตาราง + คำนวณพฤติกรรมเก็บ/ฝากเงินจริง (2026-08-23 · โค้ดพร้อม รอ deploy)
+## 🪑📊✅ ChairOps แม่บ้าน — เปลี่ยนหน้าการ์ดเป็นตาราง + คำนวณพฤติกรรมเก็บ/ฝากเงินจริง (2026-08-23 · **DEPLOYED `ddae6163`**)
 
 CEO อยากเห็นภาพรวมแม่บ้านทุกสาขาเป็น "ตาราง" แทนการ์ด เพื่อเทียบกันได้ง่ายขึ้น พร้อมอยากรู้พฤติกรรมจริง (เก็บ/ฝากเงินกี่โมง, ห่างกันกี่วัน) เพื่อเตรียมทำระบบแจ้งเตือนความผิดปกติในอนาคต (ยังไม่ทำรอบนี้)
 
@@ -27,8 +27,9 @@ CEO อยากเห็นภาพรวมแม่บ้านทุกส�
 
 **Verify:** tsc 0 error ทั้งโปรเจกต์ (`--max-old-space-size=8192`) · eslint 0 error/warning (4 ไฟล์ที่แตะ) · เจอ+แก้บั๊กเอง 1 จุดก่อนส่ง (avgGapDays รับ array ไม่ได้เรียงลำดับจริงจาก `ocrDate ?? depositedAt` ทำให้เลขเฉลี่ยผิดได้ — แก้ให้ sort ในฟังก์ชันเองกันไว้เลย)
 
-⚠️ **ยังไม่ได้เห็นหน้าจริงในเบราว์เซอร์** — ลอง `next dev` ในเรโปแล้วเจอ error คนละเรื่อง **ที่มีอยู่ก่อนหน้านี้แล้ว** (ไม่เกี่ยวกับงานนี้): `Error: You cannot use different slug names for the same dynamic path ('branchId' !== 'id')` — เช็คแล้วเกิดจาก `/chairops/collect/[id]` ชนกับ `/chairops/(office)/collect/[branchId]` (คนละ route group แต่ URL เดียวกัน) ทำให้ dev server ทั้งเรโปพังตั้งแต่ boot ไม่ใช่แค่หน้าแม่บ้าน — ยืนยันด้วย `git stash` แล้วรันซ้ำบนโค้ดเดิมก็พังเหมือนกัน จึงไม่ใช่บั๊กจากงานนี้ **ยังไม่ได้แก้** (อยู่นอก scope รอบนี้ รอ CEO ตัดสินใจว่าจะให้แก้เลยไหม)
-📝 ยังไม่ commit/push — รอ CEO ดูโค้ด + ตัดสินใจ deploy
+⚠️ **`next dev` (Turbopack) พังตั้งแต่ boot** — เจอตอนพยายามเปิดดูหน้าจริง: `Error: You cannot use different slug names for the same dynamic path ('branchId' !== 'id')` เกิดจาก `/chairops/collect/[id]` ชนกับ `/chairops/(office)/collect/[branchId]` (คนละ route group แต่ URL เดียวกัน) — ยืนยันด้วย `git stash` ว่าเป็นบั๊กเดิมที่มีอยู่ก่อนงานนี้ ไม่เกี่ยวกับที่แก้ **ข่าวดี:** เช็คแล้ว `next build` (production) **ไม่พังตาม** — build ผ่านปกติทั้งโปรเจกต์ แปลว่ากระทบแค่ตอน dev ในเครื่อง ไม่กระทบเว็บจริง แต่ยังทำให้แก้ไข/ทดสอบ dev server ในเครื่องไม่ได้ **ยังไม่ได้แก้** (นอก scope รอบนี้ — ถ้า CEO อยากให้แก้ บอกได้เลย)
+
+**Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (4 ไฟล์) · `next build` ผ่านทั้งโปรเจกต์ (รวม route `/chairops/maids`) · smoke test ก่อน/หลัง push `/` `/health` `/chairops/maids` `/login` → 307/200/307/200 เหมือนเดิมทุกตัว · `/verify` gate ผ่าน stamp `.claude-verified` · commit `ddae6163` push ตรงเข้า `origin/setup` · ยืนยัน deploy ด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง (created ตรงเวลา push)
 
 ---
 
