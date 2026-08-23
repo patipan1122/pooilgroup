@@ -108,6 +108,128 @@ export async function getCfRefillAvailability(orgId: string, branchId: string): 
 
 export class CfSourceOverIssueError extends Error {}
 
+const MACHINE_TRANSIT_WAREHOUSE_NAME = "ระหว่างย้ายตู้ (ระบบ · ห้ามใช้)";
+
+/**
+ * คลัง "ระบบ" ต่อสาขา สำหรับ stamp แถวโอนสต๊อกตอนย้ายตู้ข้ามสาขา (ย้าย warehouseId ≠ null · ≠ คลังหลัก)
+ * — กันไม่ให้แถวโอนไปปนกับ "ของบนชั้น" ในการ์ดคำนวณที่ไม่กรอง machineId (onHandAgg/mainRoomNet):
+ *   ของที่ย้ายตามตู้ไม่เคยแตะชั้นสาขาไหนจริง ๆ · ถ้าใช้ warehouseId:null จะไปบวก/ลบยอดชั้นผีทั้ง 2 สาขา (over-issue risk).
+ * isActive:false → ไม่โผล่ picker เติมของ (กรอง isActive ที่ os/app + liff อยู่แล้ว) · โผล่เฉพาะหน้าแอดมิน "จัดการคลัง" (inactive badge).
+ * lazy get-or-create + advisory lock กันสร้างซ้ำตอนย้ายพร้อมกัน 2 ตู้ในสาขาเดียวกัน.
+ */
+async function getOrCreateMachineTransitWarehouseTx(
+  tx: Tx,
+  orgId: string,
+  branchId: string,
+  userId: string,
+): Promise<string> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${branchId} || ':transit-wh'), hashtext(${orgId}))`;
+  const existing = await tx.cfWarehouse.findFirst({
+    where: { orgId, branchId, name: MACHINE_TRANSIT_WAREHOUSE_NAME },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await tx.cfWarehouse.create({
+    data: {
+      orgId,
+      branchId,
+      name: MACHINE_TRANSIT_WAREHOUSE_NAME,
+      isMain: false,
+      isActive: false,
+      sortOrder: 9999,
+      createdById: userId,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+/**
+ * ย้าย "ของที่อยู่ในตู้จริงตอนนี้" ตามตู้ไปสาขาใหม่ (ย้ายตู้ข้ามสาขา) — เรียกภายใน $transaction ของ caller
+ * ก่อนอัปเดต machine.branchId. ต่อ SKU ที่มีของในตู้ (qty≠0):
+ *   - เขียน TRANSFER_OUT ที่สาขาเดิม qty=+netQty (บวก · ตัดยอด "ในตู้" ของสาขาเดิมให้เป็น 0 —
+ *     สอดคล้อง sign convention เดียวกับ returnDollsToStock's ADJUST)
+ *   - เขียน TRANSFER_IN ที่สาขาใหม่ qty=−netQty (ลบ · ตั้งยอด "ในตู้" ของสาขาใหม่ = netQty —
+ *     สอดคล้อง sign convention เดียวกับ refillDollsToMachine's LOAD_TO_MACHINE)
+ * ไม่แก้ไข/ลบแถวประวัติเดิม (ledger เก่ายังผูก branchId เดิม — ถูกต้องสำหรับรายงานย้อนหลังของสาขาเดิม).
+ * warehouseId ทั้ง 2 ขา = "คลังระบบ" เฉพาะ (ไม่ใช่คลังหลัก/null) → ไม่ปนกับยอดบนชั้นของสาขาไหนทั้งคู่.
+ */
+export async function transferMachineStockOnBranchMoveTx(
+  tx: Tx,
+  opts: {
+    orgId: string;
+    userId: string;
+    machineId: string;
+    fromBranchId: string;
+    toBranchId: string;
+  },
+): Promise<void> {
+  const { orgId, userId, machineId, fromBranchId, toBranchId } = opts;
+
+  const inMachineRows = await tx.cfStockMovement.groupBy({
+    by: ["productId"],
+    where: { orgId, branchId: fromBranchId, machineId },
+    _sum: { qty: true },
+  });
+  const toMove = inMachineRows
+    .map((r) => ({ productId: r.productId, qty: Math.abs(r._sum.qty ?? 0) }))
+    .filter((r) => r.qty > 0);
+  if (toMove.length === 0) return;
+
+  const [fromTransitWh, toTransitWh] = await Promise.all([
+    getOrCreateMachineTransitWarehouseTx(tx, orgId, fromBranchId, userId),
+    getOrCreateMachineTransitWarehouseTx(tx, orgId, toBranchId, userId),
+  ]);
+
+  const productIds = toMove.map((r) => r.productId);
+  const products = await tx.cfProduct.findMany({
+    where: { orgId, id: { in: productIds } },
+    select: { id: true, unitCostCents: true },
+  });
+  const costOf = new Map(products.map((p) => [p.id, p.unitCostCents]));
+
+  const now = new Date();
+  for (const { productId, qty } of toMove) {
+    const unitCostCents = costOf.get(productId) ?? 0;
+    await tx.cfStockMovement.create({
+      data: {
+        orgId,
+        branchId: fromBranchId,
+        type: "TRANSFER_OUT",
+        productId,
+        machineId,
+        warehouseId: fromTransitWh,
+        qty,
+        unitCostCents,
+        refTable: "cf_machine_branch_move",
+        refId: machineId,
+        occurredAt: now,
+        createdById: userId,
+        documentType: "transfer",
+        reason: "ย้ายตู้ข้ามสาขา — ของออกจากสาขาเดิม (ของยังอยู่ในตู้จริง)",
+      },
+    });
+    await tx.cfStockMovement.create({
+      data: {
+        orgId,
+        branchId: toBranchId,
+        type: "TRANSFER_IN",
+        productId,
+        machineId,
+        warehouseId: toTransitWh,
+        qty: -qty,
+        unitCostCents,
+        refTable: "cf_machine_branch_move",
+        refId: machineId,
+        occurredAt: now,
+        createdById: userId,
+        documentType: "transfer",
+        reason: "ย้ายตู้ข้ามสาขา — ของเข้าสาขาใหม่ (ของยังอยู่ในตู้จริง)",
+      },
+    });
+  }
+}
+
 /**
  * โอนสต๊อก 1 สินค้า "ห้องหลัก→ห้องหลัก" ระหว่างสาขา (คลังหลักข้ามสาขา) — ต้องเรียก "ภายใน" $transaction ของ caller.
  * - เขียน 2 แถว: TRANSFER_OUT(from,-qty) · TRANSFER_IN(to,+qty) — ต้นทุน (unitCostCents) พกจาก product เดียวกัน.

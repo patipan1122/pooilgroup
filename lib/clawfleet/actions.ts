@@ -33,7 +33,7 @@ import {
 import { deriveEvent, deriveBranchCrossCheck } from "./validation";
 import { computeCfDrift } from "./drift";
 import { getBranchMainWarehouseId } from "./stock-queries";
-import { transferMainRoomBetweenBranchesTx, CfSourceOverIssueError } from "./stock-source";
+import { transferMainRoomBetweenBranchesTx, transferMachineStockOnBranchMoveTx, CfSourceOverIssueError } from "./stock-source";
 import { getBranchRawReadings, getMachineDayRefills, type RawReadingRow, type CellRefill } from "./raw-readings-queries";
 import { isAllowedPhotoUrl } from "@/lib/chairops/utils/url-guard";
 
@@ -2662,9 +2662,17 @@ export async function retireCfMachine(machineId: string): Promise<Result> {
 }
 
 /**
- * ย้ายตู้ไปสาขาอื่น (forward-only) — เฉพาะแอดมิน (assertCfAdmin).
- * ⚠️ movements/events เก่ายังผูก branchId เดิม (ประวัติไม่ย้ายตาม) → เป็นการย้าย
- * "ไปข้างหน้า" เท่านั้น: รอบเก็บ/สต๊อกใหม่หลังย้ายจะอยู่สาขาใหม่ · ของเก่าคงบริบทเดิม.
+ * ย้ายตู้ไปสาขาอื่น — เฉพาะแอดมิน (assertCfAdmin). CEO 2026-08-23: ของในตู้ต้องตามตู้ไป ·
+ * ยอดเงิน/ประวัติเก่าอยู่กับสาขาเดิม (ไม่ต้องตามไป).
+ * - **ของในตู้ (per-SKU) ย้ายจริง**: transferMachineStockOnBranchMoveTx เขียนคู่ TRANSFER_OUT(เดิม)/
+ *   TRANSFER_IN(ใหม่) ต่อ SKU ที่มีของในตู้ ณ ขณะย้าย (ไม่แก้ไขแถวประวัติเดิม — เก็บไว้เพื่อรายงาน
+ *   ย้อนหลังของสาขาเดิม). ทุกอย่างอยู่ใน $transaction เดียวกับการอัปเดต branchId (atomic).
+ * - **เงิน/ประวัติเก่าไม่ตามไป**: ไม่ต้องทำอะไรเพิ่มที่นี่ — matrix-queries.getMatrixData ผูกรายงาน
+ *   สาขาด้วย branchId ของ "รอบ" (cf_collection_sessions.branch_id/group.branch_id) ซึ่งคงที่ตลอดชีพ
+ *   ไม่ใช่ branchId ปัจจุบันของตู้ → ประวัติเก่ายังอยู่ที่สาขาเดิมเองโดยไม่ต้องเขียนอะไรเพิ่ม.
+ * - **รอบเก็บเงินที่ค้างอยู่ที่สาขา/กลุ่มเดิม**: ไม่ต้องปิดเอง — closeBranchSession/closeGroupSession
+ *   นับ machineCount/clawCount สดจาก branchId/groupId ปัจจุบันตอนปิด (ตู้ที่ย้ายออกไม่ถูกนับ) →
+ *   ตู้อื่นในรอบเดิมปิดยอดกันไปได้ตามปกติโดยไม่ต้องรอตู้ที่ย้ายไปแล้ว.
  * กันย้ายเข้าสาขาที่ไม่ใช่ตู้คีบ/ไม่ใช่ org เดียวกัน.
  */
 export async function reassignCfMachineBranch(
@@ -2688,14 +2696,27 @@ export async function reassignCfMachineBranch(
   });
   if (!branch) return { ok: false, error: "ไม่พบสาขาตู้คีบปลายทาง หรือไม่อยู่ในองค์กรนี้" };
 
+  const fromBranchId = machine.branchId;
   try {
-    await prisma.cfMachine.update({
-      where: { id: machineId },
-      // ย้ายเฉพาะ branchId · เคลียร์ groupId (กลุ่มผูกกับสาขาเดิม · ย้ายข้ามสาขา = หลุดกลุ่ม)
-      data: { branchId: newBranchId, groupId: null },
+    await prisma.$transaction(async (tx) => {
+      // 🔒 ล็อกตู้นี้ กันย้ายซ้อน 2 รอบพร้อมกัน (เขียนของ 2 ชุดทับกัน)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${machineId} || ':move'), hashtext(${orgId}))`;
+      await transferMachineStockOnBranchMoveTx(tx, {
+        orgId,
+        userId: session.user.id,
+        machineId,
+        fromBranchId,
+        toBranchId: newBranchId,
+      });
+      await tx.cfMachine.update({
+        where: { id: machineId },
+        // ย้ายเฉพาะ branchId · เคลียร์ groupId (กลุ่มผูกกับสาขาเดิม · ย้ายข้ามสาขา = หลุดกลุ่ม)
+        data: { branchId: newBranchId, groupId: null },
+      });
     });
     revalidateManage();
     revalidatePath("/clawfleet/os/stock");
+    revalidatePath("/clawfleet/os/matrix");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: `ย้ายสาขาตู้ไม่สำเร็จ: ${(e as Error).message}` };

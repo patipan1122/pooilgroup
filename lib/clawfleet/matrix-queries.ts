@@ -136,12 +136,40 @@ export async function getMatrixData(
   });
   if (!branch) return { branch: null, isoDays, machines: [] };
 
-  // 2. ตู้คีบในสาขา (active)
-  const machines = await prisma.cfMachine.findMany({
+  // 2. ตู้คีบในสาขา (active) — คอลัมน์หลักของเมทริกซ์ (โชว์แม้ยังไม่มี event)
+  const currentMachines = await prisma.cfMachine.findMany({
     where: { orgId, branchId: branch.id, kind: "CLAW", isActive: true },
     select: { id: true, code: true, nickname: true },
     orderBy: { code: "asc" },
   });
+
+  const since = isoDays[isoDays.length - 1]; // วันเก่าสุดในกรอบ "YYYY-MM-DD"
+
+  // 2b. CEO 2026-08-23 · ย้ายตู้ข้ามสาขา → ประวัติเก่าไม่ตามตู้ไป (ต้องอยู่กับสาขาเดิม) ·
+  //     ตู้ที่ "เคยอยู่สาขานี้ช่วงในกรอบวันที่ขอ" แต่ย้ายออกไปแล้ว (ไม่อยู่ใน currentMachines อีก)
+  //     ยังต้องโผล่เป็นคอลัมน์ของสาขานี้สำหรับวันเก่า — หา machineId เพิ่มจาก "รอบ" ที่ผูกสาขานี้
+  //     (session.branch_id/group.branch_id คงที่ตลอดชีพ ไม่ใช่ branchId ปัจจุบันของตู้).
+  const attributedRows = await prisma.$queryRaw<{ machine_id: string }[]>`
+    SELECT DISTINCT e.machine_id::text AS machine_id
+    FROM cf_collection_events e
+    JOIN cf_collection_sessions s ON s.id = e.session_id
+    LEFT JOIN cf_machine_groups g ON g.id = s.group_id
+    WHERE e.org_id = ${orgId}::uuid
+      AND e.event_type IN ('COLLECTION', 'INITIAL')
+      AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW', 'OPEN')
+      AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
+      AND (s.branch_id = ${branch.id}::uuid OR g.branch_id = ${branch.id}::uuid)
+  `;
+  const currentIds = new Set(currentMachines.map((m) => m.id));
+  const extraIds = [...new Set(attributedRows.map((r) => r.machine_id))].filter((id) => !currentIds.has(id));
+  const extraMachines = extraIds.length > 0
+    ? await prisma.cfMachine.findMany({
+        where: { orgId, id: { in: extraIds } },
+        select: { id: true, code: true, nickname: true },
+      })
+    : [];
+
+  const machines = [...currentMachines, ...extraMachines].sort((a, b) => a.code.localeCompare(b.code));
   if (machines.length === 0) {
     return { branch: { id: branch.id, name: branch.name, code: branch.code }, isoDays, machines: [] };
   }
@@ -152,7 +180,6 @@ export async function getMatrixData(
   //    - dolls = SUM(after − before) clamp ≥ 0 ต่อ event (กันมิเตอร์รีเซ็ต)
   //    - swaps = นับ event ที่ refill_qty > 0 (มีเติม/เปลี่ยนตุ๊กตา)
   //    - เฉพาะ event ในรอบที่ปิดแล้ว (CLOSED/LOCKED/ANOMALY_REVIEW)
-  const since = isoDays[isoDays.length - 1]; // วันเก่าสุดในกรอบ "YYYY-MM-DD"
   const rows = await prisma.$queryRaw<RawRow[]>`
     SELECT
       e.machine_id::text AS machine_id,
@@ -172,12 +199,16 @@ export async function getMatrixData(
       COUNT(*)::bigint AS events
     FROM cf_collection_events e
     JOIN cf_collection_sessions s ON s.id = e.session_id
+    LEFT JOIN cf_machine_groups g ON g.id = s.group_id
     WHERE e.org_id = ${orgId}::uuid
       AND e.machine_id IN (${prismaInUuid(machineIds)})
       AND e.event_type IN ('COLLECTION', 'INITIAL')
       -- + OPEN (กำลังเก็บ) — เงินที่เก็บแล้วเข้ารายงานเจาะสาขาทันที · per-event ไม่ขยับของเก่า (CEO 2026-08-01)
       AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW', 'OPEN')
       AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
+      -- CEO 2026-08-23 · ย้ายตู้ข้ามสาขา → ผูกรายงานด้วย "สาขาของรอบ" (คงที่ตลอดชีพ) ไม่ใช่
+      --   branchId ปัจจุบันของตู้ → ประวัติเก่าไม่ตามตู้ไปสาขาใหม่ (money-safe: ไม่แก้ event เก่า)
+      AND (s.branch_id = ${branch.id}::uuid OR g.branch_id = ${branch.id}::uuid)
     GROUP BY e.machine_id, iso_day
   `;
 
@@ -225,6 +256,9 @@ export async function getMatrixData(
     FROM cf_stock_movements sm
     WHERE sm.org_id = ${orgId}::uuid
       AND sm.machine_id IN (${prismaInUuid(machineIds)})
+      -- ผูก branchId ที่ stamp ไว้ตอนเติมจริง (คงที่ตลอดชีพ) ไม่ใช่ branchId ปัจจุบันของตู้ —
+      -- ย้ายตู้ข้ามสาขาแล้ว การเติมเก่าไม่ตามตู้ไปสาขาใหม่ (เหมือนกับ event ด้านบน)
+      AND sm.branch_id = ${branch.id}::uuid
       AND sm.ref_table = 'cf_refill_dolls'
       AND (sm.occurred_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
     GROUP BY sm.machine_id, iso_day
