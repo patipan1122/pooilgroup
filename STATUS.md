@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: เอาคอลัมน์เดิมกลับมาครบ + โชว์คนล่าสุดที่ทำงานต่อสาขา + ปุ่มปิดสาขาหลังชื่อ — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: เอาคอลัมน์เดิมกลับมาครบ + โชว์คนล่าสุดที่ทำงานต่อสาขา + ปุ่มปิดสาขาหลังชื่อ — DEPLOYED · CashHub Tea: ส่ง QR เข้า reconcile เป็นรายรายการ — DEPLOYED)
 
 ## 🪑📋✅ ChairOps แม่บ้าน — เอาคอลัมน์เดิมกลับมา + โชว์ "คนล่าสุดที่ทำงาน" ต่อสาขา (2026-08-23 · **DEPLOYED `b05be9d8`**)
 
@@ -11,6 +11,21 @@
 **ไฟล์ที่แตะ:** [`branch-roster-view.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-roster-view.tsx) (เพิ่ม `mostRecentMaid()`), [`branch-maids-popup.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-maids-popup.tsx) (เปลี่ยนจาก trigger หลักเป็นป้าย "N คน" เล็กๆ)
 
 **Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (2 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-hybrid`) · `/verify` gate ผ่าน · merge ชน `origin/setup` 1 ครั้ง (CashHub Tea, คนละไฟล์) commit `ae997740` push ตรงเข้า `origin/setup` · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/login` → 307/200/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
+
+---
+
+## 🧋🔀🚀 CashHub Tea — ส่ง QR เข้า reconcile เป็นรายรายการ (ไม่ใช่ยอดรวม/วัน) (2026-08-23 · DEPLOYED `2da6c744`)
+
+ต่อจาก [[cashhub-tea-qr-drilldown-and-match-rule-2026-08-21]] — CEO เห็นไส้ใน QR วันที่ 1 ส.ค. (19 รายการ) แล้วบอกตรงๆ ว่า "เงินเป็นไส้ย่อยไง" อยากให้ส่งเข้าระบบบัญชีเป็นรายรายการจริง ไม่ใช่ยอดรวมก้อนเดียวเหมือนเดิม เพื่อให้จับคู่กับธนาคารได้ทีละรายการ
+
+**สิ่งที่ทำ** ([`tea-settlement-data.ts`](lib/cashhub/tea-settlement-data.ts)):
+- `sendTeaDaysToReconcile` — วัน/ช่องทางไหนมีรายบิลแล้ว (`cashhub_tea_pos_transaction`) → ส่งแยกทีละรายการ (`source_ref` ต่อท้าย `:index` เรียงยอดมาก→น้อย) แทนยอดรวม 1 บรรทัด/วัน · ยังไม่มีรายบิล (ยังไม่ได้อัปไฟล์ใหม่) → ยังส่งยอดรวมเหมือนเดิม ไม่กระทบ
+- ก้อนรวมเก่าที่เคยส่งไว้ → ลบทิ้งแทนที่ด้วยรายการย่อย **เฉพาะที่ยัง "รอแมตช์"** — เช็ค DB จริงก่อนแก้: ยอด QR เก่าทั้งหมด 148 รายการ (ทุกสาขา/ทุกวัน) เป็น "รอแมตช์" หมด ยังไม่มีอันไหนแมชกับธนาคารแล้วเลย ปลอดภัย 100% ที่จะแทนที่ · ถ้าวันไหนก้อนรวมแมชไปแล้ว (อนาคต) จะไม่แตะเลย ขึ้น "⚠️ ตรวจเอง" ในข้อความสรุปแทน
+- [`readTeaReconcileStatus`] แก้ให้รวมรายการย่อยกลับเป็นสีเดียวกันต่อช่อง/วันในตาราง CashHub Tea (ไม่งั้นสีจะหายเพราะ key เปลี่ยน)
+
+**Verify:** tsc 0 error · eslint 0 error · `next build` ผ่าน · smoke test `/` `/cashhub/tea` `/cashhub/tea/settings` `/ledger/bank-recon` → 200 ทุกตัว
+
+📝 CEO ต้องกด **"ส่งเข้า reconcile"** ซ้ำอีกครั้งที่หน้า CashHub Tea (ของเดือน ส.ค.) เพื่อให้ยอด QR เปลี่ยนจากก้อนรวมเป็นรายรายการจริง — โค้ดแก้แล้วไม่ทำให้เกิดขึ้นเองอัตโนมัติ
 
 ---
 
