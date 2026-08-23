@@ -1,6 +1,18 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (CashHub Tea: 2 ตารางที่ลืม apply ให้ prod แก้แล้ว + โชว์ช่วงวันที่ตอนอัปโหลด Foodstory — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ClawFleet ผูกบัญชี — เปลี่ยนเป็นตาราง "สาขานำหน้า" ตาม feedback CEO — DEPLOYED)
+
+## 🦞📋✅ ClawFleet ผูกบัญชี — เปลี่ยนจาก dropdown เป็นตาราง "สาขานำหน้า" (2026-08-23 · 🚀 DEPLOYED `645ebef0`)
+
+ต่อจาก [[clawfleet-reconcile-prep-decisions-2026-08-23]] (การ์ด+modal deployed `9fa9045b`) — CEO ดูหน้าจริงแล้วส่ง screenshot หน้า "พนักงาน" เทียบให้ดู บอกว่าอยากได้แบบนั้น: **"ให้เอาสาขานำหน้า... ให้เห็นสาขานี้ มีแม่บ้านยัง ผูกบัญชียัง เก็บเงินล่าสุดกี่วันที่แล้ว กดผูกบัญชีได้หน้านี้เลย ดีกว่า"**
+
+**สิ่งที่ทำ:**
+- [`lib/clawfleet/reconcile/overview.ts`](lib/clawfleet/reconcile/overview.ts) — query ใหม่ `getClawfleetReconcileOverview()` ดึงทุกสาขาตู้คีบพร้อมกันทีเดียว (ไม่ query ทีละสาขา): จำนวนพนักงานต่อสาขา (`userBranch.groupBy`) + สถานะผูกบัญชี (`cfBranchReconcileConfig`) + เก็บเงินล่าสุด (`cfCollectionSession.groupBy` หา `_max(openedAt)` ต่อสาขา)
+- [`branches-client.tsx`](app/(admin)/clawfleet/os/branches/branches-client.tsx) — การ์ด "ผูกบัญชีธนาคาร" เดิม (ปุ่มเดียวเปิด dropdown เลือกสาขา) เปลี่ยนเป็น**ตาราง**: สาขา | พนักงาน (กี่คน/ยังไม่มี) | บัญชีธนาคาร (โชว์ชื่อธนาคารเลยถ้าผูกแล้ว/"ยังไม่ผูก") | เก็บเงินล่าสุด (กี่วันก่อน) | ปุ่ม "ผูกบัญชี"/"แก้ไข" ต่อแถว — กดปุ๊บเปิด modal เดิม (ตั้งบริษัท/บัญชี + ส่งเข้า reconcile) แบบเลือกสาขานั้นให้อัตโนมัติ ไม่ต้องเปิด dropdown เลือกเองอีกที
+
+**Verify:** tsc 0 error ทั้งโปรเจกต์ (`--max-old-space-size=8192`, ต้องลบ `.next` ก่อนเพราะ cache ค้างจาก build ของ session อื่นที่ชนกัน) · eslint 0 error/warning (3 ไฟล์) · `next build` ผ่านทั้งโปรเจกต์ (เจอ "Another next build process is already running" 1 ครั้งจาก session คู่ขนาน — รอให้ process นั้นจบเองแล้ว build ใหม่ ไม่ได้ kill) · push ผ่าน `origin/setup` (`645ebef0`) → `vercel inspect` ยืนยัน alias ชี้ deployment ใหม่ + smoke test `/` `/login` `/clawfleet/os/branches` → 307/200/307 เหมือนเดิม
+
+📝 เก็บกวาดไปด้วยระหว่างทาง: เพิ่ม `.claude/worktrees/` เข้า `.gitignore` — เจอ session คู่ขนานอื่นทิ้ง isolated worktree (nested repo เต็มรูปแบบ มี node_modules ของตัวเอง) ไว้ untracked ในเช็คเอาต์นี้ ทำให้ verify-gate ของทุก session (ไม่ใช่แค่ผม) บล็อกการ push เพราะเห็นเป็นไฟล์ค้าง — ไม่ได้แตะ/ลบตัว worktree นั้นเอง แค่กันไม่ให้ git เห็นมันอีก
 
 ## 🧋🔧✅ CashHub Tea — ตามหลังหน้าไส้ใน 2 รอบ: ตารางไม่มีจริงใน prod + เพิ่มโชว์ช่วงวันที่ตอนอัปโหลด (2026-08-23)
 
