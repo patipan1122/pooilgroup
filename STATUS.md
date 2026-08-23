@@ -1,6 +1,37 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: แก้บั๊กหลายสาขา + ปุ่มปิดสาขา/ลาออก กดจากตารางได้เลย — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ตู้คีบ OS: เช็คลิสต์เก็บเงินสาขา×วัน เต็มเดือน — DEPLOYED · ผูกบัญชีธนาคาร+ส่งเข้า reconcile — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+
+## 🦀💰✅ ตู้คีบ OS — เช็คลิสต์เก็บเงิน สาขา×วัน เต็มเดือน + กดสลับดูยอดเงิน (2026-08-23 · 🚀 DEPLOYED `origin/setup`)
+
+CEO อยากได้เช็คลิสต์แบบเดียวกับ ChairOps (`/chairops/reconcile?view=checklist` — branch×day, จุดสีเขียว/แดงบอกว่าเก็บเงินวันไหนบ้าง) ใส่ในแท็บ "สาขา × วัน" ของหน้า `/clawfleet/os/matrix` ที่มีอยู่แล้ว แต่ของเดิมไม่ใช่แบบนั้น — เป็นการ์ดสรุปสุขภาพ 5 ใบ + แถบ 7 ช่องเล็กต่อสาขา ไม่ใช่ปฏิทินเต็มเดือน และไม่มีทางดูยอดเงินเลย (query คำนวณยอดไว้แล้วแต่ทิ้ง ไม่เคยส่งออกมา)
+
+**สิ่งที่ทำ:**
+- [`lib/clawfleet/checklist-queries.ts`](lib/clawfleet/checklist-queries.ts) — เปลี่ยน `getCfChecklistGrid` จาก "31 วันย้อนหลัง" เป็น**เดือนปฏิทินจริง** (year/month + prev/next — โครงเดียวกับ ChairOps `getReconcileChecklist` ใน `lib/chairops/queries/reconcile-v2.ts`) + เพิ่มยอดเก็บเงิน (บาท) ต่อวันต่อสาขาในผลลัพธ์
+- [`app/(admin)/clawfleet/os/matrix/checklist-client.tsx`](app/(admin)/clawfleet/os/matrix/checklist-client.tsx) — เขียนใหม่ทั้งไฟล์: ตารางสาขา×วันเต็มเดือน (sticky หัวตาราง+ชื่อสาขา) จุดสี 3 แบบ (🟢เก็บ+ฝากแล้ว 🟠เก็บแล้วยังไม่ฝาก ⭕เติมตุ๊กตาอย่างเดียว) + ขีด "–" วันไม่เก็บ + แถวจางสำหรับสาขายังไม่ตั้งค่าตู้ + ปุ่ม "กดดูยอดเก็บ (บาท)" สลับทั้งตารางเป็นตัวเลข + ปุ่มเลื่อนเดือน ←/→ (คอลัมน์วันในอนาคตของเดือนปัจจุบันเว้นว่างไว้ ไม่ตีเป็น "ไม่เก็บ")
+  - **ไม่ใช้ hover tooltip** ตาม [[feedback-ceo-mobile-primary-no-hover-ui-2026-08-15]] — ของต้นแบบ ChairOps เองใช้ hover ซึ่งใช้บนมือถือไม่ได้ เลยไม่ก็อปพฤติกรรมนั้นมา ใช้ปุ่มกดสลับทั้งตารางแทน (ตรงกับที่ CEO พิมพ์ขอมา "กดสลับดูยอดเงินได้")
+- [`matrix-client.tsx`](app/(admin)/clawfleet/os/matrix/matrix-client.tsx) + [`page.tsx`](app/(admin)/clawfleet/os/matrix/page.tsx) — ต่อสาย prop ปี/เดือน + parse `?ckym=YYYY-MM` พร้อมตรวจ range กันค่าพัง (เหมือน ChairOps `?month=`)
+- ลดการ์ดสรุปจาก 5 ใบเหลือ 3 ใบ — ตัด "ตุ๊กตา≠มิเตอร์" กับ "สาขาขาดทุน" ทิ้ง เพราะไม่เคยมีข้อมูลจริงป้อนมาตั้งแต่แรก (โชว์ "—" ตลอดกาลกับข้อมูลจริง ไม่เคยเป็นตัวเลขจริงสักครั้ง) — **ตัดสินใจเองตอนเจอ ยังไม่ได้ถาม CEO ก่อนตัด** ถ้าอยากได้คืนบอกได้
+- คำนวณ "ต้องรีบเก็บ" ใหม่เป็น max streak ไม่เก็บติดกัน >3 วัน **ภายในเดือนที่กำลังดู** แทนการนับ "เว้นกี่วันจากวันนี้" แบบเดิม (ผูกกับวันนี้ตายตัว ใช้ดูเดือนย้อนหลังไม่ได้ความหมาย — พอเปลี่ยนเป็นเดือนปฏิทินก็ต้องแก้ตามด้วย)
+
+**Architecture Check:**
+- Domain expert: Database query architect (aggregation ล้วน ไม่มี money-write)
+- Race condition: ไม่มี — read-only ทั้งหมด ไม่มีการเขียนข้อมูลใหม่
+- Idempotency: N/A (ไม่มี write)
+- Data consistency: N/A (ไม่แตะ schema ไม่มี migration)
+- Scale: สูงสุด 31 วัน × 48 สาขาปัจจุบัน ต่อ 1 query group-by เดียว (ไม่มี N+1 ต่อสาขา) — ยืนยันด้วย DB spot-check ด้านล่าง
+- วิธีที่ใช้ดีที่สุดแล้วหรือยัง: ✅ reuse โครง sticky-table + สี + month-nav math จาก `matrix-client.tsx`/`reconcile-v2.ts` เดิมทั้งหมด ไม่สร้าง pattern คู่ขนานใหม่
+
+**Verify:**
+- `tsc --noEmit` 0 error ทั้งโปรเจกต์ (ต้อง `NODE_OPTIONS=--max-old-space-size=8192` ไม่งั้น OOM)
+- `next build` (turbopack) "Compiled successfully" ทั้งโปรเจกต์ รวม route `/clawfleet/os/matrix` — verify ซ้ำหลาย รอบหลัง rebase ทับ concurrent commits (ChairOps โหมดตัวเลข `0b264c14`, ClawFleet ผูกบัญชี `9fa9045b`) ก็ยังผ่านสะอาดทุกรอบ
+- `eslint` 0 error/warning (4 ไฟล์ที่แตะ)
+- **DB spot-check จริง (read-only)** — เทียบผลรวม "group by สาขา+วัน" (query ใหม่) กับผลรวม "group by สาขาอย่างเดียว" (query อิสระ คนละตัว ไม่ผ่าน code เดียวกัน) จากข้อมูลจริง org production เดือน 2026-08 (1,006 events) และ 2026-07 (27 events) — ยอดตรงกันทุกสาขา 100% (16/16 + 4/4 คู่)
+- ⚠️ **ยังไม่ได้เปิดดู/คลิกจริงในเบราว์เซอร์ก่อน deploy** — ตาม [[feedback-no-playwright-on-ceo-local-machine-2026-08-15]] ไม่เปิดเบราว์เซอร์บนเครื่อง CEO เอง และ `next dev` ทั้งเรโปกำลังพังจาก bug เก่าที่ไม่เกี่ยวกับงานนี้ (route ชนกัน `/chairops/collect/[id]` vs `/chairops/(office)/collect/[branchId]` — เจอครั้งแรกจากงาน ChairOps แม่บ้านก่อนหน้านี้) เลย preview เองในเครื่องไม่ได้ด้วย — CEO ต้องเปิดดูเองหลัง deploy
+
+**Deploy:** worktree แยก `pooilgroup-web-clawfleet-checklist` off `origin/setup` · rebase ทับ 3 รอบระหว่างทำ (concurrent sessions อื่นแซง: ChairOps โหมดตัวเลข `0b264c14`+`f0bdb762`, ClawFleet ผูกบัญชีธนาคาร `9fa9045b`) · conflict ทุกรอบเป็น STATUS.md หัวไฟล์เท่านั้น (merge เนื้อหาทุกฝั่งไว้ครบ ไม่มีโค้ดชนกันสักรอบ) · verify ซ้ำหลัง rebase ผ่านสะอาดทุกครั้ง → push เข้า `origin/setup`
+
+---
 
 ## 🪑🔧✅ ChairOps แม่บ้าน — แก้บั๊กหลายสาขา + เพิ่มปุ่ม "ปิดสาขา"/"ลาออก" กดจากตารางได้เลย (2026-08-23 · โค้ดพร้อม รอ deploy)
 
@@ -78,7 +109,6 @@ CEO อนุมัติหลัง research+plan round: เช็คลิส
 - CEO ยังต้องทดสอบจริง: เปิด `/chairops/reconcile?view=checklist` กดปุ่ม "🔢 ตัวเลข" → ลองสลับ "จำนวนเงิน/ผลต่าง" → กดตัวเลขช่องไหนก็ได้ดูรายละเอียดในที่เดิม
 
 ---
-
 
 ## 🪑📊✅ ChairOps แม่บ้าน — เปลี่ยนหน้าการ์ดเป็นตาราง + คำนวณพฤติกรรมเก็บ/ฝากเงินจริง (2026-08-23 · **DEPLOYED `ddae6163`**)
 

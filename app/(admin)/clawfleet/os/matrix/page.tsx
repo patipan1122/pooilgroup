@@ -22,10 +22,30 @@ import type { ChecklistBranch } from "./checklist-client";
 
 export const dynamic = "force-dynamic";
 
+/** วันนี้ (เวลาไทย) → "YYYY-MM" ค่าเริ่มต้นของเช็คลิสต์เมื่อไม่ได้ระบุ ?ckym= */
+function currentBangkokYm(): { year: number; month: number } {
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" });
+  const [y, m] = fmt.format(new Date()).split("-").map(Number);
+  return { year: y, month: m };
+}
+
+const YM_RE = /^(\d{4})-(\d{2})$/;
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+/** เลื่อนเดือน (1-based) ไป delta เดือน → "YYYY-MM" */
+function shiftYm(year: number, month: number, delta: number): string {
+  const zero = month - 1 + delta;
+  const y = year + Math.floor(zero / 12);
+  const m = ((zero % 12) + 12) % 12;
+  return `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
 export default async function MatrixPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string; days?: string }>;
+  searchParams: Promise<{ branch?: string; days?: string; ckym?: string }>;
 }) {
   const sp = await searchParams;
   const days = sp.days === "30" ? 30 : 20;
@@ -38,8 +58,22 @@ export default async function MatrixPage({
   let assignments: Record<string, string> = {};
   let staff: AssignableStaff[] = [];
   let canManage = false;
-  // เช็คลิสต์ สาขา×วัน ย้อนหลัง 31 วัน (READ-ONLY · scope ผ่าน userBranchIds ในตัว query)
-  let checklistIsoDays: string[] = [];
+  // เช็คลิสต์ สาขา×วัน เต็มเดือนปฏิทิน (READ-ONLY · scope ผ่าน userBranchIds ในตัว query)
+  // ?ckym=YYYY-MM เลือกเดือน · ไม่ระบุ/รูปแบบผิด → เดือนปัจจุบัน (เวลาไทย)
+  const defaultYm = currentBangkokYm();
+  const ymMatch = sp.ckym ? YM_RE.exec(sp.ckym) : null;
+  const ymY = ymMatch ? Number(ymMatch[1]) : NaN;
+  const ymM = ymMatch ? Number(ymMatch[2]) : NaN;
+  const ymValid = ymM >= 1 && ymM <= 12 && ymY >= 2000 && ymY <= 2100;
+  const ckYear = ymValid ? ymY : defaultYm.year;
+  const ckMonth = ymValid ? ymM : defaultYm.month;
+  let checklistYear = ckYear;
+  let checklistMonth = ckMonth;
+  // ค่าเริ่มต้นคำนวณจาก ckYear/ckMonth ตรง ๆ (ไม่พึ่ง DB) — nav ใช้ได้แม้ query ล้ม/DB ยังไม่ migrate
+  let checklistDaysInMonth = new Date(ckYear, ckMonth, 0).getDate();
+  let checklistMonthLabel = `${THAI_MONTHS[ckMonth - 1]} ${ckYear + 543}`;
+  let checklistPrevYm = shiftYm(ckYear, ckMonth, -1);
+  let checklistNextYm = shiftYm(ckYear, ckMonth, 1);
   let checklistBranches: ChecklistBranch[] = [];
   // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) ของสาขาที่เลือก — เลขที่พนักงานกรอกจริง (ตั้งต้น + รอบเก็บ)
   let rawRows: RawReadingRow[] = [];
@@ -48,8 +82,13 @@ export default async function MatrixPage({
   let canEditRaw = false;
 
   try {
-    const checklist = await getCfChecklistGrid({ days: 31 });
-    checklistIsoDays = checklist.isoDays;
+    const checklist = await getCfChecklistGrid({ year: ckYear, month: ckMonth });
+    checklistYear = checklist.year;
+    checklistMonth = checklist.month;
+    checklistDaysInMonth = checklist.daysInMonth;
+    checklistMonthLabel = checklist.monthLabel;
+    checklistPrevYm = checklist.prevYm;
+    checklistNextYm = checklist.nextYm;
     checklistBranches = checklist.branches;
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ตัวอย่าง
@@ -129,7 +168,12 @@ export default async function MatrixPage({
       assignments={assignments}
       staff={staff}
       canManage={canManage}
-      checklistIsoDays={checklistIsoDays}
+      checklistYear={checklistYear}
+      checklistMonth={checklistMonth}
+      checklistDaysInMonth={checklistDaysInMonth}
+      checklistMonthLabel={checklistMonthLabel}
+      checklistPrevYm={checklistPrevYm}
+      checklistNextYm={checklistNextYm}
       checklistBranches={checklistBranches}
       rawRows={rawRows}
       rawTotal={rawTotal}

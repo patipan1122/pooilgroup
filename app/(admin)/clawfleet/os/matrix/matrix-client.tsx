@@ -158,7 +158,12 @@ export function MatrixClient({
   assignments = {},
   staff = [],
   canManage = false,
-  checklistIsoDays = [],
+  checklistYear,
+  checklistMonth,
+  checklistDaysInMonth,
+  checklistMonthLabel,
+  checklistPrevYm,
+  checklistNextYm,
   checklistBranches = [],
   rawRows = [],
   rawTotal = 0,
@@ -174,8 +179,13 @@ export function MatrixClient({
   assignments?: Record<string, string>;
   staff?: AssignableStaff[];
   canManage?: boolean;
-  // Wave 2E1 — เช็คลิสต์ สาขา×วัน (READ-ONLY) จาก getCfChecklistGrid
-  checklistIsoDays?: string[];
+  // เช็คลิสต์ สาขา×วัน เต็มเดือนปฏิทิน (READ-ONLY) จาก getCfChecklistGrid
+  checklistYear: number;
+  checklistMonth: number;
+  checklistDaysInMonth: number;
+  checklistMonthLabel: string;
+  checklistPrevYm: string;
+  checklistNextYm: string;
   checklistBranches?: ChecklistBranch[];
   // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) — เลขที่พนักงานกรอกจริง ของสาขาที่เลือก
   rawRows?: RawReadingRow[];
@@ -610,7 +620,15 @@ export function MatrixClient({
       </div>
 
       {view === "branch" ? (
-        <ChecklistClient isoDays={checklistIsoDays} branches={checklistBranches} />
+        <ChecklistClient
+          year={checklistYear}
+          month={checklistMonth}
+          daysInMonth={checklistDaysInMonth}
+          monthLabel={checklistMonthLabel}
+          prevYm={checklistPrevYm}
+          nextYm={checklistNextYm}
+          branches={checklistBranches}
+        />
       ) : (
       <>
       {empty && (

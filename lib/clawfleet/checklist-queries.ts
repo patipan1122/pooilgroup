@@ -1,7 +1,7 @@
 // ClawFleet · Checklist grid (สาขา × วัน) query layer — server-only. READ-ONLY.
 //
-// เมทริกซ์ "สาขา × วัน" ย้อนหลัง N วัน — ต่อสาขา ต่อวัน สรุปสถานะการเก็บเงิน:
-//   COLLECTED    = มีรอบปิดแล้ว (CLOSED/LOCKED/ANOMALY_REVIEW) ที่เก็บเงินได้ (cash>0) แต่ยังไม่ฝากธนาคาร
+// เมทริกซ์ "สาขา × วัน" เต็มเดือนปฏิทิน — ต่อสาขา ต่อวัน สรุปสถานะการเก็บเงิน + ยอดเงิน:
+//   COLLECTED    = มีรอบปิดแล้ว (CLOSED/LOCKED/ANOMALY_REVIEW/OPEN) ที่เก็บเงินได้ (cash>0) แต่ยังไม่ฝากธนาคาร
 //   DEPOSITED    = เก็บแล้ว + ฝากธนาคารแล้ว (รอบมี depositId)
 //   REFILL_ONLY  = วันนั้นมีแต่การเติมตุ๊กตา (refillQty>0) ไม่มีการเก็บเงิน
 //   NOT_COLLECTED= ไม่มีรอบ/ไม่มี event ในวันนั้น
@@ -9,8 +9,8 @@
 //
 // ⚪ NO_BASELINE = TONE.neutral (ไม่ใช่สีแดง) — "ยังไม่ตั้งค่า" ไม่ใช่ "ผิดพลาด".
 //
-// New query — COPY SQL shape จาก matrix-queries.ts แต่ GROUP BY branch_id (ข้ามทุกสาขา
-// ในขอบเขต user) แทน machine_id ของสาขาเดียว. Reuse buildIsoDays + businessType filter.
+// เดือนปฏิทินจริง (year/month + prev/next) + ยอดเก็บเงิน/วัน — ตรงกับ getReconcileChecklist
+// (lib/chairops/queries/reconcile-v2.ts) เพื่อให้ month-nav/legend สอดคล้องกันทั้งสองโปรแกรม.
 
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -25,18 +25,29 @@ export type CfChecklistStatus =
   | "DEPOSITED"
   | "NO_BASELINE";
 
+/** ช่อง 1 สาขา × 1 วัน — สถานะ + ยอดเก็บเงินรวมวันนั้น (บาท) */
+export type CfChecklistDayCell = {
+  status: CfChecklistStatus;
+  /** ยอดเก็บเงินรวมของวันนั้น (บาท) — 0 เมื่อไม่มีเก็บ/refill-only/no-baseline */
+  amount: number;
+};
+
 export type CfChecklistBranch = {
   branchId: string;
   branchName: string;
   /** false → ทั้งแถวเป็น NO_BASELINE (สาขายังไม่มีตู้ตั้ง baseline) → เรนเดอร์เทา ⚪ */
   hasBaseline: boolean;
-  /** isoDay ("YYYY-MM-DD" เวลาไทย) → สถานะ */
-  byDay: Record<string, CfChecklistStatus>;
+  /** cells[0] = วันที่ 1 ของเดือน ... cells[daysInMonth-1] = วันสุดท้าย */
+  cells: CfChecklistDayCell[];
 };
 
 export type CfChecklistGrid = {
-  /** ISO days เรียงจากใหม่→เก่า (index 0 = วันล่าสุด) — ตรงกับ matrix */
-  isoDays: string[];
+  year: number;
+  month: number; // 1..12
+  daysInMonth: number;
+  monthLabel: string; // "สิงหาคม 2569"
+  prevYm: string; // "YYYY-MM"
+  nextYm: string;
   branches: CfChecklistBranch[];
 };
 
@@ -60,37 +71,38 @@ function toNum(v: bigint | number | null): number {
   return typeof v === "bigint" ? Number(v) : v;
 }
 
-/** สร้าง array ของ ISO days (เวลาไทย) ย้อนหลัง n วัน จากวันนี้ → ใหม่→เก่า (ตรงกับ matrix-queries) */
-function buildIsoDays(n: number): string[] {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const out: string[] = [];
-  const now = Date.now();
-  for (let i = 0; i < n; i++) {
-    out.push(fmt.format(new Date(now - i * 86_400_000)));
-  }
-  return out;
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+/** เลื่อนเดือน (1-based) ไป delta เดือน → "YYYY-MM" — ตรงกับ shiftYm ใน reconcile-v2.ts */
+function shiftYm(year: number, month: number, delta: number): string {
+  const zero = month - 1 + delta;
+  const y = year + Math.floor(zero / 12);
+  const m = ((zero % 12) + 12) % 12;
+  return `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
 /**
- * เมทริกซ์ สาขา × วัน (checklist การเก็บเงิน) ย้อนหลัง N วัน — ทุกสาขาในขอบเขต user.
+ * เมทริกซ์ สาขา × วัน (checklist การเก็บเงิน) ของเดือนปฏิทิน (Asia/Bangkok) — ทุกสาขาในขอบเขต user.
  * READ-ONLY view → scope ด้วย userBranchIds (viewer/admin = "ALL") + orgId เสมอ.
- * - days: จำนวนวันย้อนหลัง (clamp 1–60)
+ * - year/month: เดือนปฏิทินที่ต้องการ (1-12)
  * - branchIds: กรองเฉพาะสาขาที่ระบุ (subset ของ scope) ถ้าส่งมา
  */
 export async function getCfChecklistGrid(input: {
-  days: number;
+  year: number;
+  month: number;
   branchIds?: string[];
 }): Promise<CfChecklistGrid> {
   const session: Session = await requireSession();
   const orgId = session.user.org_id;
   const scope = await userBranchIds(session);
-  const days = Math.max(1, Math.min(60, Math.floor(input.days)));
-  const isoDays = buildIsoDays(days);
+  const { year, month } = input;
+  const daysInMonth = new Date(year, month, 0).getDate(); // month 1-based → last day
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const monthStart = new Date(`${ym}-01T00:00:00+07:00`);
+  const monthEnd = new Date(`${shiftYm(year, month, 1)}-01T00:00:00+07:00`);
 
   // 1. สาขาคีบตุ๊กตา (claw_machine) ในขอบเขต user + กรอง input.branchIds ถ้ามี
   const branches = await prisma.branch.findMany({
@@ -106,7 +118,15 @@ export async function getCfChecklistGrid(input: {
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
-  if (branches.length === 0) return { isoDays, branches: [] };
+  if (branches.length === 0) {
+    return {
+      year, month, daysInMonth,
+      monthLabel: `${THAI_MONTHS[month - 1]} ${year + 543}`,
+      prevYm: shiftYm(year, month, -1),
+      nextYm: shiftYm(year, month, 1),
+      branches: [],
+    };
+  }
 
   const branchIds = branches.map((b) => b.id);
 
@@ -125,15 +145,14 @@ export async function getCfChecklistGrid(input: {
     lockedRows.filter((r) => r.branchId != null).map((r) => r.branchId as string),
   );
 
-  // 3. รวมรายวันต่อสาขา (raw SQL · GROUP BY branch_id, iso_day) — copy shape จาก matrix-queries
-  //    - date ตัดเป็น "วันไทย" ด้วย AT TIME ZONE 'Asia/Bangkok'
-  //    - cash_cents = เงินเก็บได้รวม/สาขา/วัน (เฉพาะรอบที่ปิดแล้ว)
+  // 3. รวมรายวันต่อสาขา (raw SQL · GROUP BY branch_id, iso_day) ในกรอบเดือนปฏิทินนี้
+  //    - filter ช่วงเดือนด้วย collected_at ตรง (timestamptz) ก่อน แล้วค่อย group ด้วยวันไทย
+  //    - cash_cents = เงินเก็บได้รวม/สาขา/วัน (เฉพาะรอบที่ปิดแล้ว/เปิดอยู่)
   //    - refills   = จำนวน event ที่ refill_qty > 0 (มีเติมตุ๊กตา)
   //    - deposits  = จำนวนรอบที่มี deposit_id (ฝากธนาคารแล้ว)
   //    - events    = จำนวน event ทั้งหมด (แยก "ไม่มีข้อมูล" ออกจาก "0 บาท")
-  //    join sessions → กรองเฉพาะรอบปิดแล้ว (CLOSED/LOCKED/ANOMALY_REVIEW) เหมือน matrix
+  //    join sessions → กรองเฉพาะรอบปิดแล้ว (CLOSED/LOCKED/ANOMALY_REVIEW) + OPEN เหมือน matrix
   //    ⚠️ cf_collection_events ไม่มี branch_id → สาขามาจาก session (s.branch_id) เท่านั้น
-  const since = isoDays[isoDays.length - 1]; // วันเก่าสุดในกรอบ "YYYY-MM-DD"
   const rows = await prisma.$queryRaw<RawRow[]>`
     SELECT
       s.branch_id::text AS branch_id,
@@ -149,18 +168,20 @@ export async function getCfChecklistGrid(input: {
       AND e.event_type = 'COLLECTION'
       -- + OPEN (กำลังเก็บ) — ตู้ที่เก็บวันนี้แม้รอบยังไม่ปิด ให้ขึ้นสถานะเก็บแล้ว (CEO 2026-08-01)
       AND s.status IN ('CLOSED', 'LOCKED', 'ANOMALY_REVIEW', 'OPEN')
-      AND (e.collected_at AT TIME ZONE 'Asia/Bangkok')::date >= ${since}::date
+      AND e.collected_at >= ${monthStart} AND e.collected_at < ${monthEnd}
     GROUP BY s.branch_id, iso_day
   `;
 
-  // 4. ประกอบสถานะต่อ (สาขา, วัน)
-  const byBranch = new Map<string, Record<string, CfChecklistStatus>>();
+  // 4. ประกอบสถานะ+ยอดเงิน ต่อ (สาขา, index วันในเดือน 0-based)
+  const byBranch = new Map<string, Map<number, CfChecklistDayCell>>();
   for (const r of rows) {
     const events = toNum(r.events);
     if (events === 0) continue;
     const cashCents = toNum(r.cash_cents);
     const refills = toNum(r.refills);
     const deposits = toNum(r.deposits);
+    const dayIdx = Number(r.iso_day.slice(8, 10)) - 1; // "YYYY-MM-DD" → day-of-month 0-based
+    if (dayIdx < 0 || dayIdx >= daysInMonth) continue; // เผื่อ edge ของ tz boundary
 
     let status: CfChecklistStatus;
     if (cashCents > 0) {
@@ -176,32 +197,35 @@ export async function getCfChecklistGrid(input: {
 
     let m = byBranch.get(r.branch_id);
     if (!m) {
-      m = {};
+      m = new Map();
       byBranch.set(r.branch_id, m);
     }
-    m[r.iso_day] = status;
+    m.set(dayIdx, { status, amount: cashCents / 100 });
   }
 
   // 5. ประกอบ output ต่อสาขา (เติม NOT_COLLECTED สำหรับวันที่ไม่มี event · NO_BASELINE ถ้าไม่มี baseline)
   const out: CfChecklistBranch[] = branches.map((b) => {
     const hasBaseline = hasBaselineSet.has(b.id);
-    const dayMap = byBranch.get(b.id) ?? {};
-    const byDay: Record<string, CfChecklistStatus> = {};
-    for (const iso of isoDays) {
-      if (!hasBaseline) {
-        // ยังไม่ตั้ง baseline → ทั้งแถวเทา ⚪ (ไม่ประเมิน collected/not)
-        byDay[iso] = "NO_BASELINE";
-      } else {
-        byDay[iso] = dayMap[iso] ?? "NOT_COLLECTED";
-      }
-    }
+    const dayMap = byBranch.get(b.id);
+    const cells: CfChecklistDayCell[] = Array.from({ length: daysInMonth }, (_, i) => {
+      if (!hasBaseline) return { status: "NO_BASELINE", amount: 0 };
+      return dayMap?.get(i) ?? { status: "NOT_COLLECTED", amount: 0 };
+    });
     return {
       branchId: b.id,
       branchName: b.name,
       hasBaseline,
-      byDay,
+      cells,
     };
   });
 
-  return { isoDays, branches: out };
+  return {
+    year,
+    month,
+    daysInMonth,
+    monthLabel: `${THAI_MONTHS[month - 1]} ${year + 543}`,
+    prevYm: shiftYm(year, month, -1),
+    nextYm: shiftYm(year, month, 1),
+    branches: out,
+  };
 }
