@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: เอาคอลัมน์เดิมกลับมาครบ + โชว์คนล่าสุดที่ทำงานต่อสาขา + ปุ่มปิดสาขาหลังชื่อ — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: เอาคอลัมน์เดิมกลับมาครบ + โชว์คนล่าสุดที่ทำงานต่อสาขา + ปุ่มปิดสาขาหลังชื่อ — DEPLOYED)
 
-## 🪑📋✅ ChairOps แม่บ้าน — เอาคอลัมน์เดิมกลับมา + โชว์ "คนล่าสุดที่ทำงาน" ต่อสาขา (2026-08-23)
+## 🪑📋✅ ChairOps แม่บ้าน — เอาคอลัมน์เดิมกลับมา + โชว์ "คนล่าสุดที่ทำงาน" ต่อสาขา (2026-08-23 · **DEPLOYED `b05be9d8`**)
 
 ต่อจากรอบก่อน (ยุบเป็น 1 แถว/สาขา + popup) — CEO บอกว่าข้อมูลคอลัมน์เดิม (ชื่อ/ทำงานมาแล้ว/เก็บเงินล่าสุด/เฉลี่ยฝากเงิน/บัญชี/เวลาที่มักเก็บ) หายไปจากแถวหลัก อยากได้กลับมาครบ แค่ให้ถ้าสาขาไหนมีแม่บ้านมากกว่า 1 คน ให้โชว์ **"คนล่าสุดที่ทำงาน"** (คนที่เก็บเงินล่าสุดในสาขานั้น) แทนที่จะซ่อนไว้หลัง popup ทั้งหมด
 
@@ -10,9 +10,7 @@
 
 **ไฟล์ที่แตะ:** [`branch-roster-view.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-roster-view.tsx) (เพิ่ม `mostRecentMaid()`), [`branch-maids-popup.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-maids-popup.tsx) (เปลี่ยนจาก trigger หลักเป็นป้าย "N คน" เล็กๆ)
 
-**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (2 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-hybrid`)
-
-📝 ยังไม่ commit/push — รอ CEO อนุมัติ deploy
+**Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (2 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-hybrid`) · `/verify` gate ผ่าน · merge ชน `origin/setup` 1 ครั้ง (CashHub Tea, คนละไฟล์) commit `ae997740` push ตรงเข้า `origin/setup` · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/login` → 307/200/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
 
 ---
 
