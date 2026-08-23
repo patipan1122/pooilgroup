@@ -1,6 +1,19 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: คอลัมน์เก็บเงินล่าสุดโชว์ "กี่วันที่แล้ว" แทนวันที่เพียวๆ — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (CashHub Tea: 2 ตารางที่ลืม apply ให้ prod แก้แล้ว + โชว์ช่วงวันที่ตอนอัปโหลด Foodstory — DEPLOYED)
+
+## 🧋🔧✅ CashHub Tea — ตามหลังหน้าไส้ใน 2 รอบ: ตารางไม่มีจริงใน prod + เพิ่มโชว์ช่วงวันที่ตอนอัปโหลด (2026-08-23)
+
+ต่อจาก [[cashhub-tea-qr-drilldown-and-match-rule-2026-08-21]] — CEO ทดสอบแล้วไม่เห็นไส้ใน แม้อัปไฟล์ซ้ำแล้ว
+
+1. **สาเหตุจริง:** ตอน deploy ฟีเจอร์ไส้ใน ผมเขียน migration SQL ไว้ในเรโปแล้ว commit/push แต่**ลืมรันจริงกับฐานข้อมูล production** — โค้ดที่ deploy ไปพยายามอ่าน/เขียนตาราง `cashhub_tea_pos_transaction`/`ledger_bank_match_rule` ที่ยังไม่มีอยู่จริง เงียบๆ ไม่มี error ให้เห็น (ตัวจับ error ในโค้ดกันไว้ไม่ให้หน้าจอพัง) **FIX:** รัน `prisma db execute --file` ทั้ง 2 migration เข้า production จริงแล้ว verify ด้วย `to_regclass()` ว่าตารางมีจริง — ไม่ต้องแก้โค้ดเลย
+2. **เพิ่มตามที่ CEO ขอ:** ตอนอัปโหลดไฟล์ Foodstory ให้บอกช่วงวันที่ของข้อมูลในไฟล์ด้วย (เช่น "1 ส.ค. 69 – 23 ส.ค. 69 (23 วัน)") — โชว์ทั้งตอนดูตัวอย่างก่อนนำเข้า และในข้อความสรุปหลังนำเข้าสำเร็จ ([`tea-view.tsx`](app/(admin)/cashhub/tea/tea-view.tsx))
+
+**Verify:** tsc 0 error (รอบนี้ค้างเกือบ 40 นาทีเพราะเครื่องมี session อื่นรัน tsc ชนกันเยอะ ไม่ใช่บั๊ก) · eslint 0 error · `next build` ผ่าน · smoke test `/` `/cashhub/tea` `/cashhub/tea/settings` `/ledger/bank-recon` `/clawfleet` → 200 ทุกตัว · commit `d56e25f5`→`5ce2085e` (migration fix, ไม่มี code commit เพิ่มเพราะเป็นแค่ apply DB) → `90ab56d0` (ช่วงวันที่)
+
+⚠️ **พบระหว่างทำ: main checkout ตัวนี้ใช้ร่วมกันหลาย session พร้อมกันจริง** — ตอน push รอบ `90ab56d0` เจอไฟล์ ClawFleet (`staff-app-client.tsx`/`branches-client.tsx`/`MismatchGate.tsx`/`lib/clawfleet/*`) ค้างแก้ไม่ commit อยู่จาก session อื่น + worktree `.claude/worktrees/chairops-checklist-popup-fix` ของ session อื่นด้วย — **ไม่ได้แตะ/commit ของเขาเลย** ใช้ `git stash push -u` เฉพาะไฟล์ที่ไม่ใช่ของตัวเอง (ระบุ path ชัดเจน) คั่นไว้ชั่วคราวระหว่าง rebase+push แล้ว pop คืนทันที — ดู [[feedback-shared-main-checkout-collision-2026-08-23]]
+
+---
 
 ## 🪑📅✅ ChairOps แม่บ้าน — คอลัมน์ "เก็บเงินล่าสุด" โชว์ "กี่วันที่แล้ว" (2026-08-23 · **DEPLOYED `12560e8d`**)
 
