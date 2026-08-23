@@ -13,6 +13,8 @@ import {
 const CHANNEL_CODE: Record<string, string> = {
   cash: "cash",
   qr: "qr",
+  kplus: "transfer",
+  thaichuaithaiplus: "transfer",
   card: "card",
   grab: "transfer",
   lineman: "transfer",

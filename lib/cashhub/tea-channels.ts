@@ -7,6 +7,8 @@
 export type TeaChannelCode =
   | "cash"
   | "qr"
+  | "kplus"
+  | "thaichuaithaiplus"
   | "card"
   | "grab"
   | "lineman"
@@ -29,6 +31,10 @@ export type TeaChannelDef = {
 export const TEA_CHANNELS: TeaChannelDef[] = [
   { code: "cash", label: "เงินสด", match: ["ชำระด้วยเงินสด"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   { code: "qr", label: "QR", match: ["qrpayment", "qrmanual", "qr "], isSettle: true, feePercent: 0, minSettleBaht: 0 },
+  // CEO 2026-08-23: เดิม "K Plus" ปนอยู่ในถัง QR (บัญชีปลายทางจริงคนละบัญชีกัน) — แยกถังของตัวเอง
+  { code: "kplus", label: "K Plus", match: ["kplus", "k plus"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
+  // เดิมไม่มีถังนี้เลย → ตกไป "other" (ไม่ settle เงินหายจากระบบเงียบๆ ฿31,268/74 วัน ก่อนแก้) — เพิ่มถังใหม่
+  { code: "thaichuaithaiplus", label: "ไทยช่วยไทยพลัส", match: ["ไทยช่วยไทยพลัส"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   { code: "card", label: "เครดิต EDC", match: ["edc"], isSettle: true, feePercent: 0.7, minSettleBaht: 0 },
   { code: "grab", label: "Grab", match: ["grab"], isSettle: true, feePercent: 18, minSettleBaht: 0 },
   { code: "lineman", label: "Lineman", match: ["lineman"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
@@ -59,8 +65,12 @@ export function classifyTeaPayment(payment: string): TeaChannelCode {
   if (/cash|เงินสด/.test(p)) return "cash";
   if (/edc|credit|debit|บัตร|\bcard\b/.test(p)) return "card";
   if (/blueplus|true\s?money|truemoney|wallet|rabbit|shopeepay|linepay/.test(p)) return "wallet";
+  // ต้องเช็คก่อนกฎ qr ทั่วไปด้านล่าง (เดิม K Plus โดนจับรวมเป็น qr — CEO 2026-08-23 ขอแยกถัง
+  // เพราะบัญชีปลายทางจริงคนละบัญชีกัน)
+  if (/k\s?plus|kplus/.test(p)) return "kplus";
+  if (/ไทยช่วยไทยพลัส/.test(p)) return "thaichuaithaiplus";
   // เข้าธนาคารทางอิเล็กทรอนิกส์ → qr (จับเฉพาะที่รู้จัก · ที่เหลือ → other กัน bucket เพี้ยน)
-  if (/k\s?plus|kplus|qr|promptpay|prompt\s?pay|scb|krungthai|ktb|bualuang|kma|bbl|transfer|โอน|ธนาคาร|bank|พร้อมเพย/.test(p))
+  if (/qr|promptpay|prompt\s?pay|scb|krungthai|ktb|bualuang|kma|bbl|transfer|โอน|ธนาคาร|bank|พร้อมเพย/.test(p))
     return "qr";
   return "other"; // เงินเชื่อ/ไม่รู้จัก → ไม่ settle (เดิม default qr ทำให้ยอด QR เกินจริง)
 }
