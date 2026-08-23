@@ -120,9 +120,13 @@ supabase/migrations/     ← 12 SQL migrations (RLS + GENERATED columns + custom
 ## 🚦 Workflow Rules
 
 ### Always before code change
+0. **`EnterWorktree` ก่อนเสมอ — ห้ามแก้ไฟล์/commit ใน main working tree เด็ดขาด.**
+   Repo นี้ถูกหลาย Claude session ใช้งานพร้อมกันจริง (ไม่ใช่ทฤษฎี — เจอ session อื่นทิ้งไฟล์ค้างไม่ commit ในเช็คเอาต์เดียวกัน + `git push` ชนกันแบบ non-fast-forward ซ้ำหลายรอบใน 2026-08-23 เดียว) ดูรายละเอียด/สคริปต์ setup ใน `docs/MODULE_GUIDE.md` § 5 "Parallel Development — Worktree Layout"
+   `git push` เข้า `setup`/`main`/`master` จาก main working tree (ไม่ใช่ worktree) อาจถูก `verify-gate.py` hook เตือน/บล็อก — อย่าใช้ `VERIFY_SKIP=1` ข้ามด่านนี้เพื่อความสะดวก
 1. อ่าน `STATUS.md` first — รู้ sprint ปัจจุบัน · อะไรเสร็จ · อะไรค้าง
 2. อ่าน file ที่จะแก้ก่อน (Read tool) · ไม่เดา
 3. ถ้า touch DB → ตรวจ `prisma/schema.prisma` + migrations ที่เกี่ยวข้อง
+4. **ก่อน push:** `git fetch origin setup` เช็คว่ามีใครแซงหน้าไหม · `git status --porcelain` ต้องมีแค่ไฟล์ของคุณเอง (ถ้าเจอไฟล์แปลกปลอมของ session อื่น → `git stash push -u -m "<desc>" -- <path เจาะจง>` ห้าม commit ปนไปด้วย) · ถ้า rebase แล้วชนที่ `STATUS.md` → เก็บทุกฝั่งไว้เสมอ (จัดเรียงใหม่ ห้ามลบ entry ใคร)
 
 ### Security hard rules
 - `SUPABASE_SERVICE_ROLE_KEY` server-side เท่านั้น · ห้าม expose client
