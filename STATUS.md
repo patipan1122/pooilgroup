@@ -1,6 +1,22 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: การ์ด→ตาราง + สถิติเก็บ/ฝากเงินจริง — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps เช็คลิสต์: เพิ่มโหมด "ตัวเลข" ควรได้/เก็บได้/ฝาก — DEPLOYED)
+
+## 🪑🔢✅ ChairOps ตรวจยอด — เช็คลิสต์เพิ่มโหมด "ตัวเลข" (ควรได้/เก็บได้/ฝาก) คู่โหมดจุดเดิม (2026-08-23 · 🚀 DEPLOYED `origin/setup 0b264c14`)
+
+CEO อนุมัติหลัง research+plan round: เช็คลิสต์รายเดือน (สาขา × วัน) เดิมมีแต่จุดสี — อยากได้มุมมองตัวเลขจริงด้วย (ควรได้ตามมิเตอร์/เก็บได้/ฝาก) แบบไม่แตะของเดิมเลย เพื่อจับเงินหายข้ามสาขา (เคยจับได้จริงมาก่อนจากการไขว้เช็คแบบนี้).
+
+**สร้าง** (ไม่แก้ `ChecklistTab`/`checklistDot` เดิมแม้แต่บรรทัดเดียว — โหมดจุดทำงานเหมือนเดิม 100%):
+1. `getReconcileChecklistNumbers()` (`lib/chairops/queries/reconcile-v2.ts`) — เก็บได้/ฝาก copy ตรงจาก `getReconcileChecklist()` (การันตีตรงกับโหมดจุด 100%, ไม่ re-derive) · ควรได้(มิเตอร์) มา re-bucket จาก `getReconcilePeriods()` เรียกขนาน ~48 สาขา (`Promise.all`) ตามวันที่ `lastCollectedAt` ของแต่ละรอบที่ปิดแล้ว (รอบที่ยังไม่มีข้อมูลมิเตอร์ = ⚪ ไม่มีวันโชว์เลขหลอกตา) — ไม่ reimplement สูตรมิเตอร์เลย เรียกฟังก์ชันเดิมตรงๆ
+2. `NumbersTab`/`NumbersRow` (`reconcile-views.tsx`) — 1 ตัวเลขหลัก/ช่อง (งบพื้นที่ RULE L): โหมดจำนวนเงินโชว์ฝาก(หรือเก็บได้ถ้ายังไม่ฝาก) · โหมดผลต่างโชว์ควรได้−เก็บได้ เขียว/แดง สลับกันด้วย checkbox+`:has()` ล้วนๆ (ไม่มี client JS ตามที่หน้านี้ตั้งใจไว้แต่แรก) · กดตัวเลขช่องไหนก็ได้เปิดรายละเอียด "ในที่เดิม" ต่อยอด `?day=` เดิม + `?branch=` ใหม่ (org-wide เลยต้องระบุสาขา)
+3. `DayDetailPanel` เพิ่ม `branchName`/`expectedAmount` (optional prop เดิมไม่พัง) — โชว์ ควรได้/เก็บได้/ฝาก ครบ 3 ขา
+4. แถวชื่อสาขา: เพิ่มป้าย "ขาดสะสม/เกินสะสม" (depositDiffCum ล่าสุดจาก `getReconcilePeriods()`) คู่ป้าย "X วัน" เดิม — ใช้ threshold สีเดียวกับคอลัมน์ "ต่างฝากสะสม" ที่มีอยู่แล้วใน Periods tab (ไม่คิด threshold ใหม่)
+5. ผลต่างรายวันใช้ `perChairVerdict()` ตัวเดิมที่ใช้ทั่วหน้านี้อยู่แล้ว (floor ±20฿ + 2% ของยอดควรได้) ย่อเหลือ 2 สีตามที่ CEO สั่ง (เขียว=ตรง/เกิน, แดง=ขาด)
+- **ตรวจสอบ (ก่อน push):** `scripts/verify-numbers-view-2026-08-23.ts` (read-only, เก็บไว้ในเรโป rerun ได้) เรียกฟังก์ชันจริงกับ DB จริง 3 สาขาเดือน 2026-08 (คอนโดเคนชิงตันสุขุมวิท·Robinsonปราจีน·คอนโดเอสปรายเอราวัน) — เก็บได้/ฝาก/collectDays ตรงกับ `getReconcileChecklist()` 100% (60 วันที่มีข้อมูล, 0 mismatch) · cumShortfall ตรงกับ `getReconcilePeriods()` ล่าสุด 100% (3/3 สาขา) · เวลาคำนวณ ~2.5 วินาที/48 สาขา (ยอมรับได้)
+- verify: `tsc --noEmit` เต็มโปรเจกต์ 0 error · eslint ไฟล์ที่แก้ 0 error ของใหม่ (มี 2 error + 1 warning เดิมที่ไม่เกี่ยวกับฟีเจอร์นี้ — ยืนยันแล้วว่ามีอยู่ก่อนแล้วบน origin/setup, `react-hooks/purity` เจอ `Date.now()` ใน server component 2 จุดเดิม) · `next build` compiled สำเร็จ รวม `/chairops/reconcile` + `/chairops/reconcile/[branchId]` · curl smoke root/login/reconcile ตอบ 200/307 (307=redirect ไป login ตามปกติเพราะหน้าต้อง login)
+- **Deploy:** worktree ใหม่ `pooilgroup-web-numbers-view` แยกจาก `origin/setup` สด (ไม่มีคน push แซงระหว่างทำ) → push ตรงเข้า `setup` สำเร็จรอบที่ 3 (2 รอบแรกโดน auto-mode classifier บล็อกชั่วคราว "Stage 2 classifier error" — retry แล้วผ่าน ไม่ได้ข้ามด่านใดๆ)
+- **ยังไม่ได้ทำ / ข้อจำกัดที่ควรรู้:** ป้าย "ขาดสะสม" เป็นยอดสะสม **ทั้งหมดตั้งแต่เริ่มมี** (all-time ณ ตอนนี้) ไม่ใช่แค่เดือนที่กำลังดู — ตามที่ getReconcilePeriods() คำนวณไว้แต่เดิม (CEO สั่งให้ reuse ไม่ให้ reimplement) ถ้าอยากได้แบบ "เฉพาะเดือนนี้" ต้องบอกแยกเป็นงานถัดไป
+- CEO ยังต้องทดสอบจริง: เปิด `/chairops/reconcile?view=checklist` กดปุ่ม "🔢 ตัวเลข" → ลองสลับ "จำนวนเงิน/ผลต่าง" → กดตัวเลขช่องไหนก็ได้ดูรายละเอียดในที่เดิม
 
 ## 🪑📊✅ ChairOps แม่บ้าน — เปลี่ยนหน้าการ์ดเป็นตาราง + คำนวณพฤติกรรมเก็บ/ฝากเงินจริง (2026-08-23 · **DEPLOYED `ddae6163`**)
 
