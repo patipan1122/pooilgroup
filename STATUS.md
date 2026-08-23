@@ -1,6 +1,30 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ClawFleet ผูกบัญชี — เปลี่ยนเป็นตาราง "สาขานำหน้า" ตาม feedback CEO — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ตู้คีบ OS เช็คลิสต์ — จัดเรียงลำดับสาขาเอง (▲▼) + เซฟถาวร — DEPLOYED)
+
+## 🦀↕️✅ ตู้คีบ OS — จัดเรียงลำดับสาขาในตารางเช็คลิสต์เอง (▲▼) + เซฟถาวร (2026-08-23 · **DEPLOYED**)
+
+ต่อจาก [[clawfleet-checklist-grid-full-month-2026-08-23]] — CEO ขอให้กดจัดเรียงลำดับสาขาในตารางเองได้ "อิสระเลย แล้วเซฟไว้เลย" (ไม่ใช่แค่เรียงอัตโนมัติตามสูตร)
+
+**สิ่งที่ทำ:**
+- ตารางใหม่ `cf_branch_checklist_order` (migration `20260823130000`) — 1 แถวต่อสาขา เก็บแค่เลขลำดับ · **ไม่ reuse** ตาราง `cf_branch_reconcile_configs` (ผูกบัญชีธนาคาร) เพราะ field บริษัท/บัญชีธนาคารที่นั่นบังคับกรอก (NOT NULL) — ถ้าใช้ร่วมกัน สาขาที่ยังไม่ผูกบัญชีจะจัดลำดับเช็คลิสต์ไม่ได้ · **ไม่แตะ** ตาราง `Branch` เดิม (ใช้ร่วม 8 โปรแกรม)
+- [`checklist-client.tsx`](<app/(admin)/clawfleet/os/matrix/checklist-client.tsx>) — ปุ่ม ▲▼ ข้างชื่อสาขาแต่ละแถว กดสลับตำแหน่งกับแถวข้างเคียงทันที (ไม่ใช้ลาก/drag — มือถือลากแม่นยำยาก + ต้องลงไลบรารีเสริมใหม่) กดแล้วเซฟอัตโนมัติทันที (optimistic + rollback ถ้าเซฟล้ม)
+- [`checklist-order-actions.ts`](lib/clawfleet/checklist-order-actions.ts) (ใหม่) — บันทึกลำดับ **จำกัดเฉพาะ admin-power** เท่านั้น (เปลี่ยนสิ่งที่ทุกคนเห็นร่วมกัน ไม่ใช่ preference ส่วนตัว) เขียนทับลำดับทั้งชุดในทรานเดียวทุกครั้ง (กันปัญหาสาขาที่ไม่เคยจัดลำดับปนกับที่จัดแล้ว)
+- [`checklist-queries.ts`](lib/clawfleet/checklist-queries.ts) — ดึงลำดับที่เซฟไว้มาเรียงก่อน สาขาที่ไม่เคยจัดเอง = ตกท้ายแบบ ก-ฮ เหมือนเดิม (backward-compatible 100% กับสาขาที่ไม่มีใครแตะ)
+
+**Architecture Check:**
+- Domain expert: ไม่ต้องใช้ domain expert พิเศษ — เป็นแค่ preference การแสดงผล ไม่แตะเงิน
+- Race condition: ต่ำมาก — 2 คนกดพร้อมกัน = last-write-wins ทั้งชุด ไม่มีข้อมูลเสียหาย (ไม่ใช่เงิน)
+- Idempotency: ✅ เขียนซ้ำลำดับเดิม = no-op ทางผล
+- Data consistency: ✅ transaction เดียวเขียนทั้งชุด ไม่มี partial-write
+- Scale: สูงสุด ~50 สาขา/ครั้ง เขียนทีเดียว ไม่มีปัญหา
+- วิธีที่ใช้ดีที่สุดแล้วหรือยัง: ✅ ปุ่ม ▲▼ แทน drag — ไม่ต้องลงไลบรารีใหม่ (Ladder) + ใช้ได้จริงบนมือถือ (CEO เช็คจากมือถือเป็นหลัก)
+
+**Verify:** `tsc --noEmit` 0 error ทั้งโปรเจกต์ · `next build` compiled สำเร็จ รวม route `/clawfleet/os/matrix` · eslint 0 error (เจอ+แก้เอง 2 รอบ — `react-hooks/set-state-in-effect` แล้วลองแก้เป็น ref-compare-during-render ก็โดน `react-hooks/refs` อีก เพราะเรโปนี้ล็อกกฎเข้มทั้งคู่ — สุดท้ายแก้ด้วย `key={year-month}` บนคอมโพเนนต์แทน ให้ React remount เองตอนเปลี่ยนเดือน ไม่ต้อง effect/ref เลย) · **DB spot-check จริง (read-only + cleanup)** — จำลอง reverse-order 3 สาขาจริง เซฟ อ่านกลับ เทียบตรงเป๊ะ แล้วลบแถวทดสอบทิ้ง ไม่เหลือร่องรอย · migration apply กับ prod DB จริงแล้ว (`prisma db execute`)
+
+**Deploy:** worktree เดิม branch ใหม่ off `origin/setup` สด → push เข้า `origin/setup`
+
+---
 
 ## 🦞📋✅ ClawFleet ผูกบัญชี — เปลี่ยนจาก dropdown เป็นตาราง "สาขานำหน้า" (2026-08-23 · 🚀 DEPLOYED `645ebef0`)
 

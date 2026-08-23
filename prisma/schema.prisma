@@ -2881,6 +2881,21 @@ model CfBranchReconcileConfig {
   @@schema("public")
 }
 
+// CEO 2026-08-23 · ลำดับการแสดงผลสาขาในตารางเช็คลิสต์ (สาขา × วัน) ที่จัดเรียงเอง
+// (ปุ่ม ▲▼ ใน checklist-client.tsx) — แยกจาก CfBranchReconcileConfig เพราะ
+// company/bankAccount ที่นั่น NOT NULL ทำให้ผูกกับสาขาที่ยังไม่ตั้งบัญชีไม่ได้
+model CfBranchChecklistOrder {
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  branchId  String   @unique @map("branch_id") @db.Uuid
+  sortOrder Int      @map("sort_order")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([orgId])
+  @@map("cf_branch_checklist_order")
+  @@schema("public")
+}
+
 // =============================================================
 // ChairOps — massage-chair management for 30 branches
 // Lives in `chairops` schema (multi-schema · separate from public)

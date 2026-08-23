@@ -13,9 +13,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarX } from "lucide-react";
+import { CalendarX, ChevronUp, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 import { EmptyState } from "@/components/clawfleet/os/kit";
 import { num } from "@/components/clawfleet/os/format";
+import { saveChecklistOrder } from "@/lib/clawfleet/checklist-order-actions";
 
 /** สถานะ 1 สาขา ใน 1 วัน — ตรงกับ CfChecklistStatus ใน checklist-queries.ts */
 export type CfChecklistStatus =
@@ -60,7 +62,7 @@ const C = {
 
 const DOT_MIN_W = 30;
 const AMOUNT_MIN_W = 52;
-const NAME_COL_W = 168;
+const NAME_COL_W = 188;
 
 /* ── SAMPLE (เมื่อ DB ว่าง) — deterministic ตามรูปทรงข้อมูลเดียวกับของจริง ── */
 const SAMPLE_NAMES = ["รังสิต", "ลาดพร้าว", "บางแค", "บางนา", "นนทบุรี", "ปทุมธานี", "สมุทรปราการ", "มีนบุรี"];
@@ -147,6 +149,7 @@ export function ChecklistClient({
   prevYm,
   nextYm,
   branches,
+  canReorder,
 }: {
   year: number;
   month: number;
@@ -155,17 +158,41 @@ export function ChecklistClient({
   prevYm: string;
   nextYm: string;
   branches: ChecklistBranch[];
+  /** true → user เป็น admin-power ที่กดจัดเรียงลำดับสาขาเองได้ */
+  canReorder: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<"dot" | "amount">("dot");
   const [pending, startTransition] = useTransition();
+  // ลำดับที่กด ▲▼ เอง (optimistic) — ต้อง reset เมื่อเปลี่ยนเดือน ทำผ่าน `key={year-month}`
+  // ที่ matrix-client.tsx (remount ทั้งคอมโพเนนต์) แทนการ diff prop ภายใน — เรียบง่ายกว่า
+  // effect/ref และเข้ากับกฎ react-hooks/refs ของเรโปนี้ (ห้ามอ่าน/เขียน ref ระหว่าง render)
+  const [localOrder, setLocalOrder] = useState<ChecklistBranch[] | null>(null);
 
   const today = useMemo(() => todayBangkok(), []);
   const elapsedDays = useMemo(() => elapsedDaysOf(year, month, daysInMonth), [year, month, daysInMonth]);
   const empty = branches.length === 0;
-  const rows = empty ? sampleBranches(daysInMonth, elapsedDays) : branches;
+  const rows = empty ? sampleBranches(daysInMonth, elapsedDays) : (localOrder ?? branches);
   const noData = !empty && rows.length === 0;
+
+  /** กด ▲▼ — สลับตำแหน่งกับแถวข้างเคียง อัปเดตจอทันที + เซฟเบื้องหลัง (rollback ถ้าล้ม) */
+  const moveRow = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= rows.length) return;
+    const prevOrder = rows;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    setLocalOrder(next);
+    startTransition(() => {
+      saveChecklistOrder(next.map((b) => b.branchId)).then((res) => {
+        if (!res.ok) {
+          setLocalOrder(prevOrder);
+          toast.error(res.error);
+        }
+      });
+    });
+  };
 
   const goMonth = (ym: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -286,6 +313,9 @@ export function ChecklistClient({
                   }}
                 >
                   สาขา ({rows.length})
+                  {canReorder && !empty && (
+                    <span style={{ display: "block", fontSize: 9, fontWeight: 500, color: C.muted2 }}>กด ▲▼ จัดเรียงเอง</span>
+                  )}
                 </th>
                 {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
                   const isToday = year === today.year && month === today.month && d === today.day;
@@ -308,22 +338,48 @@ export function ChecklistClient({
               </tr>
             </thead>
             <tbody>
-              {rows.map((b) => (
+              {rows.map((b, ri) => (
                 <tr key={b.branchId}>
                   <th
                     scope="row"
                     style={{
                       position: "sticky", left: 0, zIndex: 1, background: "#fff",
-                      textAlign: "left", fontWeight: 600, padding: "8px 14px", fontSize: 12.5,
+                      textAlign: "left", fontWeight: 600, padding: "8px 8px 8px 14px", fontSize: 12.5,
                       color: C.ink, borderBottom: `1px solid ${C.rowLine}`, borderRight: `1px solid ${C.headLine}`,
-                      minWidth: NAME_COL_W, maxWidth: NAME_COL_W, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      minWidth: NAME_COL_W, maxWidth: NAME_COL_W,
                       opacity: b.hasBaseline ? 1 : 0.6,
                     }}
                   >
-                    {b.branchName}
-                    {!b.hasBaseline && (
-                      <span style={{ display: "block", fontSize: 9.5, fontWeight: 500, color: C.muted2 }}>ยังไม่ตั้งค่า</span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {b.branchName}
+                        {!b.hasBaseline && (
+                          <span style={{ display: "block", fontSize: 9.5, fontWeight: 500, color: C.muted2 }}>ยังไม่ตั้งค่า</span>
+                        )}
+                      </div>
+                      {canReorder && !empty && (
+                        <div style={{ display: "flex", flexDirection: "column", flex: "0 0 auto" }}>
+                          <button
+                            type="button"
+                            onClick={() => moveRow(ri, -1)}
+                            disabled={ri === 0}
+                            aria-label={`ย้าย ${b.branchName} ขึ้น`}
+                            style={{ border: "none", background: "transparent", cursor: ri === 0 ? "default" : "pointer", padding: 1, color: ri === 0 ? C.headLine : C.muted2, lineHeight: 0 }}
+                          >
+                            <ChevronUp size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveRow(ri, 1)}
+                            disabled={ri === rows.length - 1}
+                            aria-label={`ย้าย ${b.branchName} ลง`}
+                            style={{ border: "none", background: "transparent", cursor: ri === rows.length - 1 ? "default" : "pointer", padding: 1, color: ri === rows.length - 1 ? C.headLine : C.muted2, lineHeight: 0 }}
+                          >
+                            <ChevronDown size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </th>
                   {b.cells.map((c, i) => {
                     const isFuture = i >= elapsedDays;

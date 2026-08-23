@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession, type Session } from "@/lib/auth/session";
-import { userBranchIds } from "./role-guard";
+import { userBranchIds, cfHasAdminPower } from "./role-guard";
 
 /** สถานะการเก็บเงินของ 1 สาขา ใน 1 วัน */
 export type CfChecklistStatus =
@@ -49,6 +49,8 @@ export type CfChecklistGrid = {
   prevYm: string; // "YYYY-MM"
   nextYm: string;
   branches: CfChecklistBranch[];
+  /** true → user เป็น admin-power ที่กดจัดเรียงลำดับสาขาเองได้ (CfBranchChecklistOrder) */
+  canReorder: boolean;
 };
 
 /** raw row จาก groupBy สาขา×วัน */
@@ -98,6 +100,7 @@ export async function getCfChecklistGrid(input: {
   const session: Session = await requireSession();
   const orgId = session.user.org_id;
   const scope = await userBranchIds(session);
+  const canReorder = await cfHasAdminPower(session);
   const { year, month } = input;
   const daysInMonth = new Date(year, month, 0).getDate(); // month 1-based → last day
   const ym = `${year}-${String(month).padStart(2, "0")}`;
@@ -125,10 +128,29 @@ export async function getCfChecklistGrid(input: {
       prevYm: shiftYm(year, month, -1),
       nextYm: shiftYm(year, month, 1),
       branches: [],
+      canReorder,
     };
   }
 
   const branchIds = branches.map((b) => b.id);
+
+  // 1b. ลำดับที่ CEO จัดเรียงเอง (ปุ่ม ▲▼) — สาขาที่ไม่เคยจัดเอง (ไม่มีแถว) ตกท้าย
+  //     เรียง ก-ฮ ต่อจากสาขาที่จัดลำดับไว้แล้ว (branches ข้างบน orderBy name อยู่แล้ว)
+  const orderRows = await prisma.cfBranchChecklistOrder.findMany({
+    where: { orgId, branchId: { in: branchIds } },
+    select: { branchId: true, sortOrder: true },
+  });
+  const orderMap = new Map(orderRows.map((r) => [r.branchId, r.sortOrder]));
+  if (orderMap.size > 0) {
+    branches.sort((a, b) => {
+      const oa = orderMap.get(a.id);
+      const ob = orderMap.get(b.id);
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1; // มีลำดับ → มาก่อนสาขาที่ไม่มี
+      if (ob != null) return 1;
+      return 0; // ทั้งคู่ไม่มีลำดับ → คง ก-ฮ เดิม (Array.sort เสถียรใน V8)
+    });
+  }
 
   // 2. สาขาไหน "มี baseline แล้ว" — มีตู้ ≥1 ตัวที่ isFirstBaselineLocked=true
   //    (แถวสาขาที่ไม่มีตู้ locked เลย → NO_BASELINE ทั้งแถว)
@@ -227,5 +249,6 @@ export async function getCfChecklistGrid(input: {
     prevYm: shiftYm(year, month, -1),
     nextYm: shiftYm(year, month, 1),
     branches: out,
+    canReorder,
   };
 }

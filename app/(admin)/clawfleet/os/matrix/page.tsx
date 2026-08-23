@@ -75,6 +75,7 @@ export default async function MatrixPage({
   let checklistPrevYm = shiftYm(ckYear, ckMonth, -1);
   let checklistNextYm = shiftYm(ckYear, ckMonth, 1);
   let checklistBranches: ChecklistBranch[] = [];
+  let checklistCanReorder = false;
   // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) ของสาขาที่เลือก — เลขที่พนักงานกรอกจริง (ตั้งต้น + รอบเก็บ)
   let rawRows: RawReadingRow[] = [];
   let rawTotal = 0;
@@ -90,6 +91,7 @@ export default async function MatrixPage({
     checklistPrevYm = checklist.prevYm;
     checklistNextYm = checklist.nextYm;
     checklistBranches = checklist.branches;
+    checklistCanReorder = checklist.canReorder;
   } catch {
     // graceful: DB ว่าง/ยังไม่ migrate → client ใช้ตัวอย่าง
   }
@@ -175,6 +177,7 @@ export default async function MatrixPage({
       checklistPrevYm={checklistPrevYm}
       checklistNextYm={checklistNextYm}
       checklistBranches={checklistBranches}
+      checklistCanReorder={checklistCanReorder}
       rawRows={rawRows}
       rawTotal={rawTotal}
       rawTruncated={rawTruncated}

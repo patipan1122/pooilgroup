@@ -165,6 +165,7 @@ export function MatrixClient({
   checklistPrevYm,
   checklistNextYm,
   checklistBranches = [],
+  checklistCanReorder = false,
   rawRows = [],
   rawTotal = 0,
   rawTruncated = false,
@@ -187,6 +188,8 @@ export function MatrixClient({
   checklistPrevYm: string;
   checklistNextYm: string;
   checklistBranches?: ChecklistBranch[];
+  /** true → user เป็น admin-power ที่กดจัดเรียงลำดับสาขาในเช็คลิสต์เองได้ */
+  checklistCanReorder?: boolean;
   // ข้อมูลดิบมิเตอร์ (โหมดที่ 3) — เลขที่พนักงานกรอกจริง ของสาขาที่เลือก
   rawRows?: RawReadingRow[];
   rawTotal?: number;
@@ -621,6 +624,7 @@ export function MatrixClient({
 
       {view === "branch" ? (
         <ChecklistClient
+          key={`${checklistYear}-${checklistMonth}`}
           year={checklistYear}
           month={checklistMonth}
           daysInMonth={checklistDaysInMonth}
@@ -628,6 +632,7 @@ export function MatrixClient({
           prevYm={checklistPrevYm}
           nextYm={checklistNextYm}
           branches={checklistBranches}
+          canReorder={checklistCanReorder}
         />
       ) : (
       <>
