@@ -164,7 +164,14 @@ export function TeaReconcilePanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ branchCode: code, from, to }),
     });
-    const j = (await r.json()) as { ok?: boolean; inserted?: number; skippedNoConfig?: number; error?: string };
+    const j = (await r.json()) as {
+      ok?: boolean;
+      inserted?: number;
+      skippedNoConfig?: number;
+      itemizedDays?: number;
+      skippedMatchedAggregate?: number;
+      error?: string;
+    };
     return { ok: r.ok, ...j };
   }
 
@@ -177,8 +184,12 @@ export function TeaReconcilePanel({
       const j = await postReconcile(branchCode);
       if (!j.ok) return setErr(j.error ?? "ส่งไม่สำเร็จ");
       setJustSent((prev) => new Set([...prev, ...branchKeys])); // เด้ง 🟡 ทันที
+      const itemizedTxt = j.itemizedDays ? ` · แยกยอด QR รายรายการ ${j.itemizedDays} วัน` : "";
+      const blockedTxt = j.skippedMatchedAggregate
+        ? ` · ⚠️ ${j.skippedMatchedAggregate} วันแมชธนาคารไปแล้ว ไม่แตะ (ตรวจเองที่หน้าบัญชีธนาคาร)`
+        : "";
       setMsg(
-        `✅ ส่งเข้าระบบบัญชีแล้ว ${j.inserted ?? 0} รายการ${j.skippedNoConfig ? ` · ข้าม ${j.skippedNoConfig} (ยังไม่ผูกบัญชี)` : ""} → ไปกระทบยอดที่หน้าบัญชีธนาคาร`,
+        `✅ ส่งเข้าระบบบัญชีแล้ว ${j.inserted ?? 0} รายการ${j.skippedNoConfig ? ` · ข้าม ${j.skippedNoConfig} (ยังไม่ผูกบัญชี)` : ""}${itemizedTxt}${blockedTxt} → ไปกระทบยอดที่หน้าบัญชีธนาคาร`,
       );
       router.refresh();
     } catch {
@@ -196,6 +207,8 @@ export function TeaReconcilePanel({
     setMsg(null);
     let sent = 0;
     let totalInserted = 0;
+    let totalItemizedDays = 0;
+    let totalBlocked = 0;
     const noConfig: string[] = [];
     const failed: string[] = [];
     for (let i = 0; i < branches.length; i++) {
@@ -210,6 +223,8 @@ export function TeaReconcilePanel({
         } else {
           sent++;
           totalInserted += j.inserted ?? 0;
+          totalItemizedDays += j.itemizedDays ?? 0;
+          totalBlocked += j.skippedMatchedAggregate ?? 0;
         }
       } catch {
         failed.push(b.label);
@@ -219,6 +234,8 @@ export function TeaReconcilePanel({
     setBusy(false);
     setJustSent((prev) => new Set([...prev, ...branchKeys])); // เด้ง 🟡 ทันทีสำหรับสาขาที่กำลังดู
     const parts = [`✅ ส่งครบ ${sent}/${branches.length} สาขา · เพิ่มรวม ${totalInserted} รายการ`];
+    if (totalItemizedDays) parts.push(`แยกยอด QR รายรายการ ${totalItemizedDays} วัน`);
+    if (totalBlocked) parts.push(`⚠️ ${totalBlocked} วันแมชธนาคารไปแล้ว ไม่แตะ (ตรวจเองที่หน้าบัญชีธนาคาร)`);
     if (noConfig.length) parts.push(`⚪ ข้าม ${noConfig.length} สาขา (ยังไม่ตั้งบัญชี: ${noConfig.join(", ")})`);
     if (failed.length) parts.push(`⚠️ พลาด ${failed.length} สาขา (${failed.join(", ")})`);
     if (failed.length) setErr(parts.join(" · "));
