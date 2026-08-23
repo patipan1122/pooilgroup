@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: เจอ+แก้กลไก "ปิดสาขา" ซ้อนกัน 2 อัน ไม่เชื่อมกัน — รวมเป็นอันเดียว + เจอสาขาที่หายไปจากหน้าตรวจยอดโดยไม่ตั้งใจ — โค้ดพร้อม รอ CEO อนุมัติ deploy + อนุมัติแก้ข้อมูล)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: รวมกลไก "ปิดสาขา" ที่ซ้อนกัน 2 อันเป็นอันเดียว — DEPLOYED · ⚠️ เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ รอ CEO อนุมัติแก้ข้อมูล)
 
-## 🪑🔗🚨 ChairOps แม่บ้าน — เจอกลไก "ปิดสาขา" ซ้อนกัน 2 อัน (ไม่เชื่อมกัน) — รวมเป็นอันเดียว + เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ (2026-08-23)
+## 🪑🔗🚨 ChairOps แม่บ้าน — เจอกลไก "ปิดสาขา" ซ้อนกัน 2 อัน (ไม่เชื่อมกัน) — รวมเป็นอันเดียว + เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ (2026-08-23 · **DEPLOYED `27b7f535`**)
 
 CEO บอกว่า "ข้อมูลทุกอย่างมันควรเชื่อมโยงกันหมด" หลังเห็นหน้าตรวจยอด (reconcile) มีปุ่มปิดสาขาอยู่แล้ว — เช็คโค้ดแล้วพบว่า **ระบบมีปุ่ม "ปิดสาขา" อยู่แล้วจริงๆ ที่หน้า `/chairops/reconcile`** (`toggleBranchClosedAction`, super_admin เท่านั้น, แก้แค่ `closedAt` — ตั้งใจให้สาขาที่ปิดยัง**โชว์อยู่ทุกหน้าแบบจางๆ** ไม่ใช่หายไปเลย เพื่อให้ office ยังตามเก็บเงินค้างฝากได้) — **ผมไม่รู้ว่ามันมีอยู่แล้ว เลยสร้างปุ่ม "ปิดสาขา" ของตัวเองซ้อนขึ้นมาอีกอันที่หน้าแม่บ้าน ซึ่งแก้ `isActive` ด้วย** ทำให้สาขาที่ปิดผ่านปุ่มของผม **หายไปเลยทั้งระบบ** (dashboard/ตรวจยอด/collect) แทนที่จะโชว์จางๆ ตามดีไซน์เดิม — เป็น 2 กลไกที่เขียนทับ field เดียวกันคนละความหมาย
 
@@ -15,9 +15,9 @@ CEO บอกว่า "ข้อมูลทุกอย่างมันค�
 
 **บทเรียน:** ควร grep หาว่ามี "close branch" mechanism อยู่แล้วในเรโปก่อนสร้างใหม่ (ladder principle) — คราวนี้ไม่ทำ เลยสร้างของซ้อนกันโดยไม่รู้ตัว → บันทึกเป็น feedback memory แล้ว
 
-**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (4 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-closefix`)
+**Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (4 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-closefix`) · `/verify` gate ผ่าน · merge ชน `origin/setup` 1 ครั้ง (Ledger match-rules, คนละไฟล์) commit `38ac1452` push ตรงเข้า `origin/setup` · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/chairops/reconcile` `/login` → 307/200/307/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
 
-📝 ยังไม่ commit/push — รอ CEO อนุมัติ deploy โค้ด **และ** อนุมัติแก้ข้อมูล Centralอยุธยา กลับเป็น isActive=true
+📝 **โค้ด deploy แล้ว — ยังรอ CEO อนุมัติแก้ข้อมูล** Centralอยุธยา กลับเป็น `isActive=true` (แก้เฉพาะแถวนี้แถวเดียว ไม่แตะ robinsonปราจีน ที่ปิดมาก่อนงานนี้)
 
 ---
 
