@@ -3,11 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse, Landmark, Users, Copy, Check } from "lucide-react";
+import { Boxes, Wallet, Store, AlertTriangle, ArrowRight, Cpu, ChevronRight, Truck, Calendar, Warehouse, Landmark, Users, Copy, Check, UserMinus } from "lucide-react";
 import { Kpi, IconBox, Pill, Card, Modal, EmptyState } from "@/components/clawfleet/os/kit";
 import { bahtN, num, deltaColor, pnlTone, type PnlFlagKey, type Tone } from "@/components/clawfleet/os/format";
 import { reassignCfMachineBranch, setBranchStockSource } from "@/lib/clawfleet/actions";
-import { inviteCfStaff } from "@/lib/clawfleet/team-actions";
+import { inviteCfStaff, removeCfStaff } from "@/lib/clawfleet/team-actions";
 import {
   getClawfleetReconcileStatus,
   setClawfleetReconcileAccount,
@@ -1050,6 +1050,8 @@ const BRANCH_ROLE_TH: Record<string, string> = {
 function branchRoleLabel(r: string): string {
   return BRANCH_ROLE_TH[r] ?? "พนักงานเก็บเงิน";
 }
+/** บทบาทระดับแอดมินองค์กร — ห้ามเอาออกจากหน้านี้ (จัดที่หน้าผู้ใช้ส่วนกลาง) — ตรงกับ staff-client.tsx */
+const BRANCH_ADMIN_TIER_ROLES = new Set(["super_admin", "org_admin", "admin", "program_admin"]);
 
 function BranchStaffModal({
   branch,
@@ -1068,10 +1070,27 @@ function BranchStaffModal({
   const [inviteResult, setInviteResult] = useState<{ url: string; name: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [removeErr, setRemoveErr] = useState<{ id: string; msg: string } | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   function resetAdd() {
     setShowAdd(false); setName(""); setRole("staff"); setEmail(""); setPhone("");
     setError(null); setInviteResult(null); setCopied(false);
+  }
+
+  // เอาพนักงานออกจากสาขานี้ — action เดียวกับหน้า "พนักงาน" เป๊ะ (ข้อมูลเชื่อมกันทั้งโปรแกรม
+  // ไม่ทำ logic ลบซ้ำที่นี่) · ถ้าไม่เหลือสาขาเลย ระบบปิดใช้งานบัญชีให้อัตโนมัติ (มีข้อความเตือนไว้แล้ว)
+  function removeStaff(m: { id: string; name: string }) {
+    if (!branch) return;
+    if (!confirm(`เอา "${m.name}" ออกจากสาขานี้?\nถ้าไม่เหลือสาขา บัญชีจะถูกปิดใช้งาน`)) return;
+    setRemoveErr(null);
+    setRemovingId(m.id);
+    startTransition(async () => {
+      const res = await removeCfStaff(m.id, branch.branchId);
+      setRemovingId(null);
+      if (!res.ok) { setRemoveErr({ id: m.id, msg: res.error }); return; }
+      router.refresh();
+    });
   }
 
   function submit() {
@@ -1115,15 +1134,44 @@ function BranchStaffModal({
       <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
         {branch && branch.staff.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {branch.staff.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#F8F9FB", borderRadius: 9 }}>
-                <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px" }}>
-                  {(m.name.trim()[0] ?? "?").toUpperCase()}
-                </span>
-                <span style={{ flex: 1, fontWeight: 600, fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
-                <span style={{ fontSize: 11.5, color: "#6B7280", whiteSpace: "nowrap" }}>{branchRoleLabel(m.role)}</span>
-              </div>
-            ))}
+            {branch.staff.map((m) => {
+              const canRemove = !BRANCH_ADMIN_TIER_ROLES.has(m.role);
+              return (
+                <div key={m.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#F8F9FB", borderRadius: 9 }}>
+                    <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#EDEBFB", color: "#4F46E5", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 30px" }}>
+                      {(m.name.trim()[0] ?? "?").toUpperCase()}
+                    </span>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                    <span style={{ fontSize: 11.5, color: "#6B7280", whiteSpace: "nowrap" }}>{branchRoleLabel(m.role)}</span>
+                    {canRemove ? (
+                      <button
+                        type="button"
+                        onClick={() => removeStaff(m)}
+                        disabled={removingId === m.id}
+                        title="เอาออกจากสาขานี้"
+                        className="co-tap"
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+                          border: "1px solid #F3D9D5", background: "transparent", color: "#B42318",
+                          fontSize: 11, fontWeight: 600, padding: "5px 8px", borderRadius: 7,
+                          cursor: removingId === m.id ? "wait" : "pointer",
+                        }}
+                      >
+                        <UserMinus size={11} /> เอาออก
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 10.5, color: "#9AA1AB", whiteSpace: "nowrap" }}>ผู้ดูแลองค์กร</span>
+                    )}
+                  </div>
+                  {removeErr?.id === m.id && (
+                    <div style={{ marginTop: 4, padding: "6px 10px", fontSize: 11, color: "#B42318", background: "#FCEDEC", borderRadius: 7 }}>
+                      {removeErr.msg}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div style={{ fontSize: 12.5, color: "#9AA1AB" }}>ยังไม่มีพนักงานในสาขานี้</div>
