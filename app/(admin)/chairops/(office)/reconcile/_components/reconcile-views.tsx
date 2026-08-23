@@ -816,37 +816,56 @@ export function DayDetailPanel({
     detail.collections.length === 0 &&
     detail.deposits.length === 0 &&
     detail.writeOffs.length === 0;
+  const hasBothSides = detail.collections.length > 0 && detail.deposits.length > 0;
   return (
-    <div
-      className="card"
-      style={{
-        margin: "0 0 12px",
-        padding: 0,
-        overflow: "hidden",
-        borderColor: "var(--accent)",
-      }}
-    >
+    /* CEO 2026-08-23 round 2: a real fixed-position overlay, not an inline
+       block above the table — the org-wide numbers grid is ~48 rows tall, so
+       the old inline placement rendered off-screen whenever the CEO had
+       scrolled down before clicking a cell (Link scroll={false} preserves
+       scroll position, and the panel appeared above the current viewport) —
+       looked exactly like "clicked, nothing happened". Fixed positioning is
+       scroll-independent. Still zero client JS: the backdrop is a plain
+       <Link> to closeHref. */
+    <div className="rc-dd-overlay">
+      <Link
+        href={closeHref}
+        scroll={false}
+        aria-label="ปิด"
+        className="rc-dd-backdrop"
+      />
       <div
-        className="row"
+        className="card rc-dd-modal"
         style={{
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          padding: "10px 14px",
-          background: "var(--accent-soft)",
-          borderBottom: "1px solid var(--accent)",
+          margin: 0,
+          padding: 0,
+          overflow: "hidden",
+          borderColor: "var(--accent)",
         }}
       >
-        <strong style={{ fontSize: 13.5 }}>
-          {branchName ? `${branchName} · ` : ""}
-          รายการย่อยของวันที่ <span className="mono">{detail.date}</span>
-        </strong>
-        <Link href={closeHref} className="btn btn-sm" title="ปิด" scroll={false}>
-          <X size={13} aria-hidden="true" /> ปิด
-        </Link>
-      </div>
+        <div
+          className="row"
+          style={{
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "10px 14px",
+            background: "var(--accent-soft)",
+            borderBottom: "1px solid var(--accent)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <strong style={{ fontSize: 13.5 }}>
+            {branchName ? `${branchName} · ` : ""}
+            รายการย่อยของวันที่ <span className="mono">{detail.date}</span>
+          </strong>
+          <Link href={closeHref} className="btn btn-sm" title="ปิด" scroll={false}>
+            <X size={13} aria-hidden="true" /> ปิด
+          </Link>
+        </div>
 
-      <div style={{ padding: "10px 14px", display: "grid", gap: 14 }}>
+        <div style={{ padding: "10px 14px", display: "grid", gap: 14 }}>
         {/* summary chips — CEO 2026-06-29: ซ่อนชิปยอด 0 (วันที่มีแต่ตัดเงิน
             จะได้ไม่โชว์ "ยังไม่ฝาก 0" สีเหลืองเตือนชวนงง) */}
         {(detail.collectedTotal > 0 ||
@@ -957,9 +976,24 @@ export function DayDetailPanel({
           </p>
         )}
 
+        {/* CEO 2026-08-23 round 2: เก็บ/ฝาก toggle — only rendered when both
+            sides have data (nothing to flip between otherwise); the CSS rule
+            that hides one block is itself scoped to ":has(.rc-dd-toggle-input)"
+            so when this toggle is absent, whichever single block exists just
+            renders normally, unhidden. Same checkbox+:has() mechanism as the
+            numbers-grid amount/diff toggle — zero client JS. */}
+        <div className="rc-dd-flip" style={{ display: "grid", gap: 14 }}>
+          {hasBothSides && (
+            <label className="rc-dd-toggle-label">
+              <input type="checkbox" className="rc-dd-toggle-input" />
+              <span className="rc-dd-toggle-collect">🧺 ยอดเก็บ</span>
+              <span className="rc-dd-toggle-deposit">🏦 ยอดฝาก</span>
+            </label>
+          )}
+
         {/* collections */}
         {detail.collections.length > 0 && (
-          <div>
+          <div className="rc-dd-collect-block">
             <div
               className="text-3"
               style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}
@@ -1040,7 +1074,7 @@ export function DayDetailPanel({
 
         {/* deposits */}
         {detail.deposits.length > 0 && (
-          <div>
+          <div className="rc-dd-deposit-block">
             <div
               className="text-3"
               style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}
@@ -1105,6 +1139,7 @@ export function DayDetailPanel({
             </table>
           </div>
         )}
+        </div>
 
         {/* write-offs effective today — CEO 2026-06-29: กดกรรไกร ✂️ จากตาราง
             มาที่นี่ เห็นเลยว่าตัดกี่บาท ใครตัด เหตุผลอะไร ใครอนุมัติ */}
@@ -1182,6 +1217,7 @@ export function DayDetailPanel({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
