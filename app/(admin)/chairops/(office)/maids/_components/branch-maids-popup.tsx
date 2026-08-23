@@ -1,9 +1,9 @@
 "use client";
 
-// Branch name → popup listing every maid covering it (CEO 2026-08-23 follow-
-// up: "ขึ้นแบบสาขาแค่อันเดียว...กด popup ดูแม่บ้านข้างในได้กรณีมีมากกว่าหนึ่ง")
-// — replaces printing one table row per maid×branch, which read as the
-// branch name repeating/duplicating.
+// "+N คน" badge → popup listing every maid covering a branch (CEO 2026-08-23:
+// the row already shows the most-recently-active maid's full stats inline;
+// this badge is just the escape hatch to see/manage everyone else covering
+// the same branch — each with the same stats + the resign action).
 
 import { useState } from "react";
 import Link from "next/link";
@@ -22,16 +22,15 @@ export function BranchMaidsPopupButton({
   canMutate: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const primary = maids.find((m) => m.isPrimary) ?? maids[0];
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="text-left">
-        <span className="font-medium text-zinc-900 hover:text-emerald-700">{branchName}</span>
-        <div className="mt-0.5 text-xs text-zinc-500">
-          {maids.length} คน · {primary.displayName}
-          {maids.length > 1 && ` +${maids.length - 1}`}
-        </div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] font-semibold text-emerald-700"
+      >
+        {maids.length} คน
       </button>
       <Dialog open={open} onClose={() => setOpen(false)} title={branchName}>
         <div className="divide-y divide-zinc-100">
