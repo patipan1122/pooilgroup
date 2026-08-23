@@ -272,6 +272,35 @@ export async function loadTeaPosTransactions(
   }));
 }
 
+/** โหลดรายบิลทั้งช่วงวัน (สาขาเดียว) → จัดกลุ่ม (วัน, ช่องทาง) → [ยอด...]
+ *  ใช้ตอนส่งเข้า reconcile: มีรายบิลของวันไหนช่องไหน → ส่งแยกทีละรายการแทนยอดรวม/วัน */
+export async function loadTeaPosTransactionsRange(
+  admin: Admin,
+  orgId: string,
+  branchCode: string,
+  from: string,
+  to: string,
+): Promise<Map<string, number[]>> {
+  const { data } = await admin
+    .from("cashhub_tea_pos_transaction")
+    .select("sales_date, channel_code, amount_baht")
+    .eq("org_id", orgId)
+    .eq("branch_code", branchCode)
+    .gte("sales_date", from)
+    .lte("sales_date", to);
+  const out = new Map<string, number[]>();
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const key = `${String(r.sales_date)}|${String(r.channel_code)}`;
+    const amt = Number(r.amount_baht);
+    const list = out.get(key);
+    if (list) list.push(amt);
+    else out.set(key, [amt]);
+  }
+  // เรียงยอดมาก→น้อยต่อกลุ่ม (คงที่ทุกครั้งที่โหลด — ไว้ผูก index กับ source_ref)
+  for (const list of out.values()) list.sort((a, b) => b - a);
+  return out;
+}
+
 // ── ประวัติการอัปไฟล์ Foodstory (อ่านจาก audit_logs IMPORT_TEA_POS) ──────────
 export type TeaImportHistoryRow = {
   at: string; // ISO timestamp

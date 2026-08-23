@@ -6,7 +6,7 @@ import { isSuperAdmin } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { TEA_BRANCHES } from "@/lib/cashhub/tea-trcloud";
-import { loadTeaDays, loadTeaChannelConfig } from "@/lib/cashhub/tea-data";
+import { loadTeaDays, loadTeaChannelConfig, loadTeaPosTransactionsRange } from "@/lib/cashhub/tea-data";
 import { sendTeaDaysToReconcile } from "@/lib/cashhub/tea-settlement-data";
 
 export const runtime = "nodejs";
@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
 
   const savedDays = await loadTeaDays(admin, orgId, from, to, branchCode);
   const days = savedDays.map((d) => ({ date: d.sales_date, posChannels: d.pos_channels }));
-  const res = await sendTeaDaysToReconcile(orgId, branchCode, branch.label, days, configs);
+  const txByDateChannel = await loadTeaPosTransactionsRange(admin, orgId, branchCode, from, to);
+  const res = await sendTeaDaysToReconcile(orgId, branchCode, branch.label, days, configs, txByDateChannel);
   if (res.error) return NextResponse.json({ error: res.error }, { status: 500 });
 
   await audit({
@@ -55,7 +56,10 @@ export async function POST(req: NextRequest) {
     action: "SEND_TEA_RECONCILE",
     resourceType: "ledger_revenue_entry",
     diff: {
-      new: { branchCode, branchLabel: branch.label, from, to, inserted: res.inserted, skipped: res.skippedNoConfig },
+      new: {
+        branchCode, branchLabel: branch.label, from, to, inserted: res.inserted, skipped: res.skippedNoConfig,
+        itemizedDays: res.itemizedDays, skippedMatchedAggregate: res.skippedMatchedAggregate,
+      },
     },
   });
   return NextResponse.json({ ok: true, ...res });
