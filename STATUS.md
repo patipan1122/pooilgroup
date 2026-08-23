@@ -1,6 +1,27 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ตู้คีบ OS เช็คลิสต์ — จัดเรียงลำดับสาขาเอง (▲▼) + เซฟถาวร — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: ตารางเปลี่ยนเป็น 1 แถว/สาขา + popup ดูแม่บ้าน + แก้ปุ่มปิดสาขาไม่ทำงาน — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+
+## 🪑🐛✅ ChairOps แม่บ้าน — ตาราง 1 แถว/สาขา (กด popup ดูแม่บ้าน) + แก้บั๊กปุ่ม "ปิดสาขา" กดไม่ติด (2026-08-23)
+
+ต่อจาก [[chairops-maid-table-conversion-2026-08-23]] — CEO เจอ 2 เรื่องจากการใช้งานจริง
+
+**1. บั๊กจริง: กดปุ่ม "ปิดสาขา" ไม่ได้ (แก้แล้ว)** — root cause: `CloseBranchButton` เดิมใช้ `window.confirm()` (native browser dialog) ก่อนส่ง action ส่วน `ResignMaidButton` (ที่ CEO ใช้ได้ปกติ ไม่บ่น) ใช้ `Dialog` component ของแอปเอง — window.confirm() เป็นจุดเดียวที่ต่างกันระหว่าง 2 ปุ่มนี้ และในบาง context (เช่น CSP/embedding บางแบบ) เบราว์เซอร์จะเงียบๆ บล็อค native confirm()/alert() โดยไม่มี dialog โผล่มาเลยและไม่มี error — จะรู้สึกเหมือน "ปุ่มไม่ทำงาน" เป๊ะ **FIX:** เปลี่ยน `CloseBranchButton` มาใช้ `Dialog` แบบเดียวกับปุ่มลาออกที่ใช้ได้จริง + โชว์ error (เช่น ถ้ามีเงินเก็บค้างไม่ได้ฝากจะบล็อคปิด) เป็นข้อความในป๊อปอัพเลย ไม่ใช่แค่ toast ที่พลาดดูได้ง่าย
+
+**2. Redesign: ตารางเป็น 1 แถวต่อสาขา (ไม่ใช่ 1 แถวต่อแม่บ้าน×สาขา)** — เดิมสาขาที่มีแม่บ้านดูแลหลายคน หรือแม่บ้านที่ดูแลหลายสาขา จะเห็นชื่อสาขาซ้ำกันหลายแถว (เพราะพิมพ์ชื่อสาขาซ้ำทุกแม่บ้าน) ดูงง — **FIX:** จัดกลุ่มใหม่เป็น 1 แถว/สาขา กดชื่อสาขาเปิด popup ดูรายชื่อแม่บ้านทั้งหมด (พร้อมสถิติครบ + ปุ่มลาออกต่อคน) แถวหลักโชว์แค่จำนวนคน + ชื่อแรก + "เก็บเงินล่าสุด" ของแม่บ้านที่เก็บล่าสุดในสาขานั้น (กวาดตาเห็นว่าสาขาไหนนิ่งไปนานได้โดยไม่ต้องเปิด popup ทุกอัน) ปุ่ม "ปิดสาขา" ย้ายมาอยู่ระดับแถวสาขา ใช้ได้ไม่ว่าสาขานั้นจะมีแม่บ้านหรือไม่
+
+**ไฟล์ที่แตะ:**
+- [`types.ts`](app/(admin)/chairops/(office)/maids/types.ts) — `MaidActivityRow` (1 แถว/แม่บ้าน×สาขา) → `BranchWithMaidsRow` (1 แถว/สาขา, มี `maids: MaidStatsForBranch[]`)
+- [`maid-roster.ts`](lib/chairops/queries/maid-roster.ts) — จัดกลุ่ม stats ตามสาขาแทนที่จะแตกเป็นแถวแยก
+- ใหม่: [`branch-maids-popup.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-maids-popup.tsx) (popup รายชื่อ), [`format.ts`](app/(admin)/chairops/(office)/maids/_components/format.ts) (แยก date helper ใช้ร่วม 2 ไฟล์)
+- [`branch-close-buttons.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-close-buttons.tsx) — เปลี่ยน confirm mechanism
+- [`branch-roster-view.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-roster-view.tsx) — ตารางเหลือ 2 คอลัมน์ (สาขา / จัดการ)
+
+**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (9 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-popup`)
+
+📝 ยังไม่ commit/push — รอ CEO ทดสอบปุ่ม "ปิดสาขา" อีกครั้งหลัง deploy ว่าใช้ได้จริงไหม (แก้ตามสมมติฐานที่มีหลักฐานสนับสนุน แต่ไม่ได้ reproduce บั๊กเดิมได้เองเพราะไม่มีสิทธิ์เปิดเบราว์เซอร์ในเครื่อง CEO)
+
+---
 
 ## 🦀↕️✅ ตู้คีบ OS — จัดเรียงลำดับสาขาในตารางเช็คลิสต์เอง (▲▼) + เซฟถาวร (2026-08-23 · **DEPLOYED**)
 

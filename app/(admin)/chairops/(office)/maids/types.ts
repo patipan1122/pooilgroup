@@ -72,24 +72,27 @@ export interface BranchRosterView {
 }
 
 // Maid activity table (CEO 2026-08-23) — replaces the branch-card grid on
-// ?view=branch with one row per maid×branch, showing deposit-behavior stats
-// derived from real collection/deposit history (no manual data entry
-// required). A maid covering multiple branches gets one row per branch she
-// actively covers (not just her primary) — fixed 2026-08-23 after CEO caught
-// a branch showing "ไม่มีแม่บ้าน" that was actually covered as a secondary
-// assignment.
-export interface MaidActivityRow {
-  kind: "maid";
+// ?view=branch with one row PER BRANCH (not per maid×branch — a branch
+// covered by several maids, or a maid covering several branches, used to
+// print the branch name once per maid and looked like duplicate rows; CEO
+// caught this 2026-08-23). Clicking the branch name opens a popup listing
+// every maid who covers it, with her stats and the resign action.
+export interface MaidStatsForBranch {
   userId: string;
   displayName: string;
-  branchId: string;
-  branchName: string;
-  isPrimary: boolean; // this branch is her primaryBranchId — tags non-primary rows "(สาขาเสริม)"
+  isPrimary: boolean; // this branch is her primaryBranchId — tags non-primary entries "(สาขาเสริม)"
   hasBankAccount: boolean;
   daysWorking: number | null; // days since first-ever deposit anywhere (= start-of-work proxy) · null = never deposited
   lastCollectedAt: string | null; // ISO, latest collection AT THIS BRANCH · null = never here
   avgDepositGapDays: number | null; // avg days between deposits AT THIS BRANCH, last 180d · null = <2 in window
   typicalTimes: string[]; // up to 2 "HH:MM" — her most common collect/deposit time clusters overall, last 180d
+}
+
+export interface BranchWithMaidsRow {
+  kind: "branch_with_maids";
+  branchId: string;
+  branchName: string;
+  maids: MaidStatsForBranch[]; // sorted primary-first-then-name, length >= 1
 }
 
 export interface NoMaidRow {
@@ -116,7 +119,7 @@ export interface ResignedMaidRow {
   lastBranchName: string | null; // her primary branch at the time, for context
 }
 
-export type MaidActivityTableRow = MaidActivityRow | NoMaidRow | ClosedBranchRow | ResignedMaidRow;
+export type MaidActivityTableRow = BranchWithMaidsRow | NoMaidRow | ClosedBranchRow | ResignedMaidRow;
 
 export interface MissedMaidVariantRow {
   branchId: string;

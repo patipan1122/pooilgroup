@@ -20,7 +20,7 @@ import type {
   BranchRosterGroup,
   MaidInBranch,
   MaidActivityTableRow,
-  MaidActivityRow,
+  MaidStatsForBranch,
 } from "@/app/(admin)/chairops/(office)/maids/types";
 
 function bkkYmd(): string {
@@ -468,18 +468,17 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
   }
 
   const today = bkkToday();
-  const rowsByBranch = new Map<string, MaidActivityRow[]>();
-  const unassignedActive: MaidActivityTableRow[] = [];
+  // one row PER BRANCH now (CEO 2026-08-23: printing the branch name once per
+  // maid looked like duplicate rows) — group each maid's stats under the
+  // branch(es) she covers instead of emitting a row per maid×branch pair.
+  const statsByBranch = new Map<string, MaidStatsForBranch[]>();
   const resigned: MaidActivityTableRow[] = [];
 
-  function buildRow(m: (typeof maids)[number], branchId: string | null): MaidActivityRow {
+  function buildStats(m: (typeof maids)[number], branchId: string | null): MaidStatsForBranch {
     const firstDeposit = firstDepositByMaidMap.get(m.id);
     return {
-      kind: "maid",
       userId: m.id,
       displayName: m.displayName,
-      branchId: branchId ?? "",
-      branchName: branchId ? (branchById.get(branchId)?.name ?? "ไม่พบสาขา") : "ยังไม่ผูกสาขา",
       isPrimary: m.primaryBranchId === branchId,
       hasBankAccount: !!m.bankAccountNo?.trim(),
       daysWorking: firstDeposit
@@ -491,6 +490,12 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
       avgDepositGapDays: branchId ? avgGapDays(depositDaysByMaidBranch.get(compositeKey(m.id, branchId)) ?? []) : null,
       typicalTimes: clusterTimesOfDay(timeEventsByMaid.get(m.id) ?? []),
     };
+  }
+
+  function pushStats(branchId: string, stats: MaidStatsForBranch) {
+    const list = statsByBranch.get(branchId) ?? [];
+    list.push(stats);
+    statsByBranch.set(branchId, list);
   }
 
   for (const m of maids) {
@@ -506,14 +511,20 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
 
     const coverage = maidActiveBranches.get(m.id) ?? new Set<string>();
     if (coverage.size === 0) {
-      unassignedActive.push(buildRow(m, m.primaryBranchId));
+      // active but no active-branch coverage — grouped under a pseudo
+      // "ยังไม่ผูกสาขา" branch (branchId "") so nothing is silently hidden.
+      pushStats("", buildStats(m, m.primaryBranchId));
       continue;
     }
     for (const branchId of coverage) {
-      const list = rowsByBranch.get(branchId) ?? [];
-      list.push(buildRow(m, branchId));
-      rowsByBranch.set(branchId, list);
+      pushStats(branchId, buildStats(m, branchId));
     }
+  }
+
+  function sortStats(list: MaidStatsForBranch[]): MaidStatsForBranch[] {
+    return [...list].sort((a, c) =>
+      a.isPrimary === c.isPrimary ? a.displayName.localeCompare(c.displayName, "th") : a.isPrimary ? -1 : 1,
+    );
   }
 
   const activeOut: MaidActivityTableRow[] = [];
@@ -523,18 +534,20 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
       closedOut.push({ kind: "closed_branch", branchId: b.id, branchName: b.name });
       continue;
     }
-    const maidsHere = rowsByBranch.get(b.id);
+    const maidsHere = statsByBranch.get(b.id);
     if (maidsHere?.length) {
-      maidsHere.sort((a, c) =>
-        a.isPrimary === c.isPrimary ? a.displayName.localeCompare(c.displayName, "th") : a.isPrimary ? -1 : 1,
-      );
-      activeOut.push(...maidsHere);
+      activeOut.push({ kind: "branch_with_maids", branchId: b.id, branchName: b.name, maids: sortStats(maidsHere) });
     } else {
       activeOut.push({ kind: "no_maid", branchId: b.id, branchName: b.name });
     }
   }
 
-  return [...activeOut, ...unassignedActive, ...closedOut, ...resigned];
+  const unassignedStats = statsByBranch.get("");
+  const unassignedOut: MaidActivityTableRow[] = unassignedStats?.length
+    ? [{ kind: "branch_with_maids", branchId: "", branchName: "ยังไม่ผูกสาขา", maids: sortStats(unassignedStats) }]
+    : [];
+
+  return [...activeOut, ...unassignedOut, ...closedOut, ...resigned];
 });
 
 export const getMaidDetail = cache(async function getMaidDetail(
