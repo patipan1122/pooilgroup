@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: รวมกลไก "ปิดสาขา" ที่ซ้อนกัน 2 อันเป็นอันเดียว — DEPLOYED · ⚠️ เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ รอ CEO อนุมัติแก้ข้อมูล)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: รวมกลไก "ปิดสาขา" ที่ซ้อนกัน 2 อันเป็นอันเดียว — DEPLOYED · ⚠️ เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ รอ CEO อนุมัติแก้ข้อมูล · LedgerLine: ปุ่ม "เงื่อนไขการแมตช์" ในหน้าบัญชีธนาคาร — DEPLOYED)
 
 ## 🪑🔗🚨 ChairOps แม่บ้าน — เจอกลไก "ปิดสาขา" ซ้อนกัน 2 อัน (ไม่เชื่อมกัน) — รวมเป็นอันเดียว + เจอสาขาหายจากตรวจยอดโดยไม่ตั้งใจ (2026-08-23 · **DEPLOYED `27b7f535`**)
 
@@ -18,6 +18,18 @@ CEO บอกว่า "ข้อมูลทุกอย่างมันค�
 **Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (4 ไฟล์ที่แตะ) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-closefix`) · `/verify` gate ผ่าน · merge ชน `origin/setup` 1 ครั้ง (Ledger match-rules, คนละไฟล์) commit `38ac1452` push ตรงเข้า `origin/setup` · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/chairops/reconcile` `/login` → 307/200/307/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
 
 📝 **โค้ด deploy แล้ว — ยังรอ CEO อนุมัติแก้ข้อมูล** Centralอยุธยา กลับเป็น `isActive=true` (แก้เฉพาะแถวนี้แถวเดียว ไม่แตะ robinsonปราจีน ที่ปิดมาก่อนงานนี้)
+
+---
+
+## 🏦⚙️✅ LedgerLine — ปุ่ม "เงื่อนไขการแมตช์" ในหน้าบัญชีธนาคารเอง (2026-08-23 · DEPLOYED `07905dfb`)
+
+CEO บอกตรงๆ ว่าอยากตั้งเงื่อนไข "วันต้องตรงกัน" ได้จาก**หน้าบัญชีธนาคารที่กำลังดูอยู่เลย** ไม่ใช่ต้องไปหาในหน้าตั้งค่า CashHub Tea (ที่สร้างไว้ 2026-08-21) — backend (`ledger_bank_match_rule` + `applyMatchRuleOverride`) มีอยู่แล้วใช้งานได้จริงตั้งแต่ตอนนั้น แค่ไม่มีหน้าให้กดตรงจุดที่ CEO คาดหวัง
+
+**สิ่งที่ทำ:** เพิ่มปุ่ม **"เงื่อนไขการแมตช์"** คู่กับปุ่ม "สมุดจำคีย์" เดิม บนหน้า `/ledger/bank-recon/[accountId]/reconcile` (หน้าเดียวกับที่ CEO เปิดอยู่พอดี) → เปิดหน้าใหม่ `/ledger/bank-recon/[accountId]/match-rules` ตั้ง "วันต้องตรงกัน" + "ยอดห่างกันได้กี่บาท" ได้ต่อประเภท (QR/เงินสด/Grab/...) มีผล**เฉพาะบัญชีที่กำลังดูอยู่เท่านั้น** — ไม่ต้องแก้โค้ด backend เลย แค่เพิ่มหน้า UI ที่ขาดไป
+
+📝 **ตั้งให้ทันทีตามที่ CEO ขอ:** บัญชี ttb ****4274 (QR ร้านชาไข่มุก) → QR วันต้องตรงกัน = 0 (วันเดียวกันเท่านั้น) — CEO เข้าไปดู/ปรับต่อได้ที่หน้าใหม่นี้เลย
+
+**Verify:** tsc 0 error · eslint 0 error · `next build` ผ่าน (route `/ledger/bank-recon/[accountId]/match-rules` ขึ้นจริง) · smoke test `/` `/ledger/bank-recon` + หน้าบัญชีนี้ทั้ง reconcile/match-rules → 200 ทุกตัว
 
 ---
 
