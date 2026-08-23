@@ -280,6 +280,112 @@
 }
 .co-scope .rc-ck-empty { color: var(--text-muted, #bbb); }
 
+/* CEO 2026-08-23 · เช็คลิสต์โหมด "ตัวเลข" — ช่องละ 1 ตัวเลข (จำนวนเงิน/ผลต่าง)
+   แทนจุดสี. สลับโหมดด้วย checkbox ที่ซ่อน + :has() (ไม่มี client JS ตามกฎเดิม
+   ของหน้านี้) — .rc-nb-amt/.rc-nb-diff อยู่ใน DOM พร้อมกันเสมอ ตัวที่ไม่ active
+   แค่ display:none จึงไม่มีทางเห็น 2 เลขซ้อนกันในช่องเดียว. */
+.co-scope .rc-nb-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  text-align: left;
+  padding: 6px 10px;
+  min-width: 168px;
+  max-width: 210px;
+  box-shadow: 1px 0 0 var(--border);
+  vertical-align: middle;
+}
+.co-scope .rc-nb-namewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 500;
+  white-space: normal;
+}
+.co-scope .rc-nb-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.co-scope .rc-nb-shortfall {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3, #999);
+  white-space: nowrap;
+}
+.co-scope .rc-nb-cell {
+  text-align: center;
+  padding: 3px 4px;
+  min-width: 58px;
+}
+.co-scope .rc-nb-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 2px 3px;
+}
+.co-scope .rc-nb-link:hover { background: var(--surface-hover, var(--surface-soft)); }
+.co-scope .rc-nb-amt,
+.co-scope .rc-nb-diff {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* default (checkbox unchecked) = amounts mode */
+.co-scope .rc-nb-diff { display: none; }
+.co-scope .rc-nb-amt.both { color: var(--ok); }
+.co-scope .rc-nb-amt.collect { color: var(--warn, #f59e0b); }
+.co-scope .rc-nb-amt.deposit { color: var(--accent); }
+.co-scope .rc-nb-diff.ok { color: var(--ok); }
+.co-scope .rc-nb-diff.bad { color: var(--crit); }
+.co-scope .rc-nb-diff.na { color: var(--text-3, #999); font-weight: 400; }
+/* diff mode (checked) */
+.co-scope .rc-nb:has(.rc-nb-toggle-input:checked) .rc-nb-amt { display: none; }
+.co-scope .rc-nb:has(.rc-nb-toggle-input:checked) .rc-nb-diff { display: block; }
+.co-scope .rc-nb-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+}
+.co-scope .rc-nb-toggle-label:hover { border-color: var(--accent); }
+.co-scope .rc-nb-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.co-scope .rc-nb-toggle-diff { display: none; }
+.co-scope .rc-nb:has(.rc-nb-toggle-input:checked) .rc-nb-toggle-amt { display: none; }
+.co-scope .rc-nb:has(.rc-nb-toggle-input:checked) .rc-nb-toggle-diff { display: inline; }
+.co-scope .rc-nb-legend-amt,
+.co-scope .rc-nb-legend-diff {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.co-scope .rc-nb-legend-amt.both { color: var(--ok); }
+.co-scope .rc-nb-legend-amt.collect { color: var(--warn, #f59e0b); }
+.co-scope .rc-nb-legend-amt.deposit { color: var(--accent); }
+.co-scope .rc-nb-legend-diff.ok { color: var(--ok); }
+.co-scope .rc-nb-legend-diff.bad { color: var(--crit); }
+
 /* CEO 2026-07-01 · เลขตู้ในตารางรายวัน = ลิงก์เจาะดูตู้เดียว */
 .co-scope .rc-chair-link {
   color: var(--accent);

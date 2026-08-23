@@ -48,6 +48,8 @@ import {
   type ReconcileChecklist,
   type ChecklistBranch,
   type ChecklistCell,
+  type ReconcileChecklistNumbers,
+  type NumbersBranch,
 } from "@/lib/chairops/queries/reconcile-v2";
 
 const fmtN = (n: number | null | undefined): string =>
@@ -789,9 +791,26 @@ function SourceSplitRow({
 export function DayDetailPanel({
   detail,
   closeHref,
+  branchName,
+  expectedAmount,
+  expectedRoundCount,
 }: {
   detail: ReconcileDayDetail;
   closeHref: string;
+  /** CEO 2026-08-23 (numbers view) — org-wide grid opens this panel for ANY
+   *  branch, so the branch must be named in the header (the Ledger tab's own
+   *  usage is already scoped to one branch page and omits this). */
+  branchName?: string;
+  /** ควรได้ (meter-based expected) for this branch+day — from the numbers
+   *  view's round re-bucketing (getReconcileChecklistNumbers). Not part of
+   *  getReconcileDayDetail() itself (that query never touches meter data) —
+   *  the caller passes it in alongside. undefined/null → chip hidden (⚪ no
+   *  verified round closed on this exact day, or the Ledger tab's plain call
+   *  site that never passes it). */
+  expectedAmount?: number | null;
+  /** how many rounds contributed to expectedAmount — shown as "(N รอบ)" so a
+   *  multi-round day is never mistaken for a single collection's ควรได้. */
+  expectedRoundCount?: number;
 }) {
   const hasNothing =
     detail.collections.length === 0 &&
@@ -819,6 +838,7 @@ export function DayDetailPanel({
         }}
       >
         <strong style={{ fontSize: 13.5 }}>
+          {branchName ? `${branchName} · ` : ""}
           รายการย่อยของวันที่ <span className="mono">{detail.date}</span>
         </strong>
         <Link href={closeHref} className="btn btn-sm" title="ปิด" scroll={false}>
@@ -831,8 +851,20 @@ export function DayDetailPanel({
             จะได้ไม่โชว์ "ยังไม่ฝาก 0" สีเหลืองเตือนชวนงง) */}
         {(detail.collectedTotal > 0 ||
           detail.collectedNotDepositedTotal > 0 ||
-          detail.depositTotal > 0) && (
+          detail.depositTotal > 0 ||
+          expectedAmount != null) && (
           <div className="row gap-2" style={{ flexWrap: "wrap", fontSize: 12 }}>
+            {expectedAmount != null && (
+              <span
+                className="chip"
+                style={{ background: "var(--surface-2)", borderColor: "var(--border-strong)" }}
+              >
+                ควรได้ (มิเตอร์) <strong className="mono">{fmtN(expectedAmount)}</strong> ฿
+                {expectedRoundCount != null && expectedRoundCount > 1
+                  ? ` · ${expectedRoundCount} รอบ`
+                  : ""}
+              </span>
+            )}
             {detail.collectedTotal > 0 && (
               <span className="chip">
                 เก็บรวม <strong className="mono">{fmtN(detail.collectedTotal)}</strong> ฿
@@ -2475,6 +2507,230 @@ export function ChecklistTab({
       <div className="text-3" style={{ fontSize: 11, padding: "8px 2px" }}>
         เอาเมาส์ชี้แต่ละช่องเพื่อดูยอดเก็บ/ฝากของวันนั้น · กดชื่อสาขาเพื่อเข้าดูรายละเอียด ·
         “–” = วันนั้นไม่มีการเก็บเงิน
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Checklist · NUMBERS view (CEO 2026-08-23) — same branch × day grid as
+// ChecklistTab, but each cell is a clickable NUMBER instead of a dot:
+//   amounts mode (default) → ฝาก (bank-verified) or, if not yet deposited,
+//     เก็บได้ (still muted/amber tone so it's never confused with a real
+//     bank-verified figure — same distinction the dots make today).
+//   diff mode → this day's own meter variance (เก็บได้ − ควรได้), green when
+//     within tolerance/surplus, red when short. Toggled CSS-only (no client
+//     JS) via a hidden checkbox + :has() — both spans are always in the DOM,
+//     CSS shows only one at a time, so the grid never renders 2 numbers per
+//     cell at once (density budget).
+// Full 3-leg breakdown lives in the click-through detail panel, not the cell.
+// ─────────────────────────────────────────────────────────────
+function numbersDiffTone(v: PerChairVerdict): "ok" | "bad" {
+  // Binary per CEO spec ("green (surplus/on-target) or red (deficit)") —
+  // collapses the 4-way PerChairVerdict (reused as-is from Periods/รายตู้,
+  // not a new classification) into the 2 colors the grid cell shows.
+  return v === "ok" || v === "over" ? "ok" : "bad";
+}
+
+function cumShortfallDisplay(v: number): { label: string; cls: string } {
+  // Reuses the EXACT thresholds/classes PeriodsTab already uses for this same
+  // depositDiffCum figure (see "ต่างฝากสะสม" column) — not a new color rule.
+  const cls = v < -500 ? "co-drift crit" : v < -100 ? "co-drift warn" : "";
+  const label =
+    v < 0 ? `ขาดสะสม ${fmtN(Math.abs(v))}฿` : v > 0 ? `เกินสะสม ${fmtN(v)}฿` : "ต่างสะสม 0฿";
+  return { label, cls };
+}
+
+function NumbersRow({
+  b,
+  year,
+  month,
+  makeBranchHref,
+  dayHref,
+}: {
+  b: NumbersBranch;
+  year: number;
+  month: number;
+  makeBranchHref?: (branchId: string) => string;
+  dayHref: (branchId: string, day: string) => string;
+}) {
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  return (
+    <tr data-closed={b.isClosed ? "" : undefined}>
+      <th className="rc-nb-name" scope="row">
+        <div className="rc-nb-namewrap">
+          <span>
+            {makeBranchHref ? (
+              <Link href={makeBranchHref(b.branchId)} className="rc-ck-branchlink" scroll={false}>
+                {b.name}
+              </Link>
+            ) : (
+              <span>{b.name}</span>
+            )}
+            {b.isClosed && (
+              <span className="text-3" style={{ fontSize: 9.5, marginLeft: 4 }}>
+                (ปิด)
+              </span>
+            )}
+          </span>
+          <div className="rc-nb-badges">
+            <span className="rc-ck-count" title="จำนวนวันที่มีการเก็บเดือนนี้">
+              {b.collectDays} วัน
+            </span>
+            {b.cumShortfall != null &&
+              (() => {
+                const cs = cumShortfallDisplay(b.cumShortfall);
+                return (
+                  <span
+                    className={"rc-nb-shortfall " + cs.cls}
+                    title="ฝากสะสม − เก็บได้สะสม (ทั้งหมดจนถึงตอนนี้ · ไม่ใช่แค่เดือนที่ดูอยู่)"
+                  >
+                    {cs.label}
+                  </span>
+                );
+              })()}
+          </div>
+        </div>
+      </th>
+      {b.cells.map((c) => {
+        const hasData = c.collected || c.deposited;
+        if (!hasData) {
+          return (
+            <td key={c.day} className="rc-nb-cell">
+              <span className="rc-ck-empty">–</span>
+            </td>
+          );
+        }
+        const dayStr = `${year}-${pad2(month)}-${pad2(c.day)}`;
+        const amtCls = c.deposited && c.collected ? "both" : c.deposited ? "deposit" : "collect";
+        const amtText = fmtN(c.deposited ? c.depositedAmount : c.collectedAmount);
+        const diffCls = c.verdict == null ? "na" : numbersDiffTone(c.verdict);
+        const diffText = c.verdict == null ? "⚪" : fmtSigned(c.variance);
+        const title =
+          `วันที่ ${c.day}` +
+          (c.collected ? ` · เก็บ ${fmtN(c.collectedAmount)}฿` : "") +
+          (c.deposited ? ` · ฝาก ${fmtN(c.depositedAmount)}฿` : "") +
+          (c.expectedAmount != null
+            ? ` · ควรได้(มิเตอร์) ${fmtN(c.expectedAmount)}฿ · ต่าง ${fmtSigned(c.variance)}฿`
+            : " · ⚪ ไม่มีรอบที่ยืนยันด้วยมิเตอร์วันนี้");
+        return (
+          <td key={c.day} className="rc-nb-cell">
+            <Link href={dayHref(b.branchId, dayStr)} scroll={false} className="rc-nb-link" title={title}>
+              <span className={"rc-nb-amt " + amtCls}>{amtText}</span>
+              <span className={"rc-nb-diff " + diffCls}>{diffText}</span>
+            </Link>
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
+export function NumbersTab({
+  data,
+  makeMonthHref,
+  todayYm,
+  makeBranchHref,
+  dayHref,
+}: {
+  data: ReconcileChecklistNumbers | null;
+  makeMonthHref: (ym: string) => string;
+  /** current Bangkok month "YYYY-MM" — to show the "เดือนนี้" jump when away. */
+  todayYm: string;
+  /** optional per-branch link (open that branch's full reconcile page). */
+  makeBranchHref?: (branchId: string) => string;
+  /** open ONE branch+day's detail in place (extends the ?day= pattern with a branch). */
+  dayHref: (branchId: string, day: string) => string;
+}) {
+  if (!data) {
+    return (
+      <div className="card" style={{ margin: "12px 0", padding: 18, fontSize: 13 }}>
+        ยังไม่มีข้อมูล
+      </div>
+    );
+  }
+  const thisMonthYm = `${data.year}-${String(data.month).padStart(2, "0")}`;
+  const days = Array.from({ length: data.daysInMonth }, (_, i) => i + 1);
+  return (
+    <div className="rc-ledger rc-nb">
+      {/* month nav */}
+      <div
+        className="row"
+        style={{ alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 2px 8px" }}
+      >
+        <Link href={makeMonthHref(data.prevMonth)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+          ← เดือนก่อน
+        </Link>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{data.monthLabel}</span>
+        <Link href={makeMonthHref(data.nextMonth)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+          เดือนถัดไป →
+        </Link>
+        {thisMonthYm !== todayYm && (
+          <Link href={makeMonthHref(todayYm)} className="rc-tab" scroll={false} style={{ fontSize: 12 }}>
+            ⏱ เดือนนี้
+          </Link>
+        )}
+      </div>
+
+      {/* legend + amounts/diff toggle (CSS-only :has(), no client JS) */}
+      <div
+        className="row"
+        style={{ gap: 12, flexWrap: "wrap", padding: "0 2px 10px", fontSize: 11.5, alignItems: "center" }}
+      >
+        <label className="rc-nb-toggle-label">
+          <input type="checkbox" className="rc-nb-toggle-input" />
+          <span className="rc-nb-toggle-amt">📊 จำนวนเงิน</span>
+          <span className="rc-nb-toggle-diff">⚖️ ผลต่าง (มิเตอร์)</span>
+        </label>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-nb-legend-amt both">฿</span> เก็บ+ฝาก
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-nb-legend-amt collect">฿</span> เก็บ (ยังไม่ฝาก)
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-nb-legend-amt deposit">฿</span> ฝากอย่างเดียว
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-nb-legend-diff ok">+12</span> ตรง/เกิน
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-nb-legend-diff bad">−80</span> ขาด (เกินเกณฑ์ผ่อนผัน ±20฿)
+        </span>
+        <span className="row gap-1" style={{ alignItems: "center" }}>
+          <span className="rc-ck-empty">–</span> ไม่มีการเก็บ
+        </span>
+      </div>
+
+      <div className="rc-ck-wrap">
+        <table className="rc-ck-tbl rc-nb-tbl">
+          <thead>
+            <tr>
+              <th className="rc-nb-name rc-ck-corner">สาขา ({data.branches.length})</th>
+              {days.map((d) => (
+                <th key={d} className="rc-ck-dayhead">
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.branches.map((b) => (
+              <NumbersRow
+                key={b.branchId}
+                b={b}
+                year={data.year}
+                month={data.month}
+                makeBranchHref={makeBranchHref}
+                dayHref={dayHref}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-3" style={{ fontSize: 11, padding: "8px 2px" }}>
+        กดตัวเลขช่องไหนก็ได้เพื่อดูรายละเอียด (ควรได้/เก็บได้/ฝาก) ของวันนั้นในที่เดิม ·
+        “เงินขาดสะสม/เกินสะสม” ที่ชื่อสาขา = ฝาก − เก็บได้ สะสมทั้งหมดจนถึงตอนนี้
       </div>
     </div>
   );

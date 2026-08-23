@@ -36,6 +36,8 @@ export default async function ReconcileOrgPage({
     day?: string;
     pcv?: string;
     month?: string;
+    ckv?: string;
+    branch?: string;
   }>;
 }) {
   const session = await requireRole("OFFICE");
@@ -77,6 +79,8 @@ export default async function ReconcileOrgPage({
         }
         canManage={canClosePeriod}
         month={sp.month}
+        checklistView={sp.ckv === "numbers" ? "numbers" : "dots"}
+        numbersBranch={sp.branch}
       />
     </div>
   );

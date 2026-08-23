@@ -50,6 +50,8 @@ export default async function ReconcileBranchPage({
     pcv?: string;
     chair?: string;
     month?: string;
+    ckv?: string;
+    branch?: string;
     reconcileConfigSaved?: string;
     reconcileSent?: string;
     reconcileSkippedReview?: string;
@@ -132,6 +134,8 @@ export default async function ReconcileBranchPage({
         chair={sp.chair}
         canManage={isSuperAdmin(session.poolUser.role)}
         month={sp.month}
+        checklistView={sp.ckv === "numbers" ? "numbers" : "dots"}
+        numbersBranch={sp.branch}
       />
 
       {/* error / success ribbons (preserve old dispute/write-off feedback) */}

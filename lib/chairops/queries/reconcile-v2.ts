@@ -2971,6 +2971,155 @@ export async function getReconcileChecklist(args: {
 }
 
 // ----------------------------------------------------------------
+// CHECKLIST · NUMBERS VIEW — same branch × day grid as getReconcileChecklist()
+// but each cell carries the 3 anti-fraud legs (ควรได้/เก็บได้/ฝาก) instead of a
+// dot (CEO 2026-08-23). เก็บได้/ฝาก are copied verbatim from
+// getReconcileChecklist()'s own cells (SAME rows/query — guaranteed to agree
+// with the dot view, never re-derived). ควรได้ is genuinely ROUND-shaped
+// (meter-delta over a collection window), not day-shaped — this calls
+// getReconcilePeriods() PER BRANCH (the exact function powering the Periods
+// tab · does NOT reimplement the meter math) and re-buckets each closed
+// round's expectedMeter/varianceMeter onto the calendar day of that round's
+// LAST collection instant (lastCollectedAt), summing when >1 round closes on
+// the branch the same day. A day with money activity but no VERIFIED round
+// closing on it (e.g. its round is still open, or lacks meter coverage) shows
+// null/⚪ — never a fabricated ควรได้. DISPLAY-ONLY.
+// ----------------------------------------------------------------
+export interface NumbersCell {
+  day: number; // 1..daysInMonth
+  collected: boolean; // === ChecklistCell.collected (identical source)
+  deposited: boolean; // === ChecklistCell.deposited
+  collectedAmount: number; // === ChecklistCell.collectedAmount
+  depositedAmount: number; // === ChecklistCell.depositedAmount
+  expectedAmount: number | null; // Σ expectedMeter of rounds whose lastCollectedAt is this day · null = ⚪ no verified round
+  variance: number | null; // Σ varianceMeter of the same rounds (เก็บได้ − ควรได้ of THIS day's rounds only, not cumulative)
+  verdict: PerChairVerdict | null; // classification of `variance` via the SAME tolerance fn as Periods/รายตู้ · null when no verified round
+  roundCount: number; // how many periods/rounds (closed, any verdict) attribute to this day
+}
+export interface NumbersBranch {
+  branchId: string;
+  name: string;
+  isClosed: boolean;
+  cells: NumbersCell[]; // length = daysInMonth, index 0 = day 1
+  collectDays: number; // === ChecklistBranch.collectDays
+  cumShortfall: number | null; // latest depositDiffCum (ฝาก − เก็บได้, all-time running total as of NOW — same figure getReconcilePeriods() shows on its newest row) · null = branch has no closed period yet
+}
+export interface ReconcileChecklistNumbers {
+  year: number;
+  month: number;
+  daysInMonth: number;
+  monthLabel: string;
+  branches: NumbersBranch[];
+  prevMonth: string;
+  nextMonth: string;
+}
+
+export async function getReconcileChecklistNumbers(args: {
+  orgId: string;
+  year: number;
+  month: number;
+}): Promise<ReconcileChecklistNumbers> {
+  const { orgId, year, month } = args;
+
+  // เก็บได้/ฝาก — reuse the checklist's OWN computation verbatim (never diverge
+  // from the dot view for the same branch+day).
+  const checklist = await getReconcileChecklist({ orgId, year, month });
+
+  // ควรได้/variance — round-shaped. One getReconcilePeriods() call per active
+  // branch, in parallel (CEO accepted this is heavier than the dot checklist:
+  // ~N branches × full periods computation vs one flat query).
+  const periodsByBranch = await Promise.all(
+    checklist.branches.map(async (b) => ({
+      branchId: b.branchId,
+      periods: await getReconcilePeriods({ orgId, branchId: b.branchId }),
+    })),
+  );
+  const periodsMap = new Map(periodsByBranch.map((p) => [p.branchId, p.periods]));
+
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+
+  const branches: NumbersBranch[] = checklist.branches.map((cb) => {
+    const periods = periodsMap.get(cb.branchId) ?? [];
+
+    // Bucket each CLOSED round's expectedMeter/varianceMeter onto the calendar
+    // day of its lastCollectedAt (Bangkok) — the exact instant the meter math
+    // used as the round's closing boundary. Skip the open (pending) tail —
+    // it isn't a verified round yet.
+    const perDay = new Map<
+      number,
+      { expected: number; variance: number; roundCount: number; verifiedCount: number }
+    >();
+    for (const p of periods) {
+      if (p.open || !p.lastCollectedAt) continue;
+      const dayStr = p.lastCollectedAt.slice(0, 10); // "YYYY-MM-DD HH:mm" (Bangkok, see formatDateTime)
+      if (!dayStr.startsWith(ym)) continue; // round closed outside the viewed month
+      const dayNum = Number(dayStr.slice(8, 10));
+      if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > cb.cells.length) continue;
+      const acc =
+        perDay.get(dayNum) ?? { expected: 0, variance: 0, roundCount: 0, verifiedCount: 0 };
+      acc.roundCount += 1;
+      // expectedMeter/varianceMeter are set together (see getReconcilePeriods) —
+      // only count toward the day's total when the round actually has meter
+      // coverage, so an incomplete/pending round never fabricates a ควรได้.
+      if (p.expectedMeter != null && p.varianceMeter != null) {
+        acc.expected += p.expectedMeter;
+        acc.variance += p.varianceMeter;
+        acc.verifiedCount += 1;
+      }
+      perDay.set(dayNum, acc);
+    }
+
+    const cells: NumbersCell[] = cb.cells.map((c) => {
+      const acc = perDay.get(c.day);
+      const verified = !!acc && acc.verifiedCount > 0;
+      const expectedAmount = verified ? Math.round(acc!.expected) : null;
+      const variance = verified ? Math.round(acc!.variance) : null;
+      const verdict =
+        verified && expectedAmount != null && variance != null
+          ? perChairVerdict(variance, expectedAmount)
+          : null;
+      return {
+        day: c.day,
+        collected: c.collected,
+        deposited: c.deposited,
+        collectedAmount: c.collectedAmount,
+        depositedAmount: c.depositedAmount,
+        expectedAmount,
+        variance,
+        verdict,
+        roundCount: acc?.roundCount ?? 0,
+      };
+    });
+
+    // Cumulative shortfall badge — reuse depositDiffCum's running total as-is
+    // (do not re-sum it here). getReconcilePeriods() returns periods NEWEST
+    // FIRST (wins.reverse()), and every window (including the open tail) carries
+    // the running cumulative forward, so the first non-null entry is the latest
+    // figure as of now.
+    const cumShortfall = periods.find((p) => p.depositDiffCum != null)?.depositDiffCum ?? null;
+
+    return {
+      branchId: cb.branchId,
+      name: cb.name,
+      isClosed: cb.isClosed,
+      cells,
+      collectDays: cb.collectDays,
+      cumShortfall,
+    };
+  });
+
+  return {
+    year: checklist.year,
+    month: checklist.month,
+    daysInMonth: checklist.daysInMonth,
+    monthLabel: checklist.monthLabel,
+    branches,
+    prevMonth: checklist.prevMonth,
+    nextMonth: checklist.nextMonth,
+  };
+}
+
+// ----------------------------------------------------------------
 // SIDEBAR — branch list rows (cumulative drift chip + status dot)
 // ----------------------------------------------------------------
 export async function getReconcileSidebar(args: {
