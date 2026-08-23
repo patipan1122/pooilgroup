@@ -363,13 +363,10 @@ export function CollectNewForm({
         return;
       }
       toast.success("บันทึกการนับแล้ว · ฝากเงินทีหลังได้");
-      // Office collect routes go to the office collection detail; maid path
-      // stays on the maid hub for the back-button breadcrumb.
-      router.push(
-        branchOverride
-          ? `/chairops/collect/${res.data.id}`
-          : `/chairops/m/collect/${res.data.id}`,
-      );
+      // Both office and maid paths land on the same collection-detail page —
+      // office used to bounce through the deprecated `/chairops/collect/[id]`
+      // redirect stub to get here, which is what it always resolved to anyway.
+      router.push(`/chairops/m/collect/${res.data.id}`);
       router.refresh();
     });
   }

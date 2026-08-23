@@ -1,6 +1,30 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: แก้บั๊กหลายสาขา + ปุ่มปิดสาขา/ลาออก กดจากตารางได้เลย — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (แก้ `next dev` พังทั้งเรโป — route ชนกัน `/chairops/collect/[id]` vs `[branchId]` — DEPLOYED)
+
+## 🛠️✅ แก้ `next dev` พังตั้งแต่ boot — route ชนกัน `/chairops/collect/[id]` vs `/chairops/collect/[branchId]` (2026-08-23 · **DEPLOYED**)
+
+พบครั้งแรกตอนงาน [[chairops-maid-table-conversion-2026-08-23]] (2026-08-23 เช้า) — `next dev` (Turbopack) ล้มตั้งแต่ boot ทั้งเรโป: `Error: You cannot use different slug names for the same dynamic path ('branchId' !== 'id')`. CEO สั่งให้แก้ต่อจากงานเช็คลิสต์ตู้คีบ
+
+**ต้นตอ:** `app/(admin)/chairops/collect/[id]/page.tsx` เป็นหน้า **redirect เก่าที่ deprecated ไปแล้วตั้งแต่ 2026-05-25** ("W6 cutover · slated for delete +1 week" — เลยกำหนดมา 3 เดือน) แต่ยังไม่ได้ลบเพราะมีจุดเดียวในโค้ดจริงที่ยังพึ่งพามันอยู่ (ดูด้านล่าง) → ชนกับ `app/(admin)/chairops/(office)/collect/[branchId]/new/page.tsx` ซึ่งเป็นหน้าจริงที่ใช้งานอยู่ (Office กดเก็บเงินแทนสาขา จากหน้า `/chairops/branch-collect`) — ทั้งคู่ resolve เป็น URL position เดียวกัน `/chairops/collect/[X]` แต่ตั้งชื่อ param ไม่ตรงกัน (`id` vs `branchId`) ซึ่ง Next.js ไม่ยอม
+
+**สิ่งที่ทำ (2 จุด):**
+1. [`app/(admin)/chairops/(maid)/m/collect/new/form.tsx`](<app/(admin)/chairops/(maid)/m/collect/new/form.tsx>) — จุดเดียวที่ยังพึ่งพา redirect เก่า: ตอนออฟฟิศเก็บเงินแทนสาขา (`branchOverride`) เดิม `router.push` ไป `/chairops/collect/${id}` (URL เก่าที่ต้องเด้งผ่าน redirect stub ก่อน) ทั้งที่ redirect stub เองก็แค่ `redirect()` ไปที่ `/chairops/m/collect/${id}` อยู่แล้ว — แก้ให้ `router.push` ตรงไปที่ `/chairops/m/collect/${id}` เลย เหมือนเคสแม่บ้านปกติ (ลบ round-trip ที่ไม่จำเป็นออกด้วย ไม่ใช่แค่แก้ตาม)
+2. ลบ [`app/(admin)/chairops/collect/[id]/page.tsx`](<app/(admin)/chairops/collect/[id]/page.tsx>) (ตัว redirect stub ที่ชนกัน) — **เก็บ `[id]/unlock-button.tsx` ไว้เหมือนเดิม** (ไม่ใช่ route file — ยังถูก import ใช้จริงโดยหน้าแม่บ้าน `(maid)/m/collect/[id]/page.tsx`) และเก็บ `chairops/collect/page.tsx` (redirect เปล่า → `/chairops/m`), `chairops/collect/new/page.tsx`, `actions.ts`, `_components/maid-shell.tsx` ไว้ทั้งหมดเพราะยังมีปุ่ม/ลิงก์จริงในแอปพึ่งพาอยู่ (nav bar "เก็บเงิน" ของแม่บ้าน + ฟอร์มแจ้งซ่อม) — **ไม่แตะของที่ยังใช้งานจริง แก้เฉพาะจุดที่ชนกันเท่านั้น**
+
+📝 **ยังเหลือ dead code ที่ overdue 3 เดือนแต่ไม่ใช่ตัวที่ชน** (`chairops/collect/new/page.tsx` + `new/form.tsx` ไม่มีใครเรียกใช้แล้วจริงๆ) — ไม่แตะรอบนี้เพราะไม่เกี่ยวกับบั๊ก ถ้าอยากให้เก็บกวาดต่อบอกได้
+
+**Architecture Check:**
+- Domain expert: ไม่ต้องใช้ domain expert พิเศษ — เป็นบั๊ก routing ล้วน ไม่แตะเงิน/ข้อมูล
+- Race condition / Idempotency / Data consistency: N/A — ไม่มี write, ไม่แตะ schema
+- Scale: N/A
+- วิธีที่ใช้ดีที่สุดแล้วหรือยัง: ✅ แก้ต้นตอ (จุดที่ยังอ้างอิง URL เก่าอยู่) แทนการเปลี่ยนชื่อ param ให้ตรงกันแบบขอไปที — การแก้แบบนี้ลบ hop ที่ไม่จำเป็นออกด้วย ไม่ใช่แค่ปะรอยรั่ว
+
+**Verify:** `tsc --noEmit` 0 error ทั้งโปรเจกต์ (`--max-old-space-size=8192`) · `next build` ผ่านทั้งโปรเจกต์ (route list ยืนยัน `/chairops/collect/[branchId]/new` เหลือตัวเดียวที่ตำแหน่งนั้น) · eslint ไฟล์ที่แก้ 0 error ใหม่ (มี 5 error/1 warning เดิมในไฟล์เดียวกัน ยืนยันด้วย `git diff` ว่าอยู่คนละบรรทัดกับที่แก้ทั้งหมด ไม่ใช่ของที่เพิ่งทำ) · **รัน `next dev` จริงบนพอร์ตทดสอบ (3101) ยืนยัน boot สำเร็จ "✓ Ready in 309ms"** (ก่อนแก้พังทันทีตั้งแต่ boot) + ยิง request จริงไปหลายหน้ารวม `/chairops/collect` และ `/chairops/branch-collect` (จุดที่เคยชน) → ตอบปกติทุกหน้า ไม่มี error ในล็อก
+
+**Deploy:** worktree เดิม (`pooilgroup-web-clawfleet-checklist`) branch ใหม่แยกออกจาก `origin/setup` สด → push ตรงเข้า `origin/setup`
+
+---
 
 ## 🪑🔧✅ ChairOps แม่บ้าน — แก้บั๊กหลายสาขา + เพิ่มปุ่ม "ปิดสาขา"/"ลาออก" กดจากตารางได้เลย (2026-08-23 · **DEPLOYED `fec0bac8`**)
 
