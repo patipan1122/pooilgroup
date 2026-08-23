@@ -189,6 +189,8 @@ export async function toggleBranchClosedAction(
     });
     revalidatePath("/chairops/reconcile");
     revalidatePath(`/chairops/reconcile/${branchId}`);
+    // CEO 2026-08-23: closedAt now also drives /chairops/maids' branch rows.
+    revalidatePath("/chairops/maids");
     return { ok: true, closed };
   } catch (e) {
     return {

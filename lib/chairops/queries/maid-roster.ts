@@ -389,10 +389,13 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
       select: { id: true, displayName: true, primaryBranchId: true, bankAccountNo: true, isActive: true },
       orderBy: { displayName: "asc" },
     }),
-    // no isActive filter — closed branches still need to render (muted, at the bottom).
+    // "closed" = closedAt != null (same signal /chairops/reconcile's existing
+    // ปิดสาขา toggle writes via toggleBranchClosedAction) — NOT isActive,
+    // which this query never touches. No filter here so closed branches
+    // still render (muted, at the bottom) instead of vanishing.
     prisma.chairopsBranch.findMany({
       where: { orgId },
-      select: { id: true, name: true, isActive: true },
+      select: { id: true, name: true, closedAt: true },
       orderBy: { name: "asc" },
     }),
     // active coverage (assignments ∪ primaryBranchId), same convention as
@@ -453,16 +456,16 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
     pushTo(timeEventsByMaid, c.maidId, c.collectedAt);
   }
 
-  // maid → set of ACTIVE branches they cover (assignments ∪ primary),
-  // excluding closed branches — a closed branch gets its own row kind
-  // instead of a maid row, even if a stale assignment still points at it.
+  // maid → set of OPEN (non-closed) branches they cover (assignments ∪
+  // primary) — a closed branch gets its own row kind instead of a maid row,
+  // even if a stale assignment still points at it.
   const maidActiveBranches = new Map<string, Set<string>>();
   for (const m of maids) maidActiveBranches.set(m.id, new Set());
   for (const a of assignments) {
-    if (branchById.get(a.branchId)?.isActive) maidActiveBranches.get(a.userId)?.add(a.branchId);
+    if (!branchById.get(a.branchId)?.closedAt) maidActiveBranches.get(a.userId)?.add(a.branchId);
   }
   for (const m of maids) {
-    if (m.primaryBranchId && branchById.get(m.primaryBranchId)?.isActive) {
+    if (m.primaryBranchId && !branchById.get(m.primaryBranchId)?.closedAt) {
       maidActiveBranches.get(m.id)?.add(m.primaryBranchId);
     }
   }
@@ -530,7 +533,7 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
   const activeOut: MaidActivityTableRow[] = [];
   const closedOut: MaidActivityTableRow[] = [];
   for (const b of branches) {
-    if (!b.isActive) {
+    if (b.closedAt) {
       closedOut.push({ kind: "closed_branch", branchId: b.id, branchName: b.name });
       continue;
     }
