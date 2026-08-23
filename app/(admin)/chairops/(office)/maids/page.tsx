@@ -75,7 +75,7 @@ export default async function MaidRosterPage({
       </header>
 
       {view === "branch" ? (
-        <BranchView orgId={session.user.orgId} />
+        <BranchView orgId={session.user.orgId} canMutate={canMutate} />
       ) : (
         <MaidView orgId={session.user.orgId} filter={sp.filter} canViewCost={canViewCost} />
       )}
@@ -135,9 +135,9 @@ function ViewToggle({ view }: { view: "branch" | "maid" }) {
   );
 }
 
-async function BranchView({ orgId }: { orgId: string }) {
+async function BranchView({ orgId, canMutate }: { orgId: string; canMutate: boolean }) {
   const rows = await listMaidActivityRoster(orgId);
-  return <MaidActivityTable rows={rows} />;
+  return <MaidActivityTable rows={rows} canMutate={canMutate} />;
 }
 
 async function MaidView({

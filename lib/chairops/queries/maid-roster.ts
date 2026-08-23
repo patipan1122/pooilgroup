@@ -20,6 +20,7 @@ import type {
   BranchRosterGroup,
   MaidInBranch,
   MaidActivityTableRow,
+  MaidActivityRow,
 } from "@/app/(admin)/chairops/(office)/maids/types";
 
 function bkkYmd(): string {
@@ -354,66 +355,80 @@ export const listMaidRosterByBranch = cache(async function listMaidRosterByBranc
   };
 });
 
-// Maid activity table (CEO 2026-08-23) — one row per maid, replacing the
-// branch-card grid on ?view=branch. Every column is derived from real
-// collection/deposit history — no new DB fields, no manual entry.
+// Maid activity table (CEO 2026-08-23) — one row per maid×branch, replacing
+// the branch-card grid on ?view=branch. Every stat column is derived from
+// real collection/deposit history — no new DB fields, no manual entry.
+//
+// Sort order (CEO 2026-08-23 follow-up): active branches first (maid rows or
+// the red "no maid" alert), then any active maid with zero active-branch
+// coverage, then closed branches, then resigned maids — closed/resigned sink
+// to the very bottom instead of confusingly interrupting the active list.
 const ACTIVITY_WINDOW_DAYS = 180; // bounds the gap-avg + time-cluster queries to recent behavior
+
+function compositeKey(maidId: string, branchId: string): string {
+  return `${maidId}::${branchId}`;
+}
 
 export const listMaidActivityRoster = cache(async function listMaidActivityRoster(
   orgId: string,
 ): Promise<MaidActivityTableRow[]> {
   const windowStart = new Date(Date.now() - ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const [maids, branches, assignments, firstDepositByMaid, lastCollectionByMaid, recentDeposits, recentCollections] =
-    await Promise.all([
-      prisma.chairopsUser.findMany({
-        where: { orgId, role: "MAID", isActive: true },
-        select: { id: true, displayName: true, primaryBranchId: true, bankAccountNo: true },
-        orderBy: { displayName: "asc" },
-      }),
-      prisma.chairopsBranch.findMany({
-        where: { orgId, isActive: true },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      }),
-      // multi-branch coverage count, same convention as listMaidRoster.
-      prisma.chairopsMaidAssignment.groupBy({
-        by: ["userId"],
-        where: { orgId, isActive: true, endedAt: null },
-        _count: { _all: true },
-      }),
-      // first-ever deposit = "start of work" proxy (CEO 2026-08-23 decision).
-      prisma.chairopsCashDeposit.groupBy({
-        by: ["maidId"],
-        where: { orgId },
-        _min: { depositedAt: true },
-      }),
-      // last collection ever (not window-bounded — "hasn't collected in ages" IS the signal).
-      prisma.chairopsCashCollection.groupBy({
-        by: ["maidId"],
-        where: { orgId, deletedAt: null },
-        _max: { collectedAt: true },
-      }),
-      prisma.chairopsCashDeposit.findMany({
-        where: { orgId, depositedAt: { gte: windowStart } },
-        select: { maidId: true, depositedAt: true, ocrDate: true },
-        orderBy: { depositedAt: "asc" },
-      }),
-      prisma.chairopsCashCollection.findMany({
-        where: { orgId, deletedAt: null, collectedAt: { gte: windowStart } },
-        select: { maidId: true, collectedAt: true },
-      }),
-    ]);
+  const [
+    maids,
+    branches,
+    assignments,
+    firstDepositByMaid,
+    lastCollectionByMaidBranch,
+    recentDeposits,
+    recentCollections,
+  ] = await Promise.all([
+    // no isActive filter — resigned maids still need to render (muted, at the bottom).
+    prisma.chairopsUser.findMany({
+      where: { orgId, role: "MAID" },
+      select: { id: true, displayName: true, primaryBranchId: true, bankAccountNo: true, isActive: true },
+      orderBy: { displayName: "asc" },
+    }),
+    // no isActive filter — closed branches still need to render (muted, at the bottom).
+    prisma.chairopsBranch.findMany({
+      where: { orgId },
+      select: { id: true, name: true, isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    // active coverage (assignments ∪ primaryBranchId), same convention as
+    // listMaidRosterByBranch — this is what fixes the "covers 2 branches but
+    // only ever shown at 1" bug CEO caught.
+    prisma.chairopsMaidAssignment.findMany({
+      where: { orgId, isActive: true, endedAt: null },
+      select: { userId: true, branchId: true },
+    }),
+    // first-ever deposit anywhere = "start of work" proxy (CEO 2026-08-23 decision).
+    prisma.chairopsCashDeposit.groupBy({
+      by: ["maidId"],
+      where: { orgId },
+      _min: { depositedAt: true },
+    }),
+    // last collection ever, PER (maid, branch) — not window-bounded, and
+    // branch-scoped now that a maid can show up at more than one branch.
+    prisma.chairopsCashCollection.groupBy({
+      by: ["maidId", "branchId"],
+      where: { orgId, deletedAt: null },
+      _max: { collectedAt: true },
+    }),
+    prisma.chairopsCashDeposit.findMany({
+      where: { orgId, depositedAt: { gte: windowStart } },
+      select: { maidId: true, branchId: true, depositedAt: true, ocrDate: true },
+    }),
+    prisma.chairopsCashCollection.findMany({
+      where: { orgId, deletedAt: null, collectedAt: { gte: windowStart } },
+      select: { maidId: true, branchId: true, collectedAt: true },
+    }),
+  ]);
 
-  const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
-  const branchExtraCountByMaid = new Map(
-    assignments.map((a) => [a.userId, Math.max(0, a._count._all - 1)]),
-  );
-  const firstDepositByMaidMap = new Map(
-    firstDepositByMaid.map((d) => [d.maidId, d._min.depositedAt]),
-  );
-  const lastCollectionByMaidMap = new Map(
-    lastCollectionByMaid.map((c) => [c.maidId, c._max.collectedAt]),
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const firstDepositByMaidMap = new Map(firstDepositByMaid.map((d) => [d.maidId, d._min.depositedAt]));
+  const lastCollectionByMaidBranchMap = new Map(
+    lastCollectionByMaidBranch.map((c) => [compositeKey(c.maidId, c.branchId), c._max.collectedAt]),
   );
 
   function pushTo(map: Map<string, Date[]>, key: string, value: Date) {
@@ -422,59 +437,104 @@ export const listMaidActivityRoster = cache(async function listMaidActivityRoste
     else map.set(key, [value]);
   }
 
-  // per-maid: deposit "day" values for the gap-average (prefer the slip's own
-  // printed date over the app-recorded time when OCR read it successfully).
-  const depositDaysByMaid = new Map<string, Date[]>();
-  const timeEventsByMaid = new Map<string, Date[]>(); // collect + deposit times, for clustering
+  // deposit "day" values for the gap-average, PER (maid, branch) — prefer the
+  // slip's own printed date over the app-recorded time when OCR read it.
+  const depositDaysByMaidBranch = new Map<string, Date[]>();
+  // collect + deposit times PER MAID (not branch-split) — "when does she
+  // usually operate" is a personal habit, and splitting by branch would
+  // starve the cluster sample for anyone covering >1 branch.
+  const timeEventsByMaid = new Map<string, Date[]>();
   for (const d of recentDeposits) {
     const day = d.ocrDate ?? d.depositedAt;
-    pushTo(depositDaysByMaid, d.maidId, day);
+    pushTo(depositDaysByMaidBranch, compositeKey(d.maidId, d.branchId), day);
     pushTo(timeEventsByMaid, d.maidId, day);
   }
   for (const c of recentCollections) {
     pushTo(timeEventsByMaid, c.maidId, c.collectedAt);
   }
 
-  const today = bkkToday();
-  const rowsByBranch = new Map<string, MaidActivityTableRow[]>();
-  const unassigned: MaidActivityTableRow[] = [];
-
+  // maid → set of ACTIVE branches they cover (assignments ∪ primary),
+  // excluding closed branches — a closed branch gets its own row kind
+  // instead of a maid row, even if a stale assignment still points at it.
+  const maidActiveBranches = new Map<string, Set<string>>();
+  for (const m of maids) maidActiveBranches.set(m.id, new Set());
+  for (const a of assignments) {
+    if (branchById.get(a.branchId)?.isActive) maidActiveBranches.get(a.userId)?.add(a.branchId);
+  }
   for (const m of maids) {
+    if (m.primaryBranchId && branchById.get(m.primaryBranchId)?.isActive) {
+      maidActiveBranches.get(m.id)?.add(m.primaryBranchId);
+    }
+  }
+
+  const today = bkkToday();
+  const rowsByBranch = new Map<string, MaidActivityRow[]>();
+  const unassignedActive: MaidActivityTableRow[] = [];
+  const resigned: MaidActivityTableRow[] = [];
+
+  function buildRow(m: (typeof maids)[number], branchId: string | null): MaidActivityRow {
     const firstDeposit = firstDepositByMaidMap.get(m.id);
-    const row: MaidActivityTableRow = {
+    return {
       kind: "maid",
       userId: m.id,
       displayName: m.displayName,
-      branchId: m.primaryBranchId ?? "",
-      branchName: m.primaryBranchId ? (branchNameById.get(m.primaryBranchId) ?? "ไม่พบสาขา") : "ยังไม่ผูกสาขา",
-      branchExtraCount: branchExtraCountByMaid.get(m.id) ?? 0,
+      branchId: branchId ?? "",
+      branchName: branchId ? (branchById.get(branchId)?.name ?? "ไม่พบสาขา") : "ยังไม่ผูกสาขา",
+      isPrimary: m.primaryBranchId === branchId,
       hasBankAccount: !!m.bankAccountNo?.trim(),
       daysWorking: firstDeposit
         ? Math.max(0, Math.floor((today.getTime() - firstDeposit.getTime()) / (24 * 60 * 60 * 1000)))
         : null,
-      lastCollectedAt: lastCollectionByMaidMap.get(m.id)?.toISOString() ?? null,
-      avgDepositGapDays: avgGapDays(depositDaysByMaid.get(m.id) ?? []),
+      lastCollectedAt: branchId
+        ? (lastCollectionByMaidBranchMap.get(compositeKey(m.id, branchId))?.toISOString() ?? null)
+        : null,
+      avgDepositGapDays: branchId ? avgGapDays(depositDaysByMaidBranch.get(compositeKey(m.id, branchId)) ?? []) : null,
       typicalTimes: clusterTimesOfDay(timeEventsByMaid.get(m.id) ?? []),
     };
+  }
 
-    if (m.primaryBranchId && branchNameById.has(m.primaryBranchId)) {
-      const list = rowsByBranch.get(m.primaryBranchId) ?? [];
-      list.push(row);
-      rowsByBranch.set(m.primaryBranchId, list);
-    } else {
-      unassigned.push(row);
+  for (const m of maids) {
+    if (!m.isActive) {
+      resigned.push({
+        kind: "resigned_maid",
+        userId: m.id,
+        displayName: m.displayName,
+        lastBranchName: m.primaryBranchId ? (branchById.get(m.primaryBranchId)?.name ?? null) : null,
+      });
+      continue;
+    }
+
+    const coverage = maidActiveBranches.get(m.id) ?? new Set<string>();
+    if (coverage.size === 0) {
+      unassignedActive.push(buildRow(m, m.primaryBranchId));
+      continue;
+    }
+    for (const branchId of coverage) {
+      const list = rowsByBranch.get(branchId) ?? [];
+      list.push(buildRow(m, branchId));
+      rowsByBranch.set(branchId, list);
     }
   }
 
-  const out: MaidActivityTableRow[] = [];
+  const activeOut: MaidActivityTableRow[] = [];
+  const closedOut: MaidActivityTableRow[] = [];
   for (const b of branches) {
+    if (!b.isActive) {
+      closedOut.push({ kind: "closed_branch", branchId: b.id, branchName: b.name });
+      continue;
+    }
     const maidsHere = rowsByBranch.get(b.id);
-    if (maidsHere?.length) out.push(...maidsHere);
-    else out.push({ kind: "no_maid", branchId: b.id, branchName: b.name });
+    if (maidsHere?.length) {
+      maidsHere.sort((a, c) =>
+        a.isPrimary === c.isPrimary ? a.displayName.localeCompare(c.displayName, "th") : a.isPrimary ? -1 : 1,
+      );
+      activeOut.push(...maidsHere);
+    } else {
+      activeOut.push({ kind: "no_maid", branchId: b.id, branchName: b.name });
+    }
   }
-  out.push(...unassigned);
 
-  return out;
+  return [...activeOut, ...unassignedActive, ...closedOut, ...resigned];
 });
 
 export const getMaidDetail = cache(async function getMaidDetail(

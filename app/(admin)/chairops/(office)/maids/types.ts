@@ -72,20 +72,24 @@ export interface BranchRosterView {
 }
 
 // Maid activity table (CEO 2026-08-23) — replaces the branch-card grid on
-// ?view=branch with one row per maid, showing deposit-behavior stats derived
-// from real collection/deposit history (no manual data entry required).
+// ?view=branch with one row per maid×branch, showing deposit-behavior stats
+// derived from real collection/deposit history (no manual data entry
+// required). A maid covering multiple branches gets one row per branch she
+// actively covers (not just her primary) — fixed 2026-08-23 after CEO caught
+// a branch showing "ไม่มีแม่บ้าน" that was actually covered as a secondary
+// assignment.
 export interface MaidActivityRow {
   kind: "maid";
   userId: string;
   displayName: string;
   branchId: string;
   branchName: string;
-  branchExtraCount: number; // # OTHER active branches this maid also covers
+  isPrimary: boolean; // this branch is her primaryBranchId — tags non-primary rows "(สาขาเสริม)"
   hasBankAccount: boolean;
-  daysWorking: number | null; // days since first-ever deposit (= start-of-work proxy) · null = never deposited
-  lastCollectedAt: string | null; // ISO, latest collection ever (any day)
-  avgDepositGapDays: number | null; // avg days between deposits, last 180d · null = <2 deposits in window
-  typicalTimes: string[]; // up to 2 "HH:MM" — most common collect/deposit time clusters, last 180d
+  daysWorking: number | null; // days since first-ever deposit anywhere (= start-of-work proxy) · null = never deposited
+  lastCollectedAt: string | null; // ISO, latest collection AT THIS BRANCH · null = never here
+  avgDepositGapDays: number | null; // avg days between deposits AT THIS BRANCH, last 180d · null = <2 in window
+  typicalTimes: string[]; // up to 2 "HH:MM" — her most common collect/deposit time clusters overall, last 180d
 }
 
 export interface NoMaidRow {
@@ -94,7 +98,25 @@ export interface NoMaidRow {
   branchName: string;
 }
 
-export type MaidActivityTableRow = MaidActivityRow | NoMaidRow;
+// CEO 2026-08-23: branches marked closed via the new "ปิดสาขา" action sink to
+// the bottom instead of alarmingly showing as "ไม่มีแม่บ้าน — ต้องหาคน".
+export interface ClosedBranchRow {
+  kind: "closed_branch";
+  branchId: string;
+  branchName: string;
+}
+
+// CEO 2026-08-23: maids deactivated (isActive: false, via the existing
+// chairops/users deactivate flow) sink to the bottom instead of just
+// vanishing — so the office sees WHY a branch suddenly shows no coverage.
+export interface ResignedMaidRow {
+  kind: "resigned_maid";
+  userId: string;
+  displayName: string;
+  lastBranchName: string | null; // her primary branch at the time, for context
+}
+
+export type MaidActivityTableRow = MaidActivityRow | NoMaidRow | ClosedBranchRow | ResignedMaidRow;
 
 export interface MissedMaidVariantRow {
   branchId: string;

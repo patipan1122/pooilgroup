@@ -1,18 +1,27 @@
-// Maid activity table (CEO 2026-08-23) — "ดูตามสาขา", one row per maid.
+// Maid activity table (CEO 2026-08-23) — "ดูตามสาขา", one row per maid×branch.
 //
 // Replaces the earlier branch-card grid with a table so the whole roster is
 // scannable at once: branch, name, how long they've worked (from their first
-// deposit ever), last collection, average days between deposits, whether a
-// payout bank account is on file, and the 1-2 times of day they most often
-// handle cash (gap-clustered — NOT a flat average, which would blend a
-// morning + evening round into a meaningless noon reading). Branches with no
-// maid still render a row so gaps in coverage stay visible. Read-only server
-// component — clicking a maid opens /chairops/maids/[userId].
+// deposit ever), last collection at THIS branch, average days between
+// deposits at THIS branch, whether a payout bank account is on file, and the
+// 1-2 times of day they most often handle cash overall (gap-clustered — NOT a
+// flat average, which would blend a morning + evening round into a
+// meaningless noon reading). A maid covering multiple branches gets one row
+// per branch she actively covers, tagged "(สาขาเสริม)" where she isn't
+// primary.
+//
+// Active branches with no maid render a red alert row. Closed branches and
+// resigned maids sink to the very bottom of the SAME table, muted — visible
+// for context (not silently hidden) but out of the way of the active list.
+// Read-only server component except for the two small client action buttons
+// below — clicking a maid's name opens /chairops/maids/[userId].
 
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 
 import type { MaidActivityTableRow } from "../types";
+import { CloseBranchButton, ReopenBranchButton } from "./branch-close-buttons";
+import { ResignMaidButton, ReactivateMaidButton } from "./maid-status-buttons";
 
 function bkkDateTime(iso: string): string {
   return new Intl.DateTimeFormat("th-TH", {
@@ -24,7 +33,13 @@ function bkkDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function MaidActivityTable({ rows }: { rows: MaidActivityTableRow[] }) {
+export function MaidActivityTable({
+  rows,
+  canMutate,
+}: {
+  rows: MaidActivityTableRow[];
+  canMutate: boolean;
+}) {
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
       {/* legend written out (not a hover title) — CEO checks this on mobile, no hover there */}
@@ -52,25 +67,52 @@ export function MaidActivityTable({ rows }: { rows: MaidActivityTableRow[] }) {
               </td>
             </tr>
           )}
-          {rows.map((r) =>
-            r.kind === "no_maid" ? (
-              <tr key={`empty-${r.branchId}`} className="bg-rose-50/60">
-                <td className="px-4 py-2.5 font-semibold text-zinc-900">{r.branchName}</td>
-                <td colSpan={6} className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-rose-600">
-                    <AlertTriangle className="size-4" aria-hidden />
-                    ไม่มีแม่บ้าน — ต้องหาคน
-                  </span>
-                </td>
-              </tr>
-            ) : (
-              <tr key={r.userId} className="hover:bg-zinc-50">
+          {rows.map((r) => {
+            if (r.kind === "no_maid") {
+              return (
+                <tr key={`empty-${r.branchId}`} className="bg-rose-50/60">
+                  <td className="px-4 py-2.5 font-semibold text-zinc-900">{r.branchName}</td>
+                  <td colSpan={6} className="px-4 py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-rose-600">
+                      <AlertTriangle className="size-4" aria-hidden />
+                      ไม่มีแม่บ้าน — ต้องหาคน
+                    </span>
+                    {canMutate && <CloseBranchButton branchId={r.branchId} branchName={r.branchName} />}
+                  </td>
+                </tr>
+              );
+            }
+            if (r.kind === "closed_branch") {
+              return (
+                <tr key={`closed-${r.branchId}`} className="bg-zinc-50 text-zinc-400">
+                  <td className="px-4 py-2.5 font-medium">{r.branchName}</td>
+                  <td colSpan={6} className="px-4 py-2.5">
+                    ปิดสาขาแล้ว
+                    {canMutate && <ReopenBranchButton branchId={r.branchId} branchName={r.branchName} />}
+                  </td>
+                </tr>
+              );
+            }
+            if (r.kind === "resigned_maid") {
+              return (
+                <tr key={`resigned-${r.userId}`} className="bg-zinc-50 text-zinc-400">
+                  <td className="px-4 py-2.5">{r.lastBranchName ?? "–"}</td>
+                  <td colSpan={6} className="px-4 py-2.5">
+                    <Link href={`/chairops/maids/${r.userId}`} className="hover:text-zinc-600">
+                      {r.displayName}
+                    </Link>
+                    <span className="ml-1.5">— ลาออกแล้ว</span>
+                    {canMutate && <ReactivateMaidButton userId={r.userId} displayName={r.displayName} />}
+                  </td>
+                </tr>
+              );
+            }
+            return (
+              <tr key={`${r.branchId}-${r.userId}`} className="hover:bg-zinc-50">
                 <td className="px-4 py-2.5 text-zinc-700">
                   {r.branchName}
-                  {r.branchExtraCount > 0 && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] font-semibold text-emerald-700">
-                      +{r.branchExtraCount} สาขา
-                    </span>
+                  {!r.isPrimary && (
+                    <span className="ml-1.5 text-[10px] font-normal text-zinc-400">(สาขาเสริม)</span>
                   )}
                 </td>
                 <td className="px-4 py-2.5">
@@ -80,6 +122,7 @@ export function MaidActivityTable({ rows }: { rows: MaidActivityTableRow[] }) {
                   >
                     {r.displayName}
                   </Link>
+                  {canMutate && r.isPrimary && <ResignMaidButton userId={r.userId} displayName={r.displayName} />}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-zinc-700">
                   {r.daysWorking === null ? "–" : `${r.daysWorking} วัน`}
@@ -97,8 +140,8 @@ export function MaidActivityTable({ rows }: { rows: MaidActivityTableRow[] }) {
                   {r.typicalTimes.length > 0 ? r.typicalTimes.join(" · ") : "–"}
                 </td>
               </tr>
-            ),
-          )}
+            );
+          })}
         </tbody>
       </table>
     </div>
