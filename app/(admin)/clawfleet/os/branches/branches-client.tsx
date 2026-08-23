@@ -14,6 +14,7 @@ import {
   type ReconcileStatus,
 } from "@/lib/clawfleet/reconcile/actions";
 import type { CompanyOpt, BankAccountOpt } from "@/lib/cashhub/amazon-settlement-data";
+import type { BranchReconcileOverviewRow as ReconcileOverviewRow } from "@/lib/clawfleet/reconcile/overview";
 
 /** สถานะตู้จริงจาก server (cfMachine): ดี / ต้องเติม / เสีย */
 export type ServerDotStatus = "good" | "warn" | "broken";
@@ -93,6 +94,7 @@ export function BranchesClient({
   stockSourceByBranch = {},
   companies = [],
   bankAccounts = [],
+  reconcileOverview = [],
   fromISO = "",
   toISO = "",
 }: {
@@ -106,6 +108,8 @@ export function BranchesClient({
   // ผูกบัญชีธนาคาร + ส่งเข้า reconcile (CEO 2026-08-23) — ตัวเลือกบริษัท/บัญชีธนาคาร (แอดมินเท่านั้น)
   companies?: CompanyOpt[];
   bankAccounts?: BankAccountOpt[];
+  // สรุปรายสาขา (สาขานำหน้า) — พนักงาน/ผูกบัญชีแล้วยัง/เก็บเงินล่าสุด (CEO 2026-08-23)
+  reconcileOverview?: ReconcileOverviewRow[];
   // ช่วงวันที่ปัจจุบัน (YYYY-MM-DD) — สถิติ P&L ต่อสาขาอิงช่วงนี้ · เติมค่า <input type=date> + คง state ใน link
   fromISO?: string;
   toISO?: string;
@@ -388,7 +392,7 @@ export function BranchesClient({
       {isAdmin && <WarehouseSourceCard branchOptions={branchOptions} stockSourceByBranch={stockSourceByBranch} />}
 
       {/* ── ผูกบัญชีธนาคาร + ส่งเข้า reconcile (CEO 2026-08-23 · แอดมินเท่านั้น) ── */}
-      {isAdmin && <ReconcileAccountCard branchOptions={branchOptions} companies={companies} bankAccounts={bankAccounts} />}
+      {isAdmin && <ReconcileAccountCard branchOptions={branchOptions} companies={companies} bankAccounts={bankAccounts} overview={reconcileOverview} />}
 
       {/* ── legend: ความหมายของช่องสถานะตู้ ── */}
       <div
@@ -767,10 +771,12 @@ function ReconcileAccountCard({
   branchOptions,
   companies,
   bankAccounts,
+  overview,
 }: {
   branchOptions: BranchOption[];
   companies: CompanyOpt[];
   bankAccounts: BankAccountOpt[];
+  overview: ReconcileOverviewRow[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -784,11 +790,12 @@ function ReconcileAccountCard({
   const [pending, startTransition] = useTransition();
 
   const canUse = branchOptions.length > 0 && companies.length > 0 && bankAccounts.length > 0;
+  const bankLabelById = useMemo(() => new Map(bankAccounts.map((a) => [a.id, a.label])), [bankAccounts]);
 
-  function openModal() {
-    setBranchId(""); setStatus(null); setCompanyId(""); setBankAccountId("");
+  function openModalFor(id: string) {
     setError(null); setOkMsg(null);
     setOpen(true);
+    pickBranch(id);
   }
 
   function pickBranch(id: string) {
@@ -839,32 +846,72 @@ function ReconcileAccountCard({
     <div style={{ marginTop: 18 }}>
       <Card
         title="ผูกบัญชีธนาคาร + ส่งเข้า reconcile"
-        sub="สำหรับแอดมิน — ตั้งบัญชีธนาคารที่ยอดฝากของสาขาเข้าจริง แล้วส่งยอดฝากเข้าคิว LedgerLine bank-recon"
-        right={
-          <button
-            type="button"
-            onClick={openModal}
-            disabled={!canUse}
-            className="co-tap"
-            style={{
-              border: "none", cursor: canUse ? "pointer" : "not-allowed",
-              background: canUse ? "#4F46E5" : "#C7C4EE", color: "#fff",
-              fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 10,
-              display: "inline-flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
-            }}
-          >
-            <Landmark size={15} /> ผูกบัญชี
-          </button>
-        }
+        sub="สาขานำหน้า — ดูได้ทีเดียวว่าสาขาไหนมีพนักงานยัง ผูกบัญชียัง เก็บเงินล่าสุดกี่วันก่อน แล้วกดผูกบัญชีจากแถวได้เลย"
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "#6B7280" }}>
-          <IconBox tone="neutral" size={38} radius={10} bg="#F1F2F7" color="#9AA1AB"><Landmark size={17} /></IconBox>
-          <div style={{ flex: 1 }}>
-            {canUse
-              ? <>กด “ผูกบัญชี” เพื่อเลือกสาขา ตั้งบัญชีธนาคาร แล้วส่งยอดฝากเข้า reconcile</>
-              : "ต้องมีสาขาตู้คีบ + บริษัท + บัญชีธนาคารในระบบก่อน ถึงจะตั้งค่าได้"}
+        {!canUse ? (
+          <div style={{ fontSize: 12.5, color: "#6B7280" }}>
+            ต้องมีสาขาตู้คีบ + บริษัท + บัญชีธนาคารในระบบก่อน ถึงจะตั้งค่าได้
           </div>
-        </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "#8A90A0", fontSize: 11 }}>
+                  <th style={{ padding: "0 10px 8px 0", fontWeight: 600 }}>สาขา</th>
+                  <th style={{ padding: "0 10px 8px", fontWeight: 600 }}>พนักงาน</th>
+                  <th style={{ padding: "0 10px 8px", fontWeight: 600 }}>บัญชีธนาคาร</th>
+                  <th style={{ padding: "0 10px 8px", fontWeight: 600 }}>เก็บเงินล่าสุด</th>
+                  <th style={{ padding: "0 0 8px", fontWeight: 600 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {overview.map((r) => {
+                  const bankLabel = r.bankAccountId ? bankLabelById.get(r.bankAccountId) : null;
+                  return (
+                    <tr key={r.branchId} style={{ borderTop: "1px solid #F0F1F4" }}>
+                      <td style={{ padding: "9px 10px 9px 0", fontWeight: 600, color: "#1A1D21", whiteSpace: "nowrap" }}>
+                        {r.branchName} <span style={{ color: "#9AA1AB", fontWeight: 500 }}>({r.branchCode})</span>
+                      </td>
+                      <td style={{ padding: "9px 10px" }}>
+                        {r.staffCount > 0 ? (
+                          <span style={{ color: "#15803D" }}>{r.staffCount} คน</span>
+                        ) : (
+                          <span style={{ color: "#B42318" }}>ยังไม่มี</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "9px 10px" }}>
+                        {bankLabel ? (
+                          <span style={{ color: "#15803D" }}>{bankLabel}</span>
+                        ) : (
+                          <span style={{ color: "#B45309" }}>ยังไม่ผูก</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "9px 10px", color: r.lastCollectedAt ? "#3A414B" : "#9AA1AB", whiteSpace: "nowrap" }}>
+                        {r.lastCollectedLabel}
+                      </td>
+                      <td style={{ padding: "9px 0", textAlign: "right" }}>
+                        <button
+                          type="button"
+                          onClick={() => openModalFor(r.branchId)}
+                          className="co-tap"
+                          style={{
+                            border: "none", cursor: "pointer",
+                            background: bankLabel ? "#F1F2F7" : "#4F46E5",
+                            color: bankLabel ? "#454B54" : "#fff",
+                            fontSize: 11.5, fontWeight: 600, padding: "6px 11px", borderRadius: 8,
+                            display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+                          }}
+                        >
+                          <Landmark size={12} /> {bankLabel ? "แก้ไข" : "ผูกบัญชี"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
         {okMsg && (
           <div style={{ marginTop: 12, background: "#E7F4EC", border: "1px solid #BBE3C9", borderRadius: 10, padding: "10px 13px", fontSize: 12.5, color: "#15803D" }}>
             {okMsg}
