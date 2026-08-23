@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: ตารางเปลี่ยนเป็น 1 แถว/สาขา + popup ดูแม่บ้าน + แก้ปุ่มปิดสาขาไม่ทำงาน — โค้ดพร้อม รอ CEO อนุมัติ deploy)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-23 (ChairOps แม่บ้าน: ตารางเปลี่ยนเป็น 1 แถว/สาขา + popup ดูแม่บ้าน + แก้ปุ่มปิดสาขาไม่ทำงาน — DEPLOYED)
 
-## 🪑🐛✅ ChairOps แม่บ้าน — ตาราง 1 แถว/สาขา (กด popup ดูแม่บ้าน) + แก้บั๊กปุ่ม "ปิดสาขา" กดไม่ติด (2026-08-23)
+## 🪑🐛✅ ChairOps แม่บ้าน — ตาราง 1 แถว/สาขา (กด popup ดูแม่บ้าน) + แก้บั๊กปุ่ม "ปิดสาขา" กดไม่ติด (2026-08-23 · **DEPLOYED `bdfc0c09`**)
 
 ต่อจาก [[chairops-maid-table-conversion-2026-08-23]] — CEO เจอ 2 เรื่องจากการใช้งานจริง
 
@@ -17,9 +17,9 @@
 - [`branch-close-buttons.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-close-buttons.tsx) — เปลี่ยน confirm mechanism
 - [`branch-roster-view.tsx`](app/(admin)/chairops/(office)/maids/_components/branch-roster-view.tsx) — ตารางเหลือ 2 คอลัมน์ (สาขา / จัดการ)
 
-**Verify:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (9 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-popup`)
+**Verify + Deploy:** tsc 0 error (`--max-old-space-size=8192`) · eslint 0 error/warning (9 ไฟล์ที่แตะ+ใหม่) · `next build` ผ่านทั้งโปรเจกต์ — รันใน isolated worktree (`/private/tmp/pg-wt-chairops-maids-popup`) · `/verify` gate ผ่าน stamp · merge ชน `origin/setup` 1 ครั้ง (ClawFleet ผูกบัญชี, คนละไฟล์ทั้งหมดยกเว้น STATUS.md → เก็บทั้ง 2 entry ไว้) commit `de8d209f` push ตรงเข้า `origin/setup` · smoke test หลัง deploy `/` `/health` `/chairops/maids` `/login` → 307/200/307/200 ปกติ · ยืนยันด้วย `vercel inspect pooilgroup.com` ว่า alias ชี้ deployment ใหม่จริง
 
-📝 ยังไม่ commit/push — รอ CEO ทดสอบปุ่ม "ปิดสาขา" อีกครั้งหลัง deploy ว่าใช้ได้จริงไหม (แก้ตามสมมติฐานที่มีหลักฐานสนับสนุน แต่ไม่ได้ reproduce บั๊กเดิมได้เองเพราะไม่มีสิทธิ์เปิดเบราว์เซอร์ในเครื่อง CEO)
+📝 **รอ CEO ทดสอบปุ่ม "ปิดสาขา" อีกครั้ง** ว่าใช้ได้จริงไหม — แก้ตามสมมติฐานที่มีหลักฐานสนับสนุน (window.confirm() vs Dialog ที่ใช้ได้) แต่ไม่ได้ reproduce บั๊กเดิมได้เองเพราะไม่มีสิทธิ์เปิดเบราว์เซอร์ในเครื่อง CEO — ถ้ายังกดไม่ติดอีก ต้องขอ error message ที่เห็นตรงๆ มาช่วยวินิจฉัยต่อ
 
 ---
 
