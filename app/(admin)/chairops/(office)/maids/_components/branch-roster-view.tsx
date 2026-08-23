@@ -1,169 +1,119 @@
-// Branch-first maid roster (CEO 2026-07-12) — "ดูตามสาขา".
+// Maid activity table (CEO 2026-08-23) — "ดูตามสาขา", one row per maid.
 //
-// One card per active branch → the maids covering it, each with their full
-// today-status (ทำงาน/ลา + เก็บเงิน/ฝาก/ทำความสะอาดวันนี้). Branches with no
-// maid render a red "ไม่มีแม่บ้าน" banner. Active maids with no branch at all
-// are listed at the bottom so nothing is hidden. Read-only server component —
-// clicking a maid opens /chairops/maids/[userId].
+// Replaces the earlier branch-card grid with a table so the whole roster is
+// scannable at once: branch, name, how long they've worked (from their first
+// deposit ever), last collection, average days between deposits, whether a
+// payout bank account is on file, and the 1-2 times of day they most often
+// handle cash (gap-clustered — NOT a flat average, which would blend a
+// morning + evening round into a meaningless noon reading). Branches with no
+// maid still render a row so gaps in coverage stay visible. Read-only server
+// component — clicking a maid opens /chairops/maids/[userId].
 
 import Link from "next/link";
-import {
-  AlertTriangle,
-  Building2,
-  Coffee,
-  Wallet,
-  Landmark,
-  Sparkles,
-  UserX,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
-import type { BranchRosterView, MaidInBranch } from "../types";
+import type { MaidActivityTableRow } from "../types";
 
-function bkkTime(iso: string): string {
+function bkkDateTime(iso: string): string {
   return new Intl.DateTimeFormat("th-TH", {
     timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
 }
 
-export function BranchRosterViewGrid({ view }: { view: BranchRosterView }) {
+export function MaidActivityTable({ rows }: { rows: MaidActivityTableRow[] }) {
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {view.branches.map((b) => (
-          <div
-            key={b.branchId}
-            className={
-              "rounded-xl border bg-white shadow-sm " +
-              (b.maids.length === 0 ? "border-rose-200" : "border-zinc-200")
-            }
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-4 py-2.5">
-              <div className="flex min-w-0 items-center gap-2">
-                <Building2 className="size-4 shrink-0 text-zinc-400" aria-hidden />
-                <span className="truncate font-semibold text-zinc-900">{b.branchName}</span>
-              </div>
-              <span className="shrink-0 text-xs text-zinc-400">
-                {b.maids.length > 0 ? `${b.maids.length} คน` : ""}
-              </span>
-            </div>
-
-            <div className="divide-y divide-zinc-100">
-              {b.maids.length === 0 ? (
-                <div className="flex items-center gap-2 px-4 py-4 text-sm font-medium text-rose-600">
-                  <AlertTriangle className="size-4" aria-hidden />
-                  ไม่มีแม่บ้าน — ต้องหาคน
-                </div>
-              ) : (
-                b.maids.map((m) => <MaidLine key={m.userId} m={m} />)
-              )}
-            </div>
-          </div>
-        ))}
+    <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
+      {/* legend written out (not a hover title) — CEO checks this on mobile, no hover there */}
+      <div className="flex items-center gap-1.5 border-b border-zinc-100 px-4 py-2 text-xs text-zinc-500">
+        <span className="inline-block size-2 rounded-full bg-emerald-500" aria-hidden /> มีเลขบัญชีแล้ว
+        <span className="ml-2 inline-block size-2 rounded-full bg-zinc-900" aria-hidden /> ยังไม่กรอกบัญชี
       </div>
-
-      {view.unassignedMaids.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
-            <UserX className="size-4" aria-hidden />
-            แม่บ้านที่ยังไม่ผูกสาขา · {view.unassignedMaids.length} คน
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {view.unassignedMaids.map((u) => (
-              <Link
-                key={u.userId}
-                href={`/chairops/maids/${u.userId}`}
-                className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
-              >
-                {u.displayName}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MaidLine({ m }: { m: MaidInBranch }) {
-  return (
-    <div className="px-4 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <Link
-          href={`/chairops/maids/${m.userId}`}
-          className="min-w-0 truncate font-medium text-zinc-900 hover:text-emerald-700"
-        >
-          {m.displayName}
-          {!m.isPrimary && (
-            <span className="ml-1.5 text-[10px] font-normal text-zinc-400">(สาขาเสริม)</span>
+      <table className="w-full min-w-[860px] text-sm">
+        <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <tr>
+            <th className="px-4 py-2.5">สาขา</th>
+            <th className="px-4 py-2.5">ชื่อ</th>
+            <th className="px-3 py-2.5 text-right">ทำงานมาแล้ว</th>
+            <th className="px-4 py-2.5">เก็บเงินล่าสุด</th>
+            <th className="px-3 py-2.5 text-right">เฉลี่ยฝากเงิน</th>
+            <th className="px-3 py-2.5 text-center">บัญชี</th>
+            <th className="px-4 py-2.5">เวลาที่มักเก็บ/ฝาก</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-100">
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                ไม่มีข้อมูล
+              </td>
+            </tr>
           )}
-        </Link>
-        {m.onLeave ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-            <Coffee className="size-3" aria-hidden />
-            ลาวันนี้{m.leaveReason ? ` · ${m.leaveReason}` : ""}
-          </span>
-        ) : (
-          <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-800">
-            ทำงาน
-          </span>
-        )}
-      </div>
-
-      {/* today's activity — muted when not yet done, so the office can see gaps */}
-      {!m.onLeave && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-          <ActivityChip
-            done={m.collectedCount > 0}
-            icon={<Wallet className="size-3" aria-hidden />}
-            doneLabel={
-              m.collectedCount > 1
-                ? `เก็บเงิน ${m.collectedCount} รอบ · ${m.collectedLastAt ? bkkTime(m.collectedLastAt) : ""}`
-                : `เก็บเงินแล้ว${m.collectedLastAt ? ` ${bkkTime(m.collectedLastAt)}` : ""}`
-            }
-            pendingLabel="ยังไม่เก็บเงิน"
-          />
-          <ActivityChip
-            done={m.deposited}
-            icon={<Landmark className="size-3" aria-hidden />}
-            doneLabel="ฝากแล้ว"
-            pendingLabel="ยังไม่ฝาก"
-          />
-          <ActivityChip
-            done={m.cleaned}
-            icon={<Sparkles className="size-3" aria-hidden />}
-            doneLabel="ทำความสะอาดแล้ว"
-            pendingLabel="ยังไม่ทำความสะอาด"
-          />
-        </div>
-      )}
+          {rows.map((r) =>
+            r.kind === "no_maid" ? (
+              <tr key={`empty-${r.branchId}`} className="bg-rose-50/60">
+                <td className="px-4 py-2.5 font-semibold text-zinc-900">{r.branchName}</td>
+                <td colSpan={6} className="px-4 py-2.5">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-rose-600">
+                    <AlertTriangle className="size-4" aria-hidden />
+                    ไม่มีแม่บ้าน — ต้องหาคน
+                  </span>
+                </td>
+              </tr>
+            ) : (
+              <tr key={r.userId} className="hover:bg-zinc-50">
+                <td className="px-4 py-2.5 text-zinc-700">
+                  {r.branchName}
+                  {r.branchExtraCount > 0 && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] font-semibold text-emerald-700">
+                      +{r.branchExtraCount} สาขา
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/chairops/maids/${r.userId}`}
+                    className="font-medium text-zinc-900 hover:text-emerald-700"
+                  >
+                    {r.displayName}
+                  </Link>
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-zinc-700">
+                  {r.daysWorking === null ? "–" : `${r.daysWorking} วัน`}
+                </td>
+                <td className="px-4 py-2.5 text-zinc-700">
+                  {r.lastCollectedAt ? bkkDateTime(r.lastCollectedAt) : "–"}
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-zinc-700">
+                  {r.avgDepositGapDays === null ? "–" : `ทุก ${r.avgDepositGapDays.toFixed(1)} วัน`}
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  <AccountDot ok={r.hasBankAccount} />
+                </td>
+                <td className="px-4 py-2.5 text-zinc-700">
+                  {r.typicalTimes.length > 0 ? r.typicalTimes.join(" · ") : "–"}
+                </td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function ActivityChip({
-  done,
-  icon,
-  doneLabel,
-  pendingLabel,
-}: {
-  done: boolean;
-  icon: React.ReactNode;
-  doneLabel: string;
-  pendingLabel: string;
-}) {
+// Color-only marker per CEO 2026-08-23 — เขียว = กรอกเลขบัญชีแล้ว · ดำ = ยังไม่กรอก.
+// Meaning is spelled out in the legend above the table (not a hover title —
+// per [[feedback-ceo-mobile-primary-no-hover-ui-2026-08-15]] CEO checks on
+// mobile, where title tooltips never show).
+function AccountDot({ ok }: { ok: boolean }) {
   return (
     <span
-      className={
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 " +
-        (done
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-zinc-50 text-zinc-400")
-      }
-    >
-      {icon}
-      {done ? doneLabel : pendingLabel}
-    </span>
+      className={"mx-auto inline-block size-2.5 rounded-full " + (ok ? "bg-emerald-500" : "bg-zinc-900")}
+      aria-label={ok ? "มีเลขบัญชีแล้ว" : "ยังไม่กรอกเลขบัญชี"}
+    />
   );
 }

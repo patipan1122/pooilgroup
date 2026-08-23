@@ -71,6 +71,31 @@ export interface BranchRosterView {
   onLeaveToday: number;
 }
 
+// Maid activity table (CEO 2026-08-23) — replaces the branch-card grid on
+// ?view=branch with one row per maid, showing deposit-behavior stats derived
+// from real collection/deposit history (no manual data entry required).
+export interface MaidActivityRow {
+  kind: "maid";
+  userId: string;
+  displayName: string;
+  branchId: string;
+  branchName: string;
+  branchExtraCount: number; // # OTHER active branches this maid also covers
+  hasBankAccount: boolean;
+  daysWorking: number | null; // days since first-ever deposit (= start-of-work proxy) · null = never deposited
+  lastCollectedAt: string | null; // ISO, latest collection ever (any day)
+  avgDepositGapDays: number | null; // avg days between deposits, last 180d · null = <2 deposits in window
+  typicalTimes: string[]; // up to 2 "HH:MM" — most common collect/deposit time clusters, last 180d
+}
+
+export interface NoMaidRow {
+  kind: "no_maid";
+  branchId: string;
+  branchName: string;
+}
+
+export type MaidActivityTableRow = MaidActivityRow | NoMaidRow;
+
 export interface MissedMaidVariantRow {
   branchId: string;
   branchName: string;

@@ -1,9 +1,13 @@
-// /chairops/maids — Maid roster (BF1 · branch-first redesign CEO 2026-07-12).
+// /chairops/maids — Maid roster (BF1 · branch-first redesign CEO 2026-07-12;
+// ?view=branch converted card-grid → table CEO 2026-08-23).
 //
 // OFFICE+ read · ADMIN+ mutate. Two views:
-//   ?view=branch (DEFAULT) — grouped by branch, shows who is at each branch +
-//     their full today-status, and flags branches with no maid ("ไม่มีแม่บ้าน").
-//   ?view=maid — the classic maid-first table with status filter pills.
+//   ?view=branch (DEFAULT) — one row per maid: branch, days worked (since
+//     first deposit), last collection, avg days between deposits, bank
+//     account status, and the times of day they usually handle cash — all
+//     derived from real history. Flags branches with no maid ("ไม่มีแม่บ้าน").
+//   ?view=maid — the classic maid-first table with status filter pills
+//     (contract/HR readiness columns).
 // Clicking any maid navigates to /chairops/maids/[userId].
 
 import Link from "next/link";
@@ -12,10 +16,14 @@ import { ChevronRight, UserPlus, AlertTriangle, Coffee, CheckCircle2, Building2,
 import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
-import { listMaidRoster, listMaidRosterByBranch } from "@/lib/chairops/queries/maid-roster";
+import {
+  listMaidRoster,
+  listMaidRosterByBranch,
+  listMaidActivityRoster,
+} from "@/lib/chairops/queries/maid-roster";
 import { baht } from "@/lib/chairops/utils/format";
 import type { MaidRosterStatus } from "./types";
-import { BranchRosterViewGrid } from "./_components/branch-roster-view";
+import { MaidActivityTable } from "./_components/branch-roster-view";
 
 export const dynamic = "force-dynamic";
 
@@ -128,8 +136,8 @@ function ViewToggle({ view }: { view: "branch" | "maid" }) {
 }
 
 async function BranchView({ orgId }: { orgId: string }) {
-  const data = await listMaidRosterByBranch(orgId);
-  return <BranchRosterViewGrid view={data} />;
+  const rows = await listMaidActivityRoster(orgId);
+  return <MaidActivityTable rows={rows} />;
 }
 
 async function MaidView({

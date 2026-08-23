@@ -19,6 +19,7 @@ import type {
   BranchRosterView,
   BranchRosterGroup,
   MaidInBranch,
+  MaidActivityTableRow,
 } from "@/app/(admin)/chairops/(office)/maids/types";
 
 function bkkYmd(): string {
@@ -56,6 +57,65 @@ function firstOfMonthBkk(): Date {
     day: "2-digit",
   }).format(new Date());
   return new Date(`${ymd.slice(0, 7)}-01T00:00:00Z`);
+}
+
+// Average gap (in days) between consecutive events. Sorts internally — do NOT
+// assume the caller's array is already ordered (the deposit "day" values fed
+// in here are ocrDate ?? depositedAt, which can be out of order even when the
+// underlying query was sorted by depositedAt).
+// CEO 2026-08-23: "เฉลี่ยฝากเงินทุกกี่วัน" — plain average interval, not calendar buckets.
+function avgGapDays(dates: Date[]): number | null {
+  if (dates.length < 2) return null;
+  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+  let totalMs = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    totalMs += sorted[i].getTime() - sorted[i - 1].getTime();
+  }
+  return totalMs / (sorted.length - 1) / (1000 * 60 * 60 * 24);
+}
+
+// Groups a maid's historical collect/deposit timestamps into "times of day"
+// clusters and returns the top `max` clusters (by size) as "HH:MM" strings,
+// in chronological order. CEO 2026-08-23 explicitly rejected a flat average
+// (collecting 08:00 + 18:00 averages to a meaningless 13:00) — this instead
+// gap-clusters same-day-ish times together (splitting on the biggest gaps)
+// and averages ONLY within a cluster, so "ผมมักเก็บเช้า 08:00 · เย็น 18:00" is
+// what actually shows, not a midpoint nobody ever collects at.
+function clusterTimesOfDay(dates: Date[], max = 2, tz = "Asia/Bangkok"): string[] {
+  if (dates.length === 0) return [];
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const minutesOfDay = dates
+    .map((d) => {
+      const parts = fmt.formatToParts(d);
+      const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+      const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+      return h * 60 + m;
+    })
+    .sort((a, b) => a - b);
+
+  const GAP_MINUTES = 180; // >3h gap ⇒ new cluster (separates morning/noon/evening rounds)
+  const clusters: number[][] = [[minutesOfDay[0]]];
+  for (let i = 1; i < minutesOfDay.length; i++) {
+    const cur = clusters[clusters.length - 1];
+    if (minutesOfDay[i] - cur[cur.length - 1] <= GAP_MINUTES) cur.push(minutesOfDay[i]);
+    else clusters.push([minutesOfDay[i]]);
+  }
+
+  return clusters
+    .map((c) => ({ avgMin: c.reduce((s, v) => s + v, 0) / c.length, count: c.length }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, max)
+    .sort((a, b) => a.avgMin - b.avgMin)
+    .map((c) => {
+      const h = Math.floor(c.avgMin / 60);
+      const m = Math.round(c.avgMin % 60);
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    });
 }
 
 export const listMaidRoster = cache(async function listMaidRoster(
@@ -292,6 +352,129 @@ export const listMaidRosterByBranch = cache(async function listMaidRosterByBranc
     branchesWithoutMaid: groups.filter((g) => g.maids.length === 0).length,
     onLeaveToday: onLeaveAssigned.size,
   };
+});
+
+// Maid activity table (CEO 2026-08-23) — one row per maid, replacing the
+// branch-card grid on ?view=branch. Every column is derived from real
+// collection/deposit history — no new DB fields, no manual entry.
+const ACTIVITY_WINDOW_DAYS = 180; // bounds the gap-avg + time-cluster queries to recent behavior
+
+export const listMaidActivityRoster = cache(async function listMaidActivityRoster(
+  orgId: string,
+): Promise<MaidActivityTableRow[]> {
+  const windowStart = new Date(Date.now() - ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const [maids, branches, assignments, firstDepositByMaid, lastCollectionByMaid, recentDeposits, recentCollections] =
+    await Promise.all([
+      prisma.chairopsUser.findMany({
+        where: { orgId, role: "MAID", isActive: true },
+        select: { id: true, displayName: true, primaryBranchId: true, bankAccountNo: true },
+        orderBy: { displayName: "asc" },
+      }),
+      prisma.chairopsBranch.findMany({
+        where: { orgId, isActive: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      // multi-branch coverage count, same convention as listMaidRoster.
+      prisma.chairopsMaidAssignment.groupBy({
+        by: ["userId"],
+        where: { orgId, isActive: true, endedAt: null },
+        _count: { _all: true },
+      }),
+      // first-ever deposit = "start of work" proxy (CEO 2026-08-23 decision).
+      prisma.chairopsCashDeposit.groupBy({
+        by: ["maidId"],
+        where: { orgId },
+        _min: { depositedAt: true },
+      }),
+      // last collection ever (not window-bounded — "hasn't collected in ages" IS the signal).
+      prisma.chairopsCashCollection.groupBy({
+        by: ["maidId"],
+        where: { orgId, deletedAt: null },
+        _max: { collectedAt: true },
+      }),
+      prisma.chairopsCashDeposit.findMany({
+        where: { orgId, depositedAt: { gte: windowStart } },
+        select: { maidId: true, depositedAt: true, ocrDate: true },
+        orderBy: { depositedAt: "asc" },
+      }),
+      prisma.chairopsCashCollection.findMany({
+        where: { orgId, deletedAt: null, collectedAt: { gte: windowStart } },
+        select: { maidId: true, collectedAt: true },
+      }),
+    ]);
+
+  const branchNameById = new Map(branches.map((b) => [b.id, b.name]));
+  const branchExtraCountByMaid = new Map(
+    assignments.map((a) => [a.userId, Math.max(0, a._count._all - 1)]),
+  );
+  const firstDepositByMaidMap = new Map(
+    firstDepositByMaid.map((d) => [d.maidId, d._min.depositedAt]),
+  );
+  const lastCollectionByMaidMap = new Map(
+    lastCollectionByMaid.map((c) => [c.maidId, c._max.collectedAt]),
+  );
+
+  function pushTo(map: Map<string, Date[]>, key: string, value: Date) {
+    const list = map.get(key);
+    if (list) list.push(value);
+    else map.set(key, [value]);
+  }
+
+  // per-maid: deposit "day" values for the gap-average (prefer the slip's own
+  // printed date over the app-recorded time when OCR read it successfully).
+  const depositDaysByMaid = new Map<string, Date[]>();
+  const timeEventsByMaid = new Map<string, Date[]>(); // collect + deposit times, for clustering
+  for (const d of recentDeposits) {
+    const day = d.ocrDate ?? d.depositedAt;
+    pushTo(depositDaysByMaid, d.maidId, day);
+    pushTo(timeEventsByMaid, d.maidId, day);
+  }
+  for (const c of recentCollections) {
+    pushTo(timeEventsByMaid, c.maidId, c.collectedAt);
+  }
+
+  const today = bkkToday();
+  const rowsByBranch = new Map<string, MaidActivityTableRow[]>();
+  const unassigned: MaidActivityTableRow[] = [];
+
+  for (const m of maids) {
+    const firstDeposit = firstDepositByMaidMap.get(m.id);
+    const row: MaidActivityTableRow = {
+      kind: "maid",
+      userId: m.id,
+      displayName: m.displayName,
+      branchId: m.primaryBranchId ?? "",
+      branchName: m.primaryBranchId ? (branchNameById.get(m.primaryBranchId) ?? "ไม่พบสาขา") : "ยังไม่ผูกสาขา",
+      branchExtraCount: branchExtraCountByMaid.get(m.id) ?? 0,
+      hasBankAccount: !!m.bankAccountNo?.trim(),
+      daysWorking: firstDeposit
+        ? Math.max(0, Math.floor((today.getTime() - firstDeposit.getTime()) / (24 * 60 * 60 * 1000)))
+        : null,
+      lastCollectedAt: lastCollectionByMaidMap.get(m.id)?.toISOString() ?? null,
+      avgDepositGapDays: avgGapDays(depositDaysByMaid.get(m.id) ?? []),
+      typicalTimes: clusterTimesOfDay(timeEventsByMaid.get(m.id) ?? []),
+    };
+
+    if (m.primaryBranchId && branchNameById.has(m.primaryBranchId)) {
+      const list = rowsByBranch.get(m.primaryBranchId) ?? [];
+      list.push(row);
+      rowsByBranch.set(m.primaryBranchId, list);
+    } else {
+      unassigned.push(row);
+    }
+  }
+
+  const out: MaidActivityTableRow[] = [];
+  for (const b of branches) {
+    const maidsHere = rowsByBranch.get(b.id);
+    if (maidsHere?.length) out.push(...maidsHere);
+    else out.push({ kind: "no_maid", branchId: b.id, branchName: b.name });
+  }
+  out.push(...unassigned);
+
+  return out;
 });
 
 export const getMaidDetail = cache(async function getMaidDetail(
