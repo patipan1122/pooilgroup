@@ -334,9 +334,11 @@ export function MatrixClient({
 
     type Cell = { rows: { v: string; style: React.CSSProperties }[]; swapped: boolean; baseline: boolean; anomaly: boolean; hasData: boolean; style: React.CSSProperties };
     // dayRows: cashTotal = ยอดรวมเงินวันนั้น (รวมตั้งต้น · ตรงกับช่องในตาราง) · collected = จำนวนตู้ที่ "เก็บเงิน" วันนั้น
-    const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string; cashTotal: number; collected: number }[] = [];
+    // dollsTotal = ตุ๊กตาออกรวมวันนั้น (ทุกตู้ · ไม่นับวันเติมตุ๊กตานอกรอบเก็บ)
+    const dayRows: { dateLabel: string; wd: string; cells: Cell[]; avg: string; cashTotal: number; collected: number; dollsTotal: number }[] = [];
     let grandCash = 0; // ยอดรวมทั้งช่วง (มุมขวาล่าง)
     let grandColl = 0; // จำนวนครั้งที่เก็บทั้งช่วง
+    let grandDolls = 0; // ตุ๊กตาออกรวมทั้งช่วง (มุมขวาล่าง)
 
     grid.iso.forEach((iso, di) => {
       const dt = isoToDate(iso);
@@ -344,6 +346,7 @@ export function MatrixClient({
       let dayCnt = 0;
       let dayCash = 0; // เงินรวมวันนั้น (ทุกตู้ · รวมตั้งต้น)
       let dayColl = 0; // จำนวนตู้ที่มีรอบเก็บ (COLLECTION) วันนั้น
+      let dayDolls = 0; // ตุ๊กตาออกรวมวันนั้น (ทุกตู้)
       const cells: Cell[] = grid.machines.map((gm, mi) => {
         const rv = gm.days[di];
         if (!rv || !rv.hasData) {
@@ -369,6 +372,7 @@ export function MatrixClient({
           };
         }
         dayCash += rv.cash;
+        dayDolls += rv.dolls;
         if (rv.collected) dayColl += 1;
         // cost = null (ไม่มีตุ๊กตาออก · เช่น วันตั้งต้น) → โชว์ "—" + พื้น neutral (ไม่ใช่ส้ม "ปล่อยง่าย")
         // และไม่นับเข้าค่าเฉลี่ยต้นทุน/ตัว กันวันตั้งต้นดึงคอลัมน์ให้ดูแดง
@@ -438,6 +442,7 @@ export function MatrixClient({
       const avgv = dayCnt ? Math.round(daySum / dayCnt) : 0;
       grandCash += dayCash;
       grandColl += dayColl;
+      grandDolls += dayDolls;
       dayRows.push({
         dateLabel: thDate(dt),
         wd: thWeekday(dt),
@@ -445,6 +450,7 @@ export function MatrixClient({
         avg: metric === "dolls" ? String(avgv) : bahtN(avgv),
         cashTotal: dayCash,
         collected: dayColl,
+        dollsTotal: dayDolls,
       });
     });
 
@@ -474,7 +480,7 @@ export function MatrixClient({
       return { rows: frows, style: { ...CELL_PAD, background: bg, borderTop: "2px solid #DDE0E6" } };
     });
 
-    return { dayRows, footer, grandCash, grandColl };
+    return { dayRows, footer, grandCash, grandColl, grandDolls };
   }, [grid, metric, reviewOverride]);
 
   /* drill รายตู้ */
@@ -1008,8 +1014,10 @@ export function MatrixClient({
                     minWidth: 86,
                   }}
                 >
-                  รวมวันนั้น
-                  <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#9AA1AB", marginTop: 1 }}>ยอด · เก็บกี่ตู้</span>
+                  {metric === "dolls" ? "ตุ๊กตาออกวันนั้น" : "รวมวันนั้น"}
+                  <span style={{ display: "block", fontSize: 8.5, fontWeight: 500, color: "#9AA1AB", marginTop: 1 }}>
+                    {metric === "dolls" ? "ตัว · เก็บกี่ตู้" : "ยอด · เก็บกี่ตู้"}
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -1089,9 +1097,15 @@ export function MatrixClient({
                       borderLeft: "1px solid #E3E6EA",
                     }}
                   >
-                    <div style={{ fontWeight: 700, color: r.cashTotal > 0 ? "#15803D" : "#9AA1AB", fontSize: 12.5, lineHeight: 1.2 }}>
-                      {bahtN(r.cashTotal)}
-                    </div>
+                    {metric === "dolls" ? (
+                      <div style={{ fontWeight: 700, color: r.dollsTotal > 0 ? "#B45309" : "#9AA1AB", fontSize: 12.5, lineHeight: 1.2 }}>
+                        {r.dollsTotal} ตัว
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 700, color: r.cashTotal > 0 ? "#15803D" : "#9AA1AB", fontSize: 12.5, lineHeight: 1.2 }}>
+                        {bahtN(r.cashTotal)}
+                      </div>
+                    )}
                     <div style={{ fontSize: 9.5, color: "#8A90A0", fontWeight: 600, marginTop: 1 }}>
                       {r.collected > 0 ? `เก็บ ${r.collected} ตู้` : "—"}
                     </div>
@@ -1127,7 +1141,11 @@ export function MatrixClient({
                   </td>
                 ))}
                 <td style={{ background: "#EEF0F4", borderTop: "2px solid #DDE0E6", borderLeft: "1px solid #E3E6EA", textAlign: "center", padding: "6px 8px" }}>
-                  <div style={{ fontWeight: 800, color: "#15803D", fontSize: 12, lineHeight: 1.2 }}>{bahtN(matrix.grandCash)}</div>
+                  {metric === "dolls" ? (
+                    <div style={{ fontWeight: 800, color: "#B45309", fontSize: 12, lineHeight: 1.2 }}>{matrix.grandDolls} ตัว</div>
+                  ) : (
+                    <div style={{ fontWeight: 800, color: "#15803D", fontSize: 12, lineHeight: 1.2 }}>{bahtN(matrix.grandCash)}</div>
+                  )}
                   <div style={{ fontSize: 8.5, color: "#5A6270", fontWeight: 600, marginTop: 1 }}>เก็บรวม {matrix.grandColl} ครั้ง</div>
                 </td>
               </tr>
