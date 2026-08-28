@@ -15,6 +15,7 @@ const CHANNEL_CODE: Record<string, string> = {
   qr: "qr",
   kplus: "transfer",
   thaichuaithaiplus: "transfer",
+  online: "transfer",
   card: "card",
   grab: "transfer",
   lineman: "transfer",

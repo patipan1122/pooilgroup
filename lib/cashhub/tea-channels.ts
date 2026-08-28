@@ -9,6 +9,7 @@ export type TeaChannelCode =
   | "qr"
   | "kplus"
   | "thaichuaithaiplus"
+  | "online"
   | "card"
   | "grab"
   | "lineman"
@@ -35,6 +36,9 @@ export const TEA_CHANNELS: TeaChannelDef[] = [
   { code: "kplus", label: "K Plus", match: ["kplus", "k plus"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   // เดิมไม่มีถังนี้เลย → ตกไป "other" (ไม่ settle เงินหายจากระบบเงียบๆ ฿31,268/74 วัน ก่อนแก้) — เพิ่มถังใหม่
   { code: "thaichuaithaiplus", label: "ไทยช่วยไทยพลัส", match: ["ไทยช่วยไทยพลัส"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
+  // CEO 2026-08-28: บิลออนไลน์ (คอลัมน์ "ช่องทาง" ในไฟล์แยกตามบิล = "Online Order" — คนละคอลัมน์กับ
+  // "ประเภทการชำระเงิน") เงินเข้าแยกยอด/รอบต่างหาก ไม่ว่าใบนั้นจะบันทึกวิธีชำระเป็นอะไรก็ตาม
+  { code: "online", label: "Online Order", match: ["online order", "ออนไลน์", "online"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   { code: "card", label: "เครดิต EDC", match: ["edc"], isSettle: true, feePercent: 0.7, minSettleBaht: 0 },
   { code: "grab", label: "Grab", match: ["grab"], isSettle: true, feePercent: 18, minSettleBaht: 0 },
   { code: "lineman", label: "Lineman", match: ["lineman"], isSettle: true, feePercent: 0, minSettleBaht: 0 },

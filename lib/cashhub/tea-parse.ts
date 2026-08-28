@@ -9,7 +9,7 @@
 //
 // ⚠️ ไฟล์นี้ import ฝั่ง client (tea-view) → ห้าม import tea-trcloud (มี crypto/process.env).
 //    route validate สาขาด้วย teaBranchByCode เอง.
-import { classifyTeaChannel, classifyTeaPayment, type TeaChannelCode } from "./tea-channels";
+import { classifyTeaChannel, classifyTeaPayment, TEA_CHANNEL_BY_CODE, type TeaChannelCode } from "./tea-channels";
 
 const GROSS_COL = "ยอดขาย";
 const CHECK_COL = "รวมยอดชำระ";
@@ -244,6 +244,8 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
     (h) => h === "สาขา" || h === "ชื่อสาขา",
     (h) => h.endsWith("สาขา") && !h.startsWith("รหัส"),
   );
+  // "ช่องทาง" (หน้าร้าน/Online Order) — คนละคอลัมน์กับ "ช่องทางการชำระ" (cPay ด้านบน) ห้ามชนกัน
+  const cChannel = findCol((h) => h === "ช่องทาง" || (h.includes("ช่องทาง") && !h.includes("การชำระ")));
   if (cDate < 0 || cNet < 0 || cBranch < 0) {
     const miss = [
       cDate < 0 ? "วันที่ชำระเงิน" : null,
@@ -275,7 +277,11 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
       if (net > 0) dropped++; // มียอดแต่วันที่อ่านไม่ได้ → นับไว้เตือน
       continue;
     }
-    const code = cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "other";
+    // บิลออนไลน์ (คอลัมน์ "ช่องทาง" = Online Order) → เข้าถัง "online" เสมอ ไม่ว่าบันทึกวิธีชำระเป็นอะไร
+    // (เงินออนไลน์เข้าแยกยอด/รอบต่างหาก — เช็คก่อนเสมอ แล้วค่อย fallback ไปดูประเภทการชำระตามปกติ)
+    const channelCell = cChannel >= 0 ? String(r[cChannel] ?? "").trim().toLowerCase() : "";
+    const isOnline = channelCell && TEA_CHANNEL_BY_CODE.online.match.some((m) => channelCell.includes(m));
+    const code = isOnline ? "online" : cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "other";
     let b = bag.get(br);
     if (!b) {
       b = { storeLabel: br, byDate: new Map() };
