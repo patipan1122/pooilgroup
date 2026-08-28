@@ -5,6 +5,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   computeTeaSettlement,
+  TEA_CHANNEL_BY_CODE,
   type TeaChannelConfig,
   type TeaChannelCode,
 } from "./tea-channels";
@@ -109,7 +110,10 @@ export async function sendTeaDaysToReconcile(
         skippedNoConfig++; // ยังไม่ผูกบริษัท/บัญชี → ข้าม
         continue;
       }
-      const txAmounts = txByDateChannel.get(`${d.date}|${ch.code}`);
+      // itemize เฉพาะช่องที่ธนาคารรวมยอดเป็นรายทรานเซกชันจริง (เช่น QR) — K Plus/ไทยช่วยไทยพลัส/อื่นๆ
+      // ธนาคารรวมยอดเป็นก้อนเดียว/วัน (CEO ยืนยัน 2026-08-28) แม้จะมีรายบิลเก็บไว้ให้ดูไส้ในก็ตาม
+      const canItemize = TEA_CHANNEL_BY_CODE[ch.code]?.itemizedSettle === true;
+      const txAmounts = canItemize ? txByDateChannel.get(`${d.date}|${ch.code}`) : undefined;
       if (txAmounts && txAmounts.length > 0) {
         // หักค่าธรรมเนียมตามสัดส่วนเดียวกับยอดรวม (net/gross) ต่อรายการ — ผลรวมยังตรงกับยอดรวม/วันเป๊ะ
         const feeRatio = ch.gross > 0 ? ch.net / ch.gross : 1;

@@ -26,18 +26,26 @@ export type TeaChannelDef = {
   isSettle: boolean; // เป็นเงินเข้าธนาคารจริงไหม
   feePercent: number; // ค่าธรรมเนียมตั้งต้น %
   minSettleBaht: number; // ยอด/วันต่ำกว่านี้ = ยังไม่โอน (รอสะสม)
+  /** true = เงินเข้าธนาคารจริงเป็นรายทรานเซกชัน (ลูกค้าโอนเข้าทีละคน เช่น QR) → ส่งเข้า reconcile
+   *  แยกทีละรายการได้เมื่อมีรายบิล (sendTeaDaysToReconcile) · false/undefined (ค่าเริ่มต้น) = ธนาคาร
+   *  รวมยอดเป็นก้อนเดียว/วัน (เช่น K Plus, ไทยช่วยไทยพลัส, เงินสด — CEO ยืนยัน 2026-08-28) → ส่งรวมเสมอ
+   *  แม้จะมีรายบิลเก็บไว้ให้ดูไส้ในก็ตาม (ไส้ใน ≠ วิธีที่ธนาคารรวมยอดจริง) */
+  itemizedSettle?: boolean;
 };
 
 // ลำดับ = ลำดับแสดงในตาราง Excel + สมุดบัญชี
 export const TEA_CHANNELS: TeaChannelDef[] = [
   { code: "cash", label: "เงินสด", match: ["ชำระด้วยเงินสด"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
-  { code: "qr", label: "QR", match: ["qrpayment", "qrmanual", "qr "], isSettle: true, feePercent: 0, minSettleBaht: 0 },
+  { code: "qr", label: "QR", match: ["qrpayment", "qrmanual", "qr "], isSettle: true, feePercent: 0, minSettleBaht: 0, itemizedSettle: true },
   // CEO 2026-08-23: เดิม "K Plus" ปนอยู่ในถัง QR (บัญชีปลายทางจริงคนละบัญชีกัน) — แยกถังของตัวเอง
+  // CEO 2026-08-28: ธนาคารรวมยอด K Plus เป็นก้อนเดียว/วัน (ไม่ใช่รายทรานเซกชันแบบ QR) — itemizedSettle=false
   { code: "kplus", label: "K Plus", match: ["kplus", "k plus"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   // เดิมไม่มีถังนี้เลย → ตกไป "other" (ไม่ settle เงินหายจากระบบเงียบๆ ฿31,268/74 วัน ก่อนแก้) — เพิ่มถังใหม่
+  // CEO 2026-08-28: ธนาคารรวมยอดเป็นก้อนเดียว/วันเหมือน K Plus — itemizedSettle=false
   { code: "thaichuaithaiplus", label: "ไทยช่วยไทยพลัส", match: ["ไทยช่วยไทยพลัส"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   // CEO 2026-08-28: บิลออนไลน์ (คอลัมน์ "ช่องทาง" ในไฟล์แยกตามบิล = "Online Order" — คนละคอลัมน์กับ
-  // "ประเภทการชำระเงิน") เงินเข้าแยกยอด/รอบต่างหาก ไม่ว่าใบนั้นจะบันทึกวิธีชำระเป็นอะไรก็ตาม
+  // "ประเภทการชำระเงิน") เงินเข้าแยกยอด/รอบต่างหาก ไม่ว่าใบนั้นจะบันทึกวิธีชำระเป็นอะไรก็ตาม — ยังไม่ยืนยัน
+  // ว่าธนาคารรวมยอดแบบไหน (เหมือน Grab/Lineman/Shopee ที่ไม่ itemize อยู่แล้ว) ค่าเริ่มต้น = ไม่ itemize
   { code: "online", label: "Online Order", match: ["online order", "ออนไลน์", "online"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   { code: "card", label: "เครดิต EDC", match: ["edc"], isSettle: true, feePercent: 0.7, minSettleBaht: 0 },
   { code: "grab", label: "Grab", match: ["grab"], isSettle: true, feePercent: 18, minSettleBaht: 0 },
