@@ -277,11 +277,13 @@ function parseBillReport(matrix: unknown[][]): TeaPosParseResult {
       if (net > 0) dropped++; // มียอดแต่วันที่อ่านไม่ได้ → นับไว้เตือน
       continue;
     }
-    // บิลออนไลน์ (คอลัมน์ "ช่องทาง" = Online Order) → เข้าถัง "online" เสมอ ไม่ว่าบันทึกวิธีชำระเป็นอะไร
-    // (เงินออนไลน์เข้าแยกยอด/รอบต่างหาก — เช็คก่อนเสมอ แล้วค่อย fallback ไปดูประเภทการชำระตามปกติ)
+    // บิลออนไลน์ (คอลัมน์ "ช่องทาง" = Online Order) ที่จ่ายด้วย Bank Transfer → เข้าถัง "online" (เงินเข้า
+    // แยกยอด/รอบต่างหาก) · แต่ถ้าบิลออนไลน์นั้นจ่ายด้วยเงินสด (เก็บเงินปลายทาง) → ไปรวมกับถังเงินสดปกติ
+    // เพราะเงินสดเข้ากระเป๋าเดียวกับหน้าร้าน ไม่ได้แยกยอด (CEO ยืนยัน 2026-08-29)
     const channelCell = cChannel >= 0 ? String(r[cChannel] ?? "").trim().toLowerCase() : "";
-    const isOnline = channelCell && TEA_CHANNEL_BY_CODE.online.match.some((m) => channelCell.includes(m));
-    const code = isOnline ? "online" : cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "other";
+    const isOnlineOrder = channelCell && TEA_CHANNEL_BY_CODE.online.match.some((m) => channelCell.includes(m));
+    const payCode = cPay >= 0 ? classifyTeaPayment(String(r[cPay] ?? "")) : "other";
+    const code = isOnlineOrder && payCode !== "cash" ? "online" : payCode;
     let b = bag.get(br);
     if (!b) {
       b = { storeLabel: br, byDate: new Map() };
