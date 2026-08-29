@@ -25,6 +25,7 @@ import {
   isCfBranchManager,
   cfHasAdminPower,
 } from "./role-guard";
+import { extractSlipDetails, checkSlipFraud, getConfiguredAccountNumber } from "./reconcile/slip-ocr";
 
 const DEPOSITS_PATH = "/clawfleet/os/deposits";
 const DASHBOARD_PATH = "/clawfleet/os/dashboard";
@@ -269,6 +270,52 @@ export async function recordCashDeposit(input: unknown): Promise<
 
   revalidatePath(DEPOSITS_PATH);
   revalidatePath(DASHBOARD_PATH);
+
+  // เวิร์กช็อป 2026-08-29 · AI (Gemini) อ่านสลิป (ยอด/วันที่/บัญชีปลายทาง) + ตรวจสลิปซ้ำ/บัญชีผิด
+  // นอกธุรกรรม (ไม่บล็อกการฝากที่เพิ่งสำเร็จไปแล้ว) — อ่านไม่ทัน/พังก็ไม่เป็นไร ใบฝากยังใช้ได้ปกติ
+  // แค่ไม่มีข้อมูล AI ประกอบ (mirror ChairOps: lib/chairops/reconcile/slip-ocr.ts integration)
+  if (slipUrl) {
+    try {
+      const ocr = await extractSlipDetails(slipUrl, { userId, orgId });
+      const configuredAccountNumber = await getConfiguredAccountNumber(depositBranchId);
+      const fraud = await checkSlipFraud({
+        orgId,
+        branchId: depositBranchId,
+        depositId: result.depositId,
+        ocr,
+        configuredAccountNumber,
+      });
+
+      await prisma.cfCashDeposit.update({
+        where: { id: result.depositId },
+        data: {
+          ocrAmountCents: ocr.amount != null ? Math.round(ocr.amount * 100) : null,
+          ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
+          ocrAccountName: ocr.accountName,
+          ocrAccountNumber: ocr.accountNumber,
+          ocrRefNo: ocr.refNo,
+          ocrReadAt: new Date(),
+          ocrFlagReason: fraud.reason,
+        },
+      });
+
+      // AI ติดธง + ยังไม่มีใครอนุมัติ/ปฏิเสธ (NONE จากยอดตรง) → ยกระดับเป็น PENDING ให้ office ตรวจ
+      // (reuse สถานะเดิมที่ pushBranchDepositsToLedger กันออกจาก ledger push อยู่แล้ว — ไม่ต้องเพิ่ม
+      // enum ใหม่ ไม่ต้องแก้ ledger-push.ts เลย). ถ้าเป็น PENDING อยู่แล้ว (SHORT/OVER) ปล่อยไว้เหมือนเดิม.
+      if (fraud.flagged) {
+        await prisma.cfCashDeposit.updateMany({
+          where: { id: result.depositId, approvalStatus: "NONE" },
+          data: { approvalStatus: "PENDING" },
+        });
+      }
+
+      revalidatePath(DEPOSITS_PATH);
+    } catch (e) {
+      // best-effort — อ่านสลิปพัง/ตรวจโกงพัง ต้องไม่ทำให้ใบฝากที่บันทึกสำเร็จแล้วดูเหมือนพังไปด้วย
+      console.error("[clawfleet] deposit slip OCR/fraud-check failed (non-fatal)", e);
+    }
+  }
+
   return { ok: true, data: result };
 }
 

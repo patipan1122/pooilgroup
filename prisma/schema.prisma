@@ -2851,6 +2851,18 @@ model CfCashDeposit {
   reviewNote      String?  @map("review_note")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  // เวิร์กช็อป 2026-08-29 · AI (Gemini) อ่านสลิปที่แนบ — ยอด/วันที่/ชื่อ+เลขบัญชีปลายทาง/เลขที่รายการ
+  //   port มาจาก ChairopsCashDeposit เป๊ะ (proven pattern, แก้บั๊กมาแล้ว 3 รอบ) — ดู lib/clawfleet/reconcile/slip-ocr.ts
+  //   ตรวจ "บัญชีผิด" ใช้ ocrAccountNumber (เลขบัญชี) เท่านั้น ห้ามใช้ ocrAccountName เทียบ —
+  //   ChairOps เจอมาแล้วจริงว่าเทียบชื่อติดธงเท็จ 72/75 ใบ (ชื่อนิติบุคคลเต็มบนสลิป ≠ ชื่อย่อที่ตั้งค่าไว้)
+  ocrAmountCents   Int?      @map("ocr_amount_cents")
+  ocrDate          DateTime? @map("ocr_date") @db.Timestamptz(6)
+  ocrAccountName   String?   @map("ocr_account_name") // display เท่านั้น — ห้ามใช้ตรวจบัญชีผิด
+  ocrAccountNumber String?   @map("ocr_account_number") // ตัวชี้ขาดตรวจ "บัญชีผิด" (normalize เทียบเฉพาะตัวเลข)
+  ocrRefNo         String?   @map("ocr_ref_no") // ตัวชี้ขาดตรวจ "สลิปซ้ำ" (ก่อน fallback วันที่+ยอด)
+  ocrReadAt        DateTime? @map("ocr_read_at") @db.Timestamptz(6)
+  ocrFlagReason    String?   @map("ocr_flag_reason") // เหตุผลที่ AI ติดธง (โผล่ในหน้า review ของ office)
+
   @@unique([orgId, depositCode])
   @@index([orgId, branchId, depositedAt(sort: Desc)])
   @@index([orgId, status])

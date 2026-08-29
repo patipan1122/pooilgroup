@@ -257,6 +257,9 @@ export function DepositsClient({
         depositedAt: depositedAtISO,
         slipPhotoUrl: slipUrl || null,
         note: noteTrim || null,
+        // เวิร์กช็อป 2026-08-29 · AI อ่านสลิปทำงานเสร็จแล้วจริง (recordCashDeposit รออ่านก่อน return)
+        // แต่ optimistic row นี้สร้างจากค่าที่ client มีอยู่แล้ว ไม่ได้ query ใหม่ — รีเฟรชหน้าจะเห็นค่าจริง
+        ocrFlagReason: null,
       };
       setHistoryRows((prev) => [newRow, ...prev]);
       resetForm();
@@ -933,6 +936,20 @@ function HistoryTab({
                 </span>
               )}
             </div>
+
+            {/* เวิร์กช็อป 2026-08-29 · เหตุผลที่ AI ติดธง (สลิปซ้ำ/บัญชีผิด) — โผล่เฉพาะตอนมีจริง */}
+            {d.ocrFlagReason && (
+              <div
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12,
+                  background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10,
+                  padding: "9px 12px", marginBottom: 12, color: "#B42318", fontWeight: 600, lineHeight: 1.45,
+                }}
+              >
+                <AlertTriangle size={14} style={{ flex: "0 0 14px", marginTop: 1 }} />
+                <span>{d.ocrFlagReason}</span>
+              </div>
+            )}
 
             {/* ฝากจริง vs ควรฝาก */}
             <div

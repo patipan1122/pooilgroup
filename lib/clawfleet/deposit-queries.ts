@@ -53,6 +53,8 @@ export type DepositRow = {
   depositedAt: string; // ISO
   slipPhotoUrl: string | null;
   note: string | null;
+  // เวิร์กช็อป 2026-08-29 · เหตุผลที่ AI ติดธง (สลิปซ้ำ/บัญชีผิด) — null = AI ไม่ได้ติดธง/ยังไม่อ่าน
+  ocrFlagReason: string | null;
   // per-viewer review context (เหมือนกันทุกแถว · denormalize เพื่อไม่ต้องแก้ page.tsx ให้ส่ง prop เพิ่ม)
   //   canReview = ผู้ใช้นี้เป็น ผจก.สาขา/แอดมิน (mirror auth ใน reviewCashDeposit)
   //   currentUserId = ให้ client เทียบ maker ≠ checker (ห้ามอนุมัติใบที่ตัวเองฝาก) · action บังคับซ้ำอีกชั้น
@@ -287,6 +289,7 @@ export async function getDepositHistory(opts?: {
       depositedAt: r.depositedAt.toISOString(),
       slipPhotoUrl: r.slipPhotoUrl ?? null,
       note: r.note ?? null,
+      ocrFlagReason: r.ocrFlagReason ?? null,
       canReview,
       currentUserId,
     }));
