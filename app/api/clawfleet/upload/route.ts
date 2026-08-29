@@ -26,6 +26,8 @@ const PHASES = [
   "baseline_stock",
   "goods_receipt",
   "stock_count",
+  // เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้าประวัติเก็บเงิน (แทน hack เดิมที่ใช้ phase "cash")
+  "deposit_slip",
 ] as const;
 type Phase = (typeof PHASES)[number];
 

@@ -67,6 +67,77 @@ export type PendingSummary = {
   overdueCents: number;
 };
 
+// เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้าประวัติเก็บเงิน — CEO อยากเห็น "วันนี้ต้องฝากเท่าไร"
+//   แยกจาก "สะสมยังไม่ฝากเท่าไร" เป็นคนละตัวเลข (ไม่ใช่ก้อนเดียว)
+export type BranchDepositBalance = {
+  todayCents: number;
+  todayCount: number;
+  // outstanding รวม "วันนี้" อยู่ในนั้นด้วยเสมอ (outstandingCents >= todayCents)
+  outstandingCents: number;
+  outstandingCount: number;
+};
+
+// ต้นวันนี้ตามเวลาไทย (Asia/Bangkok = UTC+7) — mirror app/(admin)/clawfleet/os/app/page.tsx::startOfTodayBangkok
+function startOfTodayBangkok(now: Date): Date {
+  const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+  const shifted = new Date(now.getTime() + BKK_OFFSET_MS);
+  const midnightShiftedUtcMs = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  return new Date(midnightShiftedUtcMs - BKK_OFFSET_MS);
+}
+
+/**
+ * ยอด "เก็บมาแล้วยังไม่ฝาก" ต่อสาขา แยก "วันนี้" กับ "สะสมทั้งหมด" — ใช้โชว์บนหน้าประวัติเก็บ (staff app)
+ * เพื่อให้พนักงานเห็นทั้งยอดที่ต้องฝากวันนี้ + ยอดค้างสะสม (CEO 2026-08-29, workshop deposit-slip-ocr).
+ * 1 query (findMany เดียว) แล้วบวกใน JS ต่อสาขา — คีย์เดียวกับ getPendingDeposits (branchId ?? group.branchId).
+ * branch scope: กรอง branchIds ที่ขอมาให้เหลือเฉพาะที่ user เข้าถึงได้ก่อน (viewer=ALL เข้าได้ทุกสาขา).
+ * graceful: query ล้ม / สาขาที่ขอไม่อยู่ในสิทธิ์ → คืน 0 สำหรับสาขานั้น (ไม่พังหน้า).
+ */
+export async function getDepositBalanceByBranch(
+  branchIds: string[],
+): Promise<Record<string, BranchDepositBalance>> {
+  const result: Record<string, BranchDepositBalance> = {};
+  const uniq = Array.from(new Set(branchIds.filter((b) => b.length > 0)));
+  if (uniq.length === 0) return result;
+  try {
+    const session = await requireCfSession();
+    const orgId = session.user.org_id;
+    const scope = await userBranchIds(session);
+    const allowed = scope === "ALL" ? uniq : uniq.filter((b) => scope.includes(b));
+    for (const b of allowed) result[b] = { todayCents: 0, todayCount: 0, outstandingCents: 0, outstandingCount: 0 };
+    if (allowed.length === 0) return result;
+
+    const rows = await prisma.cfCollectionSession.findMany({
+      where: {
+        orgId,
+        status: { in: [...DEPOSITABLE_STATUSES] },
+        depositId: null,
+        totalCashCents: { gt: 0 },
+        OR: [
+          { branchId: { in: allowed } },
+          { branchId: null, group: { branchId: { in: allowed } } },
+        ],
+      },
+      take: 5000,
+      select: { branchId: true, totalCashCents: true, closedAt: true, group: { select: { branchId: true } } },
+    });
+
+    const todayStart = startOfTodayBangkok(new Date());
+    for (const r of rows) {
+      const bid = r.branchId ?? r.group?.branchId ?? null;
+      if (!bid || !result[bid]) continue;
+      result[bid].outstandingCents += r.totalCashCents;
+      result[bid].outstandingCount += 1;
+      if (r.closedAt && r.closedAt >= todayStart) {
+        result[bid].todayCents += r.totalCashCents;
+        result[bid].todayCount += 1;
+      }
+    }
+    return result;
+  } catch {
+    return result;
+  }
+}
+
 /** join ชื่อสาขาแบบ manual (org scope) — คืน Map branchId → name. ชื่อเป็นข้อมูลเสริม ล้มแล้วไม่พังหน้า. */
 async function loadBranchNames(orgId: string, branchIds: string[]): Promise<Map<string, string>> {
   const uniq = Array.from(new Set(branchIds.filter((b) => b.length > 0)));

@@ -13,6 +13,7 @@ import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
 import { getSourceMainRoomNet, getCfRefillAvailability } from "@/lib/clawfleet/stock-source";
 import { getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
+import { getDepositBalanceByBranch, getPendingDeposits, type BranchDepositBalance, type PendingDepositRow } from "@/lib/clawfleet/deposit-queries";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery, type InMachineDoll } from "./staff-app-client";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 
@@ -468,6 +469,14 @@ export default async function StaffAppPage({
   // eslint-disable-next-line react-hooks/purity
   const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
+  // เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้าประวัติเก็บเงิน — ยอด "วันนี้/สะสม" ที่ยังไม่ฝาก
+  //   + ลิสต์รอบที่ "ฝากได้" (session picker) ต่อสาขาที่ user เห็น (ทั้งสองฟังก์ชัน graceful อยู่แล้ว
+  //   ไม่ต้อง try/catch ซ้ำ — คืนค่าว่าง/ 0 ถ้า query ล้ม ไม่พังหน้า)
+  const depositBalanceByBranch: Record<string, BranchDepositBalance> = orgId
+    ? await getDepositBalanceByBranch(routeBranches.map((b) => b.id))
+    : {};
+  const pendingDeposits: PendingDepositRow[] = orgId ? await getPendingDeposits() : [];
+
   return (
     <StaffAppClient
       orgId={orgId}
@@ -493,6 +502,8 @@ export default async function StaffAppPage({
       inMachineByMachine={inMachineByMachine}
       netAvailableByBranch={netAvailableByBranch}
       machineOrder={machineOrder}
+      depositBalanceByBranch={depositBalanceByBranch}
+      pendingDeposits={pendingDeposits}
     />
   );
 }

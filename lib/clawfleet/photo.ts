@@ -19,7 +19,9 @@ export type PhotoPhase =
   | "doll_meter_bottom"
   | "baseline_stock"
   | "goods_receipt"
-  | "stock_count";
+  | "stock_count"
+  // เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้าประวัติเก็บเงิน (แทน hack เดิมที่ใช้ phase "cash")
+  | "deposit_slip";
 
 // 🛡️ path-safety: อนุญาตเฉพาะอักษร/ตัวเลข/._- (ไม่มี "/" ไม่มี "..") → กัน path traversal
 // เมื่อค่ามาจาก client. eventScopeId = "{sessionId}-{machineId}" (uuid สองก้อน ~73 ตัว) จึง

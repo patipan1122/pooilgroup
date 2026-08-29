@@ -41,8 +41,10 @@ import { createRepairTicket } from "@/lib/clawfleet/repair-actions";
 import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock, refillDollsToMachine } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
+import { recordCashDeposit } from "@/lib/clawfleet/deposit-actions";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
+import type { BranchDepositBalance, PendingDepositRow } from "@/lib/clawfleet/deposit-queries";
 // bigfeature — 4 mobile components (N1/N3/N5/R4) + goods-receipt (N6)
 import { BaselineForm } from "@/components/clawfleet/BaselineForm";
 import { MismatchGate } from "@/components/clawfleet/MismatchGate";
@@ -764,6 +766,10 @@ type Props = {
   netAvailableByBranch?: Record<string, Record<string, number>>;
   // CEO 2026-08-01 · ลำดับตู้ที่พนักงานจัดเอง (machineId → sortOrder · จำติดบัญชี). optional default {}.
   machineOrder?: Record<string, number>;
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก" vs "สะสมยังไม่ฝาก" แยก branchId (หน้าประวัติเก็บ). optional default {}.
+  depositBalanceByBranch?: Record<string, BranchDepositBalance>;
+  // เวิร์กช็อป 2026-08-29 · รอบที่ "ฝากได้" ทั้งหมดในสิทธิ์ (session picker ตอนกดฝากเงิน). optional default [].
+  pendingDeposits?: PendingDepositRow[];
 };
 
 // B3 · วันนี้ตามเวลาไทย (client-side fallback เมื่อ server ไม่ส่ง selectedDate) — YYYY-MM-DD
@@ -775,7 +781,7 @@ function clientTodayBangkokYmd(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {}, isHistoryAdmin }: Props) {
+export function StaffAppClient({ orgId, branches, skus, photoRequired, userName, closedTodayCount, todayYmd, history, selectedDate, myRecentTickets = [], assignedOnly = false, awaitingSetupIds = [], branchProducts = {}, inboundByBranch = {}, warehousesByBranch = {}, onHandByBranch = {}, receivedByBranch = {}, countsByBranch = {}, inMachineByMachine = {}, netAvailableByBranch = {}, machineOrder = {}, isHistoryAdmin, depositBalanceByBranch = {}, pendingDeposits = [] }: Props) {
   // B3 · วันที่ที่ดูประวัติ (server default = วันนี้ · fallback client-side today)
   const viewDate = selectedDate || clientTodayBangkokYmd();
   const awaitingSet = useMemo(() => new Set(awaitingSetupIds), [awaitingSetupIds]);
@@ -796,10 +802,10 @@ export function StaffAppClient({ orgId, branches, skus, photoRequired, userName,
   // desktop preview & mobile full-screen are different breakpoints — only one is
   // visible at a time, so independent state is fine (and avoids re-render coupling).
   const app = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} depositBalanceByBranch={depositBalanceByBranch} pendingDeposits={pendingDeposits} />
   );
   const appMobile = (
-    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} />
+    <StaffApp orgId={orgId} machines={machines} branchList={branchList} skus={skuList} usingDemo={usingDemo} photoRequired={enforcePhoto} userName={userName} closedTodayCount={closedTodayCount} todayYmd={todayYmd} history={history} viewDate={viewDate} myRecentTickets={myRecentTickets} assignedOnly={assignedOnly} branchProducts={branchProducts} inboundByBranch={inboundByBranch} warehousesByBranch={warehousesByBranch} onHandByBranch={onHandByBranch} receivedByBranch={receivedByBranch} countsByBranch={countsByBranch} inMachineByMachine={inMachineByMachine} netAvailableByBranch={netAvailableByBranch} machineOrder={machineOrder} isHistoryAdmin={isHistoryAdmin} depositBalanceByBranch={depositBalanceByBranch} pendingDeposits={pendingDeposits} />
   );
 
   return (
@@ -899,6 +905,9 @@ type StaffAppProps = {
   // CEO 2026-08-04 · super_admin/แอดมิน/ผจก. = เห็นปุ่มแก้ประวัติได้ทุกใบ (thread → HomeScreen → ปุ่มแก้เลข)
   // required (2026-08-09) — เดิม optional ทำให้ prop หล่นเงียบระหว่าง thread ไม่มี error ฟ้อง
   isHistoryAdmin: boolean;
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก" vs "สะสมยังไม่ฝาก" แยก branchId + รอบที่ฝากได้ (session picker)
+  depositBalanceByBranch: Record<string, BranchDepositBalance>;
+  pendingDeposits: PendingDepositRow[];
 };
 
 // "stock" panel เดิม = นับสต๊อก (N3) · เพิ่ม "receive" (N6 รับสินค้า) เข้า quick-menu
@@ -923,7 +932,7 @@ function editPayloadFromArgs(eventId: string, a: SubmitBranchEventArgs) {
   };
 }
 
-function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder, isHistoryAdmin }: StaffAppProps) {
+function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired, userName, closedTodayCount, todayYmd, history, viewDate, myRecentTickets, assignedOnly, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch, inMachineByMachine, netAvailableByBranch, machineOrder, isHistoryAdmin, depositBalanceByBranch, pendingDeposits }: StaffAppProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const router = useRouter(); // quick-save (บันทึกค้าง=ส่ง) → refresh ให้ history/สถานะตู้ "เก็บแล้ว" อัปเดตจาก server
   const [panel, setPanel] = useState<Panel>(null);
@@ -1818,6 +1827,8 @@ function StaffApp({ orgId, machines, branchList, skus, usingDemo, photoRequired,
           onHandByBranch={onHandByBranch}
           receivedByBranch={receivedByBranch}
           countsByBranch={countsByBranch}
+          depositBalanceByBranch={depositBalanceByBranch}
+          pendingDeposits={pendingDeposits}
         />
       ) : (
         <FlowScreen
@@ -2076,6 +2087,9 @@ function HomeScreen(props: {
   // CEO 2026-08-04 · thread isHistoryAdmin → PanelScreen → ปุ่มแก้เลข (แอดมิน/super_admin แก้ได้ทุกใบ)
   // required (2026-08-09) — เดิม optional ทำให้ prop หล่นเงียบระหว่าง thread ไม่มี error ฟ้อง
   isHistoryAdmin: boolean;
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก" vs "สะสมยังไม่ฝาก" แยก branchId + รอบที่ฝากได้ (session picker)
+  depositBalanceByBranch: Record<string, BranchDepositBalance>;
+  pendingDeposits: PendingDepositRow[];
 }) {
   const { userName, panel, setPanel, routeTotal, routeDone, routePct, machines, drafts, draftList, onOpen, onChange, onSetup, inMachineByMachine, pending, openingId, skippedIds, assignedOnly } = props;
   // ── สาขาที่กำลังดู (ปุ่มสลับสาขา · CEO 2026-07-28) ──
@@ -2500,7 +2514,7 @@ function HomeScreen(props: {
           </div>
         </>
       ) : (
-        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={visibleMachines} onReorderMachines={props.onReorder} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} />
+        <PanelScreen panel={panel} onBack={() => { setPanel(null); setHistoryFocus(null); }} tourStep={props.tourStep} setTourStep={props.setTourStep} tourDraw={props.tourDraw} setTourDraw={props.setTourDraw} tourDeposited={props.tourDeposited} setTourDeposited={props.setTourDeposited} tourMachines={visibleMachines} onReorderMachines={props.onReorder} onOpenTourMachine={onOpen} todayYmd={todayYmd} onExitTour={() => setPanel(null)} skus={props.skus} history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} viewDate={props.viewDate} usingDemo={props.usingDemo} orgId={props.orgId} repairMachines={props.repairMachines} myRecentTickets={props.myRecentTickets} branchId={branchId} branchCode={props.branchList.find((b) => b.id === branchId)?.code ?? machines.find((m) => m.branchId === branchId)?.code ?? ""} branchName={selectedBranchName} stockProducts={stockProducts} stockWarehouses={stockWarehouses} inboundDeliveries={inboundDeliveries} onHandByProduct={onHandByProduct} receivedDocs={receivedDocs} countDocs={countDocs} historyFocus={historyFocus} onHistoryFocusConsumed={() => setHistoryFocus(null)} depositBalance={props.depositBalanceByBranch[branchId]} pendingDeposits={props.pendingDeposits.filter((r) => r.branchId === branchId)} />
       )}
     </div>
   );
@@ -2557,6 +2571,9 @@ function PanelScreen(props: {
   // CEO 2026-07-19 · "ดูใบ" จากหน้าหลัก → เปิด detail รอบนี้อัตโนมัติในแท็บประวัติ (null = ไม่เจาะจง)
   historyFocus?: StaffHistoryRow | null;
   onHistoryFocusConsumed?: () => void;
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก" vs "สะสมยังไม่ฝาก" ของสาขานี้ + รอบที่ฝากได้ (session picker)
+  depositBalance?: BranchDepositBalance;
+  pendingDeposits: PendingDepositRow[];
 }) {
   const { panel, onBack } = props;
   return (
@@ -2570,7 +2587,7 @@ function PanelScreen(props: {
       </div>
       {/* scroll body */}
       <div className="scr" style={{ flex: 1, overflowY: "auto", padding: "14px 18px 24px" }}>
-        {panel === "history" && <HistoryPanel history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} />}
+        {panel === "history" && <HistoryPanel history={props.history} branchMachineCounts={props.branchMachineCounts} isHistoryAdmin={props.isHistoryAdmin} usingDemo={props.usingDemo} orgId={props.orgId} initialFocus={props.historyFocus ?? null} onFocusConsumed={props.onHistoryFocusConsumed} selectedBranchId={props.branchId} selectedBranchName={props.branchName} depositBalance={props.depositBalance} pendingDeposits={props.pendingDeposits} />}
         {panel === "repair" && <RepairPanel orgId={props.orgId} machines={props.repairMachines} usingDemo={props.usingDemo} myRecentTickets={props.myRecentTickets} />}
         {panel === "stock" && <StockCountPanel orgId={props.orgId} usingDemo={props.usingDemo} branchId={props.branchId} branchCode={props.branchCode} products={props.stockProducts} warehouses={props.stockWarehouses} countDocs={props.countDocs} />}
         {panel === "receive" && <GoodsReceivePanel orgId={props.orgId} usingDemo={props.usingDemo} branchCode={props.branchCode} deliveries={props.inboundDeliveries} onHandByProduct={props.onHandByProduct} receivedDocs={props.receivedDocs} />}
@@ -2700,7 +2717,14 @@ function historyKindTag(h: StaffHistoryRow): { label: string; c: string; bg: str
   return { label: "เก็บเงิน", c: "#15803D", bg: "#E7F4EC" };
 }
 
-function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; isHistoryAdmin: boolean; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string }) {
+function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo, orgId, initialFocus = null, onFocusConsumed, selectedBranchId, selectedBranchName, depositBalance, pendingDeposits = [] }: { history: StaffHistoryRow[]; branchMachineCounts?: Record<string, number>; isHistoryAdmin: boolean; usingDemo: boolean; orgId: string; initialFocus?: StaffHistoryRow | null; onFocusConsumed?: () => void; selectedBranchId?: string; selectedBranchName?: string; depositBalance?: BranchDepositBalance; pendingDeposits?: PendingDepositRow[] }) {
+  // เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้านี้เลย — โชว์ "วันนี้ต้องฝาก" vs "สะสมยังไม่ฝาก" แยกกัน
+  //   (CEO ขอชัดว่าอย่าปนเป็นก้อนเดียว) + ปุ่มฝากเงินเปิด DepositSheet (session picker + สลิป)
+  //   โชว์เฉพาะตอนดู "สาขาเดียว" ที่ระบุชัด (recordCashDeposit บังคับ 1 ใบฝาก = 1 สาขา) และไม่ใช่โหมด demo.
+  const [depositOpen, setDepositOpen] = useState(false);
+  const balance = depositBalance ?? { todayCents: 0, todayCount: 0, outstandingCents: 0, outstandingCount: 0 };
+  const branchPendingDeposits = selectedBranchId ? pendingDeposits.filter((r) => r.branchId === selectedBranchId) : [];
+  const canDeposit = !usingDemo && !!selectedBranchId && balance.outstandingCents > 0;
   const todayYmd = clientTodayBangkokYmd();
   // โหมดตัวอย่าง (ยังไม่มีข้อมูลจริง) → โชว์ตัวอย่างแต่ติดป้ายชัดว่าเป็นตัวอย่าง (ไม่หลอกว่าเป็นของจริง)
   const demoRows: StaffHistoryRow[] = [
@@ -2786,6 +2810,33 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo,
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {usingDemo && (
         <ComingSoonBanner text="กำลังแสดงตัวอย่าง (ยังไม่มีข้อมูลจริง) — รายการจริงจะขึ้นเมื่อเก็บเงินผ่านระบบ" />
+      )}
+
+      {/* เวิร์กช็อป 2026-08-29 · แถบยอดฝากเงิน — "วันนี้ต้องฝาก" แยกจาก "สะสมยังไม่ฝาก" (CEO ขอแยกกัน) +
+          ปุ่มฝากเงินเปิด DepositSheet ตรงนี้เลย (ไม่ต้องไปหน้า /clawfleet/os/deposits) */}
+      {!usingDemo && (
+        <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#fff", border: "1px solid #E8EAED", borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 18 }}>
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#9AA1AB" }}>วันนี้ต้องฝาก</div>
+              <div className="num" style={{ fontSize: 17, fontWeight: 800, color: "#1A1D21" }}>฿{Math.round(balance.todayCents / 100).toLocaleString("en-US")}</div>
+            </div>
+            <div style={{ width: 1, background: "#EAECEF" }} />
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#9AA1AB" }}>สะสมยังไม่ฝาก</div>
+              <div className="num" style={{ fontSize: 17, fontWeight: 800, color: balance.outstandingCents > 0 ? "#B45309" : "#1A1D21" }}>฿{Math.round(balance.outstandingCents / 100).toLocaleString("en-US")}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => canDeposit && setDepositOpen(true)}
+            disabled={!canDeposit}
+            className={canDeposit ? "co-tap" : ""}
+            style={{ flex: "0 0 auto", minHeight: 40, padding: "0 16px", borderRadius: 11, border: "none", fontSize: 13, fontWeight: 700, cursor: canDeposit ? "pointer" : "not-allowed", background: canDeposit ? "#4F46E5" : "#F1F2F5", color: canDeposit ? "#fff" : "#9AA1AB" }}
+          >
+            {canDeposit ? "ฝากเงิน" : "ไม่มียอดค้างฝาก"}
+          </button>
+        </div>
       )}
 
       {/* CEO 2026-08-02 · เอาชิปสลับสาขาออก — ประวัติล็อกตามสาขาที่เลือกบนหน้าหลัก (เปลี่ยนสาขาที่หน้าหลัก) */}
@@ -3155,6 +3206,181 @@ function HistoryPanel({ history, branchMachineCounts, isHistoryAdmin, usingDemo,
           onAttach={() => { setAttachRow(editRow); setEditRow(null); }}
         />
       )}
+
+      {/* เวิร์กช็อป 2026-08-29 · sheet ฝากเงิน+แนบสลิปจากหน้าประวัติเก็บ (session picker + ถ่ายสลิป + ยืนยัน) */}
+      {depositOpen && selectedBranchId && (
+        <DepositSheet
+          orgId={orgId}
+          branchId={selectedBranchId}
+          branchName={selectedBranchName || "สาขานี้"}
+          pending={branchPendingDeposits}
+          onClose={() => setDepositOpen(false)}
+          onSubmitted={() => { setDepositOpen(false); router.refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// เวิร์กช็อป 2026-08-29 · เวลาโชว์ต่อรอบใน session picker ของ DepositSheet — ISO → "วันนี้ 09:20" / "12 มิ.ย. 14:00"
+function depositRowTimeLabel(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const hhmm = d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" });
+  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return ymd === clientTodayBangkokYmd() ? `วันนี้ ${hhmm}` : `${d.toLocaleDateString("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" })} ${hhmm}`;
+}
+
+/**
+ * เวิร์กช็อป 2026-08-29 · sheet ฝากเงิน+แนบสลิปจากหน้าประวัติเก็บ — เรียก recordCashDeposit() ตัวเดิม
+ * (ตัวเดียวกับหน้า /clawfleet/os/deposits ทุกประการ ไม่มีกลไกขนาน) แค่เปิดจากทางเข้าใหม่.
+ * session picker บังคับ (ฟังก์ชันต้องการ sessionIds[] ชัดเจน ไม่ auto-sum) — ติ๊กครบทุกรอบเป็นค่าเริ่มต้น
+ * (โหมดที่ใช้บ่อยสุด) แต่พนักงานเลือก/ยกเลิกทีละรอบได้เสมอ กันฝากซ้ำ/ลืมฝากตอนสะสมหลายวัน.
+ */
+function DepositSheet({
+  orgId,
+  branchId,
+  branchName,
+  pending,
+  onClose,
+  onSubmitted,
+}: {
+  orgId: string;
+  branchId: string;
+  branchName: string;
+  pending: PendingDepositRow[];
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(pending.map((r) => r.sessionId)));
+  const [amountText, setAmountText] = useState("");
+  const [amountTouched, setAmountTouched] = useState(false);
+  const [slipUrl, setSlipUrl] = useState("");
+  const [slipUploading, setSlipUploading] = useState(false);
+  const [depositDate, setDepositDate] = useState(clientTodayBangkokYmd());
+  const [error, setError] = useState<string | null>(null);
+  const [pendingSubmit, startTransition] = useTransition();
+
+  const selectedRows = useMemo(() => pending.filter((r) => selected.has(r.sessionId)), [pending, selected]);
+  const expectedCents = useMemo(() => selectedRows.reduce((s, r) => s + r.cashCents, 0), [selectedRows]);
+
+  // prefill ยอดตามรอบที่เลือก (derive ตอน render ตรง ๆ ไม่ใช้ effect+setState) จนกว่าพนักงานจะเริ่มพิมพ์เอง
+  // (amountTouched=true) — แก้เองได้เสมอ ไม่ auto-submit ยอดที่ไม่ผ่านตา
+  const displayedAmountText = amountTouched ? amountText : (expectedCents > 0 ? String(Math.round(expectedCents / 100)) : "");
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const amountBaht = Number(displayedAmountText);
+  const amountValid = displayedAmountText.trim() !== "" && !Number.isNaN(amountBaht) && amountBaht >= 0;
+  const amountCents = amountValid ? Math.round(amountBaht * 100) : 0;
+  const varianceCents = amountCents - expectedCents;
+  const varLabel = varianceCents === 0 ? "ตรง" : varianceCents > 0 ? "เกิน" : "ขาด";
+  const varColor = varianceCents === 0 ? "#15803D" : varianceCents > 0 ? "#B45309" : "#B42318";
+  const disableSubmit = pendingSubmit || slipUploading || selectedRows.length === 0 || !amountValid;
+
+  function submit() {
+    setError(null);
+    if (slipUploading) { setError("รอรูปอัปโหลดเสร็จก่อนสักครู่ แล้วกดอีกครั้ง"); return; }
+    if (selectedRows.length === 0) { setError("เลือกรอบที่ต้องการฝากอย่างน้อย 1 รอบ"); return; }
+    if (!amountValid) { setError("กรอกยอดเงินที่ฝากจริง (บาท)"); return; }
+    const sessionIds = selectedRows.map((r) => r.sessionId);
+    const depositedAtISO = new Date(`${depositDate}T00:00:00`).toISOString();
+    startTransition(async () => {
+      const res = await recordCashDeposit({
+        sessionIds,
+        amountCents,
+        slipPhotoUrl: slipUrl || undefined,
+        depositedAt: depositedAtISO,
+      });
+      if (!res.ok) { setError(res.error || "บันทึกฝากไม่สำเร็จ ลองอีกครั้ง"); return; }
+      onSubmitted();
+    });
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(20,22,28,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: "18px 18px 0 0", padding: "18px 18px 26px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <span style={{ width: 38, height: 38, flex: "0 0 38px", borderRadius: 11, background: "#EEF0FE", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800 }}>฿</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>ฝากเงิน · {branchName}</div>
+            <div style={{ fontSize: 11, color: "#9AA1AB" }}>เลือกรอบที่ฝาก + แนบสลิปโอนเงิน</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="ปิด" style={{ width: 32, height: 32, flex: "0 0 32px", borderRadius: 9, background: "#F1F2F5", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            <X size={17} strokeWidth={2.2} color="#454B54" />
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4, marginBottom: 12 }}>{error}</div>
+        )}
+
+        {pending.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "10px 0 18px" }}>ไม่มีรอบที่ฝากได้ในสาขานี้ตอนนี้</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 14, maxHeight: 220, overflowY: "auto" }}>
+            {pending.map((r) => {
+              const checked = selected.has(r.sessionId);
+              return (
+                <button key={r.sessionId} type="button" onClick={() => toggleRow(r.sessionId)} className="co-tap"
+                  style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", padding: "9px 11px", borderRadius: 10, border: `1.5px solid ${checked ? "#C7CBFB" : "#E8EAED"}`, background: checked ? "#F5F6FE" : "#fff", cursor: "pointer" }}>
+                  <span style={{ width: 19, height: 19, flex: "0 0 19px", borderRadius: 6, border: `1.5px solid ${checked ? "#4F46E5" : "#C9CFD8"}`, background: checked ? "#4F46E5" : "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {checked && <Check size={13} strokeWidth={3} color="#fff" />}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1A1D21" }}>{r.sessionCode}</div>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{depositRowTimeLabel(r.closedAt)}{r.overdue ? ` · เลยกำหนด ${r.daysOverdue} วัน` : ""}</div>
+                  </span>
+                  <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>฿{Math.round(r.cashCents / 100).toLocaleString("en-US")}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#3F4650", marginBottom: 6 }}>ยอดเงินที่ฝากจริง (บาท)</label>
+          <input type="number" inputMode="decimal" min={0} step="0.01" value={displayedAmountText}
+            onChange={(e) => { setAmountText(e.target.value); setAmountTouched(true); }}
+            className="num" placeholder="เช่น 12500"
+            style={{ width: "100%", fontSize: 17, fontWeight: 700, color: "#1A1D21", background: "#fff", border: "1px solid #D9DBFB", borderRadius: 10, padding: "10px 13px" }} />
+          {amountValid && expectedCents > 0 && (
+            <div style={{ fontSize: 11, color: varColor, marginTop: 5, fontWeight: 700 }}>
+              เก็บได้ ฿{Math.round(expectedCents / 100).toLocaleString("en-US")} · {varLabel}{varianceCents !== 0 ? ` ฿${Math.round(Math.abs(varianceCents) / 100).toLocaleString("en-US")}` : ""}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#3F4650", marginBottom: 6 }}>สลิปการฝาก</label>
+            <PhotoCaptureButton
+              label="ถ่ายสลิปฝากเงิน" value={slipUrl}
+              onChange={setSlipUrl}
+              onUploadStatus={({ uploading }) => setSlipUploading(uploading)}
+              orgId={orgId} machineCode={`deposit-${branchId}`} eventScopeId={`deposit-${branchId}`} phase="deposit_slip" slim
+            />
+          </div>
+          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#3F4650", marginBottom: 6 }}>วันที่ฝาก</label>
+            <input type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} className="num"
+              style={{ width: "100%", fontSize: 13, color: "#3F4650", background: "#fff", border: "1px solid #D9DBFB", borderRadius: 10, padding: "10px 11px", minHeight: 44 }} />
+          </div>
+        </div>
+
+        <button type="button" onClick={submit} disabled={disableSubmit} className={disableSubmit ? "" : "co-tap"}
+          style={{ width: "100%", minHeight: 48, fontSize: 15, fontWeight: 700, color: "#fff", border: "none", borderRadius: 12, background: "#4F46E5", cursor: disableSubmit ? "not-allowed" : "pointer", opacity: disableSubmit ? 0.55 : 1 }}>
+          {pendingSubmit ? "กำลังบันทึก…" : slipUploading ? "กำลังอัปสลิป…" : `บันทึกฝากเงิน (${selectedRows.length} รอบ)`}
+        </button>
+      </div>
     </div>
   );
 }

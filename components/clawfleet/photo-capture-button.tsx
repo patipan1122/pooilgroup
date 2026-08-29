@@ -72,7 +72,9 @@ export function PhotoCaptureButton({
     | "goods_receipt"
     | "stock_count"
     // N1b — รูปสินค้าใหม่ที่เพิ่มตอนตั้งค่าตู้ครั้งแรก (ตุ๊กตาเก่าในตู้)
-    | "product_setup";
+    | "product_setup"
+    // เวิร์กช็อป 2026-08-29 · แนบสลิปฝากเงินจากหน้าประวัติเก็บเงิน
+    | "deposit_slip";
   // compact = ไอคอนกล้องเล็ก (46px) วางในบรรทัดเดียวกับช่องกรอก (เช่น มิเตอร์) — logic เหมือนเดิมทุกอย่าง
   compact?: boolean;
   // slim = ปุ่มบรรทัดเดียว ~44px (รูปก่อน/หลังเติม ตาม mockup) — logic เหมือนเดิมทุกอย่าง
