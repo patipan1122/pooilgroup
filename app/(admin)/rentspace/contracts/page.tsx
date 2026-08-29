@@ -32,6 +32,9 @@ export default async function ContractsPage() {
     (c) => (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate),
   ).length;
   const draftCount = contracts.filter((c) => c.status === "draft").length;
+  const termsPendingCount = contracts.filter(
+    (c) => c.rentApprovalStatus === "pending" || c.discountApprovalStatus === "pending",
+  ).length;
 
   // ห้องที่เปิดทำสัญญาได้ = ว่าง/จอง
   const vacantUnits = units.filter((u) => u.status === "vacant" || u.status === "reserved");
@@ -53,6 +56,7 @@ export default async function ContractsPage() {
       (c.status === "active" || c.status === "expiring") && isExpiringSoon(c.endDate) ? "expiring" : c.status,
     tenantSigned: c.tenantSigned,
     editPending: c.editStatus === "pending",
+    termsPending: c.rentApprovalStatus === "pending" || c.discountApprovalStatus === "pending",
   }));
 
   // ข้อมูลโครงการ/บัญชีรับเงิน → ส่งให้พรีวิวสัญญาในฟอร์ม
@@ -89,10 +93,15 @@ export default async function ContractsPage() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <RsKpi label="สัญญาที่ใช้งาน" value={activeCount} tone="ok" />
         <RsKpi label="ใกล้หมดอายุ (45 วัน)" value={expiringCount} tone={expiringCount ? "pending" : undefined} />
         <RsKpi label="ร่าง" value={draftCount} />
+        <RsKpi
+          label="รออนุมัติค่าเช่า/ส่วนลด"
+          value={termsPendingCount}
+          tone={termsPendingCount ? "pending" : undefined}
+        />
       </div>
 
       {contracts.length === 0 ? (

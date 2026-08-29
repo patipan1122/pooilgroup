@@ -293,7 +293,22 @@ export async function getBillByPublicToken(token: string) {
       tenant: true,
       project: true,
       items: { orderBy: { sort: "asc" } },
-      payments: { orderBy: { paidOn: "desc" } },
+      // select (not include: true) on purpose — this is a public, unauthenticated
+      // lookup, so internal-only review/OCR fields on RentalPayment must never
+      // ride along here even if someone later adds a payments UI to this page.
+      payments: {
+        orderBy: { paidOn: "desc" },
+        select: {
+          id: true,
+          amountThb: true,
+          paidOn: true,
+          method: true,
+          reference: true,
+          slipUrl: true,
+          note: true,
+          createdAt: true,
+        },
+      },
     },
   });
 }

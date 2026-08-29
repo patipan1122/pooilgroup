@@ -10,6 +10,7 @@ import { docDataFromContract } from "@/lib/rentspace/contract-doc";
 import { RentalContractDocument } from "@/components/rentspace/contract-document";
 import { Pencil } from "lucide-react";
 import { ContractForm } from "../_components/contract-form";
+import { TermsApprovalPanel } from "../_components/terms-approval-panel";
 import {
   SignLinkBox,
   PrintButton,
@@ -245,6 +246,17 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 />
               )}
             </div>
+
+            <TermsApprovalPanel
+              contractId={contract.id}
+              rentStatus={contract.rentApprovalStatus}
+              pendingRentAmountThb={contract.pendingRentAmountThb != null ? toNum(contract.pendingRentAmountThb) : null}
+              discountStatus={contract.discountApprovalStatus}
+              pendingPromoDiscountThb={
+                contract.pendingPromoDiscountThb != null ? toNum(contract.pendingPromoDiscountThb) : null
+              }
+              canDecide={isSuperAdmin(role)}
+            />
 
             {schedule.length > 0 && (
               <div className="mt-4">

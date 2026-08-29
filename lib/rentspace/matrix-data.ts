@@ -12,9 +12,19 @@ export type MatrixUnit = {
   building: string | null;
   baseRent: number;
   tenantName: string | null;
+  /** ว่าง/มีผู้เช่า/จอง — โชว์ในโหมดจัดเรียงห้องเอง (CEO 2026-08-29: จะได้รู้ว่าห้องไหน active) */
+  status: string;
 };
 
-export type MatrixPayment = { paidOn: string; amount: number; method: string };
+export type MatrixPayment = {
+  id: string;
+  paidOn: string;
+  amount: number;
+  method: string;
+  slipUrl: string | null;
+  requiresReview: boolean;
+  ocrFlagReason: string | null;
+};
 
 export type MatrixCell = {
   period: string; // YYYY-MM
@@ -68,6 +78,7 @@ export async function rentMatrix(
         name: true,
         building: true,
         baseRentThb: true,
+        status: true,
         contracts: {
           where: { status: { in: ["active", "expiring", "expired"] } },
           orderBy: { startDate: "desc" },
@@ -112,7 +123,15 @@ export async function rentMatrix(
           // เป็น "ชำระ ✓" เขียว ทั้งที่ paidAmount ยังไม่นับ → ตัวเลขในหน้าเดียวขัดกัน
           where: { status: "confirmed" },
           orderBy: { paidOn: "desc" },
-          select: { paidOn: true, amountThb: true, method: true },
+          select: {
+            id: true,
+            paidOn: true,
+            amountThb: true,
+            method: true,
+            slipUrl: true,
+            requiresReview: true,
+            ocrFlagReason: true,
+          },
         },
       },
     }),
@@ -138,6 +157,7 @@ export async function rentMatrix(
       building: u.building,
       baseRent: toNum(u.baseRentThb),
       tenantName: tenant ? tenantDisplayName(tenant) : null,
+      status: u.status,
     };
   });
 
@@ -162,9 +182,13 @@ export async function rentMatrix(
       issueDate: isoDate(b.issueDate),
       dueDate: isoDate(b.dueDate),
       payments: b.payments.map((p) => ({
+        id: p.id,
         paidOn: isoDate(p.paidOn),
         amount: toNum(p.amountThb),
         method: p.method,
+        slipUrl: p.slipUrl,
+        requiresReview: p.requiresReview,
+        ocrFlagReason: p.ocrFlagReason,
       })),
       edited: editedBillIds.has(b.id),
       ledgerStatus: ledgerStatusById.get(b.id) ?? "not_sent",

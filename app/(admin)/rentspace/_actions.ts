@@ -14,6 +14,7 @@ import { pushProjectBillsToLedger } from "@/lib/rentspace/ledger-push";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
 import { notifyBillIssued } from "@/lib/rentspace/notify";
+import { runRentSpaceSlipCheck } from "@/lib/rentspace/slip-check";
 import type { RentalBillStatus } from "@/lib/generated/prisma/enums";
 
 async function gateAdmin() {
@@ -40,6 +41,72 @@ async function gateModuleWrite() {
     if (!ok) throw new Error("ไม่มีสิทธิ์ดำเนินการนี้");
   }
   return session;
+}
+
+/**
+ * ค่าเช่า/ส่วนลด ต้อง super_admin อนุมัติเท่านั้น — ไม่มี admin-tier/program_admin fallback
+ * (CEO 2026-08-29: "ให้ผม super admin อนุมัติ ไม่สามารถแก้ไขเองได้" — เข้มกว่า gateAdmin() ทั่วไปโดยตั้งใจ)
+ */
+async function gateSuperAdminOnly() {
+  const session = await requireSession();
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะ super admin เท่านั้นที่อนุมัติได้");
+  return session;
+}
+
+/**
+ * สวิตช์ฉุกเฉิน — ปิดการบังคับอนุมัติค่าเช่า/ส่วนลดได้ทันทีถ้าระบบมีบั๊กจนพนักงานร่างสัญญาไม่ได้เลย
+ * ค่าเริ่มต้น = บังคับเสมอ (true) ต้องตั้ง env ชัดเจนเป็น "false" เท่านั้นถึงจะปิด
+ */
+function isTermsApprovalEnforced(): boolean {
+  return process.env.RENTSPACE_TERMS_APPROVAL_ENFORCED !== "false";
+}
+
+/**
+ * เทียบค่าที่ขอ (requested) กับค่าที่อนุมัติแล้วปัจจุบัน (currentApproved) แล้วตัดสินว่า
+ * จะเขียนค่าจริงทันที (super_admin หรือค่าไม่เปลี่ยน) หรือต้องพักไว้เป็น "รออนุมัติ"
+ * ใช้ร่วมกันทั้งค่าเช่าและส่วนลด (เรียกแยกกัน เพราะ 2 เรื่องนี้ approve อิสระจากกัน)
+ */
+function routeApprovalField(params: {
+  callerIsSuperAdmin: boolean;
+  currentApproved: number;
+  requested: number;
+  actorId: string;
+}): {
+  liveValue: number;
+  pendingValue: number | null;
+  status: "none" | "pending";
+  requestedBy: string | null;
+  requestedAt: Date | null;
+  decidedBy: null;
+  decidedAt: null;
+  decisionNote: null;
+} {
+  const { callerIsSuperAdmin, currentApproved, requested, actorId } = params;
+  const noOp = {
+    pendingValue: null,
+    status: "none" as const,
+    requestedBy: null,
+    requestedAt: null,
+    decidedBy: null,
+    decidedAt: null,
+    decisionNote: null,
+  };
+  if (callerIsSuperAdmin || !isTermsApprovalEnforced()) {
+    return { liveValue: requested, ...noOp };
+  }
+  if (requested === currentApproved) {
+    return { liveValue: currentApproved, ...noOp };
+  }
+  return {
+    liveValue: currentApproved,
+    pendingValue: requested,
+    status: "pending",
+    requestedBy: actorId,
+    requestedAt: new Date(),
+    decidedBy: null,
+    decidedAt: null,
+    decisionNote: null,
+  };
 }
 
 /** Anti-IDOR: throw unless the record exists within the caller's org. */
@@ -734,12 +801,26 @@ export async function actSaveContract(input: {
   const prev = input.id
     ? await prisma.rentalContract.findFirst({
         where: { id: input.id, orgId: session.user.org_id },
-        select: { unitId: true },
+        select: { unitId: true, rentAmountThb: true, promoDiscountThb: true },
       })
     : null;
   // ตอนแก้ (input.id) สัญญาต้องเป็นของ org เดียวกัน — ไม่พบ = ไม่มีสิทธิ์
   if (input.id && !prev) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
   const prevUnitId = prev?.unitId ?? null;
+  // ค่าเช่า/ส่วนลด: ใช้ค่าที่อนุมัติแล้วของสัญญาเดิม (0 ถ้าสัญญาใหม่) เทียบกับค่าที่พนักงานขอ
+  const callerIsSuperAdmin = isSuperAdmin(session.user.role);
+  const rentRoute = routeApprovalField({
+    callerIsSuperAdmin,
+    currentApproved: prev ? toNum(prev.rentAmountThb) : 0,
+    requested: input.rentAmountThb,
+    actorId: session.user.id,
+  });
+  const discountRoute = routeApprovalField({
+    callerIsSuperAdmin,
+    currentApproved: prev ? toNum(prev.promoDiscountThb) : 0,
+    requested: input.promoDiscountThb ?? 0,
+    actorId: session.user.id,
+  });
   const data = {
     projectId: input.projectId,
     unitId: input.unitId,
@@ -756,7 +837,14 @@ export async function actSaveContract(input: {
     buildingModifications: input.buildingModifications?.trim() || null,
     witness2Name: input.witness2Name?.trim() || null,
     areaSqm: input.areaSqm ?? null,
-    rentAmountThb: input.rentAmountThb,
+    rentAmountThb: rentRoute.liveValue,
+    pendingRentAmountThb: rentRoute.pendingValue,
+    rentApprovalStatus: rentRoute.status,
+    rentRequestedBy: rentRoute.requestedBy,
+    rentRequestedAt: rentRoute.requestedAt,
+    rentDecidedBy: rentRoute.decidedBy,
+    rentDecidedAt: rentRoute.decidedAt,
+    rentDecisionNote: rentRoute.decisionNote,
     rentDueDay: input.rentDueDay ?? 5,
     depositAmountThb: input.depositAmountThb ?? 0,
     depositMonths: input.depositMonths ?? 0,
@@ -769,7 +857,14 @@ export async function actSaveContract(input: {
     lateFeeType: input.lateFeeType ?? "none",
     lateFeeValue: input.lateFeeValue ?? 0,
     lateFeeGraceDays: input.lateFeeGraceDays ?? 7,
-    promoDiscountThb: input.promoDiscountThb ?? 0,
+    promoDiscountThb: discountRoute.liveValue,
+    pendingPromoDiscountThb: discountRoute.pendingValue,
+    discountApprovalStatus: discountRoute.status,
+    discountRequestedBy: discountRoute.requestedBy,
+    discountRequestedAt: discountRoute.requestedAt,
+    discountDecidedBy: discountRoute.decidedBy,
+    discountDecidedAt: discountRoute.decidedAt,
+    discountDecisionNote: discountRoute.decisionNote,
     promoMonths: input.promoMonths ?? 0,
     promoStartPeriod: input.promoStartPeriod || null,
     billIssueDay: input.billIssueDay ?? null,
@@ -879,6 +974,12 @@ export async function actSaveContract(input: {
       ]);
       if (id) await saveExtras(id);
       await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", id, { amendment: true, reSign: true });
+      if (rentRoute.status === "pending" || discountRoute.status === "pending") {
+        await logAudit(session, "RENTSPACE_TERMS_REQUESTED", "rental_contract", id, {
+          rentPending: rentRoute.status === "pending" ? rentRoute.pendingValue : undefined,
+          discountPending: discountRoute.status === "pending" ? discountRoute.pendingValue : undefined,
+        });
+      }
       revalidatePath("/rentspace/contracts");
       revalidatePath(`/rentspace/contracts/${id}`);
       revalidatePath("/rentspace");
@@ -919,6 +1020,12 @@ export async function actSaveContract(input: {
     }
   }
   await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", id, { unitId: input.unitId });
+  if (rentRoute.status === "pending" || discountRoute.status === "pending") {
+    await logAudit(session, "RENTSPACE_TERMS_REQUESTED", "rental_contract", id, {
+      rentPending: rentRoute.status === "pending" ? rentRoute.pendingValue : undefined,
+      discountPending: discountRoute.status === "pending" ? discountRoute.pendingValue : undefined,
+    });
+  }
   revalidatePath("/rentspace/contracts");
   revalidatePath("/rentspace");
   return { id };
@@ -944,6 +1051,7 @@ export async function actUpdateContractBilling(input: {
       id: true,
       tenantSigned: true,
       editStatus: true,
+      promoDiscountThb: true,
       project: { select: { contractEditUnlocked: true } },
     },
   });
@@ -960,13 +1068,27 @@ export async function actUpdateContractBilling(input: {
     input.promoMonths > 0
       ? (input.promoStartPeriod?.trim() || currentPeriod())
       : null;
+  // ส่วนลด: เหมือน actSaveContract — ไม่ใช่ super_admin ต้องพักเป็น "รออนุมัติ" ก่อน
+  const discountRoute = routeApprovalField({
+    callerIsSuperAdmin: isSuperAdmin(session.user.role),
+    currentApproved: toNum(existing.promoDiscountThb),
+    requested: input.promoDiscountThb,
+    actorId: session.user.id,
+  });
   await prisma.rentalContract.update({
     where: { id: input.contractId },
     data: {
       lateFeeType: input.lateFeeType,
       lateFeeValue: input.lateFeeValue,
       lateFeeGraceDays: input.lateFeeGraceDays,
-      promoDiscountThb: input.promoDiscountThb,
+      promoDiscountThb: discountRoute.liveValue,
+      pendingPromoDiscountThb: discountRoute.pendingValue,
+      discountApprovalStatus: discountRoute.status,
+      discountRequestedBy: discountRoute.requestedBy,
+      discountRequestedAt: discountRoute.requestedAt,
+      discountDecidedBy: discountRoute.decidedBy,
+      discountDecidedAt: discountRoute.decidedAt,
+      discountDecisionNote: discountRoute.decisionNote,
       promoMonths: input.promoMonths,
       promoStartPeriod: promoStart,
       billIssueDay: input.billIssueDay ?? null,
@@ -976,6 +1098,11 @@ export async function actUpdateContractBilling(input: {
     },
   });
   await logAudit(session, "RENTSPACE_CONTRACT_SAVED", "rental_contract", input.contractId, { billingTerms: true });
+  if (discountRoute.status === "pending") {
+    await logAudit(session, "RENTSPACE_TERMS_REQUESTED", "rental_contract", input.contractId, {
+      discountPending: discountRoute.pendingValue,
+    });
+  }
   revalidatePath(`/rentspace/contracts/${input.contractId}`);
   revalidatePath("/rentspace/units");
   return { ok: true };
@@ -983,14 +1110,70 @@ export async function actUpdateContractBilling(input: {
 
 export async function actGenerateSignLink(contractId: string) {
   const session = await gateAdmin();
-  await ownGuard(
-    prisma.rentalContract.findFirst({ where: { id: contractId, orgId: session.user.org_id }, select: { id: true } }),
-    "สัญญา",
-  );
+  const c = await prisma.rentalContract.findFirst({
+    where: { id: contractId, orgId: session.user.org_id },
+    select: { id: true, rentApprovalStatus: true, discountApprovalStatus: true },
+  });
+  if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  if (isTermsApprovalEnforced() && (c.rentApprovalStatus === "pending" || c.discountApprovalStatus === "pending")) {
+    throw new Error("ค่าเช่า/ส่วนลดของสัญญานี้ยังรอ super admin อนุมัติ — ส่งลิงก์ให้เซ็นไม่ได้จนกว่าจะอนุมัติ");
+  }
   const token = randomBytes(24).toString("base64url");
   await prisma.rentalContract.update({ where: { id: contractId }, data: { signToken: token } });
   revalidatePath(`/rentspace/contracts/${contractId}`);
   return { token };
+}
+
+/**
+ * super_admin อนุมัติ/ปฏิเสธค่าเช่าหรือส่วนลดที่พนักงานขอเปลี่ยน (D · 2026-08-29)
+ * gate เข้มกว่า actDecideContractEdit ทั่วไป — เฉพาะ super_admin เท่านั้น ไม่มี admin-tier fallback
+ */
+export async function actDecideContractTerms(
+  contractId: string,
+  field: "rent" | "discount",
+  decision: "approve" | "reject",
+  note?: string,
+) {
+  const session = await gateSuperAdminOnly();
+  const c = await prisma.rentalContract.findFirst({
+    where: { id: contractId, orgId: session.user.org_id },
+    select: {
+      id: true,
+      pendingRentAmountThb: true,
+      rentApprovalStatus: true,
+      pendingPromoDiscountThb: true,
+      discountApprovalStatus: true,
+    },
+  });
+  if (!c) throw new Error("ไม่พบสัญญา หรือไม่มีสิทธิ์");
+  const status = field === "rent" ? c.rentApprovalStatus : c.discountApprovalStatus;
+  if (status !== "pending") throw new Error("ไม่มีคำขออนุมัติที่รอดำเนินการอยู่");
+  const pendingValue = field === "rent" ? c.pendingRentAmountThb : c.pendingPromoDiscountThb;
+  const approve = decision === "approve";
+  const data =
+    field === "rent"
+      ? {
+          ...(approve && pendingValue != null ? { rentAmountThb: pendingValue } : {}),
+          pendingRentAmountThb: null,
+          rentApprovalStatus: approve ? "approved" : "rejected",
+          rentDecidedBy: session.user.id,
+          rentDecidedAt: new Date(),
+          rentDecisionNote: note?.trim() || null,
+        }
+      : {
+          ...(approve && pendingValue != null ? { promoDiscountThb: pendingValue } : {}),
+          pendingPromoDiscountThb: null,
+          discountApprovalStatus: approve ? "approved" : "rejected",
+          discountDecidedBy: session.user.id,
+          discountDecidedAt: new Date(),
+          discountDecisionNote: note?.trim() || null,
+        };
+  await prisma.rentalContract.update({ where: { id: contractId }, data });
+  await logAudit(session, "RENTSPACE_TERMS_DECIDED", "rental_contract", contractId, { field, decision, note });
+  revalidatePath(`/rentspace/contracts/${contractId}`);
+  revalidatePath("/rentspace/contracts");
+  revalidatePath("/rentspace");
+  return { ok: true };
 }
 
 export async function actTerminateContract(contractId: string, note?: string) {
@@ -2021,12 +2204,13 @@ export async function actRecordPayment(input: {
     select: { id: true },
   });
   if (dup) return { ok: true, deduped: true };
+  const paymentId = randomUUID();
   // A1: create payment + increment paidAmount + recompute อยู่ใน transaction เดียว
   // (เดิมแยก 3 round-trip → process ตายกลางทาง = มีแถวเงินแต่ paidAmount ไม่ขยับ = drift ถาวร)
   await prisma.$transaction(async (tx) => {
     await tx.rentalPayment.create({
       data: {
-        id: randomUUID(),
+        id: paymentId,
         orgId: session.user.org_id,
         billId: bill.id,
         contractId: bill.contractId,
@@ -2047,6 +2231,18 @@ export async function actRecordPayment(input: {
     await recomputeBillTotals(bill.id, tx);
   });
   await logAudit(session, "RENTSPACE_PAYMENT_RECORDED", "rental_bill", bill.id, { amount: input.amountThb });
+  // AI อ่านสลิป + ตรวจซ้ำ/บัญชีผิด — นอก transaction เงินฝากคอมมิตแล้วเสมอ (ตรวจพังไม่ทำให้เงินหาย)
+  // ต้อง await (ไม่ fire-and-forget) เพราะ serverless function อาจตัดจบทันทีที่ response ส่งออกไป
+  if (input.slipUrl) {
+    await runRentSpaceSlipCheck({
+      orgId: session.user.org_id,
+      projectId: bill.projectId,
+      contractId: bill.contractId,
+      paymentId,
+      slipUrl: input.slipUrl,
+      actor: { userId: session.user.id, orgId: session.user.org_id },
+    });
+  }
   revalidatePath("/rentspace/payments");
   revalidatePath("/rentspace/bills");
   revalidatePath(`/rentspace/bills/${bill.id}`);

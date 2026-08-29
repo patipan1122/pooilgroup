@@ -7714,6 +7714,25 @@ model RentalContract {
   areaSqm               Decimal? @map("area_sqm") @db.Decimal(10, 2) // ขนาดพื้นที่เช่า (กรอกในสัญญา · null = ใช้ของห้อง)
   // ข้อความสัญญาที่ "ขอแก้" รออนุมัติ (พนักงานเสนอ → superadmin รีวิว redline → อนุมัติ = นำไปแทน customTermsHtml)
   editProposedBodyHtml  String?  @map("edit_proposed_body_html") @db.Text
+  // ── ค่าเช่า/ส่วนลด ต้อง super_admin อนุมัติก่อนมีผลจริง (D · 2026-08-29) ──
+  // rentAmountThb/promoDiscountThb ด้านบน = ค่าที่ "อนุมัติแล้ว" เท่านั้น (ใช้คิดบิลจริง)
+  // ถ้าคนที่ไม่ใช่ super_admin เปลี่ยนค่า → ไปลงที่ pending* ก่อน ค่าจริงยังไม่ขยับจนกว่าจะอนุมัติ
+  // super_admin แก้เอง = มีผลทันที (ไม่ผ่าน pending) — แยก track รายการเช่า/ส่วนลด อิสระจากกัน
+  // เพราะ actUpdateContractBilling แก้ส่วนลดได้โดยไม่แตะค่าเช่า
+  pendingRentAmountThb  Decimal?  @map("pending_rent_amount_thb") @db.Decimal(15, 2)
+  rentApprovalStatus    String    @default("none") @map("rent_approval_status") // none | pending | approved | rejected
+  rentRequestedBy       String?   @map("rent_requested_by") @db.Uuid
+  rentRequestedAt       DateTime? @map("rent_requested_at") @db.Timestamptz(6)
+  rentDecidedBy         String?   @map("rent_decided_by") @db.Uuid
+  rentDecidedAt         DateTime? @map("rent_decided_at") @db.Timestamptz(6)
+  rentDecisionNote      String?   @map("rent_decision_note")
+  pendingPromoDiscountThb Decimal?  @map("pending_promo_discount_thb") @db.Decimal(15, 2)
+  discountApprovalStatus String    @default("none") @map("discount_approval_status") // none | pending | approved | rejected
+  discountRequestedBy    String?   @map("discount_requested_by") @db.Uuid
+  discountRequestedAt    DateTime? @map("discount_requested_at") @db.Timestamptz(6)
+  discountDecidedBy      String?   @map("discount_decided_by") @db.Uuid
+  discountDecidedAt      DateTime? @map("discount_decided_at") @db.Timestamptz(6)
+  discountDecisionNote   String?   @map("discount_decision_note")
   note             String?
   createdBy        String?                 @map("created_by") @db.Uuid
   createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -7912,6 +7931,14 @@ model RentalPayment {
   reviewedBy String?   @map("reviewed_by") @db.Uuid
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewNote String?   @map("review_note")
+  // ── AI อ่านสลิปอัตโนมัติหลังบันทึก (mirror ChairopsCashDeposit) — internal only, ห้ามหลุดไปหน้า public ──
+  ocrAmount      Int?      @map("ocr_amount")
+  ocrDate        DateTime? @map("ocr_date") @db.Date
+  ocrAccountName String?   @map("ocr_account_name")
+  ocrRefNo       String?   @map("ocr_ref_no")
+  ocrReadAt      DateTime? @map("ocr_read_at") @db.Timestamptz(6)
+  ocrFlagReason  String?   @map("ocr_flag_reason") // null = ไม่ติดธง · มีค่า = เหตุผลที่ตีธง (ซ้ำ/บัญชีไม่ตรง)
+  requiresReview Boolean   @default(false) @map("requires_review")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)

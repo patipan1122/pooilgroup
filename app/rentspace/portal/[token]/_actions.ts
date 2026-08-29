@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getTenantByPortalToken, uploadPortalSlip } from "@/lib/rentspace/portal";
+import { runRentSpaceSlipCheck } from "@/lib/rentspace/slip-check";
 
 // ทุก action ตรวจ token → ผู้เช่า ใหม่ทุกครั้ง · ไม่เชื่อ id ที่ client ส่งมาลอย ๆ
 async function tenantFromToken(token: string) {
@@ -28,7 +29,7 @@ export async function actPortalSubmitSlip(input: {
   // บิลต้องเป็นของผู้เช่าคนนี้จริง (กันเดา billId ข้ามคน)
   const bill = await prisma.rentalBill.findFirst({
     where: { id: input.billId, tenantId: tenant.id, orgId: tenant.orgId },
-    select: { id: true, contractId: true, status: true },
+    select: { id: true, projectId: true, contractId: true, status: true },
   });
   if (!bill) throw new Error("ไม่พบบิลนี้ หรือไม่ใช่บิลของคุณ");
   if (bill.status === "void") throw new Error("บิลนี้ถูกยกเลิกแล้ว");
@@ -46,9 +47,10 @@ export async function actPortalSubmitSlip(input: {
   if (dup) return { ok: true, deduped: true };
 
   const slipUrl = await uploadPortalSlip(tenant.orgId, input.slipDataUrl);
+  const paymentId = randomUUID();
   await prisma.rentalPayment.create({
     data: {
-      id: randomUUID(),
+      id: paymentId,
       orgId: tenant.orgId,
       billId: bill.id,
       contractId: bill.contractId,
@@ -61,6 +63,16 @@ export async function actPortalSubmitSlip(input: {
       source: "tenant",
       receivedBy: null,
     },
+  });
+  // AI อ่านสลิป + ตรวจซ้ำ/บัญชีผิด — ผู้เช่าอัปโหลดเองก็ตรวจเหมือนพนักงานบันทึก (CEO 2026-08-29: ตรวจทั้งสองทาง)
+  // แอดมินยังต้องกดยืนยัน (status=pending) เหมือนเดิม — ผลตรวจ AI แค่ช่วยให้เห็นธงตอนตรวจ ไม่ auto-approve เงิน
+  await runRentSpaceSlipCheck({
+    orgId: tenant.orgId,
+    projectId: bill.projectId,
+    contractId: bill.contractId,
+    paymentId,
+    slipUrl,
+    actor: { userId: tenant.id, orgId: tenant.orgId },
   });
   revalidatePath("/rentspace/payments");
   revalidatePath("/rentspace/bills");

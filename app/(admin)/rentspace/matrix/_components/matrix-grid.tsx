@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered, History } from "lucide-react";
 import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
+import { RsBadge } from "@/components/rentspace/ui";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 import { actReorderMatrixUnits } from "../../_actions";
 
@@ -219,7 +220,10 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
               <GripVertical className="rs-grip h-4 w-4 shrink-0" />
               <span className="rs-reorder-num tabular-nums">{i + 1}</span>
               <div className="min-w-0 flex-1">
-                <div style={{ fontWeight: 700, color: "var(--rs-text)", fontSize: 13 }}>{u.code}</div>
+                <div className="flex items-center gap-1.5">
+                  <span style={{ fontWeight: 700, color: "var(--rs-text)", fontSize: 13 }}>{u.code}</span>
+                  <RsBadge kind="unit" status={u.status} />
+                </div>
                 <div
                   style={{
                     fontSize: 11,
@@ -955,6 +959,7 @@ function CellDetail({
   beYear: number;
   onClose: () => void;
 }) {
+  const [slipOpen, setSlipOpen] = useState<string | null>(null);
   const remain = cell ? cell.total - cell.paid : 0;
   const rows: { label: string; value: number; strong?: boolean; danger?: boolean }[] = cell
     ? [
@@ -1075,14 +1080,34 @@ function CellDetail({
                   </div>
                   {cell.payments.length > 0 ? (
                     cell.payments.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2 text-[12.5px]">
-                        <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
-                        <span style={{ color: "var(--rs-text-2)" }}>
-                          ชำระ ({PAYMENT_METHODS[p.method] ?? p.method}) {fmtThaiDate(p.paidOn)}
-                        </span>
-                        <span className="ml-auto font-medium" style={{ color: "var(--rs-ok)" }}>
-                          {formatBaht(p.amount)}
-                        </span>
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-center gap-2 text-[12.5px]">
+                          <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
+                          <span style={{ color: "var(--rs-text-2)" }}>
+                            ชำระ ({PAYMENT_METHODS[p.method] ?? p.method}) {fmtThaiDate(p.paidOn)}
+                          </span>
+                          {p.slipUrl && (
+                            <button
+                              type="button"
+                              className="rs-chip"
+                              style={{ color: "var(--rs-brand)" }}
+                              onClick={() => setSlipOpen(p.slipUrl)}
+                            >
+                              ดูสลิป
+                            </button>
+                          )}
+                          <span className="ml-auto font-medium" style={{ color: "var(--rs-ok)" }}>
+                            {formatBaht(p.amount)}
+                          </span>
+                        </div>
+                        {p.requiresReview && (
+                          <div
+                            className="ml-5.5 rounded-md px-2 py-1 text-[11.5px]"
+                            style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+                          >
+                            ⚠ AI ตรวจพบความผิดปกติ — {p.ocrFlagReason ?? "กรุณาตรวจสอบสลิปนี้"}
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -1128,6 +1153,36 @@ function CellDetail({
           )}
         </div>
       </div>
+      {slipOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.85)" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSlipOpen(null);
+          }}
+        >
+          <button
+            type="button"
+            aria-label="ปิด"
+            className="absolute right-4 top-4 rounded-full p-2"
+            style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSlipOpen(null);
+            }}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element -- สลิปมาจาก R2 dynamic URL ไม่ผ่าน next/image domain allowlist */}
+          <img
+            src={slipOpen}
+            alt="สลิปการชำระเงิน"
+            className="max-h-[90vh] max-w-[95vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

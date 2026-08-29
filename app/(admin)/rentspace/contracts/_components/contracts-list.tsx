@@ -20,6 +20,8 @@ export type ContractRow = {
   showStatus: string; // display (expiring คำนวณแล้ว)
   tenantSigned: boolean;
   editPending: boolean;
+  /** ค่าเช่า/ส่วนลด รอ super_admin อนุมัติ (D · 2026-08-29) */
+  termsPending: boolean;
 };
 
 // ชิปกรอง — key = showStatus · label จาก CONTRACT_STATUS
@@ -151,6 +153,11 @@ export function ContractsList({ rows }: { rows: ContractRow[] }) {
                             รอแก้ไข
                           </span>
                         )}
+                        {c.termsPending && (
+                          <span className="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}>
+                            รออนุมัติค่าเช่า/ส่วนลด
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3" style={{ color: "var(--rs-text)" }}>
                         {c.unitCode}
@@ -184,6 +191,11 @@ export function ContractsList({ rows }: { rows: ContractRow[] }) {
                       {c.editPending && (
                         <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}>
                           รอแก้ไข
+                        </span>
+                      )}
+                      {c.termsPending && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}>
+                          รออนุมัติค่าเช่า/ส่วนลด
                         </span>
                       )}
                     </div>
