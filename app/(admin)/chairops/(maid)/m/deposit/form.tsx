@@ -472,10 +472,17 @@ export function BatchDepositForm({
               const absEff = Math.abs(eff);
               const overReview = absEff >= DEPOSIT_REVIEW_GATE_BAHT;
               const overNotes = absEff >= DEPOSIT_NOTES_GATE_BAHT;
+              const isShort = eff < 0;
+              // CEO 2026-08-29: only reveal the exact number (and that it's a
+              // surplus) when short — showing a maid "you're over by X" hands
+              // her a safe amount to skim next time. Notes-required / auto-
+              // review gates below still fire both ways; server enforces them
+              // regardless of what this box shows (see actions.ts BF1 MAID-04).
+              if (!isShort && !overNotes) return null;
               return (
                 <div
                   className={cn(
-                    "rounded-md border p-3 text-sm",
+                    "rounded-md border p-3 text-sm space-y-1",
                     overReview
                       ? "border-rose-300 bg-rose-50 text-rose-800"
                       : overNotes
@@ -484,21 +491,22 @@ export function BatchDepositForm({
                   )}
                   aria-live="polite"
                 >
-                  <div>
-                    ผลต่าง (ฝาก + ค่าธรรมเนียม − นับรวม):{" "}
-                    <span className="font-semibold tabular-nums">
-                      {eff >= 0 ? "+" : ""}
-                      {eff.toLocaleString()} ฿
-                    </span>
-                  </div>
+                  {isShort && (
+                    <div>
+                      ผลต่าง (ฝาก + ค่าธรรมเนียม − นับรวม):{" "}
+                      <span className="font-semibold tabular-nums">
+                        {eff.toLocaleString()} ฿
+                      </span>
+                    </div>
+                  )}
                   {overReview && (
-                    <div className="mt-1 font-medium">
+                    <div className="font-medium">
                       ⚠ ผลต่าง ≥ {DEPOSIT_REVIEW_GATE_BAHT.toLocaleString()} ฿
                       · ออฟฟิศจะตรวจรายการนี้ก่อนยืนยัน
                     </div>
                   )}
                   {!overReview && overNotes && (
-                    <div className="mt-1 font-medium">
+                    <div className="font-medium">
                       ⚠ ผลต่าง ≥ {DEPOSIT_NOTES_GATE_BAHT.toLocaleString()} ฿
                       · ต้องระบุเหตุผลในหมายเหตุ (อย่างน้อย{" "}
                       {DEPOSIT_NOTES_MIN_LEN} ตัวอักษร)
