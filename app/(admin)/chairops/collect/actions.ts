@@ -633,7 +633,7 @@ export async function batchDeposit(
         orgId: session.user.orgId,
       });
 
-      let configuredAccountName: string | null = null;
+      let configuredAccountNumber: string | null = null;
       const branchAcc = await prisma.chairopsBranch.findUnique({
         where: { id: branchId },
         select: { reconcileBankAccountId: true },
@@ -642,10 +642,14 @@ export async function batchDeposit(
         const admin = adminClient();
         const { data: acc } = await admin
           .from("ledger_bank_account")
-          .select("account_name")
+          .select("account_no")
           .eq("id", branchAcc.reconcileBankAccountId)
           .maybeSingle();
-        configuredAccountName = (acc?.account_name as string | undefined) ?? null;
+        // เลขบัญชี (account_no) แทนชื่อบัญชี — ชื่อนิติบุคคลเต็มที่ AI อ่านจากสลิป
+        // เขียนคนละรูปแบบกับชื่อย่อที่ตั้งค่าไว้ในระบบเสมอ ทำให้เช็คด้วยชื่อติดธงเท็จ
+        // เกือบทุกใบ (ยืนยันจริง 73/73 ใบ) — เลขบัญชีเป็นตัวเลขล้วน แม่นกว่ามาก
+        // (CEO 2026-08-29, ดู checkSlipFraud)
+        configuredAccountNumber = (acc?.account_no as string | undefined) ?? null;
       }
 
       const fraud = await checkSlipFraud({
@@ -653,7 +657,7 @@ export async function batchDeposit(
         branchId,
         depositId: deposit.id,
         ocr,
-        configuredAccountName,
+        configuredAccountNumber,
       });
 
       await prisma.chairopsCashDeposit.update({
@@ -662,6 +666,7 @@ export async function batchDeposit(
           ocrAmount: ocr.amount,
           ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
           ocrAccountName: ocr.accountName,
+          ocrAccountNumber: ocr.accountNumber,
           ocrRefNo: ocr.refNo,
           ocrReadAt: new Date(),
           ocrFlagReason: fraud.reason,
