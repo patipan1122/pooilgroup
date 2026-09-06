@@ -7939,6 +7939,9 @@ model RentalPayment {
   ocrAmount      Int?      @map("ocr_amount")
   ocrDate        DateTime? @map("ocr_date") @db.Date
   ocrAccountName String?   @map("ocr_account_name")
+  // เลขบัญชีปลายทาง — ใช้ตรวจ "บัญชีผิด" แทน ocrAccountName (ดู lib/rentspace/slip-check.ts,
+  // ตาม fix ของ ChairOps 2026-08-29: ชื่อนิติบุคคลเต็มเขียนคนละรูปแบบกับชื่อย่อในระบบเสมอ)
+  ocrAccountNumber String? @map("ocr_account_number")
   ocrRefNo       String?   @map("ocr_ref_no")
   ocrReadAt      DateTime? @map("ocr_read_at") @db.Timestamptz(6)
   ocrFlagReason  String?   @map("ocr_flag_reason") // null = ไม่ติดธง · มีค่า = เหตุผลที่ตีธง (ซ้ำ/บัญชีไม่ตรง)

@@ -23,6 +23,7 @@ ALTER TABLE "public"."rental_payment"
   ADD COLUMN IF NOT EXISTS "ocr_amount" integer,
   ADD COLUMN IF NOT EXISTS "ocr_date" date,
   ADD COLUMN IF NOT EXISTS "ocr_account_name" text,
+  ADD COLUMN IF NOT EXISTS "ocr_account_number" text,
   ADD COLUMN IF NOT EXISTS "ocr_ref_no" text,
   ADD COLUMN IF NOT EXISTS "ocr_read_at" timestamptz,
   ADD COLUMN IF NOT EXISTS "ocr_flag_reason" text,

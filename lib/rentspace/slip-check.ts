@@ -3,6 +3,11 @@
 // แต่เขียน dup-check ของตัวเองเพราะ checkSlipFraud เดิมผูกกับตาราง ChairopsCashDeposit
 // ตรง ๆ — RentSpace ใช้ RentalPayment แทน ขอบเขตซ้ำ = "สัญญาเดียวกัน" (เงินตามผู้เช่า
 // ไม่ใช่ตามห้อง — ผู้เช่าย้ายห้อง/มี 2 สัญญาไม่ควรชนกัน)
+//
+// เช็คบัญชีปลายทางเทียบ "เลขบัญชี" ไม่ใช่ "ชื่อบัญชี" — ตาม fix ของ ChairOps
+// (commit d3dc8b7a, 2026-08-29): ชื่อนิติบุคคลเต็มที่ AI อ่านจากสลิปเขียนคนละรูปแบบ
+// กับชื่อย่อที่ตั้งค่าไว้ในระบบเสมอ ยืนยันจริง 73/73 ใบติดธงเท็จตอนเทียบด้วยชื่อ —
+// เลขบัญชีเป็นตัวเลขล้วน AI อ่านแม่นกว่ามาก
 import { prisma } from "@/lib/prisma";
 import { adminClient } from "@/lib/db/server";
 import { extractSlipDetails, type SlipOcrDetails } from "@/lib/chairops/reconcile/slip-ocr";
@@ -10,7 +15,8 @@ import { extractSlipDetails, type SlipOcrDetails } from "@/lib/chairops/reconcil
 export { extractSlipDetails };
 export type { SlipOcrDetails };
 
-const normalizeName = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+// เทียบเฉพาะตัวเลข — ตัด "-", "x", "*", ช่องว่างทิ้ง (บางสลิปปิดบังหลักกลางด้วย x/*).
+const normalizeAcctNo = (s: string) => s.replace(/[^0-9]/g, "");
 
 export type RentSpaceSlipFraudCheck = { flagged: boolean; reason: string | null };
 
@@ -19,9 +25,9 @@ export async function checkRentSpaceSlipFraud(args: {
   contractId: string;
   paymentId: string;
   ocr: SlipOcrDetails;
-  configuredAccountName: string | null;
+  configuredAccountNumber: string | null;
 }): Promise<RentSpaceSlipFraudCheck> {
-  const { orgId, contractId, paymentId, ocr, configuredAccountName } = args;
+  const { orgId, contractId, paymentId, ocr, configuredAccountNumber } = args;
 
   if (ocr.refNo) {
     const dupRef = await prisma.rentalPayment.findFirst({
@@ -53,14 +59,14 @@ export async function checkRentSpaceSlipFraud(args: {
     }
   }
 
-  if (configuredAccountName && ocr.accountName) {
-    const a = normalizeName(configuredAccountName);
-    const b = normalizeName(ocr.accountName);
-    const matches = a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+  if (configuredAccountNumber && ocr.accountNumber) {
+    const a = normalizeAcctNo(configuredAccountNumber);
+    const b = normalizeAcctNo(ocr.accountNumber);
+    const matches = a.length >= 4 && b.length >= 4 && (a === b || a.endsWith(b) || b.endsWith(a));
     if (!matches) {
       return {
         flagged: true,
-        reason: `ชื่อบัญชีปลายทางบนสลิป ("${ocr.accountName}") ดูไม่ตรงกับบัญชีที่ตั้งค่าไว้ ("${configuredAccountName}") — กรุณาตรวจสอบว่าเงินเข้าบัญชีถูกต้อง`,
+        reason: `เลขบัญชีปลายทางบนสลิป ("${ocr.accountNumber}") ดูไม่ตรงกับบัญชีที่ตั้งค่าไว้ ("${configuredAccountNumber}") — กรุณาตรวจสอบว่าเงินเข้าบัญชีถูกต้อง`,
       };
     }
   }
@@ -68,7 +74,7 @@ export async function checkRentSpaceSlipFraud(args: {
   return { flagged: false, reason: null };
 }
 
-async function resolveConfiguredAccountName(projectId: string): Promise<string | null> {
+async function resolveConfiguredAccountNumber(projectId: string): Promise<string | null> {
   const project = await prisma.rentalProject.findUnique({
     where: { id: projectId },
     select: { reconcileBankAccountId: true },
@@ -77,10 +83,10 @@ async function resolveConfiguredAccountName(projectId: string): Promise<string |
   const admin = adminClient();
   const { data: acc } = await admin
     .from("ledger_bank_account")
-    .select("account_name")
+    .select("account_no")
     .eq("id", project.reconcileBankAccountId)
     .maybeSingle();
-  return (acc?.account_name as string | undefined) ?? null;
+  return (acc?.account_no as string | undefined) ?? null;
 }
 
 /**
@@ -99,14 +105,15 @@ export async function runRentSpaceSlipCheck(args: {
   const { orgId, projectId, contractId, paymentId, slipUrl, actor } = args;
   try {
     const ocr = await extractSlipDetails(slipUrl, actor);
-    const configuredAccountName = await resolveConfiguredAccountName(projectId);
-    const check = await checkRentSpaceSlipFraud({ orgId, contractId, paymentId, ocr, configuredAccountName });
+    const configuredAccountNumber = await resolveConfiguredAccountNumber(projectId);
+    const check = await checkRentSpaceSlipFraud({ orgId, contractId, paymentId, ocr, configuredAccountNumber });
     await prisma.rentalPayment.update({
       where: { id: paymentId },
       data: {
         ocrAmount: ocr.amount,
         ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
         ocrAccountName: ocr.accountName,
+        ocrAccountNumber: ocr.accountNumber,
         ocrRefNo: ocr.refNo,
         ocrReadAt: new Date(),
         ocrFlagReason: check.reason,
