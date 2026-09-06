@@ -44,8 +44,10 @@ export const TEA_CHANNELS: TeaChannelDef[] = [
   // CEO 2026-08-28: ธนาคารรวมยอดเป็นก้อนเดียว/วันเหมือน K Plus — itemizedSettle=false
   { code: "thaichuaithaiplus", label: "ไทยช่วยไทยพลัส", match: ["ไทยช่วยไทยพลัส"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   // CEO 2026-08-28: บิลออนไลน์ (คอลัมน์ "ช่องทาง" ในไฟล์แยกตามบิล = "Online Order" — คนละคอลัมน์กับ
-  // "ประเภทการชำระเงิน") เงินเข้าแยกยอด/รอบต่างหาก ไม่ว่าใบนั้นจะบันทึกวิธีชำระเป็นอะไรก็ตาม — ยังไม่ยืนยัน
-  // ว่าธนาคารรวมยอดแบบไหน (เหมือน Grab/Lineman/Shopee ที่ไม่ itemize อยู่แล้ว) ค่าเริ่มต้น = ไม่ itemize
+  // "ประเภทการชำระเงิน") เงินเข้าแยกยอด/รอบต่างหาก
+  // CEO 2026-08-29 (ปรับ): เฉพาะที่จ่ายด้วย Bank Transfer เท่านั้น — ถ้าบิลออนไลน์จ่ายเงินสด (เก็บปลายทาง)
+  // ให้ไปรวมกับถังเงินสดปกติแทน (ดูตรรกะจริงใน tea-parse.ts::parseBillReport ไม่ใช่แค่เช็คคอลัมน์นี้)
+  // ยังไม่ยืนยันว่าธนาคารรวมยอดแบบไหน (เหมือน Grab/Lineman/Shopee ที่ไม่ itemize อยู่แล้ว) ค่าเริ่มต้น = ไม่ itemize
   { code: "online", label: "Online Order", match: ["online order", "ออนไลน์", "online"], isSettle: true, feePercent: 0, minSettleBaht: 0 },
   { code: "card", label: "เครดิต EDC", match: ["edc"], isSettle: true, feePercent: 0.7, minSettleBaht: 0 },
   { code: "grab", label: "Grab", match: ["grab"], isSettle: true, feePercent: 18, minSettleBaht: 0 },

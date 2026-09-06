@@ -3513,6 +3513,10 @@ model ChairopsCashDeposit {
   ocrAmount      Int?
   ocrDate        DateTime?
   ocrAccountName String?
+  // CEO 2026-08-29: เลขบัญชีปลายทาง — ใช้ตรวจ "บัญชีผิด" แทน ocrAccountName เพราะชื่อ
+  // นิติบุคคลเต็มที่ AI อ่านจากสลิปเขียนคนละรูปแบบกับชื่อย่อในระบบเสมอ (ดู
+  // checkSlipFraud ใน lib/chairops/reconcile/slip-ocr.ts).
+  ocrAccountNumber String?
   // CEO 2026-08-18: เลขที่รายการบนสลิป (ถ้าอ่านได้) — สัญญาณตรวจสลิปซ้ำที่แม่นกว่า
   // วันที่+ยอด (เลขตรงกันเป๊ะ = มั่นใจสูงว่าเป็นสลิปเดิม/ใบเดียวกัน) ดู checkSlipFraud.
   ocrRefNo       String?

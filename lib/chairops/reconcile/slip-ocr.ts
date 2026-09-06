@@ -30,9 +30,21 @@ export type SlipOcrDetails = {
   // อื่น = สัญญาณสลิปซ้ำที่มั่นใจสูงกว่าวันที่+ยอด (สลิป 2 ใบคนละรายการจริงแทบ
   // เป็นไปไม่ได้ที่จะมีเลขรายการตรงกัน ต่างจากยอด+วันที่ที่บังเอิญตรงกันได้).
   refNo: string | null;
+  // CEO 2026-08-29: เลขบัญชีปลายทาง — แทนที่ accountName ในการตรวจ "บัญชีผิด"
+  // (checkSlipFraud) เพราะชื่อบัญชีที่ AI อ่านได้จากสลิป (ชื่อเต็มนิติบุคคล) กับชื่อ
+  // ย่อที่ตั้งค่าไว้ในระบบ เขียนคนละรูปแบบกันเสมอ (เช่น "บจก.เจพีซิ้ง กรู๊ป" vs
+  // "บริษัท เจพีซิงค์ กรุ๊ป จำกัด") ทำให้ติดธงเท็จแทบทุกใบ — เลขบัญชีเป็นตัวเลขล้วน
+  // AI อ่านแม่นกว่าชื่อไทยทับศัพท์เยอะ.
+  accountNumber: string | null;
 };
 
-const EMPTY: SlipOcrDetails = { amount: null, date: null, accountName: null, refNo: null };
+const EMPTY: SlipOcrDetails = {
+  amount: null,
+  date: null,
+  accountName: null,
+  refNo: null,
+  accountNumber: null,
+};
 
 async function fetchImageAsBase64(
   url: string,
@@ -53,14 +65,15 @@ async function fetchImageAsBase64(
   }
 }
 
-const SLIP_DETAILS_PROMPT = `นี่คือสลิปธนาคารไทย กรุณาอ่าน 4 อย่าง:
+const SLIP_DETAILS_PROMPT = `นี่คือสลิปธนาคารไทย กรุณาอ่าน 5 อย่าง:
 (1) ยอดเงินที่โอน/ฝาก (ไม่ใช่ยอดคงเหลือ)
 (2) วันที่ทำรายการบนสลิป แปลงเป็น YYYY-MM-DD
 (3) ชื่อบัญชีปลายทาง/ผู้รับโอนที่พิมพ์อยู่บนสลิป
 (4) เลขที่รายการ/เลขอ้างอิงธุรกรรม (transaction ID / เลขที่รายการ / Ref no. — ถ้ามีพิมพ์อยู่บนสลิป)
+(5) เลขบัญชีปลายทาง/ผู้รับโอน (destination account number — คัดลอกตัวเลขและขีดตามที่เห็นเป๊ะ แม้บางหลักจะถูกปิดบังด้วย x หรือ * ก็ใส่มาตามนั้น)
 
 ตอบ JSON เท่านั้น ไม่มีข้อความอื่น ไม่มี markdown:
-{"amount": <number|null>, "date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null, "refNo": "<string>"|null}
+{"amount": <number|null>, "date": "<YYYY-MM-DD>"|null, "accountName": "<string>"|null, "refNo": "<string>"|null, "accountNumber": "<string>"|null}
 
 ถ้าฟิลด์ไหนอ่านไม่ออก ให้คืน null ห้ามเดา`;
 
@@ -125,7 +138,13 @@ export async function extractSlipDetails(
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return EMPTY;
 
-    let parsed: { amount?: unknown; date?: unknown; accountName?: unknown; refNo?: unknown };
+    let parsed: {
+      amount?: unknown;
+      date?: unknown;
+      accountName?: unknown;
+      refNo?: unknown;
+      accountNumber?: unknown;
+    };
     try {
       parsed = JSON.parse(match[0]);
     } catch {
@@ -153,7 +172,12 @@ export async function extractSlipDetails(
         ? parsed.refNo.trim().slice(0, 100)
         : null;
 
-    return { amount, date, accountName, refNo };
+    const accountNumber =
+      typeof parsed.accountNumber === "string" && parsed.accountNumber.trim().length > 0
+        ? parsed.accountNumber.trim().slice(0, 100)
+        : null;
+
+    return { amount, date, accountName, refNo, accountNumber };
   } catch (e) {
     console.error("[chairops] extractSlipDetails failed (non-fatal)", e);
     return EMPTY;
@@ -162,7 +186,8 @@ export async function extractSlipDetails(
 
 export type SlipFraudCheck = { flagged: boolean; reason: string | null };
 
-const normalizeName = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+// เทียบเฉพาะตัวเลข — ตัด "-", "x", "*", ช่องว่างทิ้ง (บางสลิปปิดบังหลักกลางด้วย x/*).
+const normalizeAcctNo = (s: string) => s.replace(/[^0-9]/g, "");
 
 /** ตรวจสลิปซ้ำ (ในสาขาเดียวกันเท่านั้น — CEO 2026-08-18: "ให้จับเลขในสาขาเดียวกันที่
  *  พนักงานคนนั้นดูแล เพื่อที่จะได้ไม่ต้องเช็คเยอะ") + บัญชีปลายทางไม่ตรงกับที่สาขา
@@ -180,9 +205,9 @@ export async function checkSlipFraud(args: {
   branchId: string;
   depositId: string;
   ocr: SlipOcrDetails;
-  configuredAccountName: string | null;
+  configuredAccountNumber: string | null;
 }): Promise<SlipFraudCheck> {
-  const { orgId, branchId, depositId, ocr, configuredAccountName } = args;
+  const { orgId, branchId, depositId, ocr, configuredAccountNumber } = args;
 
   if (ocr.refNo) {
     const dupRef = await prisma.chairopsCashDeposit.findFirst({
@@ -214,14 +239,18 @@ export async function checkSlipFraud(args: {
     }
   }
 
-  if (configuredAccountName && ocr.accountName) {
-    const a = normalizeName(configuredAccountName);
-    const b = normalizeName(ocr.accountName);
-    const matches = a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+  // CEO 2026-08-29: เทียบ "เลขบัญชี" แทน "ชื่อบัญชี" — ชื่อที่ AI อ่านจากสลิป (ชื่อ
+  // นิติบุคคลเต็ม) กับชื่อย่อที่ตั้งค่าไว้ในระบบ เขียนคนละรูปแบบกันเสมอ ทำให้เช็ค
+  // ด้วยชื่อติดธงเท็จเกือบทุกใบ (พบจากการตรวจสอบจริง 73/73 ใบที่เคยติดธัง). เลขบัญชี
+  // เป็นตัวเลขล้วน อ่านแม่นกว่ามาก — เทียบแบบ suffix เผื่อสลิปปิดบังหลักกลาง.
+  if (configuredAccountNumber && ocr.accountNumber) {
+    const a = normalizeAcctNo(configuredAccountNumber);
+    const b = normalizeAcctNo(ocr.accountNumber);
+    const matches = a.length >= 4 && b.length >= 4 && (a === b || a.endsWith(b) || b.endsWith(a));
     if (!matches) {
       return {
         flagged: true,
-        reason: `ชื่อบัญชีปลายทางบนสลิป ("${ocr.accountName}") ดูไม่ตรงกับบัญชีที่ตั้งค่าไว้ ("${configuredAccountName}") — กรุณาตรวจสอบว่าเงินเข้าบัญชีถูกต้อง`,
+        reason: `เลขบัญชีปลายทางบนสลิป ("${ocr.accountNumber}") ดูไม่ตรงกับบัญชีที่ตั้งค่าไว้ ("${configuredAccountNumber}") — กรุณาตรวจสอบว่าเงินเข้าบัญชีถูกต้อง`,
       };
     }
   }
