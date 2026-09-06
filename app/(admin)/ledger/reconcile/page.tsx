@@ -40,6 +40,7 @@ export default async function ReconcilePage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

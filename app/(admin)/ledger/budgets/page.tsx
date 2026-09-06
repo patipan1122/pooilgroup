@@ -42,6 +42,7 @@ export default async function BudgetsPage({
     "org_admin",
     "admin",
     "area_manager",
+    "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

@@ -43,7 +43,7 @@ export default async function BankReconHubPage({
   searchParams: Promise<{ company?: string; branch?: string; period?: string }>;
 }) {
   const session = await requireRole(
-    "super_admin", "org_admin", "admin", "area_manager", "viewer",
+    "super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

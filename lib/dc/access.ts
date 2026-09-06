@@ -12,7 +12,7 @@
 
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { requireSession, type Session } from "@/lib/auth/session";
 
 export const DC_WAREHOUSE_COOKIE = "dc_wh";
@@ -41,7 +41,7 @@ export async function getAllowedWarehouses(session: Session): Promise<DcWarehous
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     select: { id: true, code: true, name: true, location: true, isDefault: true },
   });
-  if (isAdminTier(session.user.role)) return all;
+  if (isProgramAdminTier(session.user.role)) return all;
 
   const bindings = await prisma.dcWarehouseUser.findMany({
     where: { orgId, userId: session.user.id, isActive: true },
@@ -70,7 +70,7 @@ export async function getDcContext(session?: Session): Promise<DcContext> {
 
   return {
     session: s,
-    isAdmin: isAdminTier(s.user.role),
+    isAdmin: isProgramAdminTier(s.user.role),
     warehouses,
     activeWarehouseId: active?.id ?? null,
     activeWarehouse: active,
@@ -79,7 +79,7 @@ export async function getDcContext(session?: Session): Promise<DcContext> {
 
 /** True if user may MANAGE (back-office) the given warehouse. */
 export async function isWarehouseManager(session: Session, warehouseId: string): Promise<boolean> {
-  if (isAdminTier(session.user.role)) return true;
+  if (isProgramAdminTier(session.user.role)) return true;
   const row = await prisma.dcWarehouseUser.findFirst({
     where: { orgId: session.user.org_id, userId: session.user.id, warehouseId, role: "MANAGER", isActive: true },
     select: { id: true },

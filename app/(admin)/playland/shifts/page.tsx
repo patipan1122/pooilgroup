@@ -30,7 +30,7 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
     );
   }
 
-  const isManager = ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"].includes(session.user.role);
+  const isManager = ["super_admin", "org_admin", "admin", "program_admin", "area_manager", "branch_manager"].includes(session.user.role);
   const [openShift, recent] = await Promise.all([
     prisma.playlandShift.findFirst({
       where: { orgId, branchId, status: "OPEN", ...(isManager ? {} : { cashierUserId: session.user.id }) },

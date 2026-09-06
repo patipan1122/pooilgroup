@@ -53,6 +53,7 @@ export default async function CategoryLedgerPage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
 
   const { id: categoryId } = await params;

@@ -13,7 +13,7 @@ import { sendPoDocsToAp, type SendPoToApInput, type SendPoToApResult } from "@/l
 
 // รีเฟรช: ดึง PO/AP ล่าสุดจาก TRCloud มาเก็บ snapshot (อ่านล้วนจาก TRCloud + เขียนแค่ตารางสำเนาเรา).
 export async function actSyncTrcloudDocs(): Promise<TrcloudDocSyncResult> {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const res = await syncTrcloudDocs(session.user.org_id);
   revalidatePath("/ledger/trcloud-docs");
   return res;
@@ -22,7 +22,7 @@ export async function actSyncTrcloudDocs(): Promise<TrcloudDocSyncResult> {
 // รีเฟรชทีละหน้า — ให้หน้าเว็บโชว์ "เปอร์เซ็นต์การโหลด" (โหลดถึงหน้าไหนแล้ว) ระหว่างดึงจาก TRCloud.
 //   client เรียกซ้ำ start=0,100,200… ต่อชนิด (AP ก่อน แล้ว PO) จนกว่า hasMore=false หรือชนเพดานหน้า.
 export async function actSyncTrcloudDocsPage(kind: DocKind, start: number): Promise<TrcloudSyncPageResult> {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   return syncTrcloudDocsPage(session.user.org_id, kind, start);
 }
 
@@ -33,7 +33,7 @@ export async function actReadTrcloudDocDetail(
   trcloudId: string,
   refNo: string | null,
 ): Promise<TrcloudDocDetail> {
-  await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   return readTrcloudDocDetail(kind, trcloudId, refNo);
 }
 
@@ -42,7 +42,7 @@ export async function actReadTrcloudDocDetail(
 export async function actSendPoDocsToAp(
   items: SendPoToApInput[],
 ): Promise<{ ok: boolean; results: SendPoToApResult[]; error?: string }> {
-  const session = await requireRole("super_admin", "org_admin", "admin");
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!Array.isArray(items) || items.length === 0) return { ok: false, results: [], error: "ไม่มีใบที่เลือก" };
   if (items.length > 50) return { ok: false, results: [], error: "ส่งได้ครั้งละไม่เกิน 50 ใบ" };
   const results = await sendPoDocsToAp(session.user.org_id, items);

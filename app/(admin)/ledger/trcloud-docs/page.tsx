@@ -36,7 +36,7 @@ export default async function TrcloudDocsPage({
   }>;
 }) {
   // financial-view tier (เห็นยอด/ผู้ขาย/ทุกนิติบุคคล) — ตรงกับหน้ารายจ่าย
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const sp = await searchParams;
 
   const kind: TrcloudDocKind = sp.kind === "PO" ? "PO" : "AP";

@@ -30,6 +30,7 @@ export default async function ProjectsPage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

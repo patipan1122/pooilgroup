@@ -57,7 +57,7 @@ export default async function InputVatReportPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string; m?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 

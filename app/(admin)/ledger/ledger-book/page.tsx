@@ -99,6 +99,7 @@ export default async function LedgerBookPage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, {

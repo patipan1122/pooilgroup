@@ -37,6 +37,7 @@ export default async function ProjectDetailPage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const { id } = await params;
   const sp = await searchParams;

@@ -28,6 +28,7 @@ export default async function LedgerPayPage({
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const req = await getPaymentRequestDetail(session.user.org_id, requestId);
   const acct = req?.payeeAcctNo ?? req?.payeePromptpay ?? null;

@@ -37,15 +37,18 @@ export default async function LedgerHomePage({
 }) {
   // Page-level role gate (same financial-view tier as the dashboard nav policy).
   // The home KPI tiles surface company-wide financials (posted total, confirmed
-  // count, spend-by-category) → front-line roles (staff/driver/branch_manager/
-  // program_admin) must not see them. Layout assertModuleEnabled only checks the
-  // module grant, not the role, so we gate here like dashboard/settings/budgets.
+  // count, spend-by-category) → front-line roles (staff/driver/branch_manager)
+  // must not see them. Layout assertModuleEnabled only checks the module grant,
+  // not the role, so we gate here like dashboard/settings/budgets.
+  // program_admin included (2026-09-06 audit) — grant-scoped module admin, not
+  // a front-line role; must see this page once granted the ledger module.
   const session = await requireRole(
     "super_admin",
     "org_admin",
     "admin",
     "area_manager",
     "viewer",
+    "program_admin",
   );
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);

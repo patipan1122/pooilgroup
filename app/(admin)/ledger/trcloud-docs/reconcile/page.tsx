@@ -17,7 +17,7 @@ function fmtDate(iso: string | null): string {
 }
 
 export default async function TrcloudReconcilePage() {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const data = await getTrcloudReconcile(session.user.org_id);
 
   const cards = [

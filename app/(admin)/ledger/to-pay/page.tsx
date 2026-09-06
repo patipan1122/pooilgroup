@@ -16,7 +16,7 @@ export default async function ToPayPage({
 }: {
   searchParams: Promise<{ company?: string; branch?: string }>;
 }) {
-  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer");
+  const session = await requireRole("super_admin", "org_admin", "admin", "area_manager", "viewer", "program_admin");
   const sp = await searchParams;
   const scope = await resolveScope(session.user.org_id, sp);
 
