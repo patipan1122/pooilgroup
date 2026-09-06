@@ -135,6 +135,10 @@ export type AuditAction =
   | "RECRUIT_AI_DRAFTED"
   | "RECRUIT_BLACKLIST_ADDED"
   | "RECRUIT_BLACKLIST_REMOVED"
+  // Self-serve teammate invite scoped to Recruit only (CEO 2026-09-06 carve-out
+  // of the org-wide "admin appointment = super_admin only" lock — see
+  // app/(admin)/recruit/settings/team-actions.ts).
+  | "RECRUIT_TEAM_INVITED"
   // Recruit v2 (Phase B-full per design canvas)
   | "RECRUIT_INTERVIEW_SCHEDULED"
   | "RECRUIT_INTERVIEW_STATUS_CHANGED"

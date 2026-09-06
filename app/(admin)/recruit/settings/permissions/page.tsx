@@ -6,9 +6,11 @@
 
 import { requireSession } from "@/lib/auth/session";
 import { requireRecruitAdmin } from "@/lib/recruit/role-guard";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import { Section } from "@/components/ui/section";
 import { Shield, Check, X } from "lucide-react";
+import { InviteTeammateCard } from "./invite-teammate-card";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,7 @@ const CAPABILITIES = [
 export default async function PermissionsPage() {
   const session = await requireSession();
   requireRecruitAdmin(session.user.role);
+  const canInvite = await userIsModuleAdmin(session.user, "recruit");
 
   // Count users per role
   const userCounts = await prisma.user.groupBy({
@@ -60,14 +63,17 @@ export default async function PermissionsPage() {
         title="สิทธิการใช้งาน"
         description="แสดงว่า role ไหนทำอะไรได้ใน Recruit module · แก้ไข role assignment ที่ /users"
       >
+        {canInvite && <InviteTeammateCard />}
+
         <div className="rounded-2xl bg-gradient-to-br from-[var(--color-brand-50)] to-white border border-[var(--color-brand-200)] p-4 mb-6 flex items-center gap-3">
           <Shield className="size-5 text-[var(--color-brand-700)] shrink-0" />
           <div className="flex-1 text-xs text-zinc-700 leading-relaxed">
-            <b className="text-[var(--color-brand-900)]">หมายเหตุ:</b> สิทธิ์เป็น read-only ที่นี่ ·
-            ปรับ role ของแต่ละคนได้ที่หน้า{" "}
+            <b className="text-[var(--color-brand-900)]">หมายเหตุ:</b> ตารางด้านล่างเป็น read-only ·
+            ปรับ role แบบละเอียด (สาขา/แผนก) ได้ที่หน้า{" "}
             <a href="/users" className="text-[var(--color-brand-700)] font-bold underline">
               /users
-            </a>
+            </a>{" "}
+            (Super Admin เท่านั้น)
             {" · "}
             ทุก action ที่จำกัด role จะถูก enforce ที่ server (role-guard.ts)
           </div>
