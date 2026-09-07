@@ -32,7 +32,19 @@
 - query ตัวที่เคยพังจริง (SELECT คอลัมน์ใหม่จาก `rental_contract` + `rental_payment`) → อ่านได้ปกติ
 - แถวเดิมได้ค่า default ถูกต้อง (`rent_approval_status='none'` · `requires_review=false`) = ไม่มีสัญญา/การชำระเดิมเสียหาย และไม่มีอะไรค้างสถานะ "รออนุมัติ" โดยไม่ตั้งใจ
 
-⚠️ **ยังไม่ได้ merge เข้า `setup`** — ตัวแก้ guard อยู่บน branch `claude/fix-schema-guard-ssl-2026-09-07` · การ merge เข้า setup = deploy production รอ CEO เคาะแยก
+**🚀 DEPLOYED LIVE `ce7ecf45`** (2026-09-07 · CEO อนุมัติ "โอเครดำเนินได้เลย") — merge เข้า `setup` แบบ fast-forward `fc05c59b..ce7ecf45`
+
+**หลักฐานว่ายามฟื้นจริง** — build log ของ deploy นี้ ขึ้นบรรทัดที่ไม่เคยขึ้นมาตลอด 3 เดือน:
+```
+✓ [check-schema-applied] DB schema is up to date — every model column exists. (mode: enforce)
+```
+= ต่อ DB **ติด** (ไม่ใช่ `skipped` แบบเดิม) · โหมด **enforce** = บล็อก deploy ได้จริงถ้าเจอ drift · Deployment Ready · smoke 7 route ก่อน/หลังตรงกันเป๊ะ
+
+**/verify ครบ 5 ด่านก่อน push:** tsc 0 error · eslint ไฟล์ที่แก้สะอาด (345 error ที่เหลือเป็นของเดิมในไฟล์ที่ไม่ได้แตะ) · `next build` ผ่าน 692 routes · ไม่มีไฟล์ค้าง · smoke ผ่าน
+
+🔑 **escape hatch** — ถ้าวันไหน guard พลาดจนบล็อก deploy: ตั้ง env `SCHEMA_GUARD=warn` (หรือ `off`) บน Vercel → deploy ไหลต่อทันที ไม่ต้อง revert
+
+📝 **หมายเหตุที่เจอระหว่างทาง (ยังไม่แก้ ไม่กระทบตอนนี้):** [`prisma.config.ts`](prisma.config.ts) ใช้ `DIRECT_URL ?? DATABASE_URL` — `??` ไม่ fallback เมื่อค่าเป็น string ว่าง (ต่างจาก `||` ที่ guard ใช้) ถ้าวันไหน `DIRECT_URL` ถูกตั้งเป็นค่าว่าง คำสั่ง prisma CLI จะได้ url ว่างแทนที่จะถอยไปใช้ `DATABASE_URL`
 
 ---
 
