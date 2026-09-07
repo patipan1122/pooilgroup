@@ -1,6 +1,39 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-08-29 (CashHub Tea: บิลออนไลน์ที่จ่ายเงินสดไปรวมกับถังเงินสด เฉพาะที่จ่าย Bank Transfer ถึงแยกถัง Online Order — DEPLOYED · ChairOps เช็คลิสต์ตัวเลข — DEPLOYED)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-07 (🔴 RentSpace ล่มทั้งโปรแกรม — migration ไม่ได้ apply · รอ CEO รัน 1 คำสั่ง)
+
+## 🔴🏬 RentSpace ล่มทั้งโปรแกรม — "This page couldn't load" (2026-09-07 · ⏳ รอ CEO รัน 1 คำสั่ง)
+
+**อาการ:** CEO เปิด `pooilgroup.com/rentspace` แล้วเจอ "This page couldn't load · A server error occurred" (ERROR 3904789939) — ทุกหน้าของ RentSpace ไม่ใช่หน้าเดียว. โปรแกรมอื่นปกติทั้งหมด
+
+**สาเหตุจริง (2 ชั้น):**
+
+1. **migration ไม่เคย apply เข้า prod** — `prisma/migrations/manual/20260829_rentspace_terms_approval_and_slip_ocr.sql` ถูก commit พร้อมโค้ดตั้งแต่ 2026-08-29 และตัว commit เขียนเตือนตัวเองไว้ด้วยซ้ำ ("Migration required before deploy" · commit `0007c53b` 2026-09-06 ย้ำอีกว่า "not yet applied to prod") แต่ไม่มีใครรันจริง. โค้ดขึ้น production 2026-09-06 16:02 → **RentSpace ล่มตั้งแต่ตอนนั้น**
+   กลไก: Prisma เวลา `include` โดยไม่ระบุ `select` จะ **SELECT ทุกคอลัมน์**. [`listUnitsWithState`](lib/rentspace/data.ts) ใช้ `include: { tenant: true }` บน contract → SQL อ้างถึง 22 คอลัมน์ที่ยังไม่มีจริงใน DB → query พังทุกครั้ง → ทุกหน้าที่แตะ `rental_contract`/`rental_payment` ตาย
+   ยืนยันด้วย `check-schema-applied.mjs` รันกับ prod DB จริง: ขาด **22 คอลัมน์** (`rental_contract` 14 · `rental_payment` 8) และ **ขาดแค่ 2 ตารางนี้เท่านั้นทั้งเรโป** (สแกนครบ 3,879 คอลัมน์ · 289 models) → โปรแกรมอื่นไม่โดน
+
+2. **🚨 ตัวกันพลาดตายมาตั้งแต่วันแรก** — `scripts/check-schema-applied.mjs` (สร้าง 2026-06-19 หลัง ChairOps ล่มด้วยสาเหตุเดียวกันเป๊ะ) ถูกออกแบบมาให้ **บล็อก deploy** เมื่อ schema ล้ำหน้า DB. Build log ของ deploy จริงเขียนว่า:
+   `[check-schema-applied] could not connect to DB (SELF_SIGNED_CERT_IN_CHAIN) — skipped, NOT blocking the build.`
+   → ต่อ DB ไม่ติดบน Vercel **ทุก build** เลยข้ามตัวเองเงียบๆ มาตลอด 3 เดือน. เหตุผล 2 ข้อ:
+   - `new pg.Client({ connectionString, ssl })` — pg ทำ `Object.assign({}, config, parse(connectionString))` ([pg/lib/connection-parameters.js:60](node_modules/pg/lib/connection-parameters.js#L60)) → `sslmode=require` ใน URL **ทับ** `ssl: { rejectUnauthorized: false }` ที่ script ส่งไป → Supabase ใช้ cert self-signed → connect พังตลอด
+   - บนเครื่อง CEO มันดู "ผ่าน" เพราะ `.env.local` ตั้ง `NODE_TLS_REJECT_UNAUTHORIZED=0` ไว้ — Vercel ไม่มีตัวนี้ (**guard ที่เขียวเฉพาะบนเครื่องตัวเอง = ไม่มี guard**)
+   - connect fail ทุกแบบถูกนับเป็น "ชั่วคราว" แล้ว exit 0 → ความผิดพลาดถาวร (TLS/รหัสผ่าน) ก็เงียบเหมือนกัน
+
+**FIX (commit `da16d08f` · branch `claude/fix-schema-guard-ssl-2026-09-07` · ยังไม่ push):** ตัด ssl params ออกจาก URL ก่อนส่งให้ pg เพื่อให้ค่า ssl ที่เราตั้งมีผลจริง + แยก error ชั่วคราว (ENOTFOUND/ETIMEDOUT → ข้ามได้ ตามเจตนาเดิมที่ไม่อยากให้เน็ตกระตุกทำ deploy พัง) ออกจาก error ถาวร (TLS/รหัสผ่าน/DB หาย → **บล็อก build**)
+
+**Verify (รันจริงกับ prod DB โดยถอด TLS bypass ออก = จำลอง Vercel):** guard ต่อติดแล้วและฟ้อง 22 คอลัมน์ที่ขาดถูกต้อง · `SCHEMA_GUARD=enforce` → exit 1 · host มั่ว (ENOTFOUND) → ข้าม exit 0 ตามเดิม · รหัสผ่านผิด (28P01) → บล็อก · `node --check` ผ่าน
+
+**⏳ ค้างรอ CEO — 2 คำสั่ง (classifier บล็อกไม่ให้ผมรันเอง):**
+```bash
+# 1) ทำให้ RentSpace กลับมาใช้ได้ทันที (ไม่ต้อง deploy ใหม่ · ADD COLUMN IF NOT EXISTS ล้วน รันซ้ำได้)
+cd ~/Code/pooilgroup/legacy/pooilgroup-web
+npx prisma db execute --file /private/tmp/pg-wt-schemaguard/prisma/migrations/manual/20260829_rentspace_terms_approval_and_slip_ocr.sql
+
+# 2) push ตัวกันพลาดที่แก้แล้ว (กันไม่ให้เกิดซ้ำกับโปรแกรมอื่น)
+git -C /private/tmp/pg-wt-schemaguard push -u origin claude/fix-schema-guard-ssl-2026-09-07
+```
+
+---
 
 ## 🧋💵✅ CashHub Tea — บิลออนไลน์จ่ายเงินสด ต้องไปรวมถังเงินสด ไม่ใช่ถัง Online Order (2026-08-29 · DEPLOYED `0f8dfd84`)
 
