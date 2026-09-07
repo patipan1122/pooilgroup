@@ -2377,8 +2377,19 @@ export async function getReconcilePeriods(args: {
         if (cashUp === null && coinUp === null) continue; // device silent in window
         const cashLo = t0 !== null ? meterAsOf(cs, t0) : 0;
         const coinLo = t0 !== null ? meterAsOf(co, t0) : 0;
-        const cd = (cashUp ?? cashLo ?? 0) - (cashLo ?? 0);
-        const kd = (coinUp ?? coinLo ?? 0) - (coinLo ?? 0);
+        // CEO fix 2026-09-07 · a NON-opening round (t0 !== null) with no baseline
+        // reading for THIS device's meter (cashLo/coinLo === null) means the
+        // device's true last reading before t0 predates loadMeterSeries' windowed
+        // lookback (`earliest`) — same unknown-backlog situation isOpeningRound
+        // guards against, but per-device instead of per-branch. Treating that
+        // missing baseline as 0 fabricates the device's ENTIRE lifetime odometer
+        // as this round's sales (e.g. robinsonกาญ 07-22→07-29: ควรได้ 52,530 → ~4,690
+        // after excluding). Exclude that meter's contribution this round instead of
+        // assuming a zero baseline — mirrors isOpeningRound, applied per device/meter.
+        const cashKnown = t0 === null || cashLo !== null;
+        const coinKnown = t0 === null || coinLo !== null;
+        const cd = cashKnown ? (cashUp ?? cashLo ?? 0) - (cashLo ?? 0) : 0;
+        const kd = coinKnown ? (coinUp ?? coinLo ?? 0) - (coinLo ?? 0) : 0;
         if (cd < 0 || kd < 0) continue; // meter reset → skip device (don't corrupt Σ)
         sum += cd + coinBahtOf(kd);
         any = true;
