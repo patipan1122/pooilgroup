@@ -1,8 +1,8 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-07 (🔴 RentSpace ล่มทั้งโปรแกรม — migration ไม่ได้ apply · รอ CEO รัน 1 คำสั่ง)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-07 (✅ RentSpace กลับมาแล้ว — migration apply เข้า prod เรียบร้อย · ตัวกันพลาดที่ตายเงียบ 3 เดือนซ่อมแล้ว)
 
-## 🔴🏬 RentSpace ล่มทั้งโปรแกรม — "This page couldn't load" (2026-09-07 · ⏳ รอ CEO รัน 1 คำสั่ง)
+## ✅🏬 RentSpace ล่มทั้งโปรแกรม — "This page couldn't load" (2026-09-07 · **FIXED** · migration APPLIED เข้า prod แล้ว)
 
 **อาการ:** CEO เปิด `pooilgroup.com/rentspace` แล้วเจอ "This page couldn't load · A server error occurred" (ERROR 3904789939) — ทุกหน้าของ RentSpace ไม่ใช่หน้าเดียว. โปรแกรมอื่นปกติทั้งหมด
 
@@ -23,15 +23,16 @@
 
 **Verify (รันจริงกับ prod DB โดยถอด TLS bypass ออก = จำลอง Vercel):** guard ต่อติดแล้วและฟ้อง 22 คอลัมน์ที่ขาดถูกต้อง · `SCHEMA_GUARD=enforce` → exit 1 · host มั่ว (ENOTFOUND) → ข้าม exit 0 ตามเดิม · รหัสผ่านผิด (28P01) → บล็อก · `node --check` ผ่าน
 
-**⏳ ค้างรอ CEO — 2 คำสั่ง (classifier บล็อกไม่ให้ผมรันเอง):**
-```bash
-# 1) ทำให้ RentSpace กลับมาใช้ได้ทันที (ไม่ต้อง deploy ใหม่ · ADD COLUMN IF NOT EXISTS ล้วน รันซ้ำได้)
-cd ~/Code/pooilgroup/legacy/pooilgroup-web
-npx prisma db execute --file /private/tmp/pg-wt-schemaguard/prisma/migrations/manual/20260829_rentspace_terms_approval_and_slip_ocr.sql
+**✅ APPLIED เข้า prod แล้ว (2026-09-07 · CEO อนุมัติสด "จัดการให้เลย"):**
+`prisma db execute --file prisma/migrations/manual/20260829_rentspace_terms_approval_and_slip_ocr.sql` → `Script executed successfully.`
+ไม่ต้อง deploy ใหม่ — โค้ดอยู่บน production อยู่แล้ว รอแค่คอลัมน์
 
-# 2) push ตัวกันพลาดที่แก้แล้ว (กันไม่ให้เกิดซ้ำกับโปรแกรมอื่น)
-git -C /private/tmp/pg-wt-schemaguard push -u origin claude/fix-schema-guard-ssl-2026-09-07
-```
+**ยืนยันหลัง apply:**
+- `check-schema-applied.mjs` → **0 drift** ทั้งเรโป (3,879 คอลัมน์ · 289 models ครบหมด)
+- query ตัวที่เคยพังจริง (SELECT คอลัมน์ใหม่จาก `rental_contract` + `rental_payment`) → อ่านได้ปกติ
+- แถวเดิมได้ค่า default ถูกต้อง (`rent_approval_status='none'` · `requires_review=false`) = ไม่มีสัญญา/การชำระเดิมเสียหาย และไม่มีอะไรค้างสถานะ "รออนุมัติ" โดยไม่ตั้งใจ
+
+⚠️ **ยังไม่ได้ merge เข้า `setup`** — ตัวแก้ guard อยู่บน branch `claude/fix-schema-guard-ssl-2026-09-07` · การ merge เข้า setup = deploy production รอ CEO เคาะแยก
 
 ---
 
