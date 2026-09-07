@@ -140,11 +140,48 @@ let pg;
 try { ({ default: pg } = await import("pg")); }
 catch { console.log(`${C.yellow}[check-schema-applied] 'pg' not installed — skipped.${C.reset}`); process.exit(0); }
 
-const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false }, statement_timeout: 20000 });
+// `new pg.Client({ connectionString, ssl })` does NOT let our ssl win: pg does
+// `Object.assign({}, config, parse(connectionString))` (pg/lib/connection-parameters.js),
+// so whatever `sslmode=` is in the URL OVERWRITES the ssl object we pass. Supabase URLs
+// carry `sslmode=require`, which pg-connection-string turns into `ssl: {}` (= verify the
+// chain) — and Supabase serves a self-signed chain, so every connect died with
+// SELF_SIGNED_CERT_IN_CHAIN and this guard skipped itself on EVERY Vercel build from the
+// day it was added. It only ever "worked" locally because .env.local sets
+// NODE_TLS_REJECT_UNAUTHORIZED=0, which Vercel does not have. Strip the ssl params out of
+// the URL so our explicit ssl config is the one that actually takes effect.
+let connectionString = url;
+try {
+  const u = new URL(url);
+  for (const p of ["sslmode", "ssl", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) {
+    u.searchParams.delete(p);
+  }
+  connectionString = u.toString();
+} catch { /* not a parseable URL — hand it to pg as-is */ }
+
+const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: false }, statement_timeout: 20000 });
+
+// A connect failure is only safe to ignore when it is TRANSIENT (a blip during one build).
+// A misconfiguration — bad TLS, bad credentials, missing database — fails identically on
+// every future build, so "skip" there means the guard is permanently dead while still
+// printing a reassuring line. That is exactly how the unapplied RentSpace migration
+// (2026-09-06) reached production and took the whole module down. Transient → skip;
+// deterministic → treat as a guard failure and block, same as real drift.
+const TRANSIENT = new Set([
+  "ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "EPIPE", "EHOSTUNREACH",
+]);
 try {
   await client.connect();
 } catch (err) {
-  console.log(`${C.yellow}[check-schema-applied] could not connect to DB (${err.code || err.message}) — skipped, NOT blocking the build.${C.reset}`);
+  const code = err.code || err.message;
+  if (TRANSIENT.has(err.code)) {
+    console.log(`${C.yellow}[check-schema-applied] could not connect to DB (${code}) — transient, skipped, NOT blocking the build.${C.reset}`);
+    process.exit(0);
+  }
+  console.log(`\n${C.red}${C.bold}✗ [check-schema-applied] cannot connect to the DB: ${code}${C.reset}`);
+  console.log(`  ${C.dim}This is a configuration error, not a blip — it will fail on every build, leaving`);
+  console.log(`  the forgotten-migration guard permanently blind. Fix the connection, do not skip it.${C.reset}`);
+  if (mode === "enforce") process.exit(1);
+  console.log(`${C.yellow}⚠ WARN-only mode (not on Vercel) — would BLOCK on a real deploy.${C.reset}`);
   process.exit(0);
 }
 
