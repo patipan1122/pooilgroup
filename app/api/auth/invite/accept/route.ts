@@ -74,13 +74,18 @@ export async function POST(req: NextRequest) {
   // Supabase doesn't allow specifying id directly, so:
   //   1) delete the pending users row (preserve user_branches via FK behavior)
   //   2) createUser → get new id
-  //   3) re-insert users row with new id and copy user_branches relations
+  //   3) re-insert users row with new id and copy user_branches + user_modules relations
   // Easier alt: createUser, then UPDATE users SET id = new_id WHERE id = old_id
   // — but that breaks all FKs. So we use approach 1 with relinking.
 
   const { data: oldBranches } = await admin
     .from("user_branches")
     .select("branch_id, is_active")
+    .eq("user_id", userId);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: oldModules } = await (admin.from as any)("user_modules")
+    .select("module_name, role, is_active, granted_by")
     .eq("user_id", userId);
 
   // Pre-audit BEFORE the structural id-swap below.
@@ -136,6 +141,21 @@ export async function POST(req: NextRequest) {
         })),
       );
     }
+    if (oldModules && oldModules.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin.from as any)("user_modules").insert(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oldModules.map((m: any) => ({
+          org_id: oldUser.org_id,
+          user_id: oldUser.id,
+          module_name: m.module_name,
+          role: m.role,
+          is_active: m.is_active,
+          granted_by: m.granted_by,
+          updated_at: new Date().toISOString(),
+        })),
+      );
+    }
     return NextResponse.json(
       { error: authErr?.message ?? "สร้างบัญชีไม่ได้" },
       { status: 500 },
@@ -185,6 +205,21 @@ export async function POST(req: NextRequest) {
         })),
       );
     }
+    if (oldModules && oldModules.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin.from as any)("user_modules").insert(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oldModules.map((m: any) => ({
+          org_id: oldUser.org_id,
+          user_id: oldUser.id,
+          module_name: m.module_name,
+          role: m.role,
+          is_active: m.is_active,
+          granted_by: m.granted_by,
+          updated_at: now,
+        })),
+      );
+    }
     return NextResponse.json(
       { error: "บันทึกข้อมูลใหม่ไม่ได้ — ลองใหม่อีกครั้ง" },
       { status: 500 },
@@ -224,6 +259,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         warning: "บัญชีพร้อมใช้งานแล้ว แต่ผูกสาขาไม่ได้ — ติดต่อ admin",
+      });
+    }
+  }
+
+  // Step 6: re-link module-admin grants (program_admin, etc.) — best-effort,
+  // same pattern as branches above. Without this, user_modules rows written at
+  // invite time are cascade-deleted by Step 2's users-row delete and never
+  // recreated — the invited program_admin loses every module grant on accept
+  // until someone manually re-edits them (see role-gate-permanent-fix
+  // 2026-09-06/07 follow-up).
+  if (oldModules && oldModules.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: moduleErr } = await (admin.from as any)("user_modules").insert(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      oldModules.map((m: any) => ({
+        org_id: oldUser.org_id,
+        user_id: newAuthId,
+        module_name: m.module_name,
+        role: m.role,
+        is_active: m.is_active,
+        granted_by: m.granted_by,
+        updated_at: now,
+      })),
+    );
+    if (moduleErr) {
+      console.error("[invite/accept] module relink failed", moduleErr);
+      // Don't fail the whole flow — log + audit, admin can fix
+      await audit({
+        orgId: oldUser.org_id,
+        userId: newAuthId,
+        action: "CREATE_USER",
+        resourceType: "user",
+        resourceId: newAuthId,
+        diff: {
+          new: {
+            activated: true,
+            role: oldUser.role,
+            module_relink_failed: true,
+            error: moduleErr.message,
+          },
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        warning: "บัญชีพร้อมใช้งานแล้ว แต่ผูกสิทธิ์โปรแกรมไม่ได้ — ติดต่อ admin",
       });
     }
   }
