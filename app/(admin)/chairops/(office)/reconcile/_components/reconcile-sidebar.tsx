@@ -10,9 +10,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { LayoutGrid, Search, EyeOff, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
+import { LayoutGrid, Search, EyeOff, RotateCcw, Send } from "lucide-react";
 import type { ReconcileSidebarRow } from "@/lib/chairops/queries/reconcile-v2";
-import { toggleBranchClosedAction } from "@/lib/chairops/reconcile/actions";
+import {
+  toggleBranchClosedAction,
+  bulkSendDepositsToReconcileAction,
+} from "@/lib/chairops/reconcile/actions";
 
 function fmtCumDrift(n: number): string {
   const r = Math.round(n);
@@ -78,6 +82,57 @@ export function ReconcileSidebar({
     });
   };
 
+  // CEO 2026-09-09 (Pinpoint) · โหมดเลือกหลายสาขาแล้วส่งเข้า reconcile ทีเดียว —
+  // แทนที่ต้องเปิดทีละสาขากดปุ่มส่งเอง. เลือกได้เฉพาะสาขาที่ตั้งค่าบัญชีธนาคารแล้ว
+  // + ยังไม่ปิด/ย้าย (เหมือน bulkEligible ใน write-off-selection-shell.tsx).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sendPending, startSendTransition] = useTransition();
+
+  const eligibleIds = useMemo(
+    () =>
+      rows.filter((r) => r.reconcileConfigured && !r.isClosed).map((r) => r.branchId),
+    [rows],
+  );
+  const allEligibleSelected =
+    eligibleIds.length > 0 && eligibleIds.every((id) => selected.has(id));
+  const partialSelected = selected.size > 0 && !allEligibleSelected;
+
+  const toggleSelectMode = () => {
+    setSelectMode((v) => !v);
+    setSelected(new Set());
+  };
+
+  const toggleOneBranch = (branchId: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(branchId)) next.delete(branchId);
+      else next.add(branchId);
+      return next;
+    });
+
+  const toggleAllEligible = () =>
+    setSelected(allEligibleSelected ? new Set() : new Set(eligibleIds));
+
+  const handleBulkSend = () => {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    startSendTransition(async () => {
+      const r = await bulkSendDepositsToReconcileAction(ids);
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      const parts = [`ส่งสำเร็จ ${r.sentCount} สาขา`];
+      if (r.skippedCount > 0) parts.push(`ข้าม ${r.skippedCount} สาขา (ไม่มีรายการใหม่)`);
+      if (r.errorCount > 0) parts.push(`พลาด ${r.errorCount} สาขา`);
+      if (r.errorCount > 0) toast.error(parts.join(" · "));
+      else toast.success(parts.join(" · "));
+      setSelected(new Set());
+      setSelectMode(false);
+    });
+  };
+
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     if (!query) return rows;
@@ -93,13 +148,26 @@ export function ReconcileSidebar({
   return (
     <aside className="rc-sidebar">
       <div className="rc-sidebar-head">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 13 }}>Reconcile</div>
             <div className="text-3" style={{ fontSize: 11 }}>
               {rows.length} สาขา
             </div>
           </div>
+          <button
+            type="button"
+            className="rc-side-selectbtn"
+            aria-pressed={selectMode}
+            onClick={toggleSelectMode}
+            title={
+              selectMode
+                ? "ออกจากโหมดเลือกส่ง"
+                : "เลือกหลายสาขาเพื่อส่งเข้า reconcile"
+            }
+          >
+            <Send size={13} aria-hidden="true" />
+          </button>
         </div>
         <div className="rc-sidebar-search">
           <Search size={13} aria-hidden="true" />
@@ -110,6 +178,20 @@ export function ReconcileSidebar({
             aria-label="ค้นหาสาขา"
           />
         </div>
+        {selectMode && (
+          <label className="rc-selectall-row">
+            <input
+              type="checkbox"
+              checked={allEligibleSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = partialSelected;
+              }}
+              onChange={toggleAllEligible}
+              disabled={eligibleIds.length === 0}
+            />
+            เลือกทั้งหมด ({eligibleIds.length} สาขาที่ตั้งค่าบัญชีแล้ว)
+          </label>
+        )}
       </div>
       <div className="rc-sidebar-list">
         {/* ทุกสาขารวม — pinned org row */}
@@ -137,6 +219,26 @@ export function ReconcileSidebar({
               className="rc-side-rowwrap"
               data-closed={b.isClosed ? "" : undefined}
             >
+              {selectMode && (
+                <div className="rc-side-check">
+                  <input
+                    type="checkbox"
+                    aria-label={`เลือกสาขา ${b.name} เพื่อส่งเข้า reconcile`}
+                    checked={selected.has(b.branchId)}
+                    onChange={() =>
+                      b.reconcileConfigured && !b.isClosed && toggleOneBranch(b.branchId)
+                    }
+                    disabled={!b.reconcileConfigured || b.isClosed}
+                    title={
+                      b.isClosed
+                        ? "สาขาปิด/ย้ายแล้ว"
+                        : !b.reconcileConfigured
+                          ? "ยังไม่ได้ตั้งค่าบริษัท/บัญชีธนาคาร — ตั้งค่าที่หน้าสาขานี้ก่อน"
+                          : "เลือกเพื่อส่งเข้า reconcile"
+                    }
+                  />
+                </div>
+              )}
               <Link
                 href={`/chairops/reconcile/${b.branchId}${viewQs}`}
                 className="rc-side-row"
@@ -179,6 +281,26 @@ export function ReconcileSidebar({
           );
         })}
       </div>
+      {selectMode && selected.size > 0 && (
+        <div className="rc-bulk-bar">
+          <div className="rc-bulk-bar-count">เลือกแล้ว {selected.size} สาขา</div>
+          <button
+            type="button"
+            className="rc-bulk-bar-clear"
+            onClick={() => setSelected(new Set())}
+          >
+            ล้างที่เลือก
+          </button>
+          <button
+            type="button"
+            className="rc-bulk-bar-send"
+            disabled={sendPending}
+            onClick={handleBulkSend}
+          >
+            {sendPending ? "กำลังส่ง…" : `ส่งเข้า reconcile (${selected.size})`}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

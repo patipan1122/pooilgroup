@@ -19,6 +19,7 @@ import {
 } from "@/lib/chairops/reconcile/drift-engine";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { pushBranchDepositsToLedger } from "@/lib/chairops/reconcile/ledger-push";
 
 // TODO[claude-design]: Wave 2 · expand to optionally re-evaluate alerts after
 // recompute so the right-rail alert badge refreshes without a second call.
@@ -198,4 +199,64 @@ export async function toggleBranchClosedAction(
       error: e instanceof Error ? e.message : "ปิด/เปิดสาขาไม่สำเร็จ",
     };
   }
+}
+
+// CEO 2026-09-09 (Pinpoint): "อยากให้มีปุ่มส่งเข้าบัญชี reconcile กดส่งสาขาไหนบ้าง
+// ให้ติ๊กสาขา แบบส่งทั้งหมด หรือติ๊กบางสาขาออก" — ส่งฝากของหลายสาขาเข้า
+// ledger_revenue_entry ในคลิกเดียว แทนที่ต้องเปิดทีละสาขาแล้วกด sendDepositsToReconcile
+// (app/(admin)/chairops/reconcile/actions.ts) ทีละครั้ง. เรียก
+// pushBranchDepositsToLedger ต่อสาขาแบบ per-branch try/catch (สาขาหนึ่งพัง ไม่ทำให้
+// สาขาอื่นในชุดพังตาม — ตาม pattern bulkApproveWriteOffsAction) โดยที่ตัวฟังก์ชันเอง
+// กันส่งซ้ำอยู่แล้วใน DB (ON CONFLICT ... source_ref) จึงกดซ้ำได้ปลอดภัย.
+export async function bulkSendDepositsToReconcileAction(
+  branchIds: string[],
+): Promise<
+  | {
+      ok: true;
+      sentCount: number;
+      skippedCount: number;
+      errorCount: number;
+      totalInserted: number;
+    }
+  | { ok: false; error: string }
+> {
+  const ids = Array.from(
+    new Set(branchIds.filter((id): id is string => typeof id === "string" && id.length > 0)),
+  );
+  if (ids.length === 0) {
+    return { ok: false, error: "ไม่ได้เลือกสาขา" };
+  }
+  const session = await requireRole("OFFICE");
+  const orgId = session.user.orgId;
+  // org-scope guard — กันส่งข้ามองค์กร (IDOR write) เผื่อ id หลุดมาจากที่อื่น
+  const branches = await prisma.chairopsBranch.findMany({
+    where: { id: { in: ids }, orgId },
+    select: { id: true },
+  });
+
+  let sentCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+  let totalInserted = 0;
+  for (const branch of branches) {
+    const result = await pushBranchDepositsToLedger(orgId, branch.id);
+    await writeAudit({
+      userId: session.user.id,
+      action: "chairops_deposit.send_to_ledger",
+      entity: "ChairopsBranch",
+      entityId: branch.id,
+      newValue: { ...result, bulk: true },
+    });
+    if (!result.ok) errorCount++;
+    else if (result.inserted === 0) skippedCount++;
+    else {
+      sentCount++;
+      totalInserted += result.inserted;
+    }
+  }
+
+  revalidatePath("/chairops/reconcile");
+  for (const branch of branches) revalidatePath(`/chairops/reconcile/${branch.id}`);
+
+  return { ok: true, sentCount, skippedCount, errorCount, totalInserted };
 }

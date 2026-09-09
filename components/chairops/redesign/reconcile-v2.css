@@ -200,6 +200,85 @@
   opacity: 0.3;
 }
 
+/* ── CEO 2026-09-09 · โหมดเลือกหลายสาขาส่งเข้า reconcile ── */
+.co-scope .rc-side-selectbtn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-3, #999);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.co-scope .rc-side-selectbtn:hover { background: var(--surface-hover); color: var(--accent); }
+.co-scope .rc-side-selectbtn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft-border);
+}
+.co-scope .rc-side-check {
+  flex-shrink: 0;
+  width: 22px;
+  display: grid;
+  place-items: center;
+}
+.co-scope .rc-side-check input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.co-scope .rc-side-check input:disabled { cursor: default; opacity: 0.35; }
+.co-scope .rc-selectall-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3, #666);
+  cursor: pointer;
+}
+.co-scope .rc-selectall-row input { width: 13px; height: 13px; cursor: pointer; }
+.co-scope .rc-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.co-scope .rc-bulk-bar-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+.co-scope .rc-bulk-bar-clear {
+  font-size: 11px;
+  color: var(--text-3, #888);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+.co-scope .rc-bulk-bar-send {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.co-scope .rc-bulk-bar-send:disabled { opacity: 0.5; cursor: default; }
+
 /* CEO 2026-07-01 · เช็คลิสต์รายเดือน (สาขา × วัน) — sticky branch column + dots */
 .co-scope .rc-ck-wrap {
   overflow-x: auto;

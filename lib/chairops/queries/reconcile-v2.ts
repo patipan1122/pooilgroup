@@ -238,6 +238,9 @@ export interface ReconcileSidebarRow {
   daysSinceCollect: number;
   /** CEO 2026-07-01 · closedAt != null → สาขาปิด/ย้ายแล้ว → pin to bottom + dim. */
   isClosed: boolean;
+  /** CEO 2026-09-09 · reconcileCompanyId + reconcileBankAccountId ทั้งคู่ตั้งค่าแล้ว
+   *  → กดส่งเข้า reconcile ได้ (ใช้กรอง checkbox ในโหมดเลือกส่งหลายสาขา). */
+  reconcileConfigured: boolean;
 }
 
 // ----------------------------------------------------------------
@@ -3141,7 +3144,14 @@ export async function getReconcileSidebar(args: {
     prisma.chairopsBranch.findMany({
       where: { orgId, isActive: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, mallGroup: true, closedAt: true },
+      select: {
+        id: true,
+        name: true,
+        mallGroup: true,
+        closedAt: true,
+        reconcileCompanyId: true,
+        reconcileBankAccountId: true,
+      },
     }),
     prisma.chairopsDrift.findMany({
       where: { orgId },
@@ -3178,6 +3188,7 @@ export async function getReconcileSidebar(args: {
       cumDrift,
       daysSinceCollect: daysSince,
       isClosed: b.closedAt != null,
+      reconcileConfigured: Boolean(b.reconcileCompanyId && b.reconcileBankAccountId),
     };
   });
 
