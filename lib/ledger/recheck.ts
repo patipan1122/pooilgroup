@@ -105,10 +105,15 @@ export function recheckReceipt(p: {
   }
 
   // 4. sum(items) = subtotal
+  //    ข้อยกเว้น: ราคาต่อชิ้นรวม VAT ไว้แล้ว (Σitems ตรงกับยอดสุทธิ ไม่ใช่ยอดก่อนภาษี) แต่
+  //    ท้ายบิลพิมพ์แยก VAT ชัดเจน (ดูตัวอย่าง จ ใน ai-parse.ts + reconcile.ts) — กรณีนี้
+  //    Σitems ≠ subtotal โดยเจตนา ไม่ใช่อ่านพลาด ห้ามเตือน (กันธง needs_review หลอกทุกครั้ง
+  //    ที่เจอเอกสารแบบนี้ ทั้งที่ตัวเลขถูกแล้ว).
   const items = p.items ?? [];
   if (items.length > 0 && subtotal > 0) {
     const itemsSum = items.reduce((s, it) => s + num(it.amount), 0);
-    if (!near(itemsSum, subtotal)) {
+    const looksVatInclusiveLineItems = vat > 0 && near(itemsSum, total) && !near(itemsSum, subtotal);
+    if (!near(itemsSum, subtotal) && !looksVatInclusiveLineItems) {
       warnings.push(
         `ผลรวมรายการย่อย ${itemsSum.toFixed(2)} ไม่ตรงกับยอดย่อย ${subtotal.toFixed(2)}`,
       );
