@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — BUILT, verified, pushed เป็น branch แยก รอ CEO อนุมัติ merge · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
 ## 🪑📤 ChairOps Reconcile — เลือกหลายสาขาส่งเข้า reconcile ในคลิกเดียว (2026-09-09 · กำลัง deploy)
 
@@ -59,7 +59,9 @@ CEO ขอ (2026-09-09): ในป็อปอัพดูรายละเอ�
 
 ---
 
-## 🏬🧾 RentSpace — Export รายงานสรุปค่าเช่าต่อเจ้า จากหน้า matrix (Excel) (2026-09-09 · BUILT · รอ deploy)
+## 🏬🧾✅ RentSpace — Export รายงานสรุปค่าเช่าต่อเจ้า จากหน้า matrix (Excel) (2026-09-09 · DEPLOYED LIVE)
+
+**🚀 DEPLOYED LIVE:** CEO อนุมัติ "push deploy" → `/verify` ครบ 5 ด่านผ่านหมด (tsc 0 error · eslint เฉพาะไฟล์ที่แตะ 0 error · next build ผ่าน route `/rentspace/matrix/summary` ขึ้นจริง · git status สะอาด · smoke ก่อน deploy `/`→307 `/login`→200 `/rentspace/matrix`→307 ตรงกับ baseline เดิม) → push `claude/rentspace-tenant-summary-2026-09-09:setup` (commit `61fb3638`) → **smoke หลัง deploy: `/rentspace/matrix/summary` เปลี่ยนจาก 404 → 307 (พฤติกรรมเดียวกับหน้า RentSpace อื่นที่ต้อง login)** ยืนยันว่าขึ้นจริงแล้ว
 
 CEO ดูหน้า "ตารางค่าเช่า (มุมมอง Excel)" แล้วขอ export รายงานสรุปว่าได้ค่าเช่ามาเท่าไร ค้างชำระเท่าไร แต่ละเจ้า — ให้หน้าตาสวยแบบใบวางบิล
 
@@ -70,7 +72,11 @@ CEO ดูหน้า "ตารางค่าเช่า (มุมมอง
 
 **ตัดสินใจกับ CEO ก่อนสร้าง (3 ข้อ):** ตารางสรุปเดียว (ไม่แยกใบต่อเจ้า) · เลือกช่วงเดือนเอง (ไม่ fix ปีเดียว) · พิมพ์/PDF พอ ไม่ต้องมี CSV คู่
 
-**Verify:** `tsc --noEmit` ผ่าน · `eslint` เฉพาะไฟล์ที่แตะสะอาด · `next build` ผ่านจริง (รันซ้ำหลัง copy `.env`/`.env.local` เข้า worktree เพราะรอบแรก build fail จาก DATABASE_URL หาย ไม่ใช่บั๊กโค้ด) — route `/rentspace/matrix/summary` ขึ้นในตาราง build ปกติ
+**Verify:** `tsc --noEmit` ผ่าน · `eslint` เฉพาะไฟล์ที่แตะสะอาด · `next build` ผ่านจริง (รันซ้ำหลัง copy `.env`/`.env.local` เข้า worktree เพราะรอบแรก build fail จาก DATABASE_URL หาย ไม่ใช่บั๊กโค้ด — ดู [[feedback-worktree-build-verify-needs-env-files-and-no-pipe-mask-2026-09-09]]) — route `/rentspace/matrix/summary` ขึ้นในตาราง build ปกติ
+
+**Rebase ระหว่างทำ:** อีก session push ฟีเจอร์ RentSpace slip-verify เข้า `setup` แซงระหว่างทำงาน แก้ไฟล์ `matrix-grid.tsx` เดียวกัน (คนละส่วน) — `git rebase origin/setup` ชนแค่ 1 จุด (import block) เก็บทั้ง 2 ฝั่งไว้ครบ · re-verify ผ่านสะอาดหลัง rebase
+
+ดู memory [[rentspace-matrix-tenant-summary-export-2026-09-09]]
 
 **สถานะ:** commit `bd5ae4f7` บน branch `claude/rentspace-tenant-summary-2026-09-09` (จาก `origin/setup` ล่าสุด `b2c4960c`, rebase ทับ `fa95fa6a` แล้วเพราะ ClawFleet/RentSpace slip-verify deploy แซงระหว่างทำงาน — conflict เดียวที่ `matrix-grid.tsx` import block เก็บทั้ง 2 ฝั่งแล้ว) — **push ขึ้น origin แล้ว (ไม่ใช่ branch production)** รอ CEO ตรวจ/อนุมัติก่อน merge เข้า `setup` (คำสั่ง deploy อยู่ท้าย briefing)
 
