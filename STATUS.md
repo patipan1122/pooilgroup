@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — BUILT, verified, pushed เป็น branch แยก รอ CEO อนุมัติ merge · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
 ## 🦞🧾 ClawFleet — แนบสลิปฝากเงิน + AI อ่านยอด จากหน้าประวัติเก็บเงิน (2026-09-09 · **DEPLOYED LIVE**)
 
@@ -40,6 +40,21 @@ CEO ขอ (2026-09-09): ในป็อปอัพดูรายละเอ�
 **ยังต้องตั้งค่าบัญชีธนาคารที่ `/rentspace/settings` ก่อนถึงจะเห็นจุดเขียวได้จริง (ตอนนี้ขึ้นแดงหมดเพราะยังไม่ได้ตั้งค่า ไม่ใช่บั๊ก)**
 
 ---
+
+## 🏬🧾 RentSpace — Export รายงานสรุปค่าเช่าต่อเจ้า จากหน้า matrix (Excel) (2026-09-09 · BUILT · รอ deploy)
+
+CEO ดูหน้า "ตารางค่าเช่า (มุมมอง Excel)" แล้วขอ export รายงานสรุปว่าได้ค่าเช่ามาเท่าไร ค้างชำระเท่าไร แต่ละเจ้า — ให้หน้าตาสวยแบบใบวางบิล
+
+**สิ่งที่สร้าง:**
+- ปุ่ม "Export รายงานสรุป" บน toolbar หน้า matrix ([`export-summary-button.tsx`](<app/(admin)/rentspace/matrix/_components/export-summary-button.tsx>)) — เลือกช่วงเดือน (native `<input type="month">`, ไม่มี client state ใหม่) → เปิดรายงานแท็บใหม่
+- หน้ารายงาน [`matrix/summary/page.tsx`](<app/(admin)/rentspace/matrix/summary/page.tsx>) — ตารางสรุปเดียว รวมทุกเจ้า (ห้อง/ผู้เช่า/จำนวนบิล/ค่าเช่ารวม/ชำระแล้ว/ค้างชำระ + แถวรวมท้ายตาราง) ดีไซน์ A4 แบบใบวางบิลเดิม (โลโก้ JPSYNC + หัวเอกสารทางการ) พิมพ์/เซฟ PDF ผ่านเบราว์เซอร์ (ไม่ใช้ PDF lib ใหม่ — ตามธรรมเนียมเดิมของระบบ)
+- ตัวรวมยอด [`lib/rentspace/tenant-summary.ts`](lib/rentspace/tenant-summary.ts) — กรองบิล void/draft ออกเหมือนหน้า matrix เดิม (ตัวเลขตรงกับที่ CEO เห็นอยู่) เรียงตามลำดับห้องเดียวกับ Excel matrix (`matrixSortOrder`)
+
+**ตัดสินใจกับ CEO ก่อนสร้าง (3 ข้อ):** ตารางสรุปเดียว (ไม่แยกใบต่อเจ้า) · เลือกช่วงเดือนเอง (ไม่ fix ปีเดียว) · พิมพ์/PDF พอ ไม่ต้องมี CSV คู่
+
+**Verify:** `tsc --noEmit` ผ่าน · `eslint` เฉพาะไฟล์ที่แตะสะอาด · `next build` ผ่านจริง (รันซ้ำหลัง copy `.env`/`.env.local` เข้า worktree เพราะรอบแรก build fail จาก DATABASE_URL หาย ไม่ใช่บั๊กโค้ด) — route `/rentspace/matrix/summary` ขึ้นในตาราง build ปกติ
+
+**สถานะ:** commit `bd5ae4f7` บน branch `claude/rentspace-tenant-summary-2026-09-09` (จาก `origin/setup` ล่าสุด `b2c4960c`, rebase ทับ `fa95fa6a` แล้วเพราะ ClawFleet/RentSpace slip-verify deploy แซงระหว่างทำงาน — conflict เดียวที่ `matrix-grid.tsx` import block เก็บทั้ง 2 ฝั่งแล้ว) — **push ขึ้น origin แล้ว (ไม่ใช่ branch production)** รอ CEO ตรวจ/อนุมัติก่อน merge เข้า `setup` (คำสั่ง deploy อยู่ท้าย briefing)
 
 ## 🪑📉✅ ChairOps รอบเก็บ (Periods) — "ควรได้"(มิเตอร์) บั๊ก zero-fallback ทั้งองค์กร (2026-09-06→09 · DEPLOYED LIVE)
 
