@@ -7,7 +7,8 @@ import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowL
 import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import { RsBadge } from "@/components/rentspace/ui";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
-import { actReorderMatrixUnits } from "../../_actions";
+import type { RentSpacePaymentSlipVerdict } from "@/lib/rentspace/slip-check";
+import { actReorderMatrixUnits, actGetPaymentSlipCheck } from "../../_actions";
 
 /** YYYY-MM-DD → "5 มิ.ย. 69" (Thai short, BE 2-digit) */
 function fmtThaiDate(iso: string): string {
@@ -959,7 +960,40 @@ function CellDetail({
   beYear: number;
   onClose: () => void;
 }) {
-  const [slipOpen, setSlipOpen] = useState<string | null>(null);
+  const [slipOpenId, setSlipOpenId] = useState<string | null>(null);
+  // CEO 2026-09-09: AI ตรวจสลิปแต่ละแถว (วันที่+เลขบัญชีปลายทาง ตรงกับที่บันทึกไว้ไหม)
+  // — ยิงเฉพาะ payment ที่มีสลิปใน popup ที่เปิดอยู่นี้เท่านั้น (ไม่ใช่ทั้งตาราง คุมต้นทุน AI)
+  // ไม่มี entry ใน map นี้เลย = ยังโหลดอยู่ (แสดงจุดเทา) — ไม่ seed "loading" ตรงๆ ใน effect
+  // เพราะ setState synchronous ใน effect body ทำให้ cascading render (eslint react-hooks/
+  // set-state-in-effect บล็อกไว้) — set แค่ตอนผลตอบกลับจริง (async .then/.catch) เท่านั้น
+  const [slipChecks, setSlipChecks] = useState<
+    Record<string, { status: "done"; verdict: RentSpacePaymentSlipVerdict | null }>
+  >({});
+
+  useEffect(() => {
+    if (!cell) return;
+    const targets = cell.payments.filter((p) => p.slipUrl);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    for (const p of targets) {
+      actGetPaymentSlipCheck(p.id)
+        .then((verdict) => {
+          if (cancelled) return;
+          setSlipChecks((prev) => ({ ...prev, [p.id]: { status: "done", verdict } }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSlipChecks((prev) => ({ ...prev, [p.id]: { status: "done", verdict: null } }));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [cell]);
+
+  const slipOpenPayment = cell?.payments.find((p) => p.id === slipOpenId) ?? null;
+  const slipOpenCheck = slipOpenId ? slipChecks[slipOpenId] : undefined;
+
   const remain = cell ? cell.total - cell.paid : 0;
   const rows: { label: string; value: number; strong?: boolean; danger?: boolean }[] = cell
     ? [
@@ -1079,37 +1113,58 @@ function CellDetail({
                     </span>
                   </div>
                   {cell.payments.length > 0 ? (
-                    cell.payments.map((p, i) => (
-                      <div key={i} className="space-y-1">
-                        <div className="flex items-center gap-2 text-[12.5px]">
-                          <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
-                          <span style={{ color: "var(--rs-text-2)" }}>
-                            ชำระ ({PAYMENT_METHODS[p.method] ?? p.method}) {fmtThaiDate(p.paidOn)}
-                          </span>
-                          {p.slipUrl && (
-                            <button
-                              type="button"
-                              className="rs-chip"
-                              style={{ color: "var(--rs-brand)" }}
-                              onClick={() => setSlipOpen(p.slipUrl)}
-                            >
-                              ดูสลิป
-                            </button>
-                          )}
-                          <span className="ml-auto font-medium" style={{ color: "var(--rs-ok)" }}>
-                            {formatBaht(p.amount)}
-                          </span>
-                        </div>
-                        {p.requiresReview && (
-                          <div
-                            className="ml-5.5 rounded-md px-2 py-1 text-[11.5px]"
-                            style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
-                          >
-                            ⚠ AI ตรวจพบความผิดปกติ — {p.ocrFlagReason ?? "กรุณาตรวจสอบสลิปนี้"}
+                    cell.payments.map((p, i) => {
+                      const check = p.slipUrl ? slipChecks[p.id] : undefined;
+                      const dotColor =
+                        check?.status === "done"
+                          ? check.verdict?.ok
+                            ? "var(--rs-ok)"
+                            : "var(--rs-danger)"
+                          : "var(--rs-text-3)";
+                      const dotTitle =
+                        check?.status === "done"
+                          ? (check.verdict?.ok
+                              ? "AI ตรวจสลิป: วันที่+เลขบัญชีปลายทาง ตรงกับที่บันทึกไว้"
+                              : (check.verdict?.reason ?? "AI ตรวจสลิป: ไม่ตรงกับที่บันทึกไว้"))
+                          : "AI กำลังตรวจสลิป…";
+                      return (
+                        <div key={i} className="space-y-1">
+                          <div className="flex items-center gap-2 text-[12.5px]">
+                            <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-ok)" }} />
+                            <span style={{ color: "var(--rs-text-2)" }}>
+                              ชำระ ({PAYMENT_METHODS[p.method] ?? p.method}) {fmtThaiDate(p.paidOn)}
+                            </span>
+                            {p.slipUrl && (
+                              <button
+                                type="button"
+                                className="rs-chip inline-flex items-center gap-1.5"
+                                style={{ color: "var(--rs-brand)" }}
+                                onClick={() => setSlipOpenId(p.id)}
+                              >
+                                <span
+                                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                  style={{ background: dotColor }}
+                                  title={dotTitle}
+                                  aria-label={dotTitle}
+                                />
+                                ดูสลิป
+                              </button>
+                            )}
+                            <span className="ml-auto font-medium" style={{ color: "var(--rs-ok)" }}>
+                              {formatBaht(p.amount)}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    ))
+                          {p.requiresReview && (
+                            <div
+                              className="ml-5.5 rounded-md px-2 py-1 text-[11.5px]"
+                              style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+                            >
+                              ⚠ AI ตรวจพบความผิดปกติ — {p.ocrFlagReason ?? "กรุณาตรวจสอบสลิปนี้"}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="flex items-center gap-2 text-[12.5px]">
                       <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "var(--rs-text-3)" }} />
@@ -1153,13 +1208,13 @@ function CellDetail({
           )}
         </div>
       </div>
-      {slipOpen && (
+      {slipOpenId && slipOpenPayment?.slipUrl && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-3 overflow-y-auto p-4 sm:flex-row"
           style={{ background: "rgba(0,0,0,0.85)" }}
           onClick={(e) => {
             e.stopPropagation();
-            setSlipOpen(null);
+            setSlipOpenId(null);
           }}
         >
           <button
@@ -1169,20 +1224,100 @@ function CellDetail({
             style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
             onClick={(e) => {
               e.stopPropagation();
-              setSlipOpen(null);
+              setSlipOpenId(null);
             }}
           >
             <X className="h-5 w-5" />
           </button>
           {/* eslint-disable-next-line @next/next/no-img-element -- สลิปมาจาก R2 dynamic URL ไม่ผ่าน next/image domain allowlist */}
           <img
-            src={slipOpen}
+            src={slipOpenPayment.slipUrl}
             alt="สลิปการชำระเงิน"
-            className="max-h-[90vh] max-w-[95vw] rounded-lg object-contain"
+            className="max-h-[55vh] max-w-[95vw] shrink-0 rounded-lg object-contain sm:max-h-[85vh] sm:max-w-[52vw]"
             onClick={(e) => e.stopPropagation()}
           />
+          {/* ผลตรวจ AI: วันที่/เลขบัญชีปลายทางที่อ่านได้ เทียบกับที่บันทึกไว้ — เห็นเหตุผลเขียว/แดงตรงๆ */}
+          <div
+            className="rs-card w-full max-w-sm shrink-0 p-3.5 text-[12.5px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 text-[13px] font-bold" style={{ color: "var(--rs-text)" }}>
+              {slipOpenCheck?.status === "done" ? (
+                slipOpenCheck.verdict?.ok ? (
+                  <span style={{ color: "var(--rs-ok)" }}>✓ AI ตรวจสลิปตรงกับที่บันทึกไว้</span>
+                ) : (
+                  <span style={{ color: "var(--rs-danger)" }}>⚠ AI ตรวจสลิปไม่ตรงกับที่บันทึกไว้</span>
+                )
+              ) : (
+                <span style={{ color: "var(--rs-text-3)" }}>AI กำลังตรวจสลิป…</span>
+              )}
+            </div>
+            {slipOpenCheck?.status === "done" && slipOpenCheck.verdict?.reason && (
+              <div
+                className="mb-2.5 rounded-md px-2.5 py-1.5"
+                style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+              >
+                {slipOpenCheck.verdict.reason}
+              </div>
+            )}
+            <div className="space-y-1.5" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <SlipFactRow label="บันทึกไว้ · วันที่ชำระ" value={fmtThaiDate(slipOpenPayment.paidOn)} />
+              <SlipFactRow label="บันทึกไว้ · ยอด" value={formatBaht(slipOpenPayment.amount)} />
+              <SlipFactRow
+                label="AI อ่านสลิป · วันที่"
+                value={slipOpenCheck?.verdict?.ocrDate ? fmtThaiDate(slipOpenCheck.verdict.ocrDate) : "—"}
+                tone={
+                  slipOpenCheck?.status === "done"
+                    ? slipOpenCheck.verdict?.dateMatch
+                      ? "ok"
+                      : "danger"
+                    : undefined
+                }
+              />
+              <SlipFactRow
+                label="AI อ่านสลิป · ยอด"
+                value={
+                  slipOpenCheck?.verdict?.ocrAmount != null ? formatBaht(slipOpenCheck.verdict.ocrAmount) : "—"
+                }
+              />
+              <SlipFactRow
+                label="AI อ่านสลิป · เลขบัญชีปลายทาง"
+                value={slipOpenCheck?.verdict?.ocrAccountNumber ?? "—"}
+                tone={
+                  slipOpenCheck?.status === "done"
+                    ? slipOpenCheck.verdict?.acctMatch
+                      ? "ok"
+                      : "danger"
+                    : undefined
+                }
+              />
+              <SlipFactRow label="AI อ่านสลิป · ชื่อบัญชี" value={slipOpenCheck?.verdict?.ocrAccountName ?? "—"} />
+            </div>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SlipFactRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "ok" | "danger";
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span style={{ color: "var(--rs-text-3)" }}>{label}</span>
+      <span
+        className="text-right font-semibold"
+        style={{ color: tone === "ok" ? "var(--rs-ok)" : tone === "danger" ? "var(--rs-danger)" : "var(--rs-text)" }}
+      >
+        {value}
+      </span>
     </div>
   );
 }

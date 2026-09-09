@@ -14,7 +14,7 @@ import { pushProjectBillsToLedger } from "@/lib/rentspace/ledger-push";
 import { getBaseUrl } from "@/lib/utils/base-url";
 import { newPortalToken, portalUrl } from "@/lib/rentspace/portal";
 import { notifyBillIssued } from "@/lib/rentspace/notify";
-import { runRentSpaceSlipCheck } from "@/lib/rentspace/slip-check";
+import { runRentSpaceSlipCheck, getOrRunRentSpacePaymentSlipCheck } from "@/lib/rentspace/slip-check";
 import type { RentalBillStatus } from "@/lib/generated/prisma/enums";
 
 async function gateAdmin() {
@@ -2248,6 +2248,21 @@ export async function actRecordPayment(input: {
   revalidatePath(`/rentspace/bills/${bill.id}`);
   revalidatePath("/rentspace");
   return { ok: true };
+}
+
+/**
+ * CEO 2026-09-09: จุดเขียว/แดงต่อแถวชำระใน popup ดูบิล (matrix) — เรียกตอน popup เปิด
+ * ต่อ payment ที่มีสลิปเท่านั้น (ไม่ใช่ทั้งตาราง). Cache-first ผ่าน ocrReadAt — เปิดซ้ำไม่
+ * เรียก AI ซ้ำ. ใช้สิทธิ์เดียวกับรับชำระเงิน (gateModuleWrite) เพราะเขียน DB (persist ผล
+ * OCR) และมีต้นทุน AI ต่อครั้งแรกที่เปิด.
+ */
+export async function actGetPaymentSlipCheck(paymentId: string) {
+  const session = await gateModuleWrite();
+  return getOrRunRentSpacePaymentSlipCheck({
+    orgId: session.user.org_id,
+    paymentId,
+    actor: { userId: session.user.id, orgId: session.user.org_id },
+  });
 }
 
 /**
