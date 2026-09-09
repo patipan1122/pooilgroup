@@ -1,6 +1,25 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+
+## 🧾⚡✅ LedgerLine รายจ่าย — คลิกเปลี่ยนบิลรู้สึกเหมือน refresh ทั้งหน้า (2026-09-09 · DEPLOYED LIVE)
+
+CEO ส่งภาพหน้าจอ [ledger/expenses](https://poolgroup.com/ledger/expenses) บอกว่าคลิกเปลี่ยนบิลในหน้ารายจ่ายแล้ว "รู้สึกช้าและไม่ต่อเนื่อง เหมือน refresh ทั้งหน้า"
+
+**สาเหตุ (2 ชั้น):** (1) รายการซ้าย+รายละเอียดขวาผูกเป็นก้อนเดียว — คลิกทีไรไม่มีอะไรขยับบนจอเลยจนกว่าทุกอย่างจะโหลดเสร็จพร้อมกัน (ไม่ไฮไลต์แถวที่กด ไม่มี spinner) (2) หน้านี้ยิงคำสั่งไปฐานข้อมูล **6 รอบต่อเนื่องกัน** (ทีละรอบ ไม่ทำพร้อมกัน) ทั้งที่ส่วนใหญ่ไม่เกี่ยวกัน — ดึงบิลที่กดเลือกมาโชว์ ดันรออยู่ท้ายสุดของคิว หลังจากดึงรายการทั้งหมด+นับเลขทุกแท็บเสร็จก่อน
+
+**FIX:**
+- [`ExpenseList.tsx`](<app/(admin)/ledger/expenses/_components/ExpenseList.tsx>) — แถวที่กดไฮไลต์+หมุน spinner ทันที ไม่รอ server ยืนยัน
+- [`page.tsx`](<app/(admin)/ledger/expenses/page.tsx>) — แผงรายละเอียดขวาใส่ `key={selected}` + fade-in ให้เนื้อหาใหม่ค่อยๆขึ้นแทนตัดวูบ
+- [`page.tsx`](<app/(admin)/ledger/expenses/page.tsx>) — รวมคำสั่งดึงข้อมูลที่ไม่เกี่ยวกัน (pvBillLinks/สิทธิ์แก้ไข/หมวดหมู่/โครงการ/บิลที่เลือก และ รายการ+สรุป/นับเลขแท็บ/บิลทดแทน/สต๊อก) จาก **6 รอบต่อเนื่อง → 2 รอบพร้อมกัน** (ยิงคำสั่งเดิมทั้งหมด แค่พร้อมกันแทนทีละอัน — ไม่เปลี่ยน logic/query เลย)
+
+**Verify:** `tsc --noEmit` 0 error · `next build` ผ่าน · เขียนสคริปต์เทียบผลลัพธ์ query แบบเก่า(ทีละรอบ)กับแบบใหม่(พร้อมกัน)กับ DB จริง (read-only) — ตัวเลข/รายการตรงกันทุกจุด · smoke ก่อน/หลัง deploy ตรงกันเป๊ะ (`/`, `/ledger/expenses`, `/login` → 200 ทั้งคู่)
+
+**🚀 DEPLOYED LIVE (2026-09-09 · CEO อนุมัติ "push เลยครับ"):** rebase 2 รอบบน `origin/setup` ล่าสุด (โดนชนกับ session อื่น push แซง 2 ครั้งติดระหว่างทาง) → push `61fb3638..6d2b33c3` เข้า `setup` → Vercel deploy Ready (~3 นาที) → smoke หลัง deploy ตรงกับก่อน push เป๊ะ
+
+ดู memory [[ledger-expenses-click-refresh-feel-fix-2026-09-09]]
+
+---
 
 ## 🪑📤 ChairOps Reconcile — เลือกหลายสาขาส่งเข้า reconcile ในคลิกเดียว (2026-09-09 · กำลัง deploy)
 
