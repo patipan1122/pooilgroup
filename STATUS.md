@@ -1,6 +1,24 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — BUILT, verified, pushed เป็น branch แยก รอ CEO อนุมัติ merge · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — BUILT, verified, pushed เป็น branch แยก รอ CEO อนุมัติ merge · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+
+## 🪑📤 ChairOps Reconcile — เลือกหลายสาขาส่งเข้า reconcile ในคลิกเดียว (2026-09-09 · กำลัง deploy)
+
+CEO ทิ้งคอมเมนต์ผ่าน Pinpoint บนหน้า `/chairops/reconcile/[id]?view=checklist&ckv=numbers` (สาขา Indexบางนา 510): "อยากให้มีปุ่มส่งเข้าบัญชี reconcile กดส่งสาขาไหนบ้าง ให้ติ๊กสาขา แบบส่งทั้งหมด หรือติ๊กบางสาขาออก"
+
+**พบก่อนเริ่ม:** ปุ่มส่งเข้า reconcile มีอยู่แล้ว ([[chairops-reconcile-ledger-push-2026-08-15]]) แต่ทำได้ **ทีละสาขา** เท่านั้น (`sendDepositsToReconcile` ผูกกับ form 1 branchId + redirect) — ตัวฟังก์ชันจริงที่ยิง DB (`pushBranchDepositsToLedger`) ไม่มี redirect ในตัวและกันส่งซ้ำในระดับ DB อยู่แล้ว (ON CONFLICT บน `source_ref`) จึงวนลูปส่งหลายสาขาได้ปลอดภัยโดยไม่ต้องแก้อะไรที่ตัวนี้เลย เจอ pattern "ติ๊กเลือกหลายรายการ + เลือกทั้งหมด + ยกเว้นบางแถว" ที่มีอยู่แล้วในโมดูลเดียวกัน (`write-off-selection-shell.tsx` + `bulkApproveWriteOffsAction`) → ใช้แบบเดียวกันเป๊ะ ไม่คิด pattern ใหม่
+
+**สร้าง (commit `0f84f7cf`, branch `worktree-chairops-reconcile-bulk-send`, worktree `.claude/worktrees/chairops-reconcile-bulk-send`):**
+- `lib/chairops/queries/reconcile-v2.ts` — เพิ่ม `reconcileConfigured: boolean` ใน `ReconcileSidebarRow` (เช็คว่าสาขาตั้งค่าบริษัท+บัญชีธนาคารครบหรือยัง) ใช้กรอง checkbox ที่กดได้
+- `lib/chairops/reconcile/actions.ts` — เพิ่ม `bulkSendDepositsToReconcileAction(branchIds)` วน `pushBranchDepositsToLedger` ทีละสาขาแบบ try/catch แยก (สาขาหนึ่งพังไม่ทำสาขาอื่นพัง เหมือน bulk-approve write-off) คืนสรุป {sentCount, skippedCount, errorCount}
+- `reconcile-sidebar.tsx` — เพิ่มปุ่ม "เลือกส่ง" (โหมดเปิด-ปิดได้ ไม่รกหน้าเดิมตอนไม่ใช้) → checkbox ต่อสาขา (กดได้เฉพาะสาขาที่ตั้งค่าบัญชีแล้ว + ยังไม่ปิด/ย้าย — ปิดใช้งาน+tooltip บอกเหตุผลถ้ากดไม่ได้) + "เลือกทั้งหมด" + แถบส่งด้านล่าง sidebar โชว์จำนวนที่เลือก → กดส่งแล้วสรุปผลผ่าน toast (sonner, pattern เดียวกับ `close-period-button.tsx`)
+- `reconcile-v2.css` — CSS ใหม่สำหรับปุ่ม/checkbox/แถบส่ง ใช้ design token เดิม (`--accent`, `--border`, `--r-sm` ฯลฯ) ไม่เพิ่ม token ใหม่
+
+**Verify:** rebase บน `origin/setup` 3 รอบ ระหว่างทำงาน (มี session อื่น push แซงรวม 9 commit — ClawFleet, RentSpace ×2, LedgerLine — clean ไม่มี conflict ในโค้ด มีแค่ STATUS.md ชนกันเอง แก้โดยเก็บทั้งสองฝั่งทุกรอบ) → `tsc --noEmit` 0 error · eslint เฉพาะไฟล์ที่แตะ 0 error · `next build` ผ่านทุกรอบ · `git status` สะอาด · `/verify` skill stamp ผ่าน (ด่าน verify-gate hook บล็อกจนกว่าจะมี stamp)
+
+**CEO อนุมัติ push+deploy (2026-09-09)** → กำลัง push เข้า `origin/setup`
+
+---
 
 ## 🦞🧾 ClawFleet — แนบสลิปฝากเงิน + AI อ่านยอด จากหน้าประวัติเก็บเงิน (2026-09-09 · **DEPLOYED LIVE**)
 
