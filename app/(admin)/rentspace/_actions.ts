@@ -1938,11 +1938,12 @@ export async function actSendBillsToReconcile(projectId: string) {
     select: { id: true },
   });
   if (!project) throw new Error("ไม่พบโครงการ หรือไม่มีสิทธิ์");
-  const result = await pushProjectBillsToLedger(session.user.org_id, project.id);
+  const result = await pushProjectBillsToLedger(session.user.org_id, project.id, session.user.id);
   await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rental_project", project.id, {
     action: "send_to_ledger",
     inserted: result.inserted,
     alreadySent: result.alreadySent,
+    skippedForSlipMismatch: result.skippedForSlipMismatch.length,
   });
   if (!result.ok) throw new Error(result.error ?? "ส่งไม่สำเร็จ");
   revalidatePath("/rentspace/settings");

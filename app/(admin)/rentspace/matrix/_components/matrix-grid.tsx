@@ -8,8 +8,10 @@ import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format
 import { RsBadge } from "@/components/rentspace/ui";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 import type { RentSpacePaymentSlipVerdict } from "@/lib/rentspace/slip-check";
+import type { ProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
 import { actReorderMatrixUnits, actGetPaymentSlipCheck } from "../../_actions";
 import { ExportSummaryButton } from "./export-summary-button";
+import { SendToLedgerButton } from "./send-to-ledger-button";
 
 /** YYYY-MM-DD → "5 มิ.ย. 69" (Thai short, BE 2-digit) */
 function fmtThaiDate(iso: string): string {
@@ -42,6 +44,8 @@ type Props = {
   monthsTotals: number[];
   projectId: string;
   canReorder: boolean;
+  /** null = ผู้ใช้นี้ไม่มีสิทธิ์ส่งเข้าบัญชี (gateAdmin ปฏิเสธ) — ไม่โชว์ปุ่มเลย */
+  reconcileSummary: ProjectReconcileSummary | null;
 };
 
 function pad2(m: number) {
@@ -54,7 +58,7 @@ function statusTone(status: string): { bg: string; color: string } {
   return { bg: t.soft, color: t.color };
 }
 
-export default function MatrixGrid({ year, view, month, units, cells, monthsTotals, projectId, canReorder }: Props) {
+export default function MatrixGrid({ year, view, month, units, cells, monthsTotals, projectId, canReorder, reconcileSummary }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const beYear = year + 543;
@@ -365,6 +369,9 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
             </span>
           )}
           {units.length > 0 && <ExportSummaryButton projectId={projectId} />}
+          {canReorder && reconcileSummary && (
+            <SendToLedgerButton projectId={projectId} summary={reconcileSummary} />
+          )}
           {canReorder && units.length > 0 && (
             <button type="button" onClick={enterOrder} className="rs-chip shrink-0 !h-11 sm:!h-7">
               <ListOrdered className="mr-1 inline h-3.5 w-3.5" /> จัดเรียง

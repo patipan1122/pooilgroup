@@ -5,6 +5,7 @@ import { isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { getPrimaryProject } from "@/lib/rentspace/data";
 import { rentMatrix } from "@/lib/rentspace/matrix-data";
+import { getProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
 import { RsPage, RsHeader, RsBackLink, RsEmpty } from "@/components/rentspace/ui";
 import MatrixGrid from "./_components/matrix-grid";
 
@@ -43,9 +44,13 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
 
   const matrix = await rentMatrix(orgId, project.id, year);
 
-  // แอดมิน/แอดมินโปรแกรม RentSpace จัดลำดับห้องเองได้ (ตรงกับด่านหลังบ้าน gateAdmin)
+  // แอดมิน/แอดมินโปรแกรม RentSpace จัดลำดับห้องเองได้ (ตรงกับด่านหลังบ้าน gateAdmin) —
+  // สิทธิ์ชุดเดียวกันนี้ใช้เป็นด่านโชว์ปุ่ม "ส่งเข้าบัญชี LedgerLine" ด้วย (gateAdmin ฝั่ง
+  // server action เช็คเงื่อนไขเดียวกันเป๊ะ — ไม่โชว์ปุ่มให้คนที่กดแล้วจะโดนปฏิเสธอยู่ดี)
   const canReorder =
     isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
+
+  const reconcileSummary = canReorder ? await getProjectReconcileSummary(orgId, project.id) : null;
 
   const beYear = year + 543;
 
@@ -116,6 +121,7 @@ export default async function MatrixPage({ searchParams }: { searchParams: Searc
         monthsTotals={matrix.monthsTotals}
         projectId={project.id}
         canReorder={canReorder}
+        reconcileSummary={reconcileSummary}
       />
     </RsPage>
   );

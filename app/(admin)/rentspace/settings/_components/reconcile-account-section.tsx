@@ -54,7 +54,12 @@ export default function ReconcileAccountSection({
     startSend(async () => {
       try {
         const r = await actSendBillsToReconcile(projectId);
-        toast.success(`ส่งเข้าบัญชีแล้ว ${r.inserted} ใบ${r.alreadySent ? ` · ข้าม ${r.alreadySent} ใบ (ส่งไปแล้ว)` : ""}`);
+        const skipped = r.skippedForSlipMismatch.length;
+        toast.success(
+          `ส่งเข้าบัญชีแล้ว ${r.inserted} ใบ` +
+            (r.alreadySent ? ` · ข้าม ${r.alreadySent} ใบ (ส่งไปแล้ว)` : "") +
+            (skipped ? ` · ข้าม ${skipped} ใบเพราะยอดสลิปไม่ตรง (ดูรายละเอียดที่หน้าตารางค่าเช่า)` : ""),
+        );
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ส่งไม่สำเร็จ");
