@@ -9,6 +9,7 @@ import { RsBadge } from "@/components/rentspace/ui";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 import type { RentSpacePaymentSlipVerdict } from "@/lib/rentspace/slip-check";
 import { actReorderMatrixUnits, actGetPaymentSlipCheck } from "../../_actions";
+import { ExportSummaryButton } from "./export-summary-button";
 
 /** YYYY-MM-DD → "5 มิ.ย. 69" (Thai short, BE 2-digit) */
 function fmtThaiDate(iso: string): string {
@@ -363,6 +364,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
               <span style={{ fontSize: 13 }}>💡</span> กดหัวเดือนเพื่อแยกดู ค่าเช่า · น้ำ · ไฟ
             </span>
           )}
+          {units.length > 0 && <ExportSummaryButton projectId={projectId} />}
           {canReorder && units.length > 0 && (
             <button type="button" onClick={enterOrder} className="rs-chip shrink-0 !h-11 sm:!h-7">
               <ListOrdered className="mr-1 inline h-3.5 w-3.5" /> จัดเรียง
