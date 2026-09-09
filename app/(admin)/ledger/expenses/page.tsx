@@ -116,14 +116,37 @@ export default async function ExpensesPage({
   // และ LedgerExpense ไม่มี relation กลับไปคำขอ → ดึง expenseId ของบิลที่ผูกคำขอที่มี PV มาก่อน
   // ใช้ทั้งตัวนับแท็บ + กรองรายการ (แม่นยำระดับ DB · ไม่ cap 300 เหมือน pay tab).
   const pvTab = sp.pv === "1";
-  const pvBillLinks = await prisma.ledgerPaymentRequestBill.findMany({
-    where: {
-      orgId: scope.orgId,
-      companyId: scope.companyId,
-      request: { trcloudPvDocId: { not: null } },
-    },
-    select: { expenseId: true },
-  });
+  // ── Phase 1 — queries/checks that depend on nothing but `scope`/`session`/`selected`
+  // (mutually independent of each other) — fire together instead of one-at-a-time.
+  // Every click on the list re-runs this whole page (URL `?selected=` changes), so a
+  // serial waterfall here is exactly what makes it feel like a full-page refresh
+  // (CEO 2026-09-09) — collapsing the ~6 sequential round-trips this page used to do
+  // into 2 concurrent waves cuts real wall-clock time, not just the perceived kind.
+  const [pvBillLinks, canEditClaimability, categories, projectRows, selectedExpense] =
+    await Promise.all([
+      prisma.ledgerPaymentRequestBill.findMany({
+        where: {
+          orgId: scope.orgId,
+          companyId: scope.companyId,
+          request: { trcloudPvDocId: { not: null } },
+        },
+        select: { expenseId: true },
+      }),
+      // นักบัญชี/แอดมิน-เท่านั้น ที่ปรับ "ขอคืนได้?" + override + แนบใบทดแทน (gate เดียวกับ confirm).
+      ledgerWebCanForRole(scope.orgId, session.user.role, "expense.confirm"),
+      listCategories(scope.orgId, scope.companyId),
+      // โครงการ active — ใช้เป็นตัวเลือก picker (แท็กบิล) + id→name map (chip อ่านอย่างเดียวในรายการ).
+      listLedgerProjects(scope.orgId, scope.companyId, { includeArchived: false }).catch(() => []),
+      selected
+        ? getExpense({
+            orgId: scope.orgId,
+            companyId: scope.companyId,
+            id: selected,
+            withSlip: true, // โชว์สลิปโอนเงินในใบ (โอนแล้ว → ดู/ดาวน์โหลด/ส่งต่อ)
+            withPayState: true, // ปุ่ม "โอนแล้ว" ต้องรู้ payState/activeRequestId
+          })
+        : Promise.resolve(null),
+    ]);
   const pvExpenseIds = [...new Set(pvBillLinks.map((b) => b.expenseId))];
   const cc =
     sp.cc === "green" || sp.cc === "yellow" || sp.cc === "red" ? sp.cc : undefined;
@@ -170,62 +193,8 @@ export default async function ExpensesPage({
     search: q,
   };
 
-  // นักบัญชี/แอดมิน-เท่านั้น ที่ปรับ "ขอคืนได้?" + override + แนบใบทดแทน (gate เดียวกับ confirm).
-  const canEditClaimability = await ledgerWebCanForRole(
-    scope.orgId,
-    session.user.role,
-    "expense.confirm",
-  );
-
-  const [expensesResult, categories, completenessSummary, projectRows] = await Promise.all([
-    listExpensesSummary({
-      ...summaryFilter,
-      completeness: cc,
-      docType,
-      sort,
-      needsReview: nr,
-      take: 300,
-      withPayState: ledgerPayreqV1(),
-    }),
-    listCategories(scope.orgId, scope.companyId),
-    summarizeCompleteness(summaryFilter),
-    // โครงการ active — ใช้เป็นตัวเลือก picker (แท็กบิล) + id→name map (chip อ่านอย่างเดียวในรายการ).
-    listLedgerProjects(scope.orgId, scope.companyId, { includeArchived: false }).catch(() => []),
-  ]);
-  const { expenses: allRows } = expensesResult;
   const projectOptions = projectRows.map((p) => ({ value: p.id, label: p.name }));
   const projectNameById = new Map(projectRows.map((p) => [p.id, p.name] as const));
-
-  // D4 source tabs — narrow the SCOPE rows by the active tab's source/owner
-  // predicate (rows already carry `source` + `createdBy` from the summary select).
-  const matchesTab = (r: { source: string; createdBy: string | null }): boolean => {
-    if (tab === "line") return r.source === "line";
-    if (tab === "email") return r.source === "email";
-    if (tab === "web") return r.source === "web";
-    if (tab === "mine") return r.createdBy === session.user.id;
-    return true; // "all"
-  };
-
-  // สถานะการโอนต่อใบ (payState จาก query + gate หมวด/สาขา): eligible=ขอโอนได้(เขียว) ·
-  // blocked=ขอไม่ได้(แดง · ขาดสาขา/หมวด) · requested=รอโอน · paid=โอนแล้ว.
-  const payOf = (r: (typeof allRows)[number]): "paid" | "requested" | "eligible" | "blocked" => {
-    if (r.payState === "paid") return "paid";
-    if (r.payState === "requested") return "requested";
-    return expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok
-      ? "eligible"
-      : "blocked";
-  };
-  const tabRows = allRows.filter(matchesTab);
-  const rowsBase = pay ? tabRows.filter((r) => payOf(r) === pay) : tabRows;
-  // resolve ชื่อโครงการให้แต่ละแถว (queries ไม่ join relation → เติมจาก map ที่ดึงมาแล้ว · ถูก).
-  const rows = rowsBase.map((r) =>
-    r.projectId ? { ...r, projectName: projectNameById.get(r.projectId) ?? null } : r,
-  );
-  const payCounts = { eligible: 0, requested: 0, paid: 0 };
-  for (const r of tabRows) {
-    const p = payOf(r);
-    if (p !== "blocked") payCounts[p] += 1;
-  }
 
   // PRIMARY status-strip counts — DB-accurate (NOT the 300-capped list). Scope =
   // company + branch + the active source(tab)/หมวด/ภาษีซื้อ/ค้นหา filters, MINUS the
@@ -259,50 +228,169 @@ export default async function ExpensesPage({
         }
       : {}),
   };
-  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent, scAp, scPv] = await Promise.all([
-    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
-    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
-    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
-    prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
-    // ส่ง PO แล้ว = REAL doc id only (exclude null + "pending"/"error" sentinels — else a
-    // failed push inflates this count, the 2026-06-15 false-sent-display bug). AND ยังไม่แปลง AP
-    // (trcloudApDocId ว่าง) — ใบที่เป็น AP แล้วย้ายไปแท็บ "AP แล้ว" (CEO 2026-07-22 กันโชว์ซ้ำ).
-    prisma.ledgerExpense.count({
-      where: {
-        ...statusCountWhere,
-        status: { in: VISIBLE_STATUSES },
-        trcloudDocId: { not: null, notIn: ["pending", "error"] },
-        trcloudApDocId: null,
-      },
-    }),
-    // ยังไม่ส่ง PO (CEO 2026-06-10 tab) — never pushed (null) OR last push FAILED
-    // ("error") so failed bills surface here for retry instead of hiding as "sent".
-    // AND-wrapped so it composes with the search OR that statusCountWhere may carry.
-    prisma.ledgerExpense.count({
-      where: {
-        ...statusCountWhere,
-        status: { in: VISIBLE_STATUSES },
-        AND: [{ OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] }],
-      },
-    }),
-    // AP แล้ว — แปลง PO → AP เรียบร้อย (ลงบัญชีจริงแล้ว · CEO 2026-07-22).
-    prisma.ledgerExpense.count({
-      where: {
-        ...statusCountWhere,
-        status: { in: VISIBLE_STATUSES },
-        trcloudApDocId: { not: null },
-      },
-    }),
-    // PV แล้ว — ออกใบสำคัญจ่าย (PV) เข้า TRCloud แล้ว (CEO 2026-07-25). ขั้นถัดจาก "โอนแล้ว".
-    // PV ต่อ "คำขอโอน" → นับบิลที่ id อยู่ในชุด pvExpenseIds (บิลที่ผูกคำขอที่มี PV).
-    prisma.ledgerExpense.count({
-      where: {
-        ...statusCountWhere,
-        status: { in: VISIBLE_STATUSES },
-        id: { in: pvExpenseIds },
-      },
-    }),
-  ]);
+
+  // Stock-IN (LEDGER_STOCKIN_V1) — for a selected confirmed resale expense, load the
+  // stock-tracked SKU options (for inline mapping) + whether it was already received.
+  const stockinOn = ledgerStockinV1();
+  const canStockIn =
+    stockinOn &&
+    !!selectedExpense &&
+    (selectedExpense.status === "confirmed" || selectedExpense.status === "locked");
+  const billBranchId = selectedExpense?.branchId ?? null;
+  type StockLookup = {
+    skuRows: Array<{ id: string; productId: string; productName: string | null; businessGroup: string | null }>;
+    expRow: { trcloudStockinNo: string | null; trcloudStockinDocId: string | null } | null;
+  };
+
+  // ── Phase 2 — depends only on phase 1's results (pvExpenseIds · selectedExpense) but
+  // is otherwise mutually independent — again fire concurrently (this used to be 4 MORE
+  // sequential stages: list+summary → 8 status counts → replacement lookup → stock lookup).
+  const [expensesResult, completenessSummary, statusCountsRaw, replacementExpense, stockData] =
+    await Promise.all([
+      listExpensesSummary({
+        ...summaryFilter,
+        completeness: cc,
+        docType,
+        sort,
+        needsReview: nr,
+        take: 300,
+        withPayState: ledgerPayreqV1(),
+      }),
+      summarizeCompleteness(summaryFilter),
+      Promise.all([
+        prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: { in: VISIBLE_STATUSES } } }),
+        prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: true } }),
+        prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "draft", needsReview: false } }),
+        prisma.ledgerExpense.count({ where: { ...statusCountWhere, status: "confirmed" } }),
+        // ส่ง PO แล้ว = REAL doc id only (exclude null + "pending"/"error" sentinels — else a
+        // failed push inflates this count, the 2026-06-15 false-sent-display bug). AND ยังไม่แปลง AP
+        // (trcloudApDocId ว่าง) — ใบที่เป็น AP แล้วย้ายไปแท็บ "AP แล้ว" (CEO 2026-07-22 กันโชว์ซ้ำ).
+        prisma.ledgerExpense.count({
+          where: {
+            ...statusCountWhere,
+            status: { in: VISIBLE_STATUSES },
+            trcloudDocId: { not: null, notIn: ["pending", "error"] },
+            trcloudApDocId: null,
+          },
+        }),
+        // ยังไม่ส่ง PO (CEO 2026-06-10 tab) — never pushed (null) OR last push FAILED
+        // ("error") so failed bills surface here for retry instead of hiding as "sent".
+        // AND-wrapped so it composes with the search OR that statusCountWhere may carry.
+        prisma.ledgerExpense.count({
+          where: {
+            ...statusCountWhere,
+            status: { in: VISIBLE_STATUSES },
+            AND: [{ OR: [{ trcloudDocId: null }, { trcloudDocId: "error" }] }],
+          },
+        }),
+        // AP แล้ว — แปลง PO → AP เรียบร้อย (ลงบัญชีจริงแล้ว · CEO 2026-07-22).
+        prisma.ledgerExpense.count({
+          where: {
+            ...statusCountWhere,
+            status: { in: VISIBLE_STATUSES },
+            trcloudApDocId: { not: null },
+          },
+        }),
+        // PV แล้ว — ออกใบสำคัญจ่าย (PV) เข้า TRCloud แล้ว (CEO 2026-07-25). ขั้นถัดจาก "โอนแล้ว".
+        // PV ต่อ "คำขอโอน" → นับบิลที่ id อยู่ในชุด pvExpenseIds (บิลที่ผูกคำขอที่มี PV).
+        prisma.ledgerExpense.count({
+          where: {
+            ...statusCountWhere,
+            status: { in: VISIBLE_STATUSES },
+            id: { in: pvExpenseIds },
+          },
+        }),
+      ]),
+      // ถ้าใบที่เลือกมีใบทดแทน → โหลดใบทดแทนมาโชว์รูปคู่กัน (ใบเดิม + ใบใหม่).
+      selectedExpense?.replacedById
+        ? getExpense({
+            orgId: scope.orgId,
+            companyId: scope.companyId,
+            id: selectedExpense.replacedById,
+          })
+        : Promise.resolve(null),
+      canStockIn && selected
+        // orgId/companyId/billId/selId passed in as PARAMETERS (not read from the outer
+        // closure) — TS drops narrowing of outer const/const-guards across a function
+        // boundary, so `scope.companyId`/`billBranchId` would re-widen to `| null` here
+        // otherwise even though both are already checked non-null at the call site below.
+        ? (async (
+            orgId: string,
+            companyId: string,
+            billId: string | null,
+            selId: string,
+          ): Promise<StockLookup> => {
+            // กรอง SKU ตาม "สาขาของบิล" ก่อน (CEO 2026-06-10: เห็นเฉพาะสินค้าสต๊อกของสาขานั้น).
+            // หาว่าสาขานี้ผูกสินค้าสต๊อกตัวไหนไว้ (LedgerSkuBranch); ถ้าสาขายังไม่ตั้ง → fallback
+            // ทั้งบริษัท (กันรายการว่างจนผูกไม่ได้). server ยังกัน wrong_branch ตอน preview อยู่แล้ว.
+            let branchSkuIds: string[] = [];
+            if (billId) {
+              const links = await prisma.ledgerSkuBranch.findMany({
+                where: { orgId, companyId, branchId: billId },
+                select: { skuId: true },
+              });
+              branchSkuIds = links.map((l) => l.skuId);
+            }
+            const [skuRows, expRow] = await Promise.all([
+              prisma.ledgerTrcloudSku.findMany({
+                where: {
+                  orgId,
+                  companyId,
+                  stockTracked: true,
+                  ...(branchSkuIds.length > 0 ? { id: { in: branchSkuIds } } : {}),
+                },
+                select: { id: true, productId: true, productName: true, businessGroup: true },
+                orderBy: [{ businessGroup: "asc" }, { productId: "asc" }],
+                take: 500,
+              }),
+              prisma.ledgerExpense.findFirst({
+                where: { id: selId, orgId, companyId },
+                select: { trcloudStockinNo: true, trcloudStockinDocId: true },
+              }),
+            ]);
+            return { skuRows, expRow };
+          })(scope.orgId, scope.companyId, billBranchId, selected)
+        : Promise.resolve(null),
+    ]);
+  const [scAll, scReview, scDraft, scConfirmed, scSent, scUnsent, scAp, scPv] = statusCountsRaw;
+  const { expenses: allRows } = expensesResult;
+  const stockSkus = stockData?.skuRows ?? [];
+  const stockinDid = stockData?.expRow?.trcloudStockinDocId;
+  const stockinNo =
+    stockData?.expRow?.trcloudStockinNo ??
+    (stockinDid && stockinDid !== "pending" && stockinDid !== "error" ? "sent" : null);
+
+  // D4 source tabs — narrow the SCOPE rows by the active tab's source/owner
+  // predicate (rows already carry `source` + `createdBy` from the summary select).
+  const matchesTab = (r: { source: string; createdBy: string | null }): boolean => {
+    if (tab === "line") return r.source === "line";
+    if (tab === "email") return r.source === "email";
+    if (tab === "web") return r.source === "web";
+    if (tab === "mine") return r.createdBy === session.user.id;
+    return true; // "all"
+  };
+
+  // สถานะการโอนต่อใบ (payState จาก query + gate หมวด/สาขา): eligible=ขอโอนได้(เขียว) ·
+  // blocked=ขอไม่ได้(แดง · ขาดสาขา/หมวด) · requested=รอโอน · paid=โอนแล้ว.
+  const payOf = (r: (typeof allRows)[number]): "paid" | "requested" | "eligible" | "blocked" => {
+    if (r.payState === "paid") return "paid";
+    if (r.payState === "requested") return "requested";
+    return expenseConfirmability({ branchId: r.branchId, categoryId: r.categoryId }).ok
+      ? "eligible"
+      : "blocked";
+  };
+  const tabRows = allRows.filter(matchesTab);
+  const rowsBase = pay ? tabRows.filter((r) => payOf(r) === pay) : tabRows;
+  // resolve ชื่อโครงการให้แต่ละแถว (queries ไม่ join relation → เติมจาก map ที่ดึงมาแล้ว · ถูก).
+  const rows = rowsBase.map((r) =>
+    r.projectId ? { ...r, projectName: projectNameById.get(r.projectId) ?? null } : r,
+  );
+  const payCounts = { eligible: 0, requested: 0, paid: 0 };
+  for (const r of tabRows) {
+    const p = payOf(r);
+    if (p !== "blocked") payCounts[p] += 1;
+  }
+
   const statusCounts = {
     all: scAll,
     review: scReview,
@@ -318,69 +406,6 @@ export default async function ExpensesPage({
     requested: payCounts.requested,
     paid: payCounts.paid,
   };
-
-  const selectedExpense = selected
-    ? await getExpense({
-        orgId: scope.orgId,
-        companyId: scope.companyId,
-        id: selected,
-        withSlip: true, // โชว์สลิปโอนเงินในใบ (โอนแล้ว → ดู/ดาวน์โหลด/ส่งต่อ)
-        withPayState: true, // ปุ่ม "โอนแล้ว" ต้องรู้ payState/activeRequestId
-      })
-    : null;
-
-  // ถ้าใบที่เลือกมีใบทดแทน → โหลดใบทดแทนมาโชว์รูปคู่กัน (ใบเดิม + ใบใหม่).
-  const replacementExpense = selectedExpense?.replacedById
-    ? await getExpense({
-        orgId: scope.orgId,
-        companyId: scope.companyId,
-        id: selectedExpense.replacedById,
-      })
-    : null;
-
-  // Stock-IN (LEDGER_STOCKIN_V1) — for a selected confirmed resale expense, load the
-  // stock-tracked SKU options (for inline mapping) + whether it was already received.
-  const stockinOn = ledgerStockinV1();
-  let stockSkus: Array<{ id: string; productId: string; productName: string | null; businessGroup: string | null }> = [];
-  let stockinNo: string | null = null;
-  const canStockIn =
-    stockinOn &&
-    !!selectedExpense &&
-    (selectedExpense.status === "confirmed" || selectedExpense.status === "locked");
-  if (canStockIn && selected) {
-    // กรอง SKU ตาม "สาขาของบิล" ก่อน (CEO 2026-06-10: เห็นเฉพาะสินค้าสต๊อกของสาขานั้น).
-    // หาว่าสาขานี้ผูกสินค้าสต๊อกตัวไหนไว้ (LedgerSkuBranch); ถ้าสาขายังไม่ตั้ง → fallback ทั้งบริษัท
-    // (กันรายการว่างจนผูกไม่ได้). server ยังกัน wrong_branch ตอน preview อยู่แล้ว.
-    const billBranchId = selectedExpense?.branchId ?? null;
-    let branchSkuIds: string[] = [];
-    if (billBranchId) {
-      const links = await prisma.ledgerSkuBranch.findMany({
-        where: { orgId: scope.orgId, companyId: scope.companyId, branchId: billBranchId },
-        select: { skuId: true },
-      });
-      branchSkuIds = links.map((l) => l.skuId);
-    }
-    const [skuRows, expRow] = await Promise.all([
-      prisma.ledgerTrcloudSku.findMany({
-        where: {
-          orgId: scope.orgId,
-          companyId: scope.companyId,
-          stockTracked: true,
-          ...(branchSkuIds.length > 0 ? { id: { in: branchSkuIds } } : {}),
-        },
-        select: { id: true, productId: true, productName: true, businessGroup: true },
-        orderBy: [{ businessGroup: "asc" }, { productId: "asc" }],
-        take: 500,
-      }),
-      prisma.ledgerExpense.findFirst({
-        where: { id: selected, orgId: scope.orgId, companyId: scope.companyId },
-        select: { trcloudStockinNo: true, trcloudStockinDocId: true },
-      }),
-    ]);
-    stockSkus = skuRows;
-    const did = expRow?.trcloudStockinDocId;
-    stockinNo = expRow?.trcloudStockinNo ?? (did && did !== "pending" && did !== "error" ? "sent" : null);
-  }
 
   // Preserve scope params on links from the list.
   const baseParams = new URLSearchParams();
@@ -722,9 +747,13 @@ export default async function ExpensesPage({
         />
         </div>
 
-        {/* RIGHT — review pane. Mobile: hidden until a receipt is selected (master-detail). */}
+        {/* RIGHT — review pane. Mobile: hidden until a receipt is selected (master-detail).
+            key={selected} → remount + replay animate-fade-in ทุกครั้งที่สลับบิล (แทนสลับ
+            เนื้อหาแบบตัดวูบ ทำให้รู้สึกเหมือน refresh ทั้งหน้า — CEO 2026-09-09). ใช้ key
+            แทนแก้ state ใน useEffect เพราะ eslint ของเรโปนี้ห้าม setState-ใน-effect. */}
         <div
-          className={`min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 sm:p-6 ${
+          key={selected ?? "none"}
+          className={`min-w-0 animate-fade-in rounded-2xl border border-zinc-200 bg-white p-4 sm:p-6 ${
             selected ? "block" : "hidden lg:block"
           }`}
         >

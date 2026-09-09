@@ -154,6 +154,11 @@ export function ExpenseList({
   const pathname = usePathname();
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
+  // คลิกแถวแล้วไฮไลต์/หมุนทันที ไม่รอ server ยืนยัน (selectedId prop มาช้ากว่า pending
+  // เสมอ) — กัน "จอนิ่งแล้วเด้งทั้งก้อน" ที่ CEO บอกว่ารู้สึกเหมือน refresh (2026-09-09).
+  // ไม่ reset ค่านี้ตอน pending จบ (จะกลาย setState-ใน-effect ที่ eslint ห้าม) — ปล่อยให้
+  // ตอน !pending การไฮไลต์อ้างอิง selectedId (ค่าจริงจาก server) เป็นหลักแทนเสมอ.
+  const [optimisticId, setOptimisticId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Bulk-delete two-step guard: open a confirm sheet, require typing "ลบ".
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -223,6 +228,7 @@ export function ExpenseList({
   function onRowClick(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
+    setOptimisticId(id);
     startTransition(() => router.push(rowHref(id)));
   }
 
@@ -952,7 +958,10 @@ export function ExpenseList({
           </li>
         ) : (
           rows.map((r) => {
-            const active = selectedId === r.id;
+            // ระหว่างรอ (pending) เชื่อคลิกล่าสุด (optimisticId) ก่อนเสมอ — server ยัง
+            // ไม่ยืนยัน selectedId ทัน ให้แถวที่กดไฮไลต์/หมุนได้ทันที ไม่ต้องรอ round-trip.
+            const active = pending ? optimisticId === r.id : selectedId === r.id;
+            const rowLoading = active && pending;
             const isDraft = r.status === "draft";
             const isConvertible = convertibleSet.has(r.id);
             // ทุกใบที่ยังไม่ยกเลิกมีช่องติ๊ก → เลือกลบ/ยกเลิกคำขอโอนได้ (server คุมกฎ: paid=ห้ามลบ ·
@@ -1050,7 +1059,13 @@ export function ExpenseList({
                       ) : null}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
-                      <div className="text-sm font-semibold tabular-nums text-zinc-900">
+                      <div className="flex items-center gap-1 text-sm font-semibold tabular-nums text-zinc-900">
+                        {rowLoading && (
+                          <Loader2
+                            className="size-3 shrink-0 animate-spin text-[var(--color-brand-500)]"
+                            aria-label="กำลังเปิดใบนี้"
+                          />
+                        )}
                         {baht(r.total)}
                       </div>
                       <StatusBadge status={r.status} className="text-[10px]" />
