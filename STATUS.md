@@ -1,6 +1,22 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — BUILT+verified ด้วยข้อมูลจริง ยัง local รอ CEO อนุมัติ push · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — BUILT+verified ด้วยข้อมูลจริง ยัง local รอ CEO อนุมัติ push · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+
+## 🦞🧾 ClawFleet — แนบสลิปฝากเงิน + AI อ่านยอด จากหน้าประวัติเก็บเงิน (2026-09-09 · **DEPLOYED LIVE**)
+
+Workshop สเปกล็อกและสร้างจริงไว้ตั้งแต่ 2026-08-29 (commit `003259ab`+`d5e3e4ab` เดิม) — ค้าง local รอ CEO อนุมัติ apply migration 11 วัน วันนี้ CEO ขอให้ push ขึ้นจริงเพื่อทดสอบ
+
+**สิ่งที่ทำวันนี้:**
+- Rebase branch `claude/clawfleet-deposit-slip-2026-08-29` บน `origin/setup` ล่าสุด 2 รอบ (มี session อื่น push แซงระหว่างทำงาน) — clean ไม่มี conflict ทั้ง 2 รอบ (รวม `prisma/schema.prisma` ที่ทั้งสองฝั่งเพิ่มคอลัมน์คนละส่วนกัน)
+- Verify ซ้ำก่อน deploy: `tsc --noEmit` 0 error, eslint เฉพาะ 9 ไฟล์ที่แตะ 0 error ใหม่ (4 error เดิมใน `staff-app-client.tsx` มีมาก่อนตั้งแต่ 2026-07-16 ไม่เกี่ยวกับฟีเจอร์นี้), `next build` ผ่าน
+- Apply migration `prisma/migrations/manual/20260829b_cf_cash_deposit_ocr.sql` เข้า prod DB จริง (เพิ่ม 7 คอลัมน์ nullable ใน `cf_cash_deposits`: `ocr_amount_cents`, `ocr_date`, `ocr_account_name`, `ocr_account_number`, `ocr_ref_no`, `ocr_read_at`, `ocr_flag_reason` — ไม่แตะคอลัมน์เดิมเลย) ผ่าน `npx prisma db execute --file ...` — `Script executed successfully`
+- Push `claude/clawfleet-deposit-slip-2026-08-29` → `setup` (commit `80b37319`, CEO อนุมัติสดก่อน push)
+
+**Verify หลัง deploy (ไม่ใช่แค่ build เขียว):** เช็ค Vercel build log จริงเจอ `[check-schema-applied] parsed 289 models · 3886 columns ... ✓ DB schema is up to date — every model column exists. (mode: enforce)` → ยืนยันว่า migration เข้าจริงก่อน deploy ไม่ใช่ silent-skip แบบเคส RentSpace เดือนก่อน · `curl pooilgroup.com/clawfleet/os/app` → 200
+
+ดู memory [[clawfleet-deposit-slip-ocr-workshop-2026-08-29]]
+
+---
 
 ## 🏬🧾 RentSpace — คลิกดูสลิป + AI ตรวจสลิป (วันที่+เลขบัญชี) ต่อรายการชำระ (2026-09-09 · BUILT ในพื้นที่แยก ยังไม่ push)
 
