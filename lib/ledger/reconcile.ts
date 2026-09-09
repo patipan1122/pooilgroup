@@ -83,6 +83,32 @@ export function reconcileReceipt(p: {
 
   const vatOf = (base: number) => Math.round((base * VAT_RATE) / 100);
 
+  // พิเศษ: ราคาต่อชิ้นในตารางรวม VAT ไว้แล้ว (Σ items.amount = ยอดสุทธิ ไม่ใช่ยอดก่อนภาษี)
+  // แต่ท้ายบิลพิมพ์บรรทัด "ก่อนภาษี/VAT" แยกชัดเจน → AI อ่าน subtotal/vat มาถูกแล้ว
+  // (ai-parse.ts มีตัวอย่าง จ กำกับไว้) แต่ถ้าปล่อยให้ผ่านบันไดด้านล่าง โหมด "zero" จะได้
+  // grand ตรงกับยอดสุทธิพอดีเหมือนกัน (net+vat=base เสมอไม่ว่าปัดเศษยังไง) → บันไดแยกไม่ออก
+  // ว่าเป็น "ไม่มี VAT จริง" หรือ "มี VAT แต่ราคารวมไว้แล้ว" (สองกรณีนี้คำนวณ grand เท่ากันเป๊ะ
+  // เป็นคณิตศาสตร์ ไม่ใช่บั๊ก) → ต้องอาศัยสัญญาณที่ตัวเลขอย่างเดียวให้ไม่ได้ คือ "AI เห็นบรรทัด
+  // VAT ที่ไม่ใช่ 0 พิมพ์อยู่จริงไหม" → เชื่อ AI ในเคสนี้เคสเดียว ไม่ส่งเข้าบันไดทั่วไป
+  const looksVatInclusiveLineItems =
+    itemsSum > 0 &&
+    readVat > 0 &&
+    Math.abs(itemsSum - readTotal) <= TOL && // Σ items ตรงกับยอดสุทธิ (ไม่ใช่ยอดก่อนภาษี)
+    Math.abs(itemsSum - readSub) > TOL && // ...และไม่ตรงกับ subtotal ที่ AI อ่าน (ถ้าตรง = กรณีปกติ)
+    Math.abs(readSub + readVat - readDisc - wht - readTotal) <= TOL; // สมการของ AI เองก็ลงตัวอยู่แล้ว
+  if (looksVatInclusiveLineItems) {
+    return {
+      status: "ok",
+      subtotal: toB(readSub),
+      discount: toB(readDisc),
+      vat: toB(readVat),
+      wht: toB(wht),
+      total: toB(readTotal),
+      note: null,
+      changed: false,
+    };
+  }
+
   const cands: Candidate[] = [];
   for (const mode of ["exclusive", "zero"] as const) {
     for (const footerInLines of [false, true]) {

@@ -366,6 +366,7 @@ async function createDraftExpenseCore(
     wht: input.wht,
     total: input.total,
     items: input.items,
+    docType: input.docType,
   });
 
   // — Input-VAT completeness (ภาษีซื้อ) — deterministic grade beside recheck.
@@ -615,7 +616,7 @@ export async function updateExpense(
 
   const existing = await prisma.ledgerExpense.findFirst({
     where: { id: input.id, orgId, companyId: input.companyId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, docType: true },
   });
   if (!existing) return { ok: false, error: "ไม่พบรายการ" };
   if (existing.status === "void") return { ok: false, error: "รายการถูกยกเลิกแล้ว แก้ไขไม่ได้" };
@@ -635,6 +636,7 @@ export async function updateExpense(
     wht: input.wht,
     total: input.total,
     items: input.items,
+    docType: input.docType ?? (existing.docType as ExpenseDocType),
   });
 
   try {
