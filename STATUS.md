@@ -1,6 +1,27 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`, deploy Ready + smoke ผ่าน)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — BUILT+verified ด้วยข้อมูลจริง ยัง local รอ CEO อนุมัติ push · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+
+## 🏬🧾 RentSpace — คลิกดูสลิป + AI ตรวจสลิป (วันที่+เลขบัญชี) ต่อรายการชำระ (2026-09-09 · BUILT ในพื้นที่แยก ยังไม่ push)
+
+CEO ขอ (2026-09-09): ในป็อปอัพดูรายละเอียดห้อง (ตารางค่าเช่า `/rentspace/matrix`) แต่ละแถว "ชำระ (โอน) ..." ให้กดดูสลิปได้ + ให้ AI อ่านวันที่กับเลขบัญชีปลายทางจากสลิป เทียบกับที่บันทึกไว้ **ตรง = เขียว ไม่ตรง = แดง** (ไม่แตะสีช่อง/สถานะ "จ่ายครบ" เดิม)
+
+**พบก่อนเริ่ม:** ปุ่ม "ดูสลิป" (คลิกเปิดรูปเต็ม) มีอยู่แล้วจากงานก่อนหน้า (commit `280d18a3`, 2026-08-29) รวมถึงคอลัมน์เก็บผล AI (`ocrAmount/ocrDate/ocrAccountName/ocrAccountNumber/ocrRefNo/ocrReadAt`) ก็มีอยู่แล้วในตาราง `RentalPayment` **และ apply เข้า prod แล้วจริง** (ยืนยันด้วย `check-schema-applied.mjs` แบบ read-only — 0 drift) — งานที่ขาดจริงๆ คือ "จุดเขียว/แดงต่อแถวเทียบกับสลิปตัวเอง" (ของเดิมเช็คแค่ "สลิปซ้ำ" กับ "บัญชีผิดตอนอัปโหลด" เท่านั้น ไม่เคยเช็ค "สลิปนี้ตรงกับตัวมันเองไหม")
+
+**สร้างเพิ่ม (commit `d065e8bb`, branch `claude/rentspace-slip-verify-2026-09-09`, worktree `/private/tmp/pg-wt-rentspace-slip-verify` — ยัง local ไม่ push, ไม่ต้องทำ migration ใหม่เพราะคอลัมน์มีอยู่แล้ว):**
+- `lib/rentspace/slip-check.ts` — `evaluatePaymentSlipMatch()` เทียบวันที่ (Bangkok TZ เสมอ) + เลขบัญชีปลายทาง (ตัวเลขล้วน suffix-tolerant เหมือน ChairOps — ไม่เทียบชื่อ กันบั๊กเดิมที่เคยพัง 72/75 ใบ ดู [[chairops-reconcile-slip-account-check-broken-field-2026-08-29]]), `getOrRunRentSpacePaymentSlipCheck()` — cache-first ผ่าน `ocrReadAt` (เปิดซ้ำไม่เรียก AI ซ้ำ)
+- `actGetPaymentSlipCheck()` ใน `app/(admin)/rentspace/_actions.ts` — เรียกตอน popup เปิด เฉพาะ payment ที่มีสลิปในห้อง/เดือนที่เปิดดูอยู่เท่านั้น (ไม่ใช่ทั้งตาราง คุมต้นทุน AI)
+- `matrix-grid.tsx` — จุดเขียว/เทา(กำลังโหลด)/แดงต่อแถว + popup สลิปโชว์ "บันทึกไว้" vs "AI อ่านได้" คู่กัน (วันที่/ยอด/เลขบัญชี) พร้อมเหตุผลถ้าไม่ตรง
+
+**ยืนยันด้วยข้อมูลจริง (ไม่ใช่แค่ build ผ่าน):** เรียกจริงกับสลิปจริงที่ยังไม่เคยอ่าน (payment ฿7,354, 31 ส.ค. 69) — AI อ่านยอด/วันที่ตรงเป๊ะ, เรียกซ้ำรอบ 2 ใช้ผลจำไว้ (125ms ไม่เรียก AI ซ้ำ) — ยืนยัน idempotent · `tsc`/eslint/`next build` สะอาดหมด (build script รวม `check-schema-applied.mjs` ในตัว)
+
+**⚠️ ต้อง CEO ตัดสินใจก่อนเห็นผลจริง:** โครงการ RentSpace มีอยู่ **1 โครงการ** ("ทะเลทาวน์ หัวทะเล") และยังไม่ได้ตั้งค่าบัญชีธนาคารบริษัท (`reconcileBankAccountId` ว่าง) → **ทุกแถวจะขึ้นแดงหมดตอนเริ่มใช้** จนกว่าจะตั้งค่า (เหตุผลที่โชว์จะบอกตรงๆ ว่า "ยังไม่ได้ตั้งค่าบัญชี" ไม่ใช่ "โกง" — fail-closed ไม่ใช่ silent-skip) — ตั้งค่าได้ที่หน้า `/rentspace/settings` (กลไกเดิมจากฟีเจอร์ push เข้า LedgerLine, ดู [[rentspace-ledger-push-2026-08-17]])
+
+**พบเพิ่ม (ไม่ใช่บั๊กที่ขอให้แก้ ไม่ได้แตะ):** สลิปเก่าทั้ง 29 ใบที่มี `slipUrl` → `ocrReadAt` เป็น null หมด แม้อัปโหลดหลังฟีเจอร์ auto-check-ตอนอัปโหลดชิปมาแล้วก็ตาม — แปลว่า auto-check ตอนอัปโหลด (`actRecordPayment` → `runRentSpaceSlipCheck`) อาจไม่ทำงานจริงใน production มาตลอด ต้นเหตุยังไม่ได้สืบ (ฟีเจอร์ใหม่นี้ชดเชยได้เอง — อ่านให้ตอนเปิดดูครั้งแรกแทน)
+
+**ยังไม่ push/deploy — รอ CEO อนุมัติ**
+
+---
 
 ## 🪑📉✅ ChairOps รอบเก็บ (Periods) — "ควรได้"(มิเตอร์) บั๊ก zero-fallback ทั้งองค์กร (2026-09-06→09 · DEPLOYED LIVE)
 
