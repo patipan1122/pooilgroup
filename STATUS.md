@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — BUILT+verified ด้วยข้อมูลจริง ยัง local รอ CEO อนุมัติ push · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
 ## 🦞🧾 ClawFleet — แนบสลิปฝากเงิน + AI อ่านยอด จากหน้าประวัติเก็บเงิน (2026-09-09 · **DEPLOYED LIVE**)
 
@@ -18,13 +18,15 @@ Workshop สเปกล็อกและสร้างจริงไว้�
 
 ---
 
-## 🏬🧾 RentSpace — คลิกดูสลิป + AI ตรวจสลิป (วันที่+เลขบัญชี) ต่อรายการชำระ (2026-09-09 · BUILT ในพื้นที่แยก ยังไม่ push)
+## 🏬🧾✅ RentSpace — คลิกดูสลิป + AI ตรวจสลิป (วันที่+เลขบัญชี) ต่อรายการชำระ (2026-09-09 · DEPLOYED LIVE)
+
+**🚀 DEPLOYED LIVE:** CEO อนุมัติ push+deploy (2026-09-09) → `/verify` ครบ 5 ด่านผ่านหมด (tsc 0 error · eslint clean · next build ผ่านรวม schema-drift guard · ไม่มีไฟล์ค้าง · smoke `/`→307 `/login`→200 `/rentspace/matrix`→307) → `git push` ครั้งแรกโดน non-fast-forward (อีก session push ฟีเจอร์ ClawFleet slip OCR คนละไฟล์กันพอดี) → `git rebase origin/setup` สำเร็จไม่มี conflict → re-verify (tsc+build) ซ้ำ + re-stamp → push `80b37319..c3ac784f` เข้า `setup` → Vercel deploy `8ryx1oac5` Ready (~3 นาที) → `vercel inspect pooilgroup.com` ยืนยัน domain ชี้เข้า deploy ใหม่แล้ว → smoke หลัง deploy ตรงกับก่อน deploy เป๊ะ ไม่มีอะไรพัง
 
 CEO ขอ (2026-09-09): ในป็อปอัพดูรายละเอียดห้อง (ตารางค่าเช่า `/rentspace/matrix`) แต่ละแถว "ชำระ (โอน) ..." ให้กดดูสลิปได้ + ให้ AI อ่านวันที่กับเลขบัญชีปลายทางจากสลิป เทียบกับที่บันทึกไว้ **ตรง = เขียว ไม่ตรง = แดง** (ไม่แตะสีช่อง/สถานะ "จ่ายครบ" เดิม)
 
 **พบก่อนเริ่ม:** ปุ่ม "ดูสลิป" (คลิกเปิดรูปเต็ม) มีอยู่แล้วจากงานก่อนหน้า (commit `280d18a3`, 2026-08-29) รวมถึงคอลัมน์เก็บผล AI (`ocrAmount/ocrDate/ocrAccountName/ocrAccountNumber/ocrRefNo/ocrReadAt`) ก็มีอยู่แล้วในตาราง `RentalPayment` **และ apply เข้า prod แล้วจริง** (ยืนยันด้วย `check-schema-applied.mjs` แบบ read-only — 0 drift) — งานที่ขาดจริงๆ คือ "จุดเขียว/แดงต่อแถวเทียบกับสลิปตัวเอง" (ของเดิมเช็คแค่ "สลิปซ้ำ" กับ "บัญชีผิดตอนอัปโหลด" เท่านั้น ไม่เคยเช็ค "สลิปนี้ตรงกับตัวมันเองไหม")
 
-**สร้างเพิ่ม (commit `d065e8bb`, branch `claude/rentspace-slip-verify-2026-09-09`, worktree `/private/tmp/pg-wt-rentspace-slip-verify` — ยัง local ไม่ push, ไม่ต้องทำ migration ใหม่เพราะคอลัมน์มีอยู่แล้ว):**
+**สร้างเพิ่ม (deploy แล้วที่ commit `c3ac784f`, branch เดิม `claude/rentspace-slip-verify-2026-09-09`, ไม่ต้องทำ migration ใหม่เพราะคอลัมน์มีอยู่แล้ว):**
 - `lib/rentspace/slip-check.ts` — `evaluatePaymentSlipMatch()` เทียบวันที่ (Bangkok TZ เสมอ) + เลขบัญชีปลายทาง (ตัวเลขล้วน suffix-tolerant เหมือน ChairOps — ไม่เทียบชื่อ กันบั๊กเดิมที่เคยพัง 72/75 ใบ ดู [[chairops-reconcile-slip-account-check-broken-field-2026-08-29]]), `getOrRunRentSpacePaymentSlipCheck()` — cache-first ผ่าน `ocrReadAt` (เปิดซ้ำไม่เรียก AI ซ้ำ)
 - `actGetPaymentSlipCheck()` ใน `app/(admin)/rentspace/_actions.ts` — เรียกตอน popup เปิด เฉพาะ payment ที่มีสลิปในห้อง/เดือนที่เปิดดูอยู่เท่านั้น (ไม่ใช่ทั้งตาราง คุมต้นทุน AI)
 - `matrix-grid.tsx` — จุดเขียว/เทา(กำลังโหลด)/แดงต่อแถว + popup สลิปโชว์ "บันทึกไว้" vs "AI อ่านได้" คู่กัน (วันที่/ยอด/เลขบัญชี) พร้อมเหตุผลถ้าไม่ตรง
@@ -35,7 +37,7 @@ CEO ขอ (2026-09-09): ในป็อปอัพดูรายละเอ�
 
 **พบเพิ่ม (ไม่ใช่บั๊กที่ขอให้แก้ ไม่ได้แตะ):** สลิปเก่าทั้ง 29 ใบที่มี `slipUrl` → `ocrReadAt` เป็น null หมด แม้อัปโหลดหลังฟีเจอร์ auto-check-ตอนอัปโหลดชิปมาแล้วก็ตาม — แปลว่า auto-check ตอนอัปโหลด (`actRecordPayment` → `runRentSpaceSlipCheck`) อาจไม่ทำงานจริงใน production มาตลอด ต้นเหตุยังไม่ได้สืบ (ฟีเจอร์ใหม่นี้ชดเชยได้เอง — อ่านให้ตอนเปิดดูครั้งแรกแทน)
 
-**ยังไม่ push/deploy — รอ CEO อนุมัติ**
+**ยังต้องตั้งค่าบัญชีธนาคารที่ `/rentspace/settings` ก่อนถึงจะเห็นจุดเขียวได้จริง (ตอนนี้ขึ้นแดงหมดเพราะยังไม่ได้ตั้งค่า ไม่ใช่บั๊ก)**
 
 ---
 
