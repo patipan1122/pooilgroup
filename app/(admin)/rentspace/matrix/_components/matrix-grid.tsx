@@ -469,9 +469,10 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                     return (
                       <td
                         key={m}
-                        className="rs-cell"
+                        className={`rs-cell${cell.slipAmountMismatch ? " rs-cell-slip-mismatch" : ""}`}
                         style={{ background: tone.bg }}
                         onClick={() => openCell(u, m)}
+                        title={cell.slipAmountMismatch ? "ยอดสลิปไม่ตรงกับที่บันทึก — เปิดดูรายละเอียด" : undefined}
                       >
                         {cell.edited && <span className="rs-edited-dot" title="เคยแก้ไขรายการบิล" />}
                         {cell.ledgerStatus !== "not_sent" && (
@@ -651,6 +652,12 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
         .rs-cell:hover {
           outline: 2px solid var(--rs-brand);
           outline-offset: -2px;
+        }
+        /* CEO 2026-09-09: ยอดสลิป (AI อ่านไว้แล้ว) ไม่ตรงกับที่บันทึก — ต้องเห็นได้จากตาราง
+           ทันทีไม่ต้องกดปุ่มส่งก่อน ใช้กรอบแดงรอบเซลล์ (ไม่ใช่จุดที่ 3 — เต็มโควตาจุดมุมแล้ว
+           2 จุด: ส้ม=แก้ไข, น้ำเงิน/rainbow=ส่งบัญชี) box-shadow inset กันชนกับ outline ตอน hover */
+        .rs-cell-slip-mismatch {
+          box-shadow: inset 0 0 0 2px var(--rs-danger);
         }
         .rs-edited-dot {
           position: absolute;
@@ -1070,6 +1077,15 @@ function CellDetail({
                     style={{ background: "var(--rs-info-soft)", color: "var(--rs-info)" }}
                   >
                     ส่งบัญชีแล้ว · รอจับคู่
+                  </span>
+                )}
+                {cell.slipAmountMismatch && (
+                  <span
+                    className="inline-block rounded-full px-2.5 py-1 text-[11.5px] font-semibold"
+                    style={{ background: "var(--rs-danger-soft)", color: "var(--rs-danger)" }}
+                    title="กดปุ่ม “ดูสลิป” ที่แถวการชำระด้านล่างเพื่อดูยอดที่ AI อ่านได้เทียบกับที่บันทึกไว้"
+                  >
+                    ⚠ ยอดสลิปไม่ตรงกับที่บันทึก
                   </span>
                 )}
               </div>

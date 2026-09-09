@@ -275,6 +275,38 @@ export async function pushProjectBillsToLedger(
   };
 }
 
+// CEO 2026-09-09 (Part C): CEO เจอ 4 บิลที่ยอดสลิปไม่ตรง จาก pre-send gate (evaluateBillSlipGate
+// ด้านบน) แล้วขอให้ "โชว์เป็นสี/สัญลักษณ์ในตาราง" — ไม่ต้องกดปุ่มส่งก่อนถึงจะรู้. ต่างจาก
+// pushProjectBillsToLedger ตรงที่ตัวนี้ต้อง "ถูกเรียกทุกครั้งที่โหลดหน้า matrix" (ทั้งหน้า)
+// จึงห้ามยิง AI ใหม่เด็ดขาด — ใช้ ocrAmount ที่ persist ไว้แล้วเท่านั้น (ocrReadAt ต้องไม่ null)
+// payment ที่ยังไม่เคยอ่านสลิปเลย (ocrReadAt null) ถูกตัดออกจาก query ตั้งแต่ต้น (ไม่ผ่าน
+// evaluateBillSlipGate เลย) กัน false-positive แดงทั้งที่ "ยังไม่เคยตรวจ" — ต่างจาก "ตรวจแล้วไม่ตรง"
+/** หาบิลที่ยอดสลิป (จาก ocrAmount ที่ AI เคยอ่านไว้แล้วเท่านั้น — ไม่เรียก AI ใหม่) ไม่ตรงกับ
+ *  ยอดที่บันทึกไว้ — query เดียวต่อ billIds ทั้งหมด ไม่ N+1 (ใช้โหลดตาราง matrix ทั้งหน้า
+ *  เหมือน getLedgerStatusForBills ด้านบน). reuse evaluateBillSlipGate() ตรงๆ (ไม่แก้ตัวมัน)
+ *  แต่ป้อนเฉพาะ payment ที่ ocrReadAt ตั้งแล้ว — payment ที่ยังไม่ตรวจไม่ถูกนับเป็นเหตุผลเลย */
+export async function getSlipMismatchBillIds(orgId: string, billIds: string[]): Promise<Set<string>> {
+  if (billIds.length === 0) return new Set();
+  const bills = await prisma.rentalBill.findMany({
+    where: { id: { in: billIds }, orgId },
+    select: {
+      id: true,
+      payments: {
+        where: { status: "confirmed", slipUrl: { not: null }, ocrReadAt: { not: null } },
+        select: { id: true, paidOn: true, slipUrl: true, amountThb: true, ocrAmount: true },
+      },
+    },
+  });
+
+  const mismatchIds = new Set<string>();
+  for (const b of bills) {
+    if (b.payments.length === 0) continue; // ไม่มี payment ที่ตรวจแล้วเลย — ยังไม่รู้ ไม่ใช่แดง
+    const ocrAmountByPaymentId = new Map<string, number | null>(b.payments.map((p) => [p.id, p.ocrAmount]));
+    if (evaluateBillSlipGate(b, ocrAmountByPaymentId).length > 0) mismatchIds.add(b.id);
+  }
+  return mismatchIds;
+}
+
 export type LedgerBillStatus = "not_sent" | "sent_unmatched" | "sent_matched";
 
 /** สถานะส่งเข้าบัญชีต่อบิล — query เดียวต่อ billIds ทั้งหมด ไม่ N+1 (ใช้โหลดตาราง matrix) */

@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { toNum, tenantDisplayName } from "@/lib/rentspace/format";
 import { getEditedBillIds } from "@/lib/rentspace/history";
-import { getLedgerStatusForBills, type LedgerBillStatus } from "@/lib/rentspace/ledger-push";
+import { getLedgerStatusForBills, getSlipMismatchBillIds, type LedgerBillStatus } from "@/lib/rentspace/ledger-push";
 
 export type MatrixUnit = {
   id: string;
@@ -45,6 +45,9 @@ export type MatrixCell = {
   payments: MatrixPayment[]; // ประวัติการชำระ (timeline)
   edited: boolean; // เคยแก้ไขรายการบิล (RENTSPACE_BILL_UPDATED) — โชว์จุดสีส้มในตาราง
   ledgerStatus: LedgerBillStatus; // ส่งเข้า LedgerLine แล้วหรือยัง / จับคู่ธนาคารแล้วหรือยัง
+  /** ยอดสลิป (AI อ่านไว้แล้ว) ไม่ตรงกับยอดที่บันทึก — เฉพาะที่ตรวจแล้วเท่านั้น (ไม่เรียก AI ใหม่
+   *  ตอนโหลด matrix) ดู getSlipMismatchBillIds ใน ledger-push.ts */
+  slipAmountMismatch: boolean;
 };
 
 export type RentMatrix = {
@@ -140,9 +143,10 @@ export async function rentMatrix(
   // จุดสีส้ม "เคยแก้ไข" + จุดสถานะ "ส่งเข้าบัญชี LedgerLine" ในตาราง — query เดียวจบ
   // ต่อทั้งตาราง ไม่ใช่ query ต่อเซลล์ (กัน N+1)
   const billIds = bills.map((b) => b.id);
-  const [editedBillIds, ledgerStatusById] = await Promise.all([
+  const [editedBillIds, ledgerStatusById, slipMismatchBillIds] = await Promise.all([
     getEditedBillIds(orgId, billIds),
     getLedgerStatusForBills(orgId, billIds),
+    getSlipMismatchBillIds(orgId, billIds),
   ]);
 
   const isoDate = (d: Date | null | undefined) =>
@@ -192,6 +196,7 @@ export async function rentMatrix(
       })),
       edited: editedBillIds.has(b.id),
       ledgerStatus: ledgerStatusById.get(b.id) ?? "not_sent",
+      slipAmountMismatch: slipMismatchBillIds.has(b.id),
     };
     cells[`${b.unitId}|${b.period}`] = cell;
 
