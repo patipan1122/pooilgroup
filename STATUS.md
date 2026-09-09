@@ -1,6 +1,6 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🪑📤 ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — CEO อนุมัติ push แล้ว กำลัง deploy · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-09 (🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
 ## 🧾⚡✅ LedgerLine รายจ่าย — คลิกเปลี่ยนบิลรู้สึกเหมือน refresh ทั้งหน้า (2026-09-09 · DEPLOYED LIVE)
 
@@ -21,7 +21,7 @@ CEO ส่งภาพหน้าจอ [ledger/expenses](https://poolgroup.com
 
 ---
 
-## 🪑📤 ChairOps Reconcile — เลือกหลายสาขาส่งเข้า reconcile ในคลิกเดียว (2026-09-09 · กำลัง deploy)
+## 🪑📤✅ ChairOps Reconcile — เลือกหลายสาขาส่งเข้า reconcile ในคลิกเดียว (2026-09-09 · **DEPLOYED LIVE**)
 
 CEO ทิ้งคอมเมนต์ผ่าน Pinpoint บนหน้า `/chairops/reconcile/[id]?view=checklist&ckv=numbers` (สาขา Indexบางนา 510): "อยากให้มีปุ่มส่งเข้าบัญชี reconcile กดส่งสาขาไหนบ้าง ให้ติ๊กสาขา แบบส่งทั้งหมด หรือติ๊กบางสาขาออก"
 
@@ -35,7 +35,7 @@ CEO ทิ้งคอมเมนต์ผ่าน Pinpoint บนหน้า
 
 **Verify:** rebase บน `origin/setup` 3 รอบ ระหว่างทำงาน (มี session อื่น push แซงรวม 9 commit — ClawFleet, RentSpace ×2, LedgerLine — clean ไม่มี conflict ในโค้ด มีแค่ STATUS.md ชนกันเอง แก้โดยเก็บทั้งสองฝั่งทุกรอบ) → `tsc --noEmit` 0 error · eslint เฉพาะไฟล์ที่แตะ 0 error · `next build` ผ่านทุกรอบ · `git status` สะอาด · `/verify` skill stamp ผ่าน (ด่าน verify-gate hook บล็อกจนกว่าจะมี stamp)
 
-**CEO อนุมัติ push+deploy (2026-09-09)** → กำลัง push เข้า `origin/setup`
+**🚀 DEPLOYED LIVE (2026-09-09):** CEO อนุมัติ push+deploy → rebase บน `origin/setup` 3 รอบ (มี session อื่น push แซงรวม 9 commit ระหว่างทำงาน — ClawFleet slip OCR, RentSpace slip verify, RentSpace export, LedgerLine perf — code ไม่ชนกันเลยสักรอบ มีแค่ STATUS.md ชนตัวเอง แก้เก็บทั้งสองฝั่งทุกรอบ) → verify-gate hook บล็อก push ครั้งแรกเพราะยังไม่มี `/verify` stamp → รัน `/verify` (tsc 0 error · eslint clean · next build ผ่าน · git status สะอาด · smoke pre-deploy `/`→307 `/login`→200 `/chairops/reconcile`→307) → stamp → push `6d2b33c3..4aa39276` เข้า `setup` → Vercel deploy `e9bz6wykf` Ready (~3 นาที) → `vercel inspect pooilgroup.com` ยืนยัน domain ชี้เข้า deploy ใหม่แล้ว → smoke หลัง deploy ตรงกับก่อน deploy เป๊ะทั้ง 3 route ไม่มีอะไรพัง
 
 ---
 
