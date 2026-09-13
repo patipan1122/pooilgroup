@@ -212,23 +212,33 @@ export default async function UsersPage() {
     if (!codesByUserId.has(ub.user_id)) codesByUserId.set(ub.user_id, []);
     codesByUserId.get(ub.user_id)!.push(code);
   }
-  const flatUsers = allUsers.map((u) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    phone: u.phone,
-    role: u.role,
-    branchCodes: (codesByUserId.get(u.id) ?? []).join(", "),
-    status: (u.is_active
-      ? "active"
-      : u.invite_used_at
-        ? "inactive"
-        : "pending") as "active" | "pending" | "inactive",
-    has_line: !!u.line_user_id,
-    has_telegram: !!u.telegram_user_id,
-    last_login_at: u.last_login_at,
-    created_at: u.created_at,
-  }));
+  const flatUsers = allUsers
+    .map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      phone: u.phone,
+      role: u.role,
+      branchCodes: (codesByUserId.get(u.id) ?? []).join(", "),
+      status: (u.is_active
+        ? "active"
+        : u.invite_used_at
+          ? "inactive"
+          : "pending") as "active" | "pending" | "inactive",
+      has_line: !!u.line_user_id,
+      has_telegram: !!u.telegram_user_id,
+      last_login_at: u.last_login_at,
+      created_at: u.created_at,
+    }))
+    // ตารางแบบ Excel (UsersTableView) เรียงตามการใช้งานจริงเป็นค่าเริ่มต้น — คนล็อกอิน
+    // ล่าสุดขึ้นก่อน ใครยังไม่เคยล็อกอินเลย (null) จมไปอยู่ล่างสุด (CEO 2026-09-13:
+    // อยากเห็นคนที่ใช้งานอยู่ด้านบน คนไม่ใช้ไปอยู่ล่าง). ไม่แตะ query ที่ใช้ทำมุมมอง
+    // การ์ด (ประเภทธุรกิจ→สาขา→คน) ซึ่งยังเรียงตาม created_at เดิม.
+    .sort((a, b) => {
+      const at = a.last_login_at ? new Date(a.last_login_at).getTime() : -Infinity;
+      const bt = b.last_login_at ? new Date(b.last_login_at).getTime() : -Infinity;
+      return bt - at;
+    });
 
   return (
     <div className="relative">
