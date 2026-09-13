@@ -11,6 +11,7 @@ import { z } from "zod";
 import { adminClient } from "@/lib/db/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
+import { recordSuccessfulLogin, getMetaFromRequest } from "@/lib/auth/login-tracker";
 import { getRequestBaseUrl } from "@/lib/utils/base-url";
 import { verifyInvite } from "@/lib/chairops/line/invite";
 import { asLineModule, loginChannelIdForModule } from "@/lib/line/channels";
@@ -568,6 +569,13 @@ export async function POST(req: NextRequest) {
       resourceId: resolved.id,
       diff: { new: { via: "line_liff" } },
     });
+    // เดิมช่องทางนี้ไม่เคยอัปเดต users.last_login_at เลย (ต่างจาก login ด้วย
+    // อีเมล/รหัสผ่านที่เรียก recordSuccessfulLogin ผ่าน /api/auth/post-login) —
+    // ทำให้พนักงานที่ใช้ LINE เป็นหลักโชว์ "ไม่ได้ใช้งาน" ทั้งที่เข้าระบบทุกวัน
+    // (CEO 2026-09-13). เรียกตรงนี้ตัวเดียวกับที่ post-login เรียก — ครอบคลุมทั้ง
+    // เส้นทาง LIFF-JS ตรงและเส้นทาง OAuth ผ่าน /auth/line-callback (x-line-internal)
+    // เพราะทั้งสองเส้นทางวิ่งผ่านจุดนี้จุดเดียวกัน.
+    await recordSuccessfulLogin(resolved.id, getMetaFromRequest(req));
     // Server-side caller (header x-line-internal: 1 from /auth/line-callback)
     // gets the action_link back in the JSON directly so it can redirect to
     // Supabase without going through the cookie indirection — that cookie was
