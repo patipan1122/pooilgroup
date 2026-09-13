@@ -145,12 +145,32 @@ type LastKnown = { balanceSatang: number; txnDate: string };
 // which can't be mixed with the plain `number` amounts parsed from the file (throws
 // at runtime). Cast to ::text in SQL and parse with Number() here, same pattern the
 // existing duplicate-check query in commitImportAction already uses.
+//
+// row_index is assigned in FILE order (0-based), and different banks export in
+// different directions — some oldest-txn-first, some newest-first (see
+// checkBalanceContinuity above). Plain `row_index DESC` silently assumed ascending
+// row_index always means later-in-day, which is only true for oldest-first files.
+// For newest-first files (e.g. BBL's texport CSV) that picks the EARLIEST row of
+// the last day instead of the latest one, producing a phantom continuity gap on
+// the next import. Fix: detect each batch's direction the same way
+// lib/ledger/bank-reconcile-board.ts already does for the account's running-balance
+// display (`corr(row_index, txn_date)` sign, s=-1 when file is newest-first — that
+// fix caught a real ~฿23k Bangkok Bank closing-balance error) and order by
+// `(s * row_index)` so "last" always means chronologically last regardless of file
+// direction.
 async function getLastKnownBalance(bankAccountId: string): Promise<LastKnown | null> {
   const rows = await prisma.$queryRaw<{ balanceSatang: string; txnDate: string }[]>`
-    SELECT balance_satang::text as "balanceSatang", txn_date::text as "txnDate"
-    FROM ledger_bank_txn
-    WHERE bank_account_id = ${bankAccountId}::uuid
-    ORDER BY txn_date DESC, row_index DESC, id DESC
+    SELECT t.balance_satang::text as "balanceSatang", t.txn_date::text as "txnDate"
+    FROM ledger_bank_txn t
+    LEFT JOIN (
+      SELECT batch_id,
+             CASE WHEN corr(row_index::float8, extract(epoch FROM txn_date)::float8) < 0 THEN -1 ELSE 1 END AS s
+      FROM ledger_bank_txn
+      WHERE bank_account_id = ${bankAccountId}::uuid
+      GROUP BY batch_id
+    ) d ON d.batch_id = t.batch_id
+    WHERE t.bank_account_id = ${bankAccountId}::uuid
+    ORDER BY t.txn_date DESC, (COALESCE(d.s, 1) * t.row_index) DESC, t.id DESC
     LIMIT 1
   `;
   const r = rows[0];
@@ -158,18 +178,26 @@ async function getLastKnownBalance(bankAccountId: string): Promise<LastKnown | n
 }
 
 // Batched version for the smart-import path, which previews several candidate
-// accounts at once — one query instead of N.
+// accounts at once — one query instead of N. Same direction-detection fix as
+// getLastKnownBalance above, scoped per (bank_account_id, batch_id).
 async function getLastKnownBalances(bankAccountIds: string[]): Promise<Map<string, LastKnown>> {
   const map = new Map<string, LastKnown>();
   if (bankAccountIds.length === 0) return map;
   const rows = await prisma.$queryRaw<{ bankAccountId: string; balanceSatang: string; txnDate: string }[]>`
-    SELECT DISTINCT ON (bank_account_id)
-      bank_account_id::text as "bankAccountId",
-      balance_satang::text as "balanceSatang",
-      txn_date::text as "txnDate"
-    FROM ledger_bank_txn
-    WHERE bank_account_id = ANY(${bankAccountIds}::uuid[])
-    ORDER BY bank_account_id, txn_date DESC, row_index DESC, id DESC
+    SELECT DISTINCT ON (t.bank_account_id)
+      t.bank_account_id::text as "bankAccountId",
+      t.balance_satang::text as "balanceSatang",
+      t.txn_date::text as "txnDate"
+    FROM ledger_bank_txn t
+    LEFT JOIN (
+      SELECT bank_account_id, batch_id,
+             CASE WHEN corr(row_index::float8, extract(epoch FROM txn_date)::float8) < 0 THEN -1 ELSE 1 END AS s
+      FROM ledger_bank_txn
+      WHERE bank_account_id = ANY(${bankAccountIds}::uuid[])
+      GROUP BY bank_account_id, batch_id
+    ) d ON d.batch_id = t.batch_id AND d.bank_account_id = t.bank_account_id
+    WHERE t.bank_account_id = ANY(${bankAccountIds}::uuid[])
+    ORDER BY t.bank_account_id, t.txn_date DESC, (COALESCE(d.s, 1) * t.row_index) DESC, t.id DESC
   `;
   for (const r of rows) map.set(r.bankAccountId, { balanceSatang: Number(r.balanceSatang), txnDate: r.txnDate });
   return map;
