@@ -1,8 +1,20 @@
 # 📍 STATUS.md — Pooilgroup ERP
 
-> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-13 (👥🕐 หน้าทีม&สาขา — "LOGIN ล่าสุด" เปลี่ยนจาก "N วัน" เป็นวันที่+เวลาจริง + เรียงตารางให้คนใช้งานอยู่บนสุด — **DEPLOYED LIVE** `61bb7d65` · ⚠️ พบบั๊กราก: LINE login ไม่เคยบันทึกเวลาเข้าใช้ ทำให้พนักงานที่ใช้ LINE เป็นหลักโชว์ค่าเก่า/ว่าง กระทบ Access Review cron ด้วย — รอ CEO อนุมัติแก้ระดับราก · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
+> **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-13 (👥🔧 LINE login ตอนนี้บันทึกเวลาเข้าใช้แล้ว (แก้รากเสร็จสมบูรณ์ ครบทั้ง 2 ระดับ) — **DEPLOYED LIVE** `08b0fc4b` · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
-## 👥🕐✅ หน้าทีม & สาขา — "LOGIN ล่าสุด" ไม่แม่น + พบบั๊กราก LINE login ไม่บันทึกเวลาเข้าใช้ (2026-09-13 · DEPLOYED LIVE ระดับ 1, ค้างระดับ 2)
+## 👥🔧✅ LINE login ไม่เคยบันทึกเวลาเข้าใช้ — แก้รากเสร็จแล้ว (2026-09-13 · DEPLOYED LIVE ครบทั้ง 2 ระดับ)
+
+**ระดับ 2 (CEO อนุมัติ "แก้ราก เลย"):** [`app/api/auth/line-login/route.ts`](app/api/auth/line-login/route.ts) เพิ่มเรียก `recordSuccessfulLogin()` — ฟังก์ชันเดียวกับที่ login ด้วยอีเมล/รหัสผ่านใช้อยู่แล้ว (ผ่าน `/api/auth/post-login`) — ตรงจุดที่ resolve ผู้ใช้ + สร้าง magic link สำเร็จแล้ว (จุดเดียวกับที่ audit log LOGIN เดิมอยู่ ครอบคลุมทั้งเส้นทาง LIFF-JS ตรง และเส้นทาง OAuth ผ่าน `/auth/line-callback`) ตอนนี้ล็อกอินผ่าน LINE จะอัปเดต `last_login_at` เหมือนอีเมลแล้ว — แก้ทั้งหน้า "ทีม & สาขา" และ Access Review cron ที่เคยธงเท็จคนใช้ LINE เป็นหลัก
+
+ไม่เช็ค/throw ผลลัพธ์จากฟังก์ชันนี้ (ถ้าล้มเหลวต้องไม่บล็อกการล็อกอินจริง — ตามแนวเดียวกับ audit() เดิมในไฟล์นี้)
+
+**Verify:** `tsc --noEmit` 0 error · eslint เฉพาะไฟล์ที่แก้ 0 error · `next build` ผ่าน · smoke ก่อน/หลัง deploy ตรงกันเป๊ะ · **หมายเหตุ:** จุดนี้ทดสอบ end-to-end จริงไม่ได้ (ต้องมีคนล็อกอินผ่าน LINE จริง) — ยืนยันด้วยการอ่านโค้ด+ผลลัพธ์ build เท่านั้น แนะนำให้เช็คที่ `/users` หลังพนักงานคนไหนล็อกอินผ่าน LINE ครั้งถัดไป ว่า "LOGIN ล่าสุด" ขยับจริง
+
+**🚀 DEPLOYED LIVE:** push `2e33bca6..08b0fc4b` เข้า `setup` → Vercel deploy Ready → domain ยืนยันชี้ deploy ใหม่ + smoke ตรงกันเป๊ะ
+
+---
+
+## 👥🕐✅ หน้าทีม & สาขา — "LOGIN ล่าสุด" ไม่แม่น + พบบั๊กราก LINE login ไม่บันทึกเวลาเข้าใช้ (2026-09-13 · DEPLOYED LIVE ระดับ 1, ค้างระดับ 2 — ปัจจุบันแก้ครบแล้ว ดูด้านบน)
 
 CEO ดูหน้า `/users` (ทีม & สาขา) เห็นคอลัมน์ "LOGIN ล่าสุด" ขึ้น "31 วัน" / "96 วัน" / "—" กับพนักงานหลายคน สงสัยว่า "น่าจะไม่จริง" อยากให้โชว์วันที่/เวลาจริงแทน
 
