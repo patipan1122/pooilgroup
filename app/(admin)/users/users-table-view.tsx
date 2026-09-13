@@ -11,6 +11,7 @@ import type {
   DataGridRowAction,
 } from "@/components/ui/data-grid";
 import { ROLE_OPTIONS, roleLabel, roleColor } from "@/lib/constants/roles";
+import { bkkDateTime } from "@/lib/utils/format";
 
 export interface FlatUser {
   id: string;
@@ -54,19 +55,6 @@ function formatDate(iso: string | null): string {
     month: "short",
     day: "numeric",
   });
-}
-
-function timeAgo(iso: string | null): string {
-  if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (isNaN(ms)) return "—";
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return "เพิ่งเข้า";
-  if (min < 60) return `${min} น.`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} ชม.`;
-  const d = Math.floor(hr / 24);
-  return `${d} วัน`;
 }
 
 export function UsersTableView({
@@ -202,12 +190,12 @@ export function UsersTableView({
       {
         key: "last_login_at",
         label: "LOGIN ล่าสุด",
-        minWidth: 110,
+        minWidth: 140,
         getValue: (r) =>
           r.last_login_at ? new Date(r.last_login_at).getTime() : 0,
         render: (r) => (
-          <span className="text-xs text-zinc-600 tabular-num">
-            {timeAgo(r.last_login_at)}
+          <span className="text-xs text-zinc-600 tabular-nums">
+            {r.last_login_at ? bkkDateTime(r.last_login_at) : "—"}
           </span>
         ),
         format: (r) => formatDate(r.last_login_at),
