@@ -6,7 +6,7 @@
 // server (the ledger_permission matrix). TRCloud push stays a web/accountant job.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, Check } from "lucide-react";
+import { AlertTriangle, Banknote, Check } from "lucide-react";
 import { ExpenseReviewPane } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseDraft, LedgerActionResult } from "@/components/ledger/ExpenseReviewPane";
 import type { ExpenseRow, CategoryOption, BranchOption } from "@/components/ledger/_kit/types";
@@ -66,6 +66,11 @@ export function LiffExpensePane({
 }) {
   const router = useRouter();
   const [payoutOpen, setPayoutOpen] = useState(false);
+  // สาขา+หมวดครบไหม — ค่าเริ่มต้นมาจาก server (page.tsx โหลดตอนเปิดหน้า) แต่หลังจากนั้น
+  // ExpenseReviewPane (onGateChange) จะอัปเดตให้ "สด" ตามที่จอโชว์จริง ไม่ใช่ค่าตอนโหลดหน้า
+  // (CEO 2026-09-13: เลือกหมวด/สาขาแล้วยังไม่กดบันทึก → กด "ขอโอน" ดันบอกว่ายังไม่เลือก).
+  const [liveClassified, setLiveClassified] = useState(payout?.classified ?? false);
+  const [showClassifyGuide, setShowClassifyGuide] = useState(false);
   return (
     <>
     <ExpenseReviewPane
@@ -98,6 +103,7 @@ export function LiffExpensePane({
       showTrcloud={canSendTrcloud}
       showSendToTrcloud={canSendTrcloud}
       showVoucherMenu={false}
+      onGateChange={setLiveClassified}
       // ยืนยันแล้ว → อยู่หน้าบิลนั้นเลย (refresh ให้เห็นสถานะยืนยัน · ไม่เด้งไป home/รายการ
       // = ตอบ CEO 2026-07-09 "ควรไปหน้าบิลนั้น ไม่ใช่เด้ง home ใหญ่") · ลบ/ยกเลิก → เด้งกลับรายการ
       // (บิลหายจากหน้านี้แล้ว อยู่ต่อไม่มีอะไรให้ดู).
@@ -118,7 +124,15 @@ export function LiffExpensePane({
           ) : (
             <button
               type="button"
-              onClick={() => setPayoutOpen(true)}
+              onClick={() => {
+                // ยังไม่เลือกหมวด/สาขา (เช็คจากค่าสดบนจอ ไม่ใช่ค่าตอนโหลดหน้า) → บังคับไปเลือกก่อน
+                // แทนที่จะเปิด sheet ขอโอนที่กดอะไรไม่ได้ (CEO 2026-09-13).
+                if (!liveClassified) {
+                  setShowClassifyGuide(true);
+                  return;
+                }
+                setPayoutOpen(true);
+              }}
               className="press inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white active:bg-violet-700 sm:flex-none"
             >
               <Banknote className="size-4" aria-hidden /> ขอโอน
@@ -131,12 +145,49 @@ export function LiffExpensePane({
         <LiffPayeeRequest
           expenseId={payout.expenseId}
           companyId={payout.companyId}
-          classified={payout.classified}
+          classified={liveClassified}
           canSendTrcloud={canSendTrcloud}
           poSent={isTrcloudSent(expense.trcloudDocId)}
           open={payoutOpen}
           onOpenChange={setPayoutOpen}
         />
+      )}
+      {showClassifyGuide && (
+        <div
+          className="fixed inset-0 z-[9000] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowClassifyGuide(false)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="size-5" aria-hidden />
+              <span className="text-base font-semibold">ยังไม่ได้เลือกหมวด/สาขา</span>
+            </div>
+            <p className="mt-2 text-sm text-zinc-600">
+              ต้องเลือก “สาขา + หมวดค่าใช้จ่าย” ด้านบนให้ครบก่อน ระบบจึงจะขอโอนได้
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClassifyGuide(false)}
+                className="press flex-1 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-700 active:bg-zinc-50"
+              >
+                ปิด
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClassifyGuide(false);
+                  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+                }}
+                className="press flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white active:bg-violet-700"
+              >
+                ไปเลือกหมวด/สาขา
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

@@ -357,6 +357,7 @@ export function ExpenseReviewPane({
   showVoucherMenu = true,
   onAfterFinish,
   footerExtra,
+  onGateChange,
 }: {
   expense: ExpenseRow;
   /** ใบทดแทน (ถ้ามี) — โชว์ 2 รูปคู่กัน. */
@@ -418,6 +419,10 @@ export function ExpenseReviewPane({
   /** ปุ่มเสริมในแถบล่าง — วางถัดจากปุ่ม "บันทึกรายการ" (เช่น "ขอโอน" บนมือถือ LIFF).
    *  ไม่ส่งมา = ไม่มีปุ่มเสริม (พฤติกรรมเดิม · เว็บใช้เส้น onRequestPayout แยก). */
   footerExtra?: ReactNode;
+  /** แจ้งพ่อทุกครั้งที่ "สาขา+หมวดครบไหม" (gate.ok) เปลี่ยน — ใช้ให้ island อื่น (เช่น
+   *  LiffPayeeRequest ที่อยู่คนละ component) เห็นค่าล่าสุดที่จอโชว์ ไม่ใช่ค่าตอนโหลดหน้า
+   *  (CEO 2026-09-13: เลือกหมวด/สาขาบนจอแล้วยังไม่กดบันทึก → กด "ขอโอน" ดันบอกว่ายังไม่เลือก). */
+  onGateChange?: (ok: boolean) => void;
 }) {
   const [draft, setDraft] = useState<ExpenseDraft>({
     vendor: expense.vendor ?? "",
@@ -671,6 +676,7 @@ export function ExpenseReviewPane({
   );
   const gateMissingBranch = gate.missing.includes("branch");
   const gateMissingCategory = gate.missing.includes("category");
+  useEffect(() => onGateChange?.(gate.ok), [gate.ok, onGateChange]);
 
   // Committer bridge (CEO 2026-08-01) — ป๊อปอัป "ขอโอนทีเดียว" (LIFF) เรียกก่อนส่ง PO เข้า
   // TRCloud: ยืนยันใบด้วย draft ล่าสุด (ใบครบ+มีสิทธิ์ยืนยัน → onConfirm · ไม่งั้น onSave)

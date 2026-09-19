@@ -124,6 +124,34 @@ export async function resolveLedgerActor(): Promise<LedgerActor | null> {
   return null;
 }
 
+/**
+ * Find the current session's own `ledger_line_member` row (same lookup as
+ * `resolveLedgerActor`'s member branch) — for self-service flows where a member
+ * acts on their OWN row (e.g. "ขอสิทธิ์เข้าถึงสาขานี้"). Returns null for admin/
+ * accountant/staff actors (they have no member row / don't need one) or when
+ * there's no session.
+ */
+export async function resolveLedgerMemberSelf(): Promise<{
+  id: string;
+  companyId: string;
+  pendingBranchId: string | null;
+} | null> {
+  const session = await getSession();
+  if (!session) return null;
+  const lineUserId = session.user.line_user_id;
+  return prisma.ledgerLineMember.findFirst({
+    where: {
+      orgId: session.user.org_id,
+      active: true,
+      OR: [
+        { poolUserId: session.user.id },
+        ...(lineUserId ? [{ lineUserId }] : []),
+      ],
+    },
+    select: { id: true, companyId: true, pendingBranchId: true },
+  });
+}
+
 /** Is this actor a ledger ADMIN? (Pool admin-tier mapped to role 'admin', OR a
  *  member/promoted user whose ledger role is 'admin'.) The ONE admin test used by
  *  the LIFF admin console, the LINE command gate, and admin-only web actions. */
