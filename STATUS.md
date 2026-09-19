@@ -23,7 +23,7 @@ CEO ถามหาลิงก์ส่งให้คนในทีม (ท�
 
 ---
 
-## 🔐🧾🚀 LedgerLine LIFF — ปุ่มขอสิทธิ์เข้าถึงสาขา + แก้บั๊ก "ขอโอน" เช็คข้อมูลเก่า (2026-09-19 · PUSHED, ยังไม่ deploy)
+## 🔐🧾✅ LedgerLine LIFF — ปุ่มขอสิทธิ์เข้าถึงสาขา + แก้บั๊ก "ขอโอน" เช็คข้อมูลเก่า (2026-09-19 · DEPLOYED LIVE)
 
 **ปัญหาที่ CEO แจ้ง (จากสกรีนชอต):**
 1. พนักงานที่ไม่มีสิทธิ์สาขานั้นแต่ยังเห็นบิลของสาขานั้นได้ — อยากให้มีปุ่มขอสิทธิ์อยู่ในแถบเตือนเดียวกัน เลือกจากสาขาทั้งหมด ให้ซุปเปอร์แอดมินอนุมัติ
@@ -35,7 +35,7 @@ CEO ถามหาลิงก์ส่งให้คนในทีม (ท�
 
 **ไฟล์ที่แตะ:** `app/(admin)/ledger/_actions.ts`, `lib/ledger/liff-auth.ts`, `components/ledger/ExpenseReviewPane.tsx`, `app/liff/ledger/expense/[id]/{page,LiffExpensePane,LiffPayeeRequest}.tsx`, `app/liff/ledger/expense/[id]/BranchAccessBanner.tsx` (ใหม่)
 
-**สถานะ:** typecheck สะอาด · lint ไม่มี error ใหม่ (4 error ที่เจอเป็นของเดิมในไฟล์อยู่แล้วก่อนแตะ ไม่เกี่ยวกับงานนี้) · `next build` ผ่านสะอาด · commit `5f29f07a` · push ขึ้น branch `claude/ledger-branch-access-and-payout-flush` แล้ว — **ยังไม่ deploy/merge เข้า setup** รอ CEO ทดสอบ/อนุมัติก่อน
+**สถานะ:** typecheck สะอาด · lint ไม่มี error ใหม่ (4 error ที่เจอเป็นของเดิมในไฟล์อยู่แล้วก่อนแตะ ไม่เกี่ยวกับงานนี้) · `next build` ผ่านสะอาด · CEO อนุมัติ merge `c8f46cb2` เข้า `setup` แล้ว — **DEPLOYED LIVE** (Vercel `● Ready`, build 2m, smoke `/login` `/liff/ledger` → 200) — รอ CEO ทดสอบกดปุ่มจริงบนมือถือ 2 เคส: (1) เปิดบิลสาขาที่ไม่มีสิทธิ์ (2) เลือกหมวด/สาขาแล้วกด "ขอโอน" ทันทีไม่กดบันทึกก่อน
 
 **⚠️ บทเรียนระหว่างทาง:** งานรอบแรก (13 ก.ย.) เขียนเสร็จ+verify ผ่านแล้วแต่ยังไม่ทัน commit — worktree ค้างไว้ 6 วันแล้วหายไปเงียบ ๆ (หลุดจาก `git worktree list`, ไม่มี `.git` เหลือ) ต้องเขียนใหม่ทั้งหมด — เก็บเป็น feedback memory แล้ว: ต่อไปนี้ commit ทันทีหลัง verify ผ่าน ไม่รอ push ตอนจบงาน
 
