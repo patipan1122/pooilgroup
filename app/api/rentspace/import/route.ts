@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit/log";
 import { toNum } from "@/lib/rentspace/format";
@@ -110,7 +111,14 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
-  if (!isAdminTier(session.user.role)) {
+  // CEO 2026-09-19: opened to program_admin scoped to rentspace, matching the
+  // sibling app/(admin)/rentspace/units/page.tsx composed pattern — bulk CSV
+  // import creates/updates the same building/unit rows that page already
+  // lets a rentspace program_admin manage one at a time.
+  if (
+    !isAdminTier(session.user.role) &&
+    !(await userIsModuleAdmin(session.user, "rentspace"))
+  ) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const orgId = session.user.org_id;

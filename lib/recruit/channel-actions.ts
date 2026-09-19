@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { encryptToken, decryptToken } from "./channel-crypto";
 import crypto from "node:crypto";
 
@@ -165,7 +166,12 @@ export async function updateChannelSecrets(
 
 export async function deleteChannel(id: string) {
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
+  // CEO 2026-09-19: opened to program_admin scoped to recruit (createChannel/
+  // listChannels/updateChannelSecrets above stay super_admin-only — deleting
+  // a channel record doesn't re-expose a secret the way re-issuing one does).
+  if (!(await userIsModuleAdmin(session.user, "recruit"))) {
+    throw new Error("เฉพาะแอดมินของ Recruit เท่านั้นที่จัดการช่องทางได้");
+  }
 
   const existing = await prisma.recruitInboxChannel.findUnique({
     where: { id },
@@ -181,7 +187,12 @@ export async function deleteChannel(id: string) {
 
 export async function toggleChannelStatus(id: string, nextStatus: string) {
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะเจ้าของระบบ (super admin) จัดการช่องทางได้");
+  // CEO 2026-09-19: opened to program_admin scoped to recruit — see
+  // deleteChannel above for why this differs from createChannel/listChannels/
+  // updateChannelSecrets, which stay super_admin-only.
+  if (!(await userIsModuleAdmin(session.user, "recruit"))) {
+    throw new Error("เฉพาะแอดมินของ Recruit เท่านั้นที่จัดการช่องทางได้");
+  }
 
   const existing = await prisma.recruitInboxChannel.findUnique({
     where: { id },

@@ -1,11 +1,11 @@
 // DC · หลังบ้าน · รายการใบเบิก (Issue list)
 //   • เลขที่ · คลัง · จำนวนรายการ (นับจาก movement refType=dc_issue) · หมายเหตุ · เมื่อ
-//   • ปุ่มลบต่อแถว = super_admin เท่านั้น (คืนของกลับเข้าคลัง + เก็บ snapshot)
+//   • ปุ่มลบต่อแถว = admin tier + program_admin (CEO 2026-09-19: trial over) (คืนของกลับเข้าคลัง + เก็บ snapshot)
 import { PackageMinus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -22,7 +22,7 @@ export default async function DcIssuesPage() {
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
-  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบเบิก = super_admin เท่านั้น
+  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
 
   const issues = await prisma.dcIssue.findMany({
     where: { orgId },
