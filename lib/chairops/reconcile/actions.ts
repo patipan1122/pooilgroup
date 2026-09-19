@@ -19,6 +19,7 @@ import {
 } from "@/lib/chairops/reconcile/drift-engine";
 import { writeAudit } from "@/lib/chairops/audit/log";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { pushBranchDepositsToLedger } from "@/lib/chairops/reconcile/ledger-push";
 
 // TODO[claude-design]: Wave 2 · expand to optionally re-evaluate alerts after
@@ -151,7 +152,12 @@ export async function closePeriodForOrg(): Promise<
 // ใช้ ChairopsBranch.closedAt (มีอยู่แล้ว · ไม่ต้อง migration) เป็นตัวมาร์ค UI —
 // สาขาที่ closedAt != null จะถูกดันไปล่างสุดของแถบ + หรี่สี · ยังเห็นได้ ยังไม่ลบ
 // ข้อมูล และ "ไม่แตะ" isActive → drift/ledger/รายงานยังคำนวณเหมือนเดิมทุกอย่าง.
-// เปิดคืนได้ (closed=false → closedAt=null). super_admin เท่านั้น (เหมือนปุ่มปิดงวด).
+// เปิดคืนได้ (closed=false → closedAt=null).
+// CEO 2026-09-19: opened to program_admin scoped to chairops — this only
+// hides/shows one branch (not a money-moving op), unlike closePeriodForOrg
+// above which resets the org-wide shortage baseline and stays super_admin
+// only. Composition matches the identical precedent already applied to
+// app/(admin)/rentspace/page.tsx:68's canEditPlan.
 export async function toggleBranchClosedAction(
   branchId: string,
   closed: boolean,
@@ -160,10 +166,13 @@ export async function toggleBranchClosedAction(
     return { ok: false, error: "missing branchId" };
   }
   const session = await requireRole("OFFICE");
-  if (!isSuperAdmin(session.poolUser.role)) {
+  const isAdmin =
+    isSuperAdmin(session.poolUser.role) ||
+    (await userIsModuleAdmin(session.poolUser, "chairops"));
+  if (!isAdmin) {
     return {
       ok: false,
-      error: "เฉพาะผู้ดูแลสูงสุด (super admin) เท่านั้นที่ปิด/เปิดสาขาได้",
+      error: "เฉพาะผู้ดูแลที่มีสิทธิ์เท่านั้นที่ปิด/เปิดสาขาได้",
     };
   }
   // org-scope guard — กันแก้สาขาข้ามองค์กร (IDOR write).

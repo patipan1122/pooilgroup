@@ -9,7 +9,10 @@
 //   • GRN ที่ push TRCloud แล้ว → สั่งลบเอกสารใน TRCloud ให้ด้วย (deleteStockIn · best-effort)
 //   • ทุกการลบเก็บ snapshot เต็มลง DcDeletionLog (กู้คืน/ตรวจย้อนได้)
 //
-// 🔒 สิทธิ์: super_admin (CEO) เท่านั้น — ช่วง trial (ยังไม่เปิด program_admin/admin).
+// 🔒 สิทธิ์: admin tier (super_admin/org_admin/admin) + program_admin — CEO
+// 2026-09-19: trial period is over, opened to the same tier as the rest of
+// DC (matches lib/dc/access.ts's isProgramAdminTier pattern). Previously
+// super_admin (CEO) only during the trial.
 //
 // 🏗️ ความปลอดภัย (RULE I):
 //   • Idempotent — reversal movement ใช้ sourceKey prefix เฉพาะ ("*-del") → กดซ้ำ = no-op
@@ -21,7 +24,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { sourceKey } from "@/lib/dc/codes";
 import { recordMovement, getOnHand } from "@/lib/dc/stock";
 import { DcMoveKind, DcPostStatus, DcTransferStatus } from "@/lib/generated/prisma/enums";
@@ -71,13 +74,15 @@ export async function getDcTransferDeleteImpact(
 
 type Deleter = { orgId: string; userId: string; userName: string };
 
-/** Guard: login + super_admin (CEO) เท่านั้น. */
+/** Guard: login + admin tier (super_admin/org_admin/admin) or program_admin.
+ *  CEO 2026-09-19: trial period is over — matches lib/dc/access.ts's
+ *  isProgramAdminTier pattern used for the rest of DC's admin surface. */
 async function requireDeleter(): Promise<
   { ok: true; deleter: Deleter } | { ok: false; error: string }
 > {
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) {
-    return { ok: false, error: "ลบเอกสารได้เฉพาะผู้ดูแลสูงสุด (CEO/super_admin) เท่านั้น" };
+  if (!isProgramAdminTier(session.user.role)) {
+    return { ok: false, error: "ลบเอกสารได้เฉพาะผู้ดูแลระบบเท่านั้น" };
   }
   return {
     ok: true,

@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { requireSession } from "@/lib/auth/session";
 import { canDcManage, canDcFloor } from "@/lib/dc/role-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { poCode, genCode, grnCode, shipmentCode } from "@/lib/dc/codes";
 import { DcPoStatus, DcPoOrigin, DcProductType, DcPostStatus, DcPoPaymentKind, DcShipmentMode, DcShipmentStatus } from "@/lib/generated/prisma/enums";
 import { getTodayFxRate } from "@/lib/dc/fx";
@@ -993,11 +993,12 @@ export async function revertPoStatus(id: string): Promise<PoActionResult> {
  * (โค้ดที่ ship+เทสแล้ว) แล้วดึงสถานะใบกลับ AT_WAREHOUSE. super_admin เท่านั้น.
  */
 export async function unreceivePo(poIdRaw: string): Promise<PoActionResult> {
-  // 🔒 super_admin gate — เหมือน delete-actions (requireDeleter ใช้ isSuperAdmin ข้างใน).
+  // 🔒 admin tier + program_admin gate — เหมือน delete-actions's requireDeleter()
+  //    (CEO 2026-09-19: trial period over, both now use isProgramAdminTier).
   //    ผ่าน deleteGoodsReceipt ก็ตรวจซ้ำอีกชั้น แต่เรากันตั้งแต่ต้นทางเพื่อ error ที่ชัด + ได้ orgId.
   const session = await requireSession();
-  if (!isSuperAdmin(session.user.role)) {
-    return { ok: false, error: "ย้อนการรับเข้าได้เฉพาะผู้ดูแลสูงสุด (CEO/super_admin) เท่านั้น" };
+  if (!isProgramAdminTier(session.user.role)) {
+    return { ok: false, error: "ย้อนการรับเข้าได้เฉพาะผู้ดูแลระบบเท่านั้น" };
   }
   const orgId = session.user.org_id;
   const poId = (poIdRaw ?? "").trim();

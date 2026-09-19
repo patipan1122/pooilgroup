@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { DcPoStatus, DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { DcDeleteButton } from "@/app/(admin)/dc/_components/dc-delete-button";
 import { getDcOfficeChrome, DC_ROLE_LABEL } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -49,7 +49,7 @@ export default async function DcReceiptsPage({
   const ctx = await getDcContext();
   requireDcManager(ctx.session.user.role);
   const orgId = ctx.session.user.org_id;
-  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบรับ = super_admin เท่านั้น
+  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
 
   const sp = await searchParams;
   const tab: ReceiptSource = sp?.tab === "transfer" ? "transfer" : "po";

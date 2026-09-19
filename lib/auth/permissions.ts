@@ -77,10 +77,17 @@ const MATRIX: Record<DbUser["role"], Record<string, boolean>> = {
     "admin.settings": false,
   },
   driver: {},
-  // program_admin = scoped admin of specific program(s) via user_modules. No
-  // Core/CashHub permissions — never org-wide. In-program powers are gated by
-  // the module itself (userIsModuleAdmin · half-feature deferred).
-  program_admin: {},
+  // program_admin = scoped admin of specific program(s) via user_modules.
+  // In-program powers are gated by the module itself (userIsModuleAdmin).
+  // CEO 2026-09-19: opened CashHub daily-report filling (view + create) to
+  // program_admin, same as other admin-tier roles — pairs with the
+  // canFillReports()/hasCrossBranchAccess() fix in lib/auth/branch-access.ts.
+  // Still deliberately NO approve/unlock/export — those admin-tier CashHub
+  // powers were not part of this decision.
+  program_admin: {
+    "cashhub.view": true,
+    "cashhub.create": true,
+  },
   viewer: {
     "cashhub.view": true,
     "cashhub.export": true,

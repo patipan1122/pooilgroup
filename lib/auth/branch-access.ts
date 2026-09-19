@@ -5,6 +5,9 @@
 //   area_manager            → ALL active branches in org (cross-branch)
 //   admin / org_admin       → ALL active branches in org
 //   super_admin             → ALL active branches in org
+//   program_admin           → ALL active branches in org (cross-branch) —
+//                             CEO 2026-09-19: reversed the prior exclusion,
+//                             now treated the same as admin/org_admin.
 //   driver                  → none (uses /driver app)
 //   viewer                  → none (read-only)
 
@@ -27,15 +30,21 @@ export function hasCrossBranchAccess(role: DbUser["role"]): boolean {
     role === "super_admin" ||
     role === "org_admin" ||
     role === "admin" ||
-    role === "area_manager"
+    role === "area_manager" ||
+    // CEO 2026-09-19: program_admin now gets full cross-branch report access,
+    // same as admin/org_admin — was previously excluded entirely (see
+    // canFillReports() below, and app/api/cashhub/reports/route.ts's isAdmin
+    // array, which had drifted out of sync with this function).
+    role === "program_admin"
   );
 }
 
 /** True if this role can fill reports at all (vs read-only).
- *  program_admin is a per-program scoped role — never a CashHub report filler
- *  (its powers come from user_modules inside its granted modules). */
+ *  CEO 2026-09-19: program_admin is now a valid report-filler, same as the
+ *  other admin-tier roles (was previously excluded — see MEMORY
+ *  cashhub-program-admin-reports-open-2026-09-19). */
 export function canFillReports(role: DbUser["role"]): boolean {
-  return role !== "driver" && role !== "viewer" && role !== "program_admin";
+  return role !== "driver" && role !== "viewer";
 }
 
 /**

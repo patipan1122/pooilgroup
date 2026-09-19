@@ -5,7 +5,7 @@ import { Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getDcContext } from "@/lib/dc/access";
 import { requireDcManager } from "@/lib/dc/role-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { DcTransferDestType, DcTransferStatus } from "@/lib/generated/prisma/enums";
 import { getDcOfficeChrome, dcShellChrome } from "@/lib/dc/office-chrome";
 import { DcOfficeShell } from "@/components/dc/office-shell";
@@ -83,7 +83,7 @@ export default async function DcTransfersPage() {
   };
 
   const inTransitCount = transfers.filter((t) => t.status === DcTransferStatus.IN_TRANSIT).length;
-  const canDelete = isSuperAdmin(ctx.session.user.role); // ลบใบโอน = super_admin เท่านั้น
+  const canDelete = isProgramAdminTier(ctx.session.user.role); // CEO 2026-09-19: trial over — admin tier + program_admin
   const chrome = await getDcOfficeChrome(orgId);
 
   // ── รับคืนจากสาขา (รอ DC รับคืน) — ใบที่สาขากด "ส่งคืน DC" แล้ว รอคน DC กดรับเข้าคลัง ──

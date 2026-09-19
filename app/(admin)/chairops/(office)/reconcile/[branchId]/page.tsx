@@ -19,6 +19,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { recomputeDriftForBranch } from "@/lib/chairops/reconcile/drift-engine";
 import { getBranchReconcileSummary } from "@/lib/chairops/reconcile/ledger-push";
 import { adminClient } from "@/lib/db/server";
@@ -90,6 +91,14 @@ export default async function ReconcileBranchPage({
   // Bangkok "today" — default + max for the write-off "ตั้งต้น ณ วันที่" picker.
   const today = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
 
+  // CEO 2026-09-19: opened branch close/reopen (toggleBranchClosedAction) to
+  // program_admin scoped to chairops — same composition as that action's own
+  // gate in lib/chairops/reconcile/actions.ts. The org-wide period-close
+  // button (canClosePeriod at ../page.tsx) stays super_admin-only.
+  const canManage =
+    isSuperAdmin(session.poolUser.role) ||
+    (await userIsModuleAdmin(session.poolUser, "chairops"));
+
   // Write-off log for THIS branch — surfaced on the page so an approved
   // "ตั้งต้น" that pulls the drift to 0 is EXPLAINED (CEO 2026-06-25: "อยู่ดี ๆ
   // ทำไมเป็น 0 — ต้องเคลียร์ว่ามีการตัดเงิน เหตุผลอะไร"). Org-scoped.
@@ -132,7 +141,7 @@ export default async function ReconcileBranchPage({
               : "daily"
         }
         chair={sp.chair}
-        canManage={isSuperAdmin(session.poolUser.role)}
+        canManage={canManage}
         month={sp.month}
         checklistView={sp.ckv === "numbers" ? "numbers" : "dots"}
         numbersBranch={sp.branch}
