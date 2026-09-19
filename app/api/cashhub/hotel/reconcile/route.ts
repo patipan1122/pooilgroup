@@ -2,7 +2,7 @@
 // body = { branchId, from, to } → นักบัญชีกระทบกับ statement ในหน้า bank-recon → หน้า hotel ขึ้นเขียว
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import {
@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
-  if (!isSuperAdmin(session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ส่งเข้า reconcile ได้" }, { status: 403 });
+  // 2026-09-19: ส่งเข้า ledger_revenue_entry ภายใน ไม่แตะ TRCloud → program_admin ทำได้
+  if (!isProgramAdminTier(session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
   let body: { branchId?: string; from?: string; to?: string };
   try {

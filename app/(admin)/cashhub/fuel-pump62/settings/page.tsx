@@ -1,6 +1,6 @@
-// CASHHUB · ⛽ ปั๊มน้ำมัน — ตั้งค่าช่องทาง (ช่องไหน → ส่งเข้าบัญชีไหน) · super_admin เท่านั้น
+// CASHHUB · ⛽ ปั๊มน้ำมัน — ตั้งค่าช่องทาง (ช่องไหน → ส่งเข้าบัญชีไหน) · admin tier + program_admin
 import { requireSession } from "@/lib/auth/session";
-import { requireSuperAdmin } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function FuelSettingsPage() {
   const session = await requireSession();
-  requireSuperAdmin(session.user.role);
+  requireProgramAdminTier(session.user.role); // 2026-09-19: program_admin ที่ได้รับสิทธิ์ตั้งค่าได้
   const admin = adminClient();
   const orgId = session.user.org_id;
 

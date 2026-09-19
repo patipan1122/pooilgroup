@@ -1,7 +1,7 @@
 // POST /api/cashhub/hotel-settlement/save — บันทึก mapping ช่องทาง→บัญชี ของโรงแรม (super_admin)
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import {
@@ -15,8 +15,9 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
-  if (!isSuperAdmin(session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ตั้งค่าได้" }, { status: 403 });
+  // 2026-09-19: mapping ช่องทาง→บัญชีของเราเอง ไม่ใช่การเชื่อมต่อ TRCloud → program_admin ทำได้
+  if (!isProgramAdminTier(session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ตั้งค่าได้" }, { status: 403 });
 
   let body: { configs?: HotelChannelConfig[]; branchCode?: string };
   try {

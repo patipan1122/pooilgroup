@@ -3,7 +3,7 @@
 //   (รวมทุกสาขา วันที่×สาขา + เจาะรายสาขา) แล้ว (ภายหลัง) อัปไฟล์ Foodstory มาเทียบว่าตรงกับ POS ไหม.
 //   project codes 8 สาขา validated สด — ดู memory cashhub-tea-foodstory-iv-pull-2026-06-14.
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isExecutiveRole, isSuperAdmin, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -34,15 +34,19 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
 
   const savedDays = await loadTeaDays(admin, orgId, from, to);
   const canPull = isExecutiveRole(session.user.role);
-  const canConfig = isSuperAdmin(session.user.role);
+  // 2026-09-19: canConfig เดิมผูก 2 เรื่องปนกัน — (1) สร้างใบกำกับ IV จริงเข้า TRCloud
+  // (เอกสารบัญชี/ภาษี — ยังคง super_admin เท่านั้น) กับ (2) ตั้งค่าบัญชี + ส่งเข้า reconcile
+  // ภายใน (ไม่แตะ TRCloud) ที่ CEO อนุมัติให้ program_admin ทำได้แล้ว (2026-09-19)
+  const canManageTrcloud = isSuperAdmin(session.user.role); // ส่ง IV เข้า TRCloud = super_admin เท่านั้น
+  const canSendReconcile = isProgramAdminTier(session.user.role); // ตั้งค่าบัญชี + ส่งเข้า reconcile
 
   // ประวัติการอัปไฟล์ Foodstory (ผู้ที่อัปได้เห็นได้) — อ่านจาก audit_logs ไม่ผูกกับเดือนที่เลือก
   const importHistory = canPull ? await loadTeaImportHistory(admin, orgId, 20) : [];
 
-  // ── เตรียมข้อมูลกระทบยอด (เฉพาะ super_admin ที่เห็นแถบ reconcile) ──
+  // ── เตรียมข้อมูลกระทบยอด (เฉพาะคนตั้งค่าบัญชี/ส่ง reconcile ที่เห็นแถบนี้) ──
   // config = ค่าเริ่มต้นทุกสาขา (branchCode="") ใช้พรีวิวฝั่ง client · route ใช้ค่าต่อสาขาตอนส่งจริง
-  const channelConfigs = canConfig ? await loadTeaChannelConfig(admin, orgId, "") : [];
-  const reconStatus: Record<string, TeaReconcileCell> = canConfig
+  const channelConfigs = canSendReconcile ? await loadTeaChannelConfig(admin, orgId, "") : [];
+  const reconStatus: Record<string, TeaReconcileCell> = canSendReconcile
     ? await readTeaReconcileStatus(orgId, from, to)
     : {};
 
@@ -73,7 +77,8 @@ export default async function TeaSalesPage({ searchParams }: { searchParams: SP 
         branches={branches}
         savedDays={savedDays}
         canPull={canPull}
-        canConfig={canConfig}
+        canConfig={canManageTrcloud}
+        canSendReconcile={canSendReconcile}
         channelConfigs={channelConfigs}
         reconStatus={reconStatus}
         importHistory={importHistory}

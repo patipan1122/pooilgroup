@@ -15,7 +15,7 @@
 // Returns a plain-text reply, or null if the text isn't a command.
 
 import { prisma } from "@/lib/prisma";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { getLedgerDriveFolderLink } from "@/lib/ledger/drive";
 import { refreshLedgerGroupMeta } from "@/lib/ledger/line-group";
 
@@ -87,7 +87,11 @@ async function isAdminSender(
     where: { lineUserId, orgId },
     select: { role: true },
   });
-  if (u && (isAdminTier(u.role) || u.role === "viewer" || u.role === "area_manager")) {
+  // 2026-09-19: was isAdminTier-only — missed program_admin, even though this
+  // function's own doc comment says it's "unified with the LIFF/web admin
+  // notion" (resolveLedgerActor(), which already treats a granted
+  // program_admin as a full ledger admin per the 2026-06-16 CEO decision).
+  if (u && (isProgramAdminTier(u.role) || u.role === "viewer" || u.role === "area_manager")) {
     return true;
   }
   // Top-down ledger admin: a member explicitly set to role 'admin' (not necessarily
@@ -111,7 +115,10 @@ async function senderSeesAllFinancials(
     where: { lineUserId, orgId },
     select: { role: true },
   });
-  if (u && (isAdminTier(u.role) || u.role === "viewer")) return true;
+  // 2026-09-19: was isAdminTier-only — same drift as isAdminSender() above;
+  // a granted program_admin should see all-company financials same as any
+  // other ledger admin (resolveLedgerActor() already treats them as one).
+  if (u && (isProgramAdminTier(u.role) || u.role === "viewer")) return true;
   const m = await prisma.ledgerLineMember.findUnique({
     where: { orgId_lineUserId: { orgId, lineUserId } },
     select: { role: true, active: true },

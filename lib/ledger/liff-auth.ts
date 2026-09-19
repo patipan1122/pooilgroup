@@ -1,6 +1,6 @@
 import "server-only";
 import { getSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { can } from "@/lib/ledger/permissions";
 import type { LedgerCapability } from "@/lib/ledger/permission-constants";
@@ -180,7 +180,16 @@ export async function ledgerWebCanForRole(
   poolRole: Parameters<typeof isAdminTier>[0],
   capability: LedgerCapability,
 ): Promise<boolean> {
-  if (isAdminTier(poolRole)) return true; // admin-tier hard bypass (super_admin never blocked)
+  // 2026-09-19: was isAdminTier-only — missed program_admin even though
+  // resolveLedgerActor() above (the LIFF/mobile equivalent of this same
+  // capability gate) already grants program_admin full "admin" treatment
+  // once they hold the ledger module grant (2026-06-16 CEO decision, lines
+  // 79-84). Every caller of this function reaches it only after already
+  // passing a ledger module-entry gate (requireLedgerAccess() / the page's
+  // own requireRole(...,"program_admin") array), so program_admin here is
+  // always already grant-verified — safe to treat as admin-tier, same as
+  // isProgramAdminTier()'s documented intended use (role-guards.ts).
+  if (isProgramAdminTier(poolRole)) return true; // admin-tier hard bypass (super_admin never blocked) + program_admin
   if (poolRole === "viewer") return can(orgId, "accountant", capability);
   return false;
 }

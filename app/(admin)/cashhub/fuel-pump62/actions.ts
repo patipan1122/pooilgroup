@@ -183,7 +183,10 @@ export interface FuelReconcilePreview {
 
 /** พรีวิวยอดที่จะส่งจริง (read-only) — รันสูตรส่งเดียวกับตอนกดส่ง = ความจริง */
 export async function previewFuelReconcile(periodKey: string): Promise<FuelReconcilePreview> {
-  const session = await requireRole("super_admin");
+  // 2026-09-19: เดิม requireRole รับแค่ role เดียวคือ super admin — เทียบเท่าโค้ดตัวช่วยที่ล็อกเข้มสุด
+  // ทำให้ page.tsx/actions ด้านบนเปิดให้ program_admin เห็นหน้าแล้ว แต่พรีวิว/ส่งจริงยัง 403 อยู่
+  // (bug pattern เดียวกับ CashHub 4 ช่องทางอื่น) — เข้าชุด role เดียวกับ actions อื่นในไฟล์นี้ (บรรทัด 42, 85)
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) return { ok: false, error: "ปิดใช้งานอยู่" };
   if (!/^\d{4}-\d{2}$/.test(periodKey)) return { ok: false, error: "เดือนไม่ถูกต้อง" };
   const admin = adminClient();
@@ -277,9 +280,12 @@ export interface FuelSendResult {
   skipped?: number;
 }
 
-/** ส่งจริง → ledger_revenue_entry (super_admin · idempotent · transaction) */
+/** ส่งจริง → ledger_revenue_entry (admin tier + program_admin · idempotent · transaction) */
 export async function sendFuelReconcile(periodKeys: string[]): Promise<FuelSendResult> {
-  const session = await requireRole("super_admin");
+  // 2026-09-19: ส่งเข้า ledger_revenue_entry ภายใน ไม่แตะระบบภายนอก → program_admin ทำได้
+  // (เหมือน Amazon/Tea/Hotel reconcile-send ที่เปิดให้แล้ว) — เข้าชุด role เดียวกับ actions
+  // อื่นในไฟล์นี้ (บรรทัด 42, 85)
+  const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   if (!cashhubFuelV1()) return { ok: false, error: "ปิดใช้งานอยู่" };
   const keys = periodKeys.filter((k) => /^\d{4}-\d{2}$/.test(k));
   if (keys.length === 0) return { ok: false, error: "ยังไม่ได้เลือกเดือน" };

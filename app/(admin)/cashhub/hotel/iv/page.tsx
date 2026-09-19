@@ -1,7 +1,7 @@
 // CASHHUB · Hotel → ดึง IV จาก TRCloud (หน้าเต็มของตัวเอง)
 // แยกจากหน้า Excel: หน้านี้ = ดึง IV โรงแรมจาก TRCloud มาแสดง + เช็ค IV ครบทุกวัน/กะ
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import Link from "next/link";
 import { BackButton } from "@/components/ui/back-button";
@@ -112,8 +112,9 @@ export default async function HotelIvPage({ searchParams }: { searchParams: SP }
       }));
   }
 
-  // ── reconcile (กระทบยอดธนาคาร) ──
-  const canSend = isSuperAdmin(session.user.role);
+  // ── reconcile (กระทบยอดธนาคาร) — ส่ง ledger_revenue_entry ภายใน ไม่แตะ TRCloud →
+  // program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19) ──
+  const canSend = isProgramAdminTier(session.user.role);
   const branchCode = branches.find((b) => b.id === branchId)?.code ?? "";
   let reconcileView: ReturnType<typeof buildReconcileView> | null = null;
   let reconcileConfigured = false;

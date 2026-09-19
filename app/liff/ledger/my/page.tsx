@@ -12,7 +12,7 @@
 
 import Link from "next/link";
 import { Camera, Home } from "lucide-react";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
@@ -96,7 +96,9 @@ export default async function LedgerLiffMyPage() {
   });
 
   // Admin → full web back-office (5-tab nav = "หน้าหลัก"); member → LIFF home.
-  const homeHref = isAdminTier(session.user.role) ? "/ledger" : "/liff/ledger";
+  // 2026-09-19: was isAdminTier — program_admin gets the same full-admin
+  // treatment as any other ledger admin (resolveLedgerActor(), 2026-06-16).
+  const homeHref = isProgramAdminTier(session.user.role) ? "/ledger" : "/liff/ledger";
 
   return (
     <div className="mx-auto w-full max-w-md animate-fade-in px-4 pt-4 pb-[calc(76px+env(safe-area-inset-bottom))]">

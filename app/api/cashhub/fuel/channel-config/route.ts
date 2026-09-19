@@ -3,7 +3,7 @@
 // body = { configs: FuelChannelConfig[] }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { saveFuelChannelConfig } from "@/lib/cashhub/fuel-settlement-data";
@@ -14,8 +14,9 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
-  if (!isSuperAdmin(gate.session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ตั้งค่าบัญชีได้" }, { status: 403 });
+  // 2026-09-19: ผูกช่องทาง→บัญชี/บริษัทของเราเอง ไม่ใช่การเชื่อมต่อระบบภายนอก → program_admin ทำได้
+  if (!isProgramAdminTier(gate.session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ตั้งค่าบัญชีได้" }, { status: 403 });
 
   let body: { configs?: FuelChannelConfig[] };
   try {

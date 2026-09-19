@@ -2,7 +2,7 @@
 // body = { branchCode, from, to } → นักบัญชีกระทบกับ statement ในหน้า bank-recon → หน้า tea ขึ้นเขียว
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { TEA_BRANCHES } from "@/lib/cashhub/tea-trcloud";
@@ -15,8 +15,10 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
-  if (!isSuperAdmin(session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ส่งเข้า reconcile ได้" }, { status: 403 });
+  // 2026-09-19: ส่งยอด (net ต่อช่องทาง) เข้า ledger_revenue_entry ภายใน — ไม่แตะ TRCloud
+  // (คนละ action กับ tea/send-iv ที่สร้างใบกำกับจริง) → program_admin ที่ได้รับสิทธิ์ทำได้
+  if (!isProgramAdminTier(session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
   let body: { branchCode?: string; from?: string; to?: string };
   try {

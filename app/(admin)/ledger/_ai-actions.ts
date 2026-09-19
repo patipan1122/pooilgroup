@@ -15,7 +15,7 @@
 // the UI (signatures are STABLE — InsightsPanel/QaBox depend on them).
 
 import { requireSession, type DbUser } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isAdminTier, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess } from "@/lib/auth/module-access";
 import { audit } from "@/lib/audit/log";
 import { prisma } from "@/lib/prisma";
@@ -33,8 +33,11 @@ export type QaResult =
 
 // CEO/accountant-tier only — the dashboard shows org-wide P&L which front-line
 // roles must not see (matches dashboard page requireRole + nav policy).
+// 2026-09-19: dashboard/page.tsx's own requireRole(...) already includes
+// program_admin — this action-level gate had drifted stale, so a granted
+// program_admin could open the dashboard page but AI insights/Q&A would 403.
 function canViewDashboard(role: DbUser["role"]): boolean {
-  return isAdminTier(role) || role === "area_manager" || role === "viewer";
+  return isProgramAdminTier(role) || role === "area_manager" || role === "viewer";
 }
 
 /** Resolve session + module entitlement (server actions bypass the layout gate). */

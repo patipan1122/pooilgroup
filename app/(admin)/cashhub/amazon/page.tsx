@@ -4,7 +4,7 @@
 //   recipe พิสูจน์แล้ว (IV 1048468). human-confirm ก่อนสร้าง. pilot=ชุมชนหัวทะเล (5157).
 //   ดู docs/WORKSHOP_cashhub-amazon-pos-iv.md
 import { requireSession } from "@/lib/auth/session";
-import { requireExecutiveRole, isSuperAdmin } from "@/lib/auth/role-guards";
+import { requireExecutiveRole, isSuperAdmin, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -54,10 +54,17 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
   const history = await loadImportHistory(admin, orgId);
   const configs = await loadChannelConfig(admin, orgId);
   const reconcile = await loadReconcileStatus(admin, orgId, storeCode, from, to);
-  const canSend = isSuperAdmin(session.user.role); // ส่งเข้า TRCloud/reconcile = super_admin เท่านั้น
-  // ปุ่ม "ฝืนส่ง" = super_admin ฝืนได้ทุกกรณี รวมส่งซ้ำ (CEO 2026-06-16 อนุมัติ รับความเสี่ยงเอง)
+  // 2026-09-19: canSend เดิมผูก 2 เรื่องปนกัน — (1) สร้างใบกำกับ IV จริงเข้า TRCloud
+  // (ภาษี/บัญชีจริง) กับ (2) ส่งยอดเข้า reconcile ภายใน (ledger_revenue_entry) แค่เทียบยอด.
+  // แยกออกจากกัน: การสร้าง/ฝืนสร้าง IV เข้า TRCloud ยังคง super_admin เท่านั้น (เหมือนเดิม
+  // ทุกจุด — ตาม super_admin-only connection gating ที่ amazon-import/push อ้างถึง) ส่วน
+  // "ส่งเข้า reconcile" (ปุ่ม "ส่งเข้าบัญชี LedgerLine" ที่ CEO ร้องเรียนว่า program_admin
+  // มองไม่เห็น) เปิดให้ program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19).
+  const canManageTrcloud = isSuperAdmin(session.user.role); // สร้าง/จัดการสาขา TRCloud = super_admin เท่านั้น
+  const canSendReconcile = isProgramAdminTier(session.user.role); // ส่งเข้า reconcile ledger — program_admin ทำได้แล้ว
+  // ปุ่ม "ฝืนส่ง" (ซ้ำใบ IV เข้า TRCloud) = super_admin ฝืนได้ทุกกรณี (CEO 2026-06-16 อนุมัติ รับความเสี่ยงเอง)
   // ป้องกัน 2 ชั้น: เห็นเฉพาะ super_admin + ต้องพิมพ์ "ยืนยัน" ทุกครั้ง · checksum ยังกันใบ Dr≠Cr
-  const allowForce = canSend;
+  const allowForce = canManageTrcloud;
 
   return (
     <div className="ch-scope p-3 sm:p-6 lg:p-8 max-w-6xl mx-auto pb-24">
@@ -66,7 +73,7 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         <SectionPill num="☕" label="Café Amazon · ตรวจยอด + คีย์ IV" />
         <div className="flex flex-wrap items-end justify-between gap-3 mt-1">
           <TwoToneTitle first="ยอดขาย" accent={branchLabel} size={30} />
-          {canSend && (
+          {canManageTrcloud && (
             <Link
               href="/cashhub/amazon/branches"
               className="h-9 inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
@@ -121,7 +128,8 @@ export default async function AmazonSalesPage({ searchParams }: { searchParams: 
         from={from}
         to={to}
         savedDays={savedDays}
-        canSend={canSend}
+        canSend={canManageTrcloud}
+        canSendReconcile={canSendReconcile}
         allowForce={allowForce}
         history={history}
         configs={configs}

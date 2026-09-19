@@ -45,15 +45,35 @@
 // pages) is a DELIBERATE single-tier gate, not "most of the admin tier but
 // missing one", so it is never even a candidate.
 //
-// We deliberately do NOT treat every `isAdminTier(` CALL site as a violation
-// — that function is intentionally the strict 3-role tier and is correctly
-// used in ~45+ places (module-entry gates, sensitive exports) that must NOT
-// become program_admin-aware (role-guards.ts's own comments warn against
-// this — the module-entitlement gate must stay strict or program_admin could
-// enter programs it was never granted). We DO read its definition
-// (ADMIN_TIER_ROLES) as the source of truth for "the strict tier", and
-// separately assert that PROGRAM_ADMIN_TIER_ROLES = ADMIN_TIER_ROLES +
-// program_admin still holds.
+// UPDATE 2026-09-19: the paragraph above ("we deliberately do NOT treat every
+// isAdminTier( call site as a violation") described the scanner's ORIGINAL,
+// narrower scope — and that narrower scope is exactly what let a 4th
+// recurrence of this bug class ship silently: all 4 CashHub revenue channels
+// (Amazon/Tea/Hotel/FuelPump62) gated their "send to reconcile" button +
+// "bank account settings" page with `isSuperAdmin(role)` / a single-arg
+// `requireSuperAdmin(role)` call — single-FUNCTION-CALL gates, not role-array
+// literals — so patterns A/B never saw them. Fixed in commit
+// "program-admin-cashhub-full-fix" (2026-09-19).
+//
+// Pattern C (below) closes this gap: every call to isSuperAdmin(),
+// requireSuperAdmin(), isAdminTier(), or requireAdminTier() found inside a
+// scanned module directory is now a candidate site — UNLIKE patterns A/B,
+// there is no "passes automatically" case for Pattern C, because a call site
+// alone can't tell us whether excluding program_admin was deliberate (module-
+// entry gates, TRCloud/credential connections, an explicitly stricter
+// cash-handling model — all real, all still valid) or simply forgotten (the
+// actual bug). EVERY Pattern C hit must appear in
+// lib/auth/role-gate-known-exceptions.ts with a reason, exactly like an
+// array-based site that's missing a role — this file is judge, not us.
+//
+// This does mean call sites of isAdminTier/requireAdminTier that are
+// legitimately strict — most importantly each module's own layout.tsx
+// "which programs can I enter" gate (role-guards.ts's own comments forbid
+// ever loosening those — program_admin must enter via its user_modules
+// grant, not via this role check, or the module-entitlement system is
+// bypassed entirely) — now need an explicit exception entry too. That's the
+// intended trade-off: a few more entries in the exceptions file in exchange
+// for this bug class becoming impossible to reintroduce silently.
 //
 // Any real hit that's an intentional exclusion belongs in
 // lib/auth/role-gate-known-exceptions.ts with a reason, not a code change here.
@@ -177,7 +197,19 @@ export type RoleGateSite = {
   line: number;
   roles: string[];
   snippet: string;
+  /** "array" (default) = patterns A/B, checked for missing admin-tier roles.
+   *  "strict-call" = pattern C, a single-function-call gate (isSuperAdmin() etc.) —
+   *  ALWAYS a candidate; there is no "has all the roles it needs" check possible
+   *  from the call site alone, so it must be excepted or replaced, full stop. */
+  kind?: "array" | "strict-call";
 };
+
+/** Pattern C — single-function-call strict-admin-tier gates (role-guards.ts).
+ *  These four helpers are strict BY DEFINITION (no program_admin) — see the
+ *  2026-09-19 update to the file header comment for why every call site
+ *  inside a scanned module dir is a candidate, not just ones that "look like"
+ *  a curated role list. */
+const STRICT_TIER_FUNCTIONS = ["isSuperAdmin", "requireSuperAdmin", "isAdminTier", "requireAdminTier"] as const;
 
 /** true if every comma-separated token in `inner` is a quoted, known role-name string (2+ of them). */
 function pureRoleArray(inner: string, knownRoles: string[]): string[] | null {
@@ -223,6 +255,24 @@ export function findSitesInText(text: string, relFile: string, knownRoles: strin
     const roles = pureRoleArray(m[1], knownRoles);
     if (!roles) continue;
     sites.push({ file: relFile, line: lineAt(text, m.index ?? 0), roles, snippet: m[0].replace(/\s+/g, " ").slice(0, 160) });
+  }
+
+  // Pattern C: isSuperAdmin(/requireSuperAdmin(/isAdminTier(/requireAdminTier( —
+  // single-function-call strict-admin-tier gates (see 2026-09-19 header update).
+  // \b before the name prevents matching inside isProgramAdminTier(/requireProgramAdminTier(
+  // (no word boundary between "Program" and "Admin" within one identifier).
+  for (const fn of STRICT_TIER_FUNCTIONS) {
+    const re = new RegExp(`\\b${fn}\\s*\\(`, "g");
+    for (const m of text.matchAll(re)) {
+      const idx = m.index ?? 0;
+      sites.push({
+        file: relFile,
+        line: lineAt(text, idx),
+        roles: [fn],
+        snippet: text.slice(idx, idx + 140).replace(/\s+/g, " "),
+        kind: "strict-call",
+      });
+    }
   }
 
   return sites;
@@ -289,6 +339,23 @@ export function buildCases(): CompletenessCase[] {
       name: `${site.file}:${site.line}`,
       check: () => {
         if (except) return null; // documented, reviewed exception
+
+        if (site.kind === "strict-call") {
+          // Pattern C — no "has all the roles it needs" check is possible from
+          // the call site alone (it's a function call, not a role list) — every
+          // hit must be excepted or replaced with a program_admin-inclusive
+          // equivalent. See the 2026-09-19 header comment for why.
+          return (
+            `${site.file}:${site.line} calls ${site.roles[0]}(...) inside a module-scoped directory — ` +
+            `this is a hardcoded strict-admin-tier gate (role-guards.ts) that does NOT include program_admin ` +
+            `by design.\n      Snippet: ${site.snippet}\n      Fix: if this action should be available to a ` +
+            `granted program_admin, replace it with the program-admin-inclusive equivalent ` +
+            `(isProgramAdminTier(...) / requireProgramAdminTier(...)), OR — if this is a deliberate exclusion ` +
+            `(module-entry gate, credential/connection endpoint, or another explicitly-decided stricter ` +
+            `boundary) — add a justified entry to lib/auth/role-gate-known-exceptions.ts.`
+          );
+        }
+
         const missing = requiredRoles.filter((r) => !site.roles.includes(r));
         if (missing.length === 0) return null;
         return (

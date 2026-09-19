@@ -106,7 +106,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Check user_branches link unless admin
-  const isAdmin = ["super_admin", "org_admin"].includes(session.user.role);
+  // 2026-09-19 (CEO approved): เพิ่ม "admin" (array นี้เพี้ยนไปจาก hasCrossBranchAccess()
+  // ที่รวม admin อยู่แล้ว) + "program_admin" (คำขอ CEO วันนี้ — โปรดดูหมายเหตุ risk ที่
+  // lib/auth/role-gate-known-exceptions.ts: MATRIX.program_admin ใน lib/auth/permissions.ts
+  // ว่างเปล่า (ไม่มี cashhub.create) ทำให้ program_admin โดนกันที่ can() ก่อนถึงบรรทัดนี้อยู่ดี
+  // — ต้องแก้ permissions.ts เพิ่มถ้าอยากให้มีผลจริง ซึ่งอยู่นอกขอบเขตงานนี้).
+  const isAdmin = ["super_admin", "org_admin", "admin", "program_admin"].includes(session.user.role);
   if (!isAdmin) {
     const { data: link } = await admin
       .from("user_branches")

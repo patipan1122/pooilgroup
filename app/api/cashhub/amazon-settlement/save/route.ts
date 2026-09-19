@@ -1,7 +1,7 @@
 // POST /api/cashhub/amazon-settlement/save — บันทึก config ค่าธรรมเนียม/บัญชีต่อช่องทาง (super_admin)
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { saveChannelConfig } from "@/lib/cashhub/amazon-settlement-data";
@@ -13,9 +13,12 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
-  if (!isSuperAdmin(session.user.role))
+  // 2026-09-19: ตั้งค่า %ค่าธรรมเนียม/บัญชีปลายทางที่มีอยู่แล้ว — ไม่ใช่การเชื่อมต่อ/ค้นหา
+  // บัญชี TRCloud ใหม่ (นั่นคือ amazon-branch/{probe,save,delete} ที่ยังคง super_admin
+  // เท่านั้น) → program_admin ที่ได้รับสิทธิ์โปรแกรมนี้ตั้งค่าได้ (CEO 2026-09-19)
+  if (!isProgramAdminTier(session.user.role))
     return NextResponse.json(
-      { error: "เฉพาะ super_admin ตั้งค่าได้" },
+      { error: "เฉพาะ admin/program_admin ตั้งค่าได้" },
       { status: 403 },
     );
 

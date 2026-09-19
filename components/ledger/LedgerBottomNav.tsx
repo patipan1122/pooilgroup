@@ -63,14 +63,19 @@ interface NavItem {
 }
 
 // Role tiers — kept in sync with lib/modules.ts `ledger.nav` gates.
+// 2026-09-19: added program_admin — LedgerLine's page-level gates for these
+// same features already allow program_admin (module-grant-scoped admin per
+// CEO 2026-06-16); this nav-visibility array had lagged behind, leaving
+// program_admin with only the "ตั้งค่า" tab visible on mobile.
 const FINANCIAL: ReadonlyArray<Role> = [
   "super_admin",
   "org_admin",
   "admin",
   "area_manager",
   "viewer",
+  "program_admin",
 ];
-const BUDGET: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "area_manager"];
+const BUDGET: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "area_manager", "program_admin"];
 const ADMIN: ReadonlyArray<Role> = ["super_admin", "org_admin", "admin", "program_admin"];
 
 // LEAN bottom bar (CEO 2026-06-08): primary = ภาพรวม · รายการ · [ถ่าย] · ตั้งค่า ·

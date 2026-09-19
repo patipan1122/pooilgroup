@@ -19,7 +19,10 @@ type Props = {
   branches: BranchMeta[];
   savedDays: SavedTeaDay[];
   canPull: boolean;
+  /** ส่ง IV เข้า TRCloud (เอกสารบัญชี/ภาษีจริง) — super_admin เท่านั้น */
   canConfig: boolean;
+  /** ตั้งค่าบัญชี + ส่งเข้า reconcile ภายใน (ไม่แตะ TRCloud) — program_admin ทำได้ (CEO 2026-09-19) */
+  canSendReconcile: boolean;
   channelConfigs: TeaChannelConfig[];
   reconStatus: Record<string, TeaReconcileCell>;
   importHistory: TeaImportHistoryRow[];
@@ -61,6 +64,7 @@ export function TeaView({
   savedDays,
   canPull,
   canConfig,
+  canSendReconcile,
   channelConfigs,
   reconStatus,
   importHistory,
@@ -332,7 +336,7 @@ export function TeaView({
 
           <div className="hidden sm:block grow" />
 
-          {canConfig && (
+          {canSendReconcile && (
             <a
               href="/cashhub/tea/settings"
               className="h-10 inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 text-sm font-medium hover:bg-zinc-50"
@@ -618,7 +622,7 @@ export function TeaView({
           ดึง IV จาก TRCloud (คีย์ไว้แล้ว 1 ใบ/วัน/สาขา) → กด &ldquo;⬆ อัปไฟล์ Foodstory&rdquo;
           (รายงานสรุปยอดขายแยกตามบิล · ไฟล์เดียวมีหลายสาขาได้) → ดูทาน &ldquo;รายสาขา (Excel)&rdquo; ว่าตรง
           POS ไหม · ตั้งบัญชีต่อช่องทางที่ &ldquo;⚙ ตั้งค่าบัญชี&rdquo; เพื่อเตรียม reconcile
-          {canConfig && (
+          {canSendReconcile && (
             <>
               {" · "}
               <b>ส่งเข้ากระทบยอดธนาคาร</b> ทำที่แผง &ldquo;🏦 กระทบยอดธนาคาร&rdquo; ด้านล่าง → เลือกสาขา →
@@ -629,13 +633,13 @@ export function TeaView({
       </div>
 
       {/* แผงกระทบยอดธนาคาร — โชว์ทุกแท็บ (มีช่องเลือกสาขาในตัว) ให้หาเจอง่าย */}
-      {canConfig && hasAnyData && (
+      {canSendReconcile && hasAnyData && (
         <TeaReconcilePanel
           branchCode={branch}
           branchLabel={branchLabel}
           month={month}
           configured={reconcileConfigured}
-          canSend={canConfig}
+          canSend={canSendReconcile}
           days={branchDays}
           configs={channelConfigs}
           status={reconStatus}
@@ -655,7 +659,7 @@ export function TeaView({
           days={days}
           dayMap={dayMap}
           channelConfigs={channelConfigs}
-          reconStatus={canConfig ? reconStatus : {}}
+          reconStatus={canSendReconcile ? reconStatus : {}}
         />
       ) : (
         <TeaExcelGrid
@@ -664,7 +668,7 @@ export function TeaView({
           days={days}
           byDate={branchByDate}
           canSend={canConfig}
-          reconStatus={canConfig ? reconStatus : {}}
+          reconStatus={canSendReconcile ? reconStatus : {}}
         />
       )}
     </div>
