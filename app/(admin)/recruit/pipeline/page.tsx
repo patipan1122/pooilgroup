@@ -59,7 +59,21 @@ export default async function PipelinePage({
           : {}),
         status: { notIn: ["WITHDRAWN"] },
       },
-      include: {
+      // select (not include) — the kanban card (mapCard below) only reads the
+      // scalar fields listed here; resumeText (cached résumé extract, up to
+      // ~4000 chars) and answers (full form-submission JSON) are dropped —
+      // the detail panel fetches its own full row separately by id.
+      select: {
+        id: true,
+        status: true,
+        aiScore: true,
+        starRating: true,
+        flaggedBlacklist: true,
+        refId: true,
+        tags: true,
+        updatedAt: true,
+        submittedAt: true,
+        createdAt: true,
         applicant: { select: { fullName: true, phone: true } },
         posting: { select: { title: true, companyId: true } },
       },

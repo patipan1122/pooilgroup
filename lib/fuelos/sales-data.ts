@@ -139,6 +139,16 @@ export async function getSalesData(
       },
       orderBy: { issueDate: "desc" },
       take: INVOICE_LIMIT + 1,
+      // select (not full row) — mapRow() below only reads these scalar
+      // fields; rawJson (full raw TRCloud API response) and products
+      // (line-items array, only needed by the single-invoice detail view)
+      // are dropped from this list query.
+      select: {
+        id: true, docNo: true, companyFormat: true, contactId: true,
+        customerName: true, customerOrg: true, issueDate: true, dueDate: true,
+        paidDate: true, grandTotal: true, paidAmount: true, outstanding: true,
+        paymentState: true, trcloudStatus: true, salesman: true, quantity: true,
+      },
     }),
   ]);
 
@@ -215,7 +225,20 @@ export async function getCustomerDetail(orgId: string, key: string): Promise<Cus
   const where = key.startsWith("n:")
     ? { orgId, contactId: null, customerName: key.slice(2) }
     : { orgId, contactId: key };
-  const rows = await prisma.salesInvoice.findMany({ where, orderBy: { issueDate: "desc" } });
+  const rows = await prisma.salesInvoice.findMany({
+    where,
+    orderBy: { issueDate: "desc" },
+    // select (not full row) — mapRow() + the `first.customerTaxId` read below
+    // are all this needs; rawJson/products (raw API response / line items)
+    // are dropped. No `take` added — out of scope for this batch.
+    select: {
+      id: true, docNo: true, companyFormat: true, contactId: true,
+      customerName: true, customerOrg: true, customerTaxId: true,
+      issueDate: true, dueDate: true, paidDate: true,
+      grandTotal: true, paidAmount: true, outstanding: true,
+      paymentState: true, trcloudStatus: true, salesman: true, quantity: true,
+    },
+  });
   if (rows.length === 0) return null;
   const invoices = rows.map((r) => mapRow(r, today));
   const sum = invoices.reduce(
