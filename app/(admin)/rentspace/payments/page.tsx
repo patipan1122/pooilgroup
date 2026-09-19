@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Receipt, Banknote, Clock } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import {
   formatBaht,
@@ -28,7 +29,14 @@ function isThisPeriod(d: Date): boolean {
 export default async function PaymentsPage() {
   const session = await requireSession();
   const orgId = session.user.org_id;
-  const isAdmin = isAdminTier(session.user.role);
+  // 2026-09-19: เดิมใช้ isAdmin ตัวเดียวกันสำหรับ 2 ปุ่มที่สิทธิ์จริงไม่เท่ากัน —
+  // "อนุมัติส่วนลด" (actDecideDiscount) เจตนาให้ admin tier เท่านั้น (ไม่รวม program_admin
+  // — ตาม role-gate-known-exceptions.ts) แต่ "ตรวจสลิปผู้เช่า" (actConfirmTenantPayment/
+  // actRejectTenantPayment) ใช้ gateAdmin() ซึ่งรวม program_admin ที่ได้รับสิทธิ์ rentspace
+  // อยู่แล้ว — ปุ่มเดิมเลยซ่อนจาก program_admin ทั้งที่กดแล้ว server จะอนุมัติให้จริง
+  const canDecideDiscount = isAdminTier(session.user.role);
+  const canReviewSlips =
+    isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
 
   const [payments, pending, tenantSlips] = await Promise.all([
     listPayments(orgId),
@@ -97,7 +105,7 @@ export default async function PaymentsPage() {
                     ) : null}
                   </div>
                 </div>
-                {isAdmin ? (
+                {canReviewSlips ? (
                   <SlipReviewButtons paymentId={p.id} />
                 ) : (
                   <span className="text-[12px] shrink-0" style={{ color: "var(--rs-text-3)" }}>
@@ -149,7 +157,7 @@ export default async function PaymentsPage() {
                     {d.reason ? ` · ${d.reason}` : ""}
                   </div>
                 </div>
-                {isAdmin ? (
+                {canDecideDiscount ? (
                   <DiscountDecisionButtons discountId={d.id} />
                 ) : (
                   <span className="text-[12px] shrink-0" style={{ color: "var(--rs-text-3)" }}>

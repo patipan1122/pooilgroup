@@ -26,7 +26,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { liffIdForModule } from "@/lib/line/channels";
 import { requireSession, type DbUser } from "@/lib/auth/session";
-import { isAdminTier, isSuperAdmin } from "@/lib/auth/role-guards";
+import { isAdminTier, isSuperAdmin, isProgramAdminTier } from "@/lib/auth/role-guards";
 import { userHasModuleAccess, userIsModuleAdmin } from "@/lib/auth/module-access";
 import { recheckReceipt, gradeCompleteness } from "@/lib/ledger/recheck";
 import { OUR_BUYER } from "@/lib/ledger/group-identity";
@@ -1493,9 +1493,13 @@ const budgetSchema = z.object({
   alertPct: z.coerce.number().int().min(0).max(200).default(90),
 });
 
-/** Budget writes mirror the /ledger/budgets nav policy: admin tier + area_manager. */
+/** Budget writes mirror the /ledger/budgets nav policy: admin tier + area_manager
+ *  + program_admin. 2026-09-19: LedgerBottomNav.tsx's BUDGET array already got
+ *  program_admin added (CashHub program_admin full-fix) — this server gate
+ *  needs the exact same role set, or a granted program_admin would see the
+ *  "งบประมาณ" nav tab and then get every write rejected here. */
 function canEditBudget(role: DbUser["role"]): boolean {
-  return isAdminTier(role) || role === "area_manager";
+  return isProgramAdminTier(role) || role === "area_manager";
 }
 
 export async function upsertBudget(raw: unknown): Promise<ActionResult> {
@@ -3002,8 +3006,15 @@ export async function revokeLedgerInvite(id: string): Promise<ActionResult> {
   const access = await requireLedgerAccess();
   if (!access.ok) return access;
   const { session } = access;
-  if (!isSuperAdmin(session.user.role)) {
-    return { ok: false, error: "เฉพาะเจ้าของระบบ (super admin) จัดการคำเชิญได้" };
+  // 2026-09-19: was isSuperAdmin-only — asymmetric with the sibling
+  // createLedgerInvite() above, which already lets any ledger module admin
+  // (program_admin included, via userIsModuleAdmin) create an invite; only
+  // MINTING an "admin"-role invite is deliberately restricted to super_admin
+  // there (privilege-escalation guard). Revoking an invite doesn't escalate
+  // anyone's privilege, so it should follow create's base gate, not the
+  // stricter admin-appointment sub-case.
+  if (!(await userIsModuleAdmin(session.user, "ledger"))) {
+    return { ok: false, error: "เฉพาะผู้ดูแลจัดการคำเชิญได้" };
   }
   // Soft-revoke = delete the unused token (scoped to org).
   await prisma.ledgerLineInvite.deleteMany({

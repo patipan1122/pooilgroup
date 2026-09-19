@@ -17,7 +17,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { resolveLedgerActor, isLedgerAdminActor } from "@/lib/ledger/liff-auth";
 import { listCompanies, listCategories } from "@/lib/ledger/queries";
 import {
@@ -155,8 +155,11 @@ export default async function LedgerLiffAdminPage({
       permissionMatrix={permissionMatrix}
       myUserId={session.user.id}
       myLineLinked={!!session.user.line_user_id}
+      // 2026-09-19: was isAdminTier — a granted program_admin gets full ledger
+      // admin treatment (resolveLedgerActor(), 2026-06-16) so should also land
+      // on the full web back-office, not the stripped LIFF member view.
       homeHref={
-        isAdminTier(session.user.role)
+        isProgramAdminTier(session.user.role)
           ? `/ledger?company=${encodeURIComponent(companyId)}`
           : `/liff/ledger/my?company=${encodeURIComponent(companyId)}`
       }

@@ -2,7 +2,7 @@
 // body = { storeCode, from, to }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { audit } from "@/lib/audit/log";
 import { loadAmazonDays } from "@/lib/cashhub/amazon-data";
@@ -18,8 +18,11 @@ export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
   const session = gate.session;
-  if (!isSuperAdmin(session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ส่งเข้า reconcile ได้" }, { status: 403 });
+  // 2026-09-19: ส่งเข้า reconcile ภายใน (ledger_revenue_entry) ไม่ได้แตะ TRCloud/ภาษี
+  // (คนละ action กับ amazon-import/push ที่สร้างใบกำกับจริง) → program_admin ที่ได้รับ
+  // สิทธิ์โปรแกรมนี้ทำได้ (CEO 2026-09-19 อนุมัติ, มาตรฐานเดียวกับ CashHub channel อื่น)
+  if (!isProgramAdminTier(session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ส่งเข้า reconcile ได้" }, { status: 403 });
 
   let body: { storeCode?: string; storeLabel?: string; from?: string; to?: string };
   try {

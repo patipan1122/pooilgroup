@@ -1,6 +1,6 @@
-// CASHHUB · Café Amazon — ตั้งค่าช่องทางชำระ (ค่าธรรมเนียม + บัญชีที่เงินเข้า) · super_admin เท่านั้น
+// CASHHUB · Café Amazon — ตั้งค่าช่องทางชำระ (ค่าธรรมเนียม + บัญชีที่เงินเข้า) · admin tier + program_admin
 import { requireSession } from "@/lib/auth/session";
-import { requireSuperAdmin } from "@/lib/auth/role-guards";
+import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { adminClient } from "@/lib/db/server";
 import { BackButton } from "@/components/ui/back-button";
 import { SectionPill } from "@/components/cashhub/redesign/section-pill";
@@ -27,7 +27,7 @@ export default async function AmazonSettingsPage({
   searchParams: Promise<{ branch?: string; previewDate?: string }>;
 }) {
   const session = await requireSession();
-  requireSuperAdmin(session.user.role);
+  requireProgramAdminTier(session.user.role); // 2026-09-19: fee%/บัญชีปลายทาง — program_admin ที่ได้รับสิทธิ์ทำได้
   const admin = adminClient();
   const orgId = session.user.org_id;
 

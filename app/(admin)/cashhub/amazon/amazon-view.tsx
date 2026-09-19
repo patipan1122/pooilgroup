@@ -22,7 +22,10 @@ type Props = {
   from: string;
   to: string;
   savedDays: SavedAmazonDay[];
+  /** สร้าง/ฝืนสร้าง IV เข้า TRCloud + จัดการสาขา (TRCloud connection) — super_admin เท่านั้น */
   canSend: boolean;
+  /** ส่งเข้า reconcile ภายใน (ledger_revenue_entry) + เข้าหน้าตั้งค่าช่องทาง — program_admin ทำได้ (CEO 2026-09-19) */
+  canSendReconcile: boolean;
   allowForce: boolean;
   history: ImportHistoryRow[];
   configs: ChannelConfig[];
@@ -54,6 +57,7 @@ export function AmazonView({
   to,
   savedDays,
   canSend,
+  canSendReconcile,
   allowForce,
   history,
   configs,
@@ -444,7 +448,7 @@ export function AmazonView({
           >
             {busy === "match" ? "กำลังเทียบ…" : "🔄 เทียบกับ TRCloud"}
           </button>
-          {canSend && (
+          {canSendReconcile && (
             <button
               type="button"
               disabled={busy !== null || savedDays.length === 0}
@@ -475,7 +479,7 @@ export function AmazonView({
                 🕘 ประวัติ ({history.length})
               </button>
             )}
-            {canSend && (
+            {canSendReconcile && (
               <Link
                 href="/cashhub/amazon/settings"
                 title="ตั้งค่าช่องทาง/ค่าธรรมเนียม/บัญชี"

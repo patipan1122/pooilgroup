@@ -14,7 +14,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
-import { isAdminTier } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
 import {
@@ -115,8 +115,9 @@ export default async function LedgerLiffExpensePage({
   // Admin/super_admin have the full web back-office (with the 5-tab bottom nav) —
   // send them back THERE (the "หน้าหลัก" CEO means), not the stripped LIFF list.
   // A field member (no web access) stays on the LIFF "ใบของฉัน" list.
+  // 2026-09-19: was isAdminTier — program_admin gets the same treatment.
   const companyQs = sp.company ? `?company=${encodeURIComponent(sp.company)}` : "";
-  const backHref = isAdminTier(session.user.role)
+  const backHref = isProgramAdminTier(session.user.role)
     ? `/ledger/expenses${companyQs}`
     : `/liff/ledger/my${companyQs}`;
 
@@ -200,7 +201,7 @@ export default async function LedgerLiffExpensePage({
       {/* ทางเชื่อมเข้าเว็บเต็ม — เฉพาะบัญชี/ผู้ดูแล (admin tier). หมวด/สาขา · ส่ง TRCloud · ขอโอน
           ทำบนมือถือนี้ได้เลย (ด้านล่าง). ลิงก์นี้ไว้ต่อไปเครื่องมือบัญชีหนัก (ออกเอกสาร PV/JV ·
           รายงาน) ที่อยู่บนเว็บ. พนักงานหน้างานไม่เห็น. (CEO 2026-07-26) */}
-      {isAdminTier(session.user.role) && (
+      {isProgramAdminTier(session.user.role) && (
         <Link
           href={`/ledger/expenses?${sp.company ? `company=${encodeURIComponent(sp.company)}&` : ""}selected=${encodeURIComponent(id)}&focus=1`}
           className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-500 active:bg-zinc-50"

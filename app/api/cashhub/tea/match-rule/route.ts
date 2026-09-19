@@ -4,7 +4,7 @@
 // body = { rules: [{ bankAccountId, conceptKey, dateWindowDays, tolBaht }] }
 import { NextResponse, type NextRequest } from "next/server";
 import { cashHubApiGuard } from "@/lib/cashhub/api-guard";
-import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { isProgramAdminTier } from "@/lib/auth/role-guards";
 import { audit } from "@/lib/audit/log";
 import { saveAccountMatchRules } from "@/lib/ledger/reconcile-match-rule";
 
@@ -15,8 +15,9 @@ type InRule = { bankAccountId?: string; conceptKey?: string; dateWindowDays?: nu
 export async function POST(req: NextRequest) {
   const gate = await cashHubApiGuard({ executive: true });
   if (gate.error) return gate.error;
-  if (!isSuperAdmin(gate.session.user.role))
-    return NextResponse.json({ error: "เฉพาะ super_admin ตั้งค่ากฎการแมตช์ได้" }, { status: 403 });
+  // 2026-09-19: กฎแมตช์เป็นส่วนหนึ่งของหน้าตั้งค่าบัญชี (tea/settings) ที่เปิดให้ program_admin แล้ว
+  if (!isProgramAdminTier(gate.session.user.role))
+    return NextResponse.json({ error: "เฉพาะ admin/program_admin ตั้งค่ากฎการแมตช์ได้" }, { status: 403 });
 
   let body: { rules?: InRule[] };
   try {

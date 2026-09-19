@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
+import { userIsModuleAdmin } from "@/lib/auth/module-access";
 import {
   getPrimaryProject,
   listUnitsWithState,
@@ -60,6 +61,11 @@ export default async function RentSpaceOverview() {
   const session = await requireSession();
   const orgId = session.user.org_id;
   const project = await getPrimaryProject(orgId);
+  // 2026-09-19: เดิม isSuperAdmin เท่านั้น — sibling matrix/page.tsx ("จัดลำดับห้อง")
+  // เป็นฟีเจอร์ระดับเดียวกัน (แก้ผังโครงการ) แต่คอมโพสสิทธิ์ program_admin ไว้แล้ว
+  // จุดนี้ตกหล่นไม่ได้อัปเดตตาม — แก้ให้ตรงกัน (แอดมินโปรแกรม RentSpace แก้ผังได้ด้วย)
+  const canEditPlan =
+    isSuperAdmin(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
 
   if (!project) {
     return (
@@ -212,7 +218,7 @@ export default async function RentSpaceOverview() {
             <div className="font-semibold text-[15.5px]">ผังโครงการ</div>
             <div className="text-[12px]" style={{ color: "#9098A4" }}>คลิกห้องเพื่อดูข้อมูล · สลับ 2D / 3D · หมุน + ซูมได้</div>
           </div>
-          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} canEdit={isSuperAdmin(session.user.role)} />
+          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} canEdit={canEditPlan} />
         </div>
 
         {/* attention */}
