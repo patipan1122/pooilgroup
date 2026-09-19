@@ -55,7 +55,15 @@ export default async function TasksPage() {
         status: { in: FOLLOWUP_STATUSES },
       },
       orderBy: { updatedAt: "asc" },
-      include: {
+      // select (not include) — this queue only reads id/refId/status/updatedAt
+      // plus applicant/posting display fields; resumeText and answers (the
+      // heavy AI-cache/form-JSON columns) are dropped. The detail panel
+      // fetches its own full row separately by id.
+      select: {
+        id: true,
+        refId: true,
+        status: true,
+        updatedAt: true,
         applicant: { select: { fullName: true, phone: true, email: true } },
         posting: { select: { title: true } },
       },
