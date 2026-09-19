@@ -81,16 +81,20 @@ export function LiffPayeeRequest({
   function submit() {
     setMsg(null);
     startTransition(async () => {
-      // one-shot (CEO 2026-08-01): ใบยังไม่ส่ง PO + มีสิทธิ์ → ยืนยันใบ → ส่ง PO เข้า TRCloud →
-      // ขอโอน ต่อกันในกดเดียว (เหมือน "ส่ง+ขอโอนด่วน" บนเว็บ · money-safe รอทีละสเต็ป · หยุดถ้าล้ม).
+      // เซฟ draft ล่าสุดที่จอโชว์ลง DB ก่อนเสมอ (CEO 2026-09-13) — classified มาจาก draft
+      // สดของฟอร์ม (onGateChange) แต่ createPaymentRequestAction อ่านจาก DB จริง ถ้าไม่ flush
+      // ก่อน จะเจอ error "ไม่มีสิทธิ์/ยังไม่เลือก" ทั้งที่จอโชว์ครบแล้ว (เดิม flush เฉพาะกรณี
+      // needsPoSend เท่านั้น — เคสอื่นก็ต้องกันเหมือนกัน).
+      setPhase("กำลังบันทึกข้อมูลล่าสุด…");
+      const committed = await flushDraftCommit(expenseId);
+      if (!committed) {
+        setPhase(null);
+        setMsg({ kind: "err", text: "บันทึกข้อมูลไม่สำเร็จ — ลองใหม่อีกครั้ง" });
+        return;
+      }
+      // one-shot (CEO 2026-08-01): ใบยังไม่ส่ง PO + มีสิทธิ์ → ส่ง PO เข้า TRCloud → ขอโอน
+      // ต่อกันในกดเดียว (เหมือน "ส่ง+ขอโอนด่วน" บนเว็บ · money-safe รอทีละสเต็ป · หยุดถ้าล้ม).
       if (needsPoSend) {
-        setPhase("กำลังยืนยันใบ…");
-        const committed = await flushDraftCommit(expenseId);
-        if (!committed) {
-          setPhase(null);
-          setMsg({ kind: "err", text: "ยืนยันใบไม่สำเร็จ — กด “บันทึกรายการ” ให้ครบก่อน" });
-          return;
-        }
         setPhase("กำลังส่ง PO เข้า TRCloud…");
         const sent = await sendExpenseToTrcloud(expenseId);
         if (!sent.ok) {

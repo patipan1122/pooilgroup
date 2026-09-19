@@ -64,7 +64,7 @@ import { loadPushable } from "@/lib/ledger/pushable";
 import { isTrcloudSent } from "@/lib/ledger/trcloud-state";
 import { runApConversion, autoCreatePvAfterMatch } from "@/lib/ledger/ap-auto-convert";
 import { createPvForPaidAp } from "@/lib/ledger/trcloud-pv";
-import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId } from "@/lib/ledger/liff-auth";
+import { resolveLedgerActor, actorCanReachBranch, ledgerWebCan, ledgerWebCanForRole, requireActorCompanyId, resolveLedgerMemberSelf } from "@/lib/ledger/liff-auth";
 import { searchPurchases } from "@/lib/ledger/spend-analytics";
 import { audit } from "@/lib/audit/log";
 import { STANDARD_CATEGORIES } from "@/lib/ledger/coa-chart";
@@ -3164,6 +3164,32 @@ export async function approveMemberPending(
     resourceType: "ledger_line_member",
     resourceId: member.id,
     diff: { new: { approvedRequest: true, branches: nextScope.length } },
+  });
+  revalidatePath("/ledger/settings");
+  revalidatePath("/liff/ledger/admin");
+  return { ok: true };
+}
+
+/**
+ * สมาชิกไลน์กดขอสิทธิ์เข้าถึงสาขาเอง จากปุ่มในหน้า LIFF (CEO 2026-09-13) — mirror ของคำสั่ง
+ * ไลน์ "/สาขา <ชื่อ>" (line-commands.ts) แต่รับ branchId ตรงจาก branch picker แทนการแมตช์ชื่อ.
+ * ผลคือ pendingBranchId รออนุมัติ — ยังไม่ผูกสิทธิ์ทันที (approveMemberPending ทำหน้าที่นั้น).
+ * เก็บได้ทีละ 1 คำขอต่อคน — ขอสาขาใหม่จะทับคำขอเก่าที่ยังไม่อนุมัติ (ตาม pendingBranchId เดิม).
+ */
+export async function requestLedgerBranchAccess(branchId: string): Promise<ActionResult> {
+  if (!branchId) return { ok: false, error: "ไม่ได้ระบุสาขา" };
+  const actor = await resolveLedgerActor();
+  if (!actor) return { ok: false, error: "บัญชียังไม่เปิดใช้งานสำหรับคุณ · ติดต่อออฟฟิศ" };
+  if (actor.kind !== "member") {
+    return { ok: false, error: "ใช้ได้เฉพาะสมาชิกไลน์ที่ยังไม่มีสิทธิ์ครบทุกสาขา" };
+  }
+  const member = await resolveLedgerMemberSelf();
+  if (!member) return { ok: false, error: "ไม่พบข้อมูลสมาชิก" };
+  const valid = await validBranchIds(actor.orgId, member.companyId, [branchId]);
+  if (valid.length === 0) return { ok: false, error: "ไม่พบสาขานี้ในบริษัทเดียวกัน" };
+  await prisma.ledgerLineMember.update({
+    where: { id: member.id },
+    data: { pendingBranchId: branchId },
   });
   revalidatePath("/ledger/settings");
   revalidatePath("/liff/ledger/admin");

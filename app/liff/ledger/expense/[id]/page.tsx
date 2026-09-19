@@ -17,10 +17,17 @@ import { getSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { resolveScope } from "@/app/(admin)/ledger/_scope";
 import { getExpense, listCategories } from "@/app/(admin)/ledger/_data";
-import { resolveLedgerActor, ledgerWebCan, ledgerWebCanForRole } from "@/lib/ledger/liff-auth";
+import {
+  resolveLedgerActor,
+  resolveLedgerMemberSelf,
+  actorCanReachBranch,
+  ledgerWebCan,
+  ledgerWebCanForRole,
+} from "@/lib/ledger/liff-auth";
 import { listLedgerProjects } from "@/lib/ledger/projects";
 import { prisma } from "@/lib/prisma";
 import { LiffExpensePane } from "./LiffExpensePane";
+import { BranchAccessBanner } from "./BranchAccessBanner";
 import { LedgerMascot } from "@/components/ledger/Brand";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +145,29 @@ export default async function LedgerLiffExpensePage({
         })) > 0
       : false;
 
+  // ── ขอสิทธิ์เข้าถึงสาขา (CEO 2026-09-13) ───────────────────────────────────
+  // สมาชิกไลน์ (member) ที่ scope ไม่ครอบคลุมสาขาของบิลนี้ "เห็นบิลได้แต่แก้/ยืนยัน/ขอโอน
+  // ไม่ได้" (server ทุก action reject ด้วย actorCanReachBranch อยู่แล้ว) — เดิมพนักงานรู้
+  // ตัวก็ต่อเมื่อลองกดแล้วเจอ error "ไม่มีสิทธิ์ในสาขานี้" ทีนี้เช็คทันทีที่เปิดหน้า (proactive)
+  // แล้วโชว์ปุ่มขอสิทธิ์เลย ไม่ต้องให้ลองกดพังก่อน.
+  const hasBranchAccess = actorCanReachBranch(actor, expense.branchId);
+  const branchAccessBanner = hasBranchAccess
+    ? null
+    : await (async () => {
+        const member = await resolveLedgerMemberSelf();
+        const deniedBranch = expense.branchId
+          ? scope.branches.find((b) => b.id === expense.branchId)
+          : null;
+        const pendingBranch = member?.pendingBranchId
+          ? scope.branches.find((b) => b.id === member.pendingBranchId)
+          : null;
+        return {
+          deniedBranchName: deniedBranch?.name ?? "สาขานี้",
+          pendingBranchName: pendingBranch?.name ?? null,
+        };
+      })();
+  const defaultRequestBranchId = expense.branchId ?? null;
+
   return (
     <div className="mx-auto w-full max-w-md px-3 pb-10">
       {/* Mobile header — back to list + น้องใบเสร็จ + context. Anchored Bainy-style. */}
@@ -157,6 +187,15 @@ export default async function LedgerLiffExpensePage({
           </p>
         </div>
       </header>
+
+      {branchAccessBanner && (
+        <BranchAccessBanner
+          deniedBranchName={branchAccessBanner.deniedBranchName}
+          pendingBranchName={branchAccessBanner.pendingBranchName}
+          defaultBranchId={defaultRequestBranchId}
+          branches={scope.branches}
+        />
+      )}
 
       {/* ทางเชื่อมเข้าเว็บเต็ม — เฉพาะบัญชี/ผู้ดูแล (admin tier). หมวด/สาขา · ส่ง TRCloud · ขอโอน
           ทำบนมือถือนี้ได้เลย (ด้านล่าง). ลิงก์นี้ไว้ต่อไปเครื่องมือบัญชีหนัก (ออกเอกสาร PV/JV ·
