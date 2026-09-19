@@ -19,6 +19,7 @@ import {
 import { Plus, FileQuestion, Link as LinkIcon, Copy, Flame, Tag } from "lucide-react";
 import { CopyLinkButton } from "@/components/recruit/copy-link-button";
 import { ShareKitButton } from "@/components/recruit/share-kit-button";
+import { ApplicantShareButton } from "@/components/recruit/applicant-share-button";
 import { resolveCompanyFilter } from "@/lib/auth/company-context";
 
 export const dynamic = "force-dynamic";
@@ -341,6 +342,7 @@ function PostingCard({ posting }: { posting: PostingWithStats }) {
             caption={settings.caption}
             coverImageUrl={settings.coverImageUrl}
           />
+          <ApplicantShareButton postingId={posting.id} />
           <Link
             href={`/recruit?posting=${posting.id}`}
             className="flex-1 text-center text-xs h-9 px-3 inline-flex items-center justify-center rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] font-bold hover:bg-[var(--color-brand-100)] whitespace-nowrap"

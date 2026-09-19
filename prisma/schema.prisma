@@ -1342,6 +1342,13 @@ model RecruitJobPosting {
   createdById String               @map("created_by_id") @db.Uuid
   createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  // Login-required, read-only "share applicant list for this posting" link.
+  // NULL = sharing not enabled / revoked. Generated lazily by
+  // generateApplicantShareLink() (lib/recruit/actions.ts) · consumed by
+  // /recruit-share/[token]. Mirrors RentalBill.publicToken but the reader
+  // route requires a session (any logged-in Pooilgroup user), unlike the
+  // fully-public rentspace bill link.
+  applicantShareToken String? @unique @map("applicant_share_token")
 
   org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)

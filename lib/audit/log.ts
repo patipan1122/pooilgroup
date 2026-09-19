@@ -135,6 +135,10 @@ export type AuditAction =
   | "RECRUIT_AI_DRAFTED"
   | "RECRUIT_BLACKLIST_ADDED"
   | "RECRUIT_BLACKLIST_REMOVED"
+  // Applicant-list share link — login-required, read-only view scoped to
+  // ONE posting (CEO-approved 2026-09, app/(admin)/recruit-share/[token]).
+  | "RECRUIT_APPLICANT_SHARE_LINK_CREATED"
+  | "RECRUIT_APPLICANT_SHARE_LINK_REVOKED"
   // Self-serve teammate invite scoped to Recruit only (CEO 2026-09-06 carve-out
   // of the org-wide "admin appointment = super_admin only" lock — see
   // app/(admin)/recruit/settings/team-actions.ts).

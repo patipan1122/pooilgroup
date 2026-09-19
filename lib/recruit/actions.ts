@@ -1,11 +1,13 @@
 // Recruit — server actions (CRUD + status changes + AI + blacklist)
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/lib/audit/log";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import {
   APPLICATION_STATUSES,
   EMPTY_FORM_SCHEMA,
@@ -248,6 +250,83 @@ export async function deletePosting(postingId: string) {
     resourceType: "recruit_job_posting",
     resourceId: postingId,
     diff: { old: { title: posting.title } },
+  });
+
+  revalidatePath("/recruit/postings");
+}
+
+// =============================================================
+// Applicant-list share link (public, no login, read-only, per posting)
+// CEO-approved (revised 2026-09-19): anyone with the link can view ONE
+// posting's applicant list via a random-token link — no login and no
+// Recruit-module grant required for the VIEWER (same trust model as
+// RentSpace's public bill link). Generating/revoking the link itself still
+// requires normal Recruit write access to the posting, same gate as
+// publishPosting/closePosting above.
+// =============================================================
+
+export async function generateApplicantShareLink(
+  postingId: string,
+): Promise<{ url: string; token: string }> {
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    throw new Error("ไม่มีสิทธิ์");
+  }
+
+  const posting = await prisma.recruitJobPosting.findFirst({
+    where: { id: postingId, orgId: session.user.org_id },
+    select: { id: true, applicantShareToken: true },
+  });
+  if (!posting) throw new Error("ไม่พบประกาศ");
+
+  // Lazy-create: reuse an existing token so re-clicking "get link" doesn't
+  // rotate it and break a link already shared out (mirrors
+  // rentspace bill.publicToken ?? randomUUID()).
+  const token = posting.applicantShareToken ?? randomUUID();
+  if (!posting.applicantShareToken) {
+    await prisma.recruitJobPosting.update({
+      where: { id: postingId },
+      data: { applicantShareToken: token },
+    });
+
+    await audit({
+      orgId: session.user.org_id,
+      userId: session.user.id,
+      action: "RECRUIT_APPLICANT_SHARE_LINK_CREATED",
+      resourceType: "recruit_job_posting",
+      resourceId: postingId,
+    });
+
+    revalidatePath("/recruit/postings");
+  }
+
+  return { url: `${getBaseUrl()}/recruit-share/${token}`, token };
+}
+
+export async function revokeApplicantShareLink(postingId: string): Promise<void> {
+  const session = await requireSession();
+  if (!canRecruitWrite(session.user.role)) {
+    throw new Error("ไม่มีสิทธิ์");
+  }
+
+  const posting = await prisma.recruitJobPosting.findFirst({
+    where: { id: postingId, orgId: session.user.org_id },
+    select: { id: true, applicantShareToken: true },
+  });
+  if (!posting) throw new Error("ไม่พบประกาศ");
+  if (!posting.applicantShareToken) return; // already revoked/never created — no-op
+
+  await prisma.recruitJobPosting.update({
+    where: { id: postingId },
+    data: { applicantShareToken: null },
+  });
+
+  await audit({
+    orgId: session.user.org_id,
+    userId: session.user.id,
+    action: "RECRUIT_APPLICANT_SHARE_LINK_REVOKED",
+    resourceType: "recruit_job_posting",
+    resourceId: postingId,
   });
 
   revalidatePath("/recruit/postings");
