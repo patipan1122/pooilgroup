@@ -298,7 +298,31 @@ async function buildLedger(args: {
   since?: Date;
 }): Promise<LedgerDay[]> {
   const { orgId, branchId, days } = args;
-  const since = args.since ?? startOfDayMinus(days);
+  let since = args.since ?? startOfDayMinus(days);
+  // True once `since` was pushed forward to a close-period reset boundary
+  // (as opposed to just a display-window default) — gates the priorWriteOff
+  // carry-forward below, see the closePeriodResetAt block for why.
+  let closePeriodResetAt: Date | null = null;
+
+  // 2026-09-20 CEO decision: this ledger never consulted
+  // ChairopsBranch.lastReconcileClosedAt — the same anchor drift-engine.ts's
+  // window mode uses once a branch closes a period — so cumDrift here kept
+  // showing the pre-close cumulative number indefinitely while the
+  // dashboard/sidebar (which DO read the anchor) reset to ~0. Floor `since`
+  // at the close anchor (when set and later than whatever window this call
+  // already wanted) so every view of this branch's ledger — Overview, Ledger
+  // tab, Periods, Timeline, Checklist — agrees with the engine the instant a
+  // period closes, regardless of which days/since the caller asked for.
+  if (branchId) {
+    const branch = await prisma.chairopsBranch.findUnique({
+      where: { id: branchId },
+      select: { lastReconcileClosedAt: true },
+    });
+    if (branch?.lastReconcileClosedAt && branch.lastReconcileClosedAt > since) {
+      since = branch.lastReconcileClosedAt;
+      closePeriodResetAt = branch.lastReconcileClosedAt;
+    }
+  }
 
   const branchFilter = branchId ? { branchId } : {};
 
@@ -466,7 +490,14 @@ async function buildLedger(args: {
     const key = isoDay(eff);
     const signed = w.direction === "OVER" ? -w.amount : w.amount;
     if (key < sinceDay) {
-      priorWriteOff += signed;
+      // 2026-09-20: when `since` is a close-period RESET (not just a display
+      // window), pre-anchor write-offs must NOT carry forward into the new
+      // period's baseline — matches drift-engine.ts window mode, which
+      // excludes everything before the anchor with zero carry-over. Without
+      // this gate, closing a period would floor the ledger's date range
+      // correctly but still silently drag in every historical write-off as
+      // a phantom starting balance.
+      if (!closePeriodResetAt) priorWriteOff += signed;
       continue;
     }
     netWoByDay.set(key, (netWoByDay.get(key) ?? 0) + signed);
