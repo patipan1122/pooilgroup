@@ -2,6 +2,24 @@
 
 > **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-13 (👥🔧 LINE login ตอนนี้บันทึกเวลาเข้าใช้แล้ว (แก้รากเสร็จสมบูรณ์ ครบทั้ง 2 ระดับ) — **DEPLOYED LIVE** `08b0fc4b` · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
+## 🏬🔍 RentSpace — 19-persona `/auditbigteam` (2026-09-20 · SPEC ONLY, ยังไม่แก้โค้ด — ต่อด้วย `/bigsolvebug` + `/upspeed` ตามที่ CEO สั่ง)
+
+CEO สั่งตรวจ RentSpace โปรแกรมเดียว (ไม่แตะโปรแกรมอื่น) ด้วยชุด `/auditbigteam` → `/bigsolvebug` → `/upspeed` ตามลำดับ — นี่คือผลรอบแรก (audit spec-only ยังไม่แก้โค้ดอะไร)
+
+**เจอ 7 P0 / 19 P1 / 8 P2** — เอกสารเต็มที่ `docs/AUDIT_RentSpace_2026-09-20.md` บน branch `claude/rentspace-audit-2026-09-20` (push แล้ว **ยังไม่ merge เข้า setup** เพื่อไม่ให้ trigger deploy โดยไม่จำเป็น — จะ merge พร้อมของจริงตอน bigsolvebug/upspeed เสร็จ)
+
+**ต้นตอที่สำคัญที่สุด:** ยอดชำระที่พนักงานพิมพ์เอง **นับเป็น "จ่ายแล้ว" ทันที** ขึ้น KPI ก่อน AI ตรวจสลิปจะทำงานเสร็จด้วยซ้ำ — AI เช็คแล้วบล็อกได้แค่ตอน "ส่งเข้าบัญชี" ขั้นสุดท้ายเท่านั้น นี่คือต้นตอจริงของ 4 บิลค้างสลิปไม่ตรงที่เจอเมื่อ 9 ก.ย. ([[rentspace-matrix-send-to-ledger-slip-amount-gate-2026-09-09]]) — ถ้าไม่แก้ที่จุดกรอกจะเกิดซ้ำทุกเดือน
+
+**P0 อื่นที่เจอ:** ปุ่มลบบิลเดี่ยวไม่กันบิลจ่ายแล้ว (ปุ่มลบทีละหลายบิลกันไว้แล้วแต่ปุ่มเดี่ยวไม่ได้แก้ตาม) · อนุมัติส่วนลดอนุมัติเองได้ (flow อื่นกันไว้แล้ว) · บิล/การชำระเงินลบถาวรจริง ขัดกับกฎเก็บ audit log 5 ปี · ด่านตรวจสลิปก่อนส่งบัญชี (`evaluateBillSlipGate`) กับเครื่องคำนวณบิลจริงไม่มี test เลย (เสี่ยงมากเพราะ bigsolvebug/upspeed กำลังจะแตะโค้ดชุดนี้ต่อ) · popup กรอกบิลเร็ว (UnitDrawer) สร้างไว้แต่ไม่มีปุ่มเรียกใช้เลยในระบบ · หน้า portal ลูกค้าใช้ CSS class ที่ไม่มีจริง (`rs-text-2`) ทำตัวหนังสือแบนหมด
+
+**ความปลอดภัย: ไม่เจอ P0 เลย** — ระบบ LINE (OAuth+bot+LIFF) เชื่อมถูกต้อง ไม่มีช่องโหว่ cross-org เจอแค่จุดควรเสริม (rate-limit หน้า public, cron auth มีช่องหลบได้ถ้าปลอม header)
+
+**5 เรื่องรอ CEO ตัดสินใจก่อน bigsolvebug จะแก้ต่อ** (รายละเอียด trade-off เต็มใน audit doc §8): (1) เปลี่ยน flow ให้ยอดที่กรอกรอตรวจก่อนนับเป็นจ่ายแล้ว หรือคงเดิม (2) เปลี่ยนบิล/การชำระเป็น soft-delete หรือแค่เพิ่ม guard (3) เพิ่ม test ให้โค้ดคำนวณเงินก่อนไหม (4) ลงทุนระบบ LINE ต่อหรือรอดูอัตราการใช้งานก่อน (5) UnitDrawer เอาออกหรือเชื่อมใหม่ + เปิดหน้าตรวจสลิปให้พนักงานสนามเข้าได้ไหม
+
+**บทเรียนใหม่ที่บันทึกลง skill:** sibling-guard-not-propagated (guard เพิ่มจุดเดียว ไม่ลามไปจุดพี่น้อง) · kpi-counts-before-verification (ตัวเลขนับก่อนตรวจจริง) · dead-mounted-component (component mount ไว้แต่ไม่มีปุ่มเรียก) · css-custom-property-used-as-class (`className` ชนกับชื่อ `--variable`) — ดู `~/.claude/skills/auditbigteam/finding-library.md` A-034→A-037
+
+---
+
 ## 🔑✅ CEO เข้า pooilgroup.com ไม่ได้ (วนกลับหน้า login) — ไม่ใช่บั๊ก เป็นจังหวะ deploy ชนพอดี (2026-09-20)
 
 CEO แจ้งล็อกอินไม่ได้ วนกลับมาหน้า login ตลอด — ตรวจแล้วไม่ใช่ Supabase โดนล็อกเหมือนเมื่อวาน ([[pooilgroup-supabase-egress-quota-incident-2026-09-19]]) ทุกจุด (บัญชี CEO, ฐานข้อมูลตรง, Supabase Auth API) ปกติดีหมด และ log จริงแสดงว่า **login สำเร็จ 4 ครั้ง** ในช่วง 70 วินาที (12:19-12:20 น.) แต่หน้าเว็บไม่พาเข้าแดชบอร์ดสักครั้ง
