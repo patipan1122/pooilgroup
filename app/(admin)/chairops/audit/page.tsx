@@ -72,14 +72,32 @@ export default async function AuditLogPage({
   const qs = new URLSearchParams(
     Object.entries({ ...sp, page: undefined }).filter(([, v]) => v) as [string, string][]
   );
+  // /api/chairops/audit-export only supports entity/from/to (not
+  // entityId/userId/action) — carry over just what it understands.
+  const exportQs = new URLSearchParams(
+    Object.entries({ entity: sp.entity, from: sp.from, to: sp.to }).filter(
+      ([, v]) => v,
+    ) as [string, string][],
+  );
+  const exportHref = `/api/chairops/audit-export${exportQs.toString() ? `?${exportQs.toString()}` : ""}`;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
-        <p className="text-sm text-muted-foreground">
-          ทั้งหมด {total.toLocaleString("en-US")} รายการ · หน้า {page}/{pageCount}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
+          <p className="text-sm text-muted-foreground">
+            ทั้งหมด {total.toLocaleString("en-US")} รายการ · หน้า {page}/{pageCount}
+          </p>
+        </div>
+        {/* 2026-09-20 CEO decision: the export route existed and was already
+            org-scoped + correctly secured, just had no UI trigger anywhere. */}
+        <a
+          href={exportHref}
+          className="h-9 shrink-0 rounded-md border border-border px-4 text-sm font-medium leading-9 hover:bg-muted"
+        >
+          ⬇ Export CSV
+        </a>
       </div>
 
       <Card>

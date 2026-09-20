@@ -132,6 +132,13 @@ export async function closePeriodForOrg(): Promise<
     await recomputeAllDrifts(orgId);
     revalidatePath("/chairops/reconcile");
     revalidatePath("/chairops");
+    // 2026-09-20 bigsolvebug: this resets EVERY active branch's drift anchor
+    // at once but only busted the list pages — /chairops/branches and each
+    // branch's own reconcile detail page kept showing the pre-close number.
+    revalidatePath("/chairops/branches");
+    for (const b of branches) {
+      revalidatePath(`/chairops/reconcile/${b.id}`);
+    }
 
     return {
       ok: true,
@@ -217,6 +224,14 @@ export async function toggleBranchClosedAction(
 // pushBranchDepositsToLedger ต่อสาขาแบบ per-branch try/catch (สาขาหนึ่งพัง ไม่ทำให้
 // สาขาอื่นในชุดพังตาม — ตาม pattern bulkApproveWriteOffsAction) โดยที่ตัวฟังก์ชันเอง
 // กันส่งซ้ำอยู่แล้วใน DB (ON CONFLICT ... source_ref) จึงกดซ้ำได้ปลอดภัย.
+export interface BulkSendBranchResult {
+  branchId: string;
+  branchName: string;
+  ok: boolean;
+  inserted: number;
+  error?: string;
+}
+
 export async function bulkSendDepositsToReconcileAction(
   branchIds: string[],
 ): Promise<
@@ -226,6 +241,11 @@ export async function bulkSendDepositsToReconcileAction(
       skippedCount: number;
       errorCount: number;
       totalInserted: number;
+      // 2026-09-20 bigsolvebug P1 fix: caller used to only see aggregate
+      // counts ("พลาด 1 สาขา") with no way to tell WHICH branch — office
+      // staff had to reopen all N branches by hand to find it. Per-branch
+      // results let the UI point at the failure directly.
+      results: BulkSendBranchResult[];
     }
   | { ok: false; error: string }
 > {
@@ -240,13 +260,14 @@ export async function bulkSendDepositsToReconcileAction(
   // org-scope guard — กันส่งข้ามองค์กร (IDOR write) เผื่อ id หลุดมาจากที่อื่น
   const branches = await prisma.chairopsBranch.findMany({
     where: { id: { in: ids }, orgId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
   let sentCount = 0;
   let skippedCount = 0;
   let errorCount = 0;
   let totalInserted = 0;
+  const results: BulkSendBranchResult[] = [];
   for (const branch of branches) {
     const result = await pushBranchDepositsToLedger(orgId, branch.id);
     await writeAudit({
@@ -255,6 +276,13 @@ export async function bulkSendDepositsToReconcileAction(
       entity: "ChairopsBranch",
       entityId: branch.id,
       newValue: { ...result, bulk: true },
+    });
+    results.push({
+      branchId: branch.id,
+      branchName: branch.name,
+      ok: result.ok,
+      inserted: result.inserted,
+      error: result.ok ? undefined : result.error,
     });
     if (!result.ok) errorCount++;
     else if (result.inserted === 0) skippedCount++;
@@ -267,5 +295,5 @@ export async function bulkSendDepositsToReconcileAction(
   revalidatePath("/chairops/reconcile");
   for (const branch of branches) revalidatePath(`/chairops/reconcile/${branch.id}`);
 
-  return { ok: true, sentCount, skippedCount, errorCount, totalInserted };
+  return { ok: true, sentCount, skippedCount, errorCount, totalInserted, results };
 }

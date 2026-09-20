@@ -316,7 +316,22 @@ export function CollectNewForm({
 
   function submitNow() {
     startTransition(async () => {
-      const payloadLines = chairCodes.map((code) => {
+      try {
+        await submitNowInner();
+      } catch (err) {
+        // 2026-09-20 bigsolvebug P0 fix: a dropped connection mid-request
+        // used to be an uncaught rejection here with no error.tsx anywhere
+        // in this route group — she'd hit Next's generic crash page and
+        // lose the whole count. submissionIdRef is a stable per-attempt id
+        // the server dedupes on, so retrying after this toast is safe.
+        console.error("[chairops/m/collect] submit failed", err);
+        toast.error("บันทึกไม่สำเร็จ (เช็คสัญญาณเน็ต) · กดบันทึกอีกครั้งได้เลย ไม่ซ้ำ");
+      }
+    });
+  }
+
+  async function submitNowInner() {
+    const payloadLines = chairCodes.map((code) => {
         const l = lines[code]!;
         const amountNum =
           l.status === "collected"
@@ -368,7 +383,6 @@ export function CollectNewForm({
       // redirect stub to get here, which is what it always resolved to anyway.
       router.push(`/chairops/m/collect/${res.data.id}`);
       router.refresh();
-    });
   }
 
   function onSubmit(e: FormEvent) {

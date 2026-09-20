@@ -37,8 +37,10 @@ export function AddBranchButton() {
       setFloor("");
       setOpen(false);
       // Land on the new branch so the CEO can add chairs immediately.
+      // 2026-09-20 upspeed: createBranch already revalidatePath("/chairops/branches")
+      // — router.push to the new URL alone re-fetches fresh RSC data; the
+      // extra router.refresh() was a redundant second round trip.
       router.push(`/chairops/branches?branch=${res.data.branchId}&tab=chairs`);
-      router.refresh();
     });
   }
 
@@ -111,7 +113,6 @@ export function AddBranchButton() {
 
 // ── ＋ เพิ่มเก้าอี้ (chairs tab) ──────────────────────────────────────────────
 export function AddChairForm({ branchId }: { branchId: string }) {
-  const router = useRouter();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -134,7 +135,9 @@ export function AddChairForm({ branchId }: { branchId: string }) {
       setCode("");
       setName("");
       setOk(res.data.created ? `เพิ่ม ${res.data.chairCode} แล้ว` : `${res.data.chairCode} มีอยู่แล้ว`);
-      router.refresh();
+      // 2026-09-20 upspeed: addSingleChair already revalidatePath("/chairops/branches") —
+      // a Server Action's own revalidatePath already triggers the client
+      // router to refetch; the explicit refresh() was a redundant 2nd round trip.
     });
   }
 
@@ -176,7 +179,6 @@ export function ChairNameEditor({
   chairId: string;
   name: string | null;
 }) {
-  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name ?? "");
   const [pending, start] = useTransition();
@@ -186,7 +188,7 @@ export function ChairNameEditor({
       const res = await renameChair({ chairId, name: value });
       if (res.ok) {
         setEditing(false);
-        router.refresh();
+        // 2026-09-20 upspeed: renameChair already revalidatePath("/chairops/branches").
       }
     });
   }

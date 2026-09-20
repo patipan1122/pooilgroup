@@ -125,11 +125,21 @@ export function ReconcileSidebar({
       }
       const parts = [`ส่งสำเร็จ ${r.sentCount} สาขา`];
       if (r.skippedCount > 0) parts.push(`ข้าม ${r.skippedCount} สาขา (ไม่มีรายการใหม่)`);
-      if (r.errorCount > 0) parts.push(`พลาด ${r.errorCount} สาขา`);
-      if (r.errorCount > 0) toast.error(parts.join(" · "));
-      else toast.success(parts.join(" · "));
-      setSelected(new Set());
-      setSelectMode(false);
+      const failed = r.results.filter((x) => !x.ok);
+      if (failed.length > 0) {
+        // 2026-09-20 bigsolvebug P1 fix: used to only say "พลาด N สาขา" with
+        // no way to tell which — clerk had to reopen every selected branch
+        // by hand to find it. Name the branches directly in the toast.
+        parts.push(`พลาด ${failed.length} สาขา: ${failed.map((x) => x.branchName).join(", ")}`);
+        toast.error(parts.join(" · "), { duration: 10_000 });
+        // Leave only the failed branches selected — re-send is idempotent
+        // (ON CONFLICT source_ref) so the clerk can just click send again.
+        setSelected(new Set(failed.map((x) => x.branchId)));
+      } else {
+        toast.success(parts.join(" · "));
+        setSelected(new Set());
+        setSelectMode(false);
+      }
     });
   };
 

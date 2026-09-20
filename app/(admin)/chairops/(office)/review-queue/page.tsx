@@ -70,6 +70,12 @@ export default async function ReviewQueuePage() {
           <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800">
             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
             {flagged.length} รายการรอตรวจสอบ
+            {/* 2026-09-20 CEO decision (FIN-03): these amounts are now held
+                out of the main shortage number until cleared here — show the
+                pending total so office can see what's waiting, not just a count. */}
+            <span className="ml-auto font-mono text-amber-700">
+              รวม {flagged.reduce((s, d) => s + d.depositedAmount + d.bankFee, 0).toLocaleString()} ฿
+            </span>
           </div>
 
           {flagged.map((d) => {

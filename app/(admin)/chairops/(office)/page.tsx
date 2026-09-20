@@ -33,6 +33,7 @@ import {
   getRecentAlerts,
   getSystemStatus,
   MAID_CUTOFF_HOUR,
+  bangkokHour,
 } from "@/lib/chairops/queries/exec-home";
 import {
   getBranchPL,
@@ -328,7 +329,7 @@ export default async function ExecDashboardPage({
   const [
     kpis,
     criticalBranches,
-    missedMaids,
+    missedMaidsRaw,
     recentAlerts,
     systemStatus,
     pl,
@@ -342,6 +343,13 @@ export default async function ExecDashboardPage({
     getBranchPL({ orgId, from: range.from, to: range.to }),
     getPendingBillsTotal({ orgId }),
   ]);
+  // 2026-09-20 bigsolvebug P0 fix: kpis.missedMaidCount is correctly gated to
+  // 0 before MAID_CUTOFF_HOUR (the CO-WF-01 fix), but this list was never
+  // gated the same way — before cut-off the KPI tile read "0 คน" while the
+  // card right below it still listed real branch names as "ยังไม่ส่ง" with a
+  // live call/LINE nudge action, exactly the false alarm CO-WF-01 was meant
+  // to kill. Same gate, same source-of-truth helper, so it can't drift again.
+  const missedMaids = bangkokHour(new Date()) >= MAID_CUTOFF_HOUR ? missedMaidsRaw : [];
 
   const plRows = sortBranchPL(pl.rows, plSort);
 
