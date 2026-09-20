@@ -42,22 +42,22 @@ export async function revenueAnalytics(orgId: string, projectId: string): Promis
   const [thisPeriodBills, unpaidBills, windowBills, collectedPayments] = await Promise.all([
     // งวดปัจจุบัน — non-void → billed + net
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, period, status: { not: "void" } },
+      where: { orgId, projectId, period, status: { not: "void" }, deletedAt: null },
       select: { totalAmount: true, paidAmount: true },
     }),
     // ค้างชำระทั้งหมด (รวมงวดก่อน ๆ) — bills ที่ยังเปิดอยู่
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, status: { in: ["issued", "partial", "overdue"] } },
+      where: { orgId, projectId, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
       select: { totalAmount: true, paidAmount: true },
     }),
     // ย้อนหลัง 12 เดือน — query เดียว แล้วค่อย group ใน JS
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, period: { in: periods }, status: { not: "void" } },
+      where: { orgId, projectId, period: { in: periods }, status: { not: "void" }, deletedAt: null },
       select: { period: true, totalAmount: true, paidAmount: true },
     }),
     // เก็บได้เดือนนี้ (cash-basis) = Σ ชำระยืนยันแล้ว ตามวันจ่ายในเดือนนี้
     prisma.rentalPayment.findMany({
-      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd } },
+      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd }, deletedAt: null },
       select: { amountThb: true },
     }),
   ]);

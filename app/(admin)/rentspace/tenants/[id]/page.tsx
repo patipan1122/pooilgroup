@@ -10,6 +10,7 @@ import {
   toNum,
   periodLabel,
   PAYMENT_METHODS,
+  billDisplayStatus,
 } from "@/lib/rentspace/format";
 import { RsPage, RsHeader, RsBadge, RsBackLink, RsCard, RsKpi } from "@/components/rentspace/ui";
 import TenantForm from "../_components/tenant-form";
@@ -280,7 +281,7 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
                       <span className="text-[13.5px] font-semibold" style={{ color: "var(--rs-text)" }}>
                         {periodLabel(b.period)}
                       </span>
-                      <RsBadge kind="bill" status={b.status} />
+                      <RsBadge kind="bill" status={billDisplayStatus(b).key} />
                       <span className="text-[12px]" style={{ color: "var(--rs-text-3)" }}>
                         ห้อง {b.unit?.code}
                       </span>

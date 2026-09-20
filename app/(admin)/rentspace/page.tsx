@@ -12,6 +12,8 @@ import {
 import { formatBaht, tenantDisplayName, toNum, periodLabel } from "@/lib/rentspace/format";
 import { PlanWithDrawer } from "@/components/rentspace/plan-with-drawer";
 import { CycleCta } from "./_components/cycle-cta";
+import { prisma } from "@/lib/prisma";
+import { getSlipMismatchBillIds } from "@/lib/rentspace/ledger-push";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +87,17 @@ export default async function RentSpaceOverview() {
     expiringContracts(orgId, project.id),
   ]);
 
+  // "ต้องดูก่อน" สัญญาณ (audit 2026-09-20 §5 — เดิมหน้านี้ไม่มีสัญญาณเตือนสลิปไม่ตรง/cron
+  // ล้มเหลวเลย ข้อมูลมีอยู่แล้วที่ /matrix แต่ต้องคลิกเข้าไปเองโดยไม่มีใครเตือนก่อน)
+  const openBillIds = (
+    await prisma.rentalBill.findMany({
+      where: { orgId, projectId: project.id, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
+      select: { id: true },
+    })
+  ).map((b) => b.id);
+  const mismatchIds = await getSlipMismatchBillIds(orgId, openBillIds);
+  const mismatchCount = mismatchIds.size;
+
   const mapUnits = units.map((u) => ({
     id: u.id,
     code: u.code,
@@ -149,6 +162,18 @@ export default async function RentSpaceOverview() {
             <span className="block text-xs truncate" style={{ color: "#9A7B1F" }}>{expiring.slice(0, 5).map((c) => c.unit.code).join(" · ")}{expiring.length > 5 ? " · …" : ""} — กดต่อสัญญาก่อนหมดอายุ</span>
           </span>
           <span className="text-[11.5px] font-semibold self-center shrink-0" style={{ color: "#B45309" }}>ดูสัญญา</span>
+        </Link>
+      )}
+
+      {/* "ต้องดูก่อน" — ยอดสลิปไม่ตรง (audit 2026-09-20 §5, ก่อนหน้านี้ต้องเข้า /matrix เองถึงจะรู้) */}
+      {mismatchCount > 0 && (
+        <Link href="/rentspace/matrix" className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4" style={{ background: "#FDECEC", border: "1px solid #F3B4B0" }}>
+          <span className="w-[34px] h-[34px] rounded-lg shrink-0 flex items-center justify-center text-base" style={{ background: "#FBD7D5" }}>⚠️</span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-semibold text-[13.5px]" style={{ color: "#9B2C2C" }}>ยอดสลิปไม่ตรงกับยอดบันทึก {mismatchCount} บิล</span>
+            <span className="block text-xs" style={{ color: "#B4453F" }}>AI ตรวจสลิปแล้วพบยอดไม่ตรง — กดตรวจที่หน้าตาราง ก่อนส่งเข้าบัญชี</span>
+          </span>
+          <span className="text-[11.5px] font-semibold self-center shrink-0" style={{ color: "#9B2C2C" }}>ไปตรวจ</span>
         </Link>
       )}
 

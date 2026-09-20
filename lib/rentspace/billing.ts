@@ -135,7 +135,7 @@ export function effectiveRent(contract: Contract, period: string): number {
 async function nextBillNo(orgId: string, period: string): Promise<string> {
   const prefix = `INV${period.replace("-", "")}`;
   const last = await prisma.rentalBill.findFirst({
-    where: { orgId, billNo: { startsWith: prefix } },
+    where: { orgId, billNo: { startsWith: prefix }, deletedAt: null },
     orderBy: { billNo: "desc" },
     select: { billNo: true },
   });
@@ -147,7 +147,7 @@ async function nextBillNo(orgId: string, period: string): Promise<string> {
 async function nextTaxInvoiceNo(orgId: string, year: number): Promise<string> {
   const prefix = `TX${year}`;
   const last = await prisma.rentalBill.findFirst({
-    where: { orgId, taxInvoiceNo: { startsWith: prefix } },
+    where: { orgId, taxInvoiceNo: { startsWith: prefix }, deletedAt: null },
     orderBy: { taxInvoiceNo: "desc" },
     select: { taxInvoiceNo: true },
   });
@@ -166,7 +166,7 @@ export async function issueTaxInvoice(
   actorId: string | null,
 ): Promise<{ taxInvoiceNo: string; issuedAt: Date; alreadyIssued: boolean }> {
   const existing = await prisma.rentalBill.findUnique({
-    where: { id: billId },
+    where: { id: billId, deletedAt: null },
     select: { orgId: true, status: true, taxInvoiceNo: true, taxInvoiceIssuedAt: true },
   });
   if (!existing) throw new Error("ไม่พบบิล");
@@ -177,7 +177,7 @@ export async function issueTaxInvoice(
 
   // วันที่พิมพ์บนใบกำกับ = วันที่จ่ายงวดล่าสุด (ที่ยืนยันแล้ว) ของบิลนี้ — ไม่ใช่วันที่กดปุ่ม
   const lastPayment = await prisma.rentalPayment.aggregate({
-    where: { billId, status: "confirmed" },
+    where: { billId, status: "confirmed", deletedAt: null },
     _max: { paidOn: true },
   });
   const taxInvoiceDate = lastPayment._max.paidOn ?? new Date(); // ไม่ควรเกิด (บิลจ่ายครบต้องมีรายการจ่าย) แต่กันพังไว้
@@ -195,7 +195,7 @@ export async function issueTaxInvoice(
       if (result.count === 0) {
         // แพ้ race ให้อีกคำขอ (บิลนี้มีเลขแล้ว) → คืนเลขจริงกลับไป ไม่ throw
         const row = await prisma.rentalBill.findUnique({
-          where: { id: billId },
+          where: { id: billId, deletedAt: null },
           select: { taxInvoiceNo: true, taxInvoiceIssuedAt: true },
         });
         if (row?.taxInvoiceNo) return { taxInvoiceNo: row.taxInvoiceNo, issuedAt: row.taxInvoiceIssuedAt!, alreadyIssued: true };
@@ -257,9 +257,15 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   const vcfg = vatableConfig(contract);
 
   // 1) rent — prorate the FIRST month by move-in date (เข้าอยู่กลางเดือน คิดตามวันจริง)
+  //    + prorate the LAST month by move-out date (audit finding QA P1: RentalContract.moveOutDate
+  //    ถูกบันทึกไว้ตอนเลิกสัญญา แต่ billing engine ไม่เคยอ่านเลย → ผู้เช่าที่ย้ายออกกลางเดือนโดน
+  //    เรียกเก็บค่าเช่าเต็มเดือนผิด). ไม่แตะค่าไฟ/น้ำ — คิดตามมิเตอร์จริงอยู่แล้ว ไม่ใช่ตามเวลา.
   const fullRent = effectiveRent(contract, period);
   const moveInPeriod = periodOf(new Date(contract.startDate));
   const startDay = new Date(contract.startDate).getUTCDate();
+  const moveOutDate = contract.moveOutDate ? new Date(contract.moveOutDate) : null;
+  const moveOutPeriod = moveOutDate ? periodOf(moveOutDate) : null;
+  const moveOutDay = moveOutDate ? moveOutDate.getUTCDate() : null;
   let rentAmount = fullRent;
   let rentLabel = "ค่าเช่า";
   // F1: งวดก่อน "เดือนเริ่มสัญญา" ไม่คิดค่าเช่า (กันออกบิลค่าเช่าเต็มเดือนก่อนสัญญาเริ่มจริง)
@@ -267,6 +273,25 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
     rentAmount = 0;
     rentLabel = "ค่าเช่า (งวดก่อนเริ่มสัญญา — ไม่คิด)";
     notes.push("งวดนี้อยู่ก่อนวันเริ่มสัญญา จึงไม่คิดค่าเช่า");
+  } else if (moveOutPeriod && period === moveOutPeriod && moveOutDay != null) {
+    // ย้ายออกกลางงวดนี้ — คิดค่าเช่าตามสัดส่วนวันที่อยู่จริงถึงวันย้ายออก (inclusive).
+    // ถ้าเดือนเดียวกับเดือนเริ่มสัญญาด้วย (สัญญาสั้นในเดือนเดียว) ใช้วันเริ่มจริงเป็นจุดเริ่ม แทนวันที่ 1.
+    const dim = daysInPeriod(period);
+    const effectiveStartDay = period === moveInPeriod && startDay > 1 ? startDay : 1;
+    const daysOccupied = Math.max(0, Math.min(moveOutDay - effectiveStartDay + 1, dim));
+    rentAmount = round2((fullRent * daysOccupied) / dim);
+    const [, mm] = period.split("-");
+    rentLabel =
+      `ค่าเช่า (ย้ายออก ${moveOutDay}/${mm}` +
+      (effectiveStartDay > 1 ? ` · เข้าอยู่ ${effectiveStartDay}/${mm}` : "") +
+      ` · ${daysOccupied}/${dim} วัน) (ตามสัดส่วนวันที่อยู่จริง)`;
+    notes.push(`เดือนนี้ย้ายออกกลางเดือน คิดค่าเช่าตามสัดส่วนวันที่อยู่จริง (${daysOccupied}/${dim} วัน)`);
+  } else if (moveOutPeriod && period > moveOutPeriod) {
+    // งวดหลังเดือนย้ายออก — ไม่ควรเกิดในทางปกติ (สัญญาที่ยุติแล้วไม่ควรถูกออกบิลต่อ) แต่กันพังไว้
+    // สมมาตรกับ F1 ด้านบน (งวดก่อนเริ่มสัญญา)
+    rentAmount = 0;
+    rentLabel = "ค่าเช่า (งวดหลังย้ายออก — ไม่คิด)";
+    notes.push("งวดนี้อยู่หลังวันย้ายออกแล้ว จึงไม่คิดค่าเช่า");
   } else if (period === moveInPeriod && startDay > 1) {
     const dim = daysInPeriod(period);
     const daysOccupied = dim - startDay + 1;
@@ -323,6 +348,7 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
       contractId: contract.id,
       period: prevPeriod(period),
       status: { in: ["issued", "partial", "overdue"] },
+      deletedAt: null,
     },
   });
   if (prior) {
@@ -421,8 +447,10 @@ export async function recomputeBillTotals(
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<void> {
   const bill = await db.rentalBill.findUnique({
-    where: { id: billId },
-    include: { discounts: true, items: true },
+    where: { id: billId, deletedAt: null },
+    // discounts filtered by deletedAt: a soft-deleted discount must never keep
+    // reducing the bill total in this recompute (money calculation, not just a list)
+    include: { discounts: { where: { deletedAt: null } }, items: true },
   });
   if (!bill) return;
   // discount can never exceed the gross (no negative bills)
@@ -462,7 +490,7 @@ export async function createBillForContract(
   opts: { actorId?: string | null; auto?: boolean; issue?: boolean } = {},
 ): Promise<{ created: boolean; billId: string }> {
   const existing = await prisma.rentalBill.findUnique({
-    where: { contractId_period: { contractId: contract.id, period } },
+    where: { contractId_period: { contractId: contract.id, period }, deletedAt: null },
     select: { id: true, status: true, paidAmount: true },
   });
   // มีบิลที่ยัง "ไม่ถูกยกเลิก" ในงวดนี้แล้ว → คืนใบเดิม (idempotent · กันออกซ้ำ)
@@ -550,7 +578,7 @@ export async function createBillForContract(
         // contract+period clash → another worker created it; return that one
         if (msg.includes("contract_id") || msg.includes("contractId")) {
           const row = await prisma.rentalBill.findUnique({
-            where: { contractId_period: { contractId: contract.id, period } },
+            where: { contractId_period: { contractId: contract.id, period }, deletedAt: null },
             select: { id: true },
           });
           if (row) return { created: false, billId: row.id };

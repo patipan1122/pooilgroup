@@ -102,7 +102,13 @@ export async function rentMatrix(
     }),
     prisma.rentalBill.findMany({
       // ตัดบิลยกเลิก/ร่าง ออกจากยอดรวม matrix (ไม่งั้นรวมยอดเกินจริง + ไม่ตรงหน้า analytics)
-      where: { orgId, projectId, period: { startsWith: `${year}-` }, status: { notIn: ["void", "draft"] } },
+      where: {
+        orgId,
+        projectId,
+        period: { startsWith: `${year}-` },
+        status: { notIn: ["void", "draft"] },
+        deletedAt: null,
+      },
       select: {
         id: true,
         unitId: true,
@@ -124,7 +130,7 @@ export async function rentMatrix(
         payments: {
           // เฉพาะการชำระที่ยืนยันแล้ว — กัน matrix โชว์สลิปรอตรวจ (pending) / รายการที่ถอนแล้ว (voided)
           // เป็น "ชำระ ✓" เขียว ทั้งที่ paidAmount ยังไม่นับ → ตัวเลขในหน้าเดียวขัดกัน
-          where: { status: "confirmed" },
+          where: { status: "confirmed", deletedAt: null },
           orderBy: { paidOn: "desc" },
           select: {
             id: true,

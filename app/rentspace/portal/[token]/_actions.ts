@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getTenantByPortalToken, uploadPortalSlip } from "@/lib/rentspace/portal";
 import { runRentSpaceSlipCheck } from "@/lib/rentspace/slip-check";
+import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
 
 // ทุก action ตรวจ token → ผู้เช่า ใหม่ทุกครั้ง · ไม่เชื่อ id ที่ client ส่งมาลอย ๆ
 async function tenantFromToken(token: string) {
@@ -25,10 +26,15 @@ export async function actPortalSubmitSlip(input: {
   slipDataUrl: string;
   note?: string;
 }) {
+  // Public, unauthenticated write that triggers a costly AI OCR call per
+  // submission — rate-limit per portal token so it can't be scripted/spammed.
+  const rl = rateLimit(`rs-slip:${input.token}`, LIMITS.posUpload);
+  if (!rl.ok) throw new Error("ส่งบ่อยเกินไป · รอสักครู่แล้วลองใหม่");
+
   const tenant = await tenantFromToken(input.token);
   // บิลต้องเป็นของผู้เช่าคนนี้จริง (กันเดา billId ข้ามคน)
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: input.billId, tenantId: tenant.id, orgId: tenant.orgId },
+    where: { id: input.billId, tenantId: tenant.id, orgId: tenant.orgId, deletedAt: null },
     select: { id: true, projectId: true, contractId: true, status: true },
   });
   if (!bill) throw new Error("ไม่พบบิลนี้ หรือไม่ใช่บิลของคุณ");
@@ -41,7 +47,7 @@ export async function actPortalSubmitSlip(input: {
   // กันส่งซ้ำ (กดรัว/รีเฟรช): บิล+ยอด ที่ยัง pending ภายใน 3 นาที = ซ้ำ
   const dupSince = new Date(Date.now() - 180_000);
   const dup = await prisma.rentalPayment.findFirst({
-    where: { billId: bill.id, source: "tenant", status: "pending", amountThb: amount, createdAt: { gte: dupSince } },
+    where: { billId: bill.id, source: "tenant", status: "pending", amountThb: amount, createdAt: { gte: dupSince }, deletedAt: null },
     select: { id: true },
   });
   if (dup) return { ok: true, deduped: true };

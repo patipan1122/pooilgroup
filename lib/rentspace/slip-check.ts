@@ -45,7 +45,7 @@ export async function checkRentSpaceSlipFraud(args: {
 
   if (ocr.refNo) {
     const dupRef = await prisma.rentalPayment.findFirst({
-      where: { orgId, contractId, id: { not: paymentId }, ocrRefNo: ocr.refNo },
+      where: { orgId, contractId, id: { not: paymentId }, ocrRefNo: ocr.refNo, deletedAt: null },
       select: { id: true },
     });
     if (dupRef) {
@@ -62,6 +62,7 @@ export async function checkRentSpaceSlipFraud(args: {
         id: { not: paymentId },
         ocrAmount: ocr.amount,
         ocrDate: new Date(`${ocr.date}T00:00:00.000Z`),
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -217,7 +218,7 @@ export async function getOrRunRentSpacePaymentSlipCheck(args: {
   const { orgId, paymentId, actor } = args;
 
   const payment = await prisma.rentalPayment.findFirst({
-    where: { id: paymentId, orgId },
+    where: { id: paymentId, orgId, deletedAt: null },
     select: {
       contractId: true,
       slipUrl: true,
@@ -251,7 +252,7 @@ export async function getOrRunRentSpacePaymentSlipCheck(args: {
       actor,
     });
     const refreshed = await prisma.rentalPayment.findUnique({
-      where: { id: paymentId },
+      where: { id: paymentId, deletedAt: null },
       select: {
         ocrAmount: true,
         ocrDate: true,

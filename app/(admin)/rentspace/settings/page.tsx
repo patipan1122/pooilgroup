@@ -11,6 +11,8 @@ import { getProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
 import { RsPage, RsHeader } from "@/components/rentspace/ui";
 import SettingsForm from "./_components/settings-form";
 import ReconcileAccountSection from "./_components/reconcile-account-section";
+import { PermissionSection } from "./_components/permission-section";
+import { getPermissionMatrix } from "@/lib/rentspace/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +118,7 @@ export default async function RentSpaceSettingsPage() {
           summary={reconcileSummary}
         />
       )}
+      {canEditPerms && <PermissionSection matrix={await getPermissionMatrix(session.user.org_id)} />}
     </RsPage>
   );
 }

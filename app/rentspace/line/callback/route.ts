@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTenantByPortalToken } from "@/lib/rentspace/portal";
 import { rentspaceLineExchangeCode, rentspaceLineProfile, verifyPortalState } from "@/lib/rentspace/line";
+import { rateLimit, LIMITS } from "@/lib/chairops/utils/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,12 @@ export async function GET(req: NextRequest) {
   const portalToken = verifyPortalState(state);
   if (!portalToken) return NextResponse.redirect(new URL("/rentspace/portal/-?line=err", req.url));
   if (oauthErr || !code) return back(req, portalToken, "cancel");
+
+  // Public, unauthenticated OAuth callback — rate-limit per (IP, portal token)
+  // so it can't be scripted to hammer the LINE token-exchange + DB writes below.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const rl = rateLimit(`rs-line-cb:${ip}:${portalToken}`, LIMITS.login);
+  if (!rl.ok) return back(req, portalToken, "err");
 
   const tenant = await getTenantByPortalToken(portalToken);
   if (!tenant) return back(req, portalToken, "err");
