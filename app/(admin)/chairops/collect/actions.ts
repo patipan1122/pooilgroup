@@ -735,6 +735,11 @@ export async function batchDeposit(
     // deposit changes drift → reconcile sidebar + exec dashboard must refresh (P1-3)
     revalidatePath("/chairops/reconcile");
     revalidatePath("/chairops");
+    // 2026-09-20 bigsolvebug: this branch's own reconcile detail page (linked
+    // straight from the review-flag LINE alert text below) and the branches
+    // workspace both read the same drift this recompute just changed.
+    revalidatePath(`/chairops/reconcile/${branchId}`);
+    revalidatePath("/chairops/branches");
     return { ok: true, data: { id: deposit.id } };
   } catch (err) {
     if (err instanceof Error && err.message === "DEPOSIT_RACE") {
