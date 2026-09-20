@@ -2,6 +2,22 @@
 
 > **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-13 (👥🔧 LINE login ตอนนี้บันทึกเวลาเข้าใช้แล้ว (แก้รากเสร็จสมบูรณ์ ครบทั้ง 2 ระดับ) — **DEPLOYED LIVE** `08b0fc4b` · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
+## 🏬🔧✅ RentSpace `/bigsolvebug` (2026-09-20 · BUILT+VERIFIED ใน worktree, ยังไม่ merge setup)
+
+ต่อจาก `/auditbigteam` วันเดียวกัน ([memory](~/.claude/projects/-Users-patipantantikul-Code-buildlygo/memory/rentspace-auditbigteam-19persona-2026-09-20.md)) — CEO ตอบ 5 decisions ที่ค้างครบแล้ว แก้จริงตาม
+
+**แก้แล้ว 7 P0 + ~14 P1:** ลบบิลที่จ่ายแล้วต้องขอ super_admin อนุมัติ (เดิมลบตรงได้ไม่มี guard) · อนุมัติส่วนลดจำกัดเฉพาะ super_admin · บิล/การชำระ/ส่วนลด เปลี่ยนเป็น soft-delete (กู้คืนได้ เก็บ audit 5 ปีตามกฎ) · เพิ่ม test 25 เคสให้โค้ดคำนวณเงิน+ตรวจสลิปที่ไม่เคยมี test มาก่อน · ปิดช่องหลบ cron secret + กัน cron ล้มทั้งชุดถ้าโครงการเดียวพัง · แก้ CSS หน้า portal ลูกค้า (class ปลอม) · เพิ่ม rate-limit หน้า public · แก้ e-sign 3 จุด (token หมดอายุ, กันกดซ้ำ, บันทึก IP) · รวมสถานะบิลให้เป็นมาตรฐานเดียว (เดิมโชว์ขัดแย้งกันได้) · คิดค่าเช่าตามสัดส่วนวันที่อยู่จริงเมื่อย้ายออกกลางเดือน (เดิมคิดเต็มเดือนเสมอ) · เพิ่มสัญญาณ "ยอดสลิปไม่ตรง" บนหน้าแรก
+
+**ฟีเจอร์ใหม่ตามที่ CEO ขอ:** หน้าตั้งค่าสิทธิ์ (`/rentspace/settings` → "สิทธิ์การใช้งาน") ให้ super_admin ติ๊กเปิด/ปิดสิทธิ์แต่ละตำแหน่งได้ (รวมสิทธิ์เข้าหน้าตรวจสลิปของพนักงานสนาม — ค่าเริ่มต้นยังปิดเหมือนเดิม)
+
+**ค้าง 1 จุด:** sanitize HTML หน้าเซ็นสัญญา ต้องเพิ่ม npm package ใหม่ (isomorphic-dompurify) — รอ CEO อนุมัติก่อนถึงจะลงได้
+
+**แก้ finding เดิมที่ผิด:** UnitDrawer ที่ audit บอกว่า "ตายแล้ว" จริงๆ ใช้งานได้ (คลิกจุดบนแผนผัง 2D/3D เปิดได้) — audit เช็คแค่ trigger ทาง URL เส้นเดียว พลาดอีกเส้น — ไม่ได้ลบทิ้ง
+
+**Verify:** tsc 0 error · lint scoped สะอาด (เจอ 1 error เก่าที่ไม่เกี่ยวกับงานนี้) · `next build` จริงผ่าน 100% ทุก route · เช็คจำนวนบิล/การชำระ/ส่วนลดก่อน-หลังไม่เปลี่ยน (ไม่มี side-effect เกินตั้งใจ) — doc เต็ม `docs/BUGSOLVE_RentSpace_2026-09-20.md` branch `claude/rentspace-bigsolvebug-2026-09-20`
+
+---
+
 ## 🔑✅ CEO เข้า pooilgroup.com ไม่ได้ (วนกลับหน้า login) — ไม่ใช่บั๊ก เป็นจังหวะ deploy ชนพอดี (2026-09-20)
 
 CEO แจ้งล็อกอินไม่ได้ วนกลับมาหน้า login ตลอด — ตรวจแล้วไม่ใช่ Supabase โดนล็อกเหมือนเมื่อวาน ([[pooilgroup-supabase-egress-quota-incident-2026-09-19]]) ทุกจุด (บัญชี CEO, ฐานข้อมูลตรง, Supabase Auth API) ปกติดีหมด และ log จริงแสดงว่า **login สำเร็จ 4 ครั้ง** ในช่วง 70 วินาที (12:19-12:20 น.) แต่หน้าเว็บไม่พาเข้าแดชบอร์ดสักครั้ง
