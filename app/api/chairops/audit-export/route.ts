@@ -1,5 +1,9 @@
 // GET /api/audit-export?from=YYYY-MM-DD&to=YYYY-MM-DD&entity=CashCollection
-// ADMIN-only. Streams CSV of audit log rows for compliance export.
+// CEO+ only. Streams CSV of audit log rows for compliance export.
+// 2026-09-20 CEO decision: was gated at ADMIN(5), one rank above the
+// /chairops/audit page itself (requireRole("CEO"), rank 4) — a plain CEO
+// could view the log but got 403 exporting it. Loosened to match the page's
+// own gate; same org-scoped read, just downloadable instead of paginated.
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (rankOf(session.user.role) < rankOf("ADMIN")) {
+  if (rankOf(session.user.role) < rankOf("CEO")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
