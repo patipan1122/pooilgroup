@@ -190,6 +190,121 @@ async function selfRegisterChairopsMaid(
   }
 }
 
+type InviteOutcome =
+  | { kind: "resolved"; resolved: ResolvedUser; onboardingRedirect?: string }
+  // Anything about the invite link itself didn't check out (expired/invalid
+  // signature, superseded by a re-invite, already claimed by someone else,
+  // stale hijack attempt). NOT an error the tapper should see — the caller
+  // just proceeds to the normal (non-invite) resolution below, so anyone who
+  // already has an account (the common case: this is an old, already-used
+  // link) gets logged in normally instead of hitting a dead end.
+  | { kind: "fall-through" }
+  // A genuine infrastructure failure (DB/Pool write broke) — still worth
+  // surfacing as a real error, not silently swallowed.
+  | { kind: "error"; status: number; message: string };
+
+/** Resolve (or fail soft on) a ChairOps signed maid-invite tap. Never returns
+ *  an HTTP response itself — CEO 2026-09-20: an already-used/expired/revoked
+ *  invite link used to dead-end with a raw error page ("ลิงก์เชิญหมดอายุ...")
+ *  even for a maid whose account was already fully set up, because the old
+ *  code `return`ed straight out of the route on any invite problem instead of
+ *  falling through to the normal "log me in as whoever I already am" lookup
+ *  a few lines down. See [[invite-link-ttl-standardize-and-chairops-branch-bug-2026-09-20]]. */
+async function resolveChairopsInvite(
+  admin: ReturnType<typeof adminClient>,
+  invite: string,
+  lineUserId: string,
+  lineName: string | null,
+): Promise<InviteOutcome> {
+  const targetId = verifyInvite(invite);
+  if (!targetId) return { kind: "fall-through" };
+
+  // CRITICAL: the invite token signs the Supabase auth user id
+  // (createMaidInvite/createUserInvite: signInvite(authData.user.id)), which is
+  // stored on ChairopsUser.authUserId — NOT ChairopsUser.id (a separate
+  // @default(uuid()) PK). Looking up by `id` therefore NEVER matched → every
+  // completed invite login 404'd ("ไม่พบบัญชีในลิงก์เชิญ"). This was masked for
+  // months because the OAuth fallback used to drop the invite (bounced to /login
+  // before reaching here). Match on authUserId. 2026-06-16. See memory
+  // chairops-invite-link-liff-endpoint-url-2026-06-16.
+  const maid = await prisma.chairopsUser.findFirst({
+    where: { authUserId: targetId, isActive: true },
+    select: {
+      id: true, orgId: true, email: true, displayName: true, role: true,
+      lineUserId: true, authUserId: true,
+      inviteToken: true, inviteExpiresAt: true,
+      onboardingComplete: true, lineDisplayName: true,
+    },
+  });
+  if (!maid) return { kind: "fall-through" };
+
+  // Idempotent invite (CEO 2026-06-18): if THIS LINE id is already bound to this
+  // maid — a repeat tap, OR a first tap that consumed the invite but failed to
+  // land a session downstream — just RE-LOGIN. Don't fall through on the
+  // already-spent token. A DIFFERENT LINE id still can't hijack (falls through
+  // instead of binding — see below). See memory
+  // chairops-invite-plain-login-domain-split-2026-06-18.
+  const alreadyBoundToThisLine = !!maid.lineUserId && maid.lineUserId === lineUserId;
+  if (!alreadyBoundToThisLine) {
+    // F5: reject a revoked (inviteToken cleared by auto-revoke) / rotated / tampered
+    // token, and never let a different LINE id hijack an already-bound maid —
+    // both just fall through to the normal lookup below instead of binding.
+    if (maid.inviteToken !== invite) return { kind: "fall-through" };
+    if (maid.lineUserId && maid.lineUserId !== lineUserId) return { kind: "fall-through" };
+
+    // Unbound → bind this LINE id + consume the token + cache the LINE name.
+    // Auto-heal (2026-06-16): this LINE may be stuck on a leftover BRANCHLESS
+    // self-registered "junk" account from an earlier tap (selfRegisterChairopsMaid
+    // fires when a /chairops tap arrives with no invite). That stale row holds the
+    // (orgId,lineUserId) unique → the bind below would 409 and the maid would stay
+    // logged into the wrong, branchless account (CEO: "ไม่เห็นชื่อที่ตั้ง · ไม่มีสาขา").
+    // An explicit invite is an admin action that must WIN — free the junk row first.
+    // We ONLY ever touch a row with NO branch (primaryBranchId null): a properly-
+    // onboarded maid always has a branch, so a real account is never disturbed.
+    await prisma.chairopsUser.updateMany({
+      where: {
+        orgId: maid.orgId,
+        lineUserId,
+        primaryBranchId: null,
+        id: { not: maid.id },
+      },
+      data: { lineUserId: null, isActive: false },
+    });
+    try {
+      // F5: bind LINE id + consume (null out) the invite token atomically
+      await prisma.chairopsUser.update({
+        where: { id: maid.id },
+        data: {
+          lineUserId,
+          inviteToken: null,
+          inviteExpiresAt: null,
+          lineDisplayName: lineName ?? undefined,
+        },
+      });
+    } catch {
+      // Unique-constraint clash: this LINE id is already bound to a DIFFERENT
+      // ChairopsUser row. Fall through — the lookup below will find that row
+      // and log them into it correctly.
+      return { kind: "fall-through" };
+    }
+  } else if (lineName && lineName !== maid.lineDisplayName) {
+    // Already bound — refresh the cached LINE name (backfills older binds).
+    await prisma.chairopsUser
+      .update({ where: { id: maid.id }, data: { lineDisplayName: lineName } })
+      .catch(() => {});
+  }
+  if (maid.authUserId && maid.email) {
+    const r = await ensurePoolMembership(admin, maid.authUserId, maid.orgId, maid.email, maid.displayName);
+    if (!r.ok) return { kind: "error", status: 502, message: `pool-membership(invite): ${r.error}` };
+  }
+  return {
+    kind: "resolved",
+    resolved: { id: maid.id, orgId: maid.orgId, email: maid.email, name: maid.displayName, role: maid.role },
+    // F4: un-onboarded maid → override destination to onboarding form
+    onboardingRedirect: maid.onboardingComplete ? undefined : "/chairops/m/onboarding",
+  };
+}
+
 const Schema = z.object({
   idToken: z.string().min(20).max(4096),
   displayName: z.string().max(120).optional(),
@@ -277,129 +392,21 @@ export async function POST(req: NextRequest) {
 
   // 0) Invite path — a signed admin onboarding link. Binds this verified LINE
   //    id to the ChairopsUser named in the token (first tap wins; a different
-  //    LINE id can't hijack an already-bound maid).
+  //    LINE id can't hijack an already-bound maid). Any problem with the
+  //    invite itself (expired/invalid/superseded/already-claimed) falls
+  //    through to the normal resolution below instead of dead-ending —
+  //    see resolveChairopsInvite's doc comment.
   if (invite) {
-    const targetId = verifyInvite(invite);
-    if (!targetId) {
-      return NextResponse.json(
-        { error: "ลิงก์เชิญหมดอายุหรือไม่ถูกต้อง" },
-        { status: 400 },
-      );
-    }
-    // F5: also validate that the token matches what's stored in DB.
-    // If a new invite was issued for the same branch (auto-revoke), the old
-    // HMAC token is still cryptographically valid but the DB row was cleared —
-    // this check catches it.
-    // CRITICAL: the invite token signs the Supabase auth user id
-    // (createMaidInvite/createUserInvite: signInvite(authData.user.id)), which is
-    // stored on ChairopsUser.authUserId — NOT ChairopsUser.id (a separate
-    // @default(uuid()) PK). Looking up by `id` therefore NEVER matched → every
-    // completed invite login 404'd ("ไม่พบบัญชีในลิงก์เชิญ"). This was masked for
-    // months because the OAuth fallback used to drop the invite (bounced to /login
-    // before reaching here). Match on authUserId. 2026-06-16. See memory
-    // chairops-invite-link-liff-endpoint-url-2026-06-16.
-    const maid = await prisma.chairopsUser.findFirst({
-      where: { authUserId: targetId, isActive: true },
-      select: {
-        id: true, orgId: true, email: true, displayName: true, role: true,
-        lineUserId: true, authUserId: true,
-        inviteToken: true, inviteExpiresAt: true,
-        onboardingComplete: true, lineDisplayName: true,
-      },
-    });
-    if (!maid) {
-      return NextResponse.json({ error: "ไม่พบบัญชีในลิงก์เชิญ" }, { status: 404 });
-    }
-    // The LINE display name to cache for the office Users page (CEO 2026-06-18).
     const lineName = verified.name ?? displayName ?? null;
-    // Idempotent invite (CEO 2026-06-18): if THIS LINE id is already bound to this
-    // maid — a repeat tap, OR a first tap that consumed the invite but failed to
-    // land a session downstream — just RE-LOGIN. Don't 410 on the already-spent
-    // token. Single-use protection still blocks a DIFFERENT LINE id (409 below).
-    // This is what makes the invite link "ใช้ได้นานขึ้น / กดซ้ำได้": one bad tap no
-    // longer permanently burns the link. See memory
-    // chairops-invite-plain-login-domain-split-2026-06-18.
-    const alreadyBoundToThisLine = !!maid.lineUserId && maid.lineUserId === lineUserId;
-    if (!alreadyBoundToThisLine) {
-      // F5: reject a revoked (inviteToken cleared by auto-revoke) / rotated / tampered
-      // token. Only matters for a NEW bind — null !== invite ⇒ 410.
-      if (maid.inviteToken !== invite) {
-        return NextResponse.json({ error: "ลิงก์เชิญถูกยกเลิกหรือหมดอายุแล้ว" }, { status: 410 });
-      }
-      // Bound to a DIFFERENT LINE id already → never let another LINE hijack.
-      if (maid.lineUserId && maid.lineUserId !== lineUserId) {
-        return NextResponse.json(
-          { error: "ลิงก์นี้ถูกใช้ผูกกับ LINE อื่นไปแล้ว" },
-          { status: 409 },
-        );
-      }
-      // Unbound → bind this LINE id + consume the token + cache the LINE name.
-      // Auto-heal (2026-06-16): this LINE may be stuck on a leftover BRANCHLESS
-      // self-registered "junk" account from an earlier tap (selfRegisterChairopsMaid
-      // fires when a /chairops tap arrives with no invite). That stale row holds the
-      // (orgId,lineUserId) unique → the bind below would 409 and the maid would stay
-      // logged into the wrong, branchless account (CEO: "ไม่เห็นชื่อที่ตั้ง · ไม่มีสาขา").
-      // An explicit invite is an admin action that must WIN — free the junk row first.
-      // We ONLY ever touch a row with NO branch (primaryBranchId null): a properly-
-      // onboarded maid always has a branch, so a real account is never disturbed.
-      await prisma.chairopsUser.updateMany({
-        where: {
-          orgId: maid.orgId,
-          lineUserId,
-          primaryBranchId: null,
-          id: { not: maid.id },
-        },
-        data: { lineUserId: null, isActive: false },
-      });
-      try {
-        // F5: bind LINE id + consume (null out) the invite token atomically
-        await prisma.chairopsUser.update({
-          where: { id: maid.id },
-          data: {
-            lineUserId,
-            inviteToken: null,
-            inviteExpiresAt: null,
-            lineDisplayName: lineName ?? undefined,
-          },
-        });
-      } catch {
-        return NextResponse.json(
-          { error: "LINE นี้ถูกผูกกับบัญชีอื่นแล้ว" },
-          { status: 409 },
-        );
-      }
-    } else if (lineName && lineName !== maid.lineDisplayName) {
-      // Already bound — refresh the cached LINE name (backfills older binds).
-      await prisma.chairopsUser
-        .update({ where: { id: maid.id }, data: { lineDisplayName: lineName } })
-        .catch(() => {});
+    const outcome = await resolveChairopsInvite(admin, invite, lineUserId, lineName);
+    if (outcome.kind === "error") {
+      return NextResponse.json({ error: outcome.message }, { status: outcome.status });
     }
-    if (maid.authUserId && maid.email) {
-      const r = await ensurePoolMembership(
-        admin,
-        maid.authUserId,
-        maid.orgId,
-        maid.email,
-        maid.displayName,
-      );
-      if (!r.ok) {
-        return NextResponse.json(
-          { error: `pool-membership(invite): ${r.error}` },
-          { status: 502 },
-        );
-      }
+    if (outcome.kind === "resolved") {
+      resolved = outcome.resolved;
+      if (outcome.onboardingRedirect) redirectTo = outcome.onboardingRedirect;
     }
-    // F4: un-onboarded maid → override destination to onboarding form
-    if (!maid.onboardingComplete) {
-      redirectTo = "/chairops/m/onboarding";
-    }
-    resolved = {
-      id: maid.id,
-      orgId: maid.orgId,
-      email: maid.email,
-      name: maid.displayName,
-      role: maid.role,
-    };
+    // "fall-through" → resolved stays null, normal resolution below runs.
   }
 
   if (!resolved) {
