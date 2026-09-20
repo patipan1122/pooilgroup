@@ -12,6 +12,7 @@ import {
   toNum,
   periodLabel,
   PAYMENT_METHODS,
+  billDisplayStatus,
 } from "@/lib/rentspace/format";
 import { getBill } from "@/lib/rentspace/data";
 import { BillDocument } from "@/components/rentspace/bill-document";
@@ -69,7 +70,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         subtitle={`${bill.project.name} · ห้อง ${bill.unit.code} · ${periodLabel(bill.period)}`}
         action={
           <div className="flex items-center gap-2 print:hidden">
-            <RsBadge kind="bill" status={bill.status} />
+            <RsBadge kind="bill" status={billDisplayStatus(bill).key} />
           </div>
         }
       />

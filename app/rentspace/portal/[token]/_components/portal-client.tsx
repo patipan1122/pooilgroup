@@ -14,7 +14,7 @@ import {
   ExternalLink,
   History,
 } from "lucide-react";
-import { BILL_STATUS, periodLabel } from "@/lib/rentspace/format";
+import { billDisplayStatus, periodLabel } from "@/lib/rentspace/format";
 import { actPortalSubmitSlip, actPortalSaveEmail } from "../_actions";
 
 const PAY_METHOD_TH: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", qr: "QR", card: "บัตร" };
@@ -236,7 +236,7 @@ function Empty({ text }: { text: string }) {
 
 function BillCard({ token, bill }: { token: string; bill: Bill }) {
   const [open, setOpen] = useState(false);
-  const st = BILL_STATUS[bill.status] ?? { label: bill.status, color: "var(--rs-text-2)", soft: "var(--rs-bg-2)" };
+  const st = billDisplayStatus(bill);
   const outstanding = Math.max(0, bill.total - bill.paid);
   const canPay = bill.status !== "void" && outstanding > 0;
 

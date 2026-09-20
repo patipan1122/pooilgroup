@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { formatBaht, periodLabel, BILL_STATUS, UNIT_STATUS } from "@/lib/rentspace/format";
+import { formatBaht, periodLabel, billDisplayStatus, UNIT_STATUS } from "@/lib/rentspace/format";
 import { actGetUnitDrawer, actCreateBill, actRecordPayment } from "@/app/(admin)/rentspace/_actions";
 
 type Drawer = Awaited<ReturnType<typeof actGetUnitDrawer>>;
@@ -134,7 +134,7 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
               )}
 
               {/* current bill */}
-              <Section title={`บิลงวด ${periodLabel(data.period)}`} badge={data.currentBill ? BILL_STATUS[data.currentBill.status] : { label: "ยังไม่ออกบิล", color: "#C0322B", soft: "#FDECEC" }}>
+              <Section title={`บิลงวด ${periodLabel(data.period)}`} badge={data.currentBill ? billDisplayStatus(data.currentBill) : { label: "ยังไม่ออกบิล", color: "#C0322B", soft: "#FDECEC" }}>
                 {data.currentBill ? (
                   <>
                     <Row label="ค่าเช่า" value={formatBaht(data.currentBill.rent)} />
@@ -178,7 +178,7 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
                   <div className="text-[12.5px] py-1.5" style={{ color: "#A7AEB9" }}>ยังไม่มีประวัติบิล</div>
                 ) : (
                   data.history.map((h) => {
-                    const t = BILL_STATUS[h.status] ?? { label: h.status, color: "#64748b", soft: "#f1f5f9" };
+                    const t = billDisplayStatus(h);
                     return (
                       <Link key={h.billId} href={`/rentspace/bills/${h.billId}`} className="block py-2.5" style={{ borderBottom: "1px solid #F4F5F7" }}>
                         <div className="flex items-center justify-between">
@@ -197,7 +197,7 @@ export function UnitDrawer({ unitId, onClose }: { unitId: string | null; onClose
                             </div>
                           ))
                         ) : (
-                          <div className="mt-1 text-[11.5px]" style={{ color: h.status === "overdue" ? "#C0322B" : "#A7AEB9" }}>{h.status === "overdue" ? "เกินกำหนด · ยังไม่ชำระ" : "ยังไม่ชำระ"}</div>
+                          <div className="mt-1 text-[11.5px]" style={{ color: t.key === "overdue" ? "#C0322B" : "#A7AEB9" }}>{t.key === "overdue" ? "เกินกำหนด · ยังไม่ชำระ" : "ยังไม่ชำระ"}</div>
                         )}
                       </Link>
                     );

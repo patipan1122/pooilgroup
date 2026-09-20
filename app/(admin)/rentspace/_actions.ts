@@ -203,6 +203,7 @@ export async function actGetUnitDrawer(unitId: string) {
           total: toNum(curBill.totalAmount),
           paid: toNum(curBill.paidAmount),
           status: curBill.status as string,
+          dueDate: curBill.dueDate ? curBill.dueDate.toISOString() : null,
         }
       : null,
     meters: {
@@ -216,6 +217,7 @@ export async function actGetUnitDrawer(unitId: string) {
       total: toNum(b.totalAmount),
       paid: toNum(b.paidAmount),
       status: b.status as string,
+      dueDate: b.dueDate ? b.dueDate.toISOString() : null,
       payments: b.payments.map((p) => ({
         paidOn: p.paidOn.toISOString().slice(0, 10),
         method: p.method,

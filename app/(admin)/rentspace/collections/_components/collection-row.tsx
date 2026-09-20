@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown } from "lucide-react";
-import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
+import { formatBaht, billDisplayStatus, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import { actRecordPayment } from "@/app/(admin)/rentspace/_actions";
 import type { OverdueUnit, OverdueBill } from "@/lib/rentspace/collections";
 
@@ -71,7 +71,7 @@ function BillRow({ bill, unitCode }: { bill: OverdueBill; unitCode: string }) {
   const [amount, setAmount] = useState(String(bill.outstanding));
   const [method, setMethod] = useState<"cash" | "transfer" | "qr" | "card">("transfer");
   const [pending, start] = useTransition();
-  const st = BILL_STATUS[bill.status] ?? { label: bill.status, color: "var(--rs-text-3)", soft: "var(--rs-bg-3)" };
+  const st = billDisplayStatus(bill);
 
   function submit() {
     const amt = Number(String(amount).replace(/[^0-9.]/g, "")) || 0;
