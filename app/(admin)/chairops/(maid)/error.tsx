@@ -31,9 +31,9 @@ export default function MaidShellError({
       <div>
         <h1 className="text-lg font-bold text-foreground">เปิดหน้านี้ไม่สำเร็จ</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          อาจเป็นเพราะสัญญาณเน็ตหลุดชั่วคราว — ถ้าเพิ่งกด "บันทึก" หรือ
-          "ฝากเงิน" ระบบกันข้อมูลซ้ำไว้แล้ว กดลองอีกครั้งได้เลย ไม่ซ้ำเงิน
-          หรือซ้ำรอบแน่นอน
+          อาจเป็นเพราะสัญญาณเน็ตหลุดชั่วคราว — ถ้าเพิ่งกด &ldquo;บันทึก&rdquo;
+          หรือ &ldquo;ฝากเงิน&rdquo; ระบบกันข้อมูลซ้ำไว้แล้ว กดลองอีกครั้งได้เลย
+          ไม่ซ้ำเงินหรือซ้ำรอบแน่นอน
         </p>
         {error.digest && (
           <p className="mt-2 font-mono text-[10px] text-muted-foreground">
