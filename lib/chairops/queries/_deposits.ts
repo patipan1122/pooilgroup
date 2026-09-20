@@ -45,8 +45,14 @@ function buildDepositWhere(args: RangeArgs) {
   const where: {
     orgId: string;
     branchId?: string | { in: string[] };
+    // 2026-09-20 CEO decision (FIN-03): hold requiresReview=true deposits out
+    // of every "matches drift-engine" surface (sidebar/KPIs/sparkbars/ledger)
+    // — must stay in lock-step with the same filter added to drift-engine.ts's
+    // own aggregates, or this module's whole reason to exist ("so all
+    // surfaces match the engine") breaks again for exactly this field.
+    requiresReview: boolean;
     depositedAt?: { gte?: Date; lt?: Date };
-  } = { orgId };
+  } = { orgId, requiresReview: false };
   if (branchId) where.branchId = branchId;
   else if (branchIds && branchIds.length > 0) where.branchId = { in: branchIds };
   if (since || until) {
