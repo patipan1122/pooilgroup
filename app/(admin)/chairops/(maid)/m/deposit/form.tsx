@@ -234,24 +234,34 @@ export function BatchDepositForm({
     if (!slip) return;
     const ids = Array.from(selectedIds);
     startTransition(async () => {
-      const res = await batchDeposit(
-        {
-          collectionIds: ids,
-          depositedAmount: depositedNum,
-          bankFee: bankFeeNum,
-          slipPhotoUrl: slip.publicUrl,
-          slipImageHash: slip.hash,
-          notes: notes.trim() || null,
-        },
-        branchOverride ? { branchOverride } : undefined,
-      );
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
+      try {
+        const res = await batchDeposit(
+          {
+            collectionIds: ids,
+            depositedAmount: depositedNum,
+            bankFee: bankFeeNum,
+            slipPhotoUrl: slip.publicUrl,
+            slipImageHash: slip.hash,
+            notes: notes.trim() || null,
+          },
+          branchOverride ? { branchOverride } : undefined,
+        );
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success("ฝากเงินก้อนบันทึกแล้ว ✓");
+        router.push(redirectTo ?? "/chairops/m");
+        router.refresh();
+      } catch (err) {
+        // 2026-09-20 bigsolvebug P0 fix: a dropped connection mid-request
+        // used to be an uncaught rejection with no error.tsx anywhere in
+        // this route group — she'd hit Next's generic crash page and lose
+        // her typed amounts + attached slip. The deposit itself is guarded
+        // server-side (DEPOSIT_RACE compare-and-swap), so retrying is safe.
+        console.error("[chairops/m/deposit] submit failed", err);
+        toast.error("ฝากเงินไม่สำเร็จ (เช็คสัญญาณเน็ต) · กดฝากอีกครั้งได้เลย");
       }
-      toast.success("ฝากเงินก้อนบันทึกแล้ว ✓");
-      router.push(redirectTo ?? "/chairops/m");
-      router.refresh();
     });
   }
 

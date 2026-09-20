@@ -25,6 +25,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
@@ -1182,12 +1183,17 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   }
 
   // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
-  // can take 10-30 s. Fire-and-forget so the commit returns to the CEO
-  // as soon as the writes settle; drift values catch up within seconds
-  // on subsequent page loads. 2026-06-01 audit P1 (SRE): swallowed errors
-  // here are invisible — wrap each in its own catch that logs to console
-  // and the audit log so Sentry/Logflare picks it up.
-  void Promise.allSettled([
+  // can take 10-30 s, so the commit returns to the caller before this
+  // finishes. 2026-09-20 bigsolvebug P0 fix: this used to be a bare
+  // `void Promise.allSettled(...)` — on Vercel's serverless runtime,
+  // un-awaited work has no guarantee it survives after the response is
+  // sent, so drift/alerts could silently never update. `after()` keeps
+  // the function instance alive until this settles while still letting
+  // the HTTP response return immediately (same pattern already used in
+  // app/(admin)/ledger/_actions.ts). Errors are still caught per-task so
+  // one failure can't take down the others.
+  after(() =>
+    Promise.allSettled([
     // 2026-07-04 · self-heal branch_daily_revenue from ChairopsPosDaily BEFORE
     // recomputing drift, so an importer storeName mismatch can never leave the
     // ledger/drift reading an incomplete branch rollup (see the Apr–Jun gap).
@@ -1243,7 +1249,8 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
         console.error("[pos-ingest commit] auto-resolve failed:", msg);
       }
     })(),
-  ]);
+    ]),
+  );
 
   await writeAudit({
     userId: session.user.id,
@@ -1267,6 +1274,10 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   revalidatePath("/chairops/pos-ingest");
   revalidatePath("/chairops/reconcile");
   revalidatePath("/chairops/alerts");
+  // 2026-09-20 bigsolvebug: dashboard + branches list both read ChairopsDrift
+  // for the same shortage numbers this commit changes — were never busted here.
+  revalidatePath("/chairops");
+  revalidatePath("/chairops/branches");
 
   return {
     ok: true,
