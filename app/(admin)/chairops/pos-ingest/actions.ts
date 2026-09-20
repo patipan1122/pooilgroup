@@ -949,7 +949,11 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     // Step A: bulk-create new chairs. Re-fetch IDs via findMany since
     // createMany doesn't return rows; one extra query but worth it.
     if (plannedNewChairs.length > 0) {
-      await tx.chairopsChair.createMany({ data: plannedNewChairs });
+      // 2026-09-20 bigsolvebug P2 fix: (orgId, chairCode) is unique — a
+      // concurrent import of an overlapping file used to throw P2002 here
+      // and roll back the whole commit instead of gracefully skipping the
+      // row that already landed.
+      await tx.chairopsChair.createMany({ data: plannedNewChairs, skipDuplicates: true });
       const fresh = await tx.chairopsChair.findMany({
         where: {
           orgId,
@@ -1057,8 +1061,13 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     }
 
     // 2026-06-01 perf: bulk insert for new rows (1 query instead of N).
+    // 2026-09-20 bigsolvebug P2 fix: (orgId, branchId, chairCode, bizDate) is
+    // unique — a race between this commit and a concurrent import (e.g. the
+    // gmail-import cron firing mid-manual-upload) used to throw P2002 and
+    // roll back the entire commit instead of skipping the row that already
+    // landed via the other path.
     if (newDailyData.length > 0) {
-      await tx.chairopsPosDaily.createMany({ data: newDailyData });
+      await tx.chairopsPosDaily.createMany({ data: newDailyData, skipDuplicates: true });
     }
     // Existing rows still need per-row updates (Prisma has no native
     // updateMany-with-different-data), but they don't carry the audit-log
@@ -1149,7 +1158,12 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
         }
       }
       if (aggCreates.length > 0) {
-        await tx.chairopsBranchDailyRevenue.createMany({ data: aggCreates });
+        // 2026-09-20 bigsolvebug P2 fix: (orgId, branchId, bizDate) is
+        // unique — same race-safety reasoning as the PosDaily createMany above.
+        await tx.chairopsBranchDailyRevenue.createMany({
+          data: aggCreates,
+          skipDuplicates: true,
+        });
       }
       if (aggUpdates.length > 0) {
         await Promise.all(
@@ -1179,7 +1193,17 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     ) {
       return { ok: false, error: "import นี้ถูก commit ไปแล้ว · รีเฟรชหน้า" };
     }
-    throw err;
+    // 2026-09-20 bigsolvebug P2 fix: this used to re-throw the raw error,
+    // which propagated to the route's error.tsx boundary and rendered
+    // `error.message` directly (could leak a raw Postgres/Prisma message to
+    // OFFICE-tier staff) while also losing the commit checklist/elapsed-time
+    // UI state. The $transaction is all-or-nothing, so nothing was written —
+    // return a safe generic message instead and log the real one server-side.
+    console.error("[pos-ingest commit] transaction failed", err);
+    return {
+      ok: false,
+      error: "commit ไม่สำเร็จ (ยังไม่มีข้อมูลถูกบันทึก) · ลองอีกครั้ง ถ้ายังพังแจ้งทีมเทค",
+    };
   }
 
   // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
