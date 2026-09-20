@@ -1192,7 +1192,7 @@ function BranchStaffModal({
               <Check size={15} /> สร้างลิงก์เชิญ &quot;{inviteResult.name}&quot; สำเร็จ
             </div>
             <div style={{ fontSize: 11.5, color: "#5A6270", marginBottom: 8 }}>
-              ส่งลิงก์นี้ให้พนักงานเปิดเพื่อตั้งรหัสและเข้าระบบ (ลิงก์มีอายุ 48 ชั่วโมง)
+              ส่งลิงก์นี้ให้พนักงานเปิดเพื่อตั้งรหัสและเข้าระบบ (ลิงก์มีอายุ 24 ชั่วโมง)
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
               <input readOnly value={inviteResult.url} onFocus={(e) => e.currentTarget.select()} style={{ ...R_FIELD, fontSize: 12, background: "#fff", flex: 1, minWidth: 0 }} />

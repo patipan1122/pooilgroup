@@ -298,10 +298,22 @@ export const listBudgets = cache(
 
 /** Scoped LINE invites for a company (admin settings list). cache() dedupes
  *  within a single RSC render pass; force-dynamic ensures freshness on each
- *  navigation. Resolves branch names for display. */
+ *  navigation. Resolves branch names for display.
+ *
+ *  Only lists UNUSED invites — a used one has nothing left to manage/revoke,
+ *  so keeping it in this panel is just clutter (CEO 2026-09-20: "จบคือเคลีย
+ *  ทิ้งได้เลย"). The row itself is intentionally kept in the DB (usedAt +
+ *  usedByLineUserId) as a light audit trail and to let the SAME person
+ *  re-open their link idempotently — see app/api/ledger/invite/accept.
+ *  Expired-and-never-used invites have zero audit value (nothing happened),
+ *  so those are opportunistically purged here on each view — no cron needed
+ *  at this volume. */
 export const listInvites = cache(async function listInvites(orgId: string, companyId: string) {
+  await prisma.ledgerLineInvite.deleteMany({
+    where: { orgId, companyId, usedAt: null, expiresAt: { lt: new Date() } },
+  });
   const rows = await prisma.ledgerLineInvite.findMany({
-    where: { orgId, companyId },
+    where: { orgId, companyId, usedAt: null },
     orderBy: { createdAt: "desc" },
     take: 50,
     select: {

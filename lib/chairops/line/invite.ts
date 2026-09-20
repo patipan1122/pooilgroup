@@ -10,7 +10,12 @@
 
 import crypto from "node:crypto";
 
-const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (CEO 2026-06-18: ลิงก์ใช้ได้นานขึ้น)
+// Exported so callers that also persist a DB-visible copy of the expiry
+// (createMaidInvite/createUserInvite's ChairopsUser.inviteExpiresAt column,
+// used for revocation) stay in lockstep with the signed token's real TTL
+// instead of hardcoding a second, driftable number.
+export const TTL_MS = 24 * 60 * 60 * 1000; // 24h — standardized org-wide (CEO 2026-09-20:
+// unused invite links should live ~1 day; supersedes the 2026-06-18 30-day bump)
 
 // Per [[rule-j-namespace-env-by-program-d021]]: ChairOps owns its invite-signing
 // key (CHAIROPS_INVITE_SECRET). We keep NEXTAUTH_SECRET/AUTH_SECRET as a fallback

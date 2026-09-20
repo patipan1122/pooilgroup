@@ -113,7 +113,7 @@ export function NewUserForm({ assignableRoles, branches }: Props) {
           </Button>
         </div>
         <p className="text-[11px] text-zinc-500">
-          ลิงก์มีอายุ 30 วัน · ผูกกับ LINE คนแรกที่กดล็อกอิน · กดซ้ำได้ ไม่ต้องขอลิงก์ใหม่
+          ลิงก์มีอายุ 24 ชม. · ผูกกับ LINE คนแรกที่กดล็อกอิน · กดซ้ำได้ ไม่ต้องขอลิงก์ใหม่
         </p>
       </div>
     );
@@ -124,7 +124,21 @@ export function NewUserForm({ assignableRoles, branches }: Props) {
       action={(fd) =>
         startTransition(async () => {
           if (method === "invite") {
-            const r = await createUserInvite(fd);
+            let r = await createUserInvite(fd);
+            // Server found a still-pending maid invite for this branch —
+            // creating a new one would silently kill it. Confirm before force.
+            if (!r.ok && r.error.startsWith("CONFIRM_REVOKE:")) {
+              const name = r.error.slice("CONFIRM_REVOKE:".length);
+              if (
+                !confirm(
+                  `สาขานี้มีลิงก์เชิญที่ยังไม่หมดอายุอยู่แล้ว (${name}) — สร้างลิงก์ใหม่จะยกเลิกลิงก์เดิมทันที ดำเนินการต่อไหม?`,
+                )
+              ) {
+                return;
+              }
+              fd.set("force", "1");
+              r = await createUserInvite(fd);
+            }
             if (r.ok && r.data) {
               setInviteResult({
                 link: r.data.link,

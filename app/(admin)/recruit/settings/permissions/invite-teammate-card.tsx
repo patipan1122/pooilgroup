@@ -69,7 +69,7 @@ export function InviteTeammateCard() {
           <div className="space-y-3">
             <div className="rounded-xl bg-[var(--color-brand-50)] border-2 border-[var(--color-brand-200)] p-3">
               <p className="text-xs text-[var(--color-brand-700)] font-semibold mb-2">
-                Invite Link · หมดอายุ 48 ชม.
+                Invite Link · หมดอายุ 24 ชม.
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs font-mono bg-white rounded-lg px-3 py-2 border border-[var(--color-brand-200)] truncate">

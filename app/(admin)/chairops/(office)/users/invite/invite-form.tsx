@@ -71,7 +71,7 @@ export function InviteMaidForm({ branches }: { branches: ReadonlyArray<Branch> }
           </Button>
         </div>
         <p className="text-[11px] text-zinc-500">
-          ลิงก์มีอายุ 30 วัน · ผูกกับ LINE คนแรกที่กดล็อกอิน · กดซ้ำได้ ไม่ต้องขอลิงก์ใหม่
+          ลิงก์มีอายุ 24 ชม. · ผูกกับ LINE คนแรกที่กดล็อกอิน · กดซ้ำได้ ไม่ต้องขอลิงก์ใหม่
         </p>
       </div>
     );
@@ -81,7 +81,21 @@ export function InviteMaidForm({ branches }: { branches: ReadonlyArray<Branch> }
     <form
       action={(fd) =>
         startTransition(async () => {
-          const r = await createMaidInvite(fd);
+          let r = await createMaidInvite(fd);
+          // Server found a still-pending invite for this branch — creating a
+          // new one would silently kill it. Confirm before retrying with force.
+          if (!r.ok && r.error.startsWith("CONFIRM_REVOKE:")) {
+            const name = r.error.slice("CONFIRM_REVOKE:".length);
+            if (
+              !confirm(
+                `สาขานี้มีลิงก์เชิญที่ยังไม่หมดอายุอยู่แล้ว (${name}) — สร้างลิงก์ใหม่จะยกเลิกลิงก์เดิมทันที ดำเนินการต่อไหม?`,
+              )
+            ) {
+              return;
+            }
+            fd.set("force", "1");
+            r = await createMaidInvite(fd);
+          }
           if (r.ok && r.data) {
             setResult({
               link: r.data.link,

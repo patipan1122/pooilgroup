@@ -1,5 +1,5 @@
 // Shared "invite-link" primitives — create a pending user row (is_active=false)
-// bound to a 48h token, and grant module-admin access (user_modules role='admin').
+// bound to a 24h token, and grant module-admin access (user_modules role='admin').
 // Extracted so module-scoped invite flows (e.g. Recruit self-serve team invite,
 // see app/(admin)/recruit/settings/team-actions.ts) don't reimplement the token
 // format / expiry / upsert semantics used by the org-wide /api/admin/users flow.
@@ -26,15 +26,17 @@ export type CreateInviteLinkUserResult =
   | { ok: true; userId: string; token: string; expiresAt: string }
   | { ok: false; error: string };
 
-/** Insert a pending user (is_active=false) with a 48h invite token — the "send
- *  a link, they set their own password" flow. Does not grant any module. */
+/** Insert a pending user (is_active=false) with a 24h invite token — the "send
+ *  a link, they set their own password" flow. Does not grant any module.
+ *  TTL standardized org-wide to 24h (CEO 2026-09-20: invite links should live
+ *  ~1 day, unused ones aren't worth keeping around longer). */
 export async function createInviteLinkUser(
   admin: ReturnType<typeof adminClient>,
   params: CreateInviteLinkUserParams,
 ): Promise<CreateInviteLinkUserResult> {
   const userId = crypto.randomUUID();
   const token = makeInviteToken();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   const { error } = await admin.from("users").insert({
     id: userId,

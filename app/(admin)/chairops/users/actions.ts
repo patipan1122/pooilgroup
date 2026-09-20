@@ -18,7 +18,7 @@ import { canAssignRole, canManageUser } from "@/lib/chairops/auth/role-guards";
 import { zUUID } from "@/lib/chairops/schemas/zod-helpers";
 import { ChairopsUserRole, OffboardingReason } from "@/lib/generated/prisma/enums";
 import { randomUUID } from "node:crypto";
-import { signInvite, hasInviteSecret } from "@/lib/chairops/line/invite";
+import { signInvite, hasInviteSecret, TTL_MS as INVITE_TTL_MS } from "@/lib/chairops/line/invite";
 import { blockLineUser } from "@/lib/chairops/line/block";
 
 export type ActionResult<T = void> =
@@ -735,6 +735,28 @@ export async function createMaidInvite(
   });
   if (!branch) return { ok: false, error: "ไม่พบสาขาที่เลือก" };
 
+  // F5's auto-revoke below used to silently null out any other pending maid
+  // invite for this branch — an admin re-inviting (e.g. to fix a typo, or by
+  // mistake) would kill a link already in someone's hands with no warning.
+  // Surface it instead: bail with a sentinel the client recognizes and turns
+  // into a confirm() dialog; only proceed past it once the caller re-submits
+  // with force=1 (CEO 2026-09-20, found while investigating a maid stuck
+  // branchless — this wasn't her root cause, but is a real silent-data-loss
+  // path in the same area).
+  const force = formData.get("force") === "1";
+  if (!force) {
+    const conflict = await prisma.chairopsUser.findFirst({
+      where: {
+        orgId: session.user.orgId,
+        primaryBranchId: parsed.data.primaryBranchId,
+        role: ChairopsUserRole.MAID,
+        inviteToken: { not: null },
+      },
+      select: { displayName: true },
+    });
+    if (conflict) return { ok: false, error: `CONFIRM_REVOKE:${conflict.displayName}` };
+  }
+
   // Placeholder email — maids never check it; the magic-link is consumed via
   // httpOnly cookie nav, not delivered. Must be a valid format for Supabase.
   const email = `maid-${randomUUID().slice(0, 8)}@chairops.local`;
@@ -751,7 +773,7 @@ export async function createMaidInvite(
 
   // F5: generate token BEFORE transaction so we can store it atomically
   const token = signInvite(authData.user.id);
-  const inviteExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
   try {
     const user = await prisma.$transaction(async (tx) => {
@@ -893,6 +915,21 @@ export async function createUserInvite(
     if (!branch) return { ok: false, error: "ไม่พบสาขาที่เลือก" };
   }
 
+  // Same silent-revoke guard as createMaidInvite — see its comment.
+  const force = formData.get("force") === "1";
+  if (isMaid && branchId && !force) {
+    const conflict = await prisma.chairopsUser.findFirst({
+      where: {
+        orgId: session.user.orgId,
+        primaryBranchId: branchId,
+        role: ChairopsUserRole.MAID,
+        inviteToken: { not: null },
+      },
+      select: { displayName: true },
+    });
+    if (conflict) return { ok: false, error: `CONFIRM_REVOKE:${conflict.displayName}` };
+  }
+
   // Placeholder email — invitee ไม่เคยเช็ค; login ใช้ LINE id_token. ต้องเป็น
   // format อีเมลที่ถูกต้องสำหรับ Supabase. (ไม่มีโค้ดไหน parse prefix นี้.)
   const email = `invite-${randomUUID().slice(0, 8)}@chairops.local`;
@@ -909,7 +946,7 @@ export async function createUserInvite(
 
   // generate token BEFORE transaction so we can store it atomically
   const token = signInvite(authData.user.id);
-  const inviteExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
   try {
     const user = await prisma.$transaction(async (tx) => {

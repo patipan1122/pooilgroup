@@ -34,7 +34,7 @@ export function InviteManager({
   const [role, setRole] = useState<Role>("staff");
   const [scope, setScope] = useState<string[]>([]);
   const [note, setNote] = useState("");
-  const [expiresInDays, setExpiresInDays] = useState<number | "">(30);
+  const [expiresInDays, setExpiresInDays] = useState<number | "">(1);
   const [created, setCreated] = useState<{ url: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export function InviteManager({
             max={365}
             value={expiresInDays}
             onChange={(e) => setExpiresInDays(e.target.value === "" ? "" : Number(e.target.value))}
-            placeholder="เว้นว่าง = ไม่หมดอายุ"
+            placeholder="เว้นว่าง = ใช้ค่าเริ่มต้น 1 วัน"
             aria-label="หมดอายุใน (วัน)"
           />
         </div>

@@ -3,7 +3,8 @@
 // ClawFleet v2 — Team & สาขา mutations (เชิญ / แก้สิทธิ์ / เอาออก / สร้างลิงก์เชิญใหม่).
 //
 // REUSE:
-//  - invite token = crypto hex 48-char + 7-day expiry (HQ เชิญล่วงหน้าได้)
+//  - invite token = crypto hex 48-char + 24h expiry (standardized org-wide,
+//    CEO 2026-09-20 — was 7 days for "HQ เชิญล่วงหน้าได้" before that)
 //  - invite LINK = <baseUrl>/invite/<token> (หน้า redeem มีอยู่แล้ว app/(auth)/invite/[token])
 //  - impersonation ("เข้าใช้แทน") ใช้ POST /api/admin/users/[id]/impersonate ฝั่ง client (ไม่ทำที่นี่)
 //  - gate ทุก action ด้วย assertCfAdmin() · audit() ทุกการเปลี่ยนแปลง · revalidatePath
@@ -30,7 +31,7 @@ const TEAM_PATH = "/clawfleet/os/staff";
 const CF_ASSIGNABLE_ROLES = ["staff", "branch_manager", "area_manager"] as const;
 type CfAssignableRole = (typeof CF_ASSIGNABLE_ROLES)[number];
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 วัน (HQ เชิญล่วงหน้าได้ · เดิม 48 ชม. สั้นเกินไป)
+const INVITE_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชม. (มาตรฐานเดียวกันทุกโปรแกรม · CEO 2026-09-20)
 
 /** invite token แบบเดียวกับ resend-invite route — 24 ไบต์ → hex 48 ตัว */
 function makeInviteToken(): string {

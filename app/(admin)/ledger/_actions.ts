@@ -2862,9 +2862,9 @@ export async function createLedgerInvite(
   if (!company) return { ok: false, error: "ไม่พบบริษัท" };
 
   const token = randomBytes(18).toString("base64url");
-  const expiresAt = p.expiresInDays
-    ? new Date(Date.now() + p.expiresInDays * 86400_000)
-    : null;
+  // Default 1 day (CEO 2026-09-20: invite links org-wide standardized to ~24h;
+  // an admin can still type a longer number for a known-slow invitee).
+  const expiresAt = new Date(Date.now() + (p.expiresInDays ?? 1) * 86400_000);
 
   await prisma.ledgerLineInvite.create({
     data: {
@@ -2986,7 +2986,9 @@ export async function createLedgerAdminInvite(
       scopeBranchIds: p.scopeBranchIds ?? [],
       scopeCategoryIds: [],
       note: p.note || null,
-      expiresAt: new Date(Date.now() + (p.expiresInDays ?? 7) * 86400_000),
+      // Default 1 day (CEO 2026-09-20: invite links org-wide standardized to
+      // ~24h; was 7 days by default here).
+      expiresAt: new Date(Date.now() + (p.expiresInDays ?? 1) * 86400_000),
       createdBy: session.user.id,
     },
   });
