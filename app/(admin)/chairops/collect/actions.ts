@@ -15,6 +15,7 @@
 // - presignSlipUpload: presign for the deposit slip photo
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireExactRole } from "@/lib/chairops/auth/session";
@@ -627,106 +628,116 @@ export async function batchDeposit(
     // AI อ่านสลิป (ยอด/วันที่/ชื่อบัญชีปลายทาง) + ตรวจสลิปซ้ำ/บัญชีผิด — CEO
     // 2026-08-17. นอกธุรกรรม (ไม่บล็อกการฝาก) · อ่านไม่ทัน/พังก็ไม่เป็นไร ตาราง
     // reconcile จะ fallback ไปใช้ depositedAmount ที่กรอกเองแทนจนกว่าจะมีค่า.
-    try {
-      const ocr = await extractSlipDetails(data.slipPhotoUrl, {
-        userId: session.user.id,
-        orgId: session.user.orgId,
-      });
+    // 2026-09-20 upspeed P0 fix: OCR (LLM call) + Google Drive backup used to
+    // be awaited HERE, before the maid ever saw "ฝากเงินแล้ว" — typically
+    // +2-6s, worst case 15s+ (the only timeout in the chain), on a flow she
+    // does daily on a slow connection. Neither result changes what she sees
+    // (OCR is a background review signal for the office; Drive backup is a
+    // best-effort archive) so both move into `after()` — same pattern
+    // already used in app/(admin)/ledger/_actions.ts for this exact shape
+    // of "confirm now, finish the side-work after the response is sent."
+    after(async () => {
+      try {
+        const ocr = await extractSlipDetails(data.slipPhotoUrl, {
+          userId: session.user.id,
+          orgId: session.user.orgId,
+        });
 
-      let configuredAccountNumber: string | null = null;
-      const branchAcc = await prisma.chairopsBranch.findUnique({
-        where: { id: branchId },
-        select: { reconcileBankAccountId: true },
-      });
-      if (branchAcc?.reconcileBankAccountId) {
-        const admin = adminClient();
-        const { data: acc } = await admin
-          .from("ledger_bank_account")
-          .select("account_no")
-          .eq("id", branchAcc.reconcileBankAccountId)
-          .maybeSingle();
-        // เลขบัญชี (account_no) แทนชื่อบัญชี — ชื่อนิติบุคคลเต็มที่ AI อ่านจากสลิป
-        // เขียนคนละรูปแบบกับชื่อย่อที่ตั้งค่าไว้ในระบบเสมอ ทำให้เช็คด้วยชื่อติดธงเท็จ
-        // เกือบทุกใบ (ยืนยันจริง 73/73 ใบ) — เลขบัญชีเป็นตัวเลขล้วน แม่นกว่ามาก
-        // (CEO 2026-08-29, ดู checkSlipFraud)
-        configuredAccountNumber = (acc?.account_no as string | undefined) ?? null;
-      }
-
-      const fraud = await checkSlipFraud({
-        orgId: session.user.orgId,
-        branchId,
-        depositId: deposit.id,
-        ocr,
-        configuredAccountNumber,
-      });
-
-      await prisma.chairopsCashDeposit.update({
-        where: { id: deposit.id },
-        data: {
-          ocrAmount: ocr.amount,
-          ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
-          ocrAccountName: ocr.accountName,
-          ocrAccountNumber: ocr.accountNumber,
-          ocrRefNo: ocr.refNo,
-          ocrReadAt: new Date(),
-          ocrFlagReason: fraud.reason,
-          requiresReview: requiresReview || fraud.flagged,
-        },
-      });
-
-      if (fraud.flagged && !requiresReview) {
-        try {
-          const branch = await prisma.chairopsBranch.findUnique({
-            where: { id: branchId },
-            select: { name: true },
-          });
-          await notifyChannel(
-            "ops",
-            `🚨 สลิปน่าสงสัย · ${session.user.displayName} ที่ ${branch?.name ?? "สาขา"}\n${fraud.reason}\nกดดูที่ /chairops/reconcile/${branchId}`,
-          );
-        } catch {
-          // swallow — deposit already committed
+        let configuredAccountNumber: string | null = null;
+        const branchAcc = await prisma.chairopsBranch.findUnique({
+          where: { id: branchId },
+          select: { reconcileBankAccountId: true },
+        });
+        if (branchAcc?.reconcileBankAccountId) {
+          const admin = adminClient();
+          const { data: acc } = await admin
+            .from("ledger_bank_account")
+            .select("account_no")
+            .eq("id", branchAcc.reconcileBankAccountId)
+            .maybeSingle();
+          // เลขบัญชี (account_no) แทนชื่อบัญชี — ชื่อนิติบุคคลเต็มที่ AI อ่านจากสลิป
+          // เขียนคนละรูปแบบกับชื่อย่อที่ตั้งค่าไว้ในระบบเสมอ ทำให้เช็คด้วยชื่อติดธงเท็จ
+          // เกือบทุกใบ (ยืนยันจริง 73/73 ใบ) — เลขบัญชีเป็นตัวเลขล้วน แม่นกว่ามาก
+          // (CEO 2026-08-29, ดู checkSlipFraud)
+          configuredAccountNumber = (acc?.account_no as string | undefined) ?? null;
         }
+
+        const fraud = await checkSlipFraud({
+          orgId: session.user.orgId,
+          branchId,
+          depositId: deposit.id,
+          ocr,
+          configuredAccountNumber,
+        });
+
+        await prisma.chairopsCashDeposit.update({
+          where: { id: deposit.id },
+          data: {
+            ocrAmount: ocr.amount,
+            ocrDate: ocr.date ? new Date(`${ocr.date}T00:00:00.000Z`) : null,
+            ocrAccountName: ocr.accountName,
+            ocrAccountNumber: ocr.accountNumber,
+            ocrRefNo: ocr.refNo,
+            ocrReadAt: new Date(),
+            ocrFlagReason: fraud.reason,
+            requiresReview: requiresReview || fraud.flagged,
+          },
+        });
+
+        if (fraud.flagged && !requiresReview) {
+          try {
+            const branch = await prisma.chairopsBranch.findUnique({
+              where: { id: branchId },
+              select: { name: true },
+            });
+            await notifyChannel(
+              "ops",
+              `🚨 สลิปน่าสงสัย · ${session.user.displayName} ที่ ${branch?.name ?? "สาขา"}\n${fraud.reason}\nกดดูที่ /chairops/reconcile/${branchId}`,
+            );
+          } catch {
+            // swallow — deposit already committed
+          }
+        }
+      } catch (e) {
+        console.error("[chairops] slip OCR/fraud-check failed (non-fatal)", e);
       }
-    } catch (e) {
-      console.error("[chairops] slip OCR/fraud-check failed (non-fatal)", e);
-    }
+
+      // Best-effort: archive the deposit slip to Google Drive → สลิปรายได้ folder
+      // (CEO 2026-06-03). Never blocks/fails the deposit — R2 copy is live.
+      try {
+        const { getDriveConnection, backupFileToDrive } = await import(
+          "@/lib/chairops/storage/drive"
+        );
+        if (await getDriveConnection(session.user.orgId)) {
+          const resp = await fetch(data.slipPhotoUrl, {
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (resp.ok) {
+            const bytes = Buffer.from(await resp.arrayBuffer());
+            const ym = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Bangkok",
+              year: "numeric",
+              month: "2-digit",
+            }).format(new Date());
+            await backupFileToDrive({
+              orgId: session.user.orgId,
+              category: "income_slip",
+              periodYm: ym,
+              fileName: `deposit-${deposit.id}.jpg`,
+              mimeType: resp.headers.get("content-type") ?? "image/jpeg",
+              bytes,
+              r2Url: data.slipPhotoUrl,
+              sourceTable: "ChairopsCashDeposit",
+              sourceId: deposit.id,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[chairops] deposit slip drive backup failed (non-fatal)", e);
+      }
+    });
 
     await recomputeDriftForBranch(branchId);
-
-    // Best-effort: archive the deposit slip to Google Drive → สลิปรายได้ folder
-    // (CEO 2026-06-03). Never blocks/fails the deposit — R2 copy is live.
-    try {
-      const { getDriveConnection, backupFileToDrive } = await import(
-        "@/lib/chairops/storage/drive"
-      );
-      if (await getDriveConnection(session.user.orgId)) {
-        const resp = await fetch(data.slipPhotoUrl, {
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (resp.ok) {
-          const bytes = Buffer.from(await resp.arrayBuffer());
-          const ym = new Intl.DateTimeFormat("en-CA", {
-            timeZone: "Asia/Bangkok",
-            year: "numeric",
-            month: "2-digit",
-          }).format(new Date());
-          await backupFileToDrive({
-            orgId: session.user.orgId,
-            category: "income_slip",
-            periodYm: ym,
-            fileName: `deposit-${deposit.id}.jpg`,
-            mimeType: resp.headers.get("content-type") ?? "image/jpeg",
-            bytes,
-            r2Url: data.slipPhotoUrl,
-            sourceTable: "ChairopsCashDeposit",
-            sourceId: deposit.id,
-          });
-        }
-      }
-    } catch (e) {
-      console.error("[chairops] deposit slip drive backup failed (non-fatal)", e);
-    }
 
     revalidatePath("/chairops/m");
     revalidatePath("/chairops/collect");

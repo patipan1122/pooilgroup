@@ -15,13 +15,11 @@
 // reconcile sidebar's existing pattern (a plain immediate toggle).
 
 import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { toggleBranchClosedAction } from "@/lib/chairops/reconcile/actions";
 
 function useToggleClosed(branchName: string, closed: boolean) {
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
 
   function toggle(branchId: string) {
     startTransition(async () => {
@@ -31,7 +29,9 @@ function useToggleClosed(branchName: string, closed: boolean) {
         return;
       }
       toast.success(closed ? `ปิดสาขา "${branchName}" แล้ว` : `เปิดสาขา "${branchName}" ใหม่แล้ว`);
-      router.refresh();
+      // 2026-09-20 upspeed: toggleBranchClosedAction already revalidatePath("/chairops/maids")
+      // — verified this button only renders on that route, so the action's
+      // own revalidate already refreshes it; refresh() was a redundant 2nd round trip.
     });
   }
 
