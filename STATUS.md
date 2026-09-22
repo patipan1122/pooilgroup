@@ -84,9 +84,13 @@ CEO ตอบทันที: เชื่อมสูตรปิดงวด�
 
 ---
 
-## 🏬✅ RentSpace `/auditbigteam` → `/bigsolvebug` → `/upspeed` — ครบ 3 สกิลแล้ว (2026-09-20→22 · BUILT+VERIFIED ใน worktree, ยังไม่ merge setup)
+## 🏬🚀✅ RentSpace `/auditbigteam` → `/bigsolvebug` → `/upspeed` — ครบ 3 สกิลแล้ว **DEPLOYED LIVE** (2026-09-20→22)
 
-**อัปเดต 2026-09-22 — `/upspeed` (ขั้นสุดท้าย) เสร็จแล้ว:** เจอเรื่องสำคัญ — RentSpace เคยถูกรัน `/upspeed` มาแล้วครั้งหนึ่งเมื่อ 22 ก.ค. (เจอ 3 จุด) แต่ commit นั้นอยู่บน branch ที่ไม่เคย merge เข้า setup เลย **แปลว่า 3 จุดนั้นไม่เคยถูกใช้งานจริงมาตลอด 2 เดือน** — กู้กลับมาใส่ใหม่ครบ (skeleton ตอนโหลดหน้า, หน้าแรกโชว์ KPI ก่อนไม่ต้องรอผังห้อง, พรีวิวออกบิลดึงข้อมูลทีเดียวแทนทีละห้อง — ตรวจกับข้อมูลจริง 25 สัญญา ยอดตรง 100%) บวกเจอเพิ่มอีก 3 จุดจากของที่เพิ่งแก้เมื่อวาน (หน้าตาราง Excel ไม่มี skeleton ของตัวเอง, หน้าตั้งค่าดึงข้อมูลช้าเกินจำเป็น, ปุ่มรับชำระรีเฟรชซ้ำซ้อน) — doc เต็ม `docs/UPSPEED_RentSpace_2026-09-22.md`
+**อัปเดต 2026-09-22 (สุดท้าย) — CEO อนุมัติ deploy → LIVE แล้ว.** `origin/setup` ที่ `32da2ac4` · Vercel production `pooilgroup-8x7ysj4ad` **Ready** · alias `pooilgroup.com` ยืนยันแล้ว · smoke curl 8 route หลัง deploy ตรงกับ baseline ก่อน deploy เป๊ะ (`/`307 `/login`200 `/rentspace`307 `/matrix`307 `/settings`307 `/bills`307 · หน้า public `/sign/rentspace/[token]`200 `/portal/[token]`404 ไม่มี 500 เลย)
+
+**เจอระหว่าง deploy (แก้ครบก่อนขึ้นจริง):** (1) ลง `isomorphic-dompurify` ด้วย `npm install` แต่ **Vercel build จริงใช้ pnpm** (คนละตัวกับ `npm ci` ที่ GitHub Actions CI ใช้) → deploy รอบแรกพังที่ `ERR_PNPM_OUTDATED_LOCKFILE` เพราะ `pnpm-lock.yaml` ไม่ตรง `package.json` — แก้ด้วย `pnpm add` ใหม่ (2) เจอ build พังแบบสุ่ม 2 ครั้ง (ทั้ง local และบน Vercel จริง) จาก Turbopack ดึงฟอนต์ Google Fonts (`plus_jakarta_sans`) ไม่สำเร็จ — ไม่ใช่โค้ดพัง เป็นความไม่เสถียรของตัว build tool เอง แก้ด้วย `vercel redeploy` รอบเดียวผ่าน (3) เจอ role-gate-completeness test (CI บังคับผ่าน) ตกที่ RentSpace 12 จุด — ตรวจแล้วเป็นของเดิมที่ถูกอยู่แล้วแต่เลขบรรทัดเลื่อนเกิน tolerance + 3 จุดใหม่ที่ CEO ตัดสินใจไปแล้ว (ลบบิล/แก้สิทธิ์ super_admin เท่านั้น) — บันทึกเหตุผลครบใน `role-gate-known-exceptions.ts`, ผ่าน 246/246
+
+**อัปเดต 2026-09-22 (ขั้น 3) — `/upspeed` เสร็จ:** เจอเรื่องสำคัญ — RentSpace เคยถูกรัน `/upspeed` มาแล้วครั้งหนึ่งเมื่อ 22 ก.ค. (เจอ 3 จุด) แต่ commit นั้นอยู่บน branch ที่ไม่เคย merge เข้า setup เลย **แปลว่า 3 จุดนั้นไม่เคยถูกใช้งานจริงมาตลอด 2 เดือน** — กู้กลับมาใส่ใหม่ครบ (skeleton ตอนโหลดหน้า, หน้าแรกโชว์ KPI ก่อนไม่ต้องรอผังห้อง, พรีวิวออกบิลดึงข้อมูลทีเดียวแทนทีละห้อง — ตรวจกับข้อมูลจริง 25 สัญญา ยอดตรง 100%) บวกเจอเพิ่มอีก 3 จุดจากของที่เพิ่งแก้เมื่อวาน (หน้าตาราง Excel ไม่มี skeleton ของตัวเอง, หน้าตั้งค่าดึงข้อมูลช้าเกินจำเป็น, ปุ่มรับชำระรีเฟรชซ้ำซ้อน) — doc เต็ม `docs/UPSPEED_RentSpace_2026-09-22.md`
 
 ---
 
