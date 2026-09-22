@@ -3,8 +3,16 @@
 // RentSpace — เอกสารสัญญาเช่าฉบับเต็ม (ใช้ร่วมกันทุกที่: พรีวิวใน wizard · เอกสาร A4
 // หน้ารายละเอียด · หน้าเซ็นออนไลน์). รับ ContractDocData แล้วเรนเดอร์เอกสารเดียวกัน
 // เป๊ะทุกที่ → CEO เห็น "ไปทางเดียวกัน" จริง (RULE I). Pure render ไม่มี data fetching.
+import DOMPurify from "isomorphic-dompurify";
 import { LAND_TAX_CLAUSE, type ContractDocData } from "@/lib/rentspace/contract-doc";
 import { formatBaht, thaiDateLong, periodLabel } from "@/lib/rentspace/format";
+
+// bigsolvebug 2026-09-20 audit §5 Cluster F — customBodyHtml reaches the public,
+// unauthenticated e-sign page (/sign/rentspace/[token]) via this component with
+// zero sanitization. Admin-only writer today (no defense-in-depth before this fix).
+function sanitizeCustomHtml(html: string): string {
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+}
 
 function baht(n: number): string {
   return formatBaht(n);
@@ -67,7 +75,7 @@ export function RentalContractDocument({
     <div id={printId} className={`rsdoc ${className ?? ""}`}>
       {d.fullDocument && d.customBodyHtml ? (
         <>
-          <div className="rsdoc-custom" dangerouslySetInnerHTML={{ __html: d.customBodyHtml }} />
+          <div className="rsdoc-custom" dangerouslySetInnerHTML={{ __html: sanitizeCustomHtml(d.customBodyHtml) }} />
           {d.signature?.signed && d.signature.dataUrl ? (
             <div style={{ marginTop: 14, textAlign: "center" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -120,7 +128,7 @@ export function RentalContractDocument({
 
       {/* เนื้อสัญญา: แม่แบบที่กำหนดเอง (ถ้ามี) แทนที่ข้อมาตรฐาน */}
       {d.customBodyHtml ? (
-        <div className="rsdoc-custom" dangerouslySetInnerHTML={{ __html: d.customBodyHtml }} />
+        <div className="rsdoc-custom" dangerouslySetInnerHTML={{ __html: sanitizeCustomHtml(d.customBodyHtml) }} />
       ) : (
         <ol className="rsdoc-clauses">
           <li>

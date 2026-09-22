@@ -4,6 +4,7 @@
 // (template/custom HTML) from the current form values so admins SEE the contract
 // update as they type. Pure-render: takes plain values, no data fetching.
 import { useMemo } from "react";
+import DOMPurify from "isomorphic-dompurify";
 import { contractPlaceholders, fillPlaceholders, LAND_TAX_CLAUSE } from "@/lib/rentspace/contract-doc";
 
 export type ContractPreviewValues = {
@@ -110,7 +111,7 @@ export function ContractPreview({
       {/* body — filled template/custom HTML, else the standard clause set */}
       {filledBody ? (
         // มาจากแม่แบบที่ผู้ดูแลสร้างเอง (พรีวิวเท่านั้น)
-        <div className="rs-pv-custom" dangerouslySetInnerHTML={{ __html: filledBody }} />
+        <div className="rs-pv-custom" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(filledBody, { USE_PROFILES: { html: true } }) }} />
       ) : (
         <ol className="rs-pv-clauses">
           <li>
