@@ -108,7 +108,6 @@ function Modal({
 
 // ───────── record payment ─────────
 export function RecordPaymentButton({ billId, remaining }: { billId: string; remaining: number }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -146,7 +145,9 @@ export function RecordPaymentButton({ billId, remaining }: { billId: string; rem
         });
         toast.success("บันทึกรับชำระแล้ว");
         setOpen(false);
-        router.refresh();
+        // upspeed 2026-09-22: actRecordPayment เอง revalidatePath(`/rentspace/bills/${billId}`)
+        // อยู่แล้ว — หน้านี้ render อยู่ที่ route นั้นพอดี (ยืนยันแล้วว่าไม่มี render site อื่น)
+        // router.refresh() ซ้ำจะยิง fetch รอบสองเปล่าๆ
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
       }
