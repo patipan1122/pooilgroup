@@ -2,7 +2,11 @@
 
 > **Source of truth สำหรับสถานะจริง** — อัพเดต 2026-09-13 (👥🔧 LINE login ตอนนี้บันทึกเวลาเข้าใช้แล้ว (แก้รากเสร็จสมบูรณ์ ครบทั้ง 2 ระดับ) — **DEPLOYED LIVE** `08b0fc4b` · 🏬🔴🚀 RentSpace matrix — เห็นกรอบแดงในตารางทันทีถ้ายอดสลิปไม่ตรง (ไม่ต้องกดปุ่มส่งก่อน) — **DEPLOYED LIVE** `e99805df` · 🏬🚀 RentSpace matrix — ปุ่ม "ส่งเข้าบัญชี LedgerLine" ย้ายมาไว้หน้าตารางค่าเช่า + ด่านเช็คยอดสลิปก่อนส่ง (เจอ 4 บิลจริงยอดไม่ตรง กันไว้ไม่ให้ส่ง) — **DEPLOYED LIVE** `c910c553` · 🧾🔧🚀 LedgerLine VAT อ่านผิดเป็น 0 บนบิลราคาต่อชิ้นรวม VAT — **DEPLOYED** `7de3ec1e`, backfill ใบ Dohome แล้ว, ไล่เช็ค 8 ใบทั้งระบบพบอีก 1 ใบโดนเหมือนกัน (AP 551563 — ผูกกับปัญหา GL/PV เดิมที่ค้างอยู่) รอ CEO ตัดสินใจ · 🪑📤✅ ChairOps เลือกหลายสาขาส่งเข้า reconcile ทีเดียว (จาก Pinpoint) — **DEPLOYED LIVE** `4aa39276` · 🧾⚡ LedgerLine รายจ่าย คลิกเปลี่ยนบิลรู้สึกเหมือน refresh — **DEPLOYED LIVE** `6d2b33c3`, smoke ยืนยันแล้ว · 🏬🧾 RentSpace export รายงานสรุปค่าเช่าจากหน้า matrix — **DEPLOYED LIVE** `61fb3638`, smoke ยืนยันแล้ว · 🦞🧾 ClawFleet แนบสลิปฝากเงิน+AI อ่านยอด จากหน้าประวัติเก็บเงิน — **DEPLOYED LIVE** `80b37319` · 🧾 RentSpace คลิกดูสลิป+AI ตรวจสลิปต่อรายการชำระ — **DEPLOYED LIVE** `c3ac784f`, รอ CEO ตั้งค่าบัญชีธนาคารก่อนใช้จริง · ✅ ChairOps "ควรได้"(มิเตอร์) บั๊ก zero-fallback org-wide — DEPLOYED LIVE `edbe8832`)
 
-## 🏬🔧✅ RentSpace `/bigsolvebug` (2026-09-20 · BUILT+VERIFIED ใน worktree, ยังไม่ merge setup)
+## 🏬✅ RentSpace `/auditbigteam` → `/bigsolvebug` → `/upspeed` — ครบ 3 สกิลแล้ว (2026-09-20→22 · BUILT+VERIFIED ใน worktree, ยังไม่ merge setup)
+
+**อัปเดต 2026-09-22 — `/upspeed` (ขั้นสุดท้าย) เสร็จแล้ว:** เจอเรื่องสำคัญ — RentSpace เคยถูกรัน `/upspeed` มาแล้วครั้งหนึ่งเมื่อ 22 ก.ค. (เจอ 3 จุด) แต่ commit นั้นอยู่บน branch ที่ไม่เคย merge เข้า setup เลย **แปลว่า 3 จุดนั้นไม่เคยถูกใช้งานจริงมาตลอด 2 เดือน** — กู้กลับมาใส่ใหม่ครบ (skeleton ตอนโหลดหน้า, หน้าแรกโชว์ KPI ก่อนไม่ต้องรอผังห้อง, พรีวิวออกบิลดึงข้อมูลทีเดียวแทนทีละห้อง — ตรวจกับข้อมูลจริง 25 สัญญา ยอดตรง 100%) บวกเจอเพิ่มอีก 3 จุดจากของที่เพิ่งแก้เมื่อวาน (หน้าตาราง Excel ไม่มี skeleton ของตัวเอง, หน้าตั้งค่าดึงข้อมูลช้าเกินจำเป็น, ปุ่มรับชำระรีเฟรชซ้ำซ้อน) — doc เต็ม `docs/UPSPEED_RentSpace_2026-09-22.md`
+
+---
 
 ต่อจาก `/auditbigteam` วันเดียวกัน ([memory](~/.claude/projects/-Users-patipantantikul-Code-buildlygo/memory/rentspace-auditbigteam-19persona-2026-09-20.md)) — CEO ตอบ 5 decisions ที่ค้างครบแล้ว แก้จริงตาม
 
