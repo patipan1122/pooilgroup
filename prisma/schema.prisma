@@ -3125,6 +3125,10 @@ model ChairopsUser {
   mobilePhone         String?            @map("mobile_phone")
   emergencyContact    String?            @map("emergency_contact")
   emergencyPhone      String?            @map("emergency_phone")
+  // F4c (CEO 2026-09-22): a SECOND emergency contact. Fixed cardinality of 2 —
+  // a column pair, not a child table (the maid roster never needs a 3rd).
+  emergencyContact2   String?            @map("emergency_contact_2")
+  emergencyPhone2     String?            @map("emergency_phone_2")
   currentMainEmployer String?            @map("current_main_employer")
   onboardingComplete  Boolean            @default(false) @map("onboarding_complete")
   // F4b: ID card + address for the employment contract (CEO 2026-07-12).
@@ -3133,6 +3137,12 @@ model ChairopsUser {
   idCardImageUrl      String?            @map("id_card_image_url")
   idCardFileName      String?            @map("id_card_file_name")
   homeAddress         String?            @map("home_address")
+  // F4c (CEO 2026-09-22): selfie identity check taken at onboarding. Same
+  // PDPA-sensitive class as idCardImageUrl — biometric-adjacent, so it carries
+  // its own explicit consent stamp (PDPA ม.26) separate from contract consent.
+  selfieImageUrl      String?            @map("selfie_image_url")
+  selfieCapturedAt    DateTime?          @map("selfie_captured_at") @db.Timestamptz(6)
+  sensitiveConsentAt  DateTime?          @map("sensitive_consent_at") @db.Timestamptz(6)
   // F4b (CEO 2026-08-02): ชื่อเล่น — for the office contract form + maid roster.
   nickname            String?            @map("nickname")
   // F7: deactivation reason + audit trail

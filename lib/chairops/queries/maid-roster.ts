@@ -582,6 +582,15 @@ export const getMaidDetail = cache(async function getMaidDetail(
         idCardImageUrl: true,
         idCardFileName: true,
         homeAddress: true,
+        // F4c (CEO 2026-09-22) — identity-check + emergency contacts, so the
+        // office can see what the maid actually submitted at onboarding.
+        selfieImageUrl: true,
+        selfieCapturedAt: true,
+        emergencyContact: true,
+        emergencyPhone: true,
+        emergencyContact2: true,
+        emergencyPhone2: true,
+        currentMainEmployer: true,
       },
     }),
     prisma.chairopsMaidDayOff.findMany({
