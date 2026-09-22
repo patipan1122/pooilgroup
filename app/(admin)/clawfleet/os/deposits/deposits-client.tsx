@@ -108,7 +108,8 @@ export function DepositsClient({
 
   const router = useRouter();
 
-  // ── review ใบฝากขาด (SHORT) — อนุมัติ/ตีกลับ ──
+  // ── ตรวจใบฝากที่ยอดไม่ตรง — "ตรวจแล้ว" (approve) / "ตีกลับ" (reject) ──
+  //    เงินไหลเข้า ledger ไปแล้วตั้งแต่ตอนกดส่ง — ปุ่มพวกนี้ไม่ได้ปล่อย/กั้นเงิน (CEO 2026-09-22)
   const [reviewingId, setReviewingId] = useState<string | null>(null); // ใบที่กำลังตัดสิน (disable ปุ่ม)
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [isReviewing, startReview] = useTransition();
@@ -824,10 +825,13 @@ function PendingTab({
   );
 }
 
-/* ── ป้ายสถานะอนุมัติใบฝากขาด (SHORT · Wave 4b maker-checker) ─────────────── */
+/* ── ป้ายสถานะการตรวจใบฝากยอดไม่ตรง ───────────────────────────────────────
+ * CEO 2026-09-22: เงินไหลเข้าบัญชีกระทบยอดทันทีแม้ยอดไม่ตรง → ป้ายนี้บอก "ตรวจหรือยัง"
+ * ไม่ใช่ "ปล่อยเงินหรือยัง" อีกต่อไป · คำว่า "อนุมัติ" จึงเปลี่ยนเป็น "ตรวจ" ให้ตรงความจริง
+ * (ถ้ายังเขียน "รออนุมัติ" คนอ่านจะนึกว่าเงินยังค้างอยู่ ทั้งที่ส่งเข้าบัญชีไปแล้ว) */
 const APPROVAL_META: Record<string, { label: string; bg: string; border: string; color: string }> = {
-  PENDING: { label: "⏳ รออนุมัติ", bg: "#FCF8EC", border: "#F0E2BE", color: "#7A5510" },
-  APPROVED: { label: "✅ อนุมัติแล้ว", bg: "#F2FAF5", border: "#CFE9D8", color: "#15803D" },
+  PENDING: { label: "⏳ รอตรวจ", bg: "#FCF8EC", border: "#F0E2BE", color: "#7A5510" },
+  APPROVED: { label: "✅ ตรวจแล้ว", bg: "#F2FAF5", border: "#CFE9D8", color: "#15803D" },
   REJECTED: { label: "↩️ ตีกลับ", bg: "#FCEDEC", border: "#F0CFCB", color: "#9B3127" },
 };
 
@@ -866,11 +870,14 @@ function HistoryTab({
         const isShort = d.status === "SHORT";
         // คำเรียกส่วนต่างตามทิศ (SHORT/OVER) — ใช้ในข้อความ maker-checker ให้อ่านถูกทั้งขาดและเกิน
         const varianceWord = d.status === "OVER" ? "เงินเกิน" : "เงินขาด";
-        // maker-checker (Wave 4b) — ใบยอดไม่ตรง (SHORT/OVER) ที่รออนุมัติ + ผู้ใช้เป็น ผจก./แอดมิน + ไม่ใช่คนฝากเอง
         const am = APPROVAL_META[d.approvalStatus] ?? null;
         const isPendingReview = d.approvalStatus === "PENDING";
         const isMaker = d.depositedById !== "" && d.depositedById === d.currentUserId;
-        const canActNow = isPendingReview && d.canReview && !isMaker;
+        // "ตรวจแล้ว" — ผจก./แอดมินกดได้ทุกใบที่ติดธง **รวมใบที่ตัวเองฝาก** (CEO 2026-09-22:
+        //   เงินไม่ได้ถูกกั้นแล้ว ปุ่มนี้คือการรับทราบ · สาขาพนักงานคนเดียวต้องปิดงานตัวเองได้)
+        const canAck = isPendingReview && d.canReview;
+        // "ตีกลับ" — ยังห้ามกดใบตัวเอง (ทำให้ใบเป็นโมฆะ + ถอนยอดออกจาก ledger = ขยับเงินจริง)
+        const canReject = canAck && !isMaker;
         const rowBusy = reviewBusy && reviewingId === d.id;
         return (
           <div
@@ -974,11 +981,38 @@ function HistoryTab({
                 <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "#1A1D21" }}>{baht(d.amountCents)}</div>
               </div>
               <div style={{ flex: 1 }} />
+              {/* ส่วนต่าง — "ติดสีที่ตัวเลข" (CEO 2026-09-22) · ใบติดธงกดที่ตัวเลขนี้ = ตรวจแล้ว.
+                  ใช้สีเดิมของเรโป (DEPOSIT_STATUS_META: ขาด=แดง เกิน=ส้ม ตรง=เขียว) ไม่สร้างสีใหม่
+                  และไม่เพิ่มขนาดฟอนต์ใหม่ — แค่เปลี่ยน div เป็น button + เส้นใต้ประให้รู้ว่ากดได้ */}
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 11, color: "#9AA1AB", marginBottom: 2 }}>ส่วนต่าง</div>
-                <div className="num" style={{ fontSize: 16, fontWeight: 700, color: sm.accent }}>
-                  {d.varianceCents > 0 ? "+" : ""}{baht(d.varianceCents)}
-                </div>
+                {canAck ? (
+                  <button
+                    type="button"
+                    onClick={() => onReview(d.id, "approve")}
+                    disabled={rowBusy}
+                    className="co-tap num"
+                    title="กดเพื่อยืนยันว่าตรวจสอบส่วนต่างนี้แล้ว"
+                    style={{
+                      fontSize: 16, fontWeight: 700, color: sm.accent,
+                      background: "none", border: "none", padding: 0,
+                      borderBottom: `1.5px dashed ${sm.accent}`,
+                      cursor: rowBusy ? "not-allowed" : "pointer",
+                      opacity: rowBusy ? 0.6 : 1,
+                    }}
+                  >
+                    {d.varianceCents > 0 ? "+" : ""}{baht(d.varianceCents)}
+                  </button>
+                ) : (
+                  <div className="num" style={{ fontSize: 16, fontWeight: 700, color: sm.accent }}>
+                    {d.varianceCents > 0 ? "+" : ""}{baht(d.varianceCents)}
+                  </div>
+                )}
+                {canAck && (
+                  <div style={{ fontSize: 11, color: "#7A5510", marginTop: 2 }}>
+                    {rowBusy ? "กำลังบันทึก…" : "แตะเพื่อ ✓ ตรวจแล้ว"}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1006,77 +1040,44 @@ function HistoryTab({
               </div>
             )}
 
-            {/* ── maker-checker · ปุ่มอนุมัติ/ตีกลับ (เฉพาะ ผจก./แอดมิน ที่ไม่ใช่คนฝากใบนี้) ── */}
-            {canActNow && (
+            {/* ── ตรวจ/ตีกลับ (ผจก./แอดมิน) ─────────────────────────────────────────
+                "ตรวจแล้ว" = แตะที่ตัวเลขส่วนต่างด้านบน (ทางหลัก) · ตรงนี้เหลือแค่ทางเลือก
+                "ตีกลับ" ซึ่งเป็นงานขยับเงินจริงและใช้น้อยกว่ามาก → บรรทัดเดียว ไม่ใช่การ์ดเต็ม
+                (RULE L: ตัดความสูงลงจากของเดิมที่เป็นบล็อกอธิบาย + 2 ปุ่มใหญ่) */}
+            {canAck && (
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTop: "1px dashed #EDD9A8",
+                  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  marginTop: 12, paddingTop: 12, borderTop: "1px dashed #EDD9A8",
                 }}
               >
-                <div style={{ fontSize: 11.5, color: "#7A5510" }}>
-                  ใบฝาก{varianceWord}นี้ (ยอดไม่ตรง) ต้องมีผู้จัดการ/แอดมิน (ไม่ใช่คนฝาก) รับรอง —
-                  <b> อนุมัติ</b> ถ้ายอมรับว่า{varianceWord}จริง หรือ <b>ตีกลับ</b> ให้ฝากใหม่ให้ยอดตรง
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => onReview(d.id, "approve")}
-                    disabled={rowBusy}
-                    className="co-tap"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: "#fff",
-                      background: "#15803D",
-                      border: "none",
-                      padding: "8px 16px",
-                      borderRadius: 9,
-                      cursor: rowBusy ? "not-allowed" : "pointer",
-                      opacity: rowBusy ? 0.6 : 1,
-                    }}
-                  >
-                    <Check size={14} /> {rowBusy ? "กำลังบันทึก…" : `อนุมัติ (รับทราบ${varianceWord})`}
-                  </button>
+                <span style={{ fontSize: 11.5, color: "#7A5510", flex: 1, minWidth: 180 }}>
+                  ยอดส่งเข้าบัญชีกระทบยอดแล้ว · {varianceWord}นี้รอให้ตรวจ
+                </span>
+                {canReject && (
                   <button
                     type="button"
                     onClick={() => onReview(d.id, "reject")}
                     disabled={rowBusy}
                     className="co-tap"
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: "#9B3127",
-                      background: "#fff",
-                      border: "1px solid #F0CFCB",
-                      padding: "8px 16px",
-                      borderRadius: 9,
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      fontSize: 12.5, fontWeight: 600, color: "#9B3127",
+                      background: "#fff", border: "1px solid #F0CFCB",
+                      padding: "8px 16px", borderRadius: 9,
                       cursor: rowBusy ? "not-allowed" : "pointer",
                       opacity: rowBusy ? 0.6 : 1,
                     }}
                   >
-                    ↩️ ตีกลับ (ให้ฝากใหม่)
+                    ↩️ ตีกลับ (ถอนยอด · ให้ฝากใหม่)
                   </button>
-                </div>
+                )}
                 {reviewError && reviewingId === d.id && (
                   <div
                     role="alert"
                     style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 8,
-                      fontSize: 12,
-                      color: "#9B3127",
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      fontSize: 12, color: "#9B3127", flexBasis: "100%",
                     }}
                   >
                     <AlertTriangle size={14} color="#B42318" style={{ flex: "0 0 14px", marginTop: 1 }} />
@@ -1086,12 +1087,10 @@ function HistoryTab({
               </div>
             )}
 
-            {/* ใบ PENDING แต่ผู้ใช้ไม่มีสิทธิ์ตัดสิน (คนฝากเอง / staff) — แจ้งว่ารอคนอื่นรับรอง */}
-            {isPendingReview && !canActNow && (
+            {/* ใบติดธงที่ผู้ใช้คนนี้ตรวจไม่ได้ (staff) — บอกว่าเงินเดินแล้ว รอแค่คนตรวจ */}
+            {isPendingReview && !canAck && (
               <div style={{ fontSize: 11.5, color: "#7A5510", marginTop: 10 }}>
-                {isMaker
-                  ? "รอผู้จัดการ/แอดมินคนอื่นรับรอง (คุณเป็นผู้บันทึกฝากใบนี้ · อนุมัติเองไม่ได้)"
-                  : `รอผู้จัดการ/แอดมินรับรอง${varianceWord}`}
+                ยอดส่งเข้าบัญชีกระทบยอดแล้ว · รอผู้จัดการ/แอดมินตรวจ{varianceWord}
               </div>
             )}
 

@@ -26,6 +26,7 @@ import {
   cfHasAdminPower,
 } from "./role-guard";
 import { extractSlipDetails, checkSlipFraud, getConfiguredAccountNumber } from "./reconcile/slip-ocr";
+import { retractDepositFromLedger } from "./reconcile/ledger-push";
 
 const DEPOSITS_PATH = "/clawfleet/os/deposits";
 const DASHBOARD_PATH = "/clawfleet/os/dashboard";
@@ -187,12 +188,15 @@ export async function recordCashDeposit(input: unknown): Promise<
         ? "SHORT"
         : "OVER";
 
-  // Wave 4b · maker-checker ใบฝากที่ "ยอดไม่ตรง" — ต้องมีคนที่ 2 รับรอง (ผจก./แอดมิน).
+  // ใบฝากที่ "ยอดไม่ตรง" → ติดธง PENDING = **รอคนตรวจ** (ไม่ใช่ "ห้ามเงินไหล" อีกต่อไป).
   //   SHORT = เงินเข้าธนาคารไม่ครบ (เงินหายมือ→ธนาคาร) · OVER = ฝากเกินยอดที่ควรได้
   //   (fix 2026-07-20: เดิม OVER → NONE ผ่านอัตโนมัติ → พิมพ์ผิด/ยัดยอดเกิน = ยอด "ฝากเข้าธนาคาร"
-  //    บวมปลอมโดยไม่มีใครตรวจ. ตอนนี้ทั้งขาดและเกิน (นอกเกณฑ์ ±฿20) เข้า PENDING เหมือนกัน).
-  //   OK (อยู่ในเกณฑ์) = ไม่ต้องอนุมัติ → NONE. (ยังผูกรอบ + สร้างใบตามเดิม · เงินอยู่ที่ธนาคาร
-  //   ตามสลิปแล้ว · แต่ "ส่วนต่าง" ต้องมีคนที่ 2 รับรอง).
+  //    บวมปลอมโดยไม่มีใครตรวจ. ตอนนี้ทั้งขาดและเกิน (นอกเกณฑ์ ±฿20) ติดธงเหมือนกัน).
+  //   OK (อยู่ในเกณฑ์) → NONE.
+  //
+  //   ⚠️ การ "ตรวจจับ" ตรงนี้ห้ามอ่อนลงเด็ดขาด — CEO สั่งให้เลิก **กั้น** เงิน ไม่ใช่เลิก **จับ**.
+  //   varianceCents/status/approvalStatus ยังถูกคำนวณและบันทึกครบทั้งสองทิศเหมือนเดิมเป๊ะ
+  //   พร้อม audit trail ด้านล่าง · สิ่งที่เปลี่ยนคือ ledger-push ไม่กัน PENDING ออกแล้ว.
   const approvalStatus: "NONE" | "PENDING" =
     status === "SHORT" || status === "OVER" ? "PENDING" : "NONE";
 
@@ -303,9 +307,9 @@ export async function recordCashDeposit(input: unknown): Promise<
         },
       });
 
-      // AI ติดธง + ยังไม่มีใครอนุมัติ/ปฏิเสธ (NONE จากยอดตรง) → ยกระดับเป็น PENDING ให้ office ตรวจ
-      // (reuse สถานะเดิมที่ pushBranchDepositsToLedger กันออกจาก ledger push อยู่แล้ว — ไม่ต้องเพิ่ม
-      // enum ใหม่ ไม่ต้องแก้ ledger-push.ts เลย). ถ้าเป็น PENDING อยู่แล้ว (SHORT/OVER) ปล่อยไว้เหมือนเดิม.
+      // AI ติดธง (สลิปซ้ำ/บัญชีปลายทางผิด) + ยอดตรง (NONE) → ยกเป็น PENDING ให้ office ตรวจ
+      // ตอนนี้ PENDING = "ติดธง รอตรวจ" ไม่ได้กันเงินออกจาก ledger แล้ว → ใบนี้ยังไหลเข้าบัญชี
+      // กระทบยอดตามปกติ แต่จะโชว์สีเตือน + เหตุผลที่ AI สงสัย ให้แอดมินกดตรวจย้อนหลัง.
       if (fraud.flagged) {
         await prisma.cfCashDeposit.updateMany({
           where: { id: result.depositId, approvalStatus: "NONE" },
@@ -324,13 +328,24 @@ export async function recordCashDeposit(input: unknown): Promise<
 }
 
 // =============================================================
-// Wave 4b · อนุมัติ / ตีกลับ ใบฝากขาด (SHORT) — maker-checker
-//   mirror stock-actions.ts reviewCfLoss เป๊ะ:
+// "ตรวจแล้ว" / ตีกลับ ใบฝากที่ยอดไม่ตรง — ตัวชี้วัดการตรวจ (ไม่ใช่ประตูกั้นเงินอีกต่อไป)
+//
+// CEO 2026-09-22: "ยอดไหน กรอกมา ฝากมา ขึ้นเลย ... อาจจะติดสีที่ตัวเลข เพื่อโชว์ความผิดปกติ
+//   เฉย ๆ แล้วกดที่ตรงนั้นให้แอดมินยืนยันตรวจสอบได้"
+//   → เงินไหลเข้า ledger ทันทีแม้ยอดไม่ตรง (ดู reconcile/ledger-push.ts) · ปุ่มนี้กลายเป็น
+//     "รับทราบว่าตรวจแล้ว" ไม่ใช่ "ปลดล็อกเงิน".
+//
 //     - เฉพาะ ผจก.สาขา/แอดมิน (cfHasAdminPower || isCfBranchManager) · branch-scoped ด้วย deposit.branchId
-//     - maker ≠ checker (คนอนุมัติ ≠ คนบันทึกฝาก · segregation of duties)
-//     - ต้องเป็นใบ approvalStatus = PENDING เท่านั้น · atomic claim (updateMany) กันอนุมัติซ้ำ/race
-//     - approve → APPROVED + stamp reviewer (เงินขาดถูก "รับทราบ" · รอบยังผูกใบเดิม)
-//     - reject  → REJECTED + un-set sessions.depositId = null (คืนรอบกลับ "รอฝาก" ให้ฝากใหม่) + stamp
+//     - ✅ approve ("ตรวจแล้ว"): **ตัวเองกดใบตัวเองได้แล้ว** — เดิมห้าม (maker ≠ checker) เพราะมันคือ
+//       ประตูปล่อยเงิน · ตอนนี้ไม่ใช่ประตูแล้ว และสาขาที่มีพนักงานคนเดียวจะไม่มีใครกดได้เลย
+//       (= ต้นเหตุที่เงินค้างเงียบตลอดไป). ยังบันทึกครบว่าใครกด/เมื่อไร → ตรวจย้อนหลังได้
+//     - ⛔ reject ("ตีกลับ"): **ยังคง maker ≠ checker** — อันนี้ขยับเงินจริง (ทำให้ใบเป็นโมฆะ
+//       + คืนรอบให้ฝากใหม่ + ถอนยอดออกจาก ledger) ถ้าปล่อยให้คนฝากตีกลับใบตัวเองได้เงียบ ๆ
+//       = ลบร่องรอยตัวเองได้ → ช่องโกงจริง จึงไม่ผ่อน
+//     - ต้องเป็นใบ approvalStatus = PENDING เท่านั้น · atomic claim (updateMany) กันกดซ้ำ/race
+//     - approve → APPROVED + stamp reviewer (รอบยังผูกใบเดิม · ยอดใน ledger อยู่เหมือนเดิม)
+//     - reject  → REJECTED + ถอนแถวออกจาก ledger (ถ้ายังไม่กระทบยอด) + un-set sessions.depositId
+//                 = null (คืนรอบกลับ "รอฝาก") + stamp
 //     - ทั้งหมดใน $transaction เดียว + auditLog CF_CASH_DEPOSIT_REVIEW
 // =============================================================
 const ReviewDepositSchema = z.object({
@@ -382,19 +397,20 @@ export async function reviewCashDeposit(
     }
   }
 
-  // maker ≠ checker (segregation of duties) — คนบันทึกฝาก ≠ คนอนุมัติ
-  if (head.depositedById === session.user.id) {
-    return err("อนุมัติ/ตีกลับใบที่ตัวเองบันทึกฝากไม่ได้ · ให้คนอื่นตรวจ (maker ≠ checker)");
+  // maker ≠ checker — เหลือเฉพาะ "ตีกลับ" (ขยับเงินจริง) · "ตรวจแล้ว" ผ่อนให้กดใบตัวเองได้
+  // (CEO 2026-09-22 · ดูเหตุผลเต็มในหัวข้อด้านบน — สาขาพนักงานคนเดียวต้องปิดงานตัวเองได้)
+  if (decision === "reject" && head.depositedById === session.user.id) {
+    return err("ตีกลับใบที่ตัวเองบันทึกฝากไม่ได้ · ให้คนอื่นตรวจ (maker ≠ checker)");
   }
 
-  // ต้องเป็นใบ SHORT ที่ยัง PENDING เท่านั้น — ตัดสินไปแล้วห้ามซ้ำ · NONE (OK/OVER) ไม่ต้องอนุมัติ
+  // ต้องเป็นใบที่ยัง PENDING เท่านั้น — ตัดสินไปแล้วห้ามซ้ำ · NONE (ยอดตรง) ไม่ต้องตรวจ
   if (head.approvalStatus !== "PENDING") {
     return err(
       head.approvalStatus === "APPROVED"
-        ? "ใบนี้อนุมัติไปแล้ว"
+        ? "ใบนี้ตรวจแล้ว"
         : head.approvalStatus === "REJECTED"
           ? "ใบนี้ถูกตีกลับไปแล้ว"
-          : "ใบนี้ไม่ต้องอนุมัติ (ไม่ใช่ใบฝากขาด)",
+          : "ใบนี้ยอดตรง ไม่ต้องตรวจ",
     );
   }
 
@@ -420,8 +436,19 @@ export async function reviewCashDeposit(
       }
 
       // reject → คืนรอบกลับ "รอฝาก": un-set depositId ของทุกรอบที่ผูกใบนี้ → กลับไปฝากใหม่ได้.
-      // approve → ไม่ต้องแตะรอบ (เงินขาดถูกรับทราบ · รอบยังผูกใบเดิมเป็นหลักฐาน).
+      // approve → ไม่ต้องแตะรอบ (ส่วนต่างถูกรับทราบ · รอบยังผูกใบเดิมเป็นหลักฐาน).
       if (newStatus === "REJECTED") {
+        // 🔒 ต้องถอนยอดออกจาก ledger ก่อน — ตอนนี้ใบติดธงเข้า ledger ไปแล้วตั้งแต่ก่อนตรวจ
+        //    ถ้าไม่ถอน: ตีกลับ → ฝากใหม่ → ส่งอีกครั้ง = เงินก้อนเดียวถูกนับ 2 แถว.
+        //    ถ้าแถวนั้นจับคู่ statement แล้ว ถอนไม่ได้ → ยกเลิกทั้งทราน (ห้ามตีกลับ)
+        const retracted = await retractDepositFromLedger(tx, orgId, head.id);
+        if (!retracted) {
+          throw new Error(
+            "ใบนี้จับคู่กับรายการธนาคารในบัญชีกระทบยอดแล้ว · ตีกลับไม่ได้ " +
+              "(ธนาคารยืนยันว่าเงินเข้าจริง) — ให้ยกเลิกการจับคู่ที่หน้ากระทบยอดก่อน " +
+              "หรือกด “ตรวจแล้ว” แทนถ้ายอมรับส่วนต่างนี้",
+          );
+        }
         await tx.cfCollectionSession.updateMany({
           where: { orgId, depositId: head.id },
           data: { depositId: null },

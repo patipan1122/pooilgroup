@@ -11,7 +11,23 @@
 // (cashCountedCents) — เพราะยอดนี้คือเงินที่เข้าบัญชีธนาคารจริงตามที่ statement จะโชว์
 // (ถ้าขาด/เกิน สองยอดนี้ต่างกัน · reconcile ต้องเทียบกับยอดที่เข้าบัญชีจริง).
 
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+
+/**
+ * CEO 2026-09-22 — เปลี่ยนจาก "กั้นเงิน" เป็น "ปล่อยเงินไหล แล้วติดสีให้เห็น":
+ *   "ยอดไหน กรอกมา ฝากมา ขึ้นเลย ขึ้นโชว์มาเลย อาจจะติดสีที่ตัวเลข เพื่อโชว์ความผิดปกติเฉย ๆ
+ *    แล้วกดที่ตรงนั้นให้แอดมินยืนยันตรวจสอบได้"
+ *
+ * เดิม (preventive): ใบยอดไม่ตรง/AI ติดธง → approvalStatus=PENDING → **ไม่ถูกส่งเข้า ledger เลย**
+ *   จนกว่าจะมีคนที่ 2 อนุมัติ. สาขาที่มีพนักงานคนเดียวจึงไม่มีใครอนุมัติได้ → เงินค้างเงียบ
+ *   ไม่เข้าบัญชีกระทบยอดตลอดไป และ **ไม่มีใครเห็นด้วยซ้ำว่ามีใบนี้อยู่**.
+ * ตอนนี้ (detective): ทุกใบที่บันทึกฝากแล้วไหลเข้า ledger หมด (ยกเว้นใบที่ถูก "ตีกลับ" =
+ *   โมฆะจริง ๆ) · ความผิดปกติยังถูกคำนวณ + บันทึกครบเหมือนเดิมทุกประการ (status SHORT/OVER,
+ *   varianceCents, ocrFlagReason) แล้วโชว์เป็น "สีบนตัวเลข" ให้แอดมินกดตรวจทีหลัง.
+ *   → ตรวจจับโกงได้ **ดีกว่าเดิม** เพราะของเดิมใบผิดปกติหายเงียบไม่เข้าบัญชี ไม่มีใครเห็น.
+ */
+const LEDGER_ELIGIBLE_APPROVAL = ["NONE", "APPROVED", "PENDING"] as const;
 
 export type BranchReconcileSummary = {
   configured: boolean;
@@ -19,7 +35,10 @@ export type BranchReconcileSummary = {
   bankAccountId: string | null;
   readyCount: number;
   readyAmountBaht: number;
+  /** ใบติดธง (ยอดไม่ตรง/AI สงสัย) ที่ยังไม่มีใครกด "ตรวจแล้ว" — **รวมอยู่ใน readyCount แล้ว**
+   *  (ไม่ได้กันออกอีกต่อไป · เป็นแค่ตัวเลขเตือนให้ไปกดตรวจที่หน้าฝากเงิน) */
   pendingReviewCount: number;
+  /** ใบที่ถูกตีกลับ = โมฆะ · รอบถูกคืนไปฝากใหม่ → ไม่ส่งเข้า ledger (กันนับเงินซ้ำ) */
   rejectedCount: number;
   /** ใบที่ส่งเข้า ledger ไปแล้ว (ไม่นับใน readyCount) — โชว์ให้รู้ว่างานเดินไปแล้วจริง */
   alreadySentCount: number;
@@ -79,8 +98,9 @@ export async function getBranchReconcileSummary(
   });
 
   const [readyRows, pendingReviewCount, rejectedCount] = await Promise.all([
+    // PENDING (ติดธง) รวมอยู่ด้วยแล้ว — เงินไหล ไม่ถูกกั้น (ดู LEDGER_ELIGIBLE_APPROVAL)
     prisma.cfCashDeposit.findMany({
-      where: { orgId, branchId, approvalStatus: { in: ["NONE", "APPROVED"] } },
+      where: { orgId, branchId, approvalStatus: { in: [...LEDGER_ELIGIBLE_APPROVAL] } },
       select: { id: true, amountCents: true },
     }),
     prisma.cfCashDeposit.count({ where: { orgId, branchId, approvalStatus: "PENDING" } }),
@@ -112,15 +132,17 @@ export type PushResult = {
   /** ใบที่ "เพิ่งเข้า ledger รอบนี้จริง" (แถวใหม่) — กดซ้ำรอบสองจะเป็น 0 */
   inserted: number;
   alreadySent: number;
-  pendingReviewSkipped: number;
+  /** ใบติดธงที่ **ส่งเข้าไปด้วย** (ไม่ได้ข้ามแล้ว) — บอกให้ไปกดตรวจที่หน้าฝากเงิน */
+  flaggedIncluded: number;
   /** ใบยอด ฿0 หรือติดลบที่ข้ามไว้ (ledger ไม่รับ · ถ้าปล่อยเข้าไปจะทำให้ทั้งชุดล้ม) */
   zeroSkipped: number;
   error?: string;
 };
 
-/** ส่งยอดฝากทั้งหมดของสาขา (approvalStatus NONE/APPROVED เท่านั้น — ข้าม PENDING/REJECTED)
- *  เข้า ledger_revenue_entry · กดซ้ำได้ไม่จำกัด — source_ref ผูกกับ depositId เสมอ ทำให้
- *  ON CONFLICT กันซ้ำอัตโนมัติในระดับฐานข้อมูล (แถวที่จับคู่ statement แล้วจะไม่ถูกแตะ)
+/** ส่งยอดฝากของสาขาเข้า ledger_revenue_entry — **รวมใบติดธง (PENDING) ด้วย**
+ *  ข้ามเฉพาะใบที่ถูก "ตีกลับ" (REJECTED = โมฆะ · รอบถูกคืนไปฝากใหม่แล้ว ถ้าส่งเข้าไปจะนับเงินซ้ำ).
+ *  กดซ้ำได้ไม่จำกัด — source_ref ผูกกับ depositId เสมอ ทำให้ ON CONFLICT กันซ้ำอัตโนมัติ
+ *  ในระดับฐานข้อมูล (แถวที่จับคู่ statement แล้วจะไม่ถูกแตะ)
  *
  *  🔒 ทั้งชุดอยู่ใน $transaction เดียว = "สำเร็จทั้งหมด หรือไม่เข้าเลย".
  *     เดิมเป็น loop ธรรมดา: ถ้าใบที่ 5 จาก 10 ล้ม (เช่น ยอด ฿0 ที่ ledger ปฏิเสธ) ใบ 1-4
@@ -138,22 +160,23 @@ export async function pushBranchDepositsToLedger(
     }),
   ]);
   if (!branch) {
-    return { ok: false, inserted: 0, alreadySent: 0, pendingReviewSkipped: 0, zeroSkipped: 0, error: "ไม่พบสาขา" };
+    return { ok: false, inserted: 0, alreadySent: 0, flaggedIncluded: 0, zeroSkipped: 0, error: "ไม่พบสาขา" };
   }
   if (!config?.companyId || !config?.bankAccountId) {
     return {
       ok: false,
       inserted: 0,
       alreadySent: 0,
-      pendingReviewSkipped: 0,
+      flaggedIncluded: 0,
       zeroSkipped: 0,
       error: "ยังไม่ได้ตั้งค่าบริษัท/บัญชีธนาคารของสาขานี้ — ตั้งค่าก่อนแล้วค่อยส่ง",
     };
   }
 
-  const [allDeposits, pendingReviewSkipped] = await Promise.all([
+  const [allDeposits, flaggedIncluded] = await Promise.all([
+    // รวม PENDING (ติดธง) — เงินไหลก่อน ตรวจทีหลัง (ดู LEDGER_ELIGIBLE_APPROVAL)
     prisma.cfCashDeposit.findMany({
-      where: { orgId, branchId, approvalStatus: { in: ["NONE", "APPROVED"] } },
+      where: { orgId, branchId, approvalStatus: { in: [...LEDGER_ELIGIBLE_APPROVAL] } },
       select: { id: true, amountCents: true, depositedAt: true, depositedByName: true },
     }),
     prisma.cfCashDeposit.count({ where: { orgId, branchId, approvalStatus: "PENDING" } }),
@@ -166,7 +189,7 @@ export async function pushBranchDepositsToLedger(
   const zeroSkipped = allDeposits.length - deposits.length;
 
   if (deposits.length === 0) {
-    return { ok: true, inserted: 0, alreadySent: 0, pendingReviewSkipped, zeroSkipped };
+    return { ok: true, inserted: 0, alreadySent: 0, flaggedIncluded, zeroSkipped };
   }
 
   let inserted = 0;
@@ -226,7 +249,7 @@ export async function pushBranchDepositsToLedger(
       ok: false,
       inserted: 0,
       alreadySent: 0,
-      pendingReviewSkipped,
+      flaggedIncluded,
       zeroSkipped,
       error: e instanceof Error ? e.message : "ส่งไม่สำเร็จ",
     };
@@ -236,7 +259,54 @@ export async function pushBranchDepositsToLedger(
     ok: true,
     inserted,
     alreadySent: deposits.length - inserted,
-    pendingReviewSkipped,
+    flaggedIncluded,
     zeroSkipped,
   };
+}
+
+// =============================================================
+// ถอนใบฝากออกจาก ledger — ใช้ตอน "ตีกลับ" (REJECTED) เท่านั้น
+// =============================================================
+/**
+ * ⚠️ ช่องโหว่ที่ "เปิดขึ้นใหม่" เพราะเปลี่ยนมาปล่อยเงินไหลก่อนตรวจ — ต้องปิดพร้อมกัน:
+ *
+ *   เดิม ใบ PENDING ไม่เคยเข้า ledger → ตีกลับได้อย่างปลอดภัย (ไม่มีอะไรให้ถอน).
+ *   ตอนนี้ ใบ PENDING เข้า ledger แล้ว → ถ้าตีกลับแล้วปล่อยแถวใน ledger ค้างไว้:
+ *     ตีกลับ → รอบถูกคืน (depositId=null) → พนักงานฝากใหม่เป็นใบใหม่ → กดส่งอีกครั้ง
+ *     → **เงินก้อนเดียวกันอยู่ในบัญชีกระทบยอด 2 แถว** (ยอดรายได้บวมปลอม).
+ *   จึงต้องถอนแถวเดิมออกในทรานเดียวกับการตีกลับเสมอ.
+ *
+ * กันพลาด: ถ้าแถวนั้น "จับคู่กับ statement ธนาคารแล้ว" (match_state <> 'unmatched' หรือมี
+ *   match item ชี้อยู่) = ธนาคารยืนยันแล้วว่าเงินเข้าจริง → **ห้ามถอน/ห้ามตีกลับ** (คืนค่า false)
+ *   ให้ไปแก้ที่หน้ากระทบยอดก่อน. ledger_bank_match_item.book_id ไม่มี FK มาที่ตารางนี้
+ *   (ยืนยันกับ DB จริง) → ลบไปเฉย ๆ จะเหลือ match item ลอยชี้แถวที่ไม่มีอยู่.
+ *
+ * คืน true = ถอนเรียบร้อย/ไม่มีอะไรต้องถอน · false = ถอนไม่ได้เพราะกระทบยอดไปแล้ว.
+ */
+export async function retractDepositFromLedger(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  depositId: string,
+): Promise<boolean> {
+  const sourceRef = depositSourceRef(depositId);
+  const rows = await tx.$queryRaw<{ id: string; reconciled: boolean }[]>`
+    SELECT r.id::text AS id,
+           (r.match_state <> 'unmatched'
+            OR EXISTS (SELECT 1 FROM ledger_bank_match_item mi
+                        WHERE mi.book_type = 'revenue' AND mi.book_id = r.id)) AS reconciled
+      FROM ledger_revenue_entry r
+     WHERE r.org_id = ${orgId}::uuid
+       AND r.source_type = 'CLAWFLEET'
+       AND r.source_ref = ${sourceRef}`;
+
+  if (rows.length === 0) return true; // ยังไม่เคยส่งเข้า ledger — ตีกลับได้เลย
+  if (rows.some((r) => r.reconciled)) return false; // กระทบยอดแล้ว — ห้ามถอน
+
+  await tx.$executeRaw`
+    DELETE FROM ledger_revenue_entry
+     WHERE org_id = ${orgId}::uuid
+       AND source_type = 'CLAWFLEET'
+       AND source_ref = ${sourceRef}
+       AND match_state = 'unmatched'`;
+  return true;
 }
