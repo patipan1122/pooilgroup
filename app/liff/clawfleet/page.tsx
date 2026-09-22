@@ -12,6 +12,12 @@ import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
 import { getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
 import { getCfRefillAvailability } from "@/lib/clawfleet/stock-source";
+import {
+  getDepositBalanceByBranch,
+  getPendingDeposits,
+  type BranchDepositBalance,
+  type PendingDepositRow,
+} from "@/lib/clawfleet/deposit-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -222,6 +228,18 @@ export default async function ClawfleetLiffPage({
   //   + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว)
   const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก"/"สะสมยังไม่ฝาก" + รอบที่ฝากได้ (session picker)
+  //   — mirror app/(admin)/clawfleet/os/app/page.tsx เป๊ะ (ฟังก์ชันเดียวกัน · อาร์กิวเมนต์เดียวกัน).
+  //   ⚠️ เดิม LIFF ไม่เคยส่ง 2 prop นี้ → HistoryPanel fallback เป็น 0 ทุกครั้ง → canDeposit=false
+  //   → ปุ่มฝากเงินบนมือถือ LINE ขึ้น "ไม่มียอดค้างฝาก" ตลอดกาล แม้เงินค้างจริงหลักแสน
+  //   (staff-app-client.tsx:2725-2727, 2837) = สาเหตุหลักที่ไม่มีใบฝากเกิดขึ้นเลยสักใบ.
+  //   สิทธิ์: ทั้งสองฟังก์ชันเรียก requireCfSession() + userBranchIds() ภายในตัวเอง → branch scope
+  //   เท่าเดิมกับเดสก์ท็อป ไม่เปิดกว้างขึ้น · graceful อยู่แล้ว (คืน {}/[] ถ้า query ล้ม).
+  const depositBalanceByBranch: Record<string, BranchDepositBalance> = orgId
+    ? await getDepositBalanceByBranch(routeBranches.map((b) => b.id))
+    : {};
+  const pendingDeposits: PendingDepositRow[] = orgId ? await getPendingDeposits() : [];
+
   return (
     <div className="clawos">
       <StaffAppClient
@@ -244,6 +262,8 @@ export default async function ClawfleetLiffPage({
         receivedByBranch={receivedByBranch}
         countsByBranch={countsByBranch}
         isHistoryAdmin={isHistoryAdmin}
+        depositBalanceByBranch={depositBalanceByBranch}
+        pendingDeposits={pendingDeposits}
       />
     </div>
   );

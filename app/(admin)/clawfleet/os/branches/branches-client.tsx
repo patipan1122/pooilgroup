@@ -836,9 +836,18 @@ function ReconcileAccountCard({
     startTransition(async () => {
       const res = await sendClawfleetDepositsToReconcile({ branchId });
       if (!res.ok) { setError(res.error); return; }
+      // ข้อความต้องตรงความจริง: กดซ้ำแล้วไม่มีใบใหม่ = บอกว่า "ส่งครบแล้ว" ไม่ใช่เด้ง
+      // "ส่งแล้ว N ใบ" เลขเดิมซ้ำ ๆ (ของเดิมทำแบบนั้น คนคุมเงินเลยนึกว่าไม่สำเร็จแล้วกดรัว)
+      const sentMsg =
+        res.data.inserted > 0
+          ? `ส่งเข้าบัญชี reconcile แล้ว ${res.data.inserted} ใบ`
+          : res.data.alreadySent > 0
+            ? `ส่งครบแล้ว — ${res.data.alreadySent} ใบอยู่ในบัญชี reconcile เรียบร้อย (ไม่มีใบใหม่)`
+            : "ไม่มีใบฝากที่ต้องส่ง";
       setOkMsg(
-        `ส่งเข้าบัญชี reconcile แล้ว ${res.data.inserted} ใบ` +
-        (res.data.pendingReviewSkipped > 0 ? ` · ข้าม ${res.data.pendingReviewSkipped} ใบ (รอตรวจสอบก่อน)` : "")
+        sentMsg +
+        (res.data.pendingReviewSkipped > 0 ? ` · ข้าม ${res.data.pendingReviewSkipped} ใบ (รอตรวจสอบก่อน)` : "") +
+        (res.data.zeroSkipped > 0 ? ` · ข้าม ${res.data.zeroSkipped} ใบ (ยอด ฿0 ส่งไม่ได้)` : "")
       );
       pickBranch(branchId); // โหลดสรุปใหม่ (readyCount ควรลดลง/เท่าเดิมถ้ากดซ้ำ)
       router.refresh();
@@ -998,6 +1007,9 @@ function ReconcileAccountCard({
                       )}
                       {status.rejectedCount > 0 && (
                         <> · <span style={{ color: "#B42318" }}>{status.rejectedCount} ใบถูกปฏิเสธ (ไม่ส่ง)</span></>
+                      )}
+                      {status.alreadySentCount > 0 && (
+                        <> · <span style={{ color: "#15803D" }}>{status.alreadySentCount} ใบส่งแล้ว</span></>
                       )}
                     </p>
                     <button

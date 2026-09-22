@@ -28,7 +28,7 @@ import {
   Info,
 } from "lucide-react";
 import { Pill, IconBox, EmptyState, Modal } from "@/components/clawfleet/os/kit";
-import { baht, num, type Tone } from "@/components/clawfleet/os/format";
+import { baht, num, bangkokMidnightISO, type Tone } from "@/components/clawfleet/os/format";
 import { PhotoCaptureButton } from "@/components/clawfleet/photo-capture-button";
 import type {
   PendingDepositRow,
@@ -220,7 +220,8 @@ export function DepositsClient({
       return;
     }
     const sessionIds = selectedRows.map((r) => r.sessionId);
-    const depositedAtISO = new Date(`${depositDate}T00:00:00`).toISOString();
+    // วันที่ฝาก = วันตามปฏิทินไทยที่ผู้ใช้เลือก (ไม่ผูกกับโซนเวลาของเครื่อง · ดู bangkokMidnightISO)
+    const depositedAtISO = bangkokMidnightISO(depositDate);
     const noteTrim = note.trim();
     startTransition(async () => {
       const res = await recordCashDeposit({

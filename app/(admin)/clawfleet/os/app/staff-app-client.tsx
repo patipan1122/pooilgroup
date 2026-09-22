@@ -42,6 +42,7 @@ import { createBranchProduct } from "@/lib/clawfleet/product-setup-actions";
 import { submitStockCount, confirmShipmentReceived, returnDollsToStock, refillDollsToMachine } from "@/lib/clawfleet/stock-actions";
 import { confirmTransfer } from "@/lib/dc/transfer-actions";
 import { recordCashDeposit } from "@/lib/clawfleet/deposit-actions";
+import { bangkokMidnightISO } from "@/components/clawfleet/os/format";
 import type { RepairTicketRow } from "@/lib/clawfleet/repair-queries";
 import type { CfReceivedDoc, CfCountRow } from "@/lib/clawfleet/stock-queries";
 import type { BranchDepositBalance, PendingDepositRow } from "@/lib/clawfleet/deposit-queries";
@@ -3292,7 +3293,8 @@ function DepositSheet({
     if (selectedRows.length === 0) { setError("เลือกรอบที่ต้องการฝากอย่างน้อย 1 รอบ"); return; }
     if (!amountValid) { setError("กรอกยอดเงินที่ฝากจริง (บาท)"); return; }
     const sessionIds = selectedRows.map((r) => r.sessionId);
-    const depositedAtISO = new Date(`${depositDate}T00:00:00`).toISOString();
+    // วันที่ฝาก = วันตามปฏิทินไทยที่ผู้ใช้เลือก (ไม่ผูกกับโซนเวลาของมือถือ · ดู bangkokMidnightISO)
+    const depositedAtISO = bangkokMidnightISO(depositDate);
     startTransition(async () => {
       const res = await recordCashDeposit({
         sessionIds,
