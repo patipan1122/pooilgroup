@@ -217,7 +217,7 @@ export async function recordCashDeposit(input: unknown): Promise<
           expectedCents,
           varianceCents,
           status,
-          approvalStatus, // SHORT → PENDING (รออนุมัติ) · OK/OVER → NONE
+          approvalStatus, // ยอดไม่ตรง → PENDING (ติดธง รอตรวจ · เงินยังไหลเข้า ledger) · ตรง → NONE
           sessionCount: sessionIds.length,
           slipPhotoUrl: slipUrl,
           note: cleanNote,

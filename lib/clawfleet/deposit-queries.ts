@@ -44,7 +44,8 @@ export type DepositRow = {
   varianceCents: number;
   status: string; // OK | SHORT | OVER
   // Wave 4b · maker-checker ใบฝากขาด (SHORT) — NONE/PENDING/APPROVED/REJECTED
-  //   SHORT ที่สร้างใหม่ → PENDING (รออนุมัติ "รับทราบเงินขาด") · OK/OVER → NONE (ไม่ต้องอนุมัติ)
+  //   ยอดไม่ตรง (SHORT/OVER) หรือ AI ติดธง → PENDING = "ติดธง รอตรวจ" · ยอดตรง → NONE
+  //   ⚠️ PENDING ไม่กันเงินออกจาก ledger แล้ว (CEO 2026-09-22) — เป็นแค่สถานะการตรวจ
   approvalStatus: string;
   reviewedByName: string | null; // ใครอนุมัติ/ตีกลับ (checker)
   depositedById: string; // ผู้บันทึกฝาก (maker) — client ใช้เช็ก maker ≠ checker
