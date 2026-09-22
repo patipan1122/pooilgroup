@@ -22,7 +22,7 @@ export async function notifyBillIssued(billId: string): Promise<BillNotifyResult
   const out: BillNotifyResult = { channels };
   try {
     const bill = await prisma.rentalBill.findUnique({
-      where: { id: billId },
+      where: { id: billId, deletedAt: null },
       include: { tenant: true, project: true, unit: true },
     });
     if (!bill || !bill.tenant) return out;

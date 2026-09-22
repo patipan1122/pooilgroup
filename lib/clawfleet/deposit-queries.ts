@@ -28,6 +28,12 @@ export type PendingDepositRow = {
   branchId: string;
   branchName: string | null;
   holderName: string; // คนถือเงิน (คนปิดรอบ = closedBy)
+  closedById: string; // คนถือเงิน (id) — "" = ไม่ทราบ
+  /** รอบนี้เป็นเงินที่ "ผู้ใช้คนนี้" ถืออยู่เองหรือเปล่า.
+   *  ใช้ตั้งค่าติ๊กเริ่มต้นในฟอร์มฝากของพนักงาน: recordCashDeposit อนุญาตให้พนักงานธรรมดา
+   *  (ไม่ใช่ ผจก./แอดมิน) ฝากได้เฉพาะรอบที่ **ตัวเองปิดทุกใบ** (deposit-actions.ts:166-170)
+   *  → ถ้าติ๊กรอบของเพื่อนร่วมสาขามาด้วยจะยิงไปโดนปฏิเสธทั้งใบ. */
+  mine: boolean;
   closedAt: string; // ISO
   cashCents: number;
   daysOverdue: number;
@@ -44,7 +50,8 @@ export type DepositRow = {
   varianceCents: number;
   status: string; // OK | SHORT | OVER
   // Wave 4b · maker-checker ใบฝากขาด (SHORT) — NONE/PENDING/APPROVED/REJECTED
-  //   SHORT ที่สร้างใหม่ → PENDING (รออนุมัติ "รับทราบเงินขาด") · OK/OVER → NONE (ไม่ต้องอนุมัติ)
+  //   ยอดไม่ตรง (SHORT/OVER) หรือ AI ติดธง → PENDING = "ติดธง รอตรวจ" · ยอดตรง → NONE
+  //   ⚠️ PENDING ไม่กันเงินออกจาก ledger แล้ว (CEO 2026-09-22) — เป็นแค่สถานะการตรวจ
   approvalStatus: string;
   reviewedByName: string | null; // ใครอนุมัติ/ตีกลับ (checker)
   depositedById: string; // ผู้บันทึกฝาก (maker) — client ใช้เช็ก maker ≠ checker
@@ -166,6 +173,7 @@ export async function getPendingDeposits(opts?: { branchId?: string }): Promise<
   try {
     const session = await requireCfSession();
     const orgId = session.user.org_id;
+    const userId = session.user.id;
     const branchIds = await userBranchIds(session);
 
     const rows = await prisma.cfCollectionSession.findMany({
@@ -181,6 +189,7 @@ export async function getPendingDeposits(opts?: { branchId?: string }): Promise<
         id: true,
         sessionCode: true,
         branchId: true,
+        closedById: true,
         totalCashCents: true,
         closedAt: true,
         closedBy: { select: { name: true } },
@@ -219,6 +228,8 @@ export async function getPendingDeposits(opts?: { branchId?: string }): Promise<
         branchId,
         branchName: names.get(branchId) ?? null,
         holderName: row.closedBy?.name ?? "ไม่ทราบชื่อ",
+        closedById: row.closedById ?? "",
+        mine: row.closedById != null && row.closedById === userId,
         closedAt: closedAtDate ? closedAtDate.toISOString() : "",
         cashCents: row.totalCashCents,
         daysOverdue,
@@ -227,6 +238,32 @@ export async function getPendingDeposits(opts?: { branchId?: string }): Promise<
     });
   } catch {
     return [];
+  }
+}
+
+export type DepositReviewContext = {
+  /** ผู้ใช้นี้กด "ตรวจแล้ว"/"ตีกลับ" ได้ไหม (ผจก.สาขา/แอดมิน) — mirror auth ใน reviewCashDeposit */
+  canReview: boolean;
+  /** ให้ client เทียบ maker ≠ checker (ห้ามตีกลับใบที่ตัวเองฝาก) · action บังคับซ้ำอีกชั้นเสมอ */
+  currentUserId: string;
+};
+
+/**
+ * สิทธิ์ตรวจใบฝากของ "ผู้ใช้ที่กำลังดูหน้านี้" — แยกออกมาเป็นของตัวเอง ไม่ผูกกับว่ามีประวัติฝากกี่ใบ.
+ *
+ * ทำไมต้องมี: เดิมค่านี้ denormalize ไปกับทุกแถวของ getDepositHistory แล้วฝั่ง client อ่านจาก
+ *   history[0] — พอเป็น **ใบฝากใบแรกขององค์กร** ประวัติยังว่าง (history[0] = undefined) ค่าจึงตก
+ *   เป็น canReview=false เสมอ → ปุ่ม "แตะเพื่อ ✓ ตรวจแล้ว" ที่ CEO สั่งทำ ไม่โผล่ในการใช้งานจริง
+ *   ครั้งแรกสุด ซึ่งเป็นครั้งเดียวที่ทั้งระบบยังไม่เคยมีใบฝากเลย.
+ * graceful: อ่านสิทธิ์ไม่ได้ → ไม่ให้ตรวจ (fail-closed · ปลอดภัยกว่าโชว์ปุ่มที่กดแล้วเด้ง error).
+ */
+export async function getDepositReviewContext(): Promise<DepositReviewContext> {
+  try {
+    const session = await requireCfSession();
+    const canReview = (await cfHasAdminPower(session)) || isCfBranchManager(session.user.role);
+    return { canReview, currentUserId: session.user.id };
+  } catch {
+    return { canReview: false, currentUserId: "" };
   }
 }
 
@@ -328,7 +365,12 @@ export async function getPendingDepositSummary(): Promise<PendingSummary> {
       depositId: null,
       totalCashCents: { gt: 0 },
       ...(branchIds === "ALL"
-        ? {}
+        ? // ALL ก็ยังต้องตัด "รอบที่หาสาขาไม่เจอเลย" ออก ให้ตรงกับ list: getPendingDeposits
+          // ข้ามรอบที่ resolve branchId ไม่ได้ (branchId ?? group.branchId เป็น null ทั้งคู่) เพราะ
+          // ฝากไม่ได้อยู่แล้ว — ไม่มีสาขาให้ผูกใบฝาก. เดิม ALL ไม่มีเงื่อนไขนี้ → การ์ดสรุปหัวหน้า
+          // จะนับเงินที่ "ฝากไม่ได้ตลอดกาล" รวมเข้าไปในยอดค้างมือ แล้วไม่มีทางทำให้ยอดลงเป็นศูนย์ได้.
+          // (วันนี้ยังไม่มีแถวแบบนั้นในฐานข้อมูลจริง — กันไว้ไม่ให้ไหลมาทีหลังโดยไม่มีใครเห็น)
+          { OR: [{ branchId: { not: null } }, { groupId: { not: null } }] }
         : {
             OR: [
               { branchId: { in: branchIds } },

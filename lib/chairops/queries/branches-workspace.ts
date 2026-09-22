@@ -26,9 +26,14 @@ import {
   type BranchStatus,
 } from "@/app/(admin)/chairops/dashboard/_components/status-badge";
 
-// Mockup status vocabulary (ok | warn | critical | missed) used by the rail
-// filter + status dots. We collapse the richer engine status into it.
-export type WorkspaceStatus = "ok" | "warn" | "critical" | "missed";
+// Mockup status vocabulary (ok | warn | critical | missed | closed) used by
+// the rail filter + status dots. We collapse the richer engine status into it.
+// 2026-09-20 bigsolvebug P0 fix: "inactive" branches used to collapse into
+// "ok" here — a closed branch rendered with the same green dot + "ปกติ"
+// label as a healthy one, with no way to filter/see closed branches on this
+// screen at all. This is the exact blind spot that let Central Ayutthaya sit
+// unnoticed for 5 days (2026-08-23→28) — see docs/AUDIT_chairops_2026-06-15.md.
+export type WorkspaceStatus = "ok" | "warn" | "critical" | "missed" | "closed";
 
 export function toWorkspaceStatus(s: BranchStatus): WorkspaceStatus {
   switch (s) {
@@ -40,13 +45,14 @@ export function toWorkspaceStatus(s: BranchStatus): WorkspaceStatus {
     case "surplus":
       return "warn";
     case "inactive":
+      return "closed";
     case "ok":
     default:
       return "ok";
   }
 }
 
-export type WorkspaceView = "all" | "critical" | "warn" | "ok" | "missed";
+export type WorkspaceView = "all" | "critical" | "warn" | "ok" | "missed" | "closed";
 export type WorkspaceSort =
   | "priority"
   | "drift"
@@ -82,6 +88,7 @@ export interface BranchesWorkspaceVM {
     warn: number;
     ok: number;
     missed: number;
+    closed: number;
   };
   mallCounts: Record<string, number>;
 }
@@ -211,6 +218,7 @@ export async function getBranchesWorkspace(args: {
     warn: rows.filter((r) => r.status === "warn").length,
     ok: rows.filter((r) => r.status === "ok").length,
     missed: rows.filter((r) => r.status === "missed").length,
+    closed: rows.filter((r) => r.status === "closed").length,
   };
   const mallCounts: Record<string, number> = {};
   for (const r of rows) mallCounts[r.mallKey] = (mallCounts[r.mallKey] ?? 0) + 1;
@@ -224,7 +232,7 @@ export async function getBranchesWorkspace(args: {
 
   // sort
   const prio = (s: WorkspaceStatus) =>
-    s === "critical" ? 0 : s === "missed" ? 1 : s === "warn" ? 2 : 3;
+    s === "critical" ? 0 : s === "missed" ? 1 : s === "warn" ? 2 : s === "closed" ? 4 : 3;
   rows.sort((a, b) => {
     switch (sortBy) {
       case "priority":

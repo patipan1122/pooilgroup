@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { isSuperAdmin } from "@/lib/auth/role-guards";
@@ -12,6 +13,8 @@ import {
 import { formatBaht, tenantDisplayName, toNum, periodLabel } from "@/lib/rentspace/format";
 import { PlanWithDrawer } from "@/components/rentspace/plan-with-drawer";
 import { CycleCta } from "./_components/cycle-cta";
+import { prisma } from "@/lib/prisma";
+import { getSlipMismatchBillIds } from "@/lib/rentspace/ledger-push";
 
 export const dynamic = "force-dynamic";
 
@@ -78,34 +81,27 @@ export default async function RentSpaceOverview() {
     );
   }
 
-  const [kpi, cycle, units, expiring] = await Promise.all([
+  // Shell data only (เบา · ต้องขึ้นก่อนทันที): KPI · รอบบิล · แจ้งใกล้หมดสัญญา · สัญญาณสลิปไม่ตรง.
+  // ผังโครงการ + "ต้องติดตาม" ที่ต้องดึงรายห้อง (listUnitsWithState) ถูกแยกไป stream
+  // ใน <Suspense> ด้านล่าง → เลขบนหัวขึ้นทันที ไม่รอทั้งหน้า (upspeed 2026-07-22, S-002 —
+  // เดิม build ไว้บน branch ที่ไม่เคย merge เข้า setup เลยหายไป กู้กลับมาใหม่ 2026-09-22).
+  const [kpi, cycle, expiring] = await Promise.all([
     projectKpis(orgId, project.id),
     billingCycle(orgId, project.id),
-    listUnitsWithState(orgId, project.id),
     expiringContracts(orgId, project.id),
   ]);
 
-  const mapUnits = units.map((u) => ({
-    id: u.id,
-    code: u.code,
-    name: u.name,
-    building: u.building,
-    status: u.status as string,
-    baseRentThb: toNum(u.baseRentThb),
-    tenantName: u.tenant ? tenantDisplayName(u.tenant) : null,
-    outstanding: u.outstanding,
-    hasOverdue: u.hasOverdue,
-    endDate: u.contract?.endDate ? new Date(u.contract.endDate).toISOString() : null,
-    mapX: u.mapX != null ? toNum(u.mapX) : null,
-    mapY: u.mapY != null ? toNum(u.mapY) : null,
-    mapW: u.mapW != null ? toNum(u.mapW) : null,
-    mapH: u.mapH != null ? toNum(u.mapH) : null,
-  }));
-
-  const attention = units
-    .filter((u) => u.hasOverdue || u.outstanding > 0)
-    .sort((a, b) => b.outstanding - a.outstanding)
-    .slice(0, 6);
+  // "ต้องดูก่อน" สัญญาณ (audit 2026-09-20 §5 — เดิมหน้านี้ไม่มีสัญญาณเตือนสลิปไม่ตรง/cron
+  // ล้มเหลวเลย ข้อมูลมีอยู่แล้วที่ /matrix แต่ต้องคลิกเข้าไปเองโดยไม่มีใครเตือนก่อน) — ไม่พึ่ง
+  // listUnitsWithState เลย จึงอยู่ใน shell ที่ขึ้นทันทีได้ ไม่ต้องรอ stream ด้านล่าง
+  const openBillIds = (
+    await prisma.rentalBill.findMany({
+      where: { orgId, projectId: project.id, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
+      select: { id: true },
+    })
+  ).map((b) => b.id);
+  const mismatchIds = await getSlipMismatchBillIds(orgId, openBillIds);
+  const mismatchCount = mismatchIds.size;
 
   const occupancyPct = kpi.units > 0 ? Math.round((kpi.occupied / kpi.units) * 100) : 0;
 
@@ -149,6 +145,18 @@ export default async function RentSpaceOverview() {
             <span className="block text-xs truncate" style={{ color: "#9A7B1F" }}>{expiring.slice(0, 5).map((c) => c.unit.code).join(" · ")}{expiring.length > 5 ? " · …" : ""} — กดต่อสัญญาก่อนหมดอายุ</span>
           </span>
           <span className="text-[11.5px] font-semibold self-center shrink-0" style={{ color: "#B45309" }}>ดูสัญญา</span>
+        </Link>
+      )}
+
+      {/* "ต้องดูก่อน" — ยอดสลิปไม่ตรง (audit 2026-09-20 §5, ก่อนหน้านี้ต้องเข้า /matrix เองถึงจะรู้) */}
+      {mismatchCount > 0 && (
+        <Link href="/rentspace/matrix" className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-4" style={{ background: "#FDECEC", border: "1px solid #F3B4B0" }}>
+          <span className="w-[34px] h-[34px] rounded-lg shrink-0 flex items-center justify-center text-base" style={{ background: "#FBD7D5" }}>⚠️</span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-semibold text-[13.5px]" style={{ color: "#9B2C2C" }}>ยอดสลิปไม่ตรงกับยอดบันทึก {mismatchCount} บิล</span>
+            <span className="block text-xs" style={{ color: "#B4453F" }}>AI ตรวจสลิปแล้วพบยอดไม่ตรง — กดตรวจที่หน้าตาราง ก่อนส่งเข้าบัญชี</span>
+          </span>
+          <span className="text-[11.5px] font-semibold self-center shrink-0" style={{ color: "#9B2C2C" }}>ไปตรวจ</span>
         </Link>
       )}
 
@@ -211,50 +219,143 @@ export default async function RentSpaceOverview() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 items-start">
-        {/* plan (keep SiteMap3D) */}
-        <div className="rounded-2xl bg-white overflow-hidden" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
-          <div className="px-5 pt-4 pb-1">
-            <div className="font-semibold text-[15.5px]">ผังโครงการ</div>
-            <div className="text-[12px]" style={{ color: "#9098A4" }}>คลิกห้องเพื่อดูข้อมูล · สลับ 2D / 3D · หมุน + ซูมได้</div>
-          </div>
-          <PlanWithDrawer units={mapUnits} view3dEnabled={project.view3dEnabled} canEdit={canEditPlan} />
-        </div>
+      {/* ผัง + ต้องติดตาม — stream เข้ามาทีหลัง (ดึงรายห้อง) โดยที่ส่วนบนขึ้นแล้ว */}
+      <Suspense fallback={<PlanAttentionSkeleton />}>
+        <PlanAndAttention
+          orgId={orgId}
+          projectId={project.id}
+          view3dEnabled={project.view3dEnabled}
+          canEdit={canEditPlan}
+          billsComplete={billsComplete}
+          total={total}
+          billsDone={billsDone}
+        />
+      </Suspense>
+    </div>
+  );
+}
 
-        {/* attention */}
-        <div className="rounded-2xl bg-white p-5" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
-          <div className="flex items-center gap-2 mb-1">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#E08A00" strokeWidth="1.9"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /></svg>
-            <div className="font-semibold text-[15px]">ต้องติดตาม</div>
-            <span className="ml-auto text-[11.5px] font-semibold px-2 py-0.5 rounded-md" style={{ background: "#FDECEC", color: "#C0322B" }}>{attention.length + (!billsComplete && total > 0 ? 1 : 0)}</span>
-          </div>
-          <p className="text-xs mb-3.5" style={{ color: "#9098A4" }}>เรียงตามความเร่งด่วน</p>
-          <div className="flex flex-col gap-2.5">
-            {!billsComplete && total > 0 && (
-              <Link href="/rentspace/bills" className="flex items-start gap-3 rounded-xl px-3 py-2.5" style={{ background: "#FFF8F8", border: "1px solid #F6D9D9" }}>
-                <span className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-sm" style={{ background: "#FDECEC" }}>🧾</span>
-                <span className="flex-1 min-w-0">
-                  <span className="block font-semibold text-[13px]" style={{ color: "#1F2733" }}>ยังไม่ออกบิลงวดนี้</span>
-                  <span className="block text-xs" style={{ color: "#C0322B" }}>{total - billsDone} ห้องรอออกบิล</span>
-                </span>
-                <span className="text-[11.5px] font-semibold self-center" style={{ color: "#2563EB" }}>วางบิล</span>
-              </Link>
-            )}
-            {attention.map((u) => (
-              <Link key={u.id} href={`/rentspace/units/${u.id}`} className="flex items-start gap-3 rounded-xl px-3 py-2.5" style={{ background: "#fff", border: "1px solid #ECEEF1" }}>
-                <span className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-sm" style={{ background: "#FDECEC" }}>⏰</span>
-                <span className="flex-1 min-w-0">
-                  <span className="block font-semibold text-[13px] truncate" style={{ color: "#1F2733" }}>{u.code} ค้างจ่าย {formatBaht(u.outstanding)}</span>
-                  <span className="block text-xs truncate" style={{ color: "#9098A4" }}>{u.tenant ? tenantDisplayName(u.tenant) : "ว่าง"}</span>
-                </span>
-                <span className="text-[11.5px] font-semibold self-center" style={{ color: "#2563EB" }}>ตามเก็บ</span>
-              </Link>
-            ))}
-            {attention.length === 0 && billsComplete && (
-              <div className="text-center py-6 text-sm" style={{ color: "#A7AEB9" }}>ไม่มีห้องค้างชำระ 🎉</div>
-            )}
-          </div>
+/**
+ * ส่วนผังโครงการ + "ต้องติดตาม" — แยกออกมาเป็น async component ที่ดึง
+ * listUnitsWithState เอง แล้ว stream เข้าหน้าใต้ <Suspense> → KPI/ขั้นตอนด้านบน
+ * ไม่ต้องรอ query รายห้อง (ยิ่งห้องเยอะยิ่งช่วย).
+ */
+async function PlanAndAttention({
+  orgId,
+  projectId,
+  view3dEnabled,
+  canEdit,
+  billsComplete,
+  total,
+  billsDone,
+}: {
+  orgId: string;
+  projectId: string;
+  view3dEnabled: boolean;
+  canEdit: boolean;
+  billsComplete: boolean;
+  total: number;
+  billsDone: number;
+}) {
+  const units = await listUnitsWithState(orgId, projectId);
+
+  const mapUnits = units.map((u) => ({
+    id: u.id,
+    code: u.code,
+    name: u.name,
+    building: u.building,
+    status: u.status as string,
+    baseRentThb: toNum(u.baseRentThb),
+    tenantName: u.tenant ? tenantDisplayName(u.tenant) : null,
+    outstanding: u.outstanding,
+    hasOverdue: u.hasOverdue,
+    endDate: u.contract?.endDate ? new Date(u.contract.endDate).toISOString() : null,
+    mapX: u.mapX != null ? toNum(u.mapX) : null,
+    mapY: u.mapY != null ? toNum(u.mapY) : null,
+    mapW: u.mapW != null ? toNum(u.mapW) : null,
+    mapH: u.mapH != null ? toNum(u.mapH) : null,
+  }));
+
+  const attention = units
+    .filter((u) => u.hasOverdue || u.outstanding > 0)
+    .sort((a, b) => b.outstanding - a.outstanding)
+    .slice(0, 6);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 items-start">
+      {/* plan (keep SiteMap3D) */}
+      <div className="rounded-2xl bg-white overflow-hidden" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
+        <div className="px-5 pt-4 pb-1">
+          <div className="font-semibold text-[15.5px]">ผังโครงการ</div>
+          <div className="text-[12px]" style={{ color: "#9098A4" }}>คลิกห้องเพื่อดูข้อมูล · สลับ 2D / 3D · หมุน + ซูมได้</div>
         </div>
+        <PlanWithDrawer units={mapUnits} view3dEnabled={view3dEnabled} canEdit={canEdit} />
+      </div>
+
+      {/* attention */}
+      <div className="rounded-2xl bg-white p-5" style={{ border: "1px solid #E9EBEF", boxShadow: "0 1px 2px rgba(16,23,41,.04)" }}>
+        <div className="flex items-center gap-2 mb-1">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#E08A00" strokeWidth="1.9"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /></svg>
+          <div className="font-semibold text-[15px]">ต้องติดตาม</div>
+          <span className="ml-auto text-[11.5px] font-semibold px-2 py-0.5 rounded-md" style={{ background: "#FDECEC", color: "#C0322B" }}>{attention.length + (!billsComplete && total > 0 ? 1 : 0)}</span>
+        </div>
+        <p className="text-xs mb-3.5" style={{ color: "#9098A4" }}>เรียงตามความเร่งด่วน</p>
+        <div className="flex flex-col gap-2.5">
+          {!billsComplete && total > 0 && (
+            <Link href="/rentspace/bills" className="flex items-start gap-3 rounded-xl px-3 py-2.5" style={{ background: "#FFF8F8", border: "1px solid #F6D9D9" }}>
+              <span className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-sm" style={{ background: "#FDECEC" }}>🧾</span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-[13px]" style={{ color: "#1F2733" }}>ยังไม่ออกบิลงวดนี้</span>
+                <span className="block text-xs" style={{ color: "#C0322B" }}>{total - billsDone} ห้องรอออกบิล</span>
+              </span>
+              <span className="text-[11.5px] font-semibold self-center" style={{ color: "#2563EB" }}>วางบิล</span>
+            </Link>
+          )}
+          {attention.map((u) => (
+            <Link key={u.id} href={`/rentspace/units/${u.id}`} className="flex items-start gap-3 rounded-xl px-3 py-2.5" style={{ background: "#fff", border: "1px solid #ECEEF1" }}>
+              <span className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-sm" style={{ background: "#FDECEC" }}>⏰</span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-[13px] truncate" style={{ color: "#1F2733" }}>{u.code} ค้างจ่าย {formatBaht(u.outstanding)}</span>
+                <span className="block text-xs truncate" style={{ color: "#9098A4" }}>{u.tenant ? tenantDisplayName(u.tenant) : "ว่าง"}</span>
+              </span>
+              <span className="text-[11.5px] font-semibold self-center" style={{ color: "#2563EB" }}>ตามเก็บ</span>
+            </Link>
+          ))}
+          {attention.length === 0 && billsComplete && (
+            <div className="text-center py-6 text-sm" style={{ color: "#A7AEB9" }}>ไม่มีห้องค้างชำระ 🎉</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** โครงผัง + ต้องติดตาม (โผล่ทันทีระหว่าง stream ส่วนที่ดึงรายห้อง) */
+function PlanAttentionSkeleton() {
+  const bar = (w: string | number, h: number) => (
+    <div className="animate-pulse" style={{ width: w, height: h, borderRadius: 6, background: "#EBEEF3" }} />
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 items-start">
+      <div className="rounded-2xl bg-white overflow-hidden" style={{ border: "1px solid #E9EBEF" }}>
+        <div className="px-5 pt-4 pb-3 space-y-2">
+          {bar(120, 15)}
+          {bar(220, 11)}
+        </div>
+        <div className="animate-pulse" style={{ height: 300, background: "#F1F3F7" }} />
+      </div>
+      <div className="rounded-2xl bg-white p-5 space-y-3" style={{ border: "1px solid #E9EBEF" }}>
+        {bar(110, 15)}
+        {bar(90, 10)}
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ border: "1px solid #ECEEF1" }}>
+            <div className="w-[30px] h-[30px] rounded-lg" style={{ background: "#EBEEF3" }} />
+            <div className="flex-1 space-y-1.5">
+              {bar("70%", 12)}
+              {bar("45%", 9)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

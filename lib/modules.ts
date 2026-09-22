@@ -528,6 +528,12 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/clawfleet/os/collections", label: "ตรวจเงิน & กระทบยอด", icon: Activity, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
+      // ฝากเงิน — เดิมหน้านี้ไม่มีเมนู เข้าได้ทางเดียวคือพิมพ์ URL เอง หรือผ่านแบนเนอร์บนแดชบอร์ด
+      // ที่โผล่เฉพาะตอนมีเงินค้างมือ (ประตูปิดตัวเองเมื่อสาขาฝากครบ) → ห่วงโซ่เงินขาดตรงนี้.
+      // roles รวม staff เหมือน /chairops/deposits (คนถือเงินต้องบันทึกฝากเองได้) · mirror
+      // components/clawfleet/os/nav.tsx::BACK_NAV "deposits" ที่ตั้งใจไว้แต่ไม่เคยถูกเรนเดอร์.
+      { href: "/clawfleet/os/deposits", label: "ฝากเงิน", icon: Wallet, section: "หลังบ้าน",
+        roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager", "staff"] },
       { href: "/clawfleet/os/config", label: "ตั้งค่าตู้", icon: SlidersHorizontal, section: "หลังบ้าน",
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"] },
       { href: "/clawfleet/os/matrix", label: "รายงานเจาะสาขา", icon: Grid3x3, section: "หลังบ้าน",

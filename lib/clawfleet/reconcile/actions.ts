@@ -102,7 +102,9 @@ export async function setClawfleetReconcileAccount(input: unknown): Promise<Resu
 
 const SendSchema = z.object({ branchId: zUUID() });
 
-/** ส่งยอดฝากของสาขา (ที่ผ่านตรวจแล้ว) เข้า LedgerLine bank-recon — กดซ้ำได้ ระบบข้ามที่ส่งแล้วเอง */
+/** ส่งยอดฝากของสาขาเข้า LedgerLine bank-recon — กดซ้ำได้ ระบบข้ามที่ส่งแล้วเอง
+ *  ⚠️ ส่ง **ทุกใบที่ยังไม่ถูกตีกลับ** รวมใบติดธงที่ยังไม่มีใครตรวจ (CEO 2026-09-22:
+ *  เงินต้องไหลก่อน ตรวจทีหลัง) — ดู LEDGER_ELIGIBLE_APPROVAL ใน ./ledger-push.ts */
 export async function sendClawfleetDepositsToReconcile(input: unknown): Promise<ResultOf<PushResult>> {
   const parsed = SendSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "ข้อมูลไม่ถูกต้อง" };

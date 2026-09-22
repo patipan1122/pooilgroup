@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 
 const SENTINELS = new Set(["sent", "error", "pending", ""]);
 const AMOUNT_TOLERANCE = 1; // ±1 บาท (กันเศษสตางค์ปัดของ TRCloud)
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000; // ไทยไม่มี DST → UTC+7 คงที่เสมอ
 
 export type ReconcileRow = {
   expenseId: string;
@@ -25,16 +26,44 @@ export type ReconcileRow = {
 };
 
 export type TrcloudReconcileData = {
+  // all-time เสมอ — ไม่ขึ้นกับช่วงเดือนที่เลือกดูตาราง (CEO: "ไม่มีทางตกหล่น")
   summary: { matched: number; mismatch: number; missing: number; totalPushed: number };
+  // กรองตามช่วงเดือนที่เลือก (periodFrom–periodTo) แล้ว slice แสดงผลไม่เกิน LIST_LIMIT
   mismatches: ReconcileRow[];
   missing: ReconcileRow[];
+  // จำนวนจริงในช่วงที่เลือก (ก่อน slice) — ใช้โชว์หัวตาราง + เช็คว่าโดนตัดไหม
+  mismatchCountInRange: number;
+  missingCountInRange: number;
   lastSyncedAt: string | null;
   snapshotCount: number;
 };
 
 const LIST_LIMIT = 200;
 
-export async function getTrcloudReconcile(orgId: string): Promise<TrcloudReconcileData> {
+/**
+ * แปลงช่วงเดือน "YYYY-MM" (from → to) เป็นขอบเขตเวลาแบบ UTC instant นับเป็นเวลาไทย
+ * เช่น "2026-09"→"2026-09" = ตั้งแต่ 2026-09-01 00:00 ไทย (=2026-08-31T17:00:00Z)
+ * ถึงก่อน 2026-10-01 00:00 ไทย (exclusive) — กันบั๊กตัดเที่ยงคืน-ตี6 ผิดช่วงแบบ UTC ดิบ
+ */
+function monthRangeToUtcBounds(periodFrom: string, periodTo: string): { start: Date; endExclusive: Date } {
+  const [fy, fm] = periodFrom.split("-").map(Number);
+  const [ty, tm] = periodTo.split("-").map(Number);
+  const start = new Date(Date.UTC(fy, (fm || 1) - 1, 1, 0, 0, 0, 0) - BANGKOK_OFFSET_MS);
+  const endExclusive = new Date(Date.UTC(ty, tm || 1, 1, 0, 0, 0, 0) - BANGKOK_OFFSET_MS);
+  return { start, endExclusive };
+}
+
+function isInRange(iso: string | null, start: Date, endExclusive: Date): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return t >= start.getTime() && t < endExclusive.getTime();
+}
+
+export async function getTrcloudReconcile(
+  orgId: string,
+  periodFrom: string,
+  periodTo: string,
+): Promise<TrcloudReconcileData> {
   const [pushed, snapshot, lastSync] = await Promise.all([
     prisma.ledgerExpense.findMany({
       where: { orgId, trcloudPushedAt: { not: null }, status: { not: "void" } },
@@ -96,10 +125,19 @@ export async function getTrcloudReconcile(orgId: string): Promise<TrcloudReconci
     }
   }
 
+  // ⚠️ summary ด้านบนต้องมาจาก mismatches/missing/pushed แบบเต็ม (all-time) เท่านั้น — ห้ามคำนวณจากที่กรองช่วงเดือนแล้ว
+  // ตารางรายละเอียดถึงค่อยกรองตามช่วงเดือนที่เลือก (ใช้ trcloudPushedAt ทุกแถว — เป็น field เดียวที่มีครบทั้ง mismatch/missing
+  // เพราะ missing ไม่มี snapshot ที่จับคู่ได้เลยจึงไม่มี issueDate ของ TRCloud ให้ใช้)
+  const { start, endExclusive } = monthRangeToUtcBounds(periodFrom, periodTo);
+  const mismatchesInRange = mismatches.filter((r) => isInRange(r.pushedAt, start, endExclusive));
+  const missingInRange = missing.filter((r) => isInRange(r.pushedAt, start, endExclusive));
+
   return {
     summary: { matched, mismatch: mismatches.length, missing: missing.length, totalPushed: pushed.length },
-    mismatches: mismatches.slice(0, LIST_LIMIT),
-    missing: missing.slice(0, LIST_LIMIT),
+    mismatches: mismatchesInRange.slice(0, LIST_LIMIT),
+    missing: missingInRange.slice(0, LIST_LIMIT),
+    mismatchCountInRange: mismatchesInRange.length,
+    missingCountInRange: missingInRange.length,
     lastSyncedAt: lastSync._max.syncedAt ? lastSync._max.syncedAt.toISOString() : null,
     snapshotCount: snapshot.length,
   };

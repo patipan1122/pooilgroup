@@ -39,6 +39,7 @@ export async function tenantRentSummary(
       projectId,
       period: { gte: fromPeriod, lte: toPeriod },
       status: { notIn: ["void", "draft"] },
+      deletedAt: null,
     },
     include: {
       unit: { select: { id: true, code: true, name: true, matrixSortOrder: true, sortOrder: true } },

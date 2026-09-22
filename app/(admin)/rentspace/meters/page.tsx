@@ -91,7 +91,7 @@ export default async function MetersPage({
   const [rawUnits, billedUnitRows] = await Promise.all([
     meterBoard(orgId, project.id, period),
     prisma.rentalBill.findMany({
-      where: { orgId, projectId: project.id, period, status: { not: "void" } },
+      where: { orgId, projectId: project.id, period, status: { not: "void" }, deletedAt: null },
       select: { unitId: true },
     }),
   ]);

@@ -25,6 +25,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/chairops/auth/session";
@@ -948,7 +949,11 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     // Step A: bulk-create new chairs. Re-fetch IDs via findMany since
     // createMany doesn't return rows; one extra query but worth it.
     if (plannedNewChairs.length > 0) {
-      await tx.chairopsChair.createMany({ data: plannedNewChairs });
+      // 2026-09-20 bigsolvebug P2 fix: (orgId, chairCode) is unique — a
+      // concurrent import of an overlapping file used to throw P2002 here
+      // and roll back the whole commit instead of gracefully skipping the
+      // row that already landed.
+      await tx.chairopsChair.createMany({ data: plannedNewChairs, skipDuplicates: true });
       const fresh = await tx.chairopsChair.findMany({
         where: {
           orgId,
@@ -1056,8 +1061,13 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     }
 
     // 2026-06-01 perf: bulk insert for new rows (1 query instead of N).
+    // 2026-09-20 bigsolvebug P2 fix: (orgId, branchId, chairCode, bizDate) is
+    // unique — a race between this commit and a concurrent import (e.g. the
+    // gmail-import cron firing mid-manual-upload) used to throw P2002 and
+    // roll back the entire commit instead of skipping the row that already
+    // landed via the other path.
     if (newDailyData.length > 0) {
-      await tx.chairopsPosDaily.createMany({ data: newDailyData });
+      await tx.chairopsPosDaily.createMany({ data: newDailyData, skipDuplicates: true });
     }
     // Existing rows still need per-row updates (Prisma has no native
     // updateMany-with-different-data), but they don't carry the audit-log
@@ -1148,7 +1158,12 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
         }
       }
       if (aggCreates.length > 0) {
-        await tx.chairopsBranchDailyRevenue.createMany({ data: aggCreates });
+        // 2026-09-20 bigsolvebug P2 fix: (orgId, branchId, bizDate) is
+        // unique — same race-safety reasoning as the PosDaily createMany above.
+        await tx.chairopsBranchDailyRevenue.createMany({
+          data: aggCreates,
+          skipDuplicates: true,
+        });
       }
       if (aggUpdates.length > 0) {
         await Promise.all(
@@ -1178,16 +1193,31 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
     ) {
       return { ok: false, error: "import นี้ถูก commit ไปแล้ว · รีเฟรชหน้า" };
     }
-    throw err;
+    // 2026-09-20 bigsolvebug P2 fix: this used to re-throw the raw error,
+    // which propagated to the route's error.tsx boundary and rendered
+    // `error.message` directly (could leak a raw Postgres/Prisma message to
+    // OFFICE-tier staff) while also losing the commit checklist/elapsed-time
+    // UI state. The $transaction is all-or-nothing, so nothing was written —
+    // return a safe generic message instead and log the real one server-side.
+    console.error("[pos-ingest commit] transaction failed", err);
+    return {
+      ok: false,
+      error: "commit ไม่สำเร็จ (ยังไม่มีข้อมูลถูกบันทึก) · ลองอีกครั้ง ถ้ายังพังแจ้งทีมเทค",
+    };
   }
 
   // 2026-06-01 perf: drift recompute + alerts are O(branches × days) and
-  // can take 10-30 s. Fire-and-forget so the commit returns to the CEO
-  // as soon as the writes settle; drift values catch up within seconds
-  // on subsequent page loads. 2026-06-01 audit P1 (SRE): swallowed errors
-  // here are invisible — wrap each in its own catch that logs to console
-  // and the audit log so Sentry/Logflare picks it up.
-  void Promise.allSettled([
+  // can take 10-30 s, so the commit returns to the caller before this
+  // finishes. 2026-09-20 bigsolvebug P0 fix: this used to be a bare
+  // `void Promise.allSettled(...)` — on Vercel's serverless runtime,
+  // un-awaited work has no guarantee it survives after the response is
+  // sent, so drift/alerts could silently never update. `after()` keeps
+  // the function instance alive until this settles while still letting
+  // the HTTP response return immediately (same pattern already used in
+  // app/(admin)/ledger/_actions.ts). Errors are still caught per-task so
+  // one failure can't take down the others.
+  after(() =>
+    Promise.allSettled([
     // 2026-07-04 · self-heal branch_daily_revenue from ChairopsPosDaily BEFORE
     // recomputing drift, so an importer storeName mismatch can never leave the
     // ledger/drift reading an incomplete branch rollup (see the Apr–Jun gap).
@@ -1243,7 +1273,8 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
         console.error("[pos-ingest commit] auto-resolve failed:", msg);
       }
     })(),
-  ]);
+    ]),
+  );
 
   await writeAudit({
     userId: session.user.id,
@@ -1267,6 +1298,10 @@ export async function commitImport(importId: string): Promise<CommitImportSucces
   revalidatePath("/chairops/pos-ingest");
   revalidatePath("/chairops/reconcile");
   revalidatePath("/chairops/alerts");
+  // 2026-09-20 bigsolvebug: dashboard + branches list both read ChairopsDrift
+  // for the same shortage numbers this commit changes — were never busted here.
+  revalidatePath("/chairops");
+  revalidatePath("/chairops/branches");
 
   return {
     ok: true,

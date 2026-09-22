@@ -58,7 +58,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
 
   // บิลค้างของสัญญานี้ — ให้ "หัก/ริบเงินประกัน" เลือกตัดยอดบิลได้ (CEO 2026-08-09)
   const unpaidBillRows = await prisma.rentalBill.findMany({
-    where: { contractId: contract.id, orgId: session.user.org_id, status: { in: ["issued", "partial", "overdue"] } },
+    where: { contractId: contract.id, orgId: session.user.org_id, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
     select: { id: true, billNo: true, period: true, totalAmount: true, paidAmount: true },
     orderBy: { period: "asc" },
   });

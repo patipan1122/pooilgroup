@@ -4,11 +4,29 @@
 import { prisma } from "@/lib/prisma";
 import { prevPeriod, toNum } from "@/lib/rentspace/format";
 import { round2, computeBillTotals } from "@/lib/rentspace/bill-math";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import type {
+  Prisma,
+  RentalMeterReading,
+  RentalBill,
+  RentalRecurringCharge,
+} from "@/lib/generated/prisma/client";
 
 type Contract = Prisma.RentalContractGetPayload<{ include: { project: true; unit: true } }>;
 
 export type RentScheduleEntry = { fromPeriod: string; amount: number };
+
+/**
+ * ทุก DB read ที่ buildBill ต้องใช้ต่อสัญญา (มิเตอร์งวดนี้ · บิลค้างงวดก่อน ·
+ * ค่าประจำที่ใช้กับห้องนี้). ดึงล่วงหน้าเป็นชุดด้วย prefetchBillInputs() แล้วส่ง
+ * เข้า buildBill(c, period, pre) → loop พรีวิวไม่ต้องยิง DB รายแถว.
+ * (upspeed 2026-07-22 — เคยเพิ่มไว้แล้วบน branch ที่ไม่เคย merge เข้า setup จึงหายไป
+ * กู้กลับมาใหม่ 2026-09-22, ปรับให้เข้ากับ moveOut-proration ที่เพิ่มเข้ามาทีหลัง)
+ */
+export type BillInputs = {
+  readings: RentalMeterReading[];
+  prior: RentalBill | null;
+  recurring: RentalRecurringCharge[];
+};
 
 // round2 + computeBillTotals ย้ายไป lib/rentspace/bill-math.ts (prisma-free · client
 // เรียกร่วมได้) — re-export ตรงนี้เพื่อให้โค้ดเดิมที่ import จาก billing.ts ใช้ได้เหมือนเดิม.
@@ -135,7 +153,7 @@ export function effectiveRent(contract: Contract, period: string): number {
 async function nextBillNo(orgId: string, period: string): Promise<string> {
   const prefix = `INV${period.replace("-", "")}`;
   const last = await prisma.rentalBill.findFirst({
-    where: { orgId, billNo: { startsWith: prefix } },
+    where: { orgId, billNo: { startsWith: prefix }, deletedAt: null },
     orderBy: { billNo: "desc" },
     select: { billNo: true },
   });
@@ -147,7 +165,7 @@ async function nextBillNo(orgId: string, period: string): Promise<string> {
 async function nextTaxInvoiceNo(orgId: string, year: number): Promise<string> {
   const prefix = `TX${year}`;
   const last = await prisma.rentalBill.findFirst({
-    where: { orgId, taxInvoiceNo: { startsWith: prefix } },
+    where: { orgId, taxInvoiceNo: { startsWith: prefix }, deletedAt: null },
     orderBy: { taxInvoiceNo: "desc" },
     select: { taxInvoiceNo: true },
   });
@@ -166,7 +184,7 @@ export async function issueTaxInvoice(
   actorId: string | null,
 ): Promise<{ taxInvoiceNo: string; issuedAt: Date; alreadyIssued: boolean }> {
   const existing = await prisma.rentalBill.findUnique({
-    where: { id: billId },
+    where: { id: billId, deletedAt: null },
     select: { orgId: true, status: true, taxInvoiceNo: true, taxInvoiceIssuedAt: true },
   });
   if (!existing) throw new Error("ไม่พบบิล");
@@ -177,7 +195,7 @@ export async function issueTaxInvoice(
 
   // วันที่พิมพ์บนใบกำกับ = วันที่จ่ายงวดล่าสุด (ที่ยืนยันแล้ว) ของบิลนี้ — ไม่ใช่วันที่กดปุ่ม
   const lastPayment = await prisma.rentalPayment.aggregate({
-    where: { billId, status: "confirmed" },
+    where: { billId, status: "confirmed", deletedAt: null },
     _max: { paidOn: true },
   });
   const taxInvoiceDate = lastPayment._max.paidOn ?? new Date(); // ไม่ควรเกิด (บิลจ่ายครบต้องมีรายการจ่าย) แต่กันพังไว้
@@ -195,7 +213,7 @@ export async function issueTaxInvoice(
       if (result.count === 0) {
         // แพ้ race ให้อีกคำขอ (บิลนี้มีเลขแล้ว) → คืนเลขจริงกลับไป ไม่ throw
         const row = await prisma.rentalBill.findUnique({
-          where: { id: billId },
+          where: { id: billId, deletedAt: null },
           select: { taxInvoiceNo: true, taxInvoiceIssuedAt: true },
         });
         if (row?.taxInvoiceNo) return { taxInvoiceNo: row.taxInvoiceNo, issuedAt: row.taxInvoiceIssuedAt!, alreadyIssued: true };
@@ -249,7 +267,11 @@ function periodOf(d: Date): string {
 }
 
 /** Compute amounts + line items for one contract+period (reads meters + prior bill). */
-export async function buildBill(contract: Contract, period: string): Promise<BuiltBill> {
+export async function buildBill(
+  contract: Contract,
+  period: string,
+  pre?: BillInputs,
+): Promise<BuiltBill> {
   const notes: string[] = [];
   const items: BuiltBill["items"] = [];
   const vatPercent = toNum(contract.vatPercent);
@@ -257,9 +279,15 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   const vcfg = vatableConfig(contract);
 
   // 1) rent — prorate the FIRST month by move-in date (เข้าอยู่กลางเดือน คิดตามวันจริง)
+  //    + prorate the LAST month by move-out date (audit finding QA P1: RentalContract.moveOutDate
+  //    ถูกบันทึกไว้ตอนเลิกสัญญา แต่ billing engine ไม่เคยอ่านเลย → ผู้เช่าที่ย้ายออกกลางเดือนโดน
+  //    เรียกเก็บค่าเช่าเต็มเดือนผิด). ไม่แตะค่าไฟ/น้ำ — คิดตามมิเตอร์จริงอยู่แล้ว ไม่ใช่ตามเวลา.
   const fullRent = effectiveRent(contract, period);
   const moveInPeriod = periodOf(new Date(contract.startDate));
   const startDay = new Date(contract.startDate).getUTCDate();
+  const moveOutDate = contract.moveOutDate ? new Date(contract.moveOutDate) : null;
+  const moveOutPeriod = moveOutDate ? periodOf(moveOutDate) : null;
+  const moveOutDay = moveOutDate ? moveOutDate.getUTCDate() : null;
   let rentAmount = fullRent;
   let rentLabel = "ค่าเช่า";
   // F1: งวดก่อน "เดือนเริ่มสัญญา" ไม่คิดค่าเช่า (กันออกบิลค่าเช่าเต็มเดือนก่อนสัญญาเริ่มจริง)
@@ -267,6 +295,25 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
     rentAmount = 0;
     rentLabel = "ค่าเช่า (งวดก่อนเริ่มสัญญา — ไม่คิด)";
     notes.push("งวดนี้อยู่ก่อนวันเริ่มสัญญา จึงไม่คิดค่าเช่า");
+  } else if (moveOutPeriod && period === moveOutPeriod && moveOutDay != null) {
+    // ย้ายออกกลางงวดนี้ — คิดค่าเช่าตามสัดส่วนวันที่อยู่จริงถึงวันย้ายออก (inclusive).
+    // ถ้าเดือนเดียวกับเดือนเริ่มสัญญาด้วย (สัญญาสั้นในเดือนเดียว) ใช้วันเริ่มจริงเป็นจุดเริ่ม แทนวันที่ 1.
+    const dim = daysInPeriod(period);
+    const effectiveStartDay = period === moveInPeriod && startDay > 1 ? startDay : 1;
+    const daysOccupied = Math.max(0, Math.min(moveOutDay - effectiveStartDay + 1, dim));
+    rentAmount = round2((fullRent * daysOccupied) / dim);
+    const [, mm] = period.split("-");
+    rentLabel =
+      `ค่าเช่า (ย้ายออก ${moveOutDay}/${mm}` +
+      (effectiveStartDay > 1 ? ` · เข้าอยู่ ${effectiveStartDay}/${mm}` : "") +
+      ` · ${daysOccupied}/${dim} วัน) (ตามสัดส่วนวันที่อยู่จริง)`;
+    notes.push(`เดือนนี้ย้ายออกกลางเดือน คิดค่าเช่าตามสัดส่วนวันที่อยู่จริง (${daysOccupied}/${dim} วัน)`);
+  } else if (moveOutPeriod && period > moveOutPeriod) {
+    // งวดหลังเดือนย้ายออก — ไม่ควรเกิดในทางปกติ (สัญญาที่ยุติแล้วไม่ควรถูกออกบิลต่อ) แต่กันพังไว้
+    // สมมาตรกับ F1 ด้านบน (งวดก่อนเริ่มสัญญา)
+    rentAmount = 0;
+    rentLabel = "ค่าเช่า (งวดหลังย้ายออก — ไม่คิด)";
+    notes.push("งวดนี้อยู่หลังวันย้ายออกแล้ว จึงไม่คิดค่าเช่า");
   } else if (period === moveInPeriod && startDay > 1) {
     const dim = daysInPeriod(period);
     const daysOccupied = dim - startDay + 1;
@@ -286,9 +333,11 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   });
 
   // 2) electric + water from meter readings of this period
-  const readings = await prisma.rentalMeterReading.findMany({
-    where: { unitId: contract.unitId, period },
-  });
+  const readings = pre
+    ? pre.readings
+    : await prisma.rentalMeterReading.findMany({
+        where: { unitId: contract.unitId, period },
+      });
   const elec = readings.find((r) => r.kind === "electric");
   const water = readings.find((r) => r.kind === "water");
   const electricAmount = elec ? toNum(elec.amountThb) : 0;
@@ -318,13 +367,16 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
 
   // 3) late fee from prior unpaid bill
   let lateFeeAmount = 0;
-  const prior = await prisma.rentalBill.findFirst({
-    where: {
-      contractId: contract.id,
-      period: prevPeriod(period),
-      status: { in: ["issued", "partial", "overdue"] },
-    },
-  });
+  const prior = pre
+    ? pre.prior
+    : await prisma.rentalBill.findFirst({
+        where: {
+          contractId: contract.id,
+          period: prevPeriod(period),
+          status: { in: ["issued", "partial", "overdue"] },
+          deletedAt: null,
+        },
+      });
   if (prior) {
     const outstanding = toNum(prior.totalAmount) - toNum(prior.paidAmount);
     if (outstanding > 0 && contract.lateFeeType !== "none") {
@@ -373,19 +425,21 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
   //    ซึ่งจัดการ item แยกต่างหาก ไม่เรียก buildBill ซ้ำ.)
   //    ขอบเขต: contractId=สัญญานี้ (per-contract · กรอกแยกทุกสัญญา) · หรือ contractId=null
   //    ที่เป็น project-wide (unitId=null) / per-unit ห้องนี้ (legacy · ยังใช้ได้)
-  const recurring = await prisma.rentalRecurringCharge.findMany({
-    where: {
-      orgId: contract.orgId, // F8 defense-in-depth: กันข้อมูลข้าม org แม้ projectId จะผูกกับ org อยู่แล้ว
-      projectId: contract.projectId,
-      isActive: true,
-      OR: [
-        { contractId: contract.id },
-        { contractId: null, unitId: null },
-        { contractId: null, unitId: contract.unitId },
-      ],
-    },
-    orderBy: { sort: "asc" },
-  });
+  const recurring = pre
+    ? pre.recurring // pre-filtered per-contract already by prefetchBillInputs()
+    : await prisma.rentalRecurringCharge.findMany({
+        where: {
+          orgId: contract.orgId, // F8 defense-in-depth: กันข้อมูลข้าม org แม้ projectId จะผูกกับ org อยู่แล้ว
+          projectId: contract.projectId,
+          isActive: true,
+          OR: [
+            { contractId: contract.id },
+            { contractId: null, unitId: null },
+            { contractId: null, unitId: contract.unitId },
+          ],
+        },
+        orderBy: { sort: "asc" },
+      });
   let recurSort = 5;
   for (const charge of recurring) {
     const amount = round2(toNum(charge.amountThb));
@@ -412,6 +466,71 @@ export async function buildBill(contract: Contract, period: string): Promise<Bui
 }
 
 /**
+ * ดึงข้อมูลที่ buildBill ต้องใช้ของ "หลายสัญญาในงวดเดียว" ทีเดียวเป็นชุด →
+ * ~3 query รวม แทน 3×N query ต่อเนื่อง. ป้อนผลลง buildBill(c, period, map.get(c.id))
+ * แล้ว loop พรีวิวจะไม่ยิง DB รายแถวเลย.
+ *
+ * ⚠️ อ่านอย่างเดียว · ไม่แตะสูตรเงิน — grouping ใน JS ใช้เงื่อนไข "ใช้กับห้องไหน"
+ * ตัวเดียวกับ query เดิมของ buildBill เป๊ะ (สัญญานี้ · ทั้งโครงการ unitId=null ·
+ * per-unit legacy) → ยอดที่ได้เท่ากับดึงสดทุกประการ. ไม่ filter deletedAt บน prior
+ * bill โดยตั้งใจ — เหมือน buildBill เอง ตอนนี้ "งวดก่อน" ที่ถูก soft-delete แล้ว
+ * ไม่ควรกันค่าปรับล่าช้าอยู่ดี (บิลที่ถูกลบ = ไม่มีอยู่แล้วในทางธุรกิจ).
+ */
+export async function prefetchBillInputs(
+  contracts: Contract[],
+  period: string,
+): Promise<Map<string, BillInputs>> {
+  const map = new Map<string, BillInputs>();
+  if (!contracts.length) return map;
+
+  const orgId = contracts[0].orgId;
+  const projectId = contracts[0].projectId;
+  const unitIds = [...new Set(contracts.map((c) => c.unitId))];
+  const contractIds = contracts.map((c) => c.id);
+  const prev = prevPeriod(period);
+
+  const [readings, priors, charges] = await Promise.all([
+    prisma.rentalMeterReading.findMany({ where: { unitId: { in: unitIds }, period } }),
+    prisma.rentalBill.findMany({
+      where: {
+        contractId: { in: contractIds },
+        period: prev,
+        status: { in: ["issued", "partial", "overdue"] },
+        deletedAt: null,
+      },
+    }),
+    prisma.rentalRecurringCharge.findMany({
+      where: { orgId, projectId, isActive: true },
+      orderBy: { sort: "asc" },
+    }),
+  ]);
+
+  const readingsByUnit = new Map<string, RentalMeterReading[]>();
+  for (const r of readings) {
+    const arr = readingsByUnit.get(r.unitId);
+    if (arr) arr.push(r);
+    else readingsByUnit.set(r.unitId, [r]);
+  }
+  // ≤1 บิลค้างงวดก่อนต่อสัญญา (unique [contractId, period]).
+  const priorByContract = new Map<string, RentalBill>(priors.map((b) => [b.contractId, b]));
+
+  for (const c of contracts) {
+    const recurring = charges.filter(
+      (ch) =>
+        ch.contractId === c.id ||
+        (ch.contractId === null && ch.unitId === null) ||
+        (ch.contractId === null && ch.unitId === c.unitId),
+    );
+    map.set(c.id, {
+      readings: readingsByUnit.get(c.unitId) ?? [],
+      prior: priorByContract.get(c.id) ?? null,
+      recurring,
+    });
+  }
+  return map;
+}
+
+/**
  * Recompute subtotal/vat/total/status from items + approved discounts + payments.
  * รับ `db` (tx client) ได้ → เรียกภายใน prisma.$transaction เดียวกับ create/increment payment
  * เพื่อให้ atomic (กัน Σpayments ≠ paidAmount เมื่อ process ตายกลางทาง · A1/A2).
@@ -421,8 +540,10 @@ export async function recomputeBillTotals(
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<void> {
   const bill = await db.rentalBill.findUnique({
-    where: { id: billId },
-    include: { discounts: true, items: true },
+    where: { id: billId, deletedAt: null },
+    // discounts filtered by deletedAt: a soft-deleted discount must never keep
+    // reducing the bill total in this recompute (money calculation, not just a list)
+    include: { discounts: { where: { deletedAt: null } }, items: true },
   });
   if (!bill) return;
   // discount can never exceed the gross (no negative bills)
@@ -462,7 +583,7 @@ export async function createBillForContract(
   opts: { actorId?: string | null; auto?: boolean; issue?: boolean } = {},
 ): Promise<{ created: boolean; billId: string }> {
   const existing = await prisma.rentalBill.findUnique({
-    where: { contractId_period: { contractId: contract.id, period } },
+    where: { contractId_period: { contractId: contract.id, period }, deletedAt: null },
     select: { id: true, status: true, paidAmount: true },
   });
   // มีบิลที่ยัง "ไม่ถูกยกเลิก" ในงวดนี้แล้ว → คืนใบเดิม (idempotent · กันออกซ้ำ)
@@ -550,7 +671,7 @@ export async function createBillForContract(
         // contract+period clash → another worker created it; return that one
         if (msg.includes("contract_id") || msg.includes("contractId")) {
           const row = await prisma.rentalBill.findUnique({
-            where: { contractId_period: { contractId: contract.id, period } },
+            where: { contractId_period: { contractId: contract.id, period }, deletedAt: null },
             select: { id: true },
           });
           if (row) return { created: false, billId: row.id };

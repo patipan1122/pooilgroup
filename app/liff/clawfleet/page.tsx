@@ -12,6 +12,12 @@ import { listMyRecentRepairTickets, type RepairTicketRow } from "@/lib/clawfleet
 import { getAwaitingSetupMachines } from "@/lib/clawfleet/baseline-queries";
 import { getInboundDeliveries, getInboundDcTransfers, getCfWarehousesForBranch, getReceivedHistory, getCfCounts, type CfReceivedDoc, type CfCountRow } from "@/lib/clawfleet/stock-queries";
 import { getCfRefillAvailability } from "@/lib/clawfleet/stock-source";
+import {
+  getDepositBalanceByBranch,
+  getPendingDeposits,
+  type BranchDepositBalance,
+  type PendingDepositRow,
+} from "@/lib/clawfleet/deposit-queries";
 import type { GroupCollectBranch, CollectSku } from "@/lib/clawfleet/group-data";
 import { StaffAppClient, type StaffHistoryRow, type BranchStockProduct, type InboundDelivery } from "@/app/(admin)/clawfleet/os/app/staff-app-client";
 import "@/app/(admin)/clawfleet/os/clawos.css";
@@ -183,13 +189,18 @@ export default async function ClawfleetLiffPage({
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true,
           photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           session: { select: { isBaseline: true } }, // item 8 · รอบตั้งต้น
-          machine: { select: { code: true, branch: { select: { name: true } } } },
+          machine: { select: { code: true, branch: { select: { id: true, name: true } } } },
         },
         take: 50,
       });
       history = events.map((e) => ({
         code: e.machine.code,
         branch: e.machine.branch.name, // B3 · สาขาของตู้
+        // ⚠️ ต้องมี branchId เสมอ — HistoryPanel กรองประวัติด้วย branchId เทียบกับสาขาที่เลือก
+        //   (staff-app-client.tsx:2741). เดิม LIFF ไม่ส่งมาเลย → r.branchId = undefined ทุกแถว
+        //   → กรองแล้วเหลือศูนย์ → พนักงานบน LINE เห็นหน้าประวัติว่างเปล่าใต้แถบยอดฝาก
+        //   ทั้งที่มีรอบเก็บเงินจริง. ฝั่งเดสก์ท็อปส่งมาตลอด (os/app/page.tsx:319).
+        branchId: e.machine.branch.id,
         date: selectedDate, // B3 · วันที่ไทยของรอบ (YYYY-MM-DD)
         time: e.collectedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }),
         cashBaht: Math.round(e.cashCountedCents / 100),
@@ -222,6 +233,18 @@ export default async function ClawfleetLiffPage({
   //   + F1 onHandByBranch (คลังตอนนี้ต่อสินค้า) + F2 receivedByBranch (ประวัติรับแล้ว)
   const { awaitingSetupIds, branchProducts, inboundByBranch, warehousesByBranch, onHandByBranch, receivedByBranch, countsByBranch } = await loadBigfeatureData(orgId, routeBranches);
 
+  // เวิร์กช็อป 2026-08-29 · ยอด "วันนี้ต้องฝาก"/"สะสมยังไม่ฝาก" + รอบที่ฝากได้ (session picker)
+  //   — mirror app/(admin)/clawfleet/os/app/page.tsx เป๊ะ (ฟังก์ชันเดียวกัน · อาร์กิวเมนต์เดียวกัน).
+  //   ⚠️ เดิม LIFF ไม่เคยส่ง 2 prop นี้ → HistoryPanel fallback เป็น 0 ทุกครั้ง → canDeposit=false
+  //   → ปุ่มฝากเงินบนมือถือ LINE ขึ้น "ไม่มียอดค้างฝาก" ตลอดกาล แม้เงินค้างจริงหลักแสน
+  //   (staff-app-client.tsx:2725-2727, 2837) = สาเหตุหลักที่ไม่มีใบฝากเกิดขึ้นเลยสักใบ.
+  //   สิทธิ์: ทั้งสองฟังก์ชันเรียก requireCfSession() + userBranchIds() ภายในตัวเอง → branch scope
+  //   เท่าเดิมกับเดสก์ท็อป ไม่เปิดกว้างขึ้น · graceful อยู่แล้ว (คืน {}/[] ถ้า query ล้ม).
+  const depositBalanceByBranch: Record<string, BranchDepositBalance> = orgId
+    ? await getDepositBalanceByBranch(routeBranches.map((b) => b.id))
+    : {};
+  const pendingDeposits: PendingDepositRow[] = orgId ? await getPendingDeposits() : [];
+
   return (
     <div className="clawos">
       <StaffAppClient
@@ -244,6 +267,8 @@ export default async function ClawfleetLiffPage({
         receivedByBranch={receivedByBranch}
         countsByBranch={countsByBranch}
         isHistoryAdmin={isHistoryAdmin}
+        depositBalanceByBranch={depositBalanceByBranch}
+        pendingDeposits={pendingDeposits}
       />
     </div>
   );

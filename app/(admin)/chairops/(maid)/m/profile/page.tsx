@@ -19,6 +19,8 @@ export default async function MaidProfilePage() {
       mobilePhone: true,
       emergencyContact: true,
       emergencyPhone: true,
+      emergencyContact2: true,
+      emergencyPhone2: true,
       currentMainEmployer: true,
       idCardNumber: true,
       homeAddress: true,
@@ -67,8 +69,15 @@ export default async function MaidProfilePage() {
             {user.emergencyContact && (
               <Row
                 icon={<Phone className="h-5 w-5 text-zinc-400" />}
-                label="ผู้ติดต่อฉุกเฉิน"
+                label={user.emergencyContact2 ? "ผู้ติดต่อฉุกเฉิน 1" : "ผู้ติดต่อฉุกเฉิน"}
                 value={`${user.emergencyContact}${user.emergencyPhone ? ` · ${user.emergencyPhone}` : ""}`}
+              />
+            )}
+            {user.emergencyContact2 && (
+              <Row
+                icon={<Phone className="h-5 w-5 text-zinc-400" />}
+                label="ผู้ติดต่อฉุกเฉิน 2"
+                value={`${user.emergencyContact2}${user.emergencyPhone2 ? ` · ${user.emergencyPhone2}` : ""}`}
               />
             )}
             {user.currentMainEmployer && (

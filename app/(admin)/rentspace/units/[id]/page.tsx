@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Phone, Gauge, FileText, History } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { getUnitDetail } from "@/lib/rentspace/data";
-import { formatBaht, thaiDateLong, tenantDisplayName, toNum, currentPeriod, periodLabel } from "@/lib/rentspace/format";
+import { formatBaht, thaiDateLong, tenantDisplayName, toNum, currentPeriod, periodLabel, billDisplayStatus } from "@/lib/rentspace/format";
 import { RsPage, RsHeader, RsBadge, RsBackLink, RsCard } from "@/components/rentspace/ui";
 import UnitForm from "../_components/unit-form";
 import { UnitBillAction } from "../_components/unit-bill-action";
@@ -104,6 +104,7 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
             periodLabelText={periodLabel(period)}
             currentBillId={currentBill?.id ?? null}
             currentBillStatus={currentBill?.status ?? null}
+            currentBillDueDate={currentBill?.dueDate ? currentBill.dueDate.toISOString() : null}
           />
         </div>
       </RsCard>
@@ -184,7 +185,7 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
                     <td className="py-1.5 pr-3 text-right tabular-nums">{formatBaht(toNum(b.totalAmount))}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{formatBaht(toNum(b.paidAmount))}</td>
                     <td className="py-1.5 pr-3">
-                      <RsBadge kind="bill" status={b.status} />
+                      <RsBadge kind="bill" status={billDisplayStatus(b).key} />
                     </td>
                     <td className="py-1.5 pr-3">
                       <Link

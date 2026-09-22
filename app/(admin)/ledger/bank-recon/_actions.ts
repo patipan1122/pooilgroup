@@ -1806,13 +1806,24 @@ export async function listRevenueForManageAction(params: {
 export async function deleteRevenueEntryAction(revenueId: string): Promise<{ ok: boolean; error?: string }> {
   const session = await requireRole("super_admin", "org_admin", "admin", "program_admin");
   const orgId = session.user.org_id;
-  // can't delete if already matched or sitting in an active group
-  const guard = await prisma.$queryRaw<{ matched: boolean; inGroup: boolean }[]>`
+  // can't delete if already matched, sitting in an active group, or claimed by a 1:1 match.
+  // `inMatch` closes a gap the first two miss: suggestMatchesAction (fired after every statement
+  // import, :817) writes ledger_bank_match(matched_revenue_id, status='suggested') and updates only
+  // ledger_bank_txn.match_state — it does NOT touch ledger_revenue_entry.match_state and creates no
+  // match item. Between import and confirmMatchAction (:947) an entry is mid-reconciliation yet
+  // invisible to both older clauses. No FK points at ledger_revenue_entry (verified against prod),
+  // so deleting here silently orphans ledger_bank_match.matched_revenue_id and lets the bank txn be
+  // confirmed against a row that no longer exists.
+  const guard = await prisma.$queryRaw<{ matched: boolean; inGroup: boolean; inMatch: boolean }[]>`
     SELECT (r.match_state='matched') as matched,
-           EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id=r.id) as "inGroup"
+           EXISTS (SELECT 1 FROM ledger_bank_match_item mi WHERE mi.book_type='revenue' AND mi.book_id=r.id) as "inGroup",
+           EXISTS (SELECT 1 FROM ledger_bank_match m WHERE m.matched_revenue_id=r.id
+                     AND m.status IN ('suggested','confirmed')) as "inMatch"
     FROM ledger_revenue_entry r WHERE r.id=${revenueId}::uuid AND r.org_id=${orgId}::uuid LIMIT 1`;
   if (!guard.length) return { ok: false, error: "ไม่พบรายการ" };
-  if (guard[0].matched || guard[0].inGroup) return { ok: false, error: "รายการนี้กระทบยอดแล้ว ลบไม่ได้" };
+  if (guard[0].matched || guard[0].inGroup || guard[0].inMatch) {
+    return { ok: false, error: "รายการนี้กระทบยอดแล้ว ลบไม่ได้" };
+  }
   await prisma.$executeRaw`DELETE FROM ledger_revenue_entry WHERE id=${revenueId}::uuid AND org_id=${orgId}::uuid`;
   return { ok: true };
 }

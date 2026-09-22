@@ -75,6 +75,38 @@ export const BILL_STATUS: Record<string, { label: string; color: string; soft: s
   void: { label: "ยกเลิก", color: "var(--rs-text-3)", soft: "var(--rs-bg-3)" },
 };
 
+// สถานะที่แปลว่า "ยังค้างเงินอยู่" (ยังไม่ paid/void/draft) — บิลที่เลยกำหนดชำระในกลุ่มนี้
+// เท่านั้นที่นับเป็น "เกินกำหนด" ได้
+const BILL_OUTSTANDING_STATUSES = ["issued", "partial", "overdue"];
+
+/**
+ * สถานะบิลที่ "ควรโชว์จริง" ให้คนดู (canonical — ใช้แทนทุกจุดที่เคย derive เอง).
+ *
+ * ทำไมต้องมีฟังก์ชันนี้: คอลัมน์ `status` ใน DB ไม่ใช่ source of truth ที่เชื่อถือได้
+ * 100% สำหรับ "เกินกำหนด" — `recomputeBillTotals()` (lib/rentspace/billing.ts) จะ
+ * อัปเดต status เป็น "overdue" ก็ต่อเมื่อมี action เขียนบิลนั้น (เช่น รับชำระ/แก้บิล)
+ * เท่านั้น ถ้าไม่มีใครแตะบิลเลยหลังวันครบกำหนด DB จะค้างเป็น "issued"/"partial" ต่อไป
+ * เรื่อยๆ. ฟังก์ชันนี้คำนวณ "เกินกำหนด" จาก dueDate สดทุกครั้งตอนแสดงผล (ไม่พึ่ง DB
+ * status เพียงอย่างเดียว) เพื่อให้บิลใบเดียวกันไม่โชว์คนละสถานะกันคนละหน้า
+ * (เดิม 6+ จุดต่าง derive เอง — บาง จุดอ่าน status ดิบตรงๆ เลยโชว์ "ออกบิลแล้ว"/
+ * "จ่ายบางส่วน" ทั้งที่อีกหน้าที่คำนวณถูกโชว์ "เกินกำหนด" สำหรับบิลใบเดียวกัน).
+ *
+ * Logic ยึดตาม isOverdue()/displayStatus เดิมใน app/(admin)/rentspace/bills/page.tsx
+ * (implementation ที่ครบสุด — ใช้เลี้ยงทั้งตารางบิลหลักอยู่แล้ว).
+ */
+export function billDisplayStatus(b: {
+  status: string;
+  dueDate: Date | string | null;
+}): { key: string; label: string; color: string; soft: string } {
+  const due = b.dueDate ? new Date(b.dueDate) : null;
+  const overdue =
+    b.status === "overdue" ||
+    (due !== null && BILL_OUTSTANDING_STATUSES.includes(b.status) && due.getTime() < Date.now());
+  const key = overdue && b.status !== "void" ? "overdue" : b.status;
+  const tone = BILL_STATUS[key] ?? BILL_STATUS.issued;
+  return { key, ...tone };
+}
+
 export const DISCOUNT_STATUS: Record<string, { label: string; color: string; soft: string }> = {
   pending: { label: "รออนุมัติ", color: "var(--rs-pending)", soft: "var(--rs-pending-soft)" },
   approved: { label: "อนุมัติแล้ว", color: "var(--rs-ok)", soft: "var(--rs-ok-soft)" },

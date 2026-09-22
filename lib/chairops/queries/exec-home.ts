@@ -60,7 +60,7 @@ function bangkokYmd(d: Date): string {
 }
 
 /** Current hour (0–23) in Asia/Bangkok regardless of server TZ. */
-function bangkokHour(d: Date): number {
+export function bangkokHour(d: Date): number {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",

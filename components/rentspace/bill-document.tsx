@@ -6,7 +6,7 @@
 // CEO 2026-08-12: ตัดช่องเซ็นรับรอง (ลายเซ็นประ) ออกจากเอกสารทุกใบ — ไม่ใช้.
 
 import { Zap, Droplet, Landmark } from "lucide-react";
-import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel, bahtText } from "@/lib/rentspace/format";
+import { formatBaht, thaiDateLong, toNum, tenantDisplayName, periodLabel, bahtText, billDisplayStatus } from "@/lib/rentspace/format";
 
 const ITEM_KIND_LABELS: Record<string, string> = {
   rent: "ค่าเช่า",
@@ -196,9 +196,12 @@ export function BillDocument({
   const isPaid = remaining <= 0 && !isVoid;
   const headline = docTitle ?? (bill.taxInvoiceNo ? "ใบกำกับภาษี / ใบเสร็จรับเงิน" : isPaid ? "ใบเสร็จรับเงิน" : "ใบแจ้งหนี้");
   const headlineEn = docTitle ? "BILLING NOTE" : bill.taxInvoiceNo ? "TAX INVOICE" : isPaid ? "RECEIPT" : "INVOICE";
-  const statusLabel = isVoid ? "ยกเลิก" : isPaid ? "ชำระแล้ว" : "ค้างชำระ";
-  const statusTone = isVoid ? "var(--rs-text-3)" : isPaid ? "var(--rs-ok)" : "var(--rs-danger)";
-  const statusBg = isVoid ? "var(--rs-bg-3)" : isPaid ? "var(--rs-ok-soft)" : "var(--rs-danger-soft)";
+  // ป้ายสถานะ — ใช้ canonical (billDisplayStatus) แทน derive เอง กันบิลใบเดียวกัน
+  // โชว์ "ค้างชำระ" ที่นี่ แต่โชว์ "เกินกำหนด" ที่หน้าอื่น
+  const st = billDisplayStatus(bill);
+  const statusLabel = st.label;
+  const statusTone = st.color;
+  const statusBg = st.soft;
 
   const brand = "var(--rs-brand)";
   const line = "var(--rs-border)";

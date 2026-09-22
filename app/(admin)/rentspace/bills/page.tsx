@@ -10,6 +10,7 @@ import {
   periodLabel,
   currentPeriod,
   BILL_STATUS,
+  billDisplayStatus,
 } from "@/lib/rentspace/format";
 import { listBills, getPrimaryProject, listContracts } from "@/lib/rentspace/data";
 import { BillsActions } from "./_components/bills-actions";
@@ -23,11 +24,10 @@ function outstandingOf(b: { totalAmount: unknown; paidAmount: unknown; status: s
   return Math.max(0, toNum(b.totalAmount) - toNum(b.paidAmount));
 }
 
+// สถานะ "จริง" ของบิล — canonical (lib/rentspace/format.ts) คำนวณ overdue จาก
+// dueDate สดทุกครั้ง แทนพึ่ง DB status เฉยๆ (กันบิลเดียวโชว์คนละสถานะคนละหน้า)
 function isOverdue(b: { status: string; dueDate: Date | null }): boolean {
-  if (b.status === "overdue") return true;
-  if (!b.dueDate) return false;
-  if (!OUTSTANDING_STATUSES.includes(b.status)) return false;
-  return new Date(b.dueDate).getTime() < Date.now();
+  return billDisplayStatus(b).key === "overdue";
 }
 
 export default async function BillsPage({
@@ -102,7 +102,6 @@ export default async function BillsPage({
 
   const billRows: BillRow[] = bills.map((b) => {
     const remaining = outstandingOf(b);
-    const overdue = isOverdue(b);
     return {
       id: b.id,
       billNo: b.billNo,
@@ -120,7 +119,7 @@ export default async function BillsPage({
       // itemized breakdown for the expand-in-place panel
       items: b.items.map((it) => ({ kind: it.kind, label: it.label, amount: toNum(it.amount) })),
       dueDateISO: b.dueDate ? new Date(b.dueDate).toISOString() : null,
-      displayStatus: overdue && b.status !== "void" ? "overdue" : b.status,
+      displayStatus: billDisplayStatus(b).key,
     };
   });
 

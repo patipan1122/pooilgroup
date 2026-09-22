@@ -3,6 +3,7 @@ import { Receipt, Banknote, Clock } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { isAdminTier } from "@/lib/auth/role-guards";
 import { userIsModuleAdmin } from "@/lib/auth/module-access";
+import { can as canRentspace } from "@/lib/rentspace/permissions";
 import { RsPage, RsHeader, RsKpi, RsBadge, RsEmpty, RsCard, RsBackLink, RsMobileCard, RsField } from "@/components/rentspace/ui";
 import {
   formatBaht,
@@ -35,8 +36,12 @@ export default async function PaymentsPage() {
   // actRejectTenantPayment) ใช้ gateAdmin() ซึ่งรวม program_admin ที่ได้รับสิทธิ์ rentspace
   // อยู่แล้ว — ปุ่มเดิมเลยซ่อนจาก program_admin ทั้งที่กดแล้ว server จะอนุมัติให้จริง
   const canDecideDiscount = isAdminTier(session.user.role);
+  // ตรวจสลิปเปิดให้ตำแหน่งอื่น (เช่น staff/field) ได้ ถ้า super_admin ติ๊กเปิดไว้ที่หน้า
+  // ตั้งค่า → สิทธิ์ (audit 2026-09-20 §5 — เดิมล็อก admin-tier เท่านั้น พนักงานสนามเข้าไม่ได้เลย)
   const canReviewSlips =
-    isAdminTier(session.user.role) || (await userIsModuleAdmin(session.user, "rentspace"));
+    isAdminTier(session.user.role) ||
+    (await userIsModuleAdmin(session.user, "rentspace")) ||
+    (await canRentspace(session.user.org_id, session.user.role, "slip.verify_access"));
 
   const [payments, pending, tenantSlips] = await Promise.all([
     listPayments(orgId),

@@ -4,7 +4,7 @@ import { useState, Fragment, useTransition, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table, X, Calendar, ChevronRight, FileText, Clock, CheckCircle2, ArrowLeftRight, GripVertical, ArrowUp, ArrowDown, ListOrdered, History } from "lucide-react";
-import { formatBaht, BILL_STATUS, PAYMENT_METHODS } from "@/lib/rentspace/format";
+import { formatBaht, billDisplayStatus, PAYMENT_METHODS } from "@/lib/rentspace/format";
 import { RsBadge } from "@/components/rentspace/ui";
 import type { MatrixUnit, MatrixCell } from "@/lib/rentspace/matrix-data";
 import type { RentSpacePaymentSlipVerdict } from "@/lib/rentspace/slip-check";
@@ -52,10 +52,11 @@ function pad2(m: number) {
   return String(m).padStart(2, "0");
 }
 
-function statusTone(status: string): { bg: string; color: string } {
-  const t = BILL_STATUS[status];
-  if (!t) return { bg: "transparent", color: "var(--rs-text)" };
-  return { bg: t.soft, color: t.color };
+// สถานะช่อง — canonical (billDisplayStatus คำนวณ "เกินกำหนด" จาก dueDate สด แทน
+// เชื่อ DB status เฉยๆ) กันช่องตารางนี้โชว์คนละสถานะกับหน้าบิล/หน้าผู้เช่าของบิลใบเดียวกัน
+function statusTone(cell: { status: string; dueDate: string }): { bg: string; color: string; label: string } {
+  const st = billDisplayStatus(cell);
+  return { bg: st.soft, color: st.color, label: st.label };
 }
 
 export default function MatrixGrid({ year, view, month, units, cells, monthsTotals, projectId, canReorder, reconcileSummary }: Props) {
@@ -465,7 +466,7 @@ export default function MatrixGrid({ year, view, month, units, cells, monthsTota
                         </td>
                       );
                     }
-                    const tone = statusTone(cell.status);
+                    const tone = statusTone(cell);
                     return (
                       <td
                         key={m}
@@ -818,11 +819,11 @@ function MonthView({
                     <span
                       className="rs-pill"
                       style={{
-                        background: statusTone(c.status).bg,
-                        color: statusTone(c.status).color,
+                        background: statusTone(c).bg,
+                        color: statusTone(c).color,
                       }}
                     >
-                      {BILL_STATUS[c.status]?.label ?? c.status}
+                      {statusTone(c).label}
                     </span>
                   ) : (
                     <span className="rs-tag-expect">ยังไม่ออกบิล</span>
@@ -1062,9 +1063,9 @@ function CellDetail({
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
                 <span
                   className="inline-block rounded-full px-3 py-1 text-[12px] font-bold"
-                  style={{ background: statusTone(cell.status).bg, color: statusTone(cell.status).color }}
+                  style={{ background: statusTone(cell).bg, color: statusTone(cell).color }}
                 >
-                  {BILL_STATUS[cell.status]?.label ?? cell.status}
+                  {statusTone(cell).label}
                 </span>
                 {cell.ledgerStatus === "sent_matched" && (
                   <span className="cell-matched-iridescent inline-block rounded-full px-2.5 py-1 text-[11.5px]">

@@ -12,6 +12,7 @@ import {
   toNum,
   periodLabel,
   PAYMENT_METHODS,
+  billDisplayStatus,
 } from "@/lib/rentspace/format";
 import { getBill } from "@/lib/rentspace/data";
 import { BillDocument } from "@/components/rentspace/bill-document";
@@ -28,6 +29,7 @@ import {
   VoidDecisionButtons,
   EditBillButton,
   DeleteBillButton,
+  DeleteDecisionButtons,
   VoidPaymentButton,
 } from "./_components/bill-detail-actions";
 
@@ -68,7 +70,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         subtitle={`${bill.project.name} · ห้อง ${bill.unit.code} · ${periodLabel(bill.period)}`}
         action={
           <div className="flex items-center gap-2 print:hidden">
-            <RsBadge kind="bill" status={bill.status} />
+            <RsBadge kind="bill" status={billDisplayStatus(bill).key} />
           </div>
         }
       />
@@ -265,8 +267,14 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                     }))}
                   />
                 )}
-                {canDeleteBill && (
+                {canDeleteBill && bill.deleteStatus !== "pending" && (
                   <DeleteBillButton billId={bill.id} billNo={bill.billNo} hasPayments={payments.length > 0} />
+                )}
+                {bill.deleteStatus === "pending" && isSuper && <DeleteDecisionButtons billId={bill.id} />}
+                {bill.deleteStatus === "pending" && !isSuper && (
+                  <div className="text-[12px] rounded-lg px-3 py-2" style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}>
+                    มีคำขอลบบิลรอซูเปอร์แอดมินอนุมัติอยู่
+                  </div>
                 )}
               </div>
             )}
@@ -319,6 +327,57 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
                   <div style={{ color: "var(--rs-text-3)" }}>
                     ตัดสินเมื่อ {thaiDateLong(bill.voidDecidedAt)}
                     {bill.voidDecisionNote ? ` · ${bill.voidDecisionNote}` : ""}
+                  </div>
+                )}
+              </div>
+            </RsCard>
+          )}
+
+          {/* #6 บันทึก/สถานะการขอลบบิลที่จ่ายแล้ว (log) — CEO 2026-09-20 */}
+          {bill.deleteStatus && bill.deleteStatus !== "none" && (
+            <RsCard className="p-5">
+              <h2 className="font-bold mb-2" style={{ color: "var(--rs-text)" }}>
+                การขอลบบิล
+              </h2>
+              <div className="space-y-1.5 text-[13px]">
+                <div className="flex items-center gap-2">
+                  <span style={{ color: "var(--rs-text-2)" }}>สถานะ:</span>
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[12px] font-semibold"
+                    style={{
+                      background:
+                        bill.deleteStatus === "approved"
+                          ? "var(--rs-danger-soft)"
+                          : bill.deleteStatus === "rejected"
+                            ? "var(--rs-bg-3)"
+                            : "var(--rs-pending-soft)",
+                      color:
+                        bill.deleteStatus === "approved"
+                          ? "var(--rs-danger)"
+                          : bill.deleteStatus === "rejected"
+                            ? "var(--rs-text-3)"
+                            : "var(--rs-pending)",
+                    }}
+                  >
+                    {bill.deleteStatus === "pending"
+                      ? "รอซูเปอร์แอดมินอนุมัติลบ"
+                      : bill.deleteStatus === "approved"
+                        ? "ลบแล้ว (อนุมัติ)"
+                        : "ปฏิเสธคำขอลบ"}
+                  </span>
+                </div>
+                {bill.deleteReason && (
+                  <div style={{ color: "var(--rs-text-2)" }}>
+                    เหตุผล: <span style={{ color: "var(--rs-text)" }}>{bill.deleteReason}</span>
+                  </div>
+                )}
+                {bill.deleteRequestedAt && (
+                  <div style={{ color: "var(--rs-text-3)" }}>ขอเมื่อ {thaiDateLong(bill.deleteRequestedAt)}</div>
+                )}
+                {bill.deleteDecidedAt && (
+                  <div style={{ color: "var(--rs-text-3)" }}>
+                    ตัดสินเมื่อ {thaiDateLong(bill.deleteDecidedAt)}
+                    {bill.deleteDecisionNote ? ` · ${bill.deleteDecisionNote}` : ""}
                   </div>
                 )}
               </div>

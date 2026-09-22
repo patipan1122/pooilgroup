@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarPlus, Wallet, Coffee, MapPin, Pencil } from "lucide-react";
+import { CalendarPlus, Wallet, Coffee, MapPin, Pencil, ShieldCheck } from "lucide-react";
 
 import { requireRole } from "@/lib/chairops/auth/session";
 import { rankOf } from "@/lib/chairops/auth/role-guards";
@@ -22,11 +22,27 @@ import { DeleteLeaveButton } from "../_components/delete-leave-button";
 import { MultiBranchManager } from "../_components/multi-branch-manager";
 import { MaidProfileForm } from "../_components/maid-profile-form";
 import { OfficeContractEditor } from "./_components/office-contract-editor";
+import { ContractLinkShare } from "./_components/contract-link-share";
 
 export const dynamic = "force-dynamic";
 
 function ymdOf(d: Date | null): string {
   return d ? d.toISOString().slice(0, 10) : "";
+}
+
+/** "ชื่อ · เบอร์" — null ถ้าไม่มีทั้งคู่ (แสดงเป็น "—") */
+function contactLine(name: string | null, phone: string | null): string | null {
+  const parts = [name, phone].filter((p): p is string => Boolean(p?.trim()));
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function InfoRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] text-zinc-500">{label}</dt>
+      <dd className={value ? "truncate text-zinc-800" : "text-zinc-400"}>{value ?? "—"}</dd>
+    </div>
+  );
 }
 
 export default async function MaidDetailPage({
@@ -238,6 +254,49 @@ export default async function MaidDetailPage({
             prefill={officePrefill}
             companyLine={companyLine}
           />
+          <ContractLinkShare maidName={maid.displayName} status={contractStatus} />
+        </section>
+      )}
+
+      {/* ข้อมูลยืนยันตัวตน + ผู้ติดต่อฉุกเฉิน (CEO 2026-09-22) — สิ่งที่แม่บ้าน
+          กรอก/ถ่ายมาเองตอน onboarding · ADMIN+ เท่านั้นเพราะเป็นข้อมูลอ่อนไหว */}
+      {canMutate && (
+        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+            <ShieldCheck className="size-4 text-zinc-500" /> ยืนยันตัวตน + เบอร์ฉุกเฉิน
+          </div>
+
+          <div className="flex flex-wrap items-start gap-4">
+            <figure className="shrink-0">
+              {maid.selfieImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={maid.selfieImageUrl}
+                  alt={`รูปเซลฟี่ของ ${maid.displayName}`}
+                  className="size-24 rounded-lg border border-zinc-200 object-cover"
+                />
+              ) : (
+                <div className="grid size-24 place-items-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
+                  ยังไม่มี
+                  <br />
+                  รูปเซลฟี่
+                </div>
+              )}
+              <figcaption className="mt-1 text-center text-[10px] text-zinc-400">
+                {maid.selfieCapturedAt ? thaiDate(maid.selfieCapturedAt) : "เซลฟี่"}
+              </figcaption>
+            </figure>
+
+            <dl className="grid min-w-[14rem] grow grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-2">
+              <InfoRow label="ฉุกเฉิน 1" value={contactLine(maid.emergencyContact, maid.emergencyPhone)} />
+              <InfoRow label="ฉุกเฉิน 2" value={contactLine(maid.emergencyContact2, maid.emergencyPhone2)} />
+              <InfoRow label="งานประจำ" value={maid.currentMainEmployer} />
+              <InfoRow
+                label="บัตรประชาชน"
+                value={maid.idCardImageUrl ? "แนบแล้ว" : maid.idCardNumber ? "มีเลขบัตร ยังไม่แนบรูป" : null}
+              />
+            </dl>
+          </div>
         </section>
       )}
 
