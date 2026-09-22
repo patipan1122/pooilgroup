@@ -193,11 +193,32 @@ export async function pushBranchDepositsToLedger(
   }
 
   let inserted = 0;
+  let attempted = deposits.length; // ใบที่ยังส่งได้จริงตอนเขียน (หักใบที่เพิ่งถูกตีกลับระหว่างทาง)
   try {
     // 🔒 all-or-nothing: ใบใดใบหนึ่งล้ม → rollback ทั้งชุด ไม่มีเงินค้างเขียนครึ่งทาง
     await prisma.$transaction(async (tx) => {
+      // 🔒 กัน race "ส่งเข้า ledger" ชนกับ "ตีกลับ" —
+      //   ก่อนหน้านี้ 2 งานนี้แตะคนละกลุ่มเสมอ (ส่งเฉพาะ NONE/APPROVED · ตีกลับได้เฉพาะ PENDING)
+      //   พอ PENDING ไหลเข้า ledger ได้แล้ว ทั้งสองงานแย่งใบเดียวกัน: ถ้าอ่านรายการ (นอกทราน)
+      //   ตอนที่ใบยัง PENDING แล้วอีกคนกดตีกลับสำเร็จก่อนเราเขียน → เราจะเขียนแถวให้ใบที่ถูก
+      //   ตีกลับไปแล้ว (รอบถูกปลดไปฝากใหม่) = เงินก้อนเดียวถูกนับ 2 แถวในภายหลัง.
+      //   อ่านซ้ำในทราน + FOR UPDATE → ถ้าอีกฝั่งกำลังตีกลับอยู่ เราจะรอจนเขา commit แล้วเห็น
+      //   REJECTED จริง ๆ แล้วข้ามใบนั้นไป. (ลำดับล็อก cf_cash_deposits → ledger_revenue_entry
+      //   ตรงกับฝั่งตีกลับเป๊ะ จึงไม่เกิด deadlock.)
+      const ids = deposits.map((d) => d.id);
+      const live = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id::text AS id
+          FROM cf_cash_deposits
+         WHERE org_id = ${orgId}::uuid
+           AND id = ANY(${ids}::uuid[])
+           AND approval_status <> 'REJECTED'
+         FOR UPDATE`;
+      const stillEligible = new Set(live.map((r) => r.id));
+      attempted = deposits.filter((d) => stillEligible.has(d.id)).length;
+
       let insertedInTx = 0;
       for (const d of deposits) {
+        if (!stillEligible.has(d.id)) continue; // เพิ่งถูกตีกลับระหว่างทาง — ห้ามส่ง
         const sourceRef = depositSourceRef(d.id);
         const description = `ClawFleet ฝากเงิน · ${branch.name} · ${d.depositedByName}`;
         // amount_satang: ledger เก็บหน่วยสตางค์ · CfCashDeposit.amountCents เก็บหน่วย
@@ -258,7 +279,9 @@ export async function pushBranchDepositsToLedger(
   return {
     ok: true,
     inserted,
-    alreadySent: deposits.length - inserted,
+    // "ส่งไปแล้วก่อนหน้านี้" = ใบที่พยายามเขียนจริงแต่ไม่เกิดแถวใหม่ (ON CONFLICT ไปโดน DO UPDATE)
+    // ไม่ใช่ deposits.length − inserted ซึ่งจะนับใบที่เพิ่งถูกตีกลับระหว่างทางเข้ามาผิด ๆ
+    alreadySent: attempted - inserted,
     flaggedIncluded,
     zeroSkipped,
   };
