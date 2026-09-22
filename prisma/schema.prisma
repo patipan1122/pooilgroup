@@ -28,87 +28,88 @@ model Organization {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users                   User[]
-  companies               Company[]
-  branches                Branch[]
-  branchRentals           BranchRental[]
-  reportTemplates         ReportTemplate[]
-  dailyReports            DailyReport[]
-  reportDrafts            ReportDraft[]
-  bugReports              BugReport[]
-  cashShortages           CashShortage[]
-  auditLogs               AuditLog[]
-  userBranches            UserBranch[]
-  notifications           Notification[]
-  userSessions            UserSession[]
-  registerRequests        RegisterRequest[]
-  orgModules              OrgModule[]
-  branchGroups            BranchGroup[]
-  holidays                Holiday[]
-  telegramSubs            TelegramSubscription[]
-  telegramGroups          TelegramGroup[]
-  telegramTokens          TelegramPairingToken[]
-  branchTargets           BranchTarget[]
-  branchHealthScores      BranchHealthScore[]
-  branchStreaks           BranchStreak[]
-  missingReports          MissingReportReason[]
-  documents               Document[]
-  documentOwnerships      DocumentOwnership[]
-  documentTags            DocumentTag[]
-  documentRenewals        DocumentRenewal[]
-  documentSharedBranches  DocumentSharedBranch[]
-  vehicles                Vehicle[]
-  vehicleDocuments        VehicleDocument[]
-  personDocuments         PersonDocument[]
-  signaturePlacements     DocumentSignaturePlacement[]
-  documentAnalyses        DocumentAnalysis[]
-  aiSearchCache           AiSearchCache[]
+  users                        User[]
+  companies                    Company[]
+  branches                     Branch[]
+  branchRentals                BranchRental[]
+  reportTemplates              ReportTemplate[]
+  dailyReports                 DailyReport[]
+  reportDrafts                 ReportDraft[]
+  bugReports                   BugReport[]
+  cashShortages                CashShortage[]
+  auditLogs                    AuditLog[]
+  userBranches                 UserBranch[]
+  notifications                Notification[]
+  userSessions                 UserSession[]
+  registerRequests             RegisterRequest[]
+  orgModules                   OrgModule[]
+  branchGroups                 BranchGroup[]
+  holidays                     Holiday[]
+  telegramSubs                 TelegramSubscription[]
+  telegramGroups               TelegramGroup[]
+  telegramTokens               TelegramPairingToken[]
+  branchTargets                BranchTarget[]
+  branchHealthScores           BranchHealthScore[]
+  branchStreaks                BranchStreak[]
+  missingReports               MissingReportReason[]
+  documents                    Document[]
+  documentOwnerships           DocumentOwnership[]
+  documentTags                 DocumentTag[]
+  documentRenewals             DocumentRenewal[]
+  documentSharedBranches       DocumentSharedBranch[]
+  vehicles                     Vehicle[]
+  vehicleDocuments             VehicleDocument[]
+  personDocuments              PersonDocument[]
+  signaturePlacements          DocumentSignaturePlacement[]
+  documentAnalyses             DocumentAnalysis[]
+  aiSearchCache                AiSearchCache[]
   // FuelOS Sprint 6
   // Recruit module
-  recruitPostings         RecruitJobPosting[]
-  recruitApplicants       RecruitApplicant[]
-  recruitApplications     RecruitApplication[]
-  recruitApplicationNotes RecruitApplicationNote[]
-  recruitBlacklist        RecruitBlacklist[]
-  recruitInterviews       RecruitInterview[]
-  recruitMessages         RecruitMessage[]
-  recruitRules            RecruitScreeningRule[]
-  recruitFormTemplates    RecruitFormTemplate[]
-  recruitInboxChannels    RecruitInboxChannel[]
-  recruitReferrals        RecruitReferral[]
-  recruitErasureRequests  RecruitErasureRequest[]
+  recruitPostings              RecruitJobPosting[]
+  recruitApplicants            RecruitApplicant[]
+  recruitApplications          RecruitApplication[]
+  recruitApplicationNotes      RecruitApplicationNote[]
+  recruitBlacklist             RecruitBlacklist[]
+  recruitInterviews            RecruitInterview[]
+  recruitMessages              RecruitMessage[]
+  recruitRules                 RecruitScreeningRule[]
+  recruitFormTemplates         RecruitFormTemplate[]
+  recruitInboxChannels         RecruitInboxChannel[]
+  recruitReferrals             RecruitReferral[]
+  recruitErasureRequests       RecruitErasureRequest[]
+  recruitOnboardingSubmissions RecruitOnboardingSubmission[]
   // Repair module
-  repairCategories        RepairCategory[]
-  repairTickets           RepairTicket[]
-  repairTechnicians       RepairTechnician[]
-  repairPhotos            RepairPhoto[]
-  repairParts             RepairPart[]
-  repairTimelineEvents    RepairTimelineEvent[]
-  repairVendorTokens      RepairVendorToken[]
+  repairCategories             RepairCategory[]
+  repairTickets                RepairTicket[]
+  repairTechnicians            RepairTechnician[]
+  repairPhotos                 RepairPhoto[]
+  repairParts                  RepairPart[]
+  repairTimelineEvents         RepairTimelineEvent[]
+  repairVendorTokens           RepairVendorToken[]
   // ClawFleet module
-  cfMachines              CfMachine[]
-  cfMachineGroups         CfMachineGroup[]
-  cfProducts              CfProduct[]
-  cfMachineLoadouts       CfMachineLoadout[]
-  cfExchangerLoadouts     CfExchangerLoadout[]
-  cfCollectionSessions    CfCollectionSession[]
-  cfCollectionEvents      CfCollectionEvent[]
-  cfStockMovements        CfStockMovement[]
-  cfWarehouses            CfWarehouse[]
-  cfDeliveries            CfDelivery[]
-  cfDeliveryLines         CfDeliveryLine[]
-  cfGoodsReceipts         CfGoodsReceipt[]
-  cfStockCounts           CfStockCount[]
-  cfLossDocs              CfLossDoc[]
-  cfConfigRequests        CfConfigRequest[]
+  cfMachines                   CfMachine[]
+  cfMachineGroups              CfMachineGroup[]
+  cfProducts                   CfProduct[]
+  cfMachineLoadouts            CfMachineLoadout[]
+  cfExchangerLoadouts          CfExchangerLoadout[]
+  cfCollectionSessions         CfCollectionSession[]
+  cfCollectionEvents           CfCollectionEvent[]
+  cfStockMovements             CfStockMovement[]
+  cfWarehouses                 CfWarehouse[]
+  cfDeliveries                 CfDelivery[]
+  cfDeliveryLines              CfDeliveryLine[]
+  cfGoodsReceipts              CfGoodsReceipt[]
+  cfStockCounts                CfStockCount[]
+  cfLossDocs                   CfLossDoc[]
+  cfConfigRequests             CfConfigRequest[]
   // Ledger module
-  ledgerCategories        LedgerCategory[]
-  ledgerExpenses          LedgerExpense[]
-  ledgerExpenseItems      LedgerExpenseItem[]
-  ledgerBudgets           LedgerBudget[]
-  ledgerLineChannels      LedgerLineChannel[]
-  ledgerExportBatches     LedgerExportBatch[]
-  driveFolderCaches       DriveFolderCache[]
+  ledgerCategories             LedgerCategory[]
+  ledgerExpenses               LedgerExpense[]
+  ledgerExpenseItems           LedgerExpenseItem[]
+  ledgerBudgets                LedgerBudget[]
+  ledgerLineChannels           LedgerLineChannel[]
+  ledgerExportBatches          LedgerExportBatch[]
+  driveFolderCaches            DriveFolderCache[]
 
   @@map("organizations")
   @@schema("public")
@@ -134,18 +135,19 @@ model Company {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                 Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  branches            Branch[]
-  vehicles            Vehicle[]
-  recruitPostings     RecruitJobPosting[]
-  repairTickets       RepairTicket[]
+  org                          Organization                  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  branches                     Branch[]
+  vehicles                     Vehicle[]
+  recruitPostings              RecruitJobPosting[]
+  recruitOnboardingSubmissions RecruitOnboardingSubmission[]
+  repairTickets                RepairTicket[]
   // Ledger module
-  ledgerCategories    LedgerCategory[]
-  ledgerExpenses      LedgerExpense[]
-  ledgerExpenseItems  LedgerExpenseItem[]
-  ledgerBudgets       LedgerBudget[]
-  ledgerLineChannels  LedgerLineChannel[]
-  ledgerExportBatches LedgerExportBatch[]
+  ledgerCategories             LedgerCategory[]
+  ledgerExpenses               LedgerExpense[]
+  ledgerExpenseItems           LedgerExpenseItem[]
+  ledgerBudgets                LedgerBudget[]
+  ledgerLineChannels           LedgerLineChannel[]
+  ledgerExportBatches          LedgerExportBatch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -205,61 +207,62 @@ model User {
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                      Organization                 @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  userBranches             UserBranch[]
-  managedBranches          Branch[]                     @relation("BranchManager")
-  submittedReports         DailyReport[]                @relation("ReportSubmitter")
-  approvedReports          DailyReport[]                @relation("ReportApprover")
-  reportDrafts             ReportDraft[]
-  reportedBugs             BugReport[]                  @relation("BugReporter")
-  acknowledgedBugs         BugReport[]                  @relation("BugAcknowledger")
-  unlockedReports          DailyReport[]                @relation("ReportUnlocker")
-  shortagesAttributed      CashShortage[]               @relation("ShortagePerson")
-  auditLogs                AuditLog[]
-  notifications            Notification[]
-  sessions                 UserSession[]
-  reviewedRequests         RegisterRequest[]            @relation("RegisterReviewer")
-  telegramSubs             TelegramSubscription[]
-  telegramTokens           TelegramPairingToken[]
-  uploadedDocuments        Document[]                   @relation("DocumentUploader")
-  responsibleRenewals      DocumentRenewal[]            @relation("RenewalResponsible")
-  personDocuments          PersonDocument[]
-  signaturePlacements      DocumentSignaturePlacement[] @relation("SignaturePlacementSigner")
+  org                       Organization                  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  userBranches              UserBranch[]
+  managedBranches           Branch[]                      @relation("BranchManager")
+  submittedReports          DailyReport[]                 @relation("ReportSubmitter")
+  approvedReports           DailyReport[]                 @relation("ReportApprover")
+  reportDrafts              ReportDraft[]
+  reportedBugs              BugReport[]                   @relation("BugReporter")
+  acknowledgedBugs          BugReport[]                   @relation("BugAcknowledger")
+  unlockedReports           DailyReport[]                 @relation("ReportUnlocker")
+  shortagesAttributed       CashShortage[]                @relation("ShortagePerson")
+  auditLogs                 AuditLog[]
+  notifications             Notification[]
+  sessions                  UserSession[]
+  reviewedRequests          RegisterRequest[]             @relation("RegisterReviewer")
+  telegramSubs              TelegramSubscription[]
+  telegramTokens            TelegramPairingToken[]
+  uploadedDocuments         Document[]                    @relation("DocumentUploader")
+  responsibleRenewals       DocumentRenewal[]             @relation("RenewalResponsible")
+  personDocuments           PersonDocument[]
+  signaturePlacements       DocumentSignaturePlacement[]  @relation("SignaturePlacementSigner")
   // FuelOS Sprint 6
   // Recruit module
-  recruitPostingsCreated   RecruitJobPosting[]          @relation("RecruitPostingCreator")
-  recruitNotesAuthored     RecruitApplicationNote[]     @relation("RecruitNoteAuthor")
-  recruitBlacklistAdded    RecruitBlacklist[]           @relation("RecruitBlacklistAdder")
-  recruitBlacklistRemoved  RecruitBlacklist[]           @relation("RecruitBlacklistRemover")
-  recruitInterviewsCreated RecruitInterview[]           @relation("RecruitInterviewCreator")
-  recruitMessagesSent      RecruitMessage[]             @relation("RecruitMessageSender")
-  recruitRulesCreated      RecruitScreeningRule[]       @relation("RecruitRuleCreator")
-  recruitFormTemplates     RecruitFormTemplate[]        @relation("RecruitFormTemplateCreator")
-  recruitInboxChannels     RecruitInboxChannel[]        @relation("RecruitInboxChannelCreator")
-  recruitReferralsAsRef    RecruitReferral[]            @relation("RecruitReferrerUser")
-  recruitErasureDecided    RecruitErasureRequest[]      @relation("RecruitErasureDecider")
+  recruitPostingsCreated    RecruitJobPosting[]           @relation("RecruitPostingCreator")
+  recruitNotesAuthored      RecruitApplicationNote[]      @relation("RecruitNoteAuthor")
+  recruitBlacklistAdded     RecruitBlacklist[]            @relation("RecruitBlacklistAdder")
+  recruitBlacklistRemoved   RecruitBlacklist[]            @relation("RecruitBlacklistRemover")
+  recruitInterviewsCreated  RecruitInterview[]            @relation("RecruitInterviewCreator")
+  recruitMessagesSent       RecruitMessage[]              @relation("RecruitMessageSender")
+  recruitRulesCreated       RecruitScreeningRule[]        @relation("RecruitRuleCreator")
+  recruitFormTemplates      RecruitFormTemplate[]         @relation("RecruitFormTemplateCreator")
+  recruitInboxChannels      RecruitInboxChannel[]         @relation("RecruitInboxChannelCreator")
+  recruitReferralsAsRef     RecruitReferral[]             @relation("RecruitReferrerUser")
+  recruitErasureDecided     RecruitErasureRequest[]       @relation("RecruitErasureDecider")
+  recruitOnboardingReviewed RecruitOnboardingSubmission[] @relation("RecruitOnboardingReviewer")
   // Repair module
-  repairTicketsReported    RepairTicket[]               @relation("RepairTicketReporter")
-  repairTicketsResolved    RepairTicket[]               @relation("RepairTicketResolver")
-  repairTicketsClosed      RepairTicket[]               @relation("RepairTicketCloser")
-  repairTechnicianLink     RepairTechnician?
-  repairTimelineEvents     RepairTimelineEvent[]        @relation("RepairTimelineActor")
-  repairPhotosUploaded     RepairPhoto[]                @relation("RepairPhotoUploader")
-  repairPartsAdded         RepairPart[]                 @relation("RepairPartAddedBy")
-  repairPartsOrdered       RepairPart[]                 @relation("RepairPartOrderedBy")
+  repairTicketsReported     RepairTicket[]                @relation("RepairTicketReporter")
+  repairTicketsResolved     RepairTicket[]                @relation("RepairTicketResolver")
+  repairTicketsClosed       RepairTicket[]                @relation("RepairTicketCloser")
+  repairTechnicianLink      RepairTechnician?
+  repairTimelineEvents      RepairTimelineEvent[]         @relation("RepairTimelineActor")
+  repairPhotosUploaded      RepairPhoto[]                 @relation("RepairPhotoUploader")
+  repairPartsAdded          RepairPart[]                  @relation("RepairPartAddedBy")
+  repairPartsOrdered        RepairPart[]                  @relation("RepairPartOrderedBy")
   // ClawFleet module
-  cfSessionsOpened         CfCollectionSession[]        @relation("CfSessionOpener")
-  cfSessionsClosed         CfCollectionSession[]        @relation("CfSessionCloser")
-  cfSessionsReviewed       CfCollectionSession[]        @relation("CfSessionReviewer")
-  cfEventsCollected        CfCollectionEvent[]          @relation("CfEventCollector")
-  cfStockMovementsCreated  CfStockMovement[]            @relation("CfStockCreator")
-  cfWarehousesCreated      CfWarehouse[]                @relation("CfWarehouseCreator")
-  cfDeliveriesCreated      CfDelivery[]                 @relation("CfDeliveryCreator")
-  cfReceiptsCreated        CfGoodsReceipt[]             @relation("CfReceiptCreator")
-  cfStockCountsCounted     CfStockCount[]               @relation("CfCountCounter")
-  cfLossDocsReported       CfLossDoc[]                  @relation("CfLossReporter")
-  cfConfigRequestsSubmitted CfConfigRequest[]           @relation("CfConfigRequester")
-  cfConfigRequestsReviewed CfConfigRequest[]            @relation("CfConfigReviewer")
+  cfSessionsOpened          CfCollectionSession[]         @relation("CfSessionOpener")
+  cfSessionsClosed          CfCollectionSession[]         @relation("CfSessionCloser")
+  cfSessionsReviewed        CfCollectionSession[]         @relation("CfSessionReviewer")
+  cfEventsCollected         CfCollectionEvent[]           @relation("CfEventCollector")
+  cfStockMovementsCreated   CfStockMovement[]             @relation("CfStockCreator")
+  cfWarehousesCreated       CfWarehouse[]                 @relation("CfWarehouseCreator")
+  cfDeliveriesCreated       CfDelivery[]                  @relation("CfDeliveryCreator")
+  cfReceiptsCreated         CfGoodsReceipt[]              @relation("CfReceiptCreator")
+  cfStockCountsCounted      CfStockCount[]                @relation("CfCountCounter")
+  cfLossDocsReported        CfLossDoc[]                   @relation("CfLossReporter")
+  cfConfigRequestsSubmitted CfConfigRequest[]             @relation("CfConfigRequester")
+  cfConfigRequestsReviewed  CfConfigRequest[]             @relation("CfConfigReviewer")
 
   @@unique([orgId, employeeCode])
   @@index([orgId, isActive])
@@ -292,66 +295,67 @@ enum BusinessType {
 }
 
 model Branch {
-  id             String       @id @default(uuid()) @db.Uuid
-  orgId          String       @map("org_id") @db.Uuid
-  companyId      String       @map("company_id") @db.Uuid // Pooil Oil or JP Sync
-  parentBranchId String?      @map("parent_branch_id") @db.Uuid // host branch for sub-tenants (e.g. 7-11 inside a fuel station)
+  id                  String       @id @default(uuid()) @db.Uuid
+  orgId               String       @map("org_id") @db.Uuid
+  companyId           String       @map("company_id") @db.Uuid // Pooil Oil or JP Sync
+  parentBranchId      String?      @map("parent_branch_id") @db.Uuid // host branch for sub-tenants (e.g. 7-11 inside a fuel station)
   // ClawFleet · "คลังหลักข้ามสาขา" — ถ้าตั้งไว้ สาขานี้ใช้ "คลังของสาขานั้น" เป็นคลังหลัก:
   //   เติมตู้ = โอนจากสาขาต้นทาง→สาขานี้ แล้วเข้าตู้ · คืนสโตร์ = โอนกลับสาขาต้นทาง (ชั้นของสาขานี้ = ทางผ่าน net 0).
   //   null = ใช้คลังตัวเอง (พฤติกรรมเดิม 100%). จำกัด 1 ทอด: สาขาต้นทางต้องเป็นสาขาที่ใช้คลังตัวเอง (บังคับใน setBranchStockSource).
-  stockSourceBranchId String?  @map("stock_source_branch_id") @db.Uuid
-  code           String
-  name           String
-  businessType   BusinessType @map("business_type")
-  province       String?
-  region         String?
-  address        String?
-  lat            Decimal?     @db.Decimal(10, 7)
-  lng            Decimal?     @db.Decimal(10, 7)
-  managerId      String?      @map("manager_id") @db.Uuid
-  phone          String?
-  lineGroupId    String?      @map("line_group_id")
-  reportDeadline String       @default("21:00") @map("report_deadline") // HH:mm string for simplicity
-  settings       Json         @default("{}")
-  isActive       Boolean      @default(true) @map("is_active")
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  stockSourceBranchId String?      @map("stock_source_branch_id") @db.Uuid
+  code                String
+  name                String
+  businessType        BusinessType @map("business_type")
+  province            String?
+  region              String?
+  address             String?
+  lat                 Decimal?     @db.Decimal(10, 7)
+  lng                 Decimal?     @db.Decimal(10, 7)
+  managerId           String?      @map("manager_id") @db.Uuid
+  phone               String?
+  lineGroupId         String?      @map("line_group_id")
+  reportDeadline      String       @default("21:00") @map("report_deadline") // HH:mm string for simplicity
+  settings            Json         @default("{}")
+  isActive            Boolean      @default(true) @map("is_active")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org              Organization           @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  company          Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  parentBranch     Branch?                @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
-  subTenants       Branch[]               @relation("SubTenants")
-  stockSourceBranch Branch?               @relation("StockSource", fields: [stockSourceBranchId], references: [id], onDelete: SetNull)
-  stockSourceFor    Branch[]              @relation("StockSource")
-  manager          User?                  @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
-  userBranches     UserBranch[]
-  dailyReports     DailyReport[]
-  reportDrafts     ReportDraft[]
-  cashShortages    CashShortage[]
-  targets          BranchTarget[]
-  healthScores     BranchHealthScore[]
-  streak           BranchStreak?
-  missingReports   MissingReportReason[]
-  rentalsAsHost    BranchRental[]         @relation("RentalHost")
-  rentalsAsTenant  BranchRental[]         @relation("RentalTenant")
-  vehicles         Vehicle[]
-  sharedDocuments  DocumentSharedBranch[]
-  repairTickets    RepairTicket[]
+  org                          Organization                  @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company                      Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parentBranch                 Branch?                       @relation("SubTenants", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  subTenants                   Branch[]                      @relation("SubTenants")
+  stockSourceBranch            Branch?                       @relation("StockSource", fields: [stockSourceBranchId], references: [id], onDelete: SetNull)
+  stockSourceFor               Branch[]                      @relation("StockSource")
+  manager                      User?                         @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  userBranches                 UserBranch[]
+  dailyReports                 DailyReport[]
+  reportDrafts                 ReportDraft[]
+  cashShortages                CashShortage[]
+  targets                      BranchTarget[]
+  healthScores                 BranchHealthScore[]
+  streak                       BranchStreak?
+  missingReports               MissingReportReason[]
+  rentalsAsHost                BranchRental[]                @relation("RentalHost")
+  rentalsAsTenant              BranchRental[]                @relation("RentalTenant")
+  vehicles                     Vehicle[]
+  sharedDocuments              DocumentSharedBranch[]
+  recruitOnboardingSubmissions RecruitOnboardingSubmission[]
+  repairTickets                RepairTicket[]
   // ClawFleet
-  cfMachines       CfMachine[]
-  cfMachineGroups  CfMachineGroup[]
-  cfStockMovements CfStockMovement[]
-  cfWarehouses     CfWarehouse[]
-  cfSessions       CfCollectionSession[]
-  cfDeliveries     CfDelivery[]
-  cfGoodsReceipts  CfGoodsReceipt[]
-  cfStockCounts    CfStockCount[]
-  cfLossDocs       CfLossDoc[]
-  cfConfigRequests CfConfigRequest[]
+  cfMachines                   CfMachine[]
+  cfMachineGroups              CfMachineGroup[]
+  cfStockMovements             CfStockMovement[]
+  cfWarehouses                 CfWarehouse[]
+  cfSessions                   CfCollectionSession[]
+  cfDeliveries                 CfDelivery[]
+  cfGoodsReceipts              CfGoodsReceipt[]
+  cfStockCounts                CfStockCount[]
+  cfLossDocs                   CfLossDoc[]
+  cfConfigRequests             CfConfigRequest[]
   // Ledger module
-  ledgerExpenses   LedgerExpense[]
-  ledgerBudgets    LedgerBudget[]
-  ledgerSkuBranches LedgerSkuBranch[]
+  ledgerExpenses               LedgerExpense[]
+  ledgerBudgets                LedgerBudget[]
+  ledgerSkuBranches            LedgerSkuBranch[]
 
   @@unique([orgId, code])
   @@index([orgId, isActive])
@@ -1325,30 +1329,30 @@ enum RecruitCompanyScope {
 
 // 49. recruit_job_postings — ประกาศรับสมัคร
 model RecruitJobPosting {
-  id          String               @id @default(uuid()) @db.Uuid
-  orgId       String               @map("org_id") @db.Uuid
-  companyId   String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
-  title       String
-  description String?
-  slug        String               @unique // public link path
-  status      RecruitPostingStatus @default(DRAFT)
+  id                  String               @id @default(uuid()) @db.Uuid
+  orgId               String               @map("org_id") @db.Uuid
+  companyId           String?              @map("company_id") @db.Uuid // optional · CEO said "use together"
+  title               String
+  description         String?
+  slug                String               @unique // public link path
+  status              RecruitPostingStatus @default(DRAFT)
   // fieldSchema = { version: 1, sections: [{ title, fields: [...] }] }
-  fieldSchema Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
+  fieldSchema         Json                 @default("{\"version\":1,\"sections\":[]}") @map("field_schema")
   // settings = { closingDateAutoClose, notifyTemplates, ... }
-  settings    Json                 @default("{}")
-  tags        String[]             @default([]) // เช่น "Amazon" · กรองในหน้ารายการประกาศ
-  opensAt     DateTime?            @map("opens_at") @db.Timestamptz(6)
-  closesAt    DateTime?            @map("closes_at") @db.Timestamptz(6)
-  createdById String               @map("created_by_id") @db.Uuid
-  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  settings            Json                 @default("{}")
+  tags                String[]             @default([]) // เช่น "Amazon" · กรองในหน้ารายการประกาศ
+  opensAt             DateTime?            @map("opens_at") @db.Timestamptz(6)
+  closesAt            DateTime?            @map("closes_at") @db.Timestamptz(6)
+  createdById         String               @map("created_by_id") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
   // Login-required, read-only "share applicant list for this posting" link.
   // NULL = sharing not enabled / revoked. Generated lazily by
   // generateApplicantShareLink() (lib/recruit/actions.ts) · consumed by
   // /recruit-share/[token]. Mirrors RentalBill.publicToken but the reader
   // route requires a session (any logged-in Pooilgroup user), unlike the
   // fully-public rentspace bill link.
-  applicantShareToken String? @unique @map("applicant_share_token")
+  applicantShareToken String?              @unique @map("applicant_share_token")
 
   org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company      Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
@@ -1736,6 +1740,143 @@ model RecruitErasureRequest {
 }
 
 // =============================================================
+// RECRUIT ONBOARDING — "ระบบรับพนักงานใหม่ออนไลน์"
+// Standalone flow, deliberately NOT linked to RecruitApplication/RecruitApplicant
+// (CEO decision, confirmed twice). One permanent public link — HR only shares it
+// after deciding to hire someone offline; the new hire self-reports everything,
+// uploads ID documents (private Google Drive, ChairOps-pattern — NOT the public
+// Recruit upload-drive pattern), reads the real contract, and signs (drawn
+// signature + live selfie). HR reviews + approves manually; only at approval is
+// a real User created, atomically, born isActive=false until HR activates it via
+// the existing /api/admin/users/[id]/reactivate endpoint.
+// See docs/BIGFEATURE_recruit-onboarding_SPEC.md for full design + rationale.
+// =============================================================
+
+enum RecruitOnboardingStatus {
+  SUBMITTED
+  HR_REVIEWING
+  APPROVED
+  REJECTED
+
+  @@schema("public")
+}
+
+enum RecruitOnboardingDocType {
+  ID_CARD
+  HOUSE_REGISTRATION
+  BANK_BOOK
+  PHOTO
+  EDUCATION
+  OTHER
+
+  @@schema("public")
+}
+
+model RecruitOnboardingSubmission {
+  id               String   @id @default(uuid()) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  branchId         String?  @map("branch_id") @db.Uuid
+  positionApplied  String   @map("position_applied")
+  desiredStartDate DateTime @map("desired_start_date") @db.Date
+  desiredSalary    Decimal  @map("desired_salary") @db.Decimal(10, 2)
+
+  // ส่วนที่ 2: ข้อมูลส่วนตัว
+  titlePrefix    String   @map("title_prefix") // นาย/นาง/นางสาว
+  fullNameTh     String   @map("full_name_th")
+  fullNameEn     String?  @map("full_name_en")
+  nickname       String
+  nationalId     String   @map("national_id") // 13 หลัก — indexed, NOT unique (legit resubmission after correction must not 500)
+  birthDate      DateTime @map("birth_date") @db.Date
+  nationality    String
+  militaryStatus String?  @map("military_status")
+  phone          String
+  lineId         String?  @map("line_id")
+  email          String?
+  maritalStatus  String?  @map("marital_status")
+
+  // ส่วนที่ 3-7: ที่อยู่ / ผู้ติดต่อฉุกเฉิน / การศึกษา / ประวัติการทำงาน / บัญชีรับเงินเดือน
+  addressJson           Json   @default("{}") @map("address_json")
+  emergencyContactsJson Json   @default("[]") @map("emergency_contacts_json")
+  educationJson         Json   @default("{}") @map("education_json")
+  workHistoryJson       Json   @default("[]") @map("work_history_json")
+  bankName              String @map("bank_name")
+  bankAccountNo         String @map("bank_account_no")
+  bankAccountName       String @map("bank_account_name")
+
+  // ส่วนที่ 9: การยินยอม (ระดับฟอร์ม — consent ของสัญญาอยู่ที่ RecruitOnboardingConsent)
+  consentTruthfulAt                 DateTime? @map("consent_truthful_at") @db.Timestamptz(6)
+  consentPrivacyReadAt              DateTime? @map("consent_privacy_read_at") @db.Timestamptz(6)
+  consentEmergencyContactNotifiedAt DateTime? @map("consent_emergency_contact_notified_at") @db.Timestamptz(6)
+  consentReferenceCheckAt           DateTime? @map("consent_reference_check_at") @db.Timestamptz(6)
+
+  schemaVersion Int  @default(1) @map("schema_version")
+  answersJson   Json @default("{}") @map("answers_json") // fallback for future fields, mirrors RecruitApplication's own pattern
+
+  status       RecruitOnboardingStatus @default(SUBMITTED)
+  reviewedById String?                 @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  rejectReason String?                 @map("reject_reason")
+  resultUserId String?                 @map("result_user_id") @db.Uuid // plain pointer, no FK — matches RegisterRequest.resultUserId precedent exactly
+
+  submittedIp        String? @map("submitted_ip") @db.Inet
+  submittedUserAgent String? @map("submitted_user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization                @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  company   Company                     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  branch    Branch?                     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  reviewer  User?                       @relation("RecruitOnboardingReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  documents RecruitOnboardingDocument[]
+  consent   RecruitOnboardingConsent?
+
+  @@index([orgId, status, createdAt])
+  @@index([nationalId])
+  @@map("recruit_onboarding_submissions")
+  @@schema("public")
+}
+
+model RecruitOnboardingDocument {
+  id            String                   @id @default(uuid()) @db.Uuid
+  submissionId  String                   @map("submission_id") @db.Uuid
+  docType       RecruitOnboardingDocType @map("doc_type")
+  driveFileId   String                   @map("drive_file_id")
+  driveFolderId String                   @map("drive_folder_id") // private per-submission folder (ChairOps pattern) — NEVER made public-link-readable
+  fileName      String                   @map("file_name")
+  mimeType      String                   @map("mime_type")
+  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission RecruitOnboardingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@map("recruit_onboarding_documents")
+  @@schema("public")
+}
+
+// Immutable (WORM-triggered, see migration) — the legal evidence trail for the
+// signed contract. Content-hash pattern copied from ChairopsMaidContract, not
+// DocuFlow (which only stores signedAt+image, no content-hash).
+model RecruitOnboardingConsent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  submissionId        String   @unique @map("submission_id") @db.Uuid
+  signedAt            DateTime @map("signed_at") @db.Timestamptz(6)
+  signedIp            String?  @map("signed_ip") @db.Inet
+  signedUserAgent     String?  @map("signed_user_agent")
+  contractContentHash String   @map("contract_content_hash") // sha256 of the exact rendered contract text shown at signing
+  scrolledToEnd       Boolean  @default(false) @map("scrolled_to_end")
+  signatureDocId      String   @map("signature_doc_id") @db.Uuid // plain pointer → RecruitOnboardingDocument, no FK (dodges cascade-delete ordering hazard)
+  selfieDocId         String   @map("selfie_doc_id") @db.Uuid // plain pointer → RecruitOnboardingDocument, no FK
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission RecruitOnboardingSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("recruit_onboarding_consents")
+  @@schema("public")
+}
+
+// =============================================================
 // REPAIR MODULE — ระบบแจ้งซ่อม
 // 7 tables · ใครก็แจ้งได้ · admin assign + dispatch · tech see own jobs ·
 // purchasing sees parts queue · timeline + photos · tracking via code+phone.
@@ -2089,37 +2230,37 @@ enum CfProductCategory {
 // CF.1 — cf_machines (ทุกตู้: CLAW + EXCHANGER)
 // =============================================================
 model CfMachine {
-  id               String        @id @default(uuid()) @db.Uuid
-  orgId            String        @map("org_id") @db.Uuid
-  branchId         String        @map("branch_id") @db.Uuid
-  groupId          String?       @map("group_id") @db.Uuid
-  code             String // "CW-001" หรือ "EX-01"
-  nickname         String?
-  kind             CfMachineKind
-  qrToken          String        @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
-  serial           String?
+  id                     String        @id @default(uuid()) @db.Uuid
+  orgId                  String        @map("org_id") @db.Uuid
+  branchId               String        @map("branch_id") @db.Uuid
+  groupId                String?       @map("group_id") @db.Uuid
+  code                   String // "CW-001" หรือ "EX-01"
+  nickname               String?
+  kind                   CfMachineKind
+  qrToken                String        @unique @map("qr_token") // สำหรับ scan ก่อนกรอก
+  serial                 String?
   // mirror (updated via AFTER INSERT trigger on cf_collection_events)
-  lastCoinMeter    Int           @default(0) @map("last_coin_meter")
-  lastDollMeter    Int           @default(0) @map("last_doll_meter")
-  lastDollStock    Int           @default(0) @map("last_doll_stock")
-  lastEventAt      DateTime?     @map("last_event_at") @db.Timestamptz(6)
+  lastCoinMeter          Int           @default(0) @map("last_coin_meter")
+  lastDollMeter          Int           @default(0) @map("last_doll_meter")
+  lastDollStock          Int           @default(0) @map("last_doll_stock")
+  lastEventAt            DateTime?     @map("last_event_at") @db.Timestamptz(6)
   // initial values (กรอกตอนสร้างตู้ · ใช้ตอน INITIAL event)
-  initialCoinMeter Int           @default(0) @map("initial_coin_meter")
-  initialDollMeter Int           @default(0) @map("initial_doll_meter")
-  installedAt      DateTime?     @map("installed_at") @db.Date
-  retiredAt        DateTime?     @map("retired_at") @db.Timestamptz(6)
-  isActive         Boolean       @default(true) @map("is_active")
+  initialCoinMeter       Int           @default(0) @map("initial_coin_meter")
+  initialDollMeter       Int           @default(0) @map("initial_doll_meter")
+  installedAt            DateTime?     @map("installed_at") @db.Date
+  retiredAt              DateTime?     @map("retired_at") @db.Timestamptz(6)
+  isActive               Boolean       @default(true) @map("is_active")
   // bigfeature (N1/N4) — รูปตู้ + ล็อก baseline ครั้งแรก (once-only). ตู้ใหม่ = false (AWAITING_SETUP)
-  photoUrl              String?   @map("photo_url")
-  isFirstBaselineLocked Boolean   @default(false) @map("is_first_baseline_locked")
-  firstBaselineAppliedAt DateTime? @map("first_baseline_applied_at") @db.Timestamptz(6)
+  photoUrl               String?       @map("photo_url")
+  isFirstBaselineLocked  Boolean       @default(false) @map("is_first_baseline_locked")
+  firstBaselineAppliedAt DateTime?     @map("first_baseline_applied_at") @db.Timestamptz(6)
   // ultrareview Wave 3 — มอบหมายตู้ให้พนักงานเก็บ (opt-in · null = ทุกคนในสาขาเก็บได้เหมือนเดิม)
-  assignedStaffId  String?       @map("assigned_staff_id") @db.Uuid
-  notes            String?
+  assignedStaffId        String?       @map("assigned_staff_id") @db.Uuid
+  notes                  String?
   // ราคาขายตุ๊กตา "ต่อตู้" (ราคาเดียวต่อตู้ · บาท×100) · ตั้งตอนตั้งค่าครั้งแรก · display/reference (ไม่แตะกระทบยอดเงิน)
-  sellPriceCents   Int?          @map("sell_price_cents")
-  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sellPriceCents         Int?          @map("sell_price_cents")
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org               Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
@@ -2320,67 +2461,67 @@ model CfCollectionSession {
 // CF.7 — cf_collection_events (รายตู้ใน session)
 // =============================================================
 model CfCollectionEvent {
-  id                  String      @id @default(uuid()) @db.Uuid
-  orgId               String      @map("org_id") @db.Uuid
-  sessionId           String?     @map("session_id") @db.Uuid // null สำหรับ INITIAL/VOID
-  machineId           String      @map("machine_id") @db.Uuid
-  eventType           CfEventType @default(COLLECTION) @map("event_type")
-  collectedAt         DateTime    @map("collected_at") @db.Timestamptz(6)
-  collectedById       String      @map("collected_by_id") @db.Uuid
+  id                       String      @id @default(uuid()) @db.Uuid
+  orgId                    String      @map("org_id") @db.Uuid
+  sessionId                String?     @map("session_id") @db.Uuid // null สำหรับ INITIAL/VOID
+  machineId                String      @map("machine_id") @db.Uuid
+  eventType                CfEventType @default(COLLECTION) @map("event_type")
+  collectedAt              DateTime    @map("collected_at") @db.Timestamptz(6)
+  collectedById            String      @map("collected_by_id") @db.Uuid
   // ทุก kind
-  coinMeterBefore     Int         @map("coin_meter_before")
-  coinMeterAfter      Int         @map("coin_meter_after")
-  cashCountedCents    Int         @map("cash_counted_cents")
+  coinMeterBefore          Int         @map("coin_meter_before")
+  coinMeterAfter           Int         @map("coin_meter_after")
+  cashCountedCents         Int         @map("cash_counted_cents")
   // CLAW only (nullable for EXCHANGER)
-  dollMeterBefore     Int?        @map("doll_meter_before")
-  dollMeterAfter      Int?        @map("doll_meter_after")
-  stockBefore         Int?        @map("stock_before")
-  stockAfter          Int?        @map("stock_after")
-  refillQty           Int?        @map("refill_qty")
+  dollMeterBefore          Int?        @map("doll_meter_before")
+  dollMeterAfter           Int?        @map("doll_meter_after")
+  stockBefore              Int?        @map("stock_before")
+  stockAfter               Int?        @map("stock_after")
+  refillQty                Int?        @map("refill_qty")
   // EXCHANGER only (nullable for CLAW)
-  promoCoinsDispensed Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
+  promoCoinsDispensed      Int?        @map("promo_coins_dispensed") // เหรียญที่แจกจาก promo (รวมใน meter แล้ว · บันทึกแยกเพื่อ G6)
   // photos (R2 URLs) · 5 per machine in v2 (coin meter · prize meter · prize before · prize after · cash)
-  photoMeterBeforeUrl String?     @map("photo_meter_before_url")
-  photoPrizeMeterUrl  String?     @map("photo_prize_meter_url")
-  photoCashUrl        String?     @map("photo_cash_url")
-  photoMeterAfterUrl  String?     @map("photo_meter_after_url")
-  photoStockUrl       String?     @map("photo_stock_url")
-  photosPurgedAt      DateTime?   @map("photos_purged_at") @db.Timestamptz(6)
+  photoMeterBeforeUrl      String?     @map("photo_meter_before_url")
+  photoPrizeMeterUrl       String?     @map("photo_prize_meter_url")
+  photoCashUrl             String?     @map("photo_cash_url")
+  photoMeterAfterUrl       String?     @map("photo_meter_after_url")
+  photoStockUrl            String?     @map("photo_stock_url")
+  photosPurgedAt           DateTime?   @map("photos_purged_at") @db.Timestamptz(6)
   // bigfeature (N1) — 4 มิเตอร์กายภาพ (baseline snapshot + ต่อรอบ) + รูปมิเตอร์แยก + รูปตู้ (nullable)
-  meterMoneyTop           Int?      @map("meter_money_top")
-  meterMoneyBottom        Int?      @map("meter_money_bottom")
-  meterDollTop            Int?      @map("meter_doll_top")
-  meterDollBottom         Int?      @map("meter_doll_bottom")
-  photoMoneyMeterTopUrl   String?   @map("photo_money_meter_top_url")
-  photoMoneyMeterBottomUrl String?  @map("photo_money_meter_bottom_url")
-  photoDollMeterTopUrl    String?   @map("photo_doll_meter_top_url")
-  photoDollMeterBottomUrl String?   @map("photo_doll_meter_bottom_url")
-  photoMachineUrl         String?   @map("photo_machine_url")
+  meterMoneyTop            Int?        @map("meter_money_top")
+  meterMoneyBottom         Int?        @map("meter_money_bottom")
+  meterDollTop             Int?        @map("meter_doll_top")
+  meterDollBottom          Int?        @map("meter_doll_bottom")
+  photoMoneyMeterTopUrl    String?     @map("photo_money_meter_top_url")
+  photoMoneyMeterBottomUrl String?     @map("photo_money_meter_bottom_url")
+  photoDollMeterTopUrl     String?     @map("photo_doll_meter_top_url")
+  photoDollMeterBottomUrl  String?     @map("photo_doll_meter_bottom_url")
+  photoMachineUrl          String?     @map("photo_machine_url")
   // bigfeature (N5) — เหตุผลเงินขาด (null เมื่อ OK/OVER/round-1)
-  shortReason             String?   @map("short_reason")
+  shortReason              String?     @map("short_reason")
   // anomaly flags ราย event (เก็บแยกจาก session-level)
-  anomalyFlags        String[]    @default([]) @map("anomaly_flags")
-  notes               String?
+  anomalyFlags             String[]    @default([]) @map("anomaly_flags")
+  notes                    String?
   // CEO 2026-08-02 · ตรวจ/ยืนยัน "รายตู้" จากรายงานเจาะสาขา (matrix) — ช่องเงินขาด/เกิน แดง→ฟ้าเมื่อตรวจแล้ว
   //   null = ยังไม่ตรวจ · มีค่า = ตรวจ/ยืนยันแล้ว (ไม่แตะเงิน · แค่สถานะตรวจรายตู้)
-  reviewedAt          DateTime?   @map("reviewed_at") @db.Timestamptz(6)
-  reviewedById        String?     @map("reviewed_by_id") @db.Uuid
+  reviewedAt               DateTime?   @map("reviewed_at") @db.Timestamptz(6)
+  reviewedById             String?     @map("reviewed_by_id") @db.Uuid
   // idempotency key (offline retry / double-tap) — เดิมฝังใน notes marker [BASELINE_KEY] (fake-safety · AUD 2026-07-19)
   //   ย้ายมาเป็นคอลัมน์จริง + partial unique index (org_id, client_key) → กันซ้ำที่ DB ไม่ใช่ substring บน free-text
-  clientKey           String?     @map("client_key")
-  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  clientKey                String?     @map("client_key")
+  createdAt                DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org         Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   session     CfCollectionSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   machine     CfMachine            @relation(fields: [machineId], references: [id], onDelete: Restrict)
   collectedBy User                 @relation("CfEventCollector", fields: [collectedById], references: [id], onDelete: Restrict)
 
+  // idempotency จริงระดับ DB — 1 clientKey = 1 event ต่อ org (NULL ไม่ชนกัน · Postgres NULLS DISTINCT)
+  @@unique([orgId, clientKey])
   @@index([orgId, machineId, collectedAt(sort: Desc)])
   @@index([sessionId])
   @@index([orgId, eventType, collectedAt(sort: Desc)])
-  // idempotency จริงระดับ DB — 1 clientKey = 1 event ต่อ org (NULL ไม่ชนกัน · Postgres NULLS DISTINCT)
-  @@unique([orgId, clientKey])
   @@map("cf_collection_events")
   @@schema("public")
 }
@@ -2443,9 +2584,9 @@ model CfWarehouse {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  createdBy User         @relation("CfWarehouseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdBy User              @relation("CfWarehouseCreator", fields: [createdById], references: [id], onDelete: Restrict)
   movements CfStockMovement[]
   receipts  CfGoodsReceipt[]
   counts    CfStockCount[]
@@ -2487,17 +2628,17 @@ model CfDelivery {
 
 // CF.9b — cf_delivery_lines (รายการสินค้าในใบกระจาย · per-line received qty)
 model CfDeliveryLine {
-  id          String   @id @default(uuid()) @db.Uuid
-  orgId       String   @map("org_id") @db.Uuid
-  deliveryId  String   @map("delivery_id") @db.Uuid
-  productId   String   @map("product_id") @db.Uuid
-  productName String   @map("product_name") // snapshot เผื่อสินค้าถูกแก้ชื่อ/ลบ
-  qty         Int // จำนวนที่ส่งตามใบ
-  receivedQty Int      @default(0) @map("received_qty") // จำนวนที่สาขารับจริง (ตั้งตอนยืนยันรับ)
+  id            String   @id @default(uuid()) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  deliveryId    String   @map("delivery_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  productName   String   @map("product_name") // snapshot เผื่อสินค้าถูกแก้ชื่อ/ลบ
+  qty           Int // จำนวนที่ส่งตามใบ
+  receivedQty   Int      @default(0) @map("received_qty") // จำนวนที่สาขารับจริง (ตั้งตอนยืนยันรับ)
   // ราคาที่แอดมินส่วนกลางระบุ ณ ตอนส่งของ (บังคับกรอก > 0) — ราคาขายสินค้า + ราคาทุน
-  salePriceBaht Int?   @map("sale_price_baht") // ราคาขาย (บาท/ครั้ง) — ตั้งเป็นราคาขายเริ่มต้นตอนสาขารับเข้า
-  unitCostCents Int    @default(0) @map("unit_cost_cents") // ราคาทุน (สตางค์) — ใช้เป็นต้นทุนตอนสาขารับเข้าคลัง
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  salePriceBaht Int?     @map("sale_price_baht") // ราคาขาย (บาท/ครั้ง) — ตั้งเป็นราคาขายเริ่มต้นตอนสาขารับเข้า
+  unitCostCents Int      @default(0) @map("unit_cost_cents") // ราคาทุน (สตางค์) — ใช้เป็นต้นทุนตอนสาขารับเข้าคลัง
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   delivery CfDelivery   @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
@@ -2662,33 +2803,33 @@ model CfConfigRequest {
 // CF.11 — cf_stock_counts (นับสต๊อกเป็นรอบ · cycle count — fork Playland PlaylandStockCount)
 // =============================================================
 model CfStockCount {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  branchId      String   @map("branch_id") @db.Uuid
-  countCode     String   @map("count_code") // SC-YYMMDD-NN · unique per org
-  warehouseId   String?  @map("warehouse_id") @db.Uuid // null = คลังหลัก (main) ของสาขา
-  note          String?
-  itemsCounted  Int      @default(0) @map("items_counted") // จำนวนรายการที่ปรับ
-  totalDiff     Int      @default(0) @map("total_diff") // ผลรวมส่วนต่าง (ชิ้น)
-  countedById   String   @map("counted_by_id") @db.Uuid
-  countedByName String?  @map("counted_by_name") // snapshot ชื่อผู้นับ
-  countedAt     DateTime @default(now()) @map("counted_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  orgId          String    @map("org_id") @db.Uuid
+  branchId       String    @map("branch_id") @db.Uuid
+  countCode      String    @map("count_code") // SC-YYMMDD-NN · unique per org
+  warehouseId    String?   @map("warehouse_id") @db.Uuid // null = คลังหลัก (main) ของสาขา
+  note           String?
+  itemsCounted   Int       @default(0) @map("items_counted") // จำนวนรายการที่ปรับ
+  totalDiff      Int       @default(0) @map("total_diff") // ผลรวมส่วนต่าง (ชิ้น)
+  countedById    String    @map("counted_by_id") @db.Uuid
+  countedByName  String?   @map("counted_by_name") // snapshot ชื่อผู้นับ
+  countedAt      DateTime  @default(now()) @map("counted_at") @db.Timestamptz(6)
   // Wave 4b maker-checker: นับปรับยอดมูลค่าสูง ต้องคนที่ 2 อนุมัติก่อนตัดสต๊อกจริง (กันซ่อนของหาย)
   // APPLIED = ปรับสต๊อกแล้ว (auto เมื่อต่ำกว่าเกณฑ์) · PENDING = รออนุมัติ (ยังไม่ตัดสต๊อก) · APPROVED/REJECTED
-  status        String   @default("APPLIED")
-  reviewedById  String?  @map("reviewed_by_id") @db.Uuid
-  reviewedByName String? @map("reviewed_by_name")
-  reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz(6)
-  reviewNote    String?  @map("review_note")
+  status         String    @default("APPLIED")
+  reviewedById   String?   @map("reviewed_by_id") @db.Uuid
+  reviewedByName String?   @map("reviewed_by_name")
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote     String?   @map("review_note")
   // bigfeature (N3) — รูปแนบตอนนับ (มือถือ) + client idempotency key (nullable · unique-per-org เมื่อ not null)
-  photoUrls     String[] @default([]) @map("photo_urls")
-  clientKey     String?  @map("client_key")
+  photoUrls      String[]  @default([]) @map("photo_urls")
+  clientKey      String?   @map("client_key")
 
-  org     Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch  Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  warehouse CfWarehouse?      @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  counter User                @relation("CfCountCounter", fields: [countedById], references: [id], onDelete: Restrict)
-  lines   CfStockCountLine[]
+  org       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch    Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse CfWarehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  counter   User               @relation("CfCountCounter", fields: [countedById], references: [id], onDelete: Restrict)
+  lines     CfStockCountLine[]
 
   @@unique([orgId, countCode])
   // NB: idempotency uniqueness on (org_id, client_key) is a PARTIAL unique index
@@ -2750,9 +2891,9 @@ model CfLossDoc {
   reviewedAt     DateTime?    @map("reviewed_at") @db.Timestamptz(6)
   reviewNote     String?      @map("review_note")
 
-  org      Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  reporter User          @relation("CfLossReporter", fields: [reportedById], references: [id], onDelete: Restrict)
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  branch   Branch       @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  reporter User         @relation("CfLossReporter", fields: [reportedById], references: [id], onDelete: Restrict)
   lines    CfLossLine[]
 
   @@unique([orgId, lossCode])
@@ -2836,27 +2977,27 @@ model CfRepairLog {
 // ultrareview Wave 4a — custody→deposit: พิสูจน์ว่าเงินที่แม่บ้านเก็บได้ ถูกฝากเข้าธนาคารครบ
 // (ปิดจุดบอดเงินช่วง "มือพนักงาน → ธนาคาร"). 1 ใบฝากครอบได้หลายรอบ · reconcile เงินฝากจริง vs เงินเก็บ.
 model CfCashDeposit {
-  id              String   @id @default(uuid()) @db.Uuid
-  orgId           String   @map("org_id") @db.Uuid
-  branchId        String   @map("branch_id") @db.Uuid
-  depositCode     String   @map("deposit_code") // DP-YYMMDD-NN · unique per org
-  amountCents     Int      @map("amount_cents") // เงินที่ฝากจริง (จากสลิป)
-  expectedCents   Int      @map("expected_cents") // Σ เงินเก็บของรอบที่ครอบ (snapshot ตอนฝาก)
-  varianceCents   Int      @map("variance_cents") // amount - expected (ลบ = ฝากขาด · บวก = ฝากเกิน)
-  status          String   @default("OK") // OK | SHORT | OVER (verdict ส่วนต่าง)
-  sessionCount    Int      @default(0) @map("session_count")
-  slipPhotoUrl    String?  @map("slip_photo_url")
+  id              String    @id @default(uuid()) @db.Uuid
+  orgId           String    @map("org_id") @db.Uuid
+  branchId        String    @map("branch_id") @db.Uuid
+  depositCode     String    @map("deposit_code") // DP-YYMMDD-NN · unique per org
+  amountCents     Int       @map("amount_cents") // เงินที่ฝากจริง (จากสลิป)
+  expectedCents   Int       @map("expected_cents") // Σ เงินเก็บของรอบที่ครอบ (snapshot ตอนฝาก)
+  varianceCents   Int       @map("variance_cents") // amount - expected (ลบ = ฝากขาด · บวก = ฝากเกิน)
+  status          String    @default("OK") // OK | SHORT | OVER (verdict ส่วนต่าง)
+  sessionCount    Int       @default(0) @map("session_count")
+  slipPhotoUrl    String?   @map("slip_photo_url")
   note            String?
-  depositedById   String?  @map("deposited_by_id") @db.Uuid
-  depositedByName String   @map("deposited_by_name")
-  depositedAt     DateTime @map("deposited_at") @db.Timestamptz(6)
+  depositedById   String?   @map("deposited_by_id") @db.Uuid
+  depositedByName String    @map("deposited_by_name")
+  depositedAt     DateTime  @map("deposited_at") @db.Timestamptz(6)
   // Wave 4b maker-checker: ฝากขาด (SHORT) ต้องคนที่ 2 อนุมัติ (คนถือเงินปิดจ๊อบขาดเองไม่ได้)
-  approvalStatus  String   @default("NONE") @map("approval_status") // NONE(OK/OVER) | PENDING | APPROVED | REJECTED
-  reviewedById    String?  @map("reviewed_by_id") @db.Uuid
-  reviewedByName  String?  @map("reviewed_by_name")
+  approvalStatus  String    @default("NONE") @map("approval_status") // NONE(OK/OVER) | PENDING | APPROVED | REJECTED
+  reviewedById    String?   @map("reviewed_by_id") @db.Uuid
+  reviewedByName  String?   @map("reviewed_by_name")
   reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz(6)
-  reviewNote      String?  @map("review_note")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewNote      String?   @map("review_note")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   // เวิร์กช็อป 2026-08-29 · AI (Gemini) อ่านสลิปที่แนบ — ยอด/วันที่/ชื่อ+เลขบัญชีปลายทาง/เลขที่รายการ
   //   port มาจาก ChairopsCashDeposit เป๊ะ (proven pattern, แก้บั๊กมาแล้ว 3 รอบ) — ดู lib/clawfleet/reconcile/slip-ocr.ts
@@ -3258,10 +3399,10 @@ model ChairopsMaidDailyPay {
 // values are SNAPSHOTTED here, not read live from ChairopsUser, so later
 // profile edits never rewrite a signed contract). See maids contract flow.
 model ChairopsMaidContract {
-  id        String                 @id @default(uuid())
-  orgId     String
-  maidId    String
-  status    ChairopsContractStatus @default(DRAFT)
+  id     String                 @id @default(uuid())
+  orgId  String
+  maidId String
+  status ChairopsContractStatus @default(DRAFT)
 
   // ── Party snapshot (ผู้รับจ้าง) ──────────────────────────────────────────
   maidName     String
@@ -3297,8 +3438,8 @@ model ChairopsMaidContract {
   signedAt          DateTime?
   signedIp          String?
   // Legal hardening (F4b · CEO 2026-08-02) — พ.ร.บ. ธุรกรรมทางอิเล็กทรอนิกส์ ม.9.
-  signedUserAgent String? // browser UA captured at signing
-  contentHash     String? // SHA-256 (hex) of the canonical signed terms → tamper-evidence
+  signedUserAgent   String? // browser UA captured at signing
+  contentHash       String? // SHA-256 (hex) of the canonical signed terms → tamper-evidence
 
   // ── สำเนาสัญญาที่เซ็นแล้ว (ไฟล์ที่ดาวน์โหลด/ส่ง Drive ได้) ──────────────
   documentUrl  String?
@@ -3317,26 +3458,26 @@ model ChairopsMaidContract {
 }
 
 model ChairopsChair {
-  id            String    @id @default(uuid())
-  orgId         String
-  chairCode     String
+  id                   String    @id @default(uuid())
+  orgId                String
+  chairCode            String
   // Optional human "ชื่อเล่น" (CEO 2026-08-02 Pinpoint) — e.g. "ตัวหน้าร้าน".
   // Purely a display label; chairCode stays the stable key POS/collection
   // history is joined on, so renaming never breaks money attribution.
-  name          String?
-  branchId      String
-  generation    String?
-  pricePerCycle Int?
-  isOnline      Boolean   @default(true)
-  isActive      Boolean   @default(true)
-  installedAt   DateTime?
-  retiredAt     DateTime?
+  name                 String?
+  branchId             String
+  generation           String?
+  pricePerCycle        Int?
+  isOnline             Boolean   @default(true)
+  isActive             Boolean   @default(true)
+  installedAt          DateTime?
+  retiredAt            DateTime?
   // CEO 2026-06-29 · "ตู้เสีย" per-stream detector: consecutive zero-days on a
   // payment device before it's flagged suspect-broken. Adjustable PER CHAIR so a
   // low-traffic placement can be bumped (e.g. 3) without spamming. Default 2.
-  suspectThresholdDays Int @default(2)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  suspectThresholdDays Int       @default(2)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   branch        ChairopsBranch         @relation(fields: [branchId], references: [id])
   damageTickets ChairopsDamageTicket[]
@@ -3529,18 +3670,18 @@ model ChairopsCashDeposit {
   // สลิปซ้ำ (วันที่+ยอด+ชื่อบัญชีตรงกับใบอื่น) + บัญชีปลายทางไม่ตรงที่ตั้งค่าไว้ →
   // auto-flag requiresReview เหมือนเกณฑ์ |diff|>=500 เดิม (BF1 MAID-04) พร้อมเหตุผล
   // ที่อ่านได้ใน ocrFlagReason (แยกจาก notes ที่เป็นข้อความของแม่บ้านเอง).
-  ocrAmount      Int?
-  ocrDate        DateTime?
-  ocrAccountName String?
+  ocrAmount        Int?
+  ocrDate          DateTime?
+  ocrAccountName   String?
   // CEO 2026-08-29: เลขบัญชีปลายทาง — ใช้ตรวจ "บัญชีผิด" แทน ocrAccountName เพราะชื่อ
   // นิติบุคคลเต็มที่ AI อ่านจากสลิปเขียนคนละรูปแบบกับชื่อย่อในระบบเสมอ (ดู
   // checkSlipFraud ใน lib/chairops/reconcile/slip-ocr.ts).
   ocrAccountNumber String?
   // CEO 2026-08-18: เลขที่รายการบนสลิป (ถ้าอ่านได้) — สัญญาณตรวจสลิปซ้ำที่แม่นกว่า
   // วันที่+ยอด (เลขตรงกันเป๊ะ = มั่นใจสูงว่าเป็นสลิปเดิม/ใบเดียวกัน) ดู checkSlipFraud.
-  ocrRefNo       String?
-  ocrReadAt      DateTime?
-  ocrFlagReason  String?
+  ocrRefNo         String?
+  ocrReadAt        DateTime?
+  ocrFlagReason    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3980,12 +4121,12 @@ model ChairopsVendorBill {
 // CEO's free 2 TB Drive; keep R2 as the live copy for ~2 months then offload.
 // =============================================================
 model DriveFolderCache {
-  id        String       @id @default(uuid()) @db.Uuid
-  orgId     String       @map("org_id") @db.Uuid
-  parentId  String       @map("parent_id") // Drive folder ID of parent, or "root"
-  name      String       // folder name as stored in Drive
-  folderId  String       @map("folder_id") // Drive folder ID of this folder
-  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid()) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  parentId  String   @map("parent_id") // Drive folder ID of parent, or "root"
+  name      String // folder name as stored in Drive
+  folderId  String   @map("folder_id") // Drive folder ID of this folder
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -4221,16 +4362,16 @@ model PlaylandBranch {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  devices      PlaylandDevice[]
-  members      PlaylandMember[]
-  packages     PlaylandPackage[]
-  products     PlaylandProduct[]
-  sessions     PlaylandSession[]
-  bookings     PlaylandBooking[]
-  sales        PlaylandSale[]
-  shifts       PlaylandShift[]
-  promos       PlaylandPromo[]
-  alerts       PlaylandAlert[]
+  devices        PlaylandDevice[]
+  members        PlaylandMember[]
+  packages       PlaylandPackage[]
+  products       PlaylandProduct[]
+  sessions       PlaylandSession[]
+  bookings       PlaylandBooking[]
+  sales          PlaylandSale[]
+  shifts         PlaylandShift[]
+  promos         PlaylandPromo[]
+  alerts         PlaylandAlert[]
   faceEvents     PlaylandFaceEvent[]
   familyGroups   PlaylandFamilyGroup[]
   dailyReports   PlaylandDailyReport[]
@@ -4554,7 +4695,7 @@ model PlaylandProduct {
   createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  branch        PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch        PlaylandBranch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
   saleLines     PlaylandSaleLine[]
   movements     PlaylandStockMovement[]
   purchaseLines PlaylandPurchaseLine[]
@@ -4637,15 +4778,15 @@ model PlaylandPurchaseLine {
 
 // ---------- 10d. Repair Logs (ซ่อมเครื่อง · เบิกอะไหล่) ----------
 model PlaylandRepairLog {
-  id              String               @id @default(uuid()) @db.Uuid
-  orgId           String               @map("org_id") @db.Uuid
-  branchId        String               @map("branch_id") @db.Uuid
-  repairCode      String               @unique @map("repair_code")
-  machineLabel    String               @map("machine_label")
+  id              String   @id @default(uuid()) @db.Uuid
+  orgId           String   @map("org_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  repairCode      String   @unique @map("repair_code")
+  machineLabel    String   @map("machine_label")
   description     String?
-  partsCostCents  Int                  @default(0) @map("parts_cost_cents")
-  createdByUserId String               @map("created_by_user_id") @db.Uuid
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  partsCostCents  Int      @default(0) @map("parts_cost_cents")
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   branch PlaylandBranch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
   parts  PlaylandRepairPart[]
@@ -4761,7 +4902,7 @@ model PlaylandStockCount {
   countedByName   String?  @map("counted_by_name") // snapshot ชื่อผู้นับ
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  branch PlaylandBranch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch PlaylandBranch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
   lines  PlaylandStockCountLine[]
 
   @@index([orgId, branchId])
@@ -5265,25 +5406,25 @@ model InboxConversation {
 }
 
 model InboxMessage {
-  id             String         @id @default(uuid()) @db.Uuid
-  orgId          String         @map("org_id") @db.Uuid
-  conversationId String         @map("conversation_id") @db.Uuid
-  channelId      String         @map("channel_id") @db.Uuid
-  platform       InboxPlatform
-  direction      InboxDirection
-  body           String
-  sentByBot      Boolean        @default(false) @map("sent_by_bot")
-  externalId     String?        @map("external_id") // provider-side message ID (idempotency)
-  attachments    Json?
-  errorMessage   String?        @map("error_message")
+  id                String         @id @default(uuid()) @db.Uuid
+  orgId             String         @map("org_id") @db.Uuid
+  conversationId    String         @map("conversation_id") @db.Uuid
+  channelId         String         @map("channel_id") @db.Uuid
+  platform          InboxPlatform
+  direction         InboxDirection
+  body              String
+  sentByBot         Boolean        @default(false) @map("sent_by_bot")
+  externalId        String?        @map("external_id") // provider-side message ID (idempotency)
+  attachments       Json?
+  errorMessage      String?        @map("error_message")
   // Group chats: who actually sent this message (one group → many senders).
-  senderLineUserId  String?     @map("sender_line_user_id")
-  senderDisplayName String?     @map("sender_display_name")
+  senderLineUserId  String?        @map("sender_line_user_id")
+  senderDisplayName String?        @map("sender_display_name")
   // Outbound only: true = sent via push (counts toward LINE quota), false = reply
   // token (free), null = inbound. Drives the monthly push counter.
-  viaPush        Boolean?       @map("via_push")
-  createdById    String?        @map("created_by_id") @db.Uuid
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  viaPush           Boolean?       @map("via_push")
+  createdById       String?        @map("created_by_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   channel      InboxChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -6162,10 +6303,10 @@ model Conversation {
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  org        Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  channel    FuelInboxChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  customer   Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  assignedTo FuelUser?         @relation("ConvAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  org        Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channel    FuelInboxChannel?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  customer   Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedTo FuelUser?           @relation("ConvAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages   Message[]
   quotes     Quote[]
   labels     FuelConvLabelLink[]
@@ -6609,7 +6750,7 @@ model LedgerCategory {
   name               String
   kind               String   @default("expense") // เผื่ออนาคต (รายรับ v2)
   color              String?
-  trcloudAccCode     String?  @map("trcloud_acc_code")     // GL account code (e.g. 5220020)
+  trcloudAccCode     String?  @map("trcloud_acc_code") // GL account code (e.g. 5220020)
   trcloudProductCode String?  @map("trcloud_product_code") // fixed SKU (JPS-100/101/103)
   vatClaimable       Boolean  @default(false) @map("vat_claimable") // true = ขอ VAT คืนได้ (ต้องตั้งใจ); false = default conservative
   sort               Int      @default(0)
@@ -6634,19 +6775,19 @@ model LedgerCategory {
 //   ❌ ห้ามสับสน/ต่อ FK กับ RentalProject (lease ERP · Cascade children · คนละโมดูล)
 // ลบ = soft-archive (status='archived') เท่านั้น · expense.projectId → SET NULL (ไม่ทำใบเสร็จหาย).
 model LedgerProject {
-  id          String    @id @default(uuid()) @db.Uuid
-  orgId       String    @map("org_id") @db.Uuid
-  companyId   String    @map("company_id") @db.Uuid
-  name        String
-  status      String    @default("active") // active | archived
-  budgetTotal Decimal?  @map("budget_total") @db.Decimal(15, 2) // งบทั้งโครงการ — เทียบกับ "ยอดจ่ายจริง" (total−WHT · CEO 2026-07-09)
-  retentionPct Decimal  @default(0) @map("retention_pct") @db.Decimal(5, 2) // % เงินประกันผลงานหักทุกงวด (P2 · 0=ไม่มี · display-only ไม่มี engine คืนอัตโนมัติ)
-  startedAt   DateTime? @map("started_at") @db.Date
-  endedAt     DateTime? @map("ended_at") @db.Date
-  note        String?
-  createdBy   String?   @map("created_by") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  companyId    String    @map("company_id") @db.Uuid
+  name         String
+  status       String    @default("active") // active | archived
+  budgetTotal  Decimal?  @map("budget_total") @db.Decimal(15, 2) // งบทั้งโครงการ — เทียบกับ "ยอดจ่ายจริง" (total−WHT · CEO 2026-07-09)
+  retentionPct Decimal   @default(0) @map("retention_pct") @db.Decimal(5, 2) // % เงินประกันผลงานหักทุกงวด (P2 · 0=ไม่มี · display-only ไม่มี engine คืนอัตโนมัติ)
+  startedAt    DateTime? @map("started_at") @db.Date
+  endedAt      DateTime? @map("ended_at") @db.Date
+  note         String?
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([orgId, companyId, name])
   @@index([orgId, companyId, status])
@@ -6689,7 +6830,7 @@ model LedgerExpense {
   companyId             String              @map("company_id") @db.Uuid
   branchId              String?             @map("branch_id") @db.Uuid
   docCode               String              @map("doc_code") // EXP-YYYYMM-NNNN
-  title                 String?             // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (โชว์แทน docCode เมื่อมี) — null=ใช้ docCode
+  title                 String? // ชื่อเรียกใบที่ผู้ใช้ตั้งเอง (โชว์แทน docCode เมื่อมี) — null=ใช้ docCode
   status                LedgerExpenseStatus @default(draft)
   source                LedgerExpenseSource @default(web)
   vendor                String?
@@ -6831,7 +6972,7 @@ model LedgerPayment {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  matchedExpense LedgerExpense?         @relation("ExpensePayments", fields: [matchedExpenseId], references: [id], onDelete: SetNull)
+  matchedExpense LedgerExpense?        @relation("ExpensePayments", fields: [matchedExpenseId], references: [id], onDelete: SetNull)
   paymentRequest LedgerPaymentRequest? @relation("RequestPayments", fields: [paymentRequestId], references: [id], onDelete: SetNull)
 
   @@index([orgId, companyId, matchedExpenseId])
@@ -6849,43 +6990,43 @@ model LedgerPayment {
 // → ผู้บริหารโอน+ส่งสลิป → จับคู่ "สลิป ↔ คำขอ" (ไม่เดายอด) → ปิดทุกบิลในคำขอ.
 // 3 ยอด snapshot (gross/wht/expected) freeze ณ เวลาขอ; จับคู่สลิปกับ expected (net-of-WHT).
 model LedgerPaymentRequest {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @map("org_id") @db.Uuid
-  companyId       String    @map("company_id") @db.Uuid
-  branchId        String?   @map("branch_id") @db.Uuid
+  id              String  @id @default(uuid()) @db.Uuid
+  orgId           String  @map("org_id") @db.Uuid
+  companyId       String  @map("company_id") @db.Uuid
+  branchId        String? @map("branch_id") @db.Uuid
   vendor          String?
   // payee snapshot (D4) — frozen ณ เวลาขอ (immutable evidence)
-  payeeAcctName   String?   @map("payee_acct_name")
-  payeeBankCode   String?   @map("payee_bank_code")
-  payeeAcctNo     String?   @map("payee_acct_no")
-  payeePromptpay  String?   @map("payee_promptpay")
-  payeeQrPayload  String?   @map("payee_qr_payload")
-  payeeQrImageUrl String?   @map("payee_qr_image_url") // uploaded QR image (R2) — scan from card
+  payeeAcctName   String? @map("payee_acct_name")
+  payeeBankCode   String? @map("payee_bank_code")
+  payeeAcctNo     String? @map("payee_acct_no")
+  payeePromptpay  String? @map("payee_promptpay")
+  payeeQrPayload  String? @map("payee_qr_payload")
+  payeeQrImageUrl String? @map("payee_qr_image_url") // uploaded QR image (R2) — scan from card
 
-  billsGross      Decimal   @default(0) @map("bills_gross") @db.Decimal(15, 2)
-  whtTotal        Decimal   @default(0) @map("wht_total") @db.Decimal(15, 2)
-  expectedTransfer Decimal  @default(0) @map("expected_transfer") @db.Decimal(15, 2) // gross - wht
-  paidTotal       Decimal   @default(0) @map("paid_total") @db.Decimal(15, 2)        // Σ matched slips
-  state           String    @default("open") // open|partial|paid|cancelled|abnormal|reversed
-  abnormalReason  String?   @map("abnormal_reason")
-  requestedBy     String?   @map("requested_by") @db.Uuid
-  requestedAt     DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
-  pushedGroupId   String?   @map("pushed_group_id")
-  pushedMessageId String?   @map("pushed_message_id")
-  paidBy          String?   @map("paid_by")           // LINE userId of payer (from slip)
-  slipUploadedBy  String?   @map("slip_uploaded_by") @db.Uuid
-  paidAt          DateTime? @map("paid_at") @db.Timestamptz(6)
-  cancelledBy     String?   @map("cancelled_by") @db.Uuid
-  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  billsGross       Decimal   @default(0) @map("bills_gross") @db.Decimal(15, 2)
+  whtTotal         Decimal   @default(0) @map("wht_total") @db.Decimal(15, 2)
+  expectedTransfer Decimal   @default(0) @map("expected_transfer") @db.Decimal(15, 2) // gross - wht
+  paidTotal        Decimal   @default(0) @map("paid_total") @db.Decimal(15, 2) // Σ matched slips
+  state            String    @default("open") // open|partial|paid|cancelled|abnormal|reversed
+  abnormalReason   String?   @map("abnormal_reason")
+  requestedBy      String?   @map("requested_by") @db.Uuid
+  requestedAt      DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  pushedGroupId    String?   @map("pushed_group_id")
+  pushedMessageId  String?   @map("pushed_message_id")
+  paidBy           String?   @map("paid_by") // LINE userId of payer (from slip)
+  slipUploadedBy   String?   @map("slip_uploaded_by") @db.Uuid
+  paidAt           DateTime? @map("paid_at") @db.Timestamptz(6)
+  cancelledBy      String?   @map("cancelled_by") @db.Uuid
+  cancelledAt      DateTime? @map("cancelled_at") @db.Timestamptz(6)
   // PV (ใบสำคัญจ่าย) — ลงบัญชี "จ่ายจริง" ใน TRCloud หลังสลิปปิดคำขอ (1 โอน = 1 PV อ้างหลาย AP).
   // pvSourceBank = รหัสธนาคารต้นทางจากสลิป → เลือกสูตร PV บัญชีเงินสด/ธนาคาร (CEO 2026-07-25).
-  trcloudPvDocId  String?   @map("trcloud_pv_doc_id")
-  trcloudPvDocNo  String?   @map("trcloud_pv_doc_no")
-  trcloudPvAt     DateTime? @map("trcloud_pv_at") @db.Timestamptz(6)
-  trcloudPvError  String?   @map("trcloud_pv_error")
-  pvSourceBank    String?   @map("pv_source_bank")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  trcloudPvDocId   String?   @map("trcloud_pv_doc_id")
+  trcloudPvDocNo   String?   @map("trcloud_pv_doc_no")
+  trcloudPvAt      DateTime? @map("trcloud_pv_at") @db.Timestamptz(6)
+  trcloudPvError   String?   @map("trcloud_pv_error")
+  pvSourceBank     String?   @map("pv_source_bank")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   bills    LedgerPaymentRequestBill[]
   payments LedgerPayment[]            @relation("RequestPayments")
@@ -7076,18 +7217,18 @@ model LedgerLineChannel {
 // (so single-group setups behave exactly as before). Relationless (matches
 // LedgerLineMember) to keep the migration additive + low-risk on the live DB.
 model LedgerLineGroup {
-  id        String   @id @default(uuid()) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  companyId String   @map("company_id") @db.Uuid
-  groupId   String   @map("group_id") // LINE group id (C...)
-  branchId  String?  @map("branch_id") @db.Uuid // this group → this branch
-  label     String? // the real LINE group name (fetched via the group/summary API)
-  memberCount Int?   @map("member_count") // snapshot of LINE group member count
-  active    Boolean  @default(true)
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  groupId      String   @map("group_id") // LINE group id (C...)
+  branchId     String?  @map("branch_id") @db.Uuid // this group → this branch
+  label        String? // the real LINE group name (fetched via the group/summary API)
+  memberCount  Int?     @map("member_count") // snapshot of LINE group member count
+  active       Boolean  @default(true)
   // PR4/D4 — true = กลุ่มส่งสลิป (รูป = สลิปจ่ายเงิน ไม่ใช่ใบเสร็จ).
-  isSlipIntake Boolean @default(false) @map("is_slip_intake")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  isSlipIntake Boolean  @default(false) @map("is_slip_intake")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([orgId, companyId, groupId])
   @@index([orgId, companyId, active])
@@ -7243,22 +7384,22 @@ model LedgerTrcloudProduct {
 // Cache ของ SKU จาก TRCloud (mirror inventory/search ต่อธุรกิจ) — สำหรับ stock-IN.
 // ไม่สร้าง SKU เอง · stock_tracked = admin เลือกว่าตัวไหนรับเข้าสต๊อก (LEDGER_STOCKIN_V1).
 model LedgerTrcloudSku {
-  id            String   @id @default(uuid()) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  companyId     String   @map("company_id") @db.Uuid
-  productId     String   @map("product_id") // TRCloud SKU code (OIL_G95/LUB-0004/H_S0001)
-  productName   String?  @map("product_name")
-  businessGroup String?  @map("business_group") // TRCloud category field (business-line)
+  id            String    @id @default(uuid()) @db.Uuid
+  orgId         String    @map("org_id") @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  productId     String    @map("product_id") // TRCloud SKU code (OIL_G95/LUB-0004/H_S0001)
+  productName   String?   @map("product_name")
+  businessGroup String?   @map("business_group") // TRCloud category field (business-line)
   unit          String?
-  packFactor    Decimal  @default(1) @map("pack_factor") @db.Decimal(15, 4) // legacy default; 1 ลัง = N ขวด
-  packUnits     Json     @default("[]") @map("pack_units") // [{name,factor}] หลายหน่วยซื้อ เช่น โหล=12, ลัง=24
-  stockTracked  Boolean  @default(false) @map("stock_tracked")
+  packFactor    Decimal   @default(1) @map("pack_factor") @db.Decimal(15, 4) // legacy default; 1 ลัง = N ขวด
+  packUnits     Json      @default("[]") @map("pack_units") // [{name,factor}] หลายหน่วยซื้อ เช่น โหล=12, ลัง=24
+  stockTracked  Boolean   @default(false) @map("stock_tracked")
   status        String?
-  balanceCached Decimal? @map("balance_cached") @db.Decimal(15, 4)
-  costCached    Decimal? @map("cost_cached") @db.Decimal(15, 4)
+  balanceCached Decimal?  @map("balance_cached") @db.Decimal(15, 4)
+  costCached    Decimal?  @map("cost_cached") @db.Decimal(15, 4)
   syncedAt      DateTime? @map("synced_at") @db.Timestamptz(6)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   aliases     LedgerSkuAlias[]
   branchLinks LedgerSkuBranch[]
@@ -7433,54 +7574,54 @@ enum RentalDiscountKind {
 }
 
 model RentalProject {
-  id               String            @id @default(uuid()) @db.Uuid
-  orgId            String            @map("org_id") @db.Uuid
-  companyId        String?           @map("company_id") @db.Uuid
-  name             String
-  slug             String
-  address          String?
-  description      String?
-  planImageUrl     String?           @map("plan_image_url")
-  view3dEnabled    Boolean           @default(true) @map("view_3d_enabled")
-  electricRate     Decimal           @default(7) @map("electric_rate") @db.Decimal(10, 2)
-  waterRate        Decimal           @default(18) @map("water_rate") @db.Decimal(10, 2)
-  vatPercent       Decimal           @default(0) @map("vat_percent") @db.Decimal(5, 2)
+  id                     String            @id @default(uuid()) @db.Uuid
+  orgId                  String            @map("org_id") @db.Uuid
+  companyId              String?           @map("company_id") @db.Uuid
+  name                   String
+  slug                   String
+  address                String?
+  description            String?
+  planImageUrl           String?           @map("plan_image_url")
+  view3dEnabled          Boolean           @default(true) @map("view_3d_enabled")
+  electricRate           Decimal           @default(7) @map("electric_rate") @db.Decimal(10, 2)
+  waterRate              Decimal           @default(18) @map("water_rate") @db.Decimal(10, 2)
+  vatPercent             Decimal           @default(0) @map("vat_percent") @db.Decimal(5, 2)
   // รายการไหน "คิด VAT" — ค่าเริ่มต้นของทั้งโครงการ (สัญญาแต่ละห้อง override ได้)
   // ค่าเช่าอสังหาฯ ยกเว้น VAT ตามปกติ · น้ำ/ไฟ ที่เรียกเก็บถือเป็นบริการ คิด VAT ได้
   // CEO 2026-08-07: ค่าเช่า = ยกเว้น VAT · น้ำ/ไฟ = คิด VAT (default โครงการใหม่ · row เดิมไม่แตะ)
-  vatOnRent        Boolean           @default(false) @map("vat_on_rent")
-  vatOnElectric    Boolean           @default(true) @map("vat_on_electric")
-  vatOnWater       Boolean           @default(true) @map("vat_on_water")
-  lateFeeType      RentalLateFeeType @default(none) @map("late_fee_type")
-  lateFeeValue     Decimal           @default(0) @map("late_fee_value") @db.Decimal(15, 2)
-  lateFeeGraceDays Int               @default(7) @map("late_fee_grace_days")
-  billDueDay       Int               @default(5) @map("bill_due_day")
-  billCompanyName  String?           @map("bill_company_name")
-  billTaxId        String?           @map("bill_tax_id")
-  billBranch       String?           @map("bill_branch")
-  billAddress      String?           @map("bill_address")
-  autoBillEnabled  Boolean           @default(true) @map("auto_bill_enabled")
-  billEditUnlocked Boolean           @default(false) @map("bill_edit_unlocked")
-  billDeleteUnlocked Boolean         @default(false) @map("bill_delete_unlocked")
-  billIssueUnlocked Boolean          @default(true) @map("bill_issue_unlocked")
+  vatOnRent              Boolean           @default(false) @map("vat_on_rent")
+  vatOnElectric          Boolean           @default(true) @map("vat_on_electric")
+  vatOnWater             Boolean           @default(true) @map("vat_on_water")
+  lateFeeType            RentalLateFeeType @default(none) @map("late_fee_type")
+  lateFeeValue           Decimal           @default(0) @map("late_fee_value") @db.Decimal(15, 2)
+  lateFeeGraceDays       Int               @default(7) @map("late_fee_grace_days")
+  billDueDay             Int               @default(5) @map("bill_due_day")
+  billCompanyName        String?           @map("bill_company_name")
+  billTaxId              String?           @map("bill_tax_id")
+  billBranch             String?           @map("bill_branch")
+  billAddress            String?           @map("bill_address")
+  autoBillEnabled        Boolean           @default(true) @map("auto_bill_enabled")
+  billEditUnlocked       Boolean           @default(false) @map("bill_edit_unlocked")
+  billDeleteUnlocked     Boolean           @default(false) @map("bill_delete_unlocked")
+  billIssueUnlocked      Boolean           @default(true) @map("bill_issue_unlocked")
   // สิทธิ์จัดการสัญญา (mirror bill toggles) — super_admin ทะลุเสมอ
-  contractEditUnlocked   Boolean     @default(false) @map("contract_edit_unlocked")
-  contractDeleteUnlocked Boolean     @default(false) @map("contract_delete_unlocked")
+  contractEditUnlocked   Boolean           @default(false) @map("contract_edit_unlocked")
+  contractDeleteUnlocked Boolean           @default(false) @map("contract_delete_unlocked")
   // บัญชีรับเงิน (โชว์บนบิล/สัญญา/หน้าจ่ายออนไลน์ ให้ผู้เช่าจ่ายง่าย)
-  bankName          String?          @map("bank_name")
-  bankAccountNo     String?          @map("bank_account_no")
-  bankAccountHolder String?          @map("bank_account_holder")
-  promptpayId       String?          @map("promptpay_id")
-  paymentNote       String?          @map("payment_note")
+  bankName               String?           @map("bank_name")
+  bankAccountNo          String?           @map("bank_account_no")
+  bankAccountHolder      String?           @map("bank_account_holder")
+  promptpayId            String?           @map("promptpay_id")
+  paymentNote            String?           @map("payment_note")
   // CEO 2026-08-17: บัญชีธนาคารที่ยอดบิลที่จ่ายครบแล้วควรเข้าจริง — ใช้ตอนกด
   // "ส่งเข้าบัญชี LedgerLine" (ledger_revenue_entry, source_type=RENTSPACE).
   // companyId ด้านบน (มีอยู่แล้ว แต่ไม่เคยผูก UI ใช้งาน) ใช้เป็น company_id คู่กัน
   // — pattern เดียวกับ ChairopsBranch.reconcileCompanyId/reconcileBankAccountId
   // (ตารางปลายทางไม่มี Prisma model เหมือนกัน).
-  reconcileBankAccountId String?     @map("reconcile_bank_account_id") @db.Uuid
-  isActive         Boolean           @default(true) @map("is_active")
-  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reconcileBankAccountId String?           @map("reconcile_bank_account_id") @db.Uuid
+  isActive               Boolean           @default(true) @map("is_active")
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   units            RentalUnit[]
   contracts        RentalContract[]
@@ -7495,35 +7636,35 @@ model RentalProject {
 }
 
 model RentalUnit {
-  id          String           @id @default(uuid()) @db.Uuid
-  orgId       String           @map("org_id") @db.Uuid
-  projectId   String           @map("project_id") @db.Uuid
-  code        String // A1 · A2/1
-  name        String? // SHABU ZEED
-  building    String? // A1 / A2 / A3 (ชื่ออาคารแบบข้อความ — sync กับ buildingRef.name)
-  buildingId  String?          @map("building_id") @db.Uuid
-  floor       Int?
-  zone        String?
-  areaSqm     Decimal?         @map("area_sqm") @db.Decimal(10, 2)
-  baseRentThb Decimal          @default(0) @map("base_rent_thb") @db.Decimal(15, 2)
-  status      RentalUnitStatus @default(vacant)
-  mapX        Decimal?         @map("map_x") @db.Decimal(7, 3)
-  mapY        Decimal?         @map("map_y") @db.Decimal(7, 3)
-  mapW        Decimal?         @map("map_w") @db.Decimal(7, 3)
-  mapH        Decimal?         @map("map_h") @db.Decimal(7, 3)
-  mapColor    String?          @map("map_color")
-  sortOrder   Int              @default(0) @map("sort_order")
-  matrixSortOrder Int?         @map("matrix_sort_order") // ลำดับที่ CEO จัดเองในหน้า Excel matrix (แยกจาก sortOrder — null = ยังไม่จัด)
-  isActive    Boolean          @default(true) @map("is_active")
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String           @id @default(uuid()) @db.Uuid
+  orgId           String           @map("org_id") @db.Uuid
+  projectId       String           @map("project_id") @db.Uuid
+  code            String // A1 · A2/1
+  name            String? // SHABU ZEED
+  building        String? // A1 / A2 / A3 (ชื่ออาคารแบบข้อความ — sync กับ buildingRef.name)
+  buildingId      String?          @map("building_id") @db.Uuid
+  floor           Int?
+  zone            String?
+  areaSqm         Decimal?         @map("area_sqm") @db.Decimal(10, 2)
+  baseRentThb     Decimal          @default(0) @map("base_rent_thb") @db.Decimal(15, 2)
+  status          RentalUnitStatus @default(vacant)
+  mapX            Decimal?         @map("map_x") @db.Decimal(7, 3)
+  mapY            Decimal?         @map("map_y") @db.Decimal(7, 3)
+  mapW            Decimal?         @map("map_w") @db.Decimal(7, 3)
+  mapH            Decimal?         @map("map_h") @db.Decimal(7, 3)
+  mapColor        String?          @map("map_color")
+  sortOrder       Int              @default(0) @map("sort_order")
+  matrixSortOrder Int?             @map("matrix_sort_order") // ลำดับที่ CEO จัดเองในหน้า Excel matrix (แยกจาก sortOrder — null = ยังไม่จัด)
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project     RentalProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  buildingRef RentalBuilding?      @relation(fields: [buildingId], references: [id], onDelete: SetNull)
-  contracts   RentalContract[]
-  meters      RentalMeter[]
-  readings    RentalMeterReading[]
-  bills       RentalBill[]
+  project          RentalProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  buildingRef      RentalBuilding?         @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  contracts        RentalContract[]
+  meters           RentalMeter[]
+  readings         RentalMeterReading[]
+  bills            RentalBill[]
   recurringCharges RentalRecurringCharge[]
 
   @@unique([projectId, code])
@@ -7553,39 +7694,39 @@ model RentalBuilding {
 }
 
 model RentalTenant {
-  id          String    @id @default(uuid()) @db.Uuid
-  orgId       String    @map("org_id") @db.Uuid
-  prefix      String? // นาย/นาง/บริษัท
-  firstName   String?   @map("first_name")
-  lastName    String?   @map("last_name")
-  nickname    String?
-  bizName     String?   @map("biz_name") // ชื่อร้าน/กิจการ
-  phones      String[]  @default([])
-  idCardNo    String?   @map("id_card_no")
-  taxId       String?   @map("tax_id")
-  birthDate   DateTime? @map("birth_date") @db.Date
-  nationality String?
-  address     String?
-  email       String?
-  facebook    String?
-  lineId      String?   @map("line_id")
-  idCardUrl   String?   @map("id_card_url")
-  docUrls     String[]  @default([]) @map("doc_urls")
-  note        String?
+  id                    String    @id @default(uuid()) @db.Uuid
+  orgId                 String    @map("org_id") @db.Uuid
+  prefix                String? // นาย/นาง/บริษัท
+  firstName             String?   @map("first_name")
+  lastName              String?   @map("last_name")
+  nickname              String?
+  bizName               String?   @map("biz_name") // ชื่อร้าน/กิจการ
+  phones                String[]  @default([])
+  idCardNo              String?   @map("id_card_no")
+  taxId                 String?   @map("tax_id")
+  birthDate             DateTime? @map("birth_date") @db.Date
+  nationality           String?
+  address               String?
+  email                 String?
+  facebook              String?
+  lineId                String?   @map("line_id")
+  idCardUrl             String?   @map("id_card_url")
+  docUrls               String[]  @default([]) @map("doc_urls")
+  note                  String?
   // ผู้มีอำนาจลงนามแทน (กรณีผู้เช่าเป็นนิติบุคคล) — ใช้เติมช่อง "ลงชื่อ ผู้เช่า" ในสัญญา
-  authorizedSignerName  String? @map("authorized_signer_name")
-  authorizedSignerPhone String? @map("authorized_signer_phone")
+  authorizedSignerName  String?   @map("authorized_signer_name")
+  authorizedSignerPhone String?   @map("authorized_signer_phone")
   // ── พอร์ทัลผู้เช่า (ลิงก์เชิญ) · ผูก LINE/อีเมล รับบิล+แจ้งเตือน (RentSpace tenant portal · 2026-07-24) ──
-  portalToken     String?   @unique @map("portal_token") // ลิงก์เชิญ = กุญแจเปิดพอร์ทัล (null = ยังไม่ออกลิงก์)
-  portalTokenAt   DateTime? @map("portal_token_at") @db.Timestamptz(6)
-  portalRevoked   Boolean   @default(false) @map("portal_revoked") // เพิกถอนลิงก์โดยไม่ลบ token
-  lineUserId      String?   @unique @map("line_user_id") // LINE userId จริง (จาก OA RentSpace) — ต่างจาก lineId (ข้อความเปล่า)
-  lineDisplayName String?   @map("line_display_name")
-  lineLinkedAt    DateTime? @map("line_linked_at") @db.Timestamptz(6)
-  emailBillOptIn  Boolean   @default(false) @map("email_bill_opt_in") // ผู้เช่าเลือกรับบิลทางอีเมล
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  portalToken           String?   @unique @map("portal_token") // ลิงก์เชิญ = กุญแจเปิดพอร์ทัล (null = ยังไม่ออกลิงก์)
+  portalTokenAt         DateTime? @map("portal_token_at") @db.Timestamptz(6)
+  portalRevoked         Boolean   @default(false) @map("portal_revoked") // เพิกถอนลิงก์โดยไม่ลบ token
+  lineUserId            String?   @unique @map("line_user_id") // LINE userId จริง (จาก OA RentSpace) — ต่างจาก lineId (ข้อความเปล่า)
+  lineDisplayName       String?   @map("line_display_name")
+  lineLinkedAt          DateTime? @map("line_linked_at") @db.Timestamptz(6)
+  emailBillOptIn        Boolean   @default(false) @map("email_bill_opt_in") // ผู้เช่าเลือกรับบิลทางอีเมล
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   contracts RentalContract[]
   bills     RentalBill[]
@@ -7675,99 +7816,99 @@ model RentalContractAddendum {
 }
 
 model RentalContract {
-  id               String                  @id @default(uuid()) @db.Uuid
-  orgId            String                  @map("org_id") @db.Uuid
-  projectId        String                  @map("project_id") @db.Uuid
-  unitId           String                  @map("unit_id") @db.Uuid
-  tenantId         String                  @map("tenant_id") @db.Uuid
-  templateId       String?                 @map("template_id") @db.Uuid
-  contractNo       String                  @map("contract_no")
+  id                      String               @id @default(uuid()) @db.Uuid
+  orgId                   String               @map("org_id") @db.Uuid
+  projectId               String               @map("project_id") @db.Uuid
+  unitId                  String               @map("unit_id") @db.Uuid
+  tenantId                String               @map("tenant_id") @db.Uuid
+  templateId              String?              @map("template_id") @db.Uuid
+  contractNo              String               @map("contract_no")
   // วันที่ "ทำสัญญา ณ วันที่" — แยกจาก startDate (วันเริ่มเช่า) เพื่อรองรับการคีย์สัญญาย้อนหลัง
   // null = ใช้ createdAt แทน (สัญญาเก่าที่ยังไม่ได้ระบุ)
-  contractDate     DateTime?               @map("contract_date") @db.Date
-  startDate        DateTime                @map("start_date") @db.Date
-  endDate          DateTime?               @map("end_date") @db.Date
-  rentAmountThb    Decimal                 @default(0) @map("rent_amount_thb") @db.Decimal(15, 2)
-  rentDueDay       Int                     @default(5) @map("rent_due_day")
-  depositAmountThb Decimal                 @default(0) @map("deposit_amount_thb") @db.Decimal(15, 2)
-  depositMonths    Decimal                 @default(0) @map("deposit_months") @db.Decimal(5, 2)
-  vatPercent       Decimal                 @default(0) @map("vat_percent") @db.Decimal(5, 2)
+  contractDate            DateTime?            @map("contract_date") @db.Date
+  startDate               DateTime             @map("start_date") @db.Date
+  endDate                 DateTime?            @map("end_date") @db.Date
+  rentAmountThb           Decimal              @default(0) @map("rent_amount_thb") @db.Decimal(15, 2)
+  rentDueDay              Int                  @default(5) @map("rent_due_day")
+  depositAmountThb        Decimal              @default(0) @map("deposit_amount_thb") @db.Decimal(15, 2)
+  depositMonths           Decimal              @default(0) @map("deposit_months") @db.Decimal(5, 2)
+  vatPercent              Decimal              @default(0) @map("vat_percent") @db.Decimal(5, 2)
   // แก้ทับค่า VAT รายรายการเฉพาะห้องนี้ (null = ใช้ตามค่าเริ่มต้นของโครงการ)
-  vatOnRent        Boolean?                @map("vat_on_rent")
-  vatOnElectric    Boolean?                @map("vat_on_electric")
-  vatOnWater       Boolean?                @map("vat_on_water")
-  electricRate     Decimal?                @map("electric_rate") @db.Decimal(10, 2)
-  waterRate        Decimal?                @map("water_rate") @db.Decimal(10, 2)
-  lateFeeType      RentalLateFeeType       @default(none) @map("late_fee_type")
-  lateFeeValue     Decimal                 @default(0) @map("late_fee_value") @db.Decimal(15, 2)
-  lateFeeGraceDays Int                     @default(7) @map("late_fee_grace_days")
+  vatOnRent               Boolean?             @map("vat_on_rent")
+  vatOnElectric           Boolean?             @map("vat_on_electric")
+  vatOnWater              Boolean?             @map("vat_on_water")
+  electricRate            Decimal?             @map("electric_rate") @db.Decimal(10, 2)
+  waterRate               Decimal?             @map("water_rate") @db.Decimal(10, 2)
+  lateFeeType             RentalLateFeeType    @default(none) @map("late_fee_type")
+  lateFeeValue            Decimal              @default(0) @map("late_fee_value") @db.Decimal(15, 2)
+  lateFeeGraceDays        Int                  @default(7) @map("late_fee_grace_days")
   // ส่วนลดส่งเสริมการขาย (โปรโมชั่น) — ลดต่อเดือน × จำนวนเดือน เริ่มงวดไหน
-  promoDiscountThb Decimal                 @default(0) @map("promo_discount_thb") @db.Decimal(15, 2)
-  promoMonths      Int                     @default(0) @map("promo_months")
-  promoStartPeriod String?                 @map("promo_start_period")
+  promoDiscountThb        Decimal              @default(0) @map("promo_discount_thb") @db.Decimal(15, 2)
+  promoMonths             Int                  @default(0) @map("promo_months")
+  promoStartPeriod        String?              @map("promo_start_period")
   // วันวางบิลเฉพาะสัญญานี้ (null = ใช้ค่ากลางของโครงการ) — แต่ละเจ้ารอบบิลไม่ตรงกันได้
-  billIssueDay     Int?                    @map("bill_issue_day")
+  billIssueDay            Int?                 @map("bill_issue_day")
   // วันที่ย้ายออกจริง (ตั้งตอนยกเลิกสัญญา) — ใช้ทำประวัติผู้เช่า
-  moveOutDate      DateTime?               @map("move_out_date") @db.Date
-  rentSchedule     Json?                   @map("rent_schedule")
-  customTermsHtml  String?                 @map("custom_terms_html") @db.Text
-  status           RentalContractStatus    @default(draft)
-  signToken        String?                 @map("sign_token")
-  signedAt         DateTime?               @map("signed_at") @db.Timestamptz(6)
-  tenantSigned     Boolean                 @default(false) @map("tenant_signed")
-  signatureDataUrl String?                 @map("signature_data_url") @db.Text
-  signerName       String?                 @map("signer_name")
-  contractPdfUrl   String?                 @map("contract_pdf_url")
+  moveOutDate             DateTime?            @map("move_out_date") @db.Date
+  rentSchedule            Json?                @map("rent_schedule")
+  customTermsHtml         String?              @map("custom_terms_html") @db.Text
+  status                  RentalContractStatus @default(draft)
+  signToken               String?              @map("sign_token")
+  signedAt                DateTime?            @map("signed_at") @db.Timestamptz(6)
+  tenantSigned            Boolean              @default(false) @map("tenant_signed")
+  signatureDataUrl        String?              @map("signature_data_url") @db.Text
+  signerName              String?              @map("signer_name")
+  contractPdfUrl          String?              @map("contract_pdf_url")
   // ขออนุมัติแก้ไขสัญญาที่เซ็นแล้ว (maker≠checker · mirror bill void) — แก้สำเร็จ = ออก addendum + เซ็นใหม่
-  editStatus        String                 @default("none") @map("edit_status") // none | pending | approved | rejected
-  editRequestReason String?                @map("edit_request_reason")
-  editRequestedBy   String?                @map("edit_requested_by") @db.Uuid
-  editRequestedAt   DateTime?              @map("edit_requested_at") @db.Timestamptz(6)
-  editDecidedBy     String?                @map("edit_decided_by") @db.Uuid
-  editDecidedAt     DateTime?              @map("edit_decided_at") @db.Timestamptz(6)
-  editDecisionNote  String?                @map("edit_decision_note")
+  editStatus              String               @default("none") @map("edit_status") // none | pending | approved | rejected
+  editRequestReason       String?              @map("edit_request_reason")
+  editRequestedBy         String?              @map("edit_requested_by") @db.Uuid
+  editRequestedAt         DateTime?            @map("edit_requested_at") @db.Timestamptz(6)
+  editDecidedBy           String?              @map("edit_decided_by") @db.Uuid
+  editDecidedAt           DateTime?            @map("edit_decided_at") @db.Timestamptz(6)
+  editDecisionNote        String?              @map("edit_decision_note")
   // ── ช่องกรอกสำหรับแม่แบบสัญญาเช่ามาตรฐาน (nullable ทั้งหมด — สัญญาเก่าไม่กระทบ) ──
-  businessType          String?  @map("business_type")           // ประเภทกิจการ (ข้อ 2) — free text, คนละตัวกับ enum BusinessType
-  tradeName             String?  @map("trade_name")              // ชื่อทางการค้า (ข้อ 2)
-  renewalNoticeDays     Int?     @map("renewal_notice_days")     // แจ้งต่อสัญญาก่อนหมดอายุ ≥ N วัน (ข้อ 2)
-  terminationNoticeDays Int?     @map("termination_notice_days") // แจ้งเลิกล่วงหน้า ≥ N วัน (ข้อ 9)
-  fitOutFreeDays        Int?     @map("fit_out_free_days")       // ปลอดค่าเช่าช่วงตกแต่ง ≤ N วัน (ข้อ 5)
-  buildingModifications String?  @map("building_modifications") @db.Text // รายการปรับแต่งอาคาร (ข้อ 6)
-  witness2Name          String?  @map("witness2_name")           // พยานฝั่งผู้เช่า
-  areaSqm               Decimal? @map("area_sqm") @db.Decimal(10, 2) // ขนาดพื้นที่เช่า (กรอกในสัญญา · null = ใช้ของห้อง)
+  businessType            String?              @map("business_type") // ประเภทกิจการ (ข้อ 2) — free text, คนละตัวกับ enum BusinessType
+  tradeName               String?              @map("trade_name") // ชื่อทางการค้า (ข้อ 2)
+  renewalNoticeDays       Int?                 @map("renewal_notice_days") // แจ้งต่อสัญญาก่อนหมดอายุ ≥ N วัน (ข้อ 2)
+  terminationNoticeDays   Int?                 @map("termination_notice_days") // แจ้งเลิกล่วงหน้า ≥ N วัน (ข้อ 9)
+  fitOutFreeDays          Int?                 @map("fit_out_free_days") // ปลอดค่าเช่าช่วงตกแต่ง ≤ N วัน (ข้อ 5)
+  buildingModifications   String?              @map("building_modifications") @db.Text // รายการปรับแต่งอาคาร (ข้อ 6)
+  witness2Name            String?              @map("witness2_name") // พยานฝั่งผู้เช่า
+  areaSqm                 Decimal?             @map("area_sqm") @db.Decimal(10, 2) // ขนาดพื้นที่เช่า (กรอกในสัญญา · null = ใช้ของห้อง)
   // ข้อความสัญญาที่ "ขอแก้" รออนุมัติ (พนักงานเสนอ → superadmin รีวิว redline → อนุมัติ = นำไปแทน customTermsHtml)
-  editProposedBodyHtml  String?  @map("edit_proposed_body_html") @db.Text
+  editProposedBodyHtml    String?              @map("edit_proposed_body_html") @db.Text
   // ── ค่าเช่า/ส่วนลด ต้อง super_admin อนุมัติก่อนมีผลจริง (D · 2026-08-29) ──
   // rentAmountThb/promoDiscountThb ด้านบน = ค่าที่ "อนุมัติแล้ว" เท่านั้น (ใช้คิดบิลจริง)
   // ถ้าคนที่ไม่ใช่ super_admin เปลี่ยนค่า → ไปลงที่ pending* ก่อน ค่าจริงยังไม่ขยับจนกว่าจะอนุมัติ
   // super_admin แก้เอง = มีผลทันที (ไม่ผ่าน pending) — แยก track รายการเช่า/ส่วนลด อิสระจากกัน
   // เพราะ actUpdateContractBilling แก้ส่วนลดได้โดยไม่แตะค่าเช่า
-  pendingRentAmountThb  Decimal?  @map("pending_rent_amount_thb") @db.Decimal(15, 2)
-  rentApprovalStatus    String    @default("none") @map("rent_approval_status") // none | pending | approved | rejected
-  rentRequestedBy       String?   @map("rent_requested_by") @db.Uuid
-  rentRequestedAt       DateTime? @map("rent_requested_at") @db.Timestamptz(6)
-  rentDecidedBy         String?   @map("rent_decided_by") @db.Uuid
-  rentDecidedAt         DateTime? @map("rent_decided_at") @db.Timestamptz(6)
-  rentDecisionNote      String?   @map("rent_decision_note")
-  pendingPromoDiscountThb Decimal?  @map("pending_promo_discount_thb") @db.Decimal(15, 2)
-  discountApprovalStatus String    @default("none") @map("discount_approval_status") // none | pending | approved | rejected
-  discountRequestedBy    String?   @map("discount_requested_by") @db.Uuid
-  discountRequestedAt    DateTime? @map("discount_requested_at") @db.Timestamptz(6)
-  discountDecidedBy      String?   @map("discount_decided_by") @db.Uuid
-  discountDecidedAt      DateTime? @map("discount_decided_at") @db.Timestamptz(6)
-  discountDecisionNote   String?   @map("discount_decision_note")
-  note             String?
-  createdBy        String?                 @map("created_by") @db.Uuid
-  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  pendingRentAmountThb    Decimal?             @map("pending_rent_amount_thb") @db.Decimal(15, 2)
+  rentApprovalStatus      String               @default("none") @map("rent_approval_status") // none | pending | approved | rejected
+  rentRequestedBy         String?              @map("rent_requested_by") @db.Uuid
+  rentRequestedAt         DateTime?            @map("rent_requested_at") @db.Timestamptz(6)
+  rentDecidedBy           String?              @map("rent_decided_by") @db.Uuid
+  rentDecidedAt           DateTime?            @map("rent_decided_at") @db.Timestamptz(6)
+  rentDecisionNote        String?              @map("rent_decision_note")
+  pendingPromoDiscountThb Decimal?             @map("pending_promo_discount_thb") @db.Decimal(15, 2)
+  discountApprovalStatus  String               @default("none") @map("discount_approval_status") // none | pending | approved | rejected
+  discountRequestedBy     String?              @map("discount_requested_by") @db.Uuid
+  discountRequestedAt     DateTime?            @map("discount_requested_at") @db.Timestamptz(6)
+  discountDecidedBy       String?              @map("discount_decided_by") @db.Uuid
+  discountDecidedAt       DateTime?            @map("discount_decided_at") @db.Timestamptz(6)
+  discountDecisionNote    String?              @map("discount_decision_note")
+  note                    String?
+  createdBy               String?              @map("created_by") @db.Uuid
+  createdAt               DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project  RentalProject           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  unit     RentalUnit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  tenant   RentalTenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  template RentalContractTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  deposits RentalDeposit[]
-  bills    RentalBill[]
-  addenda  RentalContractAddendum[]
+  project          RentalProject            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit             RentalUnit               @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenant           RentalTenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  template         RentalContractTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  deposits         RentalDeposit[]
+  bills            RentalBill[]
+  addenda          RentalContractAddendum[]
   recurringCharges RentalRecurringCharge[]
 
   @@unique([orgId, contractNo])
@@ -7819,23 +7960,23 @@ model RentalMeter {
 }
 
 model RentalMeterReading {
-  id          String          @id @default(uuid()) @db.Uuid
-  orgId       String          @map("org_id") @db.Uuid
-  unitId      String          @map("unit_id") @db.Uuid
-  meterId     String          @map("meter_id") @db.Uuid
-  kind        RentalMeterKind
-  period      String // YYYY-MM
-  prevReading Decimal         @default(0) @map("prev_reading") @db.Decimal(15, 2)
-  currReading Decimal         @default(0) @map("curr_reading") @db.Decimal(15, 2)
-  usage       Decimal         @default(0) @db.Decimal(15, 2)
-  isReset       Boolean       @default(false) @map("is_reset")
-  oldMeterFinal Decimal?      @map("old_meter_final") @db.Decimal(15, 2)
-  ratePerUnit Decimal         @default(0) @map("rate_per_unit") @db.Decimal(10, 2)
-  amountThb   Decimal         @default(0) @map("amount_thb") @db.Decimal(15, 2)
-  photoUrl    String?         @map("photo_url")
-  note        String?
-  readBy      String?         @map("read_by") @db.Uuid
-  readAt      DateTime        @default(now()) @map("read_at") @db.Timestamptz(6)
+  id            String          @id @default(uuid()) @db.Uuid
+  orgId         String          @map("org_id") @db.Uuid
+  unitId        String          @map("unit_id") @db.Uuid
+  meterId       String          @map("meter_id") @db.Uuid
+  kind          RentalMeterKind
+  period        String // YYYY-MM
+  prevReading   Decimal         @default(0) @map("prev_reading") @db.Decimal(15, 2)
+  currReading   Decimal         @default(0) @map("curr_reading") @db.Decimal(15, 2)
+  usage         Decimal         @default(0) @db.Decimal(15, 2)
+  isReset       Boolean         @default(false) @map("is_reset")
+  oldMeterFinal Decimal?        @map("old_meter_final") @db.Decimal(15, 2)
+  ratePerUnit   Decimal         @default(0) @map("rate_per_unit") @db.Decimal(10, 2)
+  amountThb     Decimal         @default(0) @map("amount_thb") @db.Decimal(15, 2)
+  photoUrl      String?         @map("photo_url")
+  note          String?
+  readBy        String?         @map("read_by") @db.Uuid
+  readAt        DateTime        @default(now()) @map("read_at") @db.Timestamptz(6)
 
   unit  RentalUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
   meter RentalMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
@@ -7847,57 +7988,57 @@ model RentalMeterReading {
 }
 
 model RentalBill {
-  id             String           @id @default(uuid()) @db.Uuid
-  orgId          String           @map("org_id") @db.Uuid
-  projectId      String           @map("project_id") @db.Uuid
-  unitId         String           @map("unit_id") @db.Uuid
-  contractId     String           @map("contract_id") @db.Uuid
-  tenantId       String           @map("tenant_id") @db.Uuid
-  billNo         String           @map("bill_no")
-  period         String // YYYY-MM
-  issueDate      DateTime         @map("issue_date") @db.Date
-  dueDate        DateTime         @map("due_date") @db.Date
-  status         RentalBillStatus @default(draft)
-  rentAmount     Decimal          @default(0) @map("rent_amount") @db.Decimal(15, 2)
-  electricAmount Decimal          @default(0) @map("electric_amount") @db.Decimal(15, 2)
-  waterAmount    Decimal          @default(0) @map("water_amount") @db.Decimal(15, 2)
-  otherAmount    Decimal          @default(0) @map("other_amount") @db.Decimal(15, 2)
-  lateFeeAmount  Decimal          @default(0) @map("late_fee_amount") @db.Decimal(15, 2)
-  discountAmount Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  subtotal       Decimal          @default(0) @db.Decimal(15, 2)
-  vatAmount      Decimal          @default(0) @map("vat_amount") @db.Decimal(15, 2)
+  id                 String           @id @default(uuid()) @db.Uuid
+  orgId              String           @map("org_id") @db.Uuid
+  projectId          String           @map("project_id") @db.Uuid
+  unitId             String           @map("unit_id") @db.Uuid
+  contractId         String           @map("contract_id") @db.Uuid
+  tenantId           String           @map("tenant_id") @db.Uuid
+  billNo             String           @map("bill_no")
+  period             String // YYYY-MM
+  issueDate          DateTime         @map("issue_date") @db.Date
+  dueDate            DateTime         @map("due_date") @db.Date
+  status             RentalBillStatus @default(draft)
+  rentAmount         Decimal          @default(0) @map("rent_amount") @db.Decimal(15, 2)
+  electricAmount     Decimal          @default(0) @map("electric_amount") @db.Decimal(15, 2)
+  waterAmount        Decimal          @default(0) @map("water_amount") @db.Decimal(15, 2)
+  otherAmount        Decimal          @default(0) @map("other_amount") @db.Decimal(15, 2)
+  lateFeeAmount      Decimal          @default(0) @map("late_fee_amount") @db.Decimal(15, 2)
+  discountAmount     Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  subtotal           Decimal          @default(0) @db.Decimal(15, 2)
+  vatAmount          Decimal          @default(0) @map("vat_amount") @db.Decimal(15, 2)
   // อัตรา VAT ที่ "แช่แข็ง" ไว้ ณ ตอนออกบิล — recompute ต้องใช้ค่านี้ ไม่ใช่อ่านสดจากสัญญา
   // (กันบิล/ใบกำกับภาษีที่ออกไปแล้วเปลี่ยนยอดเมื่อแก้ vatPercent ในสัญญาย้อนหลัง)
-  vatPercent     Decimal          @default(0) @map("vat_percent") @db.Decimal(6, 3)
-  totalAmount    Decimal          @default(0) @map("total_amount") @db.Decimal(15, 2)
-  paidAmount     Decimal          @default(0) @map("paid_amount") @db.Decimal(15, 2)
-  note           String?
-  pdfUrl         String?          @map("pdf_url")
-  publicToken    String?          @map("public_token")
-  sentAt         DateTime?        @map("sent_at") @db.Timestamptz(6)
-  sentChannel    String?          @map("sent_channel")
-  reminderSentAt DateTime?        @map("reminder_sent_at") @db.Timestamptz(6)
-  autoGenerated  Boolean          @default(false) @map("auto_generated")
+  vatPercent         Decimal          @default(0) @map("vat_percent") @db.Decimal(6, 3)
+  totalAmount        Decimal          @default(0) @map("total_amount") @db.Decimal(15, 2)
+  paidAmount         Decimal          @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  note               String?
+  pdfUrl             String?          @map("pdf_url")
+  publicToken        String?          @map("public_token")
+  sentAt             DateTime?        @map("sent_at") @db.Timestamptz(6)
+  sentChannel        String?          @map("sent_channel")
+  reminderSentAt     DateTime?        @map("reminder_sent_at") @db.Timestamptz(6)
+  autoGenerated      Boolean          @default(false) @map("auto_generated")
   // ใบกำกับภาษี — ออกได้เฉพาะบิลที่ "จ่ายครบ" (status=paid) เท่านั้น. เลขที่ต้อง
   // เรียงต่อเนื่องไม่ข้าม/ไม่ซ้ำตามกฎสรรพากร → ออกครั้งเดียวแล้วแช่แข็งถาวร (ห้าม
   // แก้ไข/ลบบิลที่มีเลขนี้แล้ว — ดู actEditBillItems/actDeleteBill).
-  taxInvoiceNo       String?     @map("tax_invoice_no")
-  taxInvoiceIssuedAt DateTime?   @map("tax_invoice_issued_at") @db.Timestamptz(6)
-  taxInvoiceIssuedBy String?     @map("tax_invoice_issued_by") @db.Uuid
+  taxInvoiceNo       String?          @map("tax_invoice_no")
+  taxInvoiceIssuedAt DateTime?        @map("tax_invoice_issued_at") @db.Timestamptz(6)
+  taxInvoiceIssuedBy String?          @map("tax_invoice_issued_by") @db.Uuid
   // วันที่ "พิมพ์บนใบกำกับ" — อิงวันที่ลูกค้าชำระเงินงวดล่าสุด (ไม่ใช่วันที่กดปุ่มออกเลข
   // ซึ่งเก็บแยกไว้ที่ taxInvoiceIssuedAt แล้วเพื่อ audit) แช่แข็งตอนออกเลข ไม่เปลี่ยนภายหลัง.
-  taxInvoiceDate     DateTime?   @map("tax_invoice_date") @db.Date
+  taxInvoiceDate     DateTime?        @map("tax_invoice_date") @db.Date
   // การยกเลิกบิลแบบขออนุมัติ (maker≠checker) + log
-  voidStatus       String         @default("none") @map("void_status") // none | pending | approved | rejected
-  voidReason       String?        @map("void_reason")
-  voidRequestedBy  String?        @map("void_requested_by") @db.Uuid
-  voidRequestedAt  DateTime?      @map("void_requested_at") @db.Timestamptz(6)
-  voidDecidedBy    String?        @map("void_decided_by") @db.Uuid
-  voidDecidedAt    DateTime?      @map("void_decided_at") @db.Timestamptz(6)
-  voidDecisionNote String?        @map("void_decision_note")
-  createdBy      String?          @map("created_by") @db.Uuid
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  voidStatus         String           @default("none") @map("void_status") // none | pending | approved | rejected
+  voidReason         String?          @map("void_reason")
+  voidRequestedBy    String?          @map("void_requested_by") @db.Uuid
+  voidRequestedAt    DateTime?        @map("void_requested_at") @db.Timestamptz(6)
+  voidDecidedBy      String?          @map("void_decided_by") @db.Uuid
+  voidDecidedAt      DateTime?        @map("void_decided_at") @db.Timestamptz(6)
+  voidDecisionNote   String?          @map("void_decision_note")
+  createdBy          String?          @map("created_by") @db.Uuid
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project   RentalProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   unit      RentalUnit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
@@ -7936,36 +8077,36 @@ model RentalBillItem {
 }
 
 model RentalPayment {
-  id         String   @id @default(uuid()) @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  billId     String   @map("bill_id") @db.Uuid
-  contractId String   @map("contract_id") @db.Uuid
-  amountThb  Decimal  @map("amount_thb") @db.Decimal(15, 2)
-  paidOn     DateTime @map("paid_on") @db.Date
-  method     String   @default("transfer") // cash | transfer | qr | card
-  reference  String?
-  slipUrl    String?  @map("slip_url")
-  note       String?
-  receivedBy String?  @map("received_by") @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @map("org_id") @db.Uuid
+  billId           String    @map("bill_id") @db.Uuid
+  contractId       String    @map("contract_id") @db.Uuid
+  amountThb        Decimal   @map("amount_thb") @db.Decimal(15, 2)
+  paidOn           DateTime  @map("paid_on") @db.Date
+  method           String    @default("transfer") // cash | transfer | qr | card
+  reference        String?
+  slipUrl          String?   @map("slip_url")
+  note             String?
+  receivedBy       String?   @map("received_by") @db.Uuid
   // ── ผู้เช่าจ่ายเอง+แนบสลิป → รอเจ้าหน้าที่ตรวจ (money-safe · 2026-07-24) ──
   // paidAmount ของบิลนับเฉพาะ status=confirmed เท่านั้น · pending ไม่นับจนกว่าจะยืนยัน
-  status     String    @default("confirmed") @map("status") // pending | confirmed | rejected · แถวเก่า/แอดมินบันทึก = confirmed
-  source     String    @default("staff") @map("source") // staff | tenant
-  reviewedBy String?   @map("reviewed_by") @db.Uuid
-  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
-  reviewNote String?   @map("review_note")
+  status           String    @default("confirmed") @map("status") // pending | confirmed | rejected · แถวเก่า/แอดมินบันทึก = confirmed
+  source           String    @default("staff") @map("source") // staff | tenant
+  reviewedBy       String?   @map("reviewed_by") @db.Uuid
+  reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote       String?   @map("review_note")
   // ── AI อ่านสลิปอัตโนมัติหลังบันทึก (mirror ChairopsCashDeposit) — internal only, ห้ามหลุดไปหน้า public ──
-  ocrAmount      Int?      @map("ocr_amount")
-  ocrDate        DateTime? @map("ocr_date") @db.Date
-  ocrAccountName String?   @map("ocr_account_name")
+  ocrAmount        Int?      @map("ocr_amount")
+  ocrDate          DateTime? @map("ocr_date") @db.Date
+  ocrAccountName   String?   @map("ocr_account_name")
   // เลขบัญชีปลายทาง — ใช้ตรวจ "บัญชีผิด" แทน ocrAccountName (ดู lib/rentspace/slip-check.ts,
   // ตาม fix ของ ChairOps 2026-08-29: ชื่อนิติบุคคลเต็มเขียนคนละรูปแบบกับชื่อย่อในระบบเสมอ)
-  ocrAccountNumber String? @map("ocr_account_number")
-  ocrRefNo       String?   @map("ocr_ref_no")
-  ocrReadAt      DateTime? @map("ocr_read_at") @db.Timestamptz(6)
-  ocrFlagReason  String?   @map("ocr_flag_reason") // null = ไม่ติดธง · มีค่า = เหตุผลที่ตีธง (ซ้ำ/บัญชีไม่ตรง)
-  requiresReview Boolean   @default(false) @map("requires_review")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  ocrAccountNumber String?   @map("ocr_account_number")
+  ocrRefNo         String?   @map("ocr_ref_no")
+  ocrReadAt        DateTime? @map("ocr_read_at") @db.Timestamptz(6)
+  ocrFlagReason    String?   @map("ocr_flag_reason") // null = ไม่ติดธง · มีค่า = เหตุผลที่ตีธง (ซ้ำ/บัญชีไม่ตรง)
+  requiresReview   Boolean   @default(false) @map("requires_review")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
@@ -8200,17 +8341,17 @@ model ClawhubRefundRequest {
 
 // CH.4 — clawhub_redemptions (แลกของ · ตุ๊กตาเท่านั้น)
 model ClawhubRedemption {
-  id              String                  @id @default(uuid()) @db.Uuid
-  orgId           String                  @map("org_id") @db.Uuid
-  memberId        String                  @map("member_id") @db.Uuid
-  rewardId        String?                 @map("reward_id") @db.Uuid // soft ref to clawhub_rewards
-  productId       String?                 @map("product_id") @db.Uuid // soft ref to cf_products
-  productSku      String?                 @map("product_sku") // denorm snapshot
-  productName     String?                 @map("product_name")
-  productImageUrl String?                 @map("product_image_url")
-  pointsSpent     Int                     @map("points_spent")
-  status          ClawhubRedemptionStatus @default(PENDING)
-  pickupCode      String                  @map("pickup_code")
+  id               String                  @id @default(uuid()) @db.Uuid
+  orgId            String                  @map("org_id") @db.Uuid
+  memberId         String                  @map("member_id") @db.Uuid
+  rewardId         String?                 @map("reward_id") @db.Uuid // soft ref to clawhub_rewards
+  productId        String?                 @map("product_id") @db.Uuid // soft ref to cf_products
+  productSku       String?                 @map("product_sku") // denorm snapshot
+  productName      String?                 @map("product_name")
+  productImageUrl  String?                 @map("product_image_url")
+  pointsSpent      Int                     @map("points_spent")
+  status           ClawhubRedemptionStatus @default(PENDING)
+  pickupCode       String                  @map("pickup_code")
   fulfillMethod    ClawhubFulfillMethod?   @map("fulfill_method") // วิธีรับของ: DELIVERY/PICKUP/CONTACT
   recipientName    String?                 @map("recipient_name") // ชื่อผู้รับ (DELIVERY)
   recipientPhone   String?                 @map("recipient_phone") // เบอร์ผู้รับ (DELIVERY)
@@ -8218,10 +8359,10 @@ model ClawhubRedemption {
   pickupBranchCode String?                 @map("pickup_branch_code") // เลขสาขา 7-11 ที่รับเอง (PICKUP)
   pickupTime       String?                 @map("pickup_time") // เวลานัดรับ (PICKUP)
   contactNote      String?                 @map("contact_note") // หมายเหตุให้เจ้าหน้าที่ติดต่อ (CONTACT)
-  fulfilledById   String?                 @map("fulfilled_by_id") @db.Uuid
-  fulfilledAt     DateTime?               @map("fulfilled_at") @db.Timestamptz(6)
-  note            String?
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  fulfilledById    String?                 @map("fulfilled_by_id") @db.Uuid
+  fulfilledAt      DateTime?               @map("fulfilled_at") @db.Timestamptz(6)
+  note             String?
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   member ClawhubMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
@@ -9132,7 +9273,7 @@ model CafeMenuItem {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  category     CafeCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category     CafeCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variants     CafeItemVariant[]
   optionGroups CafeItemOptionGroup[]
   branchItems  CafeBranchItem[]
@@ -9183,12 +9324,12 @@ model CafeOptionGroup {
 }
 
 model CafeOptionChoice {
-  id             String  @id @default(uuid()) @db.Uuid
-  groupId        String  @map("group_id") @db.Uuid
-  label          String
-  priceDeltaCents Int    @default(0) @map("price_delta_cents")
-  sortOrder      Int     @default(0) @map("sort_order")
-  isActive       Boolean @default(true) @map("is_active")
+  id              String  @id @default(uuid()) @db.Uuid
+  groupId         String  @map("group_id") @db.Uuid
+  label           String
+  priceDeltaCents Int     @default(0) @map("price_delta_cents")
+  sortOrder       Int     @default(0) @map("sort_order")
+  isActive        Boolean @default(true) @map("is_active")
 
   group        CafeOptionGroup         @relation(fields: [groupId], references: [id], onDelete: Cascade)
   branchStocks CafeBranchChoiceStock[]
@@ -9264,19 +9405,19 @@ model CafePointPolicy {
 
 // ── สมาชิก (Google/phone · ไม่มี cache balance → คำนวณจาก ledger กัน trap ClawHub) ──
 model CafeMember {
-  id                String    @id @default(uuid()) @db.Uuid
-  orgId             String    @map("org_id") @db.Uuid
-  companyId         String    @map("company_id") @db.Uuid
-  googleSub         String?   @unique @map("google_sub") // Google OAuth subject
-  email             String?
-  phone             String?
-  phoneVerifiedAt   DateTime? @map("phone_verified_at") @db.Timestamptz(6)
-  displayName       String?   @map("display_name")
-  memberCode        String    @unique @map("member_code") // บัตรสมาชิก (Playland-style alphabet)
-  consentAt         DateTime? @map("consent_at") @db.Timestamptz(6) // ฐานสัญญา (สมัคร/แต้ม)
+  id                 String    @id @default(uuid()) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  companyId          String    @map("company_id") @db.Uuid
+  googleSub          String?   @unique @map("google_sub") // Google OAuth subject
+  email              String?
+  phone              String?
+  phoneVerifiedAt    DateTime? @map("phone_verified_at") @db.Timestamptz(6)
+  displayName        String?   @map("display_name")
+  memberCode         String    @unique @map("member_code") // บัตรสมาชิก (Playland-style alphabet)
+  consentAt          DateTime? @map("consent_at") @db.Timestamptz(6) // ฐานสัญญา (สมัคร/แต้ม)
   marketingConsentAt DateTime? @map("marketing_consent_at") @db.Timestamptz(6) // แยกตาม PDPA ม.19
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   pointEntries CafePointEntry[]
 

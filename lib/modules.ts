@@ -30,6 +30,7 @@ import {
   GraduationCap,
   FolderTree,
   UserPlus,
+  UserCheck,
   Inbox,
   KanbanSquare,
   ShieldX,
@@ -748,6 +749,14 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         label: "งานต้องตาม",
         icon: ListChecks,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "branch_manager"],
+      },
+      {
+        // รับพนักงานใหม่ออนไลน์ — คิวตรวจ/อนุมัติของ HR (ลิงก์ที่พนักงานกรอกคือ
+        // /onboard ซึ่งเป็นหน้าสาธารณะ ไม่อยู่ในเมนูนี้)
+        href: "/recruit/onboarding",
+        label: "พนักงานใหม่",
+        icon: UserCheck,
+        adminOnly: true,
       },
       {
         href: "/recruit/blacklist",

@@ -157,6 +157,16 @@ export type AuditAction =
   | "RECRUIT_ERASURE_REQUESTED"
   | "RECRUIT_ERASURE_APPROVED"
   | "RECRUIT_ERASURE_REJECTED"
+  // Recruit Onboarding — ระบบรับพนักงานใหม่ออนไลน์ (docs/BIGFEATURE_recruit-onboarding_SPEC.md).
+  // APPROVED is the only path that creates a real User row, so it is always
+  // paired with a second CREATE_USER entry (same precedent as
+  // APPROVE_REGISTER_REQUEST + CREATE_USER in app/api/admin/register-requests).
+  // SUBMITTED is written by the PUBLIC submit route with userId: null (no
+  // session exists — same precedent as app/apply/[slug]/submit-action.ts).
+  | "RECRUIT_ONBOARDING_SUBMITTED"
+  | "RECRUIT_ONBOARDING_REVIEW_STARTED"
+  | "RECRUIT_ONBOARDING_APPROVED"
+  | "RECRUIT_ONBOARDING_REJECTED"
   // Repair module — ระบบแจ้งซ่อม
   | "REPAIR_TICKET_CREATED"
   | "REPAIR_TICKET_STATUS_CHANGED"
