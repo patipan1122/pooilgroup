@@ -85,13 +85,70 @@ export const ROLE_GATE_KNOWN_EXCEPTIONS: RoleGateException[] = [
   // ── Other explicit CEO 2026-08-17 exclusions (named in the original audit) ──
   {
     file: "app/(admin)/rentspace/_actions.ts",
-    line: 2655,
-    // 2026-09-19: line corrected from 2443 → 2655 (drifted 212 lines past the
-    // ±3 tolerance from earlier unrelated edits to this file — found during
-    // the Part 4/5 guardrail-extension audit; without this fix the CI guard
-    // would have spuriously re-flagged this already-reviewed, deliberate
-    // exception as a brand-new gap).
-    reason: "actDecideDiscount — discount approval deliberately requires admin tier, NOT program_admin (see comment above the function).",
+    line: 2791,
+    // 2026-09-19: line corrected from 2443 → 2655 (drifted past the ±3
+    // tolerance from earlier unrelated edits). 2026-09-20: corrected again
+    // 2655 → 2791 (bigsolvebug added ~250 lines earlier in the file) AND the
+    // gate itself got STRICTER per CEO decision — was isAdminTier (any
+    // admin-tier role), now isSuperAdmin only, after the audit found discount
+    // approval had no requester≠approver check. Narrower than program_admin
+    // by design, not a gap.
+    reason: "actDecideDiscount — CEO 2026-09-20: discount approval restricted to super_admin only (was admin-tier with no self-approval guard — audit finding). Deliberately narrower than program_admin.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 2184,
+    reason: "actDecideDeleteBill (new 2026-09-20) — CEO decision: approving a request to delete a PAID bill is super_admin-only, narrower than the sibling actDecideVoidBill (admin-tier). Unpaid bills still delete directly via gateAdmin().",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 3045,
+    reason: "setRentspacePermission (new 2026-09-20) — editing the RentSpace role-capability permission matrix itself is super_admin-only by design (the settings page that surfaces it is gated the same way); a lower tier should not be able to grant itself more capabilities.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 1580,
+    reason: "actGenerateMonthlyBills — unlock-switch pattern: !isSuperAdmin && !billIssueUnlocked. super_admin always passes; everyone else passes once the \"อนุญาตออกบิล\" switch is on — program_admin reachable via the switch, same shape as the already-blessed canEditBill composition below.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 1781,
+    reason: "Same billIssueUnlocked unlock-switch pattern as line 1580 above (C1 preview path).",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 1811,
+    reason: "Same billIssueUnlocked unlock-switch pattern as line 1580 above (C2 selected-units path).",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 1893,
+    reason: "actDecideVoidBill — maker≠checker guard: blocks the REQUESTER from also being the approver, EXCEPT super_admin (who is trusted to self-approve). Not an admin-tier gate at all — gateAdmin() already governs who can call this function; this is the self-approval exemption clause.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 2014,
+    reason: "actEditBillItems — same billEditUnlocked unlock-switch pattern as line 1580 above.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 2120,
+    reason: "actDeleteBill — same billDeleteUnlocked unlock-switch pattern as line 1580 above (paid-bill guard added 2026-09-20 sits before this, unrelated to the switch).",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 2260,
+    reason: "actDeleteBillsBulk — same billDeleteUnlocked unlock-switch pattern as line 1580 above.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 2931,
+    reason: "actDecideContractEdit — same maker≠checker self-approval exemption as actDecideVoidBill (line 1893) above.",
+  },
+  {
+    file: "app/(admin)/rentspace/_actions.ts",
+    line: 3007,
+    reason: "actDeleteContract — same contractDeleteUnlocked unlock-switch pattern as line 1580 above.",
   },
   {
     file: "app/(admin)/rentspace/contracts/[id]/page.tsx",
@@ -221,7 +278,7 @@ export const ROLE_GATE_KNOWN_EXCEPTIONS: RoleGateException[] = [
   // composition that already makes the gate program_admin-inclusive.
   { file: "lib/chairops/auth/session.ts", line: 110, reason: "poolIsAdmin = isAdminTier(role); grantedAdmin = poolIsAdmin || (await userIsModuleAdmin(user, \"chairops\")) — program_admin with a chairops grant already passes." },
   { file: "lib/clawhub/access.ts", line: 28, reason: "requireClawhubAdmin(): if (isAdminTier(role)) return session; immediately followed by a userIsModuleAdmin(user, \"clawhub\") fallback — same composed module-entry idiom as the layout.tsx files, just written as a helper function instead." },
-  { file: "lib/chairops/reconcile/actions.ts", line: 170, reason: "toggleBranchClosedAction's isAdmin = isSuperAdmin(role) || (await userIsModuleAdmin(user,\"chairops\")) — opened to program_admin by CEO 2026-09-19; same composition already blessed at app/(admin)/rentspace/page.tsx:68's canEditPlan." },
+  { file: "lib/chairops/reconcile/actions.ts", line: 177, reason: "toggleBranchClosedAction's isAdmin = isSuperAdmin(role) || (await userIsModuleAdmin(user,\"chairops\")) — opened to program_admin by CEO 2026-09-19; same composition already blessed at app/(admin)/rentspace/page.tsx:68's canEditPlan. (Line corrected 170→177, drifted past ±3 tolerance from unrelated edits to this file — found while merging RentSpace's own upspeed chain into setup, 2026-09-22.)" },
   { file: "app/(admin)/chairops/(office)/reconcile/[branchId]/page.tsx", line: 99, reason: "canManage = isSuperAdmin(role) || (await userIsModuleAdmin(user,\"chairops\")) — UI mirror of toggleBranchClosedAction's gate above, opened to program_admin by CEO 2026-09-19." },
 
   // ── Not a real gate — comment-text false positive (2026-09-19) ─────────────

@@ -16,6 +16,7 @@ export const RENTSPACE_ROLES = [
   "branch_manager",
   "program_admin",
   "admin",
+  "org_admin",
   "super_admin",
 ] as const;
 export type RentspaceRole = (typeof RENTSPACE_ROLES)[number];
@@ -50,6 +51,7 @@ export const ROLE_LABEL: Record<RentspaceRole, string> = {
   branch_manager: "ผู้จัดการสาขา",
   program_admin: "แอดมินโปรแกรม",
   admin: "ผู้ดูแลระบบ",
+  org_admin: "ผู้ดูแลองค์กร",
   super_admin: "ซูเปอร์แอดมิน",
 };
 
@@ -58,6 +60,7 @@ export const ROLE_HINT: Record<RentspaceRole, string> = {
   branch_manager: "ดูแลสาขาตัวเอง",
   program_admin: "แอดมินเฉพาะโปรแกรม RentSpace",
   admin: "จัดการได้เกือบทุกอย่าง",
+  org_admin: "จัดการได้ทุกโปรแกรมในองค์กร",
   super_admin: "สิทธิ์สูงสุด แก้ไม่ได้",
 };
 
@@ -114,6 +117,13 @@ export const PERMISSION_DEFAULTS: Record<
     "discount.request": true,
   },
   admin: {
+    "slip.verify_access": true,
+    "bill.delete_direct": true,
+    "bill.void_request": true,
+    "contract.edit_request": true,
+    "discount.request": true,
+  },
+  org_admin: {
     "slip.verify_access": true,
     "bill.delete_direct": true,
     "bill.void_request": true,

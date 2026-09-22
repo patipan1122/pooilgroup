@@ -27,6 +27,7 @@ const ROLE_LABEL_SHORT: Record<RentspaceRole, string> = {
   branch_manager: "ผจก.สาขา",
   program_admin: "แอดมินโปรแกรม",
   admin: "ผู้ดูแล",
+  org_admin: "ผู้ดูแลองค์กร",
   super_admin: "ซูเปอร์แอดมิน",
 };
 
