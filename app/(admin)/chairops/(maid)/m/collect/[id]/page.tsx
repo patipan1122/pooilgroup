@@ -46,6 +46,7 @@ export default async function MaidCollectDetailPage({ params }: Props) {
           depositedAmount: true,
           bankFee: true,
           slipPhotoUrl: true,
+          requiresReview: true,
         },
       },
     },
@@ -100,6 +101,10 @@ export default async function MaidCollectDetailPage({ params }: Props) {
           <Badge tone="warning" className="gap-1">
             <Landmark className="h-3 w-3" aria-hidden /> ยังไม่ฝาก
           </Badge>
+        ) : row.deposit?.requiresReview ? (
+          <Badge tone="danger" className="gap-1">
+            <Landmark className="h-3 w-3" aria-hidden /> ฝากแล้ว · รอตรวจสอบ
+          </Badge>
         ) : (
           <Badge tone="success" className="gap-1">
             <Landmark className="h-3 w-3" aria-hidden /> ฝากแล้ว
@@ -139,17 +144,38 @@ export default async function MaidCollectDetailPage({ params }: Props) {
       )}
 
       {!isPendingDeposit && row.deposit && (
-        <Card className="border-emerald-200 bg-emerald-50">
-          <CardBody className="space-y-1 p-4 text-sm text-emerald-800">
+        <Card
+          className={
+            row.deposit.requiresReview
+              ? "border-red-200 bg-red-50"
+              : "border-emerald-200 bg-emerald-50"
+          }
+        >
+          <CardBody
+            className={
+              "space-y-1 p-4 text-sm " +
+              (row.deposit.requiresReview ? "text-red-800" : "text-emerald-800")
+            }
+          >
             <div className="font-semibold">
               ฝากแล้ว · {baht(row.deposit.depositedAmount)}
             </div>
-            <div className="text-xs text-emerald-700">
+            <div
+              className={
+                "text-xs " +
+                (row.deposit.requiresReview ? "text-red-700" : "text-emerald-700")
+              }
+            >
               {thaiDateTime(row.deposit.depositedAt)}
               {row.deposit.bankFee > 0
                 ? ` · ค่าธรรมเนียม ${baht(row.deposit.bankFee)}`
                 : ""}
             </div>
+            {row.deposit.requiresReview && (
+              <div className="text-xs font-medium text-red-700">
+                ⚠ office กำลังตรวจสอบสลิปนี้ — ยอดนับรวมในระบบแล้ว
+              </div>
+            )}
           </CardBody>
         </Card>
       )}

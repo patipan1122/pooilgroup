@@ -147,16 +147,14 @@ export async function computeDriftMoneyAsOf(
         _sum: { cashTotal: true, coinInsertCount: true },
       }),
       prisma.chairopsCashDeposit.aggregate({
-        // 2026-09-20 CEO decision (FIN-03): a deposit flagged requiresReview
-        // (≥500฿ POS-mismatch OR AI slip-fraud flag) used to count into the
-        // shortage number the instant it was submitted — before anyone
-        // checked it. Hold it out until office clears the flag (see
-        // review-queue/actions.ts clearDepositReview, which only flips this
-        // boolean — the deposit rejoins the total automatically once cleared).
+        // 2026-09-20 CEO decision (FIN-03) held requiresReview=true deposits
+        // out of this number until office cleared the flag. 2026-09-22 CEO
+        // decision: reverted — a deposit counts the instant it's submitted
+        // regardless of review status; review status is now shown per-row as
+        // a color badge on list surfaces instead of gating this total.
         where: {
           branchId,
           orgId,
-          requiresReview: false,
           ...(dtFilter ? { depositedAt: dtFilter } : {}),
         },
         _sum: { depositedAmount: true, bankFee: true },
@@ -327,11 +325,11 @@ async function recomputeDriftForBranch_window(
       // row itself (depositId still null, depositedAmount > 0).
       // 2026-05-31 audit P0 #1: include bankFee in deposit-side total.
       prisma.chairopsCashDeposit.aggregate({
-        // 2026-09-20 CEO decision (FIN-03) — same hold-out as computeDriftMoneyAsOf above.
+        // 2026-09-22 CEO decision: reverted the 2026-09-20 FIN-03 hold-out —
+        // same as computeDriftMoneyAsOf above.
         where: {
           branchId,
           orgId: branch.orgId,
-          requiresReview: false,
           depositedAt: { gt: anchor },
         },
         _sum: { depositedAmount: true, bankFee: true },
