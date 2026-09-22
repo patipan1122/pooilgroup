@@ -242,11 +242,15 @@ export async function checkSlipFraud(args: {
   // CEO 2026-08-29: เทียบ "เลขบัญชี" แทน "ชื่อบัญชี" — ชื่อที่ AI อ่านจากสลิป (ชื่อ
   // นิติบุคคลเต็ม) กับชื่อย่อที่ตั้งค่าไว้ในระบบ เขียนคนละรูปแบบกันเสมอ ทำให้เช็ค
   // ด้วยชื่อติดธงเท็จเกือบทุกใบ (พบจากการตรวจสอบจริง 73/73 ใบที่เคยติดธัง). เลขบัญชี
-  // เป็นตัวเลขล้วน อ่านแม่นกว่ามาก — เทียบแบบ suffix เผื่อสลิปปิดบังหลักกลาง.
+  // เป็นตัวเลขล้วน อ่านแม่นกว่ามาก.
+  // CEO 2026-09-20: endsWith() เดิมสมมติว่าสลิปบังหลักหน้าเสมอ (โชว์ท้าย) — พบว่า
+  // บางรูปแบบสลิปบังหลักกลางแทน (เช่น "813-435083-8" โชว์แค่ "5083" ที่อยู่กลาง)
+  // ทำให้ endsWith เท็จตลอดแม้บัญชีถูกต้อง (ยืนยันจริง 16 สาขา, diff เกือบทุกใบ = ฿0)
+  // → เทียบแบบ "เลขที่เห็นอยู่ตรงไหนก็ได้ในเลขเต็ม" (includes) แทน suffix-only.
   if (configuredAccountNumber && ocr.accountNumber) {
     const a = normalizeAcctNo(configuredAccountNumber);
     const b = normalizeAcctNo(ocr.accountNumber);
-    const matches = a.length >= 4 && b.length >= 4 && (a === b || a.endsWith(b) || b.endsWith(a));
+    const matches = a.length >= 4 && b.length >= 4 && (a === b || a.includes(b) || b.includes(a));
     if (!matches) {
       return {
         flagged: true,
