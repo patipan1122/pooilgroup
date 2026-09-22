@@ -3254,7 +3254,16 @@ function DepositSheet({
   onClose: () => void;
   onSubmitted: () => void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(pending.map((r) => r.sessionId)));
+  // ติ๊กเริ่มต้น = **เฉพาะรอบที่เงินอยู่ในมือของคนที่กำลังเปิดหน้านี้เอง**
+  //   ของเดิมติ๊กทุกรอบของสาขา. พนักงานธรรมดา (ไม่ใช่ ผจก./แอดมิน) ฝากได้เฉพาะรอบที่ตัวเองปิด
+  //   **ทุกใบในใบฝากเดียว** (deposit-actions.ts:166-170) → ที่สาขาซึ่งมีพนักงานหลายคน การกด
+  //   "ฝากเงิน" แล้วยืนยันเลยจะโดนปฏิเสธทุกครั้ง โดยที่หน้าจอไม่เคยบอกว่าต้องเอาติ๊กของเพื่อนออก.
+  //   ถ้าในรายการไม่มีรอบของตัวเองเลย → ติ๊กทั้งหมดเหมือนเดิม (เคสผจก./แอดมินฝากแทนลูกน้อง).
+  const mineRows = pending.filter((r) => r.mine);
+  const othersCount = pending.length - mineRows.length;
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set((mineRows.length > 0 ? mineRows : pending).map((r) => r.sessionId)),
+  );
   const [amountText, setAmountText] = useState("");
   const [amountTouched, setAmountTouched] = useState(false);
   const [slipUrl, setSlipUrl] = useState("");
@@ -3279,8 +3288,10 @@ function DepositSheet({
     });
   }
 
+  // ต้อง > 0 ไม่ใช่ >= 0 — server เป็น .positive() (deposit-actions.ts:75-78) และ ledger มี
+  // CHECK (amount_satang > 0) → ถ้าปล่อย 0 ผ่าน ปุ่มจะเขียวแล้วกดไปเด้ง error เฉย ๆ
   const amountBaht = Number(displayedAmountText);
-  const amountValid = displayedAmountText.trim() !== "" && !Number.isNaN(amountBaht) && amountBaht >= 0;
+  const amountValid = displayedAmountText.trim() !== "" && !Number.isNaN(amountBaht) && amountBaht > 0;
   const amountCents = amountValid ? Math.round(amountBaht * 100) : 0;
   const varianceCents = amountCents - expectedCents;
   const varLabel = varianceCents === 0 ? "ตรง" : varianceCents > 0 ? "เกิน" : "ขาด";
@@ -3325,6 +3336,14 @@ function DepositSheet({
           <div style={{ background: "#FDF3F2", border: "1px solid #F3D4D0", borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: "#B42318", lineHeight: 1.4, marginBottom: 12 }}>{error}</div>
         )}
 
+        {/* รอบของคนอื่นปนอยู่ในรายการ → บอกกฎให้รู้ตัวก่อนกด แทนที่จะปล่อยไปเด้ง error ตอนยืนยัน */}
+        {othersCount > 0 && (
+          <div style={{ background: "#FCF8EC", border: "1px solid #F0E2BE", borderRadius: 10, padding: "9px 12px", fontSize: 11, color: "#7A5510", lineHeight: 1.45, marginBottom: 10 }}>
+            มี {othersCount} รอบที่คนอื่นเป็นคนถือเงิน (ป้าย “ของเพื่อน”)
+            {mineRows.length > 0 ? " — ติ๊กไว้ให้เฉพาะรอบของคุณ" : ""} · ฝากรวมรอบของคนอื่นได้เฉพาะผู้จัดการสาขา/แอดมิน
+          </div>
+        )}
+
         {pending.length === 0 ? (
           <div style={{ fontSize: 12.5, color: "#9AA1AB", padding: "10px 0 18px" }}>ไม่มีรอบที่ฝากได้ในสาขานี้ตอนนี้</div>
         ) : (
@@ -3339,7 +3358,10 @@ function DepositSheet({
                   </span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1A1D21" }}>{r.sessionCode}</div>
-                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>{depositRowTimeLabel(r.closedAt)}{r.overdue ? ` · เลยกำหนด ${r.daysOverdue} วัน` : ""}</div>
+                    <div style={{ fontSize: 10.5, color: "#9AA1AB" }}>
+                      {depositRowTimeLabel(r.closedAt)}{r.overdue ? ` · เลยกำหนด ${r.daysOverdue} วัน` : ""}
+                      {!r.mine ? ` · ของเพื่อน (${r.holderName})` : ""}
+                    </div>
                   </span>
                   <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "#1A1D21" }}>฿{Math.round(r.cashCents / 100).toLocaleString("en-US")}</span>
                 </button>

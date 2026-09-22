@@ -10,8 +10,10 @@ import { requireCfSession } from "@/lib/clawfleet/role-guard";
 import {
   getPendingDeposits,
   getDepositHistory,
+  getDepositReviewContext,
   type PendingDepositRow,
   type DepositRow,
+  type DepositReviewContext,
 } from "@/lib/clawfleet/deposit-queries";
 import { DepositsClient } from "./deposits-client";
 
@@ -22,6 +24,9 @@ export default async function DepositsPage() {
   let history: DepositRow[] = [];
   let orgId = "";
   let currentUserName = "";
+  // สิทธิ์ตรวจใบฝากต้องมาเป็น prop ของตัวเอง — ห้าม derive จากประวัติ (ใบแรกสุดขององค์กรจะไม่มี
+  // ประวัติให้ derive → ปุ่ม "แตะเพื่อ ✓ ตรวจแล้ว" หายไปพอดีในครั้งที่ใช้งานจริงครั้งแรก)
+  let reviewCtx: DepositReviewContext = { canReview: false, currentUserId: "" };
 
   try {
     const session = await requireCfSession();
@@ -44,12 +49,20 @@ export default async function DepositsPage() {
     history = [];
   }
 
+  try {
+    reviewCtx = await getDepositReviewContext();
+  } catch {
+    // graceful: อ่านสิทธิ์ไม่ได้ → ไม่โชว์ปุ่มตรวจ (fail-closed)
+  }
+
   return (
     <DepositsClient
       pending={pending}
       history={history}
       orgId={orgId}
       currentUserName={currentUserName}
+      canReview={reviewCtx.canReview}
+      currentUserId={reviewCtx.currentUserId}
     />
   );
 }

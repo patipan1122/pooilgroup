@@ -185,17 +185,37 @@ export async function pushBranchDepositsToLedger(
   // ใบยอด ฿0/ติดลบ: recordCashDeposit กันไว้ที่ต้นทางแล้ว (amountCents ต้อง > 0) แต่ยังกันไว้อีกชั้น
   // เผื่อข้อมูลเก่า/นำเข้าทางอื่น — ledger มี CHECK (amount_satang > 0) ถ้าหลุดเข้าไปจะทำให้
   // ทั้งทรานแซกชันล้มและไม่มีใบไหนเข้าเลย. ข้ามเฉพาะใบเสีย ดีกว่าพาทั้งสาขาตกรถ.
-  const deposits = allDeposits.filter((d) => d.amountCents > 0);
-  const zeroSkipped = allDeposits.length - deposits.length;
+  const positive = allDeposits.filter((d) => d.amountCents > 0);
+  const zeroSkipped = allDeposits.length - positive.length;
+
+  if (positive.length === 0) {
+    return { ok: true, inserted: 0, alreadySent: 0, flaggedIncluded, zeroSkipped };
+  }
+
+  // ⏱️ ส่งเฉพาะใบที่ "ยังไม่เคยเข้า ledger" — ก่อนหน้านี้ upsert ใบเก่าซ้ำทุกใบที่สาขาเคยฝาก
+  //   ทุกครั้งที่กดส่ง. หนึ่ง round-trip ต่อใบในทรานเดียว แปลว่าเวลาที่ใช้โตไปเรื่อย ๆ ตามอายุสาขา
+  //   → ฝากวันละใบราว ๆ 1 ปี ทรานจะยาวเกิน timeout แล้ว **ส่งไม่ได้อีกเลยตลอดไป** (all-or-nothing:
+  //   ใบใหม่ตกรถไปพร้อมใบเก่าทั้งหมด). loadSentDepositIds มีอยู่แล้วและ getBranchReconcileSummary
+  //   ใช้นับ "พร้อมส่ง N ใบ" อยู่แล้ว — push แค่ไม่เคยเรียกมัน.
+  //   graceful: query ล้ม → Set ว่าง → พฤติกรรมเท่าเดิม (ON CONFLICT ที่ระดับ DB ยังกันซ้ำให้อยู่).
+  const sentBefore = await loadSentDepositIds(
+    orgId,
+    config.companyId,
+    positive.map((d) => d.id),
+  );
+  const deposits = positive.filter((d) => !sentBefore.has(d.id));
+  const alreadySentBefore = positive.length - deposits.length;
 
   if (deposits.length === 0) {
-    return { ok: true, inserted: 0, alreadySent: 0, flaggedIncluded, zeroSkipped };
+    return { ok: true, inserted: 0, alreadySent: alreadySentBefore, flaggedIncluded, zeroSkipped };
   }
 
   let inserted = 0;
   let attempted = deposits.length; // ใบที่ยังส่งได้จริงตอนเขียน (หักใบที่เพิ่งถูกตีกลับระหว่างทาง)
   try {
     // 🔒 all-or-nothing: ใบใดใบหนึ่งล้ม → rollback ทั้งชุด ไม่มีเงินค้างเขียนครึ่งทาง
+    // ⏱️ timeout 30 วิ (ค่าเริ่มต้นของ Prisma คือ 5 วิ และ lib/prisma.ts ไม่ได้ตั้งค่าไว้) —
+    //    สาขาที่ฝากค้างหลายสิบใบในรอบแรกจะเขียนไม่ทัน 5 วิแล้วล้มทั้งชุดโดยไม่มีใครเข้าใจว่าทำไม
     await prisma.$transaction(async (tx) => {
       // 🔒 กัน race "ส่งเข้า ledger" ชนกับ "ตีกลับ" —
       //   ก่อนหน้านี้ 2 งานนี้แตะคนละกลุ่มเสมอ (ส่งเฉพาะ NONE/APPROVED · ตีกลับได้เฉพาะ PENDING)
@@ -263,7 +283,7 @@ export async function pushBranchDepositsToLedger(
         if (res.length && res[0]?.is_new) insertedInTx++;
       }
       inserted = insertedInTx;
-    });
+    }, { timeout: 30_000 });
   } catch (e) {
     // rollback แล้ว — ไม่มีแถวไหนเข้า ledger เลย จึงรายงาน inserted = 0 ให้ตรงความจริง
     return {
@@ -279,9 +299,10 @@ export async function pushBranchDepositsToLedger(
   return {
     ok: true,
     inserted,
-    // "ส่งไปแล้วก่อนหน้านี้" = ใบที่พยายามเขียนจริงแต่ไม่เกิดแถวใหม่ (ON CONFLICT ไปโดน DO UPDATE)
+    // "ส่งไปแล้วก่อนหน้านี้" = ใบที่กรองออกตั้งแต่ต้นเพราะมีแถวใน ledger อยู่แล้ว
+    // + ใบที่พยายามเขียนจริงแต่ไม่เกิดแถวใหม่ (ON CONFLICT ไปโดน DO UPDATE ระหว่างทาง)
     // ไม่ใช่ deposits.length − inserted ซึ่งจะนับใบที่เพิ่งถูกตีกลับระหว่างทางเข้ามาผิด ๆ
-    alreadySent: attempted - inserted,
+    alreadySent: alreadySentBefore + (attempted - inserted),
     flaggedIncluded,
     zeroSkipped,
   };
@@ -299,10 +320,32 @@ export async function pushBranchDepositsToLedger(
  *     → **เงินก้อนเดียวกันอยู่ในบัญชีกระทบยอด 2 แถว** (ยอดรายได้บวมปลอม).
  *   จึงต้องถอนแถวเดิมออกในทรานเดียวกับการตีกลับเสมอ.
  *
- * กันพลาด: ถ้าแถวนั้น "จับคู่กับ statement ธนาคารแล้ว" (match_state <> 'unmatched' หรือมี
- *   match item ชี้อยู่) = ธนาคารยืนยันแล้วว่าเงินเข้าจริง → **ห้ามถอน/ห้ามตีกลับ** (คืนค่า false)
- *   ให้ไปแก้ที่หน้ากระทบยอดก่อน. ledger_bank_match_item.book_id ไม่มี FK มาที่ตารางนี้
- *   (ยืนยันกับ DB จริง) → ลบไปเฉย ๆ จะเหลือ match item ลอยชี้แถวที่ไม่มีอยู่.
+ * กันพลาด: ถ้าแถวนั้น "จับคู่กับ statement ธนาคารแล้ว" = ธนาคารยืนยันแล้วว่าเงินเข้าจริง →
+ *   **ห้ามถอน/ห้ามตีกลับ** (คืนค่า false) ให้ไปแก้ที่หน้ากระทบยอดก่อน. ไม่มี FK ใดชี้มาที่
+ *   ledger_revenue_entry เลย (ยืนยันกับ DB จริง: pg_constraint contype='f' → 0 แถว) → ลบไปเฉย ๆ
+ *   จะเหลือรายการจับคู่ลอยชี้แถวที่ไม่มีอยู่ โดย DB ไม่ร้องอะไรเลย.
+ *
+ * "จับคู่แล้ว" มี **3 รูปแบบ** ใน LedgerLine — ต้องเช็คให้ครบทั้งสาม (เดิมเช็คแค่สองแบบแรก):
+ *   1. r.match_state <> 'unmatched'  — เขียนตอน confirm (bank-recon/_actions.ts:947)
+ *   2. ledger_bank_match_item        — การจับคู่แบบ "กลุ่ม" (หลายรายการ ↔ หลายแถว)
+ *   3. ledger_bank_match             — การจับคู่ 1:1 แบบเก่า ที่ยัง "แค่เสนอ" (status='suggested')
+ *      ⚠️ ช่องที่หลุด: suggestMatchesAction ยิงอัตโนมัติหลังนำเข้า statement ทุกครั้ง
+ *      (bank-recon/_actions.ts:817) แล้วเขียน ledger_bank_match(matched_revenue_id,'suggested')
+ *      + อัปเดตแค่ ledger_bank_txn.match_state — **ไม่แตะ ledger_revenue_entry.match_state
+ *      และไม่สร้าง match item** → ช่วงระหว่าง "นำเข้า statement" ถึง "กดยืนยันจับคู่" แถวของเรา
+ *      อยู่ระหว่างกระทบยอดอยู่แท้ ๆ แต่มองไม่เห็นจากเงื่อนไข 1 และ 2 เลย.
+ *      ยืนยันกับ DB จริง: CHECK chk_status = ('suggested','confirmed','reversed') และมี partial
+ *      unique index ledger_bank_match_revenue_active_uidx บน matched_revenue_id เฉพาะสองสถานะแรก.
+ *
+ * 🔒 กัน race "ตีกลับ" ชนกับ "กดยืนยันจับคู่" — จุดที่เงินถูกนับซ้ำได้จริง:
+ *   ของเดิมอ่านสถานะ แล้วค่อย DELETE ... AND match_state='unmatched' แต่ **ทิ้งจำนวนแถวที่ลบได้**
+ *   แล้ว return true เสมอ. ถ้ามีคนกดยืนยันจับคู่คั่นกลางระหว่างสองคำสั่งนั้น: DELETE ลบได้ 0 แถว
+ *   (แถวกลายเป็น matched ไปแล้ว) แต่เราคืน true → ตีกลับสำเร็จ → รอบถูกคืนไปฝากใหม่ → ส่งเข้า
+ *   ledger อีกครั้งเป็นแถวใหม่ → **เงินก้อนเดียวมี 2 แถวในบัญชีกระทบยอด แถวเก่ายังผูกกับ statement อยู่ด้วย**.
+ *   ตอนนี้: ล็อกแถวด้วย FOR UPDATE ก่อน (บล็อกจนคนที่กำลังยืนยันจับคู่ commit เสร็จ) แล้ว DELETE
+ *   โดยยัดเงื่อนไข "ยังไม่จับคู่" ทั้งสามแบบไว้ในคำสั่งลบเอง และ **เทียบจำนวนแถวที่ลบได้จริง**
+ *   ลบไม่ครบ = มีอะไรมาจับคู่ไปแล้ว → คืน false → ทั้งทรานของการตีกลับถูก rollback.
+ *   (ลำดับล็อก cf_cash_deposits → ledger_revenue_entry ตรงกับฝั่ง push เป๊ะ จึงไม่เกิด deadlock.)
  *
  * คืน true = ถอนเรียบร้อย/ไม่มีอะไรต้องถอน · false = ถอนไม่ได้เพราะกระทบยอดไปแล้ว.
  */
@@ -312,24 +355,31 @@ export async function retractDepositFromLedger(
   depositId: string,
 ): Promise<boolean> {
   const sourceRef = depositSourceRef(depositId);
-  const rows = await tx.$queryRaw<{ id: string; reconciled: boolean }[]>`
-    SELECT r.id::text AS id,
-           (r.match_state <> 'unmatched'
-            OR EXISTS (SELECT 1 FROM ledger_bank_match_item mi
-                        WHERE mi.book_type = 'revenue' AND mi.book_id = r.id)) AS reconciled
+
+  // 1) ล็อกแถวของใบฝากนี้ก่อน — ถ้ามีใครกำลังยืนยันจับคู่อยู่ คำสั่งนี้จะรอจนเขา commit
+  const locked = await tx.$queryRaw<{ id: string }[]>`
+    SELECT r.id::text AS id
       FROM ledger_revenue_entry r
      WHERE r.org_id = ${orgId}::uuid
        AND r.source_type = 'CLAWFLEET'
-       AND r.source_ref = ${sourceRef}`;
+       AND r.source_ref = ${sourceRef}
+     FOR UPDATE`;
 
-  if (rows.length === 0) return true; // ยังไม่เคยส่งเข้า ledger — ตีกลับได้เลย
-  if (rows.some((r) => r.reconciled)) return false; // กระทบยอดแล้ว — ห้ามถอน
+  if (locked.length === 0) return true; // ยังไม่เคยส่งเข้า ledger — ตีกลับได้เลย
 
-  await tx.$executeRaw`
-    DELETE FROM ledger_revenue_entry
-     WHERE org_id = ${orgId}::uuid
-       AND source_type = 'CLAWFLEET'
-       AND source_ref = ${sourceRef}
-       AND match_state = 'unmatched'`;
-  return true;
+  // 2) ลบเฉพาะแถวที่ "ยังไม่ถูกจับคู่" ครบทั้งสามแบบ ณ วินาทีที่ลบจริง (ไม่ใช่ตอนที่อ่านมาก่อนหน้า)
+  const deleted = await tx.$executeRaw`
+    DELETE FROM ledger_revenue_entry AS r
+     WHERE r.org_id = ${orgId}::uuid
+       AND r.source_type = 'CLAWFLEET'
+       AND r.source_ref = ${sourceRef}
+       AND r.match_state = 'unmatched'
+       AND NOT EXISTS (SELECT 1 FROM ledger_bank_match_item mi
+                        WHERE mi.book_type = 'revenue' AND mi.book_id = r.id)
+       AND NOT EXISTS (SELECT 1 FROM ledger_bank_match m
+                        WHERE m.matched_revenue_id = r.id
+                          AND m.status IN ('suggested', 'confirmed'))`;
+
+  // ลบไม่ครบทุกแถวที่ล็อกไว้ = มีแถวที่กระทบยอดไปแล้ว → ตีกลับไม่ได้ (ทรานข้างนอกจะ rollback)
+  return deleted === locked.length;
 }

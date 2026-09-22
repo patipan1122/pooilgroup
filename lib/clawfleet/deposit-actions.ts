@@ -98,7 +98,16 @@ const RecordSchema = z.object({
  *  6) auditLog CF_CASH_DEPOSIT (amount/expected/variance/sessionIds · flag SHORT)
  */
 export async function recordCashDeposit(input: unknown): Promise<
-  ResultOf<{ depositId: string; depositCode: string; status: string; varianceCents: number; approvalStatus: string }>
+  ResultOf<{
+    depositId: string;
+    depositCode: string;
+    status: string;
+    varianceCents: number;
+    /** สถานะ **หลัง** AI อ่านสลิปเสร็จแล้ว (ไม่ใช่ค่าที่คำนวณจากส่วนต่างอย่างเดียว) */
+    approvalStatus: string;
+    /** เหตุผลที่ AI ติดธง (สลิปซ้ำ/บัญชีปลายทางผิด) — null = ไม่ติดธง/อ่านสลิปไม่ได้ */
+    ocrFlagReason: string | null;
+  }>
 > {
   const parsed = RecordSchema.safeParse(input);
   if (!parsed.success) return err(parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง");
@@ -279,6 +288,13 @@ export async function recordCashDeposit(input: unknown): Promise<
   revalidatePath(DEPOSITS_PATH);
   revalidatePath(DASHBOARD_PATH);
 
+  // สถานะที่จะ "คืนให้หน้าจอ" — ต้องสะท้อนผลหลัง AI อ่านสลิปด้วย ไม่ใช่แค่ผลจากส่วนต่าง.
+  //   เดิมคืน result.approvalStatus ที่คำนวณไว้ก่อนบล็อก AI ด้านล่างจะยก NONE → PENDING ได้
+  //   → ใบที่ AI จับได้ว่าสลิปซ้ำ/บัญชีผิด จะโชว์บนจอว่า "ยอดตรง ไม่ต้องตรวจ" ทั้งที่ในฐานข้อมูล
+  //   ติดธงรอตรวจอยู่ · คนฝากเห็นไฟเขียวปลอม และปุ่ม "แตะเพื่อ ✓ ตรวจแล้ว" ก็ไม่โผล่
+  let finalApprovalStatus: string = result.approvalStatus;
+  let finalOcrFlagReason: string | null = null;
+
   // เวิร์กช็อป 2026-08-29 · AI (Gemini) อ่านสลิป (ยอด/วันที่/บัญชีปลายทาง) + ตรวจสลิปซ้ำ/บัญชีผิด
   // นอกธุรกรรม (ไม่บล็อกการฝากที่เพิ่งสำเร็จไปแล้ว) — อ่านไม่ทัน/พังก็ไม่เป็นไร ใบฝากยังใช้ได้ปกติ
   // แค่ไม่มีข้อมูล AI ประกอบ (mirror ChairOps: lib/chairops/reconcile/slip-ocr.ts integration)
@@ -310,11 +326,15 @@ export async function recordCashDeposit(input: unknown): Promise<
       // AI ติดธง (สลิปซ้ำ/บัญชีปลายทางผิด) + ยอดตรง (NONE) → ยกเป็น PENDING ให้ office ตรวจ
       // ตอนนี้ PENDING = "ติดธง รอตรวจ" ไม่ได้กันเงินออกจาก ledger แล้ว → ใบนี้ยังไหลเข้าบัญชี
       // กระทบยอดตามปกติ แต่จะโชว์สีเตือน + เหตุผลที่ AI สงสัย ให้แอดมินกดตรวจย้อนหลัง.
+      finalOcrFlagReason = fraud.reason;
       if (fraud.flagged) {
         await prisma.cfCashDeposit.updateMany({
           where: { id: result.depositId, approvalStatus: "NONE" },
           data: { approvalStatus: "PENDING" },
         });
+        // ใบเพิ่งถูกสร้าง → สถานะเป็น NONE หรือ PENDING เท่านั้น · AI ติดธงแล้วไม่ว่าทางไหนก็จบที่
+        // PENDING (ยกจาก NONE ด้วยคำสั่งข้างบน หรือติดธงจากส่วนต่างอยู่ก่อนแล้ว)
+        finalApprovalStatus = "PENDING";
       }
 
       revalidatePath(DEPOSITS_PATH);
@@ -324,7 +344,10 @@ export async function recordCashDeposit(input: unknown): Promise<
     }
   }
 
-  return { ok: true, data: result };
+  return {
+    ok: true,
+    data: { ...result, approvalStatus: finalApprovalStatus, ocrFlagReason: finalOcrFlagReason },
+  };
 }
 
 // =============================================================

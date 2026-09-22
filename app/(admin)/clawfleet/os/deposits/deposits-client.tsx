@@ -72,26 +72,30 @@ export function DepositsClient({
   history,
   orgId,
   currentUserName,
+  canReview,
+  currentUserId,
 }: {
   pending: PendingDepositRow[];
   history: DepositRow[];
   orgId: string;
   currentUserName: string;
+  /** ผู้ใช้นี้กด "ตรวจแล้ว"/"ตีกลับ" ได้ไหม — มาจาก server ตรง ๆ (getDepositReviewContext) */
+  canReview: boolean;
+  currentUserId: string;
 }) {
   const [tab, setTab] = useState<TabKey>("pending");
   // ข้อมูลจริงจาก server เป็นหลัก · optimistic เฉพาะตอนบันทึกฝากสำเร็จ
   const [pendingRows, setPendingRows] = useState<PendingDepositRow[]>(pending);
   const [historyRows, setHistoryRows] = useState<DepositRow[]>(history);
 
-  // per-viewer review context — denormalize มากับทุก DepositRow (page.tsx ไม่ได้ส่ง prop นี้แยก).
-  // ใช้ค่าจากแถวแรกที่มี (เหมือนกันทุกแถว) · ไม่มีประวัติเลย → fallback ปลอดภัย
-  //   (optimistic row เป็นใบที่ตัวเองเพิ่งฝาก → maker ≠ checker กันไม่ให้ตัวเองอนุมัติอยู่แล้ว).
+  // per-viewer review context — **มาจาก prop ของ server โดยตรง**
+  //   เดิม derive จาก history[0] ซึ่งพังพอดีในกรณีเดียวที่สำคัญที่สุด: ใบฝากใบแรกสุดขององค์กร
+  //   (ประวัติยังว่าง → history[0] = undefined → canReview=false ตลอด) แปลว่าฟีเจอร์ "แตะตัวเลข
+  //   เพื่อยืนยันว่าตรวจแล้ว" ที่ CEO สั่งทำ จะไม่ทำงานเลยในการใช้งานจริงครั้งแรก — ซึ่งตอนนี้คือ
+  //   ทุกกรณี เพราะระบบยังไม่เคยมีใบฝากสักใบ.
   const reviewCtx = useMemo(
-    () => ({
-      canReview: history[0]?.canReview ?? false,
-      currentUserId: history[0]?.currentUserId ?? "",
-    }),
-    [history],
+    () => ({ canReview, currentUserId }),
+    [canReview, currentUserId],
   );
 
   // รอบที่เลือกไว้ (Set ของ sessionId)
@@ -171,8 +175,10 @@ export function DepositsClient({
   const depositBranchName = selectedRows[0]?.branchName ?? null;
 
   // ยอดฝากจริง (บาท) → เซนต์ · parse graceful
+  // ต้อง > 0 ไม่ใช่ >= 0: ฝั่ง server เป็น .positive() (deposit-actions.ts:75-78) และ ledger มี
+  // CHECK (amount_satang > 0) → ปล่อยให้ 0 ผ่านหน้าจอ = ผู้ใช้กดยืนยันแล้วเด้ง error ทั้งที่ปุ่มเขียว
   const amountBaht = Number(amountText);
-  const amountValid = amountText.trim() !== "" && !Number.isNaN(amountBaht) && amountBaht >= 0;
+  const amountValid = amountText.trim() !== "" && !Number.isNaN(amountBaht) && amountBaht > 0;
   const amountCents = amountValid ? Math.round(amountBaht * 100) : 0;
   // ส่วนต่าง preview: ฝากจริง − เก็บได้ (+ เกิน / − ขาด)
   const varianceCents = amountCents - expectedCents;
@@ -259,13 +265,17 @@ export function DepositsClient({
         depositedAt: depositedAtISO,
         slipPhotoUrl: slipUrl || null,
         note: noteTrim || null,
-        // เวิร์กช็อป 2026-08-29 · AI อ่านสลิปทำงานเสร็จแล้วจริง (recordCashDeposit รออ่านก่อน return)
-        // แต่ optimistic row นี้สร้างจากค่าที่ client มีอยู่แล้ว ไม่ได้ query ใหม่ — รีเฟรชหน้าจะเห็นค่าจริง
-        ocrFlagReason: null,
+        // เวิร์กช็อป 2026-08-29 · AI อ่านสลิปเสร็จก่อน recordCashDeposit จะ return อยู่แล้ว
+        // → เอาเหตุผลที่ AI ติดธงมาโชว์ได้ทันที (เดิม hardcode null ทำให้กล่องเตือนสีแดงไม่ขึ้น
+        //   ทั้งที่ระบบจับได้แล้วว่าสลิปซ้ำ/บัญชีปลายทางผิด)
+        ocrFlagReason: res.data.ocrFlagReason,
       };
       setHistoryRows((prev) => [newRow, ...prev]);
       resetForm();
       setTab("history");
+      // ดึงของจริงจาก server ตามมา (รอบที่เหลือ · เลขใบ · ผล AI) — แถว optimistic ด้านบนเป็นแค่
+      // ภาพชั่วคราวให้จอไม่กระพริบ. ทางตีกลับทำแบบนี้อยู่แล้ว (:147) ทางฝากเงินเคยขาดไป
+      router.refresh();
     });
   }
 

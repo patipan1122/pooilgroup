@@ -189,13 +189,18 @@ export default async function ClawfleetLiffPage({
           photoMoneyMeterTopUrl: true, photoMoneyMeterBottomUrl: true,
           photoDollMeterTopUrl: true, photoDollMeterBottomUrl: true, photoMachineUrl: true,
           session: { select: { isBaseline: true } }, // item 8 · รอบตั้งต้น
-          machine: { select: { code: true, branch: { select: { name: true } } } },
+          machine: { select: { code: true, branch: { select: { id: true, name: true } } } },
         },
         take: 50,
       });
       history = events.map((e) => ({
         code: e.machine.code,
         branch: e.machine.branch.name, // B3 · สาขาของตู้
+        // ⚠️ ต้องมี branchId เสมอ — HistoryPanel กรองประวัติด้วย branchId เทียบกับสาขาที่เลือก
+        //   (staff-app-client.tsx:2741). เดิม LIFF ไม่ส่งมาเลย → r.branchId = undefined ทุกแถว
+        //   → กรองแล้วเหลือศูนย์ → พนักงานบน LINE เห็นหน้าประวัติว่างเปล่าใต้แถบยอดฝาก
+        //   ทั้งที่มีรอบเก็บเงินจริง. ฝั่งเดสก์ท็อปส่งมาตลอด (os/app/page.tsx:319).
+        branchId: e.machine.branch.id,
         date: selectedDate, // B3 · วันที่ไทยของรอบ (YYYY-MM-DD)
         time: e.collectedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }),
         cashBaht: Math.round(e.cashCountedCents / 100),
