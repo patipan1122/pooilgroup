@@ -18,6 +18,9 @@ import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import { pushBranchDepositsToLedger } from "@/lib/chairops/reconcile/ledger-push";
 import { ChairopsAlertKind, ChairopsAlertLevel } from "@/lib/generated/prisma/enums";
 import { zUUID, zBaht } from "@/lib/chairops/schemas/zod-helpers";
+import { putObject } from "@/lib/r2/upload";
+import { slipKey } from "@/lib/chairops/storage/r2";
+import type { ActionResult } from "@/app/(admin)/chairops/collect/actions";
 
 // ----- Dispute a maid's cash collection -----
 
@@ -394,4 +397,85 @@ export async function sendDepositsToReconcile(formData: FormData) {
   redirect(
     `/chairops/reconcile/${branchId}?reconcileSent=${result.inserted}&reconcileSkippedReview=${result.pendingReviewSkipped}`
   );
+}
+
+// ----- Attach an additional slip to an existing deposit -----
+//
+// CEO 2026-09-22: a maid sometimes forgets to attach a slip when depositing
+// (sends the photo later over LINE) — office then attaches it here — or a
+// single deposit genuinely has more than one bank slip. Immediate, no
+// approval needed (unlike deleting, which is gated — see the delete-request
+// flow). Does NOT touch the deposit's primary `slipPhotoUrl`/OCR fraud-check
+// fields or any money total; this is purely supplementary evidence stored in
+// `ChairopsDepositSlipAttachment`.
+export async function attachDepositSlip(
+  formData: FormData,
+): Promise<ActionResult<{ url: string }>> {
+  const session = await requireRole("OFFICE");
+
+  const depositId = zUUID().safeParse(formData.get("depositId"));
+  if (!depositId.success) return { ok: false, error: "depositId ไม่ถูกต้อง" };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "ไม่มีไฟล์รูปภาพ" };
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    return { ok: false, error: "รูปใหญ่เกินไป (สูงสุด 8 MB)" };
+  }
+
+  const orgId = session.user.orgId;
+  const deposit = await prisma.chairopsCashDeposit.findFirst({
+    where: { id: depositId.data, orgId },
+    select: { id: true, branchId: true, branch: { select: { slug: true } } },
+  });
+  if (!deposit) return { ok: false, error: "ไม่พบรายการฝากเงินนี้" };
+
+  let ct = (file.type || "image/jpeg").toLowerCase();
+  if (ct === "image/heif") ct = "image/heic";
+  if (!/^image\/(jpeg|jpg|png|webp|heic)$/.test(ct)) ct = "image/jpeg";
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const attachmentId = crypto.randomUUID();
+  const ext = ct === "image/heic" ? "jpg" : (ct.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg");
+  const key = slipKey(deposit.branch.slug, attachmentId, ext);
+
+  try {
+    await putObject(key, buf, ct === "image/heic" ? "image/jpeg" : ct);
+  } catch (err) {
+    console.error("[chairops] attachDepositSlip R2 put failed", err);
+    return { ok: false, error: "อัปโหลดรูปไม่สำเร็จ · ลองอีกครั้ง" };
+  }
+
+  const url = `${process.env.R2_PUBLIC_URL}/${key}`;
+  const noteRaw = formData.get("note");
+  const note = typeof noteRaw === "string" && noteRaw.trim() ? noteRaw.trim().slice(0, 500) : null;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.chairopsDepositSlipAttachment.create({
+      data: {
+        id: attachmentId,
+        orgId,
+        depositId: depositId.data,
+        url,
+        note,
+        uploadedById: session.user.id,
+      },
+    });
+    await writeAudit(
+      {
+        userId: session.user.id,
+        action: "cash_deposit.slip_attached",
+        entity: "CashDeposit",
+        entityId: depositId.data,
+        newValue: { url, note },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/chairops/reconcile/${deposit.branchId}`);
+  revalidatePath("/chairops/reconcile");
+
+  return { ok: true, data: { url } };
 }

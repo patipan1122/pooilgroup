@@ -3548,11 +3548,34 @@ model ChairopsCashDeposit {
   branch      ChairopsBranch           @relation(fields: [branchId], references: [id])
   maid        ChairopsUser             @relation(fields: [maidId], references: [id])
   collections ChairopsCashCollection[]
+  // CEO 2026-09-22: แม่บ้านลืมแนบสลิปตอนฝาก (ส่งมาทีหลังทาง LINE) หรือฝากครั้ง
+  // เดียวมีมากกว่า 1 สลิปจริง — office แนบเพิ่มได้ทันทีไม่ต้องขออนุมัติ (ต่างจาก
+  // การลบที่ต้องขออนุมัติ). สลิปหลักยังอยู่ที่ slipPhotoUrl ด้านบนเหมือนเดิม
+  // (ไม่กระทบ AI ตรวจสลิป/ยอดเงิน) — ตารางนี้เก็บเฉพาะสลิปเสริมที่แนบตามหลัง.
+  additionalSlips ChairopsDepositSlipAttachment[]
 
   @@unique([orgId, slipImageHash])
   @@index([orgId])
   @@index([branchId, depositedAt])
   @@index([maidId, depositedAt])
+  @@schema("chairops")
+}
+
+/// สลิปเสริมที่แนบเข้ากับรายการฝากเงินที่มีอยู่แล้ว (CEO 2026-09-22) — ไม่กระทบ
+/// ยอดเงิน/สถานะตรวจสอบใด ๆ เป็นแค่หลักฐานเสริม แนบได้ทันทีไม่ต้องขออนุมัติ.
+model ChairopsDepositSlipAttachment {
+  id           String   @id @default(uuid())
+  orgId        String
+  depositId    String
+  url          String
+  note         String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  deposit ChairopsCashDeposit @relation(fields: [depositId], references: [id])
+
+  @@index([depositId])
+  @@index([orgId])
   @@schema("chairops")
 }
 

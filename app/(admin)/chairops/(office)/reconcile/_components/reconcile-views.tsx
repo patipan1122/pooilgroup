@@ -523,6 +523,7 @@ export function LedgerTab({
                       status: s.ledgerStatus,
                       flagged: s.flagged,
                       caption: `สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`,
+                      additionalSlips: s.additionalSlips,
                     }))}
                   />
                 ) : (
