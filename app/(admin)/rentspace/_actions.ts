@@ -1602,13 +1602,27 @@ export async function actCreateBill(contractId: string, period: string, issue = 
  */
 export async function actBillingPreview(projectId: string, period: string) {
   const session = await gateAdmin();
-  const { buildBill } = await import("@/lib/rentspace/billing");
+  const { buildBill, prefetchBillInputs } = await import("@/lib/rentspace/billing");
   const { tenantDisplayName } = await import("@/lib/rentspace/format");
   const contracts = await prisma.rentalContract.findMany({
     where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring", "expired"] } },
     include: { project: true, unit: true, tenant: true },
     orderBy: { unit: { code: "asc" } },
   });
+
+  // upspeed 2026-09-22: เดิมเช็ค "บิลออกแล้วหรือยัง" ทีละสัญญาใน loop (findUnique ×N
+  // ต่อเนื่อง) — รวมเป็น query เดียวก่อน แล้วค่อย prefetch reads ให้เฉพาะสัญญาที่ต้อง
+  // คิดจริง (ยังไม่ออกบิล/ถูกยกเลิกไปแล้ว) → loop คำนวณไม่ยิง DB รายแถวเลย
+  const existingBills = await prisma.rentalBill.findMany({
+    where: { contractId: { in: contracts.map((c) => c.id) }, period, deletedAt: null },
+    select: { contractId: true, status: true },
+  });
+  const existingByContract = new Map(existingBills.map((b) => [b.contractId, b]));
+  const billable = contracts.filter((c) => {
+    const existing = existingByContract.get(c.id);
+    return !existing || existing.status === "void"; // void ไม่นับว่า "ออกแล้ว" → ออกใหม่ได้
+  });
+  const preMap = await prefetchBillInputs(billable, period);
 
   const rows: {
     code: string;
@@ -1627,18 +1641,14 @@ export async function actBillingPreview(projectId: string, period: string) {
     const code = c.unit?.code ?? "—";
     const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
 
-    const existing = await prisma.rentalBill.findUnique({
-      where: { contractId_period: { contractId: c.id, period }, deletedAt: null },
-      select: { id: true, status: true },
-    });
-    // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
+    const existing = existingByContract.get(c.id);
     if (existing && existing.status !== "void") {
       // already billed → list it flagged, but it won't be re-billed
       rows.push({ code, tenant, rent: 0, utility: 0, total: 0, hasMeter: true, alreadyBilled: true });
       continue;
     }
 
-    const built = await buildBill(c, period);
+    const built = await buildBill(c, period, preMap.get(c.id));
     const rent = toNum(built.rentAmount);
     const utility = toNum(built.electricAmount) + toNum(built.waterAmount);
     // พรีวิวต้องตรงกับบิลจริง: รวมรายการประจำ (ภาษีที่ดิน/ส่วนกลาง = otherAmount) + VAT − ส่วนลดโปรฯ
@@ -1689,7 +1699,7 @@ export async function actPreviewBillsForUnits(
 ): Promise<{ rows: BillPreviewRow[]; sum: number }> {
   const session = await gateAdmin();
   if (!unitIds?.length) return { rows: [], sum: 0 };
-  const { buildBill, promoDiscountFor, computeBillTotals } = await import(
+  const { buildBill, prefetchBillInputs, promoDiscountFor, computeBillTotals } = await import(
     "@/lib/rentspace/billing"
   );
   const { tenantDisplayName } = await import("@/lib/rentspace/format");
@@ -1704,16 +1714,26 @@ export async function actPreviewBillsForUnits(
     orderBy: { unit: { code: "asc" } },
   });
 
+  // upspeed 2026-09-22: batch the existing-bill check (was 1 findUnique/contract) +
+  // prefetch buildBill's reads for the contracts that'll actually be computed
+  const existingBills = await prisma.rentalBill.findMany({
+    where: { contractId: { in: contracts.map((c) => c.id) }, period, deletedAt: null },
+    select: { contractId: true, status: true },
+  });
+  const existingByContract = new Map(existingBills.map((b) => [b.contractId, b]));
+  const billable = contracts.filter((c) => {
+    const existing = existingByContract.get(c.id);
+    return !existing || existing.status === "void";
+  });
+  const preMap = await prefetchBillInputs(billable, period);
+
   const rows: BillPreviewRow[] = [];
   let sum = 0;
   for (const c of contracts) {
     const code = c.unit?.code ?? "—";
     const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
 
-    const existing = await prisma.rentalBill.findUnique({
-      where: { contractId_period: { contractId: c.id, period }, deletedAt: null },
-      select: { id: true, status: true },
-    });
+    const existing = existingByContract.get(c.id);
     // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
     if (existing && existing.status !== "void") {
       rows.push({
@@ -1724,7 +1744,7 @@ export async function actPreviewBillsForUnits(
       continue;
     }
 
-    const built = await buildBill(c, period);
+    const built = await buildBill(c, period, preMap.get(c.id));
     const vatPercent = toNum(c.vatPercent);
     const promo = promoDiscountFor(c, period);
     const { vatAmount, totalAmount, discountAmount } = computeBillTotals({
