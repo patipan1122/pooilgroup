@@ -213,3 +213,86 @@ export function SlipChip({
     </>
   );
 }
+
+/** เมื่อวันเดียวมีหลายสลิป (ฝากหลายรอบ) — CEO 2026-09-22: "รวมยอดสลิปแล้วกดเข้า
+ *  ไปดู แล้วเห็นสลิปด้านในแบบนั้นดีกว่า" ก่อนหน้านี้แต่ละสลิปขึ้นเป็นชิปแยกเรียงกัน
+ *  ต้องบวกเลขเอง — ตอนนี้รวมเป็นชิปเดียว (จำนวนใบ · ยอดรวม) กดขยายดูรายใบด้านล่าง
+ *  แต่ละใบยังกดดูรูปสลิปของตัวเองได้ตามปกติ (ใช้ SlipChip เดิมซ้อนอยู่ข้างใน). */
+export function SlipChipGroup({
+  sumLabel,
+  anyFlagged,
+  slips,
+}: {
+  sumLabel: string;
+  anyFlagged: boolean;
+  slips: Array<{
+    id: string;
+    amount: string;
+    slipUrl: string | null;
+    status: "not_sent" | "sent_unmatched" | "sent_matched";
+    flagged: boolean;
+    caption: string;
+  }>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (slips.length === 0) return null;
+  if (slips.length === 1) {
+    const s = slips[0];
+    return (
+      <SlipChip
+        amount={s.amount}
+        slipUrl={s.slipUrl}
+        status={s.status}
+        flagged={s.flagged}
+        caption={s.caption}
+      />
+    );
+  }
+
+  return (
+    <div style={{ display: "inline-block" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="rc-slipchip-btn"
+        aria-expanded={open}
+        aria-label={`ดูสลิปทั้ง ${slips.length} ใบ`}
+      >
+        <span
+          className={`rc-slipchip rc-slipchip-sent${anyFlagged ? " rc-slipchip-flagged" : ""}`}
+          title={
+            anyFlagged
+              ? "มีสลิปติดธงรอตรวจสอบอยู่ในนี้ — กดดูรายใบ"
+              : "กดดูสลิปแต่ละใบ"
+          }
+        >
+          {anyFlagged ? "⚠ " : ""}
+          {slips.length} ใบ · {sumLabel}
+        </span>
+      </button>
+      {open && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 4,
+            marginTop: 4,
+          }}
+        >
+          {slips.map((s) => (
+            <SlipChip
+              key={s.id}
+              amount={s.amount}
+              slipUrl={s.slipUrl}
+              status={s.status}
+              flagged={s.flagged}
+              caption={s.caption}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
