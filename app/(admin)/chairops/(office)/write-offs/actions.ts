@@ -79,47 +79,72 @@ export async function bulkApproveWriteOffsAction(formData: FormData) {
 
   // Per-row tx so a single bad row doesn't roll back the rest. (Wave 2 will
   // switch to single TX once BR15 cascade ships — see TODO above.)
+  // 2026-09-20 bigsolvebug P1 fix: this loop had zero error handling — a DB
+  // blip on row 5 of 20 used to throw uncaught all the way to the client
+  // (which also has no try/catch), leaving the manager with no idea how many
+  // of the 20 actually landed. Now each row is isolated and the redirect
+  // reports both counts explicitly.
   const approvedAt = new Date();
   const branchIds = new Set<string>();
+  let approvedCount = 0;
+  let failedCount = 0;
   for (const wo of eligible) {
-    await prisma.$transaction(async (tx) => {
-      // Composite (orgId, id) on the update — TOCTOU-safe even though the
-      // eligible[] list was already pre-filtered by orgId above.
-      const res = await tx.chairopsWriteOff.updateMany({
-        where: { id: wo.id, orgId, status: "PENDING" },
-        data: {
-          status: "APPROVED",
-          approverId: session.user.id,
-          approverAt: approvedAt,
-        },
-      });
-      if (res.count === 0) return;
-      await writeAudit(
-        {
-          userId: session.user.id,
-          action: "write_off.bulk_approve",
-          entity: "WriteOff",
-          entityId: wo.id,
-          oldValue: { status: "PENDING" },
-          newValue: {
+    try {
+      await prisma.$transaction(async (tx) => {
+        // Composite (orgId, id) on the update — TOCTOU-safe even though the
+        // eligible[] list was already pre-filtered by orgId above.
+        const res = await tx.chairopsWriteOff.updateMany({
+          where: { id: wo.id, orgId, status: "PENDING" },
+          data: {
             status: "APPROVED",
-            amount: wo.amount,
-            bulk: true,
-            selfApproved: wo.makerId === session.user.id,
+            approverId: session.user.id,
+            approverAt: approvedAt,
           },
-        },
-        tx,
-      );
-    });
-    branchIds.add(wo.branchId);
+        });
+        if (res.count === 0) return;
+        await writeAudit(
+          {
+            userId: session.user.id,
+            action: "write_off.bulk_approve",
+            entity: "WriteOff",
+            entityId: wo.id,
+            oldValue: { status: "PENDING" },
+            newValue: {
+              status: "APPROVED",
+              amount: wo.amount,
+              bulk: true,
+              selfApproved: wo.makerId === session.user.id,
+            },
+          },
+          tx,
+        );
+      });
+      approvedCount++;
+      branchIds.add(wo.branchId);
+    } catch (err) {
+      failedCount++;
+      console.error("[write-offs bulk approve] row failed", wo.id, err);
+    }
   }
 
-  // Post-commit BR15 chain (Wave-1 best-effort)
-  for (const branchId of branchIds) {
-    await recomputeDriftForBranch(branchId);
+  // Post-commit BR15 chain (Wave-1 best-effort) — a failure here shouldn't
+  // undo the approvals above or crash the redirect, so it's isolated too.
+  try {
+    for (const branchId of branchIds) {
+      await recomputeDriftForBranch(branchId);
+    }
+    await evaluateAndEmitAlerts(session.user.orgId);
+  } catch (err) {
+    console.error("[write-offs bulk approve] post-commit drift/alert step failed", err);
   }
-  await evaluateAndEmitAlerts(session.user.orgId);
 
   revalidatePath("/chairops/write-offs");
-  redirect(`/chairops/write-offs?approved=${eligible.length}`);
+  const qs = new URLSearchParams({ approved: String(approvedCount) });
+  if (failedCount > 0) {
+    qs.set(
+      "error",
+      `อนุมัติสำเร็จ ${approvedCount} รายการ · พลาด ${failedCount} รายการ (ลองใหม่ได้ · รายการที่พลาดยังค้างเป็น PENDING)`,
+    );
+  }
+  redirect(`/chairops/write-offs?${qs.toString()}`);
 }

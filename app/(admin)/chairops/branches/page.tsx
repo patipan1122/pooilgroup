@@ -59,6 +59,9 @@ const VIEW_DEFS: { key: WorkspaceView; label: string; sev?: "crit" | "warn" }[] 
   { key: "warn", label: "เฝ้าระวัง", sev: "warn" },
   { key: "ok", label: "ปกติ" },
   { key: "missed", label: "ยังไม่ส่งวันนี้", sev: "warn" },
+  // 2026-09-20 bigsolvebug P0 fix: closed branches used to be invisible on
+  // this rail (collapsed into "ปกติ") — now their own filterable bucket.
+  { key: "closed", label: "ปิดสาขา" },
 ];
 
 function statusLabel(s: WorkspaceStatus): string {
@@ -68,7 +71,9 @@ function statusLabel(s: WorkspaceStatus): string {
       ? "เฝ้าระวัง"
       : s === "missed"
         ? "ยังไม่ส่ง"
-        : "ปกติ";
+        : s === "closed"
+          ? "ปิดสาขา"
+          : "ปกติ";
 }
 
 function driftClass(n: number): string {
@@ -202,6 +207,10 @@ export default async function BranchesWorkspacePage({
       { key: "missed", label: "ยังไม่ส่งวันนี้", items: visible.filter((r) => r.status === "missed") },
       { key: "warn", label: "เฝ้าระวัง", items: visible.filter((r) => r.status === "warn") },
       { key: "ok", label: "ปกติ", items: visible.filter((r) => r.status === "ok") },
+      // 2026-09-20 bigsolvebug P0 fix: without this group, a closed branch
+      // matched none of the 4 buckets above and silently vanished from the
+      // default "group by status" view — the exact blind spot this fix closes.
+      { key: "closed", label: "ปิดสาขา", items: visible.filter((r) => r.status === "closed") },
     ];
   }
   groups = groups.filter((g) => g.items.length);
@@ -499,7 +508,7 @@ async function BranchDetail({
           <div className="grow">
             <div className="row gap-2" style={{ alignItems: "center" }}>
               <h2 className="co-br-detail-name">{b.name}</h2>
-              <span className={"chip chip-" + (b.status === "critical" || b.status === "missed" ? "crit" : b.status === "warn" ? "warn" : "ok")}>
+              <span className={"chip chip-" + (b.status === "critical" || b.status === "missed" ? "crit" : b.status === "warn" ? "warn" : b.status === "closed" ? "info" : "ok")}>
                 <StatusDot status={b.status} />
                 {statusLabel(b.status)}
               </span>

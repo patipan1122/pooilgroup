@@ -7,7 +7,6 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Eraser, Loader2 } from "lucide-react";
 
 import { IdCardUpload } from "@/components/chairops/id-card-upload";
@@ -74,7 +73,6 @@ async function uploadDataUrl(dataUrl: string): Promise<string> {
 }
 
 export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
-  const router = useRouter();
   const [f, setF] = useState<ContractPrefill>(prefill);
   const [step, setStep] = useState<1 | 2>(1);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +168,7 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
           setError(res.error);
           return;
         }
-        router.refresh();
+        // 2026-09-20 upspeed: signContract already revalidatePath("/chairops/m/contract").
         window.scrollTo({ top: 0 });
       } catch (err) {
         setError(err instanceof Error ? err.message : "เซ็นสัญญาไม่สำเร็จ");

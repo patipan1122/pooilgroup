@@ -46,6 +46,13 @@ function buildDepositWhere(args: RangeArgs) {
     orgId: string;
     branchId?: string | { in: string[] };
     depositedAt?: { gte?: Date; lt?: Date };
+    // 2026-09-22 CEO decision: reverted the 2026-09-20 FIN-03 hold-out — a
+    // deposit now counts into every "matches drift-engine" surface
+    // (sidebar/KPIs/sparkbars/ledger) the instant it's submitted, regardless
+    // of `requiresReview`. Must stay in lock-step with drift-engine.ts's own
+    // aggregates (see there), or this module's whole reason to exist ("so all
+    // surfaces match the engine") breaks again. Review status is now shown
+    // per-row as a color badge on list surfaces instead of gating the total.
   } = { orgId };
   if (branchId) where.branchId = branchId;
   else if (branchIds && branchIds.length > 0) where.branchId = { in: branchIds };

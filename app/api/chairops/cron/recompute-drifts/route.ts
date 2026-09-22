@@ -1,10 +1,19 @@
 // GET /api/cron/recompute-drifts
-// Protected by CRON_SECRET. Designed to be hit by Vercel Cron every 30 min.
+// Protected by CRON_SECRET.
+// 2026-09-20 bigsolvebug: this comment used to say "every 30 min" — it
+// doesn't; vercel.json schedules it once daily ("0 22 * * *"). This is the
+// only guaranteed-to-run backstop for the drift/self-heal work that the
+// pos-ingest commit path also tries to run inline via `after()` — if that
+// inline attempt is ever slow/interrupted, a branch can go up to ~24h
+// before this cron catches it up. Flag to CEO if that gap is too wide;
+// changing the schedule is a Vercel-invocation-cost decision, not a
+// mechanical fix (see docs/AUDIT_chairops_2026-06-15.md CO-BE-02).
 // Recomputes per-branch drift and emits SHORTAGE / MISSED_COLLECTION alerts.
 //
 // BIGFEATURE §2.10 — wrapped in runWithMonitor so failures show up in
 // `cron_runs` and trigger a Telegram alert (no more silent ChairOps).
-// `allowMultipleRunsPerDay: true` because Vercel Cron hits this every 30 min.
+// `allowMultipleRunsPerDay: true` kept for safety in case the schedule is
+// ever tightened later — harmless no-op at the current once-daily cadence.
 import { NextRequest, NextResponse } from "next/server";
 import { evaluateAndEmitAlerts } from "@/lib/chairops/reconcile/alerts";
 import { syncBranchDailyFromPosDaily } from "@/lib/chairops/reconcile/branch-daily-sync";

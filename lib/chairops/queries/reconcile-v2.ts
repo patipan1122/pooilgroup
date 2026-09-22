@@ -162,6 +162,14 @@ export interface PeriodSlip {
   slipUrl: string | null;
   ledgerStatus: LedgerStatus;
   flagged: boolean; // requiresReview — สลิปซ้ำ/บัญชีผิด/ผลต่าง≥500 ยังไม่ผ่านตรวจ
+  // CEO 2026-09-22: สลิปเสริมที่ office แนบเข้ามาทีหลัง (แม่บ้านลืมแนบ ส่งมาทาง
+  // LINE) หรือฝากครั้งเดียวมีมากกว่า 1 สลิปจริง — ไม่กระทบยอด/สถานะตรวจสอบใดๆ.
+  additionalSlips: Array<{
+    id: string;
+    url: string;
+    note: string | null;
+    uploadedAt: string;
+  }>;
 }
 
 export interface PeriodWindow {
@@ -298,7 +306,31 @@ async function buildLedger(args: {
   since?: Date;
 }): Promise<LedgerDay[]> {
   const { orgId, branchId, days } = args;
-  const since = args.since ?? startOfDayMinus(days);
+  let since = args.since ?? startOfDayMinus(days);
+  // True once `since` was pushed forward to a close-period reset boundary
+  // (as opposed to just a display-window default) — gates the priorWriteOff
+  // carry-forward below, see the closePeriodResetAt block for why.
+  let closePeriodResetAt: Date | null = null;
+
+  // 2026-09-20 CEO decision: this ledger never consulted
+  // ChairopsBranch.lastReconcileClosedAt — the same anchor drift-engine.ts's
+  // window mode uses once a branch closes a period — so cumDrift here kept
+  // showing the pre-close cumulative number indefinitely while the
+  // dashboard/sidebar (which DO read the anchor) reset to ~0. Floor `since`
+  // at the close anchor (when set and later than whatever window this call
+  // already wanted) so every view of this branch's ledger — Overview, Ledger
+  // tab, Periods, Timeline, Checklist — agrees with the engine the instant a
+  // period closes, regardless of which days/since the caller asked for.
+  if (branchId) {
+    const branch = await prisma.chairopsBranch.findUnique({
+      where: { id: branchId },
+      select: { lastReconcileClosedAt: true },
+    });
+    if (branch?.lastReconcileClosedAt && branch.lastReconcileClosedAt > since) {
+      since = branch.lastReconcileClosedAt;
+      closePeriodResetAt = branch.lastReconcileClosedAt;
+    }
+  }
 
   const branchFilter = branchId ? { branchId } : {};
 
@@ -466,7 +498,14 @@ async function buildLedger(args: {
     const key = isoDay(eff);
     const signed = w.direction === "OVER" ? -w.amount : w.amount;
     if (key < sinceDay) {
-      priorWriteOff += signed;
+      // 2026-09-20: when `since` is a close-period RESET (not just a display
+      // window), pre-anchor write-offs must NOT carry forward into the new
+      // period's baseline — matches drift-engine.ts window mode, which
+      // excludes everything before the anchor with zero carry-over. Without
+      // this gate, closing a period would floor the ledger's date range
+      // correctly but still silently drag in every historical write-off as
+      // a phantom starting balance.
+      if (!closePeriodResetAt) priorWriteOff += signed;
       continue;
     }
     netWoByDay.set(key, (netWoByDay.get(key) ?? 0) + signed);
@@ -798,6 +837,10 @@ export async function getReconcileLedger(args: {
         ocrAmount: true,
         slipPhotoUrl: true,
         requiresReview: true,
+        additionalSlips: {
+          select: { id: true, url: true, note: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: { depositedAt: "asc" },
     });
@@ -814,6 +857,12 @@ export async function getReconcileLedger(args: {
         slipUrl: d.slipPhotoUrl ?? null,
         ledgerStatus: ledgerStatusById.get(d.id) ?? "not_sent",
         flagged: d.requiresReview,
+        additionalSlips: d.additionalSlips.map((s) => ({
+          id: s.id,
+          url: s.url,
+          note: s.note,
+          uploadedAt: formatDateTime(s.createdAt),
+        })),
       });
       slipsByDate.set(day, list);
     }
@@ -2534,6 +2583,10 @@ export async function getReconcilePeriods(args: {
       slipUrl: d.slipPhotoUrl ?? null,
       ledgerStatus: periodLedgerStatusById.get(d.id) ?? "not_sent",
       flagged: d.requiresReview,
+      // Periods tab doesn't get the attach-additional-slip UI in this pass
+      // (scoped to Ledger tab only, see SlipChipGroup) — not worth an extra
+      // query here until that changes.
+      additionalSlips: [],
     });
   }
 

@@ -147,7 +147,16 @@ export async function computeDriftMoneyAsOf(
         _sum: { cashTotal: true, coinInsertCount: true },
       }),
       prisma.chairopsCashDeposit.aggregate({
-        where: { branchId, orgId, ...(dtFilter ? { depositedAt: dtFilter } : {}) },
+        // 2026-09-20 CEO decision (FIN-03) held requiresReview=true deposits
+        // out of this number until office cleared the flag. 2026-09-22 CEO
+        // decision: reverted — a deposit counts the instant it's submitted
+        // regardless of review status; review status is now shown per-row as
+        // a color badge on list surfaces instead of gating this total.
+        where: {
+          branchId,
+          orgId,
+          ...(dtFilter ? { depositedAt: dtFilter } : {}),
+        },
         _sum: { depositedAmount: true, bankFee: true },
       }),
       prisma.chairopsCashCollection.aggregate({
@@ -316,6 +325,8 @@ async function recomputeDriftForBranch_window(
       // row itself (depositId still null, depositedAmount > 0).
       // 2026-05-31 audit P0 #1: include bankFee in deposit-side total.
       prisma.chairopsCashDeposit.aggregate({
+        // 2026-09-22 CEO decision: reverted the 2026-09-20 FIN-03 hold-out —
+        // same as computeDriftMoneyAsOf above.
         where: {
           branchId,
           orgId: branch.orgId,
@@ -336,13 +347,19 @@ async function recomputeDriftForBranch_window(
       }),
       // Sprint-1 fix: approved write-offs reduce the effective shortage · netted
       // by direction (SHORT−OVER, CEO 2026-06-25). Window mode: only write-offs
-      // approved within this window count (pre-anchor ones are "closed").
+      // whose debt EFFECTIVE DATE falls within this window count (pre-anchor
+      // ones are "closed"). 2026-09-20 CEO decision: this used to filter by
+      // approverAt (when someone clicked approve) instead of effectiveDate
+      // (when the debt actually happened) — the same axis mismatch
+      // computeDriftMoneyAsOf above was already fixed for; a write-off
+      // approved just after closing a period but covering debt from BEFORE
+      // the close would double-count. Matched to the same effectiveDate axis.
       prisma.chairopsWriteOff.aggregate({
-        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "SHORT", approverAt: { gt: anchor } },
+        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "SHORT", effectiveDate: { gt: anchorDate } },
         _sum: { amount: true },
       }),
       prisma.chairopsWriteOff.aggregate({
-        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "OVER", approverAt: { gt: anchor } },
+        where: { branchId, orgId: branch.orgId, status: "APPROVED", direction: "OVER", effectiveDate: { gt: anchorDate } },
         _sum: { amount: true },
       }),
       prisma.chairopsCashCollection.findFirst({
