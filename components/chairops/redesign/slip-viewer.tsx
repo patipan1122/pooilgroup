@@ -8,7 +8,9 @@
 
 import { Paperclip, X } from "lucide-react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { clearDepositReview } from "@/app/(admin)/chairops/(office)/review-queue/actions";
 
 function isImageUrl(u: string | null | undefined): u is string {
   return !!u && /^https?:\/\//i.test(u);
@@ -18,10 +20,15 @@ function Lightbox({
   url,
   caption,
   onClose,
+  footer,
 }: {
   url: string;
   caption: string;
   onClose: () => void;
+  /** CEO 2026-09-22: confirm-reviewed button for flagged slips — shown right
+   *  where office is already looking at the slip, instead of only on the
+   *  separate /chairops/review-queue page. */
+  footer?: React.ReactNode;
 }) {
   // Esc closes — keyboard parity with click-outside.
   useEffect(() => {
@@ -61,11 +68,37 @@ function Lightbox({
           className="max-h-[90vh] w-auto rounded-lg object-contain"
           unoptimized
         />
-        <span className="absolute inset-x-2 bottom-2 rounded bg-black/60 px-2 py-1 text-center font-mono text-xs text-white">
-          {caption}
-        </span>
+        <div className="absolute inset-x-2 bottom-2 flex flex-col items-center gap-2 rounded bg-black/60 px-2 py-2">
+          <span className="text-center font-mono text-xs text-white">
+            {caption}
+          </span>
+          {footer}
+        </div>
       </div>
     </div>
+  );
+}
+
+/** ปุ่มยืนยัน "ตรวจแล้ว ปกติ" บนสลิปที่ติดธง — กดตรงนี้แทนต้องไปหน้า
+ *  /chairops/review-queue แยก (CEO 2026-09-22). `returnTo` = หน้าปัจจุบัน
+ *  ให้ redirect กลับมาที่เดิมหลังเคลียร์ธง ไม่ใช่เด้งไป review-queue เสมอ. */
+function ConfirmReviewedForm({ depositId }: { depositId: string }) {
+  const pathname = usePathname();
+  return (
+    <form
+      action={clearDepositReview}
+      onClick={(e) => e.stopPropagation()}
+      className="flex flex-col items-center gap-1"
+    >
+      <input type="hidden" name="depositId" value={depositId} />
+      <input type="hidden" name="returnTo" value={pathname} />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+      >
+        ✓ ตรวจแล้ว ปกติ
+      </button>
+    </form>
   );
 }
 
@@ -169,12 +202,15 @@ export function SlipChip({
   caption,
   status,
   flagged,
+  depositId,
 }: {
   amount: string;
   slipUrl: string | null;
   caption: string;
   status: "not_sent" | "sent_unmatched" | "sent_matched";
   flagged: boolean;
+  /** เมื่อมีค่า + flagged=true → โชว์ปุ่ม "ตรวจแล้ว ปกติ" ในป็อปอัพดูสลิป. */
+  depositId?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -208,7 +244,16 @@ export function SlipChip({
         {chip}
       </button>
       {open && (
-        <Lightbox url={slipUrl} caption={caption} onClose={() => setOpen(false)} />
+        <Lightbox
+          url={slipUrl}
+          caption={caption}
+          onClose={() => setOpen(false)}
+          footer={
+            flagged && depositId ? (
+              <ConfirmReviewedForm depositId={depositId} />
+            ) : undefined
+          }
+        />
       )}
     </>
   );
@@ -246,6 +291,7 @@ export function SlipChipGroup({
         status={s.status}
         flagged={s.flagged}
         caption={s.caption}
+        depositId={s.id}
       />
     );
   }
@@ -289,6 +335,7 @@ export function SlipChipGroup({
               status={s.status}
               flagged={s.flagged}
               caption={s.caption}
+              depositId={s.id}
             />
           ))}
         </div>

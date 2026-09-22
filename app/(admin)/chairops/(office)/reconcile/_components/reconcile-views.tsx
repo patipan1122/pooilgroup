@@ -3278,6 +3278,7 @@ export function PeriodsTab({
                             status={s.ledgerStatus}
                             flagged={s.flagged}
                             caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
+                            depositId={s.id}
                           />
                         ))}
                       </div>
