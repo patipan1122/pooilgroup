@@ -1,18 +1,20 @@
-// /chairops/maids/[userId]/contract — office view / print of a maid's contract
-// (F4b · CEO 2026-08-02). ADMIN-only (PDPA: full ID number + address + signature).
+// GET /api/chairops/maids/[userId]/contract/pdf — office/admin real downloadable
+// PDF of any maid's contract (draft or signed), mirroring the self-service
+// /api/chairops/contract/pdf route but ADMIN-gated and looked up by userId
+// instead of the caller's own session (CEO 2026-09-23: the office contract
+// view's "พิมพ์ / บันทึก PDF" still used window.print(), which stamps the
+// browser's own URL/timestamp header into the output — looked unprofessional
+// next to the real paper template. Same server-side-generation reasoning as
+// the maid-facing route: avoids that, and the CSP connect-src block on R2's
+// *.r2.dev image domain that a client-side render would hit).
 
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-
+import { NextResponse } from "next/server";
+import { renderToBuffer } from "@react-pdf/renderer";
 import { requireRole } from "@/lib/chairops/auth/session";
 import { prisma } from "@/lib/prisma";
 import { ChairopsUserRole } from "@/lib/generated/prisma/enums";
-import type {
-  ContractDocData,
-  ContractSignature,
-} from "@/app/(admin)/chairops/(maid)/m/contract/types";
-import { OfficeContractView } from "../_components/office-contract-view";
+import { ContractPdfDocument } from "@/app/(admin)/chairops/(maid)/m/contract/contract-pdf-document";
+import type { ContractDocData, ContractSignature } from "@/app/(admin)/chairops/(maid)/m/contract/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +22,10 @@ function ymd(d: Date | null): string {
   return d ? d.toISOString().slice(0, 10) : "";
 }
 
-export default async function OfficeMaidContractPage({
-  params,
-}: {
-  params: Promise<{ userId: string }>;
-}) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ userId: string }> },
+) {
   const session = await requireRole(ChairopsUserRole.ADMIN);
   const { userId } = await params;
   const orgId = session.user.orgId;
@@ -33,31 +34,16 @@ export default async function OfficeMaidContractPage({
     where: { id: userId, orgId, role: ChairopsUserRole.MAID },
     select: { displayName: true },
   });
-  if (!maid) notFound();
+  if (!maid) {
+    return NextResponse.json({ error: "ไม่พบแม่บ้านคนนี้" }, { status: 404 });
+  }
 
   const contract = await prisma.chairopsMaidContract.findFirst({
     where: { orgId, maidId: userId, status: { not: "VOID" } },
     orderBy: { createdAt: "desc" },
   });
-
-  const header = (
-    <div className="text-xs text-zinc-500">
-      <Link href={`/chairops/maids/${userId}`} className="inline-flex items-center gap-1 hover:text-emerald-700">
-        <ArrowLeft className="size-3.5" /> {maid.displayName}
-      </Link>{" "}
-      / สัญญาจ้าง
-    </div>
-  );
-
   if (!contract) {
-    return (
-      <div className="space-y-4">
-        {header}
-        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-500">
-          ยังไม่มีสัญญาสำหรับแม่บ้านคนนี้ — สร้างร่างได้ที่หน้ารายละเอียดแม่บ้าน
-        </div>
-      </div>
-    );
+    return NextResponse.json({ error: "ยังไม่มีสัญญาสำหรับแม่บ้านคนนี้" }, { status: 404 });
   }
 
   const data: ContractDocData = {
@@ -92,10 +78,15 @@ export default async function OfficeMaidContractPage({
       }
     : null;
 
-  return (
-    <div className="space-y-4">
-      {header}
-      <OfficeContractView userId={userId} data={data} signature={signature} signed={signed} />
-    </div>
-  );
+  const buffer = await renderToBuffer(ContractPdfDocument({ data, signature }));
+
+  const fileName = `สัญญาจ้าง-${maid.displayName || "แม่บ้าน"}.pdf`;
+  return new NextResponse(new Uint8Array(buffer), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="contract.pdf"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      "Cache-Control": "no-store",
+    },
+  });
 }

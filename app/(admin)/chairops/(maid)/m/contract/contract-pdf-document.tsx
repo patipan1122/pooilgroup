@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
   },
   photoPlaceholder: { fontSize: 7, color: "#a1a1aa", textAlign: "center" },
   photoImg: { width: 70, height: 90, objectFit: "cover" },
+  dateLine: { marginTop: 6, textAlign: "right" },
   p: { marginTop: 3 },
   underline: { textDecoration: "underline" },
   sectionTitle: { marginTop: 12, fontSize: 11, fontWeight: 700 },
@@ -134,6 +135,27 @@ function thaiDateTime(iso: string): string {
   }).format(d);
 }
 
+/** "ทำ ณ วันที่ ... เดือน ... พ.ศ. ..." header line, split into 3 blanks to
+ *  match the original paper template (CEO reference, 2026-09-23) — uses the
+ *  signing date once signed, else stays blank like an unfilled paper form.
+ *  Kept in sync by hand with the identical helper in contract-document.tsx
+ *  (react-pdf uses its own primitives, not DOM/CSS, so JSX can't be shared). */
+function thaiDateParts(iso: string | null): { day: string; month: string; year: string } {
+  if (!iso) return { day: "…………", month: "………………………", year: "……………" };
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(d);
+  return {
+    day: parts.find((p) => p.type === "day")?.value ?? "…………",
+    month: parts.find((p) => p.type === "month")?.value ?? "………………………",
+    year: parts.find((p) => p.type === "year")?.value ?? "……………",
+  };
+}
+
 export function ContractPdfDocument({
   data,
   signature,
@@ -157,6 +179,12 @@ export function ContractPdfDocument({
             )}
           </View>
         </View>
+
+        <Text style={styles.dateLine}>
+          ทำ ณ วันที่ <Text style={styles.underline}>{thaiDateParts(signature?.signedAt ?? null).day}</Text>{" "}
+          เดือน <Text style={styles.underline}>{thaiDateParts(signature?.signedAt ?? null).month}</Text>{" "}
+          พ.ศ. <Text style={styles.underline}>{thaiDateParts(signature?.signedAt ?? null).year}</Text>
+        </Text>
 
         <Text style={styles.p}>คู่สัญญา</Text>
         <Text style={styles.p}>
