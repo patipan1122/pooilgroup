@@ -17,6 +17,25 @@ function thaiDate(iso: string | null): string {
   }).format(d);
 }
 
+/** "ทำ ณ วันที่ ... เดือน ... พ.ศ. ..." header line, split into 3 blanks to
+ *  match the original paper template (CEO reference, 2026-09-23) — uses the
+ *  signing date once signed, else stays blank like an unfilled paper form. */
+function thaiDateParts(iso: string | null): { day: string; month: string; year: string } {
+  if (!iso) return { day: "…………", month: "………………………", year: "……………" };
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(d);
+  return {
+    day: parts.find((p) => p.type === "day")?.value ?? "…………",
+    month: parts.find((p) => p.type === "month")?.value ?? "………………………",
+    year: parts.find((p) => p.type === "year")?.value ?? "……………",
+  };
+}
+
 function fill(v: string | null | undefined, dots = "........................"): string {
   const t = (v ?? "").toString().trim();
   return t === "" ? dots : t;
@@ -55,6 +74,12 @@ export function ContractDocument({
           )}
         </div>
       </div>
+
+      <p className="mt-2 text-right">
+        ทำ ณ วันที่ <U>{thaiDateParts(signature?.signedAt ?? null).day}</U>{" "}
+        เดือน <U>{thaiDateParts(signature?.signedAt ?? null).month}</U>{" "}
+        พ.ศ. <U>{thaiDateParts(signature?.signedAt ?? null).year}</U>
+      </p>
 
       <p className="mt-4">
         <span className="font-semibold">คู่สัญญา</span>
