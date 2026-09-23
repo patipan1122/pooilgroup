@@ -34,7 +34,6 @@ import {
   Camera,
   Check,
   CheckCircle2,
-  Download,
   Loader2,
   PenLine,
   RotateCcw,
@@ -726,37 +725,6 @@ export function SignClient({
 
   /* ------------------------------------------------------ ดาวน์โหลดฉบับเต็ม */
 
-  /**
-   * บันทึกสัญญาเป็นไฟล์ไว้อ่านที่อื่น/ให้คนอื่นช่วยอ่าน
-   *
-   * ⚠️ จงใจไม่ให้ลัดด่านอ่าน: กดปุ่มนี้แล้ว scrolledToEnd ยังเป็น false เหมือนเดิม
-   * ตามเหตุผลในสเปก — การที่พนักงาน "เอาไปอ่านที่อื่นได้ด้วย" ทำให้ฝั่งบริษัท
-   * แข็งแรงขึ้น ไม่ใช่อ่อนลง ส่วนหลักฐานว่า "เลื่อนอ่านครบในระบบ" ยังต้องทำอยู่ดี
-   *
-   * สร้าง blob ตอนกด ไม่ได้ตั้งไว้ล่วงหน้า — ผู้สมัครส่วนใหญ่ไม่กดปุ่มนี้
-   * จึงไม่ต้องถือ object URL ค้างไว้ในหน่วยความจำมือถือทั้งหน้า
-   */
-  function downloadFullContract() {
-    if (!contract?.ok || !form) return;
-    const lines: string[] = [contractTitle, ""];
-    for (const section of contract.sections) {
-      if (section.heading !== "") lines.push(section.heading);
-      lines.push(...section.paragraphs, "");
-    }
-    lines.push("— คำยืนยันก่อนลงลายมือชื่อ —", acknowledgmentText);
-    // BOM นำหน้า เพื่อให้ Notepad บน Windows อ่านภาษาไทยไม่เป็นตัวต่างดาว
-    const blob = new Blob([`﻿${lines.join("\n")}`], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `สัญญาจ้าง-${form.fullNameTh}.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    // Safari ยังอ่าน blob ต่ออีกครู่หลังคลิก — ปล่อยไว้ก่อนค่อยคืนหน่วยความจำ
-    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }
-
   /* ------------------------------------------------------------------ ส่งข้อมูล */
   const submittingRef = useRef(false);
   const navigatedRef = useRef(false);
@@ -864,6 +832,7 @@ export function SignClient({
         bankName: form.bankName,
         bankAccountNo: form.bankAccountNo,
         bankAccountName: form.bankAccountName,
+        noBankAccountYet: form.noBankAccountYet,
 
         documents: payload.documents,
         signature: signatureDescriptor,
@@ -988,16 +957,6 @@ export function SignClient({
             <ScrollText className="size-4 shrink-0" aria-hidden />
             <span className="break-words">{contractTitle}</span>
           </p>
-          {contract?.ok && (
-            <button
-              type="button"
-              onClick={downloadFullContract}
-              className="shrink-0 inline-flex items-center gap-1 text-xs font-bold text-zinc-600 underline underline-offset-2"
-            >
-              <Download className="size-3" aria-hidden />
-              บันทึกฉบับเต็ม
-            </button>
-          )}
         </div>
 
         {contractLoading && contract === null && (
@@ -1045,8 +1004,17 @@ export function SignClient({
               onScroll={evaluateScroll}
               tabIndex={0}
               aria-label="เนื้อหาสัญญาจ้าง"
-              className="mt-2 h-[52vh] min-h-[300px] max-h-[560px] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
+              onCopy={(e) => e.preventDefault()}
+              onCut={(e) => e.preventDefault()}
+              onContextMenu={(e) => e.preventDefault()}
+              onDragStart={(e) => e.preventDefault()}
+              className="onboard-protected mt-2 h-[52vh] min-h-[300px] max-h-[560px] overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-300)]"
             >
+              {/* เห็นเฉพาะตอนสั่งพิมพ์/บันทึกเป็น PDF — ตัวสัญญาจะถูกซ่อนแทน */}
+              <p className="onboard-protected-print-notice hidden text-[13px] text-zinc-700">
+                สัญญาฉบับนี้ไม่อนุญาตให้พิมพ์หรือบันทึกเป็นไฟล์
+                · ติดต่อฝ่ายบุคคลหากต้องการสำเนา
+              </p>
               <div ref={contentRef} className="space-y-3">
                 {contract.sections.map((section) => (
                   <div key={section.id}>

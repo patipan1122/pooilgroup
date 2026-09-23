@@ -145,6 +145,7 @@ export default async function OnboardingSubmissionPage({
   const education = asRecord(sub.educationJson);
   const workHistory = asArray(sub.workHistoryJson);
   const answers = asRecord(sub.answersJson);
+  const noBankAccountYet = answers.noBankAccountYet === true;
 
   // ── สัญญา: render ใหม่จากข้อมูลที่เก็บไว้ แล้วเทียบ hash ─────────────────
   const contractVars: OnboardingContractVars = {
@@ -430,17 +431,30 @@ export default async function OnboardingSubmissionPage({
           </Block>
 
           <Block no={7} title="บัญชีรับเงินเดือน">
-            <Fields
-              rows={[
-                ["ธนาคาร", sub.bankName],
-                ["เลขบัญชี", sub.bankAccountNo],
-                ["ชื่อบัญชี", sub.bankAccountName],
-              ]}
-            />
-            <p className="text-[11px] text-zinc-500 mt-2 leading-relaxed">
-              เทียบชื่อบัญชีกับชื่อในบัตรประชาชนให้ตรงกันก่อนอนุมัติ · ถ้าไม่ตรง
-              เงินเดือนจะโอนไม่เข้าและต้องแก้ทีหลัง
-            </p>
+            {noBankAccountYet ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                <p className="text-[13px] font-bold text-amber-900">
+                  ยังไม่ได้เปิดบัญชี ttb
+                </p>
+                <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                  พนักงานแจ้งว่ายังไม่มีบัญชี — ต้องพาไปเปิดบัญชี ttb ก่อนรอบจ่ายเงินเดือนแรก
+                </p>
+              </div>
+            ) : (
+              <>
+                <Fields
+                  rows={[
+                    ["ธนาคาร", sub.bankName],
+                    ["เลขบัญชี", sub.bankAccountNo],
+                    ["ชื่อบัญชี", sub.bankAccountName],
+                  ]}
+                />
+                <p className="text-[11px] text-zinc-500 mt-2 leading-relaxed">
+                  เทียบชื่อบัญชีกับชื่อในบัตรประชาชนให้ตรงกันก่อนอนุมัติ · ถ้าไม่ตรง
+                  เงินเดือนจะโอนไม่เข้าและต้องแก้ทีหลัง
+                </p>
+              </>
+            )}
           </Block>
         </div>
 

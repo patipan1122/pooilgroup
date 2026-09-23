@@ -130,6 +130,16 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   const rawDocType = String(form.get("docType") ?? "");
   const rawDraftId = String(form.get("submissionDraftId") ?? "");
+  // Folder id from an EARLIER upload in this same draft. Sending it back lets
+  // us skip Drive's name-based folder lookup entirely — that lookup is a
+  // search-then-create against an eventually-consistent index, and firing
+  // several concurrently (a candidate attaching documents quickly) used to
+  // create duplicate same-named folders, splitting one person's files across
+  // folders. Shape-checked only; worst case a bad value fails the upload.
+  const rawKnownFolderId = String(form.get("knownFolderId") ?? "").trim();
+  const knownFolderId = /^[A-Za-z0-9_-]{8,200}$/.test(rawKnownFolderId)
+    ? rawKnownFolderId
+    : undefined;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "ไม่พบไฟล์ที่อัปโหลด" }, { status: 400 });
@@ -226,6 +236,7 @@ export async function POST(req: NextRequest) {
     fileName: driveFileName,
     mimeType: declaredMime,
     bytes,
+    knownFolderId,
   });
   if (!uploaded) {
     console.error("[onboarding-upload] drive upload returned null", {

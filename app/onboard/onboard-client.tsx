@@ -92,11 +92,12 @@ const COMPANY_OPTIONS = [
 type CompanyCode = (typeof COMPANY_OPTIONS)[number]["code"];
 
 const TITLE_PREFIXES = ["นาย", "นาง", "นางสาว"] as const;
+// "ยังไม่ถึงกำหนด" ถูกตัดออกตามที่ CEO สั่ง 2026-09-23 — พนักงานที่ยังไม่ถึง
+// เกณฑ์ไม่ควรเลือกตัวเลือกนี้เองในฟอร์มรับเข้าทำงาน
 const MILITARY_STATUSES = [
   "ผ่านการเกณฑ์ทหารแล้ว",
   "ได้รับการยกเว้น",
   "เรียน รด. ครบ",
-  "ยังไม่ถึงกำหนด",
 ] as const;
 const MARITAL_STATUSES = ["โสด", "สมรส", "หย่า", "หม้าย"] as const;
 const RELATIONS = ["พ่อ", "แม่", "พี่น้อง", "คู่สมรส", "ญาติ", "อื่นๆ"] as const;
@@ -110,7 +111,10 @@ const EDUCATION_LEVELS = [
   "สูงกว่า ป.ตรี",
 ] as const;
 
-const SALARY_BANKS = BANK_OPTIONS.filter((b) => b.code !== "TRUEMONEY");
+// บริษัทจ่ายเงินเดือนผ่าน ttb เท่านั้น (CEO 2026-09-23) — ไม่ให้เลือกธนาคารอื่น
+// เพื่อกันกรณีพนักงานกรอกบัญชีธนาคารอื่นแล้วโอนเงินเดือนไม่เข้า
+const SALARY_BANK_CODE = "TTB";
+const SALARY_BANKS = BANK_OPTIONS.filter((b) => b.code === SALARY_BANK_CODE);
 
 const MAX_WORK_HISTORY = 5;
 
@@ -216,6 +220,7 @@ export interface OnboardingHandoffForm {
 
   bankCode: string;
   bankName: string;
+  noBankAccountYet: boolean;
   bankAccountNo: string;
   bankAccountName: string;
 
@@ -307,6 +312,7 @@ interface FormState {
   bankCode: string;
   bankAccountNo: string;
   bankAccountName: string;
+  noBankAccountYet: boolean;
 
   consentTruthful: boolean;
   consentPrivacyRead: boolean;
@@ -370,7 +376,8 @@ function emptyForm(): FormState {
     referenceName: "",
     referencePhone: "",
     consentContactReference: false,
-    bankCode: "",
+    bankCode: SALARY_BANK_CODE,
+    noBankAccountYet: false,
     bankAccountNo: "",
     bankAccountName: "",
     consentTruthful: false,
@@ -815,10 +822,12 @@ export function OnboardClient() {
       e.referencePhone = "เบอร์ไม่ถูกต้อง";
 
     // §7
-    if (!form.bankCode) e.bankCode = "เลือกธนาคาร";
-    if (!/^\d{9,15}$/.test(form.bankAccountNo.replace(/\D/g, "")))
-      e.bankAccountNo = "เลขบัญชีไม่ถูกต้อง (ตัวเลข 9-15 หลัก)";
-    req("bankAccountName", "ชื่อบัญชี");
+    // ยังไม่มีบัญชี ttb → เว้นว่างได้ทั้งหมด (HR เปิดบัญชีให้ทีหลัง)
+    if (!form.noBankAccountYet) {
+      if (!/^\d{9,15}$/.test(form.bankAccountNo.replace(/\D/g, "")))
+        e.bankAccountNo = "เลขบัญชีไม่ถูกต้อง (ตัวเลข 9-15 หลัก)";
+      req("bankAccountName", "ชื่อบัญชี");
+    }
 
     // §8
     for (const t of ONBOARDING_REQUIRED_DOC_TYPES) {
@@ -927,6 +936,7 @@ export function OnboardClient() {
       bankName: bank?.label ?? form.bankCode,
       bankAccountNo: form.bankAccountNo.replace(/\D/g, ""),
       bankAccountName: form.bankAccountName.trim(),
+      noBankAccountYet: form.noBankAccountYet,
 
       consentTruthful: form.consentTruthful,
       consentPrivacyRead: form.consentPrivacyRead,
@@ -1592,26 +1602,34 @@ export function OnboardClient() {
         subtitle="ชื่อบัญชีต้องตรงกับชื่อพนักงาน ไม่รับบัญชีของคนอื่น"
       >
         <FieldShell id="bankCode" label="ธนาคาร" required error={errors.bankCode}>
-          <div className="relative">
-            <select
-              className={`${INPUT} appearance-none pr-10`}
-              value={form.bankCode}
-              onChange={(e) => set("bankCode", e.target.value)}
-              aria-invalid={!!errors.bankCode}
-            >
-              <option value="">— เลือกธนาคาร —</option>
-              {SALARY_BANKS.map((b) => (
-                <option key={b.code} value={b.code}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              className="size-4 text-zinc-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-              aria-hidden
-            />
+          {/* บริษัทจ่ายผ่าน ttb เท่านั้น — แสดงเป็นข้อความคงที่ ไม่ใช่ dropdown
+              ที่มีตัวเลือกเดียว (กดแล้วไม่มีอะไรให้เลือก = สับสนเปล่า ๆ) */}
+          <div className={`${INPUT} flex items-center bg-zinc-50 text-zinc-700`}>
+            {SALARY_BANKS[0]?.label ?? "ทหารไทยธนชาต"} (ttb)
           </div>
         </FieldShell>
+
+        <label className="flex items-start gap-2.5 mt-1 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-[18px] accent-[var(--color-brand-600)] shrink-0"
+            checked={form.noBankAccountYet}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setForm((f) => ({
+                ...f,
+                noBankAccountYet: on,
+                // ติ๊กแล้วล้างช่องที่กรอกค้างไว้ ไม่ให้เลขบัญชีเก่าหลุดไปกับฟอร์ม
+                bankAccountNo: on ? "" : f.bankAccountNo,
+                bankAccountName: on ? "" : f.bankAccountName,
+              }));
+              setErrors((prev) => ({ ...prev, bankAccountNo: "", bankAccountName: "" }));
+            }}
+          />
+          <span className="text-[13px] text-zinc-700 leading-snug">
+            ยังไม่ได้เปิดบัญชี ttb — เว้นช่องด้านล่างไว้ก่อน แล้ว HR จะดำเนินการให้
+          </span>
+        </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FieldShell
             id="bankAccountNo"

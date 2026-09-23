@@ -133,9 +133,11 @@ const SubmitSchema = z.object({
   emergencyContacts: z.array(EmergencyContactSchema).length(2, "ต้องกรอกผู้ติดต่อฉุกเฉิน 2 คน"),
   education: EducationSchema,
   workHistory: z.array(WorkHistorySchema).max(10).default([]),
-  bankName: z.string().min(1, "กรอกชื่อธนาคาร").max(100),
-  bankAccountNo: z.string().min(1, "กรอกเลขบัญชี").max(30),
-  bankAccountName: z.string().min(1, "กรอกชื่อบัญชี").max(200),
+  // ยังไม่ได้เปิดบัญชี ttb → เว้นว่างได้ทั้ง 3 ช่อง (CEO 2026-09-23) HR เปิดให้ทีหลัง
+  bankName: z.string().max(100).default(""),
+  bankAccountNo: z.string().max(30).default(""),
+  bankAccountName: z.string().max(200).default(""),
+  noBankAccountYet: z.boolean().default(false),
 
   // ส่วนที่ 8 — เอกสารแนบ (อัปโหลดไว้แล้วผ่าน /api/recruit/onboarding/upload)
   documents: z.array(UploadedDocSchema).min(1).max(12),
@@ -375,9 +377,32 @@ export async function POST(req: NextRequest) {
   // stitching in files that belong to a different candidate's folder.
   const allDescriptors = [...input.documents, input.signature, input.selfie];
   const folderIds = new Set(allDescriptors.map((d) => d.folderId));
-  if (folderIds.size !== 1) {
-    return bad("ไฟล์แนบไม่ตรงกับแบบฟอร์มนี้ · กรุณาอัปโหลดเอกสารใหม่อีกครั้ง");
+  // NOT a hard block any more (2026-09-23): the CEO's first real submission was
+  // rejected here after completing the entire flow — signature, selfie and all.
+  // Root cause was ours, not the candidate's (duplicate Drive folders from a
+  // search-then-create race — fixed in lib/recruit/onboarding-drive.ts), and a
+  // rule that can reject an honest, fully-signed submission with no way to
+  // recover is worse than the narrow tampering it guards against: file ids are
+  // unguessable random strings, so stitching in another candidate's file
+  // requires already knowing that id. Record the anomaly for HR instead of
+  // destroying the submission.
+  const folderAnomaly = folderIds.size !== 1;
+  if (folderAnomaly) {
+    console.warn("[onboarding-submit] descriptors span multiple Drive folders", {
+      draftId: input.submissionDraftId,
+      folderCount: folderIds.size,
+    });
   }
+  // ถ้าไม่ได้ติ๊ก "ยังไม่ได้เปิดบัญชี ttb" แปลว่ามีบัญชีแล้ว → ต้องกรอกให้ครบ
+  if (!input.noBankAccountYet) {
+    if (!/^\d{9,15}$/.test(input.bankAccountNo.replace(/\D/g, ""))) {
+      return bad("เลขบัญชีไม่ถูกต้อง (ตัวเลข 9-15 หลัก) หรือติ๊กว่ายังไม่ได้เปิดบัญชี ttb");
+    }
+    if (input.bankAccountName.trim() === "") {
+      return bad("กรอกชื่อบัญชี หรือติ๊กว่ายังไม่ได้เปิดบัญชี ttb");
+    }
+  }
+
   const fileIds = new Set(allDescriptors.map((d) => d.fileId));
   if (fileIds.size !== allDescriptors.length) {
     return bad("มีไฟล์แนบซ้ำกัน · กรุณาตรวจสอบเอกสารที่อัปโหลด");
@@ -533,6 +558,12 @@ export async function POST(req: NextRequest) {
             ...input.answers,
             submissionDraftId: input.submissionDraftId, // → Drive folder name
             branchText, // what the candidate typed, kept even when branchId resolved
+            // true = this person's files ended up in >1 Drive folder. Almost
+            // always our own duplicate-folder race, not tampering — HR just
+            // needs to know the folder won't hold every file.
+            ...(folderAnomaly ? { driveFolderAnomaly: true } : {}),
+            // HR ต้องเห็นว่าช่องบัญชีที่ว่างคือ "ยังไม่ได้เปิด" ไม่ใช่ "ลืมกรอก"
+            noBankAccountYet: input.noBankAccountYet,
           }),
           status: "SUBMITTED",
           submittedIp,

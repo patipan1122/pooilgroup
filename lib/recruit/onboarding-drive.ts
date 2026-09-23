@@ -91,17 +91,38 @@ export async function uploadOnboardingDocumentToDrive(opts: {
   fileName: string;
   mimeType: string;
   bytes: Buffer;
+  /** Folder id returned by a PREVIOUS upload in this same draft. When given we
+   *  upload straight into it and skip name-based resolution entirely — this is
+   *  what prevents the duplicate-folder race described above. */
+  knownFolderId?: string;
 }): Promise<OnboardingDriveUpload | null> {
   try {
     const session = await getDriveSession(opts.orgId);
     if (!session) return null;
-    const root = await ensureFolder(session.accessToken, ONBOARDING_ROOT, null);
-    if (!root) return null;
-    const folder = await ensureFolder(
-      session.accessToken,
-      safeFolderName(opts.submissionId),
-      root,
-    );
+
+    // RACE FIX (2026-09-23, CEO hit this on the first real submission):
+    // ensureFolder() is a search-then-create against Drive, whose search index
+    // is eventually consistent. A candidate attaching several documents within
+    // a few seconds fires several of these concurrently, none of them see each
+    // other's folder yet, and Drive happily creates SEVERAL folders with the
+    // same name — so the files end up split across folders and the submit
+    // route's same-folder check rejected a perfectly honest submission.
+    // (Same bug class as the Drive folder duplication the CEO reported
+    // 2026-06-07, which is why RULE I exists.)
+    //
+    // Fix: once ANY upload for this draft has resolved a folder, the client
+    // passes that id back and we use it directly — no second name lookup, no
+    // race. Only the very first upload of a draft takes the resolve path.
+    let folder = opts.knownFolderId ?? null;
+    if (!folder) {
+      const root = await ensureFolder(session.accessToken, ONBOARDING_ROOT, null);
+      if (!root) return null;
+      folder = await ensureFolder(
+        session.accessToken,
+        safeFolderName(opts.submissionId),
+        root,
+      );
+    }
     if (!folder) return null;
     const up = await uploadBytes(session.accessToken, {
       parentId: folder,
