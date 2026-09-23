@@ -105,15 +105,28 @@ export function IdCardUpload({
 
       {url ? (
         <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-          {isImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="บัตรประชาชน" className="h-16 w-24 rounded-md object-cover" />
-          ) : (
-            <FileText className="size-8 text-zinc-400" aria-hidden />
-          )}
-          <span className="min-w-0 flex-1 truncate text-sm text-zinc-700">
-            {fileName ?? "ไฟล์ที่แนบ"}
-          </span>
+          {/* เดิมเป็นแค่รูปเล็ก/ไอคอนเฉยๆ กดดูไฟล์เต็มไม่ได้เลย (CEO report
+              2026-09-23 — office ดูเอกสารบัตรประชาชนที่แม่บ้านแนบมาไม่ได้) */}
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-w-0 flex-1 items-center gap-3"
+          >
+            {isImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={url}
+                alt="บัตรประชาชน"
+                className="h-16 w-24 shrink-0 rounded-md object-cover transition hover:opacity-80"
+              />
+            ) : (
+              <FileText className="size-8 shrink-0 text-zinc-400" aria-hidden />
+            )}
+            <span className="min-w-0 flex-1 truncate text-sm text-blue-600 hover:underline">
+              {fileName ?? "ดูไฟล์ที่แนบ"}
+            </span>
+          </a>
           <button
             type="button"
             onClick={() => {
