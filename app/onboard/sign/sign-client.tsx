@@ -613,19 +613,26 @@ export function SignClient({
   // ณ ตอนนั้นทีเดียว (ยังไม่เซ็น = null → ใบสมัครเว้นเส้นให้เซ็นด้วยมือ)
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
-  const openApplicationPreview = useCallback(() => {
+  /**
+   * อ่านลายเซ็นจากแป้นเป็นรูป ณ ตอนที่เรียก
+   *
+   * หมึกอยู่บนแป้น ไม่ได้เก็บไว้ใน state — ต้องอ่านตอนที่ต้องใช้เท่านั้น
+   * (ใช้ทั้งตอนกดพรีวิว และตอนกดส่งเพื่อเก็บลงสำเนาที่หน้า success อ่าน)
+   */
+  const captureSignatureDataUrl = useCallback((): string | null => {
     const pad = padRef.current;
-    let dataUrl: string | null = null;
-    if (pad && !pad.isEmpty()) {
-      try {
-        dataUrl = pad.getTrimmedCanvas().toDataURL("image/png");
-      } catch {
-        dataUrl = null;
-      }
+    if (!pad || pad.isEmpty()) return null;
+    try {
+      return pad.getTrimmedCanvas().toDataURL("image/png");
+    } catch {
+      return null;
     }
-    setSignaturePreview(dataUrl);
-    setShowApplicationPreview(true);
   }, []);
+
+  const openApplicationPreview = useCallback(() => {
+    setSignaturePreview(captureSignatureDataUrl());
+    setShowApplicationPreview(true);
+  }, [captureSignatureDataUrl]);
 
   const evaluateScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -1049,9 +1056,17 @@ export function SignClient({
         const selfieForReceipt = selfie
           ? await selfieDataUrlForReceipt(selfie.blob)
           : null;
+        // อ่านลายเซ็นจากแป้นตรงนี้ด้วย — signaturePreview จะมีค่าก็ต่อเมื่อผู้สมัคร
+        // เคยกดปุ่มพรีวิวมาก่อน ซึ่งส่วนใหญ่ไม่กด → สำเนาที่หน้า success เคยออกมา
+        // ไม่มีลายเซ็นเลย (CEO เจอ 2026-09-23)
+        const signatureForReceipt = captureSignatureDataUrl() ?? signaturePreview;
         window.sessionStorage.setItem(
           onboardingReceiptKey(json.reference),
-          JSON.stringify({ ...applicationDocData, selfieDataUrl: selfieForReceipt }),
+          JSON.stringify({
+            ...applicationDocData,
+            selfieDataUrl: selfieForReceipt,
+            signatureDataUrl: signatureForReceipt,
+          }),
         );
       } catch {
         /* เต็ม/โหมดไม่ระบุตัวตน — แค่ดูใบสมัครย้อนหลังไม่ได้ ไม่กระทบการส่ง */
