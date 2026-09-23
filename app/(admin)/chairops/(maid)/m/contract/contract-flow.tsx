@@ -50,10 +50,41 @@ export interface ContractPrefill {
   companyAccountName: string;
 }
 
+/** fetch() only throws TypeError for network-level failures (Safari surfaces
+ *  this as the bare, unhelpful message "Load failed") — retry once since
+ *  mobile signal drops are the common cause, but never retry a real HTTP
+ *  error response. */
+function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError;
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    return await fetch(input, init);
+  }
+}
+
+/** Decode a data URL to a Blob without a network round-trip. `fetch(dataUrl)`
+ *  looks convenient but the site's CSP `connect-src` doesn't allow `data:`,
+ *  so that fetch was blocked on every device, every time — surfacing to
+ *  users as a bare "Load failed" right after signing (CEO report
+ *  2026-09-23, same root cause as the onboarding selfie/ID-card uploads). */
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta, base64] = dataUrl.split(",");
+  const mime = /data:(.*?);base64/.exec(meta)?.[1] ?? "image/png";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 async function uploadDataUrl(dataUrl: string): Promise<string> {
-  const blob = await (await fetch(dataUrl)).blob();
+  const blob = dataUrlToBlob(dataUrl);
   const file = new File([blob], `signature-${Date.now()}.png`, { type: "image/png" });
-  const presign = await fetch("/api/r2/sign", {
+  const presign = await fetchWithRetry("/api/r2/sign", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size }),
@@ -63,7 +94,7 @@ async function uploadDataUrl(dataUrl: string): Promise<string> {
     uploadUrl: string;
     publicUrl: string;
   };
-  const put = await fetch(uploadUrl, {
+  const put = await fetchWithRetry(uploadUrl, {
     method: "PUT",
     headers: { "content-type": file.type },
     body: file,
@@ -171,7 +202,13 @@ export function ContractFlow({ prefill }: { prefill: ContractPrefill }) {
         // 2026-09-20 upspeed: signContract already revalidatePath("/chairops/m/contract").
         window.scrollTo({ top: 0 });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "เซ็นสัญญาไม่สำเร็จ");
+        setError(
+          isNetworkError(err)
+            ? "เน็ตหลุดกลางทางตอนอัปโหลดลายเซ็น — เช็คสัญญาณแล้วลองใหม่อีกครั้ง"
+            : err instanceof Error
+              ? err.message
+              : "เซ็นสัญญาไม่สำเร็จ",
+        );
       }
     });
   };
