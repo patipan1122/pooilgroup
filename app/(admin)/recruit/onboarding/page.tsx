@@ -23,6 +23,7 @@ import {
   ONBOARDING_STATUS_ORDER,
   isOnboardingStatus,
 } from "./_status";
+import { OnboardingShareLink } from "./_components/share-link";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,9 @@ export default async function OnboardingReviewListPage({
         title="พนักงานใหม่ · รอตรวจและอนุมัติ"
         description="ใบกรอกข้อมูลพนักงานใหม่ที่ส่งเข้ามาจากลิงก์สาธารณะ · อนุมัติแล้วระบบจะสร้างบัญชีผู้ใช้ให้ทันที (ยังไม่เปิดใช้งานจนกว่า HR จะกดเปิด)"
       >
+        {/* ── ลิงก์ถาวรสำหรับส่งให้พนักงานใหม่ + ปุ่มคัดลอก (CEO 2026-09-23) ── */}
+        <OnboardingShareLink />
+
         {/* ── ด่านที่ระบบทำแทนไม่ได้ — ต้องบอกให้ชัด ไม่ใช่ซ่อนในคู่มือ ── */}
         <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4 flex items-start gap-3">
           <ShieldAlert className="size-5 text-amber-700 shrink-0 mt-0.5" />
