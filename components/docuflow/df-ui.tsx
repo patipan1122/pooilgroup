@@ -516,10 +516,10 @@ export const DF_CATEGORY_COLORS: Record<string, string> = {
   fuel: "#C46A3D",
   station: "#C46A3D",
   vehicle: "#0EA5A4",
-  contract: "#0E2D7A",
+  contract: "var(--df-brand-deep)",
   tax: "#15803D",
   insurance: "#7C3AED",
-  legal: "#1B47B5",
+  legal: "var(--df-brand)",
   land: "#B45309",
-  default: "#6B7488",
+  default: "var(--df-muted)",
 };

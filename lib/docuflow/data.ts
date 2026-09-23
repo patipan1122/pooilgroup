@@ -85,6 +85,8 @@ export interface LoadDocumentsOpts {
   businessType?: string;
   /** Filter by tag (string match in document_tags) */
   tag?: string;
+  /** Filter by DocumentType id (documents.document_type_id FK) */
+  documentTypeId?: string;
   /** Filter by computed expiry status (renewal must exist) */
   expiryStatus?: ExpiryStatus;
   /** Default: true — only active documents (soft-delete aware) */
@@ -107,6 +109,7 @@ export async function loadDocuments(
     companyId,
     businessType,
     tag,
+    documentTypeId,
     expiryStatus,
     isActive = true,
     search,
@@ -140,6 +143,7 @@ export async function loadDocuments(
       ...(isActive !== undefined ? { isActive } : {}),
       ...(ownershipFilter ? { ownership: { some: ownershipFilter } } : {}),
       ...(tag ? { tags: { some: { tag } } } : {}),
+      ...(documentTypeId ? { documentTypeId } : {}),
       ...(search
         ? {
             OR: [

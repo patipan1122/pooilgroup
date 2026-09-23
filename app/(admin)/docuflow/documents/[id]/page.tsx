@@ -211,7 +211,7 @@ export default async function DocumentDetailPage({
         className="df-fade-up"
       >
         <div style={{ display: "flex", gap: 16, minWidth: 0, flex: 1 }}>
-          <DfDocIcon size="lg" tone={{ bg: "#C46A3D18", fg: "#C46A3D" }}>
+          <DfDocIcon size="lg" tone={{ bg: "#F5B80018", fg: "#B45309" }}>
             <FileText size={24} />
           </DfDocIcon>
           <div style={{ minWidth: 0 }}>

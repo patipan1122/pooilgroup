@@ -40,6 +40,22 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // DocuFlow signature embedding (lib/docuflow/signature.ts) reads a Thai
+  // TTF from lib/docuflow/fonts/ at runtime via fs.readFile — force it
+  // into these two routes' serverless bundle explicitly rather than
+  // relying solely on Next's automatic file-trace static analysis. This
+  // mirrors a bug already hit today in app/(admin)/chairops/(maid)/m/
+  // contract/contract-pdf-document.tsx, where a font asset silently
+  // wasn't present at runtime and produced a blank PDF with zero errors.
+  outputFileTracingIncludes: {
+    "app/api/docuflow/[id]/signatures/[placementId]/sign/route": [
+      "./lib/docuflow/fonts/**/*",
+    ],
+    "app/api/docuflow/[id]/signatures/[placementId]/reset/route": [
+      "./lib/docuflow/fonts/**/*",
+    ],
+  },
+
   // Security headers — 2026-05-30 /increase quality on inbox surfaced
   // that no HSTS / clickjacking / mime-sniff / referrer guard was set.
   // Inbox handles encrypted FB+LINE channel tokens, OAuth callbacks, and

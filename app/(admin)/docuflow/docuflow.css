@@ -12,55 +12,58 @@
  * etc.) inherit canvas colors WITHOUT rewriting their internals.
  * ============================================================ */
 .df-root {
-  --color-brand-50: #E6ECFA;
-  --color-brand-100: #D5DEF5;
-  --color-brand-200: #B5C5EB;
-  --color-brand-300: #8FA5DE;
-  --color-brand-400: #5A7CC6;
-  --color-brand-500: #1B47B5;
-  --color-brand-600: #1B47B5;
-  --color-brand-700: #0E2D7A;
-  --color-brand-800: #0E2D7A;
-  --color-brand-900: #0E1B2C;
-  --color-brand-vivid: #1B47B5;
+  --color-brand-50: #EEF1FF;
+  --color-brand-100: #DDE4FF;
+  --color-brand-200: #C2CDFF;
+  --color-brand-300: #99A8FF;
+  --color-brand-400: #6478FF;
+  --color-brand-500: #1E3AFF;
+  --color-brand-600: #1E3AFF;
+  --color-brand-700: #1830D4;
+  --color-brand-800: #142873;
+  --color-brand-900: #0B1850;
+  --color-brand-vivid: #1E3AFF;
 
-  --color-leaf-50: #DCEFE2;
-  --color-leaf-500: #1F7A4D;
-  --color-leaf-600: #176239;
-  --color-leaf-700: #0F4A2C;
+  --color-leaf-50: #DCFCE7;
+  --color-leaf-500: #16A34A;
+  --color-leaf-600: #15803D;
+  --color-leaf-700: #166534;
 }
 
 .df-root {
   /* Surfaces */
-  --df-bg: #F4EEE2;
-  --df-bg-warm: #EFE6D2;
+  --df-bg: #FFFFFF;
+  --df-bg-warm: #F7F8FB;
   --df-surface: #FFFFFF;
-  --df-surface-soft: #FAF6EE;
+  --df-surface-soft: #F7F8FB;
 
   /* Ink */
-  --df-ink: #0E1B2C;
-  --df-ink-2: #1F2D44;
-  --df-muted: #6B7488;
-  --df-muted-2: #9AA1B2;
+  --df-ink: #0F172A;
+  --df-ink-2: #475569;
+  --df-muted: #64748B;
+  --df-muted-2: #94A3B8;
 
   /* Lines */
-  --df-line: #E4DCCB;
-  --df-line-soft: #EFE7D6;
+  --df-line: #E6E9F1;
+  --df-line-soft: #F0F2F7;
 
   /* Brand & accent */
-  --df-brand: #1B47B5;
-  --df-brand-deep: #0E2D7A;
-  --df-brand-soft: #E6ECFA;
-  --df-accent: #C46A3D;
-  --df-accent-soft: #F4E2D3;
+  --df-brand: #1E3AFF;
+  --df-brand-deep: #1830D4;
+  --df-brand-soft: #EEF1FF;
+  /* CashHub only defines one "needs attention" amber (--ch-pending) — DocuFlow's old
+     terracotta accent + brown-amber warn both collapse onto it so there's a single
+     coherent amber language instead of two near-duplicate hues. */
+  --df-accent: #F5B800;
+  --df-accent-soft: #FEF6CF;
 
   /* Semantic */
-  --df-success: #1F7A4D;
-  --df-success-soft: #DCEFE2;
-  --df-warn: #B5811E;
-  --df-warn-soft: #F8EBC9;
-  --df-danger: #B23A2F;
-  --df-danger-soft: #F6DDD7;
+  --df-success: #16A34A;
+  --df-success-soft: #DCFCE7;
+  --df-warn: #F5B800;
+  --df-warn-soft: #FEF6CF;
+  --df-danger: #DC2626;
+  --df-danger-soft: #FEE2E2;
 
   /* Radii */
   --df-r-sm: 8px;
@@ -69,11 +72,11 @@
   --df-r-xl: 24px;
 
   /* Shadows */
-  --df-shadow-1: 0 1px 2px rgba(14, 27, 44, 0.04), 0 1px 1px rgba(14, 27, 44, 0.03);
-  --df-shadow-2: 0 6px 24px -8px rgba(14, 27, 44, 0.12), 0 2px 6px rgba(14, 27, 44, 0.05);
-  --df-shadow-3: 0 20px 50px -20px rgba(14, 27, 44, 0.25);
-  --df-shadow-blue: 0 8px 20px -6px rgba(27, 71, 181, 0.45);
-  --df-shadow-accent: 0 8px 24px -8px rgba(178, 58, 47, 0.4);
+  --df-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --df-shadow-2: 0 6px 24px -8px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --df-shadow-3: 0 20px 50px -20px rgba(15, 23, 42, 0.25);
+  --df-shadow-blue: 0 8px 20px -6px rgba(30, 58, 255, 0.45);
+  --df-shadow-accent: 0 8px 24px -8px rgba(245, 184, 0, 0.4);
 
   background: var(--df-bg);
   color: var(--df-ink);
@@ -101,7 +104,7 @@
 
 /* ============= Display (Thai serif) ============= */
 .df-serif {
-  font-family: "IBM Plex Serif Thai", "Noto Serif Thai", Georgia, serif;
+  font-family: var(--font-thai-display), sans-serif;
   font-weight: 500;
   letter-spacing: -0.01em;
 }
@@ -141,7 +144,7 @@
 .df-pill-brand { background: var(--df-brand-soft); color: var(--df-brand); }
 .df-pill-accent { background: var(--df-accent-soft); color: var(--df-accent); }
 .df-pill-outline { background: transparent; border: 1px solid var(--df-line); color: var(--df-muted); }
-.df-pill-ink { background: var(--df-ink); color: #FFF6E5; }
+.df-pill-ink { background: var(--df-ink); color: #FFFFFF; }
 
 /* ============= Buttons ============= */
 .df-btn {
@@ -172,7 +175,7 @@
   .df-fade-up { transition: none !important; animation: none !important; }
   .df-btn:hover { transform: none; }
 }
-.df-btn-primary { background: var(--df-ink); color: #FFF6E5; }
+.df-btn-primary { background: var(--df-ink); color: #FFFFFF; }
 .df-btn-primary:hover { background: var(--df-ink-2); }
 .df-btn-brand { background: var(--df-brand); color: #fff; }
 .df-btn-brand:hover { background: var(--df-brand-deep); box-shadow: var(--df-shadow-blue); }
@@ -314,8 +317,8 @@
 
 /* ============= Module banner (mimics canvas left sidebar header) ============= */
 .df-banner {
-  background: linear-gradient(135deg, #0E1B2C 0%, #1A2A42 100%);
-  color: #FFF6E5;
+  background: linear-gradient(135deg, #0B1850 0%, #142873 100%);
+  color: #FFFFFF;
   border-radius: var(--df-r-lg);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -335,8 +338,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0E1B2C, #1B47B5);
-  color: #F4EEE2;
+  background: linear-gradient(135deg, #0B1850, #1E3AFF);
+  color: #FFFFFF;
   font-family: "IBM Plex Serif Thai", Georgia, serif;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -355,7 +358,7 @@
 .df-bottomnav {
   position: sticky;
   bottom: 0;
-  background: rgba(255, 251, 244, 0.94);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: saturate(140%) blur(12px);
   -webkit-backdrop-filter: saturate(140%) blur(12px);
   border-top: 1px solid var(--df-line-soft);
@@ -396,12 +399,12 @@
  * warm cream content area).
  * ============================================================ */
 [data-module="docuflow"] {
-  background: var(--df-bg, #F4EEE2);
+  background: var(--df-bg, #FFFFFF);
 }
 
 [data-module="docuflow"] > header {
-  background: #FAF6EE;
-  border-bottom-color: #E4DCCB;
+  background: #F7F8FB;
+  border-bottom-color: #E6E9F1;
 }
 
 [data-module="docuflow"] > .flex-1 > aside {

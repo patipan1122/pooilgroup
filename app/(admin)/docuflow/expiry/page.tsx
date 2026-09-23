@@ -316,7 +316,7 @@ export default async function ExpiryDashboardPage({
               >
                 เยี่ยม! ระบบจะแจ้งเตือนเมื่อมีเอกสารใกล้หมดอายุ
               </p>
-              <DfButton href="/docuflow/browse" variant="ghost">
+              <DfButton href="/docuflow/documents" variant="ghost">
                 ดูเอกสารทั้งหมด <ChevronRight size={13} />
               </DfButton>
             </DfCard>
@@ -613,9 +613,9 @@ export default async function ExpiryDashboardPage({
             <DfCard
               padding={16}
               style={{
-                background: "linear-gradient(135deg, #0E1B2C 0%, #1B47B5 100%)",
+                background: "linear-gradient(135deg, #0B1850 0%, #1E3AFF 100%)",
                 border: "none",
-                color: "#FFF6E5",
+                color: "#FFFFFF",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

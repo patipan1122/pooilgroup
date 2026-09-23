@@ -341,7 +341,7 @@ export const MODULES: Record<ModuleSlug, ModuleConfig> = {
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],
       },
       {
-        href: "/docuflow/browse",
+        href: "/docuflow/documents",
         label: "เอกสารทั้งหมด",
         icon: FolderTree,
         roles: ["super_admin", "org_admin", "admin", "area_manager", "viewer"],

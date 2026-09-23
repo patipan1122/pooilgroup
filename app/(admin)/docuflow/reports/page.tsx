@@ -441,7 +441,7 @@ export default async function ReportsPage() {
       >
         <DfCard
           padding={18}
-          style={{ background: "linear-gradient(135deg, #EFF3FC, #FFFFFF)" }}
+          style={{ background: "linear-gradient(135deg, var(--df-brand-soft), var(--df-surface))" }}
         >
           <div
             style={{

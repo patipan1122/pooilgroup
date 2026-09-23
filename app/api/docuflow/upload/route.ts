@@ -68,6 +68,9 @@ const UploadSchema = z.object({
   /** Canonical doc type key from canonical-docs.ts (e.g. "fuel_station:ใบอนุญาตสถานีบริการน้ำมัน")
       — set when admin uses smart-upload template; null for free-form uploads. */
   documentType: z.string().max(255).optional(),
+  /** FK to the org-managed document_types table — additive alongside the legacy
+      free-text `documentType` above; both persist independently. */
+  documentTypeId: zUUID().optional(),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(500 * 1024 * 1024), // 500 MB
@@ -123,6 +126,7 @@ export async function POST(req: NextRequest) {
     name,
     description,
     documentType,
+    documentTypeId,
     filename,
     mimeType,
     fileSize,
@@ -165,6 +169,7 @@ export async function POST(req: NextRequest) {
           name,
           description: description ?? null,
           documentType: documentType ?? null,
+          documentTypeId: documentTypeId ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,

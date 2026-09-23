@@ -67,6 +67,9 @@ const MetadataSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
   documentType: z.string().max(255).optional(),
+  /** FK to the org-managed document_types table — additive alongside the legacy
+      free-text `documentType` above; both persist independently. */
+  documentTypeId: zUUID().optional(),
   ownerships: z.array(OwnershipSchema).min(1),
   tags: z.array(z.string().min(1).max(64)).default([]),
   renewal: RenewalSchema.optional(),
@@ -137,7 +140,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { name, description, documentType, ownerships, tags, renewal } = parsed.data;
+  const { name, description, documentType, documentTypeId, ownerships, tags, renewal } =
+    parsed.data;
   const orgId = session.user.org_id;
 
   const documentId = crypto.randomUUID();
@@ -186,6 +190,7 @@ export async function POST(req: NextRequest) {
           name,
           description: description ?? null,
           documentType: documentType ?? null,
+          documentTypeId: documentTypeId ?? null,
           fileKey,
           filePublicUrl: publicUrl,
           mimeType,

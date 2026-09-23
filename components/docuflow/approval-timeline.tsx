@@ -215,13 +215,13 @@ export function ApprovalTimeline({
                       height: 22,
                       borderRadius: 999,
                       background: signed
-                        ? "var(--df-success, #10b981)"
+                        ? "var(--df-success, #16a34a)"
                         : isCurrent
                           ? "var(--df-brand)"
                           : "var(--df-surface)",
                       border: `2px solid ${
                         signed
-                          ? "var(--df-success, #10b981)"
+                          ? "var(--df-success, #16a34a)"
                           : isCurrent
                             ? "var(--df-brand)"
                             : "var(--df-line)"
@@ -273,7 +273,7 @@ export function ApprovalTimeline({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "var(--df-success, #047857)",
+                            color: "var(--df-success, #16a34a)",
                             marginTop: 2,
                             fontWeight: 600,
                           }}

@@ -2,8 +2,12 @@
 // ────────────────────────────────────────────────────────────────────
 // Slim breadcrumb header rendered at the top of each docuflow page.
 // Mimics the canvas `df-topbar` element with brand mark + breadcrumb +
-// search hint + bell. Visible on desktop; hidden on mobile (bottom nav
-// takes over).
+// search hint + bell. The breadcrumb/search chrome is desktop-only
+// (hidden below 768px — bottom nav takes over on mobile), but the
+// notification bell is extracted into its own standalone floating
+// button rendered as a sibling of `.df-topbanner`, shown only below
+// 768px (mirror of the desktop-hide rule) so notifications stay
+// reachable on mobile too.
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -22,6 +26,7 @@ export function DfTopBanner({
   actions?: React.ReactNode;
 }) {
   return (
+    <>
     <div
       className="df-topbanner"
       style={{
@@ -164,5 +169,40 @@ export function DfTopBanner({
         }
       `}</style>
     </div>
+
+    {/* Mobile-only notification bell — sibling of .df-topbanner (which is
+        entirely hidden below 768px). Fixed floating circular button in the
+        top-right corner, same shadow/elevation/z-index conventions as the
+        floating primary upload button in df-mobile-nav.tsx, so it reads as
+        part of the same mobile chrome language. */}
+    <Link
+      href="/docuflow/notifications"
+      className="df-topbanner-mobile-bell"
+      aria-label="การแจ้งเตือน"
+      style={{
+        position: "fixed",
+        top: "max(12px, env(safe-area-inset-top))",
+        right: 16,
+        zIndex: 40,
+        display: "none",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 40,
+        height: 40,
+        borderRadius: "50%",
+        background: "var(--df-surface)",
+        border: "1px solid var(--df-line)",
+        color: "var(--df-ink)",
+        boxShadow: "0 6px 16px -4px rgba(30,58,255,0.35)",
+      }}
+    >
+      <Bell size={18} />
+      <style>{`
+        @media (max-width: 768px) {
+          .df-topbanner-mobile-bell { display: flex !important; }
+        }
+      `}</style>
+    </Link>
+    </>
   );
 }

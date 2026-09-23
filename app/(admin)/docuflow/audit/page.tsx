@@ -207,7 +207,7 @@ export default async function DocuFlowAuditPage({
 
   // Color the avatar by role hash
   const userColor = (id: string) => {
-    const colors = ["#0E2D7A", "#1B47B5", "#1F7A4D", "#C46A3D", "#7C3AED"];
+    const colors = ["var(--df-brand-deep)", "var(--df-brand)", "var(--df-success)", "#B45309", "#7C3AED"];
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
     return colors[h % colors.length];
@@ -420,7 +420,7 @@ export default async function DocuFlowAuditPage({
                     label: e.action,
                   };
                 const userName = e.user?.name ?? "ระบบ";
-                const color = e.user ? userColor(e.user.id) : "#9AA1B2";
+                const color = e.user ? userColor(e.user.id) : "var(--df-muted-2)";
                 const diff = (e.diff as Record<string, unknown> | null) ?? {};
                 const newData = (diff.new as Record<string, unknown> | undefined) ?? {};
                 const targetText =

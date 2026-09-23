@@ -337,7 +337,7 @@ export default async function DocuFlowOverviewPage() {
           sub="ใน Pool · ทุกบริษัท"
           icon={<FileText size={17} />}
           tone="ink"
-          href="/docuflow/browse"
+          href="/docuflow/documents"
         />
         <DfStatCard
           label="ใกล้หมดอายุ"
@@ -752,7 +752,7 @@ export default async function DocuFlowOverviewPage() {
           <DfCard
             padding={22}
             style={{
-              background: "linear-gradient(180deg, #FAF6EE, #FFFFFF)",
+              background: "linear-gradient(180deg, var(--df-bg-warm), var(--df-surface))",
             }}
             className="df-fade-up df-fade-up-200"
           >
@@ -1059,8 +1059,8 @@ export default async function DocuFlowOverviewPage() {
             style={{
               padding: "14px 18px",
               borderRadius: 12,
-              background: "linear-gradient(135deg, #0E1B2C 0%, #1B47B5 100%)",
-              color: "#FFF6E5",
+              background: "linear-gradient(135deg, #0B1850 0%, #1E3AFF 100%)",
+              color: "#FFFFFF",
               display: "flex",
               alignItems: "center",
               gap: 12,

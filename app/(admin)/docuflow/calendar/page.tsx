@@ -317,7 +317,7 @@ export default async function CalendarPage({
             <DfCard
               padding={18}
               style={{
-                background: "linear-gradient(135deg, #F4E2D3, #FAF6EE)",
+                background: "linear-gradient(135deg, var(--df-accent-soft), var(--df-bg-warm))",
               }}
             >
               <div

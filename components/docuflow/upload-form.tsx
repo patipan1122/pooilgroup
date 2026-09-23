@@ -26,17 +26,27 @@ import {
   Globe2,
   ChevronDown,
   Settings2,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import type { DocumentTypeOption } from "@/lib/docuflow/document-types";
+
+/** Prefix marking a <select> value as a canonical (not-yet-a-real-row) option —
+ * submits as the legacy free-text `documentType` string instead of `documentTypeId`. */
+const CANONICAL_VALUE_PREFIX = "canonical:";
 
 const DEFAULT_ALERT_DAYS = [90, 30, 7];
 const PROXY_MAX_BYTES = 25 * 1024 * 1024;
+const LAST_USED_KEY_PREFIX = "docuflow-upload-lastused:";
 
 const FormSchema = z.object({
   name: z.string().min(1, "ใส่ชื่อเอกสาร").max(255),
+  documentTypeId: z.string().optional(),
   expiryDate: z.string().optional(),
   description: z.string().max(2000).optional(),
   responsibleUserId: z.string().optional(),
@@ -73,6 +83,10 @@ interface Props {
   branches: Branch[];
   users: UserRow[];
   businessTypes: BizType[];
+  documentTypes: DocumentTypeOption[];
+  orgId: string;
+  /** Prefill from ?businessType=X (e.g. linked from the checklist page). */
+  defaultBusinessType?: string;
 }
 
 type ScopeKind = "group" | "company" | "business_type" | "branch" | "person";
@@ -82,6 +96,20 @@ interface Scope {
   refId: string | null;
   label: string;
   emoji: string;
+}
+
+type FileUploadState = "pending" | "uploading" | "done" | "error";
+
+interface FileUploadStatus {
+  fileName: string;
+  status: FileUploadState;
+  documentId?: string;
+  errorMessage?: string;
+}
+
+interface LastUsedChoice {
+  lastDocumentTypeId?: string;
+  lastScopes?: Scope[];
 }
 
 const TYPE_EMOJI: Record<string, string> = {
@@ -106,9 +134,13 @@ export function UploadForm({
   branches,
   users,
   businessTypes,
+  documentTypes,
+  orgId,
+  defaultBusinessType,
 }: Props) {
   const router = useRouter();
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileStatuses, setFileStatuses] = useState<FileUploadStatus[]>([]);
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [scopeQuery, setScopeQuery] = useState("");
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -127,6 +159,7 @@ export function UploadForm({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: "",
+      documentTypeId: "",
       expiryDate: "",
       description: "",
       responsibleUserId: "",
@@ -187,6 +220,20 @@ export function UploadForm({
       .slice(0, 40);
   }, [q, allScopes]);
 
+  // Group document types by business type for the <optgroup> select below —
+  // makes a long list scannable instead of one flat alphabetical dump.
+  const groupedDocumentTypes = useMemo(() => {
+    const groups = new Map<string, DocumentTypeOption[]>();
+    for (const dt of documentTypes) {
+      const biz = businessTypes.find((b) => b.value === dt.businessType);
+      const groupLabel = biz ? `${biz.emoji} ${biz.label}` : "📁 ทั่วไป";
+      const list = groups.get(groupLabel);
+      if (list) list.push(dt);
+      else groups.set(groupLabel, [dt]);
+    }
+    return Array.from(groups.entries());
+  }, [documentTypes, businessTypes]);
+
   function addScope(s: Scope) {
     setScopes((prev) => {
       const key = `${s.kind}:${s.refId ?? ""}`;
@@ -201,14 +248,30 @@ export function UploadForm({
     setScopes((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function handleFileChange(f: File | null) {
-    setFile(f);
-    if (!f || fileNameSyncRef.current) return;
-    if (!watch("name")) {
-      const cleaned = f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ");
+  function cleanFileName(f: File) {
+    return f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ");
+  }
+
+  function fileIdentity(f: File) {
+    return `${f.name}::${f.size}::${f.lastModified}`;
+  }
+
+  function addFiles(newFiles: File[]) {
+    if (newFiles.length === 0) return;
+    setFiles((prev) => {
+      const existing = new Set(prev.map(fileIdentity));
+      const toAdd = newFiles.filter((f) => !existing.has(fileIdentity(f)));
+      return [...prev, ...toAdd];
+    });
+    if (!fileNameSyncRef.current && !watch("name")) {
+      const cleaned = cleanFileName(newFiles[0]);
       setValue("name", cleaned);
       fileNameSyncRef.current = true;
     }
+  }
+
+  function removeFile(idx: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -219,6 +282,43 @@ export function UploadForm({
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  // Mount-only: prefill from (1) ?businessType=X passed down from the
+  // checklist page link, then (2) this browser's last-used choices for this
+  // org — both are DEFAULTS only, the user can still change everything
+  // before submitting. businessType (an explicit nav intent) wins over the
+  // remembered scope so it isn't silently overridden.
+  useEffect(() => {
+    if (defaultBusinessType) {
+      const match = businessTypes.find((b) => b.value === defaultBusinessType);
+      if (match) {
+        setScopes([
+          {
+            kind: "business_type",
+            refId: match.value,
+            label: `ทุกสาขา ${match.label}`,
+            emoji: match.emoji ?? "📁",
+          },
+        ]);
+      }
+    }
+
+    try {
+      const raw = localStorage.getItem(`${LAST_USED_KEY_PREFIX}${orgId}`);
+      if (raw) {
+        const saved = JSON.parse(raw) as LastUsedChoice;
+        if (saved.lastDocumentTypeId) {
+          setValue("documentTypeId", saved.lastDocumentTypeId);
+        }
+        if (!defaultBusinessType && saved.lastScopes && saved.lastScopes.length > 0) {
+          setScopes(saved.lastScopes);
+        }
+      }
+    } catch {
+      // localStorage unavailable or corrupt JSON — ignore, just skip prefill
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function buildOwnerships() {
@@ -235,6 +335,22 @@ export function UploadForm({
         return { level: "branch" as const, branchId: s.refId ?? undefined };
       return { level: "person" as const, personId: s.refId ?? undefined };
     });
+  }
+
+  /** Splits the select's composite value: a real DocumentType row submits as
+   * `documentTypeId` (FK); a canonical/not-yet-saved option submits as the
+   * legacy free-text `documentType` string instead — there's no row id to
+   * point a FK at yet. Never sends both. */
+  function resolveDocumentTypeFields(values: FormValues) {
+    const raw = values.documentTypeId || undefined;
+    if (!raw) return { documentTypeId: undefined, documentType: undefined };
+    if (raw.startsWith(CANONICAL_VALUE_PREFIX)) {
+      return {
+        documentTypeId: undefined,
+        documentType: raw.slice(CANONICAL_VALUE_PREFIX.length),
+      };
+    }
+    return { documentTypeId: raw, documentType: undefined };
   }
 
   function buildRenewal(values: FormValues) {
@@ -257,6 +373,7 @@ export function UploadForm({
       JSON.stringify({
         name: values.name,
         description: values.description || undefined,
+        ...resolveDocumentTypeFields(values),
         ownerships: buildOwnerships(),
         tags: [],
         renewal: buildRenewal(values),
@@ -285,6 +402,7 @@ export function UploadForm({
       body: JSON.stringify({
         name: values.name,
         description: values.description || undefined,
+        ...resolveDocumentTypeFields(values),
         filename: fileObj.name,
         mimeType: fileObj.type || "application/octet-stream",
         fileSize: fileObj.size,
@@ -323,12 +441,13 @@ export function UploadForm({
   }
 
   async function onSubmit(values: FormValues) {
-    if (!file) {
-      toast.error("เลือกไฟล์ก่อน");
+    if (files.length === 0) {
+      toast.error("เลือกไฟล์อย่างน้อย 1 ไฟล์");
       return;
     }
-    if (file.size > 500 * 1024 * 1024) {
-      toast.error("ไฟล์ใหญ่เกิน 500 MB");
+    const oversized = files.find((f) => f.size > 500 * 1024 * 1024);
+    if (oversized) {
+      toast.error(`ไฟล์ "${oversized.name}" ใหญ่เกิน 500 MB`);
       return;
     }
     if (scopes.length === 0) {
@@ -337,23 +456,84 @@ export function UploadForm({
     }
 
     setUploading(true);
-    try {
-      const documentId =
-        file.size <= PROXY_MAX_BYTES
-          ? await uploadViaProxy(values, file)
-          : await uploadViaPresigned(values, file);
+    setFileStatuses(files.map((f) => ({ fileName: f.name, status: "pending" })));
 
-      toast.success("อัปโหลดเสร็จ");
+    let successCount = 0;
+    let lastDocumentId: string | undefined;
+
+    // Loop the existing single-file endpoints per file — each file becomes
+    // its own Document row via the same uploadViaProxy/uploadViaPresigned
+    // calls as before. Multi-file uploads share the storage location,
+    // document type, and expiry/renewal metadata entered once in the form;
+    // only the document name is derived per-file (from that file's own
+    // filename) once there's more than one file, so a batch doesn't create
+    // N documents with an identical name.
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setFileStatuses((prev) =>
+        prev.map((s, idx) => (idx === i ? { ...s, status: "uploading" } : s)),
+      );
+      const perFileValues: FormValues =
+        files.length === 1 ? values : { ...values, name: cleanFileName(f) };
+      try {
+        const documentId =
+          f.size <= PROXY_MAX_BYTES
+            ? await uploadViaProxy(perFileValues, f)
+            : await uploadViaPresigned(perFileValues, f);
+        successCount++;
+        lastDocumentId = documentId;
+        setFileStatuses((prev) =>
+          prev.map((s, idx) =>
+            idx === i ? { ...s, status: "done", documentId } : s,
+          ),
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ";
+        console.error("[upload]", e);
+        setFileStatuses((prev) =>
+          prev.map((s, idx) =>
+            idx === i ? { ...s, status: "error", errorMessage: msg } : s,
+          ),
+        );
+      }
+    }
+
+    setUploading(false);
+
+    // Remember last-used choices for next time (same-browser convenience
+    // only — no DB write). Only save if at least one file actually went
+    // through, so a total-failure attempt doesn't overwrite good defaults.
+    if (successCount > 0) {
+      try {
+        const toSave: LastUsedChoice = {
+          lastDocumentTypeId: values.documentTypeId || undefined,
+          lastScopes: scopes,
+        };
+        localStorage.setItem(
+          `${LAST_USED_KEY_PREFIX}${orgId}`,
+          JSON.stringify(toSave),
+        );
+      } catch {
+        // localStorage unavailable (private mode, quota) — non-fatal
+      }
+    }
+
+    if (successCount === files.length) {
+      toast.success(
+        files.length === 1 ? "อัปโหลดเสร็จ" : `อัปโหลดเสร็จทั้ง ${files.length} ไฟล์`,
+      );
       startTransition(() => {
-        router.push(`/docuflow/documents/${documentId}`);
+        if (files.length === 1 && lastDocumentId) {
+          router.push(`/docuflow/documents/${lastDocumentId}`);
+        } else {
+          router.push(`/docuflow/documents`);
+        }
         router.refresh();
       });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ";
-      toast.error(msg);
-      console.error("[upload]", e);
-    } finally {
-      setUploading(false);
+    } else if (successCount > 0) {
+      toast.error(`สำเร็จ ${successCount}/${files.length} ไฟล์ — ดูรายละเอียดด้านล่าง`);
+    } else {
+      toast.error("อัปโหลดไม่สำเร็จเลย — ดูรายละเอียดด้านล่าง");
     }
   }
 
@@ -362,20 +542,20 @@ export function UploadForm({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      <Field label="ไฟล์เอกสาร" required>
+      <Field label="ไฟล์เอกสาร" required hint="เลือกได้หลายไฟล์พร้อมกัน · ลากมาเพิ่มทีหลังได้อีก">
         <label
           className={cn(
             "df-upload-zone relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed cursor-pointer transition-colors",
-            file
+            files.length > 0
               ? "border-[var(--color-brand-300)] bg-[var(--color-brand-50)]/40"
               : "border-[var(--color-brand-500)] hover:border-[var(--color-brand-700)]",
           )}
           style={{
             padding: "32px 24px",
-            minHeight: file ? 140 : 220,
-            background: file
+            minHeight: files.length > 0 ? 140 : 220,
+            background: files.length > 0
               ? undefined
-              : "linear-gradient(180deg, #EFF3FC, #FAF6EE)",
+              : "linear-gradient(180deg, var(--df-brand-soft), var(--df-bg-warm))",
           }}
           onDragOver={(e) => {
             e.preventDefault();
@@ -387,23 +567,28 @@ export function UploadForm({
           onDrop={(e) => {
             e.preventDefault();
             e.currentTarget.classList.remove("df-drop-hover");
-            const f = e.dataTransfer.files?.[0];
-            if (f) handleFileChange(f);
+            const dropped = Array.from(e.dataTransfer.files ?? []);
+            if (dropped.length) addFiles(dropped);
           }}
         >
           <input
             type="file"
+            multiple
             className="sr-only"
             accept="application/pdf,image/*,.docx,.doc"
             aria-label={
-              file
-                ? `เลือกไฟล์อื่นแทน ${file.name}`
-                : "เลือกไฟล์เอกสาร (PDF · รูป · DOCX สูงสุด 500 MB)"
+              files.length > 0
+                ? "เลือกไฟล์เพิ่ม"
+                : "เลือกไฟล์เอกสาร (PDF · รูป · DOCX สูงสุด 500 MB · เลือกได้หลายไฟล์)"
             }
-            onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const selected = Array.from(e.target.files ?? []);
+              if (selected.length) addFiles(selected);
+              e.target.value = "";
+            }}
             disabled={busy}
           />
-          {file ? (
+          {files.length > 0 ? (
             <>
               <div
                 style={{
@@ -420,13 +605,16 @@ export function UploadForm({
                 <UploadIcon className="size-7" />
               </div>
               <div className="text-center">
-                <p className="text-base font-bold text-zinc-900">{file.name}</p>
+                <p className="text-base font-bold text-zinc-900">
+                  {files.length === 1 ? files[0].name : `${files.length} ไฟล์พร้อมส่ง`}
+                </p>
                 <p className="text-xs text-zinc-500 mt-1">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB · พร้อมส่ง
-                  {file.size > PROXY_MAX_BYTES ? " · presigned mode" : ""}
+                  {files.length === 1
+                    ? `${(files[0].size / 1024 / 1024).toFixed(2)} MB · พร้อมส่ง${files[0].size > PROXY_MAX_BYTES ? " · presigned mode" : ""}`
+                    : `${(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB รวม`}
                 </p>
                 <p className="text-[11px] text-zinc-500 mt-2">
-                  คลิกอีกครั้งเพื่อเปลี่ยนไฟล์
+                  คลิกหรือลากมาเพิ่มไฟล์อื่นได้อีก
                 </p>
               </div>
             </>
@@ -438,7 +626,7 @@ export function UploadForm({
                   height: 64,
                   borderRadius: 16,
                   background: "#fff",
-                  boxShadow: "0 8px 24px -8px rgba(27,71,181,0.3)",
+                  boxShadow: "0 8px 24px -8px rgba(30,58,255,0.3)",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -466,7 +654,7 @@ export function UploadForm({
                     marginBottom: 0,
                   }}
                 >
-                  หรือคลิกเพื่อเลือกจากเครื่อง · PDF · รูป · DOCX (สูงสุด 500 MB)
+                  หรือคลิกเพื่อเลือกจากเครื่อง · PDF · รูป · DOCX (สูงสุด 500 MB · เลือกได้หลายไฟล์)
                 </p>
               </div>
               <span
@@ -491,6 +679,45 @@ export function UploadForm({
             </>
           )}
         </label>
+
+        {files.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {files.map((f, idx) => {
+              const status = fileStatuses[idx];
+              return (
+                <li
+                  key={`${f.name}:${f.size}:${f.lastModified}:${idx}`}
+                  className="flex items-center gap-3 rounded-xl border-2 border-zinc-200 bg-white px-3 py-2"
+                >
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500">
+                    <FileText className="size-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-zinc-800">
+                      {f.name}
+                    </p>
+                    <p className="text-[11px] text-zinc-500">
+                      {(f.size / 1024 / 1024).toFixed(2)} MB
+                      {status?.errorMessage ? ` · ${status.errorMessage}` : ""}
+                    </p>
+                  </div>
+                  <FileStatusBadge status={status?.status ?? "pending"} />
+                  {(!status || status.status === "pending") && (
+                    <button
+                      type="button"
+                      onClick={() => removeFile(idx)}
+                      className="text-zinc-400 hover:text-rose-700 disabled:opacity-40"
+                      disabled={busy}
+                      aria-label={`ลบ ${f.name}`}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Field>
 
       <Field
@@ -498,15 +725,48 @@ export function UploadForm({
         required
         error={errors.name?.message}
         htmlFor="name"
-        hint="ระบบดึงจากชื่อไฟล์ให้ — แก้ได้"
+        hint={
+          files.length > 1
+            ? `หลายไฟล์ — ระบบตั้งชื่อจากไฟล์แต่ละไฟล์อัตโนมัติ (${files.length} ไฟล์)`
+            : "ระบบดึงจากชื่อไฟล์ให้ — แก้ได้"
+        }
       >
         <Input
           id="name"
           {...register("name")}
           invalid={!!errors.name}
           placeholder="เช่น ใบอนุญาตปั๊ม KKN-001"
-          disabled={busy}
+          disabled={busy || files.length > 1}
         />
+      </Field>
+
+      <Field
+        label="ประเภทเอกสาร"
+        optional
+        htmlFor="documentTypeId"
+        hint="ช่วยจัดหมวดและค้นหาเอกสารในอนาคต"
+      >
+        <select
+          id="documentTypeId"
+          {...register("documentTypeId")}
+          disabled={busy}
+          className="w-full rounded-lg border-2 border-zinc-200 px-3 py-2 text-sm focus:border-[var(--color-brand-500)] focus:outline-none bg-white"
+        >
+          <option value="">— ไม่ระบุ —</option>
+          {groupedDocumentTypes.map(([groupLabel, opts]) => (
+            <optgroup key={groupLabel} label={groupLabel}>
+              {opts.map((dt) => (
+                <option
+                  key={dt.id ?? `${CANONICAL_VALUE_PREFIX}${dt.name}`}
+                  value={dt.id ?? `${CANONICAL_VALUE_PREFIX}${dt.name}`}
+                >
+                  {dt.name}
+                  {dt.isCanonical ? " (รายการมาตรฐาน — ยังไม่บันทึก)" : ""}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
       </Field>
 
       <Field
@@ -696,7 +956,7 @@ export function UploadForm({
           ) : (
             <>
               <UploadIcon className="size-4" />
-              อัปโหลดเอกสาร
+              {files.length > 1 ? `อัปโหลด ${files.length} ไฟล์` : "อัปโหลดเอกสาร"}
             </>
           )}
         </Button>
@@ -716,6 +976,42 @@ function ScopeKindBadge({ kind }: { kind: ScopeKind }) {
   const { label, icon } = map[kind];
   return (
     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-600 text-[10px] font-bold shrink-0">
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function FileStatusBadge({ status }: { status: FileUploadState }) {
+  const map: Record<
+    FileUploadState,
+    { label: string; className: string; icon?: React.ReactNode }
+  > = {
+    pending: { label: "รอคิว", className: "bg-zinc-100 text-zinc-600" },
+    uploading: {
+      label: "กำลังอัปโหลด",
+      className: "bg-[var(--color-brand-50)] text-[var(--color-brand-700)]",
+      icon: <Loader2 className="size-3 animate-spin" />,
+    },
+    done: {
+      label: "สำเร็จ",
+      className: "bg-emerald-50 text-emerald-700",
+      icon: <CheckCircle2 className="size-3" />,
+    },
+    error: {
+      label: "ผิดพลาด",
+      className: "bg-rose-50 text-rose-700",
+      icon: <AlertCircle className="size-3" />,
+    },
+  };
+  const { label, className, icon } = map[status];
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+        className,
+      )}
+    >
       {icon}
       {label}
     </span>

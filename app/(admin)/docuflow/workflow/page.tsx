@@ -2,7 +2,8 @@
 // ────────────────────────────────────────────────────────────────────
 // Multi-signer approval chain UI · driven by real signature placements
 // (DocumentSignaturePlacement) — most-recent doc's chain shown as live
-// example. Templates list shown for reference.
+// example. The right-side "ตั้งค่า Workflow" card is a UI preview only —
+// not wired to real data/backend yet (labeled "แผนถัดไป" in the UI).
 // ────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -12,7 +13,6 @@ import {
   Check,
   Clock,
   PenSquare,
-  CheckCircle2,
   Settings,
   FileText,
 } from "lucide-react";
@@ -44,30 +44,6 @@ const ROLE_LABEL: Record<string, string> = {
   driver: "Driver",
   viewer: "Viewer",
 };
-
-const TEMPLATES = [
-  {
-    name: "อนุมัติเร็ว · 1 คนเซ็น",
-    desc: "ผู้บริหาร 1 คน · วงเงิน ≤ ฿10k",
-    used: 142,
-  },
-  {
-    name: "อนุมัติมาตรฐาน · 3 คน",
-    desc: "ผจก. → ฝ่ายบัญชี → CEO",
-    used: 38,
-  },
-  {
-    name: "อนุมัติสัญญาใหญ่ · 4 คน",
-    desc: "ที่ใช้อยู่ในเอกสารนี้",
-    used: 12,
-    active: true,
-  },
-  {
-    name: "เซ็นทิ้ง · ไม่บันทึก",
-    desc: "ใบเสร็จย่อย · ไม่ต้องเก็บ",
-    used: 891,
-  },
-];
 
 export default async function DocuFlowWorkflowPage() {
   const session = await requireSession();
@@ -105,7 +81,7 @@ export default async function DocuFlowWorkflowPage() {
   const currentStep = firstUnsigned === -1 ? totalSteps : firstUnsigned;
 
   const userColor = (id: string) => {
-    const colors = ["#0E2D7A", "#1B47B5", "#1F7A4D", "#C46A3D", "#7C3AED"];
+    const colors = ["var(--df-brand-deep)", "var(--df-brand)", "var(--df-success)", "#B45309", "#7C3AED"];
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
     return colors[h % colors.length];
@@ -243,7 +219,7 @@ export default async function DocuFlowWorkflowPage() {
                   p.signerUser?.role ?? p.signerRole ?? "approver";
                 const color = p.signerUser
                   ? userColor(p.signerUser.id)
-                  : "#9AA1B2";
+                  : "var(--df-muted-2)";
                 const isLast = i === placements.length - 1;
                 return (
                   <div
@@ -313,7 +289,7 @@ export default async function DocuFlowWorkflowPage() {
                         marginBottom: 16,
                         background:
                           status === "current"
-                            ? "linear-gradient(135deg, #EFF3FC, #FFFFFF)"
+                            ? "linear-gradient(135deg, var(--df-brand-soft), var(--df-surface))"
                             : "var(--df-surface)",
                         borderRadius: 12,
                         border: `1px solid ${status === "current" ? "var(--df-brand-soft)" : "var(--df-line)"}`,
@@ -426,13 +402,30 @@ export default async function DocuFlowWorkflowPage() {
           )}
         </DfCard>
 
-        {/* RIGHT — settings + templates */}
+        {/* RIGHT — workflow settings (UI preview only — not wired to real data yet, see below) */}
         <div
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           className="df-fade-up df-fade-up-200"
         >
           <DfCard padding={22}>
-            <DfEyebrow>ตั้งค่า Workflow</DfEyebrow>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <DfEyebrow>ตั้งค่า Workflow</DfEyebrow>
+              <DfPill tone="outline" small>
+                แผนถัดไป · ยังไม่เปิดใช้งาน
+              </DfPill>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--df-muted)", marginTop: 6 }}>
+              ตัวอย่างหน้าตาการตั้งค่า — ยังไม่เชื่อมกับระบบจริง แก้ไข workflow ตอนนี้ได้ที่ปุ่ม
+              &quot;แก้ไข workflow&quot; ด้านบน
+            </div>
             <div style={{ marginTop: 14, marginBottom: 14 }}>
               <p
                 style={{
@@ -560,57 +553,6 @@ export default async function DocuFlowWorkflowPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          </DfCard>
-
-          {/* Templates */}
-          <DfCard padding={18}>
-            <DfEyebrow>เทมเพลต workflow</DfEyebrow>
-            <div style={{ marginTop: 12 }}>
-              {TEMPLATES.map((t, i) => (
-                <div
-                  key={i}
-                  style={{
-                    padding: 12,
-                    borderRadius: 8,
-                    marginBottom: 6,
-                    background: t.active
-                      ? "var(--df-brand-soft)"
-                      : "var(--df-surface-soft)",
-                    border: t.active
-                      ? "1px solid var(--df-brand)"
-                      : "1px solid transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                  }}
-                >
-                  {t.active ? (
-                    <CheckCircle2
-                      size={16}
-                      style={{ color: "var(--df-brand)" }}
-                    />
-                  ) : (
-                    <FileText size={16} style={{ color: "var(--df-muted)" }} />
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>
-                      {t.name}
-                    </div>
-                    <div
-                      style={{ fontSize: 10, color: "var(--df-muted)" }}
-                    >
-                      {t.desc}
-                    </div>
-                  </div>
-                  <div
-                    className="df-tnum"
-                    style={{ fontSize: 10, color: "var(--df-muted)" }}
-                  >
-                    ใช้ {t.used}
-                  </div>
-                </div>
-              ))}
             </div>
           </DfCard>
         </div>

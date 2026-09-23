@@ -2,8 +2,8 @@
 
 // DocuFlow · Mobile Bottom Nav (canvas DesktopShell mobile mode)
 // ────────────────────────────────────────────────────────────────────
-// 5-item fixed bottom nav · matches canvas mobile-screens.jsx exactly:
-//   หน้าหลัก / เอกสาร / [upload primary] / ต่ออายุ / ฉัน
+// 5-item fixed bottom nav:
+//   หน้าหลัก / เอกสาร / [upload primary] / ปฏิทิน / ตั้งค่า
 // Visible only on mobile (display:none above 768px via CSS).
 // ────────────────────────────────────────────────────────────────────
 
@@ -13,8 +13,8 @@ import {
   Home,
   Folder,
   Upload,
-  Clock,
-  User as UserIcon,
+  Calendar,
+  Settings,
 } from "lucide-react";
 
 interface NavItem {
@@ -27,15 +27,15 @@ interface NavItem {
 
 const ITEMS: NavItem[] = [
   { id: "home", href: "/docuflow", icon: Home, label: "หน้าหลัก" },
-  { id: "docs", href: "/docuflow/browse", icon: Folder, label: "เอกสาร" },
+  { id: "docs", href: "/docuflow/documents", icon: Folder, label: "เอกสาร" },
   {
     id: "upload",
     href: "/docuflow/documents/upload",
     icon: Upload,
     primary: true,
   },
-  { id: "renew", href: "/docuflow/expiry", icon: Clock, label: "ต่ออายุ" },
-  { id: "me", href: "/docuflow/notifications", icon: UserIcon, label: "ฉัน" },
+  { id: "calendar", href: "/docuflow/calendar", icon: Calendar, label: "ปฏิทิน" },
+  { id: "settings", href: "/docuflow/settings", icon: Settings, label: "ตั้งค่า" },
 ];
 
 export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
@@ -57,7 +57,7 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
         left: 0,
         right: 0,
         zIndex: 40,
-        background: "rgba(255, 251, 244, 0.94)",
+        background: "rgba(255, 255, 255, 0.94)",
         backdropFilter: "saturate(140%) blur(12px)",
         WebkitBackdropFilter: "saturate(140%) blur(12px)",
         borderTop: "1px solid var(--df-line-soft)",
@@ -70,7 +70,7 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
       {ITEMS.map((n) => {
         const active = isActive(n.href);
         const Icon = n.icon;
-        const showBadge = n.id === "renew" && badgeRenew > 0;
+        const showBadge = n.id === "calendar" && badgeRenew > 0;
         if (n.primary) {
           return (
             <Link
@@ -82,7 +82,7 @@ export function DfMobileBottomNav({ badgeRenew = 0 }: { badgeRenew?: number }) {
                 borderRadius: 14,
                 padding: "10px 14px",
                 marginTop: -16,
-                boxShadow: "0 6px 16px -4px rgba(27,71,181,0.45)",
+                boxShadow: "0 6px 16px -4px rgba(30,58,255,0.45)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

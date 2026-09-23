@@ -53,6 +53,7 @@ model Organization {
   branchStreaks                BranchStreak[]
   missingReports               MissingReportReason[]
   documents                    Document[]
+  documentTypes                DocumentType[]
   documentOwnerships           DocumentOwnership[]
   documentTags                 DocumentTag[]
   documentRenewals             DocumentRenewal[]
@@ -1017,6 +1018,11 @@ model Document {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// New, additive FK to the document_types table. Nullable — legacy documents and any
+  /// upload flow that hasn't been updated yet keep working via the free-text `documentType`
+  /// column above, which is NOT being removed. Added 2026-09-23, DocuFlow redesign Track A Item 3.
+  documentTypeId  String?  @map("document_type_id") @db.Uuid
+
   org                 Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   uploadedBy          User?                        @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   ownership           DocumentOwnership[]
@@ -1027,11 +1033,43 @@ model Document {
   personDocs          PersonDocument[]
   signaturePlacements DocumentSignaturePlacement[]
   analyses            DocumentAnalysis[]
+  documentTypeRef     DocumentType?                @relation(fields: [documentTypeId], references: [id], onDelete: SetNull)
 
   @@index([orgId, isActive])
   @@index([orgId, uploadedAt])
   @@index([orgId, documentType])
+  @@index([orgId, documentTypeId])
   @@map("documents")
+  @@schema("public")
+}
+
+// =============================================================
+// 22b. document_types — org-managed document type catalog (DocuFlow redesign Track A Item 3)
+// Additive alongside the legacy free-text Document.documentType column (untouched, still works).
+// Read-time fallback to lib/docuflow/canonical-docs.ts when an org has zero rows for a biz type —
+// see lib/docuflow/document-types.ts. No auto-backfill; import is an explicit future admin action.
+// =============================================================
+model DocumentType {
+  id           String   @id @default(uuid()) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  name         String
+  category     String?  @map("category") // license | permanent | form | personnel — from canonical-docs.ts DocCategory
+  businessType String?  @map("business_type") // optional link to a BusinessTypeKey; null = applies org-wide
+  frequency    String?  // ทุกปี / ทุก 2 ปี / ... (DocFrequency label, display-only)
+  dangerLevel  String?  @map("danger_level") // critical | high | medium | low
+  regulator    String?
+  description  String?
+  canonicalKey String?  @map("canonical_key") // traceability back to a canonical-docs.ts spec.name, nullable
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+  @@map("document_types")
   @@schema("public")
 }
 

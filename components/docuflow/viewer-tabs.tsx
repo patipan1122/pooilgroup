@@ -130,7 +130,7 @@ export function ViewerTabs({
         {tab === "preview" && (
           <div
             style={{
-              background: "#E8E1D2",
+              background: "var(--df-line-soft)",
               minHeight: 480,
               display: "flex",
               alignItems: "center",

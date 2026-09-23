@@ -9,6 +9,7 @@ import { requireSession } from "@/lib/auth/session";
 import { requireProgramAdminTier } from "@/lib/auth/role-guards";
 import { prisma } from "@/lib/prisma";
 import { BUSINESS_TYPE_LIST } from "@/constants/business-types";
+import { listDocumentTypesForUpload } from "@/lib/docuflow/document-types";
 import { UploadForm } from "@/components/docuflow/upload-form";
 import {
   DfButton,
@@ -21,12 +22,17 @@ import { DfTopBanner } from "@/components/docuflow/df-top-banner";
 
 export const dynamic = "force-dynamic";
 
-export default async function DocumentUploadPage() {
+interface PageProps {
+  searchParams: Promise<{ businessType?: string }>;
+}
+
+export default async function DocumentUploadPage({ searchParams }: PageProps) {
   const session = await requireSession();
   requireProgramAdminTier(session.user.role);
   const orgId = session.user.org_id;
+  const { businessType } = await searchParams;
 
-  const [companies, branches, users] = await Promise.all([
+  const [companies, branches, users, documentTypes] = await Promise.all([
     prisma.company.findMany({
       where: { orgId, isActive: true },
       select: { id: true, name: true, code: true },
@@ -48,6 +54,7 @@ export default async function DocumentUploadPage() {
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
     }),
+    listDocumentTypesForUpload(orgId),
   ]);
 
   const businessTypes = BUSINESS_TYPE_LIST.map((b) => ({
@@ -88,163 +95,13 @@ export default async function DocumentUploadPage() {
         className="df-grid-2col"
       >
         <div className="df-fade-up df-fade-up-100">
-          {/* NOTE: dropzone hero is rendered inside UploadForm (canvas-style,
-              fully functional drag-drop + click-to-select). Previous duplicate
-              visual block was confusing — single zone now. */}
+          {/* Dropzone + real per-file upload status list are both rendered
+              inside UploadForm itself (right column) — it owns the files/
+              status state end-to-end, so there's no separate queue preview
+              here anymore (the old version was a static demo array, not
+              real data). */}
 
-          {/* Upload queue preview — canvas DesktopUpload */}
-          <DfCard padding={20}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <DfEyebrow>คำลังอัปโหลด · 3 ไฟล์</DfEyebrow>
-              <span style={{ fontSize: 12, color: "var(--df-muted)" }}>
-                2 ไฟล์ AI วิเคราะห์เสร็จแล้ว
-              </span>
-            </div>
-            {[
-              {
-                name: "ใบอนุญาตถัง-KKN002-2569.pdf",
-                size: "2.4 MB",
-                status: "done",
-                aiFound: [
-                  "ใบอนุญาตประกอบกิจการถัง",
-                  "หมดอายุ 21 ธ.ค. 70",
-                  "Pooil Oil · KKN-002",
-                ],
-              },
-              {
-                name: "ใบเสร็จต่ออายุ.jpg",
-                size: "812 KB",
-                status: "done",
-                aiFound: [
-                  "ใบเสร็จ",
-                  "ค่าธรรมเนียม ฿12,000",
-                  "21 ธ.ค. 69",
-                ],
-              },
-              {
-                name: "ตรวจสภาพ-รายงาน.pdf",
-                size: "4.1 MB",
-                status: "uploading",
-                progress: 64,
-              },
-            ].map((f, i) => (
-              <div
-                key={i}
-                style={{
-                  marginTop: 8,
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid var(--df-line)",
-                  background: "var(--df-surface)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 9,
-                      background: "var(--df-bg-warm)",
-                      color: "var(--df-ink-2)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FileText size={17} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 13,
-                        marginBottom: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {f.name}
-                    </div>
-                    {f.status === "uploading" ? (
-                      <>
-                        <div className="df-bar" style={{ marginBottom: 4 }}>
-                          <i style={{ width: `${f.progress}%` }} />
-                        </div>
-                        <div
-                          style={{ fontSize: 11, color: "var(--df-muted)" }}
-                        >
-                          {f.size} · กำลังอัปโหลด {f.progress}%
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 11, color: "var(--df-muted)" }}>
-                        {f.size} ·{" "}
-                        <span
-                          style={{
-                            color: "var(--df-success)",
-                            fontWeight: 600,
-                          }}
-                        >
-                          อัปโหลดสำเร็จ
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {f.status === "done" && (
-                    <DfPill tone="success" small>
-                      <Sparkles size={11} /> AI พร้อม
-                    </DfPill>
-                  )}
-                </div>
-                {f.aiFound && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 6,
-                      marginTop: 10,
-                      paddingLeft: 48,
-                    }}
-                  >
-                    {f.aiFound.map((t, j) => (
-                      <DfPill key={j} tone="brand" small>
-                        <Sparkles size={10} /> {t}
-                      </DfPill>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-            <p
-              style={{
-                fontSize: 11,
-                color: "var(--df-muted)",
-                marginTop: 12,
-                marginBottom: 0,
-                textAlign: "center",
-                fontStyle: "italic",
-              }}
-            >
-              ตัวอย่างคิวอัปโหลด — เริ่มอัปโหลดจริงจะเห็นข้อมูลของคุณตรงนี้
-            </p>
-          </DfCard>
-
-          <DfCard padding={20} warm style={{ marginTop: 14 }}>
+          <DfCard padding={20} warm>
             <DfEyebrow>วิธีใช้</DfEyebrow>
             <ol
               style={{
@@ -349,6 +206,9 @@ export default async function DocumentUploadPage() {
               branches={branches}
               users={users}
               businessTypes={businessTypes}
+              documentTypes={documentTypes}
+              orgId={orgId}
+              defaultBusinessType={businessType}
             />
           </DfCard>
         </div>
