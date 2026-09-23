@@ -36,7 +36,7 @@ function notFound() {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ docId: string }> },
 ) {
   const session = await getSession();
@@ -72,13 +72,26 @@ export async function GET(
   const mimeType = file.mimeType || doc.mimeType || "application/octet-stream";
   const safeName = doc.fileName.replace(/["\r\n]/g, "").slice(0, 120) || "document";
 
+  // รูปภาพ → แสดงในหน้าได้เลย (ปลอดภัยกับ CSP sandbox ด้านบน)
+  // PDF/อื่น ๆ → บังคับ "ดาวน์โหลด"
+  //
+  // ทำไม: PRIVATE_HEADERS ใส่ `Content-Security-Policy: default-src 'none';
+  // sandbox` ไว้กันไฟล์ที่คนนอกอัปโหลดมารันสคริปต์ในโดเมนเรา แต่ sandbox
+  // บล็อกตัวอ่าน PDF ในตัวของเบราว์เซอร์ไปด้วย → กดแล้วได้หน้าขาวเปล่า
+  // (CEO เจอ 2026-09-23). ปล่อย sandbox ทิ้งเพื่อให้ PDF แสดงในหน้าไม่คุ้ม
+  // เพราะไฟล์มาจากฟอร์มสาธารณะที่ใครก็อัปได้ — ให้ดาวน์โหลดไปเปิดในแอปอ่าน
+  // PDF ของเครื่องแทน ปลอดภัยกว่าและตรงกับที่ CEO ขอ ("มีกดดาวน์โหลด")
+  const isImage = mimeType.startsWith("image/");
+  const forceDownload = req.nextUrl.searchParams.get("download") === "1";
+  const disposition = isImage && !forceDownload ? "inline" : "attachment";
+
   return new NextResponse(new Uint8Array(file.bytes), {
     status: 200,
     headers: {
       ...PRIVATE_HEADERS,
       "Content-Type": mimeType,
       "Content-Length": String(file.bytes.byteLength),
-      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(safeName)}`,
+      "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(safeName)}`,
     },
   });
 }

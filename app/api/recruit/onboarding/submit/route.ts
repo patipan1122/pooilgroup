@@ -28,7 +28,11 @@ import { audit } from "@/lib/audit/log";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { POOILGROUP_ORG_ID } from "@/lib/rentspace/format";
 import { normalizePhone } from "@/lib/repair/slug";
-import { hashOnboardingContract } from "@/lib/recruit/onboarding-contract";
+import {
+  hashOnboardingContract,
+  formatContractDateTh,
+  formatContractDateTimeTh,
+} from "@/lib/recruit/onboarding-contract";
 import {
   ONBOARDING_ALLOWED_DOC_MIMES,
   ONBOARDING_DOC_TYPES,
@@ -213,23 +217,8 @@ function isRealDate(s: string): boolean {
 // data changes between releases, a hand-built table does not. (thaiDateLong
 // also renders the abbreviated "2 พ.ค. 69" form, not the full form a contract
 // needs.) Output matches the example in OnboardingContractVars: "1 ตุลาคม 2569".
-const TH_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-] as const;
 
-function fmtDateTh(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${TH_MONTHS[m - 1]} ${y + 543}`;
-}
 
-function fmtDateTimeTh(at: Date): string {
-  const bkk = new Date(at.getTime() + 7 * 60 * 60 * 1000); // server runs UTC
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${bkk.getUTCDate()} ${TH_MONTHS[bkk.getUTCMonth()]} ${
-    bkk.getUTCFullYear() + 543
-  } เวลา ${p(bkk.getUTCHours())}:${p(bkk.getUTCMinutes())} น.`;
-}
 
 function oneLineAddress(a: z.infer<typeof AddressPartSchema>): string {
   return `${a.line} ต./แขวง ${a.subDistrict} อ./เขต ${a.district} จ.${a.province} ${a.postalCode}`;
@@ -455,8 +444,8 @@ export async function POST(req: NextRequest) {
     registeredAddress: oneLineAddress(input.address.registered),
     position: input.positionApplied.trim(),
     branch: branch?.name ?? branchText,
-    startDate: fmtDateTh(input.desiredStartDate),
-    signedAtText: fmtDateTimeTh(signedAt), // ignored by the hash; kept truthful
+    startDate: formatContractDateTh(input.desiredStartDate),
+    signedAtText: formatContractDateTimeTh(signedAt), // ignored by the hash; kept truthful
   });
 
   // ── 4. Spend the daily quota, then write ───────────────────────────

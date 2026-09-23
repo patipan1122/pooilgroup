@@ -29,6 +29,8 @@ import {
   hashOnboardingContract,
   renderOnboardingContract,
   ONBOARDING_CONTRACT_TITLE,
+  formatContractDateTh,
+  formatContractDateTimeTh,
   type OnboardingContractVars,
 } from "@/lib/recruit/onboarding-contract";
 import {
@@ -36,6 +38,8 @@ import {
   ONBOARDING_STATUS_LABELS_TH,
 } from "../_status";
 import { ReviewPanel } from "../_components/review-panel";
+import { PrintApplicationButton } from "../_components/print-application";
+import type { ApplicationDocData } from "@/components/recruit/application-document";
 import {
   ShieldAlert,
   CopyCheck,
@@ -75,17 +79,6 @@ function oneLineAddress(v: unknown): string {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
-/** `@db.Date` → "dd/mm/yyyy" (ใช้ส่วน UTC เพราะคอลัมน์ date เก็บเที่ยงคืน UTC) */
-function fmtDateTh(d: Date): string {
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
-}
-/** ตรงกับ fmtDateTimeTh() ในฝั่ง submit — เวลาไทย (UTC+7) */
-function fmtDateTimeTh(at: Date): string {
-  const bkk = new Date(at.getTime() + 7 * 60 * 60 * 1000);
-  return `${pad(bkk.getUTCDate())}/${pad(bkk.getUTCMonth() + 1)}/${bkk.getUTCFullYear()} ${pad(
-    bkk.getUTCHours(),
-  )}:${pad(bkk.getUTCMinutes())} น.`;
-}
 /** ชั่วโมงไทยที่กรอก — ใช้ทำ flag "กรอกตอนดึก" */
 function bkkHour(at: Date): number {
   return new Date(at.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
@@ -157,8 +150,8 @@ export default async function OnboardingSubmissionPage({
     registeredAddress: oneLineAddress(address.registered),
     position: sub.positionApplied,
     branch: sub.branch?.name ?? asText(answers.branchText),
-    startDate: fmtDateTh(sub.desiredStartDate),
-    signedAtText: sub.consent ? fmtDateTimeTh(sub.consent.signedAt) : "",
+    startDate: formatContractDateTh(sub.desiredStartDate),
+    signedAtText: sub.consent ? formatContractDateTimeTh(sub.consent.signedAt) : "",
   };
   const contractSections = getOnboardingContractSections(contractVars);
   // hash ฉบับ "ไม่รวมเวลาที่กดยินยอม" คือฉบับ canonical ของ lib สัญญา, ส่วน
@@ -177,6 +170,63 @@ export default async function OnboardingSubmissionPage({
   const attachments = sub.documents.filter(
     (d) => d.id !== signatureDoc?.id && d.id !== selfieDoc?.id,
   );
+
+  // ใบสมัครฉบับกระดาษสำหรับ HR — ใช้คอมโพเนนต์เดียวกับที่ผู้สมัครเห็น
+  const applicationDocData: ApplicationDocData = {
+    companyName: contractVars.companyName,
+    branch: contractVars.branch,
+    position: sub.positionApplied,
+    startDateText: formatContractDateTh(sub.desiredStartDate),
+    dailyWageText: formatBaht(sub.desiredSalary.toString()),
+    submittedAtText: formatContractDateTimeTh(sub.createdAt),
+    titlePrefix: sub.titlePrefix,
+    fullNameTh: sub.fullNameTh,
+    fullNameEn: sub.fullNameEn ?? "",
+    nickname: sub.nickname,
+    nationalId: sub.nationalId,
+    birthDateText: formatContractDateTh(sub.birthDate),
+    nationality: sub.nationality,
+    militaryStatus: sub.militaryStatus ?? "",
+    phone: sub.phone,
+    lineId: sub.lineId ?? "",
+    email: sub.email ?? "",
+    maritalStatus: sub.maritalStatus ?? "",
+    registeredAddress: oneLineAddress(address.registered),
+    currentAddress: oneLineAddress(address.current) || "เหมือนที่อยู่ตามทะเบียนบ้าน",
+    emergencyContacts: contacts.map((c) => {
+      const r = asRecord(c);
+      return {
+        name: asText(r.fullName) || asText(r.name),
+        relation: asText(r.relation),
+        phone: asText(r.phone),
+      };
+    }),
+    educationLevel: asText(education.level),
+    educationInstitute: asText(education.institute),
+    educationYear: asText(education.graduationYear),
+    hasWorkExperience: workHistory.length > 0,
+    workHistory: workHistory.map((w) => {
+      const r = asRecord(w);
+      return {
+        company: asText(r.company) || asText(r.employer),
+        position: asText(r.position),
+        period: asText(r.period),
+        salary: asText(r.salary) || asText(r.lastSalary),
+        reasonLeaving: asText(r.reasonLeaving) || asText(r.reasonForLeaving),
+      };
+    }),
+    referenceName: asText(answers.referenceName),
+    referencePhone: asText(answers.referencePhone),
+    bankName: sub.bankName,
+    bankAccountNo: sub.bankAccountNo,
+    bankAccountName: sub.bankAccountName,
+    noBankAccountYet,
+    attachedDocLabels: attachments.map(
+      (d) => ONBOARDING_DOC_TYPE_LABELS_TH[d.docType] ?? d.docType,
+    ),
+    signatureDataUrl: signatureDoc ? docHref(signatureDoc.id) : null,
+    selfieDataUrl: selfieDoc ? docHref(selfieDoc.id) : null,
+  };
 
   const submittedHour = bkkHour(sub.createdAt);
   const oddHourSubmission = submittedHour >= 0 && submittedHour < 5;
@@ -216,7 +266,7 @@ export default async function OnboardingSubmissionPage({
             {sub.branch?.name ?? (asText(answers.branchText) || "ไม่ระบุสาขา")} · {sub.company.name}
           </p>
           <p className="text-xs text-zinc-500 mt-1 tabular-num">
-            ส่งเข้ามา {fmtDateTimeTh(sub.createdAt)}
+            ส่งเข้ามา {formatContractDateTimeTh(sub.createdAt)}
             {oddHourSubmission && (
               <span className="ml-2 text-orange-700 font-bold">
                 ⚠️ กรอกช่วงดึก ({pad(submittedHour)}:00 น.) — ถ้าไม่ตรงกับที่นัดไว้ ให้เช็คก่อน
@@ -254,7 +304,7 @@ export default async function OnboardingSubmissionPage({
                       {d.fullNameTh}
                     </Link>{" "}
                     · {ONBOARDING_STATUS_LABELS_TH[d.status]} ·{" "}
-                    <span className="tabular-num">{fmtDateTimeTh(d.createdAt)}</span>
+                    <span className="tabular-num">{formatContractDateTimeTh(d.createdAt)}</span>
                   </li>
                 ))}
               </ul>
@@ -312,9 +362,12 @@ export default async function OnboardingSubmissionPage({
           {decided && (
             <p className="text-[11px] text-zinc-500 mb-2 tabular-num">
               พิจารณาโดย {sub.reviewer?.name ?? "ไม่ทราบ"}
-              {sub.reviewedAt ? ` · ${fmtDateTimeTh(sub.reviewedAt)}` : ""}
+              {sub.reviewedAt ? ` · ${formatContractDateTimeTh(sub.reviewedAt)}` : ""}
             </p>
           )}
+          <div className="mb-3">
+            <PrintApplicationButton data={applicationDocData} />
+          </div>
           <ReviewPanel
             submissionId={sub.id}
             candidateName={`${sub.fullNameTh} (${sub.nickname})`}
@@ -348,7 +401,7 @@ export default async function OnboardingSubmissionPage({
                   sub.branch?.name ??
                     `${asText(answers.branchText) || "—"} (พิมพ์เอง · ยังจับคู่สาขาในระบบไม่ได้)`,
                 ],
-                ["วันที่พร้อมเริ่มงาน", fmtDateTh(sub.desiredStartDate)],
+                ["วันที่พร้อมเริ่มงาน", formatContractDateTh(sub.desiredStartDate)],
                 ["ค่าแรงต่อวันที่ตกลงไว้", `${formatBaht(sub.desiredSalary.toString())} / วัน`],
               ]}
             />
@@ -361,7 +414,7 @@ export default async function OnboardingSubmissionPage({
                 ["ชื่อ-นามสกุล (อังกฤษ)", sub.fullNameEn ?? "—"],
                 ["ชื่อเล่น", sub.nickname],
                 ["เลขบัตรประชาชน", sub.nationalId],
-                ["วันเกิด", fmtDateTh(sub.birthDate)],
+                ["วันเกิด", formatContractDateTh(sub.birthDate)],
                 ["สัญชาติ", sub.nationality],
                 ["สถานภาพทางทหาร", sub.militaryStatus ?? "—"],
                 ["สถานภาพสมรส", sub.maritalStatus ?? "—"],
@@ -489,7 +542,7 @@ export default async function OnboardingSubmissionPage({
         <Block
           no={8}
           title={`เอกสารแนบ (${attachments.length} ใบ)`}
-          hint="ทุกไฟล์เปิดผ่านระบบของเราเท่านั้น · ไม่มีลิงก์ Google Drive ที่คนนอกกดดูได้"
+          hint="ทุกไฟล์เปิดผ่านระบบของเราเท่านั้น · ไม่มีลิงก์ Google Drive ที่คนนอกกดดูได้ · รูปกดดูได้ในหน้า · PDF จะดาวน์โหลดไปเปิดในเครื่อง"
         >
           {attachments.length === 0 ? (
             <Empty text="ไม่มีเอกสารแนบ" />
@@ -550,7 +603,7 @@ export default async function OnboardingSubmissionPage({
               </div>
 
               <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs mb-3">
-                <Mini label="เซ็นเมื่อ" value={fmtDateTimeTh(sub.consent.signedAt)} />
+                <Mini label="เซ็นเมื่อ" value={formatContractDateTimeTh(sub.consent.signedAt)} />
                 <Mini label="IP ที่เซ็น" value={sub.consent.signedIp ?? "ไม่ทราบ"} />
                 <Mini
                   label="อ่านจนจบ?"
@@ -713,7 +766,7 @@ function DocFrame({
             }`}
           >
             <FileText className="size-6" />
-            <span className="text-[10px] font-bold">เปิดไฟล์ PDF</span>
+            <span className="text-[10px] font-bold">ดาวน์โหลด PDF</span>
           </span>
         )}
       </a>

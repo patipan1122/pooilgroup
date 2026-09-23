@@ -25,6 +25,48 @@
 import { createHash } from "node:crypto";
 
 /** ระยะทดลองงาน — 119 วัน (ต่ำกว่า 120 วันตาม พ.ร.บ.คุ้มครองแรงงาน ม.118) */
+/**
+ * รูปแบบวันที่ที่ "เข้าไปอยู่ในตัวสัญญา" — ต้องมีที่เดียวในโปรเจกต์
+ *
+ * ⚠️ บทเรียน 2026-09-23: ฟังก์ชันนี้เคยถูกก๊อปไปเขียนซ้ำ 2 ที่ (ฝั่ง submit กับ
+ * หน้าตรวจของ HR) แล้วให้ผลคนละแบบ — submit ได้ "23 กันยายน 2569" ส่วน HR ได้
+ * "23/09/2026" → ข้อความสัญญาที่ render ใหม่ไม่ตรงกับตอนเซ็น → hash ไม่ตรง →
+ * หน้า HR ขึ้นเตือน "สัญญาไม่ตรงกับตอนที่เซ็น" กับใบที่ไม่มีใครแก้อะไรเลย
+ * ซึ่งทำลายความน่าเชื่อถือของกลไกหลักฐานทั้งอัน. ห้ามก๊อปไปเขียนใหม่อีก — import
+ * จากที่นี่เท่านั้น.
+ *
+ * ไม่ใช้ Intl/toLocaleDateString โดยตั้งใจ: hash ต้องคำนวณซ้ำได้เหมือนเดิมอีก
+ * หลายปีข้างหน้า แม้ Node/ICU จะเปลี่ยนเวอร์ชัน
+ */
+const CONTRACT_TH_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+] as const;
+
+/** รับได้ทั้ง "YYYY-MM-DD" (ตอน submit) และ Date จากคอลัมน์ @db.Date (ตอน HR ตรวจ) */
+export function formatContractDateTh(value: string | Date): string {
+  let y: number, m: number, d: number;
+  if (typeof value === "string") {
+    const [ys, ms, ds] = value.split("-").map(Number);
+    y = ys; m = ms; d = ds;
+  } else {
+    // คอลัมน์ @db.Date เก็บเที่ยงคืน UTC — อ่านส่วน UTC เท่านั้น ไม่งั้นวันเลื่อน
+    y = value.getUTCFullYear();
+    m = value.getUTCMonth() + 1;
+    d = value.getUTCDate();
+  }
+  return `${d} ${CONTRACT_TH_MONTHS[m - 1]} ${y + 543}`;
+}
+
+/** เวลาที่กดยินยอม (ไทย UTC+7) — ไม่ได้เข้า hash แต่ต้องแสดงตรงกันทุกที่ */
+export function formatContractDateTimeTh(at: Date): string {
+  const bkk = new Date(at.getTime() + 7 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${bkk.getUTCDate()} ${CONTRACT_TH_MONTHS[bkk.getUTCMonth()]} ${
+    bkk.getUTCFullYear() + 543
+  } เวลา ${p(bkk.getUTCHours())}:${p(bkk.getUTCMinutes())} น.`;
+}
+
 export const PROBATION_DAYS = 119;
 
 /**
