@@ -36,6 +36,14 @@ export async function GET() {
     return NextResponse.json({ error: "ยังไม่มีสัญญาที่เซ็นแล้ว" }, { status: 404 });
   }
 
+  // Contracts signed before the selfie-snapshot column existed (2026-09-23)
+  // have no photo on the row at all — fall back to the live profile photo
+  // rather than showing a blank box for every pre-existing signed contract.
+  const user = await prisma.chairopsUser.findUnique({
+    where: { id: maidId },
+    select: { selfieImageUrl: true },
+  });
+
   const data: ContractDocData = {
     maidName: contract.maidName,
     idCardNumber: contract.idCardNumber,
@@ -53,7 +61,7 @@ export async function GET() {
     startDate: ymd(contract.startDate),
     endDate: ymd(contract.endDate),
     idCardImageUrl: contract.idCardImageUrl,
-    selfieImageUrl: contract.selfieImageUrl,
+    selfieImageUrl: contract.selfieImageUrl ?? user?.selfieImageUrl ?? null,
   };
 
   const buffer = await renderToBuffer(

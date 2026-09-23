@@ -31,7 +31,7 @@ export default async function OfficeMaidContractPage({
 
   const maid = await prisma.chairopsUser.findFirst({
     where: { id: userId, orgId, role: ChairopsUserRole.MAID },
-    select: { displayName: true },
+    select: { displayName: true, selfieImageUrl: true },
   });
   if (!maid) notFound();
 
@@ -77,7 +77,10 @@ export default async function OfficeMaidContractPage({
     startDate: ymd(contract.startDate),
     endDate: ymd(contract.endDate),
     idCardImageUrl: contract.idCardImageUrl,
-    selfieImageUrl: contract.selfieImageUrl,
+    // Contracts signed before the selfie-snapshot column existed (2026-09-23)
+    // have no photo on the row at all — fall back to the live profile photo
+    // rather than showing a blank box for every pre-existing signed contract.
+    selfieImageUrl: contract.selfieImageUrl ?? maid.selfieImageUrl,
   };
 
   const signed =

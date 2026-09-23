@@ -48,10 +48,17 @@ const styles = StyleSheet.create({
     lineHeight: 1.5,
     color: "#18181b",
   },
-  headerRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 4 },
-  headerSpacer: { width: 70 },
-  title: { flex: 1, textAlign: "center", fontSize: 14, fontWeight: 700 },
+  // Full-width centered title (matches the paper original exactly) — the
+  // photo box floats on top via absolute positioning instead of sharing the
+  // row with a matching spacer column, which read as left-heavy/unbalanced
+  // since only the right side had a visible bordered box (CEO report
+  // 2026-09-23: "หนักฝั่งซ้ายไป ดูไม่สมส่วน").
+  headerRow: { position: "relative", marginBottom: 4, minHeight: 90 },
+  title: { textAlign: "center", fontSize: 14, fontWeight: 700 },
   photoBox: {
+    position: "absolute",
+    top: 0,
+    right: 0,
     width: 70,
     height: 90,
     borderWidth: 1,
@@ -64,7 +71,17 @@ const styles = StyleSheet.create({
   photoImg: { width: 70, height: 90, objectFit: "cover" },
   dateLine: { marginTop: 6, textAlign: "right" },
   p: { marginTop: 3 },
-  underline: { textDecoration: "underline" },
+  // Bold + dotted underline for FILLED values — a blank field stays as plain
+  // dots (from fill()'s ellipsis fallback); once filled it should read as
+  // "handwritten onto the form", not just italic/plain text (CEO report
+  // 2026-09-23: "ข้อมูลที่กรอกใช้ตัวหนา ... ใส่ไข่ปลาใส่จุด").
+  underline: {
+    fontWeight: 700,
+    borderBottomWidth: 1,
+    borderBottomColor: "#3f3f46",
+    borderBottomStyle: "dotted",
+    paddingBottom: 0.5,
+  },
   sectionTitle: { marginTop: 12, fontSize: 11, fontWeight: 700 },
   sectionBody: { marginTop: 3 },
   listItem: { flexDirection: "row", marginTop: 2 },
@@ -169,7 +186,6 @@ export function ContractPdfDocument({
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
-          <View style={styles.headerSpacer} />
           <Text style={styles.title}>สัญญาจ้างเหมาทำความสะอาดและเก็บเงินนำส่งธนาคาร</Text>
           <View style={styles.photoBox}>
             {data.selfieImageUrl ? (
