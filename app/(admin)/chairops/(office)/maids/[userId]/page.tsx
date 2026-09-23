@@ -269,12 +269,14 @@ export default async function MaidDetailPage({
           <div className="flex flex-wrap items-start gap-4">
             <figure className="shrink-0">
               {maid.selfieImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={maid.selfieImageUrl}
-                  alt={`รูปเซลฟี่ของ ${maid.displayName}`}
-                  className="size-24 rounded-lg border border-zinc-200 object-cover"
-                />
+                <a href={maid.selfieImageUrl} target="_blank" rel="noopener noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={maid.selfieImageUrl}
+                    alt={`รูปเซลฟี่ของ ${maid.displayName}`}
+                    className="size-24 rounded-lg border border-zinc-200 object-cover transition hover:opacity-80"
+                  />
+                </a>
               ) : (
                 <div className="grid size-24 place-items-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
                   ยังไม่มี
@@ -287,14 +289,33 @@ export default async function MaidDetailPage({
               </figcaption>
             </figure>
 
+            {/* บัตรประชาชน — เดิมโชว์แค่คำว่า "แนบแล้ว" กดดูรูปจริงไม่ได้เลย
+                (CEO report 2026-09-23) เปลี่ยนเป็นรูปคลิกดูได้เหมือนเซลฟี่ */}
+            <figure className="shrink-0">
+              {maid.idCardImageUrl ? (
+                <a href={maid.idCardImageUrl} target="_blank" rel="noopener noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={maid.idCardImageUrl}
+                    alt={`สำเนาบัตรประชาชนของ ${maid.displayName}`}
+                    className="size-24 rounded-lg border border-zinc-200 object-cover transition hover:opacity-80"
+                  />
+                </a>
+              ) : (
+                <div className="grid size-24 place-items-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-[11px] text-zinc-400">
+                  ยังไม่มี
+                  <br />
+                  รูปบัตร ปชช.
+                </div>
+              )}
+              <figcaption className="mt-1 text-center text-[10px] text-zinc-400">บัตรประชาชน</figcaption>
+            </figure>
+
             <dl className="grid min-w-[14rem] grow grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-2">
               <InfoRow label="ฉุกเฉิน 1" value={contactLine(maid.emergencyContact, maid.emergencyPhone)} />
               <InfoRow label="ฉุกเฉิน 2" value={contactLine(maid.emergencyContact2, maid.emergencyPhone2)} />
               <InfoRow label="งานประจำ" value={maid.currentMainEmployer} />
-              <InfoRow
-                label="บัตรประชาชน"
-                value={maid.idCardImageUrl ? "แนบแล้ว" : maid.idCardNumber ? "มีเลขบัตร ยังไม่แนบรูป" : null}
-              />
+              <InfoRow label="เลขบัตรประชาชน" value={maid.idCardNumber} />
             </dl>
           </div>
         </section>
