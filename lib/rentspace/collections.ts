@@ -40,6 +40,7 @@ export async function overdueUnits(
       orgId,
       projectId,
       status: { in: ["issued", "partial", "overdue"] },
+      deletedAt: null,
     },
     orderBy: [{ unitId: "asc" }, { period: "asc" }],
     include: {

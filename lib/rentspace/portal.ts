@@ -52,13 +52,13 @@ export async function getTenantByPortalToken(token: string) {
 export async function loadPortalData(tenantId: string, orgId: string) {
   const [bills, contracts, documents] = await Promise.all([
     prisma.rentalBill.findMany({
-      where: { tenantId, orgId, status: { notIn: ["void", "draft"] } },
+      where: { tenantId, orgId, status: { notIn: ["void", "draft"] }, deletedAt: null },
       orderBy: [{ period: "desc" }, { billNo: "desc" }],
       include: {
         unit: true,
         project: true,
         items: { orderBy: { sort: "asc" } },
-        payments: { orderBy: { createdAt: "desc" } },
+        payments: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
       },
       take: 60,
     }),
@@ -106,7 +106,7 @@ type TenantRow = {
 export async function buildPortalView(tenant: TenantRow): Promise<PortalView> {
   const { bills, documents, announcements } = await loadPortalData(tenant.id, tenant.orgId);
   const payments = await prisma.rentalPayment.findMany({
-    where: { orgId: tenant.orgId, status: "confirmed", bill: { tenantId: tenant.id } },
+    where: { orgId: tenant.orgId, status: "confirmed", bill: { tenantId: tenant.id }, deletedAt: null },
     orderBy: { paidOn: "desc" },
     take: 50,
     include: { bill: { select: { billNo: true } } },

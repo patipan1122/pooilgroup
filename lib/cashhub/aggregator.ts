@@ -66,6 +66,10 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     "yyyy-MM-dd",
   );
   const last30 = formatInTimeZone(subDays(now, 29), TZ, "yyyy-MM-dd");
+  // health scores compute nightly per branch — 14 days is ample buffer to
+  // guarantee at least one row per active branch while bounding the scan
+  // (unbounded before: table grows 1 row/branch/day forever, see D-023 egress incident)
+  const healthWindowStart = formatInTimeZone(subDays(now, 14), TZ, "yyyy-MM-dd");
   const daysInMonth = getDaysInMonth(now);
   const daysElapsed = getDate(now);
   const monthYear = parseInt(formatInTimeZone(now, TZ, "yyyy"), 10);
@@ -102,7 +106,9 @@ export async function loadDashboard(orgId: string, companyId?: string) {
     safeFrom(admin, "branch_health_scores")
       .select("branch_id, score, grade, computed_for, breakdown")
       .eq("org_id", orgId)
-      .order("computed_for", { ascending: false }),
+      .gte("computed_for", healthWindowStart)
+      .order("computed_for", { ascending: false })
+      .limit(2000),
     safeFrom(admin, "branch_streaks")
       .select("branch_id, current_streak, longest_streak, last_report_date")
       .eq("org_id", orgId),

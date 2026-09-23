@@ -41,7 +41,7 @@ export async function getProjectReconcileSummary(
   });
 
   const readyAgg = await prisma.rentalBill.aggregate({
-    where: { orgId, projectId, status: "paid" },
+    where: { orgId, projectId, status: "paid", deletedAt: null },
     _count: { _all: true },
     _sum: { totalAmount: true },
   });
@@ -155,7 +155,7 @@ export async function pushProjectBillsToLedger(
   }
 
   const bills = await prisma.rentalBill.findMany({
-    where: { orgId, projectId, status: "paid" },
+    where: { orgId, projectId, status: "paid", deletedAt: null },
     select: {
       id: true,
       period: true,
@@ -163,7 +163,7 @@ export async function pushProjectBillsToLedger(
       unit: { select: { code: true } },
       tenant: { select: { bizName: true, prefix: true, firstName: true, lastName: true, nickname: true } },
       payments: {
-        where: { status: "confirmed" },
+        where: { status: "confirmed", deletedAt: null },
         orderBy: { paidOn: "desc" },
         select: {
           id: true,
@@ -288,11 +288,11 @@ export async function pushProjectBillsToLedger(
 export async function getSlipMismatchBillIds(orgId: string, billIds: string[]): Promise<Set<string>> {
   if (billIds.length === 0) return new Set();
   const bills = await prisma.rentalBill.findMany({
-    where: { id: { in: billIds }, orgId },
+    where: { id: { in: billIds }, orgId, deletedAt: null },
     select: {
       id: true,
       payments: {
-        where: { status: "confirmed", slipUrl: { not: null }, ocrReadAt: { not: null } },
+        where: { status: "confirmed", slipUrl: { not: null }, ocrReadAt: { not: null }, deletedAt: null },
         select: { id: true, paidOn: true, slipUrl: true, amountThb: true, ocrAmount: true },
       },
     },

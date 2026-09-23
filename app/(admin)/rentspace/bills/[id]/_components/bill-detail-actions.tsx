@@ -14,6 +14,8 @@ import {
   actSendBill,
   actEditBillItems,
   actDeleteBill,
+  actRequestDeleteBill,
+  actDecideDeleteBill,
   actVoidPayment,
   actIssueTaxInvoice,
 } from "../../../_actions";
@@ -106,7 +108,6 @@ function Modal({
 
 // ───────── record payment ─────────
 export function RecordPaymentButton({ billId, remaining }: { billId: string; remaining: number }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -144,7 +145,9 @@ export function RecordPaymentButton({ billId, remaining }: { billId: string; rem
         });
         toast.success("บันทึกรับชำระแล้ว");
         setOpen(false);
-        router.refresh();
+        // upspeed 2026-09-22: actRecordPayment เอง revalidatePath(`/rentspace/bills/${billId}`)
+        // อยู่แล้ว — หน้านี้ render อยู่ที่ route นั้นพอดี (ยืนยันแล้วว่าไม่มี render site อื่น)
+        // router.refresh() ซ้ำจะยิง fetch รอบสองเปล่าๆ
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
       }
@@ -770,6 +773,11 @@ export function EditBillButton({
 }
 
 // ───────── โหมดทดลอง: ลบบิลถาวร ─────────
+/**
+ * บิลยังไม่จ่าย (hasPayments=false) → ลบตรงได้เลย (actDeleteBill, soft-delete).
+ * บิลจ่ายแล้ว (hasPayments=true) → ลบตรงไม่ได้อีกต่อไป (server บล็อก P0 เดิม) — ต้อง
+ * ส่งคำขอผ่าน actRequestDeleteBill รอ super_admin อนุมัติแทน (CEO 2026-09-20).
+ */
 export function DeleteBillButton({
   billId,
   billNo,
@@ -782,10 +790,27 @@ export function DeleteBillButton({
   const router = useRouter();
   const [pending, start] = useTransition();
   function go() {
-    const warn = hasPayments
-      ? `ลบบิล ${billNo} ถาวร?\n\n⚠️ บิลนี้มีประวัติการรับชำระเงิน — จะถูกลบไปด้วยทั้งหมด กู้คืนไม่ได้`
-      : `ลบบิล ${billNo} ถาวร? กู้คืนไม่ได้`;
-    if (!confirm(warn)) return;
+    if (hasPayments) {
+      const reason = prompt(
+        `บิล ${billNo} มีการชำระเงินแล้ว ลบตรงไม่ได้\n\nระบุเหตุผลที่ขอลบ (ต้องให้ซูเปอร์แอดมินอนุมัติก่อนบิลจะถูกลบจริง):`,
+      );
+      if (reason == null) return;
+      if (reason.trim().length < 3) {
+        toast.error("กรุณาระบุเหตุผลการขอลบบิล");
+        return;
+      }
+      start(async () => {
+        try {
+          await actRequestDeleteBill(billId, reason.trim());
+          toast.success("ส่งคำขอลบบิลแล้ว — รอซูเปอร์แอดมินอนุมัติ");
+          router.refresh();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "ส่งคำขอไม่สำเร็จ");
+        }
+      });
+      return;
+    }
+    if (!confirm(`ลบบิล ${billNo}? กู้คืนได้ในหน้าประวัติการลบ (ถ้ามี) — ให้ผู้ดูแลระบบติดต่อทีม support`)) return;
     start(async () => {
       try {
         await actDeleteBill(billId);
@@ -798,7 +823,42 @@ export function DeleteBillButton({
   }
   return (
     <button className="rs-btn rs-btn-ghost w-full min-h-[44px] sm:min-h-0" style={{ color: "var(--rs-danger)" }} onClick={go} disabled={pending}>
-      <Trash2 className="h-4 w-4" /> ลบบิลถาวร
+      <Trash2 className="h-4 w-4" /> {hasPayments ? "ขอลบบิล (ต้องอนุมัติ)" : "ลบบิลถาวร"}
     </button>
+  );
+}
+
+/** อนุมัติ/ปฏิเสธคำขอลบบิลที่จ่ายแล้ว — ซูเปอร์แอดมินเท่านั้น (แสดงเฉพาะเมื่อ deleteStatus=pending) */
+export function DeleteDecisionButtons({ billId }: { billId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  function decide(decision: "approve" | "reject") {
+    if (decision === "approve" && !confirm("ยืนยันอนุมัติลบบิลนี้? กู้คืนไม่ได้ผ่านหน้านี้")) return;
+    const note = decision === "reject" ? (prompt("เหตุผลที่ไม่อนุมัติ (ถ้ามี)") ?? "") : "";
+    start(async () => {
+      try {
+        await actDecideDeleteBill(billId, decision, note);
+        toast.success(decision === "approve" ? "อนุมัติลบบิลแล้ว" : "ปฏิเสธคำขอลบแล้ว");
+        if (decision === "approve") router.push("/rentspace/bills");
+        else router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
+      }
+    });
+  }
+  return (
+    <div className="flex gap-2">
+      <button className="rs-btn flex-1 min-h-[44px] sm:min-h-0" onClick={() => decide("approve")} disabled={pending}>
+        <Check className="h-4 w-4" /> อนุมัติลบ
+      </button>
+      <button
+        className="rs-btn rs-btn-ghost flex-1 min-h-[44px] sm:min-h-0"
+        style={{ color: "var(--rs-danger)" }}
+        onClick={() => decide("reject")}
+        disabled={pending}
+      >
+        <X className="h-4 w-4" /> ปฏิเสธ
+      </button>
+    </div>
   );
 }

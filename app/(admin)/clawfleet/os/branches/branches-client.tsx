@@ -764,7 +764,8 @@ function WarehouseSourceCard({
 /* ─────────────────────────────────────────────────────────────────────────
  * ผูกบัญชีธนาคาร + ส่งเข้า reconcile (admin only · server = assertCfAdmin)
  *  CEO 2026-08-23 — 1 บัญชีตายตัวต่อสาขา. เลือกสาขา → ตั้งบริษัท/บัญชีธนาคาร →
- *  กดส่งยอดฝาก (CfCashDeposit ที่ผ่านตรวจแล้ว) เข้า ledger_revenue_entry (LedgerLine
+ *  กดส่งยอดฝาก (CfCashDeposit ทุกใบที่ยังไม่ถูกตีกลับ — รวมใบติดธงที่ยังไม่ได้ตรวจ)
+ *  เข้า ledger_revenue_entry (LedgerLine
  *  bank-recon). กดส่งซ้ำได้ตลอด — ระบบข้ามรายการที่ส่งแล้วให้อัตโนมัติ (idempotent ·
  *  ดู lib/clawfleet/reconcile/ledger-push.ts).
  * ───────────────────────────────────────────────────────────────────────── */
@@ -836,9 +837,19 @@ function ReconcileAccountCard({
     startTransition(async () => {
       const res = await sendClawfleetDepositsToReconcile({ branchId });
       if (!res.ok) { setError(res.error); return; }
+      // ข้อความต้องตรงความจริง: กดซ้ำแล้วไม่มีใบใหม่ = บอกว่า "ส่งครบแล้ว" ไม่ใช่เด้ง
+      // "ส่งแล้ว N ใบ" เลขเดิมซ้ำ ๆ (ของเดิมทำแบบนั้น คนคุมเงินเลยนึกว่าไม่สำเร็จแล้วกดรัว)
+      const sentMsg =
+        res.data.inserted > 0
+          ? `ส่งเข้าบัญชี reconcile แล้ว ${res.data.inserted} ใบ`
+          : res.data.alreadySent > 0
+            ? `ส่งครบแล้ว — ${res.data.alreadySent} ใบอยู่ในบัญชี reconcile เรียบร้อย (ไม่มีใบใหม่)`
+            : "ไม่มีใบฝากที่ต้องส่ง";
       setOkMsg(
-        `ส่งเข้าบัญชี reconcile แล้ว ${res.data.inserted} ใบ` +
-        (res.data.pendingReviewSkipped > 0 ? ` · ข้าม ${res.data.pendingReviewSkipped} ใบ (รอตรวจสอบก่อน)` : "")
+        sentMsg +
+        // ใบติดธง "รวมส่งไปด้วย" แล้ว (ไม่ข้ามอีกต่อไป) — บอกให้ไปกดตรวจ ไม่ใช่บอกว่าตกค้าง
+        (res.data.flaggedIncluded > 0 ? ` · มี ${res.data.flaggedIncluded} ใบติดธง รอตรวจที่หน้าฝากเงิน` : "") +
+        (res.data.zeroSkipped > 0 ? ` · ข้าม ${res.data.zeroSkipped} ใบ (ยอด ฿0 ส่งไม่ได้)` : "")
       );
       pickBranch(branchId); // โหลดสรุปใหม่ (readyCount ควรลดลง/เท่าเดิมถ้ากดซ้ำ)
       router.refresh();
@@ -935,7 +946,7 @@ function ReconcileAccountCard({
         onClose={() => { if (!pending) setOpen(false); }}
         width={520}
         title="ผูกบัญชีธนาคาร + ส่งเข้า reconcile"
-        sub="1 บัญชีตายตัวต่อสาขา — ยอดฝากที่ผ่านตรวจแล้วจะพร้อมส่งเข้า LedgerLine bank-recon"
+        sub="1 บัญชีตายตัวต่อสาขา — ยอดฝากทุกใบพร้อมส่งเข้า LedgerLine bank-recon (ใบติดธงส่งด้วย แล้วค่อยตรวจ)"
         footer={
           <div style={{ display: "flex", gap: 10, padding: "14px 20px" }}>
             <button
@@ -993,11 +1004,18 @@ function ReconcileAccountCard({
                     <p style={{ fontSize: 12.5, color: "#5A6270", marginBottom: 10 }}>
                       พร้อมส่ง <b className="num">{num(status.readyCount)}</b> ใบ · ยอดรวม{" "}
                       <b className="num">{bahtN(status.readyAmountBaht)}</b>
+                      {/* ใบติดธง = รวมอยู่ใน "พร้อมส่ง" แล้ว (CEO 2026-09-22 เงินไม่ถูกกั้น) —
+                          ติดสีส้มไว้เฉย ๆ + ลิงก์ไปกดตรวจที่หน้าฝากเงิน */}
                       {status.pendingReviewCount > 0 && (
-                        <> · <span style={{ color: "#B45309" }}>{status.pendingReviewCount} ใบรอตรวจสอบ (ยังไม่ส่ง)</span></>
+                        <> · <a href="/clawfleet/os/deposits" style={{ color: "#B45309", fontWeight: 600 }}>
+                          {status.pendingReviewCount} ใบติดธง รอตรวจ →
+                        </a></>
                       )}
                       {status.rejectedCount > 0 && (
-                        <> · <span style={{ color: "#B42318" }}>{status.rejectedCount} ใบถูกปฏิเสธ (ไม่ส่ง)</span></>
+                        <> · <span style={{ color: "#B42318" }}>{status.rejectedCount} ใบตีกลับ (ไม่ส่ง)</span></>
+                      )}
+                      {status.alreadySentCount > 0 && (
+                        <> · <span style={{ color: "#15803D" }}>{status.alreadySentCount} ใบส่งแล้ว</span></>
                       )}
                     </p>
                     <button

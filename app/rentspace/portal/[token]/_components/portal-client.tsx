@@ -14,7 +14,7 @@ import {
   ExternalLink,
   History,
 } from "lucide-react";
-import { BILL_STATUS, periodLabel } from "@/lib/rentspace/format";
+import { billDisplayStatus, periodLabel } from "@/lib/rentspace/format";
 import { actPortalSubmitSlip, actPortalSaveEmail } from "../_actions";
 
 const PAY_METHOD_TH: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", qr: "QR", card: "บัตร" };
@@ -148,7 +148,7 @@ export function PortalClient({
                 <div key={p.id} className="rs-card p-3.5 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-[14px] font-medium">บิล {p.billNo}</div>
-                    <div className="text-[11.5px] rs-text-2">
+                    <div className="text-[11.5px]" style={{ color: "var(--rs-text-2)" }}>
                       {dateTH(p.paidOn)} · {PAY_METHOD_TH[p.method] ?? p.method}
                     </div>
                   </div>
@@ -171,7 +171,7 @@ export function PortalClient({
                     {a.pinned && <span className="rs-chip" style={{ background: "var(--rs-pending-soft)", color: "var(--rs-pending)" }}>ปักหมุด</span>}
                     <h3 className="font-semibold text-[15px]">{a.title}</h3>
                   </div>
-                  <div className="text-[11px] rs-text-2 mt-0.5">{dateTH(a.publishedAt)}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--rs-text-2)" }}>{dateTH(a.publishedAt)}</div>
                   <p className="text-[13.5px] rs-text mt-2 whitespace-pre-wrap leading-relaxed">{a.body}</p>
                   {a.attachmentUrls.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -197,9 +197,9 @@ export function PortalClient({
                   <FileText className="h-5 w-5 shrink-0" style={{ color: "var(--rs-brand)" }} />
                   <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-medium truncate">{d.label}</div>
-                    <div className="text-[11px] rs-text-2">{dateTH(d.createdAt)}</div>
+                    <div className="text-[11px]" style={{ color: "var(--rs-text-2)" }}>{dateTH(d.createdAt)}</div>
                   </div>
-                  <ExternalLink className="h-4 w-4 rs-text-2" />
+                  <ExternalLink className="h-4 w-4" style={{ color: "var(--rs-text-2)" }} />
                 </a>
               ))}
             </div>
@@ -227,12 +227,16 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rs-card p-8 text-center text-[13px] rs-text-2">{text}</div>;
+  return (
+    <div className="rs-card p-8 text-center text-[13px]" style={{ color: "var(--rs-text-2)" }}>
+      {text}
+    </div>
+  );
 }
 
 function BillCard({ token, bill }: { token: string; bill: Bill }) {
   const [open, setOpen] = useState(false);
-  const st = BILL_STATUS[bill.status] ?? { label: bill.status, color: "var(--rs-text-2)", soft: "var(--rs-bg-2)" };
+  const st = billDisplayStatus(bill);
   const outstanding = Math.max(0, bill.total - bill.paid);
   const canPay = bill.status !== "void" && outstanding > 0;
 
@@ -249,14 +253,14 @@ function BillCard({ token, bill }: { token: string; bill: Bill }) {
             )}
           </div>
           <div className="text-[15px] font-semibold mt-1.5">งวด {periodLabel(bill.period)}</div>
-          <div className="text-[11.5px] rs-text-2">
+          <div className="text-[11.5px]" style={{ color: "var(--rs-text-2)" }}>
             บิล {bill.billNo}
             {bill.unitCode ? ` · ห้อง ${bill.unitCode}` : ""} · ครบกำหนด {dateTH(bill.dueDate)}
           </div>
         </div>
         <div className="text-right shrink-0">
           <div className="text-[17px] font-bold">{baht(outstanding > 0 ? outstanding : bill.total)}</div>
-          <div className="text-[10.5px] rs-text-2">{outstanding > 0 ? "ค้างชำระ" : "ยอดรวม"}</div>
+          <div className="text-[10.5px]" style={{ color: "var(--rs-text-2)" }}>{outstanding > 0 ? "ค้างชำระ" : "ยอดรวม"}</div>
         </div>
       </div>
 
@@ -344,7 +348,7 @@ function PayPanel({ token, bill, outstanding, onDone }: { token: string; bill: B
   return (
     <div className="mt-3 rounded-lg p-3 space-y-2.5" style={{ background: "var(--rs-bg-2)", border: "1px solid var(--rs-border)" }}>
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-[12px] rs-text-2">
+        <label className="text-[12px]" style={{ color: "var(--rs-text-2)" }}>
           จำนวนเงินที่โอน
           <input
             type="number"
@@ -355,7 +359,7 @@ function PayPanel({ token, bill, outstanding, onDone }: { token: string; bill: B
             style={{ background: "var(--rs-bg)", border: "1px solid var(--rs-border)", color: "var(--rs-text)" }}
           />
         </label>
-        <label className="text-[12px] rs-text-2">
+        <label className="text-[12px]" style={{ color: "var(--rs-text-2)" }}>
           วันที่โอน
           <input
             type="date"
@@ -368,7 +372,7 @@ function PayPanel({ token, bill, outstanding, onDone }: { token: string; bill: B
       </div>
 
       <label className="block">
-        <span className="text-[12px] rs-text-2">สลิปโอนเงิน (รูปหรือ PDF)</span>
+        <span className="text-[12px]" style={{ color: "var(--rs-text-2)" }}>สลิปโอนเงิน (รูปหรือ PDF)</span>
         <div className="mt-1 flex items-center gap-2">
           <label className="rs-btn-ghost inline-flex items-center gap-1.5 text-[13px] cursor-pointer">
             <Upload className="h-4 w-4" /> เลือกไฟล์
@@ -436,7 +440,7 @@ function NotifyCard({ token, lineLinked, email0, optIn0, hideLine = false }: { t
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13.5px] font-medium">LINE</div>
-            <div className="text-[11px] rs-text-2">เด้งเตือนทันทีที่วางบิล</div>
+            <div className="text-[11px]" style={{ color: "var(--rs-text-2)" }}>เด้งเตือนทันทีที่วางบิล</div>
           </div>
           {lineLinked ? (
             <span className="rs-chip inline-flex items-center gap-1" style={{ background: "var(--rs-ok-soft)", color: "var(--rs-ok)" }}>
@@ -465,7 +469,7 @@ function NotifyCard({ token, lineLinked, email0, optIn0, hideLine = false }: { t
             className="mt-1 w-full rounded-md px-2.5 py-1.5 text-[13px]"
             style={{ background: "var(--rs-bg)", border: "1px solid var(--rs-border)", color: "var(--rs-text)" }}
           />
-          <label className="mt-1.5 flex items-center gap-1.5 text-[12px] rs-text-2 cursor-pointer">
+          <label className="mt-1.5 flex items-center gap-1.5 text-[12px] cursor-pointer" style={{ color: "var(--rs-text-2)" }}>
             <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} />
             ส่งใบแจ้งหนี้เข้าอีเมลนี้
           </label>

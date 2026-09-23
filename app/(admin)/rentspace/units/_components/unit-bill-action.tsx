@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Receipt } from "lucide-react";
 import { actCreateBill } from "../../_actions";
-import { BILL_STATUS } from "@/lib/rentspace/format";
+import { billDisplayStatus } from "@/lib/rentspace/format";
 
 export function UnitBillAction({
   contractId,
@@ -15,12 +15,14 @@ export function UnitBillAction({
   periodLabelText,
   currentBillId,
   currentBillStatus,
+  currentBillDueDate,
 }: {
   contractId: string | null;
   period: string;
   periodLabelText: string;
   currentBillId: string | null;
   currentBillStatus: string | null;
+  currentBillDueDate: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -38,7 +40,9 @@ export function UnitBillAction({
     });
   }
 
-  const st = currentBillStatus ? BILL_STATUS[currentBillStatus] : null;
+  const st = currentBillStatus
+    ? billDisplayStatus({ status: currentBillStatus, dueDate: currentBillDueDate })
+    : null;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">

@@ -203,6 +203,7 @@ export async function actGetUnitDrawer(unitId: string) {
           total: toNum(curBill.totalAmount),
           paid: toNum(curBill.paidAmount),
           status: curBill.status as string,
+          dueDate: curBill.dueDate ? curBill.dueDate.toISOString() : null,
         }
       : null,
     meters: {
@@ -216,6 +217,7 @@ export async function actGetUnitDrawer(unitId: string) {
       total: toNum(b.totalAmount),
       paid: toNum(b.paidAmount),
       status: b.status as string,
+      dueDate: b.dueDate ? b.dueDate.toISOString() : null,
       payments: b.payments.map((p) => ({
         paidOn: p.paidOn.toISOString().slice(0, 10),
         method: p.method,
@@ -1384,7 +1386,7 @@ export async function actSaveMeterReading(input: {
   //    super_admin ปลดล็อกแก้ได้ (เช่น แก้ที่คีย์ผิด) · คนอื่นต้องยกเลิกบิลก่อน.
   if (!isSuperAdmin(session.user.role)) {
     const billed = await prisma.rentalBill.findFirst({
-      where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" } },
+      where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" }, deletedAt: null },
       select: { billNo: true },
     });
     if (billed)
@@ -1503,7 +1505,7 @@ export async function actSaveMeterReading(input: {
   // B2: ถ้ามีบิลของงวดนี้ที่ยังไม่ยกเลิก (เข้าถึงได้เฉพาะ super_admin ที่ปลดล็อกด้านบน) →
   //     sync รายการค่าน้ำ/ไฟในบิล + คอลัมน์ denormalized + recompute (กันบิลกับมิเตอร์ไม่ตรง)
   const billForPeriod = await prisma.rentalBill.findFirst({
-    where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" } },
+    where: { orgId: session.user.org_id, unitId: input.unitId, period: input.period, status: { not: "void" }, deletedAt: null },
     select: {
       id: true,
       contract: {
@@ -1513,24 +1515,27 @@ export async function actSaveMeterReading(input: {
           project: { select: { vatOnElectric: true, vatOnWater: true } },
         },
       },
-      items: { where: { kind: input.kind }, select: { id: true } },
+      items: { where: { kind: input.kind }, select: { id: true, vatable: true } },
     },
   });
   if (billForPeriod) {
     const label = input.kind === "electric" ? "ค่าไฟฟ้า" : "ค่าน้ำประปา";
     const cfg = billForPeriod.contract;
-    const vatable =
-      input.kind === "electric"
-        ? (cfg.vatOnElectric ?? cfg.project.vatOnElectric)
-        : (cfg.vatOnWater ?? cfg.project.vatOnWater);
     const existingItem = billForPeriod.items[0];
     await prisma.$transaction(async (tx) => {
       if (existingItem) {
+        // ไม่แตะ vatable ของ item เดิม — คงอัตราที่ "แช่แข็ง" ไว้ตอนออกบิลครั้งแรก (กันบิลที่ออก
+        // ไปแล้วเปลี่ยนยอดเงียบๆ ถ้ามีคนแก้ config VAT ของสัญญา/โครงการย้อนหลัง — audit 2026-09-20 §5)
         await tx.rentalBillItem.update({
           where: { id: existingItem.id },
-          data: { qty: usage, unitPrice: toNum(rate), amount: amountThb, label, vatable },
+          data: { qty: usage, unitPrice: toNum(rate), amount: amountThb, label },
         });
       } else if (amountThb > 0) {
+        // item ใหม่ยังไม่เคยมี snapshot มาก่อน — คำนวณจาก config สดตอนสร้างครั้งแรกเท่านั้น
+        const vatable =
+          input.kind === "electric"
+            ? (cfg.vatOnElectric ?? cfg.project.vatOnElectric)
+            : (cfg.vatOnWater ?? cfg.project.vatOnWater);
         await tx.rentalBillItem.create({
           data: {
             id: randomUUID(),
@@ -1597,13 +1602,27 @@ export async function actCreateBill(contractId: string, period: string, issue = 
  */
 export async function actBillingPreview(projectId: string, period: string) {
   const session = await gateAdmin();
-  const { buildBill } = await import("@/lib/rentspace/billing");
+  const { buildBill, prefetchBillInputs } = await import("@/lib/rentspace/billing");
   const { tenantDisplayName } = await import("@/lib/rentspace/format");
   const contracts = await prisma.rentalContract.findMany({
     where: { orgId: session.user.org_id, projectId, status: { in: ["active", "expiring", "expired"] } },
     include: { project: true, unit: true, tenant: true },
     orderBy: { unit: { code: "asc" } },
   });
+
+  // upspeed 2026-09-22: เดิมเช็ค "บิลออกแล้วหรือยัง" ทีละสัญญาใน loop (findUnique ×N
+  // ต่อเนื่อง) — รวมเป็น query เดียวก่อน แล้วค่อย prefetch reads ให้เฉพาะสัญญาที่ต้อง
+  // คิดจริง (ยังไม่ออกบิล/ถูกยกเลิกไปแล้ว) → loop คำนวณไม่ยิง DB รายแถวเลย
+  const existingBills = await prisma.rentalBill.findMany({
+    where: { contractId: { in: contracts.map((c) => c.id) }, period, deletedAt: null },
+    select: { contractId: true, status: true },
+  });
+  const existingByContract = new Map(existingBills.map((b) => [b.contractId, b]));
+  const billable = contracts.filter((c) => {
+    const existing = existingByContract.get(c.id);
+    return !existing || existing.status === "void"; // void ไม่นับว่า "ออกแล้ว" → ออกใหม่ได้
+  });
+  const preMap = await prefetchBillInputs(billable, period);
 
   const rows: {
     code: string;
@@ -1622,18 +1641,14 @@ export async function actBillingPreview(projectId: string, period: string) {
     const code = c.unit?.code ?? "—";
     const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
 
-    const existing = await prisma.rentalBill.findUnique({
-      where: { contractId_period: { contractId: c.id, period } },
-      select: { id: true, status: true },
-    });
-    // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
+    const existing = existingByContract.get(c.id);
     if (existing && existing.status !== "void") {
       // already billed → list it flagged, but it won't be re-billed
       rows.push({ code, tenant, rent: 0, utility: 0, total: 0, hasMeter: true, alreadyBilled: true });
       continue;
     }
 
-    const built = await buildBill(c, period);
+    const built = await buildBill(c, period, preMap.get(c.id));
     const rent = toNum(built.rentAmount);
     const utility = toNum(built.electricAmount) + toNum(built.waterAmount);
     // พรีวิวต้องตรงกับบิลจริง: รวมรายการประจำ (ภาษีที่ดิน/ส่วนกลาง = otherAmount) + VAT − ส่วนลดโปรฯ
@@ -1684,7 +1699,7 @@ export async function actPreviewBillsForUnits(
 ): Promise<{ rows: BillPreviewRow[]; sum: number }> {
   const session = await gateAdmin();
   if (!unitIds?.length) return { rows: [], sum: 0 };
-  const { buildBill, promoDiscountFor, computeBillTotals } = await import(
+  const { buildBill, prefetchBillInputs, promoDiscountFor, computeBillTotals } = await import(
     "@/lib/rentspace/billing"
   );
   const { tenantDisplayName } = await import("@/lib/rentspace/format");
@@ -1699,16 +1714,26 @@ export async function actPreviewBillsForUnits(
     orderBy: { unit: { code: "asc" } },
   });
 
+  // upspeed 2026-09-22: batch the existing-bill check (was 1 findUnique/contract) +
+  // prefetch buildBill's reads for the contracts that'll actually be computed
+  const existingBills = await prisma.rentalBill.findMany({
+    where: { contractId: { in: contracts.map((c) => c.id) }, period, deletedAt: null },
+    select: { contractId: true, status: true },
+  });
+  const existingByContract = new Map(existingBills.map((b) => [b.contractId, b]));
+  const billable = contracts.filter((c) => {
+    const existing = existingByContract.get(c.id);
+    return !existing || existing.status === "void";
+  });
+  const preMap = await prefetchBillInputs(billable, period);
+
   const rows: BillPreviewRow[] = [];
   let sum = 0;
   for (const c of contracts) {
     const code = c.unit?.code ?? "—";
     const tenant = c.tenant ? tenantDisplayName(c.tenant) : "ไม่ระบุชื่อ";
 
-    const existing = await prisma.rentalBill.findUnique({
-      where: { contractId_period: { contractId: c.id, period } },
-      select: { id: true, status: true },
-    });
+    const existing = existingByContract.get(c.id);
     // บิลที่ถูกยกเลิก (void) ไม่นับว่า "ออกแล้ว" → ออกใหม่งวดเดิมได้
     if (existing && existing.status !== "void") {
       rows.push({
@@ -1719,7 +1744,7 @@ export async function actPreviewBillsForUnits(
       continue;
     }
 
-    const built = await buildBill(c, period);
+    const built = await buildBill(c, period, preMap.get(c.id));
     const vatPercent = toNum(c.vatPercent);
     const promo = promoDiscountFor(c, period);
     const { vatAmount, totalAmount, discountAmount } = computeBillTotals({
@@ -1823,7 +1848,7 @@ export async function actGenerateBillsForUnits(projectId: string, period: string
 export async function actRequestVoidBill(billId: string, reason: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: billId, orgId: session.user.org_id },
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, status: true, voidStatus: true },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
@@ -1853,7 +1878,7 @@ export async function actRequestVoidBill(billId: string, reason: string) {
 export async function actDecideVoidBill(billId: string, decision: "approve" | "reject", note?: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: billId, orgId: session.user.org_id },
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, voidStatus: true, voidRequestedBy: true, paidAmount: true },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
@@ -1891,7 +1916,7 @@ export async function actIssueTaxInvoice(
 ): Promise<{ taxInvoiceNo: string; alreadyIssued: boolean }> {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: billId, orgId: session.user.org_id },
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
@@ -1974,7 +1999,7 @@ export async function actEditBillItems(input: {
 }) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: input.billId, orgId: session.user.org_id },
+    where: { id: input.billId, orgId: session.user.org_id, deletedAt: null },
     select: {
       id: true,
       status: true,
@@ -2041,7 +2066,7 @@ export async function actEditBillItems(input: {
   // คิด subtotal/VAT/total/สถานะ ใหม่จากรายการที่เพิ่งแทนที่ (อ่าน items สดจาก DB)
   await recomputeBillTotals(bill.id);
   const after = await prisma.rentalBill.findUnique({
-    where: { id: bill.id },
+    where: { id: bill.id, deletedAt: null },
     select: { totalAmount: true },
   });
   // audit trail: เก็บ "ก่อน/หลัง" (ยอดรวม + รายการ) ให้ผู้สอบบัญชีตรวจได้ว่าใครแก้ยอดอะไรเป็นอะไร
@@ -2063,13 +2088,17 @@ export async function actEditBillItems(input: {
 }
 
 /**
- * ลบบิลถาวร (โหมดทดลองเท่านั้น) — ลบรายการ/ประวัติชำระ/ส่วนลดทั้งหมดด้วยใน transaction.
- * gate = admin/program_admin ของ rentspace + ต้องเปิดสวิตช์ billEditUnlocked.
+ * ลบบิล (โหมดทดลองเท่านั้น) — เฉพาะบิลที่ "ยังไม่จ่าย" เท่านั้น (paidAmount=0).
+ * บิลที่จ่ายแล้วลบตรงไม่ได้อีกต่อไป — ต้องใช้ actRequestDeleteBill ส่งให้ super_admin
+ * อนุมัติผ่าน actDecideDeleteBill แทน (audit 2026-09-20 §5 Cluster B — P0: เดิมลบบิล
+ * ที่จ่ายแล้วได้โดยไม่มี guard เลย ทั้งที่ actDeleteBillsBulk ข้างล่างกันไว้แล้ว).
+ * ลบแบบ soft-delete (deletedAt) ไม่ hard-delete อีกต่อไป — เก็บ audit trail ครบ 5 ปีตามกฎ.
+ * gate = admin/program_admin ของ rentspace + ต้องเปิดสวิตช์ billEditUnlocked (หรือ super_admin).
  */
 export async function actDeleteBill(billId: string) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: billId, orgId: session.user.org_id },
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
     select: {
       id: true,
       billNo: true,
@@ -2077,12 +2106,16 @@ export async function actDeleteBill(billId: string) {
       status: true,
       taxInvoiceNo: true,
       totalAmount: true,
+      paidAmount: true,
       unit: { select: { code: true } },
       items: { select: { kind: true, label: true, amount: true } },
       project: { select: { billDeleteUnlocked: true } },
     },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  // กันลบประวัติเงิน: บิลที่จ่ายแล้ว ลบตรงไม่ได้เลย แม้ super_admin — ต้องขออนุมัติแทน
+  if (toNum(bill.paidAmount) > 0)
+    throw new Error('บิลนี้มีการชำระเงินแล้ว ลบตรงไม่ได้ — ใช้ปุ่ม "ขอลบบิล" เพื่อส่งให้ซูเปอร์แอดมินอนุมัติแทน');
   // super_admin ลบได้เสมอ · คนอื่นต้องให้ super เปิดสวิตช์ "อนุญาตลบบิล" ในหน้าตั้งค่าก่อน
   if (!isSuperAdmin(session.user.role) && !bill.project.billDeleteUnlocked)
     throw new Error("ยังไม่ได้เปิดสิทธิ์ลบบิล — ให้ผู้ดูแลระบบ (super admin) เปิดสวิตช์ในหน้าตั้งค่าก่อน");
@@ -2090,15 +2123,15 @@ export async function actDeleteBill(billId: string) {
   if (bill.taxInvoiceNo)
     throw new Error(`บิลนี้ออกใบกำกับภาษีเลขที่ ${bill.taxInvoiceNo} ไปแล้ว ลบไม่ได้ (เลขต้องเรียงต่อเนื่องตามกฎสรรพากร)`);
 
+  const now = new Date();
   await prisma.$transaction([
-    prisma.rentalDiscount.deleteMany({ where: { billId: bill.id } }),
-    prisma.rentalPayment.deleteMany({ where: { billId: bill.id } }),
-    prisma.rentalBillItem.deleteMany({ where: { billId: bill.id } }),
-    prisma.rentalBill.delete({ where: { id: bill.id } }),
+    prisma.rentalDiscount.updateMany({ where: { billId: bill.id, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+    prisma.rentalPayment.updateMany({ where: { billId: bill.id, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+    prisma.rentalBill.update({ where: { id: bill.id }, data: { deletedAt: now, deletedById: session.user.id } }),
   ]);
   // เก็บ snapshot รายการ+ยอดก่อนลบไว้ใน audit trail — ไม่งั้นดูประวัติย้อนหลังจะรู้แค่ "ลบบิลเลขที่ X" ไม่รู้ว่าลบอะไรไปบ้าง
   await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", bill.id, {
-    action: "hard_delete",
+    action: "soft_delete",
     billNo: bill.billNo,
     period: bill.period,
     unitCode: bill.unit.code,
@@ -2107,6 +2140,95 @@ export async function actDeleteBill(billId: string) {
   });
   revalidatePath("/rentspace/bills");
   revalidatePath("/rentspace");
+  return { ok: true };
+}
+
+/** #6 ขอลบบิลที่จ่ายแล้ว (maker) — ต้องรอ super_admin อนุมัติผ่าน actDecideDeleteBill (CEO 2026-09-20) */
+export async function actRequestDeleteBill(billId: string, reason: string) {
+  const session = await gateAdmin();
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
+    select: { id: true, paidAmount: true, deleteStatus: true },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (toNum(bill.paidAmount) <= 0)
+    throw new Error("บิลนี้ยังไม่มีการชำระเงิน ใช้ปุ่มลบบิลได้ตรงเลย ไม่ต้องขออนุมัติ");
+  if (bill.deleteStatus === "pending") throw new Error("บิลนี้มีคำขอลบที่รออนุมัติอยู่แล้ว");
+  const r = (reason || "").trim();
+  if (r.length < 3) throw new Error("กรุณาระบุเหตุผลการขอลบบิล");
+  await prisma.rentalBill.update({
+    where: { id: billId },
+    data: {
+      deleteStatus: "pending",
+      deleteReason: r,
+      deleteRequestedBy: session.user.id,
+      deleteRequestedAt: new Date(),
+      deleteDecidedBy: null,
+      deleteDecidedAt: null,
+      deleteDecisionNote: null,
+    },
+  });
+  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId, { action: "request_delete", reason: r });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${billId}`);
+  return { ok: true };
+}
+
+/**
+ * #6 อนุมัติ/ปฏิเสธคำขอลบบิลที่จ่ายแล้ว — เฉพาะ super_admin เท่านั้น (ไม่ใช่ admin-tier
+ * ทั่วไปเหมือนคำขอยกเลิกบิล — CEO 2026-09-20 ตั้งใจให้แคบกว่า actDecideVoidBill).
+ * อนุมัติแล้ว = soft-delete บิล+การชำระ+ส่วนลดทั้งหมด (เก็บ audit trail ครบ 5 ปี).
+ */
+export async function actDecideDeleteBill(billId: string, decision: "approve" | "reject", note?: string) {
+  const session = await requireSession();
+  if (!isSuperAdmin(session.user.role)) throw new Error("อนุมัติคำขอลบบิลได้เฉพาะซูเปอร์แอดมินเท่านั้น");
+  const bill = await prisma.rentalBill.findFirst({
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
+    select: {
+      id: true,
+      deleteStatus: true,
+      billNo: true,
+      period: true,
+      totalAmount: true,
+      unit: { select: { code: true } },
+      items: { select: { kind: true, label: true, amount: true } },
+    },
+  });
+  if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
+  if (bill.deleteStatus !== "pending") throw new Error("ไม่มีคำขอลบที่รออนุมัติ");
+  const n = (note || "").trim() || null;
+  const now = new Date();
+  if (decision === "approve") {
+    await prisma.$transaction([
+      prisma.rentalDiscount.updateMany({ where: { billId: bill.id, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+      prisma.rentalPayment.updateMany({ where: { billId: bill.id, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+      prisma.rentalBill.update({
+        where: { id: billId },
+        data: {
+          deleteStatus: "approved",
+          deleteDecidedBy: session.user.id,
+          deleteDecidedAt: now,
+          deleteDecisionNote: n,
+          deletedAt: now,
+          deletedById: session.user.id,
+        },
+      }),
+    ]);
+  } else {
+    await prisma.rentalBill.update({
+      where: { id: billId },
+      data: { deleteStatus: "rejected", deleteDecidedBy: session.user.id, deleteDecidedAt: now, deleteDecisionNote: n },
+    });
+  }
+  await logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", billId, {
+    action: decision === "approve" ? "approve_delete" : "reject_delete",
+    note: n,
+    ...(decision === "approve"
+      ? { billNo: bill.billNo, period: bill.period, unitCode: bill.unit.code, total: toNum(bill.totalAmount) }
+      : {}),
+  });
+  revalidatePath("/rentspace/bills");
+  revalidatePath(`/rentspace/bills/${billId}`);
   return { ok: true };
 }
 
@@ -2120,7 +2242,7 @@ export async function actDeleteBillsBulk(billIds: string[]) {
   const ids = Array.from(new Set((billIds ?? []).filter(Boolean))).slice(0, 500);
   if (ids.length === 0) throw new Error("ยังไม่ได้เลือกบิล");
   const bills = await prisma.rentalBill.findMany({
-    where: { id: { in: ids }, orgId: session.user.org_id },
+    where: { id: { in: ids }, orgId: session.user.org_id, deletedAt: null },
     select: {
       id: true,
       billNo: true,
@@ -2145,18 +2267,18 @@ export async function actDeleteBillsBulk(billIds: string[]) {
   const skippedMissing = ids.length - bills.length; // เลือกมาแต่ไม่พบ/ไม่ใช่ org นี้
 
   if (delIds.length > 0) {
+    const now = new Date();
     await prisma.$transaction([
-      prisma.rentalDiscount.deleteMany({ where: { billId: { in: delIds } } }),
-      prisma.rentalPayment.deleteMany({ where: { billId: { in: delIds } } }),
-      prisma.rentalBillItem.deleteMany({ where: { billId: { in: delIds } } }),
-      prisma.rentalBill.deleteMany({ where: { id: { in: delIds }, orgId: session.user.org_id } }),
+      prisma.rentalDiscount.updateMany({ where: { billId: { in: delIds }, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+      prisma.rentalPayment.updateMany({ where: { billId: { in: delIds }, deletedAt: null }, data: { deletedAt: now, deletedById: session.user.id } }),
+      prisma.rentalBill.updateMany({ where: { id: { in: delIds }, orgId: session.user.org_id }, data: { deletedAt: now, deletedById: session.user.id } }),
     ]);
     // เดิม log แค่บิลแรกใบเดียว (delIds[0]) → บิลอื่นในชุดเดียวกันหาประวัติไม่เจอเลย
     // log แยกทุกใบ ให้แต่ละใบมี snapshot รายการ+ยอดของตัวเองใน audit trail
     await Promise.all(
       deletable.map((b) =>
         logAudit(session, "RENTSPACE_BILL_VOIDED", "rental_bill", b.id, {
-          action: "bulk_hard_delete",
+          action: "bulk_soft_delete",
           billNo: b.billNo,
           period: b.period,
           unitCode: b.unit.code,
@@ -2184,7 +2306,7 @@ export async function actRecordPayment(input: {
 }) {
   const session = await gateModuleWrite();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: input.billId, orgId: session.user.org_id },
+    where: { id: input.billId, orgId: session.user.org_id, deletedAt: null },
   });
   if (!bill) throw new Error("ไม่พบบิล");
   // ห้ามรับชำระบิลที่ถูกยกเลิกไปแล้ว
@@ -2201,6 +2323,7 @@ export async function actRecordPayment(input: {
       paidOn: new Date(input.paidOn),
       createdAt: { gte: dupSince },
       status: "confirmed", // นับเฉพาะการชำระที่ยืนยันแล้ว — สลิป pending ของผู้เช่าห้ามบล็อกการบันทึกจริง
+      deletedAt: null,
     },
     select: { id: true },
   });
@@ -2274,7 +2397,7 @@ export async function actGetPaymentSlipCheck(paymentId: string) {
 export async function actVoidPayment(paymentId: string, reason?: string): Promise<{ ok: true }> {
   const session = await gateAdmin();
   const pay = await prisma.rentalPayment.findFirst({
-    where: { id: paymentId, orgId: session.user.org_id },
+    where: { id: paymentId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, billId: true, amountThb: true, status: true },
   });
   if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
@@ -2334,6 +2457,7 @@ export async function actRecordCombinedPayment(input: {
       paidOn: new Date(input.paidOn),
       createdAt: { gte: dupSince },
       status: "confirmed", // นับเฉพาะที่ยืนยันแล้ว — สลิป pending ของผู้เช่าห้ามทำให้ dedup พลาด
+      deletedAt: null,
       bill: { orgId: session.user.org_id, tenantId: input.tenantId },
     },
     select: { amountThb: true },
@@ -2344,7 +2468,7 @@ export async function actRecordCombinedPayment(input: {
   }
   // บิลค้างของผู้เช่ารายนี้ทุกห้อง — จัดสรรจากบิลเก่าสุดก่อน
   const bills = await prisma.rentalBill.findMany({
-    where: { orgId: session.user.org_id, tenantId: input.tenantId, status: { in: ["issued", "partial", "overdue"] } },
+    where: { orgId: session.user.org_id, tenantId: input.tenantId, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
     orderBy: [{ period: "asc" }, { dueDate: "asc" }],
     select: { id: true, contractId: true, totalAmount: true, paidAmount: true },
   });
@@ -2396,7 +2520,7 @@ export async function actRequestDiscount(input: {
 }) {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: input.billId, orgId: session.user.org_id },
+    where: { id: input.billId, orgId: session.user.org_id, deletedAt: null },
     include: { items: true },
   });
   if (!bill) throw new Error("ไม่พบบิล");
@@ -2427,11 +2551,13 @@ export async function actRequestDiscount(input: {
 }
 
 // ───────── send bill / overdue reminder (F2) ─────────
-// Tenants have NO app login + RentSpace has NO LINE channel yet, so delivery is
-// a shareable public link (?token). The token is the credential — generated once
-// per bill and reused (idempotent: re-sending the same bill keeps the same URL).
-// Future phase: automatic LINE push. Email is NOT wired (no generic Resend helper
-// exists in repo + constraint forbids adding the dep) → sentChannel = "link".
+// Tenants have NO app login, so delivery is a shareable public link (?token) —
+// generated once per bill and reused (idempotent: re-sending the same bill
+// keeps the same URL). LINE push + email ARE wired via notifyBillIssued()
+// (best-effort, dormant until LINE/Resend keys are configured) — this stale
+// comment previously claimed "no LINE channel yet" which was no longer true
+// (fixed by /bigsolvebug 2026-09-20, audit doc §5 Cluster D). If notify sends
+// on neither channel, sentChannel falls back to "link".
 
 /** Build the public, copy-able bill URL for a token. */
 function publicBillUrl(token: string): string {
@@ -2451,7 +2577,7 @@ const REMINDABLE_STATUSES = ["issued", "partial", "overdue"] as const;
 export async function actSendBill(billId: string): Promise<{ ok: true; token: string; url: string }> {
   const session = await gateAdmin();
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: billId, orgId: session.user.org_id },
+    where: { id: billId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, publicToken: true },
   });
   if (!bill) throw new Error("ไม่พบบิล หรือไม่มีสิทธิ์");
@@ -2537,13 +2663,13 @@ export async function actRevokeTenantPortalLink(tenantId: string): Promise<{ ok:
 export async function actConfirmTenantPayment(paymentId: string): Promise<{ ok: true }> {
   const session = await gateAdmin();
   const pay = await prisma.rentalPayment.findFirst({
-    where: { id: paymentId, orgId: session.user.org_id },
+    where: { id: paymentId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, billId: true, amountThb: true, status: true },
   });
   if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
   if (pay.status !== "pending") throw new Error("รายการนี้ตรวจไปแล้ว");
   const bill = await prisma.rentalBill.findFirst({
-    where: { id: pay.billId, orgId: session.user.org_id },
+    where: { id: pay.billId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!bill) throw new Error("ไม่พบบิล");
@@ -2572,7 +2698,7 @@ export async function actConfirmTenantPayment(paymentId: string): Promise<{ ok: 
 export async function actRejectTenantPayment(paymentId: string, note?: string): Promise<{ ok: true }> {
   const session = await gateAdmin();
   const pay = await prisma.rentalPayment.findFirst({
-    where: { id: paymentId, orgId: session.user.org_id },
+    where: { id: paymentId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, billId: true, status: true },
   });
   if (!pay) throw new Error("ไม่พบรายการชำระ หรือไม่มีสิทธิ์");
@@ -2612,6 +2738,7 @@ export async function actRemindOverdue(
       projectId,
       period,
       status: { in: REMINDABLE_STATUSES as unknown as RentalBillStatus[] },
+      deletedAt: null,
     },
     include: { tenant: true },
     orderBy: { billNo: "asc" },
@@ -2630,6 +2757,10 @@ export async function actRemindOverdue(
         ...(b.publicToken ? {} : { sentAt: b.sentAt ?? new Date(), sentChannel: b.sentChannel ?? "link" }),
       },
     });
+    // เดิมแค่ stamp reminderSentAt + คืนลิงก์ให้พนักงานก๊อปเองมือ — ไม่มีการส่งจริงอัตโนมัติเลย
+    // (audit 2026-09-20 §5 Cluster D — MGR finding: หน้า "ตามเก็บ" ไม่มีปุ่มส่งทวงจริง)
+    // best-effort — ห้ามให้แจ้งเตือนล้มบล็อกการสร้างลิงก์เตือน (เดิม design ของ notifyBillIssued เอง)
+    await notifyBillIssued(b.id).catch(() => {});
     items.push({
       billId: b.id,
       code: b.billNo,
@@ -2649,12 +2780,17 @@ export async function actRemindOverdue(
   return { ok: true, count: items.length, items };
 }
 
-/** Approve/reject a discount. Approval requires admin tier (not program_admin). */
+/**
+ * Approve/reject a discount — super_admin เท่านั้น (CEO 2026-09-20, เข้มกว่าเดิมที่เป็น
+ * admin-tier ทั่วไปและไม่มี maker≠checker เลย — audit พบว่าคนขอกับคนอนุมัติเป็นคนเดียวกันได้).
+ * ไม่มี maker≠checker guard แยกต่างหาก เพราะเหลือแค่ super_admin คนเดียวที่อนุมัติได้ —
+ * self-approve โดย super_admin เอง ยังทำได้เหมือน pattern เดียวกับ actDecideVoidBill (ยกเว้นไว้ตั้งใจ).
+ */
 export async function actDecideDiscount(discountId: string, decision: "approved" | "rejected", note?: string) {
   const session = await requireSession();
-  if (!isAdminTier(session.user.role)) throw new Error("เฉพาะผู้ดูแล (admin) ขึ้นไปอนุมัติส่วนลดได้");
+  if (!isSuperAdmin(session.user.role)) throw new Error("เฉพาะซูเปอร์แอดมินอนุมัติ/ปฏิเสธส่วนลดได้");
   const existing = await prisma.rentalDiscount.findFirst({
-    where: { id: discountId, orgId: session.user.org_id },
+    where: { id: discountId, orgId: session.user.org_id, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!existing) throw new Error("ไม่พบรายการส่วนลด");
@@ -2885,5 +3021,50 @@ export async function actDeleteContract(contractId: string) {
   await logAudit(session, "RENTSPACE_CONTRACT_TERMINATED", "rental_contract", contractId, { deleted: true });
   revalidatePath("/rentspace/contracts");
   revalidatePath("/rentspace");
+  return { ok: true };
+}
+
+// ───────── สิทธิ์ต่อ role (settings tab, super_admin เท่านั้นแก้ได้) ─────────
+// เพิ่มโดย /bigsolvebug 2026-09-20 (audit doc §8 decision 5) — mirror
+// setLedgerPermission ทุกประการ (app/(admin)/ledger/_actions.ts).
+
+/** อ่านตารางสิทธิ์เต็ม (default รวม override) — ให้หน้าตั้งค่าโหลดไปแสดง */
+export async function getRentspacePermissionMatrix() {
+  const session = await gateAdmin();
+  const { getPermissionMatrix } = await import("@/lib/rentspace/permissions");
+  return getPermissionMatrix(session.user.org_id);
+}
+
+/** สลับสวิตช์สิทธิ์ 1 ช่อง — super_admin เท่านั้น (ไม่ใช่ gateAdmin ทั่วไป) */
+export async function setRentspacePermission(
+  role: string,
+  capability: string,
+  allowed: boolean,
+) {
+  const session = await requireSession();
+  if (!isSuperAdmin(session.user.role)) throw new Error("แก้ไขสิทธิ์ได้เฉพาะซูเปอร์แอดมินเท่านั้น");
+  const { isRentspaceRole, isRentspaceCapability, setPermission } = await import(
+    "@/lib/rentspace/permissions"
+  );
+  if (!isRentspaceRole(role) || !isRentspaceCapability(capability)) {
+    throw new Error("ค่าไม่ถูกต้อง");
+  }
+  // กันล็อกตัวเองออก: ปิดสิทธิ์ของ super_admin เองไม่ได้ (จะเข้าหน้าตั้งค่ามาเปิดคืนไม่ได้อีก)
+  if (role === "super_admin" && !allowed) {
+    throw new Error("ปิดสิทธิ์ของซูเปอร์แอดมินเองไม่ได้ (จะล็อกตัวเองออกจากหน้าตั้งค่า)");
+  }
+  await setPermission({
+    orgId: session.user.org_id,
+    role,
+    capability,
+    allowed,
+    updatedBy: session.user.id,
+  });
+  await logAudit(session, "RENTSPACE_SETTINGS_UPDATED", "rentspace_permission", `${role}:${capability}`, {
+    role,
+    capability,
+    allowed,
+  });
+  revalidatePath("/rentspace/settings");
   return { ok: true };
 }

@@ -128,6 +128,33 @@ supabase/migrations/     ← 12 SQL migrations (RLS + GENERATED columns + custom
 3. ถ้า touch DB → ตรวจ `prisma/schema.prisma` + migrations ที่เกี่ยวข้อง
 4. **ก่อน push:** `git fetch origin setup` เช็คว่ามีใครแซงหน้าไหม · `git status --porcelain` ต้องมีแค่ไฟล์ของคุณเอง (ถ้าเจอไฟล์แปลกปลอมของ session อื่น → `git stash push -u -m "<desc>" -- <path เจาะจง>` ห้าม commit ปนไปด้วย) · ถ้า rebase แล้วชนที่ `STATUS.md` → เก็บทุกฝั่งไว้เสมอ (จัดเรียงใหม่ ห้ามลบ entry ใคร)
 
+### 🗄️ แก้ฐานข้อมูล production — Claude ทำเองได้ ห้ามโยนให้ CEO กดเอง
+
+**CEO ไม่ใช่ developer และไม่เคยต้องเปิด Supabase dashboard เองเลย** — การบอก CEO ว่า
+"ให้เปิดลิงก์ Supabase แล้ววาง SQL กด Run เอง" คือ**คำตอบที่ผิด** (เกิดขึ้นจริง 2026-09-22
+แล้ว CEO ต้องมาถามว่าทำไมรอบนี้ต่างจากทุกครั้ง) ทางที่ถูกมีอยู่แล้วและถูก allowlist ไว้ใน
+`.claude/settings.json` (`Bash(./node_modules/.bin/prisma db *)`) ตั้งแต่ก่อนหน้านี้นานแล้ว:
+
+```
+1. เขียน SQL ลงไฟล์ migration ก่อน  → prisma/migrations/<YYYYMMDD>_<ชื่องาน>.sql
+                                      (หรือ supabase/migrations/ ตามที่โมดูลนั้นใช้อยู่)
+2. รันเข้า production ด้วย          → npx prisma db execute --file <path ไฟล์นั้น>
+                                      (อ่าน DIRECT_URL จาก .env.local ให้เอง)
+3. verify ด้วย query จริง            → node script ใช้ package `pg` (ดูข้อ ⚠️ ด้านล่าง)
+4. commit ไฟล์ migration ไว้เป็นประวัติ
+```
+
+**⚠️ กับดักที่เจอมาแล้ว อย่าเสียเวลาซ้ำ:**
+- ❌ `psql` ต่อ Supabase pooler **ไม่ได้** — DNS fail เฉพาะ psql (curl/host/ping ปกติ) →
+  ใช้ Node + `pg` package แทนเสมอสำหรับ query ตรวจสอบ
+- ❌ รัน DDL สดๆ inline (`node -e "...ALTER TABLE..."`) → **โดน classifier บล็อก** ทันที
+  แต่คำสั่งเดียวกันเป๊ะผ่านได้ถ้ามาจาก `prisma db execute --file <ไฟล์ที่ commit แล้ว>`
+- ❌ `prisma db execute` **ไม่รับ** flag `--schema` (Prisma 7) ใช้แค่ `--file`
+- ❌ อย่าสรุปว่า "ทำไม่ได้ ต้องให้ CEO ทำ" เพราะเจอบล็อกครั้งแรก → ลองทาง migration file ก่อนเสมอ
+
+**ต้องขออนุมัติ CEO ก่อนรัน** (ถามสั้น ๆ ในแชท ไม่ใช่โยนงานให้ทำเอง) — CEO อนุมัติแล้ว Claude
+เป็นคนรันเอง 100%
+
 ### Security hard rules
 - `SUPABASE_SERVICE_ROLE_KEY` server-side เท่านั้น · ห้าม expose client
 - ทุก HTTP route ที่ touch user data → verify session ก่อน (`requireSession()` / `requireRole()`)

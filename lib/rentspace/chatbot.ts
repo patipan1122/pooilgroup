@@ -22,7 +22,7 @@ export async function rentspaceBotReply(lineUserId: string, text: string): Promi
   }
 
   const bills = await prisma.rentalBill.findMany({
-    where: { tenantId: tenant.id, orgId: tenant.orgId, status: { notIn: ["void", "draft"] } },
+    where: { tenantId: tenant.id, orgId: tenant.orgId, status: { notIn: ["void", "draft"] }, deletedAt: null },
     orderBy: [{ period: "desc" }],
     include: { unit: true, project: true },
     take: 12,

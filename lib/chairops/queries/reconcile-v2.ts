@@ -162,6 +162,14 @@ export interface PeriodSlip {
   slipUrl: string | null;
   ledgerStatus: LedgerStatus;
   flagged: boolean; // requiresReview — สลิปซ้ำ/บัญชีผิด/ผลต่าง≥500 ยังไม่ผ่านตรวจ
+  // CEO 2026-09-22: สลิปเสริมที่ office แนบเข้ามาทีหลัง (แม่บ้านลืมแนบ ส่งมาทาง
+  // LINE) หรือฝากครั้งเดียวมีมากกว่า 1 สลิปจริง — ไม่กระทบยอด/สถานะตรวจสอบใดๆ.
+  additionalSlips: Array<{
+    id: string;
+    url: string;
+    note: string | null;
+    uploadedAt: string;
+  }>;
 }
 
 export interface PeriodWindow {
@@ -829,6 +837,10 @@ export async function getReconcileLedger(args: {
         ocrAmount: true,
         slipPhotoUrl: true,
         requiresReview: true,
+        additionalSlips: {
+          select: { id: true, url: true, note: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: { depositedAt: "asc" },
     });
@@ -845,6 +857,12 @@ export async function getReconcileLedger(args: {
         slipUrl: d.slipPhotoUrl ?? null,
         ledgerStatus: ledgerStatusById.get(d.id) ?? "not_sent",
         flagged: d.requiresReview,
+        additionalSlips: d.additionalSlips.map((s) => ({
+          id: s.id,
+          url: s.url,
+          note: s.note,
+          uploadedAt: formatDateTime(s.createdAt),
+        })),
       });
       slipsByDate.set(day, list);
     }
@@ -2565,6 +2583,10 @@ export async function getReconcilePeriods(args: {
       slipUrl: d.slipPhotoUrl ?? null,
       ledgerStatus: periodLedgerStatusById.get(d.id) ?? "not_sent",
       flagged: d.requiresReview,
+      // Periods tab doesn't get the attach-additional-slip UI in this pass
+      // (scoped to Ledger tab only, see SlipChipGroup) — not worth an extra
+      // query here until that changes.
+      additionalSlips: [],
     });
   }
 

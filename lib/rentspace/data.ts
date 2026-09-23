@@ -35,7 +35,7 @@ export async function listUnitsWithState(orgId: string, projectId: string) {
         include: { tenant: true },
       },
       bills: {
-        where: { status: { in: ["issued", "partial", "overdue"] } },
+        where: { status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
         select: { id: true, totalAmount: true, paidAmount: true, status: true, period: true },
       },
     },
@@ -84,9 +84,10 @@ export async function getUnitDetail(orgId: string, unitId: string) {
       },
       meters: { include: { readings: { orderBy: { period: "desc" }, take: 6 } } },
       bills: {
+        where: { deletedAt: null },
         orderBy: { period: "desc" },
         take: 12,
-        include: { payments: true },
+        include: { payments: { where: { deletedAt: null } } },
       },
     },
   });
@@ -139,9 +140,9 @@ export async function getTenantFull(orgId: string, id: string) {
   if (!tenant) return null;
   const [bills, documents] = await Promise.all([
     prisma.rentalBill.findMany({
-      where: { orgId, tenantId: id },
+      where: { orgId, tenantId: id, deletedAt: null },
       orderBy: [{ period: "desc" }, { billNo: "desc" }],
-      include: { unit: true, payments: { orderBy: { paidOn: "desc" } } },
+      include: { unit: true, payments: { where: { deletedAt: null }, orderBy: { paidOn: "desc" } } },
     }),
     prisma.rentalDocument.findMany({
       where: { orgId, ownerType: "tenant", ownerId: id },
@@ -322,6 +323,7 @@ export async function listBills(orgId: string, opts: { projectId?: string; statu
   return prisma.rentalBill.findMany({
     where: {
       orgId,
+      deletedAt: null,
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
       ...(opts.status ? { status: opts.status as never } : {}),
       ...(opts.period ? { period: opts.period } : {}),
@@ -332,8 +334,8 @@ export async function listBills(orgId: string, opts: { projectId?: string; statu
     include: {
       unit: true,
       tenant: true,
-      payments: true,
-      discounts: true,
+      payments: { where: { deletedAt: null } },
+      discounts: { where: { deletedAt: null } },
       items: { orderBy: { sort: "asc" } },
     },
     take: 500,
@@ -342,15 +344,15 @@ export async function listBills(orgId: string, opts: { projectId?: string; statu
 
 export async function getBill(orgId: string, id: string) {
   return prisma.rentalBill.findFirst({
-    where: { id, orgId },
+    where: { id, orgId, deletedAt: null },
     include: {
       unit: true,
       tenant: true,
       project: true,
       contract: true,
       items: { orderBy: { sort: "asc" } },
-      payments: { orderBy: { paidOn: "desc" } },
-      discounts: { orderBy: { createdAt: "desc" } },
+      payments: { where: { deletedAt: null }, orderBy: { paidOn: "desc" } },
+      discounts: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
     },
   });
 }
@@ -364,7 +366,7 @@ export async function getBill(orgId: string, id: string) {
 export async function getBillByPublicToken(token: string) {
   if (!token) return null;
   return prisma.rentalBill.findUnique({
-    where: { publicToken: token },
+    where: { publicToken: token, deletedAt: null },
     include: {
       unit: true,
       tenant: true,
@@ -374,6 +376,7 @@ export async function getBillByPublicToken(token: string) {
       // lookup, so internal-only review/OCR fields on RentalPayment must never
       // ride along here even if someone later adds a payments UI to this page.
       payments: {
+        where: { deletedAt: null },
         orderBy: { paidOn: "desc" },
         select: {
           id: true,
@@ -392,7 +395,7 @@ export async function getBillByPublicToken(token: string) {
 
 export async function listPayments(orgId: string, limit = 300) {
   return prisma.rentalPayment.findMany({
-    where: { orgId },
+    where: { orgId, deletedAt: null },
     orderBy: { paidOn: "desc" },
     take: limit,
     include: { bill: { include: { unit: true, tenant: true } } },
@@ -402,7 +405,7 @@ export async function listPayments(orgId: string, limit = 300) {
 /** สลิปที่ผู้เช่าแจ้งชำระเอง รอเจ้าหน้าที่ตรวจ (pending · source=tenant) */
 export async function pendingTenantSlips(orgId: string) {
   return prisma.rentalPayment.findMany({
-    where: { orgId, status: "pending", source: "tenant" },
+    where: { orgId, status: "pending", source: "tenant", deletedAt: null },
     orderBy: { createdAt: "desc" },
     include: { bill: { include: { unit: true, tenant: true } } },
   });
@@ -410,7 +413,7 @@ export async function pendingTenantSlips(orgId: string) {
 
 export async function pendingDiscounts(orgId: string) {
   return prisma.rentalDiscount.findMany({
-    where: { orgId, status: "pending" },
+    where: { orgId, status: "pending", deletedAt: null },
     orderBy: { createdAt: "asc" },
     include: { bill: { include: { unit: true, tenant: true } } },
   });
@@ -428,18 +431,18 @@ export async function projectKpis(orgId: string, projectId: string) {
     prisma.rentalUnit.count({ where: { orgId, projectId, isActive: true, status: "occupied" } }),
     prisma.rentalUnit.count({ where: { orgId, projectId, isActive: true, status: "vacant" } }),
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, status: { in: ["issued", "partial", "overdue"] } },
+      where: { orgId, projectId, status: { in: ["issued", "partial", "overdue"] }, deletedAt: null },
       select: { totalAmount: true, paidAmount: true, status: true },
     }),
     prisma.rentalBill.findMany({
       // ตัดบิลยกเลิก/ร่าง — "ออกบิลเดือนนี้" ต้องนับเฉพาะบิลที่ออกจริง (ให้ตรง billingCycle/analytics)
-      where: { orgId, projectId, period, status: { notIn: ["void", "draft"] } },
+      where: { orgId, projectId, period, status: { notIn: ["void", "draft"] }, deletedAt: null },
       select: { totalAmount: true, paidAmount: true },
     }),
     // CEO 2026-08-09: "เก็บได้เดือนนี้" = cash-basis (Σ ชำระที่ยืนยันแล้ว ตามวันจ่ายในเดือนนี้)
     // ให้ตรงกับหน้ารับชำระ — ไม่ผูกกับงวดบิล (เงินบิลค้างเก่าที่เพิ่งจ่าย ก็นับเข้าเดือนนี้)
     prisma.rentalPayment.findMany({
-      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd } },
+      where: { orgId, status: "confirmed", bill: { projectId }, paidOn: { gte: monthStart, lt: monthEnd }, deletedAt: null },
       select: { amountThb: true },
     }),
   ]);
@@ -471,7 +474,7 @@ export async function billingCycle(orgId: string, projectId: string, period = cu
       distinct: ["unitId"],
     }),
     prisma.rentalBill.findMany({
-      where: { orgId, projectId, period, status: { not: "void" } },
+      where: { orgId, projectId, period, status: { not: "void" }, deletedAt: null },
       select: { status: true },
     }),
   ]);

@@ -31,6 +31,11 @@ jobs:
       - name: Unit tests (money math — must pass)
         run: npx tsx lib/rentspace/__tests__/bill-math.run.ts
 
+      - name: Unit tests (slip-gate + billing engine — must pass)
+        run: |
+          npx tsx lib/rentspace/__tests__/slip-gate.run.ts
+          npx tsx lib/rentspace/__tests__/billing-engine.run.ts
+
       - name: Unit tests (role-gate completeness — must pass)
         run: npx tsx lib/auth/__tests__/role-gate-completeness.run.ts
 

@@ -3266,6 +3266,10 @@ model ChairopsUser {
   mobilePhone         String?            @map("mobile_phone")
   emergencyContact    String?            @map("emergency_contact")
   emergencyPhone      String?            @map("emergency_phone")
+  // F4c (CEO 2026-09-22): a SECOND emergency contact. Fixed cardinality of 2 —
+  // a column pair, not a child table (the maid roster never needs a 3rd).
+  emergencyContact2   String?            @map("emergency_contact_2")
+  emergencyPhone2     String?            @map("emergency_phone_2")
   currentMainEmployer String?            @map("current_main_employer")
   onboardingComplete  Boolean            @default(false) @map("onboarding_complete")
   // F4b: ID card + address for the employment contract (CEO 2026-07-12).
@@ -3274,6 +3278,12 @@ model ChairopsUser {
   idCardImageUrl      String?            @map("id_card_image_url")
   idCardFileName      String?            @map("id_card_file_name")
   homeAddress         String?            @map("home_address")
+  // F4c (CEO 2026-09-22): selfie identity check taken at onboarding. Same
+  // PDPA-sensitive class as idCardImageUrl — biometric-adjacent, so it carries
+  // its own explicit consent stamp (PDPA ม.26) separate from contract consent.
+  selfieImageUrl      String?            @map("selfie_image_url")
+  selfieCapturedAt    DateTime?          @map("selfie_captured_at") @db.Timestamptz(6)
+  sensitiveConsentAt  DateTime?          @map("sensitive_consent_at") @db.Timestamptz(6)
   // F4b (CEO 2026-08-02): ชื่อเล่น — for the office contract form + maid roster.
   nickname            String?            @map("nickname")
   // F7: deactivation reason + audit trail
@@ -3686,14 +3696,37 @@ model ChairopsCashDeposit {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branch      ChairopsBranch           @relation(fields: [branchId], references: [id])
-  maid        ChairopsUser             @relation(fields: [maidId], references: [id])
-  collections ChairopsCashCollection[]
+  branch          ChairopsBranch                  @relation(fields: [branchId], references: [id])
+  maid            ChairopsUser                    @relation(fields: [maidId], references: [id])
+  collections     ChairopsCashCollection[]
+  // CEO 2026-09-22: แม่บ้านลืมแนบสลิปตอนฝาก (ส่งมาทีหลังทาง LINE) หรือฝากครั้ง
+  // เดียวมีมากกว่า 1 สลิปจริง — office แนบเพิ่มได้ทันทีไม่ต้องขออนุมัติ (ต่างจาก
+  // การลบที่ต้องขออนุมัติ). สลิปหลักยังอยู่ที่ slipPhotoUrl ด้านบนเหมือนเดิม
+  // (ไม่กระทบ AI ตรวจสลิป/ยอดเงิน) — ตารางนี้เก็บเฉพาะสลิปเสริมที่แนบตามหลัง.
+  additionalSlips ChairopsDepositSlipAttachment[]
 
   @@unique([orgId, slipImageHash])
   @@index([orgId])
   @@index([branchId, depositedAt])
   @@index([maidId, depositedAt])
+  @@schema("chairops")
+}
+
+/// สลิปเสริมที่แนบเข้ากับรายการฝากเงินที่มีอยู่แล้ว (CEO 2026-09-22) — ไม่กระทบ
+/// ยอดเงิน/สถานะตรวจสอบใด ๆ เป็นแค่หลักฐานเสริม แนบได้ทันทีไม่ต้องขออนุมัติ.
+model ChairopsDepositSlipAttachment {
+  id           String   @id @default(uuid())
+  orgId        String
+  depositId    String
+  url          String
+  note         String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  deposit ChairopsCashDeposit @relation(fields: [depositId], references: [id])
+
+  @@index([depositId])
+  @@index([orgId])
   @@schema("chairops")
 }
 
@@ -8036,6 +8069,20 @@ model RentalBill {
   voidDecidedBy      String?          @map("void_decided_by") @db.Uuid
   voidDecidedAt      DateTime?        @map("void_decided_at") @db.Timestamptz(6)
   voidDecisionNote   String?          @map("void_decision_note")
+  // การลบบิลที่จ่ายแล้ว — ต้องขออนุมัติจาก super_admin เท่านั้น (maker≠checker)
+  // บิลที่ยังไม่จ่าย (paidAmount=0) ยังลบตรงได้ผ่าน actDeleteBill ตามเดิม ไม่ผ่าน flow นี้
+  deleteStatus       String           @default("none") @map("delete_status") // none | pending | approved | rejected
+  deleteReason       String?          @map("delete_reason")
+  deleteRequestedBy  String?          @map("delete_requested_by") @db.Uuid
+  deleteRequestedAt  DateTime?        @map("delete_requested_at") @db.Timestamptz(6)
+  deleteDecidedBy    String?          @map("delete_decided_by") @db.Uuid
+  deleteDecidedAt    DateTime?        @map("delete_decided_at") @db.Timestamptz(6)
+  deleteDecisionNote String?          @map("delete_decision_note")
+  // Soft-delete (audit ฉบับ 2026-09-20 §5 Cluster B) — บิล/การชำระ/ส่วนลดต้องกู้คืนได้
+  // เก็บ audit trail ครบ 5 ปีตามกฎ ไม่ hard-delete แถวการเงินอีกต่อไป
+  deletedAt          DateTime?        @map("deleted_at") @db.Timestamptz(6)
+  deletedById        String?          @map("deleted_by") @db.Uuid
+  deleteNote         String?          @map("delete_note")
   createdBy          String?          @map("created_by") @db.Uuid
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -8054,6 +8101,7 @@ model RentalBill {
   @@unique([publicToken])
   @@index([orgId, projectId, status])
   @@index([orgId, status, dueDate])
+  @@index([orgId, deletedAt])
   @@map("rental_bill")
   @@schema("public")
 }
@@ -8106,6 +8154,10 @@ model RentalPayment {
   ocrReadAt        DateTime? @map("ocr_read_at") @db.Timestamptz(6)
   ocrFlagReason    String?   @map("ocr_flag_reason") // null = ไม่ติดธง · มีค่า = เหตุผลที่ตีธง (ซ้ำ/บัญชีไม่ตรง)
   requiresReview   Boolean   @default(false) @map("requires_review")
+  // Soft-delete (audit 2026-09-20 §5 Cluster B) — ลบพร้อม RentalBill แม่ตอนอนุมัติลบบิล
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedById      String?   @map("deleted_by") @db.Uuid
+  deleteNote       String?   @map("delete_note")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
@@ -8113,6 +8165,7 @@ model RentalPayment {
   @@index([orgId, billId])
   @@index([orgId, contractId])
   @@index([orgId, status])
+  @@index([orgId, deletedAt])
   @@map("rental_payment")
   @@schema("public")
 }
@@ -8130,13 +8183,35 @@ model RentalDiscount {
   decidedBy      String?              @map("decided_by") @db.Uuid
   decidedAt      DateTime?            @map("decided_at") @db.Timestamptz(6)
   decisionNote   String?              @map("decision_note")
+  // Soft-delete (audit 2026-09-20 §5 Cluster B) — ลบพร้อม RentalBill แม่ตอนอนุมัติลบบิล
+  deletedAt      DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  deletedById    String?              @map("deleted_by") @db.Uuid
+  deleteNote     String?              @map("delete_note")
   createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
   bill RentalBill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   @@index([orgId, billId])
   @@index([orgId, status])
+  @@index([orgId, deletedAt])
   @@map("rental_discount")
+  @@schema("public")
+}
+
+// สิทธิ์ต่อ role ใน RentSpace (settings tab, super_admin เท่านั้นแก้ได้) — เก็บเฉพาะ
+// override; ไม่มีแถว = ใช้ default ในโค้ด (mirror ledger_permission ทุกประการ — audit 2026-09-20)
+model RentspacePermission {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  role       String // staff | branch_manager | admin | program_admin | super_admin ฯลฯ
+  capability String // slip.verify_access | bill.delete_direct | contract.void_request | contract.edit_request | discount.request
+  allowed    Boolean
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy  String?  @map("updated_by") @db.Uuid
+
+  @@unique([orgId, role, capability])
+  @@index([orgId])
+  @@map("rentspace_permission")
   @@schema("public")
 }
 

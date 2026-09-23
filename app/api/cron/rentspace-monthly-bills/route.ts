@@ -18,9 +18,7 @@ function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
   const header = req.headers.get("authorization") || "";
-  if (header === `Bearer ${secret}`) return true;
-  // Vercel cron also supports the x-vercel-cron header on the configured path
-  return req.headers.get("x-vercel-cron") != null;
+  return header === `Bearer ${secret}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -41,42 +39,75 @@ export async function GET(req: NextRequest) {
     where: { isActive: true, autoBillEnabled: true },
   });
 
-  const summary: { project: string; created: number; skipped: number; errors: number }[] = [];
+  const summary: {
+    project: string;
+    created: number;
+    skipped: number;
+    errors: number;
+    failed?: boolean;
+    failureReason?: string;
+  }[] = [];
 
   for (const project of projects) {
-    const contracts = await prisma.rentalContract.findMany({
-      // รวม expired (holdover) ให้ตรงกับ actGenerateMonthlyBills · ตัดเฉพาะ terminated/draft
-      where: { projectId: project.id, status: { in: ["active", "expiring", "expired"] } },
-      include: { project: true, unit: true },
-    });
-    let created = 0;
-    let skipped = 0;
-    let errors = 0;
-    for (const c of contracts) {
-      try {
-        // Idempotent: createBillForContract early-returns when a bill for
-        // (contractId, period) already exists → buildBill (rent + meters + late
-        // fee + recurring charges) runs at most once per bill, so re-running the
-        // cron never double-adds line items. res.created=false ⇒ skipped.
-        const res = await createBillForContract(c, period, { auto: true, issue: true });
-        if (res.created) created++;
-        else skipped++;
-      } catch {
-        errors++;
+    // Per-project isolation: this cron runs once a month, so if one project's
+    // query/audit throws and aborts the whole loop, every OTHER project also
+    // silently gets skipped until next month. Wrap each project independently
+    // so one bad project never blocks the rest.
+    try {
+      const contracts = await prisma.rentalContract.findMany({
+        // รวม expired (holdover) ให้ตรงกับ actGenerateMonthlyBills · ตัดเฉพาะ terminated/draft
+        where: { projectId: project.id, status: { in: ["active", "expiring", "expired"] } },
+        include: { project: true, unit: true },
+      });
+      let created = 0;
+      let skipped = 0;
+      let errors = 0;
+      for (const c of contracts) {
+        try {
+          // Idempotent: createBillForContract early-returns when a bill for
+          // (contractId, period) already exists → buildBill (rent + meters + late
+          // fee + recurring charges) runs at most once per bill, so re-running the
+          // cron never double-adds line items. res.created=false ⇒ skipped.
+          const res = await createBillForContract(c, period, { auto: true, issue: true });
+          if (res.created) created++;
+          else skipped++;
+        } catch {
+          errors++;
+        }
       }
-    }
-    if (created > 0 || errors > 0) {
-      await audit({
-        orgId: project.orgId,
-        userId: null,
-        action: "RENTSPACE_BILL_AUTO_CREATED",
-        resourceType: "rental_project",
-        resourceId: project.id,
-        diff: { new: { period, created, skipped, errors } },
+      if (created > 0 || errors > 0) {
+        await audit({
+          orgId: project.orgId,
+          userId: null,
+          action: "RENTSPACE_BILL_AUTO_CREATED",
+          resourceType: "rental_project",
+          resourceId: project.id,
+          diff: { new: { period, created, skipped, errors } },
+        });
+      }
+      summary.push({ project: project.name, created, skipped, errors });
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[rentspace-monthly-bills] project ${project.id} (${project.name}) failed — skipped, continuing to next project:`,
+        e,
+      );
+      summary.push({
+        project: project.name,
+        created: 0,
+        skipped: 0,
+        errors: 0,
+        failed: true,
+        failureReason: reason,
       });
     }
-    summary.push({ project: project.name, created, skipped, errors });
   }
 
-  return NextResponse.json({ ok: true, period, projects: summary });
+  const failedProjects = summary.filter((s) => s.failed);
+  return NextResponse.json({
+    ok: failedProjects.length === 0,
+    period,
+    projects: summary,
+    failedCount: failedProjects.length,
+  });
 }

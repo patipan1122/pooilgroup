@@ -1003,6 +1003,9 @@ const onboardingSchema = z.object({
   mobilePhone: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
   emergencyContact: z.string().trim().min(1, "ต้องระบุผู้ติดต่อฉุกเฉิน").max(100),
   emergencyPhone: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
+  // ผู้ติดต่อฉุกเฉินคนที่ 2 (CEO 2026-09-22) — บังคับกรอกในโฟลว์ onboarding
+  emergencyContact2: z.string().trim().min(1, "ต้องระบุผู้ติดต่อฉุกเฉินคนที่ 2").max(100),
+  emergencyPhone2: z.string().trim().min(9, "เบอร์ไม่ถูกต้อง").max(20),
   currentMainEmployer: z.string().trim().min(1, "ต้องระบุ").max(200),
   // บัญชีรับเงินเดือน (CEO 2026-06-18) — คอลัมน์มีใน DB อยู่แล้ว (payroll fields)
   bankName: z.string().trim().min(1, "ต้องระบุธนาคาร").max(100),
@@ -1018,6 +1021,12 @@ const onboardingSchema = z.object({
   homeAddress: z.string().trim().max(500).optional(),
   idCardImageUrl: z.string().trim().max(1000).optional(),
   idCardFileName: z.string().trim().max(300).optional(),
+  // เซลฟี่ยืนยันตัวตน (CEO 2026-09-22) — optional ที่ชั้น schema เพราะฟอร์มเก่า
+  // (ที่ยังไม่มีช่องนี้) ต้องยังส่งผ่านได้ · ฟอร์มใหม่บังคับกรอกฝั่ง UI
+  selfieImageUrl: z.string().trim().max(1000).optional(),
+  // PDPA ม.26 — ติ๊กยินยอมให้เก็บข้อมูลอ่อนไหว (รูปบัตร ปชช. ซึ่งมีช่องศาสนา
+  // ติดมาด้วยเสมอ + รูปใบหน้า) แยกจากการยอมรับตัวสัญญา
+  sensitiveConsent: z.string().trim().optional(),
 });
 
 // "" → null (empty optional strings are cleared, not stored as blanks)
@@ -1038,6 +1047,8 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
     mobilePhone: formData.get("mobilePhone"),
     emergencyContact: formData.get("emergencyContact"),
     emergencyPhone: formData.get("emergencyPhone"),
+    emergencyContact2: formData.get("emergencyContact2"),
+    emergencyPhone2: formData.get("emergencyPhone2"),
     currentMainEmployer: formData.get("currentMainEmployer"),
     bankName: formData.get("bankName"),
     bankAccountNo: formData.get("bankAccountNo"),
@@ -1046,9 +1057,21 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
     homeAddress: formData.get("homeAddress") ?? undefined,
     idCardImageUrl: formData.get("idCardImageUrl") ?? undefined,
     idCardFileName: formData.get("idCardFileName") ?? undefined,
+    selfieImageUrl: formData.get("selfieImageUrl") ?? undefined,
+    sensitiveConsent: formData.get("sensitiveConsent") ?? undefined,
   });
   if (!parsed.success)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
+
+  // PDPA ม.26 — ถ้ามีข้อมูลอ่อนไหวส่งมา (รูปบัตร ปชช. ที่มีช่องศาสนาติดมา /
+  // รูปใบหน้า) ต้องมีการติ๊กยินยอมมาด้วยเสมอ · เช็คซ้ำฝั่ง server กันกรณี
+  // client ถูกดัดแปลงให้ข้ามช่องติ๊ก
+  const selfieUrl = blankToNull(parsed.data.selfieImageUrl);
+  const idCardUrl = blankToNull(parsed.data.idCardImageUrl);
+  const sensitiveConsent = parsed.data.sensitiveConsent === "true";
+  if ((selfieUrl || idCardUrl) && !sensitiveConsent) {
+    return { ok: false, error: "กรุณาติ๊กยินยอมให้เก็บรูปบัตรประชาชนและรูปถ่ายก่อน" };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.chairopsUser.update({
@@ -1058,14 +1081,21 @@ export async function submitOnboarding(formData: FormData): Promise<ActionResult
         mobilePhone: parsed.data.mobilePhone,
         emergencyContact: parsed.data.emergencyContact,
         emergencyPhone: parsed.data.emergencyPhone,
+        emergencyContact2: parsed.data.emergencyContact2,
+        emergencyPhone2: parsed.data.emergencyPhone2,
         currentMainEmployer: parsed.data.currentMainEmployer,
         bankName: parsed.data.bankName,
         bankAccountNo: parsed.data.bankAccountNo,
         bankAccountName: parsed.data.bankAccountName,
         idCardNumber: blankToNull(parsed.data.idCardNumber),
         homeAddress: blankToNull(parsed.data.homeAddress),
-        idCardImageUrl: blankToNull(parsed.data.idCardImageUrl),
+        idCardImageUrl: idCardUrl,
         idCardFileName: blankToNull(parsed.data.idCardFileName),
+        selfieImageUrl: selfieUrl,
+        selfieCapturedAt: selfieUrl ? new Date() : null,
+        // เก็บเวลาที่ติ๊กยินยอมไว้เป็นหลักฐาน (PDPA ม.19 ต้องพิสูจน์ได้ว่า
+        // ขอความยินยอมเมื่อไหร่) — บันทึกเฉพาะตอนที่มีข้อมูลอ่อนไหวจริง
+        sensitiveConsentAt: sensitiveConsent && (selfieUrl || idCardUrl) ? new Date() : null,
         onboardingComplete: true,
         // Clear invite token after successful onboarding
         inviteToken: null,

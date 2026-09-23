@@ -23,7 +23,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { baht } from "@/lib/chairops/utils/format";
-import { SlipBadge, SlipChip } from "@/components/chairops/redesign/slip-viewer";
+import {
+  SlipBadge,
+  SlipChip,
+  SlipChipGroup,
+} from "@/components/chairops/redesign/slip-viewer";
 import {
   ledgerCumClass,
   ledgerDiffClass,
@@ -503,20 +507,25 @@ export function LedgerTab({
               <td>
                 {/* CEO 2026-08-17 · ชิปยอดเงินต่อใบฝาก (เหมือนตาราง Periods) —
                     ยอด AI อ่านจากสลิปจริง (fallback ยอดที่พิมพ์เองถ้ายังไม่มี) สี
-                    บอกสถานะ reconcile กดดูรูปสลิปใบนั้นได้ตรงในตาราง */}
+                    บอกสถานะ reconcile กดดูรูปสลิปใบนั้นได้ตรงในตาราง.
+                    CEO 2026-09-22: วันที่มีหลายสลิป รวมเป็นชิปเดียว (จำนวนใบ ·
+                    ยอดรวม) กดขยายดูรายใบด้านล่างแทนเรียงชิปให้บวกเลขเอง. */}
                 {d.slips && d.slips.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {d.slips.map((s) => (
-                      <SlipChip
-                        key={s.id}
-                        amount={fmtN(s.amount)}
-                        slipUrl={s.slipUrl}
-                        status={s.ledgerStatus}
-                        flagged={s.flagged}
-                        caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
-                      />
-                    ))}
-                  </div>
+                  <SlipChipGroup
+                    sumLabel={fmtN(
+                      d.slips.reduce((sum, s) => sum + s.amount, 0),
+                    )}
+                    anyFlagged={d.slips.some((s) => s.flagged)}
+                    slips={d.slips.map((s) => ({
+                      id: s.id,
+                      amount: fmtN(s.amount),
+                      slipUrl: s.slipUrl,
+                      status: s.ledgerStatus,
+                      flagged: s.flagged,
+                      caption: `สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`,
+                      additionalSlips: s.additionalSlips,
+                    }))}
+                  />
                 ) : (
                   <SlipBadge
                     url={d.slip}
@@ -3270,6 +3279,7 @@ export function PeriodsTab({
                             status={s.ledgerStatus}
                             flagged={s.flagged}
                             caption={`สลิปฝากเงิน · ${s.depositedAt}${s.amountIsOcr ? " · ยอดจาก AI อ่านสลิป" : ""}`}
+                            depositId={s.id}
                           />
                         ))}
                       </div>

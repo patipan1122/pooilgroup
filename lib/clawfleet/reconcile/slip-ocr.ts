@@ -171,8 +171,9 @@ const normalizeAcctNo = (s: string) => s.replace(/[^0-9]/g, "");
 
 /**
  * ตรวจสลิปซ้ำ + บัญชีปลายทางไม่ตรงกับที่สาขาตั้งค่าไว้ — ผลนี้ใช้ตั้ง approvalStatus="PENDING"
- * (reuse สถานะเดิมที่ pushBranchDepositsToLedger กันออกจาก ledger push อยู่แล้ว ไม่ต้องเพิ่ม
- * enum ใหม่) พร้อมเหตุผลให้ office เห็นทันทีในหน้า review ที่มีอยู่แล้ว.
+ * = "ติดธง รอตรวจ" พร้อมเหตุผลให้ office เห็นทันทีในหน้า review ที่มีอยู่แล้ว.
+ * ⚠️ PENDING **ไม่ได้กันเงินออกจาก ledger push แล้ว** (CEO 2026-09-22 — ดู LEDGER_ELIGIBLE_APPROVAL
+ * ใน ./ledger-push.ts) · คอมเมนต์เดิมตรงนี้ยังเขียนว่ามันกันอยู่ ซึ่งไม่จริงแล้ว.
  *
  * เวิร์กช็อป 2026-08-29 ปรับ scope ให้กว้างกว่า ChairOps เดิม (ที่จำกัดแค่สาขาเดียวกัน):
  *  (1) เลขที่รายการตรงกัน → เช็ค "ทั้งองค์กร" (ไม่จำกัดสาขา) — เลขที่รายการธนาคารไม่ซ้ำกันข้าม
@@ -191,9 +192,15 @@ export async function checkSlipFraud(args: {
 }): Promise<SlipFraudCheck> {
   const { orgId, branchId, depositId, ocr, configuredAccountNumber } = args;
 
+  // ใบที่ถูก "ตีกลับ" = โมฆะแล้ว (รอบถูกคืนไปฝากใหม่ · ยอดถูกถอนออกจาก ledger) → ห้ามนับเป็น
+  //   "สลิปซ้ำ". นโยบายใหม่ (CEO 2026-09-22) ทำให้ ตีกลับ → ฝากใหม่ด้วยสลิปใบเดิม เป็นทางเดินปกติ
+  //   ที่ตั้งใจให้เกิด ถ้าไม่กรองออก ใบที่ฝากใหม่จะติดธง "สงสัยเอาสลิปเดิมมาส่งซ้ำ" ทุกครั้ง
+  //   (ชนกับใบเดิมที่เพิ่งถูกตีกลับเอง) → ธงเท็จ 100% ของการฝากใหม่ · คนอ่านเลิกเชื่อธงทั้งหมด.
+  const NOT_VOIDED = { approvalStatus: { not: "REJECTED" } } as const;
+
   if (ocr.refNo) {
     const dupRef = await prisma.cfCashDeposit.findFirst({
-      where: { orgId, id: { not: depositId }, ocrRefNo: ocr.refNo },
+      where: { orgId, id: { not: depositId }, ocrRefNo: ocr.refNo, ...NOT_VOIDED },
       select: { id: true, depositedByName: true, branchId: true },
     });
     if (dupRef) {
@@ -230,6 +237,7 @@ export async function checkSlipFraud(args: {
         branchId: { in: scopeBranchIds },
         ocrAmountCents: Math.round(ocr.amount * 100),
         ocrDate: new Date(`${ocr.date}T00:00:00.000Z`),
+        ...NOT_VOIDED,
       },
       select: { id: true, depositedByName: true },
     });

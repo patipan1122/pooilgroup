@@ -11,6 +11,8 @@ import { getProjectReconcileSummary } from "@/lib/rentspace/ledger-push";
 import { RsPage, RsHeader } from "@/components/rentspace/ui";
 import SettingsForm from "./_components/settings-form";
 import ReconcileAccountSection from "./_components/reconcile-account-section";
+import { PermissionSection } from "./_components/permission-section";
+import { getPermissionMatrix } from "@/lib/rentspace/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,37 +23,39 @@ export default async function RentSpaceSettingsPage() {
   // แต่สวิตช์ปลดล็อก (แก้/ลบ/ออกบิล·สัญญา) ตั้งได้เฉพาะ super admin (กัน self-escalation)
   const canEditPerms = isSuperAdmin(session.user.role);
 
-  const project = await getPrimaryProject(session.user.org_id);
+  // upspeed 2026-09-22: getPermissionMatrix ต้องการแค่ orgId (ไม่ต้องรอ project) →
+  // ยิงพร้อม getPrimaryProject เลย แทนที่จะเป็นขั้นสุดท้ายแบบต่อเนื่อง (เดิม await
+  // อยู่ท้าย JSX แยกจากทุกอย่างข้างบน — เพิ่ม stage รอเปล่าๆ อีก 1 ชั้น)
+  const [project, permissionMatrix] = await Promise.all([
+    getPrimaryProject(session.user.org_id),
+    canEditPerms ? getPermissionMatrix(session.user.org_id) : Promise.resolve(null),
+  ]);
 
-  const [companies, bankAccounts, reconcileSummary] = project
+  const [companies, bankAccounts, reconcileSummary, recurringChargesRaw] = project
     ? await Promise.all([
         listCompanies(adminClient(), session.user.org_id),
         listBankAccounts(adminClient(), session.user.org_id),
         getProjectReconcileSummary(session.user.org_id, project.id),
-      ])
-    : [[], [], null];
-
-  // ค่าใช้จ่ายประจำ (recurring charges) ของโครงการนี้ — โหลดเฉพาะเมื่อมีโครงการแล้ว
-  const recurringCharges = project
-    ? (
-        await prisma.rentalRecurringCharge.findMany({
+        prisma.rentalRecurringCharge.findMany({
           where: { projectId: project.id, orgId: session.user.org_id },
           orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
           include: { unit: { select: { code: true, name: true } } },
-        })
-      ).map((c) => ({
-        id: c.id,
-        unitId: c.unitId,
-        kind: c.kind,
-        label: c.label,
-        amountThb: toNum(c.amountThb),
-        vatable: c.vatable,
-        isActive: c.isActive,
-        sort: c.sort,
-        unitCode: c.unit?.code ?? null,
-        unitName: c.unit?.name ?? null,
-      }))
-    : [];
+        }),
+      ])
+    : [[], [], null, []];
+
+  const recurringCharges = recurringChargesRaw.map((c) => ({
+    id: c.id,
+    unitId: c.unitId,
+    kind: c.kind,
+    label: c.label,
+    amountThb: toNum(c.amountThb),
+    vatable: c.vatable,
+    isActive: c.isActive,
+    sort: c.sort,
+    unitCode: c.unit?.code ?? null,
+    unitName: c.unit?.name ?? null,
+  }));
 
   // Flatten Decimal/Date into plain values for the client component.
   const initial = project
@@ -116,6 +120,7 @@ export default async function RentSpaceSettingsPage() {
           summary={reconcileSummary}
         />
       )}
+      {canEditPerms && permissionMatrix && <PermissionSection matrix={permissionMatrix} />}
     </RsPage>
   );
 }
