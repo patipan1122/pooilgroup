@@ -41,6 +41,10 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { POOILGROUP_ORG_ID } from "@/lib/rentspace/format";
 import { onboardingCompanyLegalName } from "@/lib/recruit/onboarding-types";
 import {
+  isOnboardingPublicFlowEnabled,
+  ONBOARDING_CLOSED_MESSAGE,
+} from "@/lib/recruit/onboarding-availability";
+import {
   FINAL_ACKNOWLEDGMENT_TEXT,
   ONBOARDING_CONTRACT_TITLE,
   ONBOARDING_CONTRACT_VERSION,
@@ -208,6 +212,22 @@ export default async function OnboardSignPage({
   // useSearchParams() — จะได้ไม่ต้องห่อ Suspense เพิ่มอีกชั้นเปล่า ๆ
   const { s } = await searchParams;
   const sessionIdFromQuery = typeof s === "string" && s !== "" ? s : null;
+
+  // สวิตช์ปิดฉุกเฉิน — เหมือน /onboard (ดู lib/recruit/onboarding-availability.ts)
+  if (!isOnboardingPublicFlowEnabled()) {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-5">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-soft border border-zinc-200 p-7 text-center">
+          <h1 className="text-xl font-extrabold text-zinc-900 font-display">
+            ปิดปรับปรุงชั่วคราว
+          </h1>
+          <p className="mt-3 text-sm text-zinc-600 leading-relaxed">
+            {ONBOARDING_CLOSED_MESSAGE}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50">

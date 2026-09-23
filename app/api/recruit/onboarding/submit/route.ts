@@ -37,6 +37,10 @@ import {
   onboardingCompanyLegalName,
   type OnboardingDocType,
 } from "@/lib/recruit/onboarding-types";
+import {
+  isOnboardingPublicFlowEnabled,
+  ONBOARDING_CLOSED_MESSAGE,
+} from "@/lib/recruit/onboarding-availability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -242,6 +246,12 @@ function toJson(v: unknown): Prisma.InputJsonValue {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isOnboardingPublicFlowEnabled()) {
+    return NextResponse.json(
+      { error: ONBOARDING_CLOSED_MESSAGE },
+      { status: 503 },
+    );
+  }
   const ip = getClientIp(req);
 
   // Two buckets on purpose. checkRateLimit() RECORDS every call it allows, so a

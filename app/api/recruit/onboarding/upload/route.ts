@@ -42,6 +42,10 @@ import {
   ONBOARDING_MAX_CAPTURE_SIZE,
   ONBOARDING_MAX_FILE_SIZE,
 } from "@/lib/recruit/onboarding-types";
+import {
+  isOnboardingPublicFlowEnabled,
+  ONBOARDING_CLOSED_MESSAGE,
+} from "@/lib/recruit/onboarding-availability";
 
 export const runtime = "nodejs"; // Buffer + Drive REST
 export const dynamic = "force-dynamic";
@@ -95,6 +99,12 @@ function safeFileName(name: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isOnboardingPublicFlowEnabled()) {
+    return NextResponse.json(
+      { error: ONBOARDING_CLOSED_MESSAGE },
+      { status: 503 },
+    );
+  }
   const ip = getClientIp(req);
   // 20 uploads / IP / 15 min — matches the existing public-recruit convention
   // (a legit candidate uploads 6 documents + signature + selfie = 8).

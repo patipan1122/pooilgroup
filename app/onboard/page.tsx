@@ -14,6 +14,10 @@
 import type { Metadata } from "next";
 import { Clock, ShieldCheck, Smartphone, ShieldAlert } from "lucide-react";
 import { OnboardClient } from "./onboard-client";
+import {
+  isOnboardingPublicFlowEnabled,
+  ONBOARDING_CLOSED_MESSAGE,
+} from "@/lib/recruit/onboarding-availability";
 
 export const metadata: Metadata = {
   title: "กรอกข้อมูลพนักงานใหม่ · PO Oil / JP Sync Group",
@@ -23,6 +27,24 @@ export const metadata: Metadata = {
 };
 
 export default function OnboardPage() {
+  // สวิตช์ปิดฉุกเฉิน — ดู lib/recruit/onboarding-availability.ts
+  // ปิดแล้วแสดงข้อความสุภาพ ไม่ใช่ 404 (ลิงก์ถูกส่งต่อใน LINE ไปแล้ว
+  // พนักงานใหม่ที่เจอ 404 จะเข้าใจว่าระบบบริษัทพัง)
+  if (!isOnboardingPublicFlowEnabled()) {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-5">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-soft border border-zinc-200 p-7 text-center">
+          <h1 className="text-xl font-extrabold text-zinc-900 font-display">
+            ปิดปรับปรุงชั่วคราว
+          </h1>
+          <p className="mt-3 text-sm text-zinc-600 leading-relaxed">
+            {ONBOARDING_CLOSED_MESSAGE}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50">
       {/* HERO — โครงเดียวกับ /apply/[slug] (brand gradient + trust chips) */}
